@@ -17,6 +17,8 @@ import { ICON_B64 } from "./icon.ts";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
+const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY") ?? "";
+const OPENAI_MODEL = Deno.env.get("OPENAI_MODEL") ?? "gpt-5.6-luna";
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY") ?? "";
 const CLAUDE_MODEL = Deno.env.get("CLAUDE_MODEL") ?? "claude-haiku-4-5-20251001";
 const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY") ?? "";
@@ -29,7 +31,7 @@ const LIMIT_SAVES = Number(Deno.env.get("LIMIT_SAVES") ?? "40");
 
 // Bump when the extraction prompt changes materially: cached cards below this
 // version are treated as a miss and re-extracted.
-const CARD_V = 3;
+const CARD_V = 4;
 
 const ALLOWED_ORIGINS = (Deno.env.get("ALLOWED_ORIGINS") ??
   "https://simeonrinkenberger.github.io,http://localhost:8000,http://127.0.0.1:8000")
@@ -178,17 +180,29 @@ type Meta = {
 const GEMINI_MODELS = [...new Set([GEMINI_MODEL, "gemini-3.6-flash-lite", "gemini-3-flash-lite", "gemini-3-flash", "gemini-flash-latest"])];
 let geminiGoodModel: string | null = null;
 
+function hasThinkingConfig(body: Record<string, unknown>): boolean {
+  const gc = body.generationConfig as Record<string, unknown> | undefined;
+  return !!gc && "thinkingConfig" in gc;
+}
+
+function withoutThinkingConfig(body: Record<string, unknown>): Record<string, unknown> {
+  const gc = { ...(body.generationConfig as Record<string, unknown>) };
+  delete gc.thinkingConfig;
+  return { ...body, generationConfig: gc };
+}
+
 async function geminiGenerate(body: Record<string, unknown>): Promise<string | null> {
   if (!GEMINI_API_KEY) return null;
   const models = geminiGoodModel
     ? [geminiGoodModel, ...GEMINI_MODELS.filter((m) => m !== geminiGoodModel)]
     : GEMINI_MODELS;
   for (const model of models) {
-    for (let attempt = 0; attempt < 2; attempt++) {
+    let payload = body;
+    for (let attempt = 0; attempt < 3; attempt++) {
       const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
         method: "POST",
         headers: { "content-type": "application/json", "x-goog-api-key": GEMINI_API_KEY },
-        body: JSON.stringify(body),
+        body: JSON.stringify(payload),
       });
       if (r.status === 429 && attempt === 0) {
         await r.body?.cancel();
@@ -201,10 +215,26 @@ async function geminiGenerate(body: Record<string, unknown>): Promise<string | n
         if (geminiGoodModel === model) geminiGoodModel = null;
         break;
       }
+      // Older models reject thinkingConfig outright — drop it and try this model again.
+      if (r.status === 400 && hasThinkingConfig(payload)) {
+        await r.body?.cancel();
+        payload = withoutThinkingConfig(payload);
+        continue;
+      }
       if (!r.ok) { console.error("gemini", model, r.status, await r.text()); return null; }
       const data = await r.json();
+      const cand = data.candidates?.[0];
+      const text = cand?.content?.parts?.map((p: { text?: string }) => p.text ?? "").join("") ?? "";
+      // A thinking model can spend the whole output budget reasoning and return no
+      // text at all; that is a failure, not an empty answer, so let the chain fall on.
+      if (!text) {
+        console.error("gemini", model, "empty text, finishReason", cand?.finishReason,
+          "thoughts", data?.usageMetadata?.thoughtsTokenCount);
+        if (geminiGoodModel === model) geminiGoodModel = null;
+        break;
+      }
       geminiGoodModel = model;
-      return data.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? "").join("") ?? "";
+      return text;
     }
   }
   console.error("gemini: all models exhausted");
@@ -260,17 +290,55 @@ async function groqGenerate(system: string, user: string, wantJson: boolean): Pr
   return null;
 }
 
-// One front door for text generation: Gemini rotation first, Groq rotation as fallback.
-// ANTHROPIC_API_KEY, when set, takes precedence upstream in extractCard.
+// OpenAI (GPT-5.6 Luna by default): the paid tier's cheapest flagship-family model.
+// The 5.6 series rejects max_tokens in favour of max_completion_tokens.
+async function openaiGenerate(system: string, user: string, wantJson: boolean): Promise<string | null> {
+  if (!OPENAI_API_KEY) return null;
+  try {
+    const r = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { authorization: `Bearer ${OPENAI_API_KEY}`, "content-type": "application/json" },
+      body: JSON.stringify({
+        model: OPENAI_MODEL,
+        messages: [{ role: "system", content: system }, { role: "user", content: user }],
+        max_completion_tokens: wantJson ? 8000 : 3000,
+        // json_object mode requires the word "json" somewhere in the messages,
+        // which buildPrompt and the helper prompts all satisfy.
+        ...(wantJson ? { response_format: { type: "json_object" } } : {}),
+      }),
+    });
+    if (!r.ok) {
+      console.error("openai", OPENAI_MODEL, r.status, (await r.text()).slice(0, 300));
+      return null;
+    }
+    const data = await r.json();
+    return data.choices?.[0]?.message?.content ?? null;
+  } catch (e) {
+    console.error("openai failed", e);
+    return null;
+  }
+}
+
+// The single front door for text generation. Order is cost-and-quality descending:
+// a paid key when present, then the free tiers as fallback. Every caller goes
+// through here, so swapping providers is a one-line change.
 async function textGenerate(system: string, user: string, wantJson: boolean): Promise<string | null> {
-  let out: string | null = null;
-  if (GEMINI_API_KEY) {
+  let out: string | null = await openaiGenerate(system, user, wantJson);
+  if (!out) out = await parseWithClaude(system, user);
+  if (!out && GEMINI_API_KEY) {
     out = await geminiGenerate({
       systemInstruction: { parts: [{ text: system }] },
       contents: [{ role: "user", parts: [{ text: user }] }],
+      // Extraction wants structured output, not reasoning. Thinking tokens are billed
+      // against maxOutputTokens, so leaving it on can consume the entire budget and
+      // return an empty candidate. Budgets are generous for the same reason.
       generationConfig: wantJson
-        ? { responseMimeType: "application/json", maxOutputTokens: 4000 }
-        : { maxOutputTokens: 2000 },
+        ? {
+          responseMimeType: "application/json",
+          maxOutputTokens: 8000,
+          thinkingConfig: { thinkingBudget: 0 },
+        }
+        : { maxOutputTokens: 3000, thinkingConfig: { thinkingBudget: 0 } },
     });
   }
   if (!out) out = await groqGenerate(system, user, wantJson);
@@ -278,7 +346,7 @@ async function textGenerate(system: string, user: string, wantJson: boolean): Pr
 }
 
 function haveAI(): boolean {
-  return !!(ANTHROPIC_API_KEY || GEMINI_API_KEY || GROQ_API_KEY);
+  return !!(OPENAI_API_KEY || ANTHROPIC_API_KEY || GEMINI_API_KEY || GROQ_API_KEY);
 }
 
 // ---------- metadata scraping ----------
@@ -851,7 +919,7 @@ async function visionCard(dataB64: string, mime: string, fallback: Card): Promis
     'reply with exactly {"none": true}. Never invent text that is not readable in the image.';
   const text = await geminiGenerate({
     contents: [{ role: "user", parts: [{ inline_data: { mime_type: mime, data: dataB64 } }, { text: prompt }] }],
-    generationConfig: { maxOutputTokens: 4000 },
+    generationConfig: { maxOutputTokens: 8000, thinkingConfig: { thinkingBudget: 0 } },
   });
   if (!text) return null;
   try {
@@ -893,7 +961,7 @@ async function extractCard(meta: Meta, platform: string): Promise<Card> {
     meta.caption.slice(0, 6000),
   ].filter(Boolean).join("\n");
 
-  const text = (await parseWithClaude(system, user)) ?? (await textGenerate(system, user, true));
+  const text = await textGenerate(system, user, true);
   if (!text) return base;
   try {
     const card = normalizeCard(parseJsonLoose(text), base);
@@ -1179,7 +1247,7 @@ async function handleReprocess(id: string, userId: string, cors: Cors): Promise<
 // Thin AI passthrough: validate, cap input, generate, return text.
 async function aiText(system: string, user: string, cors: Cors): Promise<Response> {
   if (!haveAI()) return json({ status: "error", message: "AI is not configured yet." }, 503, cors);
-  const out = (await parseWithClaude(system, user)) ?? (await textGenerate(system, user, false));
+  const out = await textGenerate(system, user, false);
   if (!out) return json({ status: "error", message: "The AI is busy — try again in a minute." }, 503, cors);
   return json({ status: "ok", text: out.trim() }, 200, cors);
 }

@@ -66,8 +66,8 @@ supabase db push                                                   # schema
 
 ## Extraction, and what it costs
 
-Every save runs at most **one** AI call. The chain is Anthropic (if `ANTHROPIC_API_KEY` is
-set) → Gemini with model rotation → Groq. Underneath sits a keyless heuristic parser that
+Every save runs at most **one** AI call. The chain is OpenAI (GPT-5.6 Luna, if
+`OPENAI_API_KEY` is set) → Anthropic → Gemini with model rotation → Groq. Underneath sits a keyless heuristic parser that
 reads `3x10`-style lines, so a card is never empty even with every AI quota exhausted.
 
 Per-user daily caps keep a public launch inside the free tiers: 10 new extractions and 40
@@ -90,8 +90,9 @@ against the second number, so saving videos other people already saved is effect
 3. Auth → Providers → Email on. Leave "Confirm email" **off** until you configure custom
    SMTP: the built-in mailer allows only a couple of messages an hour, which stalls signups.
 4. Set the function secrets you want:
-   `GEMINI_API_KEY`, `GROQ_API_KEY`, optionally `ANTHROPIC_API_KEY` + `CLAUDE_MODEL`,
-   `YOUTUBE_API_KEY`, `ALLOWED_ORIGINS`, `LIMIT_EXTRACT`, `LIMIT_SAVES`.
+   `GEMINI_API_KEY`, `GROQ_API_KEY`, optionally `OPENAI_API_KEY` + `OPENAI_MODEL`
+   (paid primary), `ANTHROPIC_API_KEY` + `CLAUDE_MODEL`, `YOUTUBE_API_KEY`,
+   `ALLOWED_ORIGINS`, `LIMIT_EXTRACT`, `LIMIT_SAVES`. Or run `./set-keys.sh`.
 5. `supabase functions deploy spotter --no-verify-jwt`.
 6. Put your project URL and anon key at the top of `app.ts`, run `node build.mjs`, and
    serve `docs/` (GitHub Pages works: Settings → Pages → main branch, `/docs`).
