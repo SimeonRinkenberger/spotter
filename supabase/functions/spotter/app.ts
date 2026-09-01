@@ -582,11 +582,15 @@ export const APP = String.raw`
       if (b.title) sect.appendChild(el("div", "blocktitle", b.title));
       var bm = blockMetaText(b);
       if (bm) sect.appendChild(el("div", "blockmeta", bm));
-      (b.exercises || []).forEach(function (ex) {
+      (b.exercises || []).forEach(function (ex, ei) {
         var row = el("div", "exrow");
         var name = el("div", "exname");
         name.appendChild(document.createTextNode(ex.name));
         if (ex.notes) name.appendChild(el("div", "exnote", ex.notes));
+        // Say which lines are the user's own. Everything else on the card is the
+        // creator's wording, and the difference matters when they come back to it.
+        if (ex.added_by_user) name.appendChild(el("div", "exmine", "Added by you"));
+        else if (ex.edited_by_user) name.appendChild(el("div", "exmine", "Edited by you"));
         // The line of the caption this exercise was read from, as a hover title.
         // Free, and it turns "where did this come from?" into a question the card
         // can answer without a new screen.
@@ -594,11 +598,19 @@ export const APP = String.raw`
         row.appendChild(name);
         var dose = doseText(ex);
         if (dose) row.appendChild(el("div", "exdose", dose));
+        var fix = el("button", "exhelp", "✎");
+        fix.setAttribute("aria-label", "Fix this exercise");
+        fix.onclick = function (e) { e.stopPropagation(); openExEdit(w, bi, ei, ex); };
+        row.appendChild(fix);
         var help = el("button", "exhelp", "?");
+        help.setAttribute("aria-label", "How to do this exercise");
         help.onclick = function (e) { e.stopPropagation(); explain(ex.name, w.title); };
         row.appendChild(help);
         sect.appendChild(row);
       });
+      var addex = el("button", "addex", "+ Add an exercise Spotter missed");
+      addex.onclick = function () { openExAdd(w, bi); };
+      sect.appendChild(addex);
       d.appendChild(sect);
     });
 
@@ -607,9 +619,13 @@ export const APP = String.raw`
       none.appendChild(el("h3", null, "No exercises found"));
       var np = el("div", "capbox",
         "This video did not include a written workout, so there is nothing to step through. " +
-        "You can still watch it and log a freestyle session, or tap ↻ above to try reading it again.");
+        "You can still watch it and log a freestyle session, tap ↻ above to try reading it again, " +
+        "or type the exercises in yourself.");
       none.appendChild(np);
       none.appendChild(el("div", null, " "));
+      var addfirst = el("button", "addex", "+ Add an exercise");
+      addfirst.onclick = function () { openExAdd(w, 0); };
+      none.appendChild(addfirst);
       d.appendChild(none);
     }
 
@@ -710,6 +726,110 @@ export const APP = String.raw`
     return sb.from("workouts").update(fields).eq("id", w.id).then(function (r) {
       if (r.error) toast("Could not save that change.");
     });
+  }
+
+  // ---------- correcting an exercise ----------
+  //
+  // The exercise list is where extraction is actually wrong, and until now it was
+  // the one part of a card the user could not touch — they could rename the
+  // category and write notes, but not tell Spotter that "Warm up" is not a
+  // movement. So this is both the missing affordance and the measurement: the edge
+  // function records every change as model-output-to-user-correction, which is the
+  // labelled set the confidence weights have never had.
+  //
+  // It goes through the API rather than PostgREST because the original value has
+  // to be read from the stored row (a "before" the browser supplies is not
+  // evidence) and a corrected name has to be resolved against the catalog, which
+  // lives in the function.
+
+  var exEdit = null;
+
+  function fieldVal(v) { return v === null || v === undefined || v === "" ? "" : String(v); }
+
+  function openExEdit(w, bi, ei, ex) {
+    exEdit = { w: w, block: bi, index: ei, name: ex.name, mode: "edit" };
+    $("exedittitle").textContent = "Fix this exercise";
+    $("exeditlede").textContent =
+      "Spotter read this off the video. If it got it wrong, put it right — the change stays on your copy.";
+    $("exeditname").value = ex.name || "";
+    $("exeditsets").value = fieldVal(ex.sets);
+    $("exeditreps").value = fieldVal(ex.reps);
+    $("exeditsecs").value = fieldVal(ex.duration_seconds);
+    $("exeditdelete").classList.remove("hide");
+    $("exeditsave").textContent = "Save change";
+    openSheet("exeditsheet");
+  }
+
+  function openExAdd(w, bi) {
+    exEdit = { w: w, block: bi, index: -1, name: null, mode: "add" };
+    $("exedittitle").textContent = "Add an exercise";
+    $("exeditlede").textContent =
+      "Something in the video Spotter did not pick up. Sets, reps and seconds are optional.";
+    $("exeditname").value = "";
+    $("exeditsets").value = "";
+    $("exeditreps").value = "";
+    $("exeditsecs").value = "";
+    $("exeditdelete").classList.add("hide");
+    $("exeditsave").textContent = "Add exercise";
+    openSheet("exeditsheet");
+    $("exeditname").focus();
+  }
+
+  // Re-seat a workout row the server has just rewritten. Realtime will deliver the
+  // same row a moment later; doing it here as well means the card does not sit
+  // stale while the socket catches up.
+  function absorbWorkout(row) {
+    if (!row || !row.id) return;
+    for (var i = 0; i < state.workouts.length; i++) {
+      if (state.workouts[i].id === row.id) { state.workouts[i] = row; break; }
+    }
+    if (current && current.id === row.id) {
+      current = row;
+      if ($("detail").classList.contains("open")) openDetail(row, true);
+    }
+    render();
+  }
+
+  function sendCorrection(payload, btn, okMsg) {
+    if (!exEdit) return;
+    var id = exEdit.w.id;
+    var label = btn ? btn.textContent : null;
+    if (btn) { btn.disabled = true; btn.textContent = "Saving…"; }
+    api("workouts/" + id + "/exercises", { method: "POST", body: JSON.stringify(payload) })
+      .then(function (r) {
+        if (btn) { btn.disabled = false; btn.textContent = label; }
+        if (r.status !== "ok") { toast(r.message || "Could not save that change."); return; }
+        closeSheet("exeditsheet");
+        exEdit = null;
+        absorbWorkout(r.workout);
+        toast(r.corrections ? okMsg : "Nothing to change.");
+      })
+      .catch(function () {
+        if (btn) { btn.disabled = false; btn.textContent = label; }
+        toast("Could not reach Spotter — check your connection.");
+      });
+  }
+
+  function saveExEdit() {
+    if (!exEdit) return;
+    var fields = {
+      name: $("exeditname").value,
+      sets: $("exeditsets").value,
+      reps: $("exeditreps").value,
+      duration_seconds: $("exeditsecs").value
+    };
+    if (!String(fields.name).trim()) { toast("An exercise needs a name."); return; }
+    var body = exEdit.mode === "add"
+      ? { op: "add", block: exEdit.block, fields: fields }
+      : { op: "edit", block: exEdit.block, index: exEdit.index, expect_name: exEdit.name, fields: fields };
+    sendCorrection(body, $("exeditsave"), exEdit.mode === "add" ? "Added it 💪" : "Fixed — thanks");
+  }
+
+  function deleteExEdit() {
+    if (!exEdit || exEdit.mode !== "edit") return;
+    sendCorrection(
+      { op: "delete", block: exEdit.block, index: exEdit.index, expect_name: exEdit.name },
+      $("exeditdelete"), "Removed it");
   }
 
   function removeWorkout(w) {
@@ -1428,9 +1548,10 @@ export const APP = String.raw`
   function openSheet(id) { $(id).classList.add("open"); }
   function closeSheet(id) { $(id).classList.remove("open"); }
 
-  ["addsheet", "setsheet", "exsheet", "explainsheet", "picksheet", "settingssheet"].forEach(function (id) {
-    $(id).addEventListener("click", function (e) { if (e.target === $(id)) closeSheet(id); });
-  });
+  ["addsheet", "setsheet", "exsheet", "exeditsheet", "explainsheet", "picksheet", "settingssheet"]
+    .forEach(function (id) {
+      $(id).addEventListener("click", function (e) { if (e.target === $(id)) closeSheet(id); });
+    });
 
   function overlayShowing() {
     if ($("detail").classList.contains("open")) return true;
@@ -1613,6 +1734,11 @@ export const APP = String.raw`
   $("addbtn").onclick = function () { $("addurl").value = ""; openSheet("addsheet"); };
   $("addgo").onclick = doAdd;
   $("addurl").addEventListener("keydown", function (e) { if (e.key === "Enter") doAdd(); });
+
+  $("exeditsave").onclick = saveExEdit;
+  $("exeditdelete").onclick = deleteExEdit;
+  $("exeditcancel").onclick = function () { closeSheet("exeditsheet"); exEdit = null; };
+  $("exeditname").addEventListener("keydown", function (e) { if (e.key === "Enter") saveExEdit(); });
 
   $("refreshbtn").onclick = function () {
     var b = $("refreshbtn");

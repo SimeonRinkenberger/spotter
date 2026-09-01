@@ -165,6 +165,35 @@ export const MARKUP_BODY = String.raw`</head>
   <div id="exlist"></div>
 </div></div>
 
+<div class="sheet" id="exeditsheet"><div class="sheetbody">
+  <div class="grabber"></div>
+  <h2 id="exedittitle">Fix this exercise</h2>
+  <p class="lede" id="exeditlede">Spotter read this off the video. If it got it wrong, put it right — your change stays on your copy.</p>
+  <div class="field">
+    <label for="exeditname">Exercise</label>
+    <input id="exeditname" type="text" placeholder="Goblet squat" autocapitalize="words" autocomplete="off" spellcheck="false">
+  </div>
+  <div class="fieldrow">
+    <div class="field">
+      <label for="exeditsets">Sets</label>
+      <input id="exeditsets" type="number" inputmode="numeric" min="1" max="99" placeholder="—">
+    </div>
+    <div class="field">
+      <label for="exeditreps">Reps</label>
+      <input id="exeditreps" type="text" inputmode="numeric" placeholder="—" autocomplete="off">
+    </div>
+    <div class="field">
+      <label for="exeditsecs">Seconds</label>
+      <input id="exeditsecs" type="number" inputmode="numeric" min="1" max="3600" placeholder="—">
+    </div>
+  </div>
+  <div class="btnrow">
+    <button class="btn ghost" id="exeditcancel">Cancel</button>
+    <button class="btn" id="exeditsave">Save change</button>
+  </div>
+  <button class="danger" id="exeditdelete">Not a real exercise — remove it</button>
+</div></div>
+
 <div class="sheet" id="explainsheet"><div class="sheetbody">
   <div class="grabber"></div>
   <h2 id="explaintitle">How to do it</h2>

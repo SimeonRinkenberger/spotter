@@ -276,6 +276,20 @@ export const STYLE = String.raw`<style>
   .exhelp { flex: 0 0 auto; width: 26px; height: 26px; border-radius: 999px; border: 1px solid var(--line-2);
     background: none; color: var(--muted); font-size: 12px; line-height: 1; display: flex;
     align-items: center; justify-content: center; }
+  /* An exercise the user has corrected or added by hand. The card still shows the
+     creator's wording everywhere else, so this is the only mark that says which
+     lines are theirs — quiet, and it never appears on model output. */
+  .exmine { font-size: 9.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--muted); margin-top: 4px; }
+  /* Same visual language as .selectrow select — sand fill, hairline, 12px radius —
+     one step quieter, because adding a missed exercise is a repair, not an action
+     the card is asking for. */
+  .addex { width: 100%; border: 1px solid var(--line); border-radius: 12px; background: var(--sand);
+    color: var(--ink-2); font-size: 13px; font-weight: 650; padding: 10px; margin: 4px 0 12px;
+    transition: transform var(--t-1) var(--e-out); }
+  .addex:active { transform: scale(.985); }
+  .fieldrow { display: flex; gap: 9px; }
+  .fieldrow .field { flex: 1; min-width: 0; }
   .capbox { font-size: 13.5px; line-height: 1.62; color: var(--ink-2); white-space: pre-wrap;
     word-break: break-word; }
   /* Shown only when the extraction could not be traced back to the source text.

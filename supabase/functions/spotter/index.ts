@@ -4,6 +4,8 @@
 //   GET  /icon.png  /manifest.webmanifest
 //   POST /api/ingest                { url } — Bearer token OR per-user ingest key (iOS Shortcut)
 //   POST /api/workouts/:id/reprocess re-run extraction on a saved workout
+//   POST /api/workouts/:id/exercises edit/add/delete one exercise on the user's own
+//                                    copy, and record the correction as labelled data
 //   POST /api/explain               form coaching for one exercise
 //   POST /api/swap                  substitute exercises
 //   POST /api/rotate-key            new ingest key
@@ -178,6 +180,11 @@ async function ensureConfig(): Promise<void> {
 const LIMIT_EXTRACT = Number(Deno.env.get("LIMIT_EXTRACT") ?? "60");
 const LIMIT_SAVES = Number(Deno.env.get("LIMIT_SAVES") ?? "200");
 const LIMIT_HELPER = Number(Deno.env.get("LIMIT_HELPER") ?? "300");
+// Correcting a card costs no AI and no scrape, so this is not a cost ceiling — it
+// is a floor under the quality of the evaluation set. A client looping edits could
+// bury the real corrections under thousands of synthetic ones, and the whole worth
+// of that table is that it is a faithful record of what people actually changed.
+const LIMIT_CORRECTIONS = Number(Deno.env.get("LIMIT_CORRECTIONS") ?? "500");
 
 // ---------- the money ceiling ----------
 //
@@ -2079,6 +2086,17 @@ async function dbInsert(table: string, row: Record<string, unknown>): Promise<an
   return (await r.json())[0];
 }
 
+async function dbInsertMany(table: string, rows: Record<string, unknown>[]): Promise<any[]> {
+  if (!rows.length) return [];
+  const r = await fetch(rest(table), {
+    method: "POST",
+    headers: { ...dbHeaders, prefer: "return=representation" },
+    body: JSON.stringify(rows),
+  });
+  if (!r.ok) throw new Error(`db insert ${r.status}: ${await r.text()}`);
+  return await r.json();
+}
+
 async function dbUpsert(table: string, row: Record<string, unknown>): Promise<void> {
   const r = await fetch(rest(table), {
     method: "POST",
@@ -2714,6 +2732,11 @@ async function handleReprocess(id: string, userId: string, cors: Cors): Promise<
     console.error("reprocess buildCard failed", p.shortcode, e);
     fresh = minimalCard(meta, p);
   }
+  // Snapshot the pure re-run before the merge touches it. mergeNoDowngrade shares
+  // the blocks array with `fresh` and re-scores through it, so reading `fresh`
+  // afterwards would read something the merge had already been over. This copy is
+  // what goes to the global cache; the merge is what goes to the user's own row.
+  const pure: Card = JSON.parse(JSON.stringify(fresh));
   const card = mergeNoDowngrade(old, fresh, meta, p.platform);
 
   let thumbUrl: string | null = old.thumb_url;
@@ -2731,19 +2754,337 @@ async function handleReprocess(id: string, userId: string, cors: Cors): Promise<
     extracted_by: card.extracted_by ?? null,
   });
 
-  // keep the shared cache fresh too, so the next person to save it gets the better card
-  await dbUpsert("video_cache", {
-    shortcode: p.shortcode, url: p.clean, platform: p.platform, kind: p.kind,
-    author: meta.author ?? old.author, caption: meta.caption ?? old.caption, thumb_url: thumbUrl,
-    card, v: CARD_V, updated_at: new Date().toISOString(),
-    confidence: typeof card.confidence === "number" ? card.confidence : null,
-    extracted_by: card.extracted_by ?? null,
-  });
+  // Keep the shared cache fresh so the next person to save this video gets the
+  // better card — but cache `pure`, the re-run on its own, never `card`.
+  //
+  // `card` is the merge, and the merge deliberately pulls forward whatever the old
+  // row held when the re-run came back thinner: its blocks, its category, its
+  // title. On a row the user has edited, those are the user's edits, and writing
+  // them here would push one person's correction into the card every other user
+  // receives. video_cache is global; workouts is theirs.
+  //
+  // The guard is also what stops a quota-exhausted re-run from downgrading the
+  // cache to an empty card, which the old unconditional upsert would have done the
+  // moment mergeNoDowngrade had nothing fresh to protect.
+  if (pure.blocks.length) {
+    await dbUpsert("video_cache", {
+      shortcode: p.shortcode, url: p.clean, platform: p.platform, kind: p.kind,
+      author: meta.author ?? old.author, caption: meta.caption ?? old.caption, thumb_url: thumbUrl,
+      card: pure, v: CARD_V, updated_at: new Date().toISOString(),
+      confidence: typeof pure.confidence === "number" ? pure.confidence : null,
+      extracted_by: pure.extracted_by ?? null,
+    });
+  } else {
+    console.log("reprocess: re-run produced no blocks, leaving video_cache alone", p.shortcode);
+  }
 
   // Charged to the same ledger and the same daily cap as a save, and recorded with
   // the same per-platform metrics, because it is the same work.
   await logSave(userId, p, meta, card, thumbUrl, false, !meta.caption, "reprocess", null);
   return json({ status: "ok", workout: updated }, 200, cors);
+}
+
+// ---------- corrections ----------
+//
+// Everything above this line is the machine's opinion. This is where a human
+// disagrees with it, and the disagreement is the most valuable data Spotter
+// produces: confidence weights are declared rather than tuned because there has
+// never been a labelled set to tune them against, and a correction is one labelled
+// example — model output on the left, the truth on the right.
+//
+// Three reasons this is an edge-function route rather than a PostgREST update the
+// browser could do on its own under RLS:
+//
+//   * the original value has to come from the stored row, not from the client. A
+//     correction whose "before" is whatever the browser claims is not evidence.
+//   * a corrected name has to be resolved against the controlled catalog, and the
+//     catalog lives here. Name normalization is its own failure mode — the model
+//     can read the movement correctly and still miss the catalog — so the
+//     canonical id is recorded either side of the change.
+//   * the write must reach `workouts` and nothing else. video_cache is global; one
+//     user's edit rewriting the card everyone receives is exactly the coupling
+//     this design exists to prevent.
+
+class BadEdit extends Error {}
+
+type EditField = "name" | "sets" | "reps" | "duration_seconds";
+const EDIT_FIELDS: EditField[] = ["name", "sets", "reps", "duration_seconds"];
+
+/**
+ * Validate one submitted field. Deliberately throws rather than coercing: quietly
+ * turning "150 sets" into null would leave the user staring at a field that
+ * emptied itself, and would write a correction recording a change nobody made.
+ */
+function cleanEditField(field: EditField, v: unknown): string | number | null {
+  if (field === "name") {
+    const s = String(v ?? "").replace(/\s+/g, " ").trim();
+    if (!s) throw new BadEdit("An exercise needs a name.");
+    return s.slice(0, 120);
+  }
+  if (field === "reps") {
+    if (v === null || v === undefined) return null;
+    const s = String(v).replace(/\s+/g, " ").trim();
+    if (!s) return null;
+    if (s.length > 32) throw new BadEdit("That reps value is too long.");
+    return s;
+  }
+  if (v === null || v === undefined || v === "") return null;
+  const n = Math.round(Number(v));
+  if (!Number.isFinite(n)) throw new BadEdit("That needs to be a number.");
+  if (field === "sets") {
+    if (n < 1 || n > 99) throw new BadEdit("Sets has to be between 1 and 99.");
+    return n;
+  }
+  if (n < 1 || n > 3600) throw new BadEdit("A duration has to be between 1 second and an hour.");
+  return n;
+}
+
+type Change = {
+  field: "name" | "sets" | "reps" | "duration_seconds" | "exercise";
+  old: string | number | null;
+  new: string | number | null;
+  oldCanon: string | null;
+  newCanon: string | null;
+  oldEx: unknown;
+  newEx: unknown;
+};
+
+function canonId(name: string | null): string | null {
+  if (!name) return null;
+  const m = canonicalize(name);
+  return m ? m.id : null;
+}
+
+function deepCopy<T>(v: T): T {
+  return JSON.parse(JSON.stringify(v));
+}
+
+async function handleCorrection(id: string, userId: string, req: Request, cors: Cors): Promise<Response> {
+  const body = await req.json().catch(() => ({} as Record<string, unknown>));
+  const op = String((body as any)?.op ?? "");
+  if (op !== "edit" && op !== "add" && op !== "delete") {
+    return json({ status: "error", message: "Unknown edit." }, 400, cors);
+  }
+
+  // Ownership is the query, not a check after it: a workout that is not this
+  // user's simply does not come back.
+  const rows = await dbSelect("workouts", `id=eq.${id}&user_id=eq.${userId}&select=*`);
+  if (!rows.length) return json({ status: "error", message: "Not found." }, 404, cors);
+  const w = rows[0];
+  if (w.ingest_status !== "ready") {
+    return json({
+      status: "error",
+      message: "Spotter is still reading this one — give it a moment before editing.",
+    }, 409, cors);
+  }
+
+  // Not a cost ceiling — corrections cost nothing to serve. It is a floor under
+  // the quality of the evaluation set, which is worthless the moment a loop can
+  // bury the real corrections under synthetic ones.
+  const already = await dbCount("corrections", `user_id=eq.${userId}&created_at=gte.${utcMidnight()}`);
+  if (already >= LIMIT_CORRECTIONS) {
+    return json({
+      status: "limit",
+      message: `Daily edit limit reached (${LIMIT_CORRECTIONS}/day) — resets at midnight UTC.`,
+    }, 429, cors);
+  }
+
+  const blocks: any[] = Array.isArray(w.blocks) ? deepCopy(w.blocks) : [];
+  // Clamped rather than trusted. An `add` to block 40 of a two-block card would
+  // otherwise punch 38 empty blocks into the row on its way there; the most a
+  // request can do is append to an existing block or start exactly one new one.
+  const asked = Math.trunc(Number((body as any)?.block ?? 0)) || 0;
+  const bi = op === "add" ? Math.max(0, Math.min(asked, blocks.length)) : asked;
+  const wantIndex = Math.trunc(Number((body as any)?.index ?? -1));
+  const expect = (body as any)?.expect_name === undefined || (body as any)?.expect_name === null
+    ? null
+    : String((body as any).expect_name);
+  const fields = ((body as any)?.fields && typeof (body as any).fields === "object")
+    ? (body as any).fields as Record<string, unknown>
+    : {};
+
+  const changes: Change[] = [];
+  let exIndex = wantIndex;
+  let subject: any = null;
+  let origEvidence: Evidence | null = null;
+
+  try {
+    if (bi < 0 || bi > 40) throw new BadEdit("That block does not exist.");
+
+    if (op === "add") {
+      // A card with nothing in it is the common case for "the extractor missed
+      // everything", so the first block is created rather than demanded.
+      while (blocks.length <= bi) {
+        blocks.push({ title: null, type: "straight", rounds: null, rest_seconds: null, exercises: [] });
+      }
+      const blk = blocks[bi];
+      if (!Array.isArray(blk.exercises)) blk.exercises = [];
+      if (blk.exercises.length >= 60) throw new BadEdit("That block is full.");
+      const name = cleanEditField("name", fields.name) as string;
+      const ex = {
+        name,
+        canonical_id: canonId(name),
+        sets: cleanEditField("sets", fields.sets),
+        reps: cleanEditField("reps", fields.reps),
+        duration_seconds: cleanEditField("duration_seconds", fields.duration_seconds),
+        rest_seconds: null, weight: null, equipment: null, notes: null,
+        // The source of an exercise a person typed is that person. Left explicitly
+        // unevidenced rather than dressed up as a located quote: the confidence
+        // score measures the extractor, and crediting it for a human's work would
+        // make the one number Phase 2 depends on describe the wrong thing.
+        evidence: null,
+        added_by_user: true,
+      };
+      blk.exercises.push(ex);
+      exIndex = blk.exercises.length - 1;
+      subject = ex;
+      changes.push({
+        field: "exercise", old: null, new: name,
+        oldCanon: null, newCanon: ex.canonical_id, oldEx: null, newEx: deepCopy(ex),
+      });
+    } else {
+      const blk = blocks[bi];
+      const list = blk && Array.isArray(blk.exercises) ? blk.exercises : null;
+      const ex = list && exIndex >= 0 ? list[exIndex] : null;
+      // The card can have been re-read by a reprocess, or edited in another tab,
+      // between render and tap. Refusing on a name mismatch is cheaper than
+      // silently rewriting whichever exercise now sits at that index.
+      if (!ex || (expect !== null && String(ex.name) !== expect)) {
+        return json({
+          status: "stale",
+          message: "This card changed since you opened it — reopen it and try again.",
+        }, 409, cors);
+      }
+      origEvidence = (ex.evidence ?? null) as Evidence | null;
+      subject = ex;
+
+      if (op === "delete") {
+        list.splice(exIndex, 1);
+        changes.push({
+          field: "exercise", old: String(ex.name), new: null,
+          oldCanon: ex.canonical_id ?? null, newCanon: null,
+          oldEx: deepCopy(ex), newEx: null,
+        });
+      } else {
+        const before = deepCopy(ex);
+        for (const f of EDIT_FIELDS) {
+          if (!(f in fields)) continue;
+          const next = cleanEditField(f, fields[f]);
+          const prev = (ex[f] ?? null) as string | number | null;
+          // An untouched field is not a correction. Writing one would put noise
+          // into the only dataset that can answer where extraction actually fails.
+          if (String(prev ?? "") === String(next ?? "")) continue;
+          const change: Change = {
+            field: f, old: prev, new: next, oldCanon: null, newCanon: null, oldEx: null, newEx: null,
+          };
+          if (f === "name") {
+            change.oldCanon = ex.canonical_id ?? null;
+            ex.name = next as string;
+            ex.canonical_id = canonId(next as string);
+            change.newCanon = ex.canonical_id;
+          } else {
+            ex[f] = next;
+          }
+          changes.push(change);
+        }
+        if (!changes.length) {
+          return json({ status: "ok", workout: w, corrections: 0 }, 200, cors);
+        }
+        ex.edited_by_user = true;
+        const after = deepCopy(ex);
+        for (const c of changes) { c.oldEx = before; c.newEx = after; }
+      }
+    }
+  } catch (e) {
+    if (e instanceof BadEdit) return json({ status: "error", message: e.message }, 400, cors);
+    throw e;
+  }
+
+  // A block emptied by a delete is not a block. Leaving it would render as
+  // "Block 2" with nothing under it.
+  const kept = blocks.filter((b) => Array.isArray(b.exercises) && b.exercises.length > 0);
+  const total = kept.reduce((n, b) => n + b.exercises.length, 0);
+
+  // Muscle groups and equipment are derived from the catalog, so they have to be
+  // re-derived from what the card now says. This runs the corrected name through
+  // the same normalizer every extraction path uses — the user's wording is kept,
+  // only the grouping key underneath it is resolved.
+  const shim = {
+    muscle_groups: Array.isArray(w.muscle_groups) ? w.muscle_groups.slice() : [],
+    equipment: Array.isArray(w.equipment) ? w.equipment.slice() : [],
+    blocks: kept,
+  } as unknown as Card;
+  applyCatalog(shim);
+
+  // workouts only. Not video_cache — see the note at the top of this section.
+  // confidence and extracted_by are also left exactly as they were: they measure
+  // what the extractor produced, and a card the user has since fixed by hand did
+  // not become a better extraction.
+  const updated = await dbPatch("workouts", `id=eq.${id}&user_id=eq.${userId}`, {
+    blocks: kept,
+    muscle_groups: shim.muscle_groups,
+    equipment: shim.equipment,
+    has_full_workout: total > 0,
+  });
+
+  // Which extraction version produced the thing being corrected. Best effort: the
+  // cache row can have been re-extracted or evicted since, and a missing version
+  // is worth less than a failed edit.
+  let cardVersion: number | null = null;
+  try {
+    const c = await dbSelect("video_cache", `shortcode=eq.${encodeURIComponent(w.shortcode)}&select=v`);
+    cardVersion = c.length ? c[0].v : null;
+  } catch (e) {
+    console.error("corrections: card version lookup failed", e);
+  }
+
+  const ledger = changes.map((c) => ({
+    user_id: userId,
+    workout_id: id,
+    shortcode: w.shortcode,
+    platform: w.platform,
+    kind: op,
+    field: c.field,
+    old_value: c.old === null || c.old === undefined ? null : String(c.old),
+    new_value: c.new === null || c.new === undefined ? null : String(c.new),
+    old_canonical_id: c.oldCanon,
+    new_canonical_id: c.newCanon,
+    old_exercise: c.oldEx,
+    new_exercise: c.newEx,
+    block_index: bi,
+    exercise_index: exIndex,
+    exercise_name: subject ? String(subject.name) : null,
+    // The state of the extraction at the moment it was corrected. Reprocess
+    // overwrites both of these in place, so they cannot be recovered afterwards.
+    extracted_by: w.extracted_by ?? null,
+    confidence: w.confidence === null || w.confidence === undefined ? null : Number(w.confidence),
+    evidence_source: origEvidence?.source ?? null,
+    evidence_verified: origEvidence ? !!origEvidence.verified : null,
+    card_version: cardVersion,
+  }));
+
+  // Order matters. The edit is the user's data and lands first; the ledger row is
+  // telemetry and follows. Losing telemetry is survivable, refusing an edit the
+  // user has already made is not — the same rule saves_log follows.
+  let recorded = true;
+  try {
+    await dbInsertMany("corrections", ledger);
+  } catch (e) {
+    console.error("corrections insert failed", e);
+    try {
+      await dbInsertMany("corrections", ledger);
+    } catch (e2) {
+      console.error("corrections insert failed twice — this edit is unrecorded", e2);
+      recorded = false;
+    }
+  }
+
+  console.log("correction", op, w.platform, w.shortcode,
+    changes.map((c) => c.field + ": " + JSON.stringify(c.old) + " -> " + JSON.stringify(c.new)).join(", "),
+    "by", w.extracted_by ?? "unknown", "confidence", w.confidence ?? "none",
+    recorded ? "" : "(NOT RECORDED)");
+
+  return json({ status: "ok", workout: updated, corrections: changes.length, recorded }, 200, cors);
 }
 
 /**
@@ -2828,6 +3169,9 @@ Deno.serve(async (req: Request) => {
 
     const reproc = path.match(/^\/api\/workouts\/([0-9a-f-]{36})\/reprocess$/);
     if (req.method === "POST" && reproc) return await handleReprocess(reproc[1], userId, cors);
+
+    const fix = path.match(/^\/api\/workouts\/([0-9a-f-]{36})\/exercises$/);
+    if (req.method === "POST" && fix) return await handleCorrection(fix[1], userId, req, cors);
 
     if (req.method === "POST" && path === "/api/explain") {
       const body = await req.json().catch(() => ({}));
