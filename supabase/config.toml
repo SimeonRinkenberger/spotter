@@ -1,0 +1,20 @@
+project_id = "spotter"
+
+[auth]
+site_url = "https://simeonrinkenberger.github.io/spotter/"
+additional_redirect_urls = [
+  "https://simeonrinkenberger.github.io/spotter/",
+  "http://localhost:8000",
+  "http://127.0.0.1:8000",
+]
+
+[auth.email]
+enable_signup = true
+# Built-in SMTP only allows ~2-4 mails/hour, which would stall every signup.
+# Turn this on together with custom SMTP (Resend free tier) before real launch.
+enable_confirmations = false
+
+[functions.spotter]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/spotter/index.ts"

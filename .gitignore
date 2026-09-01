@@ -1,0 +1,5 @@
+.env.local
+SETUP-PRIVATE.md
+supabase/.temp/
+.DS_Store
+node_modules/

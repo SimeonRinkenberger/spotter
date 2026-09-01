@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spotter — Privacy</title>
+<link rel="icon" href="icon.png">
+<style>
+  :root { color-scheme: light dark; --paper: #F5F6F8; --ink: #14171A; --ink-2: #58626E; --ember: #C9430F; }
+  @media (prefers-color-scheme: dark) {
+    :root { --paper: #101214; --ink: #EEF2F6; --ink-2: #AFBAC6; --ember: #FF9166; }
+  }
+  body { margin: 0; background: var(--paper); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.65; }
+  main { max-width: 620px; margin: 0 auto; padding: 48px 24px 80px; }
+  h1 { font-size: 30px; letter-spacing: -.03em; margin: 0 0 6px; }
+  .date { color: var(--ink-2); font-size: 13px; margin-bottom: 34px; }
+  h2 { font-size: 17px; margin: 32px 0 8px; letter-spacing: -.02em; }
+  p, li { color: var(--ink-2); font-size: 15px; }
+  a { color: var(--ember); }
+  code { background: rgba(128,128,128,.14); padding: 2px 5px; border-radius: 5px; font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Privacy</h1>
+  <div class="date">Last updated 1 September 2026</div>
+
+  <p>Spotter is a small, independent app. This page says plainly what it stores and what it does
+    not do. If anything here is unclear, email
+    <a href="mailto:simeonrinkenberger@gmail.com">simeonrinkenberger@gmail.com</a>.</p>
+
+  <h2>What Spotter stores</h2>
+  <ul>
+    <li><b>Your email address and password.</b> Handled by Supabase Auth; the password is stored
+      only as a salted hash and is never visible to us.</li>
+    <li><b>The videos you save</b> — the link, the creator name, the caption or description that
+      was public on the post, and the workout extracted from it.</li>
+    <li><b>What you log</b> — the sets, reps and weights you record in Workout Mode, plus any
+      notes and planned days you add.</li>
+    <li><b>A personal save key</b> so an iOS Shortcut can add videos for you. You can replace it
+      any time from Settings.</li>
+  </ul>
+
+  <h2>What Spotter does not do</h2>
+  <ul>
+    <li>No ads, no trackers, no analytics scripts, no cookies beyond the sign-in session your
+      browser needs.</li>
+    <li>Your library, logs and plan are private to your account and are never sold, shared, or
+      used to train anything.</li>
+    <li>No health, biometric, or location data is collected. Spotter never asks for it.</li>
+  </ul>
+
+  <h2>Other services involved</h2>
+  <p>Saving a video sends its public caption or description to an AI model
+    (currently Google Gemini or Groq) so the exercises can be pulled out. Only that public text
+    is sent — never your email, your logs, or your notes. Data is stored with
+    <a href="https://supabase.com/privacy" target="_blank" rel="noopener">Supabase</a> in the
+    United States. Fonts are loaded from Google Fonts.</p>
+  <p>Video playback happens in an embedded player from Instagram, TikTok or YouTube. Those
+    players are the platforms' own and follow the platforms' privacy policies.</p>
+
+  <h2>Shared extraction cache</h2>
+  <p>When a video is read for the first time, the resulting workout is cached under the video's
+    public ID so the next person who saves the same video gets it instantly and no AI call is
+    needed. That cache holds only information taken from the public post — never anything about
+    who saved it.</p>
+
+  <h2>Deleting your data</h2>
+  <p>Removing a workout deletes it immediately. To delete your whole account and everything in
+    it, email <a href="mailto:simeonrinkenberger@gmail.com">simeonrinkenberger@gmail.com</a> from
+    your account's address and it will be erased.</p>
+
+  <p style="margin-top:40px"><a href="./">← Back to Spotter</a></p>
+</main>
+</body>
+</html>
