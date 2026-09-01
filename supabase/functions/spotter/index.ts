@@ -7,7 +7,11 @@
 //   POST /api/explain               form coaching for one exercise
 //   POST /api/swap                  substitute exercises
 //   POST /api/rotate-key            new ingest key
-//   GET  /api/limits                today's save counts
+//   GET  /api/limits                today's counts, and the spend ceiling
+//   POST /api/worker/tick           drain the ingest queue (shared secret, not a user)
+//
+// Ingest is asynchronous: it enqueues and returns in ~200ms, and the worker fills
+// the row in afterwards. The browser watches its own workouts row over Realtime.
 // Everything else (listing, editing, logs, plan) goes straight to PostgREST from
 // the browser under RLS — this function only holds what needs secrets.
 
@@ -34,8 +38,42 @@ const GEMINI_MODEL = Deno.env.get("GEMINI_MODEL") ?? "gemini-3.6-flash";
 const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY") ?? "";
 
 // Per-user daily caps. Cache hits cost nothing, so they get the looser cap.
-const LIMIT_EXTRACT = Number(Deno.env.get("LIMIT_EXTRACT") ?? "10");
-const LIMIT_SAVES = Number(Deno.env.get("LIMIT_SAVES") ?? "40");
+// LIMIT_EXTRACT covers everything that runs the extraction ladder — a new save AND
+// a reprocess, which re-runs the whole thing and was previously counted by nothing.
+// LIMIT_HELPER is the looser ceiling for /api/explain and /api/swap: one short
+// completion each, far cheaper than an extraction, but not free and not unmetered.
+const LIMIT_EXTRACT = Number(Deno.env.get("LIMIT_EXTRACT") ?? "60");
+const LIMIT_SAVES = Number(Deno.env.get("LIMIT_SAVES") ?? "200");
+const LIMIT_HELPER = Number(Deno.env.get("LIMIT_HELPER") ?? "300");
+
+// ---------- the money ceiling ----------
+//
+// The extraction chain already falls through on failure. Nothing falls through on
+// cost, which is the failure that does not announce itself: every individual call
+// succeeds, and the bill is the only thing that changes. Past this many estimated
+// dollars in a UTC day, paid providers are switched off and extraction runs on the
+// free path — a thinner card, never a failed save.
+const DAILY_SPEND_USD = Number(Deno.env.get("DAILY_SPEND_USD") ?? "5");
+
+// USD per 1,000,000 tokens, [input, output]. A provider priced at zero is a free
+// tier: it is never gated by the ceiling, and it is what the ceiling falls back to.
+// Env-overridable because prices change and a key can move off a free tier without
+// a single line of this file changing.
+const PRICES: Record<string, [number, number]> = {
+  openai: [Number(Deno.env.get("PRICE_OPENAI_IN") ?? "0.20"), Number(Deno.env.get("PRICE_OPENAI_OUT") ?? "1.20")],
+  anthropic: [Number(Deno.env.get("PRICE_ANTHROPIC_IN") ?? "1.00"), Number(Deno.env.get("PRICE_ANTHROPIC_OUT") ?? "5.00")],
+  gemini: [Number(Deno.env.get("PRICE_GEMINI_IN") ?? "0"), Number(Deno.env.get("PRICE_GEMINI_OUT") ?? "0")],
+  groq: [Number(Deno.env.get("PRICE_GROQ_IN") ?? "0"), Number(Deno.env.get("PRICE_GROQ_OUT") ?? "0")],
+};
+
+// ---------- background worker ----------
+
+const WORKER_SECRET = Deno.env.get("WORKER_SECRET") ?? "";
+const WORKER_BATCH = Number(Deno.env.get("WORKER_BATCH") ?? "4");
+// How long a claimed job may sit untouched before it is assumed its worker died.
+const WORKER_STALE_SECONDS = Number(Deno.env.get("WORKER_STALE_SECONDS") ?? "300");
+const SELF_URL = `${SUPABASE_URL}/functions/v1/spotter`;
+const WORKER_ID = crypto.randomUUID().slice(0, 8);
 
 // Bump when the extraction prompt changes materially: cached cards below this
 // version are treated as a miss and re-extracted.
@@ -84,6 +122,142 @@ function json(body: unknown, status = 200, cors: Cors = {}): Response {
     status,
     headers: { ...cors, "content-type": "application/json; charset=utf-8" },
   });
+}
+
+// ---------- background work ----------
+//
+// The whole point of the queue is that a request returns before the work does, so
+// something has to keep the isolate alive after the response has been written.
+// Supabase's edge runtime provides EdgeRuntime.waitUntil for exactly this; probe
+// once so a runtime without it degrades to running the work inline rather than
+// having it silently truncated.
+type WaitUntil = { waitUntil?: (p: Promise<unknown>) => void };
+let waitUntilProbe: boolean | null = null;
+
+function hasWaitUntil(): boolean {
+  if (waitUntilProbe === null) {
+    const er = (globalThis as { EdgeRuntime?: WaitUntil }).EdgeRuntime;
+    waitUntilProbe = typeof er?.waitUntil === "function";
+  }
+  return waitUntilProbe;
+}
+
+/**
+ * Promise.all, but every rejection is observed. With a plain Promise.all the first
+ * rejection is thrown and the rest become unhandled rejections, which in Deno can
+ * take the whole isolate down — and these run in batches of independent database
+ * reads where more than one failing at once is the normal shape of an outage.
+ */
+async function settledAll<T>(ps: Promise<T>[]): Promise<T[]> {
+  const rs = await Promise.allSettled(ps);
+  const bad = rs.find((r) => r.status === "rejected");
+  if (bad) throw (bad as PromiseRejectedResult).reason;
+  return rs.map((r) => (r as PromiseFulfilledResult<T>).value);
+}
+
+function background(p: Promise<unknown>): void {
+  const quiet = p.catch((e) => console.error("background task failed", e));
+  if (hasWaitUntil()) {
+    (globalThis as { EdgeRuntime?: WaitUntil }).EdgeRuntime!.waitUntil!(quiet);
+  }
+}
+
+console.log("edge runtime: waitUntil", hasWaitUntil() ? "available" : "UNAVAILABLE (worker runs inline)");
+
+/** Constant-time string compare, so the worker secret cannot be probed byte by byte. */
+function secretEquals(a: string, b: string): boolean {
+  if (!a || !b || a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+// ---------- cost accounting ----------
+
+// Which unit of work a model call belongs to, and who to charge it to. Passed
+// explicitly rather than held in a module variable: one isolate serves many
+// concurrent requests, and a shared "current user" would bill the wrong person.
+type AiCtx = { purpose: string; userId: string | null };
+
+type Usage = { inTok: number; outTok: number };
+
+function approxTokens(s: string): number {
+  return Math.ceil(s.length / 4);
+}
+
+function priceFor(provider: string): [number, number] {
+  const p = PRICES[provider];
+  return p && Number.isFinite(p[0]) && Number.isFinite(p[1]) ? p : [0, 0];
+}
+
+/** A provider is "paid" iff someone configured a price for it. */
+function isPaidProvider(provider: string): boolean {
+  const [i, o] = priceFor(provider);
+  return i > 0 || o > 0;
+}
+
+function estimateCost(provider: string, u: Usage): number {
+  const [pin, pout] = priceFor(provider);
+  return (u.inTok / 1_000_000) * pin + (u.outTok / 1_000_000) * pout;
+}
+
+// Today's spend, memoised briefly. Read before every paid call, so it has to be
+// cheap; a stale window of 20 seconds can overshoot the ceiling by whatever one
+// isolate spends in 20 seconds, which is orders of magnitude below the ceiling.
+let spendCache: { at: number; usd: number } | null = null;
+
+async function spendToday(): Promise<number> {
+  if (spendCache && Date.now() - spendCache.at < 20_000) return spendCache.usd;
+  try {
+    const v = await rpc("ai_spend_today", {});
+    const usd = Number(v);
+    spendCache = { at: Date.now(), usd: Number.isFinite(usd) ? usd : 0 };
+    return spendCache.usd;
+  } catch (e) {
+    // Fails open, loudly. A database that cannot answer this is a database that
+    // cannot serve the save either, so refusing here would break extraction to
+    // prevent a cost that is not being incurred.
+    console.error("spend ceiling: could not read today's spend —", e);
+    return spendCache?.usd ?? 0;
+  }
+}
+
+/** False once the day's estimated spend has crossed the ceiling. */
+async function paidAllowed(): Promise<boolean> {
+  if (!(DAILY_SPEND_USD > 0)) {
+    console.warn("spend ceiling: DAILY_SPEND_USD is " + DAILY_SPEND_USD + " — paid tiers disabled");
+    return false;
+  }
+  const spent = await spendToday();
+  if (spent < DAILY_SPEND_USD) return true;
+  console.warn(
+    "spend ceiling reached: $" + spent.toFixed(4) + " of $" + DAILY_SPEND_USD +
+    " today — paid tiers disabled, falling back to the free extraction path",
+  );
+  return false;
+}
+
+/**
+ * One row per model call. This is what gives the ceiling something to read, and
+ * it is deliberately awaited rather than fired and forgotten: a save is allowed to
+ * take another 30ms, and a spend ledger with holes in it is not a ceiling.
+ */
+async function recordCost(
+  provider: string, model: string, ctx: AiCtx, u: Usage, ok: boolean,
+): Promise<void> {
+  const est = estimateCost(provider, u);
+  try {
+    await dbInsert("ai_cost_log", {
+      user_id: ctx.userId,
+      provider, model, purpose: ctx.purpose,
+      input_tokens: u.inTok, output_tokens: u.outTok,
+      est_cost_usd: Number(est.toFixed(6)),
+      ok,
+    });
+    if (est > 0) spendCache = null;   // a paid call invalidates the memoised total
+  } catch (e) {
+    console.error("ai_cost_log insert failed", provider, model, e);
+  }
 }
 
 // ---------- tiny HTML helpers ----------
@@ -220,7 +394,7 @@ function withoutThinkingConfig(body: Record<string, unknown>): Record<string, un
   return { ...body, generationConfig: gc };
 }
 
-async function geminiGenerate(body: Record<string, unknown>): Promise<string | null> {
+async function geminiGenerate(body: Record<string, unknown>, ctx: AiCtx): Promise<string | null> {
   if (!GEMINI_API_KEY) return null;
   const models = geminiGoodModel
     ? [geminiGoodModel, ...GEMINI_MODELS.filter((m) => m !== geminiGoodModel)]
@@ -254,14 +428,24 @@ async function geminiGenerate(body: Record<string, unknown>): Promise<string | n
       const data = await r.json();
       const cand = data.candidates?.[0];
       const text = cand?.content?.parts?.map((p: { text?: string }) => p.text ?? "").join("") ?? "";
+      // Thinking tokens are billed, so they belong in the ledger even when the
+      // candidate came back empty — that is precisely the run that costs money
+      // and returns nothing.
+      const um = data?.usageMetadata ?? {};
+      const usage: Usage = {
+        inTok: Number(um.promptTokenCount) || 0,
+        outTok: (Number(um.candidatesTokenCount) || 0) + (Number(um.thoughtsTokenCount) || 0),
+      };
       // A thinking model can spend the whole output budget reasoning and return no
       // text at all; that is a failure, not an empty answer, so let the chain fall on.
       if (!text) {
         console.error("gemini", model, "empty text, finishReason", cand?.finishReason,
-          "thoughts", data?.usageMetadata?.thoughtsTokenCount);
+          "thoughts", um?.thoughtsTokenCount);
+        await recordCost("gemini", model, ctx, usage, false);
         if (geminiGoodModel === model) geminiGoodModel = null;
         break;
       }
+      await recordCost("gemini", model, ctx, usage, true);
       geminiGoodModel = model;
       return text;
     }
@@ -280,7 +464,7 @@ const GROQ_MODELS = [...new Set([
 ].filter(Boolean))];
 let groqGoodModel: string | null = null;
 
-async function groqGenerate(system: string, user: string, wantJson: boolean): Promise<string | null> {
+async function groqGenerate(system: string, user: string, wantJson: boolean, ctx: AiCtx): Promise<string | null> {
   if (!GROQ_API_KEY) return null;
   const models = groqGoodModel
     ? [groqGoodModel, ...GROQ_MODELS.filter((m) => m !== groqGoodModel)]
@@ -311,8 +495,13 @@ async function groqGenerate(system: string, user: string, wantJson: boolean): Pr
       }
       if (!r.ok) { console.error("groq error", model, r.status, await r.text()); return null; }
       const data = await r.json();
+      const out = data.choices?.[0]?.message?.content ?? null;
+      await recordCost("groq", model, ctx, {
+        inTok: Number(data?.usage?.prompt_tokens) || approxTokens(system + user),
+        outTok: Number(data?.usage?.completion_tokens) || approxTokens(out ?? ""),
+      }, !!out);
       groqGoodModel = model;
-      return data.choices?.[0]?.message?.content ?? null;
+      return out;
     }
   }
   console.error("groq: all models failed");
@@ -321,7 +510,7 @@ async function groqGenerate(system: string, user: string, wantJson: boolean): Pr
 
 // OpenAI (GPT-5.6 Luna by default): the paid tier's cheapest flagship-family model.
 // The 5.6 series rejects max_tokens in favour of max_completion_tokens.
-async function openaiGenerate(system: string, user: string, wantJson: boolean): Promise<string | null> {
+async function openaiGenerate(system: string, user: string, wantJson: boolean, ctx: AiCtx): Promise<string | null> {
   if (!OPENAI_API_KEY) return null;
   try {
     const r = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -341,7 +530,12 @@ async function openaiGenerate(system: string, user: string, wantJson: boolean): 
       return null;
     }
     const data = await r.json();
-    return data.choices?.[0]?.message?.content ?? null;
+    const out = data.choices?.[0]?.message?.content ?? null;
+    await recordCost("openai", OPENAI_MODEL, ctx, {
+      inTok: Number(data?.usage?.prompt_tokens) || approxTokens(system + user),
+      outTok: Number(data?.usage?.completion_tokens) || approxTokens(out ?? ""),
+    }, !!out);
+    return out;
   } catch (e) {
     console.error("openai failed", e);
     return null;
@@ -350,11 +544,19 @@ async function openaiGenerate(system: string, user: string, wantJson: boolean): 
 
 // The single front door for text generation. Order is cost-and-quality descending:
 // a paid key when present, then the free tiers as fallback. Every caller goes
-// through here, so swapping providers is a one-line change.
-async function textGenerate(system: string, user: string, wantJson: boolean): Promise<string | null> {
-  let out: string | null = await openaiGenerate(system, user, wantJson);
-  if (!out) out = await parseWithClaude(system, user);
-  if (!out && GEMINI_API_KEY) {
+// through here, so swapping providers is a one-line change — and so is switching
+// the paid half of the ladder off when the day's spend has run out.
+//
+// The ceiling is checked once per call rather than per provider, because the
+// answer cannot change between two rungs of the same ladder.
+async function textGenerate(system: string, user: string, wantJson: boolean, ctx: AiCtx): Promise<string | null> {
+  const paid = await paidAllowed();
+  const allowed = (provider: string) => paid || !isPaidProvider(provider);
+
+  let out: string | null = null;
+  if (allowed("openai")) out = await openaiGenerate(system, user, wantJson, ctx);
+  if (!out && allowed("anthropic")) out = await parseWithClaude(system, user, ctx);
+  if (!out && GEMINI_API_KEY && allowed("gemini")) {
     out = await geminiGenerate({
       systemInstruction: { parts: [{ text: system }] },
       contents: [{ role: "user", parts: [{ text: user }] }],
@@ -368,9 +570,9 @@ async function textGenerate(system: string, user: string, wantJson: boolean): Pr
           thinkingConfig: { thinkingBudget: 0 },
         }
         : { maxOutputTokens: 3000, thinkingConfig: { thinkingBudget: 0 } },
-    });
+    }, ctx);
   }
-  if (!out) out = await groqGenerate(system, user, wantJson);
+  if (!out && allowed("groq")) out = await groqGenerate(system, user, wantJson, ctx);
   return out;
 }
 
@@ -1117,7 +1319,7 @@ function applyCatalog(card: Card): Card {
   return card;
 }
 
-async function parseWithClaude(system: string, user: string): Promise<string | null> {
+async function parseWithClaude(system: string, user: string, ctx: AiCtx): Promise<string | null> {
   if (!ANTHROPIC_API_KEY) return null;
   try {
     const r = await fetch("https://api.anthropic.com/v1/messages", {
@@ -1136,7 +1338,12 @@ async function parseWithClaude(system: string, user: string): Promise<string | n
     });
     if (!r.ok) { console.error("anthropic", r.status, await r.text()); return null; }
     const data = await r.json();
-    return data.content?.map((c: { text?: string }) => c.text ?? "").join("") ?? null;
+    const out = data.content?.map((c: { text?: string }) => c.text ?? "").join("") ?? null;
+    await recordCost("anthropic", CLAUDE_MODEL, ctx, {
+      inTok: Number(data?.usage?.input_tokens) || approxTokens(system + user),
+      outTok: Number(data?.usage?.output_tokens) || approxTokens(out ?? ""),
+    }, !!out);
+    return out;
   } catch (e) {
     console.error("anthropic failed", e);
     return null;
@@ -1154,8 +1361,9 @@ function b64encode(buf: ArrayBuffer): string {
   return btoa(bin);
 }
 
-async function visionCard(dataB64: string, mime: string, fallback: Card): Promise<Card | null> {
+async function visionCard(dataB64: string, mime: string, fallback: Card, ctx: AiCtx): Promise<Card | null> {
   if (!GEMINI_API_KEY) return null;
+  if (isPaidProvider("gemini") && !(await paidAllowed())) return null;
   const prompt =
     "If this image contains a written workout (a training plan, exercise list with sets and reps, " +
     "whiteboard, screenshot of a program, or handwritten notes), extract it. " +
@@ -1172,7 +1380,7 @@ async function visionCard(dataB64: string, mime: string, fallback: Card): Promis
   const text = await geminiGenerate({
     contents: [{ role: "user", parts: [{ inline_data: { mime_type: mime, data: dataB64 } }, { text: prompt }] }],
     generationConfig: { maxOutputTokens: 8000, thinkingConfig: { thinkingBudget: 0 } },
-  });
+  }, { ...ctx, purpose: "vision" });
   if (!text) return null;
   try {
     const raw = parseJsonLoose(text);
@@ -1184,14 +1392,14 @@ async function visionCard(dataB64: string, mime: string, fallback: Card): Promis
   }
 }
 
-async function extractFromImage(imgUrl: string, fallback: Card): Promise<Card | null> {
+async function extractFromImage(imgUrl: string, fallback: Card, ctx: AiCtx): Promise<Card | null> {
   if (!GEMINI_API_KEY || !imgUrl) return null;
   try {
     const ir = await safeFetch(imgUrl, { headers: { "User-Agent": DESKTOP_UA }, signal: AbortSignal.timeout(10000) });
     if (!ir.ok) return null;
     const buf = await ir.arrayBuffer();
     if (buf.byteLength < 1000 || buf.byteLength > 4_000_000) return null;
-    return await visionCard(b64encode(buf), ir.headers.get("content-type") ?? "image/jpeg", fallback);
+    return await visionCard(b64encode(buf), ir.headers.get("content-type") ?? "image/jpeg", fallback, ctx);
   } catch (e) {
     console.error("extractFromImage failed", e);
     return null;
@@ -1200,7 +1408,7 @@ async function extractFromImage(imgUrl: string, fallback: Card): Promise<Card | 
 
 // ---------- extraction waterfall ----------
 
-async function extractCard(meta: Meta, platform: string): Promise<Card> {
+async function extractCard(meta: Meta, platform: string, ctx: AiCtx): Promise<Card> {
   const fallbackTitle = cleanTitle(meta.caption?.split("\n")[0] ?? "") || "Saved workout";
   const base = heuristicWorkout(meta.caption, fallbackTitle);
   if (!meta.caption || !haveAI()) return base;
@@ -1213,7 +1421,7 @@ async function extractCard(meta: Meta, platform: string): Promise<Card> {
     meta.caption.slice(0, 6000),
   ].filter(Boolean).join("\n");
 
-  const text = await textGenerate(system, user, true);
+  const text = await textGenerate(system, user, true, ctx);
   if (!text) return base;
   try {
     const card = normalizeCard(parseJsonLoose(text), base);
@@ -1269,14 +1477,14 @@ function minimalCard(meta: Meta, p: Parsed): Card {
   };
 }
 
-async function buildCard(meta: Meta, p: Parsed): Promise<Card> {
-  let card = await extractCard(meta, p.platform);
+async function buildCard(meta: Meta, p: Parsed, ctx: AiCtx): Promise<Card> {
+  let card = await extractCard(meta, p.platform, ctx);
 
   // Instagram carousels often put the written plan on a later slide — read it only
   // when the caption produced nothing, since vision burns the scarcest quota.
   if (!card.has_full_workout && p.platform === "instagram" && meta.images?.length) {
     for (const img of meta.images.slice(0, 3)) {
-      const fromImage = await extractFromImage(img, card);
+      const fromImage = await extractFromImage(img, card, ctx);
       if (fromImage?.has_full_workout) { card = fromImage; break; }
     }
   }
@@ -1383,24 +1591,66 @@ async function dbUpsert(table: string, row: Record<string, unknown>): Promise<vo
   if (!r.ok) console.error(`db upsert ${table}`, r.status, await r.text());
 }
 
-async function dbPatch(table: string, query: string, body: Record<string, unknown>): Promise<any> {
+async function dbPatchMany(table: string, query: string, body: Record<string, unknown>): Promise<any[]> {
   const r = await fetch(`${rest(table)}?${query}`, {
     method: "PATCH",
     headers: { ...dbHeaders, prefer: "return=representation" },
     body: JSON.stringify(body),
   });
   if (!r.ok) throw new Error(`db patch ${r.status}: ${await r.text()}`);
-  return (await r.json())[0];
+  return await r.json();
 }
 
-async function dbCount(table: string, query: string): Promise<number> {
-  const r = await fetch(`${rest(table)}?${query}&select=id`, {
-    method: "HEAD",
-    headers: { ...dbHeaders, prefer: "count=exact" },
+async function dbPatch(table: string, query: string, body: Record<string, unknown>): Promise<any> {
+  return (await dbPatchMany(table, query, body))[0];
+}
+
+/**
+ * Call a security-definer function. Every multi-statement piece of queue logic
+ * lives behind one of these, because the alternative is a check in the edge
+ * function and an insert a few milliseconds later with a race in the gap.
+ */
+async function rpc(name: string, args: Record<string, unknown>): Promise<any> {
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${name}`, {
+    method: "POST",
+    headers: dbHeaders,
+    body: JSON.stringify(args),
   });
-  const range = r.headers.get("content-range") ?? "";
-  const n = parseInt(range.split("/")[1] ?? "0", 10);
-  return Number.isFinite(n) ? n : 0;
+  if (!r.ok) throw new Error(`rpc ${name} ${r.status}: ${await r.text()}`);
+  return await r.json();
+}
+
+/**
+ * These counts are the daily caps, which makes their failure mode the interesting
+ * part. This used to return 0 whenever the count could not be read, which silently
+ * removed the cap at exactly the moment the database was unhealthy. Observed twice
+ * while testing: once a transient HEAD failure reported 0 saves against 4 real
+ * rows, and once the first request into a freshly deployed isolate got a 401.
+ *
+ * So: one retry, because a cold-start blip should not fail a user's save; then
+ * throw, because an unreadable cap must never read as an empty one.
+ */
+async function dbCount(table: string, query: string): Promise<number> {
+  let last = "";
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (attempt) await new Promise((res) => setTimeout(res, 150));
+    let r: Response;
+    try {
+      r = await fetch(`${rest(table)}?${query}&select=id`, {
+        method: "HEAD",
+        headers: { ...dbHeaders, prefer: "count=exact" },
+      });
+    } catch (e) {
+      last = String(e);
+      continue;
+    }
+    if (!r.ok) { last = `${table} ${r.status}`; continue; }
+    const range = r.headers.get("content-range") ?? "";
+    const n = parseInt(range.split("/")[1] ?? "", 10);
+    if (Number.isFinite(n)) return n;
+    last = `${table}: unreadable content-range "${range}"`;
+  }
+  throw new Error(`db count ${last}`);
 }
 
 // ---------- auth ----------
@@ -1441,7 +1691,39 @@ function utcMidnight(): string {
 
 // ---------- handlers ----------
 
+// ---------- limits ----------
+
+type Counts = { saves: number; extracts: number; helpers: number };
+
+/**
+ * The three daily ceilings, read together. `extracts` is what actually costs
+ * money — it counts a new save AND a reprocess, since both run the full ladder.
+ * A cache hit is a save but not an extract, which is the whole point of the cache.
+ */
+async function countsFor(userId: string): Promise<Counts> {
+  const since = utcMidnight();
+  const base = `user_id=eq.${userId}&created_at=gte.${since}`;
+  const [saves, extracts, helpers] = await settledAll([
+    dbCount("saves_log", `${base}&kind=eq.save`),
+    dbCount("saves_log", `${base}&cached=is.false&kind=in.(save,reprocess)`),
+    dbCount("saves_log", `${base}&kind=eq.helper`),
+  ]);
+  return { saves, extracts, helpers };
+}
+
+function extractLimitResponse(cors: Cors): Response {
+  return json({
+    status: "limit",
+    message:
+      `Daily limit reached (${LIMIT_EXTRACT} new extractions/day while Spotter is free) — ` +
+      "resets at midnight UTC. Videos someone else already saved still work.",
+  }, 429, cors);
+}
+
+// ---------- ingest ----------
+
 async function handleIngest(req: Request, userId: string, cors: Cors): Promise<Response> {
+  const t0 = Date.now();
   let shared = "";
   const ct = req.headers.get("content-type") ?? "";
   if (ct.includes("json")) {
@@ -1460,98 +1742,105 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
   }
   if (!p) return json({ status: "error", message: "No workout link found in what was shared." }, 400, cors);
 
-  const dupe = await dbSelect("workouts", `user_id=eq.${userId}&shortcode=eq.${encodeURIComponent(p.shortcode)}&select=id,title`);
+  const sc = encodeURIComponent(p.shortcode);
+
+  // Three independent questions — do you already have this, are you over a cap,
+  // has anyone extracted this video — asked at once. Sequentially they were three
+  // round trips on the critical path of a request whose whole purpose is now to
+  // return quickly.
+  const [dupeR, countsR, cachedR] = await Promise.allSettled([
+    dbSelect("workouts", `user_id=eq.${userId}&shortcode=eq.${sc}&select=id,title,ingest_status`),
+    countsFor(userId),
+    dbSelect("video_cache", `shortcode=eq.${sc}&v=gte.${CARD_V}&select=*`),
+  ]);
+  for (const r of [dupeR, countsR, cachedR]) {
+    if (r.status === "rejected") throw r.reason;
+  }
+  const dupe = (dupeR as PromiseFulfilledResult<any[]>).value;
+  const counts = (countsR as PromiseFulfilledResult<Counts>).value;
+  const cached = (cachedR as PromiseFulfilledResult<any[]>).value;
+
+  // Idempotency, cheap layer. The authoritative one is the unique (user_id,
+  // shortcode) constraint inside enqueue_ingest — this only saves a round trip on
+  // the common "I already have that" case, and reports a save still in flight so a
+  // double-tap does not look like a failure.
   if (dupe.length) {
-    return json({ status: "exists", id: dupe[0].id, title: dupe[0].title, message: "Already in your library." }, 200, cors);
+    const processing = dupe[0].ingest_status === "processing";
+    return json({
+      status: processing ? "processing" : "exists",
+      id: dupe[0].id, title: dupe[0].title,
+      message: processing ? "Already reading that one." : "Already in your library.",
+    }, 200, cors);
   }
 
-  const since = utcMidnight();
-  const savesToday = await dbCount("saves_log", `user_id=eq.${userId}&created_at=gte.${since}`);
-  if (savesToday >= LIMIT_SAVES) {
+  if (counts.saves >= LIMIT_SAVES) {
     return json({
       status: "limit",
       message: `Daily save limit reached (${LIMIT_SAVES}/day while Spotter is free) — resets at midnight UTC.`,
     }, 429, cors);
   }
 
-  const cached = await dbSelect("video_cache", `shortcode=eq.${encodeURIComponent(p.shortcode)}&v=gte.${CARD_V}&select=*`);
-  let meta: Meta = { caption: null, thumb: null, author: null, source: "none" };
-  let card: Card = minimalCard(meta, p);
-  let thumbUrl: string | null = null;
-  let fromCache = false;
-  // True when some step failed and the row is thinner than it should be. Recorded
-  // per save so a platform going dark is visible in the numbers, not just the logs.
-  let degraded = false;
-
+  // A cache hit costs nothing and already answers in well under a second. Pushing
+  // it through the queue would make the fast path slower to no purpose, so it
+  // stays synchronous and comes back as a finished card.
   if (cached.length) {
     const c = cached[0];
-    card = c.card as Card;
-    meta = { caption: c.caption, thumb: c.thumb_url, author: c.author, source: "cache" };
-    thumbUrl = c.thumb_url;
-    fromCache = true;
-  } else {
-    const extractsToday = await dbCount("saves_log", `user_id=eq.${userId}&created_at=gte.${since}&cached=is.false`);
-    if (extractsToday >= LIMIT_EXTRACT) {
-      return json({
-        status: "limit",
-        message: `Daily limit reached (${LIMIT_EXTRACT} new videos/day while Spotter is free) — resets at midnight UTC. Videos someone else already saved still work.`,
-      }, 429, cors);
-    }
-
-    // Each step is allowed to fail on its own. A scrape that is blocked, a model
-    // that is out of quota or a thumbnail that will not store must still leave a
-    // usable row behind — the user gets their link back with a name on it, and can
-    // reprocess later. Never a failed save.
+    const card = c.card as Card;
+    const meta: Meta = { caption: c.caption, thumb: c.thumb_url, author: c.author, source: "cache" };
+    let row;
     try {
-      meta = await fetchMeta(p);
-    } catch (e) {
-      console.error("fetchMeta failed", p.platform, p.shortcode, e);
-      degraded = true;
-    }
-    try {
-      card = await buildCard(meta, p);
-    } catch (e) {
-      console.error("buildCard failed", p.platform, p.shortcode, e);
-      card = minimalCard(meta, p);
-      degraded = true;
-    }
-    try {
-      thumbUrl = await storeThumb(p.shortcode, meta.thumb);
-    } catch (e) {
-      console.error("storeThumb failed", p.shortcode, e);
-    }
-    if (!meta.caption) degraded = true;
-
-    // Only cache a card worth reusing. Writing an empty scrape at the current
-    // extraction version would pin that emptiness for everyone who saves the video
-    // next and for every retry of this one, which is the opposite of failing soft.
-    if (meta.caption || card.blocks.length) {
-      await dbUpsert("video_cache", {
-        shortcode: p.shortcode, url: p.clean, platform: p.platform, kind: p.kind,
-        author: meta.author, caption: meta.caption, thumb_url: thumbUrl,
-        card, v: CARD_V, updated_at: new Date().toISOString(),
+      row = await dbInsert("workouts", {
+        user_id: userId,
+        url: p.clean, shortcode: p.shortcode, platform: p.platform, kind: p.kind,
+        author: meta.author, title: card.title, caption: meta.caption, thumb_url: c.thumb_url,
+        category: card.category, muscle_groups: card.muscle_groups, equipment: card.equipment,
+        difficulty: card.difficulty, duration_minutes: card.duration_minutes, calories: card.calories,
+        blocks: card.blocks, tags: card.tags, has_full_workout: card.has_full_workout,
+        source_url: card.source_url ?? null, ingest_status: "ready",
       });
-    } else {
-      console.log("empty scrape, not cached", p.platform, p.shortcode, "source:", meta.source);
+    } catch (e) {
+      // Two simultaneous saves of the same cached video by the same user: the
+      // unique constraint rejects the second, which is correct, not an error.
+      if (!String(e).includes("23505")) throw e;
+      const again = await dbSelect("workouts", `user_id=eq.${userId}&shortcode=eq.${sc}&select=id,title`);
+      return json({ status: "exists", id: again[0]?.id, title: again[0]?.title, message: "Already in your library." }, 200, cors);
     }
+    await logSave(userId, p, meta, card, c.thumb_url, true, false, "save", null);
+    console.log("cache hit", p.platform, p.shortcode, "served in", Date.now() - t0, "ms");
+    return json({
+      status: "saved", cached: true, id: row.id, title: row.title,
+      category: row.category, has_full_workout: row.has_full_workout, degraded: false,
+    }, 200, cors);
   }
 
-  const row = await dbInsert("workouts", {
-    user_id: userId,
-    url: p.clean, shortcode: p.shortcode, platform: p.platform, kind: p.kind,
-    author: meta.author, title: card.title, caption: meta.caption, thumb_url: thumbUrl,
-    category: card.category, muscle_groups: card.muscle_groups, equipment: card.equipment,
-    difficulty: card.difficulty, duration_minutes: card.duration_minutes, calories: card.calories,
-    blocks: card.blocks, tags: card.tags, has_full_workout: card.has_full_workout,
-    source_url: card.source_url ?? null,
-  });
+  if (counts.extracts >= LIMIT_EXTRACT) return extractLimitResponse(cors);
 
-  await logSave(userId, p, meta, card, thumbUrl, fromCache, degraded);
+  // Cache miss. Everything past here used to happen inline: scrape, model call,
+  // thumbnail upload, 5-15 seconds with the user's request held open. Now it is a
+  // row in a table and somebody else's problem, and the response is the row the
+  // user can already see.
+  const provisional = cleanTitle(fallbackTitle({ caption: null, thumb: null, author: null }, p)) || "Saved workout";
+  const q = (await rpc("enqueue_ingest", {
+    p_user: userId, p_url: p.clean, p_shortcode: p.shortcode,
+    p_platform: p.platform, p_kind: p.kind, p_title: provisional,
+  }))[0];
+
+  if (!q) throw new Error("enqueue_ingest returned nothing");
+  if (q.already) {
+    return json({ status: "exists", id: q.workout_id, message: "Already in your library." }, 200, cors);
+  }
+
+  console.log("enqueued", p.platform, p.shortcode, "job", q.job_id,
+    q.job_created ? "(new)" : "(joined existing)", "in", Date.now() - t0, "ms");
+  kickWorker();
+
   return json({
-    status: "saved", cached: fromCache, id: row.id, title: row.title,
-    category: row.category, has_full_workout: row.has_full_workout,
-    degraded,
-  }, 200, cors);
+    status: "processing",
+    id: q.workout_id,
+    job_id: q.job_id,
+    title: provisional,
+    message: "Reading the video…",
+  }, 202, cors);
 }
 
 /**
@@ -1566,12 +1855,14 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
 async function logSave(
   userId: string, p: Parsed, meta: Meta, card: Card,
   thumbUrl: string | null, fromCache: boolean, degraded: boolean,
+  kind: "save" | "reprocess" | "helper" = "save", jobId: string | null = null,
 ): Promise<void> {
   const exercises = card.blocks.reduce((n, b) => n + (b.exercises?.length ?? 0), 0);
-  const base = { user_id: userId, shortcode: p.shortcode, cached: fromCache };
+  const base = { user_id: userId, shortcode: p.shortcode, cached: fromCache, kind };
   try {
     await dbInsert("saves_log", {
       ...base,
+      job_id: jobId,
       platform: p.platform,
       meta_source: meta.source ?? null,
       caption_found: !!meta.caption,
@@ -1591,14 +1882,281 @@ async function logSave(
   }
 }
 
+// ---------- the worker ----------
+//
+// Two things drive it. Ingest fires a kick the instant a job lands, which is what
+// makes a card fill in a few seconds rather than at the top of the next minute;
+// pg_cron sweeps every minute as the backstop for when a kick is lost. Neither
+// path is trusted on its own, and both are idempotent because SKIP LOCKED means a
+// job can only ever be claimed once.
+
+type Job = {
+  id: string;
+  user_id: string;
+  url: string;
+  shortcode: string;
+  platform: string;
+  kind: string | null;
+  step: string;
+  meta: Meta | null;
+  card: Card | null;
+  attempts: number;
+  max_attempts: number;
+};
+
+/** 30s, 60s, 120s, 240s… capped. Long enough for a rate limit to lift, short
+ *  enough that a user watching a pending card sees it resolve. */
+function backoffMs(attempts: number): number {
+  return Math.min(15_000 * Math.pow(2, Math.max(1, attempts)), 15 * 60_000);
+}
+
+function kickWorker(): void {
+  if (!WORKER_SECRET) { console.error("worker kick skipped: WORKER_SECRET is not set"); return; }
+  background(
+    fetch(`${SELF_URL}/api/worker/tick`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-worker-secret": WORKER_SECRET },
+      body: JSON.stringify({ source: "kick" }),
+      signal: AbortSignal.timeout(15_000),
+    }).then(async (r) => {
+      const body = await r.text();
+      if (!r.ok) console.error("worker kick", r.status, body.slice(0, 200));
+    }),
+  );
+}
+
+async function jobStep(id: string, step: string, extra: Record<string, unknown>): Promise<void> {
+  await dbPatch("ingest_jobs", `id=eq.${id}`, { step, ...extra, updated_at: new Date().toISOString() });
+}
+
+/**
+ * Write the finished card onto every workouts row waiting for this video, not
+ * just the one that triggered the job. This is why the job is keyed on the
+ * shortcode: two users saving the same reel at the same moment share one
+ * extraction, and both libraries fill in from it.
+ */
+async function finishJob(
+  job: Job, p: Parsed, meta: Meta, card: Card, thumbUrl: string | null, degraded: boolean,
+): Promise<void> {
+  const sc = encodeURIComponent(p.shortcode);
+  const filled = await dbPatchMany("workouts", `shortcode=eq.${sc}&ingest_status=eq.processing`, {
+    url: p.clean, platform: p.platform, kind: p.kind,
+    author: meta.author, title: card.title, caption: meta.caption, thumb_url: thumbUrl,
+    category: card.category, muscle_groups: card.muscle_groups, equipment: card.equipment,
+    difficulty: card.difficulty, duration_minutes: card.duration_minutes, calories: card.calories,
+    blocks: card.blocks, tags: card.tags, has_full_workout: card.has_full_workout,
+    source_url: card.source_url ?? null,
+    ingest_status: "ready", ingest_error: null,
+  });
+
+  // The rate-limit row was written at enqueue time so a burst could not slip past
+  // the cap; the quality metrics only exist now, so they are patched in afterwards.
+  const exercises = card.blocks.reduce((n, b) => n + (b.exercises?.length ?? 0), 0);
+  try {
+    await dbPatchMany("saves_log", `job_id=eq.${job.id}`, {
+      platform: p.platform,
+      meta_source: meta.source ?? null,
+      caption_found: !!meta.caption,
+      caption_chars: meta.caption?.length ?? 0,
+      thumb_found: !!thumbUrl,
+      author_found: !!meta.author,
+      exercises_found: exercises,
+      degraded,
+    });
+  } catch (e) {
+    console.error("saves_log metrics patch failed", job.id, e);
+  }
+
+  const now = new Date().toISOString();
+  // meta and card are cleared: they exist to let a retry resume, and the finished
+  // card lives in video_cache and on the rows. Keeping them would make this table
+  // grow by a caption per save forever.
+  //
+  // Guarded on still holding the claim. A worker the sweeper has already given up
+  // on can come back to life — the isolate was slow, not dead — and must not
+  // stamp 'done' over a job that has since been reassigned and re-claimed.
+  const closed = await dbPatchMany("ingest_jobs", `id=eq.${job.id}&locked_by=eq.${WORKER_ID}`, {
+    status: "done", step: "done", finished_at: now, updated_at: now,
+    locked_by: null, locked_at: null, meta: null, card: null,
+  });
+  if (!closed.length) {
+    console.warn("job", job.id, "finished but the claim had already been taken back — rows were written, job left alone");
+    return;
+  }
+  console.log("job done", job.id, p.platform, p.shortcode,
+    "rows filled:", filled.length, "exercises:", exercises, degraded ? "(degraded)" : "");
+}
+
+/**
+ * Retry with backoff, then stop. A job that has failed max_attempts times is not
+ * going to succeed on the eleventh; it becomes 'dead' and the user's card becomes
+ * retryable rather than eternally pending.
+ */
+async function failJob(job: Job, err: unknown): Promise<void> {
+  const msg = String(err).slice(0, 500);
+  const dead = job.attempts >= job.max_attempts;
+  console.error("job", dead ? "DEAD" : "failed", job.id, job.platform, job.shortcode,
+    "attempt", job.attempts, "of", job.max_attempts, "—", msg);
+  const now = new Date().toISOString();
+  try {
+    // Same claim guard as finishJob: only the worker that still holds the job may
+    // decide its fate. Without this a slow worker's failure would push a job the
+    // sweeper had already handed to somebody else back onto the queue.
+    const moved = await dbPatchMany("ingest_jobs", `id=eq.${job.id}&locked_by=eq.${WORKER_ID}`, {
+      status: dead ? "dead" : "queued",
+      run_after: new Date(Date.now() + backoffMs(job.attempts)).toISOString(),
+      locked_by: null, locked_at: null, last_error: msg,
+      finished_at: dead ? now : null, updated_at: now,
+    });
+    if (!moved.length) {
+      console.warn("job", job.id, "failed but the claim had already been taken back — leaving it alone");
+      return;
+    }
+    if (dead) {
+      await dbPatchMany("workouts", `ingest_job_id=eq.${job.id}&ingest_status=eq.processing`, {
+        ingest_status: "failed",
+        ingest_error: "Spotter could not read this video. Tap ↻ to try again.",
+      });
+    }
+  } catch (e) {
+    console.error("failJob could not record the failure", job.id, e);
+  }
+}
+
+async function runJob(job: Job): Promise<void> {
+  const p: Parsed = {
+    platform: job.platform as Parsed["platform"],
+    shortcode: job.shortcode,
+    kind: job.kind ?? "video",
+    clean: job.url,
+  };
+  const ctx: AiCtx = { purpose: "extract", userId: job.user_id };
+  const sc = encodeURIComponent(p.shortcode);
+
+  // Somebody may have filled the cache while this job was waiting on a backoff.
+  // Paying for the same extraction twice because the queue was slow would defeat
+  // the point of having a cache at all.
+  const cached = await dbSelect("video_cache", `shortcode=eq.${sc}&v=gte.${CARD_V}&select=*`);
+  if (cached.length) {
+    const c = cached[0];
+    await finishJob(job, p,
+      { caption: c.caption, thumb: c.thumb_url, author: c.author, source: "cache" },
+      c.card as Card, c.thumb_url, false);
+    return;
+  }
+
+  // Resume from wherever the last attempt got to. A model that timed out should
+  // not cost a second scrape of a caption we already have.
+  let meta: Meta;
+  if (job.step === "meta" || !job.meta) {
+    meta = await fetchMeta(p);          // throws: worth a retry, that is a network fault
+    await jobStep(job.id, "card", { meta });
+  } else {
+    meta = job.meta;
+  }
+
+  let card: Card;
+  let degraded = false;
+  if (job.step === "thumb" && job.card) {
+    card = job.card;
+  } else {
+    try {
+      card = await buildCard(meta, p, ctx);
+    } catch (e) {
+      console.error("job buildCard failed", job.id, e);
+      card = minimalCard(meta, p);
+      degraded = true;
+    }
+    await jobStep(job.id, "thumb", { card });
+  }
+
+  let thumbUrl: string | null = null;
+  try {
+    thumbUrl = await storeThumb(p.shortcode, meta.thumb);
+  } catch (e) {
+    console.error("job storeThumb failed", job.id, e);
+  }
+  if (!meta.caption) degraded = true;
+
+  // Nothing at all: no caption, no thumbnail, no handle, no exercises. That is a
+  // platform refusing us rather than a video without a written workout, and it is
+  // worth another attempt before the job is given up on.
+  if (!meta.caption && !meta.author && !thumbUrl && !card.blocks.length) {
+    throw new Error("no metadata from any source for " + p.platform + " " + p.shortcode +
+      " (tried " + (meta.source ?? "none") + ")");
+  }
+
+  // Only cache a card worth reusing. Writing an empty scrape at the current
+  // extraction version would pin that emptiness for everyone who saves the video
+  // next and for every retry of this one, which is the opposite of failing soft.
+  if (meta.caption || card.blocks.length) {
+    await dbUpsert("video_cache", {
+      shortcode: p.shortcode, url: p.clean, platform: p.platform, kind: p.kind,
+      author: meta.author, caption: meta.caption, thumb_url: thumbUrl,
+      card, v: CARD_V, updated_at: new Date().toISOString(),
+    });
+  } else {
+    console.log("empty scrape, not cached", p.platform, p.shortcode, "source:", meta.source);
+  }
+
+  await finishJob(job, p, meta, card, thumbUrl, degraded);
+}
+
+async function handleWorkerTick(req: Request): Promise<Response> {
+  // Not 401: an unauthenticated caller should not learn this route exists.
+  if (!secretEquals(req.headers.get("x-worker-secret") ?? "", WORKER_SECRET)) {
+    return json({ status: "error", message: "Not found" }, 404);
+  }
+
+  try {
+    await rpc("sweep_ingest_jobs", { p_stale_seconds: WORKER_STALE_SECONDS });
+  } catch (e) {
+    console.error("sweep failed", e);   // not fatal: claiming is still worth trying
+  }
+
+  const jobs = (await rpc("claim_ingest_jobs", { p_worker: WORKER_ID, p_limit: WORKER_BATCH })) as Job[];
+  if (!jobs.length) return json({ status: "ok", claimed: 0 });
+
+  console.log("claimed", jobs.length, "job(s):", jobs.map((j) => j.shortcode).join(","));
+  const work = Promise.all(jobs.map((j) => runJob(j).catch((e) => failJob(j, e))));
+
+  // Return before the work finishes — otherwise the tick is just the old
+  // synchronous ingest wearing a different hat. The claim is already committed, so
+  // nothing else will pick these up, and the sweeper covers this isolate dying.
+  if (hasWaitUntil()) {
+    background(work);
+    return json({ status: "ok", claimed: jobs.length, mode: "background" });
+  }
+  await work;
+  return json({ status: "ok", claimed: jobs.length, mode: "inline" });
+}
+
 async function handleReprocess(id: string, userId: string, cors: Cors): Promise<Response> {
   const rows = await dbSelect("workouts", `id=eq.${id}&user_id=eq.${userId}&select=*`);
   if (!rows.length) return json({ status: "error", message: "Not found." }, 404, cors);
   const old = rows[0];
 
+  // Reprocess re-runs the whole extraction ladder — the same scrape and the same
+  // model call as a new save. It was counted by nothing at all, which made the
+  // daily cap trivially bypassable by anyone holding the ↻ button.
+  const counts = await countsFor(userId);
+  if (counts.extracts >= LIMIT_EXTRACT) return extractLimitResponse(cors);
+
+  // A card that never finished — or that died in the queue — is not something to
+  // re-run inline. It goes back on the queue, so the retry gets the same backoff,
+  // dead-lettering and one-job-per-video guarantees as the original save.
+  if (old.ingest_status !== "ready") {
+    const q = (await rpc("requeue_ingest", { p_user: userId, p_workout: id }))[0];
+    if (!q) return json({ status: "error", message: "Not found." }, 404, cors);
+    console.log("requeued", old.platform, old.shortcode, "job", q.job_id, q.job_created ? "(new)" : "(joined existing)");
+    kickWorker();
+    return json({ status: "processing", id, job_id: q.job_id, message: "Trying that video again…" }, 202, cors);
+  }
+
   const p: Parsed = {
     platform: old.platform, shortcode: old.shortcode, kind: old.kind ?? "video", clean: old.url,
   };
+  const ctx: AiCtx = { purpose: "reprocess", userId };
   // Same fail-soft rule as ingest: a re-run that cannot reach the platform falls
   // back to what is already stored rather than erroring out. mergeNoDowngrade then
   // guarantees the saved card cannot come back thinner than it went in.
@@ -1611,7 +2169,7 @@ async function handleReprocess(id: string, userId: string, cors: Cors): Promise<
   if (!meta.caption && old.caption) meta.caption = old.caption;
   let fresh: Card;
   try {
-    fresh = await buildCard(meta, p);
+    fresh = await buildCard(meta, p, ctx);
   } catch (e) {
     console.error("reprocess buildCard failed", p.shortcode, e);
     fresh = minimalCard(meta, p);
@@ -1637,14 +2195,38 @@ async function handleReprocess(id: string, userId: string, cors: Cors): Promise<
     author: meta.author ?? old.author, caption: meta.caption ?? old.caption, thumb_url: thumbUrl,
     card, v: CARD_V, updated_at: new Date().toISOString(),
   });
+
+  // Charged to the same ledger and the same daily cap as a save, and recorded with
+  // the same per-platform metrics, because it is the same work.
+  await logSave(userId, p, meta, card, thumbUrl, false, !meta.caption, "reprocess", null);
   return json({ status: "ok", workout: updated }, 200, cors);
 }
 
-// Thin AI passthrough: validate, cap input, generate, return text.
-async function aiText(system: string, user: string, cors: Cors): Promise<Response> {
+/**
+ * Thin AI passthrough for the explain/swap helpers: validate, cap input, generate,
+ * return text. Metered on its own looser ceiling — one short completion is far
+ * cheaper than an extraction, but "far cheaper" is not "free", and these two routes
+ * were previously the only way to spend Spotter's money without limit.
+ */
+async function aiText(
+  system: string, user: string, cors: Cors, userId: string, purpose: string, helpersToday: number,
+): Promise<Response> {
   if (!haveAI()) return json({ status: "error", message: "AI is not configured yet." }, 503, cors);
-  const out = await textGenerate(system, user, false);
+  if (helpersToday >= LIMIT_HELPER) {
+    return json({
+      status: "limit",
+      message: `Daily coaching limit reached (${LIMIT_HELPER}/day) — resets at midnight UTC.`,
+    }, 429, cors);
+  }
+  const out = await textGenerate(system, user, false, { purpose, userId });
   if (!out) return json({ status: "error", message: "The AI is busy — try again in a minute." }, 503, cors);
+  // Only a successful answer is charged: a provider outage should not eat the
+  // user's daily allowance.
+  try {
+    await dbInsert("saves_log", { user_id: userId, kind: "helper", cached: false, shortcode: null });
+  } catch (e) {
+    console.error("helper saves_log insert failed", e);
+  }
   return json({ status: "ok", text: out.trim() }, 200, cors);
 }
 
@@ -1683,6 +2265,11 @@ Deno.serve(async (req: Request) => {
 
     if (!path.startsWith("/api/")) return json({ status: "error", message: "Not found" }, 404, cors);
 
+    // The worker is machine-to-machine — pg_cron via pg_net, and the function
+    // kicking itself after a save. It authenticates with a shared secret rather
+    // than a user token, so it has to be matched before the user-auth gate below.
+    if (req.method === "POST" && path === "/api/worker/tick") return await handleWorkerTick(req);
+
     // One auth resolution for every API route. Ingest is the only route that also
     // accepts the long-lived per-user key.
     let userId = await userFromBearer(req);
@@ -1702,8 +2289,10 @@ Deno.serve(async (req: Request) => {
         "You are a calm, experienced personal trainer. In 3-5 short sentences, explain how to perform the " +
         "exercise with good form: the setup, the movement, what to feel, and the single most common mistake. " +
         "Plain language, no lists, no emojis. If the movement is risky for beginners, say so briefly.";
+      const { helpers } = await countsFor(userId);
       return await aiText(system, `Exercise: ${exercise}` +
-        (body?.title ? `\nFrom the workout: ${String(body.title).slice(0, 120)}` : ""), cors);
+        (body?.title ? `\nFrom the workout: ${String(body.title).slice(0, 120)}` : ""),
+        cors, userId, "explain", helpers);
     }
 
     if (req.method === "POST" && path === "/api/swap") {
@@ -1715,8 +2304,10 @@ Deno.serve(async (req: Request) => {
         "You are a personal trainer suggesting substitute exercises. Give 1-3 alternatives that train the same " +
         "muscles with a similar stimulus, each as one line: the name, then a short why. Be honest about what is " +
         "lost in the swap. No emojis, no preamble.";
+      const { helpers } = await countsFor(userId);
       return await aiText(system,
-        `Exercise to replace: ${exercise}` + (have ? `\nAvailable equipment: ${have}` : "\nAssume bodyweight only."), cors);
+        `Exercise to replace: ${exercise}` + (have ? `\nAvailable equipment: ${have}` : "\nAssume bodyweight only."),
+        cors, userId, "swap", helpers);
     }
 
     if (req.method === "POST" && path === "/api/rotate-key") {
@@ -1728,12 +2319,17 @@ Deno.serve(async (req: Request) => {
     }
 
     if (req.method === "GET" && path === "/api/limits") {
-      const since = utcMidnight();
-      const saves = await dbCount("saves_log", `user_id=eq.${userId}&created_at=gte.${since}`);
-      const extracts = await dbCount("saves_log", `user_id=eq.${userId}&created_at=gte.${since}&cached=is.false`);
+      const counts = await countsFor(userId);
+      // The spend figures are global rather than per-user: the ceiling protects the
+      // project's bill, and it is the one number that has to be visible from
+      // outside the logs when extraction quietly drops to the free path.
+      const spent = await spendToday();
       return json({
-        status: "ok", saves_today: saves, extracts_today: extracts,
-        limit_saves: LIMIT_SAVES, limit_extract: LIMIT_EXTRACT,
+        status: "ok",
+        saves_today: counts.saves, extracts_today: counts.extracts, helpers_today: counts.helpers,
+        limit_saves: LIMIT_SAVES, limit_extract: LIMIT_EXTRACT, limit_helper: LIMIT_HELPER,
+        spend_today: Number(spent.toFixed(4)), spend_limit: DAILY_SPEND_USD,
+        paid_enabled: DAILY_SPEND_USD > 0 && spent < DAILY_SPEND_USD,
       }, 200, cors);
     }
 

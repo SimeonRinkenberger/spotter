@@ -157,7 +157,89 @@ export const APP = String.raw`
   function boot() {
     loadProfile();
     maybeInstallHint();
+    watchWorkouts();
     return load();
+  }
+
+  // ---------- realtime ----------
+  //
+  // Subscribed to this user's OWN workouts rows, filtered by user_id, on a table
+  // whose RLS already restricts to the owner. The alternative — everyone watching
+  // one shared card table — makes the server authorize every change against every
+  // connected viewer, which is fine at two users and is the thing that falls over
+  // at two thousand.
+  //
+  // This is how an asynchronous save finishes: ingest returns in ~200ms with a row
+  // in a pending state, the worker fills that row in, and the UPDATE arrives here.
+  var wkChannel = null;
+
+  function watchWorkouts() {
+    if (wkChannel || !state.user) return;
+    var uid = state.user.id;
+    // Not inside onAuthStateChange: supabase-js holds the auth lock through that
+    // callback and getSession would deadlock. boot() is already deferred a tick.
+    sb.auth.getSession().then(function (r) {
+      var tok = r.data.session ? r.data.session.access_token : null;
+      function subscribe() {
+        wkChannel = sb.channel("wk-" + uid)
+          .on("postgres_changes",
+            { event: "*", schema: "public", table: "workouts", filter: "user_id=eq." + uid },
+            onWorkoutChange)
+          .subscribe();
+      }
+      // The socket has to be carrying this user's token before it joins, or the
+      // server authorizes the subscription as anon, RLS matches nothing, and the
+      // channel reports SUBSCRIBED while silently delivering no rows for ever.
+      // Observed exactly that in testing. setAuth is a promise in current
+      // supabase-js and was synchronous in older ones, so handle both.
+      var applied = tok && sb.realtime && sb.realtime.setAuth ? sb.realtime.setAuth(tok) : null;
+      if (applied && typeof applied.then === "function") applied.then(subscribe, subscribe);
+      else subscribe();
+    });
+  }
+
+  function onWorkoutChange(payload) {
+    var row = payload.eventType === "DELETE" ? payload.old : payload.new;
+    if (!row || !row.id) return;
+
+    if (payload.eventType === "DELETE") {
+      state.workouts = state.workouts.filter(function (w) { return w.id !== row.id; });
+      render();
+      return;
+    }
+
+    var at = -1;
+    for (var i = 0; i < state.workouts.length; i++) {
+      if (state.workouts[i].id === row.id) { at = i; break; }
+    }
+    var was = at >= 0 ? state.workouts[at] : null;
+    if (at >= 0) state.workouts[at] = row; else state.workouts.unshift(row);
+
+    if (current && current.id === row.id) {
+      current = row;
+      if ($("detail").classList.contains("open")) openDetail(row, true);
+    }
+    // Only announce a transition, so a favourite toggle or a note edit is silent.
+    if (was && was.ingest_status === "processing" && row.ingest_status === "ready") {
+      toast("Ready: " + (row.title || "your workout"));
+    } else if (was && was.ingest_status === "processing" && row.ingest_status === "failed") {
+      toast("Could not read that video — open it to try again.");
+    }
+    render();
+    watchPending();
+  }
+
+  // Realtime is the fast path, not the only path: a dropped socket, a backgrounded
+  // tab or a browser that never connected must still resolve a pending card.
+  var pendTimer = null, pendPolls = 0;
+
+  function watchPending() {
+    clearTimeout(pendTimer);
+    var pending = state.workouts.filter(function (w) { return w.ingest_status === "processing"; });
+    if (!pending.length) { pendPolls = 0; return; }
+    if (pendPolls > 75) return;          // ~5 minutes, by which point the sweeper has ruled
+    pendPolls++;
+    pendTimer = setTimeout(function () { load(); }, 4000);
   }
 
   function loadProfile() {
@@ -177,8 +259,12 @@ export const APP = String.raw`
         if (r.error) { toast("Could not load your library."); return; }
         state.workouts = r.data || [];
         render();
+        watchPending();
       });
   }
+
+  function isPending(w) { return w.ingest_status === "processing"; }
+  function isFailed(w) { return w.ingest_status === "failed"; }
 
   function visible() {
     var q = state.q.toLowerCase().trim();
@@ -230,6 +316,8 @@ export const APP = String.raw`
   }
 
   function cardMeta(w) {
+    if (isPending(w)) return "Reading the video…";
+    if (isFailed(w)) return "Could not read it — tap to retry";
     var bits = [];
     var n = exerciseNames(w).length;
     if (n) bits.push(n + (n === 1 ? " exercise" : " exercises"));
@@ -270,13 +358,29 @@ export const APP = String.raw`
     grid.classList.remove("hide");
 
     items.forEach(function (w, i) {
-      var card = el("button", "carditem");
+      var pending = isPending(w), failed = isFailed(w);
+      var card = el("button", "carditem" + (pending ? " pending" : "") + (failed ? " failed" : ""));
       card.style.animation = "cardin .42s cubic-bezier(.22,.9,.3,1) both";
       card.style.animationDelay = Math.min(i, 10) * 26 + "ms";
       // fill:both keeps every animation registered forever; clear it once it has run
       card.addEventListener("animationend", function () { card.style.animation = ""; });
 
       var tw = el("div", "thumbwrap loading");
+      if (pending || failed) {
+        tw.className = "thumbwrap " + (pending ? "pending" : "failed");
+        tw.appendChild(el("div", "noimg", pending ? "⏳" : "↻"));
+        card.appendChild(tw);
+        var pb = el("div", "cardbody");
+        var pk = el("div", "cardkick");
+        pk.appendChild(el("div", "catpill", pending ? "Reading" : "Retry"));
+        pb.appendChild(pk);
+        pb.appendChild(el("div", "cardtitle", w.title || "Reading the video…"));
+        pb.appendChild(el("div", "cardmeta" + (failed ? " retryline" : ""), cardMeta(w)));
+        card.appendChild(pb);
+        card.onclick = function () { openDetail(w); };
+        grid.appendChild(card);
+        return;
+      }
       if (w.thumb_url) {
         var img = el("img");
         img.loading = "lazy";
@@ -376,7 +480,9 @@ export const APP = String.raw`
     return bits.join(" · ");
   }
 
-  function openDetail(w) {
+  // keepHistory is set when Realtime re-renders an open card in place: the overlay
+  // is already on the history stack and pushing again would need two back gestures.
+  function openDetail(w, keepHistory) {
     current = w;
     var d = $("dinner");
     d.innerHTML = "";
@@ -384,9 +490,45 @@ export const APP = String.raw`
     var em = embedNode(w);
     if (em) d.appendChild(em);
 
-    d.appendChild(el("div", "dkick", w.category || "Other"));
+    d.appendChild(el("div", "dkick", isPending(w) ? "Reading" : (isFailed(w) ? "Needs another try" : (w.category || "Other"))));
     d.appendChild(el("h2", "dtitle", w.title || "Untitled workout"));
     if (w.author) d.appendChild(el("div", "dauthor", "@" + w.author));
+
+    // A card whose extraction has not landed yet, or one whose job gave up. Both
+    // are real rows with a real link — the user keeps what they saved either way.
+    if (isPending(w) || isFailed(w)) {
+      var note = el("div", "sect");
+      note.appendChild(el("h3", null, isPending(w) ? "Still reading this one" : "Could not read this one"));
+      note.appendChild(el("div", "capbox", isPending(w)
+        ? "Spotter is pulling the workout out of this video. The card fills in here as soon as it lands — you can close this and carry on."
+        : (w.ingest_error || "Spotter could not get anything back from this link.") +
+          " The link is saved either way, so nothing is lost."));
+      d.appendChild(note);
+
+      if (isFailed(w)) {
+        var rb = el("button", "retrybtn", "Try reading it again");
+        rb.onclick = function () { retryWorkout(w, rb); };
+        d.appendChild(rb);
+      }
+      var open = el("a", "pill accent", "Open original ↗");
+      open.href = w.source_url || w.url;
+      open.target = "_blank";
+      open.rel = "noopener";
+      open.style.display = "inline-block";
+      open.style.textDecoration = "none";
+      open.style.marginBottom = "14px";
+      d.appendChild(open);
+
+      var rm = el("button", "danger", "Remove from library");
+      rm.onclick = function () { removeWorkout(w); };
+      d.appendChild(rm);
+
+      $("dfav").textContent = w.favorite ? "★" : "☆";
+      $("dfav").classList.toggle("on", !!w.favorite);
+      $("detail").classList.add("open");
+      if (!keepHistory) { $("detail").scrollTop = 0; history.pushState({ detail: 1 }, ""); }
+      return;
+    }
 
     var pills = el("div", "pillrow");
     (w.muscle_groups || []).forEach(function (m) { pills.appendChild(el("span", "pill accent", m)); });
@@ -509,8 +651,31 @@ export const APP = String.raw`
     $("dfav").textContent = w.favorite ? "★" : "☆";
     $("dfav").classList.toggle("on", !!w.favorite);
     $("detail").classList.add("open");
-    $("detail").scrollTop = 0;
-    history.pushState({ detail: 1 }, "");
+    if (!keepHistory) { $("detail").scrollTop = 0; history.pushState({ detail: 1 }, ""); }
+  }
+
+  // The retry affordance for a job that gave up. It goes back through the queue
+  // rather than re-running inline, so it gets the same backoff and the same
+  // give-up point as the original save.
+  function retryWorkout(w, btn) {
+    if (btn) { btn.disabled = true; btn.textContent = "Queued…"; }
+    api("workouts/" + w.id + "/reprocess", { method: "POST", body: "{}" })
+      .then(function (r) {
+        if (btn) { btn.disabled = false; btn.textContent = "Try reading it again"; }
+        if (r.status !== "processing" && r.status !== "ok") {
+          toast(r.message || "Could not queue that."); return;
+        }
+        w.ingest_status = "processing";
+        w.ingest_error = null;
+        if (current && current.id === w.id) openDetail(w, true);
+        render();
+        watchPending();
+        toast("Reading it again…");
+      })
+      .catch(function () {
+        if (btn) { btn.disabled = false; btn.textContent = "Try reading it again"; }
+        toast("Could not queue that.");
+      });
   }
 
   function closeDetail() {
@@ -1259,11 +1424,38 @@ export const APP = String.raw`
     if (!url) { toast("Paste a link first."); return; }
     var btn = $("addgo");
     btn.disabled = true;
-    btn.textContent = "Reading the video…";
+    btn.textContent = "Saving…";
     api("ingest", { method: "POST", body: JSON.stringify({ url: url }) })
       .then(function (r) {
         btn.disabled = false;
         btn.textContent = "Save workout";
+
+        // The normal case now. The row already exists; only its contents are
+        // pending. Close the sheet, put the card in the library straight away and
+        // let Realtime fill it in — nobody should watch a spinner for 15 seconds.
+        if (r.status === "processing") {
+          $("addurl").value = "";
+          closeSheet("addsheet");
+          toast("Saved — reading the video…");
+          var known = false;
+          for (var i = 0; i < state.workouts.length; i++) {
+            if (state.workouts[i].id === r.id) { known = true; break; }
+          }
+          if (!known) {
+            state.workouts.unshift({
+              id: r.id, url: url, title: r.title || "Reading the video…",
+              ingest_status: "processing", category: "Other",
+              blocks: [], muscle_groups: [], equipment: [], tags: [],
+              has_full_workout: false, favorite: false,
+              created_at: new Date().toISOString()
+            });
+          }
+          setView("library");
+          render();
+          watchPending();
+          return;
+        }
+
         if (r.status === "saved") {
           $("addurl").value = "";
           closeSheet("addsheet");
@@ -1296,8 +1488,13 @@ export const APP = String.raw`
     $("setsaves").textContent = "…";
     api("limits", { method: "GET" }).then(function (r) {
       if (r.status === "ok") {
-        $("setsaves").textContent = r.saves_today + " of " + r.limit_saves +
-          " (" + r.extracts_today + "/" + r.limit_extract + " new)";
+        var line = r.saves_today + " of " + r.limit_saves +
+          " (" + r.extracts_today + "/" + r.limit_extract + " extractions, " +
+          r.helpers_today + "/" + r.limit_helper + " coaching)";
+        // Say so plainly when the day's spend ceiling has switched the paid
+        // extractors off — cards get thinner and the user should know why.
+        if (r.paid_enabled === false) line += " · budget reached, using the free reader";
+        $("setsaves").textContent = line;
       }
     }).catch(function () { $("setsaves").textContent = "—"; });
     openSheet("settingssheet");
@@ -1440,11 +1637,21 @@ export const APP = String.raw`
   };
   $("dreproc").onclick = function () {
     if (!current) return;
+    // A card that never finished goes back on the queue instead of being re-run
+    // inline; retryWorkout owns that path and the pending UI that goes with it.
+    if (isPending(current) || isFailed(current)) { retryWorkout(current, null); return; }
     var b = $("dreproc");
     b.classList.add("spin");
     api("workouts/" + current.id + "/reprocess", { method: "POST", body: "{}" })
       .then(function (r) {
         b.classList.remove("spin");
+        // The row went back on the queue rather than being re-read inline — the
+        // requeue already happened, so this only has to reflect it.
+        if (r.status === "processing") {
+          if (current) { current.ingest_status = "processing"; current.ingest_error = null; openDetail(current, true); }
+          render(); watchPending(); toast("Reading it again…");
+          return;
+        }
         if (r.status !== "ok") { toast(r.message || "Could not re-read it."); return; }
         load().then(function () {
           var w = state.workouts.filter(function (x) { return x.id === r.workout.id; })[0];

@@ -179,6 +179,27 @@ export const STYLE = String.raw`<style>
   .cardmeta { color: var(--muted); font-size: 11.5px; margin-top: 5px; font-weight: 500;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
+  /* ---------- a card whose extraction has not finished ---------- */
+  /* The row exists the instant the user hits save; only its contents are pending.
+     Showing the card straight away in this state is the whole point of making
+     ingest asynchronous — a spinner on the add sheet would just be the old
+     synchronous wait with a nicer name. Unlike the lazy-image shimmer above this
+     one does loop, because it marks work genuinely in flight and it stops the
+     moment the row fills in. */
+  .thumbwrap.pending::after { content: ""; position: absolute; inset: 0; pointer-events: none;
+    background: linear-gradient(100deg, transparent 25%, rgba(255,255,255,.34) 50%, transparent 75%);
+    transform: translateX(-100%); animation: shimmer 1.5s var(--e-soft) infinite; }
+  .carditem.pending .cardtitle, .carditem.pending .cardmeta { opacity: .62; }
+  .carditem.pending .catpill { color: var(--muted); }
+  .thumbwrap.pending .noimg, .thumbwrap.failed .noimg { animation: floaty 3.4s ease-in-out infinite; }
+  .thumbwrap.failed { background: var(--sand); }
+  .carditem.failed .catpill { color: var(--ember-ink); }
+  .retryline { color: var(--ember-ink); font-weight: 650; }
+  .retrybtn { width: 100%; margin: 0 0 14px; padding: 14px; border-radius: 16px; border: none;
+    font: inherit; font-weight: 700; cursor: pointer; color: #fff; background: var(--ember);
+    box-shadow: var(--sh-md); }
+  .retrybtn:disabled { opacity: .55; }
+
   /* ---------- empty states ---------- */
   .empty { text-align: center; padding: 54px 32px 40px; color: var(--ink-2); }
   .empty .big { position: relative; width: 96px; height: 96px; margin: 0 auto 22px;

@@ -127,11 +127,15 @@ export async function hostResolvesPrivate(hostname: string): Promise<boolean> {
     Deno: { resolveDns: (h: string, t: string) => Promise<string[]> };
   }).Deno.resolveDns;
 
-  for (const type of ["A", "AAAA"]) {
-    const answers = await withTimeout(
-      resolveDns(hostname, type).catch(() => null as unknown as string[]),
-      2500,
-    );
+  // Both record types at once. Sequentially this is two DNS round trips on the
+  // critical path of every save, and the answers are independent — the guard needs
+  // to see both, not one after the other.
+  const lookups = await Promise.all(["A", "AAAA"].map((type) =>
+    // withTimeout already swallows failures, so neither of these can reject and
+    // leave the other's rejection unobserved.
+    withTimeout(resolveDns(hostname, type).catch(() => null as unknown as string[]), 2500)
+  ));
+  for (const answers of lookups) {
     if (!answers) continue;
     for (const ip of answers) if (isPrivateAddress(ip)) return true;
   }
