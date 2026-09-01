@@ -200,6 +200,9 @@ type Meta = {
   author: string | null;
   images?: string[];
   seconds?: number;   // real runtime, when the platform tells us
+  // Which scrapers actually contributed a field, comma-joined. Recorded per save so
+  // a source going dark shows up as a shift in the mix rather than as user reports.
+  source?: string;
 };
 
 // Gemini free-tier daily caps are tiny (20/day) PER MODEL, so rotate models.
@@ -382,6 +385,7 @@ async function igMeta(p: Parsed): Promise<Meta> {
   let thumb: string | null = null;
   let author: string | null = null;
   let images: string[] = [];
+  const used: string[] = [];
 
   // 1) og: tags, served to link-preview crawlers
   try {
@@ -400,6 +404,7 @@ async function igMeta(p: Parsed): Promise<Meta> {
         caption = ogDesc.replace(/^[\d.,KMB]+ likes?,\s*[\d.,KMB]+ comments?\s*-\s*\S+\s+on\s+[^:]+:\s*/i, "").trim();
       }
       author = ogTitle?.match(/^([^|:]+?) on Instagram/)?.[1]?.trim() ?? null;
+      if (caption || thumb || author) used.push("og");
     }
   } catch (_) { /* fall through */ }
 
@@ -435,25 +440,188 @@ async function igMeta(p: Parsed): Promise<Meta> {
         const u = mm[1].replace(/\\u0026/g, "&").replace(/\\\//g, "/");
         if (/^https:\/\//.test(u) && !images.includes(u)) images.push(u);
       }
+      if (caption || thumb || author || images.length) used.push("embed-captioned");
     }
   } catch (_) { /* fall through */ }
 
   if (!images.length && thumb) images = [thumb];
-  return { caption, thumb, author, images };
+  return { caption, thumb, author, images, source: used.join(",") || "none" };
+}
+
+// ---------- TikTok ----------
+//
+// oEmbed used to be the only source here, and a single 400 from it left a save with
+// no title, no author, no thumbnail and no caption — an empty card. TikTok exposes
+// the same facts in four different shapes, so each is a parser and ttMeta walks them
+// until every field is filled. Partial answers are merged, not discarded: the
+// crawler view of the video page carries a thumbnail and a handle but no caption,
+// which is worth having when the caption comes from somewhere else.
+
+type TtRaw = { caption: string | null; thumb: string | null; author: string | null; seconds?: number };
+
+function ttPickCover(covers: unknown): string | null {
+  if (typeof covers === "string") return covers.startsWith("http") ? covers : null;
+  if (Array.isArray(covers)) {
+    for (const c of covers) if (typeof c === "string" && c.startsWith("http")) return c;
+  }
+  return null;
+}
+
+function ttSome(r: TtRaw): TtRaw | null {
+  return r.caption || r.thumb || r.author ? r : null;
+}
+
+/** oEmbed JSON. `title` is the whole caption, hashtags and all. */
+function ttFromOembed(text: string): TtRaw | null {
+  try {
+    const o = JSON.parse(text);
+    return ttSome({
+      caption: typeof o.title === "string" && o.title.trim() ? o.title : null,
+      thumb: typeof o.thumbnail_url === "string" ? o.thumbnail_url : null,
+      author: (typeof o.author_name === "string" && o.author_name) ||
+        (typeof o.author_unique_id === "string" && o.author_unique_id) || null,
+    });
+  } catch { return null; }
+}
+
+/** The embed page's inline Frontity state — caption, cover, handle and runtime. */
+function ttFromEmbedState(html: string): TtRaw | null {
+  const m = html.match(/<script id="__FRONTITY_CONNECT_STATE__"[^>]*>([\s\S]*?)<\/script>/);
+  if (!m) return null;
+  try {
+    const data = JSON.parse(m[1])?.source?.data ?? {};
+    for (const key of Object.keys(data)) {
+      const vd = data[key]?.videoData;
+      if (!vd) continue;
+      const it = vd.itemInfos ?? {};
+      const au = vd.authorInfos ?? {};
+      const hit = ttSome({
+        caption: typeof it.text === "string" && it.text.trim() ? it.text : null,
+        thumb: ttPickCover(it.covers) ?? ttPickCover(it.coversOrigin) ?? ttPickCover(it.shareCover),
+        author: au.nickName || au.uniqueId || null,
+        seconds: Number(it.video?.videoMeta?.duration) || undefined,
+      });
+      if (hit) return hit;
+    }
+  } catch { /* fall through */ }
+  return null;
+}
+
+/** The full watch page's rehydration blob. Same facts, different envelope. */
+function ttFromUniversalData(html: string): TtRaw | null {
+  const m = html.match(/<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__"[^>]*>([\s\S]*?)<\/script>/);
+  if (!m) return null;
+  try {
+    const it = JSON.parse(m[1])?.__DEFAULT_SCOPE__?.["webapp.video-detail"]?.itemInfo?.itemStruct;
+    if (!it) return null;
+    return ttSome({
+      caption: typeof it.desc === "string" && it.desc.trim() ? it.desc : null,
+      thumb: ttPickCover(it.video?.cover) ?? ttPickCover(it.video?.originCover) ?? ttPickCover(it.video?.dynamicCover),
+      author: it.author?.nickname || it.author?.uniqueId || null,
+      seconds: Number(it.video?.duration) || undefined,
+    });
+  } catch { return null; }
+}
+
+/**
+ * og: tags on the video page — a thumbnail and the creator handle, and deliberately
+ * never a caption.
+ *
+ * Measured from this datacenter IP against six real videos and one dead link,
+ * og:title and og:description carried the real caption zero times. What they carry is
+ * marketing copy: "TikTok · handle", "TikTok | Make Your Day", "Watch, follow, and
+ * discover more trending content.", and — for a video that no longer exists —
+ * "Visit TikTok to discover videos!". An earlier version of this function accepted
+ * anything that did not look like boilerplate, and a dead link promptly saved with
+ * the title "Visit TikTok to discover videos!". Denylisting that class of string is
+ * a losing game, so the rule is structural instead: the caption comes only from
+ * oEmbed, the embed state, or the rehydration blob, all three of which carry the
+ * creator's real text. og: tags contribute the two fields they are honest about.
+ */
+const TT_OG_NOT_A_HANDLE = /^(make your day|watch|discover|explore|trending|log in|sign up)\b/i;
+
+function ttFromOg(html: string): TtRaw | null {
+  const thumb = metaTag(html, "og:image");
+  const title = metaTag(html, "og:title");
+
+  // "TikTok · handle" is the only author shape observed. The separator match must
+  // not turn "TikTok | Make Your Day" into a creator called "Make Your Day".
+  let author: string | null = null;
+  const m = title?.match(/^TikTok\s*[·|]\s*(.+?)\s*$/);
+  const cand = m?.[1]?.trim();
+  if (cand && !TT_OG_NOT_A_HANDLE.test(cand)) author = cand;
+
+  return ttSome({ caption: null, thumb, author });
+}
+
+type TtSource = {
+  name: string;
+  url: (id: string, clean: string) => string;
+  ua: string;
+  parse: (body: string) => TtRaw | null;
+};
+
+// Ordered by cost, and trimmed to what earned its place when seven candidate
+// endpoints were measured from this datacenter IP against six real videos:
+//   oembed        3KB   caption + thumb + author   — 200 on all six
+//   embed/v2    ~285KB  caption + thumb + author + runtime
+//   page-crawler  7KB   thumb + author only
+//   page-desktop ~400KB caption + thumb + author
+// Dropped: the crawler UA on oEmbed (byte-identical response to the desktop UA),
+// /embed/ without the v2 (serves the same page), and m.tiktok.com/v/<id>.html
+// (200 but no parseable payload on any sample). The ladder stops as soon as
+// nothing is missing, so the usual save costs one 3KB request; the later rungs
+// exist for the day oEmbed stops answering.
+const TT_SOURCES: TtSource[] = [
+  { name: "oembed", ua: DESKTOP_UA, parse: ttFromOembed,
+    url: (_id, clean) => `https://www.tiktok.com/oembed?url=${encodeURIComponent(clean)}` },
+  { name: "embed-v2", ua: DESKTOP_UA, parse: (b) => ttFromEmbedState(b) ?? ttFromOg(b),
+    url: (id) => `https://www.tiktok.com/embed/v2/${id}` },
+  { name: "page-crawler", ua: CRAWLER_UA, parse: (b) => ttFromUniversalData(b) ?? ttFromOg(b),
+    url: (_id, clean) => clean },
+  { name: "page-desktop", ua: DESKTOP_UA, parse: (b) => ttFromUniversalData(b) ?? ttFromOg(b),
+    url: (_id, clean) => clean },
+];
+
+async function ttFetchSource(s: TtSource, id: string, clean: string):
+  Promise<{ status: number; bytes: number; raw: TtRaw | null; error?: string }> {
+  const headers: Record<string, string> = { "Accept-Language": "en-US,en;q=0.9" };
+  if (s.ua) headers["User-Agent"] = s.ua;
+  try {
+    const r = await safeFetch(s.url(id, clean), { headers, signal: AbortSignal.timeout(15000) });
+    const body = await r.text();
+    if (!r.ok) return { status: r.status, bytes: body.length, raw: null };
+    return { status: r.status, bytes: body.length, raw: s.parse(body) };
+  } catch (e) {
+    return { status: 0, bytes: 0, raw: null, error: String(e).slice(0, 160) };
+  }
 }
 
 async function ttMeta(p: Parsed): Promise<Meta> {
-  try {
-    const r = await safeFetch(
-      `https://www.tiktok.com/oembed?url=${encodeURIComponent(p.clean)}`,
-      { headers: { "User-Agent": DESKTOP_UA } },
-    );
-    if (r.ok) {
-      const o = await r.json();
-      return { caption: o.title ?? null, thumb: o.thumbnail_url ?? null, author: o.author_name ?? null };
+  const id = p.shortcode.replace(/^tt-/, "");
+  const out: Meta = { caption: null, thumb: null, author: null };
+  const used: string[] = [];
+
+  for (const s of TT_SOURCES) {
+    if (out.caption && out.thumb && out.author) break;
+    const got = await ttFetchSource(s, id, p.clean);
+    if (!got.raw) {
+      if (got.status && got.status !== 200) console.error("tiktok", s.name, "http", got.status);
+      else if (got.error) console.error("tiktok", s.name, got.error);
+      continue;
     }
-  } catch (_) { /* fall through */ }
-  return { caption: null, thumb: null, author: null };
+    let gained = false;
+    if (!out.caption && got.raw.caption) { out.caption = got.raw.caption; gained = true; }
+    if (!out.thumb && got.raw.thumb) { out.thumb = got.raw.thumb; gained = true; }
+    if (!out.author && got.raw.author) { out.author = got.raw.author; gained = true; }
+    if (!out.seconds && got.raw.seconds) { out.seconds = got.raw.seconds; gained = true; }
+    if (gained) used.push(s.name);
+  }
+
+  out.source = used.join(",") || "none";
+  console.log("tiktok meta", id, "sources:", out.source,
+    "caption:", out.caption?.length ?? 0, "thumb:", !!out.thumb, "author:", out.author ?? "-");
+  return out;
 }
 
 // Reading a YouTube description from a server is only reliable through the official
@@ -504,6 +672,7 @@ async function ytMeta(p: Parsed): Promise<Meta> {
   let thumb: string | null = null;
   let author: string | null = null;
   let ytSeconds = 0;
+  const used: string[] = [];
   try {
     const r = await safeFetch(
       `https://www.youtube.com/oembed?url=${encodeURIComponent(p.clean)}&format=json`,
@@ -514,6 +683,7 @@ async function ytMeta(p: Parsed): Promise<Meta> {
       caption = o.title ?? null;
       thumb = o.thumbnail_url ?? null;
       author = o.author_name ?? null;
+      if (caption || thumb || author) used.push("oembed");
     }
   } catch (_) { /* fall through */ }
   // The description — where creators paste the full workout — isn't in oEmbed.
@@ -523,9 +693,12 @@ async function ytMeta(p: Parsed): Promise<Meta> {
     if (api.desc && api.desc.length > 20) caption = (caption ? caption + "\n\n" : "") + api.desc;
     if (!author && api.author) author = api.author;
     if (api.seconds > 0) ytSeconds = api.seconds;
+    used.push("data-api");
   }
-  if (!thumb) thumb = `https://i.ytimg.com/vi/${p.shortcode.replace(/^yt-/, "")}/hqdefault.jpg`;
-  return { caption, thumb, author, seconds: ytSeconds || undefined };
+  // i.ytimg.com serves a thumbnail for every public video without an API call, so
+  // this is a real fallback rather than a placeholder.
+  if (!thumb) { thumb = `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`; used.push("ytimg"); }
+  return { caption, thumb, author, seconds: ytSeconds || undefined, source: used.join(",") || "none" };
 }
 
 // Generic pages: og: tags plus enough body text for the AI. There is no schema.org
@@ -554,9 +727,11 @@ async function webMeta(p: Parsed): Promise<Meta> {
     const text = decodeEntities(body)
       .replace(/[ \t]+/g, " ").replace(/\s*\n\s*/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
     if (text.length > 200) out.caption = ((out.caption ?? "") + "\n\n" + text.slice(0, 6000)).trim();
+    out.source = "og";
   } catch (e) {
     console.error("webMeta failed", e);
   }
+  if (!out.source) out.source = "none";
   return out;
 }
 
@@ -1054,6 +1229,46 @@ async function extractCard(meta: Meta, platform: string): Promise<Card> {
   }
 }
 
+const PLATFORM_LABEL: Record<string, string> = {
+  instagram: "Instagram", tiktok: "TikTok", youtube: "YouTube",
+};
+
+/**
+ * The title for a card whose scrape came back with nothing. "Saved workout" on
+ * every such row gives a library of identical cards the user cannot tell apart,
+ * and that is what an empty save actually looks like today. The platform is always
+ * known and the handle usually survives even when the caption does not, so the row
+ * can at least name the thing it came from.
+ */
+function fallbackTitle(meta: Meta, p: Parsed): string {
+  const who = meta.author?.trim().slice(0, 60);
+  if (p.platform === "web") {
+    let host: string | null = null;
+    try { host = new URL(p.clean).hostname.replace(/^www\./, ""); } catch { /* keep null */ }
+    const from = who || host;
+    return from ? `Workout from ${from}` : "Saved workout";
+  }
+  const label = PLATFORM_LABEL[p.platform] ?? "Saved";
+  const kind = p.platform === "instagram" ? (p.kind === "reel" ? "reel" : "post") : "video";
+  return who ? `${label} ${kind} by ${who}` : `${label} ${kind}`;
+}
+
+/**
+ * A structurally valid, empty card. Used when card building itself throws, so an
+ * unexpected failure anywhere in the extraction ladder still leaves the user with a
+ * row carrying the link, the platform and a name — never a failed save.
+ */
+function minimalCard(meta: Meta, p: Parsed): Card {
+  return {
+    title: cleanTitle(fallbackTitle(meta, p)) || "Saved workout",
+    category: "Other",
+    muscle_groups: [], equipment: [], difficulty: null,
+    duration_minutes: null, calories: null, tags: [],
+    has_full_workout: false, blocks: [],
+    source_url: p.platform === "web" ? p.clean : null,
+  };
+}
+
 async function buildCard(meta: Meta, p: Parsed): Promise<Card> {
   let card = await extractCard(meta, p.platform);
 
@@ -1073,6 +1288,12 @@ async function buildCard(meta: Meta, p: Parsed): Promise<Card> {
     if (mins >= 4 && mins <= 120) card.duration_minutes = mins;
   }
   if (p.platform === "web") card.source_url = p.clean;
+  // The extractor's own fallback is the literal string "Saved workout" whenever the
+  // caption was missing. Replace it with something identifiable rather than shipping
+  // a library of identically named cards.
+  if (!card.title.trim() || card.title.trim() === "Saved workout") {
+    card.title = cleanTitle(fallbackTitle(meta, p)) || "Saved workout";
+  }
   return applyCatalog(card);
 }
 
@@ -1254,15 +1475,18 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
   }
 
   const cached = await dbSelect("video_cache", `shortcode=eq.${encodeURIComponent(p.shortcode)}&v=gte.${CARD_V}&select=*`);
-  let card: Card;
-  let meta: Meta;
-  let thumbUrl: string | null;
+  let meta: Meta = { caption: null, thumb: null, author: null, source: "none" };
+  let card: Card = minimalCard(meta, p);
+  let thumbUrl: string | null = null;
   let fromCache = false;
+  // True when some step failed and the row is thinner than it should be. Recorded
+  // per save so a platform going dark is visible in the numbers, not just the logs.
+  let degraded = false;
 
   if (cached.length) {
     const c = cached[0];
     card = c.card as Card;
-    meta = { caption: c.caption, thumb: c.thumb_url, author: c.author };
+    meta = { caption: c.caption, thumb: c.thumb_url, author: c.author, source: "cache" };
     thumbUrl = c.thumb_url;
     fromCache = true;
   } else {
@@ -1273,14 +1497,43 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
         message: `Daily limit reached (${LIMIT_EXTRACT} new videos/day while Spotter is free) — resets at midnight UTC. Videos someone else already saved still work.`,
       }, 429, cors);
     }
-    meta = await fetchMeta(p);
-    card = await buildCard(meta, p);
-    thumbUrl = await storeThumb(p.shortcode, meta.thumb);
-    await dbUpsert("video_cache", {
-      shortcode: p.shortcode, url: p.clean, platform: p.platform, kind: p.kind,
-      author: meta.author, caption: meta.caption, thumb_url: thumbUrl,
-      card, v: CARD_V, updated_at: new Date().toISOString(),
-    });
+
+    // Each step is allowed to fail on its own. A scrape that is blocked, a model
+    // that is out of quota or a thumbnail that will not store must still leave a
+    // usable row behind — the user gets their link back with a name on it, and can
+    // reprocess later. Never a failed save.
+    try {
+      meta = await fetchMeta(p);
+    } catch (e) {
+      console.error("fetchMeta failed", p.platform, p.shortcode, e);
+      degraded = true;
+    }
+    try {
+      card = await buildCard(meta, p);
+    } catch (e) {
+      console.error("buildCard failed", p.platform, p.shortcode, e);
+      card = minimalCard(meta, p);
+      degraded = true;
+    }
+    try {
+      thumbUrl = await storeThumb(p.shortcode, meta.thumb);
+    } catch (e) {
+      console.error("storeThumb failed", p.shortcode, e);
+    }
+    if (!meta.caption) degraded = true;
+
+    // Only cache a card worth reusing. Writing an empty scrape at the current
+    // extraction version would pin that emptiness for everyone who saves the video
+    // next and for every retry of this one, which is the opposite of failing soft.
+    if (meta.caption || card.blocks.length) {
+      await dbUpsert("video_cache", {
+        shortcode: p.shortcode, url: p.clean, platform: p.platform, kind: p.kind,
+        author: meta.author, caption: meta.caption, thumb_url: thumbUrl,
+        card, v: CARD_V, updated_at: new Date().toISOString(),
+      });
+    } else {
+      console.log("empty scrape, not cached", p.platform, p.shortcode, "source:", meta.source);
+    }
   }
 
   const row = await dbInsert("workouts", {
@@ -1293,11 +1546,49 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
     source_url: card.source_url ?? null,
   });
 
-  await dbInsert("saves_log", { user_id: userId, shortcode: p.shortcode, cached: fromCache });
+  await logSave(userId, p, meta, card, thumbUrl, fromCache, degraded);
   return json({
     status: "saved", cached: fromCache, id: row.id, title: row.title,
     category: row.category, has_full_workout: row.has_full_workout,
+    degraded,
   }, 200, cors);
+}
+
+/**
+ * Per-save success metrics. Cheap by construction — no extra fetch, no extra model
+ * call, just what the save already knows — so the cost of knowing a platform has
+ * degraded is one column set on a row that was being written anyway.
+ *
+ * saves_log is also the rate limiter, so the insert falls back to the legacy shape
+ * if the metrics columns are missing and never propagates: losing telemetry is
+ * survivable, failing a save the user already made is not.
+ */
+async function logSave(
+  userId: string, p: Parsed, meta: Meta, card: Card,
+  thumbUrl: string | null, fromCache: boolean, degraded: boolean,
+): Promise<void> {
+  const exercises = card.blocks.reduce((n, b) => n + (b.exercises?.length ?? 0), 0);
+  const base = { user_id: userId, shortcode: p.shortcode, cached: fromCache };
+  try {
+    await dbInsert("saves_log", {
+      ...base,
+      platform: p.platform,
+      meta_source: meta.source ?? null,
+      caption_found: !!meta.caption,
+      caption_chars: meta.caption?.length ?? 0,
+      thumb_found: !!thumbUrl,
+      author_found: !!meta.author,
+      exercises_found: exercises,
+      degraded,
+    });
+  } catch (e) {
+    console.error("saves_log metrics insert failed, retrying legacy shape", e);
+    try {
+      await dbInsert("saves_log", base);
+    } catch (e2) {
+      console.error("saves_log insert failed entirely", e2);
+    }
+  }
 }
 
 async function handleReprocess(id: string, userId: string, cors: Cors): Promise<Response> {
@@ -1308,12 +1599,31 @@ async function handleReprocess(id: string, userId: string, cors: Cors): Promise<
   const p: Parsed = {
     platform: old.platform, shortcode: old.shortcode, kind: old.kind ?? "video", clean: old.url,
   };
-  const meta = await fetchMeta(p);
+  // Same fail-soft rule as ingest: a re-run that cannot reach the platform falls
+  // back to what is already stored rather than erroring out. mergeNoDowngrade then
+  // guarantees the saved card cannot come back thinner than it went in.
+  let meta: Meta = { caption: null, thumb: null, author: null, source: "none" };
+  try {
+    meta = await fetchMeta(p);
+  } catch (e) {
+    console.error("reprocess fetchMeta failed", p.platform, p.shortcode, e);
+  }
   if (!meta.caption && old.caption) meta.caption = old.caption;
-  const fresh = await buildCard(meta, p);
+  let fresh: Card;
+  try {
+    fresh = await buildCard(meta, p);
+  } catch (e) {
+    console.error("reprocess buildCard failed", p.shortcode, e);
+    fresh = minimalCard(meta, p);
+  }
   const card = mergeNoDowngrade(old, fresh);
 
-  const thumbUrl = (await storeThumb(p.shortcode, meta.thumb)) ?? old.thumb_url;
+  let thumbUrl: string | null = old.thumb_url;
+  try {
+    thumbUrl = (await storeThumb(p.shortcode, meta.thumb)) ?? old.thumb_url;
+  } catch (e) {
+    console.error("reprocess storeThumb failed", p.shortcode, e);
+  }
   const updated = await dbPatch("workouts", `id=eq.${id}&user_id=eq.${userId}`, {
     title: card.title, category: card.category, muscle_groups: card.muscle_groups,
     equipment: card.equipment, difficulty: card.difficulty, duration_minutes: card.duration_minutes,
