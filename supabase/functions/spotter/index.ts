@@ -17,8 +17,13 @@
 
 import { PAGE_HTML } from "./page.ts";
 import { ICON_B64 } from "./icon.ts";
-import { canonicalize } from "./catalog.ts";
+import { canonicalize, catalogById } from "./catalog.ts";
 import { assertPublicUrl, dnsAvailable, safeFetch } from "./net.ts";
+import {
+  attachEvidence, carouselEvidence, chapterExerciseCount, type Chapter,
+  type Confidence, correctUnitErrors, type Evidence, indexSource, parseChapters,
+  scoreCard, type SourceIndex,
+} from "./evidence.ts";
 
 // Whether the DNS half of the SSRF guard is live here. The static checks always
 // run; Deno.resolveDns is not present in every Deno-compatible runtime, and the
@@ -30,12 +35,140 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY") ?? "";
-const OPENAI_MODEL = Deno.env.get("OPENAI_MODEL") ?? "gpt-5.6-luna";
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY") ?? "";
-const CLAUDE_MODEL = Deno.env.get("CLAUDE_MODEL") ?? "claude-haiku-4-5-20251001";
 const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY") ?? "";
-const GEMINI_MODEL = Deno.env.get("GEMINI_MODEL") ?? "gemini-3.6-flash";
 const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY") ?? "";
+
+// ---------- model identifiers, and why they are not constants ----------
+//
+// Gemini 2.0 was retired in June 2026 and 2.5 goes on 2026-10-16: two forced
+// migrations in about four months, and under the old arrangement each one was an
+// edit to this file followed by a deploy. A model retirement is an operational
+// event, not a code change, so the identifiers live in `app_config` — the table
+// the cron job already reads — and are refreshed here on a timer.
+//
+// Precedence is app_config > environment variable > the compiled-in default, and
+// every layer can be missing. The defaults below are the floor, not the plan: they
+// exist so a database that cannot answer still serves saves rather than failing
+// them. Nothing here is pinned to Gemini 2.5.
+
+type ModelCfg = {
+  openai: string;
+  anthropic: string;
+  gemini: string;
+  geminiPool: string[];
+  geminiVision: string;
+  groq: string;
+  groqPool: string[];
+};
+
+const MODEL_DEFAULTS: ModelCfg = {
+  openai: "gpt-5.6-luna",
+  anthropic: "claude-haiku-4-5-20251001",
+  gemini: "gemini-3.6-flash",
+  // Measured 2026-09-01: gemini-3.6-flash-lite, gemini-3-flash-lite and
+  // gemini-3-flash all answer 404 — they do not exist. The evergreen `-latest`
+  // aliases do, and they are what survives a retirement. The live pool is in
+  // app_config; this is only the floor for a database that cannot answer.
+  geminiPool: ["gemini-3.6-flash", "gemini-flash-latest", "gemini-flash-lite-latest"],
+  geminiVision: "gemini-3.6-flash",
+  groq: "openai/gpt-oss-120b",
+  groqPool: [
+    "openai/gpt-oss-120b", "llama-3.3-70b-versatile",
+    "meta-llama/llama-4-maverick-17b-128e-instruct", "openai/gpt-oss-20b",
+  ],
+};
+
+const MODEL_TTL_MS = 5 * 60_000;
+let modelCache: { at: number; cfg: ModelCfg } | null = null;
+let modelRefresh: Promise<void> | null = null;
+
+/**
+ * The raw `model.*` and `vision.*` rows from app_config, refreshed on the same
+ * timer as the models. Read synchronously by the vision dials, which run on a hot
+ * path and must not block on the database.
+ */
+let runtimeCfg: Record<string, string> = {};
+
+function envList(name: string): string[] | null {
+  const v = Deno.env.get(name);
+  if (!v) return null;
+  const list = v.split(",").map((s) => s.trim()).filter(Boolean);
+  return list.length ? list : null;
+}
+
+function buildModelCfg(rows: Record<string, string>): ModelCfg {
+  const one = (key: string, env: string, dflt: string) =>
+    (rows[key] || "").trim() || Deno.env.get(env) || dflt;
+  const many = (key: string, env: string, dflt: string[], head: string) => {
+    const raw = (rows[key] || "").trim();
+    const list = raw ? raw.split(",").map((s) => s.trim()).filter(Boolean) : (envList(env) ?? dflt);
+    // The preferred model always leads the rotation, however the pool is ordered.
+    return [...new Set([head, ...list])];
+  };
+  const gemini = one("model.gemini", "GEMINI_MODEL", MODEL_DEFAULTS.gemini);
+  const groq = one("model.groq", "GROQ_MODEL", MODEL_DEFAULTS.groq);
+  return {
+    openai: one("model.openai", "OPENAI_MODEL", MODEL_DEFAULTS.openai),
+    anthropic: one("model.anthropic", "CLAUDE_MODEL", MODEL_DEFAULTS.anthropic),
+    gemini,
+    geminiPool: many("model.gemini_pool", "GEMINI_MODEL_POOL", MODEL_DEFAULTS.geminiPool, gemini),
+    geminiVision: one("model.gemini_vision", "GEMINI_VISION_MODEL", gemini),
+    groq,
+    groqPool: many("model.groq_pool", "GROQ_MODEL_POOL", MODEL_DEFAULTS.groqPool, groq),
+  };
+}
+
+/**
+ * The current model identifiers. Synchronous and never throws: it returns the last
+ * good answer (or the env/default floor) immediately and refreshes in the
+ * background, because the alternative is a database round trip on the hot path of
+ * every model call and a save that fails when app_config is unreadable.
+ */
+function models(): ModelCfg {
+  if (!modelCache || Date.now() - modelCache.at > MODEL_TTL_MS) {
+    if (!modelRefresh) {
+      modelRefresh = (async () => {
+        try {
+          // Only the two non-secret prefixes. worker_secret lives in the same
+          // table and has no business in a cache anything else can read.
+          const rows = await dbSelect(
+            "app_config", "or=(key.like.model.*,key.like.vision.*)&select=key,value",
+          );
+          const map: Record<string, string> = {};
+          for (const r of rows) map[r.key] = String(r.value ?? "");
+          runtimeCfg = map;
+          modelCache = { at: Date.now(), cfg: buildModelCfg(map) };
+        } catch (e) {
+          console.error("model config: falling back to env/defaults —", e);
+          // Stamp the cache anyway so a database outage does not turn into a
+          // failed lookup on every single call.
+          modelCache = { at: Date.now(), cfg: modelCache?.cfg ?? buildModelCfg({}) };
+        } finally {
+          modelRefresh = null;
+        }
+      })();
+    }
+  }
+  return modelCache?.cfg ?? buildModelCfg({});
+}
+
+/**
+ * Wait for the config to be current before doing any work.
+ *
+ * models() is synchronous by design — it must never block a model call on a
+ * database round trip — which means a freshly booted isolate answers its very
+ * first question from the compiled-in defaults and only then refreshes. That is
+ * fine for a model id and wrong for the vision size cap: the cap's whole purpose
+ * is to be turnable-down without a deploy, and a dial that only takes effect on an
+ * isolate's second request is not a dial. So the two worker entry points pay for
+ * one select before they start, and everything downstream reads it synchronously.
+ */
+async function ensureConfig(): Promise<void> {
+  models();
+  const inflight = modelRefresh;
+  if (inflight) { try { await inflight; } catch { /* models() logs and falls back */ } }
+}
 
 // Per-user daily caps. Cache hits cost nothing, so they get the looser cap.
 // LIMIT_EXTRACT covers everything that runs the extraction ladder — a new save AND
@@ -79,7 +212,11 @@ const WORKER_ID = crypto.randomUUID().slice(0, 8);
 // version are treated as a miss and re-extracted.
 // 5: every exercise carries canonical_id, and muscle_groups/equipment are derived
 //    from the catalog whenever the exercises map to it.
-const CARD_V = 5;
+// 6: every exercise carries `evidence` (which source, and where in it), and the
+//    card carries an application-computed `confidence` with its components and the
+//    model that produced it. The prompt now asks for a verbatim source quote per
+//    exercise, so the output shape changed materially in both directions.
+const CARD_V = 6;
 
 const ALLOWED_ORIGINS = (Deno.env.get("ALLOWED_ORIGINS") ??
   "https://simeonrinkenberger.github.io,http://localhost:8000,http://127.0.0.1:8000")
@@ -374,14 +511,29 @@ type Meta = {
   author: string | null;
   images?: string[];
   seconds?: number;   // real runtime, when the platform tells us
+  // Chapter timestamps parsed out of a YouTube description. Evidence, never a tier
+  // of its own: see the note above parseChapters in evidence.ts for why a chapter
+  // list that terminates the search produces a plausible and useless card.
+  chapters?: Chapter[];
   // Which scrapers actually contributed a field, comma-joined. Recorded per save so
   // a source going dark shows up as a shift in the mix rather than as user reports.
   source?: string;
 };
 
-// Gemini free-tier daily caps are tiny (20/day) PER MODEL, so rotate models.
-const GEMINI_MODELS = [...new Set([GEMINI_MODEL, "gemini-3.6-flash-lite", "gemini-3-flash-lite", "gemini-3-flash", "gemini-flash-latest"])];
+// Gemini free-tier daily caps are tiny (20/day) PER MODEL, so rotate models. The
+// pool comes from app_config, so a retirement is an update statement.
 let geminiGoodModel: string | null = null;
+
+/**
+ * What a generator hands back: the text, and which model produced it. The second
+ * half is why this is an object rather than a string — a card has to record what
+ * wrote it, so that when a better model ships the weak cards can be found instead
+ * of trusted forever. A module-level "last model used" would be wrong the moment
+ * one isolate serves two requests.
+ */
+type Generated = { text: string | null; by: string | null };
+
+const NOTHING: Generated = { text: null, by: null };
 
 function hasThinkingConfig(body: Record<string, unknown>): boolean {
   const gc = body.generationConfig as Record<string, unknown> | undefined;
@@ -394,12 +546,14 @@ function withoutThinkingConfig(body: Record<string, unknown>): Record<string, un
   return { ...body, generationConfig: gc };
 }
 
-async function geminiGenerate(body: Record<string, unknown>, ctx: AiCtx): Promise<string | null> {
-  if (!GEMINI_API_KEY) return null;
-  const models = geminiGoodModel
-    ? [geminiGoodModel, ...GEMINI_MODELS.filter((m) => m !== geminiGoodModel)]
-    : GEMINI_MODELS;
-  for (const model of models) {
+async function geminiGenerate(
+  body: Record<string, unknown>, ctx: AiCtx, prefer?: string,
+): Promise<Generated> {
+  if (!GEMINI_API_KEY) return NOTHING;
+  const pool = models().geminiPool;
+  const head = prefer || geminiGoodModel;
+  const order = head ? [head, ...pool.filter((m) => m !== head)] : pool;
+  for (const model of order) {
     let payload = body;
     for (let attempt = 0; attempt < 3; attempt++) {
       const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
@@ -424,7 +578,7 @@ async function geminiGenerate(body: Record<string, unknown>, ctx: AiCtx): Promis
         payload = withoutThinkingConfig(payload);
         continue;
       }
-      if (!r.ok) { console.error("gemini", model, r.status, await r.text()); return null; }
+      if (!r.ok) { console.error("gemini", model, r.status, await r.text()); return NOTHING; }
       const data = await r.json();
       const cand = data.candidates?.[0];
       const text = cand?.content?.parts?.map((p: { text?: string }) => p.text ?? "").join("") ?? "";
@@ -447,29 +601,23 @@ async function geminiGenerate(body: Record<string, unknown>, ctx: AiCtx): Promis
       }
       await recordCost("gemini", model, ctx, usage, true);
       geminiGoodModel = model;
-      return text;
+      return { text, by: "gemini:" + model };
     }
   }
   console.error("gemini: all models exhausted");
-  return null;
+  return NOTHING;
 }
 
 // Groq free tier is 14,400 requests/day, no card. OpenAI-compatible API.
-const GROQ_MODELS = [...new Set([
-  Deno.env.get("GROQ_MODEL") ?? "",
-  "openai/gpt-oss-120b",
-  "llama-3.3-70b-versatile",
-  "meta-llama/llama-4-maverick-17b-128e-instruct",
-  "openai/gpt-oss-20b",
-].filter(Boolean))];
 let groqGoodModel: string | null = null;
 
-async function groqGenerate(system: string, user: string, wantJson: boolean, ctx: AiCtx): Promise<string | null> {
-  if (!GROQ_API_KEY) return null;
-  const models = groqGoodModel
-    ? [groqGoodModel, ...GROQ_MODELS.filter((m) => m !== groqGoodModel)]
-    : GROQ_MODELS;
-  for (const model of models) {
+async function groqGenerate(system: string, user: string, wantJson: boolean, ctx: AiCtx): Promise<Generated> {
+  if (!GROQ_API_KEY) return NOTHING;
+  const pool = models().groqPool;
+  const order = groqGoodModel
+    ? [groqGoodModel, ...pool.filter((m) => m !== groqGoodModel)]
+    : pool;
+  for (const model of order) {
     for (let attempt = 0; attempt < 2; attempt++) {
       const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST",
@@ -493,7 +641,7 @@ async function groqGenerate(system: string, user: string, wantJson: boolean, ctx
         if (groqGoodModel === model) groqGoodModel = null;
         break;
       }
-      if (!r.ok) { console.error("groq error", model, r.status, await r.text()); return null; }
+      if (!r.ok) { console.error("groq error", model, r.status, await r.text()); return NOTHING; }
       const data = await r.json();
       const out = data.choices?.[0]?.message?.content ?? null;
       await recordCost("groq", model, ctx, {
@@ -501,23 +649,24 @@ async function groqGenerate(system: string, user: string, wantJson: boolean, ctx
         outTok: Number(data?.usage?.completion_tokens) || approxTokens(out ?? ""),
       }, !!out);
       groqGoodModel = model;
-      return out;
+      return { text: out, by: out ? "groq:" + model : null };
     }
   }
   console.error("groq: all models failed");
-  return null;
+  return NOTHING;
 }
 
 // OpenAI (GPT-5.6 Luna by default): the paid tier's cheapest flagship-family model.
 // The 5.6 series rejects max_tokens in favour of max_completion_tokens.
-async function openaiGenerate(system: string, user: string, wantJson: boolean, ctx: AiCtx): Promise<string | null> {
-  if (!OPENAI_API_KEY) return null;
+async function openaiGenerate(system: string, user: string, wantJson: boolean, ctx: AiCtx): Promise<Generated> {
+  if (!OPENAI_API_KEY) return NOTHING;
+  const model = models().openai;
   try {
     const r = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: { authorization: `Bearer ${OPENAI_API_KEY}`, "content-type": "application/json" },
       body: JSON.stringify({
-        model: OPENAI_MODEL,
+        model,
         messages: [{ role: "system", content: system }, { role: "user", content: user }],
         max_completion_tokens: wantJson ? 8000 : 3000,
         // json_object mode requires the word "json" somewhere in the messages,
@@ -526,19 +675,19 @@ async function openaiGenerate(system: string, user: string, wantJson: boolean, c
       }),
     });
     if (!r.ok) {
-      console.error("openai", OPENAI_MODEL, r.status, (await r.text()).slice(0, 300));
-      return null;
+      console.error("openai", model, r.status, (await r.text()).slice(0, 300));
+      return NOTHING;
     }
     const data = await r.json();
     const out = data.choices?.[0]?.message?.content ?? null;
-    await recordCost("openai", OPENAI_MODEL, ctx, {
+    await recordCost("openai", model, ctx, {
       inTok: Number(data?.usage?.prompt_tokens) || approxTokens(system + user),
       outTok: Number(data?.usage?.completion_tokens) || approxTokens(out ?? ""),
     }, !!out);
-    return out;
+    return { text: out, by: out ? "openai:" + model : null };
   } catch (e) {
     console.error("openai failed", e);
-    return null;
+    return NOTHING;
   }
 }
 
@@ -549,14 +698,14 @@ async function openaiGenerate(system: string, user: string, wantJson: boolean, c
 //
 // The ceiling is checked once per call rather than per provider, because the
 // answer cannot change between two rungs of the same ladder.
-async function textGenerate(system: string, user: string, wantJson: boolean, ctx: AiCtx): Promise<string | null> {
+async function textGenerate(system: string, user: string, wantJson: boolean, ctx: AiCtx): Promise<Generated> {
   const paid = await paidAllowed();
   const allowed = (provider: string) => paid || !isPaidProvider(provider);
 
-  let out: string | null = null;
+  let out: Generated = NOTHING;
   if (allowed("openai")) out = await openaiGenerate(system, user, wantJson, ctx);
-  if (!out && allowed("anthropic")) out = await parseWithClaude(system, user, ctx);
-  if (!out && GEMINI_API_KEY && allowed("gemini")) {
+  if (!out.text && allowed("anthropic")) out = await parseWithClaude(system, user, ctx);
+  if (!out.text && GEMINI_API_KEY && allowed("gemini")) {
     out = await geminiGenerate({
       systemInstruction: { parts: [{ text: system }] },
       contents: [{ role: "user", parts: [{ text: user }] }],
@@ -572,7 +721,7 @@ async function textGenerate(system: string, user: string, wantJson: boolean, ctx
         : { maxOutputTokens: 3000, thinkingConfig: { thinkingBudget: 0 } },
     }, ctx);
   }
-  if (!out && allowed("groq")) out = await groqGenerate(system, user, wantJson, ctx);
+  if (!out.text && allowed("groq")) out = await groqGenerate(system, user, wantJson, ctx);
   return out;
 }
 
@@ -900,7 +1049,23 @@ async function ytMeta(p: Parsed): Promise<Meta> {
   // i.ytimg.com serves a thumbnail for every public video without an API call, so
   // this is a real fallback rather than a placeholder.
   if (!thumb) { thumb = `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`; used.push("ytimg"); }
-  return { caption, thumb, author, seconds: ytSeconds || undefined, source: used.join(",") || "none" };
+
+  // "0:00 Warm up / 1:30 Goblet Squat" is in the description we already fetched, so
+  // this costs nothing extra. It is recorded as evidence and fed to the extractor;
+  // it is explicitly NOT a tier that can end the search, because a chapter list on
+  // its own yields a card that reads well and describes nothing.
+  const chapters = parseChapters(caption);
+  if (chapters.length) {
+    used.push("chapters");
+    console.log("youtube chapters", vid, chapters.length, "entries,",
+      chapterExerciseCount(chapters), "plausibly movements");
+  }
+  return {
+    caption, thumb, author,
+    seconds: ytSeconds || undefined,
+    chapters: chapters.length ? chapters : undefined,
+    source: used.join(",") || "none",
+  };
 }
 
 // Generic pages: og: tags plus enough body text for the AI. There is no schema.org
@@ -929,6 +1094,8 @@ async function webMeta(p: Parsed): Promise<Meta> {
     const text = decodeEntities(body)
       .replace(/[ \t]+/g, " ").replace(/\s*\n\s*/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
     if (text.length > 200) out.caption = ((out.caption ?? "") + "\n\n" + text.slice(0, 6000)).trim();
+    const chapters = parseChapters(out.caption);
+    if (chapters.length) out.chapters = chapters;
     out.source = "og";
   } catch (e) {
     console.error("webMeta failed", e);
@@ -959,6 +1126,14 @@ type Exercise = {
   weight: string | null;
   equipment: string | null;
   notes: string | null;
+  // Where this exercise came from, and where in that source. Filled by
+  // attachEvidence once the card is assembled; carousel-read exercises arrive with
+  // it already set because only the vision call knows which slide it read.
+  evidence?: Evidence | null;
+  // The verbatim snippet the model claimed to be quoting. Checked against the real
+  // source text and then deleted — what survives is the checked result, never the
+  // claim. This is the whole difference between evidence and a self-report.
+  evidence_quote?: string | null;
 };
 
 type Block = {
@@ -981,6 +1156,13 @@ type Card = {
   has_full_workout: boolean;
   blocks: Block[];
   source_url?: string | null;
+  // Computed from observables about the evidence — never reported by a model.
+  confidence?: number;
+  confidence_parts?: Record<string, number>;
+  confidence_notes?: string[];
+  // "openai:gpt-5.6-luna", "vision:gemini-3.6-flash", "heuristic". What to look at
+  // when deciding which cached cards are worth re-running.
+  extracted_by?: string | null;
 };
 
 const SPAM_LINE = /^(#|link in bio|follow (me|for)|save this|comment [A-Z]+ below|tag a|dm me|check out my)/i;
@@ -1099,17 +1281,34 @@ function durationFor(text: string): number | null {
   return mins >= 4 && mins <= 300 ? mins : null;
 }
 
-function heuristicWorkout(caption: string | null, fallbackTitle: string): Card {
+/**
+ * `kind` decides how evidence produced here is labelled. The parser reads the same
+ * text the model does, so a caption stays a caption and a YouTube description stays
+ * a description — the distinction is what makes the chapters cap meaningful.
+ */
+function heuristicWorkout(
+  caption: string | null, fallbackTitle: string, kind: "caption" | "description" = "caption",
+): Card {
   const card = emptyCard(fallbackTitle);
   if (!caption) return card;
 
-  const rawLines = caption.split(/\n+/).map((l) => l.trim()).filter(Boolean);
-  const lines = rawLines.filter((l) => !SPAM_LINE.test(l));
+  // Offsets are wanted against the ORIGINAL caption, so the split keeps every line
+  // — including blank ones — and filtering happens on the indexed copy.
+  const srcLines = caption.split("\n");
+  const offsets: number[] = [];
+  let at = 0;
+  for (const l of srcLines) { offsets.push(at); at += l.length + 1; }
+  const chapterAt = new Map(parseChapters(caption).map((c) => [c.line, c.t]));
+
+  const indexed = srcLines
+    .map((l, i) => ({ i, raw: l.trim() }))
+    .filter((x) => x.raw && !SPAM_LINE.test(x.raw));
+  const lines = indexed.map((x) => x.raw);
   const titleLine = lines.find((l) => cleanLine(l).length >= 4) ?? null;
   if (titleLine) card.title = cleanTitle(titleLine) || fallbackTitle;
 
   const exercises: Exercise[] = [];
-  for (const raw of lines) {
+  for (const { i: lineNo, raw } of indexed) {
     // the title is a headline, not the first exercise
     if (raw === titleLine) continue;
     const line = cleanLine(raw);
@@ -1143,6 +1342,17 @@ function heuristicWorkout(caption: string | null, fallbackTitle: string): Card {
       weight: null,
       equipment: equipmentFor(line)[0] ?? null,
       notes: null,
+      // The parser is the one reader that cannot be wrong about its source: it read
+      // this exact line at this exact offset. Nothing downstream has to guess.
+      evidence: {
+        source: chapterAt.has(lineNo) ? "chapters" : kind,
+        line: lineNo,
+        offset: offsets[lineNo],
+        quote: raw.slice(0, 160),
+        t: chapterAt.get(lineNo) ?? null,
+        slide: null,
+        verified: true,
+      },
     });
     if (exercises.length >= 15) break;
   }
@@ -1179,9 +1389,42 @@ function buildPrompt(): string {
     'Group supersets and circuits into ONE block with the shared rounds, rather than repeating exercises. ' +
     'Each exercise is {"name": string, "sets": integer or null, "reps": string or null such as "10" or "8-12" or "AMRAP", ' +
     '"duration_seconds": integer or null for timed moves, "rest_seconds": integer or null, ' +
-    '"weight": string or null such as "moderate" or "70% 1RM", "equipment": string or null, "notes": string or null}.\n' +
+    '"weight": string or null such as "moderate" or "70% 1RM", "equipment": string or null, "notes": string or null, ' +
+    // The falsifiable field. Asking for a self-rated confidence would produce a
+    // number that is high whenever the writing is fluent; asking for the line it
+    // read produces something that can be looked up and found missing.
+    '"evidence": string — copy the ONE line of the source text this exercise came from, ' +
+    'verbatim and unaltered, at most 100 characters. Never paraphrase it and never write ' +
+    'a line that is not in the source. If no line supports it, use null}.\n' +
     "Use null for anything the text does not state — do not guess sets or reps. " +
     "NEVER invent exercises that are not in the text: a video with no written workout gets blocks: [] and has_full_workout: false.";
+}
+
+/**
+ * The chapter block appended to the user message.
+ *
+ * Chapters are handed over as clearly-labelled, clearly-limited evidence. The
+ * warning is not decoration: a chapter list read as a workout produces "Intro /
+ * Warm up / Outro" as three exercises, which is exactly the plausible-and-wrong
+ * card the confidence score exists to catch. Telling the model what a chapter list
+ * is worth is cheaper than catching every way it can be misread — and the score
+ * catches the rest regardless, because chapters are capped there too.
+ */
+function chapterBlock(chapters: Chapter[]): string {
+  if (!chapters.length) return "";
+  const lines = chapters.slice(0, 40)
+    .map((c) => `  ${Math.floor(c.t / 60)}:${String(c.t % 60).padStart(2, "0")} ${c.label}`)
+    .join("\n");
+  return [
+    "",
+    "Chapter timestamps from the video description (evidence, NOT the workout):",
+    lines,
+    "These are section markers. Many are not exercises at all — intros, warm ups, " +
+    "cool downs, outros, sponsor reads. Use them to confirm or order exercises the " +
+    "text already describes, and to fill in a name you would otherwise miss. Do NOT " +
+    "turn the chapter list into the workout: if the only thing you have is chapter " +
+    "labels and none of them names a real movement, return blocks: [] instead.",
+  ].join("\n");
 }
 
 function parseJsonLoose(text: string): any {
@@ -1224,6 +1467,8 @@ function normalizeExercise(raw: any): Exercise | null {
     weight: typeof raw?.weight === "string" ? raw.weight.slice(0, 40).trim() || null : null,
     equipment: typeof raw?.equipment === "string" ? raw.equipment.slice(0, 40).trim().toLowerCase() || null : null,
     notes: typeof raw?.notes === "string" ? raw.notes.slice(0, 240).trim() || null : null,
+    // Kept only until attachEvidence has checked it against the real source.
+    evidence_quote: typeof raw?.evidence === "string" ? raw.evidence.slice(0, 200).trim() || null : null,
   };
 }
 
@@ -1319,8 +1564,9 @@ function applyCatalog(card: Card): Card {
   return card;
 }
 
-async function parseWithClaude(system: string, user: string, ctx: AiCtx): Promise<string | null> {
-  if (!ANTHROPIC_API_KEY) return null;
+async function parseWithClaude(system: string, user: string, ctx: AiCtx): Promise<Generated> {
+  if (!ANTHROPIC_API_KEY) return NOTHING;
+  const model = models().anthropic;
   try {
     const r = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -1330,35 +1576,130 @@ async function parseWithClaude(system: string, user: string, ctx: AiCtx): Promis
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        model: CLAUDE_MODEL,
+        model,
         max_tokens: 4000,
         system,
         messages: [{ role: "user", content: user }],
       }),
     });
-    if (!r.ok) { console.error("anthropic", r.status, await r.text()); return null; }
+    if (!r.ok) { console.error("anthropic", r.status, await r.text()); return NOTHING; }
     const data = await r.json();
     const out = data.content?.map((c: { text?: string }) => c.text ?? "").join("") ?? null;
-    await recordCost("anthropic", CLAUDE_MODEL, ctx, {
+    await recordCost("anthropic", model, ctx, {
       inTok: Number(data?.usage?.input_tokens) || approxTokens(system + user),
       outTok: Number(data?.usage?.output_tokens) || approxTokens(out ?? ""),
     }, !!out);
-    return out;
+    return { text: out, by: out ? "anthropic:" + model : null };
   } catch (e) {
     console.error("anthropic failed", e);
-    return null;
+    return NOTHING;
   }
 }
 
 // ---------- vision (fallback for written plans on carousel slides) ----------
+//
+// This path killed a production worker. An Instagram carousel save terminated its
+// isolate fourteen seconds after claiming the job — the edge runtime's CPU budget,
+// spent base64-encoding a multi-megabyte image — and with WORKER_BATCH above one
+// that kill takes every healthy job sharing the isolate down with it. The sweeper
+// recovered it, so nobody lost a save; that is luck, not a design.
+//
+// Three things changed, and the order matters because only the first is structural:
+//
+//   1. **Vision runs in its own request.** The worker POSTs one image to
+//      /api/worker/vision on this same function, which is a separate isolate with
+//      its own CPU budget. If the encode is still too expensive, that isolate dies
+//      alone: the parent sees a failed fetch, treats it as "no workout on this
+//      slide", and its batch-mates never notice. This is the part that makes the
+//      failure survivable rather than merely less likely.
+//   2. **The image is capped hard and the download is aborted at the cap** — 900KB
+//      by default, down from 4MB, checked against content-length AND enforced
+//      while streaming, because content-length can lie or be absent.
+//   3. **One slide per request, with progress persisted** on the job's `step`, so a
+//      job that dies partway through a three-slide carousel resumes at slide two
+//      instead of paying for slide one again.
 
-function b64encode(buf: ArrayBuffer): string {
+/** Vision dials, read from app_config with an env and a compiled-in fallback. */
+function visionLimit(key: "max_bytes" | "max_slides" | "timeout_ms", dflt: number): number {
+  const fromCfg = Number(runtimeCfg["vision." + key]);
+  if (Number.isFinite(fromCfg) && fromCfg > 0) return fromCfg;
+  const fromEnv = Number(Deno.env.get("VISION_" + key.toUpperCase()));
+  return Number.isFinite(fromEnv) && fromEnv > 0 ? fromEnv : dflt;
+}
+
+/**
+ * base64 without monopolising the isolate.
+ *
+ * The old version built one giant binary string from 32KB `String.fromCharCode`
+ * spreads and handed it to btoa in a single synchronous run: on a 4MB image that
+ * is tens of megabytes of intermediate string and hundreds of milliseconds of
+ * uninterrupted CPU. This encodes in 8KB pieces, concatenating base64 (which is
+ * safe on a 3-byte boundary — 8192 is divisible by 3) and yielding to the event
+ * loop between pieces. Yielding does not reduce total CPU, but it stops one image
+ * from starving every other in-flight promise in the isolate, and it lets an
+ * abort signal actually be observed.
+ */
+async function b64encode(buf: ArrayBuffer): Promise<string> {
   const bytes = new Uint8Array(buf);
-  let bin = "";
-  for (let i = 0; i < bytes.length; i += 0x8000) {
-    bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  const CHUNK = 8_190;              // divisible by 3: no padding inside the joins
+  const out: string[] = [];
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    const slice = bytes.subarray(i, Math.min(i + CHUNK, bytes.length));
+    let bin = "";
+    for (let j = 0; j < slice.length; j++) bin += String.fromCharCode(slice[j]);
+    out.push(btoa(bin));
+    if ((i / CHUNK) % 8 === 7) await new Promise((r) => setTimeout(r, 0));
   }
-  return btoa(bin);
+  return out.join("");
+}
+
+/**
+ * Download an image, refusing to buffer more than `max` bytes. content-length is
+ * checked first because it is free, and then ignored: a server that omits it or
+ * lies about it is exactly the case the streaming counter exists for.
+ */
+async function fetchCapped(
+  url: string, max: number,
+): Promise<{ buf: ArrayBuffer; mime: string } | null> {
+  const r = await safeFetch(url, {
+    headers: { "User-Agent": DESKTOP_UA },
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!r.ok) { await r.body?.cancel(); return null; }
+
+  const declared = Number(r.headers.get("content-length") ?? "");
+  if (Number.isFinite(declared) && declared > max) {
+    console.log("vision: skipping", declared, "byte image, cap is", max);
+    await r.body?.cancel();
+    return null;
+  }
+  const mime = r.headers.get("content-type") ?? "image/jpeg";
+  if (!r.body) return null;
+
+  const reader = r.body.getReader();
+  const parts: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > max) {
+        console.log("vision: aborting download past the", max, "byte cap (declared", declared || "nothing", ")");
+        await reader.cancel();
+        return null;
+      }
+      parts.push(value);
+    }
+  } finally {
+    try { reader.releaseLock(); } catch { /* already released */ }
+  }
+  if (total < 1000) return null;
+
+  const buf = new Uint8Array(total);
+  let at = 0;
+  for (const p of parts) { buf.set(p, at); at += p.byteLength; }
+  return { buf: buf.buffer, mime };
 }
 
 async function visionCard(dataB64: string, mime: string, fallback: Card, ctx: AiCtx): Promise<Card | null> {
@@ -1377,58 +1718,153 @@ async function visionCard(dataB64: string, mime: string, fallback: Card, ctx: Ai
     "Transcribe exactly what is written, keeping the exercise order from the image. " +
     "If the image does NOT contain a written workout (it is just a person, a gym, or a video frame), " +
     'reply with exactly {"none": true}. Never invent text that is not readable in the image.';
-  const text = await geminiGenerate({
+  const gen = await geminiGenerate({
     contents: [{ role: "user", parts: [{ inline_data: { mime_type: mime, data: dataB64 } }, { text: prompt }] }],
     generationConfig: { maxOutputTokens: 8000, thinkingConfig: { thinkingBudget: 0 } },
-  }, { ...ctx, purpose: "vision" });
-  if (!text) return null;
+  }, { ...ctx, purpose: "vision" }, models().geminiVision);
+  if (!gen.text) return null;
   try {
-    const raw = parseJsonLoose(text);
+    const raw = parseJsonLoose(gen.text);
     if (raw.none) return null;
     const card = normalizeCard(raw, fallback);
-    return card.has_full_workout ? card : null;
+    if (!card.has_full_workout) return null;
+    card.extracted_by = gen.by ? "vision:" + gen.by.replace(/^gemini:/, "") : "vision";
+    return card;
   } catch {
     return null;
   }
 }
 
-async function extractFromImage(imgUrl: string, fallback: Card, ctx: AiCtx): Promise<Card | null> {
+/**
+ * Read ONE carousel slide. This is the expensive half, and it is the half that
+ * runs inside the /api/worker/vision isolate rather than the worker's own.
+ */
+async function extractFromImage(imgUrl: string, slide: number, fallback: Card, ctx: AiCtx): Promise<Card | null> {
   if (!GEMINI_API_KEY || !imgUrl) return null;
+  const max = visionLimit("max_bytes", 900_000);
   try {
-    const ir = await safeFetch(imgUrl, { headers: { "User-Agent": DESKTOP_UA }, signal: AbortSignal.timeout(10000) });
-    if (!ir.ok) return null;
-    const buf = await ir.arrayBuffer();
-    if (buf.byteLength < 1000 || buf.byteLength > 4_000_000) return null;
-    return await visionCard(b64encode(buf), ir.headers.get("content-type") ?? "image/jpeg", fallback, ctx);
+    const got = await fetchCapped(imgUrl, max);
+    if (!got) return null;
+    const t0 = Date.now();
+    const b64 = await b64encode(got.buf);
+    console.log("vision: slide", slide, got.buf.byteLength, "bytes encoded in", Date.now() - t0, "ms");
+    const card = await visionCard(b64, got.mime, fallback, ctx);
+    if (!card) return null;
+    // Everything read off a slide is marked as such and is never "verified":
+    // there is no text to check it against, and the score has to say so.
+    for (const b of card.blocks) {
+      for (const ex of b.exercises) ex.evidence = carouselEvidence(slide, ex.name);
+    }
+    return card;
   } catch (e) {
     console.error("extractFromImage failed", e);
     return null;
   }
 }
 
+// ---------- vision, from the parent worker's side ----------
+
+type VisionRequest = { image: string; slide: number; fallback: Card; user_id: string | null };
+
+/**
+ * Ask a fresh isolate to read one slide.
+ *
+ * Every failure mode collapses to the same answer — null, meaning "no workout on
+ * this slide" — and that is the whole design. A CPU-killed isolate returns a 5xx
+ * or drops the connection; a timeout throws; a malformed body parses to nothing.
+ * None of them can propagate into the worker that called it, so a poisoned image
+ * costs one slide rather than a batch of unrelated saves.
+ */
+async function runVisionRemote(
+  imgUrl: string, slide: number, fallback: Card, ctx: AiCtx,
+): Promise<Card | null> {
+  if (!WORKER_SECRET) {
+    // No secret means no sub-request is possible. Running it inline is the old,
+    // dangerous behaviour, so it is refused rather than silently reinstated —
+    // a missing caption beats a dead worker.
+    console.error("vision skipped: WORKER_SECRET is not set, refusing to encode inline");
+    return null;
+  }
+  const body: VisionRequest = { image: imgUrl, slide, fallback, user_id: ctx.userId };
+  try {
+    const r = await fetch(`${SELF_URL}/api/worker/vision`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-worker-secret": WORKER_SECRET },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(visionLimit("timeout_ms", 20_000)),
+    });
+    if (!r.ok) {
+      console.error("vision sub-request", r.status, (await r.text()).slice(0, 200));
+      return null;
+    }
+    const out = await r.json();
+    return out?.card ? (out.card as Card) : null;
+  } catch (e) {
+    // Includes the case this whole arrangement exists for: the vision isolate was
+    // terminated mid-encode and the socket closed. The worker notices, shrugs, and
+    // keeps its other jobs.
+    console.error("vision sub-request failed for slide", slide, "—", String(e).slice(0, 200));
+    return null;
+  }
+}
+
+async function handleVisionTick(req: Request): Promise<Response> {
+  if (!secretEquals(req.headers.get("x-worker-secret") ?? "", WORKER_SECRET)) {
+    return json({ status: "error", message: "Not found" }, 404);
+  }
+  // Before the size cap is read, not after: see ensureConfig.
+  await ensureConfig();
+  const body = await req.json().catch(() => null) as VisionRequest | null;
+  if (!body?.image) return json({ status: "error", message: "no image" }, 400);
+  const fallback = body.fallback ?? emptyCard("Saved workout");
+  const card = await extractFromImage(body.image, body.slide ?? 0, fallback, {
+    purpose: "vision", userId: body.user_id ?? null,
+  });
+  return json({ status: "ok", card });
+}
+
 // ---------- extraction waterfall ----------
 
+/** YouTube hands us a description; everything else hands us a caption. */
+function sourceKind(platform: string): "caption" | "description" {
+  return platform === "youtube" || platform === "web" ? "description" : "caption";
+}
+
+/**
+ * How many exercises the deterministic parser found. Used as an independent second
+ * opinion on the model's count — the only one available without a second model
+ * call, and free.
+ */
+function countExercises(card: Card): number {
+  return card.blocks.reduce((n, b) => n + b.exercises.length, 0);
+}
+
 async function extractCard(meta: Meta, platform: string, ctx: AiCtx): Promise<Card> {
+  const kind = sourceKind(platform);
   const fallbackTitle = cleanTitle(meta.caption?.split("\n")[0] ?? "") || "Saved workout";
-  const base = heuristicWorkout(meta.caption, fallbackTitle);
+  const base = heuristicWorkout(meta.caption, fallbackTitle, kind);
+  base.extracted_by = base.blocks.length ? "heuristic" : null;
   if (!meta.caption || !haveAI()) return base;
 
   const system = buildPrompt();
   const user = [
     meta.author ? `Creator: ${meta.author}` : "",
     `Platform: ${platform}`,
-    "Caption / description:",
+    kind === "description" ? "Video description:" : "Caption:",
     meta.caption.slice(0, 6000),
+    chapterBlock(meta.chapters ?? []),
   ].filter(Boolean).join("\n");
 
-  const text = await textGenerate(system, user, true, ctx);
-  if (!text) return base;
+  const gen = await textGenerate(system, user, true, ctx);
+  if (!gen.text) return base;
   try {
-    const card = normalizeCard(parseJsonLoose(text), base);
+    const card = normalizeCard(parseJsonLoose(gen.text), base);
+    card.extracted_by = gen.by;
     // the AI must never come back thinner than the plain parser
     if (!card.blocks.length && base.blocks.length) {
       card.blocks = base.blocks;
       card.has_full_workout = base.has_full_workout;
+      card.extracted_by = base.extracted_by ?? gen.by;
     }
     return card;
   } catch (e) {
@@ -1477,15 +1913,63 @@ function minimalCard(meta: Meta, p: Parsed): Card {
   };
 }
 
-async function buildCard(meta: Meta, p: Parsed, ctx: AiCtx): Promise<Card> {
+/**
+ * The catalog's own aliases for whatever an exercise normalized to. Passed to
+ * attachEvidence so a card saying "Bulgarian Split Squat" can still find the
+ * caption line that says "DB Bulgarians" — synonymy is the catalog's job, and
+ * duplicating it as looser text matching would only manufacture false evidence.
+ */
+function aliasesFor(ex: { canonical_id?: string | null }): string[] {
+  const e = catalogById(ex.canonical_id ?? null);
+  return e ? [e.name, ...e.aliases] : [];
+}
+
+/**
+ * Score the finished card against the text it claims to have read, and stamp the
+ * result on it. Runs on every path that produces a card, including the merge in
+ * reprocess, so nothing reaches the database unscored.
+ */
+function scoreAndStamp(card: Card, meta: Meta, platform: string, heuristicCount: number): Confidence {
+  const src: SourceIndex = indexSource(meta.caption, sourceKind(platform));
+  attachEvidence(card, src, aliasesFor);
+  // Evidence earning its keep: a claim that contradicts the line it was traced to
+  // is repaired against that line before anything is scored or stored.
+  const repairs = correctUnitErrors(card, src);
+  for (const r of repairs) console.log("unit fix:", r);
+  const c = scoreCard(card, {
+    src,
+    heuristicCount,
+    chapterCount: chapterExerciseCount(meta.chapters ?? []),
+    mediaSeconds: meta.seconds ?? null,
+  });
+  card.confidence = c.score;
+  card.confidence_parts = c.parts as unknown as Record<string, number>;
+  card.confidence_notes = c.notes;
+  return c;
+}
+
+/** Progress hook so a job can persist how far through a carousel it got. */
+type VisionProgress = (slide: number, card: Card) => Promise<void>;
+
+async function buildCard(
+  meta: Meta, p: Parsed, ctx: AiCtx, onSlide?: VisionProgress, startSlide = 0,
+): Promise<Card> {
   let card = await extractCard(meta, p.platform, ctx);
+  const heuristicCount = countExercises(heuristicWorkout(meta.caption, "x", sourceKind(p.platform)));
 
   // Instagram carousels often put the written plan on a later slide — read it only
   // when the caption produced nothing, since vision burns the scarcest quota.
+  //
+  // One slide per sub-request, and the parent checkpoints between them. A carousel
+  // that kills an isolate now costs one slide of progress rather than the job, and
+  // a job that dies here resumes at the slide it had reached rather than paying for
+  // the earlier ones again.
   if (!card.has_full_workout && p.platform === "instagram" && meta.images?.length) {
-    for (const img of meta.images.slice(0, 3)) {
-      const fromImage = await extractFromImage(img, card, ctx);
+    const slides = meta.images.slice(0, visionLimit("max_slides", 3));
+    for (let i = startSlide; i < slides.length; i++) {
+      const fromImage = await runVisionRemote(slides[i], i, card, ctx);
       if (fromImage?.has_full_workout) { card = fromImage; break; }
+      if (onSlide) await onSlide(i + 1, card);
     }
   }
 
@@ -1502,12 +1986,20 @@ async function buildCard(meta: Meta, p: Parsed, ctx: AiCtx): Promise<Card> {
   if (!card.title.trim() || card.title.trim() === "Saved workout") {
     card.title = cleanTitle(fallbackTitle(meta, p)) || "Saved workout";
   }
-  return applyCatalog(card);
+  // Catalog first: the score reads canonical_id, and the derived muscle groups are
+  // part of what it is scoring.
+  applyCatalog(card);
+  const c = scoreAndStamp(card, meta, p.platform, heuristicCount);
+  console.log("confidence", p.platform, p.shortcode, c.score,
+    JSON.stringify(c.parts), "evidence", c.evidence_pct + "%",
+    c.chapters_used ? (c.chapters_only ? "(chapters only)" : "(chapters used)") : "",
+    c.notes.length ? "— " + c.notes.join("; ") : "");
+  return card;
 }
 
 // Reprocess must never make a card worse: a quota-exhausted re-run comes back
 // empty, and silently wiping a good workout would be the worst possible bug.
-function mergeNoDowngrade(old: any, next: Card): Card {
+function mergeNoDowngrade(old: any, next: Card, meta: Meta, platform: string): Card {
   const out: Card = { ...next };
   if (!next.blocks.length && Array.isArray(old.blocks) && old.blocks.length) {
     out.blocks = old.blocks;
@@ -1525,7 +2017,12 @@ function mergeNoDowngrade(old: any, next: Card): Card {
   // Last, not first: blocks pulled back from the old card are pre-catalog rows with
   // no canonical_id, and the derived muscle/equipment must describe what survived
   // the merge rather than what the re-run happened to produce.
-  return applyCatalog(out);
+  applyCatalog(out);
+  // The score has to describe what actually survived the merge. Carrying the
+  // re-run's number over a card whose blocks came back from the old row would be
+  // reporting a measurement of something that was thrown away.
+  scoreAndStamp(out, meta, platform, countExercises(heuristicWorkout(meta.caption, "x", sourceKind(platform))));
+  return out;
 }
 
 // ---------- storage + db ----------
@@ -1796,7 +2293,12 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
         category: card.category, muscle_groups: card.muscle_groups, equipment: card.equipment,
         difficulty: card.difficulty, duration_minutes: card.duration_minutes, calories: card.calories,
         blocks: card.blocks, tags: card.tags, has_full_workout: card.has_full_workout,
-        source_url: card.source_url ?? null, ingest_status: "ready",
+        source_url: card.source_url ?? null,
+        // The card was scored when it was first extracted; a cache hit copies that
+        // score rather than recomputing it, because it is the same card.
+        confidence: typeof card.confidence === "number" ? card.confidence : (c.confidence ?? null),
+        extracted_by: card.extracted_by ?? c.extracted_by ?? null,
+        ingest_status: "ready",
       });
     } catch (e) {
       // Two simultaneous saves of the same cached video by the same user: the
@@ -1844,6 +2346,23 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
 }
 
 /**
+ * The confidence columns, in the one shape every writer uses. Derived from the card
+ * rather than recomputed, so the number on saves_log, on video_cache and on the
+ * user's row are the same number by construction and cannot drift apart.
+ */
+function qualityColumns(card: Card, meta: Meta): Record<string, unknown> {
+  const all = card.blocks.flatMap((b) => b.exercises ?? []);
+  const verified = all.filter((e) => e.evidence?.verified).length;
+  return {
+    confidence: typeof card.confidence === "number" ? card.confidence : null,
+    extracted_by: card.extracted_by ?? null,
+    evidence_pct: all.length ? Math.round(100 * verified / all.length) : null,
+    chapters_used: (meta.chapters?.length ?? 0) > 0 &&
+      all.some((e) => e.evidence?.source === "chapters"),
+  };
+}
+
+/**
  * Per-save success metrics. Cheap by construction — no extra fetch, no extra model
  * call, just what the save already knows — so the cost of knowing a platform has
  * degraded is one column set on a row that was being written anyway.
@@ -1870,6 +2389,7 @@ async function logSave(
       thumb_found: !!thumbUrl,
       author_found: !!meta.author,
       exercises_found: exercises,
+      ...qualityColumns(card, meta),
       degraded,
     });
   } catch (e) {
@@ -1946,6 +2466,8 @@ async function finishJob(
     difficulty: card.difficulty, duration_minutes: card.duration_minutes, calories: card.calories,
     blocks: card.blocks, tags: card.tags, has_full_workout: card.has_full_workout,
     source_url: card.source_url ?? null,
+    confidence: typeof card.confidence === "number" ? card.confidence : null,
+    extracted_by: card.extracted_by ?? null,
     ingest_status: "ready", ingest_error: null,
   });
 
@@ -1961,6 +2483,7 @@ async function finishJob(
       thumb_found: !!thumbUrl,
       author_found: !!meta.author,
       exercises_found: exercises,
+      ...qualityColumns(card, meta),
       degraded,
     });
   } catch (e) {
@@ -1984,7 +2507,9 @@ async function finishJob(
     return;
   }
   console.log("job done", job.id, p.platform, p.shortcode,
-    "rows filled:", filled.length, "exercises:", exercises, degraded ? "(degraded)" : "");
+    "rows filled:", filled.length, "exercises:", exercises,
+    "confidence:", card.confidence ?? "-", "by:", card.extracted_by ?? "-",
+    degraded ? "(degraded)" : "");
 }
 
 /**
@@ -2060,8 +2585,20 @@ async function runJob(job: Job): Promise<void> {
   if (job.step === "thumb" && job.card) {
     card = job.card;
   } else {
+    // Where a previous attempt got to in a carousel. `vision:2` means slides 0 and
+    // 1 were already read and found nothing, so this attempt starts at slide 2 —
+    // the point being that a job killed inside vision does not pay for those slides
+    // twice, and cannot loop over the same poisoned image until it dead-letters.
+    const resumeAt = Number(job.step.match(/^vision:(\d+)$/)?.[1] ?? "0") || 0;
+    const onSlide: VisionProgress = async (next, partial) => {
+      try {
+        await jobStep(job.id, "vision:" + next, { card: partial, meta });
+      } catch (e) {
+        console.error("job could not checkpoint vision progress", job.id, e);
+      }
+    };
     try {
-      card = await buildCard(meta, p, ctx);
+      card = await buildCard(meta, p, ctx, onSlide, resumeAt);
     } catch (e) {
       console.error("job buildCard failed", job.id, e);
       card = minimalCard(meta, p);
@@ -2094,6 +2631,8 @@ async function runJob(job: Job): Promise<void> {
       shortcode: p.shortcode, url: p.clean, platform: p.platform, kind: p.kind,
       author: meta.author, caption: meta.caption, thumb_url: thumbUrl,
       card, v: CARD_V, updated_at: new Date().toISOString(),
+      confidence: typeof card.confidence === "number" ? card.confidence : null,
+      extracted_by: card.extracted_by ?? null,
     });
   } else {
     console.log("empty scrape, not cached", p.platform, p.shortcode, "source:", meta.source);
@@ -2108,6 +2647,7 @@ async function handleWorkerTick(req: Request): Promise<Response> {
     return json({ status: "error", message: "Not found" }, 404);
   }
 
+  await ensureConfig();
   try {
     await rpc("sweep_ingest_jobs", { p_stale_seconds: WORKER_STALE_SECONDS });
   } catch (e) {
@@ -2174,7 +2714,7 @@ async function handleReprocess(id: string, userId: string, cors: Cors): Promise<
     console.error("reprocess buildCard failed", p.shortcode, e);
     fresh = minimalCard(meta, p);
   }
-  const card = mergeNoDowngrade(old, fresh);
+  const card = mergeNoDowngrade(old, fresh, meta, p.platform);
 
   let thumbUrl: string | null = old.thumb_url;
   try {
@@ -2187,6 +2727,8 @@ async function handleReprocess(id: string, userId: string, cors: Cors): Promise<
     equipment: card.equipment, difficulty: card.difficulty, duration_minutes: card.duration_minutes,
     calories: card.calories, blocks: card.blocks, tags: card.tags,
     has_full_workout: card.has_full_workout, caption: meta.caption ?? old.caption, thumb_url: thumbUrl,
+    confidence: typeof card.confidence === "number" ? card.confidence : null,
+    extracted_by: card.extracted_by ?? null,
   });
 
   // keep the shared cache fresh too, so the next person to save it gets the better card
@@ -2194,6 +2736,8 @@ async function handleReprocess(id: string, userId: string, cors: Cors): Promise<
     shortcode: p.shortcode, url: p.clean, platform: p.platform, kind: p.kind,
     author: meta.author ?? old.author, caption: meta.caption ?? old.caption, thumb_url: thumbUrl,
     card, v: CARD_V, updated_at: new Date().toISOString(),
+    confidence: typeof card.confidence === "number" ? card.confidence : null,
+    extracted_by: card.extracted_by ?? null,
   });
 
   // Charged to the same ledger and the same daily cap as a save, and recorded with
@@ -2218,7 +2762,7 @@ async function aiText(
       message: `Daily coaching limit reached (${LIMIT_HELPER}/day) — resets at midnight UTC.`,
     }, 429, cors);
   }
-  const out = await textGenerate(system, user, false, { purpose, userId });
+  const out = (await textGenerate(system, user, false, { purpose, userId })).text;
   if (!out) return json({ status: "error", message: "The AI is busy — try again in a minute." }, 503, cors);
   // Only a successful answer is charged: a provider outage should not eat the
   // user's daily allowance.
@@ -2269,6 +2813,10 @@ Deno.serve(async (req: Request) => {
     // kicking itself after a save. It authenticates with a shared secret rather
     // than a user token, so it has to be matched before the user-auth gate below.
     if (req.method === "POST" && path === "/api/worker/tick") return await handleWorkerTick(req);
+    // The vision isolate. Same shared secret, deliberately a separate request:
+    // encoding a multi-megabyte image is what killed a worker in production, and
+    // this is the boundary that keeps that kill away from healthy jobs.
+    if (req.method === "POST" && path === "/api/worker/vision") return await handleVisionTick(req);
 
     // One auth resolution for every API route. Ingest is the only route that also
     // accepts the long-lived per-user key.

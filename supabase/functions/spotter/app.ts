@@ -554,6 +554,24 @@ export const APP = String.raw`
       d.appendChild(strip);
     }
 
+    // The confidence score, translated into the only thing a user needs from it:
+    // whether to check this card against the video before training it. Silent above
+    // the threshold, because a caveat on every card is a caveat on none.
+    var conf = typeof w.confidence === "number" ? w.confidence : null;
+    if (w.has_full_workout && conf !== null && conf < 0.7) {
+      var warn = el("div", "unverified");
+      warn.appendChild(el("div", null, conf < 0.45 ? "⚠️" : "👀"));
+      var wt = el("div");
+      wt.appendChild(el("b", null, conf < 0.45
+        ? "Spotter could not check most of this."
+        : "Some of this is not in the caption."));
+      wt.appendChild(document.createTextNode(conf < 0.45
+        ? " The exercises below were not traceable to anything written on the post. Watch the original before you train it."
+        : " A few sets or reps were not written down anywhere Spotter could find. Worth a glance at the original."));
+      warn.appendChild(wt);
+      d.appendChild(warn);
+    }
+
     var start = el("button", "startbtn", w.has_full_workout ? "Start workout" : "Start & log freestyle");
     start.onclick = function () { startWorkout(w); };
     d.appendChild(start);
@@ -569,6 +587,10 @@ export const APP = String.raw`
         var name = el("div", "exname");
         name.appendChild(document.createTextNode(ex.name));
         if (ex.notes) name.appendChild(el("div", "exnote", ex.notes));
+        // The line of the caption this exercise was read from, as a hover title.
+        // Free, and it turns "where did this come from?" into a question the card
+        // can answer without a new screen.
+        if (ex.evidence && ex.evidence.quote) row.title = "From the source: " + ex.evidence.quote;
         row.appendChild(name);
         var dose = doseText(ex);
         if (dose) row.appendChild(el("div", "exdose", dose));

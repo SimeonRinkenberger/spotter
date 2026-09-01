@@ -278,6 +278,12 @@ export const STYLE = String.raw`<style>
     align-items: center; justify-content: center; }
   .capbox { font-size: 13.5px; line-height: 1.62; color: var(--ink-2); white-space: pre-wrap;
     word-break: break-word; }
+  /* Shown only when the extraction could not be traced back to the source text.
+     Deliberately quiet: it is a caveat on a card that still works, not an error. */
+  .unverified { display: flex; gap: 9px; align-items: flex-start; font-size: 12.5px;
+    line-height: 1.5; color: var(--ink-2); background: var(--sand); border: 1px solid var(--line);
+    border-radius: 12px; padding: 10px 12px; margin-bottom: 14px; }
+  .unverified b { color: var(--ink); font-weight: 650; }
   .notesarea { width: 100%; border: 1px solid var(--line); border-radius: 13px; padding: 12px;
     font-size: 14px; line-height: 1.55; background: var(--sand); color: var(--ink); outline: none;
     resize: vertical; min-height: 78px; }

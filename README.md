@@ -31,8 +31,9 @@ Browser (GitHub Pages, docs/index.html)
   └── fetch ────────► Edge Function  ingest, re-extract, AI helpers (needs secrets)
                         │
                         ├─ POST /api/ingest ──► enqueue, return in ~200ms
-                        └─ POST /api/worker/tick ──► claim jobs, extract in the background
-                             └──► Instagram / TikTok / YouTube, then Gemini → Groq
+                        ├─ POST /api/worker/tick ──► claim jobs, extract in the background
+                        │    └──► Instagram / TikTok / YouTube, then Gemini → Groq
+                        └─ POST /api/worker/vision ──► one carousel slide, own isolate
 
 pg_cron ──every minute──► pg_net ──► /api/worker/tick     (backstop for a lost kick)
 pg_cron ──every 5 min───► sweep_ingest_jobs()             (unstick a dead worker)
@@ -64,6 +65,46 @@ shown; the id is what the weight prefill and personal records group by, so "DB B
 and "Bulgarian Split Squats" are one exercise rather than two. A name that does not clear
 the floor gets a null id rather than a wrong one.
 
+**Evidence, and a confidence score computed from it.** Every extracted exercise records
+where it came from — caption, YouTube description, a chapter timestamp, or a carousel slide
+read by vision — and, where the source has positions, the line and character offset. The
+model is asked for a verbatim quote from the source; `evidence.ts` then checks whether that
+quote is actually there, so an unfindable claim lowers the score instead of propping it up.
+The card's `confidence` is a weighted function of five checkable things: does every exercise
+carry evidence, do the sets and reps appear in the source text, do two independent readers
+agree on the exercise count, does every name map to the catalog, and does the prescription
+add up to the stated length. **No model is ever asked how sure it is.** The score and its
+components are stored on the card, on the user's row and in `saves_log`, so
+`select * from save_health` answers "how good are our extractions, by platform" without
+re-running anything.
+
+Evidence also does work rather than only being recorded: a caption reading "45 secs" against
+a card claiming `duration_seconds: 2700` is corrected to 45 on the authority of the line it
+was traced to, and an implausible duration the source cannot explain is dropped rather than
+clamped to a smaller wrong number.
+
+**Chapters are evidence, never a tier.** A YouTube description carrying `0:00 Warm up /
+1:30 Goblet Squat` is parsed and handed to the extractor as a clearly-labelled source, with
+each exercise's timestamp recorded. A card whose exercises trace *only* to chapter lines is
+capped below the gate, because "Intro / Warm up / Outro" reads as a perfectly plausible
+workout and is not one.
+
+**Vision runs in its own isolate.** Reading a carousel slide means base64-encoding an image,
+which is expensive enough to exhaust the edge runtime's CPU budget — it killed a worker in
+production, and with `WORKER_BATCH > 1` that kill takes healthy jobs down with it. The
+worker now POSTs one slide at a time to `/api/worker/vision` on the same function, which is
+a separate isolate with its own budget: if it dies, the parent sees a failed request, treats
+it as "no workout on this slide", and its batch-mates never notice. Images are capped at
+`vision.max_bytes` (900KB), enforced against `content-length` *and* while streaming, and
+per-slide progress is checkpointed on the job so a retry resumes rather than repeats.
+
+**Model ids live in `app_config`, not in code.** Gemini 2.0 was retired in June 2026 and 2.5
+goes in October: a retirement should be an `update` statement, not a deploy. Precedence is
+`app_config` > environment variable > compiled-in default, refreshed every five minutes, and
+every lookup falls back rather than failing. `video_cache.extracted_by` records which model
+produced each card, and `select * from weak_cards` lists the ones worth re-running when
+something better ships.
+
 **No fetching private addresses.** Every outbound request derived from a user link goes
 through `net.ts`, which rejects loopback, link-local, RFC1918 and literal-IP hosts and
 re-checks after **every** redirect hop.
@@ -74,6 +115,7 @@ re-checks after **every** redirect hop.
 |---|---|
 | `supabase/functions/spotter/index.ts` | The whole backend: URL parsing, scrapers, AI chain, extraction, routes |
 | `supabase/functions/spotter/catalog.ts` | Canonical exercise catalog + the name normalizer (source of truth) |
+| `supabase/functions/spotter/evidence.ts` | Evidence attachment, chapter parsing, unit repair, the confidence score |
 | `supabase/functions/spotter/net.ts` | Outbound request guard: private-address filter, per-hop redirect checks |
 | `supabase/functions/spotter/style.ts` | Design tokens and every component style |
 | `supabase/functions/spotter/markup.ts` | Page head, landing page, app shell, sheets |
@@ -81,7 +123,7 @@ re-checks after **every** redirect hop.
 | `supabase/functions/spotter/page.ts` | Stitches the three together for the function |
 | `build.mjs` | Same stitch, writing `docs/index.html` for GitHub Pages |
 | `supabase/migrations/` | Schema, RLS policies, profile trigger, storage bucket, exercise catalog, ingest queue |
-| `tools/` | Catalog migration generator, normalizer test battery, one-time backfill |
+| `tools/` | Catalog migration generator, normalizer + confidence test batteries, one-time backfill |
 
 The three frontend modules are `String.raw` templates, so they must never contain a
 backtick or `${`. `build.mjs` fails loudly if they do.
@@ -92,6 +134,14 @@ backtick or `${`. `build.mjs` fails loudly if they do.
 node build.mjs && git add -A && git commit -m "..." && git push   # frontend
 supabase functions deploy spotter --no-verify-jwt                  # backend
 supabase db push                                                   # schema
+node tools/test-normalize.mjs && node tools/test-confidence.mjs    # both batteries
+```
+
+Changing a model, or turning the vision size cap down, needs none of the above:
+
+```sql
+update public.app_config set value = 'gemini-4-flash' where key = 'model.gemini';
+update public.app_config set value = '400000'         where key = 'vision.max_bytes';
 ```
 
 ## Extraction, and what it costs
