@@ -13,6 +13,14 @@
 
 import { PAGE_HTML } from "./page.ts";
 import { ICON_B64 } from "./icon.ts";
+import { canonicalize } from "./catalog.ts";
+import { assertPublicUrl, dnsAvailable, safeFetch } from "./net.ts";
+
+// Whether the DNS half of the SSRF guard is live here. The static checks always
+// run; Deno.resolveDns is not present in every Deno-compatible runtime, and the
+// difference decides whether a public hostname pointing at a private A record is
+// caught. Logged once at cold start so it is answerable from the function logs.
+console.log("ssrf guard: static checks on, dns resolution", dnsAvailable() ? "on" : "UNAVAILABLE");
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -31,7 +39,9 @@ const LIMIT_SAVES = Number(Deno.env.get("LIMIT_SAVES") ?? "40");
 
 // Bump when the extraction prompt changes materially: cached cards below this
 // version are treated as a miss and re-extracted.
-const CARD_V = 4;
+// 5: every exercise carries canonical_id, and muscle_groups/equipment are derived
+//    from the catalog whenever the exercises map to it.
+const CARD_V = 5;
 
 const ALLOWED_ORIGINS = (Deno.env.get("ALLOWED_ORIGINS") ??
   "https://simeonrinkenberger.github.io,http://localhost:8000,http://127.0.0.1:8000")
@@ -122,10 +132,15 @@ function matchYouTube(u: string): Parsed | null {
 }
 
 // Any other http(s) page — a training blog, a program write-up. Keyed by URL hash.
-async function webParsed(target: string): Promise<Parsed | null> {
-  let u: URL;
-  try { u = new URL(target.split("#")[0]); } catch { return null; }
-  if (!/^https?:$/.test(u.protocol)) return null;
+// Returns null for anything unusable and BLOCKED for anything that fails the SSRF
+// guard, so ingest can tell the user which of the two happened.
+const BLOCKED = Symbol("blocked");
+type WebParse = Parsed | null | typeof BLOCKED;
+
+async function webParsed(target: string): Promise<WebParse> {
+  const guard = await assertPublicUrl(target.split("#")[0]);
+  if (!guard.ok) { console.error("ssrf: rejected", target, "—", guard.reason); return BLOCKED; }
+  const u = guard.url;
   // social links that failed their own matcher (profiles, channels) make junk cards — reject
   if (/(^|\.)(instagram\.com|tiktok\.com|facebook\.com|youtube\.com|youtu\.be)$/i.test(u.hostname)) return null;
   for (const k of ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "fbclid", "gclid", "igsh", "mc_cid", "mc_eid"]) {
@@ -137,19 +152,30 @@ async function webParsed(target: string): Promise<Parsed | null> {
   return { platform: "web", shortcode: `web-${hex.slice(0, 16)}`, kind: "page", clean };
 }
 
-async function resolveShare(raw: string): Promise<Parsed | null> {
+async function resolveShare(raw: string): Promise<WebParse> {
   const urlMatch = raw.match(/https?:\/\/[^\s"'<>]+/);
   if (!urlMatch) return null;
   let target = urlMatch[0];
+
+  // Guard what the user actually posted before anything else looks at it, so a
+  // private address cannot reach a platform matcher and be laundered into `clean`.
+  const first = await assertPublicUrl(target);
+  if (!first.ok) { console.error("ssrf: rejected", target, "—", first.reason); return BLOCKED; }
 
   let parsed = matchInstagram(target) ?? matchTikTok(target) ?? matchYouTube(target);
   if (parsed) return parsed;
 
   // Short/share links (instagram.com/share/..., vm.tiktok.com/...): follow redirects.
+  // Each hop is validated before it is fetched AND after the Location header names
+  // its successor — a public host that redirects to 169.254.169.254 is the whole
+  // attack, so checking only what the user typed would be checking nothing.
   for (let hop = 0; hop < 4 && !parsed; hop++) {
+    const guard = await assertPublicUrl(target);
+    if (!guard.ok) { console.error("ssrf: rejected hop", hop, target, "—", guard.reason); return BLOCKED; }
+
     let loc: string | null = null;
     try {
-      const r = await fetch(target, {
+      const r = await fetch(guard.url.toString(), {
         redirect: "manual",
         headers: { "User-Agent": DESKTOP_UA, "Accept-Language": "en-US" },
       });
@@ -157,7 +183,7 @@ async function resolveShare(raw: string): Promise<Parsed | null> {
       await r.body?.cancel();
     } catch (_) { break; }
     if (!loc) break;
-    target = new URL(loc, target).toString();
+    try { target = new URL(loc, guard.url).toString(); } catch { return BLOCKED; }
     // login redirects carry the real path in ?next=
     const next = new URL(target).searchParams.get("next");
     parsed = matchInstagram(target) ?? matchTikTok(target) ?? matchYouTube(target) ??
@@ -359,7 +385,7 @@ async function igMeta(p: Parsed): Promise<Meta> {
 
   // 1) og: tags, served to link-preview crawlers
   try {
-    const r = await fetch(p.clean, {
+    const r = await safeFetch(p.clean, {
       headers: { "User-Agent": CRAWLER_UA, "Accept-Language": "en-US", "Accept": "text/html" },
     });
     if (r.ok) {
@@ -379,7 +405,7 @@ async function igMeta(p: Parsed): Promise<Meta> {
 
   // 2) the captioned-embed page often works when og: tags are login-walled
   try {
-    const r = await fetch(`https://www.instagram.com/p/${p.shortcode}/embed/captioned/`, {
+    const r = await safeFetch(`https://www.instagram.com/p/${p.shortcode}/embed/captioned/`, {
       headers: { "User-Agent": DESKTOP_UA, "Accept-Language": "en-US" },
     });
     if (r.ok) {
@@ -418,7 +444,7 @@ async function igMeta(p: Parsed): Promise<Meta> {
 
 async function ttMeta(p: Parsed): Promise<Meta> {
   try {
-    const r = await fetch(
+    const r = await safeFetch(
       `https://www.tiktok.com/oembed?url=${encodeURIComponent(p.clean)}`,
       { headers: { "User-Agent": DESKTOP_UA } },
     );
@@ -479,7 +505,7 @@ async function ytMeta(p: Parsed): Promise<Meta> {
   let author: string | null = null;
   let ytSeconds = 0;
   try {
-    const r = await fetch(
+    const r = await safeFetch(
       `https://www.youtube.com/oembed?url=${encodeURIComponent(p.clean)}&format=json`,
       { headers: { "User-Agent": DESKTOP_UA }, signal: AbortSignal.timeout(10000) },
     );
@@ -507,7 +533,7 @@ async function ytMeta(p: Parsed): Promise<Meta> {
 async function webMeta(p: Parsed): Promise<Meta> {
   const out: Meta = { caption: null, thumb: null, author: null };
   try {
-    const r = await fetch(p.clean, {
+    const r = await safeFetch(p.clean, {
       headers: { "User-Agent": DESKTOP_UA, "Accept-Language": "en-US", "Accept": "text/html" },
       signal: AbortSignal.timeout(15000),
     });
@@ -544,7 +570,11 @@ function fetchMeta(p: Parsed): Promise<Meta> {
 // ---------- caption -> workout card ----------
 
 type Exercise = {
+  // `name` stays exactly what the model produced — nothing is lost, and the UI
+  // still shows the creator's wording. `canonical_id` is the catalog key that the
+  // weight prefill and personal records group by; null when nothing matched.
   name: string;
+  canonical_id: string | null;
   sets: number | null;
   reps: string | null;
   duration_seconds: number | null;
@@ -728,6 +758,7 @@ function heuristicWorkout(caption: string | null, fallbackTitle: string): Card {
     }
     exercises.push({
       name,
+      canonical_id: null,   // filled by applyCatalog once the card is assembled
       sets: sr ? parseInt(sr[1], 10) : null,
       reps: sr ? sr[2].replace(/\s+/g, "") : null,
       duration_seconds: seconds,
@@ -808,6 +839,7 @@ function normalizeExercise(raw: any): Exercise | null {
   const reps = raw?.reps === null || raw?.reps === undefined ? null : String(raw.reps).slice(0, 24).trim() || null;
   return {
     name,
+    canonical_id: null,   // filled by applyCatalog once the card is assembled
     sets: intOrNull(raw?.sets, 30),
     reps,
     duration_seconds: intOrNull(raw?.duration_seconds, 7200),
@@ -863,6 +895,51 @@ function normalizeCard(raw: any, fallback: Card): Card {
     has_full_workout: blocks.length > 0 && blocks.some((b) => b.exercises.length > 0),
     blocks: blocks.length ? blocks : fallback.blocks,
   };
+}
+
+// ---------- catalog normalization ----------
+
+// The single place a card is reconciled with the controlled catalog. Runs on every
+// path that produces a card — AI, heuristic parser, vision, reprocess merge — so no
+// exercise can reach the database without having been offered to the normalizer.
+//
+// Rules, all deliberate:
+//   * the raw model name is never overwritten. A creator's "Bulgarians" still reads
+//     as "Bulgarians"; only the grouping key underneath it changes.
+//   * a name that does not match leaves canonical_id null. Guessing would merge two
+//     different lifts' personal records, which is worse than not matching at all.
+//   * muscle_groups come from the catalog, because which muscles a goblet squat
+//     trains does not depend on the video. The model is unreliable here — it
+//     labelled a squat/row/deadlift session "chest, shoulders, full body".
+//   * equipment does NOT get overwritten by the catalog. The catalog lists what a
+//     movement is *commonly* done with, which is not what a given video used: a
+//     dumbbell-only home workout would come back demanding a barbell, a machine and
+//     a medicine ball, because that is what rows, chest presses and Russian twists
+//     usually use. The video's own statement is the better evidence, so the catalog
+//     only fills the field when the model produced nothing at all.
+function applyCatalog(card: Card): Card {
+  const muscles: string[] = [];
+  const equip: string[] = [];
+  let matched = 0;
+
+  for (const b of card.blocks) {
+    for (const ex of b.exercises) {
+      const m = canonicalize(ex.name);
+      ex.canonical_id = m ? m.id : null;
+      if (!m) continue;
+      matched++;
+      for (const g of m.entry.muscles) if (!muscles.includes(g)) muscles.push(g);
+      for (const q of m.entry.equipment) if (!equip.includes(q)) equip.push(q);
+    }
+  }
+
+  // Only speak for the card when the catalog actually knows its exercises. A card
+  // where nothing matched keeps whatever the model said, rather than going blank.
+  if (matched) {
+    if (muscles.length) card.muscle_groups = muscles.slice(0, 8);
+    if (!card.equipment.length && equip.length) card.equipment = equip;
+  }
+  return card;
 }
 
 async function parseWithClaude(system: string, user: string): Promise<string | null> {
@@ -935,7 +1012,7 @@ async function visionCard(dataB64: string, mime: string, fallback: Card): Promis
 async function extractFromImage(imgUrl: string, fallback: Card): Promise<Card | null> {
   if (!GEMINI_API_KEY || !imgUrl) return null;
   try {
-    const ir = await fetch(imgUrl, { headers: { "User-Agent": DESKTOP_UA }, signal: AbortSignal.timeout(10000) });
+    const ir = await safeFetch(imgUrl, { headers: { "User-Agent": DESKTOP_UA }, signal: AbortSignal.timeout(10000) });
     if (!ir.ok) return null;
     const buf = await ir.arrayBuffer();
     if (buf.byteLength < 1000 || buf.byteLength > 4_000_000) return null;
@@ -996,7 +1073,7 @@ async function buildCard(meta: Meta, p: Parsed): Promise<Card> {
     if (mins >= 4 && mins <= 120) card.duration_minutes = mins;
   }
   if (p.platform === "web") card.source_url = p.clean;
-  return card;
+  return applyCatalog(card);
 }
 
 // Reprocess must never make a card worse: a quota-exhausted re-run comes back
@@ -1016,7 +1093,10 @@ function mergeNoDowngrade(old: any, next: Card): Card {
   if (!out.tags.length && old.tags?.length) out.tags = old.tags;
   // a much longer old title is usually the hand-edited one
   if (old.title && (!out.title || old.title.length > out.title.length + 20)) out.title = old.title;
-  return out;
+  // Last, not first: blocks pulled back from the old card are pre-catalog rows with
+  // no canonical_id, and the derived muscle/equipment must describe what survived
+  // the merge rather than what the re-run happened to produce.
+  return applyCatalog(out);
 }
 
 // ---------- storage + db ----------
@@ -1032,7 +1112,7 @@ const dbHeaders = { ...authHeaders, "content-type": "application/json" };
 async function storeThumb(shortcode: string, src: string | null): Promise<string | null> {
   if (!src) return null;
   try {
-    const r = await fetch(src, { headers: { "User-Agent": DESKTOP_UA } });
+    const r = await safeFetch(src, { headers: { "User-Agent": DESKTOP_UA } });
     if (!r.ok) return null;
     const buf = await r.arrayBuffer();
     if (buf.byteLength < 500) return null;
@@ -1151,6 +1231,12 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
   if (!shared) return json({ status: "error", message: "No link provided." }, 400, cors);
 
   const p = await resolveShare(shared);
+  if (p === BLOCKED) {
+    return json({
+      status: "blocked",
+      message: "That link points to a private or internal address, so Spotter will not fetch it.",
+    }, 400, cors);
+  }
   if (!p) return json({ status: "error", message: "No workout link found in what was shared." }, 400, cors);
 
   const dupe = await dbSelect("workouts", `user_id=eq.${userId}&shortcode=eq.${encodeURIComponent(p.shortcode)}&select=id,title`);

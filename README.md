@@ -41,17 +41,31 @@ to save a video pays for the scrape and the AI call; everyone after that gets th
 instantly and for free. This is the main thing that makes a public app affordable on free
 tiers.
 
+**Controlled exercise names.** The model proposes a free-form exercise name; `catalog.ts`
+maps it to a stable `canonical_exercise_id` from a seeded catalog (exact match, then alias,
+then weighted token overlap above a confidence floor — no AI). The raw name is kept and
+shown; the id is what the weight prefill and personal records group by, so "DB Bulgarians"
+and "Bulgarian Split Squats" are one exercise rather than two. A name that does not clear
+the floor gets a null id rather than a wrong one.
+
+**No fetching private addresses.** Every outbound request derived from a user link goes
+through `net.ts`, which rejects loopback, link-local, RFC1918 and literal-IP hosts and
+re-checks after **every** redirect hop.
+
 ### Source layout
 
 | Path | What |
 |---|---|
 | `supabase/functions/spotter/index.ts` | The whole backend: URL parsing, scrapers, AI chain, extraction, routes |
+| `supabase/functions/spotter/catalog.ts` | Canonical exercise catalog + the name normalizer (source of truth) |
+| `supabase/functions/spotter/net.ts` | Outbound request guard: private-address filter, per-hop redirect checks |
 | `supabase/functions/spotter/style.ts` | Design tokens and every component style |
 | `supabase/functions/spotter/markup.ts` | Page head, landing page, app shell, sheets |
 | `supabase/functions/spotter/app.ts` | All app logic: auth, library, Workout Mode, plan, progress |
 | `supabase/functions/spotter/page.ts` | Stitches the three together for the function |
 | `build.mjs` | Same stitch, writing `docs/index.html` for GitHub Pages |
-| `supabase/migrations/` | Schema, RLS policies, profile trigger, storage bucket |
+| `supabase/migrations/` | Schema, RLS policies, profile trigger, storage bucket, exercise catalog |
+| `tools/` | Catalog migration generator, normalizer test battery, one-time backfill |
 
 The three frontend modules are `String.raw` templates, so they must never contain a
 backtick or `${`. `build.mjs` fails loudly if they do.

@@ -1245,18 +1245,33 @@
     wo = {
       workout: w, screens: screens, i: (resume && resume.i) || 0,
       entries: (resume && resume.entries) || screens.map(function (s) {
-        return { name: s.ex.name, block: s.bi, exercise: s.ei, sets: [] };
+        return {
+          name: s.ex.name, canonical_id: s.ex.canonical_id || null,
+          block: s.bi, exercise: s.ei, sets: []
+        };
       }),
       startedAt: (resume && resume.startedAt) || new Date().toISOString(),
       wake: null
     };
-    if (!wo.entries.length) wo.entries = [{ name: "Freestyle", block: 0, exercise: 0, sets: [] }];
+    if (!wo.entries.length) {
+      wo.entries = [{ name: "Freestyle", canonical_id: null, block: 0, exercise: 0, sets: [] }];
+    }
     $("workout").classList.add("open");
     acquireWake();
     renderWorkout();
     startClock();
     history.pushState({ workout: 1 }, "");
     lastWeights(w);
+  }
+
+  // The grouping key for "the same movement". The catalog id when the name mapped,
+  // the raw name otherwise — so "DB Bulgarians" and "Bulgarian Split Squats" are one
+  // exercise, while anything the catalog does not know keeps the old behaviour
+  // instead of silently collapsing into some other movement. Prefixed so a canonical
+  // id can never collide with a raw name that happens to look like one.
+  function exKey(e) {
+    if (!e) return "n:";
+    return e.canonical_id ? "c:" + e.canonical_id : "n:" + (e.name || "");
   }
 
   // Prefill weight from the last time this user did the same movement.
@@ -1267,9 +1282,11 @@
         if (r.error || !r.data) return;
         r.data.forEach(function (log) {
           (log.entries || []).forEach(function (e) {
-            if (!e.name || lastWeight[e.name] !== undefined) return;
+            if (!e.name) return;
+            var k = exKey(e);
+            if (lastWeight[k] !== undefined) return;
             var last = (e.sets || []).filter(function (s) { return s.weight; }).pop();
-            if (last) lastWeight[e.name] = last.weight;
+            if (last) lastWeight[k] = last.weight;
           });
         });
       });
@@ -1381,7 +1398,7 @@
     }
     setCtx.idx = idx;
     setCtx.reps = existing ? existing.reps : targetReps;
-    setCtx.weight = existing ? existing.weight : (lastWeight[entry.name] || 0);
+    setCtx.weight = existing ? existing.weight : (lastWeight[exKey(entry)] || 0);
     $("settitle").textContent = (s && s.ex ? s.ex.name : "Set") + " · set " + (idx + 1);
     $("wtunit").textContent = state.unit;
     drawStepper();
@@ -1736,28 +1753,35 @@
       v.appendChild(card);
     }
 
-    // personal records, by estimated 1RM (Epley)
+    // Personal records, by estimated 1RM (Epley). Grouped by catalog id where the
+    // exercise name mapped, so a PR does not fragment across three spellings of the
+    // same lift; the label keeps the most recent raw name the user actually saw.
     var prs = {};
     logs.forEach(function (l) {
       (l.entries || []).forEach(function (e) {
+        var k = exKey(e);
         (e.sets || []).forEach(function (s) {
           if (!s.reps || !s.weight) return;
           var est = s.weight * (1 + s.reps / 30);
-          if (!prs[e.name] || est > prs[e.name].est) {
-            prs[e.name] = { est: est, weight: s.weight, reps: s.reps, date: l.started_at };
+          if (!prs[k]) prs[k] = { est: 0, label: e.name || "Exercise" };
+          if (est > prs[k].est) {
+            prs[k].est = est;
+            prs[k].weight = s.weight;
+            prs[k].reps = s.reps;
+            prs[k].date = l.started_at;
           }
         });
       });
     });
-    var prNames = Object.keys(prs).sort(function (a, b) { return prs[b].est - prs[a].est; }).slice(0, 12);
-    if (prNames.length) {
+    var prKeys = Object.keys(prs).sort(function (a, b) { return prs[b].est - prs[a].est; }).slice(0, 12);
+    if (prKeys.length) {
       var pc = el("div", "chartcard");
       pc.appendChild(el("h3", null, "Personal records"));
-      prNames.forEach(function (n) {
+      prKeys.forEach(function (n) {
         var p = prs[n];
         var r = el("div", "prrow");
         var nm = el("div", "n");
-        nm.appendChild(document.createTextNode(n));
+        nm.appendChild(document.createTextNode(p.label));
         nm.appendChild(el("span", null,
           p.weight + " " + state.unit + " × " + p.reps + " · " +
           new Date(p.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })));
