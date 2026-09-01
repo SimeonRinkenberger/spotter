@@ -3,3 +3,4 @@ SETUP-PRIVATE.md
 supabase/.temp/
 .DS_Store
 node_modules/
+HANDOFF.md
