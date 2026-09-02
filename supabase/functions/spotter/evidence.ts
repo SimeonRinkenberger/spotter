@@ -155,10 +155,11 @@ const CHAPTER_TRAIL = /^\s*(.+?)\s*[-–—:|.]*\s*[[(]?\s*(\d{1,3}:\d{2}(?::\d{
  * "Warm up" and "cool down" are on this list on purpose: they are real parts of a
  * session and useless as exercise names, and they are half of the exact card the
  * handoff warns about — "Intro / Warm up / Outro" is what a chapter list becomes
- * when nobody checks.
+ * when nobody checks. "Workout" is on it for the same reason: a chapter that says
+ * the workout starts here is a heading, and nobody can perform it.
  */
 export const CHAPTER_JUNK =
-  /^(intro(duction)?|outro|start|welcome|about|subscribe|sponsor|ad\b|thanks|credits|music|my gear|gear|equipment( list)?|disclaimer|q ?& ?a|questions|recap|summary|conclusion|the end|end|preview|teaser|what'?s? (next|coming)|follow me|links?|shop|merch|discount|coupon|timestamps?|chapters?|warm ?-? ?up|cool ?-? ?down|stretch(ing)?|rest|break)\b/i;
+  /^(intro(duction)?|outro|start|welcome|about|subscribe|sponsor|ad\b|thanks|credits|music|my gear|gear|equipment( list)?|disclaimer|q ?& ?a|questions|recap|summary|conclusion|the end|end|preview|teaser|what'?s? (next|coming)|follow me|links?|shop|merch|discount|coupon|timestamps?|chapters?|warm ?-? ?up|cool ?-? ?down|stretch(ing)?|rest|break|(the )?workout)\b/i;
 
 export type Chapter = { t: number; label: string; line: number };
 
@@ -206,6 +207,97 @@ export function parseChapters(text: string | null | undefined): Chapter[] {
 /** How many chapter labels could plausibly be a movement rather than furniture. */
 export function chapterExerciseCount(chapters: Chapter[]): number {
   return chapters.filter((c) => !CHAPTER_JUNK.test(c.label.trim())).length;
+}
+
+/**
+ * Is this exercise a chapter heading wearing an exercise's clothes?
+ *
+ * The chapters-only cap scores such a card down; it does not stop "Warm up",
+ * "Workout" and "Cool Down & Stretch" being listed to the user as three movements
+ * to perform. The cap answers "how much should this be trusted"; it cannot answer
+ * "what is this card telling me to do", and three headings in the exercise list is
+ * a wrong answer to the second question at any score.
+ *
+ * Deleting model output is a stronger action than scoring it, so all three
+ * conditions have to hold and each one is deliberately narrow:
+ *
+ *   1. No dose of its own. Sets, reps or a duration make it a prescription
+ *      whatever it is called. A chapter's span is not a dose — nothing copies a
+ *      timestamp into duration_seconds — so a duration here came from written text.
+ *   2. The name is furniture (CHAPTER_JUNK) rather than a movement.
+ *   3. It traces to a chapter line, to nothing at all, or to the title line of a
+ *      source that carries one — and only on a card that used chapters at all.
+ *      Anything else located in real caption or description text is left alone
+ *      however it is named: "Warm up set 3x10" written out in a caption is an
+ *      instruction the creator actually gave.
+ *
+ * The title line is in that list because of how the sources are assembled, not as
+ * a guess: ytMeta builds the text it hands over as `title + "\n\n" + description`,
+ * and webMeta as `og:title + "\n" + og:description + body`, so line 0 is the video's
+ * own title. A description titled "20 MINUTE WORKOUT" therefore gives the heading
+ * "Workout" an exact match in written text, and without this it would outrank the
+ * chapter line it actually came from and survive as the card's only exercise. A
+ * title is not a prescription, so a dose-less furniture name matching there is the
+ * same failure as one matching the chapter line — but the rule is confined to
+ * chapter cards, so an Instagram caption whose first line happens to read "Warm up"
+ * is untouched.
+ *
+ * `cardSources` is every evidence source present on the card, which is what makes
+ * condition 3 answerable for an exercise that located nothing itself.
+ */
+export function isChapterJunkExercise(
+  ex: ScorableExercise,
+  cardSources: Iterable<EvidenceSource>,
+): boolean {
+  if (typeof ex.sets === "number" && ex.sets > 0) return false;
+  if (ex.reps !== null && ex.reps !== undefined && String(ex.reps).trim() !== "") return false;
+  if (typeof ex.duration_seconds === "number" && ex.duration_seconds > 0) return false;
+
+  const name = (ex.name ?? "").trim();
+  if (!name || !CHAPTER_JUNK.test(name)) return false;
+
+  const src = ex.evidence?.source;
+  if (src === "chapters") return true;
+
+  let usedChapters = false;
+  for (const s of cardSources) if (s === "chapters") { usedChapters = true; break; }
+  if (!usedChapters) return false;
+
+  // No located evidence. On a card that used chapters, a junk name with nothing
+  // behind it is the same failure one step further along: the model read the
+  // chapter list and the quote could not be found afterwards.
+  if (!src || src === "none") return true;
+  // Located, but on the title line — which is the video's own name, not something
+  // it asks anyone to do.
+  if ((src === "caption" || src === "description") && ex.evidence?.line === 0) return true;
+  return false;
+}
+
+/**
+ * Apply that decision across a card and report what was deleted. Runs after
+ * attachEvidence, because every condition above is about evidence.
+ *
+ * The card's sources are collected first: "traced to nothing, on a card that used
+ * chapters" is not a question one exercise can answer about itself. Blocks left
+ * holding nothing are removed as well — a block that contained only headings was
+ * a heading.
+ */
+export function dropChapterJunk(card: ScorableCard): string[] {
+  const sources = new Set<EvidenceSource>();
+  for (const b of card.blocks ?? []) {
+    for (const ex of b.exercises ?? []) if (ex.evidence?.source) sources.add(ex.evidence.source);
+  }
+  const dropped: string[] = [];
+  for (const b of card.blocks ?? []) {
+    if (!Array.isArray(b.exercises)) continue;
+    b.exercises = b.exercises.filter((ex) => {
+      if (!isChapterJunkExercise(ex, sources)) return true;
+      dropped.push(ex.name);
+      return false;
+    });
+  }
+  if (dropped.length) card.blocks = (card.blocks ?? []).filter((b) => (b.exercises?.length ?? 0) > 0);
+  return dropped;
 }
 
 // ---------- the source index ----------
@@ -663,5 +755,78 @@ export function scoreCard(card: ScorableCard, ctx: ScoreContext): Confidence {
     chapters_only,
     exercises: exercises.length,
     notes,
+  };
+}
+
+// ---------- merging two scores ----------
+
+/**
+ * What a merge decides about the score. `parts` is the components as they should
+ * be stamped on the merged card: `scoreCard`'s five weighted numbers, plus the
+ * flags recording what the pipeline did to this card — `merge_kept_old_score`,
+ * `dropped_chapter_junk` — which is why the values are not all numbers. Phase 2
+ * has to be able to tell a low score from a score that was never recomputed.
+ */
+export type MergedConfidence = {
+  /** null only when the stored card predates scoring and its score was kept. */
+  score: number | null;
+  parts: Record<string, number | boolean>;
+};
+
+/**
+ * Which score survives a reprocess merge.
+ *
+ * Reprocess re-runs the ladder and then refuses to make the card worse: when the
+ * re-run comes back thinner, blocks are pulled forward from the stored row. The
+ * merged card is re-scored afterwards, which is right — the score has to describe
+ * what actually survived — but it silently punished exactly the case it was
+ * protecting. Blocks stored before CARD_V 6 carry no evidence at all, so the
+ * evidence component of the merged card scores zero and the `verified === 0` cap
+ * lands on it, and the user's score drops on a reprocess where nothing got worse.
+ * The number is advisory today; it is the Phase 2 measurement tomorrow, and a
+ * measurement that moves when the thing it measures did not is worse than none.
+ *
+ * So:
+ *
+ *   - Nothing came back from the old row: the re-run stands on its own, unchanged.
+ *   - Blocks came back and they carry no evidence: the re-score is measuring the
+ *     absence of a field that did not exist when those blocks were written, not
+ *     the quality of the card. Keep the stored score and its components verbatim —
+ *     fabricating evidence to make the number come out right would corrupt the one
+ *     record this whole module exists to keep honest. A stored score of null (a
+ *     row from before scoring existed) stays null rather than becoming a computed
+ *     number about a card that was never measured.
+ *   - Blocks came back and they DO carry evidence (v6+): the re-score is
+ *     meaningful, so it is used — but "never downgrade" applies to the score for
+ *     the same reason it applies to the blocks, so the better of the two wins.
+ *
+ * `merge_kept_old_score` records which one it was, so a card whose number did not
+ * come from its current contents can be found later rather than trusted.
+ */
+export function mergeConfidence(
+  oldConf: number | null | undefined,
+  oldParts: Record<string, number | boolean> | null | undefined,
+  rescored: { score: number; parts: Record<string, number | boolean> },
+  tookOldBlocks: boolean,
+  oldHadEvidence: boolean,
+): MergedConfidence {
+  if (!tookOldBlocks) return { score: rescored.score, parts: { ...rescored.parts } };
+
+  const stored = typeof oldConf === "number" && Number.isFinite(oldConf) ? oldConf : null;
+
+  if (!oldHadEvidence) {
+    const parts: Record<string, number | boolean> = { ...(oldParts ?? {}), merge_kept_old_score: true };
+    // One exception to keeping the old components verbatim: how many chapter
+    // headings this pass deleted is a record of what happened to the card, not a
+    // component of a score, and losing it would hide the deletion.
+    const dropped = rescored.parts?.dropped_chapter_junk;
+    if (typeof dropped === "number" && dropped > 0) parts.dropped_chapter_junk = dropped;
+    return { score: stored, parts };
+  }
+
+  const keepOld = stored !== null && stored > rescored.score;
+  return {
+    score: keepOld ? stored : rescored.score,
+    parts: { ...rescored.parts, merge_kept_old_score: keepOld },
   };
 }

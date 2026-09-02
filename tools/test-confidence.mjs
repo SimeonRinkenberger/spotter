@@ -7,6 +7,7 @@
 import {
   attachEvidence, chapterExerciseCount, indexSource, locate,
   parseChapters, scoreCard, estimateSeconds, carouselEvidence, correctUnitErrors,
+  isChapterJunkExercise, dropChapterJunk, mergeConfidence,
 } from "../supabase/functions/spotter/evidence.ts";
 import { catalogById } from "../supabase/functions/spotter/catalog.ts";
 
@@ -18,7 +19,9 @@ function aliases(ex) {
 }
 
 let failures = 0;
+let checks = 0;
 function check(name, cond, detail) {
+  checks++;
   if (cond) return;
   failures++;
   console.log("FAIL  " + name + (detail === undefined ? "" : "  — " + detail));
@@ -144,6 +147,10 @@ check("thin: says why", thin.notes.some((n) => n.includes("located")), JSON.stri
 // The exact failure the handoff warns about. Every component looks fine — the
 // labels are real, they are traceable, the count agrees with itself — and the card
 // is worthless. It must land below any reasonable gate.
+//
+// This is the scorer on its own: in the pipeline the headings here are deleted
+// first (see "chapter headings listed as exercises" below), and the cap is what is
+// left protecting the real movements that trace only to chapter timestamps.
 
 const ytSrc = indexSource(YT_DESC, "description");
 const chapterCard = {
@@ -188,6 +195,249 @@ check("mixed: not flagged chapters_only", mixed.chapters_only === false,
   JSON.stringify(mixedCard.blocks[0].exercises.map((e) => e.evidence.source)));
 check("mixed: outscores the chapter-only card", mixed.score > chapters.score,
   mixed.score + " vs " + chapters.score);
+
+// ---------- chapter headings listed as exercises ----------
+//
+// The other half of the chapters trap. The cap says "do not trust this card"; it
+// does not stop the card telling someone to perform "Warm up", "Workout" and
+// "Cool down" in sequence. Those are deleted, and the conditions are narrow enough
+// that a real movement — or a real instruction that happens to be named like a
+// heading — cannot fall through them.
+//
+// This mirrors what index.ts does after attachEvidence: drop, then score.
+function stampJunk(card, source) {
+  attachEvidence(card, source, aliases);
+  const dropped = dropChapterJunk(card);
+  const c = scoreCard(card, { src: source, heuristicCount: 0, chapterCount: 0, mediaSeconds: null });
+  const parts = { ...c.parts };
+  if (dropped.length) parts.dropped_chapter_junk = dropped.length;
+  return { dropped, parts, score: c.score };
+}
+
+const JUNK_DESC = [
+  "20 MINUTE FULL BODY SESSION",
+  "",
+  "0:00 Warm up",
+  "3:00 Workout",
+  "17:00 Cool down",
+].join("\n");
+const junkSrc = indexSource(JUNK_DESC, "description");
+const junkCard = {
+  duration_minutes: 20,
+  blocks: [{
+    rounds: null, rest_seconds: null,
+    exercises: [
+      { name: "Warm up", canonical_id: null, sets: null, reps: null, duration_seconds: null, rest_seconds: null },
+      { name: "Workout", canonical_id: null, sets: null, reps: null, duration_seconds: null, rest_seconds: null },
+      { name: "Cool down", canonical_id: null, sets: null, reps: null, duration_seconds: null, rest_seconds: null },
+    ],
+  }],
+};
+const junkRun = stampJunk(junkCard, junkSrc);
+check("junk: all three headings dropped", junkRun.dropped.length === 3,
+  JSON.stringify(junkRun.dropped));
+check("junk: counted into the components", junkRun.parts.dropped_chapter_junk === 3,
+  JSON.stringify(junkRun.parts));
+check("junk: no exercises left", junkCard.blocks.reduce((n, b) => n + b.exercises.length, 0) === 0);
+check("junk: the emptied block is removed too", junkCard.blocks.length === 0,
+  JSON.stringify(junkCard.blocks));
+
+// The same card under the title YouTube actually ships. ytMeta hands over
+// `title + "\n\n" + description`, so line 0 is the video's own name — and a video
+// called "20 MINUTE WORKOUT" gives the heading "Workout" an exact written match
+// there, which outranks the chapter line it really came from. A title is not a
+// prescription, so on a chapter card that match is worth no more than the chapter
+// line: all three still go.
+const TITLED_DESC = ["20 MINUTE WORKOUT", "", "0:00 Warm up", "3:00 Workout", "17:00 Cool down"].join("\n");
+const titledCard = {
+  duration_minutes: 20,
+  blocks: [{
+    rounds: null, rest_seconds: null,
+    exercises: [
+      { name: "Warm up", canonical_id: null, sets: null, reps: null, duration_seconds: null, rest_seconds: null },
+      { name: "Workout", canonical_id: null, sets: null, reps: null, duration_seconds: null, rest_seconds: null },
+      { name: "Cool down", canonical_id: null, sets: null, reps: null, duration_seconds: null, rest_seconds: null },
+    ],
+  }],
+};
+const titledSrc = indexSource(TITLED_DESC, "description");
+check("junk: 'Workout' really does match the title line, not the chapter line",
+  locate(titledSrc, "Workout")?.i === 0, "matched line " + locate(titledSrc, "Workout")?.i);
+const titledRun = stampJunk(titledCard, titledSrc);
+check("junk: a heading matching only the video's title drops with the rest",
+  titledRun.dropped.length === 3, JSON.stringify(titledRun.dropped));
+check("junk: nothing survives that card", titledCard.blocks.length === 0,
+  JSON.stringify(titledCard.blocks));
+
+// The control for that rule. Same title, but the description also writes the
+// workout out. What is prescribed in the body is kept — the title line is the only
+// written line that counts for nothing, and only for names that carry no dose.
+const BODY_DESC = [
+  "20 MINUTE WORKOUT",
+  "",
+  "Workout: 3 rounds of 10 goblet squats",
+  "",
+  "0:00 Warm up",
+  "3:00 Workout",
+  "17:00 Cool down",
+].join("\n");
+const bodyCard = {
+  duration_minutes: 20,
+  blocks: [{
+    rounds: 3, rest_seconds: null,
+    exercises: [
+      { name: "Warm up", canonical_id: null, sets: null, reps: null, duration_seconds: null, rest_seconds: null },
+      { name: "Goblet Squat", canonical_id: "goblet-squat", sets: 3, reps: "10", duration_seconds: null, rest_seconds: null },
+      { name: "Workout", canonical_id: null, sets: 3, reps: "10", duration_seconds: null, rest_seconds: null },
+    ],
+  }],
+};
+const bodyRun = stampJunk(bodyCard, indexSource(BODY_DESC, "description"));
+const bodyLeft = bodyCard.blocks[0].exercises;
+check("junk: the goblet squat written out in the body is kept",
+  bodyLeft.some((e) => e.name === "Goblet Squat" && e.sets === 3 && e.reps === "10"),
+  JSON.stringify(bodyLeft.map((e) => e.name)));
+check("junk: a furniture name is kept when it carries a dose of its own",
+  bodyLeft.some((e) => e.name === "Workout"), JSON.stringify(bodyLeft.map((e) => e.name)));
+check("junk: only the dose-less heading goes", bodyRun.dropped.length === 1 &&
+  bodyRun.dropped[0] === "Warm up", JSON.stringify(bodyRun.dropped));
+
+// A chapter list of real movements is a chapter list of real movements. It is
+// still capped, and nothing is deleted.
+const REAL_DESC = [
+  "FULL BODY KETTLEBELL",
+  "",
+  "0:00 Intro",
+  "1:00 Goblet Squat",
+  "6:00 Kettlebell Swing",
+].join("\n");
+const realSrc = indexSource(REAL_DESC, "description");
+const realChapterCard = {
+  duration_minutes: 12,
+  blocks: [{
+    rounds: null, rest_seconds: null,
+    exercises: [
+      { name: "Goblet Squat", canonical_id: "goblet-squat", sets: null, reps: null, duration_seconds: null, rest_seconds: null },
+      { name: "Kettlebell Swing", canonical_id: "kettlebell-swing", sets: null, reps: null, duration_seconds: null, rest_seconds: null },
+    ],
+  }],
+};
+const realRun = stampJunk(realChapterCard, realSrc);
+check("junk: real movements on chapter lines are kept", realRun.dropped.length === 0,
+  JSON.stringify(realRun.dropped));
+check("junk: nothing counted when nothing was dropped",
+  realRun.parts.dropped_chapter_junk === undefined);
+check("junk: both exercises survive", realChapterCard.blocks[0].exercises.length === 2);
+
+// A caption that literally prescribes "Warm up set 3x10" is an instruction the
+// creator gave. It is written text, it carries a dose, and it stays.
+const WARM_CAPTION = ["UPPER BODY", "Warm up set 3x10", "Bench Press 4x8"].join("\n");
+const warmSrc = indexSource(WARM_CAPTION, "caption");
+const warmCard = {
+  duration_minutes: null,
+  blocks: [{
+    rounds: null, rest_seconds: null,
+    exercises: [
+      { name: "Warm up set", canonical_id: null, sets: 3, reps: "10", duration_seconds: null, rest_seconds: null },
+      { name: "Bench Press", canonical_id: "bench-press", sets: 4, reps: "8", duration_seconds: null, rest_seconds: null },
+    ],
+  }],
+};
+const warmRun = stampJunk(warmCard, warmSrc);
+check("junk: a caption-verified 'Warm up set' with sets and reps is kept",
+  warmRun.dropped.length === 0, JSON.stringify(warmRun.dropped));
+check("junk: its evidence is verified caption text",
+  warmCard.blocks[0].exercises[0].evidence.source === "caption" &&
+  warmCard.blocks[0].exercises[0].evidence.verified === true,
+  JSON.stringify(warmCard.blocks[0].exercises[0].evidence));
+
+// A dose is a dose whatever the name. A chapter's span is never copied into
+// duration_seconds, so a duration here came from written text.
+check("junk: a 'Cool down' with a real duration is not junk",
+  isChapterJunkExercise(
+    { name: "Cool down", duration_seconds: 300, evidence: { source: "chapters", line: 4, offset: 0, quote: "17:00 Cool down", t: 1020, slide: null, verified: true } },
+    ["chapters"],
+  ) === false);
+check("junk: the same name with no dose is junk",
+  isChapterJunkExercise(
+    { name: "Cool down", duration_seconds: null, evidence: { source: "chapters", line: 4, offset: 0, quote: "17:00 Cool down", t: 1020, slide: null, verified: true } },
+    ["chapters"],
+  ) === true);
+check("junk: caption evidence is never touched",
+  isChapterJunkExercise(
+    { name: "Stretching", evidence: { source: "caption", line: 1, offset: 0, quote: "stretching", t: null, slide: null, verified: true } },
+    ["caption", "chapters"],
+  ) === false);
+check("junk: nothing located, on a card with no chapters at all, is kept",
+  isChapterJunkExercise({ name: "Warm up", evidence: { source: "none", line: null, offset: null, quote: null, t: null, slide: null, verified: false } },
+    ["caption"]) === false);
+check("junk: nothing located, on a card that used chapters, is junk",
+  isChapterJunkExercise({ name: "Warm up", evidence: { source: "none", line: null, offset: null, quote: null, t: null, slide: null, verified: false } },
+    ["chapters", "none"]) === true);
+// The title-line rule, directly. Line 0 is the video's own name; every other
+// written line is the creator saying something.
+const onLine = (line, sources) => isChapterJunkExercise(
+  { name: "Workout", evidence: { source: "description", line, offset: 0, quote: "20 MINUTE WORKOUT", t: null, slide: null, verified: true } },
+  sources,
+);
+check("junk: the title line does not shelter a heading on a chapter card",
+  onLine(0, ["chapters", "description"]) === true);
+check("junk: any other written line does", onLine(3, ["chapters", "description"]) === false);
+check("junk: and the title line is untouched when the card used no chapters",
+  onLine(0, ["description"]) === false);
+check("junk: a title-line match with a dose is kept even on a chapter card",
+  isChapterJunkExercise(
+    { name: "Workout", sets: 3, reps: "10", evidence: { source: "description", line: 0, offset: 0, quote: "20 MINUTE WORKOUT", t: null, slide: null, verified: true } },
+    ["chapters", "description"],
+  ) === false);
+
+check("junk: a real movement is never junk however it was traced",
+  isChapterJunkExercise({ name: "Goblet Squat", evidence: { source: "chapters", line: 3, offset: 0, quote: "1:00 Goblet Squat", t: 60, slide: null, verified: true } },
+    ["chapters"]) === false);
+
+// ---------- which score survives a reprocess merge ----------
+//
+// mergeNoDowngrade pulls blocks back from the stored card when a re-run comes back
+// thinner. Blocks written before evidence existed carry none, so re-scoring them
+// measures the schema they were saved under rather than the card, and the user's
+// number would fall on a reprocess where nothing got worse.
+
+const RESCORED_LOW = { score: 0.3, parts: { evidence: 0, numbers: 0.5, agreement: 1, catalog: 1, duration: 0.5 } };
+const RESCORED_HIGH = { score: 0.7, parts: { evidence: 1, numbers: 0.8, agreement: 1, catalog: 1, duration: 1 } };
+
+const keptOld = mergeConfidence(0.8, null, RESCORED_LOW, true, false);
+check("merge: an unevidenced old card keeps its stored score", keptOld.score === 0.8,
+  "got " + keptOld.score);
+check("merge: and says so", keptOld.parts.merge_kept_old_score === true,
+  JSON.stringify(keptOld.parts));
+
+const preScoring = mergeConfidence(null, null, RESCORED_LOW, true, false);
+check("merge: a pre-scoring row stays unscored rather than getting a number",
+  preScoring.score === null, String(preScoring.score));
+
+const rescoreWins = mergeConfidence(0.6, null, RESCORED_HIGH, true, true);
+check("merge: evidenced old blocks are re-scored, and the better number wins",
+  rescoreWins.score === 0.7, "got " + rescoreWins.score);
+check("merge: records that the re-score won",
+  rescoreWins.parts.merge_kept_old_score === false, JSON.stringify(rescoreWins.parts));
+
+const oldWins = mergeConfidence(0.9, null, RESCORED_HIGH, true, true);
+check("merge: no downgrade — a better stored score survives the re-score",
+  oldWins.score === 0.9 && oldWins.parts.merge_kept_old_score === true,
+  JSON.stringify(oldWins));
+
+const noMerge = mergeConfidence(0.9, null, RESCORED_LOW, false, false);
+check("merge: nothing pulled back means the re-run stands on its own",
+  noMerge.score === 0.3 && noMerge.parts.merge_kept_old_score === undefined,
+  JSON.stringify(noMerge));
+
+const keptWithDrop = mergeConfidence(0.8, { evidence: 1, numbers: 1, agreement: 1, catalog: 1, duration: 1 },
+  { score: 0.3, parts: { ...RESCORED_LOW.parts, dropped_chapter_junk: 2 } }, true, false);
+check("merge: the old components are kept verbatim",
+  keptWithDrop.parts.evidence === 1 && keptWithDrop.parts.numbers === 1,
+  JSON.stringify(keptWithDrop.parts));
+check("merge: except a deletion this pass made, which is not a score component",
+  keptWithDrop.parts.dropped_chapter_junk === 2, JSON.stringify(keptWithDrop.parts));
 
 // ---------- invented numbers ----------
 //
@@ -313,6 +563,11 @@ console.log("scores  rich " + rich.score + "  mixed " + mixed.score + "  carouse
   "  fabricated-doses " + fakeDose.score + "  chapters-only " + chapters.score + "  thin " + thin.score);
 console.log("rich parts     " + JSON.stringify(rich.parts));
 console.log("chapters parts " + JSON.stringify(chapters.parts) + "  " + JSON.stringify(chapters.notes));
+console.log("chapter junk   dropped " + JSON.stringify(junkRun.dropped) +
+  "  parts " + JSON.stringify(junkRun.parts) +
+  "  kept on a real chapter list " + JSON.stringify(realChapterCard.blocks[0].exercises.map((e) => e.name)));
+console.log("merge scores   unevidenced-old " + keptOld.score + "  pre-scoring " + preScoring.score +
+  "  rescore-wins " + rescoreWins.score + "  old-wins " + oldWins.score + "  no-merge " + noMerge.score);
 console.log("");
-if (failures) { console.log(failures + " FAILURE(S)"); process.exit(1); }
-console.log("all confidence tests passed");
+if (failures) { console.log(failures + " FAILURE(S) of " + checks + " checks"); process.exit(1); }
+console.log("all " + checks + " confidence checks passed");
