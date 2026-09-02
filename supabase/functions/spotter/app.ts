@@ -255,13 +255,22 @@ export const APP = String.raw`
 
   // ---------- library ----------
 
-  function load() {
+  function load(retry) {
     return Promise.all([
       sb.from("workouts").select("*").order("created_at", { ascending: false }).limit(200),
       sb.from("collections").select("*").order("sort_order").order("created_at"),
       sb.from("collection_items").select("collection_id,workout_id,added_at")
     ]).then(function (rs) {
-      if (rs[0].error) { toast("Could not load your library."); return; }
+      if (rs[0].error) {
+        // Right after a redirect sign-in (magic link, password reset) the first
+        // read can race supabase-js finishing the session from the URL hash and
+        // come back 401. One quiet retry before telling anyone anything.
+        if (!retry) {
+          return new Promise(function (res) { setTimeout(function () { res(load(true)); }, 900); });
+        }
+        toast("Could not load your library.");
+        return;
+      }
       state.workouts = rs[0].data || [];
       // Collections decorate the library; they are not the library. A failed read
       // here keeps whatever was already known rather than blanking the chips.
@@ -1367,6 +1376,9 @@ export const APP = String.raw`
     });
     var as = $("swapareas");
     as.innerHTML = "";
+    // Bodyweight swaps by default; listing what is to hand widens the catalog
+    // candidates the server offers the model.
+    $("swaphave").classList.toggle("hide", swapCtx.reason !== "no_equipment");
     if (swapCtx.reason === "pain") {
       as.classList.remove("hide");
       $("swaplede").textContent = "Where does it hurt? You get ways to modify the move and what to build up — not a diagnosis.";
@@ -1377,7 +1389,9 @@ export const APP = String.raw`
       });
     } else {
       as.classList.add("hide");
-      $("swaplede").textContent = "Why do you need something different?";
+      $("swaplede").textContent = swapCtx.reason === "no_equipment"
+        ? "Bodyweight swaps unless you say what you have."
+        : "Why do you need something different?";
     }
   }
 
@@ -1388,8 +1402,9 @@ export const APP = String.raw`
     var box = $("swapresult");
     box.innerHTML = "";
     box.appendChild(el("div", "aitext", "Thinking…"));
+    var have = ctx.reason === "no_equipment" ? $("swaphaveinput").value.trim().slice(0, 200) : "";
     api("swap", { method: "POST", body: JSON.stringify({
-      exercise: ctx.name, reason: ctx.reason, body_area: ctx.area || "", title: ctx.title, equipment_have: ""
+      exercise: ctx.name, reason: ctx.reason, body_area: ctx.area || "", title: ctx.title, equipment_have: have
     }) }).then(function (r) {
       if (swapCtx !== ctx || ctx.seq !== seq) return;   // a newer question superseded this one
       box.innerHTML = "";
@@ -2577,6 +2592,9 @@ export const APP = String.raw`
     this.style.height = "auto";
     this.style.height = Math.min(this.scrollHeight, 120) + "px";
   });
+
+  $("swaphavego").onclick = function () { runSwap(); };
+  $("swaphaveinput").addEventListener("keydown", function (e) { if (e.key === "Enter") runSwap(); });
 
   $("colcreate").onclick = createCollection;
   $("colname").addEventListener("keydown", function (e) { if (e.key === "Enter") createCollection(); });

@@ -217,6 +217,10 @@ export const MARKUP_BODY = String.raw`</head>
   <p class="lede" id="swaplede">Why do you need something different?</p>
   <div class="pillrow" id="swapreasons"></div>
   <div class="pillrow hide" id="swapareas"></div>
+  <div class="newcol hide" id="swaphave">
+    <input class="nm" id="swaphaveinput" type="text" placeholder="Have anything? e.g. dumbbells, bands" autocomplete="off" autocapitalize="off" aria-label="Available equipment">
+    <button class="btn" id="swaphavego">Find swaps</button>
+  </div>
   <div id="swapresult"></div>
 </div></div>
 

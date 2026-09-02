@@ -18,7 +18,14 @@ move at a time and logs what you lifted.
   set-by-set logging of reps and weight (prefilled from the last time you did that move).
 - **Plan** — drop saved workouts onto a week and see which days you actually trained.
 - **Track** — weekly volume, per-exercise personal records (estimated 1RM), muscle-group
-  balance, and a session history.
+  balance, a body diagram of what you hit this week, and every logged session.
+- **Organise** — favourites, and collections a workout can sit in several of ("Leg day",
+  "Hotel gym", "Quick 10 min"). Rename any card.
+- **Swap or modify** — no equipment, station busy, or it hurts: alternatives with an honest
+  trade-off each, or ways to modify the movement and what to build up. Never a diagnosis.
+- **Pumpy, the coach** — builds a workout from what you have saved and what you ask for,
+  adds to one you have, plans your week, and says where something fits. It shows you every
+  change and waits for you to confirm it.
 
 ## Architecture
 
@@ -109,6 +116,43 @@ something better ships.
 through `net.ts`, which rejects loopback, link-local, RFC1918 and literal-IP hosts and
 re-checks after **every** redirect hop.
 
+**Collections, not folders.** `collections` and `collection_items` are per-user with
+owner-only policies; a workout can be in any number of them and the membership insert
+policy checks that both the collection and the workout belong to the caller. Renaming a
+card is a plain PATCH on `workouts.title` under RLS; a trigger records it in `corrections`
+(kind `rename`) with the title that was actually stored, and only when the updating
+identity is the row's owner — a reprocess rewriting the title as the service role is not a
+correction.
+
+**The body diagram trusts only the catalog.** The front and back silhouettes are inline SVG
+whose regions are keyed to the same twelve muscle groups the catalog uses. What lights up
+is computed from `exercise_catalog.muscle_groups` through each exercise's `canonical_id`,
+never from the card's free-text muscle list and never from a name, so a movement the
+catalog does not know highlights nothing and the card says how many were left out.
+
+**Substitutions carry a reason.** `POST /api/swap` takes `reason` (`no_equipment`,
+`station_busy`, `pain`) and, for pain, a `body_area`. Candidates come from the catalog —
+movements sharing a muscle group, filtered by the equipment to hand, or the muscles that
+build up the sore area — and every suggestion is resolved back to a `canonical_id`. Pain
+answers are modifications plus what to strengthen; the prompt forbids a diagnosis, a filter
+drops any line that names one anyway, and the not-medical-advice line is written by the
+server rather than left to the model.
+
+**Pumpy runs server-side, over the user's own rows, and never writes without a confirm.**
+The coach goes through the same `textGenerate()` front door as extraction, so it uses Luna
+when the key exists and the free chain otherwise, under the same spend ceiling. Tool calling
+is a JSON protocol on top of plain generation — the model answers `{say, tool, proposal}`,
+tool results are appended to the transcript and the model is asked again, a few times at
+most — which keeps every provider in the ladder usable. Each tool (`list_library`,
+`get_workout`, `search_catalog`, `get_plan`, `get_logs_summary`) puts the caller's user id
+in its query. Writes come back as a validated proposal (`create_workout`,
+`append_exercises`, `plan_days`) that the user confirms in the app; only
+`POST /api/pumpy/confirm` executes it, and a tool row in `pumpy_messages` records what ran.
+A Pumpy-made workout carries `extracted_by: pumpy:<model>`; exercises it appends land in
+`corrections` as adds tagged `added_by: pumpy`. Conversations persist in `pumpy_threads` /
+`pumpy_messages` under owner-only RLS with no client writes; the last sixteen visible turns
+are the context. `PUMPY_MARK` in `app.ts` is the placeholder art and its single swap point.
+
 ### Source layout
 
 | Path | What |
@@ -122,8 +166,8 @@ re-checks after **every** redirect hop.
 | `supabase/functions/spotter/app.ts` | All app logic: auth, library, Workout Mode, plan, progress |
 | `supabase/functions/spotter/page.ts` | Stitches the three together for the function |
 | `build.mjs` | Same stitch, writing `docs/index.html` for GitHub Pages |
-| `supabase/migrations/` | Schema, RLS policies, profile trigger, storage bucket, exercise catalog, ingest queue |
-| `tools/` | Catalog migration generator, normalizer + confidence test batteries, one-time backfill |
+| `supabase/migrations/` | Schema, RLS policies, profile trigger, storage bucket, exercise catalog, ingest queue, corrections, collections, Pumpy |
+| `tools/` | Catalog migration generator, normalizer + confidence test batteries, one-time backfill, `census.py` (hash the real users' rows before/after a change), `throwaway.py` (drive disposable accounts against the live deployment) |
 
 The three frontend modules are `String.raw` templates, so they must never contain a
 backtick or `${`. `build.mjs` fails loudly if they do.
@@ -157,6 +201,7 @@ Per-user daily caps keep a public launch inside the free tiers, all overridable 
 | `LIMIT_EXTRACT` | 60 | new saves **and** reprocesses — everything that runs the ladder |
 | `LIMIT_SAVES` | 200 | every save, cache hits included |
 | `LIMIT_HELPER` | 300 | `/api/explain` and `/api/swap` |
+| `LIMIT_CHAT` | 40 | Pumpy turns — one turn can be several model calls, so this one is tight |
 
 Cache hits count only against `LIMIT_SAVES`, so saving videos other people already saved is
 effectively free.
@@ -187,7 +232,8 @@ code change. `GET /api/limits` reports `spend_today`, `spend_limit` and `paid_en
 4. Set the function secrets you want:
    `GEMINI_API_KEY`, `GROQ_API_KEY`, optionally `OPENAI_API_KEY` + `OPENAI_MODEL`
    (paid primary), `ANTHROPIC_API_KEY` + `CLAUDE_MODEL`, `YOUTUBE_API_KEY`,
-   `ALLOWED_ORIGINS`, `LIMIT_EXTRACT`, `LIMIT_SAVES`, `LIMIT_HELPER`, `DAILY_SPEND_USD`.
+   `ALLOWED_ORIGINS`, `LIMIT_EXTRACT`, `LIMIT_SAVES`, `LIMIT_HELPER`, `LIMIT_CHAT`,
+   `DAILY_SPEND_USD`.
    Or run `./set-keys.sh`.
    Also set `WORKER_SECRET` to a long random string — it is what authenticates the worker
    route — and store the same value plus the worker URL in the `app_config` table so

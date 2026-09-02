@@ -25,7 +25,7 @@
 <body>
 <main>
   <h1>Privacy</h1>
-  <div class="date">Last updated 1 September 2026</div>
+  <div class="date">Last updated 2 September 2026</div>
 
   <p>Spotter is a small, independent app. This page says plainly what it stores and what it does
     not do. If anything here is unclear, email
@@ -41,6 +41,8 @@
       notes and planned days you add.</li>
     <li><b>A personal save key</b> so an iOS Shortcut can add videos for you. You can replace it
       any time from Settings.</li>
+    <li><b>Your conversations with Pumpy</b>, the coach, so you can pick a chat up where you left
+      it, and the changes you confirmed from them. They are private to your account.</li>
   </ul>
 
   <h2>What Spotter does not do</h2>
@@ -53,9 +55,16 @@
   </ul>
 
   <h2>Other services involved</h2>
-  <p>Saving a video sends its public caption or description to an AI model
-    (currently Google Gemini or Groq) so the exercises can be pulled out. Only that public text
-    is sent — never your email, your logs, or your notes. Data is stored with
+  <p>Saving a video sends its public caption or description to an AI model (currently OpenAI,
+    with Google Gemini and Groq as fallbacks) so the exercises can be pulled out. Only that
+    public text is sent.</p>
+  <p>Asking Pumpy, tapping <i>How to do this</i>, or <i>Swap or modify</i> also sends an AI
+    model what you typed plus what it needs to answer: the titles, exercises, equipment and
+    collection names of the workouts you have saved, your planned days, and a summary of your
+    recent sessions (how many, which muscles, how much volume). Your email and your notes are
+    never sent, and nothing from any other account ever is. Pumpy cannot change anything in
+    your library until you confirm it in the app.</p>
+  <p>Data is stored with
     <a href="https://supabase.com/privacy" target="_blank" rel="noopener">Supabase</a> in the
     United States. Fonts are loaded from Google Fonts.</p>
   <p>Video playback happens in an embedded player from Instagram, TikTok or YouTube. Those
