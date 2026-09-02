@@ -2593,6 +2593,14 @@ type MediaRequest = {
   shortcode: string;
   kind: string | null;
   user_id: string | null;
+  /**
+   * The post's own caption, when there is one. Tier 2 needs it and tier 1 does
+   * not: a caption that names no exercises very often still prescribes the SHAPE
+   * of the session — "3 rounds, 45 seconds on, 20 seconds off" — and the video
+   * carries the movements without a number on them. Read apart, each is half a
+   * card. This is what lets them be read together.
+   */
+  caption?: string | null;
 };
 
 type MediaReply = {
@@ -2664,14 +2672,29 @@ async function mediaTranscript(src: MediaSource, shortcode: string, ctx: AiCtx):
  * exercise on it is stamped with video evidence — a timestamp, and no claim to be
  * verified — before it goes anywhere near the merge.
  */
-async function mediaVideo(src: MediaSource, shortcode: string, ctx: AiCtx): Promise<MediaReply> {
+async function mediaVideo(
+  src: MediaSource, shortcode: string, ctx: AiCtx, caption?: string | null,
+): Promise<MediaReply> {
   if (!videoTierEnabled()) {
     return { status: "ok", tier: "video", media_source: null, detail: "media.video_enabled is off" };
   }
   const video = src.urls.find((u) => u.kind === "video");
   if (!video) return { status: "ok", tier: "video", media_source: null, detail: "no video url" };
 
-  const read = await geminiReadVideo(video.url, src.headers, shortcode, VIDEO_PROMPT, ctx);
+  // The acceptance case for this whole wave is a caption that says "3 rounds, 45
+  // seconds on, 20 seconds off" and names no movement, over a video that shows
+  // four movements and no numbers. Reading them apart gives a card with exercises
+  // and no doses, which is not a workout anybody can follow — so the reader is
+  // given both, with an explicit rule about which may come from which.
+  const prompt = caption && caption.trim()
+    ? VIDEO_PROMPT + "\n\nThe post's own caption reads:\n---\n" + caption.slice(0, 1500) +
+      "\n---\nWhere that caption prescribes rounds, work or rest — \"3 rounds, 45 seconds on, " +
+      "20 seconds off, 1 minute rest\" — apply those numbers to the exercises you can see, and " +
+      "put the rounds and the between-round rest on the block. Where it gives no number, leave " +
+      "the field null. Never take an exercise NAME from the caption: every movement on the card " +
+      "has to be one you can actually see or read in the video."
+    : VIDEO_PROMPT;
+  const read = await geminiReadVideo(video.url, src.headers, shortcode, prompt, ctx);
   if (!read.text) {
     // The free tier is 20 requests a day per model. A 429 here is not a fault and
     // is worth naming as itself, because it is the difference between "this video
@@ -2752,7 +2775,7 @@ async function handleMediaTick(req: Request): Promise<Response> {
 
   const ctx: AiCtx = { purpose: tier === "video" ? "video" : "transcribe", userId: body.user_id ?? null };
   const out = tier === "video"
-    ? await mediaVideo(src, p.shortcode, ctx)
+    ? await mediaVideo(src, p.shortcode, ctx, body.caption ?? null)
     : await mediaTranscript(src, p.shortcode, ctx);
   return json(out, 200);
 }
@@ -2764,13 +2787,16 @@ async function handleMediaTick(req: Request): Promise<Response> {
  * nothing" — exactly as the vision sub-request does, and for the same reason: a
  * poisoned video costs one card rather than a batch of unrelated saves.
  */
-async function runMediaRemote(p: Parsed, tier: MediaTier, userId: string | null): Promise<MediaReply | null> {
+async function runMediaRemote(
+  p: Parsed, tier: MediaTier, userId: string | null, caption?: string | null,
+): Promise<MediaReply | null> {
   if (!WORKER_SECRET) {
     console.error("media skipped: WORKER_SECRET is not set, refusing to stream inline");
     return null;
   }
   const body: MediaRequest = {
     tier, platform: p.platform, url: p.clean, shortcode: p.shortcode, kind: p.kind, user_id: userId,
+    caption: caption ? caption.slice(0, SUPPLIED_CAPTION_MAX) : null,
   };
   try {
     const r = await fetch(`${SELF_URL}/api/worker/media`, {
@@ -4998,7 +5024,7 @@ async function escalateToMedia(
     }
 
     await setMediaStage(p.shortcode, tier === "video" ? "watching" : "listening");
-    const out = await runMediaRemote(p, tier, job.user_id);
+    const out = await runMediaRemote(p, tier, job.user_id, meta.caption);
     // Charged whether or not it answered: a sub-request that died mid-stream still
     // moved the bytes, and a cap that only counts successes is not a cap.
     await logMediaStep(job.user_id, p, job.id, out);
@@ -5051,7 +5077,11 @@ async function escalateToMedia(
     }
   }
 
-  await setMediaStage(p.shortcode, null);
+  // The stage is NOT cleared here, and that is deliberate. Between the last tier
+  // and finishJob there is a thumbnail to store and a cache row to write, and a
+  // card that reverted to "Reading the video" for those two seconds would be
+  // describing something that already finished. finishJob and failJob both null
+  // it, so it cannot outlive the job either way.
   if (ran.length) {
     console.log("media: ran", ran.join("+"), "on", p.shortcode, "->", countExercises(card),
       "exercise(s), confidence", card.confidence ?? "-", "source", meta.media_source ?? "none");
