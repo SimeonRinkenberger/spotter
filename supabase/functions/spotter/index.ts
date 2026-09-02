@@ -1899,6 +1899,561 @@ async function sweepOrphanUploads(): Promise<void> {
   }
 }
 
+// ---------- where the media itself lives ----------
+//
+// Everything above this point moves text: a caption, a description, a page of
+// HTML. This is the first thing in Spotter that needs to know where the VIDEO is,
+// because a caption that names no exercises is not a video that contains none —
+// the workout is spoken, or written on screen, and both of those need the media.
+//
+// Two rules hold the whole section together:
+//
+//   1. A media URL is only ever read out of a provider's own parser, never out of
+//      anything a client posted as a URL. A field named `media_url` on an ingest
+//      body would be an SSRF primitive with a friendly name, and safeFetch's
+//      blocklist is a second line of defence rather than a licence to add one.
+//   2. The bytes never land in this isolate as a value. They are either handed to
+//      somebody else as a URL (Groq fetches it itself) or streamed straight
+//      through (the Files API upload below), which is the same rule the upload
+//      provider already follows.
+
+/** One candidate media URL: where it was read from, and what is in it. */
+type MediaUrl = {
+  /** The field in the platform's own payload, for the log and the probe. */
+  field: string;
+  url: string;
+  kind: "audio" | "video";
+};
+
+/** Host and length only. A signed CDN URL carries a token; the log gets neither. */
+function mediaUrlBrief(u: string): string {
+  try { return new URL(u).hostname + " (" + u.length + " chars)"; }
+  catch { return "unparseable (" + u.length + " chars)"; }
+}
+
+/**
+ * TikTok's rehydration blob names the media three times over, and the three are
+ * not equivalent:
+ *
+ *   * `music.playUrl` is the SOUND. When the creator used their own audio —
+ *     `music.original === true` — that sound is the video's own audio track and
+ *     nothing else, which is both the cheapest thing to transcribe and exactly the
+ *     thing worth transcribing. When they used a licensed song it is the song, and
+ *     transcribing it would produce lyrics presented as a workout, so it is only
+ *     ever offered when the payload says it is original.
+ *   * `video.playAddr` is the streaming MP4, video and audio together.
+ *   * `video.downloadAddr` is the same video with the watermark, usually larger.
+ */
+function ttMediaFromHtml(html: string): MediaUrl[] {
+  const m = html.match(/<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__"[^>]*>([\s\S]*?)<\/script>/);
+  if (!m) return [];
+  let it: any;
+  try {
+    it = JSON.parse(m[1])?.__DEFAULT_SCOPE__?.["webapp.video-detail"]?.itemInfo?.itemStruct;
+  } catch { return []; }
+  if (!it) return [];
+
+  const out: MediaUrl[] = [];
+  const add = (field: string, raw: unknown, kind: "audio" | "video") => {
+    if (typeof raw !== "string") return;
+    const u = raw.replace(/\\u0026/g, "&").replace(/\\\//g, "/");
+    if (!/^https:\/\//.test(u)) return;
+    if (out.some((o) => o.url === u)) return;
+    out.push({ field, url: u, kind });
+  };
+
+  if (it.music?.original === true) add("music.playUrl", it.music?.playUrl, "audio");
+  add("video.playAddr", it.video?.playAddr, "video");
+  add("video.downloadAddr", it.video?.downloadAddr, "video");
+  return out;
+}
+
+/**
+ * Instagram exposes the reel's MP4 as an og:video on the crawler view and as
+ * `video_url` inside the page's own JSON. Both are the same file; which one is
+ * present depends on which page was fetched and by whom.
+ */
+function igMediaFromHtml(html: string): MediaUrl[] {
+  const out: MediaUrl[] = [];
+  const add = (field: string, raw: unknown) => {
+    if (typeof raw !== "string") return;
+    const u = decodeEntities(raw.replace(/\\u0026/g, "&").replace(/\\\//g, "/"));
+    if (!/^https:\/\//.test(u)) return;
+    if (out.some((o) => o.url === u)) return;
+    out.push({ field, url: u, kind: "video" });
+  };
+  add("og:video", metaTag(html, "og:video"));
+  add("og:video:secure_url", metaTag(html, "og:video:secure_url"));
+  for (const mm of html.matchAll(/"video_url"\s*:\s*"([^"]+)"/g)) add("video_url", mm[1]);
+  for (const mm of html.matchAll(/"playback_url"\s*:\s*"([^"]+)"/g)) add("playback_url", mm[1]);
+  return out;
+}
+
+/** Headers a CDN expects from a browser. Without the Referer TikTok answers 403. */
+function mediaHeaders(platform: string): Record<string, string> {
+  const h: Record<string, string> = {
+    "User-Agent": DESKTOP_UA,
+    "Accept": "*/*",
+    "Accept-Language": "en-US,en;q=0.9",
+  };
+  if (platform === "tiktok") h["Referer"] = "https://www.tiktok.com/";
+  if (platform === "instagram") h["Referer"] = "https://www.instagram.com/";
+  return h;
+}
+
+
+/**
+ * The watch page, and the cookies it hands out.
+ *
+ * Measured 2026-09-02 from this datacenter: `video.playAddr` answers 403 to a bare
+ * request and 206 to the same request carrying the cookies the watch page set a
+ * second earlier. So the page fetch is not only where the URL is read, it is where
+ * the permission to read it is issued, and the two have to travel together.
+ */
+async function pageWithCookies(
+  target: string, ua: string,
+): Promise<{ status: number; html: string | null; cookie: string; error?: string }> {
+  try {
+    const r = await safeFetch(target, {
+      headers: { "User-Agent": ua, "Accept-Language": "en-US,en;q=0.9", "Accept": "text/html" },
+      signal: AbortSignal.timeout(20_000),
+    });
+    const raw = (r.headers as unknown as { getSetCookie?: () => string[] }).getSetCookie?.() ??
+      (r.headers.get("set-cookie") ? [r.headers.get("set-cookie") as string] : []);
+    const jar: string[] = [];
+    for (const line of raw) {
+      const pair = line.split(";")[0].trim();
+      if (pair.includes("=")) jar.push(pair);
+    }
+    const html = await r.text();
+    return { status: r.status, html: r.ok ? html : null, cookie: jar.join("; ") };
+  } catch (e) {
+    return { status: 0, html: null, cookie: "", error: String(e).slice(0, 200) };
+  }
+}
+
+/**
+ * A multipart body that is a stream rather than a value.
+ *
+ * The rule everywhere else in this function is that media is moved as a URL and
+ * never held. Groq will fetch a URL itself, which is what the upload provider
+ * relies on — but a TikTok CDN URL is bound to the cookies of the machine that
+ * asked for it, so Groq cannot fetch it and something has to carry the bytes
+ * across. Carrying them THROUGH is the compromise: the response body is piped
+ * into the request body a chunk at a time, so at no point does the isolate hold
+ * the file, and the byte counter aborts the whole thing at the cap.
+ */
+function multipartStream(
+  boundary: string,
+  fields: [string, string][],
+  file: { name: string; filename: string; type: string; body: ReadableStream<Uint8Array> },
+  cap: number,
+  onBytes?: (n: number) => void,
+): ReadableStream<Uint8Array> {
+  const enc = new TextEncoder();
+  let head = "";
+  for (const [k, v] of fields) {
+    head += `--${boundary}\r\nContent-Disposition: form-data; name="${k}"\r\n\r\n${v}\r\n`;
+  }
+  head += `--${boundary}\r\nContent-Disposition: form-data; name="${file.name}"; ` +
+    `filename="${file.filename}"\r\nContent-Type: ${file.type}\r\n\r\n`;
+  const tail = `\r\n--${boundary}--\r\n`;
+
+  return new ReadableStream<Uint8Array>({
+    async start(controller) {
+      controller.enqueue(enc.encode(head));
+      const reader = file.body.getReader();
+      let total = 0;
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          total += value.byteLength;
+          if (total > cap) {
+            await reader.cancel().catch(() => {});
+            controller.error(new Error("media exceeded the " + cap + " byte cap"));
+            return;
+          }
+          controller.enqueue(value);
+        }
+      } catch (e) {
+        controller.error(e);
+        return;
+      } finally {
+        try { reader.releaseLock(); } catch { /* already released */ }
+      }
+      controller.enqueue(enc.encode(tail));
+      controller.close();
+      onBytes?.(total);
+    },
+  });
+}
+
+/** The size ceiling for anything this function streams. app_config `media.max_bytes`. */
+function mediaLimit(key: "max_bytes" | "timeout_ms", dflt: number): number {
+  const fromCfg = Number(runtimeCfg["media." + key]);
+  if (Number.isFinite(fromCfg) && fromCfg > 0) return fromCfg;
+  const fromEnv = Number(Deno.env.get("MEDIA_" + key.toUpperCase()));
+  return Number.isFinite(fromEnv) && fromEnv > 0 ? fromEnv : dflt;
+}
+
+/** Groq's own ceiling on an uploaded file, which is lower than the streaming cap. */
+const GROQ_UPLOAD_MAX_BYTES = 24 * 1024 * 1024;
+
+type Transcribed = { text: string; seconds: number; model: string; bytes: number; status: number; detail?: string };
+
+/**
+ * Speech to text for a URL Groq cannot fetch itself: this function fetches it and
+ * pipes the body through. Returns rather than throws — the caller is a tier that
+ * has a next rung, not an upload with nothing else to try.
+ */
+async function groqTranscribeStream(
+  url: string, headers: Record<string, string>, filename: string,
+): Promise<Transcribed> {
+  const model = models().groqTranscribe;
+  const empty = (status: number, detail: string): Transcribed =>
+    ({ text: "", seconds: 0, model, bytes: 0, status, detail });
+  if (!GROQ_API_KEY) return empty(0, "no groq key");
+
+  const cap = Math.min(mediaLimit("max_bytes", 40_000_000), GROQ_UPLOAD_MAX_BYTES);
+  let src: Response;
+  try {
+    src = await safeFetch(url, { headers, signal: AbortSignal.timeout(60_000) });
+  } catch (e) {
+    return empty(0, "fetch failed: " + String(e).slice(0, 200));
+  }
+  if (!src.ok || !src.body) {
+    await src.body?.cancel();
+    return empty(src.status, "media fetch " + src.status);
+  }
+  const declared = Number(src.headers.get("content-length") ?? "");
+  if (Number.isFinite(declared) && declared > cap) {
+    await src.body.cancel();
+    return empty(0, "media is " + declared + " bytes, cap is " + cap);
+  }
+
+  const boundary = "spotter" + crypto.randomUUID().replace(/-/g, "");
+  let sent = 0;
+  const body = multipartStream(boundary, [
+    ["model", model],
+    ["response_format", "verbose_json"],
+    ["temperature", "0"],
+  ], {
+    name: "file", filename,
+    type: src.headers.get("content-type") ?? "video/mp4",
+    body: src.body,
+  }, cap, (n) => { sent = n; });
+
+  let r: Response;
+  try {
+    r = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${GROQ_API_KEY}`,
+        "content-type": `multipart/form-data; boundary=${boundary}`,
+      },
+      body,
+      // Deno needs to be told the request body is a stream it may send before the
+      // response arrives. Not in the DOM typings, hence the cast.
+      duplex: "half",
+      signal: AbortSignal.timeout(mediaLimit("timeout_ms", 150_000)),
+    } as RequestInit);
+  } catch (e) {
+    return empty(0, "upload failed: " + String(e).slice(0, 200));
+  }
+
+  const raw = await r.text();
+  if (!r.ok) return { text: "", seconds: 0, model, bytes: sent, status: r.status, detail: raw.slice(0, 300) };
+
+  try {
+    const data = JSON.parse(raw);
+    // One spoken phrase per line, exactly as the upload provider does it: the
+    // evidence indexer works in lines, and one long paragraph would make every
+    // exercise "verified" against the same meaningless quote.
+    const segs = Array.isArray(data?.segments) ? data.segments : [];
+    const fromSegs = segs
+      .map((s: { text?: unknown }) => String(s?.text ?? "").trim())
+      .filter(Boolean)
+      .join("\n");
+    const text = (fromSegs || String(data?.text ?? "")).trim();
+    const seconds = Number(data?.duration);
+    return {
+      text, model, bytes: sent, status: r.status,
+      seconds: Number.isFinite(seconds) && seconds > 0 ? seconds : 0,
+    };
+  } catch (e) {
+    return { text: "", seconds: 0, model, bytes: sent, status: r.status, detail: "unparseable: " + String(e).slice(0, 160) };
+  }
+}
+
+// ---------- reading the video itself ----------
+//
+// The second tier, and the expensive one. A caption that names no exercises and a
+// soundtrack that is a song leave exactly one place the workout can be: written on
+// the screen. Gemini reads it, and the only way to give Gemini a TikTok is to hand
+// it the file, because the CDN URL is bound to the cookies of whoever fetched the
+// page and Google is not that machine.
+//
+// The bytes still never become a value in this isolate. safeFetch's response body
+// is piped into the Files API upload a chunk at a time and counted as it goes, and
+// the file is deleted on every outcome — success, failure, or a throw halfway
+// through generateContent.
+
+/**
+ * What to ask a video.
+ *
+ * The same card shape the caption extractor and the carousel reader produce, so
+ * one normalizer serves all three — plus `t_seconds`, which a video has and a
+ * caption does not, and which is the only honest thing to quote as evidence for a
+ * claim nobody wrote down. The instruction to refuse is not decoration: a model
+ * asked to find a workout in a video of somebody dancing will find one, and an
+ * invented card is worse than a thin one.
+ */
+const VIDEO_PROMPT =
+  "This is a short fitness video. Read the workout out of it: every exercise that is DEMONSTRATED " +
+  "or WRITTEN ON SCREEN, in the order it appears, using the wording on screen when there is any. " +
+  "Include the sets, reps, seconds of work and seconds of rest ONLY where they are shown on screen " +
+  "or clearly said out loud. " +
+  "Reply with ONLY a JSON object in this shape: " +
+  `{"title": string, "category": one of ${JSON.stringify(CATEGORIES)}, "muscle_groups": string[], ` +
+  '"equipment": string[], "difficulty": string or null, "duration_minutes": int or null, "calories": int or null, ' +
+  '"tags": string[], "has_full_workout": boolean, "blocks": [{"title": string or null, "type": string, ' +
+  '"rounds": int or null, "rest_seconds": int or null, "exercises": [{"name": string, "sets": int or null, ' +
+  '"reps": string or null, "duration_seconds": int or null, "rest_seconds": int or null, "weight": string or null, ' +
+  '"equipment": string or null, "notes": string or null, "t_seconds": number}]}]}. ' +
+  "`t_seconds` is when that exercise first appears, in seconds from the start. " +
+  "Never invent an exercise that is not performed or written in the video, and never invent a number " +
+  'that is not shown. If there is no workout in this video at all, reply with exactly {"none": true}.';
+
+type GeminiFile = { name: string; uri: string; mimeType: string; state: string };
+
+const GEMINI_FILES = "https://generativelanguage.googleapis.com/v1beta/files";
+const GEMINI_UPLOAD = "https://generativelanguage.googleapis.com/upload/v1beta/files";
+
+/**
+ * Start a resumable upload, then stream the media into it.
+ *
+ * Two requests, and the first one is the reason this is resumable rather than a
+ * single multipart POST: Google wants the length up front, and the length is
+ * something the CDN tells us in a header rather than something we can only learn
+ * by holding the file. A source that declines to declare its length is refused
+ * here rather than buffered — that is the rule this whole section exists to keep.
+ */
+async function geminiUploadMedia(
+  url: string, headers: Record<string, string>, displayName: string,
+): Promise<{ file: GeminiFile | null; bytes: number; status: number; detail?: string }> {
+  const fail = (status: number, detail: string) => ({ file: null, bytes: 0, status, detail });
+  if (!GEMINI_API_KEY) return fail(0, "no gemini key");
+  const cap = mediaLimit("max_bytes", 40_000_000);
+
+  let src: Response;
+  try {
+    src = await safeFetch(url, { headers, signal: AbortSignal.timeout(60_000) });
+  } catch (e) {
+    return fail(0, "media fetch failed: " + String(e).slice(0, 200));
+  }
+  if (!src.ok || !src.body) {
+    await src.body?.cancel();
+    return fail(src.status, "media fetch " + src.status);
+  }
+  const size = Number(src.headers.get("content-length") ?? "");
+  const mime = (src.headers.get("content-type") ?? "video/mp4").split(";")[0].trim();
+  if (!Number.isFinite(size) || size <= 0) {
+    await src.body.cancel();
+    return fail(0, "media declared no content-length");
+  }
+  if (size > cap) {
+    await src.body.cancel();
+    return fail(0, "media is " + size + " bytes, cap is " + cap);
+  }
+
+  let uploadUrl: string | null = null;
+  try {
+    const start = await fetch(GEMINI_UPLOAD, {
+      method: "POST",
+      headers: {
+        "x-goog-api-key": GEMINI_API_KEY,
+        "X-Goog-Upload-Protocol": "resumable",
+        "X-Goog-Upload-Command": "start",
+        "X-Goog-Upload-Header-Content-Length": String(size),
+        "X-Goog-Upload-Header-Content-Type": mime,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ file: { display_name: displayName } }),
+      signal: AbortSignal.timeout(30_000),
+    });
+    uploadUrl = start.headers.get("x-goog-upload-url");
+    if (!start.ok || !uploadUrl) {
+      const body = await start.text();
+      await src.body.cancel();
+      return fail(start.status, "upload start: " + body.slice(0, 300));
+    }
+  } catch (e) {
+    await src.body.cancel();
+    return fail(0, "upload start failed: " + String(e).slice(0, 200));
+  }
+
+  // The pipe. `counted` observes every chunk on its way past so the cap is enforced
+  // against what actually arrives rather than against what the CDN claimed.
+  let sent = 0;
+  const counted = new TransformStream<Uint8Array, Uint8Array>({
+    transform(chunk, controller) {
+      sent += chunk.byteLength;
+      if (sent > cap) throw new Error("media exceeded the " + cap + " byte cap mid-stream");
+      controller.enqueue(chunk);
+    },
+  });
+  const piped = src.body.pipeThrough(counted);
+
+  try {
+    const up = await fetch(uploadUrl, {
+      method: "POST",
+      headers: {
+        "x-goog-api-key": GEMINI_API_KEY,
+        "X-Goog-Upload-Offset": "0",
+        "X-Goog-Upload-Command": "upload, finalize",
+        "content-length": String(size),
+      },
+      body: piped,
+      duplex: "half",
+      signal: AbortSignal.timeout(mediaLimit("timeout_ms", 150_000)),
+    } as RequestInit);
+    const raw = await up.text();
+    if (!up.ok) return { file: null, bytes: sent, status: up.status, detail: raw.slice(0, 300) };
+    const f = JSON.parse(raw)?.file;
+    if (!f?.name || !f?.uri) return { file: null, bytes: sent, status: up.status, detail: raw.slice(0, 300) };
+    return {
+      file: { name: String(f.name), uri: String(f.uri), mimeType: String(f.mimeType ?? mime), state: String(f.state ?? "") },
+      bytes: sent, status: up.status,
+    };
+  } catch (e) {
+    return { file: null, bytes: sent, status: 0, detail: "upload failed: " + String(e).slice(0, 200) };
+  }
+}
+
+/** Poll until Google has finished ingesting the file, or give up saying so. */
+async function geminiFileState(name: string, waitMs: number): Promise<string> {
+  const until = Date.now() + waitMs;
+  let state = "PROCESSING";
+  while (Date.now() < until) {
+    await new Promise((r) => setTimeout(r, 2000));
+    try {
+      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/${name}`, {
+        headers: { "x-goog-api-key": GEMINI_API_KEY },
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (!r.ok) { await r.text(); continue; }
+      state = String((await r.json())?.state ?? state);
+      if (state !== "PROCESSING") return state;
+    } catch { /* keep waiting */ }
+  }
+  return state;
+}
+
+/** Best effort, always, in a finally. An undeleted file is a file Google keeps. */
+async function geminiDeleteFile(name: string): Promise<boolean> {
+  try {
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/${name}`, {
+      method: "DELETE",
+      headers: { "x-goog-api-key": GEMINI_API_KEY },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!r.ok) console.error("gemini file delete", name, r.status, (await r.text()).slice(0, 200));
+    else console.log("gemini file deleted", name);
+    return r.ok;
+  } catch (e) {
+    console.error("gemini file delete failed", name, e);
+    return false;
+  }
+}
+
+/** What Google is holding for this key right now. Used by the probe and by tests. */
+async function geminiListFiles(): Promise<unknown> {
+  if (!GEMINI_API_KEY) return { error: "no gemini key" };
+  try {
+    const r = await fetch(GEMINI_FILES + "?pageSize=50", {
+      headers: { "x-goog-api-key": GEMINI_API_KEY },
+      signal: AbortSignal.timeout(15_000),
+    });
+    const raw = await r.text();
+    if (!r.ok) return { status: r.status, body: raw.slice(0, 400) };
+    const files = JSON.parse(raw)?.files ?? [];
+    return {
+      status: r.status, count: Array.isArray(files) ? files.length : 0,
+      names: (Array.isArray(files) ? files : []).map((f: any) => String(f?.name ?? "?")).slice(0, 20),
+    };
+  } catch (e) {
+    return { error: String(e).slice(0, 200) };
+  }
+}
+
+type VideoRead = {
+  text: string | null;
+  by: string | null;
+  usage?: Usage;
+  bytes: number;
+  seconds: number | null;
+  status: number;
+  state?: string;
+  detail?: string;
+};
+
+/**
+ * Upload, ask, delete. The whole transaction with Google in one place, so there is
+ * exactly one `finally` that owns the file's lifetime.
+ */
+async function geminiReadVideo(
+  url: string, headers: Record<string, string>, displayName: string, prompt: string, ctx: AiCtx,
+): Promise<VideoRead> {
+  const model = models().geminiVision;
+  const t0 = Date.now();
+  const got = await geminiUploadMedia(url, headers, displayName);
+  if (!got.file) {
+    return { text: null, by: null, bytes: got.bytes, seconds: null, status: got.status, detail: got.detail };
+  }
+  const file = got.file;
+  try {
+    const state = file.state === "ACTIVE" ? "ACTIVE" : await geminiFileState(file.name, 60_000);
+    if (state !== "ACTIVE") {
+      return { text: null, by: null, bytes: got.bytes, seconds: null, status: 0, state, detail: "file never became ACTIVE" };
+    }
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-goog-api-key": GEMINI_API_KEY },
+      body: JSON.stringify({
+        contents: [{ parts: [{ fileData: { fileUri: file.uri, mimeType: file.mimeType } }, { text: prompt }] }],
+        generationConfig: { maxOutputTokens: 8000, thinkingConfig: { thinkingBudget: 0 } },
+      }),
+      signal: AbortSignal.timeout(mediaLimit("timeout_ms", 150_000)),
+    });
+    const raw = await r.text();
+    if (!r.ok) {
+      await recordCost("gemini", model, ctx, { inTok: 0, outTok: 0 }, false);
+      return { text: null, by: null, bytes: got.bytes, seconds: null, status: r.status, state, detail: raw.slice(0, 400) };
+    }
+    const data = JSON.parse(raw);
+    const parts = data?.candidates?.[0]?.content?.parts ?? [];
+    const text = parts.map((pp: { text?: unknown }) => String(pp?.text ?? "")).join("").trim();
+    const um = data?.usageMetadata ?? {};
+    const usage: Usage = {
+      inTok: Number(um.promptTokenCount ?? 0) || 0,
+      outTok: Number(um.candidatesTokenCount ?? 0) || 0,
+      cachedTok: Number(um.cachedContentTokenCount ?? 0) || 0,
+    };
+    await recordCost("gemini", model, ctx, usage, !!text);
+    console.log("video read", displayName, got.bytes, "bytes,", text.length, "chars in",
+      Date.now() - t0, "ms, tokens", usage.inTok + "/" + usage.outTok);
+    return {
+      text: text || null, by: "gemini:" + model, usage,
+      bytes: got.bytes, seconds: null, status: r.status, state,
+    };
+  } catch (e) {
+    return { text: null, by: null, bytes: got.bytes, seconds: null, status: 0, detail: String(e).slice(0, 300) };
+  } finally {
+    await geminiDeleteFile(file.name);
+  }
+}
+
 // ---------- the provider registry ----------
 //
 // Everything above knows how to obtain one platform's metadata. Everything below
@@ -4108,29 +4663,354 @@ async function handleWorkerTick(req: Request): Promise<Response> {
   return json({ status: "ok", claimed: jobs.length, mode: "inline" });
 }
 
+// ---------- the media probes ----------
+//
+// Tier availability is a fact about the platforms, not an assumption, and the two
+// facts that decide whether a transcript tier can exist at all are: does the page
+// this datacenter can reach still name the media, and can Groq — a different
+// machine on a different IP — fetch what it names. Both are measured here, behind
+// the worker secret, wired into nothing.
+
+type ProbeFetch = { status: number; type: string | null; length: string | null; bytes?: number; error?: string };
+
+/**
+ * Is this URL fetchable, and by whom? A HEAD first because it is free, then a
+ * ranged GET because a CDN that refuses HEAD is common and a `content-length`
+ * that is absent from one is often present on the other.
+ */
+async function probeMediaUrl(u: string, headers: Record<string, string>): Promise<{
+  field?: string; host: string; url_chars: number; head: ProbeFetch; ranged: ProbeFetch;
+}> {
+  let host = "?";
+  try { host = new URL(u).hostname; } catch { /* keep */ }
+  const one = async (init: RequestInit, read: boolean): Promise<ProbeFetch> => {
+    try {
+      const r = await safeFetch(u, { ...init, signal: AbortSignal.timeout(20_000) });
+      const out: ProbeFetch = {
+        status: r.status,
+        type: r.headers.get("content-type"),
+        length: r.headers.get("content-length") ?? r.headers.get("content-range"),
+      };
+      if (read && r.body) {
+        const reader = r.body.getReader();
+        let n = 0;
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done || n > 200_000) { await reader.cancel().catch(() => {}); break; }
+          n += value.byteLength;
+        }
+        out.bytes = n;
+      } else {
+        await r.body?.cancel();
+      }
+      return out;
+    } catch (e) {
+      return { status: 0, type: null, length: null, error: String(e).slice(0, 200) };
+    }
+  };
+  return {
+    host, url_chars: u.length,
+    head: await one({ method: "HEAD", headers }, false),
+    ranged: await one({ headers: { ...headers, Range: "bytes=0-199999" } }, true),
+  };
+}
+
+/**
+ * Groq, asked to fetch a URL itself. The raw answer, not groqTranscribe's — the
+ * question is what the service says, and a helper that turns a 400 into a friendly
+ * sentence is the wrong instrument for asking it.
+ */
+async function probeGroqUrl(u: string): Promise<{ status: number; chars: number; head: string; duration?: number }> {
+  if (!GROQ_API_KEY) return { status: 0, chars: 0, head: "no groq key" };
+  const form = new FormData();
+  form.append("url", u);
+  form.append("model", models().groqTranscribe);
+  form.append("response_format", "verbose_json");
+  form.append("temperature", "0");
+  try {
+    const r = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
+      method: "POST",
+      headers: { authorization: `Bearer ${GROQ_API_KEY}` },
+      body: form,
+      signal: AbortSignal.timeout(150_000),
+    });
+    const raw = await r.text();
+    if (!r.ok) return { status: r.status, chars: raw.length, head: raw.slice(0, 300) };
+    let text = "";
+    let duration: number | undefined;
+    try {
+      const d = JSON.parse(raw);
+      text = String(d?.text ?? "").trim();
+      duration = Number(d?.duration) || undefined;
+    } catch { text = raw.slice(0, 300); }
+    return { status: r.status, chars: text.length, head: text.slice(0, 300), duration };
+  } catch (e) {
+    return { status: 0, chars: 0, head: String(e).slice(0, 300) };
+  }
+}
+
+/** One page of HTML, reported by what it contained rather than by its contents. */
+async function probePage(url: string, ua: string): Promise<{ status: number; bytes: number; error?: string; html?: string }> {
+  try {
+    const r = await safeFetch(url, {
+      headers: { "User-Agent": ua, "Accept-Language": "en-US,en;q=0.9", "Accept": "text/html" },
+      signal: AbortSignal.timeout(20_000),
+    });
+    const body = await r.text();
+    return { status: r.status, bytes: body.length, html: r.ok ? body : undefined };
+  } catch (e) {
+    return { status: 0, bytes: 0, error: String(e).slice(0, 200) };
+  }
+}
+
+/**
+ * Does anything this datacenter can reach still name TikTok's media, and can Groq
+ * fetch it? `html` is accepted so the same probe can be run against a page a phone
+ * fetched from a residential IP, which is the one variable that matters most.
+ */
+async function probeTikTokMedia(url: string, suppliedHtml: string | null): Promise<unknown> {
+  const p = matchTikTok(url);
+  if (!p) return { status: "error", message: "not a tiktok url" };
+  const id = p.shortcode.replace(/^tt-/, "");
+  const pages: Record<string, unknown> = {};
+  let html = suppliedHtml;
+  let cookie = "";
+  if (html) {
+    pages.supplied = { bytes: html.length };
+  } else {
+    for (const [name, ua] of [["page-crawler", CRAWLER_UA], ["page-desktop", DESKTOP_UA]] as const) {
+      const got = await pageWithCookies(p.clean, ua);
+      const has = !!got.html && got.html.includes("__UNIVERSAL_DATA_FOR_REHYDRATION__");
+      pages[name] = {
+        status: got.status, bytes: got.html?.length ?? 0, rehydration_blob: has,
+        cookies: got.cookie ? got.cookie.split("; ").length : 0, error: got.error,
+      };
+      if (has && !html) { html = got.html ?? null; cookie = got.cookie; }
+    }
+  }
+  if (!html) return { status: "ok", id, pages, media: [], note: "no html carrying a rehydration blob" };
+
+  // What the blob says about the sound, which decides whether the audio-only track
+  // is the video's own audio or a song somebody else recorded.
+  let music: unknown = null;
+  const mm = html.match(/<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__"[^>]*>([\s\S]*?)<\/script>/);
+  if (mm) {
+    try {
+      const it = JSON.parse(mm[1])?.__DEFAULT_SCOPE__?.["webapp.video-detail"]?.itemInfo?.itemStruct;
+      music = it
+        ? { original: it.music?.original ?? null, title: String(it.music?.title ?? "").slice(0, 80),
+            music_seconds: it.music?.duration ?? null, video_seconds: it.video?.duration ?? null,
+            has_playAddr: !!it.video?.playAddr, has_downloadAddr: !!it.video?.downloadAddr,
+            has_music_playUrl: !!it.music?.playUrl, caption_chars: String(it.desc ?? "").length }
+        : { itemStruct: false };
+    } catch (e) { music = { parse_error: String(e).slice(0, 120) }; }
+  }
+
+  const found = ttMediaFromHtml(html);
+  const bare = mediaHeaders("tiktok");
+  const withCookie = cookie ? { ...bare, Cookie: cookie } : bare;
+  const media: unknown[] = [];
+  for (const c of found) {
+    media.push({
+      field: c.field, kind: c.kind,
+      bare: await probeMediaUrl(c.url, bare),
+      with_cookies: cookie ? await probeMediaUrl(c.url, withCookie) : "no cookies to try",
+    });
+  }
+
+  // Question 1: can Groq, on its own IP with no cookies, fetch what the page named?
+  const byUrl = found.find((c) => c.kind === "audio") ?? found[0] ?? null;
+  const groq_by_url = byUrl ? await probeGroqUrl(byUrl.url) : null;
+
+  // Question 2: if not, can this function fetch it and pipe the bytes through?
+  const toStream = found.find((c) => c.kind === "video") ?? null;
+  const streamed = toStream
+    ? await groqTranscribeStream(toStream.url, withCookie, id + ".mp4")
+    : null;
+
+  return {
+    status: "ok", id, pages, music, media,
+    groq_by_url: byUrl ? { field: byUrl.field, source: mediaUrlBrief(byUrl.url), result: groq_by_url } : null,
+    groq_streamed: toStream
+      ? {
+        field: toStream.field, source: mediaUrlBrief(toStream.url),
+        status: streamed?.status, bytes: streamed?.bytes, seconds: streamed?.seconds,
+        chars: streamed?.text.length ?? 0, detail: streamed?.detail,
+        head: (streamed?.text ?? "").slice(0, 900),
+      }
+      : null,
+  };
+}
+
+/** The same question for Instagram, whose reels expose an og:video to crawlers. */
+async function probeIgMedia(url: string, suppliedHtml: string | null): Promise<unknown> {
+  const p = matchInstagram(url);
+  if (!p) return { status: "error", message: "not an instagram url" };
+  const pages: Record<string, unknown> = {};
+  let html = suppliedHtml;
+  if (html) {
+    pages.supplied = { bytes: html.length };
+  } else {
+    for (const [name, target, ua] of [
+      ["page-crawler", p.clean, CRAWLER_UA],
+      ["embed-captioned", `https://www.instagram.com/p/${p.shortcode}/embed/captioned/`, DESKTOP_UA],
+    ] as const) {
+      const got = await probePage(target, ua);
+      const has = !!got.html && (!!metaTag(got.html, "og:video") || got.html.includes('"video_url"'));
+      pages[name] = { status: got.status, bytes: got.bytes, names_video: has, error: got.error };
+      if (has && !html) html = got.html ?? null;
+    }
+  }
+  if (!html) return { status: "ok", shortcode: p.shortcode, pages, media: [], note: "no page named a video" };
+
+  const found = igMediaFromHtml(html);
+  const headers = mediaHeaders("instagram");
+  const media: unknown[] = [];
+  for (const c of found) {
+    media.push({ field: c.field, kind: c.kind, ...(await probeMediaUrl(c.url, headers)) });
+  }
+  const candidate = found[0] ?? null;
+  const groq = candidate ? await probeGroqUrl(candidate.url) : null;
+  return {
+    status: "ok", shortcode: p.shortcode, pages,
+    og_video: !!metaTag(html, "og:video"),
+    og_video_secure: !!metaTag(html, "og:video:secure_url"),
+    video_url_field: html.includes('"video_url"'),
+    media,
+    groq_tried: candidate ? { field: candidate.field, host: mediaUrlBrief(candidate.url) } : null,
+    groq,
+  };
+}
+
+/**
+ * Can Gemini read the workout off the screen? The measurement runs the real path —
+ * the same stream, the same wait, the same delete — because a measurement of a
+ * different path would not answer the question. One upload, several shapes of
+ * request over it, so a 400 can be attributed to the shape rather than guessed at.
+ */
+async function probeGeminiVideo(url: string, suppliedHtml: string | null): Promise<unknown> {
+  const p = matchTikTok(url);
+  if (!p) return { status: "error", message: "not a tiktok url" };
+  const id = p.shortcode.replace(/^tt-/, "");
+  let html = suppliedHtml;
+  let cookie = "";
+  if (!html) {
+    const got = await pageWithCookies(p.clean, DESKTOP_UA);
+    if (!got.html) return { status: "ok", id, note: "watch page " + got.status, error: got.error };
+    html = got.html;
+    cookie = got.cookie;
+  }
+  const found = ttMediaFromHtml(html).find((c) => c.kind === "video");
+  if (!found) return { status: "ok", id, note: "no video url in the blob" };
+  const headers = cookie ? { ...mediaHeaders("tiktok"), Cookie: cookie } : mediaHeaders("tiktok");
+
+  const before = await geminiListFiles();
+  const up = await geminiUploadMedia(found.url, headers, id);
+  if (!up.file) {
+    return { status: "ok", id, field: found.field, files_before: before, upload: up };
+  }
+  const file = up.file;
+  const tries: unknown[] = [];
+  try {
+    const state = file.state === "ACTIVE" ? "ACTIVE" : await geminiFileState(file.name, 60_000);
+    const models_ = [...new Set([models().geminiVision, ...models().geminiPool])];
+    const shapes: [string, boolean, boolean][] = [
+      ["mime+thinking", true, true],
+      ["nomime+thinking", false, true],
+      ["mime+nothinking", true, false],
+    ];
+    for (const model of models_) {
+      for (const [name, withMime, withThinking] of shapes) {
+        const gc: Record<string, unknown> = { maxOutputTokens: 2000 };
+        if (withThinking) gc.thinkingConfig = { thinkingBudget: 0 };
+        const fd: Record<string, string> = { fileUri: file.uri };
+        if (withMime) fd.mimeType = file.mimeType;
+        let out: Record<string, unknown>;
+        try {
+          const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+            method: "POST",
+            headers: { "content-type": "application/json", "x-goog-api-key": GEMINI_API_KEY },
+            body: JSON.stringify({
+              contents: [{ parts: [{ fileData: fd }, { text: "List every exercise shown or written on screen, as JSON [{name, t_seconds}]." }] }],
+              generationConfig: gc,
+            }),
+            signal: AbortSignal.timeout(120_000),
+          });
+          const raw = await r.text();
+          if (!r.ok) out = { model, shape: name, http: r.status, error: raw.slice(0, 400) };
+          else {
+            const d = JSON.parse(raw);
+            const text = (d?.candidates?.[0]?.content?.parts ?? [])
+              .map((pp: { text?: unknown }) => String(pp?.text ?? "")).join("").trim();
+            out = {
+              model, shape: name, http: r.status,
+              tokens: (d?.usageMetadata?.promptTokenCount ?? 0) + "/" + (d?.usageMetadata?.candidatesTokenCount ?? 0),
+              finish: d?.candidates?.[0]?.finishReason ?? null,
+              chars: text.length, head: text.slice(0, 1200),
+            };
+          }
+        } catch (e) {
+          out = { model, shape: name, http: 0, error: String(e).slice(0, 200) };
+        }
+        tries.push(out);
+        if ((out as { chars?: number }).chars) return finishProbe();
+      }
+    }
+    function finishProbe() {
+      return { status: "ok", id, field: found!.field, bytes: up.bytes, state, file: { mime: file.mimeType, uri_chars: file.uri.length }, tries };
+    }
+    return finishProbe();
+  } finally {
+    await geminiDeleteFile(file.name);
+  }
+}
+
 /**
  * A measurement, not a feature.
  *
- * The one genuinely open question left in the extraction ladder is whether Gemini
- * will accept a YouTube URL as fileData and describe the video — which, if it
- * works, reads a workout out of a video that carries no written caption at all. It
- * has been asked twice and answered 400 INVALID_ARGUMENT both times, and both
- * harnesses were broken in ways that produce exactly that answer: a query parameter
- * leaking into mediaResolution, and a deleted test account 401ing. So this asks the
- * question once, correctly, and hands back what Google actually said, untouched.
+ * `gemini-youtube` was the first question this route existed to ask: does Gemini
+ * accept a YouTube URL as fileData and describe the video. It had been asked twice
+ * and answered 400 INVALID_ARGUMENT both times, and both harnesses were broken in
+ * ways that produce exactly that answer, so it asks once, correctly, and hands back
+ * what Google actually said, untouched.
+ *
+ * `tiktok-media` and `ig-media` ask the question the media tier depends on: is the
+ * video's own audio reachable from here, and reachable from Groq. Both accept
+ * `{url, html}` so the same measurement can be run against a page a phone fetched.
  *
  * Gated on the worker secret exactly like /api/worker/tick, and 404 to anyone
- * without it. Deliberately not wired into extraction: whether to use this is a
- * later decision, and this is only the measurement that decision needs.
+ * without it. Deliberately not wired into extraction: the tiers below call the
+ * same helpers, not this handler.
  */
 async function handleWorkerProbe(req: Request): Promise<Response> {
   if (!secretEquals(req.headers.get("x-worker-secret") ?? "", WORKER_SECRET)) {
     return json({ status: "error", message: "Not found" }, 404);
   }
   await ensureConfig();
-  const body = await req.json().catch(() => null) as { kind?: string; url?: string } | null;
+  const body = await req.json().catch(() => null) as
+    { kind?: string; url?: string; html?: string } | null;
+  const url = String(body?.url ?? "");
+  const html = typeof body?.html === "string" && body.html.trim() ? body.html : null;
+
+  if (body?.kind === "tiktok-media") {
+    const out = await probeTikTokMedia(url, html);
+    console.log("probe tiktok-media", url, "->", JSON.stringify(out).slice(0, 400));
+    return json(out, 200);
+  }
+  if (body?.kind === "gemini-files") return json(await geminiListFiles(), 200);
+  if (body?.kind === "gemini-video") {
+    const out = await probeGeminiVideo(url, html);
+    console.log("probe gemini-video", url, "->", JSON.stringify(out).slice(0, 400));
+    return json(out, 200);
+  }
+  if (body?.kind === "ig-media") {
+    const out = await probeIgMedia(url, html);
+    console.log("probe ig-media", url, "->", JSON.stringify(out).slice(0, 400));
+    return json(out, 200);
+  }
   if (body?.kind !== "gemini-youtube") return json({ status: "error", message: "unknown probe kind" }, 400);
-  const yt = matchYouTube(String(body?.url ?? ""));
+
+  const yt = matchYouTube(url);
   if (!yt) return json({ status: "error", message: "not a youtube url" }, 400);
   if (!GEMINI_API_KEY) return json({ status: "error", message: "no gemini key" }, 400);
 
