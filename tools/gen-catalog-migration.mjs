@@ -10,7 +10,14 @@ const OUT = "supabase/migrations/20260901130000_exercise_catalog.sql";
 // gets its own migration rather than a rewrite of an applied one. Both files are
 // generated from the same CATALOG, and the seed's upsert leaves secondary_muscles
 // alone, so the two can be replayed in either order.
-const OUT_SECONDARY = "supabase/migrations/20260902140000_catalog_secondary_muscles.sql";
+//
+// This constant names the NEWEST secondary-state migration — the one that carries
+// the current catalog.ts values. It is self-contained: it adds the column and the
+// constraint if they are missing and upserts every row, skipping the ones already
+// correct. When the secondary lists change again after this file has been applied,
+// point this at a NEW timestamp rather than editing an applied migration.
+// Applied already, frozen, do not regenerate: 20260902140000_catalog_secondary_muscles.sql
+const OUT_SECONDARY = "supabase/migrations/20260902150000_catalog_secondary_fill.sql";
 
 const MUSCLES = ["chest", "back", "shoulders", "biceps", "triceps", "forearms",
   "core", "glutes", "quads", "hamstrings", "calves", "full body"];
@@ -97,7 +104,7 @@ console.log(OUT + " written — " + CATALOG.length + " entries, " + sql.length.t
 
 const secRows = CATALOG.map((e) => "  (" + q(e.id) + ", " + arr(e.secondary) + ")").join(",\n");
 
-const secSql = `-- Spotter — secondary (assisting) muscles for the catalog.
+const secSql = `-- Spotter — secondary (assisting) muscles for the catalog, current values.
 --
 -- GENERATED FILE. Source of truth is supabase/functions/spotter/catalog.ts;
 -- regenerate with: node tools/gen-catalog-migration.mjs

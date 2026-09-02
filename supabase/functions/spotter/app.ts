@@ -1780,9 +1780,10 @@ export const APP = String.raw`
   }
 
   // A card's exercises through the catalog. A muscle the card trains on purpose
-  // outranks one it merely assists, so the strongest claim on the card wins. Movements
-  // the catalog files as full body light nothing — spreading them over every region
-  // would paint the whole figure and say nothing — and are counted for a note instead.
+  // outranks one it merely assists, so the strongest claim on the card wins. The word
+  // "full body" itself lights nothing — spreading a burpee over every region paints the
+  // whole figure and says nothing — so a full-body movement reaches the map only through
+  // its secondary list, and a note under the figure says that is what happened.
   function cardHits(list) {
     var levels = {}, names = {}, mapped = 0, total = 0, fullBody = [];
     function slot(m) { if (!names[m]) names[m] = { p: [], s: [] }; return names[m]; }
@@ -1864,8 +1865,8 @@ export const APP = String.raw`
     }
     if (r.fullBody.length) {
       box.appendChild(el("div", "bodynote", r.fullBody.length === 1
-        ? r.fullBody[0] + " is a full-body movement, so nothing is singled out for it."
-        : r.fullBody.length + " full-body movements work everything, so nothing is singled out for them."));
+        ? r.fullBody[0] + " is a full-body movement — only what it leans on hardest is shaded."
+        : r.fullBody.length + " full-body movements work everything — only what they lean on hardest is shaded."));
     }
   }
 

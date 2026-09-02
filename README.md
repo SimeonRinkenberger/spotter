@@ -445,9 +445,11 @@ one per set for a muscle the movement is for, half per set for one it assists. `
 `4–7.5 → step 2`, `8–13.5 → step 3`, `14+ → step 4`, painted at 26 / 50 / 74 / 100% opacity.
 Sets come from `workout_logs.entries[].sets`, so only work actually logged counts.
 
-**Full-body movements** (burpees, snatches, a sun salutation) light nothing on purpose —
-spreading them over every region paints the whole figure and says nothing — and are counted in
-a note under the map instead.
+**Full-body movements** (burpees, snatches, a sun salutation) never light a muscle from their
+primary list — the word *full body* is not a region, and spreading a burpee over every region
+paints the whole figure and says nothing. They reach the map only through their secondary list,
+so a burpee shades chest, triceps, quads, glutes and core faintly rather than blanking the
+figure, and a note under the map says that is what happened.
 
 **Tapping.** Every muscle is a `role="button"` path with an `aria-label` and keyboard focus.
 Tapping one names it under the figure: on a card, the exercises that hit it with the secondary
