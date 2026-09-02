@@ -6,6 +6,18 @@ import { writeFileSync } from "node:fs";
 import { CATALOG, CATALOG_CONFLICTS } from "../supabase/functions/spotter/catalog.ts";
 
 const OUT = "supabase/migrations/20260901130000_exercise_catalog.sql";
+// The secondary-muscle column arrived after the seed had already shipped, so it
+// gets its own migration rather than a rewrite of an applied one. Both files are
+// generated from the same CATALOG, and the seed's upsert leaves secondary_muscles
+// alone, so the two can be replayed in either order.
+//
+// This constant names the NEWEST secondary-state migration — the one that carries
+// the current catalog.ts values. It is self-contained: it adds the column and the
+// constraint if they are missing and upserts every row, skipping the ones already
+// correct. When the secondary lists change again after this file has been applied,
+// point this at a NEW timestamp rather than editing an applied migration.
+// Applied already, frozen, do not regenerate: 20260902140000_catalog_secondary_muscles.sql
+const OUT_SECONDARY = "supabase/migrations/20260902150000_catalog_secondary_fill.sql";
 
 const MUSCLES = ["chest", "back", "shoulders", "biceps", "triceps", "forearms",
   "core", "glutes", "quads", "hamstrings", "calves", "full body"];
@@ -25,6 +37,14 @@ for (const e of CATALOG) {
   if (!/^[a-z0-9-]+$/.test(e.id)) { console.error("bad id " + e.id); process.exit(1); }
   for (const m of e.muscles) if (!MUSCLES.includes(m)) { console.error("bad muscle " + m + " on " + e.id); process.exit(1); }
   for (const q of e.equipment) if (!EQUIPMENT.includes(q)) { console.error("bad equipment " + q + " on " + e.id); process.exit(1); }
+  // A muscle cannot be both the point of the movement and an afterthought, and a
+  // repeat inside either list would double-count it on the body map.
+  for (const m of e.secondary) {
+    if (!MUSCLES.includes(m)) { console.error("bad secondary muscle " + m + " on " + e.id); process.exit(1); }
+    if (e.muscles.includes(m)) { console.error("secondary " + m + " repeats a primary on " + e.id); process.exit(1); }
+  }
+  if (new Set(e.secondary).size !== e.secondary.length) { console.error("duplicate secondary on " + e.id); process.exit(1); }
+  if (new Set(e.muscles).size !== e.muscles.length) { console.error("duplicate muscle on " + e.id); process.exit(1); }
 }
 
 const q = (s) => "'" + String(s).replace(/'/g, "''") + "'";
@@ -79,3 +99,40 @@ on conflict (id) do update set
 
 writeFileSync(OUT, sql);
 console.log(OUT + " written — " + CATALOG.length + " entries, " + sql.length.toLocaleString() + " bytes");
+
+// ---------- secondary muscles ----------
+
+const secRows = CATALOG.map((e) => "  (" + q(e.id) + ", " + arr(e.secondary) + ")").join(",\n");
+
+const secSql = `-- Spotter — secondary (assisting) muscles for the catalog, current values.
+--
+-- GENERATED FILE. Source of truth is supabase/functions/spotter/catalog.ts;
+-- regenerate with: node tools/gen-catalog-migration.mjs
+--
+-- muscle_groups says what a movement is FOR; secondary_muscles says what it also
+-- asks for. The body map paints the first at full strength and the second faint,
+-- which is the only reason the distinction is stored rather than inferred.
+--
+-- Idempotent: the column is added only if absent, the constraint swallows its own
+-- duplicate, and the update is a no-op once the values match.
+
+alter table public.exercise_catalog
+  add column if not exists secondary_muscles text[] not null default '{}';
+
+do $$ begin
+  alter table public.exercise_catalog
+    add constraint catalog_secondary_known check (secondary_muscles <@ ${arr(MUSCLES)});
+exception when duplicate_object then null; end $$;
+
+update public.exercise_catalog as c
+set secondary_muscles = v.sec, updated_at = now()
+from (values
+${secRows}
+) as v(id, sec)
+where c.id = v.id and c.secondary_muscles is distinct from v.sec;
+`;
+
+writeFileSync(OUT_SECONDARY, secSql);
+const withSec = CATALOG.filter((e) => e.secondary.length).length;
+console.log(OUT_SECONDARY + " written — " + withSec + " of " + CATALOG.length +
+  " entries carry secondary muscles, " + secSql.length.toLocaleString() + " bytes");
