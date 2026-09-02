@@ -280,6 +280,31 @@ is "paid" iff a price is configured for it (`PRICE_OPENAI_IN` / `_OUT`, and the 
 `ANTHROPIC`, `GEMINI`, `GROQ`), so putting a key on a paid plan is a config change, not a
 code change. `GET /api/limits` reports `spend_today`, `spend_limit` and `paid_enabled`.
 
+**What the prompt cache saves.** OpenAI serves a repeated prompt prefix out of its own
+cache and charges a fraction of the input price for it, which is why Pumpy's system prompt
+is written static-first: the ~900 stable tokens at the front are the part that can be
+cached. Every ledger row now carries `cached_tokens` — the slice of `input_tokens` the
+provider says came from cache, a subset and never an addition — and `est_cost_usd` bills
+that slice at the cached rate, so the estimate no longer overstates a cached call. The
+cached price is env-configurable (`PRICE_OPENAI_CACHED_IN`, default `0.02`;
+`PRICE_ANTHROPIC_CACHED_IN`, default `0.10`) and both defaults **assume the standard
+one-tenth-of-input discount** — they are not read from anywhere, so correct them from the
+provider's price page if that ratio moves. Anthropic's cache is opt-in and this code sends
+no `cache_control` breakpoints, so its figure is zero until someone adds them.
+
+Read the hit rate off the `ai_cost_daily` view — one row per UTC day, provider and purpose,
+with `calls`, the three token sums, `est_cost_usd` and `cache_pct` (cached input as a whole
+percentage of all input). Service-role only, like `ai_cost_log` itself:
+
+```sql
+select * from public.ai_cost_daily order by day desc, est_cost_usd desc;
+```
+
+A healthy `cache_pct` for Pumpy is high and steady; a number that collapses means something
+put a varying string in front of the static block and every call is now paying full price.
+`GET /api/limits` surfaces the same figure for today as `cache_pct_today` (0-100, or `null`
+when nothing has run yet).
+
 ### Platform notes
 
 | Platform | Caption source | Status |
