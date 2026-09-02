@@ -342,6 +342,11 @@ const UPLOAD_EXTS = ["mp4", "mov", "webm", "m4v", "mp3", "m4a", "wav", "weba"];
 const PRICE_GROQ_WHISPER_PER_HOUR = Number(Deno.env.get("PRICE_GROQ_WHISPER_PER_HOUR") ?? "0.04");
 // A signed URL only has to outlive one Groq request.
 const UPLOAD_SIGN_SECONDS = 900;
+// Below this many characters, a transcript cannot be describing a workout. This is
+// the load-bearing half of the silence test: measured 2026-09-02, one second of
+// silence comes back from whisper-large-v3-turbo as HTTP 200 with the text
+// "Thank you." and a per-segment no_speech_prob low enough to look like speech.
+const TRANSCRIPT_MIN_CHARS = 25;
 // The orphan sweep's cutoff: anything still in the bucket this long after it
 // landed belongs to a job that died between the upload and the delete.
 const UPLOAD_ORPHAN_MS = 2 * 60 * 60 * 1000;
@@ -1751,17 +1756,25 @@ async function groqTranscribe(
       const text = (fromSegs || String(data?.text ?? "")).trim();
       const seconds = Number(data?.duration);
       // Silence does not come back as an error. Whisper answers 200 with a
-      // hallucinated word or two — the classic output on an empty track is the
-      // single word "you" — so the only way to tell silence from speech is to ask
-      // the model what it thought, per segment. Both conditions have to hold:
-      // every segment unconfident AND almost nothing said, so a quiet but real
-      // instruction is not thrown away.
+      // hallucinated pleasantry, and it is confident about it: one second of
+      // silence produced the text "Thank you." with segment probabilities that
+      // looked like ordinary speech. So the model's own opinion cannot be the
+      // whole test, and the length is what actually decides — nothing that
+      // prescribes a workout fits in twenty-five characters. The probability
+      // rule stays as a second, weaker net for a longer stretch of near-silence.
       const probs = segs
         .map((s: { no_speech_prob?: unknown }) => Number(s?.no_speech_prob))
         .filter((n: number) => Number.isFinite(n));
-      const allSilent = probs.length > 0 && probs.every((n: number) => n >= 0.85);
-      if (allSilent && text.length < 60) {
-        console.log("transcribe: no speech —", probs.length, "segment(s),", text.length, "chars");
+      const meanSilent = probs.length
+        ? probs.reduce((a: number, b: number) => a + b, 0) / probs.length
+        : 0;
+      console.log("transcribe: ", text.length, "chars,", probs.length,
+        "segment(s), mean no_speech_prob", meanSilent.toFixed(3));
+      const tooShort = text.length < TRANSCRIPT_MIN_CHARS;
+      const unconfident = probs.length > 0 && meanSilent >= 0.6 && text.length < 120;
+      if (tooShort || unconfident) {
+        console.log("transcribe: no usable speech —", tooShort ? "too short" : "unconfident",
+          JSON.stringify(text.slice(0, 80)));
         return { text: "", seconds: Number.isFinite(seconds) && seconds > 0 ? seconds : 0, model };
       }
       return { text, seconds: Number.isFinite(seconds) && seconds > 0 ? seconds : 0, model };
@@ -4005,6 +4018,19 @@ async function runJob(job: Job): Promise<void> {
       degraded = true;
     }
     await jobStep(job.id, "thumb", { card });
+  }
+
+  // Every URL-addressed provider keeps an empty card, and that is right: the LINK
+  // is still worth having, because the user can open the post and read it
+  // themselves. An upload has neither — no link, and no file any more — so an
+  // empty upload card is a row that can only disappoint. Fail it instead, with a
+  // sentence that points at the one thing that still works.
+  if (!cacheable && !card.blocks.length) {
+    throw new SoftFailure(
+      "Spotter could not make out a workout in what was said in that video. " +
+      "Paste the workout text instead.",
+      "upload produced no exercises",
+    );
   }
 
   let thumbUrl: string | null = null;

@@ -360,6 +360,16 @@ is `whisper-large-v3-turbo`; `whisper-large-v3` is `0.111`) with zero tokens and
 day's ceiling is reached the upload fails soft with "try tomorrow", **and the file is still
 deleted**.
 
+**Accepted formats.** `UPLOAD_EXTS` is mp4, mov, webm, m4v, mp3, m4a, wav, weba, kept in step with
+the bucket's own `allowed_mime_types` (the enforcing copy) and with the client's picker. Groq's
+published list does not name `mov`, which matters because iPhone camera-roll video is `.mov` —
+so it was measured rather than assumed. Verified 2026-09-02 against the live endpoint: an object
+stored at a path ending `.mov`, served through a signed URL, transcribed correctly. Groq does not
+gate on that extension. Note the scope of the test: the bytes were MPEG-4 audio, so what is proven
+is that `.mov` in the URL is not itself a refusal, not that every QuickTime container demuxes.
+Both are ISO-BMFF, and dropping `mov` would break the most common phone video for no measured
+reason, so it stays.
+
 **One attempt, on purpose.** Because the object is deleted whatever happens, an upload job is
 enqueued with `max_attempts = 1`: a second attempt would have nothing to read. The retries
 that can actually help — a rate-limited or flaky transcription call — happen inside
@@ -371,9 +381,17 @@ with a plain explanation rather than queueing a job that can only fail.
 per line so the evidence indexer has real lines to quote rather than one long paragraph.
 Every exercise located in it carries `evidence.source = "transcript"` — a new
 `EvidenceSource`, treated as verified text like a caption, because it is text we hold. The
-confidence score needed no new weights. Silence does not come back as an error from Whisper
-(it answers 200 with a hallucinated word or two), so an upload is rejected as unintelligible
-when every segment reports `no_speech_prob >= 0.85` and almost nothing was said.
+confidence score needed no new weights.
+
+Silence does not come back as an error from Whisper. Measured 2026-09-02: one second of
+silence returns HTTP 200 with the text **"Thank you."** and per-segment `no_speech_prob`
+values low enough to pass for speech, so the model's own confidence cannot be the whole
+test. A transcript shorter than `TRANSCRIPT_MIN_CHARS` (25) is therefore rejected outright —
+nothing that prescribes a workout fits in twenty-five characters — with the probability rule
+kept as a weaker second net for a longer stretch of near-silence. And because an upload has
+neither a link nor a file left over, an upload whose extraction finds **no exercises at all**
+fails the card rather than leaving an empty one; every URL-addressed provider still keeps its
+empty card, because there the link is worth having on its own.
 
 ## Self-hosting
 
