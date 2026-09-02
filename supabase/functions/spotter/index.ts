@@ -3729,6 +3729,11 @@ async function handlePumpyChat(req: Request, userId: string, cors: Cors): Promis
   }
   if (!thread) {
     thread = await dbInsert("pumpy_threads", { user_id: userId, title: message.slice(0, 60), workout_id: ctxWorkout?.id ?? null });
+  } else if (ctxWorkout && thread.workout_id !== ctxWorkout.id) {
+    // "Ask Pumpy about this workout" into a thread that already exists: the
+    // thread now remembers the card, so the context survives the next turn.
+    try { await dbPatch("pumpy_threads", `id=eq.${thread.id}`, { workout_id: ctxWorkout.id }); thread.workout_id = ctxWorkout.id; }
+    catch (e) { console.error("pumpy: could not attach workout to thread", e); }
   }
   const userMsg = await dbInsert("pumpy_messages", { thread_id: thread.id, user_id: userId, role: "user", content: message });
 
