@@ -93,13 +93,11 @@ export const MARKUP_BODY = String.raw`</head>
 
   <div class="view" id="planview"></div>
   <div class="view" id="progressview"></div>
-  <div class="view" id="historyview"></div>
 
   <nav class="tabbar">
     <button class="tab active" data-view="library"><span class="ti">🏋️</span>Library</button>
     <button class="tab" data-view="plan"><span class="ti">📅</span>Plan</button>
     <button class="tab" data-view="progress"><span class="ti">📈</span>Progress</button>
-    <button class="tab" data-view="history"><span class="ti">🗒️</span>History</button>
   </nav>
 </div>
 

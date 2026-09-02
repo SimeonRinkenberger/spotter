@@ -1635,7 +1635,7 @@ export const APP = String.raw`
       var e = el("div", "empty");
       e.appendChild(el("div", "big", "📈"));
       e.appendChild(el("h2", null, "No sessions yet"));
-      e.appendChild(el("p", null, "Finish a workout and your volume, streak and personal records show up here."));
+      e.appendChild(el("p", null, "Finish a workout and your volume, personal records and every logged session show up here."));
       v.appendChild(e);
       viewIn(v);
       return;
@@ -1776,22 +1776,16 @@ export const APP = String.raw`
       v.appendChild(mc);
     }
 
+    // The session list, under the numbers it feeds. One tab, one scroll.
+    renderHistoryInto(v, logs);
     viewIn(v);
   }
 
-  function renderHistory() {
-    var v = $("historyview");
-    v.innerHTML = "";
-    var logs = state.logs || [];
-    if (!logs.length) {
-      var e = el("div", "empty");
-      e.appendChild(el("div", "big", "🗒️"));
-      e.appendChild(el("h2", null, "No sessions yet"));
-      e.appendChild(el("p", null, "Every workout you finish gets logged here with the sets you did."));
-      v.appendChild(e);
-      viewIn(v);
-      return;
-    }
+  function renderHistoryInto(v, logs) {
+    var head = el("div", "monthhead", "History");
+    head.style.marginTop = "26px";
+    head.style.color = "var(--ember-ink)";
+    v.appendChild(head);
     var month = "";
     logs.forEach(function (l) {
       var d = new Date(l.started_at);
@@ -1827,15 +1821,16 @@ export const APP = String.raw`
 
       var del = el("button", "danger", "Delete session");
       del.onclick = function () {
-        sb.from("workout_logs").delete().eq("id", l.id).then(function () {
-          state.logs = null;
-          loadLogs().then(function () { renderHistory(); });
+        armed(del, "Tap again to delete", function () {
+          sb.from("workout_logs").delete().eq("id", l.id).then(function () {
+            state.logs = null;
+            loadLogs().then(renderProgress);
+          });
         });
       };
       card.appendChild(del);
       v.appendChild(card);
     });
-    viewIn(v);
   }
 
   // ---------- sheets ----------
@@ -1957,6 +1952,8 @@ export const APP = String.raw`
   // ---------- views ----------
 
   function setView(v) {
+    // History lives under Progress now; anything still routing to it lands there.
+    if (v === "history") v = "progress";
     state.view = v;
     var tabs = document.querySelectorAll(".tab");
     for (var i = 0; i < tabs.length; i++) {
@@ -1970,14 +1967,12 @@ export const APP = String.raw`
     $("empty").classList.toggle("hide", !lib || !!visible().length);
     $("planview").classList.toggle("open", v === "plan");
     $("progressview").classList.toggle("open", v === "progress");
-    $("historyview").classList.toggle("open", v === "history");
 
-    var titles = { library: "Spotter", plan: "Plan", progress: "Progress", history: "History" };
-    $("apptitle").textContent = titles[v];
+    var titles = { library: "Spotter", plan: "Plan", progress: "Progress" };
+    $("apptitle").textContent = titles[v] || "Spotter";
     if (lib) { render(); }
     if (v === "plan") { $("count").textContent = "This week"; loadPlan(); }
-    if (v === "progress") { $("count").textContent = "Your numbers"; loadLogs().then(renderProgress); }
-    if (v === "history") { $("count").textContent = "Every session"; loadLogs().then(renderHistory); }
+    if (v === "progress") { $("count").textContent = "Your numbers, every session"; loadLogs().then(renderProgress); }
     window.scrollTo(0, 0);
   }
 
