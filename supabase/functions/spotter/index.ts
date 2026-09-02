@@ -3692,7 +3692,8 @@ function pumpySystem(today: Date, ctxWorkout: { id: string; title: string } | nu
     '- {"kind":"append_exercises","workout_id":string,"block_title":string|null,"exercises":[same exercise shape],"summary":one sentence}',
     '- {"kind":"plan_days","days":[{"day":"YYYY-MM-DD","workout_id":string}],"summary":one sentence}',
     "Rules: spell exercises the way the catalog does when the catalog has them; only use workout ids that a tool returned, never invent one; " +
-    "favourites and collections tell you what the user likes; when a saved workout fits, prefer it to inventing one; " +
+    "favourites and collections tell you what the user likes, and when the user names something like 'my leg day' or 'hotel gym', " +
+    "a collection with that name identifies the workouts they mean — use it before asking; when a saved workout fits, prefer it to inventing one; " +
     "balance a week — do not stack the same muscles on consecutive days and leave rest days; respect the equipment and time the user states.",
     'Reply with ONLY a JSON object: {"say": string, "tool": {"name": string, "args": object} | null, "proposal": object | null}. ' +
     "Call one tool at a time; when you call one, say may be empty. When you propose, say explains it in one or two sentences. " +
