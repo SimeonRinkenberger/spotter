@@ -3824,6 +3824,20 @@ async function pumpySnapshot(userId: string): Promise<string> {
   return [lib.join("\n"), week.join("\n"), recent].join("\n\n");
 }
 
+/**
+ * The snapshot is an optimisation, not a precondition. Four reads that used to be
+ * a tool call each now sit on the critical path of every turn, and a coach that
+ * returns 500 because one of them blinked is worse than a coach that has to ask.
+ */
+async function pumpySnapshotSafe(userId: string): Promise<string> {
+  try {
+    return await pumpySnapshot(userId);
+  } catch (e) {
+    console.error("pumpy snapshot failed — falling back to tools for this turn —", e);
+    return "SNAPSHOT UNAVAILABLE this turn — use list_library and get_plan to find out what the user has.";
+  }
+}
+
 // -- proposals: validated when the model makes them, executed only on confirm --
 
 type PumpyProposal =
@@ -4220,7 +4234,7 @@ async function handlePumpyChat(req: Request, userId: string, cors: Cors): Promis
   // The last few visible turns, compactly. Tool results from earlier turns are
   // not replayed — they can be thousands of tokens — only what each side said.
   const [snapshot, hist] = await settledAll<any>([
-    pumpySnapshot(userId),
+    pumpySnapshotSafe(userId),
     dbSelect("pumpy_messages",
       `thread_id=eq.${thread.id}&user_id=eq.${userId}&role=in.(user,assistant)&id=lt.${userMsg.id}&select=role,content,meta&order=id.desc&limit=${cfg.historyTurns}`),
   ]);
