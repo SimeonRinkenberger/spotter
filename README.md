@@ -18,7 +18,7 @@ move at a time and logs what you lifted.
   set-by-set logging of reps and weight (prefilled from the last time you did that move).
 - **Plan** — drop saved workouts onto a week and see which days you actually trained.
 - **Track** — weekly volume, per-exercise personal records (estimated 1RM), muscle-group
-  balance, a body diagram of what you hit this week, and every logged session.
+  balance, an anatomical muscle map of what you hit this week, and every logged session.
 - **Organise** — favourites, and collections a workout can sit in several of ("Leg day",
   "Hotel gym", "Quick 10 min"). Rename any card.
 - **Swap or modify** — no equipment, station busy, or it hurts: alternatives with an honest
@@ -411,6 +411,62 @@ on the queue with your text already attached to the job; a card that merely scor
 re-read inline, and the never-downgrade merge still applies, so a paste can only make the card
 better than it was.
 
+## The muscle map
+
+Two anatomical figures, front and back side by side, on a card's detail (**What this hits**)
+and at the top of Progress (**What you've hit this week**). Every muscle Spotter has a word
+for is its own shape on a neutral body; a shape is grey until something asks for it.
+
+**Where the highlighting comes from.** Only from `exercise_catalog`, reached through each
+exercise's `canonical_id`. Never from the card's free-text `muscle_groups`, never from an
+exercise's name. A movement the catalog could not place lights nothing and the section says
+so underneath ("n of m exercises are not in the catalog and are not shown"), because a guess
+here would be a confident lie about the user's own training.
+
+**Primary and secondary.** `muscle_groups` is what a movement is *for*; `secondary_muscles`
+is what it also asks for — assisters and stabilisers. A goblet squat is quads, glutes and
+core primary, hamstrings and forearms secondary. Both columns are generated from
+`supabase/functions/spotter/catalog.ts`, the single source of truth; the generator refuses to
+run if a muscle appears in both lists for one exercise. On a card the strongest claim wins:
+primary anywhere on the card beats secondary anywhere on the card.
+
+**Colour grammar.** One hue, two strengths: `--ember` at full opacity for primary, 45% for
+secondary, and the untargeted neutral for the rest. Garmin Connect splits primary and
+secondary as red and yellow, but Spotter's palette has exactly one accent and the body figure
+is the densest accent surface in the app — a second hue would blow the "accent under ~10% of
+a screen" budget on the one screen most likely to break it, and red on a body diagram reads as
+injury. Red/yellow is also the worst pair for red-green colour blindness, where a single hue
+varying in lightness survives. Primary additionally carries a thin `--ember-ink` rim, so the
+split does not rest on colour alone (MuscleWiki hatches its primaries for the same reason).
+
+**Weekly intensity.** Four fixed bands, not quantiles — a light week should look like a light
+week rather than being stretched to fill the ramp. The score for a muscle is **sets logged**:
+one per set for a muscle the movement is for, half per set for one it assists. `0.5–3.5 → step 1`,
+`4–7.5 → step 2`, `8–13.5 → step 3`, `14+ → step 4`, painted at 26 / 50 / 74 / 100% opacity.
+Sets come from `workout_logs.entries[].sets`, so only work actually logged counts.
+
+**Full-body movements** (burpees, snatches, a sun salutation) light nothing on purpose —
+spreading them over every region paints the whole figure and says nothing — and are counted in
+a note under the map instead.
+
+**Tapping.** Every muscle is a `role="button"` path with an `aria-label` and keyboard focus.
+Tapping one names it under the figure: on a card, the exercises that hit it with the secondary
+ones marked; on Progress, its sets this week. Tapping it again, or anywhere off a muscle,
+clears it. The adductors are not one of Spotter's twelve muscle words, so they ride one step
+below the quads on the front and the hamstrings on the back, and tapping them selects that
+group.
+
+**Artwork.** The front and back muscle maps are the male figures from
+[react-native-body-highlighter](https://github.com/HichamELBSI/react-native-body-highlighter)
+(MIT, © 2022 ELABBASSI Hicham). The path data is re-projected from its 724×1448 space onto a
+181×362 viewBox, merged to one path per muscle group, rounded to a tenth of a unit and inlined
+in `app.ts` — about 31 KB of path data, no runtime dependency and no network request.
+
 ## Licence
 
 MIT — see [LICENSE](LICENSE).
+
+The inlined body-map artwork is MIT, © 2022 ELABBASSI Hicham
+([react-native-body-highlighter](https://github.com/HichamELBSI/react-native-body-highlighter));
+its copyright notice is carried in the comment above the path data in
+`supabase/functions/spotter/app.ts`.

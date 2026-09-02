@@ -10,6 +10,8 @@ export const STYLE = String.raw`<style>
     /* one accent, capped at ~10% of any screen */
     --ember: #E8551F; --ember-ink: #C9430F; --ember-soft: #FDEDE6; --on-ember: #FFF8F5;
     --good: #1E9E6A; --warn: #C98A00;
+    /* body map: the silhouette, then the muscles that sit on it untargeted */
+    --body-skin: #DCE1E8; --body-mus: #AEB7C3;
     --scrim: rgba(12,16,22,.55);
     --glow: rgba(232,85,31,.28);
     --sh-sm: 0 1px 2px rgba(16,22,32,.06), 0 2px 6px rgba(16,22,32,.05);
@@ -31,6 +33,7 @@ export const STYLE = String.raw`<style>
       --line: rgba(238,242,246,.10); --line-2: rgba(238,242,246,.19);
       --ember: #FF7A45; --ember-ink: #FF9166; --ember-soft: #33190F; --on-ember: #17100C;
       --good: #3FD096; --warn: #E8B54A;
+      --body-skin: #23282F; --body-mus: #3C4650;
       --scrim: rgba(2,4,8,.66);
       --glow: rgba(255,122,69,.26);
       --sh-sm: 0 1px 2px rgba(0,0,0,.44), 0 2px 8px rgba(0,0,0,.34);
@@ -514,17 +517,57 @@ export const STYLE = String.raw`<style>
     text-transform: uppercase; color: var(--muted); margin: 20px 0 8px; }
 
   /* ---------- body diagram ----------
-     The figure is currentColor at low opacity so it reads on paper and on graphite
-     alike; the highlights are the one accent, at an opacity that scales with how
-     many exercises hit that region. */
-  .bodywrap { display: flex; justify-content: center; gap: 18px; padding: 4px 0 2px; color: var(--ink); }
-  .bodyfig { flex: 0 1 132px; min-width: 0; text-align: center; }
-  .bodyfig svg.body { display: block; width: 100%; height: auto; overflow: visible; }
+     An anatomical figure, not a silhouette with blobs on it: the body is a quiet
+     neutral and every muscle Spotter has a word for is its own shape on top of it,
+     grey until something asks for it. Lit muscles are the one accent — full strength
+     for primary, faint for secondary, and a four-step ramp on Progress. One hue
+     throughout: a second colour would be a new claim on the eye for a distinction
+     weight already tells. Swatches in the legend take the same classes as the paths,
+     so the key can never drift from the figure. */
+  .bodywrap { display: flex; justify-content: center; gap: 14px; padding: 2px 0 0; }
+  .bodyfig { flex: 1 1 0; min-width: 0; max-width: 148px; text-align: center;
+    animation: bodyin var(--t-4) var(--e-out) both; }
+  @keyframes bodyin { from { opacity: 0; transform: scale(.955); } }
+  .bodyfig svg.bodysvg { display: block; width: 100%; height: auto; overflow: visible; }
+  .bodyskin { fill: var(--body-skin); stroke: var(--line-2); stroke-width: 1.1px;
+    vector-effect: non-scaling-stroke; }
+  .bodybox .bodymus, .bodybox .sw { fill: var(--body-mus); background-color: var(--body-mus);
+    transition: fill var(--t-3) var(--e-out), background-color var(--t-3) var(--e-out),
+      opacity var(--t-3) var(--e-out); }
+  .bodybox .lit { fill: var(--ember); background-color: var(--ember); }
+  .bodybox.s2 .lv1 { opacity: .45; }
+  .bodybox.s2 .lv2 { opacity: 1; }
+  /* Primary carries a rim as well as its weight, so the split survives a colour-blind
+     eye and a bad screen. MuscleWiki hatches its primaries for the same reason; a rim
+     is the version of that which does not turn ten regions into texture. */
+  .bodybox.s2 .bodymus.lv2, .bodybox.s2 .sw.lv2 { stroke: var(--ember-ink);
+    stroke-width: 1px; vector-effect: non-scaling-stroke;
+    box-shadow: inset 0 0 0 1px var(--ember-ink); }
+  .bodybox.s4 .lv1 { opacity: .26; }
+  .bodybox.s4 .lv2 { opacity: .5; }
+  .bodybox.s4 .lv3 { opacity: .74; }
+  .bodybox.s4 .lv4 { opacity: 1; }
+  .bodybox .bodymus { cursor: pointer; outline: none; }
+  .bodybox .bodymus.sel, .bodybox .bodymus:focus-visible { stroke: var(--ink);
+    stroke-width: 1.6px; vector-effect: non-scaling-stroke; }
   .bodylbl { font-size: 9.5px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
-    color: var(--muted); margin-top: 6px; }
-  .bodylegend { margin: 12px 0 8px; justify-content: center; }
-  .bodylegend .pill .n { opacity: .6; font-size: 10.5px; margin-left: 5px; font-variant-numeric: tabular-nums; }
+    color: var(--muted); margin-top: 7px; }
+  .bodylegend { display: flex; flex-wrap: wrap; justify-content: center; align-items: center;
+    gap: 5px 14px; margin: 15px 0 0; }
+  .bodylegend .lg { display: inline-flex; align-items: center; font-size: 11px; font-weight: 600;
+    color: var(--ink-2); }
+  .bodylegend .sw { flex: 0 0 auto; width: 10px; height: 10px; border-radius: 3px;
+    margin-right: 2.5px; }
+  .bodylegend .sw:last-of-type { margin-right: 7px; }
+  .bodypick { min-height: 34px; display: flex; align-items: center; justify-content: center;
+    text-align: center; font-size: 12px; line-height: 1.45; color: var(--muted);
+    margin: 9px 0 0; transition: color var(--t-2) var(--e-out); }
+  .bodypick.on { color: var(--ink); font-weight: 550; }
   .bodynote { font-size: 12px; color: var(--muted); text-align: center; line-height: 1.5; margin: 10px 0 8px; }
+  @media (prefers-reduced-motion: reduce) {
+    .bodyfig { animation: none; }
+    .bodybox .bodymus, .bodybox .sw, .bodypick { transition: none; }
+  }
 
   /* ---------- workout mode ---------- */
   #workout { position: fixed; inset: 0; z-index: 80; background-color: var(--paper);
