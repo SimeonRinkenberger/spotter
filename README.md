@@ -294,6 +294,7 @@ Per-user daily caps keep a public launch inside the free tiers, all overridable 
 | `LIMIT_HELPER` | 300 | `/api/explain` and `/api/swap` |
 | `LIMIT_CHAT` | 200 | Pumpy turns — a legacy backstop; credits are the real gate |
 | `LIMIT_UPLOADS` | 10 | videos the user uploaded themselves — the most expensive save there is |
+| `LIMIT_MEDIA` | 10 | media **steps** — one per tier that actually runs, so a full escalation costs two |
 
 Cache hits count only against `LIMIT_SAVES`, so saving videos other people already saved is
 effectively free.
@@ -331,12 +332,72 @@ put a varying string in front of the static block and every call is now paying f
 `GET /api/limits` surfaces the same figure for today as `cache_pct_today` (0-100, or `null`
 when nothing has run yet).
 
+### Reading the video itself
+
+A caption that names no exercises is not a video that contains none. The workout is spoken,
+or written on the screen, and until this wave both were invisible to Spotter. Two tiers now
+go and get them, and both run **only** past a gate this application computes from the
+finished card — never from the model's opinion of its own work:
+
+```
+!has_full_workout  ||  countExercises < 2  ||  confidence < 0.45
+```
+
+| Tier | What it does | Cost | Evidence it produces |
+|---|---|---|---|
+| 1 — transcript | Groq `whisper-large-v3-turbo`, `verbose_json`, one spoken phrase per line | $0.04/hour of audio, so ~$0.0004 for a 35-second clip | `transcript`, and located quotes in it are **verified**: it is a text we hold and can point at |
+| 2 — video | Gemini (`model.gemini_vision`) reads what is demonstrated and written on screen, with timestamps | free tier today; ~3k input tokens per clip | `video`, never verified, and the card is capped at 0.55 exactly like a carousel |
+
+Tier 2 runs only if tier 1 left the card thin. Both respect `paidAllowed()` and `LIMIT_MEDIA`,
+both run in their own sub-request (`POST /api/worker/media`, worker secret) so a
+multi-megabyte stream that kills an isolate kills nothing else, and the result goes into the
+**global** `video_cache` — so a viral clip is read once for everybody.
+
+**Where the media comes from, and why it is never a client field.** A media URL is read only
+out of a provider's own parser. TikTok's watch page (desktop UA) carries the rehydration blob
+naming `music.playUrl`, `video.playAddr` and `video.downloadAddr`; the same response sets the
+cookies without which the CDN answers 403. Measured 2026-09-02:
+
+* `music.playUrl` is the **sound**, not the video's audio. It is used only when the payload
+  says `music.original` **and** the sound's duration matches the video's — then Groq fetches
+  that URL itself and no bytes come near the function. On the acceptance clip the sound is
+  57s against a 34s video and "transcribes" to song lyrics, which is exactly the trap.
+* `video.playAddr` answers **403 bare and 206 with the watch page's cookies**, and Groq is on
+  another IP with no cookies. So the function fetches it and pipes the response body straight
+  into the request body — Groq's multipart upload for tier 1, Gemini's resumable Files API
+  upload for tier 2. The bytes are counted as they pass and aborted at `media.max_bytes`;
+  nothing is buffered, nothing is base64-encoded, nothing is stored.
+* Gemini's uploaded file is deleted in a `finally`, on every outcome.
+* **`thinkingConfig` must be omitted for video `fileData`.** Every text call in this codebase
+  switches thinking off because Gemini 3.x otherwise spends the output budget reasoning; the
+  same field makes a video request answer `400 INVALID_ARGUMENT`, on every model in the pool,
+  with and without a `mimeType`.
+* **Instagram has no tier.** Neither the crawler view, the `/embed/captioned/` page, nor the
+  same pages fetched from a residential IP names a media URL — no `og:video`, no
+  `og:video:secure_url`, no `video_url`, not one `.mp4` anywhere in 800 KB of HTML. The
+  provider hook exists and returns nothing; the day that changes it is one function.
+
+**What is stored.** `video_cache.media_tried` (asked once, ever), `media_source` (`tiktok:sound`
+/ `tiktok:stream` / `video:gemini`) and `media_text` — the transcript, kept because the card's
+evidence quotes point at it and a quote nobody can look up is not evidence. `saves_log` gets one
+`kind = 'media'` row per step with the same `media_source`. `workouts.media_stage` is `listening`
+or `watching` while a step runs and null otherwise, which is all the pending card's copy is.
+
+**Triggering it by hand.** `POST /api/workouts/:id/media` — the "Read the video" button under a
+thin card. Same caps, same queue, same one-job-per-video guarantee as the retry button. A
+second user saving a video whose cached card is thin and whose `media_tried` is false gets the
+upgrade queued for them automatically, once, and the row they write is what everybody after
+them receives.
+
+The dials live in `app_config`: `media.max_bytes` (40,000,000), `media.timeout_ms` (150,000)
+and `media.video_enabled` (`true`). Turning tier 2 off is an update statement.
+
 ### Platform notes
 
 | Platform | Caption source | Status |
 |---|---|---|
 | Instagram | og: tags via the `facebookexternalhit` UA, plus the `/embed/captioned/` page | Works. Carousel slides are read with vision only when the caption yields nothing. The crawler UA is not optional: measured 2026-09-02, a desktop or iOS Safari UA gets a login shell with no og: tags **from a residential IP too**, so a phone fetching the page must send the crawler UA. |
-| TikTok | oEmbed, then `/embed/v2`, then the watch page's rehydration blob, then og: tags | Works. Verified 200 on real videos from Supabase's datacenter IPs. og: tags never carry the caption and are only trusted for thumbnail and handle. |
+| TikTok | oEmbed, then `/embed/v2`, then the watch page's rehydration blob, then og: tags | Works. Verified 200 on real videos from Supabase's datacenter IPs. og: tags never carry the caption and are only trusted for thumbnail and handle. The **only** platform whose media Spotter can reach — see *Reading the video itself*. |
 | YouTube | oEmbed for title/author/thumb, Data API v3 for the description | The description **needs an API key**. Verified 2026-09: from a datacenter IP the watch page returns 429, the WEB player endpoint returns `LOGIN_REQUIRED`, ANDROID/iOS clients fail attestation, and both embedded-player clients error. Set `YOUTUBE_API_KEY` (or enable YouTube Data API v3 on the same Google project as `GEMINI_API_KEY`, which is used as a fallback). |
 | Any web page | og: tags plus page text | Works. |
 | Anything, from a phone | the page HTML the caller POSTs, or a caption they paste | Works, and does not scrape at all. `POST /api/ingest {url, html}` runs the same platform parsers over HTML the phone fetched from a residential IP; `{url, caption}` skips parsing entirely. `meta_source` on `saves_log` records `phone-html` / `user-caption`, so `save_health` shows how much of the mix has moved off the server's own IP. |
