@@ -582,9 +582,24 @@ export const STYLE = String.raw`<style>
   .pmark svg { width: 17px; height: 17px; display: block; }
   .noimg.pumpyimg { color: var(--ember); opacity: .9; }
   .noimg.pumpyimg svg { width: 46px; height: 46px; }
+  /* The Pumpy tab is a column as tall as what is left of the screen once the
+     sticky header and the fixed tab bar have taken their share, so the composer
+     lands on the tab bar whether the thread is empty or endless. Both numbers are
+     measured once by sizePumpy() and written here as custom properties; the
+     fallbacks are only ever used for the first paint. The page keeps scrolling on
+     the body — the log is not its own scroller, which is what makes the iOS
+     keyboard behave. */
   #pumpyview { padding-bottom: 0; }
-  #pumpylog { display: flex; flex-direction: column; gap: 10px; padding: 6px 0 14px; min-height: 42vh; }
-  .pumpytop { display: flex; justify-content: flex-end; }
+  #pumpyview.open { display: flex; flex-direction: column;
+    min-height: calc(100vh - var(--pumpytop, 130px) - var(--ptab, 78px));
+    min-height: calc(100dvh - var(--pumpytop, 130px) - var(--ptab, 78px)); }
+  body.app.pumpy { padding-bottom: var(--ptab, calc(78px + env(safe-area-inset-bottom))); }
+  #pumpylog { display: flex; flex-direction: column; gap: 10px; padding: 6px 0 14px; flex: 1 1 auto;
+    min-height: 0; }
+  #pumpylog.hello { justify-content: center; }
+  .pumpybar { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 2px 0 4px; }
+  .pumpybar .chip { padding: 8px 13px; font-size: 12.5px; }
   .pumpyhello { text-align: center; padding: 22px 12px 8px; color: var(--ink-2); font-size: 14px; line-height: 1.6; }
   .pumpyhello .pmark { width: 60px; height: 60px; margin: 0 auto 12px; box-shadow: var(--sh-md); }
   .pumpyhello .pmark svg { width: 34px; height: 34px; }
@@ -592,7 +607,10 @@ export const STYLE = String.raw`<style>
     letter-spacing: -.025em; }
   .pumpyhello p { margin: 0 auto; max-width: 340px; }
   .quick { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 16px 0 4px; }
-  .quick .chip { white-space: normal; text-align: left; line-height: 1.3; padding: 9px 13px; }
+  /* The library chips refuse to shrink; these have to, or a long ask runs off both
+     edges of the phone instead of wrapping. */
+  .quick .chip { flex: 0 1 auto; max-width: 100%; white-space: normal; text-align: left;
+    line-height: 1.3; padding: 9px 13px; }
   .msgrow { display: flex; gap: 8px; align-items: flex-end; max-width: 92%; }
   .msgcol { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
   .msg { padding: 11px 14px; border-radius: 18px; font-size: 14.5px; line-height: 1.55; white-space: pre-wrap;
@@ -618,15 +636,18 @@ export const STYLE = String.raw`<style>
   .proposal .btnrow .btn { padding: 12px; font-size: 14.5px; }
   .proposal .done { color: var(--good); font-weight: 700; font-size: 13px; margin-top: 10px; }
   .proposal .declined { color: var(--muted); font-size: 13px; margin-top: 10px; }
-  .composer { position: sticky; bottom: calc(78px + env(safe-area-inset-bottom)); padding: 8px 0 12px;
+  .composer { position: sticky; bottom: var(--ptab, calc(78px + env(safe-area-inset-bottom)));
+    padding: 8px 0 10px;
     background: color-mix(in srgb, var(--paper) 90%, transparent);
     -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
   .composerrow { display: flex; gap: 8px; align-items: flex-end; }
   .composer textarea { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 16px; padding: 12px 14px;
     font-size: 16px; line-height: 1.4; background: var(--card); color: var(--ink); outline: none; resize: none;
-    max-height: 120px; transition: border-color var(--t-2); }
+    max-height: 138px; overflow-y: auto; transition: border-color var(--t-2); }
   .composer textarea:focus { border-color: var(--ember); }
   .composer .addbtn { width: 44px; height: 44px; border-radius: 15px; font-size: 20px; }
+  .composer .addbtn[disabled] { opacity: .4; box-shadow: none; }
+  .pumpycredits { font-size: 11.5px; color: var(--muted); margin: 0 0 7px 6px; line-height: 1.4; }
   .pumpyctx { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-2); margin: 0 0 8px 6px; }
   .pumpyctx b { color: var(--ink); font-weight: 650; }
   .pumpyctx button { border: none; background: var(--sand); color: var(--muted); border-radius: 999px;
@@ -636,6 +657,22 @@ export const STYLE = String.raw`<style>
     padding: 12px; font-size: 14px; font-weight: 650; margin: -8px 0 22px; box-shadow: var(--sh-sm);
     transition: transform var(--t-1) var(--e-out); }
   .askpumpy:active { transform: scale(.982); }
+  /* One conversation per row: the thread on the left, a two-tap delete on the
+     right, the open one marked in ember. */
+  .threadrow { display: flex; align-items: center; gap: 6px; border-top: 1px solid var(--line); }
+  .threadrow:first-child { border-top: none; }
+  .threadrow .tmain { flex: 1; min-width: 0; border: none; background: none; text-align: left;
+    padding: 12px 8px; border-radius: 13px; color: var(--ink); }
+  .threadrow .tmain:active { background: var(--sand); }
+  .threadrow .tmain b { display: block; font-size: 14px; font-weight: 600; line-height: 1.35;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .threadrow .tmain span { display: block; font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+  .threadrow.on .tmain b { color: var(--ember-ink); }
+  .threadrow .tdel { flex: 0 0 auto; border: none; background: none; color: var(--muted);
+    font-size: 12px; font-weight: 600; padding: 11px 8px; border-radius: 999px; }
+  .threadrow .tdel[data-armed="1"] { color: var(--ember-ink); }
+  .threadnone { font-size: 13.5px; color: var(--muted); padding: 10px 0 4px; line-height: 1.6; }
+  .setnote { font-size: 12.5px; color: var(--muted); line-height: 1.5; padding: 0 0 12px; margin-top: -4px; }
 
   /* ---------- install hint ---------- */
   #hint { margin: 12px 18px 0; background: var(--card); border: 1px solid var(--line);
