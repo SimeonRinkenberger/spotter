@@ -532,6 +532,13 @@ export const STYLE = String.raw`<style>
     box-shadow: var(--sh-lg); max-width: 88vw; text-align: center; }
   #toast.show { opacity: 1; transform: translate(-50%, 0); }
   #toast.tappable { pointer-events: auto; cursor: pointer; }
+  /* The one toast the landing ever shows — a shared link waiting for sign-in —
+     belongs above the fold, not across the sign-in card. There is no tab bar here
+     to clear, and the top of the landing is the only empty band on the screen.
+     The 14px entrance offset still reads as an arrival from off-screen. */
+  body:not(.app) #toast { top: calc(14px + env(safe-area-inset-top)); bottom: auto;
+    transform: translate(-50%, -14px); }
+  body:not(.app) #toast.show { transform: translate(-50%, 0); }
 
   /* ---------- tab bar ---------- */
   .tabbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; display: flex;

@@ -502,7 +502,9 @@ export const APP = String.raw`
     loadProfile();
     maybeInstallHint();
     watchWorkouts();
-    return load();
+    // A shared link is saved only once the library is in hand, so the card it
+    // creates lands in a rendered grid rather than into an empty one.
+    return load().then(consumeShare);
   }
 
   // ---------- realtime ----------
@@ -2885,6 +2887,8 @@ export const APP = String.raw`
   }
 
   function offerResume() {
+    // A link that just arrived from the share sheet owns the toast and the moment.
+    if (sharing) return;
     var raw = null;
     try { raw = localStorage.getItem(draftKey()); } catch (e) { return; }
     if (!raw) return;
@@ -3794,12 +3798,26 @@ export const APP = String.raw`
     watchPending();
   }
 
-  function doAdd() {
+  /**
+   * One save path for the link box and for the share sheet. fromShare only changes
+   * two things: the wording of the confirmation, and where a failure leaves the
+   * user — a link that arrived from another app exists nowhere else on this device
+   * once it has been taken off the address bar, so a failed share puts it back in
+   * the add sheet instead of dropping it.
+   */
+  function doAdd(fromShare) {
     var url = $("addurl").value.trim();
     if (!url) { toast("Paste a link first."); return; }
     var btn = $("addgo");
     btn.disabled = true;
     btn.textContent = "Saving…";
+
+    function recover() {
+      if (!fromShare) return;
+      resetUpload();
+      openSheet("addsheet");
+    }
+
     api("ingest", { method: "POST", body: JSON.stringify({ url: url }) })
       .then(function (r) {
         btn.disabled = false;
@@ -3811,7 +3829,7 @@ export const APP = String.raw`
         if (r.status === "processing") {
           $("addurl").value = "";
           closeSheet("addsheet");
-          toast("Saved — reading the video…");
+          toast(fromShare ? "Saved from the share sheet — reading it…" : "Saved — reading the video…");
           placePending(r, url, null);
           return;
         }
@@ -3819,7 +3837,8 @@ export const APP = String.raw`
         if (r.status === "saved") {
           $("addurl").value = "";
           closeSheet("addsheet");
-          toast(r.cached ? "Saved instantly ⚡" : "Saved 💪");
+          if (fromShare) toast(r.cached ? "Saved from the share sheet ⚡" : "Saved from the share sheet 💪");
+          else toast(r.cached ? "Saved instantly ⚡" : "Saved 💪");
           load().then(function () {
             var w = state.workouts.filter(function (x) { return x.id === r.id; })[0];
             if (w) openDetail(w);
@@ -3830,12 +3849,83 @@ export const APP = String.raw`
           load();
         } else {
           toast(r.message || "Could not save that link.");
+          recover();
         }
       }).catch(function () {
         btn.disabled = false;
         btn.textContent = "Save workout";
         toast("Could not reach Spotter — check your connection.");
+        recover();
       });
+  }
+
+  // ---------- the share sheet ----------
+  //
+  // An installed PWA that declares share_target in its manifest appears in
+  // Android's share sheet; picking it launches the app at the action URL with the
+  // shared fields in the query string. That is the whole platform contract, and
+  // everything below is the three awkward parts of it.
+  //
+  // 1. Android's share system has no url field. A shared link usually arrives in
+  //    text and occasionally in title, so all three are searched for the first
+  //    http(s) URL rather than trusting url alone.
+  // 2. The Web Share Target spec sets the action URL's query to the shared params
+  //    (Level 2, "launching the web share target": "Set url's query component to
+  //    query"), so the ?share marker written into the manifest is a hint that may
+  //    not survive the launch. The params themselves are what identify a share.
+  // 3. The share can land on a signed-out app. The link is held for the length of
+  //    the tab's session and saved on the other side of sign-in.
+  //
+  // iOS Safari does not implement share_target (WebKit bug 194593, still NEW as of
+  // May 2026), so on iPhone this does nothing and the Shortcut remains the route.
+  // A future iOS share extension would open the app at the same ?share&url=
+  // address, which is why the entry point is one function.
+
+  var SHARE_KEY = "spotter_share_pending";
+  var sharing = false;
+
+  function firstUrlIn(s) {
+    if (!s) return "";
+    var m = String(s).match(/https?:\/\/[^\s"'<>]+/);
+    // Trailing punctuation belongs to the sentence somebody shared, not the link.
+    return m ? m[0].replace(/[.,;:!?)\]]+$/, "") : "";
+  }
+
+  // Runs once, before anything else can navigate: take the share off the address
+  // bar and hold it. Almost every load finds nothing and returns immediately.
+  function captureShare() {
+    var q;
+    try { q = new URLSearchParams(location.search); } catch (e) { return; }
+    if (!q.has("share") && !q.has("url") && !q.has("text") && !q.has("title")) return;
+    var u = firstUrlIn(q.get("url")) || firstUrlIn(q.get("text")) || firstUrlIn(q.get("title"));
+    if (u) { try { sessionStorage.setItem(SHARE_KEY, u); } catch (e) { /* ignore */ } }
+    // The library is not loaded yet and there may be no session, so nothing is
+    // saved here. Clean the address bar so a reload cannot replay the share.
+    try { history.replaceState(null, "", location.pathname + location.hash); } catch (e) { /* ignore */ }
+  }
+
+  function sharePending() {
+    try { return !!sessionStorage.getItem(SHARE_KEY); } catch (e) { return false; }
+  }
+
+  // Called at the end of boot, on both sign-in paths. Taking the key out before
+  // acting on it is what makes one share exactly one save.
+  function consumeShare() {
+    var u = null;
+    try {
+      u = sessionStorage.getItem(SHARE_KEY);
+      if (u) sessionStorage.removeItem(SHARE_KEY);
+    } catch (e) { return; }
+    if (u) handleSharedUrl(u);
+  }
+
+  function handleSharedUrl(u) {
+    if (!u || sharing) return;
+    sharing = true;
+    // Through the add sheet's own field, so a failure can simply show that sheet
+    // with the link already in it.
+    $("addurl").value = u;
+    doAdd(true);
   }
 
   // ---------- upload a video you saved ----------
@@ -4114,13 +4204,23 @@ export const APP = String.raw`
 
   // ---------- install hint ----------
 
+  // Two reasons to install, one per platform. On iPhone it buys a home-screen app;
+  // on Android it also buys a place in the share sheet, which is the whole reason
+  // an Android user would bother, so the hint says that instead.
   function maybeInstallHint() {
     var standalone = window.navigator.standalone ||
       (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
-    var isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    if (standalone) return;
     var dismissed = false;
     try { dismissed = localStorage.getItem("spotter_hint_done") === "1"; } catch (e) { /* ignore */ }
-    if (isIOS && !standalone && !dismissed) $("hint").classList.add("show");
+    if (dismissed) return;
+    var isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    var isAndroid = /android/i.test(navigator.userAgent);
+    if (!isIOS && !isAndroid) return;
+    $("hinttext").innerHTML = isIOS
+      ? "Add Spotter to your home screen: tap <b>Share</b>, then <b>Add to Home Screen</b>."
+      : "Install Spotter, then <b>share</b> any video straight to it from the share sheet.";
+    $("hint").classList.add("show");
   }
 
   // ---------- wiring ----------
@@ -4135,7 +4235,9 @@ export const APP = String.raw`
   // the sign-in/sign-up toggle is rebuilt by setAuthMode, which wires its own handler
 
   $("addbtn").onclick = function () { $("addurl").value = ""; resetUpload(); openSheet("addsheet"); };
-  $("addgo").onclick = doAdd;
+  // Wrapped: doAdd's first argument means "this came from the share sheet", and a
+  // bare handler would hand it a MouseEvent.
+  $("addgo").onclick = function () { doAdd(); };
   $("addurl").addEventListener("keydown", function (e) { if (e.key === "Enter") doAdd(); });
   // The row is the tap target; the file input behind it is never seen.
   $("uploadrow").onclick = function () { upError(""); $("addfile").click(); };
@@ -4312,6 +4414,11 @@ export const APP = String.raw`
 
   setAuthMode("signup");
 
+  // Before either sign-in path resolves — both of them end in consumeShare — and
+  // after the whole script body has run, because this reads a var declared in the
+  // share section and function hoisting would not have brought that with it.
+  captureShare();
+
   // A session restored from storage does not always fire onAuthStateChange in time.
   sb.auth.getSession().then(function (r) {
     if (r.data.session && r.data.session.user) {
@@ -4320,6 +4427,9 @@ export const APP = String.raw`
       boot().then(offerResume);
     } else {
       showLanding();
+      // A share that landed on a signed-out app. Say the link is safe rather than
+      // showing a sign-in screen that looks like the share went nowhere.
+      if (sharePending()) toast("Sign in to save the link you shared.");
     }
   });
 

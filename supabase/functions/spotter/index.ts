@@ -7724,6 +7724,15 @@ Deno.serve(async (req: Request) => {
         name: "Spotter", short_name: "Spotter", start_url: ".", scope: ".",
         display: "standalone", background_color: "#F5F6F8", theme_color: "#F5F6F8",
         icons: [{ src: "icon.png", sizes: "512x512", type: "image/png", purpose: "any maskable" }],
+        // Puts an installed Spotter in Android's share sheet. The action is relative
+        // to this manifest's own URL, so it resolves to the function's root here and
+        // to /spotter/ on Pages, inside scope in both places. Kept byte-identical
+        // with docs/manifest.webmanifest, which is the copy Pages serves.
+        share_target: {
+          action: "./?share",
+          method: "GET",
+          params: { title: "title", text: "text", url: "url" },
+        },
       }, 200, cors);
     }
 

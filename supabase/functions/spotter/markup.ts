@@ -101,7 +101,7 @@ export const MARKUP_BODY = String.raw`</head>
   </header>
 
   <div id="hint">
-    <div>Add Spotter to your home screen: tap <b>Share</b>, then <b>Add to Home Screen</b>.</div>
+    <div id="hinttext">Add Spotter to your home screen: tap <b>Share</b>, then <b>Add to Home Screen</b>.</div>
     <button id="hintx" aria-label="Dismiss">×</button>
   </div>
 
@@ -330,8 +330,11 @@ export const MARKUP_BODY = String.raw`</head>
   <div class="kv"><span class="k">Weight unit</span>
     <span class="v"><button class="chip" id="unittoggle">lb</button></span></div>
   <h2 style="margin-top:22px;font-size:16px">Save from your phone</h2>
-  <p class="lede">Make an iOS Shortcut that POSTs a shared link to this address, and you can save
-    straight from the share sheet. Keep it private — it works without your password.</p>
+  <p class="lede"><b>Android</b> — install Spotter, then share any video to it from the share
+    sheet. Nothing below is needed.</p>
+  <p class="lede"><b>iPhone</b> — for now, make a Shortcut that POSTs the shared link to this
+    address. A native share option is coming with the App Store version. Keep the address
+    private — it works without your password.</p>
   <div class="keybox" id="setkey">—</div>
   <div class="btnrow">
     <button class="btn ghost" id="copykey">Copy address</button>
