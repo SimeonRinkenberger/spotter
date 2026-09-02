@@ -136,6 +136,41 @@ export const STYLE = String.raw`<style>
   .chip .n { opacity: .5; font-weight: 700; margin-left: 5px; font-size: 11px; font-variant-numeric: tabular-nums; }
   .chip.active .n { opacity: .75; }
 
+  /* ---------- collections ----------
+     A collection is the general form of a favourite: the same chip row, the same
+     sand-and-ember palette, one more kind of filter. The bar below the chips
+     appears only while a collection is the active filter, and is where it is
+     renamed or deleted — no long-press, no drag. */
+  .colbar { display: flex; align-items: center; gap: 8px; padding: 6px 18px 0; font-size: 12.5px;
+    color: var(--ink-2); }
+  .colbar b { flex: 1; min-width: 0; font-weight: 700; color: var(--ink); overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  .colbar button { flex: 0 0 auto; border: none; background: var(--sand); color: var(--ink-2);
+    border-radius: 999px; padding: 7px 11px; font-size: 12px; font-weight: 650; line-height: 1;
+    transition: transform var(--t-1) var(--e-out); }
+  .colbar button:active { transform: scale(.94); }
+  .colbar button.warn { color: var(--ember-ink); }
+  .colrow { display: flex; align-items: center; gap: 12px; padding: 10px 6px; border: none;
+    background: none; text-align: left; border-radius: 13px; width: 100%; }
+  .colrow:active { background: var(--sand); }
+  .colrow .mark { width: 24px; height: 24px; border-radius: 8px; border: 1.5px solid var(--line-2);
+    display: flex; align-items: center; justify-content: center; font-size: 12px; line-height: 1;
+    color: transparent; flex: 0 0 auto; transition: background-color var(--t-2), border-color var(--t-2); }
+  .colrow.in .mark { background: var(--ember); border-color: var(--ember); color: var(--on-ember); }
+  .colrow .ce { width: 26px; text-align: center; font-size: 18px; flex: 0 0 auto; }
+  .colrow .ct { flex: 1; min-width: 0; }
+  .colrow .ct b { display: block; font-size: 14px; font-weight: 600; line-height: 1.3;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .colrow .ct span { font-size: 11.5px; color: var(--muted); }
+  .newcol { display: flex; gap: 8px; margin-top: 14px; }
+  .newcol input { border: 1px solid var(--line); border-radius: 12px; padding: 11px 12px;
+    font-size: 16px; background: var(--sand); color: var(--ink); outline: none; min-width: 0;
+    transition: border-color var(--t-2), background-color var(--t-2); }
+  .newcol input:focus { border-color: var(--ember); background: var(--card); }
+  .newcol .emo { width: 56px; text-align: center; flex: 0 0 auto; }
+  .newcol .nm { flex: 1; }
+  .newcol .btn { width: auto; flex: 0 0 auto; padding: 11px 14px; font-size: 14px; border-radius: 12px; }
+
   /* ---------- library grid ---------- */
   .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px 13px; padding: 12px 18px 24px; }
   @media (min-width: 640px) { .grid { grid-template-columns: repeat(3, 1fr); } }
@@ -242,6 +277,22 @@ export const STYLE = String.raw`<style>
   .dtitle { font-family: var(--display); font-size: 28px; font-weight: 700; line-height: 1.14;
     letter-spacing: -.032em; margin: 0 0 10px; }
   .dauthor { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
+  /* ---------- managing a card ----------
+     Rename, collections and remove as one row, in the same quiet card style as
+     .sect. Favourite stays in the top bar: it is a state, these are actions. */
+  .dtitle.editable { cursor: pointer; }
+  .managerow { display: flex; gap: 8px; margin: 0 0 12px; }
+  .mbtn { flex: 1; min-width: 0; border: 1px solid var(--line); background: var(--card);
+    color: var(--ink-2); border-radius: 13px; padding: 10px 8px; font-size: 12.5px; font-weight: 650;
+    display: flex; align-items: center; justify-content: center; gap: 6px; box-shadow: var(--sh-sm);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1;
+    transition: transform var(--t-1) var(--e-out), background-color var(--t-2); }
+  .mbtn:active { transform: scale(.96); }
+  .mbtn .n { font-size: 11px; opacity: .6; font-variant-numeric: tabular-nums; }
+  .mbtn.on { background: var(--ember-soft); color: var(--ember-ink); border-color: transparent; }
+  .mbtn.quiet { color: var(--muted); }
+  .colpills { display: flex; flex-wrap: wrap; gap: 7px; margin: 0 0 16px; }
+  .colpills .pill { border: none; cursor: pointer; font-family: var(--sans); }
   .pillrow { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 16px; }
   .pill { font-size: 12px; font-weight: 600; padding: 7px 11px; border-radius: 999px;
     background: var(--sand); color: var(--ink-2); line-height: 1; }

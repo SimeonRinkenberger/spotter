@@ -87,6 +87,7 @@ export const MARKUP_BODY = String.raw`</head>
   </div>
 
   <div class="chips" id="chips"></div>
+  <div class="colbar hide" id="colbar"></div>
   <div class="grid" id="grid"></div>
   <div class="empty hide" id="empty"></div>
 
@@ -205,6 +206,31 @@ export const MARKUP_BODY = String.raw`</head>
   <div class="grabber"></div>
   <h2 id="picktitle">Pick a workout</h2>
   <div class="picklist" id="picklist"></div>
+</div></div>
+
+<div class="sheet" id="colsheet"><div class="sheetbody">
+  <div class="grabber"></div>
+  <h2 id="coltitle">Collections</h2>
+  <p class="lede" id="collede">A workout can live in several — tap to add or remove.</p>
+  <div class="picklist" id="collist"></div>
+  <div class="newcol">
+    <input class="emo" id="colemoji" type="text" placeholder="🏷" maxlength="4" autocomplete="off" aria-label="Emoji">
+    <input class="nm" id="colname" type="text" placeholder="New collection" maxlength="60" autocapitalize="sentences" autocomplete="off" aria-label="Collection name">
+    <button class="btn" id="colcreate">Create</button>
+  </div>
+</div></div>
+
+<div class="sheet" id="renamesheet"><div class="sheetbody">
+  <div class="grabber"></div>
+  <h2 id="renametitle">Rename</h2>
+  <div class="field">
+    <label for="renameinput">Name</label>
+    <input id="renameinput" type="text" maxlength="160" autocapitalize="sentences" autocomplete="off">
+  </div>
+  <div class="btnrow">
+    <button class="btn ghost" id="renamecancel">Cancel</button>
+    <button class="btn" id="renamesave">Save</button>
+  </div>
 </div></div>
 
 <div class="sheet" id="settingssheet"><div class="sheetbody">

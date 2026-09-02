@@ -20,6 +20,7 @@ export const APP = String.raw`
 
   var state = {
     user: null, profile: null, workouts: [], logs: null, plan: null,
+    collections: [], colItems: [],
     filter: "All", q: "", view: "library", weekStart: null, unit: "lb"
   };
 
@@ -204,6 +205,7 @@ export const APP = String.raw`
 
     if (payload.eventType === "DELETE") {
       state.workouts = state.workouts.filter(function (w) { return w.id !== row.id; });
+      state.colItems = state.colItems.filter(function (it) { return it.workout_id !== row.id; });
       render();
       return;
     }
@@ -254,25 +256,60 @@ export const APP = String.raw`
   // ---------- library ----------
 
   function load() {
-    return sb.from("workouts").select("*").order("created_at", { ascending: false }).limit(200)
-      .then(function (r) {
-        if (r.error) { toast("Could not load your library."); return; }
-        state.workouts = r.data || [];
-        render();
-        watchPending();
-      });
+    return Promise.all([
+      sb.from("workouts").select("*").order("created_at", { ascending: false }).limit(200),
+      sb.from("collections").select("*").order("sort_order").order("created_at"),
+      sb.from("collection_items").select("collection_id,workout_id,added_at")
+    ]).then(function (rs) {
+      if (rs[0].error) { toast("Could not load your library."); return; }
+      state.workouts = rs[0].data || [];
+      // Collections decorate the library; they are not the library. A failed read
+      // here keeps whatever was already known rather than blanking the chips.
+      if (!rs[1].error) state.collections = rs[1].data || [];
+      if (!rs[2].error) state.colItems = rs[2].data || [];
+      render();
+      watchPending();
+    });
   }
 
   function isPending(w) { return w.ingest_status === "processing"; }
   function isFailed(w) { return w.ingest_status === "failed"; }
 
+  // ---------- collections: lookups ----------
+
+  function isColFilter(f) { return typeof f === "string" && f.indexOf("col:") === 0; }
+  function colById(id) {
+    for (var i = 0; i < state.collections.length; i++) {
+      if (state.collections[i].id === id) return state.collections[i];
+    }
+    return null;
+  }
+  function inCol(colId, workoutId) {
+    return state.colItems.some(function (it) {
+      return it.collection_id === colId && it.workout_id === workoutId;
+    });
+  }
+  function colCount(colId) {
+    return state.colItems.filter(function (it) { return it.collection_id === colId; }).length;
+  }
+  function colsOf(workoutId) {
+    return state.colItems
+      .filter(function (it) { return it.workout_id === workoutId; })
+      .map(function (it) { return colById(it.collection_id); })
+      .filter(Boolean);
+  }
+  function colLabel(c) { return (c.emoji ? c.emoji + " " : "") + c.name; }
+
   function visible() {
     var q = state.q.toLowerCase().trim();
     return state.workouts.filter(function (w) {
-      if (state.filter === "Favorites" ? !w.favorite : (state.filter !== "All" && w.category !== state.filter)) return false;
+      if (state.filter === "Favorites") { if (!w.favorite) return false; }
+      else if (isColFilter(state.filter)) { if (!inCol(state.filter.slice(4), w.id)) return false; }
+      else if (state.filter !== "All" && w.category !== state.filter) return false;
       if (!q) return true;
       var hay = [w.title, w.author, w.category, (w.muscle_groups || []).join(" "),
-        (w.equipment || []).join(" "), (w.tags || []).join(" "), exerciseNames(w).join(" ")]
+        (w.equipment || []).join(" "), (w.tags || []).join(" "), exerciseNames(w).join(" "),
+        colsOf(w.id).map(function (c) { return c.name; }).join(" ")]
         .join(" ").toLowerCase();
       return hay.indexOf(q) >= 0;
     });
@@ -294,18 +331,47 @@ export const APP = String.raw`
       counts[w.category] = (counts[w.category] || 0) + 1;
       if (w.favorite) favs++;
     });
-    var list = [["All", state.workouts.length]];
-    if (favs) list.push(["Favorites", favs]);
-    CATEGORIES.forEach(function (c) { if (counts[c]) list.push([c, counts[c]]); });
+    // The collection a chip was filtering on can have been deleted under it.
+    if (isColFilter(state.filter) && !colById(state.filter.slice(4))) state.filter = "All";
 
-    list.forEach(function (pair) {
-      var b = el("button", "chip" + (state.filter === pair[0] ? " active" : ""));
-      b.appendChild(document.createTextNode(pair[0] === "Favorites" ? "★ Favorites" : pair[0]));
-      var n = el("span", "n", String(pair[1]));
-      b.appendChild(n);
-      b.onclick = function () { state.filter = pair[0]; render(); };
+    var list = [{ key: "All", label: "All", n: state.workouts.length }];
+    if (favs) list.push({ key: "Favorites", label: "★ Favorites", n: favs });
+    // Collections sit beside Favorites: the same idea, just more of them.
+    state.collections.forEach(function (c) {
+      list.push({ key: "col:" + c.id, label: colLabel(c), n: colCount(c.id) });
+    });
+    if (state.workouts.length) list.push({ key: "__newcol", label: "＋ Collection", n: null });
+    CATEGORIES.forEach(function (c) { if (counts[c]) list.push({ key: c, label: c, n: counts[c] }); });
+
+    list.forEach(function (item) {
+      var b = el("button", "chip" + (state.filter === item.key ? " active" : ""));
+      b.appendChild(document.createTextNode(item.label));
+      if (item.n !== null) b.appendChild(el("span", "n", String(item.n)));
+      b.onclick = function () {
+        if (item.key === "__newcol") { openCollections(null); return; }
+        state.filter = item.key;
+        render();
+      };
       wrap.appendChild(b);
     });
+  }
+
+  // Rename / delete for the collection currently filtering the library. Shown
+  // only then, so the chip row stays a chip row.
+  function renderColBar() {
+    var bar = $("colbar");
+    bar.innerHTML = "";
+    var c = isColFilter(state.filter) ? colById(state.filter.slice(4)) : null;
+    if (!c || state.view !== "library") { bar.classList.add("hide"); return; }
+    bar.classList.remove("hide");
+    var n = colCount(c.id);
+    bar.appendChild(el("b", null, colLabel(c) + " · " + n + (n === 1 ? " workout" : " workouts")));
+    var ren = el("button", null, "Rename");
+    ren.onclick = function () { openRename("collection", c.id, c.name); };
+    bar.appendChild(ren);
+    var del = el("button", "warn", "Delete");
+    del.onclick = function () { deleteCollection(c, del); };
+    bar.appendChild(del);
   }
 
   function fmtDur(m) {
@@ -418,6 +484,7 @@ export const APP = String.raw`
 
   function render() {
     renderChips();
+    renderColBar();
     renderGrid();
     var n = state.workouts.length;
     $("count").textContent = n ? n + (n === 1 ? " workout" : " workouts") : "No workouts yet";
@@ -491,8 +558,16 @@ export const APP = String.raw`
     if (em) d.appendChild(em);
 
     d.appendChild(el("div", "dkick", isPending(w) ? "Reading" : (isFailed(w) ? "Needs another try" : (w.category || "Other"))));
-    d.appendChild(el("h2", "dtitle", w.title || "Untitled workout"));
+    var titleEl = el("h2", "dtitle", w.title || "Untitled workout");
+    if (!isPending(w)) {
+      titleEl.classList.add("editable");
+      titleEl.title = "Tap to rename";
+      titleEl.onclick = function () { openRename("workout", w.id, w.title || ""); };
+    }
+    d.appendChild(titleEl);
     if (w.author) d.appendChild(el("div", "dauthor", "@" + w.author));
+    d.appendChild(manageRow(w));
+    d.appendChild(colPills(w));
 
     // A card whose extraction has not landed yet, or one whose job gave up. Both
     // are real rows with a real link — the user keeps what they saved either way.
@@ -518,10 +593,6 @@ export const APP = String.raw`
       open.style.textDecoration = "none";
       open.style.marginBottom = "14px";
       d.appendChild(open);
-
-      var rm = el("button", "danger", "Remove from library");
-      rm.onclick = function () { removeWorkout(w); };
-      d.appendChild(rm);
 
       $("dfav").textContent = w.favorite ? "★" : "☆";
       $("dfav").classList.toggle("on", !!w.favorite);
@@ -682,10 +753,6 @@ export const APP = String.raw`
       d.appendChild(link);
     }
 
-    var del = el("button", "danger", "Remove from library");
-    del.onclick = function () { removeWorkout(w); };
-    d.appendChild(del);
-
     $("dfav").textContent = w.favorite ? "★" : "☆";
     $("dfav").classList.toggle("on", !!w.favorite);
     $("detail").classList.add("open");
@@ -725,6 +792,7 @@ export const APP = String.raw`
   function patchWorkout(w, fields) {
     return sb.from("workouts").update(fields).eq("id", w.id).then(function (r) {
       if (r.error) toast("Could not save that change.");
+      return !r.error;
     });
   }
 
@@ -832,13 +900,240 @@ export const APP = String.raw`
       $("exeditdelete"), "Removed it");
   }
 
-  function removeWorkout(w) {
-    sb.from("workouts").delete().eq("id", w.id).then(function (r) {
-      if (r.error) { toast("Could not remove it."); return; }
-      state.workouts = state.workouts.filter(function (x) { return x.id !== w.id; });
-      history.back();
+  function removeWorkout(w, btn) {
+    var go = function () {
+      sb.from("workouts").delete().eq("id", w.id).then(function (r) {
+        if (r.error) { toast("Could not remove it."); return; }
+        state.workouts = state.workouts.filter(function (x) { return x.id !== w.id; });
+        state.colItems = state.colItems.filter(function (it) { return it.workout_id !== w.id; });
+        history.back();
+        render();
+        toast("Removed.");
+      });
+    };
+    if (btn) armed(btn, "Tap again to remove", go); else go();
+  }
+
+  // ---------- collections and renaming ----------
+  //
+  // Both are plain PostgREST writes under RLS. A rename lands on the workouts row
+  // and a database trigger records it in `corrections` (kind 'rename') with the
+  // title that was actually stored, so the browser never supplies a "before".
+  // Membership is one row per (collection, workout): removing a workout from one
+  // collection touches nothing else, and a workout can be in as many as it likes.
+
+  // Two taps to destroy something, no dialog: the first tap changes the label,
+  // a second within three seconds does it, and doing nothing puts it back.
+  function armed(btn, confirmLabel, fn) {
+    if (btn.getAttribute("data-armed") === "1") { btn.removeAttribute("data-armed"); fn(); return; }
+    var was = btn.textContent;
+    btn.setAttribute("data-armed", "1");
+    btn.textContent = confirmLabel;
+    setTimeout(function () {
+      if (btn.getAttribute("data-armed") === "1") { btn.removeAttribute("data-armed"); btn.textContent = was; }
+    }, 3000);
+  }
+
+  // Rename · Collections · Remove as one row under the title. The favourite star
+  // stays in the top bar: it is a state, these are actions.
+  function manageRow(w) {
+    var row = el("div", "managerow");
+    row.id = "dmanage";
+    if (!isPending(w)) {
+      var ren = el("button", "mbtn", "✎ Rename");
+      ren.onclick = function () { openRename("workout", w.id, w.title || ""); };
+      row.appendChild(ren);
+    }
+    var n = colsOf(w.id).length;
+    var col = el("button", "mbtn" + (n ? " on" : ""));
+    col.appendChild(document.createTextNode("🗂 Collections"));
+    if (n) col.appendChild(el("span", "n", String(n)));
+    col.onclick = function () { openCollections(w); };
+    row.appendChild(col);
+    var rm = el("button", "mbtn quiet", "🗑 Remove");
+    rm.onclick = function () { removeWorkout(w, rm); };
+    row.appendChild(rm);
+    return row;
+  }
+
+  // The collections this card is in, as tappable pills that jump to that filter.
+  function colPills(w) {
+    var wrap = el("div", "colpills");
+    wrap.id = "dcols";
+    colsOf(w.id).forEach(function (c) {
+      var p = el("button", "pill accent", colLabel(c));
+      p.onclick = function () { state.filter = "col:" + c.id; history.back(); setView("library"); };
+      wrap.appendChild(p);
+    });
+    if (!wrap.children.length) wrap.classList.add("hide");
+    return wrap;
+  }
+
+  // Redraw only the management row and pills on an open card; a full openDetail
+  // would reload the embedded video for a membership toggle.
+  function refreshManage(w) {
+    var m = $("dmanage"), p = $("dcols");
+    if (m) m.parentNode.replaceChild(manageRow(w), m);
+    if (p) p.parentNode.replaceChild(colPills(w), p);
+  }
+
+  var renameCtx = null;
+
+  function openRename(kind, id, currentName) {
+    renameCtx = { kind: kind, id: id };
+    $("renametitle").textContent = kind === "workout" ? "Rename workout" : "Rename collection";
+    $("renameinput").value = currentName || "";
+    openSheet("renamesheet");
+    setTimeout(function () { $("renameinput").focus(); $("renameinput").select(); }, 60);
+  }
+
+  function dupCollectionMsg(err) {
+    return err && String(err.code) === "23505" ? "You already have a collection with that name." : null;
+  }
+
+  function saveRename() {
+    if (!renameCtx) return;
+    var name = $("renameinput").value.replace(/\s+/g, " ").trim();
+    if (!name) { toast("Give it a name."); return; }
+    var ctx = renameCtx;
+    var btn = $("renamesave");
+    btn.disabled = true;
+
+    if (ctx.kind === "workout") {
+      var w = state.workouts.filter(function (x) { return x.id === ctx.id; })[0];
+      if (!w || name === (w.title || "")) { btn.disabled = false; closeSheet("renamesheet"); renameCtx = null; return; }
+      patchWorkout(w, { title: name }).then(function (ok) {
+        btn.disabled = false;
+        if (!ok) return;
+        w.title = name;
+        closeSheet("renamesheet");
+        renameCtx = null;
+        var t = document.querySelector("#dinner .dtitle");
+        if (t && current && current.id === w.id) t.textContent = name;
+        render();
+        toast("Renamed.");
+      });
+      return;
+    }
+
+    var c = colById(ctx.id);
+    if (!c || name === c.name) { btn.disabled = false; closeSheet("renamesheet"); renameCtx = null; return; }
+    sb.from("collections").update({ name: name }).eq("id", c.id).then(function (r) {
+      btn.disabled = false;
+      if (r.error) { toast(dupCollectionMsg(r.error) || "Could not rename it."); return; }
+      c.name = name;
+      closeSheet("renamesheet");
+      renameCtx = null;
       render();
-      toast("Removed.");
+      if ($("colsheet").classList.contains("open")) renderColSheet();
+      if (current && $("detail").classList.contains("open")) refreshManage(current);
+      toast("Renamed.");
+    });
+  }
+
+  var colCtx = null;   // the workout whose membership the sheet is editing, or null
+
+  function openCollections(w) {
+    colCtx = w ? w.id : null;
+    $("coltitle").textContent = w ? "Collections" : "Your collections";
+    $("collede").textContent = w
+      ? "A workout can live in several — tap to add or remove."
+      : "Make a collection here, then add workouts from any card.";
+    $("colemoji").value = "";
+    $("colname").value = "";
+    renderColSheet();
+    openSheet("colsheet");
+  }
+
+  function renderColSheet() {
+    var list = $("collist");
+    list.innerHTML = "";
+    if (!state.collections.length) {
+      list.appendChild(el("p", "lede", "No collections yet. Try “Leg day”, “Hotel gym” or “Quick 10 min”."));
+    }
+    state.collections.forEach(function (c) {
+      var isIn = colCtx ? inCol(c.id, colCtx) : false;
+      var row = el("div", "colrow" + (isIn ? " in" : ""));
+      row.setAttribute("role", "button");
+      if (colCtx) row.appendChild(el("div", "mark", "✓"));
+      row.appendChild(el("div", "ce", c.emoji || "🗂"));
+      var t = el("div", "ct");
+      t.appendChild(el("b", null, c.name));
+      var n = colCount(c.id);
+      t.appendChild(el("span", null, n + (n === 1 ? " workout" : " workouts")));
+      row.appendChild(t);
+      var ren = el("button", "exhelp", "✎");
+      ren.setAttribute("aria-label", "Rename collection");
+      ren.onclick = function (e) { e.stopPropagation(); openRename("collection", c.id, c.name); };
+      row.appendChild(ren);
+      row.onclick = function () {
+        if (colCtx) { toggleMembership(c, colCtx); return; }
+        closeSheet("colsheet");
+        state.filter = "col:" + c.id;
+        setView("library");
+      };
+      list.appendChild(row);
+    });
+  }
+
+  function toggleMembership(c, workoutId) {
+    if (inCol(c.id, workoutId)) {
+      sb.from("collection_items").delete().match({ collection_id: c.id, workout_id: workoutId })
+        .then(function (r) {
+          if (r.error) { toast("Could not update that."); return; }
+          state.colItems = state.colItems.filter(function (it) {
+            return !(it.collection_id === c.id && it.workout_id === workoutId);
+          });
+          afterMembership();
+        });
+      return;
+    }
+    sb.from("collection_items").insert({ collection_id: c.id, workout_id: workoutId, user_id: state.user.id })
+      .then(function (r) {
+        if (r.error) { toast("Could not update that."); return; }
+        state.colItems.push({ collection_id: c.id, workout_id: workoutId, added_at: new Date().toISOString() });
+        afterMembership();
+      });
+  }
+
+  function afterMembership() {
+    renderColSheet();
+    render();
+    if (current && $("detail").classList.contains("open")) refreshManage(current);
+  }
+
+  function createCollection() {
+    var name = $("colname").value.replace(/\s+/g, " ").trim();
+    var emoji = $("colemoji").value.trim() || null;
+    if (!name) { toast("Name the collection first."); $("colname").focus(); return; }
+    var btn = $("colcreate");
+    btn.disabled = true;
+    sb.from("collections")
+      .insert({ user_id: state.user.id, name: name, emoji: emoji, sort_order: state.collections.length })
+      .select().single()
+      .then(function (r) {
+        btn.disabled = false;
+        if (r.error || !r.data) { toast(dupCollectionMsg(r.error) || "Could not create it."); return; }
+        state.collections.push(r.data);
+        $("colname").value = "";
+        $("colemoji").value = "";
+        if (colCtx) toggleMembership(r.data, colCtx);
+        else { renderColSheet(); render(); }
+        toast("Created " + colLabel(r.data));
+      });
+  }
+
+  function deleteCollection(c, btn) {
+    armed(btn, "Tap again to delete", function () {
+      sb.from("collections").delete().eq("id", c.id).then(function (r) {
+        if (r.error) { toast("Could not delete it."); return; }
+        state.collections = state.collections.filter(function (x) { return x.id !== c.id; });
+        state.colItems = state.colItems.filter(function (it) { return it.collection_id !== c.id; });
+        if (state.filter === "col:" + c.id) state.filter = "All";
+        render();
+        if ($("colsheet").classList.contains("open")) renderColSheet();
+        toast("Deleted " + c.name + " — its workouts are still in your library.");
+      });
     });
   }
 
@@ -1548,7 +1843,8 @@ export const APP = String.raw`
   function openSheet(id) { $(id).classList.add("open"); }
   function closeSheet(id) { $(id).classList.remove("open"); }
 
-  ["addsheet", "setsheet", "exsheet", "exeditsheet", "explainsheet", "picksheet", "settingssheet"]
+  ["addsheet", "setsheet", "exsheet", "exeditsheet", "explainsheet", "picksheet", "settingssheet",
+   "colsheet", "renamesheet"]
     .forEach(function (id) {
       $(id).addEventListener("click", function (e) { if (e.target === $(id)) closeSheet(id); });
     });
@@ -1668,6 +1964,7 @@ export const APP = String.raw`
     }
     var lib = v === "library";
     $("chips").classList.toggle("hide", !lib);
+    if (!lib) $("colbar").classList.add("hide");
     $("grid").classList.toggle("hide", !lib);
     $("searchwrap").classList.toggle("hide", !lib);
     $("empty").classList.toggle("hide", !lib || !!visible().length);
@@ -1739,6 +2036,12 @@ export const APP = String.raw`
   $("exeditdelete").onclick = deleteExEdit;
   $("exeditcancel").onclick = function () { closeSheet("exeditsheet"); exEdit = null; };
   $("exeditname").addEventListener("keydown", function (e) { if (e.key === "Enter") saveExEdit(); });
+
+  $("colcreate").onclick = createCollection;
+  $("colname").addEventListener("keydown", function (e) { if (e.key === "Enter") createCollection(); });
+  $("renamesave").onclick = saveRename;
+  $("renamecancel").onclick = function () { closeSheet("renamesheet"); renameCtx = null; };
+  $("renameinput").addEventListener("keydown", function (e) { if (e.key === "Enter") saveRename(); });
 
   $("refreshbtn").onclick = function () {
     var b = $("refreshbtn");
