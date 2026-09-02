@@ -10,7 +10,8 @@ move at a time and logs what you lifted.
 
 ## What it does
 
-- **Save** — paste a link, or share to it from your phone with a one-step iOS Shortcut.
+- **Save** — paste a link, share to Spotter from Android's share sheet, or, on iPhone, run a
+  one-step Shortcut until the native share extension ships.
 - **Extract** — the caption or description becomes a structured card: title, workout type,
   muscle groups, equipment, difficulty, duration, and exercise blocks with sets, reps,
   rest and circuit rounds.
@@ -445,6 +446,60 @@ empty card, because there the link is worth having on its own.
 
 ## Saving from your phone
 
+Two routes that work today, and which one you get is decided by the phone rather than by
+Spotter. A third — a native app with a real share extension — is the plan below.
+
+### Android — the share sheet, no setup
+
+Install Spotter from Chrome (**⋮ → Add to Home screen / Install app**), and it appears in the
+Android share sheet next to the native apps. Share a reel to it and the save is already
+running before the share sheet has finished closing; a video somebody else has already saved
+comes back finished, from the shared cache.
+
+That comes from one manifest member. It is written in both `docs/manifest.webmanifest` and
+the copy the function serves at `GET /manifest.webmanifest`, and the two copies of *this block*
+are kept identical:
+
+```json
+"share_target": {
+  "action": "./?share",
+  "method": "GET",
+  "params": { "title": "title", "text": "text", "url": "url" }
+}
+```
+
+Three facts that shape the code on the other side of it, in `app.ts` under *the share sheet*:
+
+- **The app must be installed.** An uninstalled PWA never appears in the share sheet; this is
+  deliberate in the spec, so that visiting a page cannot put it in your share menu.
+- **Android has no `url` field.** Its share system sends a link as text, so a shared URL
+  usually arrives in `text` and occasionally in `title`. `captureShare` searches all three for
+  the first `http(s)` URL rather than trusting `url`.
+- **The `?share` marker is a hint, not a promise.** Per Web Share Target Level 2 the user agent
+  *sets* the action URL's query to the shared params, which can drop anything the action already
+  had. So a share is identified by the params themselves, and `?share` only helps when it
+  survives.
+
+The link is then taken off the address bar with `history.replaceState` — one share is one save,
+and a reload cannot replay it — and saved through exactly the path a pasted link takes. If it
+arrives while you are signed out it is held for the tab's session and saved straight after
+sign-in. A failed save reopens the add sheet with the link still in it, because at that point
+the link exists nowhere else on the device.
+
+`action` is relative to the manifest's own URL, so it resolves to `/spotter/?share` on Pages
+and to the function's own root when the function serves the page — inside `scope` in both,
+which the spec requires. If Spotter ever fails to appear in an Android share sheet after a
+clean reinstall, an absolute `action` is the first thing to try; at least one report
+([Dec 2025](https://martin.hjartmyr.se/articles/pwa-web-share-target-android/)) blames the
+relative form, though the spec and Chromium's own docs do not.
+
+**iOS Safari does not implement Web Share Target** — WebKit bug
+[194593](https://bugs.webkit.org/show_bug.cgi?id=194593) is still `NEW`, unassigned, last
+commented 23 May 2026, seven years after it was filed. Nothing on the web platform puts a PWA
+in the iPhone share sheet today. Hence the next two sections.
+
+### iPhone — a Shortcut, until the app ships
+
 Settings in the app shows a personal save address containing your own key. `POST` to it with
 a JSON body:
 
@@ -456,14 +511,14 @@ a JSON body:
 and `caption` at 6,000. Anything supplied is parsed with no network call at all, and only the
 fields still missing afterwards are looked for online.
 
-### Recipe 1 — the simple one
+#### Recipe 1 — the simple one
 
 1. **Receive** URLs from the share sheet
 2. **Get Contents of URL** — your address, Method `POST`, Request Body JSON,
    one field `url` set to the Shortcut Input
 3. **Show Result**
 
-### Recipe 2 — the one to build (recommended)
+#### Recipe 2 — the one to build (recommended)
 
 1. **Receive** URLs from the share sheet
 2. **Get Contents of URL** — the shared link, Method `GET`, no body
@@ -486,6 +541,45 @@ phone` when that path ran, and `Reading the video…` when it fell back to the o
 Share any reel to it and the workout is in your library before you put the phone down.
 The key is not your password, but it can save to your account — rotate it in Settings if it
 leaks.
+
+### Native app (planned)
+
+The Shortcut is an interim, not the destination. The launch path is a thin native shell around
+this same web app, so that "share to Spotter" is one tap on both phones and nobody is asked to
+build anything.
+
+**The shape of it.** [Capacitor](https://capacitorjs.com) wraps `docs/` as an iOS and an Android
+app — the same HTML, CSS and JS, the same Supabase project, no second frontend to keep in step.
+On top of that:
+
+- **iOS Share Extension.** iOS only accepts shares into an *extension* target, never into the
+  app itself, so the Xcode project gains a Share Extension alongside the app, an **App Group**
+  the two can both read, and a custom URL scheme the extension uses to hand off. Community
+  plugins already cover the wiring: [Cap-go/capacitor-share-target](https://github.com/Cap-go/capacitor-share-target)
+  (MPL-2.0, free), [calvinckho/capacitor-share-extension](https://github.com/calvinckho/capacitor-share-extension),
+  and Capawesome's [share-target](https://capawesome.io/docs/sdks/capacitor/share-target/)
+  (paid, Insiders only). All three deliver the shared link into the web layer, where
+  `handleSharedUrl` — the same function Android's share sheet reaches — takes it.
+- **The extension can fetch the page itself.** An app extension may use `URLSession`, so the
+  share extension can `GET` the shared link over the phone's own connection and post
+  `{url, html}` exactly as Shortcut recipe 2 does. That is worth keeping: it is the residential
+  IP that makes Instagram and YouTube answer honestly, and it is why the Shortcut beats the
+  server's own fetch today. Extensions run under a short time budget, so the safe version posts
+  `{url}` immediately and adds `html` only if the fetch returns in time — the server already
+  treats `html` as optional and falls back on its own.
+- **Android intent filter.** For completeness the Capacitor Android app declares an
+  `ACTION_SEND` intent filter and routes it into the same function. The installed PWA already
+  covers Android, so this is parity rather than need.
+
+**What it costs.** Apple Developer Program **$99/yr** — required to run a Share Extension on a
+real device beyond a 7-day free provisioning profile, and required for TestFlight and the App
+Store. Google Play Console **$25 once**. Both figures current for 2026. No Apple account exists
+yet, which is why this section is a plan and not a feature.
+
+**What does not change.** The Supabase project, the edge function, the schema, RLS, the
+extraction ladder — none of it. The native shell adds a share entry point and a store listing;
+it does not add a backend. The PWA keeps working exactly as it does now, and stays the way in
+for anyone on a desktop or unwilling to install anything.
 
 ### When nothing automated works
 
