@@ -182,9 +182,18 @@ the ready library (one line each: short id, title, category, minutes, equipment,
 collections, no exercise names), this week's plan, and one line of the last fortnight's
 training. That is what `list_library` and `get_plan` used to be spent on, so the common
 questions now answer in a single call. The prompt is built static-first — identity, rules,
-tools and proposal schemas byte-identical on every request, then one fenced dynamic block —
-so OpenAI's automatic prefix caching has something to cache. Workout ids reach the model as
-handles (`h3f9a1c`, the first six hex digits of the uuid) and are resolved server-side;
+tools, a catalog index and proposal schemas byte-identical on every request, then one fenced
+dynamic block — so OpenAI's automatic prefix caching has something to cache. That index is
+every one of the catalog's exercise names, compiled from `catalog.ts` and grouped by the
+muscle it trains first, which both spells the movements for the model and carries the static
+block past the 1,024 tokens a cache hit needs (~940 → ~1,880). The last step of a turn is
+told it is the last before it spends the call, its tool call is ignored if it makes one
+anyway, and an empty answer falls back to the exercises the turn already learned rather than
+to "I lost my train of thought". `search_catalog` scores rather than filters — name and
+aliases weigh 3, muscles 2, equipment 1, top 12, never empty for a real muscle or piece of
+kit — and a comma-separated query returns the best match per name, so one call checks five
+spellings. Workout ids reach the model as handles (`h3f9a1c`, the first six hex digits of
+the uuid) and are resolved server-side;
 stored proposals always carry the full uuid. "thanks" and its friends short-circuit to a
 canned reply with no model call at all.
 

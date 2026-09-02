@@ -4374,20 +4374,186 @@ async function toolGetWorkout(userId: string, idOrHandle: string) {
   };
 }
 
-function toolSearchCatalog(query: string) {
-  const q = String(query ?? "").toLowerCase().trim();
-  if (!q) return [];
-  const out: CatalogEntry[] = [];
-  const hit = canonicalize(q);
-  if (hit) out.push(hit.entry);
-  const toks = q.split(/[^a-z0-9]+/).filter(Boolean);
-  for (const e of CATALOG) {
-    if (out.includes(e)) continue;
-    const hay = (e.name + " " + e.aliases.join(" ") + " " + e.muscles.join(" ") + " " + e.equipment.join(" ")).toLowerCase();
-    if (toks.every((t) => hay.includes(t))) out.push(e);
-    if (out.length >= 12) break;
+// -- catalog search --
+//
+// What this replaced required EVERY token of the query to appear in one entry, so
+// "beginner dumbbell push workout chest shoulders triceps" — an entirely ordinary
+// thing to ask a coach — matched nothing, and matched nothing again for the two
+// rephrasings after it, until the turn ran out of steps with nothing to say. So
+// it scores rather than filters: a name or alias is the strongest evidence the
+// user means this movement (weight 3), the muscles it trains are next (2), the kit
+// it needs is a tiebreak (1), and no token is mandatory.
+
+const PUMPY_SEARCH_MAX = 12;
+
+// Words that never pick one movement over another in a question about training.
+const PUMPY_SEARCH_STOP = new Set([
+  "a", "an", "the", "and", "or", "of", "for", "with", "to", "on", "in", "at", "is", "are", "am",
+  "my", "me", "i", "some", "any", "best", "good", "great", "easy", "hard", "new",
+  "beginner", "beginners", "novice", "intermediate", "advanced",
+  "workout", "workouts", "exercise", "exercises", "move", "moves", "movement", "movements",
+  "routine", "routines", "session", "sessions", "day", "days", "week", "plan", "training", "train",
+  "rep", "reps", "set", "sets", "minute", "minutes", "min", "mins", "second", "seconds",
+  "something", "anything", "please", "want", "need", "do", "doing", "can", "should", "would",
+]);
+
+// Additive, never substitutive: "abs" still scores against "Ab Wheel Rollout" by
+// its own spelling and also reaches the core muscle line, which is what the user
+// meant. Replacing the token instead would have traded one miss for another.
+const PUMPY_SEARCH_EXPAND: Record<string, string> = {
+  db: "dumbbells", dbs: "dumbbells", dumbell: "dumbbells", dumbells: "dumbbells",
+  bb: "barbell", kb: "kettlebell", kbs: "kettlebell", bands: "resistance",
+  abs: "core", ab: "core", delts: "shoulders", delt: "shoulders", pecs: "chest", pec: "chest",
+  quad: "quads", ham: "hamstrings", hams: "hamstrings", glute: "glutes",
+  tricep: "triceps", tris: "triceps", bicep: "biceps", bis: "biceps",
+  calf: "calves", lats: "back", lat: "back", traps: "back",
+};
+
+function pumpySearchTokens(s: string): string[] {
+  const out: string[] = [];
+  const add = (w: string) => { if (w && !PUMPY_SEARCH_STOP.has(w) && !out.includes(w)) out.push(w); };
+  for (const raw of String(s ?? "").toLowerCase().split(/[^a-z0-9]+/)) {
+    if (!raw || /^\d+$/.test(raw)) continue;
+    add(raw);
+    const exp = PUMPY_SEARCH_EXPAND[raw];
+    if (exp) add(exp);
   }
-  return out.map((e) => ({ id: e.id, name: e.name, muscles: e.muscles, equipment: e.equipment, unilateral: e.unilateral }));
+  return out;
+}
+
+function pumpyWords(parts: string[]): Set<string> {
+  const s = new Set<string>();
+  for (const p of parts) for (const w of String(p ?? "").toLowerCase().split(/[^a-z0-9]+/)) if (w) s.add(w);
+  return s;
+}
+
+type PumpySearchDoc = { entry: CatalogEntry; name: Set<string>; muscles: Set<string>; equipment: Set<string> };
+
+// Built once per isolate: 224 entries tokenized on every keystroke of a query is
+// work nobody asked for.
+const PUMPY_SEARCH_DOCS: PumpySearchDoc[] = CATALOG.map((e) => ({
+  entry: e,
+  name: pumpyWords([e.name, ...e.aliases]),
+  muscles: pumpyWords(e.muscles),
+  equipment: pumpyWords(e.equipment),
+}));
+
+/**
+ * A query token matches a field word outright, or as a prefix once both are long
+ * enough for a prefix to mean something — "dumbbell"/"dumbbells",
+ * "shoulder"/"shoulders", "press"/"presses". Below four characters only exact
+ * matches count, or "leg" would land on every legs-adjacent entry in the file.
+ */
+function pumpyWordHit(tok: string, words: Set<string>): boolean {
+  if (words.has(tok)) return true;
+  if (tok.length < 4) return false;
+  for (const w of words) {
+    if (w.length < 4) continue;
+    if (w.startsWith(tok) || tok.startsWith(w)) return true;
+  }
+  return false;
+}
+
+/** Weighted score, and how many distinct query tokens the entry answered at all. */
+function pumpySearchScore(toks: string[], d: PumpySearchDoc): { score: number; hits: number } {
+  let score = 0, hits = 0;
+  for (const t of toks) {
+    let any = false;
+    if (pumpyWordHit(t, d.name)) { score += 3; any = true; }
+    if (pumpyWordHit(t, d.muscles)) { score += 2; any = true; }
+    if (pumpyWordHit(t, d.equipment)) { score += 1; any = true; }
+    if (any) hits++;
+  }
+  return { score, hits };
+}
+
+function pumpyRank(toks: string[]): CatalogEntry[] {
+  if (!toks.length) return [];
+  const scored: { e: CatalogEntry; s: number; h: number }[] = [];
+  for (const d of PUMPY_SEARCH_DOCS) {
+    const { score, hits } = pumpySearchScore(toks, d);
+    if (score > 0) scored.push({ e: d.entry, s: score, h: hits });
+  }
+  // Score, then how much of the question the entry actually answered — one strong
+  // field hit should not outrank a movement that matched two of the user's words —
+  // then the shorter name, because "Bench Press" is the movement and "Decline Bench
+  // Press" is a variation of it, and the model asked for a movement.
+  scored.sort((a, b) => b.s - a.s || b.h - a.h || a.e.name.length - b.e.name.length || (a.e.name < b.e.name ? -1 : 1));
+  return scored.slice(0, PUMPY_SEARCH_MAX).map((x) => x.e);
+}
+
+// The never-empty rule: one word of a MUSCLES or EQUIPMENT term, mapped back to it.
+// Words of two characters ("up", from "pull-up bar") are too generic to index.
+const PUMPY_TERM_INDEX: Map<string, { muscle?: string; equipment?: string }> = (() => {
+  const m = new Map<string, { muscle?: string; equipment?: string }>();
+  const put = (word: string, patch: { muscle?: string; equipment?: string }) => {
+    if (word.length < 3) return;
+    m.set(word, { ...(m.get(word) ?? {}), ...patch });
+  };
+  for (const muscle of MUSCLES) for (const w of muscle.split(/[^a-z0-9]+/)) put(w, { muscle });
+  for (const equipment of EQUIPMENT) for (const w of equipment.split(/[^a-z0-9]+/)) put(w, { equipment });
+  return m;
+})();
+
+/**
+ * A backstop, not the main path: scoring already answers anything that names a
+ * muscle or a piece of kit. It exists so that "never empty for a real body part"
+ * is a property of the function rather than a property of the current weights.
+ */
+function pumpyTermEntries(toks: string[]): CatalogEntry[] {
+  for (const t of toks) {
+    const hit = PUMPY_TERM_INDEX.get(t) ?? PUMPY_TERM_INDEX.get(t.replace(/s$/, "")) ?? PUMPY_TERM_INDEX.get(t + "s");
+    if (!hit) continue;
+    const out: CatalogEntry[] = [];
+    if (hit.muscle) {
+      for (const e of CATALOG) if (e.muscles[0] === hit.muscle) out.push(e);
+      for (const e of CATALOG) if (e.muscles[0] !== hit.muscle && e.muscles.includes(hit.muscle)) out.push(e);
+    }
+    if (hit.equipment) for (const e of CATALOG) if (!out.includes(e) && e.equipment.includes(hit.equipment)) out.push(e);
+    if (out.length) return out.slice(0, PUMPY_SEARCH_MAX);
+  }
+  return [];
+}
+
+function compactCatalogEntry(e: CatalogEntry) {
+  return { id: e.id, name: e.name, muscles: e.muscles, equipment: e.equipment };
+}
+
+/**
+ * `query` is either a phrase ("dumbbell chest press for beginners") or a comma- or
+ * newline-separated LIST of names, in which case each one gets its single best
+ * match — one call checks five spellings instead of five calls checking one.
+ */
+function toolSearchCatalog(query: string) {
+  const raw = String(query ?? "").replace(/\s+/g, " ").trim();
+  if (!raw) return [];
+  const picked: CatalogEntry[] = [];
+  const push = (e: CatalogEntry | null | undefined) => {
+    if (e && picked.length < PUMPY_SEARCH_MAX && !picked.includes(e)) picked.push(e);
+  };
+
+  const parts = raw.split(/[,;\n]+/).map((p) => p.trim()).filter(Boolean);
+  if (parts.length > 1) {
+    for (const p of parts) {
+      const exact = canonicalize(p);
+      if (exact) { push(exact.entry); continue; }
+      push(pumpyRank(pumpySearchTokens(p))[0]);
+    }
+    // Two or three rows back from a comma-separated query usually means it was not
+    // a spelling check at all ("chest, shoulders" is a topic), so it gets the phrase
+    // ranking appended underneath. The names that did match stay at the top either way.
+    if (picked.length && picked.length < 4) for (const e of pumpyRank(pumpySearchTokens(raw))) push(e);
+    // A list nobody in the catalog resembles falls through to the phrase path below,
+    // which reads the whole thing as one query rather than giving up.
+    if (picked.length) return picked.map(compactCatalogEntry);
+  }
+
+  const exact = canonicalize(raw);
+  if (exact) push(exact.entry);
+  const toks = pumpySearchTokens(raw);
+  for (const e of pumpyRank(toks)) push(e);
+  if (!picked.length) for (const e of pumpyTermEntries(toks)) push(e);
+  return picked.map(compactCatalogEntry);
 }
 
 async function toolGetPlan(userId: string, weekStart?: string) {
@@ -4688,11 +4854,38 @@ async function execProposal(userId: string, p: PumpyProposal, model: string | nu
   return { plan: added };
 }
 
-// The static half of the prompt: identity, rules, tools, proposal schemas. It is
-// byte-identical on every call by construction — nothing here reads a date, a user
-// or a row — which is the whole point. OpenAI caches the longest common prefix of
-// a request automatically, and a prompt that opens with today's date has no common
-// prefix with yesterday's. Built once per isolate.
+// The catalog as one line per muscle: every name Spotter knows, grouped by the
+// muscle it trains first, deduplicated and sorted. Two jobs. It is the difference
+// between a model that guesses at spellings and one that reads them, so a user
+// with an empty library gets a real workout instead of three failed searches; and
+// it is ~830 tokens of text that never changes, which is what pushes the static
+// prefix past OpenAI's 1,024-token minimum and finally makes the cache do
+// something. Compiled from the catalog, so it cannot drift from it. Built once.
+const PUMPY_CATALOG_INDEX: string = (() => {
+  const byPrimary = new Map<string, string[]>();
+  for (const e of CATALOG) {
+    const primary = e.muscles[0];
+    if (!primary) continue;
+    const l = byPrimary.get(primary);
+    if (l) l.push(e.name);
+    else byPrimary.set(primary, [e.name]);
+  }
+  // MUSCLES order first so the block reads the same way the rest of the app does;
+  // anything the catalog grows that the vocabulary has not heard of still lands.
+  const order = [...MUSCLES, ...[...byPrimary.keys()].filter((m) => !MUSCLES.includes(m))];
+  const lines: string[] = [];
+  for (const m of order) {
+    const names = [...new Set(byPrimary.get(m) ?? [])].sort();
+    if (names.length) lines.push(m + ": " + names.join(", "));
+  }
+  return lines.join("\n");
+})();
+
+// The static half of the prompt: identity, rules, tools, the catalog index and the
+// proposal schemas. It is byte-identical on every call by construction — nothing
+// here reads a date, a user or a row — which is the whole point. OpenAI caches the
+// longest common prefix of a request automatically, and a prompt that opens with
+// today's date has no common prefix with yesterday's. Built once per isolate.
 const PUMPY_STATIC = [
   "You are Pumpy, the coach inside Spotter — small, upbeat, plain-spoken, and honest. You help the user build " +
   "workouts from their OWN saved library, add to workouts they already have, plan their week, and place things " +
@@ -4709,12 +4902,18 @@ const PUMPY_STATIC = [
   "- list_library {query?} → saved workouts matching query (title, category, muscle, equipment or collection), " +
   "at most 40, without exercise names.",
   "- get_workout {id} → one workout with every block and exercise.",
-  "- search_catalog {query} → real exercises Spotter knows (name, muscles, equipment).",
+  "- search_catalog {query} → exercises Spotter knows, best first (id, name, muscles, equipment). query is a " +
+  "phrase, a muscle, a piece of equipment, or a comma-separated list of names to check several spellings at once.",
   "- get_plan {week_start?} → what is planned and done on each day of a week (week_start is a Monday, YYYY-MM-DD).",
   "- get_logs_summary {days?} → recent sessions, muscles hit, volume.",
   "The snapshot already lists the library, this week's plan and recent training. Do not call list_library or " +
   "get_plan for the current week — the answer is in front of you. Call get_workout only when you need a workout's " +
-  "exercises. Call search_catalog only before proposing exercises you are not sure Spotter knows.",
+  "exercises.",
+  "CATALOG INDEX — every exercise Spotter knows, grouped by the muscle it trains first:\n" + PUMPY_CATALOG_INDEX,
+  "The catalog index above is the list of exercises Spotter knows. Spell exercises exactly as listed. Call " +
+  "search_catalog only for something not in the index. Call it at most twice per turn.",
+  "If the library is empty, design the workout from the catalog index and propose create_workout right away — " +
+  "do not search first.",
   "Writes never happen directly. When the user wants something saved, return a proposal; they confirm it in the app:",
   '- {"kind":"create_workout","title":string,"category":one of ' + JSON.stringify(CATEGORIES) +
   ',"duration_minutes":int|null,"equipment":[from ' + JSON.stringify(EQUIPMENT) + '],"blocks":[{"title":string|null,"type":one of ' +
@@ -4767,6 +4966,47 @@ function pumpyClean(say: string, userMessage: string): string {
   }
   if (PUMPY_PAIN_RE.test(userMessage) && out && !out.includes(PAIN_NOTE)) out = out + " " + PAIN_NOTE;
   return out.slice(0, PUMPY_SAY_CHARS);
+}
+
+// -- the last step always answers --
+//
+// Measured on a live thread: three searches, a fourth call that asked for a fifth,
+// and a user who read "I lost my train of thought" after seven credits. Two things
+// were wrong. The model was never told the fourth call was its last, and when it
+// spent it anyway there was nothing to say back except an apology, even though the
+// turn had by then read a dozen exercises out of the catalog.
+//
+// So it gets told, in the same shape as the budget cut, and if it still comes back
+// empty the turn answers from what it learned instead of from nothing.
+
+const PUMPY_LAST_STEP_NOTE =
+  "[no tool calls left — answer the user now in one or two sentences, or make your proposal]";
+const PUMPY_NO_ANSWER =
+  "I could not put that together — try asking for a specific workout, like 'build me a 20-minute dumbbell push day'.";
+
+/** Exercise names a tool result taught this turn: catalog rows, or a workout's blocks. */
+function pumpyNamesFrom(result: unknown): string[] {
+  const out: string[] = [];
+  const add = (v: unknown) => {
+    const s = String(v ?? "").replace(/\s+/g, " ").trim();
+    if (s && s.length <= 60 && !out.includes(s)) out.push(s);
+  };
+  if (Array.isArray(result)) {
+    for (const r of result) if (r && typeof r === "object") add((r as any).name);
+  } else if (result && typeof result === "object") {
+    for (const b of ((result as any).blocks ?? []) as any[]) {
+      for (const e of (b?.exercises ?? []) as any[]) add(e?.name);
+    }
+  }
+  return out;
+}
+
+/** The line the user reads when the model produced nothing usable. */
+function pumpyFallbackSay(names: string[]): string {
+  const picked = names.filter(Boolean).slice(0, 4);
+  if (!picked.length) return PUMPY_NO_ANSWER;
+  return "Here is what I would start with: " + picked.join(", ") +
+    ". Say the word and I will build those into a workout.";
 }
 
 // -- credits --
@@ -4956,9 +5196,16 @@ async function handlePumpyChat(req: Request, userId: string, cors: Cors): Promis
   let outTok = 0;
   let cost = 0;
   let budgetHit = false;
+  // Exercise names the tools handed back this turn, so that a turn which learned
+  // something and then failed to phrase it still has something to say.
+  const learned: string[] = [];
   const say_of = (r: any) => swapStr(r?.say, PUMPY_SAY_CHARS);
 
   for (let step = 0; step < PUMPY_MAX_STEPS; step++) {
+    // The last call cannot buy another tool result — the branch below ignores its
+    // tool — so it is told that before it spends the call rather than after. The
+    // budget cut says the same thing in its own words; do not say it twice.
+    if (step === PUMPY_MAX_STEPS - 1 && !budgetHit) transcript.push(PUMPY_LAST_STEP_NOTE);
     const gen = await textGenerate(system, "Conversation so far:\n" + transcript.join("\n") + "\n\nReply as Pumpy, as JSON.", true, ctx);
     if (gen.usage) {
       calls++;
@@ -4999,6 +5246,7 @@ async function handlePumpyChat(req: Request, userId: string, cors: Cors): Promis
       let result: unknown;
       try { result = await runPumpyTool(userId, String(tool.name), tool.args ?? {}); }
       catch (e) { result = { error: String(e).slice(0, 200) }; }
+      for (const n of pumpyNamesFrom(result)) if (learned.length < 12 && !learned.includes(n)) learned.push(n);
       const resultText = JSON.stringify(result).slice(0, PUMPY_TOOL_RESULT_CHARS);
       if (say) transcript.push("Pumpy: " + say);
       transcript.push("[tool " + tool.name + "(" + JSON.stringify(tool.args ?? {}).slice(0, 300) + ") → " + resultText + "]");
@@ -5007,6 +5255,11 @@ async function handlePumpyChat(req: Request, userId: string, cors: Cors): Promis
         meta: { args: tool.args ?? {}, result_chars: resultText.length },
       });
       continue;
+    }
+
+    if (tool) {
+      console.warn("pumpy: ignoring a", String(tool.name).slice(0, 40), "call on thread", thread.id,
+        budgetHit ? "— the turn's budget is spent" : "— no steps left");
     }
 
     let proposal: PumpyProposal | null = null;
@@ -5020,10 +5273,22 @@ async function handlePumpyChat(req: Request, userId: string, cors: Cors): Promis
       }
     }
     const cleaned = pumpyClean(say, message);
-    const content = cleaned || (proposal ? proposal.summary : "I lost my train of thought — say that again?");
+    let content = cleaned || (proposal ? proposal.summary : "");
+    let fellBack = false;
+    if (!content) {
+      // Nothing said and nothing proposed. The turn still read the catalog or a
+      // card, so it answers with that rather than with an apology.
+      content = pumpyClean(pumpyFallbackSay(learned), message) || PUMPY_NO_ANSWER;
+      fellBack = true;
+      console.warn("pumpy: no usable answer on thread", thread.id, "at step", step,
+        "— fell back with", learned.length, "learned name(s)");
+    }
+    const meta: Record<string, unknown> = proposal
+      ? { proposal, status: "pending", model: by }
+      : { model: by };
+    if (fellBack) meta.fallback = learned.length ? "learned" : "generic";
     const m = await dbInsert("pumpy_messages", {
-      thread_id: thread.id, user_id: userId, role: "assistant", content,
-      meta: proposal ? { proposal, status: "pending", model: by } : { model: by },
+      thread_id: thread.id, user_id: userId, role: "assistant", content, meta,
     });
     out.push(m);
     if (proposal) pending = m;
