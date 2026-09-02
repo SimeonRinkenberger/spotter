@@ -37,7 +37,6 @@ export const APP = String.raw`
   function toast(msg) {
     var t = $("toast");
     t.textContent = msg;
-    // Scenery by default; only offerResume opts back in.
     t.onclick = null;
     t.classList.remove("tappable");
     t.classList.add("show");
@@ -49,7 +48,6 @@ export const APP = String.raw`
     }, 2800);
   }
 
-  // Re-trigger the shared entrance on a node we are reusing: clear, reflow, set.
   function viewIn(node) {
     if (!node) return;
     node.classList.remove("viewin");
@@ -343,7 +341,6 @@ export const APP = String.raw`
     return out;
   }
 
-  // The chip row as drawn: everything about it except which chip is lit.
   var chipSig = null;
 
   function renderChips() {
@@ -367,7 +364,7 @@ export const APP = String.raw`
 
     // The chips have carried a 220ms transition on their lit state that never once
     // ran: render() threw every chip away, and a new node cannot transition from a
-    // value it never held. When the row is unchanged the buttons are kept.
+    // value it never held. Unchanged row, kept buttons.
     var sig = list.map(function (i) { return i.key + "" + i.label + "" + i.n; }).join("");
     var kids = wrap.children;
     if (sig === chipSig && kids.length === list.length) {
@@ -387,7 +384,6 @@ export const APP = String.raw`
         if (item.key === "__newcol") { openCollections(null); return; }
         state.filter = item.key;
         render();
-        // One cross-fade of the grid, rather than re-flying every card in it.
         viewIn($("grid"));
       };
       wrap.appendChild(b);
@@ -431,9 +427,7 @@ export const APP = String.raw`
     return bits.join(" · ");
   }
 
-  // Which workouts the grid has drawn once, and how many cards this pass are new.
-  // renderGrid runs on every search keystroke and every render(), and used to fly
-  // every card in from below each time.
+  // renderGrid runs on every keystroke and render(), and re-flew every card.
   var seenCards = {};
   var newThisPass = 0;
 
@@ -441,8 +435,6 @@ export const APP = String.raw`
     if (seenCards[id]) return;
     seenCards[id] = 1;
     card.classList.add("in");
-    // By new cards, not grid position: one card landing into the eleventh slot
-    // should not wait a quarter second for its turn.
     card.style.animationDelay = Math.min(newThisPass++, 10) * 26 + "ms";
     card.addEventListener("animationend", function () {
       card.classList.remove("in");
@@ -517,8 +509,7 @@ export const APP = String.raw`
           tw.classList.remove("loading");
           tw.appendChild(el("div", "noimg", "🏋️"));
         };
-        // Cached, which is every render after the first: a skeleton for a wait
-        // already over is the flicker skeletons exist to prevent.
+        // Cached: a skeleton for a wait already over is the flicker it prevents.
         if (img.complete && img.naturalWidth) {
           tw.classList.remove("loading");
           tw.classList.add("loaded");
@@ -623,7 +614,7 @@ export const APP = String.raw`
   // is already on the history stack and pushing again would need two back gestures.
   function openDetail(w, keepHistory) {
     current = w;
-    // Reopened mid-close: cancel it, and the embed teardown queued behind it.
+    // Reopened mid-close: cancel it and the teardown behind it.
     clearTimeout(detailCloseTimer);
     $("detail").classList.remove("closing");
     var d = $("dinner");
@@ -996,7 +987,7 @@ export const APP = String.raw`
     d.classList.add("closing");
     current = null;
     clearTimeout(detailCloseTimer);
-    // The embed is torn out at the end: emptying it first animates a blank page out.
+    // Torn out at the end: emptying first animates a blank page out.
     detailCloseTimer = setTimeout(function () {
       d.classList.remove("closing");
       if (!d.classList.contains("open")) $("dinner").innerHTML = "";
@@ -2217,8 +2208,8 @@ export const APP = String.raw`
   function renderWorkout() {
     if (!wo) return;
     var main = $("wmain"), dots = $("wdots");
-    // The running rest belonged to the screen being replaced: its ring went with it
-    // while its interval carried on and announced a rest already left.
+    // The running rest belongs to the screen being replaced, and used to carry on
+    // and announce a rest already left.
     clearInterval(restTimer);
     main.innerHTML = "";
     dots.innerHTML = "";
@@ -2258,7 +2249,6 @@ export const APP = String.raw`
 
     renderSetPills(main, entry, s.ex);
 
-    // A row, not two full-width blocks: .wmain is a column flex, so these stretched.
     var acts = el("div", "wactions");
     var help = el("button", "chip", "? How to do this");
     help.onclick = function () { explain(s.ex.name, wo.workout.title); };
@@ -2271,8 +2261,8 @@ export const APP = String.raw`
     viewIn(main);
   }
 
-  // The set logged a moment ago, consumed once by the render that follows: the pill
-  // is rebuilt, not transitioned, so this is what says the tap landed.
+  // Read once by the next render: the pill is rebuilt, not transitioned, so this
+  // is what says the tap landed.
   var justSet = -1;
 
   function renderSetPills(main, entry, ex) {
@@ -2339,8 +2329,7 @@ export const APP = String.raw`
     if (s && s.ex && s.ex.rest_seconds) startRest(s.ex.rest_seconds);
   }
 
-  // The ring reports how much of the rest is left rather than spinning, and runs
-  // off the clock rather than its own ticks, which drift over a long rest.
+  // What is left of the rest, not a spin; off the clock, not its own ticks.
   function startRest(seconds) {
     clearInterval(restTimer);
     var main = $("wmain");
@@ -2354,7 +2343,7 @@ export const APP = String.raw`
     var total = seconds * 1000;
     var until = Date.now() + total;
     restTimer = setInterval(function () {
-      // The screen this rest belonged to is gone. Stop, and say nothing.
+      // Its screen is gone. Stop, and say nothing.
       if (!box.parentNode) { clearInterval(restTimer); return; }
       var left = until - Date.now();
       if (left <= 0) {
@@ -2431,8 +2420,7 @@ export const APP = String.raw`
     var any = (d.entries || []).some(function (e) { return e.sets && e.sets.length; });
     if (!any) { clearDraft(); return; }
     toast("Tap to resume " + (d.title || "your workout"));
-    // The toast is pointer-events: none, so this one said "tap to resume" and could
-    // not be tapped. It opts in for its own 2.8 seconds.
+    // #toast is pointer-events: none, so this said "tap to resume" untappably.
     var t = $("toast");
     t.classList.add("tappable");
     t.onclick = function () {
@@ -3108,8 +3096,7 @@ export const APP = String.raw`
       hello.appendChild(q);
       log.appendChild(hello);
     }
-    // Only what the log has not shown rises in: the thread is rebuilt every render,
-    // so animating every bubble would replay the conversation on each answer.
+    // The thread is rebuilt every render; animating every bubble would replay it.
     var before = pumpy.shownCount || 0;
     shown.forEach(function (m, i) {
       var node = renderMsg(m);
@@ -3270,9 +3257,8 @@ export const APP = String.raw`
 
   // ---------- sheets ----------
   //
-  // Opening was animated; closing was one frame of display:none. Both ends now run,
-  // and "open" is dropped the instant a close begins, not when it ends — every
-  // overlayShowing() and popstate test here asks whether a sheet is open.
+  // Closing was one frame of display:none. "open" drops when a close begins, not
+  // when it ends: every overlayShowing() and popstate test asks about it.
 
   var closeTimers = {};
 
@@ -3603,7 +3589,6 @@ export const APP = String.raw`
 
     var titles = { library: "Spotter", plan: "Plan", progress: "Progress", pumpy: "Pumpy" };
     $("apptitle").textContent = titles[v] || "Spotter";
-    // The library is a header, a chip row and a grid, so the grid carries its switch.
     if (lib) { render(); viewIn($("grid")); }
     if (v === "plan") { $("count").textContent = "This week"; loadPlan(); }
     if (v === "progress") { $("count").textContent = "Your numbers, every session"; loadLogs().then(renderProgress); }
@@ -3643,7 +3628,6 @@ export const APP = String.raw`
     ptrPulling = false;
     var p = $("ptr");
     var d = parseFloat(p.style.opacity || "0");
-    // Only now: while the finger was down it had to sit exactly under the thumb.
     p.classList.add("back");
     p.style.opacity = 0;
     p.style.transform = "";
@@ -3831,8 +3815,6 @@ export const APP = String.raw`
     if ($("workout").classList.contains("open")) { exitWorkout(); return; }
     var open = document.querySelectorAll(".sheet.open");
     if (open.length) {
-      // Through closeSheet, so the back gesture closes a sheet the same way its
-      // own scrim does rather than blinking it out of existence.
       for (var i = 0; i < open.length; i++) closeSheet(open[i].id);
       return;
     }
