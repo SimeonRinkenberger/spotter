@@ -197,7 +197,16 @@ export const MARKUP_BODY = String.raw`</head>
   <div class="grabber"></div>
   <h2 id="explaintitle">How to do it</h2>
   <div class="aitext" id="explaintext">Thinking…</div>
-  <div class="btnrow"><button class="btn ghost" id="swapgo">Find a substitute</button></div>
+  <div class="btnrow"><button class="btn ghost" id="swapgo">⇄ Swap or modify</button></div>
+</div></div>
+
+<div class="sheet" id="swapsheet"><div class="sheetbody">
+  <div class="grabber"></div>
+  <h2 id="swaptitle">Swap or modify</h2>
+  <p class="lede" id="swaplede">Why do you need something different?</p>
+  <div class="pillrow" id="swapreasons"></div>
+  <div class="pillrow hide" id="swapareas"></div>
+  <div id="swapresult"></div>
 </div></div>
 
 <div class="sheet" id="picksheet"><div class="sheetbody">

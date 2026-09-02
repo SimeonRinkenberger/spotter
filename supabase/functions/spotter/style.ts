@@ -386,6 +386,24 @@ export const STYLE = String.raw`<style>
   .btnrow { display: flex; gap: 9px; margin-top: 10px; }
   .btnrow .btn { flex: 1; }
 
+  /* ---------- swap or modify ----------
+     Reason and body-area pickers reuse the library chips; the answer is a list
+     in the detail view's exercise-row rhythm, with the trade-off one step quieter
+     than the why, and the non-medical line quietest of all. */
+  .swapsummary { font-size: 14px; line-height: 1.6; color: var(--ink-2); margin: 6px 0 8px; }
+  .swapsect { margin: 14px 0 4px; }
+  .swapsect h3 { font-family: var(--display); font-size: 12px; font-weight: 700; letter-spacing: .11em;
+    text-transform: uppercase; color: var(--muted); margin: 0 0 4px; }
+  .swapitem { padding: 11px 0; border-top: 1px solid var(--line); }
+  .swapitem:first-of-type { border-top: none; }
+  .swapitem b { font-size: 14.5px; font-weight: 650; line-height: 1.35; }
+  .swapitem .tag { font-size: 9.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--ember-ink); margin-left: 8px; white-space: nowrap; }
+  .swapitem .why { font-size: 13px; color: var(--ink-2); line-height: 1.5; margin-top: 3px; }
+  .swapitem .trade { font-size: 12.5px; color: var(--muted); line-height: 1.5; margin-top: 3px; }
+  .swapnote { font-size: 12px; color: var(--muted); line-height: 1.5; margin: 14px 0 4px; padding-top: 10px;
+    border-top: 1px solid var(--line); }
+
   /* ---------- picker list ---------- */
   .picklist { display: flex; flex-direction: column; gap: 2px; }
   .pickrow { display: flex; align-items: center; gap: 12px; padding: 11px 6px; border: none;

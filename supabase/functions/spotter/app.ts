@@ -695,6 +695,10 @@ export const APP = String.raw`
         fix.setAttribute("aria-label", "Fix this exercise");
         fix.onclick = function (e) { e.stopPropagation(); openExEdit(w, bi, ei, ex); };
         row.appendChild(fix);
+        var sw = el("button", "exhelp", "⇄");
+        sw.setAttribute("aria-label", "Swap or modify this exercise");
+        sw.onclick = function (e) { e.stopPropagation(); openSwap(ex.name, w.title); };
+        row.appendChild(sw);
         var help = el("button", "exhelp", "?");
         help.setAttribute("aria-label", "How to do this exercise");
         help.onclick = function (e) { e.stopPropagation(); explain(ex.name, w.title); };
@@ -1305,7 +1309,7 @@ export const APP = String.raw`
   function explain(name, title) {
     $("explaintitle").textContent = name;
     $("explaintext").textContent = expCache[name] || "Thinking…";
-    $("swapgo").onclick = function () { swap(name); };
+    $("swapgo").onclick = function () { closeSheet("explainsheet"); openSwap(name, title); };
     openSheet("explainsheet");
     if (expCache[name]) return;
     api("explain", { method: "POST", body: JSON.stringify({ exercise: name, title: title || "" }) })
@@ -1316,13 +1320,120 @@ export const APP = String.raw`
       }).catch(function () { $("explaintext").textContent = "Could not load that."; });
   }
 
-  function swap(name) {
-    $("explaintitle").textContent = "Instead of " + name;
-    $("explaintext").textContent = "Thinking…";
-    api("swap", { method: "POST", body: JSON.stringify({ exercise: name, equipment_have: "" }) })
-      .then(function (r) {
-        $("explaintext").textContent = r.status === "ok" ? r.text : (r.message || "Could not load that.");
-      }).catch(function () { $("explaintext").textContent = "Could not load that."; });
+  // ---------- swap or modify ----------
+  //
+  // Three reasons, one sheet. No equipment and station busy come back as
+  // alternatives with an honest trade-off each; "it hurts" asks where, then
+  // returns ways to modify the movement and what to build up — and the server,
+  // not the model, writes the not-medical-advice line at the bottom.
+
+  var SWAP_REASONS = [["no_equipment", "No equipment"], ["station_busy", "Station busy"], ["pain", "It hurts"]];
+  var BODY_AREAS = ["shoulder", "elbow", "wrist", "neck", "upper back", "lower back", "hip", "knee", "ankle"];
+  var swapCtx = null;
+
+  function openSwap(name, title) {
+    swapCtx = { name: name, title: title || "", reason: null, area: null, seq: 0 };
+    $("swaptitle").textContent = "Instead of " + name;
+    $("swapresult").innerHTML = "";
+    renderSwapChips();
+    openSheet("swapsheet");
+  }
+
+  function renderSwapChips() {
+    var rs = $("swapreasons");
+    rs.innerHTML = "";
+    SWAP_REASONS.forEach(function (pair) {
+      var b = el("button", "chip" + (swapCtx.reason === pair[0] ? " active" : ""), pair[1]);
+      b.onclick = function () {
+        swapCtx.reason = pair[0];
+        swapCtx.area = null;
+        $("swapresult").innerHTML = "";
+        renderSwapChips();
+        if (pair[0] !== "pain") runSwap();
+      };
+      rs.appendChild(b);
+    });
+    var as = $("swapareas");
+    as.innerHTML = "";
+    if (swapCtx.reason === "pain") {
+      as.classList.remove("hide");
+      $("swaplede").textContent = "Where does it hurt? You get ways to modify the move and what to build up — not a diagnosis.";
+      BODY_AREAS.forEach(function (a) {
+        var b = el("button", "chip" + (swapCtx.area === a ? " active" : ""), a);
+        b.onclick = function () { swapCtx.area = a; renderSwapChips(); runSwap(); };
+        as.appendChild(b);
+      });
+    } else {
+      as.classList.add("hide");
+      $("swaplede").textContent = "Why do you need something different?";
+    }
+  }
+
+  function runSwap() {
+    var ctx = swapCtx;
+    if (!ctx || !ctx.reason || (ctx.reason === "pain" && !ctx.area)) return;
+    var seq = ++ctx.seq;
+    var box = $("swapresult");
+    box.innerHTML = "";
+    box.appendChild(el("div", "aitext", "Thinking…"));
+    api("swap", { method: "POST", body: JSON.stringify({
+      exercise: ctx.name, reason: ctx.reason, body_area: ctx.area || "", title: ctx.title, equipment_have: ""
+    }) }).then(function (r) {
+      if (swapCtx !== ctx || ctx.seq !== seq) return;   // a newer question superseded this one
+      box.innerHTML = "";
+      if (r.status !== "ok") { box.appendChild(el("div", "aitext", r.message || "Could not load that.")); return; }
+      renderSwapResult(box, r);
+    }).catch(function () {
+      if (swapCtx !== ctx || ctx.seq !== seq) return;
+      box.innerHTML = "";
+      box.appendChild(el("div", "aitext", "Could not load that."));
+    });
+  }
+
+  function swapItem(it, withTrade) {
+    var d = el("div", "swapitem");
+    var h = el("div");
+    h.appendChild(el("b", null, it.name));
+    if (it.in_catalog) h.appendChild(el("span", "tag", "in catalog"));
+    d.appendChild(h);
+    if (it.why) d.appendChild(el("div", "why", it.why));
+    if (withTrade && it.tradeoff) d.appendChild(el("div", "trade", "Trade-off: " + it.tradeoff));
+    return d;
+  }
+
+  function renderSwapResult(box, r) {
+    if (r.summary) box.appendChild(el("div", "swapsummary", r.summary));
+    if (r.reason === "pain") {
+      if ((r.modifications || []).length) {
+        var ms = el("div", "swapsect");
+        ms.appendChild(el("h3", null, "Modify the movement"));
+        r.modifications.forEach(function (m) {
+          var d = el("div", "swapitem");
+          d.appendChild(el("b", null, m.change));
+          if (m.why) d.appendChild(el("div", "why", m.why));
+          ms.appendChild(d);
+        });
+        box.appendChild(ms);
+      }
+      if ((r.strengthen || []).length) {
+        var ss = el("div", "swapsect");
+        ss.appendChild(el("h3", null, "Build it up over time"));
+        r.strengthen.forEach(function (s) { ss.appendChild(swapItem(s, false)); });
+        box.appendChild(ss);
+      }
+      if (r.stop_if) box.appendChild(el("div", "swapsummary", r.stop_if));
+      box.appendChild(el("div", "swapnote", r.disclaimer ||
+        "Not medical advice — if the pain is sharp, keeps coming back or gets worse, see a professional."));
+      return;
+    }
+    if ((r.alternatives || []).length) {
+      var al = el("div", "swapsect");
+      al.appendChild(el("h3", null, "Try instead"));
+      r.alternatives.forEach(function (a) { al.appendChild(swapItem(a, true)); });
+      box.appendChild(al);
+    } else if (!r.summary) {
+      box.appendChild(el("div", "aitext", r.text || "Nothing came back — try again in a minute."));
+    }
   }
 
   // ---------- workout mode ----------
@@ -1475,6 +1586,11 @@ export const APP = String.raw`
     help.style.marginTop = "18px";
     help.onclick = function () { explain(s.ex.name, wo.workout.title); };
     main.appendChild(help);
+    var swapChip = el("button", "chip", "⇄ Swap or modify");
+    swapChip.style.marginTop = "18px";
+    swapChip.style.marginLeft = "8px";
+    swapChip.onclick = function () { openSwap(s.ex.name, wo.workout.title); };
+    main.appendChild(swapChip);
 
     viewIn(main);
   }
@@ -2021,7 +2137,7 @@ export const APP = String.raw`
   function closeSheet(id) { $(id).classList.remove("open"); }
 
   ["addsheet", "setsheet", "exsheet", "exeditsheet", "explainsheet", "picksheet", "settingssheet",
-   "colsheet", "renamesheet"]
+   "colsheet", "renamesheet", "swapsheet"]
     .forEach(function (id) {
       $(id).addEventListener("click", function (e) { if (e.target === $(id)) closeSheet(id); });
     });

@@ -7,7 +7,9 @@
 //   POST /api/workouts/:id/exercises edit/add/delete one exercise on the user's own
 //                                    copy, and record the correction as labelled data
 //   POST /api/explain               form coaching for one exercise
-//   POST /api/swap                  substitute exercises
+//   POST /api/swap                  { exercise, reason: no_equipment | station_busy | pain,
+//                                     body_area? } — alternatives with honest trade-offs, or
+//                                     for pain: modifications + what to build up, never a diagnosis
 //   POST /api/rotate-key            new ingest key
 //   GET  /api/limits                today's counts, and the spend ceiling
 //   POST /api/worker/tick           drain the ingest queue (shared secret, not a user)
@@ -19,7 +21,7 @@
 
 import { PAGE_HTML } from "./page.ts";
 import { ICON_B64 } from "./icon.ts";
-import { canonicalize, catalogById } from "./catalog.ts";
+import { CATALOG, type CatalogEntry, canonicalize, catalogById } from "./catalog.ts";
 import { assertPublicUrl, dnsAvailable, safeFetch } from "./net.ts";
 import {
   attachEvidence, carouselEvidence, chapterExerciseCount, type Chapter,
@@ -3115,6 +3117,247 @@ async function aiText(
   return json({ status: "ok", text: out.trim() }, 200, cors);
 }
 
+// ---------- substitutions and pain modifications ----------
+//
+// /api/swap used to answer one question — "I don't have the equipment" — with
+// free text. It now takes a reason: no equipment, the station is busy, or it
+// hurts. The first two return alternatives, each with an honest line about what
+// the swap loses. The third returns modifications to the movement plus what to
+// build up over time, and never a diagnosis: the prompt forbids it, a filter
+// drops any line that names one anyway, and the closing line is written here
+// rather than left to the model. Where possible every suggested exercise is a
+// real catalog entry, so it carries a canonical_id the rest of the app knows.
+
+type SwapReason = "no_equipment" | "station_busy" | "pain";
+const SWAP_REASONS: SwapReason[] = ["no_equipment", "station_busy", "pain"];
+const BODY_AREAS = ["shoulder", "elbow", "wrist", "neck", "upper back", "lower back", "hip", "knee", "ankle", "other"];
+
+// Which catalog muscle groups a sore area is usually built up through. A table,
+// not a model opinion, so the strengthening candidates are the same every time.
+const AREA_MUSCLES: Record<string, string[]> = {
+  "shoulder": ["shoulders", "back", "chest"],
+  "elbow": ["forearms", "triceps", "biceps"],
+  "wrist": ["forearms"],
+  "neck": ["back", "shoulders"],
+  "upper back": ["back", "shoulders"],
+  "lower back": ["core", "glutes", "hamstrings", "back"],
+  "hip": ["glutes", "hamstrings", "quads", "core"],
+  "knee": ["quads", "hamstrings", "glutes", "calves"],
+  "ankle": ["calves"],
+  "other": [],
+};
+
+// The line every pain answer carries. Written here, never left to the model.
+const PAIN_NOTE = "Not medical advice — if the pain is sharp, keeps coming back or gets worse, see a professional.";
+
+// A pain answer must never diagnose. The prompt says so; this catches a model
+// that does it anyway and drops that item rather than the whole answer.
+const DIAGNOSIS_RE =
+  /\b(tendinitis|tendonitis|tendinopathy|bursitis|impingement|arthritis|torn|tear\b|fracture|herniat|sciatica|labral|labrum|dislocat|you (probably|likely|may|might|could) have|sounds like|diagnos)/i;
+
+function parseHave(have: string): Set<string> {
+  const s = new Set<string>();
+  const t = have.toLowerCase();
+  for (const q of EQUIPMENT) {
+    if (t.includes(q)) s.add(q);
+  }
+  if (/\b(db|dumbbell)/.test(t)) s.add("dumbbells");
+  if (/\bkb\b/.test(t)) s.add("kettlebell");
+  if (/\bbb\b/.test(t)) s.add("barbell");
+  if (/\bband/.test(t)) s.add("resistance bands");
+  return s;
+}
+
+/**
+ * The catalog entries worth offering. For a swap: movements sharing a muscle
+ * group with the one being replaced, filtered to what the user has when the
+ * problem is equipment. For pain: movements that build the sore area, from the
+ * table above. Sorted by overlap, then by how little kit they need.
+ */
+function swapCandidates(exercise: string, reason: SwapReason, have: string, area: string | null): CatalogEntry[] {
+  const target = canonicalize(exercise)?.entry ?? null;
+  let muscles = target ? target.muscles : [];
+  if (reason === "pain" && area && (AREA_MUSCLES[area] ?? []).length) muscles = AREA_MUSCLES[area];
+  if (!muscles.length) return [];
+  const haveSet = parseHave(have);
+  let list = CATALOG.filter((e) => e.id !== target?.id && e.muscles.some((m) => muscles.includes(m)));
+  if (reason === "no_equipment") {
+    list = list.filter((e) => e.equipment.length === 0 || e.equipment.every((q) => haveSet.has(q)));
+  }
+  const shared = (e: CatalogEntry) => e.muscles.filter((m) => muscles.includes(m)).length;
+  list.sort((a, b) =>
+    shared(b) - shared(a) || a.equipment.length - b.equipment.length || a.name.localeCompare(b.name));
+  return list.slice(0, 40);
+}
+
+type SwapItem = { name: string; why: string; tradeoff?: string; canonical_id: string | null; in_catalog: boolean };
+
+function swapStr(v: unknown, max: number): string {
+  return typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, max) : "";
+}
+
+/** Model-suggested movements, each resolved against the catalog. The name the
+ *  model wrote is kept; the id underneath it is what the app can act on. */
+function swapItems(list: unknown, withTrade: boolean): SwapItem[] {
+  if (!Array.isArray(list)) return [];
+  const out: SwapItem[] = [];
+  for (const it of list.slice(0, 5)) {
+    const name = cleanTitle(swapStr((it as any)?.name, 80));
+    if (!name) continue;
+    const m = canonicalize(name);
+    const item: SwapItem = {
+      name, why: swapStr((it as any)?.why, 240),
+      canonical_id: m ? m.id : null, in_catalog: !!m,
+    };
+    if (withTrade) item.tradeoff = swapStr((it as any)?.tradeoff, 240);
+    out.push(item);
+  }
+  return out;
+}
+
+type SwapOut = {
+  reason: SwapReason; exercise: string; body_area: string | null; summary: string;
+  alternatives?: SwapItem[]; modifications?: { change: string; why: string }[];
+  strengthen?: SwapItem[]; stop_if?: string; disclaimer?: string; text: string;
+};
+
+/** Plain-text rendering, for any client that only knows how to show `text`. */
+function swapAsText(o: SwapOut): string {
+  const lines: string[] = [];
+  if (o.summary) lines.push(o.summary);
+  for (const a of o.alternatives ?? []) {
+    lines.push("• " + a.name + (a.why ? " — " + a.why : "") + (a.tradeoff ? " Trade-off: " + a.tradeoff : ""));
+  }
+  if (o.modifications?.length) {
+    lines.push("Modify it:");
+    for (const m of o.modifications) lines.push("• " + m.change + (m.why ? " — " + m.why : ""));
+  }
+  if (o.strengthen?.length) {
+    lines.push("Build it up:");
+    for (const s of o.strengthen) lines.push("• " + s.name + (s.why ? " — " + s.why : ""));
+  }
+  if (o.stop_if) lines.push(o.stop_if);
+  if (o.disclaimer) lines.push(o.disclaimer);
+  return lines.join("\n");
+}
+
+function shapeSwap(raw: any, text: string, reason: SwapReason, exercise: string, area: string | null): SwapOut {
+  if (reason === "pain") {
+    let dropped = 0;
+    const clean = (s: string) => { if (DIAGNOSIS_RE.test(s)) { dropped++; return ""; } return s; };
+    let summary = clean(swapStr(raw?.summary, 300));
+    const modifications = (Array.isArray(raw?.modifications) ? raw.modifications : []).slice(0, 5)
+      .map((m: any) => ({ change: swapStr(m?.change, 200), why: swapStr(m?.why, 240) }))
+      .filter((m: { change: string; why: string }) => m.change && clean(m.change + " " + m.why));
+    const strengthen = swapItems(raw?.strengthen, false).filter((s) => clean(s.name + " " + s.why));
+    const stopIf = clean(swapStr(raw?.stop_if, 240));
+    if (dropped) console.warn("swap: dropped", dropped, "diagnostic line(s) from a pain answer for", exercise);
+    if (!summary && !modifications.length && !strengthen.length) {
+      summary = "Ease the range of motion, lighten the load and slow the tempo on this one, or skip it today.";
+    }
+    const out: SwapOut = {
+      reason, exercise, body_area: area, summary, modifications, strengthen,
+      stop_if: stopIf, disclaimer: PAIN_NOTE, text: "",
+    };
+    out.text = swapAsText(out);
+    return out;
+  }
+  const alternatives = swapItems(raw?.alternatives, true);
+  let summary = swapStr(raw?.summary, 300);
+  if (!alternatives.length && !summary) {
+    // Not JSON after all: show what came back rather than nothing.
+    summary = text.replace(/[{}"\[\]]/g, " ").replace(/\s+/g, " ").trim().slice(0, 500);
+  }
+  const out: SwapOut = { reason, exercise, body_area: null, summary, alternatives, text: "" };
+  out.text = swapAsText(out);
+  return out;
+}
+
+async function handleSwap(req: Request, userId: string, cors: Cors): Promise<Response> {
+  const body = await req.json().catch(() => ({}));
+  const exercise = String(body?.exercise ?? "").slice(0, 120).trim();
+  if (!exercise) return json({ status: "error", message: "No exercise given." }, 400, cors);
+  const reasonRaw = String(body?.reason ?? "no_equipment");
+  if (!(SWAP_REASONS as string[]).includes(reasonRaw)) {
+    return json({ status: "error", message: "Unknown reason." }, 400, cors);
+  }
+  const reason = reasonRaw as SwapReason;
+  const areaRaw = String(body?.body_area ?? "").toLowerCase().replace(/\s+/g, " ").trim().slice(0, 40);
+  const area = reason === "pain" ? (BODY_AREAS.includes(areaRaw) ? areaRaw : (areaRaw ? "other" : null)) : null;
+  const have = String(body?.equipment_have ?? "").slice(0, 200).trim();
+  const title = String(body?.title ?? "").slice(0, 120).trim();
+
+  if (!haveAI()) return json({ status: "error", message: "AI is not configured yet." }, 503, cors);
+  // Same ceiling as explain: one short completion, metered, never free-running.
+  const { helpers } = await countsFor(userId);
+  if (helpers >= LIMIT_HELPER) {
+    return json({
+      status: "limit",
+      message: `Daily coaching limit reached (${LIMIT_HELPER}/day) — resets at midnight UTC.`,
+    }, 429, cors);
+  }
+
+  const cands = swapCandidates(exercise, reason, have, area);
+  const candLine = cands.length
+    ? "Catalog candidates (prefer these and use the exact names; go outside the list only if nothing fits, and say so): " +
+      cands.map((c) => c.name).join(", ")
+    : "Catalog candidates: none matched — suggest common, well-known movements.";
+
+  let system: string;
+  let user: string;
+  if (reason === "pain") {
+    system =
+      "You are a careful personal trainer. Someone feels pain in a body area when doing an exercise. " +
+      "You are NOT a clinician: never name a condition, injury or diagnosis, never guess what is wrong, " +
+      "never say it is fine, never tell them to push through. Offer only (1) modifications to the movement " +
+      "that usually reduce the demand on that area — range of motion, tempo, load, grip or stance, a regression, " +
+      "or skipping it today — and (2) exercises that build the area up gradually, chosen from the candidate list " +
+      "where possible. Reply with ONLY a JSON object: " +
+      '{"summary": one plain sentence, "modifications": [{"change": string, "why": string}] with 2-4 items, ' +
+      '"strengthen": [{"name": string, "why": string}] with 2-4 items, ' +
+      '"stop_if": one sentence on when to stop and get it looked at}. ' +
+      "Plain language, no emojis, no preaching, no lists inside strings. Use the word json nowhere else.";
+    user = [
+      `Exercise: ${exercise}`,
+      `Where it hurts: ${area ?? "not specified"}`,
+      title ? `From the workout: ${title}` : "",
+      candLine,
+    ].filter(Boolean).join("\n");
+  } else {
+    system =
+      "You are a personal trainer suggesting substitute exercises. Reply with ONLY a JSON object: " +
+      '{"summary": one sentence, "alternatives": [{"name": string, "why": string, "tradeoff": string}] with 2-4 items}. ' +
+      "Each alternative trains the same muscles with a similar stimulus. The tradeoff must be honest about what " +
+      "the swap loses — load, range of motion, stability demand, specificity — and never claim a swap is " +
+      "equivalent when it is not. Prefer names from the candidate list, verbatim. No emojis, no preamble.";
+    user = [
+      `Exercise to replace: ${exercise}`,
+      reason === "station_busy"
+        ? "Reason: the station or machine is busy right now. The same equipment may be free elsewhere in the gym, and a free-weight or bodyweight version is fine."
+        : "Reason: the equipment is not available." +
+          (have ? ` Available equipment: ${have}.` : " Assume bodyweight only unless the candidate list says otherwise."),
+      title ? `From the workout: ${title}` : "",
+      candLine,
+    ].filter(Boolean).join("\n");
+  }
+
+  const gen = await textGenerate(system, user, true, { purpose: "swap", userId });
+  if (!gen.text) return json({ status: "error", message: "The AI is busy — try again in a minute." }, 503, cors);
+  let raw: any = null;
+  try { raw = parseJsonLoose(gen.text); } catch { raw = null; }
+  const out = shapeSwap(raw, gen.text, reason, exercise, area);
+
+  // Only a successful answer is charged, the same rule as explain.
+  try {
+    await dbInsert("saves_log", { user_id: userId, kind: "helper", cached: false, shortcode: null });
+  } catch (e) {
+    console.error("helper saves_log insert failed", e);
+  }
+  console.log("swap", reason, area ?? "-", JSON.stringify(exercise), "candidates", cands.length,
+    "by", gen.by ?? "-", "items", (out.alternatives?.length ?? 0) + (out.modifications?.length ?? 0) + (out.strengthen?.length ?? 0));
+  return json({ status: "ok", model: gen.by, ...out }, 200, cors);
+}
+
 // ---------- router ----------
 
 Deno.serve(async (req: Request) => {
@@ -3187,20 +3430,7 @@ Deno.serve(async (req: Request) => {
         cors, userId, "explain", helpers);
     }
 
-    if (req.method === "POST" && path === "/api/swap") {
-      const body = await req.json().catch(() => ({}));
-      const exercise = String(body?.exercise ?? "").slice(0, 120).trim();
-      if (!exercise) return json({ status: "error", message: "No exercise given." }, 400, cors);
-      const have = String(body?.equipment_have ?? "").slice(0, 200).trim();
-      const system =
-        "You are a personal trainer suggesting substitute exercises. Give 1-3 alternatives that train the same " +
-        "muscles with a similar stimulus, each as one line: the name, then a short why. Be honest about what is " +
-        "lost in the swap. No emojis, no preamble.";
-      const { helpers } = await countsFor(userId);
-      return await aiText(system,
-        `Exercise to replace: ${exercise}` + (have ? `\nAvailable equipment: ${have}` : "\nAssume bodyweight only."),
-        cors, userId, "swap", helpers);
-    }
+    if (req.method === "POST" && path === "/api/swap") return await handleSwap(req, userId, cors);
 
     if (req.method === "POST" && path === "/api/rotate-key") {
       const bytes = new Uint8Array(16);
