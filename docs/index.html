@@ -600,9 +600,24 @@
   .pmark svg { width: 17px; height: 17px; display: block; }
   .noimg.pumpyimg { color: var(--ember); opacity: .9; }
   .noimg.pumpyimg svg { width: 46px; height: 46px; }
+  /* The Pumpy tab is a column as tall as what is left of the screen once the
+     sticky header and the fixed tab bar have taken their share, so the composer
+     lands on the tab bar whether the thread is empty or endless. Both numbers are
+     measured once by sizePumpy() and written here as custom properties; the
+     fallbacks are only ever used for the first paint. The page keeps scrolling on
+     the body — the log is not its own scroller, which is what makes the iOS
+     keyboard behave. */
   #pumpyview { padding-bottom: 0; }
-  #pumpylog { display: flex; flex-direction: column; gap: 10px; padding: 6px 0 14px; min-height: 42vh; }
-  .pumpytop { display: flex; justify-content: flex-end; }
+  #pumpyview.open { display: flex; flex-direction: column;
+    min-height: calc(100vh - var(--pumpytop, 130px) - var(--ptab, 78px));
+    min-height: calc(100dvh - var(--pumpytop, 130px) - var(--ptab, 78px)); }
+  body.app.pumpy { padding-bottom: var(--ptab, calc(78px + env(safe-area-inset-bottom))); }
+  #pumpylog { display: flex; flex-direction: column; gap: 10px; padding: 6px 0 14px; flex: 1 1 auto;
+    min-height: 0; }
+  #pumpylog.hello { justify-content: center; }
+  .pumpybar { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 2px 0 4px; }
+  .pumpybar .chip { padding: 8px 13px; font-size: 12.5px; }
   .pumpyhello { text-align: center; padding: 22px 12px 8px; color: var(--ink-2); font-size: 14px; line-height: 1.6; }
   .pumpyhello .pmark { width: 60px; height: 60px; margin: 0 auto 12px; box-shadow: var(--sh-md); }
   .pumpyhello .pmark svg { width: 34px; height: 34px; }
@@ -610,7 +625,10 @@
     letter-spacing: -.025em; }
   .pumpyhello p { margin: 0 auto; max-width: 340px; }
   .quick { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 16px 0 4px; }
-  .quick .chip { white-space: normal; text-align: left; line-height: 1.3; padding: 9px 13px; }
+  /* The library chips refuse to shrink; these have to, or a long ask runs off both
+     edges of the phone instead of wrapping. */
+  .quick .chip { flex: 0 1 auto; max-width: 100%; white-space: normal; text-align: left;
+    line-height: 1.3; padding: 9px 13px; }
   .msgrow { display: flex; gap: 8px; align-items: flex-end; max-width: 92%; }
   .msgcol { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
   .msg { padding: 11px 14px; border-radius: 18px; font-size: 14.5px; line-height: 1.55; white-space: pre-wrap;
@@ -636,15 +654,18 @@
   .proposal .btnrow .btn { padding: 12px; font-size: 14.5px; }
   .proposal .done { color: var(--good); font-weight: 700; font-size: 13px; margin-top: 10px; }
   .proposal .declined { color: var(--muted); font-size: 13px; margin-top: 10px; }
-  .composer { position: sticky; bottom: calc(78px + env(safe-area-inset-bottom)); padding: 8px 0 12px;
+  .composer { position: sticky; bottom: var(--ptab, calc(78px + env(safe-area-inset-bottom)));
+    padding: 8px 0 10px;
     background: color-mix(in srgb, var(--paper) 90%, transparent);
     -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
   .composerrow { display: flex; gap: 8px; align-items: flex-end; }
   .composer textarea { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 16px; padding: 12px 14px;
     font-size: 16px; line-height: 1.4; background: var(--card); color: var(--ink); outline: none; resize: none;
-    max-height: 120px; transition: border-color var(--t-2); }
+    max-height: 138px; overflow-y: auto; transition: border-color var(--t-2); }
   .composer textarea:focus { border-color: var(--ember); }
   .composer .addbtn { width: 44px; height: 44px; border-radius: 15px; font-size: 20px; }
+  .composer .addbtn[disabled] { opacity: .4; box-shadow: none; }
+  .pumpycredits { font-size: 11.5px; color: var(--muted); margin: 0 0 7px 6px; line-height: 1.4; }
   .pumpyctx { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-2); margin: 0 0 8px 6px; }
   .pumpyctx b { color: var(--ink); font-weight: 650; }
   .pumpyctx button { border: none; background: var(--sand); color: var(--muted); border-radius: 999px;
@@ -654,6 +675,22 @@
     padding: 12px; font-size: 14px; font-weight: 650; margin: -8px 0 22px; box-shadow: var(--sh-sm);
     transition: transform var(--t-1) var(--e-out); }
   .askpumpy:active { transform: scale(.982); }
+  /* One conversation per row: the thread on the left, a two-tap delete on the
+     right, the open one marked in ember. */
+  .threadrow { display: flex; align-items: center; gap: 6px; border-top: 1px solid var(--line); }
+  .threadrow:first-child { border-top: none; }
+  .threadrow .tmain { flex: 1; min-width: 0; border: none; background: none; text-align: left;
+    padding: 12px 8px; border-radius: 13px; color: var(--ink); }
+  .threadrow .tmain:active { background: var(--sand); }
+  .threadrow .tmain b { display: block; font-size: 14px; font-weight: 600; line-height: 1.35;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .threadrow .tmain span { display: block; font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+  .threadrow.on .tmain b { color: var(--ember-ink); }
+  .threadrow .tdel { flex: 0 0 auto; border: none; background: none; color: var(--muted);
+    font-size: 12px; font-weight: 600; padding: 11px 8px; border-radius: 999px; }
+  .threadrow .tdel[data-armed="1"] { color: var(--ember-ink); }
+  .threadnone { font-size: 13.5px; color: var(--muted); padding: 10px 0 4px; line-height: 1.6; }
+  .setnote { font-size: 12.5px; color: var(--muted); line-height: 1.5; padding: 0 0 12px; margin-top: -4px; }
 
   /* ---------- install hint ---------- */
   #hint { margin: 12px 18px 0; background: var(--card); border: 1px solid var(--line);
@@ -736,9 +773,14 @@
   <div class="view" id="planview"></div>
   <div class="view" id="progressview"></div>
   <div class="view" id="pumpyview">
+    <div class="pumpybar">
+      <button class="chip" id="pumpychats">☰ Chats</button>
+      <button class="chip" id="pumpynew">＋ New chat</button>
+    </div>
     <div id="pumpylog"></div>
     <div class="composer" id="pumpycomposer">
       <div class="pumpyctx hide" id="pumpyctx"></div>
+      <div class="pumpycredits hide" id="pumpycredits"></div>
       <div class="composerrow">
         <textarea id="pumpyinput" rows="1" placeholder="Ask Pumpy…" autocapitalize="sentences"></textarea>
         <button class="addbtn" id="pumpysend" aria-label="Send">↑</button>
@@ -897,11 +939,19 @@
   </div>
 </div></div>
 
+<div class="sheet" id="pumpysheet"><div class="sheetbody">
+  <div class="grabber"></div>
+  <h2>Your chats</h2>
+  <p class="lede">Every conversation you have had with Pumpy. Tap one to pick it up.</p>
+  <div id="pumpythreads"></div>
+</div></div>
+
 <div class="sheet" id="settingssheet"><div class="sheetbody">
   <div class="grabber"></div>
   <h2>Settings</h2>
   <div class="kv"><span class="k">Signed in as</span><span class="v" id="setemail">—</span></div>
   <div class="kv"><span class="k">Saved today</span><span class="v" id="setsaves">—</span></div>
+  <div class="setnote hide" id="setpumpy"></div>
   <div class="kv"><span class="k">Weight unit</span>
     <span class="v"><button class="chip" id="unittoggle">lb</button></span></div>
   <h2 style="margin-top:22px;font-size:16px">Save from your phone</h2>
@@ -3094,21 +3144,46 @@
     return s;
   }
 
-  var pumpy = { thread: null, messages: [], busy: false, ctx: null, loaded: false };
+  var pumpy = { thread: null, messages: [], busy: false, ctx: null, loaded: false,
+    meter: null, meterAsked: false };
 
+  // Short enough to wrap into a chip on a phone, long enough to still be a real ask.
   var QUICK_ASKS = [
-    "Build me a 25-minute shoulders and core workout, kettlebell only",
+    "Build a 25-min kettlebell shoulders + core",
     "Plan my week from what I've saved",
     "Add a finisher to my leg day",
-    "I have shoulder pain — where does a tendon-strengthener fit in my week?"
+    "Shoulder pain — what should I strengthen?"
   ];
+
+  // A keyboard sends on Enter; a phone keyboard's return key must still make a
+  // new line, so only ask for that where there is no touch screen.
+  var NO_TOUCH = !("ontouchstart" in window) && !(navigator.maxTouchPoints > 0);
 
   function openPumpy(w) {
     if (w) pumpy.ctx = { id: w.id, title: w.title || "Workout" };
     setView("pumpy");
   }
 
+  // The tab is a column between the sticky header and the fixed tab bar. Both
+  // heights are read off the live layout rather than guessed: the header grows
+  // with the safe area, the tab bar with the home indicator, and the install hint
+  // can sit above the view. Written as custom properties so the CSS can do the
+  // arithmetic, including on the body's bottom padding, which is what decides
+  // where the page ends when the thread is long.
+  function sizePumpy() {
+    var v = $("pumpyview");
+    if (!v || !v.classList.contains("open")) return;
+    var scrolled = window.scrollY || window.pageYOffset || 0;
+    var top = Math.max(0, Math.round(v.getBoundingClientRect().top + scrolled));
+    var bar = document.querySelector(".tabbar");
+    var tab = bar ? Math.round(bar.getBoundingClientRect().height) : 78;
+    var root = document.documentElement;
+    root.style.setProperty("--pumpytop", top + "px");
+    root.style.setProperty("--ptab", tab + "px");
+  }
+
   function loadPumpy() {
+    ensurePumpyMeter();
     if (pumpy.loaded) { renderPumpy(); return; }
     sb.from("pumpy_threads").select("*").order("updated_at", { ascending: false }).limit(1).then(function (r) {
       var t = r.data && r.data[0];
@@ -3123,20 +3198,176 @@
     pumpy.thread = null;
     pumpy.messages = [];
     pumpy.ctx = null;
+    pumpy.loaded = true;
     renderPumpy();
+  }
+
+  // ---------- Pumpy · the thread list ----------
+
+  function agoText(iso) {
+    var t = Date.parse(iso || "");
+    if (!t) return "";
+    var s = Math.max(0, (Date.now() - t) / 1000);
+    if (s < 90) return "just now";
+    if (s < 3600) return Math.round(s / 60) + " min ago";
+    if (s < 86400) return Math.round(s / 3600) + "h ago";
+    if (s < 7 * 86400) return Math.round(s / 86400) + "d ago";
+    return new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  }
+
+  function openPumpyThreads() {
+    var list = $("pumpythreads");
+    list.innerHTML = "";
+    list.appendChild(el("div", "threadnone", "Loading…"));
+    openSheet("pumpysheet");
+    sb.from("pumpy_threads")
+      .select("id,title,updated_at,workout_id,workouts(title)")
+      .order("updated_at", { ascending: false }).limit(50)
+      .then(function (r) { renderThreads((r && r.data) || []); })
+      .catch(function () {
+        list.innerHTML = "";
+        list.appendChild(el("div", "threadnone", "Could not load your chats."));
+      });
+  }
+
+  function renderThreads(rows) {
+    var list = $("pumpythreads");
+    list.innerHTML = "";
+    if (!rows.length) {
+      list.appendChild(el("div", "threadnone",
+        "No chats yet. Ask Pumpy something and it will keep the conversation here."));
+      return;
+    }
+    rows.forEach(function (t) {
+      var open = pumpy.thread && pumpy.thread.id === t.id;
+      var row = el("div", "threadrow" + (open ? " on" : ""));
+      var main = el("button", "tmain");
+      main.appendChild(el("b", null, t.title || "New chat"));
+      var bits = [];
+      if (agoText(t.updated_at)) bits.push(agoText(t.updated_at));
+      if (t.workout_id) bits.push("About " + ((t.workouts && t.workouts.title) || "a workout"));
+      if (open) bits.push("Open");
+      main.appendChild(el("span", null, bits.join(" · ")));
+      main.onclick = function () { openThread(t); };
+      row.appendChild(main);
+
+      var del = el("button", "tdel", "Delete");
+      del.setAttribute("aria-label", "Delete this chat");
+      del.onclick = function () {
+        armed(del, "Delete?", function () {
+          sb.from("pumpy_threads").delete().eq("id", t.id).then(function (r) {
+            if (r && r.error) { toast("Could not delete that chat."); return; }
+            row.parentNode && row.parentNode.removeChild(row);
+            if (pumpy.thread && pumpy.thread.id === t.id) newPumpyThread();
+            if (!list.querySelector(".threadrow")) renderThreads([]);
+          });
+        });
+      };
+      row.appendChild(del);
+      list.appendChild(row);
+    });
+  }
+
+  function openThread(t) {
+    closeSheet("pumpysheet");
+    pumpy.thread = { id: t.id, title: t.title, updated_at: t.updated_at, workout_id: t.workout_id };
+    pumpy.messages = [];
+    pumpy.loaded = true;
+    // The thread already knows which card it was opened from; say so, so the
+    // context line matches the row the user just tapped.
+    pumpy.ctx = t.workout_id
+      ? { id: t.workout_id, title: (t.workouts && t.workouts.title) || "Workout" }
+      : null;
+    renderPumpy();
+    sb.from("pumpy_messages").select("*").eq("thread_id", t.id).order("id", { ascending: true }).limit(80)
+      .then(function (m) {
+        if (!pumpy.thread || pumpy.thread.id !== t.id) return;   // switched again while loading
+        pumpy.messages = (m && m.data) || [];
+        renderPumpy();
+      });
+  }
+
+  // ---------- Pumpy · credits ----------
+  //
+  // The meter is whatever the server last said, and every field of it is
+  // optional: until the backend ships this block, r.pumpy is simply absent and
+  // nothing new appears anywhere.
+
+  function ensurePumpyMeter() {
+    if (pumpy.meterAsked) return;
+    pumpy.meterAsked = true;
+    api("limits", { method: "GET" })
+      .then(function (r) { absorbMeter(r && r.pumpy); })
+      .catch(function () { /* the tab works fine without it */ });
+  }
+
+  function absorbMeter(p) {
+    if (!p || typeof p !== "object") return;
+    pumpy.meter = p;
+    renderPumpyCredits();
+    renderSettingsMeter();
+  }
+
+  function num(v) { return typeof v === "number" && isFinite(v) ? v : null; }
+
+  // {used, cap} where cap may be null for unlimited, or the whole thing may be junk.
+  function bucket(b) {
+    if (!b || typeof b !== "object") return null;
+    var used = num(b.used);
+    if (used === null) return null;
+    var cap = num(b.cap);
+    return { used: used, cap: cap, left: cap === null ? null : Math.max(0, cap - used) };
+  }
+
+  function countText(b, tail) {
+    if (b.cap === null) return "unlimited " + tail;
+    return b.used.toLocaleString() + " of " + b.cap.toLocaleString() + " " + tail;
+  }
+
+  function renderSettingsMeter() {
+    var n = $("setpumpy");
+    if (!n) return;
+    var p = pumpy.meter;
+    var day = p && bucket(p.day);
+    var month = p && bucket(p.month);
+    if (!p || (!day && !month)) { n.textContent = ""; n.classList.add("hide"); return; }
+    var bits = ["Pumpy"];
+    if (typeof p.plan === "string" && p.plan) {
+      bits.push(p.plan.charAt(0).toUpperCase() + p.plan.slice(1) + " plan");
+    }
+    if (day) bits.push(countText(day, "credits today"));
+    if (month) bits.push(countText(month, "this month"));
+    n.textContent = bits.join(" · ");
+    n.classList.remove("hide");
+  }
+
+  // Only speaks up when the tank is nearly empty — under a fifth of either cap.
+  function renderPumpyCredits() {
+    var n = $("pumpycredits");
+    if (!n) return;
+    var p = pumpy.meter;
+    var day = p && bucket(p.day);
+    var month = p && bucket(p.month);
+    var low = null;
+    if (day && day.cap > 0 && day.left < day.cap * 0.2) {
+      low = day.left.toLocaleString() + " credit" + (day.left === 1 ? "" : "s") +
+        " left today · resets at midnight UTC";
+    } else if (month && month.cap > 0 && month.left < month.cap * 0.2) {
+      low = month.left.toLocaleString() + " left this month · resets on the 1st";
+    }
+    if (!low) { n.textContent = ""; n.classList.add("hide"); return; }
+    n.textContent = low;
+    n.classList.remove("hide");
   }
 
   function renderPumpy() {
     var log = $("pumpylog");
     log.innerHTML = "";
     var shown = pumpy.messages.filter(function (m) { return m.role === "user" || m.role === "assistant"; });
-    if (shown.length) {
-      var top = el("div", "pumpytop");
-      var nb = el("button", "chip", "＋ New chat");
-      nb.onclick = newPumpyThread;
-      top.appendChild(nb);
-      log.appendChild(top);
-    } else {
+    // With nothing said yet the log is empty space, so the greeting sits in the
+    // middle of it rather than clinging to the top.
+    log.classList.toggle("hello", !shown.length);
+    if (!shown.length) {
       var hello = el("div", "pumpyhello");
       hello.appendChild(pumpyMark("pmark"));
       hello.appendChild(el("h2", null, "Hey, I'm Pumpy"));
@@ -3160,7 +3391,10 @@
       log.appendChild(row);
     }
     renderPumpyCtx();
-    window.scrollTo(0, document.body.scrollHeight);
+    renderPumpyCredits();
+    $("pumpysend").disabled = !!pumpy.busy;
+    sizePumpy();
+    if (shown.length || pumpy.busy) window.scrollTo(0, document.body.scrollHeight);
   }
 
   function renderMsg(m) {
@@ -3241,7 +3475,10 @@
   function sendPumpy(text) {
     text = String(text || $("pumpyinput").value || "").trim();
     if (!text || pumpy.busy) return;
-    $("pumpyinput").value = "";
+    var box = $("pumpyinput");
+    box.value = "";
+    box.style.height = "auto";
+    if (NO_TOUCH) box.focus();
     pumpy.busy = true;
     pumpy.messages.push({ id: "local-" + Date.now(), role: "user", content: text });
     renderPumpy();
@@ -3252,6 +3489,8 @@
     };
     api("pumpy/chat", { method: "POST", body: JSON.stringify(payload) }).then(function (r) {
       pumpy.busy = false;
+      // Every answer carries the meter, the refusal at the cap most of all.
+      absorbMeter(r && r.pumpy);
       pumpy.messages = pumpy.messages.filter(function (m) { return String(m.id).indexOf("local-") !== 0; });
       if (r.status !== "ok") {
         // The ceiling and the outage both come back as something Pumpy says.
@@ -3302,7 +3541,7 @@
   function closeSheet(id) { $(id).classList.remove("open"); }
 
   ["addsheet", "setsheet", "exsheet", "exeditsheet", "explainsheet", "picksheet", "settingssheet",
-   "colsheet", "renamesheet", "swapsheet"]
+   "colsheet", "renamesheet", "swapsheet", "pumpysheet"]
     .forEach(function (id) {
       $(id).addEventListener("click", function (e) { if (e.target === $(id)) closeSheet(id); });
     });
@@ -3383,7 +3622,10 @@
     var key = state.profile ? state.profile.ingest_key : null;
     $("setkey").textContent = key ? API + "ingest?key=" + key : "Loading…";
     $("setsaves").textContent = "…";
+    renderSettingsMeter();
     api("limits", { method: "GET" }).then(function (r) {
+      pumpy.meterAsked = true;
+      absorbMeter(r && r.pumpy);
       if (r.status === "ok") {
         var line = r.saves_today + " of " + r.limit_saves +
           " (" + r.extracts_today + "/" + r.limit_extract + " extractions, " +
@@ -3432,13 +3674,18 @@
     $("planview").classList.toggle("open", v === "plan");
     $("progressview").classList.toggle("open", v === "progress");
     $("pumpyview").classList.toggle("open", v === "pumpy");
+    // The Pumpy tab ends exactly on the tab bar, so it wants the tab bar's own
+    // height as the page's bottom padding rather than the roomier default.
+    document.body.classList.toggle("pumpy", v === "pumpy");
 
     var titles = { library: "Spotter", plan: "Plan", progress: "Progress", pumpy: "Pumpy" };
     $("apptitle").textContent = titles[v] || "Spotter";
     if (lib) { render(); }
     if (v === "plan") { $("count").textContent = "This week"; loadPlan(); }
     if (v === "progress") { $("count").textContent = "Your numbers, every session"; loadLogs().then(renderProgress); }
-    if (v === "pumpy") { $("count").textContent = "Your coach"; loadPumpy(); return; }
+    // Measure before the first render, so the column is the right height even on
+    // the open that has to wait for the thread to come back from the database.
+    if (v === "pumpy") { $("count").textContent = "Your coach"; sizePumpy(); loadPumpy(); return; }
     window.scrollTo(0, 0);
   }
 
@@ -3500,13 +3747,17 @@
 
   $("pumpytab").innerHTML = PUMPY_MARK;
   $("pumpysend").onclick = function () { sendPumpy(); };
+  $("pumpychats").onclick = openPumpyThreads;
+  $("pumpynew").onclick = newPumpyThread;
   $("pumpyinput").addEventListener("keydown", function (e) {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendPumpy(); }
+    if (NO_TOUCH && e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendPumpy(); }
   });
   $("pumpyinput").addEventListener("input", function () {
     this.style.height = "auto";
-    this.style.height = Math.min(this.scrollHeight, 120) + "px";
+    this.style.height = Math.min(this.scrollHeight, 138) + "px";
   });
+  window.addEventListener("resize", sizePumpy);
+  window.addEventListener("orientationchange", sizePumpy);
 
   $("swaphavego").onclick = function () { runSwap(); };
   $("swaphaveinput").addEventListener("keydown", function (e) { if (e.key === "Enter") runSwap(); });

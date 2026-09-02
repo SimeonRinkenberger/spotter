@@ -94,9 +94,14 @@ export const MARKUP_BODY = String.raw`</head>
   <div class="view" id="planview"></div>
   <div class="view" id="progressview"></div>
   <div class="view" id="pumpyview">
+    <div class="pumpybar">
+      <button class="chip" id="pumpychats">☰ Chats</button>
+      <button class="chip" id="pumpynew">＋ New chat</button>
+    </div>
     <div id="pumpylog"></div>
     <div class="composer" id="pumpycomposer">
       <div class="pumpyctx hide" id="pumpyctx"></div>
+      <div class="pumpycredits hide" id="pumpycredits"></div>
       <div class="composerrow">
         <textarea id="pumpyinput" rows="1" placeholder="Ask Pumpy…" autocapitalize="sentences"></textarea>
         <button class="addbtn" id="pumpysend" aria-label="Send">↑</button>
@@ -255,11 +260,19 @@ export const MARKUP_BODY = String.raw`</head>
   </div>
 </div></div>
 
+<div class="sheet" id="pumpysheet"><div class="sheetbody">
+  <div class="grabber"></div>
+  <h2>Your chats</h2>
+  <p class="lede">Every conversation you have had with Pumpy. Tap one to pick it up.</p>
+  <div id="pumpythreads"></div>
+</div></div>
+
 <div class="sheet" id="settingssheet"><div class="sheetbody">
   <div class="grabber"></div>
   <h2>Settings</h2>
   <div class="kv"><span class="k">Signed in as</span><span class="v" id="setemail">—</span></div>
   <div class="kv"><span class="k">Saved today</span><span class="v" id="setsaves">—</span></div>
+  <div class="setnote hide" id="setpumpy"></div>
   <div class="kv"><span class="k">Weight unit</span>
     <span class="v"><button class="chip" id="unittoggle">lb</button></span></div>
   <h2 style="margin-top:22px;font-size:16px">Save from your phone</h2>

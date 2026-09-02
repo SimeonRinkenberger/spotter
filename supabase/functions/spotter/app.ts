@@ -2179,21 +2179,46 @@ export const APP = String.raw`
     return s;
   }
 
-  var pumpy = { thread: null, messages: [], busy: false, ctx: null, loaded: false };
+  var pumpy = { thread: null, messages: [], busy: false, ctx: null, loaded: false,
+    meter: null, meterAsked: false };
 
+  // Short enough to wrap into a chip on a phone, long enough to still be a real ask.
   var QUICK_ASKS = [
-    "Build me a 25-minute shoulders and core workout, kettlebell only",
+    "Build a 25-min kettlebell shoulders + core",
     "Plan my week from what I've saved",
     "Add a finisher to my leg day",
-    "I have shoulder pain — where does a tendon-strengthener fit in my week?"
+    "Shoulder pain — what should I strengthen?"
   ];
+
+  // A keyboard sends on Enter; a phone keyboard's return key must still make a
+  // new line, so only ask for that where there is no touch screen.
+  var NO_TOUCH = !("ontouchstart" in window) && !(navigator.maxTouchPoints > 0);
 
   function openPumpy(w) {
     if (w) pumpy.ctx = { id: w.id, title: w.title || "Workout" };
     setView("pumpy");
   }
 
+  // The tab is a column between the sticky header and the fixed tab bar. Both
+  // heights are read off the live layout rather than guessed: the header grows
+  // with the safe area, the tab bar with the home indicator, and the install hint
+  // can sit above the view. Written as custom properties so the CSS can do the
+  // arithmetic, including on the body's bottom padding, which is what decides
+  // where the page ends when the thread is long.
+  function sizePumpy() {
+    var v = $("pumpyview");
+    if (!v || !v.classList.contains("open")) return;
+    var scrolled = window.scrollY || window.pageYOffset || 0;
+    var top = Math.max(0, Math.round(v.getBoundingClientRect().top + scrolled));
+    var bar = document.querySelector(".tabbar");
+    var tab = bar ? Math.round(bar.getBoundingClientRect().height) : 78;
+    var root = document.documentElement;
+    root.style.setProperty("--pumpytop", top + "px");
+    root.style.setProperty("--ptab", tab + "px");
+  }
+
   function loadPumpy() {
+    ensurePumpyMeter();
     if (pumpy.loaded) { renderPumpy(); return; }
     sb.from("pumpy_threads").select("*").order("updated_at", { ascending: false }).limit(1).then(function (r) {
       var t = r.data && r.data[0];
@@ -2208,20 +2233,176 @@ export const APP = String.raw`
     pumpy.thread = null;
     pumpy.messages = [];
     pumpy.ctx = null;
+    pumpy.loaded = true;
     renderPumpy();
+  }
+
+  // ---------- Pumpy · the thread list ----------
+
+  function agoText(iso) {
+    var t = Date.parse(iso || "");
+    if (!t) return "";
+    var s = Math.max(0, (Date.now() - t) / 1000);
+    if (s < 90) return "just now";
+    if (s < 3600) return Math.round(s / 60) + " min ago";
+    if (s < 86400) return Math.round(s / 3600) + "h ago";
+    if (s < 7 * 86400) return Math.round(s / 86400) + "d ago";
+    return new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  }
+
+  function openPumpyThreads() {
+    var list = $("pumpythreads");
+    list.innerHTML = "";
+    list.appendChild(el("div", "threadnone", "Loading…"));
+    openSheet("pumpysheet");
+    sb.from("pumpy_threads")
+      .select("id,title,updated_at,workout_id,workouts(title)")
+      .order("updated_at", { ascending: false }).limit(50)
+      .then(function (r) { renderThreads((r && r.data) || []); })
+      .catch(function () {
+        list.innerHTML = "";
+        list.appendChild(el("div", "threadnone", "Could not load your chats."));
+      });
+  }
+
+  function renderThreads(rows) {
+    var list = $("pumpythreads");
+    list.innerHTML = "";
+    if (!rows.length) {
+      list.appendChild(el("div", "threadnone",
+        "No chats yet. Ask Pumpy something and it will keep the conversation here."));
+      return;
+    }
+    rows.forEach(function (t) {
+      var open = pumpy.thread && pumpy.thread.id === t.id;
+      var row = el("div", "threadrow" + (open ? " on" : ""));
+      var main = el("button", "tmain");
+      main.appendChild(el("b", null, t.title || "New chat"));
+      var bits = [];
+      if (agoText(t.updated_at)) bits.push(agoText(t.updated_at));
+      if (t.workout_id) bits.push("About " + ((t.workouts && t.workouts.title) || "a workout"));
+      if (open) bits.push("Open");
+      main.appendChild(el("span", null, bits.join(" · ")));
+      main.onclick = function () { openThread(t); };
+      row.appendChild(main);
+
+      var del = el("button", "tdel", "Delete");
+      del.setAttribute("aria-label", "Delete this chat");
+      del.onclick = function () {
+        armed(del, "Delete?", function () {
+          sb.from("pumpy_threads").delete().eq("id", t.id).then(function (r) {
+            if (r && r.error) { toast("Could not delete that chat."); return; }
+            row.parentNode && row.parentNode.removeChild(row);
+            if (pumpy.thread && pumpy.thread.id === t.id) newPumpyThread();
+            if (!list.querySelector(".threadrow")) renderThreads([]);
+          });
+        });
+      };
+      row.appendChild(del);
+      list.appendChild(row);
+    });
+  }
+
+  function openThread(t) {
+    closeSheet("pumpysheet");
+    pumpy.thread = { id: t.id, title: t.title, updated_at: t.updated_at, workout_id: t.workout_id };
+    pumpy.messages = [];
+    pumpy.loaded = true;
+    // The thread already knows which card it was opened from; say so, so the
+    // context line matches the row the user just tapped.
+    pumpy.ctx = t.workout_id
+      ? { id: t.workout_id, title: (t.workouts && t.workouts.title) || "Workout" }
+      : null;
+    renderPumpy();
+    sb.from("pumpy_messages").select("*").eq("thread_id", t.id).order("id", { ascending: true }).limit(80)
+      .then(function (m) {
+        if (!pumpy.thread || pumpy.thread.id !== t.id) return;   // switched again while loading
+        pumpy.messages = (m && m.data) || [];
+        renderPumpy();
+      });
+  }
+
+  // ---------- Pumpy · credits ----------
+  //
+  // The meter is whatever the server last said, and every field of it is
+  // optional: until the backend ships this block, r.pumpy is simply absent and
+  // nothing new appears anywhere.
+
+  function ensurePumpyMeter() {
+    if (pumpy.meterAsked) return;
+    pumpy.meterAsked = true;
+    api("limits", { method: "GET" })
+      .then(function (r) { absorbMeter(r && r.pumpy); })
+      .catch(function () { /* the tab works fine without it */ });
+  }
+
+  function absorbMeter(p) {
+    if (!p || typeof p !== "object") return;
+    pumpy.meter = p;
+    renderPumpyCredits();
+    renderSettingsMeter();
+  }
+
+  function num(v) { return typeof v === "number" && isFinite(v) ? v : null; }
+
+  // {used, cap} where cap may be null for unlimited, or the whole thing may be junk.
+  function bucket(b) {
+    if (!b || typeof b !== "object") return null;
+    var used = num(b.used);
+    if (used === null) return null;
+    var cap = num(b.cap);
+    return { used: used, cap: cap, left: cap === null ? null : Math.max(0, cap - used) };
+  }
+
+  function countText(b, tail) {
+    if (b.cap === null) return "unlimited " + tail;
+    return b.used.toLocaleString() + " of " + b.cap.toLocaleString() + " " + tail;
+  }
+
+  function renderSettingsMeter() {
+    var n = $("setpumpy");
+    if (!n) return;
+    var p = pumpy.meter;
+    var day = p && bucket(p.day);
+    var month = p && bucket(p.month);
+    if (!p || (!day && !month)) { n.textContent = ""; n.classList.add("hide"); return; }
+    var bits = ["Pumpy"];
+    if (typeof p.plan === "string" && p.plan) {
+      bits.push(p.plan.charAt(0).toUpperCase() + p.plan.slice(1) + " plan");
+    }
+    if (day) bits.push(countText(day, "credits today"));
+    if (month) bits.push(countText(month, "this month"));
+    n.textContent = bits.join(" · ");
+    n.classList.remove("hide");
+  }
+
+  // Only speaks up when the tank is nearly empty — under a fifth of either cap.
+  function renderPumpyCredits() {
+    var n = $("pumpycredits");
+    if (!n) return;
+    var p = pumpy.meter;
+    var day = p && bucket(p.day);
+    var month = p && bucket(p.month);
+    var low = null;
+    if (day && day.cap > 0 && day.left < day.cap * 0.2) {
+      low = day.left.toLocaleString() + " credit" + (day.left === 1 ? "" : "s") +
+        " left today · resets at midnight UTC";
+    } else if (month && month.cap > 0 && month.left < month.cap * 0.2) {
+      low = month.left.toLocaleString() + " left this month · resets on the 1st";
+    }
+    if (!low) { n.textContent = ""; n.classList.add("hide"); return; }
+    n.textContent = low;
+    n.classList.remove("hide");
   }
 
   function renderPumpy() {
     var log = $("pumpylog");
     log.innerHTML = "";
     var shown = pumpy.messages.filter(function (m) { return m.role === "user" || m.role === "assistant"; });
-    if (shown.length) {
-      var top = el("div", "pumpytop");
-      var nb = el("button", "chip", "＋ New chat");
-      nb.onclick = newPumpyThread;
-      top.appendChild(nb);
-      log.appendChild(top);
-    } else {
+    // With nothing said yet the log is empty space, so the greeting sits in the
+    // middle of it rather than clinging to the top.
+    log.classList.toggle("hello", !shown.length);
+    if (!shown.length) {
       var hello = el("div", "pumpyhello");
       hello.appendChild(pumpyMark("pmark"));
       hello.appendChild(el("h2", null, "Hey, I'm Pumpy"));
@@ -2245,7 +2426,10 @@ export const APP = String.raw`
       log.appendChild(row);
     }
     renderPumpyCtx();
-    window.scrollTo(0, document.body.scrollHeight);
+    renderPumpyCredits();
+    $("pumpysend").disabled = !!pumpy.busy;
+    sizePumpy();
+    if (shown.length || pumpy.busy) window.scrollTo(0, document.body.scrollHeight);
   }
 
   function renderMsg(m) {
@@ -2326,7 +2510,10 @@ export const APP = String.raw`
   function sendPumpy(text) {
     text = String(text || $("pumpyinput").value || "").trim();
     if (!text || pumpy.busy) return;
-    $("pumpyinput").value = "";
+    var box = $("pumpyinput");
+    box.value = "";
+    box.style.height = "auto";
+    if (NO_TOUCH) box.focus();
     pumpy.busy = true;
     pumpy.messages.push({ id: "local-" + Date.now(), role: "user", content: text });
     renderPumpy();
@@ -2337,6 +2524,8 @@ export const APP = String.raw`
     };
     api("pumpy/chat", { method: "POST", body: JSON.stringify(payload) }).then(function (r) {
       pumpy.busy = false;
+      // Every answer carries the meter, the refusal at the cap most of all.
+      absorbMeter(r && r.pumpy);
       pumpy.messages = pumpy.messages.filter(function (m) { return String(m.id).indexOf("local-") !== 0; });
       if (r.status !== "ok") {
         // The ceiling and the outage both come back as something Pumpy says.
@@ -2387,7 +2576,7 @@ export const APP = String.raw`
   function closeSheet(id) { $(id).classList.remove("open"); }
 
   ["addsheet", "setsheet", "exsheet", "exeditsheet", "explainsheet", "picksheet", "settingssheet",
-   "colsheet", "renamesheet", "swapsheet"]
+   "colsheet", "renamesheet", "swapsheet", "pumpysheet"]
     .forEach(function (id) {
       $(id).addEventListener("click", function (e) { if (e.target === $(id)) closeSheet(id); });
     });
@@ -2468,7 +2657,10 @@ export const APP = String.raw`
     var key = state.profile ? state.profile.ingest_key : null;
     $("setkey").textContent = key ? API + "ingest?key=" + key : "Loading…";
     $("setsaves").textContent = "…";
+    renderSettingsMeter();
     api("limits", { method: "GET" }).then(function (r) {
+      pumpy.meterAsked = true;
+      absorbMeter(r && r.pumpy);
       if (r.status === "ok") {
         var line = r.saves_today + " of " + r.limit_saves +
           " (" + r.extracts_today + "/" + r.limit_extract + " extractions, " +
@@ -2517,13 +2709,18 @@ export const APP = String.raw`
     $("planview").classList.toggle("open", v === "plan");
     $("progressview").classList.toggle("open", v === "progress");
     $("pumpyview").classList.toggle("open", v === "pumpy");
+    // The Pumpy tab ends exactly on the tab bar, so it wants the tab bar's own
+    // height as the page's bottom padding rather than the roomier default.
+    document.body.classList.toggle("pumpy", v === "pumpy");
 
     var titles = { library: "Spotter", plan: "Plan", progress: "Progress", pumpy: "Pumpy" };
     $("apptitle").textContent = titles[v] || "Spotter";
     if (lib) { render(); }
     if (v === "plan") { $("count").textContent = "This week"; loadPlan(); }
     if (v === "progress") { $("count").textContent = "Your numbers, every session"; loadLogs().then(renderProgress); }
-    if (v === "pumpy") { $("count").textContent = "Your coach"; loadPumpy(); return; }
+    // Measure before the first render, so the column is the right height even on
+    // the open that has to wait for the thread to come back from the database.
+    if (v === "pumpy") { $("count").textContent = "Your coach"; sizePumpy(); loadPumpy(); return; }
     window.scrollTo(0, 0);
   }
 
@@ -2585,13 +2782,17 @@ export const APP = String.raw`
 
   $("pumpytab").innerHTML = PUMPY_MARK;
   $("pumpysend").onclick = function () { sendPumpy(); };
+  $("pumpychats").onclick = openPumpyThreads;
+  $("pumpynew").onclick = newPumpyThread;
   $("pumpyinput").addEventListener("keydown", function (e) {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendPumpy(); }
+    if (NO_TOUCH && e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendPumpy(); }
   });
   $("pumpyinput").addEventListener("input", function () {
     this.style.height = "auto";
-    this.style.height = Math.min(this.scrollHeight, 120) + "px";
+    this.style.height = Math.min(this.scrollHeight, 138) + "px";
   });
+  window.addEventListener("resize", sizePumpy);
+  window.addEventListener("orientationchange", sizePumpy);
 
   $("swaphavego").onclick = function () { runSwap(); };
   $("swaphaveinput").addEventListener("keydown", function (e) { if (e.key === "Enter") runSwap(); });

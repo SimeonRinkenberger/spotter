@@ -151,7 +151,15 @@ in its query. Writes come back as a validated proposal (`create_workout`,
 A Pumpy-made workout carries `extracted_by: pumpy:<model>`; exercises it appends land in
 `corrections` as adds tagged `added_by: pumpy`. Conversations persist in `pumpy_threads` /
 `pumpy_messages` under owner-only RLS with no client writes; the last sixteen visible turns
-are the context. `PUMPY_MARK` in `app.ts` is the placeholder art and its single swap point.
+are the context. The tab itself is a column sized between the sticky header and the fixed tab
+bar, so the composer sits on the tab bar whether the thread is empty or endless; a slim bar
+above it opens the chat list — every thread the caller owns, newest first, with the workout it
+was opened from and a two-tap delete that takes the messages with it — or starts a new one.
+When a response carries a `pumpy` credit meter (`plan`, `day`, `month`, each cap possibly
+null for unlimited), Settings shows the day and month counts and the composer adds a quiet
+line once either allowance falls under a fifth; every field is optional and nothing new
+appears while the server omits them. `PUMPY_MARK` in `app.ts` is the placeholder art and its
+single swap point.
 
 ### Source layout
 
