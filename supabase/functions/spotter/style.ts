@@ -24,6 +24,8 @@ export const STYLE = String.raw`<style>
     --e-out: cubic-bezier(.22,.9,.3,1);
     --e-spring: cubic-bezier(.32,.72,0,1);
     --e-soft: cubic-bezier(.4,0,.2,1);
+    /* The curve that was missing: one that LEAVES. Material's emphasized-accelerate. */
+    --e-in: cubic-bezier(.3,0,.8,.15);
     --t-1: 150ms; --t-2: 220ms; --t-3: 320ms; --t-4: 420ms;
   }
   @media (prefers-color-scheme: dark) {
@@ -186,6 +188,9 @@ export const STYLE = String.raw`<style>
   .carditem { background: none; border: none; padding: 0; display: flex; flex-direction: column;
     cursor: pointer; min-width: 0; text-align: left; transition: transform var(--t-2) var(--e-out); }
   .carditem:active { transform: scale(.968); }
+  /* Only a card the grid has never drawn: it used to re-fly the library on every
+     render, including every search keystroke. */
+  .carditem.in { animation: cardin var(--t-4) var(--e-out) both; }
   @keyframes cardin { from { opacity: 0; transform: translateY(14px); } }
   .thumbwrap { position: relative; aspect-ratio: 4 / 5; border-radius: 18px; overflow: hidden;
     background: var(--sand); box-shadow: var(--sh-md); isolation: isolate; }
@@ -237,7 +242,9 @@ export const STYLE = String.raw`<style>
   .thumbwrap.pending .noimg, .thumbwrap.failed .noimg { animation: floaty 3.4s ease-in-out infinite; }
   .thumbwrap.failed { background: var(--sand); }
   .carditem.failed .catpill { color: var(--ember-ink); }
-  .retryline { color: var(--ember-ink); font-weight: 650; }
+  /* An instruction, not a fact: the one card line that must not be cut off. */
+  .retryline { color: var(--ember-ink); font-weight: 650; white-space: normal;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
   .retrybtn { width: 100%; margin: 0 0 14px; padding: 14px; border-radius: 16px; border: none;
     font: inherit; font-weight: 700; cursor: pointer; color: #fff; background: var(--ember);
     box-shadow: var(--sh-md); }
@@ -264,8 +271,12 @@ export const STYLE = String.raw`<style>
   /* ---------- detail overlay ---------- */
   .overlay { position: fixed; inset: 0; z-index: 50; background-color: var(--paper);
     background-image: var(--grain); display: none; overflow-y: auto; -webkit-overflow-scrolling: touch; }
-  .overlay.open { display: block; animation: slideup .34s var(--e-out); }
+  .overlay.open { display: block; animation: slideup var(--t-3) var(--e-out); }
   @keyframes slideup { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+  /* Leaving, in two thirds of the time it took to arrive. */
+  .overlay.closing { display: block; pointer-events: none;
+    animation: slidedown var(--t-2) var(--e-in) both; }
+  @keyframes slidedown { to { transform: translateY(18px); opacity: 0; } }
   .dtop { position: sticky; top: 0; z-index: 5; display: flex; align-items: center;
     justify-content: space-between; gap: 8px;
     padding: calc(10px + env(safe-area-inset-top)) 14px 10px;
@@ -384,6 +395,13 @@ export const STYLE = String.raw`<style>
     padding: 8px 20px calc(26px + env(safe-area-inset-bottom));
     animation: sheetup .38s var(--e-spring); }
   @keyframes sheetup { from { transform: translateY(100%); } }
+  /* It arrived over 380ms and vanished in one frame. An exit asks less of the eye:
+     same path back, 220ms, accelerating. */
+  .sheet.closing { display: flex; pointer-events: none;
+    animation: fadeout var(--t-2) var(--e-soft) both; }
+  .sheet.closing .sheetbody { animation: sheetdown var(--t-2) var(--e-in) both; }
+  @keyframes fadeout { to { opacity: 0; } }
+  @keyframes sheetdown { to { transform: translateY(100%); } }
   .grabber { width: 38px; height: 4px; border-radius: 999px; background: var(--line-2);
     margin: 6px auto 16px; }
   .sheetbody h2 { font-family: var(--display); font-size: 20px; font-weight: 700; margin: 0 0 6px;
@@ -478,6 +496,8 @@ export const STYLE = String.raw`<style>
     pointer-events: none; transition: opacity var(--t-2), transform var(--t-2) var(--e-out);
     box-shadow: var(--sh-lg); max-width: 88vw; text-align: center; }
   #toast.show { opacity: 1; transform: translate(-50%, 0); }
+  /* Scenery normally, and must not eat a tap. The resume offer is the exception. */
+  #toast.tappable { pointer-events: auto; cursor: pointer; }
 
   /* ---------- tab bar ---------- */
   .tabbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; display: flex;
@@ -497,6 +517,16 @@ export const STYLE = String.raw`<style>
     width: 30px; height: 30px; margin-left: -15px; border-radius: 999px; background: var(--card);
     box-shadow: var(--sh-md); display: flex; align-items: center; justify-content: center;
     opacity: 0; pointer-events: none; color: var(--ember); font-size: 15px; }
+  /* Only on release: while the finger is down a transition puts it behind the thumb. */
+  #ptr.back { transition: opacity var(--t-2) var(--e-soft), transform var(--t-3) var(--e-out); }
+
+  /* ---------- one entrance, reused ----------
+     viewIn() in app.ts always existed and never did anything: it re-triggered an
+     entrance nothing declared, so every view switch, empty state and exercise
+     change snapped. Only the arriving screen animates; holding the outgoing one
+     back would delay the answer to a tap. */
+  .viewin { animation: viewin var(--t-3) var(--e-out); }
+  @keyframes viewin { from { opacity: 0; transform: translateY(7px); } }
 
   /* ---------- plan ---------- */
   .view { display: none; padding: 4px 18px 30px; }
@@ -535,7 +565,10 @@ export const STYLE = String.raw`<style>
   .chartcard h3 { font-family: var(--display); font-size: 12px; font-weight: 700; letter-spacing: .11em;
     text-transform: uppercase; color: var(--muted); margin: 0 0 14px; }
   .chartcard svg { display: block; width: 100%; height: auto; overflow: visible; }
-  .bar { fill: var(--ember); }
+  /* Out of the axis rather than already there. */
+  .bar { fill: var(--ember); transform-box: fill-box; transform-origin: bottom;
+    animation: growy var(--t-4) var(--e-out); }
+  @keyframes growy { from { transform: scaleY(0); } }
   .bar.dim { fill: var(--line-2); }
   .axis { fill: var(--muted); font-size: 9px; font-weight: 600; font-family: var(--sans); }
   .prrow, .histrow { display: flex; align-items: center; gap: 11px; padding: 11px 0;
@@ -550,7 +583,9 @@ export const STYLE = String.raw`<style>
   .mgrow .lbl { width: 82px; flex: 0 0 auto; font-size: 11.5px; color: var(--ink-2); font-weight: 600;
     text-transform: capitalize; }
   .mgbar { flex: 1; height: 8px; border-radius: 999px; background: var(--sand); overflow: hidden; }
-  .mgbar i { display: block; height: 100%; border-radius: 999px; background: var(--ember); }
+  .mgbar i { display: block; height: 100%; border-radius: 999px; background: var(--ember);
+    transform-origin: left; animation: growx var(--t-4) var(--e-out); }
+  @keyframes growx { from { transform: scaleX(0); } }
   .mgrow .num { width: 26px; text-align: right; font-size: 11.5px; color: var(--muted);
     font-variant-numeric: tabular-nums; font-weight: 600; }
   .monthhead { font-family: var(--display); font-size: 12px; font-weight: 700; letter-spacing: .11em;
@@ -614,6 +649,8 @@ export const STYLE = String.raw`<style>
     background-image: radial-gradient(140% 90% at 50% -10%, var(--ember-soft), transparent 62%), var(--grain);
     display: none; flex-direction: column; }
   #workout.open { display: flex; animation: fadein var(--t-3) var(--e-soft); }
+  #workout.closing { display: flex; pointer-events: none;
+    animation: fadeout var(--t-2) var(--e-in) both; }
   .wtop { display: flex; align-items: center; justify-content: space-between; gap: 10px;
     padding: calc(10px + env(safe-area-inset-top)) 16px 6px; }
   .wclock { font-family: var(--display); font-size: 14px; font-weight: 700; color: var(--muted);
@@ -634,12 +671,20 @@ export const STYLE = String.raw`<style>
   .setpills { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 22px 0 6px; }
   .setpill { border: 1px solid var(--line-2); background: var(--card); border-radius: 14px;
     padding: 10px 13px; min-width: 74px; font-size: 12px; color: var(--muted); font-weight: 600;
-    line-height: 1.3; transition: transform var(--t-1) var(--e-out); }
+    line-height: 1.3; transition: transform var(--t-1) var(--e-out),
+      background-color var(--t-2) var(--e-soft), border-color var(--t-2) var(--e-soft),
+      color var(--t-2) var(--e-soft); }
   .setpill:active { transform: scale(.94); }
   .setpill b { display: block; font-family: var(--display); font-size: 15px; color: var(--ink);
     font-weight: 700; margin-bottom: 2px; font-variant-numeric: tabular-nums; }
   .setpill.done { background: var(--ember); border-color: var(--ember); color: var(--on-ember); }
   .setpill.done b { color: var(--on-ember); }
+  /* The most-repeated tap in the app, and one an iOS PWA cannot answer with a buzz
+     (Safari has no Navigator.vibrate), so the picture carries the whole receipt. */
+  .setpill.just { animation: setpop var(--t-3) var(--e-out); }
+  @keyframes setpop { 0% { transform: scale(.9); } 55% { transform: scale(1.05); } }
+  /* They were two full-width blocks in a column flex. They are a row. */
+  .wactions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 18px; }
   .wbottom { display: flex; align-items: center; justify-content: space-between; gap: 10px;
     padding: 10px 16px calc(14px + env(safe-area-inset-bottom)); }
   .wnav { border: none; background: var(--sand); color: var(--ink); border-radius: 999px;
@@ -652,9 +697,14 @@ export const STYLE = String.raw`<style>
     transition: transform var(--t-1) var(--e-out); }
   .wfinish:active { transform: scale(.978); }
   .resttimer { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 16px;
-    font-size: 13px; font-weight: 650; color: var(--ember-ink); }
-  .resttimer .ring { width: 34px; height: 34px; border-radius: 999px; border: 3px solid var(--ember-soft);
-    border-top-color: var(--ember); animation: spin 1s linear infinite; }
+    font-size: 13px; font-weight: 650; color: var(--ember-ink);
+    animation: viewin var(--t-2) var(--e-out); }
+  /* The app knows how long a rest is, so the ring reports what is left of it. */
+  .resttimer .ring { position: relative; width: 34px; height: 34px; border-radius: 999px;
+    background: conic-gradient(var(--ember) calc(var(--rest, 1) * 1turn), var(--ember-soft) 0); }
+  .resttimer .ring::after { content: ""; position: absolute; inset: 3.5px; border-radius: 999px;
+    background: var(--paper); }
+  .resttimer.gone { animation: fadeout var(--t-2) var(--e-in) both; }
   .stepper { display: flex; align-items: center; gap: 12px; justify-content: center; margin: 14px 0; }
   .stepper button { width: 46px; height: 46px; border-radius: 999px; border: 1px solid var(--line-2);
     background: var(--card); color: var(--ink); font-size: 20px; line-height: 1; }
@@ -688,6 +738,9 @@ export const STYLE = String.raw`<style>
   #pumpyview.open { display: flex; flex-direction: column;
     min-height: calc(100vh - var(--pumpytop, 130px) - var(--ptab, 78px));
     min-height: calc(100dvh - var(--pumpytop, 130px) - var(--ptab, 78px)); }
+  /* Opacity only: the composer inside is sticky, and a transform on its ancestor
+     would take it along for the ride. */
+  #pumpyview.viewin { animation-name: fadeonly; }
   body.app.pumpy { padding-bottom: var(--ptab, calc(78px + env(safe-area-inset-bottom))); }
   #pumpylog { display: flex; flex-direction: column; gap: 10px; padding: 6px 0 14px; flex: 1 1 auto;
     min-height: 0; }
@@ -715,6 +768,9 @@ export const STYLE = String.raw`<style>
   .msg.pumpy { background: var(--card); border: 1px solid var(--line); box-shadow: var(--sh-sm);
     border-bottom-left-radius: 6px; color: var(--ink); }
   .msg.typing { color: var(--muted); letter-spacing: .2em; }
+  /* Only a turn the log has not shown: the thread is rebuilt every render. */
+  .msgin { animation: msgin var(--t-3) var(--e-out); }
+  @keyframes msgin { from { opacity: 0; transform: translateY(9px); } }
   .proposal { background: var(--card); border: 1.5px solid var(--ember); border-radius: 18px; padding: 14px 16px 12px;
     box-shadow: var(--sh-md); }
   .proposal h4 { font-family: var(--display); font-size: 11px; font-weight: 700; letter-spacing: .13em;
@@ -729,8 +785,12 @@ export const STYLE = String.raw`<style>
   .proposal .pline b { color: var(--ink); font-weight: 650; }
   .proposal .btnrow { margin-top: 12px; }
   .proposal .btnrow .btn { padding: 12px; font-size: 14.5px; }
-  .proposal .done { color: var(--good); font-weight: 700; font-size: 13px; margin-top: 10px; }
-  .proposal .declined { color: var(--muted); font-size: 13px; margin-top: 10px; }
+  /* Into the space the two buttons left, not onto where they were. */
+  .proposal .done { color: var(--good); font-weight: 700; font-size: 13px; margin-top: 10px;
+    animation: donein var(--t-3) var(--e-out); }
+  .proposal .declined { color: var(--muted); font-size: 13px; margin-top: 10px;
+    animation: donein var(--t-3) var(--e-out); }
+  @keyframes donein { from { opacity: 0; transform: translateY(-5px); } }
   .composer { position: sticky; bottom: var(--ptab, calc(78px + env(safe-area-inset-bottom)));
     padding: 8px 0 10px;
     background: color-mix(in srgb, var(--paper) 90%, transparent);
@@ -769,6 +829,29 @@ export const STYLE = String.raw`<style>
   .threadnone { font-size: 13.5px; color: var(--muted); padding: 10px 0 4px; line-height: 1.6; }
   .setnote { font-size: 12.5px; color: var(--muted); line-height: 1.5; padding: 0 0 12px; margin-top: -4px; }
 
+  /* ---------- reach ----------
+     Apple asks for 44px; several controls are drawn smaller because the row they
+     sit in is. Only the hit area grows, and every inset is capped at the gap to the
+     next control — a delete that steals the edge of the title beside it is worse
+     than a small delete. An inset is measured from the padding box, so a bordered
+     control needs one more pixel a side than a bare one. Heights reached: 38/40 ->
+     44 for the icon buttons, 26 -> 38 exhelp, 30 -> 44 planx, 34.5 -> 44.5 mbtn,
+     37.5 -> 45.5 planadd and addex, 31 -> 43 filter chip, 22 -> 36 the Pumpy x. */
+  .iconbtn, .addbtn, .exhelp, .planx, .planadd, .mbtn, .addex, .danger,
+  .chips .chip, .pumpyctx button, .threadrow .tdel { position: relative; }
+  .iconbtn::after, .addbtn::after, .exhelp::after, .planx::after, .planadd::after,
+  .mbtn::after, .addex::after, .danger::after, .chips .chip::after,
+  .pumpyctx button::after, .threadrow .tdel::after { content: ""; position: absolute; }
+  .iconbtn::after { inset: -3px; }
+  .addbtn::after { inset: -2px; }
+  .exhelp::after { inset: -7px -6px; }
+  .planx::after { inset: -7px -4px; }
+  .planadd::after, .addex::after { inset: -5px 0; }
+  .mbtn::after { inset: -6px 0; }
+  .danger::after, .threadrow .tdel::after { inset: -3px 0; }
+  .chips .chip::after { inset: -6px 0; }
+  .pumpyctx button::after { inset: -7px; }
+
   /* ---------- install hint ---------- */
   #hint { margin: 12px 18px 0; background: var(--card); border: 1px solid var(--line);
     border-radius: 16px; padding: 13px 15px; font-size: 13px; line-height: 1.55; color: var(--ink-2);
@@ -777,5 +860,23 @@ export const STYLE = String.raw`<style>
   #hint b { color: var(--ink); }
   #hint button { background: none; border: none; color: var(--muted); font-size: 17px; padding: 0 2px;
     line-height: 1; flex: 0 0 auto; }
+
+  /* ---------- reduced motion, answered in one place ----------
+     Apple's instruction is not "remove the feedback" but "replace transitions in
+     x, y and z with fades": entrances keep their opacity and lose their travel,
+     decorative loops stop, and the loops that carry information stay. */
+  @keyframes fadeonly { from { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) {
+    .viewin, .carditem.in, .msgin, .bodyfig, .resttimer, .overlay.open,
+    .proposal .done, .proposal .declined {
+      animation-name: fadeonly; animation-duration: var(--t-2); animation-delay: 0ms; }
+    .overlay.closing, .sheet.closing, #workout.closing, .resttimer.gone {
+      animation: fadeout var(--t-1) var(--e-soft) both; }
+    .sheetbody, .sheet.closing .sheetbody, .setpill.just, .mgbar i, .bar,
+    .empty .big, .thumbwrap.pending .noimg, .thumbwrap.failed .noimg,
+    .thumbwrap.loading::after, .thumbwrap.pending::after { animation: none; }
+    .thumbwrap img { transition: none; }
+    #ptr.back { transition-duration: var(--t-1); }
+  }
 </style>
 `;

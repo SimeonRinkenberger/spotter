@@ -37,17 +37,24 @@ export const APP = String.raw`
   function toast(msg) {
     var t = $("toast");
     t.textContent = msg;
+    // Scenery by default; only offerResume opts back in.
+    t.onclick = null;
+    t.classList.remove("tappable");
     t.classList.add("show");
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(function () { t.classList.remove("show"); }, 2800);
+    toastTimer = setTimeout(function () {
+      t.classList.remove("show");
+      t.classList.remove("tappable");
+      t.onclick = null;
+    }, 2800);
   }
 
-  // Re-trigger an entrance animation on a node we are reusing.
+  // Re-trigger the shared entrance on a node we are reusing: clear, reflow, set.
   function viewIn(node) {
     if (!node) return;
-    node.style.animation = "none";
+    node.classList.remove("viewin");
     void node.offsetWidth;
-    node.style.animation = "";
+    node.classList.add("viewin");
   }
 
   function esc(s) { return String(s === null || s === undefined ? "" : s); }
@@ -336,9 +343,11 @@ export const APP = String.raw`
     return out;
   }
 
+  // The chip row as drawn: everything about it except which chip is lit.
+  var chipSig = null;
+
   function renderChips() {
     var wrap = $("chips");
-    wrap.innerHTML = "";
     var counts = {}, favs = 0;
     state.workouts.forEach(function (w) {
       counts[w.category] = (counts[w.category] || 0) + 1;
@@ -356,6 +365,20 @@ export const APP = String.raw`
     if (state.workouts.length) list.push({ key: "__newcol", label: "＋ Collection", n: null });
     CATEGORIES.forEach(function (c) { if (counts[c]) list.push({ key: c, label: c, n: counts[c] }); });
 
+    // The chips have carried a 220ms transition on their lit state that never once
+    // ran: render() threw every chip away, and a new node cannot transition from a
+    // value it never held. When the row is unchanged the buttons are kept.
+    var sig = list.map(function (i) { return i.key + "" + i.label + "" + i.n; }).join("");
+    var kids = wrap.children;
+    if (sig === chipSig && kids.length === list.length) {
+      for (var k = 0; k < list.length; k++) {
+        kids[k].classList.toggle("active", state.filter === list[k].key);
+      }
+      return;
+    }
+    chipSig = sig;
+    wrap.innerHTML = "";
+
     list.forEach(function (item) {
       var b = el("button", "chip" + (state.filter === item.key ? " active" : ""));
       b.appendChild(document.createTextNode(item.label));
@@ -364,6 +387,8 @@ export const APP = String.raw`
         if (item.key === "__newcol") { openCollections(null); return; }
         state.filter = item.key;
         render();
+        // One cross-fade of the grid, rather than re-flying every card in it.
+        viewIn($("grid"));
       };
       wrap.appendChild(b);
     });
@@ -406,10 +431,30 @@ export const APP = String.raw`
     return bits.join(" · ");
   }
 
+  // Which workouts the grid has drawn once, and how many cards this pass are new.
+  // renderGrid runs on every search keystroke and every render(), and used to fly
+  // every card in from below each time.
+  var seenCards = {};
+  var newThisPass = 0;
+
+  function cardIn(card, id) {
+    if (seenCards[id]) return;
+    seenCards[id] = 1;
+    card.classList.add("in");
+    // By new cards, not grid position: one card landing into the eleventh slot
+    // should not wait a quarter second for its turn.
+    card.style.animationDelay = Math.min(newThisPass++, 10) * 26 + "ms";
+    card.addEventListener("animationend", function () {
+      card.classList.remove("in");
+      card.style.animationDelay = "";
+    });
+  }
+
   function renderGrid() {
     var grid = $("grid"), empty = $("empty");
     var items = visible();
     grid.innerHTML = "";
+    newThisPass = 0;
 
     if (!items.length) {
       grid.classList.add("hide");
@@ -439,10 +484,7 @@ export const APP = String.raw`
     items.forEach(function (w, i) {
       var pending = isPending(w), failed = isFailed(w);
       var card = el("button", "carditem" + (pending ? " pending" : "") + (failed ? " failed" : ""));
-      card.style.animation = "cardin .42s cubic-bezier(.22,.9,.3,1) both";
-      card.style.animationDelay = Math.min(i, 10) * 26 + "ms";
-      // fill:both keeps every animation registered forever; clear it once it has run
-      card.addEventListener("animationend", function () { card.style.animation = ""; });
+      cardIn(card, w.id);
 
       var tw = el("div", "thumbwrap loading");
       if (pending || failed) {
@@ -475,6 +517,12 @@ export const APP = String.raw`
           tw.classList.remove("loading");
           tw.appendChild(el("div", "noimg", "🏋️"));
         };
+        // Cached, which is every render after the first: a skeleton for a wait
+        // already over is the flicker skeletons exist to prevent.
+        if (img.complete && img.naturalWidth) {
+          tw.classList.remove("loading");
+          tw.classList.add("loaded");
+        }
         tw.appendChild(img);
       } else {
         tw.classList.remove("loading");
@@ -575,6 +623,9 @@ export const APP = String.raw`
   // is already on the history stack and pushing again would need two back gestures.
   function openDetail(w, keepHistory) {
     current = w;
+    // Reopened mid-close: cancel it, and the embed teardown queued behind it.
+    clearTimeout(detailCloseTimer);
+    $("detail").classList.remove("closing");
     var d = $("dinner");
     d.innerHTML = "";
 
@@ -936,10 +987,20 @@ export const APP = String.raw`
     });
   }
 
+  var detailCloseTimer = null;
+
   function closeDetail() {
-    $("detail").classList.remove("open");
-    $("dinner").innerHTML = "";   // stop the embedded video
+    var d = $("detail");
+    if (!d.classList.contains("open")) return;
+    d.classList.remove("open");
+    d.classList.add("closing");
     current = null;
+    clearTimeout(detailCloseTimer);
+    // The embed is torn out at the end: emptying it first animates a blank page out.
+    detailCloseTimer = setTimeout(function () {
+      d.classList.remove("closing");
+      if (!d.classList.contains("open")) $("dinner").innerHTML = "";
+    }, 240);
   }
 
   function patchWorkout(w, fields) {
@@ -2094,6 +2155,8 @@ export const APP = String.raw`
     if (!wo.entries.length) {
       wo.entries = [{ name: "Freestyle", canonical_id: null, block: 0, exercise: 0, sets: [] }];
     }
+    clearTimeout(woCloseTimer);
+    $("workout").classList.remove("closing");
     $("workout").classList.add("open");
     acquireWake();
     renderWorkout();
@@ -2154,6 +2217,9 @@ export const APP = String.raw`
   function renderWorkout() {
     if (!wo) return;
     var main = $("wmain"), dots = $("wdots");
+    // The running rest belonged to the screen being replaced: its ring went with it
+    // while its interval carried on and announced a rest already left.
+    clearInterval(restTimer);
     main.innerHTML = "";
     dots.innerHTML = "";
 
@@ -2192,27 +2258,33 @@ export const APP = String.raw`
 
     renderSetPills(main, entry, s.ex);
 
+    // A row, not two full-width blocks: .wmain is a column flex, so these stretched.
+    var acts = el("div", "wactions");
     var help = el("button", "chip", "? How to do this");
-    help.style.marginTop = "18px";
     help.onclick = function () { explain(s.ex.name, wo.workout.title); };
-    main.appendChild(help);
+    acts.appendChild(help);
     var swapChip = el("button", "chip", "⇄ Swap or modify");
-    swapChip.style.marginTop = "18px";
-    swapChip.style.marginLeft = "8px";
     swapChip.onclick = function () { openSwap(s.ex.name, wo.workout.title); };
-    main.appendChild(swapChip);
+    acts.appendChild(swapChip);
+    main.appendChild(acts);
 
     viewIn(main);
   }
+
+  // The set logged a moment ago, consumed once by the render that follows: the pill
+  // is rebuilt, not transitioned, so this is what says the tap landed.
+  var justSet = -1;
 
   function renderSetPills(main, entry, ex) {
     var target = ex && ex.sets ? ex.sets : Math.max(entry.sets.length + 1, 1);
     var pills = el("div", "setpills");
     var count = Math.max(target, entry.sets.length + (entry.sets.length >= target ? 1 : 0));
+    var just = justSet;
+    justSet = -1;
     for (var i = 0; i < count; i++) {
       (function (idx) {
         var done = entry.sets[idx];
-        var p = el("button", "setpill" + (done ? " done" : ""));
+        var p = el("button", "setpill" + (done ? " done" : "") + (idx === just ? " just" : ""));
         var b = el("b", null, done
           ? (done.reps + (done.weight ? " × " + done.weight : ""))
           : "Set " + (idx + 1));
@@ -2261,31 +2333,40 @@ export const APP = String.raw`
     };
     saveDraft();
     closeSheet("setsheet");
+    justSet = setCtx.idx;
     renderWorkout();
     var s = wo.screens[wo.i];
     if (s && s.ex && s.ex.rest_seconds) startRest(s.ex.rest_seconds);
   }
 
+  // The ring reports how much of the rest is left rather than spinning, and runs
+  // off the clock rather than its own ticks, which drift over a long rest.
   function startRest(seconds) {
     clearInterval(restTimer);
-    var left = seconds;
     var main = $("wmain");
     var box = el("div", "resttimer");
     var ring = el("div", "ring");
-    var label = el("span", null, "Rest " + left + "s");
+    var label = el("span", null, "Rest " + seconds + "s");
+    ring.style.setProperty("--rest", "1");
     box.appendChild(ring);
     box.appendChild(label);
     main.appendChild(box);
+    var total = seconds * 1000;
+    var until = Date.now() + total;
     restTimer = setInterval(function () {
-      left--;
+      // The screen this rest belonged to is gone. Stop, and say nothing.
+      if (!box.parentNode) { clearInterval(restTimer); return; }
+      var left = until - Date.now();
       if (left <= 0) {
         clearInterval(restTimer);
-        if (box.parentNode) box.parentNode.removeChild(box);
+        box.classList.add("gone");
+        setTimeout(function () { if (box.parentNode) box.parentNode.removeChild(box); }, 240);
         toast("Rest done — next set.");
         return;
       }
-      label.textContent = "Rest " + left + "s";
-    }, 1000);
+      ring.style.setProperty("--rest", String(left / total));
+      label.textContent = "Rest " + Math.ceil(left / 1000) + "s";
+    }, 100);
   }
 
   function woGo(delta) {
@@ -2323,13 +2404,20 @@ export const APP = String.raw`
     });
   }
 
+  var woCloseTimer = null;
+
   function exitWorkout() {
     clearInterval(woTimer);
     clearInterval(restTimer);
     releaseWake();
     clearDraft();
     wo = null;
-    $("workout").classList.remove("open");
+    var n = $("workout");
+    if (!n.classList.contains("open")) return;
+    n.classList.remove("open");
+    n.classList.add("closing");
+    clearTimeout(woCloseTimer);
+    woCloseTimer = setTimeout(function () { n.classList.remove("closing"); }, 260);
   }
 
   function offerResume() {
@@ -2343,8 +2431,16 @@ export const APP = String.raw`
     var any = (d.entries || []).some(function (e) { return e.sets && e.sets.length; });
     if (!any) { clearDraft(); return; }
     toast("Tap to resume " + (d.title || "your workout"));
+    // The toast is pointer-events: none, so this one said "tap to resume" and could
+    // not be tapped. It opts in for its own 2.8 seconds.
     var t = $("toast");
-    t.onclick = function () { t.onclick = null; startWorkout(w, d); };
+    t.classList.add("tappable");
+    t.onclick = function () {
+      t.onclick = null;
+      t.classList.remove("tappable");
+      t.classList.remove("show");
+      startWorkout(w, d);
+    };
   }
 
   // ---------- plan ----------
@@ -2826,6 +2922,7 @@ export const APP = String.raw`
     pumpy.messages = [];
     pumpy.ctx = null;
     pumpy.loaded = true;
+    pumpy.shownCount = 0;
     renderPumpy();
   }
 
@@ -2900,6 +2997,7 @@ export const APP = String.raw`
     pumpy.thread = { id: t.id, title: t.title, updated_at: t.updated_at, workout_id: t.workout_id };
     pumpy.messages = [];
     pumpy.loaded = true;
+    pumpy.shownCount = 0;
     // The thread already knows which card it was opened from; say so, so the
     // context line matches the row the user just tapped.
     pumpy.ctx = t.workout_id
@@ -3010,9 +3108,17 @@ export const APP = String.raw`
       hello.appendChild(q);
       log.appendChild(hello);
     }
-    shown.forEach(function (m) { log.appendChild(renderMsg(m)); });
+    // Only what the log has not shown rises in: the thread is rebuilt every render,
+    // so animating every bubble would replay the conversation on each answer.
+    var before = pumpy.shownCount || 0;
+    shown.forEach(function (m, i) {
+      var node = renderMsg(m);
+      if (before && i >= before) node.classList.add("msgin");
+      log.appendChild(node);
+    });
+    pumpy.shownCount = shown.length;
     if (pumpy.busy) {
-      var row = el("div", "msgrow");
+      var row = el("div", "msgrow msgin");
       row.appendChild(pumpyMark("pmark"));
       row.appendChild(el("div", "msg pumpy typing", "•••"));
       log.appendChild(row);
@@ -3163,9 +3269,29 @@ export const APP = String.raw`
   }
 
   // ---------- sheets ----------
+  //
+  // Opening was animated; closing was one frame of display:none. Both ends now run,
+  // and "open" is dropped the instant a close begins, not when it ends — every
+  // overlayShowing() and popstate test here asks whether a sheet is open.
 
-  function openSheet(id) { $(id).classList.add("open"); }
-  function closeSheet(id) { $(id).classList.remove("open"); }
+  var closeTimers = {};
+
+  function openSheet(id) {
+    var n = $(id);
+    clearTimeout(closeTimers[id]);
+    n.classList.remove("closing");
+    n.classList.add("open");
+  }
+
+  function closeSheet(id) {
+    var n = $(id);
+    if (!n.classList.contains("open")) return;
+    n.classList.remove("open");
+    n.classList.add("closing");
+    clearTimeout(closeTimers[id]);
+    // A timer, not animationend: a sheet reopened mid-close never fires one.
+    closeTimers[id] = setTimeout(function () { n.classList.remove("closing"); }, 260);
+  }
 
   ["addsheet", "setsheet", "exsheet", "exeditsheet", "explainsheet", "picksheet", "settingssheet",
    "colsheet", "renamesheet", "swapsheet", "pumpysheet", "capsheet"]
@@ -3477,12 +3603,17 @@ export const APP = String.raw`
 
     var titles = { library: "Spotter", plan: "Plan", progress: "Progress", pumpy: "Pumpy" };
     $("apptitle").textContent = titles[v] || "Spotter";
-    if (lib) { render(); }
+    // The library is a header, a chip row and a grid, so the grid carries its switch.
+    if (lib) { render(); viewIn($("grid")); }
     if (v === "plan") { $("count").textContent = "This week"; loadPlan(); }
     if (v === "progress") { $("count").textContent = "Your numbers, every session"; loadLogs().then(renderProgress); }
     // Measure before the first render, so the column is the right height even on
     // the open that has to wait for the thread to come back from the database.
-    if (v === "pumpy") { $("count").textContent = "Your coach"; sizePumpy(); loadPumpy(); return; }
+    if (v === "pumpy") {
+      $("count").textContent = "Your coach";
+      sizePumpy(); loadPumpy(); viewIn($("pumpyview"));
+      return;
+    }
     window.scrollTo(0, 0);
   }
 
@@ -3502,6 +3633,7 @@ export const APP = String.raw`
     if (dy <= 0) { ptrPulling = false; $("ptr").style.opacity = 0; return; }
     var d = Math.min(dy * 0.45, 80);
     var p = $("ptr");
+    p.classList.remove("back");
     p.style.opacity = Math.min(d / 55, 1);
     p.style.transform = "translateY(" + d + "px) rotate(" + d * 4 + "deg)";
   }, { passive: true });
@@ -3511,6 +3643,8 @@ export const APP = String.raw`
     ptrPulling = false;
     var p = $("ptr");
     var d = parseFloat(p.style.opacity || "0");
+    // Only now: while the finger was down it had to sit exactly under the thumb.
+    p.classList.add("back");
     p.style.opacity = 0;
     p.style.transform = "";
     if (d >= 1) { state.logs = null; load(); toast("Refreshed"); }
@@ -3695,9 +3829,11 @@ export const APP = String.raw`
   // one history entry per overlay, so the phone back gesture closes it
   window.addEventListener("popstate", function () {
     if ($("workout").classList.contains("open")) { exitWorkout(); return; }
-    if (document.querySelectorAll(".sheet.open").length) {
-      var open = document.querySelectorAll(".sheet.open");
-      for (var i = 0; i < open.length; i++) open[i].classList.remove("open");
+    var open = document.querySelectorAll(".sheet.open");
+    if (open.length) {
+      // Through closeSheet, so the back gesture closes a sheet the same way its
+      // own scrim does rather than blinking it out of existence.
+      for (var i = 0; i < open.length; i++) closeSheet(open[i].id);
       return;
     }
     if ($("detail").classList.contains("open")) closeDetail();
