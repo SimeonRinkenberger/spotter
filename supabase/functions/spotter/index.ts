@@ -312,15 +312,31 @@ const LIMIT_CORRECTIONS = Number(Deno.env.get("LIMIT_CORRECTIONS") ?? "500");
 // free path — a thinner card, never a failed save.
 const DAILY_SPEND_USD = Number(Deno.env.get("DAILY_SPEND_USD") ?? "5");
 
-// USD per 1,000,000 tokens, [input, output]. A provider priced at zero is a free
-// tier: it is never gated by the ceiling, and it is what the ceiling falls back to.
-// Env-overridable because prices change and a key can move off a free tier without
-// a single line of this file changing.
-const PRICES: Record<string, [number, number]> = {
-  openai: [Number(Deno.env.get("PRICE_OPENAI_IN") ?? "0.20"), Number(Deno.env.get("PRICE_OPENAI_OUT") ?? "1.20")],
-  anthropic: [Number(Deno.env.get("PRICE_ANTHROPIC_IN") ?? "1.00"), Number(Deno.env.get("PRICE_ANTHROPIC_OUT") ?? "5.00")],
-  gemini: [Number(Deno.env.get("PRICE_GEMINI_IN") ?? "0"), Number(Deno.env.get("PRICE_GEMINI_OUT") ?? "0")],
-  groq: [Number(Deno.env.get("PRICE_GROQ_IN") ?? "0"), Number(Deno.env.get("PRICE_GROQ_OUT") ?? "0")],
+// USD per 1,000,000 tokens, [input, output, cached input]. A provider priced at
+// zero is a free tier: it is never gated by the ceiling, and it is what the
+// ceiling falls back to. Env-overridable because prices change and a key can move
+// off a free tier without a single line of this file changing.
+//
+// The third number is what an input token costs when the provider served it from
+// its own prompt cache. Both paid providers discount a repeated prompt prefix to
+// a tenth of the input price, and the defaults here are that tenth — 0.02 against
+// OpenAI's 0.20, 0.10 against Anthropic's 1.00. That ratio is an assumption, not
+// a quote: it is the standard cached-input discount at the time of writing, and
+// if either price page says otherwise, correct it with PRICE_OPENAI_CACHED_IN /
+// PRICE_ANTHROPIC_CACHED_IN rather than editing this file.
+const PRICES: Record<string, [number, number, number]> = {
+  openai: [
+    Number(Deno.env.get("PRICE_OPENAI_IN") ?? "0.20"),
+    Number(Deno.env.get("PRICE_OPENAI_OUT") ?? "1.20"),
+    Number(Deno.env.get("PRICE_OPENAI_CACHED_IN") ?? "0.02"),
+  ],
+  anthropic: [
+    Number(Deno.env.get("PRICE_ANTHROPIC_IN") ?? "1.00"),
+    Number(Deno.env.get("PRICE_ANTHROPIC_OUT") ?? "5.00"),
+    Number(Deno.env.get("PRICE_ANTHROPIC_CACHED_IN") ?? "0.10"),
+  ],
+  gemini: [Number(Deno.env.get("PRICE_GEMINI_IN") ?? "0"), Number(Deno.env.get("PRICE_GEMINI_OUT") ?? "0"), 0],
+  groq: [Number(Deno.env.get("PRICE_GROQ_IN") ?? "0"), Number(Deno.env.get("PRICE_GROQ_OUT") ?? "0"), 0],
 };
 
 // ---------- background worker ----------
@@ -443,7 +459,11 @@ function secretEquals(a: string, b: string): boolean {
 // default 8,000-token ceiling only ever pays for a model that runs away.
 type AiCtx = { purpose: string; userId: string | null; maxOut?: number };
 
-type Usage = { inTok: number; outTok: number };
+// `cachedTok` is the part of `inTok` the provider says it served from its prompt
+// cache. A SUBSET of inTok, never an addition to it — every adapter normalises to
+// that meaning, whatever shape the provider reports. Undefined means "the provider
+// said nothing", which prices identically to zero.
+type Usage = { inTok: number; outTok: number; cachedTok?: number };
 
 /** The caller's output cap when they set one, otherwise the caller-supplied default. */
 function outCap(ctx: AiCtx, dflt: number): number {
@@ -455,9 +475,10 @@ function approxTokens(s: string): number {
   return Math.ceil(s.length / 4);
 }
 
-function priceFor(provider: string): [number, number] {
+function priceFor(provider: string): [number, number, number] {
   const p = PRICES[provider];
-  return p && Number.isFinite(p[0]) && Number.isFinite(p[1]) ? p : [0, 0];
+  if (!p || !Number.isFinite(p[0]) || !Number.isFinite(p[1])) return [0, 0, 0];
+  return [p[0], p[1], Number.isFinite(p[2]) ? p[2] : 0];
 }
 
 /** A provider is "paid" iff someone configured a price for it. */
@@ -466,9 +487,26 @@ function isPaidProvider(provider: string): boolean {
   return i > 0 || o > 0;
 }
 
+// Cached input is billed separately and much cheaper, so a prompt whose static
+// half the provider already has is a fraction of the price of the same prompt
+// sent cold. Clamped both ways: a provider that reported more cached tokens than
+// input tokens (it should not) bills everything at the cached rate rather than
+// crediting the day's spend with a negative number.
 function estimateCost(provider: string, u: Usage): number {
-  const [pin, pout] = priceFor(provider);
-  return (u.inTok / 1_000_000) * pin + (u.outTok / 1_000_000) * pout;
+  const [pin, pout, pcached] = priceFor(provider);
+  const cached = cachedPart(u);
+  const fresh = Math.max(0, u.inTok - cached);
+  return (fresh / 1_000_000) * pin +
+    (cached / 1_000_000) * pcached +
+    (u.outTok / 1_000_000) * pout;
+}
+
+/** The reported cached tokens, clamped into [0, inTok]. */
+function cachedPart(u: Usage): number {
+  const c = Number(u.cachedTok);
+  if (!Number.isFinite(c) || c <= 0) return 0;
+  const inTok = Number.isFinite(u.inTok) ? Math.max(0, u.inTok) : 0;
+  return Math.min(c, inTok);
 }
 
 // Today's spend, memoised briefly. Read before every paid call, so it has to be
@@ -492,6 +530,33 @@ async function spendToday(): Promise<number> {
   }
 }
 
+/**
+ * What share of today's input tokens the providers served from their own prompt
+ * caches, 0-100, or null when there is nothing to divide by. Global rather than
+ * per-user, like the spend figures, and best effort throughout: this is a number
+ * to look at, not one anything depends on, so a view that has not been migrated
+ * in yet is a null and never a failed /api/limits.
+ */
+async function cachePctToday(): Promise<number | null> {
+  try {
+    // ai_cost_daily buckets its `day` in UTC, and so does the spend ceiling, so an
+    // ISO date string is the whole filter this needs.
+    const day = new Date().toISOString().slice(0, 10);
+    const rows = await dbSelect("ai_cost_daily", `select=input_tokens,cached_tokens&day=gte.${day}`);
+    let inTok = 0;
+    let cached = 0;
+    for (const r of rows) {
+      inTok += Number(r?.input_tokens) || 0;
+      cached += Number(r?.cached_tokens) || 0;
+    }
+    if (!(inTok > 0)) return null;
+    return Math.max(0, Math.min(100, Math.round((100 * cached) / inTok)));
+  } catch (e) {
+    console.warn("cache_pct_today unavailable —", e);
+    return null;
+  }
+}
+
 /** False once the day's estimated spend has crossed the ceiling. */
 async function paidAllowed(): Promise<boolean> {
   if (!(DAILY_SPEND_USD > 0)) {
@@ -507,6 +572,10 @@ async function paidAllowed(): Promise<boolean> {
   return false;
 }
 
+// Said once per isolate, not once per call: a missing column is a deploy-ordering
+// state, and a line per model call would bury the log it is trying to warn in.
+let warnedNoCachedColumn = false;
+
 /**
  * One row per model call. This is what gives the ceiling something to read, and
  * it is deliberately awaited rather than fired and forgotten: a save is allowed to
@@ -516,17 +585,39 @@ async function recordCost(
   provider: string, model: string, ctx: AiCtx, u: Usage, ok: boolean,
 ): Promise<void> {
   const est = estimateCost(provider, u);
+  const row: Record<string, unknown> = {
+    user_id: ctx.userId,
+    provider, model, purpose: ctx.purpose,
+    input_tokens: u.inTok, output_tokens: u.outTok,
+    cached_tokens: cachedPart(u),
+    est_cost_usd: Number(est.toFixed(6)),
+    ok,
+  };
   try {
-    await dbInsert("ai_cost_log", {
-      user_id: ctx.userId,
-      provider, model, purpose: ctx.purpose,
-      input_tokens: u.inTok, output_tokens: u.outTok,
-      est_cost_usd: Number(est.toFixed(6)),
-      ok,
-    });
+    await dbInsert("ai_cost_log", row);
     if (est > 0) spendCache = null;   // a paid call invalidates the memoised total
+    return;
   } catch (e) {
-    console.error("ai_cost_log insert failed", provider, model, e);
+    // `cached_tokens` arrives in a migration, and a deploy can land on either side
+    // of it. Losing the row would be the worse failure of the two — a ledger with
+    // holes in it is not a ceiling — so a schema-cache complaint about exactly
+    // this column costs one retry without it, and says so once per isolate.
+    if (!String(e).includes("cached_tokens")) {
+      console.error("ai_cost_log insert failed", provider, model, e);
+      return;
+    }
+    if (!warnedNoCachedColumn) {
+      warnedNoCachedColumn = true;
+      console.warn("ai_cost_log has no cached_tokens column yet — logging without it until the migration lands");
+    }
+  }
+  const legacy = { ...row };
+  delete legacy.cached_tokens;
+  try {
+    await dbInsert("ai_cost_log", legacy);
+    if (est > 0) spendCache = null;
+  } catch (e2) {
+    console.error("ai_cost_log insert failed (retried without cached_tokens)", provider, model, e2);
   }
 }
 
@@ -822,6 +913,11 @@ async function openaiGenerate(system: string, user: string, wantJson: boolean, c
     const usage: Usage = {
       inTok: Number(data?.usage?.prompt_tokens) || approxTokens(system + user),
       outTok: Number(data?.usage?.completion_tokens) || approxTokens(out ?? ""),
+      // OpenAI caches long prompt prefixes on its own and reports how much of this
+      // call's prompt came out of that cache. `prompt_tokens` already counts these,
+      // so it is a subset — which is why the static half of a prompt is worth
+      // putting first. Absent on a short prompt or an older model: then it is 0.
+      cachedTok: Number(data?.usage?.prompt_tokens_details?.cached_tokens) || 0,
     };
     await recordCost("openai", model, ctx, usage, !!out);
     return { text: out, by: out ? "openai:" + model : null, usage };
@@ -1731,9 +1827,19 @@ async function parseWithClaude(system: string, user: string, ctx: AiCtx): Promis
     if (!r.ok) { console.error("anthropic", r.status, await r.text()); return NOTHING; }
     const data = await r.json();
     const out = data.content?.map((c: { text?: string }) => c.text ?? "").join("") ?? null;
+    // Anthropic splits the prompt three ways and, unlike OpenAI, keeps the cache
+    // figures OUT of `input_tokens`. Fold them back in so `inTok` means the same
+    // thing for every provider — every input token, with `cachedTok` the subset
+    // that was cheap. Cache WRITES are billed at 1.25x and are counted here at the
+    // plain input price, a knowing 25% undercount on the write itself; both
+    // numbers are zero today, because this adapter sends no cache_control
+    // breakpoints and Anthropic's cache is opt-in.
+    const cacheRead = Number(data?.usage?.cache_read_input_tokens) || 0;
+    const cacheWrite = Number(data?.usage?.cache_creation_input_tokens) || 0;
     const usage: Usage = {
-      inTok: Number(data?.usage?.input_tokens) || approxTokens(system + user),
+      inTok: (Number(data?.usage?.input_tokens) || approxTokens(system + user)) + cacheRead + cacheWrite,
       outTok: Number(data?.usage?.output_tokens) || approxTokens(out ?? ""),
+      cachedTok: cacheRead,
     };
     await recordCost("anthropic", model, ctx, usage, !!out);
     return { text: out, by: out ? "anthropic:" + model : null, usage };
@@ -4562,6 +4668,9 @@ Deno.serve(async (req: Request) => {
       // project's bill, and it is the one number that has to be visible from
       // outside the logs when extraction quietly drops to the free path.
       const spent = await spendToday();
+      // How much of today's input the providers billed at the cached rate. Null
+      // when there is nothing to divide by, or when the rollup cannot be read.
+      const cachePct = await cachePctToday();
       // Pumpy's credits, in exactly the shape the chat route returns, so the app
       // has one thing to render whichever call it heard from last.
       const meter = await pumpyMeter(userId);
@@ -4573,6 +4682,7 @@ Deno.serve(async (req: Request) => {
         limit_chat: LIMIT_CHAT,
         spend_today: Number(spent.toFixed(4)), spend_limit: DAILY_SPEND_USD,
         paid_enabled: DAILY_SPEND_USD > 0 && spent < DAILY_SPEND_USD,
+        cache_pct_today: cachePct,
         pumpy: pumpyBlock(meter),
       }, 200, cors);
     }
