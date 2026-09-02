@@ -94,7 +94,19 @@ clamped to a smaller wrong number.
 1:30 Goblet Squat` is parsed and handed to the extractor as a clearly-labelled source, with
 each exercise's timestamp recorded. A card whose exercises trace *only* to chapter lines is
 capped below the gate, because "Intro / Warm up / Outro" reads as a perfectly plausible
-workout and is not one.
+workout and is not one. The cap is not enough on its own — a distrusted card still lists
+those headings as movements to perform — so an exercise that traces to a chapter line, is
+named like furniture (`Warm up`, `Workout`, `Cool Down & Stretch`, `Outro`) and carries no
+sets, reps or duration of its own is deleted rather than scored, and the count lands in the
+card's components as `dropped_chapter_junk`. Anything written out in real caption or
+description text is left alone however it is named: "Warm up set 3x10" is an instruction.
+
+**A reprocess never lowers the score either.** When a re-run comes back thinner, the merge
+pulls blocks forward from the saved card — and blocks saved before evidence existed carry
+none, so re-scoring them would measure the schema they were written under rather than the
+card. The saved score is kept in that case (`merge_kept_old_score`), a card that predates
+scoring stays unscored rather than being given a number, and where the old blocks do carry
+evidence the better of the two scores wins.
 
 **Vision runs in its own isolate.** Reading a carousel slide means base64-encoding an image,
 which is expensive enough to exhaust the edge runtime's CPU budget — it killed a worker in

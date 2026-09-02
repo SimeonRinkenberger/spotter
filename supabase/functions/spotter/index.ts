@@ -29,8 +29,8 @@ import { CATALOG, type CatalogEntry, canonicalize, catalogById } from "./catalog
 import { assertPublicUrl, dnsAvailable, safeFetch } from "./net.ts";
 import {
   attachEvidence, carouselEvidence, chapterExerciseCount, type Chapter,
-  type Confidence, correctUnitErrors, type Evidence, indexSource, parseChapters,
-  scoreCard, type SourceIndex,
+  type Confidence, correctUnitErrors, dropChapterJunk, type Evidence,
+  indexSource, mergeConfidence, parseChapters, scoreCard, type SourceIndex,
 } from "./evidence.ts";
 
 // Whether the DNS half of the SSRF guard is live here. The static checks always
@@ -1174,8 +1174,14 @@ type Card = {
   blocks: Block[];
   source_url?: string | null;
   // Computed from observables about the evidence — never reported by a model.
-  confidence?: number;
-  confidence_parts?: Record<string, number>;
+  // Null when the card carries a score that was never computed: a reprocess that
+  // pulled pre-scoring blocks forward keeps their missing number rather than
+  // inventing one. See mergeConfidence in evidence.ts.
+  confidence?: number | null;
+  // The five weighted parts, plus flags recording what the pipeline did to this
+  // card — `dropped_chapter_junk`, `merge_kept_old_score` — which is why the
+  // values are not all numbers.
+  confidence_parts?: Record<string, number | boolean>;
   confidence_notes?: string[];
   // "openai:gpt-5.6-luna", "vision:gemini-3.6-flash", "heuristic". What to look at
   // when deciding which cached cards are worth re-running.
@@ -1949,8 +1955,23 @@ function aliasesFor(ex: { canonical_id?: string | null }): string[] {
 function scoreAndStamp(card: Card, meta: Meta, platform: string, heuristicCount: number): Confidence {
   const src: SourceIndex = indexSource(meta.caption, sourceKind(platform));
   attachEvidence(card, src, aliasesFor);
-  // Evidence earning its keep: a claim that contradicts the line it was traced to
-  // is repaired against that line before anything is scored or stored.
+  // Evidence earning its keep, twice over. Both of these run before the score, so
+  // what is scored is what will be stored and shown, not an earlier draft of it.
+  //
+  // First: a chapter heading listed as a movement is deleted rather than scored.
+  // The chapters-only cap marks such a card as untrustworthy and leaves it telling
+  // the user to perform "Warm up / Workout / Cool Down & Stretch"; a score cannot
+  // answer "what is this card asking me to do", and three headings is a wrong
+  // answer to that question at any score.
+  const junk = dropChapterJunk(card);
+  if (junk.length) {
+    console.log("dropped chapter junk:", junk.length, "—", junk.join(", "));
+    // A card with nothing left does not have a full workout in it, whatever the
+    // extractor thought before the headings came out.
+    if (!card.blocks.length) card.has_full_workout = false;
+  }
+  // Second: a claim that contradicts the line it was traced to is repaired against
+  // that line.
   const repairs = correctUnitErrors(card, src);
   for (const r of repairs) console.log("unit fix:", r);
   const c = scoreCard(card, {
@@ -1960,8 +1981,15 @@ function scoreAndStamp(card: Card, meta: Meta, platform: string, heuristicCount:
     mediaSeconds: meta.seconds ?? null,
   });
   card.confidence = c.score;
-  card.confidence_parts = c.parts as unknown as Record<string, number>;
-  card.confidence_notes = c.notes;
+  const parts: Record<string, number | boolean> = { ...c.parts };
+  // Recorded on the card rather than only in the log, so Phase 2 can separate "this
+  // card had two exercises" from "this card had two exercises after three headings
+  // were deleted". Absent means none were dropped.
+  if (junk.length) parts.dropped_chapter_junk = junk.length;
+  card.confidence_parts = parts;
+  card.confidence_notes = junk.length
+    ? [...c.notes, `dropped ${junk.length} chapter heading(s) listed as exercises`]
+    : c.notes;
   return c;
 }
 
@@ -2018,10 +2046,17 @@ async function buildCard(
 // empty, and silently wiping a good workout would be the worst possible bug.
 function mergeNoDowngrade(old: any, next: Card, meta: Meta, platform: string): Card {
   const out: Card = { ...next };
+  let tookOldBlocks = false;
   if (!next.blocks.length && Array.isArray(old.blocks) && old.blocks.length) {
     out.blocks = old.blocks;
     out.has_full_workout = !!old.has_full_workout;
+    tookOldBlocks = true;
   }
+  // Read BEFORE scoreAndStamp: out.blocks and old.blocks are the same objects, and
+  // attachEvidence writes an evidence field onto every one of them. A moment later
+  // this question has no answer.
+  const oldHadEvidence = tookOldBlocks && (old.blocks as any[]).some((b: any) =>
+    (b?.exercises ?? []).some((ex: any) => ex?.evidence && ex.evidence.source !== "none"));
   if (out.category === "Other" && old.category && old.category !== "Other") out.category = old.category;
   if (!out.muscle_groups.length && old.muscle_groups?.length) out.muscle_groups = old.muscle_groups;
   if (!out.equipment.length && old.equipment?.length) out.equipment = old.equipment;
@@ -2038,7 +2073,32 @@ function mergeNoDowngrade(old: any, next: Card, meta: Meta, platform: string): C
   // The score has to describe what actually survived the merge. Carrying the
   // re-run's number over a card whose blocks came back from the old row would be
   // reporting a measurement of something that was thrown away.
-  scoreAndStamp(out, meta, platform, countExercises(heuristicWorkout(meta.caption, "x", sourceKind(platform))));
+  const c = scoreAndStamp(out, meta, platform, countExercises(heuristicWorkout(meta.caption, "x", sourceKind(platform))));
+  // …and re-scoring blocks that came back from the old row can only be read as a
+  // measurement when those blocks carry evidence. Blocks stored before CARD_V 6
+  // have none, so the re-score would report a collapse that describes the schema
+  // they were written under, not the card. mergeConfidence decides which number
+  // survives, on the same principle as the blocks above: a reprocess never makes
+  // the card worse, and that has to include the number attached to it.
+  const merged = mergeConfidence(
+    old.confidence === null || old.confidence === undefined ? null : Number(old.confidence),
+    (old.confidence_parts ?? null) as Record<string, number | boolean> | null,
+    { score: c.score, parts: out.confidence_parts ?? {} },
+    tookOldBlocks,
+    oldHadEvidence,
+  );
+  out.confidence = merged.score;
+  out.confidence_parts = merged.parts;
+  if (tookOldBlocks && merged.score !== c.score) {
+    out.confidence_notes = [
+      ...(out.confidence_notes ?? []),
+      merged.score === null
+        ? `left unscored: the saved card predates scoring and its blocks came back unchanged (the re-score would have said ${c.score})`
+        : `kept the saved card's score ${merged.score} over the re-score ${c.score}: its blocks are what survived the merge`,
+    ];
+    console.log("merge kept the stored score", merged.score ?? "(none)", "over", c.score,
+      oldHadEvidence ? "(old blocks had evidence)" : "(old blocks predate evidence)");
+  }
   return out;
 }
 
@@ -2387,8 +2447,13 @@ function qualityColumns(card: Card, meta: Meta): Record<string, unknown> {
     confidence: typeof card.confidence === "number" ? card.confidence : null,
     extracted_by: card.extracted_by ?? null,
     evidence_pct: all.length ? Math.round(100 * verified / all.length) : null,
+    // Chapter headings deleted as fake exercises still count as chapters having
+    // contributed to this card. Reading only the surviving exercises would report
+    // `false` for exactly the cards that answer the open question — whether
+    // chapters help, or mostly produce plausible-and-wrong output.
     chapters_used: (meta.chapters?.length ?? 0) > 0 &&
-      all.some((e) => e.evidence?.source === "chapters"),
+      (all.some((e) => e.evidence?.source === "chapters") ||
+        !!card.confidence_parts?.dropped_chapter_junk),
   };
 }
 
