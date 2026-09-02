@@ -32,6 +32,46 @@ enable_confirmations = false
 enroll_enabled = true
 verify_enabled = true
 
+# ---------- Sign in with Google / Apple ----------
+# LEFT COMMENTED ON PURPOSE. `supabase config push` writes whatever is here to the
+# live project, so an uncommented block with an empty client_id would switch the
+# provider on with no credentials behind it — and the sign-in screen paints its
+# button off exactly this state (GET /auth/v1/settings, the "external" map). Enable
+# these only when the credentials exist.
+#
+# Two ways to turn a provider on, and only one of them belongs in git:
+#   - Dashboard -> Authentication -> Providers. Nothing to commit, the secret never
+#     leaves Supabase. This is the recommended route and the one README describes.
+#   - Uncomment below, export SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET (and the Apple
+#     one) in the shell, then `supabase config push`. The secret stays in the
+#     environment; only the reference to it is committed.
+#
+# client_id does NOT accept env() substitution — it is a public identifier and is
+# meant to be readable. The same value goes into PUBLIC_AUTH in
+# supabase/functions/spotter/app.ts so the browser can run the in-page token flow.
+# Full setup steps: README, "Sign in with Google / Apple".
+#
+# [auth.external.google]
+# enabled = true
+# # Google Cloud Console -> Credentials -> OAuth client ID (Web application).
+# client_id = ""
+# secret = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET)"
+# # Leave unset: the callback is https://mtzevoxxpsktmrbbuxva.supabase.co/auth/v1/callback
+# redirect_uri = ""
+# url = ""
+# # Leave false. The page sends a nonce with every id_token and gotrue must check it.
+# skip_nonce_check = false
+#
+# [auth.external.apple]
+# enabled = true
+# # The Apple *Services ID* (e.g. com.example.spotter.web), not the App ID.
+# client_id = ""
+# # The client-secret JWT signed with the .p8 key — expires, six months maximum.
+# secret = "env(SUPABASE_AUTH_EXTERNAL_APPLE_SECRET)"
+# redirect_uri = ""
+# url = ""
+# skip_nonce_check = false
+
 [functions.spotter]
 enabled = true
 verify_jwt = false
