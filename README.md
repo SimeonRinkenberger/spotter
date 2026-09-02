@@ -40,7 +40,8 @@ Browser (GitHub Pages, docs/index.html)
                         ├─ POST /api/ingest ──► enqueue, return in ~200ms
                         ├─ POST /api/worker/tick ──► claim jobs, extract in the background
                         │    └──► Instagram / TikTok / YouTube, then Gemini → Groq
-                        └─ POST /api/worker/vision ──► one carousel slide, own isolate
+                        ├─ POST /api/worker/vision ──► one carousel slide, own isolate
+                        └─ POST /api/worker/probe ──► one-off measurement, wired into nothing
 
 pg_cron ──every minute──► pg_net ──► /api/worker/tick     (backstop for a lost kick)
 pg_cron ──every 5 min───► sweep_ingest_jobs()             (unstick a dead worker)
@@ -309,10 +310,11 @@ when nothing has run yet).
 
 | Platform | Caption source | Status |
 |---|---|---|
-| Instagram | og: tags via the `facebookexternalhit` UA, plus the `/embed/captioned/` page | Works. Carousel slides are read with vision only when the caption yields nothing. |
+| Instagram | og: tags via the `facebookexternalhit` UA, plus the `/embed/captioned/` page | Works. Carousel slides are read with vision only when the caption yields nothing. The crawler UA is not optional: measured 2026-09-02, a desktop or iOS Safari UA gets a login shell with no og: tags **from a residential IP too**, so a phone fetching the page must send the crawler UA. |
 | TikTok | oEmbed, then `/embed/v2`, then the watch page's rehydration blob, then og: tags | Works. Verified 200 on real videos from Supabase's datacenter IPs. og: tags never carry the caption and are only trusted for thumbnail and handle. |
 | YouTube | oEmbed for title/author/thumb, Data API v3 for the description | The description **needs an API key**. Verified 2026-09: from a datacenter IP the watch page returns 429, the WEB player endpoint returns `LOGIN_REQUIRED`, ANDROID/iOS clients fail attestation, and both embedded-player clients error. Set `YOUTUBE_API_KEY` (or enable YouTube Data API v3 on the same Google project as `GEMINI_API_KEY`, which is used as a fallback). |
 | Any web page | og: tags plus page text | Works. |
+| Anything, from a phone | the page HTML the caller POSTs, or a caption they paste | Works, and does not scrape at all. `POST /api/ingest {url, html}` runs the same platform parsers over HTML the phone fetched from a residential IP; `{url, caption}` skips parsing entirely. `meta_source` on `saves_log` records `phone-html` / `user-caption`, so `save_health` shows how much of the mix has moved off the server's own IP. |
 
 ## Self-hosting
 
@@ -339,19 +341,75 @@ when nothing has run yet).
 5. `supabase functions deploy spotter --no-verify-jwt`.
 6. Put your project URL and anon key at the top of `app.ts`, run `node build.mjs`, and
    serve `docs/` (GitHub Pages works: Settings → Pages → main branch, `/docs`).
+7. Auth hardening. `supabase/config.toml` carries TOTP MFA
+   (`[auth.mfa.totp] enroll_enabled/verify_enabled`), which `supabase config push` applies —
+   those two keys are in the published
+   [CLI config reference](https://supabase.com/docs/guides/local-development/cli/config).
+   The other two things the Supabase advisors ask for are **not** in that reference at CLI
+   2.116.0, and the CLI ignores keys it does not know rather than rejecting them, so they
+   have to be set in the dashboard:
+
+   - **Leaked-password protection** (checks new passwords against Have I Been Pwned; Pro plan
+     and above): Dashboard → Authentication → **Sign In / Providers** → Email → turn on
+     **Prevent use of leaked passwords** → Save.
+   - **Password policy**: same page → set **Minimum password length** to at least 10 and
+     **Required characters** to `Lowercase, uppercase letters and digits` or stronger → Save.
+
+   Both are visible afterwards in Advisors → Security, which is where they were flagged.
 
 ## Saving from your phone
 
-Settings in the app shows a personal save address containing your own key. Build a Shortcut:
+Settings in the app shows a personal save address containing your own key. `POST` to it with
+a JSON body:
+
+```json
+{ "url": "https://...", "html": "<optional: the page, already fetched>", "caption": "optional: the text you can see" }
+```
+
+`url` is the only required field. `html` is capped at 2,000,000 characters (413 above that)
+and `caption` at 6,000. Anything supplied is parsed with no network call at all, and only the
+fields still missing afterwards are looked for online.
+
+### Recipe 1 — the simple one
 
 1. **Receive** URLs from the share sheet
 2. **Get Contents of URL** — your address, Method `POST`, Request Body JSON,
    one field `url` set to the Shortcut Input
 3. **Show Result**
 
+### Recipe 2 — the one to build (recommended)
+
+1. **Receive** URLs from the share sheet
+2. **Get Contents of URL** — the shared link, Method `GET`, no body
+3. **Get Contents of URL** — your address, Method `POST`, Request Body JSON, two fields:
+   `url` set to the Shortcut Input, and `html` set to the *Contents of URL* from step 2
+4. **Show Result**
+
+**Instagram needs one extra thing.** Measured 2026-09-02 from a residential IP: Instagram serves
+og: tags only to a link-preview crawler. With Safari's own User-Agent the reel page comes back as
+a 620KB login shell with no og: tags at all, from any IP. So on step 2, add a header
+`User-Agent` = `facebookexternalhit/1.1` (Shortcuts: **Headers** on the Get Contents of URL
+action). TikTok and YouTube need no header — the page a phone gets is already the whole page.
+
+The difference is who fetches the page. In recipe 2 your phone does, over your home Wi-Fi or
+your carrier — a residential IP, which platforms serve normally and do not rate-limit, and
+which is why a YouTube watch page that answers 429 to the server arrives whole on a phone. The
+server then never scrapes anything: it parses what you sent. Step 4 shows `Read from your
+phone` when that path ran, and `Reading the video…` when it fell back to the old one.
+
 Share any reel to it and the workout is in your library before you put the phone down.
 The key is not your password, but it can save to your account — rotate it in Settings if it
 leaks.
+
+### When nothing automated works
+
+Open the card and either **Try reading it again** (on a card that failed) or **Paste the
+caption to improve it** (in the caveat on a card Spotter could not verify). Both open a box:
+copy the workout text off the post, paste it, tap **Read it**. It goes to
+`POST /api/workouts/:id/reprocess` with `{ "caption": "…" }`. A card that had failed goes back
+on the queue with your text already attached to the job; a card that merely scored badly is
+re-read inline, and the never-downgrade merge still applies, so a paste can only make the card
+better than it was.
 
 ## Licence
 

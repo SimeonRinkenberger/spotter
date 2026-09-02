@@ -247,6 +247,20 @@ export const MARKUP_BODY = String.raw`</head>
   </div>
 </div></div>
 
+<div class="sheet" id="capsheet"><div class="sheetbody">
+  <div class="grabber"></div>
+  <h2>Paste the caption</h2>
+  <p class="lede" id="caplede">Copy the workout text from the post and paste it here.</p>
+  <div class="field">
+    <label for="capinput">Caption</label>
+    <textarea id="capinput" rows="8" placeholder="3 rounds&#10;10 goblet squats&#10;12 push ups&#10;15 kettlebell swings" autocapitalize="sentences" autocomplete="off" spellcheck="false"></textarea>
+  </div>
+  <div class="btnrow">
+    <button class="btn ghost" id="capcancel">Cancel</button>
+    <button class="btn" id="capgo">Read it</button>
+  </div>
+</div></div>
+
 <div class="sheet" id="renamesheet"><div class="sheetbody">
   <div class="grabber"></div>
   <h2 id="renametitle">Rename</h2>

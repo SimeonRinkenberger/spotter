@@ -79,6 +79,11 @@ export const STYLE = String.raw`<style>
     font-size: 16px; background: var(--sand); color: var(--ink); outline: none;
     transition: border-color var(--t-2), background-color var(--t-2); }
   .field input:focus { border-color: var(--ember); background: var(--card); }
+  .field textarea { width: 100%; border: 1px solid var(--line); border-radius: 13px; padding: 12px 14px;
+    font-size: 16px; line-height: 1.55; background: var(--sand); color: var(--ink); outline: none;
+    resize: vertical; min-height: 148px;
+    transition: border-color var(--t-2), background-color var(--t-2); }
+  .field textarea:focus { border-color: var(--ember); background: var(--card); }
   .btn { width: 100%; border: none; border-radius: 14px; padding: 14px; font-size: 15.5px;
     font-weight: 650; background: var(--ember); color: var(--on-ember); box-shadow: 0 3px 14px var(--glow);
     transition: transform var(--t-1) var(--e-out), opacity var(--t-2); letter-spacing: -.01em; }
@@ -234,6 +239,10 @@ export const STYLE = String.raw`<style>
     font: inherit; font-weight: 700; cursor: pointer; color: #fff; background: var(--ember);
     box-shadow: var(--sh-md); }
   .retrybtn:disabled { opacity: .55; }
+  /* The second rung under a failed card: quieter than the retry, because it asks
+     the user to do work and the retry does not. */
+  .retrybtn.ghost { background: var(--card); color: var(--ink); border: 1px solid var(--line-2);
+    box-shadow: none; font-weight: 650; }
 
   /* ---------- empty states ---------- */
   .empty { text-align: center; padding: 54px 32px 40px; color: var(--ink-2); }
@@ -349,6 +358,9 @@ export const STYLE = String.raw`<style>
     line-height: 1.5; color: var(--ink-2); background: var(--sand); border: 1px solid var(--line);
     border-radius: 12px; padding: 10px 12px; margin-bottom: 14px; }
   .unverified b { color: var(--ink); font-weight: 650; }
+  .unverified .fixlink { display: inline; background: none; border: 0; padding: 0; margin: 0;
+    font: inherit; color: var(--ember-ink); font-weight: 650; text-decoration: underline;
+    text-underline-offset: 2px; cursor: pointer; }
   .notesarea { width: 100%; border: 1px solid var(--line); border-radius: 13px; padding: 12px;
     font-size: 14px; line-height: 1.55; background: var(--sand); color: var(--ink); outline: none;
     resize: vertical; min-height: 78px; }
