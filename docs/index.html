@@ -501,6 +501,19 @@
   .monthhead { font-family: var(--display); font-size: 12px; font-weight: 700; letter-spacing: .11em;
     text-transform: uppercase; color: var(--muted); margin: 20px 0 8px; }
 
+  /* ---------- body diagram ----------
+     The figure is currentColor at low opacity so it reads on paper and on graphite
+     alike; the highlights are the one accent, at an opacity that scales with how
+     many exercises hit that region. */
+  .bodywrap { display: flex; justify-content: center; gap: 18px; padding: 4px 0 2px; color: var(--ink); }
+  .bodyfig { flex: 0 1 132px; min-width: 0; text-align: center; }
+  .bodyfig svg.body { display: block; width: 100%; height: auto; overflow: visible; }
+  .bodylbl { font-size: 9.5px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--muted); margin-top: 6px; }
+  .bodylegend { margin: 12px 0 8px; justify-content: center; }
+  .bodylegend .pill .n { opacity: .6; font-size: 10.5px; margin-left: 5px; font-variant-numeric: tabular-nums; }
+  .bodynote { font-size: 12px; color: var(--muted); text-align: center; line-height: 1.5; margin: 10px 0 8px; }
+
   /* ---------- workout mode ---------- */
   #workout { position: fixed; inset: 0; z-index: 80; background-color: var(--paper);
     background-image: radial-gradient(140% 90% at 50% -10%, var(--ember-soft), transparent 62%), var(--grain);
@@ -1438,6 +1451,28 @@
     start.onclick = function () { startWorkout(w); };
     d.appendChild(start);
 
+    // What this hits: catalog muscles through canonical_id, nothing else. Filled
+    // in once the catalog map is here, which after the first card is immediate.
+    if (exN) {
+      var hits = el("div", "sect");
+      hits.appendChild(el("h3", null, "What this hits"));
+      var slot = el("div");
+      hits.appendChild(slot);
+      hits.appendChild(el("div", null, " "));
+      d.appendChild(hits);
+      loadCatalog().then(function () {
+        if (!current || current.id !== w.id) return;
+        var r = countsFromExercises(allExercises(w));
+        slot.innerHTML = "";
+        slot.appendChild(bodyDiagram(r.counts,
+          "None of these exercises matched Spotter's catalog yet, so nothing is highlighted."));
+        if (r.mapped && r.mapped < r.total) {
+          slot.appendChild(el("div", "bodynote",
+            (r.total - r.mapped) + " of " + r.total + " exercises are not in the catalog and are not shown."));
+        }
+      });
+    }
+
     (w.blocks || []).forEach(function (b, bi) {
       var sect = el("div", "sect");
       sect.appendChild(el("h3", null, "Block " + (bi + 1)));
@@ -1926,6 +1961,145 @@
         toast("Deleted " + c.name + " — its workouts are still in your library.");
       });
     });
+  }
+
+  // ---------- body diagram ----------
+  //
+  // Two silhouettes as inline SVG, regions keyed to the catalog's muscle vocabulary.
+  // What lights up is derived ONLY from exercise_catalog.muscle_groups through each
+  // exercise's canonical_id — never from the card's free-text muscle list and never
+  // from an exercise name. A movement the catalog does not know highlights nothing,
+  // and says so. The figure is currentColor; highlights are the accent.
+
+  var MUSCLE_LIST = ["chest", "back", "shoulders", "biceps", "triceps", "forearms",
+    "core", "glutes", "quads", "hamstrings", "calves"];
+
+  var BODY_BASE =
+    '<g fill="currentColor" opacity=".13">' +
+    '<circle cx="50" cy="15" r="11"/>' +
+    '<rect x="45" y="24" width="10" height="9"/>' +
+    '<path d="M30 32 H70 Q74 32 74 37 L71 82 Q69 108 60 112 H40 Q31 108 29 82 L26 37 Q26 32 30 32 Z"/>' +
+    '<path d="M27 35 L17 40 L13 72 L22 74 L29 52 Z"/>' +
+    '<path d="M13 72 L22 74 L19 106 L10 105 Z"/>' +
+    '<circle cx="14" cy="111" r="4.5"/>' +
+    '<path d="M73 35 L83 40 L87 72 L78 74 L71 52 Z"/>' +
+    '<path d="M87 72 L78 74 L81 106 L90 105 Z"/>' +
+    '<circle cx="86" cy="111" r="4.5"/>' +
+    '<path d="M34 110 H50 L49 162 L36 162 Z"/>' +
+    '<path d="M36 162 H49 L47 208 L38 208 Z"/>' +
+    '<path d="M37 208 H48 L50 215 H34 Z"/>' +
+    '<path d="M50 110 H66 L64 162 L51 162 Z"/>' +
+    '<path d="M51 162 H64 L62 208 L53 208 Z"/>' +
+    '<path d="M52 208 H63 L66 215 H50 Z"/>' +
+    '</g>';
+
+  var BODY_REGIONS = {
+    front: {
+      chest: '<path d="M32 37 L50 36 V56 Q41 59 33 54 Z"/><path d="M68 37 L50 36 V56 Q59 59 67 54 Z"/>',
+      shoulders: '<ellipse cx="25" cy="40" rx="8" ry="6.5"/><ellipse cx="75" cy="40" rx="8" ry="6.5"/>',
+      biceps: '<path d="M20 45 L28 47 L25 70 L16 68 Z"/><path d="M80 45 L72 47 L75 70 L84 68 Z"/>',
+      forearms: '<path d="M14 74 L21 76 L19 104 L12 103 Z"/><path d="M86 74 L79 76 L81 104 L88 103 Z"/>',
+      core: '<path d="M40 58 H60 L59 108 H41 Z"/>',
+      quads: '<path d="M36 113 H49 L48 158 H38 Z"/><path d="M51 113 H64 L62 158 H52 Z"/>',
+      calves: '<path d="M39 166 H47 L46 204 H40 Z"/><path d="M53 166 H61 L60 204 H54 Z"/>'
+    },
+    back: {
+      back: '<path d="M30 34 H70 L66 86 Q50 94 34 86 Z"/>',
+      shoulders: '<ellipse cx="25" cy="40" rx="8" ry="6.5"/><ellipse cx="75" cy="40" rx="8" ry="6.5"/>',
+      triceps: '<path d="M20 45 L28 47 L25 70 L16 68 Z"/><path d="M80 45 L72 47 L75 70 L84 68 Z"/>',
+      forearms: '<path d="M14 74 L21 76 L19 104 L12 103 Z"/><path d="M86 74 L79 76 L81 104 L88 103 Z"/>',
+      glutes: '<path d="M35 96 H65 Q66 116 50 118 Q34 116 35 96 Z"/>',
+      hamstrings: '<path d="M36 120 H49 L48 160 H38 Z"/><path d="M51 120 H64 L62 160 H52 Z"/>',
+      calves: '<path d="M38 164 H48 L47 202 H39 Z"/><path d="M52 164 H62 L61 202 H53 Z"/>'
+    }
+  };
+
+  // weights: muscle -> 0..1. Region opacity scales with it, from a clear floor so
+  // a muscle hit once still reads, up to full accent for the most-hit one.
+  function bodyFigure(view, weights) {
+    var regions = BODY_REGIONS[view];
+    var html = '<svg class="body" viewBox="0 0 100 220" role="img" aria-label="' + view + ' of body">' + BODY_BASE;
+    Object.keys(regions).forEach(function (m) {
+      var wgt = weights[m] || 0;
+      html += '<g class="mg" data-m="' + m + '" fill="var(--ember)" opacity="' +
+        (wgt ? (0.3 + 0.7 * wgt).toFixed(2) : "0") + '">' + regions[m] + '</g>';
+    });
+    html += '</svg>';
+    var fig = el("div", "bodyfig");
+    fig.innerHTML = html;   // constant markup: nothing user-supplied is in it
+    fig.appendChild(el("div", "bodylbl", view));
+    return fig;
+  }
+
+  // counts: muscle -> how many exercises hit it. "full body" is spread over every
+  // region rather than drawn as its own.
+  function bodyWeights(counts) {
+    var fb = counts["full body"] || 0;
+    var max = fb;
+    MUSCLE_LIST.forEach(function (m) { max = Math.max(max, (counts[m] || 0) + fb); });
+    var w = {};
+    if (!max) return w;
+    MUSCLE_LIST.forEach(function (m) {
+      var n = (counts[m] || 0) + fb;
+      if (n) w[m] = Math.min(1, n / max);
+    });
+    return w;
+  }
+
+  function bodyDiagram(counts, emptyText) {
+    var box = el("div");
+    var wrap = el("div", "bodywrap");
+    var w = bodyWeights(counts);
+    wrap.appendChild(bodyFigure("front", w));
+    wrap.appendChild(bodyFigure("back", w));
+    box.appendChild(wrap);
+    var names = Object.keys(counts).filter(function (m) { return counts[m] > 0; })
+      .sort(function (a, b) { return counts[b] - counts[a]; });
+    if (!names.length) { box.appendChild(el("div", "bodynote", emptyText)); return box; }
+    var legend = el("div", "pillrow bodylegend");
+    names.forEach(function (m) {
+      var p = el("span", "pill accent", m);
+      p.appendChild(el("span", "n", String(counts[m])));
+      legend.appendChild(p);
+    });
+    box.appendChild(legend);
+    return box;
+  }
+
+  // The catalog's id -> muscle_groups map, read once per session. Every signed-in
+  // user may read the catalog; it is reference data, not theirs or anyone's.
+  var catalogMuscles = null;
+  var catalogLoading = null;
+
+  function loadCatalog() {
+    if (catalogMuscles) return Promise.resolve(catalogMuscles);
+    if (catalogLoading) return catalogLoading;
+    catalogLoading = sb.from("exercise_catalog").select("id,muscle_groups").limit(1000).then(function (r) {
+      catalogMuscles = {};
+      (r.data || []).forEach(function (e) { catalogMuscles[e.id] = e.muscle_groups || []; });
+      catalogLoading = null;
+      return catalogMuscles;
+    });
+    return catalogLoading;
+  }
+
+  // list: anything carrying canonical_id — a card's exercises or a log's entries.
+  function countsFromExercises(list) {
+    var counts = {}, mapped = 0, total = 0;
+    list.forEach(function (e) {
+      total++;
+      var ms = e && e.canonical_id && catalogMuscles ? catalogMuscles[e.canonical_id] : null;
+      if (!ms) return;
+      mapped++;
+      ms.forEach(function (m) { counts[m] = (counts[m] || 0) + 1; });
+    });
+    return { counts: counts, mapped: mapped, total: total };
+  }
+
+  function allExercises(w) {
+    var out = [];
+    (w.blocks || []).forEach(function (b) { (b.exercises || []).forEach(function (e) { out.push(e); }); });
+    return out;
   }
 
   // ---------- AI helpers ----------
@@ -2455,6 +2629,27 @@
       row.appendChild(c);
     });
     v.appendChild(row);
+
+    // What you've hit this week, from the sessions actually logged: each logged
+    // entry carries the canonical_id it was started with, and the catalog says
+    // which muscles that is. Intensity is how many logged exercises hit a region.
+    var monday = ymd(mondayOf(new Date()));
+    var weekLogs = logs.filter(function (l) { return weekKey(l.started_at) === monday; });
+    var hit = el("div", "chartcard");
+    hit.appendChild(el("h3", null, "What you've hit this week"));
+    var hitSlot = el("div");
+    hit.appendChild(hitSlot);
+    v.appendChild(hit);
+    loadCatalog().then(function () {
+      if (state.view !== "progress") return;
+      var entries = [];
+      weekLogs.forEach(function (l) { (l.entries || []).forEach(function (e) { entries.push(e); }); });
+      var r = countsFromExercises(entries);
+      hitSlot.innerHTML = "";
+      hitSlot.appendChild(bodyDiagram(r.counts, weekLogs.length
+        ? "This week's logged exercises are not in the catalog, so nothing is highlighted."
+        : "Nothing logged this week yet."));
+    });
 
     // weekly volume bars, last 8 weeks
     var buckets = [];

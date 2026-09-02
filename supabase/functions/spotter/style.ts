@@ -483,6 +483,19 @@ export const STYLE = String.raw`<style>
   .monthhead { font-family: var(--display); font-size: 12px; font-weight: 700; letter-spacing: .11em;
     text-transform: uppercase; color: var(--muted); margin: 20px 0 8px; }
 
+  /* ---------- body diagram ----------
+     The figure is currentColor at low opacity so it reads on paper and on graphite
+     alike; the highlights are the one accent, at an opacity that scales with how
+     many exercises hit that region. */
+  .bodywrap { display: flex; justify-content: center; gap: 18px; padding: 4px 0 2px; color: var(--ink); }
+  .bodyfig { flex: 0 1 132px; min-width: 0; text-align: center; }
+  .bodyfig svg.body { display: block; width: 100%; height: auto; overflow: visible; }
+  .bodylbl { font-size: 9.5px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--muted); margin-top: 6px; }
+  .bodylegend { margin: 12px 0 8px; justify-content: center; }
+  .bodylegend .pill .n { opacity: .6; font-size: 10.5px; margin-left: 5px; font-variant-numeric: tabular-nums; }
+  .bodynote { font-size: 12px; color: var(--muted); text-align: center; line-height: 1.5; margin: 10px 0 8px; }
+
   /* ---------- workout mode ---------- */
   #workout { position: fixed; inset: 0; z-index: 80; background-color: var(--paper);
     background-image: radial-gradient(140% 90% at 50% -10%, var(--ember-soft), transparent 62%), var(--grain);
