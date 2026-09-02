@@ -242,12 +242,12 @@ check("junk: no exercises left", junkCard.blocks.reduce((n, b) => n + b.exercise
 check("junk: the emptied block is removed too", junkCard.blocks.length === 0,
   JSON.stringify(junkCard.blocks));
 
-// The limit of the rule, pinned rather than hidden. A description titled
-// "20 MINUTE WORKOUT" gives the heading "Workout" an exact match in written text,
-// and written text is never deleted — so that one survives while the two that
-// traced to chapter lines do not. Deleting it would mean deleting an exercise the
-// description literally contains, which is a bigger licence than this is worth;
-// the chapters-only cap still lands on the card.
+// The same card under the title YouTube actually ships. ytMeta hands over
+// `title + "\n\n" + description`, so line 0 is the video's own name — and a video
+// called "20 MINUTE WORKOUT" gives the heading "Workout" an exact written match
+// there, which outranks the chapter line it really came from. A title is not a
+// prescription, so on a chapter card that match is worth no more than the chapter
+// line: all three still go.
 const TITLED_DESC = ["20 MINUTE WORKOUT", "", "0:00 Warm up", "3:00 Workout", "17:00 Cool down"].join("\n");
 const titledCard = {
   duration_minutes: 20,
@@ -260,10 +260,47 @@ const titledCard = {
     ],
   }],
 };
-const titledRun = stampJunk(titledCard, indexSource(TITLED_DESC, "description"));
-check("junk: a heading matched in the title line is written text, and survives",
-  titledRun.dropped.length === 2 && titledCard.blocks[0].exercises.length === 1,
-  JSON.stringify(titledRun.dropped));
+const titledSrc = indexSource(TITLED_DESC, "description");
+check("junk: 'Workout' really does match the title line, not the chapter line",
+  locate(titledSrc, "Workout")?.i === 0, "matched line " + locate(titledSrc, "Workout")?.i);
+const titledRun = stampJunk(titledCard, titledSrc);
+check("junk: a heading matching only the video's title drops with the rest",
+  titledRun.dropped.length === 3, JSON.stringify(titledRun.dropped));
+check("junk: nothing survives that card", titledCard.blocks.length === 0,
+  JSON.stringify(titledCard.blocks));
+
+// The control for that rule. Same title, but the description also writes the
+// workout out. What is prescribed in the body is kept — the title line is the only
+// written line that counts for nothing, and only for names that carry no dose.
+const BODY_DESC = [
+  "20 MINUTE WORKOUT",
+  "",
+  "Workout: 3 rounds of 10 goblet squats",
+  "",
+  "0:00 Warm up",
+  "3:00 Workout",
+  "17:00 Cool down",
+].join("\n");
+const bodyCard = {
+  duration_minutes: 20,
+  blocks: [{
+    rounds: 3, rest_seconds: null,
+    exercises: [
+      { name: "Warm up", canonical_id: null, sets: null, reps: null, duration_seconds: null, rest_seconds: null },
+      { name: "Goblet Squat", canonical_id: "goblet-squat", sets: 3, reps: "10", duration_seconds: null, rest_seconds: null },
+      { name: "Workout", canonical_id: null, sets: 3, reps: "10", duration_seconds: null, rest_seconds: null },
+    ],
+  }],
+};
+const bodyRun = stampJunk(bodyCard, indexSource(BODY_DESC, "description"));
+const bodyLeft = bodyCard.blocks[0].exercises;
+check("junk: the goblet squat written out in the body is kept",
+  bodyLeft.some((e) => e.name === "Goblet Squat" && e.sets === 3 && e.reps === "10"),
+  JSON.stringify(bodyLeft.map((e) => e.name)));
+check("junk: a furniture name is kept when it carries a dose of its own",
+  bodyLeft.some((e) => e.name === "Workout"), JSON.stringify(bodyLeft.map((e) => e.name)));
+check("junk: only the dose-less heading goes", bodyRun.dropped.length === 1 &&
+  bodyRun.dropped[0] === "Warm up", JSON.stringify(bodyRun.dropped));
 
 // A chapter list of real movements is a chapter list of real movements. It is
 // still capped, and nothing is deleted.
@@ -337,6 +374,23 @@ check("junk: nothing located, on a card with no chapters at all, is kept",
 check("junk: nothing located, on a card that used chapters, is junk",
   isChapterJunkExercise({ name: "Warm up", evidence: { source: "none", line: null, offset: null, quote: null, t: null, slide: null, verified: false } },
     ["chapters", "none"]) === true);
+// The title-line rule, directly. Line 0 is the video's own name; every other
+// written line is the creator saying something.
+const onLine = (line, sources) => isChapterJunkExercise(
+  { name: "Workout", evidence: { source: "description", line, offset: 0, quote: "20 MINUTE WORKOUT", t: null, slide: null, verified: true } },
+  sources,
+);
+check("junk: the title line does not shelter a heading on a chapter card",
+  onLine(0, ["chapters", "description"]) === true);
+check("junk: any other written line does", onLine(3, ["chapters", "description"]) === false);
+check("junk: and the title line is untouched when the card used no chapters",
+  onLine(0, ["description"]) === false);
+check("junk: a title-line match with a dose is kept even on a chapter card",
+  isChapterJunkExercise(
+    { name: "Workout", sets: 3, reps: "10", evidence: { source: "description", line: 0, offset: 0, quote: "20 MINUTE WORKOUT", t: null, slide: null, verified: true } },
+    ["chapters", "description"],
+  ) === false);
+
 check("junk: a real movement is never junk however it was traced",
   isChapterJunkExercise({ name: "Goblet Squat", evidence: { source: "chapters", line: 3, offset: 0, quote: "1:00 Goblet Squat", t: 60, slide: null, verified: true } },
     ["chapters"]) === false);

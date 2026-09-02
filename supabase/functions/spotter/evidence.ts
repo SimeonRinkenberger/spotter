@@ -225,10 +225,22 @@ export function chapterExerciseCount(chapters: Chapter[]): number {
  *      whatever it is called. A chapter's span is not a dose — nothing copies a
  *      timestamp into duration_seconds — so a duration here came from written text.
  *   2. The name is furniture (CHAPTER_JUNK) rather than a movement.
- *   3. It traces to a chapter line, or to nothing at all on a card that used
- *      chapters. Anything located in real caption or description text is left
- *      alone however it is named: "Warm up set 3x10" written out in a caption is
- *      an instruction the creator actually gave.
+ *   3. It traces to a chapter line, to nothing at all, or to the title line of a
+ *      source that carries one — and only on a card that used chapters at all.
+ *      Anything else located in real caption or description text is left alone
+ *      however it is named: "Warm up set 3x10" written out in a caption is an
+ *      instruction the creator actually gave.
+ *
+ * The title line is in that list because of how the sources are assembled, not as
+ * a guess: ytMeta builds the text it hands over as `title + "\n\n" + description`,
+ * and webMeta as `og:title + "\n" + og:description + body`, so line 0 is the video's
+ * own title. A description titled "20 MINUTE WORKOUT" therefore gives the heading
+ * "Workout" an exact match in written text, and without this it would outrank the
+ * chapter line it actually came from and survive as the card's only exercise. A
+ * title is not a prescription, so a dose-less furniture name matching there is the
+ * same failure as one matching the chapter line — but the rule is confined to
+ * chapter cards, so an Instagram caption whose first line happens to read "Warm up"
+ * is untouched.
  *
  * `cardSources` is every evidence source present on the card, which is what makes
  * condition 3 answerable for an exercise that located nothing itself.
@@ -246,12 +258,18 @@ export function isChapterJunkExercise(
 
   const src = ex.evidence?.source;
   if (src === "chapters") return true;
-  // No located evidence. On a card that used chapters at all, a junk name with
-  // nothing behind it is the same failure one step further along: the model read
-  // the chapter list and the quote could not be found afterwards.
-  if (!src || src === "none") {
-    for (const s of cardSources) if (s === "chapters") return true;
-  }
+
+  let usedChapters = false;
+  for (const s of cardSources) if (s === "chapters") { usedChapters = true; break; }
+  if (!usedChapters) return false;
+
+  // No located evidence. On a card that used chapters, a junk name with nothing
+  // behind it is the same failure one step further along: the model read the
+  // chapter list and the quote could not be found afterwards.
+  if (!src || src === "none") return true;
+  // Located, but on the title line — which is the video's own name, not something
+  // it asks anyone to do.
+  if ((src === "caption" || src === "description") && ex.evidence?.line === 0) return true;
   return false;
 }
 

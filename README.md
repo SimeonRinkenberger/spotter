@@ -99,7 +99,10 @@ those headings as movements to perform — so an exercise that traces to a chapt
 named like furniture (`Warm up`, `Workout`, `Cool Down & Stretch`, `Outro`) and carries no
 sets, reps or duration of its own is deleted rather than scored, and the count lands in the
 card's components as `dropped_chapter_junk`. Anything written out in real caption or
-description text is left alone however it is named: "Warm up set 3x10" is an instruction.
+description text is left alone however it is named: "Warm up set 3x10" is an instruction. The
+one exception is the title line — the text handed to the matcher is `title + description`, so
+a video called "20 MINUTE WORKOUT" would otherwise let the heading "Workout" cite the title
+and survive as the card's only exercise.
 
 **A reprocess never lowers the score either.** When a re-run comes back thinner, the merge
 pulls blocks forward from the saved card — and blocks saved before evidence existed carry
