@@ -22,6 +22,7 @@
 export type EvidenceSource =
   | "caption"      // Instagram / TikTok caption text
   | "description"  // YouTube description, or a web page's body
+  | "transcript"   // what the creator SAID, transcribed from a video the user uploaded
   | "chapters"     // a timestamped line in a YouTube description
   | "carousel"     // read off a carousel slide by vision — no text to check against
   | "heuristic"    // the deterministic parser, which knows exactly which line it read
@@ -302,8 +303,17 @@ export function dropChapterJunk(card: ScorableCard): string[] {
 
 // ---------- the source index ----------
 
+/**
+ * Which of the three texts a card was read out of. It is only ever used as the
+ * `source` stamped on located evidence, so adding one costs nothing beyond
+ * saying honestly where the words came from — and a transcript is a materially
+ * different provenance from a caption: nobody wrote it, and a speech model may
+ * have misheard it.
+ */
+export type SourceKind = "caption" | "description" | "transcript";
+
 export type SourceIndex = {
-  kind: "caption" | "description";
+  kind: SourceKind;
   text: string;
   lines: SourceLine[];
   chapters: Chapter[];
@@ -312,7 +322,7 @@ export type SourceIndex = {
 
 export function indexSource(
   text: string | null | undefined,
-  kind: "caption" | "description",
+  kind: SourceKind,
 ): SourceIndex {
   const t = text ?? "";
   const chapters = parseChapters(t);

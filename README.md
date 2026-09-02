@@ -224,7 +224,7 @@ gets the not-medical-advice line appended whether or not the model wrote it.
 
 | Path | What |
 |---|---|
-| `supabase/functions/spotter/index.ts` | The whole backend: URL parsing, scrapers, AI chain, extraction, routes |
+| `supabase/functions/spotter/index.ts` | The whole backend: the provider registry, scrapers, transcription, AI chain, extraction, routes |
 | `supabase/functions/spotter/catalog.ts` | Canonical exercise catalog + the name normalizer (source of truth) |
 | `supabase/functions/spotter/evidence.ts` | Evidence attachment, chapter parsing, unit repair, the confidence score |
 | `supabase/functions/spotter/net.ts` | Outbound request guard: private-address filter, per-hop redirect checks |
@@ -233,11 +233,26 @@ gets the not-medical-advice line appended whether or not the model wrote it.
 | `supabase/functions/spotter/app.ts` | All app logic: auth, library, Workout Mode, plan, progress |
 | `supabase/functions/spotter/page.ts` | Stitches the three together for the function |
 | `build.mjs` | Same stitch, writing `docs/index.html` for GitHub Pages |
-| `supabase/migrations/` | Schema, RLS policies, profile trigger, storage bucket, exercise catalog, ingest queue, corrections, collections, Pumpy |
+| `supabase/migrations/` | Schema, RLS policies, profile trigger, storage buckets, exercise catalog, ingest queue, corrections, collections, Pumpy |
 | `tools/` | Catalog migration generator, normalizer + confidence test batteries, one-time backfill, `census.py` (hash the real users' rows before/after a change), `throwaway.py` (drive disposable accounts against the live deployment) |
 
 The three frontend modules are `String.raw` templates, so they must never contain a
 backtick or `${`. `build.mjs` fails loudly if they do.
+
+**The provider registry.** Everything that knows how a video is obtained lives in one table
+in `index.ts`, so nothing else has to. A provider declares how to recognise a link (`match`),
+how to fetch its metadata (`fetchMeta`), how to read metadata out of HTML somebody else
+fetched (`parseHtml`), and whether its cards belong in the global `video_cache` (`cacheable`).
+
+| Provider | Addressed by | Cacheable |
+|---|---|---|
+| `instagram` / `tiktok` / `youtube` | a URL its `match` recognises | yes |
+| `web` | any other public URL — the fallback | yes |
+| `upload` | no URL at all: a file the user put in their own storage folder | **no** — `up-<uuid>` is one person's file, not a video anyone else can save |
+
+`resolveShare` walks the registry's matchers, `fetchMeta` and `parseSuppliedHtml` dispatch
+through `providerFor(platform)`, and the queue, the worker and the extraction ladder never
+ask how the media was obtained. Adding a source is a new object in `PROVIDERS`.
 
 ### Deploying
 
@@ -269,6 +284,7 @@ Per-user daily caps keep a public launch inside the free tiers, all overridable 
 | `LIMIT_SAVES` | 200 | every save, cache hits included |
 | `LIMIT_HELPER` | 300 | `/api/explain` and `/api/swap` |
 | `LIMIT_CHAT` | 200 | Pumpy turns — a legacy backstop; credits are the real gate |
+| `LIMIT_UPLOADS` | 10 | videos the user uploaded themselves — the most expensive save there is |
 
 Cache hits count only against `LIMIT_SAVES`, so saving videos other people already saved is
 effectively free.
@@ -315,6 +331,49 @@ when nothing has run yet).
 | YouTube | oEmbed for title/author/thumb, Data API v3 for the description | The description **needs an API key**. Verified 2026-09: from a datacenter IP the watch page returns 429, the WEB player endpoint returns `LOGIN_REQUIRED`, ANDROID/iOS clients fail attestation, and both embedded-player clients error. Set `YOUTUBE_API_KEY` (or enable YouTube Data API v3 on the same Google project as `GEMINI_API_KEY`, which is used as a fallback). |
 | Any web page | og: tags plus page text | Works. |
 | Anything, from a phone | the page HTML the caller POSTs, or a caption they paste | Works, and does not scrape at all. `POST /api/ingest {url, html}` runs the same platform parsers over HTML the phone fetched from a residential IP; `{url, caption}` skips parsing entirely. `meta_source` on `saves_log` records `phone-html` / `user-caption`, so `save_health` shows how much of the mix has moved off the server's own IP. |
+| A video the user uploaded | the words spoken in it, transcribed | Works. The one path nobody can block, and the only one that reads a video with no written workout anywhere. `meta_source` records `transcript`. |
+
+### Uploading a video (the spoken-only case)
+
+Some creators say the whole workout and write nothing down. There is no caption to fetch
+from anywhere, so the last rung of the ladder is the user handing over the video they saved.
+
+**What is sent where.** The file goes from the browser straight into
+`uploads/<user id>/<uuid>.<ext>` — a **private** bucket whose RLS policies let a user insert,
+read and delete only inside their own first folder segment. The edge function is then posted
+a path, not a file: `POST /api/ingest {"upload_path": "<uid>/<uuid>.m4a", "filename": "leg day.m4a"}`.
+The worker mints a 15-minute signed URL and hands **that** to Groq's transcription endpoint
+in its `url` field, so Groq fetches the media itself and no video byte ever passes through
+the function — the standing rule that edge functions move URLs, never media, is not bent for
+this. The object is deleted in a `finally`: on success, on failure, on a spend refusal. An
+hourly sweep inside the worker tick deletes anything in the bucket older than two hours, as
+the backstop for a job that died in between.
+
+**Limits and cost.** 25 MB per file (`UPLOAD_MAX_BYTES`), which is Groq's free-tier ceiling;
+their dev tier allows 100 MB, and the bucket's own `file_size_limit` is already set to 100 MB
+so moving tiers is one constant. `LIMIT_UPLOADS` (default 10/day) is counted in `saves_log`
+under `kind = 'upload'`, on top of `LIMIT_EXTRACT` and `LIMIT_SAVES`, which an upload also
+spends. Transcription is billed by audio duration rather than tokens, so its ledger row
+carries `est_cost_usd = seconds / 3600 × PRICE_GROQ_WHISPER_PER_HOUR` (default `0.04`, which
+is `whisper-large-v3-turbo`; `whisper-large-v3` is `0.111`) with zero tokens and
+`purpose = 'transcribe'`. `paidAllowed()` gates it exactly like a paid model call — when the
+day's ceiling is reached the upload fails soft with "try tomorrow", **and the file is still
+deleted**.
+
+**One attempt, on purpose.** Because the object is deleted whatever happens, an upload job is
+enqueued with `max_attempts = 1`: a second attempt would have nothing to read. The retries
+that can actually help — a rate-limited or flaky transcription call — happen inside
+`groqTranscribe` while the file still exists. A failed upload card therefore offers *Paste
+the caption instead* and not *Try reading it again*, and `POST /reprocess` on one refuses
+with a plain explanation rather than queueing a job that can only fail.
+
+**What the card says.** The transcript becomes the card's caption, split one spoken segment
+per line so the evidence indexer has real lines to quote rather than one long paragraph.
+Every exercise located in it carries `evidence.source = "transcript"` — a new
+`EvidenceSource`, treated as verified text like a caption, because it is text we hold. The
+confidence score needed no new weights. Silence does not come back as an error from Whisper
+(it answers 200 with a hallucinated word or two), so an upload is rejected as unintelligible
+when every segment reports `no_speech_prob >= 0.85` and almost nothing was said.
 
 ## Self-hosting
 
@@ -403,7 +462,11 @@ leaks.
 
 ### When nothing automated works
 
-Open the card and either **Try reading it again** (on a card that failed) or **Paste the
+First, **Upload a video you saved** — the option under the link box in the add sheet. That is
+the path for a creator who says the workout out loud and writes nothing, and it is the only
+one no platform can take away; see *Uploading a video* above for what it sends where.
+
+Failing that, open the card and either **Try reading it again** (on a card that failed) or **Paste the
 caption to improve it** (in the caveat on a card Spotter could not verify). Both open a box:
 copy the workout text off the post, paste it, tap **Read it**. It goes to
 `POST /api/workouts/:id/reprocess` with `{ "caption": "…" }`. A card that had failed goes back

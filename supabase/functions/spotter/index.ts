@@ -35,6 +35,7 @@ import {
   attachEvidence, carouselEvidence, chapterExerciseCount, type Chapter,
   type Confidence, correctUnitErrors, dropChapterJunk, type Evidence,
   indexSource, mergeConfidence, parseChapters, scoreCard, type SourceIndex,
+  type SourceKind,
 } from "./evidence.ts";
 
 // Whether the DNS half of the SSRF guard is live here. The static checks always
@@ -72,6 +73,8 @@ type ModelCfg = {
   geminiVision: string;
   groq: string;
   groqPool: string[];
+  /** Speech-to-text, for videos the user uploaded. Same key, different endpoint. */
+  groqTranscribe: string;
 };
 
 const MODEL_DEFAULTS: ModelCfg = {
@@ -89,6 +92,7 @@ const MODEL_DEFAULTS: ModelCfg = {
     "openai/gpt-oss-120b", "llama-3.3-70b-versatile",
     "meta-llama/llama-4-maverick-17b-128e-instruct", "openai/gpt-oss-20b",
   ],
+  groqTranscribe: "whisper-large-v3-turbo",
 };
 
 // ---------- Pumpy's dials, on the same timer ----------
@@ -162,6 +166,7 @@ function buildModelCfg(rows: Record<string, string>): ModelCfg {
     geminiVision: one("model.gemini_vision", "GEMINI_VISION_MODEL", gemini),
     groq,
     groqPool: many("model.groq_pool", "GROQ_MODEL_POOL", MODEL_DEFAULTS.groqPool, groq),
+    groqTranscribe: one("model.groq_transcribe", "GROQ_TRANSCRIBE_MODEL", MODEL_DEFAULTS.groqTranscribe),
   };
 }
 
@@ -306,6 +311,40 @@ const LIMIT_CHAT = Number(Deno.env.get("LIMIT_CHAT") ?? "200");
 // bury the real corrections under thousands of synthetic ones, and the whole worth
 // of that table is that it is a faithful record of what people actually changed.
 const LIMIT_CORRECTIONS = Number(Deno.env.get("LIMIT_CORRECTIONS") ?? "500");
+// An upload is the most expensive save Spotter offers: it costs a transcription on
+// top of the extraction, and it is the only path that puts a user's own bytes in
+// our storage. Tighter than LIMIT_EXTRACT on purpose, and counted separately in
+// saves_log under kind = 'upload'.
+const LIMIT_UPLOADS = Number(Deno.env.get("LIMIT_UPLOADS") ?? "10");
+
+// ---------- user uploads ----------
+//
+// The last rung of the ingest ladder, and the only one nobody can block: a creator
+// who says the workout out loud and writes nothing leaves no text anywhere, so the
+// user hands us the video they already saved and we listen to it.
+//
+// The design rule that shapes all of this: edge functions move URLs, never media
+// bytes. The file goes phone -> Supabase Storage directly (supabase-js, under RLS),
+// and the function hands Groq a short-lived signed URL. Nothing here ever holds a
+// video in memory, and the object is deleted the moment transcription returns.
+
+// Groq's transcription endpoint takes 25 MB on the free tier and 100 MB on the dev
+// tier. This is the free-tier number because that is what the key is on today; it
+// is one constant, quoted to the user in the add sheet and in the README, so
+// moving tiers is a one-line change.
+const UPLOAD_MAX_BYTES = Number(Deno.env.get("UPLOAD_MAX_BYTES") ?? String(25 * 1024 * 1024));
+// What the bucket accepts, and the only extensions an upload_path may end in. Kept
+// in step with allowed_mime_types on the bucket itself, which is the enforcing copy.
+const UPLOAD_EXTS = ["mp4", "mov", "webm", "m4v", "mp3", "m4a", "wav", "weba"];
+// USD per hour of audio transcribed. Groq bills whisper-large-v3-turbo by audio
+// duration rather than by token, which is why it needs its own price and its own
+// row shape in the ledger. Env-overridable like every other price.
+const PRICE_GROQ_WHISPER_PER_HOUR = Number(Deno.env.get("PRICE_GROQ_WHISPER_PER_HOUR") ?? "0.04");
+// A signed URL only has to outlive one Groq request.
+const UPLOAD_SIGN_SECONDS = 900;
+// The orphan sweep's cutoff: anything still in the bucket this long after it
+// landed belongs to a job that died between the upload and the delete.
+const UPLOAD_ORPHAN_MS = 2 * 60 * 60 * 1000;
 
 // ---------- the money ceiling ----------
 //
@@ -467,7 +506,11 @@ type AiCtx = { purpose: string; userId: string | null; maxOut?: number };
 // cache. A SUBSET of inTok, never an addition to it — every adapter normalises to
 // that meaning, whatever shape the provider reports. Undefined means "the provider
 // said nothing", which prices identically to zero.
-type Usage = { inTok: number; outTok: number; cachedTok?: number };
+// `usd` is the escape hatch for a call that is not priced by tokens at all —
+// transcription is billed by the hour of audio. When it is set it IS the cost and
+// the token maths is skipped; every existing caller leaves it undefined and is
+// priced exactly as before.
+type Usage = { inTok: number; outTok: number; cachedTok?: number; usd?: number };
 
 /** The caller's output cap when they set one, otherwise the caller-supplied default. */
 function outCap(ctx: AiCtx, dflt: number): number {
@@ -497,6 +540,10 @@ function isPaidProvider(provider: string): boolean {
 // input tokens (it should not) bills everything at the cached rate rather than
 // crediting the day's spend with a negative number.
 function estimateCost(provider: string, u: Usage): number {
+  // Priced by something other than tokens, and said so. One row in the same ledger,
+  // read by the same ceiling — the only difference is who did the arithmetic.
+  const flat = Number(u.usd);
+  if (Number.isFinite(flat) && flat >= 0) return flat;
   const [pin, pout, pcached] = priceFor(provider);
   const cached = cachedPart(u);
   const fresh = Math.max(0, u.inTok - cached);
@@ -645,10 +692,13 @@ function metaTag(html: string, prop: string): string | null {
 // ---------- URL parsing ----------
 
 type Parsed = {
-  platform: "instagram" | "tiktok" | "youtube" | "web";
-  shortcode: string;   // unique key (tiktok ids prefixed tt-, youtube yt-, generic pages web-<hash>)
-  kind: string;        // reel | p | tv | video | page
-  clean: string;       // canonical link
+  platform: "instagram" | "tiktok" | "youtube" | "web" | "upload";
+  // unique key (tiktok ids prefixed tt-, youtube yt-, generic pages web-<hash>,
+  // a user's own upload up-<uuid> — that last one is unique per upload rather
+  // than per video, which is exactly why upload cards are never cached)
+  shortcode: string;
+  kind: string;        // reel | p | tv | video | page | upload
+  clean: string;       // canonical link, or spotter://upload/<uuid> for an upload
 };
 
 function matchInstagram(u: string): Parsed | null {
@@ -701,7 +751,7 @@ async function resolveShare(raw: string): Promise<WebParse> {
   const first = await assertPublicUrl(target);
   if (!first.ok) { console.error("ssrf: rejected", target, "—", first.reason); return BLOCKED; }
 
-  let parsed = matchInstagram(target) ?? matchTikTok(target) ?? matchYouTube(target);
+  let parsed = matchUrl(target);
   if (parsed) return parsed;
 
   // Short/share links (instagram.com/share/..., vm.tiktok.com/...): follow redirects.
@@ -725,7 +775,7 @@ async function resolveShare(raw: string): Promise<WebParse> {
     try { target = new URL(loc, guard.url).toString(); } catch { return BLOCKED; }
     // login redirects carry the real path in ?next=
     const next = new URL(target).searchParams.get("next");
-    parsed = matchInstagram(target) ?? matchTikTok(target) ?? matchYouTube(target) ??
+    parsed = matchUrl(target) ??
       (next ? matchInstagram("https://www.instagram.com" + next) : null);
   }
   return parsed ?? await webParsed(target);
@@ -754,6 +804,13 @@ type Meta = {
   // Set once the worker has tried to fill the gaps in a supplied meta, so a retry
   // does not scrape again for fields the first attempt already failed to find.
   topped_up?: boolean;
+  // Upload jobs only. `upload_path` is where the user's file is sitting in the
+  // private `uploads` bucket, and it is seeded onto the job because the worker —
+  // not the request — is what transcribes it. A meta carrying this and nothing
+  // else is an address, not a scrape: see runJob. `filename` is what the user
+  // called the file, kept only as a title fallback.
+  upload_path?: string;
+  filename?: string;
 };
 
 // Gemini free-tier daily caps are tiny (20/day) PER MODEL, so rotate models. The
@@ -1520,11 +1577,418 @@ async function webMeta(p: Parsed): Promise<Meta> {
   return out;
 }
 
-function fetchMeta(p: Parsed): Promise<Meta> {
-  if (p.platform === "instagram") return igMeta(p);
-  if (p.platform === "tiktok") return ttMeta(p);
-  if (p.platform === "youtube") return ytMeta(p);
-  return webMeta(p);
+// ---------- the upload provider: a video the user brought themselves ----------
+//
+// Storage layout is `uploads/<user id>/<uuid>.<ext>`, private, and the RLS policies
+// on storage.objects let a user touch only their own first folder segment. The
+// service role bypasses those, which is what lets the worker sign and delete.
+//
+// The object is deleted on EVERY outcome. That has a consequence worth stating
+// plainly: an upload job gets exactly one attempt, because a second one would have
+// nothing left to read. So the retries that matter — a rate-limited or flaky Groq
+// — happen inside this function, while the bytes are still there, and the job's
+// max_attempts is set to 1 when it is enqueued.
+
+/**
+ * A failure the user is meant to read. Thrown by a path that knows exactly what
+ * went wrong AND knows that trying again will not help, so failJob can put the
+ * sentence on the card instead of the generic "tap ↻ to try again".
+ */
+class SoftFailure extends Error {
+  readonly userMessage: string;
+  constructor(userMessage: string, detail?: string) {
+    super(detail ? `${userMessage} [${detail}]` : userMessage);
+    this.name = "SoftFailure";
+    this.userMessage = userMessage;
+  }
+}
+
+const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
+type UploadRef = { path: string; uid: string; id: string; ext: string };
+
+/**
+ * `<uid>/<uuid>.<ext>`, and nothing else. This is the only thing standing between
+ * a caller-supplied string and a service-role storage call, so it is a whitelist
+ * of exact shapes rather than a check for "../" — the owner is compared against
+ * the caller, so a valid-looking path belonging to somebody else fails here too.
+ */
+function parseUploadPath(raw: unknown, owner: string): UploadRef | null {
+  if (typeof raw !== "string") return null;
+  const parts = raw.trim().split("/");
+  if (parts.length !== 2) return null;
+  const [uid, file] = parts;
+  if (uid !== owner || !UUID_RE.test(uid)) return null;
+  const dot = file.lastIndexOf(".");
+  if (dot <= 0) return null;
+  const id = file.slice(0, dot);
+  const ext = file.slice(dot + 1).toLowerCase();
+  if (!UUID_RE.test(id) || !UPLOAD_EXTS.includes(ext)) return null;
+  return { path: `${uid}/${id}.${ext}`, uid, id, ext };
+}
+
+/** One page of a storage folder, service role. Empty on any failure. */
+async function listUploads(
+  prefix: string, limit = 100, sortByCreated = false, search?: string,
+): Promise<{ name: string; id: string | null; created_at?: string }[]> {
+  try {
+    const r = await fetch(`${SUPABASE_URL}/storage/v1/object/list/uploads`, {
+      method: "POST",
+      headers: dbHeaders,
+      body: JSON.stringify({
+        prefix, limit, offset: 0,
+        ...(search ? { search } : {}),
+        sortBy: sortByCreated
+          ? { column: "created_at", order: "asc" }
+          : { column: "name", order: "asc" },
+      }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!r.ok) {
+      console.error("uploads list", prefix, r.status, (await r.text()).slice(0, 200));
+      return [];
+    }
+    return await r.json();
+  } catch (e) {
+    console.error("uploads list failed", prefix, e);
+    return [];
+  }
+}
+
+/** Does this object actually exist? Asked before a job is charged for reading it. */
+async function uploadExists(ref: UploadRef): Promise<boolean> {
+  const want = `${ref.id}.${ref.ext}`;
+  // `search` narrows the listing server-side; the exact comparison afterwards is
+  // what actually decides, because search is a substring match rather than an
+  // equality test and a folder is not guaranteed to fit in one page.
+  const rows = await listUploads(`${ref.uid}/`, 100, false, want);
+  return rows.some((o) => o.name === want && o.id !== null);
+}
+
+/** Best effort, always. A file we failed to delete is what the orphan sweep is for. */
+async function deleteUpload(path: string): Promise<void> {
+  try {
+    const r = await fetch(`${SUPABASE_URL}/storage/v1/object/uploads/${path}`, {
+      method: "DELETE",
+      headers: authHeaders,
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!r.ok) console.error("upload delete", path, r.status, (await r.text()).slice(0, 200));
+    else console.log("upload deleted", path);
+  } catch (e) {
+    console.error("upload delete failed", path, e);
+  }
+}
+
+/** A URL Groq can fetch once, valid for a quarter of an hour. */
+async function signUpload(path: string): Promise<string> {
+  const r = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/uploads/${path}`, {
+    method: "POST",
+    headers: dbHeaders,
+    body: JSON.stringify({ expiresIn: UPLOAD_SIGN_SECONDS }),
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!r.ok) throw new Error(`sign ${r.status}: ${(await r.text()).slice(0, 200)}`);
+  const body = await r.json();
+  const rel = body?.signedURL ?? body?.signedUrl ?? null;
+  if (typeof rel !== "string" || !rel) throw new Error("sign returned no url");
+  return `${SUPABASE_URL}/storage/v1${rel.startsWith("/") ? "" : "/"}${rel}`;
+}
+
+/**
+ * Speech to text, by URL.
+ *
+ * The `url` field is the whole reason this design is allowed to exist: Groq
+ * fetches the media itself, so the bytes go storage -> Groq and never through this
+ * function. A `file` part would mean reading a 25 MB video into an isolate that
+ * has neither the memory budget nor any business holding it.
+ *
+ * Retries live here rather than in the job because the object is deleted when this
+ * returns — one 429 must not cost the user their upload.
+ */
+async function groqTranscribe(
+  signed: string,
+): Promise<{ text: string; seconds: number; model: string }> {
+  if (!GROQ_API_KEY) throw new SoftFailure("Spotter cannot transcribe uploads right now.", "no groq key");
+  const model = models().groqTranscribe;
+  let lastStatus = 0;
+  let lastBody = "";
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt) await new Promise((res) => setTimeout(res, 2000 * attempt));
+    const form = new FormData();
+    form.append("url", signed);
+    form.append("model", model);
+    form.append("response_format", "verbose_json");
+    form.append("temperature", "0");
+
+    let r: Response;
+    try {
+      r = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
+        method: "POST",
+        headers: { authorization: `Bearer ${GROQ_API_KEY}` },
+        body: form,
+        signal: AbortSignal.timeout(120_000),
+      });
+    } catch (e) {
+      lastStatus = 0;
+      lastBody = String(e).slice(0, 200);
+      console.error("transcribe network error", lastBody);
+      continue;
+    }
+
+    if (r.ok) {
+      const data = await r.json();
+      // Segments carry the line structure speech does not have. The evidence
+      // indexer works in lines, and one 900-word paragraph would make every
+      // exercise "verified" against the same meaningless quote, so a spoken
+      // phrase per line is not cosmetic — it is what makes the evidence true.
+      const segs = Array.isArray(data?.segments) ? data.segments : [];
+      const fromSegs = segs
+        .map((s: { text?: unknown }) => String(s?.text ?? "").trim())
+        .filter(Boolean)
+        .join("\n");
+      const text = (fromSegs || String(data?.text ?? "")).trim();
+      const seconds = Number(data?.duration);
+      // Silence does not come back as an error. Whisper answers 200 with a
+      // hallucinated word or two — the classic output on an empty track is the
+      // single word "you" — so the only way to tell silence from speech is to ask
+      // the model what it thought, per segment. Both conditions have to hold:
+      // every segment unconfident AND almost nothing said, so a quiet but real
+      // instruction is not thrown away.
+      const probs = segs
+        .map((s: { no_speech_prob?: unknown }) => Number(s?.no_speech_prob))
+        .filter((n: number) => Number.isFinite(n));
+      const allSilent = probs.length > 0 && probs.every((n: number) => n >= 0.85);
+      if (allSilent && text.length < 60) {
+        console.log("transcribe: no speech —", probs.length, "segment(s),", text.length, "chars");
+        return { text: "", seconds: Number.isFinite(seconds) && seconds > 0 ? seconds : 0, model };
+      }
+      return { text, seconds: Number.isFinite(seconds) && seconds > 0 ? seconds : 0, model };
+    }
+
+    lastStatus = r.status;
+    lastBody = (await r.text()).slice(0, 300);
+    // 413 is the size ceiling and 400 is usually "no audio track" or a format the
+    // model will not read. Neither improves on a second ask.
+    if (r.status === 413) {
+      throw new SoftFailure(
+        `That file is too big to transcribe — the limit is ${Math.round(UPLOAD_MAX_BYTES / (1024 * 1024))} MB.`,
+        "groq 413",
+      );
+    }
+    if (r.status === 400 || r.status === 415 || r.status === 422) {
+      throw new SoftFailure(
+        "Spotter could not hear a workout in that file — check it has sound, or paste the caption instead.",
+        `groq ${r.status}`,
+      );
+    }
+    console.error("transcribe", model, r.status, lastBody);
+  }
+  throw new SoftFailure(
+    "The transcription service did not answer. Your upload was not saved — try again in a minute.",
+    `groq ${lastStatus}`,
+  );
+}
+
+/**
+ * The upload provider's fetchMeta. Sign, transcribe, price, delete — and delete
+ * whatever happened, which is why the whole body sits inside a try/finally.
+ */
+async function uploadMeta(p: Parsed, job?: Job): Promise<Meta> {
+  const seeded = job?.meta ?? null;
+  const ref = job ? parseUploadPath(seeded?.upload_path, job.user_id) : null;
+  if (!ref) {
+    // A reprocess of an upload card lands here: the file is long gone and there is
+    // nothing to go back to. Not a throw — handleReprocess falls back to the stored
+    // transcript, which is the right answer.
+    console.log("upload: no object to read for", p.shortcode, "— nothing to fetch");
+    return { caption: null, thumb: null, author: null, source: "none", filename: seeded?.filename };
+  }
+
+  const ctx: AiCtx = { purpose: "transcribe", userId: job?.user_id ?? null };
+  try {
+    // The ceiling gates transcription exactly as it gates a paid model call. There
+    // is no free fallback for hearing a video, so this is a refusal rather than a
+    // downgrade — and the object still goes, in the finally below.
+    if (!(await paidAllowed())) {
+      throw new SoftFailure(
+        "Spotter's daily budget is spent — upload this one again tomorrow.",
+        "spend ceiling",
+      );
+    }
+    const signed = await signUpload(ref.path);
+    const t0 = Date.now();
+    const got = await groqTranscribe(signed);
+    // Groq bills a ten-second minimum however short the clip is, and a response
+    // that reported no duration at all must not be logged as free — the ledger is
+    // the ceiling, and a ceiling with zeroes in it is not a ceiling.
+    const billed = Math.max(got.seconds, 10);
+    const usd = (billed / 3600) * PRICE_GROQ_WHISPER_PER_HOUR;
+    await recordCost("groq", got.model, ctx, { inTok: 0, outTok: 0, usd }, !!got.text);
+    console.log("transcribed", p.shortcode, got.seconds.toFixed(1), "s audio (billed",
+      billed.toFixed(1) + "s),", got.text.length, "chars, $" + usd.toFixed(6),
+      "in", Date.now() - t0, "ms");
+    if (!got.text) {
+      throw new SoftFailure(
+        "Spotter could not hear a workout in that file — check it has sound, or paste the caption instead.",
+        "empty transcript",
+      );
+    }
+    return {
+      caption: got.text,
+      thumb: null,
+      author: null,
+      seconds: got.seconds || undefined,
+      source: "transcript",
+      // Supplied in the sense that matters here: it came from the user, not from a
+      // scrape, so topUpMeta must never go looking for a page to complete it.
+      supplied: true,
+      topped_up: true,
+      filename: seeded?.filename,
+    };
+  } finally {
+    await deleteUpload(ref.path);
+  }
+}
+
+/**
+ * The backstop for a job that died between the upload and the delete. Runs at most
+ * once an hour per isolate, walks one page of user folders and deletes anything
+ * older than two hours. Bounded on purpose: this is a sweeper, not a migration.
+ */
+let lastOrphanSweep = 0;
+
+async function sweepOrphanUploads(): Promise<void> {
+  const now = Date.now();
+  if (now - lastOrphanSweep < 60 * 60 * 1000) return;
+  lastOrphanSweep = now;
+  try {
+    const folders = await listUploads("", 50);
+    let deleted = 0;
+    let seen = 0;
+    for (const f of folders) {
+      // A folder comes back with a null id; a stray file at the bucket root does not.
+      if (f.id !== null || !UUID_RE.test(f.name)) continue;
+      const objects = await listUploads(`${f.name}/`, 100, true);
+      for (const o of objects) {
+        if (o.id === null) continue;
+        seen++;
+        const age = now - Date.parse(o.created_at ?? "");
+        if (!Number.isFinite(age) || age < UPLOAD_ORPHAN_MS) continue;
+        await deleteUpload(`${f.name}/${o.name}`);
+        deleted++;
+      }
+    }
+    console.log("orphan sweep:", seen, "object(s) in the uploads bucket,", deleted, "deleted");
+  } catch (e) {
+    console.error("orphan sweep failed", e);
+  }
+}
+
+// ---------- the provider registry ----------
+//
+// Everything above knows how to obtain one platform's metadata. Everything below
+// used to know which platform was which, in four separate `if (p.platform === …)`
+// ladders that had to be kept in step by hand — and the fifth source, a file the
+// user uploaded themselves, is not addressed by a URL at all.
+//
+// So the ladders collapse into one table. A provider says how to recognise a link
+// (if it is a link), how to go and get the metadata, how to read metadata out of
+// HTML somebody else fetched (if HTML is a thing it has), and whether its result
+// belongs in the GLOBAL video_cache. The rest of the system never asks how the
+// media was obtained.
+//
+// This is a re-grouping, not a rewrite: every function body below the line is the
+// one that was already there.
+
+/**
+ * What a pure parser can read out of a page. A Meta with no provenance on it —
+ * `source` and `supplied` describe how the caller came by the HTML, which is the
+ * caller's business and never the parser's.
+ */
+type SuppliedParse = Omit<Meta, "source" | "supplied" | "topped_up" | "upload_path" | "filename">;
+
+type Provider = {
+  name: Parsed["platform"];
+  /** URL-addressed providers only. Uploads have no link to match. */
+  match?: (url: string) => Parsed | null;
+  /** `job` is passed when the worker is the caller: uploads need what it carries. */
+  fetchMeta: (p: Parsed, job?: Job) => Promise<Meta>;
+  /** The pure half, for HTML a phone already fetched. */
+  parseHtml?: (html: string, p: Parsed) => SuppliedParse;
+  /**
+   * Whether a finished card may be written to the global video_cache. True for
+   * everything addressed by a public URL, because the next person to save that
+   * URL is saving the same video. False for an upload: `up-<uuid>` is one
+   * person's file, and caching it would be caching a stranger's private video
+   * under a key nobody else can ever hit.
+   */
+  cacheable: boolean;
+};
+
+const instagramProvider: Provider = {
+  name: "instagram",
+  match: matchInstagram,
+  fetchMeta: (p) => igMeta(p),
+  parseHtml: (html) => igParseHtml(html),
+  cacheable: true,
+};
+
+const tiktokProvider: Provider = {
+  name: "tiktok",
+  match: matchTikTok,
+  fetchMeta: (p) => ttMeta(p),
+  parseHtml: (html) => ttParseHtml(html),
+  cacheable: true,
+};
+
+const youtubeProvider: Provider = {
+  name: "youtube",
+  match: matchYouTube,
+  fetchMeta: (p) => ytMeta(p),
+  parseHtml: (html) => ytParseHtml(html),
+  cacheable: true,
+};
+
+// No `match`: webParsed is the fallback resolveShare reaches when no provider
+// claimed the link, and it is async because it runs the outbound guard first.
+const webProvider: Provider = {
+  name: "web",
+  fetchMeta: (p) => webMeta(p),
+  parseHtml: (html, p) => webParseHtml(html, p.clean),
+  cacheable: true,
+};
+
+const uploadProvider: Provider = {
+  name: "upload",
+  fetchMeta: (p, job) => uploadMeta(p, job),
+  // A file has no HTML, and a caption pasted onto an upload card goes through
+  // metaFromSupplied's caption branch like any other.
+  cacheable: false,
+};
+
+const PROVIDERS: Provider[] = [
+  instagramProvider, tiktokProvider, youtubeProvider, webProvider, uploadProvider,
+];
+
+/** The provider for a platform, falling back to web — the one that reads anything. */
+function providerFor(platform: string): Provider {
+  for (const pr of PROVIDERS) if (pr.name === platform) return pr;
+  return webProvider;
+}
+
+/** The first provider that recognises this link, or null for none. */
+function matchUrl(u: string): Parsed | null {
+  for (const pr of PROVIDERS) {
+    const hit = pr.match ? pr.match(u) : null;
+    if (hit) return hit;
+  }
+  return null;
+}
+
+function fetchMeta(p: Parsed, job?: Job): Promise<Meta> {
+  return providerFor(p.platform).fetchMeta(p, job);
 }
 
 // ---------- what the caller brought ----------
@@ -1555,11 +2019,11 @@ function keepFetchableUrl(u: string | null | undefined, what: string): string | 
 }
 
 /** The right pure parser for the platform the link resolved to. */
-function parseSuppliedHtml(p: Parsed, html: string): Meta {
-  if (p.platform === "instagram") return igParseHtml(html);
-  if (p.platform === "tiktok") return ttParseHtml(html);
-  if (p.platform === "youtube") return ytParseHtml(html);
-  return webParseHtml(html, p.clean);
+function parseSuppliedHtml(p: Parsed, html: string): SuppliedParse {
+  const pr = providerFor(p.platform);
+  if (pr.parseHtml) return pr.parseHtml(html, p);
+  // A provider with no HTML of its own — an upload. Nothing to read.
+  return { caption: null, thumb: null, author: null };
 }
 
 /** True when the caption on this meta is text a person typed, not a platform's. */
@@ -1818,7 +2282,7 @@ function durationFor(text: string): number | null {
  * a description — the distinction is what makes the chapters cap meaningful.
  */
 function heuristicWorkout(
-  caption: string | null, fallbackTitle: string, kind: "caption" | "description" = "caption",
+  caption: string | null, fallbackTitle: string, kind: SourceKind = "caption",
 ): Card {
   const card = emptyCard(fallbackTitle);
   if (!caption) return card;
@@ -2367,8 +2831,14 @@ async function handleVisionTick(req: Request): Promise<Response> {
 
 // ---------- extraction waterfall ----------
 
-/** YouTube hands us a description; everything else hands us a caption. */
-function sourceKind(platform: string): "caption" | "description" {
+/**
+ * YouTube and the web hand us a description, an upload hands us the words the
+ * creator spoke, and everything else hands us a caption. The distinction is
+ * carried all the way down onto each exercise's evidence, so a card built from
+ * speech says so rather than claiming a caption nobody wrote.
+ */
+function sourceKind(platform: string): SourceKind {
+  if (platform === "upload") return "transcript";
   return platform === "youtube" || platform === "web" ? "description" : "caption";
 }
 
@@ -2392,7 +2862,15 @@ async function extractCard(meta: Meta, platform: string, ctx: AiCtx): Promise<Ca
   const user = [
     meta.author ? `Creator: ${meta.author}` : "",
     `Platform: ${platform}`,
-    kind === "description" ? "Video description:" : "Caption:",
+    // The label only, never the system prompt: buildPrompt is what CARD_V versions,
+    // and re-extracting every cached card in the database to add one noun would be
+    // a bad trade. A transcript is announced as one so the model does not read
+    // speech disfluencies as caption formatting.
+    kind === "transcript"
+      ? "Transcript of what the creator says in the video (speech, so it has no formatting and may contain mishearings):"
+      : kind === "description"
+      ? "Video description:"
+      : "Caption:",
     meta.caption.slice(0, 6000),
     chapterBlock(meta.chapters ?? []),
   ].filter(Boolean).join("\n");
@@ -2428,6 +2906,14 @@ const PLATFORM_LABEL: Record<string, string> = {
  */
 function fallbackTitle(meta: Meta, p: Parsed): string {
   const who = meta.author?.trim().slice(0, 60);
+  // An upload has no handle and no page to name it. What the user called the file
+  // is the only thing about it a person chose, so it is the best name available.
+  if (p.platform === "upload") {
+    const named = cleanTitle(
+      (meta.filename ?? "").replace(/\.[A-Za-z0-9]{1,5}$/, "").replace(/[_\-.]+/g, " ").trim(),
+    );
+    return named || "Uploaded workout";
+  }
   if (p.platform === "web") {
     let host: string | null = null;
     try { host = new URL(p.clean).hostname.replace(/^www\./, ""); } catch { /* keep null */ }
@@ -2891,6 +3377,126 @@ async function requeueWithMeta(
   }, 202, cors);
 }
 
+/**
+ * A save that carries no link at all, because the media is a file the user just
+ * put in their own folder of the uploads bucket.
+ *
+ * Everything the URL path gets from `resolveShare` this has to establish for
+ * itself: that the path is theirs, that the object is really there, and that they
+ * are inside both the extraction cap and the tighter upload cap. After that it is
+ * an ordinary enqueue — the worker does not know or care that this one has no URL.
+ */
+async function ingestUpload(
+  body: Record<string, unknown>, userId: string, cors: Cors,
+): Promise<Response> {
+  const t0 = Date.now();
+  const ref = parseUploadPath(body.upload_path, userId);
+  if (!ref) {
+    return json({
+      status: "error",
+      message: "That upload could not be read. Pick the file again.",
+    }, 400, cors);
+  }
+  const filename = typeof body.filename === "string" ? body.filename.slice(0, 160).trim() : "";
+
+  const [countsR, uploadsR] = await Promise.allSettled([
+    countsFor(userId),
+    dbCount("saves_log", `user_id=eq.${userId}&created_at=gte.${utcMidnight()}&kind=eq.upload`),
+  ]);
+  for (const r of [countsR, uploadsR]) if (r.status === "rejected") throw r.reason;
+  const counts = (countsR as PromiseFulfilledResult<Counts>).value;
+  const uploadsToday = (uploadsR as PromiseFulfilledResult<number>).value;
+
+  if (uploadsToday >= LIMIT_UPLOADS) {
+    return json({
+      status: "limit",
+      message: `Daily upload limit reached (${LIMIT_UPLOADS}/day while Spotter is free) — ` +
+        "resets at midnight UTC. Links still work.",
+    }, 429, cors);
+  }
+  if (counts.saves >= LIMIT_SAVES) {
+    return json({
+      status: "limit",
+      message: `Daily save limit reached (${LIMIT_SAVES}/day while Spotter is free) — resets at midnight UTC.`,
+    }, 429, cors);
+  }
+  if (counts.extracts >= LIMIT_EXTRACT) return extractLimitResponse(cors);
+
+  // Asked before anything is charged: an upload_path pointing at nothing is a
+  // client bug or a probe, and either way it must not create a job.
+  if (!(await uploadExists(ref))) {
+    return json({
+      status: "error",
+      message: "Spotter cannot find that file — the upload did not finish. Try picking it again.",
+    }, 404, cors);
+  }
+
+  const p: Parsed = {
+    platform: "upload",
+    shortcode: `up-${ref.id}`,
+    kind: "upload",
+    clean: `spotter://upload/${ref.id}`,
+  };
+  const provisional = cleanTitle(fallbackTitle({
+    caption: null, thumb: null, author: null, filename: filename || undefined,
+  }, p)) || "Uploaded workout";
+
+  const q = (await rpc("enqueue_ingest", {
+    p_user: userId, p_url: p.clean, p_shortcode: p.shortcode,
+    p_platform: p.platform, p_kind: p.kind, p_title: provisional,
+  }))[0];
+  if (!q) throw new Error("enqueue_ingest returned nothing");
+  // `up-<uuid>` is unique per upload, so this cannot legitimately happen — a
+  // repeated POST of the same path is the only way, and it is already saved.
+  if (q.already) {
+    return json({ status: "exists", id: q.workout_id, message: "Already in your library." }, 200, cors);
+  }
+
+  // Two things at once, and both matter.
+  //
+  // The meta seed is the object's address rather than a scrape: runJob recognises
+  // that shape and calls the provider instead of trusting it. max_attempts drops
+  // to 1 because the object is deleted whatever happens, so a second attempt would
+  // have nothing to read — the retries that can help live inside groqTranscribe,
+  // where the file still exists.
+  try {
+    await dbPatch("ingest_jobs", `id=eq.${q.job_id}`, {
+      max_attempts: 1,
+      meta: { caption: null, thumb: null, author: null, upload_path: ref.path, filename: filename || null },
+      updated_at: new Date().toISOString(),
+    });
+  } catch (e) {
+    // Without the address the job cannot do anything but fail four times, so this
+    // is one of the few places where failing the request outright is kinder.
+    console.error("could not seed the upload path onto job", q.job_id, e);
+    await deleteUpload(ref.path);
+    return json({
+      status: "error",
+      message: "Spotter could not start reading that upload. Try again in a moment.",
+    }, 500, cors);
+  }
+
+  // The upload counter, separate from the save and the extraction it also is.
+  try {
+    await dbInsert("saves_log", {
+      user_id: userId, shortcode: p.shortcode, cached: false, kind: "upload",
+      platform: p.platform, job_id: q.job_id,
+    });
+  } catch (e) {
+    console.error("upload counter row failed", q.job_id, e);
+  }
+
+  console.log("enqueued upload", p.shortcode, "job", q.job_id, "in", Date.now() - t0, "ms");
+  kickWorker();
+  return json({
+    status: "processing",
+    id: q.workout_id,
+    job_id: q.job_id,
+    title: provisional,
+    message: "Listening to the video…",
+  }, 202, cors);
+}
+
 async function handleIngest(req: Request, userId: string, cors: Cors): Promise<Response> {
   const t0 = Date.now();
   let shared = "";
@@ -2900,6 +3506,11 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
   if (ct.includes("json")) {
     let body: Record<string, unknown> | null = null;
     try { body = await req.json(); } catch (_) { body = null; }
+    // No link, a file. The whole request is a different shape from here on, so it
+    // gets its own function rather than five more branches in this one.
+    if (body && typeof body.upload_path === "string") {
+      return await ingestUpload(body, userId, cors);
+    }
     shared = typeof body?.url === "string" ? body.url : "";
     const rawHtml = typeof body?.html === "string" ? body.html : "";
     if (rawHtml.trim()) {
@@ -3271,9 +3882,13 @@ async function failJob(job: Job, err: unknown): Promise<void> {
       return;
     }
     if (dead) {
+      // A failure that knew what it was gets to say so. Everything else keeps the
+      // generic line, because "TypeError: undefined is not an object" on a card is
+      // worse than no explanation at all.
+      const said = err instanceof SoftFailure ? err.userMessage : null;
       await dbPatchMany("workouts", `ingest_job_id=eq.${job.id}&ingest_status=eq.processing`, {
         ingest_status: "failed",
-        ingest_error: "Spotter could not read this video. Tap ↻ to try again.",
+        ingest_error: said ?? "Spotter could not read this video. Tap ↻ to try again.",
       });
     }
   } catch (e) {
@@ -3315,11 +3930,16 @@ async function runJob(job: Job): Promise<void> {
   };
   const ctx: AiCtx = { purpose: "extract", userId: job.user_id };
   const sc = encodeURIComponent(p.shortcode);
+  const cacheable = providerFor(p.platform).cacheable;
 
   // Somebody may have filled the cache while this job was waiting on a backoff.
   // Paying for the same extraction twice because the queue was slow would defeat
-  // the point of having a cache at all.
-  const cached = await dbSelect("video_cache", `shortcode=eq.${sc}&v=gte.${CARD_V}&select=*`);
+  // the point of having a cache at all. Skipped entirely for a provider whose
+  // cards are not shareable — an upload key is unique to one file, so the lookup
+  // could only ever miss.
+  const cached = cacheable
+    ? await dbSelect("video_cache", `shortcode=eq.${sc}&v=gte.${CARD_V}&select=*`)
+    : [];
   if (cached.length) {
     const c = cached[0];
     await finishJob(job, p,
@@ -3335,8 +3955,15 @@ async function runJob(job: Job): Promise<void> {
   // save that arrived with the page HTML or a pasted caption writes the meta onto
   // the row while the step is still the default 'meta', and the entire point of
   // writing it is that it be used instead of a scrape.
+  //
+  // One exception to that ordering, and it is the reason `upload_path` exists: a
+  // meta carrying nothing but the address of a file is not a scrape that already
+  // happened, it is what the provider needs in order to do its own. Reading it as
+  // a finished scrape would give the user a card built from an empty caption and
+  // never listen to their video at all.
+  const addressOnly = !!job.meta?.upload_path && !job.meta?.caption;
   let meta: Meta;
-  if (job.meta) {
+  if (job.meta && !addressOnly) {
     meta = job.meta;
     // Supplied text is usually partial — a pasted caption carries no thumbnail and
     // no handle. Fill in only what is missing, once, and never fail over it.
@@ -3349,7 +3976,7 @@ async function runJob(job: Job): Promise<void> {
       }
     }
   } else {
-    meta = await fetchMeta(p);          // throws: worth a retry, that is a network fault
+    meta = await fetchMeta(p, job);     // throws: worth a retry, that is a network fault
     await jobStep(job.id, "card", { meta });
   }
 
@@ -3399,7 +4026,12 @@ async function runJob(job: Job): Promise<void> {
   // Only cache a card worth reusing. Writing an empty scrape at the current
   // extraction version would pin that emptiness for everyone who saves the video
   // next and for every retry of this one, which is the opposite of failing soft.
-  if (!meta.caption && !card.blocks.length) {
+  if (!cacheable) {
+    // One person's own video, keyed by an id nobody else can produce. There is
+    // nothing global about it, and putting it in a global table would be storing
+    // a stranger's private transcript for no possible reader.
+    console.log("not cacheable, skipping video_cache", p.platform, p.shortcode);
+  } else if (!meta.caption && !card.blocks.length) {
     console.log("empty scrape, not cached", p.platform, p.shortcode, "source:", meta.source);
   } else if (!(await captionMayOverwriteCache(p.shortcode, meta))) {
     console.log("not caching a pasted caption over the platform's own", p.platform, p.shortcode);
@@ -3428,6 +4060,10 @@ async function handleWorkerTick(req: Request): Promise<Response> {
   } catch (e) {
     console.error("sweep failed", e);   // not fatal: claiming is still worth trying
   }
+  // The uploads bucket's own sweeper. Rate-limited to once an hour per isolate and
+  // never awaited: it is a backstop for bytes nobody is waiting on, and a slow
+  // storage listing must not delay a card the user is watching.
+  background(sweepOrphanUploads());
 
   const jobs = (await rpc("claim_ingest_jobs", { p_worker: WORKER_ID, p_limit: WORKER_BATCH })) as Job[];
   if (!jobs.length) return json({ status: "ok", claimed: 0 });
@@ -3533,6 +4169,17 @@ async function handleReprocess(id: string, userId: string, req: Request, cors: C
   // not: the queue path writes the fresh card straight onto the row, and
   // mergeNoDowngrade — the guarantee that a re-read can never make a card worse —
   // lives only on the synchronous path below.
+  // An upload that never produced a transcript has nothing left to re-read: the
+  // file was deleted the moment transcription returned, one way or the other. Say
+  // so, rather than queueing a job whose only possible outcome is the same failure.
+  if (old.platform === "upload" && old.ingest_status !== "ready" && !pasted) {
+    return json({
+      status: "error",
+      message: "The uploaded file is gone — Spotter deletes it as soon as it has listened. " +
+        "Paste the workout text instead, or upload the video again.",
+    }, 409, cors);
+  }
+
   if (old.ingest_status !== "ready") {
     if (pasted) {
       const back: Parsed = {
@@ -3612,7 +4259,9 @@ async function handleReprocess(id: string, userId: string, req: Request, cors: C
   // The guard is also what stops a quota-exhausted re-run from downgrading the
   // cache to an empty card, which the old unconditional upsert would have done the
   // moment mergeNoDowngrade had nothing fresh to protect.
-  if (!pure.blocks.length) {
+  if (!providerFor(p.platform).cacheable) {
+    console.log("reprocess: not a cacheable provider, leaving video_cache alone", p.shortcode);
+  } else if (!pure.blocks.length) {
     console.log("reprocess: re-run produced no blocks, leaving video_cache alone", p.shortcode);
   } else if (!(await captionMayOverwriteCache(p.shortcode, meta))) {
     console.log("reprocess: not caching a pasted caption over the platform's own", p.shortcode);
