@@ -460,7 +460,13 @@ export const APP = String.raw`
         tw.appendChild(img);
       } else {
         tw.classList.remove("loading");
-        tw.appendChild(el("div", "noimg", "🏋️"));
+        if (w.platform === "pumpy") {
+          var pi = el("div", "noimg pumpyimg");
+          pi.innerHTML = PUMPY_MARK;
+          tw.appendChild(pi);
+        } else {
+          tw.appendChild(el("div", "noimg", "🏋️"));
+        }
       }
       if (w.favorite) tw.appendChild(el("div", "fav", "★"));
       var d = fmtDur(w.duration_minutes);
@@ -646,6 +652,12 @@ export const APP = String.raw`
     var start = el("button", "startbtn", w.has_full_workout ? "Start workout" : "Start & log freestyle");
     start.onclick = function () { startWorkout(w); };
     d.appendChild(start);
+
+    var ask = el("button", "askpumpy");
+    ask.appendChild(pumpyMark("pmark"));
+    ask.appendChild(document.createTextNode("Ask Pumpy about this workout"));
+    ask.onclick = function () { history.back(); openPumpy(w); };
+    d.appendChild(ask);
 
     // What this hits: catalog muscles through canonical_id, nothing else. Filled
     // in once the catalog map is here, which after the first card is immediate.
@@ -2131,6 +2143,229 @@ export const APP = String.raw`
     });
   }
 
+  // ---------- Pumpy ----------
+  //
+  // The coach. Everything Pumpy knows comes from server-side tools that only see
+  // this user's rows, and every write comes back as a proposal card that is
+  // confirmed here before anything is saved. The mark below is a PLACEHOLDER:
+  // swap PUMPY_MARK for the real art and every avatar, tab icon and card follows.
+
+  var PUMPY_MARK =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<path d="M8.6 8.4a3.4 3.4 0 0 1 6.8 0"/>' +
+    '<circle cx="12" cy="14.2" r="6.3"/>' +
+    '<path d="M9.7 13.3h.01M14.3 13.3h.01"/>' +
+    '<path d="M9.8 16.2c.7.9 1.5 1.3 2.2 1.3s1.5-.4 2.2-1.3"/>' +
+    '</svg>';
+
+  function pumpyMark(cls) {
+    var s = el("span", cls || "pmark");
+    s.innerHTML = PUMPY_MARK;   // constant markup, nothing user-supplied
+    return s;
+  }
+
+  var pumpy = { thread: null, messages: [], busy: false, ctx: null, loaded: false };
+
+  var QUICK_ASKS = [
+    "Build me a 25-minute shoulders and core workout, kettlebell only",
+    "Plan my week from what I've saved",
+    "Add a finisher to my leg day",
+    "I have shoulder pain — where does a tendon-strengthener fit in my week?"
+  ];
+
+  function openPumpy(w) {
+    if (w) pumpy.ctx = { id: w.id, title: w.title || "Workout" };
+    setView("pumpy");
+  }
+
+  function loadPumpy() {
+    if (pumpy.loaded) { renderPumpy(); return; }
+    sb.from("pumpy_threads").select("*").order("updated_at", { ascending: false }).limit(1).then(function (r) {
+      var t = r.data && r.data[0];
+      if (!t) { pumpy.loaded = true; renderPumpy(); return; }
+      pumpy.thread = t;
+      return sb.from("pumpy_messages").select("*").eq("thread_id", t.id).order("id", { ascending: true }).limit(80)
+        .then(function (m) { pumpy.messages = m.data || []; pumpy.loaded = true; renderPumpy(); });
+    });
+  }
+
+  function newPumpyThread() {
+    pumpy.thread = null;
+    pumpy.messages = [];
+    pumpy.ctx = null;
+    renderPumpy();
+  }
+
+  function renderPumpy() {
+    var log = $("pumpylog");
+    log.innerHTML = "";
+    var shown = pumpy.messages.filter(function (m) { return m.role === "user" || m.role === "assistant"; });
+    if (shown.length) {
+      var top = el("div", "pumpytop");
+      var nb = el("button", "chip", "＋ New chat");
+      nb.onclick = newPumpyThread;
+      top.appendChild(nb);
+      log.appendChild(top);
+    } else {
+      var hello = el("div", "pumpyhello");
+      hello.appendChild(pumpyMark("pmark"));
+      hello.appendChild(el("h2", null, "Hey, I'm Pumpy"));
+      hello.appendChild(el("p", null,
+        "I know what you've saved. Ask me to build a workout from it, add to one, or plan your week. " +
+        "I'll show you before I change anything."));
+      var q = el("div", "quick");
+      QUICK_ASKS.forEach(function (t) {
+        var c = el("button", "chip", t);
+        c.onclick = function () { sendPumpy(t); };
+        q.appendChild(c);
+      });
+      hello.appendChild(q);
+      log.appendChild(hello);
+    }
+    shown.forEach(function (m) { log.appendChild(renderMsg(m)); });
+    if (pumpy.busy) {
+      var row = el("div", "msgrow");
+      row.appendChild(pumpyMark("pmark"));
+      row.appendChild(el("div", "msg pumpy typing", "•••"));
+      log.appendChild(row);
+    }
+    renderPumpyCtx();
+    window.scrollTo(0, document.body.scrollHeight);
+  }
+
+  function renderMsg(m) {
+    if (m.role === "user") return el("div", "msg me", m.content || "");
+    var row = el("div", "msgrow");
+    row.appendChild(pumpyMark("pmark"));
+    var col = el("div", "msgcol");
+    if (m.content) col.appendChild(el("div", "msg pumpy", m.content));
+    var p = m.meta && m.meta.proposal;
+    if (p) col.appendChild(renderProposal(m, p));
+    row.appendChild(col);
+    return row;
+  }
+
+  function proposalLine(name, dose) {
+    var l = el("div", "pline");
+    l.appendChild(el("b", null, name));
+    if (dose) l.appendChild(document.createTextNode(" — " + dose));
+    return l;
+  }
+
+  function renderProposal(m, p) {
+    var card = el("div", "proposal");
+    card.appendChild(el("h4", null, p.kind === "create_workout" ? "New workout"
+      : (p.kind === "append_exercises" ? "Add to a workout" : "Plan")));
+    if (p.kind === "create_workout") {
+      card.appendChild(el("div", "ptitle", p.title));
+      var meta = [p.category, fmtDur(p.duration_minutes), (p.equipment || []).join(", ")].filter(Boolean).join(" · ");
+      if (meta) card.appendChild(el("div", "pmeta", meta));
+      (p.blocks || []).forEach(function (b) {
+        var label = [b.title, b.type && b.type !== "straight" ? b.type : null, b.rounds ? b.rounds + " rounds" : null]
+          .filter(Boolean).join(" · ");
+        if (label) card.appendChild(el("div", "pblock", label));
+        (b.exercises || []).forEach(function (e) { card.appendChild(proposalLine(e.name, doseText(e))); });
+      });
+    } else if (p.kind === "append_exercises") {
+      card.appendChild(el("div", "ptitle", p.workout_title || "Workout"));
+      if (p.block_title) card.appendChild(el("div", "pmeta", p.block_title));
+      (p.exercises || []).forEach(function (e) { card.appendChild(proposalLine(e.name, doseText(e))); });
+    } else if (p.kind === "plan_days") {
+      (p.days || []).forEach(function (d) {
+        var dt = new Date(d.day + "T12:00:00");
+        card.appendChild(proposalLine(dt.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }),
+          d.workout_title || d.workout_id));
+      });
+    }
+    var status = m.meta.status;
+    if (status === "pending") {
+      var row = el("div", "btnrow");
+      var no = el("button", "btn ghost", "Not now");
+      var yes = el("button", "btn", p.kind === "create_workout" ? "Save it" : (p.kind === "plan_days" ? "Plan it" : "Add them"));
+      no.onclick = function () { confirmPumpy(m, false, no, yes); };
+      yes.onclick = function () { confirmPumpy(m, true, no, yes); };
+      row.appendChild(no);
+      row.appendChild(yes);
+      card.appendChild(row);
+    } else if (status === "done") {
+      card.appendChild(el("div", "done", "✓ Done"));
+    } else {
+      card.appendChild(el("div", "declined", "Skipped"));
+    }
+    return card;
+  }
+
+  function renderPumpyCtx() {
+    var c = $("pumpyctx");
+    c.innerHTML = "";
+    if (!pumpy.ctx) { c.classList.add("hide"); return; }
+    c.classList.remove("hide");
+    c.appendChild(document.createTextNode("About "));
+    c.appendChild(el("b", null, pumpy.ctx.title));
+    var x = el("button", null, "×");
+    x.setAttribute("aria-label", "Stop talking about this workout");
+    x.onclick = function () { pumpy.ctx = null; renderPumpyCtx(); };
+    c.appendChild(x);
+  }
+
+  function sendPumpy(text) {
+    text = String(text || $("pumpyinput").value || "").trim();
+    if (!text || pumpy.busy) return;
+    $("pumpyinput").value = "";
+    pumpy.busy = true;
+    pumpy.messages.push({ id: "local-" + Date.now(), role: "user", content: text });
+    renderPumpy();
+    var payload = {
+      thread_id: pumpy.thread ? pumpy.thread.id : null,
+      message: text,
+      workout_id: pumpy.ctx ? pumpy.ctx.id : null
+    };
+    api("pumpy/chat", { method: "POST", body: JSON.stringify(payload) }).then(function (r) {
+      pumpy.busy = false;
+      pumpy.messages = pumpy.messages.filter(function (m) { return String(m.id).indexOf("local-") !== 0; });
+      if (r.status !== "ok") {
+        // The ceiling and the outage both come back as something Pumpy says.
+        pumpy.messages.push({ id: "local-err-" + Date.now(), role: "user", content: text });
+        pumpy.messages.push({ id: "local-err2-" + Date.now(), role: "assistant", content: r.message || "Something went wrong — try again." });
+        renderPumpy();
+        return;
+      }
+      if (!pumpy.thread || pumpy.thread.id !== r.thread_id) pumpy.thread = { id: r.thread_id };
+      if (r.user_message) pumpy.messages.push(r.user_message);
+      (r.messages || []).forEach(function (m) { pumpy.messages.push(m); });
+      renderPumpy();
+    }).catch(function () {
+      pumpy.busy = false;
+      pumpy.messages.push({ id: "local-err-" + Date.now(), role: "assistant", content: "I couldn't reach Spotter — check your connection." });
+      renderPumpy();
+    });
+  }
+
+  function confirmPumpy(m, accept, noBtn, yesBtn) {
+    noBtn.disabled = true;
+    yesBtn.disabled = true;
+    if (accept) yesBtn.textContent = "Saving…";
+    api("pumpy/confirm", { method: "POST", body: JSON.stringify({ thread_id: pumpy.thread.id, message_id: m.id, accept: accept }) })
+      .then(function (r) {
+        if (r.status !== "ok") {
+          toast(r.message || "Could not do that.");
+          noBtn.disabled = false; yesBtn.disabled = false;
+          return;
+        }
+        m.meta.status = accept ? "done" : "declined";
+        (r.messages || []).forEach(function (x) { pumpy.messages.push(x); });
+        if (r.workout) {
+          if (r.created) state.workouts.unshift(r.workout);
+          else absorbWorkout(r.workout);
+        }
+        if (r.plan) state.plan = null;
+        renderPumpy();
+      }).catch(function () {
+        toast("Could not reach Spotter — check your connection.");
+        noBtn.disabled = false; yesBtn.disabled = false;
+      });
+  }
+
   // ---------- sheets ----------
 
   function openSheet(id) { $(id).classList.add("open"); }
@@ -2222,7 +2457,8 @@ export const APP = String.raw`
       if (r.status === "ok") {
         var line = r.saves_today + " of " + r.limit_saves +
           " (" + r.extracts_today + "/" + r.limit_extract + " extractions, " +
-          r.helpers_today + "/" + r.limit_helper + " coaching)";
+          r.helpers_today + "/" + r.limit_helper + " coaching, " +
+          (r.chats_today || 0) + "/" + (r.limit_chat || "—") + " Pumpy)";
         // Say so plainly when the day's spend ceiling has switched the paid
         // extractors off — cards get thinner and the user should know why.
         if (r.paid_enabled === false) line += " · budget reached, using the free reader";
@@ -2265,12 +2501,14 @@ export const APP = String.raw`
     $("empty").classList.toggle("hide", !lib || !!visible().length);
     $("planview").classList.toggle("open", v === "plan");
     $("progressview").classList.toggle("open", v === "progress");
+    $("pumpyview").classList.toggle("open", v === "pumpy");
 
-    var titles = { library: "Spotter", plan: "Plan", progress: "Progress" };
+    var titles = { library: "Spotter", plan: "Plan", progress: "Progress", pumpy: "Pumpy" };
     $("apptitle").textContent = titles[v] || "Spotter";
     if (lib) { render(); }
     if (v === "plan") { $("count").textContent = "This week"; loadPlan(); }
     if (v === "progress") { $("count").textContent = "Your numbers, every session"; loadLogs().then(renderProgress); }
+    if (v === "pumpy") { $("count").textContent = "Your coach"; loadPumpy(); return; }
     window.scrollTo(0, 0);
   }
 
@@ -2329,6 +2567,16 @@ export const APP = String.raw`
   $("exeditdelete").onclick = deleteExEdit;
   $("exeditcancel").onclick = function () { closeSheet("exeditsheet"); exEdit = null; };
   $("exeditname").addEventListener("keydown", function (e) { if (e.key === "Enter") saveExEdit(); });
+
+  $("pumpytab").innerHTML = PUMPY_MARK;
+  $("pumpysend").onclick = function () { sendPumpy(); };
+  $("pumpyinput").addEventListener("keydown", function (e) {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendPumpy(); }
+  });
+  $("pumpyinput").addEventListener("input", function () {
+    this.style.height = "auto";
+    this.style.height = Math.min(this.scrollHeight, 120) + "px";
+  });
 
   $("colcreate").onclick = createCollection;
   $("colname").addEventListener("keydown", function (e) { if (e.key === "Enter") createCollection(); });

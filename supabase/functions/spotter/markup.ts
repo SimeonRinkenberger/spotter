@@ -93,11 +93,22 @@ export const MARKUP_BODY = String.raw`</head>
 
   <div class="view" id="planview"></div>
   <div class="view" id="progressview"></div>
+  <div class="view" id="pumpyview">
+    <div id="pumpylog"></div>
+    <div class="composer" id="pumpycomposer">
+      <div class="pumpyctx hide" id="pumpyctx"></div>
+      <div class="composerrow">
+        <textarea id="pumpyinput" rows="1" placeholder="Ask Pumpy…" autocapitalize="sentences"></textarea>
+        <button class="addbtn" id="pumpysend" aria-label="Send">↑</button>
+      </div>
+    </div>
+  </div>
 
   <nav class="tabbar">
     <button class="tab active" data-view="library"><span class="ti">🏋️</span>Library</button>
     <button class="tab" data-view="plan"><span class="ti">📅</span>Plan</button>
     <button class="tab" data-view="progress"><span class="ti">📈</span>Progress</button>
+    <button class="tab" data-view="pumpy"><span class="ti" id="pumpytab"></span>Pumpy</button>
   </nav>
 </div>
 

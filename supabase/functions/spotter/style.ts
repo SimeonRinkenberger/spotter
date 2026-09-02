@@ -568,6 +568,75 @@ export const STYLE = String.raw`<style>
   .stepper .val small { display: block; font-size: 10px; font-weight: 700; letter-spacing: .12em;
     text-transform: uppercase; color: var(--muted); margin-top: 4px; }
 
+  /* ---------- Pumpy ----------
+     The coach's mark is currentColor everywhere it appears, so it takes the tab's
+     muted/ember state and the avatar's ember-on-soft without extra rules. Chat
+     bubbles borrow the card and accent surfaces; the proposal card is the one
+     place the accent is used as a border, because it is the one thing on the
+     screen asking for a decision. */
+  .tab .ti svg { width: 21px; height: 21px; display: block; }
+  .tab .ti#pumpytab { filter: none; opacity: .55; }
+  .tab.active .ti#pumpytab { opacity: 1; }
+  .pmark { width: 28px; height: 28px; border-radius: 999px; background: var(--ember-soft); color: var(--ember-ink);
+    display: flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+  .pmark svg { width: 17px; height: 17px; display: block; }
+  .noimg.pumpyimg { color: var(--ember); opacity: .9; }
+  .noimg.pumpyimg svg { width: 46px; height: 46px; }
+  #pumpyview { padding-bottom: 0; }
+  #pumpylog { display: flex; flex-direction: column; gap: 10px; padding: 6px 0 14px; min-height: 42vh; }
+  .pumpytop { display: flex; justify-content: flex-end; }
+  .pumpyhello { text-align: center; padding: 22px 12px 8px; color: var(--ink-2); font-size: 14px; line-height: 1.6; }
+  .pumpyhello .pmark { width: 60px; height: 60px; margin: 0 auto 12px; box-shadow: var(--sh-md); }
+  .pumpyhello .pmark svg { width: 34px; height: 34px; }
+  .pumpyhello h2 { font-family: var(--display); font-size: 22px; font-weight: 700; margin: 0 0 6px; color: var(--ink);
+    letter-spacing: -.025em; }
+  .pumpyhello p { margin: 0 auto; max-width: 340px; }
+  .quick { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 16px 0 4px; }
+  .quick .chip { white-space: normal; text-align: left; line-height: 1.3; padding: 9px 13px; }
+  .msgrow { display: flex; gap: 8px; align-items: flex-end; max-width: 92%; }
+  .msgcol { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .msg { padding: 11px 14px; border-radius: 18px; font-size: 14.5px; line-height: 1.55; white-space: pre-wrap;
+    word-break: break-word; }
+  .msg.me { align-self: flex-end; max-width: 86%; background: var(--ember); color: var(--on-ember);
+    border-bottom-right-radius: 6px; box-shadow: 0 3px 12px var(--glow); }
+  .msg.pumpy { background: var(--card); border: 1px solid var(--line); box-shadow: var(--sh-sm);
+    border-bottom-left-radius: 6px; color: var(--ink); }
+  .msg.typing { color: var(--muted); letter-spacing: .2em; }
+  .proposal { background: var(--card); border: 1.5px solid var(--ember); border-radius: 18px; padding: 14px 16px 12px;
+    box-shadow: var(--sh-md); }
+  .proposal h4 { font-family: var(--display); font-size: 11px; font-weight: 700; letter-spacing: .13em;
+    text-transform: uppercase; color: var(--ember-ink); margin: 0 0 8px; }
+  .proposal .ptitle { font-family: var(--display); font-size: 18px; font-weight: 700; letter-spacing: -.02em;
+    margin: 0 0 4px; line-height: 1.2; }
+  .proposal .pmeta { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+  .proposal .pblock { font-size: 11px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase;
+    color: var(--muted); margin: 10px 0 2px; }
+  .proposal .pline { font-size: 13.5px; line-height: 1.5; color: var(--ink-2); padding: 6px 0;
+    border-top: 1px solid var(--line); }
+  .proposal .pline b { color: var(--ink); font-weight: 650; }
+  .proposal .btnrow { margin-top: 12px; }
+  .proposal .btnrow .btn { padding: 12px; font-size: 14.5px; }
+  .proposal .done { color: var(--good); font-weight: 700; font-size: 13px; margin-top: 10px; }
+  .proposal .declined { color: var(--muted); font-size: 13px; margin-top: 10px; }
+  .composer { position: sticky; bottom: calc(78px + env(safe-area-inset-bottom)); padding: 8px 0 12px;
+    background: color-mix(in srgb, var(--paper) 90%, transparent);
+    -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
+  .composerrow { display: flex; gap: 8px; align-items: flex-end; }
+  .composer textarea { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 16px; padding: 12px 14px;
+    font-size: 16px; line-height: 1.4; background: var(--card); color: var(--ink); outline: none; resize: none;
+    max-height: 120px; transition: border-color var(--t-2); }
+  .composer textarea:focus { border-color: var(--ember); }
+  .composer .addbtn { width: 44px; height: 44px; border-radius: 15px; font-size: 20px; }
+  .pumpyctx { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-2); margin: 0 0 8px 6px; }
+  .pumpyctx b { color: var(--ink); font-weight: 650; }
+  .pumpyctx button { border: none; background: var(--sand); color: var(--muted); border-radius: 999px;
+    width: 22px; height: 22px; font-size: 14px; line-height: 1; }
+  .askpumpy { width: 100%; display: flex; align-items: center; justify-content: center; gap: 9px;
+    border: 1px solid var(--line); border-radius: 16px; background: var(--card); color: var(--ink);
+    padding: 12px; font-size: 14px; font-weight: 650; margin: -8px 0 22px; box-shadow: var(--sh-sm);
+    transition: transform var(--t-1) var(--e-out); }
+  .askpumpy:active { transform: scale(.982); }
+
   /* ---------- install hint ---------- */
   #hint { margin: 12px 18px 0; background: var(--card); border: 1px solid var(--line);
     border-radius: 16px; padding: 13px 15px; font-size: 13px; line-height: 1.55; color: var(--ink-2);

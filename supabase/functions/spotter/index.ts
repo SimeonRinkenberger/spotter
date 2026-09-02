@@ -10,6 +10,10 @@
 //   POST /api/swap                  { exercise, reason: no_equipment | station_busy | pain,
 //                                     body_area? } — alternatives with honest trade-offs, or
 //                                     for pain: modifications + what to build up, never a diagnosis
+//   POST /api/pumpy/chat            { thread_id?, message, workout_id? } — one turn with the coach;
+//                                     tools run over the caller's own rows, writes come back as a
+//                                     proposal to confirm
+//   POST /api/pumpy/confirm         { thread_id, message_id, accept } — execute or decline a proposal
 //   POST /api/rotate-key            new ingest key
 //   GET  /api/limits                today's counts, and the spend ceiling
 //   POST /api/worker/tick           drain the ingest queue (shared secret, not a user)
@@ -182,6 +186,10 @@ async function ensureConfig(): Promise<void> {
 const LIMIT_EXTRACT = Number(Deno.env.get("LIMIT_EXTRACT") ?? "60");
 const LIMIT_SAVES = Number(Deno.env.get("LIMIT_SAVES") ?? "200");
 const LIMIT_HELPER = Number(Deno.env.get("LIMIT_HELPER") ?? "300");
+// One Pumpy turn can be several model calls (a tool call is a round trip), each
+// carrying the conversation and a tool result — far costlier than an extraction.
+// Its own, tighter ceiling; the global spend ceiling still sits on top.
+const LIMIT_CHAT = Number(Deno.env.get("LIMIT_CHAT") ?? "40");
 // Correcting a card costs no AI and no scrape, so this is not a cost ceiling — it
 // is a floor under the quality of the evaluation set. A client looping edits could
 // bury the real corrections under thousands of synthetic ones, and the whole worth
@@ -2210,22 +2218,24 @@ function utcMidnight(): string {
 
 // ---------- limits ----------
 
-type Counts = { saves: number; extracts: number; helpers: number };
+type Counts = { saves: number; extracts: number; helpers: number; chats: number };
 
 /**
- * The three daily ceilings, read together. `extracts` is what actually costs
- * money — it counts a new save AND a reprocess, since both run the full ladder.
- * A cache hit is a save but not an extract, which is the whole point of the cache.
+ * The daily ceilings, read together. `extracts` is what actually costs money —
+ * it counts a new save AND a reprocess, since both run the full ladder. A cache
+ * hit is a save but not an extract, which is the whole point of the cache.
+ * `chats` is one row per Pumpy turn, however many tool round trips it took.
  */
 async function countsFor(userId: string): Promise<Counts> {
   const since = utcMidnight();
   const base = `user_id=eq.${userId}&created_at=gte.${since}`;
-  const [saves, extracts, helpers] = await settledAll([
+  const [saves, extracts, helpers, chats] = await settledAll([
     dbCount("saves_log", `${base}&kind=eq.save`),
     dbCount("saves_log", `${base}&cached=is.false&kind=in.(save,reprocess)`),
     dbCount("saves_log", `${base}&kind=eq.helper`),
+    dbCount("saves_log", `${base}&kind=eq.chat`),
   ]);
-  return { saves, extracts, helpers };
+  return { saves, extracts, helpers, chats };
 }
 
 function extractLimitResponse(cors: Cors): Response {
@@ -3358,6 +3368,505 @@ async function handleSwap(req: Request, userId: string, cors: Cors): Promise<Res
   return json({ status: "ok", model: gen.by, ...out }, 200, cors);
 }
 
+// ---------- Pumpy, the coach ----------
+//
+// Pumpy talks to the user about THEIR library and nothing else. Every tool below
+// takes the caller's user id and puts it in the query, so there is no path from
+// a conversation to another person's rows. It runs through textGenerate like
+// every other model call — Luna when the key is there, the free chain otherwise,
+// the day's spend ceiling on top — and it never writes without a confirmed
+// proposal: reads happen inside the turn, writes come back as a card the user
+// accepts or declines, and only /api/pumpy/confirm executes them.
+//
+// Tool calling is a JSON protocol on top of plain text generation, because that
+// is what the front door offers and because it keeps every provider in the
+// ladder usable: the model replies {say, tool, proposal}; a tool result is
+// appended to the transcript and the model is asked again, a few times at most.
+
+const PUMPY_MAX_STEPS = 5;
+const PUMPY_HISTORY = 16;
+const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+function utcMonday(d: Date): Date {
+  const x = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  x.setUTCDate(x.getUTCDate() - ((x.getUTCDay() + 6) % 7));
+  return x;
+}
+function ymdUtc(d: Date): string { return d.toISOString().slice(0, 10); }
+function isUuid(s: unknown): s is string { return typeof s === "string" && /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(s); }
+
+function compactExercise(e: any) {
+  return {
+    name: e?.name ?? null, canonical_id: e?.canonical_id ?? null, sets: e?.sets ?? null, reps: e?.reps ?? null,
+    duration_seconds: e?.duration_seconds ?? null, rest_seconds: e?.rest_seconds ?? null,
+  };
+}
+
+/** Muscles a card trains, by the catalog through canonical_id — the same rule the body diagram uses. */
+function catalogMusclesOf(blocks: any[]): string[] {
+  const out: string[] = [];
+  for (const b of blocks ?? []) {
+    for (const e of b?.exercises ?? []) {
+      const c = catalogById(e?.canonical_id ?? null);
+      if (c) for (const m of c.muscles) if (!out.includes(m)) out.push(m);
+    }
+  }
+  return out;
+}
+
+// -- tools: every one scoped by user id in the query itself --
+
+async function toolListLibrary(userId: string) {
+  const [rows, items] = await settledAll([
+    dbSelect("workouts",
+      `user_id=eq.${userId}&ingest_status=eq.ready&select=id,title,category,muscle_groups,equipment,duration_minutes,favorite,blocks,platform` +
+      `&order=favorite.desc,created_at.desc&limit=80`),
+    dbSelect("collection_items", `user_id=eq.${userId}&select=workout_id,collections(name)`),
+  ]);
+  const cols = new Map<string, string[]>();
+  for (const it of items) {
+    const n = it?.collections?.name;
+    if (!n) continue;
+    const l = cols.get(it.workout_id) ?? [];
+    l.push(n);
+    cols.set(it.workout_id, l);
+  }
+  return rows.map((w: any) => {
+    const exs = (w.blocks ?? []).flatMap((b: any) => b?.exercises ?? []);
+    const mus = catalogMusclesOf(w.blocks);
+    return {
+      id: w.id, title: w.title, category: w.category, source: w.platform,
+      muscles: mus.length ? mus : (w.muscle_groups ?? []),
+      equipment: w.equipment ?? [], minutes: w.duration_minutes ?? null, favorite: !!w.favorite,
+      collections: cols.get(w.id) ?? [],
+      exercise_count: exs.length,
+      exercises: exs.slice(0, 8).map((e: any) => e?.name).filter(Boolean),
+    };
+  });
+}
+
+async function toolGetWorkout(userId: string, id: string) {
+  if (!isUuid(id)) return { error: "that is not a workout id from this library" };
+  const rows = await dbSelect("workouts",
+    `id=eq.${id}&user_id=eq.${userId}&select=id,title,category,muscle_groups,equipment,duration_minutes,favorite,blocks,notes`);
+  if (!rows.length) return { error: "no such workout in this library" };
+  const w = rows[0];
+  return {
+    id: w.id, title: w.title, category: w.category, muscles: catalogMusclesOf(w.blocks),
+    equipment: w.equipment ?? [], minutes: w.duration_minutes ?? null, favorite: !!w.favorite, notes: w.notes ?? null,
+    blocks: (w.blocks ?? []).map((b: any) => ({
+      title: b?.title ?? null, type: b?.type ?? "straight", rounds: b?.rounds ?? null, rest_seconds: b?.rest_seconds ?? null,
+      exercises: (b?.exercises ?? []).map(compactExercise),
+    })),
+  };
+}
+
+function toolSearchCatalog(query: string) {
+  const q = String(query ?? "").toLowerCase().trim();
+  if (!q) return [];
+  const out: CatalogEntry[] = [];
+  const hit = canonicalize(q);
+  if (hit) out.push(hit.entry);
+  const toks = q.split(/[^a-z0-9]+/).filter(Boolean);
+  for (const e of CATALOG) {
+    if (out.includes(e)) continue;
+    const hay = (e.name + " " + e.aliases.join(" ") + " " + e.muscles.join(" ") + " " + e.equipment.join(" ")).toLowerCase();
+    if (toks.every((t) => hay.includes(t))) out.push(e);
+    if (out.length >= 12) break;
+  }
+  return out.map((e) => ({ id: e.id, name: e.name, muscles: e.muscles, equipment: e.equipment, unilateral: e.unilateral }));
+}
+
+async function toolGetPlan(userId: string, weekStart?: string) {
+  let start = weekStart && /^\d{4}-\d{2}-\d{2}$/.test(weekStart) ? new Date(weekStart + "T00:00:00Z") : utcMonday(new Date());
+  if (isNaN(start.getTime())) start = utcMonday(new Date());
+  const end = new Date(start.getTime() + 6 * 86400000);
+  const [plan, logs] = await settledAll([
+    dbSelect("plan", `user_id=eq.${userId}&day=gte.${ymdUtc(start)}&day=lte.${ymdUtc(end)}&select=id,day,workout_id,workouts(title)&order=day`),
+    dbSelect("workout_logs",
+      `user_id=eq.${userId}&started_at=gte.${ymdUtc(start)}T00:00:00Z&started_at=lte.${ymdUtc(end)}T23:59:59Z&select=started_at,workout_title`),
+  ]);
+  const days = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(start.getTime() + i * 86400000);
+    const key = ymdUtc(d);
+    days.push({
+      day: key, weekday: WEEKDAYS[d.getUTCDay()],
+      planned: plan.filter((p: any) => p.day === key).map((p: any) => ({ workout_id: p.workout_id, title: p.workouts?.title ?? null })),
+      done: logs.filter((l: any) => String(l.started_at).slice(0, 10) === key).map((l: any) => l.workout_title),
+    });
+  }
+  return { week_start: ymdUtc(start), days };
+}
+
+async function toolLogsSummary(userId: string, days: number) {
+  const n = Math.max(1, Math.min(Number(days) || 14, 90));
+  const since = new Date(Date.now() - n * 86400000).toISOString();
+  const logs = await dbSelect("workout_logs",
+    `user_id=eq.${userId}&started_at=gte.${since}&select=started_at,workout_title,duration_seconds,entries&order=started_at.desc&limit=100`);
+  const muscles: Record<string, number> = {};
+  const byWorkout: Record<string, number> = {};
+  let volume = 0, sets = 0;
+  for (const l of logs) {
+    const t = l.workout_title ?? "untitled";
+    byWorkout[t] = (byWorkout[t] ?? 0) + 1;
+    for (const e of l.entries ?? []) {
+      const c = catalogById(e?.canonical_id ?? null);
+      if (c) for (const m of c.muscles) muscles[m] = (muscles[m] ?? 0) + 1;
+      for (const s of e?.sets ?? []) { sets++; if (s?.reps && s?.weight) volume += Number(s.reps) * Number(s.weight); }
+    }
+  }
+  return {
+    days: n, sessions: logs.length, last_session: logs[0]?.started_at ?? null,
+    sets_logged: sets, volume, muscles_hit: muscles, by_workout: byWorkout,
+  };
+}
+
+async function runPumpyTool(userId: string, name: string, args: any): Promise<unknown> {
+  switch (name) {
+    case "list_library": return await toolListLibrary(userId);
+    case "get_workout": return await toolGetWorkout(userId, String(args?.id ?? args?.workout_id ?? ""));
+    case "search_catalog": return toolSearchCatalog(String(args?.query ?? args?.q ?? ""));
+    case "get_plan": return await toolGetPlan(userId, args?.week_start ? String(args.week_start) : undefined);
+    case "get_logs_summary": return await toolLogsSummary(userId, Number(args?.days ?? 14));
+    default: return { error: "unknown tool " + name + "; the tools are list_library, get_workout, search_catalog, get_plan, get_logs_summary" };
+  }
+}
+
+// -- proposals: validated when the model makes them, executed only on confirm --
+
+type PumpyProposal =
+  | {
+    kind: "create_workout"; title: string; category: string; difficulty: string | null;
+    duration_minutes: number | null; equipment: string[]; muscle_groups: string[]; blocks: Block[]; summary: string;
+  }
+  | {
+    kind: "append_exercises"; workout_id: string; workout_title: string; block_title: string | null;
+    exercises: Exercise[]; summary: string;
+  }
+  | { kind: "plan_days"; days: { day: string; workout_id: string; workout_title: string }[]; summary: string };
+
+/** Model-written exercises, through the same normalizer extraction uses, then the catalog. */
+function pumpyExercises(list: unknown): Exercise[] {
+  if (!Array.isArray(list)) return [];
+  return list.slice(0, 20)
+    .map(normalizeExercise)
+    .filter((e): e is Exercise => !!e)
+    .map((e) => {
+      delete e.evidence_quote;
+      e.evidence = null;          // a coach wrote it; there is no source line to trace
+      e.canonical_id = canonId(e.name);
+      return e;
+    });
+}
+
+async function validateProposal(userId: string, p: any): Promise<PumpyProposal | { error: string }> {
+  const kind = String(p?.kind ?? "");
+  const summary = swapStr(p?.summary, 400);
+
+  if (kind === "create_workout") {
+    const title = cleanTitle(swapStr(p?.title, 120)) || "Pumpy workout";
+    const card = normalizeCard({ ...p, title }, emptyCard(title));
+    for (const b of card.blocks) for (const e of b.exercises) { delete e.evidence_quote; e.evidence = null; }
+    if (!countExercises(card)) return { error: "a workout needs at least one exercise" };
+    applyCatalog(card);
+    return {
+      kind, title: card.title, category: card.category, difficulty: card.difficulty,
+      duration_minutes: card.duration_minutes, equipment: card.equipment, muscle_groups: card.muscle_groups,
+      blocks: card.blocks, summary: summary || `Save "${card.title}" to your library`,
+    };
+  }
+
+  if (kind === "append_exercises") {
+    const wid = String(p?.workout_id ?? "");
+    if (!isUuid(wid)) return { error: "workout_id must be an id returned by list_library" };
+    const rows = await dbSelect("workouts", `id=eq.${wid}&user_id=eq.${userId}&select=id,title`);
+    if (!rows.length) return { error: "no such workout in this library" };
+    const exercises = pumpyExercises(p?.exercises);
+    if (!exercises.length) return { error: "nothing to add — give at least one exercise with a name" };
+    return {
+      kind, workout_id: wid, workout_title: rows[0].title ?? "Workout",
+      block_title: cleanTitle(swapStr(p?.block_title, 60)) || null,
+      exercises, summary: summary || `Add ${exercises.length} exercise(s) to "${rows[0].title}"`,
+    };
+  }
+
+  if (kind === "plan_days") {
+    const raw = Array.isArray(p?.days) ? p.days.slice(0, 14) : [];
+    const ids = [...new Set(raw.map((d: any) => String(d?.workout_id ?? "")).filter(isUuid))] as string[];
+    if (!ids.length) return { error: "each day needs a workout_id returned by list_library" };
+    const rows = await dbSelect("workouts", `user_id=eq.${userId}&id=in.(${ids.join(",")})&select=id,title`);
+    const titles = new Map<string, string>(rows.map((r: any) => [r.id, r.title ?? "Workout"]));
+    const days: { day: string; workout_id: string; workout_title: string }[] = [];
+    for (const d of raw) {
+      const day = String(d?.day ?? "");
+      const wid = String(d?.workout_id ?? "");
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !titles.has(wid)) continue;
+      if (days.some((x) => x.day === day && x.workout_id === wid)) continue;
+      days.push({ day, workout_id: wid, workout_title: titles.get(wid)! });
+    }
+    if (!days.length) return { error: "no valid days: use YYYY-MM-DD and workout ids from this library" };
+    return { kind, days, summary: summary || `Plan ${days.length} day(s)` };
+  }
+
+  return { error: "unknown proposal kind " + kind };
+}
+
+async function execProposal(userId: string, p: PumpyProposal, model: string | null):
+  Promise<{ workout?: any; created?: boolean; plan?: any[] }> {
+  if (p.kind === "create_workout") {
+    const id = crypto.randomUUID();
+    const row = await dbInsert("workouts", {
+      id, user_id: userId,
+      url: "spotter://pumpy/" + id, shortcode: "pumpy-" + id, platform: "pumpy", kind: "coach", author: "Pumpy",
+      title: p.title, caption: p.summary, category: p.category,
+      muscle_groups: p.muscle_groups, equipment: p.equipment, difficulty: p.difficulty,
+      duration_minutes: p.duration_minutes, blocks: p.blocks, tags: ["pumpy"],
+      has_full_workout: true, extracted_by: "pumpy:" + (model ?? "unknown"), ingest_status: "ready",
+    });
+    return { workout: row, created: true };
+  }
+
+  if (p.kind === "append_exercises") {
+    const rows = await dbSelect("workouts", `id=eq.${p.workout_id}&user_id=eq.${userId}&select=*`);
+    if (!rows.length) throw new Error("that workout is no longer in the library");
+    const w = rows[0];
+    const blocks: any[] = Array.isArray(w.blocks) ? deepCopy(w.blocks) : [];
+    const exs = p.exercises.map((e) => ({ ...e, added_by_pumpy: true }));
+    blocks.push({ title: p.block_title ?? "Added by Pumpy", type: "straight", rounds: null, rest_seconds: null, exercises: exs });
+    const shim = {
+      muscle_groups: Array.isArray(w.muscle_groups) ? w.muscle_groups.slice() : [],
+      equipment: Array.isArray(w.equipment) ? w.equipment.slice() : [],
+      blocks,
+    } as unknown as Card;
+    applyCatalog(shim);
+    const updated = await dbPatch("workouts", `id=eq.${w.id}&user_id=eq.${userId}`, {
+      blocks, muscle_groups: shim.muscle_groups, equipment: shim.equipment, has_full_workout: true,
+    });
+    // Same ledger as a hand-added exercise: model output on the left is null,
+    // the coach's exercise on the right, tagged so the two are separable.
+    try {
+      await dbInsertMany("corrections", exs.map((e, i) => ({
+        user_id: userId, workout_id: w.id, shortcode: w.shortcode, platform: w.platform,
+        kind: "add", field: "exercise", old_value: null, new_value: e.name,
+        old_canonical_id: null, new_canonical_id: e.canonical_id ?? null,
+        old_exercise: null, new_exercise: { ...e, added_by: "pumpy" },
+        block_index: blocks.length - 1, exercise_index: i, exercise_name: e.name,
+        extracted_by: w.extracted_by ?? null,
+        confidence: w.confidence === null || w.confidence === undefined ? null : Number(w.confidence),
+      })));
+    } catch (e) {
+      console.error("pumpy: corrections insert for append failed", e);
+    }
+    return { workout: updated, created: false };
+  }
+
+  const added: any[] = [];
+  for (const d of p.days) {
+    const dupe = await dbSelect("plan", `user_id=eq.${userId}&day=eq.${d.day}&workout_id=eq.${d.workout_id}&select=id`);
+    if (dupe.length) continue;
+    added.push(await dbInsert("plan", { user_id: userId, day: d.day, workout_id: d.workout_id }));
+  }
+  return { plan: added };
+}
+
+function pumpySystem(today: Date, ctxWorkout: { id: string; title: string } | null): string {
+  return [
+    "You are Pumpy, the coach inside Spotter — small, upbeat, plain-spoken, and honest. You help the user build " +
+    "workouts from their OWN saved library, add to workouts they already have, plan their week, and place things " +
+    "sensibly. Short answers, no emojis, no preaching. You are not a clinician: never name a condition or diagnose. " +
+    "When pain comes up, offer modifications and what to strengthen, and end with exactly this line: " + PAIN_NOTE,
+    "Today is " + WEEKDAYS[today.getUTCDay()] + " " + ymdUtc(today) + ". This week starts Monday " + ymdUtc(utcMonday(today)) + ".",
+    ctxWorkout ? `The user opened this chat from their workout "${ctxWorkout.title}" (id ${ctxWorkout.id}).` : "",
+    "You can call tools. Every tool sees only this user's own data. Tools:",
+    "- list_library {} → their saved workouts: id, title, category, muscles, equipment, minutes, favorite, collections, exercise names. Call this first when you need to know what they have.",
+    "- get_workout {id} → one workout with every block and exercise.",
+    "- search_catalog {query} → real exercises Spotter knows (name, muscles, equipment). Check names here before proposing.",
+    "- get_plan {week_start?} → what is planned and done on each day of a week (week_start is a Monday, YYYY-MM-DD).",
+    "- get_logs_summary {days?} → recent sessions, muscles hit, volume.",
+    "Writes never happen directly. When the user wants something saved, return a proposal; they confirm it in the app:",
+    '- {"kind":"create_workout","title":string,"category":one of ' + JSON.stringify(CATEGORIES) +
+    ',"duration_minutes":int|null,"equipment":[from ' + JSON.stringify(EQUIPMENT) + '],"blocks":[{"title":string|null,"type":one of ' +
+    JSON.stringify(BLOCK_TYPES) + ',"rounds":int|null,"rest_seconds":int|null,"exercises":[{"name":string,"sets":int|null,' +
+    '"reps":string|null,"duration_seconds":int|null,"rest_seconds":int|null,"notes":string|null}]}],"summary":one sentence}',
+    '- {"kind":"append_exercises","workout_id":string,"block_title":string|null,"exercises":[same exercise shape],"summary":one sentence}',
+    '- {"kind":"plan_days","days":[{"day":"YYYY-MM-DD","workout_id":string}],"summary":one sentence}',
+    "Rules: spell exercises the way the catalog does when the catalog has them; only use workout ids that a tool returned, never invent one; " +
+    "favourites and collections tell you what the user likes; when a saved workout fits, prefer it to inventing one; " +
+    "balance a week — do not stack the same muscles on consecutive days and leave rest days; respect the equipment and time the user states.",
+    'Reply with ONLY a JSON object: {"say": string, "tool": {"name": string, "args": object} | null, "proposal": object | null}. ' +
+    "Call one tool at a time; when you call one, say may be empty. When you propose, say explains it in one or two sentences. " +
+    "Otherwise just answer in say.",
+  ].filter(Boolean).join("\n");
+}
+
+async function handlePumpyChat(req: Request, userId: string, cors: Cors): Promise<Response> {
+  const body = await req.json().catch(() => ({}));
+  const message = String(body?.message ?? "").replace(/\s+/g, " ").trim().slice(0, 2000);
+  if (!message) return json({ status: "error", message: "Say something first." }, 400, cors);
+  if (!haveAI()) return json({ status: "error", message: "AI is not configured yet." }, 503, cors);
+
+  const chats = await dbCount("saves_log", `user_id=eq.${userId}&created_at=gte.${utcMidnight()}&kind=eq.chat`);
+  if (chats >= LIMIT_CHAT) {
+    return json({
+      status: "limit",
+      message: `That is ${LIMIT_CHAT} chats today — my daily limit while Spotter is free. I am back at midnight UTC.`,
+    }, 429, cors);
+  }
+
+  let thread: any = null;
+  const tid = String(body?.thread_id ?? "");
+  if (isUuid(tid)) {
+    const t = await dbSelect("pumpy_threads", `id=eq.${tid}&user_id=eq.${userId}&select=*`);
+    thread = t[0] ?? null;
+  }
+  let ctxWorkout: { id: string; title: string } | null = null;
+  const wid = String(body?.workout_id ?? thread?.workout_id ?? "");
+  if (isUuid(wid)) {
+    const w = await dbSelect("workouts", `id=eq.${wid}&user_id=eq.${userId}&select=id,title`);
+    if (w.length) ctxWorkout = { id: w[0].id, title: w[0].title ?? "Workout" };
+  }
+  if (!thread) {
+    thread = await dbInsert("pumpy_threads", { user_id: userId, title: message.slice(0, 60), workout_id: ctxWorkout?.id ?? null });
+  }
+  const userMsg = await dbInsert("pumpy_messages", { thread_id: thread.id, user_id: userId, role: "user", content: message });
+
+  // The last few visible turns, compactly. Tool results from earlier turns are
+  // not replayed — they can be thousands of tokens — only what each side said.
+  const hist = await dbSelect("pumpy_messages",
+    `thread_id=eq.${thread.id}&user_id=eq.${userId}&role=in.(user,assistant)&id=lt.${userMsg.id}&select=role,content,meta&order=id.desc&limit=${PUMPY_HISTORY}`);
+  const transcript: string[] = hist.reverse().map((m: any) =>
+    (m.role === "user" ? "User: " : "Pumpy: ") + String(m.content ?? "").slice(0, 800) +
+    (m.meta?.proposal ? ` [proposed ${m.meta.proposal.kind}; the user ${m.meta.status === "done" ? "confirmed it" : m.meta.status === "declined" ? "declined it" : "has not answered yet"}]` : ""));
+  transcript.push("User: " + message);
+
+  const system = pumpySystem(new Date(), ctxWorkout);
+  const ctx: AiCtx = { purpose: "chat", userId };
+  const out: any[] = [];
+  let pending: any = null;
+  let by: string | null = null;
+  let toolCalls = 0;
+  const say_of = (r: any) => swapStr(r?.say, 1500);
+
+  for (let step = 0; step < PUMPY_MAX_STEPS; step++) {
+    const gen = await textGenerate(system, "Conversation so far:\n" + transcript.join("\n") + "\n\nReply as Pumpy, as JSON.", true, ctx);
+    by = gen.by ?? by;
+    if (!gen.text) {
+      // Every provider declined — quota, outage, or the day's spend ceiling with no
+      // free rung left. Pumpy says so; it does not throw.
+      const m = await dbInsert("pumpy_messages", {
+        thread_id: thread.id, user_id: userId, role: "assistant",
+        content: "I need a breather — every model I can reach is busy or today's budget is spent. Try me again in a little while.",
+        meta: { degraded: true },
+      });
+      out.push(m);
+      break;
+    }
+    let r: any;
+    try { r = parseJsonLoose(gen.text); } catch { r = { say: gen.text.trim() }; }
+    const say = say_of(r);
+    const tool = r?.tool && typeof r.tool === "object" && r.tool.name ? r.tool : null;
+
+    if (tool && step < PUMPY_MAX_STEPS - 1) {
+      toolCalls++;
+      let result: unknown;
+      try { result = await runPumpyTool(userId, String(tool.name), tool.args ?? {}); }
+      catch (e) { result = { error: String(e).slice(0, 200) }; }
+      const resultText = JSON.stringify(result).slice(0, 7000);
+      if (say) transcript.push("Pumpy: " + say);
+      transcript.push("[tool " + tool.name + "(" + JSON.stringify(tool.args ?? {}).slice(0, 300) + ") → " + resultText + "]");
+      await dbInsert("pumpy_messages", {
+        thread_id: thread.id, user_id: userId, role: "tool", content: String(tool.name),
+        meta: { args: tool.args ?? {}, result_chars: resultText.length },
+      });
+      continue;
+    }
+
+    let proposal: PumpyProposal | null = null;
+    if (r?.proposal && typeof r.proposal === "object") {
+      const v = await validateProposal(userId, r.proposal);
+      if ("error" in v) {
+        transcript.push("[proposal rejected: " + v.error + " — fix it or answer without one]");
+        if (step < PUMPY_MAX_STEPS - 1) continue;
+      } else {
+        proposal = v;
+      }
+    }
+    const content = say || (proposal ? proposal.summary : "I lost my train of thought — say that again?");
+    const m = await dbInsert("pumpy_messages", {
+      thread_id: thread.id, user_id: userId, role: "assistant", content,
+      meta: proposal ? { proposal, status: "pending", model: by } : { model: by },
+    });
+    out.push(m);
+    if (proposal) pending = m;
+    break;
+  }
+
+  try { await dbPatch("pumpy_threads", `id=eq.${thread.id}`, { updated_at: new Date().toISOString() }); } catch { /* cosmetic */ }
+  // One row per turn however many round trips it took: the ceiling is on turns.
+  try { await dbInsert("saves_log", { user_id: userId, kind: "chat", cached: false, shortcode: null }); }
+  catch (e) { console.error("chat saves_log insert failed", e); }
+  console.log("pumpy turn", thread.id, "tools", toolCalls, "by", by ?? "-", pending ? "proposal " + pending.meta.proposal.kind : "");
+  return json({ status: "ok", thread_id: thread.id, user_message: userMsg, messages: out, pending: pending ? pending.id : null, model: by }, 200, cors);
+}
+
+async function handlePumpyConfirm(req: Request, userId: string, cors: Cors): Promise<Response> {
+  const body = await req.json().catch(() => ({}));
+  const mid = Number(body?.message_id);
+  const accept = !!body?.accept;
+  if (!Number.isFinite(mid)) return json({ status: "error", message: "Which proposal?" }, 400, cors);
+  const rows = await dbSelect("pumpy_messages", `id=eq.${mid}&user_id=eq.${userId}&role=eq.assistant&select=*`);
+  const m = rows[0];
+  if (!m?.meta?.proposal) return json({ status: "error", message: "Not found." }, 404, cors);
+  if (m.meta.status !== "pending") {
+    return json({ status: "error", message: "That one was already " + m.meta.status + "." }, 409, cors);
+  }
+  const p = m.meta.proposal as PumpyProposal;
+  const say = async (content: string, meta: unknown = null) =>
+    await dbInsert("pumpy_messages", { thread_id: m.thread_id, user_id: userId, role: "assistant", content, meta });
+
+  if (!accept) {
+    await dbPatch("pumpy_messages", `id=eq.${mid}`, { meta: { ...m.meta, status: "declined" } });
+    const a = await say("No problem — nothing was changed.");
+    return json({ status: "ok", messages: [a] }, 200, cors);
+  }
+
+  let result: { workout?: any; created?: boolean; plan?: any[] };
+  try {
+    result = await execProposal(userId, p, m.meta.model ?? null);
+  } catch (e) {
+    console.error("pumpy: proposal execution failed", p.kind, e);
+    const a = await say("I could not save that: " + String((e as Error)?.message ?? e).slice(0, 160));
+    return json({ status: "ok", messages: [a] }, 200, cors);
+  }
+
+  const summary = p.kind === "plan_days"
+    ? { plan_rows: (result.plan ?? []).length, days: p.days.map((d) => d.day) }
+    : { workout_id: result.workout?.id ?? null, created: !!result.created };
+  await dbPatch("pumpy_messages", `id=eq.${mid}`, { meta: { ...m.meta, status: "done", result: summary } });
+  // The provenance row: what was executed, with what, and what came of it.
+  await dbInsert("pumpy_messages", {
+    thread_id: m.thread_id, user_id: userId, role: "tool", content: p.kind,
+    meta: { executed: p.kind, proposal_message_id: mid, result: summary },
+  });
+
+  let text: string;
+  if (p.kind === "create_workout") {
+    text = `Saved "${p.title}" to your library — ${countExercises({ blocks: p.blocks } as Card)} exercises. It is in the Library tab now.`;
+  } else if (p.kind === "append_exercises") {
+    text = `Added ${p.exercises.length} exercise${p.exercises.length === 1 ? "" : "s"} to "${p.workout_title}".`;
+  } else {
+    const n = (result.plan ?? []).length;
+    text = n ? `Planned ${n} day${n === 1 ? "" : "s"}. Have a look at the Plan tab.` : "Those days were already planned — nothing to add.";
+  }
+  const a = await say(text);
+  console.log("pumpy confirm", p.kind, JSON.stringify(summary));
+  return json({
+    status: "ok", messages: [a],
+    workout: result.workout ?? null, created: !!result.created, plan: result.plan ?? null,
+  }, 200, cors);
+}
+
 // ---------- router ----------
 
 Deno.serve(async (req: Request) => {
@@ -3431,6 +3940,8 @@ Deno.serve(async (req: Request) => {
     }
 
     if (req.method === "POST" && path === "/api/swap") return await handleSwap(req, userId, cors);
+    if (req.method === "POST" && path === "/api/pumpy/chat") return await handlePumpyChat(req, userId, cors);
+    if (req.method === "POST" && path === "/api/pumpy/confirm") return await handlePumpyConfirm(req, userId, cors);
 
     if (req.method === "POST" && path === "/api/rotate-key") {
       const bytes = new Uint8Array(16);
@@ -3449,7 +3960,9 @@ Deno.serve(async (req: Request) => {
       return json({
         status: "ok",
         saves_today: counts.saves, extracts_today: counts.extracts, helpers_today: counts.helpers,
+        chats_today: counts.chats,
         limit_saves: LIMIT_SAVES, limit_extract: LIMIT_EXTRACT, limit_helper: LIMIT_HELPER,
+        limit_chat: LIMIT_CHAT,
         spend_today: Number(spent.toFixed(4)), spend_limit: DAILY_SPEND_USD,
         paid_enabled: DAILY_SPEND_USD > 0 && spent < DAILY_SPEND_USD,
       }, 200, cors);
