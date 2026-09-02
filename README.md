@@ -165,16 +165,59 @@ in its query. Writes come back as a validated proposal (`create_workout`,
 `POST /api/pumpy/confirm` executes it, and a tool row in `pumpy_messages` records what ran.
 A Pumpy-made workout carries `extracted_by: pumpy:<model>`; exercises it appends land in
 `corrections` as adds tagged `added_by: pumpy`. Conversations persist in `pumpy_threads` /
-`pumpy_messages` under owner-only RLS with no client writes; the last sixteen visible turns
-are the context. The tab itself is a column sized between the sticky header and the fixed tab
+`pumpy_messages` under owner-only RLS with no client writes.
+`PUMPY_MARK` in `app.ts` is the placeholder art and its single swap point.
+The tab itself is a column sized between the sticky header and the fixed tab
 bar, so the composer sits on the tab bar whether the thread is empty or endless; a slim bar
 above it opens the chat list — every thread the caller owns, newest first, with the workout it
 was opened from and a two-tap delete that takes the messages with it — or starts a new one.
 When a response carries a `pumpy` credit meter (`plan`, `day`, `month`, each cap possibly
 null for unlimited), Settings shows the day and month counts and the composer adds a quiet
 line once either allowance falls under a fifth; every field is optional and nothing new
-appears while the server omits them. `PUMPY_MARK` in `app.ts` is the placeholder art and its
-single swap point.
+appears while the server omits them.
+
+**A turn is one model call, not three.** Every turn opens with a *snapshot* — an index of
+the ready library (one line each: short id, title, category, minutes, equipment, ★,
+collections, no exercise names), this week's plan, and one line of the last fortnight's
+training. That is what `list_library` and `get_plan` used to be spent on, so the common
+questions now answer in a single call. The prompt is built static-first — identity, rules,
+tools and proposal schemas byte-identical on every request, then one fenced dynamic block —
+so OpenAI's automatic prefix caching has something to cache. Workout ids reach the model as
+handles (`h3f9a1c`, the first six hex digits of the uuid) and are resolved server-side;
+stored proposals always carry the full uuid. "thanks" and its friends short-circuit to a
+canned reply with no model call at all.
+
+**Credits meter the coach.** One credit is 1,000 weighted tokens, `input + 4 × output`,
+summed over every model call in a turn and rounded up, minimum one for any turn that reached
+a model; a short-circuited turn is zero. It is provider-independent — a free Gemini answer
+still spends credits, because credits meter the coach's work rather than the invoice. Every
+turn writes one `pumpy_usage` row (calls, tokens, credits, estimated cost, model, thread),
+and `pumpy_usage_totals()` reads the three numbers the gate needs in one round trip.
+
+| Plan | Credits/day | Credits/month |
+|---|---|---|
+| `free` | 150 | 1,500 |
+| `plus` | 400 | 5,000 |
+| `pro` | 1,000 | 15,000 |
+| `staff` | unlimited | unlimited |
+
+`profiles.plan` picks the row; `profiles.pumpy_limits` (`{"day":…, "month":…}`, `null` =
+unlimited) overrides it field by field. Both are read-only to clients — the column grant on
+`profiles` covers `display_name` and `settings` only. Three more limits sit alongside:
+`pumpy.per_minute` (6 turns/minute, counted over `pumpy_usage` so short-circuits count too),
+`pumpy.turn_max_credits` (40 — past it the model gets one last call and has to answer with
+what it has), and a hard 1,200-character cap on the incoming message. All of them, plus
+`pumpy.history_turns` and `pumpy.snapshot_max_workouts`, live in `app_config` on the same
+five-minute TTL as the model ids, so raising a cap is an update statement.
+
+Every chat response — 200 and 429 alike — carries a `pumpy` object (`plan`, `day:{used,cap}`,
+`month:{used,cap}`, `resets_day_at`, `resets_month_at`, `per_minute`), a 200 also carries
+`usage` for the turn, and `GET /api/limits` returns the same `pumpy` object. A 429 names its
+`scope`: `minute`, `day` or `month`. Guardrails are in the prompt and enforced after it:
+Pumpy answers only about training, treats everything in the snapshot and tool results as
+data rather than instructions, keeps under 90 words, and never diagnoses — any sentence
+matching the diagnosis filter is dropped from the answer, and a message that mentions pain
+gets the not-medical-advice line appended whether or not the model wrote it.
 
 ### Source layout
 
@@ -224,7 +267,7 @@ Per-user daily caps keep a public launch inside the free tiers, all overridable 
 | `LIMIT_EXTRACT` | 60 | new saves **and** reprocesses — everything that runs the ladder |
 | `LIMIT_SAVES` | 200 | every save, cache hits included |
 | `LIMIT_HELPER` | 300 | `/api/explain` and `/api/swap` |
-| `LIMIT_CHAT` | 40 | Pumpy turns — one turn can be several model calls, so this one is tight |
+| `LIMIT_CHAT` | 200 | Pumpy turns — a legacy backstop; credits are the real gate |
 
 Cache hits count only against `LIMIT_SAVES`, so saving videos other people already saved is
 effectively free.

@@ -3629,8 +3629,10 @@
       if (r.status === "ok") {
         var line = r.saves_today + " of " + r.limit_saves +
           " (" + r.extracts_today + "/" + r.limit_extract + " extractions, " +
-          r.helpers_today + "/" + r.limit_helper + " coaching, " +
-          (r.chats_today || 0) + "/" + (r.limit_chat || "—") + " Pumpy)";
+          r.helpers_today + "/" + r.limit_helper + " coaching" +
+          // The credits line below is the real Pumpy meter; the turn count is only
+          // shown while the server does not send one.
+          (r.pumpy ? ")" : ", " + (r.chats_today || 0) + "/" + (r.limit_chat || "—") + " Pumpy)");
         // Say so plainly when the day's spend ceiling has switched the paid
         // extractors off — cards get thinner and the user should know why.
         if (r.paid_enabled === false) line += " · budget reached, using the free reader";
