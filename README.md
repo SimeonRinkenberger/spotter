@@ -443,6 +443,119 @@ empty card, because there the link is worth having on its own.
 
    Both are visible afterwards in Advisors → Security, which is where they were flagged.
 
+### Sign in with Google / Apple
+
+The sign-in card carries **Continue with Google** and **Continue with Apple** under the
+email form. Neither button is painted until the matching provider is switched on for the
+project: the page reads `GET {SUPABASE_URL}/auth/v1/settings` once at boot and shows a
+button only where the `external` map says `true`. Until you do the steps below the sign-in
+screen looks exactly as it did before, which is the intended resting state — nothing to
+comment out, nothing to remember to remove.
+
+Both buttons run the **in-page token flow** (`signInWithIdToken`), not a whole-page
+redirect: an installed PWA on iOS that navigates out to a provider finishes the sign-in in
+Safari, where the session lands in a storage the PWA cannot read. `signInWithOAuth` is kept
+as the automatic fallback for when the provider script is blocked, when Google's One Tap
+declines to show, or when the public client id below is still blank.
+
+Two public identifiers have to reach the browser. They live in a single constant at the top
+of `supabase/functions/spotter/app.ts`:
+
+```js
+var PUBLIC_AUTH = { google_client_id: "", apple_services_id: "" };
+```
+
+Neither is a secret — a Google web client id and an Apple Services ID are visible to anyone
+who views source. The real secrets (Google's client secret, Apple's `.p8` key) only ever go
+into Supabase.
+
+#### 1. Google
+
+1. [Google Cloud Console](https://console.cloud.google.com/) → create or pick a project.
+2. **APIs & Services → OAuth consent screen** (newer consoles: **Google Auth Platform →
+   Branding**). User type **External**. App name `Spotter`, your support email, and:
+   - Authorized domain: `simeonrinkenberger.github.io`
+   - Privacy policy: `https://simeonrinkenberger.github.io/spotter/privacy.html`
+   Then **Audience → Publish app**, or the sign-in only works for accounts you list as test
+   users.
+3. **Credentials → Create credentials → OAuth client ID → Web application**:
+   - **Authorized JavaScript origins** (these are what the in-page token flow checks, and a
+     missing one is the usual reason the Google prompt silently never appears):
+     - `https://simeonrinkenberger.github.io`
+     - `http://localhost:8000`
+   - **Authorized redirect URIs** (the redirect fallback, and how Supabase completes the
+     exchange):
+     - `https://mtzevoxxpsktmrbbuxva.supabase.co/auth/v1/callback`
+4. Copy the **Client ID** and **Client secret**. Supabase Dashboard → **Authentication →
+   Providers → Google** → enable, paste both, Save. The button appears on the next page load.
+5. Paste the **Client ID** (only the id) into `PUBLIC_AUTH.google_client_id`, run
+   `node build.mjs`, and commit `docs/index.html` with it. Without this step the button
+   still works — it just takes the redirect fallback instead of the in-page flow.
+
+#### 2. Apple
+
+Sign in with Apple on the web needs a paid **Apple Developer Program** membership. Apple
+also refuses `http://` and `localhost` return URLs, so this one cannot be tested locally at
+all — it works on the deployed site or not at all.
+
+1. [Certificates, Identifiers & Profiles](https://developer.apple.com/account/resources/) →
+   **Identifiers → App IDs → +**. Bundle ID e.g. `com.simeonrinkenberger.spotter`, and tick
+   the **Sign in with Apple** capability.
+2. **Identifiers → Services IDs → +**, e.g. `com.simeonrinkenberger.spotter.web`. *This
+   identifier is the client id the browser uses* — not the App ID. Tick **Sign in with
+   Apple**, then **Configure**:
+   - Primary App ID: the App ID from step 1.
+   - **Domains and Subdomains**: `simeonrinkenberger.github.io`
+   - **Return URLs** — add **both**:
+     - `https://mtzevoxxpsktmrbbuxva.supabase.co/auth/v1/callback` (redirect fallback)
+     - `https://simeonrinkenberger.github.io/spotter/` (the in-page popup flow posts its
+       result back to this exact origin; leave it out and the popup fails with
+       `invalid_request`)
+3. **Keys → +**, tick **Sign in with Apple**, Configure → pick the primary App ID, then
+   **Download** the `.p8` file. Apple lets you download it **once**. Note the **Key ID** and
+   your **Team ID** (top right of the developer account).
+4. Turn the key into a client secret. It is a JWT signed with the `.p8`, and Apple caps its
+   life at six months, so it has to be regenerated twice a year —
+   [Supabase's Apple guide](https://supabase.com/docs/guides/auth/social-login/auth-apple)
+   walks through generating it from the Team ID, Key ID, Services ID and `.p8`.
+5. Supabase Dashboard → **Authentication → Providers → Apple** → enable:
+   - **Client IDs**: the Services ID from step 2
+   - **Secret Key**: the JWT from step 4
+6. Paste the **Services ID** into `PUBLIC_AUTH.apple_services_id`, run `node build.mjs`,
+   commit `docs/index.html`.
+
+#### 3. What changes for the people using it
+
+- Both buttons appear under the email form, separated by an "or" divider. On iPhone, iPad
+  and Mac the Apple button is moved to the top of the pair, which is where Apple's
+  guidelines and the platform's own habits put it.
+- Signing in with a provider whose verified email already has a Spotter account **links to
+  that account** rather than making a second one — Supabase matches on the verified address.
+  So the two existing password accounts keep their libraries if their owners switch.
+- Google supplies a name, and the signup trigger uses it for the profile display name
+  (migration `20260902160000_oauth_profiles.sql`). Apple supplies a name **only on the very
+  first authorization and never again**, so the page captures it at that moment and writes
+  it to the profile — but only over the placeholder taken from the email address, never over
+  a name someone chose.
+- Apple's "Hide My Email" gives Spotter a private relay address. Everything works with it;
+  the account is keyed on that address.
+- Settings gains a **Sign-in method** row so it is obvious which one is in use.
+
+#### Also worth knowing
+
+- `supabase/config.toml` carries both provider blocks **commented out**, with the exact
+  keys. The dashboard route above is the recommended one; if you would rather push config,
+  uncomment them, export `SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET` /
+  `SUPABASE_AUTH_EXTERNAL_APPLE_SECRET`, and run `supabase config push`. Do not uncomment
+  them with empty ids — that switches the provider on with nothing behind it and the button
+  appears anyway.
+- Leave `skip_nonce_check` at `false`. Every id_token the page sends carries a nonce and
+  gotrue is meant to check it.
+- The Apple mark on the button is an inline SVG so the card paints without waiting on a
+  third-party image. Apple asks that custom buttons use the artwork from
+  [Apple Design Resources](https://developer.apple.com/design/resources/); if you ever
+  submit an app that reuses this screen, swap the path in `markup.ts` for their file.
+
 ## Saving from your phone
 
 Settings in the app shows a personal save address containing your own key. `POST` to it with

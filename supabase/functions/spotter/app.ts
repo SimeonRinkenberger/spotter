@@ -11,6 +11,15 @@ export const APP = String.raw`
   var SB_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10emV2b3h4cHNrdG1yYmJ1eHZhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgyMjM5ODgsImV4cCI6MjEwMzc5OTk4OH0._vpNhLJtv2bVGgXXClva9O5cX8Y5eJdTgbgAO81NnmU";
   var API = SB_URL + "/functions/v1/spotter/api/";
 
+  // Public identifiers for the two sign-in providers. Neither is a secret: a Google
+  // web client id and an Apple Services id are visible to anyone who opens this page,
+  // which is why they live here and not in app_config (service-role only) or in a
+  // second file to host. Fill them in after creating the credentials — README,
+  // "Sign in with Google / Apple". Leaving one blank does not break anything: the
+  // button only appears once the provider is switched on for the Supabase project,
+  // and a blank id simply sends that button down the redirect fallback.
+  var PUBLIC_AUTH = { google_client_id: "", apple_services_id: "" };
+
   var sb = window.supabase.createClient(SB_URL, SB_ANON, {
     auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
   });
@@ -126,6 +135,335 @@ export const APP = String.raw`
       setAuthMode(authMode);
       authError(String(e.message || e));
     });
+  }
+
+  // ---------- provider sign-in (Google / Apple) ----------
+  //
+  // Token flow, not redirect flow. An installed PWA on iOS runs in its own window,
+  // and a full-page navigation out to accounts.google.com leaves it — the person
+  // finishes in Safari, where the session lands in storage the PWA cannot read, and
+  // comes back to a signed-out home screen icon. Both providers below hand us an
+  // OpenID id_token inside the page we are already in, and signInWithIdToken turns
+  // that into a session with no navigation at all. signInWithOAuth is kept as the
+  // fallback for the cases the token flow cannot cover: the provider script blocked
+  // or missing, One Tap declining to show, or no public client id configured yet.
+  //
+  // Nonce: gotrue compares sha256hex(the nonce we send it) against the id_token's
+  // nonce claim, so the provider must have put that hash in the token. Google copies
+  // the value through untouched; Apple's JS SDK hashes it on the way out. We hand
+  // both providers the hashed value and then read the claim back off the token to
+  // decide which of our two values to forward — correct either way, one prompt.
+
+  var GIS_SRC = "https://accounts.google.com/gsi/client";
+  var APPLEID_SRC = "https://appleid.cdn-apple.com/appleauth/static/jsapi/appleid/1/en_US/appleid.auth.js";
+  var SCRIPT_WAIT = 8000;
+
+  var authProviders = null;
+  var oauthBusy = false;
+  var oaLabels = {};
+  var scriptOnce = {};
+  var oauthWatchdog = null;
+
+  function loadScript(src) {
+    if (scriptOnce[src]) return scriptOnce[src];
+    var p = new Promise(function (resolve, reject) {
+      var done = false;
+      var timer = setTimeout(function () {
+        if (done) return;
+        done = true;
+        reject(new Error("script timed out"));
+      }, SCRIPT_WAIT);
+      var node = document.createElement("script");
+      node.src = src;
+      node.async = true;
+      node.onload = function () {
+        if (done) return;
+        done = true; clearTimeout(timer); resolve();
+      };
+      node.onerror = function () {
+        if (done) return;
+        done = true; clearTimeout(timer); reject(new Error("script blocked"));
+      };
+      document.head.appendChild(node);
+    });
+    // A failed load must not be remembered as a permanent failure — the second tap
+    // on a flaky connection deserves a real attempt.
+    p.catch(function () { scriptOnce[src] = null; });
+    scriptOnce[src] = p;
+    return p;
+  }
+
+  function randomNonce() {
+    var b = new Uint8Array(32);
+    window.crypto.getRandomValues(b);
+    var raw = "";
+    for (var i = 0; i < b.length; i++) raw += String.fromCharCode(b[i]);
+    return btoa(raw).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+
+  function sha256Hex(str) {
+    return window.crypto.subtle.digest("SHA-256", new TextEncoder().encode(str))
+      .then(function (buf) {
+        var out = "";
+        var view = new Uint8Array(buf);
+        for (var i = 0; i < view.length; i++) out += ("0" + view[i].toString(16)).slice(-2);
+        return out;
+      });
+  }
+
+  // Read-only peek at the payload. Nothing here is trusted — the token is verified
+  // by gotrue against the provider's keys; we only need to know which nonce it holds.
+  function tokenNonce(jwt) {
+    try {
+      var part = String(jwt).split(".")[1];
+      if (!part) return null;
+      part = part.replace(/-/g, "+").replace(/_/g, "/");
+      while (part.length % 4) part += "=";
+      var body = JSON.parse(atob(part));
+      return body && body.nonce ? String(body.nonce) : null;
+    } catch (e) { return null; }
+  }
+
+  function nonceToSend(idToken, raw, hashed) {
+    var claim = tokenNonce(idToken);
+    // No nonce in the token means the provider dropped it; gotrue rejects the pair
+    // unless we drop it too.
+    if (!claim) return null;
+    // Claim is our hashed value: the provider copied it through, so gotrue needs the
+    // value that hashes to it. Otherwise the provider hashed ours, and gotrue needs
+    // the value we handed over.
+    return claim === hashed ? raw : hashed;
+  }
+
+  function isAppleDevice() {
+    var ua = navigator.userAgent || "";
+    // iPadOS reports itself as a Mac; both are Apple hardware, so both take the
+    // Apple-first order anyway.
+    return /iPhone|iPad|iPod|Macintosh|Mac OS X/i.test(ua);
+  }
+
+  function oaLabelOf(id) {
+    if (!oaLabels[id]) oaLabels[id] = $(id).querySelector(".oalabel").textContent;
+    return oaLabels[id];
+  }
+
+  function setOauthBusy(id) {
+    ["oagoogle", "oaapple"].forEach(function (b) {
+      var node = $(b);
+      if (!node) return;
+      node.disabled = !!id;
+      node.querySelector(".oalabel").textContent = b === id ? "Opening…" : oaLabelOf(b);
+    });
+    oauthBusy = !!id;
+    // Both provider UIs are somebody else's window, and neither is guaranteed to
+    // tell us it went away — a blocked pop-up, a FedCM sheet closed in a way that
+    // fires no moment. Without this, one of those leaves the buttons disabled until
+    // the page is reloaded. Long enough that it never interrupts a real sign-in.
+    clearTimeout(oauthWatchdog);
+    if (id) oauthWatchdog = setTimeout(function () { setOauthBusy(null); }, 90000);
+  }
+
+  function oauthMessage(e) {
+    var m = e && e.message ? String(e.message) : String(e || "");
+    if (/not enabled|unsupported provider/i.test(m)) return "That sign-in method is not switched on yet.";
+    if (/nonce/i.test(m)) return "That sign-in took too long — try again.";
+    if (/popup|blocked/i.test(m)) return "Allow pop-ups for Spotter, then try again.";
+    return m || "That sign-in did not work.";
+  }
+
+  function oauthFailed(e) {
+    setOauthBusy(null);
+    toast(oauthMessage(e));
+  }
+
+  // Whole-page handover to the provider and back. Only used when the in-page token
+  // flow is not available.
+  function oauthRedirect(provider) {
+    sb.auth.signInWithOAuth({
+      provider: provider,
+      options: { redirectTo: location.origin + location.pathname }
+    }).then(function (r) {
+      if (r && r.error) oauthFailed(r.error);
+      // On success the browser is already navigating; leave the button busy.
+    }).catch(oauthFailed);
+  }
+
+  function finishIdToken(provider, idToken, raw, hashed, fullName) {
+    var args = { provider: provider, token: idToken };
+    var n = nonceToSend(idToken, raw, hashed);
+    if (n) args.nonce = n;
+    sb.auth.signInWithIdToken(args).then(function (r) {
+      setOauthBusy(null);
+      if (r.error) { oauthFailed(r.error); return; }
+      // onAuthStateChange has already swapped the view. The name write below is
+      // deliberately on the next tick: supabase-js holds the auth lock across that
+      // callback and a query started inside it deadlocks.
+      if (fullName && r.data && r.data.user) {
+        var u = r.data.user;
+        setTimeout(function () { saveProviderName(u, fullName); }, 0);
+      }
+    }).catch(oauthFailed);
+  }
+
+  // Apple hands over the person's name on the FIRST authorization only and never
+  // again, so it is captured here or lost. The signup trigger has already written a
+  // profile row using the email local part; the second eq() means this only ever
+  // overwrites that default, never a name someone chose for themselves later.
+  function saveProviderName(user, fullName) {
+    sb.auth.updateUser({ data: { full_name: fullName } }).then(function () {}, function () {});
+    var placeholder = String(user.email || "").split("@")[0];
+    if (!placeholder) return;
+    sb.from("profiles").update({ display_name: fullName })
+      .eq("id", user.id).eq("display_name", placeholder)
+      .then(function (r) {
+        if (r && !r.error && state.profile) state.profile.display_name = fullName;
+      }, function () {});
+  }
+
+  function googleSignIn() {
+    if (oauthBusy) return;
+    setOauthBusy("oagoogle");
+    authError("");
+    if (!PUBLIC_AUTH.google_client_id) { oauthRedirect("google"); return; }
+    var raw = randomNonce();
+    var hashed = null;
+    var handed = false;
+    sha256Hex(raw).then(function (h) {
+      hashed = h;
+      return loadScript(GIS_SRC);
+    }).then(function () {
+      var gid = window.google && window.google.accounts && window.google.accounts.id;
+      if (!gid) throw new Error("script blocked");
+      gid.initialize({
+        client_id: PUBLIC_AUTH.google_client_id,
+        nonce: hashed,
+        context: "signin",
+        auto_select: false,
+        itp_support: true,
+        callback: function (resp) {
+          handed = true;
+          if (!resp || !resp.credential) { oauthRedirect("google"); return; }
+          finishIdToken("google", resp.credential, raw, hashed, null);
+        }
+      });
+      gid.prompt(function (note) {
+        if (handed) return;
+        var type = null;
+        try { type = note && note.getMomentType ? note.getMomentType() : null; } catch (e) { type = null; }
+        // FedCM is always on now, and it took isNotDisplayed/getNotDisplayedReason
+        // with it; getMomentType and getDismissedReason are what is left.
+        if (type === "skipped") {
+          // No Google session in this browser, or One Tap suppressed. The whole-page
+          // flow can still sign this person in, so send them there.
+          handed = true;
+          oauthRedirect("google");
+          return;
+        }
+        if (type === "dismissed") {
+          var why = null;
+          try { why = note && note.getDismissedReason ? note.getDismissedReason() : null; } catch (e) { why = null; }
+          // credential_returned arrives in the callback above. Anything else is the
+          // person closing the sheet, and bouncing them to a redirect they did not
+          // ask for would be rude.
+          if (why !== "credential_returned") { handed = true; setOauthBusy(null); }
+        }
+      });
+    }).catch(function () {
+      if (handed) return;
+      handed = true;
+      oauthRedirect("google");
+    });
+  }
+
+  function appleSignIn() {
+    if (oauthBusy) return;
+    setOauthBusy("oaapple");
+    authError("");
+    if (!PUBLIC_AUTH.apple_services_id) { oauthRedirect("apple"); return; }
+    var raw = randomNonce();
+    var hashed = null;
+    var ready = false;
+    sha256Hex(raw).then(function (h) {
+      hashed = h;
+      return loadScript(APPLEID_SRC);
+    }).then(function () {
+      if (!window.AppleID || !window.AppleID.auth) throw new Error("script blocked");
+      ready = true;
+      window.AppleID.auth.init({
+        clientId: PUBLIC_AUTH.apple_services_id,
+        scope: "name email",
+        // With usePopup the result comes back by postMessage to this window, so the
+        // redirect URI has to be this page's own origin — and that origin has to be
+        // registered against the Services ID. README has the exact values.
+        redirectURI: location.origin + location.pathname,
+        usePopup: true,
+        nonce: hashed
+      });
+      return window.AppleID.auth.signIn();
+    }).then(function (res) {
+      var tok = res && res.authorization ? res.authorization.id_token : null;
+      if (!tok) throw new Error("Apple did not return a token.");
+      var name = null;
+      if (res.user && res.user.name) {
+        var parts = [res.user.name.firstName, res.user.name.middleName, res.user.name.lastName];
+        name = parts.filter(Boolean).join(" ").trim() || null;
+      }
+      finishIdToken("apple", tok, raw, hashed, name);
+    }).catch(function (e) {
+      // Before the script is up this is a load failure and the whole-page flow is
+      // the right answer. After it, the person was in Apple's sheet: a cancel is a
+      // cancel, and any other failure is worth saying out loud rather than silently
+      // starting a second, different sign-in.
+      if (!ready) { oauthRedirect("apple"); return; }
+      var code = e && e.error ? String(e.error) : String((e && e.message) || e || "");
+      if (/popup_closed|user_cancelled|user_trigger_new_signin_flow/i.test(code)) {
+        setOauthBusy(null);
+        return;
+      }
+      oauthFailed(e);
+    });
+  }
+
+  // Which buttons exist is the project's answer, not ours: auth/v1/settings lists
+  // every provider switched on for this Supabase project. Fetched once, cached in
+  // memory; if the fetch fails we show neither button rather than a button that
+  // cannot work.
+  function loadAuthProviders() {
+    return fetch(SB_URL + "/auth/v1/settings", { headers: { apikey: SB_ANON } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) {
+        authProviders = j && j.external ? j.external : null;
+        renderAuthProviders();
+      })
+      .catch(function () { authProviders = null; });
+  }
+
+  function renderAuthProviders() {
+    var wrap = $("oauthwrap");
+    if (!wrap) return;
+    var hasGoogle = !!(authProviders && authProviders.google);
+    var hasApple = !!(authProviders && authProviders.apple);
+    $("oagoogle").classList.toggle("hide", !hasGoogle);
+    $("oaapple").classList.toggle("hide", !hasApple);
+    wrap.classList.toggle("hide", !(hasGoogle || hasApple));
+    // Apple's guidance is that its button is no less prominent than the others, and
+    // on Apple hardware that is the one people reach for first.
+    if (hasApple && isAppleDevice()) {
+      var box = $("oauthbtns");
+      box.insertBefore($("oaapple"), box.firstChild);
+    }
+  }
+
+  // Reads "google" / "apple" / "email" off the session for the settings sheet.
+  function signInMethod() {
+    var u = state.user;
+    if (!u) return null;
+    var p = (u.app_metadata && u.app_metadata.provider) ||
+      (u.identities && u.identities.length ? u.identities[0].provider : null);
+    if (p === "google") return "Google";
+    if (p === "apple") return "Apple";
+    if (p === "email") return "Email and password";
+    return p ? String(p) : null;
   }
 
   function showLanding() {
@@ -3413,6 +3751,9 @@ export const APP = String.raw`
 
   function openSettings() {
     $("setemail").textContent = state.user ? state.user.email : "—";
+    var how = signInMethod();
+    $("setprov").textContent = how || "—";
+    $("setprovrow").classList.toggle("hide", !how);
     $("unittoggle").textContent = state.unit;
     var key = state.profile ? state.profile.ingest_key : null;
     $("setkey").textContent = key ? API + "ingest?key=" + key : "Loading…";
@@ -3530,6 +3871,11 @@ export const APP = String.raw`
   // ---------- wiring ----------
 
   $("authgo").onclick = doAuth;
+  $("oagoogle").onclick = googleSignIn;
+  $("oaapple").onclick = appleSignIn;
+  oaLabelOf("oagoogle");
+  oaLabelOf("oaapple");
+  loadAuthProviders();
   $("pw").addEventListener("keydown", function (e) { if (e.key === "Enter") doAuth(); });
   // the sign-in/sign-up toggle is rebuilt by setAuthMode, which wires its own handler
 

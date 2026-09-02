@@ -99,6 +99,43 @@ export const STYLE = String.raw`<style>
   .autherr { font-size: 13px; color: var(--ember-ink); margin-top: 12px; line-height: 1.5;
     background: var(--ember-soft); padding: 10px 12px; border-radius: 11px; display: none; }
   .autherr.show { display: block; }
+
+  /* ---------- provider sign-in (Google / Apple) ----------
+     Both marks sit on the same neutral button so the row reads as one control
+     type. --card is the only surface token that satisfies both brand rules at
+     once: white in light (Google light theme, Apple "white with outline") and
+     near-black in dark (Google dark theme, Apple black). On a --card authcard
+     that leaves the 1px stroke and --sh-sm doing the separating, which is how
+     Google's own light button looks on a white sheet.
+     Sizes come from Apple's HIG: minimum width 140px, minimum height 30pt, and
+     a margin of at least 1/10 of the button height around the content. 48px
+     matches the height of the ember Create-account button above, because Apple
+     asks that its button be no smaller than the other sign-in buttons. */
+  .oauth { margin-top: 18px; }
+  .oauthdiv { display: flex; align-items: center; gap: 12px; margin: 0 0 12px;
+    color: var(--muted); font-size: 10.5px; font-weight: 700; letter-spacing: .15em;
+    text-transform: uppercase; }
+  .oauthdiv::before, .oauthdiv::after { content: ""; flex: 1 1 0; height: 1px; background: var(--line); }
+  .oauthbtns { display: flex; flex-direction: column; gap: 10px; }
+  .oabtn { display: flex; align-items: center; gap: 10px; width: 100%; min-width: 140px;
+    min-height: 48px; padding: 12px 14px; border: 1px solid var(--line-2); border-radius: 14px;
+    background: var(--card); color: var(--ink); box-shadow: var(--sh-sm);
+    font-size: 15.5px; font-weight: 650; letter-spacing: -.01em;
+    transition: transform var(--t-1) var(--e-out), border-color var(--t-2), opacity var(--t-2); }
+  .oabtn:active { transform: scale(.978); }
+  .oabtn:focus-visible { outline: 2px solid var(--ember); outline-offset: 2px; }
+  .oabtn[disabled] { opacity: .55; }
+  .oamark { flex: 0 0 auto; width: 20px; height: 20px; display: flex;
+    align-items: center; justify-content: center; }
+  .oamark svg { display: block; }
+  /* Mark on the leading edge, title optically centred in the whole button: the
+     padding matches the mark plus its gap so the label sits on the mid-line. */
+  .oalabel { flex: 1 1 auto; min-width: 0; text-align: center; padding-right: 30px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  @media (prefers-reduced-motion: reduce) {
+    .oabtn { transition: none; }
+    .oabtn:active { transform: none; }
+  }
   .landfoot { text-align: center; margin-top: 30px; font-size: 12px; color: var(--muted); }
   .landfoot a { color: var(--muted); }
 
