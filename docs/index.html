@@ -1710,8 +1710,8 @@
   // ---------- collections and renaming ----------
   //
   // Both are plain PostgREST writes under RLS. A rename lands on the workouts row
-  // and a database trigger records it in `corrections` (kind 'rename') with the
-  // title that was actually stored, so the browser never supplies a "before".
+  // and a database trigger records it in the corrections table (kind 'rename')
+  // with the title that was actually stored, so the browser never supplies a "before".
   // Membership is one row per (collection, workout): removing a workout from one
   // collection touches nothing else, and a workout can be in as many as it likes.
 
