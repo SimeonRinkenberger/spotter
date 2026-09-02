@@ -283,6 +283,10 @@ export const APP = String.raw`
 
   function isPending(w) { return w.ingest_status === "processing"; }
   function isFailed(w) { return w.ingest_status === "failed"; }
+  // A video the user uploaded themselves. It has no page to open, no embed and no
+  // caption anybody wrote — everything on the card was heard rather than read, so
+  // the copy around it says so.
+  function isUpload(w) { return w.platform === "upload"; }
 
   // ---------- collections: lookups ----------
 
@@ -391,8 +395,8 @@ export const APP = String.raw`
   }
 
   function cardMeta(w) {
-    if (isPending(w)) return "Reading the video…";
-    if (isFailed(w)) return "Could not read it — tap to retry";
+    if (isPending(w)) return isUpload(w) ? "Listening to the video…" : "Reading the video…";
+    if (isFailed(w)) return isUpload(w) ? "Could not hear it — tap to see why" : "Could not read it — tap to retry";
     var bits = [];
     var n = exerciseNames(w).length;
     if (n) bits.push(n + (n === 1 ? " exercise" : " exercises"));
@@ -442,14 +446,19 @@ export const APP = String.raw`
 
       var tw = el("div", "thumbwrap loading");
       if (pending || failed) {
+        var up = isUpload(w);
         tw.className = "thumbwrap " + (pending ? "pending" : "failed");
-        tw.appendChild(el("div", "noimg", pending ? "⏳" : "↻"));
+        // A failed upload cannot be retried — the file was deleted the moment
+        // Spotter finished listening — so it must not wear the ↻ that says it can.
+        tw.appendChild(el("div", "noimg", pending ? (up ? "🎧" : "⏳") : (up ? "🎧" : "↻")));
         card.appendChild(tw);
         var pb = el("div", "cardbody");
         var pk = el("div", "cardkick");
-        pk.appendChild(el("div", "catpill", pending ? "Reading" : "Retry"));
+        pk.appendChild(el("div", "catpill",
+          pending ? (up ? "Listening" : "Reading") : (up ? "Failed" : "Retry")));
         pb.appendChild(pk);
-        pb.appendChild(el("div", "cardtitle", w.title || "Reading the video…"));
+        pb.appendChild(el("div", "cardtitle",
+          w.title || (up ? "Listening to the video…" : "Reading the video…")));
         pb.appendChild(el("div", "cardmeta" + (failed ? " retryline" : ""), cardMeta(w)));
         card.appendChild(pb);
         card.onclick = function () { openDetail(w); };
@@ -587,32 +596,49 @@ export const APP = String.raw`
     // A card whose extraction has not landed yet, or one whose job gave up. Both
     // are real rows with a real link — the user keeps what they saved either way.
     if (isPending(w) || isFailed(w)) {
+      var isUp = isUpload(w);
       var note = el("div", "sect");
-      note.appendChild(el("h3", null, isPending(w) ? "Still reading this one" : "Could not read this one"));
+      note.appendChild(el("h3", null, isPending(w)
+        ? (isUp ? "Still listening to this one" : "Still reading this one")
+        : (isUp ? "Could not hear a workout in this one" : "Could not read this one")));
       note.appendChild(el("div", "capbox", isPending(w)
-        ? "Spotter is pulling the workout out of this video. The card fills in here as soon as it lands — you can close this and carry on."
-        : (w.ingest_error || "Spotter could not get anything back from this link.") +
-          " The link is saved either way, so nothing is lost."));
+        ? (isUp
+          ? "Spotter is transcribing what the creator says, then pulling the workout out of it. The card fills in here as soon as it lands — you can close this and carry on."
+          : "Spotter is pulling the workout out of this video. The card fills in here as soon as it lands — you can close this and carry on.")
+        : (w.ingest_error || (isUp
+          ? "Spotter could not make out a workout in that file."
+          : "Spotter could not get anything back from this link.")) +
+          (isUp
+            ? " The file itself is already deleted — Spotter keeps uploads only long enough to listen to them."
+            : " The link is saved either way, so nothing is lost.")));
       d.appendChild(note);
 
       if (isFailed(w)) {
-        var rb = el("button", "retrybtn", "Try reading it again");
-        rb.onclick = function () { retryWorkout(w, rb); };
-        d.appendChild(rb);
+        // An upload has nothing to try again: the file is gone by the time this
+        // card exists. Offering ↻ would offer a button that can only fail.
+        if (!isUp) {
+          var rb = el("button", "retrybtn", "Try reading it again");
+          rb.onclick = function () { retryWorkout(w, rb); };
+          d.appendChild(rb);
+        }
         // The last rung, and the only one a platform cannot block: whatever it
         // serves a server, the user can read the caption on their own screen.
-        var pb = el("button", "retrybtn ghost", "Paste the caption instead");
+        var pb = el("button", "retrybtn" + (isUp ? "" : " ghost"), "Paste the caption instead");
         pb.onclick = function () { openCaption(w); };
         d.appendChild(pb);
       }
-      var open = el("a", "pill accent", "Open original ↗");
-      open.href = w.source_url || w.url;
-      open.target = "_blank";
-      open.rel = "noopener";
-      open.style.display = "inline-block";
-      open.style.textDecoration = "none";
-      open.style.marginBottom = "14px";
-      d.appendChild(open);
+      // An upload has no original to open — its only address is inside Spotter,
+      // and that address stopped resolving to anything the moment it was read.
+      if (!isUp) {
+        var open = el("a", "pill accent", "Open original ↗");
+        open.href = w.source_url || w.url;
+        open.target = "_blank";
+        open.rel = "noopener";
+        open.style.display = "inline-block";
+        open.style.textDecoration = "none";
+        open.style.marginBottom = "14px";
+        d.appendChild(open);
+      }
 
       $("dfav").textContent = w.favorite ? "★" : "☆";
       $("dfav").classList.toggle("on", !!w.favorite);
@@ -796,7 +822,9 @@ export const APP = String.raw`
 
     if (w.caption) {
       var capSect = el("div", "sect");
-      capSect.appendChild(el("h3", null, "Original caption"));
+      // Nobody wrote an upload's text — a speech model heard it — so calling it a
+      // caption would be claiming a source that does not exist.
+      capSect.appendChild(el("h3", null, isUpload(w) ? "What was said in the video" : "Original caption"));
       capSect.appendChild(el("div", "capbox", w.caption));
       capSect.appendChild(el("div", null, " "));
       d.appendChild(capSect);
@@ -855,7 +883,9 @@ export const APP = String.raw`
   function openCaption(w) {
     capFor = w;
     $("capinput").value = "";
-    $("caplede").textContent = isFailed(w)
+    $("caplede").textContent = isUpload(w)
+      ? "Type or paste the workout as the video says it. Spotter builds the card from your text — the file itself is already gone."
+      : isFailed(w)
       ? "Copy the workout text off the post and paste it here. Spotter reads what you paste instead of trying the video again."
       : "Copy the workout text off the post and paste it here. Spotter rebuilds the card from your text.";
     openSheet("capsheet");
@@ -2662,6 +2692,31 @@ export const APP = String.raw`
 
   // ---------- add ----------
 
+  /**
+   * The row the user sees the instant a save is accepted, before the worker has
+   * put anything in it. Shared by the link path and the upload path so both land
+   * in the library the same way and Realtime fills either one in.
+   */
+  function placePending(r, url, platform) {
+    var known = false;
+    for (var i = 0; i < state.workouts.length; i++) {
+      if (state.workouts[i].id === r.id) { known = true; break; }
+    }
+    if (!known) {
+      state.workouts.unshift({
+        id: r.id, url: url, platform: platform || null,
+        title: r.title || (platform === "upload" ? "Listening to the video…" : "Reading the video…"),
+        ingest_status: "processing", category: "Other",
+        blocks: [], muscle_groups: [], equipment: [], tags: [],
+        has_full_workout: false, favorite: false,
+        created_at: new Date().toISOString()
+      });
+    }
+    setView("library");
+    render();
+    watchPending();
+  }
+
   function doAdd() {
     var url = $("addurl").value.trim();
     if (!url) { toast("Paste a link first."); return; }
@@ -2680,22 +2735,7 @@ export const APP = String.raw`
           $("addurl").value = "";
           closeSheet("addsheet");
           toast("Saved — reading the video…");
-          var known = false;
-          for (var i = 0; i < state.workouts.length; i++) {
-            if (state.workouts[i].id === r.id) { known = true; break; }
-          }
-          if (!known) {
-            state.workouts.unshift({
-              id: r.id, url: url, title: r.title || "Reading the video…",
-              ingest_status: "processing", category: "Other",
-              blocks: [], muscle_groups: [], equipment: [], tags: [],
-              has_full_workout: false, favorite: false,
-              created_at: new Date().toISOString()
-            });
-          }
-          setView("library");
-          render();
-          watchPending();
+          placePending(r, url, null);
           return;
         }
 
@@ -2719,6 +2759,164 @@ export const APP = String.raw`
         btn.textContent = "Save workout";
         toast("Could not reach Spotter — check your connection.");
       });
+  }
+
+  // ---------- upload a video you saved ----------
+  //
+  // The bottom of the ingest ladder, for the creator who says the workout out loud
+  // and writes nothing down. There is no caption anywhere to fetch, so the user
+  // hands over the video they already saved and Spotter listens to it.
+  //
+  // The bytes go from this device straight into the user's own folder of the
+  // private uploads bucket, under the storage policies. They never pass through
+  // the edge function — what is posted to /api/ingest is a path, so that request
+  // is a few hundred bytes however heavy the video is.
+  //
+  // XHR rather than supabase-js's storage client, for one reason: XHR reports
+  // upload progress and fetch does not. A 25 MB file on mobile data is well past
+  // the ten seconds at which a spinner stops being an honest answer to "how long".
+
+  var UPLOAD_MAX = 25 * 1024 * 1024;
+  // Extension to content type. Also the whitelist: the server validates the same
+  // set, and the bucket's own allowed_mime_types is the third and enforcing copy.
+  var UPLOAD_TYPES = {
+    mp4: "video/mp4", m4v: "video/x-m4v", mov: "video/quicktime", webm: "video/webm",
+    m4a: "audio/mp4", mp3: "audio/mpeg", wav: "audio/wav", weba: "audio/webm"
+  };
+  var UPLOAD_KINDS = "MP4, MOV, M4A, MP3, WAV or WebM";
+  var uploading = false;
+
+  function uuid() {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    var b = new Uint8Array(16);
+    crypto.getRandomValues(b);
+    b[6] = (b[6] & 15) | 64;
+    b[8] = (b[8] & 63) | 128;
+    var h = [];
+    for (var i = 0; i < 16; i++) h.push((b[i] + 256).toString(16).slice(1));
+    return h.slice(0, 4).join("") + "-" + h.slice(4, 6).join("") + "-" +
+      h.slice(6, 8).join("") + "-" + h.slice(8, 10).join("") + "-" + h.slice(10, 16).join("");
+  }
+
+  function mb(bytes) { return Math.round(bytes / (1024 * 1024) * 10) / 10; }
+
+  // Inline on the control that caused it, never a toast: the fix is to pick a
+  // different file, so the message has to still be there when the user looks back.
+  function upError(msg) {
+    var e = $("uperr");
+    if (!msg) { e.hidden = true; e.textContent = ""; return; }
+    e.textContent = msg;
+    e.hidden = false;
+  }
+
+  function upProgress(frac, note) {
+    $("upprog").hidden = false;
+    $("upfill").style.width = Math.round(Math.max(0, Math.min(1, frac)) * 100) + "%";
+    $("upnote").textContent = note;
+  }
+
+  function resetUpload() {
+    uploading = false;
+    upError("");
+    $("upprog").hidden = true;
+    $("upfill").style.width = "0";
+    $("upnote").textContent = "Uploading…";
+    $("uploadrow").disabled = false;
+    $("addfile").value = "";
+  }
+
+  function putObject(file, path, ctype) {
+    return sb.auth.getSession().then(function (s) {
+      var token = s.data.session ? s.data.session.access_token : "";
+      return new Promise(function (resolve, reject) {
+        var xhr = new XMLHttpRequest();
+        xhr.open("POST", SB_URL + "/storage/v1/object/uploads/" + path, true);
+        xhr.setRequestHeader("authorization", "Bearer " + token);
+        xhr.setRequestHeader("apikey", SB_ANON);
+        xhr.setRequestHeader("content-type", ctype);
+        xhr.setRequestHeader("x-upsert", "false");
+        xhr.upload.onprogress = function (e) {
+          if (!e.lengthComputable) return;
+          var f = e.loaded / e.total;
+          upProgress(f, "Uploading… " + Math.round(f * 100) + "%");
+        };
+        xhr.onload = function () {
+          if (xhr.status >= 200 && xhr.status < 300) { resolve(); return; }
+          reject(new Error(String(xhr.status)));
+        };
+        xhr.onerror = function () { reject(new Error("network")); };
+        xhr.onabort = function () { reject(new Error("network")); };
+        xhr.send(file);
+      });
+    });
+  }
+
+  function doUpload(file) {
+    if (uploading) return;
+    upError("");
+    if (!state.user) { upError("Sign in first."); return; }
+
+    var name = file.name || "video";
+    var dot = name.lastIndexOf(".");
+    var ext = dot > 0 ? name.slice(dot + 1).toLowerCase() : "";
+    if (!UPLOAD_TYPES[ext]) {
+      upError("Spotter cannot listen to a ." + (ext || "?") + " file. Send " + UPLOAD_KINDS + ".");
+      $("addfile").value = "";
+      return;
+    }
+    // Named cause, named limit, named way out — the opposite of "an error occurred
+    // with your upload, please try again".
+    if (file.size > UPLOAD_MAX) {
+      upError("That file is " + mb(file.size) + " MB and the limit is " + mb(UPLOAD_MAX) +
+        " MB. Trim the clip, or paste the workout text onto the card instead.");
+      $("addfile").value = "";
+      return;
+    }
+    if (!file.size) { upError("That file is empty."); $("addfile").value = ""; return; }
+
+    uploading = true;
+    $("uploadrow").disabled = true;
+    var path = state.user.id + "/" + uuid() + "." + ext;
+    upProgress(0, "Uploading… 0%");
+
+    putObject(file, path, UPLOAD_TYPES[ext]).then(function () {
+      // The bytes have landed. What happens next is a different kind of waiting —
+      // somebody else's machine listening — so it gets a different word.
+      upProgress(1, "Uploaded — Spotter is listening…");
+      return api("ingest", {
+        method: "POST",
+        body: JSON.stringify({ upload_path: path, filename: name.slice(0, 160) })
+      });
+    }).then(function (r) {
+      if (r.status === "processing") {
+        closeSheet("addsheet");
+        resetUpload();
+        toast("Uploaded — listening to the video…");
+        placePending(r, "", "upload");
+        return;
+      }
+      if (r.status === "exists") {
+        closeSheet("addsheet");
+        resetUpload();
+        toast("Already in your library.");
+        load();
+        return;
+      }
+      resetUpload();
+      upError(r.message || "Spotter could not start reading that upload.");
+    }).catch(function (e) {
+      var msg = String(e && e.message ? e.message : e);
+      resetUpload();
+      if (msg === "413") {
+        upError("That file is too big for Spotter's storage. The limit is " + mb(UPLOAD_MAX) + " MB.");
+      } else if (msg === "400" || msg === "415") {
+        upError("Spotter's storage would not take that file. Send " + UPLOAD_KINDS + ".");
+      } else if (msg === "401" || msg === "403") {
+        upError("Session expired — sign in again.");
+      } else {
+        upError("The upload did not finish. Check your connection and try again.");
+      }
+    });
   }
 
   // ---------- settings ----------
@@ -2845,9 +3043,15 @@ export const APP = String.raw`
   $("pw").addEventListener("keydown", function (e) { if (e.key === "Enter") doAuth(); });
   // the sign-in/sign-up toggle is rebuilt by setAuthMode, which wires its own handler
 
-  $("addbtn").onclick = function () { $("addurl").value = ""; openSheet("addsheet"); };
+  $("addbtn").onclick = function () { $("addurl").value = ""; resetUpload(); openSheet("addsheet"); };
   $("addgo").onclick = doAdd;
   $("addurl").addEventListener("keydown", function (e) { if (e.key === "Enter") doAdd(); });
+  // The row is the tap target; the file input behind it is never seen.
+  $("uploadrow").onclick = function () { upError(""); $("addfile").click(); };
+  $("addfile").onchange = function () {
+    var f = this.files && this.files[0];
+    if (f) doUpload(f);
+  };
 
   $("exeditsave").onclick = saveExEdit;
   $("exeditdelete").onclick = deleteExEdit;

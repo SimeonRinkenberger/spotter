@@ -398,6 +398,46 @@ export const STYLE = String.raw`<style>
   .btnrow { display: flex; gap: 9px; margin-top: 10px; }
   .btnrow .btn { flex: 1; }
 
+  /* ---------- upload a video you saved ----------
+     A tertiary control under the primary one, never a second primary: the URL
+     field is the everyday path and this is its fallback. A hairline is the whole
+     separator — an "or" chip would give the two paths equal billing.
+     The bar is determinate because we know the byte count, and a 25 MB file on
+     mobile data is well past the ten seconds at which a spinner stops being an
+     honest answer to "how long". */
+  .upblock { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+  .uploadrow { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
+    background: var(--card); border: 1px solid var(--line-2); border-radius: 16px;
+    padding: 13px 14px; color: var(--ink); box-shadow: var(--sh-sm);
+    transition: border-color var(--t-2) var(--e-out), transform var(--t-1) var(--e-out),
+      opacity var(--t-2); }
+  .uploadrow:active { transform: scale(.985); }
+  .uploadrow:focus-visible { outline: 2px solid var(--ember); outline-offset: 2px; }
+  .uploadrow[disabled] { opacity: .5; }
+  .upmark { flex: 0 0 auto; width: 34px; height: 34px; border-radius: 11px; display: grid;
+    place-items: center; background: var(--ember-soft); color: var(--ember-ink);
+    font-size: 17px; font-weight: 700; line-height: 1; }
+  .uptext { display: block; min-width: 0; }
+  .uptext b { display: block; font-size: 14.5px; font-weight: 650; letter-spacing: -.01em; }
+  .uptext small { display: block; margin-top: 3px; font-size: 12.5px; line-height: 1.45;
+    color: var(--muted); }
+  /* Inline on the control that caused it, not a toast: the fix is to pick a
+     different file, which means the message has to still be there when the user
+     looks back at the row. */
+  .uperr { margin-top: 10px; font-size: 13px; line-height: 1.5; color: var(--ember-ink);
+    background: var(--ember-soft); border-radius: 12px; padding: 10px 12px;
+    animation: fadein var(--t-2) var(--e-soft); }
+  .upprog { margin-top: 12px; }
+  .upbar { height: 6px; border-radius: 999px; background: var(--sand); overflow: hidden; }
+  .upbar i { display: block; height: 100%; width: 0; border-radius: 999px; background: var(--ember);
+    transition: width var(--t-2) var(--e-out); }
+  .upnote { margin-top: 7px; font-size: 12.5px; color: var(--ink-2);
+    font-variant-numeric: tabular-nums; }
+  @media (prefers-reduced-motion: reduce) {
+    .uploadrow, .upbar i { transition: none; }
+    .uperr { animation: none; }
+  }
+
   /* ---------- swap or modify ----------
      Reason and body-area pickers reuse the library chips; the answer is a list
      in the detail view's exercise-row rhythm, with the trade-off one step quieter

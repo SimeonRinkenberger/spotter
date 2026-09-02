@@ -153,6 +153,26 @@ export const MARKUP_BODY = String.raw`</head>
   <p class="lede">Paste a link to a TikTok, Instagram reel, YouTube video, or any workout page.</p>
   <div class="field"><input id="addurl" type="url" placeholder="https://..." autocapitalize="off" autocomplete="off" spellcheck="false"></div>
   <button class="btn" id="addgo">Save workout</button>
+
+  <!-- The last rung of the ingest ladder, and deliberately the quiet one: pasting a
+       link is the everyday path, and this is for the video nobody wrote a caption
+       for. The size limit is stated here rather than only in the error, so being
+       told the file is too big confirms a rule the user already read. -->
+  <div class="upblock">
+    <button class="uploadrow" id="uploadrow" type="button">
+      <span class="upmark" aria-hidden="true">&#8593;</span>
+      <span class="uptext">
+        <b>Upload a video you saved</b>
+        <small>For creators who say the workout instead of writing it. MP4, M4A, MP3, WAV or WebM, up to 25 MB.</small>
+      </span>
+    </button>
+    <input id="addfile" type="file" accept="video/*,audio/*" hidden>
+    <div class="uperr" id="uperr" hidden></div>
+    <div class="upprog" id="upprog" hidden>
+      <div class="upbar"><i id="upfill"></i></div>
+      <div class="upnote" id="upnote">Uploading&hellip;</div>
+    </div>
+  </div>
 </div></div>
 
 <div class="sheet" id="setsheet"><div class="sheetbody">
