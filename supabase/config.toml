@@ -14,6 +14,24 @@ enable_signup = true
 # Turn this on together with custom SMTP (Resend free tier) before real launch.
 enable_confirmations = false
 
+# ---------- MFA ----------
+# The Supabase advisors flag "insufficient MFA options": a project where the only
+# factor is a password. Turning TOTP on does not force anyone to use it — it makes
+# the enrol and verify endpoints available, so a user who wants an authenticator app
+# can add one. Nothing in the app enrols a factor yet; this is the door, not the
+# walk through it.
+#
+# These two keys are in the published CLI config reference
+# (https://supabase.com/docs/guides/local-development/cli/config, auth.mfa.totp.*)
+# and so are pushable with `supabase config push`. The other two advisor items —
+# leaked-password (HIBP) protection and a password policy — are NOT in that
+# reference at CLI 2.116.0, and the CLI ignores unknown keys silently rather than
+# rejecting them, so writing guesses here would look like protection and be none.
+# They are dashboard settings; the exact steps are in README, "Self-hosting".
+[auth.mfa.totp]
+enroll_enabled = true
+verify_enabled = true
+
 [functions.spotter]
 enabled = true
 verify_jwt = false

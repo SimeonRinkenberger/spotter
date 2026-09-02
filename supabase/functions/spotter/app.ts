@@ -599,6 +599,11 @@ export const APP = String.raw`
         var rb = el("button", "retrybtn", "Try reading it again");
         rb.onclick = function () { retryWorkout(w, rb); };
         d.appendChild(rb);
+        // The last rung, and the only one a platform cannot block: whatever it
+        // serves a server, the user can read the caption on their own screen.
+        var pb = el("button", "retrybtn ghost", "Paste the caption instead");
+        pb.onclick = function () { openCaption(w); };
+        d.appendChild(pb);
       }
       var open = el("a", "pill accent", "Open original ↗");
       open.href = w.source_url || w.url;
@@ -654,6 +659,14 @@ export const APP = String.raw`
       wt.appendChild(document.createTextNode(conf < 0.45
         ? " The exercises below were not traceable to anything written on the post. Watch the original before you train it."
         : " A few sets or reps were not written down anywhere Spotter could find. Worth a glance at the original."));
+      // Only on the low band. On the middle one the card is mostly traceable and
+      // asking the user to retype a caption would be asking for work worth little.
+      if (conf < 0.45) {
+        wt.appendChild(document.createTextNode(" "));
+        var fix = el("button", "fixlink", "Paste the caption to improve it");
+        fix.onclick = function () { openCaption(w); };
+        wt.appendChild(fix);
+      }
       warn.appendChild(wt);
       d.appendChild(warn);
     }
@@ -828,6 +841,65 @@ export const APP = String.raw`
         if (btn) { btn.disabled = false; btn.textContent = "Try reading it again"; }
         toast("Could not queue that.");
       });
+  }
+
+  // ---------- pasting the caption ----------
+  //
+  // The bottom of the ingest ladder. Every automated path can be blocked — an IP
+  // ban, a login wall, a video with the workout only on screen — and none of that
+  // stops the user reading the caption on their own phone. It goes to the same
+  // reprocess endpoint as the retry button, which decides for itself whether that
+  // means a queued job or an inline re-read with the never-downgrade merge.
+  var capFor = null;
+
+  function openCaption(w) {
+    capFor = w;
+    $("capinput").value = "";
+    $("caplede").textContent = isFailed(w)
+      ? "Copy the workout text off the post and paste it here. Spotter reads what you paste instead of trying the video again."
+      : "Copy the workout text off the post and paste it here. Spotter rebuilds the card from your text.";
+    openSheet("capsheet");
+    setTimeout(function () { $("capinput").focus(); }, 60);
+  }
+
+  function sendCaption() {
+    if (!capFor) return;
+    var w = capFor;
+    var text = $("capinput").value.trim();
+    if (text.length < 12) { toast("Paste a bit more than that."); return; }
+    var btn = $("capgo");
+    btn.disabled = true;
+    btn.textContent = "Reading…";
+    api("workouts/" + w.id + "/reprocess", {
+      method: "POST",
+      body: JSON.stringify({ caption: text.slice(0, 6000) })
+    }).then(function (r) {
+      btn.disabled = false;
+      btn.textContent = "Read it";
+      // A card that had failed goes back on the queue; a card that was merely weak
+      // is re-read inline and comes back whole.
+      if (r.status === "processing") {
+        closeSheet("capsheet");
+        w.ingest_status = "processing";
+        w.ingest_error = null;
+        if (current && current.id === w.id) openDetail(w, true);
+        render();
+        watchPending();
+        toast("Reading your caption…");
+        return;
+      }
+      if (r.status !== "ok") { toast(r.message || "Could not read that."); return; }
+      closeSheet("capsheet");
+      load().then(function () {
+        var fresh = state.workouts.filter(function (x) { return x.id === r.workout.id; })[0];
+        if (fresh) openDetail(fresh, true);
+        toast("Re-read it from your caption.");
+      });
+    }).catch(function () {
+      btn.disabled = false;
+      btn.textContent = "Read it";
+      toast("Could not read that.");
+    });
   }
 
   function closeDetail() {
@@ -2576,7 +2648,7 @@ export const APP = String.raw`
   function closeSheet(id) { $(id).classList.remove("open"); }
 
   ["addsheet", "setsheet", "exsheet", "exeditsheet", "explainsheet", "picksheet", "settingssheet",
-   "colsheet", "renamesheet", "swapsheet", "pumpysheet"]
+   "colsheet", "renamesheet", "swapsheet", "pumpysheet", "capsheet"]
     .forEach(function (id) {
       $(id).addEventListener("click", function (e) { if (e.target === $(id)) closeSheet(id); });
     });
@@ -2802,6 +2874,9 @@ export const APP = String.raw`
   $("colcreate").onclick = createCollection;
   $("colname").addEventListener("keydown", function (e) { if (e.key === "Enter") createCollection(); });
   $("renamesave").onclick = saveRename;
+  $("capcancel").onclick = function () { closeSheet("capsheet"); capFor = null; };
+  $("capgo").onclick = sendCaption;
+
   $("renamecancel").onclick = function () { closeSheet("renamesheet"); renameCtx = null; };
   $("renameinput").addEventListener("keydown", function (e) { if (e.key === "Enter") saveRename(); });
 

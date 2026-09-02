@@ -97,6 +97,11 @@
     font-size: 16px; background: var(--sand); color: var(--ink); outline: none;
     transition: border-color var(--t-2), background-color var(--t-2); }
   .field input:focus { border-color: var(--ember); background: var(--card); }
+  .field textarea { width: 100%; border: 1px solid var(--line); border-radius: 13px; padding: 12px 14px;
+    font-size: 16px; line-height: 1.55; background: var(--sand); color: var(--ink); outline: none;
+    resize: vertical; min-height: 148px;
+    transition: border-color var(--t-2), background-color var(--t-2); }
+  .field textarea:focus { border-color: var(--ember); background: var(--card); }
   .btn { width: 100%; border: none; border-radius: 14px; padding: 14px; font-size: 15.5px;
     font-weight: 650; background: var(--ember); color: var(--on-ember); box-shadow: 0 3px 14px var(--glow);
     transition: transform var(--t-1) var(--e-out), opacity var(--t-2); letter-spacing: -.01em; }
@@ -252,6 +257,10 @@
     font: inherit; font-weight: 700; cursor: pointer; color: #fff; background: var(--ember);
     box-shadow: var(--sh-md); }
   .retrybtn:disabled { opacity: .55; }
+  /* The second rung under a failed card: quieter than the retry, because it asks
+     the user to do work and the retry does not. */
+  .retrybtn.ghost { background: var(--card); color: var(--ink); border: 1px solid var(--line-2);
+    box-shadow: none; font-weight: 650; }
 
   /* ---------- empty states ---------- */
   .empty { text-align: center; padding: 54px 32px 40px; color: var(--ink-2); }
@@ -367,6 +376,9 @@
     line-height: 1.5; color: var(--ink-2); background: var(--sand); border: 1px solid var(--line);
     border-radius: 12px; padding: 10px 12px; margin-bottom: 14px; }
   .unverified b { color: var(--ink); font-weight: 650; }
+  .unverified .fixlink { display: inline; background: none; border: 0; padding: 0; margin: 0;
+    font: inherit; color: var(--ember-ink); font-weight: 650; text-decoration: underline;
+    text-underline-offset: 2px; cursor: pointer; }
   .notesarea { width: 100%; border: 1px solid var(--line); border-radius: 13px; padding: 12px;
     font-size: 14px; line-height: 1.55; background: var(--sand); color: var(--ink); outline: none;
     resize: vertical; min-height: 78px; }
@@ -923,6 +935,20 @@
     <input class="emo" id="colemoji" type="text" placeholder="🏷" maxlength="4" autocomplete="off" aria-label="Emoji">
     <input class="nm" id="colname" type="text" placeholder="New collection" maxlength="60" autocapitalize="sentences" autocomplete="off" aria-label="Collection name">
     <button class="btn" id="colcreate">Create</button>
+  </div>
+</div></div>
+
+<div class="sheet" id="capsheet"><div class="sheetbody">
+  <div class="grabber"></div>
+  <h2>Paste the caption</h2>
+  <p class="lede" id="caplede">Copy the workout text from the post and paste it here.</p>
+  <div class="field">
+    <label for="capinput">Caption</label>
+    <textarea id="capinput" rows="8" placeholder="3 rounds&#10;10 goblet squats&#10;12 push ups&#10;15 kettlebell swings" autocapitalize="sentences" autocomplete="off" spellcheck="false"></textarea>
+  </div>
+  <div class="btnrow">
+    <button class="btn ghost" id="capcancel">Cancel</button>
+    <button class="btn" id="capgo">Read it</button>
   </div>
 </div></div>
 
@@ -1564,6 +1590,11 @@
         var rb = el("button", "retrybtn", "Try reading it again");
         rb.onclick = function () { retryWorkout(w, rb); };
         d.appendChild(rb);
+        // The last rung, and the only one a platform cannot block: whatever it
+        // serves a server, the user can read the caption on their own screen.
+        var pb = el("button", "retrybtn ghost", "Paste the caption instead");
+        pb.onclick = function () { openCaption(w); };
+        d.appendChild(pb);
       }
       var open = el("a", "pill accent", "Open original ↗");
       open.href = w.source_url || w.url;
@@ -1619,6 +1650,14 @@
       wt.appendChild(document.createTextNode(conf < 0.45
         ? " The exercises below were not traceable to anything written on the post. Watch the original before you train it."
         : " A few sets or reps were not written down anywhere Spotter could find. Worth a glance at the original."));
+      // Only on the low band. On the middle one the card is mostly traceable and
+      // asking the user to retype a caption would be asking for work worth little.
+      if (conf < 0.45) {
+        wt.appendChild(document.createTextNode(" "));
+        var fix = el("button", "fixlink", "Paste the caption to improve it");
+        fix.onclick = function () { openCaption(w); };
+        wt.appendChild(fix);
+      }
       warn.appendChild(wt);
       d.appendChild(warn);
     }
@@ -1793,6 +1832,65 @@
         if (btn) { btn.disabled = false; btn.textContent = "Try reading it again"; }
         toast("Could not queue that.");
       });
+  }
+
+  // ---------- pasting the caption ----------
+  //
+  // The bottom of the ingest ladder. Every automated path can be blocked — an IP
+  // ban, a login wall, a video with the workout only on screen — and none of that
+  // stops the user reading the caption on their own phone. It goes to the same
+  // reprocess endpoint as the retry button, which decides for itself whether that
+  // means a queued job or an inline re-read with the never-downgrade merge.
+  var capFor = null;
+
+  function openCaption(w) {
+    capFor = w;
+    $("capinput").value = "";
+    $("caplede").textContent = isFailed(w)
+      ? "Copy the workout text off the post and paste it here. Spotter reads what you paste instead of trying the video again."
+      : "Copy the workout text off the post and paste it here. Spotter rebuilds the card from your text.";
+    openSheet("capsheet");
+    setTimeout(function () { $("capinput").focus(); }, 60);
+  }
+
+  function sendCaption() {
+    if (!capFor) return;
+    var w = capFor;
+    var text = $("capinput").value.trim();
+    if (text.length < 12) { toast("Paste a bit more than that."); return; }
+    var btn = $("capgo");
+    btn.disabled = true;
+    btn.textContent = "Reading…";
+    api("workouts/" + w.id + "/reprocess", {
+      method: "POST",
+      body: JSON.stringify({ caption: text.slice(0, 6000) })
+    }).then(function (r) {
+      btn.disabled = false;
+      btn.textContent = "Read it";
+      // A card that had failed goes back on the queue; a card that was merely weak
+      // is re-read inline and comes back whole.
+      if (r.status === "processing") {
+        closeSheet("capsheet");
+        w.ingest_status = "processing";
+        w.ingest_error = null;
+        if (current && current.id === w.id) openDetail(w, true);
+        render();
+        watchPending();
+        toast("Reading your caption…");
+        return;
+      }
+      if (r.status !== "ok") { toast(r.message || "Could not read that."); return; }
+      closeSheet("capsheet");
+      load().then(function () {
+        var fresh = state.workouts.filter(function (x) { return x.id === r.workout.id; })[0];
+        if (fresh) openDetail(fresh, true);
+        toast("Re-read it from your caption.");
+      });
+    }).catch(function () {
+      btn.disabled = false;
+      btn.textContent = "Read it";
+      toast("Could not read that.");
+    });
   }
 
   function closeDetail() {
@@ -3541,7 +3639,7 @@
   function closeSheet(id) { $(id).classList.remove("open"); }
 
   ["addsheet", "setsheet", "exsheet", "exeditsheet", "explainsheet", "picksheet", "settingssheet",
-   "colsheet", "renamesheet", "swapsheet", "pumpysheet"]
+   "colsheet", "renamesheet", "swapsheet", "pumpysheet", "capsheet"]
     .forEach(function (id) {
       $(id).addEventListener("click", function (e) { if (e.target === $(id)) closeSheet(id); });
     });
@@ -3767,6 +3865,9 @@
   $("colcreate").onclick = createCollection;
   $("colname").addEventListener("keydown", function (e) { if (e.key === "Enter") createCollection(); });
   $("renamesave").onclick = saveRename;
+  $("capcancel").onclick = function () { closeSheet("capsheet"); capFor = null; };
+  $("capgo").onclick = sendCaption;
+
   $("renamecancel").onclick = function () { closeSheet("renamesheet"); renameCtx = null; };
   $("renameinput").addEventListener("keydown", function (e) { if (e.key === "Enter") saveRename(); });
 

@@ -2,8 +2,11 @@
 // One function under /functions/v1/spotter:
 //   GET  /                          the web app (HTML)
 //   GET  /icon.png  /manifest.webmanifest
-//   POST /api/ingest                { url } — Bearer token OR per-user ingest key (iOS Shortcut)
-//   POST /api/workouts/:id/reprocess re-run extraction on a saved workout
+//   POST /api/ingest                { url, html?, caption? } — Bearer token OR per-user ingest
+//                                    key (iOS Shortcut). `html` is the page the phone already
+//                                    fetched from its own residential IP; `caption` is text the
+//                                    user pasted. Either one means the server does not scrape.
+//   POST /api/workouts/:id/reprocess { caption? } — re-run extraction on a saved workout
 //   POST /api/workouts/:id/exercises edit/add/delete one exercise on the user's own
 //                                    copy, and record the correction as labelled data
 //   POST /api/explain               form coaching for one exercise
@@ -17,6 +20,7 @@
 //   POST /api/rotate-key            new ingest key
 //   GET  /api/limits                today's counts, and the spend ceiling
 //   POST /api/worker/tick           drain the ingest queue (shared secret, not a user)
+//   POST /api/worker/probe          one-off measurement behind the same secret
 //
 // Ingest is asynchronous: it enqueues and returns in ~200ms, and the worker fills
 // the row in afterwards. The browser watches its own workouts row over Realtime.
@@ -26,7 +30,7 @@
 import { PAGE_HTML } from "./page.ts";
 import { ICON_B64 } from "./icon.ts";
 import { CATALOG, type CatalogEntry, canonicalize, catalogById } from "./catalog.ts";
-import { assertPublicUrl, dnsAvailable, safeFetch } from "./net.ts";
+import { assertPublicUrl, checkUrl, dnsAvailable, safeFetch } from "./net.ts";
 import {
   attachEvidence, carouselEvidence, chapterExerciseCount, type Chapter,
   type Confidence, correctUnitErrors, dropChapterJunk, type Evidence,
@@ -651,6 +655,14 @@ type Meta = {
   // Which scrapers actually contributed a field, comma-joined. Recorded per save so
   // a source going dark shows up as a shift in the mix rather than as user reports.
   source?: string;
+  // True when this meta came from the caller rather than from a scrape — the page
+  // HTML a phone fetched, or a caption a user pasted. It is what the worker reads
+  // to decide whether to top the meta up over the network, and what the cache guard
+  // reads to decide whether a user's typing may overwrite a platform's own text.
+  supplied?: boolean;
+  // Set once the worker has tried to fill the gaps in a supplied meta, so a retry
+  // does not scrape again for fields the first attempt already failed to find.
+  topped_up?: boolean;
 };
 
 // Gemini free-tier daily caps are tiny (20/day) PER MODEL, so rotate models. The
@@ -870,11 +882,93 @@ function haveAI(): boolean {
 }
 
 // ---------- metadata scraping ----------
+//
+// Every platform's HTML-reading rung is split in two: a PURE parser that takes a
+// page's HTML and gives back what it can read, and a fetcher that goes and gets
+// that HTML. The split is the whole reason /api/ingest can accept a page someone
+// else already fetched — from this datacenter IP the YouTube watch page answers
+// 429 and Instagram is one policy change from doing the same, while from a phone's
+// own residential IP those pages carry everything. Same regexes, different courier.
+
+/** og: tags on the post page, as served to link-preview crawlers. Pure. */
+function igFromOg(html: string): { caption: string | null; thumb: string | null; author: string | null } {
+  const thumb = metaTag(html, "og:image");
+  const ogTitle = metaTag(html, "og:title");
+  const ogDesc = metaTag(html, "og:description");
+  const quoted = (s: string | null) => s?.match(/: ["“]([\s\S]*?)["”]?\s*$/)?.[1]?.trim() ?? null;
+  const candidates = [quoted(ogTitle), quoted(ogDesc)].filter((c): c is string => !!c);
+  let caption = candidates.sort((a, b) => b.length - a.length)[0] ?? null;
+  if (!caption && ogDesc) {
+    caption = ogDesc.replace(/^[\d.,KMB]+ likes?,\s*[\d.,KMB]+ comments?\s*-\s*\S+\s+on\s+[^:]+:\s*/i, "").trim() || null;
+  }
+  const author = ogTitle?.match(/^([^|:]+?) on Instagram/)?.[1]?.trim() ?? null;
+  return { caption, thumb, author };
+}
+
+/**
+ * The captioned-embed page: a caption with its line structure intact, the handle,
+ * and — the part nothing else exposes — every carousel slide's display_url, which
+ * is where a written plan usually lives. Pure.
+ */
+function igFromEmbed(html: string): {
+  caption: string | null; thumb: string | null; author: string | null; images: string[];
+} {
+  let thumb: string | null = null;
+  const im = html.match(/class="EmbeddedMediaImage"[^>]*src="([^"]+)"/) ??
+    html.match(/src="(https:\/\/[^"]*scontent[^"]+)"/);
+  if (im) thumb = decodeEntities(im[1]);
+
+  let caption: string | null = null;
+  const capDiv = html.match(/<div class="Caption"[^>]*>([\s\S]*?)<div class="CaptionComments"/) ??
+    html.match(/<div class="Caption"[^>]*>([\s\S]*?)<\/div>/);
+  if (capDiv) {
+    const text = decodeEntities(
+      capDiv[1].replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, " "),
+    ).replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+    if (text) caption = text;
+  }
+
+  let author: string | null = null;
+  const a = html.match(/class="UsernameText"[^>]*>([^<]+)</);
+  if (a) author = decodeEntities(a[1]);
+
+  const images: string[] = [];
+  for (const mm of html.matchAll(/"display_url"\s*:\s*"([^"]+)"/g)) {
+    const u = mm[1].replace(/\\u0026/g, "&").replace(/\\\//g, "/");
+    if (/^https:\/\//.test(u) && !images.includes(u)) images.push(u);
+  }
+  return { caption, thumb, author, images };
+}
+
+/**
+ * og: tags collapse newlines, and a caption WITH line structure beats a longer flat
+ * one — "3x10 squat / 3x12 press" as two lines parses, as one line it does not.
+ * That preference is the only reason the embed page is worth a second request.
+ */
+function igBetterCaption(have: string | null, next: string | null): string | null {
+  if (!next) return have;
+  if (!have) return next;
+  const structured = next.includes("\n") && !have.includes("\n");
+  return structured || next.length > have.length ? next : have;
+}
+
+/** Both Instagram parsers over one page of HTML. Pure — this is the phone's path. */
+function igParseHtml(html: string): Meta {
+  const og = igFromOg(html);
+  const em = igFromEmbed(html);
+  const thumb = og.thumb ?? em.thumb;
+  const images = em.images.slice();
+  if (!images.length && thumb) images.push(thumb);
+  return {
+    caption: igBetterCaption(og.caption, em.caption),
+    thumb,
+    author: og.author ?? em.author,
+    images,
+  };
+}
 
 async function igMeta(p: Parsed): Promise<Meta> {
-  let caption: string | null = null;
-  let thumb: string | null = null;
-  let author: string | null = null;
+  const out: Meta = { caption: null, thumb: null, author: null };
   let images: string[] = [];
   const used: string[] = [];
 
@@ -884,18 +978,11 @@ async function igMeta(p: Parsed): Promise<Meta> {
       headers: { "User-Agent": CRAWLER_UA, "Accept-Language": "en-US", "Accept": "text/html" },
     });
     if (r.ok) {
-      const html = await r.text();
-      thumb = metaTag(html, "og:image");
-      const ogTitle = metaTag(html, "og:title");
-      const ogDesc = metaTag(html, "og:description");
-      const quoted = (s: string | null) => s?.match(/: ["“]([\s\S]*?)["”]?\s*$/)?.[1]?.trim() ?? null;
-      const candidates = [quoted(ogTitle), quoted(ogDesc)].filter((c): c is string => !!c);
-      caption = candidates.sort((a, b) => b.length - a.length)[0] ?? null;
-      if (!caption && ogDesc) {
-        caption = ogDesc.replace(/^[\d.,KMB]+ likes?,\s*[\d.,KMB]+ comments?\s*-\s*\S+\s+on\s+[^:]+:\s*/i, "").trim();
-      }
-      author = ogTitle?.match(/^([^|:]+?) on Instagram/)?.[1]?.trim() ?? null;
-      if (caption || thumb || author) used.push("og");
+      const got = igFromOg(await r.text());
+      out.caption = got.caption;
+      out.thumb = got.thumb;
+      out.author = got.author;
+      if (out.caption || out.thumb || out.author) used.push("og");
     }
   } catch (_) { /* fall through */ }
 
@@ -905,38 +992,24 @@ async function igMeta(p: Parsed): Promise<Meta> {
       headers: { "User-Agent": DESKTOP_UA, "Accept-Language": "en-US" },
     });
     if (r.ok) {
-      const html = await r.text();
-      if (!thumb) {
-        const im = html.match(/class="EmbeddedMediaImage"[^>]*src="([^"]+)"/) ??
-          html.match(/src="(https:\/\/[^"]*scontent[^"]+)"/);
-        if (im) thumb = decodeEntities(im[1]);
-      }
-      const capDiv = html.match(/<div class="Caption"[^>]*>([\s\S]*?)<div class="CaptionComments"/) ??
-        html.match(/<div class="Caption"[^>]*>([\s\S]*?)<\/div>/);
-      if (capDiv) {
-        const text = decodeEntities(
-          capDiv[1].replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, " "),
-        ).replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
-        // og: tags collapse newlines; a caption WITH line structure beats a longer flat one
-        const structured = text.includes("\n") && !(caption ?? "").includes("\n");
-        if (text && (!caption || structured || text.length > caption.length)) caption = text;
-      }
-      if (!author) {
-        const a = html.match(/class="UsernameText"[^>]*>([^<]+)</);
-        if (a) author = decodeEntities(a[1]);
-      }
-      // carousel posts: the embed page's inline JSON exposes display_url for every slide,
-      // and slide 2 is very often the written workout
-      for (const mm of html.matchAll(/"display_url"\s*:\s*"([^"]+)"/g)) {
-        const u = mm[1].replace(/\\u0026/g, "&").replace(/\\\//g, "/");
-        if (/^https:\/\//.test(u) && !images.includes(u)) images.push(u);
-      }
-      if (caption || thumb || author || images.length) used.push("embed-captioned");
+      const got = igFromEmbed(await r.text());
+      // "did this rung contribute", not "is there anything at all by now" — the old
+      // test read the accumulated fields and so credited the embed page for what og:
+      // had already found, which is the one question save_health exists to answer.
+      let gained = false;
+      const better = igBetterCaption(out.caption, got.caption);
+      if (better !== out.caption) { out.caption = better; gained = true; }
+      if (!out.thumb && got.thumb) { out.thumb = got.thumb; gained = true; }
+      if (!out.author && got.author) { out.author = got.author; gained = true; }
+      for (const u of got.images) if (!images.includes(u)) { images.push(u); gained = true; }
+      if (gained) used.push("embed-captioned");
     }
   } catch (_) { /* fall through */ }
 
-  if (!images.length && thumb) images = [thumb];
-  return { caption, thumb, author, images, source: used.join(",") || "none" };
+  if (!images.length && out.thumb) images = [out.thumb];
+  out.images = images;
+  out.source = used.join(",") || "none";
+  return out;
 }
 
 // ---------- TikTok ----------
@@ -1043,6 +1116,25 @@ function ttFromOg(html: string): TtRaw | null {
   if (cand && !TT_OG_NOT_A_HANDLE.test(cand)) author = cand;
 
   return ttSome({ caption: null, thumb, author });
+}
+
+/**
+ * Every HTML-reading TikTok rung, over one page of HTML. This is what a phone
+ * hands us: the rehydration blob if the full watch page came back, the embed
+ * state if the embed page did, and og: for the two fields it is honest about.
+ * og: is still refused a caption here for exactly the reasons above — the page
+ * being fetched by a phone does not make "Make Your Day" a workout.
+ */
+function ttParseHtml(html: string): Meta {
+  const out: Meta = { caption: null, thumb: null, author: null };
+  for (const raw of [ttFromUniversalData(html), ttFromEmbedState(html), ttFromOg(html)]) {
+    if (!raw) continue;
+    if (!out.caption && raw.caption) out.caption = raw.caption;
+    if (!out.thumb && raw.thumb) out.thumb = raw.thumb;
+    if (!out.author && raw.author) out.author = raw.author;
+    if (!out.seconds && raw.seconds) out.seconds = raw.seconds;
+  }
+  return out;
 }
 
 type TtSource = {
@@ -1158,6 +1250,83 @@ function isoMinutes(iso: string): number {
   return Math.round(d * 1440 + h * 60 + mi + s / 60);
 }
 
+/**
+ * The JSON object that starts at `start`, found by counting braces with string and
+ * escape awareness.
+ *
+ * A regex cannot do this. ytInitialPlayerResponse is a few hundred kilobytes of
+ * nested objects on one line, and the obvious /=\s*(\{[\s\S]*?\})/ stops at the
+ * first inner brace while /(\{[\s\S]*\})/ runs to the end of the document.
+ */
+function sliceJsonObject(s: string, start: number): string | null {
+  if (s[start] !== "{") return null;
+  let depth = 0, inStr = false, esc = false;
+  for (let i = start; i < s.length; i++) {
+    const c = s[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (c === "\\") esc = true;
+      else if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') { inStr = true; continue; }
+    if (c === "{") depth++;
+    else if (c === "}") { depth--; if (depth === 0) return s.slice(start, i + 1); }
+  }
+  return null;
+}
+
+/** A JSON string body ("a\u00e9b") back to text, leaving it alone if it will not parse. */
+function jsonStr(raw: string | undefined): string | null {
+  if (!raw) return null;
+  try { return JSON.parse('"' + raw + '"'); } catch { return raw; }
+}
+
+/**
+ * A YouTube watch page, read the way the page's own player reads it.
+ *
+ * From this datacenter IP none of this is reachable — the watch page answers 429
+ * and every innertube client is a dead end, which is why ytMeta needs the Data API
+ * key. From a phone's residential IP the same page arrives whole, and
+ * videoDetails.shortDescription is the full description: the field creators paste
+ * the workout into and the one thing oEmbed does not carry. Pure.
+ */
+function ytParseHtml(html: string): Meta {
+  const out: Meta = { caption: null, thumb: null, author: null };
+  out.thumb = metaTag(html, "og:image");
+
+  let title: string | null = null;
+  let desc = "";
+  const m = html.match(/ytInitialPlayerResponse\s*=\s*\{/);
+  if (m && typeof m.index === "number") {
+    const body = sliceJsonObject(html, m.index + m[0].length - 1);
+    if (body) {
+      try {
+        const vd = JSON.parse(body)?.videoDetails;
+        if (vd) {
+          if (typeof vd.title === "string") title = vd.title;
+          if (typeof vd.shortDescription === "string") desc = vd.shortDescription;
+          if (typeof vd.author === "string" && vd.author) out.author = vd.author;
+          const secs = Number(vd.lengthSeconds);
+          if (Number.isFinite(secs) && secs > 0) out.seconds = secs;
+        }
+      } catch (e) {
+        console.error("ytParseHtml: player response did not parse —", String(e).slice(0, 120));
+      }
+    }
+  }
+  if (!title) title = metaTag(html, "og:title");
+  if (!out.author) out.author = jsonStr(html.match(/"ownerChannelName"\s*:\s*"([^"]{1,120})"/)?.[1]);
+
+  // The same shape ytMeta builds: the title, then the description under it. The
+  // extractor reads one block of text, and the title is often the workout's name.
+  const parts = [title, desc.length > 20 ? desc : ""].filter(Boolean) as string[];
+  out.caption = parts.length ? parts.join("\n\n") : null;
+  const chapters = parseChapters(out.caption);
+  if (chapters.length) out.chapters = chapters;
+  return out;
+}
+
 async function ytMeta(p: Parsed): Promise<Meta> {
   let caption: string | null = null;
   let thumb: string | null = null;
@@ -1210,32 +1379,43 @@ async function ytMeta(p: Parsed): Promise<Meta> {
 
 // Generic pages: og: tags plus enough body text for the AI. There is no schema.org
 // type for workouts the way there is for recipes, so everything goes through the model.
-async function webMeta(p: Parsed): Promise<Meta> {
+/** og: tags plus enough body text for the model. Pure. */
+function webParseHtml(html: string, clean: string): Meta {
   const out: Meta = { caption: null, thumb: null, author: null };
+  out.thumb = metaTag(html, "og:image");
+  out.author = metaTag(html, "og:site_name");
+  if (!out.author) { try { out.author = new URL(clean).hostname.replace(/^www\./, ""); } catch (_) { /* ok */ } }
+  const ogTitle = metaTag(html, "og:title") ??
+    (html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1]?.trim() ?? null);
+  const ogDesc = metaTag(html, "og:description");
+  out.caption = [ogTitle, ogDesc].filter(Boolean).join("\n") || null;
+
+  const body = html
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, "\n");
+  const text = decodeEntities(body)
+    .replace(/[ \t]+/g, " ").replace(/\s*\n\s*/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+  if (text.length > 200) out.caption = ((out.caption ?? "") + "\n\n" + text.slice(0, 6000)).trim();
+  const chapters = parseChapters(out.caption);
+  if (chapters.length) out.chapters = chapters;
+  return out;
+}
+
+async function webMeta(p: Parsed): Promise<Meta> {
+  let out: Meta = { caption: null, thumb: null, author: null };
   try {
     const r = await safeFetch(p.clean, {
       headers: { "User-Agent": DESKTOP_UA, "Accept-Language": "en-US", "Accept": "text/html" },
       signal: AbortSignal.timeout(15000),
     });
-    if (!r.ok) { console.error("webMeta fetch", p.clean, r.status); return out; }
-    const html = await r.text();
-    out.thumb = metaTag(html, "og:image");
-    out.author = metaTag(html, "og:site_name");
-    if (!out.author) { try { out.author = new URL(p.clean).hostname.replace(/^www\./, ""); } catch (_) { /* ok */ } }
-    const ogTitle = metaTag(html, "og:title") ??
-      (html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1]?.trim() ?? null);
-    const ogDesc = metaTag(html, "og:description");
-    out.caption = [ogTitle, ogDesc].filter(Boolean).join("\n") || null;
-
-    const body = html
-      .replace(/<script[\s\S]*?<\/script>/gi, " ")
-      .replace(/<style[\s\S]*?<\/style>/gi, " ")
-      .replace(/<[^>]+>/g, "\n");
-    const text = decodeEntities(body)
-      .replace(/[ \t]+/g, " ").replace(/\s*\n\s*/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
-    if (text.length > 200) out.caption = ((out.caption ?? "") + "\n\n" + text.slice(0, 6000)).trim();
-    const chapters = parseChapters(out.caption);
-    if (chapters.length) out.chapters = chapters;
+    if (!r.ok) {
+      console.error("webMeta fetch", p.clean, r.status);
+      await r.body?.cancel();
+      out.source = "none";
+      return out;
+    }
+    out = webParseHtml(await r.text(), p.clean);
     out.source = "og";
   } catch (e) {
     console.error("webMeta failed", e);
@@ -1249,6 +1429,115 @@ function fetchMeta(p: Parsed): Promise<Meta> {
   if (p.platform === "tiktok") return ttMeta(p);
   if (p.platform === "youtube") return ytMeta(p);
   return webMeta(p);
+}
+
+// ---------- what the caller brought ----------
+//
+// Two measured facts drive this whole section. From this datacenter IP the YouTube
+// watch page answers 429 and the innertube endpoints are dead ends; Instagram works
+// today and a datacenter IP at volume will eventually be blocked as well. From a
+// phone's own residential IP those same pages carry everything. So /api/ingest
+// accepts the page the phone already fetched — and when even that fails, the
+// caption the user can read on their own screen and paste.
+//
+// The supplied HTML is attacker-controlled by construction: anyone holding an
+// ingest key can post two megabytes of anything. Nothing here trusts it beyond
+// running the same regexes over it, and every URL it yields is filtered through the
+// outbound guard's static half here and its DNS half again at fetch time inside
+// safeFetch. Filtering here is not the security boundary — safeFetch is — but it
+// turns a silent throw deep in a thumbnail upload into one legible log line.
+
+const SUPPLIED_HTML_MAX = 2_000_000;
+const SUPPLIED_CAPTION_MAX = 6_000;
+
+/** Drop a URL read out of supplied HTML that the outbound guard would refuse anyway. */
+function keepFetchableUrl(u: string | null | undefined, what: string): string | null {
+  if (!u) return null;
+  const c = checkUrl(u);
+  if (!c.ok) { console.error("ssrf: rejected supplied", what, u.slice(0, 120), "—", c.reason); return null; }
+  return c.url.toString();
+}
+
+/** The right pure parser for the platform the link resolved to. */
+function parseSuppliedHtml(p: Parsed, html: string): Meta {
+  if (p.platform === "instagram") return igParseHtml(html);
+  if (p.platform === "tiktok") return ttParseHtml(html);
+  if (p.platform === "youtube") return ytParseHtml(html);
+  return webParseHtml(html, p.clean);
+}
+
+/** True when the caption on this meta is text a person typed, not a platform's. */
+function captionIsUserTyped(meta: Meta): boolean {
+  return (meta.source ?? "").split(",").includes("user-caption");
+}
+
+/**
+ * A Meta built with no network at all, from whatever the caller supplied. Whatever
+ * is still missing afterwards is the worker's problem — see topUpMeta.
+ */
+function metaFromSupplied(p: Parsed, html: string | null, caption: string | null): Meta {
+  const out: Meta = { caption: null, thumb: null, author: null, supplied: true };
+  const used: string[] = [];
+
+  if (html) {
+    const got = parseSuppliedHtml(p, html);
+    out.caption = got.caption;
+    out.thumb = keepFetchableUrl(got.thumb, "thumbnail");
+    out.author = got.author;
+    if (got.seconds) out.seconds = got.seconds;
+    if (got.chapters?.length) out.chapters = got.chapters;
+    const imgs = (got.images ?? [])
+      .map((u) => keepFetchableUrl(u, "carousel slide"))
+      .filter((u): u is string => !!u);
+    if (imgs.length) out.images = imgs;
+    if (out.caption || out.thumb || out.author || imgs.length) used.push("phone-html");
+    else console.log("supplied html parsed to nothing:", p.platform, p.shortcode, html.length, "chars");
+  }
+
+  // What the user typed wins over anything read off a page. They are looking at the
+  // caption we could not reach, which is the entire point of letting them paste it.
+  if (caption) {
+    out.caption = caption;
+    const ch = parseChapters(caption);
+    out.chapters = ch.length ? ch : undefined;
+    used.push("user-caption");
+  }
+
+  out.source = used.join(",") || "none";
+  return out;
+}
+
+/**
+ * Fill the gaps in a supplied meta over the network, best effort. Only the fields
+ * that are still missing: a caption the user pasted is never overwritten by a
+ * scrape, and neither is one the phone read off the real page.
+ *
+ * Failure here is not failure of the save. The supplied text is the reason this
+ * request exists; a missing handle or thumbnail on top of it is cosmetic.
+ */
+async function topUpMeta(p: Parsed, supplied: Meta): Promise<Meta> {
+  const out: Meta = { ...supplied, topped_up: true };
+  if (out.caption && out.thumb && out.author) return out;
+  try {
+    const net = await fetchMeta(p);
+    let gained = false;
+    if (!out.caption && net.caption) { out.caption = net.caption; gained = true; }
+    if (!out.thumb && net.thumb) { out.thumb = net.thumb; gained = true; }
+    if (!out.author && net.author) { out.author = net.author; gained = true; }
+    if (!out.seconds && net.seconds) { out.seconds = net.seconds; gained = true; }
+    if (!out.images?.length && net.images?.length) { out.images = net.images; gained = true; }
+    if (!out.chapters?.length && net.chapters?.length) { out.chapters = net.chapters; gained = true; }
+    if (gained) {
+      const parts = (out.source ?? "").split(",").filter(Boolean);
+      for (const n of (net.source ?? "").split(",")) if (n && n !== "none" && !parts.includes(n)) parts.push(n);
+      out.source = parts.join(",") || "none";
+    }
+    console.log("top-up", p.platform, p.shortcode, gained ? "filled gaps ->" : "found nothing, source stays",
+      out.source);
+  } catch (e) {
+    console.error("top-up failed for", p.platform, p.shortcode, "—", String(e).slice(0, 200));
+  }
+  return out;
 }
 
 // ---------- caption -> workout card ----------
@@ -2445,12 +2734,80 @@ function extractLimitResponse(cors: Cors): Response {
 
 // ---------- ingest ----------
 
+/**
+ * Put a supplied meta onto the job before any worker can claim it.
+ *
+ * No schema change is needed for this: the job's `meta` column and its `step`
+ * already exist so a retry can resume, and seeding them says exactly the same
+ * thing a resume says — the scrape is done, start at the card.
+ *
+ * Best effort on purpose. If the patch fails the worker scrapes as it always did,
+ * which is a worse save rather than a broken one.
+ */
+async function seedJobMeta(jobId: string | null | undefined, meta: Meta): Promise<boolean> {
+  if (!jobId) return false;
+  try {
+    await jobStep(jobId, "card", { meta });
+    return true;
+  } catch (e) {
+    console.error("could not seed supplied meta onto job", jobId, e);
+    return false;
+  }
+}
+
+/** What the Shortcut's Show Result shows, so the phone can see which path ran. */
+function suppliedMessage(meta: Meta, seeded: boolean): string {
+  if (!seeded) return "Reading the video…";
+  if (captionIsUserTyped(meta)) return "Reading your caption…";
+  return "Read from your phone";
+}
+
+/**
+ * A card that already gave up, and a caller who has since brought the page HTML or
+ * the caption: that is a retry carrying new information, not a duplicate save. It
+ * goes back through the queue so it keeps the backoff and the dead-letter cutoff.
+ */
+async function requeueWithMeta(
+  workoutId: string, userId: string, meta: Meta, cors: Cors,
+): Promise<Response> {
+  const q = (await rpc("requeue_ingest", { p_user: userId, p_workout: workoutId }))[0];
+  if (!q) return json({ status: "error", message: "Not found." }, 404, cors);
+  // Only a job this call created may be seeded. A job already in flight for this
+  // video belongs to its own scrape — overwriting its meta would hand somebody
+  // else's save our text.
+  const seeded = q.job_created ? await seedJobMeta(q.job_id, meta) : false;
+  console.log("requeued with supplied meta", workoutId, "job", q.job_id,
+    q.job_created ? "(new)" : "(joined existing, not seeded)", "source:", meta.source);
+  kickWorker();
+  return json({
+    status: "processing", id: workoutId, job_id: q.job_id,
+    message: suppliedMessage(meta, seeded),
+  }, 202, cors);
+}
+
 async function handleIngest(req: Request, userId: string, cors: Cors): Promise<Response> {
   const t0 = Date.now();
   let shared = "";
+  let html: string | null = null;
+  let caption: string | null = null;
   const ct = req.headers.get("content-type") ?? "";
   if (ct.includes("json")) {
-    try { shared = (await req.json())?.url ?? ""; } catch (_) { shared = ""; }
+    let body: Record<string, unknown> | null = null;
+    try { body = await req.json(); } catch (_) { body = null; }
+    shared = typeof body?.url === "string" ? body.url : "";
+    const rawHtml = typeof body?.html === "string" ? body.html : "";
+    if (rawHtml.trim()) {
+      if (rawHtml.length > SUPPLIED_HTML_MAX) {
+        return json({
+          status: "error",
+          message: "That page is too big to send: " + rawHtml.length + " characters, and the limit is " +
+            SUPPLIED_HTML_MAX + ". Send the link on its own, or paste the caption instead.",
+        }, 413, cors);
+      }
+      html = rawHtml;
+    }
+    const rawCap = typeof body?.caption === "string" ? body.caption : "";
+    if (rawCap.trim()) caption = rawCap.slice(0, SUPPLIED_CAPTION_MAX).trim();
   } else {
     shared = (await req.text()).trim();
   }
@@ -2464,6 +2821,18 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
     }, 400, cors);
   }
   if (!p) return json({ status: "error", message: "No workout link found in what was shared." }, 400, cors);
+
+  // Everything the caller brought, read with no network at all. Null when they
+  // brought nothing this platform's parsers could use, in which case this is an
+  // ordinary save and the worker scrapes as it always has.
+  let supplied: Meta | null = null;
+  if (html || caption) {
+    const m = metaFromSupplied(p, html, caption);
+    console.log("supplied meta", p.platform, p.shortcode, "source:", m.source,
+      "caption:", m.caption?.length ?? 0, "thumb:", !!m.thumb, "author:", m.author ?? "-",
+      "slides:", m.images?.length ?? 0);
+    supplied = m.source === "none" ? null : m;
+  }
 
   const sc = encodeURIComponent(p.shortcode);
 
@@ -2488,6 +2857,10 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
   // the common "I already have that" case, and reports a save still in flight so a
   // double-tap does not look like a failure.
   if (dupe.length) {
+    if (supplied && dupe[0].ingest_status === "failed") {
+      if (counts.extracts >= LIMIT_EXTRACT) return extractLimitResponse(cors);
+      return await requeueWithMeta(dupe[0].id, userId, supplied, cors);
+    }
     const processing = dupe[0].ingest_status === "processing";
     return json({
       status: processing ? "processing" : "exists",
@@ -2547,7 +2920,8 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
   // thumbnail upload, 5-15 seconds with the user's request held open. Now it is a
   // row in a table and somebody else's problem, and the response is the row the
   // user can already see.
-  const provisional = cleanTitle(fallbackTitle({ caption: null, thumb: null, author: null }, p)) || "Saved workout";
+  const provisional =
+    cleanTitle(fallbackTitle(supplied ?? { caption: null, thumb: null, author: null }, p)) || "Saved workout";
   const q = (await rpc("enqueue_ingest", {
     p_user: userId, p_url: p.clean, p_shortcode: p.shortcode,
     p_platform: p.platform, p_kind: p.kind, p_title: provisional,
@@ -2555,11 +2929,33 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
 
   if (!q) throw new Error("enqueue_ingest returned nothing");
   if (q.already) {
+    // The cheap dupe check above missed it — two saves of the same link raced. If
+    // the row that won is a failed one and this call brought text, retry it.
+    if (supplied) {
+      const again = await dbSelect("workouts", `user_id=eq.${userId}&shortcode=eq.${sc}&select=id,ingest_status`);
+      if (again[0]?.ingest_status === "failed") {
+        return await requeueWithMeta(again[0].id, userId, supplied, cors);
+      }
+    }
     return json({ status: "exists", id: q.workout_id, message: "Already in your library." }, 200, cors);
   }
 
   console.log("enqueued", p.platform, p.shortcode, "job", q.job_id,
     q.job_created ? "(new)" : "(joined existing)", "in", Date.now() - t0, "ms");
+
+  // Order matters: patch before kick, so the meta is on the row before the worker
+  // this call is about to wake can claim it. The pg_cron sweep can still claim the
+  // job in the ~50ms gap, in which case attempt 1 scrapes normally and only a retry
+  // would read what was supplied. That is acceptable, and it is exactly why runJob
+  // asks about job.meta before job.step — a job seeded while still at step 'meta'
+  // has to use what it was given rather than scrape over it.
+  //
+  // Only a job this call created is seeded. Joining an existing job means another
+  // save of the same video is already in flight, and that job's own scrape owns it.
+  const seeded = supplied && q.job_created ? await seedJobMeta(q.job_id, supplied) : false;
+  if (supplied && !q.job_created) {
+    console.log("joined an existing job for", p.shortcode, "— supplied meta not applied");
+  }
   kickWorker();
 
   return json({
@@ -2567,7 +2963,7 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
     id: q.workout_id,
     job_id: q.job_id,
     title: provisional,
-    message: "Reading the video…",
+    message: supplied ? suppliedMessage(supplied, seeded) : "Reading the video…",
   }, 202, cors);
 }
 
@@ -2779,6 +3175,31 @@ async function failJob(job: Job, err: unknown): Promise<void> {
   }
 }
 
+/**
+ * Whether a card built from text a person typed may be written to the global cache.
+ *
+ * A card read off phone-fetched HTML always may: that is the platform's own text,
+ * fetched by a different machine. A pasted caption may not replace a caption the
+ * platform itself gave us — one person's approximation of a workout would become
+ * every future saver's card. The cache-miss path only runs when there is no row at
+ * the current extraction version, so what this can find is an older-version row,
+ * which is exactly the row a re-extraction would otherwise overwrite in silence.
+ */
+async function captionMayOverwriteCache(shortcode: string, meta: Meta): Promise<boolean> {
+  if (!captionIsUserTyped(meta)) return true;
+  try {
+    const rows = await dbSelect("video_cache", `shortcode=eq.${encodeURIComponent(shortcode)}&select=caption`);
+    const existing = rows[0]?.caption;
+    if (typeof existing === "string" && existing.trim()) return false;
+  } catch (e) {
+    // Cannot prove it is safe, so leave the shared row alone. The user's own card
+    // is written either way; only the global copy is skipped.
+    console.error("cache guard could not read video_cache for", shortcode, e);
+    return false;
+  }
+  return true;
+}
+
 async function runJob(job: Job): Promise<void> {
   const p: Parsed = {
     platform: job.platform as Parsed["platform"],
@@ -2803,12 +3224,27 @@ async function runJob(job: Job): Promise<void> {
 
   // Resume from wherever the last attempt got to. A model that timed out should
   // not cost a second scrape of a caption we already have.
+  //
+  // job.meta is asked about BEFORE job.step, and that ordering is load-bearing: a
+  // save that arrived with the page HTML or a pasted caption writes the meta onto
+  // the row while the step is still the default 'meta', and the entire point of
+  // writing it is that it be used instead of a scrape.
   let meta: Meta;
-  if (job.step === "meta" || !job.meta) {
+  if (job.meta) {
+    meta = job.meta;
+    // Supplied text is usually partial — a pasted caption carries no thumbnail and
+    // no handle. Fill in only what is missing, once, and never fail over it.
+    if (meta.supplied && !meta.topped_up) {
+      meta = await topUpMeta(p, meta);
+      try {
+        await jobStep(job.id, "card", { meta });
+      } catch (e) {
+        console.error("job could not persist the topped-up meta", job.id, e);
+      }
+    }
+  } else {
     meta = await fetchMeta(p);          // throws: worth a retry, that is a network fault
     await jobStep(job.id, "card", { meta });
-  } else {
-    meta = job.meta;
   }
 
   let card: Card;
@@ -2857,7 +3293,11 @@ async function runJob(job: Job): Promise<void> {
   // Only cache a card worth reusing. Writing an empty scrape at the current
   // extraction version would pin that emptiness for everyone who saves the video
   // next and for every retry of this one, which is the opposite of failing soft.
-  if (meta.caption || card.blocks.length) {
+  if (!meta.caption && !card.blocks.length) {
+    console.log("empty scrape, not cached", p.platform, p.shortcode, "source:", meta.source);
+  } else if (!(await captionMayOverwriteCache(p.shortcode, meta))) {
+    console.log("not caching a pasted caption over the platform's own", p.platform, p.shortcode);
+  } else {
     await dbUpsert("video_cache", {
       shortcode: p.shortcode, url: p.clean, platform: p.platform, kind: p.kind,
       author: meta.author, caption: meta.caption, thumb_url: thumbUrl,
@@ -2865,8 +3305,6 @@ async function runJob(job: Job): Promise<void> {
       confidence: typeof card.confidence === "number" ? card.confidence : null,
       extracted_by: card.extracted_by ?? null,
     });
-  } else {
-    console.log("empty scrape, not cached", p.platform, p.shortcode, "source:", meta.source);
   }
 
   await finishJob(job, p, meta, card, thumbUrl, degraded);
@@ -2902,7 +3340,74 @@ async function handleWorkerTick(req: Request): Promise<Response> {
   return json({ status: "ok", claimed: jobs.length, mode: "inline" });
 }
 
-async function handleReprocess(id: string, userId: string, cors: Cors): Promise<Response> {
+/**
+ * A measurement, not a feature.
+ *
+ * The one genuinely open question left in the extraction ladder is whether Gemini
+ * will accept a YouTube URL as fileData and describe the video — which, if it
+ * works, reads a workout out of a video that carries no written caption at all. It
+ * has been asked twice and answered 400 INVALID_ARGUMENT both times, and both
+ * harnesses were broken in ways that produce exactly that answer: a query parameter
+ * leaking into mediaResolution, and a deleted test account 401ing. So this asks the
+ * question once, correctly, and hands back what Google actually said, untouched.
+ *
+ * Gated on the worker secret exactly like /api/worker/tick, and 404 to anyone
+ * without it. Deliberately not wired into extraction: whether to use this is a
+ * later decision, and this is only the measurement that decision needs.
+ */
+async function handleWorkerProbe(req: Request): Promise<Response> {
+  if (!secretEquals(req.headers.get("x-worker-secret") ?? "", WORKER_SECRET)) {
+    return json({ status: "error", message: "Not found" }, 404);
+  }
+  await ensureConfig();
+  const body = await req.json().catch(() => null) as { kind?: string; url?: string } | null;
+  if (body?.kind !== "gemini-youtube") return json({ status: "error", message: "unknown probe kind" }, 400);
+  const yt = matchYouTube(String(body?.url ?? ""));
+  if (!yt) return json({ status: "error", message: "not a youtube url" }, 400);
+  if (!GEMINI_API_KEY) return json({ status: "error", message: "no gemini key" }, 400);
+
+  const model = models().geminiVision;
+  // Exactly the documented shape for a YouTube URL and nothing more: no mimeType,
+  // because this is not an upload; no mediaResolution, which is the parameter the
+  // last attempt corrupted; thinking off; a small output cap.
+  const payload = {
+    contents: [{
+      parts: [
+        { fileData: { fileUri: yt.clean } },
+        { text: "List every exercise shown, with the timestamp it starts, as JSON [{name, t_seconds}]" },
+      ],
+    }],
+    generationConfig: { maxOutputTokens: 2000, thinkingConfig: { thinkingBudget: 0 } },
+  };
+
+  let statusCode = 0;
+  let text = "";
+  try {
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-goog-api-key": GEMINI_API_KEY },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(110_000),
+    });
+    statusCode = r.status;
+    text = await r.text();
+  } catch (e) {
+    return json({ status: "error", model, url: yt.clean, message: String(e).slice(0, 300) }, 200);
+  }
+  console.log("probe gemini-youtube", yt.shortcode, "->", statusCode, text.length, "chars");
+  return json({ status: "ok", status_code: statusCode, model, url: yt.clean, body: text.slice(0, 4000) }, 200);
+}
+
+async function handleReprocess(id: string, userId: string, req: Request, cors: Cors): Promise<Response> {
+  // Optional: the caption the user can see on their own screen and Spotter cannot
+  // reach. An ordinary retry posts "{}" and lands here with nothing.
+  let pasted: string | null = null;
+  try {
+    const body = await req.json() as Record<string, unknown> | null;
+    const raw = typeof body?.caption === "string" ? body.caption : "";
+    if (raw.trim()) pasted = raw.slice(0, SUPPLIED_CAPTION_MAX).trim();
+  } catch (_) { /* no body at all is the ordinary retry */ }
+
   const rows = await dbSelect("workouts", `id=eq.${id}&user_id=eq.${userId}&select=*`);
   if (!rows.length) return json({ status: "error", message: "Not found." }, 404, cors);
   const old = rows[0];
@@ -2916,7 +3421,19 @@ async function handleReprocess(id: string, userId: string, cors: Cors): Promise<
   // A card that never finished — or that died in the queue — is not something to
   // re-run inline. It goes back on the queue, so the retry gets the same backoff,
   // dead-lettering and one-job-per-video guarantees as the original save.
+  //
+  // A pasted caption on a card that never finished goes back through the queue with
+  // the caption already on the job. A pasted caption on a card that IS ready must
+  // not: the queue path writes the fresh card straight onto the row, and
+  // mergeNoDowngrade — the guarantee that a re-read can never make a card worse —
+  // lives only on the synchronous path below.
   if (old.ingest_status !== "ready") {
+    if (pasted) {
+      const back: Parsed = {
+        platform: old.platform, shortcode: old.shortcode, kind: old.kind ?? "video", clean: old.url,
+      };
+      return await requeueWithMeta(id, userId, metaFromSupplied(back, null, pasted), cors);
+    }
     const q = (await rpc("requeue_ingest", { p_user: userId, p_workout: id }))[0];
     if (!q) return json({ status: "error", message: "Not found." }, 404, cors);
     console.log("requeued", old.platform, old.shortcode, "job", q.job_id, q.job_created ? "(new)" : "(joined existing)");
@@ -2932,10 +3449,20 @@ async function handleReprocess(id: string, userId: string, cors: Cors): Promise<
   // back to what is already stored rather than erroring out. mergeNoDowngrade then
   // guarantees the saved card cannot come back thinner than it went in.
   let meta: Meta = { caption: null, thumb: null, author: null, source: "none" };
-  try {
-    meta = await fetchMeta(p);
-  } catch (e) {
-    console.error("reprocess fetchMeta failed", p.platform, p.shortcode, e);
+  if (pasted) {
+    // Do not go back to the platform. The user is pasting precisely because what
+    // the platform returns is not the workout, and asking again would only give the
+    // extractor two texts to disagree about. The old row keeps the thumbnail and
+    // the handle: storeThumb on a null source returns null and falls back to them.
+    meta = metaFromSupplied(p, null, pasted);
+    meta.author = old.author ?? null;
+    console.log("reprocess from a pasted caption", p.shortcode, pasted.length, "chars");
+  } else {
+    try {
+      meta = await fetchMeta(p);
+    } catch (e) {
+      console.error("reprocess fetchMeta failed", p.platform, p.shortcode, e);
+    }
   }
   if (!meta.caption && old.caption) meta.caption = old.caption;
   let fresh: Card;
@@ -2979,7 +3506,11 @@ async function handleReprocess(id: string, userId: string, cors: Cors): Promise<
   // The guard is also what stops a quota-exhausted re-run from downgrading the
   // cache to an empty card, which the old unconditional upsert would have done the
   // moment mergeNoDowngrade had nothing fresh to protect.
-  if (pure.blocks.length) {
+  if (!pure.blocks.length) {
+    console.log("reprocess: re-run produced no blocks, leaving video_cache alone", p.shortcode);
+  } else if (!(await captionMayOverwriteCache(p.shortcode, meta))) {
+    console.log("reprocess: not caching a pasted caption over the platform's own", p.shortcode);
+  } else {
     await dbUpsert("video_cache", {
       shortcode: p.shortcode, url: p.clean, platform: p.platform, kind: p.kind,
       author: meta.author ?? old.author, caption: meta.caption ?? old.caption, thumb_url: thumbUrl,
@@ -2987,8 +3518,6 @@ async function handleReprocess(id: string, userId: string, cors: Cors): Promise<
       confidence: typeof pure.confidence === "number" ? pure.confidence : null,
       extracted_by: pure.extracted_by ?? null,
     });
-  } else {
-    console.log("reprocess: re-run produced no blocks, leaving video_cache alone", p.shortcode);
   }
 
   // Charged to the same ledger and the same daily cap as a save, and recorded with
@@ -4514,6 +5043,9 @@ Deno.serve(async (req: Request) => {
     // encoding a multi-megabyte image is what killed a worker in production, and
     // this is the boundary that keeps that kill away from healthy jobs.
     if (req.method === "POST" && path === "/api/worker/vision") return await handleVisionTick(req);
+    // An experiment behind the same secret: does Gemini describe a YouTube video
+    // given only its URL? Measurement only, wired into nothing.
+    if (req.method === "POST" && path === "/api/worker/probe") return await handleWorkerProbe(req);
 
     // One auth resolution for every API route. Ingest is the only route that also
     // accepts the long-lived per-user key.
@@ -4524,7 +5056,7 @@ Deno.serve(async (req: Request) => {
     if (req.method === "POST" && path === "/api/ingest") return await handleIngest(req, userId, cors);
 
     const reproc = path.match(/^\/api\/workouts\/([0-9a-f-]{36})\/reprocess$/);
-    if (req.method === "POST" && reproc) return await handleReprocess(reproc[1], userId, cors);
+    if (req.method === "POST" && reproc) return await handleReprocess(reproc[1], userId, req, cors);
 
     const fix = path.match(/^\/api\/workouts\/([0-9a-f-]{36})\/exercises$/);
     if (req.method === "POST" && fix) return await handleCorrection(fix[1], userId, req, cors);
