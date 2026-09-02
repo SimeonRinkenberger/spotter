@@ -8,6 +8,7 @@ import {
   attachEvidence, chapterExerciseCount, indexSource, locate,
   parseChapters, scoreCard, estimateSeconds, carouselEvidence, correctUnitErrors,
   isChapterJunkExercise, dropChapterJunk, mergeConfidence,
+  indexSources, videoEvidence,
 } from "../supabase/functions/spotter/evidence.ts";
 import { catalogById } from "../supabase/functions/spotter/catalog.ts";
 
@@ -556,6 +557,75 @@ const absurdScore = scoreCard(absurd, { src: indexSource("Plank 30 sec", "captio
 check("duration: 30 seconds of work billed as an hour is implausible",
   absurdScore.parts.duration === 0, "got " + absurdScore.parts.duration);
 
+// ---------- the media tier: two texts, and a video with no text at all ----------
+
+// A caption that prescribes the shape of the session and a transcript that names
+// the movements. Neither is a whole workout; together they are one, and every
+// exercise has to report which of the two it was found in.
+const MEDIA_CAPTION = [
+  "FULL BODY - 1 DUMBBELL ONLY",
+  "3 rounds, 45 seconds on, 20 seconds off",
+].join("\n");
+const MEDIA_TRANSCRIPT = [
+  "We are starting with bent over dumbbell rows.",
+  "Then going into some tricep pushdowns.",
+  "And finishing with lat pulldowns.",
+].join("\n");
+
+const twoTexts = indexSources([
+  { text: MEDIA_CAPTION, kind: "caption" },
+  { text: MEDIA_TRANSCRIPT, kind: "transcript" },
+]);
+
+check("indexSources: one part is byte-identical to indexSource",
+  JSON.stringify(indexSources([{ text: MEDIA_CAPTION, kind: "caption" }])) ===
+  JSON.stringify(indexSource(MEDIA_CAPTION, "caption")));
+check("indexSources: offsets index into the joined text",
+  twoTexts.lines.every((l) => twoTexts.text.slice(l.offset, l.offset + l.raw.length) === l.raw),
+  JSON.stringify(twoTexts.lines.map((l) => [l.offset, l.raw.slice(0, 12)])));
+
+const mediaCard = {
+  duration_minutes: null,
+  blocks: [{ rounds: 3, rest_seconds: 20, exercises: [
+    { name: "Bent Over Dumbbell Row", canonical_id: "bent-over-row", sets: null, reps: null, duration_seconds: 45, rest_seconds: 20 },
+    { name: "Tricep Pushdown", canonical_id: "triceps-pushdown", sets: null, reps: null, duration_seconds: 45, rest_seconds: 20 },
+    { name: "Lat Pulldown", canonical_id: "lat-pulldown", sets: null, reps: null, duration_seconds: 45, rest_seconds: 20 },
+  ] }],
+};
+attachEvidence(mediaCard, twoTexts, aliases);
+const mediaEv = mediaCard.blocks[0].exercises.map((e) => e.evidence);
+check("transcript: an exercise found in the spoken text says so, not 'caption'",
+  mediaEv.every((e) => e.source === "transcript" && e.verified),
+  JSON.stringify(mediaEv.map((e) => e.source)));
+check("transcript: the quote is the spoken line it was found in",
+  /bent over dumbbell rows/i.test(mediaEv[0].quote ?? ""), mediaEv[0].quote);
+const mediaScore = scoreCard(mediaCard, { src: twoTexts, heuristicCount: 3 });
+check("transcript: located speech is real evidence and scores like it",
+  mediaScore.evidence_pct === 100 && mediaScore.score > 0.55,
+  mediaScore.score + " / " + mediaScore.evidence_pct + "%");
+
+// A card read off the screen. Nothing was written anywhere, so nothing can be
+// checked, and the score has to say so with the same cap a carousel gets.
+const screenCard = {
+  duration_minutes: null,
+  blocks: [{ rounds: 3, rest_seconds: 20, exercises: [
+    { name: "Goblet Squat", canonical_id: "goblet-squat", sets: null, reps: null, duration_seconds: 45, rest_seconds: 20, evidence: videoEvidence(0, "Goblet Squat") },
+    { name: "Dumbbell Snatch", canonical_id: "dumbbell-snatch", sets: null, reps: null, duration_seconds: 45, rest_seconds: 20, evidence: videoEvidence(17, "Alt snatch") },
+  ] }],
+};
+const captionOnly = indexSource(MEDIA_CAPTION, "caption");
+attachEvidence(screenCard, captionOnly, aliases);
+const screen = scoreCard(screenCard, { src: captionOnly, heuristicCount: 0 });
+check("video: never marked verified",
+  screenCard.blocks[0].exercises.every((e) => e.evidence.verified === false));
+check("video: the timestamp survives onto the evidence",
+  screenCard.blocks[0].exercises[1].evidence.t === 17);
+check("video: capped at 0.55 like a carousel, and said so",
+  screen.score <= 0.55 && screen.notes.some((n) => /read off the video itself/.test(n)),
+  screen.score + " " + JSON.stringify(screen.notes));
+check("video: still beats a card traceable to nothing at all", screen.score > thin.score,
+  screen.score + " vs " + thin.score);
+
 // ---------- report ----------
 
 console.log("");
@@ -566,6 +636,7 @@ console.log("chapters parts " + JSON.stringify(chapters.parts) + "  " + JSON.str
 console.log("chapter junk   dropped " + JSON.stringify(junkRun.dropped) +
   "  parts " + JSON.stringify(junkRun.parts) +
   "  kept on a real chapter list " + JSON.stringify(realChapterCard.blocks[0].exercises.map((e) => e.name)));
+console.log("media scores   caption+transcript " + mediaScore.score + "  video-only " + screen.score);
 console.log("merge scores   unevidenced-old " + keptOld.score + "  pre-scoring " + preScoring.score +
   "  rescore-wins " + rescoreWins.score + "  old-wins " + oldWins.score + "  no-merge " + noMerge.score);
 console.log("");

@@ -84,6 +84,19 @@
     kept is the transcript, on your card, where you can read and edit it. The video itself is
     not kept, not shared with anyone else, and never added to the shared cache below.</p>
 
+  <h2>When Spotter reads the video itself</h2>
+  <p>Some videos say the workout out loud, or write it on the screen, and put none of it in the
+    caption. When a card comes out thin, Spotter may go and read the video the link points at.
+    First it sends the audio to
+    <a href="https://groq.com/privacy-policy/" target="_blank" rel="noopener">Groq</a> to be
+    transcribed; if nobody is speaking, it sends the video to
+    <a href="https://ai.google.dev/gemini-api/terms" target="_blank" rel="noopener">Google</a>
+    to read what is written on the screen. Neither of them keeps it — the copy Google needs for
+    the few seconds it is reading is deleted straight afterwards, every time — and Spotter never
+    stores the video either. What Spotter keeps is the transcript and the exercises it found,
+    nothing else. This runs only on a card that came out thin, only for links (never for a video
+    you uploaded), and you can also ask for it yourself with the <i>Read the video</i> button.</p>
+
   <h2>Shared extraction cache</h2>
   <p>When a video is read for the first time, the resulting workout is cached under the video's
     public ID so the next person who saves the same video gets it instantly and no AI call is

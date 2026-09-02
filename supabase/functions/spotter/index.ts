@@ -7,6 +7,8 @@
 //                                    fetched from its own residential IP; `caption` is text the
 //                                    user pasted. Either one means the server does not scrape.
 //   POST /api/workouts/:id/reprocess { caption? } — re-run extraction on a saved workout
+//   POST /api/workouts/:id/media     read the video itself when the caption was thin:
+//                                    transcribe what is said, then read what is on screen
 //   POST /api/workouts/:id/exercises edit/add/delete one exercise on the user's own
 //                                    copy, and record the correction as labelled data
 //   POST /api/explain               form coaching for one exercise
@@ -20,6 +22,7 @@
 //   POST /api/rotate-key            new ingest key
 //   GET  /api/limits                today's counts, and the spend ceiling
 //   POST /api/worker/tick           drain the ingest queue (shared secret, not a user)
+//   POST /api/worker/media          one tier of reading the video, in its own isolate
 //   POST /api/worker/probe          one-off measurement behind the same secret
 //
 // Ingest is asynchronous: it enqueues and returns in ~200ms, and the worker fills
@@ -34,8 +37,8 @@ import { assertPublicUrl, checkUrl, dnsAvailable, safeFetch } from "./net.ts";
 import {
   attachEvidence, carouselEvidence, chapterExerciseCount, type Chapter,
   type Confidence, correctUnitErrors, dropChapterJunk, type Evidence,
-  indexSource, mergeConfidence, parseChapters, scoreCard, type SourceIndex,
-  type SourceKind,
+  indexSource, indexSources, mergeConfidence, parseChapters, scoreCard, type SourceIndex,
+  type SourceKind, type SourcePart, videoEvidence,
 } from "./evidence.ts";
 
 // Whether the DNS half of the SSRF guard is live here. The static checks always
@@ -226,7 +229,8 @@ function models(): ModelCfg {
           // Only the three non-secret prefixes. worker_secret lives in the same
           // table and has no business in a cache anything else can read.
           const rows = await dbSelect(
-            "app_config", "or=(key.like.model.*,key.like.vision.*,key.like.pumpy.*)&select=key,value",
+            "app_config",
+            "or=(key.like.model.*,key.like.vision.*,key.like.media.*,key.like.pumpy.*)&select=key,value",
           );
           const map: Record<string, string> = {};
           for (const r of rows) map[r.key] = String(r.value ?? "");
@@ -816,6 +820,18 @@ type Meta = {
   // called the file, kept only as a title fallback.
   upload_path?: string;
   filename?: string;
+  // What the media tier heard or read. NEVER folded into `caption`: a caption is
+  // what the creator wrote and this is what a machine made of their video, and a
+  // card has to be able to say which of the two a claim came from. Indexed as its
+  // own labelled source, and carried on the job so a retry does not pay twice.
+  transcript?: string;
+  // Which media route produced it — "tiktok:sound", "tiktok:stream", "video:gemini".
+  // Recorded on saves_log and on the global cache row.
+  media_source?: string;
+  // A thumbnail already sitting in our own bucket under this shortcode. A job
+  // seeded from the cache has no ORIGINAL url to re-fetch, and storeThumb answers
+  // null for that — which would strip the picture off a card that has one.
+  thumb_stored?: string | null;
 };
 
 // Gemini free-tier daily caps are tiny (20/day) PER MODEL, so rotate models. The
@@ -2417,40 +2433,363 @@ async function geminiReadVideo(
     if (state !== "ACTIVE") {
       return { text: null, by: null, bytes: got.bytes, seconds: null, status: 0, state, detail: "file never became ACTIVE" };
     }
-    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-goog-api-key": GEMINI_API_KEY },
-      body: JSON.stringify({
-        contents: [{ parts: [{ fileData: { fileUri: file.uri, mimeType: file.mimeType } }, { text: prompt }] }],
-        generationConfig: { maxOutputTokens: 8000, thinkingConfig: { thinkingBudget: 0 } },
-      }),
-      signal: AbortSignal.timeout(mediaLimit("timeout_ms", 150_000)),
-    });
-    const raw = await r.text();
-    if (!r.ok) {
-      await recordCost("gemini", model, ctx, { inTok: 0, outTok: 0 }, false);
-      return { text: null, by: null, bytes: got.bytes, seconds: null, status: r.status, state, detail: raw.slice(0, 400) };
+    // The free tier is twenty requests a day PER MODEL, so an exhausted quota is
+    // a reason to ask a different model rather than to give up — the file is
+    // already uploaded, and asking again costs nothing but the ask.
+    const order = [...new Set([models().geminiVision, ...models().geminiPool])];
+    let lastStatus = 0;
+    let lastBody = "";
+    for (const m of order) {
+      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-goog-api-key": GEMINI_API_KEY },
+        body: JSON.stringify({
+          contents: [{ parts: [{ fileData: { fileUri: file.uri, mimeType: file.mimeType } }, { text: prompt }] }],
+          // No thinkingConfig, and that is a measurement rather than an oversight.
+          // Every text call in this file switches thinking off because Gemini 3.x
+          // otherwise spends the whole output budget reasoning — but the SAME field
+          // makes a request carrying video fileData answer 400 INVALID_ARGUMENT,
+          // measured 2026-09-02 across every model in the pool, with and without a
+          // mimeType. Dropping it is what makes this work at all.
+          generationConfig: { maxOutputTokens: 8000 },
+        }),
+        signal: AbortSignal.timeout(mediaLimit("timeout_ms", 150_000)),
+      });
+      const raw = await r.text();
+      if (!r.ok) {
+        lastStatus = r.status;
+        lastBody = raw.slice(0, 400);
+        await recordCost("gemini", m, ctx, { inTok: 0, outTok: 0 }, false);
+        if (r.status === 429 || r.status === 404) {
+          console.error("video read: gemini", m, r.status, "— rotating to the next model");
+          continue;
+        }
+        break;
+      }
+      const data = JSON.parse(raw);
+      const parts = data?.candidates?.[0]?.content?.parts ?? [];
+      const text = parts.map((pp: { text?: unknown }) => String(pp?.text ?? "")).join("").trim();
+      const um = data?.usageMetadata ?? {};
+      const usage: Usage = {
+        inTok: Number(um.promptTokenCount ?? 0) || 0,
+        outTok: (Number(um.candidatesTokenCount ?? 0) || 0) + (Number(um.thoughtsTokenCount ?? 0) || 0),
+        cachedTok: Number(um.cachedContentTokenCount ?? 0) || 0,
+      };
+      await recordCost("gemini", m, ctx, usage, !!text);
+      console.log("video read", displayName, got.bytes, "bytes,", text.length, "chars in",
+        Date.now() - t0, "ms, tokens", usage.inTok + "/" + usage.outTok, "by", m);
+      if (!text) {
+        lastStatus = r.status;
+        lastBody = "empty candidate, finishReason " + String(data?.candidates?.[0]?.finishReason ?? "-");
+        continue;
+      }
+      return {
+        text, by: "gemini:" + m, usage,
+        bytes: got.bytes, seconds: null, status: r.status, state,
+      };
     }
-    const data = JSON.parse(raw);
-    const parts = data?.candidates?.[0]?.content?.parts ?? [];
-    const text = parts.map((pp: { text?: unknown }) => String(pp?.text ?? "")).join("").trim();
-    const um = data?.usageMetadata ?? {};
-    const usage: Usage = {
-      inTok: Number(um.promptTokenCount ?? 0) || 0,
-      outTok: Number(um.candidatesTokenCount ?? 0) || 0,
-      cachedTok: Number(um.cachedContentTokenCount ?? 0) || 0,
-    };
-    await recordCost("gemini", model, ctx, usage, !!text);
-    console.log("video read", displayName, got.bytes, "bytes,", text.length, "chars in",
-      Date.now() - t0, "ms, tokens", usage.inTok + "/" + usage.outTok);
     return {
-      text: text || null, by: "gemini:" + model, usage,
-      bytes: got.bytes, seconds: null, status: r.status, state,
+      text: null, by: null, bytes: got.bytes, seconds: null,
+      status: lastStatus, state, detail: lastBody || "every model declined",
     };
   } catch (e) {
     return { text: null, by: null, bytes: got.bytes, seconds: null, status: 0, detail: String(e).slice(0, 300) };
   } finally {
     await geminiDeleteFile(file.name);
+  }
+}
+
+// ---------- the media tiers, from the platform's side ----------
+//
+// What a provider has to be able to say before its videos can be read: where the
+// media is, what headers make it fetchable, and whether the audio-only track is
+// this video's own sound or a song somebody else recorded. The last of those is
+// what decides whether Groq can be handed a URL or has to be handed bytes.
+
+type MediaSource = {
+  /** Cheapest first: the audio-only track before the full video. */
+  urls: MediaUrl[];
+  /** What makes those URLs fetchable — a Referer, and TikTok's session cookies. */
+  headers: Record<string, string>;
+  /**
+   * True when the audio-only track IS this video's audio. TikTok's `music` is the
+   * SOUND the video uses, which is only the creator's own voice when they recorded
+   * it: `original` says it was not taken from the commercial library, and the
+   * durations agreeing says it was not taken from somebody else's video either.
+   * Measured on the acceptance clip, where `original` is true, the sound is 57s
+   * and the video 34s, and the "transcript" of that sound is song lyrics.
+   */
+  soundIsVideo: boolean;
+  seconds: number | null;
+};
+
+/** The rehydration blob's itemStruct, or null. Shared by the parsers above. */
+function ttItemStruct(html: string): any {
+  const m = html.match(/<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__"[^>]*>([\s\S]*?)<\/script>/);
+  if (!m) return null;
+  try {
+    return JSON.parse(m[1])?.__DEFAULT_SCOPE__?.["webapp.video-detail"]?.itemInfo?.itemStruct ?? null;
+  } catch { return null; }
+}
+
+async function tiktokMedia(p: Parsed): Promise<MediaSource | null> {
+  // The watch page is fetched again here rather than reused from the scrape,
+  // and that is not waste: the cookies it sets are what make the CDN answer, and
+  // the URLs it hands out expire in minutes. A stale copy of either is useless.
+  const got = await pageWithCookies(p.clean, DESKTOP_UA);
+  if (!got.html) {
+    console.error("media: tiktok watch page", got.status, got.error ?? "", "for", p.shortcode);
+    return null;
+  }
+  const urls = ttMediaFromHtml(got.html);
+  if (!urls.length) {
+    console.error("media: tiktok page named no media for", p.shortcode);
+    return null;
+  }
+  const it = ttItemStruct(got.html);
+  const videoSeconds = Number(it?.video?.duration) || null;
+  const musicSeconds = Number(it?.music?.duration) || null;
+  const soundIsVideo = !!it?.music?.original && !!videoSeconds && !!musicSeconds &&
+    Math.abs(musicSeconds - videoSeconds) <= 1;
+  console.log("media: tiktok", p.shortcode, urls.map((u) => u.field).join(","),
+    "cookies", got.cookie ? got.cookie.split("; ").length : 0,
+    "sound", soundIsVideo ? "is this video (" + musicSeconds + "s)" : "is a song (" + musicSeconds + "s vs " + videoSeconds + "s)");
+  return {
+    urls,
+    headers: got.cookie ? { ...mediaHeaders("tiktok"), Cookie: got.cookie } : mediaHeaders("tiktok"),
+    soundIsVideo,
+    seconds: videoSeconds,
+  };
+}
+
+// ---------- the media tiers, from the worker's side ----------
+
+/** How many media steps one person may run in a day. A step, not a video. */
+const LIMIT_MEDIA = Number(Deno.env.get("LIMIT_MEDIA") ?? "10");
+
+/** Whether tier 2 is switched on. app_config `media.video_enabled`. */
+function videoTierEnabled(): boolean {
+  const v = (runtimeCfg["media.video_enabled"] ?? "").trim().toLowerCase();
+  if (v) return v !== "false" && v !== "0" && v !== "off";
+  return (Deno.env.get("MEDIA_VIDEO_ENABLED") ?? "").toLowerCase() !== "false";
+}
+
+/**
+ * The escalation gate, computed by this application from the finished card and
+ * never asked of the model that wrote it. A card escalates when it does not claim
+ * a workout, or claims one exercise, or claims several that nothing could check.
+ */
+function cardIsThin(card: Card): boolean {
+  const conf = typeof card.confidence === "number" ? card.confidence : 0;
+  return !card.has_full_workout || countExercises(card) < 2 || conf < 0.45;
+}
+
+type MediaTier = "transcript" | "video";
+
+type MediaRequest = {
+  tier: MediaTier;
+  platform: string;
+  url: string;
+  shortcode: string;
+  kind: string | null;
+  user_id: string | null;
+};
+
+type MediaReply = {
+  status: string;
+  tier: MediaTier;
+  media_source: string | null;
+  text?: string | null;
+  card?: Card | null;
+  seconds?: number | null;
+  bytes?: number;
+  detail?: string;
+};
+
+/**
+ * Tier 1. Two routes, and which one runs is a fact about the video rather than a
+ * preference: when the sound IS the video's own audio, Groq fetches that URL
+ * itself and no bytes come near this function; when it is a song, the audio has to
+ * come out of the video, and the video's URL answers 403 to anybody without the
+ * watch page's cookies — which Groq, on another IP, does not have.
+ */
+async function mediaTranscript(src: MediaSource, shortcode: string, ctx: AiCtx): Promise<MediaReply> {
+  const audio = src.soundIsVideo ? src.urls.find((u) => u.kind === "audio") : null;
+  const video = src.urls.find((u) => u.kind === "video");
+  const bill = async (seconds: number, model: string, ok: boolean) => {
+    // Groq bills a ten-second minimum however short the clip is, and a response
+    // that reported no duration must not be logged as free — the ledger is the
+    // ceiling, and a ceiling with zeroes in it is not a ceiling.
+    const billed = Math.max(seconds, 10);
+    const usd = (billed / 3600) * PRICE_GROQ_WHISPER_PER_HOUR;
+    await recordCost("groq", model, ctx, { inTok: 0, outTok: 0, usd }, ok);
+    return usd;
+  };
+
+  if (audio) {
+    try {
+      const got = await groqTranscribe(audio.url);
+      const usd = await bill(got.seconds, got.model, !!got.text);
+      console.log("media: heard", shortcode, "from the sound track —", got.text.length, "chars,",
+        got.seconds.toFixed(1) + "s, $" + usd.toFixed(6));
+      if (got.text) {
+        return { status: "ok", tier: "transcript", media_source: "tiktok:sound", text: got.text, seconds: got.seconds };
+      }
+    } catch (e) {
+      // SoftFailure included: a media tier has a next rung, so nothing here throws
+      // it onwards. The stream route below is that next rung.
+      console.error("media: sound-track transcription failed for", shortcode, String(e).slice(0, 200));
+    }
+  }
+
+  if (!video) return { status: "ok", tier: "transcript", media_source: null, detail: "no video url" };
+  const got = await groqTranscribeStream(video.url, src.headers, shortcode + ".mp4");
+  const usd = await bill(got.seconds, got.model, !!got.text);
+  console.log("media: heard", shortcode, "from the video —", got.text.length, "chars,",
+    got.seconds.toFixed(1) + "s,", got.bytes, "bytes, $" + usd.toFixed(6),
+    got.detail ? "— " + got.detail : "");
+  // Silence does not come back as an error, and neither does a soundtrack. What
+  // decides is length: nothing that prescribes a workout fits in twenty-five
+  // characters, and the extractor is a better judge of the rest than a threshold.
+  const text = got.text.length >= TRANSCRIPT_MIN_CHARS ? got.text : "";
+  return {
+    status: "ok", tier: "transcript",
+    media_source: text ? "tiktok:stream" : null,
+    text, seconds: got.seconds, bytes: got.bytes, detail: got.detail,
+  };
+}
+
+/**
+ * Tier 2. The card comes back from the model rather than from text, so every
+ * exercise on it is stamped with video evidence — a timestamp, and no claim to be
+ * verified — before it goes anywhere near the merge.
+ */
+async function mediaVideo(src: MediaSource, shortcode: string, ctx: AiCtx): Promise<MediaReply> {
+  if (!videoTierEnabled()) {
+    return { status: "ok", tier: "video", media_source: null, detail: "media.video_enabled is off" };
+  }
+  const video = src.urls.find((u) => u.kind === "video");
+  if (!video) return { status: "ok", tier: "video", media_source: null, detail: "no video url" };
+
+  const read = await geminiReadVideo(video.url, src.headers, shortcode, VIDEO_PROMPT, ctx);
+  if (!read.text) {
+    // The free tier is 20 requests a day per model. A 429 here is not a fault and
+    // is worth naming as itself, because it is the difference between "this video
+    // has nothing on screen" and "come back tomorrow".
+    console.error("media: video read produced nothing for", shortcode,
+      "http", read.status, read.detail ? "— " + read.detail.slice(0, 200) : "");
+    return { status: "ok", tier: "video", media_source: null, bytes: read.bytes, detail: read.detail };
+  }
+
+  let raw: any;
+  try { raw = parseJsonLoose(read.text); } catch (e) {
+    return { status: "ok", tier: "video", media_source: null, bytes: read.bytes, detail: "unparseable: " + String(e).slice(0, 160) };
+  }
+  if (raw?.none) {
+    console.log("media: nothing to read on screen for", shortcode);
+    return { status: "ok", tier: "video", media_source: "video:gemini", card: null, bytes: read.bytes };
+  }
+
+  // The timestamps, before normalizeCard drops the field it does not know about.
+  // Keyed on the name exactly as normalizeExercise will render it, so the lookup
+  // afterwards is an equality test rather than a guess.
+  const stamps = new Map<string, number>();
+  for (const b of (Array.isArray(raw?.blocks) ? raw.blocks : [])) {
+    for (const ex of (Array.isArray(b?.exercises) ? b.exercises : [])) {
+      const name = typeof ex?.name === "string" ? cleanTitle(ex.name) : "";
+      const t = Number(ex?.t_seconds);
+      if (name && Number.isFinite(t) && t >= 0 && !stamps.has(name)) stamps.set(name, t);
+    }
+  }
+
+  const card = normalizeCard(raw, emptyCard("Saved workout"));
+  if (!card.blocks.length) {
+    return { status: "ok", tier: "video", media_source: "video:gemini", card: null, bytes: read.bytes };
+  }
+  for (const b of card.blocks) {
+    for (const ex of b.exercises) {
+      ex.evidence = videoEvidence(stamps.get(ex.name) ?? null, ex.name);
+      delete ex.evidence_quote;
+    }
+  }
+  card.extracted_by = read.by ? "video:" + read.by.replace(/^gemini:/, "") : "video";
+  console.log("media: read", countExercises(card), "exercise(s) off the screen of", shortcode,
+    "in", read.bytes, "bytes");
+  return { status: "ok", tier: "video", media_source: "video:gemini", card, bytes: read.bytes, seconds: read.seconds };
+}
+
+/**
+ * The media isolate. Same shared secret and the same reason as /api/worker/vision:
+ * this is where a multi-megabyte stream and a two-minute model call live, and when
+ * one of them kills the isolate it must take nothing else with it.
+ */
+async function handleMediaTick(req: Request): Promise<Response> {
+  if (!secretEquals(req.headers.get("x-worker-secret") ?? "", WORKER_SECRET)) {
+    return json({ status: "error", message: "Not found" }, 404);
+  }
+  await ensureConfig();
+  const body = await req.json().catch(() => null) as MediaRequest | null;
+  const tier = body?.tier === "video" ? "video" : "transcript";
+  if (!body?.url || !body?.shortcode || !body?.platform) {
+    return json({ status: "error", tier, media_source: null, detail: "incomplete request" }, 400);
+  }
+  const provider = providerFor(body.platform);
+  if (!provider.media) {
+    return json({ status: "ok", tier, media_source: null, detail: "provider has no media" }, 200);
+  }
+  // The link is re-parsed by the provider's own matcher rather than trusted, and
+  // the shortcode it yields has to be the one the caller claimed. Nothing outside
+  // this function can reach this route — it is behind the worker secret — but the
+  // rule that a media URL only ever comes from a provider parser is worth keeping
+  // true at every hop rather than at the first one.
+  const p = provider.match ? provider.match(body.url) : null;
+  if (!p || p.shortcode !== body.shortcode) {
+    console.error("media: refusing", String(body.url).slice(0, 120), "— it is not", body.shortcode);
+    return json({ status: "error", tier, media_source: null, detail: "url does not match its shortcode" }, 400);
+  }
+  const src = await provider.media(p);
+  if (!src) return json({ status: "ok", tier, media_source: null, detail: "no media url" }, 200);
+
+  const ctx: AiCtx = { purpose: tier === "video" ? "video" : "transcribe", userId: body.user_id ?? null };
+  const out = tier === "video"
+    ? await mediaVideo(src, p.shortcode, ctx)
+    : await mediaTranscript(src, p.shortcode, ctx);
+  return json(out, 200);
+}
+
+/**
+ * Ask a fresh isolate to read one video, one tier at a time.
+ *
+ * Every failure collapses to the same answer — null, meaning "the media told us
+ * nothing" — exactly as the vision sub-request does, and for the same reason: a
+ * poisoned video costs one card rather than a batch of unrelated saves.
+ */
+async function runMediaRemote(p: Parsed, tier: MediaTier, userId: string | null): Promise<MediaReply | null> {
+  if (!WORKER_SECRET) {
+    console.error("media skipped: WORKER_SECRET is not set, refusing to stream inline");
+    return null;
+  }
+  const body: MediaRequest = {
+    tier, platform: p.platform, url: p.clean, shortcode: p.shortcode, kind: p.kind, user_id: userId,
+  };
+  try {
+    const r = await fetch(`${SELF_URL}/api/worker/media`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-worker-secret": WORKER_SECRET },
+      body: JSON.stringify(body),
+      // Its own budget, well past the model call inside it: a 60s upload and a 90s
+      // read are both normal, and cutting the parent off early would pay for work
+      // whose answer we then threw away.
+      signal: AbortSignal.timeout(mediaLimit("timeout_ms", 150_000) + 60_000),
+    });
+    if (!r.ok) {
+      console.error("media sub-request", tier, r.status, (await r.text()).slice(0, 200));
+      return null;
+    }
+    return await r.json() as MediaReply;
+  } catch (e) {
+    console.error("media sub-request failed for", tier, p.shortcode, "—", String(e).slice(0, 200));
+    return null;
   }
 }
 
@@ -2493,6 +2832,14 @@ type Provider = {
    * under a key nobody else can ever hit.
    */
   cacheable: boolean;
+  /**
+   * Where this platform's video actually is, when the caption was not enough.
+   * Absent means the platform gives us nothing to read: measured 2026-09-02,
+   * Instagram names no media URL on the crawler view, on the embed page, or in
+   * HTML fetched from a residential IP, so a thin reel still has only the caption
+   * the user can paste. The day that changes it is one function and one line here.
+   */
+  media?: (p: Parsed) => Promise<MediaSource | null>;
 };
 
 const instagramProvider: Provider = {
@@ -2509,6 +2856,7 @@ const tiktokProvider: Provider = {
   fetchMeta: (p) => ttMeta(p),
   parseHtml: (html) => ttParseHtml(html),
   cacheable: true,
+  media: tiktokMedia,
 };
 
 const youtubeProvider: Provider = {
@@ -3419,12 +3767,63 @@ function countExercises(card: Card): number {
   return card.blocks.reduce((n, b) => n + b.exercises.length, 0);
 }
 
+/**
+ * The texts this card may have been read out of, in the order they are indexed.
+ *
+ * Two, at most: what the creator wrote, and what the media tier heard. They stay
+ * separate all the way down — the index labels every line with the text it came
+ * from, so an exercise found in speech reports "transcript" and not a caption
+ * nobody wrote.
+ */
+function sourceParts(meta: Meta, platform: string): SourcePart[] {
+  const parts: SourcePart[] = [{ text: meta.caption, kind: sourceKind(platform) }];
+  if (meta.transcript) parts.push({ text: meta.transcript, kind: "transcript" });
+  return parts;
+}
+
+/** Where the transcript's lines and characters land once the two are joined. */
+function transcriptShift(meta: Meta): { line: number; offset: number } {
+  if (!meta.caption) return { line: 0, offset: 0 };
+  return { line: meta.caption.split("\n").length + 1, offset: meta.caption.length + 2 };
+}
+
+/**
+ * The deterministic parser over both texts, as the independent second opinion the
+ * score needs. It reads each text on its own terms rather than one concatenation,
+ * because the parser stamps its source onto every line it reads and there is no
+ * honest single answer for two texts.
+ *
+ * The richer of the two wins rather than both being concatenated: this is a
+ * fallback card and a second opinion on a count, and a caption and a transcript
+ * describing the same session would double every exercise in it.
+ */
+function heuristicCard(meta: Meta, platform: string, title: string): Card {
+  const written = heuristicWorkout(meta.caption, title, sourceKind(platform));
+  if (!meta.transcript) return written;
+  const spoken = heuristicWorkout(meta.transcript, title, "transcript");
+  if (countExercises(spoken) <= countExercises(written)) return written;
+  // The parser numbered those lines against the transcript alone; in the index
+  // they sit after the caption, and evidence pointing at the wrong words is worse
+  // than none.
+  const shift = transcriptShift(meta);
+  for (const b of spoken.blocks) {
+    for (const ex of b.exercises) {
+      if (!ex.evidence) continue;
+      if (ex.evidence.line !== null) ex.evidence.line += shift.line;
+      if (ex.evidence.offset !== null) ex.evidence.offset += shift.offset;
+    }
+  }
+  written.blocks = spoken.blocks;
+  written.has_full_workout = spoken.has_full_workout;
+  return written;
+}
+
 async function extractCard(meta: Meta, platform: string, ctx: AiCtx): Promise<Card> {
   const kind = sourceKind(platform);
   const fallbackTitle = cleanTitle(meta.caption?.split("\n")[0] ?? "") || "Saved workout";
-  const base = heuristicWorkout(meta.caption, fallbackTitle, kind);
+  const base = heuristicCard(meta, platform, fallbackTitle);
   base.extracted_by = base.blocks.length ? "heuristic" : null;
-  if (!meta.caption || !haveAI()) return base;
+  if ((!meta.caption && !meta.transcript) || !haveAI()) return base;
 
   const system = buildPrompt();
   const user = [
@@ -3434,12 +3833,23 @@ async function extractCard(meta: Meta, platform: string, ctx: AiCtx): Promise<Ca
     // and re-extracting every cached card in the database to add one noun would be
     // a bad trade. A transcript is announced as one so the model does not read
     // speech disfluencies as caption formatting.
-    kind === "transcript"
-      ? "Transcript of what the creator says in the video (speech, so it has no formatting and may contain mishearings):"
-      : kind === "description"
-      ? "Video description:"
-      : "Caption:",
-    meta.caption.slice(0, 6000),
+    meta.caption
+      ? (kind === "transcript"
+        ? "Transcript of what the creator says in the video (speech, so it has no formatting and may contain mishearings):"
+        : kind === "description"
+        ? "Video description:"
+        : "Caption:")
+      : "",
+    meta.caption ? meta.caption.slice(0, 6000) : "",
+    // The second text, announced as a second text. The caption usually carries the
+    // SHAPE of the session — "3 rounds, 45 on, 20 off" — and the speech carries the
+    // MOVEMENTS, so the model is told to use both rather than pick one.
+    meta.transcript
+      ? "TRANSCRIPT — what the creator says out loud in the video, one phrase per line " +
+        "(speech, so it has no formatting and may contain mishearings). The caption above " +
+        "may give the rounds, work and rest; this gives the movements. Use both."
+      : "",
+    meta.transcript ? meta.transcript.slice(0, 8000) : "",
     chapterBlock(meta.chapters ?? []),
   ].filter(Boolean).join("\n");
 
@@ -3526,7 +3936,7 @@ function aliasesFor(ex: { canonical_id?: string | null }): string[] {
  * reprocess, so nothing reaches the database unscored.
  */
 function scoreAndStamp(card: Card, meta: Meta, platform: string, heuristicCount: number): Confidence {
-  const src: SourceIndex = indexSource(meta.caption, sourceKind(platform));
+  const src: SourceIndex = indexSources(sourceParts(meta, platform));
   attachEvidence(card, src, aliasesFor);
   // Evidence earning its keep, twice over. Both of these run before the score, so
   // what is scored is what will be stored and shown, not an earlier draft of it.
@@ -3573,7 +3983,7 @@ async function buildCard(
   meta: Meta, p: Parsed, ctx: AiCtx, onSlide?: VisionProgress, startSlide = 0,
 ): Promise<Card> {
   let card = await extractCard(meta, p.platform, ctx);
-  const heuristicCount = countExercises(heuristicWorkout(meta.caption, "x", sourceKind(p.platform)));
+  const heuristicCount = countExercises(heuristicCard(meta, p.platform, "x"));
 
   // Instagram carousels often put the written plan on a later slide — read it only
   // when the caption produced nothing, since vision burns the scarcest quota.
@@ -3646,7 +4056,7 @@ function mergeNoDowngrade(old: any, next: Card, meta: Meta, platform: string): C
   // The score has to describe what actually survived the merge. Carrying the
   // re-run's number over a card whose blocks came back from the old row would be
   // reporting a measurement of something that was thrown away.
-  const c = scoreAndStamp(out, meta, platform, countExercises(heuristicWorkout(meta.caption, "x", sourceKind(platform))));
+  const c = scoreAndStamp(out, meta, platform, countExercises(heuristicCard(meta, platform, "x")));
   // …and re-scoring blocks that came back from the old row can only be read as a
   // measurement when those blocks carry evidence. Blocks stored before CARD_V 6
   // have none, so the re-score would report a collapse that describes the schema
@@ -4193,6 +4603,10 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
     }
     await logSave(userId, p, meta, card, c.thumb_url, true, false, "save", null);
     console.log("cache hit", p.platform, p.shortcode, "served in", Date.now() - t0, "ms");
+    // The row is theirs either way — this only decides whether Spotter stops here
+    // or goes and reads the video the cached card could not.
+    const upgraded = await upgradeCachedCard(userId, p, c, row.id, cors);
+    if (upgraded) return upgraded;
     return json({
       status: "saved", cached: true, id: row.id, title: row.title,
       category: row.category, has_full_workout: row.has_full_workout, degraded: false,
@@ -4380,15 +4794,16 @@ async function finishJob(
     source_url: card.source_url ?? null,
     confidence: typeof card.confidence === "number" ? card.confidence : null,
     extracted_by: card.extracted_by ?? null,
-    ingest_status: "ready", ingest_error: null,
+    ingest_status: "ready", ingest_error: null, media_stage: null,
   });
 
   // The rate-limit row was written at enqueue time so a burst could not slip past
   // the cap; the quality metrics only exist now, so they are patched in afterwards.
   const exercises = card.blocks.reduce((n, b) => n + (b.exercises?.length ?? 0), 0);
   try {
-    await dbPatchMany("saves_log", `job_id=eq.${job.id}`, {
+    await dbPatchMany("saves_log", `job_id=eq.${job.id}&kind=neq.media`, {
       platform: p.platform,
+      media_source: meta.media_source ?? null,
       meta_source: meta.source ?? null,
       caption_found: !!meta.caption,
       caption_chars: meta.caption?.length ?? 0,
@@ -4449,6 +4864,9 @@ async function failJob(job: Job, err: unknown): Promise<void> {
       console.warn("job", job.id, "failed but the claim had already been taken back — leaving it alone");
       return;
     }
+    // Whatever happens next, nothing is listening to or watching this video right
+    // now, and a card that says otherwise while it waits out a backoff is lying.
+    await setMediaStage(job.shortcode, null);
     if (dead) {
       // A failure that knew what it was gets to say so. Everything else keeps the
       // generic line, because "TypeError: undefined is not an object" on a card is
@@ -4489,6 +4907,158 @@ async function captionMayOverwriteCache(shortcode: string, meta: Meta): Promise<
   return true;
 }
 
+// ---------- escalating a thin card to the video ----------
+
+/** What the user is watching happen, on their own row, while it happens. */
+async function setMediaStage(shortcode: string, stage: string | null): Promise<void> {
+  try {
+    await dbPatchMany("workouts",
+      `shortcode=eq.${encodeURIComponent(shortcode)}&ingest_status=eq.processing`, { media_stage: stage });
+  } catch (e) {
+    // Cosmetic: the copy on a pending card. Never worth failing a job over.
+    console.error("media stage patch failed", shortcode, stage, e);
+  }
+}
+
+/** Media steps this user has run today. Throws rather than answering zero. */
+function mediaCountToday(userId: string): Promise<number> {
+  return dbCount("saves_log", `user_id=eq.${userId}&created_at=gte.${utcMidnight()}&kind=eq.media`);
+}
+
+/** One ledger row per media step that actually ran, with the route it took. */
+async function logMediaStep(
+  userId: string | null, p: Parsed, jobId: string | null, out: MediaReply | null,
+): Promise<void> {
+  if (!userId) return;
+  const base = {
+    user_id: userId, shortcode: p.shortcode, cached: false, kind: "media",
+    platform: p.platform, job_id: jobId,
+  };
+  try {
+    await dbInsert("saves_log", { ...base, media_source: out?.media_source ?? null });
+  } catch (e) {
+    console.error("media saves_log insert failed, retrying without media_source", e);
+    try { await dbInsert("saves_log", base); }
+    catch (e2) { console.error("media saves_log insert failed entirely", e2); }
+  }
+}
+
+type Escalation = { card: Card; meta: Meta; ran: MediaTier[] };
+
+/**
+ * Read the video, in tiers, for a card the caption could not fill.
+ *
+ * The order is the cost order and the stopping rule is the gate: transcription is
+ * cents per thousand videos, video understanding is about half a cent a clip, and
+ * neither runs while the card is good enough. Every rung answers the same way when
+ * it fails — the card it was given, unchanged — so nothing here can make a save
+ * worse than not running at all.
+ */
+async function escalateToMedia(
+  job: Job, p: Parsed, meta: Meta, card: Card,
+): Promise<Escalation> {
+  const ran: MediaTier[] = [];
+  const done = new Set<MediaTier>();
+  const m = job.step.match(/^media:(transcript|video)$/);
+  if (m) {
+    done.add("transcript");
+    if (m[1] === "video") done.add("video");
+  }
+  if (!providerFor(p.platform).media) return { card, meta, ran };
+  if (!cardIsThin(card)) return { card, meta, ran };
+
+  for (const tier of ["transcript", "video"] as MediaTier[]) {
+    if (done.has(tier)) continue;
+    if (!cardIsThin(card)) break;
+    if (tier === "video" && !videoTierEnabled()) {
+      console.log("media: tier 2 is switched off, leaving", p.shortcode, "thin");
+      break;
+    }
+    // Both tiers cost money — transcription by the hour of audio, and a video read
+    // by the token — so both stop at the same ceiling as every other paid call.
+    if (!(await paidAllowed())) {
+      console.log("media: skipping", tier, "for", p.shortcode, "— today's spend ceiling is reached");
+      break;
+    }
+    if (job.user_id) {
+      let used: number;
+      try {
+        used = await mediaCountToday(job.user_id);
+      } catch (e) {
+        // A count that could not be read is not a count of zero. Skipping costs one
+        // thin card; guessing costs an uncapped bill.
+        console.error("media: cannot read today's count for", job.user_id, "— skipping", e);
+        break;
+      }
+      if (used >= LIMIT_MEDIA) {
+        console.log("media: skipping", tier, "for", p.shortcode, "—", job.user_id,
+          "has used", used, "of", LIMIT_MEDIA, "media steps today");
+        break;
+      }
+    }
+
+    await setMediaStage(p.shortcode, tier === "video" ? "watching" : "listening");
+    const out = await runMediaRemote(p, tier, job.user_id);
+    // Charged whether or not it answered: a sub-request that died mid-stream still
+    // moved the bytes, and a cap that only counts successes is not a cap.
+    await logMediaStep(job.user_id, p, job.id, out);
+    if (!out) {
+      // The isolate died, or the request never landed. That is not "this video has
+      // nothing in it", so it must NOT be recorded as an answer — `ran` is what
+      // sets media_tried, and a transient failure has no business closing the
+      // question for everybody. The next save of this video will ask again.
+      console.error("media:", tier, "sub-request gave no answer for", p.shortcode, "— leaving it unread");
+      break;
+    }
+    ran.push(tier);
+
+    if (tier === "transcript" && out?.text) {
+      meta = {
+        ...meta,
+        transcript: out.text,
+        media_source: out.media_source ?? meta.media_source,
+        seconds: meta.seconds ?? (out.seconds || undefined),
+      };
+      // The whole ladder again, with one more text in it. Merged rather than
+      // replaced, because a caption that gave the rounds and the work interval is
+      // still the best source for those even when the movements came from speech.
+      let next: Card;
+      try {
+        next = await buildCard(meta, p, { purpose: "extract", userId: job.user_id });
+      } catch (e) {
+        console.error("media: re-extraction with the transcript failed", p.shortcode, e);
+        next = card;
+      }
+      card = mergeNoDowngrade(card, next, meta, p.platform);
+    } else if (tier === "video" && out?.card) {
+      const seen = out.card;
+      // The video read the movements; it did not read the post. Naming, and
+      // everything else the caption already established, stays with the caption.
+      seen.title = card.title || seen.title;
+      meta = { ...meta, media_source: out.media_source ?? meta.media_source };
+      card = mergeNoDowngrade(card, seen, meta, p.platform);
+    } else if (out) {
+      // It ran and found nothing. That is an answer, and it is recorded as one so
+      // nobody pays to ask the same video the same question again.
+      meta = { ...meta, media_source: meta.media_source ?? out.media_source ?? undefined };
+      console.log("media:", tier, "found nothing in", p.shortcode, out.detail ? "— " + out.detail : "");
+    }
+
+    try {
+      await jobStep(job.id, "media:" + tier, { card, meta });
+    } catch (e) {
+      console.error("job could not checkpoint media progress", job.id, e);
+    }
+  }
+
+  await setMediaStage(p.shortcode, null);
+  if (ran.length) {
+    console.log("media: ran", ran.join("+"), "on", p.shortcode, "->", countExercises(card),
+      "exercise(s), confidence", card.confidence ?? "-", "source", meta.media_source ?? "none");
+  }
+  return { card, meta, ran };
+}
+
 async function runJob(job: Job): Promise<void> {
   const p: Parsed = {
     platform: job.platform as Parsed["platform"],
@@ -4500,12 +5070,17 @@ async function runJob(job: Job): Promise<void> {
   const sc = encodeURIComponent(p.shortcode);
   const cacheable = providerFor(p.platform).cacheable;
 
+  // A job whose whole purpose is to improve the cached card must not be answered
+  // by the cached card. Without this the media job seeded from a cache row would
+  // find that row here, finish from it, and never read the video at all.
+  const mediaJob = /^media(:|$)/.test(job.step);
+
   // Somebody may have filled the cache while this job was waiting on a backoff.
   // Paying for the same extraction twice because the queue was slow would defeat
   // the point of having a cache at all. Skipped entirely for a provider whose
   // cards are not shareable — an upload key is unique to one file, so the lookup
   // could only ever miss.
-  const cached = cacheable
+  const cached = cacheable && !mediaJob
     ? await dbSelect("video_cache", `shortcode=eq.${sc}&v=gte.${CARD_V}&select=*`)
     : [];
   if (cached.length) {
@@ -4550,29 +5125,45 @@ async function runJob(job: Job): Promise<void> {
 
   let card: Card;
   let degraded = false;
+  let mediaRan: MediaTier[] = [];
   if (job.step === "thumb" && job.card) {
     card = job.card;
   } else {
-    // Where a previous attempt got to in a carousel. `vision:2` means slides 0 and
-    // 1 were already read and found nothing, so this attempt starts at slide 2 —
-    // the point being that a job killed inside vision does not pay for those slides
-    // twice, and cannot loop over the same poisoned image until it dead-letters.
-    const resumeAt = Number(job.step.match(/^vision:(\d+)$/)?.[1] ?? "0") || 0;
-    const onSlide: VisionProgress = async (next, partial) => {
+    // A job that arrives already holding its card is here for the media tiers and
+    // nothing else: seeded that way by "read the video", or resuming after one
+    // tier finished. Re-extracting the caption it was given would be paying twice
+    // for an answer that is on the job.
+    if (/^media(:|$)/.test(job.step) && job.card) {
+      card = job.card;
+    } else {
+      // Where a previous attempt got to in a carousel. `vision:2` means slides 0 and
+      // 1 were already read and found nothing, so this attempt starts at slide 2 —
+      // the point being that a job killed inside vision does not pay for those slides
+      // twice, and cannot loop over the same poisoned image until it dead-letters.
+      const resumeAt = Number(job.step.match(/^vision:(\d+)$/)?.[1] ?? "0") || 0;
+      const onSlide: VisionProgress = async (next, partial) => {
+        try {
+          await jobStep(job.id, "vision:" + next, { card: partial, meta });
+        } catch (e) {
+          console.error("job could not checkpoint vision progress", job.id, e);
+        }
+      };
       try {
-        await jobStep(job.id, "vision:" + next, { card: partial, meta });
+        card = await buildCard(meta, p, ctx, onSlide, resumeAt);
       } catch (e) {
-        console.error("job could not checkpoint vision progress", job.id, e);
+        console.error("job buildCard failed", job.id, e);
+        card = minimalCard(meta, p);
+        degraded = true;
       }
-    };
-    try {
-      card = await buildCard(meta, p, ctx, onSlide, resumeAt);
-    } catch (e) {
-      console.error("job buildCard failed", job.id, e);
-      card = minimalCard(meta, p);
-      degraded = true;
     }
-    await jobStep(job.id, "thumb", { card });
+    // The caption has said everything it is going to. If what it produced is thin,
+    // the workout is in the video — spoken, or written on the screen — and this is
+    // where Spotter goes and gets it.
+    const esc = await escalateToMedia(job, p, meta, card);
+    card = esc.card;
+    meta = esc.meta;
+    mediaRan = esc.ran;
+    await jobStep(job.id, "thumb", { card, meta });
   }
 
   // Every URL-addressed provider keeps an empty card, and that is right: the LINK
@@ -4594,6 +5185,11 @@ async function runJob(job: Job): Promise<void> {
   } catch (e) {
     console.error("job storeThumb failed", job.id, e);
   }
+  // A job seeded from the cache was handed a picture that is already in our own
+  // bucket and no original URL to re-fetch. storeThumb answers null for that, and
+  // finishJob writes what it is given, so without this the upgrade would strip the
+  // thumbnail off every card it improved.
+  if (!thumbUrl && meta.thumb_stored) thumbUrl = meta.thumb_stored;
   if (!meta.caption) degraded = true;
 
   // Nothing at all: no caption, no thumbnail, no handle, no exercises. That is a
@@ -4617,13 +5213,24 @@ async function runJob(job: Job): Promise<void> {
   } else if (!(await captionMayOverwriteCache(p.shortcode, meta))) {
     console.log("not caching a pasted caption over the platform's own", p.platform, p.shortcode);
   } else {
-    await dbUpsert("video_cache", {
+    const row: Record<string, unknown> = {
       shortcode: p.shortcode, url: p.clean, platform: p.platform, kind: p.kind,
       author: meta.author, caption: meta.caption, thumb_url: thumbUrl,
       card, v: CARD_V, updated_at: new Date().toISOString(),
       confidence: typeof card.confidence === "number" ? card.confidence : null,
       extracted_by: card.extracted_by ?? null,
-    });
+    };
+    // Only written when the video was actually read — in this attempt, or in an
+    // earlier one whose transcript is still on the job. An upsert sets the columns
+    // it is given and leaves the rest alone, so a save that never needed the video
+    // cannot reset a row that has already been read, and `media_tried` is what
+    // stops the next person paying to ask the same video the same question.
+    if (mediaRan.length || meta.transcript || meta.media_source) {
+      row.media_tried = true;
+      row.media_source = meta.media_source ?? null;
+      if (meta.transcript) row.media_text = meta.transcript;
+    }
+    await dbUpsert("video_cache", row);
   }
 
   await finishJob(job, p, meta, card, thumbUrl, degraded);
@@ -4884,85 +5491,28 @@ async function probeIgMedia(url: string, suppliedHtml: string | null): Promise<u
 
 /**
  * Can Gemini read the workout off the screen? The measurement runs the real path —
- * the same stream, the same wait, the same delete — because a measurement of a
- * different path would not answer the question. One upload, several shapes of
- * request over it, so a 400 can be attributed to the shape rather than guessed at.
+ * the same provider hook, the same stream, the same wait, the same delete — so
+ * that what it reports is what the tier will do rather than a rehearsal of it.
  */
-async function probeGeminiVideo(url: string, suppliedHtml: string | null): Promise<unknown> {
+async function probeGeminiVideo(url: string): Promise<unknown> {
   const p = matchTikTok(url);
   if (!p) return { status: "error", message: "not a tiktok url" };
-  const id = p.shortcode.replace(/^tt-/, "");
-  let html = suppliedHtml;
-  let cookie = "";
-  if (!html) {
-    const got = await pageWithCookies(p.clean, DESKTOP_UA);
-    if (!got.html) return { status: "ok", id, note: "watch page " + got.status, error: got.error };
-    html = got.html;
-    cookie = got.cookie;
-  }
-  const found = ttMediaFromHtml(html).find((c) => c.kind === "video");
-  if (!found) return { status: "ok", id, note: "no video url in the blob" };
-  const headers = cookie ? { ...mediaHeaders("tiktok"), Cookie: cookie } : mediaHeaders("tiktok");
-
+  const src = await tiktokMedia(p);
+  if (!src) return { status: "ok", id: p.shortcode, note: "no media url" };
   const before = await geminiListFiles();
-  const up = await geminiUploadMedia(found.url, headers, id);
-  if (!up.file) {
-    return { status: "ok", id, field: found.field, files_before: before, upload: up };
-  }
-  const file = up.file;
-  const tries: unknown[] = [];
-  try {
-    const state = file.state === "ACTIVE" ? "ACTIVE" : await geminiFileState(file.name, 60_000);
-    const models_ = [...new Set([models().geminiVision, ...models().geminiPool])];
-    const shapes: [string, boolean, boolean][] = [
-      ["mime+thinking", true, true],
-      ["nomime+thinking", false, true],
-      ["mime+nothinking", true, false],
-    ];
-    for (const model of models_) {
-      for (const [name, withMime, withThinking] of shapes) {
-        const gc: Record<string, unknown> = { maxOutputTokens: 2000 };
-        if (withThinking) gc.thinkingConfig = { thinkingBudget: 0 };
-        const fd: Record<string, string> = { fileUri: file.uri };
-        if (withMime) fd.mimeType = file.mimeType;
-        let out: Record<string, unknown>;
-        try {
-          const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-            method: "POST",
-            headers: { "content-type": "application/json", "x-goog-api-key": GEMINI_API_KEY },
-            body: JSON.stringify({
-              contents: [{ parts: [{ fileData: fd }, { text: "List every exercise shown or written on screen, as JSON [{name, t_seconds}]." }] }],
-              generationConfig: gc,
-            }),
-            signal: AbortSignal.timeout(120_000),
-          });
-          const raw = await r.text();
-          if (!r.ok) out = { model, shape: name, http: r.status, error: raw.slice(0, 400) };
-          else {
-            const d = JSON.parse(raw);
-            const text = (d?.candidates?.[0]?.content?.parts ?? [])
-              .map((pp: { text?: unknown }) => String(pp?.text ?? "")).join("").trim();
-            out = {
-              model, shape: name, http: r.status,
-              tokens: (d?.usageMetadata?.promptTokenCount ?? 0) + "/" + (d?.usageMetadata?.candidatesTokenCount ?? 0),
-              finish: d?.candidates?.[0]?.finishReason ?? null,
-              chars: text.length, head: text.slice(0, 1200),
-            };
-          }
-        } catch (e) {
-          out = { model, shape: name, http: 0, error: String(e).slice(0, 200) };
-        }
-        tries.push(out);
-        if ((out as { chars?: number }).chars) return finishProbe();
-      }
-    }
-    function finishProbe() {
-      return { status: "ok", id, field: found!.field, bytes: up.bytes, state, file: { mime: file.mimeType, uri_chars: file.uri.length }, tries };
-    }
-    return finishProbe();
-  } finally {
-    await geminiDeleteFile(file.name);
-  }
+  const read = await geminiReadVideo(
+    (src.urls.find((u) => u.kind === "video") ?? src.urls[0]).url,
+    src.headers, p.shortcode, VIDEO_PROMPT, { purpose: "video", userId: null },
+  );
+  const after = await geminiListFiles();
+  return {
+    status: "ok", id: p.shortcode, model: models().geminiVision,
+    files_before: before, files_after: after,
+    bytes: read.bytes, http: read.status, state: read.state, detail: read.detail,
+    by: read.by, tokens: read.usage ? read.usage.inTok + "/" + read.usage.outTok : null,
+    chars: read.text?.length ?? 0,
+    body: (read.text ?? "").slice(0, 2500),
+  };
 }
 
 /**
@@ -4999,7 +5549,7 @@ async function handleWorkerProbe(req: Request): Promise<Response> {
   }
   if (body?.kind === "gemini-files") return json(await geminiListFiles(), 200);
   if (body?.kind === "gemini-video") {
-    const out = await probeGeminiVideo(url, html);
+    const out = await probeGeminiVideo(url);
     console.log("probe gemini-video", url, "->", JSON.stringify(out).slice(0, 400));
     return json(out, 200);
   }
@@ -5044,6 +5594,174 @@ async function handleWorkerProbe(req: Request): Promise<Response> {
   }
   console.log("probe gemini-youtube", yt.shortcode, "->", statusCode, text.length, "chars");
   return json({ status: "ok", status_code: statusCode, model, url: yt.clean, body: text.slice(0, 4000) }, 200);
+}
+
+// ---------- reading the video on request ----------
+
+/**
+ * The meta and the card a media-only job starts from.
+ *
+ * The card comes from the GLOBAL cache row and never from the user's own, and
+ * that is not fussiness: finishJob writes what the job produces back to
+ * video_cache, so seeding from a row somebody has hand-corrected would push one
+ * person's edits into the card every other user receives. With no cache row to
+ * seed from, the job starts one step earlier and rebuilds from the caption.
+ */
+function mediaSeed(cached: any, w: any): { step: string; meta: Meta; card: Card | null } {
+  const meta: Meta = {
+    caption: cached?.caption ?? w.caption ?? null,
+    // No original URL survives a save — what we have is our own copy, under this
+    // shortcode, which runJob knows to keep rather than re-fetch.
+    thumb: null,
+    thumb_stored: cached?.thumb_url ?? w.thumb_url ?? null,
+    author: cached?.author ?? w.author ?? null,
+    source: "cache",
+    topped_up: true,
+    transcript: typeof cached?.media_text === "string" && cached.media_text ? cached.media_text : undefined,
+    media_source: cached?.media_source ?? undefined,
+  };
+  const usable = cached && Number(cached.v) >= CARD_V && cached.card;
+  return usable
+    ? { step: "media", meta, card: cached.card as Card }
+    : { step: "card", meta, card: null };
+}
+
+/** The daily ceiling on media steps, asked before anything is charged for one. */
+async function mediaCapReached(userId: string): Promise<number | null> {
+  try {
+    const used = await mediaCountToday(userId);
+    return used >= LIMIT_MEDIA ? used : null;
+  } catch (e) {
+    // Same rule as the worker: a count that cannot be read is not zero.
+    console.error("media cap could not be read for", userId, e);
+    return LIMIT_MEDIA;
+  }
+}
+
+/**
+ * "Read the video" — the manual trigger, for a card that came out thin and a user
+ * who would rather Spotter listened than retyped the caption themselves.
+ *
+ * It goes back through the queue rather than running inline, for exactly the
+ * reasons the retry button does: a two-minute upload and a model call have no
+ * business inside a request the user is holding open, and the queue is what owns
+ * the backoff, the one-job-per-video guarantee and the dead-letter cutoff.
+ */
+async function handleReadVideo(id: string, userId: string, cors: Cors): Promise<Response> {
+  const rows = await dbSelect("workouts", `id=eq.${id}&user_id=eq.${userId}&select=*`);
+  if (!rows.length) return json({ status: "error", message: "Not found." }, 404, cors);
+  const w = rows[0];
+
+  if (!providerFor(w.platform).media) {
+    return json({
+      status: "error",
+      message: "Spotter cannot reach the video behind this link — paste the workout text instead.",
+    }, 400, cors);
+  }
+  if (w.ingest_status === "processing") {
+    return json({ status: "processing", id, message: "Already reading that one." }, 200, cors);
+  }
+
+  const sc = encodeURIComponent(w.shortcode);
+  const [countsR, cachedR] = await Promise.allSettled([
+    countsFor(userId),
+    dbSelect("video_cache", `shortcode=eq.${sc}&select=*`),
+  ]);
+  for (const r of [countsR, cachedR]) if (r.status === "rejected") throw r.reason;
+  const counts = (countsR as PromiseFulfilledResult<Counts>).value;
+  const cached = (cachedR as PromiseFulfilledResult<any[]>).value[0] ?? null;
+
+  if (cached?.media_tried) {
+    return json({
+      status: "ok",
+      message: "Spotter has already read this one — there was nothing in the video the card does not show.",
+    }, 200, cors);
+  }
+  if (counts.extracts >= LIMIT_EXTRACT) return extractLimitResponse(cors);
+  const over = await mediaCapReached(userId);
+  if (over !== null) {
+    return json({
+      status: "limit",
+      message: `Daily limit for reading videos reached (${LIMIT_MEDIA}/day while Spotter is free) — ` +
+        "resets at midnight UTC.",
+    }, 429, cors);
+  }
+  if (!(await paidAllowed())) {
+    return json({
+      status: "limit",
+      message: "Spotter's daily budget is spent — try reading this one again tomorrow.",
+    }, 429, cors);
+  }
+
+  const q = (await rpc("requeue_ingest", { p_user: userId, p_workout: id }))[0];
+  if (!q) return json({ status: "error", message: "Not found." }, 404, cors);
+  if (q.job_created) {
+    const seed = mediaSeed(cached, w);
+    try {
+      await jobStep(q.job_id, seed.step, { meta: seed.meta, card: seed.card });
+    } catch (e) {
+      // The job still runs; it just re-reads the caption first. A slower path is
+      // not a failed one.
+      console.error("could not seed the media job", q.job_id, e);
+    }
+    console.log("read-the-video queued", w.platform, w.shortcode, "job", q.job_id, "from step", seed.step);
+  } else {
+    console.log("read-the-video joined an existing job for", w.shortcode, "— not seeded");
+  }
+  // The stage is set here rather than only by the worker: between this response
+  // and the worker reaching the media step there are a few seconds in which the
+  // card would otherwise say "Reading the video", which is not what was asked for
+  // and not what is about to happen.
+  try { await dbPatch("workouts", `id=eq.${id}`, { media_stage: "listening" }); }
+  catch (e) { console.error("could not set the media stage on", id, e); }
+  kickWorker();
+  return json({
+    status: "processing", id, job_id: q.job_id,
+    message: "Listening to the video…",
+  }, 202, cors);
+}
+
+/**
+ * The cache hit that is worth improving.
+ *
+ * A thin card in the global cache that nobody has tried the video for is the one
+ * case where copying the cached row is the wrong answer: the second person to save
+ * that video pays for the upgrade once, and the row they write is what everybody
+ * after them gets. Returns null — meaning "the ordinary cache hit stands" — for
+ * anything that is not exactly that case, including every cap.
+ */
+async function upgradeCachedCard(
+  userId: string, p: Parsed, cached: any, workoutId: string, cors: Cors,
+): Promise<Response | null> {
+  if (cached.media_tried) return null;
+  if (!providerFor(p.platform).media) return null;
+  const card = cached.card as Card;
+  if (!card || !cardIsThin(card)) return null;
+
+  const counts = await countsFor(userId);
+  if (counts.extracts >= LIMIT_EXTRACT) return null;
+  if (await mediaCapReached(userId) !== null) return null;
+  if (!(await paidAllowed())) return null;
+
+  const q = (await rpc("requeue_ingest", { p_user: userId, p_workout: workoutId }))[0];
+  if (!q) return null;
+  if (q.job_created) {
+    const seed = mediaSeed(cached, { caption: cached.caption, author: cached.author, thumb_url: cached.thumb_url });
+    try {
+      await jobStep(q.job_id, seed.step, { meta: seed.meta, card: seed.card });
+    } catch (e) {
+      console.error("could not seed the cache-upgrade job", q.job_id, e);
+    }
+  }
+  console.log("cache upgrade queued", p.platform, p.shortcode, "job", q.job_id,
+    q.job_created ? "(new)" : "(joined existing)");
+  try { await dbPatch("workouts", `id=eq.${workoutId}`, { media_stage: "listening" }); }
+  catch (e) { console.error("could not set the media stage on", workoutId, e); }
+  kickWorker();
+  return json({
+    status: "processing", id: workoutId, job_id: q.job_id, title: card.title,
+    message: "Listening to the video…",
+  }, 202, cors);
 }
 
 async function handleReprocess(id: string, userId: string, req: Request, cors: Cors): Promise<Response> {
@@ -5124,6 +5842,17 @@ async function handleReprocess(id: string, userId: string, req: Request, cors: C
     }
   }
   if (!meta.caption && old.caption) meta.caption = old.caption;
+  // What the media tier heard, if it ever ran on this video. Without it a re-run
+  // is asked to justify a card built from two texts while holding one, and the
+  // evidence on every spoken exercise would evaporate for no better reason than
+  // that nobody handed the transcript back.
+  const cachedRow = (await dbSelect("video_cache",
+    `shortcode=eq.${encodeURIComponent(p.shortcode)}&select=card,media_tried,media_source,media_text`))[0] ?? null;
+  if (!meta.transcript && typeof cachedRow?.media_text === "string" && cachedRow.media_text) {
+    meta.transcript = cachedRow.media_text;
+    meta.media_source = cachedRow.media_source ?? undefined;
+    console.log("reprocess: replaying", cachedRow.media_text.length, "chars of transcript for", p.shortcode);
+  }
   let fresh: Card;
   try {
     fresh = await buildCard(meta, p, ctx);
@@ -5171,6 +5900,15 @@ async function handleReprocess(id: string, userId: string, req: Request, cors: C
     console.log("reprocess: re-run produced no blocks, leaving video_cache alone", p.shortcode);
   } else if (!(await captionMayOverwriteCache(p.shortcode, meta))) {
     console.log("reprocess: not caching a pasted caption over the platform's own", p.shortcode);
+  } else if (
+    cachedRow?.media_tried && !meta.transcript &&
+    countExercises((cachedRow.card ?? { blocks: [] }) as Card) > countExercises(pure)
+  ) {
+    // The cached card was read out of the video and this re-run was not. Writing a
+    // thinner caption-only card over it would undo, for everybody, work somebody
+    // already paid for.
+    console.log("reprocess: leaving the video-read cache row alone for", p.shortcode,
+      "— it has", countExercises(cachedRow.card as Card), "exercises against this re-run's", countExercises(pure));
   } else {
     await dbUpsert("video_cache", {
       shortcode: p.shortcode, url: p.clean, platform: p.platform, kind: p.kind,
@@ -6969,6 +7707,9 @@ Deno.serve(async (req: Request) => {
     // encoding a multi-megabyte image is what killed a worker in production, and
     // this is the boundary that keeps that kill away from healthy jobs.
     if (req.method === "POST" && path === "/api/worker/vision") return await handleVisionTick(req);
+    // The media isolate, for the same reason and behind the same secret: a
+    // multi-megabyte stream and a two-minute model call, kept away from the batch.
+    if (req.method === "POST" && path === "/api/worker/media") return await handleMediaTick(req);
     // An experiment behind the same secret: does Gemini describe a YouTube video
     // given only its URL? Measurement only, wired into nothing.
     if (req.method === "POST" && path === "/api/worker/probe") return await handleWorkerProbe(req);
@@ -6983,6 +7724,9 @@ Deno.serve(async (req: Request) => {
 
     const reproc = path.match(/^\/api\/workouts\/([0-9a-f-]{36})\/reprocess$/);
     if (req.method === "POST" && reproc) return await handleReprocess(reproc[1], userId, req, cors);
+
+    const readvid = path.match(/^\/api\/workouts\/([0-9a-f-]{36})\/media$/);
+    if (req.method === "POST" && readvid) return await handleReadVideo(readvid[1], userId, cors);
 
     const fix = path.match(/^\/api\/workouts\/([0-9a-f-]{36})\/exercises$/);
     if (req.method === "POST" && fix) return await handleCorrection(fix[1], userId, req, cors);

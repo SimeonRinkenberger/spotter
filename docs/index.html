@@ -1382,6 +1382,74 @@
   // the copy around it says so.
   function isUpload(w) { return w.platform === "upload"; }
 
+  // Three different things can be happening to a card that has not landed yet, and
+  // a card that says "Reading" while Spotter is listening to the audio is telling
+  // the user something that is not true. The server sets media_stage on the row as
+  // each tier starts and clears it when the job ends, so this is a fact about the
+  // job rather than a guess from the client.
+  var STAGES = {
+    reading: {
+      kick: "Reading", glyph: "⏳", line: "Reading the video…",
+      head: "Still reading this one",
+      body: "Spotter is pulling the workout out of this video. The card fills in here as soon " +
+        "as it lands — you can close this and carry on."
+    },
+    listening: {
+      kick: "Listening", glyph: "🎧", line: "Listening to the video…",
+      head: "Still listening to this one",
+      body: "The caption did not say what the exercises are, so Spotter is listening to the video " +
+        "to hear them. The card fills in here as soon as it lands — you can close this and carry on."
+    },
+    watching: {
+      kick: "Watching", glyph: "👀", line: "Watching the video…",
+      head: "Still watching this one",
+      body: "Nobody says the exercises out loud in this one, so Spotter is watching it to read what " +
+        "is written on the screen. The card fills in here as soon as it lands — you can close " +
+        "this and carry on."
+    },
+    upload: {
+      kick: "Listening", glyph: "🎧", line: "Listening to the video…",
+      head: "Still listening to this one",
+      body: "Spotter is transcribing what the creator says, then pulling the workout out of it. " +
+        "The card fills in here as soon as it lands — you can close this and carry on."
+    }
+  };
+
+  function stageOf(w) {
+    if (isUpload(w)) return STAGES.upload;
+    if (w.media_stage === "watching") return STAGES.watching;
+    if (w.media_stage === "listening") return STAGES.listening;
+    return STAGES.reading;
+  }
+
+  // What this card was actually read out of. The caveat has to be able to say so:
+  // "not in the caption" is true of every exercise read off a screen and tells the
+  // user nothing they can act on, while "read off the screen" tells them exactly
+  // what to check and where to look.
+  function readFrom(w) {
+    var out = { video: false, speech: false };
+    (w.blocks || []).forEach(function (b) {
+      (b.exercises || []).forEach(function (ex) {
+        var src = ex.evidence && ex.evidence.source;
+        if (src === "video") out.video = true;
+        if (src === "transcript") out.speech = true;
+      });
+    });
+    return out;
+  }
+
+  // Whose videos Spotter can actually reach. Measured 2026-09-02: TikTok's watch
+  // page still names the media file and hands out the cookies that make it
+  // fetchable, and Instagram names no media URL at all — not to a server, not to
+  // a phone on its own connection — so offering this on a reel would be offering
+  // a button that can only fail.
+  function canReadVideo(w) {
+    if (w.platform !== "tiktok") return false;
+    if (isPending(w) || isFailed(w)) return false;
+    var from = readFrom(w);
+    return !from.video && !from.speech;
+  }
+
   // ---------- collections: lookups ----------
 
   function isColFilter(f) { return typeof f === "string" && f.indexOf("col:") === 0; }
@@ -1489,7 +1557,7 @@
   }
 
   function cardMeta(w) {
-    if (isPending(w)) return isUpload(w) ? "Listening to the video…" : "Reading the video…";
+    if (isPending(w)) return stageOf(w).line;
     if (isFailed(w)) return isUpload(w) ? "Could not hear it — tap to see why" : "Could not read it — tap to retry";
     var bits = [];
     var n = exerciseNames(w).length;
@@ -1541,18 +1609,18 @@
       var tw = el("div", "thumbwrap loading");
       if (pending || failed) {
         var up = isUpload(w);
+        var stage = stageOf(w);
         tw.className = "thumbwrap " + (pending ? "pending" : "failed");
         // A failed upload cannot be retried — the file was deleted the moment
         // Spotter finished listening — so it must not wear the ↻ that says it can.
-        tw.appendChild(el("div", "noimg", pending ? (up ? "🎧" : "⏳") : (up ? "🎧" : "↻")));
+        tw.appendChild(el("div", "noimg", pending ? stage.glyph : (up ? "🎧" : "↻")));
         card.appendChild(tw);
         var pb = el("div", "cardbody");
         var pk = el("div", "cardkick");
         pk.appendChild(el("div", "catpill",
-          pending ? (up ? "Listening" : "Reading") : (up ? "Failed" : "Retry")));
+          pending ? stage.kick : (up ? "Failed" : "Retry")));
         pb.appendChild(pk);
-        pb.appendChild(el("div", "cardtitle",
-          w.title || (up ? "Listening to the video…" : "Reading the video…")));
+        pb.appendChild(el("div", "cardtitle", w.title || stage.line));
         pb.appendChild(el("div", "cardmeta" + (failed ? " retryline" : ""), cardMeta(w)));
         card.appendChild(pb);
         card.onclick = function () { openDetail(w); };
@@ -1675,7 +1743,9 @@
     var em = embedNode(w);
     if (em) d.appendChild(em);
 
-    d.appendChild(el("div", "dkick", isPending(w) ? "Reading" : (isFailed(w) ? "Needs another try" : (w.category || "Other"))));
+    d.appendChild(el("div", "dkick", isPending(w)
+      ? stageOf(w).kick
+      : (isFailed(w) ? "Needs another try" : (w.category || "Other"))));
     var titleEl = el("h2", "dtitle", w.title || "Untitled workout");
     if (!isPending(w)) {
       titleEl.classList.add("editable");
@@ -1691,14 +1761,13 @@
     // are real rows with a real link — the user keeps what they saved either way.
     if (isPending(w) || isFailed(w)) {
       var isUp = isUpload(w);
+      var stage = stageOf(w);
       var note = el("div", "sect");
       note.appendChild(el("h3", null, isPending(w)
-        ? (isUp ? "Still listening to this one" : "Still reading this one")
+        ? stage.head
         : (isUp ? "Could not hear a workout in this one" : "Could not read this one")));
       note.appendChild(el("div", "capbox", isPending(w)
-        ? (isUp
-          ? "Spotter is transcribing what the creator says, then pulling the workout out of it. The card fills in here as soon as it lands — you can close this and carry on."
-          : "Spotter is pulling the workout out of this video. The card fills in here as soon as it lands — you can close this and carry on.")
+        ? stage.body
         : (w.ingest_error || (isUp
           ? "Spotter could not make out a workout in that file."
           : "Spotter could not get anything back from this link.")) +
@@ -1769,16 +1838,33 @@
     // whether to check this card against the video before training it. Silent above
     // the threshold, because a caveat on every card is a caveat on none.
     var conf = typeof w.confidence === "number" ? w.confidence : null;
+    var from = readFrom(w);
     if (w.has_full_workout && conf !== null && conf < 0.7) {
       var warn = el("div", "unverified");
-      warn.appendChild(el("div", null, conf < 0.45 ? "⚠️" : "👀"));
+      warn.appendChild(el("div", null, from.video || from.speech ? "👀" : (conf < 0.45 ? "⚠️" : "👀")));
       var wt = el("div");
-      wt.appendChild(el("b", null, conf < 0.45
-        ? "Spotter could not check most of this."
-        : "Some of this is not in the caption."));
-      wt.appendChild(document.createTextNode(conf < 0.45
-        ? " The exercises below were not traceable to anything written on the post. Watch the original before you train it."
-        : " A few sets or reps were not written down anywhere Spotter could find. Worth a glance at the original."));
+      // A card read out of the video is not a card whose caption came up short —
+      // there was no caption to come up short. Saying "not in the caption" about
+      // exercises nobody ever wrote down would send the user looking for text that
+      // does not exist, so each source gets the sentence that is true of it.
+      if (from.video) {
+        wt.appendChild(el("b", null, "Spotter read this off the screen."));
+        wt.appendChild(document.createTextNode(
+          " The caption named no exercises, so these came from what is written and shown in the video " +
+          "itself. There is no text to check them against — watch it once before you train it."));
+      } else if (from.speech) {
+        wt.appendChild(el("b", null, "Spotter heard this in the video."));
+        wt.appendChild(document.createTextNode(
+          " These exercises come from what the creator says out loud rather than from the caption, " +
+          "so a name can be misheard. Worth a listen before you train it."));
+      } else {
+        wt.appendChild(el("b", null, conf < 0.45
+          ? "Spotter could not check most of this."
+          : "Some of this is not in the caption."));
+        wt.appendChild(document.createTextNode(conf < 0.45
+          ? " The exercises below were not traceable to anything written on the post. Watch the original before you train it."
+          : " A few sets or reps were not written down anywhere Spotter could find. Worth a glance at the original."));
+      }
       // Only on the low band. On the middle one the card is mostly traceable and
       // asking the user to retype a caption would be asking for work worth little.
       if (conf < 0.45) {
@@ -1786,6 +1872,14 @@
         var fix = el("button", "fixlink", "Paste the caption to improve it");
         fix.onclick = function () { openCaption(w); };
         wt.appendChild(fix);
+        // The other end of the same offer, and the one that costs the user nothing:
+        // let Spotter go and read the video instead of asking them to retype it.
+        if (canReadVideo(w)) {
+          wt.appendChild(document.createTextNode(" · "));
+          var rv = el("button", "fixlink", "Read the video");
+          rv.onclick = function () { readVideo(w, rv); };
+          wt.appendChild(rv);
+        }
       }
       warn.appendChild(wt);
       d.appendChild(warn);
@@ -1872,12 +1966,27 @@
     if (!(w.blocks || []).length) {
       var none = el("div", "sect");
       none.appendChild(el("h3", null, "No exercises found"));
-      var np = el("div", "capbox",
-        "This video did not include a written workout, so there is nothing to step through. " +
-        "You can still watch it and log a freestyle session, tap ↻ above to try reading it again, " +
-        "or type the exercises in yourself.");
+      // The one place in the app where the video tier matters most: the caption
+      // said nothing, so the workout is in the video or nowhere. Offer that first,
+      // and only then the two things that cost the user work.
+      var canRead = canReadVideo(w);
+      var np = el("div", "capbox", canRead
+        ? "The caption on this one names no exercises. Spotter can go and read the video itself — " +
+          "listen to what the creator says, and read what is written on the screen. It takes a " +
+          "minute or so, and the card fills in here."
+        : (from.video || from.speech
+          ? "Spotter read the video itself and still could not make out a workout in it. " +
+            "You can watch it and log a freestyle session, or type the exercises in yourself."
+          : "This video did not include a written workout, so there is nothing to step through. " +
+            "You can still watch it and log a freestyle session, tap ↻ above to try reading it again, " +
+            "or type the exercises in yourself."));
       none.appendChild(np);
       none.appendChild(el("div", null, " "));
+      if (canRead) {
+        var rvb = el("button", "retrybtn", "Read the video");
+        rvb.onclick = function () { readVideo(w, rvb); };
+        none.appendChild(rvb);
+      }
       var addfirst = el("button", "addex", "+ Add an exercise");
       addfirst.onclick = function () { openExAdd(w, 0); };
       none.appendChild(addfirst);
@@ -1965,6 +2074,34 @@
       })
       .catch(function () {
         if (btn) { btn.disabled = false; btn.textContent = "Try reading it again"; }
+        toast("Could not queue that.");
+      });
+  }
+
+  /**
+   * Ask Spotter to read the video itself.
+   *
+   * It goes back through the queue rather than answering inline, and the card goes
+   * pending while it does — the same shape as the retry button, because it is the
+   * same machinery. media_stage is set optimistically to "listening" so the copy
+   * is right from the first frame rather than from the first Realtime update.
+   */
+  function readVideo(w, btn) {
+    if (btn) { btn.disabled = true; btn.textContent = "Queued…"; }
+    api("workouts/" + w.id + "/media", { method: "POST", body: "{}" })
+      .then(function (r) {
+        if (btn) { btn.disabled = false; btn.textContent = "Read the video"; }
+        if (r.status !== "processing") { toast(r.message || "Could not queue that."); return; }
+        w.ingest_status = "processing";
+        w.ingest_error = null;
+        w.media_stage = "listening";
+        if (current && current.id === w.id) openDetail(w, true);
+        render();
+        watchPending();
+        toast("Listening to the video…");
+      })
+      .catch(function () {
+        if (btn) { btn.disabled = false; btn.textContent = "Read the video"; }
         toast("Could not queue that.");
       });
   }

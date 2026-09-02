@@ -25,6 +25,7 @@ export type EvidenceSource =
   | "transcript"   // what the creator SAID, transcribed from a video the user uploaded
   | "chapters"     // a timestamped line in a YouTube description
   | "carousel"     // read off a carousel slide by vision — no text to check against
+  | "video"        // read off the screen of the video itself — same, with a timestamp
   | "heuristic"    // the deterministic parser, which knows exactly which line it read
   | "none";
 
@@ -86,6 +87,21 @@ export function carouselEvidence(slide: number, quote: string | null): Evidence 
   };
 }
 
+/**
+ * Read off the screen of the video, at a moment in it. Never verified, for exactly
+ * the reason carousel evidence is not: there is no text to check it against. The
+ * timestamp is the one thing that CAN be checked — by a person, by opening the
+ * video at that second — which is why it is kept and shown.
+ */
+export function videoEvidence(t: number | null, quote: string | null): Evidence {
+  return {
+    source: "video", line: null, offset: null, slide: null,
+    t: typeof t === "number" && Number.isFinite(t) && t >= 0 ? Math.round(t) : null,
+    quote: quote ? quote.slice(0, 160) : null,
+    verified: false,
+  };
+}
+
 // ---------- text normalization ----------
 //
 // Matching happens on a flattened form so that "▶️ Bulgarian Split Squats —
@@ -133,6 +149,13 @@ export type SourceLine = {
   /** Set when the line is a chapter entry, in seconds. */
   t: number | null;
   label: string;     // the chapter label, or the raw line
+  /**
+   * Which text this line came from, when the index was built from more than one.
+   * A caption and a transcript of the same video are two different provenances —
+   * one was written by the creator, the other heard by a speech model — and an
+   * exercise located in one must not be reported as coming from the other.
+   */
+  kind?: SourceKind;
 };
 
 // ---------- chapters ----------
@@ -320,30 +343,72 @@ export type SourceIndex = {
   normWhole: string;
 };
 
+/** One labelled text among the several a card may have been read out of. */
+export type SourcePart = { text: string | null | undefined; kind: SourceKind };
+
 export function indexSource(
   text: string | null | undefined,
   kind: SourceKind,
 ): SourceIndex {
-  const t = text ?? "";
-  const chapters = parseChapters(t);
-  const byLine = new Map<number, Chapter>();
-  for (const c of chapters) byLine.set(c.line, c);
+  return indexSources([{ text, kind }]);
+}
 
+/**
+ * Index several texts as one searchable source, each line remembering which text
+ * it came from.
+ *
+ * The media tier is why this exists: a card built from a caption AND a transcript
+ * of the same video has two provenances, and collapsing them into one would make
+ * every located quote claim to be a caption nobody wrote. Lines are laid out in
+ * order with a blank line between parts, so offsets remain offsets into the one
+ * text this returns — which is the text the caller must keep if it wants the
+ * offsets to mean anything later.
+ *
+ * A single part behaves exactly as the old single-text index did, down to the
+ * offsets: no separator is emitted before the first part.
+ */
+export function indexSources(parts: SourcePart[]): SourceIndex {
+  const used = parts.filter((p) => (p.text ?? "").length > 0);
+  const kind: SourceKind = used[0]?.kind ?? parts[0]?.kind ?? "caption";
   const lines: SourceLine[] = [];
+  const chapters: Chapter[] = [];
+  const texts: string[] = [];
   let offset = 0;
-  const raws = t.split("\n");
-  for (let i = 0; i < raws.length; i++) {
-    const raw = raws[i];
-    const ch = byLine.get(i);
-    lines.push({
-      i, offset, raw,
-      norm: normText(raw),
-      t: ch ? ch.t : null,
-      label: ch ? ch.label : raw.trim(),
-    });
-    offset += raw.length + 1;
+
+  for (const part of used) {
+    const t = part.text ?? "";
+    if (texts.length) {
+      // The separator between two parts. It is a real line in the joined text, so
+      // it gets a real (empty) line here too — otherwise every offset after it
+      // would be one character out.
+      lines.push({ i: lines.length, offset, raw: "", norm: "", t: null, label: "", kind: part.kind });
+      offset += 1;
+      texts.push("");
+    }
+    texts.push(t);
+    const byLine = new Map<number, Chapter>();
+    for (const c of parseChapters(t)) {
+      const moved = { ...c, line: c.line + lines.length };
+      byLine.set(c.line, c);
+      chapters.push(moved);
+    }
+    const raws = t.split("\n");
+    for (let i = 0; i < raws.length; i++) {
+      const raw = raws[i];
+      const ch = byLine.get(i);
+      lines.push({
+        i: lines.length, offset, raw,
+        norm: normText(raw),
+        t: ch ? ch.t : null,
+        label: ch ? ch.label : raw.trim(),
+        kind: part.kind,
+      });
+      offset += raw.length + 1;
+    }
   }
-  return { kind, text: t, lines, chapters, normWhole: normText(t) };
+
+  const text = texts.join("\n");
+  return { kind, text, lines, chapters, normWhole: normText(text) };
 }
 
 // ---------- locating a claim in the source ----------
@@ -414,7 +479,7 @@ function evidenceFromLine(src: SourceIndex, l: SourceLine, quote: string | null)
     // A line carrying a timestamp is chapter evidence even though it lives in the
     // description. Which of the two it is decides how much the card is trusted, so
     // the distinction is drawn from the line's own shape rather than asserted.
-    source: l.t !== null ? "chapters" : src.kind,
+    source: l.t !== null ? "chapters" : (l.kind ?? src.kind),
     line: l.i,
     offset: l.offset,
     quote: (quote ?? l.raw).trim().slice(0, 160) || null,
@@ -686,12 +751,17 @@ export function scoreCard(card: ScorableCard, ctx: ScoreContext): Confidence {
 
   // 1. evidence — verified counts fully, carousel OCR counts partially because
   //    there is no text to check it against, nothing counts as nothing.
-  let evSum = 0, verified = 0, chapterEv = 0, carouselEv = 0;
+  let evSum = 0, verified = 0, chapterEv = 0, carouselEv = 0, videoEv = 0;
   for (const ex of exercises) {
     const e = ex.evidence;
     if (!e || e.source === "none") continue;
     if (e.verified) { evSum += 1; verified++; }
-    else if (e.source === "carousel") { evSum += 0.4; carouselEv++; }
+    // Two sources with nothing to check them against, and the same partial credit
+    // for the same reason: a slide and a video frame are both real observations
+    // that no text can confirm.
+    else if (e.source === "carousel" || e.source === "video") { evSum += 0.4; }
+    if (e.source === "carousel") carouselEv++;
+    if (e.source === "video") videoEv++;
     if (e.source === "chapters") chapterEv++;
   }
   const evidence = clamp01(evSum / exercises.length);
@@ -742,9 +812,11 @@ export function scoreCard(card: ScorableCard, ctx: ScoreContext): Confidence {
     // A card read off a carousel slide has real evidence that simply cannot be
     // checked; a card with nothing at all is the model writing from memory. The
     // second deserves the harder cap.
-    if (carouselEv > 0) {
+    if (carouselEv > 0 || videoEv > 0) {
       score = Math.min(score, 0.55);
-      notes.push("read off carousel slides — no text to check it against");
+      notes.push(videoEv > 0 && carouselEv === 0
+        ? "read off the video itself — no text to check it against"
+        : "read off carousel slides — no text to check it against");
     } else {
       score = Math.min(score, 0.35);
       notes.push("nothing could be located in a source text");
