@@ -851,23 +851,43 @@ export const STYLE = String.raw`<style>
     vector-effect: non-scaling-stroke; }
   .bodybox .bodymus, .bodybox .sw { fill: var(--body-mus); background-color: var(--body-mus);
     transition: fill var(--t-3) var(--e-out), background-color var(--t-3) var(--e-out),
-      opacity var(--t-3) var(--e-out); }
+      fill-opacity var(--t-3) var(--e-out), opacity var(--t-3) var(--e-out); }
   .bodybox .lit { fill: var(--ember); background-color: var(--ember); }
-  .bodybox.s2 .lv1 { opacity: .45; }
-  .bodybox.s2 .lv2 { opacity: 1; }
+  /* One number, spent twice: fill-opacity on the figure, opacity on the legend's
+     swatches. A path's own opacity would take its selection ring down with it, and
+     the ring has to be as legible on the faintest band as on the brightest. */
+  .bodybox .bodymus { fill-opacity: var(--o, 1); }
+  .bodybox .sw { opacity: var(--o, 1); }
+  .bodybox.s2 .lv1 { --o: .45; }
+  .bodybox.s2 .lv2 { --o: 1; }
   /* Primary carries a rim as well as its weight, so the split survives a colour-blind
      eye and a bad screen. MuscleWiki hatches its primaries for the same reason; a rim
      is the version of that which does not turn ten regions into texture. */
   .bodybox.s2 .bodymus.lv2, .bodybox.s2 .sw.lv2 { stroke: var(--ember-ink);
     stroke-width: 1px; vector-effect: non-scaling-stroke;
     box-shadow: inset 0 0 0 1px var(--ember-ink); }
-  .bodybox.s4 .lv1 { opacity: .26; }
-  .bodybox.s4 .lv2 { opacity: .5; }
-  .bodybox.s4 .lv3 { opacity: .74; }
-  .bodybox.s4 .lv4 { opacity: 1; }
+  .bodybox.s4 .lv1 { --o: .26; }
+  .bodybox.s4 .lv2 { --o: .5; }
+  .bodybox.s4 .lv3 { --o: .74; }
+  .bodybox.s4 .lv4 { --o: 1; }
   .bodybox .bodymus { cursor: pointer; outline: none; }
-  .bodybox .bodymus.sel, .bodybox .bodymus:focus-visible { stroke: var(--ink);
-    stroke-width: 1.6px; vector-effect: non-scaling-stroke; }
+  /* Tapping a muscle used to change almost nothing you could see: a 1.6px ink line
+     dimmed to the strength of the band it was drawn on, and on a lit one in dark
+     mode near-white on ember measures 2.3:1 — a ring nobody could find. No single
+     colour can do this job, because the pale answer fails just as badly the other
+     way (paper on the untargeted grey is 1.2:1). So the ring is a pair, an ink line
+     with a paper halo just outside it, and whichever half a fill swallows the other
+     stands at 4.8:1 or better against it — measured across both schemes, the
+     untargeted grey, the bare skin and all six lit strengths. The .lit selector is
+     the same weight as the primary's ember rim above and comes after it, so a
+     tapped primary wears this instead. */
+  .bodybox .bodymus.sel, .bodybox .bodymus.sel.lit, .bodybox .bodymus:focus-visible {
+    stroke: var(--ink); stroke-width: 2px; vector-effect: non-scaling-stroke;
+    filter: drop-shadow(0 0 1px var(--paper)) drop-shadow(0 0 1px var(--paper)); }
+  /* And it arrives, with the pop a logged set gets: movement finds an eye that a
+     colour change on a small shape does not. */
+  .bodybox .bodymus.sel { animation: setpop var(--t-3) var(--e-spring);
+    transform-box: fill-box; transform-origin: center; }
   .bodylbl { font-size: 11px; font-weight: 600; color: var(--muted); margin-top: 7px;
     text-transform: capitalize; }
   .bodylegend { display: flex; flex-wrap: wrap; justify-content: center; align-items: center;
@@ -883,7 +903,7 @@ export const STYLE = String.raw`<style>
   .bodypick.on { color: var(--ink); font-weight: 550; }
   .bodynote { font-size: 12px; color: var(--muted); text-align: center; line-height: 1.5; margin: 10px 0 8px; }
   @media (prefers-reduced-motion: reduce) {
-    .bodyfig { animation: none; }
+    .bodyfig, .bodybox .bodymus.sel { animation: none; }
     .bodybox .bodymus, .bodybox .sw, .bodypick { transition: none; }
   }
 
