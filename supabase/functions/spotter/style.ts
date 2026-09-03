@@ -611,25 +611,66 @@ export const STYLE = String.raw`<style>
 
   /* ---------- how to do this ----------
      The creator's line is the only thing here drawn in full ink: it came out of the
-     video the user saved, and everything under it is generic by comparison. The
-     slot below is fixed at 4:3 so the sheet never jumps when an image lands late,
-     and contains rather than crops — a drawing cut through the lifter's head
-     demonstrates nothing. */
+     video the user saved, and everything under it is generic by comparison. */
   .said { margin: 4px 0 16px; padding-left: 13px; border-left: 2px solid var(--ember); }
   .saidlab { font-size: 11.5px; font-weight: 650; color: var(--muted); margin-bottom: 5px;
     line-height: 1.4; }
   .saidq { font-size: 15px; line-height: 1.55; color: var(--ink); word-break: break-word; }
   .said .chip, #watchbody .chip { margin-top: 11px; padding: 11px 15px; }
-  .demo { margin: 0 0 16px; }
-  .demoslot { position: relative; aspect-ratio: 4 / 3; border-radius: 14px; overflow: hidden;
+  /* ---------- the demonstration clip ----------
+     One 16:9 slot, a title, a channel, a way out — the shape Hevy, Fitbod and Nike
+     Training Club all settled on for the demo inside an exercise screen. Ours is
+     somebody else's video rather than one we filmed, so the channel line is not
+     decoration: it says whose gym you are standing in.
+
+     The slot is a grid row that grows from 0fr to 1fr, which is the one way to
+     animate to a height nobody knows in advance. It matters because the answer
+     arrives after the sheet is already open and reading: without it the
+     explanation would jump down the moment a clip was found. */
+  .vslot { display: grid; grid-template-rows: 0fr;
+    transition: grid-template-rows var(--t-3) var(--e-out); }
+  .vslot.on { grid-template-rows: 1fr; }
+  .vslot > div { overflow: hidden; min-height: 0; }
+  .ytbox { padding-top: 2px; }
+  .ytbox .saidlab { margin-bottom: 7px; }
+  .ytface { display: block; width: 100%; margin: 0; padding: 0; border: 0; background: none;
+    text-align: left; color: inherit; font: inherit;
+    transition: transform var(--t-1) var(--e-out); }
+  .ytface:active { transform: scale(.985); }
+  /* hqdefault is 480x360 with letterbox bars top and bottom; cropped to 16:9 they
+     are exactly what comes off, so this covers rather than contains. */
+  .ytshot { position: relative; aspect-ratio: 16 / 9; border-radius: 14px; overflow: hidden;
     background: var(--sand); border: 1px solid var(--line); }
-  .demoslot img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
-  /* Two frames held then crossed, opacity only; under reduced motion the second
-     never arrives. */
-  .demoslot img.b { opacity: 0; animation: demofade 1.6s var(--e-soft) infinite alternate; }
-  @keyframes demofade { 0%, 38% { opacity: 0; } 62%, 100% { opacity: 1; } }
-  .democredit { font-size: 11px; line-height: 1.45; color: var(--muted); margin-top: 6px; }
-  @media (prefers-reduced-motion: reduce) { .demoslot img.b { animation: none; } }
+  .ytshot img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
+    display: block; }
+  /* Ember, not a red YouTube button: this is Spotter offering the clip, and the
+     accent guarantees the mark reads whatever the thumbnail turns out to be. */
+  .ytplay { position: absolute; left: 50%; top: 50%; width: 54px; height: 54px;
+    margin: -27px 0 0 -27px; border-radius: 999px; display: flex; align-items: center;
+    justify-content: center; background: var(--ember); color: var(--on-ember);
+    box-shadow: 0 3px 16px var(--glow); }
+  .ytplay .ic { width: 20px; height: 20px; fill: currentColor; margin-left: 2px; }
+  .ytt { font-size: 13.5px; line-height: 1.45; color: var(--ink); margin-top: 9px;
+    font-weight: 600; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2; }
+  .ytc { font-size: 12px; line-height: 1.4; color: var(--muted); margin-top: 3px; }
+  /* A row, not a button: the clip is the offer and this is the door beside it. */
+  .ytmore { position: relative; display: inline-flex; align-items: center; gap: 5px;
+    margin: 12px 0 16px; font-size: 13.5px; font-weight: 600; color: var(--ember-ink);
+    text-decoration: none; transition: opacity var(--t-1) var(--e-out); }
+  .ytmore::after { content: ""; position: absolute; inset: -13px -8px; }
+  .ytmore:active { opacity: .6; }
+  .ytmore .ic { width: 13px; height: 13px; }
+  /* The player takes the facade's frame exactly, and loses the detail embed's drop
+     shadow: the slot clips its own overflow, and a clipped shadow is a hard edge. */
+  .ytbox .embedwrap.wide { margin-bottom: 0; border-radius: 14px; box-shadow: none;
+    border: 1px solid var(--line); }
+  @media (prefers-reduced-motion: reduce) {
+    .vslot { transition: none; }
+    .ytface { transition: none; }
+    .ytface:active { transform: none; }
+    .ytmore { transition: none; }
+  }
   .kv { display: flex; align-items: center; justify-content: space-between; gap: 12px;
     padding: 13px 0; border-top: 1px solid var(--line); font-size: 14px; }
   .kv:first-of-type { border-top: none; }

@@ -147,6 +147,20 @@ is computed from `exercise_catalog.muscle_groups` through each exercise's `canon
 never from the card's free-text muscle list and never from a name, so a movement the
 catalog does not know highlights nothing and the card says how many were left out.
 
+**The demonstration is somebody's video, not a drawing.** The Explain sheet used to show a
+CC-BY-SA line illustration from the wger catalog; a still frame cannot show a movement, so it
+now offers a short YouTube clip instead. `POST /api/demo-video` searches the YouTube Data API
+(`search.list`, embeddable and syndicated only, short, safe-search strict) and caches the answer
+— hit or miss — in `exercise_videos`, keyed by `canonical_id` where the exercise has one and by
+a flattened name where it does not. That cache is the whole feature: `search.list` costs 100
+units of the free 10,000/day quota against `videos.list`'s 1, so an uncached lookup budget is a
+hundred sheet opens a day for the entire project. A hit is kept forever, a miss for seven days,
+and an uncached lookup is metered on the same `LIMIT_HELPER` ceiling as `/api/explain`. The
+sheet shows a facade — thumbnail plus play mark — and only builds the `youtube-nocookie` iframe
+when it is tapped, tearing it down when the sheet closes; under it a "More on YouTube" row links
+to the search, which is what the sheet offers when nothing was found. The `demo_*` columns, the
+`demos` bucket and `tools/map-demos.mjs` are still there but nothing reads them.
+
 **Substitutions carry a reason.** `POST /api/swap` takes `reason` (`no_equipment`,
 `station_busy`, `pain`) and, for pain, a `body_area`. Candidates come from the catalog —
 movements sharing a muscle group, filtered by the equipment to hand, or the muscles that
@@ -292,7 +306,7 @@ Per-user daily caps keep a public launch inside the free tiers, all overridable 
 |---|---|---|
 | `LIMIT_EXTRACT` | 60 | new saves **and** reprocesses — everything that runs the ladder |
 | `LIMIT_SAVES` | 200 | every save, cache hits included |
-| `LIMIT_HELPER` | 300 | `/api/explain` and `/api/swap` |
+| `LIMIT_HELPER` | 300 | `/api/explain`, `/api/swap` and an uncached `/api/demo-video` lookup |
 | `LIMIT_CHAT` | 200 | Pumpy turns — a legacy backstop; credits are the real gate |
 | `LIMIT_UPLOADS` | 10 | videos the user uploaded themselves — the most expensive save there is |
 | `LIMIT_MEDIA` | 10 | media **steps** — one per tier that actually runs, so a full escalation costs two |

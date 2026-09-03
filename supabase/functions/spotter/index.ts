@@ -12,6 +12,8 @@
 //   POST /api/workouts/:id/exercises edit/add/delete one exercise on the user's own
 //                                    copy, and record the correction as labelled data
 //   POST /api/explain               form coaching for one exercise
+//   POST /api/demo-video            one short YouTube clip of the movement, cached globally,
+//                                    plus a search link that works even when nothing was found
 //   POST /api/swap                  { exercise, reason: no_equipment | station_busy | pain,
 //                                     body_area? } — alternatives with honest trade-offs, or
 //                                     for pain: modifications + what to build up, never a diagnosis
@@ -1422,6 +1424,92 @@ function isoMinutes(iso: string): number {
   const d = parseFloat(m[1] ?? "0"), h = parseFloat(m[2] ?? "0");
   const mi = parseFloat(m[3] ?? "0"), s = parseFloat(m[4] ?? "0");
   return Math.round(d * 1440 + h * 60 + mi + s / 60);
+}
+
+// ---------- the demonstration video ----------
+//
+// The Explain sheet asks "what does this movement look like?" and the honest answer
+// is that somebody has already filmed it well. The same Data API key finds one
+// through search.list — which costs 100 units of the free 10,000/day against
+// videos.list's 1, so this is a hundred lookups a day for the whole project unless
+// every answer is cached. public.exercise_videos is that cache, and it caches a
+// miss too: asking again tomorrow for a movement YouTube had nothing for is the
+// same 100 units as asking for a new one.
+
+type DemoVideo = { id: string; title: string; channel: string };
+
+/**
+ * The cache key. The catalog id when the exercise has one, so "DB bench",
+ * "Dumbbell Bench Press" and "dumbbell bench presses" share a single lookup; a
+ * flattened name when the catalog does not know the movement — lowercased, accents
+ * folded, everything that is not a letter or a digit collapsed to one space.
+ */
+function demoKey(name: string, canonicalId: string): string {
+  if (canonicalId) return canonicalId;
+  return name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+/** What we type into YouTube, and what the "More on YouTube" row links to. */
+function demoQuery(name: string): string {
+  return name + " exercise form";
+}
+
+/**
+ * Pick one of the five candidates. Relevance ranking already did the hard part; the
+ * only thing worth checking is that the title mentions the movement at all, because
+ * a search for an exercise nobody has filmed returns a workout vlog that happens to
+ * rank. Tokens shorter than four letters are ignored — "up", "arm" and "one" match
+ * everything — and containment rather than equality, so "deadlifts" satisfies
+ * "deadlift". Nothing matches, the first result stands: it is still what a person
+ * typing the same words would have seen at the top.
+ */
+function pickDemo(items: any[], name: string): any | null {
+  const want = name.toLowerCase().replace(/[^a-z0-9]+/g, " ").split(" ")
+    .filter((t) => t.length >= 4);
+  if (want.length) {
+    for (const it of items) {
+      const title = String(it?.snippet?.title ?? "").toLowerCase();
+      if (want.some((t) => title.includes(t))) return it;
+    }
+  }
+  return items[0] ?? null;
+}
+
+/**
+ * One search.list call. Short, embeddable, syndicated, English, safe-search strict:
+ * a clip that will not play inside our own iframe is worse than no clip, and the
+ * whole point is a demonstration rather than a twenty-minute programming video.
+ * Any failure — no key, quota exhausted (403), a slow answer — returns null, and
+ * the caller still has the plain search link to offer.
+ */
+async function ytSearchDemo(name: string): Promise<DemoVideo | null> {
+  if (!YOUTUBE_API_KEY) return null;
+  try {
+    const r = await fetch(
+      "https://www.googleapis.com/youtube/v3/search?part=snippet&type=video" +
+      "&videoEmbeddable=true&videoSyndicated=true&safeSearch=strict&videoDuration=short" +
+      "&relevanceLanguage=en&maxResults=5&fields=" +
+      encodeURIComponent("items(id/videoId,snippet(title,channelTitle))") +
+      "&q=" + encodeURIComponent(demoQuery(name)) + "&key=" + YOUTUBE_API_KEY,
+      { signal: AbortSignal.timeout(8000) },
+    );
+    if (!r.ok) {
+      console.error("youtube search", r.status, (await r.text()).slice(0, 200));
+      return null;
+    }
+    const item = pickDemo((await r.json())?.items ?? [], name);
+    const id = item?.id?.videoId;
+    if (!id) return null;
+    return {
+      id: String(id),
+      title: String(item?.snippet?.title ?? "").slice(0, 200),
+      channel: String(item?.snippet?.channelTitle ?? "").slice(0, 120),
+    };
+  } catch (e) {
+    console.error("youtube search failed", e);
+    return null;
+  }
 }
 
 /**
@@ -6286,6 +6374,87 @@ async function aiText(
   return json({ status: "ok", text: out.trim() }, 200, cors);
 }
 
+/**
+ * POST /api/demo-video — a short clip of the movement for the Explain sheet.
+ *
+ * Answers { status: "ok", video: {id,title,channel,url} | null, search_url }. The
+ * search_url is there whatever happens, because the one thing the sheet must never
+ * do is offer nothing: a link into YouTube's own results opens the YouTube app on a
+ * phone and is a perfectly good answer to "show me how this looks".
+ *
+ * Metered on the helper ceiling, like /api/explain and /api/swap. Not because the
+ * lookup costs Spotter money — it costs Google's free quota — but because 10,000
+ * units a day is 100 uncached lookups for every user at once, and a client looping
+ * over invented exercise names could take the feature away from everybody before
+ * lunch. Only an uncached lookup is charged; a cache hit is free, which is the
+ * whole shape of this feature.
+ */
+async function handleDemoVideo(req: Request, userId: string, cors: Cors): Promise<Response> {
+  const body = await req.json().catch(() => ({}));
+  const name = String(body?.exercise ?? "").slice(0, 120).trim();
+  if (!name) return json({ status: "error", message: "No exercise given." }, 400, cors);
+  const canonical = String(body?.canonical_id ?? "").slice(0, 80).trim();
+  const query = demoQuery(name);
+  const search_url = "https://www.youtube.com/results?search_query=" + encodeURIComponent(query);
+  const key = demoKey(name, canonical);
+  // A name that flattens to nothing at all — emoji, punctuation — is not a lookup.
+  if (!key) return json({ status: "ok", video: null, search_url }, 200, cors);
+
+  const found = (v: DemoVideo | null) => json({
+    status: "ok",
+    video: v ? { ...v, url: "https://www.youtube.com/watch?v=" + v.id } : null,
+    search_url,
+  }, 200, cors);
+
+  // A cache read that throws — the table is not there yet, the network blinked —
+  // must not cost the sheet its answer, so it falls through to a live lookup.
+  let cached: any = null;
+  try {
+    cached = (await dbSelect(
+      "exercise_videos",
+      "key=eq." + encodeURIComponent(key) + "&select=video_id,title,channel,fetched_at,miss&limit=1",
+    ))[0] ?? null;
+  } catch (e) {
+    console.error("exercise_videos read failed", e);
+  }
+  if (cached && !cached.miss && cached.video_id) {
+    return found({ id: cached.video_id, title: cached.title ?? "", channel: cached.channel ?? "" });
+  }
+  // A miss is honoured for a week. Retrying it sooner spends 100 units to learn the
+  // same thing; waiting forever means a movement filmed next month is never found.
+  if (cached && cached.miss &&
+      Date.now() - Date.parse(cached.fetched_at) < 7 * 24 * 60 * 60 * 1000) {
+    return found(null);
+  }
+
+  const { helpers } = await countsFor(userId);
+  // Over the ceiling the answer is still ok with a null video: this route is a
+  // garnish on a sheet whose real content is the explanation, and a 429 here would
+  // read to the user as the sheet being broken.
+  if (helpers >= LIMIT_HELPER) return found(null);
+
+  const video = await ytSearchDemo(name);
+  try {
+    await dbUpsert("exercise_videos", {
+      key,
+      video_id: video ? video.id : null,
+      title: video ? video.title : null,
+      channel: video ? video.channel : null,
+      query,
+      fetched_at: new Date().toISOString(),
+      miss: !video,
+    });
+  } catch (e) {
+    console.error("exercise_videos write failed", e);
+  }
+  try {
+    await dbInsert("saves_log", { user_id: userId, kind: "helper", cached: false, shortcode: null });
+  } catch (e) {
+    console.error("demo helper saves_log insert failed", e);
+  }
+  return found(video);
+}
+
 // ---------- substitutions and pain modifications ----------
 //
 // /api/swap used to answer one question — "I don't have the equipment" — with
@@ -7796,6 +7965,7 @@ Deno.serve(async (req: Request) => {
         cors, userId, "explain", helpers);
     }
 
+    if (req.method === "POST" && path === "/api/demo-video") return await handleDemoVideo(req, userId, cors);
     if (req.method === "POST" && path === "/api/swap") return await handleSwap(req, userId, cors);
     if (req.method === "POST" && path === "/api/pumpy/chat") return await handlePumpyChat(req, userId, cors);
     if (req.method === "POST" && path === "/api/pumpy/confirm") return await handlePumpyConfirm(req, userId, cors);
