@@ -340,13 +340,16 @@ export const MARKUP_BODY = String.raw`</head>
   <button class="danger" id="exeditdelete">Not a real exercise — remove it</button>
 </div></div>
 
-<!-- Three answers, in the order they earn: what the creator said, a drawing of the
-     movement, then the AI. #explainpre holds the first two and stays empty when
-     there is nothing honest to put in it. -->
+<!-- Three answers, in the order they earn: what the creator said, somebody filming
+     the movement properly, then the AI. #explainpre holds the quote and stays empty
+     when there is nothing honest to put in it. #explainvid is a collapsed slot that
+     grows to whatever the clip lookup turned out to need, so the explanation glides
+     down instead of jumping when the answer arrives late. -->
 <div class="sheet" id="explainsheet"><div class="sheetbody">
   <div class="grabber"></div>
   <h2 id="explaintitle">How to do it</h2>
   <div id="explainpre"></div>
+  <div class="vslot" id="explainvid"><div id="explainvidin"></div></div>
   <div class="aitext" id="explaintext">Reading up on it&hellip;</div>
   <div class="btnrow"><button class="btn ghost" id="swapgo"><svg class="ic"><use href="#i-swap"></use></svg>Swap or modify</button></div>
 </div></div>

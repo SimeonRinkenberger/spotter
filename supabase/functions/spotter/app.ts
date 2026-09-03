@@ -2846,8 +2846,9 @@ export const APP = String.raw`
 
   // ---------- how to do this ----------
   //
-  // Three answers in the order they earn: what the creator said, a drawing of the
-  // movement, then the AI — which is told the quote so it cannot contradict it.
+  // Three answers in the order they earn: what the creator said, somebody filming
+  // the movement properly, then the AI — which is told the quote so it cannot
+  // contradict it.
 
   var expCache = {};
   var expKey = "";   // what the open sheet is about; every async fill checks it
@@ -2915,46 +2916,95 @@ export const APP = String.raw`
     closeSheet("explainsheet");
   }
 
-  // The demo columns, read once and only when a sheet asks. Apart from loadCatalog
-  // on purpose: before the demos migration this select fails, which should cost one
-  // sheet its drawing rather than every card its muscle map. An empty answer caches
-  // like any other — columns do not appear mid-session.
-  var demoMap = null, demoLoading = null;
+  // ---------- the demonstration clip ----------
+  //
+  // What used to sit here was a line drawing of a stranger somewhere inside the
+  // movement, and a still frame cannot show a movement. The sheet offers instead
+  // what a person would have gone looking for anyway: a short clip of the lift on
+  // YouTube, chosen server-side and cached globally so the same lookup is never
+  // paid for twice.
+  //
+  // Nothing plays until it is asked to. The slot is a facade — one thumbnail and
+  // one play mark — and the player only exists between the tap and the sheet
+  // closing, which keeps YouTube's iframe, its script and its cookies out of the
+  // page entirely for everyone who only wanted to read.
 
-  function loadDemos() {
-    if (demoMap) return Promise.resolve(demoMap);
-    if (!demoLoading) {
-      demoLoading = sb.from("exercise_catalog")
-        .select("id,demo_url,demo_kind,demo_credit,demo_poster")
-        .not("demo_url", "is", null).limit(400).then(function (r) {
-          demoMap = {};
-          (r.data || []).forEach(function (e) { demoMap[e.id] = e; });
-          return demoMap;
-        });
-    }
-    return demoLoading;
+  var vidCache = {};
+
+  // Keyed the way the server keys it: the catalog id where there is one, so every
+  // spelling of a movement shares one answer, and the name where there is not.
+  // Prefixed, so an exercise called "constructor" reads its own cache entry rather
+  // than Object's prototype.
+  function vidKey(ex) {
+    return "v:" + (ex.canonical_id || String(ex.name || "").toLowerCase());
   }
 
-  // A fixed 4:3 slot so the sheet does not jump when the image lands, and no slot
-  // at all when there is nothing for it.
-  function demoNode(d, name) {
-    var fig = el("figure", "demo"), slot = el("div", "demoslot");
-    function im(src, cls, alt) {
-      var i = el("img", cls);
-      i.src = src; i.alt = alt; i.loading = "lazy"; i.decoding = "async";
-      slot.appendChild(i);
-      return i;
+  // hqdefault is 480x360 with letterbox bars; cropping it to 16:9 removes exactly
+  // those bars, which is why the slot is cover and not contain.
+  function vidFace(box, v) {
+    var b = el("button", "ytface"), shot = el("div", "ytshot"), img = el("img");
+    b.setAttribute("aria-label", "Play " + (v.title || "the demonstration") + " on YouTube");
+    img.src = "https://i.ytimg.com/vi/" + v.id + "/hqdefault.jpg";
+    img.alt = "";
+    img.loading = "lazy";
+    img.decoding = "async";
+    shot.appendChild(img);
+    shot.appendChild(icon(el("span", "ytplay"), "play"));
+    b.appendChild(shot);
+    if (v.title) b.appendChild(el("div", "ytt", v.title));
+    if (v.channel) b.appendChild(el("div", "ytc", v.channel));
+    b.onclick = function () { vidPlay(box, v); };
+    return b;
+  }
+
+  // The facade becomes the player in place. nocookie because a sheet that explains
+  // a squat has no business setting an ad profile; playsinline so iOS keeps it in
+  // the page; rel=0 so the end card stays inside the channel it came from.
+  function vidPlay(box, v) {
+    var face = box.querySelector(".ytface");
+    if (!face) return;
+    var wrap = el("div", "embedwrap wide"), f = el("iframe");
+    f.src = "https://www.youtube-nocookie.com/embed/" + v.id + "?autoplay=1&playsinline=1&rel=0";
+    f.setAttribute("allow", "accelerometer; autoplay; encrypted-media; picture-in-picture; fullscreen");
+    f.setAttribute("allowfullscreen", "");
+    f.title = v.title || "Exercise demonstration";
+    wrap.appendChild(f);
+    box.replaceChild(wrap, face);
+  }
+
+  // The link row is not a fallback for the clip — it is the other half of the
+  // answer, and on a phone it hands off to the YouTube app. When nothing was found
+  // it is the whole answer, which is still more than the sheet had before.
+  function vidNode(v, searchUrl) {
+    var box = el("div", "ytbox");
+    if (v && v.id) {
+      box.appendChild(el("div", "saidlab", "Watch how it is done"));
+      box.appendChild(vidFace(box, v));
     }
-    // A 404 is not worth a broken frame: take the figure out, leave the rest.
-    im(d.demo_url, null, "Drawing of " + name).onerror = function () {
-      if (fig.parentNode) fig.parentNode.removeChild(fig);
-    };
-    // Start and finish of one rep, crossed slowly, so its shape reads.
-    if (d.demo_kind === "pair" && d.demo_poster) im(d.demo_poster, "b", "");
-    fig.appendChild(slot);
-    // CC BY-SA requires the line, and whoever drew this deserves it.
-    if (d.demo_credit) fig.appendChild(el("figcaption", "democredit", d.demo_credit));
-    return fig;
+    if (searchUrl) {
+      var a = el("a", "ytmore", "More on YouTube");
+      a.appendChild(ic("arrow-up-right"));
+      a.href = searchUrl;
+      a.target = "_blank";
+      a.rel = "noopener";
+      box.appendChild(a);
+    }
+    return box;
+  }
+
+  // The slot grows from nothing to whatever it turned out to need, so the
+  // explanation below it glides down rather than jumping when the answer lands
+  // late. One frame between filling it and opening it, or the browser has nothing
+  // to animate from.
+  function vidFill(r) {
+    var slot = $("explainvid"), inner = $("explainvidin");
+    inner.innerHTML = "";
+    inner.appendChild(vidNode(r.video, r.search_url));
+    if (window.requestAnimationFrame) {
+      requestAnimationFrame(function () { slot.classList.add("on"); });
+    } else {
+      slot.classList.add("on");
+    }
   }
 
   function explain(ex, w) {
@@ -2978,12 +3028,25 @@ export const APP = String.raw`
     $("swapgo").onclick = function () { openSwap(name, title); closeSheet("explainsheet"); };
     openSheet("explainsheet");
 
-    // No catalog match, no drawing: it illustrates a named movement.
-    if (ex.canonical_id) {
-      loadDemos().then(function (m) {
-        var d = m[ex.canonical_id];
-        if (d && expKey === key) pre.appendChild(demoNode(d, name));
-      });
+    // Collapsed and empty on every open: whatever the last exercise was shown is
+    // not this one, and a stale player would still be talking.
+    $("explainvid").classList.remove("on");
+    $("explainvidin").innerHTML = "";
+    // Asked alongside the explanation rather than after it. They are two different
+    // questions with two very different latencies — a cached clip is one round trip
+    // and a completion is several seconds — and neither should wait for the other.
+    var vk = vidKey(ex);
+    if (vidCache[vk]) {
+      vidFill(vidCache[vk]);
+    } else {
+      api("demo-video", {
+        method: "POST",
+        body: JSON.stringify({ exercise: name, canonical_id: ex.canonical_id || null })
+      }).then(function (r) {
+        if (!r || r.status !== "ok") return;
+        vidCache[vk] = r;
+        if (expKey === key) vidFill(r);
+      }).catch(function () {});
     }
 
     if (expCache[key]) return;
@@ -4883,9 +4946,10 @@ export const APP = String.raw`
     // A timer, not animationend: a sheet reopened mid-close never fires one.
     closeTimers[id] = setTimeout(function () {
       n.classList.remove("closing");
-      // Every way of closing the clip sheet comes through here, so the iframe
-      // always leaves the page — and only once it has finished sliding away.
+      // Every way of closing a sheet with a player in it comes through here, so the
+      // iframe always leaves the page — and only once it has finished sliding away.
       if (id === "watchsheet") $("watchbody").innerHTML = "";
+      if (id === "explainsheet") $("explainvidin").innerHTML = "";
     }, 260);
     // Give the entry back when the last sheet goes — unless the browser has
     // already taken it (a back gesture) or another sheet is standing in its place.
