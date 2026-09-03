@@ -1250,13 +1250,20 @@ export const STYLE = String.raw`<style>
   .setgroup .kv { min-height: 44px; box-sizing: border-box; padding: 12px 15px;
     border-top: 1px solid var(--line); }
   .setgroup > :first-child.kv { border-top: none; }
+  /* The label holds its line and the value gives way: "Saved today" wrapping to two
+     lines to make room for a usage string that gets truncated anyway is the worst
+     of both. */
+  .setgroup .kv .k { white-space: nowrap; }
   .setgroup .kv .v { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* The tappable ones. A row that opens a sheet is navigation, so it wears the
      disclosure chevron; a row that only reports a value does not, and setting
      [disabled] on it (a provider account cannot change its own email) turns it
      back into that plain row rather than dimming it. */
+  /* border: none first — a button carries a UA border on the three sides .kv never
+     names, and inside a group that drew a box around every tappable row. */
   a.kv.row, button.kv.row { display: flex; width: 100%; background: none; font: inherit;
-    color: inherit; text-align: left; text-decoration: none; border-radius: 0;
+    color: inherit; text-align: left; text-decoration: none; border: none; border-radius: 0;
+    border-top: 1px solid var(--line);
     transition: background-color var(--t-1) var(--e-out); }
   a.kv.row:active, button.kv.row:not([disabled]):active { background: var(--sand); }
   .kv .chev { flex: 0 0 auto; width: 16px; height: 16px; color: var(--line-2); margin-right: -3px; }
