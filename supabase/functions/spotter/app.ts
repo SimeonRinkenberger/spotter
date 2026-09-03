@@ -4654,9 +4654,11 @@ export const APP = String.raw`
   var sheetNav = false, sheetBack = 0;
 
   function openSheet(id) {
-    var n = $(id);
+    var n = $(id), b = n.querySelector(".sheetbody");
     clearTimeout(closeTimers[id]);
     n.classList.remove("closing");
+    // Whatever a drag left behind, so a sheet never opens half pushed away.
+    if (b) { b.classList.remove("snap"); b.style.transform = ""; }
     n.classList.add("open");
     if (!sheetNav) { sheetNav = true; history.pushState({ sheet: id }, ""); }
   }
@@ -4682,11 +4684,89 @@ export const APP = String.raw`
     }
   }
 
+  // ---------- pushing a sheet away ----------
+  //
+  // Every sheet has worn a grabber since the day it was drawn, and until now the
+  // grabber was a picture of a gesture: tapping the scrim closed a sheet, and a
+  // sheet tall enough to cover its own scrim could not be closed at all —
+  // installed to the home screen there is no back swipe to fall back on either.
+  //
+  // Apple's rule is the one worth copying. The drag is offered only where the
+  // sheet's own scroller is already at its top or the finger is on the grabber, so
+  // a list inside a sheet still scrolls; from there the sheet follows the finger
+  // 1:1, resists upwards rather than travelling, and a flick or a third of its own
+  // height sends it away through closeSheet, which is what hands the history entry
+  // back. Anything less goes home on the spring.
+  var SH_FLING = 350, SH_PART = 0.35;
+
+  function wireSheet(id) {
+    var sheet = $(id), body = sheet.querySelector(".sheetbody"), sd = null;
+    sheet.addEventListener("click", function (e) { if (e.target === sheet) closeSheet(id); });
+    if (!body) return;
+
+    function stop(e, cancelled) {
+      if (!sd || (e && e.pointerId !== sd.id)) return;
+      var d = sd;
+      sd = null;
+      if (!d.lock) return;
+      try { body.releasePointerCapture(d.id); } catch (err) { /* already gone */ }
+      swallowClick();
+      var s = d.s, dt = (s[s.length - 1].t - s[0].t) / 1000;
+      var v = dt > 0.004 ? (s[s.length - 1].y - s[0].y) / dt : 0;
+      if (!cancelled && (v > SH_FLING || d.dy > body.offsetHeight * SH_PART)) {
+        // The closing keyframe reads the transform it finds as its start, so the
+        // sheet carries on down from wherever the finger left it.
+        closeSheet(id);
+        return;
+      }
+      body.classList.add("snap");
+      body.style.transform = "";
+    }
+
+    body.addEventListener("pointerdown", function (e) {
+      if (sd || !e.isPrimary || noDragIn(e.target)) return;
+      var onGrab = e.target === body ||
+        (e.target.classList && e.target.classList.contains("grabber"));
+      if (body.scrollTop > 0 && !onGrab) return;
+      sd = { id: e.pointerId, x: e.clientX, y: e.clientY, lock: false, dy: 0,
+        s: [{ t: now(), y: e.clientY }] };
+    });
+
+    body.addEventListener("pointermove", function (e) {
+      if (!sd || e.pointerId !== sd.id) return;
+      var dy = e.clientY - sd.y, dx = e.clientX - sd.x;
+      if (!sd.lock) {
+        if (Math.abs(dx) > SLOP && Math.abs(dx) > Math.abs(dy)) { sd = null; return; }
+        if (Math.abs(dy) <= SLOP) return;
+        sd.lock = true;
+        // Re-datum on the lock point so the sheet does not jump the slop distance.
+        sd.y = e.clientY; dy = 0;
+        body.classList.remove("snap");
+        try { body.setPointerCapture(sd.id); } catch (err) { /* not fatal */ }
+      }
+      sd.dy = dy;
+      var s = sd.s;
+      s.push({ t: now(), y: e.clientY });
+      while (s.length > 2 && s[s.length - 1].t - s[0].t > 100) s.shift();
+      // Up is not a dismissal, so it is answered with a third of itself.
+      body.style.transform = "translateY(" + (dy > 0 ? dy : dy / 3) + "px)";
+    });
+
+    // Pointer events are dispatched before the touch that caused them, so by the
+    // time this runs the drag has already decided. iOS needs the touch itself
+    // cancelled or it takes the gesture for a scroll and sends a pointercancel
+    // into the middle of the drag.
+    body.addEventListener("touchmove", function (e) {
+      if (sd && sd.lock && e.cancelable) e.preventDefault();
+    }, { passive: false });
+
+    body.addEventListener("pointerup", function (e) { stop(e, false); });
+    body.addEventListener("pointercancel", function (e) { stop(e, true); });
+  }
+
   ["addsheet", "setsheet", "watchsheet", "exsheet", "exeditsheet", "explainsheet", "picksheet",
    "settingssheet", "colsheet", "renamesheet", "swapsheet", "pumpysheet", "capsheet"]
-    .forEach(function (id) {
-      $(id).addEventListener("click", function (e) { if (e.target === $(id)) closeSheet(id); });
-    });
+    .forEach(wireSheet);
 
   function overlayShowing() {
     if ($("detail").classList.contains("open")) return true;
@@ -5711,6 +5791,7 @@ export const APP = String.raw`
     load().then(function () { b.classList.remove("spin"); });
   };
   $("settingsbtn").onclick = openSettings;
+  $("setclose").onclick = function () { closeSheet("settingssheet"); };
   $("copykey").onclick = function () {
     var t = $("setkey").textContent;
     if (navigator.clipboard) navigator.clipboard.writeText(t);

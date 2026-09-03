@@ -599,10 +599,25 @@
     align-items: flex-end; -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
   .sheet.open { display: flex; animation: fadein var(--t-2) var(--e-soft); }
   @keyframes fadein { from { opacity: 0; } }
-  .sheetbody { width: 100%; max-height: 86vh; overflow-y: auto; background: var(--paper);
+  /* 88% of the frame, so an eighth of the screen is always scrim you can tap —
+     against the layout viewport this was 86vh of a box whose own top was already
+     off screen, and the Settings sheet came out with nothing tappable left. The
+     bounce is off because the drag below owns what happens at the top edge. */
+  .sheetbody { position: relative; width: 100%; max-height: 88%; overflow-y: auto;
+    overscroll-behavior: none; background: var(--paper);
     background-image: var(--grain); border-radius: 26px 26px 0 0; box-shadow: var(--sh-up);
     padding: 8px 20px calc(26px + env(safe-area-inset-bottom));
     animation: sheetup .38s var(--e-spring); }
+  /* Only on for the settle: the drag itself is 1:1 and must not be timed. */
+  .sheetbody.snap { transition: transform var(--t-3) var(--e-spring); }
+  /* The tallest sheet is the one with the least scrim left over, so it says how to
+     leave out loud as well as in a gesture. */
+  .sheetx { position: absolute; top: 6px; right: 10px; width: 44px; height: 44px;
+    display: flex; align-items: center; justify-content: center; border: none;
+    background: none; color: var(--muted); border-radius: 14px;
+    transition: background-color var(--t-1) var(--e-out); }
+  .sheetx .ic { width: 20px; height: 20px; }
+  .sheetx:active { background: var(--sand); }
   @keyframes sheetup { from { transform: translateY(100%); } }
   .sheet.closing { display: flex; pointer-events: none;
     animation: fadeout var(--t-2) var(--e-soft) both; }
@@ -1206,6 +1221,7 @@
       animation: fadeout var(--t-1) var(--e-soft) both; }
     /* The staggered summary is :nth-child, which outranks the rule above it. */
     .sumfigs .setpill:nth-child(n) { animation-delay: 0ms; }
+    .sheetbody.snap, .sheetx { transition: none; }
     .sheetbody, .sheet.closing .sheetbody, .setpill.just, .setpill.just.pr,
     .empty .big, .thumbwrap.pending .noimg, .thumbwrap.failed .noimg,
     .thumbwrap.loading::after, .thumbwrap.pending::after { animation: none; }
@@ -1592,6 +1608,7 @@
 
 <div class="sheet" id="settingssheet"><div class="sheetbody">
   <div class="grabber"></div>
+  <button class="sheetx" id="setclose" aria-label="Close settings"><svg class="ic"><use href="#i-x"></use></svg></button>
   <h2>Settings</h2>
   <div class="kv"><span class="k">Signed in as</span><span class="v" id="setemail">—</span></div>
   <div class="kv hide" id="setprovrow"><span class="k">Sign-in method</span><span class="v" id="setprov">—</span></div>
@@ -6283,9 +6300,11 @@
   var sheetNav = false, sheetBack = 0;
 
   function openSheet(id) {
-    var n = $(id);
+    var n = $(id), b = n.querySelector(".sheetbody");
     clearTimeout(closeTimers[id]);
     n.classList.remove("closing");
+    // Whatever a drag left behind, so a sheet never opens half pushed away.
+    if (b) { b.classList.remove("snap"); b.style.transform = ""; }
     n.classList.add("open");
     if (!sheetNav) { sheetNav = true; history.pushState({ sheet: id }, ""); }
   }
@@ -6311,11 +6330,89 @@
     }
   }
 
+  // ---------- pushing a sheet away ----------
+  //
+  // Every sheet has worn a grabber since the day it was drawn, and until now the
+  // grabber was a picture of a gesture: tapping the scrim closed a sheet, and a
+  // sheet tall enough to cover its own scrim could not be closed at all —
+  // installed to the home screen there is no back swipe to fall back on either.
+  //
+  // Apple's rule is the one worth copying. The drag is offered only where the
+  // sheet's own scroller is already at its top or the finger is on the grabber, so
+  // a list inside a sheet still scrolls; from there the sheet follows the finger
+  // 1:1, resists upwards rather than travelling, and a flick or a third of its own
+  // height sends it away through closeSheet, which is what hands the history entry
+  // back. Anything less goes home on the spring.
+  var SH_FLING = 350, SH_PART = 0.35;
+
+  function wireSheet(id) {
+    var sheet = $(id), body = sheet.querySelector(".sheetbody"), sd = null;
+    sheet.addEventListener("click", function (e) { if (e.target === sheet) closeSheet(id); });
+    if (!body) return;
+
+    function stop(e, cancelled) {
+      if (!sd || (e && e.pointerId !== sd.id)) return;
+      var d = sd;
+      sd = null;
+      if (!d.lock) return;
+      try { body.releasePointerCapture(d.id); } catch (err) { /* already gone */ }
+      swallowClick();
+      var s = d.s, dt = (s[s.length - 1].t - s[0].t) / 1000;
+      var v = dt > 0.004 ? (s[s.length - 1].y - s[0].y) / dt : 0;
+      if (!cancelled && (v > SH_FLING || d.dy > body.offsetHeight * SH_PART)) {
+        // The closing keyframe reads the transform it finds as its start, so the
+        // sheet carries on down from wherever the finger left it.
+        closeSheet(id);
+        return;
+      }
+      body.classList.add("snap");
+      body.style.transform = "";
+    }
+
+    body.addEventListener("pointerdown", function (e) {
+      if (sd || !e.isPrimary || noDragIn(e.target)) return;
+      var onGrab = e.target === body ||
+        (e.target.classList && e.target.classList.contains("grabber"));
+      if (body.scrollTop > 0 && !onGrab) return;
+      sd = { id: e.pointerId, x: e.clientX, y: e.clientY, lock: false, dy: 0,
+        s: [{ t: now(), y: e.clientY }] };
+    });
+
+    body.addEventListener("pointermove", function (e) {
+      if (!sd || e.pointerId !== sd.id) return;
+      var dy = e.clientY - sd.y, dx = e.clientX - sd.x;
+      if (!sd.lock) {
+        if (Math.abs(dx) > SLOP && Math.abs(dx) > Math.abs(dy)) { sd = null; return; }
+        if (Math.abs(dy) <= SLOP) return;
+        sd.lock = true;
+        // Re-datum on the lock point so the sheet does not jump the slop distance.
+        sd.y = e.clientY; dy = 0;
+        body.classList.remove("snap");
+        try { body.setPointerCapture(sd.id); } catch (err) { /* not fatal */ }
+      }
+      sd.dy = dy;
+      var s = sd.s;
+      s.push({ t: now(), y: e.clientY });
+      while (s.length > 2 && s[s.length - 1].t - s[0].t > 100) s.shift();
+      // Up is not a dismissal, so it is answered with a third of itself.
+      body.style.transform = "translateY(" + (dy > 0 ? dy : dy / 3) + "px)";
+    });
+
+    // Pointer events are dispatched before the touch that caused them, so by the
+    // time this runs the drag has already decided. iOS needs the touch itself
+    // cancelled or it takes the gesture for a scroll and sends a pointercancel
+    // into the middle of the drag.
+    body.addEventListener("touchmove", function (e) {
+      if (sd && sd.lock && e.cancelable) e.preventDefault();
+    }, { passive: false });
+
+    body.addEventListener("pointerup", function (e) { stop(e, false); });
+    body.addEventListener("pointercancel", function (e) { stop(e, true); });
+  }
+
   ["addsheet", "setsheet", "watchsheet", "exsheet", "exeditsheet", "explainsheet", "picksheet",
    "settingssheet", "colsheet", "renamesheet", "swapsheet", "pumpysheet", "capsheet"]
-    .forEach(function (id) {
-      $(id).addEventListener("click", function (e) { if (e.target === $(id)) closeSheet(id); });
-    });
+    .forEach(wireSheet);
 
   function overlayShowing() {
     if ($("detail").classList.contains("open")) return true;
@@ -7340,6 +7437,7 @@
     load().then(function () { b.classList.remove("spin"); });
   };
   $("settingsbtn").onclick = openSettings;
+  $("setclose").onclick = function () { closeSheet("settingssheet"); };
   $("copykey").onclick = function () {
     var t = $("setkey").textContent;
     if (navigator.clipboard) navigator.clipboard.writeText(t);

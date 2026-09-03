@@ -581,10 +581,25 @@ export const STYLE = String.raw`<style>
     align-items: flex-end; -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
   .sheet.open { display: flex; animation: fadein var(--t-2) var(--e-soft); }
   @keyframes fadein { from { opacity: 0; } }
-  .sheetbody { width: 100%; max-height: 86vh; overflow-y: auto; background: var(--paper);
+  /* 88% of the frame, so an eighth of the screen is always scrim you can tap —
+     against the layout viewport this was 86vh of a box whose own top was already
+     off screen, and the Settings sheet came out with nothing tappable left. The
+     bounce is off because the drag below owns what happens at the top edge. */
+  .sheetbody { position: relative; width: 100%; max-height: 88%; overflow-y: auto;
+    overscroll-behavior: none; background: var(--paper);
     background-image: var(--grain); border-radius: 26px 26px 0 0; box-shadow: var(--sh-up);
     padding: 8px 20px calc(26px + env(safe-area-inset-bottom));
     animation: sheetup .38s var(--e-spring); }
+  /* Only on for the settle: the drag itself is 1:1 and must not be timed. */
+  .sheetbody.snap { transition: transform var(--t-3) var(--e-spring); }
+  /* The tallest sheet is the one with the least scrim left over, so it says how to
+     leave out loud as well as in a gesture. */
+  .sheetx { position: absolute; top: 6px; right: 10px; width: 44px; height: 44px;
+    display: flex; align-items: center; justify-content: center; border: none;
+    background: none; color: var(--muted); border-radius: 14px;
+    transition: background-color var(--t-1) var(--e-out); }
+  .sheetx .ic { width: 20px; height: 20px; }
+  .sheetx:active { background: var(--sand); }
   @keyframes sheetup { from { transform: translateY(100%); } }
   .sheet.closing { display: flex; pointer-events: none;
     animation: fadeout var(--t-2) var(--e-soft) both; }
@@ -1188,6 +1203,7 @@ export const STYLE = String.raw`<style>
       animation: fadeout var(--t-1) var(--e-soft) both; }
     /* The staggered summary is :nth-child, which outranks the rule above it. */
     .sumfigs .setpill:nth-child(n) { animation-delay: 0ms; }
+    .sheetbody.snap, .sheetx { transition: none; }
     .sheetbody, .sheet.closing .sheetbody, .setpill.just, .setpill.just.pr,
     .empty .big, .thumbwrap.pending .noimg, .thumbwrap.failed .noimg,
     .thumbwrap.loading::after, .thumbwrap.pending::after { animation: none; }
