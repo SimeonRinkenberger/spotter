@@ -3774,7 +3774,13 @@ export const APP = String.raw`
     hit.appendChild(hitSlot);
     v.appendChild(hit);
     loadCatalog().then(function () {
-      if (state.view !== "progress") return;
+      // Whether this render was superseded, not whether Progress is the page being
+      // looked at. warmPages() draws this page while the Library is still on
+      // screen, so the old test was false exactly when the first draw happened and
+      // the figure never arrived at all — and arriving later does not redraw a page
+      // that is already drawn. A detached slot is the honest question: it means
+      // some later render replaced the box this answer was for.
+      if (!hitSlot.isConnected) return;
       var entries = [];
       weekLogs.forEach(function (l) { (l.entries || []).forEach(function (e) { entries.push(e); }); });
       var r = weekHits(entries);
