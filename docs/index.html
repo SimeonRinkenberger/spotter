@@ -6472,8 +6472,12 @@
       // Settings is selecting it, not throwing the sheet away.
       if (e.pointerType !== "touch" && e.pointerType !== "pen") return;
       if (sd || !e.isPrimary || noDragIn(e.target)) return;
-      var grab = e.target === body || (e.target.classList && e.target.classList.contains("grabber"));
-      if (body.scrollTop > 0 && !grab) return;
+      // Below the header band the list has the gesture whenever it has somewhere
+      // to scroll; the top 44px — the grabber and the air around it — is the
+      // handle, and pulls the sheet down however far the list has been scrolled.
+      // Asked of the finger's position rather than what it landed on, because the
+      // gaps between rows are the sheet body itself and a drag there is a scroll.
+      if (body.scrollTop > 0 && e.clientY - body.getBoundingClientRect().top > 44) return;
       sd = { id: e.pointerId, x: e.clientX, y: e.clientY, lock: false, dy: 0, s: [] };
     });
 
