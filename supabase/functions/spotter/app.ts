@@ -781,12 +781,17 @@ export const APP = String.raw`
     // The people this library is made of. Three at most, and none with a single card:
     // a chip that narrows the grid to one workout saves nobody a scroll. By count,
     // then by name, so a tie does not reshuffle the row between renders.
-    Object.keys(byAuth).filter(function (a) { return byAuth[a].n > 1; })
+    var byKeys = Object.keys(byAuth).filter(function (a) { return byAuth[a].n > 1; })
       .sort(function (a, b) { return byAuth[b].n - byAuth[a].n || (a < b ? -1 : 1); })
-      .slice(0, 3)
-      .forEach(function (a) {
-        list.push({ key: "by:" + a, label: "@" + byAuth[a].label, n: byAuth[a].n });
-      });
+      .slice(0, 3);
+    // A handle tapped on a card can belong to someone under that floor or outside
+    // the top three, and a filter with no chip to account for it is a library that
+    // looks broken and cannot be switched off. Pin the active one in.
+    var by = isByFilter(state.filter) ? state.filter.slice(3) : null;
+    if (by && byKeys.indexOf(by) < 0) byKeys.push(by);
+    byKeys.forEach(function (a) {
+      list.push({ key: "by:" + a, label: "@" + byAuth[a].label, n: byAuth[a].n });
+    });
     // Collections sit beside Favorites: the same idea, just more of them.
     state.collections.forEach(function (c) {
       list.push({ key: "col:" + c.id, label: colLabel(c), n: colCount(c.id) });
