@@ -4884,7 +4884,8 @@
         var key = ymd(d);
         var card = el("div", "daycard" + (key === todayStr ? " today" : ""));
         var head = el("div", "dayhead");
-        head.appendChild(el("div", "dayname", names[i] + " " + d.getDate()));
+        var label = names[i] + " " + d.getDate();
+        head.appendChild(el("div", "dayname", label));
         var didLog = (state.planLogs || []).some(function (l) {
           return l.started_at && ymd(new Date(l.started_at)) === key;
         });
@@ -4915,7 +4916,7 @@
         });
 
         var add = el("button", "planadd", "+ Add a workout");
-        add.onclick = function () { openPicker(key); };
+        add.onclick = function () { openPicker(key, label); };
         card.appendChild(add);
         v.appendChild(card);
       })(i);
@@ -4928,10 +4929,12 @@
     viewIn(v);
   }
 
-  function openPicker(day) {
+  // Named the way the card that opened it names the day — "Add to Thursday 3",
+  // not the yyyy-mm-dd key the row is stored under.
+  function openPicker(day, label) {
     var list = $("picklist");
     list.innerHTML = "";
-    $("picktitle").textContent = "Add to " + day;
+    $("picktitle").textContent = "Add to " + (label || day);
     if (!state.workouts.length) {
       list.appendChild(el("p", "lede", "Save a workout first, then you can plan it."));
     }
