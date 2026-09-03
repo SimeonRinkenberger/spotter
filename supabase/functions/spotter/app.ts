@@ -5518,17 +5518,16 @@ export const APP = String.raw`
   var ptrStart = 0, ptrPulling = false;
 
   function refreshActive() {
-    var v = VIEWS[idx];
-    if (v === "plan") return quietly(loadPlan(true));
-    if (v === "progress") { state.logs = null; return quietly(loadLogs().then(renderProgress)); }
-    if (v === "pumpy") { pumpy.loaded = false; loadPumpy(); return null; }
     state.logs = null;
     return load();
   }
 
   pagesEl.addEventListener("touchstart", function (e) {
     var pg = activePage();
-    if (!pg || pg.scrollTop > 2 || overlayShowing()) { ptrPulling = false; return; }
+    // Library only: it is the one page whose content arrives from outside — a
+    // share from another device, a socket that dropped. Plan, Progress and Pumpy
+    // refresh themselves on arrival and have nothing a pull could add.
+    if (idx !== 0 || !pg || pg.scrollTop > 2 || overlayShowing()) { ptrPulling = false; return; }
     ptrStart = e.touches[0].clientY;
     ptrPulling = true;
   }, { passive: true });
