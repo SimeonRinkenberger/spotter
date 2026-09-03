@@ -3684,14 +3684,32 @@ export const APP = String.raw`
     return ymd(mondayOf(new Date(iso)));
   }
 
-  // The three headline figures count up the first time Progress is drawn and never
-  // again: a number that re-counts on every swipe back is a fidget, not a result.
-  // Text does not interpolate, so this is a frame loop rather than a transition —
-  // --t-4 and cubic ease-out, the curve everything else here arrives on.
+  // The three headline figures count up the first time Progress is LOOKED AT, and
+  // never again: a number that re-counts on every swipe back is a fidget, not a
+  // result.
+  //
+  // It belongs to the arrival rather than to the render, and both halves of that
+  // matter. warmPages() draws this page in idle time a few hundred milliseconds
+  // after boot, while the Library is still on screen — counting there spends the
+  // whole thing on nobody. And arriving later does NOT redraw a page that is
+  // already drawn and still current, so hanging it off renderProgress alone means
+  // it never runs at all. countStats() is therefore called from both, and guards
+  // itself: it reads the figures back off the page it is animating.
   var statsCounted = false;
 
+  function countStats() {
+    if (statsCounted || state.view !== "progress") return;
+    var nodes = document.querySelectorAll("#progressview .stat .v");
+    if (!nodes.length) return;
+    statsCounted = true;
+    if (lessMotion()) return;
+    for (var i = 0; i < nodes.length; i++) countUp(nodes[i], parseInt(nodes[i].textContent, 10) || 0);
+  }
+
+  // Text does not interpolate, so this is a frame loop rather than a transition —
+  // --t-4 and cubic ease-out, the curve everything else here arrives on.
   function countUp(node, to) {
-    if (statsCounted || lessMotion() || !(to > 0)) { node.textContent = String(to); return; }
+    if (!(to > 0)) return;
     var t0 = 0;
     node.textContent = "0";
     requestAnimationFrame(function frame(t) {
@@ -3737,13 +3755,10 @@ export const APP = String.raw`
      [thisWeek, "This week"],
      [logs.length, "Sessions"]].forEach(function (s) {
       var c = el("div", "stat");
-      var val = el("div", "v", String(s[0]));
-      countUp(val, s[0]);
-      c.appendChild(val);
+      c.appendChild(el("div", "v", String(s[0])));
       c.appendChild(el("div", "k", s[1]));
       row.appendChild(c);
     });
-    statsCounted = true;
     v.appendChild(row);
 
     // What you've hit this week, from the sessions actually logged: each logged
@@ -3890,6 +3905,9 @@ export const APP = String.raw`
     // The session list, under the numbers it feeds. One tab, one scroll.
     renderHistoryInto(v, logs);
     viewIn(v);
+    // For the arrival that had to wait for its own read: the page was empty when
+    // arrive() ran and there was nothing to count yet.
+    countStats();
   }
 
   function renderHistoryInto(v, logs) {
@@ -4955,7 +4973,7 @@ export const APP = String.raw`
       if (!drawn.progress || !state.logs) {
         drawn.progress = true;
         quietly(loadLogs().then(renderProgress));
-      }
+      } else countStats();
     } else if (v === "pumpy") {
       loadPumpy();
     }
