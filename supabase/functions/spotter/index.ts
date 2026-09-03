@@ -7774,13 +7774,25 @@ Deno.serve(async (req: Request) => {
       const body = await req.json().catch(() => ({}));
       const exercise = String(body?.exercise ?? "").slice(0, 120).trim();
       if (!exercise) return json({ status: "error", message: "No exercise given." }, 400, cors);
+      // The creator's own line about this movement, when the card has one. It is the
+      // most specific thing anyone knows about how THIS video wants the exercise
+      // done, so the model is told not to argue with it — a cue like "drive through
+      // the heels" is coaching, not an error to correct.
+      const quote = String(body?.quote ?? "").slice(0, 300).trim();
+      const source = String(body?.source ?? "").slice(0, 20).trim();
+      const canonical = String(body?.canonical_id ?? "").slice(0, 80).trim();
       const system =
         "You are a calm, experienced personal trainer. In 3-5 short sentences, explain how to perform the " +
         "exercise with good form: the setup, the movement, what to feel, and the single most common mistake. " +
-        "Plain language, no lists, no emojis. If the movement is risky for beginners, say so briefly.";
+        "Plain language, no lists, no emojis. If the movement is risky for beginners, say so briefly." +
+        (quote
+          ? " If the creator's own words are given, do not contradict them; explain the movement they described."
+          : "");
       const { helpers } = await countsFor(userId);
       return await aiText(system, `Exercise: ${exercise}` +
-        (body?.title ? `\nFrom the workout: ${String(body.title).slice(0, 120)}` : ""),
+        (canonical ? `\nCatalog id: ${canonical}` : "") +
+        (body?.title ? `\nFrom the workout: ${String(body.title).slice(0, 120)}` : "") +
+        (quote ? `\nThe creator said${source ? ` (${source})` : ""}: ${quote}` : ""),
         cors, userId, "explain", helpers);
     }
 

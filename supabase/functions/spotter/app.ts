@@ -1314,7 +1314,9 @@ export const APP = String.raw`
 
   var current = null;
 
-  function embedNode(w) {
+  // start is a second into the video, and only YouTube can honour it: TikTok's
+  // embed takes no parameters and Instagram will not name the media file to anyone.
+  function embedNode(w, start) {
     var wrap, frame;
     if (w.platform === "instagram") {
       wrap = el("div", "embedwrap vertical");
@@ -1330,7 +1332,8 @@ export const APP = String.raw`
     } else if (w.platform === "youtube") {
       wrap = el("div", "embedwrap wide");
       frame = el("iframe");
-      frame.src = "https://www.youtube.com/embed/" + String(w.shortcode).replace(/^yt-/, "");
+      frame.src = "https://www.youtube.com/embed/" + String(w.shortcode).replace(/^yt-/, "") +
+        (start ? "?start=" + start + "&autoplay=1" : "");
       frame.setAttribute("allow", "accelerometer; encrypted-media; picture-in-picture; fullscreen");
       frame.setAttribute("allowfullscreen", "");
     } else {
@@ -1575,10 +1578,8 @@ export const APP = String.raw`
         // creator's wording, and the difference matters when they come back to it.
         if (ex.added_by_user) name.appendChild(el("div", "exmine", "Added by you"));
         else if (ex.edited_by_user) name.appendChild(el("div", "exmine", "Edited by you"));
-        // The line of the caption this exercise was read from, as a hover title.
-        // Free, and it turns "where did this come from?" into a question the card
-        // can answer without a new screen.
-        if (ex.evidence && ex.evidence.quote) row.title = "From the source: " + ex.evidence.quote;
+        // The source line used to be a hover title here — invisible on a phone, and
+        // silent about where it came from. The Explain sheet says all of it now.
         row.appendChild(name);
         var dose = doseText(ex);
         if (dose) row.appendChild(el("div", "exdose", dose));
@@ -1592,7 +1593,7 @@ export const APP = String.raw`
         row.appendChild(sw);
         var help = el("button", "exhelp", "?");
         help.setAttribute("aria-label", "How to do this exercise");
-        help.onclick = function (e) { e.stopPropagation(); explain(ex.name, w.title); };
+        help.onclick = function (e) { e.stopPropagation(); explain(ex, w); };
         row.appendChild(help);
         sect.appendChild(row);
       });
@@ -2843,29 +2844,162 @@ export const APP = String.raw`
     return out;
   }
 
-  // ---------- AI helpers ----------
+  // ---------- how to do this ----------
+  //
+  // Three answers in the order they earn: what the creator said, a drawing of the
+  // movement, then the AI — which is told the quote so it cannot contradict it.
 
   var expCache = {};
+  var expKey = "";   // what the open sheet is about; every async fill checks it
+  var EXFAIL = "Could not get an explanation just now. Try again in a moment.";
 
-  function explain(name, title) {
+  // Where the quote came from. The second string is used when verified is false —
+  // the line could not be traced back to a text we hold, so it names Spotter as the
+  // reader rather than quoting. Softened, not hidden: an unchecked quote is still
+  // the most specific thing here.
+  var SAID = {
+    caption: ["From the caption", "Spotter read this in the caption"],
+    description: ["From the description", "Spotter read this in the description"],
+    transcript: ["What the creator said", "Spotter heard this in the video"],
+    chapters: ["From the chapter list", "Spotter read this in the chapters"],
+    carousel: ["From a slide", "Spotter read this off a slide"],
+    video: ["Read off the screen", "Spotter read this off the screen"],
+    heuristic: ["From the source", "Spotter read this in the source"]
+  };
+
+  // The second of the video this line was read at, when there is one.
+  function bitOf(ex) {
+    var t = ex && ex.evidence ? ex.evidence.t : null;
+    if (typeof t !== "number" || !(t >= 0 && t < 86400)) return null;
+    return Math.round(t);
+  }
+
+  // A button on YouTube only: that is the one embed that starts where it is asked
+  // to, and a button that could only fail is worse than no button.
+  function bitBtn(w, ex) {
+    var t = bitOf(ex);
+    if (t === null || !w || w.platform !== "youtube") return null;
+    var b = icon(el("button", "chip"), "play", "Watch this bit");
+    b.onclick = function () { watchBit(w, t); };
+    return b;
+  }
+
+  function saidNode(ex, w) {
+    var ev = ex.evidence;
+    var quote = ev && ev.quote ? String(ev.quote).trim() : "";
+    var pair = ev ? SAID[ev.source] : null;
+    if (!quote || !pair) return null;
+    var box = el("div", "said"), t = bitOf(ex);
+    var lab = pair[ev.verified === false ? 1 : 0];
+    if (t !== null) lab += " · at " + Math.floor(t / 60) + ":" + String(t % 60).padStart(2, "0");
+    box.appendChild(el("div", "saidlab", lab));
+    box.appendChild(el("div", "saidq", quote));
+    var b = bitBtn(w, ex);
+    if (b) box.appendChild(b);
+    return box;
+  }
+
+  // The clip, at the second the line came from. In Workout Mode the video lives in
+  // the clip sheet, so that opens; from a card the detail's own embed reloads.
+  function watchBit(w, t) {
+    var em = embedNode(w, t);
+    if (!em) return;
+    if (wo && wo.workout && wo.workout.id === w.id) {
+      $("watchbody").innerHTML = "";
+      $("watchbody").appendChild(em);
+      // Open before close: the sheet layer's one history entry survives a handover.
+      openSheet("watchsheet");
+    } else if ($("dinner").firstChild) {
+      $("dinner").replaceChild(em, $("dinner").firstChild);
+    }
+    closeSheet("explainsheet");
+  }
+
+  // The demo columns, read once and only when a sheet asks. Apart from loadCatalog
+  // on purpose: before the demos migration this select fails, which should cost one
+  // sheet its drawing rather than every card its muscle map. An empty answer caches
+  // like any other — columns do not appear mid-session.
+  var demoMap = null, demoLoading = null;
+
+  function loadDemos() {
+    if (demoMap) return Promise.resolve(demoMap);
+    if (!demoLoading) {
+      demoLoading = sb.from("exercise_catalog")
+        .select("id,demo_url,demo_kind,demo_credit,demo_poster")
+        .not("demo_url", "is", null).limit(400).then(function (r) {
+          demoMap = {};
+          (r.data || []).forEach(function (e) { demoMap[e.id] = e; });
+          return demoMap;
+        });
+    }
+    return demoLoading;
+  }
+
+  // A fixed 4:3 slot so the sheet does not jump when the image lands, and no slot
+  // at all when there is nothing for it.
+  function demoNode(d, name) {
+    var fig = el("figure", "demo"), slot = el("div", "demoslot");
+    function im(src, cls, alt) {
+      var i = el("img", cls);
+      i.src = src; i.alt = alt; i.loading = "lazy"; i.decoding = "async";
+      slot.appendChild(i);
+      return i;
+    }
+    // A 404 is not worth a broken frame: take the figure out, leave the rest.
+    im(d.demo_url, null, "Drawing of " + name).onerror = function () {
+      if (fig.parentNode) fig.parentNode.removeChild(fig);
+    };
+    // Start and finish of one rep, crossed slowly, so its shape reads.
+    if (d.demo_kind === "pair" && d.demo_poster) im(d.demo_poster, "b", "");
+    fig.appendChild(slot);
+    // CC BY-SA requires the line, and whoever drew this deserves it.
+    if (d.demo_credit) fig.appendChild(el("figcaption", "democredit", d.demo_credit));
+    return fig;
+  }
+
+  function explain(ex, w) {
+    var name = ex.name, title = w ? (w.title || "") : "";
+    var ev = ex.evidence || null;
+    var quote = ev && ev.quote ? String(ev.quote).trim() : "";
+    // Keyed by name AND quote: explained against the creator's own cue it is a
+    // different answer, and the generic one would drop what made this worth opening.
+    var key = name + "\n" + quote;
+    expKey = key;
     $("explaintitle").textContent = name;
+    var pre = $("explainpre");
+    pre.innerHTML = "";
+    var s = saidNode(ex, w);
+    if (s) pre.appendChild(s);
     // Spotter's pending vocabulary is reading, listening, watching. "Thinking" is
     // a chatbot's word for the same wait and belongs to a different app.
-    $("explaintext").textContent = expCache[name] || "Reading up on it…";
+    $("explaintext").textContent = expCache[key] || "Reading up on it…";
     // Open before close: the swap sheet takes over the sheet layer's one history
     // entry, and closing first would hand that entry back mid-handover.
     $("swapgo").onclick = function () { openSwap(name, title); closeSheet("explainsheet"); };
     openSheet("explainsheet");
-    if (expCache[name]) return;
-    api("explain", { method: "POST", body: JSON.stringify({ exercise: name, title: title || "" }) })
-      .then(function (r) {
-        var text = r.status === "ok" ? r.text
-          : (r.message || "Could not get an explanation just now. Try again in a moment.");
-        expCache[name] = r.status === "ok" ? text : null;
-        if ($("explaintitle").textContent === name) $("explaintext").textContent = text;
-      }).catch(function () {
-        $("explaintext").textContent = "Could not get an explanation just now. Try again in a moment.";
+
+    // No catalog match, no drawing: it illustrates a named movement.
+    if (ex.canonical_id) {
+      loadDemos().then(function (m) {
+        var d = m[ex.canonical_id];
+        if (d && expKey === key) pre.appendChild(demoNode(d, name));
       });
+    }
+
+    if (expCache[key]) return;
+    api("explain", {
+      method: "POST",
+      body: JSON.stringify({
+        exercise: name, title: title, quote: quote,
+        source: ev ? ev.source : null, canonical_id: ex.canonical_id || null
+      })
+    }).then(function (r) {
+      var text = r.status === "ok" ? r.text : (r.message || EXFAIL);
+      expCache[key] = r.status === "ok" ? text : null;
+      if (expKey === key) $("explaintext").textContent = text;
+    }).catch(function () {
+      if (expKey === key) $("explaintext").textContent = EXFAIL;
+    });
   }
 
   // ---------- swap or modify ----------
@@ -3213,7 +3347,7 @@ export const APP = String.raw`
       acts.appendChild(watch);
     }
     var help = icon(el("button", "chip"), "help", "How to do this");
-    help.onclick = function () { explain(s.ex.name, wo.workout.title); };
+    help.onclick = function () { explain(s.ex, wo.workout); };
     acts.appendChild(help);
     var swapChip = icon(el("button", "chip"), "swap", "Swap or modify");
     swapChip.onclick = function () { openSwap(s.ex.name, wo.workout.title); };
@@ -3625,6 +3759,10 @@ export const APP = String.raw`
     var body = $("watchbody");
     body.innerHTML = "";
     body.appendChild(em);
+    // The clip opens at the top; the exercise on screen was read at a particular
+    // second of it, so offer that too. Emptied with the iframe on close.
+    var s = wo.screens[wo.i], b = s && bitBtn(wo.workout, s.ex);
+    if (b) body.appendChild(b);
     // The wake lock is kept: a screen asleep during a form check is the complaint.
     openSheet("watchsheet");
   }

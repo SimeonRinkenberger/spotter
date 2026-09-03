@@ -340,9 +340,13 @@ export const MARKUP_BODY = String.raw`</head>
   <button class="danger" id="exeditdelete">Not a real exercise — remove it</button>
 </div></div>
 
+<!-- Three answers, in the order they earn: what the creator said, a drawing of the
+     movement, then the AI. #explainpre holds the first two and stays empty when
+     there is nothing honest to put in it. -->
 <div class="sheet" id="explainsheet"><div class="sheetbody">
   <div class="grabber"></div>
   <h2 id="explaintitle">How to do it</h2>
+  <div id="explainpre"></div>
   <div class="aitext" id="explaintext">Reading up on it&hellip;</div>
   <div class="btnrow"><button class="btn ghost" id="swapgo"><svg class="ic"><use href="#i-swap"></use></svg>Swap or modify</button></div>
 </div></div>
@@ -449,7 +453,10 @@ export const MARKUP_BODY = String.raw`</head>
        because an address in a public page is an address that gets harvested. -->
   <div class="setnote foot"><span id="setver">Spotter</span> ·
     <a href="whats-new.html">What&rsquo;s new</a> · Something wrong?
-    <a href="https://github.com/SimeonRinkenberger/spotter/issues" target="_blank" rel="noopener">Tell me</a></div>
+    <a href="https://github.com/SimeonRinkenberger/spotter/issues" target="_blank" rel="noopener">Tell me</a>
+    <!-- Each drawing carries its own author under it; this is the standing line. -->
+    <span class="credit">Some exercise illustrations from wger contributors,
+    <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener">CC BY-SA 4.0</a>.</span></div>
 </div></div>
 
 <div id="toast"></div>
