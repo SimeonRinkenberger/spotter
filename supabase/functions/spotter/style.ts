@@ -666,6 +666,10 @@ export const STYLE = String.raw`<style>
     pointer-events: none; transition: opacity var(--t-2), transform var(--t-2) var(--e-out);
     box-shadow: var(--sh-lg); max-width: 88vw; text-align: center; }
   #toast.show { opacity: 1; transform: translate(-50%, 0); }
+  /* Workout Mode has no tab bar to clear but a rest strip lands where the toast
+     does: 76px of bottom bar, 48px of strip, 12px of air. "New best" used to sit
+     on +15 s and Skip for three seconds. */
+  #workout.open ~ #toast { bottom: calc(136px + env(safe-area-inset-bottom)); }
   #toast.tappable { pointer-events: auto; cursor: pointer; }
   /* The one toast the landing ever shows — a shared link waiting for sign-in —
      belongs above the fold, not across the sign-in card. There is no tab bar here
@@ -1058,6 +1062,13 @@ export const STYLE = String.raw`<style>
     padding: 8px 0 10px;
     background: color-mix(in srgb, var(--paper) 90%, transparent);
     -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
+  /* Keyboard up: #app follows the visual viewport but .tabbar, fixed to the layout
+     one, is behind the keys — so the composer's clearance for the bar is a margin
+     below nothing. Sit it on the app's own bottom edge and take the bar out of the
+     way, as a native chat app does. */
+  body.kb .composer { bottom: 0; margin-bottom: 0; }
+  body.kb .page { padding-bottom: 24px; }
+  body.kb .tabbar { visibility: hidden; }
   .composerrow { display: flex; gap: 8px; align-items: flex-end; }
   .composer textarea { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 16px; padding: 12px 14px;
     font-size: 16px; line-height: 1.4; background: var(--card); color: var(--ink); outline: none; resize: none;

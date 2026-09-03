@@ -2781,7 +2781,9 @@ export const APP = String.raw`
     // Spotter's pending vocabulary is reading, listening, watching. "Thinking" is
     // a chatbot's word for the same wait and belongs to a different app.
     $("explaintext").textContent = expCache[name] || "Reading up on it…";
-    $("swapgo").onclick = function () { closeSheet("explainsheet"); openSwap(name, title); };
+    // Open before close: the swap sheet takes over the sheet layer's one history
+    // entry, and closing first would hand that entry back mid-handover.
+    $("swapgo").onclick = function () { openSwap(name, title); closeSheet("explainsheet"); };
     openSheet("explainsheet");
     if (expCache[name]) return;
     api("explain", { method: "POST", body: JSON.stringify({ exercise: name, title: title || "" }) })
@@ -3013,7 +3015,8 @@ export const APP = String.raw`
             var h = hist[k] || (hist[k] = { best: 0 });
             sets.forEach(function (s) {
               // Epley, as the Progress tab's records already use it.
-              if (s.weight) h.best = Math.max(h.best, s.weight * (1 + s.reps / 30));
+              // In today's unit, so a session logged in the other one still counts.
+              if (s.weight) h.best = Math.max(h.best, toUnit(s.weight, s.unit) * (1 + s.reps / 30));
             });
             // Newest first: the first session carrying this movement IS last time.
             if (h.date) return;
@@ -3033,13 +3036,26 @@ export const APP = String.raw`
       });
   }
 
+  // Every set keeps the unit it was logged in, so switching lb to kg changes the
+  // language and not what was lifted: convert on the way to the screen, never
+  // rewrite the row. One decimal, because 42.5 kg is a plate and 42.4747 is noise.
+  var LB_PER_KG = 2.2046226;
+
+  function toUnit(w, unit) {
+    w = Number(w) || 0;
+    if (!w || !unit || unit === state.unit) return w;
+    return Math.round((state.unit === "kg" ? w / LB_PER_KG : w * LB_PER_KG) * 10) / 10;
+  }
+
+  function wtText(w, unit) { return toUnit(w, unit).toLocaleString(); }
+
   // Blank until the history is in, so it never claims a first time it cannot know.
   function lastLine(entry) {
     if (!histReady || !entry) return "";
     var h = hist[exKey(entry)];
     if (!h || !h.date) return "first time logging this.";
     return "last time · " + h.sets + " × " + h.reps +
-      (h.weight ? " at " + h.weight + " " + h.unit : "") + " · " + agoText(h.date);
+      (h.weight ? " at " + wtText(h.weight, h.unit) + " " + state.unit : "") + " · " + agoText(h.date);
   }
 
   function startClock() {
@@ -3140,10 +3156,11 @@ export const APP = String.raw`
   // is what says the tap landed.
   var justSet = -1;
 
-  // What a set was, wherever one is shown: a held second is not a rep.
+  // What a set was, wherever one is shown: a held second is not a rep, and a
+  // weight is read in today's unit rather than relabelled with it.
   function setText(s) {
     if (s.seconds) return s.seconds + "s";
-    return (s.reps || 0) + (s.weight ? " × " + s.weight : "");
+    return (s.reps || 0) + (s.weight ? " × " + wtText(s.weight, s.unit) : "");
   }
 
   function renderSetPills(main, entry, ex, target) {
@@ -3190,7 +3207,7 @@ export const APP = String.raw`
     var h = hist[exKey(entry)];
     setCtx.idx = idx;
     setCtx.reps = existing ? existing.reps : targetReps;
-    setCtx.weight = existing ? existing.weight : ((h && h.weight) || 0);
+    setCtx.weight = existing ? toUnit(existing.weight, existing.unit) : (h ? toUnit(h.weight, h.unit) : 0);
     $("settitle").textContent = (s && s.ex ? s.ex.name : "Set") + " · set " + (idx + 1);
     // The number worth beating stays up while the stepper argues with it.
     $("setlast").textContent = lastLine(entry);
@@ -3200,8 +3217,11 @@ export const APP = String.raw`
   }
 
   function drawStepper() {
+    // Steps of 2.5 on a converted seed drift into 45.599999999999994, and every
+    // change passes here on its way to the screen and to the saved set.
+    setCtx.weight = Math.round(setCtx.weight * 10) / 10;
     $("repsval").textContent = String(setCtx.reps);
-    $("wtval").textContent = String(setCtx.weight);
+    $("wtval").textContent = setCtx.weight.toLocaleString();
   }
 
   function saveSet() {
@@ -3574,6 +3594,7 @@ export const APP = String.raw`
   }
 
   // Both history entries if the workout was opened from a card, one from the plan.
+  // Sheets give their entry back as they close, so these two are all that is left.
   function leaveWorkout() {
     var openedFromDetail = $("detail").classList.contains("open");
     exitWorkout();
@@ -3591,7 +3612,7 @@ export const APP = String.raw`
     logged.forEach(function (e) {
       e.sets.forEach(function (s) {
         sets++;
-        if (s.reps && s.weight) vol += s.reps * s.weight;
+        if (s.reps && s.weight) vol += s.reps * toUnit(s.weight, s.unit);
       });
     });
 
@@ -3622,7 +3643,7 @@ export const APP = String.raw`
         var row = el("div", "setpill pr");
         row.appendChild(el("b", null, "New best"));
         row.appendChild(document.createTextNode(p.name + " · " +
-          p.weight + " " + (p.unit || state.unit) + " × " + p.reps));
+          wtText(p.weight, p.unit) + " " + state.unit + " × " + p.reps));
         prs.appendChild(row);
       });
       main.appendChild(prs);
@@ -3766,7 +3787,8 @@ export const APP = String.raw`
         var key = ymd(d);
         var card = el("div", "daycard" + (key === todayStr ? " today" : ""));
         var head = el("div", "dayhead");
-        head.appendChild(el("div", "dayname", names[i] + " " + d.getDate()));
+        var label = names[i] + " " + d.getDate();
+        head.appendChild(el("div", "dayname", label));
         var didLog = (state.planLogs || []).some(function (l) {
           return l.started_at && ymd(new Date(l.started_at)) === key;
         });
@@ -3798,7 +3820,7 @@ export const APP = String.raw`
         });
 
         var add = el("button", "planadd", "+ Add a workout");
-        add.onclick = function () { openPicker(key); };
+        add.onclick = function () { openPicker(key, label); };
         card.appendChild(add);
         v.appendChild(card);
       })(i);
@@ -3811,10 +3833,12 @@ export const APP = String.raw`
     viewIn(v);
   }
 
-  function openPicker(day) {
+  // Named the way the card that opened it names the day — "Add to Thursday 3",
+  // not the yyyy-mm-dd key the row is stored under.
+  function openPicker(day, label) {
     var list = $("picklist");
     list.innerHTML = "";
-    $("picktitle").textContent = "Add to " + day;
+    $("picktitle").textContent = "Add to " + (label || day);
     if (!state.workouts.length) {
       list.appendChild(el("p", "lede", "Save a workout first, then you can plan it."));
     }
@@ -3860,7 +3884,7 @@ export const APP = String.raw`
     var v = 0;
     (log.entries || []).forEach(function (e) {
       (e.sets || []).forEach(function (s) {
-        if (s.reps && s.weight) v += s.reps * s.weight;
+        if (s.reps && s.weight) v += s.reps * toUnit(s.weight, s.unit);
       });
     });
     return v;
@@ -4036,11 +4060,11 @@ export const APP = String.raw`
         var k = exKey(e);
         (e.sets || []).forEach(function (s) {
           if (!s.reps || !s.weight) return;
-          var est = s.weight * (1 + s.reps / 30);
+          var wt = toUnit(s.weight, s.unit), est = wt * (1 + s.reps / 30);
           if (!prs[k]) prs[k] = { est: 0, label: e.name || "Exercise" };
           if (est > prs[k].est) {
             prs[k].est = est;
-            prs[k].weight = s.weight;
+            prs[k].weight = wt;
             prs[k].reps = s.reps;
             prs[k].date = l.started_at;
           }
@@ -4057,7 +4081,7 @@ export const APP = String.raw`
         var nm = el("div", "n");
         nm.appendChild(document.createTextNode(p.label));
         nm.appendChild(el("span", null,
-          p.weight + " " + state.unit + " × " + p.reps + " · " +
+          wtText(p.weight) + " " + state.unit + " × " + p.reps + " · " +
           new Date(p.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })));
         r.appendChild(nm);
         r.appendChild(el("div", "v", Math.round(p.est) + " " + state.unit));
@@ -4584,14 +4608,21 @@ export const APP = String.raw`
 
   var closeTimers = {};
 
+  // One history entry for the whole sheet layer, so the back gesture closes the
+  // sheet instead of leaving the app. One and not one per sheet: a popstate closes
+  // every open sheet at once, and a sheet handing over to another keeps the entry
+  // rather than stacking a second one. sheetBack counts our own pops, not gestures.
+  var sheetNav = false, sheetBack = 0;
+
   function openSheet(id) {
     var n = $(id);
     clearTimeout(closeTimers[id]);
     n.classList.remove("closing");
     n.classList.add("open");
+    if (!sheetNav) { sheetNav = true; history.pushState({ sheet: id }, ""); }
   }
 
-  function closeSheet(id) {
+  function closeSheet(id, fromPop) {
     var n = $(id);
     if (!n.classList.contains("open")) return;
     n.classList.remove("open");
@@ -4604,6 +4635,12 @@ export const APP = String.raw`
       // always leaves the page — and only once it has finished sliding away.
       if (id === "watchsheet") $("watchbody").innerHTML = "";
     }, 260);
+    // Give the entry back when the last sheet goes — unless the browser has
+    // already taken it (a back gesture) or another sheet is standing in its place.
+    if (sheetNav && !document.querySelector(".sheet.open")) {
+      sheetNav = false;
+      if (!fromPop) { sheetBack++; history.back(); }
+    }
   }
 
   ["addsheet", "setsheet", "watchsheet", "exsheet", "exeditsheet", "explainsheet", "picksheet",
@@ -4999,6 +5036,10 @@ export const APP = String.raw`
     state.unit = state.unit === "lb" ? "kg" : "lb";
     $("unittoggle").textContent = state.unit;
     saveSettings();
+    // A drawn Progress has to be drawn again to be read in the new unit, not just
+    // relabelled — reloading the logs first if something has already dropped them.
+    if (!drawn.progress) return;
+    if (state.logs) renderProgress(); else quietly(loadLogs().then(renderProgress));
   }
 
   // Off, then the three rests worth an opinion. Four options do not earn a sheet.
@@ -5224,7 +5265,9 @@ export const APP = String.raw`
   // now for all four, off the live layout.
   function measureChrome() {
     var root = document.documentElement;
-    var h = Math.round(hdrEl.getBoundingClientRect().height);
+    // Unrounded: the spacer ends and the search sticks at the header's own bottom
+    // edge, and 70.5 rounded to 71 left half a pixel of content showing between.
+    var h = hdrEl.getBoundingClientRect().height;
     var b = Math.round(tabbar.getBoundingClientRect().height);
     if (h) root.style.setProperty("--hdr", h + "px");
     if (b) root.style.setProperty("--ptab", b + "px");
@@ -5440,6 +5483,10 @@ export const APP = String.raw`
 
   function fitViewport() {
     var vv = window.visualViewport, a = $("app");
+    // body.kb hides the tab bar, so the test is height actually lost to the
+    // keyboard, not focus: a desktop browser and an external keyboard both focus
+    // a field without taking a pixel.
+    document.body.classList.toggle("kb", !!vv && kbOn && vv.height < window.innerHeight - 80);
     if (!vv || !kbOn) { a.style.height = ""; a.style.top = ""; return; }
     a.style.height = vv.height + "px";
     a.style.top = vv.offsetTop + "px";
@@ -5720,12 +5767,17 @@ export const APP = String.raw`
 
   // one history entry per overlay, so the phone back gesture closes it
   window.addEventListener("popstate", function () {
-    if ($("workout").classList.contains("open")) { exitWorkout(); return; }
+    // Our own pop, from a sheet the UI has already closed; reading it as a gesture
+    // would close the overlay that sheet was sitting on.
+    if (sheetBack) { sheetBack--; return; }
+    // Sheets first: while one is open its entry is the top one, even over Workout
+    // Mode, so it is the entry this pop just spent.
     var open = document.querySelectorAll(".sheet.open");
     if (open.length) {
-      for (var i = 0; i < open.length; i++) closeSheet(open[i].id);
+      for (var i = 0; i < open.length; i++) closeSheet(open[i].id, true);
       return;
     }
+    if ($("workout").classList.contains("open")) { exitWorkout(); return; }
     if ($("detail").classList.contains("open")) closeDetail();
   });
 
