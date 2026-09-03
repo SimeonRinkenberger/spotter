@@ -516,6 +516,9 @@ export const APP = String.raw`
     } else {
       state.user = null;
       state.workouts = []; state.logs = null; state.plan = null;
+      // What the last person was looking for is not what the next one is. The
+      // library came back narrowed to a search and a creator nobody had typed.
+      state.filter = "All"; state.q = ""; $("search").value = "";
       showLanding();
     }
   });
