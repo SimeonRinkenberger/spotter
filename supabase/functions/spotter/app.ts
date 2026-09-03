@@ -2794,7 +2794,7 @@ export const APP = String.raw`
     try {
       localStorage.setItem(draftKey(), JSON.stringify({
         workoutId: wo.workout.id, title: wo.workout.title,
-        entries: wo.entries, startedAt: wo.startedAt, i: wo.i
+        entries: wo.entries, startedAt: wo.startedAt, i: wo.i, rounds: wo.rounds
       }));
     } catch (e) { /* private mode */ }
   }
@@ -2814,9 +2814,10 @@ export const APP = String.raw`
         };
       }),
       startedAt: (resume && resume.startedAt) || new Date().toISOString(),
-      // prs: what fell today, keyed by movement, for the summary and the toast.
-      wake: null, prs: {}, finished: false
+      // prs: what fell today, keyed by movement. rounds: the lap of each circuit.
+      wake: null, prs: {}, rounds: (resume && resume.rounds) || {}, finished: false
     };
+    woPhase = "idle";
     if (!wo.entries.length) {
       wo.entries = [{ name: "Freestyle", canonical_id: null, block: 0, exercise: 0, sets: [] }];
     }
@@ -2912,7 +2913,8 @@ export const APP = String.raw`
     if (wo && wo.wake) { try { wo.wake.release(); } catch (e) { /* ignore */ } wo.wake = null; }
   }
 
-  function renderWorkout() {
+  // hush: no entrance — a logged round changed a number.
+  function renderWorkout(hush) {
     if (!wo) return;
     var main = $("wmain"), dots = $("wdots");
     main.innerHTML = "";
@@ -2946,15 +2948,22 @@ export const APP = String.raw`
     main.appendChild(el("div", "wblock", blockLabel));
     main.appendChild(el("h2", "wname", s.ex.name));
 
+    // The lap outranks the dose: the reps do not change between rounds.
     var dose = doseText(s.ex);
+    if (isCircuit(s.block)) dose = "Round " + roundOf(s.bi) + " of " +
+      roundsOf(s.block) + (dose ? " · " + dose : "");
     if (dose) main.appendChild(el("div", "wdose", dose));
-    var last = el("div", "wnote wlast", lastLine(entry));
-    last.id = "wlast";
-    main.appendChild(last);
-    if (s.ex.weight) main.appendChild(el("div", "wnote", "Suggested load: " + s.ex.weight));
-    if (s.ex.notes) main.appendChild(el("div", "wnote", s.ex.notes));
 
-    renderSetPills(main, entry, s.ex);
+    if (isTimed(s.ex)) {
+      timedBody(main, s, entry);
+    } else {
+      var last = el("div", "wnote wlast", lastLine(entry));
+      last.id = "wlast";
+      main.appendChild(last);
+      if (s.ex.weight) main.appendChild(el("div", "wnote", "Suggested load: " + s.ex.weight));
+      if (s.ex.notes) main.appendChild(el("div", "wnote", s.ex.notes));
+      renderSetPills(main, entry, s.ex, targetOf(s));
+    }
 
     var acts = el("div", "wactions");
     // First in the row: when the name of a movement is not enough, the video it
@@ -2974,17 +2983,24 @@ export const APP = String.raw`
     acts.appendChild(swapChip);
     main.appendChild(acts);
 
-    viewIn(main);
+    if (!hush) viewIn(main);
   }
 
   // Read once by the next render: the pill is rebuilt, not transitioned, so this
   // is what says the tap landed.
   var justSet = -1;
 
-  function renderSetPills(main, entry, ex) {
-    var target = ex && ex.sets ? ex.sets : Math.max(entry.sets.length + 1, 1);
+  // What a set was, wherever one is shown: a held second is not a rep.
+  function setText(s) {
+    if (s.seconds) return s.seconds + "s";
+    return (s.reps || 0) + (s.weight ? " × " + s.weight : "");
+  }
+
+  function renderSetPills(main, entry, ex, target) {
+    target = target || (ex && ex.sets ? ex.sets : Math.max(entry.sets.length + 1, 1));
     var pills = el("div", "setpills");
     var count = Math.max(target, entry.sets.length + (entry.sets.length >= target ? 1 : 0));
+    var timed = isTimed(ex);
     var just = justSet;
     justSet = -1;
     for (var i = 0; i < count; i++) {
@@ -2992,14 +3008,17 @@ export const APP = String.raw`
         var done = entry.sets[idx];
         var p = el("button", "setpill" + (done ? " done" : "") + (idx === just ? " just" : "") +
           (done && done.pr ? " pr" : ""));
-        var b = el("b", null, done
-          ? (done.reps + (done.weight ? " × " + done.weight : ""))
-          : "Set " + (idx + 1));
+        var b = el("b", null, done ? setText(done)
+          : timed ? ex.duration_seconds + "s" : "Set " + (idx + 1));
         p.appendChild(b);
         p.appendChild(document.createTextNode(done
-          ? (done.weight ? state.unit : "reps")
+          ? (done.seconds ? "held" : done.weight ? state.unit : "reps")
+          : timed ? "hold " + (idx + 1)
           : (ex && ex.reps ? ex.reps + " reps" : "tap to log")));
-        p.onclick = function () { openSetSheet(idx); };
+        // A hold has one number, so its pill toggles: for one done off the clock.
+        p.onclick = timed
+          ? function () { logHold(idx, ex.duration_seconds, 1); justSet = idx; renderWorkout(); }
+          : function () { openSetSheet(idx); };
         pills.appendChild(p);
       })(i);
     }
@@ -3055,7 +3074,13 @@ export const APP = String.raw`
     justSet = setCtx.idx;
     renderWorkout();
     var s = wo.screens[wo.i];
-    // The card's own rest wins; the default covers everything that never says.
+    // In a circuit the rest is the walk to the next station, so it ends by
+    // arriving. Elsewhere the card's rest wins, the default covers silence.
+    if (s && isCircuit(s.block)) {
+      var gap = restAfter(s, state.rest);
+      if (gap > 0) startRest(gap, null, nextMove); else nextMove();
+      return;
+    }
     var secs = (s && s.ex && s.ex.rest_seconds) || state.rest;
     if (secs > 0) startRest(secs);
   }
@@ -3079,16 +3104,24 @@ export const APP = String.raw`
   // What is left of the rest, not a spin — and read off a deadline rather than
   // counted in ticks, because setInterval is throttled the moment the phone goes
   // in a pocket. restHeld is what was left when it was paused.
-  var restUntil = 0, restTotal = 0, restHeld = 0, restCued = 0;
+  // restFace is the dial it draws on — the strip, or a timed move's big ring —
+  // and restThen what happens at zero. One engine: a second one is a second drift.
+  var restUntil = 0, restTotal = 0, restHeld = 0, restCued = 0, restFace = null, restThen = null;
 
-  function startRest(seconds) {
+  function startRest(seconds, face, then) {
+    // Moving to the ring must not leave the strip frozen.
+    if (face && !restFace) stopRest();
     clearInterval(restTimer);
     restTotal = seconds * 1000;
     restUntil = Date.now() + restTotal;
     restHeld = 0;
     restCued = 4;
-    $("reststrip").className = "reststrip on";
-    $("restword").textContent = "Rest";
+    restFace = face || null;
+    restThen = then || null;
+    if (!restFace) {
+      $("reststrip").className = "reststrip on";
+      $("restword").textContent = "Rest";
+    }
     drawRest(restTotal);
     restTimer = setInterval(tickRest, 200);
   }
@@ -3105,17 +3138,22 @@ export const APP = String.raw`
 
   function drawRest(left) {
     var s = Math.max(0, Math.ceil(left / 1000));
-    $("restring").style.setProperty("--rest", String(Math.max(0, left) / restTotal));
-    $("restnum").textContent = s >= 60
+    var ring = $(restFace ? "wring" : "restring"), num = $(restFace ? "wnum" : "restnum");
+    // The dial can be gone mid-tick. The deadline is what stands.
+    if (!ring || !num) return;
+    ring.style.setProperty("--rest", String(Math.max(0, left) / restTotal));
+    num.textContent = s >= 60
       ? Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0") : String(s);
   }
 
   function doneRest() {
+    var then = restThen;
     stopRest();
     beep(880, .16, 0);
     beep(1318.5, .34, .13);
     // Safari still has no Navigator.vibrate. Ask anyway, expect nothing.
     if (navigator.vibrate) { try { navigator.vibrate([35, 55, 35]); } catch (e) { /* bonus */ } }
+    if (then) { then(); return; }
     toast("Rest done — next set.");
   }
 
@@ -3125,6 +3163,9 @@ export const APP = String.raw`
     clearInterval(restTimer);
     restUntil = 0;
     restHeld = 0;
+    var onRing = restFace;
+    restFace = restThen = null;
+    if (onRing) return;
     var strip = $("reststrip");
     if (!strip.classList.contains("on")) return;
     strip.className = "reststrip on gone";
@@ -3133,20 +3174,19 @@ export const APP = String.raw`
 
   function pauseRest() {
     if (!restUntil) return;
-    var strip = $("reststrip");
     if (restHeld) {
       restUntil = Date.now() + restHeld;
       restHeld = 0;
-      strip.classList.remove("paused");
-      $("restword").textContent = "Rest";
       restTimer = setInterval(tickRest, 200);
       tickRest();
     } else {
       restHeld = Math.max(0, restUntil - Date.now());
       clearInterval(restTimer);
-      strip.classList.add("paused");
-      $("restword").textContent = "Paused";
     }
+    if (restFace) { paintPhase(); return; }
+    var strip = $("reststrip");
+    if (restHeld) strip.classList.add("paused"); else strip.classList.remove("paused");
+    $("restword").textContent = restHeld ? "Paused" : "Rest";
   }
 
   function addRest(ms) {
@@ -3185,6 +3225,151 @@ export const APP = String.raw`
     } catch (e) { /* a silent cue is not a failure */ }
   }
 
+  // ---------- timed moves and circuits ----------
+  // "45 s on, 20 s off, three rounds" is a different workout to 3 × 10, and this
+  // screen only spoke the second language. A timed move gets a clock where its
+  // pills would be; a circuit walks its own laps. Phases: idle, ready, work, rest.
+  var woPhase = "idle";
+
+  function isTimed(ex) { return !!(ex && ex.duration_seconds > 0); }
+
+  // Rounds make a circuit; so does a block of nothing but timed moves, an
+  // interval set that never said so. A lone one is not: a plank goes nowhere.
+  function isCircuit(b) {
+    var ex = (b && b.exercises) || [];
+    return !!b && ((b.rounds || 0) > 1 || (ex.length > 1 && ex.every(isTimed)));
+  }
+
+  function roundsOf(b) { return isCircuit(b) ? Math.max(b.rounds || 1, 1) : 1; }
+  function roundOf(bi) { return (wo && wo.rounds[bi]) || 1; }
+  function targetOf(s) {
+    return isCircuit(s.block) ? roundsOf(s.block) : Math.max(s.ex.sets || 1, 1);
+  }
+
+  // The last station of a lap with laps left. ei says how far back the first is.
+  function atRoundEnd() {
+    var s = wo && wo.screens[wo.i];
+    return !!(s && isCircuit(s.block) && s.ei === s.block.exercises.length - 1 &&
+      roundOf(s.bi) < roundsOf(s.block));
+  }
+
+  // At the end of a lap the gap is the block's rest, not the move's: one pause.
+  function restAfter(s, fallback) {
+    return atRoundEnd() ? (s.block.rest_seconds || state.rest || 0)
+      : (s.ex.rest_seconds || fallback || 0);
+  }
+
+  function timedBody(main, s, entry) {
+    var t = el("div", "wtimer"), ring = el("button", "ring"), go = el("button", "btn wstart"),
+      num = el("span", null, String(s.ex.duration_seconds)), word = el("div", "wblock wphase");
+    t.id = "wtimer"; ring.id = "wring"; num.id = "wnum"; word.id = "wphase"; go.id = "wgobtn";
+    ring.setAttribute("aria-label", "Start or pause the countdown");
+    ring.onclick = go.onclick = ringTap;
+    ring.appendChild(num);
+    t.appendChild(ring);
+    t.appendChild(word);
+    main.appendChild(t);
+
+    // Half of why a follow-along screen works: what is next, before it is now.
+    var nx = wo.screens[atRoundEnd() ? wo.i - s.ei : wo.i + 1];
+    if (nx) main.appendChild(el("div", "wnote wup", "Next: " + nx.ex.name));
+    // The round line counts laps; a lone stack of holds needs pills.
+    if (!isCircuit(s.block) && targetOf(s) > 1) renderSetPills(main, entry, s.ex, targetOf(s));
+    main.appendChild(go);
+    paintPhase();
+  }
+
+  function paintPhase() {
+    var t = $("wtimer");
+    if (!t) return;
+    var held = !!(restHeld && restFace);
+    t.className = "wtimer" + (woPhase !== "idle" && !held ? "" : " idle");
+    $("wphase").textContent = held ? "Paused"
+      : woPhase === "ready" ? "Get ready"
+      : woPhase === "rest" ? (atRoundEnd() ? "Round done" : "Rest")
+      : woPhase === "work" ? "Work" : "Tap to start";
+    $("wgobtn").textContent = woPhase === "idle" ? "Start" : held ? "Resume" : "Pause";
+    // A redraw builds a fresh ring; put the countdown back on it.
+    if (restUntil && restFace) drawRest(restHeld || restUntil - Date.now());
+  }
+
+  function ringTap() {
+    // iOS unlocks audio on a gesture, and this is usually the first one.
+    unlockAudio();
+    if (woPhase !== "idle") { pauseRest(); return; }
+    woPhase = "ready";
+    startRest(3, "ready", startWork);
+    paintPhase();
+  }
+
+  function startWork() {
+    var s = wo && wo.screens[wo.i];
+    if (!s || !isTimed(s.ex)) return;
+    woPhase = "work";
+    startRest(s.ex.duration_seconds, "work", workDone);
+    paintPhase();
+  }
+
+  function stopWork() {
+    if (restFace) stopRest();
+    woPhase = "idle";
+  }
+
+  function workDone() {
+    var s = wo && wo.screens[wo.i];
+    if (!s) return;
+    logHold(isCircuit(s.block) ? roundOf(s.bi) - 1 : wo.entries[wo.i].sets.length,
+      s.ex.duration_seconds);
+    woPhase = "idle";
+    // A lone timed move counts down and waits; only a circuit moves the screen.
+    if (!isCircuit(s.block)) { renderWorkout(1); return; }
+    var gap = restAfter(s, 0);
+    if (gap <= 0) { nextMove(); return; }
+    woPhase = "rest";
+    renderWorkout(1);
+    startRest(gap, "rest", nextMove);
+  }
+
+  // Another lap of this block, the next station in it, or out the other side.
+  function nextMove() {
+    var s = wo && wo.screens[wo.i];
+    if (!s) return;
+    woPhase = "idle";
+    if (atRoundEnd()) {
+      wo.rounds[s.bi] = roundOf(s.bi) + 1;
+      wo.i -= s.ei;
+      saveDraft();
+      renderWorkout();
+      startWork();
+      return;
+    }
+    if (wo.i >= wo.screens.length - 1) {
+      renderWorkout(1);
+      toast("Last one done — finish when you are ready.");
+      return;
+    }
+    woGo(1);
+    var n = wo.screens[wo.i];
+    if (n && isTimed(n.ex) && isCircuit(n.block)) startWork();
+  }
+
+  // In a circuit the arrow must roll the lap over, not walk past it.
+  function skipMove() {
+    var s = wo && wo.screens[wo.i];
+    stopWork();
+    if (s && isCircuit(s.block)) nextMove(); else woGo(1);
+  }
+
+  // A held second logs as a set with no reps, so set counts include it and volume
+  // does not. Never past the end: JSON turns a hole into a reader-breaking null.
+  function logHold(idx, secs, toggle) {
+    if (!wo) return;
+    var st = wo.entries[wo.i].sets;
+    if (toggle && st[idx]) st.splice(idx, 1);
+    else st[Math.min(idx, st.length)] = { seconds: secs, done: true };
+    saveDraft();
+  }
+
   function openWatch() {
     if (!wo) return;
     var em = embedNode(wo.workout);
@@ -3200,6 +3385,8 @@ export const APP = String.raw`
     if (!wo) return;
     var next = wo.i + delta;
     if (next < 0 || next >= Math.max(wo.screens.length, 1)) return;
+    // A rest belongs to the lifter; a countdown to the move on screen.
+    stopWork();
     wo.i = next;
     saveDraft();
     renderWorkout();
@@ -3738,9 +3925,7 @@ export const APP = String.raw`
         var er = el("div", "histrow");
         var en = el("div", "n");
         en.appendChild(document.createTextNode(e.name));
-        en.appendChild(el("span", null, e.sets.map(function (s) {
-          return s.reps + (s.weight ? "×" + s.weight : "");
-        }).join("  ")));
+        en.appendChild(el("span", null, e.sets.map(setText).join("  ")));
         er.appendChild(en);
         card.appendChild(er);
       });
@@ -5240,7 +5425,7 @@ export const APP = String.raw`
 
   $("wclose").onclick = function () { history.back(); };
   $("wprev").onclick = function () { woGo(-1); };
-  $("wnext").onclick = function () { woGo(1); };
+  $("wnext").onclick = skipMove;
   $("wfinish").onclick = finishWorkout;
   $("wlist").onclick = function () {
     if (!wo) return;
@@ -5253,7 +5438,7 @@ export const APP = String.raw`
       t.appendChild(el("span", null, doseText(s.ex) || "—"));
       row.appendChild(t);
       if (wo.entries[i] && wo.entries[i].sets.length) row.appendChild(el("span", "daydone", "✓"));
-      row.onclick = function () { wo.i = i; closeSheet("exsheet"); renderWorkout(); };
+      row.onclick = function () { stopWork(); wo.i = i; closeSheet("exsheet"); renderWorkout(); };
       list.appendChild(row);
     });
     openSheet("exsheet");
@@ -5261,7 +5446,8 @@ export const APP = String.raw`
 
   $("restring").onclick = pauseRest;
   $("restplus").onclick = function () { addRest(15000); };
-  $("restskip").onclick = function () { stopRest(); };
+  // A skipped rest still owes the advance it was holding.
+  $("restskip").onclick = function () { var t = restThen; stopRest(); if (t) t(); };
   $("watchclose").onclick = function () { closeSheet("watchsheet"); };
 
   $("repsup").onclick = function () { setCtx.reps++; drawStepper(); };

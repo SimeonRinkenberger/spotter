@@ -820,7 +820,7 @@ export const STYLE = String.raw`<style>
   .wnote { font-size: 13.5px; color: var(--muted); line-height: 1.55; margin-top: 10px; }
   /* "last time · 3 × 10 at 60 lb · 5d ago" is a reference, not a headline: muted,
      one line, clipping rather than pushing the set pills down the screen. */
-  .wlast, .setlast { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .wlast, .setlast, .wup { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .wlast { margin-top: 6px; }
   .setlast { margin: 0 0 2px; }
   .wlast:empty, .setlast:empty { display: none; }
@@ -864,20 +864,35 @@ export const STYLE = String.raw`<style>
     padding: 0 16px 4px; animation: viewin var(--t-2) var(--e-out); }
   .reststrip.on { display: flex; }
   .reststrip.gone { animation: fadeout var(--t-2) var(--e-in) both; }
-  .reststrip .ring { position: relative; flex: 0 0 auto; width: 44px; height: 44px; padding: 0;
+  .ring { position: relative; flex: 0 0 auto; width: 44px; height: 44px; padding: 0;
     border: none; border-radius: 999px; display: flex; align-items: center; justify-content: center;
     background: conic-gradient(var(--ember) calc(var(--rest, 1) * 1turn), var(--ember-soft) 0);
     transition: transform var(--t-1) var(--e-out); }
-  .reststrip .ring::after { content: ""; position: absolute; inset: 4px; border-radius: 999px;
+  .ring::after { content: ""; position: absolute; inset: 4px; border-radius: 999px;
     background: var(--paper); }
-  .reststrip .ring span { position: relative; font-size: 12px; font-weight: 700;
+  .ring span { position: relative; font-size: 12px; font-weight: 700;
     color: var(--ember-ink); font-variant-numeric: tabular-nums; letter-spacing: -.03em; }
-  .reststrip .ring:active { transform: scale(.92); }
-  .reststrip.paused .ring {
+  .ring:active { transform: scale(.92); }
+  /* Idle and paused share a look on purpose: both mean the clock is not moving. */
+  .reststrip.paused .ring, .wtimer.idle .ring {
     background: conic-gradient(var(--line-2) calc(var(--rest, 1) * 1turn), var(--sand) 0); }
-  .reststrip.paused .ring span, .reststrip.paused .restword { color: var(--muted); }
+  .reststrip.paused .ring span, .reststrip.paused .restword,
+  .wtimer.idle .ring span, .wtimer.idle .wphase { color: var(--muted); }
   .restword { font-size: 13px; font-weight: 650; color: var(--ember-ink); }
   .reststrip .chip { min-height: 44px; display: flex; align-items: center; }
+
+  /* ---------- a timed move ----------
+     The rest ring again, at the size a countdown needs when the phone is on the
+     floor and you are not, and doubling as the start/pause button. */
+  .wtimer { display: flex; flex-direction: column; align-items: center; margin: 16px 0 2px; }
+  .wtimer .ring { width: 164px; height: 164px; }
+  .wtimer .ring::after { inset: 9px; }
+  .wtimer .ring span { font-family: var(--display); font-size: 44px; letter-spacing: -.04em;
+    color: var(--ink); }
+  .wtimer .ring:active { transform: scale(.965); }
+  .wphase { margin: 12px 0 0; }
+  .wup { color: var(--ink-2); font-weight: 600; }
+  .wstart { align-self: center; max-width: 280px; margin-top: 16px; }
 
   /* ---------- the session summary ----------
      Finishing used to be a toast, gone before the phone was back in the pocket.
