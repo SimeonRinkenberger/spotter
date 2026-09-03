@@ -94,7 +94,7 @@ export const STYLE = String.raw`<style>
   .daydone { display: inline-flex; align-items: center; gap: 4px; }
 
   /* ---------- landing (signed out) ---------- */
-  #landing { display: none; min-height: 100vh; min-height: 100dvh; }
+  #landing { display: none; min-height: 100vh; min-height: var(--vvh, 100dvh); }
   #landing.open { display: block; }
   .land { max-width: 460px; margin: 0 auto; padding: calc(38px + env(safe-area-inset-top)) 24px 60px; }
   .brandrow { display: flex; align-items: center; gap: 11px; margin-bottom: 40px; }
@@ -191,7 +191,24 @@ export const STYLE = String.raw`<style>
      in which a page can slide sideways. The height follows the visual viewport
      while a field is focused (fitViewport in app.ts) so the iOS keyboard pushes
      the composer up rather than shoving the whole app off the top. */
-  #app { position: fixed; left: 0; right: 0; top: 0; height: 100vh; height: 100dvh;
+  /* ---------- the frame ----------
+     Every full-screen layer — the app, its sheets, the detail overlay, Workout
+     Mode, the toast — is drawn against these two rather than against the layout
+     viewport, because on the one device that matters most the layout viewport
+     lies. An installed iOS web app asking for viewport-fit=cover is handed an
+     initial containing block a safe-area-inset-top SHORT of the screen (WebKit
+     254868, open since 2023 and still reproducing), so 100dvh, -webkit-fill-
+     available and visualViewport.height all measure 793 of an 852pt phone and
+     everything fixed to the bottom floats a status bar above it. vh is the one
+     unit WebKit still measures against the whole screen there — the reverse of
+     the advice for a browser tab, which is why it is scoped to standalone, where
+     vh cannot mean anything else because there is no URL bar to hide.
+     fitViewport() in app.ts overrides both while the keyboard is up. */
+  :root { --vvh: 100dvh; --vvtop: 0px; }
+  @media all and (display-mode: standalone) { :root { --vvh: 100vh; } }
+  /* Older iOS answers navigator.standalone and not the media feature. */
+  :root.sa { --vvh: 100vh; }
+  #app { position: fixed; left: 0; right: 0; top: var(--vvtop); height: var(--vvh);
     overflow: hidden; }
 
   /* ---------- header ---------- */
@@ -431,7 +448,8 @@ export const STYLE = String.raw`<style>
   .empty b { color: var(--ember-ink); font-weight: 700; }
 
   /* ---------- detail overlay ---------- */
-  .overlay { position: fixed; inset: 0; z-index: 50; background-color: var(--paper);
+  .overlay { position: fixed; left: 0; right: 0; top: var(--vvtop); height: var(--vvh);
+    z-index: 50; background-color: var(--paper);
     background-image: var(--grain); display: none; overflow-y: auto; -webkit-overflow-scrolling: touch; }
   .overlay.open { display: block; animation: slideup var(--t-3) var(--e-out); }
   @keyframes slideup { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
@@ -558,7 +576,8 @@ export const STYLE = String.raw`<style>
      workout — logging a set, the exercise list, the clip — was laid out, animated
      and hit-testable underneath an opaque full-screen overlay, so the taps landed
      on nothing. Still under the toast at 90, still over the detail overlay at 50. */
-  .sheet { position: fixed; inset: 0; z-index: 85; background: var(--scrim); display: none;
+  .sheet { position: fixed; left: 0; right: 0; top: var(--vvtop); height: var(--vvh);
+    z-index: 85; background: var(--scrim); display: none;
     align-items: flex-end; -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
   .sheet.open { display: flex; animation: fadein var(--t-2) var(--e-soft); }
   @keyframes fadein { from { opacity: 0; } }
@@ -660,16 +679,20 @@ export const STYLE = String.raw`<style>
   .pickrow .pt span { font-size: 11.5px; color: var(--muted); }
 
   /* ---------- toast ---------- */
-  #toast { position: fixed; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom));
-    transform: translate(-50%, 14px); z-index: 90; background: var(--ink); color: var(--paper);
+  /* Hung from the frame's bottom edge rather than the layout viewport's, which is
+     not the same edge on an installed iPhone. translate(-50%, -100%) makes top the
+     line the toast sits ON, so the 96px of clearance still means 96px. */
+  #toast { position: fixed; left: 50%;
+    top: calc(var(--vvtop) + var(--vvh) - 96px - env(safe-area-inset-bottom));
+    transform: translate(-50%, calc(-100% + 14px)); z-index: 90; background: var(--ink); color: var(--paper);
     padding: 12px 18px; border-radius: 999px; font-size: 13.5px; font-weight: 600; opacity: 0;
     pointer-events: none; transition: opacity var(--t-2), transform var(--t-2) var(--e-out);
     box-shadow: var(--sh-lg); max-width: 88vw; text-align: center; }
-  #toast.show { opacity: 1; transform: translate(-50%, 0); }
+  #toast.show { opacity: 1; transform: translate(-50%, -100%); }
   /* Workout Mode has no tab bar to clear but a rest strip lands where the toast
      does: 76px of bottom bar, 48px of strip, 12px of air. "New best" used to sit
      on +15 s and Skip for three seconds. */
-  #workout.open ~ #toast { bottom: calc(136px + env(safe-area-inset-bottom)); }
+  #workout.open ~ #toast { top: calc(var(--vvtop) + var(--vvh) - 136px - env(safe-area-inset-bottom)); }
   #toast.tappable { pointer-events: auto; cursor: pointer; }
   /* The one toast the landing ever shows — a shared link waiting for sign-in —
      belongs above the fold, not across the sign-in card. There is no tab bar here
@@ -684,7 +707,10 @@ export const STYLE = String.raw`<style>
      from --x, the track's position measured in pages, so a tap, a fling and a
      finger halfway between two tabs all move the bar by the same rule. The spring
      in app.ts is the timing; a CSS transition on top of it would fight it. */
-  .tabbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; display: flex;
+  /* Absolute inside #app, not fixed to the layout viewport: the frame knows where
+     the bottom of the screen is and the layout viewport does not. #app is fixed,
+     so this is the same box in the same stacking context it has always been. */
+  .tabbar { position: absolute; left: 0; right: 0; bottom: 0; z-index: 40; display: flex;
     background: color-mix(in srgb, var(--paper) 88%, transparent);
     -webkit-backdrop-filter: blur(22px) saturate(1.6); backdrop-filter: blur(22px) saturate(1.6);
     border-top: 1px solid var(--line); padding: 8px 6px calc(6px + env(safe-area-inset-bottom)); }
@@ -847,7 +873,8 @@ export const STYLE = String.raw`<style>
   }
 
   /* ---------- workout mode ---------- */
-  #workout { position: fixed; inset: 0; z-index: 80; background-color: var(--paper);
+  #workout { position: fixed; left: 0; right: 0; top: var(--vvtop); height: var(--vvh);
+    z-index: 80; background-color: var(--paper);
     background-image: radial-gradient(140% 90% at 50% -10%, var(--ember-soft), transparent 62%), var(--grain);
     display: none; flex-direction: column; }
   #workout.open { display: flex; animation: fadein var(--t-3) var(--e-soft); }

@@ -4383,7 +4383,37 @@ export const APP = String.raw`
     return b.used.toLocaleString() + " of " + b.cap.toLocaleString() + " " + tail;
   }
 
+  // What this phone thinks its own screen is. Every full-screen layer is now sized
+  // from numbers WebKit gets wrong in an installed app, and there is no simulator
+  // on this side of the work, so the numbers go on the page for the one person who
+  // can read them off a real device. A probe element rather than a table of
+  // constants: 100vh, 100dvh and the two insets are exactly what the stylesheet
+  // asks for, so what it prints is what the layout actually got.
+  function layoutLine() {
+    var vv = window.visualViewport, p = el("div"), vh, dvh, top, bot;
+    p.style.cssText = "position:fixed;top:0;left:0;width:0;visibility:hidden;height:100vh";
+    document.body.appendChild(p);
+    vh = p.offsetHeight;
+    p.style.height = "100dvh"; dvh = p.offsetHeight;
+    p.style.height = "env(safe-area-inset-top)"; top = p.offsetHeight;
+    p.style.height = "env(safe-area-inset-bottom)"; bot = p.offsetHeight;
+    document.body.removeChild(p);
+    return "Layout " + screen.width + "x" + screen.height +
+      " · vv " + (vv ? Math.round(vv.height) : "—") + " · inner " + window.innerHeight +
+      " · vh " + vh + " · dvh " + dvh + " · sa " + top + "/" + bot +
+      " · hdr " + Math.round(hdrEl.getBoundingClientRect().height) +
+      "/" + Math.round(tabbar.getBoundingClientRect().height) +
+      " · " + (standalone() ? "standalone" : "browser");
+  }
+
   function renderSettingsMeter() {
+    var d = $("setdiag");
+    if (d) {
+      var staff = (state.profile && state.profile.plan === "staff") ||
+        (pumpy.meter && pumpy.meter.plan === "staff");
+      d.textContent = staff ? layoutLine() : "";
+      d.classList.toggle("hide", !staff);
+    }
     var n = $("setpumpy");
     if (!n) return;
     var p = pumpy.meter;
@@ -5493,26 +5523,38 @@ export const APP = String.raw`
     }
   })();
 
-  // ---------- the keyboard ----------
+  // ---------- the frame ----------
   //
-  // iOS leaves the layout viewport alone and slides the visual one, so a fixed
-  // full-height app ends up with its tab bar and Pumpy's composer under the keys.
-  // While a field inside the app is focused the app follows the visual viewport
-  // instead. Android Chrome never gets here: interactive-widget in the viewport
-  // meta already resizes the content for it.
+  // --vvh and --vvtop are the height and top of every full-screen layer: the app,
+  // its sheets, the detail overlay, Workout Mode, the toast. Their resting value
+  // is a CSS one — 100vh installed, 100dvh in a tab, for the reason set out where
+  // they are declared — and this function only takes them over for the keyboard,
+  // which no unit describes. iOS leaves the layout viewport alone and slides the
+  // visual one up, so a full-height app would keep its tab bar and Pumpy's
+  // composer under the keys; following the visual viewport puts the composer on
+  // top of the keyboard the way a native chat app does, and now carries the open
+  // sheet with it rather than leaving a field behind the keys.
+  //
+  // Deliberately NOT the source of truth for the resting height: in the installed
+  // app WebKit reports visualViewport.height as short as everything else, so
+  // taking it at face value would draw the same 59pt band this wave is removing.
   var kbOn = false;
 
   function fitViewport() {
-    var vv = window.visualViewport, a = $("app");
-    // body.kb hides the tab bar, so the test is height actually lost to the
-    // keyboard, not focus: a desktop browser and an external keyboard both focus
-    // a field without taking a pixel.
-    document.body.classList.toggle("kb", !!vv && kbOn && vv.height < window.innerHeight - 80);
-    if (!vv || !kbOn) { a.style.height = ""; a.style.top = ""; return; }
-    a.style.height = vv.height + "px";
-    a.style.top = vv.offsetTop + "px";
+    var vv = window.visualViewport, root = document.documentElement;
+    // The test is height actually lost to the keyboard, not focus: a desktop
+    // browser and an external keyboard both focus a field without taking a pixel.
+    var kb = !!vv && kbOn && vv.height < window.innerHeight - 80;
+    document.body.classList.toggle("kb", kb);
+    if (!kb) { root.style.removeProperty("--vvh"); root.style.removeProperty("--vvtop"); return; }
+    root.style.setProperty("--vvh", vv.height + "px");
+    root.style.setProperty("--vvtop", vv.offsetTop + "px");
     if (window.scrollY) window.scrollTo(0, 0);
   }
+
+  // The media feature is the modern signal and navigator.standalone the one older
+  // iOS answers; where only the second is true the stylesheet has not heard.
+  if (window.navigator.standalone) document.documentElement.classList.add("sa");
 
   if (window.visualViewport) {
     window.visualViewport.addEventListener("resize", fitViewport);
