@@ -14,6 +14,12 @@ export const STYLE = String.raw`<style>
        already uses, so the schemes agree instead of inverting. */
     --ember: #E8551F; --ember-ink: #BE3F0E; --ember-soft: #FDEDE6; --on-ember: #17100C;
     --good: #178055; --warn: #C98A00;
+    /* The tab bar's selection capsule: a tint read as glass, not a second
+       accent. 7% is where it stops costing the lit label its AA — a tenth put
+       ember-ink on 4.41 against it, under the 4.5 that 10px type needs; this
+       measures 4.58. Dark affords more: there the label lightens as the
+       capsule darkens (6.85). */
+    --pill: color-mix(in srgb, var(--ember) 7%, transparent);
     /* body map: the silhouette, then the muscles that sit on it untargeted */
     --body-skin: #DCE1E8; --body-mus: #AEB7C3;
     --scrim: rgba(12,16,22,.55);
@@ -39,6 +45,7 @@ export const STYLE = String.raw`<style>
       --line: rgba(238,242,246,.10); --line-2: rgba(238,242,246,.19);
       --ember: #FF7A45; --ember-ink: #FF9166; --ember-soft: #33190F; --on-ember: #17100C;
       --good: #3FD096; --warn: #E8B54A;
+      --pill: color-mix(in srgb, var(--ember) 15%, transparent);
       --body-skin: #23282F; --body-mus: #3C4650;
       --scrim: rgba(2,4,8,.66);
       --glow: rgba(255,122,69,.26);
@@ -54,7 +61,6 @@ export const STYLE = String.raw`<style>
     font-family: var(--sans); overscroll-behavior-y: none;
     -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
   body { background-image: var(--grain); }
-  body.app { padding-bottom: calc(78px + env(safe-area-inset-bottom)); }
   button, input, select, textarea { font-family: var(--sans); }
   button { cursor: pointer; }
   .hide { display: none !important; }
@@ -145,17 +151,63 @@ export const STYLE = String.raw`<style>
   .landfoot { text-align: center; margin-top: 30px; font-size: 12px; color: var(--muted); }
   .landfoot a { color: var(--muted); }
 
+  /* ---------- app shell ----------
+     #app owns the viewport instead of the document: the four pages scroll inside
+     it while the header and the tab bar stay put, which is the only arrangement
+     in which a page can slide sideways. The height follows the visual viewport
+     while a field is focused (fitViewport in app.ts) so the iOS keyboard pushes
+     the composer up rather than shoving the whole app off the top. */
+  #app { position: fixed; left: 0; right: 0; top: 0; height: 100vh; height: 100dvh;
+    overflow: hidden; }
+
   /* ---------- header ---------- */
-  header { position: sticky; top: 0; z-index: 20;
+  header { position: absolute; top: 0; left: 0; right: 0; z-index: 20;
     background: color-mix(in srgb, var(--paper) 84%, transparent);
     -webkit-backdrop-filter: blur(20px) saturate(1.5); backdrop-filter: blur(20px) saturate(1.5);
-    padding: calc(12px + env(safe-area-inset-top)) 18px 12px; border-bottom: 1px solid var(--line); }
+    padding: calc(12px + env(safe-area-inset-top)) 18px 12px; }
+  /* The hairline belongs at the bottom of the whole translucent bar, and on
+     Library that bar ends at the search field, which carries its own and slides
+     away with the page. --x is the track position in pages, so the two lines
+     cross-fade: mid-swipe you see half of each instead of both at full strength. */
+  header::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1px;
+    background: var(--line); opacity: clamp(0, var(--x, 0), 1); }
   .titlerow { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
+  .tstack { flex: 1 1 auto; min-width: 0; }
   h1 { font-family: var(--display); font-size: 27px; margin: 0; font-weight: 700;
     letter-spacing: -.03em; line-height: 1; }
   .count { color: var(--muted); font-size: 10.5px; margin-top: 7px; font-weight: 700;
     letter-spacing: .15em; text-transform: uppercase; }
+  /* One title strip per page, stacked in a single grid cell so the header keeps
+     one height whatever is showing. Each slides a quarter of the page's travel
+     and fades as it leaves — a large title crossing over, not a text swap. */
+  #apptitle, #count { display: grid; }
+  #apptitle .ts, #count .ts { grid-area: 1 / 1; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    transform: translateX(calc((var(--i, 0) - var(--x, 0)) * 24px));
+    opacity: calc(1 - max(var(--i, 0) - var(--x, 0), var(--x, 0) - var(--i, 0))); }
+  .ts:nth-child(1) { --i: 0; }
+  .ts:nth-child(2) { --i: 1; }
+  .ts:nth-child(3) { --i: 2; }
+  .ts:nth-child(4) { --i: 3; }
   .hbtns { display: flex; gap: 8px; }
+
+  /* ---------- the pager ----------
+     touch-action hands vertical pans to the browser (which then fires
+     pointercancel at us) and keeps horizontal ones, so the axis lock is the
+     platform's rather than a pile of preventDefault. */
+  .pages { position: absolute; inset: 0; overflow: hidden; touch-action: pan-y pinch-zoom; }
+  .track { display: flex; height: 100%; }
+  .track.dragging { will-change: transform; }
+  .page { flex: 0 0 100%; height: 100%; overflow-y: auto; overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch; padding-bottom: calc(var(--ptab, 78px) + 24px); }
+  /* The header's height as a real box rather than the scroller's top padding:
+     engines disagree about which edge a sticky inset inside a PADDED scroller
+     is measured from, and with no padding there is nothing to disagree about.
+     A pseudo-element because renderPlan and renderProgress empty their page
+     with innerHTML and would take a real spacer with them. */
+  .page::before { content: ""; display: block; flex: 0 0 auto; height: var(--hdr, 92px); }
+  /* Reduced motion: the track jumps and the arriving page fades in instead. */
+  .page.xfade { animation: fadeonly var(--t-2) var(--e-soft); }
   .addbtn { width: 40px; height: 40px; border-radius: 14px; border: none; background: var(--ember);
     color: var(--on-ember); font-size: 23px; line-height: 1; font-weight: 600;
     box-shadow: 0 3px 12px var(--glow); transition: transform var(--t-1) var(--e-out); }
@@ -163,9 +215,20 @@ export const STYLE = String.raw`<style>
   .addbtn.ghost { background: var(--sand); color: var(--ink-2); font-size: 16px; box-shadow: none; }
   .spin { animation: spin 1s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
-  .searchwrap { margin-top: 14px; position: relative; display: block; }
-  .searchico { position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
-    color: var(--muted); pointer-events: none; display: flex; }
+  /* The search is the Library page's own first row, not the header's, so it
+     slides away with Library instead of hanging over Plan. Sticking it at the
+     header's height and painting it in the header's glass keeps it reading as
+     one bar: at rest there is no line between them, only the one underneath. */
+  .searchwrap { position: sticky; top: var(--hdr, 92px); z-index: 5; display: block;
+    padding: 8px 18px 12px;
+    background: color-mix(in srgb, var(--paper) 84%, transparent);
+    -webkit-backdrop-filter: blur(20px) saturate(1.5); backdrop-filter: blur(20px) saturate(1.5); }
+  .searchwrap::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1px;
+    background: var(--line); opacity: calc(1 - clamp(0, var(--x, 0), 1)); }
+  /* Spanning the input's own band rather than half of a padded box, so the mark
+     stays on the field's mid-line whatever the field's height turns out to be. */
+  .searchico { position: absolute; left: 32px; top: 8px; bottom: 12px;
+    color: var(--muted); pointer-events: none; display: flex; align-items: center; }
   .search { width: 100%; border: 1px solid var(--line); border-radius: 14px;
     padding: 11px 14px 11px 40px; font-size: 16px; background: var(--sand); color: var(--ink);
     outline: none; transition: border-color var(--t-2), background-color var(--t-2); }
@@ -173,7 +236,10 @@ export const STYLE = String.raw`<style>
   .search::placeholder { color: var(--muted); }
 
   /* ---------- filter chips ---------- */
+  /* The pager's touch-action gives the browser vertical pans only; this row has
+     to ask for horizontal ones back or it stops scrolling sideways. */
   .chips { display: flex; gap: 7px; overflow-x: auto; padding: 14px 18px 6px; scrollbar-width: none;
+    touch-action: pan-x pan-y;
     -webkit-mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 26px), transparent 100%);
     mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 26px), transparent 100%); }
   .chips::-webkit-scrollbar { display: none; }
@@ -540,18 +606,39 @@ export const STYLE = String.raw`<style>
     transform: translate(-50%, -14px); }
   body:not(.app) #toast.show { transform: translate(-50%, 0); }
 
-  /* ---------- tab bar ---------- */
+  /* ---------- tab bar ----------
+     Nothing here transitions any more, and that is the point: every item is drawn
+     from --x, the track's position measured in pages, so a tap, a fling and a
+     finger halfway between two tabs all move the bar by the same rule. The spring
+     in app.ts is the timing; a CSS transition on top of it would fight it. */
   .tabbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; display: flex;
     background: color-mix(in srgb, var(--paper) 88%, transparent);
     -webkit-backdrop-filter: blur(22px) saturate(1.6); backdrop-filter: blur(22px) saturate(1.6);
     border-top: 1px solid var(--line); padding: 8px 6px calc(6px + env(safe-area-inset-bottom)); }
-  .tab { flex: 1; border: none; background: none; display: flex; flex-direction: column;
-    align-items: center; gap: 4px; padding: 5px 2px; color: var(--muted); font-size: 10px;
-    font-weight: 650; letter-spacing: .02em; transition: color var(--t-2); }
-  .tab .ti { font-size: 19px; line-height: 1; filter: grayscale(1); opacity: .55;
-    transition: filter var(--t-2), opacity var(--t-2), transform var(--t-2) var(--e-out); }
-  .tab.active { color: var(--ember-ink); }
-  .tab.active .ti { filter: none; opacity: 1; transform: translateY(-1px) scale(1.08); }
+  /* The selected item rides a capsule instead of being announced by colour alone,
+     the way the iOS 26 tab bar glides its glass pill between items. The pill box
+     is a whole tab wide so translateX(100%) is exactly one tab; the visible
+     capsule is the inset pseudo-element. */
+  .tabpill { position: absolute; left: 6px; top: 8px; bottom: calc(6px + env(safe-area-inset-bottom));
+    width: calc((100% - 12px) / 4); pointer-events: none;
+    transform: translateX(calc(var(--x, 0) * 100%)); }
+  .tabpill::after { content: ""; position: absolute; inset: 0 5px; border-radius: 14px;
+    background: var(--pill); }
+  .tab { flex: 1; position: relative; z-index: 1; border: none; background: none; display: flex;
+    flex-direction: column; align-items: center; gap: 4px; padding: 5px 2px; font-size: 10px;
+    font-weight: 650; letter-spacing: .02em;
+    --d: calc(var(--i, 0) - var(--x, 0));
+    --p: clamp(0, calc(1 - max(var(--d), 0 - var(--d))), 1);
+    color: var(--muted);
+    color: color-mix(in srgb, var(--ember-ink) calc(var(--p) * 100%), var(--muted)); }
+  .tab:nth-child(2) { --i: 0; }
+  .tab:nth-child(3) { --i: 1; }
+  .tab:nth-child(4) { --i: 2; }
+  .tab:nth-child(5) { --i: 3; }
+  .tab:focus-visible { outline: 2px solid var(--ember); outline-offset: -3px; border-radius: 14px; }
+  .tab .ti { font-size: 19px; line-height: 1; filter: grayscale(calc(1 - var(--p)));
+    opacity: calc(.55 + .45 * var(--p));
+    transform: translateY(calc(-1px * var(--p))) scale(calc(1 + .08 * var(--p))); }
 
   /* ---------- pull to refresh ---------- */
   #ptr { position: fixed; top: calc(env(safe-area-inset-top) + 6px); left: 50%; z-index: 30;
@@ -568,8 +655,9 @@ export const STYLE = String.raw`<style>
   @keyframes viewin { from { opacity: 0; transform: translateY(7px); } }
 
   /* ---------- plan ---------- */
-  .view { display: none; padding: 4px 18px 30px; }
-  .view.open { display: block; }
+  /* Plan, Progress and Pumpy are always-mounted pages now; only the side gutter
+     is theirs, the vertical padding belongs to .page. */
+  .view { padding-left: 18px; padding-right: 18px; }
   .weekbar { display: flex; align-items: center; justify-content: space-between; gap: 10px;
     margin: 10px 0 16px; }
   .weekbar b { font-family: var(--display); font-size: 16px; font-weight: 700; letter-spacing: -.02em; }
@@ -753,29 +841,29 @@ export const STYLE = String.raw`<style>
      place the accent is used as a border, because it is the one thing on the
      screen asking for a decision. */
   .tab .ti svg { width: 21px; height: 21px; display: block; }
-  .tab .ti#pumpytab { filter: none; opacity: .55; }
-  .tab.active .ti#pumpytab { opacity: 1; }
+  /* The mark is a line drawing, not an emoji: greyscaling it does nothing but it
+     still takes the opacity and lift every other item gets. */
+  .tab .ti#pumpytab { filter: none; }
   .pmark { width: 28px; height: 28px; border-radius: 999px; background: var(--ember-soft); color: var(--ember-ink);
     display: flex; align-items: center; justify-content: center; flex: 0 0 auto; }
   .pmark svg { width: 17px; height: 17px; display: block; }
   .noimg.pumpyimg { color: var(--ember); opacity: .9; }
   .noimg.pumpyimg svg { width: 46px; height: 46px; }
-  /* The Pumpy tab is a column as tall as what is left of the screen once the
-     sticky header and the fixed tab bar have taken their share, so the composer
-     lands on the tab bar whether the thread is empty or endless. Both numbers are
-     measured once by sizePumpy() and written here as custom properties; the
-     fallbacks are only ever used for the first paint. The page keeps scrolling on
-     the body — the log is not its own scroller, which is what makes the iOS
-     keyboard behave. */
-  #pumpyview { padding-bottom: 0; }
-  #pumpyview.open { display: flex; flex-direction: column;
-    min-height: calc(100vh - var(--pumpytop, 130px) - var(--ptab, 78px));
-    min-height: calc(100dvh - var(--pumpytop, 130px) - var(--ptab, 78px)); }
-  /* Opacity only: a transform here would take the sticky composer with it. */
-  #pumpyview.viewin { animation-name: fadeonly; }
-  body.app.pumpy { padding-bottom: var(--ptab, calc(78px + env(safe-area-inset-bottom))); }
-  #pumpylog { display: flex; flex-direction: column; gap: 10px; padding: 6px 0 14px; flex: 1 1 auto;
-    min-height: 0; }
+  /* Pumpy is a column inside its own scroller, ending exactly on the tab bar so
+     the composer lands on it whether the thread is empty or endless. The page's
+     usual bottom padding is overridden for that reason: sticky cannot push an
+     element past its containing block, so any gap left below the column would
+     become a gap under the composer. The log carries no min-height:0 on purpose —
+     it has to be allowed to outgrow the column and make the page scroll, which is
+     the whole difference between a chat and a list.
+     The old note here said an inner scroller would break the iOS keyboard. It
+     would have; fitViewport() in app.ts is what now handles that. */
+  /* No bottom padding either, for the reason above: the composer's margin, not
+     the scroller's padding, is what keeps the tab bar clear — otherwise the
+     same disagreement decides whether the composer sits ON the tab bar or a
+     whole tab bar's height above it. */
+  #pumpyview { display: flex; flex-direction: column; padding-bottom: 0; }
+  #pumpylog { display: flex; flex-direction: column; gap: 10px; padding: 6px 0 14px; flex: 1 1 auto; }
   #pumpylog.hello { justify-content: center; }
   .pumpybar { display: flex; align-items: center; justify-content: space-between; gap: 10px;
     padding: 2px 0 4px; }
@@ -822,6 +910,7 @@ export const STYLE = String.raw`<style>
     animation: donein var(--t-3) var(--e-out); }
   @keyframes donein { from { opacity: 0; transform: translateY(-5px); } }
   .composer { position: sticky; bottom: var(--ptab, calc(78px + env(safe-area-inset-bottom)));
+    margin-bottom: var(--ptab, calc(78px + env(safe-area-inset-bottom)));
     padding: 8px 0 10px;
     background: color-mix(in srgb, var(--paper) 90%, transparent);
     -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }

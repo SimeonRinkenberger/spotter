@@ -5,7 +5,7 @@ export const MARKUP_HEAD = String.raw`<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, interactive-widget=resizes-content">
 <title>Spotter — save any workout video</title>
 <meta name="description" content="Save fitness videos from TikTok, Instagram and YouTube. Spotter pulls out the exercises, sets and reps, then walks you through the workout and logs what you lifted.">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -77,14 +77,19 @@ export const MARKUP_BODY = String.raw`</head>
 </div>
 
 <!-- ---------- signed in ---------- -->
+<!-- Four pages side by side on one track, not four boxes taking turns at
+     display:none. The header and the tab bar sit above the track and are told
+     where it is every frame, so the title strips and the tab capsule move with
+     the finger instead of jumping when a view swaps. Each page is its own
+     vertical scroller, which is what lets a tab remember where it was left. -->
 <div id="app" class="hide">
   <div id="ptr">↻</div>
 
   <header>
     <div class="titlerow">
-      <div>
-        <h1 id="apptitle">Spotter</h1>
-        <div class="count" id="count">Loading</div>
+      <div class="tstack">
+        <h1 id="apptitle"><span class="ts">Spotter</span><span class="ts" aria-hidden="true">Plan</span><span class="ts" aria-hidden="true">Progress</span><span class="ts" aria-hidden="true">Pumpy</span></h1>
+        <div class="count" id="count"><span class="ts" id="count0">Loading</span><span class="ts" aria-hidden="true">This week</span><span class="ts" aria-hidden="true">Your numbers</span><span class="ts" aria-hidden="true">Your coach</span></div>
       </div>
       <div class="hbtns">
         <button class="addbtn ghost" id="settingsbtn" title="Settings" aria-label="Settings">⚙</button>
@@ -92,47 +97,55 @@ export const MARKUP_BODY = String.raw`</head>
         <button class="addbtn" id="addbtn" title="Add a workout" aria-label="Add a workout">+</button>
       </div>
     </div>
-    <label class="searchwrap" id="searchwrap">
-      <span class="searchico">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.2-3.2"></path></svg>
-      </span>
-      <input class="search" id="search" type="search" placeholder="Search workouts, exercises, muscles" autocapitalize="off" autocomplete="off">
-    </label>
   </header>
 
-  <div id="hint">
-    <div id="hinttext">Add Spotter to your home screen: tap <b>Share</b>, then <b>Add to Home Screen</b>.</div>
-    <button id="hintx" aria-label="Dismiss">×</button>
-  </div>
+  <div class="pages" id="pages">
+    <div class="track" id="track">
+      <div class="page" id="libpage" role="tabpanel" aria-labelledby="tab0">
+        <label class="searchwrap" id="searchwrap">
+          <span class="searchico">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.2-3.2"></path></svg>
+          </span>
+          <input class="search" id="search" type="search" placeholder="Search workouts, exercises, muscles" autocapitalize="off" autocomplete="off">
+        </label>
 
-  <div class="chips" id="chips"></div>
-  <div class="colbar hide" id="colbar"></div>
-  <div class="grid" id="grid"></div>
-  <div class="empty hide" id="empty"></div>
+        <div id="hint">
+          <div id="hinttext">Add Spotter to your home screen: tap <b>Share</b>, then <b>Add to Home Screen</b>.</div>
+          <button id="hintx" aria-label="Dismiss">×</button>
+        </div>
 
-  <div class="view" id="planview"></div>
-  <div class="view" id="progressview"></div>
-  <div class="view" id="pumpyview">
-    <div class="pumpybar">
-      <button class="chip" id="pumpychats">☰ Chats</button>
-      <button class="chip" id="pumpynew">＋ New chat</button>
-    </div>
-    <div id="pumpylog"></div>
-    <div class="composer" id="pumpycomposer">
-      <div class="pumpyctx hide" id="pumpyctx"></div>
-      <div class="pumpycredits hide" id="pumpycredits"></div>
-      <div class="composerrow">
-        <textarea id="pumpyinput" rows="1" placeholder="Ask Pumpy…" autocapitalize="sentences"></textarea>
-        <button class="addbtn" id="pumpysend" aria-label="Send">↑</button>
+        <div class="chips" id="chips"></div>
+        <div class="colbar hide" id="colbar"></div>
+        <div class="grid" id="grid"></div>
+        <div class="empty hide" id="empty"></div>
+      </div>
+
+      <div class="page view" id="planview" role="tabpanel" aria-labelledby="tab1"></div>
+      <div class="page view" id="progressview" role="tabpanel" aria-labelledby="tab2"></div>
+      <div class="page view" id="pumpyview" role="tabpanel" aria-labelledby="tab3">
+        <div class="pumpybar">
+          <button class="chip" id="pumpychats">☰ Chats</button>
+          <button class="chip" id="pumpynew">＋ New chat</button>
+        </div>
+        <div id="pumpylog"></div>
+        <div class="composer" id="pumpycomposer">
+          <div class="pumpyctx hide" id="pumpyctx"></div>
+          <div class="pumpycredits hide" id="pumpycredits"></div>
+          <div class="composerrow">
+            <textarea id="pumpyinput" rows="1" placeholder="Ask Pumpy…" autocapitalize="sentences"></textarea>
+            <button class="addbtn" id="pumpysend" aria-label="Send">↑</button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 
-  <nav class="tabbar">
-    <button class="tab active" data-view="library"><span class="ti">🏋️</span>Library</button>
-    <button class="tab" data-view="plan"><span class="ti">📅</span>Plan</button>
-    <button class="tab" data-view="progress"><span class="ti">📈</span>Progress</button>
-    <button class="tab" data-view="pumpy"><span class="ti" id="pumpytab"></span>Pumpy</button>
+  <nav class="tabbar" role="tablist" aria-label="Sections">
+    <div class="tabpill" aria-hidden="true"></div>
+    <button class="tab active" id="tab0" role="tab" aria-selected="true" aria-controls="libpage" data-view="library"><span class="ti">🏋️</span>Library</button>
+    <button class="tab" id="tab1" role="tab" aria-selected="false" aria-controls="planview" data-view="plan"><span class="ti">📅</span>Plan</button>
+    <button class="tab" id="tab2" role="tab" aria-selected="false" aria-controls="progressview" data-view="progress"><span class="ti">📈</span>Progress</button>
+    <button class="tab" id="tab3" role="tab" aria-selected="false" aria-controls="pumpyview" data-view="pumpy"><span class="ti" id="pumpytab"></span>Pumpy</button>
   </nav>
 </div>
 

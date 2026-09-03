@@ -57,8 +57,22 @@ export const APP = String.raw`
     }, 2800);
   }
 
+  // Arriving on a tab is not an arrival to announce: the page slid in under the
+  // finger, and replaying an entrance on top of that slide reads as one move too
+  // many. Refreshes that happen BECAUSE a page was arrived at wrap themselves in
+  // quietly(); everything that changes in place — a new week, a new filter, a new
+  // message — still gets its entrance.
+  var quiet = 0;
+
+  function quietly(p) {
+    quiet++;
+    function done() { quiet--; }
+    if (p && typeof p.then === "function") p.then(done, done); else done();
+    return p;
+  }
+
   function viewIn(node) {
-    if (!node) return;
+    if (!node || quiet) return;
     node.classList.remove("viewin");
     void node.offsetWidth;
     node.classList.add("viewin");
@@ -478,9 +492,14 @@ export const APP = String.raw`
   }
 
   function showApp() {
+    var wasHidden = $("app").classList.contains("hide");
     document.body.classList.add("app");
     $("landing").classList.remove("open");
     $("app").classList.remove("hide");
+    // Only when it was genuinely off screen. onAuthStateChange also fires on
+    // every token refresh, and throwing a reader of Progress back to Library an
+    // hour into a session would be a very hard bug to find.
+    if (wasHidden) resetPager();
   }
 
   sb.auth.onAuthStateChange(function (event, session) {
@@ -504,7 +523,40 @@ export const APP = String.raw`
     watchWorkouts();
     // A shared link is saved only once the library is in hand, so the card it
     // creates lands in a rendered grid rather than into an empty one.
-    return load().then(consumeShare);
+    return load().then(consumeShare).then(warmPages);
+  }
+
+  // All four pages are mounted all the time now, which means a swipe can uncover
+  // one before anybody has drawn it. These three are drawn in idle time once the
+  // library has landed — staggered, because they are database reads and the
+  // library's thumbnails are still arriving.
+  var drawn = { plan: false, progress: false, pumpy: false };
+
+  function idle(fn, ms) {
+    setTimeout(function () {
+      if (window.requestIdleCallback) requestIdleCallback(function () { fn(); }, { timeout: 900 });
+      else fn();
+    }, ms);
+  }
+
+  function warmPages() {
+    idle(function () {
+      if (drawn.plan) return;
+      drawn.plan = true;
+      quietly(loadPlan(true));
+    }, 150);
+    idle(function () {
+      if (drawn.progress) return;
+      drawn.progress = true;
+      quietly(loadLogs().then(renderProgress));
+    }, 300);
+    idle(function () {
+      // Drawn before it is loaded so the column is never empty, then filled in.
+      // The warm flag skips the credits call: a session that never opens Pumpy
+      // has no business asking the server about Pumpy's meter.
+      if (!pumpy.loaded) renderPumpy();
+      loadPumpy(true);
+    }, 450);
   }
 
   // ---------- realtime ----------
@@ -804,7 +856,7 @@ export const APP = String.raw`
     var bar = $("colbar");
     bar.innerHTML = "";
     var c = isColFilter(state.filter) ? colById(state.filter.slice(4)) : null;
-    if (!c || state.view !== "library") { bar.classList.add("hide"); return; }
+    if (!c) { bar.classList.add("hide"); return; }
     bar.classList.remove("hide");
     var n = colCount(c.id);
     bar.appendChild(el("b", null, colLabel(c) + " · " + n + (n === 1 ? " workout" : " workouts")));
@@ -958,7 +1010,7 @@ export const APP = String.raw`
     renderColBar();
     renderGrid();
     var n = state.workouts.length;
-    $("count").textContent = n ? n + (n === 1 ? " workout" : " workouts") : "No workouts yet";
+    $("count0").textContent = n ? n + (n === 1 ? " workout" : " workouts") : "No workouts yet";
   }
 
   // ---------- detail ----------
@@ -2925,7 +2977,17 @@ export const APP = String.raw`
       String(d.getDate()).padStart(2, "0");
   }
 
-  function loadPlan() {
+  // What the week actually holds, cheaply. Arriving on a tab must not tear the
+  // page down and rebuild it: that loses where it was scrolled to and buys
+  // nothing when the answer is the same answer.
+  var planSig = "";
+
+  function planShape() {
+    return JSON.stringify([state.plan, state.planLogs, ymd(state.weekStart),
+      state.workouts.length]);
+  }
+
+  function loadPlan(silent) {
     if (!state.weekStart) state.weekStart = mondayOf(new Date());
     var start = ymd(state.weekStart);
     var endD = new Date(state.weekStart);
@@ -2936,6 +2998,9 @@ export const APP = String.raw`
     ]).then(function (rs) {
       state.plan = rs[0].data || [];
       state.planLogs = rs[1].data || [];
+      var shape = planShape();
+      if (silent && shape === planSig) return;
+      planSig = shape;
       renderPlan();
     });
   }
@@ -3354,26 +3419,11 @@ export const APP = String.raw`
     setView("pumpy");
   }
 
-  // The tab is a column between the sticky header and the fixed tab bar. Both
-  // heights are read off the live layout rather than guessed: the header grows
-  // with the safe area, the tab bar with the home indicator, and the install hint
-  // can sit above the view. Written as custom properties so the CSS can do the
-  // arithmetic, including on the body's bottom padding, which is what decides
-  // where the page ends when the thread is long.
-  function sizePumpy() {
-    var v = $("pumpyview");
-    if (!v || !v.classList.contains("open")) return;
-    var scrolled = window.scrollY || window.pageYOffset || 0;
-    var top = Math.max(0, Math.round(v.getBoundingClientRect().top + scrolled));
-    var bar = document.querySelector(".tabbar");
-    var tab = bar ? Math.round(bar.getBoundingClientRect().height) : 78;
-    var root = document.documentElement;
-    root.style.setProperty("--pumpytop", top + "px");
-    root.style.setProperty("--ptab", tab + "px");
-  }
-
-  function loadPumpy() {
-    ensurePumpyMeter();
+  // sizePumpy() measured the header and the tab bar for this one view. Every
+  // page needs the same two numbers now, so measureChrome() in the pager section
+  // owns them and keeps the --ptab name the composer is written against.
+  function loadPumpy(warm) {
+    if (!warm) ensurePumpyMeter();
     if (pumpy.loaded) { renderPumpy(); return; }
     sb.from("pumpy_threads").select("*").order("updated_at", { ascending: false }).limit(1).then(function (r) {
       var t = r.data && r.data[0];
@@ -3592,8 +3642,10 @@ export const APP = String.raw`
     renderPumpyCtx();
     renderPumpyCredits();
     $("pumpysend").disabled = !!pumpy.busy;
-    sizePumpy();
-    if (shown.length || pumpy.busy) window.scrollTo(0, document.body.scrollHeight);
+    // The thread is its own scroller now, so "go to the bottom" is a property on
+    // this page rather than a jump of the whole document.
+    var pg = $("pumpyview");
+    if (shown.length || pumpy.busy) pg.scrollTop = pg.scrollHeight;
   }
 
   function renderMsg(m) {
@@ -4132,55 +4184,468 @@ export const APP = String.raw`
     sb.from("profiles").update({ settings: { unit: state.unit } }).eq("id", state.user.id);
   }
 
-  // ---------- views ----------
+  // ---------- the pager ----------
+  //
+  // Four pages on one track. It all comes down to one number — pos, the track's
+  // offset in pixels: it follows the finger 1:1, rubber-bands past the ends, and
+  // is settled by a spring starting at the velocity the finger let go at. The tab
+  // bar and the header's title strips are not animated alongside it, they are
+  // DRAWN from it every frame, which is why a tap, a fling and a finger stopped
+  // between two pages all agree with one another.
 
+  var VIEWS = ["library", "plan", "progress", "pumpy"];
+  var PAGE_IDS = ["libpage", "planview", "progressview", "pumpyview"];
+  var LAST = VIEWS.length - 1;
+
+  var pagesEl = $("pages"), track = $("track"), tabbar = document.querySelector(".tabbar");
+  var hdrEl = $("app").querySelector("header"), searchEl = $("searchwrap");
+
+  var pos = 0;            // track offset in px, the one source of truth
+  var pageW = 0;          // one page's width
+  var idx = 0;            // the page committed to
+  var arrivedAt = 0;      // the page the last arrival ran for
+
+  var perf = window.performance && window.performance.now ? window.performance : null;
+  function now() { return perf ? perf.now() : Date.now(); }
+  function clamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
+
+  var motionQ = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
+  function lessMotion() { return !!(motionQ && motionQ.matches); }
+  function activePage() { return $(PAGE_IDS[idx]); }
+
+  // One transform plus three custom properties: title strips, tab items, capsule
+  // and the search bar's hairline all read --x, the track position in pages. Set
+  // on those three nodes rather than on #app, because an inherited property on
+  // the app would invalidate style for every card in the grid, every frame.
+  function paint() {
+    track.style.transform = "translate3d(" + (-pos) + "px,0,0)";
+    // The chrome never rubber-bands: past the ends the pages stretch, the tab bar
+    // stays where it belongs.
+    var x = String(clamp(pageW ? pos / pageW : 0, 0, LAST));
+    hdrEl.style.setProperty("--x", x);
+    tabbar.style.setProperty("--x", x);
+    searchEl.style.setProperty("--x", x);
+  }
+
+  // UIScrollView's rubber band: the further past the end you pull, the less of
+  // the pull arrives, asymptotic to one page. 0.55 is the constant Apple's feel
+  // is usually reverse-engineered to.
+  function bandPos(p) {
+    var max = LAST * pageW;
+    if (p >= 0 && p <= max) return p;
+    var d = p < 0 ? -p : p - max;
+    var b = (1 - 1 / (d * 0.55 / pageW + 1)) * pageW;
+    return p < 0 ? -b : max + b;
+  }
+
+  // The pair UISpringTimingParameters is built from, response and damping ratio,
+  // as stiffness = (2*pi/response)^2 * m and damping = 2*zeta*sqrt(k*m), m = 1.
+  // Zeta is exactly 1: a pager that overshoots shows a sliver of a page it is not
+  // going to.
+  var SP_K = (2 * Math.PI / 0.42) * (2 * Math.PI / 0.42);
+  var SP_C = 2 * Math.sqrt(SP_K);
+  var spTarget = 0, spVel = 0, spRaf = 0, spLast = 0;
+
+  function stopSpring() {
+    if (spRaf) { cancelAnimationFrame(spRaf); spRaf = 0; }
+    spLast = 0;
+  }
+
+  function land() {
+    stopSpring();
+    pos = spTarget;
+    spVel = 0;
+    track.classList.remove("dragging");
+    paint();
+    settled();
+  }
+
+  function springTo(target, v0) {
+    spTarget = target;
+    spVel = v0 || 0;
+    if (lessMotion()) { land(); return; }
+    // Already running: retarget in place. Restarting from the page it was heading
+    // to is what makes a pager feel like a slideshow instead of a surface.
+    if (spRaf) return;
+    spLast = 0;
+    spRaf = requestAnimationFrame(step);
+  }
+
+  function step(t) {
+    var dt = spLast ? Math.min((t - spLast) / 1000, 0.032) : 1 / 60;
+    spLast = t;
+    // Sub-stepped at ~240 Hz so the integration is stable on a 60 Hz frame and
+    // identical on a 120 Hz one: the same motion on every phone.
+    var n = Math.max(1, Math.ceil(dt * 240)), h = dt / n;
+    for (var i = 0; i < n; i++) {
+      spVel += (-SP_K * (pos - spTarget) - SP_C * spVel) * h;
+      pos += spVel * h;
+    }
+    if (Math.abs(pos - spTarget) < 0.1 && Math.abs(spVel) < 5) { land(); return; }
+    paint();
+    spRaf = requestAnimationFrame(step);
+  }
+
+  // The destination is decided on the tap or the moment the finger lifts, not
+  // when the slide ends, so a screen reader is never told about a page the user
+  // has already left. Pages nobody is on go inert: not focusable, not read out.
+  function commit(i) {
+    idx = i;
+    state.view = VIEWS[i];
+    var tabs = document.querySelectorAll(".tab"), n, k;
+    for (k = 0; k < tabs.length; k++) {
+      n = k === i;
+      tabs[k].classList.toggle("active", n);
+      tabs[k].setAttribute("aria-selected", n ? "true" : "false");
+      tabs[k].tabIndex = n ? 0 : -1;
+    }
+    for (k = 0; k < PAGE_IDS.length; k++) {
+      n = $(PAGE_IDS[k]);
+      n.inert = k !== i;
+      if (k === i) n.removeAttribute("aria-hidden"); else n.setAttribute("aria-hidden", "true");
+    }
+    // Eight strips, four titles then four subtitles; only the pair being read.
+    var strips = document.querySelectorAll(".ts");
+    for (k = 0; k < strips.length; k++) {
+      if (k % 4 === i) strips[k].removeAttribute("aria-hidden");
+      else strips[k].setAttribute("aria-hidden", "true");
+    }
+  }
+
+  // A swipe must never uncover a blank page, and arriving must never replay an
+  // entrance. warmPages() draws all four once; arriving after that is a quiet
+  // refresh, with no re-render at all when the answer has not changed — a
+  // re-render would throw away where the page was scrolled to.
+  function arrive(i) {
+    var v = VIEWS[i];
+    // Library is left alone: realtime and load() already keep it fresh.
+    if (v === "plan") {
+      drawn.plan = true;
+      quietly(loadPlan(true));
+    } else if (v === "progress") {
+      // state.logs is nulled at every point that invalidates it — finishing a
+      // workout, the refresh button, a pull. Nothing to do while it still stands.
+      if (!drawn.progress || !state.logs) {
+        drawn.progress = true;
+        quietly(loadLogs().then(renderProgress));
+      }
+    } else if (v === "pumpy") {
+      loadPumpy();
+    }
+  }
+
+  function settled() {
+    if (arrivedAt === idx) return;   // a snap back to where you already were
+    arrivedAt = idx;
+    arrive(idx);
+  }
+
+  function goTo(i, animate) {
+    i = clamp(i, 0, LAST);
+    commit(i);
+    spTarget = i * pageW;
+    if (!animate || !pageW) { land(); return; }
+    if (lessMotion()) {
+      // Apple's instruction for reduced motion is not "remove the feedback" but
+      // "replace movement with a fade": no slide, the arriving page fades in.
+      var pg = $(PAGE_IDS[i]);
+      pg.classList.remove("xfade");
+      void pg.offsetWidth;
+      pg.classList.add("xfade");
+      land();
+      return;
+    }
+    springTo(spTarget, spVel);
+  }
+
+  // Same signature every caller already uses. Nothing scrolls to the top: each
+  // page keeps its own offset, the way native tabs do.
   function setView(v) {
     // History lives under Progress now; anything still routing to it lands there.
     if (v === "history") v = "progress";
-    state.view = v;
-    var tabs = document.querySelectorAll(".tab");
-    for (var i = 0; i < tabs.length; i++) {
-      tabs[i].classList.toggle("active", tabs[i].getAttribute("data-view") === v);
-    }
-    var lib = v === "library";
-    $("chips").classList.toggle("hide", !lib);
-    if (!lib) $("colbar").classList.add("hide");
-    $("grid").classList.toggle("hide", !lib);
-    $("searchwrap").classList.toggle("hide", !lib);
-    $("empty").classList.toggle("hide", !lib || !!visible().length);
-    $("planview").classList.toggle("open", v === "plan");
-    $("progressview").classList.toggle("open", v === "progress");
-    $("pumpyview").classList.toggle("open", v === "pumpy");
-    // The Pumpy tab ends exactly on the tab bar, so it wants the tab bar's own
-    // height as the page's bottom padding rather than the roomier default.
-    document.body.classList.toggle("pumpy", v === "pumpy");
-
-    var titles = { library: "Spotter", plan: "Plan", progress: "Progress", pumpy: "Pumpy" };
-    $("apptitle").textContent = titles[v] || "Spotter";
-    if (lib) { render(); viewIn($("grid")); }
-    if (v === "plan") { $("count").textContent = "This week"; loadPlan(); }
-    if (v === "progress") { $("count").textContent = "Your numbers, every session"; loadLogs().then(renderProgress); }
-    // Measure before the first render, so the column is the right height even on
-    // the open that has to wait for the thread to come back from the database.
-    if (v === "pumpy") {
-      $("count").textContent = "Your coach";
-      sizePumpy(); loadPumpy(); viewIn($("pumpyview"));
-      return;
-    }
-    window.scrollTo(0, 0);
+    var i = VIEWS.indexOf(v);
+    if (i < 0) i = 0;
+    // Nothing to slide while the app is off screen: a share landing on Library,
+    // or a fresh sign-in, must simply already be there.
+    goTo(i, !$("app").classList.contains("hide"));
   }
 
+  function resetPager() {
+    if (!pagesEl) return;
+    stopSpring();
+    idx = 0; arrivedAt = 0; state.view = "library";
+    drawn = { plan: false, progress: false, pumpy: false };
+    planSig = "";
+    for (var k = 0; k < PAGE_IDS.length; k++) $(PAGE_IDS[k]).scrollTop = 0;
+    measureChrome();
+    pos = 0; spTarget = 0; spVel = 0;
+    commit(0);
+    paint();
+  }
+
+  // The header and the tab bar decide where every page begins and ends, and both
+  // change height with the safe area — what sizePumpy() measured for one view,
+  // now for all four, off the live layout.
+  function measureChrome() {
+    var root = document.documentElement;
+    var h = Math.round(hdrEl.getBoundingClientRect().height);
+    var b = Math.round(tabbar.getBoundingClientRect().height);
+    if (h) root.style.setProperty("--hdr", h + "px");
+    if (b) root.style.setProperty("--ptab", b + "px");
+    var w = pagesEl.clientWidth;
+    if (w && w !== pageW) {
+      // A rotation must not leave the track parked between two pages, and a
+      // spring cut short by one still has to count as an arrival — land() is
+      // the one path that ends a move, so the resize goes through it too.
+      pageW = w;
+      spTarget = idx * pageW;
+      land();
+      return;
+    }
+    paint();
+  }
+
+  if (window.ResizeObserver) {
+    var chromeRO = new ResizeObserver(measureChrome);
+    chromeRO.observe(hdrEl); chromeRO.observe(tabbar); chromeRO.observe(pagesEl);
+  } else {
+    window.addEventListener("resize", measureChrome);
+    window.addEventListener("orientationchange", measureChrome);
+  }
+
+  // ---------- the drag ----------
+  //
+  // The axis lock is the browser's own: .pages asks for touch-action pan-y, so a
+  // vertical pan is taken by the page's scroller (and arrives here as
+  // pointercancel) while a horizontal one is handed to us. Nothing below has to
+  // call preventDefault on a touch.
+
+  var FLING = 350;        // px/s past which a flick is a fling, not a nudge
+  var SLOP = 8;           // px before either axis has been chosen
+  var VWIN = 100;         // ms of pointer history the release velocity reads
+  var drag = null;
+
+  // Fields, the chip row, the body map, anything that says so: places where a
+  // sideways drag already means something else.
+  function noDragIn(node) {
+    return !!(node && node.closest && node.closest(
+      "input, textarea, select, [contenteditable], .chips, .bodybox, [data-noswipe]"));
+  }
+
+  // A sideways scroller between the finger and the page owns the gesture. The
+  // walk stops at the page it finds, whichever page that is: mid-spring the
+  // finger can land on the arriving one, and climbing past it would reach the
+  // track — 1500px wide inside a 375px window — and refuse every drag.
+  function scrollerInWay(node) {
+    for (var n = node; n && n !== pagesEl; n = n.parentElement) {
+      if (n.classList && n.classList.contains("page")) return false;
+      if (n.scrollWidth > n.clientWidth + 1) return true;
+    }
+    return false;
+  }
+
+  // One click follows the finger up after a drag. It belongs to whatever the drag
+  // started on and must not open it.
+  function swallowClick() {
+    var t = 0;
+    function off() { clearTimeout(t); document.removeEventListener("click", eat, true); }
+    function eat(ev) { ev.preventDefault(); ev.stopPropagation(); off(); }
+    document.addEventListener("click", eat, true);
+    t = setTimeout(off, 350);
+  }
+
+  pagesEl.addEventListener("pointerdown", function (e) {
+    if (e.pointerType !== "touch" && e.pointerType !== "pen") return;
+    if (drag || overlayShowing()) return;
+    if (noDragIn(e.target) || scrollerInWay(e.target)) return;
+    // Safari's back gesture starts at the very edge. Taking it over inside a
+    // browser tab would trap the user on the page; installed to the home screen
+    // there is no such gesture and the whole width is ours.
+    if (!standalone() && e.clientX < 24) return;
+    drag = { id: e.pointerId, x: e.clientX, y: e.clientY, from: idx, lock: false,
+      dx: 0, pos0: pos, raf: 0, s: [{ t: now(), x: e.clientX }] };
+  });
+
+  function dragFrame() {
+    if (!drag) return;
+    drag.raf = 0;
+    pos = bandPos(drag.pos0 - drag.dx);
+    paint();
+  }
+
+  pagesEl.addEventListener("pointermove", function (e) {
+    if (!drag || e.pointerId !== drag.id) return;
+    var dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    if (!drag.lock) {
+      if (Math.abs(dy) > SLOP && Math.abs(dy) >= Math.abs(dx)) { drag = null; return; }
+      if (!(Math.abs(dx) > SLOP && Math.abs(dx) > Math.abs(dy) * 1.2)) return;
+      drag.lock = true;
+      // Catch the spring where it is rather than restarting from its target. An
+      // animation you can grab mid-flight is most of what makes this a surface.
+      stopSpring();
+      drag.pos0 = pos;
+      drag.from = clamp(Math.round(pos / pageW), 0, LAST);
+      // Re-datum on the lock point so the page does not jump the slop distance.
+      drag.x = e.clientX; drag.y = e.clientY;
+      dx = 0;
+      track.classList.add("dragging");
+      ptrPulling = false;
+      try { pagesEl.setPointerCapture(drag.id); } catch (err) { /* not fatal */ }
+    }
+    drag.dx = dx;
+    var s = drag.s;
+    s.push({ t: now(), x: e.clientX });
+    while (s.length > 2 && s[s.length - 1].t - s[0].t > VWIN) s.shift();
+    if (!drag.raf) drag.raf = requestAnimationFrame(dragFrame);
+  });
+
+  function endDrag(e, cancelled) {
+    if (!drag || (e && e.pointerId !== drag.id)) return;
+    var d = drag;
+    drag = null;
+    if (d.raf) cancelAnimationFrame(d.raf);
+    if (!d.lock) return;
+    try { pagesEl.releasePointerCapture(d.id); } catch (err) { /* already gone */ }
+    swallowClick();
+    var near = clamp(Math.round(pos / pageW), 0, LAST);
+    if (cancelled) { commit(near); springTo(near * pageW, 0); return; }
+
+    var s = d.s, i;
+    s.push({ t: now(), x: e.clientX });
+    var last = s[s.length - 1], first = s[0];
+    for (i = s.length - 1; i >= 0; i--) { if (last.t - s[i].t <= VWIN) first = s[i]; }
+    var dt = (last.t - first.t) / 1000;
+    // The lift lands in the same millisecond as the last move often enough — a
+    // stuttering frame, a browser batching pointer events — that reading only
+    // the window would report a fling as a standstill. Fall back to the whole
+    // buffer before giving up on having a velocity at all.
+    if (dt < 0.004 && s.length > 1) { first = s[0]; dt = (last.t - first.t) / 1000; }
+    // pos runs against the finger, so the track's velocity is the pointer's
+    // negated.
+    var v = dt > 0.004 ? -(last.x - first.x) / dt : 0;
+
+    var to = near;
+    if (Math.abs(v) > FLING) {
+      // A flick moves exactly one page from where it started — two pages on one
+      // throw is how a pager loses the person using it — unless the drag had
+      // already carried the track further, where springing back against the
+      // finger would be the wrong answer.
+      to = clamp(d.from + (v > 0 ? 1 : -1), 0, LAST);
+      if ((v > 0 && pos > to * pageW) || (v < 0 && pos < to * pageW)) to = near;
+    }
+    commit(to);
+    springTo(to * pageW, v);
+  }
+
+  pagesEl.addEventListener("pointerup", function (e) { endDrag(e, false); });
+  pagesEl.addEventListener("pointercancel", function (e) { endDrag(e, true); });
+
+  // ---------- the tab bar ----------
+  //
+  // iOS tab bars select on touch-down, not on the lift, and it is most of why a
+  // native tab bar feels like buttons rather than pictures of buttons. The click
+  // stays for mice and keyboards, guarded so one tap does not count twice.
+  var tabTouched = 0;
+
+  function tabTap(i) {
+    if (i === idx) {
+      // Tapping the tab you are on takes that page back to the top.
+      var pg = $(PAGE_IDS[i]);
+      if (lessMotion() || !pg.scrollTo) pg.scrollTop = 0;
+      else pg.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+    setView(VIEWS[i]);
+  }
+
+  (function () {
+    var tabs = document.querySelectorAll(".tab");
+    for (var i = 0; i < tabs.length; i++) {
+      (function (t, k) {
+        t.addEventListener("pointerdown", function (e) {
+          if (e.pointerType !== "touch" && e.pointerType !== "pen") return;
+          tabTouched = Date.now();
+          tabTap(k);
+        });
+        t.onclick = function () {
+          if (Date.now() - tabTouched < 700) return;   // the touch already did it
+          tabTap(k);
+        };
+        // Automatic activation, as the tablist pattern asks: the arrow moves the
+        // selection, not merely the focus.
+        t.addEventListener("keydown", function (e) {
+          var to = -1;
+          if (e.key === "ArrowRight") to = k + 1;
+          else if (e.key === "ArrowLeft") to = k - 1;
+          else if (e.key === "Home") to = 0;
+          else if (e.key === "End") to = LAST;
+          if (to < 0 || to > LAST) return;
+          e.preventDefault();
+          setView(VIEWS[to]);
+          $("tab" + to).focus();
+        });
+      })(tabs[i], i);
+    }
+  })();
+
+  // ---------- the keyboard ----------
+  //
+  // iOS leaves the layout viewport alone and slides the visual one, so a fixed
+  // full-height app ends up with its tab bar and Pumpy's composer under the keys.
+  // While a field inside the app is focused the app follows the visual viewport
+  // instead. Android Chrome never gets here: interactive-widget in the viewport
+  // meta already resizes the content for it.
+  var kbOn = false;
+
+  function fitViewport() {
+    var vv = window.visualViewport, a = $("app");
+    if (!vv || !kbOn) { a.style.height = ""; a.style.top = ""; return; }
+    a.style.height = vv.height + "px";
+    a.style.top = vv.offsetTop + "px";
+    if (window.scrollY) window.scrollTo(0, 0);
+  }
+
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", fitViewport);
+    window.visualViewport.addEventListener("scroll", fitViewport);
+  }
+  document.addEventListener("focusin", function (e) {
+    var t = e.target && e.target.tagName;
+    if ((t !== "INPUT" && t !== "TEXTAREA") || !$("app").contains(e.target)) return;
+    kbOn = true;
+    fitViewport();
+  });
+  document.addEventListener("focusout", function (e) {
+    if (!$("app").contains(e.target)) return;
+    kbOn = false;
+    setTimeout(fitViewport, 60);   // the viewport comes back over several frames
+  });
+
   // ---------- pull to refresh ----------
+  //
+  // Per page rather than per document: eligible only when the page you are
+  // looking at is already at its top, abandoned the moment the pager takes the
+  // gesture sideways, and refreshing whatever you are actually looking at.
 
   var ptrStart = 0, ptrPulling = false;
 
-  document.addEventListener("touchstart", function (e) {
-    if (window.scrollY > 2 || overlayShowing()) { ptrPulling = false; return; }
+  function refreshActive() {
+    var v = VIEWS[idx];
+    if (v === "plan") { quietly(loadPlan(true)); return; }
+    if (v === "progress") { state.logs = null; quietly(loadLogs().then(renderProgress)); return; }
+    if (v === "pumpy") { pumpy.loaded = false; loadPumpy(); return; }
+    state.logs = null;
+    load();
+  }
+
+  pagesEl.addEventListener("touchstart", function (e) {
+    var pg = activePage();
+    if (!pg || pg.scrollTop > 2 || overlayShowing()) { ptrPulling = false; return; }
     ptrStart = e.touches[0].clientY;
     ptrPulling = true;
   }, { passive: true });
 
-  document.addEventListener("touchmove", function (e) {
+  pagesEl.addEventListener("touchmove", function (e) {
     if (!ptrPulling) return;
     var dy = e.touches[0].clientY - ptrStart;
     if (dy <= 0) { ptrPulling = false; $("ptr").style.opacity = 0; return; }
@@ -4191,7 +4656,7 @@ export const APP = String.raw`
     p.style.transform = "translateY(" + d + "px) rotate(" + d * 4 + "deg)";
   }, { passive: true });
 
-  document.addEventListener("touchend", function (e) {
+  pagesEl.addEventListener("touchend", function () {
     if (!ptrPulling) return;
     ptrPulling = false;
     var p = $("ptr");
@@ -4199,7 +4664,7 @@ export const APP = String.raw`
     p.classList.add("back");
     p.style.opacity = 0;
     p.style.transform = "";
-    if (d >= 1) { state.logs = null; load(); toast("Refreshed"); }
+    if (d >= 1) { refreshActive(); toast("Refreshed"); }
   }, { passive: true });
 
   // ---------- install hint ----------
@@ -4207,10 +4672,13 @@ export const APP = String.raw`
   // Two reasons to install, one per platform. On iPhone it buys a home-screen app;
   // on Android it also buys a place in the share sheet, which is the whole reason
   // an Android user would bother, so the hint says that instead.
+  function standalone() {
+    return !!(window.navigator.standalone ||
+      (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches));
+  }
+
   function maybeInstallHint() {
-    var standalone = window.navigator.standalone ||
-      (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
-    if (standalone) return;
+    if (standalone()) return;
     var dismissed = false;
     try { dismissed = localStorage.getItem("spotter_hint_done") === "1"; } catch (e) { /* ignore */ }
     if (dismissed) return;
@@ -4262,9 +4730,6 @@ export const APP = String.raw`
     this.style.height = "auto";
     this.style.height = Math.min(this.scrollHeight, 138) + "px";
   });
-  window.addEventListener("resize", sizePumpy);
-  window.addEventListener("orientationchange", sizePumpy);
-
   $("swaphavego").onclick = function () { runSwap(); };
   $("swaphaveinput").addEventListener("keydown", function (e) { if (e.key === "Enter") runSwap(); });
 
@@ -4387,13 +4852,6 @@ export const APP = String.raw`
     $("hint").classList.remove("show");
     try { localStorage.setItem("spotter_hint_done", "1"); } catch (e) { /* ignore */ }
   };
-
-  var tabs = document.querySelectorAll(".tab");
-  for (var ti = 0; ti < tabs.length; ti++) {
-    (function (t) {
-      t.onclick = function () { setView(t.getAttribute("data-view")); };
-    })(tabs[ti]);
-  }
 
   // one history entry per overlay, so the phone back gesture closes it
   window.addEventListener("popstate", function () {
