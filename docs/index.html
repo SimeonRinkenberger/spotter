@@ -205,6 +205,23 @@
   .chip .n { opacity: .5; font-weight: 700; margin-left: 5px; font-size: 11px; font-variant-numeric: tabular-nums; }
   .chip.active .n { opacity: .75; }
 
+  /* ---------- today ----------
+     The Plan's own day card, borrowed to answer the question the app is opened
+     with. It sits beside the chip row and hides with it: the view switch turns
+     that row off when the Library is not on screen, and this has to leave too
+     rather than sit on top of the Plan. Trained already and the ember goes —
+     nothing left to do here today. */
+  .todaywrap { padding: 12px 18px 0; }
+  .chips.hide + .todaywrap { display: none; }
+  .todaywrap .daycard { margin-bottom: 0; }
+  .todaywrap .daycard.done { border-color: var(--line); }
+  .todaywrap .daycard.done .dayname { color: var(--muted); }
+  .ttitle { display: block; width: 100%; text-align: left; border: none; background: none;
+    padding: 3px 0 0; color: var(--ink); font-family: var(--display); font-size: 18px;
+    font-weight: 700; line-height: 1.22; letter-spacing: -.025em; }
+  .tdose { font-size: 12.5px; color: var(--muted); margin: 5px 0 12px; }
+  .tstart { padding: 12px; font-size: 14.5px; border-radius: 12px; }
+
   /* ---------- collections ----------
      A collection is the general form of a favourite: the same chip row, the same
      sand-and-ember palette, one more kind of filter. The bar below the chips
@@ -354,7 +371,14 @@
     color: var(--ember-ink); margin-bottom: 8px; }
   .dtitle { font-family: var(--display); font-size: 28px; font-weight: 700; line-height: 1.14;
     letter-spacing: -.032em; margin: 0 0 10px; }
-  .dauthor { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
+  /* People save from three or four creators they trust, not thirty, so the handle
+     is a filter and not a caption. Drawn exactly as before: the padding and the
+     negative top margin buy 44px of reach and change nothing else. */
+  .dauthor { display: block; width: fit-content; max-width: 100%; border: none; background: none;
+    text-align: left; color: var(--muted); font-size: 13px; padding: 15px 0; margin: -13px 0 1px;
+    text-decoration: underline; text-decoration-color: var(--line-2); text-underline-offset: 3px;
+    transition: color var(--t-1) var(--e-soft); }
+  .dauthor:active { color: var(--ember-ink); }
   /* ---------- managing a card ----------
      Rename, collections and remove as one row, in the same quiet card style as
      .sect. Favourite stays in the top bar: it is a state, these are actions. */
@@ -882,10 +906,10 @@
      hit area grows, capped at the gap to the next control so no two overlap.
      Insets come off the padding box: a bordered control needs a pixel more. */
   .iconbtn, .addbtn, .exhelp, .planx, .planadd, .mbtn, .addex, .danger,
-  .chips .chip, .pumpyctx button, .threadrow .tdel { position: relative; }
+  .chips .chip, .pumpyctx button, .threadrow .tdel, .ttitle { position: relative; }
   .iconbtn::after, .addbtn::after, .exhelp::after, .planx::after, .planadd::after,
   .mbtn::after, .addex::after, .danger::after, .chips .chip::after,
-  .pumpyctx button::after, .threadrow .tdel::after { content: ""; position: absolute; }
+  .pumpyctx button::after, .threadrow .tdel::after, .ttitle::after { content: ""; position: absolute; }
   .iconbtn::after { inset: -3px; }
   .addbtn::after { inset: -2px; }
   .exhelp::after { inset: -7px -6px; }
@@ -895,6 +919,8 @@
   .danger::after, .threadrow .tdel::after { inset: -3px 0; }
   .chips .chip::after { inset: -6px 0; }
   .pumpyctx button::after { inset: -7px; }
+  /* Up into the label, which is text and not a control; down to the dose line. */
+  .ttitle::after { inset: -14px 0 -5px; }
 
   /* ---------- install hint ---------- */
   #hint { margin: 12px 18px 0; background: var(--card); border: 1px solid var(--line);
@@ -1948,6 +1974,13 @@
   // ---------- collections: lookups ----------
 
   function isColFilter(f) { return typeof f === "string" && f.indexOf("col:") === 0; }
+  // The third way a library divides itself, after the category the model guessed
+  // and the collection the user made — and the only one nobody had to work for. It
+  // takes the same "prefix:value" shape as a collection filter so visible(),
+  // renderChips() and chipSig all learn it at once, and is keyed lower-case so one
+  // person cannot end up with two chips.
+  function isByFilter(f) { return typeof f === "string" && f.indexOf("by:") === 0; }
+  function authorKey(a) { return a ? String(a).toLowerCase().trim() : ""; }
   function colById(id) {
     for (var i = 0; i < state.collections.length; i++) {
       if (state.collections[i].id === id) return state.collections[i];
@@ -1975,6 +2008,7 @@
     return state.workouts.filter(function (w) {
       if (state.filter === "Favorites") { if (!w.favorite) return false; }
       else if (isColFilter(state.filter)) { if (!inCol(state.filter.slice(4), w.id)) return false; }
+      else if (isByFilter(state.filter)) { if (authorKey(w.author) !== state.filter.slice(3)) return false; }
       else if (state.filter !== "All" && w.category !== state.filter) return false;
       if (!q) return true;
       var hay = [w.title, w.author, w.category, (w.muscle_groups || []).join(" "),
@@ -1997,16 +2031,32 @@
 
   function renderChips() {
     var wrap = $("chips");
-    var counts = {}, favs = 0;
+    var counts = {}, favs = 0, byAuth = {};
     state.workouts.forEach(function (w) {
       counts[w.category] = (counts[w.category] || 0) + 1;
       if (w.favorite) favs++;
+      var a = authorKey(w.author);
+      if (!a) return;
+      // The label keeps the first spelling seen: the handle as its platform writes it.
+      if (!byAuth[a]) byAuth[a] = { label: w.author, n: 0 };
+      byAuth[a].n++;
     });
-    // The collection a chip was filtering on can have been deleted under it.
+    // A collection can be deleted under the chip filtering on it, and a creator can
+    // lose their last card the same way. Clearing beats an empty grid explaining itself.
     if (isColFilter(state.filter) && !colById(state.filter.slice(4))) state.filter = "All";
+    if (isByFilter(state.filter) && !byAuth[state.filter.slice(3)]) state.filter = "All";
 
     var list = [{ key: "All", label: "All", n: state.workouts.length }];
     if (favs) list.push({ key: "Favorites", label: "★ Favorites", n: favs });
+    // The people this library is made of. Three at most, and none with a single card:
+    // a chip that narrows the grid to one workout saves nobody a scroll. By count,
+    // then by name, so a tie does not reshuffle the row between renders.
+    Object.keys(byAuth).filter(function (a) { return byAuth[a].n > 1; })
+      .sort(function (a, b) { return byAuth[b].n - byAuth[a].n || (a < b ? -1 : 1); })
+      .slice(0, 3)
+      .forEach(function (a) {
+        list.push({ key: "by:" + a, label: "@" + byAuth[a].label, n: byAuth[a].n });
+      });
     // Collections sit beside Favorites: the same idea, just more of them.
     state.collections.forEach(function (c) {
       list.push({ key: "col:" + c.id, label: colLabel(c), n: colCount(c.id) });
@@ -2058,6 +2108,90 @@
     var del = el("button", "warn", "Delete");
     del.onclick = function () { deleteCollection(c, del); };
     bar.appendChild(del);
+  }
+
+  // ---------- today ----------
+  //
+  // A training app is opened with one question — what am I doing today — and the
+  // plan knew the answer two tabs away. One card above the grid, and none at all on
+  // an empty day: nothing planned is not a problem to solve. The Plan tab is the
+  // only thing that reads plan rows and most sessions never open it, so this does
+  // its own read of today's plan and today's logs: two small selects.
+
+  var today = { day: null, rows: [], done: false, at: 0, busy: false, shown: false };
+
+  // Anchored to the chip row instead of declared in markup.ts: setView hides that
+  // row exactly when the Library is off screen, and one CSS adjacency rule lets
+  // this card leave with it however the block is laid out later.
+  var todayBox = el("div", "todaywrap hide");
+  todayBox.id = "today";
+  $("chips").parentNode.insertBefore(todayBox, $("chips").nextSibling);
+
+  function loadToday() {
+    if (today.busy || !state.user) return;
+    var key = ymd(new Date());
+    today.busy = true;
+    Promise.all([
+      sb.from("plan").select("workout_id").eq("day", key),
+      sb.from("workout_logs").select("started_at").gte("started_at", key + "T00:00:00Z")
+    ]).then(function (rs) {
+      today.day = key;
+      today.rows = rs[0].data || [];
+      // The Plan's own test for its tick, so the two cannot disagree about today.
+      today.done = (rs[1].data || []).some(function (l) {
+        return l.started_at && l.started_at.slice(0, 10) === key;
+      });
+      renderToday();
+    }).catch(function () { /* the age check tries again in half a minute */ })
+      .then(function () { today.busy = false; today.at = Date.now(); });
+  }
+
+  function todayDose(w) {
+    var n = exerciseNames(w).length;
+    var first = ((w.blocks || [])[0] || {}).exercises || [];
+    return [n ? n + (n === 1 ? " exercise" : " exercises") : null,
+      first.length ? doseText(first[0]) : null, fmtDur(w.duration_minutes)]
+      .filter(Boolean).join(" · ");
+  }
+
+  function renderToday() {
+    // The snapshot ages two ways this screen never hears about: the day rolling over
+    // under a phone left on the counter, and a session finished in Workout Mode,
+    // which does not come back through load(). One age check covers both, at two
+    // small reads a minute however often the library repaints.
+    if (state.view === "library" &&
+      (today.day !== ymd(new Date()) || Date.now() - today.at > 30000)) loadToday();
+
+    var box = todayBox, list = [];
+    today.rows.forEach(function (p) {
+      var m = state.workouts.filter(function (x) { return x.id === p.workout_id; })[0];
+      if (m) list.push(m);
+    });
+    var w = list[0];
+    box.innerHTML = "";
+    if (!w) { box.classList.add("hide"); today.shown = false; return; }
+    box.classList.remove("hide");
+
+    var card = el("div", "daycard today" + (today.done ? " done" : ""));
+    var head = el("div", "dayhead");
+    head.appendChild(el("div", "dayname", "Today"));
+    if (today.done) head.appendChild(el("div", "daydone", "✓ Done today"));
+    card.appendChild(head);
+    var t = el("button", "ttitle", w.title || "Workout");
+    t.onclick = function () { openDetail(w); };
+    card.appendChild(t);
+    var dose = [todayDose(w), list.length > 1 ? "+" + (list.length - 1) + " more today" : null]
+      .filter(Boolean).join(" · ");
+    if (dose) card.appendChild(el("div", "tdose", dose));
+    // The detail overlay's own start call, so finishing lands in the same place.
+    var go = el("button", "btn tstart" + (today.done ? " ghost" : ""),
+      today.done ? "Log another" : "Start");
+    go.onclick = function () { startWorkout(w); };
+    card.appendChild(go);
+    box.appendChild(card);
+    // Only the first appearance arrives: rebuilt on every render, a card that
+    // re-enters on every filter tap is a flicker.
+    if (!today.shown) { today.shown = true; viewIn(box); }
   }
 
   function fmtDur(m) {
@@ -2200,6 +2334,7 @@
   function render() {
     renderChips();
     renderColBar();
+    renderToday();
     renderGrid();
     var n = state.workouts.length;
     $("count").textContent = n ? n + (n === 1 ? " workout" : " workouts") : "No workouts yet";
@@ -2285,7 +2420,15 @@
       titleEl.onclick = function () { openRename("workout", w.id, w.title || ""); };
     }
     d.appendChild(titleEl);
-    if (w.author) d.appendChild(el("div", "dauthor", "@" + w.author));
+    // The handle does what a collection pill does: close the card, land in a library
+    // already narrowed to that creator.
+    if (w.author) {
+      var au = el("button", "dauthor", "@" + w.author);
+      au.onclick = function () {
+        state.filter = "by:" + authorKey(w.author); history.back(); setView("library");
+      };
+      d.appendChild(au);
+    }
     d.appendChild(manageRow(w));
     d.appendChild(colPills(w));
 
@@ -4180,6 +4323,9 @@
     ]).then(function (rs) {
       state.plan = rs[0].data || [];
       state.planLogs = rs[1].data || [];
+      // Every plan change lands here, and the today card is a copy of one day of it.
+      // Retire the copy rather than let the two screens differ.
+      today.at = 0;
       renderPlan();
     });
   }
