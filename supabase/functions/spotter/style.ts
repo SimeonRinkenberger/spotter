@@ -60,10 +60,38 @@ export const STYLE = String.raw`<style>
   html, body { margin: 0; padding: 0; background-color: var(--paper); color: var(--ink);
     font-family: var(--sans); overscroll-behavior-y: none;
     -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
-  body { background-image: var(--grain); }
+  /* Quotes and brackets hang into the margin instead of indenting the line they
+     start. One declaration, Safari-supported, and it is the difference between
+     type that was set and type that was poured in. */
+  body { background-image: var(--grain); hanging-punctuation: first; }
   button, input, select, textarea { font-family: var(--sans); }
   button { cursor: pointer; }
   .hide { display: none !important; }
+
+  /* ---------- icons ----------
+     The sprite is a real element in the flow, so it is taken out of it here
+     rather than with display:none, which stops <use> resolving in WebKit.
+     Everything else is one class: 1em square by default, so an icon is the size
+     of the text it sits beside, and stroked in currentColor, so it takes the
+     colour of whatever it is in — including the tab bar's per-frame colour-mix. */
+  .sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+  .ic { width: 1em; height: 1em; display: block; flex: 0 0 auto; fill: none;
+    stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  /* A favourite is a filled star, everywhere it is shown. */
+  .iconbtn.on .ic, .fav .ic { fill: currentColor; }
+  .iconbtn .ic { width: 18px; height: 18px; }
+  .addbtn .ic { width: 20px; height: 20px; }
+  .addbtn.ghost .ic { width: 18px; height: 18px; }
+  .chip .ic, .mbtn .ic, .btn .ic { width: 15px; height: 15px; }
+  .exhelp .ic, .colrow .mark .ic, .daydone .ic { width: 14px; height: 14px; }
+  .searchico .ic { width: 16px; height: 16px; }
+  .stepper button .ic { width: 20px; height: 20px; }
+  /* Every control that used to centre a glyph with line-height now has a box to
+     centre instead, and a box only centres inside a flex container. */
+  .addbtn, .planx, .pumpyctx button, #hint button, .stepper button {
+    display: flex; align-items: center; justify-content: center; }
+  .btn { display: flex; align-items: center; justify-content: center; gap: 7px; }
+  .daydone { display: inline-flex; align-items: center; gap: 4px; }
 
   /* ---------- landing (signed out) ---------- */
   #landing { display: none; min-height: 100vh; min-height: 100dvh; }
@@ -88,8 +116,15 @@ export const STYLE = String.raw`<style>
   .authcard h2 { font-family: var(--display); font-size: 19px; margin: 0 0 16px; font-weight: 700;
     letter-spacing: -.02em; }
   .field { margin-bottom: 12px; }
-  .field label { display: block; font-size: 11px; font-weight: 700; letter-spacing: .1em;
-    text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+  /* ---------- the small labels ----------
+     Eighteen rules used to set their label in caps with a tenth of an em between
+     the letters, which is the single most-cited tell of an interface nobody drew.
+     The five that are STRUCTURE — the header subtitle, a section head, a chart
+     head, a day, a month — keep it, because there caps are doing the work of a
+     rule or a border. The rest are captions, and captions are sentence case: same
+     colour, one size up so the hierarchy survives losing the spacing. */
+  .field label { display: block; font-size: 11px; font-weight: 600;
+    color: var(--muted); margin-bottom: 6px; }
   .field input { width: 100%; border: 1px solid var(--line); border-radius: 13px; padding: 12px 14px;
     font-size: 16px; background: var(--sand); color: var(--ink); outline: none;
     transition: border-color var(--t-2), background-color var(--t-2); }
@@ -125,8 +160,7 @@ export const STYLE = String.raw`<style>
      asks that its button be no smaller than the other sign-in buttons. */
   .oauth { margin-top: 18px; }
   .oauthdiv { display: flex; align-items: center; gap: 12px; margin: 0 0 12px;
-    color: var(--muted); font-size: 10.5px; font-weight: 700; letter-spacing: .15em;
-    text-transform: uppercase; }
+    color: var(--muted); font-size: 11px; font-weight: 600; }
   .oauthdiv::before, .oauthdiv::after { content: ""; flex: 1 1 0; height: 1px; background: var(--line); }
   .oauthbtns { display: flex; flex-direction: column; gap: 10px; }
   .oabtn { display: flex; align-items: center; gap: 10px; width: 100%; min-width: 140px;
@@ -243,7 +277,8 @@ export const STYLE = String.raw`<style>
     -webkit-mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 26px), transparent 100%);
     mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 26px), transparent 100%); }
   .chips::-webkit-scrollbar { display: none; }
-  .chip { flex: 0 0 auto; border: none; background: var(--sand); color: var(--ink-2);
+  .chip { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px;
+    border: none; background: var(--sand); color: var(--ink-2);
     border-radius: 999px; padding: 9px 14px; font-size: 13px; font-weight: 600; line-height: 1;
     letter-spacing: -.005em;
     transition: background-color var(--t-2) var(--e-soft), color var(--t-2) var(--e-soft),
@@ -291,7 +326,8 @@ export const STYLE = String.raw`<style>
     display: flex; align-items: center; justify-content: center; font-size: 12px; line-height: 1;
     color: transparent; flex: 0 0 auto; transition: background-color var(--t-2), border-color var(--t-2); }
   .colrow.in .mark { background: var(--ember); border-color: var(--ember); color: var(--on-ember); }
-  .colrow .ce { width: 26px; text-align: center; font-size: 18px; flex: 0 0 auto; }
+  .colrow .ce { width: 26px; font-size: 18px; flex: 0 0 auto;
+    display: flex; align-items: center; justify-content: center; }
   .colrow .ct { flex: 1; min-width: 0; }
   .colrow .ct b { display: block; font-size: 14px; font-weight: 600; line-height: 1.3;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -334,15 +370,17 @@ export const STYLE = String.raw`<style>
     display: flex; align-items: center; justify-content: center; font-size: 13px; line-height: 1;
     background: rgba(10,14,20,.46); border-radius: 999px; color: #FFC9A8; }
   .durbadge { position: absolute; left: 9px; bottom: 9px; z-index: 2; font-size: 10.5px; font-weight: 700;
-    letter-spacing: .02em; color: #fff; background: rgba(10,14,20,.56); padding: 4px 8px;
+    letter-spacing: .02em; font-variant-numeric: tabular-nums;
+    color: #fff; background: rgba(10,14,20,.56); padding: 4px 8px;
     border-radius: 999px; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
   .cardbody { padding: 11px 3px 0; min-width: 0; }
   .cardkick { display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
     margin-bottom: 5px; min-width: 0; }
-  .catpill { font-size: 9.5px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
+  /* 10.5 rather than the 11 the other captions took: these two sit directly above
+     a 15px title in a two-column grid, and at 11 they compete with it. */
+  .catpill { font-size: 10.5px; font-weight: 650;
     color: var(--ember-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-  .diffpill { font-size: 10px; font-weight: 700; color: var(--muted); white-space: nowrap; flex: 0 0 auto;
-    text-transform: uppercase; letter-spacing: .08em; }
+  .diffpill { font-size: 10.5px; font-weight: 600; color: var(--muted); white-space: nowrap; flex: 0 0 auto; }
   .cardtitle { font-family: var(--display); font-size: 15px; font-weight: 650; line-height: 1.25;
     letter-spacing: -.018em; color: var(--ink); display: -webkit-box;
     -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
@@ -380,7 +418,10 @@ export const STYLE = String.raw`<style>
   .empty .big { position: relative; width: 96px; height: 96px; margin: 0 auto 22px;
     border-radius: 999px; background: radial-gradient(circle at 50% 36%, var(--card), var(--sand));
     box-shadow: var(--sh-md); display: flex; align-items: center; justify-content: center;
-    font-size: 38px; animation: floaty 5.5s ease-in-out infinite; }
+    font-size: 38px; color: var(--ember); animation: floaty 5.5s ease-in-out infinite; }
+  /* A drawn mark, not a 96px emoji. Thinner than the rest of the set because it
+     is four times the size: 2px at 38px reads as a marker pen. */
+  .empty .big .ic { stroke-width: 1.5; }
   .empty .big::after { content: ""; position: absolute; inset: -11px;
     border-radius: 999px; border: 1px dashed var(--line-2); }
   @keyframes floaty { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
@@ -415,8 +456,7 @@ export const STYLE = String.raw`<style>
   .embedwrap.wide { aspect-ratio: 16 / 9; }
   .embedwrap.wide iframe { height: 100%; }
   .dphoto { width: 100%; display: block; border-radius: 20px; box-shadow: var(--sh-md); margin-bottom: 20px; }
-  .dkick { font-size: 10px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase;
-    color: var(--ember-ink); margin-bottom: 8px; }
+  .dkick { font-size: 11px; font-weight: 650; color: var(--ember-ink); margin-bottom: 8px; }
   .dtitle { font-family: var(--display); font-size: 28px; font-weight: 700; line-height: 1.14;
     letter-spacing: -.032em; margin: 0 0 10px; }
   /* People save from three or four creators they trust, not thirty, so the handle
@@ -452,9 +492,8 @@ export const STYLE = String.raw`<style>
   .spec { flex: 1; padding: 13px 8px; text-align: center; border-right: 1px solid var(--line); min-width: 0; }
   .spec:last-child { border-right: none; }
   .spec .v { font-family: var(--display); font-size: 17px; font-weight: 700; letter-spacing: -.02em;
-    color: var(--ink); }
-  .spec .k { font-size: 9.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
-    color: var(--muted); margin-top: 4px; }
+    color: var(--ink); font-variant-numeric: tabular-nums; }
+  .spec .k { font-size: 11px; font-weight: 600; color: var(--muted); margin-top: 4px; }
   .startbtn { width: 100%; border: none; border-radius: 16px; padding: 16px; font-size: 16px;
     font-weight: 700; background: var(--ember); color: var(--on-ember); box-shadow: 0 4px 18px var(--glow);
     margin-bottom: 22px; letter-spacing: -.01em; transition: transform var(--t-1) var(--e-out); }
@@ -463,10 +502,7 @@ export const STYLE = String.raw`<style>
     padding: 16px 16px 6px; margin-bottom: 14px; box-shadow: var(--sh-sm); }
   .sect h3 { font-family: var(--display); font-size: 12px; font-weight: 700; letter-spacing: .11em;
     text-transform: uppercase; color: var(--muted); margin: 0 0 12px; }
-  .blocktitle { font-family: var(--display); font-size: 15px; font-weight: 700; letter-spacing: -.02em;
-    margin: 0 0 3px; }
-  .blockmeta { font-size: 11.5px; color: var(--muted); margin-bottom: 11px; font-weight: 600;
-    text-transform: uppercase; letter-spacing: .07em; }
+  .blockmeta { font-size: 11.5px; color: var(--muted); margin-bottom: 11px; font-weight: 600; }
   .exrow { display: flex; align-items: flex-start; gap: 11px; padding: 11px 0;
     border-top: 1px solid var(--line); }
   .exrow:first-of-type { border-top: none; }
@@ -480,8 +516,7 @@ export const STYLE = String.raw`<style>
   /* An exercise the user has corrected or added by hand. The card still shows the
      creator's wording everywhere else, so this is the only mark that says which
      lines are theirs — quiet, and it never appears on model output. */
-  .exmine { font-size: 9.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
-    color: var(--muted); margin-top: 4px; }
+  .exmine { font-size: 11px; font-weight: 600; color: var(--muted); margin-top: 4px; }
   /* Same visual language as .selectrow select — sand fill, hairline, 12px radius —
      one step quieter, because adding a missed exercise is a repair, not an action
      the card is asking for. */
@@ -499,6 +534,7 @@ export const STYLE = String.raw`<style>
     line-height: 1.5; color: var(--ink-2); background: var(--sand); border: 1px solid var(--line);
     border-radius: 12px; padding: 10px 12px; margin-bottom: 14px; }
   .unverified b { color: var(--ink); font-weight: 650; }
+  .unverified .ic { width: 17px; height: 17px; margin-top: 1px; color: var(--ember-ink); }
   .unverified .fixlink { display: inline; background: none; border: 0; padding: 0; margin: 0;
     font: inherit; color: var(--ember-ink); font-weight: 650; text-decoration: underline;
     text-underline-offset: 2px; cursor: pointer; }
@@ -599,7 +635,7 @@ export const STYLE = String.raw`<style>
   .swapitem { padding: 11px 0; border-top: 1px solid var(--line); }
   .swapitem:first-of-type { border-top: none; }
   .swapitem b { font-size: 14.5px; font-weight: 650; line-height: 1.35; }
-  .swapitem .tag { font-size: 9.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+  .swapitem .tag { font-size: 11px; font-weight: 600;
     color: var(--ember-ink); margin-left: 8px; white-space: nowrap; }
   .swapitem .why { font-size: 13px; color: var(--ink-2); line-height: 1.5; margin-top: 3px; }
   .swapitem .trade { font-size: 12.5px; color: var(--muted); line-height: 1.5; margin-top: 3px; }
@@ -664,9 +700,14 @@ export const STYLE = String.raw`<style>
   .tab:nth-child(4) { --i: 2; }
   .tab:nth-child(5) { --i: 3; }
   .tab:focus-visible { outline: 2px solid var(--ember); outline-offset: -3px; border-radius: 14px; }
-  .tab .ti { font-size: 19px; line-height: 1; filter: grayscale(calc(1 - var(--p)));
-    opacity: calc(.55 + .45 * var(--p));
+  /* The grayscale filter is gone with the emoji it was there to launder: a line
+     icon in currentColor already takes the muted-to-ember mix on the .tab above,
+     per frame, which is what the emoji could never do. */
+  .tab .ti { line-height: 1; opacity: calc(.62 + .38 * var(--p));
     transform: translateY(calc(-1px * var(--p))) scale(calc(1 + .08 * var(--p))); }
+  /* A 2px stroke at 21px is the weight of a 700 label; the lit tab earns a little
+     more of it, the way SF Symbols go from Regular to Semibold on selection. */
+  .tab .ti .ic { stroke-width: calc(1.85 + .35 * var(--p)); }
 
   /* ---------- pull to refresh ---------- */
   #ptr { position: fixed; top: calc(env(safe-area-inset-top) + 6px); left: 50%; z-index: 30;
@@ -689,6 +730,9 @@ export const STYLE = String.raw`<style>
   .weekbar { display: flex; align-items: center; justify-content: space-between; gap: 10px;
     margin: 10px 0 16px; }
   .weekbar b { font-family: var(--display); font-size: 16px; font-weight: 700; letter-spacing: -.02em; }
+  /* An empty week is seven dashed boxes and no explanation of what they are for.
+     One line above them, only while there is nothing planned. */
+  .planlede { font-size: 13px; line-height: 1.55; color: var(--ink-2); margin: 0 0 14px; }
   .daycard { background: var(--card); border: 1px solid var(--line); border-radius: 16px;
     padding: 13px 15px; margin-bottom: 9px; box-shadow: var(--sh-sm); }
   .daycard.today { border-color: var(--ember); }
@@ -712,9 +756,8 @@ export const STYLE = String.raw`<style>
   .stat { background: var(--card); border: 1px solid var(--line); border-radius: 15px; padding: 14px 10px;
     text-align: center; box-shadow: var(--sh-sm); }
   .stat .v { font-family: var(--display); font-size: 24px; font-weight: 700; letter-spacing: -.03em;
-    line-height: 1; color: var(--ink); }
-  .stat .k { font-size: 9.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
-    color: var(--muted); margin-top: 6px; }
+    line-height: 1; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .stat .k { font-size: 11px; font-weight: 600; color: var(--muted); margin-top: 6px; }
   .chartcard { background: var(--card); border: 1px solid var(--line); border-radius: 18px;
     padding: 16px; margin-bottom: 14px; box-shadow: var(--sh-sm); }
   .chartcard h3 { font-family: var(--display); font-size: 12px; font-weight: 700; letter-spacing: .11em;
@@ -775,8 +818,8 @@ export const STYLE = String.raw`<style>
   .bodybox .bodymus { cursor: pointer; outline: none; }
   .bodybox .bodymus.sel, .bodybox .bodymus:focus-visible { stroke: var(--ink);
     stroke-width: 1.6px; vector-effect: non-scaling-stroke; }
-  .bodylbl { font-size: 9.5px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
-    color: var(--muted); margin-top: 7px; }
+  .bodylbl { font-size: 11px; font-weight: 600; color: var(--muted); margin-top: 7px;
+    text-transform: capitalize; }
   .bodylegend { display: flex; flex-wrap: wrap; justify-content: center; align-items: center;
     gap: 5px 14px; margin: 15px 0 0; }
   .bodylegend .lg { display: inline-flex; align-items: center; font-size: 11px; font-weight: 600;
@@ -812,8 +855,7 @@ export const STYLE = String.raw`<style>
   .wdot.done { background: var(--good); }
   .wmain { flex: 1; display: flex; flex-direction: column; justify-content: center;
     padding: 10px 26px; text-align: center; overflow-y: auto; }
-  .wblock { font-size: 11px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase;
-    color: var(--ember-ink); margin-bottom: 12px; }
+  .wblock { font-size: 12.5px; font-weight: 650; color: var(--ember-ink); margin-bottom: 12px; }
   .wname { font-family: var(--display); font-size: 32px; font-weight: 700; line-height: 1.12;
     letter-spacing: -.035em; margin: 0 0 12px; }
   .wdose { font-size: 16px; color: var(--ink-2); font-weight: 600; margin-bottom: 4px; }
@@ -896,8 +938,7 @@ export const STYLE = String.raw`<style>
   .sumfigs .setpill:nth-child(3) { animation-delay: 140ms; }
   .sumprs { margin-top: 4px; }
   .sumprs .setpill { animation-delay: 210ms; }
-  .sumprs .setpill b { color: var(--ember-ink); font-size: 11px; letter-spacing: .1em;
-    text-transform: uppercase; }
+  .sumprs .setpill b { color: var(--ember-ink); font-size: 12px; }
   .sumdone { margin-top: 24px; animation: viewin var(--t-3) var(--e-out) 260ms both; }
   /* The clip, in a sheet, at the moment it is wanted. Shorter than the detail
      view's embed so the close button stays on screen with it. */
@@ -908,8 +949,8 @@ export const STYLE = String.raw`<style>
     background: var(--card); color: var(--ink); font-size: 20px; line-height: 1; }
   .stepper .val { font-family: var(--display); font-size: 30px; font-weight: 700; min-width: 96px;
     text-align: center; font-variant-numeric: tabular-nums; letter-spacing: -.03em; }
-  .stepper .val small { display: block; font-size: 10px; font-weight: 700; letter-spacing: .12em;
-    text-transform: uppercase; color: var(--muted); margin-top: 4px; }
+  .stepper .val small { display: block; font-size: 11px; font-weight: 600;
+    color: var(--muted); margin-top: 4px; }
 
   /* ---------- Pumpy ----------
      The coach's mark is currentColor everywhere it appears, so it takes the tab's
@@ -918,9 +959,6 @@ export const STYLE = String.raw`<style>
      place the accent is used as a border, because it is the one thing on the
      screen asking for a decision. */
   .tab .ti svg { width: 21px; height: 21px; display: block; }
-  /* The mark is a line drawing, not an emoji: greyscaling it does nothing but it
-     still takes the opacity and lift every other item gets. */
-  .tab .ti#pumpytab { filter: none; }
   .pmark { width: 28px; height: 28px; border-radius: 999px; background: var(--ember-soft); color: var(--ember-ink);
     display: flex; align-items: center; justify-content: center; flex: 0 0 auto; }
   .pmark svg { width: 17px; height: 17px; display: block; }
@@ -964,25 +1002,33 @@ export const STYLE = String.raw`<style>
     border-bottom-right-radius: 6px; box-shadow: 0 3px 12px var(--glow); }
   .msg.pumpy { background: var(--card); border: 1px solid var(--line); box-shadow: var(--sh-sm);
     border-bottom-left-radius: 6px; color: var(--ink); }
-  .msg.typing { color: var(--muted); letter-spacing: .2em; }
+  /* Three dots that do not move read as a bubble that broke, not as thinking.
+     Opacity only, so it costs the compositor nothing while a model is answering. */
+  .msg.typing { display: flex; align-items: center; gap: 5px; padding: 15px 16px; }
+  .msg.typing i { width: 6px; height: 6px; border-radius: 999px; background: var(--muted);
+    animation: typedot 1.2s var(--e-soft) infinite; }
+  .msg.typing i:nth-child(2) { animation-delay: .18s; }
+  .msg.typing i:nth-child(3) { animation-delay: .36s; }
+  @keyframes typedot { 0%, 65%, 100% { opacity: .3; } 30% { opacity: 1; } }
   .msgin { animation: msgin var(--t-3) var(--e-out); }
   @keyframes msgin { from { opacity: 0; transform: translateY(9px); } }
   .proposal { background: var(--card); border: 1.5px solid var(--ember); border-radius: 18px; padding: 14px 16px 12px;
     box-shadow: var(--sh-md); }
-  .proposal h4 { font-family: var(--display); font-size: 11px; font-weight: 700; letter-spacing: .13em;
-    text-transform: uppercase; color: var(--ember-ink); margin: 0 0 8px; }
+  .proposal h4 { font-family: var(--display); font-size: 12.5px; font-weight: 700;
+    color: var(--ember-ink); margin: 0 0 8px; }
   .proposal .ptitle { font-family: var(--display); font-size: 18px; font-weight: 700; letter-spacing: -.02em;
     margin: 0 0 4px; line-height: 1.2; }
   .proposal .pmeta { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
-  .proposal .pblock { font-size: 11px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase;
-    color: var(--muted); margin: 10px 0 2px; }
+  .proposal .pblock { font-size: 11.5px; font-weight: 600; color: var(--muted); margin: 10px 0 2px; }
   .proposal .pline { font-size: 13.5px; line-height: 1.5; color: var(--ink-2); padding: 6px 0;
     border-top: 1px solid var(--line); }
   .proposal .pline b { color: var(--ink); font-weight: 650; }
   .proposal .btnrow { margin-top: 12px; }
   .proposal .btnrow .btn { padding: 12px; font-size: 14.5px; }
   .proposal .done { color: var(--good); font-weight: 700; font-size: 13px; margin-top: 10px;
+    display: flex; align-items: center; gap: 5px;
     animation: donein var(--t-3) var(--e-out); }
+  .proposal .done .ic { width: 15px; height: 15px; }
   .proposal .declined { color: var(--muted); font-size: 13px; margin-top: 10px;
     animation: donein var(--t-3) var(--e-out); }
   @keyframes donein { from { opacity: 0; transform: translateY(-5px); } }
@@ -1024,6 +1070,20 @@ export const STYLE = String.raw`<style>
   .threadrow .tdel[data-armed="1"] { color: var(--ember-ink); }
   .threadnone { font-size: 13.5px; color: var(--muted); padding: 10px 0 4px; line-height: 1.6; }
   .setnote { font-size: 12.5px; color: var(--muted); line-height: 1.5; padding: 0 0 12px; margin-top: -4px; }
+  /* The colophon: version, changelog, a way to report something. Quiet on purpose
+     — it is the last thing in the sheet, not an invitation to leave. */
+  .setnote.foot { text-align: center; margin-top: 10px; padding-bottom: 0; }
+  .setnote.foot a { color: var(--muted); }
+
+  /* ---------- the keyboard ring ----------
+     Three controls in the whole app showed one. :focus-visible, so a thumb never
+     sees it and a Tab key always does; the outline follows each control's own
+     border-radius, so it fits a pill as well as it fits a square. */
+  button:focus-visible, a:focus-visible, [role="button"]:focus-visible, select:focus-visible {
+    outline: 2px solid var(--ember); outline-offset: 2px; }
+  /* The body map draws its own: an outline round a muscle's bounding box would be
+     a rectangle over the figure. */
+  .bodybox .bodymus:focus-visible { outline: none; }
 
   /* ---------- reach ----------
      Apple asks for 44px; these are drawn smaller because their rows are. Only the
@@ -1072,6 +1132,8 @@ export const STYLE = String.raw`<style>
     .sheetbody, .sheet.closing .sheetbody, .setpill.just, .setpill.just.pr,
     .empty .big, .thumbwrap.pending .noimg, .thumbwrap.failed .noimg,
     .thumbwrap.loading::after, .thumbwrap.pending::after { animation: none; }
+    /* The dots stop but stay: they are the only thing saying an answer is coming. */
+    .msg.typing i { animation: none; opacity: .6; }
     .thumbwrap img { transition: none; }
     #ptr.back { transition-duration: var(--t-1); }
   }
