@@ -4610,9 +4610,8 @@ export const APP = String.raw`
 
   // One history entry for the whole sheet layer, so the back gesture closes the
   // sheet instead of leaving the app. One and not one per sheet: a popstate closes
-  // every open sheet at once, and a sheet handing over to another (explain into
-  // swap) keeps the entry instead of stacking a second one to press back through.
-  // sheetBack counts the pops we ask for ourselves, which are not gestures.
+  // every open sheet at once, and a sheet handing over to another keeps the entry
+  // rather than stacking a second one. sheetBack counts our own pops, not gestures.
   var sheetNav = false, sheetBack = 0;
 
   function openSheet(id) {
@@ -5037,9 +5036,10 @@ export const APP = String.raw`
     state.unit = state.unit === "lb" ? "kg" : "lb";
     $("unittoggle").textContent = state.unit;
     saveSettings();
-    // Every weight on Progress is a conversion of a stored one, so the page has to
-    // be drawn again to be read in the new unit rather than merely relabelled.
-    if (state.logs) renderProgress();
+    // A drawn Progress has to be drawn again to be read in the new unit, not just
+    // relabelled — reloading the logs first if something has already dropped them.
+    if (!drawn.progress) return;
+    if (state.logs) renderProgress(); else quietly(loadLogs().then(renderProgress));
   }
 
   // Off, then the three rests worth an opinion. Four options do not earn a sheet.
