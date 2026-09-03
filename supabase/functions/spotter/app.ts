@@ -643,7 +643,13 @@ export const APP = String.raw`
     // Only when it was genuinely off screen. onAuthStateChange also fires on
     // every token refresh, and throwing a reader of Progress back to Library an
     // hour into a session would be a very hard bug to find.
-    if (wasHidden) resetPager();
+    if (!wasHidden) return;
+    resetPager();
+    // resetPager measures in the frame the app is revealed in, and iOS is still
+    // working the safe area out in that frame. Ask again once it has.
+    if (window.requestAnimationFrame) {
+      requestAnimationFrame(function () { measureChrome(); requestAnimationFrame(measureChrome); });
+    }
   }
 
   sb.auth.onAuthStateChange(function (event, session) {
@@ -4454,7 +4460,33 @@ export const APP = String.raw`
     return b.used.toLocaleString() + " of " + b.cap.toLocaleString() + " " + tail;
   }
 
+  // What this phone thinks its own screen is. There is no simulator on this side
+  // of the work and WebKit gets these numbers wrong in an installed app, so they
+  // go on the page for the one person who can read them off a real device. A probe
+  // element rather than constants: it prints what the layout actually got.
+  function layoutLine() {
+    var vv = window.visualViewport, p = el("div"), n = [];
+    p.style.cssText = "position:fixed;top:0;left:0;width:0;visibility:hidden";
+    document.body.appendChild(p);
+    ["100vh", "100dvh", "env(safe-area-inset-top)", "env(safe-area-inset-bottom)"]
+      .forEach(function (h) { p.style.height = h; n.push(p.offsetHeight); });
+    document.body.removeChild(p);
+    return "Layout " + screen.width + "x" + screen.height +
+      " · vv " + (vv ? Math.round(vv.height) : "—") + " · inner " + window.innerHeight +
+      " · vh " + n[0] + " · dvh " + n[1] + " · sa " + n[2] + "/" + n[3] +
+      " · chrome " + Math.round(hdrEl.getBoundingClientRect().height) +
+      "/" + Math.round(tabbar.getBoundingClientRect().height) +
+      " · " + (standalone() ? "standalone" : "browser");
+  }
+
   function renderSettingsMeter() {
+    var d = $("setdiag");
+    if (d) {
+      var staff = (state.profile && state.profile.plan === "staff") ||
+        (pumpy.meter && pumpy.meter.plan === "staff");
+      d.textContent = staff ? layoutLine() : "";
+      d.classList.toggle("hide", !staff);
+    }
     var n = $("setpumpy");
     if (!n) return;
     var p = pumpy.meter;
@@ -4695,9 +4727,11 @@ export const APP = String.raw`
   var sheetNav = false, sheetBack = 0;
 
   function openSheet(id) {
-    var n = $(id);
+    var n = $(id), b = n.querySelector(".sheetbody");
     clearTimeout(closeTimers[id]);
     n.classList.remove("closing");
+    // Whatever a drag left behind, so a sheet never opens half pushed away.
+    if (b) { b.classList.remove("snap"); b.style.transform = ""; }
     n.classList.add("open");
     if (!sheetNav) { sheetNav = true; history.pushState({ sheet: id }, ""); }
   }
@@ -4723,11 +4757,86 @@ export const APP = String.raw`
     }
   }
 
+  // ---------- pushing a sheet away ----------
+  //
+  // The grabber every sheet wears was a picture of a gesture: a sheet tall enough
+  // to cover its own scrim could not be closed at all, and installed to the home
+  // screen there is no back swipe to fall back on. Apple's rule, then — offered
+  // only where the sheet's own scroller is at its top or the finger is on the
+  // grabber, so a list inside a sheet still scrolls; 1:1 from there, resisting
+  // upwards rather than travelling; a flick or a third of its height sends it away
+  // through closeSheet, which is what hands the history entry back.
+  var SH_FLING = 350, SH_PART = 0.35;
+
+  function wireSheet(id) {
+    var sheet = $(id), body = sheet.querySelector(".sheetbody"), sd = null;
+    sheet.addEventListener("click", function (e) { if (e.target === sheet) closeSheet(id); });
+    if (!body) return;
+
+    function stop(e, cancelled) {
+      if (!sd || (e && e.pointerId !== sd.id)) return;
+      var d = sd;
+      sd = null;
+      if (!d.lock) return;
+      try { body.releasePointerCapture(d.id); } catch (err) { /* already gone */ }
+      swallowClick();
+      var s = d.s, a = s[0], b = s[s.length - 1], dt = (b.t - a.t) / 1000;
+      var v = dt > 0.004 ? (b.y - a.y) / dt : 0;
+      // The closing keyframe takes the transform it finds as its start, so the
+      // sheet carries on down from wherever the finger left it.
+      if (!cancelled && (v > SH_FLING || d.dy > body.offsetHeight * SH_PART)) { closeSheet(id); return; }
+      body.classList.add("snap");
+      body.style.transform = "";
+    }
+
+    body.addEventListener("pointerdown", function (e) {
+      // Fingers only, as the pager is: a mouse dragging across the address in
+      // Settings is selecting it, not throwing the sheet away.
+      if (e.pointerType !== "touch" && e.pointerType !== "pen") return;
+      if (sd || !e.isPrimary || noDragIn(e.target)) return;
+      // Below the header band the list has the gesture whenever it has somewhere
+      // to scroll; the top 44px — the grabber and the air around it — is the
+      // handle, and pulls the sheet down however far the list has been scrolled.
+      // Asked of the finger's position rather than what it landed on, because the
+      // gaps between rows are the sheet body itself and a drag there is a scroll.
+      if (body.scrollTop > 0 && e.clientY - body.getBoundingClientRect().top > 44) return;
+      sd = { id: e.pointerId, x: e.clientX, y: e.clientY, lock: false, dy: 0, s: [] };
+    });
+
+    body.addEventListener("pointermove", function (e) {
+      if (!sd || e.pointerId !== sd.id) return;
+      var dy = e.clientY - sd.y, dx = e.clientX - sd.x;
+      if (!sd.lock) {
+        if (Math.abs(dx) > SLOP && Math.abs(dx) > Math.abs(dy)) { sd = null; return; }
+        if (Math.abs(dy) <= SLOP) return;
+        sd.lock = true;
+        // Re-datum on the lock point so the sheet does not jump the slop distance.
+        sd.y = e.clientY; dy = 0;
+        body.classList.remove("snap");
+        try { body.setPointerCapture(sd.id); } catch (err) { /* not fatal */ }
+      }
+      sd.dy = dy;
+      // The release reads the last VWIN of travel, the same window the pager uses.
+      sd.s.push({ t: now(), y: e.clientY });
+      while (sd.s.length > 2 && sd.s[sd.s.length - 1].t - sd.s[0].t > VWIN) sd.s.shift();
+      // Up is not a dismissal, so it is answered with a third of itself.
+      body.style.transform = "translateY(" + (dy > 0 ? dy : dy / 3) + "px)";
+    });
+
+    // Pointer events are dispatched before the touch that caused them, so the drag
+    // has already decided by the time this runs. iOS needs the touch itself
+    // cancelled or it takes the gesture for a scroll and pointercancels us mid-drag.
+    body.addEventListener("touchmove", function (e) {
+      if (sd && sd.lock && e.cancelable) e.preventDefault();
+    }, { passive: false });
+
+    body.addEventListener("pointerup", function (e) { stop(e, false); });
+    body.addEventListener("pointercancel", function (e) { stop(e, true); });
+  }
+
   ["addsheet", "setsheet", "watchsheet", "exsheet", "exeditsheet", "explainsheet", "picksheet",
    "settingssheet", "colsheet", "renamesheet", "swapsheet", "pumpysheet", "capsheet"]
-    .forEach(function (id) {
-      $(id).addEventListener("click", function (e) { if (e.target === $(id)) closeSheet(id); });
-    });
+    .forEach(wireSheet);
 
   function overlayShowing() {
     if ($("detail").classList.contains("open")) return true;
@@ -5365,13 +5474,20 @@ export const APP = String.raw`
     paint();
   }
 
+  // Border box, not the observer's default content box: these two grow by their
+  // safe-area padding and by nothing else, iOS supplies those env() values after
+  // the first paint, and a content-box observer is specified not to report a
+  // padding-only change. That is how --hdr and --ptab came to be a status bar
+  // short. The events cover what an observer of three boxes cannot see — a
+  // rotation, a bfcache restore, the visual viewport settling.
   if (window.ResizeObserver) {
-    var chromeRO = new ResizeObserver(measureChrome);
-    chromeRO.observe(hdrEl); chromeRO.observe(tabbar); chromeRO.observe(pagesEl);
-  } else {
-    window.addEventListener("resize", measureChrome);
-    window.addEventListener("orientationchange", measureChrome);
+    var chromeRO = new ResizeObserver(measureChrome), border = { box: "border-box" };
+    chromeRO.observe(hdrEl, border); chromeRO.observe(tabbar, border); chromeRO.observe(pagesEl, border);
   }
+  window.addEventListener("resize", measureChrome);
+  window.addEventListener("orientationchange", measureChrome);
+  window.addEventListener("pageshow", measureChrome);
+  if (window.visualViewport) window.visualViewport.addEventListener("resize", measureChrome);
 
   // ---------- the drag ----------
   //
@@ -5396,10 +5512,22 @@ export const APP = String.raw`
   // walk stops at the page it finds, whichever page that is: mid-spring the
   // finger can land on the arriving one, and climbing past it would reach the
   // track — 1500px wide inside a 375px window — and refuse every drag.
-  function scrollerInWay(node) {
+  //
+  // Measuring wider than its box is not the same as being a scroller, and taking
+  // it for one is why Plan answered no swipe at all on the owner's phone: every
+  // 44px hit area here is a pseudo-element hanging a few pixels past the control
+  // it enlarges, which puts the week bar at 467 inside 464, a plan row at 436
+  // inside 432, Pumpy's composer at 466 inside 464. None of them scroll. So the
+  // test is what the box is told to do with its overflow, and whether it has
+  // anywhere left to go in the direction the finger is going.
+  function scrollerInWay(node, dx) {
     for (var n = node; n && n !== pagesEl; n = n.parentElement) {
       if (n.classList && n.classList.contains("page")) return false;
-      if (n.scrollWidth > n.clientWidth + 1) return true;
+      if (n.scrollWidth <= n.clientWidth + 1) continue;
+      var ox = getComputedStyle(n).overflowX;
+      if (ox !== "auto" && ox !== "scroll") continue;
+      // Finger right wants the page before it, which is the scroller running left.
+      if (dx > 0 ? n.scrollLeft > 0 : n.scrollLeft < n.scrollWidth - n.clientWidth - 1) return true;
     }
     return false;
   }
@@ -5417,13 +5545,13 @@ export const APP = String.raw`
   pagesEl.addEventListener("pointerdown", function (e) {
     if (e.pointerType !== "touch" && e.pointerType !== "pen") return;
     if (drag || overlayShowing()) return;
-    if (noDragIn(e.target) || scrollerInWay(e.target)) return;
+    if (noDragIn(e.target)) return;
     // Safari's back gesture starts at the very edge. Taking it over inside a
     // browser tab would trap the user on the page; installed to the home screen
     // there is no such gesture and the whole width is ours.
     if (!standalone() && e.clientX < 24) return;
     drag = { id: e.pointerId, x: e.clientX, y: e.clientY, from: idx, lock: false,
-      dx: 0, pos0: pos, raf: 0, s: [{ t: now(), x: e.clientX }] };
+      dx: 0, pos0: pos, raf: 0, on: e.target, s: [{ t: now(), x: e.clientX }] };
   });
 
   function dragFrame() {
@@ -5439,6 +5567,9 @@ export const APP = String.raw`
     if (!drag.lock) {
       if (Math.abs(dy) > SLOP && Math.abs(dy) >= Math.abs(dx)) { drag = null; return; }
       if (!(Math.abs(dx) > SLOP && Math.abs(dx) > Math.abs(dy) * 1.2)) return;
+      // Asked here rather than on the touch down: a scroller only owns the drag if
+      // it can answer the direction, and the direction is not known until now.
+      if (scrollerInWay(drag.on, dx)) { drag = null; return; }
       drag.lock = true;
       // Catch the spring where it is rather than restarting from its target. An
       // animation you can grab mid-flight is most of what makes this a surface.
@@ -5555,26 +5686,34 @@ export const APP = String.raw`
     }
   })();
 
-  // ---------- the keyboard ----------
+  // ---------- the frame ----------
   //
-  // iOS leaves the layout viewport alone and slides the visual one, so a fixed
-  // full-height app ends up with its tab bar and Pumpy's composer under the keys.
-  // While a field inside the app is focused the app follows the visual viewport
-  // instead. Android Chrome never gets here: interactive-widget in the viewport
-  // meta already resizes the content for it.
+  // --vvh and --vvtop size every full-screen layer. Their resting value is the CSS
+  // one set where they are declared, and this takes them over only for the
+  // keyboard, which no unit describes: iOS leaves the layout viewport alone and
+  // slides the visual one up, so a full-height app keeps its tab bar and Pumpy's
+  // composer under the keys. Following the visual viewport lifts the composer onto
+  // the keyboard as a native chat app does, and now carries an open sheet with it.
+  // Deliberately not the source of truth for the resting height: installed, WebKit
+  // reports it as short as everything else, and believing it would redraw the 59pt
+  // band this wave exists to remove.
   var kbOn = false;
 
   function fitViewport() {
-    var vv = window.visualViewport, a = $("app");
-    // body.kb hides the tab bar, so the test is height actually lost to the
-    // keyboard, not focus: a desktop browser and an external keyboard both focus
-    // a field without taking a pixel.
-    document.body.classList.toggle("kb", !!vv && kbOn && vv.height < window.innerHeight - 80);
-    if (!vv || !kbOn) { a.style.height = ""; a.style.top = ""; return; }
-    a.style.height = vv.height + "px";
-    a.style.top = vv.offsetTop + "px";
+    var vv = window.visualViewport, root = document.documentElement;
+    // The test is height actually lost to the keyboard, not focus: a desktop
+    // browser and an external keyboard both focus a field without taking a pixel.
+    var kb = !!vv && kbOn && vv.height < window.innerHeight - 80;
+    document.body.classList.toggle("kb", kb);
+    if (!kb) { root.style.removeProperty("--vvh"); root.style.removeProperty("--vvtop"); return; }
+    root.style.setProperty("--vvh", vv.height + "px");
+    root.style.setProperty("--vvtop", vv.offsetTop + "px");
     if (window.scrollY) window.scrollTo(0, 0);
   }
+
+  // The media feature is the modern signal and navigator.standalone the one older
+  // iOS answers; where only the second is true the stylesheet has not heard.
+  if (window.navigator.standalone) document.documentElement.classList.add("sa");
 
   if (window.visualViewport) {
     window.visualViewport.addEventListener("resize", fitViewport);
@@ -5731,6 +5870,7 @@ export const APP = String.raw`
     load().then(function () { b.classList.remove("spin"); });
   };
   $("settingsbtn").onclick = openSettings;
+  $("setclose").onclick = function () { closeSheet("settingssheet"); };
   $("copykey").onclick = function () {
     var t = $("setkey").textContent;
     if (navigator.clipboard) navigator.clipboard.writeText(t);

@@ -101,7 +101,7 @@ export const STYLE = String.raw`<style>
   .daydone { display: inline-flex; align-items: center; gap: 4px; }
 
   /* ---------- landing (signed out) ---------- */
-  #landing { display: none; min-height: 100vh; min-height: 100dvh; }
+  #landing { display: none; min-height: 100vh; min-height: var(--vvh, 100dvh); }
   #landing.open { display: block; }
   .land { max-width: 460px; margin: 0 auto; padding: calc(38px + env(safe-area-inset-top)) 24px 60px; }
   .brandrow { display: flex; align-items: center; gap: 11px; margin-bottom: 40px; }
@@ -192,13 +192,21 @@ export const STYLE = String.raw`<style>
   .landfoot { text-align: center; margin-top: 30px; font-size: 12px; color: var(--muted); }
   .landfoot a { color: var(--muted); }
 
-  /* ---------- app shell ----------
+  /* ---------- app shell, and the frame everything full-screen is drawn in ----------
      #app owns the viewport instead of the document: the four pages scroll inside
      it while the header and the tab bar stay put, which is the only arrangement
-     in which a page can slide sideways. The height follows the visual viewport
-     while a field is focused (fitViewport in app.ts) so the iOS keyboard pushes
-     the composer up rather than shoving the whole app off the top. */
-  #app { position: fixed; left: 0; right: 0; top: 0; height: 100vh; height: 100dvh;
+     in which a page can slide sideways. Its size is --vvh/--vvtop, and so is every
+     other full-screen layer's, because the layout viewport lies where it matters
+     most: an installed iOS app asking for viewport-fit=cover gets an ICB a
+     safe-area-inset-top short of the screen (WebKit 254868), so 100dvh,
+     -webkit-fill-available and visualViewport.height all read 793 of an 852pt
+     phone and everything fixed to the bottom floats a status bar above it. Only vh
+     still measures the whole screen there, which is the reverse of the rule for a
+     browser tab — hence the scope. fitViewport() takes both for the keyboard. */
+  :root { --vvh: 100dvh; --vvtop: 0px; }
+  @media all and (display-mode: standalone) { :root { --vvh: 100vh; } }
+  :root.sa { --vvh: 100vh; }   /* older iOS answers navigator.standalone, not the feature */
+  #app { position: fixed; left: 0; right: 0; top: var(--vvtop); height: var(--vvh);
     overflow: hidden; }
 
   /* ---------- header ---------- */
@@ -438,7 +446,8 @@ export const STYLE = String.raw`<style>
   .empty b { color: var(--ember-ink); font-weight: 700; }
 
   /* ---------- detail overlay ---------- */
-  .overlay { position: fixed; inset: 0; z-index: 50; background-color: var(--paper);
+  .overlay { position: fixed; left: 0; right: 0; top: var(--vvtop); height: var(--vvh);
+    z-index: 50; background-color: var(--paper);
     background-image: var(--grain); display: none; overflow-y: auto; -webkit-overflow-scrolling: touch; }
   .overlay.open { display: block; animation: slideup var(--t-3) var(--e-out); }
   @keyframes slideup { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
@@ -565,14 +574,28 @@ export const STYLE = String.raw`<style>
      workout — logging a set, the exercise list, the clip — was laid out, animated
      and hit-testable underneath an opaque full-screen overlay, so the taps landed
      on nothing. Still under the toast at 90, still over the detail overlay at 50. */
-  .sheet { position: fixed; inset: 0; z-index: 85; background: var(--scrim); display: none;
+  .sheet { position: fixed; left: 0; right: 0; top: var(--vvtop); height: var(--vvh);
+    z-index: 85; background: var(--scrim); display: none;
     align-items: flex-end; -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
   .sheet.open { display: flex; animation: fadein var(--t-2) var(--e-soft); }
   @keyframes fadein { from { opacity: 0; } }
-  .sheetbody { width: 100%; max-height: 86vh; overflow-y: auto; background: var(--paper);
+  /* 88% of the frame, so an eighth of the screen is always scrim you can tap: as
+     86vh of a viewport whose own top was off screen, Settings left none. The
+     bounce is off because the drag owns what happens at the top edge. */
+  .sheetbody { position: relative; width: 100%; max-height: 88%; overflow-y: auto;
+    overscroll-behavior: none; background: var(--paper);
     background-image: var(--grain); border-radius: 26px 26px 0 0; box-shadow: var(--sh-up);
     padding: 8px 20px calc(26px + env(safe-area-inset-bottom));
     animation: sheetup .38s var(--e-spring); }
+  /* Only on for the settle: the drag itself is 1:1 and must not be timed. */
+  .sheetbody.snap { transition: transform var(--t-3) var(--e-spring); }
+  /* The tallest sheet leaves the least scrim, so it also says how to leave. The
+     app's own icon button, so it is the same 38px control with the same 44px
+     reach as every other way out of a screen. */
+  /* Scoped to the sheet body so it outranks the reach block further down, which
+     makes every .iconbtn position: relative for its hit area and would otherwise
+     leave this one sitting in the flow at the top LEFT of the sheet. */
+  .sheetbody .sheetx { position: absolute; top: 10px; right: 14px; z-index: 1; }
   @keyframes sheetup { from { transform: translateY(100%); } }
   .sheet.closing { display: flex; pointer-events: none;
     animation: fadeout var(--t-2) var(--e-soft) both; }
@@ -667,16 +690,20 @@ export const STYLE = String.raw`<style>
   .pickrow .pt span { font-size: 11.5px; color: var(--muted); }
 
   /* ---------- toast ---------- */
-  #toast { position: fixed; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom));
-    transform: translate(-50%, 14px); z-index: 90; background: var(--ink); color: var(--paper);
+  /* Hung from the frame's bottom edge, not the layout viewport's — not the same
+     edge on an installed iPhone. -100% makes top the line the toast sits ON, so
+     the 96px of clearance still means 96px. */
+  #toast { position: fixed; left: 50%;
+    top: calc(var(--vvtop) + var(--vvh) - 96px - env(safe-area-inset-bottom));
+    transform: translate(-50%, calc(-100% + 14px)); z-index: 90; background: var(--ink); color: var(--paper);
     padding: 12px 18px; border-radius: 999px; font-size: 13.5px; font-weight: 600; opacity: 0;
     pointer-events: none; transition: opacity var(--t-2), transform var(--t-2) var(--e-out);
     box-shadow: var(--sh-lg); max-width: 88vw; text-align: center; }
-  #toast.show { opacity: 1; transform: translate(-50%, 0); }
+  #toast.show { opacity: 1; transform: translate(-50%, -100%); }
   /* Workout Mode has no tab bar to clear but a rest strip lands where the toast
      does: 76px of bottom bar, 48px of strip, 12px of air. "New best" used to sit
      on +15 s and Skip for three seconds. */
-  #workout.open ~ #toast { bottom: calc(136px + env(safe-area-inset-bottom)); }
+  #workout.open ~ #toast { top: calc(var(--vvtop) + var(--vvh) - 136px - env(safe-area-inset-bottom)); }
   #toast.tappable { pointer-events: auto; cursor: pointer; }
   /* The one toast the landing ever shows — a shared link waiting for sign-in —
      belongs above the fold, not across the sign-in card. There is no tab bar here
@@ -691,7 +718,10 @@ export const STYLE = String.raw`<style>
      from --x, the track's position measured in pages, so a tap, a fling and a
      finger halfway between two tabs all move the bar by the same rule. The spring
      in app.ts is the timing; a CSS transition on top of it would fight it. */
-  .tabbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; display: flex;
+  /* Absolute inside #app rather than fixed: the frame knows where the bottom of
+     the screen is and the layout viewport does not. #app is itself fixed, so this
+     is the same box in the same stacking context it has always been. */
+  .tabbar { position: absolute; left: 0; right: 0; bottom: 0; z-index: 40; display: flex;
     background: color-mix(in srgb, var(--paper) 88%, transparent);
     -webkit-backdrop-filter: blur(22px) saturate(1.6); backdrop-filter: blur(22px) saturate(1.6);
     border-top: 1px solid var(--line); padding: 8px 6px calc(6px + env(safe-area-inset-bottom)); }
@@ -817,23 +847,38 @@ export const STYLE = String.raw`<style>
     vector-effect: non-scaling-stroke; }
   .bodybox .bodymus, .bodybox .sw { fill: var(--body-mus); background-color: var(--body-mus);
     transition: fill var(--t-3) var(--e-out), background-color var(--t-3) var(--e-out),
-      opacity var(--t-3) var(--e-out); }
+      fill-opacity var(--t-3) var(--e-out), opacity var(--t-3) var(--e-out); }
   .bodybox .lit { fill: var(--ember); background-color: var(--ember); }
-  .bodybox.s2 .lv1 { opacity: .45; }
-  .bodybox.s2 .lv2 { opacity: 1; }
+  /* One number, spent twice: fill-opacity on the figure, opacity on the legend's
+     swatches. A path's own opacity takes its selection ring down with it, and the
+     ring has to read on the faintest band as well as the brightest. */
+  .bodybox .bodymus { fill-opacity: var(--o, 1); }
+  .bodybox .sw { opacity: var(--o, 1); }
+  .bodybox.s2 .lv1 { --o: .45; }
+  .bodybox.s2 .lv2 { --o: 1; }
   /* Primary carries a rim as well as its weight, so the split survives a colour-blind
      eye and a bad screen. MuscleWiki hatches its primaries for the same reason; a rim
      is the version of that which does not turn ten regions into texture. */
   .bodybox.s2 .bodymus.lv2, .bodybox.s2 .sw.lv2 { stroke: var(--ember-ink);
     stroke-width: 1px; vector-effect: non-scaling-stroke;
     box-shadow: inset 0 0 0 1px var(--ember-ink); }
-  .bodybox.s4 .lv1 { opacity: .26; }
-  .bodybox.s4 .lv2 { opacity: .5; }
-  .bodybox.s4 .lv3 { opacity: .74; }
-  .bodybox.s4 .lv4 { opacity: 1; }
+  .bodybox.s4 .lv1 { --o: .26; }
+  .bodybox.s4 .lv2 { --o: .5; }
+  .bodybox.s4 .lv3 { --o: .74; }
+  .bodybox.s4 .lv4 { --o: 1; }
   .bodybox .bodymus { cursor: pointer; outline: none; }
-  .bodybox .bodymus.sel, .bodybox .bodymus:focus-visible { stroke: var(--ink);
-    stroke-width: 1.6px; vector-effect: non-scaling-stroke; }
+  /* No one colour can ring a shape that might be any of eight fills: ink on a
+     dark-mode ember is 2.3:1, and pale fails the other way at 1.2:1 on the
+     untargeted grey. So the ring is a pair — an ink line with a paper halo outside
+     it — and whichever half a fill swallows, the other stands at 4.8:1 or better,
+     both schemes, all eight. .lit matches the primary's ember rim above for weight
+     and comes after it, so a tapped primary wears this instead. */
+  .bodybox .bodymus.sel, .bodybox .bodymus.sel.lit,
+  .bodybox .bodymus:focus-visible, .bodybox .bodymus.lit:focus-visible {
+    stroke: var(--ink); stroke-width: 2px; vector-effect: non-scaling-stroke;
+    filter: drop-shadow(0 0 1px var(--paper)) drop-shadow(0 0 1px var(--paper)); }
+  .bodybox .bodymus.sel { animation: setpop var(--t-3) var(--e-spring);
+    transform-box: fill-box; transform-origin: center; }
   .bodylbl { font-size: 11px; font-weight: 600; color: var(--muted); margin-top: 7px;
     text-transform: capitalize; }
   .bodylegend { display: flex; flex-wrap: wrap; justify-content: center; align-items: center;
@@ -849,12 +894,13 @@ export const STYLE = String.raw`<style>
   .bodypick.on { color: var(--ink); font-weight: 550; }
   .bodynote { font-size: 12px; color: var(--muted); text-align: center; line-height: 1.5; margin: 10px 0 8px; }
   @media (prefers-reduced-motion: reduce) {
-    .bodyfig { animation: none; }
+    .bodyfig, .bodybox .bodymus.sel { animation: none; }
     .bodybox .bodymus, .bodybox .sw, .bodypick { transition: none; }
   }
 
   /* ---------- workout mode ---------- */
-  #workout { position: fixed; inset: 0; z-index: 80; background-color: var(--paper);
+  #workout { position: fixed; left: 0; right: 0; top: var(--vvtop); height: var(--vvh);
+    z-index: 80; background-color: var(--paper);
     background-image: radial-gradient(140% 90% at 50% -10%, var(--ember-soft), transparent 62%), var(--grain);
     display: none; flex-direction: column; }
   #workout.open { display: flex; animation: fadein var(--t-3) var(--e-soft); }
@@ -1177,6 +1223,7 @@ export const STYLE = String.raw`<style>
       animation: fadeout var(--t-1) var(--e-soft) both; }
     /* The staggered summary is :nth-child, which outranks the rule above it. */
     .sumfigs .setpill:nth-child(n) { animation-delay: 0ms; }
+    .sheetbody.snap { transition: none; }
     .sheetbody, .sheet.closing .sheetbody, .setpill.just, .setpill.just.pr,
     .empty .big, .thumbwrap.pending .noimg, .thumbwrap.failed .noimg,
     .thumbwrap.loading::after, .thumbwrap.pending::after { animation: none; }

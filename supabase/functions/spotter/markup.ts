@@ -414,6 +414,7 @@ export const MARKUP_BODY = String.raw`</head>
 
 <div class="sheet" id="settingssheet"><div class="sheetbody">
   <div class="grabber"></div>
+  <button class="iconbtn sheetx" id="setclose" aria-label="Close settings"><svg class="ic"><use href="#i-x"></use></svg></button>
   <h2>Settings</h2>
   <div class="kv"><span class="k">Signed in as</span><span class="v" id="setemail">—</span></div>
   <div class="kv hide" id="setprovrow"><span class="k">Sign-in method</span><span class="v" id="setprov">—</span></div>
@@ -439,6 +440,9 @@ export const MARKUP_BODY = String.raw`</head>
     <button class="btn ghost" id="rotatekey">New key</button>
   </div>
   <button class="danger" id="signout">Sign out</button>
+  <!-- What this phone believes about its own screen. Staff only, and there so the
+       one person holding an affected device can photograph the numbers. -->
+  <div class="setnote foot hide" id="setdiag"></div>
   <!-- The last line of the app, and the one that says a person is behind it. The
        version comes from the constant in app.ts so there is one place to change
        it; the report goes to the public issue tracker rather than an address,
