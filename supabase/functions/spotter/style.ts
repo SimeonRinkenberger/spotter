@@ -241,10 +241,11 @@ export const STYLE = String.raw`<style>
   .hbtns { display: flex; gap: 8px; }
 
   /* ---------- the pager ----------
-     touch-action hands vertical pans to the browser (which then fires
-     pointercancel at us) and keeps horizontal ones, so the axis lock is the
-     platform's rather than a pile of preventDefault. */
-  .pages { position: absolute; inset: 0; overflow: hidden; touch-action: pan-y pinch-zoom; }
+     No touch-action on purpose. Asking for pan-y let WebKit start scrolling
+     before the drag had said a word, and it then cancelled our pointer on any
+     drag that was not ruler-straight. Left alone, WebKit waits for the verdict
+     of the non-passive touchmove in app.ts, so the axis is ours to decide. */
+  .pages { position: absolute; inset: 0; overflow: hidden; }
   .track { display: flex; height: 100%; }
   .track.dragging { will-change: transform; }
   .page { flex: 0 0 100%; height: 100%; overflow-y: auto; overscroll-behavior: contain;
@@ -285,10 +286,9 @@ export const STYLE = String.raw`<style>
   .search::placeholder { color: var(--muted); }
 
   /* ---------- filter chips ---------- */
-  /* The pager's touch-action gives the browser vertical pans only; this row has
-     to ask for horizontal ones back or it stops scrolling sideways. */
+  /* This row used to ask for horizontal pans back, because the pager was taking
+     them away at the top. It no longer takes them, so there is nothing to ask. */
   .chips { display: flex; gap: 7px; overflow-x: auto; padding: 14px 18px 6px; scrollbar-width: none;
-    touch-action: pan-x pan-y;
     -webkit-mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 26px), transparent 100%);
     mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 26px), transparent 100%); }
   .chips::-webkit-scrollbar { display: none; }

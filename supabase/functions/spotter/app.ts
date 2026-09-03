@@ -4901,9 +4901,10 @@ export const APP = String.raw`
   // to cover its own scrim could not be closed at all, and installed to the home
   // screen there is no back swipe to fall back on. Apple's rule, then — offered
   // only where the sheet's own scroller is at its top or the finger is on the
-  // grabber, so a list inside a sheet still scrolls; 1:1 from there, resisting
-  // upwards rather than travelling; a flick or a third of its height sends it away
-  // through closeSheet, which is what hands the history entry back.
+  // grabber, and only downwards while the list still has anywhere to go, so a
+  // list inside a sheet still scrolls; 1:1 from there, resisting upwards rather
+  // than travelling; a flick or a third of its height sends it away through
+  // closeSheet, which is what hands the history entry back.
   var SH_FLING = 350, SH_PART = 0.35;
 
   function wireSheet(id) {
@@ -4947,6 +4948,13 @@ export const APP = String.raw`
       if (!sd.lock) {
         if (Math.abs(dx) > SLOP && Math.abs(dx) > Math.abs(dy)) { sd = null; return; }
         if (Math.abs(dy) <= SLOP) return;
+        // A finger moving up is asking the list to come up. The drag used to
+        // claim that too, and the touchmove below then cancelled the scroll it
+        // was asking for — which is why Settings, a long sheet that opens at its
+        // top, could not be scrolled to its Sign out button at all. Upward
+        // belongs to the sheet only when there is nothing underneath to scroll,
+        // and that is the same answer on the grabber band as below it.
+        if (dy < 0 && body.scrollHeight > body.clientHeight + 1) { sd = null; return; }
         sd.lock = true;
         // Re-datum on the lock point so the sheet does not jump the slop distance.
         sd.y = e.clientY; dy = 0;
@@ -5629,14 +5637,34 @@ export const APP = String.raw`
 
   // ---------- the drag ----------
   //
-  // The axis lock is the browser's own: .pages asks for touch-action pan-y, so a
-  // vertical pan is taken by the page's scroller (and arrives here as
-  // pointercancel) while a horizontal one is handed to us. Nothing below has to
-  // call preventDefault on a touch.
+  // The axis lock is ours now, not the browser's. .pages used to ask for
+  // touch-action pan-y and let WebKit arbitrate: a vertical pan went straight to
+  // the page's scroller and reached us only as a pointercancel. Two things were
+  // wrong with that. WebKit starts the scroll before any script has spoken, and
+  // on iOS it cancels the pointer on a merely diagonal drag even when sideways
+  // plainly dominates (w3c/pointerevents#303) — so on a page that scrolls, only
+  // a ruler-straight swipe ever got through, which is exactly what the owner
+  // reported about Plan.
+  //
+  // So .pages declares no touch-action, which makes WebKit wait for a verdict on
+  // every touchmove, and the non-passive listener below gives it one: while we
+  // hold a horizontal lock the touch is cancelled, the scroller never sees the
+  // gesture, and there is no pointercancel left to lose. Pointer events are
+  // dispatched before the touch that caused them, so the axis chosen in
+  // pointermove is already known to the touchmove that follows it.
+  //
+  // The verdict is taken once, at the moment the finger clears the slop, and it
+  // is deliberately generous: 45 degrees normally, up to 65 when whatever is
+  // under the finger has nowhere to scroll the way the finger is drifting,
+  // because then a lazy diagonal can only have meant sideways.
 
   var FLING = 350;        // px/s past which a flick is a fling, not a nudge
   var SLOP = 8;           // px before either axis has been chosen
   var VWIN = 100;         // ms of pointer history the release velocity reads
+  var QUICK = 300;        // ms within which a short travel still counts as a flick
+  var QUICKPX = 30;       // px of travel that flick has to have covered
+  var PART = 0.4;         // of a page dragged, past which a slow release commits
+  var LEAN = 2.14;        // tan 65deg: the most a drag may lean and still be sideways
   var drag = null;
 
   // Fields, the chip row, the body map, anything that says so: places where a
@@ -5670,6 +5698,28 @@ export const APP = String.raw`
     return false;
   }
 
+  // The same question one axis over, and the one that decides how far the lock is
+  // allowed to lean: has anything under the finger got somewhere left to go in
+  // the direction the finger is drifting. A page with no overflow, or one already
+  // resting against the end being pulled towards, cannot have been asked to
+  // scroll — so a drag that is only roughly sideways there was still a swipe.
+  function scrollableY(node, dy) {
+    for (var n = node; n && n !== pagesEl; n = n.parentElement) {
+      var page = !!(n.classList && n.classList.contains("page"));
+      if (n.scrollHeight > n.clientHeight + 1) {
+        var oy = getComputedStyle(n).overflowY;
+        if (page || oy === "auto" || oy === "scroll") {
+          // Finger down wants the content above it, which is the scroller running up.
+          if (dy > 0 ? n.scrollTop > 0 : n.scrollTop < n.scrollHeight - n.clientHeight - 1) return true;
+        }
+      }
+      // The page is the last scroller in the stack; the track above it is 1500px
+      // of pages side by side and has nothing to say about vertical.
+      if (page) return false;
+    }
+    return false;
+  }
+
   // One click follows the finger up after a drag. It belongs to whatever the drag
   // started on and must not open it.
   function swallowClick() {
@@ -5689,7 +5739,7 @@ export const APP = String.raw`
     // there is no such gesture and the whole width is ours.
     if (!standalone() && e.clientX < 24) return;
     drag = { id: e.pointerId, x: e.clientX, y: e.clientY, from: idx, lock: false,
-      dx: 0, pos0: pos, raf: 0, on: e.target, s: [{ t: now(), x: e.clientX }] };
+      dx: 0, pos0: pos, raf: 0, lockT: 0, on: e.target, s: [{ t: now(), x: e.clientX }] };
   });
 
   function dragFrame() {
@@ -5703,12 +5753,23 @@ export const APP = String.raw`
     if (!drag || e.pointerId !== drag.id) return;
     var dx = e.clientX - drag.x, dy = e.clientY - drag.y;
     if (!drag.lock) {
-      if (Math.abs(dy) > SLOP && Math.abs(dy) >= Math.abs(dx)) { drag = null; return; }
-      if (!(Math.abs(dx) > SLOP && Math.abs(dx) > Math.abs(dy) * 1.2)) return;
+      var ax = Math.abs(dx), ay = Math.abs(dy);
+      // Nothing is decided until the finger has actually gone somewhere — in any
+      // direction. The old rule read a running bias and threw the whole gesture
+      // away the first time the finger wandered 8px vertical; a finger swiping
+      // across a phone held in one hand wanders.
+      if (ax * ax + ay * ay < SLOP * SLOP) return;
+      // 45 degrees, widened to 65 when nothing underneath could scroll that way.
+      // The exception is Library sitting at its top with the finger coming down:
+      // that is the pull to refresh, and it keeps the strict angle so a swipe has
+      // to look like a swipe.
+      var lean = (!scrollableY(drag.on, dy) && !(ptrPulling && dy > 0)) ? LEAN : 1;
+      if (ay > ax * lean) { drag = null; return; }
       // Asked here rather than on the touch down: a scroller only owns the drag if
       // it can answer the direction, and the direction is not known until now.
       if (scrollerInWay(drag.on, dx)) { drag = null; return; }
       drag.lock = true;
+      drag.lockT = now();
       // Catch the spring where it is rather than restarting from its target. An
       // animation you can grab mid-flight is most of what makes this a surface.
       stopSpring();
@@ -5728,6 +5789,15 @@ export const APP = String.raw`
     if (!drag.raf) drag.raf = requestAnimationFrame(dragFrame);
   });
 
+  // The whole reason .pages can drop touch-action. WebKit holds the scroll until
+  // this has run, and the pointermove above has already chosen the axis by the
+  // time it does, so a locked drag simply takes the touch off the scroller. The
+  // pull to refresh keeps its own passive listeners on this same element: they
+  // read the gesture, this one is the only one that answers for it.
+  pagesEl.addEventListener("touchmove", function (e) {
+    if (drag && drag.lock && e.cancelable) e.preventDefault();
+  }, { passive: false });
+
   function endDrag(e, cancelled) {
     if (!drag || (e && e.pointerId !== drag.id)) return;
     var d = drag;
@@ -5736,11 +5806,15 @@ export const APP = String.raw`
     if (!d.lock) return;
     try { pagesEl.releasePointerCapture(d.id); } catch (err) { /* already gone */ }
     swallowClick();
-    var near = clamp(Math.round(pos / pageW), 0, LAST);
-    if (cancelled) { commit(near); springTo(near * pageW, 0); return; }
 
     var s = d.s, i;
-    s.push({ t: now(), x: e.clientX });
+    // A cancel arriving after the lock is an interruption — a call, a banner
+    // dropping in — and can no longer be the browser taking the axis off us,
+    // because every touch since the lock has been prevented. So it ends the drag
+    // on a lift's terms, minus the lift's own sample: a cancel carries whatever
+    // coordinates the pointer last had, and stamping those with the time they
+    // arrived would read as a finger that had come to a stop.
+    if (!cancelled) s.push({ t: now(), x: e.clientX });
     var last = s[s.length - 1], first = s[0];
     for (i = s.length - 1; i >= 0; i--) { if (last.t - s[i].t <= VWIN) first = s[i]; }
     var dt = (last.t - first.t) / 1000;
@@ -5758,14 +5832,30 @@ export const APP = String.raw`
     // negated.
     var v = dt > 0.004 ? -(last.x - first.x) / dt : 0;
 
+    // Where a release with nothing behind it lands. Measured from the page the
+    // lock started on rather than rounded off the track, because at two fifths
+    // the two stop agreeing: that much of a page is enough to have meant it, and
+    // demanding the full half is what makes a pager feel like it is holding on.
+    var moved = pageW ? (pos - d.from * pageW) / pageW : 0;
+    var near = clamp(d.from + (moved > PART ? 1 : (moved < -PART ? -1 : 0)), 0, LAST);
+
+    // A finger decelerates into the lift, so a real flick can read as a
+    // standstill across the last 100ms and be answered with a spring back to
+    // where it started. Swiper's short-swipe rule instead: released soon after
+    // the lock, having covered ground one way, is a flick whatever the velocity
+    // window happens to say.
+    var dir = 0;
+    if (Math.abs(v) > FLING) dir = v > 0 ? 1 : -1;
+    else if (now() - d.lockT < QUICK && Math.abs(d.dx) > QUICKPX) dir = d.dx < 0 ? 1 : -1;
+
     var to = near;
-    if (Math.abs(v) > FLING) {
+    if (dir) {
       // A flick moves exactly one page from where it started — two pages on one
       // throw is how a pager loses the person using it — unless the drag had
       // already carried the track further, where springing back against the
       // finger would be the wrong answer.
-      to = clamp(d.from + (v > 0 ? 1 : -1), 0, LAST);
-      if ((v > 0 && pos > to * pageW) || (v < 0 && pos < to * pageW)) to = near;
+      to = clamp(d.from + dir, 0, LAST);
+      if ((dir > 0 && pos > to * pageW) || (dir < 0 && pos < to * pageW)) to = near;
     }
     commit(to);
     springTo(to * pageW, v);
