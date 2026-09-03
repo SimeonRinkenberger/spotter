@@ -2161,6 +2161,9 @@
     } else {
       state.user = null;
       state.workouts = []; state.logs = null; state.plan = null;
+      // What the last person was looking for is not what the next one is. The
+      // library came back narrowed to a search and a creator nobody had typed.
+      state.filter = "All"; state.q = ""; $("search").value = "";
       showLanding();
     }
   });
@@ -2577,15 +2580,19 @@
     today.busy = true;
     Promise.all([
       sb.from("plan").select("workout_id").eq("day", key),
-      // A day either side: eight this morning in Sydney is yesterday in UTC. The
-      // window is deliberately loose and sameDay() decides.
+      // Pulled back a day: no time zone can then leave this morning's session
+      // outside the window, and the local date below is what decides.
       sb.from("workout_logs").select("started_at")
         .gte("started_at", ymd(new Date(Date.now() - 86400000)) + "T00:00:00Z")
     ]).then(function (rs) {
       today.day = key;
       today.rows = rs[0].data || [];
       // The Plan's own test for its tick, so the two cannot disagree about today.
-      today.done = (rs[1].data || []).some(function (l) { return sameDay(l.started_at, key); });
+      // A day is the local one: comparing UTC dates ticked the wrong day every
+      // evening west of Greenwich, which is most of an evening's training.
+      today.done = (rs[1].data || []).some(function (l) {
+        return l.started_at && ymd(new Date(l.started_at)) === key;
+      });
       renderToday();
     }).catch(function () { /* the age check tries again in half a minute */ })
       .then(function () { today.busy = false; today.at = Date.now(); });
@@ -2880,11 +2887,13 @@
     }
     d.appendChild(titleEl);
     // The handle does what a collection pill does: close the card, land in a library
-    // already narrowed to that creator.
+    // already narrowed to that creator. setView only moves the pager now — arriving
+    // on a page deliberately does not redraw it — so the new filter has to be drawn
+    // here, or the library lands still showing everything.
     if (w.author) {
       var au = el("button", "dauthor", "@" + w.author);
       au.onclick = function () {
-        state.filter = "by:" + authorKey(w.author); history.back(); setView("library");
+        state.filter = "by:" + authorKey(w.author); render(); history.back(); setView("library");
       };
       d.appendChild(au);
     }
@@ -3521,7 +3530,7 @@
     wrap.id = "dcols";
     colsOf(w.id).forEach(function (c) {
       var p = el("button", "pill accent", colLabel(c));
-      p.onclick = function () { state.filter = "col:" + c.id; history.back(); setView("library"); };
+      p.onclick = function () { state.filter = "col:" + c.id; render(); history.back(); setView("library"); };
       wrap.appendChild(p);
     });
     if (!wrap.children.length) wrap.classList.add("hide");
@@ -3634,6 +3643,7 @@
         if (colCtx) { toggleMembership(c, colCtx); return; }
         closeSheet("colsheet");
         state.filter = "col:" + c.id;
+        render();
         setView("library");
       };
       list.appendChild(row);
@@ -5063,16 +5073,6 @@
       String(d.getDate()).padStart(2, "0");
   }
 
-  // Did this timestamp happen on this local day. started_at is UTC and a day is
-  // not: slicing the first ten characters of the ISO string ticks Thursday for a
-  // session logged at 19:36 on Wednesday in Chicago, and misses this morning
-  // entirely in Sydney. Compare moments, not strings.
-  function sameDay(iso, key) {
-    if (!iso) return false;
-    var t = new Date(iso);
-    return !isNaN(t.getTime()) && ymd(t) === key;
-  }
-
   // What the week actually holds, cheaply. Arriving on a tab must not tear the
   // page down and rebuild it: that loses where it was scrolled to and buys
   // nothing when the answer is the same answer.
@@ -5088,12 +5088,10 @@
     var start = ymd(state.weekStart);
     var endD = new Date(state.weekStart);
     endD.setDate(endD.getDate() + 6);
-    // A day before Monday, because a Monday-morning session east of UTC is stored
-    // with Sunday's date. sameDay() below decides which day each one lands on.
-    var fromD = new Date(state.weekStart.getTime() - 86400000);
     return Promise.all([
       sb.from("plan").select("*").gte("day", start).lte("day", ymd(endD)),
-      sb.from("workout_logs").select("id,started_at").gte("started_at", ymd(fromD) + "T00:00:00Z")
+      sb.from("workout_logs").select("id,started_at")
+        .gte("started_at", ymd(new Date(state.weekStart.getTime() - 86400000)) + "T00:00:00Z")
     ]).then(function (rs) {
       state.plan = rs[0].data || [];
       state.planLogs = rs[1].data || [];
@@ -5150,7 +5148,9 @@
         var card = el("div", "daycard" + (key === todayStr ? " today" : ""));
         var head = el("div", "dayhead");
         head.appendChild(el("div", "dayname", names[i] + " " + d.getDate()));
-        var didLog = (state.planLogs || []).some(function (l) { return sameDay(l.started_at, key); });
+        var didLog = (state.planLogs || []).some(function (l) {
+          return l.started_at && ymd(new Date(l.started_at)) === key;
+        });
         if (didLog) { head.appendChild(icon(el("div", "daydone"), "check", "done")); done++; }
         card.appendChild(head);
 
@@ -6713,8 +6713,13 @@
     // The lift lands in the same millisecond as the last move often enough — a
     // stuttering frame, a browser batching pointer events — that reading only
     // the window would report a fling as a standstill. Fall back to the whole
-    // buffer before giving up on having a velocity at all.
-    if (dt < 0.004 && s.length > 1) { first = s[0]; dt = (last.t - first.t) / 1000; }
+    // buffer before giving up on having a velocity at all, but only while the
+    // buffer is itself inside the window: a finger that has not moved for longer
+    // than that has stopped, and averaging across the pause would read the whole
+    // drag as one throw and commit a page nobody asked for.
+    if (dt < 0.004 && s.length > 1 && last.t - s[0].t <= VWIN) {
+      first = s[0]; dt = (last.t - first.t) / 1000;
+    }
     // pos runs against the finger, so the track's velocity is the pointer's
     // negated.
     var v = dt > 0.004 ? -(last.x - first.x) / dt : 0;
