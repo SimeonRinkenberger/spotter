@@ -2673,11 +2673,13 @@
     }
     d.appendChild(titleEl);
     // The handle does what a collection pill does: close the card, land in a library
-    // already narrowed to that creator.
+    // already narrowed to that creator. setView only moves the pager now — arriving
+    // on a page deliberately does not redraw it — so the new filter has to be drawn
+    // here, or the library lands still showing everything.
     if (w.author) {
       var au = el("button", "dauthor", "@" + w.author);
       au.onclick = function () {
-        state.filter = "by:" + authorKey(w.author); history.back(); setView("library");
+        state.filter = "by:" + authorKey(w.author); render(); history.back(); setView("library");
       };
       d.appendChild(au);
     }
@@ -3283,7 +3285,7 @@
     wrap.id = "dcols";
     colsOf(w.id).forEach(function (c) {
       var p = el("button", "pill accent", colLabel(c));
-      p.onclick = function () { state.filter = "col:" + c.id; history.back(); setView("library"); };
+      p.onclick = function () { state.filter = "col:" + c.id; render(); history.back(); setView("library"); };
       wrap.appendChild(p);
     });
     if (!wrap.children.length) wrap.classList.add("hide");
@@ -3391,6 +3393,7 @@
         if (colCtx) { toggleMembership(c, colCtx); return; }
         closeSheet("colsheet");
         state.filter = "col:" + c.id;
+        render();
         setView("library");
       };
       list.appendChild(row);
