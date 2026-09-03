@@ -592,7 +592,10 @@ export const STYLE = String.raw`<style>
   /* The tallest sheet leaves the least scrim, so it also says how to leave. The
      app's own icon button, so it is the same 38px control with the same 44px
      reach as every other way out of a screen. */
-  .sheetx { position: absolute; top: 10px; right: 14px; z-index: 1; }
+  /* Scoped to the sheet body so it outranks the reach block further down, which
+     makes every .iconbtn position: relative for its hit area and would otherwise
+     leave this one sitting in the flow at the top LEFT of the sheet. */
+  .sheetbody .sheetx { position: absolute; top: 10px; right: 14px; z-index: 1; }
   @keyframes sheetup { from { transform: translateY(100%); } }
   .sheet.closing { display: flex; pointer-events: none;
     animation: fadeout var(--t-2) var(--e-soft) both; }
