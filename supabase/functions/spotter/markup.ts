@@ -44,6 +44,7 @@ export const MARKUP_BODY = String.raw`</head>
 <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
 <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
 <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+<symbol id="i-chev" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
 <symbol id="i-star" viewBox="0 0 24 24"><path d="m12 2.6 2.9 6 6.6.9-4.8 4.6 1.2 6.5-5.9-3.1-5.9 3.1 1.2-6.5L2.5 9.5l6.6-.9z"/></symbol>
 <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
 <symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></symbol>
@@ -98,6 +99,9 @@ export const MARKUP_BODY = String.raw`</head>
       </div>
       <button class="btn" id="authgo">Create account</button>
       <div class="autherr" id="autherr"></div>
+      <!-- Only on the sign-in face. Offering it while somebody is creating an
+           account is offering to reset a password that does not exist yet. -->
+      <div class="authswap hide" id="forgotwrap"><button id="forgotpw" type="button">Forgot your password?</button></div>
       <!-- Provider sign-in. Both buttons stay in the DOM and are unhidden by
            renderAuthProviders() in app.ts once auth/v1/settings says the provider
            is switched on for this project; with neither enabled this whole block
@@ -416,47 +420,94 @@ export const MARKUP_BODY = String.raw`</head>
   <div id="pumpythreads"></div>
 </div></div>
 
+<!-- Settings is a grouped list now, five sections deep, in the order a person
+     asks the questions: who am I, how should it behave, how do I get videos in,
+     what do you hold on me, what is this. Apple's rule for a settings screen and
+     the shape every fitness app looked at (Hevy, Strong, Fitbod) already uses.
+     Sign out breaks with those three, which all park it at the very foot: here it
+     ends the FIRST section, because at the foot it sat under a Shortcut how-to
+     nobody could scroll past, and a control that cannot be found is not shipped.
+     Delete account stays last, which is where destructive belongs. -->
 <div class="sheet" id="settingssheet"><div class="sheetbody">
   <div class="grabber"></div>
   <button class="iconbtn sheetx" id="setclose" aria-label="Close settings"><svg class="ic"><use href="#i-x"></use></svg></button>
   <h2>Settings</h2>
-  <div class="kv"><span class="k">Signed in as</span><span class="v" id="setemail">—</span></div>
-  <div class="kv hide" id="setprovrow"><span class="k">Sign-in method</span><span class="v" id="setprov">—</span></div>
-  <div class="kv"><span class="k">Saved today</span><span class="v" id="setsaves">—</span></div>
+
+  <h3 class="seth">Account</h3>
+  <div class="setgroup">
+    <button class="kv row" id="setmailrow"><span class="k">Email</span><span class="v" id="setemail">&mdash;</span><svg class="ic chev"><use href="#i-chev"></use></svg></button>
+    <div class="kv hide" id="setprovrow"><span class="k">Sign-in method</span><span class="v" id="setprov">&mdash;</span></div>
+    <button class="kv row" id="setnamerow"><span class="k">Name</span><span class="v" id="setname">&mdash;</span><svg class="ic chev"><use href="#i-chev"></use></svg></button>
+    <button class="kv row hide" id="setpwrow"><span class="k">Password</span><span class="v">Change</span><svg class="ic chev"><use href="#i-chev"></use></svg></button>
+    <div class="kv"><span class="k">Saved today</span><span class="v" id="setsaves">&mdash;</span></div>
+  </div>
   <div class="setnote hide" id="setpumpy"></div>
-  <div class="kv"><span class="k">Weight unit</span>
-    <span class="v"><button class="chip" id="unittoggle">lb</button></span></div>
-  <div class="kv"><span class="k">Rest between sets</span>
-    <span class="v"><button class="chip" id="resttoggle">90 s</button></span></div>
-  <div class="kv"><span class="k">Timer sounds</span>
-    <span class="v"><button class="chip" id="soundtoggle">On</button></span></div>
-  <div class="setnote">The rest is used when the video does not say. The sounds are three
-    ticks and a chime, and only play while Spotter is open. Also in Workout Mode's top bar.</div>
-  <h2 style="margin-top:22px;font-size:16px">Save from your phone</h2>
-  <p class="lede"><b>Android</b> — install Spotter, then share any video to it from the share
+  <button class="btn ghost setout" id="signout">Sign out</button>
+
+  <h3 class="seth">Preferences</h3>
+  <div class="setgroup">
+    <div class="kv"><span class="k">Weight unit</span>
+      <span class="v"><button class="chip" id="unittoggle">lb</button></span></div>
+    <div class="kv"><span class="k">Timer sounds</span>
+      <span class="v"><button class="chip" id="soundtoggle">On</button></span></div>
+    <!-- Unhidden only where the browser will actually buzz. iOS Safari has no
+         navigator.vibrate at all, and a switch over nothing is a lie. -->
+    <div class="kv hide" id="sethapticrow"><span class="k">Vibration</span>
+      <span class="v"><button class="chip" id="haptictoggle">On</button></span></div>
+  </div>
+  <div class="setnote">The sounds are three ticks and a chime, and only play while Spotter is
+    open &mdash; also switchable from Workout Mode's top bar. How long you rest comes from the
+    card the video made, not from here.</div>
+
+  <h3 class="seth">Save from your phone</h3>
+  <p class="lede"><b>Android</b> &mdash; install Spotter, then share any video to it from the share
     sheet. Nothing below is needed.</p>
-  <p class="lede"><b>iPhone</b> — for now, make a Shortcut that POSTs the shared link to this
+  <p class="lede"><b>iPhone</b> &mdash; for now, make a Shortcut that POSTs the shared link to this
     address. A native share option is coming with the App Store version. Keep the address
-    private — it works without your password.</p>
-  <div class="keybox" id="setkey">—</div>
+    private &mdash; it works without your password.</p>
+  <div class="keybox" id="setkey">&mdash;</div>
   <div class="btnrow">
     <button class="btn ghost" id="copykey">Copy address</button>
     <button class="btn ghost" id="rotatekey">New key</button>
   </div>
-  <button class="danger" id="signout">Sign out</button>
+
+  <h3 class="seth">Data &amp; privacy</h3>
+  <div class="setgroup">
+    <button class="kv row" id="setexport"><span class="k">Export my data</span><span class="v" id="setexportv">JSON</span><svg class="ic chev"><use href="#i-chev"></use></svg></button>
+    <a class="kv row" href="privacy.html"><span class="k">Privacy policy</span><svg class="ic chev"><use href="#i-chev"></use></svg></a>
+    <button class="kv row del" id="setdelete"><span class="k">Delete account</span><svg class="ic chev"><use href="#i-chev"></use></svg></button>
+  </div>
+
+  <h3 class="seth">About</h3>
+  <div class="setgroup">
+    <a class="kv row" href="whats-new.html"><span class="k">What&rsquo;s new</span><span class="v" id="setver">&mdash;</span><svg class="ic chev"><use href="#i-chev"></use></svg></a>
+    <button class="kv row" id="settell"><span class="k">Tell a friend</span><svg class="ic chev"><use href="#i-chev"></use></svg></button>
+    <a class="kv row" href="https://github.com/SimeonRinkenberger/spotter/issues" target="_blank" rel="noopener"><span class="k">Something wrong? Tell me</span><svg class="ic chev"><use href="#i-chev"></use></svg></a>
+  </div>
   <!-- What this phone believes about its own screen. Staff only, and there so the
        one person holding an affected device can photograph the numbers. -->
   <div class="setnote foot hide" id="setdiag"></div>
   <!-- The last line of the app, and the one that says a person is behind it. The
-       version comes from the constant in app.ts so there is one place to change
-       it; the report goes to the public issue tracker rather than an address,
-       because an address in a public page is an address that gets harvested. -->
-  <div class="setnote foot"><span id="setver">Spotter</span> ·
-    <a href="whats-new.html">What&rsquo;s new</a> · Something wrong?
-    <a href="https://github.com/SimeonRinkenberger/spotter/issues" target="_blank" rel="noopener">Tell me</a>
-    <!-- Each drawing carries its own author under it; this is the standing line. -->
-    <span class="credit">Some exercise illustrations from wger contributors,
-    <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener">CC BY-SA 4.0</a>.</span></div>
+       report goes to the public issue tracker rather than an address, because an
+       address in a public page is an address that gets harvested. -->
+  <div class="setnote foot">Made by Simeon Rinkenberger &middot; Free while in beta</div>
+</div></div>
+
+<!-- One sheet for every account question, dressed by JS. Rename, change password,
+     change email, ask for a reset link, choose a new one after following it, and
+     confirm a deletion are the same object: a title, a sentence, some fields, one
+     button that does the thing. Six sheets of markup would have been six copies of
+     the same twenty lines and six more things to keep in step. -->
+<div class="sheet" id="accountsheet"><div class="sheetbody">
+  <div class="grabber"></div>
+  <h2 id="acctitle">Account</h2>
+  <p class="lede" id="acclede"></p>
+  <div id="accfields"></div>
+  <div class="autherr" id="accerr"></div>
+  <div class="btnrow">
+    <button class="btn ghost" id="acccancel">Cancel</button>
+    <button class="btn" id="accgo">Save</button>
+  </div>
 </div></div>
 
 <div id="toast"></div>
