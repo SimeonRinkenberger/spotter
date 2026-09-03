@@ -580,7 +580,16 @@ export const APP = String.raw`
     // Only when it was genuinely off screen. onAuthStateChange also fires on
     // every token refresh, and throwing a reader of Progress back to Library an
     // hour into a session would be a very hard bug to find.
-    if (wasHidden) resetPager();
+    if (!wasHidden) return;
+    resetPager();
+    // resetPager measures the chrome in the frame it is revealed in, and iOS is
+    // still deciding what the safe area is in that frame. Ask again once it has.
+    if (window.requestAnimationFrame) {
+      requestAnimationFrame(function () {
+        measureChrome();
+        requestAnimationFrame(measureChrome);
+      });
+    }
   }
 
   sb.auth.onAuthStateChange(function (event, session) {
@@ -5284,13 +5293,25 @@ export const APP = String.raw`
     paint();
   }
 
+  // Border box, not the observer's default content box. The header and the tab bar
+  // grow by their safe-area padding and by nothing else, and iOS hands those env()
+  // values over after the first paint — a padding-only change, which a content-box
+  // observer is specified not to report. That is how --hdr and --ptab came to be a
+  // status bar short on the one phone that has a status bar worth the name: the
+  // week bar and the empty-state circle started under the header, and the Pumpy
+  // composer finished under the tab bar.
   if (window.ResizeObserver) {
-    var chromeRO = new ResizeObserver(measureChrome);
-    chromeRO.observe(hdrEl); chromeRO.observe(tabbar); chromeRO.observe(pagesEl);
-  } else {
-    window.addEventListener("resize", measureChrome);
-    window.addEventListener("orientationchange", measureChrome);
+    var chromeRO = new ResizeObserver(measureChrome), border = { box: "border-box" };
+    chromeRO.observe(hdrEl, border); chromeRO.observe(tabbar, border); chromeRO.observe(pagesEl, border);
   }
+  // And the moments an observer of three boxes cannot see: a rotation, a return
+  // from the back/forward cache with the page already laid out, and the visual
+  // viewport settling after the keyboard or a URL bar has moved. Cheap, rare, and
+  // event-driven — nothing here asks the layout a question every frame.
+  window.addEventListener("resize", measureChrome);
+  window.addEventListener("orientationchange", measureChrome);
+  window.addEventListener("pageshow", measureChrome);
+  if (window.visualViewport) window.visualViewport.addEventListener("resize", measureChrome);
 
   // ---------- the drag ----------
   //
