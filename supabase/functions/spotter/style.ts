@@ -585,6 +585,28 @@ export const STYLE = String.raw`<style>
     letter-spacing: -.015em; }
   .sheetbody p.lede { font-size: 13.5px; line-height: 1.6; color: var(--ink-2); margin: 0 0 18px; }
   .sheetbody .aitext { font-size: 14.5px; line-height: 1.68; color: var(--ink-2); white-space: pre-wrap; }
+
+  /* ---------- how to do this ----------
+     The creator's line is the only thing here drawn in full ink: it came out of the
+     video the user saved, and everything under it is generic by comparison. The
+     slot below is fixed at 4:3 so the sheet never jumps when an image lands late,
+     and contains rather than crops — a drawing cut through the lifter's head
+     demonstrates nothing. */
+  .said { margin: 4px 0 16px; padding-left: 13px; border-left: 2px solid var(--ember); }
+  .saidlab { font-size: 11.5px; font-weight: 650; color: var(--muted); margin-bottom: 5px;
+    line-height: 1.4; }
+  .saidq { font-size: 15px; line-height: 1.55; color: var(--ink); word-break: break-word; }
+  .said .chip, #watchbody .chip { margin-top: 11px; padding: 11px 15px; }
+  .demo { margin: 0 0 16px; }
+  .demoslot { position: relative; aspect-ratio: 4 / 3; border-radius: 14px; overflow: hidden;
+    background: var(--sand); border: 1px solid var(--line); }
+  .demoslot img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+  /* Two frames held then crossed, opacity only; under reduced motion the second
+     never arrives. */
+  .demoslot img.b { opacity: 0; animation: demofade 1.6s var(--e-soft) infinite alternate; }
+  @keyframes demofade { 0%, 38% { opacity: 0; } 62%, 100% { opacity: 1; } }
+  .democredit { font-size: 11px; line-height: 1.45; color: var(--muted); margin-top: 6px; }
+  @media (prefers-reduced-motion: reduce) { .demoslot img.b { animation: none; } }
   .kv { display: flex; align-items: center; justify-content: space-between; gap: 12px;
     padding: 13px 0; border-top: 1px solid var(--line); font-size: 14px; }
   .kv:first-of-type { border-top: none; }
@@ -1122,6 +1144,7 @@ export const STYLE = String.raw`<style>
      — it is the last thing in the sheet, not an invitation to leave. */
   .setnote.foot { text-align: center; margin-top: 10px; padding-bottom: 0; }
   .setnote.foot a { color: var(--muted); }
+  .setnote.foot .credit { display: block; margin-top: 7px; opacity: .8; }
 
   /* ---------- the keyboard ring ----------
      Three controls in the whole app showed one. :focus-visible, so a thumb never
@@ -1138,9 +1161,9 @@ export const STYLE = String.raw`<style>
      hit area grows, capped at the gap to the next control so no two overlap.
      Insets come off the padding box: a bordered control needs a pixel more. */
   .iconbtn, .addbtn, .exhelp, .planx, .planadd, .mbtn, .addex, .danger,
-  .chips .chip, .pumpyctx button, .threadrow .tdel, .ttitle { position: relative; }
+  .chips .chip, .said .chip, .pumpyctx button, .threadrow .tdel, .ttitle { position: relative; }
   .iconbtn::after, .addbtn::after, .exhelp::after, .planx::after, .planadd::after,
-  .mbtn::after, .addex::after, .danger::after, .chips .chip::after,
+  .mbtn::after, .addex::after, .danger::after, .chips .chip::after, .said .chip::after,
   .pumpyctx button::after, .threadrow .tdel::after, .ttitle::after { content: ""; position: absolute; }
   .iconbtn::after { inset: -3px; }
   .addbtn::after { inset: -2px; }
@@ -1149,7 +1172,7 @@ export const STYLE = String.raw`<style>
   .planadd::after, .addex::after { inset: -5px 0; }
   .mbtn::after { inset: -6px 0; }
   .danger::after, .threadrow .tdel::after { inset: -3px 0; }
-  .chips .chip::after { inset: -6px 0; }
+  .chips .chip::after, .said .chip::after { inset: -6px 0; }
   .pumpyctx button::after { inset: -7px; }
   /* Up into the label, which is text and not a control; down to the dose line. */
   .ttitle::after { inset: -14px 0 -5px; }

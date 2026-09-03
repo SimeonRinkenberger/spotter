@@ -1,0 +1,2199 @@
+{
+ "note": "Set confirm:true on the ONE candidate that really is this exercise, or reject:true on the row if none of them are, then re-run node tools/map-demos.mjs run. matcher:'key' means the same words in another inflection and is usually safe; 'fuzzy' is word overlap and is the one to look at; ai:true means the drawing was generated rather than drawn, so check the form before you take it. Open preview to see the image.",
+ "generated": "2026-09-03",
+ "rows": [
+  {
+   "id": "split-squat",
+   "name": "Split Squat",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-988",
+     "source": "wger",
+     "name": "Bulgarian split squats left",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/988/6283b258-a4d7-4833-84f7-a38987022d3d.png",
+     "credit": "Illustration: Franpol, CC BY-SA 4.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-1593",
+     "source": "wger",
+     "name": "Smith Machine Split Squat",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1593/9815fcd6-cf40-4ddd-9b38-2eac25973de1.gif",
+     "credit": "Illustration: workout, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "bulgarian-split-squat",
+   "name": "Bulgarian Split Squat",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-988",
+     "source": "wger",
+     "name": "Bulgarian split squats left",
+     "score": 0.857,
+     "matcher": "fuzzy",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/988/6283b258-a4d7-4833-84f7-a38987022d3d.png",
+     "credit": "Illustration: Franpol, CC BY-SA 4.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-1706",
+     "source": "wger",
+     "name": "Bulgarian Squat with Dumbbells",
+     "score": 0.667,
+     "matcher": "fuzzy",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1706/0c5243cc-2539-4005-aee0-d3a8c5d3a32c.jfif",
+     "credit": "Illustration: AlucardEvil40, CC BY-SA 4.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-1593",
+     "source": "wger",
+     "name": "Smith Machine Split Squat",
+     "score": 0.571,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1593/9815fcd6-cf40-4ddd-9b38-2eac25973de1.gif",
+     "credit": "Illustration: workout, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "box-squat",
+   "name": "Box Squat",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-977",
+     "source": "wger",
+     "name": "Box squat",
+     "score": 1,
+     "matcher": "exact",
+     "ai": true,
+     "preview": "https://wger.de/media/exercise-images/977/3124c091-6395-4377-96c5-56048b627ceb.png",
+     "credit": "Illustration: clafal, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "lateral-lunge",
+   "name": "Lateral Lunge",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-1604",
+     "source": "wger",
+     "name": "Sliding Lateral Lunge",
+     "score": 0.8,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1604/7695428e-bfed-4021-b987-498d93153995.png",
+     "credit": "Illustration: RiccaBaro, CC BY-SA 4.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-984",
+     "source": "wger",
+     "name": "Lunges",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/984/5c7ffe68-e7b2-47f3-a22a-f9cc28640432.png",
+     "credit": "Illustration: Franpol, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "curtsy-lunge",
+   "name": "Curtsy Lunge",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-984",
+     "source": "wger",
+     "name": "Lunges",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/984/5c7ffe68-e7b2-47f3-a22a-f9cc28640432.png",
+     "credit": "Illustration: Franpol, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "step-up",
+   "name": "Step Up",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-981",
+     "source": "wger",
+     "name": "Step-ups",
+     "score": 1,
+     "matcher": "exact",
+     "ai": true,
+     "preview": "https://wger.de/media/exercise-images/981/f9377a7e-eb58-4cca-b805-2d36863aeb03.png",
+     "credit": "Illustration from wger, CC BY-SA 4.0",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "calf-raise",
+   "name": "Calf Raise",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-622",
+     "source": "wger",
+     "name": "Standing Calf Raises",
+     "score": 0.8,
+     "matcher": "key",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/622/9a429bd0-afd3-4ad0-8043-e9beec901c81.jpeg",
+     "credit": "Illustration: clafal, wger.de, CC BY-SA 4.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-1243",
+     "source": "wger",
+     "name": "Double Leg Calf Raise",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1243/53d4fabe-c994-4907-873f-8d82813a9832.png",
+     "credit": "Illustration: erikocobra, CC BY-SA 4.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-1620",
+     "source": "wger",
+     "name": "Seated Dumbbell Calf Raise",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1620/edd40e39-e337-4460-a8dd-6127d40ddd16.jpeg",
+     "credit": "Illustration: AlucardEvil40, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "seated-calf-raise",
+   "name": "Seated Calf Raise",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-1620",
+     "source": "wger",
+     "name": "Seated Dumbbell Calf Raise",
+     "score": 0.857,
+     "matcher": "fuzzy",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1620/edd40e39-e337-4460-a8dd-6127d40ddd16.jpeg",
+     "credit": "Illustration: AlucardEvil40, CC BY-SA 4.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-622",
+     "source": "wger",
+     "name": "Standing Calf Raises",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/622/9a429bd0-afd3-4ad0-8043-e9beec901c81.jpeg",
+     "credit": "Illustration: clafal, wger.de, CC BY-SA 4.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-1243",
+     "source": "wger",
+     "name": "Double Leg Calf Raise",
+     "score": 0.571,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1243/53d4fabe-c994-4907-873f-8d82813a9832.png",
+     "credit": "Illustration: erikocobra, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "single-leg-deadlift",
+   "name": "Single Leg Deadlift",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-1736",
+     "source": "wger",
+     "name": "Single-Leg Deadlift with Dumbbell",
+     "score": 0.857,
+     "matcher": "fuzzy",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1736/aa724cc5-c485-4f3e-9d2a-0c6ae4baefbe.png",
+     "credit": "Illustration: Tierrasverdes, CC BY-SA 4.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-1734",
+     "source": "wger",
+     "name": "Single-Leg Lunge with Kettlebell:",
+     "score": 0.571,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1734/782e2fbb-1267-476d-a817-14f3b83e0564.png",
+     "credit": "Illustration: Tierrasverdes, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "stiff-leg-deadlift",
+   "name": "Stiff Leg Deadlift",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-1736",
+     "source": "wger",
+     "name": "Single-Leg Deadlift with Dumbbell",
+     "score": 0.571,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1736/aa724cc5-c485-4f3e-9d2a-0c6ae4baefbe.png",
+     "credit": "Illustration: Tierrasverdes, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "deficit-deadlift",
+   "name": "Deficit Deadlift",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-184",
+     "source": "wger",
+     "name": "Deadlifts",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/184/1709c405-620a-4d07-9658-fade2b66a2df.jpeg",
+     "credit": "Illustration: philip, wger.de, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "hip-thrust",
+   "name": "Hip Thrust",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-1642",
+     "source": "wger",
+     "name": "Dumbbell Hip Thrust",
+     "score": 0.8,
+     "matcher": "fuzzy",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1642/a81ad922-caf5-47f8-99b4-640cb0717436.webp",
+     "credit": "Illustration: AlucardEvil40, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "single-leg-glute-bridge",
+   "name": "Single Leg Glute Bridge",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-265",
+     "source": "wger",
+     "name": "Glute Bridge",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/265/7528acb4-b2cc-4b75-b6ae-d514cbd4f78b.png",
+     "credit": "Illustration: tdprice12, CC BY-SA 4.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-1735",
+     "source": "wger",
+     "name": "Single-leg side glute press",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1735/43bca7d9-2333-43f3-8554-2d0b39fa2a07.png",
+     "credit": "Illustration: Tierrasverdes, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "kettlebell-deadlift",
+   "name": "Kettlebell Deadlift",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-1003",
+     "source": "wger",
+     "name": "Kettlebell deadlifts",
+     "score": 1,
+     "matcher": "key",
+     "ai": true,
+     "preview": "https://wger.de/media/exercise-images/1003/772d6e47-3865-4944-9255-7435d0b06782.png",
+     "credit": "Illustration from wger, CC BY-SA 4.0",
+     "confirm": false
+    },
+    {
+     "key": "wger-1612",
+     "source": "wger",
+     "name": "kettlebell sumo deadlift",
+     "score": 0.8,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1612/3dc33f57-2786-4305-8b91-e011d7055923.jpg",
+     "credit": "Illustration: Tierrasverdes, CC BY-SA 4.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-1641",
+     "source": "wger",
+     "name": "Kettlebell One Legged Deadlift",
+     "score": 0.8,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1641/68d9488d-2596-420f-be0f-52aa70732c83.webp",
+     "credit": "Illustration: AlucardEvil40, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "nordic-curl",
+   "name": "Nordic Curl",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-909",
+     "source": "wger",
+     "name": "Reverse Nordic Curl",
+     "score": 0.8,
+     "matcher": "fuzzy",
+     "ai": true,
+     "preview": "https://wger.de/media/exercise-images/909/159222d9-c1e4-46ae-89ee-6a2dfaab978d.png",
+     "credit": "Illustration: karly, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "power-clean",
+   "name": "Power Clean",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-1087",
+     "source": "wger",
+     "name": "Dumbbell Hang Power Cleans",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1087/d85f4e02-b20c-457c-bdfb-0b00e2d14150.jpg",
+     "credit": "Illustration: philip, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "hang-clean",
+   "name": "Hang Clean",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-1087",
+     "source": "wger",
+     "name": "Dumbbell Hang Power Cleans",
+     "score": 0.667,
+     "matcher": "fuzzy",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1087/d85f4e02-b20c-457c-bdfb-0b00e2d14150.jpg",
+     "credit": "Illustration: philip, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "snatch",
+   "name": "Snatch",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-1947",
+     "source": "wger",
+     "name": "dumbbell snatch",
+     "score": 0.667,
+     "matcher": "fuzzy",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1947/4201a9c0-f9e4-48ca-80f1-b46c7ffe5640.webp",
+     "credit": "Illustration: Aleid, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "sumo-deadlift-high-pull",
+   "name": "Sumo Deadlift High Pull",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-630",
+     "source": "wger",
+     "name": "Sumo Deadlift",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/630/b0f0c7d8-5878-4d9e-b820-21acc013741d.webp",
+     "credit": "Illustration: magdy, CC BY-SA 4.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-79",
+     "source": "wger",
+     "name": "Bent High Pulls",
+     "score": 0.571,
+     "matcher": "none",
+     "ai": true,
+     "preview": "https://wger.de/media/exercise-images/79/da58dfbf-748a-461b-891e-3d6bc9cc4be2.png",
+     "credit": "Illustration: lakerbeezel, CC BY-SA 4.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-1088",
+     "source": "wger",
+     "name": "Dumbbell sumo deadlift",
+     "score": 0.571,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1088/9f66b288-ce8f-4154-ba80-78fee267263c.jpg",
+     "credit": "Illustration: philip, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "incline-bench-press",
+   "name": "Incline Bench Press",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-538",
+     "source": "wger",
+     "name": "Incline Bench Press - Barbell",
+     "score": 0.857,
+     "matcher": "key",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/41/Incline-bench-press-1.png",
+     "credit": "Illustration: Everkinetic, wger.de, CC BY-SA 3.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-537",
+     "source": "wger",
+     "name": "Incline Bench Press - Dumbbell",
+     "score": 0.857,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/16/Incline-press-1.png",
+     "credit": "Illustration: Everkinetic, wger.de, CC BY-SA 3.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-539",
+     "source": "wger",
+     "name": "Incline Bench Press - MP",
+     "score": 0.857,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/61/Close-grip-bench-press-1.png",
+     "credit": "Illustration: Everkinetic, wger.de, CC BY-SA 3.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "decline-bench-press",
+   "name": "Decline Bench Press",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-185",
+     "source": "wger",
+     "name": "Decline Bench Press Barbell",
+     "score": 0.857,
+     "matcher": "fuzzy",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/100/Decline-bench-press-1.png",
+     "credit": "Illustration: Everkinetic, wger.de, CC BY-SA 3.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-73",
+     "source": "wger",
+     "name": "Bench Press",
+     "score": 0.8,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/192/Bench-press-1.png",
+     "credit": "Illustration: Everkinetic, sistab2, CC BY-SA 3.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-1831",
+     "source": "wger",
+     "name": "Hammerstrength Decline Press",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1831/2d9d509f-707b-4132-961e-91a2459ca198.jpg",
+     "credit": "Illustration: hans, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "dumbbell-bench-press",
+   "name": "Dumbbell Bench Press",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-537",
+     "source": "wger",
+     "name": "Incline Bench Press - Dumbbell",
+     "score": 0.857,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/16/Incline-press-1.png",
+     "credit": "Illustration: Everkinetic, wger.de, CC BY-SA 3.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-73",
+     "source": "wger",
+     "name": "Bench Press",
+     "score": 0.8,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/192/Bench-press-1.png",
+     "credit": "Illustration: Everkinetic, sistab2, CC BY-SA 3.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-567",
+     "source": "wger",
+     "name": "Shoulder Press, Dumbbells",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/123/dumbbell-shoulder-press-large-1.png",
+     "credit": "Illustration: Everkinetic, wger.de, CC BY-SA 3.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "incline-push-up",
+   "name": "Incline Push-Up",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-1551",
+     "source": "wger",
+     "name": "Push-Up",
+     "score": 0.8,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1551/a6a9e561-3965-45c6-9f2b-ee671e1a3a45.png",
+     "credit": "Illustration: Settebello, CC BY-SA 4.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-454",
+     "source": "wger",
+     "name": "Pike Push Ups",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": true,
+     "preview": "https://wger.de/media/exercise-images/454/447f3c17-405f-46e0-b138-65c2a8caaab0.png",
+     "credit": "Illustration: Nash, CC BY-SA 4.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-1112",
+     "source": "wger",
+     "name": "Push-Ups | Decline",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1112/81f40bee-4adf-4317-8476-1a87706e3031.png",
+     "credit": "Illustration: anon1337, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "decline-push-up",
+   "name": "Decline Push-Up",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-1112",
+     "source": "wger",
+     "name": "Push-Ups | Decline",
+     "score": 1,
+     "matcher": "key",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1112/81f40bee-4adf-4317-8476-1a87706e3031.png",
+     "credit": "Illustration: anon1337, CC BY-SA 4.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-1551",
+     "source": "wger",
+     "name": "Push-Up",
+     "score": 0.8,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1551/a6a9e561-3965-45c6-9f2b-ee671e1a3a45.png",
+     "credit": "Illustration: Settebello, CC BY-SA 4.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-454",
+     "source": "wger",
+     "name": "Pike Push Ups",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": true,
+     "preview": "https://wger.de/media/exercise-images/454/447f3c17-405f-46e0-b138-65c2a8caaab0.png",
+     "credit": "Illustration: Nash, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "diamond-push-up",
+   "name": "Diamond Push-Up",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-1551",
+     "source": "wger",
+     "name": "Push-Up",
+     "score": 0.8,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1551/a6a9e561-3965-45c6-9f2b-ee671e1a3a45.png",
+     "credit": "Illustration: Settebello, CC BY-SA 4.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-454",
+     "source": "wger",
+     "name": "Pike Push Ups",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": true,
+     "preview": "https://wger.de/media/exercise-images/454/447f3c17-405f-46e0-b138-65c2a8caaab0.png",
+     "credit": "Illustration: Nash, CC BY-SA 4.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-1112",
+     "source": "wger",
+     "name": "Push-Ups | Decline",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1112/81f40bee-4adf-4317-8476-1a87706e3031.png",
+     "credit": "Illustration: anon1337, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "wide-push-up",
+   "name": "Wide Push-Up",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-1551",
+     "source": "wger",
+     "name": "Push-Up",
+     "score": 0.8,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1551/a6a9e561-3965-45c6-9f2b-ee671e1a3a45.png",
+     "credit": "Illustration: Settebello, CC BY-SA 4.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-454",
+     "source": "wger",
+     "name": "Pike Push Ups",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": true,
+     "preview": "https://wger.de/media/exercise-images/454/447f3c17-405f-46e0-b138-65c2a8caaab0.png",
+     "credit": "Illustration: Nash, CC BY-SA 4.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-1112",
+     "source": "wger",
+     "name": "Push-Ups | Decline",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1112/81f40bee-4adf-4317-8476-1a87706e3031.png",
+     "credit": "Illustration: anon1337, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "pike-push-up",
+   "name": "Pike Push-Up",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-454",
+     "source": "wger",
+     "name": "Pike Push Ups",
+     "score": 1,
+     "matcher": "exact",
+     "ai": true,
+     "preview": "https://wger.de/media/exercise-images/454/447f3c17-405f-46e0-b138-65c2a8caaab0.png",
+     "credit": "Illustration: Nash, CC BY-SA 4.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-1551",
+     "source": "wger",
+     "name": "Push-Up",
+     "score": 0.8,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1551/a6a9e561-3965-45c6-9f2b-ee671e1a3a45.png",
+     "credit": "Illustration: Settebello, CC BY-SA 4.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-1112",
+     "source": "wger",
+     "name": "Push-Ups | Decline",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1112/81f40bee-4adf-4317-8476-1a87706e3031.png",
+     "credit": "Illustration: anon1337, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "archer-push-up",
+   "name": "Archer Push-Up",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-1551",
+     "source": "wger",
+     "name": "Push-Up",
+     "score": 0.8,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1551/a6a9e561-3965-45c6-9f2b-ee671e1a3a45.png",
+     "credit": "Illustration: Settebello, CC BY-SA 4.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-454",
+     "source": "wger",
+     "name": "Pike Push Ups",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": true,
+     "preview": "https://wger.de/media/exercise-images/454/447f3c17-405f-46e0-b138-65c2a8caaab0.png",
+     "credit": "Illustration: Nash, CC BY-SA 4.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-1112",
+     "source": "wger",
+     "name": "Push-Ups | Decline",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1112/81f40bee-4adf-4317-8476-1a87706e3031.png",
+     "credit": "Illustration: anon1337, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "chest-fly",
+   "name": "Chest Fly",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-926",
+     "source": "wger",
+     "name": "Machine chest fly",
+     "score": 0.8,
+     "matcher": "fuzzy",
+     "ai": true,
+     "preview": "https://wger.de/media/exercise-images/926/ae9deb5d-a1e9-4c30-b1e3-c128ba5d4969.png",
+     "credit": "Illustration: novadani, CC BY-SA 4.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-1922",
+     "source": "wger",
+     "name": "Seated Cable chest fly",
+     "score": 0.667,
+     "matcher": "fuzzy",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1922/eb750ee5-3220-4128-aef1-5e2f1ccff40a.webp",
+     "credit": "Illustration: shushu, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "incline-dumbbell-fly",
+   "name": "Incline Dumbbell Fly",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-238",
+     "source": "wger",
+     "name": "Fly With Dumbbells",
+     "score": 0.8,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/238/2fc242d3-5bdd-4f97-99bd-678adb8c96fc.png",
+     "credit": "Illustration: cshep442, wger.de, CC BY-SA 4.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-537",
+     "source": "wger",
+     "name": "Incline Dumbbell Press",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/16/Incline-press-1.png",
+     "credit": "Illustration: Everkinetic, wger.de, CC BY-SA 3.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-828",
+     "source": "wger",
+     "name": "Incline Bench Reverse Fly",
+     "score": 0.571,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/828/2e959dab-f39b-4c7c-9063-eb43064ab5eb.png",
+     "credit": "Illustration: cshep442, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "cable-fly",
+   "name": "Cable Fly",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-237",
+     "source": "wger",
+     "name": "Fly With Cable",
+     "score": 1,
+     "matcher": "key",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/122/Incline-cable-flyes-1.png",
+     "credit": "Illustration: Everkinetic, wger.de, CC BY-SA 3.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-822",
+     "source": "wger",
+     "name": "Cable Rear Delt Fly",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/822/74affc0d-03b6-4f33-b5f4-a822a2615f68.png",
+     "credit": "Illustration: cshep442, CC BY-SA 4.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-1922",
+     "source": "wger",
+     "name": "Seated Cable chest fly",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1922/eb750ee5-3220-4128-aef1-5e2f1ccff40a.webp",
+     "credit": "Illustration: shushu, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "ring-dip",
+   "name": "Ring Dip",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-194",
+     "source": "wger",
+     "name": "Dips",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/194/34600351-8b0b-4cb0-8daa-583537be15b0.png",
+     "credit": "Illustration: cshep442, BFad07, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "bench-dip",
+   "name": "Bench Dip",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-194",
+     "source": "wger",
+     "name": "Dips",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/194/34600351-8b0b-4cb0-8daa-583537be15b0.png",
+     "credit": "Illustration: cshep442, BFad07, CC BY-SA 4.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-197",
+     "source": "wger",
+     "name": "Dips Between Two Benches",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/83/Bench-dips-1.png",
+     "credit": "Illustration: Everkinetic, wger.de, CC BY-SA 3.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "seated-shoulder-press",
+   "name": "Seated Shoulder Press",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-543",
+     "source": "wger",
+     "name": "Shoulder Press, on Machine",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/53/Shoulder-press-machine-2.png",
+     "credit": "Illustration: wger.de, CC BY-SA 3.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-566",
+     "source": "wger",
+     "name": "Shoulder Press, Barbell",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/119/seated-barbell-shoulder-press-large-1.png",
+     "credit": "Illustration: Everkinetic, wger.de, CC BY-SA 3.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-567",
+     "source": "wger",
+     "name": "Shoulder Press, Dumbbells",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/123/dumbbell-shoulder-press-large-1.png",
+     "credit": "Illustration: Everkinetic, wger.de, CC BY-SA 3.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "dumbbell-shoulder-press",
+   "name": "Dumbbell Shoulder Press",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-567",
+     "source": "wger",
+     "name": "Shoulder Press, Dumbbells",
+     "score": 1,
+     "matcher": "key",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/123/dumbbell-shoulder-press-large-1.png",
+     "credit": "Illustration: Everkinetic, wger.de, CC BY-SA 3.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-1968",
+     "source": "wger",
+     "name": "Single-arm dumbbell shoulder press",
+     "score": 0.75,
+     "matcher": "none",
+     "ai": true,
+     "preview": "https://wger.de/media/exercise-images/1968/cd92e973-a0d9-4e5f-9011-5369012598d3.png",
+     "credit": "Illustration: evtimovgeorg, CC BY-SA 4.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-537",
+     "source": "wger",
+     "name": "Incline Dumbbell Press",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/16/Incline-press-1.png",
+     "credit": "Illustration: Everkinetic, wger.de, CC BY-SA 3.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "machine-shoulder-press",
+   "name": "Machine Shoulder Press",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-543",
+     "source": "wger",
+     "name": "Shoulder Press, on Machine",
+     "score": 1,
+     "matcher": "key",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/53/Shoulder-press-machine-2.png",
+     "credit": "Illustration: wger.de, CC BY-SA 3.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-129",
+     "source": "wger",
+     "name": "Machine Chest Press",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/129/b263c968-e067-4750-916a-d8758a7df23e.webp",
+     "credit": "Illustration: roneydya, wger.de, CC BY-SA 4.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-566",
+     "source": "wger",
+     "name": "Shoulder Press, Barbell",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/119/seated-barbell-shoulder-press-large-1.png",
+     "credit": "Illustration: Everkinetic, wger.de, CC BY-SA 3.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "handstand-push-up",
+   "name": "Handstand Push-Up",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-1551",
+     "source": "wger",
+     "name": "Push-Up",
+     "score": 0.8,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1551/a6a9e561-3965-45c6-9f2b-ee671e1a3a45.png",
+     "credit": "Illustration: Settebello, CC BY-SA 4.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-454",
+     "source": "wger",
+     "name": "Pike Push Ups",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": true,
+     "preview": "https://wger.de/media/exercise-images/454/447f3c17-405f-46e0-b138-65c2a8caaab0.png",
+     "credit": "Illustration: Nash, CC BY-SA 4.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-1112",
+     "source": "wger",
+     "name": "Push-Ups | Decline",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1112/81f40bee-4adf-4317-8476-1a87706e3031.png",
+     "credit": "Illustration: anon1337, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "rear-delt-fly",
+   "name": "Rear Delt Fly",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-487",
+     "source": "wger",
+     "name": "Rear Delt Raises",
+     "score": 0.667,
+     "matcher": "key",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/487/ad724e5c-b1ed-49e8-9279-a17545b0dd0b.png",
+     "credit": "Illustration: cshep442, YYCfit, CC BY-SA 4.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-822",
+     "source": "wger",
+     "name": "Cable Rear Delt Fly",
+     "score": 0.857,
+     "matcher": "fuzzy",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/822/74affc0d-03b6-4f33-b5f4-a822a2615f68.png",
+     "credit": "Illustration: cshep442, CC BY-SA 4.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-1098",
+     "source": "wger",
+     "name": "Seated rear delt rise",
+     "score": 0.571,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1098/fa5328a2-64cb-4afb-a283-b3d948ddaf3f.jpg",
+     "credit": "Illustration: philip, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "upright-row",
+   "name": "Upright Row",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-691",
+     "source": "wger",
+     "name": "Upright Row, on Multi Press",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/691/297d4ce1-7e9e-4adb-8f5c-7d54054be885.jpg",
+     "credit": "Illustration: anto.kreegyr, wger.de, CC BY-SA 4.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-693",
+     "source": "wger",
+     "name": "Upright Row, SZ-bar",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/693/05c91bd2-7814-40b6-b2d1-51ae942b8321.png",
+     "credit": "Illustration: wger.de, CC BY-SA 4.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-694",
+     "source": "wger",
+     "name": "Upright Row w/ Dumbbells",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/694/119e6823-6960-4341-a9e1-aaf78d7fb57c.png",
+     "credit": "Illustration: cshep442, koreyhinton, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "face-pull",
+   "name": "Face Pull",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-1639",
+     "source": "wger",
+     "name": "Dumbbell Bent Over Face Pull",
+     "score": 0.571,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1639/8927346e-f5ca-4795-bdf1-5ac9309401e7.webp",
+     "credit": "Illustration: AlucardEvil40, CC BY-SA 4.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-1732",
+     "source": "wger",
+     "name": "Face pulls with yellow/green band",
+     "score": 0.571,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1732/d13b9adb-968e-4f73-95e6-b16690bcf616.jpg",
+     "credit": "Illustration: 54str, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "shrug",
+   "name": "Shrug",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-571",
+     "source": "wger",
+     "name": "Shrugs, Barbells",
+     "score": 0.667,
+     "matcher": "key",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/150/Barbell-shrugs-1.png",
+     "credit": "Illustration: Everkinetic, wger.de, CC BY-SA 3.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-572",
+     "source": "wger",
+     "name": "Shrugs, Dumbbells",
+     "score": 0.667,
+     "matcher": "key",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/151/Dumbbell-shrugs-2.png",
+     "credit": "Illustration: Everkinetic, wger.de, CC BY-SA 3.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-570",
+     "source": "wger",
+     "name": "Shoulder Shrug",
+     "score": 0.667,
+     "matcher": "fuzzy",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/570/68b4a33f-40f1-4dda-b56c-a2e20ed13903.jpg",
+     "credit": "Illustration: BFad07, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "assisted-pull-up",
+   "name": "Assisted Pull-Up",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-475",
+     "source": "wger",
+     "name": "Pull-ups",
+     "score": 0.8,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/475/b0554016-16fd-4dbe-be47-a2a17d16ae0e.jpg",
+     "credit": "Illustration: Imobard, wger.de, CC BY-SA 4.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-1198",
+     "source": "wger",
+     "name": "horizontal pull-ups",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1198/864906ac-4ac7-4e52-a886-c6bb97950a9f.jpg",
+     "credit": "Illustration: Gavru, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "scapular-pull-up",
+   "name": "Scapular Pull-Up",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-475",
+     "source": "wger",
+     "name": "Pull-ups",
+     "score": 0.8,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/475/b0554016-16fd-4dbe-be47-a2a17d16ae0e.jpg",
+     "credit": "Illustration: Imobard, wger.de, CC BY-SA 4.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-1198",
+     "source": "wger",
+     "name": "horizontal pull-ups",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1198/864906ac-4ac7-4e52-a886-c6bb97950a9f.jpg",
+     "credit": "Illustration: Gavru, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "lat-pulldown",
+   "name": "Lat Pulldown",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-1127",
+     "source": "wger",
+     "name": "Close-grip supinated lat pulldown",
+     "score": 0.571,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1127/4942b7c0-6bda-4983-88e5-86547c3d445e.png",
+     "credit": "Illustration: Franpol, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "bent-over-row",
+   "name": "Bent-Over Row",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-81",
+     "source": "wger",
+     "name": "Bent Over Dumbbell Rows",
+     "score": 0.857,
+     "matcher": "fuzzy",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/81/a751a438-ae2d-4751-8d61-cef0e9292174.png",
+     "credit": "Illustration: Franpol, sebk, CC BY-SA 4.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-83",
+     "source": "wger",
+     "name": "Bent Over Rowing",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/109/Barbell-rear-delt-row-1.png",
+     "credit": "Illustration: Everkinetic, wger.de, CC BY-SA 3.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-1186",
+     "source": "wger",
+     "name": "One Arm Bent Row",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1186/1987a039-cf35-437e-bbdc-40c53dd7d053.jpg",
+     "credit": "Illustration: anto.kreegyr, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "chest-supported-row",
+   "name": "Chest Supported Row",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-1283",
+     "source": "wger",
+     "name": "Incline Chest-Supported Dumbbell Row",
+     "score": 0.75,
+     "matcher": "fuzzy",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1283/e7262f70-7512-408a-8d00-4c499ef632fc.jpg",
+     "credit": "Illustration: carlos3c, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "t-bar-row",
+   "name": "T-Bar Row",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-513",
+     "source": "wger",
+     "name": "Rowing, T-bar",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/106/T-bar-row-1.png",
+     "credit": "Illustration: Everkinetic, wger.de, CC BY-SA 3.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-693",
+     "source": "wger",
+     "name": "Upright Row, SZ-bar",
+     "score": 0.571,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/693/05c91bd2-7814-40b6-b2d1-51ae942b8321.png",
+     "credit": "Illustration: wger.de, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "machine-row",
+   "name": "Machine Row",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-1725",
+     "source": "wger",
+     "name": "Seated Row (Machine)",
+     "score": 0.8,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1725/f0ebd44e-b8e1-400c-b598-ca371f3a07af.png",
+     "credit": "Illustration: barry, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "pull-over",
+   "name": "Pull-Over",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-1639",
+     "source": "wger",
+     "name": "Dumbbell Bent Over Face Pull",
+     "score": 0.571,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1639/8927346e-f5ca-4795-bdf1-5ac9309401e7.webp",
+     "credit": "Illustration: AlucardEvil40, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "high-pull",
+   "name": "High Pull",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-79",
+     "source": "wger",
+     "name": "Bent High Pulls",
+     "score": 0.8,
+     "matcher": "none",
+     "ai": true,
+     "preview": "https://wger.de/media/exercise-images/79/da58dfbf-748a-461b-891e-3d6bc9cc4be2.png",
+     "credit": "Illustration: lakerbeezel, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "barbell-curl",
+   "name": "Barbell Curl",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-51",
+     "source": "wger",
+     "name": "Barbell Wrist Curl",
+     "score": 0.8,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/51/f1730f56-7aca-4566-8338-3e42b1bee6e1.webp",
+     "credit": "Illustration: burenl, CC BY-SA 4.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-91",
+     "source": "wger",
+     "name": "Biceps Curls With Barbell",
+     "score": 0.8,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/74/Bicep-curls-1.png",
+     "credit": "Illustration: Everkinetic, wger.de, CC BY-SA 3.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-1290",
+     "source": "wger",
+     "name": "Reverse Grip Barbell Curls",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1290/c05818bf-1c81-46df-9f24-42e354265388.png",
+     "credit": "Illustration: Franpol, sTiKyt, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "ez-bar-curl",
+   "name": "EZ Bar Curl",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-94",
+     "source": "wger",
+     "name": "Biceps Curls With SZ-bar",
+     "score": 0.571,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/94/6dee2f60-aea2-4f2d-9bf6-aef50c4f9483.png",
+     "credit": "Illustration: Franpol, wger.de, CC BY-SA 4.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-912",
+     "source": "wger",
+     "name": "Straight Bar Cable Curls",
+     "score": 0.571,
+     "matcher": "none",
+     "ai": true,
+     "preview": "https://wger.de/media/exercise-images/912/e10a034f-6370-4dd6-b1c2-416b27844529.png",
+     "credit": "Illustration: novadani, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "incline-dumbbell-curl",
+   "name": "Incline Dumbbell Curl",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-92",
+     "source": "wger",
+     "name": "Biceps Curls With Dumbbell",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/81/Biceps-curl-1.png",
+     "credit": "Illustration: Everkinetic, wger.de, CC BY-SA 3.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-537",
+     "source": "wger",
+     "name": "Incline Dumbbell Press",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/16/Incline-press-1.png",
+     "credit": "Illustration: Everkinetic, wger.de, CC BY-SA 3.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-1192",
+     "source": "wger",
+     "name": "Alternating Biceps Curls With Dumbbell",
+     "score": 0.571,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1192/651a4535-8210-4dbd-8f06-61d95fdd9963.png",
+     "credit": "Illustration: Franpol, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "concentration-curl",
+   "name": "Concentration Curl",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-1109",
+     "source": "wger",
+     "name": "Cable Concentration Curl",
+     "score": 0.8,
+     "matcher": "fuzzy",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1109/00b0a0bf-c14a-4f13-bb14-62c09030a1aa.png",
+     "credit": "Illustration: Franpol, cshep442, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "cable-curl",
+   "name": "Cable Curl",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-95",
+     "source": "wger",
+     "name": "Biceps Curl With Cable",
+     "score": 0.8,
+     "matcher": "key",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/129/Standing-biceps-curl-1.png",
+     "credit": "Illustration: Everkinetic, wger.de, CC BY-SA 3.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-1109",
+     "source": "wger",
+     "name": "Cable Concentration Curl",
+     "score": 0.8,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1109/00b0a0bf-c14a-4f13-bb14-62c09030a1aa.png",
+     "credit": "Illustration: Franpol, cshep442, CC BY-SA 4.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-912",
+     "source": "wger",
+     "name": "Straight Bar Cable Curls",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": true,
+     "preview": "https://wger.de/media/exercise-images/912/e10a034f-6370-4dd6-b1c2-416b27844529.png",
+     "credit": "Illustration: novadani, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "reverse-curl",
+   "name": "Reverse Curl",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-909",
+     "source": "wger",
+     "name": "Reverse Nordic Curl",
+     "score": 0.8,
+     "matcher": "none",
+     "ai": true,
+     "preview": "https://wger.de/media/exercise-images/909/159222d9-c1e4-46ae-89ee-6a2dfaab978d.png",
+     "credit": "Illustration: karly, CC BY-SA 4.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-1290",
+     "source": "wger",
+     "name": "Reverse Grip Barbell Curls",
+     "score": 0.667,
+     "matcher": "fuzzy",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1290/c05818bf-1c81-46df-9f24-42e354265388.png",
+     "credit": "Illustration: Franpol, sTiKyt, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "wrist-curl",
+   "name": "Wrist Curl",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-51",
+     "source": "wger",
+     "name": "Barbell Wrist Curl",
+     "score": 0.8,
+     "matcher": "fuzzy",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/51/f1730f56-7aca-4566-8338-3e42b1bee6e1.webp",
+     "credit": "Illustration: burenl, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "side-plank",
+   "name": "Side Plank",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-2509",
+     "source": "wger",
+     "name": "Side Plank (Core L1)",
+     "score": 0.667,
+     "matcher": "exact",
+     "ai": true,
+     "preview": "https://wger.de/media/exercise-images/2509/41318de7-85ad-4a8c-8d94-dff73206e2fb.png",
+     "credit": "Illustration: Vasco Custom, CC BY-SA 4.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-458",
+     "source": "wger",
+     "name": "Plank",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/458/b7bd9c28-9f1d-4647-bd17-ab6a3adf5770.png",
+     "credit": "Illustration: utkb, YYCfit / BFad07, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "copenhagen-plank",
+   "name": "Copenhagen Plank",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-458",
+     "source": "wger",
+     "name": "Plank",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/458/b7bd9c28-9f1d-4647-bd17-ab6a3adf5770.png",
+     "credit": "Illustration: utkb, YYCfit / BFad07, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "hip-dip",
+   "name": "Hip Dip",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-194",
+     "source": "wger",
+     "name": "Dips",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/194/34600351-8b0b-4cb0-8daa-583537be15b0.png",
+     "credit": "Illustration: cshep442, BFad07, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "reverse-crunch",
+   "name": "Reverse Crunch",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-167",
+     "source": "wger",
+     "name": "Crunches",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/91/Crunches-1.png",
+     "credit": "Illustration: wger.de, CC BY-SA 3.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "cable-crunch",
+   "name": "Cable Crunch",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-167",
+     "source": "wger",
+     "name": "Crunches",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/91/Crunches-1.png",
+     "credit": "Illustration: wger.de, CC BY-SA 3.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "sit-up",
+   "name": "Sit-Up",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-1479",
+     "source": "wger",
+     "name": "Sit Up Elbow Thrust",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1479/0305d98e-0887-4c0c-8992-7c220814efc2.webp",
+     "credit": "Illustration: Moffi, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "bicycle-crunch",
+   "name": "Bicycle Crunch",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-167",
+     "source": "wger",
+     "name": "Crunches",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/91/Crunches-1.png",
+     "credit": "Illustration: wger.de, CC BY-SA 3.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "leg-raise",
+   "name": "Leg Raise",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-377",
+     "source": "wger",
+     "name": "Leg Raises, Lying",
+     "score": 0.8,
+     "matcher": "key",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/125/Leg-raises-2.png",
+     "credit": "Illustration: Everkinetic, wger.de, CC BY-SA 3.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-957",
+     "source": "wger",
+     "name": "Quadriped Arm and Leg Raise",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/957/0fd94587-6021-4763-856e-7227f5fcba2a.png",
+     "credit": "Illustration: utkb, CC BY-SA 4.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-1243",
+     "source": "wger",
+     "name": "Double Leg Calf Raise",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1243/53d4fabe-c994-4907-873f-8d82813a9832.png",
+     "credit": "Illustration: erikocobra, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "hanging-leg-raise",
+   "name": "Hanging Leg Raise",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-377",
+     "source": "wger",
+     "name": "Leg Raises, Lying",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/125/Leg-raises-2.png",
+     "credit": "Illustration: Everkinetic, wger.de, CC BY-SA 3.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-957",
+     "source": "wger",
+     "name": "Quadriped Arm and Leg Raise",
+     "score": 0.571,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/957/0fd94587-6021-4763-856e-7227f5fcba2a.png",
+     "credit": "Illustration: utkb, CC BY-SA 4.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-1243",
+     "source": "wger",
+     "name": "Double Leg Calf Raise",
+     "score": 0.571,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1243/53d4fabe-c994-4907-873f-8d82813a9832.png",
+     "credit": "Illustration: erikocobra, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "hanging-knee-raise",
+   "name": "Hanging Knee Raise",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-978",
+     "source": "wger",
+     "name": "Knee Raises",
+     "score": 0.8,
+     "matcher": "exact",
+     "ai": true,
+     "preview": "https://wger.de/media/exercise-images/978/d3ffe51f-7eb8-4cc9-9eae-105847af3005.png",
+     "credit": "Illustration: clafal, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "hollow-hold",
+   "name": "Hollow Hold",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-297",
+     "source": "wger",
+     "name": "Hollow Hold",
+     "score": 1,
+     "matcher": "exact",
+     "ai": true,
+     "preview": "https://wger.de/media/exercise-images/297/b10d3341-baa8-49ab-b462-5b3529389aac.png",
+     "credit": "Illustration: Behrooz, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "running",
+   "name": "Running",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-983",
+     "source": "wger",
+     "name": "Running in place",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/983/16245344-9957-4a24-8d61-f9939ed5f964.png",
+     "credit": "Illustration from wger, CC BY-SA 4.0",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "jumping-jack",
+   "name": "Jumping Jack",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-320",
+     "source": "wger",
+     "name": "Jumping Jacks",
+     "score": 1,
+     "matcher": "exact",
+     "ai": true,
+     "preview": "https://wger.de/media/exercise-images/320/6c9124b6-3551-47a8-9c22-20141c8b9c53.png",
+     "credit": "Illustration: student1234, CC BY-SA 4.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-1962",
+     "source": "wger",
+     "name": "Low Impact Jumping Jack",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": true,
+     "preview": "https://wger.de/media/exercise-images/1962/74041371-1019-4f89-9ebe-cec792484a46.png",
+     "credit": "Illustration: Anon#2, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "medicine-ball-slam",
+   "name": "Medicine Ball Slam",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-1089",
+     "source": "wger",
+     "name": "Medicine ball twist",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1089/49f51716-535d-41dd-aeb5-cff5bb906bc1.jpeg",
+     "credit": "Illustration: clafal, CC BY-SA 4.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-976",
+     "source": "wger",
+     "name": "Medicine ball booklet crunch",
+     "score": 0.571,
+     "matcher": "none",
+     "ai": true,
+     "preview": "https://wger.de/media/exercise-images/976/94649ea6-bf58-4fd9-90c1-b2ec96ee20cd.png",
+     "credit": "Illustration: clafal, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "hip-abduction",
+   "name": "Hip Abduction",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-1748",
+     "source": "wger",
+     "name": "Machine Hip Abduction",
+     "score": 0.8,
+     "matcher": "fuzzy",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1748/923a3ff7-c269-49bd-9f03-697151a40f06.jpg",
+     "credit": "Illustration: Tierrasverdes, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "donkey-kick",
+   "name": "Donkey Kick",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-1616",
+     "source": "wger",
+     "name": "Dumbbell donkey kick",
+     "score": 0.8,
+     "matcher": "fuzzy",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1616/97e6fd98-2ca6-486f-b9b2-f0499fe38044.jpg",
+     "credit": "Illustration: Tierrasverdes, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "side-lying-leg-raise",
+   "name": "Side Lying Leg Raise",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-377",
+     "source": "wger",
+     "name": "Leg Raises, Lying",
+     "score": 0.857,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/125/Leg-raises-2.png",
+     "credit": "Illustration: Everkinetic, wger.de, CC BY-SA 3.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-348",
+     "source": "wger",
+     "name": "Side raises",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/148/lateral-dumbbell-raises-large-2.png",
+     "credit": "Illustration: Everkinetic, wger.de, CC BY-SA 3.0 via wger",
+     "confirm": false
+    },
+    {
+     "key": "wger-349",
+     "source": "wger",
+     "name": "Side raises on Cable",
+     "score": 0.571,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/349/9d969203-9cb6-4d47-9c31-fef53bfe1de5.png",
+     "credit": "Illustration: philip, wger.de, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "childs-pose",
+   "name": "Child's Pose",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-1002",
+     "source": "wger",
+     "name": "Child's pose",
+     "score": 1,
+     "matcher": "exact",
+     "ai": true,
+     "preview": "https://wger.de/media/exercise-images/1002/ddf91765-8045-4087-bece-de17f33332ce.png",
+     "credit": "Illustration from wger, CC BY-SA 4.0",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "id": "hamstring-stretch",
+   "name": "Hamstring Stretch",
+   "reject": false,
+   "candidates": [
+    {
+     "key": "wger-1870",
+     "source": "wger",
+     "name": "Lying Hamstring Stretch with Band",
+     "score": 0.667,
+     "matcher": "none",
+     "ai": false,
+     "preview": "https://wger.de/media/exercise-images/1870/7465bbcf-3b86-42a6-8d2f-12a3d1f60a15.png",
+     "credit": "Illustration: Davidgj32, CC BY-SA 4.0 via wger",
+     "confirm": false
+    }
+   ]
+  }
+ ]
+}
