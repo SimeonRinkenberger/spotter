@@ -507,7 +507,12 @@
   .pill.accent { background: var(--ember-soft); color: var(--ember-ink); }
   .specstrip { display: flex; gap: 0; background: var(--card); border: 1px solid var(--line);
     border-radius: 16px; overflow: hidden; margin-bottom: 20px; box-shadow: var(--sh-sm); }
-  .spec { flex: 1; padding: 13px 8px; text-align: center; border-right: 1px solid var(--line); min-width: 0; }
+  /* Content-sized rather than four equal quarters: the values are a duration, a
+     count and a word, and "Intermediate" needs more room than "3". Equal cells
+     made the longest one bleed into its own padding. Each still grows into the
+     leftover, so the strip is full width whatever it is holding. */
+  .spec { flex: 1 1 auto; padding: 13px 8px; text-align: center;
+    border-right: 1px solid var(--line); min-width: 0; }
   .spec:last-child { border-right: none; }
   .spec .v { font-family: var(--display); font-size: 17px; font-weight: 700; letter-spacing: -.02em;
     color: var(--ink); font-variant-numeric: tabular-nums; }
