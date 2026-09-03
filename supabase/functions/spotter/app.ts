@@ -680,6 +680,10 @@ export const APP = String.raw`
       // here keeps whatever was already known rather than blanking the chips.
       if (!rs[1].error) state.collections = rs[1].data || [];
       if (!rs[2].error) state.colItems = rs[2].data || [];
+      // Refresh has to mean refresh. The today card's own age check is there for
+      // the passive path — a chip tap, a realtime render — and would otherwise
+      // shrug off a pull-to-refresh made half a minute after the last read.
+      today.at = 0;
       render();
       watchPending();
     });
@@ -763,6 +767,13 @@ export const APP = String.raw`
   // ---------- collections: lookups ----------
 
   function isColFilter(f) { return typeof f === "string" && f.indexOf("col:") === 0; }
+  // The third way a library divides itself, after the category the model guessed
+  // and the collection the user made — and the only one nobody had to work for. It
+  // takes the same "prefix:value" shape as a collection filter so visible(),
+  // renderChips() and chipSig all learn it at once, and is keyed lower-case so one
+  // person cannot end up with two chips.
+  function isByFilter(f) { return typeof f === "string" && f.indexOf("by:") === 0; }
+  function authorKey(a) { return a ? String(a).toLowerCase().trim() : ""; }
   function colById(id) {
     for (var i = 0; i < state.collections.length; i++) {
       if (state.collections[i].id === id) return state.collections[i];
@@ -790,6 +801,7 @@ export const APP = String.raw`
     return state.workouts.filter(function (w) {
       if (state.filter === "Favorites") { if (!w.favorite) return false; }
       else if (isColFilter(state.filter)) { if (!inCol(state.filter.slice(4), w.id)) return false; }
+      else if (isByFilter(state.filter)) { if (authorKey(w.author) !== state.filter.slice(3)) return false; }
       else if (state.filter !== "All" && w.category !== state.filter) return false;
       if (!q) return true;
       var hay = [w.title, w.author, w.category, (w.muscle_groups || []).join(" "),
@@ -812,16 +824,37 @@ export const APP = String.raw`
 
   function renderChips() {
     var wrap = $("chips");
-    var counts = {}, favs = 0;
+    var counts = {}, favs = 0, byAuth = {};
     state.workouts.forEach(function (w) {
       counts[w.category] = (counts[w.category] || 0) + 1;
       if (w.favorite) favs++;
+      var a = authorKey(w.author);
+      if (!a) return;
+      // The label keeps the first spelling seen: the handle as its platform writes it.
+      if (!byAuth[a]) byAuth[a] = { label: w.author, n: 0 };
+      byAuth[a].n++;
     });
-    // The collection a chip was filtering on can have been deleted under it.
+    // A collection can be deleted under the chip filtering on it, and a creator can
+    // lose their last card the same way. Clearing beats an empty grid explaining itself.
     if (isColFilter(state.filter) && !colById(state.filter.slice(4))) state.filter = "All";
+    if (isByFilter(state.filter) && !byAuth[state.filter.slice(3)]) state.filter = "All";
 
     var list = [{ key: "All", label: "All", n: state.workouts.length }];
     if (favs) list.push({ key: "Favorites", label: "★ Favorites", n: favs });
+    // The people this library is made of. Three at most, and none with a single card:
+    // a chip that narrows the grid to one workout saves nobody a scroll. By count,
+    // then by name, so a tie does not reshuffle the row between renders.
+    var byKeys = Object.keys(byAuth).filter(function (a) { return byAuth[a].n > 1; })
+      .sort(function (a, b) { return byAuth[b].n - byAuth[a].n || (a < b ? -1 : 1); })
+      .slice(0, 3);
+    // A handle tapped on a card can belong to someone under that floor or outside
+    // the top three, and a filter with no chip to account for it is a library that
+    // looks broken and cannot be switched off. Pin the active one in.
+    var by = isByFilter(state.filter) ? state.filter.slice(3) : null;
+    if (by && byKeys.indexOf(by) < 0) byKeys.push(by);
+    byKeys.forEach(function (a) {
+      list.push({ key: "by:" + a, label: "@" + byAuth[a].label, n: byAuth[a].n });
+    });
     // Collections sit beside Favorites: the same idea, just more of them.
     state.collections.forEach(function (c) {
       list.push({ key: "col:" + c.id, label: colLabel(c), n: colCount(c.id) });
@@ -873,6 +906,90 @@ export const APP = String.raw`
     var del = el("button", "warn", "Delete");
     del.onclick = function () { deleteCollection(c, del); };
     bar.appendChild(del);
+  }
+
+  // ---------- today ----------
+  //
+  // A training app is opened with one question — what am I doing today — and the
+  // plan knew the answer two tabs away. One card above the grid, and none at all on
+  // an empty day: nothing planned is not a problem to solve. The Plan tab is the
+  // only thing that reads plan rows and most sessions never open it, so this does
+  // its own read of today's plan and today's logs: two small selects.
+
+  var today = { day: null, rows: [], done: false, at: 0, busy: false, shown: false };
+
+  // Anchored to the chip row instead of declared in markup.ts: setView hides that
+  // row exactly when the Library is off screen, and one CSS adjacency rule lets
+  // this card leave with it however the block is laid out later.
+  var todayBox = el("div", "todaywrap hide");
+  todayBox.id = "today";
+  $("chips").parentNode.insertBefore(todayBox, $("chips").nextSibling);
+
+  function loadToday() {
+    if (today.busy || !state.user) return;
+    var key = ymd(new Date());
+    today.busy = true;
+    Promise.all([
+      sb.from("plan").select("workout_id").eq("day", key),
+      sb.from("workout_logs").select("started_at").gte("started_at", key + "T00:00:00Z")
+    ]).then(function (rs) {
+      today.day = key;
+      today.rows = rs[0].data || [];
+      // The Plan's own test for its tick, so the two cannot disagree about today.
+      today.done = (rs[1].data || []).some(function (l) {
+        return l.started_at && l.started_at.slice(0, 10) === key;
+      });
+      renderToday();
+    }).catch(function () { /* the age check tries again in half a minute */ })
+      .then(function () { today.busy = false; today.at = Date.now(); });
+  }
+
+  function todayDose(w) {
+    var n = exerciseNames(w).length;
+    var first = ((w.blocks || [])[0] || {}).exercises || [];
+    return [n ? n + (n === 1 ? " exercise" : " exercises") : null,
+      first.length ? doseText(first[0]) : null, fmtDur(w.duration_minutes)]
+      .filter(Boolean).join(" · ");
+  }
+
+  function renderToday() {
+    // The snapshot ages two ways this screen never hears about: the day rolling over
+    // under a phone left on the counter, and a session finished in Workout Mode,
+    // which does not come back through load(). One age check covers both, at two
+    // small reads a minute however often the library repaints.
+    if (state.view === "library" &&
+      (today.day !== ymd(new Date()) || Date.now() - today.at > 30000)) loadToday();
+
+    var box = todayBox, list = [];
+    today.rows.forEach(function (p) {
+      var m = state.workouts.filter(function (x) { return x.id === p.workout_id; })[0];
+      if (m) list.push(m);
+    });
+    var w = list[0];
+    box.innerHTML = "";
+    if (!w) { box.classList.add("hide"); today.shown = false; return; }
+    box.classList.remove("hide");
+
+    var card = el("div", "daycard today" + (today.done ? " done" : ""));
+    var head = el("div", "dayhead");
+    head.appendChild(el("div", "dayname", "Today"));
+    if (today.done) head.appendChild(el("div", "daydone", "✓ Done today"));
+    card.appendChild(head);
+    var t = el("button", "ttitle", w.title || "Workout");
+    t.onclick = function () { openDetail(w); };
+    card.appendChild(t);
+    var dose = [todayDose(w), list.length > 1 ? "+" + (list.length - 1) + " more today" : null]
+      .filter(Boolean).join(" · ");
+    if (dose) card.appendChild(el("div", "tdose", dose));
+    // The detail overlay's own start call, so finishing lands in the same place.
+    var go = el("button", "btn tstart" + (today.done ? " ghost" : ""),
+      today.done ? "Log another" : "Start");
+    go.onclick = function () { startWorkout(w); };
+    card.appendChild(go);
+    box.appendChild(card);
+    // Only the first appearance arrives: rebuilt on every render, a card that
+    // re-enters on every filter tap is a flicker.
+    if (!today.shown) { today.shown = true; viewIn(box); }
   }
 
   function fmtDur(m) {
@@ -1015,6 +1132,7 @@ export const APP = String.raw`
   function render() {
     renderChips();
     renderColBar();
+    renderToday();
     renderGrid();
     var n = state.workouts.length;
     $("count0").textContent = n ? n + (n === 1 ? " workout" : " workouts") : "No workouts yet";
@@ -1100,7 +1218,15 @@ export const APP = String.raw`
       titleEl.onclick = function () { openRename("workout", w.id, w.title || ""); };
     }
     d.appendChild(titleEl);
-    if (w.author) d.appendChild(el("div", "dauthor", "@" + w.author));
+    // The handle does what a collection pill does: close the card, land in a library
+    // already narrowed to that creator.
+    if (w.author) {
+      var au = el("button", "dauthor", "@" + w.author);
+      au.onclick = function () {
+        state.filter = "by:" + authorKey(w.author); history.back(); setView("library");
+      };
+      d.appendChild(au);
+    }
     d.appendChild(manageRow(w));
     d.appendChild(colPills(w));
 
@@ -3086,6 +3212,10 @@ export const APP = String.raw`
     sb.from("workout_logs").insert(payload).then(function (r) {
       if (r.error) { toast("Could not save that session."); return; }
       state.logs = null;
+      // The today card was drawn before this session existed. Retire it now,
+      // and redraw at once if the library is the page underneath.
+      today.at = 0;
+      renderToday();
     });
     clearInterval(woTimer);
     stopRest();
@@ -3234,6 +3364,9 @@ export const APP = String.raw`
     ]).then(function (rs) {
       state.plan = rs[0].data || [];
       state.planLogs = rs[1].data || [];
+      // Every plan change lands here, and the today card is a copy of one day of it.
+      // Retire the copy rather than let the two screens differ.
+      today.at = 0;
       var shape = planShape();
       if (silent && shape === planSig) return;
       planSig = shape;
@@ -4591,7 +4724,9 @@ export const APP = String.raw`
   // re-render would throw away where the page was scrolled to.
   function arrive(i) {
     var v = VIEWS[i];
-    // Library is left alone: realtime and load() already keep it fresh.
+    // Library's grid is kept fresh by realtime and load(); only the today card
+    // is a snapshot, and renderToday() decides for itself whether it has aged.
+    if (v === "library") { renderToday(); return; }
     if (v === "plan") {
       drawn.plan = true;
       quietly(loadPlan(true));

@@ -253,6 +253,23 @@ export const STYLE = String.raw`<style>
   .chip .n { opacity: .5; font-weight: 700; margin-left: 5px; font-size: 11px; font-variant-numeric: tabular-nums; }
   .chip.active .n { opacity: .75; }
 
+  /* ---------- today ----------
+     The Plan's own day card, borrowed to answer the question the app is opened
+     with. It sits beside the chip row and hides with it: the view switch turns
+     that row off when the Library is not on screen, and this has to leave too
+     rather than sit on top of the Plan. Trained already and the ember goes —
+     nothing left to do here today. */
+  .todaywrap { padding: 12px 18px 0; }
+  .chips.hide + .todaywrap { display: none; }
+  .todaywrap .daycard { margin-bottom: 0; }
+  .todaywrap .daycard.done { border-color: var(--line); }
+  .todaywrap .daycard.done .dayname { color: var(--muted); }
+  .ttitle { display: block; width: 100%; text-align: left; border: none; background: none;
+    padding: 3px 0 0; color: var(--ink); font-family: var(--display); font-size: 18px;
+    font-weight: 700; line-height: 1.22; letter-spacing: -.025em; }
+  .tdose { font-size: 12.5px; color: var(--muted); margin: 5px 0 12px; }
+  .tstart { padding: 12px; font-size: 14.5px; border-radius: 12px; }
+
   /* ---------- collections ----------
      A collection is the general form of a favourite: the same chip row, the same
      sand-and-ember palette, one more kind of filter. The bar below the chips
@@ -402,7 +419,14 @@ export const STYLE = String.raw`<style>
     color: var(--ember-ink); margin-bottom: 8px; }
   .dtitle { font-family: var(--display); font-size: 28px; font-weight: 700; line-height: 1.14;
     letter-spacing: -.032em; margin: 0 0 10px; }
-  .dauthor { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
+  /* People save from three or four creators they trust, not thirty, so the handle
+     is a filter and not a caption. Drawn exactly as before: the padding and the
+     negative top margin buy 44px of reach and change nothing else. */
+  .dauthor { display: block; width: fit-content; max-width: 100%; border: none; background: none;
+    text-align: left; color: var(--muted); font-size: 13px; padding: 15px 0; margin: -13px 0 1px;
+    text-decoration: underline; text-decoration-color: var(--line-2); text-underline-offset: 3px;
+    transition: color var(--t-1) var(--e-soft); }
+  .dauthor:active { color: var(--ember-ink); }
   /* ---------- managing a card ----------
      Rename, collections and remove as one row, in the same quiet card style as
      .sect. Favourite stays in the top bar: it is a state, these are actions. */
@@ -1006,10 +1030,10 @@ export const STYLE = String.raw`<style>
      hit area grows, capped at the gap to the next control so no two overlap.
      Insets come off the padding box: a bordered control needs a pixel more. */
   .iconbtn, .addbtn, .exhelp, .planx, .planadd, .mbtn, .addex, .danger,
-  .chips .chip, .pumpyctx button, .threadrow .tdel { position: relative; }
+  .chips .chip, .pumpyctx button, .threadrow .tdel, .ttitle { position: relative; }
   .iconbtn::after, .addbtn::after, .exhelp::after, .planx::after, .planadd::after,
   .mbtn::after, .addex::after, .danger::after, .chips .chip::after,
-  .pumpyctx button::after, .threadrow .tdel::after { content: ""; position: absolute; }
+  .pumpyctx button::after, .threadrow .tdel::after, .ttitle::after { content: ""; position: absolute; }
   .iconbtn::after { inset: -3px; }
   .addbtn::after { inset: -2px; }
   .exhelp::after { inset: -7px -6px; }
@@ -1019,6 +1043,8 @@ export const STYLE = String.raw`<style>
   .danger::after, .threadrow .tdel::after { inset: -3px 0; }
   .chips .chip::after { inset: -6px 0; }
   .pumpyctx button::after { inset: -7px; }
+  /* Up into the label, which is text and not a control; down to the dose line. */
+  .ttitle::after { inset: -14px 0 -5px; }
 
   /* ---------- install hint ---------- */
   #hint { margin: 12px 18px 0; background: var(--card); border: 1px solid var(--line);
