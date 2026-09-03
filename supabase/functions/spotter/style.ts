@@ -702,6 +702,12 @@ export const STYLE = String.raw`<style>
     letter-spacing: -.035em; margin: 0 0 12px; }
   .wdose { font-size: 16px; color: var(--ink-2); font-weight: 600; margin-bottom: 4px; }
   .wnote { font-size: 13.5px; color: var(--muted); line-height: 1.55; margin-top: 10px; }
+  /* "last time · 3 × 10 at 60 lb · 5d ago" is a reference, not a headline: muted,
+     one line, clipping rather than pushing the set pills down the screen. */
+  .wlast, .setlast { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .wlast { margin-top: 6px; }
+  .setlast { margin: 0 0 2px; }
+  .wlast:empty, .setlast:empty { display: none; }
   .setpills { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 22px 0 6px; }
   .setpill { border: 1px solid var(--line-2); background: var(--card); border-radius: 14px;
     padding: 10px 13px; min-width: 74px; font-size: 12px; color: var(--muted); font-weight: 600;
@@ -717,6 +723,11 @@ export const STYLE = String.raw`<style>
      Navigator.vibrate — so the picture is the whole receipt. */
   .setpill.just { animation: setpop var(--t-3) var(--e-out); }
   @keyframes setpop { 0% { transform: scale(.9); } 55% { transform: scale(1.05); } }
+  /* A best is the one celebration lifters ask for: a ring and a longer pop, not
+     confetti. The ring stays put — the point is it is still true ten minutes on. */
+  .setpill.pr { box-shadow: 0 0 0 2px var(--paper), 0 0 0 3.5px var(--ember); }
+  .setpill.just.pr { animation: setpr var(--t-4) var(--e-spring); }
+  @keyframes setpr { 0% { transform: scale(.88); } 45% { transform: scale(1.09); } }
   .wactions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 18px; }
   .wbottom { display: flex; align-items: center; justify-content: space-between; gap: 10px;
     padding: 10px 16px calc(14px + env(safe-area-inset-bottom)); }
@@ -729,15 +740,53 @@ export const STYLE = String.raw`<style>
     padding: 15px; font-size: 15px; font-weight: 700; box-shadow: 0 4px 18px var(--glow);
     transition: transform var(--t-1) var(--e-out); }
   .wfinish:active { transform: scale(.978); }
-  .resttimer { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 16px;
-    font-size: 13px; font-weight: 650; color: var(--ember-ink);
-    animation: viewin var(--t-2) var(--e-out); }
-  /* A rest has a known length, so the ring says what is left of it. */
-  .resttimer .ring { position: relative; width: 34px; height: 34px; border-radius: 999px;
-    background: conic-gradient(var(--ember) calc(var(--rest, 1) * 1turn), var(--ember-soft) 0); }
-  .resttimer .ring::after { content: ""; position: absolute; inset: 3.5px; border-radius: 999px;
+  /* A rest has a known length, so the ring says what is left of it. The strip sits
+     between the exercise and the bottom bar rather than inside the screen, so it
+     outlives the swipe to the next movement; the ring is also the pause button,
+     which is why it is 44px and not the 34 it looks like it needs. */
+  .reststrip { display: none; align-items: center; justify-content: center; gap: 8px;
+    padding: 0 16px 4px; animation: viewin var(--t-2) var(--e-out); }
+  .reststrip.on { display: flex; }
+  .reststrip.gone { animation: fadeout var(--t-2) var(--e-in) both; }
+  .reststrip .ring { position: relative; flex: 0 0 auto; width: 44px; height: 44px; padding: 0;
+    border: none; border-radius: 999px; display: flex; align-items: center; justify-content: center;
+    background: conic-gradient(var(--ember) calc(var(--rest, 1) * 1turn), var(--ember-soft) 0);
+    transition: transform var(--t-1) var(--e-out); }
+  .reststrip .ring::after { content: ""; position: absolute; inset: 4px; border-radius: 999px;
     background: var(--paper); }
-  .resttimer.gone { animation: fadeout var(--t-2) var(--e-in) both; }
+  .reststrip .ring span { position: relative; font-size: 12px; font-weight: 700;
+    color: var(--ember-ink); font-variant-numeric: tabular-nums; letter-spacing: -.03em; }
+  .reststrip .ring:active { transform: scale(.92); }
+  .reststrip.paused .ring {
+    background: conic-gradient(var(--line-2) calc(var(--rest, 1) * 1turn), var(--sand) 0); }
+  .reststrip.paused .ring span, .reststrip.paused .restword { color: var(--muted); }
+  .restword { font-size: 13px; font-weight: 650; color: var(--ember-ink); }
+  .reststrip .chip { min-height: 44px; display: flex; align-items: center; }
+
+  /* ---------- the session summary ----------
+     Finishing used to be a toast, gone before the phone was back in the pocket.
+     It is the one moment in the loop that is pure payoff, so it takes the screen
+     it is already on. The figures and the bests are set pills, deliberately: the
+     summary should speak in the same objects that were tapped all session. No
+     confetti — the numbers are the reward, and lifters can tell the difference. */
+  #workout.summary .wdots, #workout.summary .wbottom,
+  #workout.summary .reststrip { display: none; }
+  /* Hidden, not removed: the clock stays centred between the two top corners. */
+  #workout.summary #wlist { visibility: hidden; }
+  .sumfigs { margin-top: 20px; }
+  .sumfigs .setpill b { font-size: 23px; letter-spacing: -.035em; }
+  .sumfigs .setpill, .sumprs .setpill { animation: viewin var(--t-2) var(--e-out) both; }
+  .sumfigs .setpill:nth-child(2) { animation-delay: 70ms; }
+  .sumfigs .setpill:nth-child(3) { animation-delay: 140ms; }
+  .sumprs { margin-top: 4px; }
+  .sumprs .setpill { animation-delay: 210ms; }
+  .sumprs .setpill b { color: var(--ember-ink); font-size: 11px; letter-spacing: .1em;
+    text-transform: uppercase; }
+  .sumdone { margin-top: 24px; animation: viewin var(--t-3) var(--e-out) 260ms both; }
+  /* The clip, in a sheet, at the moment it is wanted. Shorter than the detail
+     view's embed so the close button stays on screen with it. */
+  #watchbody .embedwrap, #watchbody .dphoto { margin-bottom: 14px; }
+  #watchbody .embedwrap.vertical iframe { height: 56vh; }
   .stepper { display: flex; align-items: center; gap: 12px; justify-content: center; margin: 14px 0; }
   .stepper button { width: 46px; height: 46px; border-radius: 999px; border: 1px solid var(--line-2);
     background: var(--card); color: var(--ink); font-size: 20px; line-height: 1; }
@@ -893,12 +942,15 @@ export const STYLE = String.raw`<style>
      loops stop, informative ones stay. */
   @keyframes fadeonly { from { opacity: 0; } }
   @media (prefers-reduced-motion: reduce) {
-    .viewin, .carditem.in, .msgin, .bodyfig, .resttimer, .overlay.open,
+    .viewin, .carditem.in, .msgin, .bodyfig, .reststrip, .overlay.open, .sumdone,
+    .sumfigs .setpill, .sumprs .setpill,
     .proposal .done, .proposal .declined {
       animation-name: fadeonly; animation-duration: var(--t-2); animation-delay: 0ms; }
-    .overlay.closing, .sheet.closing, #workout.closing, .resttimer.gone {
+    .overlay.closing, .sheet.closing, #workout.closing, .reststrip.gone {
       animation: fadeout var(--t-1) var(--e-soft) both; }
-    .sheetbody, .sheet.closing .sheetbody, .setpill.just,
+    /* The staggered summary is :nth-child, which outranks the rule above it. */
+    .sumfigs .setpill:nth-child(n) { animation-delay: 0ms; }
+    .sheetbody, .sheet.closing .sheetbody, .setpill.just, .setpill.just.pr,
     .empty .big, .thumbwrap.pending .noimg, .thumbwrap.failed .noimg,
     .thumbwrap.loading::after, .thumbwrap.pending::after { animation: none; }
     .thumbwrap img { transition: none; }

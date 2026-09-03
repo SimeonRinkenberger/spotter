@@ -158,6 +158,14 @@ export const MARKUP_BODY = String.raw`</head>
   </div>
   <div class="wdots" id="wdots"></div>
   <div class="wmain" id="wmain"></div>
+  <!-- Out here rather than inside .wmain: a rest belongs to the lifter, not to the
+       screen they happen to be looking at. Swiping on used to throw it away. -->
+  <div class="reststrip" id="reststrip">
+    <button class="ring" id="restring" aria-label="Pause or resume the rest"><span id="restnum">0</span></button>
+    <span class="restword" id="restword">Rest</span>
+    <button class="chip" id="restplus">+15 s</button>
+    <button class="chip" id="restskip">Skip</button>
+  </div>
   <div class="wbottom">
     <button class="wnav" id="wprev" aria-label="Previous">←</button>
     <button class="wfinish" id="wfinish">Finish workout</button>
@@ -197,6 +205,7 @@ export const MARKUP_BODY = String.raw`</head>
 <div class="sheet" id="setsheet"><div class="sheetbody">
   <div class="grabber"></div>
   <h2 id="settitle">Log set</h2>
+  <div class="wnote setlast" id="setlast"></div>
   <div class="stepper">
     <button id="repsdown" aria-label="Fewer reps">−</button>
     <div class="val"><span id="repsval">10</span><small>reps</small></div>
@@ -211,6 +220,17 @@ export const MARKUP_BODY = String.raw`</head>
     <button class="btn ghost" id="setclear">Clear</button>
     <button class="btn" id="setsave">Save set</button>
   </div>
+</div></div>
+
+<!-- The premise of the app at the moment it is needed: the clip, three feet from the
+     barbell. #watchbody is filled on open and emptied on close — an Instagram or
+     TikTok iframe left alive behind Workout Mode keeps loading, and takes the audio
+     with it. -->
+<div class="sheet" id="watchsheet"><div class="sheetbody">
+  <div class="grabber"></div>
+  <h2>Watch the clip</h2>
+  <div id="watchbody"></div>
+  <button class="btn ghost" id="watchclose">Close</button>
 </div></div>
 
 <div class="sheet" id="exsheet"><div class="sheetbody">
@@ -329,6 +349,12 @@ export const MARKUP_BODY = String.raw`</head>
   <div class="setnote hide" id="setpumpy"></div>
   <div class="kv"><span class="k">Weight unit</span>
     <span class="v"><button class="chip" id="unittoggle">lb</button></span></div>
+  <div class="kv"><span class="k">Rest between sets</span>
+    <span class="v"><button class="chip" id="resttoggle">90 s</button></span></div>
+  <div class="kv"><span class="k">Timer sounds</span>
+    <span class="v"><button class="chip" id="soundtoggle">On</button></span></div>
+  <div class="setnote">The rest is used when the video does not say. The sounds are three
+    ticks and a chime, and only play while Spotter is open.</div>
   <h2 style="margin-top:22px;font-size:16px">Save from your phone</h2>
   <p class="lede"><b>Android</b> — install Spotter, then share any video to it from the share
     sheet. Nothing below is needed.</p>
