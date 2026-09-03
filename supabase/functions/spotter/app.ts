@@ -4938,8 +4938,13 @@ export const APP = String.raw`
     // The lift lands in the same millisecond as the last move often enough — a
     // stuttering frame, a browser batching pointer events — that reading only
     // the window would report a fling as a standstill. Fall back to the whole
-    // buffer before giving up on having a velocity at all.
-    if (dt < 0.004 && s.length > 1) { first = s[0]; dt = (last.t - first.t) / 1000; }
+    // buffer before giving up on having a velocity at all, but only while the
+    // buffer is itself inside the window: a finger that has not moved for longer
+    // than that has stopped, and averaging across the pause would read the whole
+    // drag as one throw and commit a page nobody asked for.
+    if (dt < 0.004 && s.length > 1 && last.t - s[0].t <= VWIN) {
+      first = s[0]; dt = (last.t - first.t) / 1000;
+    }
     // pos runs against the finger, so the track's velocity is the pointer's
     // negated.
     var v = dt > 0.004 ? -(last.x - first.x) / dt : 0;
