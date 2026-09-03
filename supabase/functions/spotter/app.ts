@@ -28,6 +28,13 @@ export const APP = String.raw`
   // docs/whats-new.html, and the settings sheet reads it from here.
   var VERSION = "0.9";
 
+  // What a rest is when the card says nothing. It was a Settings row until the
+  // obvious objection landed: how long to rest belongs to the program or to the
+  // video, so the card's own rest_seconds always wins — the exercise's first, then
+  // the block's. 90s is the top of the ACSM hypertrophy band and sits between what
+  // Hevy (~90) and Strong (~120) default to; a saved reel is hypertrophy-shaped.
+  var REST_FALLBACK = 90;
+
   var CATEGORIES = ["Push", "Pull", "Legs", "Upper Body", "Full Body", "Core",
     "Cardio", "HIIT", "Mobility", "Yoga", "Other"];
 
@@ -35,9 +42,7 @@ export const APP = String.raw`
     user: null, profile: null, workouts: [], logs: null, plan: null,
     collections: [], colItems: [],
     filter: "All", q: "", view: "library", weekStart: null, unit: "lb",
-    // Most social cards never say how long to rest, so the timer only ever ran
-    // for the few that did. 0 means the user asked for no timer at all.
-    rest: 90, sounds: true
+    sounds: true, haptics: true
   };
 
   function $(id) { return document.getElementById(id); }
@@ -94,9 +99,12 @@ export const APP = String.raw`
   // for pr and done — and every call below starts driving the Taptic Engine.
   var BUZZ = { tap: 8, success: 12, pr: [14, 60, 22], done: [35, 55, 35] };
 
+  // One gate, which is what makes a Vibration switch possible at all: every call
+  // site in the app comes through here. navigator.vibrate does not exist on iOS at
+  // any setting, so there the switch is not offered rather than lying.
   function haptic(kind) {
     var p = BUZZ[kind];
-    if (!p || !navigator.vibrate) return;
+    if (!p || !state.haptics || !navigator.vibrate) return;
     try { navigator.vibrate(p); } catch (e) { /* a phone that will not buzz is fine */ }
   }
 
@@ -247,13 +255,24 @@ export const APP = String.raw`
     var b = el("button", null, isUp ? "Sign in" : "Create an account");
     b.onclick = function () { setAuthMode(isUp ? "signin" : "signup"); };
     $("authswap").appendChild(b);
+    $("forgotwrap").classList.toggle("hide", isUp);
   }
 
   function authError(msg) {
     var e = $("autherr");
+    e.classList.remove("ok");
     if (!msg) { e.classList.remove("show"); return; }
     e.textContent = msg;
     e.classList.add("show");
+  }
+
+  // The same box, carrying good news: a reset link on its way, or an account that
+  // is gone. Two sentences do not earn a second element.
+  function authOK(msg) {
+    var e = $("autherr");
+    e.textContent = msg;
+    e.classList.add("show");
+    e.classList.add("ok");
   }
 
   // gotrue writes for a log ("AuthApiError: User already registered"); the person
@@ -653,6 +672,9 @@ export const APP = String.raw`
   }
 
   sb.auth.onAuthStateChange(function (event, session) {
+    // Arriving on a reset link. supabase-js holds the auth lock for the length of
+    // this callback, so the sheet — which will want to write a user — waits a tick.
+    if (event === "PASSWORD_RECOVERY") setTimeout(openRecovery, 0);
     if (session && session.user) {
       var first = !state.user;
       state.user = session.user;
@@ -800,9 +822,10 @@ export const APP = String.raw`
         state.profile = r.data;
         var s = r.data.settings || {};
         if (s.unit) state.unit = s.unit;
-        // 0 is a real answer here ("no timer"), so these test presence, not truth.
-        if (typeof s.rest === "number") state.rest = s.rest;
+        // false is a real answer, so these test presence, not truth. An older
+        // profile may still carry s.rest; it is ignored on purpose.
         if (typeof s.sounds === "boolean") state.sounds = s.sounds;
+        if (typeof s.haptics === "boolean") state.haptics = s.haptics;
         // The top-bar button and the strip were drawn from the default; correct them.
         paintSounds();
       }
@@ -3520,11 +3543,11 @@ export const APP = String.raw`
     // In a circuit the rest is the walk to the next station, so it ends by
     // arriving. Elsewhere the card's rest wins, the default covers silence.
     if (s && isCircuit(s.block)) {
-      var gap = restAfter(s, state.rest);
+      var gap = restAfter(s, REST_FALLBACK);
       if (gap > 0) startRest(gap, null, nextMove); else nextMove();
       return;
     }
-    var secs = (s && s.ex && s.ex.rest_seconds) || state.rest;
+    var secs = (s && s.ex && s.ex.rest_seconds) || REST_FALLBACK;
     if (secs > 0) startRest(secs);
   }
 
@@ -3701,7 +3724,7 @@ export const APP = String.raw`
 
   // At the end of a lap the gap is the block's rest, not the move's: one pause.
   function restAfter(s, fallback) {
-    return atRoundEnd() ? (s.block.rest_seconds || state.rest || 0)
+    return atRoundEnd() ? (s.block.rest_seconds || REST_FALLBACK)
       : (s.ex.rest_seconds || fallback || 0);
   }
 
@@ -5377,13 +5400,21 @@ export const APP = String.raw`
   // ---------- settings ----------
 
   function openSettings() {
-    $("setver").textContent = "Spotter v" + VERSION;
+    $("setver").textContent = "v" + VERSION;
     $("setemail").textContent = state.user ? state.user.email : "—";
     var how = signInMethod();
     $("setprov").textContent = how || "—";
     $("setprovrow").classList.toggle("hide", !how);
+    // Only an email account owns its own password and address; Google and Apple
+    // own theirs, and offering to change them here would send somebody round a
+    // loop that ends at a provider screen we do not control.
+    var mine = isEmailAccount();
+    $("setpwrow").classList.toggle("hide", !mine);
+    $("setmailrow").disabled = !mine;
+    $("setname").textContent = displayName() || "Not set";
     $("unittoggle").textContent = state.unit;
-    $("resttoggle").textContent = restLabel();
+    $("haptictoggle").textContent = state.haptics ? "On" : "Off";
+    $("sethapticrow").classList.toggle("hide", !navigator.vibrate);
     paintSounds();
     var key = state.profile ? state.profile.ingest_key : null;
     $("setkey").textContent = key ? API + "ingest?key=" + key : "Loading…";
@@ -5420,7 +5451,7 @@ export const APP = String.raw`
   // The column is written whole, so every preference goes up together: saving one
   // of them used to be enough to drop the others.
   function saveSettings() {
-    var s = { unit: state.unit, rest: state.rest, sounds: state.sounds };
+    var s = { unit: state.unit, sounds: state.sounds, haptics: state.haptics };
     if (state.profile) state.profile.settings = s;
     // The then() is what sends it. A supabase-js builder is lazy — it only runs
     // the request when something awaits it — so this line without one has been
@@ -5428,8 +5459,6 @@ export const APP = String.raw`
     sb.from("profiles").update({ settings: s }).eq("id", state.user.id)
       .then(function (r) { if (r.error) toast("That setting did not save. Try again in a moment."); });
   }
-
-  function restLabel() { return state.rest ? state.rest + " s" : "Off"; }
 
   function toggleUnit() {
     state.unit = state.unit === "lb" ? "kg" : "lb";
@@ -5441,21 +5470,341 @@ export const APP = String.raw`
     if (state.logs) renderProgress(); else quietly(loadLogs().then(renderProgress));
   }
 
-  // Off, then the three rests worth an opinion. Four options do not earn a sheet.
-  function toggleRest() {
-    var opts = [0, 60, 90, 120];
-    state.rest = opts[(opts.indexOf(state.rest) + 1) % opts.length];
-    $("resttoggle").textContent = restLabel();
+  function toggleSounds() { setSounds(!state.sounds); }
+
+  function toggleHaptics() {
+    state.haptics = !state.haptics;
+    $("haptictoggle").textContent = state.haptics ? "On" : "Off";
+    // The switch answers in the language it is about.
+    if (state.haptics) haptic("tap");
     saveSettings();
   }
-
-  function toggleSounds() { setSounds(!state.sounds); }
 
   // The same switch from inside the workout, where the chip's word is not there to
   // read the state back, so the toast does it.
   function toggleWorkoutSounds() {
     setSounds(!state.sounds);
     toast(state.sounds ? "Timer sounds on." : "Timer sounds off.", 1800);
+  }
+
+  // ---------- the account ----------
+  //
+  // Rename, change password, change email, ask for a reset link, choose a new one
+  // after following it, confirm a deletion: all the same shape — a title, a
+  // sentence, some fields, one button — so all one sheet dressed by accSheet.
+  // Deletion is not a nicety: App Store guideline 5.1.1(v) makes in-app account
+  // deletion a condition of listing, and Play wants a public page saying how too.
+
+  function isEmailAccount() {
+    var u = state.user;
+    if (!u) return false;
+    var p = (u.app_metadata && u.app_metadata.provider) ||
+      (u.identities && u.identities.length ? u.identities[0].provider : null);
+    return !p || p === "email";
+  }
+
+  function displayName() { return (state.profile && state.profile.display_name) || ""; }
+
+  var accCfg = null;
+
+  function accSheet(cfg) {
+    $("acctitle").textContent = cfg.title;
+    $("acclede").textContent = cfg.lede || "";
+    var box = $("accfields");
+    box.innerHTML = "";
+    (cfg.fields || []).forEach(function (f) {
+      var w = el("div", "field"), lab = el("label", null, f.label), inp = el("input");
+      inp.id = "acc_" + f.name;
+      inp.type = f.type || "text";
+      inp.value = f.value || "";
+      if (f.placeholder) inp.placeholder = f.placeholder;
+      inp.setAttribute("autocomplete", f.auto || "off");
+      if (inp.type !== "password") {
+        inp.setAttribute("autocapitalize", "off");
+        inp.spellcheck = false;
+      }
+      lab.setAttribute("for", inp.id);
+      w.appendChild(lab);
+      w.appendChild(inp);
+      box.appendChild(w);
+      inp.addEventListener("keydown", function (e) { if (e.key === "Enter") accGo(); });
+      inp.addEventListener("input", armAcc);
+    });
+    accErr("");
+    var go = $("accgo");
+    go.textContent = cfg.go;
+    go.classList.toggle("del", !!cfg.danger);
+    accCfg = cfg;
+    armAcc();
+    openSheet("accountsheet");
+    // Not on the destructive sheet: throwing a keyboard up would cover the list of
+    // what is about to stop existing, which is the whole point of that sheet.
+    var first = cfg.danger ? null : box.querySelector("input");
+    if (first) setTimeout(function () { first.focus(); if (first.value) first.select(); }, 60);
+  }
+
+  function accErr(msg) {
+    var e = $("accerr");
+    if (!msg) { e.classList.remove("show"); return; }
+    e.textContent = msg;
+    e.classList.add("show");
+  }
+
+  function accVal(name) { var n = $("acc_" + name); return n ? n.value : ""; }
+
+  // Only the deletion sheet arms; every other button is live from the start. The
+  // busy flag matters because arming runs on every keystroke, and a keystroke
+  // landing mid-request would put the button back for a second press.
+  var accBusy = false;
+
+  function armAcc() {
+    if (accCfg && !accBusy) $("accgo").disabled = !!accCfg.arm && !accCfg.arm();
+  }
+
+  function accGo() {
+    var cfg = accCfg, btn = $("accgo");
+    if (!cfg || btn.disabled) return;
+    var word = btn.textContent;
+    accBusy = true;
+    btn.disabled = true;
+    btn.textContent = cfg.busy || "Working…";
+    accErr("");
+    cfg.run(function (err) {
+      accBusy = false;
+      // The sheet may have been swiped away while the network was thinking.
+      if (accCfg !== cfg) return;
+      btn.disabled = false;
+      btn.textContent = word;
+      armAcc();
+      if (err) { accErr(err); return; }
+      accCfg = null;
+      closeSheet("accountsheet");
+    });
+  }
+
+  function closeAcc() { accCfg = null; accBusy = false; closeSheet("accountsheet"); }
+
+  function openName() {
+    accSheet({
+      title: "Your name", lede: "What Spotter calls you.",
+      fields: [{ name: "name", label: "Name", value: displayName(), auto: "name" }],
+      go: "Save", busy: "Saving…",
+      run: function (done) {
+        var v = accVal("name").trim().slice(0, 160);
+        if (!v) { done("Give it something to call you."); return; }
+        sb.from("profiles").update({ display_name: v }).eq("id", state.user.id)
+          .then(function (r) {
+            if (r.error) { done("That did not save. Try again in a moment."); return; }
+            if (state.profile) state.profile.display_name = v;
+            $("setname").textContent = v;
+            toast("Name saved.");
+            done(null);
+          }, function () { done("That did not save. Try again in a moment."); });
+      }
+    });
+  }
+
+  function openPassword() {
+    accSheet({
+      title: "Change password",
+      lede: "The current one first, so a borrowed phone cannot lock you out of your own account.",
+      fields: [
+        { name: "old", label: "Current password", type: "password", auto: "current-password" },
+        { name: "new", label: "New password", type: "password", auto: "new-password",
+          placeholder: "At least 8 characters" }
+      ],
+      go: "Change it", busy: "Changing…",
+      run: function (done) {
+        var pw = accVal("new");
+        if (pw.length < 8) { done("Use at least 8 characters."); return; }
+        // Checked by signing in again rather than taken on trust: updateUser will
+        // change the password of whoever holds the session, and whoever holds the
+        // session is whoever is holding the phone.
+        sb.auth.signInWithPassword({ email: state.user.email, password: accVal("old") })
+          .then(function (r) {
+            if (r.error) { done("That is not your current password."); return; }
+            sb.auth.updateUser({ password: pw }).then(function (u) {
+              if (u.error) { done(authMessage(u.error.message)); return; }
+              toast("Password changed.");
+              done(null);
+            }, function () { done("Could not change it. Try again in a moment."); });
+          }, function () { done("Could not change it. Try again in a moment."); });
+      }
+    });
+  }
+
+  function openEmail() {
+    accSheet({
+      title: "Change email",
+      lede: "Both addresses get a confirmation link, and the change only lands once you have followed both.",
+      fields: [{ name: "email", label: "New email", type: "email", auto: "email",
+        placeholder: "you@example.com" }],
+      go: "Send the links", busy: "Sending…",
+      run: function (done) {
+        var v = accVal("email").trim();
+        if (v.indexOf("@") < 1 || v.indexOf(".", v.indexOf("@")) < 0) {
+          done("That email address does not look right."); return;
+        }
+        sb.auth.updateUser({ email: v }).then(function (r) {
+          if (r.error) { done(authMessage(r.error.message)); return; }
+          toast("Check both inboxes for the confirmation links.", 4600);
+          done(null);
+        }, function () { done("Could not send them. Try again in a moment."); });
+      }
+    });
+  }
+
+  // Mail still goes through Supabase's built-in sender, which is slow and tightly
+  // rate-limited, so the sentence promises nothing it cannot keep — and it never
+  // says whether the address has an account, which would be a membership oracle.
+  function forgotPassword() {
+    var email = $("email").value.trim();
+    if (!email) { authError("Type your email above first, then tap this."); return; }
+    var b = $("forgotpw");
+    b.disabled = true;
+    sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname })
+      .then(function (r) {
+        b.disabled = false;
+        if (r.error) { authError(authMessage(r.error.message)); return; }
+        authOK("If that address has an account, a reset link is on its way. If it does not " +
+          "arrive in a few minutes, try again later.");
+      }, function () {
+        b.disabled = false;
+        authError("Could not ask for a link. Check your connection.");
+      });
+  }
+
+  // Following the link lands back here with a recovery session already built from
+  // the hash, so the only thing left to collect is the password. Guarded because
+  // the event and the hash check can both fire for one arrival.
+  var recoveryShown = false;
+
+  function openRecovery() {
+    if (recoveryShown || !state.user) return;
+    recoveryShown = true;
+    accSheet({
+      title: "Choose a new password",
+      lede: "This is the last step — pick one and you are signed in.",
+      fields: [{ name: "new", label: "New password", type: "password", auto: "new-password",
+        placeholder: "At least 8 characters" }],
+      go: "Set it", busy: "Saving…",
+      run: function (done) {
+        var pw = accVal("new");
+        if (pw.length < 8) { done("Use at least 8 characters."); return; }
+        sb.auth.updateUser({ password: pw }).then(function (r) {
+          if (r.error) { done(authMessage(r.error.message)); return; }
+          toast("Password changed. You are signed in.");
+          done(null);
+        }, function () { done("Could not save it. Try again in a moment."); });
+      }
+    });
+  }
+
+  // Named out loud rather than summarised as "your data": a list is the only honest
+  // way to say what is about to stop existing. Typing the word is the strongest
+  // confirmation a sheet can ask for, and the one Hevy uses. No delayed commit —
+  // this is a confirmation, not an undo, and a pending timer teaches people to
+  // ignore it.
+  function openDelete() {
+    accSheet({
+      title: "Delete your account",
+      lede: "This erases your workout cards, every session you have logged, your plan, your " +
+        "collections, your chats with Pumpy, and the account itself. It cannot be undone and " +
+        "there is no copy. Export your data first if you want to keep it.",
+      fields: [{ name: "sure", label: "Type DELETE to confirm", placeholder: "DELETE" }],
+      go: "Delete everything", busy: "Deleting…", danger: true,
+      arm: function () { return accVal("sure").trim().toUpperCase() === "DELETE"; },
+      run: function (done) {
+        api("account/delete", { method: "POST", body: "{}" }).then(function (r) {
+          if (!r || r.status !== "ok") { done("Could not delete it. Try again in a moment."); return; }
+          done(null);
+          // Both sheets go before the sign-out swaps the view, or the landing is
+          // built underneath an open Settings.
+          closeSheet("settingssheet");
+          sb.auth.signOut().then(function () {
+            setAuthMode("signin");
+            authOK("Your account is deleted. Everything in it has been erased.");
+          });
+        }, function () { done("Could not delete it. Try again in a moment."); });
+      }
+    });
+  }
+
+  // Everything the person put in, structured and machine-readable, which is what
+  // portability actually asks for. Read under RLS, so it can only ever be their own
+  // rows; the ingest key is left out because it is a credential that works without
+  // a password, and a file is a thing people forward.
+  var exporting = false;
+
+  function exportData() {
+    if (exporting) return;
+    exporting = true;
+    toast("Gathering your data…", 6000);
+    Promise.all([
+      sb.from("workouts").select("*"),
+      sb.from("workout_logs").select("*"),
+      sb.from("plan").select("*"),
+      sb.from("collections").select("*"),
+      sb.from("collection_items").select("*"),
+      sb.from("pumpy_threads").select("*"),
+      sb.from("pumpy_messages").select("*")
+    ]).then(function (rs) {
+      exporting = false;
+      for (var i = 0; i < rs.length; i++) {
+        if (rs[i].error) { toast("Could not gather it all — try again in a moment."); return; }
+      }
+      var p = state.profile || {};
+      handOver(JSON.stringify({
+        app: "Spotter", format: 1, app_version: VERSION,
+        exported_at: new Date().toISOString(),
+        account: {
+          id: state.user.id, email: state.user.email,
+          display_name: p.display_name || null, created_at: p.created_at || null,
+          settings: p.settings || null
+        },
+        workouts: rs[0].data, workout_logs: rs[1].data, plan: rs[2].data,
+        collections: rs[3].data, collection_items: rs[4].data,
+        pumpy_threads: rs[5].data, pumpy_messages: rs[6].data
+      }, null, 2));
+    }, function () {
+      exporting = false;
+      toast("Could not gather it all — try again in a moment.");
+    });
+  }
+
+  // An iPhone has no downloads folder a person can point at, so there the share
+  // sheet is the only place a file can go that they will find again. Everywhere
+  // else a download is exactly what is expected.
+  function handOver(text) {
+    var name = "spotter-export-" + new Date().toISOString().slice(0, 10) + ".json";
+    var blob = new Blob([text], { type: "application/json" });
+    var file = null;
+    try { file = new File([blob], name, { type: "application/json" }); } catch (e) { /* older webkit */ }
+    if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
+      navigator.share({ files: [file], title: "Spotter export" })
+        .then(function () { toast("Exported."); }, function () { /* cancelling is not failing */ });
+      return;
+    }
+    var url = URL.createObjectURL(blob);
+    var a = el("a");
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+    toast("Saved " + name, 4000);
+  }
+
+  function tellFriend() {
+    var url = location.origin + location.pathname;
+    var text = "Spotter reads the workout out of a fitness video and walks you through it.";
+    if (navigator.share) {
+      navigator.share({ title: "Spotter", text: text, url: url }).catch(function () { });
+      return;
+    }
+    if (navigator.clipboard) { navigator.clipboard.writeText(url); toast("Link copied."); return; }
+    toast(url, 5000);
   }
 
   // ---------- the pager ----------
@@ -6107,6 +6456,7 @@ export const APP = String.raw`
   // ---------- wiring ----------
 
   $("authgo").onclick = doAuth;
+  $("forgotpw").onclick = forgotPassword;
   $("oagoogle").onclick = googleSignIn;
   $("oaapple").onclick = appleSignIn;
   oaLabelOf("oagoogle");
@@ -6170,8 +6520,22 @@ export const APP = String.raw`
   };
   $("rotatekey").onclick = rotateKey;
   $("unittoggle").onclick = toggleUnit;
-  $("resttoggle").onclick = toggleRest;
   $("soundtoggle").onclick = toggleSounds;
+  $("haptictoggle").onclick = toggleHaptics;
+  $("setnamerow").onclick = openName;
+  $("setpwrow").onclick = openPassword;
+  $("setmailrow").onclick = openEmail;
+  $("setexport").onclick = exportData;
+  $("setdelete").onclick = openDelete;
+  $("settell").onclick = tellFriend;
+  $("acccancel").onclick = closeAcc;
+  $("accgo").onclick = accGo;
+  // Wired on its own rather than added to the list further up, which another
+  // hand is working on this week.
+  wireSheet("accountsheet");
+  // A belt for the braces above: a session restored from the hash before the
+  // listener was attached leaves no PASSWORD_RECOVERY event to hear.
+  if (location.hash.indexOf("type=recovery") > 0) setTimeout(openRecovery, 700);
   $("wsound").onclick = toggleWorkoutSounds;
   $("signout").onclick = function () {
     closeSheet("settingssheet");

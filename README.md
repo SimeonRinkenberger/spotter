@@ -27,6 +27,11 @@ move at a time and logs what you lifted.
 - **Pumpy, the coach** — builds a workout from what you have saved and what you ask for,
   adds to one you have, plans your week, and says where something fits. It shows you every
   change and waits for you to confirm it.
+- **Your account** — Settings is a grouped list: Account, Preferences, Save from your phone,
+  Data & privacy, About. Change your name, your password and your email address; sign out from
+  the first screenful; export everything you put in as one JSON file; delete the account and
+  everything in it from inside the app. A forgotten password is reset by email from the sign-in
+  card.
 
 ## Architecture
 
@@ -477,6 +482,82 @@ kept as a weaker second net for a longer stretch of near-silence. And because an
 neither a link nor a file left over, an upload whose extraction finds **no exercises at all**
 fails the card rather than leaving an empty one; every URL-addressed provider still keeps its
 empty card, because there the link is worth having on its own.
+
+## The account
+
+Settings is five titled groups, in the order the questions get asked — **Account**,
+**Preferences**, **Save from your phone**, **Data & privacy**, **About** — which is the shape
+Hevy, Strong, Fitbod and iOS Settings all use. Two deliberate deviations from those apps:
+
+- **Sign out ends the Account group**, not the sheet. Every app looked at parks it at the very
+  bottom; here that put it under the iPhone Shortcut how-to, where it could not be found. It is
+  now in the first screenful at 375×812.
+- **Rest between sets is not a setting.** How long to rest belongs to the program or to the
+  video. Workout Mode takes the card's own `rest_seconds` — the exercise's first, then the
+  block's at the end of a circuit lap — and only when the card says nothing does it fall back to
+  `REST_FALLBACK` in `app.ts`, currently 90 seconds (the top of the ACSM hypertrophy band, and
+  between what Hevy and Strong default to). Profiles saved before this still carry a
+  `settings.rest`; it is ignored on read.
+
+What each group holds:
+
+| Group | Rows |
+| --- | --- |
+| Account | Email (tap to change — email accounts only), Sign-in method, Name, Password (email accounts only), Saved today, **Sign out** |
+| Preferences | Weight unit, Timer sounds, Vibration (only where `navigator.vibrate` exists, so not on iOS) |
+| Save from your phone | The ingest address, Copy, New key |
+| Data & privacy | Export my data, Privacy policy, **Delete account** |
+| About | What's new + version, Tell a friend, Something wrong? |
+
+Rename, change password, change email, choose a new password after a reset, and confirm a
+deletion all share **one** sheet (`#accountsheet`), dressed by `accSheet(cfg)` in `app.ts`.
+
+### Forgot password
+
+The sign-in face of the auth card shows **Forgot your password?**, which calls
+`resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname })`. Coming back
+on the link fires `PASSWORD_RECOVERY`, and the "Choose a new password" sheet opens from it
+(deferred a tick — supabase-js holds the auth lock through that callback). A `type=recovery` in
+the URL hash is checked at boot as a fallback for browsers that restore the session before the
+listener is attached.
+
+> **Owner action.** The Pages URL `https://simeonrinkenberger.github.io/spotter/` must be listed
+> under Dashboard → Authentication → **URL Configuration** → Redirect URLs, or the link in the
+> email bounces to the Site URL instead. Mail also still goes through Supabase's built-in sender,
+> which is rate-limited to a handful an hour and not for production — the reset copy says so out
+> loud, and a real SMTP provider is needed before launch.
+
+### Export my data
+
+`Settings → Data & privacy → Export my data` reads `workouts`, `workout_logs`, `plan`,
+`collections`, `collection_items`, `pumpy_threads` and `pumpy_messages` through supabase-js under
+RLS, adds the profile's `display_name`, `created_at` and `settings`, and writes
+`spotter-export-<date>.json`. On a device where `navigator.canShare({ files })` is true (an
+iPhone, which has no downloads folder a person can point at) it goes to the share sheet;
+everywhere else it is a download. The ingest key is left out on purpose: it works without a
+password, and a file is a thing people forward.
+
+### Delete account
+
+`POST /api/account/delete`, Bearer token, resolved by the same `userFromBearer` gate as every
+other route. Deleting the auth user cascades every table with an `on delete cascade` to
+`auth.users`; the three that deliberately have no such key are handled first, while their rows
+can still be found:
+
+| Table | What happens | Why |
+| --- | --- | --- |
+| `saves_log` | deleted | a per-user rate-limit counter |
+| `pumpy_usage` | deleted | per-user credits |
+| `ai_cost_log` | `user_id` set to `null` | the project's spend ledger feeds the daily budget guard; deleting rows would hand today's ceiling back |
+
+Objects under `uploads/<user id>/` are removed first (paged, best effort — the hourly orphan
+sweep is the backstop), then `DELETE /auth/v1/admin/users/<id>` with the service role. In the app
+it is the last control in Data & privacy, styled destructive, behind a sheet that names
+everything that goes and asks for the word DELETE to be typed.
+
+In-app account deletion is not optional for the App Store: guideline **5.1.1(v)** makes it a
+condition of listing any app that creates accounts. Google Play additionally wants a publicly
+reachable page describing it, which is `docs/privacy.html#delete`.
 
 ## Self-hosting
 

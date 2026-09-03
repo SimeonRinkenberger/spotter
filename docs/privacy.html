@@ -112,12 +112,34 @@
   <p>When a video is read for the first time, the resulting workout is cached under the video's
     public ID so the next person who saves the same video gets it instantly and no AI call is
     needed. That cache holds only information taken from the public post — never anything about
-    who saved it.</p>
+    who saved it. It is not linked to any account, so deleting an account does not remove it.</p>
 
-  <h2>Deleting your data</h2>
-  <p>Removing a workout deletes it immediately. To delete your whole account and everything in
-    it, email <a href="mailto:simeonrinkenberger@gmail.com">simeonrinkenberger@gmail.com</a> from
-    your account's address and it will be erased.</p>
+  <h2 id="export">Taking your data with you</h2>
+  <p>Settings &rarr; Data &amp; privacy &rarr; <b>Export my data</b> writes everything you put into
+    Spotter &mdash; your workout cards, every session you have logged, your plan, your collections,
+    your chats with Pumpy and your settings &mdash; into a single JSON file on your device. It is a
+    plain, structured, machine-readable format, so you can read it yourself or move it somewhere
+    else. Your personal save key is deliberately left out of the file, because it works without a
+    password and files get forwarded.</p>
+
+  <h2 id="delete">Deleting your account</h2>
+  <p>Removing a workout deletes it immediately. To delete your <b>whole account</b>, open Spotter
+    and go to Settings &rarr; Data &amp; privacy &rarr; <b>Delete account</b>. You will be asked to
+    type DELETE to confirm, and then the following are erased straight away and permanently:</p>
+  <ul>
+    <li>your workout cards, and any video files you uploaded;</li>
+    <li>every session you have logged, and your plan;</li>
+    <li>your collections and the corrections you made to cards;</li>
+    <li>your chats with Pumpy;</li>
+    <li>your profile, your settings and your personal save key;</li>
+    <li>the sign-in account itself.</li>
+  </ul>
+  <p>None of it can be recovered afterwards, so export your data first if you want to keep it.
+    Spotter keeps its own record of what the AI cost to run, and the deletion strips your account
+    id out of those rows rather than keeping them attached to you.</p>
+  <p>If you cannot sign in, email
+    <a href="mailto:simeonrinkenberger@gmail.com">simeonrinkenberger@gmail.com</a> from your
+    account's address and it will be erased for you.</p>
 
   <p style="margin-top:40px"><a href="./">← Back to Spotter</a></p>
 </main>

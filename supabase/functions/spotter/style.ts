@@ -1226,12 +1226,52 @@ export const STYLE = String.raw`<style>
     font-size: 12px; font-weight: 600; padding: 11px 8px; border-radius: 999px; }
   .threadrow .tdel[data-armed="1"] { color: var(--ember-ink); }
   .threadnone { font-size: 13.5px; color: var(--muted); padding: 10px 0 4px; line-height: 1.6; }
-  .setnote { font-size: 12.5px; color: var(--muted); line-height: 1.5; padding: 0 0 12px; margin-top: -4px; }
-  /* The colophon: version, changelog, a way to report something. Quiet on purpose
-     — it is the last thing in the sheet, not an invitation to leave. */
-  .setnote.foot { text-align: center; margin-top: 10px; padding-bottom: 0; }
+  .setnote { font-size: 12.5px; color: var(--muted); line-height: 1.5; padding: 6px 4px 0; }
+  /* The colophon. Quiet on purpose — it is the last thing in the sheet, not an
+     invitation to leave. */
+  .setnote.foot { text-align: center; margin-top: 18px; }
   .setnote.foot a { color: var(--muted); }
-  .setnote.foot .credit { display: block; margin-top: 7px; opacity: .8; }
+
+  /* ---------- settings as a grouped list ----------
+     Five inset cards with a header over each, which is what iOS Settings and every
+     fitness app worth copying does, and what turns a scroll of twenty unrelated
+     rows into five short answers. The header keeps caps and tracking because a
+     section head is STRUCTURE — it is doing the work of a rule.
+     Rows are full-bleed inside their card so the press highlight and the hairline
+     both run the whole width; 44px minimum, whatever the row holds. */
+  .seth { font-family: var(--display); font-size: 11.5px; font-weight: 700; letter-spacing: .07em;
+    text-transform: uppercase; color: var(--muted); margin: 22px 0 8px 4px; }
+  .setgroup { background: var(--card); border: 1px solid var(--line); border-radius: 16px;
+    overflow: hidden; box-shadow: var(--sh-sm); }
+  /* The padding is on the rows, not the group, so a row is genuinely full width:
+     the hairline and the press highlight both run edge to edge, and a button — which
+     shrink-to-fits by default and so needs width: 100% — measures the right thing. */
+  .setgroup .kv { min-height: 44px; box-sizing: border-box; padding: 12px 15px;
+    border-top: 1px solid var(--line); }
+  .setgroup > :first-child.kv { border-top: none; }
+  .setgroup .kv .v { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* The tappable ones. A row that opens a sheet is navigation, so it wears the
+     disclosure chevron; a row that only reports a value does not, and setting
+     [disabled] on it (a provider account cannot change its own email) turns it
+     back into that plain row rather than dimming it. */
+  a.kv.row, button.kv.row { display: flex; width: 100%; background: none; font: inherit;
+    color: inherit; text-align: left; text-decoration: none; border-radius: 0;
+    transition: background-color var(--t-1) var(--e-out); }
+  a.kv.row:active, button.kv.row:not([disabled]):active { background: var(--sand); }
+  .kv .chev { flex: 0 0 auto; width: 16px; height: 16px; color: var(--line-2); margin-right: -3px; }
+  .kv.row[disabled] .chev { display: none; }
+  .kv.del .k { color: var(--ember-ink); font-weight: 650; }
+  .kv.del .chev { color: var(--ember-ink); opacity: .55; }
+  /* Sign out ends the Account section rather than the sheet, so it is a secondary
+     button with air above it, not a link lost in the colophon. */
+  .setout { margin-top: 12px; }
+  /* The one destructive button in the app. --ember-ink is the only red the system
+     has; --paper on it measures 5.6:1 light and 8.4:1 dark, so the word survives
+     both schemes without a second colour being invented for it. */
+  .btn.del { background: var(--ember-ink); color: var(--paper); box-shadow: none; }
+  /* The same box that carries an auth error, carrying good news instead: a reset
+     link on its way, or an account that is gone. */
+  .autherr.ok { color: var(--good); }
 
   /* ---------- the keyboard ring ----------
      Three controls in the whole app showed one. :focus-visible, so a thumb never

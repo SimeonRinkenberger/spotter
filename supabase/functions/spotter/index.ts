@@ -22,6 +22,7 @@
 //                                     proposal to confirm
 //   POST /api/pumpy/confirm         { thread_id, message_id, accept } — execute or decline a proposal
 //   POST /api/rotate-key            new ingest key
+//   POST /api/account/delete        erase the caller's account and everything in it
 //   GET  /api/limits                today's counts, and the spend ceiling
 //   POST /api/worker/tick           drain the ingest queue (shared secret, not a user)
 //   POST /api/worker/media          one tier of reading the video, in its own isolate
@@ -4287,6 +4288,12 @@ async function dbPatch(table: string, query: string, body: Record<string, unknow
   return (await dbPatchMany(table, query, body))[0];
 }
 
+async function dbDelete(table: string, query: string): Promise<void> {
+  const r = await fetch(`${rest(table)}?${query}`, { method: "DELETE", headers: dbHeaders });
+  if (!r.ok) throw new Error(`db delete ${table} ${r.status}: ${await r.text()}`);
+  await r.body?.cancel();
+}
+
 /**
  * Call a security-definer function. Every multi-statement piece of queue logic
  * lives behind one of these, because the alternative is a check in the edge
@@ -4364,6 +4371,71 @@ async function userFromIngestKey(req: Request, url: URL): Promise<string | null>
   if (!/^[0-9a-f]{32}$/.test(key)) return null;
   const rows = await dbSelect("profiles", `ingest_key=eq.${key}&select=id`);
   return rows[0]?.id ?? null;
+}
+
+/**
+ * Erase the caller. Required to ship at all — App Store guideline 5.1.1(v) makes
+ * in-app account deletion a condition of listing any app that creates accounts,
+ * and Play asks for the same plus a public page describing it.
+ *
+ * Order matters. Deleting the auth user takes every table with an `on delete
+ * cascade` to auth.users with it — profiles, workouts and therefore plan and
+ * collection_items, workout_logs, collections, pumpy_threads, pumpy_messages,
+ * ingest_jobs, corrections. Three tables deliberately carry no such key, because
+ * they are ledgers that must survive a row being deleted, and they are handled
+ * here BEFORE the cascade, while the rows can still be found:
+ *
+ *   saves_log, pumpy_usage   per-user rate-limit counters — deleted outright,
+ *                            because a limit against a person who no longer
+ *                            exists is not protecting anything.
+ *   ai_cost_log              the project's own spend ledger, read by the daily
+ *                            budget guard. Its rows are ANONYMISED rather than
+ *                            deleted: dropping them would quietly hand back
+ *                            today's spend ceiling, and user_id is the only part
+ *                            of the row that is about a person.
+ *
+ * The uploads bucket has no cascade either — the objects live under a folder
+ * named for the user id, and anything left there is deleted first. Storage
+ * failures are logged and do not stop the deletion: the hourly orphan sweep is
+ * the backstop, and a person asking to be erased must not be blocked by a bucket.
+ */
+async function handleAccountDelete(userId: string, cors: Cors): Promise<Response> {
+  if (!UUID_RE.test(userId)) return json({ status: "error", message: "Bad account." }, 400, cors);
+  const filter = `user_id=eq.${userId}`;
+  try {
+    await dbDelete("saves_log", filter);
+    await dbDelete("pumpy_usage", filter);
+    await dbPatchMany("ai_cost_log", filter, { user_id: null });
+  } catch (e) {
+    console.error("account delete: ledgers", userId, e);
+    return json({ status: "error", message: "Could not delete the account." }, 500, cors);
+  }
+
+  // Best effort, and paged: a folder is not guaranteed to fit in one listing.
+  try {
+    for (let page = 0; page < 10; page++) {
+      const objects = await listUploads(`${userId}/`, 100);
+      if (!objects.length) break;
+      for (const o of objects) await deleteUpload(`${userId}/${o.name}`);
+      if (objects.length < 100) break;
+    }
+  } catch (e) {
+    console.error("account delete: uploads", userId, e);
+  }
+
+  // Last, because it is the one step that cannot be retried afterwards: once the
+  // auth row is gone there is no token left that could ask for any of the above.
+  const r = await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${userId}`, {
+    method: "DELETE",
+    headers: { ...authHeaders, authorization: `Bearer ${SERVICE_KEY}` },
+  });
+  if (!r.ok) {
+    console.error("account delete: auth", userId, r.status, (await r.text()).slice(0, 300));
+    return json({ status: "error", message: "Could not delete the account." }, 500, cors);
+  }
+  await r.body?.cancel();
+  console.log("account deleted", userId);
+  return json({ status: "ok" }, 200, cors);
 }
 
 function utcMidnight(): string {
@@ -7969,6 +8041,10 @@ Deno.serve(async (req: Request) => {
     if (req.method === "POST" && path === "/api/swap") return await handleSwap(req, userId, cors);
     if (req.method === "POST" && path === "/api/pumpy/chat") return await handlePumpyChat(req, userId, cors);
     if (req.method === "POST" && path === "/api/pumpy/confirm") return await handlePumpyConfirm(req, userId, cors);
+
+    if (req.method === "POST" && path === "/api/account/delete") {
+      return await handleAccountDelete(userId, cors);
+    }
 
     if (req.method === "POST" && path === "/api/rotate-key") {
       const bytes = new Uint8Array(16);
