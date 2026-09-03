@@ -507,7 +507,11 @@
     display: block; margin: 6px auto 0; }
 
   /* ---------- bottom sheets ---------- */
-  .sheet { position: fixed; inset: 0; z-index: 70; background: var(--scrim); display: none;
+  /* Above Workout Mode (80), not below it. At 70 every sheet opened from the
+     workout — logging a set, the exercise list, the clip — was laid out, animated
+     and hit-testable underneath an opaque full-screen overlay, so the taps landed
+     on nothing. Still under the toast at 90, still over the detail overlay at 50. */
+  .sheet { position: fixed; inset: 0; z-index: 85; background: var(--scrim); display: none;
     align-items: flex-end; -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
   .sheet.open { display: flex; animation: fadein var(--t-2) var(--e-soft); }
   @keyframes fadein { from { opacity: 0; } }
@@ -808,6 +812,12 @@
     letter-spacing: -.035em; margin: 0 0 12px; }
   .wdose { font-size: 16px; color: var(--ink-2); font-weight: 600; margin-bottom: 4px; }
   .wnote { font-size: 13.5px; color: var(--muted); line-height: 1.55; margin-top: 10px; }
+  /* "last time · 3 × 10 at 60 lb · 5d ago" is a reference, not a headline: muted,
+     one line, clipping rather than pushing the set pills down the screen. */
+  .wlast, .setlast { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .wlast { margin-top: 6px; }
+  .setlast { margin: 0 0 2px; }
+  .wlast:empty, .setlast:empty { display: none; }
   .setpills { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 22px 0 6px; }
   .setpill { border: 1px solid var(--line-2); background: var(--card); border-radius: 14px;
     padding: 10px 13px; min-width: 74px; font-size: 12px; color: var(--muted); font-weight: 600;
@@ -823,6 +833,11 @@
      Navigator.vibrate — so the picture is the whole receipt. */
   .setpill.just { animation: setpop var(--t-3) var(--e-out); }
   @keyframes setpop { 0% { transform: scale(.9); } 55% { transform: scale(1.05); } }
+  /* A best is the one celebration lifters ask for: a ring and a longer pop, not
+     confetti. The ring stays put — the point is it is still true ten minutes on. */
+  .setpill.pr { box-shadow: 0 0 0 2px var(--paper), 0 0 0 3.5px var(--ember); }
+  .setpill.just.pr { animation: setpr var(--t-4) var(--e-spring); }
+  @keyframes setpr { 0% { transform: scale(.88); } 45% { transform: scale(1.09); } }
   .wactions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 18px; }
   .wbottom { display: flex; align-items: center; justify-content: space-between; gap: 10px;
     padding: 10px 16px calc(14px + env(safe-area-inset-bottom)); }
@@ -835,15 +850,53 @@
     padding: 15px; font-size: 15px; font-weight: 700; box-shadow: 0 4px 18px var(--glow);
     transition: transform var(--t-1) var(--e-out); }
   .wfinish:active { transform: scale(.978); }
-  .resttimer { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 16px;
-    font-size: 13px; font-weight: 650; color: var(--ember-ink);
-    animation: viewin var(--t-2) var(--e-out); }
-  /* A rest has a known length, so the ring says what is left of it. */
-  .resttimer .ring { position: relative; width: 34px; height: 34px; border-radius: 999px;
-    background: conic-gradient(var(--ember) calc(var(--rest, 1) * 1turn), var(--ember-soft) 0); }
-  .resttimer .ring::after { content: ""; position: absolute; inset: 3.5px; border-radius: 999px;
+  /* A rest has a known length, so the ring says what is left of it. The strip sits
+     between the exercise and the bottom bar rather than inside the screen, so it
+     outlives the swipe to the next movement; the ring is also the pause button,
+     which is why it is 44px and not the 34 it looks like it needs. */
+  .reststrip { display: none; align-items: center; justify-content: center; gap: 8px;
+    padding: 0 16px 4px; animation: viewin var(--t-2) var(--e-out); }
+  .reststrip.on { display: flex; }
+  .reststrip.gone { animation: fadeout var(--t-2) var(--e-in) both; }
+  .reststrip .ring { position: relative; flex: 0 0 auto; width: 44px; height: 44px; padding: 0;
+    border: none; border-radius: 999px; display: flex; align-items: center; justify-content: center;
+    background: conic-gradient(var(--ember) calc(var(--rest, 1) * 1turn), var(--ember-soft) 0);
+    transition: transform var(--t-1) var(--e-out); }
+  .reststrip .ring::after { content: ""; position: absolute; inset: 4px; border-radius: 999px;
     background: var(--paper); }
-  .resttimer.gone { animation: fadeout var(--t-2) var(--e-in) both; }
+  .reststrip .ring span { position: relative; font-size: 12px; font-weight: 700;
+    color: var(--ember-ink); font-variant-numeric: tabular-nums; letter-spacing: -.03em; }
+  .reststrip .ring:active { transform: scale(.92); }
+  .reststrip.paused .ring {
+    background: conic-gradient(var(--line-2) calc(var(--rest, 1) * 1turn), var(--sand) 0); }
+  .reststrip.paused .ring span, .reststrip.paused .restword { color: var(--muted); }
+  .restword { font-size: 13px; font-weight: 650; color: var(--ember-ink); }
+  .reststrip .chip { min-height: 44px; display: flex; align-items: center; }
+
+  /* ---------- the session summary ----------
+     Finishing used to be a toast, gone before the phone was back in the pocket.
+     It is the one moment in the loop that is pure payoff, so it takes the screen
+     it is already on. The figures and the bests are set pills, deliberately: the
+     summary should speak in the same objects that were tapped all session. No
+     confetti — the numbers are the reward, and lifters can tell the difference. */
+  #workout.summary .wdots, #workout.summary .wbottom,
+  #workout.summary .reststrip { display: none; }
+  /* Hidden, not removed: the clock stays centred between the two top corners. */
+  #workout.summary #wlist { visibility: hidden; }
+  .sumfigs { margin-top: 20px; }
+  .sumfigs .setpill b { font-size: 23px; letter-spacing: -.035em; }
+  .sumfigs .setpill, .sumprs .setpill { animation: viewin var(--t-2) var(--e-out) both; }
+  .sumfigs .setpill:nth-child(2) { animation-delay: 70ms; }
+  .sumfigs .setpill:nth-child(3) { animation-delay: 140ms; }
+  .sumprs { margin-top: 4px; }
+  .sumprs .setpill { animation-delay: 210ms; }
+  .sumprs .setpill b { color: var(--ember-ink); font-size: 11px; letter-spacing: .1em;
+    text-transform: uppercase; }
+  .sumdone { margin-top: 24px; animation: viewin var(--t-3) var(--e-out) 260ms both; }
+  /* The clip, in a sheet, at the moment it is wanted. Shorter than the detail
+     view's embed so the close button stays on screen with it. */
+  #watchbody .embedwrap, #watchbody .dphoto { margin-bottom: 14px; }
+  #watchbody .embedwrap.vertical iframe { height: 56vh; }
   .stepper { display: flex; align-items: center; gap: 12px; justify-content: center; margin: 14px 0; }
   .stepper button { width: 46px; height: 46px; border-radius: 999px; border: 1px solid var(--line-2);
     background: var(--card); color: var(--ink); font-size: 20px; line-height: 1; }
@@ -1000,12 +1053,15 @@
      loops stop, informative ones stay. */
   @keyframes fadeonly { from { opacity: 0; } }
   @media (prefers-reduced-motion: reduce) {
-    .viewin, .carditem.in, .msgin, .bodyfig, .resttimer, .overlay.open,
+    .viewin, .carditem.in, .msgin, .bodyfig, .reststrip, .overlay.open, .sumdone,
+    .sumfigs .setpill, .sumprs .setpill,
     .proposal .done, .proposal .declined {
       animation-name: fadeonly; animation-duration: var(--t-2); animation-delay: 0ms; }
-    .overlay.closing, .sheet.closing, #workout.closing, .resttimer.gone {
+    .overlay.closing, .sheet.closing, #workout.closing, .reststrip.gone {
       animation: fadeout var(--t-1) var(--e-soft) both; }
-    .sheetbody, .sheet.closing .sheetbody, .setpill.just,
+    /* The staggered summary is :nth-child, which outranks the rule above it. */
+    .sumfigs .setpill:nth-child(n) { animation-delay: 0ms; }
+    .sheetbody, .sheet.closing .sheetbody, .setpill.just, .setpill.just.pr,
     .empty .big, .thumbwrap.pending .noimg, .thumbwrap.failed .noimg,
     .thumbwrap.loading::after, .thumbwrap.pending::after { animation: none; }
     .thumbwrap img { transition: none; }
@@ -1161,6 +1217,14 @@
   </div>
   <div class="wdots" id="wdots"></div>
   <div class="wmain" id="wmain"></div>
+  <!-- Out here rather than inside .wmain: a rest belongs to the lifter, not to the
+       screen they happen to be looking at. Swiping on used to throw it away. -->
+  <div class="reststrip" id="reststrip">
+    <button class="ring" id="restring" aria-label="Pause or resume the rest"><span id="restnum">0</span></button>
+    <span class="restword" id="restword">Rest</span>
+    <button class="chip" id="restplus">+15 s</button>
+    <button class="chip" id="restskip">Skip</button>
+  </div>
   <div class="wbottom">
     <button class="wnav" id="wprev" aria-label="Previous">←</button>
     <button class="wfinish" id="wfinish">Finish workout</button>
@@ -1200,6 +1264,7 @@
 <div class="sheet" id="setsheet"><div class="sheetbody">
   <div class="grabber"></div>
   <h2 id="settitle">Log set</h2>
+  <div class="wnote setlast" id="setlast"></div>
   <div class="stepper">
     <button id="repsdown" aria-label="Fewer reps">−</button>
     <div class="val"><span id="repsval">10</span><small>reps</small></div>
@@ -1214,6 +1279,17 @@
     <button class="btn ghost" id="setclear">Clear</button>
     <button class="btn" id="setsave">Save set</button>
   </div>
+</div></div>
+
+<!-- The premise of the app at the moment it is needed: the clip, three feet from the
+     barbell. #watchbody is filled on open and emptied on close — an Instagram or
+     TikTok iframe left alive behind Workout Mode keeps loading, and takes the audio
+     with it. -->
+<div class="sheet" id="watchsheet"><div class="sheetbody">
+  <div class="grabber"></div>
+  <h2>Watch the clip</h2>
+  <div id="watchbody"></div>
+  <button class="btn ghost" id="watchclose">Close</button>
 </div></div>
 
 <div class="sheet" id="exsheet"><div class="sheetbody">
@@ -1332,6 +1408,12 @@
   <div class="setnote hide" id="setpumpy"></div>
   <div class="kv"><span class="k">Weight unit</span>
     <span class="v"><button class="chip" id="unittoggle">lb</button></span></div>
+  <div class="kv"><span class="k">Rest between sets</span>
+    <span class="v"><button class="chip" id="resttoggle">90 s</button></span></div>
+  <div class="kv"><span class="k">Timer sounds</span>
+    <span class="v"><button class="chip" id="soundtoggle">On</button></span></div>
+  <div class="setnote">The rest is used when the video does not say. The sounds are three
+    ticks and a chime, and only play while Spotter is open.</div>
   <h2 style="margin-top:22px;font-size:16px">Save from your phone</h2>
   <p class="lede"><b>Android</b> — install Spotter, then share any video to it from the share
     sheet. Nothing below is needed.</p>
@@ -1376,7 +1458,10 @@
   var state = {
     user: null, profile: null, workouts: [], logs: null, plan: null,
     collections: [], colItems: [],
-    filter: "All", q: "", view: "library", weekStart: null, unit: "lb"
+    filter: "All", q: "", view: "library", weekStart: null, unit: "lb",
+    // Most social cards never say how long to rest, so the timer only ever ran
+    // for the few that did. 0 means the user asked for no timer at all.
+    rest: 90, sounds: true
   };
 
   function $(id) { return document.getElementById(id); }
@@ -1991,7 +2076,11 @@
     sb.from("profiles").select("*").eq("id", state.user.id).maybeSingle().then(function (r) {
       if (r.data) {
         state.profile = r.data;
-        if (r.data.settings && r.data.settings.unit) state.unit = r.data.settings.unit;
+        var s = r.data.settings || {};
+        if (s.unit) state.unit = s.unit;
+        // 0 is a real answer here ("no timer"), so these test presence, not truth.
+        if (typeof s.rest === "number") state.rest = s.rest;
+        if (typeof s.sounds === "boolean") state.sounds = s.sounds;
       }
     });
   }
@@ -4016,19 +4105,22 @@
         };
       }),
       startedAt: (resume && resume.startedAt) || new Date().toISOString(),
-      wake: null
+      // prs: what fell today, keyed by movement, for the summary and the toast.
+      wake: null, prs: {}, finished: false
     };
     if (!wo.entries.length) {
       wo.entries = [{ name: "Freestyle", canonical_id: null, block: 0, exercise: 0, sets: [] }];
     }
     clearTimeout(woCloseTimer);
     $("workout").classList.remove("closing");
+    $("workout").classList.remove("summary");
     $("workout").classList.add("open");
+    stopRest();
     acquireWake();
     renderWorkout();
     startClock();
     history.pushState({ workout: 1 }, "");
-    lastWeights(w);
+    lastWeights();
   }
 
   // The grouping key for "the same movement". The catalog id when the name mapped,
@@ -4041,22 +4133,53 @@
     return e.canonical_id ? "c:" + e.canonical_id : "n:" + (e.name || "");
   }
 
-  // Prefill weight from the last time this user did the same movement.
-  var lastWeight = {};
-  function lastWeights(w) {
-    sb.from("workout_logs").select("entries").order("started_at", { ascending: false }).limit(25)
+  // One read of the last 25 sessions answers three questions: the weight the set
+  // sheet opens on, what "last time" says, and what a set has to beat to be a
+  // best. One pass, because the gym floor is one bar of LTE.
+  var hist = {}, histReady = false;
+
+  function lastWeights() {
+    hist = {};
+    histReady = false;
+    sb.from("workout_logs").select("entries,started_at").order("started_at", { ascending: false }).limit(25)
       .then(function (r) {
         if (r.error || !r.data) return;
         r.data.forEach(function (log) {
           (log.entries || []).forEach(function (e) {
             if (!e.name) return;
+            var sets = (e.sets || []).filter(function (s) { return s.reps; });
+            if (!sets.length) return;
             var k = exKey(e);
-            if (lastWeight[k] !== undefined) return;
-            var last = (e.sets || []).filter(function (s) { return s.weight; }).pop();
-            if (last) lastWeight[k] = last.weight;
+            var h = hist[k] || (hist[k] = { best: 0 });
+            sets.forEach(function (s) {
+              // Epley, as the Progress tab's records already use it.
+              if (s.weight) h.best = Math.max(h.best, s.weight * (1 + s.reps / 30));
+            });
+            // Newest first: the first session carrying this movement IS last time.
+            if (h.date) return;
+            var top = sets.filter(function (s) { return s.weight; }).pop() || sets[sets.length - 1];
+            h.date = log.started_at;
+            h.sets = sets.length;
+            h.reps = top.reps;
+            h.weight = top.weight || 0;
+            h.unit = top.unit || state.unit;
           });
         });
+        histReady = true;
+        // Lands after the first exercise is drawn, so refill the line in place
+        // rather than redraw a screen under someone's thumb.
+        var line = $("wlast");
+        if (line && wo && !wo.finished) line.textContent = lastLine(wo.entries[wo.i]);
       });
+  }
+
+  // Blank until the history is in, so it never claims a first time it cannot know.
+  function lastLine(entry) {
+    if (!histReady || !entry) return "";
+    var h = hist[exKey(entry)];
+    if (!h || !h.date) return "first time logging this.";
+    return "last time · " + h.sets + " × " + h.reps +
+      (h.weight ? " at " + h.weight + " " + h.unit : "") + " · " + agoText(h.date);
   }
 
   function startClock() {
@@ -4083,9 +4206,6 @@
   function renderWorkout() {
     if (!wo) return;
     var main = $("wmain"), dots = $("wdots");
-    // The running rest belongs to the screen being replaced, and used to carry on
-    // and announce a rest already left.
-    clearInterval(restTimer);
     main.innerHTML = "";
     dots.innerHTML = "";
 
@@ -4119,12 +4239,24 @@
 
     var dose = doseText(s.ex);
     if (dose) main.appendChild(el("div", "wdose", dose));
+    var last = el("div", "wnote wlast", lastLine(entry));
+    last.id = "wlast";
+    main.appendChild(last);
     if (s.ex.weight) main.appendChild(el("div", "wnote", "Suggested load: " + s.ex.weight));
     if (s.ex.notes) main.appendChild(el("div", "wnote", s.ex.notes));
 
     renderSetPills(main, entry, s.ex);
 
     var acts = el("div", "wactions");
+    // First in the row: when the name of a movement is not enough, the video it
+    // came from is the answer, and this is the moment it is wanted. Absent rather
+    // than dead when the card has no embed and no thumbnail to show.
+    var w = wo.workout;
+    if (w.thumb_url || (w.shortcode && /^(instagram|tiktok|youtube)$/.test(w.platform))) {
+      var watch = el("button", "chip", "▶ Watch the clip");
+      watch.onclick = openWatch;
+      acts.appendChild(watch);
+    }
     var help = el("button", "chip", "? How to do this");
     help.onclick = function () { explain(s.ex.name, wo.workout.title); };
     acts.appendChild(help);
@@ -4149,7 +4281,8 @@
     for (var i = 0; i < count; i++) {
       (function (idx) {
         var done = entry.sets[idx];
-        var p = el("button", "setpill" + (done ? " done" : "") + (idx === just ? " just" : ""));
+        var p = el("button", "setpill" + (done ? " done" : "") + (idx === just ? " just" : "") +
+          (done && done.pr ? " pr" : ""));
         var b = el("b", null, done
           ? (done.reps + (done.weight ? " × " + done.weight : ""))
           : "Set " + (idx + 1));
@@ -4176,10 +4309,13 @@
       var m = String(s.ex.reps).match(/\d+/);
       if (m) targetReps = parseInt(m[0], 10);
     }
+    var h = hist[exKey(entry)];
     setCtx.idx = idx;
     setCtx.reps = existing ? existing.reps : targetReps;
-    setCtx.weight = existing ? existing.weight : (lastWeight[exKey(entry)] || 0);
+    setCtx.weight = existing ? existing.weight : ((h && h.weight) || 0);
     $("settitle").textContent = (s && s.ex ? s.ex.name : "Set") + " · set " + (idx + 1);
+    // The number worth beating stays up while the stepper argues with it.
+    $("setlast").textContent = lastLine(entry);
     $("wtunit").textContent = state.unit;
     drawStepper();
     openSheet("setsheet");
@@ -4192,45 +4328,163 @@
 
   function saveSet() {
     if (!wo) return;
+    // Usually the session's first gesture, and iOS starts audio in nothing else.
+    unlockAudio();
     var entry = wo.entries[wo.i];
-    entry.sets[setCtx.idx] = {
+    var set = {
       reps: setCtx.reps, weight: setCtx.weight || null, unit: state.unit, done: true
     };
+    var k = exKey(entry), told = !!wo.prs[k];
+    if (prCheck(entry, set, k)) {
+      set.pr = true;
+      // Once per movement per session: the fifth toast about one lift is noise.
+      if (!told) toast("new best — " + (entry.name || "that").toLowerCase());
+    }
+    entry.sets[setCtx.idx] = set;
     saveDraft();
     closeSheet("setsheet");
     justSet = setCtx.idx;
     renderWorkout();
     var s = wo.screens[wo.i];
-    if (s && s.ex && s.ex.rest_seconds) startRest(s.ex.rest_seconds);
+    // The card's own rest wins; the default covers everything that never says.
+    var secs = (s && s.ex && s.ex.rest_seconds) || state.rest;
+    if (secs > 0) startRest(secs);
   }
 
-  // What is left of the rest, not a spin; off the clock, not its own ticks.
+  // A best only means something measured against a real one, so h.best carries the
+  // gate: it exists only if an earlier session logged this movement with weight.
+  // On day one everything is a record, which is how records stop being worth much.
+  function prCheck(entry, set, k) {
+    if (!histReady || !set.weight || !set.reps) return false;
+    var h = hist[k];
+    if (!h || !h.best) return false;
+    var est = set.weight * (1 + set.reps / 30);
+    if (est <= h.best) return false;
+    h.best = est;
+    // Keyed, so the summary gets one line per movement: the best of the day
+    // rather than every step up to it.
+    wo.prs[k] = { name: entry.name || "Exercise", reps: set.reps, weight: set.weight, unit: set.unit };
+    return true;
+  }
+
+  // What is left of the rest, not a spin — and read off a deadline rather than
+  // counted in ticks, because setInterval is throttled the moment the phone goes
+  // in a pocket. restHeld is what was left when it was paused.
+  var restUntil = 0, restTotal = 0, restHeld = 0, restCued = 0;
+
   function startRest(seconds) {
     clearInterval(restTimer);
-    var main = $("wmain");
-    var box = el("div", "resttimer");
-    var ring = el("div", "ring");
-    var label = el("span", null, "Rest " + seconds + "s");
-    ring.style.setProperty("--rest", "1");
-    box.appendChild(ring);
-    box.appendChild(label);
-    main.appendChild(box);
-    var total = seconds * 1000;
-    var until = Date.now() + total;
-    restTimer = setInterval(function () {
-      // Its screen is gone. Stop, and say nothing.
-      if (!box.parentNode) { clearInterval(restTimer); return; }
-      var left = until - Date.now();
-      if (left <= 0) {
-        clearInterval(restTimer);
-        box.classList.add("gone");
-        setTimeout(function () { if (box.parentNode) box.parentNode.removeChild(box); }, 240);
-        toast("Rest done — next set.");
-        return;
-      }
-      ring.style.setProperty("--rest", String(left / total));
-      label.textContent = "Rest " + Math.ceil(left / 1000) + "s";
-    }, 100);
+    restTotal = seconds * 1000;
+    restUntil = Date.now() + restTotal;
+    restHeld = 0;
+    restCued = 4;
+    $("reststrip").className = "reststrip on";
+    $("restword").textContent = "Rest";
+    drawRest(restTotal);
+    restTimer = setInterval(tickRest, 200);
+  }
+
+  function tickRest() {
+    if (!restUntil || restHeld) return;
+    var left = restUntil - Date.now();
+    if (left <= 0) { doneRest(); return; }
+    drawRest(left);
+    // 3, 2 and 1 once each: a throttled tab lands two ticks in a second, or none.
+    var s = Math.ceil(left / 1000);
+    if (s <= 3 && s < restCued) { restCued = s; beep(880, .05, 0); }
+  }
+
+  function drawRest(left) {
+    var s = Math.max(0, Math.ceil(left / 1000));
+    $("restring").style.setProperty("--rest", String(Math.max(0, left) / restTotal));
+    $("restnum").textContent = s >= 60
+      ? Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0") : String(s);
+  }
+
+  function doneRest() {
+    stopRest();
+    beep(880, .16, 0);
+    beep(1318.5, .34, .13);
+    // Safari still has no Navigator.vibrate. Ask anyway, expect nothing.
+    if (navigator.vibrate) { try { navigator.vibrate([35, 55, 35]); } catch (e) { /* bonus */ } }
+    toast("Rest done — next set.");
+  }
+
+  // Run out, skipped, or left behind by finishing — a rest ends the same way. The
+  // second guard is for a rest started inside the fade: that one owns the strip.
+  function stopRest() {
+    clearInterval(restTimer);
+    restUntil = 0;
+    restHeld = 0;
+    var strip = $("reststrip");
+    if (!strip.classList.contains("on")) return;
+    strip.className = "reststrip on gone";
+    setTimeout(function () { if (!restUntil) strip.className = "reststrip"; }, 240);
+  }
+
+  function pauseRest() {
+    if (!restUntil) return;
+    var strip = $("reststrip");
+    if (restHeld) {
+      restUntil = Date.now() + restHeld;
+      restHeld = 0;
+      strip.classList.remove("paused");
+      $("restword").textContent = "Rest";
+      restTimer = setInterval(tickRest, 200);
+      tickRest();
+    } else {
+      restHeld = Math.max(0, restUntil - Date.now());
+      clearInterval(restTimer);
+      strip.classList.add("paused");
+      $("restword").textContent = "Paused";
+    }
+  }
+
+  function addRest(ms) {
+    if (!restUntil) return;
+    // The total grows with the remainder, so the ring fills back up — more rest
+    // should look like more rest, not like lost progress.
+    restTotal += ms;
+    if (restHeld) restHeld += ms; else restUntil += ms;
+    restCued = 4;
+    drawRest(restHeld || restUntil - Date.now());
+  }
+
+  // Three ticks and a chime, from a context a tap unlocked. A bonus on top of the
+  // ring, never the only way to know.
+  var actx = null;
+
+  function unlockAudio() {
+    if (!state.sounds) return;
+    try {
+      if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+      if (actx.state === "suspended") actx.resume();
+    } catch (e) { actx = null; }
+  }
+
+  function beep(freq, len, delay) {
+    if (!actx || !state.sounds) return;
+    try {
+      var t = actx.currentTime + delay, o = actx.createOscillator(), g = actx.createGain();
+      o.frequency.value = freq;
+      o.connect(g); g.connect(actx.destination);
+      // Ramped, not switched: a square edge on a phone speaker is a click.
+      g.gain.setValueAtTime(.0001, t);
+      g.gain.exponentialRampToValueAtTime(.2, t + .012);
+      g.gain.exponentialRampToValueAtTime(.0001, t + len);
+      o.start(t); o.stop(t + len + .03);
+    } catch (e) { /* a silent cue is not a failure */ }
+  }
+
+  function openWatch() {
+    if (!wo) return;
+    var em = embedNode(wo.workout);
+    if (!em) return;
+    var body = $("watchbody");
+    body.innerHTML = "";
+    body.appendChild(em);
+    // The wake lock is kept: a screen asleep during a form check is the complaint.
+    openSheet("watchsheet");
   }
 
   function woGo(delta) {
@@ -4243,8 +4497,9 @@
   }
 
   function finishWorkout() {
-    if (!wo) return;
+    if (!wo || wo.finished) return;
     var logged = wo.entries.filter(function (e) { return e.sets.length; });
+    if (!logged.length) { leaveWorkout(); toast("Workout closed — nothing logged."); return; }
     var payload = {
       user_id: state.user.id,
       workout_id: wo.workout.id,
@@ -4254,31 +4509,94 @@
       duration_seconds: Math.round((Date.now() - new Date(wo.startedAt).getTime()) / 1000),
       entries: logged
     };
-    var hadSets = logged.length > 0;
-    exitWorkout();
-    // Workout mode and the detail page each pushed a history entry; finishing should
-    // land back in the library, not on the detail page under the closed overlay.
-    var openedFromDetail = $("detail").classList.contains("open");
-    history.go(openedFromDetail ? -2 : -1);
-    if (!hadSets) { toast("Workout closed — nothing logged."); return; }
+    // Insert first, draw from memory: the one moment of payoff in the whole loop
+    // should never wait on a gym's signal.
     sb.from("workout_logs").insert(payload).then(function (r) {
       if (r.error) { toast("Could not save that session."); return; }
       state.logs = null;
-      toast("Session logged 💪");
     });
+    clearInterval(woTimer);
+    stopRest();
+    clearDraft();
+    wo.finished = true;
+    renderSummary(payload, logged);
+  }
+
+  // Both history entries if the workout was opened from a card, one from the plan.
+  function leaveWorkout() {
+    var openedFromDetail = $("detail").classList.contains("open");
+    exitWorkout();
+    history.go(openedFromDetail ? -2 : -1);
+  }
+
+  function renderSummary(payload, logged) {
+    var main = $("wmain");
+    main.innerHTML = "";
+    $("workout").classList.add("summary");
+
+    var mins = Math.max(1, Math.round(payload.duration_seconds / 60));
+    $("wclock").textContent = mins + " min";
+    var sets = 0, vol = 0;
+    logged.forEach(function (e) {
+      e.sets.forEach(function (s) {
+        sets++;
+        if (s.reps && s.weight) vol += s.reps * s.weight;
+      });
+    });
+
+    main.appendChild(el("div", "wblock", "Session complete"));
+    main.appendChild(el("h2", "wname", wo.workout.title || "Workout"));
+
+    var figs = el("div", "setpills sumfigs");
+    [[String(mins), "min"], [String(sets), sets === 1 ? "set" : "sets"],
+     [vol ? Math.round(vol).toLocaleString() : "—", vol ? state.unit : "bodyweight"]]
+      .forEach(function (f) {
+        var box = el("div", "setpill");
+        box.appendChild(el("b", null, f[0]));
+        box.appendChild(document.createTextNode(f[1]));
+        figs.appendChild(box);
+      });
+    main.appendChild(figs);
+
+    // What was worked, in the card's own words. The anatomical map stays in the
+    // detail view; a list says as much here for a fraction of the page.
+    var mg = wo.workout.muscle_groups || [];
+    if (mg.length) main.appendChild(el("div", "wnote", mg.slice(0, 6).join(" · ")));
+
+    var beaten = Object.keys(wo.prs);
+    if (beaten.length) {
+      var prs = el("div", "setpills sumprs");
+      beaten.forEach(function (k) {
+        var p = wo.prs[k];
+        var row = el("div", "setpill pr");
+        row.appendChild(el("b", null, "new best"));
+        row.appendChild(document.createTextNode(p.name.toLowerCase() + " · " +
+          p.weight + " " + (p.unit || state.unit) + " × " + p.reps));
+        prs.appendChild(row);
+      });
+      main.appendChild(prs);
+    }
+
+    var done = el("button", "btn sumdone", "Done");
+    done.onclick = leaveWorkout;
+    main.appendChild(done);
+    viewIn(main);
   }
 
   var woCloseTimer = null;
 
   function exitWorkout() {
     clearInterval(woTimer);
-    clearInterval(restTimer);
+    stopRest();
     releaseWake();
     clearDraft();
+    // The clip sheet can outlive the overlay it was opened from.
+    closeSheet("watchsheet");
     wo = null;
     var n = $("workout");
     if (!n.classList.contains("open")) return;
     n.classList.remove("open");
+    n.classList.remove("summary");
     n.classList.add("closing");
     clearTimeout(woCloseTimer);
     woCloseTimer = setTimeout(function () { n.classList.remove("closing"); }, 260);
@@ -5153,11 +5471,16 @@
     n.classList.add("closing");
     clearTimeout(closeTimers[id]);
     // A timer, not animationend: a sheet reopened mid-close never fires one.
-    closeTimers[id] = setTimeout(function () { n.classList.remove("closing"); }, 260);
+    closeTimers[id] = setTimeout(function () {
+      n.classList.remove("closing");
+      // Every way of closing the clip sheet comes through here, so the iframe
+      // always leaves the page — and only once it has finished sliding away.
+      if (id === "watchsheet") $("watchbody").innerHTML = "";
+    }, 260);
   }
 
-  ["addsheet", "setsheet", "exsheet", "exeditsheet", "explainsheet", "picksheet", "settingssheet",
-   "colsheet", "renamesheet", "swapsheet", "pumpysheet", "capsheet"]
+  ["addsheet", "setsheet", "watchsheet", "exsheet", "exeditsheet", "explainsheet", "picksheet",
+   "settingssheet", "colsheet", "renamesheet", "swapsheet", "pumpysheet", "capsheet"]
     .forEach(function (id) {
       $(id).addEventListener("click", function (e) { if (e.target === $(id)) closeSheet(id); });
     });
@@ -5492,6 +5815,8 @@
     $("setprov").textContent = how || "—";
     $("setprovrow").classList.toggle("hide", !how);
     $("unittoggle").textContent = state.unit;
+    $("resttoggle").textContent = restLabel();
+    $("soundtoggle").textContent = state.sounds ? "On" : "Off";
     var key = state.profile ? state.profile.ingest_key : null;
     $("setkey").textContent = key ? API + "ingest?key=" + key : "Loading…";
     $("setsaves").textContent = "…";
@@ -5524,10 +5849,40 @@
     });
   }
 
+  // The column is written whole, so every preference goes up together: saving one
+  // of them used to be enough to drop the others.
+  function saveSettings() {
+    var s = { unit: state.unit, rest: state.rest, sounds: state.sounds };
+    if (state.profile) state.profile.settings = s;
+    // The then() is what sends it. A supabase-js builder is lazy — it only runs
+    // the request when something awaits it — so this line without one has been
+    // quietly dropping the unit preference on the floor since it was written.
+    sb.from("profiles").update({ settings: s }).eq("id", state.user.id)
+      .then(function (r) { if (r.error) toast("Could not save that setting."); });
+  }
+
+  function restLabel() { return state.rest ? state.rest + " s" : "Off"; }
+
   function toggleUnit() {
     state.unit = state.unit === "lb" ? "kg" : "lb";
     $("unittoggle").textContent = state.unit;
-    sb.from("profiles").update({ settings: { unit: state.unit } }).eq("id", state.user.id);
+    saveSettings();
+  }
+
+  // Off, then the three rests worth an opinion. Four options do not earn a sheet.
+  function toggleRest() {
+    var opts = [0, 60, 90, 120];
+    state.rest = opts[(opts.indexOf(state.rest) + 1) % opts.length];
+    $("resttoggle").textContent = restLabel();
+    saveSettings();
+  }
+
+  function toggleSounds() {
+    state.sounds = !state.sounds;
+    $("soundtoggle").textContent = state.sounds ? "On" : "Off";
+    // This tap is a gesture, and iOS hands out audio permission in gestures.
+    if (state.sounds) unlockAudio();
+    saveSettings();
   }
 
   // ---------- the pager ----------
@@ -6102,6 +6457,8 @@
   };
   $("rotatekey").onclick = rotateKey;
   $("unittoggle").onclick = toggleUnit;
+  $("resttoggle").onclick = toggleRest;
+  $("soundtoggle").onclick = toggleSounds;
   $("signout").onclick = function () {
     closeSheet("settingssheet");
     sb.auth.signOut();
@@ -6178,6 +6535,11 @@
     openSheet("exsheet");
   };
 
+  $("restring").onclick = pauseRest;
+  $("restplus").onclick = function () { addRest(15000); };
+  $("restskip").onclick = function () { stopRest(); };
+  $("watchclose").onclick = function () { closeSheet("watchsheet"); };
+
   $("repsup").onclick = function () { setCtx.reps++; drawStepper(); };
   $("repsdown").onclick = function () { if (setCtx.reps > 0) setCtx.reps--; drawStepper(); };
   $("wtup").onclick = function () { setCtx.weight += (state.unit === "kg" ? 2.5 : 5); drawStepper(); };
@@ -6212,6 +6574,9 @@
 
   document.addEventListener("visibilitychange", function () {
     if (document.visibilityState !== "visible" || !state.user) return;
+    // The interval was throttled while the phone was away; the deadline was not.
+    // One tick puts the ring right, and ends a rest that ran out in a pocket.
+    if (restUntil) tickRest();
     if (wo) { acquireWake(); return; }
     if (!overlayShowing()) load();
   });
