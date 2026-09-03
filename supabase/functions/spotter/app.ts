@@ -3074,7 +3074,7 @@ export const APP = String.raw`
         r.data.forEach(function (log) {
           (log.entries || []).forEach(function (e) {
             if (!e.name) return;
-            var sets = (e.sets || []).filter(function (s) { return s.reps; });
+            var sets = (e.sets || []).filter(function (s) { return s && s.reps; });
             if (!sets.length) return;
             var k = exKey(e);
             var h = hist[k] || (hist[k] = { best: 0 });
@@ -3636,7 +3636,12 @@ export const APP = String.raw`
 
   function finishWorkout() {
     if (!wo || wo.finished) return;
-    var logged = wo.entries.filter(function (e) { return e.sets.length; });
+    // Sets are logged by index, so logging set 2 before set 1 leaves a hole that
+    // JSON turns into null and every later reader trips over. Close the holes
+    // here, once, before the session is written anywhere.
+    var logged = wo.entries.map(function (e) {
+      return Object.assign({}, e, { sets: (e.sets || []).filter(Boolean) });
+    }).filter(function (e) { return e.sets.length; });
     if (!logged.length) { leaveWorkout(); toast("Workout closed — nothing logged."); return; }
     var payload = {
       user_id: state.user.id,
@@ -3683,6 +3688,7 @@ export const APP = String.raw`
     var sets = 0, vol = 0;
     logged.forEach(function (e) {
       e.sets.forEach(function (s) {
+        if (!s) return;
         sets++;
         if (s.reps && s.weight) vol += s.reps * toUnit(s.weight, s.unit);
       });
@@ -3956,6 +3962,7 @@ export const APP = String.raw`
     var v = 0;
     (log.entries || []).forEach(function (e) {
       (e.sets || []).forEach(function (s) {
+        if (!s) return;
         if (s.reps && s.weight) v += s.reps * toUnit(s.weight, s.unit);
       });
     });
@@ -4131,6 +4138,7 @@ export const APP = String.raw`
       (l.entries || []).forEach(function (e) {
         var k = exKey(e);
         (e.sets || []).forEach(function (s) {
+          if (!s) return;
           if (!s.reps || !s.weight) return;
           var wt = toUnit(s.weight, s.unit), est = wt * (1 + s.reps / 30);
           if (!prs[k]) prs[k] = { est: 0, label: e.name || "Exercise" };
@@ -4214,7 +4222,7 @@ export const APP = String.raw`
       var n = el("div", "n");
       n.appendChild(document.createTextNode(l.workout_title || "Workout"));
       var sets = 0;
-      (l.entries || []).forEach(function (e) { sets += (e.sets || []).length; });
+      (l.entries || []).forEach(function (e) { sets += (e.sets || []).filter(Boolean).length; });
       n.appendChild(el("span", null,
         d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }) +
         " · " + sets + (sets === 1 ? " set" : " sets") +
@@ -4229,7 +4237,7 @@ export const APP = String.raw`
         var er = el("div", "histrow");
         var en = el("div", "n");
         en.appendChild(document.createTextNode(e.name));
-        en.appendChild(el("span", null, e.sets.map(setText).join("  ")));
+        en.appendChild(el("span", null, e.sets.filter(Boolean).map(setText).join("  ")));
         er.appendChild(en);
         card.appendChild(er);
       });
