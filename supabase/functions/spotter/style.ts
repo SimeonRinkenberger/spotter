@@ -185,29 +185,20 @@ export const STYLE = String.raw`<style>
   .landfoot { text-align: center; margin-top: 30px; font-size: 12px; color: var(--muted); }
   .landfoot a { color: var(--muted); }
 
-  /* ---------- app shell ----------
+  /* ---------- app shell, and the frame everything full-screen is drawn in ----------
      #app owns the viewport instead of the document: the four pages scroll inside
      it while the header and the tab bar stay put, which is the only arrangement
-     in which a page can slide sideways. The height follows the visual viewport
-     while a field is focused (fitViewport in app.ts) so the iOS keyboard pushes
-     the composer up rather than shoving the whole app off the top. */
-  /* ---------- the frame ----------
-     Every full-screen layer — the app, its sheets, the detail overlay, Workout
-     Mode, the toast — is drawn against these two rather than against the layout
-     viewport, because on the one device that matters most the layout viewport
-     lies. An installed iOS web app asking for viewport-fit=cover is handed an
-     initial containing block a safe-area-inset-top SHORT of the screen (WebKit
-     254868, open since 2023 and still reproducing), so 100dvh, -webkit-fill-
-     available and visualViewport.height all measure 793 of an 852pt phone and
-     everything fixed to the bottom floats a status bar above it. vh is the one
-     unit WebKit still measures against the whole screen there — the reverse of
-     the advice for a browser tab, which is why it is scoped to standalone, where
-     vh cannot mean anything else because there is no URL bar to hide.
-     fitViewport() in app.ts overrides both while the keyboard is up. */
+     in which a page can slide sideways. Its size is --vvh/--vvtop, and so is every
+     other full-screen layer's, because the layout viewport lies where it matters
+     most: an installed iOS app asking for viewport-fit=cover gets an ICB a
+     safe-area-inset-top short of the screen (WebKit 254868), so 100dvh,
+     -webkit-fill-available and visualViewport.height all read 793 of an 852pt
+     phone and everything fixed to the bottom floats a status bar above it. Only vh
+     still measures the whole screen there, which is the reverse of the rule for a
+     browser tab — hence the scope. fitViewport() takes both for the keyboard. */
   :root { --vvh: 100dvh; --vvtop: 0px; }
   @media all and (display-mode: standalone) { :root { --vvh: 100vh; } }
-  /* Older iOS answers navigator.standalone and not the media feature. */
-  :root.sa { --vvh: 100vh; }
+  :root.sa { --vvh: 100vh; }   /* older iOS answers navigator.standalone, not the feature */
   #app { position: fixed; left: 0; right: 0; top: var(--vvtop); height: var(--vvh);
     overflow: hidden; }
 
@@ -581,10 +572,9 @@ export const STYLE = String.raw`<style>
     align-items: flex-end; -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
   .sheet.open { display: flex; animation: fadein var(--t-2) var(--e-soft); }
   @keyframes fadein { from { opacity: 0; } }
-  /* 88% of the frame, so an eighth of the screen is always scrim you can tap —
-     against the layout viewport this was 86vh of a box whose own top was already
-     off screen, and the Settings sheet came out with nothing tappable left. The
-     bounce is off because the drag below owns what happens at the top edge. */
+  /* 88% of the frame, so an eighth of the screen is always scrim you can tap: as
+     86vh of a viewport whose own top was off screen, Settings left none. The
+     bounce is off because the drag owns what happens at the top edge. */
   .sheetbody { position: relative; width: 100%; max-height: 88%; overflow-y: auto;
     overscroll-behavior: none; background: var(--paper);
     background-image: var(--grain); border-radius: 26px 26px 0 0; box-shadow: var(--sh-up);
@@ -592,14 +582,10 @@ export const STYLE = String.raw`<style>
     animation: sheetup .38s var(--e-spring); }
   /* Only on for the settle: the drag itself is 1:1 and must not be timed. */
   .sheetbody.snap { transition: transform var(--t-3) var(--e-spring); }
-  /* The tallest sheet is the one with the least scrim left over, so it says how to
-     leave out loud as well as in a gesture. */
-  .sheetx { position: absolute; top: 6px; right: 10px; width: 44px; height: 44px;
-    display: flex; align-items: center; justify-content: center; border: none;
-    background: none; color: var(--muted); border-radius: 14px;
-    transition: background-color var(--t-1) var(--e-out); }
-  .sheetx .ic { width: 20px; height: 20px; }
-  .sheetx:active { background: var(--sand); }
+  /* The tallest sheet leaves the least scrim, so it also says how to leave. The
+     app's own icon button, so it is the same 38px control with the same 44px
+     reach as every other way out of a screen. */
+  .sheetx { position: absolute; top: 10px; right: 14px; z-index: 1; }
   @keyframes sheetup { from { transform: translateY(100%); } }
   .sheet.closing { display: flex; pointer-events: none;
     animation: fadeout var(--t-2) var(--e-soft) both; }
@@ -694,9 +680,9 @@ export const STYLE = String.raw`<style>
   .pickrow .pt span { font-size: 11.5px; color: var(--muted); }
 
   /* ---------- toast ---------- */
-  /* Hung from the frame's bottom edge rather than the layout viewport's, which is
-     not the same edge on an installed iPhone. translate(-50%, -100%) makes top the
-     line the toast sits ON, so the 96px of clearance still means 96px. */
+  /* Hung from the frame's bottom edge, not the layout viewport's — not the same
+     edge on an installed iPhone. -100% makes top the line the toast sits ON, so
+     the 96px of clearance still means 96px. */
   #toast { position: fixed; left: 50%;
     top: calc(var(--vvtop) + var(--vvh) - 96px - env(safe-area-inset-bottom));
     transform: translate(-50%, calc(-100% + 14px)); z-index: 90; background: var(--ink); color: var(--paper);
@@ -722,9 +708,9 @@ export const STYLE = String.raw`<style>
      from --x, the track's position measured in pages, so a tap, a fling and a
      finger halfway between two tabs all move the bar by the same rule. The spring
      in app.ts is the timing; a CSS transition on top of it would fight it. */
-  /* Absolute inside #app, not fixed to the layout viewport: the frame knows where
-     the bottom of the screen is and the layout viewport does not. #app is fixed,
-     so this is the same box in the same stacking context it has always been. */
+  /* Absolute inside #app rather than fixed: the frame knows where the bottom of
+     the screen is and the layout viewport does not. #app is itself fixed, so this
+     is the same box in the same stacking context it has always been. */
   .tabbar { position: absolute; left: 0; right: 0; bottom: 0; z-index: 40; display: flex;
     background: color-mix(in srgb, var(--paper) 88%, transparent);
     -webkit-backdrop-filter: blur(22px) saturate(1.6); backdrop-filter: blur(22px) saturate(1.6);
@@ -854,8 +840,8 @@ export const STYLE = String.raw`<style>
       fill-opacity var(--t-3) var(--e-out), opacity var(--t-3) var(--e-out); }
   .bodybox .lit { fill: var(--ember); background-color: var(--ember); }
   /* One number, spent twice: fill-opacity on the figure, opacity on the legend's
-     swatches. A path's own opacity would take its selection ring down with it, and
-     the ring has to be as legible on the faintest band as on the brightest. */
+     swatches. A path's own opacity takes its selection ring down with it, and the
+     ring has to read on the faintest band as well as the brightest. */
   .bodybox .bodymus { fill-opacity: var(--o, 1); }
   .bodybox .sw { opacity: var(--o, 1); }
   .bodybox.s2 .lv1 { --o: .45; }
@@ -871,21 +857,15 @@ export const STYLE = String.raw`<style>
   .bodybox.s4 .lv3 { --o: .74; }
   .bodybox.s4 .lv4 { --o: 1; }
   .bodybox .bodymus { cursor: pointer; outline: none; }
-  /* Tapping a muscle used to change almost nothing you could see: a 1.6px ink line
-     dimmed to the strength of the band it was drawn on, and on a lit one in dark
-     mode near-white on ember measures 2.3:1 — a ring nobody could find. No single
-     colour can do this job, because the pale answer fails just as badly the other
-     way (paper on the untargeted grey is 1.2:1). So the ring is a pair, an ink line
-     with a paper halo just outside it, and whichever half a fill swallows the other
-     stands at 4.8:1 or better against it — measured across both schemes, the
-     untargeted grey, the bare skin and all six lit strengths. The .lit selector is
-     the same weight as the primary's ember rim above and comes after it, so a
-     tapped primary wears this instead. */
+  /* No one colour can ring a shape that might be any of eight fills: ink on a
+     dark-mode ember is 2.3:1, and pale fails the other way at 1.2:1 on the
+     untargeted grey. So the ring is a pair — an ink line with a paper halo outside
+     it — and whichever half a fill swallows, the other stands at 4.8:1 or better,
+     both schemes, all eight. .lit matches the primary's ember rim above for weight
+     and comes after it, so a tapped primary wears this instead. */
   .bodybox .bodymus.sel, .bodybox .bodymus.sel.lit, .bodybox .bodymus:focus-visible {
     stroke: var(--ink); stroke-width: 2px; vector-effect: non-scaling-stroke;
     filter: drop-shadow(0 0 1px var(--paper)) drop-shadow(0 0 1px var(--paper)); }
-  /* And it arrives, with the pop a logged set gets: movement finds an eye that a
-     colour change on a small shape does not. */
   .bodybox .bodymus.sel { animation: setpop var(--t-3) var(--e-spring);
     transform-box: fill-box; transform-origin: center; }
   .bodylbl { font-size: 11px; font-weight: 600; color: var(--muted); margin-top: 7px;
@@ -1223,7 +1203,7 @@ export const STYLE = String.raw`<style>
       animation: fadeout var(--t-1) var(--e-soft) both; }
     /* The staggered summary is :nth-child, which outranks the rule above it. */
     .sumfigs .setpill:nth-child(n) { animation-delay: 0ms; }
-    .sheetbody.snap, .sheetx { transition: none; }
+    .sheetbody.snap { transition: none; }
     .sheetbody, .sheet.closing .sheetbody, .setpill.just, .setpill.just.pr,
     .empty .big, .thumbwrap.pending .noimg, .thumbwrap.failed .noimg,
     .thumbwrap.loading::after, .thumbwrap.pending::after { animation: none; }

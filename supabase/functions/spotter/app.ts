@@ -582,13 +582,10 @@ export const APP = String.raw`
     // hour into a session would be a very hard bug to find.
     if (!wasHidden) return;
     resetPager();
-    // resetPager measures the chrome in the frame it is revealed in, and iOS is
-    // still deciding what the safe area is in that frame. Ask again once it has.
+    // resetPager measures in the frame the app is revealed in, and iOS is still
+    // working the safe area out in that frame. Ask again once it has.
     if (window.requestAnimationFrame) {
-      requestAnimationFrame(function () {
-        measureChrome();
-        requestAnimationFrame(measureChrome);
-      });
+      requestAnimationFrame(function () { measureChrome(); requestAnimationFrame(measureChrome); });
     }
   }
 
@@ -4383,25 +4380,21 @@ export const APP = String.raw`
     return b.used.toLocaleString() + " of " + b.cap.toLocaleString() + " " + tail;
   }
 
-  // What this phone thinks its own screen is. Every full-screen layer is now sized
-  // from numbers WebKit gets wrong in an installed app, and there is no simulator
-  // on this side of the work, so the numbers go on the page for the one person who
-  // can read them off a real device. A probe element rather than a table of
-  // constants: 100vh, 100dvh and the two insets are exactly what the stylesheet
-  // asks for, so what it prints is what the layout actually got.
+  // What this phone thinks its own screen is. There is no simulator on this side
+  // of the work and WebKit gets these numbers wrong in an installed app, so they
+  // go on the page for the one person who can read them off a real device. A probe
+  // element rather than constants: it prints what the layout actually got.
   function layoutLine() {
-    var vv = window.visualViewport, p = el("div"), vh, dvh, top, bot;
-    p.style.cssText = "position:fixed;top:0;left:0;width:0;visibility:hidden;height:100vh";
+    var vv = window.visualViewport, p = el("div"), n = [];
+    p.style.cssText = "position:fixed;top:0;left:0;width:0;visibility:hidden";
     document.body.appendChild(p);
-    vh = p.offsetHeight;
-    p.style.height = "100dvh"; dvh = p.offsetHeight;
-    p.style.height = "env(safe-area-inset-top)"; top = p.offsetHeight;
-    p.style.height = "env(safe-area-inset-bottom)"; bot = p.offsetHeight;
+    ["100vh", "100dvh", "env(safe-area-inset-top)", "env(safe-area-inset-bottom)"]
+      .forEach(function (h) { p.style.height = h; n.push(p.offsetHeight); });
     document.body.removeChild(p);
     return "Layout " + screen.width + "x" + screen.height +
       " · vv " + (vv ? Math.round(vv.height) : "—") + " · inner " + window.innerHeight +
-      " · vh " + vh + " · dvh " + dvh + " · sa " + top + "/" + bot +
-      " · hdr " + Math.round(hdrEl.getBoundingClientRect().height) +
+      " · vh " + n[0] + " · dvh " + n[1] + " · sa " + n[2] + "/" + n[3] +
+      " · chrome " + Math.round(hdrEl.getBoundingClientRect().height) +
       "/" + Math.round(tabbar.getBoundingClientRect().height) +
       " · " + (standalone() ? "standalone" : "browser");
   }
@@ -4686,17 +4679,13 @@ export const APP = String.raw`
 
   // ---------- pushing a sheet away ----------
   //
-  // Every sheet has worn a grabber since the day it was drawn, and until now the
-  // grabber was a picture of a gesture: tapping the scrim closed a sheet, and a
-  // sheet tall enough to cover its own scrim could not be closed at all —
-  // installed to the home screen there is no back swipe to fall back on either.
-  //
-  // Apple's rule is the one worth copying. The drag is offered only where the
-  // sheet's own scroller is already at its top or the finger is on the grabber, so
-  // a list inside a sheet still scrolls; from there the sheet follows the finger
-  // 1:1, resists upwards rather than travelling, and a flick or a third of its own
-  // height sends it away through closeSheet, which is what hands the history entry
-  // back. Anything less goes home on the spring.
+  // The grabber every sheet wears was a picture of a gesture: a sheet tall enough
+  // to cover its own scrim could not be closed at all, and installed to the home
+  // screen there is no back swipe to fall back on. Apple's rule, then — offered
+  // only where the sheet's own scroller is at its top or the finger is on the
+  // grabber, so a list inside a sheet still scrolls; 1:1 from there, resisting
+  // upwards rather than travelling; a flick or a third of its height sends it away
+  // through closeSheet, which is what hands the history entry back.
   var SH_FLING = 350, SH_PART = 0.35;
 
   function wireSheet(id) {
@@ -4711,25 +4700,20 @@ export const APP = String.raw`
       if (!d.lock) return;
       try { body.releasePointerCapture(d.id); } catch (err) { /* already gone */ }
       swallowClick();
-      var s = d.s, dt = (s[s.length - 1].t - s[0].t) / 1000;
-      var v = dt > 0.004 ? (s[s.length - 1].y - s[0].y) / dt : 0;
-      if (!cancelled && (v > SH_FLING || d.dy > body.offsetHeight * SH_PART)) {
-        // The closing keyframe reads the transform it finds as its start, so the
-        // sheet carries on down from wherever the finger left it.
-        closeSheet(id);
-        return;
-      }
+      var s = d.s, a = s[0], b = s[s.length - 1], dt = (b.t - a.t) / 1000;
+      var v = dt > 0.004 ? (b.y - a.y) / dt : 0;
+      // The closing keyframe takes the transform it finds as its start, so the
+      // sheet carries on down from wherever the finger left it.
+      if (!cancelled && (v > SH_FLING || d.dy > body.offsetHeight * SH_PART)) { closeSheet(id); return; }
       body.classList.add("snap");
       body.style.transform = "";
     }
 
     body.addEventListener("pointerdown", function (e) {
       if (sd || !e.isPrimary || noDragIn(e.target)) return;
-      var onGrab = e.target === body ||
-        (e.target.classList && e.target.classList.contains("grabber"));
-      if (body.scrollTop > 0 && !onGrab) return;
-      sd = { id: e.pointerId, x: e.clientX, y: e.clientY, lock: false, dy: 0,
-        s: [{ t: now(), y: e.clientY }] };
+      var grab = e.target === body || (e.target.classList && e.target.classList.contains("grabber"));
+      if (body.scrollTop > 0 && !grab) return;
+      sd = { id: e.pointerId, x: e.clientX, y: e.clientY, lock: false, dy: 0, s: [] };
     });
 
     body.addEventListener("pointermove", function (e) {
@@ -4745,17 +4729,16 @@ export const APP = String.raw`
         try { body.setPointerCapture(sd.id); } catch (err) { /* not fatal */ }
       }
       sd.dy = dy;
-      var s = sd.s;
-      s.push({ t: now(), y: e.clientY });
-      while (s.length > 2 && s[s.length - 1].t - s[0].t > 100) s.shift();
+      // The release reads the last VWIN of travel, the same window the pager uses.
+      sd.s.push({ t: now(), y: e.clientY });
+      while (sd.s.length > 2 && sd.s[sd.s.length - 1].t - sd.s[0].t > VWIN) sd.s.shift();
       // Up is not a dismissal, so it is answered with a third of itself.
       body.style.transform = "translateY(" + (dy > 0 ? dy : dy / 3) + "px)";
     });
 
-    // Pointer events are dispatched before the touch that caused them, so by the
-    // time this runs the drag has already decided. iOS needs the touch itself
-    // cancelled or it takes the gesture for a scroll and sends a pointercancel
-    // into the middle of the drag.
+    // Pointer events are dispatched before the touch that caused them, so the drag
+    // has already decided by the time this runs. iOS needs the touch itself
+    // cancelled or it takes the gesture for a scroll and pointercancels us mid-drag.
     body.addEventListener("touchmove", function (e) {
       if (sd && sd.lock && e.cancelable) e.preventDefault();
     }, { passive: false });
@@ -5403,21 +5386,16 @@ export const APP = String.raw`
     paint();
   }
 
-  // Border box, not the observer's default content box. The header and the tab bar
-  // grow by their safe-area padding and by nothing else, and iOS hands those env()
-  // values over after the first paint — a padding-only change, which a content-box
-  // observer is specified not to report. That is how --hdr and --ptab came to be a
-  // status bar short on the one phone that has a status bar worth the name: the
-  // week bar and the empty-state circle started under the header, and the Pumpy
-  // composer finished under the tab bar.
+  // Border box, not the observer's default content box: these two grow by their
+  // safe-area padding and by nothing else, iOS supplies those env() values after
+  // the first paint, and a content-box observer is specified not to report a
+  // padding-only change. That is how --hdr and --ptab came to be a status bar
+  // short. The events cover what an observer of three boxes cannot see — a
+  // rotation, a bfcache restore, the visual viewport settling.
   if (window.ResizeObserver) {
     var chromeRO = new ResizeObserver(measureChrome), border = { box: "border-box" };
     chromeRO.observe(hdrEl, border); chromeRO.observe(tabbar, border); chromeRO.observe(pagesEl, border);
   }
-  // And the moments an observer of three boxes cannot see: a rotation, a return
-  // from the back/forward cache with the page already laid out, and the visual
-  // viewport settling after the keyboard or a URL bar has moved. Cheap, rare, and
-  // event-driven — nothing here asks the layout a question every frame.
   window.addEventListener("resize", measureChrome);
   window.addEventListener("orientationchange", measureChrome);
   window.addEventListener("pageshow", measureChrome);
@@ -5448,13 +5426,12 @@ export const APP = String.raw`
   // track — 1500px wide inside a 375px window — and refuse every drag.
   //
   // Measuring wider than its box is not the same as being a scroller, and taking
-  // it for one is why Plan would not answer a swipe on the owner's phone at all.
-  // Every 44px hit area in this app is a pseudo-element hanging a few pixels past
-  // the control it belongs to, and each of those makes its row measure 2-4px over:
-  // the week bar 467 against 464, a plan row 436 against 432, Pumpy's composer 466
-  // against 464. None of them scroll — nothing is hidden and nothing can move — so
-  // the test is what the box is told to do with its overflow, and whether it has
-  // anywhere left to go in the direction the finger is actually going.
+  // it for one is why Plan answered no swipe at all on the owner's phone: every
+  // 44px hit area here is a pseudo-element hanging a few pixels past the control
+  // it enlarges, which puts the week bar at 467 inside 464, a plan row at 436
+  // inside 432, Pumpy's composer at 466 inside 464. None of them scroll. So the
+  // test is what the box is told to do with its overflow, and whether it has
+  // anywhere left to go in the direction the finger is going.
   function scrollerInWay(node, dx) {
     for (var n = node; n && n !== pagesEl; n = n.parentElement) {
       if (n.classList && n.classList.contains("page")) return false;
@@ -5621,19 +5598,15 @@ export const APP = String.raw`
 
   // ---------- the frame ----------
   //
-  // --vvh and --vvtop are the height and top of every full-screen layer: the app,
-  // its sheets, the detail overlay, Workout Mode, the toast. Their resting value
-  // is a CSS one — 100vh installed, 100dvh in a tab, for the reason set out where
-  // they are declared — and this function only takes them over for the keyboard,
-  // which no unit describes. iOS leaves the layout viewport alone and slides the
-  // visual one up, so a full-height app would keep its tab bar and Pumpy's
-  // composer under the keys; following the visual viewport puts the composer on
-  // top of the keyboard the way a native chat app does, and now carries the open
-  // sheet with it rather than leaving a field behind the keys.
-  //
-  // Deliberately NOT the source of truth for the resting height: in the installed
-  // app WebKit reports visualViewport.height as short as everything else, so
-  // taking it at face value would draw the same 59pt band this wave is removing.
+  // --vvh and --vvtop size every full-screen layer. Their resting value is the CSS
+  // one set where they are declared, and this takes them over only for the
+  // keyboard, which no unit describes: iOS leaves the layout viewport alone and
+  // slides the visual one up, so a full-height app keeps its tab bar and Pumpy's
+  // composer under the keys. Following the visual viewport lifts the composer onto
+  // the keyboard as a native chat app does, and now carries an open sheet with it.
+  // Deliberately not the source of truth for the resting height: installed, WebKit
+  // reports it as short as everything else, and believing it would redraw the 59pt
+  // band this wave exists to remove.
   var kbOn = false;
 
   function fitViewport() {

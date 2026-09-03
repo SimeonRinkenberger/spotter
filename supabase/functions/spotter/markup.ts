@@ -399,7 +399,7 @@ export const MARKUP_BODY = String.raw`</head>
 
 <div class="sheet" id="settingssheet"><div class="sheetbody">
   <div class="grabber"></div>
-  <button class="sheetx" id="setclose" aria-label="Close settings"><svg class="ic"><use href="#i-x"></use></svg></button>
+  <button class="iconbtn sheetx" id="setclose" aria-label="Close settings"><svg class="ic"><use href="#i-x"></use></svg></button>
   <h2>Settings</h2>
   <div class="kv"><span class="k">Signed in as</span><span class="v" id="setemail">—</span></div>
   <div class="kv hide" id="setprovrow"><span class="k">Sign-in method</span><span class="v" id="setprov">—</span></div>
