@@ -4325,7 +4325,8 @@
             var h = hist[k] || (hist[k] = { best: 0 });
             sets.forEach(function (s) {
               // Epley, as the Progress tab's records already use it.
-              if (s.weight) h.best = Math.max(h.best, s.weight * (1 + s.reps / 30));
+              // In today's unit, so a session logged in the other one still counts.
+              if (s.weight) h.best = Math.max(h.best, toUnit(s.weight, s.unit) * (1 + s.reps / 30));
             });
             // Newest first: the first session carrying this movement IS last time.
             if (h.date) return;
@@ -4345,13 +4346,26 @@
       });
   }
 
+  // Every set keeps the unit it was logged in, so switching lb to kg changes the
+  // language and not what was lifted: convert on the way to the screen, never
+  // rewrite the row. One decimal, because 42.5 kg is a plate and 42.4747 is noise.
+  var LB_PER_KG = 2.2046226;
+
+  function toUnit(w, unit) {
+    w = Number(w) || 0;
+    if (!w || !unit || unit === state.unit) return w;
+    return Math.round((state.unit === "kg" ? w / LB_PER_KG : w * LB_PER_KG) * 10) / 10;
+  }
+
+  function wtText(w, unit) { return toUnit(w, unit).toLocaleString(); }
+
   // Blank until the history is in, so it never claims a first time it cannot know.
   function lastLine(entry) {
     if (!histReady || !entry) return "";
     var h = hist[exKey(entry)];
     if (!h || !h.date) return "first time logging this.";
     return "last time · " + h.sets + " × " + h.reps +
-      (h.weight ? " at " + h.weight + " " + h.unit : "") + " · " + agoText(h.date);
+      (h.weight ? " at " + wtText(h.weight, h.unit) + " " + state.unit : "") + " · " + agoText(h.date);
   }
 
   function startClock() {
@@ -4456,7 +4470,7 @@
         var p = el("button", "setpill" + (done ? " done" : "") + (idx === just ? " just" : "") +
           (done && done.pr ? " pr" : ""));
         var b = el("b", null, done
-          ? (done.reps + (done.weight ? " × " + done.weight : ""))
+          ? (done.reps + (done.weight ? " × " + wtText(done.weight, done.unit) : ""))
           : "Set " + (idx + 1));
         p.appendChild(b);
         p.appendChild(document.createTextNode(done
@@ -4484,7 +4498,7 @@
     var h = hist[exKey(entry)];
     setCtx.idx = idx;
     setCtx.reps = existing ? existing.reps : targetReps;
-    setCtx.weight = existing ? existing.weight : ((h && h.weight) || 0);
+    setCtx.weight = existing ? toUnit(existing.weight, existing.unit) : (h ? toUnit(h.weight, h.unit) : 0);
     $("settitle").textContent = (s && s.ex ? s.ex.name : "Set") + " · set " + (idx + 1);
     // The number worth beating stays up while the stepper argues with it.
     $("setlast").textContent = lastLine(entry);
@@ -4494,8 +4508,11 @@
   }
 
   function drawStepper() {
+    // Steps of 2.5 on a converted seed drift into 45.599999999999994, and every
+    // change comes through here on its way to the screen and to the saved set.
+    setCtx.weight = Math.round(setCtx.weight * 10) / 10;
     $("repsval").textContent = String(setCtx.reps);
-    $("wtval").textContent = String(setCtx.weight);
+    $("wtval").textContent = setCtx.weight.toLocaleString();
   }
 
   function saveSet() {
@@ -4718,7 +4735,7 @@
     logged.forEach(function (e) {
       e.sets.forEach(function (s) {
         sets++;
-        if (s.reps && s.weight) vol += s.reps * s.weight;
+        if (s.reps && s.weight) vol += s.reps * toUnit(s.weight, s.unit);
       });
     });
 
@@ -4749,7 +4766,7 @@
         var row = el("div", "setpill pr");
         row.appendChild(el("b", null, "new best"));
         row.appendChild(document.createTextNode(p.name.toLowerCase() + " · " +
-          p.weight + " " + (p.unit || state.unit) + " × " + p.reps));
+          wtText(p.weight, p.unit) + " " + state.unit + " × " + p.reps));
         prs.appendChild(row);
       });
       main.appendChild(prs);
@@ -4980,7 +4997,7 @@
     var v = 0;
     (log.entries || []).forEach(function (e) {
       (e.sets || []).forEach(function (s) {
-        if (s.reps && s.weight) v += s.reps * s.weight;
+        if (s.reps && s.weight) v += s.reps * toUnit(s.weight, s.unit);
       });
     });
     return v;
@@ -5112,11 +5129,11 @@
         var k = exKey(e);
         (e.sets || []).forEach(function (s) {
           if (!s.reps || !s.weight) return;
-          var est = s.weight * (1 + s.reps / 30);
+          var wt = toUnit(s.weight, s.unit), est = wt * (1 + s.reps / 30);
           if (!prs[k]) prs[k] = { est: 0, label: e.name || "Exercise" };
           if (est > prs[k].est) {
             prs[k].est = est;
-            prs[k].weight = s.weight;
+            prs[k].weight = wt;
             prs[k].reps = s.reps;
             prs[k].date = l.started_at;
           }
@@ -5133,7 +5150,7 @@
         var nm = el("div", "n");
         nm.appendChild(document.createTextNode(p.label));
         nm.appendChild(el("span", null,
-          p.weight + " " + state.unit + " × " + p.reps + " · " +
+          wtText(p.weight) + " " + state.unit + " × " + p.reps + " · " +
           new Date(p.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })));
         r.appendChild(nm);
         r.appendChild(el("div", "v", Math.round(p.est) + " " + state.unit));
@@ -5207,7 +5224,7 @@
         var en = el("div", "n");
         en.appendChild(document.createTextNode(e.name));
         en.appendChild(el("span", null, e.sets.map(function (s) {
-          return s.reps + (s.weight ? "×" + s.weight : "");
+          return s.reps + (s.weight ? "×" + wtText(s.weight, s.unit) : "");
         }).join("  ")));
         er.appendChild(en);
         card.appendChild(er);
@@ -6068,6 +6085,9 @@
     state.unit = state.unit === "lb" ? "kg" : "lb";
     $("unittoggle").textContent = state.unit;
     saveSettings();
+    // Every weight on Progress is a conversion of a stored one, so the page has to
+    // be drawn again to be read in the new unit rather than merely relabelled.
+    if (state.logs) renderProgress();
   }
 
   // Off, then the three rests worth an opinion. Four options do not earn a sheet.
