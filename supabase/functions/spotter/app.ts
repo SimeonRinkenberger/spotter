@@ -3048,7 +3048,7 @@ export const APP = String.raw`
 
   function drawStepper() {
     // Steps of 2.5 on a converted seed drift into 45.599999999999994, and every
-    // change comes through here on its way to the screen and to the saved set.
+    // change passes here on its way to the screen and to the saved set.
     setCtx.weight = Math.round(setCtx.weight * 10) / 10;
     $("repsval").textContent = String(setCtx.reps);
     $("wtval").textContent = setCtx.weight.toLocaleString();
@@ -3255,8 +3255,7 @@ export const APP = String.raw`
   }
 
   // Both history entries if the workout was opened from a card, one from the plan.
-  // Sheets opened during the session give their entry back as they close, so what
-  // is left above the page underneath is still only these two.
+  // Sheets give their entry back as they close, so these two are all that is left.
   function leaveWorkout() {
     var openedFromDetail = $("detail").classList.contains("open");
     exitWorkout();
@@ -4198,13 +4197,11 @@ export const APP = String.raw`
 
   var closeTimers = {};
 
-  // One history entry for the whole sheet layer, so the phone's back gesture
-  // closes the sheet instead of leaving the app. One and not one per sheet: a
-  // popstate closes every open sheet at once, and a sheet that hands over to
-  // another (explain into swap) keeps the entry rather than stacking a second one
-  // the user would have to press back twice for. sheetBack counts the pops we ask
-  // for ourselves — the popstate handler must not read those as a gesture and
-  // close the overlay underneath.
+  // One history entry for the whole sheet layer, so the back gesture closes the
+  // sheet instead of leaving the app. One and not one per sheet: a popstate closes
+  // every open sheet at once, and a sheet handing over to another (explain into
+  // swap) keeps the entry instead of stacking a second one to press back through.
+  // sheetBack counts the pops we ask for ourselves, which are not gestures.
   var sheetNav = false, sheetBack = 0;
 
   function openSheet(id) {
@@ -4851,9 +4848,8 @@ export const APP = String.raw`
   // now for all four, off the live layout.
   function measureChrome() {
     var root = document.documentElement;
-    // Unrounded: the header's own bottom edge is where the spacer has to end and
-    // the search has to stick, and 70.5 rounded up to 71 left half a pixel of
-    // scrolling content showing between the two.
+    // Unrounded: the spacer ends and the search sticks at the header's own bottom
+    // edge, and 70.5 rounded to 71 left half a pixel of content showing between.
     var h = hdrEl.getBoundingClientRect().height;
     var b = Math.round(tabbar.getBoundingClientRect().height);
     if (h) root.style.setProperty("--hdr", h + "px");
@@ -5070,10 +5066,9 @@ export const APP = String.raw`
 
   function fitViewport() {
     var vv = window.visualViewport, a = $("app");
-    // The keyboard is only really up once the visual viewport has lost height to
-    // it. Focus alone is not the test: a desktop browser and an iPad's external
-    // keyboard both put a field in focus without taking a pixel, and body.kb
-    // hides the tab bar.
+    // body.kb hides the tab bar, so the test is height actually lost to the
+    // keyboard, not focus: a desktop browser and an external keyboard both focus
+    // a field without taking a pixel.
     document.body.classList.toggle("kb", !!vv && kbOn && vv.height < window.innerHeight - 80);
     if (!vv || !kbOn) { a.style.height = ""; a.style.top = ""; return; }
     a.style.height = vv.height + "px";
@@ -5338,11 +5333,11 @@ export const APP = String.raw`
 
   // one history entry per overlay, so the phone back gesture closes it
   window.addEventListener("popstate", function () {
-    // Our own pop, from a sheet the UI has already closed. Anything below would
-    // read it as a gesture and close the overlay the sheet was sitting on.
+    // Our own pop, from a sheet the UI has already closed; reading it as a gesture
+    // would close the overlay that sheet was sitting on.
     if (sheetBack) { sheetBack--; return; }
-    // Sheets first: a sheet's entry is always the top one while it is open, so it
-    // is the entry this pop just spent — even over Workout Mode.
+    // Sheets first: while one is open its entry is the top one, even over Workout
+    // Mode, so it is the entry this pop just spent.
     var open = document.querySelectorAll(".sheet.open");
     if (open.length) {
       for (var i = 0; i < open.length; i++) closeSheet(open[i].id, true);

@@ -625,9 +625,9 @@ export const STYLE = String.raw`<style>
     pointer-events: none; transition: opacity var(--t-2), transform var(--t-2) var(--e-out);
     box-shadow: var(--sh-lg); max-width: 88vw; text-align: center; }
   #toast.show { opacity: 1; transform: translate(-50%, 0); }
-  /* Workout Mode has no tab bar to clear but it does have a rest running under
-     where the toast lands: 76px of bottom bar, 48px of rest strip, and the same
-     gap above them. A new best used to sit on +15 s and Skip for three seconds. */
+  /* Workout Mode has no tab bar to clear but a rest strip lands where the toast
+     does: 76px of bottom bar, 48px of strip, 12px of air. "New best" used to sit
+     on +15 s and Skip for three seconds. */
   #workout.open ~ #toast { bottom: calc(136px + env(safe-area-inset-bottom)); }
   #toast.tappable { pointer-events: auto; cursor: pointer; }
   /* The one toast the landing ever shows — a shared link waiting for sign-in —
@@ -996,9 +996,9 @@ export const STYLE = String.raw`<style>
     background: color-mix(in srgb, var(--paper) 90%, transparent);
     -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
   /* Keyboard up: #app follows the visual viewport but .tabbar, fixed to the layout
-     one, stays behind the keys — so the composer's clearance for the bar is a
-     margin below nothing. Sit it on the app's own bottom edge and take the bar out
-     of the way, which is what a native chat app does with its own. */
+     one, is behind the keys — so the composer's clearance for the bar is a margin
+     below nothing. Sit it on the app's own bottom edge and take the bar out of the
+     way, as a native chat app does. */
   body.kb .composer { bottom: 0; margin-bottom: 0; }
   body.kb .page { padding-bottom: 24px; }
   body.kb .tabbar { visibility: hidden; }
