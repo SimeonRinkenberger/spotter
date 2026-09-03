@@ -25,6 +25,47 @@ export const MARKUP_HEAD = String.raw`<!DOCTYPE html>
 export const MARKUP_BODY = String.raw`</head>
 <body>
 
+<!-- ---------- the icon set ----------
+     Lucide's 24px grid and 2px round-cap language (ISC, no attribution needed),
+     hand-inlined: only the glyphs this app draws, not the generated sprite, which
+     Lucide's own guide warns loads the whole library. Several paths are redrawn
+     simpler than Lucide's — the gear, the barbell, the ear — because at 16-21px
+     the extra control points are mud, and because they were the expensive ones.
+     Before this the app wore 26 emoji: a different picture on every OS, and a
+     screen reader saying "clockwise open circle arrow" where a person sees
+     Refresh. Everything is stroked in currentColor, so each icon inherits the
+     colour rule that dressed the character it replaces. -->
+<svg class="sprite" aria-hidden="true" focusable="false">
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></symbol>
+<symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+<symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+<symbol id="i-star" viewBox="0 0 24 24"><path d="m12 2.6 2.9 6 6.6.9-4.8 4.6 1.2 6.5-5.9-3.1-5.9 3.1 1.2-6.5L2.5 9.5l6.6-.9z"/></symbol>
+<symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+<symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></symbol>
+<symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></symbol>
+<symbol id="i-arrow-up" viewBox="0 0 24 24"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></symbol>
+<symbol id="i-arrow-up-right" viewBox="0 0 24 24"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></symbol>
+<symbol id="i-swap" viewBox="0 0 24 24"><path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/></symbol>
+<symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20.5 12a8.5 8.5 0 1 1-2.5-6"/><path d="M21 3.5V6h-2.5"/></symbol>
+<symbol id="i-settings" viewBox="0 0 24 24"><path d="M13.8 2.5h-3.6l-.5 2.6-2.3 1.3-2.5-.9-1.8 3.1 2 1.7v2.6l-2 1.7 1.8 3.1 2.5-.9 2.3 1.3.5 2.6h3.6l.5-2.6 2.3-1.3 2.5.9 1.8-3.1-2-1.7v-2.6l2-1.7-1.8-3.1-2.5.9-2.3-1.3z"/><circle cx="12" cy="12" r="3"/></symbol>
+<symbol id="i-list" viewBox="0 0 24 24"><path d="M3.5 6h17"/><path d="M3.5 12h17"/><path d="M3.5 18h17"/></symbol>
+<symbol id="i-pencil" viewBox="0 0 24 24"><path d="M18.5 2.5a2.8 2.8 0 0 1 4 4L7 22l-5 1 1-5z"/><path d="m15 5 4 4"/></symbol>
+<symbol id="i-folder" viewBox="0 0 24 24"><path d="M2 6a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z"/></symbol>
+<symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></symbol>
+<symbol id="i-upload" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3.5v11"/></symbol>
+<symbol id="i-dumbbell" viewBox="0 0 24 24"><path d="M2.5 9.5v5"/><path d="M6 6.5v11"/><path d="M18 6.5v11"/><path d="M21.5 9.5v5"/><path d="M6 12h12"/></symbol>
+<symbol id="i-calendar" viewBox="0 0 24 24"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></symbol>
+<symbol id="i-trend" viewBox="0 0 24 24"><path d="M22 7 13.5 15.5 8.5 10.5 2 17"/><path d="M16 7h6v6"/></symbol>
+<symbol id="i-play" viewBox="0 0 24 24"><path d="M6 3.5 20 12 6 20.5z"/></symbol>
+<symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12"/><circle cx="12" cy="12" r="3"/></symbol>
+<symbol id="i-ear" viewBox="0 0 24 24"><path d="M3 15h2.5a1.5 1.5 0 0 1 1.5 1.5v3A1.5 1.5 0 0 1 5.5 21H4a1 1 0 0 1-1-1v-8a9 9 0 0 1 18 0v8a1 1 0 0 1-1 1h-1.5a1.5 1.5 0 0 1-1.5-1.5v-3a1.5 1.5 0 0 1 1.5-1.5H21"/></symbol>
+<symbol id="i-hourglass" viewBox="0 0 24 24"><path d="M6 2h12"/><path d="M6 22h12"/><path d="M17 2v4.5L12 12l5 5.5V22"/><path d="M7 2v4.5L12 12l-5 5.5V22"/></symbol>
+<symbol id="i-share" viewBox="0 0 24 24"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="m16 6-4-4-4 4"/><path d="M12 2v13"/></symbol>
+<symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3 2 20.5h20z"/><path d="M12 9.5v4.5"/><path d="M12 17.5h.01"/></symbol>
+<symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></symbol>
+</svg>
+
 <!-- ---------- signed out ---------- -->
 <div id="landing">
   <div class="land">
@@ -72,7 +113,11 @@ export const MARKUP_BODY = String.raw`</head>
       </div>
       <div class="authswap" id="authswap">Already have an account? <button id="authtoggle">Sign in</button></div>
     </div>
-    <div class="landfoot">Free while in beta · <a href="privacy.html">Privacy</a></div>
+    <!-- Somebody made this. Software with no maker, no version and no way to say
+         something is wrong reads as unowned however good it is, and that absence
+         was the loudest thing about this page. -->
+    <div class="landfoot">Made by Simeon Rinkenberger · Free while in beta ·
+      <a href="whats-new.html">What&rsquo;s new</a> · <a href="privacy.html">Privacy</a></div>
   </div>
 </div>
 
@@ -83,18 +128,18 @@ export const MARKUP_BODY = String.raw`</head>
      the finger instead of jumping when a view swaps. Each page is its own
      vertical scroller, which is what lets a tab remember where it was left. -->
 <div id="app" class="hide">
-  <div id="ptr">↻</div>
+  <div id="ptr"><svg class="ic"><use href="#i-refresh"></use></svg></div>
 
   <header>
     <div class="titlerow">
       <div class="tstack">
         <h1 id="apptitle"><span class="ts">Spotter</span><span class="ts" aria-hidden="true">Plan</span><span class="ts" aria-hidden="true">Progress</span><span class="ts" aria-hidden="true">Pumpy</span></h1>
-        <div class="count" id="count"><span class="ts" id="count0">Loading</span><span class="ts" aria-hidden="true">This week</span><span class="ts" aria-hidden="true">Your numbers</span><span class="ts" aria-hidden="true">Your coach</span></div>
+        <div class="count" id="count"><span class="ts" id="count0">Reading your library</span><span class="ts" aria-hidden="true">This week</span><span class="ts" aria-hidden="true">Your numbers</span><span class="ts" aria-hidden="true">Your coach</span></div>
       </div>
       <div class="hbtns">
-        <button class="addbtn ghost" id="settingsbtn" title="Settings" aria-label="Settings">⚙</button>
-        <button class="addbtn ghost" id="refreshbtn" title="Refresh" aria-label="Refresh">↻</button>
-        <button class="addbtn" id="addbtn" title="Add a workout" aria-label="Add a workout">+</button>
+        <button class="addbtn ghost" id="settingsbtn" title="Settings" aria-label="Settings"><svg class="ic"><use href="#i-settings"></use></svg></button>
+        <button class="addbtn ghost" id="refreshbtn" title="Refresh" aria-label="Refresh"><svg class="ic"><use href="#i-refresh"></use></svg></button>
+        <button class="addbtn" id="addbtn" title="Add a workout" aria-label="Add a workout"><svg class="ic"><use href="#i-plus"></use></svg></button>
       </div>
     </div>
   </header>
@@ -103,15 +148,14 @@ export const MARKUP_BODY = String.raw`</head>
     <div class="track" id="track">
       <div class="page" id="libpage" role="tabpanel" aria-labelledby="tab0">
         <label class="searchwrap" id="searchwrap">
-          <span class="searchico">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.2-3.2"></path></svg>
-          </span>
+          <span class="searchico"><svg class="ic"><use href="#i-search"></use></svg></span>
           <input class="search" id="search" type="search" placeholder="Search workouts, exercises, muscles" autocapitalize="off" autocomplete="off">
         </label>
 
         <div id="hint">
-          <div id="hinttext">Add Spotter to your home screen: tap <b>Share</b>, then <b>Add to Home Screen</b>.</div>
-          <button id="hintx" aria-label="Dismiss">×</button>
+          <div id="hinttext">Spotter works better installed — full screen, and it opens like an app.
+            Tap <b>Share</b>, then <b>Add to Home Screen</b>.</div>
+          <button id="hintx" aria-label="Dismiss"><svg class="ic"><use href="#i-x"></use></svg></button>
         </div>
 
         <div class="chips" id="chips"></div>
@@ -124,8 +168,8 @@ export const MARKUP_BODY = String.raw`</head>
       <div class="page view" id="progressview" role="tabpanel" aria-labelledby="tab2"></div>
       <div class="page view" id="pumpyview" role="tabpanel" aria-labelledby="tab3">
         <div class="pumpybar">
-          <button class="chip" id="pumpychats">☰ Chats</button>
-          <button class="chip" id="pumpynew">＋ New chat</button>
+          <button class="chip" id="pumpychats"><svg class="ic"><use href="#i-list"></use></svg>Chats</button>
+          <button class="chip" id="pumpynew"><svg class="ic"><use href="#i-plus"></use></svg>New chat</button>
         </div>
         <div id="pumpylog"></div>
         <div class="composer" id="pumpycomposer">
@@ -133,7 +177,7 @@ export const MARKUP_BODY = String.raw`</head>
           <div class="pumpycredits hide" id="pumpycredits"></div>
           <div class="composerrow">
             <textarea id="pumpyinput" rows="1" placeholder="Ask Pumpy…" autocapitalize="sentences"></textarea>
-            <button class="addbtn" id="pumpysend" aria-label="Send">↑</button>
+            <button class="addbtn" id="pumpysend" aria-label="Send"><svg class="ic"><use href="#i-arrow-up"></use></svg></button>
           </div>
         </div>
       </div>
@@ -142,9 +186,9 @@ export const MARKUP_BODY = String.raw`</head>
 
   <nav class="tabbar" role="tablist" aria-label="Sections">
     <div class="tabpill" aria-hidden="true"></div>
-    <button class="tab active" id="tab0" role="tab" aria-selected="true" aria-controls="libpage" data-view="library"><span class="ti">🏋️</span>Library</button>
-    <button class="tab" id="tab1" role="tab" aria-selected="false" aria-controls="planview" data-view="plan"><span class="ti">📅</span>Plan</button>
-    <button class="tab" id="tab2" role="tab" aria-selected="false" aria-controls="progressview" data-view="progress"><span class="ti">📈</span>Progress</button>
+    <button class="tab active" id="tab0" role="tab" aria-selected="true" aria-controls="libpage" data-view="library"><span class="ti"><svg class="ic"><use href="#i-dumbbell"></use></svg></span>Library</button>
+    <button class="tab" id="tab1" role="tab" aria-selected="false" aria-controls="planview" data-view="plan"><span class="ti"><svg class="ic"><use href="#i-calendar"></use></svg></span>Plan</button>
+    <button class="tab" id="tab2" role="tab" aria-selected="false" aria-controls="progressview" data-view="progress"><span class="ti"><svg class="ic"><use href="#i-trend"></use></svg></span>Progress</button>
     <button class="tab" id="tab3" role="tab" aria-selected="false" aria-controls="pumpyview" data-view="pumpy"><span class="ti" id="pumpytab"></span>Pumpy</button>
   </nav>
 </div>
@@ -152,11 +196,11 @@ export const MARKUP_BODY = String.raw`</head>
 <!-- ---------- detail ---------- -->
 <div class="overlay" id="detail">
   <div class="dtop">
-    <button class="iconbtn" id="dclose" aria-label="Back">←</button>
+    <button class="iconbtn" id="dclose" aria-label="Back"><svg class="ic"><use href="#i-arrow-left"></use></svg></button>
     <div class="hbtns">
-      <button class="iconbtn" id="dfav" aria-label="Favorite">☆</button>
-      <button class="iconbtn" id="dshare" aria-label="Share">↗</button>
-      <button class="iconbtn" id="dreproc" aria-label="Re-read this video">↻</button>
+      <button class="iconbtn" id="dfav" title="Favourite" aria-label="Favourite" aria-pressed="false"><svg class="ic"><use href="#i-star"></use></svg></button>
+      <button class="iconbtn" id="dshare" title="Share" aria-label="Share"><svg class="ic"><use href="#i-share"></use></svg></button>
+      <button class="iconbtn" id="dreproc" title="Read it again" aria-label="Read it again"><svg class="ic"><use href="#i-refresh"></use></svg></button>
     </div>
   </div>
   <div class="dinner" id="dinner"></div>
@@ -165,9 +209,9 @@ export const MARKUP_BODY = String.raw`</head>
 <!-- ---------- workout mode ---------- -->
 <div id="workout">
   <div class="wtop">
-    <button class="iconbtn" id="wclose" aria-label="Exit workout">✕</button>
+    <button class="iconbtn" id="wclose" aria-label="Exit workout"><svg class="ic"><use href="#i-x"></use></svg></button>
     <div class="wclock" id="wclock">0:00</div>
-    <button class="iconbtn" id="wlist" aria-label="All exercises">☰</button>
+    <button class="iconbtn" id="wlist" aria-label="All exercises"><svg class="ic"><use href="#i-list"></use></svg></button>
   </div>
   <div class="wdots" id="wdots"></div>
   <div class="wmain" id="wmain"></div>
@@ -180,9 +224,9 @@ export const MARKUP_BODY = String.raw`</head>
     <button class="chip" id="restskip">Skip</button>
   </div>
   <div class="wbottom">
-    <button class="wnav" id="wprev" aria-label="Previous">←</button>
+    <button class="wnav" id="wprev" aria-label="Previous exercise"><svg class="ic"><use href="#i-arrow-left"></use></svg></button>
     <button class="wfinish" id="wfinish">Finish workout</button>
-    <button class="wnav" id="wnext" aria-label="Next">→</button>
+    <button class="wnav" id="wnext" aria-label="Next exercise"><svg class="ic"><use href="#i-arrow-right"></use></svg></button>
   </div>
 </div>
 
@@ -200,7 +244,7 @@ export const MARKUP_BODY = String.raw`</head>
        told the file is too big confirms a rule the user already read. -->
   <div class="upblock">
     <button class="uploadrow" id="uploadrow" type="button">
-      <span class="upmark" aria-hidden="true">&#8593;</span>
+      <span class="upmark" aria-hidden="true"><svg class="ic"><use href="#i-upload"></use></svg></span>
       <span class="uptext">
         <b>Upload a video you saved</b>
         <small>For creators who say the workout instead of writing it. MP4, M4A, MP3, WAV or WebM, up to 25 MB.</small>
@@ -220,14 +264,14 @@ export const MARKUP_BODY = String.raw`</head>
   <h2 id="settitle">Log set</h2>
   <div class="wnote setlast" id="setlast"></div>
   <div class="stepper">
-    <button id="repsdown" aria-label="Fewer reps">−</button>
+    <button id="repsdown" aria-label="Fewer reps"><svg class="ic"><use href="#i-minus"></use></svg></button>
     <div class="val"><span id="repsval">10</span><small>reps</small></div>
-    <button id="repsup" aria-label="More reps">+</button>
+    <button id="repsup" aria-label="More reps"><svg class="ic"><use href="#i-plus"></use></svg></button>
   </div>
   <div class="stepper">
-    <button id="wtdown" aria-label="Less weight">−</button>
+    <button id="wtdown" aria-label="Less weight"><svg class="ic"><use href="#i-minus"></use></svg></button>
     <div class="val"><span id="wtval">0</span><small id="wtunit">lb</small></div>
-    <button id="wtup" aria-label="More weight">+</button>
+    <button id="wtup" aria-label="More weight"><svg class="ic"><use href="#i-plus"></use></svg></button>
   </div>
   <div class="btnrow">
     <button class="btn ghost" id="setclear">Clear</button>
@@ -284,8 +328,8 @@ export const MARKUP_BODY = String.raw`</head>
 <div class="sheet" id="explainsheet"><div class="sheetbody">
   <div class="grabber"></div>
   <h2 id="explaintitle">How to do it</h2>
-  <div class="aitext" id="explaintext">Thinking…</div>
-  <div class="btnrow"><button class="btn ghost" id="swapgo">⇄ Swap or modify</button></div>
+  <div class="aitext" id="explaintext">Reading up on it&hellip;</div>
+  <div class="btnrow"><button class="btn ghost" id="swapgo"><svg class="ic"><use href="#i-swap"></use></svg>Swap or modify</button></div>
 </div></div>
 
 <div class="sheet" id="swapsheet"><div class="sheetbody">
@@ -380,6 +424,13 @@ export const MARKUP_BODY = String.raw`</head>
     <button class="btn ghost" id="rotatekey">New key</button>
   </div>
   <button class="danger" id="signout">Sign out</button>
+  <!-- The last line of the app, and the one that says a person is behind it. The
+       version comes from the constant in app.ts so there is one place to change
+       it; the report goes to the public issue tracker rather than an address,
+       because an address in a public page is an address that gets harvested. -->
+  <div class="setnote foot"><span id="setver">Spotter</span> ·
+    <a href="whats-new.html">What&rsquo;s new</a> · Something wrong?
+    <a href="https://github.com/SimeonRinkenberger/spotter/issues" target="_blank" rel="noopener">Tell me</a></div>
 </div></div>
 
 <div id="toast"></div>
