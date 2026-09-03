@@ -680,7 +680,8 @@
   .ytmore { position: relative; display: inline-flex; align-items: center; gap: 5px;
     margin: 12px 0 16px; font-size: 13.5px; font-weight: 600; color: var(--ember-ink);
     text-decoration: none; transition: opacity var(--t-1) var(--e-out); }
-  .ytmore::after { content: ""; position: absolute; inset: -13px -8px; }
+  /* Drawn at its text height; only the hit area grows, to Apple's 44. */
+  .ytmore::after { content: ""; position: absolute; inset: -14px -8px; }
   .ytmore:active { opacity: .6; }
   .ytmore .ic { width: 13px; height: 13px; }
   /* The player takes the facade's frame exactly, and loses the detail embed's drop
@@ -4820,8 +4821,6 @@
     shot.appendChild(img);
     shot.appendChild(icon(el("span", "ytplay"), "play"));
     b.appendChild(shot);
-    if (v.title) b.appendChild(el("div", "ytt", v.title));
-    if (v.channel) b.appendChild(el("div", "ytc", v.channel));
     b.onclick = function () { vidPlay(box, v); };
     return b;
   }
@@ -4849,6 +4848,11 @@
     if (v && v.id) {
       box.appendChild(el("div", "saidlab", "Watch how it is done"));
       box.appendChild(vidFace(box, v));
+      // Outside the facade, so they survive the swap to the player: whose gym this
+      // is does not stop mattering the moment the video starts, and the slot keeps
+      // exactly the height it had, so tapping play moves nothing.
+      if (v.title) box.appendChild(el("div", "ytt", v.title));
+      if (v.channel) box.appendChild(el("div", "ytc", v.channel));
     }
     if (searchUrl) {
       var a = el("a", "ytmore", "More on YouTube");

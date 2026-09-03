@@ -2974,8 +2974,6 @@ export const APP = String.raw`
     shot.appendChild(img);
     shot.appendChild(icon(el("span", "ytplay"), "play"));
     b.appendChild(shot);
-    if (v.title) b.appendChild(el("div", "ytt", v.title));
-    if (v.channel) b.appendChild(el("div", "ytc", v.channel));
     b.onclick = function () { vidPlay(box, v); };
     return b;
   }
@@ -3003,6 +3001,11 @@ export const APP = String.raw`
     if (v && v.id) {
       box.appendChild(el("div", "saidlab", "Watch how it is done"));
       box.appendChild(vidFace(box, v));
+      // Outside the facade, so they survive the swap to the player: whose gym this
+      // is does not stop mattering the moment the video starts, and the slot keeps
+      // exactly the height it had, so tapping play moves nothing.
+      if (v.title) box.appendChild(el("div", "ytt", v.title));
+      if (v.channel) box.appendChild(el("div", "ytc", v.channel));
     }
     if (searchUrl) {
       var a = el("a", "ytmore", "More on YouTube");

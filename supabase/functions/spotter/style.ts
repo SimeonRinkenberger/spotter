@@ -658,7 +658,8 @@ export const STYLE = String.raw`<style>
   .ytmore { position: relative; display: inline-flex; align-items: center; gap: 5px;
     margin: 12px 0 16px; font-size: 13.5px; font-weight: 600; color: var(--ember-ink);
     text-decoration: none; transition: opacity var(--t-1) var(--e-out); }
-  .ytmore::after { content: ""; position: absolute; inset: -13px -8px; }
+  /* Drawn at its text height; only the hit area grows, to Apple's 44. */
+  .ytmore::after { content: ""; position: absolute; inset: -14px -8px; }
   .ytmore:active { opacity: .6; }
   .ytmore .ic { width: 13px; height: 13px; }
   /* The player takes the facade's frame exactly, and loses the detail embed's drop
