@@ -991,6 +991,13 @@ export const STYLE = String.raw`<style>
     padding: 8px 0 10px;
     background: color-mix(in srgb, var(--paper) 90%, transparent);
     -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
+  /* Keyboard up: #app follows the visual viewport but .tabbar, fixed to the layout
+     one, stays behind the keys — so the composer's clearance for the bar is a
+     margin below nothing. Sit it on the app's own bottom edge and take the bar out
+     of the way, which is what a native chat app does with its own. */
+  body.kb .composer { bottom: 0; margin-bottom: 0; }
+  body.kb .page { padding-bottom: 24px; }
+  body.kb .tabbar { visibility: hidden; }
   .composerrow { display: flex; gap: 8px; align-items: flex-end; }
   .composer textarea { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 16px; padding: 12px 14px;
     font-size: 16px; line-height: 1.4; background: var(--card); color: var(--ink); outline: none; resize: none;

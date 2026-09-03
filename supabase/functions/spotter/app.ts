@@ -5044,6 +5044,11 @@ export const APP = String.raw`
 
   function fitViewport() {
     var vv = window.visualViewport, a = $("app");
+    // The keyboard is only really up once the visual viewport has lost height to
+    // it. Focus alone is not the test: a desktop browser and an iPad's external
+    // keyboard both put a field in focus without taking a pixel, and body.kb
+    // hides the tab bar.
+    document.body.classList.toggle("kb", !!vv && kbOn && vv.height < window.innerHeight - 80);
     if (!vv || !kbOn) { a.style.height = ""; a.style.top = ""; return; }
     a.style.height = vv.height + "px";
     a.style.top = vv.offsetTop + "px";
