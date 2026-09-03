@@ -2638,7 +2638,9 @@ export const APP = String.raw`
   function explain(name, title) {
     $("explaintitle").textContent = name;
     $("explaintext").textContent = expCache[name] || "Thinking…";
-    $("swapgo").onclick = function () { closeSheet("explainsheet"); openSwap(name, title); };
+    // Open before close: the swap sheet takes over the sheet layer's one history
+    // entry, and closing first would hand that entry back mid-handover.
+    $("swapgo").onclick = function () { openSwap(name, title); closeSheet("explainsheet"); };
     openSheet("explainsheet");
     if (expCache[name]) return;
     api("explain", { method: "POST", body: JSON.stringify({ exercise: name, title: title || "" }) })
@@ -3236,6 +3238,8 @@ export const APP = String.raw`
   }
 
   // Both history entries if the workout was opened from a card, one from the plan.
+  // Sheets opened during the session give their entry back as they close, so what
+  // is left above the page underneath is still only these two.
   function leaveWorkout() {
     var openedFromDetail = $("detail").classList.contains("open");
     exitWorkout();
@@ -4174,14 +4178,24 @@ export const APP = String.raw`
 
   var closeTimers = {};
 
+  // One history entry for the whole sheet layer, so the phone's back gesture
+  // closes the sheet instead of leaving the app. One and not one per sheet: a
+  // popstate closes every open sheet at once, and a sheet that hands over to
+  // another (explain into swap) keeps the entry rather than stacking a second one
+  // the user would have to press back twice for. sheetBack counts the pops we ask
+  // for ourselves — the popstate handler must not read those as a gesture and
+  // close the overlay underneath.
+  var sheetNav = false, sheetBack = 0;
+
   function openSheet(id) {
     var n = $(id);
     clearTimeout(closeTimers[id]);
     n.classList.remove("closing");
     n.classList.add("open");
+    if (!sheetNav) { sheetNav = true; history.pushState({ sheet: id }, ""); }
   }
 
-  function closeSheet(id) {
+  function closeSheet(id, fromPop) {
     var n = $(id);
     if (!n.classList.contains("open")) return;
     n.classList.remove("open");
@@ -4194,6 +4208,12 @@ export const APP = String.raw`
       // always leaves the page — and only once it has finished sliding away.
       if (id === "watchsheet") $("watchbody").innerHTML = "";
     }, 260);
+    // Give the entry back when the last sheet goes — unless the browser has
+    // already taken it (a back gesture) or another sheet is standing in its place.
+    if (sheetNav && !document.querySelector(".sheet.open")) {
+      sheetNav = false;
+      if (!fromPop) { sheetBack++; history.back(); }
+    }
   }
 
   ["addsheet", "setsheet", "watchsheet", "exsheet", "exeditsheet", "explainsheet", "picksheet",
@@ -5287,12 +5307,17 @@ export const APP = String.raw`
 
   // one history entry per overlay, so the phone back gesture closes it
   window.addEventListener("popstate", function () {
-    if ($("workout").classList.contains("open")) { exitWorkout(); return; }
+    // Our own pop, from a sheet the UI has already closed. Anything below would
+    // read it as a gesture and close the overlay the sheet was sitting on.
+    if (sheetBack) { sheetBack--; return; }
+    // Sheets first: a sheet's entry is always the top one while it is open, so it
+    // is the entry this pop just spent — even over Workout Mode.
     var open = document.querySelectorAll(".sheet.open");
     if (open.length) {
-      for (var i = 0; i < open.length; i++) closeSheet(open[i].id);
+      for (var i = 0; i < open.length; i++) closeSheet(open[i].id, true);
       return;
     }
+    if ($("workout").classList.contains("open")) { exitWorkout(); return; }
     if ($("detail").classList.contains("open")) closeDetail();
   });
 
