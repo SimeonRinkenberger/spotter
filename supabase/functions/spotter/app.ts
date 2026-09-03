@@ -24,6 +24,10 @@ export const APP = String.raw`
     auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
   });
 
+  // The one place the version is written down. It names the entry at the top of
+  // docs/whats-new.html, and the settings sheet reads it from here.
+  var VERSION = "0.9";
+
   var CATEGORIES = ["Push", "Pull", "Legs", "Upper Body", "Full Body", "Core",
     "Cardio", "HIIT", "Mobility", "Yoga", "Other"];
 
@@ -45,8 +49,28 @@ export const APP = String.raw`
     return n;
   }
 
+  // One icon out of the sprite at the top of the body. A node, not a string of
+  // markup, because everything else here builds nodes.
+  function ic(name) {
+    var s = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    s.setAttribute("class", "ic");
+    s.setAttribute("aria-hidden", "true");
+    var u = document.createElementNS("http://www.w3.org/2000/svg", "use");
+    u.setAttribute("href", "#i-" + name);
+    s.appendChild(u);
+    return s;
+  }
+
+  // A mark and a word: the shape almost every button here turned out to be once
+  // the emoji came out of its label.
+  function icon(node, name, text) {
+    node.appendChild(ic(name));
+    if (text) node.appendChild(document.createTextNode(text));
+    return node;
+  }
+
   var toastTimer = null;
-  function toast(msg) {
+  function toast(msg, ms) {
     var t = $("toast");
     t.textContent = msg;
     t.onclick = null;
@@ -57,8 +81,50 @@ export const APP = String.raw`
       t.classList.remove("show");
       t.classList.remove("tappable");
       t.onclick = null;
-    }, 2800);
+    }, ms || 2800);
   }
+
+  // ---------- undo ----------
+  //
+  // A delayed commit, not a compensating write: the screen changes on the tap and
+  // the row is deleted only when the toast offering the undo has gone. Tapping it
+  // cancels a write that never happened, so there is nothing that can half-fail.
+  // The window is the toast's own life — an undo that outlives the sentence
+  // offering it is a promise the interface has stopped making.
+  var UNDO_MS = 5200;
+  var undoTimer = null, undoFn = null;
+
+  function flushUndo() {
+    clearTimeout(undoTimer);
+    undoTimer = null;
+    var f = undoFn;
+    undoFn = null;
+    if (f) f();
+  }
+
+  function offerUndo(msg, commit, revert) {
+    // A second delete commits the first: two pending, one toast, one of them
+    // unaccounted for.
+    flushUndo();
+    undoFn = commit;
+    undoTimer = setTimeout(flushUndo, UNDO_MS);
+    toast(msg + " · Undo", UNDO_MS);
+    var t = $("toast");
+    t.classList.add("tappable");
+    t.onclick = function () {
+      t.onclick = null;
+      t.classList.remove("tappable");
+      t.classList.remove("show");
+      clearTimeout(undoTimer);
+      undoTimer = null;
+      undoFn = null;
+      revert();
+    };
+  }
+
+  // Leaving commits too. The request may not survive the unload; if it does not,
+  // the row is still there next time, which is the failure worth having.
+  window.addEventListener("pagehide", flushUndo);
 
   // Arriving on a tab is not an arrival to announce: the page slid in under the
   // finger, and replaying an entrance on top of that slide reads as one move too
@@ -127,6 +193,23 @@ export const APP = String.raw`
     e.classList.add("show");
   }
 
+  // gotrue writes for a log ("AuthApiError: User already registered"); the person
+  // reading this box wants a sentence about their account. Anything unrecognised
+  // gets the honest generic, never the class name of an exception.
+  function authMessage(m) {
+    m = String(m || "");
+    if (/already regist/i.test(m)) return "That email already has an account — sign in instead.";
+    if (/invalid login|invalid.*credential/i.test(m)) return "Wrong email or password.";
+    if (/rate limit|too many|for security purposes/i.test(m)) return "Too many tries. Give it a minute.";
+    if (/confirm/i.test(m)) return "Check your email to confirm your account, then sign in.";
+    if (/network|fetch|failed to fetch/i.test(m)) return "Could not reach Spotter — check your connection.";
+    if (/password/i.test(m) && /weak|short|least|6 char/i.test(m)) return "Use at least 8 characters.";
+    if (/email/i.test(m) && /invalid|valid/i.test(m)) return "That email address does not look right.";
+    return authMode === "signup"
+      ? "Could not create your account. Try again in a moment."
+      : "Could not sign you in. Try again in a moment.";
+  }
+
   function doAuth() {
     var email = $("email").value.trim();
     var pw = $("pw").value;
@@ -144,18 +227,12 @@ export const APP = String.raw`
     p.then(function (r) {
       btn.disabled = false;
       setAuthMode(authMode);
-      if (r.error) {
-        var m = r.error.message || "That did not work.";
-        if (/already regist/i.test(m)) m = "That email already has an account — sign in instead.";
-        if (/invalid login/i.test(m)) m = "Wrong email or password.";
-        authError(m);
-        return;
-      }
+      if (r.error) { authError(authMessage(r.error.message)); return; }
       if (!r.data.session) { authError("Check your email to confirm your account, then sign in."); }
     }).catch(function (e) {
       btn.disabled = false;
       setAuthMode(authMode);
-      authError(String(e.message || e));
+      authError(authMessage(e && e.message ? e.message : e));
     });
   }
 
@@ -290,7 +367,8 @@ export const APP = String.raw`
     if (/not enabled|unsupported provider/i.test(m)) return "That sign-in method is not switched on yet.";
     if (/nonce/i.test(m)) return "That sign-in took too long — try again.";
     if (/popup|blocked/i.test(m)) return "Allow pop-ups for Spotter, then try again.";
-    return m || "That sign-in did not work.";
+    // What the provider said is for the console.
+    return "That sign-in did not work. Try again, or use your email and password.";
   }
 
   function oauthFailed(e) {
@@ -675,7 +753,7 @@ export const APP = String.raw`
         if (!retry) {
           return new Promise(function (res) { setTimeout(function () { res(load(true)); }, 900); });
         }
-        toast("Could not load your library.");
+        toast("Could not load your library — pull down to try again.");
         return;
       }
       state.workouts = rs[0].data || [];
@@ -706,26 +784,26 @@ export const APP = String.raw`
   // job rather than a guess from the client.
   var STAGES = {
     reading: {
-      kick: "Reading", glyph: "⏳", line: "Reading the video…",
+      kick: "Reading", glyph: "hourglass", line: "Reading the video…",
       head: "Still reading this one",
       body: "Spotter is pulling the workout out of this video. The card fills in here as soon " +
         "as it lands — you can close this and carry on."
     },
     listening: {
-      kick: "Listening", glyph: "🎧", line: "Listening to the video…",
+      kick: "Listening", glyph: "ear", line: "Listening to the video…",
       head: "Still listening to this one",
       body: "The caption did not say what the exercises are, so Spotter is listening to the video " +
         "to hear them. The card fills in here as soon as it lands — you can close this and carry on."
     },
     watching: {
-      kick: "Watching", glyph: "👀", line: "Watching the video…",
+      kick: "Watching", glyph: "eye", line: "Watching the video…",
       head: "Still watching this one",
       body: "Nobody says the exercises out loud in this one, so Spotter is watching it to read what " +
         "is written on the screen. The card fills in here as soon as it lands — you can close " +
         "this and carry on."
     },
     upload: {
-      kick: "Listening", glyph: "🎧", line: "Listening to the video…",
+      kick: "Listening", glyph: "ear", line: "Listening to the video…",
       head: "Still listening to this one",
       body: "Spotter is transcribing what the creator says, then pulling the workout out of it. " +
         "The card fills in here as soon as it lands — you can close this and carry on."
@@ -843,7 +921,7 @@ export const APP = String.raw`
     if (isByFilter(state.filter) && !byAuth[state.filter.slice(3)]) state.filter = "All";
 
     var list = [{ key: "All", label: "All", n: state.workouts.length }];
-    if (favs) list.push({ key: "Favorites", label: "★ Favorites", n: favs });
+    if (favs) list.push({ key: "Favorites", label: "Favourites", icon: "star", n: favs });
     // The people this library is made of. Three at most, and none with a single card:
     // a chip that narrows the grid to one workout saves nobody a scroll. By count,
     // then by name, so a tie does not reshuffle the row between renders.
@@ -862,13 +940,13 @@ export const APP = String.raw`
     state.collections.forEach(function (c) {
       list.push({ key: "col:" + c.id, label: colLabel(c), n: colCount(c.id) });
     });
-    if (state.workouts.length) list.push({ key: "__newcol", label: "＋ Collection", n: null });
+    if (state.workouts.length) list.push({ key: "__newcol", label: "Collection", icon: "plus", n: null });
     CATEGORIES.forEach(function (c) { if (counts[c]) list.push({ key: c, label: c, n: counts[c] }); });
 
     // The chips have carried a 220ms transition on their lit state that never once
     // ran: render() threw every chip away, and a new node cannot transition from a
     // value it never held. Unchanged row, kept buttons.
-    var sig = list.map(function (i) { return i.key + "" + i.label + "" + i.n; }).join("");
+    var sig = list.map(function (i) { return i.key + "" + i.label + "" + i.icon + "" + i.n; }).join("");
     var kids = wrap.children;
     if (sig === chipSig && kids.length === list.length) {
       for (var k = 0; k < list.length; k++) {
@@ -881,6 +959,7 @@ export const APP = String.raw`
 
     list.forEach(function (item) {
       var b = el("button", "chip" + (state.filter === item.key ? " active" : ""));
+      if (item.icon) b.appendChild(ic(item.icon));
       b.appendChild(document.createTextNode(item.label));
       if (item.n !== null) b.appendChild(el("span", "n", String(item.n)));
       b.onclick = function () {
@@ -907,7 +986,7 @@ export const APP = String.raw`
     ren.onclick = function () { openRename("collection", c.id, c.name); };
     bar.appendChild(ren);
     var del = el("button", "warn", "Delete");
-    del.onclick = function () { deleteCollection(c, del); };
+    del.onclick = function () { deleteCollection(c); };
     bar.appendChild(del);
   }
 
@@ -981,7 +1060,7 @@ export const APP = String.raw`
     var card = el("div", "daycard today" + (today.done ? " done" : ""));
     var head = el("div", "dayhead");
     head.appendChild(el("div", "dayname", "Today"));
-    if (today.done) head.appendChild(el("div", "daydone", "✓ Done today"));
+    if (today.done) head.appendChild(icon(el("div", "daydone"), "check", "Done today"));
     card.appendChild(head);
     var t = el("button", "ttitle", w.title || "Workout");
     t.onclick = function () { openDetail(w); };
@@ -1044,8 +1123,7 @@ export const APP = String.raw`
       grid.classList.add("hide");
       empty.classList.remove("hide");
       empty.innerHTML = "";
-      var big = el("div", "big", state.workouts.length ? "🔍" : "🏋️");
-      empty.appendChild(big);
+      empty.appendChild(icon(el("div", "big"), state.workouts.length ? "search" : "dumbbell"));
       if (!state.workouts.length) {
         empty.appendChild(el("h2", null, "Your gym bag is empty"));
         var p = el("p");
@@ -1055,8 +1133,13 @@ export const APP = String.raw`
         p.appendChild(document.createTextNode(" and paste a link to a workout video. Spotter reads the exercises out of it."));
         empty.appendChild(p);
       } else {
-        empty.appendChild(el("h2", null, "Nothing matches"));
-        empty.appendChild(el("p", null, "Try a different search or filter."));
+        // Naming the search back, and saying what it looks in, turns a dead end
+        // into an instruction.
+        var q = state.q.trim();
+        empty.appendChild(el("h2", null, q ? "Nothing matches “" + q + "”" : "Nothing under this filter"));
+        empty.appendChild(el("p", null, q
+          ? "Spotter searches titles, exercise names, muscles and equipment. Try one word instead of three."
+          : "Nothing in your library is filed here yet. Tap All to see everything."));
       }
       viewIn(empty);
       return;
@@ -1076,8 +1159,8 @@ export const APP = String.raw`
         var stage = stageOf(w);
         tw.className = "thumbwrap " + (pending ? "pending" : "failed");
         // A failed upload cannot be retried — the file was deleted the moment
-        // Spotter finished listening — so it must not wear the ↻ that says it can.
-        tw.appendChild(el("div", "noimg", pending ? stage.glyph : (up ? "🎧" : "↻")));
+        // Spotter finished listening — so it must not wear the mark that says it can.
+        tw.appendChild(icon(el("div", "noimg"), pending ? stage.glyph : (up ? "ear" : "refresh")));
         card.appendChild(tw);
         var pb = el("div", "cardbody");
         var pk = el("div", "cardkick");
@@ -1099,7 +1182,7 @@ export const APP = String.raw`
         img.onload = function () { tw.classList.remove("loading"); tw.classList.add("loaded"); };
         img.onerror = function () {
           tw.classList.remove("loading");
-          tw.appendChild(el("div", "noimg", "🏋️"));
+          tw.appendChild(icon(el("div", "noimg"), "dumbbell"));
         };
         // Cached: a skeleton for a wait already over is the flicker it prevents.
         if (img.complete && img.naturalWidth) {
@@ -1114,10 +1197,17 @@ export const APP = String.raw`
           pi.innerHTML = PUMPY_MARK;
           tw.appendChild(pi);
         } else {
-          tw.appendChild(el("div", "noimg", "🏋️"));
+          tw.appendChild(icon(el("div", "noimg"), "dumbbell"));
         }
       }
-      if (w.favorite) tw.appendChild(el("div", "fav", "★"));
+      // The star was a character a screen reader read out; an aria-hidden icon is
+      // not, so the state it stands for has to be said in words.
+      if (w.favorite) {
+        var fv = icon(el("div", "fav"), "star");
+        fv.setAttribute("role", "img");
+        fv.setAttribute("aria-label", "Favourite");
+        tw.appendChild(fv);
+      }
       var d = fmtDur(w.duration_minutes);
       if (d) tw.appendChild(el("div", "durbadge", d));
       card.appendChild(tw);
@@ -1125,7 +1215,10 @@ export const APP = String.raw`
       var body = el("div", "cardbody");
       var kick = el("div", "cardkick");
       kick.appendChild(el("div", "catpill", w.category || "Other"));
-      if (w.difficulty) kick.appendChild(el("div", "diffpill", w.difficulty.slice(0, 3)));
+      // The whole word now it is not shouting: "ADV" was a compression the caps
+      // made tolerable, and "Adv" is just a word cut short. The row is stored
+      // lower-case, which read as a shout being undone rather than a word.
+      if (w.difficulty) kick.appendChild(el("div", "diffpill", capWord(w.difficulty)));
       body.appendChild(kick);
       body.appendChild(el("div", "cardtitle", w.title || "Untitled workout"));
       var meta = cardMeta(w);
@@ -1261,7 +1354,7 @@ export const APP = String.raw`
 
       if (isFailed(w)) {
         // An upload has nothing to try again: the file is gone by the time this
-        // card exists. Offering ↻ would offer a button that can only fail.
+        // card exists. Offering a re-read would offer a button that can only fail.
         if (!isUp) {
           var rb = el("button", "retrybtn", "Try reading it again");
           rb.onclick = function () { retryWorkout(w, rb); };
@@ -1275,19 +1368,9 @@ export const APP = String.raw`
       }
       // An upload has no original to open — its only address is inside Spotter,
       // and that address stopped resolving to anything the moment it was read.
-      if (!isUp) {
-        var open = el("a", "pill accent", "Open original ↗");
-        open.href = w.source_url || w.url;
-        open.target = "_blank";
-        open.rel = "noopener";
-        open.style.display = "inline-block";
-        open.style.textDecoration = "none";
-        open.style.marginBottom = "14px";
-        d.appendChild(open);
-      }
+      if (!isUp) d.appendChild(originalLink(w));
 
-      $("dfav").textContent = w.favorite ? "★" : "☆";
-      $("dfav").classList.toggle("on", !!w.favorite);
+      setFav(w);
       $("detail").classList.add("open");
       if (!keepHistory) { $("detail").scrollTop = 0; history.pushState({ detail: 1 }, ""); }
       return;
@@ -1304,7 +1387,7 @@ export const APP = String.raw`
     if (dur) specs.push([dur, "Duration"]);
     var exN = exerciseNames(w).length;
     if (exN) specs.push([String(exN), "Exercises"]);
-    if (w.difficulty) specs.push([w.difficulty, "Level"]);
+    if (w.difficulty) specs.push([capWord(w.difficulty), "Level"]);
     if (w.calories) specs.push([String(w.calories), "Est. kcal"]);
     if (specs.length) {
       var strip = el("div", "specstrip");
@@ -1324,7 +1407,7 @@ export const APP = String.raw`
     var from = readFrom(w);
     if (w.has_full_workout && conf !== null && conf < 0.7) {
       var warn = el("div", "unverified");
-      warn.appendChild(el("div", null, from.video || from.speech ? "👀" : (conf < 0.45 ? "⚠️" : "👀")));
+      warn.appendChild(ic(from.video || from.speech ? "eye" : (conf < 0.45 ? "alert" : "eye")));
       var wt = el("div");
       // A card read out of the video is not a card whose caption came up short —
       // there was no caption to come up short. Saying "not in the caption" about
@@ -1398,7 +1481,7 @@ export const APP = String.raw`
         ]), cardCaption(r.names)));
         if (!r.mapped) {
           slot.appendChild(el("div", "bodynote",
-            "None of these exercises matched Spotter's catalog yet, so nothing is highlighted."));
+            "None of these exercises matched Spotter’s catalog yet, so nothing is highlighted."));
         }
         bodyNotes(slot, r, "exercises");
       });
@@ -1406,8 +1489,10 @@ export const APP = String.raw`
 
     (w.blocks || []).forEach(function (b, bi) {
       var sect = el("div", "sect");
-      sect.appendChild(el("h3", null, "Block " + (bi + 1)));
-      if (b.title) sect.appendChild(el("div", "blocktitle", b.title));
+      // A block has a name in the data — "Warm-up", "Finisher". The card printed
+      // "Block 1" above it and the name underneath: label and caption the wrong way
+      // round. The name IS the heading.
+      sect.appendChild(el("h3", null, b.title || "Block " + (bi + 1)));
       var bm = blockMetaText(b);
       if (bm) sect.appendChild(el("div", "blockmeta", bm));
       (b.exercises || []).forEach(function (ex, ei) {
@@ -1426,11 +1511,11 @@ export const APP = String.raw`
         row.appendChild(name);
         var dose = doseText(ex);
         if (dose) row.appendChild(el("div", "exdose", dose));
-        var fix = el("button", "exhelp", "✎");
+        var fix = icon(el("button", "exhelp"), "pencil");
         fix.setAttribute("aria-label", "Fix this exercise");
         fix.onclick = function (e) { e.stopPropagation(); openExEdit(w, bi, ei, ex); };
         row.appendChild(fix);
-        var sw = el("button", "exhelp", "⇄");
+        var sw = icon(el("button", "exhelp"), "swap");
         sw.setAttribute("aria-label", "Swap or modify this exercise");
         sw.onclick = function (e) { e.stopPropagation(); openSwap(ex.name, w.title); };
         row.appendChild(sw);
@@ -1461,8 +1546,8 @@ export const APP = String.raw`
           ? "Spotter read the video itself and still could not make out a workout in it. " +
             "You can watch it and log a freestyle session, or type the exercises in yourself."
           : "This video did not include a written workout, so there is nothing to step through. " +
-            "You can still watch it and log a freestyle session, tap ↻ above to try reading it again, " +
-            "or type the exercises in yourself."));
+            "You can still watch it and log a freestyle session, use Read it again at the top of " +
+            "this card to have another go, or type the exercises in yourself."));
       none.appendChild(np);
       none.appendChild(el("div", null, " "));
       if (canRead) {
@@ -1520,21 +1605,34 @@ export const APP = String.raw`
       d.appendChild(capSect);
     }
 
-    if (w.source_url || w.platform === "web") {
-      var link = el("a", "pill accent", "Open original ↗");
-      link.href = w.source_url || w.url;
-      link.target = "_blank";
-      link.rel = "noopener";
-      link.style.display = "inline-block";
-      link.style.textDecoration = "none";
-      link.style.marginBottom = "14px";
-      d.appendChild(link);
-    }
+    if (w.source_url || w.platform === "web") d.appendChild(originalLink(w));
 
-    $("dfav").textContent = w.favorite ? "★" : "☆";
-    $("dfav").classList.toggle("on", !!w.favorite);
+    setFav(w);
     $("detail").classList.add("open");
     if (!keepHistory) { $("detail").scrollTop = 0; history.pushState({ detail: 1 }, ""); }
+  }
+
+  // The same pill in both halves of openDetail.
+  function originalLink(w) {
+    var a = icon(el("a", "pill accent"), "arrow-up-right");
+    a.insertBefore(document.createTextNode("Open original"), a.firstChild);
+    a.href = w.source_url || w.url;
+    a.target = "_blank";
+    a.rel = "noopener";
+    a.style.display = "inline-flex";
+    a.style.alignItems = "center";
+    a.style.gap = "5px";
+    a.style.textDecoration = "none";
+    a.style.marginBottom = "14px";
+    return a;
+  }
+
+  // One star, filled when it is one. aria-pressed says which state the button is
+  // IN rather than which it would go to — a screen reader cannot see the fill.
+  function setFav(w) {
+    var b = $("dfav");
+    b.classList.toggle("on", !!w.favorite);
+    b.setAttribute("aria-pressed", w.favorite ? "true" : "false");
   }
 
   // The retry affordance for a job that gave up. It goes back through the queue
@@ -1546,7 +1644,7 @@ export const APP = String.raw`
       .then(function (r) {
         if (btn) { btn.disabled = false; btn.textContent = "Try reading it again"; }
         if (r.status !== "processing" && r.status !== "ok") {
-          toast(r.message || "Could not queue that."); return;
+          toast(r.message || "Could not start reading that — try again in a minute."); return;
         }
         w.ingest_status = "processing";
         w.ingest_error = null;
@@ -1557,7 +1655,7 @@ export const APP = String.raw`
       })
       .catch(function () {
         if (btn) { btn.disabled = false; btn.textContent = "Try reading it again"; }
-        toast("Could not queue that.");
+        toast("Could not start reading that — try again in a minute.");
       });
   }
 
@@ -1574,7 +1672,7 @@ export const APP = String.raw`
     api("workouts/" + w.id + "/media", { method: "POST", body: "{}" })
       .then(function (r) {
         if (btn) { btn.disabled = false; btn.textContent = "Read the video"; }
-        if (r.status !== "processing") { toast(r.message || "Could not queue that."); return; }
+        if (r.status !== "processing") { toast(r.message || "Could not start reading that — try again in a minute."); return; }
         w.ingest_status = "processing";
         w.ingest_error = null;
         w.media_stage = "listening";
@@ -1585,7 +1683,7 @@ export const APP = String.raw`
       })
       .catch(function () {
         if (btn) { btn.disabled = false; btn.textContent = "Read the video"; }
-        toast("Could not queue that.");
+        toast("Could not start reading that — try again in a minute.");
       });
   }
 
@@ -1636,7 +1734,7 @@ export const APP = String.raw`
         toast("Reading your caption…");
         return;
       }
-      if (r.status !== "ok") { toast(r.message || "Could not read that."); return; }
+      if (r.status !== "ok") { toast(r.message || "Could not read that caption — try again in a moment."); return; }
       closeSheet("capsheet");
       load().then(function () {
         var fresh = state.workouts.filter(function (x) { return x.id === r.workout.id; })[0];
@@ -1646,7 +1744,7 @@ export const APP = String.raw`
     }).catch(function () {
       btn.disabled = false;
       btn.textContent = "Read it";
-      toast("Could not read that.");
+      toast("Could not read that caption — try again in a moment.");
     });
   }
 
@@ -1668,7 +1766,7 @@ export const APP = String.raw`
 
   function patchWorkout(w, fields) {
     return sb.from("workouts").update(fields).eq("id", w.id).then(function (r) {
-      if (r.error) toast("Could not save that change.");
+      if (r.error) toast("That change did not save. Your copy is unchanged.");
       return !r.error;
     });
   }
@@ -1743,7 +1841,7 @@ export const APP = String.raw`
     api("workouts/" + id + "/exercises", { method: "POST", body: JSON.stringify(payload) })
       .then(function (r) {
         if (btn) { btn.disabled = false; btn.textContent = label; }
-        if (r.status !== "ok") { toast(r.message || "Could not save that change."); return; }
+        if (r.status !== "ok") { toast(r.message || "That change did not save. Your copy is unchanged."); return; }
         closeSheet("exeditsheet");
         exEdit = null;
         absorbWorkout(r.workout);
@@ -1763,29 +1861,56 @@ export const APP = String.raw`
       reps: $("exeditreps").value,
       duration_seconds: $("exeditsecs").value
     };
-    if (!String(fields.name).trim()) { toast("An exercise needs a name."); return; }
+    if (!String(fields.name).trim()) { toast("Give it a name first."); return; }
     var body = exEdit.mode === "add"
       ? { op: "add", block: exEdit.block, fields: fields }
       : { op: "edit", block: exEdit.block, index: exEdit.index, expect_name: exEdit.name, fields: fields };
-    sendCorrection(body, $("exeditsave"), exEdit.mode === "add" ? "Added it 💪" : "Fixed — thanks");
+    sendCorrection(body, $("exeditsave"), exEdit.mode === "add" ? "Added it" : "Fixed — thanks");
   }
 
+  // The one correction that takes something away, so the only one with an undo.
+  // The card loses the row now, the server when the toast goes — which also means
+  // the server's expect_name guard still sees the exercise it is asked to delete.
   function deleteExEdit() {
     if (!exEdit || exEdit.mode !== "edit") return;
-    sendCorrection(
-      { op: "delete", block: exEdit.block, index: exEdit.index, expect_name: exEdit.name },
-      $("exeditdelete"), "Removed it");
+    var ctx = exEdit;
+    var w = ctx.w;
+    var before = JSON.parse(JSON.stringify(w.blocks || []));
+    exEdit = null;
+    closeSheet("exeditsheet");
+
+    function redraw() {
+      if (current && current.id === w.id && $("detail").classList.contains("open")) openDetail(w, true);
+      render();
+    }
+    var blk = (w.blocks || [])[ctx.block];
+    if (blk && blk.exercises) blk.exercises.splice(ctx.index, 1);
+    redraw();
+
+    function putBack(msg) { w.blocks = before; redraw(); if (msg) toast(msg); }
+
+    offerUndo("Removed " + ctx.name, function () {
+      api("workouts/" + w.id + "/exercises", {
+        method: "POST",
+        body: JSON.stringify({ op: "delete", block: ctx.block, index: ctx.index, expect_name: ctx.name })
+      }).then(function (r) {
+        if (r.status !== "ok") { putBack(r.message || "That did not save — the exercise is back."); return; }
+        absorbWorkout(r.workout);
+      }).catch(function () {
+        putBack("Could not reach Spotter — the exercise is back.");
+      });
+    }, function () { putBack(null); });
   }
 
   function removeWorkout(w, btn) {
     var go = function () {
       sb.from("workouts").delete().eq("id", w.id).then(function (r) {
-        if (r.error) { toast("Could not remove it."); return; }
+        if (r.error) { toast("That did not delete. The workout is still here."); return; }
         state.workouts = state.workouts.filter(function (x) { return x.id !== w.id; });
         state.colItems = state.colItems.filter(function (it) { return it.workout_id !== w.id; });
         history.back();
         render();
-        toast("Removed.");
+        toast("Workout removed.");
       });
     };
     if (btn) armed(btn, "Tap again to remove", go); else go();
@@ -1817,17 +1942,16 @@ export const APP = String.raw`
     var row = el("div", "managerow");
     row.id = "dmanage";
     if (!isPending(w)) {
-      var ren = el("button", "mbtn", "✎ Rename");
+      var ren = icon(el("button", "mbtn"), "pencil", "Rename");
       ren.onclick = function () { openRename("workout", w.id, w.title || ""); };
       row.appendChild(ren);
     }
     var n = colsOf(w.id).length;
-    var col = el("button", "mbtn" + (n ? " on" : ""));
-    col.appendChild(document.createTextNode("🗂 Collections"));
+    var col = icon(el("button", "mbtn" + (n ? " on" : "")), "folder", "Collections");
     if (n) col.appendChild(el("span", "n", String(n)));
     col.onclick = function () { openCollections(w); };
     row.appendChild(col);
-    var rm = el("button", "mbtn quiet", "🗑 Remove");
+    var rm = icon(el("button", "mbtn quiet"), "trash", "Remove");
     rm.onclick = function () { removeWorkout(w, rm); };
     row.appendChild(rm);
     return row;
@@ -1871,7 +1995,7 @@ export const APP = String.raw`
   function saveRename() {
     if (!renameCtx) return;
     var name = $("renameinput").value.replace(/\s+/g, " ").trim();
-    if (!name) { toast("Give it a name."); return; }
+    if (!name) { toast("Give it a name first."); return; }
     var ctx = renameCtx;
     var btn = $("renamesave");
     btn.disabled = true;
@@ -1897,7 +2021,7 @@ export const APP = String.raw`
     if (!c || name === c.name) { btn.disabled = false; closeSheet("renamesheet"); renameCtx = null; return; }
     sb.from("collections").update({ name: name }).eq("id", c.id).then(function (r) {
       btn.disabled = false;
-      if (r.error) { toast(dupCollectionMsg(r.error) || "Could not rename it."); return; }
+      if (r.error) { toast(dupCollectionMsg(r.error) || "That name did not save. Try again in a moment."); return; }
       c.name = name;
       closeSheet("renamesheet");
       renameCtx = null;
@@ -1932,14 +2056,19 @@ export const APP = String.raw`
       var isIn = colCtx ? inCol(c.id, colCtx) : false;
       var row = el("div", "colrow" + (isIn ? " in" : ""));
       row.setAttribute("role", "button");
-      if (colCtx) row.appendChild(el("div", "mark", "✓"));
-      row.appendChild(el("div", "ce", c.emoji || "🗂"));
+      // The tick used to be the only thing saying "in this collection", and it was
+      // a character. aria-pressed says it properly.
+      if (colCtx) row.setAttribute("aria-pressed", isIn ? "true" : "false");
+      if (colCtx) row.appendChild(icon(el("div", "mark"), "check"));
+      // The emoji is the user's own — the one thing on this row they chose. Only
+      // the fallback, which is Spotter speaking, becomes a drawn mark.
+      row.appendChild(c.emoji ? el("div", "ce", c.emoji) : icon(el("div", "ce"), "folder"));
       var t = el("div", "ct");
       t.appendChild(el("b", null, c.name));
       var n = colCount(c.id);
       t.appendChild(el("span", null, n + (n === 1 ? " workout" : " workouts")));
       row.appendChild(t);
-      var ren = el("button", "exhelp", "✎");
+      var ren = icon(el("button", "exhelp"), "pencil");
       ren.setAttribute("aria-label", "Rename collection");
       ren.onclick = function (e) { e.stopPropagation(); openRename("collection", c.id, c.name); };
       row.appendChild(ren);
@@ -1958,7 +2087,7 @@ export const APP = String.raw`
     if (inCol(c.id, workoutId)) {
       sb.from("collection_items").delete().match({ collection_id: c.id, workout_id: workoutId })
         .then(function (r) {
-          if (r.error) { toast("Could not update that."); return; }
+          if (r.error) { toast("That collection did not change. Try again in a moment."); return; }
           state.colItems = state.colItems.filter(function (it) {
             return !(it.collection_id === c.id && it.workout_id === workoutId);
           });
@@ -1968,7 +2097,7 @@ export const APP = String.raw`
     }
     sb.from("collection_items").insert({ collection_id: c.id, workout_id: workoutId, user_id: state.user.id })
       .then(function (r) {
-        if (r.error) { toast("Could not update that."); return; }
+        if (r.error) { toast("That collection did not change. Try again in a moment."); return; }
         state.colItems.push({ collection_id: c.id, workout_id: workoutId, added_at: new Date().toISOString() });
         afterMembership();
       });
@@ -1983,7 +2112,7 @@ export const APP = String.raw`
   function createCollection() {
     var name = $("colname").value.replace(/\s+/g, " ").trim();
     var emoji = $("colemoji").value.trim() || null;
-    if (!name) { toast("Name the collection first."); $("colname").focus(); return; }
+    if (!name) { toast("Give it a name first."); $("colname").focus(); return; }
     var btn = $("colcreate");
     btn.disabled = true;
     sb.from("collections")
@@ -1991,7 +2120,7 @@ export const APP = String.raw`
       .select().single()
       .then(function (r) {
         btn.disabled = false;
-        if (r.error || !r.data) { toast(dupCollectionMsg(r.error) || "Could not create it."); return; }
+        if (r.error || !r.data) { toast(dupCollectionMsg(r.error) || "Could not create that collection — try a different name."); return; }
         state.collections.push(r.data);
         $("colname").value = "";
         $("colemoji").value = "";
@@ -2001,17 +2130,29 @@ export const APP = String.raw`
       });
   }
 
-  function deleteCollection(c, btn) {
-    armed(btn, "Tap again to delete", function () {
+  // No two-tap arming any more: undo costs nothing to the person who meant it and
+  // gives everything back to the one who did not. The row goes when the toast does.
+  function deleteCollection(c) {
+    var at = state.collections.indexOf(c);
+    var items = state.colItems.filter(function (it) { return it.collection_id === c.id; });
+    var wasFilter = state.filter;
+    state.collections = state.collections.filter(function (x) { return x.id !== c.id; });
+    state.colItems = state.colItems.filter(function (it) { return it.collection_id !== c.id; });
+    if (state.filter === "col:" + c.id) state.filter = "All";
+    render();
+    if ($("colsheet").classList.contains("open")) renderColSheet();
+    offerUndo("Deleted " + c.name + " — the workouts stay", function () {
       sb.from("collections").delete().eq("id", c.id).then(function (r) {
-        if (r.error) { toast("Could not delete it."); return; }
-        state.collections = state.collections.filter(function (x) { return x.id !== c.id; });
-        state.colItems = state.colItems.filter(function (it) { return it.collection_id !== c.id; });
-        if (state.filter === "col:" + c.id) state.filter = "All";
-        render();
-        if ($("colsheet").classList.contains("open")) renderColSheet();
-        toast("Deleted " + c.name + " — its workouts are still in your library.");
+        if (!r || !r.error) return;
+        toast("That did not delete. The collection is still here.");
+        load();
       });
+    }, function () {
+      state.collections.splice(at < 0 ? state.collections.length : at, 0, c);
+      state.colItems = state.colItems.concat(items);
+      state.filter = wasFilter;
+      render();
+      if ($("colsheet").classList.contains("open")) renderColSheet();
     });
   }
 
@@ -2637,16 +2778,21 @@ export const APP = String.raw`
 
   function explain(name, title) {
     $("explaintitle").textContent = name;
-    $("explaintext").textContent = expCache[name] || "Thinking…";
+    // Spotter's pending vocabulary is reading, listening, watching. "Thinking" is
+    // a chatbot's word for the same wait and belongs to a different app.
+    $("explaintext").textContent = expCache[name] || "Reading up on it…";
     $("swapgo").onclick = function () { closeSheet("explainsheet"); openSwap(name, title); };
     openSheet("explainsheet");
     if (expCache[name]) return;
     api("explain", { method: "POST", body: JSON.stringify({ exercise: name, title: title || "" }) })
       .then(function (r) {
-        var text = r.status === "ok" ? r.text : (r.message || "Could not load that.");
+        var text = r.status === "ok" ? r.text
+          : (r.message || "Could not get an explanation just now. Try again in a moment.");
         expCache[name] = r.status === "ok" ? text : null;
         if ($("explaintitle").textContent === name) $("explaintext").textContent = text;
-      }).catch(function () { $("explaintext").textContent = "Could not load that."; });
+      }).catch(function () {
+        $("explaintext").textContent = "Could not get an explanation just now. Try again in a moment.";
+      });
   }
 
   // ---------- swap or modify ----------
@@ -2709,19 +2855,23 @@ export const APP = String.raw`
     var seq = ++ctx.seq;
     var box = $("swapresult");
     box.innerHTML = "";
-    box.appendChild(el("div", "aitext", "Thinking…"));
+    box.appendChild(el("div", "aitext", "Looking for something else…"));
     var have = ctx.reason === "no_equipment" ? $("swaphaveinput").value.trim().slice(0, 200) : "";
     api("swap", { method: "POST", body: JSON.stringify({
       exercise: ctx.name, reason: ctx.reason, body_area: ctx.area || "", title: ctx.title, equipment_have: have
     }) }).then(function (r) {
       if (swapCtx !== ctx || ctx.seq !== seq) return;   // a newer question superseded this one
       box.innerHTML = "";
-      if (r.status !== "ok") { box.appendChild(el("div", "aitext", r.message || "Could not load that.")); return; }
+      if (r.status !== "ok") {
+        box.appendChild(el("div", "aitext",
+          r.message || "Could not find a swap just now. Try again in a moment."));
+        return;
+      }
       renderSwapResult(box, r);
     }).catch(function () {
       if (swapCtx !== ctx || ctx.seq !== seq) return;
       box.innerHTML = "";
-      box.appendChild(el("div", "aitext", "Could not load that."));
+      box.appendChild(el("div", "aitext", "Could not find a swap just now. Try again in a moment."));
     });
   }
 
@@ -2971,14 +3121,14 @@ export const APP = String.raw`
     // than dead when the card has no embed and no thumbnail to show.
     var w = wo.workout;
     if (w.thumb_url || (w.shortcode && /^(instagram|tiktok|youtube)$/.test(w.platform))) {
-      var watch = el("button", "chip", "▶ Watch the clip");
+      var watch = icon(el("button", "chip"), "play", "Watch the clip");
       watch.onclick = openWatch;
       acts.appendChild(watch);
     }
-    var help = el("button", "chip", "? How to do this");
+    var help = icon(el("button", "chip"), "help", "How to do this");
     help.onclick = function () { explain(s.ex.name, wo.workout.title); };
     acts.appendChild(help);
-    var swapChip = el("button", "chip", "⇄ Swap or modify");
+    var swapChip = icon(el("button", "chip"), "swap", "Swap or modify");
     swapChip.onclick = function () { openSwap(s.ex.name, wo.workout.title); };
     acts.appendChild(swapChip);
     main.appendChild(acts);
@@ -3066,7 +3216,9 @@ export const APP = String.raw`
     if (prCheck(entry, set, k)) {
       set.pr = true;
       // Once per movement per session: the fifth toast about one lift is noise.
-      if (!told) toast("new best — " + (entry.name || "that").toLowerCase());
+      // Sentence case, and the movement spelled as the card spells it: lower-casing
+      // somebody's "Bulgarian Split Squat" reads like a log line, not a best.
+      if (!told) toast("New best — " + (entry.name || "that lift"));
     }
     entry.sets[setCtx.idx] = set;
     saveDraft();
@@ -3408,7 +3560,7 @@ export const APP = String.raw`
     // Insert first, draw from memory: the one moment of payoff in the whole loop
     // should never wait on a gym's signal.
     sb.from("workout_logs").insert(payload).then(function (r) {
-      if (r.error) { toast("Could not save that session."); return; }
+      if (r.error) { toast("Could not save that session — check your connection."); return; }
       state.logs = null;
       // The today card was drawn before this session existed. Retire it now,
       // and redraw at once if the library is the page underneath.
@@ -3469,8 +3621,8 @@ export const APP = String.raw`
       beaten.forEach(function (k) {
         var p = wo.prs[k];
         var row = el("div", "setpill pr");
-        row.appendChild(el("b", null, "new best"));
-        row.appendChild(document.createTextNode(p.name.toLowerCase() + " · " +
+        row.appendChild(el("b", null, "New best"));
+        row.appendChild(document.createTextNode(p.name + " · " +
           p.weight + " " + (p.unit || state.unit) + " × " + p.reps));
         prs.appendChild(row);
       });
@@ -3577,7 +3729,8 @@ export const APP = String.raw`
     var v = $("planview");
     v.innerHTML = "";
     var bar = el("div", "weekbar");
-    var prev = el("button", "iconbtn", "←");
+    var prev = icon(el("button", "iconbtn"), "arrow-left");
+    prev.setAttribute("aria-label", "The week before");
     prev.onclick = function () {
       state.weekStart = new Date(state.weekStart.getTime() - 7 * 86400000);
       loadPlan();
@@ -3588,13 +3741,21 @@ export const APP = String.raw`
     bar.appendChild(prev);
     bar.appendChild(el("b", null,
       state.weekStart.toLocaleDateString(undefined, fmt) + " – " + endD.toLocaleDateString(undefined, fmt)));
-    var next = el("button", "iconbtn", "→");
+    var next = icon(el("button", "iconbtn"), "arrow-right");
+    next.setAttribute("aria-label", "The week after");
     next.onclick = function () {
       state.weekStart = new Date(state.weekStart.getTime() + 7 * 86400000);
       loadPlan();
     };
     bar.appendChild(next);
     v.appendChild(bar);
+
+    // Seven dashed boxes and no sentence assumes you know what they are for.
+    if (!(state.plan || []).length) {
+      v.appendChild(el("div", "planlede",
+        "Nothing planned this week. Put a workout on a day and it shows up here, " +
+        "with a tick once you have done it."));
+    }
 
     var names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
     var todayStr = ymd(new Date());
@@ -3610,7 +3771,7 @@ export const APP = String.raw`
         var didLog = (state.planLogs || []).some(function (l) {
           return l.started_at && ymd(new Date(l.started_at)) === key;
         });
-        if (didLog) { head.appendChild(el("div", "daydone", "✓ done")); done++; }
+        if (didLog) { head.appendChild(icon(el("div", "daydone"), "check", "done")); done++; }
         card.appendChild(head);
 
         var rows = (state.plan || []).filter(function (p) { return p.day === key; });
@@ -3628,7 +3789,8 @@ export const APP = String.raw`
           var t = el("div", "pt", w.title || "Workout");
           t.onclick = function () { openDetail(w); };
           item.appendChild(t);
-          var x = el("button", "planx", "✕");
+          var x = icon(el("button", "planx"), "x");
+          x.setAttribute("aria-label", "Take this off the day");
           x.onclick = function () {
             sb.from("plan").delete().eq("id", p.id).then(function () { loadPlan(); });
           };
@@ -3673,7 +3835,7 @@ export const APP = String.raw`
         sb.from("plan").insert({ user_id: state.user.id, day: day, workout_id: w.id })
           .then(function (r) {
             closeSheet("picksheet");
-            if (r.error) { toast("Could not add that."); return; }
+            if (r.error) { toast("Could not add it to that day. Try again in a moment."); return; }
             loadPlan();
           });
       };
@@ -3709,6 +3871,42 @@ export const APP = String.raw`
     return ymd(mondayOf(new Date(iso)));
   }
 
+  // The three headline figures count up the first time Progress is LOOKED AT, and
+  // never again: a number that re-counts on every swipe back is a fidget, not a
+  // result.
+  //
+  // It belongs to the arrival rather than to the render, and both halves of that
+  // matter. warmPages() draws this page in idle time a few hundred milliseconds
+  // after boot, while the Library is still on screen — counting there spends the
+  // whole thing on nobody. And arriving later does NOT redraw a page that is
+  // already drawn and still current, so hanging it off renderProgress alone means
+  // it never runs at all. countStats() is therefore called from both, and guards
+  // itself: it reads the figures back off the page it is animating.
+  var statsCounted = false;
+
+  function countStats() {
+    if (statsCounted || state.view !== "progress") return;
+    var nodes = document.querySelectorAll("#progressview .stat .v");
+    if (!nodes.length) return;
+    statsCounted = true;
+    if (lessMotion()) return;
+    for (var i = 0; i < nodes.length; i++) countUp(nodes[i], parseInt(nodes[i].textContent, 10) || 0);
+  }
+
+  // Text does not interpolate, so this is a frame loop rather than a transition —
+  // --t-4 and cubic ease-out, the curve everything else here arrives on.
+  function countUp(node, to) {
+    if (!(to > 0)) return;
+    var t0 = 0;
+    node.textContent = "0";
+    requestAnimationFrame(function frame(t) {
+      if (!t0) t0 = t;
+      var p = Math.min(1, (t - t0) / 420);
+      node.textContent = String(Math.round(to * (1 - Math.pow(1 - p, 3))));
+      if (p < 1) requestAnimationFrame(frame);
+    });
+  }
+
   function renderProgress() {
     var v = $("progressview");
     v.innerHTML = "";
@@ -3716,7 +3914,7 @@ export const APP = String.raw`
 
     if (!logs.length) {
       var e = el("div", "empty");
-      e.appendChild(el("div", "big", "📈"));
+      e.appendChild(icon(el("div", "big"), "trend"));
       e.appendChild(el("h2", null, "No sessions yet"));
       e.appendChild(el("p", null, "Finish a workout and your volume, personal records and every logged session show up here."));
       v.appendChild(e);
@@ -3738,11 +3936,13 @@ export const APP = String.raw`
     }).length;
 
     var row = el("div", "statrow");
-    [[String(streak), streak === 1 ? "Week streak" : "Week streak"],
-     [String(thisWeek), "This week"],
-     [String(logs.length), "Sessions"]].forEach(function (s) {
+    // "1 · Week streak" was never right, and the ternary meant to fix it had the
+    // same string in both arms. A streak is weeks in a row; one is still one.
+    [[streak, streak === 1 ? "Week in a row" : "Weeks in a row"],
+     [thisWeek, "This week"],
+     [logs.length, "Sessions"]].forEach(function (s) {
       var c = el("div", "stat");
-      c.appendChild(el("div", "v", s[0]));
+      c.appendChild(el("div", "v", String(s[0])));
       c.appendChild(el("div", "k", s[1]));
       row.appendChild(c);
     });
@@ -3756,12 +3956,18 @@ export const APP = String.raw`
     var monday = ymd(mondayOf(new Date()));
     var weekLogs = logs.filter(function (l) { return weekKey(l.started_at) === monday; });
     var hit = el("div", "chartcard");
-    hit.appendChild(el("h3", null, "What you've hit this week"));
+    hit.appendChild(el("h3", null, "What you’ve hit this week"));
     var hitSlot = el("div");
     hit.appendChild(hitSlot);
     v.appendChild(hit);
     loadCatalog().then(function () {
-      if (state.view !== "progress") return;
+      // Whether this render was superseded, not whether Progress is the page being
+      // looked at. warmPages() draws this page while the Library is still on
+      // screen, so the old test was false exactly when the first draw happened and
+      // the figure never arrived at all — and arriving later does not redraw a page
+      // that is already drawn. A detached slot is the honest question: it means
+      // some later render replaced the box this answer was for.
+      if (!hitSlot.isConnected) return;
       var entries = [];
       weekLogs.forEach(function (l) { (l.entries || []).forEach(function (e) { entries.push(e); }); });
       var r = weekHits(entries);
@@ -3772,7 +3978,7 @@ export const APP = String.raw`
       ]), weekCaption(r)));
       if (!r.mapped) {
         hitSlot.appendChild(el("div", "bodynote", weekLogs.length
-          ? "This week's logged exercises are not in the catalog, so nothing is highlighted."
+          ? "This week’s logged exercises are not in the catalog, so nothing is highlighted."
           : "Nothing logged this week yet."));
       }
       bodyNotes(hitSlot, r, "logged exercises");
@@ -3892,6 +4098,9 @@ export const APP = String.raw`
     // The session list, under the numbers it feeds. One tab, one scroll.
     renderHistoryInto(v, logs);
     viewIn(v);
+    // For the arrival that had to wait for its own read: the page was empty when
+    // arrive() ran and there was nothing to count yet.
+    countStats();
   }
 
   function renderHistoryInto(v, logs) {
@@ -3932,11 +4141,21 @@ export const APP = String.raw`
 
       var del = el("button", "danger", "Delete session");
       del.onclick = function () {
-        armed(del, "Tap again to delete", function () {
-          sb.from("workout_logs").delete().eq("id", l.id).then(function () {
+        // Everything on this screen is derived from state.logs, so taking the
+        // session out of that array and redrawing IS the optimistic update.
+        var at = state.logs.indexOf(l);
+        state.logs = state.logs.filter(function (x) { return x.id !== l.id; });
+        renderProgress();
+        offerUndo("Session deleted", function () {
+          sb.from("workout_logs").delete().eq("id", l.id).then(function (r) {
+            if (!r || !r.error) return;
+            toast("That did not delete. The session is still here.");
             state.logs = null;
             loadLogs().then(renderProgress);
           });
+        }, function () {
+          state.logs.splice(at < 0 ? state.logs.length : at, 0, l);
+          renderProgress();
         });
       };
       card.appendChild(del);
@@ -3971,7 +4190,7 @@ export const APP = String.raw`
   // Short enough to wrap into a chip on a phone, long enough to still be a real ask.
   var QUICK_ASKS = [
     "Build a 25-min kettlebell shoulders + core",
-    "Plan my week from what I've saved",
+    "Plan my week from what I’ve saved",
     "Add a finisher to my leg day",
     "Shoulder pain — what should I strengthen?"
   ];
@@ -4025,7 +4244,7 @@ export const APP = String.raw`
   function openPumpyThreads() {
     var list = $("pumpythreads");
     list.innerHTML = "";
-    list.appendChild(el("div", "threadnone", "Loading…"));
+    list.appendChild(el("div", "threadnone", "Finding your chats…"));
     openSheet("pumpysheet");
     sb.from("pumpy_threads")
       .select("id,title,updated_at,workout_id,workouts(title)")
@@ -4033,7 +4252,7 @@ export const APP = String.raw`
       .then(function (r) { renderThreads((r && r.data) || []); })
       .catch(function () {
         list.innerHTML = "";
-        list.appendChild(el("div", "threadnone", "Could not load your chats."));
+        list.appendChild(el("div", "threadnone", "Could not load your chats — try again in a moment."));
       });
   }
 
@@ -4063,7 +4282,7 @@ export const APP = String.raw`
       del.onclick = function () {
         armed(del, "Delete?", function () {
           sb.from("pumpy_threads").delete().eq("id", t.id).then(function (r) {
-            if (r && r.error) { toast("Could not delete that chat."); return; }
+            if (r && r.error) { toast("That chat did not delete. It is still here."); return; }
             row.parentNode && row.parentNode.removeChild(row);
             if (pumpy.thread && pumpy.thread.id === t.id) newPumpyThread();
             if (!list.querySelector(".threadrow")) renderThreads([]);
@@ -4178,10 +4397,10 @@ export const APP = String.raw`
     if (!shown.length) {
       var hello = el("div", "pumpyhello");
       hello.appendChild(pumpyMark("pmark"));
-      hello.appendChild(el("h2", null, "Hey, I'm Pumpy"));
+      hello.appendChild(el("h2", null, "Hey, I’m Pumpy"));
       hello.appendChild(el("p", null,
-        "I know what you've saved. Ask me to build a workout from it, add to one, or plan your week. " +
-        "I'll show you before I change anything."));
+        "I know what you’ve saved. Ask me to build a workout from it, add to one, or plan your week. " +
+        "I’ll show you before I change anything."));
       var q = el("div", "quick");
       QUICK_ASKS.forEach(function (t) {
         var c = el("button", "chip", t);
@@ -4202,7 +4421,14 @@ export const APP = String.raw`
     if (pumpy.busy) {
       var row = el("div", "msgrow msgin");
       row.appendChild(pumpyMark("pmark"));
-      row.appendChild(el("div", "msg pumpy typing", "•••"));
+      // Three elements, not three characters: dots that do not move read as a
+      // bubble that broke.
+      var dots = el("div", "msg pumpy typing");
+      dots.setAttribute("aria-label", "Pumpy is answering");
+      dots.appendChild(el("i"));
+      dots.appendChild(el("i"));
+      dots.appendChild(el("i"));
+      row.appendChild(dots);
       log.appendChild(row);
     }
     renderPumpyCtx();
@@ -4269,7 +4495,7 @@ export const APP = String.raw`
       row.appendChild(yes);
       card.appendChild(row);
     } else if (status === "done") {
-      card.appendChild(el("div", "done", "✓ Done"));
+      card.appendChild(icon(el("div", "done"), "check", "Done"));
     } else {
       card.appendChild(el("div", "declined", "Skipped"));
     }
@@ -4283,7 +4509,7 @@ export const APP = String.raw`
     c.classList.remove("hide");
     c.appendChild(document.createTextNode("About "));
     c.appendChild(el("b", null, pumpy.ctx.title));
-    var x = el("button", null, "×");
+    var x = icon(el("button", null), "x");
     x.setAttribute("aria-label", "Stop talking about this workout");
     x.onclick = function () { pumpy.ctx = null; renderPumpyCtx(); };
     c.appendChild(x);
@@ -4312,7 +4538,7 @@ export const APP = String.raw`
       if (r.status !== "ok") {
         // The ceiling and the outage both come back as something Pumpy says.
         pumpy.messages.push({ id: "local-err-" + Date.now(), role: "user", content: text });
-        pumpy.messages.push({ id: "local-err2-" + Date.now(), role: "assistant", content: r.message || "Something went wrong — try again." });
+        pumpy.messages.push({ id: "local-err2-" + Date.now(), role: "assistant", content: r.message || "I could not answer that just now. Try again in a moment." });
         renderPumpy();
         return;
       }
@@ -4322,7 +4548,7 @@ export const APP = String.raw`
       renderPumpy();
     }).catch(function () {
       pumpy.busy = false;
-      pumpy.messages.push({ id: "local-err-" + Date.now(), role: "assistant", content: "I couldn't reach Spotter — check your connection." });
+      pumpy.messages.push({ id: "local-err-" + Date.now(), role: "assistant", content: "I couldn’t reach Spotter — check your connection." });
       renderPumpy();
     });
   }
@@ -4334,7 +4560,7 @@ export const APP = String.raw`
     api("pumpy/confirm", { method: "POST", body: JSON.stringify({ thread_id: pumpy.thread.id, message_id: m.id, accept: accept }) })
       .then(function (r) {
         if (r.status !== "ok") {
-          toast(r.message || "Could not do that.");
+          toast(r.message || "Could not apply that just now. Try again in a moment.");
           noBtn.disabled = false; yesBtn.disabled = false;
           return;
         }
@@ -4460,8 +4686,12 @@ export const APP = String.raw`
         if (r.status === "saved") {
           $("addurl").value = "";
           closeSheet("addsheet");
-          if (fromShare) toast(r.cached ? "Saved from the share sheet ⚡" : "Saved from the share sheet 💪");
-          else toast(r.cached ? "Saved instantly ⚡" : "Saved 💪");
+          // The cache hit is a good fact — somebody else already paid to read this
+          // video — so the receipt says the fact instead of a lightning bolt.
+          if (r.cached) toast(fromShare
+            ? "Saved from the share sheet — someone had already read this one, so it is ready"
+            : "Saved — someone had already read this one, so it is ready");
+          else toast(fromShare ? "Saved from the share sheet — read and ready" : "Saved — read and ready");
           load().then(function () {
             var w = state.workouts.filter(function (x) { return x.id === r.id; })[0];
             if (w) openDetail(w);
@@ -4471,7 +4701,7 @@ export const APP = String.raw`
           toast("Already in your library.");
           load();
         } else {
-          toast(r.message || "Could not save that link.");
+          toast(r.message || "Could not save that link — check it and try again.");
           recover();
         }
       }).catch(function () {
@@ -4698,9 +4928,9 @@ export const APP = String.raw`
       var msg = String(e && e.message ? e.message : e);
       resetUpload();
       if (msg === "413") {
-        upError("That file is too big for Spotter's storage. The limit is " + mb(UPLOAD_MAX) + " MB.");
+        upError("That file is too big for Spotter’s storage. The limit is " + mb(UPLOAD_MAX) + " MB.");
       } else if (msg === "400" || msg === "415") {
-        upError("Spotter's storage would not take that file. Send " + UPLOAD_KINDS + ".");
+        upError("Spotter’s storage would not take that file. Send " + UPLOAD_KINDS + ".");
       } else if (msg === "401" || msg === "403") {
         upError("Session expired — sign in again.");
       } else {
@@ -4712,6 +4942,7 @@ export const APP = String.raw`
   // ---------- settings ----------
 
   function openSettings() {
+    $("setver").textContent = "Spotter v" + VERSION;
     $("setemail").textContent = state.user ? state.user.email : "—";
     var how = signInMethod();
     $("setprov").textContent = how || "—";
@@ -4744,7 +4975,7 @@ export const APP = String.raw`
 
   function rotateKey() {
     api("rotate-key", { method: "POST", body: "{}" }).then(function (r) {
-      if (r.status !== "ok") { toast("Could not make a new key."); return; }
+      if (r.status !== "ok") { toast("Could not make a new key — try again in a moment."); return; }
       if (state.profile) state.profile.ingest_key = r.ingest_key;
       $("setkey").textContent = API + "ingest?key=" + r.ingest_key;
       toast("New key made — update your Shortcut.");
@@ -4760,7 +4991,7 @@ export const APP = String.raw`
     // the request when something awaits it — so this line without one has been
     // quietly dropping the unit preference on the floor since it was written.
     sb.from("profiles").update({ settings: s }).eq("id", state.user.id)
-      .then(function (r) { if (r.error) toast("Could not save that setting."); });
+      .then(function (r) { if (r.error) toast("That setting did not save. Try again in a moment."); });
   }
 
   function restLabel() { return state.rest ? state.rest + " s" : "Off"; }
@@ -4933,7 +5164,7 @@ export const APP = String.raw`
       if (!drawn.progress || !state.logs) {
         drawn.progress = true;
         quietly(loadLogs().then(renderProgress));
-      }
+      } else countStats();
     } else if (v === "pumpy") {
       loadPumpy();
     }
@@ -4981,6 +5212,7 @@ export const APP = String.raw`
     idx = 0; arrivedAt = 0; state.view = "library";
     drawn = { plan: false, progress: false, pumpy: false };
     planSig = "";
+    statsCounted = false;
     for (var k = 0; k < PAGE_IDS.length; k++) $(PAGE_IDS[k]).scrollTop = 0;
     measureChrome();
     pos = 0; spTarget = 0; spVel = 0;
@@ -5241,11 +5473,11 @@ export const APP = String.raw`
 
   function refreshActive() {
     var v = VIEWS[idx];
-    if (v === "plan") { quietly(loadPlan(true)); return; }
-    if (v === "progress") { state.logs = null; quietly(loadLogs().then(renderProgress)); return; }
-    if (v === "pumpy") { pumpy.loaded = false; loadPumpy(); return; }
+    if (v === "plan") return quietly(loadPlan(true));
+    if (v === "progress") { state.logs = null; return quietly(loadLogs().then(renderProgress)); }
+    if (v === "pumpy") { pumpy.loaded = false; loadPumpy(); return null; }
     state.logs = null;
-    load();
+    return load();
   }
 
   pagesEl.addEventListener("touchstart", function (e) {
@@ -5274,7 +5506,16 @@ export const APP = String.raw`
     p.classList.add("back");
     p.style.opacity = 0;
     p.style.transform = "";
-    if (d >= 1) { refreshActive(); toast("Refreshed"); }
+    if (d < 1) return;
+    // "Refreshed" is a receipt with nothing on it. Wait for the read and answer
+    // the question the pull was actually asking.
+    var before = state.workouts.length;
+    var job = refreshActive();
+    if (!job || !job.then) { toast("Up to date"); return; }
+    job.then(function () {
+      var n = state.workouts.length - before;
+      toast(n > 0 ? n + (n === 1 ? " workout came in" : " workouts came in") : "Up to date");
+    }, function () { toast("Could not reach Spotter — check your connection."); });
   }, { passive: true });
 
   // ---------- install hint ----------
@@ -5295,9 +5536,12 @@ export const APP = String.raw`
     var isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
     var isAndroid = /android/i.test(navigator.userAgent);
     if (!isIOS && !isAndroid) return;
+    // Why, then how. The old line was only the how — two steps for no given reason.
     $("hinttext").innerHTML = isIOS
-      ? "Add Spotter to your home screen: tap <b>Share</b>, then <b>Add to Home Screen</b>."
-      : "Install Spotter, then <b>share</b> any video straight to it from the share sheet.";
+      ? "Spotter works better installed — full screen, and it opens like an app. " +
+        "Tap <b>Share</b>, then <b>Add to Home Screen</b>."
+      : "Install Spotter and it joins your share sheet — then any video goes " +
+        "straight to it with <b>Share</b>.";
     $("hint").classList.add("show");
   }
 
@@ -5379,8 +5623,7 @@ export const APP = String.raw`
   $("dfav").onclick = function () {
     if (!current) return;
     current.favorite = !current.favorite;
-    $("dfav").textContent = current.favorite ? "★" : "☆";
-    $("dfav").classList.toggle("on", current.favorite);
+    setFav(current);
     patchWorkout(current, { favorite: current.favorite });
     render();
   };
@@ -5414,13 +5657,13 @@ export const APP = String.raw`
           render(); watchPending(); toast("Reading it again…");
           return;
         }
-        if (r.status !== "ok") { toast(r.message || "Could not re-read it."); return; }
+        if (r.status !== "ok") { toast(r.message || "Could not read that video again — try again in a minute."); return; }
         load().then(function () {
           var w = state.workouts.filter(function (x) { return x.id === r.workout.id; })[0];
           if (w) openDetail(w);
           toast("Re-read the video.");
         });
-      }).catch(function () { b.classList.remove("spin"); toast("Could not re-read it."); });
+      }).catch(function () { b.classList.remove("spin"); toast("Could not read that video again — try again in a minute."); });
   };
 
   $("wclose").onclick = function () { history.back(); };
@@ -5437,7 +5680,12 @@ export const APP = String.raw`
       t.appendChild(el("b", null, s.ex.name));
       t.appendChild(el("span", null, doseText(s.ex) || "—"));
       row.appendChild(t);
-      if (wo.entries[i] && wo.entries[i].sets.length) row.appendChild(el("span", "daydone", "✓"));
+      if (wo.entries[i] && wo.entries[i].sets.length) {
+        var tick = icon(el("span", "daydone"), "check");
+        tick.setAttribute("role", "img");
+        tick.setAttribute("aria-label", "Logged");
+        row.appendChild(tick);
+      }
       row.onclick = function () { stopWork(); wo.i = i; closeSheet("exsheet"); renderWorkout(); };
       list.appendChild(row);
     });
