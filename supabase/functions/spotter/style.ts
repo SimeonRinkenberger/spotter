@@ -917,7 +917,8 @@ export const STYLE = String.raw`<style>
     transition: transform var(--t-1) var(--e-out); }
   .ring::after { content: ""; position: absolute; inset: 4px; border-radius: 999px;
     background: var(--paper); }
-  .ring span { position: relative; font-size: 12px; font-weight: 700;
+  /* z-index: ::after is the last child, so it paints over the number without it. */
+  .ring span { position: relative; z-index: 1; font-size: 12px; font-weight: 700;
     color: var(--ember-ink); font-variant-numeric: tabular-nums; letter-spacing: -.03em; }
   .ring:active { transform: scale(.92); }
   /* Idle and paused share a look on purpose: both mean the clock is not moving. */

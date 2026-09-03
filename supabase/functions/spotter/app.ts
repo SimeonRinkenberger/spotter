@@ -3063,7 +3063,7 @@ export const APP = String.raw`
     if (wo && wo.wake) { try { wo.wake.release(); } catch (e) { /* ignore */ } wo.wake = null; }
   }
 
-  // hush: no entrance — a logged round changed a number.
+  // hush: no entrance; a logged round changed a number.
   function renderWorkout(hush) {
     if (!wo) return;
     var main = $("wmain"), dots = $("wdots");
@@ -3425,7 +3425,6 @@ export const APP = String.raw`
     // Half of why a follow-along screen works: what is next, before it is now.
     var nx = wo.screens[atRoundEnd() ? wo.i - s.ei : wo.i + 1];
     if (nx) main.appendChild(el("div", "wnote wup", "Next: " + nx.ex.name));
-    // The round line counts laps; a lone stack of holds needs pills.
     if (!isCircuit(s.block) && targetOf(s) > 1) renderSetPills(main, entry, s.ex, targetOf(s));
     main.appendChild(go);
     paintPhase();
@@ -3482,7 +3481,7 @@ export const APP = String.raw`
     startRest(gap, "rest", nextMove);
   }
 
-  // Another lap of this block, the next station in it, or out the other side.
+  // Another lap of this block, the next station in it, or out of it.
   function nextMove() {
     var s = wo && wo.screens[wo.i];
     if (!s) return;
@@ -5694,7 +5693,7 @@ export const APP = String.raw`
 
   $("restring").onclick = pauseRest;
   $("restplus").onclick = function () { addRest(15000); };
-  // A skipped rest still owes the advance it was holding.
+  // A skipped rest still owes its advance.
   $("restskip").onclick = function () { var t = restThen; stopRest(); if (t) t(); };
   $("watchclose").onclick = function () { closeSheet("watchsheet"); };
 
