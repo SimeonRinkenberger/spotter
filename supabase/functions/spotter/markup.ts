@@ -425,13 +425,13 @@ export const MARKUP_BODY = String.raw`</head>
     <button class="btn ghost" id="rotatekey">New key</button>
   </div>
   <button class="danger" id="signout">Sign out</button>
+  <!-- What this phone believes about its own screen. Staff only, and there so the
+       one person holding an affected device can photograph the numbers. -->
+  <div class="setnote foot hide" id="setdiag"></div>
   <!-- The last line of the app, and the one that says a person is behind it. The
        version comes from the constant in app.ts so there is one place to change
        it; the report goes to the public issue tracker rather than an address,
        because an address in a public page is an address that gets harvested. -->
-  <!-- What this phone believes about its own screen. Staff only, and there so the
-       one person holding an affected device can photograph the numbers. -->
-  <div class="setnote foot hide" id="setdiag"></div>
   <div class="setnote foot"><span id="setver">Spotter</span> ·
     <a href="whats-new.html">What&rsquo;s new</a> · Something wrong?
     <a href="https://github.com/SimeonRinkenberger/spotter/issues" target="_blank" rel="noopener">Tell me</a></div>

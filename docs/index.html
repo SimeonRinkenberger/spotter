@@ -881,7 +881,8 @@
      it — and whichever half a fill swallows, the other stands at 4.8:1 or better,
      both schemes, all eight. .lit matches the primary's ember rim above for weight
      and comes after it, so a tapped primary wears this instead. */
-  .bodybox .bodymus.sel, .bodybox .bodymus.sel.lit, .bodybox .bodymus:focus-visible {
+  .bodybox .bodymus.sel, .bodybox .bodymus.sel.lit,
+  .bodybox .bodymus:focus-visible, .bodybox .bodymus.lit:focus-visible {
     stroke: var(--ink); stroke-width: 2px; vector-effect: non-scaling-stroke;
     filter: drop-shadow(0 0 1px var(--paper)) drop-shadow(0 0 1px var(--paper)); }
   .bodybox .bodymus.sel { animation: setpop var(--t-3) var(--e-spring);
@@ -1634,13 +1635,13 @@
     <button class="btn ghost" id="rotatekey">New key</button>
   </div>
   <button class="danger" id="signout">Sign out</button>
+  <!-- What this phone believes about its own screen. Staff only, and there so the
+       one person holding an affected device can photograph the numbers. -->
+  <div class="setnote foot hide" id="setdiag"></div>
   <!-- The last line of the app, and the one that says a person is behind it. The
        version comes from the constant in app.ts so there is one place to change
        it; the report goes to the public issue tracker rather than an address,
        because an address in a public page is an address that gets harvested. -->
-  <!-- What this phone believes about its own screen. Staff only, and there so the
-       one person holding an affected device can photograph the numbers. -->
-  <div class="setnote foot hide" id="setdiag"></div>
   <div class="setnote foot"><span id="setver">Spotter</span> ·
     <a href="whats-new.html">What&rsquo;s new</a> · Something wrong?
     <a href="https://github.com/SimeonRinkenberger/spotter/issues" target="_blank" rel="noopener">Tell me</a></div>
@@ -6356,6 +6357,9 @@
     }
 
     body.addEventListener("pointerdown", function (e) {
+      // Fingers only, as the pager is: a mouse dragging across the address in
+      // Settings is selecting it, not throwing the sheet away.
+      if (e.pointerType !== "touch" && e.pointerType !== "pen") return;
       if (sd || !e.isPrimary || noDragIn(e.target)) return;
       var grab = e.target === body || (e.target.classList && e.target.classList.contains("grabber"));
       if (body.scrollTop > 0 && !grab) return;

@@ -863,7 +863,8 @@ export const STYLE = String.raw`<style>
      it — and whichever half a fill swallows, the other stands at 4.8:1 or better,
      both schemes, all eight. .lit matches the primary's ember rim above for weight
      and comes after it, so a tapped primary wears this instead. */
-  .bodybox .bodymus.sel, .bodybox .bodymus.sel.lit, .bodybox .bodymus:focus-visible {
+  .bodybox .bodymus.sel, .bodybox .bodymus.sel.lit,
+  .bodybox .bodymus:focus-visible, .bodybox .bodymus.lit:focus-visible {
     stroke: var(--ink); stroke-width: 2px; vector-effect: non-scaling-stroke;
     filter: drop-shadow(0 0 1px var(--paper)) drop-shadow(0 0 1px var(--paper)); }
   .bodybox .bodymus.sel { animation: setpop var(--t-3) var(--e-spring);

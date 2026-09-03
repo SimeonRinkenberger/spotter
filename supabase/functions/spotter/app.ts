@@ -4710,6 +4710,9 @@ export const APP = String.raw`
     }
 
     body.addEventListener("pointerdown", function (e) {
+      // Fingers only, as the pager is: a mouse dragging across the address in
+      // Settings is selecting it, not throwing the sheet away.
+      if (e.pointerType !== "touch" && e.pointerType !== "pen") return;
       if (sd || !e.isPrimary || noDragIn(e.target)) return;
       var grab = e.target === body || (e.target.classList && e.target.classList.contains("grabber"));
       if (body.scrollTop > 0 && !grab) return;
