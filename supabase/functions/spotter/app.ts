@@ -621,6 +621,10 @@ export const APP = String.raw`
       // here keeps whatever was already known rather than blanking the chips.
       if (!rs[1].error) state.collections = rs[1].data || [];
       if (!rs[2].error) state.colItems = rs[2].data || [];
+      // Refresh has to mean refresh. The today card's own age check is there for
+      // the passive path — a chip tap, a realtime render — and would otherwise
+      // shrug off a pull-to-refresh made half a minute after the last read.
+      today.at = 0;
       render();
       watchPending();
     });
