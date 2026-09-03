@@ -643,6 +643,10 @@
     pointer-events: none; transition: opacity var(--t-2), transform var(--t-2) var(--e-out);
     box-shadow: var(--sh-lg); max-width: 88vw; text-align: center; }
   #toast.show { opacity: 1; transform: translate(-50%, 0); }
+  /* Workout Mode has no tab bar to clear but it does have a rest running under
+     where the toast lands: 76px of bottom bar, 48px of rest strip, and the same
+     gap above them. A new best used to sit on +15 s and Skip for three seconds. */
+  #workout.open ~ #toast { bottom: calc(136px + env(safe-area-inset-bottom)); }
   #toast.tappable { pointer-events: auto; cursor: pointer; }
   /* The one toast the landing ever shows — a shared link waiting for sign-in —
      belongs above the fold, not across the sign-in card. There is no tab bar here
