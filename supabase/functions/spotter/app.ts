@@ -931,13 +931,18 @@ export const APP = String.raw`
     today.busy = true;
     Promise.all([
       sb.from("plan").select("workout_id").eq("day", key),
-      sb.from("workout_logs").select("started_at").gte("started_at", key + "T00:00:00Z")
+      // Pulled back a day: no time zone can then leave this morning's session
+      // outside the window, and the local date below is what decides.
+      sb.from("workout_logs").select("started_at")
+        .gte("started_at", ymd(new Date(Date.now() - 86400000)) + "T00:00:00Z")
     ]).then(function (rs) {
       today.day = key;
       today.rows = rs[0].data || [];
       // The Plan's own test for its tick, so the two cannot disagree about today.
+      // A day is the local one: comparing UTC dates ticked the wrong day every
+      // evening west of Greenwich, which is most of an evening's training.
       today.done = (rs[1].data || []).some(function (l) {
-        return l.started_at && l.started_at.slice(0, 10) === key;
+        return l.started_at && ymd(new Date(l.started_at)) === key;
       });
       renderToday();
     }).catch(function () { /* the age check tries again in half a minute */ })
@@ -3363,7 +3368,8 @@ export const APP = String.raw`
     endD.setDate(endD.getDate() + 6);
     return Promise.all([
       sb.from("plan").select("*").gte("day", start).lte("day", ymd(endD)),
-      sb.from("workout_logs").select("id,started_at").gte("started_at", start + "T00:00:00Z")
+      sb.from("workout_logs").select("id,started_at")
+        .gte("started_at", ymd(new Date(state.weekStart.getTime() - 86400000)) + "T00:00:00Z")
     ]).then(function (rs) {
       state.plan = rs[0].data || [];
       state.planLogs = rs[1].data || [];
@@ -3412,7 +3418,7 @@ export const APP = String.raw`
         var head = el("div", "dayhead");
         head.appendChild(el("div", "dayname", names[i] + " " + d.getDate()));
         var didLog = (state.planLogs || []).some(function (l) {
-          return l.started_at && l.started_at.slice(0, 10) === key;
+          return l.started_at && ymd(new Date(l.started_at)) === key;
         });
         if (didLog) { head.appendChild(el("div", "daydone", "✓ done")); done++; }
         card.appendChild(head);
