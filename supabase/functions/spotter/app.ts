@@ -4828,7 +4828,10 @@ export const APP = String.raw`
   // now for all four, off the live layout.
   function measureChrome() {
     var root = document.documentElement;
-    var h = Math.round(hdrEl.getBoundingClientRect().height);
+    // Unrounded: the header's own bottom edge is where the spacer has to end and
+    // the search has to stick, and 70.5 rounded up to 71 left half a pixel of
+    // scrolling content showing between the two.
+    var h = hdrEl.getBoundingClientRect().height;
     var b = Math.round(tabbar.getBoundingClientRect().height);
     if (h) root.style.setProperty("--hdr", h + "px");
     if (b) root.style.setProperty("--ptab", b + "px");
