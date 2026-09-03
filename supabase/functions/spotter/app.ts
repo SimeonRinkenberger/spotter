@@ -4374,7 +4374,11 @@ export const APP = String.raw`
   function saveSettings() {
     var s = { unit: state.unit, rest: state.rest, sounds: state.sounds };
     if (state.profile) state.profile.settings = s;
-    sb.from("profiles").update({ settings: s }).eq("id", state.user.id);
+    // The then() is what sends it. A supabase-js builder is lazy — it only runs
+    // the request when something awaits it — so this line without one has been
+    // quietly dropping the unit preference on the floor since it was written.
+    sb.from("profiles").update({ settings: s }).eq("id", state.user.id)
+      .then(function (r) { if (r.error) toast("Could not save that setting."); });
   }
 
   function restLabel() { return state.rest ? state.rest + " s" : "Off"; }

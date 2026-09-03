@@ -423,7 +423,11 @@ export const STYLE = String.raw`<style>
     display: block; margin: 6px auto 0; }
 
   /* ---------- bottom sheets ---------- */
-  .sheet { position: fixed; inset: 0; z-index: 70; background: var(--scrim); display: none;
+  /* Above Workout Mode (80), not below it. At 70 every sheet opened from the
+     workout — logging a set, the exercise list, the clip — was laid out, animated
+     and hit-testable underneath an opaque full-screen overlay, so the taps landed
+     on nothing. Still under the toast at 90, still over the detail overlay at 50. */
+  .sheet { position: fixed; inset: 0; z-index: 85; background: var(--scrim); display: none;
     align-items: flex-end; -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
   .sheet.open { display: flex; animation: fadein var(--t-2) var(--e-soft); }
   @keyframes fadein { from { opacity: 0; } }
