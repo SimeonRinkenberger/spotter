@@ -19,7 +19,11 @@ export const MARKUP_HEAD = String.raw`<!DOCTYPE html>
 <meta name="theme-color" content="#101214" media="(prefers-color-scheme: dark)">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<!-- Two font hosts now, so two preconnects: the display face lives at Fontshare,
+     and its file host is only discovered after that stylesheet has parsed. -->
+<link rel="preconnect" href="https://cdn.fontshare.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@700,800&display=swap" rel="stylesheet">
 `;
 
 export const MARKUP_BODY = String.raw`</head>
@@ -64,6 +68,8 @@ export const MARKUP_BODY = String.raw`</head>
 <symbol id="i-share" viewBox="0 0 24 24"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="m16 6-4-4-4 4"/><path d="M12 2v13"/></symbol>
 <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3 2 20.5h20z"/><path d="M12 9.5v4.5"/><path d="M12 17.5h.01"/></symbol>
 <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></symbol>
+<symbol id="i-volume-2" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5.2a10 10 0 0 1 0 13.6"/></symbol>
+<symbol id="i-volume-x" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="m22 9-6 6"/><path d="m16 9 6 6"/></symbol>
 </svg>
 
 <!-- ---------- signed out ---------- -->
@@ -211,7 +217,13 @@ export const MARKUP_BODY = String.raw`</head>
   <div class="wtop">
     <button class="iconbtn" id="wclose" aria-label="Exit workout"><svg class="ic"><use href="#i-x"></use></svg></button>
     <div class="wclock" id="wclock">0:00</div>
-    <button class="iconbtn" id="wlist" aria-label="All exercises"><svg class="ic"><use href="#i-list"></use></svg></button>
+    <!-- Sounds start themselves, so the switch for them belongs where they play,
+         not three taps away in Settings. aria-pressed carries the state that the
+         icon carries for everyone else. -->
+    <div class="wtools">
+      <button class="iconbtn" id="wsound" aria-label="Timer sounds" aria-pressed="true"><svg class="ic"><use href="#i-volume-2"></use></svg></button>
+      <button class="iconbtn" id="wlist" aria-label="All exercises"><svg class="ic"><use href="#i-list"></use></svg></button>
+    </div>
   </div>
   <div class="wdots" id="wdots"></div>
   <div class="wmain" id="wmain"></div>
@@ -220,6 +232,9 @@ export const MARKUP_BODY = String.raw`</head>
   <div class="reststrip" id="reststrip">
     <button class="ring" id="restring" aria-label="Pause or resume the rest"><span id="restnum">0</span></button>
     <span class="restword" id="restword">Rest</span>
+    <!-- A clock that used to chime and now does not should say why, right here,
+         rather than leave the silence to be read as a bug. -->
+    <svg class="ic wmute" aria-hidden="true"><use href="#i-volume-x"></use></svg>
     <button class="chip" id="restplus">+15 s</button>
     <button class="chip" id="restskip">Skip</button>
   </div>
@@ -412,7 +427,7 @@ export const MARKUP_BODY = String.raw`</head>
   <div class="kv"><span class="k">Timer sounds</span>
     <span class="v"><button class="chip" id="soundtoggle">On</button></span></div>
   <div class="setnote">The rest is used when the video does not say. The sounds are three
-    ticks and a chime, and only play while Spotter is open.</div>
+    ticks and a chime, and only play while Spotter is open. Also in Workout Mode's top bar.</div>
   <h2 style="margin-top:22px;font-size:16px">Save from your phone</h2>
   <p class="lede"><b>Android</b> — install Spotter, then share any video to it from the share
     sheet. Nothing below is needed.</p>

@@ -84,6 +84,69 @@ export const APP = String.raw`
     }, ms || 2800);
   }
 
+  // ---------- haptics ----------
+  //
+  // Four kinds, one door. Android answers navigator.vibrate; iOS Safari answers
+  // nothing at all and always has, so every call site treats a buzz as a bonus on
+  // top of something the screen already said.
+  // This is also the seam for going native: when Spotter is wrapped in Capacitor,
+  // only this function changes — Haptics.impact for tap and success, notification
+  // for pr and done — and every call below starts driving the Taptic Engine.
+  var BUZZ = { tap: 8, success: 12, pr: [14, 60, 22], done: [35, 55, 35] };
+
+  function haptic(kind) {
+    var p = BUZZ[kind];
+    if (!p || !navigator.vibrate) return;
+    try { navigator.vibrate(p); } catch (e) { /* a phone that will not buzz is fine */ }
+  }
+
+  // ---------- timer sounds ----------
+  //
+  // Sound that starts on its own has to be disclosed, and the disclosure has to
+  // carry the off switch: a sentence that only says "this makes noise" is worse
+  // than the noise. So the first clock on this device raises one tappable toast,
+  // and the tap is the mute. Once per device, and never when they are already off.
+  var soundTold = false;
+  try { soundTold = localStorage.getItem("spotter_sound_told") === "1"; } catch (e) { /* ignore */ }
+
+  function tellSounds() {
+    if (soundTold || !state.sounds) return;
+    var t = $("toast");
+    // Never over the top of something that had to be said, like a new best. The
+    // flag is only spent when the sentence is actually seen, so it waits a rest.
+    if (t.classList.contains("show")) return;
+    soundTold = true;
+    try { localStorage.setItem("spotter_sound_told", "1"); } catch (e) { /* ignore */ }
+    toast("Timer sounds are on · Tap to mute", 5200);
+    t.classList.add("tappable");
+    t.onclick = function () {
+      t.onclick = null;
+      t.classList.remove("tappable");
+      setSounds(false);
+      toast("Timer sounds off. Settings turns them back on.");
+    };
+  }
+
+  // One switch, three faces: the Settings row, the button in the workout's top
+  // bar, and the muted mark on the rest strip. They cannot disagree if only this
+  // writes to them.
+  function setSounds(on) {
+    state.sounds = !!on;
+    // This is a tap, and iOS hands out audio permission inside gestures only.
+    if (state.sounds) unlockAudio();
+    paintSounds();
+    saveSettings();
+  }
+
+  function paintSounds() {
+    $("soundtoggle").textContent = state.sounds ? "On" : "Off";
+    var w = $("wsound");
+    w.innerHTML = "";
+    w.appendChild(ic(state.sounds ? "volume-2" : "volume-x"));
+    w.setAttribute("aria-pressed", state.sounds ? "true" : "false");
+    $("reststrip").classList.toggle("muted", !state.sounds);
+  }
+
   // ---------- undo ----------
   //
   // A delayed commit, not a compensating write: the screen changes on the tap and
@@ -740,6 +803,8 @@ export const APP = String.raw`
         // 0 is a real answer here ("no timer"), so these test presence, not truth.
         if (typeof s.rest === "number") state.rest = s.rest;
         if (typeof s.sounds === "boolean") state.sounds = s.sounds;
+        // The top-bar button and the strip were drawn from the default; correct them.
+        paintSounds();
       }
     });
   }
@@ -3015,7 +3080,7 @@ export const APP = String.raw`
         r.data.forEach(function (log) {
           (log.entries || []).forEach(function (e) {
             if (!e.name) return;
-            var sets = (e.sets || []).filter(function (s) { return s.reps; });
+            var sets = (e.sets || []).filter(function (s) { return s && s.reps; });
             if (!sets.length) return;
             var k = exKey(e);
             var h = hist[k] || (hist[k] = { best: 0 });
@@ -3246,6 +3311,9 @@ export const APP = String.raw`
       // somebody's "Bulgarian Split Squat" reads like a log line, not a best.
       if (!told) toast("New best — " + (entry.name || "that lift"));
     }
+    // A best gets its own pattern: the point of a buzz is that you can tell two
+    // of them apart with the phone face down on the bench.
+    haptic(set.pr ? "pr" : "success");
     entry.sets[setCtx.idx] = set;
     saveDraft();
     closeSheet("setsheet");
@@ -3296,6 +3364,8 @@ export const APP = String.raw`
     restCued = 4;
     restFace = face || null;
     restThen = then || null;
+    // The first clock to run on this phone is the first time it makes a noise.
+    tellSounds();
     if (!restFace) {
       $("reststrip").className = "reststrip on";
       $("restword").textContent = "Rest";
@@ -3325,12 +3395,13 @@ export const APP = String.raw`
   }
 
   function doneRest() {
-    var then = restThen;
+    var then = restThen, onRing = restFace;
     stopRest();
     beep(880, .16, 0);
     beep(1318.5, .34, .13);
-    // Safari still has no Navigator.vibrate. Ask anyway, expect nothing.
-    if (navigator.vibrate) { try { navigator.vibrate([35, 55, 35]); } catch (e) { /* bonus */ } }
+    // A rest between sets ending is an event; a phase turning over inside a timed
+    // move or a circuit happens every twenty seconds and only wants a tick.
+    haptic(onRing ? "success" : "done");
     if (then) { then(); return; }
     toast("Rest done — next set.");
   }
@@ -3571,7 +3642,12 @@ export const APP = String.raw`
 
   function finishWorkout() {
     if (!wo || wo.finished) return;
-    var logged = wo.entries.filter(function (e) { return e.sets.length; });
+    // Sets are logged by index, so logging set 2 before set 1 leaves a hole that
+    // JSON turns into null and every later reader trips over. Close the holes
+    // here, once, before the session is written anywhere.
+    var logged = wo.entries.map(function (e) {
+      return Object.assign({}, e, { sets: (e.sets || []).filter(Boolean) });
+    }).filter(function (e) { return e.sets.length; });
     if (!logged.length) { leaveWorkout(); toast("Workout closed — nothing logged."); return; }
     var payload = {
       user_id: state.user.id,
@@ -3596,6 +3672,7 @@ export const APP = String.raw`
     stopRest();
     clearDraft();
     wo.finished = true;
+    haptic("done");
     renderSummary(payload, logged);
   }
 
@@ -3617,6 +3694,7 @@ export const APP = String.raw`
     var sets = 0, vol = 0;
     logged.forEach(function (e) {
       e.sets.forEach(function (s) {
+        if (!s) return;
         sets++;
         if (s.reps && s.weight) vol += s.reps * toUnit(s.weight, s.unit);
       });
@@ -3890,6 +3968,7 @@ export const APP = String.raw`
     var v = 0;
     (log.entries || []).forEach(function (e) {
       (e.sets || []).forEach(function (s) {
+        if (!s) return;
         if (s.reps && s.weight) v += s.reps * toUnit(s.weight, s.unit);
       });
     });
@@ -4065,6 +4144,7 @@ export const APP = String.raw`
       (l.entries || []).forEach(function (e) {
         var k = exKey(e);
         (e.sets || []).forEach(function (s) {
+          if (!s) return;
           if (!s.reps || !s.weight) return;
           var wt = toUnit(s.weight, s.unit), est = wt * (1 + s.reps / 30);
           if (!prs[k]) prs[k] = { est: 0, label: e.name || "Exercise" };
@@ -4148,7 +4228,7 @@ export const APP = String.raw`
       var n = el("div", "n");
       n.appendChild(document.createTextNode(l.workout_title || "Workout"));
       var sets = 0;
-      (l.entries || []).forEach(function (e) { sets += (e.sets || []).length; });
+      (l.entries || []).forEach(function (e) { sets += (e.sets || []).filter(Boolean).length; });
       n.appendChild(el("span", null,
         d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }) +
         " · " + sets + (sets === 1 ? " set" : " sets") +
@@ -4163,7 +4243,7 @@ export const APP = String.raw`
         var er = el("div", "histrow");
         var en = el("div", "n");
         en.appendChild(document.createTextNode(e.name));
-        en.appendChild(el("span", null, e.sets.map(setText).join("  ")));
+        en.appendChild(el("span", null, e.sets.filter(Boolean).map(setText).join("  ")));
         er.appendChild(en);
         card.appendChild(er);
       });
@@ -5090,7 +5170,7 @@ export const APP = String.raw`
     $("setprovrow").classList.toggle("hide", !how);
     $("unittoggle").textContent = state.unit;
     $("resttoggle").textContent = restLabel();
-    $("soundtoggle").textContent = state.sounds ? "On" : "Off";
+    paintSounds();
     var key = state.profile ? state.profile.ingest_key : null;
     $("setkey").textContent = key ? API + "ingest?key=" + key : "Loading…";
     $("setsaves").textContent = "…";
@@ -5155,12 +5235,13 @@ export const APP = String.raw`
     saveSettings();
   }
 
-  function toggleSounds() {
-    state.sounds = !state.sounds;
-    $("soundtoggle").textContent = state.sounds ? "On" : "Off";
-    // This tap is a gesture, and iOS hands out audio permission in gestures.
-    if (state.sounds) unlockAudio();
-    saveSettings();
+  function toggleSounds() { setSounds(!state.sounds); }
+
+  // The same switch from inside the workout, where the chip's word is not there to
+  // read the state back, so the toast does it.
+  function toggleWorkoutSounds() {
+    setSounds(!state.sounds);
+    toast(state.sounds ? "Timer sounds on." : "Timer sounds off.", 1800);
   }
 
   // ---------- the pager ----------
@@ -5576,6 +5657,8 @@ export const APP = String.raw`
         t.addEventListener("pointerdown", function (e) {
           if (e.pointerType !== "touch" && e.pointerType !== "pen") return;
           tabTouched = Date.now();
+          // Under the finger, on the down — the same instant the capsule moves.
+          haptic("tap");
           tabTap(k);
         });
         t.onclick = function () {
@@ -5793,6 +5876,7 @@ export const APP = String.raw`
   $("unittoggle").onclick = toggleUnit;
   $("resttoggle").onclick = toggleRest;
   $("soundtoggle").onclick = toggleSounds;
+  $("wsound").onclick = toggleWorkoutSounds;
   $("signout").onclick = function () {
     closeSheet("settingssheet");
     sb.auth.signOut();

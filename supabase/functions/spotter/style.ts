@@ -29,7 +29,14 @@ export const STYLE = String.raw`<style>
     --sh-lg: 0 2px 6px rgba(16,22,32,.07), 0 12px 28px rgba(16,22,32,.11), 0 30px 56px rgba(16,22,32,.08);
     --sh-up: 0 -6px 34px rgba(12,18,28,.18);
     --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='.04'/%3E%3C/svg%3E");
-    --display: "Space Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    /* Space Grotesk is on every 2026 list of fonts that give an AI-built app
+       away, and it is wide: at 375px the landing headline needed three lines.
+       Cabinet Grotesk sets 10% narrower for the same size, which buys back a
+       line on the hero and a line on every card title, and it has a voice.
+       ITF Free Font Licence, so commercial use and CDN loading are allowed.
+       Every negative track below was retuned for it; the uppercase ones were
+       not, because the two faces set capitals to within a third of a percent. */
+    --display: "Cabinet Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     --sans: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
     --e-out: cubic-bezier(.22,.9,.3,1);
     --e-spring: cubic-bezier(.32,.72,0,1);
@@ -99,9 +106,9 @@ export const STYLE = String.raw`<style>
   .land { max-width: 460px; margin: 0 auto; padding: calc(38px + env(safe-area-inset-top)) 24px 60px; }
   .brandrow { display: flex; align-items: center; gap: 11px; margin-bottom: 40px; }
   .brandrow img { width: 40px; height: 40px; border-radius: 11px; box-shadow: var(--sh-sm); }
-  .brandrow span { font-family: var(--display); font-size: 21px; font-weight: 700; letter-spacing: -.02em; }
-  .hero { font-family: var(--display); font-size: 38px; line-height: 1.08; font-weight: 700;
-    letter-spacing: -.033em; margin: 0 0 16px; }
+  .brandrow span { font-family: var(--display); font-size: 21px; font-weight: 700; letter-spacing: -.012em; }
+  .hero { font-family: var(--display); font-size: 38px; line-height: 1.08; font-weight: 800;
+    letter-spacing: -.02em; margin: 0 0 16px; }
   .hero em { font-style: normal; color: var(--ember); }
   .sub { font-size: 15.5px; line-height: 1.6; color: var(--ink-2); margin: 0 0 34px; }
   .steps { display: flex; flex-direction: column; gap: 14px; margin: 0 0 36px; padding: 0; list-style: none; }
@@ -114,7 +121,7 @@ export const STYLE = String.raw`<style>
   .authcard { background: var(--card); border: 1px solid var(--line); border-radius: 20px;
     padding: 22px 20px; box-shadow: var(--sh-md); }
   .authcard h2 { font-family: var(--display); font-size: 19px; margin: 0 0 16px; font-weight: 700;
-    letter-spacing: -.02em; }
+    letter-spacing: -.012em; }
   .field { margin-bottom: 12px; }
   /* ---------- the small labels ----------
      Eighteen rules used to set their label in caps with a tenth of an em between
@@ -216,7 +223,7 @@ export const STYLE = String.raw`<style>
   .titlerow { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
   .tstack { flex: 1 1 auto; min-width: 0; }
   h1 { font-family: var(--display); font-size: 27px; margin: 0; font-weight: 700;
-    letter-spacing: -.03em; line-height: 1; }
+    letter-spacing: -.018em; line-height: 1; }
   .count { color: var(--muted); font-size: 10.5px; margin-top: 7px; font-weight: 700;
     letter-spacing: .15em; text-transform: uppercase; }
   /* One title strip per page, stacked in a single grid cell so the header keeps
@@ -309,7 +316,7 @@ export const STYLE = String.raw`<style>
   .todaywrap .daycard.done .dayname { color: var(--muted); }
   .ttitle { display: block; width: 100%; text-align: left; border: none; background: none;
     padding: 3px 0 0; color: var(--ink); font-family: var(--display); font-size: 18px;
-    font-weight: 700; line-height: 1.22; letter-spacing: -.025em; }
+    font-weight: 700; line-height: 1.22; letter-spacing: -.015em; }
   .tdose { font-size: 12.5px; color: var(--muted); margin: 5px 0 12px; }
   .tstart { padding: 12px; font-size: 14.5px; border-radius: 12px; }
 
@@ -390,7 +397,7 @@ export const STYLE = String.raw`<style>
     color: var(--ember-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   .diffpill { font-size: 10.5px; font-weight: 600; color: var(--muted); white-space: nowrap; flex: 0 0 auto; }
   .cardtitle { font-family: var(--display); font-size: 15px; font-weight: 650; line-height: 1.25;
-    letter-spacing: -.018em; color: var(--ink); display: -webkit-box;
+    letter-spacing: -.011em; color: var(--ink); display: -webkit-box;
     -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .cardmeta { color: var(--muted); font-size: 11.5px; margin-top: 5px; font-weight: 500;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -434,7 +441,7 @@ export const STYLE = String.raw`<style>
     border-radius: 999px; border: 1px dashed var(--line-2); }
   @keyframes floaty { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
   .empty h2 { color: var(--ink); font-family: var(--display); font-size: 21px; font-weight: 700;
-    margin: 0 0 10px; letter-spacing: -.025em; }
+    margin: 0 0 10px; letter-spacing: -.015em; }
   .empty p { font-size: 13.5px; line-height: 1.65; margin: 5px auto; max-width: 300px; }
   .empty b { color: var(--ember-ink); font-weight: 700; }
 
@@ -467,7 +474,7 @@ export const STYLE = String.raw`<style>
   .dphoto { width: 100%; display: block; border-radius: 20px; box-shadow: var(--sh-md); margin-bottom: 20px; }
   .dkick { font-size: 11px; font-weight: 650; color: var(--ember-ink); margin-bottom: 8px; }
   .dtitle { font-family: var(--display); font-size: 28px; font-weight: 700; line-height: 1.14;
-    letter-spacing: -.032em; margin: 0 0 10px; }
+    letter-spacing: -.019em; margin: 0 0 10px; }
   /* People save from three or four creators they trust, not thirty, so the handle
      is a filter and not a caption. Drawn exactly as before: the padding and the
      negative top margin buy 44px of reach and change nothing else. */
@@ -505,7 +512,7 @@ export const STYLE = String.raw`<style>
   .spec { flex: 1 1 auto; padding: 13px 8px; text-align: center;
     border-right: 1px solid var(--line); min-width: 0; }
   .spec:last-child { border-right: none; }
-  .spec .v { font-family: var(--display); font-size: 17px; font-weight: 700; letter-spacing: -.02em;
+  .spec .v { font-family: var(--display); font-size: 17px; font-weight: 700; letter-spacing: -.012em;
     color: var(--ink); font-variant-numeric: tabular-nums; }
   .spec .k { font-size: 11px; font-weight: 600; color: var(--muted); margin-top: 4px; }
   .startbtn { width: 100%; border: none; border-radius: 16px; padding: 16px; font-size: 16px;
@@ -595,7 +602,7 @@ export const STYLE = String.raw`<style>
   .grabber { width: 38px; height: 4px; border-radius: 999px; background: var(--line-2);
     margin: 6px auto 16px; }
   .sheetbody h2 { font-family: var(--display); font-size: 20px; font-weight: 700; margin: 0 0 6px;
-    letter-spacing: -.025em; }
+    letter-spacing: -.015em; }
   .sheetbody p.lede { font-size: 13.5px; line-height: 1.6; color: var(--ink-2); margin: 0 0 18px; }
   .sheetbody .aitext { font-size: 14.5px; line-height: 1.68; color: var(--ink-2); white-space: pre-wrap; }
   .kv { display: flex; align-items: center; justify-content: space-between; gap: 12px;
@@ -765,7 +772,7 @@ export const STYLE = String.raw`<style>
   .view { padding-left: 18px; padding-right: 18px; }
   .weekbar { display: flex; align-items: center; justify-content: space-between; gap: 10px;
     margin: 10px 0 16px; }
-  .weekbar b { font-family: var(--display); font-size: 16px; font-weight: 700; letter-spacing: -.02em; }
+  .weekbar b { font-family: var(--display); font-size: 16px; font-weight: 700; letter-spacing: -.012em; }
   /* An empty week is seven dashed boxes and no explanation of what they are for.
      One line above them, only while there is nothing planned. */
   .planlede { font-size: 13px; line-height: 1.55; color: var(--ink-2); margin: 0 0 14px; }
@@ -791,7 +798,7 @@ export const STYLE = String.raw`<style>
   .statrow { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; margin: 4px 0 18px; }
   .stat { background: var(--card); border: 1px solid var(--line); border-radius: 15px; padding: 14px 10px;
     text-align: center; box-shadow: var(--sh-sm); }
-  .stat .v { font-family: var(--display); font-size: 24px; font-weight: 700; letter-spacing: -.03em;
+  .stat .v { font-family: var(--display); font-size: 24px; font-weight: 700; letter-spacing: -.018em;
     line-height: 1; color: var(--ink); font-variant-numeric: tabular-nums; }
   .stat .k { font-size: 11px; font-weight: 600; color: var(--muted); margin-top: 6px; }
   .chartcard { background: var(--card); border: 1px solid var(--line); border-radius: 18px;
@@ -896,8 +903,11 @@ export const STYLE = String.raw`<style>
   #workout.open { display: flex; animation: fadein var(--t-3) var(--e-soft); }
   #workout.closing { display: flex; pointer-events: none;
     animation: fadeout var(--t-2) var(--e-in) both; }
-  .wtop { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  /* Three columns rather than space-between, because the right-hand side gained a
+     second button and the elapsed clock has to stay on the centre line anyway. */
+  .wtop { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 10px;
     padding: calc(10px + env(safe-area-inset-top)) 16px 6px; }
+  .wtools { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
   .wclock { font-family: var(--display); font-size: 14px; font-weight: 700; color: var(--muted);
     font-variant-numeric: tabular-nums; }
   .wdots { display: flex; gap: 5px; justify-content: center; flex-wrap: wrap; padding: 8px 20px 0; }
@@ -908,8 +918,8 @@ export const STYLE = String.raw`<style>
   .wmain { flex: 1; display: flex; flex-direction: column; justify-content: center;
     padding: 10px 26px; text-align: center; overflow-y: auto; }
   .wblock { font-size: 12.5px; font-weight: 650; color: var(--ember-ink); margin-bottom: 12px; }
-  .wname { font-family: var(--display); font-size: 32px; font-weight: 700; line-height: 1.12;
-    letter-spacing: -.035em; margin: 0 0 12px; }
+  .wname { font-family: var(--display); font-size: 32px; font-weight: 800; line-height: 1.12;
+    letter-spacing: -.021em; margin: 0 0 12px; }
   .wdose { font-size: 16px; color: var(--ink-2); font-weight: 600; margin-bottom: 4px; }
   .wnote { font-size: 13.5px; color: var(--muted); line-height: 1.55; margin-top: 10px; }
   /* "last time · 3 × 10 at 60 lb · 5d ago" is a reference, not a headline: muted,
@@ -974,6 +984,10 @@ export const STYLE = String.raw`<style>
   .reststrip.paused .ring span, .reststrip.paused .restword,
   .wtimer.idle .ring span, .wtimer.idle .wphase { color: var(--muted); }
   .restword { font-size: 13px; font-weight: 650; color: var(--ember-ink); }
+  /* Muted, and the strip says so instead of just going quiet. Grey, 14px, next to
+     the word — a note, not a control; the control is in the top bar. */
+  .wmute { display: none; width: 14px; height: 14px; color: var(--muted); margin-left: -2px; }
+  .reststrip.muted .wmute { display: block; }
   .reststrip .chip { min-height: 44px; display: flex; align-items: center; }
 
   /* ---------- a timed move ----------
@@ -982,8 +996,8 @@ export const STYLE = String.raw`<style>
   .wtimer { display: flex; flex-direction: column; align-items: center; margin: 16px 0 2px; }
   .wtimer .ring { width: 164px; height: 164px; }
   .wtimer .ring::after { inset: 9px; }
-  .wtimer .ring span { font-family: var(--display); font-size: 44px; letter-spacing: -.04em;
-    color: var(--ink); }
+  .wtimer .ring span { font-family: var(--display); font-size: 44px; font-weight: 800;
+    letter-spacing: -.024em; color: var(--ink); }
   .wtimer .ring:active { transform: scale(.965); }
   .wphase { margin: 12px 0 0; }
   .wup { color: var(--ink-2); font-weight: 600; }
@@ -998,7 +1012,9 @@ export const STYLE = String.raw`<style>
   #workout.summary .wdots, #workout.summary .wbottom,
   #workout.summary .reststrip { display: none; }
   /* Hidden, not removed: the clock stays centred between the two top corners. */
-  #workout.summary #wlist { visibility: hidden; }
+  /* Both top-bar tools go quiet on the summary: there is no list left to open and
+     no clock left to mute, and a control that does nothing is a small lie. */
+  #workout.summary #wlist, #workout.summary #wsound { visibility: hidden; }
   .sumfigs { margin-top: 20px; }
   .sumfigs .setpill b { font-size: 23px; letter-spacing: -.035em; }
   .sumfigs .setpill, .sumprs .setpill { animation: viewin var(--t-2) var(--e-out) both; }
@@ -1016,7 +1032,7 @@ export const STYLE = String.raw`<style>
   .stepper button { width: 46px; height: 46px; border-radius: 999px; border: 1px solid var(--line-2);
     background: var(--card); color: var(--ink); font-size: 20px; line-height: 1; }
   .stepper .val { font-family: var(--display); font-size: 30px; font-weight: 700; min-width: 96px;
-    text-align: center; font-variant-numeric: tabular-nums; letter-spacing: -.03em; }
+    text-align: center; font-variant-numeric: tabular-nums; letter-spacing: -.018em; }
   .stepper .val small { display: block; font-size: 11px; font-weight: 600;
     color: var(--muted); margin-top: 4px; }
 
@@ -1055,7 +1071,7 @@ export const STYLE = String.raw`<style>
   .pumpyhello .pmark { width: 60px; height: 60px; margin: 0 auto 12px; box-shadow: var(--sh-md); }
   .pumpyhello .pmark svg { width: 34px; height: 34px; }
   .pumpyhello h2 { font-family: var(--display); font-size: 22px; font-weight: 700; margin: 0 0 6px; color: var(--ink);
-    letter-spacing: -.025em; }
+    letter-spacing: -.015em; }
   .pumpyhello p { margin: 0 auto; max-width: 340px; }
   .quick { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 16px 0 4px; }
   /* The library chips refuse to shrink; these have to, or a long ask runs off both
@@ -1084,7 +1100,7 @@ export const STYLE = String.raw`<style>
     box-shadow: var(--sh-md); }
   .proposal h4 { font-family: var(--display); font-size: 12.5px; font-weight: 700;
     color: var(--ember-ink); margin: 0 0 8px; }
-  .proposal .ptitle { font-family: var(--display); font-size: 18px; font-weight: 700; letter-spacing: -.02em;
+  .proposal .ptitle { font-family: var(--display); font-size: 18px; font-weight: 700; letter-spacing: -.012em;
     margin: 0 0 4px; line-height: 1.2; }
   .proposal .pmeta { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
   .proposal .pblock { font-size: 11.5px; font-weight: 600; color: var(--muted); margin: 10px 0 2px; }
