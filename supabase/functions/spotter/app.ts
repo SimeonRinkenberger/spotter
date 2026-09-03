@@ -5446,10 +5446,23 @@ export const APP = String.raw`
   // walk stops at the page it finds, whichever page that is: mid-spring the
   // finger can land on the arriving one, and climbing past it would reach the
   // track — 1500px wide inside a 375px window — and refuse every drag.
-  function scrollerInWay(node) {
+  //
+  // Measuring wider than its box is not the same as being a scroller, and taking
+  // it for one is why Plan would not answer a swipe on the owner's phone at all.
+  // Every 44px hit area in this app is a pseudo-element hanging a few pixels past
+  // the control it belongs to, and each of those makes its row measure 2-4px over:
+  // the week bar 467 against 464, a plan row 436 against 432, Pumpy's composer 466
+  // against 464. None of them scroll — nothing is hidden and nothing can move — so
+  // the test is what the box is told to do with its overflow, and whether it has
+  // anywhere left to go in the direction the finger is actually going.
+  function scrollerInWay(node, dx) {
     for (var n = node; n && n !== pagesEl; n = n.parentElement) {
       if (n.classList && n.classList.contains("page")) return false;
-      if (n.scrollWidth > n.clientWidth + 1) return true;
+      if (n.scrollWidth <= n.clientWidth + 1) continue;
+      var ox = getComputedStyle(n).overflowX;
+      if (ox !== "auto" && ox !== "scroll") continue;
+      // Finger right wants the page before it, which is the scroller running left.
+      if (dx > 0 ? n.scrollLeft > 0 : n.scrollLeft < n.scrollWidth - n.clientWidth - 1) return true;
     }
     return false;
   }
@@ -5467,13 +5480,13 @@ export const APP = String.raw`
   pagesEl.addEventListener("pointerdown", function (e) {
     if (e.pointerType !== "touch" && e.pointerType !== "pen") return;
     if (drag || overlayShowing()) return;
-    if (noDragIn(e.target) || scrollerInWay(e.target)) return;
+    if (noDragIn(e.target)) return;
     // Safari's back gesture starts at the very edge. Taking it over inside a
     // browser tab would trap the user on the page; installed to the home screen
     // there is no such gesture and the whole width is ours.
     if (!standalone() && e.clientX < 24) return;
     drag = { id: e.pointerId, x: e.clientX, y: e.clientY, from: idx, lock: false,
-      dx: 0, pos0: pos, raf: 0, s: [{ t: now(), x: e.clientX }] };
+      dx: 0, pos0: pos, raf: 0, on: e.target, s: [{ t: now(), x: e.clientX }] };
   });
 
   function dragFrame() {
@@ -5489,6 +5502,9 @@ export const APP = String.raw`
     if (!drag.lock) {
       if (Math.abs(dy) > SLOP && Math.abs(dy) >= Math.abs(dx)) { drag = null; return; }
       if (!(Math.abs(dx) > SLOP && Math.abs(dx) > Math.abs(dy) * 1.2)) return;
+      // Asked here rather than on the touch down: a scroller only owns the drag if
+      // it can answer the direction, and the direction is not known until now.
+      if (scrollerInWay(drag.on, dx)) { drag = null; return; }
       drag.lock = true;
       // Catch the spring where it is rather than restarting from its target. An
       // animation you can grab mid-flight is most of what makes this a surface.
