@@ -1073,7 +1073,7 @@ export const STYLE = String.raw`<style>
      is theirs, the vertical padding belongs to .page. */
   .view { padding-left: 18px; padding-right: 18px; }
   .weekbar { display: flex; align-items: center; justify-content: space-between; gap: 10px;
-    margin: 10px 0 16px; }
+    margin: 10px 0 11px; }
   .weekbar b { font-family: var(--display); font-size: 16px; font-weight: 700; letter-spacing: -.012em; }
   /* An empty week is seven dashed boxes and no explanation of what they are for.
      One line above them, only while there is nothing planned. */
@@ -1095,6 +1095,105 @@ export const STYLE = String.raw`<style>
   .planadd { background: none; border: 1px dashed var(--line-2); color: var(--muted); width: 100%;
     border-radius: 12px; padding: 10px; font-size: 13px; font-weight: 600; margin-top: 9px; }
   .planx { background: none; border: none; color: var(--muted); font-size: 15px; padding: 6px; }
+
+  /* ---------- plan / week or month ----------
+     Apple's segmented control: the selection is one thumb travelling between
+     seats, not two pictures of a state, so the pill is a single node sliding on
+     --t-2 while the labels hold still. Two title-case nouns and no action among
+     them — a segmented control chooses a view and never does a thing. */
+  .planctl { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+  .seg { position: relative; display: flex; flex: 0 0 auto; background: var(--sand);
+    border-radius: 11px; padding: 3px; }
+  .segpill { position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc(50% - 3px);
+    background: var(--card); border-radius: 9px; box-shadow: var(--sh-sm);
+    transition: transform var(--t-2) var(--e-spring); }
+  .seg.m .segpill { transform: translateX(100%); }
+  /* --ink-2, not --muted: --muted measures 4.13 on sand. */
+  .segbtn { position: relative; z-index: 1; min-width: 64px; min-height: 32px; border: none;
+    background: none; color: var(--ink-2); font-size: 13px; font-weight: 700; padding: 0 12px;
+    letter-spacing: -.005em; transition: color var(--t-2) var(--e-soft); }
+  .segbtn[aria-selected="true"] { color: var(--ink); }
+  .planacts { margin-left: auto; display: flex; align-items: center; gap: 7px; }
+  .planbtn { border: 1px solid var(--line); background: var(--card); color: var(--ink-2);
+    border-radius: 999px; padding: 0 13px; min-height: 32px; font-size: 12.5px; font-weight: 700;
+    display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+    transition: transform var(--t-1) var(--e-out), border-color var(--t-2) var(--e-soft); }
+  .planbtn:active { transform: scale(.94); }
+  /* A crossfade and nothing more: the bar above it did not move. */
+  .planswap { animation: planswap var(--t-2) var(--e-out); }
+  @keyframes planswap { from { opacity: 0; } }
+
+  /* ---------- plan / the month ----------
+     iOS Calendar's compact month: a number, a couple of marks, and the count of
+     marks doing the talking. Seven columns in a 375px phone leave 45px each, so
+     three 12px marks and two 2px gaps come to 40 against the 42 a cell has to
+     give. Nothing here grows without that sum being redone. */
+  .mgrid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; }
+  .mdow { text-align: center; font-size: 10px; font-weight: 700; letter-spacing: .08em;
+    color: var(--muted); padding-bottom: 5px; }
+  .mcell { display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+    gap: 4px; min-height: 56px; padding: 7px 1px; background: var(--card);
+    border: 1px solid var(--line); border-radius: 11px; box-shadow: var(--sh-sm);
+    transition: transform var(--t-1) var(--e-out); }
+  .mcell:active { transform: scale(.93); }
+  /* Present and tappable but no longer cards: 35 equal boxes hide the 1st. */
+  .mcell.out { background: none; border-color: transparent; box-shadow: none; }
+  /* Colour and weight, not opacity: --muted measures 4.52 on paper, and ink at
+     .45 lands on 3.4 and stops being AA. */
+  .mcell.out .mnum { color: var(--muted); font-weight: 600; }
+  .mcell.today { border-color: var(--ember); box-shadow: 0 0 0 1px var(--ember); }
+  .mtop { display: flex; align-items: center; justify-content: center; gap: 2px; line-height: 1; }
+  .mnum { font-size: 12.5px; font-weight: 700; color: var(--ink);
+    font-variant-numeric: tabular-nums; }
+  .mcell.today .mnum { color: var(--ember-ink); }
+  .mtop .ic { width: 10px; height: 10px; color: var(--good); stroke-width: 3; }
+  .mmarks { display: flex; align-items: center; justify-content: center; gap: 2px;
+    min-height: 12px; }
+  .mmarks img { width: 12px; height: 12px; border-radius: 3px; object-fit: cover;
+    background: var(--sand); }
+  .mdot { width: 7px; height: 7px; border-radius: 999px; background: var(--ember); }
+  /* The day sheet borrows .planitem and .planadd whole. */
+  #daylist { margin-bottom: 4px; }
+  #daylist .lede { margin: 10px 0 0; }
+
+  /* ---------- programs / copy a week ----------
+     A destination is a row you tap, and the weeks it will land on light up
+     together: four weeks should look like four weeks before you commit. Card
+     and --line, not sand — --muted is 4.89 on card and 4.13 on sand. */
+  .copyhead { margin-bottom: 15px; }
+  .copywks { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 10px; }
+  .copysum { font-size: 13px; color: var(--ink-2); line-height: 1.45; }
+  .copysum b { color: var(--ink); font-weight: 700; }
+  .copyweeks { display: flex; flex-direction: column; gap: 6px; }
+  .copyweek { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    width: 100%; min-height: 44px; text-align: left; background: var(--card);
+    border: 1px solid var(--line); border-radius: 12px; padding: 10px 13px;
+    transition: background-color var(--t-2) var(--e-soft), border-color var(--t-2) var(--e-soft),
+      transform var(--t-1) var(--e-out); }
+  .copyweek b { font-size: 14px; font-weight: 700; color: var(--ink); }
+  .copyweek .n { font-size: 12px; font-weight: 600; color: var(--muted); flex: 0 0 auto; }
+  .copyweek:active { transform: scale(.98); }
+  .copyweek.on { background: var(--ember-soft); border-color: var(--ember); }
+  .copyweek.on .n { color: var(--ember-ink); }
+  .copyrep { display: flex; align-items: center; gap: 11px; flex-wrap: wrap; margin: 17px 0 3px; }
+  .copyrep > span { font-size: 13px; font-weight: 700; color: var(--ink-2); }
+  .copychips { display: flex; gap: 6px; flex-wrap: wrap; }
+  /* 44 outright: these wrap, and a hit area that deep would overlap the row. */
+  .copychips .chip { min-width: 44px; justify-content: center;
+    padding: 9px 11px; font-variant-numeric: tabular-nums; }
+  .copywks .chip, .copychips .chip { min-height: 44px; }
+  .planbtn.wide { width: 100%; min-height: 44px; margin-top: 11px; font-size: 13.5px; }
+  /* Already 44, and stacked between two controls whose hit areas it would eat. */
+  .planbtn.wide::after { display: none; }
+  .planbody > .planbtn.wide { margin-top: 16px; }
+  .planbtn .pumpmark { width: 18px; height: 18px; color: var(--ember); flex: 0 0 auto; }
+  .planbtn .pumpmark svg { width: 100%; height: 100%; display: block; }
+  /* The answer without the travel: the pill still moves, instantly. */
+  @media (prefers-reduced-motion: reduce) {
+    .segpill { transition: none; }
+    .planbtn:active, .segbtn, .mcell, .copyweek { transition: none; }
+    .planswap { animation: none; }
+  }
 
   /* ---------- progress / history ---------- */
   .statrow { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; margin: 4px 0 18px; }
@@ -1533,9 +1632,10 @@ export const STYLE = String.raw`<style>
      hit area grows, capped at the gap to the next control so no two overlap.
      Insets come off the padding box: a bordered control needs a pixel more. */
   .iconbtn, .addbtn, .exhelp, .planx, .planadd, .mbtn, .addex, .danger, .libcount,
-  .planlegal a, .planlegal button,
+  .planlegal a, .planlegal button, .segbtn, .planbtn,
   .chips .chip, .said .chip, .pumpyctx button, .threadrow .tdel, .ttitle { position: relative; }
   .iconbtn::after, .addbtn::after, .exhelp::after, .planx::after, .planadd::after,
+  .segbtn::after, .planbtn::after,
   .mbtn::after, .addex::after, .danger::after, .chips .chip::after, .said .chip::after,
   .pumpyctx button::after, .threadrow .tdel::after, .ttitle::after,
   .libcount::after, .planlegal a::after, .planlegal button::after { content: ""; position: absolute; }
@@ -1546,6 +1646,7 @@ export const STYLE = String.raw`<style>
   .exhelp::after { inset: -7px -6px; }
   .planx::after { inset: -7px -4px; }
   .planadd::after, .addex::after { inset: -5px 0; }
+  .segbtn::after, .planbtn::after { inset: -6px 0; }
   .mbtn::after { inset: -6px 0; }
   .danger::after, .threadrow .tdel::after { inset: -3px 0; }
   .chips .chip::after, .said .chip::after { inset: -6px 0; }

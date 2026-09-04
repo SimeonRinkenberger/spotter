@@ -398,6 +398,25 @@ export const MARKUP_BODY = String.raw`</head>
   <div class="picklist" id="picklist"></div>
 </div></div>
 
+<div class="sheet" id="daysheet"><div class="sheetbody">
+  <div class="grabber"></div>
+  <h2 id="daytitle">Day</h2>
+  <div id="daylist"></div>
+  <button class="planadd" id="dayadd">+ Add a workout</button>
+</div></div>
+
+<div class="sheet" id="copysheet"><div class="sheetbody">
+  <div class="grabber"></div>
+  <h2>Copy a week</h2>
+  <div class="copyhead" id="copyhead"></div>
+  <p class="lede">Where should it go?</p>
+  <div class="copyweeks" id="copyweeks"></div>
+  <div class="copyrep"><span>Repeat for</span><div class="copychips" id="copyreps"></div></div>
+  <div class="btnrow"><button class="btn" id="copygo">Copy</button></div>
+  <button class="planbtn wide" id="copypumpy"></button>
+  <button class="danger" id="copyclear">Clear this week</button>
+</div></div>
+
 <div class="sheet" id="colsheet"><div class="sheetbody">
   <div class="grabber"></div>
   <h2 id="coltitle">Collections</h2>
