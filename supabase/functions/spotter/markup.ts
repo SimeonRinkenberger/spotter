@@ -17,6 +17,19 @@ export const MARKUP_HEAD = String.raw`<!DOCTYPE html>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#F5F6F8" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#101214" media="(prefers-color-scheme: dark)">
+<!-- Every read this app makes goes to one host, and the first of them is fired the
+     moment the session is restored — measured at 68ms into the load, which used to
+     be 68ms before DNS, TCP and TLS had even started. dns-prefetch is the fallback
+     for the browsers that ignore preconnect. -->
+<link rel="preconnect" href="https://mtzevoxxpsktmrbbuxva.supabase.co" crossorigin>
+<link rel="dns-prefetch" href="https://mtzevoxxpsktmrbbuxva.supabase.co">
+<!-- supabase-js is the one blocking script and its tag is at the foot of a 480 KB
+     document, so the preload scanner reached it 107ms in on a cold load. Nothing
+     happens in this app until it has run, which makes it critical path. Neither of
+     these carries crossorigin: the script tag itself is a plain one, and a preload
+     that asks for a different mode is a second download, not a head start. -->
+<link rel="preconnect" href="https://cdn.jsdelivr.net">
+<link rel="preload" as="script" href="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <!-- Two font hosts now, so two preconnects: the display face lives at Fontshare,

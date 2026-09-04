@@ -566,8 +566,14 @@ export const STYLE = String.raw`<style>
   .addex:active { transform: scale(.985); }
   .fieldrow { display: flex; gap: 9px; }
   .fieldrow .field { flex: 1; min-width: 0; }
+  /* An original caption is a couple of thousand characters of wrapped text sitting
+     a long way below the fold of a card that has just been opened, and laying it
+     out is the most expensive thing on that screen that nobody is looking at.
+     content-visibility skips it until it is scrolled near; the remembered
+     intrinsic size — auto, so the browser uses the real height after the first
+     time — keeps the scrollbar honest in the meantime. */
   .capbox { font-size: 13.5px; line-height: 1.62; color: var(--ink-2); white-space: pre-wrap;
-    word-break: break-word; }
+    word-break: break-word; content-visibility: auto; contain-intrinsic-size: auto 220px; }
   /* Shown only when the extraction could not be traced back to the source text.
      Deliberately quiet: it is a caveat on a card that still works, not an error. */
   .unverified { display: flex; gap: 9px; align-items: flex-start; font-size: 12.5px;

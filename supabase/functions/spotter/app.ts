@@ -1397,7 +1397,13 @@ export const APP = String.raw`
       }
       if (w.thumb_url) {
         var img = el("img");
-        img.loading = "lazy";
+        // The four thumbnails above the fold are the first thing anybody looks at,
+        // so they are told to hurry and not to wait for anything; the rest keep the
+        // lazy default. decoding=async everywhere, because a thumbnail decoded on
+        // the main thread is a thumbnail decoded during a scroll.
+        img.loading = i < 4 ? "eager" : "lazy";
+        img.decoding = "async";
+        if (i < 4) img.setAttribute("fetchpriority", "high");
         img.alt = "";
         img.src = w.thumb_url;
         img.onload = function () { tw.classList.remove("loading"); tw.classList.add("loaded"); };
@@ -1490,6 +1496,7 @@ export const APP = String.raw`
     } else {
       if (w.thumb_url) {
         var img = el("img", "dphoto");
+        img.decoding = "async";
         img.src = w.thumb_url;
         img.alt = "";
         return img;
@@ -1497,6 +1504,27 @@ export const APP = String.raw`
       return null;
     }
     wrap.appendChild(frame);
+    // A cross-origin iframe and the overlay's entrance want the same frames, and
+    // the iframe wins: it starts a whole third-party page loading in the middle of
+    // a 320ms animation. So the src is held back until the browser has painted the
+    // overlay once — the card arrives clean and the video lands into it a moment
+    // later, which is the order a person reads them in anyway. The timeout is the
+    // belt: a tab that is backgrounded between the tap and the next frame raises
+    // no rAF at all, and the embed still has to be there when it comes back.
+    var href = frame.getAttribute("src");
+    if (href) {
+      frame.removeAttribute("src");
+      frame.setAttribute("loading", "lazy");
+      var placed = false;
+      var go = function () {
+        if (placed) return;
+        placed = true;
+        // Closed again within the frame: nothing to load for a card nobody is on.
+        if (frame.parentNode) frame.setAttribute("src", href);
+      };
+      if (window.requestAnimationFrame) requestAnimationFrame(function () { requestAnimationFrame(go); });
+      setTimeout(go, 200);
+    }
     return wrap;
   }
 

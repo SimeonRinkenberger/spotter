@@ -14,6 +14,19 @@
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#F5F6F8" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#101214" media="(prefers-color-scheme: dark)">
+<!-- Every read this app makes goes to one host, and the first of them is fired the
+     moment the session is restored — measured at 68ms into the load, which used to
+     be 68ms before DNS, TCP and TLS had even started. dns-prefetch is the fallback
+     for the browsers that ignore preconnect. -->
+<link rel="preconnect" href="https://mtzevoxxpsktmrbbuxva.supabase.co" crossorigin>
+<link rel="dns-prefetch" href="https://mtzevoxxpsktmrbbuxva.supabase.co">
+<!-- supabase-js is the one blocking script and its tag is at the foot of a 480 KB
+     document, so the preload scanner reached it 107ms in on a cold load. Nothing
+     happens in this app until it has run, which makes it critical path. Neither of
+     these carries crossorigin: the script tag itself is a plain one, and a preload
+     that asks for a different mode is a second download, not a head start. -->
+<link rel="preconnect" href="https://cdn.jsdelivr.net">
+<link rel="preload" as="script" href="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <!-- Two font hosts now, so two preconnects: the display face lives at Fontshare,
@@ -588,8 +601,14 @@
   .addex:active { transform: scale(.985); }
   .fieldrow { display: flex; gap: 9px; }
   .fieldrow .field { flex: 1; min-width: 0; }
+  /* An original caption is a couple of thousand characters of wrapped text sitting
+     a long way below the fold of a card that has just been opened, and laying it
+     out is the most expensive thing on that screen that nobody is looking at.
+     content-visibility skips it until it is scrolled near; the remembered
+     intrinsic size — auto, so the browser uses the real height after the first
+     time — keeps the scrollbar honest in the meantime. */
   .capbox { font-size: 13.5px; line-height: 1.62; color: var(--ink-2); white-space: pre-wrap;
-    word-break: break-word; }
+    word-break: break-word; content-visibility: auto; contain-intrinsic-size: auto 220px; }
   /* Shown only when the extraction could not be traced back to the source text.
      Deliberately quiet: it is a caveat on a card that still works, not an error. */
   .unverified { display: flex; gap: 9px; align-items: flex-start; font-size: 12.5px;
@@ -3451,7 +3470,13 @@
       }
       if (w.thumb_url) {
         var img = el("img");
-        img.loading = "lazy";
+        // The four thumbnails above the fold are the first thing anybody looks at,
+        // so they are told to hurry and not to wait for anything; the rest keep the
+        // lazy default. decoding=async everywhere, because a thumbnail decoded on
+        // the main thread is a thumbnail decoded during a scroll.
+        img.loading = i < 4 ? "eager" : "lazy";
+        img.decoding = "async";
+        if (i < 4) img.setAttribute("fetchpriority", "high");
         img.alt = "";
         img.src = w.thumb_url;
         img.onload = function () { tw.classList.remove("loading"); tw.classList.add("loaded"); };
@@ -3544,6 +3569,7 @@
     } else {
       if (w.thumb_url) {
         var img = el("img", "dphoto");
+        img.decoding = "async";
         img.src = w.thumb_url;
         img.alt = "";
         return img;
@@ -3551,6 +3577,27 @@
       return null;
     }
     wrap.appendChild(frame);
+    // A cross-origin iframe and the overlay's entrance want the same frames, and
+    // the iframe wins: it starts a whole third-party page loading in the middle of
+    // a 320ms animation. So the src is held back until the browser has painted the
+    // overlay once — the card arrives clean and the video lands into it a moment
+    // later, which is the order a person reads them in anyway. The timeout is the
+    // belt: a tab that is backgrounded between the tap and the next frame raises
+    // no rAF at all, and the embed still has to be there when it comes back.
+    var href = frame.getAttribute("src");
+    if (href) {
+      frame.removeAttribute("src");
+      frame.setAttribute("loading", "lazy");
+      var placed = false;
+      var go = function () {
+        if (placed) return;
+        placed = true;
+        // Closed again within the frame: nothing to load for a card nobody is on.
+        if (frame.parentNode) frame.setAttribute("src", href);
+      };
+      if (window.requestAnimationFrame) requestAnimationFrame(function () { requestAnimationFrame(go); });
+      setTimeout(go, 200);
+    }
     return wrap;
   }
 
