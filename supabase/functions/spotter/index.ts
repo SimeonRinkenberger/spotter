@@ -6526,7 +6526,9 @@ async function aiText(
  */
 async function handleDemoVideo(req: Request, userId: string, cors: Cors): Promise<Response> {
   const body = await req.json().catch(() => ({}));
-  const name = String(body?.exercise ?? "").slice(0, 120).trim();
+  // "exercise" is the field; "name" is what the page shipped as until the morning
+  // of 4 Sept, and a phone holding that page for a day should still get a clip.
+  const name = String(body?.exercise ?? body?.name ?? "").slice(0, 120).trim();
   if (!name) return json({ status: "error", message: "No exercise given." }, 400, cors);
   const canonical = String(body?.canonical_id ?? "").slice(0, 80).trim();
   const query = demoQuery(name);

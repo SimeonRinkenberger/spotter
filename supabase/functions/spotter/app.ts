@@ -6249,13 +6249,19 @@ export const APP = String.raw`
   var QUICKPX = 30;       // px of travel that flick has to have covered
   var PART = 0.4;         // of a page dragged, past which a slow release commits
   var LEAN = 2.14;        // tan 65deg: the most a drag may lean and still be sideways
+  var LEAN_Y = 1.43;      // tan 55deg: the lean allowed over content that could scroll
   var drag = null;
 
-  // Fields, the chip row, the body map, anything that says so: places where a
-  // sideways drag already means something else.
+  // Fields, and anything that says so: places where a sideways drag already
+  // means something else. The chip rows used to be listed here and so did the
+  // body map, and between them they refused most of Progress and the top of
+  // Library outright — a drag that began on a muscle or a creator chip never
+  // paged, whatever angle it left at. A chip row is a scroller, and the scroller
+  // rule below already gives it the drag exactly when it has somewhere to scroll;
+  // the body map only answers taps.
   function noDragIn(node) {
     return !!(node && node.closest && node.closest(
-      "input, textarea, select, [contenteditable], .chips, .bodybox, [data-noswipe]"));
+      "input, textarea, select, [contenteditable], [data-noswipe]"));
   }
 
   // A sideways scroller between the finger and the page owns the gesture. The
@@ -6343,11 +6349,14 @@ export const APP = String.raw`
       // away the first time the finger wandered 8px vertical; a finger swiping
       // across a phone held in one hand wanders.
       if (ax * ax + ay * ay < SLOP * SLOP) return;
-      // 45 degrees, widened to 65 when nothing underneath could scroll that way.
+      // 55 degrees over content that could scroll, 65 where nothing underneath
+      // could scroll that way. Wider than the 45 a native pager uses, on purpose:
+      // the owner swipes one-handed and a thumb's sideways stroke arcs, and a
+      // page that will not turn is a worse fault than a scroll that turns one.
       // The exception is Library sitting at its top with the finger coming down:
       // that is the pull to refresh, and it keeps the strict angle so a swipe has
       // to look like a swipe.
-      var lean = (!scrollableY(drag.on, dy) && !(ptrPulling && dy > 0)) ? LEAN : 1;
+      var lean = (ptrPulling && dy > 0) ? 1 : (scrollableY(drag.on, dy) ? LEAN_Y : LEAN);
       if (ay > ax * lean) { drag = null; return; }
       // Asked here rather than on the touch down: a scroller only owns the drag if
       // it can answer the direction, and the direction is not known until now.
