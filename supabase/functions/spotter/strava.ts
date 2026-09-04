@@ -165,6 +165,10 @@ async function sDelete(table: string, query: string): Promise<void> {
 // could paste their own code onto somebody else's id and connect a Strava account
 // to an account they do not own. So it is signed, it carries a nonce so two
 // connects in the same second are different strings, and it expires.
+//
+// It is deliberately not a one-time token: keeping a nonce store to burn would be
+// a table and a sweep for a ten-minute window that only ever travels between the
+// user's own browser and strava.com over TLS. Ten minutes is the mitigation.
 
 function b64url(bytes: Uint8Array): string {
   let s = "";
