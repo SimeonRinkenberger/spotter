@@ -626,7 +626,7 @@
     z-index: 85; background: var(--scrim); display: flex; align-items: flex-end;
     visibility: hidden; pointer-events: none; opacity: 0;
     transition: opacity var(--t-2) var(--e-soft); }
-  /* Only while it moves: 14 permanent layers is memory for nothing. */
+  /* Only while it moves: 14 permanent layers is memory wasted. */
   .sheet.open { visibility: visible; pointer-events: auto; opacity: 1; will-change: opacity; }
   .sheet.closing { visibility: visible; will-change: opacity; }
   .sheet.open .sheetbody, .sheet.closing .sheetbody { will-change: transform; }
@@ -639,7 +639,7 @@
     background-image: var(--grain); border-radius: 26px 26px 0 0; box-shadow: var(--sh-up);
     padding: 8px 20px calc(26px + var(--sab));
     transform: translateY(100%); transition: transform var(--t-2) var(--e-in); }
-  /* Arriving is the slower, springier half, as iOS presents a sheet in about .4s. */
+  /* The slower, springier half: iOS presents a sheet in about .4s. */
   .sheet.open .sheetbody { transform: none; transition: transform .38s var(--e-spring); }
   /* The finger is the animation, so nothing may be timed — and it has to outrank
      the open rule above or the drag lags a frame behind the thumb. Taken off with
@@ -7795,9 +7795,8 @@
     var n = $(id), b = n.querySelector(".sheetbody");
     clearTimeout(closeTimers[id]);
     n.classList.remove("closing");
-    // Whatever a drag left behind, plus the scroller display:none used to wind
-    // back for free and Settings needs at its top. Both before .open, so the
-    // transition it starts really begins at the closed position.
+    // Whatever a drag left behind, plus the scroller display:none wound back for
+    // free and Settings needs at its top. Before .open, so its transition is honest.
     if (b) { b.classList.remove("dragging"); b.style.transform = ""; b.scrollTop = 0; }
     n.classList.add("open");
     if (!sheetNav) { sheetNav = true; history.pushState({ sheet: id }, ""); }

@@ -5726,9 +5726,8 @@ export const APP = String.raw`
     var n = $(id), b = n.querySelector(".sheetbody");
     clearTimeout(closeTimers[id]);
     n.classList.remove("closing");
-    // Whatever a drag left behind, plus the scroller display:none used to wind
-    // back for free and Settings needs at its top. Both before .open, so the
-    // transition it starts really begins at the closed position.
+    // Whatever a drag left behind, plus the scroller display:none wound back for
+    // free and Settings needs at its top. Before .open, so its transition is honest.
     if (b) { b.classList.remove("dragging"); b.style.transform = ""; b.scrollTop = 0; }
     n.classList.add("open");
     if (!sheetNav) { sheetNav = true; history.pushState({ sheet: id }, ""); }
