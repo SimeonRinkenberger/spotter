@@ -4707,17 +4707,63 @@ async function dbCount(table: string, query: string): Promise<number> {
 // Resolve the caller from their Supabase access token. Deliberately an HTTP call
 // rather than local JWT verification: new projects sign with asymmetric keys and
 // the algorithm is not ours to assume.
+//
+// Once per token per isolate, not once per request. The warm floor of /api/limits
+// was measured at ~840ms and this round trip to Auth is on the front of every API
+// call the app makes; a token that Auth vouched for a minute ago is the same
+// person a minute later. The cache is keyed by a hash of the token, never the
+// token, and it can only ever be SHORTER-lived than the token: the JWT's own exp
+// is read (unverified — it is used for nothing but trimming the lifetime, the
+// identity always came from Auth) and the entry ends at the earlier of that and
+// five minutes. A signed-out session therefore lingers here for at most five
+// minutes, and only for the edge function's own routes: every PostgREST read the
+// app makes still carries the token to the database, which checks it itself.
+const AUTH_CACHE_TTL = 5 * 60 * 1000;
+const AUTH_CACHE_MAX = 500;
+const authCache = new Map<string, { id: string; until: number }>();
+
+async function tokenKey(token: string): Promise<string> {
+  const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
+  return Array.from(new Uint8Array(d)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/** The token's own expiry in ms, or null when it cannot be read. Never trusted for identity. */
+function tokenExp(token: string): number | null {
+  try {
+    const part = token.split(".")[1] ?? "";
+    const exp = JSON.parse(atob(part.replace(/-/g, "+").replace(/_/g, "/")))?.exp;
+    return typeof exp === "number" ? exp * 1000 : null;
+  } catch {
+    return null;
+  }
+}
+
 async function userFromBearer(req: Request): Promise<string | null> {
   const auth = req.headers.get("authorization") ?? "";
   const token = auth.replace(/^Bearer\s+/i, "").trim();
   if (!token || token === ANON_KEY) return null;
+  let key = "";
+  try {
+    key = await tokenKey(token);
+    const hit = authCache.get(key);
+    if (hit && hit.until > Date.now()) return hit.id;
+  } catch { /* no cache this time; Auth still answers */ }
   try {
     const r = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
       headers: { apikey: ANON_KEY, authorization: `Bearer ${token}` },
     });
     if (!r.ok) { await r.body?.cancel(); return null; }
     const u = await r.json();
-    return typeof u?.id === "string" ? u.id : null;
+    const id = typeof u?.id === "string" ? u.id : null;
+    if (id && key) {
+      const exp = tokenExp(token);
+      const until = Math.min(Date.now() + AUTH_CACHE_TTL, exp ?? Infinity);
+      if (until > Date.now()) {
+        if (authCache.size >= AUTH_CACHE_MAX) authCache.delete(authCache.keys().next().value as string);
+        authCache.set(key, { id, until });
+      }
+    }
+    return id;
   } catch (e) {
     console.error("auth lookup failed", e);
     return null;
@@ -8836,26 +8882,26 @@ Deno.serve(async (req: Request) => {
 
     if (req.method === "GET" && path === "/api/limits") {
       await ensureConfig();
-      const counts = await countsFor(userId);
+      // Six independent reads, asked together. They used to be asked one after
+      // another — counts, then spend, then the cache rate, then the rest — and
+      // the answer took the sum of their round trips rather than the longest.
       // The spend figures are global rather than per-user: the ceiling protects the
       // project's bill, and it is the one number that has to be visible from
-      // outside the logs when extraction quietly drops to the free path.
-      const spent = await spendToday();
-      // How much of today's input the providers billed at the cached rate. Null
-      // when there is nothing to divide by, or when the rollup cannot be read.
-      const cachePct = await cachePctToday();
-      // Pumpy's credits, in exactly the shape the chat route returns, so the app
-      // has one thing to render whichever call it heard from last — and the
-      // caller's plan and its caps, asked at the same time rather than after.
-      // The old flat `limit_*` fields stay and now carry the plan's numbers, so
-      // a live app that has not been reloaded yet keeps working and simply reads
-      // the right ceiling. `null` is unlimited in both shapes.
+      // outside the logs when extraction quietly drops to the free path. The cache
+      // rate is how much of today's input the providers billed at the cached
+      // rate — null when there is nothing to divide by, or when the rollup cannot
+      // be read. Pumpy's credits come in exactly the shape the chat route returns,
+      // so the app has one thing to render whichever call it heard from last, and
+      // the caller's plan and its caps are asked at the same time rather than
+      // after. The old flat `limit_*` fields stay and carry the plan's numbers,
+      // so a live app that has not been reloaded yet keeps working and simply
+      // reads the right ceiling; `null` is unlimited in both shapes.
       // `library_count` rides along because the Library page's counter — "12 of
       // 20 saved" — is the paywall's quietest and most-seen surface, and it would
       // otherwise need a count of its own on every visit.
-      const [meter, uc, held] = await settledAll<any>(
-        [pumpyMeter(userId), capsFor(userId), libraryCount(userId)],
-      ) as [PumpyMeter, UserCaps, number];
+      const [counts, spent, cachePct, meter, uc, held] = await settledAll<any>(
+        [countsFor(userId), spendToday(), cachePctToday(), pumpyMeter(userId), capsFor(userId), libraryCount(userId)],
+      ) as [Counts, number, number | null, PumpyMeter, UserCaps, number];
       return json({
         status: "ok",
         plan: uc.plan,
