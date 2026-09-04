@@ -4634,6 +4634,9 @@ export const APP = String.raw`
       main.appendChild(prs);
     }
 
+    // The card, and every way off this phone with it.
+    main.appendChild(shareRow(payload, logged));
+
     var done = el("button", "btn sumdone", "Done");
     done.onclick = leaveWorkout;
     main.appendChild(done);
@@ -5054,6 +5057,198 @@ export const APP = String.raw`
     return scCard(by[l.workout_id] || {}, l.workout_title, l.started_at,
       Math.max(1, Math.round((l.duration_seconds || 60) / 60)), sets,
       volumeOf(l), [], l.entries || []);
+  }
+
+  // ---------- the doorway ----------
+  //
+  // Draw first, then offer. A share sheet has to open inside the tap that opened
+  // it: transient activation is a timer of a few seconds which share() then
+  // spends, and WebKit's own note on it names "the file took too long to
+  // produce" as the way this goes wrong. So the card is drawn when the summary
+  // mounts, the buttons are built out of the File that came back, and the tap
+  // handler below has nothing left to wait for. Nothing may be added to it.
+
+  function scForget() {
+    if (sc.url) URL.revokeObjectURL(sc.url);
+    sc.url = sc.blob = sc.file = sc.card = sc.img = sc.hint = null;
+  }
+
+  // The summary leaves by Done, by the back gesture, or by a resumed draft over
+  // the top of it, and all three end with #workout losing .summary. Watching the
+  // class is the one hook that does not reach into Workout Mode's own exit.
+  function scWatchSummary() {
+    if (sc.watching || !window.MutationObserver) return;
+    sc.watching = true;
+    var n = $("workout");
+    new MutationObserver(function () {
+      if (!n.classList.contains("summary")) scForget();
+    }).observe(n, { attributes: true, attributeFilter: ["class"] });
+  }
+
+  function scPaint() {
+    var mine = ++sc.seq;
+    sc.card.theme = sc.theme;
+    return renderShareCard(sc.card).then(function (b) {
+      if (mine !== sc.seq) return null;        // a second chip tap already won
+      if (sc.url) URL.revokeObjectURL(sc.url);
+      sc.blob = b;
+      sc.file = null;
+      // Web Share will not take a bare Blob, and the oldest WebKit here has no
+      // File constructor at all — there the download path still works.
+      try { sc.file = new File([b], "spotter-workout.png", { type: "image/png" }); }
+      catch (e) { /* no File, no sheet */ }
+      sc.url = URL.createObjectURL(b);
+      if (sc.img) { sc.img.src = sc.url; sc.img.classList.add("in"); }
+      return b;
+    });
+  }
+
+  // canShare needs no user activation, so what this phone can do is settled while
+  // the card is drawn rather than found out inside the tap.
+  function scCan() {
+    if (!navigator.share) return 0;
+    if (sc.file && navigator.canShare) {
+      try { if (navigator.canShare({ files: [sc.file] })) return 2; } catch (e) { /* older */ }
+    }
+    return 1;
+  }
+
+  // The last fallback, and the reason this cannot really break: an image on the
+  // screen can always be pressed and saved.
+  function scHold() {
+    if (sc.hint) sc.hint.textContent = "Hold the preview to save it.";
+  }
+
+  function scShare() {
+    haptic("tap");
+    if (!sc.file) { scHold(); return; }
+    try {
+      // No title and no text: on iOS some targets carry the text instead of the
+      // image, which is the opposite of what this button is for.
+      var p = navigator.share({ files: [sc.file] });
+      // Cancelling a sheet is not failing, and the browsers disagree on what to
+      // call everything else, so nothing here matches on a name.
+      if (p && p.then) p.then(null, function (e) {
+        if (!e || e.name !== "AbortError") scHold();
+      });
+    } catch (e) { scHold(); }
+  }
+
+  // A phone with a share sheet that will not take files still shares a link.
+  function scLinkShare() {
+    haptic("tap");
+    try {
+      var p = navigator.share({ title: "Spotter", text: sc.card ? sc.card.title : "Workout",
+        url: location.origin + location.pathname });
+      if (p && p.then) p.then(null, function () { /* cancelled, or nothing took it */ });
+    } catch (e) { scHold(); }
+  }
+
+  // An anchor over a blob URL, never a navigation: in a standalone PWA a step out
+  // of scope ejects the whole session into Safari.
+  function scSave() {
+    haptic("tap");
+    if (!sc.url) { scHold(); return; }
+    var a = el("a");
+    a.href = sc.url;
+    a.download = "spotter-workout.png";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    toast("Saved spotter-workout.png", 3600);
+  }
+
+  function scCopy() {
+    haptic("tap");
+    var it = {};
+    it["image/png"] = sc.blob;
+    navigator.clipboard.write([new ClipboardItem(it)])
+      .then(function () { toast("Card copied."); }, scHold);
+  }
+
+  function scBtn(label, cls, mark, fn) {
+    var b = el("button", cls);
+    b.type = "button";
+    if (mark) icon(b, mark, label); else b.textContent = label;
+    b.onclick = fn;
+    return b;
+  }
+
+  // Save image is not an error path. On iOS it is how most people get a card into
+  // a Story, so it stands next to Share at the same size — and where the sheet
+  // exists it IS the sheet, because the sheet's own Save Image is the route to
+  // Photos. Only a browser with no sheet at all gets a download.
+  function scButtons(btns) {
+    var can = scCan();
+    if (can === 2) {
+      btns.appendChild(scBtn("Share", "btn", "share", scShare));
+      btns.appendChild(scBtn("Save image", "btn ghost", null, scShare));
+    } else if (can === 1) {
+      btns.appendChild(scBtn("Share", "btn", "share", scLinkShare));
+      btns.appendChild(scBtn("Save image", "btn ghost", null, scSave));
+    } else {
+      btns.appendChild(scBtn("Download", "btn", null, scSave));
+      if (window.ClipboardItem && navigator.clipboard && navigator.clipboard.write) {
+        btns.appendChild(scBtn("Copy image", "btn ghost", null, scCopy));
+      }
+    }
+    btns.classList.add("in");
+  }
+
+  function shareRow(payload, logged) {
+    var wrap = el("div", "sharewrap");
+    sc.card = scFromSession(payload, logged);
+    scWatchSummary();
+
+    var row = el("div", "sharerow");
+    var prev = el("div", "scprev");
+    sc.img = el("img");
+    sc.img.alt = "The session as a card, ready to share";
+    prev.appendChild(sc.img);
+    row.appendChild(prev);
+
+    var side = el("div", "scside");
+    var chips = el("div", "scchips"), pair = [];
+    ["dark", "light"].forEach(function (t) {
+      var b = el("button", "scchip", t === "dark" ? "Dark" : "Light");
+      b.type = "button";
+      b.setAttribute("aria-pressed", sc.theme === t ? "true" : "false");
+      b.onclick = function () {
+        if (sc.theme === t) return;
+        sc.theme = t;
+        try { localStorage.setItem("spotter_card", t); } catch (e) { /* ignore */ }
+        pair.forEach(function (x) {
+          x[0].setAttribute("aria-pressed", x[1] === t ? "true" : "false");
+        });
+        haptic("tap");
+        scPaint();
+      };
+      pair.push([b, t]);
+      chips.appendChild(b);
+    });
+    side.appendChild(chips);
+    sc.hint = el("div", "schint",
+      "Share to Instagram, TikTok, Messages — or save it to Photos.");
+    side.appendChild(sc.hint);
+    row.appendChild(side);
+    wrap.appendChild(row);
+
+    var btns = el("div", "scbtns");
+    wrap.appendChild(btns);
+    scPaint().then(function (b) {
+      if (b) scButtons(btns);
+    }, function () {
+      // No card, no doorway. An unchanged summary beats a button that cannot.
+      if (wrap.parentNode) wrap.parentNode.removeChild(wrap);
+    });
+
+    // Strava is another agent's button and another agent's connection; this row
+    // only leaves room for it under ours.
+    if (typeof stravaBtn === "function") {
+      var sbn = stravaBtn(payload);
+      if (sbn) wrap.appendChild(sbn);
+    }
+    return wrap;
   }
 
   // ---------- plan ----------
