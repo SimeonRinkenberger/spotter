@@ -1416,6 +1416,16 @@ export const STYLE = String.raw`<style>
   /* Both top-bar tools go quiet on the summary: there is no list left to open and
      no clock left to mute, and a control that does nothing is a small lie. */
   #workout.summary #wlist, #workout.summary #wsound { visibility: hidden; }
+  /* ---------- the share card ----------
+     The one thing a finished session can leave the phone as. Both card palettes
+     live here rather than in the draw code, and both are written out in full so
+     the card's theme stays the poster's choice and not the phone's scheme:
+     ground, panel, ink, quiet ink, ember, hairline. */
+  :root {
+    --sc-dark: #0E1013 #171B20 #F2F5F8 #98A3AF #FF7A45 #2A3138;
+    --sc-light: #F1F3F6 #FFFFFF #14171A #68727E #E8551F #E2E6EC;
+  }
+
   .sumfigs { margin-top: 20px; }
   .sumfigs .setpill b { font-size: 23px; letter-spacing: -.035em; }
   .sumfigs .setpill, .sumprs .setpill { animation: viewin var(--t-2) var(--e-out) both; }
@@ -1425,6 +1435,43 @@ export const STYLE = String.raw`<style>
   .sumprs .setpill { animation-delay: 210ms; }
   .sumprs .setpill b { color: var(--ember-ink); font-size: 12px; }
   .sumdone { margin-top: 24px; animation: viewin var(--t-3) var(--e-out) 260ms both; }
+  /* The card's own row: a preview at the size of a thumbnail, the two themes
+     beside it, and the buttons under both. The buttons are only added once the
+     File exists, so one that says Share is one that can. */
+  .sharewrap { margin-top: 22px; animation: viewin var(--t-2) var(--e-out) 250ms both; }
+  .sharerow { display: flex; gap: 14px; }
+  .scprev { flex: 0 0 140px; width: 140px; height: 249px; border-radius: 16px;
+    overflow: hidden; background: var(--sand); border: 1px solid var(--line);
+    box-shadow: var(--sh-md); }
+  .scprev img { width: 100%; height: 100%; display: block; object-fit: cover; opacity: 0;
+    transition: opacity var(--t-3) var(--e-out); }
+  .scprev img.in { opacity: 1; }
+  .scside { flex: 1; min-width: 0; display: flex; flex-direction: column;
+    justify-content: center; gap: 12px; }
+  .scchips { display: flex; gap: 8px; }
+  .scchip { flex: 1; min-width: 0; min-height: 44px; padding: 10px 4px; font-size: 13px;
+    font-weight: 650; border: 1px solid var(--line-2); border-radius: 12px;
+    background: var(--card); color: var(--ink-2);
+    transition: background-color var(--t-2), border-color var(--t-2), color var(--t-2); }
+  .scchip[aria-pressed="true"] { background: var(--pill); border-color: var(--ember);
+    color: var(--ember-ink); }
+  .schint { font-size: 11.5px; line-height: 1.45; color: var(--muted); }
+  .scbtns { display: flex; flex-direction: column; gap: 9px; }
+  .scbtns.in { margin-top: 14px; animation: viewin var(--t-2) var(--e-out) both; }
+  .scbtns .btn { padding: 13px; font-size: 15px; }
+  @media (prefers-reduced-motion: reduce) {
+    .sharewrap, .scbtns.in { animation-name: fadeonly; animation-delay: 0ms; }
+    .scprev img { transition: none; }
+  }
+  /* On a past session there is no room for a preview, so the card is drawn on
+     the tap and handed straight to the sheet. Strava's button lands beside it. */
+  .cardacts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .scmini { display: inline-flex; align-items: center; gap: 7px; min-height: 44px;
+    padding: 11px 15px; border: 1px solid var(--line-2); border-radius: 999px;
+    background: var(--card); color: var(--ink-2); font-size: 13px; font-weight: 600;
+    transition: transform var(--t-1) var(--e-out), opacity var(--t-2); }
+  .scmini .ic { width: 15px; height: 15px; }
+  .scmini:active { transform: scale(.96); }
   /* The clip, in a sheet, at the moment it is wanted. Shorter than the detail
      view's embed so the close button stays on screen with it. */
   #watchbody .embedwrap, #watchbody .dphoto { margin-bottom: 14px; }
