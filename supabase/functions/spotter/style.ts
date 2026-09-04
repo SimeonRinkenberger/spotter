@@ -1073,11 +1073,48 @@ export const STYLE = String.raw`<style>
      move, so sliding the body up under it would be one arrival too many. */
   .planswap { animation: planswap var(--t-2) var(--e-out); }
   @keyframes planswap { from { opacity: 0; } }
+
+  /* ---------- plan / the month ----------
+     iOS Calendar's compact month, which draws a day as a number and a couple of
+     marks and lets the count of marks do the talking. Seven columns inside a
+     375px phone leave about 45px each, so every number below is measured against
+     that: three 12px marks and two 2px gaps come to 40, and the cell has 42 to
+     give. Nothing here may grow without that sum being redone. */
+  .mgrid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; }
+  .mdow { text-align: center; font-size: 10px; font-weight: 700; letter-spacing: .08em;
+    color: var(--muted); padding-bottom: 5px; }
+  .mcell { display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+    gap: 4px; min-height: 56px; padding: 7px 1px; background: var(--card);
+    border: 1px solid var(--line); border-radius: 11px; box-shadow: var(--sh-sm);
+    transition: transform var(--t-1) var(--e-out); }
+  .mcell:active { transform: scale(.93); }
+  /* The days either side of the month are present and tappable but stop being
+     cards: a grid of 35 equal boxes hides where the month begins. */
+  .mcell.out { background: none; border-color: transparent; box-shadow: none; }
+  /* Quieted by colour and weight, not by opacity: --muted is the one grey in
+     here measured against paper (4.52), and a date faded to .45 of the ink lands
+     at 3.4 and stops being AA. */
+  .mcell.out .mnum { color: var(--muted); font-weight: 600; }
+  .mcell.today { border-color: var(--ember); box-shadow: 0 0 0 1px var(--ember); }
+  .mtop { display: flex; align-items: center; justify-content: center; gap: 2px; line-height: 1; }
+  .mnum { font-size: 12.5px; font-weight: 700; color: var(--ink);
+    font-variant-numeric: tabular-nums; }
+  .mcell.today .mnum { color: var(--ember-ink); }
+  .mtop .ic { width: 10px; height: 10px; color: var(--good); stroke-width: 3; }
+  .mmarks { display: flex; align-items: center; justify-content: center; gap: 2px;
+    min-height: 12px; }
+  .mmarks img { width: 12px; height: 12px; border-radius: 3px; object-fit: cover;
+    background: var(--sand); }
+  .mdot { width: 7px; height: 7px; border-radius: 999px; background: var(--ember); }
+  /* The day sheet borrows .planitem and .planadd whole, so a workout looks the
+     same however you reached it. Only the gap above the button is its own. */
+  #daylist { margin-bottom: 4px; }
+  #daylist .lede { margin: 10px 0 0; }
   /* Reduced motion keeps the answer and drops the travel: the pill is still the
      thing that says which mode you are in, so it moves, instantly. */
   @media (prefers-reduced-motion: reduce) {
     .segpill { transition: none; }
-    .planbtn:active, .segbtn { transition: none; }
+    .planbtn:active, .segbtn, .mcell { transition: none; }
     .planswap { animation: none; }
   }
 

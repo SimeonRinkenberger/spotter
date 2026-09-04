@@ -387,6 +387,13 @@ export const MARKUP_BODY = String.raw`</head>
   <div class="picklist" id="picklist"></div>
 </div></div>
 
+<div class="sheet" id="daysheet"><div class="sheetbody">
+  <div class="grabber"></div>
+  <h2 id="daytitle">Day</h2>
+  <div id="daylist"></div>
+  <button class="planadd" id="dayadd">+ Add a workout</button>
+</div></div>
+
 <div class="sheet" id="colsheet"><div class="sheetbody">
   <div class="grabber"></div>
   <h2 id="coltitle">Collections</h2>

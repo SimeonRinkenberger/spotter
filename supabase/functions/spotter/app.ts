@@ -4518,6 +4518,9 @@ export const APP = String.raw`
     planBody.innerHTML = "";
     planBody.classList.remove("planswap");
     if (planMode === "month") renderMonth(planBody); else renderWeek(planBody);
+    // The day sheet is a second window onto these same rows. Redraw it here and
+    // the two can never disagree about what is planned.
+    if ($("daysheet").classList.contains("open")) renderDay();
     // A mode switch is a crossfade, not an arrival: the bar above it did not
     // move, so sliding the body up under it would be one gesture too many.
     if (planSwap) { planSwap = false; void planBody.offsetWidth; planBody.classList.add("planswap"); }
@@ -4635,17 +4638,80 @@ export const APP = String.raw`
         var cell = el("button", "mcell" + (out ? " out" : "") + (key === todayStr ? " today" : ""));
         var top = el("div", "mtop");
         top.appendChild(el("span", "mnum", String(d.getDate())));
+        var did = loggedOn(key);
+        // The tick is the only thing in a cell that reports the past. It sits
+        // beside the number rather than among the marks, because a mark says
+        // what is coming and this one says what happened.
+        if (did) top.appendChild(ic("check"));
         cell.appendChild(top);
-        if (!out && loggedOn(key)) done++;
-        cell.appendChild(el("div", "mmarks"));
+
+        var ws = rowsFor(key).map(function (row) { return planWorkout(row.workout_id); })
+          .filter(Boolean);
+        if (!out) { planned += ws.length; if (did) done++; }
+        var marks = el("div", "mmarks");
+        // Three and no more, and no "+2" after them: at 45px a cell can hold the
+        // count or the pictures, and the pictures are what makes a month of
+        // workouts recognisable at a glance. The day sheet holds the rest.
+        ws.slice(0, 3).forEach(function (w) {
+          if (!w.thumb_url) { marks.appendChild(el("span", "mdot")); return; }
+          var img = el("img");
+          img.src = w.thumb_url;
+          img.alt = "";
+          marks.appendChild(img);
+        });
+        cell.appendChild(marks);
+        // The cell is a button with three pictures in it and nothing a screen
+        // reader could read, so the whole sentence is written out here.
         cell.setAttribute("aria-label", d.toLocaleDateString(undefined,
-          { weekday: "long", month: "long", day: "numeric" }));
+          { weekday: "long", month: "long", day: "numeric" }) +
+          (ws.length ? ", " + ws.length + " planned" : ", nothing planned") +
+          (did ? ", trained" : ""));
+        cell.onclick = function () { openDay(key); };
         grid.appendChild(cell);
       })(i);
     }
     v.appendChild(grid);
     v.appendChild(planSummary(planned + " planned · " + done + " done in " +
       monthStart.toLocaleDateString(undefined, { month: "long" })));
+  }
+
+  // ---------- plan / one day ----------
+  //
+  // Apple's Calendar in List density answers a tapped day in place rather than
+  // pushing a screen at you, and that is the right size of answer here too: the
+  // month is the thing you came to read, and a sheet gives the day back without
+  // taking it away. Google Calendar's month behaves the same way — tap a date,
+  // see that date. So: what is on it, and one way to add to it.
+
+  var dayKey = null;
+
+  function openDay(key) {
+    dayKey = key;
+    renderDay();
+    openSheet("daysheet");
+  }
+
+  function renderDay() {
+    if (!dayKey) return;
+    var d = dayDate(dayKey);
+    var label = d.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+    $("daytitle").textContent = label;
+    var list = $("daylist");
+    list.innerHTML = "";
+    var rows = rowsFor(dayKey);
+    if (!rows.length) list.appendChild(el("p", "lede", "Nothing planned for this day."));
+    rows.forEach(function (row) {
+      var item = planItem(row);
+      if (item) list.appendChild(item);
+    });
+    // The picker is handed the sheet rather than stacked on top of it: opened
+    // first so the history entry never falls to the floor between the two, and
+    // the day slides away behind it.
+    $("dayadd").onclick = function () {
+      var key = dayKey;
+      openPicker(key, label);
+      closeSheet("daysheet");
+    };
   }
 
   // Named the way the card that opened it names the day — "Add to Thursday 3",
@@ -6224,7 +6290,8 @@ export const APP = String.raw`
   }
 
   ["addsheet", "setsheet", "watchsheet", "exsheet", "exeditsheet", "explainsheet", "picksheet",
-   "settingssheet", "colsheet", "renamesheet", "swapsheet", "pumpysheet", "capsheet", "plansheet"]
+   "settingssheet", "colsheet", "renamesheet", "swapsheet", "pumpysheet", "capsheet", "plansheet",
+   "daysheet"]
     .forEach(wireSheet);
 
   function overlayShowing() {
