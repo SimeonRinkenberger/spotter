@@ -544,37 +544,32 @@ export const STYLE = String.raw`<style>
     text-transform: uppercase; color: var(--muted); margin: 0 0 12px; }
   .blockmeta { font-size: 11.5px; color: var(--muted); margin-bottom: 11px; font-weight: 600; }
   /* ---------- an exercise row, and the drawer behind it ----------
-     Three buttons on every line is three things to sort past before the eye can
-     read the exercise. They are behind a leftward swipe now, where Mail and Notes
-     keep theirs: .exrow is the window, .exmain the content that slides, .exacts
-     the drawer waiting under it. The row bleeds back through .sect's 16px padding
-     so the buttons meet the card's edge — a native inset-grouped cell leaves no
-     gutter between an action and the side of the screen. No touch-action, for the
-     same reason the pager declares none: WebKit must wait for app.ts to say which
-     axis this was. */
+     .exrow is the window, .exmain the content that slides, .exacts the drawer under
+     it. The row bleeds back through .sect's 16px padding so the buttons meet the
+     card edge, as an inset-grouped cell does. No touch-action, for the pager's
+     reason: WebKit must wait for app.ts to name the axis. */
   .exrow { position: relative; overflow: hidden; margin: 0 -16px; --exw: 64px; }
-  /* The hairline used to be the row's own border and would now travel with the
-     content. Drawn instead, inset where it has always been, and left behind. */
+  /* The hairline was the row's border and would now travel with the content.
+     Drawn instead, inset where it was, and left behind. */
   .exrow::before { content: ""; position: absolute; left: 16px; right: 16px; top: 0;
     height: 1px; background: var(--line); }
   .exrow:first-of-type::before { display: none; }
-  /* Padding, not margin, so the row itself reaches the card edge while the words
-     stay exactly where they were. 44px is the floor a one-line row would miss. */
+  /* Padding, not margin: the row reaches the card edge, the words do not move.
+     44px is the floor a one-line row would otherwise miss. */
   .exmain { display: flex; align-items: flex-start; gap: 11px; padding: 11px 16px;
-    min-height: 44px; position: relative; -webkit-user-select: none; user-select: none;
+    min-height: 44px; position: relative; cursor: pointer;
+    -webkit-user-select: none; user-select: none;
     transition: transform var(--t-3) var(--e-spring), background var(--t-1) var(--e-out); }
-  /* iOS lights a row the moment it is touched, not when the finger leaves. The
-     class comes off again the instant the travel says this was a scroll. */
-  .exrow.press .exmain { background: var(--sand); }
+  /* iOS lights a row on touch and drops it when the finger scrolls, which is what
+     :active means there — and cursor: pointer is what turns it on. */
+  .exmain:active { background: var(--sand); }
   .exname { flex: 1; min-width: 0; font-size: 14.5px; line-height: 1.35; font-weight: 550; }
   .exnote { font-size: 12px; color: var(--muted); margin-top: 3px; line-height: 1.45; font-weight: 400; }
   .exdose { flex: 0 0 auto; font-family: var(--display); font-size: 13.5px; font-weight: 700;
     color: var(--ember-ink); font-variant-numeric: tabular-nums; padding-top: 1px; }
   .exacts { position: absolute; top: 0; right: 0; bottom: 0; display: flex;
     transition: transform var(--t-3) var(--e-spring); transform: translateX(100%); }
-  /* A mark over a word: what iOS 26 shows by default, and the word is also what a
-     screen reader would otherwise have to guess. Closed, each button is folded
-     onto the one to its right — they unfold as the content slides away. */
+  /* Closed, each button is folded onto the one to its right. */
   .exact { width: var(--exw); border: 0; padding: 0; background: var(--sand); color: var(--ink-2);
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
     font-size: 10.5px; font-weight: 650; line-height: 1;
@@ -593,7 +588,7 @@ export const STYLE = String.raw`<style>
   /* While a finger is on it the row is not animating, it is being moved. */
   .exrow.drag .exmain, .exrow.drag .exacts, .exrow.drag .exact { transition: none; }
   /* A mouse has no swipe. Hover lays the drawer over the end of the row rather
-     than pushing the row aside, which is what a list on a desktop does. */
+     than pushing the row aside, as a desktop list does. */
   @media (hover: hover) {
     .exrow:hover .exacts, .exrow:hover .exact { transform: none; }
   }
@@ -1534,8 +1529,7 @@ export const STYLE = String.raw`<style>
     /* The staggered summary is :nth-child, which outranks the rule above it. */
     .sumfigs .setpill:nth-child(n) { animation-delay: 0ms; }
     .sheetbody.snap { transition: none; }
-    /* The row still has to answer the finger, so the travel stays — it is the
-       gesture itself. What goes is the spring and most of the time it takes. */
+    /* The travel stays: it is the gesture itself. The spring goes. */
     .exmain, .exacts, .exact {
       transition-duration: var(--t-1); transition-timing-function: var(--e-soft); }
     .sheetbody, .sheet.closing .sheetbody, .setpill.just, .setpill.just.pr,
