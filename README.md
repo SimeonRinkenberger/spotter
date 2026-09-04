@@ -769,7 +769,25 @@ Terms of service and the payments section of the privacy policy are the frontend
 
 ### What the person sees
 
-(frontend wave)
+Nothing, until Stripe is configured. With a key set, a free account sees one slim line above
+the library grid — `12 of 20 saved · Plus` — which turns ember at sixteen and opens the plan
+sheet; the save receipt adds `That is 16 of your 20 saved workouts.` from the same point on.
+Everything else is a refusal answering for itself: any cap a paid plan would lift opens that
+sheet with one line above the title naming the number, the reset and what Plus does about it,
+while a cap no plan lifts keeps today's plain toast. Pumpy never gets a sheet thrown over him —
+his ceiling arrives as a `See Plus` chip under the sentence he just said. The sheet is
+`Spotter Plus`: six benefit rows built from the live caps, a yearly card pre-selected against a
+monthly one, the founding price struck through against the standing one while the coupon is
+alive, a computed trial date, `Not now`, and Terms · Privacy · Restore purchase. Buying leaves
+for hosted Checkout and comes back through `docs/billing-return.html`, a static page that
+exists because an installed iOS PWA opens Checkout in an in-app browser with storage of its
+own; the app notices the return by itself and says `Welcome to Plus.` Settings › Plan carries
+the state — `Free`, `Plus · free trial, ends 11 Sep`, `Plus · renews 4 Oct`, `Plus · ends 4 Oct`,
+`Plus · payment failed`, `Staff` — what the day has used, and the buttons into the Stripe
+portal. Without a Stripe key the sheet says plans are coming soon, Settings says `Free` with no
+buttons under it at all, and the library page is the page it is today. The Terms of Use
+(`docs/terms.html`) and the Payments section of the privacy policy were written in plain
+language and have not been reviewed by a lawyer — do that before charging real money.
 
 ## Self-hosting
 

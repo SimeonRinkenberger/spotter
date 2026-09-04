@@ -131,7 +131,7 @@ export const MARKUP_BODY = String.raw`</head>
     <!-- Somebody made this. Software with no maker, no version and no way to say
          something is wrong reads as unowned however good it is, and that absence
          was the loudest thing about this page. -->
-    <div class="landfoot">Made by Simeon Rinkenberger · Free while in beta ·
+    <div class="landfoot">Made by Simeon Rinkenberger · Free to start ·
       <a href="whats-new.html">What&rsquo;s new</a> · <a href="terms.html">Terms</a> ·
       <a href="privacy.html">Privacy</a></div>
   </div>
