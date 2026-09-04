@@ -543,13 +543,57 @@ export const STYLE = String.raw`<style>
   .sect h3 { font-family: var(--display); font-size: 12px; font-weight: 700; letter-spacing: .11em;
     text-transform: uppercase; color: var(--muted); margin: 0 0 12px; }
   .blockmeta { font-size: 11.5px; color: var(--muted); margin-bottom: 11px; font-weight: 600; }
-  .exrow { display: flex; align-items: flex-start; gap: 11px; padding: 11px 0;
-    border-top: 1px solid var(--line); }
-  .exrow:first-of-type { border-top: none; }
+  /* ---------- an exercise row, and the drawer behind it ----------
+     .exrow is the window, .exmain the content that slides, .exacts the drawer under
+     it. The row bleeds back through .sect's 16px padding so the buttons meet the
+     card edge, as an inset-grouped cell does. No touch-action, for the pager's
+     reason: WebKit must wait for app.ts to name the axis. */
+  .exrow { position: relative; overflow: hidden; margin: 0 -16px; --exw: 64px; }
+  /* The hairline was the row's border and would now travel with the content.
+     Drawn instead, inset where it was, and left behind. */
+  .exrow::before { content: ""; position: absolute; left: 16px; right: 16px; top: 0;
+    height: 1px; background: var(--line); }
+  .exrow:first-of-type::before { display: none; }
+  /* Padding, not margin: the row reaches the card edge, the words do not move.
+     44px is the floor a one-line row would otherwise miss. */
+  .exmain { display: flex; align-items: flex-start; gap: 11px; padding: 11px 16px;
+    min-height: 44px; position: relative; cursor: pointer;
+    -webkit-user-select: none; user-select: none;
+    transition: transform var(--t-3) var(--e-spring), background var(--t-1) var(--e-out); }
+  /* iOS lights a row on touch and drops it when the finger scrolls, which is what
+     :active means there — and cursor: pointer is what turns it on. */
+  .exmain:active { background: var(--sand); }
   .exname { flex: 1; min-width: 0; font-size: 14.5px; line-height: 1.35; font-weight: 550; }
   .exnote { font-size: 12px; color: var(--muted); margin-top: 3px; line-height: 1.45; font-weight: 400; }
   .exdose { flex: 0 0 auto; font-family: var(--display); font-size: 13.5px; font-weight: 700;
     color: var(--ember-ink); font-variant-numeric: tabular-nums; padding-top: 1px; }
+  .exacts { position: absolute; top: 0; right: 0; bottom: 0; display: flex;
+    transition: transform var(--t-3) var(--e-spring); transform: translateX(100%); }
+  /* Closed, each button is folded onto the one to its right. */
+  .exact { width: var(--exw); border: 0; padding: 0; background: var(--sand); color: var(--ink-2);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+    font-size: 10.5px; font-weight: 650; line-height: 1;
+    transition: transform var(--t-3) var(--e-spring);
+    transform: translateX(calc(var(--i, 0) * var(--exw) * -1)); }
+  .exact:nth-child(2) { --i: 1; }
+  .exact:nth-child(3) { --i: 2; }
+  .exact .ic { width: 16px; height: 16px; }
+  /* Two sand rectangles side by side read as one; a hairline says they are two. */
+  .exact + .exact:not(.prim) { border-left: 1px solid var(--line); }
+  /* One accent, spent on the thing the row is most often opened for. */
+  .exact.prim { background: var(--ember); color: var(--on-ember); }
+  .exact:active { filter: brightness(.93); }
+  .exrow.open .exmain { transform: translateX(calc(var(--exw) * -3)); }
+  .exrow.open .exacts, .exrow.open .exact { transform: none; }
+  /* While a finger is on it the row is not animating, it is being moved. */
+  .exrow.drag .exmain, .exrow.drag .exacts, .exrow.drag .exact { transition: none; }
+  /* A mouse has no swipe. Hover lays the drawer over the end of the row rather
+     than pushing the row aside, as a desktop list does. */
+  @media (hover: hover) {
+    .exrow:hover .exacts, .exrow:hover .exact { transform: none; }
+  }
+  /* What the first-run peek says instead of performing it, when motion is off. */
+  .exhint { font-size: 11.5px; font-weight: 600; color: var(--muted); margin: 10px 0 2px; }
   .exhelp { flex: 0 0 auto; width: 26px; height: 26px; border-radius: 999px; border: 1px solid var(--line-2);
     background: none; color: var(--muted); font-size: 12px; line-height: 1; display: flex;
     align-items: center; justify-content: center; }
@@ -1529,6 +1573,9 @@ export const STYLE = String.raw`<style>
     .overlay, .overlay.open, .overlay.closing { transform: none;
       transition-duration: var(--t-2); }
     .sheetbody, .sheet.open .sheetbody { transform: none; transition: none; }
+    /* The travel stays: it is the gesture itself. The spring goes. */
+    .exmain, .exacts, .exact {
+      transition-duration: var(--t-1); transition-timing-function: var(--e-soft); }
     .setpill.just, .setpill.just.pr,
     .empty .big, .thumbwrap.pending .noimg, .thumbwrap.failed .noimg,
     .thumbwrap.loading::after, .thumbwrap.pending::after { animation: none; }
