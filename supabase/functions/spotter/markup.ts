@@ -402,6 +402,7 @@ export const MARKUP_BODY = String.raw`</head>
   <div class="copyweeks" id="copyweeks"></div>
   <div class="copyrep"><span>Repeat for</span><div class="copychips" id="copyreps"></div></div>
   <div class="btnrow"><button class="btn" id="copygo">Copy</button></div>
+  <button class="planbtn wide" id="copypumpy"></button>
   <button class="danger" id="copyclear">Clear this week</button>
 </div></div>
 

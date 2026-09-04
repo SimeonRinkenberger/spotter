@@ -1137,6 +1137,9 @@ export const STYLE = String.raw`<style>
   .copychips .chip { min-width: 34px; min-height: 34px; justify-content: center;
     padding: 9px 11px; font-variant-numeric: tabular-nums; }
   .planbtn.wide { width: 100%; min-height: 44px; margin-top: 11px; font-size: 13.5px; }
+  .planbody > .planbtn.wide { margin-top: 16px; }
+  .planbtn .pumpmark { width: 18px; height: 18px; color: var(--ember); flex: 0 0 auto; }
+  .planbtn .pumpmark svg { width: 100%; height: 100%; display: block; }
   /* Reduced motion keeps the answer and drops the travel: the pill is still the
      thing that says which mode you are in, so it moves, instantly. */
   @media (prefers-reduced-motion: reduce) {

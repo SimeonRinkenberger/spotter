@@ -7945,7 +7945,9 @@ async function validateProposal(userId: string, p: any): Promise<PumpyProposal |
   }
 
   if (kind === "plan_days") {
-    const raw = Array.isArray(p?.days) ? p.days.slice(0, 14) : [];
+    // Six weeks, because a program is the unit now and two weeks was the old
+    // ceiling on a proposal that could only ever be a fortnight.
+    const raw = Array.isArray(p?.days) ? p.days.slice(0, 42) : [];
     // Handles first, uuids second; every day is resolved before anything is looked
     // up, and the stored proposal carries full uuids only.
     const keys = [...new Set(raw.map((d: any) => String(d?.workout_id ?? "")).filter(Boolean))] as string[];
@@ -8099,6 +8101,10 @@ const PUMPY_STATIC = [
   '"reps":string|null,"duration_seconds":int|null,"rest_seconds":int|null,"notes":string|null,"from":workout id|null}]}],"summary":one sentence}',
   '- {"kind":"append_exercises","workout_id":string,"block_title":string|null,"exercises":[same exercise shape, "from" included],"summary":one sentence}',
   '- {"kind":"plan_days","days":[{"day":"YYYY-MM-DD","workout_id":string}],"summary":one sentence}',
+  "A program is several weeks and one proposal: put every day of it in a single plan_days, up to 42 days. " +
+  "Call get_plan {week_start} once for each week beyond this one before planning into it, so you add to what is " +
+  "already there instead of over it. Progress the weeks — a set, a round, a harder variation or less rest — unless " +
+  "the user asks for a plain repeat, and then repeat the week exactly as it stands.",
   'When an exercise is taken from one of the user\'s saved workouts, set that exercise\'s "from" to that ' +
   "workout's id — only ever the id of a workout that really contains the movement, otherwise leave it out — and " +
   "in say name the workouts you drew from by their titles.",

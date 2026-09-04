@@ -4524,6 +4524,10 @@ export const APP = String.raw`
     planBody.innerHTML = "";
     planBody.classList.remove("planswap");
     if (planMode === "month") renderMonth(planBody); else renderWeek(planBody);
+    // The offer sits under the plan rather than in the bar: it is the thing you
+    // do once you have looked at the week, not one of the two ways of looking.
+    planBody.appendChild(pumpyProgramBtn(el("button", "planbtn wide"),
+      planMode === "month" ? weekInMonth(monthStart) : state.weekStart));
     // The day sheet is a second window onto these same rows. Redraw it here and
     // the two can never disagree about what is planned.
     if ($("daysheet").classList.contains("open")) renderDay();
@@ -4834,6 +4838,7 @@ export const APP = String.raw`
     go.textContent = "Copy to " + copyPlural(copyReps);
     go.disabled = !srcRows.length;
     go.onclick = function () { doCopy(); };
+    pumpyProgramBtn($("copypumpy"), copySrc);
     var clear = $("copyclear");
     clear.textContent = "Clear " + weekLabel(copySrc);
     clear.disabled = !srcRows.length;
@@ -4883,6 +4888,40 @@ export const APP = String.raw`
   // The other direction, and the delayed commit this file uses everywhere else:
   // the week empties on the tap and the rows go only once the sentence offering
   // the undo has gone, so there is nothing that can half-fail.
+  // Route taken, and why. The other one was a plan context — a second kind of
+  // pumpy.ctx posted as its own field and rendered into the system prompt beside
+  // ctxWorkout — and it would have to be right in three places at once in a week
+  // when four hands are in this file, for an answer a sentence already gives.
+  // A sentence is also the only one of the two the user can argue with: "4-week"
+  // and "progresses each week" are exactly what a person wants to change to
+  // "6 weeks" or "keep it the same" before they send it, and a chip cannot say
+  // either. So the composer is filled and left alone — nothing is sent until the
+  // user sends it, and no API has to move for the page to ship.
+  function programWithPumpy(week) {
+    var s = "Turn the week of " + shortDate(week) + " (" + ymd(week) +
+      ") into a 4-week program that progresses each week.";
+    setView("pumpy");
+    var box = $("pumpyinput");
+    box.value = s;
+    // The composer sizes itself on input; nobody typed this, so say it here.
+    box.style.height = "auto";
+    box.style.height = Math.min(box.scrollHeight, 138) + "px";
+    if (NO_TOUCH) box.focus();
+  }
+
+  // The same button in two places — under the plan and at the foot of the copy
+  // sheet — so it is one function that dresses whichever node it is handed.
+  function pumpyProgramBtn(node, week) {
+    if (!node.childNodes.length) {
+      var mark = el("span", "pumpmark");
+      mark.innerHTML = PUMPY_MARK;
+      node.appendChild(mark);
+      node.appendChild(document.createTextNode("Build a program with Pumpy"));
+    }
+    node.onclick = function () { programWithPumpy(week); };
+    return node;
+  }
+
   function clearWeek() {
     var w = copySrc, label = weekLabel(w);
     var rows = weekRows(state.plan, w);
@@ -5620,8 +5659,25 @@ export const APP = String.raw`
       if (p.block_title) card.appendChild(el("div", "pmeta", p.block_title));
       (p.exercises || []).forEach(function (e) { proposalEx(card, e); });
     } else if (p.kind === "plan_days") {
-      (p.days || []).forEach(function (d) {
-        var dt = new Date(d.day + "T12:00:00");
+      // Twenty-eight lines in date order is a wall. Four weeks of seven is a
+      // program, and the only difference is a heading — .pblock, the same one a
+      // workout's blocks already wear, so the two cards read alike. A single
+      // week gets no heading: one group does not need naming.
+      var days = (p.days || []).slice().sort(function (x, y) {
+        return x.day < y.day ? -1 : (x.day > y.day ? 1 : 0);
+      });
+      var weeks = {}, n = 0;
+      days.forEach(function (d) {
+        var k = ymd(mondayOf(dayDate(d.day)));
+        if (!weeks[k]) { weeks[k] = true; n++; }
+      });
+      var seen = null;
+      days.forEach(function (d) {
+        var dt = dayDate(d.day), wk = mondayOf(dt), k = ymd(wk);
+        if (n > 1 && k !== seen) {
+          seen = k;
+          card.appendChild(el("div", "pblock", "Week of " + shortDate(wk)));
+        }
         card.appendChild(proposalLine(dt.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }),
           d.workout_title || d.workout_id));
       });
