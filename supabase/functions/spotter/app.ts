@@ -4403,7 +4403,7 @@ export const APP = String.raw`
   // seats, not two states of a picture.
 
   var planBar = null, planBody = null, planSwap = false;
-  var barTitle = null, barPrev = null, barNext = null, barSeg = null, barToday = null;
+  var barTitle = null, barPrev = null, barNext = null, barSeg = null, barToday = null, barCopy = null;
 
   function buildPlanBar() {
     planBar = el("div", "planbar");
@@ -4447,6 +4447,12 @@ export const APP = String.raw`
       loadPlan();
     };
     acts.appendChild(barToday);
+    // Boostcamp's program creator calls it duplicating a week; TrainHeroic and
+    // TrueCoach both call it copy and then ask where to paste. Copy is the word
+    // all three answer to, so it is the word on the button.
+    barCopy = el("button", "planbtn", "Copy");
+    barCopy.onclick = function () { openCopy(); };
+    acts.appendChild(barCopy);
     row.appendChild(acts);
     planBar.appendChild(row);
     return planBar;
@@ -4712,6 +4718,183 @@ export const APP = String.raw`
       openPicker(key, label);
       closeSheet("daysheet");
     };
+  }
+
+  // ---------- programs ----------
+  //
+  // A multi-week program is the same week said again with something changed, and
+  // every coaching tool that builds one has the same two verbs. Boostcamp
+  // duplicates days and weeks; TrainHeroic copies a selection and asks you to
+  // hover the start date to paste it; TrueCoach copies and drops. All three ask
+  // WHERE, none of them assumes next week — so this sheet asks too, and then
+  // adds the count neither of them documents: repeat for N weeks, which is the
+  // difference between building a four-week block and pasting four times.
+  //
+  // Hevy and Strong have no version of this at all, and it is worth saying why:
+  // their plan is a folder of routines you pick from when you arrive at the gym,
+  // and Hevy's calendar is explicitly a record of what you did, not a plan. A
+  // session bound to a date is a different object — it can be missed, moved, or
+  // repeated — and only that object makes "copy this week forward" mean anything.
+
+  var copySrc = null, copyDest = null, copyReps = 1, copyRows = null;
+  var REPS = [1, 2, 3, 4, 6, 8];
+  // Eight weeks of destinations to choose from, sixteen weeks of rows fetched:
+  // repeat 8 from the eighth week reaches the fifteenth, and skipping duplicates
+  // is only honest if what is already there has been looked at.
+  var COPY_WEEKS = 8, COPY_SPAN = 16;
+
+  function weekRows(rows, w) {
+    var from = ymd(w), to = ymd(addDays(w, 6));
+    return (rows || []).filter(function (r) { return r.day >= from && r.day <= to; });
+  }
+
+  // Every whole week the visible month touches — the short list a month view
+  // needs before it can be asked which week to copy.
+  function monthWeeks() {
+    var r = planRange(), out = [], w = r.from;
+    while (ymd(w) <= ymd(r.to)) { out.push(w); w = addDays(w, 7); }
+    return out;
+  }
+
+  function openCopy() {
+    copySrc = planMode === "month" ? weekInMonth(monthStart) : state.weekStart;
+    copyDest = addDays(copySrc, 7);
+    copyReps = 1;
+    copyRows = null;
+    renderCopy();
+    openSheet("copysheet");
+    // The counts are the whole point of the list, so they are fetched rather
+    // than guessed from the weeks that happen to be on screen.
+    var span = { from: copySrc, to: addDays(copySrc, (COPY_SPAN + 1) * 7 - 1) };
+    sb.from("plan").select("*").gte("day", ymd(span.from)).lte("day", ymd(span.to))
+      .then(function (r) {
+        copyRows = r.data || [];
+        if ($("copysheet").classList.contains("open")) renderCopy();
+      });
+  }
+
+  function copyPlural(n) { return n + (n === 1 ? " week" : " weeks"); }
+
+  function renderCopy() {
+    var head = $("copyhead");
+    head.innerHTML = "";
+    // In month view no week is "the" week yet, so the first question the sheet
+    // asks is which one — a chip per week the month touches, Apple's own answer
+    // to a choice of five or six short labels.
+    if (planMode === "month") {
+      var wks = el("div", "copywks");
+      monthWeeks().forEach(function (w) {
+        var c = el("button", "chip" + (ymd(w) === ymd(copySrc) ? " active" : ""), shortDate(w));
+        c.onclick = function () {
+          copySrc = w;
+          copyDest = addDays(w, 7);
+          renderCopy();
+        };
+        wks.appendChild(c);
+      });
+      head.appendChild(wks);
+    }
+    var srcRows = copyRows ? weekRows(copyRows, copySrc) : weekRows(state.plan, copySrc);
+    var sum = el("div", "copysum");
+    sum.appendChild(el("b", null, weekLabel(copySrc)));
+    sum.appendChild(document.createTextNode(srcRows.length
+      ? " · " + srcRows.length + (srcRows.length === 1 ? " workout" : " workouts")
+      : " · nothing planned"));
+    head.appendChild(sum);
+
+    var list = $("copyweeks");
+    list.innerHTML = "";
+    for (var i = 1; i <= COPY_WEEKS; i++) {
+      (function (i) {
+        var w = addDays(copySrc, i * 7);
+        var n = copyRows ? weekRows(copyRows, w).length : -1;
+        var on = ymd(w) >= ymd(copyDest) &&
+          ymd(w) <= ymd(addDays(copyDest, (copyReps - 1) * 7));
+        var b = el("button", "copyweek" + (on ? " on" : ""));
+        b.appendChild(el("b", null, weekLabel(w)));
+        // Blank until the fetch lands rather than a zero that might be a lie —
+        // the row is the same height either way, so nothing jumps.
+        b.appendChild(el("span", "n", n < 0 ? "" : (n ? n + " planned" : "empty")));
+        b.setAttribute("aria-pressed", on ? "true" : "false");
+        b.onclick = function () { copyDest = w; renderCopy(); };
+        list.appendChild(b);
+      })(i);
+    }
+
+    var chips = $("copyreps");
+    chips.innerHTML = "";
+    REPS.forEach(function (n) {
+      var c = el("button", "chip" + (n === copyReps ? " active" : ""), String(n));
+      c.setAttribute("aria-label", copyPlural(n));
+      c.onclick = function () { copyReps = n; renderCopy(); };
+      chips.appendChild(c);
+    });
+
+    var go = $("copygo");
+    go.textContent = "Copy to " + copyPlural(copyReps);
+    go.disabled = !srcRows.length;
+    go.onclick = function () { doCopy(); };
+    var clear = $("copyclear");
+    clear.textContent = "Clear " + weekLabel(copySrc);
+    clear.disabled = !srcRows.length;
+    clear.onclick = function () { clearWeek(); };
+  }
+
+  // One insert for the whole batch, and one undo for it — Apple asks that a set
+  // of related changes be revertible in a single step, and eight weeks of rows
+  // put in one at a time would be eight things to take back.
+  function doCopy() {
+    var srcRows = weekRows(copyRows || state.plan, copySrc);
+    if (!srcRows.length) return;
+    var have = {};
+    (copyRows || []).forEach(function (r) { have[r.day + "|" + r.workout_id] = true; });
+    var rows = [];
+    for (var k = 0; k < copyReps; k++) {
+      for (var i = 0; i < 7; i++) {
+        var from = ymd(addDays(copySrc, i));
+        var to = ymd(addDays(copyDest, k * 7 + i));
+        for (var j = 0; j < srcRows.length; j++) {
+          if (srcRows[j].day !== from) continue;
+          var sig = to + "|" + srcRows[j].workout_id;
+          // A second copy of the same week must be worth nothing, not double.
+          if (have[sig]) continue;
+          have[sig] = true;
+          rows.push({ user_id: state.user.id, day: to, workout_id: srcRows[j].workout_id });
+        }
+      }
+    }
+    closeSheet("copysheet");
+    if (!rows.length) { toast("Those weeks already have this one."); return; }
+    var n = copyReps;
+    sb.from("plan").insert(rows).select("id").then(function (r) {
+      if (r.error) { toast("Could not copy that week. Try again in a moment."); return; }
+      var ids = (r.data || []).map(function (x) { return x.id; });
+      loadPlan();
+      // The rows are already in, so this undo is a real delete of exactly the ids
+      // that came back — never "everything that week", which would take away what
+      // was there before the copy.
+      offerUndo("Copied to " + copyPlural(n), function () { /* already committed */ },
+        function () {
+          sb.from("plan").delete().in("id", ids).then(function () { loadPlan(); });
+        });
+    });
+  }
+
+  // The other direction, and the delayed commit this file uses everywhere else:
+  // the week empties on the tap and the rows go only once the sentence offering
+  // the undo has gone, so there is nothing that can half-fail.
+  function clearWeek() {
+    var w = copySrc, label = weekLabel(w);
+    var rows = weekRows(state.plan, w);
+    if (!rows.length) return;
+    var ids = {};
+    rows.forEach(function (r) { ids[r.id] = true; });
+    state.plan = (state.plan || []).filter(function (r) { return !ids[r.id]; });
+    repaintPlan();
+    closeSheet("copysheet");
+    offerUndo("Cleared " + label, function () {
+      sb.from("plan").delete().in("id", Object.keys(ids)).then(function () { loadPlan(); });
+    }, function () { loadPlan(); });
   }
 
   // Named the way the card that opened it names the day — "Add to Thursday 3",
@@ -6291,7 +6474,7 @@ export const APP = String.raw`
 
   ["addsheet", "setsheet", "watchsheet", "exsheet", "exeditsheet", "explainsheet", "picksheet",
    "settingssheet", "colsheet", "renamesheet", "swapsheet", "pumpysheet", "capsheet", "plansheet",
-   "daysheet"]
+   "daysheet", "copysheet"]
     .forEach(wireSheet);
 
   function overlayShowing() {

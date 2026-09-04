@@ -1110,11 +1110,38 @@ export const STYLE = String.raw`<style>
      same however you reached it. Only the gap above the button is its own. */
   #daylist { margin-bottom: 4px; }
   #daylist .lede { margin: 10px 0 0; }
+
+  /* ---------- programs / copy a week ----------
+     A destination is a row you tap, not a date you type, and the rows the copy
+     will land on light up together — repeat for four weeks should look like four
+     weeks before you commit to it. Card and --line rather than sand, because
+     --muted is measured on card (4.89) and on sand it drops to 4.13. */
+  .copyhead { margin-bottom: 15px; }
+  .copywks { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 10px; }
+  .copysum { font-size: 13px; color: var(--ink-2); line-height: 1.45; }
+  .copysum b { color: var(--ink); font-weight: 700; }
+  .copyweeks { display: flex; flex-direction: column; gap: 6px; }
+  .copyweek { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    width: 100%; min-height: 44px; text-align: left; background: var(--card);
+    border: 1px solid var(--line); border-radius: 12px; padding: 10px 13px;
+    transition: background-color var(--t-2) var(--e-soft), border-color var(--t-2) var(--e-soft),
+      transform var(--t-1) var(--e-out); }
+  .copyweek b { font-size: 14px; font-weight: 700; color: var(--ink); }
+  .copyweek .n { font-size: 12px; font-weight: 600; color: var(--muted); flex: 0 0 auto; }
+  .copyweek:active { transform: scale(.98); }
+  .copyweek.on { background: var(--ember-soft); border-color: var(--ember); }
+  .copyweek.on .n { color: var(--ember-ink); }
+  .copyrep { display: flex; align-items: center; gap: 11px; flex-wrap: wrap; margin: 17px 0 3px; }
+  .copyrep > span { font-size: 13px; font-weight: 700; color: var(--ink-2); }
+  .copychips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .copychips .chip { min-width: 34px; min-height: 34px; justify-content: center;
+    padding: 9px 11px; font-variant-numeric: tabular-nums; }
+  .planbtn.wide { width: 100%; min-height: 44px; margin-top: 11px; font-size: 13.5px; }
   /* Reduced motion keeps the answer and drops the travel: the pill is still the
      thing that says which mode you are in, so it moves, instantly. */
   @media (prefers-reduced-motion: reduce) {
     .segpill { transition: none; }
-    .planbtn:active, .segbtn, .mcell { transition: none; }
+    .planbtn:active, .segbtn, .mcell, .copyweek { transition: none; }
     .planswap { animation: none; }
   }
 
