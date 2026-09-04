@@ -605,7 +605,7 @@ export const STYLE = String.raw`<style>
     z-index: 85; background: var(--scrim); display: flex; align-items: flex-end;
     visibility: hidden; pointer-events: none; opacity: 0;
     transition: opacity var(--t-2) var(--e-soft); }
-  /* Promoted only while it moves: 14 permanent layers is memory for nothing. */
+  /* Only while it moves: 14 permanent layers is memory for nothing. */
   .sheet.open { visibility: visible; pointer-events: auto; opacity: 1; will-change: opacity; }
   .sheet.closing { visibility: visible; will-change: opacity; }
   .sheet.open .sheetbody, .sheet.closing .sheetbody { will-change: transform; }
@@ -620,9 +620,10 @@ export const STYLE = String.raw`<style>
     transform: translateY(100%); transition: transform var(--t-2) var(--e-in); }
   /* Arriving is the slower, springier half, as iOS presents a sheet in about .4s. */
   .sheet.open .sheetbody { transform: none; transition: transform .38s var(--e-spring); }
-  /* The finger is the animation, so nothing may be timed. Taken off with the
-     inline transform, so both endings start from where the sheet actually is. */
-  .sheetbody.dragging { transition: none; }
+  /* The finger is the animation, so nothing may be timed — and it has to outrank
+     the open rule above or the drag lags a frame behind the thumb. Taken off with
+     the inline transform, so both endings start from where the sheet is. */
+  .sheet.open .sheetbody.dragging { transition: none; }
   /* The tallest sheet leaves the least scrim, so it also says how to leave. The
      app's own icon button, so it is the same 38px control with the same 44px
      reach as every other way out of a screen. */
@@ -630,8 +631,8 @@ export const STYLE = String.raw`<style>
      makes every .iconbtn position: relative for its hit area and would otherwise
      leave this one sitting in the flow at the top LEFT of the sheet. */
   .sheetbody .sheetx { position: absolute; top: 10px; right: 14px; z-index: 1; }
-  /* Closing is the resting state coming back: .closing only holds the sheet
-     visible while the base values transition it away. fadeout stays for others. */
+  /* Closing is the resting state coming back: .closing holds the sheet visible
+     while the base values transition it away. fadeout stays for others. */
   @keyframes fadeout { to { opacity: 0; } }
   .grabber { width: 38px; height: 4px; border-radius: 999px; background: var(--line-2);
     margin: 6px auto 16px; }
