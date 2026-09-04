@@ -154,17 +154,26 @@ catalog does not know highlights nothing and the card says how many were left ou
 
 **The demonstration is somebody's video, not a drawing.** The Explain sheet used to show a
 CC-BY-SA line illustration from the wger catalog; a still frame cannot show a movement, so it
-now offers a short YouTube clip instead. `POST /api/demo-video` searches the YouTube Data API
-(`search.list`, embeddable and syndicated only, short, safe-search strict) and caches the answer
-— hit or miss — in `exercise_videos`, keyed by `canonical_id` where the exercise has one and by
-a flattened name where it does not. That cache is the whole feature: `search.list` costs 100
-units of the free 10,000/day quota against `videos.list`'s 1, so an uncached lookup budget is a
-hundred sheet opens a day for the entire project. A hit is kept forever, a miss for seven days,
-and an uncached lookup is metered on the same `LIMIT_HELPER` ceiling as `/api/explain`. The
-sheet shows a facade — thumbnail plus play mark — and only builds the `youtube-nocookie` iframe
-when it is tapped, tearing it down when the sheet closes; under it a "More on YouTube" row links
-to the search, which is what the sheet offers when nothing was found. The `demo_*` columns, the
-`demos` bucket and `tools/map-demos.mjs` are still there but nothing reads them.
+now offers a short YouTube clip instead. `POST /api/demo-video` answers from
+`exercise_demo_videos` first: a curated shelf of demonstrations harvested from an allow-list of
+fitness creators who publish plain per-exercise footage (`DEMO_CHANNELS` in `index.ts`,
+`tools/demo-sources.json` for the seed tool), keyed by `canonical_id`, ordered by tier then rank
+and returned four deep — the first as `video`, the rest as `alternates`, so the sheet can offer
+the same movement filmed by somebody else. That path spends no quota, charges no helper and
+writes nothing. Only a movement the shelf does not cover falls through to `exercise_videos` and
+then to the YouTube Data API (`search.list`, embeddable and syndicated only, short, safe-search
+strict, ten results, allow-listed channels preferred and clickbait titles demoted). That cache
+is why the fallback is affordable: `search.list` costs 100 units of the free 10,000/day quota
+against `videos.list`'s 1 — and since June 2026 has its own 100-calls-a-day ceiling — so an
+uncached lookup budget is a hundred sheet opens a day for the entire project. A hit is kept
+forever, a miss for seven days, and an uncached lookup is metered on the same `LIMIT_HELPER`
+ceiling as `/api/explain`. The sheet leads with the creator's name and the clip length, shows a
+facade — thumbnail plus play mark — and only builds the `youtube-nocookie` iframe when it is
+tapped (with `loop=1&playlist=<id>` for clips of 45 s or less), tearing it down when the sheet
+closes; under it a chip row swaps between the alternates with no network, and a "More on
+YouTube" row links to the search, which is what the sheet offers when nothing was found. The
+`demo_*` columns, the `demos` bucket and `tools/map-demos.mjs` are still there but nothing reads
+them.
 
 **Substitutions carry a reason.** `POST /api/swap` takes `reason` (`no_equipment`,
 `station_busy`, `pain`) and, for pain, a `body_area`. Candidates come from the catalog —

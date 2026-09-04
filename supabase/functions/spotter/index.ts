@@ -1436,8 +1436,47 @@ function isoMinutes(iso: string): number {
 // every answer is cached. public.exercise_videos is that cache, and it caches a
 // miss too: asking again tomorrow for a movement YouTube had nothing for is the
 // same 100 units as asking for a new one.
+//
+// Since June 2026 search.list has its own 100-calls-a-day ceiling on top of the unit
+// budget, and what it returns for "<movement> exercise form" is a lottery: a good
+// eleven-second demonstration and a thumbnail with a red arrow on it rank the same.
+// So the first answer is no longer a search at all. public.exercise_demo_videos holds
+// clips harvested from a short list of creators who actually publish plain
+// per-exercise demonstrations, keyed by the catalog id; reading it costs nothing, is
+// deterministic, and lets the sheet say whose gym you are standing in. Search is what
+// happens when the movement is not in that table — and even then it now prefers those
+// same channels when one of them turns up in the results.
 
-type DemoVideo = { id: string; title: string; channel: string };
+type DemoVideo = { id: string; title: string; channel: string; secs?: number | null };
+
+/**
+ * The allow-list, channel id → tier: 1 is a library of bare per-exercise demos, 2 is a
+ * good library with longer clips or a house format in the title, 3 is a teaching
+ * channel worth offering as the "go deeper" alternate rather than the first answer.
+ * Alphabetical by label, because a wall of channel ids sorts by nothing useful.
+ *
+ * The seed tool owns the same list in tools/demo-sources.json; this copy exists so the
+ * search fallback can recognise one of them without a round trip to the database.
+ */
+const DEMO_CHANNELS: Record<string, number> = {
+  "UC97k3hlbE-1rVN8y56zyEEA": 3, // Bodybuilding.com
+  "UCOe24b2O8eoeHz9fwWuKRVA": 2, // Catalyst Athletics
+  "UCtcQ6TPwXAYgZ1Mcl3M1vng": 2, // CrossFit
+  "UCjNE2-Yeiwo4mTJ3HdfrSHA": 1, // Functional Bodybuilding
+  "UC68TLK0mAEzUyHx5x5k-S1Q": 3, // Jeff Nippard
+  "UCFpj07BSepA04QgvKSUX8eg": 2, // MuscleWiki
+  "UCfQgsKhHjSyRLOp9mnffqVg": 1, // Renaissance Periodization
+  "UC6TRaqsCQQBI0QF6aSBz4nw": 2, // T-Nation
+};
+
+/**
+ * The words a demonstration does not have in its title. A clip called "Front Squat" is
+ * a person doing a front squat; "5 Front Squat Mistakes You're STILL Making?!" is a
+ * person talking about one, and it out-ranks the first because that is what the phrasing
+ * is for. Punctuation is matched anywhere and the words on their own boundaries, so
+ * "Nonstop" and "Whyte" are not casualties.
+ */
+const DEMO_BAIT = /[?!]|\b(?:mistakes?|worst|never|stop|why)\b/;
 
 /**
  * The cache key. The catalog id when the exercise has one, so "DB bench",
@@ -1457,20 +1496,36 @@ function demoQuery(name: string): string {
 }
 
 /**
- * Pick one of the five candidates. Relevance ranking already did the hard part; the
- * only thing worth checking is that the title mentions the movement at all, because
- * a search for an exercise nobody has filmed returns a workout vlog that happens to
- * rank. Tokens shorter than four letters are ignored — "up", "arm" and "one" match
+ * Pick one of the ten candidates, in three passes that get progressively less picky.
+ *
+ * First: anything from an allow-listed channel, best tier winning and relevance
+ * breaking ties within a tier. Relevance ranking is not wrong often enough to argue
+ * with, but it has no opinion about who filmed the thing, and a Renaissance
+ * Periodization clip sitting eighth is still the answer we would have chosen by hand.
+ * Ten results rather than five because those channels rarely optimise a title for
+ * search and often rank below the people who do — same 100 units either way.
+ *
+ * Second: the first result whose title mentions the movement and is not baiting a
+ * click. Tokens shorter than four letters are ignored — "up", "arm" and "one" match
  * everything — and containment rather than equality, so "deadlifts" satisfies
- * "deadlift". Nothing matches, the first result stands: it is still what a person
- * typing the same words would have seen at the top.
+ * "deadlift".
+ *
+ * Last: the first result. Nothing else matched, and it is still what a person typing
+ * the same words would have seen at the top.
  */
 function pickDemo(items: any[], name: string): any | null {
+  let best: any = null, bestTier = 99;
+  for (const it of items) {
+    const tier = DEMO_CHANNELS[String(it?.snippet?.channelId ?? "")];
+    if (tier !== undefined && tier < bestTier) { best = it; bestTier = tier; }
+  }
+  if (best) return best;
   const want = name.toLowerCase().replace(/[^a-z0-9]+/g, " ").split(" ")
     .filter((t) => t.length >= 4);
   if (want.length) {
     for (const it of items) {
       const title = String(it?.snippet?.title ?? "").toLowerCase();
+      if (DEMO_BAIT.test(title)) continue;
       if (want.some((t) => title.includes(t))) return it;
     }
   }
@@ -1490,8 +1545,8 @@ async function ytSearchDemo(name: string): Promise<DemoVideo | null> {
     const r = await fetch(
       "https://www.googleapis.com/youtube/v3/search?part=snippet&type=video" +
       "&videoEmbeddable=true&videoSyndicated=true&safeSearch=strict&videoDuration=short" +
-      "&relevanceLanguage=en&maxResults=5&fields=" +
-      encodeURIComponent("items(id/videoId,snippet(title,channelTitle))") +
+      "&relevanceLanguage=en&maxResults=10&fields=" +
+      encodeURIComponent("items(id/videoId,snippet(title,channelTitle,channelId))") +
       "&q=" + encodeURIComponent(demoQuery(name)) + "&key=" + YOUTUBE_API_KEY,
       { signal: AbortSignal.timeout(8000) },
     );
@@ -6449,17 +6504,25 @@ async function aiText(
 /**
  * POST /api/demo-video — a short clip of the movement for the Explain sheet.
  *
- * Answers { status: "ok", video: {id,title,channel,url} | null, search_url }. The
- * search_url is there whatever happens, because the one thing the sheet must never
- * do is offer nothing: a link into YouTube's own results opens the YouTube app on a
- * phone and is a perfectly good answer to "show me how this looks".
+ * Answers { status: "ok", video: {id,title,channel,url,secs,curated} | null,
+ * alternates: [{id,title,channel,secs}], search_url }. The search_url is there
+ * whatever happens, because the one thing the sheet must never do is offer nothing: a
+ * link into YouTube's own results opens the YouTube app on a phone and is a perfectly
+ * good answer to "show me how this looks".
  *
- * Metered on the helper ceiling, like /api/explain and /api/swap. Not because the
- * lookup costs Spotter money — it costs Google's free quota — but because 10,000
- * units a day is 100 uncached lookups for every user at once, and a client looping
- * over invented exercise names could take the feature away from everybody before
- * lunch. Only an uncached lookup is charged; a cache hit is free, which is the
- * whole shape of this feature.
+ * Three answers in descending order of how much we trust them. The curated table
+ * first, when the exercise has a catalog id: those rows were harvested from channels
+ * a person chose, they carry a clip length, and they arrive several deep so the sheet
+ * can offer the same movement filmed by somebody else. That path spends no quota and
+ * charges no helper — nothing was asked of anyone, we already knew the answer — so it
+ * writes no saves_log row and does not touch the search cache either.
+ *
+ * Then today's exercise_videos cache, then a live search. Those two are metered on the
+ * helper ceiling, like /api/explain and /api/swap. Not because the lookup costs Spotter
+ * money — it costs Google's free quota — but because 10,000 units a day is 100 uncached
+ * lookups for every user at once, and a client looping over invented exercise names
+ * could take the feature away from everybody before lunch. Only an uncached lookup is
+ * charged; a cache hit is free, which is the whole shape of this feature.
  */
 async function handleDemoVideo(req: Request, userId: string, cors: Cors): Promise<Response> {
   const body = await req.json().catch(() => ({}));
@@ -6470,13 +6533,50 @@ async function handleDemoVideo(req: Request, userId: string, cors: Cors): Promis
   const search_url = "https://www.youtube.com/results?search_query=" + encodeURIComponent(query);
   const key = demoKey(name, canonical);
   // A name that flattens to nothing at all — emoji, punctuation — is not a lookup.
-  if (!key) return json({ status: "ok", video: null, search_url }, 200, cors);
+  if (!key) return json({ status: "ok", video: null, alternates: [], search_url }, 200, cors);
 
-  const found = (v: DemoVideo | null) => json({
+  const found = (v: DemoVideo | null, curated = false, alternates: DemoVideo[] = []) => json({
     status: "ok",
-    video: v ? { ...v, url: "https://www.youtube.com/watch?v=" + v.id } : null,
+    video: v ? {
+      id: v.id, title: v.title, channel: v.channel,
+      url: "https://www.youtube.com/watch?v=" + v.id,
+      secs: v.secs ?? null, curated,
+    } : null,
+    alternates: alternates.map((a) => ({
+      id: a.id, title: a.title, channel: a.channel, secs: a.secs ?? null,
+    })),
     search_url,
   }, 200, cors);
+
+  // The curated shelf. Ordered by tier then rank, so row zero is the clip the seed
+  // tool judged best for this movement and the rest are the other creators who filmed
+  // it. Four is the whole offer: a fifth chip would scroll off a 375px sheet and
+  // nobody chooses between five demonstrations of a squat.
+  //
+  // A read that throws is silence, not an error. The table arrives in a migration and
+  // a deploy that runs ahead of it must still answer the sheet — the search path below
+  // is exactly what this route did before the shelf existed.
+  if (canonical) {
+    let rows: any[] = [];
+    try {
+      rows = await dbSelect(
+        "exercise_demo_videos",
+        "key=eq." + encodeURIComponent(canonical) +
+        "&select=video_id,title,channel,secs,tier,rank&order=tier.asc,rank.asc&limit=4",
+      );
+    } catch (e) {
+      console.error("exercise_demo_videos read failed", e);
+    }
+    const clips: DemoVideo[] = rows
+      .filter((r) => r?.video_id)
+      .map((r) => ({
+        id: String(r.video_id),
+        title: String(r.title ?? ""),
+        channel: String(r.channel ?? ""),
+        secs: r.secs === null || r.secs === undefined ? null : Number(r.secs),
+      }));
+    if (clips.length) return found(clips[0], true, clips.slice(1));
+  }
 
   // A cache read that throws — the table is not there yet, the network blinked —
   // must not cost the sheet its answer, so it falls through to a live lookup.

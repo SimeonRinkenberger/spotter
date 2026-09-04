@@ -2951,6 +2951,16 @@ export const APP = String.raw`
   // one play mark — and the player only exists between the tap and the sheet
   // closing, which keeps YouTube's iframe, its script and its cookies out of the
   // page entirely for everyone who only wanted to read.
+  //
+  // The clips are picked now rather than searched for: the server keeps a shelf of
+  // demonstrations from a short list of creators who publish plain per-exercise
+  // footage, and answers with up to four for the same movement. Hevy, Fitbod and
+  // Boostcamp all self-host a short muted loop at the top of the exercise screen with
+  // the cues underneath, and the paid ones name the coach; none embeds a search
+  // result. So ours leads with the creator — a person chose these channels, and that
+  // is the whole claim — and the title, which for an eleven-second clip is the name of
+  // the exercise again, drops to the line under it. A search result keeps the old
+  // order, title first: it is a weaker claim and should read like one.
 
   var vidCache = {};
 
@@ -2962,50 +2972,154 @@ export const APP = String.raw`
     return "v:" + (ex.canonical_id || String(ex.name || "").toLowerCase());
   }
 
+  // Seconds as a clock, the way every player writes them. Zero and nonsense come
+  // back empty rather than as "0:00", because the shelf may not know a clip's length
+  // and a made-up one is worse than none.
+  function vidLen(secs) {
+    var s = Math.round(Number(secs) || 0);
+    if (s < 1) return "";
+    var m = Math.floor(s / 60), r = s % 60;
+    return m + ":" + (r < 10 ? "0" : "") + r;
+  }
+
+  // The iframe URL. nocookie because a sheet that explains a squat has no business
+  // setting an ad profile; playsinline so iOS keeps it in the page; rel=0 so the end
+  // card stays inside the channel it came from.
+  //
+  // Short clips loop, which is why the demos in Hevy and Fitbod read as demonstrations
+  // rather than videos: eleven seconds of a front squat wants to run again, not stop
+  // on a frozen frame. YouTube only loops a playlist, so the playlist is the clip
+  // itself — loop=1 does nothing without it. Past 45 seconds nothing loops: a
+  // two-minute breakdown restarting forever is just rude.
+  function vidSrc(clip) {
+    var u = "https://www.youtube-nocookie.com/embed/" + clip.id +
+      "?autoplay=1&playsinline=1&rel=0";
+    if (clip.secs && clip.secs <= 45) u += "&loop=1&playlist=" + clip.id;
+    return u;
+  }
+
   // hqdefault is 480x360 with letterbox bars; cropping it to 16:9 removes exactly
   // those bars, which is why the slot is cover and not contain.
-  function vidFace(box, v) {
+  function vidFace(box, st) {
     var b = el("button", "ytface"), shot = el("div", "ytshot"), img = el("img");
-    b.setAttribute("aria-label", "Play " + (v.title || "the demonstration") + " on YouTube");
-    img.src = "https://i.ytimg.com/vi/" + v.id + "/hqdefault.jpg";
     img.alt = "";
     img.loading = "lazy";
     img.decoding = "async";
     shot.appendChild(img);
     shot.appendChild(icon(el("span", "ytplay"), "play"));
     b.appendChild(shot);
-    b.onclick = function () { vidPlay(box, v); };
+    b.onclick = function () { vidPlay(box, st); };
     return b;
   }
 
-  // The facade becomes the player in place. nocookie because a sheet that explains
-  // a squat has no business setting an ad profile; playsinline so iOS keeps it in
-  // the page; rel=0 so the end card stays inside the channel it came from.
-  function vidPlay(box, v) {
-    var face = box.querySelector(".ytface");
-    if (!face) return;
+  // The facade becomes the player in place.
+  function vidPlay(box, st) {
+    var face = box.querySelector(".ytface"), clip = st.clips[st.i];
+    if (!face || !clip) return;
     var wrap = el("div", "embedwrap wide"), f = el("iframe");
-    f.src = "https://www.youtube-nocookie.com/embed/" + v.id + "?autoplay=1&playsinline=1&rel=0";
+    f.src = vidSrc(clip);
     f.setAttribute("allow", "accelerometer; autoplay; encrypted-media; picture-in-picture; fullscreen");
     f.setAttribute("allowfullscreen", "");
-    f.title = v.title || "Exercise demonstration";
+    f.title = clip.title || "Exercise demonstration";
     wrap.appendChild(f);
     box.replaceChild(wrap, face);
+  }
+
+  // Everything about the current clip except the chips: the thumbnail behind the play
+  // mark and the two lines under it. Drawn from state, so a chip tap calls exactly
+  // this. The lines sit outside the facade so they survive the swap to the player —
+  // whose gym this is does not stop mattering the moment the video starts.
+  function vidPaint(box, st) {
+    var clip = st.clips[st.i], by = box.querySelector(".ytby");
+    var face = box.querySelector(".ytface"), img = box.querySelector(".ytshot img");
+    if (img) img.src = "https://i.ytimg.com/vi/" + clip.id + "/hqdefault.jpg";
+    if (face) {
+      face.setAttribute("aria-label",
+        "Play " + (clip.title || "the demonstration") +
+        (clip.channel ? " by " + clip.channel : "") + " on YouTube");
+    }
+    if (!by) return;
+    by.innerHTML = "";
+    // A YouTube mark beside the name, because the API's terms ask that the source be
+    // identifiable as YouTube and forbid drawing anything on the player itself. It is
+    // in currentColor at 14px, not the red logo: this is a byline, not a badge.
+    var who = el("div", st.curated ? "ytch" : "ytc"), len = vidLen(clip.secs);
+    who.appendChild(ic("youtube"));
+    who.appendChild(el("span", null, clip.channel || "YouTube"));
+    if (len) who.appendChild(el("span", "ytlen", len));
+    var what = clip.title ? el("div", st.curated ? "ytsub" : "ytt", clip.title) : null;
+    if (st.curated) {
+      by.appendChild(who);
+      if (what) by.appendChild(what);
+    } else {
+      if (what) by.appendChild(what);
+      by.appendChild(who);
+    }
+  }
+
+  // One chip per creator who filmed this movement, the current one filled. Labelled
+  // by channel rather than by title because the titles are all the same two words —
+  // the exercise — and the only thing that differs is whose demonstration it is.
+  function vidChips(box, st) {
+    var row = box.querySelector(".ytalts");
+    if (!row) return;
+    row.innerHTML = "";
+    for (var i = 0; i < st.clips.length; i++) {
+      var c = el("button", "ytalt" + (i === st.i ? " on" : ""), st.clips[i].channel || "YouTube");
+      c.setAttribute("aria-pressed", i === st.i ? "true" : "false");
+      c.onclick = vidChipTap(box, st, i);
+      row.appendChild(c);
+    }
+  }
+
+  // The handler, built outside the loop so each chip closes over its own index.
+  function vidChipTap(box, st, i) {
+    return function () { vidSwap(box, st, i); };
+  }
+
+  // A chip tap is an exchange of pixels, never a request: the server sent every clip
+  // at once and they are all sitting in vidCache. The crossfade is opacity only and
+  // the title clamps to one line, so the slot above — a grid row animating its own
+  // height — never has a second animation to fight. Reduced motion skips the fade
+  // rather than blanking the thumbnail for a fifth of a second.
+  function vidSwap(box, st, i) {
+    if (i === st.i || !st.clips[i]) return;
+    st.i = i;
+    vidChips(box, st);
+    // Already playing: the honest thing is to start the clip that was asked for
+    // rather than fall back to a still of it.
+    var fr = box.querySelector(".embedwrap iframe");
+    if (fr) {
+      fr.src = vidSrc(st.clips[i]);
+      fr.title = st.clips[i].title || "Exercise demonstration";
+    }
+    var fade = [];
+    var by = box.querySelector(".ytby"), face = box.querySelector(".ytface");
+    if (by) fade.push(by);
+    if (face) fade.push(face);
+    if (lessMotion()) { vidPaint(box, st); return; }
+    for (var j = 0; j < fade.length; j++) fade[j].classList.add("swapping");
+    setTimeout(function () {
+      vidPaint(box, st);
+      for (var k = 0; k < fade.length; k++) fade[k].classList.remove("swapping");
+    }, 220);
   }
 
   // The link row is not a fallback for the clip — it is the other half of the
   // answer, and on a phone it hands off to the YouTube app. When nothing was found
   // it is the whole answer, which is still more than the sheet had before.
-  function vidNode(v, searchUrl) {
+  function vidNode(v, searchUrl, alternates, curated) {
     var box = el("div", "ytbox");
     if (v && v.id) {
+      var st = { clips: [v].concat(alternates || []), i: 0, curated: !!curated };
       box.appendChild(el("div", "saidlab", "Watch how it is done"));
-      box.appendChild(vidFace(box, v));
-      // Outside the facade, so they survive the swap to the player: whose gym this
-      // is does not stop mattering the moment the video starts, and the slot keeps
-      // exactly the height it had, so tapping play moves nothing.
-      if (v.title) box.appendChild(el("div", "ytt", v.title));
-      if (v.channel) box.appendChild(el("div", "ytc", v.channel));
+      box.appendChild(vidFace(box, st));
+      box.appendChild(el("div", "ytby"));
+      // One clip is not a choice, and a row of exactly one chip would read as a
+      // filter that cannot be turned off.
+      if (st.clips.length > 1) box.appendChild(el("div", "ytalts"));
+      vidPaint(box, st);
+      vidChips(box, st);
     }
     if (searchUrl) {
       var a = el("a", "ytmore", "More on YouTube");
@@ -3025,7 +3139,8 @@ export const APP = String.raw`
   function vidFill(r) {
     var slot = $("explainvid"), inner = $("explainvidin");
     inner.innerHTML = "";
-    inner.appendChild(vidNode(r.video, r.search_url));
+    inner.appendChild(vidNode(r.video, r.search_url, r.alternates,
+      r.video && r.video.curated));
     if (window.requestAnimationFrame) {
       requestAnimationFrame(function () { slot.classList.add("on"); });
     } else {

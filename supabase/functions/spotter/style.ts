@@ -618,10 +618,10 @@ export const STYLE = String.raw`<style>
   .saidq { font-size: 15px; line-height: 1.55; color: var(--ink); word-break: break-word; }
   .said .chip, #watchbody .chip { margin-top: 11px; padding: 11px 15px; }
   /* ---------- the demonstration clip ----------
-     One 16:9 slot, a title, a channel, a way out — the shape Hevy, Fitbod and Nike
-     Training Club all settled on for the demo inside an exercise screen. Ours is
-     somebody else's video rather than one we filmed, so the channel line is not
-     decoration: it says whose gym you are standing in.
+     One 16:9 slot, a byline, the other creators who filmed it, a way out — the shape
+     Hevy, Fitbod and Nike Training Club all settled on for the demo inside an exercise
+     screen. Ours is somebody else's video rather than one we filmed, so the channel
+     line is not decoration: it says whose gym you are standing in.
 
      The slot is a grid row that grows from 0fr to 1fr, which is the one way to
      animate to a height nobody knows in advance. It matters because the answer
@@ -635,7 +635,7 @@ export const STYLE = String.raw`<style>
   .ytbox .saidlab { margin-bottom: 7px; }
   .ytface { display: block; width: 100%; margin: 0; padding: 0; border: 0; background: none;
     text-align: left; color: inherit; font: inherit;
-    transition: transform var(--t-1) var(--e-out); }
+    transition: transform var(--t-1) var(--e-out), opacity var(--t-2) var(--e-soft); }
   .ytface:active { transform: scale(.985); }
   /* hqdefault is 480x360 with letterbox bars top and bottom; cropped to 16:9 they
      are exactly what comes off, so this covers rather than contains. */
@@ -650,10 +650,42 @@ export const STYLE = String.raw`<style>
     justify-content: center; background: var(--ember); color: var(--on-ember);
     box-shadow: 0 3px 16px var(--glow); }
   .ytplay .ic { width: 20px; height: 20px; fill: currentColor; margin-left: 2px; }
-  .ytt { font-size: 13.5px; line-height: 1.45; color: var(--ink); margin-top: 9px;
+  /* The byline. Curated clips read creator first — .ytch over .ytsub — because a
+     person chose that channel; a search result keeps .ytt over .ytc, the humbler claim.
+     The block crossfades on a chip tap, opacity only: the slot above is a grid row
+     animating its own height and a second height animation would fight it. */
+  .ytby { margin-top: 9px; transition: opacity var(--t-2) var(--e-soft); }
+  .ytby.swapping, .ytface.swapping { opacity: 0; }
+  .ytch { display: flex; align-items: center; gap: 6px; font-size: 13.5px; font-weight: 650;
+    line-height: 1.4; color: var(--ink); }
+  .ytch .ic { width: 14px; height: 14px; }
+  /* Not the red logo: YouTube's terms ask only that the source be identifiable, and a
+     brand colour here would outrank the creator's own name, which is the point. */
+  .ytlen { color: var(--muted); font-weight: 600; font-variant-numeric: tabular-nums; }
+  /* One line, always: a two-line title on one clip and a one-line title on the next
+     would move the chips under it every time a chip is tapped. */
+  .ytsub { font-size: 12.5px; line-height: 1.4; color: var(--muted); margin-top: 3px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ytt { font-size: 13.5px; line-height: 1.45; color: var(--ink);
     font-weight: 600; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical;
     -webkit-line-clamp: 2; }
-  .ytc { font-size: 12px; line-height: 1.4; color: var(--muted); margin-top: 3px; }
+  .ytc { display: flex; align-items: center; gap: 6px; font-size: 12px; line-height: 1.4;
+    color: var(--muted); margin-top: 3px; }
+  .ytc .ic { width: 13px; height: 13px; }
+  /* The other creators who filmed this movement. It scrolls rather than wraps, so the
+     slot's height never depends on how long "Renaissance Periodization" is. */
+  .ytalts { display: flex; gap: 7px; margin-top: 11px; padding: 6px 0; overflow-x: auto;
+    scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .ytalts::-webkit-scrollbar { display: none; }
+  .ytalt { position: relative; flex: none; height: 32px; padding: 0 13px; border-radius: 999px;
+    border: 1px solid var(--line); background: var(--sand); color: var(--ink-2); font: inherit;
+    font-size: 12.5px; font-weight: 600; white-space: nowrap;
+    transition: background var(--t-1) var(--e-out), color var(--t-1) var(--e-out),
+      border-color var(--t-1) var(--e-out), transform var(--t-1) var(--e-out); }
+  /* Drawn 32 tall so the row stays a row; hit 44, which is Apple's floor. */
+  .ytalt::after { content: ""; position: absolute; inset: -6px 0; }
+  .ytalt.on { background: var(--ember-soft); color: var(--ember-ink); border-color: transparent; }
+  .ytalt:active { transform: scale(.96); }
   /* A row, not a button: the clip is the offer and this is the door beside it. */
   .ytmore { position: relative; display: inline-flex; align-items: center; gap: 5px;
     margin: 12px 0 16px; font-size: 13.5px; font-weight: 600; color: var(--ember-ink);
@@ -671,6 +703,11 @@ export const STYLE = String.raw`<style>
     .ytface { transition: none; }
     .ytface:active { transform: none; }
     .ytmore { transition: none; }
+    /* The swap still happens, it just happens at once — vidSwap skips the delay too,
+       so the thumbnail is never blank. */
+    .ytby, .ytalt { transition: none; }
+    .ytby.swapping, .ytface.swapping { opacity: 1; }
+    .ytalt:active { transform: none; }
   }
   .kv { display: flex; align-items: center; justify-content: space-between; gap: 12px;
     padding: 13px 0; border-top: 1px solid var(--line); font-size: 14px; }
