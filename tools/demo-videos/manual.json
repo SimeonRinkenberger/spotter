@@ -1,0 +1,5 @@
+[
+  {
+    "_comment": "Hand-pasted demo clips, for creators whose per-exercise videos are unlisted and cannot be enumerated (Jeff Nippard's program link sheets). One object per clip: {\"video_id\": \"11-char YouTube id\", \"key\": \"a catalog id from supabase/functions/spotter/catalog.ts\", \"title\": \"Front Squat\", \"secs\": 12}. secs is optional. Entries without a video_id (like this one) are ignored, so this comment can stay. Rows from this file are trusted as written — method 'manual', tier 1 — and are never sent to the review file, so check the id and the key before pasting. Re-run: node tools/demo-videos.mjs run"
+  }
+]

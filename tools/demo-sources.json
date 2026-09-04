@@ -1,0 +1,103 @@
+{
+  "note": "Curated demo-clip allow-list. Every clip Spotter shows in the Explain sheet comes from one of these creators; nothing is taken from YouTube search. To add a creator, add one entry here and run 'node tools/demo-videos.mjs run' — the enumerator, the matcher, the review file and the SQL do not change. Fields: uploads:true enumerates the channel's uploads playlist (UU + channel_id minus the UC); playlists[] enumerates exactly those playlist ids; playlists_tab is a regex over the channel's playlists tab, for a creator who files demos in many small playlists; manual points at a hand-pasted file for clips that are unlisted and cannot be enumerated. select is the gate a video has to pass to be considered at all (max_secs, optional min_secs, optional title_re, plain_title = the title has to read like a bare exercise name, max_words). strip is applied in order to the title before matching and before the title is shown. tier orders creators when several have the same exercise: 1 wins.",
+  "sources": [
+    {
+      "slug": "rp",
+      "label": "Renaissance Periodization",
+      "channel_id": "UCfQgsKhHjSyRLOp9mnffqVg",
+      "handle": "@RenaissancePeriodization",
+      "tier": 1,
+      "uploads": true,
+      "select": { "max_secs": 25, "min_secs": 5, "plain_title": true, "max_words": 5 },
+      "strip": []
+    },
+    {
+      "slug": "fbb",
+      "label": "Functional Bodybuilding",
+      "channel_id": "UCjNE2-Yeiwo4mTJ3HdfrSHA",
+      "handle": "@FunctionalBodybuilding",
+      "tier": 1,
+      "playlists": [
+        "PLUm64T6pR_3Xl5tlXsEYBVnCHfRfI6pdk",
+        "PLUm64T6pR_3UGcplYRtMX8MGGaGK3FYWg",
+        "PLUm64T6pR_3Vp3FwusriwMavo8rYz9KKy",
+        "PLUm64T6pR_3VbUKO9rvB59CTCQXIQ0OW4",
+        "PLUm64T6pR_3WXyaAjw-Oj55C97Keazfgh"
+      ],
+      "select": { "max_secs": 90, "plain_title": true, "max_words": 8 },
+      "strip": []
+    },
+    {
+      "slug": "catalyst",
+      "label": "Catalyst Athletics",
+      "channel_id": "UCOe24b2O8eoeHz9fwWuKRVA",
+      "handle": "@CatalystAthletics",
+      "tier": 2,
+      "playlists": ["PLEaPUUsRrMbwMMSS5L2z3eskcz6lHXkj0"],
+      "select": { "max_secs": 240, "title_re": "\\|\\s*Olympic Weightlifting Exercise Library\\s*$" },
+      "strip": ["\\s*\\|\\s*Olympic Weightlifting Exercise Library\\s*$"]
+    },
+    {
+      "slug": "crossfit",
+      "label": "CrossFit",
+      "channel_id": "UCtcQ6TPwXAYgZ1Mcl3M1vng",
+      "handle": "@crossfit",
+      "tier": 2,
+      "uploads": true,
+      "select": { "max_secs": 240, "title_re": "^The [A-Z][A-Za-z\\-' ]+( \\(.*\\))?$" },
+      "strip": ["^The ", "\\s*\\(.*\\)\\s*$"]
+    },
+    {
+      "slug": "tnation",
+      "label": "T-Nation",
+      "channel_id": "UC6TRaqsCQQBI0QF6aSBz4nw",
+      "handle": "@tnation",
+      "tier": 2,
+      "playlists": ["PL7CBCDEFF8472591B"],
+      "select": { "max_secs": 180, "plain_title": true, "max_words": 8 },
+      "strip": []
+    },
+    {
+      "slug": "musclewiki",
+      "label": "MuscleWiki",
+      "channel_id": "UCFpj07BSepA04QgvKSUX8eg",
+      "handle": "@MuscleWiki",
+      "tier": 2,
+      "playlists_tab": "Exercises$",
+      "select": { "max_secs": 60, "title_re": "^How [Tt]o\\b", "max_words": 10 },
+      "strip": ["^How [Tt]o\\b[\\s:.\\-]*(?:do\\b[\\s:.\\-]*)?(?:(?:an|a|the)\\b\\s*)?"]
+    },
+    {
+      "slug": "bbcom",
+      "label": "Bodybuilding.com",
+      "channel_id": "UC97k3hlbE-1rVN8y56zyEEA",
+      "handle": "@bodybuildingcom",
+      "tier": 3,
+      "uploads": true,
+      "select": { "max_secs": 180, "title_re": " Exercise\\s*-\\s*Bodybuilding\\.com\\s*$" },
+      "strip": ["\\s*-\\s*[A-Za-z /&]+ Exercise\\s*-\\s*Bodybuilding\\.com\\s*$"]
+    },
+    {
+      "slug": "nippard",
+      "label": "Jeff Nippard",
+      "channel_id": "UC68TLK0mAEzUyHx5x5k-S1Q",
+      "handle": "@JeffNippard",
+      "tier": 3,
+      "playlists": ["PLp4G6oBUcv8yGQifkb4p_ZOoACPnYslx9"],
+      "select": { "max_secs": 900 },
+      "strip": [],
+      "no_hook_filter": true,
+      "review_only": true,
+      "why": "Technique Tuesday is a deep dive, not a demo clip, and every title is a hook. It is offered as the go-deeper alternate, never as an automatic match: containment and the review file only."
+    },
+    {
+      "slug": "nippard-program",
+      "label": "Jeff Nippard",
+      "channel_id": "UC68TLK0mAEzUyHx5x5k-S1Q",
+      "handle": "@JeffNippard",
+      "tier": 1,
+      "manual": "tools/demo-videos/manual.json",
+      "why": "Nippard's true per-exercise demo clips are unlisted and only reachable through a purchased program's link sheet, so they cannot be enumerated. The owner pastes them into the manual file."
+    }
+  ]
+}
