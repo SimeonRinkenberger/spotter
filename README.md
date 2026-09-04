@@ -166,6 +166,22 @@ when it is tapped, tearing it down when the sheet closes; under it a "More on Yo
 to the search, which is what the sheet offers when nothing was found. The `demo_*` columns, the
 `demos` bucket and `tools/map-demos.mjs` are still there but nothing reads them.
 
+**The clips come from a short list of creators, not from search.** `search.list` has been capped
+at 100 calls a day for the whole project since June 2026, and what it ranks first is a lottery, so
+the demonstrations are a curated allow-list: eight channels that publish plain, per-exercise
+footage — Renaissance Periodization and Functional Bodybuilding first, then Catalyst Athletics,
+CrossFit, T-Nation and MuscleWiki, then Bodybuilding.com and Jeff Nippard — enumerated keylessly
+from the owner's own machine by `tools/demo-videos.mjs` and matched to canonical catalog ids
+offline, so a lookup at request time is one index scan and no quota. Only two things become a clip
+without a person: a title that IS a catalog name or alias, and a title that contains one as a whole
+phrase with nothing but neutral words ("standing", "cable", "machine") left over. Everything else —
+"Wide Grip Bench Press", "Machine Glute Kickback" — goes to `tools/demo-videos-review.json` to be
+confirmed or rejected by hand, and those decisions survive re-runs. Today that is 378 clips over
+168 of the 224 catalog ids; the misses are cardio machines and yoga, which nobody on the list
+demonstrates. Adding a creator is one entry in `tools/demo-sources.json` and one
+`node tools/demo-videos.mjs run`, which refreshes the committed snapshots under
+`tools/demo-videos/` and regenerates the seed migration.
+
 **Substitutions carry a reason.** `POST /api/swap` takes `reason` (`no_equipment`,
 `station_busy`, `pain`) and, for pain, a `body_area`. Candidates come from the catalog —
 movements sharing a muscle group, filtered by the equipment to hand, or the muscles that

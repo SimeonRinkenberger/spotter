@@ -1,0 +1,942 @@
+[
+ {
+  "id": "--utaPT7XYQ",
+  "secs": 14,
+  "title": "Parallel Pulldown"
+ },
+ {
+  "id": "-MODnZdnmAQ",
+  "secs": 12,
+  "title": "Cable Rope Facepull"
+ },
+ {
+  "id": "-OUSBPnHvsQ",
+  "secs": 10,
+  "title": "Machine Crunch"
+ },
+ {
+  "id": "-eO_VydErV0",
+  "secs": 16,
+  "title": "Feet Forward Smith Squat"
+ },
+ {
+  "id": "-xa-6cQaZKY",
+  "secs": 12,
+  "title": "Rope Pushdown"
+ },
+ {
+  "id": "0DQvn2qsOG4",
+  "secs": 9,
+  "title": "Front Squat Cross Grip"
+ },
+ {
+  "id": "0UBRfiO4zDs",
+  "secs": 17,
+  "title": "Chest Supported Row"
+ },
+ {
+  "id": "0Wa9CfRXUkA",
+  "secs": 12,
+  "title": "Hammer Machine Chest Press"
+ },
+ {
+  "id": "0o07iGKUarI",
+  "secs": 12,
+  "title": "Machine Lateral Raise"
+ },
+ {
+  "id": "0tiC6RUZL8Y",
+  "secs": 15,
+  "title": "Assisted Wide Grip Pullup"
+ },
+ {
+  "id": "1IIPcUCKxcE",
+  "secs": 12,
+  "title": "Narrow Stance Squat"
+ },
+ {
+  "id": "1lrjpLuXH4w",
+  "secs": 10,
+  "title": "Inverted Skullcrusher"
+ },
+ {
+  "id": "1u18yJELsh0",
+  "secs": 12,
+  "title": "Cable Overhead Triceps Extension"
+ },
+ {
+  "id": "2CDKTFFp5fA",
+  "secs": 14,
+  "title": "Rope Twist Curl"
+ },
+ {
+  "id": "2OMbdPF7mz4",
+  "secs": 12,
+  "title": "Cable Cross Body Lateral Raise"
+ },
+ {
+  "id": "2wPpcJBe03o",
+  "secs": 13,
+  "title": "Dumbbell Bench Wrist Curl"
+ },
+ {
+  "id": "2zaT3WAgZi0",
+  "secs": 11,
+  "title": "Cable Side Shrug"
+ },
+ {
+  "id": "34gVHrkaiz0",
+  "secs": 11,
+  "title": "Bent Lateral Raise"
+ },
+ {
+  "id": "3QcJggd_L24",
+  "secs": 16,
+  "title": "Smith Machine Row"
+ },
+ {
+  "id": "4H2ItXwUTp8",
+  "secs": 15,
+  "title": "Seal Row"
+ },
+ {
+  "id": "4LA1kF7yCGo",
+  "secs": 11,
+  "title": "Dip"
+ },
+ {
+  "id": "4eDJa5MnAmY",
+  "secs": 15,
+  "title": "Sumo Squat"
+ },
+ {
+  "id": "4mfLHnFL0Uw",
+  "secs": 12,
+  "title": "Cable Flye"
+ },
+ {
+  "id": "5CECBjd7HLQ",
+  "secs": 12,
+  "title": "Incline Dumbbell Press"
+ },
+ {
+  "id": "5PoEksoJNaw",
+  "secs": 12,
+  "title": "Two Arm Dumbbell Row"
+ },
+ {
+  "id": "5YK4bgzXDp0",
+  "secs": 14,
+  "title": "Machine Reverse Flye"
+ },
+ {
+  "id": "5z7ZtboxbBY",
+  "secs": 10,
+  "title": "Dumbbell Bent Shrug"
+ },
+ {
+  "id": "6FZHJGzMFEc",
+  "secs": 15,
+  "title": "Barbell Bent Over Row"
+ },
+ {
+  "id": "6Fzep104f0s",
+  "secs": 13,
+  "title": "Cable Triceps Pushdown"
+ },
+ {
+  "id": "6GMKPQVERzw",
+  "secs": 10,
+  "title": "Rope Crunch"
+ },
+ {
+  "id": "7FwGZ8qY5OU",
+  "secs": 9,
+  "title": "Hanging Straight Leg Raise"
+ },
+ {
+  "id": "87pZAbYjXc4",
+  "secs": 13,
+  "title": "EZ Bar Underhand Front Raise"
+ },
+ {
+  "id": "8CGMuud1ANw",
+  "secs": 11,
+  "title": "Kneeling Cable Facepull"
+ },
+ {
+  "id": "8oR5hBwbIBc",
+  "secs": 18,
+  "title": "Incline Dumbbell Flye"
+ },
+ {
+  "id": "8urE8Z8AMQ4",
+  "secs": 13,
+  "title": "Smith Machine Incline Press"
+ },
+ {
+  "id": "8ygapPMYK1I",
+  "secs": 11,
+  "title": "Assisted Normal Grip Pullup"
+ },
+ {
+  "id": "90cE3rCLtmo",
+  "secs": 11,
+  "title": "Incline Dumbbell Facepull"
+ },
+ {
+  "id": "9JC1EwqezGY",
+  "secs": 10,
+  "title": "Underhand Pullup"
+ },
+ {
+  "id": "AweC3UaM14o",
+  "secs": 12,
+  "title": "Deadlift"
+ },
+ {
+  "id": "B09ZkYsnKko",
+  "secs": 12,
+  "title": "Low Incline Dumbbell Press"
+ },
+ {
+  "id": "BIOM5eSsJ_8",
+  "secs": 9,
+  "title": "V-Up"
+ },
+ {
+  "id": "BeIcUXQ3RDc",
+  "secs": 12,
+  "title": "Cable Single Arm Side Shrug"
+ },
+ {
+  "id": "BhlL-esnitU",
+  "secs": 16,
+  "title": "Flat Dumbbell Press Flye"
+ },
+ {
+  "id": "Bx8ga1BLHLE",
+  "secs": 12,
+  "title": "Machine Triceps Extension"
+ },
+ {
+  "id": "CN_7cz3P-1U",
+  "secs": 15,
+  "title": "Stiff Legged Deadlift"
+ },
+ {
+  "id": "Cj6P91eFXkM",
+  "secs": 13,
+  "title": "Cable Bent Flye"
+ },
+ {
+  "id": "Cp_bShvMY4c",
+  "secs": 11,
+  "title": "Cable Single Arm Pushdown"
+ },
+ {
+  "id": "D1f7d1OcobY",
+  "secs": 14,
+  "title": "Thumbs Down Lateral Raise"
+ },
+ {
+  "id": "DAnTf16NcT0",
+  "secs": 10,
+  "title": "Slant Board Situp"
+ },
+ {
+  "id": "DMo3HJoawrU",
+  "secs": 14,
+  "title": "Single Arm Supported Dumbbell Row"
+ },
+ {
+  "id": "EF7jXP17DPE",
+  "secs": 11,
+  "title": "Barbell Hip Thrust"
+ },
+ {
+  "id": "EK747VC37yE",
+  "secs": 13,
+  "title": "EZ Bar Curl Wide Grip"
+ },
+ {
+  "id": "EUIri47Epcg",
+  "secs": 15,
+  "title": "Normal Grip Pulldown"
+ },
+ {
+  "id": "EeE3f4VWFDo",
+  "secs": 11,
+  "title": "Wide Grip Bench Press"
+ },
+ {
+  "id": "FDay9wFe5uE",
+  "secs": 17,
+  "title": "Machine Flye"
+ },
+ {
+  "id": "FiQUzPtS90E",
+  "secs": 13,
+  "title": "Narrow Grip Bench Press"
+ },
+ {
+  "id": "FxQ0XEoFYQk",
+  "secs": 11,
+  "title": "Incline Wide Grip Bench Press"
+ },
+ {
+  "id": "G2qpTG1Eh40",
+  "secs": 11,
+  "title": "Standing Barbell Shoulder Press"
+ },
+ {
+  "id": "G9uNaXGTJ4w",
+  "secs": 12,
+  "title": "Straight Arm Pulldown"
+ },
+ {
+  "id": "GFYrRBoov3w",
+  "secs": 12,
+  "title": "High Incline Dumbbell Press"
+ },
+ {
+  "id": "GH_l85Ky3vA",
+  "secs": 12,
+  "title": "Dumbbell Lean Shrug"
+ },
+ {
+  "id": "GRHLNfmr_oI",
+  "secs": 14,
+  "title": "Narrow Grip Pulldown"
+ },
+ {
+  "id": "GRgWPT9XSQQ",
+  "secs": 8,
+  "title": "Wide Grip Pullup"
+ },
+ {
+  "id": "GdsRZAeeDUc",
+  "secs": 12,
+  "title": "Assisted Parallel Pullup"
+ },
+ {
+  "id": "H260SUUyJBM",
+  "secs": 14,
+  "title": "Underhand EZ Bar Row"
+ },
+ {
+  "id": "HHxNbhP16UE",
+  "secs": 9,
+  "title": "Front Squat"
+ },
+ {
+  "id": "HzIiNhHhhtA",
+  "secs": 13,
+  "title": "Seated Dumbbell Shoulder Press"
+ },
+ {
+  "id": "IdZ7HXnatko",
+  "secs": 10,
+  "title": "EZ Bar Overhead Triceps Exension"
+ },
+ {
+  "id": "IuzRCN6eG6Y",
+  "secs": 12,
+  "title": "Seated Barbell Shoulder Press"
+ },
+ {
+  "id": "JFm8KbhjibM",
+  "secs": 17,
+  "title": "Flat Dumbbell Flye"
+ },
+ {
+  "id": "Ja6ZlIDONac",
+  "secs": 17,
+  "title": "Machine Preacher Curl"
+ },
+ {
+  "id": "JnLFSFurrqQ",
+  "secs": 14,
+  "title": "Barbell Curl Normal Grip"
+ },
+ {
+  "id": "KOaCM1HMwU0",
+  "secs": 13,
+  "title": "Inverted Row"
+ },
+ {
+  "id": "KxEYX_cuesM",
+  "secs": 13,
+  "title": "Leg Press Calves"
+ },
+ {
+  "id": "L4ChTwrXTjc",
+  "secs": 14,
+  "title": "Assisted Underhand Pullup"
+ },
+ {
+  "id": "Lz1aFtuNvEQ",
+  "secs": 13,
+  "title": "Narrow Pushup"
+ },
+ {
+  "id": "M_MjF5Nm_h4",
+  "secs": 11,
+  "title": "Barbell Shrug"
+ },
+ {
+  "id": "N3awlEyTY98",
+  "secs": 12,
+  "title": "Calf Machine"
+ },
+ {
+  "id": "N6FVnaasdq0",
+  "secs": 11,
+  "title": "Single Leg Leg Curl"
+ },
+ {
+  "id": "NLDBFtSNhqg",
+  "secs": 10,
+  "title": "Machine Glute Kickback"
+ },
+ {
+  "id": "NwzUje3z0qY",
+  "secs": 11,
+  "title": "Machine Chest Press"
+ },
+ {
+  "id": "O-OBCfyh9Fw",
+  "secs": 13,
+  "title": "Pec Deck Flye"
+ },
+ {
+  "id": "O5viuEPDXKY",
+  "secs": 12,
+  "title": "Smith Machine Bench Press"
+ },
+ {
+  "id": "OChuGyCSC7U",
+  "secs": 9,
+  "title": "Machine Triceps Pushdown"
+ },
+ {
+  "id": "OLqZDUUD2b0",
+  "secs": 13,
+  "title": "Smith Machine Seated Shoulder Press"
+ },
+ {
+  "id": "O_0V30RUjFY",
+  "secs": 24,
+  "title": "Huberman NAILED IT"
+ },
+ {
+  "id": "Orxowest56U",
+  "secs": 11,
+  "title": "Seated Leg Curl"
+ },
+ {
+  "id": "OuG1smZTsQQ",
+  "secs": 11,
+  "title": "Lateral Raise"
+ },
+ {
+  "id": "QIpa-9dtkgA",
+  "secs": 12,
+  "title": "Smith Machine Upright Row"
+ },
+ {
+  "id": "RD_A-Z15ER4",
+  "secs": 9,
+  "title": "Hanging Knee Raise"
+ },
+ {
+  "id": "Raemd3qWgJc",
+  "secs": 11,
+  "title": "Standing Dumbbell Shoulder Press"
+ },
+ {
+  "id": "SBGYSfoqyfU",
+  "secs": 8,
+  "title": "Glute Ham Raise"
+ },
+ {
+  "id": "SKf8wHlIFX0",
+  "secs": 14,
+  "title": "Top Hold Lateral Raise"
+ },
+ {
+  "id": "TQfhY5oJ_Sc",
+  "secs": 11,
+  "title": "Reverse Lunge"
+ },
+ {
+  "id": "T_X5rb3G5lk",
+  "secs": 12,
+  "title": "Modified Candlestick"
+ },
+ {
+  "id": "Tih5iHyELsE",
+  "secs": 14,
+  "title": "JM Press"
+ },
+ {
+  "id": "TrTSvn5-MTk",
+  "secs": 13,
+  "title": "Incline Machine Chest Press"
+ },
+ {
+  "id": "UCXxvVItLoM",
+  "secs": 18,
+  "title": "Seated Cable Row"
+ },
+ {
+  "id": "UPGuwx7GQ9s",
+  "secs": 13,
+  "title": "Barbell Row to Chest"
+ },
+ {
+  "id": "Ub6QruNKfbY",
+  "secs": 12,
+  "title": "Dumbbell Upright Row"
+ },
+ {
+  "id": "VprlTxpB1rk",
+  "secs": 14,
+  "title": "Underhand Pulldown"
+ },
+ {
+  "id": "WG3vdcq__I0",
+  "secs": 14,
+  "title": "EZ Bar Spider Curl"
+ },
+ {
+  "id": "WVAaKJvToe0",
+  "secs": 12,
+  "title": "Cable Wrist Curl"
+ },
+ {
+  "id": "WvLMauqrnK8",
+  "secs": 13,
+  "title": "Machine Shoulder Press"
+ },
+ {
+  "id": "X-uKkAukJVA",
+  "secs": 11,
+  "title": "Deficit Deadlift"
+ },
+ {
+  "id": "XOEL4MgekYE",
+  "secs": 14,
+  "title": "Hammer Curl"
+ },
+ {
+  "id": "XWt6FQAK5wM",
+  "secs": 11,
+  "title": "Parallel Grip Pullup"
+ },
+ {
+  "id": "YCKPD4BSD2E",
+  "secs": 15,
+  "title": "Wide Grip Pulldown"
+ },
+ {
+  "id": "YQ2s_Y7g5Qk",
+  "secs": 11,
+  "title": "Flat Dumbbell Bench Press"
+ },
+ {
+  "id": "YykmcX2b-LY",
+  "secs": 9,
+  "title": "Cable Shrug"
+ },
+ {
+  "id": "ZSPmIyX9RZs",
+  "secs": 11,
+  "title": "Machine Hip Thrust"
+ },
+ {
+  "id": "Zfi0KcIJi6c",
+  "secs": 11,
+  "title": "Incline Narrow Grip Bench Press"
+ },
+ {
+  "id": "_9VlfuYYC7w",
+  "secs": 12,
+  "title": "Cambered Bar Bench Press"
+ },
+ {
+  "id": "_FrrYQxA6kc",
+  "secs": 14,
+  "title": "Machine Chest Supported Row"
+ },
+ {
+  "id": "__qfDhdByMY",
+  "secs": 12,
+  "title": "Stair Calves"
+ },
+ {
+  "id": "_gEx2ijsmNM",
+  "secs": 11,
+  "title": "Single Leg Stair Claves"
+ },
+ {
+  "id": "_ikCPws1mbE",
+  "secs": 12,
+  "title": "Barbell Front Raise"
+ },
+ {
+  "id": "_meXEWq5MOQ",
+  "secs": 9,
+  "title": "Barbell Walking Lunge"
+ },
+ {
+  "id": "_t3lrPI6Ns4",
+  "secs": 11,
+  "title": "Dumbbell Shrug"
+ },
+ {
+  "id": "aTYlqC_JacQ",
+  "secs": 17,
+  "title": "Incline Dumbbell Curl"
+ },
+ {
+  "id": "aV1U_mK3XOs",
+  "secs": 11,
+  "title": "Flat Hammer Machine Press"
+ },
+ {
+  "id": "bnYekgCKfv0",
+  "secs": 11,
+  "title": "Sumo Deficit Deadlift"
+ },
+ {
+  "id": "cYKYGwcg0U8",
+  "secs": 18,
+  "title": "Dumbbell Stiff Legged Deadlift"
+ },
+ {
+  "id": "cdmnvo3augg",
+  "secs": 13,
+  "title": "EZ Bar Curl Narrow Grip"
+ },
+ {
+  "id": "d9daNDIXtK8",
+  "secs": 9,
+  "title": "Barbell Bent Shrug"
+ },
+ {
+  "id": "dEJ0FTm-CEk",
+  "secs": 18,
+  "title": "High Bar Good Morning"
+ },
+ {
+  "id": "eFWCn5iEbTU",
+  "secs": 10,
+  "title": "Dumbbell Walking Lunge"
+ },
+ {
+  "id": "eHtSpCIykYU",
+  "secs": 22,
+  "title": "Activity Level and Dieting"
+ },
+ {
+  "id": "e_8HLu59-to",
+  "secs": 13,
+  "title": "Cable Underhand Flye"
+ },
+ {
+  "id": "ejPy8UvUTdg",
+  "secs": 25,
+  "title": "Sumo Haters Are Making Excuses"
+ },
+ {
+  "id": "fuK3nFvwgXk",
+  "secs": 16,
+  "title": "Dumbbell Single Arm Preacher Curl"
+ },
+ {
+  "id": "fv0sM-mu9NY",
+  "secs": 22,
+  "title": "The LEAST Effective Bicep Exercise"
+ },
+ {
+  "id": "gMgvBspQ9lk",
+  "secs": 13,
+  "title": "Medium Grip Bench Press"
+ },
+ {
+  "id": "gg5hwJuv6KI",
+  "secs": 17,
+  "title": "Hammer High Row"
+ },
+ {
+  "id": "gmNlqsE3Onc",
+  "secs": 13,
+  "title": "Deficit Pushup"
+ },
+ {
+  "id": "hPWYuhJMUhU",
+  "secs": 10,
+  "title": "Barbell Facepull"
+ },
+ {
+  "id": "hRJ6tR5-if0",
+  "secs": 12,
+  "title": "Dumbbell Front Raise"
+ },
+ {
+  "id": "hh5516HCu4k",
+  "secs": 12,
+  "title": "Smith Machine Calves"
+ },
+ {
+  "id": "i5edOh7e3sE",
+  "secs": 25,
+  "title": "Don't Do Pullups Like THIS"
+ },
+ {
+  "id": "i7J5h7BJ07g",
+  "secs": 10,
+  "title": "High Bar Squat"
+ },
+ {
+  "id": "iQ4JjOK73PE",
+  "secs": 12,
+  "title": "Dumbbell Standing Wrist Curl"
+ },
+ {
+  "id": "iWpoegdfgtc",
+  "secs": 11,
+  "title": "Normal Grip Pullup"
+ },
+ {
+  "id": "iixND1P2lik",
+  "secs": 15,
+  "title": "Alternating Dumbbell Curl"
+ },
+ {
+  "id": "jNihW0WDIL4",
+  "secs": 9,
+  "title": "Split Squat"
+ },
+ {
+  "id": "jPjhQ2hsAds",
+  "secs": 13,
+  "title": "Dumbbell Skullcrusher"
+ },
+ {
+  "id": "jQjWlIwG4sI",
+  "secs": 15,
+  "title": "Dumbbell Pullover"
+ },
+ {
+  "id": "jiowkUMomlw",
+  "secs": 16,
+  "title": "Cambered Bar Row"
+ },
+ {
+  "id": "ke2shAeQ0O8",
+  "secs": 15,
+  "title": "Dumbbell Spider Curl"
+ },
+ {
+  "id": "kqidUIf1eJE",
+  "secs": 13,
+  "title": "Rope Overhead Triceps Extension"
+ },
+ {
+  "id": "ktU2H0DDmwk",
+  "secs": 11,
+  "title": "Seated Barbell Overhead Triceps Extension"
+ },
+ {
+  "id": "ktqMy9B9e9w",
+  "secs": 23,
+  "title": "More Exercises Isn’t Always Better"
+ },
+ {
+  "id": "l3rHYPtMUo8",
+  "secs": 14,
+  "title": "Barbell Skullcrusher"
+ },
+ {
+  "id": "lJ2o89kcnxY",
+  "secs": 11,
+  "title": "Incline Medium Grip Bench Press"
+ },
+ {
+  "id": "lTfiohnjbyM",
+  "secs": 13,
+  "title": "Incline Dumbbell Press Flye"
+ },
+ {
+  "id": "lfQR7oVS8eo",
+  "secs": 12,
+  "title": "Barbell Standing Wrist Curl"
+ },
+ {
+  "id": "lq7eLC30b9w",
+  "secs": 10,
+  "title": "Leaning Cable Lateral Raise"
+ },
+ {
+  "id": "lzDgRRuBdqY",
+  "secs": 10,
+  "title": "Single Leg Hip Thrust"
+ },
+ {
+  "id": "m0FOpMEgero",
+  "secs": 11,
+  "title": "Leg Extension"
+ },
+ {
+  "id": "mm6_WcoCVTA",
+  "secs": 11,
+  "title": "Pushup"
+ },
+ {
+  "id": "mnxn-7SO9Ks",
+  "secs": 16,
+  "title": "Low Bar Good Morning"
+ },
+ {
+  "id": "n5WDXD_mpVY",
+  "secs": 13,
+  "title": "Lying Leg Curl"
+ },
+ {
+  "id": "nOn_Bz0zrwQ",
+  "secs": 10,
+  "title": "Cable Bent Shrug"
+ },
+ {
+  "id": "nzTY7j9ocR8",
+  "secs": 10,
+  "title": "Dumbbell Facepull"
+ },
+ {
+  "id": "odtLmLBUf04",
+  "secs": 17,
+  "title": "He Doesn't Even Train Arms"
+ },
+ {
+  "id": "opFVuRi_3b8",
+  "secs": 14,
+  "title": "Cable EZ Bar Curl"
+ },
+ {
+  "id": "opjbouBmUWg",
+  "secs": 16,
+  "title": "Hammer Low Row"
+ },
+ {
+  "id": "oxpAl14EYyc",
+  "secs": 16,
+  "title": "Machine Pullover"
+ },
+ {
+  "id": "pOn8Hzdl0go",
+  "secs": 21,
+  "title": "The RP Cooking Show Trailer"
+ },
+ {
+  "id": "pUS6HBQjRmc",
+  "secs": 16,
+  "title": "Barbell Curl Narrow Grip"
+ },
+ {
+  "id": "pXg8qppif7I",
+  "secs": 10,
+  "title": "Reaching Situp"
+ },
+ {
+  "id": "pfSMst14EFk",
+  "secs": 10,
+  "title": "Sumo Deadlift"
+ },
+ {
+  "id": "pv8e6OSyETE",
+  "secs": 11,
+  "title": "Cable Pull Through"
+ },
+ {
+  "id": "q5X9thiKofE",
+  "secs": 11,
+  "title": "Barbell Triceps Overhead Extension"
+ },
+ {
+  "id": "qr3ziolhjvQ",
+  "secs": 11,
+  "title": "Cable Upright Row"
+ },
+ {
+  "id": "rYgNArpwE7E",
+  "secs": 14,
+  "title": "Hack Squat"
+ },
+ {
+  "id": "sxA__DoLsgo",
+  "secs": 15,
+  "title": "EZ Bar Preacher Curl"
+ },
+ {
+  "id": "tRXw8HQ7-oA",
+  "secs": 16,
+  "title": "Dumbbell Twist Curl"
+ },
+ {
+  "id": "tZUYS7X50so",
+  "secs": 18,
+  "title": "Incline Dumbbell Row"
+ },
+ {
+  "id": "um3VVzqunPU",
+  "secs": 10,
+  "title": "Barbell Upright Row"
+ },
+ {
+  "id": "v709aJKv-gM",
+  "secs": 10,
+  "title": "Trap Bar Deadlift"
+ },
+ {
+  "id": "x41IWlX4Rqo",
+  "secs": 21,
+  "title": "You're Doing Calf Raises WRONG"
+ },
+ {
+  "id": "xU4l_IsSULs",
+  "secs": 23,
+  "title": "Supplements WON'T Get You Lean"
+ },
+ {
+  "id": "yIoAcMD3jcE",
+  "secs": 11,
+  "title": "Cable Underhand Front Raise"
+ },
+ {
+  "id": "yPis7nlbqdY",
+  "secs": 16,
+  "title": "T Bar Row"
+ },
+ {
+  "id": "yZ83t4mrPrI",
+  "secs": 12,
+  "title": "Assisted Dip"
+ },
+ {
+  "id": "yZmx_Ac3880",
+  "secs": 11,
+  "title": "Leg Press"
+ },
+ {
+  "id": "z3PRz2aVA10",
+  "secs": 12,
+  "title": "Incline Dumbbell Lateral Raise"
+ },
+ {
+  "id": "zgToz5FiI-E",
+  "secs": 12,
+  "title": "Seated Dumbbell Shrug"
+ }
+]

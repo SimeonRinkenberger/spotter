@@ -1,0 +1,7419 @@
+{
+ "note": "Set confirm:true on the ONE candidate that really is this exercise, or reject:true on the row when none of them are, then re-run node tools/demo-videos.mjs run. Confirm only when the clip shows the SAME movement: 'Medium Grip Bench Press' is a bench press, 'Wide Grip Bench Press' is a different lift and belongs rejected. why:'names it' means the title literally contains the catalog name and the words listed are what is left over; 'word overlap' is a score and is the one to read carefully. Open url to watch the clip. Rows already decided are kept at the end with done:true — that is how a decision survives the next run, so do not delete them. Undecided rows come first; they are the to-do list.",
+ "generated": "2026-09-04",
+ "open": 113,
+ "decided": 198,
+ "rows": [
+  {
+   "video_id": "wud3idMnESY",
+   "source": "catalyst",
+   "title": "Prone Weighted Arm Circles | Olympic Weightlifting Exercise Library",
+   "clean": "Prone Weighted Arm Circles",
+   "secs": 40,
+   "url": "https://www.youtube.com/watch?v=wud3idMnESY",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "arm-circles",
+     "name": "Arm Circles",
+     "via": "Arm Circles",
+     "score": 0.667,
+     "why": "names it, with pron weighted left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "o_v8N7tW2w0",
+   "source": "fbb",
+   "title": "Rear Foot Elevated Split Jumps",
+   "clean": "Rear Foot Elevated Split Jumps",
+   "secs": 11,
+   "url": "https://www.youtube.com/watch?v=o_v8N7tW2w0",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "bulgarian-split-squat",
+     "name": "Bulgarian Split Squat",
+     "via": "rear foot elevated split squat",
+     "score": 0.8,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "eIETz1Kq6Lk",
+   "source": "fbb",
+   "title": "Cross Body Kettlebell Rear Foot Elevated Split Squat",
+   "clean": "Cross Body Kettlebell Rear Foot Elevated Split Squat",
+   "secs": 16,
+   "url": "https://www.youtube.com/watch?v=eIETz1Kq6Lk",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "bulgarian-split-squat",
+     "name": "Bulgarian Split Squat",
+     "via": "rear foot elevated split squat",
+     "score": 0.769,
+     "why": "names it, with cro body kettlebell left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "pEOli_ZdcBs",
+   "source": "catalyst",
+   "title": "Single-Arm Overhead Bulgarian Split Squat | Olympic Weightlifting Exercise Library",
+   "clean": "Single-Arm Overhead Bulgarian Split Squat",
+   "secs": 60,
+   "url": "https://www.youtube.com/watch?v=pEOli_ZdcBs",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "bulgarian-split-squat",
+     "name": "Bulgarian Split Squat",
+     "via": "Bulgarian Split Squat",
+     "score": 0.667,
+     "why": "names it, with singl arm overhead left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "hdXgJwbaIYg",
+   "source": "catalyst",
+   "title": "Rope Cable Curl | Olympic Weightlifting Exercise Library",
+   "clean": "Rope Cable Curl",
+   "secs": 38,
+   "url": "https://www.youtube.com/watch?v=hdXgJwbaIYg",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "cable-curl",
+     "name": "Cable Curl",
+     "via": "Cable Curl",
+     "score": 0.8,
+     "why": "names it, with rop left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "C2RhWTlwx_U",
+   "source": "catalyst",
+   "title": "Single-Arm Cable Curl | Olympic Weightlifting Exercise Library",
+   "clean": "Single-Arm Cable Curl",
+   "secs": 31,
+   "url": "https://www.youtube.com/watch?v=C2RhWTlwx_U",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "cable-curl",
+     "name": "Cable Curl",
+     "via": "Cable Curl",
+     "score": 0.667,
+     "why": "names it, with singl arm left over",
+     "confirm": false
+    },
+    {
+     "id": "dumbbell-row",
+     "name": "Dumbbell Row",
+     "via": "single arm row",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "1G0UPv34k-8",
+   "source": "catalyst",
+   "title": "Single-Arm Rope Cable Curl | Olympic Weightlifting Exercise Library",
+   "clean": "Single-Arm Rope Cable Curl",
+   "secs": 38,
+   "url": "https://www.youtube.com/watch?v=1G0UPv34k-8",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "cable-curl",
+     "name": "Cable Curl",
+     "via": "Cable Curl",
+     "score": 0.571,
+     "why": "names it, with singl arm rop left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "Cj6P91eFXkM",
+   "source": "rp",
+   "title": "Cable Bent Flye",
+   "clean": "Cable Bent Flye",
+   "secs": 13,
+   "url": "https://www.youtube.com/watch?v=Cj6P91eFXkM",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "cable-fly",
+     "name": "Cable Fly",
+     "via": "Cable Fly",
+     "score": 0.8,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "e_8HLu59-to",
+   "source": "rp",
+   "title": "Cable Underhand Flye",
+   "clean": "Cable Underhand Flye",
+   "secs": 13,
+   "url": "https://www.youtube.com/watch?v=e_8HLu59-to",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "cable-fly",
+     "name": "Cable Fly",
+     "via": "Cable Fly",
+     "score": 0.8,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "ouHziPD2Eqg",
+   "source": "tnation",
+   "title": "High-Cable High Crossover",
+   "clean": "High-Cable High Crossover",
+   "secs": 20,
+   "url": "https://www.youtube.com/watch?v=ouHziPD2Eqg",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "cable-fly",
+     "name": "Cable Fly",
+     "via": "cable crossover",
+     "score": 0.8,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "nl2MnK1i504",
+   "source": "tnation",
+   "title": "Thibaudeau Coaches the Chest Supported Dumbbell Row",
+   "clean": "Thibaudeau Coaches the Chest Supported Dumbbell Row",
+   "secs": 43,
+   "url": "https://www.youtube.com/watch?v=nl2MnK1i504",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "chest-supported-row",
+     "name": "Chest Supported Row",
+     "via": "chest supported dumbbell row",
+     "score": 0.727,
+     "why": "names it, with thibaudeau coach left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "i965d8Rn-XA",
+   "source": "catalyst",
+   "title": "Copenhagen Plank Lift | Olympic Weightlifting Exercise Library",
+   "clean": "Copenhagen Plank Lift",
+   "secs": 49,
+   "url": "https://www.youtube.com/watch?v=i965d8Rn-XA",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "copenhagen-plank",
+     "name": "Copenhagen Plank",
+     "via": "Copenhagen Plank",
+     "score": 0.8,
+     "why": "names it, with lift left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "HAs_NgyTtOo",
+   "source": "catalyst",
+   "title": "Copenhagen Complex | Olympic Weightlifting Exercise Library",
+   "clean": "Copenhagen Complex",
+   "secs": 62,
+   "url": "https://www.youtube.com/watch?v=HAs_NgyTtOo",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "copenhagen-plank",
+     "name": "Copenhagen Plank",
+     "via": "copenhagen",
+     "score": 0.667,
+     "why": "names it, with complex left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "hTNWWqL9oc8",
+   "source": "fbb",
+   "title": "Bottoms Up Dual Kettlebell Cossack Squat",
+   "clean": "Bottoms Up Dual Kettlebell Cossack Squat",
+   "secs": 17,
+   "url": "https://www.youtube.com/watch?v=hTNWWqL9oc8",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "cossack-squat",
+     "name": "Cossack Squat",
+     "via": "Cossack Squat",
+     "score": 0.5,
+     "why": "names it, with bottom up dual kettlebell left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "sBuAJggOIxE",
+   "source": "fbb",
+   "title": "Dual Kettlebell Front Rack Cossack Squat",
+   "clean": "Dual Kettlebell Front Rack Cossack Squat",
+   "secs": 17,
+   "url": "https://www.youtube.com/watch?v=sBuAJggOIxE",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "cossack-squat",
+     "name": "Cossack Squat",
+     "via": "Cossack Squat",
+     "score": 0.5,
+     "why": "names it, with dual kettlebell front rack left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "-OUSBPnHvsQ",
+   "source": "rp",
+   "title": "Machine Crunch",
+   "clean": "Machine Crunch",
+   "secs": 10,
+   "url": "https://www.youtube.com/watch?v=-OUSBPnHvsQ",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "crunch",
+     "name": "Crunch",
+     "via": "Crunch",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "xO5WVJGVJ2w",
+   "source": "bbcom",
+   "title": "One-Legged Cable Kickback - Leg Exercise - Bodybuilding.com",
+   "clean": "One-Legged Cable Kickback",
+   "secs": 53,
+   "url": "https://www.youtube.com/watch?v=xO5WVJGVJ2w",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "donkey-kick",
+     "name": "Donkey Kick",
+     "via": "cable kickback",
+     "score": 0.8,
+     "why": "names it, with one legged left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "EK747VC37yE",
+   "source": "rp",
+   "title": "EZ Bar Curl Wide Grip",
+   "clean": "EZ Bar Curl Wide Grip",
+   "secs": 13,
+   "url": "https://www.youtube.com/watch?v=EK747VC37yE",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "ez-bar-curl",
+     "name": "EZ Bar Curl",
+     "via": "EZ Bar Curl",
+     "score": 0.75,
+     "why": "names it, with wid grip left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "cdmnvo3augg",
+   "source": "rp",
+   "title": "EZ Bar Curl Narrow Grip",
+   "clean": "EZ Bar Curl Narrow Grip",
+   "secs": 13,
+   "url": "https://www.youtube.com/watch?v=cdmnvo3augg",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "ez-bar-curl",
+     "name": "EZ Bar Curl",
+     "via": "EZ Bar Curl",
+     "score": 0.75,
+     "why": "names it, with narrow grip left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "AbWC9KxD8Co",
+   "source": "catalyst",
+   "title": "Wide-Grip Cable EZ Curl | Olympic Weightlifting Exercise Library",
+   "clean": "Wide-Grip Cable EZ Curl",
+   "secs": 36,
+   "url": "https://www.youtube.com/watch?v=AbWC9KxD8Co",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "ez-bar-curl",
+     "name": "EZ Bar Curl",
+     "via": "ez curl",
+     "score": 0.571,
+     "why": "names it, with wid grip cabl left over",
+     "confirm": false
+    },
+    {
+     "id": "cable-curl",
+     "name": "Cable Curl",
+     "via": "Cable Curl",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "bNmYhWaTtDE",
+   "source": "fbb",
+   "title": "L-Sit Flutter Kicks on Kettlebells",
+   "clean": "L-Sit Flutter Kicks on Kettlebells",
+   "secs": 14,
+   "url": "https://www.youtube.com/watch?v=bNmYhWaTtDE",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "flutter-kick",
+     "name": "Flutter Kick",
+     "via": "Flutter Kick",
+     "score": 0.571,
+     "why": "names it, with flutter kick kettlebell left over",
+     "confirm": false
+    },
+    {
+     "id": "l-sit",
+     "name": "L-Sit",
+     "via": "L-Sit",
+     "score": 0.571,
+     "why": "names it, with flutter kick kettlebell left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "kYBV3s4aj8U",
+   "source": "fbb",
+   "title": "L Hang Flutter Kicks Rings",
+   "clean": "L Hang Flutter Kicks Rings",
+   "secs": 13,
+   "url": "https://www.youtube.com/watch?v=kYBV3s4aj8U",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "flutter-kick",
+     "name": "Flutter Kick",
+     "via": "Flutter Kick",
+     "score": 0.571,
+     "why": "names it, with l hang ring left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "zDRj6Sw6tw8",
+   "source": "fbb",
+   "title": "L Sit Flutter Kicks On Parallettes",
+   "clean": "L Sit Flutter Kicks On Parallettes",
+   "secs": 16,
+   "url": "https://www.youtube.com/watch?v=zDRj6Sw6tw8",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "flutter-kick",
+     "name": "Flutter Kick",
+     "via": "Flutter Kick",
+     "score": 0.571,
+     "why": "names it, with flutter kick parallett left over",
+     "confirm": false
+    },
+    {
+     "id": "l-sit",
+     "name": "L-Sit",
+     "via": "L-Sit",
+     "score": 0.571,
+     "why": "names it, with flutter kick parallett left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "r9gqv3WF90I",
+   "source": "bbcom",
+   "title": "Dumbbell Squat - Leg Exercise - Bodybuilding.com",
+   "clean": "Dumbbell Squat",
+   "secs": 58,
+   "url": "https://www.youtube.com/watch?v=r9gqv3WF90I",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "goblet-squat",
+     "name": "Goblet Squat",
+     "via": "dumbbell goblet squat",
+     "score": 0.8,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "back-squat",
+     "name": "Back Squat",
+     "via": "squat",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "5VpbbzTjjMk",
+   "source": "fbb",
+   "title": "Goblet Press",
+   "clean": "Goblet Press",
+   "secs": 15,
+   "url": "https://www.youtube.com/watch?v=5VpbbzTjjMk",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "goblet-squat",
+     "name": "Goblet Squat",
+     "via": "goblets",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "KQKzt47L5aI",
+   "source": "fbb",
+   "title": "Goblet Clean",
+   "clean": "Goblet Clean",
+   "secs": 14,
+   "url": "https://www.youtube.com/watch?v=KQKzt47L5aI",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "goblet-squat",
+     "name": "Goblet Squat",
+     "via": "goblets",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "power-clean",
+     "name": "Power Clean",
+     "via": "clean",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "aAErmRDDJKY",
+   "source": "crossfit",
+   "title": "The Freestanding Handstand Push-Up",
+   "clean": "Freestanding Handstand Push-Up",
+   "secs": 47,
+   "url": "https://www.youtube.com/watch?v=aAErmRDDJKY",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "handstand-push-up",
+     "name": "Handstand Push-Up",
+     "via": "Handstand Push-Up",
+     "score": 0.857,
+     "why": "names it, with freestanding left over",
+     "confirm": false
+    },
+    {
+     "id": "push-up",
+     "name": "Push-Up",
+     "via": "Push-Up",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "incline-push-up",
+     "name": "Incline Push-Up",
+     "via": "Incline Push-Up",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "hvoQiF0kBI8",
+   "source": "crossfit",
+   "title": "The Strict Handstand Push-up",
+   "clean": "Strict Handstand Push-up",
+   "secs": 34,
+   "url": "https://www.youtube.com/watch?v=hvoQiF0kBI8",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "handstand-push-up",
+     "name": "Handstand Push-Up",
+     "via": "Handstand Push-Up",
+     "score": 0.857,
+     "why": "names it, with strict left over",
+     "confirm": false
+    },
+    {
+     "id": "push-up",
+     "name": "Push-Up",
+     "via": "Push-Up",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "incline-push-up",
+     "name": "Incline Push-Up",
+     "via": "Incline Push-Up",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "DJA1t6Fp5WE",
+   "source": "crossfit",
+   "title": "The Kipping Deficit Handstand Push-Up",
+   "clean": "Kipping Deficit Handstand Push-Up",
+   "secs": 57,
+   "url": "https://www.youtube.com/watch?v=DJA1t6Fp5WE",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "handstand-push-up",
+     "name": "Handstand Push-Up",
+     "via": "Handstand Push-Up",
+     "score": 0.75,
+     "why": "names it, with kipping deficit left over",
+     "confirm": false
+    },
+    {
+     "id": "push-up",
+     "name": "Push-Up",
+     "via": "Push-Up",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "jCbac5LqELQ",
+   "source": "fbb",
+   "title": "Pike Leg Lift Hold",
+   "clean": "Pike Leg Lift Hold",
+   "secs": 10,
+   "url": "https://www.youtube.com/watch?v=jCbac5LqELQ",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "hanging-leg-raise",
+     "name": "Hanging Leg Raise",
+     "via": "hanging leg lift",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "k0rGt74G80M",
+   "source": "fbb",
+   "title": "Alternating Pike Leg Lift",
+   "clean": "Alternating Pike Leg Lift",
+   "secs": 9,
+   "url": "https://www.youtube.com/watch?v=k0rGt74G80M",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "hanging-leg-raise",
+     "name": "Hanging Leg Raise",
+     "via": "hanging leg lift",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "9WRp0a5hcb0",
+   "source": "catalyst",
+   "title": "Snatch High-Pull | Olympic Weightlifting Exercise Library",
+   "clean": "Snatch High-Pull",
+   "secs": 100,
+   "url": "https://www.youtube.com/watch?v=9WRp0a5hcb0",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "high-pull",
+     "name": "High Pull",
+     "via": "High Pull",
+     "score": 0.8,
+     "why": "names it, with snatch left over",
+     "confirm": false
+    },
+    {
+     "id": "sumo-deadlift-high-pull",
+     "name": "Sumo Deadlift High Pull",
+     "via": "Sumo Deadlift High Pull",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "XOcrzk_wOWI",
+   "source": "fbb",
+   "title": "Split Stance High Pull",
+   "clean": "Split Stance High Pull",
+   "secs": 15,
+   "url": "https://www.youtube.com/watch?v=XOcrzk_wOWI",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "high-pull",
+     "name": "High Pull",
+     "via": "High Pull",
+     "score": 0.667,
+     "why": "names it, with split stanc left over",
+     "confirm": false
+    },
+    {
+     "id": "split-squat",
+     "name": "Split Squat",
+     "via": "split stance lunge",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "FwBpJiZzbeo",
+   "source": "catalyst",
+   "title": "Block Clean High-Pull | Olympic Weightlifting Exercise Library",
+   "clean": "Block Clean High-Pull",
+   "secs": 98,
+   "url": "https://www.youtube.com/watch?v=FwBpJiZzbeo",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "high-pull",
+     "name": "High Pull",
+     "via": "High Pull",
+     "score": 0.667,
+     "why": "names it, with block clean left over",
+     "confirm": false
+    },
+    {
+     "id": "rack-pull",
+     "name": "Rack Pull",
+     "via": "block pull",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "F0_JFhGqY8Q",
+   "source": "catalyst",
+   "title": "Standing Banded Hip Abduction | Olympic Weightlifting Exercise Library",
+   "clean": "Standing Banded Hip Abduction",
+   "secs": 46,
+   "url": "https://www.youtube.com/watch?v=F0_JFhGqY8Q",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "hip-abduction",
+     "name": "Hip Abduction",
+     "via": "Hip Abduction",
+     "score": 0.667,
+     "why": "names it, with standing banded left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "mX4EVBcATFo",
+   "source": "catalyst",
+   "title": "Standing Banded Hip Adduction | Olympic Weightlifting Exercise Library",
+   "clean": "Standing Banded Hip Adduction",
+   "secs": 47,
+   "url": "https://www.youtube.com/watch?v=mX4EVBcATFo",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "hip-adduction",
+     "name": "Hip Adduction",
+     "via": "Hip Adduction",
+     "score": 0.667,
+     "why": "names it, with standing banded left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "usqebc9Ekfo",
+   "source": "fbb",
+   "title": "High Knee Jump Rope Singles",
+   "clean": "High Knee Jump Rope Singles",
+   "secs": 11,
+   "url": "https://www.youtube.com/watch?v=usqebc9Ekfo",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "jump-rope",
+     "name": "Jump Rope",
+     "via": "Jump Rope",
+     "score": 0.571,
+     "why": "names it, with jump rop singl left over",
+     "confirm": false
+    },
+    {
+     "id": "high-knees",
+     "name": "High Knees",
+     "via": "High Knees",
+     "score": 0.571,
+     "why": "names it, with jump rop singl left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "ZV10GlZk4To",
+   "source": "crossfit",
+   "title": "The Buddy Lee System for Jump Rope",
+   "clean": "Buddy Lee System for Jump Rope",
+   "secs": 96,
+   "url": "https://www.youtube.com/watch?v=ZV10GlZk4To",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "jump-rope",
+     "name": "Jump Rope",
+     "via": "Jump Rope",
+     "score": 0.571,
+     "why": "names it, with buddy lee system left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "9NUaxWCbSgg",
+   "source": "fbb",
+   "title": "Dual Hike Kettlebell Clean",
+   "clean": "Dual Hike Kettlebell Clean",
+   "secs": 17,
+   "url": "https://www.youtube.com/watch?v=9NUaxWCbSgg",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "kettlebell-clean",
+     "name": "Kettlebell Clean",
+     "via": "Kettlebell Clean",
+     "score": 0.667,
+     "why": "names it, with dual hik left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "n7V_34BArI8",
+   "source": "fbb",
+   "title": "Dual Hike Kettlebell Cleans",
+   "clean": "Dual Hike Kettlebell Cleans",
+   "secs": 18,
+   "url": "https://www.youtube.com/watch?v=n7V_34BArI8",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "kettlebell-clean",
+     "name": "Kettlebell Clean",
+     "via": "Kettlebell Clean",
+     "score": 0.667,
+     "why": "names it, with dual hik left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "EsV5_zVY4Hg",
+   "source": "fbb",
+   "title": "Split Stance Dual KB Clean",
+   "clean": "Split Stance Dual KB Clean",
+   "secs": 16,
+   "url": "https://www.youtube.com/watch?v=EsV5_zVY4Hg",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "kettlebell-clean",
+     "name": "Kettlebell Clean",
+     "via": "kb clean",
+     "score": 0.571,
+     "why": "names it, with split stanc dual left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "99EiBbzllwE",
+   "source": "fbb",
+   "title": "Deficit Stiff Leg Kettlebell Deadlift",
+   "clean": "Deficit Stiff Leg Kettlebell Deadlift",
+   "secs": 16,
+   "url": "https://www.youtube.com/watch?v=99EiBbzllwE",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "kettlebell-deadlift",
+     "name": "Kettlebell Deadlift",
+     "via": "Kettlebell Deadlift",
+     "score": 0.571,
+     "why": "names it, with deficit stiff leg left over",
+     "confirm": false
+    },
+    {
+     "id": "stiff-leg-deadlift",
+     "name": "Stiff Leg Deadlift",
+     "via": "Stiff Leg Deadlift",
+     "score": 0.75,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "single-leg-deadlift",
+     "name": "Single Leg Deadlift",
+     "via": "one leg deadlift",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "QM6tD8M9mfI",
+   "source": "fbb",
+   "title": "Narrow Stance KB Rotational Deadlift",
+   "clean": "Narrow Stance KB Rotational Deadlift",
+   "secs": 19,
+   "url": "https://www.youtube.com/watch?v=QM6tD8M9mfI",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "kettlebell-deadlift",
+     "name": "Kettlebell Deadlift",
+     "via": "kb deadlift",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "KIng0ZfYzTc",
+   "source": "fbb",
+   "title": "Tall Kneeling DB Halo",
+   "clean": "Tall Kneeling DB Halo",
+   "secs": 11,
+   "url": "https://www.youtube.com/watch?v=KIng0ZfYzTc",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "kettlebell-halo",
+     "name": "Kettlebell Halo",
+     "via": "halo",
+     "score": 0.4,
+     "why": "names it, with tall kneeling dumbbell left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "cziPNNioEFo",
+   "source": "fbb",
+   "title": "Z Seated Hip to Halo",
+   "clean": "Z Seated Hip to Halo",
+   "secs": 17,
+   "url": "https://www.youtube.com/watch?v=cziPNNioEFo",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "kettlebell-halo",
+     "name": "Kettlebell Halo",
+     "via": "halo",
+     "score": 0.4,
+     "why": "names it, with z seated hip left over",
+     "confirm": false
+    },
+    {
+     "id": "hip-abduction",
+     "name": "Hip Abduction",
+     "via": "seated hip abduction",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "hip-adduction",
+     "name": "Hip Adduction",
+     "via": "seated hip adduction",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "Z7LJF9ipWvg",
+   "source": "fbb",
+   "title": "Wide Kettlebell Snatch",
+   "clean": "Wide Kettlebell Snatch",
+   "secs": 13,
+   "url": "https://www.youtube.com/watch?v=Z7LJF9ipWvg",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "kettlebell-snatch",
+     "name": "Kettlebell Snatch",
+     "via": "Kettlebell Snatch",
+     "score": 0.8,
+     "why": "names it, with wid left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "t3uqfMoUXIw",
+   "source": "fbb",
+   "title": "Dual Kettlebell Snatch",
+   "clean": "Dual Kettlebell Snatch",
+   "secs": 15,
+   "url": "https://www.youtube.com/watch?v=t3uqfMoUXIw",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "kettlebell-snatch",
+     "name": "Kettlebell Snatch",
+     "via": "Kettlebell Snatch",
+     "score": 0.8,
+     "why": "names it, with dual left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "qxHG6E00rF8",
+   "source": "fbb",
+   "title": "Kettlebell Snatch From Floor",
+   "clean": "Kettlebell Snatch From Floor",
+   "secs": 13,
+   "url": "https://www.youtube.com/watch?v=qxHG6E00rF8",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "kettlebell-snatch",
+     "name": "Kettlebell Snatch",
+     "via": "Kettlebell Snatch",
+     "score": 0.667,
+     "why": "names it, with floor left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "UiUgK5Joo0Q",
+   "source": "crossfit",
+   "title": "The Power Swing",
+   "clean": "Power Swing",
+   "secs": 74,
+   "url": "https://www.youtube.com/watch?v=UiUgK5Joo0Q",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "kettlebell-swing",
+     "name": "Kettlebell Swing",
+     "via": "swing",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "uB-fq0HqGK0",
+   "source": "crossfit",
+   "title": "The Dumbbell Swing",
+   "clean": "Dumbbell Swing",
+   "secs": 50,
+   "url": "https://www.youtube.com/watch?v=uB-fq0HqGK0",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "kettlebell-swing",
+     "name": "Kettlebell Swing",
+     "via": "swing",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "uUpSFguwRQM",
+   "source": "crossfit",
+   "title": "The Russian Swing with Jeff Martone",
+   "clean": "Russian Swing with Jeff Martone",
+   "secs": 129,
+   "url": "https://www.youtube.com/watch?v=uUpSFguwRQM",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "kettlebell-swing",
+     "name": "Kettlebell Swing",
+     "via": "russian swing",
+     "score": 0.667,
+     "why": "names it, with jeff marton left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "87I2gbRgtUI",
+   "source": "fbb",
+   "title": "Bodyweight Windmill",
+   "clean": "Bodyweight Windmill",
+   "secs": 16,
+   "url": "https://www.youtube.com/watch?v=87I2gbRgtUI",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "kettlebell-windmill",
+     "name": "Kettlebell Windmill",
+     "via": "windmill",
+     "score": 0.667,
+     "why": "names it, with bodyweight left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "sGgI_gV85Zs",
+   "source": "fbb",
+   "title": "Bottoms Up Kettlebell Windmill",
+   "clean": "Bottoms Up Kettlebell Windmill",
+   "secs": 15,
+   "url": "https://www.youtube.com/watch?v=sGgI_gV85Zs",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "kettlebell-windmill",
+     "name": "Kettlebell Windmill",
+     "via": "Kettlebell Windmill",
+     "score": 0.667,
+     "why": "names it, with bottom up left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "wjYNzITBDqg",
+   "source": "fbb",
+   "title": "Half Kneeling Kettlebell Windmill",
+   "clean": "Half Kneeling Kettlebell Windmill",
+   "secs": 18,
+   "url": "https://www.youtube.com/watch?v=wjYNzITBDqg",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "kettlebell-windmill",
+     "name": "Kettlebell Windmill",
+     "via": "Kettlebell Windmill",
+     "score": 0.667,
+     "why": "names it, with half kneeling left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "lLu9U0G7Ogw",
+   "source": "fbb",
+   "title": "L Sit on Parallettes",
+   "clean": "L Sit on Parallettes",
+   "secs": 14,
+   "url": "https://www.youtube.com/watch?v=lLu9U0G7Ogw",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "l-sit",
+     "name": "L-Sit",
+     "via": "L-Sit",
+     "score": 0.8,
+     "why": "names it, with parallett left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "uyC5CxlquSI",
+   "source": "fbb",
+   "title": "Ring L Sit",
+   "clean": "Ring L Sit",
+   "secs": 13,
+   "url": "https://www.youtube.com/watch?v=uyC5CxlquSI",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "l-sit",
+     "name": "L-Sit",
+     "via": "L-Sit",
+     "score": 0.8,
+     "why": "names it, with ring left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "WHi1bvZLwlw",
+   "source": "crossfit",
+   "title": "The Hanging L-Sit",
+   "clean": "Hanging L-Sit",
+   "secs": 36,
+   "url": "https://www.youtube.com/watch?v=WHi1bvZLwlw",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "l-sit",
+     "name": "L-Sit",
+     "via": "L-Sit",
+     "score": 0.8,
+     "why": "names it, with hanging left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "dBa3mLBz_hg",
+   "source": "fbb",
+   "title": "Cross Body Landmine Press Half Kneeling",
+   "clean": "Cross Body Landmine Press Half Kneeling",
+   "secs": 16,
+   "url": "https://www.youtube.com/watch?v=dBa3mLBz_hg",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "landmine-press",
+     "name": "Landmine Press",
+     "via": "Landmine Press",
+     "score": 0.5,
+     "why": "names it, with cro body half kneeling left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "tb66mJdhUC8",
+   "source": "fbb",
+   "title": "Seated Alternating Kettlebell Press",
+   "clean": "Seated Alternating Kettlebell Press",
+   "secs": 20,
+   "url": "https://www.youtube.com/watch?v=tb66mJdhUC8",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "machine-chest-press",
+     "name": "Machine Chest Press",
+     "via": "seated chest press",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "seated-shoulder-press",
+     "name": "Seated Shoulder Press",
+     "via": "Seated Shoulder Press",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "dumbbell-shoulder-press",
+     "name": "Dumbbell Shoulder Press",
+     "via": "seated dumbbell press",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "opjbouBmUWg",
+   "source": "rp",
+   "title": "Hammer Low Row",
+   "clean": "Hammer Low Row",
+   "secs": 16,
+   "url": "https://www.youtube.com/watch?v=opjbouBmUWg",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "machine-row",
+     "name": "Machine Row",
+     "via": "hammer strength row",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "iUAukdE0QQ4",
+   "source": "crossfit",
+   "title": "The Bar Muscle-Up with Boz",
+   "clean": "Bar Muscle-Up with Boz",
+   "secs": 199,
+   "url": "https://www.youtube.com/watch?v=iUAukdE0QQ4",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "muscle-up",
+     "name": "Muscle-Up",
+     "via": "bar muscle up",
+     "score": 0.857,
+     "why": "names it, with boz left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "G8W0BhzrWcs",
+   "source": "crossfit",
+   "title": "The Kipping Muscle-Up",
+   "clean": "Kipping Muscle-Up",
+   "secs": 71,
+   "url": "https://www.youtube.com/watch?v=G8W0BhzrWcs",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "muscle-up",
+     "name": "Muscle-Up",
+     "via": "Muscle-Up",
+     "score": 0.8,
+     "why": "names it, with kipping left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "rtF51pQB6Wc",
+   "source": "crossfit",
+   "title": "The Strict Muscle-up",
+   "clean": "Strict Muscle-up",
+   "secs": 48,
+   "url": "https://www.youtube.com/watch?v=rtF51pQB6Wc",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "muscle-up",
+     "name": "Muscle-Up",
+     "via": "Muscle-Up",
+     "score": 0.8,
+     "why": "names it, with strict left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "3qOa2aNMFGE",
+   "source": "catalyst",
+   "title": "Snatch-Grip Overhead Carry | Olympic Weightlifting Exercise Library",
+   "clean": "Snatch-Grip Overhead Carry",
+   "secs": 41,
+   "url": "https://www.youtube.com/watch?v=3qOa2aNMFGE",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "overhead-carry",
+     "name": "Overhead Carry",
+     "via": "Overhead Carry",
+     "score": 0.667,
+     "why": "names it, with snatch grip left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "XvCtlykuy1U",
+   "source": "catalyst",
+   "title": "Jerk-Grip Overhead Carry | Olympic Weightlifting Exercise Library",
+   "clean": "Jerk-Grip Overhead Carry",
+   "secs": 42,
+   "url": "https://www.youtube.com/watch?v=XvCtlykuy1U",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "overhead-carry",
+     "name": "Overhead Carry",
+     "via": "Overhead Carry",
+     "score": 0.667,
+     "why": "names it, with jerk grip left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "1grTH_YfK_0",
+   "source": "catalyst",
+   "title": "Single-Arm Dumbbell Overhead Carry | Olympic Weightlifting Exercise Library",
+   "clean": "Single-Arm Dumbbell Overhead Carry",
+   "secs": 46,
+   "url": "https://www.youtube.com/watch?v=1grTH_YfK_0",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "overhead-carry",
+     "name": "Overhead Carry",
+     "via": "Overhead Carry",
+     "score": 0.571,
+     "why": "names it, with singl arm dumbbell left over",
+     "confirm": false
+    },
+    {
+     "id": "dumbbell-row",
+     "name": "Dumbbell Row",
+     "via": "single arm dumbbell row",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "GWPgSK--Pjo",
+   "source": "crossfit",
+   "title": "The Overhead Squat Shoulder Position",
+   "clean": "Overhead Squat Shoulder Position",
+   "secs": 95,
+   "url": "https://www.youtube.com/watch?v=GWPgSK--Pjo",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "overhead-squat",
+     "name": "Overhead Squat",
+     "via": "Overhead Squat",
+     "score": 0.667,
+     "why": "names it, with shoulder position left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "fa_yJa2XwXk",
+   "source": "crossfit",
+   "title": "The Single-Dumbbell Overhead Squat",
+   "clean": "Single-Dumbbell Overhead Squat",
+   "secs": 57,
+   "url": "https://www.youtube.com/watch?v=fa_yJa2XwXk",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "overhead-squat",
+     "name": "Overhead Squat",
+     "via": "Overhead Squat",
+     "score": 0.667,
+     "why": "names it, with singl dumbbell left over",
+     "confirm": false
+    },
+    {
+     "id": "goblet-squat",
+     "name": "Goblet Squat",
+     "via": "dumbbell goblet squat",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "pistol-squat",
+     "name": "Pistol Squat",
+     "via": "single leg squat",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "i3VMBdEBB7c",
+   "source": "crossfit",
+   "title": "The Overhead Squat with Chris Spealler",
+   "clean": "Overhead Squat with Chris Spealler",
+   "secs": 50,
+   "url": "https://www.youtube.com/watch?v=i3VMBdEBB7c",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "overhead-squat",
+     "name": "Overhead Squat",
+     "via": "Overhead Squat",
+     "score": 0.667,
+     "why": "names it, with chri spealler left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "601OxeRCXGI",
+   "source": "fbb",
+   "title": "DB Rack Leg Behind Pistol Squat",
+   "clean": "DB Rack Leg Behind Pistol Squat",
+   "secs": 17,
+   "url": "https://www.youtube.com/watch?v=601OxeRCXGI",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "pistol-squat",
+     "name": "Pistol Squat",
+     "via": "Pistol Squat",
+     "score": 0.5,
+     "why": "names it, with dumbbell rack leg behind left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "RHj4ErHsJAw",
+   "source": "fbb",
+   "title": "Single Arm KB Rack Pistol Squat",
+   "clean": "Single Arm KB Rack Pistol Squat",
+   "secs": 14,
+   "url": "https://www.youtube.com/watch?v=RHj4ErHsJAw",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "pistol-squat",
+     "name": "Pistol Squat",
+     "via": "Pistol Squat",
+     "score": 0.5,
+     "why": "names it, with singl arm kettlebell rack left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "64SmhiH0Xxg",
+   "source": "fbb",
+   "title": "RKC Plank",
+   "clean": "RKC Plank",
+   "secs": 13,
+   "url": "https://www.youtube.com/watch?v=64SmhiH0Xxg",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "plank",
+     "name": "Plank",
+     "via": "Plank",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "faQ-oBpREiE",
+   "source": "catalyst",
+   "title": "Back Plank | Olympic Weightlifting Exercise Library",
+   "clean": "Back Plank",
+   "secs": 44,
+   "url": "https://www.youtube.com/watch?v=faQ-oBpREiE",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "plank",
+     "name": "Plank",
+     "via": "Plank",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "oxpAl14EYyc",
+   "source": "rp",
+   "title": "Machine Pullover",
+   "clean": "Machine Pullover",
+   "secs": 16,
+   "url": "https://www.youtube.com/watch?v=oxpAl14EYyc",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "pull-over",
+     "name": "Pull-Over",
+     "via": "pullover",
+     "score": 0.667,
+     "why": "names it, with machin left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "1u0SQznd_pk",
+   "source": "crossfit",
+   "title": "The Push Jerk Progression",
+   "clean": "Push Jerk Progression",
+   "secs": 87,
+   "url": "https://www.youtube.com/watch?v=1u0SQznd_pk",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "push-jerk",
+     "name": "Push Jerk",
+     "via": "Push Jerk",
+     "score": 0.8,
+     "why": "names it, with progression left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "GqAEuwXQXRU",
+   "source": "crossfit",
+   "title": "The Clean and Push Jerk",
+   "clean": "Clean and Push Jerk",
+   "secs": 64,
+   "url": "https://www.youtube.com/watch?v=GqAEuwXQXRU",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "push-jerk",
+     "name": "Push Jerk",
+     "via": "Push Jerk",
+     "score": 0.8,
+     "why": "names it, with clean left over",
+     "confirm": false
+    },
+    {
+     "id": "clean-and-jerk",
+     "name": "Clean and Jerk",
+     "via": "Clean and Jerk",
+     "score": 0.8,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "QhvxG1YWe_o",
+   "source": "crossfit",
+   "title": "The Dumbbell Push Jerk",
+   "clean": "Dumbbell Push Jerk",
+   "secs": 49,
+   "url": "https://www.youtube.com/watch?v=QhvxG1YWe_o",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "push-jerk",
+     "name": "Push Jerk",
+     "via": "Push Jerk",
+     "score": 0.8,
+     "why": "names it, with dumbbell left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "YRAGOygzs-U",
+   "source": "catalyst",
+   "title": "Block Clean Pull to Hold | Olympic Weightlifting Exercise Library",
+   "clean": "Block Clean Pull to Hold",
+   "secs": 73,
+   "url": "https://www.youtube.com/watch?v=YRAGOygzs-U",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "rack-pull",
+     "name": "Rack Pull",
+     "via": "block pull",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "STzuIct48Hg",
+   "source": "fbb",
+   "title": "KB Plank Rows",
+   "clean": "KB Plank Rows",
+   "secs": 19,
+   "url": "https://www.youtube.com/watch?v=STzuIct48Hg",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "renegade-row",
+     "name": "Renegade Row",
+     "via": "plank row",
+     "score": 0.8,
+     "why": "names it, with kettlebell left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "98yvk8F1bso",
+   "source": "catalyst",
+   "title": "Reverse Lunge + Step-Up | Olympic Weightlifting Exercise Library",
+   "clean": "Reverse Lunge + Step-Up",
+   "secs": 52,
+   "url": "https://www.youtube.com/watch?v=98yvk8F1bso",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "reverse-lunge",
+     "name": "Reverse Lunge",
+     "via": "Reverse Lunge",
+     "score": 0.667,
+     "why": "names it, with step up left over",
+     "confirm": false
+    },
+    {
+     "id": "step-up",
+     "name": "Step Up",
+     "via": "Step Up",
+     "score": 0.667,
+     "why": "names it, with step up left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "2M6qb9a4SlQ",
+   "source": "fbb",
+   "title": "Cobra Reverse Lunge to Knee Lift",
+   "clean": "Cobra Reverse Lunge to Knee Lift",
+   "secs": 10,
+   "url": "https://www.youtube.com/watch?v=2M6qb9a4SlQ",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "reverse-lunge",
+     "name": "Reverse Lunge",
+     "via": "Reverse Lunge",
+     "score": 0.571,
+     "why": "names it, with cobra kne lift left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "7p06e5h03cY",
+   "source": "fbb",
+   "title": "Dual KB Overhead Reverse Lunge",
+   "clean": "Dual KB Overhead Reverse Lunge",
+   "secs": 17,
+   "url": "https://www.youtube.com/watch?v=7p06e5h03cY",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "reverse-lunge",
+     "name": "Reverse Lunge",
+     "via": "Reverse Lunge",
+     "score": 0.571,
+     "why": "names it, with dual kettlebell overhead left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "5QeozmsFoOo",
+   "source": "catalyst",
+   "title": "Soft-Backed Staggered Dumbbell RDL | Olympic Weightlifting Exercise Library",
+   "clean": "Soft-Backed Staggered Dumbbell RDL",
+   "secs": 50,
+   "url": "https://www.youtube.com/watch?v=5QeozmsFoOo",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "romanian-deadlift",
+     "name": "Romanian Deadlift",
+     "via": "dumbbell rdl",
+     "score": 0.571,
+     "why": "names it, with soft backed staggered left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "ERT1IFqDJug",
+   "source": "catalyst",
+   "title": "RNT Single-Leg Dumbbell RDL | Olympic Weightlifting Exercise Library",
+   "clean": "RNT Single-Leg Dumbbell RDL",
+   "secs": 93,
+   "url": "https://www.youtube.com/watch?v=ERT1IFqDJug",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "romanian-deadlift",
+     "name": "Romanian Deadlift",
+     "via": "dumbbell rdl",
+     "score": 0.571,
+     "why": "names it, with rnt singl leg left over",
+     "confirm": false
+    },
+    {
+     "id": "single-leg-deadlift",
+     "name": "Single Leg Deadlift",
+     "via": "single leg rdl",
+     "score": 0.75,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "VjTvFSsnP18",
+   "source": "catalyst",
+   "title": "Single-Leg Dumbbell RDL Passbacks | Olympic Weightlifting Exercise Library",
+   "clean": "Single-Leg Dumbbell RDL Passbacks",
+   "secs": 61,
+   "url": "https://www.youtube.com/watch?v=VjTvFSsnP18",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "romanian-deadlift",
+     "name": "Romanian Deadlift",
+     "via": "dumbbell rdl",
+     "score": 0.571,
+     "why": "names it, with singl leg passback left over",
+     "confirm": false
+    },
+    {
+     "id": "single-leg-deadlift",
+     "name": "Single Leg Deadlift",
+     "via": "single leg rdl",
+     "score": 0.75,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "usAoNA_ZgAI",
+   "source": "fbb",
+   "title": "Straight Arm KB Russian Twists",
+   "clean": "Straight Arm KB Russian Twists",
+   "secs": 15,
+   "url": "https://www.youtube.com/watch?v=usAoNA_ZgAI",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "russian-twist",
+     "name": "Russian Twist",
+     "via": "Russian Twist",
+     "score": 0.571,
+     "why": "names it, with straight arm kettlebell left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "4sfpeYUhbT4",
+   "source": "catalyst",
+   "title": "GHD Anti-Rotation Russian Twist | Olympic Weightlifting Exercise Library",
+   "clean": "GHD Anti-Rotation Russian Twist",
+   "secs": 61,
+   "url": "https://www.youtube.com/watch?v=4sfpeYUhbT4",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "russian-twist",
+     "name": "Russian Twist",
+     "via": "Russian Twist",
+     "score": 0.571,
+     "why": "names it, with ghd anti rotation left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "Ey1uBys_6-A",
+   "source": "catalyst",
+   "title": "Decline Anti-Rotation Russian Twist | Olympic Weightlifting Exercise Library",
+   "clean": "Decline Anti-Rotation Russian Twist",
+   "secs": 46,
+   "url": "https://www.youtube.com/watch?v=Ey1uBys_6-A",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "russian-twist",
+     "name": "Russian Twist",
+     "via": "Russian Twist",
+     "score": 0.571,
+     "why": "names it, with declin anti rotation left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "r-vXg-q0d-E",
+   "source": "catalyst",
+   "title": "Side Plank Clamshell | Olympic Weightlifting Exercise Library",
+   "clean": "Side Plank Clamshell",
+   "secs": 46,
+   "url": "https://www.youtube.com/watch?v=r-vXg-q0d-E",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "side-plank",
+     "name": "Side Plank",
+     "via": "Side Plank",
+     "score": 0.8,
+     "why": "names it, with clamshell left over",
+     "confirm": false
+    },
+    {
+     "id": "copenhagen-plank",
+     "name": "Copenhagen Plank",
+     "via": "copenhagen side plank",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "hip-dip",
+     "name": "Hip Dip",
+     "via": "side plank hip dip",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "9pja54n7QmY",
+   "source": "musclewiki",
+   "title": "How to do Side Planks with Rotation",
+   "clean": "Side Planks with Rotation",
+   "secs": 18,
+   "url": "https://www.youtube.com/watch?v=9pja54n7QmY",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "side-plank",
+     "name": "Side Plank",
+     "via": "Side Plank",
+     "score": 0.8,
+     "why": "names it, with rotation left over",
+     "confirm": false
+    },
+    {
+     "id": "copenhagen-plank",
+     "name": "Copenhagen Plank",
+     "via": "copenhagen side plank",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "hip-dip",
+     "name": "Hip Dip",
+     "via": "side plank hip dip",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "e0UCpD4LfzY",
+   "source": "musclewiki",
+   "title": "How to do Side Planks with Rotation",
+   "clean": "Side Planks with Rotation",
+   "secs": 15,
+   "url": "https://www.youtube.com/watch?v=e0UCpD4LfzY",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "side-plank",
+     "name": "Side Plank",
+     "via": "Side Plank",
+     "score": 0.8,
+     "why": "names it, with rotation left over",
+     "confirm": false
+    },
+    {
+     "id": "copenhagen-plank",
+     "name": "Copenhagen Plank",
+     "via": "copenhagen side plank",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "hip-dip",
+     "name": "Hip Dip",
+     "via": "side plank hip dip",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "1pbZ8mX2D1U",
+   "source": "crossfit",
+   "title": "The GHD Sit-up",
+   "clean": "GHD Sit-up",
+   "secs": 29,
+   "url": "https://www.youtube.com/watch?v=1pbZ8mX2D1U",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "sit-up",
+     "name": "Sit-Up",
+     "via": "Sit-Up",
+     "score": 0.8,
+     "why": "names it, with ghd left over",
+     "confirm": false
+    },
+    {
+     "id": "v-up",
+     "name": "V-Up",
+     "via": "v sit up",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "VIZX2Ru9qU8",
+   "source": "crossfit",
+   "title": "The AbMat Sit-Up",
+   "clean": "AbMat Sit-Up",
+   "secs": 55,
+   "url": "https://www.youtube.com/watch?v=VIZX2Ru9qU8",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "sit-up",
+     "name": "Sit-Up",
+     "via": "Sit-Up",
+     "score": 0.8,
+     "why": "names it, with abmat left over",
+     "confirm": false
+    },
+    {
+     "id": "v-up",
+     "name": "V-Up",
+     "via": "v sit up",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "_HDZODOx7Zw",
+   "source": "crossfit",
+   "title": "The AbMat Sit-up",
+   "clean": "AbMat Sit-up",
+   "secs": 33,
+   "url": "https://www.youtube.com/watch?v=_HDZODOx7Zw",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "sit-up",
+     "name": "Sit-Up",
+     "via": "Sit-Up",
+     "score": 0.8,
+     "why": "names it, with abmat left over",
+     "confirm": false
+    },
+    {
+     "id": "v-up",
+     "name": "V-Up",
+     "via": "v sit up",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "Wi6d6BNPjgk",
+   "source": "crossfit",
+   "title": "The Squat Clean Thruster With Nuno Costa",
+   "clean": "Squat Clean Thruster With Nuno Costa",
+   "secs": 165,
+   "url": "https://www.youtube.com/watch?v=Wi6d6BNPjgk",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "squat-clean",
+     "name": "Squat Clean",
+     "via": "Squat Clean",
+     "score": 0.571,
+     "why": "names it, with thruster nuno costa left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "jUrsoFnrk60",
+   "source": "catalyst",
+   "title": "RNT Step-Up | Olympic Weightlifting Exercise Library",
+   "clean": "RNT Step-Up",
+   "secs": 86,
+   "url": "https://www.youtube.com/watch?v=jUrsoFnrk60",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "step-up",
+     "name": "Step Up",
+     "via": "Step Up",
+     "score": 0.8,
+     "why": "names it, with rnt left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "7AtIjR-QqVA",
+   "source": "bbcom",
+   "title": "Dumbbell Step Ups - Leg Exercise - Bodybuilding.com",
+   "clean": "Dumbbell Step Ups",
+   "secs": 48,
+   "url": "https://www.youtube.com/watch?v=7AtIjR-QqVA",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "step-up",
+     "name": "Step Up",
+     "via": "Step Up",
+     "score": 0.8,
+     "why": "names it, with dumbbell left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "3HUEab31fks",
+   "source": "fbb",
+   "title": "Kettlebell Suitcase Box Step Up",
+   "clean": "Kettlebell Suitcase Box Step Up",
+   "secs": 15,
+   "url": "https://www.youtube.com/watch?v=3HUEab31fks",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "step-up",
+     "name": "Step Up",
+     "via": "box step up",
+     "score": 0.75,
+     "why": "names it, with kettlebell suitca left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "7RwkiIjaFj4",
+   "source": "crossfit",
+   "title": "The Sumo Deadlift High-Pull Progression",
+   "clean": "Sumo Deadlift High-Pull Progression",
+   "secs": 68,
+   "url": "https://www.youtube.com/watch?v=7RwkiIjaFj4",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "sumo-deadlift-high-pull",
+     "name": "Sumo Deadlift High Pull",
+     "via": "Sumo Deadlift High Pull",
+     "score": 0.889,
+     "why": "names it, with progression left over",
+     "confirm": false
+    },
+    {
+     "id": "sumo-deadlift",
+     "name": "Sumo Deadlift",
+     "via": "Sumo Deadlift",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "high-pull",
+     "name": "High Pull",
+     "via": "High Pull",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "cpa86xd2ifY",
+   "source": "crossfit",
+   "title": "The Sumo Deadlift High Pull with Matt Swift",
+   "clean": "Sumo Deadlift High Pull with Matt Swift",
+   "secs": 159,
+   "url": "https://www.youtube.com/watch?v=cpa86xd2ifY",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "sumo-deadlift-high-pull",
+     "name": "Sumo Deadlift High Pull",
+     "via": "Sumo Deadlift High Pull",
+     "score": 0.8,
+     "why": "names it, with matt swift left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "w0KnlQ-b7jw",
+   "source": "bbcom",
+   "title": "Lying T-Bar Row - Back Exercise - Bodybuilding.com",
+   "clean": "Lying T-Bar Row",
+   "secs": 46,
+   "url": "https://www.youtube.com/watch?v=w0KnlQ-b7jw",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "t-bar-row",
+     "name": "T-Bar Row",
+     "via": "T-Bar Row",
+     "score": 0.857,
+     "why": "names it, with lying left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "H260SUUyJBM",
+   "source": "rp",
+   "title": "Underhand EZ Bar Row",
+   "clean": "Underhand EZ Bar Row",
+   "secs": 14,
+   "url": "https://www.youtube.com/watch?v=H260SUUyJBM",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "t-bar-row",
+     "name": "T-Bar Row",
+     "via": "T-Bar Row",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "ez-bar-curl",
+     "name": "EZ Bar Curl",
+     "via": "EZ Bar Curl",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "6dHvTlsMvNY",
+   "source": "crossfit",
+   "title": "The Kipping Toes-to-Bar",
+   "clean": "Kipping Toes-to-Bar",
+   "secs": 90,
+   "url": "https://www.youtube.com/watch?v=6dHvTlsMvNY",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "toes-to-bar",
+     "name": "Toes to Bar",
+     "via": "Toes to Bar",
+     "score": 0.667,
+     "why": "names it, with kipping left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "_03pCKOv4l4",
+   "source": "crossfit",
+   "title": "The Kipping Toes-to-bar",
+   "clean": "Kipping Toes-to-bar",
+   "secs": 34,
+   "url": "https://www.youtube.com/watch?v=_03pCKOv4l4",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "toes-to-bar",
+     "name": "Toes to Bar",
+     "via": "Toes to Bar",
+     "score": 0.667,
+     "why": "names it, with kipping left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "f_kJ4NJw4dM",
+   "source": "fbb",
+   "title": "Cross Body Strict Toes To Bar",
+   "clean": "Cross Body Strict Toes To Bar",
+   "secs": 17,
+   "url": "https://www.youtube.com/watch?v=f_kJ4NJw4dM",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "toes-to-bar",
+     "name": "Toes to Bar",
+     "via": "Toes to Bar",
+     "score": 0.4,
+     "why": "names it, with cro body strict left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "ypJA34CWr78",
+   "source": "bbcom",
+   "title": "Triceps Dumbbell Kickback - Triceps Exercise - Bodybuilding.com",
+   "clean": "Triceps Dumbbell Kickback",
+   "secs": 66,
+   "url": "https://www.youtube.com/watch?v=ypJA34CWr78",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "tricep-kickback",
+     "name": "Tricep Kickback",
+     "via": "Tricep Kickback",
+     "score": 0.8,
+     "why": "names it, with tricep left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "qKHd9Lri7vM",
+   "source": "fbb",
+   "title": "Bodyweight Turkish Get Up",
+   "clean": "Bodyweight Turkish Get Up",
+   "secs": 14,
+   "url": "https://www.youtube.com/watch?v=qKHd9Lri7vM",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "turkish-get-up",
+     "name": "Turkish Get Up",
+     "via": "Turkish Get Up",
+     "score": 0.857,
+     "why": "names it, with bodyweight left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "saYKvqSscuY",
+   "source": "crossfit",
+   "title": "The Dumbbell Turkish Get-Up",
+   "clean": "Dumbbell Turkish Get-Up",
+   "secs": 84,
+   "url": "https://www.youtube.com/watch?v=saYKvqSscuY",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "turkish-get-up",
+     "name": "Turkish Get Up",
+     "via": "Turkish Get Up",
+     "score": 0.857,
+     "why": "names it, with dumbbell left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "jM50SQGN-Ak",
+   "source": "fbb",
+   "title": "Goblet Single Leg Ball Wall Sit",
+   "clean": "Goblet Single Leg Ball Wall Sit",
+   "secs": 15,
+   "url": "https://www.youtube.com/watch?v=jM50SQGN-Ak",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "wall-sit",
+     "name": "Wall Sit",
+     "via": "Wall Sit",
+     "score": 0.5,
+     "why": "names it, with goblet singl leg ball left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "r9OEV8ik-_M",
+   "source": "fbb",
+   "title": "Wall Sit Single Arm KB Press",
+   "clean": "Wall Sit Single Arm KB Press",
+   "secs": 18,
+   "url": "https://www.youtube.com/watch?v=r9OEV8ik-_M",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "wall-sit",
+     "name": "Wall Sit",
+     "via": "Wall Sit",
+     "score": 0.5,
+     "why": "names it, with singl arm kettlebell pre left over",
+     "confirm": false
+    },
+    {
+     "id": "landmine-press",
+     "name": "Landmine Press",
+     "via": "single arm landmine press",
+     "score": 0.6,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "w8-M1IrI3YQ",
+   "source": "catalyst",
+   "title": "Cross Chop | Olympic Weightlifting Exercise Library",
+   "clean": "Cross Chop",
+   "secs": 52,
+   "url": "https://www.youtube.com/watch?v=w8-M1IrI3YQ",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "woodchop",
+     "name": "Woodchop",
+     "via": "chop",
+     "score": 0.667,
+     "why": "names it, with cro left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "Psmkt_Tft5E",
+   "source": "fbb",
+   "title": "Half Kneeling Kettlebell Chop and Lift",
+   "clean": "Half Kneeling Kettlebell Chop and Lift",
+   "secs": 15,
+   "url": "https://www.youtube.com/watch?v=Psmkt_Tft5E",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "woodchop",
+     "name": "Woodchop",
+     "via": "chop",
+     "score": 0.333,
+     "why": "names it, with half kneeling kettlebell lift left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "2SchMMbHcdg",
+   "source": "fbb",
+   "title": "Tall Kneeling DB Low to High Chop",
+   "clean": "Tall Kneeling DB Low to High Chop",
+   "secs": 17,
+   "url": "https://www.youtube.com/watch?v=2SchMMbHcdg",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "woodchop",
+     "name": "Woodchop",
+     "via": "chop",
+     "score": 0.286,
+     "why": "names it, with tall kneeling dumbbell low high left over",
+     "confirm": false
+    }
+   ]
+  },
+  {
+   "video_id": "-5UWY4HVohQ",
+   "source": "catalyst",
+   "title": "Dumbbell Incline Bench Row | Olympic Weightlifting Exercise Library",
+   "clean": "Dumbbell Incline Bench Row",
+   "secs": 36,
+   "url": "https://www.youtube.com/watch?v=-5UWY4HVohQ",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "incline-bench-press",
+     "name": "Incline Bench Press",
+     "via": "incline bench",
+     "score": 0.667,
+     "why": "names it, with dumbbell row left over",
+     "confirm": false
+    },
+    {
+     "id": "incline-dumbbell-press",
+     "name": "Incline Dumbbell Press",
+     "via": "incline dumbbell bench press",
+     "score": 0.75,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "dumbbell-row",
+     "name": "Dumbbell Row",
+     "via": "Dumbbell Row",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "0DFaIjw19z4",
+   "source": "catalyst",
+   "title": "Decline Sit-Up | Olympic Weightlifting Exercise Library",
+   "clean": "Decline Sit-Up",
+   "secs": 40,
+   "url": "https://www.youtube.com/watch?v=0DFaIjw19z4",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "sit-up",
+     "name": "Sit-Up",
+     "via": "Sit-Up",
+     "score": 0.8,
+     "why": "names it, with declin left over",
+     "confirm": false
+    },
+    {
+     "id": "decline-push-up",
+     "name": "Decline Push-Up",
+     "via": "Decline Push-Up",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "v-up",
+     "name": "V-Up",
+     "via": "v sit up",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "0JFdITpJUlM",
+   "source": "fbb",
+   "title": "Kettlebell Rack Skater Walk Front and Back",
+   "clean": "Kettlebell Rack Skater Walk Front and Back",
+   "secs": 16,
+   "url": "https://www.youtube.com/watch?v=0JFdITpJUlM",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "skater-jump",
+     "name": "Skater Jump",
+     "via": "skaters",
+     "score": 0.286,
+     "why": "names it, with kettlebell rack walk front back left over",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "0m6BnkrB9Aw",
+   "source": "catalyst",
+   "title": "Snatch-Grip Bench Row | Olympic Weightlifting Exercise Library",
+   "clean": "Snatch-Grip Bench Row",
+   "secs": 38,
+   "url": "https://www.youtube.com/watch?v=0m6BnkrB9Aw",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "close-grip-bench-press",
+     "name": "Close Grip Bench Press",
+     "via": "close grip bench",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "1IIPcUCKxcE",
+   "source": "rp",
+   "title": "Narrow Stance Squat",
+   "clean": "Narrow Stance Squat",
+   "secs": 12,
+   "url": "https://www.youtube.com/watch?v=1IIPcUCKxcE",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "sumo-squat",
+     "name": "Sumo Squat",
+     "via": "wide stance squat",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "split-squat",
+     "name": "Split Squat",
+     "via": "split stance squat",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "1lrjpLuXH4w",
+   "source": "rp",
+   "title": "Inverted Skullcrusher",
+   "clean": "Inverted Skullcrusher",
+   "secs": 10,
+   "url": "https://www.youtube.com/watch?v=1lrjpLuXH4w",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "skull-crusher",
+     "name": "Skull Crusher",
+     "via": "skullcrusher",
+     "score": 0.667,
+     "why": "names it, with inverted left over",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "1wFhyIWpbzU",
+   "source": "catalyst",
+   "title": "Rope Kettlebell Curl | Olympic Weightlifting Exercise Library",
+   "clean": "Rope Kettlebell Curl",
+   "secs": 43,
+   "url": "https://www.youtube.com/watch?v=1wFhyIWpbzU",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "cable-curl",
+     "name": "Cable Curl",
+     "via": "rope curl",
+     "score": 0.8,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "2BVEHWSFnM0",
+   "source": "fbb",
+   "title": "Glute Loop Physio Ball Single Leg Shoulder Bridge",
+   "clean": "Glute Loop Physio Ball Single Leg Shoulder Bridge",
+   "secs": 8,
+   "url": "https://www.youtube.com/watch?v=2BVEHWSFnM0",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "single-leg-glute-bridge",
+     "name": "Single Leg Glute Bridge",
+     "via": "Single Leg Glute Bridge",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "2CDKTFFp5fA",
+   "source": "rp",
+   "title": "Rope Twist Curl",
+   "clean": "Rope Twist Curl",
+   "secs": 14,
+   "url": "https://www.youtube.com/watch?v=2CDKTFFp5fA",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "cable-curl",
+     "name": "Cable Curl",
+     "via": "rope curl",
+     "score": 0.8,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "2EVZzC88mk4",
+   "source": "catalyst",
+   "title": "Barbell Side Bend | Olympic Weightlifting Exercise Library",
+   "clean": "Barbell Side Bend",
+   "secs": 50,
+   "url": "https://www.youtube.com/watch?v=2EVZzC88mk4",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "side-bend",
+     "name": "Side Bend",
+     "via": "Side Bend",
+     "score": 0.8,
+     "why": "names it, with barbell left over",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "2Er3t9j8JYo",
+   "source": "fbb",
+   "title": "Pike Leg Lift",
+   "clean": "Pike Leg Lift",
+   "secs": 7,
+   "url": "https://www.youtube.com/watch?v=2Er3t9j8JYo",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "hanging-leg-raise",
+     "name": "Hanging Leg Raise",
+     "via": "hanging leg lift",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "side-lying-leg-raise",
+     "name": "Side Lying Leg Raise",
+     "via": "side lying leg lifts",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "3Pk1duNhQiQ",
+   "source": "fbb",
+   "title": "Banded Side Plank",
+   "clean": "Banded Side Plank",
+   "secs": 15,
+   "url": "https://www.youtube.com/watch?v=3Pk1duNhQiQ",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "side-plank",
+     "name": "Side Plank",
+     "via": "Side Plank",
+     "score": 0.8,
+     "why": "names it, with banded left over",
+     "confirm": false
+    },
+    {
+     "id": "copenhagen-plank",
+     "name": "Copenhagen Plank",
+     "via": "copenhagen side plank",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "hip-dip",
+     "name": "Hip Dip",
+     "via": "side plank hip dip",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "3QcJggd_L24",
+   "source": "rp",
+   "title": "Smith Machine Row",
+   "clean": "Smith Machine Row",
+   "secs": 16,
+   "url": "https://www.youtube.com/watch?v=3QcJggd_L24",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "machine-row",
+     "name": "Machine Row",
+     "via": "Machine Row",
+     "score": 0.8,
+     "why": "names it, with smith left over",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "4GxsdPRo8sE",
+   "source": "fbb",
+   "title": "Cobra Cyclist Squats",
+   "clean": "Cobra Cyclist Squats",
+   "secs": 16,
+   "url": "https://www.youtube.com/watch?v=4GxsdPRo8sE",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "cobra-stretch",
+     "name": "Cobra Stretch",
+     "via": "cobra",
+     "score": 0.5,
+     "why": "names it, with cyclist squat left over",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "4NNOrKyboqo",
+   "source": "catalyst",
+   "title": "Copenhagen Kick | Olympic Weightlifting Exercise Library",
+   "clean": "Copenhagen Kick",
+   "secs": 54,
+   "url": "https://www.youtube.com/watch?v=4NNOrKyboqo",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "copenhagen-plank",
+     "name": "Copenhagen Plank",
+     "via": "copenhagen",
+     "score": 0.667,
+     "why": "names it, with kick left over",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "5Y7H4nt1AdY",
+   "source": "catalyst",
+   "title": "Copenhagen Roll | Olympic Weightlifting Exercise Library",
+   "clean": "Copenhagen Roll",
+   "secs": 46,
+   "url": "https://www.youtube.com/watch?v=5Y7H4nt1AdY",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "copenhagen-plank",
+     "name": "Copenhagen Plank",
+     "via": "copenhagen",
+     "score": 0.667,
+     "why": "names it, with roll left over",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "6VXpiOPN77E",
+   "source": "catalyst",
+   "title": "Lunge + Single-Leg RDL | Olympic Weightlifting Exercise Library",
+   "clean": "Lunge + Single-Leg RDL",
+   "secs": 56,
+   "url": "https://www.youtube.com/watch?v=6VXpiOPN77E",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "single-leg-deadlift",
+     "name": "Single Leg Deadlift",
+     "via": "single leg rdl",
+     "score": 0.857,
+     "why": "names it, with lung left over",
+     "confirm": false
+    },
+    {
+     "id": "pistol-squat",
+     "name": "Pistol Squat",
+     "via": "single leg squat",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "single-leg-glute-bridge",
+     "name": "Single Leg Glute Bridge",
+     "via": "single leg bridge",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "6wyxpVY8PQ0",
+   "source": "fbb",
+   "title": "Dual Kettlebell Hang Squat Clean",
+   "clean": "Dual Kettlebell Hang Squat Clean",
+   "secs": 13,
+   "url": "https://www.youtube.com/watch?v=6wyxpVY8PQ0",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "squat-clean",
+     "name": "Squat Clean",
+     "via": "Squat Clean",
+     "score": 0.571,
+     "why": "names it, with dual kettlebell hang left over",
+     "confirm": false
+    },
+    {
+     "id": "hang-clean",
+     "name": "Hang Clean",
+     "via": "Hang Clean",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "kettlebell-clean",
+     "name": "Kettlebell Clean",
+     "via": "Kettlebell Clean",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "7GBBdCDWpn4",
+   "source": "fbb",
+   "title": "Cyclist Air Squat",
+   "clean": "Cyclist Air Squat",
+   "secs": 10,
+   "url": "https://www.youtube.com/watch?v=7GBBdCDWpn4",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "bodyweight-squat",
+     "name": "Bodyweight Squat",
+     "via": "air squat",
+     "score": 0.8,
+     "why": "names it, with cyclist left over",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "7YALH28ECZ8",
+   "source": "catalyst",
+   "title": "Single-Arm Tate Press | Olympic Weightlifting Exercise Library",
+   "clean": "Single-Arm Tate Press",
+   "secs": 37,
+   "url": "https://www.youtube.com/watch?v=7YALH28ECZ8",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "landmine-press",
+     "name": "Landmine Press",
+     "via": "single arm landmine press",
+     "score": 0.75,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "dumbbell-row",
+     "name": "Dumbbell Row",
+     "via": "single arm row",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "7jNA-3RbnEc",
+   "source": "catalyst",
+   "title": "Single-Leg Wall Sit | Olympic Weightlifting Exercise Library",
+   "clean": "Single-Leg Wall Sit",
+   "secs": 70,
+   "url": "https://www.youtube.com/watch?v=7jNA-3RbnEc",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "wall-sit",
+     "name": "Wall Sit",
+     "via": "Wall Sit",
+     "score": 0.667,
+     "why": "names it, with singl leg left over",
+     "confirm": false
+    },
+    {
+     "id": "pistol-squat",
+     "name": "Pistol Squat",
+     "via": "single leg squat",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "single-leg-deadlift",
+     "name": "Single Leg Deadlift",
+     "via": "Single Leg Deadlift",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "8ttp7Koqng0",
+   "source": "fbb",
+   "title": "Bodyweight Side Bend",
+   "clean": "Bodyweight Side Bend",
+   "secs": 19,
+   "url": "https://www.youtube.com/watch?v=8ttp7Koqng0",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "side-bend",
+     "name": "Side Bend",
+     "via": "Side Bend",
+     "score": 0.8,
+     "why": "names it, with bodyweight left over",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "9K8XTNN7tFs",
+   "source": "catalyst",
+   "title": "Star Side Plank | Olympic Weightlifting Exercise Library",
+   "clean": "Star Side Plank",
+   "secs": 34,
+   "url": "https://www.youtube.com/watch?v=9K8XTNN7tFs",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "side-plank",
+     "name": "Side Plank",
+     "via": "Side Plank",
+     "score": 0.8,
+     "why": "names it, with star left over",
+     "confirm": false
+    },
+    {
+     "id": "copenhagen-plank",
+     "name": "Copenhagen Plank",
+     "via": "copenhagen side plank",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "hip-dip",
+     "name": "Hip Dip",
+     "via": "side plank hip dip",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "9Vrd1yGvkGQ",
+   "source": "catalyst",
+   "title": "Anti-Rotation Russian Twist | Olympic Weightlifting Exercise Library",
+   "clean": "Anti-Rotation Russian Twist",
+   "secs": 62,
+   "url": "https://www.youtube.com/watch?v=9Vrd1yGvkGQ",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "russian-twist",
+     "name": "Russian Twist",
+     "via": "Russian Twist",
+     "score": 0.667,
+     "why": "names it, with anti rotation left over",
+     "confirm": false
+    },
+    {
+     "id": "pallof-press",
+     "name": "Pallof Press",
+     "via": "anti rotation press",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "9p13nKWLbDU",
+   "source": "fbb",
+   "title": "Single Leg Pike Leg Lift",
+   "clean": "Single Leg Pike Leg Lift",
+   "secs": 13,
+   "url": "https://www.youtube.com/watch?v=9p13nKWLbDU",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "pistol-squat",
+     "name": "Pistol Squat",
+     "via": "single leg squat",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "single-leg-deadlift",
+     "name": "Single Leg Deadlift",
+     "via": "Single Leg Deadlift",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "single-leg-glute-bridge",
+     "name": "Single Leg Glute Bridge",
+     "via": "single leg bridge",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "9wIkPCS4Mbo",
+   "source": "crossfit",
+   "title": "The Kipping Handstand Push-up",
+   "clean": "Kipping Handstand Push-up",
+   "secs": 57,
+   "url": "https://www.youtube.com/watch?v=9wIkPCS4Mbo",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "handstand-push-up",
+     "name": "Handstand Push-Up",
+     "via": "Handstand Push-Up",
+     "score": 0.857,
+     "why": "names it, with kipping left over",
+     "confirm": false
+    },
+    {
+     "id": "push-up",
+     "name": "Push-Up",
+     "via": "Push-Up",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "incline-push-up",
+     "name": "Incline Push-Up",
+     "via": "Incline Push-Up",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "BXwy0X021aQ",
+   "source": "catalyst",
+   "title": "Pallof Press in Squat | Olympic Weightlifting Exercise Library",
+   "clean": "Pallof Press in Squat",
+   "secs": 53,
+   "url": "https://www.youtube.com/watch?v=BXwy0X021aQ",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "pallof-press",
+     "name": "Pallof Press",
+     "via": "Pallof Press",
+     "score": 0.8,
+     "why": "names it, with squat left over",
+     "confirm": false
+    },
+    {
+     "id": "thruster",
+     "name": "Thruster",
+     "via": "squat to press",
+     "score": 0.8,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "ClpxzYm4Zoo",
+   "source": "catalyst",
+   "title": "Block Snatch Pull | Olympic Weightlifting Exercise Library",
+   "clean": "Block Snatch Pull",
+   "secs": 80,
+   "url": "https://www.youtube.com/watch?v=ClpxzYm4Zoo",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "rack-pull",
+     "name": "Rack Pull",
+     "via": "block pull",
+     "score": 0.8,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "CtfToyTIl4s",
+   "source": "fbb",
+   "title": "KB Crossbody Sumo Squat",
+   "clean": "KB Crossbody Sumo Squat",
+   "secs": 16,
+   "url": "https://www.youtube.com/watch?v=CtfToyTIl4s",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "sumo-squat",
+     "name": "Sumo Squat",
+     "via": "Sumo Squat",
+     "score": 0.667,
+     "why": "names it, with kettlebell crossbody left over",
+     "confirm": false
+    },
+    {
+     "id": "goblet-squat",
+     "name": "Goblet Squat",
+     "via": "kb goblet squat",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "DSlXpHDBOvs",
+   "source": "fbb",
+   "title": "Half Kneeling KB Horn Curl to Halo Flow",
+   "clean": "Half Kneeling KB Horn Curl to Halo Flow",
+   "secs": 19,
+   "url": "https://www.youtube.com/watch?v=DSlXpHDBOvs",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "kettlebell-halo",
+     "name": "Kettlebell Halo",
+     "via": "kb halo",
+     "score": 0.444,
+     "why": "names it, with half kneeling kettlebell horn curl flow left over",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "DjqgGTYNtg8",
+   "source": "catalyst",
+   "title": "Reverse Preacher Curl | Olympic Weightlifting Exercise Library",
+   "clean": "Reverse Preacher Curl",
+   "secs": 35,
+   "url": "https://www.youtube.com/watch?v=DjqgGTYNtg8",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "preacher-curl",
+     "name": "Preacher Curl",
+     "via": "Preacher Curl",
+     "score": 0.8,
+     "why": "names it, with rever left over",
+     "confirm": false
+    },
+    {
+     "id": "reverse-curl",
+     "name": "Reverse Curl",
+     "via": "Reverse Curl",
+     "score": 0.8,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "DrQHZQhshvE",
+   "source": "catalyst",
+   "title": "Russian Step-Up | Olympic Weightlifting Exercise Library",
+   "clean": "Russian Step-Up",
+   "secs": 65,
+   "url": "https://www.youtube.com/watch?v=DrQHZQhshvE",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "step-up",
+     "name": "Step Up",
+     "via": "Step Up",
+     "score": 0.8,
+     "why": "names it, with russian left over",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "EHEGr4oQYhc",
+   "source": "fbb",
+   "title": "Glute Loop Air Squat",
+   "clean": "Glute Loop Air Squat",
+   "secs": 14,
+   "url": "https://www.youtube.com/watch?v=EHEGr4oQYhc",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "bodyweight-squat",
+     "name": "Bodyweight Squat",
+     "via": "air squat",
+     "score": 0.667,
+     "why": "names it, with glut loop left over",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "FZ8mMUwnCQs",
+   "source": "fbb",
+   "title": "Single Arm Kettlebell Squat Clean",
+   "clean": "Single Arm Kettlebell Squat Clean",
+   "secs": 16,
+   "url": "https://www.youtube.com/watch?v=FZ8mMUwnCQs",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "squat-clean",
+     "name": "Squat Clean",
+     "via": "Squat Clean",
+     "score": 0.571,
+     "why": "names it, with singl arm kettlebell left over",
+     "confirm": false
+    },
+    {
+     "id": "kettlebell-clean",
+     "name": "Kettlebell Clean",
+     "via": "Kettlebell Clean",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "FkWLkq9xUVE",
+   "source": "catalyst",
+   "title": "QL Side Bend | Olympic Weightlifting Exercise Library",
+   "clean": "QL Side Bend",
+   "secs": 48,
+   "url": "https://www.youtube.com/watch?v=FkWLkq9xUVE",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "side-bend",
+     "name": "Side Bend",
+     "via": "Side Bend",
+     "score": 0.8,
+     "why": "names it, with ql left over",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "FmrO4lVzktw",
+   "source": "catalyst",
+   "title": "Iso Adduction Glute Bridge | Olympic Weightlifting Exercise Library",
+   "clean": "Iso Adduction Glute Bridge",
+   "secs": 45,
+   "url": "https://www.youtube.com/watch?v=FmrO4lVzktw",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "glute-bridge",
+     "name": "Glute Bridge",
+     "via": "Glute Bridge",
+     "score": 0.667,
+     "why": "names it, with iso adduction left over",
+     "confirm": false
+    },
+    {
+     "id": "single-leg-glute-bridge",
+     "name": "Single Leg Glute Bridge",
+     "via": "one leg glute bridge",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "Fpnk0TPRpzg",
+   "source": "catalyst",
+   "title": "Petersen Step-Up | Olympic Weightlifting Exercise Library",
+   "clean": "Petersen Step-Up",
+   "secs": 43,
+   "url": "https://www.youtube.com/watch?v=Fpnk0TPRpzg",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "step-up",
+     "name": "Step Up",
+     "via": "Step Up",
+     "score": 0.8,
+     "why": "names it, with petersen left over",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "FrndyTC1UwU",
+   "source": "fbb",
+   "title": "Kettlebell Split Clean to Halo Flow",
+   "clean": "Kettlebell Split Clean to Halo Flow",
+   "secs": 22,
+   "url": "https://www.youtube.com/watch?v=FrndyTC1UwU",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "kettlebell-halo",
+     "name": "Kettlebell Halo",
+     "via": "Kettlebell Halo",
+     "score": 0.571,
+     "why": "names it, with kettlebell split clean flow left over",
+     "confirm": false
+    },
+    {
+     "id": "kettlebell-clean",
+     "name": "Kettlebell Clean",
+     "via": "Kettlebell Clean",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "GUDCwZCEnSg",
+   "source": "fbb",
+   "title": "Dual DB Scissor Kicks",
+   "clean": "Dual DB Scissor Kicks",
+   "secs": 19,
+   "url": "https://www.youtube.com/watch?v=GUDCwZCEnSg",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "scissor-kick",
+     "name": "Scissor Kick",
+     "via": "Scissor Kick",
+     "score": 0.667,
+     "why": "names it, with dual dumbbell left over",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "GbTcCkSKlls",
+   "source": "catalyst",
+   "title": "Reverse EZ Curl | Olympic Weightlifting Exercise Library",
+   "clean": "Reverse EZ Curl",
+   "secs": 32,
+   "url": "https://www.youtube.com/watch?v=GbTcCkSKlls",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "ez-bar-curl",
+     "name": "EZ Bar Curl",
+     "via": "ez curl",
+     "score": 0.8,
+     "why": "names it, with rever left over",
+     "confirm": false
+    },
+    {
+     "id": "reverse-curl",
+     "name": "Reverse Curl",
+     "via": "Reverse Curl",
+     "score": 0.8,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "HQs3RnPptqM",
+   "source": "fbb",
+   "title": "Feet Elevated Plank",
+   "clean": "Feet Elevated Plank",
+   "secs": 11,
+   "url": "https://www.youtube.com/watch?v=HQs3RnPptqM",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "decline-push-up",
+     "name": "Decline Push-Up",
+     "via": "feet elevated push up",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "Hjddt_yu9ns",
+   "source": "musclewiki",
+   "title": "How to do a Hanging Oblique Tuck (Leg Raise)",
+   "clean": "Hanging Oblique Tuck (Leg Raise)",
+   "secs": 21,
+   "url": "https://www.youtube.com/watch?v=Hjddt_yu9ns",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "hanging-leg-raise",
+     "name": "Hanging Leg Raise",
+     "via": "Hanging Leg Raise",
+     "score": 0.75,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "leg-raise",
+     "name": "Leg Raise",
+     "via": "Leg Raise",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "HrEckdTNtMk",
+   "source": "fbb",
+   "title": "KB Switch Snatch",
+   "clean": "KB Switch Snatch",
+   "secs": 70,
+   "url": "https://www.youtube.com/watch?v=HrEckdTNtMk",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "kettlebell-snatch",
+     "name": "Kettlebell Snatch",
+     "via": "kb snatch",
+     "score": 0.8,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "IB5jHPLjj3M",
+   "source": "catalyst",
+   "title": "GHD Russian Twist | Olympic Weightlifting Exercise Library",
+   "clean": "GHD Russian Twist",
+   "secs": 40,
+   "url": "https://www.youtube.com/watch?v=IB5jHPLjj3M",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "russian-twist",
+     "name": "Russian Twist",
+     "via": "Russian Twist",
+     "score": 0.8,
+     "why": "names it, with ghd left over",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "IV7foDbpVhc",
+   "source": "catalyst",
+   "title": "Incline Hex Press | Olympic Weightlifting Exercise Library",
+   "clean": "Incline Hex Press",
+   "secs": 36,
+   "url": "https://www.youtube.com/watch?v=IV7foDbpVhc",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "incline-bench-press",
+     "name": "Incline Bench Press",
+     "via": "Incline Bench Press",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "incline-dumbbell-press",
+     "name": "Incline Dumbbell Press",
+     "via": "Incline Dumbbell Press",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "Ih3YRZud1EU",
+   "source": "fbb",
+   "title": "Cobra Reverse Lunge",
+   "clean": "Cobra Reverse Lunge",
+   "secs": 9,
+   "url": "https://www.youtube.com/watch?v=Ih3YRZud1EU",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "reverse-lunge",
+     "name": "Reverse Lunge",
+     "via": "Reverse Lunge",
+     "score": 0.8,
+     "why": "names it, with cobra left over",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "IkzbpN0WMjc",
+   "source": "catalyst",
+   "title": "Staggered RDL | Olympic Weightlifting Exercise Library",
+   "clean": "Staggered RDL",
+   "secs": 66,
+   "url": "https://www.youtube.com/watch?v=IkzbpN0WMjc",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "romanian-deadlift",
+     "name": "Romanian Deadlift",
+     "via": "rdl",
+     "score": 0.667,
+     "why": "names it, with staggered left over",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "InRvHNUOlSs",
+   "source": "crossfit",
+   "title": "The Kipping Handstand Push-Up",
+   "clean": "Kipping Handstand Push-Up",
+   "secs": 39,
+   "url": "https://www.youtube.com/watch?v=InRvHNUOlSs",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "handstand-push-up",
+     "name": "Handstand Push-Up",
+     "via": "Handstand Push-Up",
+     "score": 0.857,
+     "why": "names it, with kipping left over",
+     "confirm": false
+    },
+    {
+     "id": "push-up",
+     "name": "Push-Up",
+     "via": "Push-Up",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "incline-push-up",
+     "name": "Incline Push-Up",
+     "via": "Incline Push-Up",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "J6DlYOWZjQI",
+   "source": "fbb",
+   "title": "Dual Kettlebell Banded Sumo Deadlift",
+   "clean": "Dual Kettlebell Banded Sumo Deadlift",
+   "secs": 17,
+   "url": "https://www.youtube.com/watch?v=J6DlYOWZjQI",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "sumo-deadlift",
+     "name": "Sumo Deadlift",
+     "via": "Sumo Deadlift",
+     "score": 0.571,
+     "why": "names it, with dual kettlebell banded left over",
+     "confirm": false
+    },
+    {
+     "id": "kettlebell-deadlift",
+     "name": "Kettlebell Deadlift",
+     "via": "Kettlebell Deadlift",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "JhInIL4TGHE",
+   "source": "catalyst",
+   "title": "Push Jerk in Snatch | Olympic Weightlifting Exercise Library",
+   "clean": "Push Jerk in Snatch",
+   "secs": 56,
+   "url": "https://www.youtube.com/watch?v=JhInIL4TGHE",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "push-jerk",
+     "name": "Push Jerk",
+     "via": "Push Jerk",
+     "score": 0.8,
+     "why": "names it, with snatch left over",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "KVGhkHSrDJo",
+   "source": "crossfit",
+   "title": "The Medicine-Ball Clean",
+   "clean": "Medicine-Ball Clean",
+   "secs": 74,
+   "url": "https://www.youtube.com/watch?v=KVGhkHSrDJo",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "wall-ball",
+     "name": "Wall Ball",
+     "via": "medicine ball thruster",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "medicine-ball-slam",
+     "name": "Medicine Ball Slam",
+     "via": "Medicine Ball Slam",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "LTUamvD6b5o",
+   "source": "fbb",
+   "title": "Windmill Press",
+   "clean": "Windmill Press",
+   "secs": 18,
+   "url": "https://www.youtube.com/watch?v=LTUamvD6b5o",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "kettlebell-windmill",
+     "name": "Kettlebell Windmill",
+     "via": "windmill",
+     "score": 0.667,
+     "why": "names it, with pre left over",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "LgoNq38QXIM",
+   "source": "catalyst",
+   "title": "Reverse Cable Curl | Olympic Weightlifting Exercise Library",
+   "clean": "Reverse Cable Curl",
+   "secs": 31,
+   "url": "https://www.youtube.com/watch?v=LgoNq38QXIM",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "cable-curl",
+     "name": "Cable Curl",
+     "via": "Cable Curl",
+     "score": 0.8,
+     "why": "names it, with rever left over",
+     "confirm": false
+    },
+    {
+     "id": "reverse-curl",
+     "name": "Reverse Curl",
+     "via": "Reverse Curl",
+     "score": 0.8,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "M9AJ8e8jK8U",
+   "source": "fbb",
+   "title": "Goblet Cyclist Rear Foot Elevated Split Squat",
+   "clean": "Goblet Cyclist Rear Foot Elevated Split Squat",
+   "secs": 18,
+   "url": "https://www.youtube.com/watch?v=M9AJ8e8jK8U",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "bulgarian-split-squat",
+     "name": "Bulgarian Split Squat",
+     "via": "rear foot elevated split squat",
+     "score": 0.833,
+     "why": "names it, with goblet cyclist left over",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "MVX4zlXudEw",
+   "source": "catalyst",
+   "title": "Glute-Ham Bridge Walkout | Olympic Weightlifting Exercise Library",
+   "clean": "Glute-Ham Bridge Walkout",
+   "secs": 45,
+   "url": "https://www.youtube.com/watch?v=MVX4zlXudEw",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "inchworm",
+     "name": "Inchworm",
+     "via": "walkout",
+     "score": 0.4,
+     "why": "names it, with glut ham bridg left over",
+     "confirm": false
+    },
+    {
+     "id": "glute-bridge",
+     "name": "Glute Bridge",
+     "via": "Glute Bridge",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "single-leg-glute-bridge",
+     "name": "Single Leg Glute Bridge",
+     "via": "one leg glute bridge",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "Mfcsc910lkM",
+   "source": "catalyst",
+   "title": "Arnold Z-Press | Olympic Weightlifting Exercise Library",
+   "clean": "Arnold Z-Press",
+   "secs": 41,
+   "url": "https://www.youtube.com/watch?v=Mfcsc910lkM",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "arnold-press",
+     "name": "Arnold Press",
+     "via": "Arnold Press",
+     "score": 0.8,
+     "why": "names it, with z pre left over",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "MmBisIuvLeU",
+   "source": "catalyst",
+   "title": "Plank Pull-Through | Olympic Weightlifting Exercise Library",
+   "clean": "Plank Pull-Through",
+   "secs": 39,
+   "url": "https://www.youtube.com/watch?v=MmBisIuvLeU",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "cable-pull-through",
+     "name": "Cable Pull Through",
+     "via": "pull through",
+     "score": 0.8,
+     "why": "names it, with plank left over",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "NLDBFtSNhqg",
+   "source": "rp",
+   "title": "Machine Glute Kickback",
+   "clean": "Machine Glute Kickback",
+   "secs": 10,
+   "url": "https://www.youtube.com/watch?v=NLDBFtSNhqg",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "donkey-kick",
+     "name": "Donkey Kick",
+     "via": "glute kickback",
+     "score": 0.8,
+     "why": "names it, with machin left over",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "OLqZDUUD2b0",
+   "source": "rp",
+   "title": "Smith Machine Seated Shoulder Press",
+   "clean": "Smith Machine Seated Shoulder Press",
+   "secs": 13,
+   "url": "https://www.youtube.com/watch?v=OLqZDUUD2b0",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "seated-shoulder-press",
+     "name": "Seated Shoulder Press",
+     "via": "Seated Shoulder Press",
+     "score": 0.75,
+     "why": "names it, with smith machin left over",
+     "confirm": false
+    },
+    {
+     "id": "machine-shoulder-press",
+     "name": "Machine Shoulder Press",
+     "via": "seated machine shoulder press",
+     "score": 0.889,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "dumbbell-shoulder-press",
+     "name": "Dumbbell Shoulder Press",
+     "via": "shoulder press",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "P-094iG67V4",
+   "source": "catalyst",
+   "title": "Block Snatch Pull to Hold | Olympic Weightlifting Exercise Library",
+   "clean": "Block Snatch Pull to Hold",
+   "secs": 72,
+   "url": "https://www.youtube.com/watch?v=P-094iG67V4",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "rack-pull",
+     "name": "Rack Pull",
+     "via": "block pull",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "PJGJ7SXhSZY",
+   "source": "catalyst",
+   "title": "Pause Squat Vertical Jump | Olympic Weightlifting Exercise Library",
+   "clean": "Pause Squat Vertical Jump",
+   "secs": 63,
+   "url": "https://www.youtube.com/watch?v=PJGJ7SXhSZY",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "jump-squat",
+     "name": "Jump Squat",
+     "via": "Jump Squat",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "PPSrY5X5Its",
+   "source": "catalyst",
+   "title": "Anti-Rotation Landmine | Olympic Weightlifting Exercise Library",
+   "clean": "Anti-Rotation Landmine",
+   "secs": 55,
+   "url": "https://www.youtube.com/watch?v=PPSrY5X5Its",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "landmine-rotation",
+     "name": "Landmine Rotation",
+     "via": "Landmine Rotation",
+     "score": 0.8,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "pallof-press",
+     "name": "Pallof Press",
+     "via": "anti rotation press",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "PgAfycuKJyg",
+   "source": "fbb",
+   "title": "KB Rotational Snatch",
+   "clean": "KB Rotational Snatch",
+   "secs": 57,
+   "url": "https://www.youtube.com/watch?v=PgAfycuKJyg",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "kettlebell-snatch",
+     "name": "Kettlebell Snatch",
+     "via": "kb snatch",
+     "score": 0.8,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "Pnm9TSgvBF0",
+   "source": "catalyst",
+   "title": "GHD Sit-up | Olympic Weightlifting Exercise Library",
+   "clean": "GHD Sit-up",
+   "secs": 52,
+   "url": "https://www.youtube.com/watch?v=Pnm9TSgvBF0",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "sit-up",
+     "name": "Sit-Up",
+     "via": "Sit-Up",
+     "score": 0.8,
+     "why": "names it, with ghd left over",
+     "confirm": false
+    },
+    {
+     "id": "v-up",
+     "name": "V-Up",
+     "via": "v sit up",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "QERPj_zwbDg",
+   "source": "fbb",
+   "title": "Clamshell Plank with hips on floor",
+   "clean": "Clamshell Plank with hips on floor",
+   "secs": 14,
+   "url": "https://www.youtube.com/watch?v=QERPj_zwbDg",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "clamshell",
+     "name": "Clamshell",
+     "via": "Clamshell",
+     "score": 0.4,
+     "why": "names it, with plank hip floor left over",
+     "confirm": false
+    },
+    {
+     "id": "hip-dip",
+     "name": "Hip Dip",
+     "via": "plank hip dip",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "QZ8YT4TVekw",
+   "source": "fbb",
+   "title": "Single Arm Kettlebell Rack Wall Sit",
+   "clean": "Single Arm Kettlebell Rack Wall Sit",
+   "secs": 15,
+   "url": "https://www.youtube.com/watch?v=QZ8YT4TVekw",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "wall-sit",
+     "name": "Wall Sit",
+     "via": "Wall Sit",
+     "score": 0.5,
+     "why": "names it, with singl arm kettlebell rack left over",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "QxWgv0sl0rk",
+   "source": "musclewiki",
+   "title": "How to do a Hanging Oblique Tuck (Leg Raise)",
+   "clean": "Hanging Oblique Tuck (Leg Raise)",
+   "secs": 16,
+   "url": "https://www.youtube.com/watch?v=QxWgv0sl0rk",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "hanging-leg-raise",
+     "name": "Hanging Leg Raise",
+     "via": "Hanging Leg Raise",
+     "score": 0.75,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "leg-raise",
+     "name": "Leg Raise",
+     "via": "Leg Raise",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "SoL2B7ncSKg",
+   "source": "catalyst",
+   "title": "Clean-Grip Overhead Squat | Olympic Weightlifting Exercise Library",
+   "clean": "Clean-Grip Overhead Squat",
+   "secs": 66,
+   "url": "https://www.youtube.com/watch?v=SoL2B7ncSKg",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "overhead-squat",
+     "name": "Overhead Squat",
+     "via": "Overhead Squat",
+     "score": 0.667,
+     "why": "names it, with clean grip left over",
+     "confirm": false
+    },
+    {
+     "id": "squat-clean",
+     "name": "Squat Clean",
+     "via": "Squat Clean",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "Sq138eXp3Lg",
+   "source": "fbb",
+   "title": "Cobra High Knee March",
+   "clean": "Cobra High Knee March",
+   "secs": 13,
+   "url": "https://www.youtube.com/watch?v=Sq138eXp3Lg",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "high-knees",
+     "name": "High Knees",
+     "via": "High Knees",
+     "score": 0.667,
+     "why": "names it, with cobra march left over",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "Sqpr9fqilso",
+   "source": "fbb",
+   "title": "Cobra Lunges",
+   "clean": "Cobra Lunges",
+   "secs": 15,
+   "url": "https://www.youtube.com/watch?v=Sqpr9fqilso",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "cobra-stretch",
+     "name": "Cobra Stretch",
+     "via": "cobra",
+     "score": 0.667,
+     "why": "names it, with lung left over",
+     "confirm": false
+    },
+    {
+     "id": "lunge",
+     "name": "Lunge",
+     "via": "Lunge",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "TPhCweFRaJQ",
+   "source": "crossfit",
+   "title": "The Masters",
+   "clean": "Masters",
+   "secs": 198,
+   "url": "https://www.youtube.com/watch?v=TPhCweFRaJQ",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "stair-climber",
+     "name": "Stair Climber",
+     "via": "stair master",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "TlneBvU4XFY",
+   "source": "crossfit",
+   "title": "The Medicine Ball Progression",
+   "clean": "Medicine Ball Progression",
+   "secs": 91,
+   "url": "https://www.youtube.com/watch?v=TlneBvU4XFY",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "wall-ball",
+     "name": "Wall Ball",
+     "via": "medicine ball thruster",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "medicine-ball-slam",
+     "name": "Medicine Ball Slam",
+     "via": "Medicine Ball Slam",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "TrTSvn5-MTk",
+   "source": "rp",
+   "title": "Incline Machine Chest Press",
+   "clean": "Incline Machine Chest Press",
+   "secs": 13,
+   "url": "https://www.youtube.com/watch?v=TrTSvn5-MTk",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "machine-chest-press",
+     "name": "Machine Chest Press",
+     "via": "Machine Chest Press",
+     "score": 0.857,
+     "why": "names it, with inclin left over",
+     "confirm": false
+    },
+    {
+     "id": "leg-press",
+     "name": "Leg Press",
+     "via": "machine leg press",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "incline-bench-press",
+     "name": "Incline Bench Press",
+     "via": "Incline Bench Press",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "Tw7F9n5fT4w",
+   "source": "crossfit",
+   "title": "The Squat Stance",
+   "clean": "Squat Stance",
+   "secs": 101,
+   "url": "https://www.youtube.com/watch?v=Tw7F9n5fT4w",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "sumo-squat",
+     "name": "Sumo Squat",
+     "via": "wide stance squat",
+     "score": 0.8,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "split-squat",
+     "name": "Split Squat",
+     "via": "split stance squat",
+     "score": 0.8,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "back-squat",
+     "name": "Back Squat",
+     "via": "squat",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "U0su_R--Rsk",
+   "source": "fbb",
+   "title": "Deficit Dual KB Sumo Deadlift",
+   "clean": "Deficit Dual KB Sumo Deadlift",
+   "secs": 18,
+   "url": "https://www.youtube.com/watch?v=U0su_R--Rsk",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "sumo-deadlift",
+     "name": "Sumo Deadlift",
+     "via": "Sumo Deadlift",
+     "score": 0.571,
+     "why": "names it, with deficit dual kettlebell left over",
+     "confirm": false
+    },
+    {
+     "id": "deficit-deadlift",
+     "name": "Deficit Deadlift",
+     "via": "Deficit Deadlift",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "kettlebell-deadlift",
+     "name": "Kettlebell Deadlift",
+     "via": "kb deadlift",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "U0ybVas0Bnk",
+   "source": "fbb",
+   "title": "Hollow Body Single Arm KB Press",
+   "clean": "Hollow Body Single Arm KB Press",
+   "secs": 14,
+   "url": "https://www.youtube.com/watch?v=U0ybVas0Bnk",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "landmine-press",
+     "name": "Landmine Press",
+     "via": "single arm landmine press",
+     "score": 0.6,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "UMGJdb2W4E4",
+   "source": "catalyst",
+   "title": "Decline Russian Twist | Olympic Weightlifting Exercise Library",
+   "clean": "Decline Russian Twist",
+   "secs": 44,
+   "url": "https://www.youtube.com/watch?v=UMGJdb2W4E4",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "russian-twist",
+     "name": "Russian Twist",
+     "via": "Russian Twist",
+     "score": 0.8,
+     "why": "names it, with declin left over",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "Uf1jY-575lo",
+   "source": "fbb",
+   "title": "Alternating Kettlebell Floor Press",
+   "clean": "Alternating Kettlebell Floor Press",
+   "secs": 15,
+   "url": "https://www.youtube.com/watch?v=Uf1jY-575lo",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "dumbbell-floor-press",
+     "name": "Dumbbell Floor Press",
+     "via": "floor press",
+     "score": 0.667,
+     "why": "names it, with kettlebell left over",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "V-WgTVv4lXU",
+   "source": "fbb",
+   "title": "Banded Kettlebell Goblet Squat",
+   "clean": "Banded Kettlebell Goblet Squat",
+   "secs": 14,
+   "url": "https://www.youtube.com/watch?v=V-WgTVv4lXU",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "goblet-squat",
+     "name": "Goblet Squat",
+     "via": "kettlebell goblet squat",
+     "score": 0.857,
+     "why": "names it, with banded left over",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "V3vgy7VYE98",
+   "source": "fbb",
+   "title": "KB Swing to Waiter Juggle",
+   "clean": "KB Swing to Waiter Juggle",
+   "secs": 69,
+   "url": "https://www.youtube.com/watch?v=V3vgy7VYE98",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "kettlebell-swing",
+     "name": "Kettlebell Swing",
+     "via": "kb swing",
+     "score": 0.667,
+     "why": "names it, with waiter juggl left over",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "VJWAb94U4SM",
+   "source": "catalyst",
+   "title": "Poliquin Step-Up | Olympic Weightlifting Exercise Library",
+   "clean": "Poliquin Step-Up",
+   "secs": 51,
+   "url": "https://www.youtube.com/watch?v=VJWAb94U4SM",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "step-up",
+     "name": "Step Up",
+     "via": "Step Up",
+     "score": 0.8,
+     "why": "names it, with poliquin left over",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "VaYVUPIbxE4",
+   "source": "catalyst",
+   "title": "Scap Pull-up Circles | Olympic Weightlifting Exercise Library",
+   "clean": "Scap Pull-up Circles",
+   "secs": 50,
+   "url": "https://www.youtube.com/watch?v=VaYVUPIbxE4",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "scapular-pull-up",
+     "name": "Scapular Pull-Up",
+     "via": "scap pull up",
+     "score": 0.857,
+     "why": "names it, with circl left over",
+     "confirm": false
+    },
+    {
+     "id": "pull-up",
+     "name": "Pull-Up",
+     "via": "Pull-Up",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "chin-up",
+     "name": "Chin-Up",
+     "via": "underhand pull up",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "VeaiCMYiucI",
+   "source": "catalyst",
+   "title": "Rotating Sit-Up | Olympic Weightlifting Exercise Library",
+   "clean": "Rotating Sit-Up",
+   "secs": 44,
+   "url": "https://www.youtube.com/watch?v=VeaiCMYiucI",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "sit-up",
+     "name": "Sit-Up",
+     "via": "Sit-Up",
+     "score": 0.8,
+     "why": "names it, with rotating left over",
+     "confirm": false
+    },
+    {
+     "id": "v-up",
+     "name": "V-Up",
+     "via": "v sit up",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "Vkx3GFJqUuQ",
+   "source": "fbb",
+   "title": "Plank with Lateral Band Row",
+   "clean": "Plank with Lateral Band Row",
+   "secs": 13,
+   "url": "https://www.youtube.com/watch?v=Vkx3GFJqUuQ",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "renegade-row",
+     "name": "Renegade Row",
+     "via": "plank row",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "banded-walk",
+     "name": "Banded Walk",
+     "via": "lateral band walk",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "VnHvZtV8Gz0",
+   "source": "fbb",
+   "title": "Single Leg Single Kettlebell Deadlift",
+   "clean": "Single Leg Single Kettlebell Deadlift",
+   "secs": 15,
+   "url": "https://www.youtube.com/watch?v=VnHvZtV8Gz0",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "kettlebell-deadlift",
+     "name": "Kettlebell Deadlift",
+     "via": "Kettlebell Deadlift",
+     "score": 0.667,
+     "why": "names it, with singl leg singl left over",
+     "confirm": false
+    },
+    {
+     "id": "single-leg-deadlift",
+     "name": "Single Leg Deadlift",
+     "via": "Single Leg Deadlift",
+     "score": 0.857,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "pistol-squat",
+     "name": "Pistol Squat",
+     "via": "single leg squat",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "WJimwCzD4yA",
+   "source": "fbb",
+   "title": "Goblet Clean to Reverse Lunge",
+   "clean": "Goblet Clean to Reverse Lunge",
+   "secs": 20,
+   "url": "https://www.youtube.com/watch?v=WJimwCzD4yA",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "reverse-lunge",
+     "name": "Reverse Lunge",
+     "via": "Reverse Lunge",
+     "score": 0.667,
+     "why": "names it, with goblet clean left over",
+     "confirm": false
+    },
+    {
+     "id": "lunge",
+     "name": "Lunge",
+     "via": "goblet lunge",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "WQb0rvx_iZ8",
+   "source": "catalyst",
+   "title": "Backward Farmer Carry | Olympic Weightlifting Exercise Library",
+   "clean": "Backward Farmer Carry",
+   "secs": 46,
+   "url": "https://www.youtube.com/watch?v=WQb0rvx_iZ8",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "farmers-carry",
+     "name": "Farmer's Carry",
+     "via": "Farmer's Carry",
+     "score": 0.8,
+     "why": "names it, with backward left over",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "Wfb06JyjOgQ",
+   "source": "catalyst",
+   "title": "Half-Kneeling Cross Chop | Olympic Weightlifting Exercise Library",
+   "clean": "Half-Kneeling Cross Chop",
+   "secs": 48,
+   "url": "https://www.youtube.com/watch?v=Wfb06JyjOgQ",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "woodchop",
+     "name": "Woodchop",
+     "via": "chop",
+     "score": 0.4,
+     "why": "names it, with half kneeling cro left over",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "X7-R8lKprHI",
+   "source": "catalyst",
+   "title": "RLE RDL | Olympic Weightlifting Exercise Library",
+   "clean": "RLE RDL",
+   "secs": 54,
+   "url": "https://www.youtube.com/watch?v=X7-R8lKprHI",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "romanian-deadlift",
+     "name": "Romanian Deadlift",
+     "via": "rdl",
+     "score": 0.667,
+     "why": "names it, with rle left over",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "XaWw7jhNHsg",
+   "source": "crossfit",
+   "title": "The Assisted Air Squat",
+   "clean": "Assisted Air Squat",
+   "secs": 19,
+   "url": "https://www.youtube.com/watch?v=XaWw7jhNHsg",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "bodyweight-squat",
+     "name": "Bodyweight Squat",
+     "via": "air squat",
+     "score": 0.8,
+     "why": "names it, with assisted left over",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "YKbnnxXGmdI",
+   "source": "fbb",
+   "title": "Pillow Case Face Pull",
+   "clean": "Pillow Case Face Pull",
+   "secs": 15,
+   "url": "https://www.youtube.com/watch?v=YKbnnxXGmdI",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "face-pull",
+     "name": "Face Pull",
+     "via": "Face Pull",
+     "score": 0.667,
+     "why": "names it, with pillow cas left over",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "YcMj0EEadQo",
+   "source": "bbcom",
+   "title": "Decline Reverse Crunch - Ab Exercise - Bodybuilding.com",
+   "clean": "Decline Reverse Crunch",
+   "secs": 49,
+   "url": "https://www.youtube.com/watch?v=YcMj0EEadQo",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "reverse-crunch",
+     "name": "Reverse Crunch",
+     "via": "Reverse Crunch",
+     "score": 0.8,
+     "why": "names it, with declin left over",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "YiNUKCqvpAU",
+   "source": "fbb",
+   "title": "Dual DB Flutter Kicks",
+   "clean": "Dual DB Flutter Kicks",
+   "secs": 14,
+   "url": "https://www.youtube.com/watch?v=YiNUKCqvpAU",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "flutter-kick",
+     "name": "Flutter Kick",
+     "via": "Flutter Kick",
+     "score": 0.667,
+     "why": "names it, with dual dumbbell left over",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "Z5Ry2pvbGag",
+   "source": "catalyst",
+   "title": "Side Plank Lift | Olympic Weightlifting Exercise Library",
+   "clean": "Side Plank Lift",
+   "secs": 42,
+   "url": "https://www.youtube.com/watch?v=Z5Ry2pvbGag",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "side-plank",
+     "name": "Side Plank",
+     "via": "Side Plank",
+     "score": 0.8,
+     "why": "names it, with lift left over",
+     "confirm": false
+    },
+    {
+     "id": "copenhagen-plank",
+     "name": "Copenhagen Plank",
+     "via": "copenhagen side plank",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "hip-dip",
+     "name": "Hip Dip",
+     "via": "side plank hip dip",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "ZPoMxOrIeO4",
+   "source": "crossfit",
+   "title": "The Back Rack Lunge",
+   "clean": "Back Rack Lunge",
+   "secs": 35,
+   "url": "https://www.youtube.com/watch?v=ZPoMxOrIeO4",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "reverse-lunge",
+     "name": "Reverse Lunge",
+     "via": "back lunge",
+     "score": 0.8,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "Zfi0KcIJi6c",
+   "source": "rp",
+   "title": "Incline Narrow Grip Bench Press",
+   "clean": "Incline Narrow Grip Bench Press",
+   "secs": 11,
+   "url": "https://www.youtube.com/watch?v=Zfi0KcIJi6c",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "close-grip-bench-press",
+     "name": "Close Grip Bench Press",
+     "via": "narrow grip bench press",
+     "score": 0.889,
+     "why": "names it, with inclin left over",
+     "confirm": false
+    },
+    {
+     "id": "incline-bench-press",
+     "name": "Incline Bench Press",
+     "via": "Incline Bench Press",
+     "score": 0.75,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "incline-dumbbell-press",
+     "name": "Incline Dumbbell Press",
+     "via": "incline dumbbell bench press",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "_jcAAqMMtnc",
+   "source": "bbcom",
+   "title": "Smith Machine Squat - Leg Exercise - Bodybuilding.com",
+   "clean": "Smith Machine Squat",
+   "secs": 83,
+   "url": "https://www.youtube.com/watch?v=_jcAAqMMtnc",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "hack-squat",
+     "name": "Hack Squat",
+     "via": "machine hack squat",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "arlwDvq6YEQ",
+   "source": "fbb",
+   "title": "Cobra High Knee Lateral Steps",
+   "clean": "Cobra High Knee Lateral Steps",
+   "secs": 14,
+   "url": "https://www.youtube.com/watch?v=arlwDvq6YEQ",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "high-knees",
+     "name": "High Knees",
+     "via": "High Knees",
+     "score": 0.571,
+     "why": "names it, with cobra lateral step left over",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "axoeDmW0oAY",
+   "source": "nippard",
+   "title": "How To Build a Thick Back With Perfect Rowing Technique (Pendlay Row/ Helms Row)",
+   "clean": "How To Build a Thick Back With Perfect Rowing Technique (Pendlay Row/ Helms Row)",
+   "secs": 510,
+   "url": "https://www.youtube.com/watch?v=axoeDmW0oAY",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "rowing-machine",
+     "name": "Rowing Machine",
+     "via": "rowing",
+     "score": 0.182,
+     "why": "names it, with how build thick back perfect techniqu left over",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "azumEfnk-GI",
+   "source": "crossfit",
+   "title": "The Dumbbell Overhead Squat",
+   "clean": "Dumbbell Overhead Squat",
+   "secs": 74,
+   "url": "https://www.youtube.com/watch?v=azumEfnk-GI",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "overhead-squat",
+     "name": "Overhead Squat",
+     "via": "Overhead Squat",
+     "score": 0.8,
+     "why": "names it, with dumbbell left over",
+     "confirm": false
+    },
+    {
+     "id": "goblet-squat",
+     "name": "Goblet Squat",
+     "via": "dumbbell goblet squat",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "dumbbell-shoulder-press",
+     "name": "Dumbbell Shoulder Press",
+     "via": "dumbbell overhead press",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "bnYekgCKfv0",
+   "source": "rp",
+   "title": "Sumo Deficit Deadlift",
+   "clean": "Sumo Deficit Deadlift",
+   "secs": 11,
+   "url": "https://www.youtube.com/watch?v=bnYekgCKfv0",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "deficit-deadlift",
+     "name": "Deficit Deadlift",
+     "via": "Deficit Deadlift",
+     "score": 0.8,
+     "why": "names it, with sumo left over",
+     "confirm": false
+    },
+    {
+     "id": "sumo-deadlift",
+     "name": "Sumo Deadlift",
+     "via": "Sumo Deadlift",
+     "score": 0.8,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "sumo-deadlift-high-pull",
+     "name": "Sumo Deadlift High Pull",
+     "via": "Sumo Deadlift High Pull",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "cWDL8SgOm_A",
+   "source": "catalyst",
+   "title": "Incline Bench Rear Delt Row | Olympic Weightlifting Exercise Library",
+   "clean": "Incline Bench Rear Delt Row",
+   "secs": 37,
+   "url": "https://www.youtube.com/watch?v=cWDL8SgOm_A",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "incline-bench-press",
+     "name": "Incline Bench Press",
+     "via": "incline bench",
+     "score": 0.571,
+     "why": "names it, with rear delt row left over",
+     "confirm": false
+    },
+    {
+     "id": "chest-supported-row",
+     "name": "Chest Supported Row",
+     "via": "incline row",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "ciUS_Tqh090",
+   "source": "tnation",
+   "title": "Dumbbell Squat",
+   "clean": "Dumbbell Squat",
+   "secs": 45,
+   "url": "https://www.youtube.com/watch?v=ciUS_Tqh090",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "goblet-squat",
+     "name": "Goblet Squat",
+     "via": "dumbbell goblet squat",
+     "score": 0.8,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "back-squat",
+     "name": "Back Squat",
+     "via": "squat",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "crOENtBfluo",
+   "source": "fbb",
+   "title": "Chinese Plank Front",
+   "clean": "Chinese Plank Front",
+   "secs": 13,
+   "url": "https://www.youtube.com/watch?v=crOENtBfluo",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "plank",
+     "name": "Plank",
+     "via": "front plank",
+     "score": 0.8,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "ctPbVlt_9f0",
+   "source": "catalyst",
+   "title": "Pallof Press in Split | Olympic Weightlifting Exercise Library",
+   "clean": "Pallof Press in Split",
+   "secs": 57,
+   "url": "https://www.youtube.com/watch?v=ctPbVlt_9f0",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "pallof-press",
+     "name": "Pallof Press",
+     "via": "Pallof Press",
+     "score": 0.8,
+     "why": "names it, with split left over",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "eQ7ZFfp5H1U",
+   "source": "catalyst",
+   "title": "Rear Delt W Fly | Olympic Weightlifting Exercise Library",
+   "clean": "Rear Delt W Fly",
+   "secs": 38,
+   "url": "https://www.youtube.com/watch?v=eQ7ZFfp5H1U",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "rear-delt-fly",
+     "name": "Rear Delt Fly",
+     "via": "Rear Delt Fly",
+     "score": 0.857,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "enT1mAixp0s",
+   "source": "fbb",
+   "title": "Hollow Body Pull Over w  Tuck Up",
+   "clean": "Hollow Body Pull Over w Tuck Up",
+   "secs": 25,
+   "url": "https://www.youtube.com/watch?v=enT1mAixp0s",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "pull-over",
+     "name": "Pull-Over",
+     "via": "Pull-Over",
+     "score": 0.444,
+     "why": "names it, with hollow body w tuck up left over",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "erxZ6kTVPP0",
+   "source": "fbb",
+   "title": "Low Switch Cossack Squats",
+   "clean": "Low Switch Cossack Squats",
+   "secs": 19,
+   "url": "https://www.youtube.com/watch?v=erxZ6kTVPP0",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "cossack-squat",
+     "name": "Cossack Squat",
+     "via": "Cossack Squat",
+     "score": 0.667,
+     "why": "names it, with low switch left over",
+     "confirm": false
+    },
+    {
+     "id": "back-squat",
+     "name": "Back Squat",
+     "via": "low bar squat",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "fMoFdVEIcY8",
+   "source": "fbb",
+   "title": "Extended Plank",
+   "clean": "Extended Plank",
+   "secs": 13,
+   "url": "https://www.youtube.com/watch?v=fMoFdVEIcY8",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "plank",
+     "name": "Plank",
+     "via": "Plank",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "fOPqk1FA4HU",
+   "source": "fbb",
+   "title": "Dual Russian Kettlebell Swings",
+   "clean": "Dual Russian Kettlebell Swings",
+   "secs": 14,
+   "url": "https://www.youtube.com/watch?v=fOPqk1FA4HU",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "kettlebell-swing",
+     "name": "Kettlebell Swing",
+     "via": "russian kettlebell swing",
+     "score": 0.857,
+     "why": "names it, with dual left over",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "g5-vKqXxM1Y",
+   "source": "fbb",
+   "title": "Banded Goblet Squat",
+   "clean": "Banded Goblet Squat",
+   "secs": 10,
+   "url": "https://www.youtube.com/watch?v=g5-vKqXxM1Y",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "goblet-squat",
+     "name": "Goblet Squat",
+     "via": "Goblet Squat",
+     "score": 0.8,
+     "why": "names it, with banded left over",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "gYXr-AbnCYk",
+   "source": "catalyst",
+   "title": "Decline Crunch | Olympic Weightlifting Exercise Library",
+   "clean": "Decline Crunch",
+   "secs": 41,
+   "url": "https://www.youtube.com/watch?v=gYXr-AbnCYk",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "crunch",
+     "name": "Crunch",
+     "via": "Crunch",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "h6c6QE12_f0",
+   "source": "catalyst",
+   "title": "Overhead Squat with Hanging Weights | Olympic Weightlifting Exercise Library",
+   "clean": "Overhead Squat with Hanging Weights",
+   "secs": 63,
+   "url": "https://www.youtube.com/watch?v=h6c6QE12_f0",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "overhead-squat",
+     "name": "Overhead Squat",
+     "via": "Overhead Squat",
+     "score": 0.667,
+     "why": "names it, with hanging weight left over",
+     "confirm": false
+    },
+    {
+     "id": "bodyweight-squat",
+     "name": "Bodyweight Squat",
+     "via": "body weight squat",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "hVWwhWqi0V0",
+   "source": "catalyst",
+   "title": "Seated 90/90 Band Adduction | Olympic Weightlifting Exercise Library",
+   "clean": "Seated 90/90 Band Adduction",
+   "secs": 45,
+   "url": "https://www.youtube.com/watch?v=hVWwhWqi0V0",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "hip-adduction",
+     "name": "Hip Adduction",
+     "via": "seated hip adduction",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "hhfkRjjirPo",
+   "source": "fbb",
+   "title": "Dual Kettlebell Squat Clean Thruster",
+   "clean": "Dual Kettlebell Squat Clean Thruster",
+   "secs": 16,
+   "url": "https://www.youtube.com/watch?v=hhfkRjjirPo",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "squat-clean",
+     "name": "Squat Clean",
+     "via": "Squat Clean",
+     "score": 0.571,
+     "why": "names it, with dual kettlebell thruster left over",
+     "confirm": false
+    },
+    {
+     "id": "kettlebell-clean",
+     "name": "Kettlebell Clean",
+     "via": "Kettlebell Clean",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "iHun-DVOzNI",
+   "source": "catalyst",
+   "title": "Hamstring Bridge | Olympic Weightlifting Exercise Library",
+   "clean": "Hamstring Bridge",
+   "secs": 45,
+   "url": "https://www.youtube.com/watch?v=iHun-DVOzNI",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "glute-bridge",
+     "name": "Glute Bridge",
+     "via": "bridge",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "iJA_F44jhkA",
+   "source": "tnation",
+   "title": "Power Incline Flye",
+   "clean": "Power Incline Flye",
+   "secs": 24,
+   "url": "https://www.youtube.com/watch?v=iJA_F44jhkA",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "incline-dumbbell-fly",
+     "name": "Incline Dumbbell Fly",
+     "via": "incline fly",
+     "score": 0.8,
+     "why": "names it, with power left over",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "iZGejMQapsk",
+   "source": "catalyst",
+   "title": "Cable EZ Curl | Olympic Weightlifting Exercise Library",
+   "clean": "Cable EZ Curl",
+   "secs": 36,
+   "url": "https://www.youtube.com/watch?v=iZGejMQapsk",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "ez-bar-curl",
+     "name": "EZ Bar Curl",
+     "via": "ez curl",
+     "score": 0.8,
+     "why": "names it, with cabl left over",
+     "confirm": false
+    },
+    {
+     "id": "cable-curl",
+     "name": "Cable Curl",
+     "via": "Cable Curl",
+     "score": 0.8,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "ibmb3louDAk",
+   "source": "fbb",
+   "title": "KB Cross Body Clean",
+   "clean": "KB Cross Body Clean",
+   "secs": 15,
+   "url": "https://www.youtube.com/watch?v=ibmb3louDAk",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "kettlebell-clean",
+     "name": "Kettlebell Clean",
+     "via": "kb clean",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "jiowkUMomlw",
+   "source": "rp",
+   "title": "Cambered Bar Row",
+   "clean": "Cambered Bar Row",
+   "secs": 16,
+   "url": "https://www.youtube.com/watch?v=jiowkUMomlw",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "t-bar-row",
+     "name": "T-Bar Row",
+     "via": "T-Bar Row",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "jpuWHAqiEcI",
+   "source": "catalyst",
+   "title": "Band Coil Single Leg Hinge + Knee Raise | Olympic Weightlifting Exercise Library",
+   "clean": "Band Coil Single Leg Hinge + Knee Raise",
+   "secs": 60,
+   "url": "https://www.youtube.com/watch?v=jpuWHAqiEcI",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "hanging-knee-raise",
+     "name": "Hanging Knee Raise",
+     "via": "knee raise",
+     "score": 0.444,
+     "why": "names it, with band coil singl leg hing left over",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "k8Of-kCHlCQ",
+   "source": "catalyst",
+   "title": "Push Jerk in Split | Olympic Weightlifting Exercise Library",
+   "clean": "Push Jerk in Split",
+   "secs": 57,
+   "url": "https://www.youtube.com/watch?v=k8Of-kCHlCQ",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "push-jerk",
+     "name": "Push Jerk",
+     "via": "Push Jerk",
+     "score": 0.8,
+     "why": "names it, with split left over",
+     "confirm": false
+    },
+    {
+     "id": "split-jerk",
+     "name": "Split Jerk",
+     "via": "Split Jerk",
+     "score": 0.8,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "k8sLPlsrybA",
+   "source": "catalyst",
+   "title": "Wall Sit March | Olympic Weightlifting Exercise Library",
+   "clean": "Wall Sit March",
+   "secs": 58,
+   "url": "https://www.youtube.com/watch?v=k8sLPlsrybA",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "wall-sit",
+     "name": "Wall Sit",
+     "via": "Wall Sit",
+     "score": 0.8,
+     "why": "names it, with march left over",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "kEevbhAotCs",
+   "source": "catalyst",
+   "title": "Single-Leg Jack Knife | Olympic Weightlifting Exercise Library",
+   "clean": "Single-Leg Jack Knife",
+   "secs": 49,
+   "url": "https://www.youtube.com/watch?v=kEevbhAotCs",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "pistol-squat",
+     "name": "Pistol Squat",
+     "via": "single leg squat",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "single-leg-deadlift",
+     "name": "Single Leg Deadlift",
+     "via": "Single Leg Deadlift",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "single-leg-glute-bridge",
+     "name": "Single Leg Glute Bridge",
+     "via": "single leg bridge",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "kneGICiz30g",
+   "source": "fbb",
+   "title": "Single Arm Russian Kettlebell Swings",
+   "clean": "Single Arm Russian Kettlebell Swings",
+   "secs": 15,
+   "url": "https://www.youtube.com/watch?v=kneGICiz30g",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "kettlebell-swing",
+     "name": "Kettlebell Swing",
+     "via": "russian kettlebell swing",
+     "score": 0.75,
+     "why": "names it, with singl arm left over",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "maJvSt6nE1A",
+   "source": "catalyst",
+   "title": "Block Clean Pull | Olympic Weightlifting Exercise Library",
+   "clean": "Block Clean Pull",
+   "secs": 77,
+   "url": "https://www.youtube.com/watch?v=maJvSt6nE1A",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "rack-pull",
+     "name": "Rack Pull",
+     "via": "block pull",
+     "score": 0.8,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "oESws6Yzmmg",
+   "source": "catalyst",
+   "title": "Overhead Walking Lunge | Olympic Weightlifting Exercise Library",
+   "clean": "Overhead Walking Lunge",
+   "secs": 67,
+   "url": "https://www.youtube.com/watch?v=oESws6Yzmmg",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "walking-lunge",
+     "name": "Walking Lunge",
+     "via": "Walking Lunge",
+     "score": 0.8,
+     "why": "names it, with overhead left over",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "oeUmHvKzXxA",
+   "source": "fbb",
+   "title": "Seated See Saw Press",
+   "clean": "Seated See Saw Press",
+   "secs": 17,
+   "url": "https://www.youtube.com/watch?v=oeUmHvKzXxA",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "machine-chest-press",
+     "name": "Machine Chest Press",
+     "via": "seated chest press",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "seated-shoulder-press",
+     "name": "Seated Shoulder Press",
+     "via": "Seated Shoulder Press",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "dumbbell-shoulder-press",
+     "name": "Dumbbell Shoulder Press",
+     "via": "seated dumbbell press",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "opFVuRi_3b8",
+   "source": "rp",
+   "title": "Cable EZ Bar Curl",
+   "clean": "Cable EZ Bar Curl",
+   "secs": 14,
+   "url": "https://www.youtube.com/watch?v=opFVuRi_3b8",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "ez-bar-curl",
+     "name": "EZ Bar Curl",
+     "via": "EZ Bar Curl",
+     "score": 0.857,
+     "why": "names it, with cabl left over",
+     "confirm": false
+    },
+    {
+     "id": "cable-curl",
+     "name": "Cable Curl",
+     "via": "Cable Curl",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "barbell-curl",
+     "name": "Barbell Curl",
+     "via": "straight bar curl",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "pCTGz_Qecos",
+   "source": "fbb",
+   "title": "L Crunch",
+   "clean": "L Crunch",
+   "secs": 13,
+   "url": "https://www.youtube.com/watch?v=pCTGz_Qecos",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "crunch",
+     "name": "Crunch",
+     "via": "Crunch",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "pUS6HBQjRmc",
+   "source": "rp",
+   "title": "Barbell Curl Narrow Grip",
+   "clean": "Barbell Curl Narrow Grip",
+   "secs": 16,
+   "url": "https://www.youtube.com/watch?v=pUS6HBQjRmc",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "barbell-curl",
+     "name": "Barbell Curl",
+     "via": "Barbell Curl",
+     "score": 0.667,
+     "why": "names it, with narrow grip left over",
+     "confirm": false
+    },
+    {
+     "id": "hammer-curl",
+     "name": "Hammer Curl",
+     "via": "neutral grip curl",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "reverse-curl",
+     "name": "Reverse Curl",
+     "via": "reverse grip curl",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "prDdkGgNWLM",
+   "source": "fbb",
+   "title": "Staggered Stance Kettlebell Deadlift",
+   "clean": "Staggered Stance Kettlebell Deadlift",
+   "secs": 16,
+   "url": "https://www.youtube.com/watch?v=prDdkGgNWLM",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "kettlebell-deadlift",
+     "name": "Kettlebell Deadlift",
+     "via": "Kettlebell Deadlift",
+     "score": 0.667,
+     "why": "names it, with staggered stanc left over",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "rNFD7RPyyMU",
+   "source": "fbb",
+   "title": "Plank with Band Pull",
+   "clean": "Plank with Band Pull",
+   "secs": 15,
+   "url": "https://www.youtube.com/watch?v=rNFD7RPyyMU",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "band-pull-apart",
+     "name": "Band Pull Apart",
+     "via": "Band Pull Apart",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "assisted-pull-up",
+     "name": "Assisted Pull-Up",
+     "via": "band assisted pull up",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "sSL3wAmTLXs",
+   "source": "fbb",
+   "title": "Bent Hollow Flutter Kicks",
+   "clean": "Bent Hollow Flutter Kicks",
+   "secs": 12,
+   "url": "https://www.youtube.com/watch?v=sSL3wAmTLXs",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "flutter-kick",
+     "name": "Flutter Kick",
+     "via": "Flutter Kick",
+     "score": 0.667,
+     "why": "names it, with bent hollow left over",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "siwBxy4wRNs",
+   "source": "crossfit",
+   "title": "The Kettlebell Wall-Ball Shot",
+   "clean": "Kettlebell Wall-Ball Shot",
+   "secs": 33,
+   "url": "https://www.youtube.com/watch?v=siwBxy4wRNs",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "wall-ball",
+     "name": "Wall Ball",
+     "via": "wall ball shot",
+     "score": 0.857,
+     "why": "names it, with kettlebell left over",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "vWVtbOhnE_U",
+   "source": "tnation",
+   "title": "Unilateral Face Pull",
+   "clean": "Unilateral Face Pull",
+   "secs": 56,
+   "url": "https://www.youtube.com/watch?v=vWVtbOhnE_U",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "face-pull",
+     "name": "Face Pull",
+     "via": "Face Pull",
+     "score": 0.8,
+     "why": "names it, with unilateral left over",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "v_-k7tAy45M",
+   "source": "catalyst",
+   "title": "Band External Rotation + Press | Olympic Weightlifting Exercise Library",
+   "clean": "Band External Rotation + Press",
+   "secs": 47,
+   "url": "https://www.youtube.com/watch?v=v_-k7tAy45M",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "pallof-press",
+     "name": "Pallof Press",
+     "via": "anti rotation press",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "vlVEbSPfUdY",
+   "source": "catalyst",
+   "title": "RNT Bulgarian Split Squat | Olympic Weightlifting Exercise Library",
+   "clean": "RNT Bulgarian Split Squat",
+   "secs": 90,
+   "url": "https://www.youtube.com/watch?v=vlVEbSPfUdY",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "bulgarian-split-squat",
+     "name": "Bulgarian Split Squat",
+     "via": "Bulgarian Split Squat",
+     "score": 0.857,
+     "why": "names it, with rnt left over",
+     "confirm": false
+    },
+    {
+     "id": "split-squat",
+     "name": "Split Squat",
+     "via": "Split Squat",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "xMD7S378yA8",
+   "source": "catalyst",
+   "title": "Single-Arm Z-Press | Olympic Weightlifting Exercise Library",
+   "clean": "Single-Arm Z-Press",
+   "secs": 38,
+   "url": "https://www.youtube.com/watch?v=xMD7S378yA8",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "landmine-press",
+     "name": "Landmine Press",
+     "via": "single arm landmine press",
+     "score": 0.75,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "dumbbell-row",
+     "name": "Dumbbell Row",
+     "via": "single arm row",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "zIeimP6JcZk",
+   "source": "catalyst",
+   "title": "Snatch Push Jerk  | Olympic Weightlifting Exercise Library",
+   "clean": "Snatch Push Jerk",
+   "secs": 68,
+   "url": "https://www.youtube.com/watch?v=zIeimP6JcZk",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "push-jerk",
+     "name": "Push Jerk",
+     "via": "Push Jerk",
+     "score": 0.8,
+     "why": "names it, with snatch left over",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "zYlzFIQfpRA",
+   "source": "catalyst",
+   "title": "Cable T-Bar Row | Olympic Weightlifting Exercise Library",
+   "clean": "Cable T-Bar Row",
+   "secs": 64,
+   "url": "https://www.youtube.com/watch?v=zYlzFIQfpRA",
+   "reject": true,
+   "candidates": [
+    {
+     "id": "t-bar-row",
+     "name": "T-Bar Row",
+     "via": "T-Bar Row",
+     "score": 0.857,
+     "why": "names it, with cabl left over",
+     "confirm": false
+    },
+    {
+     "id": "seated-cable-row",
+     "name": "Seated Cable Row",
+     "via": "cable row",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "Pca41QxE7l4",
+   "source": "fbb",
+   "title": "Slider Archer Push Up",
+   "clean": "Slider Archer Push Up",
+   "secs": 10,
+   "url": "https://www.youtube.com/watch?v=Pca41QxE7l4",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "archer-push-up",
+     "name": "Archer Push-Up",
+     "via": "Archer Push-Up",
+     "score": 0.857,
+     "why": "names it, with slider left over",
+     "confirm": true
+    },
+    {
+     "id": "push-up",
+     "name": "Push-Up",
+     "via": "Push-Up",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "incline-push-up",
+     "name": "Incline Push-Up",
+     "via": "Incline Push-Up",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "JnLFSFurrqQ",
+   "source": "rp",
+   "title": "Barbell Curl Normal Grip",
+   "clean": "Barbell Curl Normal Grip",
+   "secs": 14,
+   "url": "https://www.youtube.com/watch?v=JnLFSFurrqQ",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "barbell-curl",
+     "name": "Barbell Curl",
+     "via": "Barbell Curl",
+     "score": 0.667,
+     "why": "names it, with normal grip left over",
+     "confirm": true
+    },
+    {
+     "id": "hammer-curl",
+     "name": "Hammer Curl",
+     "via": "neutral grip curl",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "reverse-curl",
+     "name": "Reverse Curl",
+     "via": "reverse grip curl",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "DEEDzAP-0pc",
+   "source": "fbb",
+   "title": "Kettlebell Rack Rear Foot Elevated Split Squat",
+   "clean": "Kettlebell Rack Rear Foot Elevated Split Squat",
+   "secs": 14,
+   "url": "https://www.youtube.com/watch?v=DEEDzAP-0pc",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "bulgarian-split-squat",
+     "name": "Bulgarian Split Squat",
+     "via": "rear foot elevated split squat",
+     "score": 0.833,
+     "why": "names it, with kettlebell rack left over",
+     "confirm": true
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "_FrrYQxA6kc",
+   "source": "rp",
+   "title": "Machine Chest Supported Row",
+   "clean": "Machine Chest Supported Row",
+   "secs": 14,
+   "url": "https://www.youtube.com/watch?v=_FrrYQxA6kc",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "chest-supported-row",
+     "name": "Chest Supported Row",
+     "via": "Chest Supported Row",
+     "score": 0.857,
+     "why": "names it, with machin left over",
+     "confirm": true
+    },
+    {
+     "id": "machine-row",
+     "name": "Machine Row",
+     "via": "Machine Row",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "machine-chest-press",
+     "name": "Machine Chest Press",
+     "via": "Machine Chest Press",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "vcMZNgn5G9c",
+   "source": "fbb",
+   "title": "Alternating KB Rack Cossack Squats",
+   "clean": "Alternating KB Rack Cossack Squats",
+   "secs": 17,
+   "url": "https://www.youtube.com/watch?v=vcMZNgn5G9c",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "cossack-squat",
+     "name": "Cossack Squat",
+     "via": "Cossack Squat",
+     "score": 0.571,
+     "why": "names it, with kettlebell rack left over",
+     "confirm": true
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "OYuojkJvT4k",
+   "source": "fbb",
+   "title": "Glute Loop Donkey Kicks",
+   "clean": "Glute Loop Donkey Kicks",
+   "secs": 14,
+   "url": "https://www.youtube.com/watch?v=OYuojkJvT4k",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "donkey-kick",
+     "name": "Donkey Kick",
+     "via": "Donkey Kick",
+     "score": 0.667,
+     "why": "names it, with glut loop left over",
+     "confirm": true
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "i_URJN83nys",
+   "source": "crossfit",
+   "title": "The Kettlebell Floor Press",
+   "clean": "Kettlebell Floor Press",
+   "secs": 88,
+   "url": "https://www.youtube.com/watch?v=i_URJN83nys",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "dumbbell-floor-press",
+     "name": "Dumbbell Floor Press",
+     "via": "floor press",
+     "score": 0.8,
+     "why": "names it, with kettlebell left over",
+     "confirm": true
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "QbpmaP-Oxz8",
+   "source": "tnation",
+   "title": "Rope Seated Face Pull",
+   "clean": "Rope Seated Face Pull",
+   "secs": 54,
+   "url": "https://www.youtube.com/watch?v=QbpmaP-Oxz8",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "face-pull",
+     "name": "Face Pull",
+     "via": "rope face pull",
+     "score": 0.857,
+     "why": "names it, with rop seated left over",
+     "confirm": true
+    },
+    {
+     "id": "cable-pull-through",
+     "name": "Cable Pull Through",
+     "via": "rope pull through",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "FVZ9BX1ZGH4",
+   "source": "catalyst",
+   "title": "Axle Farmer Carry | Olympic Weightlifting Exercise Library",
+   "clean": "Axle Farmer Carry",
+   "secs": 49,
+   "url": "https://www.youtube.com/watch?v=FVZ9BX1ZGH4",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "farmers-carry",
+     "name": "Farmer's Carry",
+     "via": "Farmer's Carry",
+     "score": 0.8,
+     "why": "names it, with axl left over",
+     "confirm": true
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "hJW-Xc8TvU8",
+   "source": "bbcom",
+   "title": "Farmer's Walk - Forearm Exercise - Bodybuilding.com",
+   "clean": "Farmer's Walk",
+   "secs": 47,
+   "url": "https://www.youtube.com/watch?v=hJW-Xc8TvU8",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "farmers-carry",
+     "name": "Farmer's Carry",
+     "via": "farmers walk",
+     "score": 1,
+     "why": "word overlap",
+     "confirm": true
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "F8fhsu9-Lu8",
+   "source": "fbb",
+   "title": "Hollow Body Flutter Kicks",
+   "clean": "Hollow Body Flutter Kicks",
+   "secs": 13,
+   "url": "https://www.youtube.com/watch?v=F8fhsu9-Lu8",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "flutter-kick",
+     "name": "Flutter Kick",
+     "via": "Flutter Kick",
+     "score": 0.667,
+     "why": "names it, with hollow body left over",
+     "confirm": true
+    },
+    {
+     "id": "hollow-hold",
+     "name": "Hollow Hold",
+     "via": "hollow body hold",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "twJfjVteVbI",
+   "source": "fbb",
+   "title": "Dumbbell Frog Pump",
+   "clean": "Dumbbell Frog Pump",
+   "secs": 12,
+   "url": "https://www.youtube.com/watch?v=twJfjVteVbI",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "frog-pump",
+     "name": "Frog Pump",
+     "via": "Frog Pump",
+     "score": 0.8,
+     "why": "names it, with dumbbell left over",
+     "confirm": true
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "1PzFtQZhIgU",
+   "source": "fbb",
+   "title": "Glute Loop Glute Bridges",
+   "clean": "Glute Loop Glute Bridges",
+   "secs": 11,
+   "url": "https://www.youtube.com/watch?v=1PzFtQZhIgU",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "glute-bridge",
+     "name": "Glute Bridge",
+     "via": "Glute Bridge",
+     "score": 0.8,
+     "why": "names it, with glut loop left over",
+     "confirm": true
+    },
+    {
+     "id": "single-leg-glute-bridge",
+     "name": "Single Leg Glute Bridge",
+     "via": "one leg glute bridge",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "0wDEO6shVjc",
+   "source": "crossfit",
+   "title": "The Strict Handstand Push-Up",
+   "clean": "Strict Handstand Push-Up",
+   "secs": 49,
+   "url": "https://www.youtube.com/watch?v=0wDEO6shVjc",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "handstand-push-up",
+     "name": "Handstand Push-Up",
+     "via": "Handstand Push-Up",
+     "score": 0.857,
+     "why": "names it, with strict left over",
+     "confirm": true
+    },
+    {
+     "id": "push-up",
+     "name": "Push-Up",
+     "via": "Push-Up",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "incline-push-up",
+     "name": "Incline Push-Up",
+     "via": "Incline Push-Up",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "KYwP30AD_h0",
+   "source": "fbb",
+   "title": "Hanging Knee Tucks",
+   "clean": "Hanging Knee Tucks",
+   "secs": 19,
+   "url": "https://www.youtube.com/watch?v=KYwP30AD_h0",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "hanging-knee-raise",
+     "name": "Hanging Knee Raise",
+     "via": "Hanging Knee Raise",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": true
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "7FwGZ8qY5OU",
+   "source": "rp",
+   "title": "Hanging Straight Leg Raise",
+   "clean": "Hanging Straight Leg Raise",
+   "secs": 9,
+   "url": "https://www.youtube.com/watch?v=7FwGZ8qY5OU",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "leg-raise",
+     "name": "Leg Raise",
+     "via": "Leg Raise",
+     "score": 0.667,
+     "why": "names it, with hanging straight left over",
+     "confirm": false
+    },
+    {
+     "id": "hanging-leg-raise",
+     "name": "Hanging Leg Raise",
+     "via": "Hanging Leg Raise",
+     "score": 0.857,
+     "why": "word overlap",
+     "confirm": true
+    },
+    {
+     "id": "stiff-leg-deadlift",
+     "name": "Stiff Leg Deadlift",
+     "via": "straight leg deadlift",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "afOncpVZoAQ",
+   "source": "fbb",
+   "title": "High Knees Run in Place",
+   "clean": "High Knees Run in Place",
+   "secs": 7,
+   "url": "https://www.youtube.com/watch?v=afOncpVZoAQ",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "high-knees",
+     "name": "High Knees",
+     "via": "running in place high knees",
+     "score": 0.75,
+     "why": "names it, with run plac left over",
+     "confirm": true
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "2Qv8pEnprpU",
+   "source": "catalyst",
+   "title": "Clean High-Pull | Olympic Weightlifting Exercise Library",
+   "clean": "Clean High-Pull",
+   "secs": 101,
+   "url": "https://www.youtube.com/watch?v=2Qv8pEnprpU",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "high-pull",
+     "name": "High Pull",
+     "via": "High Pull",
+     "score": 0.8,
+     "why": "names it, with clean left over",
+     "confirm": true
+    },
+    {
+     "id": "sumo-deadlift-high-pull",
+     "name": "Sumo Deadlift High Pull",
+     "via": "Sumo Deadlift High Pull",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "D98du9B2bgw",
+   "source": "fbb",
+   "title": "Dual KB High Pull",
+   "clean": "Dual KB High Pull",
+   "secs": 18,
+   "url": "https://www.youtube.com/watch?v=D98du9B2bgw",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "high-pull",
+     "name": "High Pull",
+     "via": "High Pull",
+     "score": 0.667,
+     "why": "names it, with dual left over",
+     "confirm": true
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "1tLUb7aqG0c",
+   "source": "fbb",
+   "title": "Dual Kettlebell Jefferson Curl",
+   "clean": "Dual Kettlebell Jefferson Curl",
+   "secs": 22,
+   "url": "https://www.youtube.com/watch?v=1tLUb7aqG0c",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "jefferson-curl",
+     "name": "Jefferson Curl",
+     "via": "Jefferson Curl",
+     "score": 0.667,
+     "why": "names it, with dual kettlebell left over",
+     "confirm": true
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "dtJ6kOV5dUc",
+   "source": "bbcom",
+   "title": "Freehand Jump Squat - Leg Exercise - Bodybuilding.com",
+   "clean": "Freehand Jump Squat",
+   "secs": 51,
+   "url": "https://www.youtube.com/watch?v=dtJ6kOV5dUc",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "jump-squat",
+     "name": "Jump Squat",
+     "via": "Jump Squat",
+     "score": 0.8,
+     "why": "names it, with freehand left over",
+     "confirm": true
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "y10UT2nOFVs",
+   "source": "catalyst",
+   "title": "Squat Vertical Jump | Olympic Weightlifting Exercise Library",
+   "clean": "Squat Vertical Jump",
+   "secs": 70,
+   "url": "https://www.youtube.com/watch?v=y10UT2nOFVs",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "jump-squat",
+     "name": "Jump Squat",
+     "via": "Jump Squat",
+     "score": 0.8,
+     "why": "word overlap",
+     "confirm": true
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "roDYEs8qfKQ",
+   "source": "fbb",
+   "title": "Kettlebell Clean From Floor",
+   "clean": "Kettlebell Clean From Floor",
+   "secs": 15,
+   "url": "https://www.youtube.com/watch?v=roDYEs8qfKQ",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "kettlebell-clean",
+     "name": "Kettlebell Clean",
+     "via": "Kettlebell Clean",
+     "score": 0.667,
+     "why": "names it, with floor left over",
+     "confirm": true
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "spFfhanSJ6A",
+   "source": "tnation",
+   "title": "One-Arm Suitcase Deadlift",
+   "clean": "One-Arm Suitcase Deadlift",
+   "secs": 43,
+   "url": "https://www.youtube.com/watch?v=spFfhanSJ6A",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "kettlebell-deadlift",
+     "name": "Kettlebell Deadlift",
+     "via": "suitcase deadlift",
+     "score": 0.8,
+     "why": "names it, with singl arm left over",
+     "confirm": true
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "61F3dwJFv_U",
+   "source": "fbb",
+   "title": "Dumbbell Halo",
+   "clean": "Dumbbell Halo",
+   "secs": 20,
+   "url": "https://www.youtube.com/watch?v=61F3dwJFv_U",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "kettlebell-halo",
+     "name": "Kettlebell Halo",
+     "via": "halo",
+     "score": 0.667,
+     "why": "names it, with dumbbell left over",
+     "confirm": true
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "63d8GMBIUyY",
+   "source": "fbb",
+   "title": "Hike Kettlebell Snatch",
+   "clean": "Hike Kettlebell Snatch",
+   "secs": 18,
+   "url": "https://www.youtube.com/watch?v=63d8GMBIUyY",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "kettlebell-snatch",
+     "name": "Kettlebell Snatch",
+     "via": "Kettlebell Snatch",
+     "score": 0.8,
+     "why": "names it, with hik left over",
+     "confirm": true
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "EVLXzqAzAHI",
+   "source": "fbb",
+   "title": "Dumbbell Windmill",
+   "clean": "Dumbbell Windmill",
+   "secs": 16,
+   "url": "https://www.youtube.com/watch?v=EVLXzqAzAHI",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "kettlebell-windmill",
+     "name": "Kettlebell Windmill",
+     "via": "windmill",
+     "score": 0.667,
+     "why": "names it, with dumbbell left over",
+     "confirm": true
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "0h8LCh9b8vY",
+   "source": "fbb",
+   "title": "L Sit on Kettlebells",
+   "clean": "L Sit on Kettlebells",
+   "secs": 16,
+   "url": "https://www.youtube.com/watch?v=0h8LCh9b8vY",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "l-sit",
+     "name": "L-Sit",
+     "via": "L-Sit",
+     "score": 0.8,
+     "why": "names it, with kettlebell left over",
+     "confirm": true
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "2rbLIlqnNhg",
+   "source": "fbb",
+   "title": "Slider Lateral Lunge",
+   "clean": "Slider Lateral Lunge",
+   "secs": 13,
+   "url": "https://www.youtube.com/watch?v=2rbLIlqnNhg",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "lateral-lunge",
+     "name": "Lateral Lunge",
+     "via": "Lateral Lunge",
+     "score": 0.8,
+     "why": "names it, with slider left over",
+     "confirm": true
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "9pZQ75l7Y00",
+   "source": "musclewiki",
+   "title": "How To: Laying Leg Raises",
+   "clean": "Laying Leg Raises",
+   "secs": 23,
+   "url": "https://www.youtube.com/watch?v=9pZQ75l7Y00",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "leg-raise",
+     "name": "Leg Raise",
+     "via": "Leg Raise",
+     "score": 0.8,
+     "why": "names it, with laying left over",
+     "confirm": true
+    },
+    {
+     "id": "hanging-leg-raise",
+     "name": "Hanging Leg Raise",
+     "via": "Hanging Leg Raise",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "side-lying-leg-raise",
+     "name": "Side Lying Leg Raise",
+     "via": "side leg raise",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "0Wa9CfRXUkA",
+   "source": "rp",
+   "title": "Hammer Machine Chest Press",
+   "clean": "Hammer Machine Chest Press",
+   "secs": 12,
+   "url": "https://www.youtube.com/watch?v=0Wa9CfRXUkA",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "machine-chest-press",
+     "name": "Machine Chest Press",
+     "via": "Machine Chest Press",
+     "score": 0.857,
+     "why": "names it, with hammer left over",
+     "confirm": true
+    },
+    {
+     "id": "leg-press",
+     "name": "Leg Press",
+     "via": "machine leg press",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "dumbbell-bench-press",
+     "name": "Dumbbell Bench Press",
+     "via": "dumbbell chest press",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "gg5hwJuv6KI",
+   "source": "rp",
+   "title": "Hammer High Row",
+   "clean": "Hammer High Row",
+   "secs": 17,
+   "url": "https://www.youtube.com/watch?v=gg5hwJuv6KI",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "machine-row",
+     "name": "Machine Row",
+     "via": "hammer strength row",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": true
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "w2DbVUp3aq4",
+   "source": "fbb",
+   "title": "Kettlebell Man Maker",
+   "clean": "Kettlebell Man Maker",
+   "secs": 27,
+   "url": "https://www.youtube.com/watch?v=w2DbVUp3aq4",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "man-maker",
+     "name": "Man Maker",
+     "via": "Man Maker",
+     "score": 0.8,
+     "why": "names it, with kettlebell left over",
+     "confirm": true
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "9DTNHLWAJ1U",
+   "source": "fbb",
+   "title": "Slider Mountain Climbers",
+   "clean": "Slider Mountain Climbers",
+   "secs": 9,
+   "url": "https://www.youtube.com/watch?v=9DTNHLWAJ1U",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "mountain-climber",
+     "name": "Mountain Climber",
+     "via": "Mountain Climber",
+     "score": 0.8,
+     "why": "names it, with slider left over",
+     "confirm": true
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "o69WaY_7k2c",
+   "source": "crossfit",
+   "title": "The Strict Bar Muscle-Up",
+   "clean": "Strict Bar Muscle-Up",
+   "secs": 47,
+   "url": "https://www.youtube.com/watch?v=o69WaY_7k2c",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "muscle-up",
+     "name": "Muscle-Up",
+     "via": "bar muscle up",
+     "score": 0.857,
+     "why": "names it, with strict left over",
+     "confirm": true
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "oGxc2ph8Fnw",
+   "source": "bbcom",
+   "title": "Butterfly - Chest Exercise - Bodybuilding.com",
+   "clean": "Butterfly",
+   "secs": 47,
+   "url": "https://www.youtube.com/watch?v=oGxc2ph8Fnw",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "pec-deck",
+     "name": "Pec Deck",
+     "via": "butterfly machine",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": true
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "qDcniqddTeE",
+   "source": "crossfit",
+   "title": "The Pistol",
+   "clean": "Pistol",
+   "secs": 59,
+   "url": "https://www.youtube.com/watch?v=qDcniqddTeE",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "pistol-squat",
+     "name": "Pistol Squat",
+     "via": "Pistol Squat",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": true
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "Ja6ZlIDONac",
+   "source": "rp",
+   "title": "Machine Preacher Curl",
+   "clean": "Machine Preacher Curl",
+   "secs": 17,
+   "url": "https://www.youtube.com/watch?v=Ja6ZlIDONac",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "preacher-curl",
+     "name": "Preacher Curl",
+     "via": "Preacher Curl",
+     "score": 0.8,
+     "why": "names it, with machin left over",
+     "confirm": true
+    },
+    {
+     "id": "leg-curl",
+     "name": "Leg Curl",
+     "via": "machine leg curl",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "a-_aey-v-8I",
+   "source": "catalyst",
+   "title": "Dumbbell Preacher Curl | Olympic Weightlifting Exercise Library",
+   "clean": "Dumbbell Preacher Curl",
+   "secs": 39,
+   "url": "https://www.youtube.com/watch?v=a-_aey-v-8I",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "preacher-curl",
+     "name": "Preacher Curl",
+     "via": "Preacher Curl",
+     "score": 0.8,
+     "why": "names it, with dumbbell left over",
+     "confirm": true
+    },
+    {
+     "id": "dumbbell-curl",
+     "name": "Dumbbell Curl",
+     "via": "Dumbbell Curl",
+     "score": 0.8,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "incline-dumbbell-curl",
+     "name": "Incline Dumbbell Curl",
+     "via": "Incline Dumbbell Curl",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "4B-BrBH17uM",
+   "source": "bbcom",
+   "title": "Bent Arm Dumbbell Pullover - Chest / Back Exercise - Bodybuilding.com",
+   "clean": "Bent Arm Dumbbell Pullover",
+   "secs": 68,
+   "url": "https://www.youtube.com/watch?v=4B-BrBH17uM",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "pull-over",
+     "name": "Pull-Over",
+     "via": "dumbbell pullover",
+     "score": 0.667,
+     "why": "names it, with bent arm left over",
+     "confirm": true
+    },
+    {
+     "id": "dumbbell-row",
+     "name": "Dumbbell Row",
+     "via": "one arm dumbbell row",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "5YK4bgzXDp0",
+   "source": "rp",
+   "title": "Machine Reverse Flye",
+   "clean": "Machine Reverse Flye",
+   "secs": 14,
+   "url": "https://www.youtube.com/watch?v=5YK4bgzXDp0",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "rear-delt-fly",
+     "name": "Rear Delt Fly",
+     "via": "reverse fly",
+     "score": 0.8,
+     "why": "names it, with machin left over",
+     "confirm": true
+    },
+    {
+     "id": "pec-deck",
+     "name": "Pec Deck",
+     "via": "machine fly",
+     "score": 0.8,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "drzAGFkb5yg",
+   "source": "musclewiki",
+   "title": "How to do Bent-Over Rear Delt Raises",
+   "clean": "Bent-Over Rear Delt Raises",
+   "secs": 17,
+   "url": "https://www.youtube.com/watch?v=drzAGFkb5yg",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "rear-delt-fly",
+     "name": "Rear Delt Fly",
+     "via": "bent over rear delt fly",
+     "score": 0.8,
+     "why": "names it, with bent over left over",
+     "confirm": true
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "i8VL6OjVlCY",
+   "source": "fbb",
+   "title": "Kettlebell Renegade Row",
+   "clean": "Kettlebell Renegade Row",
+   "secs": 20,
+   "url": "https://www.youtube.com/watch?v=i8VL6OjVlCY",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "renegade-row",
+     "name": "Renegade Row",
+     "via": "Renegade Row",
+     "score": 0.8,
+     "why": "names it, with kettlebell left over",
+     "confirm": true
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "CU7Mzo-OtHk",
+   "source": "fbb",
+   "title": "Hollow Body Scissor Kicks",
+   "clean": "Hollow Body Scissor Kicks",
+   "secs": 14,
+   "url": "https://www.youtube.com/watch?v=CU7Mzo-OtHk",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "scissor-kick",
+     "name": "Scissor Kick",
+     "via": "Scissor Kick",
+     "score": 0.667,
+     "why": "names it, with hollow body left over",
+     "confirm": true
+    },
+    {
+     "id": "hollow-hold",
+     "name": "Hollow Hold",
+     "via": "hollow body hold",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "JOoc07_Xkls",
+   "source": "bbcom",
+   "title": "Kettlebell One-Legged Deadlift - Leg Exercise - Bodybuilding.com",
+   "clean": "Kettlebell One-Legged Deadlift",
+   "secs": 45,
+   "url": "https://www.youtube.com/watch?v=JOoc07_Xkls",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "single-leg-deadlift",
+     "name": "Single Leg Deadlift",
+     "via": "one legged deadlift",
+     "score": 0.8,
+     "why": "names it, with kettlebell left over",
+     "confirm": true
+    },
+    {
+     "id": "kettlebell-deadlift",
+     "name": "Kettlebell Deadlift",
+     "via": "Kettlebell Deadlift",
+     "score": 0.8,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "stiff-leg-deadlift",
+     "name": "Stiff Leg Deadlift",
+     "via": "stiff legged deadlift",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "_DhDkij1vxY",
+   "source": "catalyst",
+   "title": "Single-Leg Dumbbell RDL | Olympic Weightlifting Exercise Library",
+   "clean": "Single-Leg Dumbbell RDL",
+   "secs": 64,
+   "url": "https://www.youtube.com/watch?v=_DhDkij1vxY",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "romanian-deadlift",
+     "name": "Romanian Deadlift",
+     "via": "dumbbell rdl",
+     "score": 0.667,
+     "why": "names it, with singl leg left over",
+     "confirm": false
+    },
+    {
+     "id": "single-leg-deadlift",
+     "name": "Single Leg Deadlift",
+     "via": "single leg rdl",
+     "score": 0.857,
+     "why": "word overlap",
+     "confirm": true
+    },
+    {
+     "id": "pistol-squat",
+     "name": "Pistol Squat",
+     "via": "single leg squat",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "vyxetZZazBE",
+   "source": "catalyst",
+   "title": "Single-Leg Glute Bridge Hold | Olympic Weightlifting Exercise Library",
+   "clean": "Single-Leg Glute Bridge Hold",
+   "secs": 64,
+   "url": "https://www.youtube.com/watch?v=vyxetZZazBE",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "single-leg-glute-bridge",
+     "name": "Single Leg Glute Bridge",
+     "via": "Single Leg Glute Bridge",
+     "score": 0.889,
+     "why": "names it, with hold left over",
+     "confirm": true
+    },
+    {
+     "id": "glute-bridge",
+     "name": "Glute Bridge",
+     "via": "Glute Bridge",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "P4H5p4HoJeI",
+   "source": "catalyst",
+   "title": "Dumbbell Skullcrusher | Olympic Weightlifting Exercise Library",
+   "clean": "Dumbbell Skullcrusher",
+   "secs": 44,
+   "url": "https://www.youtube.com/watch?v=P4H5p4HoJeI",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "skull-crusher",
+     "name": "Skull Crusher",
+     "via": "skullcrusher",
+     "score": 0.667,
+     "why": "names it, with dumbbell left over",
+     "confirm": true
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "jPjhQ2hsAds",
+   "source": "rp",
+   "title": "Dumbbell Skullcrusher",
+   "clean": "Dumbbell Skullcrusher",
+   "secs": 13,
+   "url": "https://www.youtube.com/watch?v=jPjhQ2hsAds",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "skull-crusher",
+     "name": "Skull Crusher",
+     "via": "skullcrusher",
+     "score": 0.667,
+     "why": "names it, with dumbbell left over",
+     "confirm": true
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "WG3vdcq__I0",
+   "source": "rp",
+   "title": "EZ Bar Spider Curl",
+   "clean": "EZ Bar Spider Curl",
+   "secs": 14,
+   "url": "https://www.youtube.com/watch?v=WG3vdcq__I0",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "spider-curl",
+     "name": "Spider Curl",
+     "via": "Spider Curl",
+     "score": 0.667,
+     "why": "names it, with ez bar left over",
+     "confirm": true
+    },
+    {
+     "id": "ez-bar-curl",
+     "name": "EZ Bar Curl",
+     "via": "EZ Bar Curl",
+     "score": 0.857,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "barbell-curl",
+     "name": "Barbell Curl",
+     "via": "straight bar curl",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "cl5pYaFYX1U",
+   "source": "catalyst",
+   "title": "Straight-Legged Deadlift | Olympic Weightlifting Exercise Library",
+   "clean": "Straight-Legged Deadlift",
+   "secs": 57,
+   "url": "https://www.youtube.com/watch?v=cl5pYaFYX1U",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "single-leg-deadlift",
+     "name": "Single Leg Deadlift",
+     "via": "one legged deadlift",
+     "score": 0.8,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "stiff-leg-deadlift",
+     "name": "Stiff Leg Deadlift",
+     "via": "stiff legged deadlift",
+     "score": 0.667,
+     "why": "word overlap",
+     "confirm": true
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "0xpSOScnr1E",
+   "source": "fbb",
+   "title": "Kettlebell Sumo Deadlift High Pull",
+   "clean": "Kettlebell Sumo Deadlift High Pull",
+   "secs": 13,
+   "url": "https://www.youtube.com/watch?v=0xpSOScnr1E",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "sumo-deadlift-high-pull",
+     "name": "Sumo Deadlift High Pull",
+     "via": "Sumo Deadlift High Pull",
+     "score": 0.889,
+     "why": "names it, with kettlebell left over",
+     "confirm": true
+    },
+    {
+     "id": "high-pull",
+     "name": "High Pull",
+     "via": "kettlebell high pull",
+     "score": 0.75,
+     "why": "word overlap",
+     "confirm": false
+    },
+    {
+     "id": "sumo-deadlift",
+     "name": "Sumo Deadlift",
+     "via": "Sumo Deadlift",
+     "score": 0.571,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "xX9Hzi7Onnw",
+   "source": "crossfit",
+   "title": "The Strict Toes-To-Bar",
+   "clean": "Strict Toes-To-Bar",
+   "secs": 57,
+   "url": "https://www.youtube.com/watch?v=xX9Hzi7Onnw",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "toes-to-bar",
+     "name": "Toes to Bar",
+     "via": "Toes to Bar",
+     "score": 0.667,
+     "why": "names it, with strict left over",
+     "confirm": true
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "HyqTb_jE_oI",
+   "source": "bbcom",
+   "title": "Tricep Dumbbell Kickback - Tricep Exercise - Bodybuilding.com",
+   "clean": "Tricep Dumbbell Kickback",
+   "secs": 66,
+   "url": "https://www.youtube.com/watch?v=HyqTb_jE_oI",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "tricep-kickback",
+     "name": "Tricep Kickback",
+     "via": "Tricep Kickback",
+     "score": 0.8,
+     "why": "names it, with tricep left over",
+     "confirm": true
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "O7FdhtkE47M",
+   "source": "fbb",
+   "title": "Dumbbell Turkish Get Up",
+   "clean": "Dumbbell Turkish Get Up",
+   "secs": 11,
+   "url": "https://www.youtube.com/watch?v=O7FdhtkE47M",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "turkish-get-up",
+     "name": "Turkish Get Up",
+     "via": "Turkish Get Up",
+     "score": 0.857,
+     "why": "names it, with dumbbell left over",
+     "confirm": true
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "_meXEWq5MOQ",
+   "source": "rp",
+   "title": "Barbell Walking Lunge",
+   "clean": "Barbell Walking Lunge",
+   "secs": 9,
+   "url": "https://www.youtube.com/watch?v=_meXEWq5MOQ",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "walking-lunge",
+     "name": "Walking Lunge",
+     "via": "Walking Lunge",
+     "score": 0.8,
+     "why": "names it, with barbell left over",
+     "confirm": true
+    },
+    {
+     "id": "lunge",
+     "name": "Lunge",
+     "via": "barbell lunge",
+     "score": 0.8,
+     "why": "word overlap",
+     "confirm": false
+    }
+   ],
+   "done": true
+  },
+  {
+   "video_id": "ivziZev2BzA",
+   "source": "fbb",
+   "title": "Banded Chop",
+   "clean": "Banded Chop",
+   "secs": 14,
+   "url": "https://www.youtube.com/watch?v=ivziZev2BzA",
+   "reject": false,
+   "candidates": [
+    {
+     "id": "woodchop",
+     "name": "Woodchop",
+     "via": "chop",
+     "score": 0.667,
+     "why": "names it, with banded left over",
+     "confirm": true
+    }
+   ],
+   "done": true
+  }
+ ]
+}
