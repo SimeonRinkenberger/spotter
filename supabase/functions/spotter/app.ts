@@ -1449,8 +1449,10 @@ export const APP = String.raw`
   }
 
   // Artwork, whose it is, what it is called — the order the App Store shelf and
-  // Perplexity's source row both put a source in. Tapping makes the Ask Pumpy move,
-  // leaving this card the way the back gesture would, so the stack holds one overlay.
+  // Perplexity's source row both put a source in. Tapping swaps this card for that
+  // one inside the overlay already open, keeping its single history entry: closing
+  // first and reopening cannot work, because the pop lands AFTER the reopen and
+  // closes the card it was meant to open.
   function fromChip(src) {
     var b = el("button", "fromchip"), tw = el("span", "fromthumb"), t = el("span", "fromtext");
     if (src.thumb_url) {
@@ -1465,7 +1467,7 @@ export const APP = String.raw`
     t.appendChild(el("span", "fromtitle", src.title || "Untitled workout"));
     b.appendChild(tw);
     b.appendChild(t);
-    b.onclick = function () { history.back(); openDetail(src); };
+    b.onclick = function () { openDetail(src, true); $("detail").scrollTop = 0; };
     return b;
   }
 
