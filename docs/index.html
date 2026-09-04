@@ -3950,9 +3950,18 @@
       sel.appendChild(o);
     });
     sel.onchange = function () {
-      patchWorkout(w, { category: sel.value });
+      // Optimistic, and now honest about it: patchWorkout's own failure line says
+      // "your copy is unchanged", which was not true — the pill stayed switched
+      // and no realtime event was coming to correct it, because no row changed.
+      var was = w.category;
       w.category = sel.value;
       render();
+      patchWorkout(w, { category: sel.value }).then(function (ok) {
+        if (ok) return;
+        w.category = was;
+        sel.value = was || "Other";
+        render();
+      });
     };
     cat.appendChild(el("span", "pill", "Category"));
     cat.appendChild(sel);
@@ -3967,8 +3976,15 @@
     ta.oninput = function () {
       clearTimeout(noteTimer);
       noteTimer = setTimeout(function () {
-        patchWorkout(w, { notes: ta.value });
-        w.notes = ta.value;
+        // Nothing is put back in the box on a failure — the user is very likely
+        // still typing in it — but the row keeps the last value the server agreed
+        // to, so a later render does not show a note that was never saved.
+        var was = w.notes;
+        var sent = ta.value;
+        w.notes = sent;
+        patchWorkout(w, { notes: sent }).then(function (ok) {
+          if (!ok && w.notes === sent) w.notes = was;
+        });
       }, 700);
     };
     notesSect.appendChild(ta);
@@ -4285,15 +4301,26 @@
     }, function () { putBack(null); });
   }
 
+  // The second tap of an armed button is as deliberate as an answer gets, and it
+  // used to be followed by a card that sat there for a round trip. It closes now.
+  // Deleting a collection and deleting a session both already worked this way; the
+  // workout itself was the odd one out. There is no undo offered here on purpose —
+  // the arming is the confirmation — but a delete the server refuses puts the card
+  // back rather than leaving the library quietly wrong.
   function removeWorkout(w, btn) {
     var go = function () {
+      var keptW = state.workouts, keptC = state.colItems;
+      state.workouts = state.workouts.filter(function (x) { return x.id !== w.id; });
+      state.colItems = state.colItems.filter(function (it) { return it.workout_id !== w.id; });
+      history.back();
+      render();
+      toast("Workout removed.");
       sb.from("workouts").delete().eq("id", w.id).then(function (r) {
-        if (r.error) { toast("That did not delete. The workout is still here."); return; }
-        state.workouts = state.workouts.filter(function (x) { return x.id !== w.id; });
-        state.colItems = state.colItems.filter(function (it) { return it.workout_id !== w.id; });
-        history.back();
+        if (!r.error) return;
+        state.workouts = keptW;
+        state.colItems = keptC;
         render();
-        toast("Workout removed.");
+        toast("That did not delete. The workout is still here.");
       });
     };
     if (btn) armed(btn, "Tap again to remove", go); else go();
@@ -4383,35 +4410,51 @@
     var btn = $("renamesave");
     btn.disabled = true;
 
+    // A rename is a thing the user typed, so the app already knows the answer and
+    // does not need the server's permission to show it. The sheet closes on the
+    // tap and the new name is everywhere at once; if the write comes back unhappy
+    // the old name goes back and says why — including the duplicate-name answer,
+    // which is the one thing here only the server knows.
     if (ctx.kind === "workout") {
       var w = state.workouts.filter(function (x) { return x.id === ctx.id; })[0];
       if (!w || name === (w.title || "")) { btn.disabled = false; closeSheet("renamesheet"); renameCtx = null; return; }
+      var wasTitle = w.title;
+      w.title = name;
+      closeSheet("renamesheet");
+      renameCtx = null;
+      btn.disabled = false;
+      var t = document.querySelector("#dinner .dtitle");
+      if (t && current && current.id === w.id) t.textContent = name;
+      render();
+      toast("Renamed.");
       patchWorkout(w, { title: name }).then(function (ok) {
-        btn.disabled = false;
-        if (!ok) return;
-        w.title = name;
-        closeSheet("renamesheet");
-        renameCtx = null;
-        var t = document.querySelector("#dinner .dtitle");
-        if (t && current && current.id === w.id) t.textContent = name;
+        if (ok) return;
+        w.title = wasTitle;
+        var t2 = document.querySelector("#dinner .dtitle");
+        if (t2 && current && current.id === w.id) t2.textContent = wasTitle || "Untitled workout";
         render();
-        toast("Renamed.");
       });
       return;
     }
 
     var c = colById(ctx.id);
     if (!c || name === c.name) { btn.disabled = false; closeSheet("renamesheet"); renameCtx = null; return; }
+    var wasName = c.name;
+    c.name = name;
+    closeSheet("renamesheet");
+    renameCtx = null;
+    btn.disabled = false;
+    render();
+    if ($("colsheet").classList.contains("open")) renderColSheet();
+    if (current && $("detail").classList.contains("open")) refreshManage(current);
+    toast("Renamed.");
     sb.from("collections").update({ name: name }).eq("id", c.id).then(function (r) {
-      btn.disabled = false;
-      if (r.error) { toast(dupCollectionMsg(r.error) || "That name did not save. Try again in a moment."); return; }
-      c.name = name;
-      closeSheet("renamesheet");
-      renameCtx = null;
+      if (!r.error) return;
+      c.name = wasName;
       render();
       if ($("colsheet").classList.contains("open")) renderColSheet();
       if (current && $("detail").classList.contains("open")) refreshManage(current);
-      toast("Renamed.");
+      toast(dupCollectionMsg(r.error) || "That name did not save. Try again in a moment.");
     });
   }
 
@@ -4466,24 +4509,37 @@
     });
   }
 
+  // The tick, the count and the aria-pressed state all used to wait on a round
+  // trip — a fifth of a second in which the row a person had just tapped looked
+  // dead, and the honest reading of which is that the tap did not land. Filing a
+  // workout under a collection is a thing the phone already knows the answer to,
+  // so it happens now and the write catches up. If the write fails the row goes
+  // back where it was and says so, which is the only case in which anything moves
+  // twice.
   function toggleMembership(c, workoutId) {
-    if (inCol(c.id, workoutId)) {
-      sb.from("collection_items").delete().match({ collection_id: c.id, workout_id: workoutId })
-        .then(function (r) {
-          if (r.error) { toast("That collection did not change. Try again in a moment."); return; }
-          state.colItems = state.colItems.filter(function (it) {
-            return !(it.collection_id === c.id && it.workout_id === workoutId);
-          });
-          afterMembership();
-        });
+    var had = inCol(c.id, workoutId);
+    var kept = state.colItems;
+    if (had) {
+      state.colItems = state.colItems.filter(function (it) {
+        return !(it.collection_id === c.id && it.workout_id === workoutId);
+      });
+    } else {
+      state.colItems = state.colItems.concat([
+        { collection_id: c.id, workout_id: workoutId, added_at: new Date().toISOString() }
+      ]);
+    }
+    afterMembership();
+    function undo(r) {
+      if (!r.error) return;
+      state.colItems = kept;
+      afterMembership();
+      toast("That collection did not change. Try again in a moment.");
+    }
+    if (had) {
+      sb.from("collection_items").delete().match({ collection_id: c.id, workout_id: workoutId }).then(undo);
       return;
     }
-    sb.from("collection_items").insert({ collection_id: c.id, workout_id: workoutId, user_id: state.user.id })
-      .then(function (r) {
-        if (r.error) { toast("That collection did not change. Try again in a moment."); return; }
-        state.colItems.push({ collection_id: c.id, workout_id: workoutId, added_at: new Date().toISOString() });
-        afterMembership();
-      });
+    sb.from("collection_items").insert({ collection_id: c.id, workout_id: workoutId, user_id: state.user.id }).then(undo);
   }
 
   function afterMembership() {
@@ -6529,7 +6585,23 @@
           var x = icon(el("button", "planx"), "x");
           x.setAttribute("aria-label", "Take this off the day");
           x.onclick = function () {
-            sb.from("plan").delete().eq("id", p.id).then(function () { loadPlan(); });
+            // A row the server has not confirmed yet has no id to delete by. It
+            // goes on its own the moment loadPlan lands.
+            if (String(p.id).indexOf("tmp-") === 0) return;
+            // Off the day now, then two round trips' worth of confirmation. A row
+            // that sits there after being dismissed reads as a tap that missed —
+            // and this was also the one write in the file that never looked at
+            // r.error, so a failed delete quietly redrew the row still present.
+            var kept = state.plan;
+            state.plan = state.plan.filter(function (q) { return q.id !== p.id; });
+            today.at = 0;
+            renderPlan();
+            sb.from("plan").delete().eq("id", p.id).then(function (r) {
+              if (!r.error) return;
+              state.plan = kept;
+              renderPlan();
+              toast("That did not come off the day — it is still planned.");
+            });
           };
           item.appendChild(x);
           card.appendChild(item);
@@ -6571,10 +6643,25 @@
       t.appendChild(el("span", null, [w.category, fmtDur(w.duration_minutes)].filter(Boolean).join(" · ")));
       row.appendChild(t);
       row.onclick = function () {
+        // The sheet closes and the day fills in on the tap. It used to take two
+        // serial round trips — the insert, then a whole week re-read — before
+        // anything on screen moved. The row wears a temporary id until the real
+        // one arrives, and the planx handler knows not to try to delete by it.
+        closeSheet("picksheet");
+        var kept = state.plan;
+        state.plan = (state.plan || []).concat([
+          { id: "tmp-" + Date.now(), day: day, workout_id: w.id, user_id: state.user.id }
+        ]);
+        today.at = 0;
+        renderPlan();
         sb.from("plan").insert({ user_id: state.user.id, day: day, workout_id: w.id })
           .then(function (r) {
-            closeSheet("picksheet");
-            if (r.error) { toast("Could not add it to that day. Try again in a moment."); return; }
+            if (r.error) {
+              state.plan = kept;
+              renderPlan();
+              toast("Could not add it to that day. Try again in a moment.");
+              return;
+            }
             loadPlan();
           });
       };
@@ -9664,10 +9751,17 @@
   $("dclose").onclick = function () { history.back(); };
   $("dfav").onclick = function () {
     if (!current) return;
-    current.favorite = !current.favorite;
-    setFav(current);
-    patchWorkout(current, { favorite: current.favorite });
+    var w = current;
+    w.favorite = !w.favorite;
+    setFav(w);
     render();
+    // The star used to stay lit through a failure it had already been told about.
+    patchWorkout(w, { favorite: w.favorite }).then(function (ok) {
+      if (ok) return;
+      w.favorite = !w.favorite;
+      if (current === w) setFav(w);
+      render();
+    });
   };
   $("dshare").onclick = function () {
     if (!current) return;
