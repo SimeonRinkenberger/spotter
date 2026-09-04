@@ -1912,7 +1912,10 @@ export const APP = String.raw`
   var exDrag = null;
   var exQuiet = 0;        // scrolls before this are ours, not the user's
 
-  function exWidth(row) { return row.children[1].offsetWidth || 192; }
+  // Measured off the stylesheet, but only ever once: offsetWidth is a synchronous
+  // layout, and this is read on every pointermove.
+  var exW = 0;
+  function exWidth(row) { return exW || (exW = row.children[1].offsetWidth || 192); }
 
   // Each button slides out from under the one to its right, so they unfold rather
   // than arrive as a slab. Transform only. A d of null hands the row back to the
