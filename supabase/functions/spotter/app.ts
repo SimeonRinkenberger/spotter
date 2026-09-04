@@ -6929,7 +6929,7 @@ export const APP = String.raw`
   // A label changing under the finger should not snap. .btn already carries an
   // opacity transition, so this is two writes and no new rule; clearing the inline
   // value rather than setting 1 hands dimming back to .btn[disabled].
-  function swapLabel(node, text) {
+  function stravaSwap(node, text) {
     if (lessMotion()) { node.textContent = text; return; }
     node.style.opacity = "0";
     setTimeout(function () { node.textContent = text; node.style.opacity = ""; }, 220);
@@ -6973,7 +6973,7 @@ export const APP = String.raw`
     if (!log.id || strava.busy) return;
     strava.busy = true;
     b.disabled = true;
-    swapLabel(b, "Sending…");
+    stravaSwap(b, "Sending…");
     api("strava/push", {
       method: "POST",
       body: JSON.stringify({
@@ -6992,7 +6992,7 @@ export const APP = String.raw`
         return;
       }
       b.disabled = false;
-      swapLabel(b, "Send to Strava");
+      stravaSwap(b, "Send to Strava");
       // A grant Strava has already revoked is recorded here too, so Settings and
       // every other card stop offering something that cannot work.
       if (r && r.code === "disconnected") { strava.connected = false; paintStrava(); }
@@ -7000,7 +7000,7 @@ export const APP = String.raw`
     }).catch(function () {
       strava.busy = false;
       b.disabled = false;
-      swapLabel(b, "Send to Strava");
+      stravaSwap(b, "Send to Strava");
       toast("Could not reach Spotter — check your connection.");
     });
   }
@@ -7026,10 +7026,10 @@ export const APP = String.raw`
       b.textContent = "Saving…";
       var tries = 0;
       var watch = setInterval(function () {
-        if (log.id) { clearInterval(watch); b.disabled = false; swapLabel(b, "Send to Strava"); return; }
+        if (log.id) { clearInterval(watch); b.disabled = false; stravaSwap(b, "Send to Strava"); return; }
         if (++tries < 40) return;
         clearInterval(watch);
-        swapLabel(b, "Not saved yet");
+        stravaSwap(b, "Not saved yet");
       }, 250);
     }
     return b;
