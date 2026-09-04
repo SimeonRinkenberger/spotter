@@ -7625,26 +7625,36 @@ function toolSearchCatalog(query: string) {
   return picked.map(compactCatalogEntry);
 }
 
-async function toolGetPlan(userId: string, weekStart?: string) {
+// One week by default; up to six in one call. The first live program request
+// spent three of the turn's four tool steps asking for weeks two, three and four
+// one at a time and had nothing left to propose with. Two reads whatever the span.
+async function toolGetPlan(userId: string, weekStart?: string, weeks = 1) {
   let start = weekStart && /^\d{4}-\d{2}-\d{2}$/.test(weekStart) ? new Date(weekStart + "T00:00:00Z") : utcMonday(new Date());
   if (isNaN(start.getTime())) start = utcMonday(new Date());
-  const end = new Date(start.getTime() + 6 * 86400000);
+  const span = Math.max(1, Math.min(6, Math.floor(Number(weeks) || 1)));
+  const end = new Date(start.getTime() + (7 * span - 1) * 86400000);
   const [plan, logs] = await settledAll([
     dbSelect("plan", `user_id=eq.${userId}&day=gte.${ymdUtc(start)}&day=lte.${ymdUtc(end)}&select=id,day,workout_id,workouts(title)&order=day`),
     dbSelect("workout_logs",
       `user_id=eq.${userId}&started_at=gte.${ymdUtc(start)}T00:00:00Z&started_at=lte.${ymdUtc(end)}T23:59:59Z&select=started_at,workout_title`),
   ]);
-  const days = [];
-  for (let i = 0; i < 7; i++) {
-    const d = new Date(start.getTime() + i * 86400000);
-    const key = ymdUtc(d);
-    days.push({
-      day: key, weekday: WEEKDAYS[d.getUTCDay()],
-      planned: plan.filter((p: any) => p.day === key).map((p: any) => ({ workout_id: handleOf(p.workout_id), title: p.workouts?.title ?? null })),
-      done: logs.filter((l: any) => String(l.started_at).slice(0, 10) === key).map((l: any) => l.workout_title),
-    });
-  }
-  return { week_start: ymdUtc(start), days };
+  const weekOf = (from: Date) => {
+    const days = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(from.getTime() + i * 86400000);
+      const key = ymdUtc(d);
+      days.push({
+        day: key, weekday: WEEKDAYS[d.getUTCDay()],
+        planned: plan.filter((p: any) => p.day === key).map((p: any) => ({ workout_id: handleOf(p.workout_id), title: p.workouts?.title ?? null })),
+        done: logs.filter((l: any) => String(l.started_at).slice(0, 10) === key).map((l: any) => l.workout_title),
+      });
+    }
+    return { week_start: ymdUtc(from), days };
+  };
+  if (span === 1) return weekOf(start);
+  const out = [];
+  for (let w = 0; w < span; w++) out.push(weekOf(new Date(start.getTime() + w * 7 * 86400000)));
+  return { week_start: ymdUtc(start), weeks: out };
 }
 
 async function toolLogsSummary(userId: string, days: number) {
@@ -7675,7 +7685,7 @@ async function runPumpyTool(userId: string, name: string, args: any): Promise<un
     case "list_library": return await toolListLibrary(userId, args?.query ?? args?.q);
     case "get_workout": return await toolGetWorkout(userId, String(args?.id ?? args?.workout_id ?? ""));
     case "search_catalog": return toolSearchCatalog(String(args?.query ?? args?.q ?? ""));
-    case "get_plan": return await toolGetPlan(userId, args?.week_start ? String(args.week_start) : undefined);
+    case "get_plan": return await toolGetPlan(userId, args?.week_start ? String(args.week_start) : undefined, Number(args?.weeks ?? 1));
     case "get_logs_summary": return await toolLogsSummary(userId, Number(args?.days ?? 14));
     default: return { error: "unknown tool " + name + "; the tools are list_library, get_workout, search_catalog, get_plan, get_logs_summary" };
   }
@@ -8130,7 +8140,8 @@ const PUMPY_STATIC = [
   "- get_workout {id} → one workout with every block and exercise.",
   "- search_catalog {query} → exercises Spotter knows, best first (id, name, muscles, equipment). query is a " +
   "phrase, a muscle, a piece of equipment, or a comma-separated list of names to check several spellings at once.",
-  "- get_plan {week_start?} → what is planned and done on each day of a week (week_start is a Monday, YYYY-MM-DD).",
+  "- get_plan {week_start?, weeks?} → what is planned and done on each day of a week, or of up to 6 consecutive " +
+  "weeks in ONE call when weeks is given (week_start is a Monday, YYYY-MM-DD).",
   "- get_logs_summary {days?} → recent sessions, muscles hit, volume.",
   "The snapshot already lists the library, this week's plan and recent training. Do not call list_library or " +
   "get_plan for the current week — the answer is in front of you. Call get_workout only when you need a workout's " +
@@ -8148,9 +8159,10 @@ const PUMPY_STATIC = [
   '- {"kind":"append_exercises","workout_id":string,"block_title":string|null,"exercises":[same exercise shape, "from" included],"summary":one sentence}',
   '- {"kind":"plan_days","days":[{"day":"YYYY-MM-DD","workout_id":string}],"summary":one sentence}',
   "A program is several weeks and one proposal: put every day of it in a single plan_days, up to 42 days. " +
-  "Call get_plan {week_start} once for each week beyond this one before planning into it, so you add to what is " +
-  "already there instead of over it. Progress the weeks — a set, a round, a harder variation or less rest — unless " +
-  "the user asks for a plain repeat, and then repeat the week exactly as it stands.",
+  "Before planning beyond this week call get_plan ONCE with week_start = next Monday and weeks = how many weeks " +
+  "you are planning, so you add to what is already there instead of over it — never one call per week. " +
+  "Progress the weeks — a set, a round, a harder variation or less rest — unless the user asks for a plain " +
+  "repeat, and then repeat the week exactly as it stands.",
   'When an exercise is taken from one of the user\'s saved workouts, set that exercise\'s "from" to that ' +
   "workout's id — only ever the id of a workout that really contains the movement, otherwise leave it out — and " +
   "in say name the workouts you drew from by their titles.",
