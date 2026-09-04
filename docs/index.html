@@ -14,17 +14,15 @@
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#F5F6F8" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#101214" media="(prefers-color-scheme: dark)">
-<!-- Every read this app makes goes to one host, and the first of them is fired the
-     moment the session is restored — measured at 68ms into the load, which used to
-     be 68ms before DNS, TCP and TLS had even started. dns-prefetch is the fallback
-     for the browsers that ignore preconnect. -->
+<!-- Every read goes to one host, and the first is fired the moment the session is
+     restored — measured at 68ms in, which used to be 68ms before DNS, TCP and TLS
+     had started. dns-prefetch is for the browsers that ignore preconnect. -->
 <link rel="preconnect" href="https://mtzevoxxpsktmrbbuxva.supabase.co" crossorigin>
 <link rel="dns-prefetch" href="https://mtzevoxxpsktmrbbuxva.supabase.co">
-<!-- supabase-js is the one blocking script and its tag is at the foot of a 480 KB
-     document, so the preload scanner reached it 107ms in on a cold load. Nothing
-     happens in this app until it has run, which makes it critical path. Neither of
-     these carries crossorigin: the script tag itself is a plain one, and a preload
-     that asks for a different mode is a second download, not a head start. -->
+<!-- supabase-js is the one blocking script, its tag is at the foot of a 480 KB
+     document, and the preload scanner reached it 107ms into a cold load. Nothing
+     happens until it has run. Neither line carries crossorigin: the script tag is
+     a plain one, and a preload in another mode is a second download. -->
 <link rel="preconnect" href="https://cdn.jsdelivr.net">
 <link rel="preload" as="script" href="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -601,12 +599,11 @@
   .addex:active { transform: scale(.985); }
   .fieldrow { display: flex; gap: 9px; }
   .fieldrow .field { flex: 1; min-width: 0; }
-  /* An original caption is a couple of thousand characters of wrapped text sitting
-     a long way below the fold of a card that has just been opened, and laying it
-     out is the most expensive thing on that screen that nobody is looking at.
-     content-visibility skips it until it is scrolled near; the remembered
-     intrinsic size — auto, so the browser uses the real height after the first
-     time — keeps the scrollbar honest in the meantime. */
+  /* A caption is a couple of thousand characters of wrapped text a long way below
+     the fold of a card just opened: the most expensive thing on that screen that
+     nobody is looking at. Skipped until it is scrolled near, with a remembered
+     intrinsic size — auto, so the real height is used after the first time — to
+     keep the scrollbar honest meanwhile. */
   .capbox { font-size: 13.5px; line-height: 1.62; color: var(--ink-2); white-space: pre-wrap;
     word-break: break-word; content-visibility: auto; contain-intrinsic-size: auto 220px; }
   /* Shown only when the extraction could not be traced back to the source text.
@@ -2295,14 +2292,12 @@
 
   // ---------- edge function calls ----------
 
-  // Three routes where asking the same question twice at the same moment is not
-  // two questions. They are read-shaped — the answer depends only on the body, and
-  // the server already caches a demo clip globally — and something now does ask
-  // twice: the prefetch that starts when a finger lands on the "?" and the sheet
-  // that opens ninety milliseconds later. Sharing the promise costs one AI call
-  // instead of two. Everything else on this function is a thing that HAPPENS
-  // rather than a thing that is asked — an ingest, a Pumpy turn, a checkout — and
-  // two of those are genuinely two.
+  // Three routes where the same question asked twice at once is not two questions:
+  // the answer depends on nothing but the body. Something does now ask twice — the
+  // prefetch on pointerdown and the sheet ninety milliseconds later — and sharing
+  // the promise makes that one AI call. Everything else here is a thing that
+  // HAPPENS rather than one that is asked — an ingest, a Pumpy turn, a checkout —
+  // and two of those are genuinely two.
   var SHARED = { "explain": 1, "demo-video": 1, "swap": 1 };
   var inFlight = {};
 
@@ -2788,19 +2783,17 @@
     }
   });
 
-  // Two doors lead to boot: onAuthStateChange's first session, and the
-  // getSession at the foot of this file for the session that was restored from
-  // storage before the listener existed. Both used to open. Measured on the live
-  // page: profiles, workouts, collections and collection_items each fetched
-  // twice, eight round trips where four would do, and the grid built twice from
-  // the same rows. Whoever arrives second now gets the first one's promise.
+  // Two doors lead here — onAuthStateChange's first session, and the getSession at
+  // the foot of this file for a session restored before the listener existed — and
+  // both used to open. Measured live: profiles, workouts, collections and
+  // collection_items each read twice, eight round trips where four would do, and
+  // the grid built twice from the same rows. Second in gets the first one's promise.
   var booting = null;
 
   function boot() {
     if (booting) return booting;
-    // Before the network is asked anything. The library the user is looking at is
-    // almost always the library they left, so it goes up now and the read that
-    // follows corrects it.
+    // Before the network is asked anything: the library someone is looking at is
+    // almost always the one they left.
     paintCache();
     loadProfile();
     maybeInstallHint();
@@ -2959,28 +2952,19 @@
 
   // ---------- cache ----------
   //
-  // Measured on the live page with twenty cards: the document is interactive at
-  // 77ms and the first card lands at 358ms. Every one of those 280 milliseconds
-  // is one PostgREST round trip, not work — the grid itself builds in a
-  // millisecond. So the last answer is kept on the phone and painted while the
-  // network is still being asked, which is what Instagram and Hevy do and why
-  // both feel like they were already open. The read that follows is still the
-  // truth; this only decides what is on screen until it arrives.
-  //
-  // Everything here is wrapped, because localStorage throws rather than returns
-  // in a Safari private window and on a phone whose storage is full, and a
-  // library that will not load because a cache would not write is a much worse
-  // bug than a library that takes 358ms.
+  // Measured live with twenty cards: the document is interactive at 77ms and the
+  // first card lands at 358ms, and all of that gap is one PostgREST round trip,
+  // not work. So the last answer is kept and painted while the network is still
+  // being asked — what Instagram and Hevy do, and why both feel already open. The
+  // read behind it is still the truth. Every call here is wrapped: localStorage
+  // throws in a private window and on a full phone, and a library that will not
+  // load because a cache would not write is the worse bug by far.
   var CACHE_KEY = "spotter-lib-v1";
-  // A quota is 5MB on most browsers and the whole point is to be fast; a cache
-  // this side of 1.5MB writes in a millisecond or two, and one that has grown
-  // past it is not worth the main thread it would cost.
-  var CACHE_MAX = 1500000;
+  var CACHE_MAX = 1500000;   // a quota is 5MB; past this it is not worth the main thread
 
-  // caption is 62% of an average row and nothing on the library screen reads it
-  // — not the card, not the chips, not the search, which looks in titles,
-  // exercise names, muscles, equipment and tags. It is dropped, and load()
-  // brings the real row back a quarter of a second later.
+  // caption is 62% of a row and nothing on the library screen reads it — not the
+  // card, not the chips, not the search, which looks in titles, exercise names,
+  // muscles, equipment and tags. load() brings the real row back a moment later.
   function thinRow(w) {
     var out = {}, k;
     for (k in w) { if (Object.prototype.hasOwnProperty.call(w, k) && k !== "caption") out[k] = w[k]; }
@@ -2992,8 +2976,8 @@
       var raw = localStorage.getItem(CACHE_KEY);
       if (!raw) return null;
       var c = JSON.parse(raw);
-      // Keyed by user, and checked rather than trusted: a phone two people share
-      // must never show one of them the other's workouts for a third of a second.
+      // Keyed by user and checked rather than trusted: a shared phone must never
+      // show one person the other's workouts, not even for a third of a second.
       if (!c || c.v !== 1 || !state.user || c.uid !== state.user.id) return null;
       if (!c.workouts || !c.workouts.length) return null;
       return c;
@@ -3012,8 +2996,8 @@
       if (payload.length > CACHE_MAX) { localStorage.removeItem(CACHE_KEY); return; }
       localStorage.setItem(CACHE_KEY, payload);
     } catch (e) {
-      // Out of quota, or a browser that refuses to store anything at all. Clear
-      // what may be a half-written entry and carry on without a cache.
+      // Out of quota, or a browser that stores nothing. Drop what may be a
+      // half-written entry and carry on without a cache.
       try { localStorage.removeItem(CACHE_KEY); } catch (e2) { }
     }
   }
@@ -3028,27 +3012,21 @@
     state.workouts = c.workouts;
     state.collections = c.collections || [];
     state.colItems = c.colItems || [];
-    // Every card in this paint is a card the user has already seen, so not one of
-    // them should fly in — and when load() lands a moment later they must not fly
-    // in then either. seenCards is exactly the ledger that stops a filter tap
-    // re-animating the grid; this is the same idea one launch earlier.
+    // Every card here has been seen before, so none should fly in — not now and
+    // not when load() lands. seenCards is the ledger that already stops a filter
+    // tap re-animating the grid; this is the same idea one launch earlier.
     for (var i = 0; i < state.workouts.length; i++) seenCards[state.workouts[i].id] = 1;
     render();
   }
 
-  // The ninety milliseconds between a finger landing and the tap that follows are
-  // already spent — instant.page measures 90ms on touch and 80ms on a mouse — and
-  // they are the cheapest ninety milliseconds in the app. The explain sheet's two
-  // questions are both fully determined by the exercise under the finger, so both
-  // can be asked while the press is still happening; the answers land in the same
-  // two caches the sheet reads, so it finds them there and renders nothing twice.
-  //
-  // The tap that follows asks the same two questions, and api() shares an in-flight
-  // answer for exactly these routes, so the pair costs one call rather than two.
-  // The only waste left is a press that becomes a scroll instead of a tap, and even
-  // that is recovered the moment the user presses the "?" for real. Nothing is
-  // prefetched for the swap sheet: a swap needs a reason the user has not chosen
-  // yet, and guessing it would spend a credit on the wrong question.
+  // The ninety milliseconds between a finger landing and the tap it becomes are
+  // already spent — instant.page measures 90ms on touch, 80ms on a mouse. Both of
+  // the explain sheet's questions are decided by the exercise under the finger, so
+  // the press asks them and the answers land in the same two caches the sheet
+  // reads. api() shares the in-flight answer for these routes, so the press and
+  // the tap together cost one AI credit rather than two; the only waste left is a
+  // press that turns into a scroll, and even that is recovered next time. Nothing
+  // is prefetched for the swap sheet — a swap needs a reason nobody has picked yet.
   function prefetchExplain(ex, w) {
     if (!ex || !ex.name) return;
     var quote = ex.evidence && ex.evidence.quote ? String(ex.evidence.quote).trim() : "";
@@ -3098,9 +3076,8 @@
       // shrug off a pull-to-refresh made half a minute after the last read.
       today.at = 0;
       render();
-      // A card opened straight off the cache is a card without its caption. The
-      // real row is in hand now, so the open one is put right the same way a
-      // realtime update puts it right.
+      // A card opened straight off the cache has no caption on it. The real row is
+      // in hand now, so the open one is put right the way realtime puts it right.
       if (current && $("detail").classList.contains("open")) {
         for (var i = 0; i < state.workouts.length; i++) {
           if (state.workouts[i].id === current.id) {
@@ -3111,8 +3088,8 @@
         }
       }
       watchPending();
-      // In idle time, because this is for the next launch and the thumbnails of
-      // this one are still arriving.
+      // In idle time: this is for the next launch, and this one's thumbnails are
+      // still arriving.
       idle(writeCache, 0);
     });
   }
@@ -3523,10 +3500,10 @@
       }
       if (w.thumb_url) {
         var img = el("img");
-        // The four thumbnails above the fold are the first thing anybody looks at,
-        // so they are told to hurry and not to wait for anything; the rest keep the
-        // lazy default. decoding=async everywhere, because a thumbnail decoded on
-        // the main thread is a thumbnail decoded during a scroll.
+        // The four above the fold are the first thing anybody looks at, so they
+        // are told to hurry; the rest keep the lazy default. decoding=async on all
+        // of them, because a thumbnail decoded on the main thread is one decoded
+        // during a scroll.
         img.loading = i < 4 ? "eager" : "lazy";
         img.decoding = "async";
         if (i < 4) img.setAttribute("fetchpriority", "high");
@@ -3629,28 +3606,13 @@
       }
       return null;
     }
+    // Holding the src back a frame was tried here and measured worse, twice: a
+    // cross-origin iframe is handed to another process and costs 0.8ms to insert,
+    // while a src-less one has an about:blank document built in this process and
+    // costs 2.1ms — so deferring buys nothing on the main thread and delays the
+    // video. The lazy hint stays, for an embed that opens below the fold.
+    frame.setAttribute("loading", "lazy");
     wrap.appendChild(frame);
-    // A cross-origin iframe and the overlay's entrance want the same frames, and
-    // the iframe wins: it starts a whole third-party page loading in the middle of
-    // a 320ms animation. So the src is held back until the browser has painted the
-    // overlay once — the card arrives clean and the video lands into it a moment
-    // later, which is the order a person reads them in anyway. The timeout is the
-    // belt: a tab that is backgrounded between the tap and the next frame raises
-    // no rAF at all, and the embed still has to be there when it comes back.
-    var href = frame.getAttribute("src");
-    if (href) {
-      frame.removeAttribute("src");
-      frame.setAttribute("loading", "lazy");
-      var placed = false;
-      var go = function () {
-        if (placed) return;
-        placed = true;
-        // Closed again within the frame: nothing to load for a card nobody is on.
-        if (frame.parentNode) frame.setAttribute("src", href);
-      };
-      if (window.requestAnimationFrame) requestAnimationFrame(function () { requestAnimationFrame(go); });
-      setTimeout(go, 200);
-    }
     return wrap;
   }
 
@@ -3950,9 +3912,9 @@
       sel.appendChild(o);
     });
     sel.onchange = function () {
-      // Optimistic, and now honest about it: patchWorkout's own failure line says
-      // "your copy is unchanged", which was not true — the pill stayed switched
-      // and no realtime event was coming to correct it, because no row changed.
+      // Optimistic, and now honest about it: patchWorkout says "your copy is
+      // unchanged", which was not true — the pill stayed switched and no realtime
+      // event was coming to correct it, because no row had changed.
       var was = w.category;
       w.category = sel.value;
       render();
@@ -3976,9 +3938,9 @@
     ta.oninput = function () {
       clearTimeout(noteTimer);
       noteTimer = setTimeout(function () {
-        // Nothing is put back in the box on a failure — the user is very likely
-        // still typing in it — but the row keeps the last value the server agreed
-        // to, so a later render does not show a note that was never saved.
+        // Nothing is put back in the box on a failure — somebody is probably still
+        // typing in it — but the row keeps the last value the server agreed to, so
+        // no later render shows a note that was never saved.
         var was = w.notes;
         var sent = ta.value;
         w.notes = sent;
@@ -4302,11 +4264,10 @@
   }
 
   // The second tap of an armed button is as deliberate as an answer gets, and it
-  // used to be followed by a card that sat there for a round trip. It closes now.
-  // Deleting a collection and deleting a session both already worked this way; the
-  // workout itself was the odd one out. There is no undo offered here on purpose —
-  // the arming is the confirmation — but a delete the server refuses puts the card
-  // back rather than leaving the library quietly wrong.
+  // used to be followed by a card sitting there for a round trip. Deleting a
+  // collection and deleting a session already worked this way; the workout was the
+  // odd one out. No undo on purpose — the arming is the confirmation — but a
+  // refused delete puts the card back rather than leaving the library wrong.
   function removeWorkout(w, btn) {
     var go = function () {
       var keptW = state.workouts, keptC = state.colItems;
@@ -4410,11 +4371,10 @@
     var btn = $("renamesave");
     btn.disabled = true;
 
-    // A rename is a thing the user typed, so the app already knows the answer and
-    // does not need the server's permission to show it. The sheet closes on the
-    // tap and the new name is everywhere at once; if the write comes back unhappy
-    // the old name goes back and says why — including the duplicate-name answer,
-    // which is the one thing here only the server knows.
+    // A rename is a thing the user typed, so the app needs nobody's permission to
+    // show it. The sheet closes on the tap and the name is everywhere at once; a
+    // refusal puts the old one back and says why — including the duplicate-name
+    // answer, which is the one thing here only the server knows.
     if (ctx.kind === "workout") {
       var w = state.workouts.filter(function (x) { return x.id === ctx.id; })[0];
       if (!w || name === (w.title || "")) { btn.disabled = false; closeSheet("renamesheet"); renameCtx = null; return; }
@@ -4509,13 +4469,10 @@
     });
   }
 
-  // The tick, the count and the aria-pressed state all used to wait on a round
-  // trip — a fifth of a second in which the row a person had just tapped looked
-  // dead, and the honest reading of which is that the tap did not land. Filing a
-  // workout under a collection is a thing the phone already knows the answer to,
-  // so it happens now and the write catches up. If the write fails the row goes
-  // back where it was and says so, which is the only case in which anything moves
-  // twice.
+  // The tick, the count and aria-pressed all used to wait on a round trip — a
+  // fifth of a second in which the row just tapped looked dead, which reads as a
+  // tap that missed. The phone knows this answer, so it happens now and the write
+  // catches up; a refusal puts the row back and says so.
   function toggleMembership(c, workoutId) {
     var had = inCol(c.id, workoutId);
     var kept = state.colItems;
@@ -6585,13 +6542,11 @@
           var x = icon(el("button", "planx"), "x");
           x.setAttribute("aria-label", "Take this off the day");
           x.onclick = function () {
-            // A row the server has not confirmed yet has no id to delete by. It
-            // goes on its own the moment loadPlan lands.
+            // A row the server has not confirmed has no id to delete by; it goes
+            // on its own when loadPlan lands.
             if (String(p.id).indexOf("tmp-") === 0) return;
-            // Off the day now, then two round trips' worth of confirmation. A row
-            // that sits there after being dismissed reads as a tap that missed —
-            // and this was also the one write in the file that never looked at
-            // r.error, so a failed delete quietly redrew the row still present.
+            // Off the day now. This was also the one write in the file that never
+            // looked at r.error, so a refused delete quietly redrew the row.
             var kept = state.plan;
             state.plan = state.plan.filter(function (q) { return q.id !== p.id; });
             today.at = 0;
@@ -6643,10 +6598,9 @@
       t.appendChild(el("span", null, [w.category, fmtDur(w.duration_minutes)].filter(Boolean).join(" · ")));
       row.appendChild(t);
       row.onclick = function () {
-        // The sheet closes and the day fills in on the tap. It used to take two
+        // The sheet closes and the day fills in on the tap; it used to take two
         // serial round trips — the insert, then a whole week re-read — before
-        // anything on screen moved. The row wears a temporary id until the real
-        // one arrives, and the planx handler knows not to try to delete by it.
+        // anything moved. The row wears a temporary id until the real one lands.
         closeSheet("picksheet");
         var kept = state.plan;
         state.plan = (state.plan || []).concat([
