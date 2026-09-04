@@ -486,6 +486,30 @@ export const MARKUP_BODY = String.raw`</head>
   </div>
   <button class="setlink hide" id="setrefresh">Refresh</button>
 
+  <!-- Connections, hidden whole until the owner has set the Strava secrets: an
+       integration nobody can switch on is not a Settings row, it is noise. Under
+       Plan and above Preferences because it is account-shaped rather than a
+       preference, which is where Hevy and Strong file theirs too.
+       The button is Strava's own asset and nothing else: their brand rules make
+       the official image the required entry to the consent screen and forbid
+       redrawing or recolouring it, so it is a fixed 48px img from our own origin
+       and app.ts falls back to words if the file is not there. -->
+  <div class="hide" id="setconn">
+    <h3 class="seth">Connections</h3>
+    <div class="setgroup">
+      <div class="kv"><span class="k">Strava</span><span class="v" id="setstrava">Not connected</span></div>
+    </div>
+    <div class="setnote" id="setstravanote"></div>
+    <div class="btnrow hide" id="setstravaoffrow">
+      <button class="btn ghost" id="stravaoff">Disconnect</button>
+    </div>
+    <button class="hide" id="stravaon" aria-label="Connect with Strava"
+      style="width:100%;background:none;border:0;padding:12px 0 2px;cursor:pointer;-webkit-tap-highlight-color:transparent">
+      <img id="stravaonimg" src="strava-connect.svg" alt="Connect with Strava"
+        style="height:48px;width:auto;display:block;margin:0 auto">
+    </button>
+  </div>
+
   <h3 class="seth">Preferences</h3>
   <div class="setgroup">
     <div class="kv"><span class="k">Weight unit</span>

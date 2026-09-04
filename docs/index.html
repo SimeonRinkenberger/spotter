@@ -2074,6 +2074,30 @@
   </div>
   <button class="setlink hide" id="setrefresh">Refresh</button>
 
+  <!-- Connections, hidden whole until the owner has set the Strava secrets: an
+       integration nobody can switch on is not a Settings row, it is noise. Under
+       Plan and above Preferences because it is account-shaped rather than a
+       preference, which is where Hevy and Strong file theirs too.
+       The button is Strava's own asset and nothing else: their brand rules make
+       the official image the required entry to the consent screen and forbid
+       redrawing or recolouring it, so it is a fixed 48px img from our own origin
+       and app.ts falls back to words if the file is not there. -->
+  <div class="hide" id="setconn">
+    <h3 class="seth">Connections</h3>
+    <div class="setgroup">
+      <div class="kv"><span class="k">Strava</span><span class="v" id="setstrava">Not connected</span></div>
+    </div>
+    <div class="setnote" id="setstravanote"></div>
+    <div class="btnrow hide" id="setstravaoffrow">
+      <button class="btn ghost" id="stravaoff">Disconnect</button>
+    </div>
+    <button class="hide" id="stravaon" aria-label="Connect with Strava"
+      style="width:100%;background:none;border:0;padding:12px 0 2px;cursor:pointer;-webkit-tap-highlight-color:transparent">
+      <img id="stravaonimg" src="strava-connect.svg" alt="Connect with Strava"
+        style="height:48px;width:auto;display:block;margin:0 auto">
+    </button>
+  </div>
+
   <h3 class="seth">Preferences</h3>
   <div class="setgroup">
     <div class="kv"><span class="k">Weight unit</span>
@@ -6724,8 +6748,13 @@
     };
     // Insert first, draw from memory: the one moment of payoff in the whole loop
     // should never wait on a gym's signal.
-    sb.from("workout_logs").insert(payload).then(function (r) {
+    sb.from("workout_logs").insert(payload).select("id").single().then(function (r) {
       if (r.error) { toast("Could not save that session — check your connection."); return; }
+      // The summary is already on screen, and Send to Strava needs a log id to
+      // push. The insert is the only moment that id exists, and the summary holds
+      // this very object, so writing it here is what wakes that button up.
+      payload.id = r.data && r.data.id;
+      if (wo) wo.logId = payload.id;
       state.logs = null;
       // The today card was drawn before this session existed. Retire it now,
       // and redraw at once if the library is the page underneath.
@@ -8923,6 +8952,294 @@
     });
   }
 
+  // ---------- strava ----------
+  //
+  // The only thing in Spotter that writes to somebody else's account.
+  //
+  // A new Strava API app may connect exactly ONE athlete until the owner
+  // self-upgrades to ten, and past ten is a review — so the whole group is hidden
+  // until the function says configured, and the line under the button says
+  // "limited beta" rather than letting somebody find that out at a consent screen.
+  // No token comes near this file: the browser asks for a URL, walks to
+  // strava.com, comes back to a static page, and holds three booleans after it.
+
+  var STRAVA_ORANGE = "#FC5200";
+  var STRAVA_KEY = "spotter_strava_return";
+  var STRAVA_WAIT = "spotter_strava_waiting";
+
+  var strava = { asked: false, configured: false, connected: false, athlete: null, busy: false };
+
+  // captureBilling's shape for captureBilling's reason: whatever came back on the
+  // address bar must be off it before anything reloads, and there may be no
+  // session yet when this runs.
+  function captureStrava() {
+    var q;
+    try { q = new URLSearchParams(location.search); } catch (e) { return; }
+    if (!q.has("strava")) return;
+    try {
+      sessionStorage.setItem(STRAVA_KEY, JSON.stringify({
+        outcome: q.get("strava"), why: q.get("why") || null
+      }));
+    } catch (e) { /* ignore */ }
+    try { history.replaceState(null, "", location.pathname + location.hash); } catch (e) { /* ignore */ }
+  }
+
+  // One vocabulary for both halves: the codes the callback puts on the address bar
+  // and the codes a push answers with overlap, and one wall deserves one sentence.
+  function stravaSays(code, message) {
+    if (code === "capacity") return "Strava lets this app connect a limited number of athletes right now.";
+    if (code === "disconnected") return "Strava disconnected this app — reconnect in Settings.";
+    if (code === "not_connected") return "Connect Strava in Settings first.";
+    if (code === "declined") return "Strava was not connected. You can try again any time.";
+    if (code === "scope") return "Spotter needs permission to add workouts to Strava — try again and leave that box ticked.";
+    if (code === "bad_state") return "That took too long. Tap Connect with Strava again.";
+    return message || "Strava could not take that just now. Try again in a minute.";
+  }
+
+  function stravaWait(on) {
+    try {
+      if (on) sessionStorage.setItem(STRAVA_WAIT, "1"); else sessionStorage.removeItem(STRAVA_WAIT);
+    } catch (e) { /* ignore */ }
+    return on;
+  }
+
+  function consumeStrava() {
+    var raw = null, o = null;
+    try {
+      raw = sessionStorage.getItem(STRAVA_KEY);
+      if (raw) sessionStorage.removeItem(STRAVA_KEY);
+    } catch (e) { /* ignore */ }
+    try { o = raw ? JSON.parse(raw) : null; } catch (e) { o = null; }
+    if (!o) return false;
+    stravaWait(false);
+    strava.asked = false;
+    toast(o.outcome === "connected" ? "Strava connected." : stravaSays(o.why, null), 4200);
+    // A return that lands before the session is restored still gets its toast; the
+    // status read waits for somebody to ask for it.
+    if (state.user) askStrava();
+    return true;
+  }
+
+  // Three doors onto one question, the three billing already needed: pageshow,
+  // visibilitychange, focus. On iOS the consent screen opens in a browser whose
+  // storage is not ours and the return address may never reach the app at all, so
+  // a connect that never came back is settled by asking the server instead.
+  function stravaBack() {
+    if (document.visibilityState === "hidden") return;
+    if (consumeStrava()) return;
+    var waiting = false;
+    try { waiting = sessionStorage.getItem(STRAVA_WAIT) === "1"; } catch (e) { /* ignore */ }
+    if (!state.user || !waiting) return;
+    stravaWait(false);
+    strava.asked = false;
+    askStrava().then(function () { if (strava.connected) toast("Strava connected."); });
+  }
+
+  // Once per page load unless something happened that could change the answer.
+  // configured:false is a 200 rather than an error, so a project with no Strava
+  // secrets draws no group and shows no failure.
+  function askStrava() {
+    if (strava.asked) return Promise.resolve(strava);
+    strava.asked = true;
+    return api("strava/status", { method: "GET" }).then(function (r) {
+      if (r && r.status === "ok") {
+        strava.configured = !!r.configured;
+        strava.connected = !!r.connected;
+        strava.athlete = r.athlete_id || null;
+      }
+      paintStrava();
+      return strava;
+    }).catch(function () {
+      // Ask again next time rather than hide the group for ever over one dropped
+      // request.
+      strava.asked = false;
+      paintStrava();
+      return strava;
+    });
+  }
+
+  function paintStrava() {
+    var box = $("setconn");
+    if (!box) return;
+    box.classList.toggle("hide", !strava.configured);
+    if (!strava.configured) return;
+    var on = strava.connected;
+    $("setstrava").textContent = on ? "Connected" : "Not connected";
+    $("stravaon").classList.toggle("hide", on);
+    $("setstravaoffrow").classList.toggle("hide", !on);
+    $("setstravanote").textContent = on
+      ? "Finished sessions can be sent to Strava as a manual workout: its name, how long it took, and " +
+        "your sets in the description." + (strava.athlete ? " Athlete " + strava.athlete + "." : "") +
+        " Disconnecting takes Spotter's access away and deletes the tokens."
+      : "Limited beta. Strava caps how many people one app may connect, so this may not be open to your " +
+        "account yet. Spotter only writes: it adds a finished session and never reads anything back.";
+  }
+
+  function connectStrava() {
+    var b = $("stravaon");
+    b.disabled = true;
+    api("strava/connect", { method: "GET" }).then(function (r) {
+      if (!r || r.status !== "ok" || !r.url) {
+        b.disabled = false;
+        toast((r && r.message) || "Could not start the Strava connection.");
+        return;
+      }
+      // Marked before the page leaves: this flag, in OUR storage, is what tells the
+      // app to ask the server how it went when it next comes to front.
+      stravaWait(true);
+      location.href = r.url;
+    }).catch(function () {
+      b.disabled = false;
+      toast("Could not reach Spotter — check your connection.");
+    });
+  }
+
+  // Armed, like every other undoing in the app. Disconnecting is reversible, but
+  // it is not a thing anybody means to do with a stray thumb.
+  function stravaOff(btn) {
+    armed(btn, "Tap again to disconnect", function () {
+      btn.disabled = true;
+      api("strava/disconnect", { method: "POST", body: "{}" }).then(function (r) {
+        btn.disabled = false;
+        if (!r || r.status !== "ok") { toast((r && r.message) || "Could not disconnect just now."); return; }
+        strava.connected = false;
+        strava.athlete = null;
+        paintStrava();
+        toast("Strava disconnected.");
+      }).catch(function () {
+        btn.disabled = false;
+        toast("Could not reach Spotter — check your connection.");
+      });
+    });
+  }
+
+  // A label changing under the finger should not snap. .btn already carries an
+  // opacity transition, so this is two writes and no new rule; clearing the inline
+  // value rather than setting 1 hands dimming back to .btn[disabled].
+  function swapLabel(node, text) {
+    if (lessMotion()) { node.textContent = text; return; }
+    node.style.opacity = "0";
+    setTimeout(function () { node.textContent = text; node.style.opacity = ""; }, 220);
+  }
+
+  // Strava asks for the way back to be findable — bold, underline or their orange.
+  // An anchor because it leaves the app, wearing the button's geometry so it sits
+  // level with whatever the share row put beside it.
+  function stravaLink(id) {
+    var a = el("a", "btn ghost", "View on Strava");
+    a.href = "https://www.strava.com/activities/" + id;
+    a.target = "_blank";
+    a.rel = "noopener";
+    a.style.cssText = "color:" + STRAVA_ORANGE +
+      ";font-weight:700;display:block;box-sizing:border-box;text-align:center;text-decoration:none";
+    return a;
+  }
+
+  // start_date_local is the session's LOCAL wall clock and only the phone knows
+  // it. The trailing Z is part of the format Strava documents, not a claim about
+  // UTC — sending a real UTC stamp files a 6pm session at 11pm.
+  function stravaLocalISO(iso) {
+    var d = iso ? new Date(iso) : new Date();
+    if (isNaN(d.getTime())) d = new Date();
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 19) + "Z";
+  }
+
+  // The bests read off the sets themselves rather than out of Workout Mode's
+  // tally, so a card in History composes the same description as the summary did.
+  function stravaPrs(log) {
+    var out = [];
+    (log.entries || []).forEach(function (e) {
+      (e.sets || []).forEach(function (s) {
+        if (s && s.pr) out.push({ name: e.name, weight: s.weight, unit: s.unit, reps: s.reps });
+      });
+    });
+    return out.slice(0, 6);
+  }
+
+  function pushStrava(log, b) {
+    if (!log.id || strava.busy) return;
+    strava.busy = true;
+    b.disabled = true;
+    swapLabel(b, "Sending…");
+    api("strava/push", {
+      method: "POST",
+      body: JSON.stringify({
+        log_id: log.id, start_local: stravaLocalISO(log.started_at),
+        unit: state.unit, prs: stravaPrs(log)
+      })
+    }).then(function (r) {
+      strava.busy = false;
+      if (r && r.status === "ok" && r.activity_id) {
+        // Remembered on the row as well as on Strava, so leaving History and
+        // coming back shows the link rather than offering the send again.
+        log.strava_activity_id = r.activity_id;
+        if (b.parentNode) b.parentNode.replaceChild(stravaLink(r.activity_id), b);
+        haptic("success");
+        toast("Sent to Strava.");
+        return;
+      }
+      b.disabled = false;
+      swapLabel(b, "Send to Strava");
+      // A grant Strava has already revoked is recorded here too, so Settings and
+      // every other card stop offering something that cannot work.
+      if (r && r.code === "disconnected") { strava.connected = false; paintStrava(); }
+      toast(stravaSays(r && r.code, r && r.message), 4200);
+    }).catch(function () {
+      strava.busy = false;
+      b.disabled = false;
+      swapLabel(b, "Send to Strava");
+      toast("Could not reach Spotter — check your connection.");
+    });
+  }
+
+  // The hook the share row calls, on the summary and on every History card. Null
+  // whenever Strava is off or not connected, which keeps a feature nobody can use
+  // out of everybody else's session summary.
+  function stravaBtn(log) {
+    if (!strava.configured || !strava.connected || !log) return null;
+    if (log.strava_activity_id) return stravaLink(log.strava_activity_id);
+
+    var b = el("button", "btn ghost", "Send to Strava");
+    b.style.color = STRAVA_ORANGE;
+    b.style.fontWeight = "700";
+    b.onclick = function () { pushStrava(log, b); };
+
+    // The summary draws the instant the workout ends, before the insert has come
+    // back with the id a push has to be aimed at. So the button says so, watches
+    // the object finishWorkout stashes it onto, and wakes when it lands — for ten
+    // seconds, then it stops claiming a save that plainly did not happen.
+    if (!log.id) {
+      b.disabled = true;
+      b.textContent = "Saving…";
+      var tries = 0;
+      var watch = setInterval(function () {
+        if (log.id) { clearInterval(watch); b.disabled = false; swapLabel(b, "Send to Strava"); return; }
+        if (++tries < 40) return;
+        clearInterval(watch);
+        swapLabel(b, "Not saved yet");
+      }, 250);
+    }
+    return b;
+  }
+
+  $("stravaon").onclick = connectStrava;
+  $("stravaoff").onclick = function () { stravaOff(this); };
+
+  // The official image is the required entry point to Strava's consent screen and
+  // may not be redrawn, so if the asset has not landed in docs/ yet the same
+  // button says the words instead of leaving an invisible control on the page.
+  $("stravaonimg").onerror = function () {
+    var b = $("stravaon");
+    if (this.parentNode === b) b.removeChild(this);
+    b.textContent = "Connect with Strava";
+    b.style.cssText = "width:100%;border:0;border-radius:14px;padding:14px;font-size:15.5px;" +
+      "font-weight:700;background:" + STRAVA_ORANGE + ";color:#FFFFFF";
+  };
+
+  window.addEventListener("pageshow", stravaBack);
+  window.addEventListener("focus", stravaBack);
+  document.addEventListener("visibilitychange", stravaBack);
+
   // ---------- settings ----------
 
   function openSettings() {
@@ -8953,6 +9270,11 @@
     paintPlanGroup();
     paintPlanUse(billing.limits);
     Promise.all([loadPrices(), loadSub()]).then(paintPlanGroup);
+    // Beside the limits read rather than after it: the Connections group is hidden
+    // until this answers, and a round trip that lands with the others is the
+    // difference between Settings opening finished and Settings filling itself in.
+    paintStrava();
+    askStrava();
     api("limits", { method: "GET" }).then(function (r) {
       pumpy.meterAsked = true;
       absorbMeter(r && r.pumpy);
@@ -10287,6 +10609,7 @@
   // share section and function hoisting would not have brought that with it.
   captureShare();
   captureBilling();
+  captureStrava();
 
   // A session restored from storage does not always fire onAuthStateChange in time.
   sb.auth.getSession().then(function (r) {
