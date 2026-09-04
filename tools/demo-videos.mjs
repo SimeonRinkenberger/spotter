@@ -50,7 +50,24 @@ import { canonicalize, CATALOG } from "../supabase/functions/spotter/catalog.ts"
 const SOURCES_FILE = "tools/demo-sources.json";
 const SNAP_DIR = "tools/demo-videos";
 const REVIEW = "tools/demo-videos-review.json";
-const OUT = "supabase/migrations/20260904020000_exercise_demo_videos_seed.sql";
+// The seed is a migration, and an applied migration is history: once it has run on
+// the remote database it must not change. So a regeneration after that writes a NEW
+// dated file (--new) rather than editing the one already applied; without --new the
+// tool rewrites the newest seed file it finds, which is right while it is unapplied.
+import { readdirSync } from "node:fs";
+const SEED_SUFFIX = "_exercise_demo_videos_seed.sql";
+function seedPath() {
+  const dir = "supabase/migrations";
+  const have = readdirSync(dir).filter((f) => f.endsWith(SEED_SUFFIX)).sort();
+  if (process.argv.includes("--new") || !have.length) {
+    const d = new Date(), z = (n) => String(n).padStart(2, "0");
+    const stamp = d.getUTCFullYear() + z(d.getUTCMonth() + 1) + z(d.getUTCDate()) +
+      z(d.getUTCHours()) + z(d.getUTCMinutes()) + "00";
+    return dir + "/" + stamp + SEED_SUFFIX;
+  }
+  return dir + "/" + have[have.length - 1];
+}
+const OUT = seedPath();
 const CACHE = ".demo-cache";                 // gitignored scratch for raw enumerations
 
 // A candidate has to look like the same movement before a human is asked about it
@@ -565,8 +582,11 @@ for (const e of CATALOG) {
 
 // Words that cannot change which movement a title names. Stemmed, because that is
 // what is left over after tokenSeq.
+// "grip" and "stance" are neutral on their own because the word that qualifies them
+// is what carries the meaning: "Medium Grip Bench Press" leaves only neutral words
+// and is a bench press; "Wide Grip Bench Press" still leaves "wide" and goes to review.
 const NEUTRAL = new Set(["flat", "medium", "normal", "standard", "regular", "barbell", "dumbbell",
-  "cable", "machine", "bodyweight", "seated", "standing", "bilateral"].map(stem));
+  "cable", "machine", "bodyweight", "seated", "standing", "bilateral", "grip", "stance"].map(stem));
 // ... with one exception. "Machine Glute Kickback" is not "Donkey Kick" and
 // "Barbell Hollow Hold" is not a hollow hold: a piece of equipment left over on a
 // movement the catalog says needs none (or a different one) is the apparatus
