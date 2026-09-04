@@ -2295,9 +2295,22 @@
 
   // ---------- edge function calls ----------
 
+  // Three routes where asking the same question twice at the same moment is not
+  // two questions. They are read-shaped — the answer depends only on the body, and
+  // the server already caches a demo clip globally — and something now does ask
+  // twice: the prefetch that starts when a finger lands on the "?" and the sheet
+  // that opens ninety milliseconds later. Sharing the promise costs one AI call
+  // instead of two. Everything else on this function is a thing that HAPPENS
+  // rather than a thing that is asked — an ingest, a Pumpy turn, a checkout — and
+  // two of those are genuinely two.
+  var SHARED = { "explain": 1, "demo-video": 1, "swap": 1 };
+  var inFlight = {};
+
   function api(path, opts) {
     opts = opts || {};
-    return sb.auth.getSession().then(function (r) {
+    var share = SHARED[path] ? path + "\n" + (opts.body || "") : null;
+    if (share && inFlight[share]) return inFlight[share];
+    var p = sb.auth.getSession().then(function (r) {
       var token = r.data.session ? r.data.session.access_token : "";
       opts.headers = Object.assign({
         authorization: "Bearer " + token,
@@ -2310,6 +2323,12 @@
         return body;
       });
     });
+    if (share) {
+      inFlight[share] = p;
+      var forget = function () { delete inFlight[share]; };
+      p.then(forget, forget);
+    }
+    return p;
   }
 
   // ---------- auth ----------
@@ -3015,6 +3034,40 @@
     // re-animating the grid; this is the same idea one launch earlier.
     for (var i = 0; i < state.workouts.length; i++) seenCards[state.workouts[i].id] = 1;
     render();
+  }
+
+  // The ninety milliseconds between a finger landing and the tap that follows are
+  // already spent — instant.page measures 90ms on touch and 80ms on a mouse — and
+  // they are the cheapest ninety milliseconds in the app. The explain sheet's two
+  // questions are both fully determined by the exercise under the finger, so both
+  // can be asked while the press is still happening; the answers land in the same
+  // two caches the sheet reads, so it finds them there and renders nothing twice.
+  //
+  // The tap that follows asks the same two questions, and api() shares an in-flight
+  // answer for exactly these routes, so the pair costs one call rather than two.
+  // The only waste left is a press that becomes a scroll instead of a tap, and even
+  // that is recovered the moment the user presses the "?" for real. Nothing is
+  // prefetched for the swap sheet: a swap needs a reason the user has not chosen
+  // yet, and guessing it would spend a credit on the wrong question.
+  function prefetchExplain(ex, w) {
+    if (!ex || !ex.name) return;
+    var quote = ex.evidence && ex.evidence.quote ? String(ex.evidence.quote).trim() : "";
+    var vk = vidKey(ex);
+    if (!vidCache[vk]) {
+      api("demo-video", { method: "POST", body: JSON.stringify({
+        exercise: ex.name, canonical_id: ex.canonical_id || null
+      }) }).then(function (r) {
+        if (r && r.status === "ok") vidCache[vk] = r;
+      }).catch(function () { });
+    }
+    var key = ex.name + "\n" + quote;
+    if (expCache[key]) return;
+    api("explain", { method: "POST", body: JSON.stringify({
+      exercise: ex.name, title: w ? (w.title || "") : "", quote: quote,
+      source: ex.evidence ? ex.evidence.source : null, canonical_id: ex.canonical_id || null
+    }) }).then(function (r) {
+      if (r && r.status === "ok") expCache[key] = r.text;
+    }).catch(function () { });
   }
 
   // ---------- library ----------
@@ -3846,6 +3899,9 @@
         var help = el("button", "exhelp", "?");
         help.setAttribute("aria-label", "How to do this exercise");
         help.onclick = function (e) { e.stopPropagation(); explain(ex, w); };
+        // Added, not woven in: the press starts the two questions the tap is about
+        // to ask, and the tap finds them already in flight.
+        help.addEventListener("pointerdown", function () { prefetchExplain(ex, w); });
         row.appendChild(help);
         sect.appendChild(row);
       });
