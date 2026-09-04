@@ -1204,6 +1204,12 @@ export const APP = String.raw`
     if (w.equipment && w.equipment.length) bits.push(w.equipment[0]);
     else if (w.has_full_workout) bits.push("bodyweight");
     if (!bits.length && w.author) bits.push("@" + w.author);
+    // On the shelf a coach's card is a mark and a title saying nothing about where
+    // it came from, and "invented for you" is not "built from what you saved".
+    if (w.platform === "pumpy") {
+      var cn = citedSources(w).length;
+      if (cn) bits.push("from " + cn + (cn === 1 ? " save" : " saves"));
+    }
     return bits.join(" · ");
   }
 
@@ -1409,6 +1415,72 @@ export const APP = String.raw`
     return bits.join(" · ");
   }
 
+  // ---------- borrowed from a saved video ----------
+  //
+  // A card Pumpy built out of the library used to look like one he invented.
+  // ex.source is the server's checked answer to "which of your videos is this
+  // from", so the video behind a movement can be named, opened and quoted. Never
+  // trusted: a card deleted since resolves to nothing, and every caller here has a
+  // sentence for that.
+
+  function srcById(id) {
+    return state.workouts.filter(function (x) { return x.id === id; })[0] || null;
+  }
+
+  function sourceOf(ex) {
+    return ex && ex.source && ex.source.workout_id ? srcById(ex.source.workout_id) : null;
+  }
+
+  // The distinct videos a card borrowed from, in the order its exercises name them.
+  // Nothing is looked up until an exercise carries one, which is what makes this
+  // affordable in cardMeta — that runs per card on every keystroke.
+  function citedSources(w) {
+    var out = [], seen = {};
+    (w.blocks || []).forEach(function (b) {
+      (b.exercises || []).forEach(function (ex) {
+        var s = ex && ex.source, src;
+        if (!s || !s.workout_id || seen[s.workout_id]) return;
+        seen[s.workout_id] = 1;
+        src = srcById(s.workout_id);
+        if (src) out.push(src);
+      });
+    });
+    return out;
+  }
+
+  // Artwork, whose it is, what it is called — the order the App Store shelf and
+  // Perplexity's source row both put a source in. Tapping swaps this card for that
+  // one inside the overlay already open, keeping its single history entry: closing
+  // first and reopening cannot work, because the pop lands AFTER the reopen and
+  // closes the card it was meant to open.
+  function fromChip(src) {
+    var b = el("button", "fromchip"), tw = el("span", "fromthumb"), t = el("span", "fromtext");
+    if (src.thumb_url) {
+      var img = el("img");
+      img.loading = "lazy";
+      img.alt = "";
+      img.src = src.thumb_url;
+      tw.appendChild(img);
+    } else if (src.platform === "pumpy") tw.appendChild(pumpyMark("pmark"));
+    else tw.appendChild(ic("dumbbell"));
+    if (src.author) t.appendChild(el("span", "fromwho", "@" + src.author));
+    t.appendChild(el("span", "fromtitle", src.title || "Untitled workout"));
+    b.appendChild(tw);
+    b.appendChild(t);
+    b.onclick = function () { openDetail(src, true); $("detail").scrollTop = 0; };
+    return b;
+  }
+
+  // A citation is a footnote: the quietest line on the row, and when the video is
+  // gone it says so in words rather than offering a tap that can only fail.
+  function fromLine(ex) {
+    if (!ex || !ex.source) return null;
+    var src = sourceOf(ex);
+    return el("div", "exfrom", src
+      ? "From " + (src.author ? "@" + src.author : (src.title || "a saved video"))
+      : "From a video you removed");
+  }
+
   // keepHistory is set when Realtime re-renders an open card in place: the overlay
   // is already on the history stack and pushing again would need two back gestures.
   function openDetail(w, keepHistory) {
@@ -1600,6 +1672,18 @@ export const APP = String.raw`
       });
     }
 
+    // Above the blocks: a coach's card arrives with no video attached, and whose
+    // videos it came out of is the first thing worth knowing about it.
+    var cites = citedSources(w);
+    if (cites.length) {
+      var built = el("div", "sect");
+      built.appendChild(el("h3", null, "Built from your videos"));
+      var strip = el("div", "fromstrip");
+      cites.forEach(function (src) { strip.appendChild(fromChip(src)); });
+      built.appendChild(strip);
+      d.appendChild(built);
+    }
+
     (w.blocks || []).forEach(function (b, bi) {
       var sect = el("div", "sect");
       // A block has a name in the data — "Warm-up", "Finisher". The card printed
@@ -1617,6 +1701,8 @@ export const APP = String.raw`
         // creator's wording, and the difference matters when they come back to it.
         if (ex.added_by_user) name.appendChild(el("div", "exmine", "Added by you"));
         else if (ex.edited_by_user) name.appendChild(el("div", "exmine", "Edited by you"));
+        var fl = fromLine(ex);
+        if (fl) name.appendChild(fl);
         // The source line used to be a hover title here — invisible on a phone, and
         // silent about where it came from. The Explain sheet says all of it now.
         row.appendChild(name);
@@ -2947,7 +3033,11 @@ export const APP = String.raw`
   function watchBit(w, t) {
     var em = embedNode(w, t);
     if (!em) return;
-    if (wo && wo.workout && wo.workout.id === w.id) {
+    // The sheet whenever the card in front of the user is not this video's own —
+    // Workout Mode, or a coach's card quoting one it borrowed from. Only a card
+    // showing its own embed can reload it in place; anywhere else this would drop
+    // somebody else's video into the top of the card.
+    if ((wo && wo.workout) || !current || current.id !== w.id) {
       $("watchbody").innerHTML = "";
       $("watchbody").appendChild(em);
       // Open before close: the sheet layer's one history entry survives a handover.
@@ -3169,6 +3259,9 @@ export const APP = String.raw`
 
   function explain(ex, w) {
     var name = ex.name, title = w ? (w.title || "") : "";
+    // A borrowed line's quote belongs to the video it came from: the timestamp is a
+    // second of that video, and "Watch this bit" has to open it.
+    var src = sourceOf(ex), qw = src || w;
     var ev = ex.evidence || null;
     var quote = ev && ev.quote ? String(ev.quote).trim() : "";
     // Keyed by name AND quote: explained against the creator's own cue it is a
@@ -3178,7 +3271,11 @@ export const APP = String.raw`
     $("explaintitle").textContent = name;
     var pre = $("explainpre");
     pre.innerHTML = "";
-    var s = saidNode(ex, w);
+    // Who, before what: a quote reads differently once you know whose it is.
+    if (src) pre.appendChild(el("div", "saidlab", src.author
+      ? "In @" + src.author + "’s " + (src.title || "saved workout")
+      : "In " + (src.title || "a workout you saved")));
+    var s = saidNode(ex, qw);
     if (s) pre.appendChild(s);
     // Spotter's pending vocabulary is reading, listening, watching. "Thinking" is
     // a chatbot's word for the same wait and belongs to a different app.
@@ -3565,10 +3662,14 @@ export const APP = String.raw`
     // First in the row: when the name of a movement is not enough, the video it
     // came from is the answer, and this is the moment it is wanted. Absent rather
     // than dead when the card has no embed and no thumbnail to show.
-    var w = wo.workout;
-    if (w.thumb_url || (w.shortcode && /^(instagram|tiktok|youtube)$/.test(w.platform))) {
-      var watch = icon(el("button", "chip"), "play", "Watch the clip");
-      watch.onclick = openWatch;
+    // A coach's card has no video of its own; a borrowed movement does. So the clip
+    // follows the exercise rather than the workout, and the button names whose video
+    // is coming. An uncited line on a coach's card still offers nothing.
+    var w = wo.workout, clip = sourceOf(s.ex) || w;
+    if (clip.thumb_url || (clip.shortcode && /^(instagram|tiktok|youtube)$/.test(clip.platform))) {
+      var whose = clip.id !== w.id && clip.author ? "@" + clip.author + "’s" : "the";
+      var watch = icon(el("button", "chip"), "play", "Watch " + whose + " clip");
+      watch.onclick = function () { openWatch(clip, s.ex); };
       acts.appendChild(watch);
     }
     var help = icon(el("button", "chip"), "help", "How to do this");
@@ -3977,16 +4078,18 @@ export const APP = String.raw`
     saveDraft();
   }
 
-  function openWatch() {
+  // w is the session's workout, or the video this exercise was borrowed from.
+  function openWatch(w, ex) {
     if (!wo) return;
-    var em = embedNode(wo.workout);
+    w = w || wo.workout;
+    var em = embedNode(w);
     if (!em) return;
     var body = $("watchbody");
     body.innerHTML = "";
     body.appendChild(em);
     // The clip opens at the top; the exercise on screen was read at a particular
     // second of it, so offer that too. Emptied with the iframe on close.
-    var s = wo.screens[wo.i], b = s && bitBtn(wo.workout, s.ex);
+    var s = wo.screens[wo.i], b = bitBtn(w, ex || (s && s.ex));
     if (b) body.appendChild(b);
     // The wake lock is kept: a screen asleep during a form check is the complaint.
     openSheet("watchsheet");
@@ -4976,6 +5079,15 @@ export const APP = String.raw`
     return l;
   }
 
+  // The last look before anything is saved, so borrowed lines own up here too — by
+  // title, and silently when the card they name is no longer in the library.
+  function proposalEx(card, e) {
+    var line = proposalLine(e.name, doseText(e));
+    var w = e.source && e.source.workout_id ? srcById(e.source.workout_id) : null;
+    if (w && w.title) line.appendChild(el("div", "pfrom", "from " + w.title));
+    card.appendChild(line);
+  }
+
   function renderProposal(m, p) {
     var card = el("div", "proposal");
     card.appendChild(el("h4", null, p.kind === "create_workout" ? "New workout"
@@ -4988,12 +5100,12 @@ export const APP = String.raw`
         var label = [b.title, b.type && b.type !== "straight" ? b.type : null, b.rounds ? b.rounds + " rounds" : null]
           .filter(Boolean).join(" · ");
         if (label) card.appendChild(el("div", "pblock", label));
-        (b.exercises || []).forEach(function (e) { card.appendChild(proposalLine(e.name, doseText(e))); });
+        (b.exercises || []).forEach(function (e) { proposalEx(card, e); });
       });
     } else if (p.kind === "append_exercises") {
       card.appendChild(el("div", "ptitle", p.workout_title || "Workout"));
       if (p.block_title) card.appendChild(el("div", "pmeta", p.block_title));
-      (p.exercises || []).forEach(function (e) { card.appendChild(proposalLine(e.name, doseText(e))); });
+      (p.exercises || []).forEach(function (e) { proposalEx(card, e); });
     } else if (p.kind === "plan_days") {
       (p.days || []).forEach(function (d) {
         var dt = new Date(d.day + "T12:00:00");
