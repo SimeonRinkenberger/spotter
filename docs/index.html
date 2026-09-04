@@ -1350,6 +1350,16 @@
   /* Both top-bar tools go quiet on the summary: there is no list left to open and
      no clock left to mute, and a control that does nothing is a small lie. */
   #workout.summary #wlist, #workout.summary #wsound { visibility: hidden; }
+  /* ---------- the share card ----------
+     The one thing a finished session can leave the phone as. Both card palettes
+     live here rather than in the draw code, and both are written out in full so
+     the card's theme stays the poster's choice and not the phone's scheme:
+     ground, panel, ink, quiet ink, ember, hairline. */
+  :root {
+    --sc-dark: #0E1013 #171B20 #F2F5F8 #98A3AF #FF7A45 #2A3138;
+    --sc-light: #F1F3F6 #FFFFFF #14171A #68727E #E8551F #E2E6EC;
+  }
+
   .sumfigs { margin-top: 20px; }
   .sumfigs .setpill b { font-size: 23px; letter-spacing: -.035em; }
   .sumfigs .setpill, .sumprs .setpill { animation: viewin var(--t-2) var(--e-out) both; }
@@ -6844,6 +6854,379 @@
       t.classList.remove("show");
       startWorkout(w, d);
     };
+  }
+
+  // ---------- share card ----------
+  //
+  // "When a workout is done I want to export it to a story." The research came
+  // back with exactly one mechanism a web app has: navigator.share with a file,
+  // into the OS share sheet, where Instagram, TikTok, Snapchat and Messages all
+  // show up. What a share extension then does with a handed-in PNG is its own
+  // business, so nothing here promises a Story — and Save image stands next to
+  // Share as an equal, because on iOS that is how most people get a card into one.
+  //
+  // The picture is drawn by hand. Every HTML-to-image library either re-implements
+  // CSS badly or leans on foreignObject, which is where WebKit breaks; and one
+  // Supabase thumbnail drawn in would taint the canvas and make toBlob throw. So:
+  // flat colour, text, and the two marks this page already owns.
+
+  var SC_W = 1080, SC_H = 1920, SC_PAD = 88;
+  // Instagram covers the top ~250px with the avatar and the bottom ~250 with the
+  // reply box. Nothing that has to be read leaves the strip between these two.
+  var SC_TOP = 262, SC_BASE = 1580;
+  var SC_SANS = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  var SC_WHERE = { tiktok: "TikTok", instagram: "Instagram", youtube: "YouTube" };
+
+  // Everything the summary is holding on the card's behalf: the theme the poster
+  // picked, the blob, and the File that a tap is allowed to hand to the sheet.
+  var sc = { theme: "dark", file: null, blob: null, url: null, card: null,
+    img: null, hint: null, seq: 0, watching: false };
+  try { if (localStorage.getItem("spotter_card") === "light") sc.theme = "light"; }
+  catch (e) { /* a browser with storage shut off keeps the default */ }
+
+  // Both card palettes are declared in style.ts and both exist in both schemes:
+  // the card's theme is the poster's choice, not the phone's.
+  function scPalette(theme) {
+    var v = getComputedStyle(document.documentElement)
+      .getPropertyValue(theme === "light" ? "--sc-light" : "--sc-dark").trim().split(/\s+/);
+    return { bg: v[0], panel: v[1], ink: v[2], dim: v[3], ember: v[4], line: v[5] };
+  }
+
+  // WebKit has painted the first fillText in Times for twenty years when the face
+  // is not in memory yet, so ask for it by weight AND size. But a card that
+  // arrives late is worse than a card in the system face: 300ms and no longer.
+  var scFacePromise = null;
+  function scFace() {
+    if (scFacePromise) return scFacePromise;
+    var sys = SC_SANS, want = '800 96px "Cabinet Grotesk"';
+    if (!document.fonts || !document.fonts.load) return (scFacePromise = Promise.resolve(sys));
+    scFacePromise = Promise.race([document.fonts.load(want),
+      new Promise(function (ok) { setTimeout(ok, 300); })])
+      .then(function () {
+        return document.fonts.check(want) ? '"Cabinet Grotesk", ' + sys : sys;
+      }, function () { return sys; });
+    return scFacePromise;
+  }
+
+  // A mark becomes a data URI of markup this document already holds, never a
+  // fetch: anything cross-origin painted on would taint the canvas, and toBlob
+  // on a tainted canvas throws instead of handing back a card.
+  var scArt = {};
+  function scMark(inner, col, px) {
+    var k = col + px + inner.length;
+    if (scArt[k]) return scArt[k];
+    // Safari draws nothing from an SVG with no intrinsic size, hence width/height.
+    var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + px + '" height="' + px +
+      '" viewBox="0 0 24 24" fill="none" stroke="' + col + '" stroke-width="2" ' +
+      'stroke-linecap="round" stroke-linejoin="round">' + inner + '</svg>';
+    scArt[k] = new Promise(function (ok) {
+      var im = new Image();
+      im.onload = function () { ok(im); };
+      im.onerror = function () { ok(null); };
+      im.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+    });
+    return scArt[k];
+  }
+
+  function scRR(c, x, y, w, h, r) {
+    c.beginPath();
+    c.moveTo(x + r, y);
+    c.arcTo(x + w, y, x + w, y + h, r);
+    c.arcTo(x + w, y + h, x, y + h, r);
+    c.arcTo(x, y + h, x, y, r);
+    c.arcTo(x, y, x + w, y, r);
+    c.closePath();
+  }
+
+  // Canvas has no letter-spacing before Safari 17.4, so ask and move on: tracking
+  // that quietly does nothing is a card that is a shade wider, not a broken one.
+  function scSet(c, font, col, align, track) {
+    c.font = font;
+    c.fillStyle = col;
+    c.textAlign = align || "left";
+    if ("letterSpacing" in c) c.letterSpacing = (track || 0) + "px";
+  }
+
+  function scFit(c, s, max) {
+    s = String(s);
+    if (c.measureText(s).width <= max) return s;
+    while (s.length > 1 && c.measureText(s + "…").width > max) s = s.slice(0, -1);
+    return s + "…";
+  }
+
+  function scWrap(c, s, max, lines) {
+    var w = String(s || "").split(/\s+/), out = [], cur = "", cut = false, i;
+    for (i = 0; i < w.length; i++) {
+      var t = cur ? cur + " " + w[i] : w[i];
+      if (!cur || c.measureText(t).width <= max) cur = t;
+      else if (out.length + 1 < lines) { out.push(cur); cur = w[i]; }
+      else { cut = true; break; }
+    }
+    if (cur) out.push(cur);
+    if (cut) out[out.length - 1] = scFit(c, out[out.length - 1] + " …", max);
+    return out.length ? out : ["Workout"];
+  }
+
+  // The three figures are the loudest thing on the card, and a five-digit volume
+  // is twice the width of a two-digit minute count, so the size follows the text.
+  function scBig(c, s, x, y, max, face, col) {
+    var size = 104;
+    c.fillStyle = col;
+    if ("letterSpacing" in c) c.letterSpacing = "-2px";
+    c.font = "800 " + size + "px " + face;
+    while (size > 52 && c.measureText(s).width > max) {
+      size -= 6;
+      c.font = "800 " + size + "px " + face;
+    }
+    c.fillText(s, x, y);
+  }
+
+  // Everything is measured before anything is drawn, because the block is centred
+  // in the strip Instagram leaves alone and the exercise list is what gives.
+  function scDraw(c, d, p, face, marks) {
+    var L = SC_PAD, R = SC_W - SC_PAD, W = R - L, i;
+
+    c.fillStyle = p.bg;
+    c.fillRect(0, 0, SC_W, SC_H);
+    // One bloom of the accent behind the numbers: a flat rectangle reads as a
+    // screenshot and nobody posts a screenshot. It is painted small and blown up
+    // on purpose. A full-size radial gradient is two million pixels of unique
+    // colour, PNG cannot compress a single one of them, and it measured 700KB of
+    // card on its own; at a tenth the size and scaled back up it costs 190KB and
+    // looks the same, because a gradient blurred is still that gradient.
+    var sm = document.createElement("canvas");
+    sm.width = 108;
+    sm.height = 192;
+    var s2 = sm.getContext("2d");
+    var glow = s2.createRadialGradient(94, 34, 0, 94, 34, 88);
+    glow.addColorStop(0, p.ember + "4E");
+    glow.addColorStop(1, p.ember + "00");
+    s2.fillStyle = glow;
+    s2.fillRect(0, 0, 108, 192);
+    c.drawImage(sm, 0, 0, SC_W, SC_H);
+
+    c.textBaseline = "alphabetic";
+    scSet(c, "800 92px " + face, p.ink, "left", -2.5);
+    var tl = scWrap(c, d.title, W, 3);
+    var shown = Math.min(d.prs.length, 2);
+    var headH = 118, titleH = tl.length * 104 + 34, figH = 246;
+    var prH = shown ? shown * 110 + (d.prs.length > shown ? 50 : 0) + 22 : 0;
+    var credH = d.credit ? 62 : 0;
+    // The list is the substance of the card, so it is the last thing to give: a
+    // long title next to a pair of bests takes the page first from the muscle
+    // line, then from the row height, and only then from the number of rows.
+    var lab = d.label, rowH = 72, labH = 0, rows = 0, pass, room;
+    for (pass = 0; pass < 3; pass++) {
+      labH = lab ? 46 : 0;
+      room = SC_BASE - SC_TOP - (headH + titleH + figH + prH + labH + credH) - 18;
+      rows = Math.max(0, Math.min(8, Math.floor(room / rowH)));
+      if (rows >= 6 || rows >= d.exercises.length) break;
+      if (pass === 0) lab = ""; else rowH = 64;
+    }
+    var list = d.exercises.slice(0), more = 0;
+    if (list.length > rows) {
+      more = list.length - Math.max(0, rows - 1);
+      list = list.slice(0, Math.max(0, rows - 1));
+    }
+    var listH = (list.length + (more ? 1 : 0)) * rowH + (list.length ? 18 : 0);
+    var y = SC_TOP + Math.max(0, Math.floor((SC_BASE - SC_TOP -
+      (headH + titleH + figH + prH + labH + credH + listH)) / 2));
+
+    if (marks.mark) c.drawImage(marks.mark, L, y, 62, 62);
+    scSet(c, "800 50px " + face, p.ink, "left", -1);
+    c.fillText("Spotter", L + (marks.mark ? 80 : 0), y + 49);
+    scSet(c, "500 30px " + SC_SANS, p.dim, "right", 0);
+    c.fillText(d.date, R, y + 45);
+    y += headH;
+
+    scSet(c, "800 92px " + face, p.ink, "left", -2.5);
+    for (i = 0; i < tl.length; i++) c.fillText(tl[i], L, y + 76 + i * 104);
+    y += titleH;
+
+    c.fillStyle = p.panel;
+    scRR(c, L, y, W, 216, 34);
+    c.fill();
+    c.strokeStyle = p.line;
+    c.lineWidth = 2;
+    c.stroke();
+    var cw = W / 3;
+    for (i = 1; i < 3; i++) {
+      c.beginPath();
+      c.moveTo(L + cw * i, y + 46);
+      c.lineTo(L + cw * i, y + 170);
+      c.stroke();
+    }
+    for (i = 0; i < 3; i++) {
+      c.textAlign = "center";
+      scBig(c, d.figs[i][0], L + cw * i + cw / 2, y + 130, cw - 44, face, p.ink);
+      scSet(c, "700 26px " + SC_SANS, p.dim, "center", 4);
+      c.fillText(scFit(c, String(d.figs[i][1]).toUpperCase(), cw - 30),
+        L + cw * i + cw / 2, y + 178);
+    }
+    y += figH;
+
+    // The card has to visibly change when a best was beaten: that is the single
+    // thing most likely to make someone post it.
+    for (i = 0; i < shown; i++) {
+      c.fillStyle = p.ember + "26";
+      scRR(c, L, y, W, 104, 26);
+      c.fill();
+      c.fillStyle = p.ember;
+      scRR(c, L, y, 10, 104, 5);
+      c.fill();
+      scSet(c, "700 25px " + SC_SANS, p.ember, "left", 4);
+      c.fillText("NEW BEST", L + 40, y + 43);
+      scSet(c, "600 37px " + SC_SANS, p.ink, "left", -0.4);
+      c.fillText(scFit(c, d.prs[i], W - 80), L + 40, y + 82);
+      y += 110;
+    }
+    if (shown && d.prs.length > shown) {
+      var rest = d.prs.length - shown;
+      scSet(c, "600 30px " + SC_SANS, p.ember, "left", 0);
+      c.fillText("+" + rest + " more personal best" + (rest === 1 ? "" : "s"), L, y + 32);
+      y += 50;
+    }
+    if (shown) y += 22;
+
+    if (lab) {
+      scSet(c, "700 26px " + SC_SANS, p.dim, "left", 4);
+      c.fillText(scFit(c, lab.toUpperCase(), W), L, y + 28);
+      y += labH;
+    }
+    var base = Math.round(rowH * 0.66), fa = rowH > 68 ? 37 : 34, fb = rowH > 68 ? 32 : 30;
+    for (i = 0; i < list.length; i++) {
+      if (i) {
+        c.strokeStyle = p.line;
+        c.lineWidth = 2;
+        c.beginPath();
+        c.moveTo(L, y + 1);
+        c.lineTo(R, y + 1);
+        c.stroke();
+      }
+      scSet(c, "500 " + fb + "px " + SC_SANS, p.dim, "right", 0);
+      var sw = c.measureText(list[i][1]).width;
+      c.fillText(list[i][1], R, y + base);
+      scSet(c, "600 " + fa + "px " + SC_SANS, p.ink, "left", -0.3);
+      c.fillText(scFit(c, list[i][0], W - sw - 40), L, y + base);
+      y += rowH;
+    }
+    if (more) {
+      scSet(c, "500 " + fb + "px " + SC_SANS, p.dim, "left", 0);
+      c.fillText("+" + more + " more", L, y + base);
+      y += rowH;
+    }
+    if (list.length) y += 18;
+
+    if (d.credit) {
+      var cx = L;
+      if (marks.coach) { c.drawImage(marks.coach, L, y + 2, 40, 40); cx = L + 54; }
+      scSet(c, "500 31px " + SC_SANS, p.dim, "left", 0);
+      c.fillText(scFit(c, d.credit, R - cx), cx, y + 34);
+    }
+
+    // Small, quiet, bottom-centre, inside the safe zone: a card that looks like
+    // an advert does not get posted.
+    scSet(c, "500 29px " + SC_SANS, p.dim, "center", 2);
+    c.globalAlpha = 0.72;
+    c.fillText("Logged with Spotter", SC_W / 2, 1636);
+    c.globalAlpha = 1;
+  }
+
+  function renderShareCard(card) {
+    var p = scPalette(card.theme);
+    return Promise.all([
+      scFace(),
+      scMark(($("i-dumbbell") || { innerHTML: "" }).innerHTML, p.ember, 62),
+      card.coach ? scMark(PUMPY_MARK.replace(/^<svg[^>]*>/, "").replace(/<\/svg>$/, ""),
+        p.dim, 40) : Promise.resolve(null)
+    ]).then(function (r) {
+      var cv = document.createElement("canvas");
+      // A fixed asset, not a screen surface, so devicePixelRatio never comes into
+      // it: at DPR 3 this would be 18.6M pixels, past the canvas area cap on
+      // every iPhone before iOS 18, and the whole draw would come back blank.
+      cv.width = SC_W;
+      cv.height = SC_H;
+      var c = cv.getContext("2d");
+      scDraw(c, card, p, r[0], { mark: r[1], coach: r[2] });
+      return new Promise(function (ok, no) {
+        // A tainted canvas, a browser with no toBlob, a phone out of memory: one
+        // failure, and the caller drops the row rather than showing a Share
+        // button with nothing behind it.
+        try {
+          cv.toBlob(function (b) { if (b) ok(b); else no(new Error("no blob")); }, "image/png");
+        } catch (e) { no(e); }
+      });
+    });
+  }
+
+  // What a set was, in one phrase: three of the same reading as "3 × 10", a mixed
+  // set as a count, and the heaviest weight of the lot after it.
+  function scSets(e) {
+    var st = (e.sets || []).filter(Boolean), n = st.length;
+    if (!n) return "";
+    var reps = st[0].reps, same = true, top = 0, secs = 0;
+    st.forEach(function (s) {
+      if (s.reps !== reps) same = false;
+      if (s.seconds) secs = Math.max(secs, s.seconds);
+      if (s.weight) top = Math.max(top, toUnit(s.weight, s.unit));
+    });
+    if (secs && !reps) return n + " × " + secs + "s";
+    var t = same && reps ? n + " × " + reps : n + (n === 1 ? " set" : " sets");
+    return top ? t + " · " + top.toLocaleString() + " " + state.unit : t;
+  }
+
+  function scCard(w, title, when, mins, sets, vol, prs, entries) {
+    var ex = [];
+    (entries || []).forEach(function (e) {
+      var s = scSets(e);
+      if (s) ex.push([e.name || "Exercise", s]);
+    });
+    // Where the workout came from, in the words the app already uses for it.
+    var credit = "";
+    if (w.platform === "pumpy") credit = "Built with Pumpy";
+    else if (w.author) credit = "from @" + w.author +
+      (SC_WHERE[w.platform] ? " on " + SC_WHERE[w.platform] : "");
+    return {
+      theme: sc.theme,
+      title: title || "Workout",
+      date: new Date(when).toLocaleDateString(undefined,
+        { weekday: "long", month: "long", day: "numeric" }),
+      figs: [[String(mins), "min"], [String(sets), sets === 1 ? "set" : "sets"],
+        [vol ? Math.round(vol).toLocaleString() : "—", vol ? state.unit : "bodyweight"]],
+      prs: prs,
+      label: (w.muscle_groups || []).slice(0, 4).join("  ·  "),
+      exercises: ex,
+      credit: credit,
+      coach: w.platform === "pumpy"
+    };
+  }
+
+  function scFromSession(payload, logged) {
+    var w = (wo && wo.workout) || {}, sets = 0, vol = 0;
+    logged.forEach(function (e) {
+      e.sets.forEach(function (s) {
+        if (!s) return;
+        sets++;
+        if (s.reps && s.weight) vol += s.reps * toUnit(s.weight, s.unit);
+      });
+    });
+    var prs = Object.keys((wo && wo.prs) || {}).map(function (k) {
+      var p = wo.prs[k];
+      return p.name + " · " + wtText(p.weight, p.unit) + " " + state.unit + " × " + p.reps;
+    });
+    return scCard(w, payload.workout_title, payload.started_at,
+      Math.max(1, Math.round(payload.duration_seconds / 60)), sets, vol, prs, logged);
+  }
+
+  // No PR block on a past session: which lifts were bests was settled on the day,
+  // and deciding it again now out of a longer history would be a claim.
+  function scFromLog(l) {
+    var by = {}, sets = 0;
+    state.workouts.forEach(function (w) { by[w.id] = w; });
+    (l.entries || []).forEach(function (e) { sets += (e.sets || []).filter(Boolean).length; });
+    return scCard(by[l.workout_id] || {}, l.workout_title, l.started_at,
+      Math.max(1, Math.round((l.duration_seconds || 60) / 60)), sets,
+      volumeOf(l), [], l.entries || []);
   }
 
   // ---------- plan ----------

@@ -1317,6 +1317,16 @@ export const STYLE = String.raw`<style>
   /* Both top-bar tools go quiet on the summary: there is no list left to open and
      no clock left to mute, and a control that does nothing is a small lie. */
   #workout.summary #wlist, #workout.summary #wsound { visibility: hidden; }
+  /* ---------- the share card ----------
+     The one thing a finished session can leave the phone as. Both card palettes
+     live here rather than in the draw code, and both are written out in full so
+     the card's theme stays the poster's choice and not the phone's scheme:
+     ground, panel, ink, quiet ink, ember, hairline. */
+  :root {
+    --sc-dark: #0E1013 #171B20 #F2F5F8 #98A3AF #FF7A45 #2A3138;
+    --sc-light: #F1F3F6 #FFFFFF #14171A #68727E #E8551F #E2E6EC;
+  }
+
   .sumfigs { margin-top: 20px; }
   .sumfigs .setpill b { font-size: 23px; letter-spacing: -.035em; }
   .sumfigs .setpill, .sumprs .setpill { animation: viewin var(--t-2) var(--e-out) both; }
