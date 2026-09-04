@@ -4063,7 +4063,10 @@
     try { localStorage.setItem("spotter_exswipe_told", "1"); } catch (err) { /* ignore */ }
     // Motion off: say it once instead. Replace the travel, not the meaning.
     if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      sect.appendChild(el("div", "exhint", "Swipe an exercise left for more."));
+      var h = el("div", "exhint", "Swipe an exercise left for more.");
+      // Placed once the block has finished building, or it lands between two rows.
+      // Last child by then is the add button, and the line belongs above it.
+      setTimeout(function () { sect.insertBefore(h, sect.lastChild); }, 0);
       return;
     }
     // After the card has arrived, or it lands on a page still sliding up.
