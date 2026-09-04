@@ -7273,8 +7273,12 @@ function handleOf(id: string): string {
   return "h" + String(id).replace(/-/g, "").slice(0, 6).toLowerCase();
 }
 
+// Four to six hex digits, not six exactly: the first live citation came back as
+// h18a25 — five — and lost its footnote over a digit the model dropped. A shorter
+// prefix is fine as long as it is unique in the library, which resolveHandle checks;
+// an ambiguous one is refused there rather than guessed at.
 function isHandle(s: unknown): s is string {
-  return typeof s === "string" && /^h[0-9a-f]{6}$/i.test(s.trim());
+  return typeof s === "string" && /^h[0-9a-f]{4,6}$/i.test(s.trim());
 }
 
 /** Every workout id this user owns, for resolving handles. */
@@ -7650,8 +7654,11 @@ function pumpySnapshotLine(w: any, cols: string[]): string {
   const title = String(w.title ?? "Untitled").replace(/\s+/g, " ").trim().slice(0, 60);
   const mins = w.duration_minutes ? `${w.duration_minutes}m` : "-";
   const kit = (w.equipment ?? []).length ? (w.equipment as string[]).join("/") : "bodyweight";
+  // The creator sits next to the title: "the kettlebell one from kbmarco" is how
+  // people name a video, and a snapshot without the name could not find it.
+  const by = w.author ? "@" + String(w.author).replace(/\s+/g, " ").trim().slice(0, 24) : "";
   const fields = [
-    handleOf(w.id), title, w.category ?? "Other", mins, kit,
+    handleOf(w.id), title, by, w.category ?? "Other", mins, kit,
     w.favorite ? "★" : "", cols.join(", "),
   ];
   // Trailing empties are noise; an empty column in the middle keeps the shape readable.
@@ -7665,7 +7672,7 @@ async function pumpySnapshot(userId: string): Promise<string> {
   const [rows, cols, plan, logs] = await settledAll<any>([
     // One extra row, purely to learn whether there are more than the cap.
     dbSelect("workouts",
-      `user_id=eq.${userId}&ingest_status=eq.ready&select=id,title,category,equipment,duration_minutes,favorite` +
+      `user_id=eq.${userId}&ingest_status=eq.ready&select=id,title,author,category,equipment,duration_minutes,favorite` +
       `&order=favorite.desc,created_at.desc&limit=${max + 1}`),
     collectionsByWorkout(userId),
     toolGetPlan(userId),
@@ -7677,7 +7684,7 @@ async function pumpySnapshot(userId: string): Promise<string> {
 
   const lib: string[] = [
     shown.length
-      ? "LIBRARY (" + shown.length + " ready) — id | title | category | minutes | equipment | ★ | collections"
+      ? "LIBRARY (" + shown.length + " ready) — id | title | by | category | minutes | equipment | ★ | collections"
       : "LIBRARY — empty; nothing saved yet.",
   ];
   for (const w of shown) lib.push(pumpySnapshotLine(w, byWorkout.get(w.id) ?? []));
