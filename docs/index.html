@@ -1044,7 +1044,7 @@
      is theirs, the vertical padding belongs to .page. */
   .view { padding-left: 18px; padding-right: 18px; }
   .weekbar { display: flex; align-items: center; justify-content: space-between; gap: 10px;
-    margin: 10px 0 16px; }
+    margin: 10px 0 11px; }
   .weekbar b { font-family: var(--display); font-size: 16px; font-weight: 700; letter-spacing: -.012em; }
   /* An empty week is seven dashed boxes and no explanation of what they are for.
      One line above them, only while there is nothing planned. */
@@ -1066,6 +1066,42 @@
   .planadd { background: none; border: 1px dashed var(--line-2); color: var(--muted); width: 100%;
     border-radius: 12px; padding: 10px; font-size: 13px; font-weight: 600; margin-top: 9px; }
   .planx { background: none; border: none; color: var(--muted); font-size: 15px; padding: 6px; }
+
+  /* ---------- plan / week or month ----------
+     Apple's segmented control, and the one rule of it that decides the shape
+     here: the selection is a single thumb travelling between seats, not two
+     pictures of a state. So the pill is one node that slides on --t-2 while the
+     labels hold still. Two seats, title-case nouns, and no action among them —
+     Today and Copy are buttons beside the control, because a segmented control
+     chooses what you are looking at and never does a thing to it. */
+  .planctl { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+  .seg { position: relative; display: flex; flex: 0 0 auto; background: var(--sand);
+    border-radius: 11px; padding: 3px; }
+  .segpill { position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc(50% - 3px);
+    background: var(--card); border-radius: 9px; box-shadow: var(--sh-sm);
+    transition: transform var(--t-2) var(--e-spring); }
+  .seg.m .segpill { transform: translateX(100%); }
+  .segbtn { position: relative; z-index: 1; min-width: 64px; min-height: 32px; border: none;
+    background: none; color: var(--muted); font-size: 13px; font-weight: 700; padding: 0 12px;
+    letter-spacing: -.005em; transition: color var(--t-2) var(--e-soft); }
+  .segbtn[aria-selected="true"] { color: var(--ink); }
+  .planacts { margin-left: auto; display: flex; align-items: center; gap: 7px; }
+  .planbtn { border: 1px solid var(--line); background: var(--card); color: var(--ink-2);
+    border-radius: 999px; padding: 0 13px; min-height: 32px; font-size: 12.5px; font-weight: 700;
+    display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+    transition: transform var(--t-1) var(--e-out), border-color var(--t-2) var(--e-soft); }
+  .planbtn:active { transform: scale(.94); }
+  /* Switching mode is a crossfade and nothing more. The bar above it did not
+     move, so sliding the body up under it would be one arrival too many. */
+  .planswap { animation: planswap var(--t-2) var(--e-out); }
+  @keyframes planswap { from { opacity: 0; } }
+  /* Reduced motion keeps the answer and drops the travel: the pill is still the
+     thing that says which mode you are in, so it moves, instantly. */
+  @media (prefers-reduced-motion: reduce) {
+    .segpill { transition: none; }
+    .planbtn:active, .segbtn { transition: none; }
+    .planswap { animation: none; }
+  }
 
   /* ---------- progress / history ---------- */
   .statrow { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; margin: 4px 0 18px; }
@@ -1504,9 +1540,10 @@
      hit area grows, capped at the gap to the next control so no two overlap.
      Insets come off the padding box: a bordered control needs a pixel more. */
   .iconbtn, .addbtn, .exhelp, .planx, .planadd, .mbtn, .addex, .danger, .libcount,
-  .planlegal a, .planlegal button,
+  .planlegal a, .planlegal button, .segbtn, .planbtn,
   .chips .chip, .said .chip, .pumpyctx button, .threadrow .tdel, .ttitle { position: relative; }
   .iconbtn::after, .addbtn::after, .exhelp::after, .planx::after, .planadd::after,
+  .segbtn::after, .planbtn::after,
   .mbtn::after, .addex::after, .danger::after, .chips .chip::after, .said .chip::after,
   .pumpyctx button::after, .threadrow .tdel::after, .ttitle::after,
   .libcount::after, .planlegal a::after, .planlegal button::after { content: ""; position: absolute; }
@@ -1517,6 +1554,7 @@
   .exhelp::after { inset: -7px -6px; }
   .planx::after { inset: -7px -4px; }
   .planadd::after, .addex::after { inset: -5px 0; }
+  .segbtn::after, .planbtn::after { inset: -6px 0; }
   .mbtn::after { inset: -6px 0; }
   .danger::after, .threadrow .tdel::after { inset: -3px 0; }
   .chips .chip::after, .said .chip::after { inset: -6px 0; }
@@ -6356,35 +6394,113 @@
     return d;
   }
 
+  // Calendar arithmetic, not clock arithmetic. A month grid crosses the two
+  // mornings a year that are 23 and 25 hours long, and adding 86400000ms across
+  // one of them lands back on the day it started — a duplicated cell in March.
+  // Asking the Date constructor for "the 34th of September" never can.
+  function addDays(d, n) {
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+  }
+
+  function firstOf(date) {
+    var d = new Date(date);
+    return new Date(d.getFullYear(), d.getMonth(), 1);
+  }
+
   function ymd(d) {
     return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" +
       String(d.getDate()).padStart(2, "0");
   }
 
-  // What the week actually holds, cheaply. Arriving on a tab must not tear the
-  // page down and rebuild it: that loses where it was scrolled to and buys
-  // nothing when the answer is the same answer.
+  // A day key back into a local Date. Midday, because "2026-09-07" parsed as a
+  // date-only string is UTC midnight, which is the 6th anywhere west of London.
+  function dayDate(key) { return new Date(key + "T12:00:00"); }
+
+  // ---------- plan · where you are looking ----------
+  //
+  // Apple treats month and week as one grid at two densities rather than two
+  // screens, and iOS Calendar reaches the second by rotating the phone. A phone
+  // held upright needs a control instead, so this is the one piece of state the
+  // whole page hangs off: a mode, and an anchor for each mode. Two anchors and
+  // not one, because switching back to Week should land on the week you were
+  // reading, not on whatever day the month happens to begin with.
+  var planMode = "week", monthStart = null;
+  var PLAN_AT = "spotter_plan_at";
+
+  function rememberPlan() {
+    try {
+      localStorage.setItem(PLAN_AT,
+        planMode + "|" + ymd(planMode === "month" ? monthStart : state.weekStart));
+    } catch (e) { /* a browser that will not remember is not an error */ }
+  }
+
+  // The week that speaks for a month: the one holding today when today is in it,
+  // and the first otherwise. Used both by the mode switch and by Copy.
+  function weekInMonth(m) {
+    var now = new Date();
+    if (now.getFullYear() === m.getFullYear() && now.getMonth() === m.getMonth()) return mondayOf(now);
+    return mondayOf(m);
+  }
+
+  // A week belongs to the month holding its Thursday — the ISO rule, and the
+  // answer that stops the last week of August from calling itself September.
+  function monthOfWeek(w) { return firstOf(addDays(w, 3)); }
+
+  function restorePlan() {
+    var raw = "";
+    try { raw = localStorage.getItem(PLAN_AT) || ""; } catch (e) { return; }
+    var bits = raw.split("|");
+    var d = bits.length > 1 ? dayDate(bits[1]) : null;
+    if (!d || isNaN(d.getTime())) return;
+    if (bits[0] === "month") {
+      planMode = "month";
+      monthStart = firstOf(d);
+      state.weekStart = weekInMonth(monthStart);
+    } else {
+      state.weekStart = mondayOf(d);
+      monthStart = monthOfWeek(state.weekStart);
+    }
+  }
+  restorePlan();
+
+  // Week and month ask the same two questions of the same two tables; only the
+  // window differs. A month runs from the Monday on or before the 1st to the
+  // Sunday on or after the last day, so the grid is always whole weeks.
+  function planRange() {
+    if (planMode === "month") {
+      var last = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0);
+      return { from: mondayOf(monthStart), to: addDays(mondayOf(last), 6) };
+    }
+    return { from: state.weekStart, to: addDays(state.weekStart, 6) };
+  }
+
+  // What the visible range actually holds, cheaply. Arriving on a tab must not
+  // tear the page down and rebuild it: that loses where it was scrolled to and
+  // buys nothing when the answer is the same answer.
   var planSig = "";
 
   function planShape() {
-    return JSON.stringify([state.plan, state.planLogs, ymd(state.weekStart),
+    var r = planRange();
+    return JSON.stringify([state.plan, state.planLogs, planMode, ymd(r.from), ymd(r.to),
       state.workouts.length]);
   }
 
   function loadPlan(silent) {
     if (!state.weekStart) state.weekStart = mondayOf(new Date());
-    var start = ymd(state.weekStart);
-    var endD = new Date(state.weekStart);
-    endD.setDate(endD.getDate() + 6);
+    if (!monthStart) monthStart = monthOfWeek(state.weekStart);
+    var r = planRange();
+    // A day of slack either side: a log is stamped in UTC and read back in local
+    // time, and the two disagree by up to a day at the edges of the window.
     return Promise.all([
-      sb.from("plan").select("*").gte("day", start).lte("day", ymd(endD)),
+      sb.from("plan").select("*").gte("day", ymd(r.from)).lte("day", ymd(r.to)),
       sb.from("workout_logs").select("id,started_at")
-        .gte("started_at", ymd(new Date(state.weekStart.getTime() - 86400000)) + "T00:00:00Z")
+        .gte("started_at", ymd(addDays(r.from, -1)) + "T00:00:00Z")
+        .lte("started_at", ymd(addDays(r.to, 1)) + "T23:59:59Z")
     ]).then(function (rs) {
       state.plan = rs[0].data || [];
       state.planLogs = rs[1].data || [];
-      // Every plan change lands here, and the today card is a copy of one day of it.
-      // Retire the copy rather than let the two screens differ.
+      // Every plan change lands here, and the today card is a copy of one day of
+      // it. Retire the copy rather than let the two screens differ.
       today.at = 0;
       var shape = planShape();
       if (silent && shape === planSig) return;
@@ -6393,31 +6509,194 @@
     });
   }
 
+  // A change this page made itself, already true on the screen. Same two chores
+  // loadPlan does on the way back, minus the round trip.
+  function repaintPlan() {
+    today.at = 0;
+    planSig = planShape();
+    renderPlan();
+  }
+
+  function rowsFor(key) {
+    return (state.plan || []).filter(function (p) { return p.day === key; });
+  }
+
+  function loggedOn(key) {
+    return (state.planLogs || []).some(function (l) {
+      return l.started_at && ymd(new Date(l.started_at)) === key;
+    });
+  }
+
+  function planWorkout(id) {
+    return state.workouts.filter(function (x) { return x.id === id; })[0];
+  }
+
+  // ---------- plan · the bar ----------
+  //
+  // Built once and kept, unlike the body under it. A segmented control whose
+  // pill is replaced rather than moved cannot slide, and the slide is the whole
+  // point of the control: Apple's thumb is one object travelling between two
+  // seats, not two states of a picture.
+
+  var planBar = null, planBody = null, planSwap = false;
+  var barTitle = null, barPrev = null, barNext = null, barSeg = null, barToday = null;
+
+  function buildPlanBar() {
+    planBar = el("div", "planbar");
+    var top = el("div", "weekbar");
+    barPrev = icon(el("button", "iconbtn"), "arrow-left");
+    barPrev.onclick = function () { stepPlan(-1); };
+    barTitle = el("b");
+    barNext = icon(el("button", "iconbtn"), "arrow-right");
+    barNext.onclick = function () { stepPlan(1); };
+    top.appendChild(barPrev);
+    top.appendChild(barTitle);
+    top.appendChild(barNext);
+    planBar.appendChild(top);
+
+    var row = el("div", "planctl");
+    // Apple's rule for a segmented control: two to five equal segments, plain
+    // title-case nouns, and never an action mixed in among them — which is why
+    // Copy is a button beside the pill rather than a third seat inside it.
+    barSeg = el("div", "seg");
+    barSeg.setAttribute("role", "tablist");
+    barSeg.setAttribute("aria-label", "How to view the plan");
+    barSeg.appendChild(el("span", "segpill"));
+    ["week", "month"].forEach(function (m) {
+      var b = el("button", "segbtn", m === "week" ? "Week" : "Month");
+      b.setAttribute("role", "tab");
+      b.onclick = function () { setPlanMode(m); };
+      barSeg.appendChild(b);
+    });
+    row.appendChild(barSeg);
+
+    // The two things you do to a plan rather than to a view of it, kept together
+    // on the far side of the pill.
+    var acts = el("div", "planacts");
+    // Google Calendar keeps a way back to today within reach at all times. It
+    // earns its place only while today is off screen, so it comes and goes.
+    barToday = el("button", "planbtn", "Today");
+    barToday.onclick = function () {
+      if (planMode === "month") monthStart = firstOf(new Date());
+      state.weekStart = mondayOf(new Date());
+      rememberPlan();
+      loadPlan();
+    };
+    acts.appendChild(barToday);
+    row.appendChild(acts);
+    planBar.appendChild(row);
+    return planBar;
+  }
+
+  function stepPlan(n) {
+    if (planMode === "month") {
+      monthStart = new Date(monthStart.getFullYear(), monthStart.getMonth() + n, 1);
+      state.weekStart = weekInMonth(monthStart);
+    } else {
+      state.weekStart = addDays(state.weekStart, 7 * n);
+      monthStart = monthOfWeek(state.weekStart);
+    }
+    rememberPlan();
+    loadPlan();
+  }
+
+  function setPlanMode(m) {
+    if (m === planMode) return;
+    if (m === "month") monthStart = monthOfWeek(state.weekStart);
+    else state.weekStart = weekInMonth(monthStart);
+    planMode = m;
+    planSwap = true;
+    // Painted before the fetch, on the pill that is already on the screen: the
+    // slide belongs to the tap, not to whenever the rows come back.
+    paintPlanBar();
+    rememberPlan();
+    loadPlan();
+  }
+
+  function showingToday() {
+    var now = new Date();
+    if (planMode === "month") {
+      return now.getFullYear() === monthStart.getFullYear() && now.getMonth() === monthStart.getMonth();
+    }
+    var key = ymd(now);
+    return key >= ymd(state.weekStart) && key <= ymd(addDays(state.weekStart, 6));
+  }
+
+  function shortDate(d) {
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  }
+
+  function weekLabel(w) { return shortDate(w) + " – " + shortDate(addDays(w, 6)); }
+
+  function paintPlanBar() {
+    var month = planMode === "month";
+    barTitle.textContent = month
+      ? monthStart.toLocaleDateString(undefined, { month: "long", year: "numeric" })
+      : weekLabel(state.weekStart);
+    barPrev.setAttribute("aria-label", month ? "The month before" : "The week before");
+    barNext.setAttribute("aria-label", month ? "The month after" : "The week after");
+    barSeg.classList.toggle("m", month);
+    var tabs = barSeg.querySelectorAll(".segbtn");
+    tabs[0].setAttribute("aria-selected", month ? "false" : "true");
+    tabs[1].setAttribute("aria-selected", month ? "true" : "false");
+    barToday.classList.toggle("hide", showingToday());
+  }
+
   function renderPlan() {
     var v = $("planview");
-    v.innerHTML = "";
-    var bar = el("div", "weekbar");
-    var prev = icon(el("button", "iconbtn"), "arrow-left");
-    prev.setAttribute("aria-label", "The week before");
-    prev.onclick = function () {
-      state.weekStart = new Date(state.weekStart.getTime() - 7 * 86400000);
-      loadPlan();
-    };
-    var endD = new Date(state.weekStart);
-    endD.setDate(endD.getDate() + 6);
-    var fmt = { month: "short", day: "numeric" };
-    bar.appendChild(prev);
-    bar.appendChild(el("b", null,
-      state.weekStart.toLocaleDateString(undefined, fmt) + " – " + endD.toLocaleDateString(undefined, fmt)));
-    var next = icon(el("button", "iconbtn"), "arrow-right");
-    next.setAttribute("aria-label", "The week after");
-    next.onclick = function () {
-      state.weekStart = new Date(state.weekStart.getTime() + 7 * 86400000);
-      loadPlan();
-    };
-    bar.appendChild(next);
-    v.appendChild(bar);
+    if (!planBody || planBody.parentNode !== v) {
+      v.innerHTML = "";
+      v.appendChild(buildPlanBar());
+      planBody = el("div", "planbody");
+      v.appendChild(planBody);
+    }
+    paintPlanBar();
+    planBody.innerHTML = "";
+    planBody.classList.remove("planswap");
+    if (planMode === "month") renderMonth(planBody); else renderWeek(planBody);
+    // A mode switch is a crossfade, not an arrival: the bar above it did not
+    // move, so sliding the body up under it would be one gesture too many.
+    if (planSwap) { planSwap = false; void planBody.offsetWidth; planBody.classList.add("planswap"); }
+    else viewIn(planBody);
+  }
 
+  // ---------- plan · the week ----------
+
+  var DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+
+  // One row, drawn the same on a day card and inside the day sheet, so the two
+  // can never drift apart.
+  function planItem(p) {
+    var w = planWorkout(p.workout_id);
+    if (!w) return null;
+    var item = el("div", "planitem");
+    if (w.thumb_url) {
+      var img = el("img");
+      img.src = w.thumb_url;
+      img.alt = "";
+      item.appendChild(img);
+    }
+    var t = el("div", "pt", w.title || "Workout");
+    t.onclick = function () { openDetail(w); };
+    item.appendChild(t);
+    var x = icon(el("button", "planx"), "x");
+    x.setAttribute("aria-label", "Take this off the day");
+    x.onclick = function () { planDrop(p); };
+    item.appendChild(x);
+    return item;
+  }
+
+  // The two writes this page makes, each behind one door. Everything that plans
+  // or unplans a single day comes through here.
+  function planAdd(day, workoutId) {
+    return sb.from("plan").insert({ user_id: state.user.id, day: day, workout_id: workoutId });
+  }
+
+  function planDrop(p) {
+    return sb.from("plan").delete().eq("id", p.id).then(function () { loadPlan(); });
+  }
+
+  function renderWeek(v) {
     // Seven dashed boxes and no sentence assumes you know what they are for.
     if (!(state.plan || []).length) {
       v.appendChild(el("div", "planlede",
@@ -6425,46 +6704,25 @@
         "with a tick once you have done it."));
     }
 
-    var names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
     var todayStr = ymd(new Date());
     var planned = 0, done = 0;
 
     for (var i = 0; i < 7; i++) {
       (function (i) {
-        var d = new Date(state.weekStart.getTime() + i * 86400000);
+        var d = addDays(state.weekStart, i);
         var key = ymd(d);
         var card = el("div", "daycard" + (key === todayStr ? " today" : ""));
         var head = el("div", "dayhead");
-        var label = names[i] + " " + d.getDate();
+        var label = DAY_NAMES[i] + " " + d.getDate();
         head.appendChild(el("div", "dayname", label));
-        var didLog = (state.planLogs || []).some(function (l) {
-          return l.started_at && ymd(new Date(l.started_at)) === key;
-        });
-        if (didLog) { head.appendChild(icon(el("div", "daydone"), "check", "done")); done++; }
+        if (loggedOn(key)) { head.appendChild(icon(el("div", "daydone"), "check", "done")); done++; }
         card.appendChild(head);
 
-        var rows = (state.plan || []).filter(function (p) { return p.day === key; });
+        var rows = rowsFor(key);
         planned += rows.length;
         rows.forEach(function (p) {
-          var w = state.workouts.filter(function (x) { return x.id === p.workout_id; })[0];
-          if (!w) return;
-          var item = el("div", "planitem");
-          if (w.thumb_url) {
-            var img = el("img");
-            img.src = w.thumb_url;
-            img.alt = "";
-            item.appendChild(img);
-          }
-          var t = el("div", "pt", w.title || "Workout");
-          t.onclick = function () { openDetail(w); };
-          item.appendChild(t);
-          var x = icon(el("button", "planx"), "x");
-          x.setAttribute("aria-label", "Take this off the day");
-          x.onclick = function () {
-            sb.from("plan").delete().eq("id", p.id).then(function () { loadPlan(); });
-          };
-          item.appendChild(x);
-          card.appendChild(item);
+          var item = planItem(p);
+          if (item) card.appendChild(item);
         });
 
         var add = el("button", "planadd", "+ Add a workout");
@@ -6474,11 +6732,56 @@
       })(i);
     }
 
-    var summary = el("div", "count", planned + " planned · " + done + " done this week");
+    v.appendChild(planSummary(planned + " planned · " + done + " done this week"));
+  }
+
+  function planSummary(text) {
+    var summary = el("div", "count", text);
     summary.style.textAlign = "center";
     summary.style.marginTop = "14px";
-    v.appendChild(summary);
-    viewIn(v);
+    return summary;
+  }
+
+  // ---------- plan · the month ----------
+  //
+  // iOS Calendar's compact month is the model: one cell a day, at most three
+  // marks in it, today ringed, the days either side of the month present but
+  // quiet. A thumbnail where the card has one — a month of workouts you can
+  // recognise by their pictures is worth more than a month of identical dots.
+
+  var DOW = ["M", "T", "W", "T", "F", "S", "S"];
+
+  function renderMonth(v) {
+    var r = planRange();
+    var grid = el("div", "mgrid");
+    for (var h = 0; h < 7; h++) {
+      var head = el("div", "mdow", DOW[h]);
+      head.setAttribute("aria-hidden", "true");
+      grid.appendChild(head);
+    }
+    var todayStr = ymd(new Date());
+    var days = Math.round((r.to.getTime() - r.from.getTime()) / 86400000) + 1;
+    var planned = 0, done = 0;
+
+    for (var i = 0; i < days; i++) {
+      (function (i) {
+        var d = addDays(r.from, i);
+        var key = ymd(d);
+        var out = d.getMonth() !== monthStart.getMonth();
+        var cell = el("button", "mcell" + (out ? " out" : "") + (key === todayStr ? " today" : ""));
+        var top = el("div", "mtop");
+        top.appendChild(el("span", "mnum", String(d.getDate())));
+        cell.appendChild(top);
+        if (!out && loggedOn(key)) done++;
+        cell.appendChild(el("div", "mmarks"));
+        cell.setAttribute("aria-label", d.toLocaleDateString(undefined,
+          { weekday: "long", month: "long", day: "numeric" }));
+        grid.appendChild(cell);
+      })(i);
+    }
+    v.appendChild(grid);
+    v.appendChild(planSummary(planned + " planned · " + done + " done in " +
+      monthStart.toLocaleDateString(undefined, { month: "long" })));
   }
 
   // Named the way the card that opened it names the day — "Add to Thursday 3",
@@ -6503,12 +6806,11 @@
       t.appendChild(el("span", null, [w.category, fmtDur(w.duration_minutes)].filter(Boolean).join(" · ")));
       row.appendChild(t);
       row.onclick = function () {
-        sb.from("plan").insert({ user_id: state.user.id, day: day, workout_id: w.id })
-          .then(function (r) {
-            closeSheet("picksheet");
-            if (r.error) { toast("Could not add it to that day. Try again in a moment."); return; }
-            loadPlan();
-          });
+        planAdd(day, w.id).then(function (r) {
+          closeSheet("picksheet");
+          if (r.error) { toast("Could not add it to that day. Try again in a moment."); return; }
+          loadPlan();
+        });
       };
       list.appendChild(row);
     });

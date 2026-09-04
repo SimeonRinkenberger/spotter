@@ -1022,7 +1022,7 @@ export const STYLE = String.raw`<style>
      is theirs, the vertical padding belongs to .page. */
   .view { padding-left: 18px; padding-right: 18px; }
   .weekbar { display: flex; align-items: center; justify-content: space-between; gap: 10px;
-    margin: 10px 0 16px; }
+    margin: 10px 0 11px; }
   .weekbar b { font-family: var(--display); font-size: 16px; font-weight: 700; letter-spacing: -.012em; }
   /* An empty week is seven dashed boxes and no explanation of what they are for.
      One line above them, only while there is nothing planned. */
@@ -1044,6 +1044,42 @@ export const STYLE = String.raw`<style>
   .planadd { background: none; border: 1px dashed var(--line-2); color: var(--muted); width: 100%;
     border-radius: 12px; padding: 10px; font-size: 13px; font-weight: 600; margin-top: 9px; }
   .planx { background: none; border: none; color: var(--muted); font-size: 15px; padding: 6px; }
+
+  /* ---------- plan / week or month ----------
+     Apple's segmented control, and the one rule of it that decides the shape
+     here: the selection is a single thumb travelling between seats, not two
+     pictures of a state. So the pill is one node that slides on --t-2 while the
+     labels hold still. Two seats, title-case nouns, and no action among them —
+     Today and Copy are buttons beside the control, because a segmented control
+     chooses what you are looking at and never does a thing to it. */
+  .planctl { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+  .seg { position: relative; display: flex; flex: 0 0 auto; background: var(--sand);
+    border-radius: 11px; padding: 3px; }
+  .segpill { position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc(50% - 3px);
+    background: var(--card); border-radius: 9px; box-shadow: var(--sh-sm);
+    transition: transform var(--t-2) var(--e-spring); }
+  .seg.m .segpill { transform: translateX(100%); }
+  .segbtn { position: relative; z-index: 1; min-width: 64px; min-height: 32px; border: none;
+    background: none; color: var(--muted); font-size: 13px; font-weight: 700; padding: 0 12px;
+    letter-spacing: -.005em; transition: color var(--t-2) var(--e-soft); }
+  .segbtn[aria-selected="true"] { color: var(--ink); }
+  .planacts { margin-left: auto; display: flex; align-items: center; gap: 7px; }
+  .planbtn { border: 1px solid var(--line); background: var(--card); color: var(--ink-2);
+    border-radius: 999px; padding: 0 13px; min-height: 32px; font-size: 12.5px; font-weight: 700;
+    display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+    transition: transform var(--t-1) var(--e-out), border-color var(--t-2) var(--e-soft); }
+  .planbtn:active { transform: scale(.94); }
+  /* Switching mode is a crossfade and nothing more. The bar above it did not
+     move, so sliding the body up under it would be one arrival too many. */
+  .planswap { animation: planswap var(--t-2) var(--e-out); }
+  @keyframes planswap { from { opacity: 0; } }
+  /* Reduced motion keeps the answer and drops the travel: the pill is still the
+     thing that says which mode you are in, so it moves, instantly. */
+  @media (prefers-reduced-motion: reduce) {
+    .segpill { transition: none; }
+    .planbtn:active, .segbtn { transition: none; }
+    .planswap { animation: none; }
+  }
 
   /* ---------- progress / history ---------- */
   .statrow { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; margin: 4px 0 18px; }
@@ -1482,9 +1518,10 @@ export const STYLE = String.raw`<style>
      hit area grows, capped at the gap to the next control so no two overlap.
      Insets come off the padding box: a bordered control needs a pixel more. */
   .iconbtn, .addbtn, .exhelp, .planx, .planadd, .mbtn, .addex, .danger, .libcount,
-  .planlegal a, .planlegal button,
+  .planlegal a, .planlegal button, .segbtn, .planbtn,
   .chips .chip, .said .chip, .pumpyctx button, .threadrow .tdel, .ttitle { position: relative; }
   .iconbtn::after, .addbtn::after, .exhelp::after, .planx::after, .planadd::after,
+  .segbtn::after, .planbtn::after,
   .mbtn::after, .addex::after, .danger::after, .chips .chip::after, .said .chip::after,
   .pumpyctx button::after, .threadrow .tdel::after, .ttitle::after,
   .libcount::after, .planlegal a::after, .planlegal button::after { content: ""; position: absolute; }
@@ -1495,6 +1532,7 @@ export const STYLE = String.raw`<style>
   .exhelp::after { inset: -7px -6px; }
   .planx::after { inset: -7px -4px; }
   .planadd::after, .addex::after { inset: -5px 0; }
+  .segbtn::after, .planbtn::after { inset: -6px 0; }
   .mbtn::after { inset: -6px 0; }
   .danger::after, .threadrow .tdel::after { inset: -3px 0; }
   .chips .chip::after, .said .chip::after { inset: -6px 0; }
