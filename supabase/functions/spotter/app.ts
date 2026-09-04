@@ -698,7 +698,7 @@ export const APP = String.raw`
     watchWorkouts();
     // A shared link is saved only once the library is in hand, so the card it
     // creates lands in a rendered grid rather than into an empty one.
-    return load().then(consumeShare).then(warmPages);
+    return load().then(consumeShare).then(consumeBilling).then(warmPages);
   }
 
   // All four pages are mounted all the time now, which means a swipe can uncover
@@ -732,6 +732,14 @@ export const APP = String.raw`
       if (!pumpy.loaded) renderPumpy();
       loadPumpy(true);
     }, 450);
+    idle(function () {
+      // One GET per session, and only for an account that has something to be
+      // told: a paid or staff account never asks about prices at all, and a
+      // project without a Stripe key answers "not configured" and is cached as
+      // such, so nothing about the page changes.
+      if (!isFree()) return;
+      loadPrices().then(renderLibCount);
+    }, 700);
   }
 
   // ---------- realtime ----------
@@ -828,6 +836,13 @@ export const APP = String.raw`
         if (typeof s.haptics === "boolean") state.haptics = s.haptics;
         // The top-bar button and the strip were drawn from the default; correct them.
         paintSounds();
+        // The plan is on this row, and the shelf counter is drawn from the plan.
+        // The row is a copy of a fact the server owns, though, and for the second
+        // after a payment it can still be the old copy — so anything the server
+        // has since said out loud is put back on top of it. The wrong way round
+        // to be wrong here is to show a paywall to somebody who has just paid.
+        if (billing.said) state.profile.plan = billing.said;
+        renderLibCount();
       }
     });
   }
@@ -1329,6 +1344,7 @@ export const APP = String.raw`
     renderColBar();
     renderToday();
     renderGrid();
+    renderLibCount();
     var n = state.workouts.length;
     $("count0").textContent = n ? n + (n === 1 ? " workout" : " workouts") : "No workouts yet";
   }
@@ -1739,7 +1755,7 @@ export const APP = String.raw`
       .then(function (r) {
         if (btn) { btn.disabled = false; btn.textContent = "Try reading it again"; }
         if (r.status !== "processing" && r.status !== "ok") {
-          toast(r.message || "Could not start reading that — try again in a minute."); return;
+          limitHit(r, "Could not start reading that — try again in a minute."); return;
         }
         w.ingest_status = "processing";
         w.ingest_error = null;
@@ -1767,7 +1783,7 @@ export const APP = String.raw`
     api("workouts/" + w.id + "/media", { method: "POST", body: "{}" })
       .then(function (r) {
         if (btn) { btn.disabled = false; btn.textContent = "Read the video"; }
-        if (r.status !== "processing") { toast(r.message || "Could not start reading that — try again in a minute."); return; }
+        if (r.status !== "processing") { limitHit(r, "Could not start reading that — try again in a minute."); return; }
         w.ingest_status = "processing";
         w.ingest_error = null;
         w.media_stage = "listening";
@@ -1829,7 +1845,7 @@ export const APP = String.raw`
         toast("Reading your caption…");
         return;
       }
-      if (r.status !== "ok") { toast(r.message || "Could not read that caption — try again in a moment."); return; }
+      if (r.status !== "ok") { limitHit(r, "Could not read that caption — try again in a moment."); return; }
       closeSheet("capsheet");
       load().then(function () {
         var fresh = state.workouts.filter(function (x) { return x.id === r.workout.id; })[0];
@@ -1936,7 +1952,7 @@ export const APP = String.raw`
     api("workouts/" + id + "/exercises", { method: "POST", body: JSON.stringify(payload) })
       .then(function (r) {
         if (btn) { btn.disabled = false; btn.textContent = label; }
-        if (r.status !== "ok") { toast(r.message || "That change did not save. Your copy is unchanged."); return; }
+        if (r.status !== "ok") { limitHit(r, "That change did not save. Your copy is unchanged."); return; }
         closeSheet("exeditsheet");
         exEdit = null;
         absorbWorkout(r.workout);
@@ -1989,7 +2005,10 @@ export const APP = String.raw`
         method: "POST",
         body: JSON.stringify({ op: "delete", block: ctx.block, index: ctx.index, expect_name: ctx.name })
       }).then(function (r) {
-        if (r.status !== "ok") { putBack(r.message || "That did not save — the exercise is back."); return; }
+        if (r.status !== "ok") {
+          putBack(limitHit(r, null) ? null : (r.message || "That did not save — the exercise is back."));
+          return;
+        }
         absorbWorkout(r.workout);
       }).catch(function () {
         putBack("Could not reach Spotter — the exercise is back.");
@@ -3184,7 +3203,7 @@ export const APP = String.raw`
         method: "POST",
         body: JSON.stringify({ exercise: name, canonical_id: ex.canonical_id || null })
       }).then(function (r) {
-        if (!r || r.status !== "ok") return;
+        if (!r || r.status !== "ok") { limitHit(r, null); return; }
         vidCache[vk] = r;
         if (expKey === key) vidFill(r);
       }).catch(function () {});
@@ -3201,6 +3220,7 @@ export const APP = String.raw`
       var text = r.status === "ok" ? r.text : (r.message || EXFAIL);
       expCache[key] = r.status === "ok" ? text : null;
       if (expKey === key) $("explaintext").textContent = text;
+      limitHit(r, null);
     }).catch(function () {
       if (expKey === key) $("explaintext").textContent = EXFAIL;
     });
@@ -3276,6 +3296,7 @@ export const APP = String.raw`
       if (r.status !== "ok") {
         box.appendChild(el("div", "aitext",
           r.message || "Could not find a swap just now. Try again in a moment."));
+        limitHit(r, null);
         return;
       }
       renderSwapResult(box, r);
@@ -4937,6 +4958,11 @@ export const APP = String.raw`
     row.appendChild(pumpyMark("pmark"));
     var col = el("div", "msgcol");
     if (m.content) col.appendChild(el("div", "msg pumpy", m.content));
+    if (m.meta && m.meta.limit) {
+      var see = el("button", "chip", "See " + planWord(m.meta.limit.next_plan || "plus"));
+      see.onclick = function () { openPlans(m.meta.limit); };
+      col.appendChild(see);
+    }
     var p = m.meta && m.meta.proposal;
     if (p) col.appendChild(renderProposal(m, p));
     row.appendChild(col);
@@ -5029,7 +5055,13 @@ export const APP = String.raw`
       if (r.status !== "ok") {
         // The ceiling and the outage both come back as something Pumpy says.
         pumpy.messages.push({ id: "local-err-" + Date.now(), role: "user", content: text });
-        pumpy.messages.push({ id: "local-err2-" + Date.now(), role: "assistant", content: r.message || "I could not answer that just now. Try again in a moment." });
+        pumpy.messages.push({
+          id: "local-err2-" + Date.now(), role: "assistant",
+          content: r.message || "I could not answer that just now. Try again in a moment.",
+          // A chip under his sentence rather than a sheet thrown over his face
+          // mid-answer: the offer is there to take, and ignoring it costs nothing.
+          meta: (r.status === "limit" && r.upgrade) ? { limit: r } : null
+        });
         renderPumpy();
         return;
       }
@@ -5067,6 +5099,612 @@ export const APP = String.raw`
         toast("Could not reach Spotter — check your connection.");
         noBtn.disabled = false; yesBtn.disabled = false;
       });
+  }
+
+  // ---------- Spotter Plus ----------
+  //
+  // Every number a person reads about the plan is built out of what the server
+  // just said and none of it out of a number typed here: the caps live in
+  // app_config and the prices live in Stripe, so a sentence with 20 baked into it
+  // is a sentence that goes wrong the first time either of them moves.
+  // The second rule is that billing may not exist. Until the routes ship
+  // /api/billing/* is a 404 and the subscriptions table is not there, and both
+  // have to land as "free, nothing to sell" with no toast and no console line, so
+  // every read below ends in a shrug rather than an error.
+
+  var billing = {
+    prices: null,      // last good /api/billing/prices, or a not-configured stand-in
+    waiting: null,     // that fetch in flight, so two callers make one call
+    sub: null, subAsked: false,
+    limits: null,      // last /api/limits, for the Settings usage line
+    said: null,        // the plan the server last reported, which outranks the row
+    ctx: null,         // the 429 the sheet was opened by, or null from Settings
+    interval: "year", busy: false
+  };
+
+  function billOn() { return !!(billing.prices && billing.prices.configured); }
+  function myPlan() { return (state.profile && state.profile.plan) || "free"; }
+  function isFree() { var p = myPlan(); return p !== "plus" && p !== "pro" && p !== "staff"; }
+
+  // free stays lower case: it is a description, the paid ones are names.
+  function planWord(p) {
+    p = String(p || "free");
+    return p === "free" ? "free" : p.charAt(0).toUpperCase() + p.slice(1);
+  }
+
+  function money(cents, cur) {
+    var v = (cents || 0) / 100, frac = v % 1 ? 2 : 0;
+    try {
+      return new Intl.NumberFormat(undefined, {
+        style: "currency", currency: String(cur || "usd").toUpperCase(),
+        minimumFractionDigits: frac, maximumFractionDigits: 2
+      }).format(v);
+    } catch (e) { return "$" + (frac ? v.toFixed(2) : String(v)); }
+  }
+
+  // "11 September" in prose; "11 Sep" in the Settings value cell, which is one
+  // line wide and already carrying the plan name.
+  function dayMonth(iso, long) {
+    if (!iso) return "";
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return "";
+    return d.toLocaleDateString(undefined, { day: "numeric", month: long ? "long" : "short" });
+  }
+
+  function loadPrices() {
+    if (billing.prices) return Promise.resolve(billing.prices);
+    if (billing.waiting) return billing.waiting;
+    billing.waiting = api("billing/prices", { method: "GET" }).then(function (r) {
+      billing.waiting = null;
+      billing.prices = (r && r.status === "ok" && r.configured) ? r : { configured: false };
+      return billing.prices;
+    }).catch(function () {
+      // A route that has not shipped, or a browser that would not make the call.
+      billing.waiting = null;
+      billing.prices = { configured: false };
+      return billing.prices;
+    });
+    return billing.waiting;
+  }
+
+  // Straight from PostgREST under the owner's own RLS. Before the migration is
+  // applied this is an error rather than a row — the same answer as "never
+  // subscribed", and treated as one.
+  function loadSub() {
+    if (billing.subAsked) return Promise.resolve(billing.sub);
+    billing.subAsked = true;
+    return sb.from("subscriptions").select("*").maybeSingle().then(function (r) {
+      billing.sub = (r && !r.error && r.data) ? r.data : null;
+      return billing.sub;
+    }).catch(function () { billing.sub = null; return null; });
+  }
+
+  function capNum(n) { return n === null || n === undefined ? null : num(n); }
+  function capMany(n) { return n === null ? "as many" : Number(n).toLocaleString(); }
+
+  // Credits are the accounting unit; nobody buys credits. At four to six a turn
+  // this is what a month is worth in conversation, rounded to something a person
+  // can hold in their head — a16z's rule, and Notion's, which never shows an end
+  // user a credit number at all.
+  function msgCount(credits) {
+    var n = credits / 5;
+    return (n >= 100 ? Math.round(n / 50) * 50 : Math.round(n / 10) * 10).toLocaleString();
+  }
+
+  function planBenefits(caps) {
+    var f = caps && caps.free, p = caps && caps.plus;
+    if (!f || !p) return [];
+    var out = [], lib = capNum(p.library);
+    out.push(lib === null
+      ? "Keep every workout you save — the free plan holds " + f.library + "."
+      : "Hold " + capMany(lib) + " saved workouts, instead of " + f.library + ".");
+    out.push("Read " + capMany(capNum(p.extract)) + " new videos a day, instead of " + f.extract + ".");
+    out.push("Watch " + capMany(capNum(p.media)) + " silent clips a day, instead of " + f.media +
+      " — the ones with no caption to read.");
+    out.push("Send " + capMany(capNum(p.uploads)) + " of your own videos a day, instead of " + f.uploads + ".");
+    if (num(p.pumpy_month) && num(f.pumpy_month)) {
+      out.push("About " + msgCount(p.pumpy_month) + " coach messages a month, instead of " +
+        msgCount(f.pumpy_month) + ".");
+    }
+    out.push("Stop whenever you like. Everything you saved stays yours, and stays readable.");
+    return out;
+  }
+
+  // A limit line has to carry three things — what you hit, when it comes back,
+  // what the paid plan does about it — and every number for all three is off the
+  // 429. Each cap gets the verb it actually earns.
+  var CAP_WORDS = {
+    extract: ["new videos read today", "reads", " a day"],
+    media: ["silent clips watched today", "watches", " a day"],
+    uploads: ["uploads today", "takes", " a day"],
+    saves: ["saves today", "saves", " a day"],
+    helper: ["explanations and swaps today", "allows", ""]
+  };
+  var MULT = ["", "", "twice", "three times", "four times", "five times", "six times"];
+
+  function pumpyRoom(up) {
+    var caps = billing.prices && billing.prices.caps;
+    var f = caps && caps.free && num(caps.free.pumpy_month);
+    var p = caps && caps.plus && num(caps.plus.pumpy_month);
+    var mult = f && p ? Math.round(p / f) : 0;
+    return "On " + up + " I have " +
+      (mult >= 2 && mult < MULT.length ? "about " + MULT[mult] + " as much room" : "a lot more room") + ".";
+  }
+
+  function planCtxLine(c) {
+    if (!c || !c.kind) return "";
+    var cap = num(c.cap), next = capNum(c.next_cap);
+    var mine = "the " + planWord(c.plan) + " plan", up = planWord(c.next_plan || "plus");
+    if (c.kind === "library") {
+      return "That is " + cap + " saved workouts, which is " + mine + "'s shelf. " + up +
+        " takes the lid off, and nothing you have saved is going anywhere in the meantime.";
+    }
+    // Pumpy's two stay in his own first person, wherever they are read.
+    if (c.kind === "pumpy") {
+      var m = c.pumpy && bucket(c.pumpy.month);
+      return (m && m.cap !== null && m.left <= 0
+        ? "That is this month's coaching used up — my credits come back on the 1st. "
+        : "That is my coaching done for today — my credits come back at midnight UTC. ") + pumpyRoom(up);
+    }
+    var w = CAP_WORDS[c.kind];
+    if (!w || cap === null) return "";
+    var noun = c.kind === "uploads" && cap === 1 ? "upload today" : w[0];
+    return "That is " + cap + " " + noun + ", " + mine + "'s daily limit. It resets at midnight UTC. " +
+      (next === null ? up + " has no daily limit." : up + " " + w[1] + " " + next + w[2] + ".");
+  }
+
+  // ---------- the sheet ----------
+
+  function skelRow(cls) { return el("div", "skel " + cls); }
+
+  // Never a blank rectangle waiting on Stripe, and never a price we do not have.
+  function paintSkeleton() {
+    var good = $("plangood"), cards = $("plancards");
+    good.innerHTML = ""; cards.innerHTML = "";
+    good.appendChild(skelRow("sline"));
+    good.appendChild(skelRow("sline half"));
+    good.appendChild(skelRow("sline"));
+    good.appendChild(skelRow("sline half"));
+    cards.appendChild(skelRow("scard"));
+    cards.appendChild(skelRow("scard"));
+    $("planbuy").classList.add("hide");
+    $("plantrial").classList.add("hide");
+    $("plansoon").classList.add("hide");
+    $("planfine").textContent = "";
+  }
+
+  function priceCard(iv, plus, p) {
+    var yearly = iv === "year", cur = p.currency;
+    var full = plus[iv].amount, pay = yearly && p.founding ? p.founding.first_year_amount : full;
+    var b = el("button", "pcard");
+    b.type = "button";
+    b.setAttribute("role", "radio");
+    b.setAttribute("data-iv", iv);
+    var row = el("div", "prow");
+    row.appendChild(el("span", "pname", yearly ? "Yearly" : "Monthly"));
+    var amt = el("span", "pamt");
+    // The founding price does not hide the standing one: struck through beside it
+    // is the only way to show the discount without implying the second year keeps it.
+    if (pay !== full) amt.appendChild(el("span", "pold", money(full, cur)));
+    amt.appendChild(document.createTextNode(money(pay, cur)));
+    row.appendChild(amt);
+    b.appendChild(row);
+    if (yearly) {
+      var meta = el("div", "pmeta");
+      meta.appendChild(el("span", null, money(Math.round(pay / 12), cur) + " a month" +
+        (pay !== full ? " for your first year" : "")));
+      var save = Math.round((1 - pay / (plus.month.amount * 12)) * 100);
+      if (save >= 5) meta.appendChild(el("span", "pill accent", "SAVE " + save + "%"));
+      b.appendChild(meta);
+    }
+    b.onclick = function () { pickInterval(iv); };
+    return b;
+  }
+
+  // The button is the thing being watched while somebody decides, so its word
+  // cross-fades rather than cutting under the thumb.
+  function setBuyLabel(text) {
+    var s = $("planbuy").querySelector("b");
+    if (!s || s.textContent === text) return;
+    if (!s.textContent) { s.textContent = text; return; }
+    s.classList.add("fade");
+    setTimeout(function () { s.textContent = text; s.classList.remove("fade"); }, 130);
+  }
+
+  function finePrint(p, plus, iv, pay, full, days) {
+    var cur = p.currency, first;
+    if (iv === "month") {
+      first = money(pay, cur) + " a month until you cancel.";
+    } else if (pay !== full) {
+      // How many founding years are left is a live number from Stripe, so it is
+      // said instead of the fixed 200 the coupon was created with.
+      var left = num(p.founding && p.founding.remaining);
+      first = money(pay, cur) + " for your first year — the founding price" +
+        (left ? ", with " + left + " left" : "") + ". Then " + money(full, cur) +
+        " every year until you cancel.";
+    } else {
+      first = money(full, cur) + " a year" + (days > 0 ? " after the trial" : "") +
+        ", then every year until you cancel.";
+    }
+    return first + " Cancel any time in Settings, under Plan. Prices in US dollars.";
+  }
+
+  function paintChoice() {
+    var p = billing.prices, plus = p && p.plans && p.plans.plus;
+    if (!plus) return;
+    var iv = billing.interval, yearly = iv === "year", cur = p.currency;
+    var cards = $("plancards").querySelectorAll(".pcard");
+    for (var i = 0; i < cards.length; i++) {
+      var on = cards[i].getAttribute("data-iv") === iv;
+      cards[i].classList.toggle("on", on);
+      cards[i].setAttribute("aria-checked", on ? "true" : "false");
+    }
+    var full = plus[iv].amount, pay = yearly && p.founding ? p.founding.first_year_amount : full;
+    var days = num(p.trial_days) || 0, trial = $("plantrial");
+    // Yearly only, per the contract, and the date is computed so the sentence is
+    // still true on the day it is read.
+    if (yearly && days > 0) {
+      trial.textContent = "Free for " + days + " days. We will not charge you before " +
+        new Date(Date.now() + days * 86400000).toLocaleDateString(undefined, { day: "numeric", month: "long" }) +
+        ", and you can cancel before then.";
+      trial.classList.remove("hide");
+    } else { trial.textContent = ""; trial.classList.add("hide"); }
+    setBuyLabel(yearly && days > 0 ? "Start " + days + " free days"
+      : "Subscribe for " + money(pay, cur) + (yearly ? " a year" : " a month"));
+    $("planfine").textContent = finePrint(p, plus, iv, pay, full, days);
+  }
+
+  function pickInterval(iv) {
+    if (billing.interval === iv || billing.busy) return;
+    billing.interval = iv;
+    haptic("tap");
+    paintChoice();
+  }
+
+  function paintPlans() {
+    var p = billing.prices || { configured: false };
+    var good = $("plangood"), cards = $("plancards");
+    good.innerHTML = ""; cards.innerHTML = "";
+    planBenefits(p.caps).forEach(function (t) {
+      var row = el("div", "pgood");
+      row.appendChild(ic("check"));
+      row.appendChild(el("span", null, t));
+      good.appendChild(row);
+    });
+    var plus = p.plans && p.plans.plus;
+    var ready = !!(p.configured && plus && plus.month && plus.year);
+    $("plansoon").classList.toggle("hide", ready);
+    $("planbuy").classList.toggle("hide", !ready);
+    $("plandot2").classList.toggle("hide", !ready);
+    $("planrestore").classList.toggle("hide", !ready);
+    if (!ready) {
+      $("plantrial").classList.add("hide");
+      $("planfine").textContent = "";
+      return;
+    }
+    // Yearly first and pre-selected: annual keeps 44% of subscribers at twelve
+    // months against monthly's 17%, and pre-selecting it moved the mix 70% in
+    // Superwall's tests. Monthly is still one tap away.
+    cards.appendChild(priceCard("year", plus, p));
+    cards.appendChild(priceCard("month", plus, p));
+    $("planbuy").disabled = false;
+    paintChoice();
+  }
+
+  function paintCtx() {
+    var n = $("planctx"), line = planCtxLine(billing.ctx);
+    n.textContent = line;
+    n.classList.toggle("hide", !line);
+  }
+
+  function openPlans(ctx) {
+    billing.ctx = ctx && ctx.kind ? ctx : null;
+    billing.interval = "year";
+    billing.busy = false;
+    paintCtx();
+    if (!billing.prices) paintSkeleton();
+    openSheet("plansheet");
+    loadPrices().then(function () {
+      if ($("plansheet").classList.contains("open")) paintPlans();
+    });
+  }
+
+  // ---------- leaving for Stripe, and coming back ----------
+  //
+  // The flag's value is the plan the contract names, with the moment it was
+  // written after a pipe: a checkout abandoned in the Stripe tab would otherwise
+  // sit here for ever and every return to the app would ask Stripe about a
+  // subscription nobody started. Twelve hours is far longer than any webhook has
+  // taken and far shorter than never.
+  var BILL_FLAG = "spotter.billing.pending";
+  var BILL_TTL = 12 * 3600 * 1000;
+  var BILL_KEY = "spotter_billing_return";
+  var billRound = false, billBusy = false;
+
+  function setPending(plan) {
+    try {
+      if (plan) localStorage.setItem(BILL_FLAG, plan + "|" + Date.now());
+      else localStorage.removeItem(BILL_FLAG);
+    } catch (e) { /* private mode; the return page still works */ }
+  }
+
+  function pending() {
+    var v = null;
+    try { v = localStorage.getItem(BILL_FLAG); } catch (e) { return null; }
+    if (!v) return null;
+    var bits = String(v).split("|"), at = parseInt(bits[1], 10);
+    if (at && Date.now() - at > BILL_TTL) { setPending(null); return null; }
+    return bits[0] || null;
+  }
+
+  function startCheckout() {
+    if (billing.busy) return;
+    var b = $("planbuy"), was = b.querySelector("b").textContent;
+    billing.busy = true;
+    b.disabled = true;
+    setBuyLabel("Opening…");
+    api("billing/checkout", {
+      method: "POST",
+      body: JSON.stringify({
+        plan: "plus", interval: billing.interval,
+        return_url: location.origin + location.pathname
+      })
+    }).then(function (r) {
+      if (r && r.status === "ok" && r.url) {
+        // Written before the navigation, because the navigation is the last thing
+        // this page does. Installed on iOS the Checkout opens in an in-app browser
+        // with storage of its own, so this flag, in OUR storage, is the only thing
+        // still here when the person comes back.
+        setPending("plus");
+        location.assign(r.url);
+        return;                                  // left busy on purpose: we are leaving
+      }
+      billing.busy = false;
+      b.disabled = false;
+      if (r && r.code === "already_subscribed") { setBuyLabel(was); openPortal(null); return; }
+      if (r && r.code === "not_configured") { billing.prices = { configured: false }; paintPlans(); return; }
+      setBuyLabel(was);
+      toast((r && r.message) || "Could not open checkout — try again in a moment.");
+    }).catch(function () {
+      billing.busy = false;
+      b.disabled = false;
+      setBuyLabel(was);
+      toast("Could not reach Spotter — check your connection.");
+    });
+  }
+
+  function openPortal(btn) {
+    var was = btn ? btn.textContent : null;
+    if (btn) { btn.disabled = true; btn.textContent = "Opening…"; }
+    api("billing/portal", {
+      method: "POST", body: JSON.stringify({ return_url: location.origin + location.pathname })
+    }).then(function (r) {
+      if (r && r.status === "ok" && r.url) { location.assign(r.url); return; }
+      if (btn) { btn.disabled = false; btn.textContent = was; }
+      toast((r && r.message) || "Could not open the billing page just now.");
+    }).catch(function () {
+      if (btn) { btn.disabled = false; btn.textContent = was; }
+      toast("Could not reach Spotter — check your connection.");
+    });
+  }
+
+  // One writer for "the plan may have changed": the return from Checkout, the
+  // Refresh row and Restore purchase all end here.
+  function absorbPlan(r, loud) {
+    var before = myPlan();
+    billing.sub = r.subscription || null;
+    billing.subAsked = true;
+    adoptPlan(r.plan);
+    setPending(null);
+    renderLibCount();
+    paintPlanGroup();
+    if (loud && r.plan !== before && r.plan !== "free") {
+      toast("Welcome to " + planWord(r.plan) + ".");
+      haptic("success");
+      closeSheet("plansheet");
+    }
+    // The profile row is the app's own copy and the webhook wrote it server-side;
+    // read it back rather than trusting the two to agree.
+    loadProfile();
+  }
+
+  function askBilling(sid, tries) {
+    if (billBusy || !state.user) return;
+    billBusy = true;
+    api("billing/sync", { method: "POST", body: JSON.stringify(sid ? { session_id: sid } : {}) })
+      .then(function (r) {
+        billBusy = false;
+        if (r && r.status === "ok" && r.plan && r.plan !== "free") { absorbPlan(r, true); return; }
+        if (tries > 1) setTimeout(function () { askBilling(sid, tries - 1); }, 2000);
+      })
+      .catch(function () {
+        billBusy = false;
+        if (tries > 1) setTimeout(function () { askBilling(sid, tries - 1); }, 2000);
+      });
+  }
+
+  // Once per page load, however many of the three events fire: a phone coming
+  // back raises visibilitychange, pageshow and focus together, and three rounds
+  // of three calls is not politeness.
+  function watchBilling() {
+    unbusy();
+    if (billRound || !state.user || !pending()) return;
+    billRound = true;
+    askBilling(null, 3);
+  }
+
+  // startCheckout leaves the button disabled and saying "Opening…" because the
+  // page is on its way out. A back gesture out of Stripe brings that exact frame
+  // back from the browser's cache, so the first thing the person sees is a dead
+  // button. Whatever brought us back to the front undoes it.
+  function unbusy() {
+    if (!billing.busy) return;
+    billing.busy = false;
+    var b = $("planbuy");
+    if (b) { b.disabled = false; paintChoice(); }
+  }
+
+  // The shape captureShare has, for the reason it has it: whatever came back on
+  // the address bar must be off it before anything reloads, and there may be no
+  // session yet when this runs.
+  function captureBilling() {
+    var q;
+    try { q = new URLSearchParams(location.search); } catch (e) { return; }
+    if (!q.has("billing")) return;
+    try {
+      sessionStorage.setItem(BILL_KEY, JSON.stringify({
+        outcome: q.get("billing"), session_id: q.get("session_id") || null
+      }));
+    } catch (e) { /* ignore */ }
+    try { history.replaceState(null, "", location.pathname + location.hash); } catch (e) { /* ignore */ }
+  }
+
+  function consumeBilling() {
+    var raw = null, o = null;
+    try {
+      raw = sessionStorage.getItem(BILL_KEY);
+      if (raw) sessionStorage.removeItem(BILL_KEY);
+    } catch (e) { /* ignore */ }
+    try { o = raw ? JSON.parse(raw) : null; } catch (e) { o = null; }
+    if (!o) { watchBilling(); return; }
+    // No charge was made, and nobody needs telling that on the way back in.
+    if (o.outcome === "cancel") { setPending(null); return; }
+    billRound = true;
+    askBilling(o.session_id, 3);
+  }
+
+  function refreshBilling(btn) {
+    var was = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "Checking…";
+    api("billing/sync", { method: "POST", body: "{}" }).then(function (r) {
+      btn.disabled = false;
+      btn.textContent = was;
+      if (!r || r.status !== "ok") { toast((r && r.message) || "Could not check with Stripe just now."); return; }
+      var before = myPlan();
+      absorbPlan(r, false);
+      toast(r.plan === before
+        ? "Up to date — you are on the " + planWord(r.plan) + " plan."
+        : "Now on the " + planWord(r.plan) + " plan.");
+    }).catch(function () {
+      btn.disabled = false;
+      btn.textContent = was;
+      toast("Could not reach Spotter — check your connection.");
+    });
+  }
+
+  // ---------- Settings, the Plan group ----------
+
+  function paintPlanGroup() {
+    var row = $("setplan");
+    if (!row) return;
+    var configured = billOn(), plan = myPlan(), s = billing.sub;
+    var staff = plan === "staff", paid = plan === "plus" || plan === "pro";
+    var word = planWord(plan), text = staff ? "Staff" : (paid ? word : "Free"), failed = false;
+    if (paid && s) {
+      var ends = dayMonth(s.current_period_end), trial = dayMonth(s.trial_end || s.current_period_end);
+      // A failed payment outranks everything: it is the one state with something
+      // to do about it.
+      if (s.payment_failed_at) { text = word + " · payment failed"; failed = true; }
+      else if (s.status === "trialing" && trial) text = word + " · free trial, ends " + trial;
+      else if ((s.cancel_at_period_end || s.cancel_at) && ends) text = word + " · ends " + ends;
+      else if (ends) text = word + " · renews " + ends;
+    }
+    row.textContent = text;
+
+    var warn = $("setplanwarn"), until = failed && dayMonth(s.current_period_end, true);
+    warn.textContent = failed
+      ? "The last payment did not go through. " + word + " keeps working" +
+        (until ? " until " + until : "") + " while we retry."
+      : "";
+    warn.classList.toggle("hide", !failed);
+
+    var canBuy = configured && !paid && !staff, canManage = configured && paid;
+    $("setupgrade").classList.toggle("hide", !canBuy);
+    $("setmanage").classList.toggle("hide", !canManage);
+    $("setpay").classList.toggle("hide", !(canManage && failed));
+    $("setplanbtns").classList.toggle("hide", !(canBuy || canManage));
+    $("setrefresh").classList.toggle("hide", !configured);
+  }
+
+  // Two copies of "which plan is this": the profile row the webhook writes, and
+  // whatever the server was enforcing a moment ago when it counted the caps. They
+  // agree except in the seconds after a payment, and in those seconds the
+  // enforcing one is the one that must win — showing a shelf counter to somebody
+  // who has just paid for an unlimited shelf is the wrong way round to be wrong.
+  function adoptPlan(plan) {
+    if (!plan) return;
+    billing.said = plan;
+    if (!state.profile || state.profile.plan === plan) return;
+    state.profile.plan = plan;
+    renderLibCount();
+    paintPlanGroup();
+  }
+
+  function capLine(used, cap, word) {
+    var c = capNum(cap);
+    return (c === null ? used : used + " of " + c) + " " + word;
+  }
+
+  function paintPlanUse(r) {
+    var n = $("setplanuse"), lim = r && r.limits, bits = [];
+    if (lim) {
+      if (capNum(lim.library) !== null && num(r.library_count) !== null) {
+        bits.push(capLine(r.library_count, lim.library, "workouts saved"));
+      }
+      if (num(r.extracts_today) !== null) bits.push(capLine(r.extracts_today, lim.extract, "read today"));
+    }
+    n.textContent = bits.join(" · ");
+    n.classList.toggle("hide", !bits.length);
+  }
+
+  // ---------- how full the free shelf is ----------
+  //
+  // The one paywall here that is not a refusal. Null means say nothing, and a
+  // paid account, an account with billing off and a cap the server did not send
+  // all come back null — which is what makes all three look like today.
+  function shelf(extra) {
+    if (!billOn() || !isFree()) return null;
+    var caps = billing.prices.caps;
+    var cap = caps && caps.free ? capNum(caps.free.library) : null;
+    if (cap === null || cap <= 0) return null;
+    return { used: state.workouts.length + (extra || 0), cap: cap, warn: Math.ceil(cap * 0.8) };
+  }
+
+  // Every app that warns well warns before the wall, once: the save receipt says
+  // how full the shelf is from four fifths on, and says nothing else. The join is
+  // made here because the receipts it is glued to do not all end in a stop — one
+  // trails an ellipsis, the others end on a word — and three call sites getting
+  // that right independently is three chances to ship "read and ready That is".
+  function withShelf(msg, extra) {
+    var c = shelf(extra);
+    if (!c || c.used < c.warn) return msg;
+    return msg + (/[.…!?]$/.test(msg) ? " " : ". ") +
+      "That is " + c.used + " of your " + c.cap + " saved workouts.";
+  }
+
+  function renderLibCount() {
+    var n = $("libcount");
+    if (!n) return;
+    var c = shelf();
+    if (!c) { n.classList.add("hide"); return; }
+    n.innerHTML = "";
+    n.appendChild(el("b", null, c.used + " of " + c.cap));
+    n.appendChild(document.createTextNode(" saved · "));
+    n.appendChild(el("b", "lgo", "Plus"));
+    n.classList.toggle("near", c.used >= c.warn);
+    if (n.classList.contains("hide")) { n.classList.remove("hide"); n.classList.add("viewin"); }
+  }
+
+  // One answer to a cap, wherever a call can hit one. The sheet replaces the
+  // toast only when there is something to sell: upgrade is false for a Plus user
+  // who tripped a daily abuse stop and false for everybody while billing is off,
+  // and then this is exactly today's behaviour. A null message means the call
+  // site was silent about failures before and stays silent.
+  function limitHit(r, fallbackMsg) {
+    if (r && r.status === "limit" && r.upgrade) { openPlans(r); return true; }
+    if (fallbackMsg !== null) toast((r && r.message) || fallbackMsg);
+    return false;
   }
 
   // ---------- sheets ----------
@@ -5200,7 +5838,7 @@ export const APP = String.raw`
   }
 
   ["addsheet", "setsheet", "watchsheet", "exsheet", "exeditsheet", "explainsheet", "picksheet",
-   "settingssheet", "colsheet", "renamesheet", "swapsheet", "pumpysheet", "capsheet"]
+   "settingssheet", "colsheet", "renamesheet", "swapsheet", "pumpysheet", "capsheet", "plansheet"]
     .forEach(wireSheet);
 
   function overlayShowing() {
@@ -5268,8 +5906,9 @@ export const APP = String.raw`
         if (r.status === "processing") {
           $("addurl").value = "";
           closeSheet("addsheet");
-          toast(fromShare ? "Saved from the share sheet — reading it…" : "Saved — reading the video…");
           placePending(r, url, null);
+          toast(withShelf(fromShare ? "Saved from the share sheet — reading it…"
+            : "Saved — reading the video…"), 3400);
           return;
         }
 
@@ -5278,10 +5917,13 @@ export const APP = String.raw`
           closeSheet("addsheet");
           // The cache hit is a good fact — somebody else already paid to read this
           // video — so the receipt says the fact instead of a lightning bolt.
-          if (r.cached) toast(fromShare
+          // The row is not in state.workouts until load() comes back, so the
+          // count this save makes is asked for one ahead.
+          if (r.cached) toast(withShelf(fromShare
             ? "Saved from the share sheet — someone had already read this one, so it is ready"
-            : "Saved — someone had already read this one, so it is ready");
-          else toast(fromShare ? "Saved from the share sheet — read and ready" : "Saved — read and ready");
+            : "Saved — someone had already read this one, so it is ready", 1), 3400);
+          else toast(withShelf(fromShare ? "Saved from the share sheet — read and ready"
+            : "Saved — read and ready", 1), 3400);
           load().then(function () {
             var w = state.workouts.filter(function (x) { return x.id === r.id; })[0];
             if (w) openDetail(w);
@@ -5291,6 +5933,9 @@ export const APP = String.raw`
           toast("Already in your library.");
           load();
         } else {
+          // A cap is not a broken link: the sheet answers it, and the link stays
+          // in the box so a plan change lands the person back on the save.
+          if (limitHit(r, null)) return;
           toast(r.message || "Could not save that link — check it and try again.");
           recover();
         }
@@ -5501,8 +6146,8 @@ export const APP = String.raw`
       if (r.status === "processing") {
         closeSheet("addsheet");
         resetUpload();
-        toast("Uploaded — listening to the video…");
         placePending(r, "", "upload");
+        toast(withShelf("Uploaded — listening to the video…"), 3400);
         return;
       }
       if (r.status === "exists") {
@@ -5513,6 +6158,7 @@ export const APP = String.raw`
         return;
       }
       resetUpload();
+      if (limitHit(r, null)) return;
       upError(r.message || "Spotter could not start reading that upload.");
     }).catch(function (e) {
       var msg = String(e && e.message ? e.message : e);
@@ -5552,16 +6198,31 @@ export const APP = String.raw`
     $("setkey").textContent = key ? API + "ingest?key=" + key : "Loading…";
     $("setsaves").textContent = "…";
     renderSettingsMeter();
+    // Drawn at once from whatever is already known so the group never opens
+    // blank, then again when the two reads behind it land. Both of them shrug
+    // rather than fail: no billing routes and no subscriptions table both come
+    // back as "Free, nothing to offer", which is the state to ship first.
+    paintPlanGroup();
+    paintPlanUse(billing.limits);
+    Promise.all([loadPrices(), loadSub()]).then(paintPlanGroup);
     api("limits", { method: "GET" }).then(function (r) {
       pumpy.meterAsked = true;
       absorbMeter(r && r.pumpy);
       if (r.status === "ok") {
-        var line = r.saves_today + " of " + r.limit_saves +
-          " (" + r.extracts_today + "/" + r.limit_extract + " extractions, " +
-          r.helpers_today + "/" + r.limit_helper + " coaching" +
-          // The credits line below is the real Pumpy meter; the turn count is only
-          // shown while the server does not send one.
-          (r.pumpy ? ")" : ", " + (r.chats_today || 0) + "/" + (r.limit_chat || "—") + " Pumpy)");
+        billing.limits = r;
+        adoptPlan(r.plan);
+        paintPlanUse(r);
+        // Plan-aware once the server sends caps per plan, and today's sentence
+        // until it does — which is the page as it stands while billing is off.
+        var line = r.limits
+          ? capLine(r.saves_today, r.limits.saves, "saves") + " · " +
+            capLine(r.extracts_today, r.limits.extract, "read")
+          : r.saves_today + " of " + r.limit_saves +
+            " (" + r.extracts_today + "/" + r.limit_extract + " extractions, " +
+            r.helpers_today + "/" + r.limit_helper + " coaching" +
+            // The credits line below is the real Pumpy meter; the turn count is only
+            // shown while the server does not send one.
+            (r.pumpy ? ")" : ", " + (r.chats_today || 0) + "/" + (r.limit_chat || "—") + " Pumpy)");
         // Say so plainly when the day's spend ceiling has switched the paid
         // extractors off — cards get thinner and the user should know why.
         if (r.paid_enabled === false) line += " · budget reached, using the free reader";
@@ -6707,6 +7368,14 @@ export const APP = String.raw`
   $("setexport").onclick = exportData;
   $("setdelete").onclick = openDelete;
   $("settell").onclick = tellFriend;
+  $("setupgrade").onclick = function () { openPlans(null); };
+  $("setmanage").onclick = function () { openPortal(this); };
+  $("setpay").onclick = function () { openPortal(this); };
+  $("setrefresh").onclick = function () { refreshBilling(this); };
+  $("plannot").onclick = function () { closeSheet("plansheet"); };
+  $("planbuy").onclick = startCheckout;
+  $("planrestore").onclick = function () { refreshBilling(this); };
+  $("libcount").onclick = function () { openPlans(null); };
   $("acccancel").onclick = closeAcc;
   $("accgo").onclick = accGo;
   // Wired on its own rather than added to the list further up, which another
@@ -6761,7 +7430,7 @@ export const APP = String.raw`
           render(); watchPending(); toast("Reading it again…");
           return;
         }
-        if (r.status !== "ok") { toast(r.message || "Could not read that video again — try again in a minute."); return; }
+        if (r.status !== "ok") { limitHit(r, "Could not read that video again — try again in a minute."); return; }
         load().then(function () {
           var w = state.workouts.filter(function (x) { return x.id === r.workout.id; })[0];
           if (w) openDetail(w);
@@ -6845,8 +7514,16 @@ export const APP = String.raw`
     // One tick puts the ring right, and ends a rest that ran out in a pocket.
     if (restUntil) tickRest();
     if (wo) { acquireWake(); return; }
+    watchBilling();
     if (!overlayShowing()) load();
   });
+
+  // Three doors onto the same question, because the way back from a cross-origin
+  // checkout differs by platform: Safari raises pageshow out of its cache, an
+  // installed PWA raises visibilitychange when the in-app browser closes over it,
+  // and a desktop tab raises focus. All three land in one round of asking.
+  window.addEventListener("pageshow", watchBilling);
+  window.addEventListener("focus", watchBilling);
 
   setAuthMode("signup");
 
@@ -6854,6 +7531,7 @@ export const APP = String.raw`
   // after the whole script body has run, because this reads a var declared in the
   // share section and function hoisting would not have brought that with it.
   captureShare();
+  captureBilling();
 
   // A session restored from storage does not always fire onAuthStateChange in time.
   sb.auth.getSession().then(function (r) {

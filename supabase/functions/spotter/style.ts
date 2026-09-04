@@ -628,6 +628,90 @@ export const STYLE = String.raw`<style>
   .sheetbody p.lede { font-size: 13.5px; line-height: 1.6; color: var(--ink-2); margin: 0 0 18px; }
   .sheetbody .aitext { font-size: 14.5px; line-height: 1.68; color: var(--ink-2); white-space: pre-wrap; }
 
+  /* ---------- the plan sheet ----------
+     A sheet and not a takeover: what is being asked for is money, which is
+     exactly why it must be as easy to leave as the collection picker. Every
+     value below is a token or a shape the system already had. The context line
+     sits ABOVE the title because it is the reason the sheet opened, and a reason
+     that arrives after the pitch reads as an excuse for the pitch. */
+  .planctx { font-size: 13px; line-height: 1.55; color: var(--muted); margin: 2px 0 12px; }
+  .plangood { margin: 14px 0 4px; }
+  /* 44px whatever the sentence does at 375px: the rhythm the app's other rows
+     keep, so this reads as a list and not as a paragraph. */
+  .pgood { display: flex; align-items: flex-start; gap: 11px; min-height: 44px;
+    box-sizing: border-box; padding: 7px 0; font-size: 13.5px; line-height: 1.5; color: var(--ink-2); }
+  .pgood .ic { flex: 0 0 auto; width: 17px; height: 17px; margin-top: 3px; color: var(--ember); }
+  .plancards { margin: 16px 0 0; }
+  /* The whole rectangle is the radio, so there is no small circle to hit. Label
+     left, amount right, the rest wrapping underneath — which is what keeps the
+     founding line from pushing the amount off the edge at 375px. */
+  .pcard { display: block; width: 100%; text-align: left; font: inherit; color: inherit;
+    background: var(--card); border: 1px solid var(--line-2); border-radius: 16px;
+    padding: 13px 15px; margin-bottom: 9px; box-shadow: var(--sh-sm);
+    transition: border-color var(--t-2) var(--e-out), background-color var(--t-2) var(--e-out),
+      transform var(--t-1) var(--e-out); }
+  .pcard.on { border-color: var(--ember); background: var(--ember-soft); }
+  .pcard:active { transform: scale(.985); }
+  .prow { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+  .pname { font-size: 14.5px; font-weight: 650; letter-spacing: -.01em; }
+  .pamt { font-family: var(--display); font-size: 17px; font-weight: 700; letter-spacing: -.015em;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .pold { color: var(--muted); font-weight: 500; text-decoration: line-through; margin-right: 7px; }
+  .pmeta { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 6px;
+    font-size: 11.5px; line-height: 1.45; color: var(--muted); }
+  .pmeta .pill { font-size: 10.5px; padding: 5px 9px; }
+  .plantrial, .plansoon { font-size: 13px; line-height: 1.5; color: var(--ink-2); margin: 4px 0 14px; }
+  .plansoon { color: var(--muted); }
+  .planbuy { margin-top: 4px; min-height: 48px; }
+  /* Cross-fades rather than cutting: this is the one thing a person watches
+     while deciding, and a word that snaps under the thumb reads as a mis-tap. */
+  .planbuy b { font-weight: 650; transition: opacity var(--t-1) var(--e-soft); }
+  .planbuy b.fade { opacity: 0; }
+  /* 14px rather than 13: the dismiss has to be as easy to hit as the button that
+     charges you, and 13 left it a pixel short of the 44 Apple asks for. */
+  .plannot { display: block; width: 100%; background: none; border: none; font: inherit;
+    font-size: 13.5px; font-weight: 600; color: var(--muted); padding: 14px; margin-top: 2px; }
+  .planfine { font-size: 11.5px; line-height: 1.5; color: var(--muted); margin-top: 8px; }
+  /* Apple's 3.1.2 asks for working Terms and Privacy on the screen that sells,
+     and 3.1.1 for a restore. On the web the restore is a re-read from Stripe. */
+  .planlegal { display: flex; flex-wrap: wrap; align-items: center; justify-content: center;
+    gap: 9px; margin-top: 14px; }
+  .planlegal a, .planlegal button { font: inherit; font-size: 12px; font-weight: 500;
+    color: var(--muted); text-decoration: none; background: none; border: none; padding: 4px 2px; }
+  .planlegal span { color: var(--line-2); font-size: 12px; }
+  /* ---------- waiting for the prices ----------
+     Never "$undefined" and never an empty sheet: the shapes that are coming. The
+     sweep loops because the work is real, and stops when the numbers land. */
+  .skel { position: relative; overflow: hidden; background: var(--sand); border-radius: 12px; }
+  .skel::after { content: ""; position: absolute; inset: 0;
+    background: linear-gradient(100deg, transparent 25%, rgba(255,255,255,.26) 50%, transparent 75%);
+    transform: translateX(-100%); animation: shimmer 1.5s var(--e-soft) infinite; }
+  .skel.sline { height: 15px; margin: 15px 0; }
+  .skel.sline.half { width: 62%; }
+  .skel.scard { height: 66px; margin-bottom: 9px; border-radius: 16px; }
+  /* ---------- how full the free shelf is ----------
+     A line of text with a tap in it, over the grid it is counting, and nothing at
+     all until the count is known and the plan is free. Ember from the warn point
+     on, which is the only warning this app gives before the wall. */
+  .libcount { display: block; width: auto; margin: 12px 18px 0; padding: 6px 0;
+    background: none; border: none; font: inherit; font-size: 12.5px; font-weight: 600;
+    color: var(--muted); text-align: left; letter-spacing: -.005em;
+    transition: color var(--t-2) var(--e-soft); }
+  .libcount b { font-weight: 700; color: var(--ink-2); }
+  .libcount.near, .libcount.near b { color: var(--ember-ink); }
+  /* ---------- Settings, the Plan group ---------- */
+  .setnote.warn { color: var(--ember-ink); }
+  .setlink { display: block; width: 100%; background: none; border: none; font: inherit;
+    font-size: 13px; font-weight: 600; color: var(--ember-ink); padding: 13px; margin-top: 2px; }
+  /* Pumpy's own way to the sheet: a chip under the sentence he just said, rather
+     than a sheet thrown over his face while he is mid-answer. */
+  .msgcol .chip { align-self: flex-start; }
+  @media (prefers-reduced-motion: reduce) {
+    .pcard, .planbuy b, .libcount { transition: none; }
+    .pcard:active { transform: none; }
+    .skel::after { animation: none; }
+  }
+
   /* ---------- how to do this ----------
      The creator's line is the only thing here drawn in full ink: it came out of the
      video the user saved, and everything under it is generic by comparison. */
@@ -1356,11 +1440,15 @@ export const STYLE = String.raw`<style>
      Apple asks for 44px; these are drawn smaller because their rows are. Only the
      hit area grows, capped at the gap to the next control so no two overlap.
      Insets come off the padding box: a bordered control needs a pixel more. */
-  .iconbtn, .addbtn, .exhelp, .planx, .planadd, .mbtn, .addex, .danger,
+  .iconbtn, .addbtn, .exhelp, .planx, .planadd, .mbtn, .addex, .danger, .libcount,
+  .planlegal a, .planlegal button,
   .chips .chip, .said .chip, .pumpyctx button, .threadrow .tdel, .ttitle { position: relative; }
   .iconbtn::after, .addbtn::after, .exhelp::after, .planx::after, .planadd::after,
   .mbtn::after, .addex::after, .danger::after, .chips .chip::after, .said .chip::after,
-  .pumpyctx button::after, .threadrow .tdel::after, .ttitle::after { content: ""; position: absolute; }
+  .pumpyctx button::after, .threadrow .tdel::after, .ttitle::after,
+  .libcount::after, .planlegal a::after, .planlegal button::after { content: ""; position: absolute; }
+  .libcount::after { inset: -9px; }
+  .planlegal a::after, .planlegal button::after { inset: -11px -4px; }
   .iconbtn::after { inset: -3px; }
   .addbtn::after { inset: -2px; }
   .exhelp::after { inset: -7px -6px; }

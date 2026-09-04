@@ -25,7 +25,7 @@
 <body>
 <main>
   <h1>Privacy</h1>
-  <div class="date">Last updated 2 September 2026</div>
+  <div class="date">Last updated 4 September 2026</div>
 
   <p>Spotter is a small, independent app. This page says plainly what it stores and what it does
     not do. If anything here is unclear, email
@@ -46,6 +46,9 @@
       any time from Settings.</li>
     <li><b>Your conversations with Pumpy</b>, the coach, so you can pick a chat up where you left
       it, and the changes you confirmed from them. They are private to your account.</li>
+    <li><b>If you subscribe to Spotter Plus</b>, an identifier for you at Stripe and the state of
+      your subscription — the plan, whether it is running, and the date it renews or ends. Never
+      your card. See <a href="#payments">Payments</a> below.</li>
   </ul>
 
   <h2>What Spotter does not do</h2>
@@ -87,6 +90,35 @@
     <a href="https://support.google.com/youtube/answer/171780" target="_blank" rel="noopener">privacy-enhanced
     (no-cookie)</a> YouTube player that is only added to the page once you tap and is removed
     again when you close the sheet. The link beside it opens YouTube's own search results.</p>
+
+  <h2 id="payments">Payments</h2>
+  <p>Spotter Plus is paid for through
+    <a href="https://stripe.com/privacy" target="_blank" rel="noopener">Stripe</a>, and the payment
+    happens on Stripe's own checkout page, not on Spotter's. Your card number, the security code
+    on the back of it and whatever address your bank wants go to Stripe and stop there.
+    <b>Spotter never sees any of it</b>, has no way to ask for it, and could not charge your card
+    by itself if it wanted to.</p>
+  <p>What Spotter keeps, on a row attached to your account, is only what it needs to know whether
+    you are on the paid plan today:</p>
+  <ul>
+    <li>the customer and subscription identifiers Stripe gave you, so the two systems can talk
+      about the same person;</li>
+    <li>which plan it is, whether it is on trial, running, cancelled or unpaid, whether it is set
+      to stop at the end of the period, and the date that period ends;</li>
+    <li>the date a payment last failed, if one has, so the app can say so and offer the fix;</li>
+    <li>a log of the notifications Stripe sends — the identifier and type of each one, and when it
+      was handled. That log is how Spotter avoids acting on the same message twice. It holds no
+      payment details.</li>
+  </ul>
+  <p>Stripe is its own company and handles your payment data under
+    <a href="https://stripe.com/privacy" target="_blank" rel="noopener">its own privacy policy</a>.
+    Spotter sends it your account identifier so a payment can be matched back to you, and your
+    email address if you give Stripe one at checkout.</p>
+  <p>If you cancel, the row stays until the period you paid for runs out and then says you are on
+    the free plan. <b>Deleting your account cancels the subscription first</b>, then deletes your
+    customer record at Stripe along with everything else. Stripe keeps its own record of the
+    payments themselves for as long as tax and accounting law says it must — that part is not
+    Spotter's to delete.</p>
 
   <h2>Videos you upload</h2>
   <p>If you upload a video yourself — the option under the link box, for creators who say the
@@ -136,6 +168,8 @@
     <li>your collections and the corrections you made to cards;</li>
     <li>your chats with Pumpy;</li>
     <li>your profile, your settings and your personal save key;</li>
+    <li>your subscription, if you have one — it is cancelled at Stripe first, and your customer
+      record there is deleted with it;</li>
     <li>the sign-in account itself.</li>
   </ul>
   <p>None of it can be recovered afterwards, so export your data first if you want to keep it.

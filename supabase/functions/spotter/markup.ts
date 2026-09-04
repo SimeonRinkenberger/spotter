@@ -132,7 +132,8 @@ export const MARKUP_BODY = String.raw`</head>
          something is wrong reads as unowned however good it is, and that absence
          was the loudest thing about this page. -->
     <div class="landfoot">Made by Simeon Rinkenberger · Free while in beta ·
-      <a href="whats-new.html">What&rsquo;s new</a> · <a href="privacy.html">Privacy</a></div>
+      <a href="whats-new.html">What&rsquo;s new</a> · <a href="terms.html">Terms</a> ·
+      <a href="privacy.html">Privacy</a></div>
   </div>
 </div>
 
@@ -175,6 +176,10 @@ export const MARKUP_BODY = String.raw`</head>
 
         <div class="chips" id="chips"></div>
         <div class="colbar hide" id="colbar"></div>
+        <!-- The only paywall that is not a refusal, sitting where the shelf is.
+             Hidden outright rather than kept empty, so a paid account and an
+             account with billing off get today's page to the pixel. -->
+        <button class="libcount hide" id="libcount"></button>
         <div class="grid" id="grid"></div>
         <div class="empty hide" id="empty"></div>
       </div>
@@ -452,6 +457,24 @@ export const MARKUP_BODY = String.raw`</head>
   <div class="setnote hide" id="setpumpy"></div>
   <button class="btn ghost setout" id="signout">Sign out</button>
 
+  <!-- Under Account, where Hevy and Fitbod both put theirs and where Apple's
+       guideline expects a subscriber to look for the way out; below Sign out only
+       because Sign out is deliberately the end of the Account section. With
+       billing switched off the row reads Free and no button appears at all —
+       Settings is not the place to advertise a plan nobody can buy yet. -->
+  <h3 class="seth">Plan</h3>
+  <div class="setgroup">
+    <div class="kv" id="setplanrow"><span class="k">Plan</span><span class="v" id="setplan">Free</span></div>
+  </div>
+  <div class="setnote hide" id="setplanuse"></div>
+  <div class="setnote warn hide" id="setplanwarn"></div>
+  <div class="btnrow hide" id="setplanbtns">
+    <button class="btn hide" id="setpay">Update payment</button>
+    <button class="btn ghost hide" id="setmanage">Manage subscription</button>
+    <button class="btn hide" id="setupgrade">Upgrade to Plus</button>
+  </div>
+  <button class="setlink hide" id="setrefresh">Refresh</button>
+
   <h3 class="seth">Preferences</h3>
   <div class="setgroup">
     <div class="kv"><span class="k">Weight unit</span>
@@ -482,6 +505,7 @@ export const MARKUP_BODY = String.raw`</head>
   <h3 class="seth">Data &amp; privacy</h3>
   <div class="setgroup">
     <button class="kv row" id="setexport"><span class="k">Export my data</span><span class="v" id="setexportv">JSON</span><svg class="ic chev"><use href="#i-chev"></use></svg></button>
+    <a class="kv row" href="terms.html"><span class="k">Terms of use</span><svg class="ic chev"><use href="#i-chev"></use></svg></a>
     <a class="kv row" href="privacy.html"><span class="k">Privacy policy</span><svg class="ic chev"><use href="#i-chev"></use></svg></a>
     <button class="kv row del" id="setdelete"><span class="k">Delete account</span><svg class="ic chev"><use href="#i-chev"></use></svg></button>
   </div>
@@ -498,7 +522,29 @@ export const MARKUP_BODY = String.raw`</head>
   <!-- The last line of the app, and the one that says a person is behind it. The
        report goes to the public issue tracker rather than an address, because an
        address in a public page is an address that gets harvested. -->
-  <div class="setnote foot">Made by Simeon Rinkenberger &middot; Free while in beta</div>
+  <div class="setnote foot">Made by Simeon Rinkenberger</div>
+</div></div>
+
+<!-- The one place Spotter asks for money. Written by openPlans() out of the live
+     prices and caps, so no number here can drift from the number the server is
+     enforcing: the only copy in the markup is the half with no number in it. -->
+<div class="sheet" id="plansheet"><div class="sheetbody">
+  <div class="grabber"></div>
+  <div class="planctx hide" id="planctx"></div>
+  <h2>Spotter Plus</h2>
+  <p class="lede">Room to save what you find, and a coach who does not run out mid-week.</p>
+  <div class="plangood" id="plangood"></div>
+  <div class="plancards" id="plancards" role="radiogroup" aria-label="Billing period"></div>
+  <div class="plantrial hide" id="plantrial"></div>
+  <div class="plansoon hide" id="plansoon">Plans are coming soon.</div>
+  <button class="btn planbuy hide" id="planbuy"><b></b></button>
+  <button class="plannot" id="plannot">Not now</button>
+  <div class="planfine" id="planfine"></div>
+  <div class="planlegal">
+    <a href="terms.html">Terms</a><span aria-hidden="true">&middot;</span>
+    <a href="privacy.html">Privacy</a><span aria-hidden="true" id="plandot2">&middot;</span>
+    <button id="planrestore">Restore purchase</button>
+  </div>
 </div></div>
 
 <!-- One sheet for every account question, dressed by JS. Rename, change password,
