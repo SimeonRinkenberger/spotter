@@ -5251,6 +5251,59 @@ export const APP = String.raw`
     return wrap;
   }
 
+  // A past session draws its card on the tap. That measured 23ms cold and 13ms
+  // warm, which is nothing against an activation window counted in seconds — and
+  // the pointerdown starts the draw eighty milliseconds early anyway, the way the
+  // AI prefetch already does, so by the click there is usually a File waiting.
+  function scLogCard(l) {
+    var card = scFromLog(l);
+    card.theme = sc.theme;
+    return renderShareCard(card).then(function (b) {
+      var f = null;
+      try { f = new File([b], "spotter-workout.png", { type: "image/png" }); }
+      catch (e) { /* the download path takes the blob instead */ }
+      return { blob: b, file: f };
+    });
+  }
+
+  // The same doorway without the preview: whatever this phone can do with the
+  // card, straight out of the tap.
+  function scHandOff(r) {
+    if (r.file && navigator.canShare && navigator.canShare({ files: [r.file] })) {
+      try {
+        var p = navigator.share({ files: [r.file] });
+        if (p && p.then) p.then(null, function () { /* cancelled, or refused */ });
+        return;
+      } catch (e) { /* an older sheet: fall through to the download */ }
+    }
+    var u = URL.createObjectURL(r.blob);
+    var a = el("a");
+    a.href = u;
+    a.download = "spotter-workout.png";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function () { URL.revokeObjectURL(u); }, 4000);
+    toast("Saved spotter-workout.png", 3600);
+  }
+
+  function scLogBtn(l) {
+    var b = el("button", "scmini");
+    b.type = "button";
+    icon(b, "share", "Share");
+    var drawn = null;
+    b.onpointerdown = function () { if (!drawn) drawn = scLogCard(l); };
+    b.onclick = function () {
+      haptic("tap");
+      if (!drawn) drawn = scLogCard(l);
+      drawn.then(scHandOff, function () {
+        drawn = null;
+        toast("Could not draw that card.");
+      });
+    };
+    return b;
+  }
+
   // ---------- plan ----------
 
   function mondayOf(date) {
@@ -5744,6 +5797,16 @@ export const APP = String.raw`
         er.appendChild(en);
         card.appendChild(er);
       });
+
+      // A past session goes out the same door as a fresh one, and Strava's own
+      // button sits beside it on the same row.
+      var acts = el("div", "cardacts");
+      acts.appendChild(scLogBtn(l));
+      if (typeof stravaBtn === "function") {
+        var sbn = stravaBtn(l);
+        if (sbn) acts.appendChild(sbn);
+      }
+      card.appendChild(acts);
 
       var del = el("button", "danger", "Delete session");
       del.onclick = function () {

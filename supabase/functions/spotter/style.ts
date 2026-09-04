@@ -1364,6 +1364,15 @@ export const STYLE = String.raw`<style>
     .sharewrap, .scbtns.in { animation-name: fadeonly; animation-delay: 0ms; }
     .scprev img { transition: none; }
   }
+  /* On a past session there is no room for a preview, so the card is drawn on
+     the tap and handed straight to the sheet. Strava's button lands beside it. */
+  .cardacts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .scmini { display: inline-flex; align-items: center; gap: 7px; min-height: 44px;
+    padding: 11px 15px; border: 1px solid var(--line-2); border-radius: 999px;
+    background: var(--card); color: var(--ink-2); font-size: 13px; font-weight: 600;
+    transition: transform var(--t-1) var(--e-out), opacity var(--t-2); }
+  .scmini .ic { width: 15px; height: 15px; }
+  .scmini:active { transform: scale(.96); }
   /* The clip, in a sheet, at the moment it is wanted. Shorter than the detail
      view's embed so the close button stays on screen with it. */
   #watchbody .embedwrap, #watchbody .dphoto { margin-bottom: 14px; }
