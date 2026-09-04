@@ -222,9 +222,20 @@ export const APP = String.raw`
 
   // ---------- edge function calls ----------
 
+  // Three routes where the same question asked twice at once is not two questions:
+  // the answer depends on nothing but the body. Something does now ask twice — the
+  // prefetch on pointerdown and the sheet ninety milliseconds later — and sharing
+  // the promise makes that one AI call. Everything else here is a thing that
+  // HAPPENS rather than one that is asked — an ingest, a Pumpy turn, a checkout —
+  // and two of those are genuinely two.
+  var SHARED = { "explain": 1, "demo-video": 1, "swap": 1 };
+  var inFlight = {};
+
   function api(path, opts) {
     opts = opts || {};
-    return sb.auth.getSession().then(function (r) {
+    var share = SHARED[path] ? path + "\n" + (opts.body || "") : null;
+    if (share && inFlight[share]) return inFlight[share];
+    var p = sb.auth.getSession().then(function (r) {
       var token = r.data.session ? r.data.session.access_token : "";
       opts.headers = Object.assign({
         authorization: "Bearer " + token,
@@ -237,6 +248,12 @@ export const APP = String.raw`
         return body;
       });
     });
+    if (share) {
+      inFlight[share] = p;
+      var forget = function () { delete inFlight[share]; };
+      p.then(forget, forget);
+    }
+    return p;
   }
 
   // ---------- auth ----------
@@ -688,17 +705,33 @@ export const APP = String.raw`
       // What the last person was looking for is not what the next one is. The
       // library came back narrowed to a search and a creator nobody had typed.
       state.filter = "All"; state.q = ""; $("search").value = "";
+      // Somebody else's library must never paint on this phone, and the next
+      // sign-in on this page has to be a real boot rather than a no-op.
+      dropCache();
+      booting = null;
       showLanding();
     }
   });
 
+  // Two doors lead here — onAuthStateChange's first session, and the getSession at
+  // the foot of this file for a session restored before the listener existed — and
+  // both used to open. Measured live: profiles, workouts, collections and
+  // collection_items each read twice, eight round trips where four would do, and
+  // the grid built twice from the same rows. Second in gets the first one's promise.
+  var booting = null;
+
   function boot() {
+    if (booting) return booting;
+    // Before the network is asked anything: the library someone is looking at is
+    // almost always the one they left.
+    paintCache();
     loadProfile();
     maybeInstallHint();
     watchWorkouts();
     // A shared link is saved only once the library is in hand, so the card it
     // creates lands in a rendered grid rather than into an empty one.
-    return load().then(consumeShare).then(consumeBilling).then(warmPages);
+    booting = load().then(consumeShare).then(consumeBilling).then(warmPages);
+    return booting;
   }
 
   // All four pages are mounted all the time now, which means a swipe can uncover
@@ -847,6 +880,104 @@ export const APP = String.raw`
     });
   }
 
+  // ---------- cache ----------
+  //
+  // Measured live with twenty cards: the document is interactive at 77ms and the
+  // first card lands at 358ms, and all of that gap is one PostgREST round trip,
+  // not work. So the last answer is kept and painted while the network is still
+  // being asked — what Instagram and Hevy do, and why both feel already open. The
+  // read behind it is still the truth. Every call here is wrapped: localStorage
+  // throws in a private window and on a full phone, and a library that will not
+  // load because a cache would not write is the worse bug by far.
+  var CACHE_KEY = "spotter-lib-v1";
+  var CACHE_MAX = 1500000;   // a quota is 5MB; past this it is not worth the main thread
+
+  // caption is 62% of a row and nothing on the library screen reads it — not the
+  // card, not the chips, not the search, which looks in titles, exercise names,
+  // muscles, equipment and tags. load() brings the real row back a moment later.
+  function thinRow(w) {
+    var out = {}, k;
+    for (k in w) { if (Object.prototype.hasOwnProperty.call(w, k) && k !== "caption") out[k] = w[k]; }
+    return out;
+  }
+
+  function readCache() {
+    try {
+      var raw = localStorage.getItem(CACHE_KEY);
+      if (!raw) return null;
+      var c = JSON.parse(raw);
+      // Keyed by user and checked rather than trusted: a shared phone must never
+      // show one person the other's workouts, not even for a third of a second.
+      if (!c || c.v !== 1 || !state.user || c.uid !== state.user.id) return null;
+      if (!c.workouts || !c.workouts.length) return null;
+      return c;
+    } catch (e) { return null; }
+  }
+
+  function writeCache() {
+    if (!state.user) return;
+    try {
+      var payload = JSON.stringify({
+        v: 1, uid: state.user.id, at: Date.now(),
+        workouts: state.workouts.map(thinRow),
+        collections: state.collections,
+        colItems: state.colItems
+      });
+      if (payload.length > CACHE_MAX) { localStorage.removeItem(CACHE_KEY); return; }
+      localStorage.setItem(CACHE_KEY, payload);
+    } catch (e) {
+      // Out of quota, or a browser that stores nothing. Drop what may be a
+      // half-written entry and carry on without a cache.
+      try { localStorage.removeItem(CACHE_KEY); } catch (e2) { }
+    }
+  }
+
+  function dropCache() {
+    try { localStorage.removeItem(CACHE_KEY); } catch (e) { }
+  }
+
+  function paintCache() {
+    var c = readCache();
+    if (!c) return;
+    state.workouts = c.workouts;
+    state.collections = c.collections || [];
+    state.colItems = c.colItems || [];
+    // Every card here has been seen before, so none should fly in — not now and
+    // not when load() lands. seenCards is the ledger that already stops a filter
+    // tap re-animating the grid; this is the same idea one launch earlier.
+    for (var i = 0; i < state.workouts.length; i++) seenCards[state.workouts[i].id] = 1;
+    render();
+  }
+
+  // The ninety milliseconds between a finger landing and the tap it becomes are
+  // already spent — instant.page measures 90ms on touch, 80ms on a mouse. Both of
+  // the explain sheet's questions are decided by the exercise under the finger, so
+  // the press asks them and the answers land in the same two caches the sheet
+  // reads. api() shares the in-flight answer for these routes, so the press and
+  // the tap together cost one AI credit rather than two; the only waste left is a
+  // press that turns into a scroll, and even that is recovered next time. Nothing
+  // is prefetched for the swap sheet — a swap needs a reason nobody has picked yet.
+  function prefetchExplain(ex, w) {
+    if (!ex || !ex.name) return;
+    var quote = ex.evidence && ex.evidence.quote ? String(ex.evidence.quote).trim() : "";
+    var vk = vidKey(ex);
+    if (!vidCache[vk]) {
+      api("demo-video", { method: "POST", body: JSON.stringify({
+        exercise: ex.name, canonical_id: ex.canonical_id || null
+      }) }).then(function (r) {
+        if (r && r.status === "ok") vidCache[vk] = r;
+      }).catch(function () { });
+    }
+    var key = ex.name + "\n" + quote;
+    if (expCache[key]) return;
+    api("explain", { method: "POST", body: JSON.stringify({
+      exercise: ex.name, title: w ? (w.title || "") : "", quote: quote,
+      source: ex.evidence ? ex.evidence.source : null, canonical_id: ex.canonical_id || null
+    }) }).then(function (r) {
+      if (r && r.status === "ok") expCache[key] = r.text;
+    }).catch(function () { });
+  }
+
   // ---------- library ----------
 
   function load(retry) {
@@ -875,7 +1006,21 @@ export const APP = String.raw`
       // shrug off a pull-to-refresh made half a minute after the last read.
       today.at = 0;
       render();
+      // A card opened straight off the cache has no caption on it. The real row is
+      // in hand now, so the open one is put right the way realtime puts it right.
+      if (current && $("detail").classList.contains("open")) {
+        for (var i = 0; i < state.workouts.length; i++) {
+          if (state.workouts[i].id === current.id) {
+            current = state.workouts[i];
+            openDetail(current, true);
+            break;
+          }
+        }
+      }
       watchPending();
+      // In idle time: this is for the next launch, and this one's thumbnails are
+      // still arriving.
+      idle(writeCache, 0);
     });
   }
 
@@ -1291,7 +1436,13 @@ export const APP = String.raw`
       }
       if (w.thumb_url) {
         var img = el("img");
-        img.loading = "lazy";
+        // The four above the fold are the first thing anybody looks at, so they
+        // are told to hurry; the rest keep the lazy default. decoding=async on all
+        // of them, because a thumbnail decoded on the main thread is one decoded
+        // during a scroll.
+        img.loading = i < 4 ? "eager" : "lazy";
+        img.decoding = "async";
+        if (i < 4) img.setAttribute("fetchpriority", "high");
         img.alt = "";
         img.src = w.thumb_url;
         img.onload = function () { tw.classList.remove("loading"); tw.classList.add("loaded"); };
@@ -1384,12 +1535,19 @@ export const APP = String.raw`
     } else {
       if (w.thumb_url) {
         var img = el("img", "dphoto");
+        img.decoding = "async";
         img.src = w.thumb_url;
         img.alt = "";
         return img;
       }
       return null;
     }
+    // Holding the src back a frame was tried here and measured worse, twice: a
+    // cross-origin iframe is handed to another process and costs 0.8ms to insert,
+    // while a src-less one has an about:blank document built in this process and
+    // costs 2.1ms — so deferring buys nothing on the main thread and delays the
+    // video. The lazy hint stays, for an embed that opens below the fold.
+    frame.setAttribute("loading", "lazy");
     wrap.appendChild(frame);
     return wrap;
   }
@@ -1717,8 +1875,17 @@ export const APP = String.raw`
           function () { openExEdit(w, bi, ei, ex); }));
         acts.appendChild(exAct(row, "swap", "Swap", "Swap or modify this exercise", false,
           function () { openSwap(ex.name, w.title); }));
-        acts.appendChild(exAct(row, "help", "How to", "How to do this exercise", true,
-          function () { explain(ex, w); }));
+        var how = exAct(row, "help", "How to", "How to do this exercise", true,
+          function () { explain(ex, w); });
+        // The press starts the two questions the tap is about to ask, and the tap
+        // finds them already in flight. Only where a press is an intent: the drawer
+        // button, and a mouse on the row. A finger landing on a row is as often the
+        // start of a scroll, and two AI calls per scroll touch is money for nothing.
+        how.addEventListener("pointerdown", function () { prefetchExplain(ex, w); });
+        main.addEventListener("pointerdown", function (e) {
+          if (e.pointerType === "mouse") prefetchExplain(ex, w);
+        });
+        acts.appendChild(how);
         row.appendChild(acts);
         // A closed row answers a tap with what it is most asked for; an open one
         // answers by putting itself away, as iOS does.
@@ -1774,9 +1941,18 @@ export const APP = String.raw`
       sel.appendChild(o);
     });
     sel.onchange = function () {
-      patchWorkout(w, { category: sel.value });
+      // Optimistic, and now honest about it: patchWorkout says "your copy is
+      // unchanged", which was not true — the pill stayed switched and no realtime
+      // event was coming to correct it, because no row had changed.
+      var was = w.category;
       w.category = sel.value;
       render();
+      patchWorkout(w, { category: sel.value }).then(function (ok) {
+        if (ok) return;
+        w.category = was;
+        sel.value = was || "Other";
+        render();
+      });
     };
     cat.appendChild(el("span", "pill", "Category"));
     cat.appendChild(sel);
@@ -1791,8 +1967,15 @@ export const APP = String.raw`
     ta.oninput = function () {
       clearTimeout(noteTimer);
       noteTimer = setTimeout(function () {
-        patchWorkout(w, { notes: ta.value });
-        w.notes = ta.value;
+        // Nothing is put back in the box on a failure — somebody is probably still
+        // typing in it — but the row keeps the last value the server agreed to, so
+        // no later render shows a note that was never saved.
+        var was = w.notes;
+        var sent = ta.value;
+        w.notes = sent;
+        patchWorkout(w, { notes: sent }).then(function (ok) {
+          if (!ok && w.notes === sent) w.notes = was;
+        });
       }, 700);
     };
     notesSect.appendChild(ta);
@@ -2319,15 +2502,25 @@ export const APP = String.raw`
     }, function () { putBack(null); });
   }
 
+  // The second tap of an armed button is as deliberate as an answer gets, and it
+  // used to be followed by a card sitting there for a round trip. Deleting a
+  // collection and deleting a session already worked this way; the workout was the
+  // odd one out. No undo on purpose — the arming is the confirmation — but a
+  // refused delete puts the card back rather than leaving the library wrong.
   function removeWorkout(w, btn) {
     var go = function () {
+      var keptW = state.workouts, keptC = state.colItems;
+      state.workouts = state.workouts.filter(function (x) { return x.id !== w.id; });
+      state.colItems = state.colItems.filter(function (it) { return it.workout_id !== w.id; });
+      history.back();
+      render();
+      toast("Workout removed.");
       sb.from("workouts").delete().eq("id", w.id).then(function (r) {
-        if (r.error) { toast("That did not delete. The workout is still here."); return; }
-        state.workouts = state.workouts.filter(function (x) { return x.id !== w.id; });
-        state.colItems = state.colItems.filter(function (it) { return it.workout_id !== w.id; });
-        history.back();
+        if (!r.error) return;
+        state.workouts = keptW;
+        state.colItems = keptC;
         render();
-        toast("Workout removed.");
+        toast("That did not delete. The workout is still here.");
       });
     };
     if (btn) armed(btn, "Tap again to remove", go); else go();
@@ -2417,35 +2610,50 @@ export const APP = String.raw`
     var btn = $("renamesave");
     btn.disabled = true;
 
+    // A rename is a thing the user typed, so the app needs nobody's permission to
+    // show it. The sheet closes on the tap and the name is everywhere at once; a
+    // refusal puts the old one back and says why — including the duplicate-name
+    // answer, which is the one thing here only the server knows.
     if (ctx.kind === "workout") {
       var w = state.workouts.filter(function (x) { return x.id === ctx.id; })[0];
       if (!w || name === (w.title || "")) { btn.disabled = false; closeSheet("renamesheet"); renameCtx = null; return; }
+      var wasTitle = w.title;
+      w.title = name;
+      closeSheet("renamesheet");
+      renameCtx = null;
+      btn.disabled = false;
+      var t = document.querySelector("#dinner .dtitle");
+      if (t && current && current.id === w.id) t.textContent = name;
+      render();
+      toast("Renamed.");
       patchWorkout(w, { title: name }).then(function (ok) {
-        btn.disabled = false;
-        if (!ok) return;
-        w.title = name;
-        closeSheet("renamesheet");
-        renameCtx = null;
-        var t = document.querySelector("#dinner .dtitle");
-        if (t && current && current.id === w.id) t.textContent = name;
+        if (ok) return;
+        w.title = wasTitle;
+        var t2 = document.querySelector("#dinner .dtitle");
+        if (t2 && current && current.id === w.id) t2.textContent = wasTitle || "Untitled workout";
         render();
-        toast("Renamed.");
       });
       return;
     }
 
     var c = colById(ctx.id);
     if (!c || name === c.name) { btn.disabled = false; closeSheet("renamesheet"); renameCtx = null; return; }
+    var wasName = c.name;
+    c.name = name;
+    closeSheet("renamesheet");
+    renameCtx = null;
+    btn.disabled = false;
+    render();
+    if ($("colsheet").classList.contains("open")) renderColSheet();
+    if (current && $("detail").classList.contains("open")) refreshManage(current);
+    toast("Renamed.");
     sb.from("collections").update({ name: name }).eq("id", c.id).then(function (r) {
-      btn.disabled = false;
-      if (r.error) { toast(dupCollectionMsg(r.error) || "That name did not save. Try again in a moment."); return; }
-      c.name = name;
-      closeSheet("renamesheet");
-      renameCtx = null;
+      if (!r.error) return;
+      c.name = wasName;
       render();
       if ($("colsheet").classList.contains("open")) renderColSheet();
       if (current && $("detail").classList.contains("open")) refreshManage(current);
-      toast("Renamed.");
+      toast(dupCollectionMsg(r.error) || "That name did not save. Try again in a moment.");
     });
   }
 
@@ -2500,24 +2708,34 @@ export const APP = String.raw`
     });
   }
 
+  // The tick, the count and aria-pressed all used to wait on a round trip — a
+  // fifth of a second in which the row just tapped looked dead, which reads as a
+  // tap that missed. The phone knows this answer, so it happens now and the write
+  // catches up; a refusal puts the row back and says so.
   function toggleMembership(c, workoutId) {
-    if (inCol(c.id, workoutId)) {
-      sb.from("collection_items").delete().match({ collection_id: c.id, workout_id: workoutId })
-        .then(function (r) {
-          if (r.error) { toast("That collection did not change. Try again in a moment."); return; }
-          state.colItems = state.colItems.filter(function (it) {
-            return !(it.collection_id === c.id && it.workout_id === workoutId);
-          });
-          afterMembership();
-        });
+    var had = inCol(c.id, workoutId);
+    var kept = state.colItems;
+    if (had) {
+      state.colItems = state.colItems.filter(function (it) {
+        return !(it.collection_id === c.id && it.workout_id === workoutId);
+      });
+    } else {
+      state.colItems = state.colItems.concat([
+        { collection_id: c.id, workout_id: workoutId, added_at: new Date().toISOString() }
+      ]);
+    }
+    afterMembership();
+    function undo(r) {
+      if (!r.error) return;
+      state.colItems = kept;
+      afterMembership();
+      toast("That collection did not change. Try again in a moment.");
+    }
+    if (had) {
+      sb.from("collection_items").delete().match({ collection_id: c.id, workout_id: workoutId }).then(undo);
       return;
     }
-    sb.from("collection_items").insert({ collection_id: c.id, workout_id: workoutId, user_id: state.user.id })
-      .then(function (r) {
-        if (r.error) { toast("That collection did not change. Try again in a moment."); return; }
-        state.colItems.push({ collection_id: c.id, workout_id: workoutId, added_at: new Date().toISOString() });
-        afterMembership();
-      });
+    sb.from("collection_items").insert({ collection_id: c.id, workout_id: workoutId, user_id: state.user.id }).then(undo);
   }
 
   function afterMembership() {
@@ -4580,7 +4798,21 @@ export const APP = String.raw`
           var x = icon(el("button", "planx"), "x");
           x.setAttribute("aria-label", "Take this off the day");
           x.onclick = function () {
-            sb.from("plan").delete().eq("id", p.id).then(function () { loadPlan(); });
+            // A row the server has not confirmed has no id to delete by; it goes
+            // on its own when loadPlan lands.
+            if (String(p.id).indexOf("tmp-") === 0) return;
+            // Off the day now. This was also the one write in the file that never
+            // looked at r.error, so a refused delete quietly redrew the row.
+            var kept = state.plan;
+            state.plan = state.plan.filter(function (q) { return q.id !== p.id; });
+            today.at = 0;
+            renderPlan();
+            sb.from("plan").delete().eq("id", p.id).then(function (r) {
+              if (!r.error) return;
+              state.plan = kept;
+              renderPlan();
+              toast("That did not come off the day — it is still planned.");
+            });
           };
           item.appendChild(x);
           card.appendChild(item);
@@ -4622,10 +4854,24 @@ export const APP = String.raw`
       t.appendChild(el("span", null, [w.category, fmtDur(w.duration_minutes)].filter(Boolean).join(" · ")));
       row.appendChild(t);
       row.onclick = function () {
+        // The sheet closes and the day fills in on the tap; it used to take two
+        // serial round trips — the insert, then a whole week re-read — before
+        // anything moved. The row wears a temporary id until the real one lands.
+        closeSheet("picksheet");
+        var kept = state.plan;
+        state.plan = (state.plan || []).concat([
+          { id: "tmp-" + Date.now(), day: day, workout_id: w.id, user_id: state.user.id }
+        ]);
+        today.at = 0;
+        renderPlan();
         sb.from("plan").insert({ user_id: state.user.id, day: day, workout_id: w.id })
           .then(function (r) {
-            closeSheet("picksheet");
-            if (r.error) { toast("Could not add it to that day. Try again in a moment."); return; }
+            if (r.error) {
+              state.plan = kept;
+              renderPlan();
+              toast("Could not add it to that day. Try again in a moment.");
+              return;
+            }
             loadPlan();
           });
       };
@@ -7734,10 +7980,17 @@ export const APP = String.raw`
   $("dclose").onclick = function () { history.back(); };
   $("dfav").onclick = function () {
     if (!current) return;
-    current.favorite = !current.favorite;
-    setFav(current);
-    patchWorkout(current, { favorite: current.favorite });
+    var w = current;
+    w.favorite = !w.favorite;
+    setFav(w);
     render();
+    // The star used to stay lit through a failure it had already been told about.
+    patchWorkout(w, { favorite: w.favorite }).then(function (ok) {
+      if (ok) return;
+      w.favorite = !w.favorite;
+      if (current === w) setFav(w);
+      render();
+    });
   };
   $("dshare").onclick = function () {
     if (!current) return;

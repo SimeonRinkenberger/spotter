@@ -637,8 +637,15 @@ export const STYLE = String.raw`<style>
   .addex:active { transform: scale(.985); }
   .fieldrow { display: flex; gap: 9px; }
   .fieldrow .field { flex: 1; min-width: 0; }
+  /* A caption is a couple of thousand characters of wrapped text a long way below
+     the fold of a card just opened: the most expensive thing on that screen that
+     nobody is looking at. Skipped until it is scrolled near, with a remembered
+     intrinsic size — auto, so the real height is used from the second time on —
+     to keep the scrollbar honest meanwhile. 400px is the middle of what a real
+     caption measures (a long one came out at 875px at 375 wide), which is the
+     number that makes the first scroll to the bottom least wrong. */
   .capbox { font-size: 13.5px; line-height: 1.62; color: var(--ink-2); white-space: pre-wrap;
-    word-break: break-word; }
+    word-break: break-word; content-visibility: auto; contain-intrinsic-size: auto 400px; }
   /* Shown only when the extraction could not be traced back to the source text.
      Deliberately quiet: it is a caveat on a card that still works, not an error. */
   .unverified { display: flex; gap: 9px; align-items: flex-start; font-size: 12.5px;
