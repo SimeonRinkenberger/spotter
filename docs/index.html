@@ -2742,17 +2742,35 @@
       // What the last person was looking for is not what the next one is. The
       // library came back narrowed to a search and a creator nobody had typed.
       state.filter = "All"; state.q = ""; $("search").value = "";
+      // Somebody else's library must never paint on this phone, and the next
+      // sign-in on this page has to be a real boot rather than a no-op.
+      dropCache();
+      booting = null;
       showLanding();
     }
   });
 
+  // Two doors lead to boot: onAuthStateChange's first session, and the
+  // getSession at the foot of this file for the session that was restored from
+  // storage before the listener existed. Both used to open. Measured on the live
+  // page: profiles, workouts, collections and collection_items each fetched
+  // twice, eight round trips where four would do, and the grid built twice from
+  // the same rows. Whoever arrives second now gets the first one's promise.
+  var booting = null;
+
   function boot() {
+    if (booting) return booting;
+    // Before the network is asked anything. The library the user is looking at is
+    // almost always the library they left, so it goes up now and the read that
+    // follows corrects it.
+    paintCache();
     loadProfile();
     maybeInstallHint();
     watchWorkouts();
     // A shared link is saved only once the library is in hand, so the card it
     // creates lands in a rendered grid rather than into an empty one.
-    return load().then(consumeShare).then(consumeBilling).then(warmPages);
+    booting = load().then(consumeShare).then(consumeBilling).then(warmPages);
+    return booting;
   }
 
   // All four pages are mounted all the time now, which means a swipe can uncover
@@ -2901,6 +2919,85 @@
     });
   }
 
+  // ---------- cache ----------
+  //
+  // Measured on the live page with twenty cards: the document is interactive at
+  // 77ms and the first card lands at 358ms. Every one of those 280 milliseconds
+  // is one PostgREST round trip, not work — the grid itself builds in a
+  // millisecond. So the last answer is kept on the phone and painted while the
+  // network is still being asked, which is what Instagram and Hevy do and why
+  // both feel like they were already open. The read that follows is still the
+  // truth; this only decides what is on screen until it arrives.
+  //
+  // Everything here is wrapped, because localStorage throws rather than returns
+  // in a Safari private window and on a phone whose storage is full, and a
+  // library that will not load because a cache would not write is a much worse
+  // bug than a library that takes 358ms.
+  var CACHE_KEY = "spotter-lib-v1";
+  // A quota is 5MB on most browsers and the whole point is to be fast; a cache
+  // this side of 1.5MB writes in a millisecond or two, and one that has grown
+  // past it is not worth the main thread it would cost.
+  var CACHE_MAX = 1500000;
+
+  // caption is 62% of an average row and nothing on the library screen reads it
+  // — not the card, not the chips, not the search, which looks in titles,
+  // exercise names, muscles, equipment and tags. It is dropped, and load()
+  // brings the real row back a quarter of a second later.
+  function thinRow(w) {
+    var out = {}, k;
+    for (k in w) { if (Object.prototype.hasOwnProperty.call(w, k) && k !== "caption") out[k] = w[k]; }
+    return out;
+  }
+
+  function readCache() {
+    try {
+      var raw = localStorage.getItem(CACHE_KEY);
+      if (!raw) return null;
+      var c = JSON.parse(raw);
+      // Keyed by user, and checked rather than trusted: a phone two people share
+      // must never show one of them the other's workouts for a third of a second.
+      if (!c || c.v !== 1 || !state.user || c.uid !== state.user.id) return null;
+      if (!c.workouts || !c.workouts.length) return null;
+      return c;
+    } catch (e) { return null; }
+  }
+
+  function writeCache() {
+    if (!state.user) return;
+    try {
+      var payload = JSON.stringify({
+        v: 1, uid: state.user.id, at: Date.now(),
+        workouts: state.workouts.map(thinRow),
+        collections: state.collections,
+        colItems: state.colItems
+      });
+      if (payload.length > CACHE_MAX) { localStorage.removeItem(CACHE_KEY); return; }
+      localStorage.setItem(CACHE_KEY, payload);
+    } catch (e) {
+      // Out of quota, or a browser that refuses to store anything at all. Clear
+      // what may be a half-written entry and carry on without a cache.
+      try { localStorage.removeItem(CACHE_KEY); } catch (e2) { }
+    }
+  }
+
+  function dropCache() {
+    try { localStorage.removeItem(CACHE_KEY); } catch (e) { }
+  }
+
+  function paintCache() {
+    var c = readCache();
+    if (!c) return;
+    state.workouts = c.workouts;
+    state.collections = c.collections || [];
+    state.colItems = c.colItems || [];
+    // Every card in this paint is a card the user has already seen, so not one of
+    // them should fly in — and when load() lands a moment later they must not fly
+    // in then either. seenCards is exactly the ledger that stops a filter tap
+    // re-animating the grid; this is the same idea one launch earlier.
+    for (var i = 0; i < state.workouts.length; i++) seenCards[state.workouts[i].id] = 1;
+    render();
+  }
+
   // ---------- library ----------
 
   function load(retry) {
@@ -2929,7 +3026,22 @@
       // shrug off a pull-to-refresh made half a minute after the last read.
       today.at = 0;
       render();
+      // A card opened straight off the cache is a card without its caption. The
+      // real row is in hand now, so the open one is put right the same way a
+      // realtime update puts it right.
+      if (current && $("detail").classList.contains("open")) {
+        for (var i = 0; i < state.workouts.length; i++) {
+          if (state.workouts[i].id === current.id) {
+            current = state.workouts[i];
+            openDetail(current, true);
+            break;
+          }
+        }
+      }
       watchPending();
+      // In idle time, because this is for the next launch and the thumbnails of
+      // this one are still arriving.
+      idle(writeCache, 0);
     });
   }
 
