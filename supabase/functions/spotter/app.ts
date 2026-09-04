@@ -5709,8 +5709,10 @@ export const APP = String.raw`
 
   // ---------- sheets ----------
   //
-  // Closing was one frame of display:none. "open" drops when a close begins, not
-  // when it ends: every overlayShowing() and popstate test asks about it.
+  // A sheet is always in the page now, hidden between showings rather than
+  // display:none, so opening is a class flip CSS transitions from a resting state
+  // that already exists; the one timer left drops ".closing", which hides it.
+  // "open" goes when a close begins: every overlayShowing() and popstate asks.
 
   var closeTimers = {};
 
@@ -5724,8 +5726,9 @@ export const APP = String.raw`
     var n = $(id), b = n.querySelector(".sheetbody");
     clearTimeout(closeTimers[id]);
     n.classList.remove("closing");
-    // Whatever a drag left behind, so a sheet never opens half pushed away.
-    if (b) { b.classList.remove("snap"); b.style.transform = ""; }
+    // Whatever a drag left behind, plus the scroller display:none wound back for
+    // free and Settings needs at its top. Before .open, so its transition is honest.
+    if (b) { b.classList.remove("dragging"); b.style.transform = ""; b.scrollTop = 0; }
     n.classList.add("open");
     if (!sheetNav) { sheetNav = true; history.pushState({ sheet: id }, ""); }
   }
@@ -5733,10 +5736,16 @@ export const APP = String.raw`
   function closeSheet(id, fromPop) {
     var n = $(id);
     if (!n.classList.contains("open")) return;
+    // A drag hands the sheet back to CSS here — every close route passes through
+    // this line — and in the same style change as the class swap: an inline
+    // transform outranks the stylesheet, so the close carries on from where it is.
+    var b = n.querySelector(".sheetbody");
+    if (b) { b.classList.remove("dragging"); b.style.transform = ""; }
     n.classList.remove("open");
     n.classList.add("closing");
     clearTimeout(closeTimers[id]);
-    // A timer, not animationend: a sheet reopened mid-close never fires one.
+    // A timer, not transitionend: a sheet reopened mid-close never fires one. It
+    // outlasts the transition, and dropping the class is what hides the sheet.
     closeTimers[id] = setTimeout(function () {
       n.classList.remove("closing");
       // Every way of closing a sheet with a player in it comes through here, so the
@@ -5778,10 +5787,11 @@ export const APP = String.raw`
       swallowClick();
       var s = d.s, a = s[0], b = s[s.length - 1], dt = (b.t - a.t) / 1000;
       var v = dt > 0.004 ? (b.y - a.y) / dt : 0;
-      // The closing keyframe takes the transform it finds as its start, so the
-      // sheet carries on down from wherever the finger left it.
+      // closeSheet drops the inline transform in the same style change that
+      // starts the close, so the sheet carries on down from where it was.
       if (!cancelled && (v > SH_FLING || d.dy > body.offsetHeight * SH_PART)) { closeSheet(id); return; }
-      body.classList.add("snap");
+      // Not far enough: timing back and offset cleared together, so it springs home.
+      body.classList.remove("dragging");
       body.style.transform = "";
     }
 
@@ -5815,7 +5825,7 @@ export const APP = String.raw`
         sd.lock = true;
         // Re-datum on the lock point so the sheet does not jump the slop distance.
         sd.y = e.clientY; dy = 0;
-        body.classList.remove("snap");
+        body.classList.add("dragging");
         try { body.setPointerCapture(sd.id); } catch (err) { /* not fatal */ }
       }
       sd.dy = dy;
