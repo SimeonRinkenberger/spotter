@@ -4832,7 +4832,7 @@ export const APP = String.raw`
     return " · label " + Math.round(r.top - b.top) + "+" + Math.round(r.height) + " of " + Math.round(b.height) +
       " bottom " + Math.round(window.innerHeight - r.bottom) + " · " + cs.color + " " + cs.visibility + " op " + cs.opacity +
       " · " + cs.fontSize + "/" + cs.fontWeight + " " + (cs.fontFamily || "").split(",")[0] + " loaded " + fontOk +
-      " · tab op " + p.opacity + " · dpr " + window.devicePixelRatio;
+      " · tab op " + p.opacity + " · barpad " + getComputedStyle(tabbar).paddingBottom + " · dpr " + window.devicePixelRatio;
   }
 
   function renderSettingsMeter() {
@@ -5639,6 +5639,45 @@ export const APP = String.raw`
 
   var accCfg = null;
 
+  // ---------- a password you can look at ----------
+  //
+  // The owner's ask, and Apple's: a password field you can check while typing it
+  // is the difference between a typo and a locked-out account. The eye swaps the
+  // input between password and text and nothing else — same element, same id,
+  // same autofill — and keeps the caret where it was, because iOS puts it back at
+  // the start on a type change and that reads as the field having emptied.
+  function pwBox(inp) {
+    var box = el("div", "pwbox"), b = el("button", "pweye");
+    b.type = "button";
+    b.setAttribute("aria-label", "Show password");
+    b.setAttribute("aria-pressed", "false");
+    b.innerHTML = '<svg class="ic"><use href="#i-eye"></use></svg>';
+    box.appendChild(inp);
+    box.appendChild(b);
+    wirePwEye(box);
+    return box;
+  }
+
+  function wirePwEye(box) {
+    var inp = box.querySelector("input"), b = box.querySelector(".pweye");
+    if (!inp || !b) return;
+    // Pointer down rather than click so the keyboard never drops between the
+    // tap and the swap: losing focus is what makes a toggle feel like a reload.
+    b.addEventListener("pointerdown", function (e) { e.preventDefault(); });
+    b.addEventListener("click", function () {
+      var show = inp.type === "password", had = document.activeElement === inp;
+      var end = inp.value.length;
+      inp.type = show ? "text" : "password";
+      b.setAttribute("aria-pressed", show ? "true" : "false");
+      b.setAttribute("aria-label", show ? "Hide password" : "Show password");
+      b.querySelector("use").setAttribute("href", show ? "#i-eye-off" : "#i-eye");
+      if (had) {
+        inp.focus();
+        try { inp.setSelectionRange(end, end); } catch (err) { /* not every type allows it */ }
+      }
+    });
+  }
+
   function accSheet(cfg) {
     $("acctitle").textContent = cfg.title;
     $("acclede").textContent = cfg.lede || "";
@@ -5657,7 +5696,7 @@ export const APP = String.raw`
       }
       lab.setAttribute("for", inp.id);
       w.appendChild(lab);
-      w.appendChild(inp);
+      w.appendChild(inp.type === "password" ? pwBox(inp) : inp);
       box.appendChild(w);
       inp.addEventListener("keydown", function (e) { if (e.key === "Enter") accGo(); });
       inp.addEventListener("input", armAcc);
@@ -6467,9 +6506,11 @@ export const APP = String.raw`
   // slides the visual one up, so a full-height app keeps its tab bar and Pumpy's
   // composer under the keys. Following the visual viewport lifts the composer onto
   // the keyboard as a native chat app does, and now carries an open sheet with it.
-  // Deliberately not the source of truth for the resting height: installed, WebKit
-  // reports it as short as everything else, and believing it would redraw the 59pt
-  // band this wave exists to remove.
+  // Not the source of truth for the resting height, which is the stylesheet's
+  // 100dvh: on the owner's installed iOS 26 the web view really is a status bar
+  // shorter than the screen and clips at its edge (see the frame comment in
+  // style.ts), and the visual viewport agrees with it — but the resting value
+  // belongs in one place, and that place is CSS.
   var kbOn = false;
 
   function fitViewport() {
@@ -6483,10 +6524,6 @@ export const APP = String.raw`
     root.style.setProperty("--vvtop", vv.offsetTop + "px");
     if (window.scrollY) window.scrollTo(0, 0);
   }
-
-  // The media feature is the modern signal and navigator.standalone the one older
-  // iOS answers; where only the second is true the stylesheet has not heard.
-  if (window.navigator.standalone) document.documentElement.classList.add("sa");
 
   if (window.visualViewport) {
     window.visualViewport.addEventListener("resize", fitViewport);
@@ -6644,6 +6681,7 @@ export const APP = String.raw`
     load().then(function () { b.classList.remove("spin"); });
   };
   $("settingsbtn").onclick = openSettings;
+  wirePwEye($("pw").parentNode);
   $("setclose").onclick = function () { closeSheet("settingssheet"); };
   $("copykey").onclick = function () {
     var t = $("setkey").textContent;

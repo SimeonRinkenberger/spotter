@@ -136,6 +136,19 @@ export const STYLE = String.raw`<style>
     font-size: 16px; background: var(--sand); color: var(--ink); outline: none;
     transition: border-color var(--t-2), background-color var(--t-2); }
   .field input:focus { border-color: var(--ember); background: var(--card); }
+  /* A password you can look at. The eye sits inside the field's own box, a
+     44px target on the trailing edge, and swaps the input between password and
+     text — the field, its id and its autofill hints are untouched, so the
+     browser's own password tooling keeps working. */
+  .pwbox { position: relative; }
+  .pwbox input { padding-right: 50px; }
+  .pweye { position: absolute; right: 2px; top: 50%; width: 44px; height: 44px; margin-top: -22px;
+    border: none; background: none; border-radius: 12px; color: var(--muted);
+    display: flex; align-items: center; justify-content: center;
+    transition: color var(--t-2), transform var(--t-1) var(--e-out); }
+  .pweye .ic { width: 19px; height: 19px; }
+  .pweye[aria-pressed="true"] { color: var(--ember-ink); }
+  .pweye:active { transform: scale(.9); }
   .field textarea { width: 100%; border: 1px solid var(--line); border-radius: 13px; padding: 12px 14px;
     font-size: 16px; line-height: 1.55; background: var(--sand); color: var(--ink); outline: none;
     resize: vertical; min-height: 148px;
@@ -196,16 +209,22 @@ export const STYLE = String.raw`<style>
      #app owns the viewport instead of the document: the four pages scroll inside
      it while the header and the tab bar stay put, which is the only arrangement
      in which a page can slide sideways. Its size is --vvh/--vvtop, and so is every
-     other full-screen layer's, because the layout viewport lies where it matters
-     most: an installed iOS app asking for viewport-fit=cover gets an ICB a
-     safe-area-inset-top short of the screen (WebKit 254868), so 100dvh,
-     -webkit-fill-available and visualViewport.height all read 793 of an 852pt
-     phone and everything fixed to the bottom floats a status bar above it. Only vh
-     still measures the whole screen there, which is the reverse of the rule for a
-     browser tab — hence the scope. fitViewport() takes both for the keyboard. */
-  :root { --vvh: 100dvh; --vvtop: 0px; }
-  @media all and (display-mode: standalone) { :root { --vvh: 100vh; } }
-  :root.sa { --vvh: 100vh; }   /* older iOS answers navigator.standalone, not the feature */
+     other full-screen layer's. The frame is the dynamic viewport, and nothing
+     larger: on the owner's iPhone, installed, iOS 26 hosts the app in a web view
+     that is a status bar short of the screen (852pt screen, 793pt view, Apple's
+     FB20169593) and clips at its own edge, so a frame sized from 100vh put the tab
+     bar's lower third — its labels and its home-indicator padding — into a band
+     no pixel of ours can reach. The same bug makes the bottom inset a lie there:
+     the home indicator sits below the view, not inside it. --sab is the inset
+     the view can actually give back — the reported one less whatever 100vh claims
+     beyond the dynamic viewport, never below zero — and every bottom edge in the
+     app pads with it. On a phone without the bug 100vh equals 100dvh, --sab is the
+     real inset, and this reads as it always did. fitViewport() takes the frame
+     over for the keyboard only. */
+  :root { --vvh: 100dvh; --vvtop: 0px; --sab: env(safe-area-inset-bottom); }
+  @supports (height: 100dvh) {
+    :root { --sab: max(0px, calc(env(safe-area-inset-bottom) - (100vh - 100dvh))); }
+  }
   #app { position: fixed; left: 0; right: 0; top: var(--vvtop); height: var(--vvh);
     overflow: hidden; }
 
@@ -464,7 +483,7 @@ export const STYLE = String.raw`<style>
     justify-content: center; transition: transform var(--t-1) var(--e-out); flex: 0 0 auto; }
   .iconbtn:active { transform: scale(.92); }
   .iconbtn.on { background: var(--ember); color: var(--on-ember); }
-  .dinner { padding: 4px 18px calc(46px + env(safe-area-inset-bottom)); max-width: 720px; margin: 0 auto; }
+  .dinner { padding: 4px 18px calc(46px + var(--sab)); max-width: 720px; margin: 0 auto; }
   .embedwrap { position: relative; border-radius: 20px; overflow: hidden; background: var(--sand);
     box-shadow: var(--sh-md); margin-bottom: 20px; }
   .embedwrap iframe { display: block; width: 100%; border: 0; }
@@ -585,7 +604,7 @@ export const STYLE = String.raw`<style>
   .sheetbody { position: relative; width: 100%; max-height: 88%; overflow-y: auto;
     overscroll-behavior: none; background: var(--paper);
     background-image: var(--grain); border-radius: 26px 26px 0 0; box-shadow: var(--sh-up);
-    padding: 8px 20px calc(26px + env(safe-area-inset-bottom));
+    padding: 8px 20px calc(26px + var(--sab));
     animation: sheetup .38s var(--e-spring); }
   /* Only on for the settle: the drag itself is 1:1 and must not be timed. */
   .sheetbody.snap { transition: transform var(--t-3) var(--e-spring); }
@@ -795,7 +814,7 @@ export const STYLE = String.raw`<style>
      edge on an installed iPhone. -100% makes top the line the toast sits ON, so
      the 96px of clearance still means 96px. */
   #toast { position: fixed; left: 50%;
-    top: calc(var(--vvtop) + var(--vvh) - 96px - env(safe-area-inset-bottom));
+    top: calc(var(--vvtop) + var(--vvh) - 96px - var(--sab));
     transform: translate(-50%, calc(-100% + 14px)); z-index: 90; background: var(--ink); color: var(--paper);
     padding: 12px 18px; border-radius: 999px; font-size: 13.5px; font-weight: 600; opacity: 0;
     pointer-events: none; transition: opacity var(--t-2), transform var(--t-2) var(--e-out);
@@ -804,7 +823,7 @@ export const STYLE = String.raw`<style>
   /* Workout Mode has no tab bar to clear but a rest strip lands where the toast
      does: 76px of bottom bar, 48px of strip, 12px of air. "New best" used to sit
      on +15 s and Skip for three seconds. */
-  #workout.open ~ #toast { top: calc(var(--vvtop) + var(--vvh) - 136px - env(safe-area-inset-bottom)); }
+  #workout.open ~ #toast { top: calc(var(--vvtop) + var(--vvh) - 136px - var(--sab)); }
   #toast.tappable { pointer-events: auto; cursor: pointer; }
   /* The one toast the landing ever shows — a shared link waiting for sign-in —
      belongs above the fold, not across the sign-in card. There is no tab bar here
@@ -825,12 +844,12 @@ export const STYLE = String.raw`<style>
   .tabbar { position: absolute; left: 0; right: 0; bottom: 0; z-index: 40; display: flex;
     background: color-mix(in srgb, var(--paper) 88%, transparent);
     -webkit-backdrop-filter: blur(22px) saturate(1.6); backdrop-filter: blur(22px) saturate(1.6);
-    border-top: 1px solid var(--line); padding: 8px 6px calc(6px + env(safe-area-inset-bottom)); }
+    border-top: 1px solid var(--line); padding: 8px 6px calc(6px + var(--sab)); }
   /* The selected item rides a capsule instead of being announced by colour alone,
      the way the iOS 26 tab bar glides its glass pill between items. The pill box
      is a whole tab wide so translateX(100%) is exactly one tab; the visible
      capsule is the inset pseudo-element. */
-  .tabpill { position: absolute; left: 6px; top: 8px; bottom: calc(6px + env(safe-area-inset-bottom));
+  .tabpill { position: absolute; left: 6px; top: 8px; bottom: calc(6px + var(--sab));
     width: calc((100% - 12px) / 4); pointer-events: none;
     transform: translateX(calc(var(--x, 0) * 100%)); }
   .tabpill::after { content: ""; position: absolute; inset: 0 5px; border-radius: 14px;
@@ -1059,7 +1078,7 @@ export const STYLE = String.raw`<style>
   @keyframes setpr { 0% { transform: scale(.88); } 45% { transform: scale(1.09); } }
   .wactions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 18px; }
   .wbottom { display: flex; align-items: center; justify-content: space-between; gap: 10px;
-    padding: 10px 16px calc(14px + env(safe-area-inset-bottom)); }
+    padding: 10px 16px calc(14px + var(--sab)); }
   .wnav { border: none; background: var(--sand); color: var(--ink); border-radius: 999px;
     width: 52px; height: 52px; font-size: 19px; display: flex; align-items: center; justify-content: center;
     transition: transform var(--t-1) var(--e-out); }
@@ -1225,8 +1244,8 @@ export const STYLE = String.raw`<style>
   .proposal .declined { color: var(--muted); font-size: 13px; margin-top: 10px;
     animation: donein var(--t-3) var(--e-out); }
   @keyframes donein { from { opacity: 0; transform: translateY(-5px); } }
-  .composer { position: sticky; bottom: var(--ptab, calc(78px + env(safe-area-inset-bottom)));
-    margin-bottom: var(--ptab, calc(78px + env(safe-area-inset-bottom)));
+  .composer { position: sticky; bottom: var(--ptab, calc(78px + var(--sab)));
+    margin-bottom: var(--ptab, calc(78px + var(--sab)));
     padding: 8px 0 10px;
     background: color-mix(in srgb, var(--paper) 90%, transparent);
     -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }

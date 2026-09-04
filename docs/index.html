@@ -158,6 +158,19 @@
     font-size: 16px; background: var(--sand); color: var(--ink); outline: none;
     transition: border-color var(--t-2), background-color var(--t-2); }
   .field input:focus { border-color: var(--ember); background: var(--card); }
+  /* A password you can look at. The eye sits inside the field's own box, a
+     44px target on the trailing edge, and swaps the input between password and
+     text — the field, its id and its autofill hints are untouched, so the
+     browser's own password tooling keeps working. */
+  .pwbox { position: relative; }
+  .pwbox input { padding-right: 50px; }
+  .pweye { position: absolute; right: 2px; top: 50%; width: 44px; height: 44px; margin-top: -22px;
+    border: none; background: none; border-radius: 12px; color: var(--muted);
+    display: flex; align-items: center; justify-content: center;
+    transition: color var(--t-2), transform var(--t-1) var(--e-out); }
+  .pweye .ic { width: 19px; height: 19px; }
+  .pweye[aria-pressed="true"] { color: var(--ember-ink); }
+  .pweye:active { transform: scale(.9); }
   .field textarea { width: 100%; border: 1px solid var(--line); border-radius: 13px; padding: 12px 14px;
     font-size: 16px; line-height: 1.55; background: var(--sand); color: var(--ink); outline: none;
     resize: vertical; min-height: 148px;
@@ -218,16 +231,22 @@
      #app owns the viewport instead of the document: the four pages scroll inside
      it while the header and the tab bar stay put, which is the only arrangement
      in which a page can slide sideways. Its size is --vvh/--vvtop, and so is every
-     other full-screen layer's, because the layout viewport lies where it matters
-     most: an installed iOS app asking for viewport-fit=cover gets an ICB a
-     safe-area-inset-top short of the screen (WebKit 254868), so 100dvh,
-     -webkit-fill-available and visualViewport.height all read 793 of an 852pt
-     phone and everything fixed to the bottom floats a status bar above it. Only vh
-     still measures the whole screen there, which is the reverse of the rule for a
-     browser tab — hence the scope. fitViewport() takes both for the keyboard. */
-  :root { --vvh: 100dvh; --vvtop: 0px; }
-  @media all and (display-mode: standalone) { :root { --vvh: 100vh; } }
-  :root.sa { --vvh: 100vh; }   /* older iOS answers navigator.standalone, not the feature */
+     other full-screen layer's. The frame is the dynamic viewport, and nothing
+     larger: on the owner's iPhone, installed, iOS 26 hosts the app in a web view
+     that is a status bar short of the screen (852pt screen, 793pt view, Apple's
+     FB20169593) and clips at its own edge, so a frame sized from 100vh put the tab
+     bar's lower third — its labels and its home-indicator padding — into a band
+     no pixel of ours can reach. The same bug makes the bottom inset a lie there:
+     the home indicator sits below the view, not inside it. --sab is the inset
+     the view can actually give back — the reported one less whatever 100vh claims
+     beyond the dynamic viewport, never below zero — and every bottom edge in the
+     app pads with it. On a phone without the bug 100vh equals 100dvh, --sab is the
+     real inset, and this reads as it always did. fitViewport() takes the frame
+     over for the keyboard only. */
+  :root { --vvh: 100dvh; --vvtop: 0px; --sab: env(safe-area-inset-bottom); }
+  @supports (height: 100dvh) {
+    :root { --sab: max(0px, calc(env(safe-area-inset-bottom) - (100vh - 100dvh))); }
+  }
   #app { position: fixed; left: 0; right: 0; top: var(--vvtop); height: var(--vvh);
     overflow: hidden; }
 
@@ -486,7 +505,7 @@
     justify-content: center; transition: transform var(--t-1) var(--e-out); flex: 0 0 auto; }
   .iconbtn:active { transform: scale(.92); }
   .iconbtn.on { background: var(--ember); color: var(--on-ember); }
-  .dinner { padding: 4px 18px calc(46px + env(safe-area-inset-bottom)); max-width: 720px; margin: 0 auto; }
+  .dinner { padding: 4px 18px calc(46px + var(--sab)); max-width: 720px; margin: 0 auto; }
   .embedwrap { position: relative; border-radius: 20px; overflow: hidden; background: var(--sand);
     box-shadow: var(--sh-md); margin-bottom: 20px; }
   .embedwrap iframe { display: block; width: 100%; border: 0; }
@@ -607,7 +626,7 @@
   .sheetbody { position: relative; width: 100%; max-height: 88%; overflow-y: auto;
     overscroll-behavior: none; background: var(--paper);
     background-image: var(--grain); border-radius: 26px 26px 0 0; box-shadow: var(--sh-up);
-    padding: 8px 20px calc(26px + env(safe-area-inset-bottom));
+    padding: 8px 20px calc(26px + var(--sab));
     animation: sheetup .38s var(--e-spring); }
   /* Only on for the settle: the drag itself is 1:1 and must not be timed. */
   .sheetbody.snap { transition: transform var(--t-3) var(--e-spring); }
@@ -817,7 +836,7 @@
      edge on an installed iPhone. -100% makes top the line the toast sits ON, so
      the 96px of clearance still means 96px. */
   #toast { position: fixed; left: 50%;
-    top: calc(var(--vvtop) + var(--vvh) - 96px - env(safe-area-inset-bottom));
+    top: calc(var(--vvtop) + var(--vvh) - 96px - var(--sab));
     transform: translate(-50%, calc(-100% + 14px)); z-index: 90; background: var(--ink); color: var(--paper);
     padding: 12px 18px; border-radius: 999px; font-size: 13.5px; font-weight: 600; opacity: 0;
     pointer-events: none; transition: opacity var(--t-2), transform var(--t-2) var(--e-out);
@@ -826,7 +845,7 @@
   /* Workout Mode has no tab bar to clear but a rest strip lands where the toast
      does: 76px of bottom bar, 48px of strip, 12px of air. "New best" used to sit
      on +15 s and Skip for three seconds. */
-  #workout.open ~ #toast { top: calc(var(--vvtop) + var(--vvh) - 136px - env(safe-area-inset-bottom)); }
+  #workout.open ~ #toast { top: calc(var(--vvtop) + var(--vvh) - 136px - var(--sab)); }
   #toast.tappable { pointer-events: auto; cursor: pointer; }
   /* The one toast the landing ever shows — a shared link waiting for sign-in —
      belongs above the fold, not across the sign-in card. There is no tab bar here
@@ -847,12 +866,12 @@
   .tabbar { position: absolute; left: 0; right: 0; bottom: 0; z-index: 40; display: flex;
     background: color-mix(in srgb, var(--paper) 88%, transparent);
     -webkit-backdrop-filter: blur(22px) saturate(1.6); backdrop-filter: blur(22px) saturate(1.6);
-    border-top: 1px solid var(--line); padding: 8px 6px calc(6px + env(safe-area-inset-bottom)); }
+    border-top: 1px solid var(--line); padding: 8px 6px calc(6px + var(--sab)); }
   /* The selected item rides a capsule instead of being announced by colour alone,
      the way the iOS 26 tab bar glides its glass pill between items. The pill box
      is a whole tab wide so translateX(100%) is exactly one tab; the visible
      capsule is the inset pseudo-element. */
-  .tabpill { position: absolute; left: 6px; top: 8px; bottom: calc(6px + env(safe-area-inset-bottom));
+  .tabpill { position: absolute; left: 6px; top: 8px; bottom: calc(6px + var(--sab));
     width: calc((100% - 12px) / 4); pointer-events: none;
     transform: translateX(calc(var(--x, 0) * 100%)); }
   .tabpill::after { content: ""; position: absolute; inset: 0 5px; border-radius: 14px;
@@ -1081,7 +1100,7 @@
   @keyframes setpr { 0% { transform: scale(.88); } 45% { transform: scale(1.09); } }
   .wactions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 18px; }
   .wbottom { display: flex; align-items: center; justify-content: space-between; gap: 10px;
-    padding: 10px 16px calc(14px + env(safe-area-inset-bottom)); }
+    padding: 10px 16px calc(14px + var(--sab)); }
   .wnav { border: none; background: var(--sand); color: var(--ink); border-radius: 999px;
     width: 52px; height: 52px; font-size: 19px; display: flex; align-items: center; justify-content: center;
     transition: transform var(--t-1) var(--e-out); }
@@ -1247,8 +1266,8 @@
   .proposal .declined { color: var(--muted); font-size: 13px; margin-top: 10px;
     animation: donein var(--t-3) var(--e-out); }
   @keyframes donein { from { opacity: 0; transform: translateY(-5px); } }
-  .composer { position: sticky; bottom: var(--ptab, calc(78px + env(safe-area-inset-bottom)));
-    margin-bottom: var(--ptab, calc(78px + env(safe-area-inset-bottom)));
+  .composer { position: sticky; bottom: var(--ptab, calc(78px + var(--sab)));
+    margin-bottom: var(--ptab, calc(78px + var(--sab)));
     padding: 8px 0 10px;
     background: color-mix(in srgb, var(--paper) 90%, transparent);
     -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
@@ -1447,6 +1466,7 @@
 <symbol id="i-trend" viewBox="0 0 24 24"><path d="M22 7 13.5 15.5 8.5 10.5 2 17"/><path d="M16 7h6v6"/></symbol>
 <symbol id="i-play" viewBox="0 0 24 24"><path d="M6 3.5 20 12 6 20.5z"/></symbol>
 <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12"/><circle cx="12" cy="12" r="3"/></symbol>
+<symbol id="i-eye-off" viewBox="0 0 24 24"><path d="M10.7 5.1a10.7 10.7 0 0 1 11.2 6.6 1 1 0 0 1 0 .7 10.7 10.7 0 0 1-1.4 2.5"/><path d="M14.1 14.2a3 3 0 0 1-4.2-4.2"/><path d="M17.5 17.5a10.7 10.7 0 0 1-15.4-5.2 1 1 0 0 1 0-.7 10.7 10.7 0 0 1 4.4-5.1"/><path d="m2 2 20 20"/></symbol>
 <symbol id="i-ear" viewBox="0 0 24 24"><path d="M3 15h2.5a1.5 1.5 0 0 1 1.5 1.5v3A1.5 1.5 0 0 1 5.5 21H4a1 1 0 0 1-1-1v-8a9 9 0 0 1 18 0v8a1 1 0 0 1-1 1h-1.5a1.5 1.5 0 0 1-1.5-1.5v-3a1.5 1.5 0 0 1 1.5-1.5H21"/></symbol>
 <symbol id="i-hourglass" viewBox="0 0 24 24"><path d="M6 2h12"/><path d="M6 22h12"/><path d="M17 2v4.5L12 12l5 5.5V22"/><path d="M7 2v4.5L12 12l-5 5.5V22"/></symbol>
 <symbol id="i-share" viewBox="0 0 24 24"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="m16 6-4-4-4 4"/><path d="M12 2v13"/></symbol>
@@ -1479,7 +1499,10 @@
       </div>
       <div class="field">
         <label for="pw">Password</label>
-        <input id="pw" type="password" autocomplete="current-password" placeholder="At least 8 characters">
+        <div class="pwbox">
+          <input id="pw" type="password" autocomplete="current-password" placeholder="At least 8 characters">
+          <button type="button" class="pweye" aria-label="Show password" aria-pressed="false"><svg class="ic"><use href="#i-eye"></use></svg></button>
+        </div>
       </div>
       <button class="btn" id="authgo">Create account</button>
       <div class="autherr" id="autherr"></div>
@@ -6729,7 +6752,7 @@
     return " · label " + Math.round(r.top - b.top) + "+" + Math.round(r.height) + " of " + Math.round(b.height) +
       " bottom " + Math.round(window.innerHeight - r.bottom) + " · " + cs.color + " " + cs.visibility + " op " + cs.opacity +
       " · " + cs.fontSize + "/" + cs.fontWeight + " " + (cs.fontFamily || "").split(",")[0] + " loaded " + fontOk +
-      " · tab op " + p.opacity + " · dpr " + window.devicePixelRatio;
+      " · tab op " + p.opacity + " · barpad " + getComputedStyle(tabbar).paddingBottom + " · dpr " + window.devicePixelRatio;
   }
 
   function renderSettingsMeter() {
@@ -7536,6 +7559,45 @@
 
   var accCfg = null;
 
+  // ---------- a password you can look at ----------
+  //
+  // The owner's ask, and Apple's: a password field you can check while typing it
+  // is the difference between a typo and a locked-out account. The eye swaps the
+  // input between password and text and nothing else — same element, same id,
+  // same autofill — and keeps the caret where it was, because iOS puts it back at
+  // the start on a type change and that reads as the field having emptied.
+  function pwBox(inp) {
+    var box = el("div", "pwbox"), b = el("button", "pweye");
+    b.type = "button";
+    b.setAttribute("aria-label", "Show password");
+    b.setAttribute("aria-pressed", "false");
+    b.innerHTML = '<svg class="ic"><use href="#i-eye"></use></svg>';
+    box.appendChild(inp);
+    box.appendChild(b);
+    wirePwEye(box);
+    return box;
+  }
+
+  function wirePwEye(box) {
+    var inp = box.querySelector("input"), b = box.querySelector(".pweye");
+    if (!inp || !b) return;
+    // Pointer down rather than click so the keyboard never drops between the
+    // tap and the swap: losing focus is what makes a toggle feel like a reload.
+    b.addEventListener("pointerdown", function (e) { e.preventDefault(); });
+    b.addEventListener("click", function () {
+      var show = inp.type === "password", had = document.activeElement === inp;
+      var end = inp.value.length;
+      inp.type = show ? "text" : "password";
+      b.setAttribute("aria-pressed", show ? "true" : "false");
+      b.setAttribute("aria-label", show ? "Hide password" : "Show password");
+      b.querySelector("use").setAttribute("href", show ? "#i-eye-off" : "#i-eye");
+      if (had) {
+        inp.focus();
+        try { inp.setSelectionRange(end, end); } catch (err) { /* not every type allows it */ }
+      }
+    });
+  }
+
   function accSheet(cfg) {
     $("acctitle").textContent = cfg.title;
     $("acclede").textContent = cfg.lede || "";
@@ -7554,7 +7616,7 @@
       }
       lab.setAttribute("for", inp.id);
       w.appendChild(lab);
-      w.appendChild(inp);
+      w.appendChild(inp.type === "password" ? pwBox(inp) : inp);
       box.appendChild(w);
       inp.addEventListener("keydown", function (e) { if (e.key === "Enter") accGo(); });
       inp.addEventListener("input", armAcc);
@@ -8364,9 +8426,11 @@
   // slides the visual one up, so a full-height app keeps its tab bar and Pumpy's
   // composer under the keys. Following the visual viewport lifts the composer onto
   // the keyboard as a native chat app does, and now carries an open sheet with it.
-  // Deliberately not the source of truth for the resting height: installed, WebKit
-  // reports it as short as everything else, and believing it would redraw the 59pt
-  // band this wave exists to remove.
+  // Not the source of truth for the resting height, which is the stylesheet's
+  // 100dvh: on the owner's installed iOS 26 the web view really is a status bar
+  // shorter than the screen and clips at its edge (see the frame comment in
+  // style.ts), and the visual viewport agrees with it — but the resting value
+  // belongs in one place, and that place is CSS.
   var kbOn = false;
 
   function fitViewport() {
@@ -8380,10 +8444,6 @@
     root.style.setProperty("--vvtop", vv.offsetTop + "px");
     if (window.scrollY) window.scrollTo(0, 0);
   }
-
-  // The media feature is the modern signal and navigator.standalone the one older
-  // iOS answers; where only the second is true the stylesheet has not heard.
-  if (window.navigator.standalone) document.documentElement.classList.add("sa");
 
   if (window.visualViewport) {
     window.visualViewport.addEventListener("resize", fitViewport);
@@ -8541,6 +8601,7 @@
     load().then(function () { b.classList.remove("spin"); });
   };
   $("settingsbtn").onclick = openSettings;
+  wirePwEye($("pw").parentNode);
   $("setclose").onclick = function () { closeSheet("settingssheet"); };
   $("copykey").onclick = function () {
     var t = $("setkey").textContent;
