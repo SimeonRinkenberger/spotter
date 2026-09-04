@@ -769,11 +769,28 @@ writeFileSync(REVIEW, JSON.stringify({
 // ---------- ranking ----------
 
 const RANK_METHOD = { exact: 0, manual: 0, confirmed: 1 };
+
+// How literally the clip's title names the exercise. The catalog's own name beats
+// one of its aliases, which beats a title that merely contains one; a digit in the
+// title ("1 1/4 Front Squat", "3-Position Clean") is a variant whatever the matcher
+// made of it. This sorts ahead of leftover words and clip length because "Wide Grip
+// Pullup" being three seconds shorter than "Normal Grip Pullup" is not a reason to
+// show the variant first.
+function closeness(key, title) {
+  const e = BY_ID.get(key);
+  const t = normalizeText(title);
+  let c = 2;
+  if (e && t === normalizeText(e.name)) c = 0;
+  else if (e && e.aliases.some((a) => normalizeText(a) === t)) c = 1;
+  return c + (/\d/.test(title) ? 1 : 0);
+}
+
 const final = [];
 for (const [key, list] of [...picks.entries()].sort()) {
   list.sort((a, b) =>
     a.tier - b.tier ||
     RANK_METHOD[a.method] - RANK_METHOD[b.method] ||
+    closeness(a.key, a.title) - closeness(b.key, b.title) ||
     a.leftover - b.leftover ||
     lenRank(a.secs) - lenRank(b.secs) ||
     (a.video_id < b.video_id ? -1 : a.video_id > b.video_id ? 1 : 0));
