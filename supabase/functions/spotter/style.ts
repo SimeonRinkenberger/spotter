@@ -1046,12 +1046,10 @@ export const STYLE = String.raw`<style>
   .planx { background: none; border: none; color: var(--muted); font-size: 15px; padding: 6px; }
 
   /* ---------- plan / week or month ----------
-     Apple's segmented control, and the one rule of it that decides the shape
-     here: the selection is a single thumb travelling between seats, not two
-     pictures of a state. So the pill is one node that slides on --t-2 while the
-     labels hold still. Two seats, title-case nouns, and no action among them —
-     Today and Copy are buttons beside the control, because a segmented control
-     chooses what you are looking at and never does a thing to it. */
+     Apple's segmented control: the selection is one thumb travelling between
+     seats, not two pictures of a state, so the pill is a single node sliding on
+     --t-2 while the labels hold still. Two title-case nouns and no action among
+     them — a segmented control chooses a view and never does a thing. */
   .planctl { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
   .seg { position: relative; display: flex; flex: 0 0 auto; background: var(--sand);
     border-radius: 11px; padding: 3px; }
@@ -1059,8 +1057,9 @@ export const STYLE = String.raw`<style>
     background: var(--card); border-radius: 9px; box-shadow: var(--sh-sm);
     transition: transform var(--t-2) var(--e-spring); }
   .seg.m .segpill { transform: translateX(100%); }
+  /* --ink-2, not --muted: --muted measures 4.13 on sand. */
   .segbtn { position: relative; z-index: 1; min-width: 64px; min-height: 32px; border: none;
-    background: none; color: var(--muted); font-size: 13px; font-weight: 700; padding: 0 12px;
+    background: none; color: var(--ink-2); font-size: 13px; font-weight: 700; padding: 0 12px;
     letter-spacing: -.005em; transition: color var(--t-2) var(--e-soft); }
   .segbtn[aria-selected="true"] { color: var(--ink); }
   .planacts { margin-left: auto; display: flex; align-items: center; gap: 7px; }
@@ -1069,17 +1068,15 @@ export const STYLE = String.raw`<style>
     display: inline-flex; align-items: center; justify-content: center; gap: 5px;
     transition: transform var(--t-1) var(--e-out), border-color var(--t-2) var(--e-soft); }
   .planbtn:active { transform: scale(.94); }
-  /* Switching mode is a crossfade and nothing more. The bar above it did not
-     move, so sliding the body up under it would be one arrival too many. */
+  /* A crossfade and nothing more: the bar above it did not move. */
   .planswap { animation: planswap var(--t-2) var(--e-out); }
   @keyframes planswap { from { opacity: 0; } }
 
   /* ---------- plan / the month ----------
-     iOS Calendar's compact month, which draws a day as a number and a couple of
-     marks and lets the count of marks do the talking. Seven columns inside a
-     375px phone leave about 45px each, so every number below is measured against
-     that: three 12px marks and two 2px gaps come to 40, and the cell has 42 to
-     give. Nothing here may grow without that sum being redone. */
+     iOS Calendar's compact month: a number, a couple of marks, and the count of
+     marks doing the talking. Seven columns in a 375px phone leave 45px each, so
+     three 12px marks and two 2px gaps come to 40 against the 42 a cell has to
+     give. Nothing here grows without that sum being redone. */
   .mgrid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; }
   .mdow { text-align: center; font-size: 10px; font-weight: 700; letter-spacing: .08em;
     color: var(--muted); padding-bottom: 5px; }
@@ -1088,12 +1085,10 @@ export const STYLE = String.raw`<style>
     border: 1px solid var(--line); border-radius: 11px; box-shadow: var(--sh-sm);
     transition: transform var(--t-1) var(--e-out); }
   .mcell:active { transform: scale(.93); }
-  /* The days either side of the month are present and tappable but stop being
-     cards: a grid of 35 equal boxes hides where the month begins. */
+  /* Present and tappable but no longer cards: 35 equal boxes hide the 1st. */
   .mcell.out { background: none; border-color: transparent; box-shadow: none; }
-  /* Quieted by colour and weight, not by opacity: --muted is the one grey in
-     here measured against paper (4.52), and a date faded to .45 of the ink lands
-     at 3.4 and stops being AA. */
+  /* Colour and weight, not opacity: --muted measures 4.52 on paper, and ink at
+     .45 lands on 3.4 and stops being AA. */
   .mcell.out .mnum { color: var(--muted); font-weight: 600; }
   .mcell.today { border-color: var(--ember); box-shadow: 0 0 0 1px var(--ember); }
   .mtop { display: flex; align-items: center; justify-content: center; gap: 2px; line-height: 1; }
@@ -1106,16 +1101,14 @@ export const STYLE = String.raw`<style>
   .mmarks img { width: 12px; height: 12px; border-radius: 3px; object-fit: cover;
     background: var(--sand); }
   .mdot { width: 7px; height: 7px; border-radius: 999px; background: var(--ember); }
-  /* The day sheet borrows .planitem and .planadd whole, so a workout looks the
-     same however you reached it. Only the gap above the button is its own. */
+  /* The day sheet borrows .planitem and .planadd whole. */
   #daylist { margin-bottom: 4px; }
   #daylist .lede { margin: 10px 0 0; }
 
   /* ---------- programs / copy a week ----------
-     A destination is a row you tap, not a date you type, and the rows the copy
-     will land on light up together — repeat for four weeks should look like four
-     weeks before you commit to it. Card and --line rather than sand, because
-     --muted is measured on card (4.89) and on sand it drops to 4.13. */
+     A destination is a row you tap, and the weeks it will land on light up
+     together: four weeks should look like four weeks before you commit. Card
+     and --line, not sand — --muted is 4.89 on card and 4.13 on sand. */
   .copyhead { margin-bottom: 15px; }
   .copywks { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 10px; }
   .copysum { font-size: 13px; color: var(--ink-2); line-height: 1.45; }
@@ -1134,14 +1127,17 @@ export const STYLE = String.raw`<style>
   .copyrep { display: flex; align-items: center; gap: 11px; flex-wrap: wrap; margin: 17px 0 3px; }
   .copyrep > span { font-size: 13px; font-weight: 700; color: var(--ink-2); }
   .copychips { display: flex; gap: 6px; flex-wrap: wrap; }
-  .copychips .chip { min-width: 34px; min-height: 34px; justify-content: center;
+  /* 44 outright: these wrap, and a hit area that deep would overlap the row. */
+  .copychips .chip { min-width: 44px; justify-content: center;
     padding: 9px 11px; font-variant-numeric: tabular-nums; }
+  .copywks .chip, .copychips .chip { min-height: 44px; }
   .planbtn.wide { width: 100%; min-height: 44px; margin-top: 11px; font-size: 13.5px; }
+  /* Already 44, and stacked between two controls whose hit areas it would eat. */
+  .planbtn.wide::after { display: none; }
   .planbody > .planbtn.wide { margin-top: 16px; }
   .planbtn .pumpmark { width: 18px; height: 18px; color: var(--ember); flex: 0 0 auto; }
   .planbtn .pumpmark svg { width: 100%; height: 100%; display: block; }
-  /* Reduced motion keeps the answer and drops the travel: the pill is still the
-     thing that says which mode you are in, so it moves, instantly. */
+  /* The answer without the travel: the pill still moves, instantly. */
   @media (prefers-reduced-motion: reduce) {
     .segpill { transition: none; }
     .planbtn:active, .segbtn, .mcell, .copyweek { transition: none; }

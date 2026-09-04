@@ -4258,10 +4258,9 @@ export const APP = String.raw`
     return d;
   }
 
-  // Calendar arithmetic, not clock arithmetic. A month grid crosses the two
-  // mornings a year that are 23 and 25 hours long, and adding 86400000ms across
-  // one of them lands back on the day it started — a duplicated cell in March.
-  // Asking the Date constructor for "the 34th of September" never can.
+  // Calendar arithmetic, not clock arithmetic: 86400000ms across one of the two
+  // mornings a year that are 23 or 25 hours long lands back on the day it
+  // started, and the constructor asked for the 34th of September never can.
   function addDays(d, n) {
     return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
   }
@@ -4276,18 +4275,15 @@ export const APP = String.raw`
       String(d.getDate()).padStart(2, "0");
   }
 
-  // A day key back into a local Date. Midday, because "2026-09-07" parsed as a
-  // date-only string is UTC midnight, which is the 6th anywhere west of London.
+  // Midday: a date-only string parses as UTC midnight, which is yesterday
+  // anywhere west of London.
   function dayDate(key) { return new Date(key + "T12:00:00"); }
 
   // ---------- plan · where you are looking ----------
   //
-  // Apple treats month and week as one grid at two densities rather than two
-  // screens, and iOS Calendar reaches the second by rotating the phone. A phone
-  // held upright needs a control instead, so this is the one piece of state the
-  // whole page hangs off: a mode, and an anchor for each mode. Two anchors and
-  // not one, because switching back to Week should land on the week you were
-  // reading, not on whatever day the month happens to begin with.
+  // iOS Calendar reaches its week by having the phone rotated; held upright it
+  // needs a control. An anchor each, not one, so coming back to Week lands on
+  // the week you were reading.
   var planMode = "week", monthStart = null;
   var PLAN_AT = "spotter_plan_at";
 
@@ -4298,16 +4294,14 @@ export const APP = String.raw`
     } catch (e) { /* a browser that will not remember is not an error */ }
   }
 
-  // The week that speaks for a month: the one holding today when today is in it,
-  // and the first otherwise. Used both by the mode switch and by Copy.
+  // The week that speaks for a month: today's when today is in it, else the first.
   function weekInMonth(m) {
     var now = new Date();
     if (now.getFullYear() === m.getFullYear() && now.getMonth() === m.getMonth()) return mondayOf(now);
     return mondayOf(m);
   }
 
-  // A week belongs to the month holding its Thursday — the ISO rule, and the
-  // answer that stops the last week of August from calling itself September.
+  // The ISO rule, which stops the last week of August calling itself September.
   function monthOfWeek(w) { return firstOf(addDays(w, 3)); }
 
   function restorePlan() {
@@ -4327,9 +4321,8 @@ export const APP = String.raw`
   }
   restorePlan();
 
-  // Week and month ask the same two questions of the same two tables; only the
-  // window differs. A month runs from the Monday on or before the 1st to the
-  // Sunday on or after the last day, so the grid is always whole weeks.
+  // Same two questions, one window: a month runs Monday-on-or-before-the-1st to
+  // Sunday-on-or-after-the-last, so the grid is always whole weeks.
   function planRange() {
     if (planMode === "month") {
       var last = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0);
@@ -4353,8 +4346,7 @@ export const APP = String.raw`
     if (!state.weekStart) state.weekStart = mondayOf(new Date());
     if (!monthStart) monthStart = monthOfWeek(state.weekStart);
     var r = planRange();
-    // A day of slack either side: a log is stamped in UTC and read back in local
-    // time, and the two disagree by up to a day at the edges of the window.
+    // A day of slack: a log is stamped UTC and read back local.
     return Promise.all([
       sb.from("plan").select("*").gte("day", ymd(r.from)).lte("day", ymd(r.to)),
       sb.from("workout_logs").select("id,started_at")
@@ -4373,8 +4365,7 @@ export const APP = String.raw`
     });
   }
 
-  // A change this page made itself, already true on the screen. Same two chores
-  // loadPlan does on the way back, minus the round trip.
+  // A change already true on the screen: loadPlan's two chores, no round trip.
   function repaintPlan() {
     today.at = 0;
     planSig = planShape();
@@ -4397,10 +4388,8 @@ export const APP = String.raw`
 
   // ---------- plan · the bar ----------
   //
-  // Built once and kept, unlike the body under it. A segmented control whose
-  // pill is replaced rather than moved cannot slide, and the slide is the whole
-  // point of the control: Apple's thumb is one object travelling between two
-  // seats, not two states of a picture.
+  // Built once and kept, unlike the body under it: a pill replaced rather than
+  // moved cannot slide, and the slide is the point of the control.
 
   var planBar = null, planBody = null, planSwap = false;
   var barTitle = null, barPrev = null, barNext = null, barSeg = null, barToday = null, barCopy = null;
@@ -4419,9 +4408,8 @@ export const APP = String.raw`
     planBar.appendChild(top);
 
     var row = el("div", "planctl");
-    // Apple's rule for a segmented control: two to five equal segments, plain
-    // title-case nouns, and never an action mixed in among them — which is why
-    // Copy is a button beside the pill rather than a third seat inside it.
+    // Apple's rule: up to five equal segments, title-case nouns, and no action
+    // among them — which is why Copy sits beside the pill, not inside it.
     barSeg = el("div", "seg");
     barSeg.setAttribute("role", "tablist");
     barSeg.setAttribute("aria-label", "How to view the plan");
@@ -4434,11 +4422,10 @@ export const APP = String.raw`
     });
     row.appendChild(barSeg);
 
-    // The two things you do to a plan rather than to a view of it, kept together
-    // on the far side of the pill.
+    // What you do TO a plan, not how you look at it.
     var acts = el("div", "planacts");
-    // Google Calendar keeps a way back to today within reach at all times. It
-    // earns its place only while today is off screen, so it comes and goes.
+    // Google Calendar keeps a way back to today in reach; it earns its place
+    // only while today is off screen, so it comes and goes.
     barToday = el("button", "planbtn", "Today");
     barToday.onclick = function () {
       if (planMode === "month") monthStart = firstOf(new Date());
@@ -4447,9 +4434,8 @@ export const APP = String.raw`
       loadPlan();
     };
     acts.appendChild(barToday);
-    // Boostcamp's program creator calls it duplicating a week; TrainHeroic and
-    // TrueCoach both call it copy and then ask where to paste. Copy is the word
-    // all three answer to, so it is the word on the button.
+    // Boostcamp duplicates a week; TrainHeroic and TrueCoach copy and ask where
+    // to paste. Copy is the word all three answer to.
     barCopy = el("button", "planbtn", "Copy");
     barCopy.onclick = function () { openCopy(); };
     acts.appendChild(barCopy);
@@ -4476,8 +4462,7 @@ export const APP = String.raw`
     else state.weekStart = weekInMonth(monthStart);
     planMode = m;
     planSwap = true;
-    // Painted before the fetch, on the pill that is already on the screen: the
-    // slide belongs to the tap, not to whenever the rows come back.
+    // Painted before the fetch: the slide belongs to the tap, not to the rows.
     paintPlanBar();
     rememberPlan();
     loadPlan();
@@ -4524,15 +4509,12 @@ export const APP = String.raw`
     planBody.innerHTML = "";
     planBody.classList.remove("planswap");
     if (planMode === "month") renderMonth(planBody); else renderWeek(planBody);
-    // The offer sits under the plan rather than in the bar: it is the thing you
-    // do once you have looked at the week, not one of the two ways of looking.
+    // Under the plan, not in the bar: it is what you do once you have looked.
     planBody.appendChild(pumpyProgramBtn(el("button", "planbtn wide"),
       planMode === "month" ? weekInMonth(monthStart) : state.weekStart));
-    // The day sheet is a second window onto these same rows. Redraw it here and
-    // the two can never disagree about what is planned.
+    // A second window onto these same rows; redrawn here so the two agree.
     if ($("daysheet").classList.contains("open")) renderDay();
-    // A mode switch is a crossfade, not an arrival: the bar above it did not
-    // move, so sliding the body up under it would be one gesture too many.
+    // A crossfade, not an arrival: the bar above it did not move.
     if (planSwap) { planSwap = false; void planBody.offsetWidth; planBody.classList.add("planswap"); }
     else viewIn(planBody);
   }
@@ -4541,8 +4523,7 @@ export const APP = String.raw`
 
   var DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
-  // One row, drawn the same on a day card and inside the day sheet, so the two
-  // can never drift apart.
+  // One row, drawn the same on a day card and in the day sheet.
   function planItem(p) {
     var w = planWorkout(p.workout_id);
     if (!w) return null;
@@ -4563,8 +4544,8 @@ export const APP = String.raw`
     return item;
   }
 
-  // The two writes this page makes, each behind one door. Everything that plans
-  // or unplans a single day comes through here.
+  // The two single-day writes, each behind one door — the speed pass wants
+  // these lines optimistic and can have them here.
   function planAdd(day, workoutId) {
     return sb.from("plan").insert({ user_id: state.user.id, day: day, workout_id: workoutId });
   }
@@ -4621,10 +4602,9 @@ export const APP = String.raw`
 
   // ---------- plan · the month ----------
   //
-  // iOS Calendar's compact month is the model: one cell a day, at most three
-  // marks in it, today ringed, the days either side of the month present but
-  // quiet. A thumbnail where the card has one — a month of workouts you can
-  // recognise by their pictures is worth more than a month of identical dots.
+  // iOS Calendar's compact month: one cell a day, three marks at most, today
+  // ringed, the days either side present but quiet. A thumbnail where the card
+  // has one — pictures are recognisable in a way identical dots are not.
 
   var DOW = ["M", "T", "W", "T", "F", "S", "S"];
 
@@ -4649,9 +4629,7 @@ export const APP = String.raw`
         var top = el("div", "mtop");
         top.appendChild(el("span", "mnum", String(d.getDate())));
         var did = loggedOn(key);
-        // The tick is the only thing in a cell that reports the past. It sits
-        // beside the number rather than among the marks, because a mark says
-        // what is coming and this one says what happened.
+        // Beside the number, not among the marks: a mark says what is coming.
         if (did) top.appendChild(ic("check"));
         cell.appendChild(top);
 
@@ -4659,9 +4637,7 @@ export const APP = String.raw`
           .filter(Boolean);
         if (!out) { planned += ws.length; if (did) done++; }
         var marks = el("div", "mmarks");
-        // Three and no more, and no "+2" after them: at 45px a cell can hold the
-        // count or the pictures, and the pictures are what makes a month of
-        // workouts recognisable at a glance. The day sheet holds the rest.
+        // Three, and no "+2": at 45px a cell holds the count or the pictures.
         ws.slice(0, 3).forEach(function (w) {
           if (!w.thumb_url) { marks.appendChild(el("span", "mdot")); return; }
           var img = el("img");
@@ -4670,8 +4646,7 @@ export const APP = String.raw`
           marks.appendChild(img);
         });
         cell.appendChild(marks);
-        // The cell is a button with three pictures in it and nothing a screen
-        // reader could read, so the whole sentence is written out here.
+        // Three pictures and nothing a screen reader could read.
         cell.setAttribute("aria-label", d.toLocaleDateString(undefined,
           { weekday: "long", month: "long", day: "numeric" }) +
           (ws.length ? ", " + ws.length + " planned" : ", nothing planned") +
@@ -4685,13 +4660,11 @@ export const APP = String.raw`
       monthStart.toLocaleDateString(undefined, { month: "long" })));
   }
 
-  // ---------- plan / one day ----------
+  // ---------- plan · one day ----------
   //
-  // Apple's Calendar in List density answers a tapped day in place rather than
-  // pushing a screen at you, and that is the right size of answer here too: the
-  // month is the thing you came to read, and a sheet gives the day back without
-  // taking it away. Google Calendar's month behaves the same way — tap a date,
-  // see that date. So: what is on it, and one way to add to it.
+  // Apple's Calendar in List density answers a tapped day in place, and Google's
+  // month does the same — tap a date, see that date. A sheet gives the day back
+  // without taking the month away.
 
   var dayKey = null;
 
@@ -4714,9 +4687,8 @@ export const APP = String.raw`
       var item = planItem(row);
       if (item) list.appendChild(item);
     });
-    // The picker is handed the sheet rather than stacked on top of it: opened
-    // first so the history entry never falls to the floor between the two, and
-    // the day slides away behind it.
+    // Handed over rather than stacked: the picker opens first, so the one
+    // history entry never falls to the floor between them.
     $("dayadd").onclick = function () {
       var key = dayKey;
       openPicker(key, label);
@@ -4726,25 +4698,20 @@ export const APP = String.raw`
 
   // ---------- programs ----------
   //
-  // A multi-week program is the same week said again with something changed, and
-  // every coaching tool that builds one has the same two verbs. Boostcamp
-  // duplicates days and weeks; TrainHeroic copies a selection and asks you to
-  // hover the start date to paste it; TrueCoach copies and drops. All three ask
-  // WHERE, none of them assumes next week — so this sheet asks too, and then
-  // adds the count neither of them documents: repeat for N weeks, which is the
-  // difference between building a four-week block and pasting four times.
+  // Boostcamp duplicates days and weeks; TrainHeroic copies a selection and asks
+  // you to hover the start date to paste it; TrueCoach copies and drops. All
+  // three ask WHERE — none assumes next week — so this sheet asks too, and adds
+  // the count none of them documents: repeat for N weeks, which is the
+  // difference between a four-week block and pasting four times.
   //
-  // Hevy and Strong have no version of this at all, and it is worth saying why:
-  // their plan is a folder of routines you pick from when you arrive at the gym,
-  // and Hevy's calendar is explicitly a record of what you did, not a plan. A
-  // session bound to a date is a different object — it can be missed, moved, or
-  // repeated — and only that object makes "copy this week forward" mean anything.
+  // Hevy and Strong have no version of this: their plan is a folder of routines
+  // you choose from at the gym, and Hevy's calendar is a record of what you did.
+  // Only a session bound to a date can be missed, moved or repeated.
 
   var copySrc = null, copyDest = null, copyReps = 1, copyRows = null;
   var REPS = [1, 2, 3, 4, 6, 8];
-  // Eight weeks of destinations to choose from, sixteen weeks of rows fetched:
-  // repeat 8 from the eighth week reaches the fifteenth, and skipping duplicates
-  // is only honest if what is already there has been looked at.
+  // Eight destinations offered, sixteen weeks of rows fetched: repeat 8 from the
+  // eighth reaches the fifteenth, and duplicates can only be skipped if seen.
   var COPY_WEEKS = 8, COPY_SPAN = 16;
 
   function weekRows(rows, w) {
@@ -4752,8 +4719,7 @@ export const APP = String.raw`
     return (rows || []).filter(function (r) { return r.day >= from && r.day <= to; });
   }
 
-  // Every whole week the visible month touches — the short list a month view
-  // needs before it can be asked which week to copy.
+  // Every whole week the visible month touches.
   function monthWeeks() {
     var r = planRange(), out = [], w = r.from;
     while (ymd(w) <= ymd(r.to)) { out.push(w); w = addDays(w, 7); }
@@ -4767,8 +4733,7 @@ export const APP = String.raw`
     copyRows = null;
     renderCopy();
     openSheet("copysheet");
-    // The counts are the whole point of the list, so they are fetched rather
-    // than guessed from the weeks that happen to be on screen.
+    // The counts are the point of the list, so they are fetched, not guessed.
     var span = { from: copySrc, to: addDays(copySrc, (COPY_SPAN + 1) * 7 - 1) };
     sb.from("plan").select("*").gte("day", ymd(span.from)).lte("day", ymd(span.to))
       .then(function (r) {
@@ -4782,9 +4747,8 @@ export const APP = String.raw`
   function renderCopy() {
     var head = $("copyhead");
     head.innerHTML = "";
-    // In month view no week is "the" week yet, so the first question the sheet
-    // asks is which one — a chip per week the month touches, Apple's own answer
-    // to a choice of five or six short labels.
+    // In month view no week is "the" week yet, so the sheet asks which — a chip
+    // per week the month touches.
     if (planMode === "month") {
       var wks = el("div", "copywks");
       monthWeeks().forEach(function (w) {
@@ -4816,8 +4780,7 @@ export const APP = String.raw`
           ymd(w) <= ymd(addDays(copyDest, (copyReps - 1) * 7));
         var b = el("button", "copyweek" + (on ? " on" : ""));
         b.appendChild(el("b", null, weekLabel(w)));
-        // Blank until the fetch lands rather than a zero that might be a lie —
-        // the row is the same height either way, so nothing jumps.
+        // Blank until the fetch lands, rather than a zero that might be a lie.
         b.appendChild(el("span", "n", n < 0 ? "" : (n ? n + " planned" : "empty")));
         b.setAttribute("aria-pressed", on ? "true" : "false");
         b.onclick = function () { copyDest = w; renderCopy(); };
@@ -4845,9 +4808,8 @@ export const APP = String.raw`
     clear.onclick = function () { clearWeek(); };
   }
 
-  // One insert for the whole batch, and one undo for it — Apple asks that a set
-  // of related changes be revertible in a single step, and eight weeks of rows
-  // put in one at a time would be eight things to take back.
+  // One insert and one undo for the batch: Apple asks that a set of related
+  // changes revert in a single step.
   function doCopy() {
     var srcRows = weekRows(copyRows || state.plan, copySrc);
     if (!srcRows.length) return;
@@ -4875,9 +4837,8 @@ export const APP = String.raw`
       if (r.error) { toast("Could not copy that week. Try again in a moment."); return; }
       var ids = (r.data || []).map(function (x) { return x.id; });
       loadPlan();
-      // The rows are already in, so this undo is a real delete of exactly the ids
-      // that came back — never "everything that week", which would take away what
-      // was there before the copy.
+      // A real delete of exactly the ids that came back — never "everything that
+      // week", which would take away what was there before.
       offerUndo("Copied to " + copyPlural(n), function () { /* already committed */ },
         function () {
           sb.from("plan").delete().in("id", ids).then(function () { loadPlan(); });
@@ -4885,18 +4846,15 @@ export const APP = String.raw`
     });
   }
 
-  // The other direction, and the delayed commit this file uses everywhere else:
-  // the week empties on the tap and the rows go only once the sentence offering
-  // the undo has gone, so there is nothing that can half-fail.
-  // Route taken, and why. The other one was a plan context — a second kind of
-  // pumpy.ctx posted as its own field and rendered into the system prompt beside
-  // ctxWorkout — and it would have to be right in three places at once in a week
-  // when four hands are in this file, for an answer a sentence already gives.
-  // A sentence is also the only one of the two the user can argue with: "4-week"
-  // and "progresses each week" are exactly what a person wants to change to
-  // "6 weeks" or "keep it the same" before they send it, and a chip cannot say
-  // either. So the composer is filled and left alone — nothing is sent until the
-  // user sends it, and no API has to move for the page to ship.
+  // The other direction, on the delayed commit this file uses everywhere: the
+  // week empties on the tap and the rows go when the sentence offering the undo
+  // does, so nothing can half-fail.
+  // Route taken: a prefilled sentence, not a plan context. A context would have
+  // to be right in renderPumpyCtx, sendPumpy and pumpySystem at once, in a week
+  // when four hands are in this file — and a sentence is the only one of the two
+  // the user can argue with, since "4-week" and "progresses each week" are
+  // exactly what they will want to change before sending. Nothing is sent until
+  // they send it, and no API has to move for the page to ship.
   function programWithPumpy(week) {
     var s = "Turn the week of " + shortDate(week) + " (" + ymd(week) +
       ") into a 4-week program that progresses each week.";
@@ -4909,8 +4867,7 @@ export const APP = String.raw`
     if (NO_TOUCH) box.focus();
   }
 
-  // The same button in two places — under the plan and at the foot of the copy
-  // sheet — so it is one function that dresses whichever node it is handed.
+  // Two places, one function, whichever node it is handed.
   function pumpyProgramBtn(node, week) {
     if (!node.childNodes.length) {
       var mark = el("span", "pumpmark");
@@ -5659,10 +5616,9 @@ export const APP = String.raw`
       if (p.block_title) card.appendChild(el("div", "pmeta", p.block_title));
       (p.exercises || []).forEach(function (e) { proposalEx(card, e); });
     } else if (p.kind === "plan_days") {
-      // Twenty-eight lines in date order is a wall. Four weeks of seven is a
-      // program, and the only difference is a heading — .pblock, the same one a
-      // workout's blocks already wear, so the two cards read alike. A single
-      // week gets no heading: one group does not need naming.
+      // Twenty-eight lines in date order is a wall; four weeks of seven is a
+      // program, and a heading is the whole difference. .pblock, so the two
+      // proposal cards read alike. One week gets none — one group needs no name.
       var days = (p.days || []).slice().sort(function (x, y) {
         return x.day < y.day ? -1 : (x.day > y.day ? 1 : 0);
       });
