@@ -557,6 +557,33 @@ export const STYLE = String.raw`<style>
      creator's wording everywhere else, so this is the only mark that says which
      lines are theirs — quiet, and it never appears on model output. */
   .exmine { font-size: 11px; font-weight: 600; color: var(--muted); margin-top: 4px; }
+  /* Where a coach borrowed the line from: the voice of "Added by you", and not a
+     link — the source is one tap away in the strip above, and a fourth target on a
+     row holding three buttons is a row nobody can aim at. */
+  .exfrom { font-size: 11px; font-weight: 600; color: var(--muted); margin-top: 4px; }
+  /* "Built from your videos" — artwork, who, which: the order the App Store shelf
+     and Perplexity's source row both put a source in. Wrapping, not scrolling: two
+     fit a 375px card, and a source hidden off the edge of a strip about sources is
+     a bad joke. */
+  .fromstrip { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+  .fromchip { flex: 1 1 148px; min-width: 0; display: flex; align-items: center; gap: 10px;
+    padding: 8px; border: 1px solid var(--line); border-radius: 14px; background: var(--sand);
+    color: var(--ink); font: inherit; text-align: left;
+    transition: transform var(--t-2) var(--e-out); }
+  .fromchip:active { transform: scale(.975); }
+  .fromthumb { flex: 0 0 auto; width: 40px; height: 40px; border-radius: 11px; overflow: hidden;
+    background: var(--card); color: var(--muted); display: flex; align-items: center;
+    justify-content: center; }
+  .fromthumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .fromthumb .ic { width: 19px; height: 19px; }
+  .fromthumb .pmark { width: 100%; height: 100%; border-radius: 0; }
+  .fromtext { flex: 1; min-width: 0; }
+  .fromwho { display: block; font-size: 11px; font-weight: 700; color: var(--ember-ink); }
+  .fromtitle { display: block; font-size: 12.5px; font-weight: 600; color: var(--ink);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  @media (prefers-reduced-motion: reduce) {
+    .fromchip, .fromchip:active { transition: none; transform: none; }
+  }
   /* Same visual language as .selectrow select — sand fill, hairline, 12px radius —
      one step quieter, because adding a missed exercise is a repair, not an action
      the card is asking for. */
@@ -1319,6 +1346,8 @@ export const STYLE = String.raw`<style>
   .proposal .pline { font-size: 13.5px; line-height: 1.5; color: var(--ink-2); padding: 6px 0;
     border-top: 1px solid var(--line); }
   .proposal .pline b { color: var(--ink); font-weight: 650; }
+  /* Which saved video a proposed line came from, before the user says yes. */
+  .proposal .pfrom { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
   .proposal .btnrow { margin-top: 12px; }
   .proposal .btnrow .btn { padding: 12px; font-size: 14.5px; }
   .proposal .done { color: var(--good); font-weight: 700; font-size: 13px; margin-top: 10px;

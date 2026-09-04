@@ -3499,21 +3499,6 @@ type Exercise = {
   // source text and then deleted — what survives is the checked result, never the
   // claim. This is the whole difference between evidence and a self-report.
   evidence_quote?: string | null;
-  // Only on a coach's card: the saved workout this exercise was lifted out of, and
-  // where in it. Evidence says which line of a video an exercise was read from;
-  // this says which of the user's videos the exercise itself came from, which is
-  // the difference between "Pumpy made this up" and "Pumpy borrowed this from a
-  // creator you follow". Written only by the Pumpy citation pass, never by
-  // extraction, and never trusted from a model: the handle it writes is resolved
-  // against this user's own rows before anything is stored.
-  source?: ExerciseSource | null;
-};
-
-/** A position inside a saved workout's blocks. The uuid, never a short handle. */
-type ExerciseSource = {
-  workout_id: string;
-  block_index: number;
-  exercise_index: number;
 };
 
 type Block = {
@@ -7376,15 +7361,11 @@ async function toolGetWorkout(userId: string, idOrHandle: string) {
   if (typeof resolved !== "string") return resolved;
   const id = resolved;
   const rows = await dbSelect("workouts",
-    `id=eq.${id}&user_id=eq.${userId}&select=id,title,category,muscle_groups,equipment,duration_minutes,favorite,blocks,notes,author,platform`);
+    `id=eq.${id}&user_id=eq.${userId}&select=id,title,category,muscle_groups,equipment,duration_minutes,favorite,blocks,notes`);
   if (!rows.length) return { error: "no such workout in this library" };
   const w = rows[0];
   return {
-    // author and source are here so a coach who borrows a movement out of this card
-    // can say whose video it was in plain words — "Ana's kettlebell circuit" — rather
-    // than handing the user a title with nobody attached to it.
     id: handleOf(w.id), title: w.title, category: w.category, muscles: catalogMusclesOf(w.blocks),
-    author: w.author ?? null, source: w.platform ?? null,
     equipment: w.equipment ?? [], minutes: w.duration_minutes ?? null, favorite: !!w.favorite, notes: w.notes ?? null,
     blocks: (w.blocks ?? []).map((b: any) => ({
       title: b?.title ?? null, type: b?.type ?? "straight", rounds: b?.rounds ?? null, rest_seconds: b?.rest_seconds ?? null,
@@ -7744,157 +7725,10 @@ function pumpyExercises(list: unknown): Exercise[] {
     .filter((e): e is Exercise => !!e)
     .map((e) => {
       delete e.evidence_quote;
-      // A coach wrote this line, so there is no source line to trace — unless the
-      // citation pass below finds the saved video it was borrowed from, which
-      // copies that video's evidence back onto it.
-      e.evidence = null;
+      e.evidence = null;          // a coach wrote it; there is no source line to trace
       e.canonical_id = canonId(e.name);
       return e;
     });
-}
-
-// -- citations: the exercise Pumpy borrowed, and the video it came from --
-//
-// "If Pumpy uses one of the videos in his workout that that person has saved,
-// then I want Pumpy to cite that video." So the model may hang a `from` handle on
-// any exercise it writes, and this pass turns that claim into a stored position:
-// the workout's real uuid, the block and the exercise inside it, plus a copy of
-// that exercise's evidence so the explain sheet can still quote the creator and
-// jump to the second of the video the line was read at.
-//
-// It is a claim, never a fact. The handle is resolved against this user's own rows
-// and the movement has to actually be in the workout the model named; anything
-// that does not check out loses its citation and keeps its exercise. A coach that
-// refused to build a workout because it misremembered which card a squat was on
-// would be trading the whole answer for a footnote.
-//
-// The positions are read off the RAW blocks rather than carried on the exercises,
-// because normalizeExercise drops every field it does not know about — which is
-// the property that keeps a model from writing straight into the database, and
-// worth more than the convenience of a transient field would be. The cost is that
-// this walk has to mirror normalizeCard's own two drops exactly: an exercise whose
-// name will not survive, and then a block left with nothing in it.
-
-/** The one rule normalizeExercise applies before anything else: a usable name. */
-function pumpyKeepsExercise(raw: any): boolean {
-  return typeof raw?.name === "string" && cleanTitle(raw.name).length >= 2;
-}
-
-function pumpyFromHandle(raw: any): string | null {
-  const v = String(raw?.from ?? raw?.from_workout ?? "").trim();
-  return v ? v.slice(0, 40) : null;
-}
-
-/** "block:exercise" as the pair will be numbered after normalisation → the handle. */
-function pumpyCitedInBlocks(rawBlocks: unknown): Map<string, string> {
-  const out = new Map<string, string>();
-  if (!Array.isArray(rawBlocks)) return out;
-  let bi = 0;
-  for (const b of rawBlocks.slice(0, 12)) {
-    const kept = (Array.isArray(b?.exercises) ? b.exercises.slice(0, 15) : []).filter(pumpyKeepsExercise);
-    if (!kept.length) continue;   // normalizeCard drops a block with no exercises left
-    kept.forEach((e: any, ei: number) => {
-      const h = pumpyFromHandle(e);
-      if (h) out.set(bi + ":" + ei, h);
-    });
-    bi++;
-  }
-  return out;
-}
-
-/** The same, for append_exercises' one flat list. */
-function pumpyCitedInList(list: unknown): Map<string, string> {
-  const out = new Map<string, string>();
-  if (!Array.isArray(list)) return out;
-  list.slice(0, 20).filter(pumpyKeepsExercise).forEach((e: any, ei: number) => {
-    const h = pumpyFromHandle(e);
-    if (h) out.set("0:" + ei, h);
-  });
-  return out;
-}
-
-/** Names compared the way a person compares them: case, punctuation and runs of space gone. */
-function pumpyExName(s: unknown): string {
-  return String(s ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-}
-
-/**
- * Where this movement sits in that workout. The catalog key is the strongest
- * evidence — "Bulgarians" and "Bulgarian Split Squat" are the same lift and the
- * coach will have spelled it the catalog's way — then the name outright, and only
- * then one name inside the other, which catches "Push-up" against "Push-ups to
- * failure" without letting a loose hit outrank an exact one.
- */
-function pumpyFindInWorkout(blocks: any, ex: Exercise): ExerciseSource | null {
-  const want = pumpyExName(ex.name);
-  let exact: { bi: number; ei: number } | null = null;
-  let loose: { bi: number; ei: number } | null = null;
-  const list: any[] = Array.isArray(blocks) ? blocks : [];
-  for (let bi = 0; bi < list.length; bi++) {
-    const exs: any[] = Array.isArray(list[bi]?.exercises) ? list[bi].exercises : [];
-    for (let ei = 0; ei < exs.length; ei++) {
-      const got = pumpyExName(exs[ei]?.name);
-      if (ex.canonical_id && exs[ei]?.canonical_id === ex.canonical_id) {
-        return { workout_id: "", block_index: bi, exercise_index: ei };
-      }
-      if (!got || !want) continue;
-      if (!exact && got === want) exact = { bi, ei };
-      else if (!loose && (got.includes(want) || want.includes(got))) loose = { bi, ei };
-    }
-  }
-  const hit = exact ?? loose;
-  return hit ? { workout_id: "", block_index: hit.bi, exercise_index: hit.ei } : null;
-}
-
-/**
- * Resolve every handle in one id fetch and read every cited workout in one query —
- * a proposal that cites six cards should cost two round trips, not twelve. Mutates
- * the exercises in place; a citation that does not check out is dropped with a
- * console line and nothing else, because the workout is still worth saving.
- */
-async function pumpyAttachSources(userId: string, blocks: Block[], cited: Map<string, string>): Promise<void> {
-  if (!cited.size) return;
-  const handles = [...new Set(cited.values())];
-  const known = handles.some((h) => !isUuid(h)) ? await workoutIds(userId) : [];
-  const ids = new Map<string, string>();
-  for (const h of handles) {
-    const r = await resolveHandle(userId, h, known);
-    if (typeof r === "string") ids.set(h, r);
-    else console.warn("pumpy cite: handle", h, "went nowhere —", r.error);
-  }
-  const uuids = [...new Set(ids.values())];
-  if (!uuids.length) return;
-  let rows: any[] = [];
-  try {
-    rows = await dbSelect("workouts", `user_id=eq.${userId}&id=in.(${uuids.join(",")})&select=id,blocks`);
-  } catch (e) {
-    console.error("pumpy cite: could not read the cited workouts —", e);
-    return;
-  }
-  const byId = new Map<string, any>(rows.map((r: any) => [String(r.id), r]));
-  let kept = 0, dropped = 0;
-  cited.forEach((handle, key) => {
-    const at = key.split(":");
-    const ex = blocks[Number(at[0])]?.exercises?.[Number(at[1])];
-    if (!ex) return;
-    const wid = ids.get(handle) ?? "";
-    const row = byId.get(wid);
-    const found = row ? pumpyFindInWorkout(row.blocks, ex) : null;
-    if (!found) {
-      dropped++;
-      console.warn("pumpy cite: dropped", JSON.stringify(ex.name), "→", handle,
-        row ? "— that workout does not contain it" : "— no such workout");
-      return;
-    }
-    found.workout_id = wid;
-    ex.source = found;
-    // The quote and the "Watch this bit" button come with it: without the source
-    // video's evidence a citation would be a name with nothing behind it.
-    const src = row.blocks?.[found.block_index]?.exercises?.[found.exercise_index];
-    ex.evidence = src?.evidence ?? null;
-    kept++;
-  });
-  console.log("pumpy cite:", kept, "attached,", dropped, "dropped, across", uuids.length, "workout(s)");
 }
 
 async function validateProposal(userId: string, p: any): Promise<PumpyProposal | { error: string }> {
@@ -7907,8 +7741,6 @@ async function validateProposal(userId: string, p: any): Promise<PumpyProposal |
     for (const b of card.blocks) for (const e of b.exercises) { delete e.evidence_quote; e.evidence = null; }
     if (!countExercises(card)) return { error: "a workout needs at least one exercise" };
     applyCatalog(card);
-    // After the catalog, because the catalog key is what the matcher looks at first.
-    await pumpyAttachSources(userId, card.blocks, pumpyCitedInBlocks(p?.blocks));
     return {
       kind, title: card.title, category: card.category, difficulty: card.difficulty,
       duration_minutes: card.duration_minutes, equipment: card.equipment, muscle_groups: card.muscle_groups,
@@ -7927,9 +7759,6 @@ async function validateProposal(userId: string, p: any): Promise<PumpyProposal |
     if (!rows.length) return { error: "no such workout in this library" };
     const exercises = pumpyExercises(p?.exercises);
     if (!exercises.length) return { error: "nothing to add — give at least one exercise with a name" };
-    // One flat list is one block as far as the citation walk is concerned.
-    await pumpyAttachSources(userId, [{ title: null, type: "straight", rounds: null, rest_seconds: null, exercises }],
-      pumpyCitedInList(p?.exercises));
     return {
       kind, workout_id: wid, workout_title: rows[0].title ?? "Workout",
       block_title: cleanTitle(swapStr(p?.block_title, 60)) || null,
@@ -8089,12 +7918,9 @@ const PUMPY_STATIC = [
   '- {"kind":"create_workout","title":string,"category":one of ' + JSON.stringify(CATEGORIES) +
   ',"duration_minutes":int|null,"equipment":[from ' + JSON.stringify(EQUIPMENT) + '],"blocks":[{"title":string|null,"type":one of ' +
   JSON.stringify(BLOCK_TYPES) + ',"rounds":int|null,"rest_seconds":int|null,"exercises":[{"name":string,"sets":int|null,' +
-  '"reps":string|null,"duration_seconds":int|null,"rest_seconds":int|null,"notes":string|null,"from":workout id|null}]}],"summary":one sentence}',
-  '- {"kind":"append_exercises","workout_id":string,"block_title":string|null,"exercises":[same exercise shape, "from" included],"summary":one sentence}',
+  '"reps":string|null,"duration_seconds":int|null,"rest_seconds":int|null,"notes":string|null}]}],"summary":one sentence}',
+  '- {"kind":"append_exercises","workout_id":string,"block_title":string|null,"exercises":[same exercise shape],"summary":one sentence}',
   '- {"kind":"plan_days","days":[{"day":"YYYY-MM-DD","workout_id":string}],"summary":one sentence}',
-  'When an exercise is taken from one of the user\'s saved workouts, set that exercise\'s "from" to that ' +
-  "workout's id — only ever the id of a workout that really contains the movement, otherwise leave it out — and " +
-  "in say name the workouts you drew from by their titles.",
   "Rules: spell exercises the way the catalog does when the catalog has them; favourites (★) and collections tell " +
   "you what the user likes, and when the user names something like 'my leg day' or 'hotel gym', a collection with " +
   "that name identifies the workouts they mean — use it before asking; when a saved workout fits, prefer it to " +
