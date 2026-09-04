@@ -584,6 +584,193 @@ In-app account deletion is not optional for the App Store: guideline **5.1.1(v)*
 condition of listing any app that creates accounts. Google Play additionally wants a publicly
 reachable page describing it, which is `docs/privacy.html#delete`.
 
+Deleting an account **cancels the Stripe subscription and deletes the Stripe customer first**,
+before a single row goes. If Stripe cannot be reached the whole deletion stops with a 503 and
+nothing is deleted, because an account that is gone but still charging a card every month is the
+one outcome that must never happen.
+
+## Plans and billing
+
+Spotter sells one paid tier: **Plus, $6.99 a month or $39.99 a year**, with a 7-day trial on the
+annual price only (a card is taken up front — the free tier is the monthly plan's trial). At
+launch the first 200 annual subscribers pay **$29.99 for the first year**. Everything that made
+Spotter worth using stays free for ever — logging, Workout Mode, the plan, progress, the muscle
+map, collections and export are not metered and never will be.
+
+**The free gate is the shelf, not the day.** A free account holds **20 workouts**; Plus is
+unlimited. The five daily caps below exist to stop abuse and are set where an ordinary week never
+touches them, because a daily ceiling teaches people to save *less*, which is the opposite of
+what a library wants. The library cap is checked only where a new row would be created — a save,
+an upload, a workout Pumpy proposes — and never on reading, logging, editing, planning or
+deleting. Nothing already saved is ever taken away, including from an account that goes over the
+number when a comp ends.
+
+**Entitlement is one column.** `profiles.plan` (`free | plus | pro | staff`) is the only thing any
+cap check reads — it already was, for Pumpy's credits. A `subscriptions` row derives it through
+one trigger, `apply_subscription_plan()`, and that row carries a `source` (`stripe | apple |
+google | manual`) so an App Store purchase later writes the same row and the derivation does not
+change. A `staff` profile is never touched by billing: comps stay the owner's to give.
+
+**Stripe is a signal, never the state.** Stripe does not promise to deliver events in order, and
+two events about one subscription can share a timestamp — so no handler trusts a payload. Every
+webhook, the return from a successful checkout, and the Settings refresh all call the same
+`syncStripeCustomer(customerId)` in `supabase/functions/spotter/billing.ts`, which asks Stripe
+what that customer has *now* and overwrites the row. Replaying an event rewrites an identical
+row. Event ids are recorded in `billing_events` so a duplicate delivery is a 200 and a delivery
+that failed halfway can still be retried.
+
+Entitled is `trialing`, `active` or `past_due` — the last one being the grace window while Stripe
+retries a failed card:
+
+| Stripe `status` | Entitled | `profiles.plan` | What Settings shows |
+| --- | --- | --- | --- |
+| `trialing` | yes | plus/pro | `Plus · trial ends Oct 4` |
+| `active` | yes | plus/pro | `Plus · renews Oct 4` |
+| `active`, cancelling | yes | plus/pro | `Plus · ends Oct 4` |
+| `past_due` | yes (grace) | plus/pro | `Plus · payment failed` + Update payment |
+| `unpaid` | no | free | `Free` — retries are spent; Stripe's own advice is to revoke here |
+| `canceled` | no | free | `Free` |
+| `incomplete` | no | free | `Free` — the first payment did not settle within 23 hours |
+| `incomplete_expired` | no | free | `Free` — terminal |
+| `paused` | no | free | `Free` |
+
+Two fields are read from places that are easy to get wrong. The renewal date lives on the
+subscription **item** (`items.data[0].current_period_end`) — the field on the subscription itself
+was removed in API version `2025-03-31.basil` and reading it gets `undefined` with no error. And
+"cancels at the end of the period" is `cancel_at_period_end === true || cancel_at != null`,
+because flexible billing mode signals it through the second one.
+
+**Without a Stripe key nothing changes.** Every billing route answers
+`503 {code: "not_configured"}`, except `GET /api/billing/prices`, which answers 200 with
+`configured: false` so the app can say plans are coming soon. Ingest, the worker, Pumpy and the
+caps do not know billing exists. That is the state the function deploys in, and the state a fork
+of this repo runs in for ever.
+
+### Setting up Stripe
+
+```
+./tools/stripe-setup.sh          # a sandbox / test key first
+./tools/stripe-setup.sh --live   # the live account, once the test run checks out
+```
+
+It prompts for the secret key without echoing it, runs `tools/stripe-setup.mjs` (Node 20+, no npm
+dependencies — plain `fetch` against `api.stripe.com`), then stores `STRIPE_SECRET_KEY` and
+`STRIPE_WEBHOOK_SECRET` as function secrets and redeploys. Add `--dry-run` to the `.mjs` directly
+to see what it would do without changing anything.
+
+Every step is idempotent, and by something a Dashboard rename cannot break: products by
+`metadata.spotter_key`, prices by `lookup_key`, the portal configuration by `metadata.spotter`,
+the webhook endpoint by its URL. Run it as often as you like. **The webhook signing secret is
+returned only on the run that creates the endpoint** — Stripe never shows it again. If you lose
+it, roll it in Workbench → Webhooks → Roll secret and run the script again to store the new one.
+
+Portal configurations and webhook endpoints are **per mode**, so the test run and the live run
+each create their own. Nothing else differs.
+
+> **Owner action — six settings the API cannot touch.** The script prints these at the end; they
+> are here so they are findable later.
+>
+> 1. Revenue recovery → Retries: Smart Retries on, 8 tries over 2 weeks, then **Cancel the
+>    subscription**. Not "leave past-due" — Spotter treats `past_due` as entitled during the grace
+>    window, so that setting would hand a non-payer the paid plan for ever.
+> 2. Revenue recovery → Emails: failed-payment on, expiring-card on.
+> 3. Settings → Billing → Subscriptions and emails: trial-ending reminder on, upcoming-renewal
+>    emails on, free-trial messaging → "Link to a Stripe-hosted page". Stripe's own emails are the
+>    entire dunning story; Spotter sends no billing email of its own.
+> 4. Settings → Checkout and Payment Links → Subscriptions: **Limit customers to one
+>    subscription** on (it needs the no-code portal login link enabled). The 409 the checkout
+>    route returns is only the second layer.
+> 5. Settings → Branding, plus a public business name and support email — they appear on Checkout,
+>    in the portal and on every Stripe email.
+> 6. Stripe Tax: **threshold monitoring only**. No registrations, no calculation. Illinois does not
+>    tax cloud-only SaaS and every economic-nexus threshold is many times away, so calculation
+>    would collect nothing and add a renewal-time failure mode. Monitoring is free at zero
+>    registrations and is what will tell you when that stops being true.
+
+Testing without the Stripe CLI: card `4242 4242 4242 4242` for the happy path,
+`4000 0000 0000 0341` to make a *renewal* fail (it attaches fine and declines when charged),
+`4000 0027 6000 3184` for 3-D Secure on a subscription. Renewals and dunning over time are
+Dashboard **Simulations** (test clocks) — advance the clock an extra hour past the cycle date, or
+the draft invoice will not have finalised yet. To test duplicate handling, resend a real event
+from Workbench → Webhooks and check the second call answers `{"duplicate": true}`.
+
+### Prices and caps are data
+
+Nothing about the tiers is compiled in. Three files and one table, and none of them need a deploy
+to change:
+
+| What | Where | Notes |
+| --- | --- | --- |
+| Product names, amounts, intervals, trial length, the founding offer | `tools/stripe-plans.json` | The source of truth for what the setup script creates. Amounts in cents. |
+| The caps per plan | `app_config.limits.plans` | Read on the same 5-minute cache as the model ids. `null` = unlimited. |
+| Trial length the function applies | `app_config.billing.trial_days` | Annual only. Keep it equal to `trial_days` in the JSON. `0` switches trials off. |
+| Stripe Tax | `app_config.billing.tax` | `false` at launch. The checkout code already reads it. |
+| One person's caps | `profiles.limits` | A JSON override, field by field, beating the plan. |
+
+Today's numbers:
+
+| Cap | Free | Plus |
+| --- | --- | --- |
+| `library` workouts held (**not** per day) | 20 | unlimited |
+| `saves` per day | 30 | 200 |
+| `extract` new extractions per day | 10 | 60 |
+| `media` video reads per day | 2 | 15 |
+| `uploads` per day | 1 | 10 |
+| `helper` explain/swap answers per day | 25 | 60 |
+
+Pumpy's credits are a separate dial (`app_config.pumpy.plans`, `profiles.pumpy_limits`) and are
+unchanged: free 150/day and 1,500/month, Plus 400/day and 5,000/month.
+
+**Changing a price.** Edit the amount in `tools/stripe-plans.json` and run the setup script again.
+Prices are immutable in Stripe, so it creates a new one, moves the `lookup_key` onto it with
+`transfer_lookup_key` and deactivates the old — everybody already subscribed keeps the price they
+bought. No code knows a price id.
+
+**The founding offer** is a Stripe coupon with a fixed id, `SPOTTER_FOUNDING_YEAR`: $10 off, once,
+200 redemptions, scoped to the Plus product. The setup script creates it; the function looks it up
+by that id on the same five-minute cache as the prices and, while Stripe reports it valid, applies
+it to every yearly checkout automatically. Nobody types a code. Stripe's own `max_redemptions`
+counter is what closes the offer, so there is no number on our side to drift — `GET
+/api/billing/prices` reports `founding: {first_year_amount, remaining}`, or `null` once it is gone.
+**To end the offer, delete the coupon** in Products → Coupons; the paywall stops advertising it
+within five minutes and checkout goes to full price. Coupons are immutable, so changing the
+amount means deleting and re-creating. One consequence worth knowing: a Checkout Session may
+carry a coupon *or* a promo-code box, never both, so while the offer runs the yearly checkout has
+no "enter a code" field. Monthly keeps one. If Stripe refuses the coupon at session creation —
+the 200th redemption landing mid-click — the function retries once at full price rather than
+losing the sale.
+
+**The `LIMIT_*` secrets still work**, and now mean the free plan only: `LIMIT_SAVES`,
+`LIMIT_EXTRACT`, `LIMIT_MEDIA`, `LIMIT_UPLOADS`, `LIMIT_HELPER`. They predate plans and were the
+caps for everybody, so the only honest reading of one today is "this is what an unpaid account
+gets"; they must never reach into a paid plan. There is no `LIMIT_LIBRARY`: the shelf never
+existed before plans did, so there is nothing for an environment variable to inherit — change it
+in `limits.plans`. Precedence, loosest layer last:
+compiled defaults → `LIMIT_*` (free only) → `app_config.limits.plans` → `profiles.limits`.
+
+**Comping someone** is one row, and no Stripe involvement at all:
+
+```sql
+insert into public.subscriptions (user_id, source, plan, status)
+values ('<user uuid>', 'manual', 'plus', 'active');
+-- and to take it back:
+delete from public.subscriptions where user_id = '<user uuid>';
+```
+
+The trigger moves `profiles.plan` either way. For a bigger allowance without a plan change, set
+`profiles.limits` instead —
+`update public.profiles set limits = '{"library": null, "saves": 500}' where id = '…';`, where
+`null` means unlimited for that one field.
+For yourself, `plan = 'staff'` is the blunt instrument — everything unlimited, and billing is
+forbidden from overwriting it.
+
+Terms of service and the payments section of the privacy policy are the frontend wave's to write
+(`docs/terms.html`, `docs/privacy.html`); both want a look from an attorney before launch.
+
+### What the person sees
+
+(frontend wave)
+
 ## Self-hosting
 
 1. Create a Supabase project and `supabase link --project-ref <ref>`.
@@ -596,6 +783,10 @@ reachable page describing it, which is `docs/privacy.html#delete`.
    `ALLOWED_ORIGINS`, `LIMIT_EXTRACT`, `LIMIT_SAVES`, `LIMIT_HELPER`, `LIMIT_CHAT`,
    `DAILY_SPEND_USD`.
    Or run `./set-keys.sh`.
+   Paid plans are optional and off by default: leave `STRIPE_SECRET_KEY` and
+   `STRIPE_WEBHOOK_SECRET` unset and every billing route answers `not_configured` while
+   everything else behaves exactly as it does with them. To switch them on, run
+   `./tools/stripe-setup.sh` — see [Plans and billing](#plans-and-billing).
    Also set `WORKER_SECRET` to a long random string — it is what authenticates the worker
    route — and store the same value plus the worker URL in the `app_config` table so
    `pg_cron` can reach it:

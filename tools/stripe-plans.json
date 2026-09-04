@@ -1,0 +1,63 @@
+{
+  "_note": "The human-editable source of truth for what tools/stripe-setup.sh creates in Stripe. Amounts are in cents. Prices are addressed everywhere by lookup_key, never by price id, so re-creating them in another Stripe account changes nothing in the code. Change an amount here, run the script again, and it creates a new price, moves the lookup key onto it and deactivates the old one — existing subscribers keep the price they bought. Cap numbers live in app_config (limits.plans), not here; trial_days must match the billing.trial_days seed in supabase/migrations/20260904200000_billing.sql.",
+
+  "currency": "usd",
+  "_trial_note": "Applied to the ANNUAL price only, with a card taken up front — the free tier is the monthly plan's trial. The function reads app_config.billing.trial_days, not this; keep the two equal.",
+  "trial_days": 7,
+
+  "_founding_note": "The launch offer: $10 off the first year for the first 200 accounts, so $29.99 then $39.99. A fixed-id coupon rather than a promotion code, because nobody types it — the function applies it to every yearly checkout for as long as Stripe says the coupon is valid, and Stripe's own max_redemptions closes the offer. Amounts are immutable once a coupon exists: to change the offer, delete the coupon in the Dashboard and run this script again. To END the offer, just delete it — the paywall stops showing it within five minutes and checkout goes to full price. Note that a coupon and Checkout's promo-code box are mutually exclusive, so while this exists the yearly checkout has no 'enter a code' field; monthly keeps one.",
+  "founding": {
+    "enabled": true,
+    "id": "SPOTTER_FOUNDING_YEAR",
+    "name": "Founding year",
+    "product": "plus",
+    "amount_off": 1000,
+    "duration": "once",
+    "max_redemptions": 200
+  },
+
+  "site": "https://simeonrinkenberger.github.io/spotter",
+  "webhook_url": "https://mtzevoxxpsktmrbbuxva.supabase.co/functions/v1/spotter/api/billing/webhook",
+
+  "products": [
+    {
+      "key": "plus",
+      "enabled": true,
+      "name": "Spotter Plus",
+      "description": "An unlimited library, and more of everything that costs money to make: 200 saves, 60 extractions, 15 video reads, 10 uploads and 60 coaching answers a day.",
+      "prices": [
+        { "lookup_key": "spotter_plus_month", "interval": "month", "unit_amount": 699 },
+        { "lookup_key": "spotter_plus_year", "interval": "year", "unit_amount": 3999 }
+      ]
+    },
+    {
+      "key": "pro",
+      "enabled": false,
+      "_enabled_note": "Off on purpose. Spotter sells one paid tier; pro exists in the schema and the cap table as the price-raise valve. Set enabled to true and run the script again the day it is sold — nothing in the function changes.",
+      "name": "Spotter Pro",
+      "description": "Everything in Plus, with the daily ceilings raised again.",
+      "prices": [
+        { "lookup_key": "spotter_pro_month", "interval": "month", "unit_amount": 999 },
+        { "lookup_key": "spotter_pro_year", "interval": "year", "unit_amount": 5999 }
+      ]
+    }
+  ],
+
+  "_events_note": "Every one of these calls the same syncStripeCustomer, so the list is about which changes are worth a round trip, not about which handler runs. invoice.created is deliberately absent: subscribing to it means a slow response can delay invoice finalisation by up to 72 hours.",
+  "events": [
+    "checkout.session.completed",
+    "checkout.session.async_payment_succeeded",
+    "checkout.session.async_payment_failed",
+    "customer.subscription.created",
+    "customer.subscription.updated",
+    "customer.subscription.deleted",
+    "customer.subscription.paused",
+    "customer.subscription.resumed",
+    "customer.subscription.trial_will_end",
+    "invoice.paid",
+    "invoice.payment_failed",
+    "invoice.payment_action_required",
+    "customer.updated",
+    "payment_method.attached"
+  ]
+}

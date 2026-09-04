@@ -23,7 +23,12 @@
 //   POST /api/pumpy/confirm         { thread_id, message_id, accept } — execute or decline a proposal
 //   POST /api/rotate-key            new ingest key
 //   POST /api/account/delete        erase the caller's account and everything in it
-//   GET  /api/limits                today's counts, and the spend ceiling
+//   GET  /api/limits                today's counts, the plan's caps, and the spend ceiling
+//   GET  /api/billing/prices        what the plans cost, by lookup key, from Stripe
+//   POST /api/billing/checkout      { plan, interval, return_url } — a Checkout Session URL
+//   POST /api/billing/portal        { return_url } — a Customer Portal URL
+//   POST /api/billing/sync          { session_id? } — re-read Stripe and rewrite the row
+//   POST /api/billing/webhook       Stripe's events (signature-verified, no user token)
 //   POST /api/worker/tick           drain the ingest queue (shared secret, not a user)
 //   POST /api/worker/media          one tier of reading the video, in its own isolate
 //   POST /api/worker/probe          one-off measurement behind the same secret
@@ -35,6 +40,10 @@
 
 import { PAGE_HTML } from "./page.ts";
 import { ICON_B64 } from "./icon.ts";
+import {
+  BillingError, billingConfigured, cancelAndDeleteCustomer, createCheckout, createPortal,
+  handleWebhook, pricesBlock, returnBaseFrom, sellablePlans, syncFromSession, syncUser,
+} from "./billing.ts";
 import { CATALOG, type CatalogEntry, canonicalize, catalogById } from "./catalog.ts";
 import { assertPublicUrl, checkUrl, dnsAvailable, safeFetch } from "./net.ts";
 import {
@@ -229,17 +238,20 @@ function models(): ModelCfg {
     if (!modelRefresh) {
       modelRefresh = (async () => {
         try {
-          // Only the three non-secret prefixes. worker_secret lives in the same
-          // table and has no business in a cache anything else can read.
+          // Only the non-secret prefixes. worker_secret lives in the same table
+          // and has no business in a cache anything else can read. The plan caps
+          // ride this refresh rather than getting a timer of their own: they are
+          // read on the same hot paths and go stale at the same rate.
           const rows = await dbSelect(
             "app_config",
-            "or=(key.like.model.*,key.like.vision.*,key.like.media.*,key.like.pumpy.*)&select=key,value",
+            "or=(key.like.model.*,key.like.vision.*,key.like.media.*,key.like.pumpy.*,key.like.limits.*)&select=key,value",
           );
           const map: Record<string, string> = {};
           for (const r of rows) map[r.key] = String(r.value ?? "");
           runtimeCfg = map;
           modelCache = { at: Date.now(), cfg: buildModelCfg(map) };
           pumpyCache = buildPumpyCfg(map);
+          limitsCache = buildLimitsCfg(map);
         } catch (e) {
           console.error("model config: falling back to env/defaults —", e);
           // Stamp the cache anyway so a database outage does not turn into a
@@ -299,14 +311,296 @@ function pumpyLimitsFor(profile: { plan?: unknown; pumpy_limits?: unknown } | nu
   return { plan, day, month };
 }
 
-// Per-user daily caps. Cache hits cost nothing, so they get the looser cap.
-// LIMIT_EXTRACT covers everything that runs the extraction ladder — a new save AND
-// a reprocess, which re-runs the whole thing and was previously counted by nothing.
-// LIMIT_HELPER is the looser ceiling for /api/explain and /api/swap: one short
-// completion each, far cheaper than an extraction, but not free and not unmetered.
-const LIMIT_EXTRACT = Number(Deno.env.get("LIMIT_EXTRACT") ?? "60");
-const LIMIT_SAVES = Number(Deno.env.get("LIMIT_SAVES") ?? "200");
-const LIMIT_HELPER = Number(Deno.env.get("LIMIT_HELPER") ?? "300");
+// ---------- the daily caps, and the plan that sets them ----------
+//
+// These used to be five environment variables, the same numbers for everybody.
+// Now they are a table keyed by `profiles.plan` — the same column Pumpy's credits
+// already read, kept in step with Stripe by one trigger — so a plan is a row in
+// app_config and not a deploy.
+//
+// What is metered is only what costs money to produce: an extraction, a video
+// read, an upload, one coaching answer. Logging, Workout Mode, the plan, progress
+// and the muscle map are not metered at all and never will be — a tracker that
+// meters logging is dead on arrival, and the free tier has to be genuinely
+// useful for anyone to stay long enough to buy.
+//
+// `extract` covers everything that runs the extraction ladder: a new save AND a
+// reprocess, which re-runs the whole thing. A cache hit costs nothing, so it is a
+// save but not an extract.
+//
+// `library` is the odd one and the important one: it is a STOCK, not a rate —
+// how many workouts an account may hold at once, not how many it may add today.
+// Everything else here resets at midnight and is really an abuse stop; the
+// library cap is the one that says what a free account IS. It is checked only
+// when something new would be created, and never when reading, logging, editing
+// or deleting, because a cap that can make a person's own saved workout
+// unreachable is not a business model, it is a hostage situation. An account
+// already over the number (comped, then un-comped) keeps everything it has.
+
+type LimitKind = "library" | "saves" | "extract" | "media" | "uploads" | "helper";
+type LimitCaps = Record<LimitKind, number | null>;
+
+const LIMIT_KINDS: LimitKind[] = ["library", "saves", "extract", "media", "uploads", "helper"];
+
+/** The stock cap, as opposed to the five that reset at midnight UTC. */
+function isDailyKind(kind: LimitKind): boolean {
+  return kind !== "library";
+}
+
+// The floor for a database that cannot answer — the same numbers the migration
+// seeded, so a config outage does not silently change anybody's allowance.
+const LIMITS_DEFAULTS: Record<string, LimitCaps> = {
+  free: { library: 20, saves: 30, extract: 10, media: 2, uploads: 1, helper: 25 },
+  plus: { library: null, saves: 200, extract: 60, media: 15, uploads: 10, helper: 60 },
+  pro: { library: null, saves: 500, extract: 150, media: 50, uploads: 25, helper: 600 },
+  staff: { library: null, saves: null, extract: null, media: null, uploads: null, helper: null },
+};
+
+// The paid ladder, cheapest first. The `upgrade` flag on a 429 walks it looking
+// for a plan that would not have stopped this request.
+const PLAN_LADDER = ["plus", "pro"];
+
+// `library` is absent on purpose: the LIMIT_* secrets predate plans and there was
+// never a library ceiling to inherit, so there is nothing for one to override.
+const LIMIT_ENV_NAMES: Partial<Record<LimitKind, string>> = {
+  saves: "LIMIT_SAVES", extract: "LIMIT_EXTRACT", media: "LIMIT_MEDIA",
+  uploads: "LIMIT_UPLOADS", helper: "LIMIT_HELPER",
+};
+
+/** An env override, or undefined when the owner has not set that secret at all. */
+function envCap(name: string): number | undefined {
+  const raw = (Deno.env.get(name) ?? "").trim();
+  if (!raw) return undefined;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : undefined;
+}
+
+/**
+ * The compiled floor with the owner's LIMIT_* secrets folded into the FREE plan.
+ *
+ * Those secrets predate plans and were the caps for everyone, so the only honest
+ * reading of one today is "this is what an unpaid account gets". They must not
+ * reach into a paid plan: a `LIMIT_SAVES=200` left over from before must never
+ * cap a Plus subscriber at what free used to be.
+ */
+const LIMITS_FLOOR: Record<string, LimitCaps> = (() => {
+  const free = { ...LIMITS_DEFAULTS.free };
+  for (const kind of LIMIT_KINDS) {
+    const name = LIMIT_ENV_NAMES[kind];
+    if (!name) continue;
+    const v = envCap(name);
+    if (v !== undefined) free[kind] = v;
+  }
+  return { ...LIMITS_DEFAULTS, free };
+})();
+
+/**
+ * A cap out of app_config. Same rule as pumpyCap: `null` is deliberate and means
+ * unlimited, and anything that is neither null nor a non-negative number is a
+ * typo — which must fall back to the compiled floor, never to unlimited.
+ */
+function limitCap(v: unknown, floor: number | null): number | null {
+  if (v === null) return null;
+  const n = Number(v);
+  if (Number.isFinite(n) && n >= 0) return Math.floor(n);
+  return floor;
+}
+
+function buildLimitsCfg(rows: Record<string, string>): Record<string, LimitCaps> {
+  const raw = (rows["limits.plans"] ?? "").trim();
+  if (!raw) return LIMITS_FLOOR;
+  try {
+    const parsed = JSON.parse(raw);
+    const out: Record<string, LimitCaps> = {};
+    for (const [name, v] of Object.entries(parsed as Record<string, any>)) {
+      const floor = LIMITS_FLOOR[name] ?? LIMITS_FLOOR.free;
+      const caps = {} as LimitCaps;
+      for (const kind of LIMIT_KINDS) caps[kind] = limitCap(v?.[kind], floor[kind]);
+      out[name] = caps;
+    }
+    if (!Object.keys(out).length) {
+      console.error("limits.plans: empty object, using compiled-in caps");
+      return LIMITS_FLOOR;
+    }
+    // Merged over the floor rather than replacing it, so a seed edited down to
+    // free and plus does not quietly put every staff account on free's caps.
+    return { ...LIMITS_FLOOR, ...out };
+  } catch (e) {
+    console.error("limits.plans: unparseable, using compiled-in caps —", e);
+    return LIMITS_FLOOR;
+  }
+}
+
+let limitsCache: Record<string, LimitCaps> = LIMITS_FLOOR;
+
+/** The cap table, on the models' cache and TTL. Synchronous, for the same reason. */
+function limitsConfig(): Record<string, LimitCaps> {
+  models();
+  return limitsCache;
+}
+
+type UserCaps = { plan: string; caps: LimitCaps };
+
+/**
+ * The caps that apply to one person: their plan's numbers, then their personal
+ * override on top, field by field. An unknown plan name reads as free — a bad
+ * string in one column must never mean "no limit".
+ */
+function capsFrom(profile: { plan?: unknown; limits?: unknown } | null): UserCaps {
+  const table = limitsConfig();
+  const asked = String(profile?.plan ?? "free");
+  const plan = table[asked] ? asked : "free";
+  const caps = { ...(table[plan] ?? LIMITS_FLOOR.free) };
+  const ov = profile?.limits;
+  if (ov && typeof ov === "object" && !Array.isArray(ov)) {
+    const o = ov as Record<string, unknown>;
+    for (const kind of LIMIT_KINDS) if (kind in o) caps[kind] = limitCap(o[kind], caps[kind]);
+  }
+  return { plan, caps };
+}
+
+/**
+ * One profile read per metered request, never cached across users: a plan that
+ * changed thirty seconds ago has to bite now, and a cache keyed on nothing is how
+ * one person's allowance ends up applied to somebody else.
+ *
+ * Falls back to the free plan rather than throwing. A request whose plan cannot
+ * be read is still allowed to happen — at the smallest allowance, which is the
+ * safe direction for the bill.
+ */
+async function capsFor(userId: string): Promise<UserCaps> {
+  let profile: { plan?: unknown; limits?: unknown } | null = null;
+  try {
+    profile = (await dbSelect("profiles", `id=eq.${userId}&select=plan,limits`))[0] ?? null;
+  } catch (e) {
+    console.error("caps: could not read the plan for", userId, "— using free —", e);
+  }
+  return capsFrom(profile);
+}
+
+/** Over the cap? A null cap is unlimited and is never over. */
+function overCap(used: number, cap: number | null): boolean {
+  return cap !== null && used >= cap;
+}
+
+/** Would `next` have let this request through when `cap` did not? */
+function biggerCap(next: number | null, cap: number | null): boolean {
+  if (cap === null) return false;
+  if (next === null) return true;
+  return next > cap;
+}
+
+type UpgradePath = { upgrade: boolean; next_plan?: string; next_cap?: number | null };
+
+/**
+ * The nearest plan up the ladder that would not have stopped this request AND is
+ * actually on sale.
+ *
+ * This is what decides whether a 429 shows the paywall or an ordinary toast: an
+ * upgrade the user could buy their way past this minute is worth interrupting
+ * them for, and one they could not is just noise. `sellable` is the list of
+ * plans with an active Stripe price, so `pro` — seeded in the cap table as the
+ * price-raise valve, with no product behind it — never appears, a Plus
+ * subscriber who hits a daily ceiling is simply told what the ceiling is, and a
+ * project with no Stripe key at all shows no paywall to anybody.
+ */
+function upgradePath(
+  plan: string, cap: number | null, capOf: (p: string) => number | null | undefined,
+  sellable: string[],
+): UpgradePath {
+  if (plan === "staff") return { upgrade: false };
+  for (let i = PLAN_LADDER.indexOf(plan) + 1; i < PLAN_LADDER.length; i++) {
+    const name = PLAN_LADDER[i];
+    if (!sellable.includes(name)) continue;
+    const next = capOf(name);
+    if (next === undefined) continue;
+    if (biggerCap(next, cap)) return { upgrade: true, next_plan: name, next_cap: next };
+  }
+  return { upgrade: false };
+}
+
+const PLAN_NAMES: Record<string, string> = { free: "Free", plus: "Plus", pro: "Pro", staff: "Staff" };
+
+function planName(plan: string): string {
+  return PLAN_NAMES[plan] ?? plan.charAt(0).toUpperCase() + plan.slice(1);
+}
+
+/**
+ * What a person reads when a cap stops them.
+ *
+ * Calm and specific: the number, the plan it belongs to, and when it comes back.
+ * No apology, no "while Spotter is free" — that line was true in beta and is a
+ * lie the moment anyone can pay. The sell is the paywall's job, not this string's.
+ */
+function capMessage(kind: LimitKind, plan: string, cap: number | null): string {
+  const n = cap ?? 0;
+  const p = planName(plan);
+  const many = (one: string, more: string) => `${n} ${n === 1 ? one : more}`;
+  const tail = `on the ${p} plan — the count resets at midnight UTC.`;
+  switch (kind) {
+    case "library":
+      // No "resets at midnight" here, because it never does: this is the shelf,
+      // not the day. Says plainly what to do about it, and does not pretend the
+      // workouts are at risk — nothing already saved is ever touched by a cap.
+      return `That is ${many("saved workout", "saved workouts")} — the whole ${p} library. ` +
+        "Everything you have saved stays; deleting one makes room for another.";
+    case "saves":
+      return `That is today's ${many("save", "saves")} ${tail}`;
+    case "extract":
+      return `That is today's ${many("new extraction", "new extractions")} ${tail} ` +
+        "Videos someone else already saved still work.";
+    case "media":
+      return `That is today's ${many("video read", "video reads")} ${tail}`;
+    case "uploads":
+      return `That is today's ${many("upload", "uploads")} ${tail} Links still work.`;
+    case "helper":
+      return `That is today's ${many("coaching answer", "coaching answers")} ${tail}`;
+  }
+}
+
+/**
+ * The one shape every cap 429 answers with, so the app has a single thing to
+ * render: which allowance ran out, on which plan, how big it was, what the next
+ * plan up would give, and when it comes back.
+ *
+ * Async only because `upgrade` has to know what is on sale, which is a Stripe
+ * answer — cached in-isolate for five minutes, and immediate (nothing is on
+ * sale) when there is no Stripe key. That is one cheap lookup on a path that is
+ * by definition not the happy one.
+ *
+ * `resets_at` is null for the library cap: it is a shelf, not a day, and a
+ * timestamp there would be a promise nothing keeps.
+ */
+async function capLimit(
+  kind: LimitKind, uc: UserCaps, used: number, cors: Cors, message?: string,
+): Promise<Response> {
+  const cap = uc.caps[kind];
+  const table = limitsConfig();
+  return json({
+    status: "limit",
+    kind,
+    plan: uc.plan,
+    cap,
+    used,
+    ...upgradePath(uc.plan, cap, (p) => table[p]?.[kind], await sellablePlans()),
+    resets_at: isDailyKind(kind) ? utcNextMidnight() : null,
+    message: message ?? capMessage(kind, uc.plan, cap),
+  }, 429, cors);
+}
+
+/**
+ * How many workouts this account holds. The library cap's `used`, and the number
+ * the Library page's counter shows.
+ *
+ * Its own count rather than a field on the profile, because a stale copy of this
+ * number is a cap that either blocks a save it should not or lets one through it
+ * should not, and there is nothing to invalidate it on: workouts are created and
+ * deleted from half a dozen places, including the worker.
+ */
+async function libraryCount(userId: string): Promise<number> {
+  return await dbCount("workouts", `user_id=eq.${userId}`);
+}
+
 // A legacy backstop, no longer the thing that meters Pumpy. Credits are the
 // primary gate now (pumpy_usage + the per-plan day/month caps above); this counts
 // bare turns in saves_log and exists only so a bug in the credit path cannot leave
@@ -318,11 +612,6 @@ const LIMIT_CHAT = Number(Deno.env.get("LIMIT_CHAT") ?? "200");
 // bury the real corrections under thousands of synthetic ones, and the whole worth
 // of that table is that it is a faithful record of what people actually changed.
 const LIMIT_CORRECTIONS = Number(Deno.env.get("LIMIT_CORRECTIONS") ?? "500");
-// An upload is the most expensive save Spotter offers: it costs a transcription on
-// top of the extraction, and it is the only path that puts a user's own bytes in
-// our storage. Tighter than LIMIT_EXTRACT on purpose, and counted separately in
-// saves_log under kind = 'upload'.
-const LIMIT_UPLOADS = Number(Deno.env.get("LIMIT_UPLOADS") ?? "10");
 
 // ---------- user uploads ----------
 //
@@ -2708,8 +2997,9 @@ async function tiktokMedia(p: Parsed): Promise<MediaSource | null> {
 
 // ---------- the media tiers, from the worker's side ----------
 
-/** How many media steps one person may run in a day. A step, not a video. */
-const LIMIT_MEDIA = Number(Deno.env.get("LIMIT_MEDIA") ?? "10");
+// How many media steps one person may run in a day — a step, not a video — is
+// the `media` cap on their plan now. LIMIT_MEDIA survives only as an override of
+// the free plan's number, folded into LIMITS_FLOOR with the other four.
 
 /** Whether tier 2 is switched on. app_config `media.video_enabled`. */
 function videoTierEnabled(): boolean {
@@ -4419,6 +4709,32 @@ async function userFromBearer(req: Request): Promise<string | null> {
   }
 }
 
+/**
+ * The caller's email address, for the Stripe Customer.
+ *
+ * A second call to the same endpoint `userFromBearer` already used, rather than
+ * widening that function's return type: it is on the hot path of every API
+ * request and this is wanted by exactly one route, which happens a handful of
+ * times a day. An account with no email (an OAuth identity that withheld it)
+ * gives an empty string, and Stripe is happy to make a Customer without one.
+ */
+async function userEmailFromBearer(req: Request): Promise<string> {
+  const auth = req.headers.get("authorization") ?? "";
+  const token = auth.replace(/^Bearer\s+/i, "").trim();
+  if (!token || token === ANON_KEY) return "";
+  try {
+    const r = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+      headers: { apikey: ANON_KEY, authorization: `Bearer ${token}` },
+    });
+    if (!r.ok) { await r.body?.cancel(); return ""; }
+    const u = await r.json();
+    return typeof u?.email === "string" ? u.email : "";
+  } catch (e) {
+    console.error("billing: email lookup failed", e);
+    return "";
+  }
+}
+
 // The long-lived per-user key used by the iOS Shortcut. Hex-validated before it
 // ever reaches a PostgREST filter.
 async function userFromIngestKey(req: Request, url: URL): Promise<string | null> {
@@ -4453,10 +4769,29 @@ async function userFromIngestKey(req: Request, url: URL): Promise<string | null>
  * named for the user id, and anything left there is deleted first. Storage
  * failures are logged and do not stop the deletion: the hourly orphan sweep is
  * the backstop, and a person asking to be erased must not be blocked by a bucket.
+ *
+ * Stripe is the one exception to "best effort". It runs FIRST, before a single
+ * row is touched, and a failure there stops everything with a 503: an account
+ * that is gone but still charging a card every month is the one outcome that
+ * must never happen, and "try again in a minute" is a far better answer than a
+ * subscription nobody is left to cancel.
  */
 async function handleAccountDelete(userId: string, cors: Cors): Promise<Response> {
   if (!UUID_RE.test(userId)) return json({ status: "error", message: "Bad account." }, 400, cors);
   const filter = `user_id=eq.${userId}`;
+
+  try {
+    await cancelAndDeleteCustomer(userId);
+  } catch (e) {
+    console.error("account delete: STRIPE FAILED, nothing deleted", userId, e);
+    return json({
+      status: "error",
+      code: "billing_unreachable",
+      message: "Could not cancel your subscription just now — try again in a minute, " +
+        "or cancel it from Manage subscription first.",
+    }, 503, cors);
+  }
+
   try {
     await dbDelete("saves_log", filter);
     await dbDelete("pumpy_usage", filter);
@@ -4534,13 +4869,8 @@ async function countsFor(userId: string): Promise<Counts> {
   return { saves, extracts, helpers, chats };
 }
 
-function extractLimitResponse(cors: Cors): Response {
-  return json({
-    status: "limit",
-    message:
-      `Daily limit reached (${LIMIT_EXTRACT} new extractions/day while Spotter is free) — ` +
-      "resets at midnight UTC. Videos someone else already saved still work.",
-  }, 429, cors);
+function extractLimitResponse(cors: Cors, uc: UserCaps, used: number): Promise<Response> {
+  return capLimit("extract", uc, used, cors);
 }
 
 // ---------- ingest ----------
@@ -4618,28 +4948,24 @@ async function ingestUpload(
   }
   const filename = typeof body.filename === "string" ? body.filename.slice(0, 160).trim() : "";
 
-  const [countsR, uploadsR] = await Promise.allSettled([
+  const [countsR, uploadsR, capsR, libR] = await Promise.allSettled([
     countsFor(userId),
     dbCount("saves_log", `user_id=eq.${userId}&created_at=gte.${utcMidnight()}&kind=eq.upload`),
+    capsFor(userId),
+    libraryCount(userId),
   ]);
-  for (const r of [countsR, uploadsR]) if (r.status === "rejected") throw r.reason;
+  for (const r of [countsR, uploadsR, capsR, libR]) if (r.status === "rejected") throw r.reason;
   const counts = (countsR as PromiseFulfilledResult<Counts>).value;
   const uploadsToday = (uploadsR as PromiseFulfilledResult<number>).value;
+  const uc = (capsR as PromiseFulfilledResult<UserCaps>).value;
+  const held = (libR as PromiseFulfilledResult<number>).value;
 
-  if (uploadsToday >= LIMIT_UPLOADS) {
-    return json({
-      status: "limit",
-      message: `Daily upload limit reached (${LIMIT_UPLOADS}/day while Spotter is free) — ` +
-        "resets at midnight UTC. Links still work.",
-    }, 429, cors);
-  }
-  if (counts.saves >= LIMIT_SAVES) {
-    return json({
-      status: "limit",
-      message: `Daily save limit reached (${LIMIT_SAVES}/day while Spotter is free) — resets at midnight UTC.`,
-    }, 429, cors);
-  }
-  if (counts.extracts >= LIMIT_EXTRACT) return extractLimitResponse(cors);
+  // An upload always makes a new row, so the shelf is asked about first — and
+  // before the file is transcribed, which is the expensive half.
+  if (overCap(held, uc.caps.library)) return capLimit("library", uc, held, cors);
+  if (overCap(uploadsToday, uc.caps.uploads)) return capLimit("uploads", uc, uploadsToday, cors);
+  if (overCap(counts.saves, uc.caps.saves)) return capLimit("saves", uc, counts.saves, cors);
+  if (overCap(counts.extracts, uc.caps.extract)) return extractLimitResponse(cors, uc, counts.extracts);
 
   // Asked before anything is charged: an upload_path pointing at nothing is a
   // client bug or a probe, and either way it must not create a job.
@@ -4772,21 +5098,25 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
 
   const sc = encodeURIComponent(p.shortcode);
 
-  // Three independent questions — do you already have this, are you over a cap,
-  // has anyone extracted this video — asked at once. Sequentially they were three
-  // round trips on the critical path of a request whose whole purpose is now to
-  // return quickly.
-  const [dupeR, countsR, cachedR] = await Promise.allSettled([
+  // Four independent questions — do you already have this, are you over a daily
+  // cap, is your library full, has anyone extracted this video — asked at once.
+  // Sequentially they were round trips on the critical path of a request whose
+  // whole purpose is now to return quickly.
+  const [dupeR, countsR, cachedR, capsR, libR] = await Promise.allSettled([
     dbSelect("workouts", `user_id=eq.${userId}&shortcode=eq.${sc}&select=id,title,ingest_status`),
     countsFor(userId),
     dbSelect("video_cache", `shortcode=eq.${sc}&v=gte.${CARD_V}&select=*`),
+    capsFor(userId),
+    libraryCount(userId),
   ]);
-  for (const r of [dupeR, countsR, cachedR]) {
+  for (const r of [dupeR, countsR, cachedR, capsR, libR]) {
     if (r.status === "rejected") throw r.reason;
   }
   const dupe = (dupeR as PromiseFulfilledResult<any[]>).value;
   const counts = (countsR as PromiseFulfilledResult<Counts>).value;
   const cached = (cachedR as PromiseFulfilledResult<any[]>).value;
+  const uc = (capsR as PromiseFulfilledResult<UserCaps>).value;
+  const held = (libR as PromiseFulfilledResult<number>).value;
 
   // Idempotency, cheap layer. The authoritative one is the unique (user_id,
   // shortcode) constraint inside enqueue_ingest — this only saves a round trip on
@@ -4794,7 +5124,7 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
   // double-tap does not look like a failure.
   if (dupe.length) {
     if (supplied && dupe[0].ingest_status === "failed") {
-      if (counts.extracts >= LIMIT_EXTRACT) return extractLimitResponse(cors);
+      if (overCap(counts.extracts, uc.caps.extract)) return extractLimitResponse(cors, uc, counts.extracts);
       return await requeueWithMeta(dupe[0].id, userId, supplied, cors);
     }
     const processing = dupe[0].ingest_status === "processing";
@@ -4805,12 +5135,14 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
     }, 200, cors);
   }
 
-  if (counts.saves >= LIMIT_SAVES) {
-    return json({
-      status: "limit",
-      message: `Daily save limit reached (${LIMIT_SAVES}/day while Spotter is free) — resets at midnight UTC.`,
-    }, 429, cors);
-  }
+  // The shelf is asked about after the duplicate check and before the daily
+  // ones, in that order for a reason: re-saving something you already have must
+  // never be refused for lack of room, since it adds no row — and a full library
+  // is a different sentence from "that is today's 30", so the more specific
+  // answer goes first.
+  if (overCap(held, uc.caps.library)) return capLimit("library", uc, held, cors);
+
+  if (overCap(counts.saves, uc.caps.saves)) return capLimit("saves", uc, counts.saves, cors);
 
   // A cache hit costs nothing and already answers in well under a second. Pushing
   // it through the queue would make the fast path slower to no purpose, so it
@@ -4854,7 +5186,7 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
     }, 200, cors);
   }
 
-  if (counts.extracts >= LIMIT_EXTRACT) return extractLimitResponse(cors);
+  if (overCap(counts.extracts, uc.caps.extract)) return extractLimitResponse(cors, uc, counts.extracts);
 
   // Cache miss. Everything past here used to happen inline: scrape, model call,
   // thumbnail upload, 5-15 seconds with the user's request held open. Now it is a
@@ -5223,17 +5555,22 @@ async function escalateToMedia(
     }
     if (job.user_id) {
       let used: number;
+      let cap: number | null;
       try {
-        used = await mediaCountToday(job.user_id);
+        // The cap is the one on the job owner's plan, read here rather than
+        // carried on the job: a plan bought while a job was queued should count.
+        const [u, uc] = await settledAll<any>([mediaCountToday(job.user_id), capsFor(job.user_id)]);
+        used = u as number;
+        cap = (uc as UserCaps).caps.media;
       } catch (e) {
         // A count that could not be read is not a count of zero. Skipping costs one
         // thin card; guessing costs an uncapped bill.
         console.error("media: cannot read today's count for", job.user_id, "— skipping", e);
         break;
       }
-      if (used >= LIMIT_MEDIA) {
+      if (overCap(used, cap)) {
         console.log("media: skipping", tier, "for", p.shortcode, "—", job.user_id,
-          "has used", used, "of", LIMIT_MEDIA, "media steps today");
+          "has used", used, "of", cap, "media steps today");
         break;
       }
     }
@@ -5871,15 +6208,20 @@ function mediaSeed(cached: any, w: any): { step: string; meta: Meta; card: Card 
     : { step: "card", meta, card: null };
 }
 
-/** The daily ceiling on media steps, asked before anything is charged for one. */
-async function mediaCapReached(userId: string): Promise<number | null> {
+/**
+ * The daily ceiling on media steps, asked before anything is charged for one.
+ * Returns how many have been used when the plan's cap is reached, null when it
+ * is not — so the caller can put the number in the message.
+ */
+async function mediaCapReached(userId: string, cap: number | null): Promise<number | null> {
   try {
     const used = await mediaCountToday(userId);
-    return used >= LIMIT_MEDIA ? used : null;
+    return overCap(used, cap) ? used : null;
   } catch (e) {
-    // Same rule as the worker: a count that cannot be read is not zero.
+    // Same rule as the worker: a count that cannot be read is not zero. An
+    // unlimited plan is still unlimited, though — there is no number to exceed.
     console.error("media cap could not be read for", userId, e);
-    return LIMIT_MEDIA;
+    return cap === null ? null : cap;
   }
 }
 
@@ -5908,13 +6250,15 @@ async function handleReadVideo(id: string, userId: string, cors: Cors): Promise<
   }
 
   const sc = encodeURIComponent(w.shortcode);
-  const [countsR, cachedR] = await Promise.allSettled([
+  const [countsR, cachedR, capsR] = await Promise.allSettled([
     countsFor(userId),
     dbSelect("video_cache", `shortcode=eq.${sc}&select=*`),
+    capsFor(userId),
   ]);
-  for (const r of [countsR, cachedR]) if (r.status === "rejected") throw r.reason;
+  for (const r of [countsR, cachedR, capsR]) if (r.status === "rejected") throw r.reason;
   const counts = (countsR as PromiseFulfilledResult<Counts>).value;
   const cached = (cachedR as PromiseFulfilledResult<any[]>).value[0] ?? null;
+  const uc = (capsR as PromiseFulfilledResult<UserCaps>).value;
 
   if (cached?.media_tried) {
     return json({
@@ -5922,15 +6266,9 @@ async function handleReadVideo(id: string, userId: string, cors: Cors): Promise<
       message: "Spotter has already read this one — there was nothing in the video the card does not show.",
     }, 200, cors);
   }
-  if (counts.extracts >= LIMIT_EXTRACT) return extractLimitResponse(cors);
-  const over = await mediaCapReached(userId);
-  if (over !== null) {
-    return json({
-      status: "limit",
-      message: `Daily limit for reading videos reached (${LIMIT_MEDIA}/day while Spotter is free) — ` +
-        "resets at midnight UTC.",
-    }, 429, cors);
-  }
+  if (overCap(counts.extracts, uc.caps.extract)) return extractLimitResponse(cors, uc, counts.extracts);
+  const over = await mediaCapReached(userId, uc.caps.media);
+  if (over !== null) return capLimit("media", uc, over, cors);
   if (!(await paidAllowed())) {
     return json({
       status: "limit",
@@ -5983,9 +6321,9 @@ async function upgradeCachedCard(
   const card = cached.card as Card;
   if (!card || !cardIsThin(card)) return null;
 
-  const counts = await countsFor(userId);
-  if (counts.extracts >= LIMIT_EXTRACT) return null;
-  if (await mediaCapReached(userId) !== null) return null;
+  const [counts, uc] = await settledAll<any>([countsFor(userId), capsFor(userId)]);
+  if (overCap((counts as Counts).extracts, (uc as UserCaps).caps.extract)) return null;
+  if (await mediaCapReached(userId, (uc as UserCaps).caps.media) !== null) return null;
   if (!(await paidAllowed())) return null;
 
   const q = (await rpc("requeue_ingest", { p_user: userId, p_workout: workoutId }))[0];
@@ -6026,8 +6364,10 @@ async function handleReprocess(id: string, userId: string, req: Request, cors: C
   // Reprocess re-runs the whole extraction ladder — the same scrape and the same
   // model call as a new save. It was counted by nothing at all, which made the
   // daily cap trivially bypassable by anyone holding the ↻ button.
-  const counts = await countsFor(userId);
-  if (counts.extracts >= LIMIT_EXTRACT) return extractLimitResponse(cors);
+  const [counts, uc] = await settledAll<any>([countsFor(userId), capsFor(userId)]);
+  if (overCap((counts as Counts).extracts, (uc as UserCaps).caps.extract)) {
+    return extractLimitResponse(cors, uc as UserCaps, (counts as Counts).extracts);
+  }
 
   // A card that never finished — or that died in the queue — is not something to
   // re-run inline. It goes back on the queue, so the retry gets the same backoff,
@@ -6480,15 +6820,11 @@ async function handleCorrection(id: string, userId: string, req: Request, cors: 
  * were previously the only way to spend Spotter's money without limit.
  */
 async function aiText(
-  system: string, user: string, cors: Cors, userId: string, purpose: string, helpersToday: number,
+  system: string, user: string, cors: Cors, userId: string, purpose: string,
+  helpersToday: number, uc: UserCaps,
 ): Promise<Response> {
   if (!haveAI()) return json({ status: "error", message: "AI is not configured yet." }, 503, cors);
-  if (helpersToday >= LIMIT_HELPER) {
-    return json({
-      status: "limit",
-      message: `Daily coaching limit reached (${LIMIT_HELPER}/day) — resets at midnight UTC.`,
-    }, 429, cors);
-  }
+  if (overCap(helpersToday, uc.caps.helper)) return capLimit("helper", uc, helpersToday, cors);
   const out = (await textGenerate(system, user, false, { purpose, userId })).text;
   if (!out) return json({ status: "error", message: "The AI is busy — try again in a minute." }, 503, cors);
   // Only a successful answer is charged: a provider outage should not eat the
@@ -6601,11 +6937,11 @@ async function handleDemoVideo(req: Request, userId: string, cors: Cors): Promis
     return found(null);
   }
 
-  const { helpers } = await countsFor(userId);
+  const [counts, uc] = await settledAll<any>([countsFor(userId), capsFor(userId)]);
   // Over the ceiling the answer is still ok with a null video: this route is a
   // garnish on a sheet whose real content is the explanation, and a 429 here would
   // read to the user as the sheet being broken.
-  if (helpers >= LIMIT_HELPER) return found(null);
+  if (overCap((counts as Counts).helpers, (uc as UserCaps).caps.helper)) return found(null);
 
   const video = await ytSearchDemo(name);
   try {
@@ -6801,12 +7137,10 @@ async function handleSwap(req: Request, userId: string, cors: Cors): Promise<Res
 
   if (!haveAI()) return json({ status: "error", message: "AI is not configured yet." }, 503, cors);
   // Same ceiling as explain: one short completion, metered, never free-running.
-  const { helpers } = await countsFor(userId);
-  if (helpers >= LIMIT_HELPER) {
-    return json({
-      status: "limit",
-      message: `Daily coaching limit reached (${LIMIT_HELPER}/day) — resets at midnight UTC.`,
-    }, 429, cors);
+  const [counts, uc] = await settledAll<any>([countsFor(userId), capsFor(userId)]);
+  const helpers = (counts as Counts).helpers;
+  if (overCap(helpers, (uc as UserCaps).caps.helper)) {
+    return capLimit("helper", uc as UserCaps, helpers, cors);
   }
 
   const cands = swapCandidates(exercise, reason, have, area);
@@ -7719,6 +8053,26 @@ async function pumpyMeter(userId: string): Promise<PumpyMeter> {
   return { ...pumpyLimitsFor(profile), totals };
 }
 
+/**
+ * The contract fields a credit 429 carries alongside Pumpy's own voice, so the
+ * app can open the paywall from a coaching limit exactly as it does from a save
+ * limit. The ladder here is `pumpy.plans`, not `limits.plans` — credits are their
+ * own dial and a plan can raise one without raising the other.
+ */
+async function pumpyLimitFields(m: PumpyMeter, scope: "day" | "month") {
+  const plans = pumpyConfig().plans;
+  const cap = scope === "day" ? m.day : m.month;
+  const used = scope === "day" ? m.totals.day : m.totals.month;
+  return {
+    kind: "pumpy",
+    plan: m.plan,
+    cap,
+    used,
+    ...upgradePath(m.plan, cap, (p) => plans[p]?.[scope], await sellablePlans()),
+    resets_at: scope === "day" ? utcNextMidnight() : utcNextMonth(),
+  };
+}
+
 /** What every chat response and /api/limits reports. `extra` is the turn just finished. */
 function pumpyBlock(m: PumpyMeter, extra = 0) {
   return {
@@ -7771,6 +8125,7 @@ async function handlePumpyChat(req: Request, userId: string, cors: Cors): Promis
   if (over(meter.totals.day, meter.day)) {
     return json({
       status: "limit", scope: "day",
+      ...(await pumpyLimitFields(meter, "day")),
       message: "That is my coaching done for today — my credits come back at midnight UTC.",
       pumpy: pumpyBlock(meter),
     }, 429, cors);
@@ -7778,6 +8133,7 @@ async function handlePumpyChat(req: Request, userId: string, cors: Cors): Promis
   if (over(meter.totals.month, meter.month)) {
     return json({
       status: "limit", scope: "month",
+      ...(await pumpyLimitFields(meter, "month")),
       message: "That is this month's coaching used up — my credits come back on the 1st.",
       pumpy: pumpyBlock(meter),
     }, 429, cors);
@@ -7787,7 +8143,11 @@ async function handlePumpyChat(req: Request, userId: string, cors: Cors): Promis
   if (chats >= LIMIT_CHAT) {
     return json({
       status: "limit", scope: "legacy",
-      message: `That is ${LIMIT_CHAT} chats today — my daily limit while Spotter is free. I am back at midnight UTC.`,
+      // The backstop, not a plan cap — so `upgrade` is false and nobody is sold
+      // anything for tripping a number that exists to catch a bug in the meter.
+      kind: "pumpy", plan: meter.plan, cap: LIMIT_CHAT, used: chats, upgrade: false,
+      resets_at: utcNextMidnight(),
+      message: `That is ${LIMIT_CHAT} chats today — my daily limit. I am back at midnight UTC.`,
       pumpy: pumpyBlock(meter),
     }, 429, cors);
   }
@@ -8001,6 +8361,19 @@ async function handlePumpyConfirm(req: Request, userId: string, cors: Cors): Pro
     return json({ status: "ok", messages: [a] }, 200, cors);
   }
 
+  // A coached workout is a workouts row like any other, so it answers to the
+  // same shelf. Only `create_workout` makes one — appending exercises edits a row
+  // that already exists, and planning days writes to a different table
+  // altogether — so this is the one proposal kind the library cap can refuse.
+  // Refused, the proposal stays `pending`: upgrade or delete something, tap
+  // Accept again, and it goes through.
+  if (p.kind === "create_workout") {
+    const [uc, held] = await settledAll<any>([capsFor(userId), libraryCount(userId)]);
+    if (overCap(held as number, (uc as UserCaps).caps.library)) {
+      return await capLimit("library", uc as UserCaps, held as number, cors);
+    }
+  }
+
   let result: { workout?: any; created?: boolean; plan?: any[] };
   try {
     result = await execProposal(userId, p, m.meta.model ?? null);
@@ -8035,6 +8408,123 @@ async function handlePumpyConfirm(req: Request, userId: string, cors: Cors): Pro
     status: "ok", messages: [a],
     workout: result.workout ?? null, created: !!result.created, plan: result.plan ?? null,
   }, 200, cors);
+}
+
+// ---------- billing ----------
+
+/**
+ * The answer when the owner has not switched plans on.
+ *
+ * Every billing route gives this rather than a 500, because "no Stripe key" is a
+ * deliberate, supported state — it is how the function deploys the first time and
+ * how a fork of this repo runs for ever. Nothing else in the app behaves any
+ * differently: caps, ingest, Pumpy and the worker do not know billing exists.
+ */
+function notConfigured(cors: Cors): Response {
+  return json({
+    status: "error", code: "not_configured", message: "Plans are not switched on yet.",
+  }, 503, cors);
+}
+
+/**
+ * The two plans' numbers, side by side, for the paywall's benefit rows.
+ *
+ * The sheet builds "20 saved workouts → an unlimited library" from these rather
+ * than from prose in the markup, so a cap change in app_config moves the selling
+ * copy with it and there is nothing to go stale. Pumpy's monthly credits come
+ * from their own dial (`pumpy.plans`) and are folded in here, because to the
+ * person reading the sheet they are simply another line in the same list.
+ */
+function capsBlock(): Record<string, Record<string, number | null>> {
+  const table = limitsConfig();
+  const pumpy = pumpyConfig().plans;
+  const out: Record<string, Record<string, number | null>> = {};
+  for (const plan of ["free", "plus"]) {
+    const caps = table[plan] ?? LIMITS_FLOOR.free;
+    out[plan] = { ...caps, pumpy_month: pumpy[plan]?.month ?? null };
+  }
+  return out;
+}
+
+/** What the app needs after a sync: the derived plan, and the row behind it. */
+async function billingState(userId: string): Promise<{ plan: string; subscription: any }> {
+  const [prof, subs] = await settledAll<any[]>([
+    dbSelect("profiles", `id=eq.${userId}&select=plan`),
+    dbSelect("subscriptions", `user_id=eq.${userId}&select=*`),
+  ]);
+  return { plan: String(prof[0]?.plan ?? "free"), subscription: subs[0] ?? null };
+}
+
+/**
+ * The four billing routes behind the auth gate. (The webhook is matched above it,
+ * next to the worker's routes, because Stripe has no user token.)
+ *
+ * `prices` is the one that answers 200 with `configured: false` instead of a 503:
+ * the app asks it before drawing the paywall, and "plans are coming soon" is a
+ * screen to paint, not an error to report. The other three would be asking Stripe
+ * to do something, so they say plainly that they cannot.
+ */
+async function handleBilling(path: string, req: Request, userId: string, cors: Cors): Promise<Response> {
+  const route = path.slice("/api/billing/".length);
+
+  if (req.method === "GET" && route === "prices") {
+    if (!billingConfigured()) return json({ status: "ok", configured: false }, 200, cors);
+    try {
+      // The caps come from this file rather than from billing.ts on purpose:
+      // billing.ts deliberately knows nothing about the cap table, and the
+      // paywall wants both halves in one answer.
+      await ensureConfig();
+      return json({ status: "ok", ...(await pricesBlock()), caps: capsBlock() }, 200, cors);
+    } catch (e) {
+      // A Stripe outage is not "coming soon" — say so, so the sheet can offer a
+      // retry rather than telling everyone the product does not exist yet.
+      console.error("billing prices failed", e);
+      return json({
+        status: "error", code: "billing_failed",
+        message: "Could not reach Stripe just now — try again in a minute.",
+      }, 502, cors);
+    }
+  }
+
+  if (req.method !== "POST") return json({ status: "error", message: "Not found" }, 404, cors);
+  if (!billingConfigured()) return notConfigured(cors);
+
+  const body = await req.json().catch(() => ({})) as Record<string, unknown>;
+  const base = returnBaseFrom(body.return_url, req);
+
+  try {
+    if (route === "checkout") {
+      const plan = String(body.plan ?? "");
+      const interval = String(body.interval ?? "");
+      if (!PLAN_LADDER.includes(plan) || (interval !== "month" && interval !== "year")) {
+        return json({ status: "error", message: "Unknown plan." }, 400, cors);
+      }
+      const url = await createCheckout(userId, await userEmailFromBearer(req), plan, interval, base);
+      return json({ status: "ok", url }, 200, cors);
+    }
+
+    if (route === "portal") {
+      return json({ status: "ok", url: await createPortal(userId, `${base}?billing=portal`) }, 200, cors);
+    }
+
+    if (route === "sync") {
+      const sessionId = typeof body.session_id === "string" ? body.session_id.trim() : "";
+      if (sessionId) await syncFromSession(userId, sessionId);
+      else await syncUser(userId);
+      return json({ status: "ok", ...(await billingState(userId)) }, 200, cors);
+    }
+  } catch (e) {
+    if (e instanceof BillingError) {
+      return json({ status: "error", code: e.code, message: e.message }, e.status, cors);
+    }
+    console.error("billing", route, "failed for", userId, e);
+    return json({
+      status: "error", code: "billing_failed",
+      message: "Something went wrong with the payment page — try again in a minute.",
+    }, 502, cors);
+  }
+
+  return json({ status: "error", message: "Not found" }, 404, cors);
 }
 
 // ---------- router ----------
@@ -8096,6 +8586,11 @@ Deno.serve(async (req: Request) => {
     // given only its URL? Measurement only, wired into nothing.
     if (req.method === "POST" && path === "/api/worker/probe") return await handleWorkerProbe(req);
 
+    // Stripe holds no Supabase token and never will, so its events are matched
+    // here, above the gate, for the same reason the worker's routes are. The
+    // request is authenticated instead by the signature over its raw body.
+    if (req.method === "POST" && path === "/api/billing/webhook") return await handleWebhook(req);
+
     // One auth resolution for every API route. Ingest is the only route that also
     // accepts the long-lived per-user key.
     let userId = await userFromBearer(req);
@@ -8131,12 +8626,12 @@ Deno.serve(async (req: Request) => {
         (quote
           ? " If the creator's own words are given, do not contradict them; explain the movement they described."
           : "");
-      const { helpers } = await countsFor(userId);
+      const [counts, uc] = await settledAll<any>([countsFor(userId), capsFor(userId)]);
       return await aiText(system, `Exercise: ${exercise}` +
         (canonical ? `\nCatalog id: ${canonical}` : "") +
         (body?.title ? `\nFrom the workout: ${String(body.title).slice(0, 120)}` : "") +
         (quote ? `\nThe creator said${source ? ` (${source})` : ""}: ${quote}` : ""),
-        cors, userId, "explain", helpers);
+        cors, userId, "explain", (counts as Counts).helpers, uc as UserCaps);
     }
 
     if (req.method === "POST" && path === "/api/demo-video") return await handleDemoVideo(req, userId, cors);
@@ -8147,6 +8642,8 @@ Deno.serve(async (req: Request) => {
     if (req.method === "POST" && path === "/api/account/delete") {
       return await handleAccountDelete(userId, cors);
     }
+
+    if (path.startsWith("/api/billing/")) return await handleBilling(path, req, userId, cors);
 
     if (req.method === "POST" && path === "/api/rotate-key") {
       const bytes = new Uint8Array(16);
@@ -8167,13 +8664,26 @@ Deno.serve(async (req: Request) => {
       // when there is nothing to divide by, or when the rollup cannot be read.
       const cachePct = await cachePctToday();
       // Pumpy's credits, in exactly the shape the chat route returns, so the app
-      // has one thing to render whichever call it heard from last.
-      const meter = await pumpyMeter(userId);
+      // has one thing to render whichever call it heard from last — and the
+      // caller's plan and its caps, asked at the same time rather than after.
+      // The old flat `limit_*` fields stay and now carry the plan's numbers, so
+      // a live app that has not been reloaded yet keeps working and simply reads
+      // the right ceiling. `null` is unlimited in both shapes.
+      // `library_count` rides along because the Library page's counter — "12 of
+      // 20 saved" — is the paywall's quietest and most-seen surface, and it would
+      // otherwise need a count of its own on every visit.
+      const [meter, uc, held] = await settledAll<any>(
+        [pumpyMeter(userId), capsFor(userId), libraryCount(userId)],
+      ) as [PumpyMeter, UserCaps, number];
       return json({
         status: "ok",
+        plan: uc.plan,
+        limits: uc.caps,
+        library_count: held,
         saves_today: counts.saves, extracts_today: counts.extracts, helpers_today: counts.helpers,
         chats_today: counts.chats,
-        limit_saves: LIMIT_SAVES, limit_extract: LIMIT_EXTRACT, limit_helper: LIMIT_HELPER,
+        limit_saves: uc.caps.saves, limit_extract: uc.caps.extract, limit_helper: uc.caps.helper,
+        limit_media: uc.caps.media, limit_uploads: uc.caps.uploads,
         limit_chat: LIMIT_CHAT,
         spend_today: Number(spent.toFixed(4)), spend_limit: DAILY_SPEND_USD,
         paid_enabled: DAILY_SPEND_USD > 0 && spent < DAILY_SPEND_USD,
