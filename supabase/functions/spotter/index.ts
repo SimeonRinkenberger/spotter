@@ -29,6 +29,11 @@
 //   POST /api/billing/portal        { return_url } — a Customer Portal URL
 //   POST /api/billing/sync          { session_id? } — re-read Stripe and rewrite the row
 //   POST /api/billing/webhook       Stripe's events (signature-verified, no user token)
+//   GET  /api/strava/status         { configured, connected, athlete_id }
+//   GET  /api/strava/connect        { url } — the signed "Connect with Strava" consent link
+//   GET  /api/strava/callback       Strava's redirect back (signed state, no user token)
+//   POST /api/strava/push           { log_id, start_local } — one session as a manual activity
+//   POST /api/strava/disconnect     deauthorize and forget the tokens
 //   POST /api/worker/tick           drain the ingest queue (shared secret, not a user)
 //   POST /api/worker/media          one tier of reading the video, in its own isolate
 //   POST /api/worker/probe          one-off measurement behind the same secret
@@ -44,6 +49,7 @@ import {
   BillingError, billingConfigured, cancelAndDeleteCustomer, createCheckout, createPortal,
   handleWebhook, pricesBlock, returnBaseFrom, sellablePlans, syncFromSession, syncUser,
 } from "./billing.ts";
+import { forgetStravaQuietly, handleCallback, handleStrava } from "./strava.ts";
 import { CATALOG, type CatalogEntry, canonicalize, catalogById } from "./catalog.ts";
 import { assertPublicUrl, checkUrl, dnsAvailable, safeFetch } from "./net.ts";
 import {
@@ -4853,6 +4859,14 @@ async function handleAccountDelete(userId: string, cors: Cors): Promise<Response
     }, 503, cors);
   }
 
+  // Strava, once Stripe has said the deletion may go ahead. `strava_tokens`
+  // cascades with the auth row, but a row deleted without telling Strava leaves a
+  // live grant on the athlete's account with nothing left here to revoke it. This
+  // one is best effort in the other direction from Stripe: a Strava outage must
+  // not hold up an erasure, because a stale grant costs the person nothing and
+  // they can revoke it on strava.com themselves.
+  await forgetStravaQuietly(userId);
+
   try {
     await dbDelete("saves_log", filter);
     await dbDelete("pumpy_usage", filter);
@@ -8818,6 +8832,12 @@ Deno.serve(async (req: Request) => {
     // request is authenticated instead by the signature over its raw body.
     if (req.method === "POST" && path === "/api/billing/webhook") return await handleWebhook(req);
 
+    // Strava's OAuth redirect, above the gate for the same reason: the browser
+    // arriving here has been to strava.com and back and carries no Supabase token.
+    // What authenticates it instead is the HMAC-signed `state` we put on the way
+    // out, which names the user and expires ten minutes after it was made.
+    if (req.method === "GET" && path === "/api/strava/callback") return await handleCallback(req);
+
     // One auth resolution for every API route. Ingest is the only route that also
     // accepts the long-lived per-user key.
     let userId = await userFromBearer(req);
@@ -8871,6 +8891,7 @@ Deno.serve(async (req: Request) => {
     }
 
     if (path.startsWith("/api/billing/")) return await handleBilling(path, req, userId, cors);
+    if (path.startsWith("/api/strava/")) return await handleStrava(path, req, userId, cors);
 
     if (req.method === "POST" && path === "/api/rotate-key") {
       const bytes = new Uint8Array(16);
