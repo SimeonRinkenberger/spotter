@@ -4688,17 +4688,16 @@ export const APP = String.raw`
 
   // ---------- share card ----------
   //
-  // "When a workout is done I want to export it to a story." The research came
-  // back with exactly one mechanism a web app has: navigator.share with a file,
-  // into the OS share sheet, where Instagram, TikTok, Snapchat and Messages all
-  // show up. What a share extension then does with a handed-in PNG is its own
-  // business, so nothing here promises a Story — and Save image stands next to
-  // Share as an equal, because on iOS that is how most people get a card into one.
+  // "When a workout is done I want to export it to a story." One mechanism does
+  // that from a web app: navigator.share with a file, into the OS share sheet,
+  // where Instagram, TikTok, Snapchat and Messages all appear. What a share
+  // extension then does with a handed-in PNG is its own business, so nothing here
+  // promises a Story, and Save image stands beside Share at the same size because
+  // on iOS that is how most people get a card into one.
   //
-  // The picture is drawn by hand. Every HTML-to-image library either re-implements
-  // CSS badly or leans on foreignObject, which is where WebKit breaks; and one
-  // Supabase thumbnail drawn in would taint the canvas and make toBlob throw. So:
-  // flat colour, text, and the two marks this page already owns.
+  // The picture is drawn by hand: every HTML-to-image library either reimplements
+  // CSS badly or leans on foreignObject, which is where WebKit breaks, and one
+  // Supabase thumbnail drawn in would taint the canvas so toBlob throws.
 
   var SC_W = 1080, SC_H = 1920, SC_PAD = 88;
   // Instagram covers the top ~250px with the avatar and the bottom ~250 with the
@@ -4707,15 +4706,15 @@ export const APP = String.raw`
   var SC_SANS = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
   var SC_WHERE = { tiktok: "TikTok", instagram: "Instagram", youtube: "YouTube" };
 
-  // Everything the summary is holding on the card's behalf: the theme the poster
-  // picked, the blob, and the File that a tap is allowed to hand to the sheet.
+  // What the summary holds on the card's behalf: the theme the poster picked, and
+  // the File a tap is allowed to hand straight to the sheet.
   var sc = { theme: "dark", file: null, blob: null, url: null, card: null,
     img: null, hint: null, seq: 0, watching: false };
   try { if (localStorage.getItem("spotter_card") === "light") sc.theme = "light"; }
   catch (e) { /* a browser with storage shut off keeps the default */ }
 
-  // Both card palettes are declared in style.ts and both exist in both schemes:
-  // the card's theme is the poster's choice, not the phone's.
+  // Both palettes are declared in style.ts and both exist in both schemes: the
+  // card's theme is the poster's choice, not the phone's.
   function scPalette(theme) {
     var v = getComputedStyle(document.documentElement)
       .getPropertyValue(theme === "light" ? "--sc-light" : "--sc-dark").trim().split(/\s+/);
@@ -4723,8 +4722,8 @@ export const APP = String.raw`
   }
 
   // WebKit has painted the first fillText in Times for twenty years when the face
-  // is not in memory yet, so ask for it by weight AND size. But a card that
-  // arrives late is worse than a card in the system face: 300ms and no longer.
+  // is not in memory yet, so ask for it by weight and size. But a card that
+  // arrives late is worse than one in the system face: 300ms and no longer.
   var scFacePromise = null;
   function scFace() {
     if (scFacePromise) return scFacePromise;
@@ -4732,20 +4731,19 @@ export const APP = String.raw`
     if (!document.fonts || !document.fonts.load) return (scFacePromise = Promise.resolve(sys));
     scFacePromise = Promise.race([document.fonts.load(want),
       new Promise(function (ok) { setTimeout(ok, 300); })])
-      .then(function () {
-        return document.fonts.check(want) ? '"Cabinet Grotesk", ' + sys : sys;
-      }, function () { return sys; });
+      .then(function () { return document.fonts.check(want) ? '"Cabinet Grotesk", ' + sys : sys; },
+        function () { return sys; });
     return scFacePromise;
   }
 
   // A mark becomes a data URI of markup this document already holds, never a
-  // fetch: anything cross-origin painted on would taint the canvas, and toBlob
-  // on a tainted canvas throws instead of handing back a card.
+  // fetch: anything cross-origin painted on taints the canvas, and toBlob on a
+  // tainted canvas throws instead of handing back a card. Safari draws nothing
+  // from an SVG with no intrinsic size, hence the width and height.
   var scArt = {};
   function scMark(inner, col, px) {
     var k = col + px + inner.length;
     if (scArt[k]) return scArt[k];
-    // Safari draws nothing from an SVG with no intrinsic size, hence width/height.
     var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + px + '" height="' + px +
       '" viewBox="0 0 24 24" fill="none" stroke="' + col + '" stroke-width="2" ' +
       'stroke-linecap="round" stroke-linejoin="round">' + inner + '</svg>';
@@ -4768,12 +4766,10 @@ export const APP = String.raw`
     c.closePath();
   }
 
-  // Canvas has no letter-spacing before Safari 17.4, so ask and move on: tracking
-  // that quietly does nothing is a card that is a shade wider, not a broken one.
+  // Canvas had no letter-spacing before Safari 17.4, so ask and move on: tracking
+  // that quietly does nothing is a card a shade wider, not a broken one.
   function scSet(c, font, col, align, track) {
-    c.font = font;
-    c.fillStyle = col;
-    c.textAlign = align || "left";
+    c.font = font; c.fillStyle = col; c.textAlign = align || "left";
     if ("letterSpacing" in c) c.letterSpacing = (track || 0) + "px";
   }
 
@@ -4785,9 +4781,9 @@ export const APP = String.raw`
   }
 
   function scWrap(c, s, max, lines) {
-    var w = String(s || "").split(/\s+/), out = [], cur = "", cut = false, i;
+    var w = String(s || "").split(/\s+/), out = [], cur = "", cut = false, i, t;
     for (i = 0; i < w.length; i++) {
-      var t = cur ? cur + " " + w[i] : w[i];
+      t = cur ? cur + " " + w[i] : w[i];
       if (!cur || c.measureText(t).width <= max) cur = t;
       else if (out.length + 1 < lines) { out.push(cur); cur = w[i]; }
       else { cut = true; break; }
@@ -4797,54 +4793,43 @@ export const APP = String.raw`
     return out.length ? out : ["Workout"];
   }
 
-  // The three figures are the loudest thing on the card, and a five-digit volume
-  // is twice the width of a two-digit minute count, so the size follows the text.
+  // A five-digit volume is twice the width of a two-digit minute count, so in the
+  // one row where the numbers shout, the size follows the text.
   function scBig(c, s, x, y, max, face, col) {
     var size = 104;
     c.fillStyle = col;
     if ("letterSpacing" in c) c.letterSpacing = "-2px";
     c.font = "800 " + size + "px " + face;
-    while (size > 52 && c.measureText(s).width > max) {
-      size -= 6;
-      c.font = "800 " + size + "px " + face;
-    }
+    while (size > 52 && c.measureText(s).width > max) { size -= 6; c.font = "800 " + size + "px " + face; }
     c.fillText(s, x, y);
   }
 
-  // Everything is measured before anything is drawn, because the block is centred
-  // in the strip Instagram leaves alone and the exercise list is what gives.
   function scDraw(c, d, p, face, marks) {
     var L = SC_PAD, R = SC_W - SC_PAD, W = R - L, i;
-
-    c.fillStyle = p.bg;
-    c.fillRect(0, 0, SC_W, SC_H);
+    c.fillStyle = p.bg; c.fillRect(0, 0, SC_W, SC_H);
     // One bloom of the accent behind the numbers: a flat rectangle reads as a
-    // screenshot and nobody posts a screenshot. It is painted small and blown up
-    // on purpose. A full-size radial gradient is two million pixels of unique
-    // colour, PNG cannot compress a single one of them, and it measured 700KB of
-    // card on its own; at a tenth the size and scaled back up it costs 190KB and
-    // looks the same, because a gradient blurred is still that gradient.
-    var sm = document.createElement("canvas");
-    sm.width = 108;
-    sm.height = 192;
-    var s2 = sm.getContext("2d");
+    // screenshot and nobody posts a screenshot. It is painted at a tenth size and
+    // blown up on purpose — a full-size radial gradient is two million pixels PNG
+    // cannot compress, and it measured 700KB of card on its own. Blurred, a
+    // gradient is still that gradient.
+    var sm = document.createElement("canvas"), s2;
+    sm.width = 108; sm.height = 192;
+    s2 = sm.getContext("2d");
     var glow = s2.createRadialGradient(94, 34, 0, 94, 34, 88);
-    glow.addColorStop(0, p.ember + "4E");
-    glow.addColorStop(1, p.ember + "00");
-    s2.fillStyle = glow;
-    s2.fillRect(0, 0, 108, 192);
+    glow.addColorStop(0, p.ember + "4E"); glow.addColorStop(1, p.ember + "00");
+    s2.fillStyle = glow; s2.fillRect(0, 0, 108, 192);
     c.drawImage(sm, 0, 0, SC_W, SC_H);
 
+    // Measured whole before a pixel is drawn, so the block can be centred in the
+    // strip Instagram leaves alone. The list is the substance of the card, so it
+    // is the last thing to give: a long title next to a pair of bests takes the
+    // page first from the muscle line, then from the row height, then from rows.
     c.textBaseline = "alphabetic";
     scSet(c, "800 92px " + face, p.ink, "left", -2.5);
-    var tl = scWrap(c, d.title, W, 3);
-    var shown = Math.min(d.prs.length, 2);
+    var tl = scWrap(c, d.title, W, 3), shown = Math.min(d.prs.length, 2);
     var headH = 118, titleH = tl.length * 104 + 34, figH = 246;
     var prH = shown ? shown * 110 + (d.prs.length > shown ? 50 : 0) + 22 : 0;
     var credH = d.credit ? 62 : 0;
-    // The list is the substance of the card, so it is the last thing to give: a
-    // long title next to a pair of bests takes the page first from the muscle
-    // line, then from the row height, and only then from the number of rows.
     var lab = d.label, rowH = 72, labH = 0, rows = 0, pass, room;
     for (pass = 0; pass < 3; pass++) {
       labH = lab ? 46 : 0;
@@ -4874,36 +4859,27 @@ export const APP = String.raw`
     y += titleH;
 
     c.fillStyle = p.panel;
-    scRR(c, L, y, W, 216, 34);
-    c.fill();
-    c.strokeStyle = p.line;
-    c.lineWidth = 2;
-    c.stroke();
+    scRR(c, L, y, W, 216, 34); c.fill();
+    c.strokeStyle = p.line; c.lineWidth = 2; c.stroke();
     var cw = W / 3;
     for (i = 1; i < 3; i++) {
-      c.beginPath();
-      c.moveTo(L + cw * i, y + 46);
-      c.lineTo(L + cw * i, y + 170);
-      c.stroke();
+      c.beginPath(); c.moveTo(L + cw * i, y + 46); c.lineTo(L + cw * i, y + 170); c.stroke();
     }
     for (i = 0; i < 3; i++) {
       c.textAlign = "center";
       scBig(c, d.figs[i][0], L + cw * i + cw / 2, y + 130, cw - 44, face, p.ink);
       scSet(c, "700 26px " + SC_SANS, p.dim, "center", 4);
-      c.fillText(scFit(c, String(d.figs[i][1]).toUpperCase(), cw - 30),
-        L + cw * i + cw / 2, y + 178);
+      c.fillText(scFit(c, String(d.figs[i][1]).toUpperCase(), cw - 30), L + cw * i + cw / 2, y + 178);
     }
     y += figH;
 
-    // The card has to visibly change when a best was beaten: that is the single
-    // thing most likely to make someone post it.
+    // The card has to visibly change when a best was beaten: of everything on it,
+    // that is what makes someone post it.
     for (i = 0; i < shown; i++) {
       c.fillStyle = p.ember + "26";
-      scRR(c, L, y, W, 104, 26);
-      c.fill();
+      scRR(c, L, y, W, 104, 26); c.fill();
       c.fillStyle = p.ember;
-      scRR(c, L, y, 10, 104, 5);
-      c.fill();
+      scRR(c, L, y, 10, 104, 5); c.fill();
       scSet(c, "700 25px " + SC_SANS, p.ember, "left", 4);
       c.fillText("NEW BEST", L + 40, y + 43);
       scSet(c, "600 37px " + SC_SANS, p.ink, "left", -0.4);
@@ -4923,18 +4899,14 @@ export const APP = String.raw`
       c.fillText(scFit(c, lab.toUpperCase(), W), L, y + 28);
       y += labH;
     }
-    var base = Math.round(rowH * 0.66), fa = rowH > 68 ? 37 : 34, fb = rowH > 68 ? 32 : 30;
+    var base = Math.round(rowH * 0.66), fa = rowH > 68 ? 37 : 34, fb = rowH > 68 ? 32 : 30, sw;
     for (i = 0; i < list.length; i++) {
       if (i) {
-        c.strokeStyle = p.line;
-        c.lineWidth = 2;
-        c.beginPath();
-        c.moveTo(L, y + 1);
-        c.lineTo(R, y + 1);
-        c.stroke();
+        c.strokeStyle = p.line; c.lineWidth = 2;
+        c.beginPath(); c.moveTo(L, y + 1); c.lineTo(R, y + 1); c.stroke();
       }
       scSet(c, "500 " + fb + "px " + SC_SANS, p.dim, "right", 0);
-      var sw = c.measureText(list[i][1]).width;
+      sw = c.measureText(list[i][1]).width;
       c.fillText(list[i][1], R, y + base);
       scSet(c, "600 " + fa + "px " + SC_SANS, p.ink, "left", -0.3);
       c.fillText(scFit(c, list[i][0], W - sw - 40), L, y + base);
@@ -4953,9 +4925,8 @@ export const APP = String.raw`
       scSet(c, "500 31px " + SC_SANS, p.dim, "left", 0);
       c.fillText(scFit(c, d.credit, R - cx), cx, y + 34);
     }
-
-    // Small, quiet, bottom-centre, inside the safe zone: a card that looks like
-    // an advert does not get posted.
+    // Small, quiet, bottom-centre, inside the safe zone: a card that looks like an
+    // advert does not get posted.
     scSet(c, "500 29px " + SC_SANS, p.dim, "center", 2);
     c.globalAlpha = 0.72;
     c.fillText("Logged with Spotter", SC_W / 2, 1636);
@@ -4964,33 +4935,28 @@ export const APP = String.raw`
 
   function renderShareCard(card) {
     var p = scPalette(card.theme);
-    return Promise.all([
-      scFace(),
+    return Promise.all([scFace(),
       scMark(($("i-dumbbell") || { innerHTML: "" }).innerHTML, p.ember, 62),
-      card.coach ? scMark(PUMPY_MARK.replace(/^<svg[^>]*>/, "").replace(/<\/svg>$/, ""),
-        p.dim, 40) : Promise.resolve(null)
+      card.coach ? scMark(PUMPY_MARK.replace(/^<svg[^>]*>/, "").replace(/<\/svg>$/, ""), p.dim, 40)
+        : Promise.resolve(null)
     ]).then(function (r) {
       var cv = document.createElement("canvas");
       // A fixed asset, not a screen surface, so devicePixelRatio never comes into
-      // it: at DPR 3 this would be 18.6M pixels, past the canvas area cap on
-      // every iPhone before iOS 18, and the whole draw would come back blank.
-      cv.width = SC_W;
-      cv.height = SC_H;
-      var c = cv.getContext("2d");
-      scDraw(c, card, p, r[0], { mark: r[1], coach: r[2] });
+      // it: at DPR 3 this would be 18.6M pixels, past the canvas area cap on every
+      // iPhone before iOS 18, and the whole draw would come back blank.
+      cv.width = SC_W; cv.height = SC_H;
+      scDraw(cv.getContext("2d"), card, p, r[0], { mark: r[1], coach: r[2] });
       return new Promise(function (ok, no) {
-        // A tainted canvas, a browser with no toBlob, a phone out of memory: one
-        // failure, and the caller drops the row rather than showing a Share
-        // button with nothing behind it.
-        try {
-          cv.toBlob(function (b) { if (b) ok(b); else no(new Error("no blob")); }, "image/png");
-        } catch (e) { no(e); }
+        // A tainted canvas, no toBlob, a phone out of memory: one failure, and the
+        // caller drops the row rather than offering a button with nothing behind it.
+        try { cv.toBlob(function (b) { if (b) ok(b); else no(new Error("no blob")); }, "image/png"); }
+        catch (e) { no(e); }
       });
     });
   }
 
   // What a set was, in one phrase: three of the same reading as "3 × 10", a mixed
-  // set as a count, and the heaviest weight of the lot after it.
+  // set as a count, and the heaviest weight of the lot after either.
   function scSets(e) {
     var st = (e.sets || []).filter(Boolean), n = st.length;
     if (!n) return "";
@@ -5011,22 +4977,17 @@ export const APP = String.raw`
       var s = scSets(e);
       if (s) ex.push([e.name || "Exercise", s]);
     });
-    // Where the workout came from, in the words the app already uses for it.
+    // Where it came from, in the words the app already uses for it.
     var credit = "";
     if (w.platform === "pumpy") credit = "Built with Pumpy";
     else if (w.author) credit = "from @" + w.author +
       (SC_WHERE[w.platform] ? " on " + SC_WHERE[w.platform] : "");
     return {
-      theme: sc.theme,
-      title: title || "Workout",
-      date: new Date(when).toLocaleDateString(undefined,
-        { weekday: "long", month: "long", day: "numeric" }),
+      theme: sc.theme, title: title || "Workout", prs: prs, exercises: ex, credit: credit,
+      date: new Date(when).toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" }),
       figs: [[String(mins), "min"], [String(sets), sets === 1 ? "set" : "sets"],
         [vol ? Math.round(vol).toLocaleString() : "—", vol ? state.unit : "bodyweight"]],
-      prs: prs,
       label: (w.muscle_groups || []).slice(0, 4).join("  ·  "),
-      exercises: ex,
-      credit: credit,
       coach: w.platform === "pumpy"
     };
   }
@@ -5048,34 +5009,33 @@ export const APP = String.raw`
       Math.max(1, Math.round(payload.duration_seconds / 60)), sets, vol, prs, logged);
   }
 
-  // No PR block on a past session: which lifts were bests was settled on the day,
+  // No bests on a past session: which lifts were records was settled on the day,
   // and deciding it again now out of a longer history would be a claim.
   function scFromLog(l) {
     var by = {}, sets = 0;
     state.workouts.forEach(function (w) { by[w.id] = w; });
     (l.entries || []).forEach(function (e) { sets += (e.sets || []).filter(Boolean).length; });
     return scCard(by[l.workout_id] || {}, l.workout_title, l.started_at,
-      Math.max(1, Math.round((l.duration_seconds || 60) / 60)), sets,
-      volumeOf(l), [], l.entries || []);
+      Math.max(1, Math.round((l.duration_seconds || 60) / 60)), sets, volumeOf(l), [], l.entries || []);
   }
 
   // ---------- the doorway ----------
   //
   // Draw first, then offer. A share sheet has to open inside the tap that opened
   // it: transient activation is a timer of a few seconds which share() then
-  // spends, and WebKit's own note on it names "the file took too long to
-  // produce" as the way this goes wrong. So the card is drawn when the summary
-  // mounts, the buttons are built out of the File that came back, and the tap
-  // handler below has nothing left to wait for. Nothing may be added to it.
+  // spends, and WebKit's own note on it names "the file took too long to produce"
+  // as the way this goes wrong. So the card is drawn when the summary mounts, the
+  // buttons are built out of the File that came back, and the tap handler below
+  // has nothing left to wait for. Nothing may be added to it.
 
   function scForget() {
     if (sc.url) URL.revokeObjectURL(sc.url);
     sc.url = sc.blob = sc.file = sc.card = sc.img = sc.hint = null;
   }
 
-  // The summary leaves by Done, by the back gesture, or by a resumed draft over
-  // the top of it, and all three end with #workout losing .summary. Watching the
-  // class is the one hook that does not reach into Workout Mode's own exit.
+  // The summary leaves by Done, by the back gesture, or under a resumed draft, and
+  // all three end with #workout losing .summary. Watching the class is the one
+  // hook that does not reach into Workout Mode's own exit.
   function scWatchSummary() {
     if (sc.watching || !window.MutationObserver) return;
     sc.watching = true;
@@ -5092,15 +5052,44 @@ export const APP = String.raw`
       if (mine !== sc.seq) return null;        // a second chip tap already won
       if (sc.url) URL.revokeObjectURL(sc.url);
       sc.blob = b;
-      sc.file = null;
-      // Web Share will not take a bare Blob, and the oldest WebKit here has no
-      // File constructor at all — there the download path still works.
-      try { sc.file = new File([b], "spotter-workout.png", { type: "image/png" }); }
-      catch (e) { /* no File, no sheet */ }
+      sc.file = scFileOf(b);
       sc.url = URL.createObjectURL(b);
       if (sc.img) { sc.img.src = sc.url; sc.img.classList.add("in"); }
       return b;
     });
+  }
+
+  // Web Share will not take a bare Blob, and the oldest WebKit here has no File
+  // constructor at all — there the download path still works.
+  function scFileOf(b) {
+    try { return new File([b], "spotter-workout.png", { type: "image/png" }); }
+    catch (e) { return null; }
+  }
+
+  // An anchor over a blob URL, never a navigation: in a standalone PWA a step out
+  // of scope ejects the whole session into Safari.
+  function scDrop(url, temp) {
+    var a = el("a");
+    a.href = url;
+    a.download = "spotter-workout.png";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    if (temp) setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+    toast("Saved spotter-workout.png", 3600);
+  }
+
+  // Hand a File to the sheet and say whether the sheet took it. Cancelling is not
+  // failing, and the browsers disagree on what to call everything else, so nothing
+  // here matches on a name.
+  function scSheet(file, onfail) {
+    try {
+      var p = navigator.share({ files: [file] });
+      if (p && p.then) p.then(null, function (e) {
+        if (onfail && (!e || e.name !== "AbortError")) onfail();
+      });
+      return true;
+    } catch (e) { return false; }
   }
 
   // canShare needs no user activation, so what this phone can do is settled while
@@ -5119,22 +5108,14 @@ export const APP = String.raw`
     if (sc.hint) sc.hint.textContent = "Hold the preview to save it.";
   }
 
+  // No title and no text: on iOS some targets carry the text instead of the
+  // image, which is the opposite of what this button is for.
   function scShare() {
     haptic("tap");
-    if (!sc.file) { scHold(); return; }
-    try {
-      // No title and no text: on iOS some targets carry the text instead of the
-      // image, which is the opposite of what this button is for.
-      var p = navigator.share({ files: [sc.file] });
-      // Cancelling a sheet is not failing, and the browsers disagree on what to
-      // call everything else, so nothing here matches on a name.
-      if (p && p.then) p.then(null, function (e) {
-        if (!e || e.name !== "AbortError") scHold();
-      });
-    } catch (e) { scHold(); }
+    if (!sc.file || !scSheet(sc.file, scHold)) scHold();
   }
 
-  // A phone with a share sheet that will not take files still shares a link.
+  // A sheet that will not take files still takes a link.
   function scLinkShare() {
     haptic("tap");
     try {
@@ -5144,18 +5125,9 @@ export const APP = String.raw`
     } catch (e) { scHold(); }
   }
 
-  // An anchor over a blob URL, never a navigation: in a standalone PWA a step out
-  // of scope ejects the whole session into Safari.
   function scSave() {
     haptic("tap");
-    if (!sc.url) { scHold(); return; }
-    var a = el("a");
-    a.href = sc.url;
-    a.download = "spotter-workout.png";
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    toast("Saved spotter-workout.png", 3600);
+    if (sc.url) scDrop(sc.url, false); else scHold();
   }
 
   function scCopy() {
@@ -5175,7 +5147,7 @@ export const APP = String.raw`
   }
 
   // Save image is not an error path. On iOS it is how most people get a card into
-  // a Story, so it stands next to Share at the same size — and where the sheet
+  // a Story, so it stands next to Share at the same size — and where a sheet
   // exists it IS the sheet, because the sheet's own Save Image is the route to
   // Photos. Only a browser with no sheet at all gets a download.
   function scButtons(btns) {
@@ -5196,19 +5168,15 @@ export const APP = String.raw`
   }
 
   function shareRow(payload, logged) {
-    var wrap = el("div", "sharewrap");
+    var wrap = el("div", "sharewrap"), row = el("div", "sharerow"), prev = el("div", "scprev");
     sc.card = scFromSession(payload, logged);
     scWatchSummary();
-
-    var row = el("div", "sharerow");
-    var prev = el("div", "scprev");
     sc.img = el("img");
     sc.img.alt = "The session as a card, ready to share";
     prev.appendChild(sc.img);
     row.appendChild(prev);
 
-    var side = el("div", "scside");
-    var chips = el("div", "scchips"), pair = [];
+    var side = el("div", "scside"), chips = el("div", "scchips"), pair = [];
     ["dark", "light"].forEach(function (t) {
       var b = el("button", "scchip", t === "dark" ? "Dark" : "Light");
       b.type = "button";
@@ -5217,9 +5185,7 @@ export const APP = String.raw`
         if (sc.theme === t) return;
         sc.theme = t;
         try { localStorage.setItem("spotter_card", t); } catch (e) { /* ignore */ }
-        pair.forEach(function (x) {
-          x[0].setAttribute("aria-pressed", x[1] === t ? "true" : "false");
-        });
+        pair.forEach(function (x) { x[0].setAttribute("aria-pressed", x[1] === t ? "true" : "false"); });
         haptic("tap");
         scPaint();
       };
@@ -5227,17 +5193,14 @@ export const APP = String.raw`
       chips.appendChild(b);
     });
     side.appendChild(chips);
-    sc.hint = el("div", "schint",
-      "Share to Instagram, TikTok, Messages — or save it to Photos.");
+    sc.hint = el("div", "schint", "Share to Instagram, TikTok, Messages — or save it to Photos.");
     side.appendChild(sc.hint);
     row.appendChild(side);
     wrap.appendChild(row);
 
     var btns = el("div", "scbtns");
     wrap.appendChild(btns);
-    scPaint().then(function (b) {
-      if (b) scButtons(btns);
-    }, function () {
+    scPaint().then(function (b) { if (b) scButtons(btns); }, function () {
       // No card, no doorway. An unchanged summary beats a button that cannot.
       if (wrap.parentNode) wrap.parentNode.removeChild(wrap);
     });
@@ -5251,55 +5214,33 @@ export const APP = String.raw`
     return wrap;
   }
 
-  // A past session draws its card on the tap. That measured 23ms cold and 13ms
-  // warm, which is nothing against an activation window counted in seconds — and
-  // the pointerdown starts the draw eighty milliseconds early anyway, the way the
-  // AI prefetch already does, so by the click there is usually a File waiting.
+  // A past session draws its card on the tap. That measured 10 to 28ms, nothing
+  // against an activation window counted in seconds — and the pointerdown starts
+  // the draw early anyway, the way the AI prefetch already does, so by the click
+  // there is usually a File waiting.
   function scLogCard(l) {
     var card = scFromLog(l);
     card.theme = sc.theme;
-    return renderShareCard(card).then(function (b) {
-      var f = null;
-      try { f = new File([b], "spotter-workout.png", { type: "image/png" }); }
-      catch (e) { /* the download path takes the blob instead */ }
-      return { blob: b, file: f };
-    });
+    return renderShareCard(card).then(function (b) { return { blob: b, file: scFileOf(b) }; });
   }
 
   // The same doorway without the preview: whatever this phone can do with the
   // card, straight out of the tap.
   function scHandOff(r) {
-    if (r.file && navigator.canShare && navigator.canShare({ files: [r.file] })) {
-      try {
-        var p = navigator.share({ files: [r.file] });
-        if (p && p.then) p.then(null, function () { /* cancelled, or refused */ });
-        return;
-      } catch (e) { /* an older sheet: fall through to the download */ }
-    }
-    var u = URL.createObjectURL(r.blob);
-    var a = el("a");
-    a.href = u;
-    a.download = "spotter-workout.png";
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(function () { URL.revokeObjectURL(u); }, 4000);
-    toast("Saved spotter-workout.png", 3600);
+    if (r.file && navigator.canShare && navigator.canShare({ files: [r.file] }) &&
+      scSheet(r.file)) return;
+    scDrop(URL.createObjectURL(r.blob), true);
   }
 
   function scLogBtn(l) {
-    var b = el("button", "scmini");
+    var b = el("button", "scmini"), drawn = null;
     b.type = "button";
     icon(b, "share", "Share");
-    var drawn = null;
     b.onpointerdown = function () { if (!drawn) drawn = scLogCard(l); };
     b.onclick = function () {
       haptic("tap");
       if (!drawn) drawn = scLogCard(l);
-      drawn.then(scHandOff, function () {
-        drawn = null;
-        toast("Could not draw that card.");
-      });
+      drawn.then(scHandOff, function () { drawn = null; toast("Could not draw that card."); });
     };
     return b;
   }
