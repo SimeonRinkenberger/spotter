@@ -465,14 +465,15 @@ export const STYLE = String.raw`<style>
   .empty b { color: var(--ember-ink); font-weight: 700; }
 
   /* ---------- detail overlay ---------- */
+  /* Hidden, not display:none — see the sheets below. */
   .overlay { position: fixed; left: 0; right: 0; top: var(--vvtop); height: var(--vvh);
     z-index: 50; background-color: var(--paper);
-    background-image: var(--grain); display: none; overflow-y: auto; -webkit-overflow-scrolling: touch; }
-  .overlay.open { display: block; animation: slideup var(--t-3) var(--e-out); }
-  @keyframes slideup { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
-  .overlay.closing { display: block; pointer-events: none;
-    animation: slidedown var(--t-2) var(--e-in) both; }
-  @keyframes slidedown { to { transform: translateY(18px); opacity: 0; } }
+    background-image: var(--grain); overflow-y: auto; -webkit-overflow-scrolling: touch;
+    visibility: hidden; pointer-events: none; opacity: 0; transform: translateY(18px);
+    transition: opacity var(--t-2) var(--e-in), transform var(--t-2) var(--e-in); }
+  .overlay.open { visibility: visible; pointer-events: auto; opacity: 1; transform: none;
+    transition: opacity var(--t-3) var(--e-out), transform var(--t-3) var(--e-out); }
+  .overlay.closing { visibility: visible; }
   .dtop { position: sticky; top: 0; z-index: 5; display: flex; align-items: center;
     justify-content: space-between; gap: 8px;
     padding: calc(10px + env(safe-area-inset-top)) 14px 10px;
@@ -593,10 +594,21 @@ export const STYLE = String.raw`<style>
      workout — logging a set, the exercise list, the clip — was laid out, animated
      and hit-testable underneath an opaque full-screen overlay, so the taps landed
      on nothing. Still under the toast at 90, still over the detail overlay at 50. */
+  /* Hidden between showings, never display:none: display threw the layout away and
+     rebuilt it inside the entrance's own first frame, and a keyframe restarted on
+     an element just back from display:none does not reliably begin at that frame —
+     which is why every opening after the first was the jerky one. Laid out and
+     transitioned instead, as Vaul, Ionic and UIKit's sheet do. The 3px blur went
+     with it: on the element whose opacity animated it made WebKit re-blur, every
+     frame, a backdrop far heavier than at launch. Apple's dimming is plain. */
   .sheet { position: fixed; left: 0; right: 0; top: var(--vvtop); height: var(--vvh);
-    z-index: 85; background: var(--scrim); display: none;
-    align-items: flex-end; -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
-  .sheet.open { display: flex; animation: fadein var(--t-2) var(--e-soft); }
+    z-index: 85; background: var(--scrim); display: flex; align-items: flex-end;
+    visibility: hidden; pointer-events: none; opacity: 0;
+    transition: opacity var(--t-2) var(--e-soft); }
+  /* Promoted only while it moves: 14 permanent layers is memory for nothing. */
+  .sheet.open { visibility: visible; pointer-events: auto; opacity: 1; will-change: opacity; }
+  .sheet.closing { visibility: visible; will-change: opacity; }
+  .sheet.open .sheetbody, .sheet.closing .sheetbody { will-change: transform; }
   @keyframes fadein { from { opacity: 0; } }
   /* 88% of the frame, so an eighth of the screen is always scrim you can tap: as
      86vh of a viewport whose own top was off screen, Settings left none. The
@@ -605,9 +617,12 @@ export const STYLE = String.raw`<style>
     overscroll-behavior: none; background: var(--paper);
     background-image: var(--grain); border-radius: 26px 26px 0 0; box-shadow: var(--sh-up);
     padding: 8px 20px calc(26px + var(--sab));
-    animation: sheetup .38s var(--e-spring); }
-  /* Only on for the settle: the drag itself is 1:1 and must not be timed. */
-  .sheetbody.snap { transition: transform var(--t-3) var(--e-spring); }
+    transform: translateY(100%); transition: transform var(--t-2) var(--e-in); }
+  /* Arriving is the slower, springier half, as iOS presents a sheet in about .4s. */
+  .sheet.open .sheetbody { transform: none; transition: transform .38s var(--e-spring); }
+  /* The finger is the animation, so nothing may be timed. Taken off with the
+     inline transform, so both endings start from where the sheet actually is. */
+  .sheetbody.dragging { transition: none; }
   /* The tallest sheet leaves the least scrim, so it also says how to leave. The
      app's own icon button, so it is the same 38px control with the same 44px
      reach as every other way out of a screen. */
@@ -615,12 +630,9 @@ export const STYLE = String.raw`<style>
      makes every .iconbtn position: relative for its hit area and would otherwise
      leave this one sitting in the flow at the top LEFT of the sheet. */
   .sheetbody .sheetx { position: absolute; top: 10px; right: 14px; z-index: 1; }
-  @keyframes sheetup { from { transform: translateY(100%); } }
-  .sheet.closing { display: flex; pointer-events: none;
-    animation: fadeout var(--t-2) var(--e-soft) both; }
-  .sheet.closing .sheetbody { animation: sheetdown var(--t-2) var(--e-in) both; }
+  /* Closing is the resting state coming back: .closing only holds the sheet
+     visible while the base values transition it away. fadeout stays for others. */
   @keyframes fadeout { to { opacity: 0; } }
-  @keyframes sheetdown { to { transform: translateY(100%); } }
   .grabber { width: 38px; height: 4px; border-radius: 999px; background: var(--line-2);
     margin: 6px auto 16px; }
   .sheetbody h2 { font-family: var(--display); font-size: 20px; font-weight: 700; margin: 0 0 6px;
@@ -1476,16 +1488,19 @@ export const STYLE = String.raw`<style>
      loops stop, informative ones stay. */
   @keyframes fadeonly { from { opacity: 0; } }
   @media (prefers-reduced-motion: reduce) {
-    .viewin, .carditem.in, .msgin, .bodyfig, .reststrip, .overlay.open, .sumdone,
+    .viewin, .carditem.in, .msgin, .bodyfig, .reststrip, .sumdone,
     .sumfigs .setpill, .sumprs .setpill,
     .proposal .done, .proposal .declined {
       animation-name: fadeonly; animation-duration: var(--t-2); animation-delay: 0ms; }
-    .overlay.closing, .sheet.closing, #workout.closing, .reststrip.gone {
+    #workout.closing, .reststrip.gone {
       animation: fadeout var(--t-1) var(--e-soft) both; }
     /* The staggered summary is :nth-child, which outranks the rule above it. */
     .sumfigs .setpill:nth-child(n) { animation-delay: 0ms; }
-    .sheetbody.snap { transition: none; }
-    .sheetbody, .sheet.closing .sheetbody, .setpill.just, .setpill.just.pr,
+    /* Fade kept, travel gone; the compounds repeat or the rules above outrank. */
+    .overlay, .overlay.open, .overlay.closing { transform: none;
+      transition-duration: var(--t-2); }
+    .sheetbody, .sheet.open .sheetbody { transform: none; transition: none; }
+    .setpill.just, .setpill.just.pr,
     .empty .big, .thumbwrap.pending .noimg, .thumbwrap.failed .noimg,
     .thumbwrap.loading::after, .thumbwrap.pending::after { animation: none; }
     /* The dots stop but stay: they are the only thing saying an answer is coming. */
