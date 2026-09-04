@@ -4703,7 +4703,21 @@ export const APP = String.raw`
       " · vh " + n[0] + " · dvh " + n[1] + " · sa " + n[2] + "/" + n[3] +
       " · chrome " + Math.round(hdrEl.getBoundingClientRect().height) +
       "/" + Math.round(tabbar.getBoundingClientRect().height) +
-      " · " + (standalone() ? "standalone" : "browser");
+      " · " + (standalone() ? "standalone" : "browser") + labelLine();
+  }
+
+  // The tab labels, as the phone lays them out and colours them: the owner's
+  // screenshots show the icons and not the words, so this says whether the words
+  // have a box at all, and what they were told to look like.
+  function labelLine() {
+    var t = document.querySelector(".tab .tl"), b = tabbar.getBoundingClientRect();
+    if (!t) return " · label: none";
+    var r = t.getBoundingClientRect(), cs = getComputedStyle(t), p = getComputedStyle(t.parentNode);
+    var fontOk = document.fonts && document.fonts.check ? document.fonts.check("650 10px Inter") : "?";
+    return " · label " + Math.round(r.top - b.top) + "+" + Math.round(r.height) + " of " + Math.round(b.height) +
+      " bottom " + Math.round(window.innerHeight - r.bottom) + " · " + cs.color + " " + cs.visibility + " op " + cs.opacity +
+      " · " + cs.fontSize + "/" + cs.fontWeight + " " + (cs.fontFamily || "").split(",")[0] + " loaded " + fontOk +
+      " · tab op " + p.opacity + " · dpr " + window.devicePixelRatio;
   }
 
   function renderSettingsMeter() {

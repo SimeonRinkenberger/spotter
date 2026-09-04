@@ -818,6 +818,11 @@ export const STYLE = String.raw`<style>
   /* A 2px stroke at 21px is the weight of a 700 label; the lit tab earns a little
      more of it, the way SF Symbols go from Regular to Semibold on selection. */
   .tab .ti .ic { stroke-width: calc(1.85 + .35 * var(--p)); }
+  /* The label in a box of its own, on its own layer. On the owner's iPhone the
+     icons painted and the words under them did not, with the layout itself
+     correct — the signature of WebKit dropping an anonymous text run inside a
+     backdrop-filtered bar while a transformed sibling repaints every frame. */
+  .tab .tl { display: block; transform: translateZ(0); }
 
   /* ---------- pull to refresh ---------- */
   #ptr { position: fixed; top: calc(env(safe-area-inset-top) + 6px); left: 50%; z-index: 30;

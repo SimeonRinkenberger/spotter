@@ -196,10 +196,10 @@ export const MARKUP_BODY = String.raw`</head>
 
   <nav class="tabbar" role="tablist" aria-label="Sections">
     <div class="tabpill" aria-hidden="true"></div>
-    <button class="tab active" id="tab0" role="tab" aria-selected="true" aria-controls="libpage" data-view="library"><span class="ti"><svg class="ic"><use href="#i-dumbbell"></use></svg></span>Library</button>
-    <button class="tab" id="tab1" role="tab" aria-selected="false" aria-controls="planview" data-view="plan"><span class="ti"><svg class="ic"><use href="#i-calendar"></use></svg></span>Plan</button>
-    <button class="tab" id="tab2" role="tab" aria-selected="false" aria-controls="progressview" data-view="progress"><span class="ti"><svg class="ic"><use href="#i-trend"></use></svg></span>Progress</button>
-    <button class="tab" id="tab3" role="tab" aria-selected="false" aria-controls="pumpyview" data-view="pumpy"><span class="ti" id="pumpytab"></span>Pumpy</button>
+    <button class="tab active" id="tab0" role="tab" aria-selected="true" aria-controls="libpage" data-view="library"><span class="ti"><svg class="ic"><use href="#i-dumbbell"></use></svg></span><span class="tl">Library</span></button>
+    <button class="tab" id="tab1" role="tab" aria-selected="false" aria-controls="planview" data-view="plan"><span class="ti"><svg class="ic"><use href="#i-calendar"></use></svg></span><span class="tl">Plan</span></button>
+    <button class="tab" id="tab2" role="tab" aria-selected="false" aria-controls="progressview" data-view="progress"><span class="ti"><svg class="ic"><use href="#i-trend"></use></svg></span><span class="tl">Progress</span></button>
+    <button class="tab" id="tab3" role="tab" aria-selected="false" aria-controls="pumpyview" data-view="pumpy"><span class="ti" id="pumpytab"></span><span class="tl">Pumpy</span></button>
   </nav>
 </div>
 
