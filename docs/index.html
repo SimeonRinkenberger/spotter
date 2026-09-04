@@ -565,13 +565,62 @@
   .sect h3 { font-family: var(--display); font-size: 12px; font-weight: 700; letter-spacing: .11em;
     text-transform: uppercase; color: var(--muted); margin: 0 0 12px; }
   .blockmeta { font-size: 11.5px; color: var(--muted); margin-bottom: 11px; font-weight: 600; }
-  .exrow { display: flex; align-items: flex-start; gap: 11px; padding: 11px 0;
-    border-top: 1px solid var(--line); }
-  .exrow:first-of-type { border-top: none; }
+  /* ---------- an exercise row, and the drawer behind it ----------
+     Three buttons on every line is three things to sort past before the eye can
+     read the exercise. They are behind a leftward swipe now, where Mail and Notes
+     keep theirs: .exrow is the window, .exmain the content that slides, .exacts
+     the drawer waiting under it. The row bleeds back through .sect's 16px padding
+     so the buttons meet the card's edge — a native inset-grouped cell leaves no
+     gutter between an action and the side of the screen. No touch-action, for the
+     same reason the pager declares none: WebKit must wait for app.ts to say which
+     axis this was. */
+  .exrow { position: relative; overflow: hidden; margin: 0 -16px; --exw: 64px; }
+  /* The hairline used to be the row's own border and would now travel with the
+     content. Drawn instead, inset where it has always been, and left behind. */
+  .exrow::before { content: ""; position: absolute; left: 16px; right: 16px; top: 0;
+    height: 1px; background: var(--line); }
+  .exrow:first-of-type::before { display: none; }
+  /* Padding, not margin, so the row itself reaches the card edge while the words
+     stay exactly where they were. 44px is the floor a one-line row would miss. */
+  .exmain { display: flex; align-items: flex-start; gap: 11px; padding: 11px 16px;
+    min-height: 44px; position: relative; -webkit-user-select: none; user-select: none;
+    transition: transform var(--t-3) var(--e-spring), background var(--t-1) var(--e-out); }
+  /* iOS lights a row the moment it is touched, not when the finger leaves. The
+     class comes off again the instant the travel says this was a scroll. */
+  .exrow.press .exmain { background: var(--sand); }
   .exname { flex: 1; min-width: 0; font-size: 14.5px; line-height: 1.35; font-weight: 550; }
   .exnote { font-size: 12px; color: var(--muted); margin-top: 3px; line-height: 1.45; font-weight: 400; }
   .exdose { flex: 0 0 auto; font-family: var(--display); font-size: 13.5px; font-weight: 700;
     color: var(--ember-ink); font-variant-numeric: tabular-nums; padding-top: 1px; }
+  .exacts { position: absolute; top: 0; right: 0; bottom: 0; display: flex;
+    transition: transform var(--t-3) var(--e-spring); transform: translateX(100%); }
+  /* A mark over a word: what iOS 26 shows by default, and the word is also what a
+     screen reader would otherwise have to guess. Closed, each button is folded
+     onto the one to its right — they unfold as the content slides away. */
+  .exact { width: var(--exw); border: 0; padding: 0; background: var(--sand); color: var(--ink-2);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+    font-size: 10.5px; font-weight: 650; line-height: 1;
+    transition: transform var(--t-3) var(--e-spring);
+    transform: translateX(calc(var(--i, 0) * var(--exw) * -1)); }
+  .exact:nth-child(2) { --i: 1; }
+  .exact:nth-child(3) { --i: 2; }
+  .exact .ic { width: 16px; height: 16px; }
+  /* Two sand rectangles side by side read as one; a hairline says they are two. */
+  .exact + .exact:not(.prim) { border-left: 1px solid var(--line); }
+  /* One accent, spent on the thing the row is most often opened for. */
+  .exact.prim { background: var(--ember); color: var(--on-ember); }
+  .exact:active { filter: brightness(.93); }
+  .exrow.open .exmain { transform: translateX(calc(var(--exw) * -3)); }
+  .exrow.open .exacts, .exrow.open .exact { transform: none; }
+  /* While a finger is on it the row is not animating, it is being moved. */
+  .exrow.drag .exmain, .exrow.drag .exacts, .exrow.drag .exact { transition: none; }
+  /* A mouse has no swipe. Hover lays the drawer over the end of the row rather
+     than pushing the row aside, which is what a list on a desktop does. */
+  @media (hover: hover) {
+    .exrow:hover .exacts, .exrow:hover .exact { transform: none; }
+  }
+  /* What the first-run peek says instead of performing it, when motion is off. */
+  .exhint { font-size: 11.5px; font-weight: 600; color: var(--muted); margin: 10px 0 2px; }
   .exhelp { flex: 0 0 auto; width: 26px; height: 26px; border-radius: 999px; border: 1px solid var(--line-2);
     background: none; color: var(--muted); font-size: 12px; line-height: 1; display: flex;
     align-items: center; justify-content: center; }
@@ -1507,6 +1556,10 @@
     /* The staggered summary is :nth-child, which outranks the rule above it. */
     .sumfigs .setpill:nth-child(n) { animation-delay: 0ms; }
     .sheetbody.snap { transition: none; }
+    /* The row still has to answer the finger, so the travel stays — it is the
+       gesture itself. What goes is the spring and most of the time it takes. */
+    .exmain, .exacts, .exact {
+      transition-duration: var(--t-1); transition-timing-function: var(--e-soft); }
     .sheetbody, .sheet.closing .sheetbody, .setpill.just, .setpill.just.pr,
     .empty .big, .thumbwrap.pending .noimg, .thumbwrap.failed .noimg,
     .thumbwrap.loading::after, .thumbwrap.pending::after { animation: none; }
@@ -3664,6 +3717,7 @@
       if (bm) sect.appendChild(el("div", "blockmeta", bm));
       (b.exercises || []).forEach(function (ex, ei) {
         var row = el("div", "exrow");
+        var main = el("div", "exmain");
         var name = el("div", "exname");
         name.appendChild(document.createTextNode(ex.name));
         if (ex.notes) name.appendChild(el("div", "exnote", ex.notes));
@@ -3673,22 +3727,31 @@
         else if (ex.edited_by_user) name.appendChild(el("div", "exmine", "Edited by you"));
         // The source line used to be a hover title here — invisible on a phone, and
         // silent about where it came from. The Explain sheet says all of it now.
-        row.appendChild(name);
+        main.appendChild(name);
         var dose = doseText(ex);
-        if (dose) row.appendChild(el("div", "exdose", dose));
-        var fix = icon(el("button", "exhelp"), "pencil");
-        fix.setAttribute("aria-label", "Fix this exercise");
-        fix.onclick = function (e) { e.stopPropagation(); openExEdit(w, bi, ei, ex); };
-        row.appendChild(fix);
-        var sw = icon(el("button", "exhelp"), "swap");
-        sw.setAttribute("aria-label", "Swap or modify this exercise");
-        sw.onclick = function (e) { e.stopPropagation(); openSwap(ex.name, w.title); };
-        row.appendChild(sw);
-        var help = el("button", "exhelp", "?");
-        help.setAttribute("aria-label", "How to do this exercise");
-        help.onclick = function (e) { e.stopPropagation(); explain(ex, w); };
-        row.appendChild(help);
+        if (dose) main.appendChild(el("div", "exdose", dose));
+        row.appendChild(main);
+        // The same three buttons, now in the drawer behind the row. Trailing
+        // actions are laid out edge-first on iOS — the last one written is the one
+        // nearest the side of the screen — so the one this row is mostly opened
+        // for is the one a thumb reaches without having to aim.
+        var acts = el("div", "exacts");
+        acts.appendChild(exAct(row, "pencil", "Edit", "Fix this exercise", false,
+          function () { openExEdit(w, bi, ei, ex); }));
+        acts.appendChild(exAct(row, "swap", "Swap", "Swap or modify this exercise", false,
+          function () { openSwap(ex.name, w.title); }));
+        acts.appendChild(exAct(row, "help", "How to", "How to do this exercise", true,
+          function () { explain(ex, w); }));
+        row.appendChild(acts);
+        // A closed row answers a tap with the thing it is most often asked for. An
+        // open one answers by putting itself away, which is what iOS does and what
+        // stops a mis-aimed tap firing a sheet the user was reaching past.
+        main.onclick = function () {
+          if (row.classList.contains("open")) { closeExRow(row); return; }
+          explain(ex, w);
+        };
         sect.appendChild(row);
+        teachExSwipe(sect, row);
       });
       var addex = el("button", "addex", "+ Add an exercise Spotter missed");
       addex.onclick = function () { openExAdd(w, bi); };
@@ -3934,6 +3997,250 @@
       if (r.error) toast("That change did not save. Your copy is unchanged.");
       return !r.error;
     });
+  }
+
+  // ---------- row actions ----------
+  //
+  // Three buttons hanging off every exercise was the whole card shouting at once,
+  // and the owner said so. They are behind a leftward swipe now, the way a mail row
+  // hides its actions, and the gesture is built the way the pager and the sheets in
+  // this file are built: pointer events, one axis chosen when the finger clears the
+  // slop and never revisited, and a non-passive touchmove that takes the touch off
+  // the overlay's scroller only while a row is genuinely being dragged. Without
+  // that last part WebKit decides a merely diagonal drag was a scroll and
+  // pointercancels us out of the middle of it.
+  //
+  // What is deliberately missing is UIKit's full swipe. performsFirstActionWithFullSwipe
+  // is true by default on a table row, but the action it fires there is Delete —
+  // something you want gone, and gone is easy to undo. Ours opens a sheet, and a
+  // sheet that springs open because a thumb carried too far is a papercut.
+  //
+  // A gesture also cannot be the only door: the HIG says so under Accessibility and
+  // WCAG 2.5.7 makes it a requirement, since a drag is not something every hand can
+  // perform. So a mouse gets the drawer on hover, a keyboard gets it on focus, a
+  // press held still opens it with no travel at all, and the row's own tap still
+  // goes straight to the answer people actually came for.
+
+  var EX_FLING = 300;     // px/s of leftward throw that opens whatever the distance
+  var EX_BAND = 0.55;     // the constant iOS itself resists an overscroll with
+  var EX_HOLD = 480;      // ms of stillness that counts as a press rather than a tap
+  var EX_PEEK = 56;       // px the first row ever shown gives away about itself
+  var exOv = $("detail");
+  var openEx = null;      // the one row anywhere with its drawer showing
+  var exDrag = null;
+  var exQuiet = 0;        // scrolls before this are ours, not the user's
+
+  function exWidth(row) { return row.children[1].offsetWidth || 192; }
+
+  // Content and drawer travel together, and each button also slides out from under
+  // the one to its right so they unfold rather than arriving as a slab. Transform
+  // only: animating three widths on every pointermove is how a list drops frames.
+  function exPaint(row, d) {
+    var acts = row.children[1], n = acts.children.length, w = exWidth(row), i;
+    row.children[0].style.transform = "translateX(" + (-d) + "px)";
+    acts.style.transform = "translateX(" + Math.max(0, w - d) + "px)";
+    for (i = 0; i < n; i++) {
+      acts.children[i].style.transform =
+        "translateX(" + (i * ((d < w ? d : w) / n - w / n)) + "px)";
+    }
+  }
+
+  // Hand the row back to the stylesheet. Everything a drag writes is inline, and
+  // inline outranks the hover rule that gives a desktop the same three buttons.
+  function exBare(row) {
+    var acts = row.children[1], i;
+    row.children[0].style.transform = "";
+    acts.style.transform = "";
+    for (i = 0; i < acts.children.length; i++) acts.children[i].style.transform = "";
+  }
+
+  function closeExRow(row) {
+    if (!row) return;
+    row.classList.remove("drag");
+    row.classList.remove("press");
+    row.classList.remove("open");
+    exBare(row);
+    if (openEx === row) openEx = null;
+  }
+
+  function openExRow(row, quiet) {
+    var was = openEx === row;
+    if (openEx && !was) closeExRow(openEx);
+    row.classList.remove("drag");
+    row.classList.remove("press");
+    exBare(row);
+    row.classList.add("open");
+    openEx = row;
+    // Opening a row can scroll it into view, and the scroll below would read that
+    // as the user moving on and shut the drawer it had just been given.
+    exQuiet = now() + 450;
+    if (!quiet && !was) haptic("tap");
+  }
+
+  // Teach it once, and by showing rather than telling: the first card with
+  // exercises this device opens nudges its first row and lets it spring back. Any
+  // touch cancels the nudge — a hint that fights the finger is worse than no hint.
+  var exTold = false, exPeekT = null, exPeeking = null;
+  try { exTold = localStorage.getItem("spotter_exswipe_told") === "1"; } catch (e) { /* ignore */ }
+
+  function exPeekStop() {
+    clearTimeout(exPeekT);
+    if (exPeeking) { exBare(exPeeking); exPeeking = null; }
+  }
+
+  function teachExSwipe(sect, row) {
+    if (exTold) return;
+    exTold = true;
+    try { localStorage.setItem("spotter_exswipe_told", "1"); } catch (err) { /* ignore */ }
+    // Motion off: say it once, under the block it is about. Apple's instruction is
+    // to replace the travel, not to drop what the travel was there to convey.
+    if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      sect.appendChild(el("div", "exhint", "Swipe an exercise left for more."));
+      return;
+    }
+    // After the card itself has finished arriving, or the nudge lands on a page
+    // that is still sliding up and reads as a glitch.
+    exPeekT = setTimeout(function () {
+      exPeeking = row;
+      exPaint(row, EX_PEEK);
+      exPeekT = setTimeout(exPeekStop, 820);
+    }, 420);
+  }
+
+  exOv.addEventListener("pointerdown", function (e) {
+    // Fingers and pen. A mouse has hover, which is the better answer for a mouse.
+    if (e.pointerType !== "touch" && e.pointerType !== "pen") return;
+    if (exDrag || !e.isPrimary) return;
+    var row = e.target.closest ? e.target.closest(".exrow") : null;
+    if (!row || noDragIn(e.target)) return;
+    // A finger that lands on the drawer is aiming at a button, not at the row.
+    if (row.children[1].contains(e.target)) return;
+    // The mirror of the pager's left-edge guard: inside a browser tab the right
+    // edge is Safari's forward swipe, and taking it strands the user on the page.
+    if (!standalone() && e.clientX > window.innerWidth - 24) return;
+    exPeekStop();
+    exDrag = { id: e.pointerId, x: e.clientX, y: e.clientY, row: row, d: 0,
+      lock: false, held: false, base: row.classList.contains("open") ? exWidth(row) : 0,
+      s: [{ t: now(), x: e.clientX }] };
+    exDrag.hold = setTimeout(function () {
+      if (!exDrag || exDrag.row !== row || exDrag.lock) return;
+      exDrag.held = true;
+      openExRow(row);
+    }, EX_HOLD);
+    row.classList.add("press");
+  });
+
+  exOv.addEventListener("pointermove", function (e) {
+    if (!exDrag || e.pointerId !== exDrag.id || exDrag.held) return;
+    var dx = e.clientX - exDrag.x, dy = e.clientY - exDrag.y, w, d, o;
+    if (!exDrag.lock) {
+      // Nothing is decided until the finger has actually gone somewhere, in any
+      // direction — the same radial slop the pager uses.
+      if (dx * dx + dy * dy < SLOP * SLOP) return;
+      clearTimeout(exDrag.hold);
+      exDrag.row.classList.remove("press");
+      // 45 degrees, and the tie goes to the scroller: a row lives inside a page
+      // that has to be readable, and a list that steals vertical is unusable.
+      if (Math.abs(dy) > Math.abs(dx)) { exDrag = null; return; }
+      // A closed row has nothing to give a finger going right. There are no
+      // leading actions here, and pretending otherwise would only resist.
+      if (dx > 0 && !exDrag.base) { exDrag = null; return; }
+      exDrag.lock = true;
+      // Re-datum on the lock point so the row does not jump the slop distance.
+      exDrag.x = e.clientX; dx = 0;
+      exDrag.row.classList.add("drag");
+      try { exOv.setPointerCapture(exDrag.id); } catch (err) { /* not fatal */ }
+      // One drawer at a time, decided the moment this one becomes real.
+      if (openEx && openEx !== exDrag.row) closeExRow(openEx);
+    }
+    w = exWidth(exDrag.row);
+    d = exDrag.base - dx;
+    if (d < 0) d = 0;
+    else if (d > w) {
+      // Apple's own rubber band rather than a flat fraction of the overshoot: it
+      // eases towards a stop instead of running on at 55 per cent for ever.
+      o = d - w;
+      d = w + o * w * EX_BAND / (w + EX_BAND * o);
+    }
+    exDrag.d = d;
+    exDrag.s.push({ t: now(), x: e.clientX });
+    while (exDrag.s.length > 2 &&
+      exDrag.s[exDrag.s.length - 1].t - exDrag.s[0].t > VWIN) exDrag.s.shift();
+    exPaint(exDrag.row, d);
+  });
+
+  // Pointer events are dispatched before the touch that caused them, so the axis
+  // is already chosen by the time this runs. Only a locked row prevents anything;
+  // every other touch in the overlay is left to scroll it.
+  exOv.addEventListener("touchmove", function (e) {
+    if (exDrag && exDrag.lock && e.cancelable) e.preventDefault();
+  }, { passive: false });
+
+  function endEx(e, cancelled) {
+    if (!exDrag || (e && e.pointerId !== exDrag.id)) return;
+    var r = exDrag;
+    exDrag = null;
+    clearTimeout(r.hold);
+    r.row.classList.remove("press");
+    // A press that opened the drawer must not also let the click through to the
+    // row underneath, which would open the very sheet the user was reaching past.
+    if (r.held) { swallowClick(); return; }
+    if (!r.lock) return;
+    try { exOv.releasePointerCapture(r.id); } catch (err) { /* already gone */ }
+    swallowClick();
+    var s = r.s, a = s[0], b = s[s.length - 1], dt = (b.t - a.t) / 1000;
+    var v = dt > 0.004 ? (b.x - a.x) / dt : 0;
+    var w = exWidth(r.row), open = r.d > w / 2;
+    // A throw beats the distance, in either direction: where the finger was going
+    // when it left is what the person meant, and half a drawer is only the answer
+    // when they let go of it standing still.
+    if (!cancelled && v < -EX_FLING) open = true;
+    else if (!cancelled && v > EX_FLING) open = false;
+    if (open) openExRow(r.row); else closeExRow(r.row);
+  }
+
+  exOv.addEventListener("pointerup", function (e) { endEx(e, false); });
+  exOv.addEventListener("pointercancel", function (e) { endEx(e, true); });
+
+  // Anywhere else on the page puts it away — the header, another card, the tab bar.
+  // Capture, so the drawer is already gone by the time what was tapped runs.
+  document.addEventListener("pointerdown", function (e) {
+    if (openEx && !openEx.contains(e.target)) closeExRow(openEx);
+  }, true);
+
+  // Scrolling is the other way a native row closes itself. The quiet window keeps
+  // the scroll that brings a focused button into view from shutting the drawer
+  // that focus had just opened.
+  exOv.addEventListener("scroll", function () {
+    if (openEx && now() > exQuiet) closeExRow(openEx);
+  }, { passive: true });
+
+  // The buttons are real buttons behind an overflow: hidden, so Tab reaches them
+  // and the browser then tries to scroll them into view — which on a clipped box
+  // means shifting the row itself and leaving it sitting half open. Open it
+  // properly instead, and put the row's own scroll back to nothing. Focus landing
+  // anywhere else in the card is the close half of the same rule.
+  exOv.addEventListener("focusin", function (e) {
+    var row = e.target.closest ? e.target.closest(".exrow") : null;
+    if (row && row.children[1].contains(e.target)) {
+      openExRow(row, true);
+      row.scrollLeft = 0;
+    } else if (openEx && row !== openEx) closeExRow(openEx);
+  });
+
+  // One button in the drawer: a mark over a word. The word is there because iOS 26
+  // shows one by default and because a screen reader would otherwise be reading an
+  // icon; the aria-label keeps the whole sentence the round buttons used to carry.
+  function exAct(row, mark, word, label, prim, fn) {
+    var b = icon(el("button", prim ? "exact prim" : "exact"), mark);
+    b.appendChild(el("span", null, word));
+    b.setAttribute("aria-label", label);
+    b.onclick = function (e) {
+      e.stopPropagation();
+      closeExRow(row);
+      fn();
+    };
+    return b;
   }
 
   // ---------- correcting an exercise ----------
