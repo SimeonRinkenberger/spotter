@@ -465,7 +465,6 @@ export const STYLE = String.raw`<style>
   .empty b { color: var(--ember-ink); font-weight: 700; }
 
   /* ---------- detail overlay ---------- */
-  /* Hidden, not display:none — see the sheets below. */
   .overlay { position: fixed; left: 0; right: 0; top: var(--vvtop); height: var(--vvh);
     z-index: 50; background-color: var(--paper);
     background-image: var(--grain); overflow-y: auto; -webkit-overflow-scrolling: touch;
@@ -594,13 +593,13 @@ export const STYLE = String.raw`<style>
      workout — logging a set, the exercise list, the clip — was laid out, animated
      and hit-testable underneath an opaque full-screen overlay, so the taps landed
      on nothing. Still under the toast at 90, still over the detail overlay at 50. */
-  /* Hidden between showings, never display:none: display threw the layout away and
-     rebuilt it inside the entrance's own first frame, and a keyframe restarted on
-     an element just back from display:none does not reliably begin at that frame —
-     which is why every opening after the first was the jerky one. Laid out and
-     transitioned instead, as Vaul, Ionic and UIKit's sheet do. The 3px blur went
-     with it: on the element whose opacity animated it made WebKit re-blur, every
-     frame, a backdrop far heavier than at launch. Apple's dimming is plain. */
+  /* Hidden between showings, never display:none — the overlay above too. Display
+     threw the layout away and rebuilt it in the entrance's own first frame, and a
+     keyframe restarted on an element just back from display:none does not reliably
+     begin at that frame: why every opening after the first was the jerky one. Laid
+     out and transitioned instead, as Vaul, Ionic and UIKit's sheet do. The 3px blur
+     went with it: on the element whose opacity animated it made WebKit re-blur,
+     every frame, a backdrop far heavier than at launch. Apple's dim is plain. */
   .sheet { position: fixed; left: 0; right: 0; top: var(--vvtop); height: var(--vvh);
     z-index: 85; background: var(--scrim); display: flex; align-items: flex-end;
     visibility: hidden; pointer-events: none; opacity: 0;
