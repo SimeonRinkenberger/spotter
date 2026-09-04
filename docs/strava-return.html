@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Spotter — Strava</title>
+<link rel="icon" href="icon.png">
+<!--
+  Why this page exists at all.
+
+  Strava's consent screen is on strava.com, a different origin. Installed to the
+  home screen on iOS, Spotter opens a cross-origin link in an in-app browser whose
+  storage is NOT the app's storage — so the app may never load the address Strava
+  redirects to, and anything written here would be written somewhere the app
+  cannot read. This page therefore stores nothing and promises nothing. It says
+  how it went and offers the way back; the app learns the outcome for itself, from
+  ?strava=... when that link is followed, and otherwise by asking the function for
+  its connection status every time it comes back to the front.
+
+  No external script, no fetch, no font download. The only script is the branch
+  between connected and the handful of ways it can fail, and every one of those
+  ends on the same sentence: go back and try again.
+-->
+<style>
+  :root { color-scheme: light dark;
+    --paper: #F5F6F8; --card: #FFFFFF; --ink: #14171A; --ink-2: #58626E;
+    --line: rgba(20,23,26,.09); --ember: #E8551F; --on-ember: #17100C; --good: #178055; }
+  @media (prefers-color-scheme: dark) {
+    :root { --paper: #101214; --card: #191D21; --ink: #EEF2F6; --ink-2: #AFBAC6;
+      --line: rgba(238,242,246,.10); --ember: #FF7A45; --on-ember: #17100C; --good: #3FD096; }
+  }
+  body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    background: var(--paper); color: var(--ink); line-height: 1.6;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  main { width: 100%; max-width: 380px; box-sizing: border-box; text-align: center;
+    padding: 32px 24px calc(32px + env(safe-area-inset-bottom)); }
+  .mark { width: 62px; height: 62px; margin: 0 auto 20px; border-radius: 999px;
+    background: var(--card); border: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: center; }
+  .mark svg { width: 30px; height: 30px; fill: none; stroke: var(--good); stroke-width: 2.4;
+    stroke-linecap: round; stroke-linejoin: round; }
+  .mark.off svg { stroke: var(--ink-2); }
+  h1 { font-size: 24px; letter-spacing: -.025em; margin: 0 0 10px; }
+  p { color: var(--ink-2); font-size: 15px; margin: 0 0 26px; }
+  a.go { display: block; background: var(--ember); color: var(--on-ember); text-decoration: none;
+    font-size: 15.5px; font-weight: 650; padding: 15px; border-radius: 14px; }
+  /* Strava's own rule: attribution is "Powered by Strava" or "Compatible with
+     Strava", and nothing else. No logo here, because there is nothing to link. */
+  .fine { font-size: 12.5px; color: var(--ink-2); margin: 18px 0 0; }
+</style>
+</head>
+<body>
+<main>
+  <div class="mark" id="mark">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+  </div>
+  <h1 id="head">Strava is connected</h1>
+  <p id="say">Close this and go back to Spotter. When you finish a workout, you can send it
+    straight to Strava.</p>
+  <a class="go" id="go" href="./?strava=connected">Back to Spotter</a>
+  <p class="fine">Compatible with Strava</p>
+</main>
+<script>
+  (function () {
+    var WHY = {
+      declined: "You closed Strava's screen before saying yes, so nothing was connected. " +
+        "Everything in Spotter is where you left it.",
+      scope: "Spotter needs permission to add workouts to your Strava account. Try again and " +
+        "leave that box ticked.",
+      capacity: "Strava lets this app connect a limited number of athletes right now. " +
+        "Nothing is wrong with your account.",
+      bad_state: "That link had gone stale. Open Settings in Spotter and tap Connect with " +
+        "Strava again.",
+      not_configured: "Strava is not switched on in this copy of Spotter yet."
+    };
+    var q;
+    try { q = new URLSearchParams(location.search); } catch (e) { return; }
+    if (q.get("strava") === "connected") return;
+    var why = q.get("why") || "";
+    document.getElementById("mark").className = "mark off";
+    document.getElementById("mark").innerHTML =
+      '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
+    document.getElementById("head").textContent = "Strava was not connected";
+    document.getElementById("say").textContent = WHY[why] ||
+      "Strava could not be connected just now. Go back to Spotter and try again in a minute.";
+    // The reason travels back with the person, so the app can say the same thing
+    // in a toast rather than making them remember this screen.
+    document.getElementById("go").href = "./?strava=error" + (why ? "&why=" + encodeURIComponent(why) : "");
+  })();
+</script>
+</body>
+</html>

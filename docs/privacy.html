@@ -120,6 +120,25 @@
     payments themselves for as long as tax and accounting law says it must — that part is not
     Spotter's to delete.</p>
 
+  <h2 id="connections">Connections</h2>
+  <p>Spotter can connect to <a href="https://www.strava.com/legal/privacy" target="_blank" rel="noopener">Strava</a>,
+    if you choose to, so that a workout you have just finished can be sent there as an activity.
+    You connect it yourself in Settings &rarr; Connections, and nothing happens until you do.</p>
+  <p>The connection is <b>one-way</b>. Spotter <b>writes</b> to Strava and never reads from it:
+    it does not see your activities, your friends, your routes, your segments or your profile,
+    and no Strava data is ever given to any of the AI services above. What gets sent, and only
+    when you tap <b>Send to Strava</b> on a session, is the workout's name, when you started it
+    and how long it took, one line per exercise with the sets you logged, your total volume, any
+    personal bests from that session, and a link back to Spotter.</p>
+  <p>When you connect, Strava gives Spotter's server two access keys. They are held on a row
+    attached to your account <b>on the server only</b> — the app in your browser never receives
+    them and cannot read them — together with your Strava athlete number and the identifier of
+    each activity Spotter created, so the same session is never posted twice.
+    <b>Disconnecting deletes both keys and tells Strava to forget Spotter</b>, and so does
+    deleting your account. You can also revoke Spotter yourself at any time from
+    <a href="https://www.strava.com/settings/apps" target="_blank" rel="noopener">your Strava
+    settings</a>.</p>
+
   <h2>Videos you upload</h2>
   <p>If you upload a video yourself — the option under the link box, for creators who say the
     workout out loud instead of writing it down — the file goes straight from your device into
@@ -170,6 +189,8 @@
     <li>your profile, your settings and your personal save key;</li>
     <li>your subscription, if you have one — it is cancelled at Stripe first, and your customer
       record there is deleted with it;</li>
+    <li>your Strava connection, if you made one — Strava is told to forget Spotter and both
+      access keys are deleted;</li>
     <li>the sign-in account itself.</li>
   </ul>
   <p>None of it can be recovered afterwards, so export your data first if you want to keep it.

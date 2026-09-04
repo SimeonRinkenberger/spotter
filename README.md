@@ -789,6 +789,100 @@ buttons under it at all, and the library page is the page it is today. The Terms
 (`docs/terms.html`) and the Payments section of the privacy policy were written in plain
 language and have not been reviewed by a lawyer — do that before charging real money.
 
+## Strava
+
+A finished session can be pushed to Strava as a **manual `WeightTraining` activity** — its name,
+how long it took, and one line per exercise in the description, with the total volume, any bests,
+and a link back to Spotter. It is **write-only**: Spotter never reads an activity, a name, a
+photo or anything else out of Strava, which is both the smallest thing that does the job and the
+cheapest way to stay on the right side of the API agreement (no Strava data in any AI feature, no
+cache beyond seven days, no persistent index, per-user isolation).
+
+It ships **behind configuration and off**. With no Strava secrets set, the function's five
+`/api/strava/*` routes answer `configured: false` or a 503 `not_configured`, the app hides the
+whole Connections group, and `stravaBtn` returns null so no session summary anywhere gains a
+button. That is the state this repo deploys in.
+
+**Why it is a limited beta, and will be for a while.** Every new Strava API application starts at
+an athlete capacity of **1** — the developer's own account, "Single Player Mode". Standard Tier
+developers can self-upgrade to **10** from the API Settings dashboard with no review; past ten
+needs the app submitted for review. And since 1 June 2026 Standard Tier API access requires a
+**paid Strava subscription**. So this is realistically the owner's account today, ten people after
+a dashboard click, and a review beyond that — which is why the copy under the button says so.
+
+### What only the owner can do
+
+1. **Create the API application** at <https://www.strava.com/settings/api>. Authorization Callback
+   Domain must be exactly `mtzevoxxpsktmrbbuxva.supabase.co` — the function's host, not the Pages
+   host. Note the Client ID and Client Secret.
+2. **Hold a paid Strava subscription** (required for Standard Tier API access since June 2026).
+3. **Set the three secrets and redeploy** — nothing works until both:
+   ```
+   supabase secrets set STRAVA_CLIENT_ID=... STRAVA_CLIENT_SECRET=... \
+     STRAVA_STATE_SECRET="$(openssl rand -base64 48)"
+   supabase functions deploy spotter
+   ```
+   `STRAVA_STATE_SECRET` signs the OAuth `state`; it is what stops somebody pasting their own
+   authorization code onto another account's id. Rotating it invalidates states in flight, which
+   is harmless — the person taps Connect again.
+4. **Self-upgrade athlete capacity 1 → 10** in the API Settings dashboard when it is time.
+5. **Replace `docs/strava-connect.svg`** with the official button, verbatim. The file in the repo
+   is a plain orange placeholder carrying no Strava mark. Download
+   <https://www.strava.com/downloads/1.1-Connect-with-Strava-Buttons.zip>, take the orange SVG and
+   save it over `docs/strava-connect.svg`; nothing else changes. Their brand rules make the
+   official button the required entry point to the consent screen and forbid redrawing,
+   recolouring or animating the logo — and the app falls back to a plain labelled button if the
+   file is missing, so the placeholder is safe but not shippable.
+
+### Brand rules baked in
+
+The OAuth entry is the official **Connect with Strava** button at 48 px. The link back is **View
+on Strava** in Strava orange **#FC5200**, bold, which is one of the three treatments their
+guidelines accept. Attribution anywhere is **"Compatible with Strava"** — the return page uses
+exactly that. No Strava logo is used as an icon, animated or recoloured anywhere.
+
+### How it is put together
+
+| Piece | Where |
+| --- | --- |
+| OAuth, refresh, the push, deauthorize | `supabase/functions/spotter/strava.ts` |
+| Routes (`status`, `connect`, `callback`, `push`, `disconnect`) | one import and two lines in `index.ts` |
+| `strava_tokens`, `workout_logs.strava_activity_id` | `supabase/migrations/20260905000000_strava.sql` |
+| Settings › Connections, the return flow, `stravaBtn` | `markup.ts` + the `strava` section of `app.ts` |
+| Where the browser lands after consent | `docs/strava-return.html` |
+| Checks that need no secrets | `deno run --allow-env tools/strava-harness.ts` |
+
+`strava_tokens` has RLS on and **zero policies**, like `video_cache` — only the service role ever
+sees a token, and `revoke all` on top means the client cannot even probe the table. The client is
+told `connected` and an athlete id, and nothing else.
+
+Two details are load-bearing. **Refresh tokens rotate**: Strava returns a new one every time one
+is spent and invalidates the old one immediately, so two isolates refreshing at once is not a
+wasted round trip but a permanently broken connection. The write is therefore a compare-and-set —
+`update … where user_id = ? and refresh_token = <the one we read>` — and zero rows changed means
+somebody else rotated first, so the answer is to re-read and use *theirs*. And **`start_date_local`
+is the phone's wall clock**, sent by the browser, because the server cannot know it; a real UTC
+timestamp files a 6 pm session at 11 pm.
+
+Double posting is stopped by `workout_logs.strava_activity_id`: the push refuses when it is
+already set, and the same migration **revokes UPDATE on `workout_logs` from `anon` and
+`authenticated`**, because Supabase's default grants would otherwise have let a browser write
+that column itself. The app has never updated a log row — it inserts, selects and deletes — so
+nothing else changes; a future column-level `grant update (…)` is how any editing would come back.
+
+### What the person sees
+
+Nothing at all, unless the secrets are set. With them set, Settings gains a **Connections** group
+under Plan: `Strava — Not connected`, the official button, and a line saying it is a limited beta
+and that Spotter only writes. Connecting leaves for strava.com and comes back through
+`docs/strava-return.html`; an installed iOS app may never see that address at all, so the app also
+re-asks its connection status every time it returns to the front. Once connected the row reads
+`Strava — Connected`, the note names the athlete id, and a **Disconnect** control appears that
+arms on the first tap, like every other undoing in the app. A finished session then carries a
+**Send to Strava** button beside Share — disabled and saying `Saving…` until the log row has an
+id — which turns into **View on Strava** in #FC5200 when it lands, on the summary and for ever
+after in History. `capacity`, `disconnected` and `rate_limited` each get their own sentence.
+
 ## Self-hosting
 
 1. Create a Supabase project and `supabase link --project-ref <ref>`.

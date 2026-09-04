@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 193 48" width="193" height="48" role="img" aria-label="Connect with Strava">
+<!--
+  PLACEHOLDER — replace this file, verbatim, with the official "Connect with
+  Strava" button before Strava is switched on for anybody.
+
+  Strava's brand guidelines make the official button the required entry point to
+  the consent screen and forbid redrawing, recolouring or animating their logo.
+  This file therefore carries NO Strava mark: it is a plain orange (#FC5200)
+  control at the official 48px height, so the layout, the id and the app's
+  fallback can all be built and tested without an unauthorised copy of somebody
+  else's logo shipping in the repo.
+
+  To finish it: download https://www.strava.com/downloads/1.1-Connect-with-Strava-Buttons.zip
+  (orange and white, EPS/SVG/PNG), take the orange SVG, and save it over this file
+  as docs/strava-connect.svg. Nothing else changes — markup.ts already points at
+  this name and sizes it to 48px tall. See the "Strava" section of the README.
+-->
+<rect width="193" height="48" rx="4" fill="#FC5200"/>
+<text x="96.5" y="30" text-anchor="middle" fill="#FFFFFF"
+  font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+  font-size="15" font-weight="600">Connect with Strava</text>
+</svg>
