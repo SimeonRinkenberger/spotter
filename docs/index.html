@@ -8007,12 +8007,12 @@
     // A second window onto these same rows; redrawn here so the two agree.
     if ($("daysheet").classList.contains("open")) renderDay();
     void planBody.offsetWidth;
+    // A swipe said which way time went, so the week arrives from that side. A
+    // tap on the segmented control did not, and gets the crossfade it always had.
     if (planSlide) {
-      // A swipe said which way time went, so the week arrives from that side.
       planBody.style.setProperty("--pin", (planSlide > 0 ? 26 : -26) + "px");
       planSlide = 0;
       planBody.classList.add("planin");
-    // A crossfade, not an arrival: the bar above it did not move.
     } else if (planSwap) { planSwap = false; planBody.classList.add("planswap"); }
     else viewIn(planBody);
   }
