@@ -57,6 +57,16 @@ export const PRICE_LOOKUP_KEYS = [
  */
 export const FOUNDING_COUPON_ID = "SPOTTER_FOUNDING_YEAR";
 
+/**
+ * The product tax code Managed Payments insists on: Software as a service,
+ * personal use. The setup script writes it when it creates a product; this is
+ * the copy the function uses to repair a product that lost it (an edit in the
+ * Dashboard, a product made by hand) rather than refuse every checkout until
+ * somebody re-runs the script. Stripe Tax reads the same field if it is ever
+ * switched on instead.
+ */
+export const PRODUCT_TAX_CODE = "txcd_10103000";
+
 /** Statuses that entitle. Kept in step with the migration's trigger, by hand and on purpose. */
 const ENTITLING = new Set(["trialing", "active", "past_due"]);
 
@@ -548,6 +558,7 @@ export async function createCheckout(
   // otherwise Stripe would reject the session, the retry below would fire, and
   // the person would wait for two round trips to reach the same page.
   const productId = typeof price.product === "string" ? price.product : price.product.id;
+  await ensureTaxCode(price);
   const appliesTo = founding?.applies_to?.products ?? null;
   const coupon = interval === "year" && founding
       && (!appliesTo || appliesTo.includes(productId))
@@ -609,6 +620,32 @@ export async function createCheckout(
   console.log("billing: checkout", userId, key, trialDays ? `trial ${trialDays}d` : "no trial",
     coupon ? `coupon ${coupon}` : "no coupon");
   return session.url;
+}
+
+/**
+ * Make sure the product behind a price carries a tax code before Checkout is
+ * asked to sell it. Managed Payments refuses the session otherwise, and the
+ * first real checkout on this account failed exactly that way. Once per
+ * product per isolate: the catalog is expanded with its products, so this is
+ * a field read on the happy path and a single update on the unhappy one.
+ */
+const taxCodeSeen = new Set<string>();
+async function ensureTaxCode(price: Stripe.Price): Promise<void> {
+  const product = price.product;
+  if (typeof product !== "object" || !product || ("deleted" in product && product.deleted)) return;
+  const p = product as Stripe.Product;
+  if (taxCodeSeen.has(p.id)) return;
+  if (p.tax_code) { taxCodeSeen.add(p.id); return; }
+  try {
+    await stripeClient().products.update(p.id, { tax_code: PRODUCT_TAX_CODE });
+    p.tax_code = PRODUCT_TAX_CODE;
+    taxCodeSeen.add(p.id);
+    console.log("billing: set tax code", PRODUCT_TAX_CODE, "on", p.id, p.name);
+  } catch (e) {
+    // Not fatal here: the session call below will say so in Stripe's own words
+    // if the product really cannot be sold, and that error is the one to log.
+    console.error("billing: could not set the product tax code on", p.id, e);
+  }
 }
 
 // ---------- portal ----------
