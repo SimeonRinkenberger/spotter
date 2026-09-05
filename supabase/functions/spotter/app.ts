@@ -5822,6 +5822,10 @@ export const APP = String.raw`
     top.appendChild(barPrev);
     top.appendChild(barTitle);
     top.appendChild(barNext);
+    // The one word that keeps the pager off this band, so the drag below can
+    // have it. Everything else about the pager is left alone.
+    top.setAttribute("data-noswipe", "");
+    wireWeekBar(top);
     planBar.appendChild(top);
 
     var row = el("div", "planctl");
@@ -5871,6 +5875,113 @@ export const APP = String.raw`
     }
     rememberPlan();
     loadPlan();
+  }
+
+  // ---------- plan · the bar is the control ----------
+  //
+  // Material lets a tab strip and the content under it each answer a sideways
+  // drag and mean different things by it. Here the content is the app's four
+  // tabs, so data-noswipe hands every drag starting on this band to the code
+  // below and the pager never sees one; a drag on the days still pages. The
+  // arrows stay: Apple asks a gesture to supplement a control, not replace it.
+  //
+  // Nothing is fetched for the week arriving, so the body leans the way the
+  // finger goes rather than pretending to be two weeks side by side, and the
+  // title follows a fifth of that. On release the lean carries out and the week
+  // that lands slides in from the far side. Discipline and constants are the
+  // pager's: slop before an axis, one verdict, the touch cancelled only while we
+  // hold it, a fling or two fifths of the bar to commit.
+  var WB_LEAD = 64, planSlide = 0;
+
+  function wireWeekBar(bar) {
+    var wd = null;
+
+    function rest(keepBody) {
+      bar.classList.remove("wbdrag");
+      barTitle.style.transform = "";
+      if (keepBody) return;
+      // Timing back on before the offset goes, so it springs home rather than snaps.
+      planBody.classList.add("pbmove");
+      planBody.style.transform = "";
+      planBody.style.opacity = "";
+    }
+
+    function stop(e, cancelled) {
+      if (!wd || (e && e.pointerId !== wd.id)) return;
+      var d = wd;
+      wd = null;
+      if (!d.lock) return;
+      try { bar.releasePointerCapture(d.id); } catch (err) { /* already gone */ }
+      // One click follows the finger up, and it belongs to whichever arrow the
+      // drag started on.
+      swallowClick();
+      var s = d.s, a = s[0], b = s[s.length - 1], dt = (b.t - a.t) / 1000;
+      var v = dt > 0.004 ? (b.x - a.x) / dt : 0;
+      var far = Math.abs(d.dx) > bar.offsetWidth * PART;
+      // Left is forwards, the way a calendar reads.
+      var n = cancelled ? 0
+        : (v < -FLING || (far && d.dx < 0)) ? 1
+        : (v > FLING || (far && d.dx > 0)) ? -1 : 0;
+      rest(!!n);
+      if (!n) return;
+      // The title belongs to the finger, not to the fetch — the rule the
+      // segmented control already follows when it paints before it loads.
+      planSlide = n;
+      if (!d.calm) {
+        planBody.classList.add("pbmove");
+        planBody.style.transform = "translateX(" + (n > 0 ? -WB_LEAD : WB_LEAD) + "px)";
+        planBody.style.opacity = "0";
+      }
+      stepPlan(n);
+      paintPlanBar();
+      haptic("tap");
+    }
+
+    bar.addEventListener("pointerdown", function (e) {
+      if (e.pointerType !== "touch" && e.pointerType !== "pen") return;
+      if (wd || !e.isPrimary || overlayShowing()) return;
+      // Safari's back gesture owns the very edge inside a browser tab.
+      if (!standalone() && e.clientX < 24) return;
+      wd = { id: e.pointerId, x: e.clientX, y: e.clientY, dx: 0, lock: false,
+        calm: lessMotion(), s: [{ t: now(), x: e.clientX }] };
+    });
+
+    bar.addEventListener("pointermove", function (e) {
+      if (!wd || e.pointerId !== wd.id) return;
+      var dx = e.clientX - wd.x, dy = e.clientY - wd.y;
+      if (!wd.lock) {
+        if (dx * dx + dy * dy < SLOP * SLOP) return;
+        // Forty-five degrees and no wider. The pager leans to 65 because a page
+        // that will not turn is the worse fault there; this band is 44px tall and
+        // sits where people start a scroll, so a drag that leans down is theirs.
+        if (Math.abs(dy) > Math.abs(dx)) { wd = null; return; }
+        wd.lock = true;
+        // Re-datum on the lock point so the week does not jump the slop.
+        wd.x = e.clientX;
+        dx = 0;
+        bar.classList.add("wbdrag");
+        planBody.classList.remove("pbmove");
+        try { bar.setPointerCapture(wd.id); } catch (err) { /* not fatal */ }
+      }
+      wd.dx = dx;
+      wd.s.push({ t: now(), x: e.clientX });
+      while (wd.s.length > 2 && wd.s[wd.s.length - 1].t - wd.s[0].t > VWIN) wd.s.shift();
+      if (wd.calm) return;
+      var lead = clamp(dx / 2, -WB_LEAD, WB_LEAD);
+      planBody.style.transform = "translateX(" + lead + "px)";
+      planBody.style.opacity = String(1 - Math.abs(lead) / 256);
+      barTitle.style.transform = "translateX(" + (lead * 0.18) + "px)";
+    });
+
+    // The page under this band scrolls, and WebKit settles that on the touch, not
+    // on the pointer event before it: cancelling the touch while we hold the axis
+    // is the whole reason the bar can declare no touch-action, as the pager does.
+    bar.addEventListener("touchmove", function (e) {
+      if (wd && wd.lock && e.cancelable) e.preventDefault();
+    }, { passive: false });
+
+    bar.addEventListener("pointerup", function (e) { stop(e, false); });
+    bar.addEventListener("pointercancel", function (e) { stop(e, true); });
   }
 
   function setPlanMode(m) {
@@ -5924,15 +6035,25 @@ export const APP = String.raw`
     }
     paintPlanBar();
     planBody.innerHTML = "";
-    planBody.classList.remove("planswap");
+    // Whatever a swipe left on it, taken back without animating the way back:
+    // the entrance below is the move, and a transition under it would fight it.
+    planBody.classList.remove("planswap", "planin", "pbmove");
+    planBody.style.transform = "";
+    planBody.style.opacity = "";
     if (planMode === "month") renderMonth(planBody); else renderWeek(planBody);
     // Under the plan, not in the bar: it is what you do once you have looked.
     planBody.appendChild(pumpyProgramBtn(el("button", "planbtn wide"),
       planMode === "month" ? weekInMonth(monthStart) : state.weekStart));
     // A second window onto these same rows; redrawn here so the two agree.
     if ($("daysheet").classList.contains("open")) renderDay();
-    // A crossfade, not an arrival: the bar above it did not move.
-    if (planSwap) { planSwap = false; void planBody.offsetWidth; planBody.classList.add("planswap"); }
+    void planBody.offsetWidth;
+    // A swipe said which way time went, so the week arrives from that side. A
+    // tap on the segmented control did not, and gets the crossfade it always had.
+    if (planSlide) {
+      planBody.style.setProperty("--pin", (planSlide > 0 ? 26 : -26) + "px");
+      planSlide = 0;
+      planBody.classList.add("planin");
+    } else if (planSwap) { planSwap = false; planBody.classList.add("planswap"); }
     else viewIn(planBody);
   }
 
@@ -6160,86 +6281,127 @@ export const APP = String.raw`
     return out;
   }
 
+  // The nodes of this sheet, kept. A tap in here only changes what the buttons
+  // say and which are lit, and rebuilding all of them to answer that threw away
+  // the button under the thumb — harmless once the tap had landed, not harmless
+  // at all when the fetch below did the rebuilding a third of a second after the
+  // sheet opened, which is exactly when the first tap is in the air.
+  var copyWkChips = null, copySumWk = null, copySumN = null, copyRowEls = null, copyRepEls = null;
+
   function openCopy() {
     copySrc = planMode === "month" ? weekInMonth(monthStart) : state.weekStart;
     copyDest = addDays(copySrc, 7);
     copyReps = 1;
     copyRows = null;
-    renderCopy();
+    buildCopy();
     openSheet("copysheet");
     // The counts are the point of the list, so they are fetched, not guessed.
     var span = { from: copySrc, to: addDays(copySrc, (COPY_SPAN + 1) * 7 - 1) };
     sb.from("plan").select("*").gte("day", ymd(span.from)).lte("day", ymd(span.to))
       .then(function (r) {
         copyRows = r.data || [];
-        if ($("copysheet").classList.contains("open")) renderCopy();
+        if ($("copysheet").classList.contains("open")) paintCopy();
       });
   }
 
   function copyPlural(n) { return n + (n === 1 ? " week" : " weeks"); }
 
-  function renderCopy() {
+  // Built once per opening. The one thing that can change shape while the sheet
+  // is up is which week is the source, and that only moves the labels.
+  function buildCopy() {
     var head = $("copyhead");
     head.innerHTML = "";
+    copyWkChips = null;
     // In month view no week is "the" week yet, so the sheet asks which — a chip
     // per week the month touches.
     if (planMode === "month") {
       var wks = el("div", "copywks");
+      copyWkChips = [];
       monthWeeks().forEach(function (w) {
-        var c = el("button", "chip" + (ymd(w) === ymd(copySrc) ? " active" : ""), shortDate(w));
-        c.onclick = function () {
-          copySrc = w;
-          copyDest = addDays(w, 7);
-          renderCopy();
-        };
+        var c = el("button", "chip", shortDate(w));
+        c.onclick = function () { copySrc = w; copyDest = addDays(w, 7); paintCopy(); };
+        copyWkChips.push({ w: w, node: c });
         wks.appendChild(c);
       });
       head.appendChild(wks);
     }
-    var srcRows = copyRows ? weekRows(copyRows, copySrc) : weekRows(state.plan, copySrc);
     var sum = el("div", "copysum");
-    sum.appendChild(el("b", null, weekLabel(copySrc)));
-    sum.appendChild(document.createTextNode(srcRows.length
-      ? " · " + srcRows.length + (srcRows.length === 1 ? " workout" : " workouts")
-      : " · nothing planned"));
+    copySumWk = el("b");
+    copySumN = document.createTextNode("");
+    sum.appendChild(copySumWk);
+    sum.appendChild(copySumN);
     head.appendChild(sum);
 
     var list = $("copyweeks");
     list.innerHTML = "";
+    copyRowEls = [];
     for (var i = 1; i <= COPY_WEEKS; i++) {
       (function (i) {
-        var w = addDays(copySrc, i * 7);
-        var n = copyRows ? weekRows(copyRows, w).length : -1;
-        var on = ymd(w) >= ymd(copyDest) &&
-          ymd(w) <= ymd(addDays(copyDest, (copyReps - 1) * 7));
-        var b = el("button", "copyweek" + (on ? " on" : ""));
-        b.appendChild(el("b", null, weekLabel(w)));
-        // Blank until the fetch lands, rather than a zero that might be a lie.
-        b.appendChild(el("span", "n", n < 0 ? "" : (n ? n + " planned" : "empty")));
-        b.setAttribute("aria-pressed", on ? "true" : "false");
-        b.onclick = function () { copyDest = w; renderCopy(); };
+        var b = el("button", "copyweek"), row = { i: i, node: b, lab: el("b"), n: el("span", "n") };
+        b.appendChild(row.lab);
+        b.appendChild(row.n);
+        // Read off copySrc at tap time, not closed over: the source week can
+        // move under these rows and the row is still the same row.
+        b.onclick = function () { copyDest = addDays(copySrc, i * 7); paintCopy(); };
+        copyRowEls.push(row);
         list.appendChild(b);
       })(i);
     }
 
     var chips = $("copyreps");
     chips.innerHTML = "";
+    copyRepEls = [];
     REPS.forEach(function (n) {
-      var c = el("button", "chip" + (n === copyReps ? " active" : ""), String(n));
+      var c = el("button", "chip", String(n));
       c.setAttribute("aria-label", copyPlural(n));
-      c.onclick = function () { copyReps = n; renderCopy(); };
+      c.onclick = function () { copyReps = n; paintCopy(); };
+      copyRepEls.push({ n: n, node: c });
       chips.appendChild(c);
     });
+
+    $("copygo").onclick = function () { doCopy(); };
+    $("copyclear").onclick = function () { clearWeek(); };
+    paintCopy();
+  }
+
+  // One selectedness said twice: the class the eye reads and the state a screen
+  // reader reads, which the rebuilt version only ever said for the week rows.
+  function copyLit(node, cls, on) {
+    node.classList.toggle(cls, on);
+    node.setAttribute("aria-pressed", on ? "true" : "false");
+  }
+
+  function paintCopy() {
+    var i, w, n, on;
+    for (i = 0; copyWkChips && i < copyWkChips.length; i++) {
+      copyLit(copyWkChips[i].node, "active", ymd(copyWkChips[i].w) === ymd(copySrc));
+    }
+    var srcRows = copyRows ? weekRows(copyRows, copySrc) : weekRows(state.plan, copySrc);
+    copySumWk.textContent = weekLabel(copySrc);
+    copySumN.nodeValue = srcRows.length
+      ? " · " + srcRows.length + (srcRows.length === 1 ? " workout" : " workouts")
+      : " · nothing planned";
+
+    for (i = 0; i < copyRowEls.length; i++) {
+      w = addDays(copySrc, copyRowEls[i].i * 7);
+      n = copyRows ? weekRows(copyRows, w).length : -1;
+      copyRowEls[i].lab.textContent = weekLabel(w);
+      // Blank until the fetch lands, rather than a zero that might be a lie.
+      copyRowEls[i].n.textContent = n < 0 ? "" : (n ? n + " planned" : "empty");
+      on = ymd(w) >= ymd(copyDest) && ymd(w) <= ymd(addDays(copyDest, (copyReps - 1) * 7));
+      copyLit(copyRowEls[i].node, "on", on);
+    }
+    for (i = 0; i < copyRepEls.length; i++) {
+      copyLit(copyRepEls[i].node, "active", copyRepEls[i].n === copyReps);
+    }
 
     var go = $("copygo");
     go.textContent = "Copy to " + copyPlural(copyReps);
     go.disabled = !srcRows.length;
-    go.onclick = function () { doCopy(); };
     pumpyProgramBtn($("copypumpy"), copySrc);
     var clear = $("copyclear");
     clear.textContent = "Clear " + weekLabel(copySrc);
     clear.disabled = !srcRows.length;
-    clear.onclick = function () { clearWeek(); };
   }
 
   // One insert and one undo for the batch: Apple asks that a set of related
@@ -7866,7 +8028,12 @@ export const APP = String.raw`
   // list inside a sheet still scrolls; 1:1 from there, resisting upwards rather
   // than travelling; a flick or a third of its height sends it away through
   // closeSheet, which is what hands the history entry back.
-  var SH_FLING = 350, SH_PART = 0.35;
+  // A thumb drifts while it presses, and eight pixels of drift was enough to
+  // take the drag off a button and have the release swallow that button's click:
+  // one lost tap per drift, the other half of the copy sheet's freeze. So a
+  // control asks 24px before the sheet believes the finger meant to throw it
+  // away — still an easy flick, no longer something a press does by accident.
+  var SH_FLING = 350, SH_PART = 0.35, SH_TAP = 24;
 
   function wireSheet(id) {
     var sheet = $(id), body = sheet.querySelector(".sheetbody"), sd = null;
@@ -7901,15 +8068,17 @@ export const APP = String.raw`
       // Asked of the finger's position rather than what it landed on, because the
       // gaps between rows are the sheet body itself and a drag there is a scroll.
       if (body.scrollTop > 0 && e.clientY - body.getBoundingClientRect().top > 44) return;
-      sd = { id: e.pointerId, x: e.clientX, y: e.clientY, lock: false, dy: 0, s: [] };
+      var ctl = e.target.closest && e.target.closest("button, a, label, [role=button]");
+      sd = { id: e.pointerId, x: e.clientX, y: e.clientY, lock: false, dy: 0, s: [],
+        slop: ctl ? SH_TAP : SLOP };
     });
 
     body.addEventListener("pointermove", function (e) {
       if (!sd || e.pointerId !== sd.id) return;
       var dy = e.clientY - sd.y, dx = e.clientX - sd.x;
       if (!sd.lock) {
-        if (Math.abs(dx) > SLOP && Math.abs(dx) > Math.abs(dy)) { sd = null; return; }
-        if (Math.abs(dy) <= SLOP) return;
+        if (Math.abs(dx) > sd.slop && Math.abs(dx) > Math.abs(dy)) { sd = null; return; }
+        if (Math.abs(dy) <= sd.slop) return;
         // A finger moving up is asking the list to come up. The drag used to
         // claim that too, and the touchmove below then cancelled the scroll it
         // was asking for — which is why Settings, a long sheet that opens at its

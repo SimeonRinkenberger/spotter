@@ -1186,6 +1186,16 @@ export const STYLE = String.raw`<style>
   /* A crossfade and nothing more: the bar above it did not move. */
   .planswap { animation: planswap var(--t-2) var(--e-out); }
   @keyframes planswap { from { opacity: 0; } }
+  /* A swipe on the bar leans the body the way the finger goes and then sends it
+     out that way, so the week arriving comes in from the far side — the crossfade
+     above cannot say which direction time went. Transform and opacity only, and
+     .pbmove is timing: on for the release, off while a finger is holding it, so
+     tracking is 1:1 and the let-go is the only thing that eases. */
+  .planbody.pbmove { transition: transform var(--t-2) var(--e-out), opacity var(--t-2) var(--e-out); }
+  .weekbar b { transition: transform var(--t-2) var(--e-spring); }
+  .weekbar.wbdrag b { transition: none; }
+  .planin { animation: planin var(--t-3) var(--e-out); }
+  @keyframes planin { from { opacity: 0; transform: translateX(var(--pin, 26px)); } }
 
   /* ---------- plan / the month ----------
      iOS Calendar's compact month: a number, a couple of marks, and the count of
@@ -1246,6 +1256,12 @@ export const STYLE = String.raw`<style>
   .copychips .chip { min-width: 44px; justify-content: center;
     padding: 9px 11px; font-variant-numeric: tabular-nums; }
   .copywks .chip, .copychips .chip { min-height: 44px; }
+  /* iOS has ignored user-scalable=no since iOS 10, so a quick second tap on one
+     of these can still be taken for a double-tap zoom and never reach the
+     button. manipulation is the one word that says tapped, not zoomed, and it
+     stays scoped to this sheet: the pager's axis lock needs the rest of the page
+     to keep declaring nothing. */
+  #copysheet button { touch-action: manipulation; }
   .planbtn.wide { width: 100%; min-height: 44px; margin-top: 11px; font-size: 13.5px; }
   /* Already 44, and stacked between two controls whose hit areas it would eat. */
   .planbtn.wide::after { display: none; }
@@ -1257,6 +1273,11 @@ export const STYLE = String.raw`<style>
     .segpill { transition: none; }
     .planbtn:active, .segbtn, .mcell, .copyweek { transition: none; }
     .planswap { animation: none; }
+    /* The week still changes and still says so, with the crossfade this section
+       already uses rather than a slide. The drag itself moves nothing: app.ts
+       asks lessMotion() before it paints a lean. */
+    .planbody.pbmove, .weekbar b { transition: none; }
+    .planin { animation: planswap var(--t-2) var(--e-out); }
   }
 
   /* ---------- progress / history ---------- */
