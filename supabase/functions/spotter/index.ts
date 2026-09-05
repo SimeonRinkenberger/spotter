@@ -1015,10 +1015,20 @@ function matchInstagram(u: string): Parsed | null {
   return { platform: "instagram", shortcode: m[2], kind, clean: `https://www.instagram.com/${kind}/${m[2]}/` };
 }
 
+// `/@user/photo/<id>` is the swipe-right carousel: the same id space as a video,
+// with no video in it. Until it matched here it fell through to webParsed, which
+// refuses tiktok.com hostnames, so resolveShare answered null and ingest replied
+// "No workout link found in what was shared." That sentence is the error the owner
+// reported, and this regex is most of the fix.
 function matchTikTok(u: string): Parsed | null {
-  const m = u.match(/tiktok\.com\/(?:@[^/]+\/video|v)\/(\d+)/);
+  const m = u.match(/tiktok\.com\/(?:@[^/]+\/(video|photo)|v)\/(\d+)/);
   if (!m) return null;
-  return { platform: "tiktok", shortcode: `tt-${m[1]}`, kind: "video", clean: u.split("?")[0] };
+  return {
+    platform: "tiktok",
+    shortcode: `tt-${m[2]}`,
+    kind: m[1] === "photo" ? "photo" : "video",
+    clean: u.split("?")[0],
+  };
 }
 
 function matchYouTube(u: string): Parsed | null {
@@ -1493,7 +1503,11 @@ async function igMeta(p: Parsed): Promise<Meta> {
 // crawler view of the video page carries a thumbnail and a handle but no caption,
 // which is worth having when the caption comes from somewhere else.
 
-type TtRaw = { caption: string | null; thumb: string | null; author: string | null; seconds?: number };
+type TtRaw = {
+  caption: string | null; thumb: string | null; author: string | null; seconds?: number;
+  /** A photo post's slides, in order. Absent on a video, which has none. */
+  images?: string[];
+};
 
 function ttPickCover(covers: unknown): string | null {
   if (typeof covers === "string") return covers.startsWith("http") ? covers : null;
@@ -1503,8 +1517,43 @@ function ttPickCover(covers: unknown): string | null {
   return null;
 }
 
+/** Every image on a photo post arrives as a list of CDN mirrors. The first answers. */
+function ttPickUrl(list: unknown): string | null {
+  if (!Array.isArray(list)) return null;
+  for (const u of list) if (typeof u === "string" && u.startsWith("http")) return u;
+  return null;
+}
+
 function ttSome(r: TtRaw): TtRaw | null {
-  return r.caption || r.thumb || r.author ? r : null;
+  return r.caption || r.thumb || r.author || r.images?.length ? r : null;
+}
+
+/**
+ * A photo post read out of the rehydration blob's itemStruct.
+ *
+ * The post says two separate things and neither summarises the other:
+ * `imagePost.title` is the line the app draws over the first slide, `desc` is the
+ * hashtag caption under it. Both go into the caption, because "Push day" plus
+ * "#gymtok" is what a caption-only extraction has to work with — and the slides,
+ * which is where the sets and reps actually are, are what vision reads afterwards.
+ */
+function ttPhotoRaw(it: any): TtRaw | null {
+  const ip = it?.imagePost;
+  if (!ip) return null;
+  const images: string[] = [];
+  for (const im of (Array.isArray(ip.images) ? ip.images : [])) {
+    const u = ttPickUrl(im?.imageURL?.urlList);
+    if (u && !images.includes(u)) images.push(u);
+  }
+  const title = typeof ip.title === "string" && ip.title.trim() ? ip.title.trim() : null;
+  const desc = typeof it?.desc === "string" && it.desc.trim() ? it.desc.trim() : null;
+  return ttSome({
+    caption: [title, desc].filter(Boolean).join("\n") || null,
+    // The cover IS the first slide on a photo post, so either order is honest.
+    thumb: ttPickUrl(ip.cover?.imageURL?.urlList) ?? images[0] ?? ttPickCover(it?.video?.cover),
+    author: it?.author?.nickname || it?.author?.uniqueId || null,
+    images,
+  });
 }
 
 /** oEmbed JSON. `title` is the whole caption, hashtags and all. */
@@ -1531,11 +1580,19 @@ function ttFromEmbedState(html: string): TtRaw | null {
       if (!vd) continue;
       const it = vd.itemInfos ?? {};
       const au = vd.authorInfos ?? {};
+      // The embed page is the one rung that answers for a photo post without being
+      // asked for the video address, and it names the slides under its own key.
+      const images: string[] = [];
+      for (const d of (Array.isArray(vd.imagePostInfo?.displayImages) ? vd.imagePostInfo.displayImages : [])) {
+        const u = ttPickUrl(d?.urlList);
+        if (u && !images.includes(u)) images.push(u);
+      }
       const hit = ttSome({
         caption: typeof it.text === "string" && it.text.trim() ? it.text : null,
         thumb: ttPickCover(it.covers) ?? ttPickCover(it.coversOrigin) ?? ttPickCover(it.shareCover),
         author: au.nickName || au.uniqueId || null,
         seconds: Number(it.video?.videoMeta?.duration) || undefined,
+        images: images.length ? images : undefined,
       });
       if (hit) return hit;
     }
@@ -1545,18 +1602,19 @@ function ttFromEmbedState(html: string): TtRaw | null {
 
 /** The full watch page's rehydration blob. Same facts, different envelope. */
 function ttFromUniversalData(html: string): TtRaw | null {
-  const m = html.match(/<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__"[^>]*>([\s\S]*?)<\/script>/);
-  if (!m) return null;
-  try {
-    const it = JSON.parse(m[1])?.__DEFAULT_SCOPE__?.["webapp.video-detail"]?.itemInfo?.itemStruct;
-    if (!it) return null;
-    return ttSome({
-      caption: typeof it.desc === "string" && it.desc.trim() ? it.desc : null,
-      thumb: ttPickCover(it.video?.cover) ?? ttPickCover(it.video?.originCover) ?? ttPickCover(it.video?.dynamicCover),
-      author: it.author?.nickname || it.author?.uniqueId || null,
-      seconds: Number(it.video?.duration) || undefined,
-    });
-  } catch { return null; }
+  const it = ttItemStruct(html);
+  if (!it) return null;
+  // A photo post's itemStruct carries a `video` object too — all zeroes, with the
+  // first slide as its cover. So imagePost is asked about first, or a carousel
+  // would be read as a video of no length and its slides never looked at.
+  const photo = ttPhotoRaw(it);
+  if (photo) return photo;
+  return ttSome({
+    caption: typeof it.desc === "string" && it.desc.trim() ? it.desc : null,
+    thumb: ttPickCover(it.video?.cover) ?? ttPickCover(it.video?.originCover) ?? ttPickCover(it.video?.dynamicCover),
+    author: it.author?.nickname || it.author?.uniqueId || null,
+    seconds: Number(it.video?.duration) || undefined,
+  });
 }
 
 /**
@@ -1605,8 +1663,25 @@ function ttParseHtml(html: string): Meta {
     if (!out.thumb && raw.thumb) out.thumb = raw.thumb;
     if (!out.author && raw.author) out.author = raw.author;
     if (!out.seconds && raw.seconds) out.seconds = raw.seconds;
+    if (!out.images?.length && raw.images?.length) out.images = raw.images;
   }
   return out;
+}
+
+/**
+ * The page a SERVER can read for this post.
+ *
+ * Measured 2026-09-05 from this Mac's residential IP against a live photo post:
+ * a plain GET of `/@user/photo/<id>` with a desktop UA answers 200 with a 370KB
+ * shell — no rehydration blob, no og: tags, the title "TikTok - Make Your Day" —
+ * while the SAME id at `/@user/video/<id>` answers with the whole itemStruct,
+ * imagePost and all. TikTok treats the video address as the canonical one and
+ * only renders the photo address in a real browser. So every scraper here asks
+ * for the video address; `clean` keeps the photo one, because that is the link
+ * the user shared and the link the card has to open.
+ */
+function ttWatchUrl(clean: string): string {
+  return clean.replace(/\/photo\/(\d+)/, "/video/$1");
 }
 
 type TtSource = {
@@ -1614,6 +1689,13 @@ type TtSource = {
   url: (id: string, clean: string) => string;
   ua: string;
   parse: (body: string) => TtRaw | null;
+  /**
+   * Skipped for a photo post. Only oEmbed sets it: measured 2026-09-05, oEmbed
+   * answers HTTP 400 `{"message":"Something went wrong","code":400}` for a
+   * `/photo/` URL, which is where a carousel save used to lose its title, author
+   * and thumbnail all at once.
+   */
+  videoOnly?: boolean;
 };
 
 // Ordered by cost, and trimmed to what earned its place when seven candidate
@@ -1628,14 +1710,14 @@ type TtSource = {
 // nothing is missing, so the usual save costs one 3KB request; the later rungs
 // exist for the day oEmbed stops answering.
 const TT_SOURCES: TtSource[] = [
-  { name: "oembed", ua: DESKTOP_UA, parse: ttFromOembed,
+  { name: "oembed", ua: DESKTOP_UA, parse: ttFromOembed, videoOnly: true,
     url: (_id, clean) => `https://www.tiktok.com/oembed?url=${encodeURIComponent(clean)}` },
   { name: "embed-v2", ua: DESKTOP_UA, parse: (b) => ttFromEmbedState(b) ?? ttFromOg(b),
     url: (id) => `https://www.tiktok.com/embed/v2/${id}` },
   { name: "page-crawler", ua: CRAWLER_UA, parse: (b) => ttFromUniversalData(b) ?? ttFromOg(b),
-    url: (_id, clean) => clean },
+    url: (_id, clean) => ttWatchUrl(clean) },
   { name: "page-desktop", ua: DESKTOP_UA, parse: (b) => ttFromUniversalData(b) ?? ttFromOg(b),
-    url: (_id, clean) => clean },
+    url: (_id, clean) => ttWatchUrl(clean) },
 ];
 
 async function ttFetchSource(s: TtSource, id: string, clean: string):
@@ -1656,9 +1738,14 @@ async function ttMeta(p: Parsed): Promise<Meta> {
   const id = p.shortcode.replace(/^tt-/, "");
   const out: Meta = { caption: null, thumb: null, author: null };
   const used: string[] = [];
+  const photo = p.kind === "photo";
+  let images: string[] = [];
 
   for (const s of TT_SOURCES) {
-    if (out.caption && out.thumb && out.author) break;
+    if (photo && s.videoOnly) continue;
+    // A photo post is not finished until its slides are in hand: the caption on a
+    // carousel is usually a hashtag line, and the workout is on the pictures.
+    if (out.caption && out.thumb && out.author && (!photo || images.length)) break;
     const got = await ttFetchSource(s, id, p.clean);
     if (!got.raw) {
       if (got.status && got.status !== 200) console.error("tiktok", s.name, "http", got.status);
@@ -1670,12 +1757,29 @@ async function ttMeta(p: Parsed): Promise<Meta> {
     if (!out.thumb && got.raw.thumb) { out.thumb = got.raw.thumb; gained = true; }
     if (!out.author && got.raw.author) { out.author = got.raw.author; gained = true; }
     if (!out.seconds && got.raw.seconds) { out.seconds = got.raw.seconds; gained = true; }
+    // Through the outbound guard's static half here as well as safeFetch's DNS
+    // half at fetch time, so a slide the guard would refuse is dropped once and
+    // legibly rather than thrown from inside the vision sub-request.
+    if (!images.length && got.raw.images?.length) {
+      for (const u of got.raw.images) {
+        const keep = keepFetchableUrl(u, "tiktok slide");
+        if (keep && !images.includes(keep)) images.push(keep);
+      }
+      if (images.length) gained = true;
+    }
     if (gained) used.push(s.name);
   }
 
+  // A one-slide post has its only picture as the cover, exactly as a one-image
+  // Instagram post does. Slides are recorded whatever `kind` said, because a
+  // carousel shared by its /video/ alias is still a carousel.
+  if (!images.length && photo && out.thumb) images = [out.thumb];
+  if (images.length) out.images = images;
+
   out.source = used.join(",") || "none";
-  console.log("tiktok meta", id, "sources:", out.source,
-    "caption:", out.caption?.length ?? 0, "thumb:", !!out.thumb, "author:", out.author ?? "-");
+  console.log("tiktok meta", id, photo ? "(photo)" : "", "sources:", out.source,
+    "caption:", out.caption?.length ?? 0, "thumb:", !!out.thumb, "author:", out.author ?? "-",
+    "slides:", images.length);
   return out;
 }
 
@@ -2962,12 +3066,24 @@ type MediaSource = {
   seconds: number | null;
 };
 
-/** The rehydration blob's itemStruct, or null. Shared by the parsers above. */
+/**
+ * The rehydration blob's itemStruct, or null. Shared by the parsers above.
+ *
+ * Two envelopes hold the same object, and which one arrives is a fact about the
+ * User-Agent rather than about the post. A desktop browser gets
+ * `webapp.video-detail`; a phone gets the reflow page, which puts the identical
+ * itemStruct under `webapp.reflow.video.detail`. The second one matters because
+ * the HTML a phone posts to /api/ingest is the phone's page, not ours — measured
+ * 2026-09-05 against a live photo post, an iPhone UA is the only way a GET of a
+ * `/photo/` URL comes back carrying anything at all.
+ */
 function ttItemStruct(html: string): any {
   const m = html.match(/<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__"[^>]*>([\s\S]*?)<\/script>/);
   if (!m) return null;
   try {
-    return JSON.parse(m[1])?.__DEFAULT_SCOPE__?.["webapp.video-detail"]?.itemInfo?.itemStruct ?? null;
+    const scope = JSON.parse(m[1])?.__DEFAULT_SCOPE__ ?? {};
+    return scope["webapp.video-detail"]?.itemInfo?.itemStruct ??
+      scope["webapp.reflow.video.detail"]?.itemInfo?.itemStruct ?? null;
   } catch { return null; }
 }
 
@@ -4466,14 +4582,18 @@ async function buildCard(
   let card = await extractCard(meta, p.platform, ctx);
   const heuristicCount = countExercises(heuristicCard(meta, p.platform, "x"));
 
-  // Instagram carousels often put the written plan on a later slide — read it only
-  // when the caption produced nothing, since vision burns the scarcest quota.
+  // Carousels put the written plan on the pictures — an Instagram carousel, a
+  // TikTok photo post, and whatever names slides next. The gate is the slides
+  // themselves rather than the platform: a provider that could not name any never
+  // reaches this, and one that did has the same thing to read whoever served it.
+  // Read only when the caption produced nothing, since vision burns the scarcest
+  // quota.
   //
   // One slide per sub-request, and the parent checkpoints between them. A carousel
   // that kills an isolate now costs one slide of progress rather than the job, and
   // a job that dies here resumes at the slide it had reached rather than paying for
   // the earlier ones again.
-  if (!card.has_full_workout && p.platform === "instagram" && meta.images?.length) {
+  if (!card.has_full_workout && meta.images?.length) {
     const slides = meta.images.slice(0, visionLimit("max_slides", 3));
     for (let i = startSlide; i < slides.length; i++) {
       const fromImage = await runVisionRemote(slides[i], i, card, ctx);
@@ -5520,9 +5640,12 @@ async function failJob(job: Job, err: unknown): Promise<void> {
       // generic line, because "TypeError: undefined is not an object" on a card is
       // worse than no explanation at all.
       const said = err instanceof SoftFailure ? err.userMessage : null;
+      // "video" is wrong for a swipe-right photo post, and a user told the wrong
+      // noun reasonably concludes Spotter did not understand what they sent.
+      const noun = job.kind === "photo" ? "photo post" : "video";
       await dbPatchMany("workouts", `ingest_job_id=eq.${job.id}&ingest_status=eq.processing`, {
         ingest_status: "failed",
-        ingest_error: said ?? "Spotter could not read this video. Tap ↻ to try again.",
+        ingest_error: said ?? `Spotter could not read this ${noun}. Tap ↻ to try again.`,
       });
     }
   } catch (e) {
@@ -5613,6 +5736,13 @@ async function escalateToMedia(
     if (m[1] === "video") done.add("video");
   }
   if (!providerFor(p.platform).media) return { card, meta, ran };
+  // A photo post has no video in it. tiktokMedia would fetch the watch page a
+  // second time and log "named no media", and the slides — which is where the
+  // workout is — were already read by vision above. Nothing to escalate to.
+  if (p.kind === "photo" || meta.images?.length) {
+    console.log("media: skipping", p.shortcode, "— a photo post has slides, not a video");
+    return { card, meta, ran };
+  }
   if (!cardIsThin(card)) return { card, meta, ran };
 
   for (const tier of ["transcript", "video"] as MediaTier[]) {
