@@ -520,9 +520,14 @@
   .embedwrap { position: relative; border-radius: 20px; overflow: hidden; background: var(--sand);
     box-shadow: var(--sh-md); margin-bottom: 20px; }
   .embedwrap iframe { display: block; width: 100%; border: 0; }
-  .embedwrap.vertical iframe { height: 640px; }
+  /* 640 is a guess app.ts's message listener corrects once the embed page reports;
+     grown and not jumped, so the title below slides rather than teleports. */
+  .embedwrap.vertical iframe { height: 640px; transition: height var(--t-3) var(--e-out); }
   .embedwrap.wide { aspect-ratio: 16 / 9; }
   .embedwrap.wide iframe { height: 100%; }
+  @media (prefers-reduced-motion: reduce) {
+    .embedwrap.vertical iframe { transition: none; }
+  }
   .dphoto { width: 100%; display: block; border-radius: 20px; box-shadow: var(--sh-md); margin-bottom: 20px; }
   .dkick { font-size: 11px; font-weight: 650; color: var(--ember-ink); margin-bottom: 8px; }
   .dtitle { font-family: var(--display); font-size: 28px; font-weight: 700; line-height: 1.14;
@@ -3905,6 +3910,29 @@
     wrap.appendChild(frame);
     return wrap;
   }
+
+  // A vertical embed is taller than the slot the stylesheet guesses, so the frame
+  // scrolled inside itself — and a touch belongs to the scroller it began in, so the
+  // first swipe down an open card moved the video, not the card. Apple's rule is not
+  // to face two scrollers one way; TikTok's and Instagram's own embed scripts obey it
+  // by sizing the frame to the height the embed page reports, inline so it outranks
+  // both the slot and the sheet's shorter one. One listener, not one per embed: it
+  // matches the frame a message came from, so card and clip sheet are both served,
+  // and only an object carries a height (TikTok also posts a bare "[tea-sdk]ready").
+  window.addEventListener("message", function (e) {
+    var ig = e.origin === "https://www.instagram.com";
+    if (!ig && e.origin !== "https://www.tiktok.com") return;
+    if (!e.source || typeof e.data !== "string" || e.data.charAt(0) !== "{") return;
+    try { var d = JSON.parse(e.data); } catch (err) { return; }
+    // Instagram measures under MEASURE and only there; TikTok names height flat.
+    var h = ig ? (d.type === "MEASURE" && d.details ? d.details.height : null) : d.height;
+    if (typeof h !== "number" || !(h > 0)) return;
+    h = Math.max(200, Math.min(2000, Math.round(h)));
+    var all = document.querySelectorAll(".embedwrap iframe");
+    for (var i = 0; i < all.length; i++) {
+      if (all[i].contentWindow === e.source) all[i].style.height = h + "px";
+    }
+  });
 
   function doseText(ex) {
     var bits = [];
