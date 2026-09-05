@@ -694,6 +694,27 @@ Dashboard **Simulations** (test clocks) — advance the clock an extra hour past
 the draft invoice will not have finalised yet. To test duplicate handling, resend a real event
 from Workbench → Webhooks and check the second call answers `{"duplicate": true}`.
 
+### Stripe as merchant of record (Managed Payments)
+
+Stripe accounts opened in 2026 come with **Managed Payments** switched on: Stripe is the
+merchant of record, so it calculates, withholds and remits sales tax, VAT and GST in more than
+80 countries, handles disputes and transaction-level support, and the customer sees "Sold
+through Link" on receipts and `LINK.COM*` on their statement. It costs 3.5 % on top of the
+ordinary card fee (about 6.4 % + 30¢ all in). For one person selling a consumer app worldwide
+that is the safe default, and it is what the function assumes: every Checkout Session states
+`managed_payments[enabled]` from `app_config.billing.managed_payments` (`true` by default).
+It requires a tax code on the product — `stripe-plans.json` carries `txcd_10103000`, SaaS for
+personal use, and the setup script sets it — and forbids `automatic_tax` on the session, so the
+`billing.tax` dial is ignored while it is on. To sell as yourself at the lower fee instead:
+
+```sql
+update public.app_config set value = 'false' where key = 'billing.managed_payments';
+```
+
+Then you carry the tax obligations (see `billing.tax`). Stripe can refund a Managed Payments
+transaction without you if a support request goes unanswered for 48 hours, so keep the support
+email in the Stripe Dashboard current.
+
 ### Prices and caps are data
 
 Nothing about the tiers is compiled in. Three files and one table, and none of them need a deploy

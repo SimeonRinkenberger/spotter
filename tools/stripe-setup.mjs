@@ -137,6 +137,10 @@ async function ensureProduct(product) {
   const fields = {
     name: product.name,
     description: product.description,
+    // The product tax code. Managed Payments (Stripe as merchant of record, on by
+    // default for accounts made in 2026) refuses a Checkout Session for a product
+    // without one, and Stripe Tax reads the same field if it is ever used instead.
+    ...(product.tax_code ? { tax_code: product.tax_code } : {}),
     metadata: { spotter_key: product.key },
   };
   if (found) {

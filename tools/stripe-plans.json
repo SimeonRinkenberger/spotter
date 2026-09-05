@@ -1,6 +1,7 @@
 {
   "_note": "The human-editable source of truth for what tools/stripe-setup.sh creates in Stripe. Amounts are in cents. Prices are addressed everywhere by lookup_key, never by price id, so re-creating them in another Stripe account changes nothing in the code. Change an amount here, run the script again, and it creates a new price, moves the lookup key onto it and deactivates the old one — existing subscribers keep the price they bought. Cap numbers live in app_config (limits.plans), not here; trial_days must match the billing.trial_days seed in supabase/migrations/20260904200000_billing.sql.",
 
+  "_tax_code_note": "Stripe product tax code. txcd_10103000 = Software as a service (SaaS), personal use. Required by Managed Payments (Stripe as merchant of record, on by default for new accounts) and used by Stripe Tax if that is ever switched on instead.",
   "currency": "usd",
   "_trial_note": "Applied to the ANNUAL price only, with a card taken up front — the free tier is the monthly plan's trial. The function reads app_config.billing.trial_days, not this; keep the two equal.",
   "trial_days": 7,
@@ -24,6 +25,7 @@
       "key": "plus",
       "enabled": true,
       "name": "Spotter Plus",
+      "tax_code": "txcd_10103000",
       "description": "An unlimited library, and more of everything that costs money to make: 200 saves, 60 extractions, 15 video reads, 10 uploads and 60 coaching answers a day.",
       "prices": [
         { "lookup_key": "spotter_plus_month", "interval": "month", "unit_amount": 699 },
@@ -35,6 +37,7 @@
       "enabled": false,
       "_enabled_note": "Off on purpose. Spotter sells one paid tier; pro exists in the schema and the cap table as the price-raise valve. Set enabled to true and run the script again the day it is sold — nothing in the function changes.",
       "name": "Spotter Pro",
+      "tax_code": "txcd_10103000",
       "description": "Everything in Plus, with the daily ceilings raised again.",
       "prices": [
         { "lookup_key": "spotter_pro_month", "interval": "month", "unit_amount": 999 },

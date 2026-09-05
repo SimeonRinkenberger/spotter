@@ -177,15 +177,19 @@ function jsonResponse(body: unknown, status = 200): Response {
 // hot paths, and these are read only by checkout, which happens a handful of
 // times a day. So this is its own read on its own TTL rather than a second timer
 // on somebody else's cache.
-type BillingCfg = { trialDays: number; tax: boolean };
+type BillingCfg = { trialDays: number; tax: boolean; managed: boolean };
 const CFG_TTL_MS = 5 * 60_000;
 let cfgCache: { at: number; cfg: BillingCfg } | null = null;
 
 async function billingCfg(): Promise<BillingCfg> {
   if (cfgCache && Date.now() - cfgCache.at < CFG_TTL_MS) return cfgCache.cfg;
-  const cfg: BillingCfg = { trialDays: 0, tax: false };
+  // Managed Payments defaults to ON here as well as in Stripe: a new account has
+  // it switched on, and a missing row must not silently move the tax liability
+  // back onto the owner. `billing.managed_payments = false` is the deliberate act.
+  const cfg: BillingCfg = { trialDays: 0, tax: false, managed: true };
   try {
-    const rows = await bSelect("app_config", "key=in.(billing.trial_days,billing.tax)&select=key,value");
+    const rows = await bSelect("app_config",
+      "key=in.(billing.trial_days,billing.tax,billing.managed_payments)&select=key,value");
     for (const r of rows) {
       if (r.key === "billing.trial_days") {
         const n = Number(String(r.value ?? "").trim());
@@ -193,12 +197,15 @@ async function billingCfg(): Promise<BillingCfg> {
         if (Number.isFinite(n) && n >= 0 && n <= 730) cfg.trialDays = Math.floor(n);
       } else if (r.key === "billing.tax") {
         cfg.tax = String(r.value ?? "").trim().toLowerCase() === "true";
+      } else if (r.key === "billing.managed_payments") {
+        cfg.managed = String(r.value ?? "").trim().toLowerCase() !== "false";
       }
     }
     cfgCache = { at: Date.now(), cfg };
   } catch (e) {
-    // A dial that cannot be read is the conservative dial: no trial, no tax.
-    console.error("billing config unreadable, using no trial and no tax —", e);
+    // A dial that cannot be read is the conservative dial: no trial, no tax of
+    // our own, and Stripe as merchant of record.
+    console.error("billing config unreadable, using no trial, no tax, managed —", e);
   }
   return cfg;
 }
@@ -561,10 +568,21 @@ export async function createCheckout(
       metadata: { user_id: userId },
       ...(trialDays > 0 ? { trial_period_days: trialDays } : {}),
     },
-    // Only when a registration exists. `customer_update.address` defaults to
-    // `never`, which silently reuses whatever address is already on the Customer
-    // — the failure that looks like success — so it is set explicitly here.
-    ...(cfg.tax
+    // Managed Payments: Stripe is the merchant of record, so it calculates,
+    // withholds and remits sales tax, VAT and GST itself, handles disputes and
+    // transaction support, and the customer sees "Sold through Link". Always
+    // stated explicitly, both ways — a new Stripe account has it on by default,
+    // and whether this account sells as itself or through Stripe is a decision
+    // the config makes, never one the account's default makes for it. It needs
+    // a tax code on the Product (the setup script sets one) and forbids
+    // `automatic_tax` and `customer_update` on the session, hence the guard on
+    // the tax block below.
+    managed_payments: { enabled: cfg.managed },
+    // Only when a registration exists AND the owner is the merchant of record.
+    // `customer_update.address` defaults to `never`, which silently reuses
+    // whatever address is already on the Customer — the failure that looks like
+    // success — so it is set explicitly here.
+    ...(cfg.tax && !cfg.managed
       ? {
         automatic_tax: { enabled: true },
         billing_address_collection: "required" as const,
