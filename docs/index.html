@@ -6872,7 +6872,7 @@
   // Android's shade wants the same sentence: a media notification carries the
   // transport but not the words. One fixed tag makes an update replace the row
   // rather than stack under it, and a replacement never re-alerts. iOS has none of
-  // this, so the path detects itself away and the card stands alone there.
+  // this, so the path detects itself away and the card stands alone.
   function liveNote(close) {
     if (!navigator.serviceWorker || !window.Notification || Notification.permission !== "granted") return;
     navigator.serviceWorker.ready.then(function (reg) {
@@ -6883,17 +6883,17 @@
       }
       reg.showNotification(wo.workout.title || "Workout", {
         tag: LIVE_TAG, body: live.line, icon: "icon.png", badge: "icon.png",
-        // Silent, so a ticking rest never lights the screen. Android holds a row
-        // anyway; requireInteraction is for the desktops, which fade one out.
-        silent: true, requireInteraction: true,
+        // Silent, so a ticking rest never lights the screen. Nothing asks for
+        // persistence: Android holds a row until it is dealt with.
+        silent: true,
         actions: [{ action: "toggle", title: restHeld ? "Resume" : "Pause" },
           { action: "next", title: "Skip" }]
       }).catch(function () { /* a phone that refuses actions still has the card */ });
     }).catch(function () { /* no worker, no shade */ });
   }
 
-  // Once per device, as the timer sounds do it: something appeared outside the app,
-  // and the sentence explaining it carries the way out. On Android it is also the
+  // Once per device, as the timer sounds do it: something appeared outside the app
+  // and the sentence explaining it carries the way out — and on Android it is the
   // reason for the prompt, so the tap comes before the dialog.
   var liveTold = false;
   try { liveTold = localStorage.getItem("spotter_live_told") === "1"; } catch (e) { /* ignore */ }
