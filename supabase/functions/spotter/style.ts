@@ -1182,6 +1182,12 @@ export const STYLE = String.raw`<style>
   .copychips .chip { min-width: 44px; justify-content: center;
     padding: 9px 11px; font-variant-numeric: tabular-nums; }
   .copywks .chip, .copychips .chip { min-height: 44px; }
+  /* iOS has ignored user-scalable=no since iOS 10, so a quick second tap on one
+     of these can still be taken for a double-tap zoom and never reach the
+     button. manipulation is the one word that says tapped, not zoomed, and it
+     stays scoped to this sheet: the pager's axis lock needs the rest of the page
+     to keep declaring nothing. */
+  #copysheet button { touch-action: manipulation; }
   .planbtn.wide { width: 100%; min-height: 44px; margin-top: 11px; font-size: 13.5px; }
   /* Already 44, and stacked between two controls whose hit areas it would eat. */
   .planbtn.wide::after { display: none; }
