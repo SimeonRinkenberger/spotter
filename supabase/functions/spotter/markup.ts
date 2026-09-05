@@ -404,7 +404,7 @@ export const MARKUP_BODY = String.raw`</head>
      already steering the order. -->
 <div class="sheet" id="sortsheet"><div class="sheetbody">
   <div class="grabber"></div>
-  <h2>Sort library</h2>
+  <h2>Sort by</h2>
   <div class="picklist" id="sortlist"></div>
   <div class="jumpwrap hide" id="jumpwrap">
     <h3>Jump to</h3>

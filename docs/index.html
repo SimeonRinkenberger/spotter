@@ -2199,7 +2199,7 @@
      already steering the order. -->
 <div class="sheet" id="sortsheet"><div class="sheetbody">
   <div class="grabber"></div>
-  <h2>Sort library</h2>
+  <h2>Sort by</h2>
   <div class="picklist" id="sortlist"></div>
   <div class="jumpwrap hide" id="jumpwrap">
     <h3>Jump to</h3>
@@ -3560,15 +3560,14 @@
 
   // ---------- how the library is ordered ----------
   //
-  // Filters narrow, sort re-shapes: two controls because they answer two questions,
-  // the split Spotify's Your Library and Pinterest's boards grid both keep. Newest
-  // leads because it is what the library does today.
+  // Filters narrow and sort re-shapes, as two controls, which is the split Spotify's
+  // Your Library and Pinterest's boards keep. Newest leads: it is today's order.
   var SORTS = ["new", "by", "mg"];
   var SORTLBL = { "new": "Newest", "by": "Creator", "mg": "Body part" };
 
   // The vocabulary the server derives, in its own order: down the front of a body
   // and then the back, as the Progress figure reads. Alphabetical would open on
-  // Back, Biceps, Calves — a filing cabinet, not a body.
+  // Back, Biceps, Calves, which is a filing cabinet rather than a body.
   var MUSCLES = ["chest", "back", "shoulders", "biceps", "triceps", "forearms", "core",
     "glutes", "quads", "hamstrings", "calves", "full body"];
 
@@ -3581,8 +3580,8 @@
   } catch (e) { /* a private window still gets a library, just not a remembered order */ }
 
   // The body-part twin of by:, same prefix:value shape. Both take an empty value —
-  // "by:" is everything nobody signed, "mg:" everything no heading claimed — because
-  // a section a person can see has to be one they can tap, leftovers included.
+  // nobody signed it, no heading claimed it — because a section a person can see
+  // has to be one they can tap, leftovers included.
   function isMgFilter(f) { return typeof f === "string" && f.indexOf("mg:") === 0; }
   function hasMg(w, m) {
     var mg = w.muscle_groups || [], i, v;
@@ -3630,14 +3629,14 @@
       counts[w.category] = (counts[w.category] || 0) + 1;
       if (w.favorite) favs++;
     });
-    // A collection can be deleted under the chip filtering on it. Clearing beats an
-    // empty grid explaining itself. (The creator and muscle narrows lost their chips
-    // and are cleared the same way by the bar below this row.)
+    // A collection can be deleted under the chip filtering on it, and clearing beats
+    // an empty grid explaining itself. The bar below does the same for the narrows
+    // that no longer have a chip.
     if (isColFilter(state.filter) && !colById(state.filter.slice(4))) state.filter = "All";
 
-    // Sort leads the row, pinned while the filters scroll under it: it is not one
-    // more filter to hunt for, it decides the shape of everything below. Apple's
-    // repeated "Sort by" is the sheet title, so the chip can carry the answer.
+    // Sort leads the row and stays pinned while the filters scroll under it: it is
+    // not one more filter to hunt for, it decides the shape of everything below.
+    // Apple's repeated "Sort by" is the sheet title, so the chip carries the answer.
     var list = [{ key: "__sort", cls: "sortchip", label: SORTLBL[sortMode], icon: "sort", n: null }];
     list.push({ key: "All", label: "All", n: state.workouts.length });
     if (favs) list.push({ key: "Favorites", label: "Favourites", icon: "star", n: favs });
@@ -3695,7 +3694,6 @@
       state.workouts.forEach(function (w) {
         if (isBy ? authorKey(w.author) !== k : !hasMg(w, k)) return;
         n++;
-        // The handle as its own platform spells it, which authorKey has lower-cased.
         if (!name && isBy && k) name = "@" + w.author;
       });
       // Either can lose its last card while it is the filter, and nothing else on
@@ -3725,9 +3723,9 @@
 
   // ---------- sections and the jump list ----------
   //
-  // Where a heading comes to rest: under the app header and the search bar, the two
-  // things this page scrolls beneath. Measured, not written into the stylesheet —
-  // the header grows by the status bar and the search bar by the text size.
+  // Where a heading rests: under the app header and the search bar, the two things
+  // this page scrolls beneath. Measured, not written into the stylesheet, because
+  // one grows by the status bar and the other by the text size.
   function secTop() {
     var h = document.querySelector("header"), s = $("searchwrap");
     return (h ? h.getBoundingClientRect().height : 0) + (s ? s.getBoundingClientRect().height : 0);
@@ -3775,8 +3773,8 @@
       r.setAttribute("role", "radio");
       r.setAttribute("aria-checked", on ? "true" : "false");
       r.appendChild(el("b", null, SORTLBL[k]));
-      // A mark against the one in force, not a lit row: Apple's Menus guidance is
-      // that a checkmark is what people scan a list of attributes for.
+      // Apple's Menus guidance: a checkmark is what people scan a list of attributes
+      // for, so the one in force wears a mark rather than a lit background.
       if (on) r.appendChild(ic("check"));
       r.onclick = function () { setSort(k); };
       sl.appendChild(r);
@@ -3789,8 +3787,7 @@
     if (k !== sortMode) {
       sortMode = k;
       try { localStorage.setItem(SORT_KEY, k); } catch (e) { /* the order still applies today */ }
-      // A narrow taken out of a section means nothing under another sort: "Chest"
-      // grouped by creator is one heading over one group.
+      // A narrow taken out of a section means nothing under another sort.
       if (isByFilter(state.filter) || isMgFilter(state.filter)) state.filter = "All";
       render();
       viewIn($("grid"));
@@ -3806,8 +3803,8 @@
   // of a two-column grid. A sheet of full 44pt rows clears both.
   function renderJump() {
     var wrap = $("jumpwrap"), jl = $("jumplist");
-    // Read off the headings the grid is actually showing, so the list cannot come
-    // to describe a library that has moved on underneath it.
+    // Read off the headings themselves, so the list cannot describe a grid that has
+    // moved on underneath it.
     var heads = $("grid").querySelectorAll(".gname");
     jl.innerHTML = "";
     if (heads.length < 2) { wrap.classList.add("hide"); return; }
@@ -3994,9 +3991,9 @@
     empty.classList.add("hide");
     grid.classList.remove("hide");
 
-    // Grouping goes off once the grid is narrowed to one of its own sections: a
-    // single heading says nothing the line above it just said. A category or a
-    // collection still groups — "Push, by creator" is a question people ask.
+    // Grouping goes off once the grid is narrowed to one of its own sections: one
+    // heading says nothing the line above it just said. A category or a collection
+    // still groups — "Push, by creator" is a question people ask.
     var group = sortMode !== "new" &&
       !(sortMode === "by" && isByFilter(state.filter)) &&
       !(sortMode === "mg" && isMgFilter(state.filter));
@@ -4027,8 +4024,8 @@
       jb.onclick = function () { openSort(); };
       head.appendChild(jb);
       sec.appendChild(head);
-      // The section's own two columns are the library grid again, class and all,
-      // so one set of rules and one set of breakpoints answers for both.
+      // The section's columns are the library grid again, class and all: one set of
+      // rules and one set of breakpoints answers for both.
       var box = el("div", "grid");
       g.items.forEach(function (w) { box.appendChild(cardNode(w, n++)); });
       sec.appendChild(box);
@@ -4037,9 +4034,9 @@
   }
 
   // One card, wherever it is going: the flat grid, or a section of it. i is its
-  // place on the page and nothing else — the first four are what a person is
-  // looking at. Listed under three muscles it still flies in once: cardIn is how a
-  // NEW card arrives, and one workout arriving three times is a flock, not news.
+  // place on the page, so the first four are still the ones told to hurry. Listed
+  // under three muscles it flies in once — cardIn is how a NEW card arrives, and
+  // one workout arriving three times is a flock, not news.
   function cardNode(w, i) {
     var pending = isPending(w), failed = isFailed(w);
     var card = el("button", "carditem" + (pending ? " pending" : "") + (failed ? " failed" : ""));
