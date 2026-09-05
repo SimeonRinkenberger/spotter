@@ -539,10 +539,17 @@ export const MARKUP_BODY = String.raw`</head>
          navigator.vibrate at all, and a switch over nothing is a lie. -->
     <div class="kv hide" id="sethapticrow"><span class="k">Vibration</span>
       <span class="v"><button class="chip" id="haptictoggle">On</button></span></div>
+    <!-- Hidden where no card can appear, for the same reason as Vibration above. -->
+    <div class="kv hide" id="setlivrow"><span class="k">Show workout on lock screen</span>
+      <span class="v"><button class="chip" id="livetoggle">On</button></span></div>
   </div>
   <div class="setnote">The sounds are three ticks and a chime, and only play while Spotter is
     open &mdash; also switchable from Workout Mode's top bar. How long you rest comes from the
     card the video made, not from here.</div>
+  <!-- The side effect nobody would guess: the card exists only while something is
+       playing, and a phone plays one thing at a time. -->
+  <div class="setnote">The lock screen card shows the set, the rest clock and the controls. It
+    uses your phone's media slot, so starting a workout pauses whatever else was playing.</div>
 
   <h3 class="seth">Save from your phone</h3>
   <p class="lede"><b>Android</b> &mdash; install Spotter, then share any video to it from the share
