@@ -1552,6 +1552,29 @@ export const APP = String.raw`
     return wrap;
   }
 
+  // A vertical embed is taller than the slot the stylesheet guesses, so the frame
+  // scrolled inside itself — and a touch belongs to the scroller it began in, so the
+  // first swipe down an open card moved the video, not the card. Apple's rule is not
+  // to face two scrollers one way; TikTok's and Instagram's own embed scripts obey it
+  // by sizing the frame to the height the embed page reports, inline so it outranks
+  // both the slot and the sheet's shorter one. One listener, not one per embed: it
+  // matches the frame a message came from, so card and clip sheet are both served,
+  // and only an object carries a height (TikTok also posts a bare "[tea-sdk]ready").
+  window.addEventListener("message", function (e) {
+    var ig = e.origin === "https://www.instagram.com";
+    if (!ig && e.origin !== "https://www.tiktok.com") return;
+    if (!e.source || typeof e.data !== "string" || e.data.charAt(0) !== "{") return;
+    try { var d = JSON.parse(e.data); } catch (err) { return; }
+    // Instagram measures under MEASURE and only there; TikTok names height flat.
+    var h = ig ? (d.type === "MEASURE" && d.details ? d.details.height : null) : d.height;
+    if (typeof h !== "number" || !(h > 0)) return;
+    h = Math.max(200, Math.min(2000, Math.round(h)));
+    var all = document.querySelectorAll(".embedwrap iframe");
+    for (var i = 0; i < all.length; i++) {
+      if (all[i].contentWindow === e.source) all[i].style.height = h + "px";
+    }
+  });
+
   function doseText(ex) {
     var bits = [];
     if (ex.sets && ex.reps) bits.push(ex.sets + " × " + ex.reps);

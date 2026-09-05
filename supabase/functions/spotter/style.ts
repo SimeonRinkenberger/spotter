@@ -487,9 +487,14 @@ export const STYLE = String.raw`<style>
   .embedwrap { position: relative; border-radius: 20px; overflow: hidden; background: var(--sand);
     box-shadow: var(--sh-md); margin-bottom: 20px; }
   .embedwrap iframe { display: block; width: 100%; border: 0; }
-  .embedwrap.vertical iframe { height: 640px; }
+  /* 640 is a guess app.ts's message listener corrects once the embed page reports;
+     grown and not jumped, so the title below slides rather than teleports. */
+  .embedwrap.vertical iframe { height: 640px; transition: height var(--t-3) var(--e-out); }
   .embedwrap.wide { aspect-ratio: 16 / 9; }
   .embedwrap.wide iframe { height: 100%; }
+  @media (prefers-reduced-motion: reduce) {
+    .embedwrap.vertical iframe { transition: none; }
+  }
   .dphoto { width: 100%; display: block; border-radius: 20px; box-shadow: var(--sh-md); margin-bottom: 20px; }
   .dkick { font-size: 11px; font-weight: 650; color: var(--ember-ink); margin-bottom: 8px; }
   .dtitle { font-family: var(--display); font-size: 28px; font-weight: 700; line-height: 1.14;
