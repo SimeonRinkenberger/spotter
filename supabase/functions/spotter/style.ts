@@ -1122,6 +1122,16 @@ export const STYLE = String.raw`<style>
   /* A crossfade and nothing more: the bar above it did not move. */
   .planswap { animation: planswap var(--t-2) var(--e-out); }
   @keyframes planswap { from { opacity: 0; } }
+  /* A swipe on the bar leans the body the way the finger goes and then sends it
+     out that way, so the week arriving comes in from the far side — the crossfade
+     above cannot say which direction time went. Transform and opacity only, and
+     .pbmove is timing: on for the release, off while a finger is holding it, so
+     tracking is 1:1 and the let-go is the only thing that eases. */
+  .planbody.pbmove { transition: transform var(--t-2) var(--e-out), opacity var(--t-2) var(--e-out); }
+  .weekbar b { transition: transform var(--t-2) var(--e-spring); }
+  .weekbar.wbdrag b { transition: none; }
+  .planin { animation: planin var(--t-3) var(--e-out); }
+  @keyframes planin { from { opacity: 0; transform: translateX(var(--pin, 26px)); } }
 
   /* ---------- plan / the month ----------
      iOS Calendar's compact month: a number, a couple of marks, and the count of
@@ -1199,6 +1209,11 @@ export const STYLE = String.raw`<style>
     .segpill { transition: none; }
     .planbtn:active, .segbtn, .mcell, .copyweek { transition: none; }
     .planswap { animation: none; }
+    /* The week still changes and still says so, with the crossfade this section
+       already uses rather than a slide. The drag itself moves nothing: app.ts
+       asks lessMotion() before it paints a lean. */
+    .planbody.pbmove, .weekbar b { transition: none; }
+    .planin { animation: planswap var(--t-2) var(--e-out); }
   }
 
   /* ---------- progress / history ---------- */
