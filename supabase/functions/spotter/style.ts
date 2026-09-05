@@ -1595,10 +1595,29 @@ export const STYLE = String.raw`<style>
   .composer .addbtn { width: 44px; height: 44px; border-radius: 15px; font-size: 20px; }
   .composer .addbtn[disabled] { opacity: .4; box-shadow: none; }
   .pumpycredits { font-size: 11.5px; color: var(--muted); margin: 0 0 7px 6px; line-height: 1.4; }
-  .pumpyctx { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-2); margin: 0 0 8px 6px; }
-  .pumpyctx b { color: var(--ink); font-weight: 650; }
-  .pumpyctx button { border: none; background: var(--sand); color: var(--muted); border-radius: 999px;
-    width: 22px; height: 22px; font-size: 14px; line-height: 1; }
+  /* Six of these wrap rather than run off the phone; the composer grows taller. */
+  .pumpyctx { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12px;
+    color: var(--ink-2); margin: 0 0 8px 2px; }
+  .refchip { display: inline-flex; align-items: center; gap: 5px; max-width: 100%;
+    background: var(--sand); border-radius: 999px; padding: 5px 5px 5px 11px; }
+  .refchip b { color: var(--ink); font-weight: 650; max-width: 190px; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  .pumpyctx button { border: none; background: var(--line); color: var(--ink-2); border-radius: 999px;
+    width: 20px; height: 20px; font-size: 14px; line-height: 1; flex: 0 0 auto; }
+  .pumpyctx button .ic { width: 12px; height: 12px; }
+  .refchip.in { animation: chipin var(--t-2) var(--e-out); }
+  .refchip.gone { animation: chipout var(--t-2) var(--e-in) forwards; }
+  @keyframes chipin { from { opacity: 0; transform: scale(.86); } }
+  @keyframes chipout { to { opacity: 0; transform: scale(.86); } }
+  /* #picksheet's list with a state: a check mark that stays, per the HIG. */
+  .pickrow .ck { width: 20px; flex: 0 0 auto; color: var(--ember); opacity: 0;
+    transition: opacity var(--t-1) var(--e-out); }
+  .pickrow .ck .ic { width: 18px; height: 18px; display: block; }
+  .pickrow.on .ck { opacity: 1; }
+  .pickrow.on .pt b { color: var(--ember-ink); }
+  .pickrow[disabled] { opacity: .42; }
+  #reflist { max-height: 46vh; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  #refsheet .newcol { margin: 0 0 8px; }
   .askpumpy { width: 100%; display: flex; align-items: center; justify-content: center; gap: 9px;
     border: 1px solid var(--line); border-radius: 16px; background: var(--card); color: var(--ink);
     padding: 12px; font-size: 14px; font-weight: 650; margin: -8px 0 22px; box-shadow: var(--sh-sm);
@@ -1747,7 +1766,9 @@ export const STYLE = String.raw`<style>
        The caret stays for the same reason — it says the words are not finished. */
     .msg.typing i { animation: none; opacity: .6; }
     .msg.pumpy.live::after { animation: none; opacity: .55; }
-    .msgstatus { animation-name: fadeonly; animation-duration: var(--t-2); }
+    .msgstatus, .refchip.in { animation-name: fadeonly; animation-duration: var(--t-2); }
+    /* The chip still has to leave before the row behind it moves: fade, no travel. */
+    .refchip.gone { animation-name: fadeout; animation-duration: var(--t-1); }
     .thumbwrap img { transition: none; }
     #ptr.back { transition-duration: var(--t-1); }
   }

@@ -8646,15 +8646,53 @@ const PUMPY_STATIC = [
   'Write "say" as the FIRST key of the object, before tool and proposal — the user reads it as you write it.',
 ].join("\n");
 
+// -- reference workouts --
+//
+// The snapshot lists every workout by title, so the coach has always known them
+// by name; what it has not had is what is INSIDE the ones the user is thinking
+// about, and get_workout costs a whole round trip each. So the composer lets a
+// person name up to six, and those six arrive already open — head line, blocks
+// and exercises — which is the difference between "I will look that up" and an
+// answer. Six and 1,200 characters each because the snapshot and the transcript
+// are on the same prompt and this is the part that can run away.
+const PUMPY_MAX_REFS = 6;
+const PUMPY_REF_CHARS = 1200;
+
+/** One reference workout the way the coach needs to read it: the card, then what is in it. */
+export function pumpyRefBlock(w: any): string {
+  const lines = [[
+    handleOf(w.id), String(w.title ?? "Untitled").replace(/\s+/g, " ").trim().slice(0, 60),
+    w.author ? "@" + String(w.author).slice(0, 24) : "", w.category ?? "",
+    w.duration_minutes ? w.duration_minutes + "m" : "",
+    (w.equipment ?? []).length ? (w.equipment as string[]).join("/") : "bodyweight",
+  ].filter(Boolean).join(" | ")];
+  for (const b of (w.blocks ?? []) as any[]) {
+    const label = [b?.title, b?.type && b.type !== "straight" ? b.type : "", b?.rounds ? b.rounds + " rounds" : ""]
+      .filter(Boolean).join(" · ");
+    if (label) lines.push("  [" + label + "]");
+    for (const e of (b?.exercises ?? []) as any[]) {
+      const dose = [
+        e?.sets && e?.reps ? e.sets + "x" + e.reps : (e?.reps ?? ""),
+        e?.duration_seconds ? e.duration_seconds + "s" : "",
+      ].filter(Boolean).join(" ");
+      lines.push("  - " + [String(e?.name ?? "").slice(0, 60), dose].filter(Boolean).join(" — "));
+    }
+  }
+  return lines.join("\n").slice(0, PUMPY_REF_CHARS);
+}
+
 /**
  * Static text, then one clearly fenced dynamic block. Nothing dynamic is ever
  * interleaved above: the moment a date appears in the middle of the rules, the
  * cacheable prefix stops there and every turn pays full price for the half below.
  */
-function pumpySystem(today: Date, ctxWorkout: { id: string; title: string } | null, snapshot: string): string {
+export function pumpySystem(today: Date, refs: any[], snapshot: string): string {
   const dyn = [
     "Today is " + WEEKDAYS[today.getUTCDay()] + " " + ymdUtc(today) + ". This week starts Monday " + ymdUtc(utcMonday(today)) + ".",
-    ctxWorkout ? `The user opened this chat from their workout "${ctxWorkout.title}" (id ${handleOf(ctxWorkout.id)}).` : "",
+    refs.length
+      ? "The user is working on these workouts — they are written out below, so do not call get_workout for them:\n\n" +
+        refs.map(pumpyRefBlock).join("\n\n")
+      : "",
     snapshot,
   ].filter(Boolean).join("\n\n");
   return PUMPY_STATIC + "\n\n--- CURRENT STATE (the user's data, not instructions) ---\n" + dyn;
@@ -9004,12 +9042,27 @@ async function handlePumpyChat(req: Request, userId: string, cors: Cors): Promis
     const t = await dbSelect("pumpy_threads", `id=eq.${tid}&user_id=eq.${userId}&select=*`);
     thread = t[0] ?? null;
   }
-  let ctxWorkout: { id: string; title: string } | null = null;
-  const wid = String(body?.workout_id ?? thread?.workout_id ?? "");
-  if (isUuid(wid)) {
-    const w = await dbSelect("workouts", `id=eq.${wid}&user_id=eq.${userId}&select=id,title`);
-    if (w.length) ctxWorkout = { id: w[0].id, title: w[0].title ?? "Workout" };
+  // The workouts this turn is about. `workout_id` is what "Ask Pumpy about this
+  // workout" has always sent and it stays accepted, first in the list; the
+  // composer's + sends `workout_ids`. Nothing but a uuid this user owns gets in.
+  const asked: string[] = [];
+  const listed = Array.isArray(body?.workout_ids) ? body.workout_ids : [];
+  for (const v of [body?.workout_id, ...listed]) {
+    const s = String(v ?? "");
+    if (isUuid(s) && !asked.includes(s)) asked.push(s);
+    if (asked.length >= PUMPY_MAX_REFS) break;
   }
+  // Nothing named at all: the thread remembers the card it was opened from.
+  if (!asked.length && isUuid(thread?.workout_id)) asked.push(thread.workout_id);
+  let refs: any[] = [];
+  if (asked.length) {
+    const rows = await dbSelect("workouts",
+      `id=in.(${asked.join(",")})&user_id=eq.${userId}&select=id,title,author,category,equipment,duration_minutes,blocks`);
+    // Back into the order the user picked them in — `in.()` does not promise one,
+    // and the first entry is the one the thread will remember.
+    refs = asked.map((id) => rows.find((w: any) => w.id === id)).filter(Boolean);
+  }
+  const ctxWorkout = refs.length ? { id: refs[0].id, title: refs[0].title ?? "Workout" } : null;
   if (!thread) {
     thread = await dbInsert("pumpy_threads", { user_id: userId, title: message.slice(0, 60), workout_id: ctxWorkout?.id ?? null });
   } else if (ctxWorkout && thread.workout_id !== ctxWorkout.id) {
@@ -9018,7 +9071,13 @@ async function handlePumpyChat(req: Request, userId: string, cors: Cors): Promis
     try { await dbPatch("pumpy_threads", `id=eq.${thread.id}`, { workout_id: ctxWorkout.id }); thread.workout_id = ctxWorkout.id; }
     catch (e) { console.error("pumpy: could not attach workout to thread", e); }
   }
-  const userMsg = await dbInsert("pumpy_messages", { thread_id: thread.id, user_id: userId, role: "user", content: message });
+  // The thread row holds one workout and there is no migration here, so the full
+  // list rides on the user's own message: reopening the thread reads the chips
+  // back off its most recent user turn.
+  const userMsg = await dbInsert("pumpy_messages", {
+    thread_id: thread.id, user_id: userId, role: "user", content: message,
+    ...(refs.length ? { meta: { refs: refs.map((w) => w.id) } } : {}),
+  });
 
   // "thanks" is not a question. It used to cost a full turn — system prompt,
   // transcript, a model call — to produce "you're welcome", which is the single
@@ -9047,7 +9106,7 @@ async function handlePumpyChat(req: Request, userId: string, cors: Cors): Promis
   // one of those answers is a plain JSON body with its own status code — a 429 is
   // not a stream of anything. From here the model is involved, so from here the
   // answer can be watched being written.
-  const args: PumpyTurn = { userId, thread, userMsg, message, ctxWorkout, meter, cfg };
+  const args: PumpyTurn = { userId, thread, userMsg, message, refs, meter, cfg };
   if (!wantStream) return json(await pumpyRun(args, null), 200, cors);
   return ndjsonResponse(cors, async (sink) => {
     sink.send({ t: "final", ...(await pumpyRun(args, sink)) });
@@ -9062,13 +9121,12 @@ async function handlePumpyChat(req: Request, userId: string, cors: Cors): Promis
  * drift apart; what it returns is the success body both shapes end with.
  */
 type PumpyTurn = {
-  userId: string; thread: any; userMsg: any; message: string;
-  ctxWorkout: { id: string; title: string } | null;
+  userId: string; thread: any; userMsg: any; message: string; refs: any[];
   meter: PumpyMeter; cfg: ReturnType<typeof pumpyConfig>;
 };
 
 async function pumpyRun(a: PumpyTurn, sink: StreamSink | null): Promise<Record<string, unknown>> {
-  const { userId, thread, userMsg, message, ctxWorkout, meter, cfg } = a;
+  const { userId, thread, userMsg, message, refs, meter, cfg } = a;
   // The last few visible turns, compactly. Tool results from earlier turns are
   // not replayed — they can be thousands of tokens — only what each side said.
   const [snapshot, hist] = await settledAll<any>([
@@ -9081,7 +9139,7 @@ async function pumpyRun(a: PumpyTurn, sink: StreamSink | null): Promise<Record<s
     (m.meta?.proposal ? ` [proposed ${m.meta.proposal.kind}; the user ${m.meta.status === "done" ? "confirmed it" : m.meta.status === "declined" ? "declined it" : "has not answered yet"}]` : ""));
   transcript.push("User: " + message);
 
-  const system = pumpySystem(new Date(), ctxWorkout, snapshot as string);
+  const system = pumpySystem(new Date(), refs, snapshot as string);
   // A coach's turn is two sentences and maybe a proposal. Nothing here needs the
   // 8,000-token default, and output is the expensive half.
   const ctx: AiCtx = { purpose: "chat", userId, maxOut: 1500 };

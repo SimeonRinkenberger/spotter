@@ -6364,8 +6364,12 @@ export const APP = String.raw`
     return s;
   }
 
-  var pumpy = { thread: null, messages: [], busy: false, ctx: null, loaded: false,
+  var pumpy = { thread: null, messages: [], busy: false, refs: [], loaded: false,
     meter: null, meterAsked: false, live: null, stick: true, wired: false };
+
+  // Six, because references are written into the prompt in full and it already
+  // carries the library index and the transcript.
+  var MAX_REFS = 6;
 
   // Short enough to wrap into a chip on a phone, long enough to still be a real ask.
   var QUICK_ASKS = [
@@ -6380,7 +6384,8 @@ export const APP = String.raw`
   var NO_TOUCH = !("ontouchstart" in window) && !(navigator.maxTouchPoints > 0);
 
   function openPumpy(w) {
-    if (w) pumpy.ctx = { id: w.id, title: w.title || "Workout" };
+    // "Ask Pumpy about this workout" is the first reference, picked for you.
+    if (w && pumpy.refs.indexOf(w.id) < 0) pumpy.refs = [w.id].concat(pumpy.refs).slice(0, MAX_REFS);
     setView("pumpy");
   }
 
@@ -6402,7 +6407,7 @@ export const APP = String.raw`
   function newPumpyThread() {
     pumpy.thread = null;
     pumpy.messages = [];
-    pumpy.ctx = null;
+    pumpy.refs = [];
     pumpy.loaded = true;
     pumpy.shownCount = 0;
     renderPumpy();
@@ -6481,16 +6486,20 @@ export const APP = String.raw`
     pumpy.loaded = true;
     pumpy.shownCount = 0;
     pumpy.stick = true;   // a thread opens on its newest message, always
-    // The thread already knows which card it was opened from; say so, so the
-    // context line matches the row the user just tapped.
-    pumpy.ctx = t.workout_id
-      ? { id: t.workout_id, title: (t.workouts && t.workouts.title) || "Workout" }
-      : null;
+    // The thread row remembers one workout; the messages remember all of them.
+    // This stands in until they land, and is all a pre-references thread has.
+    pumpy.refs = t.workout_id ? [t.workout_id] : [];
     renderPumpy();
     sb.from("pumpy_messages").select("*").eq("thread_id", t.id).order("id", { ascending: true }).limit(80)
       .then(function (m) {
         if (!pumpy.thread || pumpy.thread.id !== t.id) return;   // switched again while loading
         pumpy.messages = (m && m.data) || [];
+        // Chips come back off the most recent turn that had any, so picking a
+        // conversation up leaves it where you left it.
+        for (var i = pumpy.messages.length - 1; i >= 0; i--) {
+          var u = pumpy.messages[i];
+          if (u.role === "user" && u.meta && u.meta.refs && u.meta.refs.length) { pumpy.refs = u.meta.refs; break; }
+        }
         renderPumpy();
       });
   }
@@ -6755,17 +6764,91 @@ export const APP = String.raw`
     return card;
   }
 
+  // ---------- Pumpy · the workouts a turn is about ----------
+  //
+  // The coach has always known the library by title, but reading one cost it a
+  // tool call — so people described their own workouts back to it. The + at the
+  // head of the composer names up to six and sends them written out in full.
+  // ChatGPT's attach affordance, and its removable chips above the box, which
+  // are the only way to see before you send what the answer will be about.
+
+  var ctxSeen = {};   // chips already on screen, so only new ones fly in
+
   function renderPumpyCtx() {
-    var c = $("pumpyctx");
+    var c = $("pumpyctx"), seen = {};
+    // An id whose workout has since been deleted simply stops being a chip.
+    var rows = pumpy.refs.map(srcById).filter(Boolean);
     c.innerHTML = "";
-    if (!pumpy.ctx) { c.classList.add("hide"); return; }
-    c.classList.remove("hide");
-    c.appendChild(document.createTextNode("About "));
-    c.appendChild(el("b", null, pumpy.ctx.title));
-    var x = icon(el("button", null), "x");
-    x.setAttribute("aria-label", "Stop talking about this workout");
-    x.onclick = function () { pumpy.ctx = null; renderPumpyCtx(); };
-    c.appendChild(x);
+    c.classList.toggle("hide", !rows.length);
+    rows.forEach(function (w) {
+      var chip = el("span", "refchip" + (ctxSeen[w.id] ? "" : " in"));
+      seen[w.id] = 1;
+      chip.appendChild(el("b", null, w.title || "Workout"));
+      var x = icon(el("button", null), "x");
+      x.setAttribute("aria-label", "Stop working on " + (w.title || "this workout"));
+      x.onclick = function () {
+        // Out before it is forgotten: dropping it from the list first would take
+        // the chip away before the eye had followed it.
+        chip.classList.remove("in");
+        chip.classList.add("gone");
+        setTimeout(function () {
+          pumpy.refs = pumpy.refs.filter(function (id) { return id !== w.id; });
+          delete ctxSeen[w.id];
+          renderPumpyCtx();
+        }, 200);
+      };
+      chip.appendChild(x);
+      c.appendChild(chip);
+    });
+    ctxSeen = seen;
+  }
+
+  function openRefSheet() {
+    $("refsearch").value = "";
+    renderRefList();
+    openSheet("refsheet");
+  }
+
+  function renderRefList() {
+    var list = $("reflist"), q = $("refsearch").value.toLowerCase().trim();
+    var full = pumpy.refs.length >= MAX_REFS;
+    list.innerHTML = "";
+    var rows = state.workouts.filter(function (w) {
+      return !q || [w.title, w.author, w.category].join(" ").toLowerCase().indexOf(q) >= 0;
+    });
+    if (!rows.length) {
+      list.appendChild(el("p", "lede", state.workouts.length ? "Nothing by that name."
+        : "Save a workout first, then you can point Pumpy at it."));
+    }
+    rows.forEach(function (w) {
+      var on = pumpy.refs.indexOf(w.id) >= 0;
+      var row = el("button", "pickrow" + (on ? " on" : ""));
+      row.setAttribute("aria-pressed", on ? "true" : "false");
+      if (w.thumb_url) {
+        var img = el("img");
+        img.src = w.thumb_url;
+        img.alt = "";
+        row.appendChild(img);
+      }
+      var t = el("div", "pt");
+      t.appendChild(el("b", null, w.title || "Workout"));
+      t.appendChild(el("span", null, [w.author ? "@" + w.author : "", w.category, fmtDur(w.duration_minutes)]
+        .filter(Boolean).join(" · ")));
+      row.appendChild(t);
+      row.appendChild(icon(el("span", "ck"), "check"));
+      // At six the unpicked rows go quiet: a cap you can see beats one that argues.
+      if (full && !on) row.disabled = true;
+      row.onclick = function () {
+        pumpy.refs = on
+          ? pumpy.refs.filter(function (id) { return id !== w.id; })
+          : pumpy.refs.concat([w.id]);
+        renderRefList();
+        renderPumpyCtx();
+      };
+      list.appendChild(row);
+    });
+    var n = pumpy.refs.length;
+    $("refdone").textContent = n ? "Done · " + n : "Done";
   }
 
   // ---------- Pumpy · the answer as it is written ----------
@@ -6838,10 +6921,14 @@ export const APP = String.raw`
     pumpy.stick = true;
     pumpy.messages.push({ id: "local-" + Date.now(), role: "user", content: text });
     renderPumpy();
+    var ids = pumpy.refs.slice(0, MAX_REFS);
     var payload = {
       thread_id: pumpy.thread ? pumpy.thread.id : null,
       message: text,
-      workout_id: pumpy.ctx ? pumpy.ctx.id : null
+      // Both shapes: workout_id is what every deployed function already reads, so
+      // the chips still do something during the minutes between the two deploys.
+      workout_id: ids[0] || null,
+      workout_ids: ids
     };
     apiStream("pumpy/chat", payload, function (r) {
       if (r.t !== "final") { liveEvent(r); return; }
@@ -7660,7 +7747,7 @@ export const APP = String.raw`
 
   ["addsheet", "setsheet", "watchsheet", "exsheet", "exeditsheet", "explainsheet", "picksheet",
    "settingssheet", "colsheet", "renamesheet", "swapsheet", "pumpysheet", "capsheet", "plansheet",
-   "daysheet", "copysheet"]
+   "daysheet", "copysheet", "refsheet"]
     .forEach(wireSheet);
 
   function overlayShowing() {
@@ -9440,6 +9527,9 @@ export const APP = String.raw`
   $("pumpysend").onclick = function () { sendPumpy(); };
   $("pumpychats").onclick = openPumpyThreads;
   $("pumpynew").onclick = newPumpyThread;
+  $("pumpyplus").onclick = openRefSheet;
+  $("refdone").onclick = function () { closeSheet("refsheet"); };
+  $("refsearch").addEventListener("input", renderRefList);
   $("pumpyinput").addEventListener("keydown", function (e) {
     if (NO_TOUCH && e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendPumpy(); }
   });
