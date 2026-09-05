@@ -307,10 +307,16 @@ export const STYLE = String.raw`<style>
   /* ---------- filter chips ---------- */
   /* This row used to ask for horizontal pans back, because the pager was taking
      them away at the top. It no longer takes them, so there is nothing to ask. */
-  .chips { display: flex; gap: 7px; overflow-x: auto; padding: 14px 18px 6px; scrollbar-width: none;
+  /* The row's side inset lives on the end chips, not on the scroller: Blink measures
+     a sticky inset from the scrollport's content box and WebKit from its padding box,
+     so a padded scroller pins the Sort chip 18px apart on the two engines. With no
+     horizontal padding there is nothing for them to disagree about. */
+  .chips { display: flex; gap: 7px; overflow-x: auto; padding: 14px 0 6px; scrollbar-width: none;
     -webkit-mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 26px), transparent 100%);
     mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 26px), transparent 100%); }
   .chips::-webkit-scrollbar { display: none; }
+  .chips > :first-child { margin-left: 18px; }
+  .chips > :last-child { margin-right: 18px; }
   .chip { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px;
     border: none; background: var(--sand); color: var(--ink-2);
     border-radius: 999px; padding: 9px 14px; font-size: 13px; font-weight: 600; line-height: 1;
@@ -321,6 +327,16 @@ export const STYLE = String.raw`<style>
   .chip.active { background: var(--ember); color: var(--on-ember); box-shadow: 0 3px 12px var(--glow); }
   .chip .n { opacity: .5; font-weight: 700; margin-left: 5px; font-size: 11px; font-variant-numeric: tabular-nums; }
   .chip.active .n { opacity: .75; }
+  /* Sort stays put while the filters scroll under it: what decides the shape of the
+     page below cannot be something you drag the row to find. Stuck at the row's own
+     18px inset, so at rest it has not moved. The paper edge on its right is what the
+     chips vanish behind — a lit pill floating over sand would read as a bug. */
+  .chips .chip.sortchip { position: sticky; left: 18px; z-index: 2;
+    background: var(--card); color: var(--ink); box-shadow: 0 0 0 1px var(--line); }
+  .chips .chip.sortchip .ic { color: var(--ember-ink); }
+  .chip.sortchip::before { content: ""; position: absolute; left: 100%; top: -14px; bottom: -6px;
+    width: 18px; pointer-events: none;
+    background: linear-gradient(90deg, var(--paper) 30%, transparent); }
 
   /* ---------- today ----------
      The Plan's own day card, borrowed to answer the question the app is opened
@@ -353,6 +369,8 @@ export const STYLE = String.raw`<style>
     transition: transform var(--t-1) var(--e-out); }
   .colbar button:active { transform: scale(.94); }
   .colbar button.warn { color: var(--ember-ink); }
+  .colbar .clr { display: inline-flex; align-items: center; gap: 5px; }
+  .colbar .clr .ic { width: 13px; height: 13px; }
   .colrow { display: flex; align-items: center; gap: 12px; padding: 10px 6px; border: none;
     background: none; text-align: left; border-radius: 13px; width: 100%; }
   .colrow:active { background: var(--sand); }
@@ -379,6 +397,34 @@ export const STYLE = String.raw`<style>
   .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px 13px; padding: 12px 18px 24px; }
   @media (min-width: 640px) { .grid { grid-template-columns: repeat(3, 1fr); } }
   @media (min-width: 980px) { .grid { grid-template-columns: repeat(4, 1fr); } }
+
+  /* ---------- sections ----------
+     Grouped, the grid becomes one grid per section under a heading that stays put
+     while its own cards are on screen and is pushed off by the next — the plain
+     list of Photos and Apple Music. Each heading sticks inside its own <section>,
+     which is what stops twelve of them stacking at the top. It rests under the app
+     header AND the search bar (--gsec, measured: both grow with the system) and
+     below the search bar's layer, so it slides beneath that glass, not over it. */
+  .grid.grouped { display: block; padding: 2px 0 24px; }
+  .grouped .grid { padding: 10px 18px 22px; }
+  .ghead { position: sticky; top: var(--gsec, 155px); z-index: 4; display: flex;
+    align-items: stretch; padding-left: 18px;
+    background: color-mix(in srgb, var(--paper) 84%, transparent);
+    -webkit-backdrop-filter: blur(20px) saturate(1.5); backdrop-filter: blur(20px) saturate(1.5); }
+  .gname { flex: 1; min-width: 0; display: flex; align-items: center; gap: 7px;
+    border: none; background: none; text-align: left; padding: 12px 0 10px; color: var(--ink);
+    font-family: var(--display); font-size: 17px; font-weight: 700; letter-spacing: -.015em;
+    transition: opacity var(--t-1) var(--e-out); }
+  .gname b { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gname .ic { width: 14px; height: 14px; color: var(--muted); flex: 0 0 auto; }
+  .gn { flex: 0 0 auto; font-size: 12px; font-weight: 700; color: var(--ink-2);
+    font-variant-numeric: tabular-nums; }
+  /* 44px wide: a control in its own right, not a decoration on one. */
+  .gjump { flex: 0 0 auto; width: 44px; border: none; background: none; color: var(--ink-2);
+    display: flex; align-items: center; justify-content: center;
+    transition: opacity var(--t-1) var(--e-out); }
+  .gname:active, .gjump:active { opacity: .5; }
+  @media (prefers-reduced-motion: reduce) { .gname, .gjump { transition: none; } }
   .carditem { background: none; border: none; padding: 0; display: flex; flex-direction: column;
     cursor: pointer; min-width: 0; text-align: left; transition: transform var(--t-2) var(--e-out); }
   .carditem:active { transform: scale(.968); }
@@ -987,6 +1033,19 @@ export const STYLE = String.raw`<style>
   .pickrow .pt b { display: block; font-size: 14px; font-weight: 600; line-height: 1.3;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pickrow .pt span { font-size: 11.5px; color: var(--muted); }
+
+  /* ---------- sort and jump ----------
+     A mark against the one in force, which is what Apple says people scan a list of
+     attributes for — not a segmented control, whose equal segments would clip the
+     longest of three unequal labels at 375px. 44px rows, iOS's default size. */
+  .sortrow { min-height: 44px; gap: 10px; }
+  .sortrow b { flex: 1; min-width: 0; font-size: 15px; font-weight: 600;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sortrow .ic { width: 17px; height: 17px; flex: 0 0 auto; color: var(--ember-ink); }
+  .sortrow.on b { color: var(--ember-ink); }
+  .jumpwrap { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); }
+  .jumpwrap h3 { margin: 0 0 4px 6px; font-family: inherit; font-size: 11.5px; font-weight: 700;
+    letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
 
   /* ---------- toast ---------- */
   /* Hung from the frame's bottom edge, not the layout viewport's — not the same
