@@ -66,6 +66,7 @@ export const MARKUP_BODY = String.raw`</head>
 <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20.5 12a8.5 8.5 0 1 1-2.5-6"/><path d="M21 3.5V6h-2.5"/></symbol>
 <symbol id="i-settings" viewBox="0 0 24 24"><path d="M13.8 2.5h-3.6l-.5 2.6-2.3 1.3-2.5-.9-1.8 3.1 2 1.7v2.6l-2 1.7 1.8 3.1 2.5-.9 2.3 1.3.5 2.6h3.6l.5-2.6 2.3-1.3 2.5.9 1.8-3.1-2-1.7v-2.6l2-1.7-1.8-3.1-2.5.9-2.3-1.3z"/><circle cx="12" cy="12" r="3"/></symbol>
 <symbol id="i-list" viewBox="0 0 24 24"><path d="M3.5 6h17"/><path d="M3.5 12h17"/><path d="M3.5 18h17"/></symbol>
+<symbol id="i-sort" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M7 12h10"/><path d="M10 18h4"/></symbol>
 <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M18.5 2.5a2.8 2.8 0 0 1 4 4L7 22l-5 1 1-5z"/><path d="m15 5 4 4"/></symbol>
 <symbol id="i-folder" viewBox="0 0 24 24"><path d="M2 6a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z"/></symbol>
 <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></symbol>
@@ -396,6 +397,19 @@ export const MARKUP_BODY = String.raw`</head>
   <div class="grabber"></div>
   <h2 id="picktitle">Pick a workout</h2>
   <div class="picklist" id="picklist"></div>
+</div></div>
+
+<!-- How the library is ordered, and once it has sections a way to reach the twelfth
+     without dragging past eleven. Both in one sheet because whoever wants to jump is
+     already steering the order. -->
+<div class="sheet" id="sortsheet"><div class="sheetbody">
+  <div class="grabber"></div>
+  <h2>Sort library</h2>
+  <div class="picklist" id="sortlist"></div>
+  <div class="jumpwrap hide" id="jumpwrap">
+    <h3>Jump to</h3>
+    <div class="picklist" id="jumplist"></div>
+  </div>
 </div></div>
 
 <div class="sheet" id="daysheet"><div class="sheetbody">

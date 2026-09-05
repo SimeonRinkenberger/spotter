@@ -1131,12 +1131,51 @@ export const APP = String.raw`
   }
   function colLabel(c) { return (c.emoji ? c.emoji + " " : "") + c.name; }
 
+  // ---------- how the library is ordered ----------
+  //
+  // Filters narrow, sort re-shapes: two controls because they answer two questions,
+  // the split Spotify's Your Library and Pinterest's boards grid both keep. Newest
+  // leads because it is what the library does today.
+  var SORTS = ["new", "by", "mg"];
+  var SORTLBL = { "new": "Newest", "by": "Creator", "mg": "Body part" };
+
+  // The vocabulary the server derives, in its own order: down the front of a body
+  // and then the back, as the Progress figure reads. Alphabetical would open on
+  // Back, Biceps, Calves — a filing cabinet, not a body.
+  var MUSCLES = ["chest", "back", "shoulders", "biceps", "triceps", "forearms", "core",
+    "glutes", "quads", "hamstrings", "calves", "full body"];
+
+  // Remembered across sessions, as Spotify's is: an order chosen once is a
+  // statement about the library, not about this minute.
+  var SORT_KEY = "spotter_sort", sortMode = "new";
+  try {
+    var savedSort = localStorage.getItem(SORT_KEY);
+    if (savedSort === "by" || savedSort === "mg") sortMode = savedSort;
+  } catch (e) { /* a private window still gets a library, just not a remembered order */ }
+
+  // The body-part twin of by:, same prefix:value shape. Both take an empty value —
+  // "by:" is everything nobody signed, "mg:" everything no heading claimed — because
+  // a section a person can see has to be one they can tap, leftovers included.
+  function isMgFilter(f) { return typeof f === "string" && f.indexOf("mg:") === 0; }
+  function hasMg(w, m) {
+    var mg = w.muscle_groups || [], i, v;
+    for (i = 0; i < mg.length; i++) {
+      v = String(mg[i]).toLowerCase().trim();
+      if (m) { if (v === m) return true; }
+      // Unsorted means "under no heading this app has", not "lists no muscles": a
+      // value the catalog stopped using would otherwise leave the library entirely.
+      else if (MUSCLES.indexOf(v) >= 0) return false;
+    }
+    return !m;
+  }
+
   function visible() {
     var q = state.q.toLowerCase().trim();
     return state.workouts.filter(function (w) {
       if (state.filter === "Favorites") { if (!w.favorite) return false; }
       else if (isColFilter(state.filter)) { if (!inCol(state.filter.slice(4), w.id)) return false; }
       else if (isByFilter(state.filter)) { if (authorKey(w.author) !== state.filter.slice(3)) return false; }
+      else if (isMgFilter(state.filter)) { if (!hasMg(w, state.filter.slice(3))) return false; }
       else if (state.filter !== "All" && w.category !== state.filter) return false;
       if (!q) return true;
       var hay = [w.title, w.author, w.category, (w.muscle_groups || []).join(" "),
@@ -1159,38 +1198,25 @@ export const APP = String.raw`
 
   function renderChips() {
     var wrap = $("chips");
-    var counts = {}, favs = 0, byAuth = {};
+    var counts = {}, favs = 0;
     state.workouts.forEach(function (w) {
       counts[w.category] = (counts[w.category] || 0) + 1;
       if (w.favorite) favs++;
-      var a = authorKey(w.author);
-      if (!a) return;
-      // The label keeps the first spelling seen: the handle as its platform writes it.
-      if (!byAuth[a]) byAuth[a] = { label: w.author, n: 0 };
-      byAuth[a].n++;
     });
-    // A collection can be deleted under the chip filtering on it, and a creator can
-    // lose their last card the same way. Clearing beats an empty grid explaining itself.
+    // A collection can be deleted under the chip filtering on it. Clearing beats an
+    // empty grid explaining itself. (The creator and muscle narrows lost their chips
+    // and are cleared the same way by the bar below this row.)
     if (isColFilter(state.filter) && !colById(state.filter.slice(4))) state.filter = "All";
-    if (isByFilter(state.filter) && !byAuth[state.filter.slice(3)]) state.filter = "All";
 
-    var list = [{ key: "All", label: "All", n: state.workouts.length }];
+    // Sort leads the row, pinned while the filters scroll under it: it is not one
+    // more filter to hunt for, it decides the shape of everything below. Apple's
+    // repeated "Sort by" is the sheet title, so the chip can carry the answer.
+    var list = [{ key: "__sort", cls: "sortchip", label: SORTLBL[sortMode], icon: "sort", n: null }];
+    list.push({ key: "All", label: "All", n: state.workouts.length });
     if (favs) list.push({ key: "Favorites", label: "Favourites", icon: "star", n: favs });
-    // The people this library is made of. Three at most, and none with a single card:
-    // a chip that narrows the grid to one workout saves nobody a scroll. By count,
-    // then by name, so a tie does not reshuffle the row between renders.
-    var byKeys = Object.keys(byAuth).filter(function (a) { return byAuth[a].n > 1; })
-      .sort(function (a, b) { return byAuth[b].n - byAuth[a].n || (a < b ? -1 : 1); })
-      .slice(0, 3);
-    // A handle tapped on a card can belong to someone under that floor or outside
-    // the top three, and a filter with no chip to account for it is a library that
-    // looks broken and cannot be switched off. Pin the active one in.
-    var by = isByFilter(state.filter) ? state.filter.slice(3) : null;
-    if (by && byKeys.indexOf(by) < 0) byKeys.push(by);
-    byKeys.forEach(function (a) {
-      list.push({ key: "by:" + a, label: "@" + byAuth[a].label, n: byAuth[a].n });
-    });
-    // Collections sit beside Favorites: the same idea, just more of them.
+    // The three busiest creators used to sit here, and they were the complaint: three
+    // out of however many a library is made of, the rest reachable only by dragging
+    // the row. Creator sort now lists every one, with a count and a jump.
     state.collections.forEach(function (c) {
       list.push({ key: "col:" + c.id, label: colLabel(c), n: colCount(c.id) });
     });
@@ -1212,11 +1238,13 @@ export const APP = String.raw`
     wrap.innerHTML = "";
 
     list.forEach(function (item) {
-      var b = el("button", "chip" + (state.filter === item.key ? " active" : ""));
+      var b = el("button", "chip" + (item.cls ? " " + item.cls : "") +
+        (state.filter === item.key ? " active" : ""));
       if (item.icon) b.appendChild(ic(item.icon));
       b.appendChild(document.createTextNode(item.label));
       if (item.n !== null) b.appendChild(el("span", "n", String(item.n)));
       b.onclick = function () {
+        if (item.key === "__sort") { openSort(); return; }
         if (item.key === "__newcol") { openCollections(null); return; }
         state.filter = item.key;
         render();
@@ -1232,6 +1260,30 @@ export const APP = String.raw`
     var bar = $("colbar");
     bar.innerHTML = "";
     var c = isColFilter(state.filter) ? colById(state.filter.slice(4)) : null;
+    // A creator or a body part narrows the grid as a collection does, and with the
+    // creator chips gone this line is the only thing that says which narrow is on —
+    // and the only way back out.
+    if (!c && (isByFilter(state.filter) || isMgFilter(state.filter))) {
+      var isBy = isByFilter(state.filter), k = state.filter.slice(3), n = 0, name = null;
+      state.workouts.forEach(function (w) {
+        if (isBy ? authorKey(w.author) !== k : !hasMg(w, k)) return;
+        n++;
+        // The handle as its own platform spells it, which authorKey has lower-cased.
+        if (!name && isBy && k) name = "@" + w.author;
+      });
+      // Either can lose its last card while it is the filter, and nothing else on
+      // this page would notice; the chip row has to be told its All is lit again.
+      if (!n) { state.filter = "All"; renderChips(); }
+      else {
+        bar.classList.remove("hide");
+        if (!name) name = isBy ? "No creator" : (k ? capWord(k) : "Unsorted");
+        bar.appendChild(el("b", null, name + " · " + n + (n === 1 ? " workout" : " workouts")));
+        var back = icon(el("button", "clr"), "x", "All");
+        back.onclick = function () { state.filter = "All"; render(); viewIn($("grid")); };
+        bar.appendChild(back);
+        return;
+      }
+    }
     if (!c) { bar.classList.add("hide"); return; }
     bar.classList.remove("hide");
     var n = colCount(c.id);
@@ -1242,6 +1294,112 @@ export const APP = String.raw`
     var del = el("button", "warn", "Delete");
     del.onclick = function () { deleteCollection(c); };
     bar.appendChild(del);
+  }
+
+  // ---------- sections and the jump list ----------
+  //
+  // Where a heading comes to rest: under the app header and the search bar, the two
+  // things this page scrolls beneath. Measured, not written into the stylesheet —
+  // the header grows by the status bar and the search bar by the text size.
+  function secTop() {
+    var h = document.querySelector("header"), s = $("searchwrap");
+    return (h ? h.getBoundingClientRect().height : 0) + (s ? s.getBoundingClientRect().height : 0);
+  }
+  function libTop() { var pg = $("libpage"); if (pg) pg.scrollTop = 0; }
+
+  // Busiest creator first, ties by name so the order does not reshuffle between
+  // renders. "No creator" is a leftovers drawer, and leftovers go at the bottom.
+  function sections(items) {
+    var out = [], i;
+    if (sortMode === "by") {
+      var m = {}, keys = [], none = [];
+      items.forEach(function (w) {
+        var a = authorKey(w.author);
+        if (!a) { none.push(w); return; }
+        if (!m[a]) { m[a] = { key: "by:" + a, label: "@" + w.author, items: [] }; keys.push(a); }
+        m[a].items.push(w);
+      });
+      keys.sort(function (a, b) { return m[b].items.length - m[a].items.length || (a < b ? -1 : 1); });
+      for (i = 0; i < keys.length; i++) out.push(m[keys[i]]);
+      if (none.length) out.push({ key: "by:", label: "No creator", items: none });
+      return out;
+    }
+    // A card is listed under EVERY muscle it works — how Photos files a picture of
+    // two people into both albums. A set that trains chest and triceps is a real
+    // answer to "what have I got for triceps"; one heading only would make the
+    // other heading lie.
+    for (i = 0; i < MUSCLES.length; i++) {
+      var mus = MUSCLES[i];
+      var got = items.filter(function (w) { return hasMg(w, mus); });
+      if (got.length) out.push({ key: "mg:" + mus, label: capWord(mus), items: got });
+    }
+    var rest = items.filter(function (w) { return hasMg(w, ""); });
+    if (rest.length) out.push({ key: "mg:", label: "Unsorted", items: rest });
+    return out;
+  }
+
+  function openSort() {
+    var sl = $("sortlist");
+    sl.innerHTML = "";
+    sl.setAttribute("role", "radiogroup");
+    SORTS.forEach(function (k) {
+      var on = sortMode === k;
+      var r = el("button", "pickrow sortrow" + (on ? " on" : ""));
+      r.setAttribute("role", "radio");
+      r.setAttribute("aria-checked", on ? "true" : "false");
+      r.appendChild(el("b", null, SORTLBL[k]));
+      // A mark against the one in force, not a lit row: Apple's Menus guidance is
+      // that a checkmark is what people scan a list of attributes for.
+      if (on) r.appendChild(ic("check"));
+      r.onclick = function () { setSort(k); };
+      sl.appendChild(r);
+    });
+    renderJump();
+    openSheet("sortsheet");
+  }
+
+  function setSort(k) {
+    if (k !== sortMode) {
+      sortMode = k;
+      try { localStorage.setItem(SORT_KEY, k); } catch (e) { /* the order still applies today */ }
+      // A narrow taken out of a section means nothing under another sort: "Chest"
+      // grouped by creator is one heading over one group.
+      if (isByFilter(state.filter) || isMgFilter(state.filter)) state.filter = "All";
+      render();
+      viewIn($("grid"));
+      libTop();
+    }
+    // iOS dismisses a picker on the choice rather than asking to be dismissed too.
+    closeSheet("sortsheet");
+  }
+
+  // Apple sends a very long list to an index rail, and a rail is the one thing that
+  // does not fit: down the trailing edge of a 375px screen each section gets about
+  // 20pt, under iOS's 44pt default and Android's 48dp floor, and it eats the width
+  // of a two-column grid. A sheet of full 44pt rows clears both.
+  function renderJump() {
+    var wrap = $("jumpwrap"), jl = $("jumplist");
+    // Read off the headings the grid is actually showing, so the list cannot come
+    // to describe a library that has moved on underneath it.
+    var heads = $("grid").querySelectorAll(".gname");
+    jl.innerHTML = "";
+    if (heads.length < 2) { wrap.classList.add("hide"); return; }
+    wrap.classList.remove("hide");
+    Array.prototype.forEach.call(heads, function (h) {
+      var r = el("button", "pickrow sortrow");
+      r.appendChild(el("b", null, h.children[0].textContent));
+      r.appendChild(el("span", "gn", h.children[1].textContent));
+      r.onclick = function () { closeSheet("sortsheet"); jumpTo(h.parentNode.parentNode); };
+      jl.appendChild(r);
+    });
+  }
+
+  function jumpTo(sec) {
+    var pg = $("libpage");
+    var top = pg.scrollTop + sec.getBoundingClientRect().top - pg.getBoundingClientRect().top - secTop();
+    if (top < 0) top = 0;
+    if (lessMotion() || !pg.scrollTo) pg.scrollTop = top;
+    else pg.scrollTo({ top: top, behavior: "smooth" });
   }
 
   // ---------- today ----------
@@ -1381,6 +1539,7 @@ export const APP = String.raw`
 
     if (!items.length) {
       grid.classList.add("hide");
+      grid.classList.remove("grouped");
       empty.classList.remove("hide");
       empty.innerHTML = "";
       empty.appendChild(icon(el("div", "big"), state.workouts.length ? "search" : "dumbbell"));
@@ -1408,92 +1567,136 @@ export const APP = String.raw`
     empty.classList.add("hide");
     grid.classList.remove("hide");
 
-    items.forEach(function (w, i) {
-      var pending = isPending(w), failed = isFailed(w);
-      var card = el("button", "carditem" + (pending ? " pending" : "") + (failed ? " failed" : ""));
-      cardIn(card, w.id);
+    // Grouping goes off once the grid is narrowed to one of its own sections: a
+    // single heading says nothing the line above it just said. A category or a
+    // collection still groups — "Push, by creator" is a question people ask.
+    var group = sortMode !== "new" &&
+      !(sortMode === "by" && isByFilter(state.filter)) &&
+      !(sortMode === "mg" && isMgFilter(state.filter));
+    grid.classList.toggle("grouped", group);
 
-      var tw = el("div", "thumbwrap loading");
-      if (pending || failed) {
-        var up = isUpload(w);
-        var stage = stageOf(w);
-        tw.className = "thumbwrap " + (pending ? "pending" : "failed");
-        // A failed upload cannot be retried — the file was deleted the moment
-        // Spotter finished listening — so it must not wear the mark that says it can.
-        tw.appendChild(icon(el("div", "noimg"), pending ? stage.glyph : (up ? "ear" : "refresh")));
-        card.appendChild(tw);
-        var pb = el("div", "cardbody");
-        var pk = el("div", "cardkick");
-        pk.appendChild(el("div", "catpill",
-          pending ? stage.kick : (up ? "Failed" : "Retry")));
-        pb.appendChild(pk);
-        pb.appendChild(el("div", "cardtitle", w.title || stage.line));
-        pb.appendChild(el("div", "cardmeta" + (failed ? " retryline" : ""), cardMeta(w)));
-        card.appendChild(pb);
-        card.onclick = function () { openDetail(w); };
-        grid.appendChild(card);
-        return;
-      }
-      if (w.thumb_url) {
-        var img = el("img");
-        // The four above the fold are the first thing anybody looks at, so they
-        // are told to hurry; the rest keep the lazy default. decoding=async on all
-        // of them, because a thumbnail decoded on the main thread is one decoded
-        // during a scroll.
-        img.loading = i < 4 ? "eager" : "lazy";
-        img.decoding = "async";
-        if (i < 4) img.setAttribute("fetchpriority", "high");
-        img.alt = "";
-        img.src = w.thumb_url;
-        img.onload = function () { tw.classList.remove("loading"); tw.classList.add("loaded"); };
-        img.onerror = function () {
-          tw.classList.remove("loading");
-          tw.appendChild(icon(el("div", "noimg"), "dumbbell"));
-        };
-        // Cached: a skeleton for a wait already over is the flicker it prevents.
-        if (img.complete && img.naturalWidth) {
-          tw.classList.remove("loading");
-          tw.classList.add("loaded");
-        }
-        tw.appendChild(img);
-      } else {
-        tw.classList.remove("loading");
-        if (w.platform === "pumpy") {
-          var pi = el("div", "noimg pumpyimg");
-          pi.innerHTML = PUMPY_MARK;
-          tw.appendChild(pi);
-        } else {
-          tw.appendChild(icon(el("div", "noimg"), "dumbbell"));
-        }
-      }
-      // The star was a character a screen reader read out; an aria-hidden icon is
-      // not, so the state it stands for has to be said in words.
-      if (w.favorite) {
-        var fv = icon(el("div", "fav"), "star");
-        fv.setAttribute("role", "img");
-        fv.setAttribute("aria-label", "Favourite");
-        tw.appendChild(fv);
-      }
-      var d = fmtDur(w.duration_minutes);
-      if (d) tw.appendChild(el("div", "durbadge", d));
-      card.appendChild(tw);
+    if (!group) {
+      items.forEach(function (w, i) { grid.appendChild(cardNode(w, i)); });
+      return;
+    }
 
-      var body = el("div", "cardbody");
-      var kick = el("div", "cardkick");
-      kick.appendChild(el("div", "catpill", w.category || "Other"));
-      // The whole word now it is not shouting: "ADV" was a compression the caps
-      // made tolerable, and "Adv" is just a word cut short. The row is stored
-      // lower-case, which read as a shout being undone rather than a word.
-      if (w.difficulty) kick.appendChild(el("div", "diffpill", capWord(w.difficulty)));
-      body.appendChild(kick);
-      body.appendChild(el("div", "cardtitle", w.title || "Untitled workout"));
-      var meta = cardMeta(w);
-      if (meta) body.appendChild(el("div", "cardmeta", meta));
-      card.appendChild(body);
-
-      card.onclick = function () { openDetail(w); };
-      grid.appendChild(card);
+    var rest = secTop();
+    if (rest > 1) document.documentElement.style.setProperty("--gsec", rest + "px");
+    var n = 0;
+    sections(items).forEach(function (g) {
+      var sec = el("section", "gsec");
+      var head = el("div", "ghead");
+      var name = el("button", "gname");
+      name.appendChild(el("b", null, g.label));
+      name.appendChild(el("span", "gn", String(g.items.length)));
+      name.appendChild(ic("chev"));
+      name.onclick = function () { state.filter = g.key; render(); viewIn($("grid")); libTop(); };
+      head.appendChild(name);
+      // The jump lives on the one row always on screen: by the time anybody wants
+      // the twelfth section, the chip row carrying Sort is ten cards above them.
+      var jb = el("button", "gjump");
+      jb.setAttribute("aria-label", "Jump to a section");
+      jb.appendChild(ic("list"));
+      jb.onclick = function () { openSort(); };
+      head.appendChild(jb);
+      sec.appendChild(head);
+      // The section's own two columns are the library grid again, class and all,
+      // so one set of rules and one set of breakpoints answers for both.
+      var box = el("div", "grid");
+      g.items.forEach(function (w) { box.appendChild(cardNode(w, n++)); });
+      sec.appendChild(box);
+      grid.appendChild(sec);
     });
+  }
+
+  // One card, wherever it is going: the flat grid, or a section of it. i is its
+  // place on the page and nothing else — the first four are what a person is
+  // looking at. Listed under three muscles it still flies in once: cardIn is how a
+  // NEW card arrives, and one workout arriving three times is a flock, not news.
+  function cardNode(w, i) {
+    var pending = isPending(w), failed = isFailed(w);
+    var card = el("button", "carditem" + (pending ? " pending" : "") + (failed ? " failed" : ""));
+    cardIn(card, w.id);
+
+    var tw = el("div", "thumbwrap loading");
+    if (pending || failed) {
+      var up = isUpload(w);
+      var stage = stageOf(w);
+      tw.className = "thumbwrap " + (pending ? "pending" : "failed");
+      // A failed upload cannot be retried — the file was deleted the moment
+      // Spotter finished listening — so it must not wear the mark that says it can.
+      tw.appendChild(icon(el("div", "noimg"), pending ? stage.glyph : (up ? "ear" : "refresh")));
+      card.appendChild(tw);
+      var pb = el("div", "cardbody");
+      var pk = el("div", "cardkick");
+      pk.appendChild(el("div", "catpill",
+        pending ? stage.kick : (up ? "Failed" : "Retry")));
+      pb.appendChild(pk);
+      pb.appendChild(el("div", "cardtitle", w.title || stage.line));
+      pb.appendChild(el("div", "cardmeta" + (failed ? " retryline" : ""), cardMeta(w)));
+      card.appendChild(pb);
+      card.onclick = function () { openDetail(w); };
+      return card;
+    }
+    if (w.thumb_url) {
+      var img = el("img");
+      // The four above the fold are the first thing anybody looks at, so they
+      // are told to hurry; the rest keep the lazy default. decoding=async on all
+      // of them, because a thumbnail decoded on the main thread is one decoded
+      // during a scroll.
+      img.loading = i < 4 ? "eager" : "lazy";
+      img.decoding = "async";
+      if (i < 4) img.setAttribute("fetchpriority", "high");
+      img.alt = "";
+      img.src = w.thumb_url;
+      img.onload = function () { tw.classList.remove("loading"); tw.classList.add("loaded"); };
+      img.onerror = function () {
+        tw.classList.remove("loading");
+        tw.appendChild(icon(el("div", "noimg"), "dumbbell"));
+      };
+      // Cached: a skeleton for a wait already over is the flicker it prevents.
+      if (img.complete && img.naturalWidth) {
+        tw.classList.remove("loading");
+        tw.classList.add("loaded");
+      }
+      tw.appendChild(img);
+    } else {
+      tw.classList.remove("loading");
+      if (w.platform === "pumpy") {
+        var pi = el("div", "noimg pumpyimg");
+        pi.innerHTML = PUMPY_MARK;
+        tw.appendChild(pi);
+      } else {
+        tw.appendChild(icon(el("div", "noimg"), "dumbbell"));
+      }
+    }
+    // The star was a character a screen reader read out; an aria-hidden icon is
+    // not, so the state it stands for has to be said in words.
+    if (w.favorite) {
+      var fv = icon(el("div", "fav"), "star");
+      fv.setAttribute("role", "img");
+      fv.setAttribute("aria-label", "Favourite");
+      tw.appendChild(fv);
+    }
+    var d = fmtDur(w.duration_minutes);
+    if (d) tw.appendChild(el("div", "durbadge", d));
+    card.appendChild(tw);
+
+    var body = el("div", "cardbody");
+    var kick = el("div", "cardkick");
+    kick.appendChild(el("div", "catpill", w.category || "Other"));
+    // The whole word now it is not shouting: "ADV" was a compression the caps
+    // made tolerable, and "Adv" is just a word cut short. The row is stored
+    // lower-case, which read as a shout being undone rather than a word.
+    if (w.difficulty) kick.appendChild(el("div", "diffpill", capWord(w.difficulty)));
+    body.appendChild(kick);
+    body.appendChild(el("div", "cardtitle", w.title || "Untitled workout"));
+    var meta = cardMeta(w);
+    if (meta) body.appendChild(el("div", "cardmeta", meta));
+    card.appendChild(body);
+
+    card.onclick = function () { openDetail(w); };
+    return card;
   }
 
   function render() {
@@ -7529,7 +7732,7 @@ export const APP = String.raw`
 
   ["addsheet", "setsheet", "watchsheet", "exsheet", "exeditsheet", "explainsheet", "picksheet",
    "settingssheet", "colsheet", "renamesheet", "swapsheet", "pumpysheet", "capsheet", "plansheet",
-   "daysheet", "copysheet"]
+   "daysheet", "copysheet", "sortsheet"]
     .forEach(wireSheet);
 
   function overlayShowing() {
