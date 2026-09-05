@@ -431,10 +431,17 @@ export async function syncStripeCustomer(customerId: string): Promise<void> {
     (a, b) => (STATUS_RANK[b.status] ?? 0) - (STATUS_RANK[a.status] ?? 0) || b.created - a.created,
   )[0];
 
+  // This writer owns Stripe rows and nothing else. A later App Store or Play
+  // purchase writes the same table with another `source`, and a Stripe event
+  // about a customer who once subscribed on the web must not be allowed to
+  // delete or overwrite that row — that would drop a paying subscriber to free
+  // because of an unrelated receipt. So: the delete is filtered by source, and
+  // the upsert declines to clobber an entitled row that another store wrote.
   if (!sub) {
-    // No subscription at all: drop the row and let the trigger put them on free.
-    await bDelete("subscriptions", `user_id=eq.${userId}`);
-    console.log("billing: no subscription for", userId, "— row removed");
+    // No Stripe subscription at all: drop OUR row and let the trigger put them
+    // on free (or leave them on whatever another source entitles them to).
+    await bDelete("subscriptions", `user_id=eq.${userId}&source=eq.stripe`);
+    console.log("billing: no stripe subscription for", userId, "— stripe row removed");
     return;
   }
 
@@ -453,7 +460,15 @@ export async function syncStripeCustomer(customerId: string): Promise<void> {
   // Keep the FIRST payment_failed_at for as long as it is still failing, so
   // Settings can say how long it has been broken rather than resetting the clock
   // on every retry.
-  const prev = await bSelect("subscriptions", `user_id=eq.${userId}&select=payment_failed_at`);
+  const prev = await bSelect("subscriptions", `user_id=eq.${userId}&select=source,status,payment_failed_at`);
+  const other = prev[0] && prev[0].source !== "stripe" ? prev[0] : null;
+  if (other && ENTITLING.has(String(other.status)) && !ENTITLING.has(sub.status)) {
+    // They are entitled through a store and Stripe's news is a dead subscription:
+    // the store row stands. (An entitling Stripe subscription still wins below —
+    // one row per user, and the one that lets them in is the one to keep.)
+    console.log("billing: keeping", other.source, "row for", userId, "over stripe", sub.status);
+    return;
+  }
 
   await bUpsert("subscriptions", {
     user_id: userId,
@@ -470,7 +485,7 @@ export async function syncStripeCustomer(customerId: string): Promise<void> {
     current_period_end: periodEnd ? new Date(periodEnd * 1000).toISOString() : null,
     trial_end: sub.trial_end ? new Date(sub.trial_end * 1000).toISOString() : null,
     payment_failed_at: failing
-      ? (prev[0]?.payment_failed_at ?? new Date().toISOString())
+      ? ((prev[0]?.source === "stripe" ? prev[0]?.payment_failed_at : null) ?? new Date().toISOString())
       : null,
     // Trimmed on purpose: enough to answer a support question, not a copy of
     // Stripe's database in ours.
