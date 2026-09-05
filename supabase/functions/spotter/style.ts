@@ -1544,6 +1544,15 @@ export const STYLE = String.raw`<style>
   @keyframes typedot { 0%, 65%, 100% { opacity: .3; } 30% { opacity: 1; } }
   .msgin { animation: msgin var(--t-3) var(--e-out); }
   @keyframes msgin { from { opacity: 0; transform: translateY(9px); } }
+  /* What the coach is doing while a tool runs; it gives way to the words. */
+  .msgstatus { font-size: 12.5px; color: var(--ink-2); line-height: 1.4; padding: 2px 4px;
+    animation: msgin var(--t-2) var(--e-out); }
+  /* Without a caret a paused stream and a finished one look the same. Opacity
+     only, so it costs the compositor nothing while words are arriving. */
+  .msg.pumpy.live::after { content: ""; display: inline-block; width: 7px; height: 14px;
+    margin-left: 2px; vertical-align: -2px; border-radius: 2px; background: var(--ember);
+    animation: caret 1.05s var(--e-soft) infinite; }
+  @keyframes caret { 0%, 45% { opacity: 1; } 55%, 100% { opacity: .18; } }
   .proposal { background: var(--card); border: 1.5px solid var(--ember); border-radius: 18px; padding: 14px 16px 12px;
     box-shadow: var(--sh-md); }
   .proposal h4 { font-family: var(--display); font-size: 12.5px; font-weight: 700;
@@ -1734,8 +1743,11 @@ export const STYLE = String.raw`<style>
     .setpill.just, .setpill.just.pr,
     .empty .big, .thumbwrap.pending .noimg, .thumbwrap.failed .noimg,
     .thumbwrap.loading::after, .thumbwrap.pending::after { animation: none; }
-    /* The dots stop but stay: they are the only thing saying an answer is coming. */
+    /* The dots stop but stay: they are the only thing saying an answer is coming.
+       The caret stays for the same reason — it says the words are not finished. */
     .msg.typing i { animation: none; opacity: .6; }
+    .msg.pumpy.live::after { animation: none; opacity: .55; }
+    .msgstatus { animation-name: fadeonly; animation-duration: var(--t-2); }
     .thumbwrap img { transition: none; }
     #ptr.back { transition-duration: var(--t-1); }
   }

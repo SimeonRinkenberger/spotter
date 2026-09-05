@@ -256,6 +256,42 @@ export const APP = String.raw`
     return p;
   }
 
+  // The same call, read as it arrives. The server answers NDJSON — one JSON
+  // object per line, the last of them exactly the body api() would have handed
+  // back — so onEvent always ends with a t:"final" carrying today's answer, and
+  // a reply that is not a stream (a refusal at the cap, a function not yet
+  // redeployed) is parsed whole and delivered as that one event. Callers get one
+  // path either way. The flag rides in the BODY, never a header: a new header
+  // would move the CORS preflight allowlist, and every page already in a pocket
+  // would fail against the function until it caught up.
+  function apiStream(path, body, onEvent) {
+    body.stream = true;
+    return sb.auth.getSession().then(function (s) {
+      var t = s.data.session ? s.data.session.access_token : "";
+      return fetch(API + path, {
+        method: "POST",
+        headers: { authorization: "Bearer " + t, "content-type": "application/json" },
+        body: JSON.stringify(body)
+      });
+    }).then(function (r) {
+      if (r.status === 401) { toast("Session expired — sign in again."); throw new Error("401"); }
+      if (!r.body || !r.body.getReader || (r.headers.get("content-type") || "").indexOf("ndjson") < 0) {
+        return r.json().then(function (b) { onEvent(Object.assign({ t: "final" }, b)); });
+      }
+      var rd = r.body.getReader(), dec = new TextDecoder(), buf = "", nl;
+      function feed(s) { if (s) { try { onEvent(JSON.parse(s)); } catch (e) { /* half a line */ } } }
+      function pump() {
+        return rd.read().then(function (x) {
+          buf += x.done ? "" : dec.decode(x.value, { stream: true });
+          while ((nl = buf.indexOf("\n")) >= 0) { feed(buf.slice(0, nl).trim()); buf = buf.slice(nl + 1); }
+          if (x.done) { feed(buf.trim()); return; }
+          return pump();
+        });
+      }
+      return pump();
+    });
+  }
+
   // ---------- auth ----------
 
   var authMode = "signup";
@@ -969,13 +1005,19 @@ export const APP = String.raw`
       }).catch(function () { });
     }
     var key = ex.name + "\n" + quote;
-    if (expCache[key]) return;
-    api("explain", { method: "POST", body: JSON.stringify({
+    if (expCache[key] || expWaiting[key]) return;
+    // The press does not stream — nothing is open yet to watch it in — and the
+    // promise is kept so the tap ninety milliseconds later joins THIS call.
+    // api()'s in-flight sharing cannot reach across the two transports, and an
+    // explanation costs a helper credit whichever one asked for it.
+    expWaiting[key] = api("explain", { method: "POST", body: JSON.stringify({
       exercise: ex.name, title: w ? (w.title || "") : "", quote: quote,
       source: ex.evidence ? ex.evidence.source : null, canonical_id: ex.canonical_id || null
     }) }).then(function (r) {
+      delete expWaiting[key];
       if (r && r.status === "ok") expCache[key] = r.text;
-    }).catch(function () { });
+      return r;
+    }).catch(function () { delete expWaiting[key]; return null; });
   }
 
   // ---------- library ----------
@@ -3414,6 +3456,7 @@ export const APP = String.raw`
   // contradict it.
 
   var expCache = {};
+  var expWaiting = {};   // prefetches in flight, so the tap after the press joins one
   var expKey = "";   // what the open sheet is about; every async fill checks it
   var EXFAIL = "Could not get an explanation just now. Try again in a moment.";
 
@@ -3742,19 +3785,29 @@ export const APP = String.raw`
     }
 
     if (expCache[key]) return;
-    api("explain", {
-      method: "POST",
-      body: JSON.stringify({
-        exercise: name, title: title, quote: quote,
-        source: ev ? ev.source : null, canonical_id: ex.canonical_id || null
-      })
-    }).then(function (r) {
+    function done(r) {
+      if (!r) { if (expKey === key) $("explaintext").textContent = EXFAIL; return; }
       var text = r.status === "ok" ? r.text : (r.message || EXFAIL);
       expCache[key] = r.status === "ok" ? text : null;
       if (expKey === key) $("explaintext").textContent = text;
       limitHit(r, null);
+    }
+    // Joining the press costs nothing; asking again costs a credit. Only a sheet
+    // opened cold gets to watch the words arrive.
+    if (expWaiting[key]) { expWaiting[key].then(done); return; }
+    var got = "";
+    apiStream("explain", {
+      exercise: name, title: title, quote: quote,
+      source: ev ? ev.source : null, canonical_id: ex.canonical_id || null
+    }, function (r) {
+      if (r.t === "delta") {
+        got += r.text || "";
+        if (expKey === key) $("explaintext").textContent = got;
+        return;
+      }
+      done(r);
     }).catch(function () {
-      if (expKey === key) $("explaintext").textContent = EXFAIL;
+      if (expKey === key) $("explaintext").textContent = got || EXFAIL;
     });
   }
 
@@ -6312,7 +6365,7 @@ export const APP = String.raw`
   }
 
   var pumpy = { thread: null, messages: [], busy: false, ctx: null, loaded: false,
-    meter: null, meterAsked: false };
+    meter: null, meterAsked: false, live: null, stick: true, wired: false };
 
   // Short enough to wrap into a chip on a phone, long enough to still be a real ask.
   var QUICK_ASKS = [
@@ -6427,6 +6480,7 @@ export const APP = String.raw`
     pumpy.messages = [];
     pumpy.loaded = true;
     pumpy.shownCount = 0;
+    pumpy.stick = true;   // a thread opens on its newest message, always
     // The thread already knows which card it was opened from; say so, so the
     // context line matches the row the user just tapped.
     pumpy.ctx = t.workout_id
@@ -6585,7 +6639,9 @@ export const APP = String.raw`
       log.appendChild(node);
     });
     pumpy.shownCount = shown.length;
-    if (pumpy.busy) {
+    if (pumpy.busy && pumpy.live) {
+      log.appendChild(pumpy.live.row);   // built once; a rebuild only re-hangs it
+    } else if (pumpy.busy) {
       var row = el("div", "msgrow msgin");
       row.appendChild(pumpyMark("pmark"));
       // Three elements, not three characters: dots that do not move read as a
@@ -6712,6 +6768,64 @@ export const APP = String.raw`
     c.appendChild(x);
   }
 
+  // ---------- Pumpy · the answer as it is written ----------
+  //
+  // Two rules, both about the reader. Follow the bottom only while the reader is
+  // already there — use-stick-to-bottom, the library bolt.new uses, calls it
+  // seventy pixels — so anyone who scrolled up to re-read is never yanked back
+  // mid-sentence. And write INTO the bubble: renderPumpy() rebuilds the whole
+  // log, so running it per token would throw the DOM away several times a
+  // second, and one appended text node is what Chrome's guidance asks for.
+
+  function pumpyFollow() { var p = $("pumpyview"); if (pumpy.stick) p.scrollTop = p.scrollHeight; }
+
+  function startLive() {
+    if (pumpy.live) return pumpy.live;
+    var row = el("div", "msgrow msgin"), col = el("div", "msgcol");
+    var st = el("div", "msgstatus hide"), bub = el("div", "msg pumpy live hide");
+    var tn = document.createTextNode("");
+    bub.setAttribute("aria-live", "polite");
+    bub.appendChild(tn);
+    col.appendChild(st);
+    col.appendChild(bub);
+    row.appendChild(pumpyMark("pmark"));
+    row.appendChild(col);
+    pumpy.live = { row: row, st: st, bub: bub, tn: tn };
+    if (!pumpy.wired) {
+      pumpy.wired = true;
+      // A scroll the page made itself always lands at the bottom, so it leaves
+      // this flag where it was; only a person can turn it off.
+      $("pumpyview").addEventListener("scroll", function () {
+        var p = $("pumpyview");
+        pumpy.stick = p.scrollHeight - p.scrollTop - p.clientHeight <= 70;
+      }, { passive: true });
+    }
+    renderPumpy();
+    return pumpy.live;
+  }
+
+  function liveEvent(ev) {
+    var L = startLive();
+    if (ev.t === "status") {
+      L.st.textContent = ev.text || "";
+      L.st.classList.toggle("hide", !ev.text);
+    } else if (ev.t === "delta") {
+      L.tn.appendData(ev.text || "");
+      L.bub.classList.remove("hide");
+      L.st.classList.add("hide");
+    } else if (ev.t === "retract") {
+      // A sentence that turned diagnostic on its way out: the server takes it
+      // back, and the bubble un-writes exactly those characters.
+      var n = Math.min(L.tn.length, ev.chars || 0);
+      if (n) L.tn.deleteData(L.tn.length - n, n);
+    } else if (ev.t === "reset") {
+      // Not the answer after all — a tool call with a thought in front of it.
+      L.tn.deleteData(0, L.tn.length);
+      L.bub.classList.add("hide");
+    }
+    pumpyFollow();
+  }
+
   function sendPumpy(text) {
     text = String(text || $("pumpyinput").value || "").trim();
     if (!text || pumpy.busy) return;
@@ -6720,6 +6834,8 @@ export const APP = String.raw`
     box.style.height = "auto";
     if (NO_TOUCH) box.focus();
     pumpy.busy = true;
+    pumpy.live = null;
+    pumpy.stick = true;
     pumpy.messages.push({ id: "local-" + Date.now(), role: "user", content: text });
     renderPumpy();
     var payload = {
@@ -6727,8 +6843,13 @@ export const APP = String.raw`
       message: text,
       workout_id: pumpy.ctx ? pumpy.ctx.id : null
     };
-    api("pumpy/chat", { method: "POST", body: JSON.stringify(payload) }).then(function (r) {
+    apiStream("pumpy/chat", payload, function (r) {
+      if (r.t !== "final") { liveEvent(r); return; }
       pumpy.busy = false;
+      pumpy.live = null;
+      // renderPumpy() ends at the bottom, which is right for a reader who was
+      // following along and rude to one who had scrolled up to re-read.
+      var keep = pumpy.stick ? -1 : $("pumpyview").scrollTop;
       // Every answer carries the meter, the refusal at the cap most of all.
       absorbMeter(r && r.pumpy);
       pumpy.messages = pumpy.messages.filter(function (m) { return String(m.id).indexOf("local-") !== 0; });
@@ -6749,9 +6870,19 @@ export const APP = String.raw`
       if (r.user_message) pumpy.messages.push(r.user_message);
       (r.messages || []).forEach(function (m) { pumpy.messages.push(m); });
       renderPumpy();
+      if (keep >= 0) $("pumpyview").scrollTop = keep;
+    }).then(function () {
+      // Still busy means the body ended with no final line — a dead isolate or a
+      // dropped connection. Same recovery as a throw, one handler below.
+      if (pumpy.busy) throw new Error("cut");
     }).catch(function () {
+      if (!pumpy.busy) return;
       pumpy.busy = false;
-      pumpy.messages.push({ id: "local-err-" + Date.now(), role: "assistant", content: "I couldn’t reach Spotter — check your connection." });
+      // Whatever arrived before it broke is kept: it is still what the coach said.
+      var half = pumpy.live && pumpy.live.tn.data;
+      pumpy.live = null;
+      pumpy.messages.push({ id: "local-err-" + Date.now(), role: "assistant",
+        content: half || "I couldn’t reach Spotter — check your connection." });
       renderPumpy();
     });
   }
