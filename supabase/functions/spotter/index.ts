@@ -2363,8 +2363,60 @@ async function groqTranscribe(
   );
 }
 
+// Which of the extensions the bucket accepts actually have pictures in them.
+// The rest are audio, and there is nothing for a video reader to look at.
+const UPLOAD_VIDEO_EXTS = new Set(["mp4", "mov", "webm", "m4v"]);
+
+type UploadRoute = { first: "video" | "transcript"; fallback: boolean; why: string | null };
+
 /**
- * The upload provider's fetchMeta. Sign, transcribe, price, delete — and delete
+ * Which reader an upload goes to.
+ *
+ * The old answer was always Groq, and that made the add sheet's promise — "for
+ * creators who say the workout instead of writing it" — a real limit rather than
+ * a description: a video whose whole workout is written on the screen and never
+ * spoken came back as silence. A model that watches has existed in this file
+ * since the TikTok media tier; this is the decision about when to use it.
+ *
+ * Video first, transcript behind it, because watching is strictly more
+ * informative — the reader is given the audio as well as the pictures — and
+ * because the file is deleted the moment either returns, so there is exactly one
+ * pass to spend. Audio-only files have nothing to watch and skip straight to
+ * Groq. Every gate that stops the paid media tier stops this too, and a gated
+ * video is not a failed save: it is heard instead, which is what used to happen
+ * to every upload.
+ *
+ * A decision rather than a side effect, so tools/media-harness.ts can check it
+ * without a bucket, a Groq key or a Gemini key.
+ */
+function uploadRoute(
+  f: { ext: string; videoTier: boolean; paid: boolean; overCap: boolean },
+): UploadRoute {
+  if (!UPLOAD_VIDEO_EXTS.has(f.ext)) return { first: "transcript", fallback: false, why: null };
+  if (!f.videoTier) return { first: "transcript", fallback: false, why: "media.video_enabled is off" };
+  if (!f.paid) return { first: "transcript", fallback: false, why: "today's spend ceiling is reached" };
+  if (f.overCap) return { first: "transcript", fallback: false, why: "this account is over its media cap for today" };
+  return { first: "video", fallback: true, why: null };
+}
+
+/**
+ * Has this account run out of media steps for today? Answers "yes" when it cannot
+ * tell, on the media tier's own principle: a count that could not be read is not
+ * a count of zero, and the cost of being wrong here is one file heard rather than
+ * watched, which is what every upload used to get.
+ */
+async function overMediaCapToday(userId: string): Promise<boolean> {
+  try {
+    const [u, uc] = await settledAll<unknown>([mediaCountToday(userId), capsFor(userId)]);
+    return overCap(u as number, (uc as UserCaps).caps.media);
+  } catch (e) {
+    console.error("upload: cannot read today's media count for", userId, "— not watching", e);
+    return true;
+  }
+}
+
+/**
+ * The upload provider's fetchMeta. Sign, read, price, delete — and delete
  * whatever happened, which is why the whole body sits inside a try/finally.
  */
 async function uploadMeta(p: Parsed, job?: Job): Promise<Meta> {
@@ -2389,6 +2441,23 @@ async function uploadMeta(p: Parsed, job?: Job): Promise<Meta> {
         "spend ceiling",
       );
     }
+
+    // ---- watched, when there is anything to watch ----
+    const route = uploadRoute({
+      ext: ref.ext,
+      videoTier: videoTierEnabled(),
+      paid: true,   // asked above, and a refusal there never reaches this line
+      overCap: job?.user_id ? await overMediaCapToday(job.user_id) : false,
+    });
+    if (route.why) console.log("upload: listening to", p.shortcode, "rather than watching —", route.why);
+    if (route.first === "video" && job) {
+      const seen = await uploadVideoRead(p, job);
+      if (seen) return seen;
+      console.log("upload: the video reader found nothing in", p.shortcode, "— listening instead");
+    }
+
+    // ---- heard: the original path, and still the only one for an audio file ----
+    await setMediaStage(p.shortcode, "listening");
     const signed = await signUpload(ref.path);
     const t0 = Date.now();
     const got = await groqTranscribe(signed);
@@ -2413,6 +2482,8 @@ async function uploadMeta(p: Parsed, job?: Job): Promise<Meta> {
       author: null,
       seconds: got.seconds || undefined,
       source: "transcript",
+      // Which machine made this text, on the same column the media tier writes.
+      media_source: "upload:groq",
       // Supplied in the sense that matters here: it came from the user, not from a
       // scrape, so topUpMeta must never go looking for a page to complete it.
       supplied: true,
@@ -2422,6 +2493,62 @@ async function uploadMeta(p: Parsed, job?: Job): Promise<Meta> {
   } finally {
     await deleteUpload(ref.path);
   }
+}
+
+/**
+ * Watch the upload, in the media isolate, and hand back the meta for a card that
+ * is already finished. Null means "that produced nothing" — a refusal, an
+ * exhausted quota, a file with no workout in it — and the caller listens instead.
+ *
+ * Why this returns a finished card rather than text: the provider interface hands
+ * fetchMeta's caller a Meta, and the video reader's answer is a Card. The card
+ * travels on the job, which is where runJob already looks for one when the step
+ * says a media tier produced it — the same route the TikTok video tier uses. What
+ * that route skips is the tail of buildCard, so the catalog, the title fallback
+ * and the score are applied here rather than left undone. An upload's job has
+ * max_attempts 1 (the file is gone either way), so this is the only pass, and
+ * nothing here has to survive a resume.
+ */
+async function uploadVideoRead(p: Parsed, job: Job): Promise<Meta | null> {
+  await setMediaStage(p.shortcode, "watching");
+  const out = await runMediaRemote(p, "video", job.user_id, null);
+  // Charged whether or not it answered, exactly as the media tier charges: a
+  // sub-request that died mid-stream still moved the bytes.
+  await logMediaStep(job.user_id, p, job.id, out);
+  if (!out?.card) {
+    console.log("upload: watched", p.shortcode, "and got no card",
+      out?.detail ? "— " + out.detail.slice(0, 200) : "");
+    return null;
+  }
+
+  const card = out.card;
+  const meta: Meta = {
+    caption: null,
+    thumb: null,
+    author: null,
+    source: "video",
+    media_source: out.media_source ?? "video:gemini",
+    supplied: true,
+    topped_up: true,
+    filename: job.meta?.filename,
+  };
+  if (!card.title.trim() || card.title.trim() === "Saved workout") {
+    card.title = cleanTitle(fallbackTitle(meta, p)) || "Uploaded workout";
+  }
+  applyCatalog(card);
+  scoreAndStamp(card, meta, p.platform, 0);
+  // The job is how a card reaches runJob from here. Persisted as well as set in
+  // memory so the row and the isolate agree about what happened.
+  job.card = card;
+  job.step = "media:video";
+  try {
+    await jobStep(job.id, "media:video", { card });
+  } catch (e) {
+    console.error("upload: could not checkpoint the watched card", job.id, e);
+  }
+  console.log("upload: watched", p.shortcode, "->", countExercises(card),
+    "exercise(s), confidence", card.confidence ?? "-", "by", card.extracted_by ?? "-");
+  return meta;
 }
 
 /**
@@ -3298,6 +3425,41 @@ async function mediaVideo(
 }
 
 /**
+ * Where a user's own upload is, as a MediaSource — the shape the video reader
+ * already takes, so watching a file somebody uploaded and watching a TikTok are
+ * the same code below this line.
+ *
+ * The object is located rather than named: the request carries the shortcode
+ * (`up-<uuid>`) and the owner, and the folder listing supplies the extension.
+ * That is deliberate. A path in the request would be a caller-supplied string
+ * arriving at a service-role storage call, and this route — behind the worker
+ * secret though it is — has no need of one.
+ */
+async function uploadMediaSource(shortcode: string, userId: string | null): Promise<MediaSource | null> {
+  const id = shortcode.replace(/^up-/, "");
+  if (!userId || !UUID_RE.test(userId) || !UUID_RE.test(id)) {
+    console.error("media: refusing to read upload", shortcode, "— not an owned uuid");
+    return null;
+  }
+  const rows = await listUploads(`${userId}/`, 100, false, id);
+  const hit = rows.find((o) => o.id !== null && o.name.startsWith(id + "."));
+  const ref = hit ? parseUploadPath(`${userId}/${hit.name}`, userId) : null;
+  if (!ref) {
+    console.error("media: no object in the bucket for", shortcode);
+    return null;
+  }
+  // No cookies and no Referer: this is our own bucket, and the signed URL is the
+  // whole credential. It expires in a quarter of an hour, which comfortably
+  // outlives one upload to the Files API.
+  return {
+    urls: [{ field: "upload", url: await signUpload(ref.path), kind: "video" }],
+    headers: {},
+    soundIsVideo: false,
+    seconds: null,
+  };
+}
+
+/**
  * The media isolate. Same shared secret and the same reason as /api/worker/vision:
  * this is where a multi-megabyte stream and a two-minute model call live, and when
  * one of them kills the isolate it must take nothing else with it.
@@ -3312,6 +3474,24 @@ async function handleMediaTick(req: Request): Promise<Response> {
   if (!body?.url || !body?.shortcode || !body?.platform) {
     return json({ status: "error", tier, media_source: null, detail: "incomplete request" }, 400);
   }
+  // An upload has no link to match and no provider media(): its bytes are in our
+  // own private bucket rather than on a platform's CDN. The isolate finds the
+  // object from the same shortcode every other part of the job uses and signs it
+  // here, so no caller-supplied path ever reaches a service-role storage call —
+  // and the transcript tier is refused, because Groq's retries and Groq's billing
+  // live in uploadMeta, where the file still exists.
+  if (body.platform === "upload") {
+    if (tier !== "video") {
+      return json({ status: "ok", tier, media_source: null, detail: "the worker transcribes uploads itself" }, 200);
+    }
+    const src = await uploadMediaSource(body.shortcode, body.user_id ?? null);
+    if (!src) return json({ status: "ok", tier, media_source: null, detail: "no object to read" }, 200);
+    return json(
+      await mediaVideo(src, body.shortcode, { purpose: "video", userId: body.user_id ?? null }, body.caption ?? null),
+      200,
+    );
+  }
+
   const provider = providerFor(body.platform);
   if (!provider.media) {
     return json({ status: "ok", tier, media_source: null, detail: "provider has no media" }, 200);

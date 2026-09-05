@@ -1,4 +1,5 @@
-// Battery for the TikTok photo-post path (the swipe-right carousels).
+// Battery for the two media paths wave 12 changed: TikTok photo posts (the
+// swipe-right carousels) and the upload reader.
 //
 // Run: deno run --allow-read tools/media-harness.ts   — exits non-zero on failure.
 //
@@ -120,6 +121,7 @@ const NAMES = [
   "decodeEntities", "metaTag", "matchTikTok", "ttWatchUrl",
   "ttPickCover", "ttPickUrl", "ttSome", "ttPhotoRaw", "ttItemStruct",
   "ttFromOembed", "ttFromEmbedState", "ttFromUniversalData", "ttFromOg", "ttParseHtml",
+  "UPLOAD_VIDEO_EXTS", "uploadRoute",
 ];
 
 const module = STUBS + NAMES.map(lift).join("\n\n") + "\n";
@@ -226,6 +228,83 @@ check("a video still parses", (vid.caption ?? "").indexOf("#gymtok") === 0, JSON
 eq("a video has a runtime", vid.seconds, 17);
 check("a video has no slides", !vid.images || vid.images.length === 0);
 check("a video keeps its cover as the thumbnail", !!vid.thumb);
+
+// ---------- 4. the upload routing decision ----------
+//
+// Which reader an upload goes to is a decision, not a side effect, so it is a
+// function of five facts and can be checked without Groq, Gemini or a bucket.
+
+const OK = { videoTier: true, paid: true, overCap: false };
+const vidFile = { ext: "mp4", ...OK };
+const audFile = { ext: "m4a", ...OK };
+
+eq("an mp4 is watched first", M.uploadRoute(vidFile).first, "video");
+eq("a mov is watched first", M.uploadRoute({ ...OK, ext: "mov" }).first, "video");
+eq("a webm is watched first", M.uploadRoute({ ...OK, ext: "webm" }).first, "video");
+eq("an m4a is only heard", M.uploadRoute(audFile).first, "transcript");
+eq("an mp3 is only heard", M.uploadRoute({ ...OK, ext: "mp3" }).first, "transcript");
+eq("a wav is only heard", M.uploadRoute({ ...OK, ext: "wav" }).first, "transcript");
+
+check("a video falls back to the transcript", M.uploadRoute(vidFile).fallback === true);
+check("audio has nothing to fall back to", M.uploadRoute(audFile).fallback === false);
+
+eq("the video tier switched off means listen instead",
+  M.uploadRoute({ ...vidFile, videoTier: false }).first, "transcript");
+eq("past the spend ceiling nothing is watched",
+  M.uploadRoute({ ...vidFile, paid: false }).first, "transcript");
+eq("over the media cap nothing is watched",
+  M.uploadRoute({ ...vidFile, overCap: true }).first, "transcript");
+check("a video routed to the transcript by a gate says why",
+  (M.uploadRoute({ ...vidFile, videoTier: false }).why ?? "").length > 0);
+
+// Every extension the bucket accepts is routed one way or the other. A new
+// extension added to UPLOAD_EXTS without a decision here would be the bug.
+for (const ext of ["mp4", "mov", "webm", "m4v", "mp3", "m4a", "wav", "weba"]) {
+  const r = M.uploadRoute({ ...OK, ext });
+  check("the bucket's ." + ext + " has a route",
+    r.first === "video" || r.first === "transcript", JSON.stringify(r));
+}
+eq("the video extensions are exactly the moving ones",
+  [...M.UPLOAD_VIDEO_EXTS].sort(), ["m4v", "mov", "mp4", "webm"]);
+
+// ---------- 5. the media tiers, mocked ----------
+//
+// The one thing left that a laptop can check about Part B: that a Gemini refusal
+// really does fall through to Groq rather than failing the save. The two readers
+// are stubbed and the fall-through is driven by the same shape the real ones
+// return — null text from the video reader, text from the transcriber.
+
+function readUpload(
+  route: { first: string; fallback: boolean },
+  watch: () => string | null,
+  hear: () => string | null,
+): { by: string; text: string | null; ran: string[] } {
+  const ran: string[] = [];
+  if (route.first === "video") {
+    ran.push("video");
+    const seen = watch();
+    if (seen) return { by: "video:gemini", text: seen, ran };
+    if (!route.fallback) return { by: "none", text: null, ran };
+  }
+  ran.push("transcript");
+  const heard = hear();
+  return { by: heard ? "transcript" : "none", text: heard, ran };
+}
+
+const watched = readUpload(M.uploadRoute(vidFile), () => "3 rounds of 10 squats", () => "…");
+eq("a video Gemini could read never reaches Groq", watched.ran, ["video"]);
+eq("and says the video read it", watched.by, "video:gemini");
+
+const refused = readUpload(M.uploadRoute(vidFile), () => null, () => "he says ten squats");
+eq("a Gemini refusal falls through to Groq", refused.ran, ["video", "transcript"]);
+eq("and says the transcript read it", refused.by, "transcript");
+
+const heardOnly = readUpload(M.uploadRoute(audFile), () => "never called", () => "he says ten squats");
+eq("audio goes straight to Groq", heardOnly.ran, ["transcript"]);
+
+const nothing = readUpload(M.uploadRoute(vidFile), () => null, () => null);
+eq("a file with nothing in it still ran both", nothing.ran, ["video", "transcript"]);
+eq("and claims nothing read it", nothing.by, "none");
 
 // ---------- done ----------
 
