@@ -8105,14 +8105,13 @@
     return out;
   }
 
-  // The nodes of this sheet, kept. Every tap in here changes only what the
-  // buttons say and which of them are lit, and this used to answer that by
-  // building all of them again: the destination row under the thumb was thrown
-  // away and replaced by the very tap that was landing on it. Harmless while the
-  // tap had already been delivered — and not harmless at all when the fetch
-  // below lands instead, a third of a second after the sheet opens, which is
-  // exactly when the first tap is in the air. That tap then had no live button
-  // to arrive at and did nothing, and doing nothing twice is what "it freezes".
+  // The nodes of this sheet, kept. A tap in here only changes what the buttons
+  // say and which are lit, and rebuilding all of them to answer that threw away
+  // the button under the thumb. Harmless when the tap had already landed, and
+  // not harmless when the fetch below rebuilt them instead — a third of a second
+  // after the sheet opens, which is exactly when the first tap is in the air. It
+  // then had no live button to arrive at, and a tap that does nothing twice in a
+  // row is what the owner was calling a freeze.
   var copyWkChips = null, copySumWk = null, copySumN = null, copyRowEls = null, copyRepEls = null;
 
   function openCopy() {
@@ -9855,12 +9854,11 @@
   // list inside a sheet still scrolls; 1:1 from there, resisting upwards rather
   // than travelling; a flick or a third of its height sends it away through
   // closeSheet, which is what hands the history entry back.
-  // A thumb drifts while it presses. Eight pixels of that was enough to take the
-  // drag off a button, and the release then swallowed the button's click — one
-  // lost tap per drift, which is what "the copy sheet freezes" was. A control
-  // asks for more travel than the sheet's own body does before the sheet
-  // believes the finger meant to throw it away; 24px is still an easy flick from
-  // a row, and no longer something a press can do by accident.
+  // A thumb drifts while it presses, and eight pixels of drift was enough to
+  // take the drag off a button and have the release swallow that button's click:
+  // one lost tap per drift, the other half of the copy sheet's freeze. So a
+  // control asks 24px before the sheet believes the finger meant to throw it
+  // away — still an easy flick, no longer something a press does by accident.
   var SH_FLING = 350, SH_PART = 0.35, SH_TAP = 24;
 
   function wireSheet(id) {
