@@ -751,6 +751,115 @@ function json(body: unknown, status = 200, cors: Cors = {}): Response {
   });
 }
 
+// ---------- streamed answers (NDJSON) ----------
+//
+// The same answer, written as it is thought of. One JSON object per line —
+// `{t:"status"|"delta"|"retract"|"reset"|"final"}` — because a line is a frame
+// every runtime in the chain already knows how to keep whole, and the LAST line
+// is byte-for-byte the JSON body the non-streaming route returns. That is the
+// contract that keeps this from forking the feature: a client that does not ask
+// for a stream gets today's response, and a client that does gets today's
+// response at the end with the words in front of it.
+//
+// The transport is asked for in the request BODY, never a header: a new request
+// header would change the CORS preflight allowlist, and an allowlist change is a
+// deploy the old page in someone's pocket would fail against.
+
+type StreamEvent = Record<string, unknown> & { t: string };
+
+/** Where a turn writes while it runs. `send` never throws — see below. */
+type StreamSink = { send(ev: StreamEvent): void; dead: boolean };
+
+/**
+ * A response whose body is written by `run`, which starts immediately and keeps
+ * writing after the headers have gone out.
+ *
+ * Two things are deliberate. `run` is NOT awaited before the Response is built,
+ * or the browser would sit on a blank fetch until the model had finished — the
+ * whole point. And `send` swallows an enqueue failure rather than throwing: a
+ * user who closes the tab mid-answer cancels the stream, and the turn still has
+ * database writes to finish. The close happens after `run` resolves, so every
+ * one of those writes has landed before the client sees the end of the body.
+ */
+export function ndjsonResponse(cors: Cors, run: (sink: StreamSink) => Promise<void>): Response {
+  const enc = new TextEncoder();
+  // The controller lives on an object rather than in a bare `let` so that reading
+  // it back after the stream was constructed is an ordinary property read.
+  const held: { ctl: ReadableStreamDefaultController<Uint8Array> | null } = { ctl: null };
+  const stream = new ReadableStream<Uint8Array>({ start(c) { held.ctl = c; } });
+  const sink: StreamSink = {
+    dead: false,
+    send(ev) {
+      if (sink.dead || !held.ctl) return;
+      try { held.ctl.enqueue(enc.encode(JSON.stringify(ev) + "\n")); }
+      catch { sink.dead = true; }
+    },
+  };
+  background((async () => {
+    try { await run(sink); }
+    catch (e) { console.error("stream run failed", e); sink.send({ t: "error", message: String(e).slice(0, 200) }); }
+    finally { try { held.ctl?.close(); } catch { /* already cancelled by the client */ } }
+  })());
+  return new Response(stream, {
+    status: 200,
+    headers: {
+      ...cors,
+      "content-type": "application/x-ndjson; charset=utf-8",
+      "cache-control": "no-cache",
+      // Nothing in front of this function should hold the body back looking for
+      // a content-length; nginx in particular buffers by default.
+      "x-accel-buffering": "no",
+    },
+  });
+}
+
+/** Whether a caller asked for the streamed shape. Body field, never a header. */
+function wantsStream(body: unknown): boolean {
+  return (body as { stream?: unknown } | null)?.stream === true;
+}
+
+/**
+ * A byte stream as lines, with the split points wherever the network put them.
+ * Shared by all four provider adapters: every one of them speaks SSE, and every
+ * one of them will hand back a chunk that ends in the middle of a UTF-8
+ * character or the middle of a JSON object.
+ */
+export async function* streamLines(body: ReadableStream<Uint8Array> | null): AsyncGenerator<string> {
+  if (!body) return;
+  const reader = body.getReader();
+  const dec = new TextDecoder();
+  let buf = "";
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let nl = buf.indexOf("\n");
+      while (nl >= 0) {
+        const line = buf.slice(0, nl);
+        buf = buf.slice(nl + 1);
+        yield line.endsWith("\r") ? line.slice(0, -1) : line;
+        nl = buf.indexOf("\n");
+      }
+    }
+    buf += dec.decode();
+    if (buf) yield buf.endsWith("\r") ? buf.slice(0, -1) : buf;
+  } finally {
+    try { reader.releaseLock(); } catch { /* the stream is already finished */ }
+  }
+}
+
+/** The JSON payload of each SSE `data:` line; comments, event names and [DONE] dropped. */
+export async function* sseObjects(body: ReadableStream<Uint8Array> | null): AsyncGenerator<any> {
+  for await (const line of streamLines(body)) {
+    if (!line.startsWith("data:")) continue;
+    const raw = line.slice(5).trim();
+    if (!raw || raw === "[DONE]") continue;
+    try { yield JSON.parse(raw); }
+    catch { console.error("sse: unparseable data line", raw.slice(0, 160)); }
+  }
+}
+
 // ---------- background work ----------
 //
 // The whole point of the queue is that a request returns before the work does, so
@@ -1225,6 +1334,115 @@ async function geminiGenerate(
   return NOTHING;
 }
 
+// -- the streaming siblings --
+//
+// Every adapter below has a non-streaming twin above or beside it, and the twin
+// is untouched: extraction, swaps and the worker all still take their answer in
+// one piece, because nothing watches those and a single JSON body is the simpler
+// thing to be right about. What changed is that a person now watches the coach
+// think, so the coach's own ladder grew a second front door.
+//
+// Three rules hold across all four:
+//   1. They return the same `Generated` as their twin — text, `by`, `usage` — so
+//      recordCost, estimateCost, the credit meter and the ledger see no
+//      difference between a streamed turn and a whole one.
+//   2. A non-OK status returns NOTHING and the ladder moves on, exactly as today.
+//      But once bytes have been emitted the ladder must NOT move on: switching
+//      providers mid-sentence would rewrite words the user has already read. So a
+//      failure AFTER the first delta returns what was said, and the turn finishes
+//      with it.
+//   3. Usage comes from the provider when the provider sends it (each puts it in
+//      a different place, on a different chunk) and from approxTokens when it
+//      does not — the same fallback the non-streaming twins use.
+
+type OnDelta = (text: string) => void;
+
+/** True when a stream produced words before it broke — see rule 2 above. */
+function partial(text: string, by: string, usage: Usage): Generated {
+  return { text: text || null, by: text ? by : null, usage };
+}
+
+/** Fill in whatever the provider did not tell us, so `usage` is never half-empty. */
+function usageOr(u: Usage, system: string, user: string, text: string): Usage {
+  return {
+    ...u,
+    inTok: u.inTok || approxTokens(system + user),
+    outTok: u.outTok || approxTokens(text),
+  };
+}
+
+export async function geminiStream(
+  body: Record<string, unknown>, ctx: AiCtx, system: string, user: string, onDelta: OnDelta,
+): Promise<Generated> {
+  if (!GEMINI_API_KEY) return NOTHING;
+  const pool = models().geminiPool;
+  const head = geminiGoodModel;
+  const order = head ? [head, ...pool.filter((m) => m !== head)] : pool;
+  for (const model of order) {
+    let payload = body;
+    // Two passes at most per model: the second exists only for the older models
+    // that reject thinkingConfig outright, exactly as the non-streaming twin does.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      let text = "";
+      let usage: Usage = { inTok: 0, outTok: 0 };
+      try {
+        const r = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse`,
+          {
+            method: "POST",
+            headers: { "content-type": "application/json", "x-goog-api-key": GEMINI_API_KEY },
+            body: JSON.stringify(payload),
+          },
+        );
+        if (r.status === 400 && hasThinkingConfig(payload) && attempt === 0) {
+          await r.body?.cancel();
+          payload = withoutThinkingConfig(payload);
+          continue;
+        }
+        if (!r.ok) {
+          // No sleep-and-retry on 429 here, unlike the twin: the person is
+          // watching an empty bubble, and 2.5 seconds of nothing costs more than
+          // dropping straight to the next model in the pool.
+          console.error("gemini stream", model, r.status, "— rotating to next model");
+          await r.body?.cancel();
+          if (geminiGoodModel === model) geminiGoodModel = null;
+          break;
+        }
+        for await (const d of sseObjects(r.body)) {
+          const parts = d?.candidates?.[0]?.content?.parts;
+          if (Array.isArray(parts)) {
+            for (const p of parts) {
+              const piece = typeof p?.text === "string" ? p.text : "";
+              if (piece) { text += piece; onDelta(piece); }
+            }
+          }
+          const um = d?.usageMetadata;
+          if (um) {
+            usage = {
+              inTok: Number(um.promptTokenCount) || 0,
+              outTok: (Number(um.candidatesTokenCount) || 0) + (Number(um.thoughtsTokenCount) || 0),
+            };
+          }
+        }
+      } catch (e) {
+        console.error("gemini stream failed", model, e);
+        if (!text) { if (geminiGoodModel === model) geminiGoodModel = null; break; }
+      }
+      const u = usageOr(usage, system, user, text);
+      await recordCost("gemini", model, ctx, u, !!text);
+      if (!text) {
+        console.error("gemini stream", model, "produced no text");
+        if (geminiGoodModel === model) geminiGoodModel = null;
+        break;
+      }
+      geminiGoodModel = model;
+      return partial(text, "gemini:" + model, u);
+    }
+  }
+  console.error("gemini stream: all models exhausted");
+  return NOTHING;
+}
+
 // Groq free tier is 14,400 requests/day, no card. OpenAI-compatible API.
 let groqGoodModel: string | null = null;
 
@@ -1274,6 +1492,64 @@ async function groqGenerate(system: string, user: string, wantJson: boolean, ctx
   return NOTHING;
 }
 
+/**
+ * Groq's streamed shape is OpenAI's, with one wrinkle: the totals ride on the
+ * FINAL chunk under `x_groq.usage` rather than under `usage`, and only sometimes
+ * under both. Read whichever arrives.
+ */
+export async function groqStream(
+  system: string, user: string, wantJson: boolean, ctx: AiCtx, onDelta: OnDelta,
+): Promise<Generated> {
+  if (!GROQ_API_KEY) return NOTHING;
+  const pool = models().groqPool;
+  const order = groqGoodModel ? [groqGoodModel, ...pool.filter((m) => m !== groqGoodModel)] : pool;
+  for (const model of order) {
+    let text = "";
+    let usage: Usage = { inTok: 0, outTok: 0 };
+    try {
+      const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: { authorization: `Bearer ${GROQ_API_KEY}`, "content-type": "application/json" },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: "system", content: system }, { role: "user", content: user }],
+          max_tokens: outCap(ctx, 4000),
+          stream: true,
+          stream_options: { include_usage: true },
+          ...(wantJson ? { response_format: { type: "json_object" } } : {}),
+        }),
+      });
+      if (!r.ok) {
+        console.error("groq stream", model, r.status, "— rotating to next model");
+        await r.body?.cancel();
+        if (groqGoodModel === model) groqGoodModel = null;
+        continue;
+      }
+      for await (const d of sseObjects(r.body)) {
+        const piece = d?.choices?.[0]?.delta?.content;
+        if (typeof piece === "string" && piece) { text += piece; onDelta(piece); }
+        const u = d?.x_groq?.usage ?? d?.usage;
+        if (u) {
+          usage = {
+            inTok: Number(u.prompt_tokens) || usage.inTok,
+            outTok: Number(u.completion_tokens) || usage.outTok,
+          };
+        }
+      }
+    } catch (e) {
+      console.error("groq stream failed", model, e);
+      if (!text) { if (groqGoodModel === model) groqGoodModel = null; continue; }
+    }
+    const u = usageOr(usage, system, user, text);
+    await recordCost("groq", model, ctx, u, !!text);
+    if (!text) { if (groqGoodModel === model) groqGoodModel = null; continue; }
+    groqGoodModel = model;
+    return partial(text, "groq:" + model, u);
+  }
+  console.error("groq stream: all models failed");
+  return NOTHING;
+}
+
 // OpenAI (GPT-5.6 Luna by default): the paid tier's cheapest flagship-family model.
 // The 5.6 series rejects max_tokens in favour of max_completion_tokens.
 async function openaiGenerate(system: string, user: string, wantJson: boolean, ctx: AiCtx): Promise<Generated> {
@@ -1315,6 +1591,57 @@ async function openaiGenerate(system: string, user: string, wantJson: boolean, c
   }
 }
 
+/**
+ * OpenAI streamed. `stream_options.include_usage` buys one extra chunk at the
+ * end whose `choices` is empty and whose `usage` is the whole call's — without it
+ * a streamed turn would be charged on approxTokens and the ledger would slowly
+ * drift away from the invoice.
+ */
+export async function openaiStream(
+  system: string, user: string, wantJson: boolean, ctx: AiCtx, onDelta: OnDelta,
+): Promise<Generated> {
+  if (!OPENAI_API_KEY) return NOTHING;
+  const model = models().openai;
+  let text = "";
+  let usage: Usage = { inTok: 0, outTok: 0, cachedTok: 0 };
+  try {
+    const r = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { authorization: `Bearer ${OPENAI_API_KEY}`, "content-type": "application/json" },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: "system", content: system }, { role: "user", content: user }],
+        max_completion_tokens: outCap(ctx, wantJson ? 8000 : 3000),
+        stream: true,
+        stream_options: { include_usage: true },
+        ...(wantJson ? { response_format: { type: "json_object" } } : {}),
+      }),
+    });
+    if (!r.ok) {
+      console.error("openai stream", model, r.status, (await r.text()).slice(0, 300));
+      return NOTHING;
+    }
+    for await (const d of sseObjects(r.body)) {
+      if (d?.error) { console.error("openai stream", model, "mid-stream error", d.error); break; }
+      const piece = d?.choices?.[0]?.delta?.content;
+      if (typeof piece === "string" && piece) { text += piece; onDelta(piece); }
+      if (d?.usage) {
+        usage = {
+          inTok: Number(d.usage.prompt_tokens) || 0,
+          outTok: Number(d.usage.completion_tokens) || 0,
+          cachedTok: Number(d.usage.prompt_tokens_details?.cached_tokens) || 0,
+        };
+      }
+    }
+  } catch (e) {
+    console.error("openai stream failed", e);
+    if (!text) return NOTHING;
+  }
+  const u = usageOr(usage, system, user, text);
+  await recordCost("openai", model, ctx, u, !!text);
+  return partial(text, "openai:" + model, u);
+}
+
 // The single front door for text generation. Order is cost-and-quality descending:
 // a paid key when present, then the free tiers as fallback. Every caller goes
 // through here, so swapping providers is a one-line change — and so is switching
@@ -1346,6 +1673,48 @@ async function textGenerate(system: string, user: string, wantJson: boolean, ctx
     }, ctx);
   }
   if (!out.text && allowed("groq")) out = await groqGenerate(system, user, wantJson, ctx);
+  return out;
+}
+
+/** The generationConfig textGenerate builds for Gemini, so both ladders ask for the same thing. */
+function geminiBody(system: string, user: string, wantJson: boolean, ctx: AiCtx): Record<string, unknown> {
+  return {
+    systemInstruction: { parts: [{ text: system }] },
+    contents: [{ role: "user", parts: [{ text: user }] }],
+    generationConfig: wantJson
+      ? {
+        responseMimeType: "application/json",
+        maxOutputTokens: outCap(ctx, 8000),
+        thinkingConfig: { thinkingBudget: 0 },
+      }
+      : { maxOutputTokens: outCap(ctx, 3000), thinkingConfig: { thinkingBudget: 0 } },
+  };
+}
+
+/**
+ * textGenerate's ladder, one rung at a time, writing as it goes. Same gate, same
+ * order, same `Generated` back — the only difference is that `onDelta` sees the
+ * words before the caller does.
+ *
+ * The ladder still falls through a rung that answered with nothing, because a
+ * provider that returned nothing has shown the user nothing either. It does NOT
+ * fall through a rung that answered with SOMETHING and then broke: those words
+ * are already on the screen, and the second provider would start its own sentence
+ * over the top of the first one's.
+ */
+export async function textStream(
+  system: string, user: string, wantJson: boolean, ctx: AiCtx, onDelta: OnDelta,
+): Promise<Generated> {
+  const paid = await paidAllowed();
+  const allowed = (provider: string) => paid || !isPaidProvider(provider);
+
+  let out: Generated = NOTHING;
+  if (allowed("openai")) out = await openaiStream(system, user, wantJson, ctx, onDelta);
+  if (!out.text && allowed("anthropic")) out = await claudeStream(system, user, ctx, onDelta);
+  if (!out.text && GEMINI_API_KEY && allowed("gemini")) {
+    out = await geminiStream(geminiBody(system, user, wantJson, ctx), ctx, system, user, onDelta);
+  }
+  if (!out.text && allowed("groq")) out = await groqStream(system, user, wantJson, ctx, onDelta);
   return out;
 }
 
@@ -3997,6 +4366,62 @@ async function parseWithClaude(system: string, user: string, ctx: AiCtx): Promis
     console.error("anthropic failed", e);
     return NOTHING;
   }
+}
+
+/**
+ * parseWithClaude's streaming sibling. Anthropic splits the numbers across the
+ * conversation rather than putting them on one chunk: `message_start` carries the
+ * input side (plain, cache-read and cache-write, which are folded together here
+ * for the same reason the twin folds them — `inTok` must mean every input token
+ * whichever provider answered), and `message_delta` carries the output side once
+ * the model has stopped.
+ */
+export async function claudeStream(
+  system: string, user: string, ctx: AiCtx, onDelta: OnDelta,
+): Promise<Generated> {
+  if (!ANTHROPIC_API_KEY) return NOTHING;
+  const model = models().anthropic;
+  let text = "";
+  let inTok = 0, outTok = 0, cachedTok = 0;
+  try {
+    const r = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: outCap(ctx, 4000),
+        system,
+        messages: [{ role: "user", content: user }],
+        stream: true,
+      }),
+    });
+    if (!r.ok) { console.error("anthropic stream", r.status, (await r.text()).slice(0, 300)); return NOTHING; }
+    for await (const d of sseObjects(r.body)) {
+      if (d?.type === "error") { console.error("anthropic stream mid-stream error", d.error); break; }
+      if (d?.type === "content_block_delta" && d?.delta?.type === "text_delta") {
+        const piece = String(d.delta.text ?? "");
+        if (piece) { text += piece; onDelta(piece); }
+      } else if (d?.type === "message_start") {
+        const u = d?.message?.usage ?? {};
+        const read = Number(u.cache_read_input_tokens) || 0;
+        const write = Number(u.cache_creation_input_tokens) || 0;
+        inTok = (Number(u.input_tokens) || 0) + read + write;
+        cachedTok = read;
+      } else if (d?.type === "message_delta") {
+        outTok = Number(d?.usage?.output_tokens) || outTok;
+      }
+    }
+  } catch (e) {
+    console.error("anthropic stream failed", e);
+    if (!text) return NOTHING;
+  }
+  const u = { ...usageOr({ inTok, outTok }, system, user, text), cachedTok };
+  await recordCost("anthropic", model, ctx, u, !!text);
+  return partial(text, "anthropic:" + model, u);
 }
 
 // ---------- vision (fallback for written plans on carousel slides) ----------
@@ -6902,14 +7327,44 @@ async function aiText(
   if (overCap(helpersToday, uc.caps.helper)) return capLimit("helper", uc, helpersToday, cors);
   const out = (await textGenerate(system, user, false, { purpose, userId })).text;
   if (!out) return json({ status: "error", message: "The AI is busy — try again in a minute." }, 503, cors);
-  // Only a successful answer is charged: a provider outage should not eat the
-  // user's daily allowance.
+  await chargeHelper(userId);
+  return json({ status: "ok", text: out.trim() }, 200, cors);
+}
+
+// Only a successful answer is charged: a provider outage should not eat the
+// user's daily allowance.
+async function chargeHelper(userId: string): Promise<void> {
   try {
     await dbInsert("saves_log", { user_id: userId, kind: "helper", cached: false, shortcode: null });
   } catch (e) {
     console.error("helper saves_log insert failed", e);
   }
-  return json({ status: "ok", text: out.trim() }, 200, cors);
+}
+
+/**
+ * aiText, watched. Plain prose rather than JSON, so there is no `say` to find and
+ * no sentence to take back — the deltas ARE the answer, and `final` is the same
+ * { status, text } body the whole version returns. The two refusals above it stay
+ * plain JSON with their own status codes, for the same reason Pumpy's do: a cap is
+ * not a stream of anything, and the app already knows how to read one.
+ */
+async function aiTextStream(
+  system: string, user: string, cors: Cors, userId: string, purpose: string,
+  helpersToday: number, uc: UserCaps,
+): Promise<Response> {
+  if (!haveAI()) return json({ status: "error", message: "AI is not configured yet." }, 503, cors);
+  if (overCap(helpersToday, uc.caps.helper)) return capLimit("helper", uc, helpersToday, cors);
+  return ndjsonResponse(cors, async (sink) => {
+    const gen = await textStream(system, user, false, { purpose, userId }, (piece) => {
+      sink.send({ t: "delta", text: piece });
+    });
+    if (!gen.text) {
+      sink.send({ t: "final", status: "error", message: "The AI is busy — try again in a minute." });
+      return;
+    }
+    await chargeHelper(userId);
+    sink.send({ t: "final", status: "ok", text: gen.text.trim() });
+  });
 }
 
 /**
@@ -8187,7 +8642,8 @@ const PUMPY_STATIC = [
   "the equipment and time the user states.",
   'Reply with ONLY a JSON object: {"say": string, "tool": {"name": string, "args": object} | null, "proposal": object | null}. ' +
   "Call one tool at a time; when you call one, say may be empty. When you propose, say explains it in one or two sentences. " +
-  "Otherwise just answer in say.",
+  "Otherwise just answer in say. " +
+  'Write "say" as the FIRST key of the object, before tool and proposal — the user reads it as you write it.',
 ].join("\n");
 
 /**
@@ -8226,6 +8682,136 @@ function pumpyClean(say: string, userMessage: string): string {
   if (PUMPY_PAIN_RE.test(userMessage) && out && !out.includes(PAIN_NOTE)) out = out + " " + PAIN_NOTE;
   return out.slice(0, PUMPY_SAY_CHARS);
 }
+
+// -- watching a JSON object be written --
+//
+// The coach answers with {"say":…, "tool":…, "proposal":…}, and the only part a
+// person should ever see is `say`. Waiting for the object to close before showing
+// anything is what this whole feature exists to stop, and JSON.parse cannot read
+// half an object — so `say` is decoded by hand, one character at a time, out of a
+// string that is still arriving.
+//
+// The prompt's last rule asks for `say` FIRST, which is what makes the first
+// occurrence of the key the right one. A model that ignores that and puts `tool`
+// first simply streams nothing: the scanner finds `say` late, the turn ends, and
+// `final` carries the whole answer as it does today. Late is the failure mode, not
+// wrong.
+
+const JSON_ESCAPES: Record<string, string> = {
+  '"': '"', "\\": "\\", "/": "/", b: "\b", f: "\f", n: "\n", r: "\r", t: "\t",
+};
+
+/** Feed it raw model text; it gives back the pieces of `say` as they decode. */
+type SayScanner = { push(chunk: string): string; done(): boolean };
+
+export function makeSayScanner(): SayScanner {
+  let phase = 0;      // 0 hunting the key, 1 decoding the string, 2 closed
+  let seek = "";      // raw text seen while hunting
+  let pend = "";      // an escape, or half a surrogate pair, split across chunks
+  return {
+    done() { return phase === 2; },
+    push(chunk: string): string {
+      if (phase === 2) return "";
+      if (phase === 0) {
+        seek += chunk;
+        const m = /"say"\s*:\s*"/.exec(seek);
+        if (!m) return "";
+        phase = 1;
+        chunk = seek.slice(m.index + m[0].length);
+        seek = "";
+      }
+      const s = pend + chunk;
+      pend = "";
+      let out = "";
+      let i = 0;
+      while (i < s.length) {
+        const c = s[i];
+        if (c === '"') { phase = 2; break; }
+        if (c !== "\\") { out += c; i++; continue; }
+        // An escape that has not finished arriving waits for the rest of itself.
+        if (i + 1 >= s.length) { pend = s.slice(i); break; }
+        const e = s[i + 1];
+        if (e === "u") {
+          if (i + 6 > s.length) { pend = s.slice(i); break; }
+          const hex = s.slice(i + 2, i + 6);
+          if (!/^[0-9a-fA-F]{4}$/.test(hex)) { out += e; i += 2; continue; }
+          out += String.fromCharCode(parseInt(hex, 16));
+          i += 6;
+          continue;
+        }
+        out += JSON_ESCAPES[e] ?? e;
+        i += 2;
+      }
+      // An emoji is written 💪 — two escapes, and half of one is not a
+      // character. Hold a trailing high surrogate back for its partner.
+      if (phase !== 2 && out) {
+        const last = out.charCodeAt(out.length - 1);
+        if (last >= 0xD800 && last <= 0xDBFF) { pend = out.slice(-1) + pend; out = out.slice(0, -1); }
+      }
+      return out;
+    },
+  };
+}
+
+/**
+ * The rule that keeps a delta from showing what the final answer would drop.
+ *
+ * pumpyClean throws away any SENTENCE matching DIAGNOSIS_RE, and it can only do
+ * that because it has the whole sentence. A stream does not — "that sounds" is
+ * innocent and "that sounds like tendinitis" is not, and by then three words are
+ * already on the screen. So the sentence being written is tested on every
+ * character, and the moment it turns diagnostic the characters of it that were
+ * sent are taken back with a `retract` and nothing more of that sentence is sent.
+ * The next sentence starts clean.
+ *
+ * The boundary is the same one pumpyClean splits on — a run of . ! ? — so a
+ * sentence here is a sentence there, and no fragment can slip between the two.
+ */
+type SayGate = { push(text: string): StreamEvent[]; shown(): number };
+
+export function makeSayGate(limit: number): SayGate {
+  let sentence = "", shownOfSentence = 0, shown = 0;
+  let blocked = false, justEnded = false;
+  return {
+    shown() { return shown; },
+    push(text: string): StreamEvent[] {
+      let out = "", retract = 0;
+      for (const ch of text) {
+        if (justEnded && !/[.!?]/.test(ch)) { sentence = ""; shownOfSentence = 0; blocked = false; }
+        justEnded = /[.!?]/.test(ch);
+        sentence += ch;
+        if (blocked) continue;
+        // Past the cap the final answer is sliced at anyway, so showing more of
+        // it would only be text that disappears when `final` lands.
+        if (shown + out.length >= limit) continue;
+        out += ch;
+        shownOfSentence += ch.length;
+        if (DIAGNOSIS_RE.test(sentence)) {
+          blocked = true;
+          const here = Math.min(out.length, shownOfSentence);
+          out = out.slice(0, out.length - here);
+          retract += shownOfSentence - here;
+          shownOfSentence = 0;
+        }
+      }
+      const evs: StreamEvent[] = [];
+      // Retract first: it cuts the tail of what is already on screen, and a delta
+      // sent before it would be the part that got cut.
+      if (retract) { shown -= retract; evs.push({ t: "retract", chars: retract }); }
+      if (out) { shown += out.length; evs.push({ t: "delta", text: out }); }
+      return evs;
+    },
+  };
+}
+
+/** What the user reads while a tool runs. Specific, per Apple's rule against "loading". */
+export const PUMPY_TOOL_STATUS: Record<string, string> = {
+  list_library: "Looking through your library…",
+  get_workout: "Reading that workout…",
+  search_catalog: "Checking the exercise catalog…",
+  get_plan: "Reading your plan…",
+  get_logs_summary: "Looking at your recent sessions…",
+};
 
 // -- the last step always answers --
 //
@@ -8364,6 +8950,7 @@ async function pumpyRecordUsage(
 async function handlePumpyChat(req: Request, userId: string, cors: Cors): Promise<Response> {
   const body = await req.json().catch(() => ({}));
   const message = String(body?.message ?? "").replace(/\s+/g, " ").trim().slice(0, PUMPY_MESSAGE_CHARS);
+  const wantStream = wantsStream(body);
   if (!message) return json({ status: "error", message: "Say something first." }, 400, cors);
   if (!haveAI()) return json({ status: "error", message: "AI is not configured yet." }, 503, cors);
 
@@ -8456,6 +9043,32 @@ async function handlePumpyChat(req: Request, userId: string, cors: Cors): Promis
     }, 200, cors);
   }
 
+  // Everything above decided whether there is a turn to have at all, and every
+  // one of those answers is a plain JSON body with its own status code — a 429 is
+  // not a stream of anything. From here the model is involved, so from here the
+  // answer can be watched being written.
+  const args: PumpyTurn = { userId, thread, userMsg, message, ctxWorkout, meter, cfg };
+  if (!wantStream) return json(await pumpyRun(args, null), 200, cors);
+  return ndjsonResponse(cors, async (sink) => {
+    sink.send({ t: "final", ...(await pumpyRun(args, sink)) });
+  });
+}
+
+/**
+ * One turn with the coach: the model loop, the tools, the answer and every row it
+ * writes. The same function whether or not anyone is watching — `sink` is the
+ * only difference, and it only ever ADDS events. Everything that decides what the
+ * answer IS happens here once, so the streamed turn and the whole one cannot
+ * drift apart; what it returns is the success body both shapes end with.
+ */
+type PumpyTurn = {
+  userId: string; thread: any; userMsg: any; message: string;
+  ctxWorkout: { id: string; title: string } | null;
+  meter: PumpyMeter; cfg: ReturnType<typeof pumpyConfig>;
+};
+
+async function pumpyRun(a: PumpyTurn, sink: StreamSink | null): Promise<Record<string, unknown>> {
+  const { userId, thread, userMsg, message, ctxWorkout, meter, cfg } = a;
   // The last few visible turns, compactly. Tool results from earlier turns are
   // not replayed — they can be thousands of tokens — only what each side said.
   const [snapshot, hist] = await settledAll<any>([
@@ -8485,13 +9098,35 @@ async function handlePumpyChat(req: Request, userId: string, cors: Cors): Promis
   // something and then failed to phrase it still has something to say.
   const learned: string[] = [];
   const say_of = (r: any) => swapStr(r?.say, PUMPY_SAY_CHARS);
+  // What this step has already put on the user's screen. A step that turns out to
+  // be a tool call has to take it back — the prompt says a tool step's `say` may
+  // be empty, so this is rare, but "rare" is not "never" and half a thought left
+  // above a status line is worse than no thought at all.
+  let onScreen = 0;
+  let sayStreamed = "";
+  const undoStreamed = () => {
+    if (sink && onScreen) sink.send({ t: "reset" });
+    onScreen = 0;
+  };
 
   for (let step = 0; step < PUMPY_MAX_STEPS; step++) {
     // The last call cannot buy another tool result — the branch below ignores its
     // tool — so it is told that before it spends the call rather than after. The
     // budget cut says the same thing in its own words; do not say it twice.
     if (step === PUMPY_MAX_STEPS - 1 && !budgetHit) transcript.push(PUMPY_LAST_STEP_NOTE);
-    const gen = await textGenerate(system, "Conversation so far:\n" + transcript.join("\n") + "\n\nReply as Pumpy, as JSON.", true, ctx);
+    const prompt = "Conversation so far:\n" + transcript.join("\n") + "\n\nReply as Pumpy, as JSON.";
+    const scanner = makeSayScanner();
+    const gate = makeSayGate(PUMPY_SAY_CHARS);
+    sayStreamed = "";
+    const gen = sink
+      ? await textStream(system, prompt, true, ctx, (raw) => {
+        const piece = scanner.push(raw);
+        if (!piece) return;
+        sayStreamed += piece;
+        for (const ev of gate.push(piece)) sink.send(ev);
+        onScreen = gate.shown();
+      })
+      : await textGenerate(system, prompt, true, ctx);
     if (gen.usage) {
       calls++;
       inTok += gen.usage.inTok;
@@ -8511,7 +9146,11 @@ async function handlePumpyChat(req: Request, userId: string, cors: Cors): Promis
       break;
     }
     let r: any;
-    try { r = parseJsonLoose(gen.text); } catch { r = { say: gen.text.trim() }; }
+    // A stream that broke mid-object leaves unparseable JSON, and the raw braces
+    // are the last thing to show anyone. The scanner already read `say` out of it
+    // character by character, so that is what the turn keeps. Off the stream
+    // sayStreamed is empty and this is today's line exactly.
+    try { r = parseJsonLoose(gen.text); } catch { r = { say: sayStreamed || gen.text.trim() }; }
     const say = say_of(r);
     const tool = r?.tool && typeof r.tool === "object" && r.tool.name ? r.tool : null;
 
@@ -8525,9 +9164,12 @@ async function handlePumpyChat(req: Request, userId: string, cors: Cors): Promis
           "— cutting tools and asking for the answer");
         if (say) transcript.push("Pumpy: " + say);
         transcript.push("[budget: answer now in one or two sentences, no tools]");
+        undoStreamed();
         continue;
       }
       toolCalls++;
+      undoStreamed();
+      sink?.send({ t: "status", text: PUMPY_TOOL_STATUS[String(tool.name)] ?? "Having a look…" });
       let result: unknown;
       try { result = await runPumpyTool(userId, String(tool.name), tool.args ?? {}); }
       catch (e) { result = { error: String(e).slice(0, 200) }; }
@@ -8552,7 +9194,7 @@ async function handlePumpyChat(req: Request, userId: string, cors: Cors): Promis
       const v = await validateProposal(userId, r.proposal);
       if ("error" in v) {
         transcript.push("[proposal rejected: " + v.error + " — fix it or answer without one]");
-        if (step < PUMPY_MAX_STEPS - 1) continue;
+        if (step < PUMPY_MAX_STEPS - 1) { undoStreamed(); continue; }
       } else {
         proposal = v;
       }
@@ -8590,13 +9232,14 @@ async function handlePumpyChat(req: Request, userId: string, cors: Cors): Promis
   catch (e) { console.error("chat saves_log insert failed", e); }
   console.log("pumpy turn", thread.id, "calls=" + calls, "tools=" + toolCalls, "in=" + inTok, "out=" + outTok,
     "credits=" + credits, "snapshot_chars=" + String(snapshot).length, "by=" + (by ?? "-"),
+    sink ? "streamed=" + onScreen : "whole",
     pending ? "proposal=" + pending.meta.proposal.kind : "");
-  return json({
+  return {
     status: "ok", thread_id: thread.id, user_message: userMsg, messages: out,
     pending: pending ? pending.id : null, model: by,
     usage: { calls, input_tokens: inTok, output_tokens: outTok, credits },
     pumpy: pumpyBlock(meter, credits),
-  }, 200, cors);
+  };
 }
 
 async function handlePumpyConfirm(req: Request, userId: string, cors: Cors): Promise<Response> {
@@ -8892,11 +9535,14 @@ Deno.serve(async (req: Request) => {
           ? " If the creator's own words are given, do not contradict them; explain the movement they described."
           : "");
       const [counts, uc] = await settledAll<any>([countsFor(userId), capsFor(userId)]);
-      return await aiText(system, `Exercise: ${exercise}` +
+      const ask = `Exercise: ${exercise}` +
         (canonical ? `\nCatalog id: ${canonical}` : "") +
         (body?.title ? `\nFrom the workout: ${String(body.title).slice(0, 120)}` : "") +
-        (quote ? `\nThe creator said${source ? ` (${source})` : ""}: ${quote}` : ""),
-        cors, userId, "explain", (counts as Counts).helpers, uc as UserCaps);
+        (quote ? `\nThe creator said${source ? ` (${source})` : ""}: ${quote}` : "");
+      // The sheet asks to watch it arrive; the pointerdown prefetch does not,
+      // because nothing is open yet to watch it in.
+      const fn = wantsStream(body) ? aiTextStream : aiText;
+      return await fn(system, ask, cors, userId, "explain", (counts as Counts).helpers, uc as UserCaps);
     }
 
     if (req.method === "POST" && path === "/api/demo-video") return await handleDemoVideo(req, userId, cors);
