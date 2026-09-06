@@ -6,6 +6,23 @@ add measured comparisons, changes, regression evidence and remaining acceptance 
 for the [implementation prompt](performance-motion-prompt.md). Starting hypotheses
 are retained as historical context, not presented as measurements.
 
+## Deployment follow-up — 6 September 2026
+
+After the owner clarified deployment intent, runtime commit `a324632425538e3ca6445ccd07331d3e9ed93227`
+was fast-forwarded to main and pushed. GitHub Pages reports `built` for that commit;
+Supabase function `spotter` is ACTIVE at version **140**. Both production HTML URLs
+returned HTTP 200 with **539,651 bytes**, SHA-256
+`39ba4945019cd4ada9e4675279c1a03ccd41aafdac5aafcaa577675e38bd844e`, byte-identical to
+the tested generated page. The live service worker matches the tested v7 file.
+The live landing page renders without captured JavaScript errors, and a protected
+API read without authentication still returns 401.
+
+Deployment used an isolated worktree so the newer uncommitted changes from the
+separate Plan/workout/Pumpy UX task remain untouched and are not included in this
+release. That task's additional fixes still need their own deployment. The original
+implementation and measurement notes below describe the state before publication;
+physical-device and remaining acceptance limitations still apply.
+
 ## Verified baseline
 
 `node build.mjs` succeeds and regenerates the existing outputs without a diff:
@@ -107,8 +124,8 @@ guarantees or thresholds attributed to Apple.
 
 The local performance pass is implemented on `performance-motion`, starting from
 clean `main` at `a4151de` (runtime baseline `54c43b1`). No backend, schema, model,
-secret or production configuration was changed. This is a tested local candidate,
-not a deployed release. `AGENT-CONTEXT.md` reserves push/merge/deployment for the
+secret or production configuration was changed. This was initially prepared as a tested local candidate; the deployment follow-up
+above records its subsequent publication. `AGENT-CONTEXT.md` reserves push/merge/deployment for the
 senior session. The app version remains 0.12; the changed service worker is v7.
 
 ### Conditions and reproducibility
