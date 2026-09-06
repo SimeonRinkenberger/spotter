@@ -4485,11 +4485,11 @@ body:not(.app) #toast.show {
   gap: 12px;
 }
 .scchips {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 8px;
 }
 .scchip {
-  flex: 1;
   min-width: 0;
   min-height: 44px;
   padding: 10px 4px;
@@ -4527,9 +4527,13 @@ body:not(.app) #toast.show {
   padding: 13px;
   font-size: 15px;
 }
+.scvid {
+  animation: viewin var(--t-2) var(--e-out) both;
+}
 @media (prefers-reduced-motion: reduce) {
   .sharewrap,
-  .scbtns.in {
+  .scbtns.in,
+  .scvid {
     animation-name: fadeonly;
     animation-delay: 0ms;
   }
@@ -10648,12 +10652,12 @@ select:focus-visible {
       startWorkout(w, d);
     };
   }
-  var SC_W = 1080, SC_H = 1920, SC_PAD = 88;
+  var SC_W = 1080, SC_H = 1920, SC_CH = 1200, SC_PAD = 88;
   var SC_TOP = 262, SC_BASE = 1580;
   var SC_SANS = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
   var SC_WHERE = { tiktok: "TikTok", instagram: "Instagram", youtube: "YouTube" };
   var sc = {
-    theme: "dark",
+    bg: "dark",
     file: null,
     blob: null,
     url: null,
@@ -10661,14 +10665,25 @@ select:focus-visible {
     img: null,
     hint: null,
     seq: 0,
-    watching: false
+    watching: false,
+    photo: null,
+    pair: null,
+    btns: null,
+    tip: "",
+    vfile: null,
+    vurl: null,
+    vbtn: null,
+    vseq: 0,
+    vst: 2,
+    vno: false
   };
   try {
-    if (localStorage.getItem("spotter_card") === "light") sc.theme = "light";
+    var scWas = localStorage.getItem("spotter_card");
+    if (scWas === "light" || scWas === "clear") sc.bg = scWas;
   } catch (e) {
   }
-  function scPalette(theme) {
-    var v = getComputedStyle(document.documentElement).getPropertyValue(theme === "light" ? "--sc-light" : "--sc-dark").trim().split(/\s+/);
+  function scPalette(bg) {
+    var v = getComputedStyle(document.documentElement).getPropertyValue(bg === "light" ? "--sc-light" : "--sc-dark").trim().split(/\s+/);
     return { bg: v[0], panel: v[1], ink: v[2], dim: v[3], ember: v[4], line: v[5] };
   }
   var scFacePromise = null;
@@ -10746,43 +10761,80 @@ select:focus-visible {
     if (cut) out[out.length - 1] = scFit(c, out[out.length - 1] + " \u2026", max);
     return out.length ? out : ["Workout"];
   }
-  function scBig(c, s, x, y, max, face, col) {
+  function scBig(c, s, x, y, max, face, col, ms) {
     var size = 104;
     c.fillStyle = col;
     if ("letterSpacing" in c) c.letterSpacing = "-2px";
     c.font = "800 " + size + "px " + face;
-    while (size > 52 && c.measureText(s).width > max) {
+    while (size > 52 && c.measureText(ms || s).width > max) {
       size -= 6;
       c.font = "800 " + size + "px " + face;
     }
     c.fillText(s, x, y);
   }
-  function scDraw(c, d, p, face, marks) {
-    var L = SC_PAD, R = SC_W - SC_PAD, W = R - L, i;
-    c.fillStyle = p.bg;
-    c.fillRect(0, 0, SC_W, SC_H);
-    var sm = document.createElement("canvas"), s2;
-    sm.width = 108;
-    sm.height = 192;
-    s2 = sm.getContext("2d");
-    var glow = s2.createRadialGradient(94, 34, 0, 94, 34, 88);
-    glow.addColorStop(0, p.ember + "4E");
-    glow.addColorStop(1, p.ember + "00");
-    s2.fillStyle = glow;
-    s2.fillRect(0, 0, 108, 192);
-    c.drawImage(sm, 0, 0, SC_W, SC_H);
+  function scSeg(t, a, b) {
+    return 1 - Math.pow(1 - Math.max(0, Math.min(1, (t - a) / (b - a))), 3);
+  }
+  function scRise(s, k) {
+    if (k >= 1 || !/^[\d,]+$/.test(s)) return s;
+    return Math.round(parseFloat(s.replace(/,/g, "")) * k).toLocaleString();
+  }
+  function scDraw(c, d, p, face, marks, t) {
+    var L = SC_PAD, R = SC_W - SC_PAD, W = R - L, i, a;
+    var clear = d.bg === "clear", photo = d.bg === "photo" && marks.photo;
+    var H = clear ? SC_CH : SC_H, TOP = clear ? 64 : SC_TOP, BASE = H - (clear ? 64 : SC_H - SC_BASE);
+    if (t === void 0) t = 1;
+    c.clearRect(0, 0, SC_W, H);
+    if (photo) {
+      var iw = marks.photo.width, ih = marks.photo.height, k = Math.max(SC_W / iw, H / ih);
+      c.drawImage(marks.photo, (SC_W - iw * k) / 2, (H - ih * k) / 2, iw * k, ih * k);
+      var sg = c.createLinearGradient(0, H * 0.4, 0, H);
+      sg.addColorStop(0, "rgba(0,0,0,0)");
+      sg.addColorStop(1, "rgba(0,0,0,.55)");
+      c.fillStyle = "rgba(0,0,0,.34)";
+      c.fillRect(0, 0, SC_W, H);
+      c.fillStyle = sg;
+      c.fillRect(0, H * 0.4, SC_W, H * 0.6);
+    } else if (!clear) {
+      c.fillStyle = p.bg;
+      c.fillRect(0, 0, SC_W, H);
+      var sm = document.createElement("canvas"), s2;
+      sm.width = 108;
+      sm.height = 192;
+      s2 = sm.getContext("2d");
+      var glow = s2.createRadialGradient(94, 34, 0, 94, 34, 88);
+      glow.addColorStop(0, p.ember + "4E");
+      glow.addColorStop(1, p.ember + "00");
+      s2.fillStyle = glow;
+      s2.fillRect(0, 0, 108, 192);
+      a = scSeg(t, 0, 0.18);
+      c.globalAlpha = a;
+      c.drawImage(sm, 0, (a - 1) * 90, SC_W, H);
+      c.globalAlpha = 1;
+    }
+    if (clear || photo) {
+      c.shadowColor = "rgba(0,0,0,.55)";
+      c.shadowBlur = 20;
+    }
+    var n = 0;
+    function scStep() {
+      var e = scSeg(t, 0.25 + n * 0.03, 0.62);
+      n++;
+      c.globalAlpha = e;
+      return (1 - e) * 22;
+    }
     c.textBaseline = "alphabetic";
     scSet(c, "800 92px " + face, p.ink, "left", -2.5);
-    var tl = scWrap(c, d.title, W, 3), shown = Math.min(d.prs.length, 2);
+    var tl = scWrap(c, d.title, W, clear ? 2 : 3), shown = Math.min(d.prs.length, clear ? 1 : 2);
     var headH = 118, titleH = tl.length * 104 + 34, figH = 246;
-    var prH = shown ? shown * 110 + (d.prs.length > shown ? 50 : 0) + 22 : 0;
+    var prH = shown ? shown * 110 + (!clear && d.prs.length > shown ? 50 : 0) + 22 : 0;
     var credH = d.credit ? 62 : 0;
-    var lab = d.label, rowH = 72, labH = 0, rows = 0, pass, room;
+    var lab = clear ? "" : d.label, rowH = 72, labH = 0, rows = 0, pass, room, cap = clear ? 3 : 8;
     for (pass = 0; pass < 3; pass++) {
       labH = lab ? 46 : 0;
-      room = SC_BASE - SC_TOP - (headH + titleH + figH + prH + labH + credH) - 18;
-      rows = Math.max(0, Math.min(8, Math.floor(room / rowH)));
-      if (rows >= 6 || rows >= d.exercises.length) break;
+      room = BASE - TOP - (headH + titleH + figH + prH + labH + credH) - 18;
+      rows = Math.max(0, Math.min(cap, Math.floor(room / rowH)));
+      if (rows >= Math.min(6, cap) || rows >= d.exercises.length) break;
       if (pass === 0) lab = "";
       else rowH = 64;
     }
@@ -10792,17 +10844,19 @@ select:focus-visible {
       list = list.slice(0, Math.max(0, rows - 1));
     }
     var listH = (list.length + (more ? 1 : 0)) * rowH + (list.length ? 18 : 0);
-    var y = SC_TOP + Math.max(0, Math.floor((SC_BASE - SC_TOP - (headH + titleH + figH + prH + labH + credH + listH)) / 2));
+    var y = TOP + Math.max(0, Math.floor((BASE - TOP - (headH + titleH + figH + prH + labH + credH + listH)) / 2));
     if (marks.mark) c.drawImage(marks.mark, L, y, 62, 62);
     scSet(c, "800 50px " + face, p.ink, "left", -1);
     c.fillText("Spotter", L + (marks.mark ? 80 : 0), y + 49);
-    scSet(c, "500 30px " + SC_SANS, p.dim, "right", 0);
-    c.fillText(d.date, R, y + 45);
+    if (!clear) {
+      scSet(c, "500 30px " + SC_SANS, p.dim, "right", 0);
+      c.fillText(d.date, R, y + 45);
+    }
     y += headH;
     scSet(c, "800 92px " + face, p.ink, "left", -2.5);
     for (i = 0; i < tl.length; i++) c.fillText(tl[i], L, y + 76 + i * 104);
     y += titleH;
-    c.fillStyle = p.panel;
+    c.fillStyle = clear || photo ? p.panel + "C4" : p.panel;
     scRR(c, L, y, W, 216, 34);
     c.fill();
     c.strokeStyle = p.line;
@@ -10815,86 +10869,99 @@ select:focus-visible {
       c.lineTo(L + cw * i, y + 170);
       c.stroke();
     }
+    var up = scSeg(t, 0.1, 0.35);
     for (i = 0; i < 3; i++) {
       c.textAlign = "center";
-      scBig(c, d.figs[i][0], L + cw * i + cw / 2, y + 130, cw - 44, face, p.ink);
+      scBig(c, scRise(d.figs[i][0], up), L + cw * i + cw / 2, y + 130, cw - 44, face, p.ink, d.figs[i][0]);
       scSet(c, "700 26px " + SC_SANS, p.dim, "center", 4);
       c.fillText(scFit(c, String(d.figs[i][1]).toUpperCase(), cw - 30), L + cw * i + cw / 2, y + 178);
     }
     y += figH;
+    var dy;
     for (i = 0; i < shown; i++) {
+      dy = scStep();
       c.fillStyle = p.ember + "26";
-      scRR(c, L, y, W, 104, 26);
+      scRR(c, L, y + dy, W, 104, 26);
       c.fill();
       c.fillStyle = p.ember;
-      scRR(c, L, y, 10, 104, 5);
+      scRR(c, L, y + dy, 10, 104, 5);
       c.fill();
       scSet(c, "700 25px " + SC_SANS, p.ember, "left", 4);
-      c.fillText("NEW BEST", L + 40, y + 43);
+      c.fillText("NEW BEST", L + 40, y + dy + 43);
       scSet(c, "600 37px " + SC_SANS, p.ink, "left", -0.4);
-      c.fillText(scFit(c, d.prs[i], W - 80), L + 40, y + 82);
+      c.fillText(scFit(c, d.prs[i], W - 80), L + 40, y + dy + 82);
       y += 110;
     }
     if (shown && d.prs.length > shown) {
       var rest = d.prs.length - shown;
+      dy = scStep();
       scSet(c, "600 30px " + SC_SANS, p.ember, "left", 0);
-      c.fillText("+" + rest + " more personal best" + (rest === 1 ? "" : "s"), L, y + 32);
+      c.fillText("+" + rest + " more personal best" + (rest === 1 ? "" : "s"), L, y + dy + 32);
       y += 50;
     }
     if (shown) y += 22;
     if (lab) {
+      dy = scStep();
       scSet(c, "700 26px " + SC_SANS, p.dim, "left", 4);
-      c.fillText(scFit(c, lab.toUpperCase(), W), L, y + 28);
+      c.fillText(scFit(c, lab.toUpperCase(), W), L, y + dy + 28);
       y += labH;
     }
     var base = Math.round(rowH * 0.66), fa = rowH > 68 ? 37 : 34, fb = rowH > 68 ? 32 : 30, sw;
     for (i = 0; i < list.length; i++) {
+      dy = scStep();
       if (i) {
         c.strokeStyle = p.line;
         c.lineWidth = 2;
         c.beginPath();
-        c.moveTo(L, y + 1);
-        c.lineTo(R, y + 1);
+        c.moveTo(L, y + dy + 1);
+        c.lineTo(R, y + dy + 1);
         c.stroke();
       }
       scSet(c, "500 " + fb + "px " + SC_SANS, p.dim, "right", 0);
       sw = c.measureText(list[i][1]).width;
-      c.fillText(list[i][1], R, y + base);
+      c.fillText(list[i][1], R, y + dy + base);
       scSet(c, "600 " + fa + "px " + SC_SANS, p.ink, "left", -0.3);
-      c.fillText(scFit(c, list[i][0], W - sw - 40), L, y + base);
+      c.fillText(scFit(c, list[i][0], W - sw - 40), L, y + dy + base);
       y += rowH;
     }
     if (more) {
+      dy = scStep();
       scSet(c, "500 " + fb + "px " + SC_SANS, p.dim, "left", 0);
-      c.fillText("+" + more + " more", L, y + base);
+      c.fillText("+" + more + " more", L, y + dy + base);
       y += rowH;
     }
     if (list.length) y += 18;
     if (d.credit) {
       var cx = L;
+      dy = scStep();
       if (marks.coach) {
-        c.drawImage(marks.coach, L, y + 2, 40, 40);
+        c.drawImage(marks.coach, L, y + dy + 2, 40, 40);
         cx = L + 54;
       }
       scSet(c, "500 31px " + SC_SANS, p.dim, "left", 0);
-      c.fillText(scFit(c, d.credit, R - cx), cx, y + 34);
+      c.fillText(scFit(c, d.credit, R - cx), cx, y + dy + 34);
     }
     scSet(c, "500 29px " + SC_SANS, p.dim, "center", 2);
     c.globalAlpha = 0.72;
-    c.fillText("Logged with Spotter", SC_W / 2, 1636);
+    c.fillText("Logged with Spotter", SC_W / 2, H - (clear ? 40 : 284));
     c.globalAlpha = 1;
   }
-  function renderShareCard(card) {
-    var p = scPalette(card.theme);
+  function scAssets(card) {
+    var p = scPalette(card.bg);
     return Promise.all([
       scFace(),
       scMark(($("i-dumbbell") || { innerHTML: "" }).innerHTML, p.ember, 62),
       card.coach ? scMark(PUMPY_MARK.replace(/^<svg[^>]*>/, "").replace(/<\/svg>$/, ""), p.dim, 40) : Promise.resolve(null)
     ]).then(function(r) {
+      return { p: p, face: r[0], marks: { mark: r[1], coach: r[2], photo: sc.photo } };
+    });
+  }
+  function renderShareCard(card) {
+    return scAssets(card).then(function(a) {
       var cv = document.createElement("canvas");
       cv.width = SC_W;
-      cv.height = SC_H;
-      scDraw(cv.getContext("2d"), card, p, r[0], { mark: r[1], coach: r[2] });
+      cv.height = card.bg === "clear" ? SC_CH : SC_H;
+      scDraw(cv.getContext("2d"), card, a.p, a.face, a.marks, 1);
       return new Promise(function(ok, no) {
         try {
           cv.toBlob(function(b) {
@@ -10904,6 +10971,91 @@ select:focus-visible {
         } catch (e) {
           no(e);
         }
+      });
+    });
+  }
+  var SC_MS = 5e3;
+  function scMime() {
+    try {
+      if (window.MediaRecorder && MediaRecorder.isTypeSupported("video/mp4")) return "video/mp4";
+    } catch (e) {
+    }
+    return "";
+  }
+  function scRecord(card, mime) {
+    return scAssets(card).then(function(a) {
+      return new Promise(function(ok, no) {
+        var cv = document.createElement("canvas"), ctx, rec, str, ch = [], raf = 0, hard = 0, t0 = 0, last = -99, over = false;
+        cv.width = SC_W;
+        cv.height = SC_H;
+        ctx = cv.getContext("2d");
+        scDraw(ctx, card, a.p, a.face, a.marks, 0);
+        if (!cv.captureStream) return no(0);
+        str = cv.captureStream(30);
+        try {
+          rec = new MediaRecorder(str, { mimeType: mime, videoBitsPerSecond: 4e6 });
+        } catch (e) {
+          return no(e);
+        }
+        function shut() {
+          clearTimeout(hard);
+          cancelAnimationFrame(raf);
+          document.removeEventListener("visibilitychange", hide);
+          try {
+            rec.stop();
+          } catch (e) {
+          }
+          setTimeout(function() {
+            str.getTracks().forEach(function(t) {
+              t.stop();
+            });
+          }, 400);
+        }
+        function give() {
+          if (over) return;
+          over = true;
+          var b = new Blob(ch, { type: "video/mp4" });
+          if (b.size) ok(b);
+          else no(0);
+        }
+        function fail() {
+          if (!over) {
+            over = true;
+            shut();
+            no(0);
+          }
+        }
+        function hide() {
+          if (document.hidden) fail();
+        }
+        function tick(ts) {
+          if (over) return;
+          if (!t0) t0 = ts;
+          var t = Math.min(1, (ts - t0) / SC_MS);
+          if (ts - last >= 31 || t === 1) {
+            last = ts;
+            scDraw(ctx, card, a.p, a.face, a.marks, t);
+          }
+          if (t < 1) {
+            raf = requestAnimationFrame(tick);
+            return;
+          }
+          shut();
+          setTimeout(give, 600);
+        }
+        rec.ondataavailable = function(e) {
+          if (e.data && e.data.size) ch.push(e.data);
+        };
+        rec.onstop = give;
+        rec.onerror = fail;
+        document.addEventListener("visibilitychange", hide);
+        hard = setTimeout(fail, SC_MS + 1800);
+        try {
+          rec.start();
+        } catch (e) {
+          return fail();
+        }
+        raf = requestAnimationFrame(tick);
       });
     });
   }
@@ -10930,7 +11082,7 @@ select:focus-visible {
     if (w.platform === "pumpy") credit = "Built with Pumpy";
     else if (w.author) credit = "from @" + w.author + (SC_WHERE[w.platform] ? " on " + SC_WHERE[w.platform] : "");
     return {
-      theme: sc.theme,
+      bg: sc.bg,
       title: title || "Workout",
       prs: prs,
       exercises: ex,
@@ -10990,7 +11142,15 @@ select:focus-visible {
   }
   function scForget() {
     if (sc.url) URL.revokeObjectURL(sc.url);
+    if (sc.vurl) URL.revokeObjectURL(sc.vurl);
+    sc.vseq++;
+    sc.vst = 2;
+    sc.vno = false;
+    if (sc.photo && sc.photo.close) sc.photo.close();
+    if (sc.bg === "photo") sc.bg = "dark";
+    sc.photo = null;
     sc.url = sc.blob = sc.file = sc.card = sc.img = sc.hint = null;
+    sc.vurl = sc.vfile = sc.vbtn = sc.btns = sc.pair = null;
   }
   function scWatchSummary() {
     if (sc.watching || !window.MutationObserver) return;
@@ -11002,9 +11162,9 @@ select:focus-visible {
   }
   function scPaint() {
     var mine = ++sc.seq;
-    sc.card.theme = sc.theme;
+    sc.card.bg = sc.bg;
     return renderShareCard(sc.card).then(function(b) {
-      if (mine !== sc.seq) return null;
+      if (mine !== sc.seq || !sc.card) return null;
       if (sc.url) URL.revokeObjectURL(sc.url);
       sc.blob = b;
       sc.file = scFileOf(b);
@@ -11013,8 +11173,143 @@ select:focus-visible {
         sc.img.src = sc.url;
         sc.img.classList.add("in");
       }
+      scMakeVideo();
       return b;
     });
+  }
+  function scMakeVideo() {
+    var mime = scMime(), mine = ++sc.vseq;
+    if (sc.vurl) URL.revokeObjectURL(sc.vurl);
+    sc.vurl = sc.vfile = null;
+    if (sc.vno) return;
+    if (sc.card.bg === "clear") mime = "";
+    sc.vst = mime ? 0 : 2;
+    scArm();
+    if (!mime) return;
+    scRecord(sc.card, mime).then(function(b) {
+      if (mine !== sc.vseq) return;
+      try {
+        sc.vfile = new File([b], "spotter-workout.mp4", { type: "video/mp4" });
+      } catch (e) {
+      }
+      sc.vurl = URL.createObjectURL(b);
+      sc.vst = 1;
+      scArm();
+    }, function() {
+      if (mine === sc.vseq) {
+        sc.vst = 2;
+        sc.vno = true;
+        scArm();
+      }
+    });
+  }
+  function scArm() {
+    if (sc.vst === 2 && sc.vbtn) {
+      sc.vbtn.parentNode.removeChild(sc.vbtn);
+      sc.vbtn = null;
+    }
+    if (sc.vst === 2 || !sc.btns) return;
+    if (!sc.vbtn) sc.btns.appendChild(sc.vbtn = scBtn("Making video\u2026", "btn ghost scvid", null, scVideo));
+    sc.vbtn.disabled = sc.vst !== 1;
+    sc.vbtn.textContent = sc.vst !== 1 ? "Making video\u2026" : scCan() === 2 && sc.vfile ? "Share video" : "Save video";
+  }
+  function scVideo() {
+    haptic("tap");
+    if (sc.vfile && scCan() === 2 && scSheet(sc.vfile, scHold)) return;
+    if (sc.vurl) scDrop(sc.vurl, false, "spotter-workout.mp4");
+    else scHold();
+  }
+  function scPress(v) {
+    if (!sc.pair) return;
+    sc.pair.forEach(function(x) {
+      x[0].setAttribute("aria-pressed", x[1] === v ? "true" : "false");
+    });
+  }
+  function scSay() {
+    if (!sc.hint) return;
+    sc.hint.textContent = sc.bg === "clear" ? "Save it, then add it over your own clip in the Story editor." : sc.tip;
+  }
+  function scPhoto(f) {
+    var url = URL.createObjectURL(f), p = null;
+    function took(im) {
+      if (sc.photo && sc.photo.close) sc.photo.close();
+      sc.photo = im;
+      sc.bg = "photo";
+      scPress("photo");
+      scSay();
+      scPaint();
+    }
+    function slow() {
+      var im = new Image();
+      im.onload = function() {
+        took(im);
+        URL.revokeObjectURL(url);
+      };
+      im.onerror = function() {
+        URL.revokeObjectURL(url);
+        toast("Could not read that picture.");
+      };
+      im.src = url;
+    }
+    if (window.createImageBitmap) {
+      try {
+        p = createImageBitmap(f, { resizeWidth: SC_W, resizeQuality: "high" });
+      } catch (e) {
+        p = null;
+      }
+    }
+    if (p && p.then) p.then(function(im) {
+      URL.revokeObjectURL(url);
+      took(im);
+    }, slow);
+    else slow();
+  }
+  function scCaption(d) {
+    var out = [], bits = [], tags = ["#gym"], vol = d.figs[2], i, s, g;
+    if (d.prs.length === 1) bits.push("a new best on " + String(d.prs[0]).split(" \xB7 ")[0]);
+    else if (d.prs.length) bits.push(d.prs.length + " new bests");
+    if (vol[1] !== "bodyweight") bits.push(vol[0] + " " + vol[1]);
+    bits.push(d.figs[1][0] + " " + d.figs[1][1]);
+    out.push(d.title + " \xB7 " + bits.join(", ") + ".");
+    if (d.coach) out.push("Built with Pumpy in Spotter.");
+    else {
+      if (d.credit) out.push("Workout " + d.credit + ".");
+      out.push("Logged with Spotter.");
+    }
+    g = String(d.label || "").split(/\s*·\s*/);
+    for (i = 0; i < g.length && tags.length < (d.prs.length ? 4 : 5); i++) {
+      s = g[i].toLowerCase().replace(/[^a-z0-9]/g, "");
+      if (s) tags.push("#" + s);
+    }
+    if (d.prs.length) tags.push("#personalbest");
+    out.push(tags.join(" "));
+    return out.join("\n");
+  }
+  function scCopyCaption() {
+    haptic("tap");
+    var s = scCaption(sc.card), okd = false, t;
+    function old() {
+      t = el("textarea");
+      t.value = s;
+      t.style.cssText = "position:fixed;top:-9999px;opacity:0";
+      document.body.appendChild(t);
+      t.select();
+      try {
+        okd = document.execCommand("copy");
+      } catch (e) {
+      }
+      t.remove();
+      said();
+    }
+    function said() {
+      toast(okd ? "Caption copied \u2014 paste it in the app." : "Could not copy the caption.");
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(s).then(function() {
+        okd = true;
+        said();
+      }, old);
+    } else old();
   }
   function scFileOf(b) {
     try {
@@ -11023,17 +11318,18 @@ select:focus-visible {
       return null;
     }
   }
-  function scDrop(url, temp) {
+  function scDrop(url, temp, name) {
     var a = el("a");
+    name = name || "spotter-workout.png";
     a.href = url;
-    a.download = "spotter-workout.png";
+    a.download = name;
     document.body.appendChild(a);
     a.click();
     a.remove();
     if (temp) setTimeout(function() {
       URL.revokeObjectURL(url);
     }, 4e3);
-    toast("Saved spotter-workout.png", 3600);
+    toast("Saved " + name, 3600);
   }
   function scSheet(file, onfail) {
     try {
@@ -11100,6 +11396,8 @@ select:focus-visible {
   }
   function scButtons(btns) {
     var can = scCan();
+    sc.btns = btns;
+    btns.appendChild(scBtn("Copy caption", "btn ghost", null, scCopyCaption));
     if (can === 2) {
       btns.appendChild(scBtn("Share", "btn", "share", scShare));
       btns.appendChild(scBtn("Save image", "btn ghost", null, scShare));
@@ -11112,6 +11410,9 @@ select:focus-visible {
         btns.appendChild(scBtn("Copy image", "btn ghost", null, scCopy));
       }
     }
+    sc.tip = can === 1 ? "This browser can only share a link. Save the image and post it yourself." : can === 0 ? "Download it, or copy it straight into a post." : "Share to Instagram, TikTok, Messages \u2014 or save it to Photos.";
+    scSay();
+    scArm();
     btns.classList.add("in");
   }
   function shareRow(payload, logged) {
@@ -11122,28 +11423,42 @@ select:focus-visible {
     sc.img.alt = "The session as a card, ready to share";
     prev.appendChild(sc.img);
     row.appendChild(prev);
-    var side = el("div", "scside"), chips = el("div", "scchips"), pair = [];
-    ["dark", "light"].forEach(function(t) {
-      var b = el("button", "scchip", t === "dark" ? "Dark" : "Light");
+    var side = el("div", "scside"), chips = el("div", "scchips");
+    var pin = el("input");
+    pin.type = "file";
+    pin.accept = "image/*";
+    pin.hidden = true;
+    pin.onchange = function() {
+      var f = pin.files && pin.files[0];
+      pin.value = "";
+      if (f) scPhoto(f);
+    };
+    sc.pair = [];
+    [["dark", "Dark"], ["light", "Light"], ["clear", "Clear"], ["photo", "Photo"]].forEach(function(t) {
+      var b = el("button", "scchip", t[1]);
       b.type = "button";
-      b.setAttribute("aria-pressed", sc.theme === t ? "true" : "false");
       b.onclick = function() {
-        if (sc.theme === t) return;
-        sc.theme = t;
+        haptic("tap");
+        if (t[0] === "photo") {
+          pin.click();
+          return;
+        }
+        if (sc.bg === t[0]) return;
+        sc.bg = t[0];
         try {
-          localStorage.setItem("spotter_card", t);
+          localStorage.setItem("spotter_card", t[0]);
         } catch (e) {
         }
-        pair.forEach(function(x) {
-          x[0].setAttribute("aria-pressed", x[1] === t ? "true" : "false");
-        });
-        haptic("tap");
+        scPress(t[0]);
+        scSay();
         scPaint();
       };
-      pair.push([b, t]);
+      sc.pair.push([b, t[0]]);
       chips.appendChild(b);
     });
+    scPress(sc.bg);
     side.appendChild(chips);
+    side.appendChild(pin);
     sc.hint = el("div", "schint", "Share to Instagram, TikTok, Messages \u2014 or save it to Photos.");
     side.appendChild(sc.hint);
     row.appendChild(side);
@@ -11163,7 +11478,7 @@ select:focus-visible {
   }
   function scLogCard(l) {
     var card = scFromLog(l);
-    card.theme = sc.theme;
+    card.bg = sc.bg;
     return renderShareCard(card).then(function(b) {
       return { blob: b, file: scFileOf(b) };
     });

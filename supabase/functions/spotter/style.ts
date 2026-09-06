@@ -1656,8 +1656,10 @@ export const STYLE = String.raw`<style>
   .scprev img.in { opacity: 1; }
   .scside { flex: 1; min-width: 0; display: flex; flex-direction: column;
     justify-content: center; gap: 12px; }
-  .scchips { display: flex; gap: 8px; }
-  .scchip { flex: 1; min-width: 0; min-height: 44px; padding: 10px 4px; font-size: 13px;
+  /* Two to a row rather than one long line: four 44px targets across a 140px
+     column would clip at 375px. */
+  .scchips { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .scchip { min-width: 0; min-height: 44px; padding: 10px 4px; font-size: 13px;
     font-weight: 650; border: 1px solid var(--line-2); border-radius: 12px;
     background: var(--card); color: var(--ink-2);
     transition: background-color var(--t-2), border-color var(--t-2), color var(--t-2); }
@@ -1667,8 +1669,11 @@ export const STYLE = String.raw`<style>
   .scbtns { display: flex; flex-direction: column; gap: 9px; }
   .scbtns.in { margin-top: 14px; animation: viewin var(--t-2) var(--e-out) both; }
   .scbtns .btn { padding: 13px; font-size: 15px; }
+  /* The clip's button is late by nature, and leaves and returns with the chip that
+     asked for it, so it fades rather than appears. */
+  .scvid { animation: viewin var(--t-2) var(--e-out) both; }
   @media (prefers-reduced-motion: reduce) {
-    .sharewrap, .scbtns.in { animation-name: fadeonly; animation-delay: 0ms; }
+    .sharewrap, .scbtns.in, .scvid { animation-name: fadeonly; animation-delay: 0ms; }
     .scprev img { transition: none; }
   }
   /* On a past session there is no room for a preview, so the card is drawn on
