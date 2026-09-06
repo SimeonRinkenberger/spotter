@@ -6795,6 +6795,9 @@ export const APP = String.raw`
           pumpy.refs = pumpy.refs.filter(function (id) { return id !== w.id; });
           delete ctxSeen[w.id];
           renderPumpyCtx();
+          // The picker is behind the composer and may still be open on the row
+          // this chip was; a tick mark that survives its chip is a lie.
+          if ($("refsheet").classList.contains("open")) renderRefList();
         }, 200);
       };
       chip.appendChild(x);

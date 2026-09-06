@@ -1595,16 +1595,22 @@ export const STYLE = String.raw`<style>
   .composer .addbtn { width: 44px; height: 44px; border-radius: 15px; font-size: 20px; }
   .composer .addbtn[disabled] { opacity: .4; box-shadow: none; }
   .pumpycredits { font-size: 11.5px; color: var(--muted); margin: 0 0 7px 6px; line-height: 1.4; }
-  /* Six of these wrap rather than run off the phone; the composer grows taller. */
+  /* Six of these wrap rather than run off the phone. Half a row each, so six is
+     three rows and not six: at full width one long title per line turned the
+     composer into a third of the screen. The cap is the backstop for a phone
+     with larger text, and it scrolls rather than pushing the box off-screen. */
   .pumpyctx { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12px;
-    color: var(--ink-2); margin: 0 0 8px 2px; }
-  .refchip { display: inline-flex; align-items: center; gap: 5px; max-width: 100%;
+    color: var(--ink-2); margin: 0 0 8px 2px; max-height: 118px; overflow-y: auto; }
+  .refchip { display: inline-flex; align-items: center; gap: 5px; max-width: calc(50% - 5px);
     background: var(--sand); border-radius: 999px; padding: 5px 5px 5px 11px; }
-  .refchip b { color: var(--ink); font-weight: 650; max-width: 190px; overflow: hidden;
+  .refchip b { color: var(--ink); font-weight: 650; min-width: 0; overflow: hidden;
     text-overflow: ellipsis; white-space: nowrap; }
   .pumpyctx button { border: none; background: var(--line); color: var(--ink-2); border-radius: 999px;
-    width: 20px; height: 20px; font-size: 14px; line-height: 1; flex: 0 0 auto; }
+    width: 22px; height: 22px; font-size: 14px; line-height: 1; flex: 0 0 auto; }
   .pumpyctx button .ic { width: 12px; height: 12px; }
+  /* 22px of ink, 44px of finger — the shared rule below gives every small button
+     34px, and a chip that will not let go of a workout is worse than a wide one. */
+  .pumpyctx .refchip button::after { inset: -11px; }
   .refchip.in { animation: chipin var(--t-2) var(--e-out); }
   .refchip.gone { animation: chipout var(--t-2) var(--e-in) forwards; }
   @keyframes chipin { from { opacity: 0; transform: scale(.86); } }
