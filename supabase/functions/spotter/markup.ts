@@ -200,8 +200,8 @@ export const MARKUP_BODY = String.raw`</head>
       <div class="page view" id="progressview" role="tabpanel" aria-labelledby="tab2"></div>
       <div class="page view" id="pumpyview" role="tabpanel" aria-labelledby="tab3">
         <div class="pumpybar">
-          <button class="chip" id="pumpychats"><svg class="ic"><use href="#i-list"></use></svg>Chats</button>
-          <button class="chip" id="pumpynew"><svg class="ic"><use href="#i-plus"></use></svg>New chat</button>
+          <button id="pumpychats" title="Chats" aria-label="Chats"><svg class="ic"><use href="#i-list"></use></svg></button>
+          <button id="pumpynew" title="New chat" aria-label="New chat"><svg class="ic"><use href="#i-plus"></use></svg></button>
         </div>
         <div id="pumpylog"></div>
         <div class="composer" id="pumpycomposer">
