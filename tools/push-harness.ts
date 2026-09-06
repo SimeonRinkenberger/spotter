@@ -382,5 +382,81 @@ check("the Node interop half passed", out.code === 0, stderr || `exit ${out.code
 const counted = /(\d+) interop checks/.exec(stdout);
 if (counted) checks += Number(counted[1]);
 
+// ---------- 7. the service worker ----------
+//
+// docs/sw.js is the half of this feature nobody can watch fail: a push handler
+// that throws, or one that shows nothing, costs the site its permission (a
+// userVisibleOnly subscription MUST produce a visible notification). So the file
+// is loaded into a fake worker global here and both handlers are driven.
+
+const swSrc = await Deno.readTextFile("docs/sw.js");
+const listeners: Record<string, (e: unknown) => void> = {};
+const shown: { title: string; opts: Record<string, unknown> }[] = [];
+let focused = 0, opened: string | null = null;
+const fakeSelf = {
+  addEventListener: (k: string, fn: (e: unknown) => void) => { listeners[k] = fn; },
+  registration: {
+    scope: "https://simeonrinkenberger.github.io/spotter/",
+    showNotification: (title: string, opts: Record<string, unknown>) => {
+      shown.push({ title, opts });
+      return Promise.resolve();
+    },
+  },
+  clients: {
+    matchAll: () => Promise.resolve(clientList),
+    openWindow: (u: string) => { opened = u; return Promise.resolve(null); },
+  },
+  skipWaiting: () => Promise.resolve(),
+  location: { origin: "https://simeonrinkenberger.github.io" },
+};
+let clientList: { url: string; focus: () => void }[] = [];
+new Function("self", "caches", "fetch", "Response", "URL", swSrc)(
+  fakeSelf, { open: () => Promise.resolve({}), keys: () => Promise.resolve([]) },
+  () => Promise.resolve(), class {}, URL,
+);
+
+check("the worker cache name was bumped", swSrc.indexOf("spotter-shell-v3") > 0);
+check("the worker registers a push handler", typeof listeners.push === "function");
+check("and a notificationclick handler", typeof listeners.notificationclick === "function");
+
+const waited: Promise<unknown>[] = [];
+const pushEvent = (data: unknown) => ({
+  data: data === null ? null : { json: () => data },
+  waitUntil: (p: Promise<unknown>) => { waited.push(p); },
+});
+listeners.push(pushEvent({
+  title: "Push day is on today's plan.", body: "42 minutes.",
+  tag: "spotter-plan", url: "https://simeonrinkenberger.github.io/spotter/",
+}));
+await Promise.all(waited);
+check("a push shows the notification it was sent",
+  shown.length === 1 && shown[0].title === "Push day is on today's plan." &&
+  shown[0].opts.body === "42 minutes." && shown[0].opts.tag === "spotter-plan");
+check("the tag is what makes a repeat replace rather than stack, and it does not re-buzz",
+  shown[0].opts.renotify === false);
+
+// A push service is allowed to wake a worker with no data at all. Showing
+// nothing would cost the site its permission, so there is always a notification.
+listeners.push(pushEvent(null));
+await Promise.all(waited);
+check("a push with no data still shows something", shown.length === 2 && shown[1].title === "Spotter");
+listeners.push({ data: { json: () => { throw new Error("not json"); } }, waitUntil: (p: Promise<unknown>) => { waited.push(p); } });
+await Promise.all(waited);
+check("a push with an unreadable body still shows something", shown.length === 3);
+
+const clickEvent = () => ({
+  notification: { close: () => {}, data: { url: "https://simeonrinkenberger.github.io/spotter/" } },
+  waitUntil: (p: Promise<unknown>) => { waited.push(p); },
+});
+clientList = [{ url: "https://simeonrinkenberger.github.io/spotter/", focus: () => { focused++; } }];
+listeners.notificationclick(clickEvent());
+await Promise.all(waited);
+check("a tap focuses the copy of the app that is already open", focused === 1 && opened === null);
+clientList = [];
+listeners.notificationclick(clickEvent());
+await Promise.all(waited);
+check("and opens one when nothing is running",
+  opened === "https://simeonrinkenberger.github.io/spotter/");
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures) Deno.exit(1);
