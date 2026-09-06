@@ -1309,6 +1309,10 @@ export const STYLE = String.raw`<style>
   #workout.open { display: flex; animation: fadein var(--t-3) var(--e-soft); }
   #workout.closing { display: flex; pointer-events: none;
     animation: fadeout var(--t-2) var(--e-in) both; }
+  /* No global touch-action, on purpose: the pager needs WebKit to hold the scroll
+     (see .pages). This overlay has no pager under it, so its controls can say they
+     are taps — manipulation drops only double-tap zoom, and the wait for it. */
+  #workout button { touch-action: manipulation; }
   /* Three columns rather than space-between, because the right-hand side gained a
      second button and the elapsed clock has to stay on the centre line anyway. */
   .wtop { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 10px;

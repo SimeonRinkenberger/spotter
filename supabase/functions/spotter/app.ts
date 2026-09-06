@@ -6701,12 +6701,21 @@ export const APP = String.raw`
     var vv = window.visualViewport, p = el("div"), n = [];
     p.style.cssText = "position:fixed;top:0;left:0;width:0;visibility:hidden";
     document.body.appendChild(p);
-    ["100vh", "100dvh", "env(safe-area-inset-top)", "env(safe-area-inset-bottom)"]
+    ["100vh", "100dvh", "env(safe-area-inset-top)", "env(safe-area-inset-bottom)",
+     "var(--sab)", "var(--vvh)"]
       .forEach(function (h) { p.style.height = h; n.push(p.offsetHeight); });
     document.body.removeChild(p);
+    var doc = document.documentElement;
+    // vv is height@offsetTop, sy scroll over scrollable, drift the worst the frame
+    // was ever found adrift with no keyboard up. A low tap is one of those three.
     return "Layout " + screen.width + "x" + screen.height +
-      " · vv " + (vv ? Math.round(vv.height) : "—") + " · inner " + window.innerHeight +
+      " · vv " + (vv ? Math.round(vv.height) + "@" + Math.round(vv.offsetTop) : "—") +
+      " · inner " + window.innerHeight +
+      " · sy " + Math.round(window.scrollY) + "/" + (doc.scrollHeight - doc.clientHeight) +
+      " · drift " + kbDrift + "x" + kbDriftN +
       " · vh " + n[0] + " · dvh " + n[1] + " · sa " + n[2] + "/" + n[3] +
+      " · sab " + n[4] + " · frame " + n[5] +
+      " · rest " + ($("reststrip").className.slice(9).trim() || "off") +
       " · chrome " + Math.round(hdrEl.getBoundingClientRect().height) +
       "/" + Math.round(tabbar.getBoundingClientRect().height) +
       " · " + (standalone() ? "standalone" : "browser") + labelLine();
@@ -9386,40 +9395,61 @@ export const APP = String.raw`
   // keyboard, which no unit describes: iOS leaves the layout viewport alone and
   // slides the visual one up, so a full-height app keeps its tab bar and Pumpy's
   // composer under the keys. Following the visual viewport lifts the composer onto
-  // the keyboard as a native chat app does, and now carries an open sheet with it.
-  // Not the source of truth for the resting height, which is the stylesheet's
-  // 100dvh: on the owner's installed iOS 26 the web view really is a status bar
-  // shorter than the screen and clips at its edge (see the frame comment in
-  // style.ts), and the visual viewport agrees with it — but the resting value
-  // belongs in one place, and that place is CSS.
-  var kbOn = false;
+  // the keyboard as a native chat app does, and carries an open sheet with it. Not
+  // the resting height, though: that is the stylesheet's 100dvh, because on the
+  // owner's installed iOS 26 the web view really is a status bar shorter than the
+  // screen and clips at its edge (see style.ts), and one place should own it.
+  //
+  // It also keeps the two viewports together. A fixed layer is laid out against the
+  // layout viewport and drawn against the visual one, and where they part a button
+  // answers a tap below where it is painted. iOS parts them to reveal a focused
+  // field, which it need not do if no layer of ours hangs under the keyboard — so
+  // the frame now follows the keyboard for every field, not the two inside #app.
+  var kbOn = false, kbSettle = false, kbDrift = 0, kbDriftN = 0;
 
   function fitViewport() {
     var vv = window.visualViewport, root = document.documentElement;
     // The test is height actually lost to the keyboard, not focus: a desktop
     // browser and an external keyboard both focus a field without taking a pixel.
-    var kb = !!vv && kbOn && vv.height < window.innerHeight - 80;
+    var kb = !!vv && (kbOn || kbSettle) && vv.height < window.innerHeight - 80;
     document.body.classList.toggle("kb", kb);
-    if (!kb) { root.style.removeProperty("--vvh"); root.style.removeProperty("--vvtop"); return; }
-    root.style.setProperty("--vvh", vv.height + "px");
-    root.style.setProperty("--vvtop", vv.offsetTop + "px");
-    if (window.scrollY) window.scrollTo(0, 0);
+    if (kb) {
+      root.style.setProperty("--vvh", vv.height + "px");
+      root.style.setProperty("--vvtop", vv.offsetTop + "px");
+    } else {
+      root.style.removeProperty("--vvh");
+      root.style.removeProperty("--vvtop");
+      kbSettle = false;             // the viewport is back; the settle is over
+      var off = window.scrollY + ((vv && vv.offsetTop) || 0);
+      if (off) { kbDriftN++; if (off > kbDrift) kbDrift = off; }
+    }
+    // Fixed layers have nothing of their own to scroll, so a scrolled document is
+    // iOS's doing, and every pixel of it is a tap landing that far low.
+    if (window.scrollY && !$("landing").classList.contains("open")) window.scrollTo(0, 0);
   }
 
   if (window.visualViewport) {
     window.visualViewport.addEventListener("resize", fitViewport);
     window.visualViewport.addEventListener("scroll", fitViewport);
   }
+  // Everywhere but the landing page, which really does scroll and needs no help.
+  function kbField(n) {
+    var t = n && n.tagName;
+    return (t === "INPUT" || t === "TEXTAREA") && !$("landing").contains(n);
+  }
   document.addEventListener("focusin", function (e) {
-    var t = e.target && e.target.tagName;
-    if ((t !== "INPUT" && t !== "TEXTAREA") || !$("app").contains(e.target)) return;
+    if (!kbField(e.target)) return;
     kbOn = true;
+    kbSettle = false;
     fitViewport();
   });
   document.addEventListener("focusout", function (e) {
-    if (!$("app").contains(e.target)) return;
+    if (!kbField(e.target)) return;
     kbOn = false;
-    setTimeout(fitViewport, 60);   // the viewport comes back over several frames
+    kbSettle = true;
+    // The keyboard leaves over about a quarter of a second and the viewport comes
+    // back across it, so one check at 60ms could hand the frame back mid-flight.
+    for (var i = 0, ms = [0, 60, 150, 300, 600]; i < ms.length; i++) setTimeout(fitViewport, ms[i]);
   });
 
   // ---------- pull to refresh ----------
