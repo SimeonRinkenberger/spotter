@@ -1954,6 +1954,23 @@ export const STYLE = String.raw`<style>
   .goalset .chip { min-width: 32px; padding: 6px 0; justify-content: center; font-size: 15px; }
   .goalset .chip[disabled] { opacity: .38; }
   .goalset b { min-width: 20px; text-align: center; }
+  /* The reminder row holds a time and a switch. A native time input rather than a
+     wheel of our own: it is the control the phone already knows how to show, it
+     is localised and accessible for free, and iOS gives it the same picker every
+     alarm in the OS uses. Stripped back to the app's own type so it reads as a
+     value in the row, not as a form field dropped into one. */
+  .remset { display: flex; align-items: center; gap: 8px; }
+  .remtime { font: inherit; font-weight: 650; font-variant-numeric: tabular-nums;
+    color: var(--ink); background: var(--sand); border: none; border-radius: 999px;
+    padding: 7px 10px; min-height: 32px; -webkit-appearance: none; appearance: none;
+    transition: opacity var(--t-2) var(--e-soft); }
+  .remtime::-webkit-date-and-time-value { text-align: right; margin: 0; }
+  .remtime::-webkit-calendar-picker-indicator { display: none; }
+  /* Off is not a disabled state, so the switch keeps full contrast; a row that
+     genuinely cannot work — Safari with no PushManager, or a permission the user
+     turned off in the OS — dims, and the note under the group says why. */
+  .remtime[disabled], #remplan[disabled], #remrisk[disabled] { opacity: .38; }
+  @media (prefers-reduced-motion: reduce) { .remtime { transition: none; } }
   .kv .chev { flex: 0 0 auto; width: 16px; height: 16px; color: var(--line-2); margin-right: -3px; }
   .kv.row[disabled] .chev { display: none; }
   .kv.del .k { color: var(--ember-ink); font-weight: 650; }

@@ -10,7 +10,7 @@
 // arrives — still refreshes the cache for next time. That is the pattern Workbox
 // calls NetworkFirst with networkTimeoutSeconds, and 1.5s is the number that keeps a
 // bad connection from holding a blank screen while never beating a good one.
-var CACHE = "spotter-shell-v2";
+var CACHE = "spotter-shell-v3";
 var SHELL = ["icon.png", "manifest.webmanifest"];
 var PAGE = "index.html";
 var NET_TIMEOUT = 1500;
@@ -80,4 +80,48 @@ self.addEventListener("fetch", function (e) {
   if (SHELL.some(function (p) { return url.pathname.endsWith(p); })) {
     e.respondWith(caches.match(e.request).then(function (r) { return r || fetch(e.request); }));
   }
+});
+
+// ---------- the two reminders ----------
+//
+// Spotter sends exactly two notifications, both opt-in, both switchable off in
+// Settings: the plan-day reminder and the one that says the week is still
+// reachable. The server decides whether to send; this decides how it looks.
+//
+// The payload is JSON — { title, body, tag, url } — but a push service is
+// allowed to wake a worker with no data at all (a Safari "budget" ping, a
+// mangled body), and userVisibleOnly means a push that shows nothing costs the
+// site its permission. So the parse is wrapped and there is always a fallback
+// notification. `tag` is one fixed string per KIND, so tomorrow's plan-day
+// reminder replaces today's on the lock screen instead of stacking under it.
+self.addEventListener("push", function (e) {
+  var d = {};
+  try { d = e.data ? e.data.json() : {}; } catch (err) { d = {}; }
+  var title = d.title || "Spotter";
+  e.waitUntil(self.registration.showNotification(title, {
+    body: d.body || undefined,
+    tag: d.tag || "spotter",
+    icon: "icon.png",
+    badge: "icon.png",
+    // Replace quietly: a second buzz for a notification that only updated the
+    // first one is the thing that gets an app switched off.
+    renotify: false,
+    data: { url: d.url || "./" }
+  }));
+});
+
+// Tapping it should land in the app that is already open, on the phone it is
+// open on, rather than starting a second copy of it. Only if nothing is running
+// do we open a window.
+self.addEventListener("notificationclick", function (e) {
+  e.notification.close();
+  var want = (e.notification.data && e.notification.data.url) || "./";
+  e.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true })
+    .then(function (list) {
+      for (var i = 0; i < list.length; i++) {
+        var c = list[i];
+        if (c.url.indexOf(self.registration.scope) === 0 && "focus" in c) return c.focus();
+      }
+      return self.clients.openWindow ? self.clients.openWindow(want) : undefined;
+    }));
 });

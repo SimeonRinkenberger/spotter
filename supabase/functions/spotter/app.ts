@@ -902,6 +902,10 @@ export const APP = String.raw`
         // profile may still carry s.rest; it is ignored on purpose.
         if (typeof s.sounds === "boolean") state.sounds = s.sounds;
         if (typeof s.haptics === "boolean") state.haptics = s.haptics;
+        // An intent, not the truth: the switches are corrected against this
+        // browser's own push subscription the moment Settings opens.
+        if (s.remind) { remind.plan = !!s.remind.plan; remind.risk = !!s.remind.risk; }
+        if (typeof s.remindAt === "number") remind.at = s.remindAt;
         // The top-bar button and the strip were drawn from the default; correct them.
         paintSounds();
         // The plan is on this row, and the shelf counter is drawn from the plan.
@@ -10133,6 +10137,7 @@ export const APP = String.raw`
     $("haptictoggle").textContent = state.haptics ? "On" : "Off";
     $("sethapticrow").classList.toggle("hide", !navigator.vibrate);
     paintSounds();
+    loadRemind();
     var key = state.profile ? state.profile.ingest_key : null;
     $("setkey").textContent = key ? API + "ingest?key=" + key : "Loading…";
     $("setsaves").textContent = "…";
@@ -10193,6 +10198,12 @@ export const APP = String.raw`
     // next unit toggle. goalSetting() is the reader, so it is also the source.
     var g = goalSetting();
     if (g) s.goal = g;
+    // The reminders, for the same reason: the push_subscriptions row is what the
+    // sender reads, but it belongs to ONE browser, and a second device should
+    // open on the right words rather than on Off while it waits for its own row.
+    s.remind = { plan: remind.plan, risk: remind.risk };
+    s.remindAt = remind.at;
+    s.tz = tzName();
     if (state.profile) state.profile.settings = s;
     // The then() is what sends it. A supabase-js builder is lazy — it only runs
     // the request when something awaits it — so this line without one has been
@@ -10249,6 +10260,203 @@ export const APP = String.raw`
   function toggleWorkoutSounds() {
     setSounds(!state.sounds);
     toast(state.sounds ? "Timer sounds on." : "Timer sounds off.", 1800);
+  }
+
+  // ---------- reminders ----------
+  //
+  // Two notifications and there will not be a third: today's plan at an hour the
+  // user picked, and the one that says the week is still reachable. Both start
+  // Off, and permission is asked FROM THE TAP that asks for it — never at launch,
+  // which is Apple's rule and the only version of this that is not a trick.
+  //
+  // Where the truth lives: the push_subscriptions row is per BROWSER (a phone and
+  // a laptop are two grants of permission and two endpoints), so it is what the
+  // sender reads and what these switches write. profiles.settings keeps a copy as
+  // an intent, so a second device opens on the right words while it waits for its
+  // own row — and because saveSettings writes that column whole, the keys have to
+  // be in it or the next unit toggle would delete them.
+  //
+  // iOS only has Notification and PushManager AT ALL inside an installed web app
+  // (16.4+, WebKit's Web Push for Home Screen web apps). In Safari proper the
+  // switches would be a lie, so they dim and the note says what to do instead.
+
+  var remind = { plan: false, risk: false, at: 1050, sub: null, key: null, busy: false };
+
+  function pushable() {
+    return !!(navigator.serviceWorker && window.PushManager && window.Notification);
+  }
+
+  function denied() { return pushable() && window.Notification.permission === "denied"; }
+
+  function tzName() {
+    try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; }
+    catch (e) { return "UTC"; }
+  }
+
+  function hhmm(m) {
+    return ("0" + Math.floor(m / 60)).slice(-2) + ":" + ("0" + (m % 60)).slice(-2);
+  }
+
+  // One sentence saying what arrives and when, or the reason no switch here can
+  // work. Never a second prompt: a refused permission is undoable only in the OS,
+  // so this says where rather than offering a button that would be ignored.
+  function remindNote() {
+    if (!pushable()) {
+      // The same two steps the install hint gives, because it is the same ask.
+      return standalone() ? "This browser cannot show reminders."
+        : "Install Spotter to your Home Screen to get reminders \u2014 tap Share, then Add to Home Screen.";
+    }
+    if (denied()) return "Reminders are off in your phone's Settings.";
+    return "Two at most and never more than one a day: today's plan at the hour nearest the " +
+      "time you pick, and one on the last day the week's goal is still reachable.";
+  }
+
+  function paintRemind() {
+    var can = pushable() && !denied() && !remind.busy, t = $("remtime");
+    ["plan", "risk"].forEach(function (k) {
+      var b = $("rem" + k);
+      b.textContent = remind[k] ? "On" : "Off";
+      b.classList.toggle("active", remind[k]);
+      b.disabled = !can;
+    });
+    // The time belongs to the reminder it sets, so it is live only while that is.
+    t.disabled = !can || !remind.plan;
+    t.value = hhmm(remind.at);
+    $("setremnote").textContent = remindNote();
+  }
+
+  // What this browser is actually subscribed to, which is the only thing the
+  // sender reads. Drawn first from the profile so the group never opens blank,
+  // then corrected when the row lands.
+  function loadRemind() {
+    paintRemind();
+    if (!pushable()) return;
+    navigator.serviceWorker.ready.then(function (reg) {
+      return reg.pushManager.getSubscription();
+    }).then(function (sub) {
+      remind.sub = sub || null;
+      if (!sub) { remind.plan = false; remind.risk = false; paintRemind(); return; }
+      return sb.from("push_subscriptions").select("remind_plan,remind_risk,remind_at")
+        .eq("endpoint", sub.endpoint).maybeSingle().then(function (r) {
+          var w = r.data || {};
+          remind.plan = !!w.remind_plan;
+          remind.risk = !!w.remind_risk;
+          if (typeof w.remind_at === "number") remind.at = w.remind_at;
+          paintRemind();
+        });
+    }).catch(paintRemind);
+  }
+
+  // The public half of the VAPID pair, asked for once and kept. It comes from the
+  // function rather than the page so that rotating the pair is a secret change
+  // and a reload, not a deploy of the app.
+  function pushKey() {
+    if (remind.key) return Promise.resolve(remind.key);
+    return api("push/config", { method: "GET" }).then(function (r) {
+      remind.key = (r && r.status === "ok" && r.configured && r.key) || null;
+      return remind.key;
+    }, function () { return null; });
+  }
+
+  function keyBytes(k) {
+    var s = (k + "===".slice((k.length + 3) % 4)).replace(/-/g, "+").replace(/_/g, "/");
+    return Uint8Array.from(atob(s), function (c) { return c.charCodeAt(0); });
+  }
+
+  // Called synchronously inside the click, so the gesture is still the user's —
+  // which is what iOS requires and what makes this a request rather than a trap.
+  // Safari once took a callback and returned nothing; both spellings answer here.
+  function askPermission() {
+    return new Promise(function (res) {
+      var r = window.Notification.requestPermission(res);
+      if (r && r.then) r.then(res, res);
+    });
+  }
+
+  function subscribeRemind() {
+    return askPermission().then(function (p) {
+      return p === "granted" ? pushKey() : null;
+    }).then(function (key) {
+      if (!key) return null;
+      return navigator.serviceWorker.ready.then(function (reg) {
+        return reg.pushManager.getSubscription().then(function (have) {
+          // userVisibleOnly is required and honest: every push this app sends is
+          // a notification the user sees. Nothing here wakes a phone silently.
+          return have || reg.pushManager.subscribe({
+            userVisibleOnly: true, applicationServerKey: keyBytes(key)
+          });
+        });
+      });
+    });
+  }
+
+  // Written under RLS straight to PostgREST, not through the function: it is the
+  // user's own row and holds no secret. The ledger columns the sender keeps
+  // (last_sent_at, the weekly count) are not grantable to a browser and are not
+  // sent from here.
+  function saveRemind() {
+    var sub = remind.sub, k = sub ? sub.toJSON().keys : null;
+    if (!k) return;
+    sb.from("push_subscriptions").upsert({
+      user_id: state.user.id, endpoint: sub.endpoint, p256dh: k.p256dh, auth: k.auth,
+      tz: tzName(), remind_plan: remind.plan, remind_risk: remind.risk, remind_at: remind.at
+    }, { onConflict: "endpoint" }).then(function (r) {
+      if (r.error) toast("That reminder did not save. Try again in a moment.");
+    });
+  }
+
+  // Off costs nothing and leaves nothing behind: the row goes, and so does the
+  // browser's subscription, so the push service stops holding an endpoint for
+  // somebody who said no.
+  function offRemind() {
+    var sub = remind.sub;
+    remind.sub = null;
+    if (!sub) return;
+    sb.from("push_subscriptions").delete().eq("endpoint", sub.endpoint)
+      .then(function () { sub.unsubscribe(); });
+  }
+
+  function toggleRemind(kind) {
+    if (remind.busy || !pushable() || denied()) return;
+    if (remind[kind]) {
+      remind[kind] = false;
+      haptic("tap");
+      paintRemind();
+      saveSettings();
+      if (remind.plan || remind.risk) saveRemind(); else offRemind();
+      return;
+    }
+    remind.busy = true;
+    paintRemind();
+    subscribeRemind().then(function (sub) {
+      remind.busy = false;
+      if (!sub) {
+        // A refusal has already rewritten the note to say where to undo it, so
+        // the toast is only for the case where nothing was refused and nothing
+        // worked either — no VAPID keys on the deployment, most likely.
+        paintRemind();
+        if (!denied()) toast("Reminders are not switched on for this app yet.");
+        return;
+      }
+      remind.sub = sub;
+      remind[kind] = true;
+      haptic("tap");
+      paintRemind();
+      saveSettings();
+      saveRemind();
+    }, function () {
+      remind.busy = false;
+      paintRemind();
+      toast("Could not switch that reminder on \u2014 try again in a moment.");
+    });
+  }
+
+  function setRemindAt() {
+    var v = /^(\d\d):(\d\d)$/.exec($("remtime").value || "");
+    if (!v) { paintRemind(); return; }
+    remind.at = Math.max(0, Math.min(1439, Number(v[1]) * 60 + Number(v[2])));
+    saveSettings();
+    if (remind.sub) saveRemind();
   }
 
   // ---------- the account ----------
@@ -11369,6 +11577,9 @@ export const APP = String.raw`
   $("countdone").onclick = function () { closeSheet("countsheet"); };
   $("soundtoggle").onclick = toggleSounds;
   $("haptictoggle").onclick = toggleHaptics;
+  $("remplan").onclick = function () { toggleRemind("plan"); };
+  $("remrisk").onclick = function () { toggleRemind("risk"); };
+  $("remtime").onchange = setRemindAt;
   $("setnamerow").onclick = openName;
   $("setpwrow").onclick = openPassword;
   $("setmailrow").onclick = openEmail;

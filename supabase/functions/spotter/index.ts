@@ -34,6 +34,8 @@
 //   GET  /api/strava/callback       Strava's redirect back (signed state, no user token)
 //   POST /api/strava/push           { log_id, start_local } — one session as a manual activity
 //   POST /api/strava/disconnect     deauthorize and forget the tokens
+//   GET  /api/push/config           { configured, key } — the VAPID public key to subscribe with
+//   POST /api/push/tick             the hourly reminder pass (shared secret, not a user)
 //   POST /api/worker/tick           drain the ingest queue (shared secret, not a user)
 //   POST /api/worker/media          one tier of reading the video, in its own isolate
 //   POST /api/worker/probe          one-off measurement behind the same secret
@@ -50,6 +52,7 @@ import {
   handleWebhook, pricesBlock, returnBaseFrom, sellablePlans, syncFromSession, syncUser,
 } from "./billing.ts";
 import { forgetStravaQuietly, handleCallback, handleStrava } from "./strava.ts";
+import { pushConfig, runPushTick } from "./push.ts";
 import { CATALOG, type CatalogEntry, canonicalize, catalogById } from "./catalog.ts";
 import { assertPublicUrl, checkUrl, dnsAvailable, safeFetch } from "./net.ts";
 import {
@@ -10617,6 +10620,18 @@ Deno.serve(async (req: Request) => {
     // given only its URL? Measurement only, wired into nothing.
     if (req.method === "POST" && path === "/api/worker/probe") return await handleWorkerProbe(req);
 
+    // The reminders pass, on the hour from pg_cron. Same shared secret and the
+    // same reason as the worker's routes: nobody is signed in. `?dry=1` reports
+    // what it would have sent without sending it, which is how you find out why
+    // a phone stayed quiet without waiting a day to try again.
+    if (req.method === "POST" && path === "/api/push/tick") {
+      if (!secretEquals(req.headers.get("x-worker-secret") ?? "", WORKER_SECRET)) {
+        return json({ status: "error", message: "Not found" }, 404);
+      }
+      const out = await runPushTick(Date.now(), url.searchParams.get("dry") === "1");
+      return json({ status: "ok", ...out });
+    }
+
     // Stripe holds no Supabase token and never will, so its events are matched
     // here, above the gate, for the same reason the worker's routes are. The
     // request is authenticated instead by the signature over its raw body.
@@ -10685,6 +10700,14 @@ Deno.serve(async (req: Request) => {
 
     if (path.startsWith("/api/billing/")) return await handleBilling(path, req, userId, cors);
     if (path.startsWith("/api/strava/")) return await handleStrava(path, req, userId, cors);
+
+    // The one thing a browser needs before it can subscribe: the VAPID public
+    // key. Behind the auth gate because only a signed-in person has anywhere to
+    // put a subscription, and read from the environment rather than baked into
+    // the page so that rotating the pair is a secret change and a reload.
+    if (req.method === "GET" && path === "/api/push/config") {
+      return json({ status: "ok", ...pushConfig() }, 200, cors);
+    }
 
     if (req.method === "POST" && path === "/api/rotate-key") {
       const bytes = new Uint8Array(16);

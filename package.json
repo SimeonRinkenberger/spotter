@@ -11,6 +11,7 @@
     "stripe": "^22"
   },
   "devDependencies": {
-    "esbuild": "0.28.2"
+    "esbuild": "0.28.2",
+    "web-push": "^3.6.7"
   }
 }

@@ -591,6 +591,23 @@ export const MARKUP_BODY = String.raw`</head>
     open &mdash; also switchable from Workout Mode's top bar. How long you rest comes from the
     card the video made, not from here.</div>
 
+  <!-- A group of their own rather than two more rows under Preferences, which is
+       where iOS Settings files Notifications for every app on the phone: they are
+       the one thing here that reaches a person when Spotter is closed, they are
+       gated on a permission the rest of the sheet is not, and the first of them
+       carries a time. Both start Off and nothing is asked for until a switch is
+       tapped. -->
+  <h3 class="seth">Reminders</h3>
+  <div class="setgroup">
+    <div class="kv"><span class="k">Plan-day reminder</span>
+      <span class="v remset"><input class="remtime" id="remtime" type="time" value="17:30" aria-label="Time of the plan-day reminder"><button class="chip" id="remplan">Off</button></span></div>
+    <div class="kv"><span class="k">Week at risk</span>
+      <span class="v"><button class="chip" id="remrisk">Off</button></span></div>
+  </div>
+  <!-- Written by paintRemind, which runs before the sheet can be seen: the note
+       has three things to say and only one of them is about reminders arriving. -->
+  <div class="setnote" id="setremnote"></div>
+
   <h3 class="seth">Save from your phone</h3>
   <p class="lede"><b>Android</b> &mdash; install Spotter, then share any video to it from the share
     sheet. Nothing below is needed.</p>
