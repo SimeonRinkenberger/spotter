@@ -1079,6 +1079,13 @@
   .jumpwrap { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); }
   .jumpwrap h3 { margin: 0 0 4px 6px; font-family: inherit; font-size: 11.5px; font-weight: 700;
     letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
+  /* The sheet stays open on the choice, so its new sections have to arrive rather
+     than be there: it grows into the measured --jh and the rows above ride up.
+     Reduced motion keeps the fade and drops the growing. */
+  .jumpwrap.in { overflow: hidden; animation: jumpin var(--t-2) var(--e-out) backwards; }
+  @keyframes jumpin { from { max-height: 0; margin-top: 0; padding-top: 0; opacity: 0; }
+    to { max-height: var(--jh, 70vh); } }
+  @media (prefers-reduced-motion: reduce) { .jumpwrap.in { animation-name: fadein; } }
 
   /* ---------- toast ---------- */
   /* Hung from the frame's bottom edge, not the layout viewport's — not the same
@@ -2271,13 +2278,13 @@
 
 <!-- How the library is ordered, and once it has sections a way to reach the twelfth
      without dragging past eleven. Both in one sheet because whoever wants to jump is
-     already steering the order. -->
+     already steering the order. The choice writes both headings, hence the ids. -->
 <div class="sheet" id="sortsheet"><div class="sheetbody">
   <div class="grabber"></div>
-  <h2>Sort by</h2>
+  <h2 id="sorttitle">Sort by</h2>
   <div class="picklist" id="sortlist"></div>
   <div class="jumpwrap hide" id="jumpwrap">
-    <h3>Jump to</h3>
+    <h3 id="jumphead">Jump to</h3>
     <div class="picklist" id="jumplist"></div>
   </div>
 </div></div>
@@ -3898,10 +3905,13 @@
     return out;
   }
 
-  function openSort() {
+  // chose: a choice made under an open sheet, the only case that animates.
+  function openSort(chose) {
     var sl = $("sortlist");
     sl.innerHTML = "";
     sl.setAttribute("role", "radiogroup");
+    $("sorttitle").textContent = sortMode === "new" ? "Sort by"
+      : "Sorted by " + SORTLBL[sortMode].toLowerCase();
     SORTS.forEach(function (k) {
       var on = sortMode === k;
       var r = el("button", "pickrow sortrow" + (on ? " on" : ""));
@@ -3914,11 +3924,12 @@
       r.onclick = function () { setSort(k); };
       sl.appendChild(r);
     });
-    renderJump();
+    renderJump(chose);
     openSheet("sortsheet");
   }
 
   function setSort(k) {
+    var had = sortMode;
     if (k !== sortMode) {
       sortMode = k;
       try { localStorage.setItem(SORT_KEY, k); } catch (e) { /* the order still applies today */ }
@@ -3928,7 +3939,10 @@
       viewIn($("grid"));
       libTop();
     }
-    // iOS dismisses a picker on the choice rather than asking to be dismissed too.
+    // A menu leaves on the choice; a sheet need not, and here the choice is what
+    // makes the sections — leaving would hide the one thing the tap produced. No
+    // sections to show, or the same order asked for twice, and it goes as before.
+    if (k !== had && $("grid").querySelectorAll(".gname").length > 1) { openSort(true); return; }
     closeSheet("sortsheet");
   }
 
@@ -3936,7 +3950,7 @@
   // does not fit: down the trailing edge of a 375px screen each section gets about
   // 20pt, under iOS's 44pt default and Android's 48dp floor, and it eats the width
   // of a two-column grid. A sheet of full 44pt rows clears both.
-  function renderJump() {
+  function renderJump(chose) {
     var wrap = $("jumpwrap"), jl = $("jumplist");
     // Read off the headings themselves, so the list cannot describe a grid that has
     // moved on underneath it.
@@ -3944,6 +3958,7 @@
     jl.innerHTML = "";
     if (heads.length < 2) { wrap.classList.add("hide"); return; }
     wrap.classList.remove("hide");
+    $("jumphead").textContent = "Jump to a " + SORTLBL[sortMode].toLowerCase();
     Array.prototype.forEach.call(heads, function (h) {
       var r = el("button", "pickrow sortrow");
       r.appendChild(el("b", null, h.children[0].textContent));
@@ -3951,6 +3966,13 @@
       r.onclick = function () { closeSheet("sortsheet"); jumpTo(h.parentNode.parentNode); };
       jl.appendChild(r);
     });
+    if (!chose) return;
+    // A sheet sits on the bottom edge, so a list that simply appeared at its foot
+    // would shove the rows above it up in one frame. The read both restarts the
+    // animation and tells it how tall the list it is uncovering is.
+    wrap.classList.remove("in");
+    wrap.style.setProperty("--jh", wrap.offsetHeight + "px");
+    wrap.classList.add("in");
   }
 
   function jumpTo(sec) {

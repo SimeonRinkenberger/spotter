@@ -402,13 +402,13 @@ export const MARKUP_BODY = String.raw`</head>
 
 <!-- How the library is ordered, and once it has sections a way to reach the twelfth
      without dragging past eleven. Both in one sheet because whoever wants to jump is
-     already steering the order. -->
+     already steering the order. The choice writes both headings, hence the ids. -->
 <div class="sheet" id="sortsheet"><div class="sheetbody">
   <div class="grabber"></div>
-  <h2>Sort by</h2>
+  <h2 id="sorttitle">Sort by</h2>
   <div class="picklist" id="sortlist"></div>
   <div class="jumpwrap hide" id="jumpwrap">
-    <h3>Jump to</h3>
+    <h3 id="jumphead">Jump to</h3>
     <div class="picklist" id="jumplist"></div>
   </div>
 </div></div>
