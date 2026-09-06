@@ -1,0 +1,131 @@
+{
+  "kind": "startup",
+  "version": "before",
+  "mode": "uncached",
+  "run": 0,
+  "browser": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+  "viewport": [
+    375,
+    812
+  ],
+  "longTasks": [],
+  "firstLibrary": 495.80000019073486,
+  "renderMs": 2.5,
+  "firstLibraryFrame": 499.10000014305115,
+  "navigation": {
+    "ttfb": 9.800000190734863,
+    "domContentLoaded": 69.70000004768372,
+    "encoded": 546493,
+    "decoded": 546493
+  },
+  "resources": [
+    {
+      "path": "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js",
+      "duration": 4.699999809265137,
+      "transfer": 0,
+      "encoded": 55125
+    },
+    {
+      "path": "https://fonts.googleapis.com/css2",
+      "duration": 4,
+      "transfer": 0,
+      "encoded": 760
+    },
+    {
+      "path": "http://localhost:8000/icon.png",
+      "duration": 1.9000000953674316,
+      "transfer": 0,
+      "encoded": 4994
+    },
+    {
+      "path": "https://api.fontshare.com/v2/css",
+      "duration": 4.700000047683716,
+      "transfer": 0,
+      "encoded": 0
+    },
+    {
+      "path": "http://localhost:8000/strava-connect.svg",
+      "duration": 5,
+      "transfer": 0,
+      "encoded": 1328
+    },
+    {
+      "path": "https://mtzevoxxpsktmrbbuxva.supabase.co/auth/v1/settings",
+      "duration": 377.39999985694885,
+      "transfer": 0,
+      "encoded": 0
+    },
+    {
+      "path": "https://mtzevoxxpsktmrbbuxva.supabase.co/rest/v1/profiles",
+      "duration": 401.2000000476837,
+      "transfer": 0,
+      "encoded": 0
+    },
+    {
+      "path": "https://mtzevoxxpsktmrbbuxva.supabase.co/rest/v1/collections",
+      "duration": 417.2000000476837,
+      "transfer": 0,
+      "encoded": 0
+    },
+    {
+      "path": "https://mtzevoxxpsktmrbbuxva.supabase.co/rest/v1/workouts",
+      "duration": 430.5,
+      "transfer": 0,
+      "encoded": 0
+    },
+    {
+      "path": "https://mtzevoxxpsktmrbbuxva.supabase.co/rest/v1/collection_items",
+      "duration": 400.7000000476837,
+      "transfer": 0,
+      "encoded": 0
+    },
+    {
+      "path": "https://mtzevoxxpsktmrbbuxva.supabase.co/rest/v1/plan",
+      "duration": 55.700000047683716,
+      "transfer": 0,
+      "encoded": 0
+    },
+    {
+      "path": "https://mtzevoxxpsktmrbbuxva.supabase.co/rest/v1/workout_logs",
+      "duration": 59.200000047683716,
+      "transfer": 0,
+      "encoded": 0
+    },
+    {
+      "path": "https://mtzevoxxpsktmrbbuxva.supabase.co/rest/v1/plan",
+      "duration": 108.79999995231628,
+      "transfer": 0,
+      "encoded": 0
+    },
+    {
+      "path": "https://mtzevoxxpsktmrbbuxva.supabase.co/rest/v1/workout_logs",
+      "duration": 109,
+      "transfer": 0,
+      "encoded": 0
+    },
+    {
+      "path": "https://mtzevoxxpsktmrbbuxva.supabase.co/rest/v1/workout_logs",
+      "duration": 96.40000009536743,
+      "transfer": 0,
+      "encoded": 0
+    },
+    {
+      "path": "https://mtzevoxxpsktmrbbuxva.supabase.co/rest/v1/achievements",
+      "duration": 60.799999952316284,
+      "transfer": 0,
+      "encoded": 0
+    },
+    {
+      "path": "https://mtzevoxxpsktmrbbuxva.supabase.co/rest/v1/exercise_catalog",
+      "duration": 84.09999990463257,
+      "transfer": 0,
+      "encoded": 0
+    },
+    {
+      "path": "https://mtzevoxxpsktmrbbuxva.supabase.co/rest/v1/pumpy_threads",
+      "duration": 76.29999995231628,
+      "transfer": 0,
+      "encoded": 0
+    }
+  ]
+}

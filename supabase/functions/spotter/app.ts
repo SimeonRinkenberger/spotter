@@ -21,7 +21,17 @@ export const APP = String.raw`
   var PUBLIC_AUTH = { google_client_id: "", apple_services_id: "" };
 
   var sb = window.supabase.createClient(SB_URL, SB_ANON, {
-    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+    global: { fetch: function (url, opts) {
+      // Only idempotent database reads get the short deadline. Auth and writes
+      // retain the SDK's semantics; a timed-out write must never be replayed here.
+      if (String(url).indexOf("/rest/v1/") < 0 || (opts && opts.method && opts.method !== "GET")) return fetch(url, opts);
+      return deadline(function (signal) {
+        return fetch(url, Object.assign({}, opts || {}, { signal: signal })).then(function (r) {
+          return r.arrayBuffer().then(function (body) { return new Response(body, {status:r.status, statusText:r.statusText, headers:r.headers}); });
+        });
+      }, 15000);
+    } }
   });
 
   // The one place the version is written down. It names the entry at the top of
@@ -231,23 +241,52 @@ export const APP = String.raw`
   var SHARED = { "explain": 1, "demo-video": 1, "swap": 1 };
   var inFlight = {};
 
+  // A login is a lifetime, not just an id: signing out and back into the same
+  // account must also retire outstanding reads. Failed reads never enter a cache.
+  var accountEpoch = 0, reads = {}, libraryRev = 0, logsRev = 0, planRev = 0;
+  function readOnce(key, work) {
+    key = accountEpoch + ":" + (state.user ? state.user.id : "") + ":" + key;
+    if (reads[key]) return reads[key];
+    var p = Promise.resolve().then(work);
+    reads[key] = p;
+    function done() { if (reads[key] === p) delete reads[key]; }
+    p.then(done, done);
+    return p;
+  }
+  function accountNow(epoch, uid) { return epoch === accountEpoch && state.user && state.user.id === uid; }
+  function invalidateLogs() { logsRev++; state.logs = null; }
+
+  function deadline(work, ms) {
+    var controller = new AbortController(), timer;
+    var timeout = new Promise(function (resolve, reject) {
+      timer = setTimeout(function () { controller.abort(); reject(new Error("Connection timed out. Check the result before trying again.")); }, ms);
+    });
+    var p = Promise.race([Promise.resolve().then(function () { return work(controller.signal); }), timeout]);
+    function done() { clearTimeout(timer); }
+    p.then(done, done);
+    return p;
+  }
+
   function api(path, opts) {
     opts = opts || {};
-    var share = SHARED[path] ? path + "\n" + (opts.body || "") : null;
+    var epoch = accountEpoch, uid = state.user && state.user.id;
+    var share = SHARED[path] ? epoch + ":" + uid + ":" + path + "\n" + (opts.body || "") : null;
     if (share && inFlight[share]) return inFlight[share];
-    var p = sb.auth.getSession().then(function (r) {
+    var p = deadline(function (signal) { return sb.auth.getSession().then(function (r) {
+      if (!accountNow(epoch, uid)) throw new Error("Account changed");
       var token = r.data.session ? r.data.session.access_token : "";
       opts.headers = Object.assign({
         authorization: "Bearer " + token,
         "content-type": "application/json"
       }, opts.headers || {});
-      return fetch(API + path, opts);
+      return fetch(API + path, Object.assign({}, opts, { signal: signal }));
     }).then(function (r) {
       return r.json().then(function (body) {
+        if (!accountNow(epoch, uid)) throw new Error("Account changed");
         if (r.status === 401) { toast("Session expired — sign in again."); throw new Error("401"); }
         return body;
       });
-    });
+    }); }, opts.method === "GET" ? 15000 : 90000);
     if (share) {
       inFlight[share] = p;
       var forget = function () { delete inFlight[share]; };
@@ -265,22 +304,32 @@ export const APP = String.raw`
   // pocket would fail against the function until it caught up.
   function apiStream(path, body, onEvent) {
     body.stream = true;
-    return sb.auth.getSession().then(function (s) {
+    var epoch = accountEpoch, uid = state.user && state.user.id;
+    return deadline(function (signal) { return sb.auth.getSession().then(function (s) {
+      if (!accountNow(epoch, uid)) throw new Error("Account changed");
       var t = s.data.session ? s.data.session.access_token : "";
       return fetch(API + path, {
         method: "POST",
+        signal: signal,
         headers: { authorization: "Bearer " + t, "content-type": "application/json" },
         body: JSON.stringify(body)
       });
     }).then(function (r) {
+      if (!accountNow(epoch, uid)) throw new Error("Account changed");
       if (r.status === 401) { toast("Session expired — sign in again."); throw new Error("401"); }
       if (!r.body || !r.body.getReader || (r.headers.get("content-type") || "").indexOf("ndjson") < 0) {
-        return r.json().then(function (b) { onEvent(Object.assign({ t: "final" }, b)); });
+        return r.json().then(function (b) { if (accountNow(epoch, uid)) onEvent(Object.assign({ t: "final" }, b)); });
       }
       var rd = r.body.getReader(), dec = new TextDecoder(), buf = "", nl;
-      function feed(s) { if (s) { try { onEvent(JSON.parse(s)); } catch (e) { /* half a line */ } } }
+      function feed(s) {
+        if (!s || !accountNow(epoch, uid)) return;
+        var event;
+        try { event = JSON.parse(s); } catch (e) { throw new Error("Interrupted answer"); }
+        onEvent(event);
+      }
       function pump() {
         return rd.read().then(function (x) {
+          if (!accountNow(epoch, uid)) { rd.cancel(); return; }
           buf += x.done ? "" : dec.decode(x.value, { stream: true });
           while ((nl = buf.indexOf("\n")) >= 0) { feed(buf.slice(0, nl).trim()); buf = buf.slice(nl + 1); }
           if (x.done) { feed(buf.trim()); return; }
@@ -288,7 +337,7 @@ export const APP = String.raw`
         });
       }
       return pump();
-    });
+    }); }, 240000);
   }
 
   // ---------- auth ----------
@@ -723,18 +772,58 @@ export const APP = String.raw`
     }
   }
 
+  function clearAccount() {
+    if (pendingMotion) pendingMotion.disconnect();
+    $("app").classList.add("hide");
+    accountEpoch++; reads = {}; inFlight = {}; libraryRev++; logsRev++; planRev++;
+    // A delayed delete belongs to the account that offered its undo. If that
+    // account leaves first, retain the server row rather than write as the next.
+    clearTimeout(undoTimer); undoTimer = null; undoFn = null;
+    clearTimeout(detailCloseTimer); clearTimeout(woCloseTimer);
+    clearTimeout(pendTimer); pendTimer = null; pendPolls = 0; pendBusy = false;
+    if (wkChannel) { sb.removeChannel(wkChannel); wkChannel = null; }
+    booting = null; state.profile = null; state.workouts = []; state.logs = null;
+    state.plan = null; state.planLogs = []; state.awards = null; state.goal = null;
+    state.unit = "lb"; state.sounds = true; state.haptics = true;
+    state.collections = []; state.colItems = []; seenCards = {}; gridCards = {};
+    expCache = {}; expWaiting = {}; vidCache = {}; expKey = "";
+    today.rows = []; today.at = 0; today.day = null; today.busy = false; today.shown = false;
+    current = null;
+    if (wo) saveDraft();
+    clearInterval(woTimer); stopRest(); releaseWake(); wo = null; hist = {}; histReady = false;
+    if (strava) strava = { asked: false, configured: false, connected: false, athlete: null, busy: false };
+    if (pumpy) {
+      var seq = (pumpy.openSeq || 0) + 1, wired = pumpy.wired;
+      pumpy = { thread: null, messages: [], refs: [], refsRev: 0, loaded: false,
+        busy: false, live: null, stick: true, wired: wired, openSeq: seq };
+    }
+    if (billing) { billing.sub = null; billing.subAsked = false; billing.limits = null; billing.said = null; billing.ctx = null; }
+    ["grid", "chips", "colbar", "libcount", "empty", "dinner", "pumpylog", "pumpyannounce", "pumpyctx", "pumpythreads", "planview", "progressview", "today"].forEach(function (id) {
+      var n = $(id); if (n) n.innerHTML = "";
+    });
+    $("count0").textContent = "Reading your library";
+    clearTimeout(toastTimer); $("toast").classList.remove("show"); $("toast").textContent = "";
+    Array.prototype.forEach.call(document.querySelectorAll(".sheet.open, #detail.open, #workout.open"), function (n) {
+      n.classList.remove("open");
+    });
+    state.filter = "All"; state.q = ""; $("search").value = "";
+    guideClear(); guideStill(); dropCache();
+  }
+
   sb.auth.onAuthStateChange(function (event, session) {
     // Arriving on a reset link. supabase-js holds the auth lock for the length of
     // this callback, so the sheet — which will want to write a user — waits a tick.
     if (event === "PASSWORD_RECOVERY") setTimeout(openRecovery, 0);
     if (session && session.user) {
-      var first = !state.user;
+      var first = !state.user || state.user.id !== session.user.id;
+      if (first && state.user) clearAccount();
       state.user = session.user;
       showApp();
       // supabase-js holds the auth lock for the duration of this callback, so any
       // query started here deadlocks. Hand the work to the next tick instead.
       if (first) setTimeout(boot, 0);
     } else {
+      clearAccount();
       state.user = null;
       guideUser();
       state.workouts = []; state.logs = null; state.plan = null; state.awards = null;
@@ -767,8 +856,12 @@ export const APP = String.raw`
     watchWorkouts();
     // A shared link is saved only once the library is in hand, so the card it
     // creates lands in a rendered grid rather than into an empty one.
-    booting = load().then(consumeShare).then(consumeBilling).then(warmPages)
-      .then(function () { return profileReady; }).then(welcomeMaybe);
+    var epoch = accountEpoch, uid = state.user.id;
+    booting = load().then(function () { if (accountNow(epoch, uid)) return consumeShare(); })
+      .then(function () { if (accountNow(epoch, uid)) return consumeBilling(); })
+      .then(function () { if (accountNow(epoch, uid)) return warmPages(); })
+      .then(function () { return profileReady; })
+      .then(function () { if (accountNow(epoch, uid)) welcomeMaybe(); });
     return booting;
   }
 
@@ -786,17 +879,21 @@ export const APP = String.raw`
   }
 
   function warmPages() {
+    var epoch = accountEpoch, uid = state.user && state.user.id;
     idle(function () {
+      if (!accountNow(epoch, uid)) return;
       if (drawn.plan) return;
       drawn.plan = true;
       quietly(loadPlan(true));
     }, 150);
     idle(function () {
+      if (!accountNow(epoch, uid)) return;
       if (drawn.progress) return;
       drawn.progress = true;
       quietly(loadLogs().then(renderProgress));
     }, 300);
     idle(function () {
+      if (!accountNow(epoch, uid)) return;
       // Drawn before it is loaded so the column is never empty, then filled in.
       // The warm flag skips the credits call: a session that never opens Pumpy
       // has no business asking the server about Pumpy's meter.
@@ -804,6 +901,7 @@ export const APP = String.raw`
       loadPumpy(true);
     }, 450);
     idle(function () {
+      if (!accountNow(epoch, uid)) return;
       // One GET per session, and only for an account that has something to be
       // told: a paid or staff account never asks about prices at all, and a
       // project without a Stripe key answers "not configured" and is cached as
@@ -827,16 +925,17 @@ export const APP = String.raw`
 
   function watchWorkouts() {
     if (wkChannel || !state.user) return;
-    var uid = state.user.id;
+    var uid = state.user.id, epoch = accountEpoch;
     // Not inside onAuthStateChange: supabase-js holds the auth lock through that
     // callback and getSession would deadlock. boot() is already deferred a tick.
     sb.auth.getSession().then(function (r) {
       var tok = r.data.session ? r.data.session.access_token : null;
       function subscribe() {
+        if (!accountNow(epoch, uid) || wkChannel) return;
         wkChannel = sb.channel("wk-" + uid)
           .on("postgres_changes",
             { event: "*", schema: "public", table: "workouts", filter: "user_id=eq." + uid },
-            onWorkoutChange)
+            function (payload) { if (accountNow(epoch, uid)) onWorkoutChange(payload); })
           .subscribe();
       }
       // The socket has to be carrying this user's token before it joins, or the
@@ -853,6 +952,11 @@ export const APP = String.raw`
   function onWorkoutChange(payload) {
     var row = payload.eventType === "DELETE" ? payload.old : payload.new;
     if (!row || !row.id) return;
+    if (!state.user || (row.user_id && row.user_id !== state.user.id)) return;
+    if (payload.eventType !== "DELETE" && state.workouts.some(function (w) {
+      return w.id === row.id && JSON.stringify(w) === JSON.stringify(row);
+    })) return;
+    libraryRev++;
 
     if (payload.eventType === "DELETE") {
       state.workouts = state.workouts.filter(function (w) { return w.id !== row.id; });
@@ -869,8 +973,7 @@ export const APP = String.raw`
     if (at >= 0) state.workouts[at] = row; else state.workouts.unshift(row);
 
     if (current && current.id === row.id) {
-      current = row;
-      if ($("detail").classList.contains("open")) openDetail(row, true);
+      refreshDetail(row);
     }
     // Only announce a transition, so a favourite toggle or a note edit is silent.
     if (was && was.ingest_status === "processing" && row.ingest_status === "ready") {
@@ -884,21 +987,39 @@ export const APP = String.raw`
 
   // Realtime is the fast path, not the only path: a dropped socket, a backgrounded
   // tab or a browser that never connected must still resolve a pending card.
-  var pendTimer = null, pendPolls = 0;
+  var pendTimer = null, pendPolls = 0, pendBusy = false;
 
   function watchPending() {
     clearTimeout(pendTimer);
+    pendTimer = null;
     var pending = state.workouts.filter(function (w) { return w.ingest_status === "processing"; });
     if (!pending.length) { pendPolls = 0; return; }
-    if (pendPolls > 75) return;          // ~5 minutes, by which point the sweeper has ruled
-    pendPolls++;
-    pendTimer = setTimeout(function () { load(); }, 4000);
+    if (document.hidden || !state.user || pendBusy || pendPolls >= 75) return;
+    pendTimer = setTimeout(pollPending, 4000);
+  }
+
+  function pollPending() {
+    pendTimer = null;
+    if (pendBusy || document.hidden || !state.user) return Promise.resolve();
+    var ids = state.workouts.filter(isPending).map(function (w) { return w.id; });
+    if (!ids.length) return Promise.resolve();
+    var epoch = accountEpoch, uid = state.user.id, rev = libraryRev;
+    pendBusy = true; pendPolls++;
+    return sb.from("workouts").select("*").eq("user_id", uid).in("id", ids).then(function (r) {
+      if (!accountNow(epoch, uid) || r.error || rev !== libraryRev) return;
+      var found = {};
+      (r.data || []).forEach(function (w) { found[w.id] = true; onWorkoutChange({eventType:"UPDATE",new:w}); });
+      ids.forEach(function (id) { if (!found[id]) onWorkoutChange({eventType:"DELETE",old:{id:id}}); });
+    }).catch(function () { /* the bounded fallback tries again; known cards stay */ }).then(function () {
+      if (!accountNow(epoch, uid)) return;
+      pendBusy = false; watchPending();
+    });
   }
 
   function loadProfile() {
-    var uid = state.user.id;
+    var uid = state.user.id, epoch = accountEpoch;
     return sb.from("profiles").select("*").eq("id", uid).maybeSingle().then(function (r) {
-      if (!state.user || state.user.id !== uid) return;
+      if (!accountNow(epoch, uid)) return;
       if (r.data) {
         state.profile = r.data;
         var s = r.data.settings || {};
@@ -1031,47 +1152,75 @@ export const APP = String.raw`
   // ---------- library ----------
 
   function load(retry) {
-    return Promise.all([
-      sb.from("workouts").select("*").order("created_at", { ascending: false }).limit(200),
-      sb.from("collections").select("*").order("sort_order").order("created_at"),
-      sb.from("collection_items").select("collection_id,workout_id,added_at")
-    ]).then(function (rs) {
-      if (rs[0].error) {
-        // Right after a redirect sign-in (magic link, password reset) the first
-        // read can race supabase-js finishing the session from the URL hash and
-        // come back 401. One quiet retry before telling anyone anything.
-        if (!retry) {
-          return new Promise(function (res) { setTimeout(function () { res(load(true)); }, 900); });
-        }
-        toast("Could not load your library — pull down to try again.");
-        return;
-      }
-      state.workouts = rs[0].data || [];
-      // Collections decorate the library; they are not the library. A failed read
-      // here keeps whatever was already known rather than blanking the chips.
-      if (!rs[1].error) state.collections = rs[1].data || [];
-      if (!rs[2].error) state.colItems = rs[2].data || [];
-      // Refresh has to mean refresh. The today card's own age check is there for
-      // the passive path — a chip tap, a realtime render — and would otherwise
-      // shrug off a pull-to-refresh made half a minute after the last read.
-      today.at = 0;
-      render();
-      // A card opened straight off the cache has no caption on it. The real row is
-      // in hand now, so the open one is put right the way realtime puts it right.
-      if (current && $("detail").classList.contains("open")) {
-        for (var i = 0; i < state.workouts.length; i++) {
-          if (state.workouts[i].id === current.id) {
-            current = state.workouts[i];
-            openDetail(current, true);
-            break;
+    if (!state.user) return Promise.resolve();
+    var uid = state.user.id, epoch = accountEpoch, rev = libraryRev;
+    return readOnce("library:" + rev + ":" + !!retry, function () {
+      var rows = sb.from("workouts").select("*").eq("user_id", uid)
+        .order("created_at", { ascending: false }).limit(200).then(function (r) {
+          if (!accountNow(epoch, uid)) return;
+          if (r.error) throw r.error;
+          // A socket event or local edit after the read started is newer evidence.
+          if (rev !== libraryRev) return;
+          state.workouts = r.data || [];
+          today.at = 0;
+          render();
+          if (current && $("detail").classList.contains("open")) {
+            var fresh = state.workouts.filter(function (w) { return w.id === current.id; })[0];
+            if (fresh) refreshDetail(fresh);
           }
+          watchPending();
+        });
+      var collections = Promise.all([
+        sb.from("collections").select("*").eq("user_id", uid).order("sort_order").order("created_at"),
+        sb.from("collection_items").select("collection_id,workout_id,added_at").eq("user_id", uid)
+      ]).then(function (rs) {
+        if (!accountNow(epoch, uid) || rev !== libraryRev) return;
+        var changed = false;
+        if (!rs[0].error && JSON.stringify(state.collections) !== JSON.stringify(rs[0].data || [])) {
+          state.collections = rs[0].data || []; changed = true;
         }
-      }
-      watchPending();
-      // In idle time: this is for the next launch, and this one's thumbnails are
-      // still arriving.
-      idle(writeCache, 0);
+        if (!rs[1].error && JSON.stringify(state.colItems) !== JSON.stringify(rs[1].data || [])) {
+          state.colItems = rs[1].data || []; changed = true;
+        }
+        if (changed) render();
+      }).catch(function () { /* keep known collection membership on transient failure */ });
+      return Promise.all([rows, collections]).then(function () {
+        if (!accountNow(epoch, uid)) return;
+        if (rev !== libraryRev) return load();
+        idle(function () { if (accountNow(epoch, uid)) writeCache(); }, 0);
+      }).catch(function () {
+        if (!accountNow(epoch, uid)) return;
+        if (!retry) return new Promise(function (resolve) {
+          setTimeout(function () { resolve(accountNow(epoch, uid) ? load(true) : undefined); }, 900);
+        });
+        toast("Could not load your library — pull down to try again.");
+      });
     });
+  }
+
+  // A background refresh is not a new visit. Keep the mounted body (including
+  // expanded rows, focus and playing media) when its source has not changed.
+  function refreshDetail(w) {
+    if (!current || current.id !== w.id) return;
+    if (JSON.stringify(current) === JSON.stringify(w)) return;
+    var old = current, d = $("dinner"), scroll = $("detail").scrollTop;
+    if (!$("detail").classList.contains("open")) { current = w; return; }
+    var media = d.firstElementChild;
+    var keepMedia = media && media.querySelector("iframe") && old.url === w.url && old.platform === w.platform;
+    var expanded = [];
+    Array.prototype.forEach.call(d.querySelectorAll(".exrow"), function (row, i) {
+      if (row.classList.contains("open")) expanded.push(i);
+    });
+    var active = document.activeElement;
+    if (keepMedia) media.remove();
+    openDetail(w, true);
+    if (keepMedia && d.firstElementChild && d.firstElementChild.querySelector("iframe")) d.replaceChild(media, d.firstElementChild);
+    if (JSON.stringify(old.blocks) === JSON.stringify(w.blocks)) {
+      var rows = d.querySelectorAll(".exrow");
+      expanded.forEach(function (i) { if (rows[i]) rows[i].classList.add("open"); });
+    }
+    if (active && active.isConnected && active !== document.body) active.focus({ preventScroll: true });
+    $("detail").scrollTop = scroll;
   }
 
   function isPending(w) { return w.ingest_status === "processing"; }
@@ -1491,7 +1640,7 @@ export const APP = String.raw`
 
   function loadToday() {
     if (today.busy || !state.user) return;
-    var key = ymd(new Date());
+    var key = ymd(new Date()), epoch = accountEpoch, uid = state.user.id;
     today.busy = true;
     Promise.all([
       sb.from("plan").select("workout_id").eq("day", key),
@@ -1500,6 +1649,8 @@ export const APP = String.raw`
       sb.from("workout_logs").select("started_at")
         .gte("started_at", ymd(new Date(Date.now() - 86400000)) + "T00:00:00Z")
     ]).then(function (rs) {
+      if (!accountNow(epoch, uid)) return;
+      if (rs[0].error || rs[1].error) throw new Error("Today unavailable");
       today.day = key;
       today.rows = rs[0].data || [];
       // The Plan's own test for its tick, so the two cannot disagree about today.
@@ -1510,7 +1661,7 @@ export const APP = String.raw`
       });
       renderToday();
     }).catch(function () { /* the age check tries again in half a minute */ })
-      .then(function () { today.busy = false; today.at = Date.now(); });
+      .then(function () { if (accountNow(epoch, uid)) { today.busy = false; today.at = Date.now(); } });
   }
 
   function todayDose(w) {
@@ -1590,8 +1741,11 @@ export const APP = String.raw`
   }
 
   // renderGrid runs on every keystroke and render(), and re-flew every card.
-  var seenCards = {};
+  var seenCards = {}, gridCards = {};
   var newThisPass = 0;
+  var pendingMotion = window.IntersectionObserver ? new IntersectionObserver(function (entries) {
+    entries.forEach(function (entry) { entry.target.classList.toggle("awake", entry.isIntersecting); });
+  }) : null;
 
   function cardIn(card, id) {
     if (seenCards[id]) return;
@@ -1607,10 +1761,40 @@ export const APP = String.raw`
   function renderGrid() {
     var grid = $("grid"), empty = $("empty");
     var items = visible();
-    grid.innerHTML = "";
+    var previous = gridCards, next = {}, liveIds = {};
+    state.workouts.forEach(function (w) { liveIds[w.id] = true; });
+    Object.keys(previous).forEach(function (key) {
+      if (liveIds[previous[key].id]) next[key] = previous[key];
+      else if (pendingMotion) pendingMotion.unobserve(previous[key].node);
+    });
+    function card(w, i, groupKey) {
+      var key = (groupKey || "flat") + ":" + w.id;
+      var sig = JSON.stringify([w.title, w.ingest_status, w.media_stage, w.platform, w.thumb_url,
+        w.favorite, w.duration_minutes, w.category, w.difficulty, cardMeta(w)]);
+      var entry = previous[key];
+      if (!entry || entry.sig !== sig) {
+        var changed = !!entry;
+        if (entry && pendingMotion) pendingMotion.unobserve(entry.node);
+        entry = { id: w.id, sig: sig, node: cardNode(w, i) };
+        if (changed) entry.node.classList.add("fresh");
+      }
+      entry.node.onclick = function () { openDetail(w); };
+      next[key] = entry;
+      return entry.node;
+    }
+    function reconcile(parent, nodes) {
+      var at = parent.firstChild;
+      nodes.forEach(function (node) {
+        if (node === at) at = at.nextSibling;
+        else parent.insertBefore(node, at);
+      });
+      while (at) { var rest = at.nextSibling; parent.removeChild(at); at = rest; }
+    }
     newThisPass = 0;
 
     if (!items.length) {
+      if (pendingMotion) pendingMotion.disconnect();
+      grid.innerHTML = ""; gridCards = {};
       grid.classList.add("hide");
       grid.classList.remove("grouped");
       empty.classList.remove("hide");
@@ -1649,15 +1833,25 @@ export const APP = String.raw`
     grid.classList.toggle("grouped", group);
 
     if (!group) {
-      items.forEach(function (w, i) { grid.appendChild(cardNode(w, i)); });
+      reconcile(grid, items.map(function (w, i) { return card(w, i); }));
+      gridCards = next;
       return;
     }
 
     var rest = secTop();
     if (rest > 1) document.documentElement.style.setProperty("--gsec", rest + "px");
-    var n = 0;
+    var n = 0, groups = [], oldGroups = {};
+    Array.prototype.forEach.call(grid.children, function (node) { if (node.sectionKey) oldGroups[node.sectionKey] = node; });
     sections(items).forEach(function (g) {
+      var kept = oldGroups[g.key];
+      if (kept) {
+        kept.querySelector(".gname b").textContent = g.label;
+        kept.querySelector(".gn").textContent = String(g.items.length);
+        reconcile(kept.querySelector(".grid"), g.items.map(function (w) { return card(w, n++, g.key); }));
+        groups.push(kept); return;
+      }
       var sec = el("section", "gsec");
+      sec.sectionKey = g.key;
       var head = el("div", "ghead");
       var name = el("button", "gname");
       name.appendChild(el("b", null, g.label));
@@ -1676,10 +1870,11 @@ export const APP = String.raw`
       // The section's columns are the library grid again, class and all: one set of
       // rules and one set of breakpoints answers for both.
       var box = el("div", "grid");
-      g.items.forEach(function (w) { box.appendChild(cardNode(w, n++)); });
+      g.items.forEach(function (w) { box.appendChild(card(w, n++, g.key)); });
       sec.appendChild(box);
-      grid.appendChild(sec);
+      groups.push(sec);
     });
+    reconcile(grid, groups); gridCards = next;
   }
 
   // One card, wherever it is going: the flat grid, or a section of it. i is its
@@ -1689,6 +1884,7 @@ export const APP = String.raw`
   function cardNode(w, i) {
     var pending = isPending(w), failed = isFailed(w);
     var card = el("button", "carditem" + (pending ? " pending" : "") + (failed ? " failed" : ""));
+    if (pending && pendingMotion) pendingMotion.observe(card);
     card.setAttribute("data-id", w.id);   // the shelf's order, read back by the detail's swipe
     cardIn(card, w.id);
 
@@ -2506,7 +2702,9 @@ export const APP = String.raw`
   }
 
   function patchWorkout(w, fields) {
+    libraryRev++;
     return sb.from("workouts").update(fields).eq("id", w.id).then(function (r) {
+      libraryRev++;
       if (r.error) toast("That change did not save. Your copy is unchanged.");
       return !r.error;
     });
@@ -3777,6 +3975,7 @@ export const APP = String.raw`
     if (catalogLoading) return catalogLoading;
     catalogLoading = sb.from("exercise_catalog").select("id,muscle_groups,secondary_muscles")
       .limit(1000).then(function (r) {
+        if (r.error) throw r.error;
         catalogMuscles = {};
         (r.data || []).forEach(function (e) {
           catalogMuscles[e.id] = {
@@ -3785,7 +3984,7 @@ export const APP = String.raw`
         });
         catalogLoading = null;
         return catalogMuscles;
-      });
+      }).catch(function () { catalogLoading = null; return {}; });
     return catalogLoading;
   }
 
@@ -4456,8 +4655,10 @@ export const APP = String.raw`
   function lastWeights() {
     hist = {};
     histReady = false;
+    var epoch = accountEpoch, uid = state.user && state.user.id;
     sb.from("workout_logs").select("entries,started_at").order("started_at", { ascending: false }).limit(25)
       .then(function (r) {
+        if (!accountNow(epoch, uid)) return;
         if (r.error || !r.data) return;
         r.data.forEach(function (log) {
           (log.entries || []).forEach(function (e) {
@@ -5249,7 +5450,7 @@ export const APP = String.raw`
       // this very object, so writing it here is what wakes that button up.
       payload.id = r.data && r.data.id;
       if (wo) wo.logId = payload.id;
-      state.logs = null;
+      invalidateLogs();
       // The today card was drawn before this session existed. Retire it now,
       // and redraw at once if the library is the page underneath.
       today.at = 0;
@@ -6399,30 +6600,36 @@ export const APP = String.raw`
   }
 
   function loadPlan(silent) {
+    if (!state.user) return Promise.resolve();
     if (!state.weekStart) state.weekStart = mondayOf(new Date());
     if (!monthStart) monthStart = monthOfWeek(state.weekStart);
-    var r = planRange();
-    // A day of slack: a log is stamped UTC and read back local.
-    return Promise.all([
-      sb.from("plan").select("*").gte("day", ymd(r.from)).lte("day", ymd(r.to)),
-      sb.from("workout_logs").select("id,started_at")
-        .gte("started_at", ymd(addDays(r.from, -1)) + "T00:00:00Z")
-        .lte("started_at", ymd(addDays(r.to, 1)) + "T23:59:59Z")
-    ]).then(function (rs) {
-      state.plan = rs[0].data || [];
-      state.planLogs = rs[1].data || [];
-      // Every plan change lands here, and the today card is a copy of one day of
-      // it. Retire the copy rather than let the two screens differ.
-      today.at = 0;
-      var shape = planShape();
-      if (silent && shape === planSig) return;
-      planSig = shape;
-      renderPlan();
+    var r = planRange(), from = ymd(r.from), to = ymd(r.to);
+    var uid = state.user.id, epoch = accountEpoch, rev = planRev;
+    return readOnce("plan:" + from + ":" + to + ":" + rev, function () {
+      return Promise.all([
+        sb.from("plan").select("*").eq("user_id", uid).gte("day", from).lte("day", to),
+        sb.from("workout_logs").select("id,started_at").eq("user_id", uid)
+          .gte("started_at", ymd(addDays(r.from, -1)) + "T00:00:00Z")
+          .lte("started_at", ymd(addDays(r.to, 1)) + "T23:59:59Z")
+      ]).then(function (rs) {
+        if (!accountNow(epoch, uid) || rev !== planRev) return;
+        var nowRange = planRange();
+        if (from !== ymd(nowRange.from) || to !== ymd(nowRange.to)) return;
+        if (rs[0].error || rs[1].error) throw new Error("Plan unavailable");
+        state.plan = rs[0].data || []; state.planLogs = rs[1].data || [];
+        today.at = 0;
+        var shape = planShape();
+        if (silent && shape === planSig) return;
+        planSig = shape; renderPlan();
+      }).catch(function () {
+        if (accountNow(epoch, uid)) toast("Could not refresh your plan. Try opening Plan again.");
+      });
     });
   }
 
   // A change already true on the screen: loadPlan's two chores, no round trip.
   function repaintPlan() {
+    planRev++;
     today.at = 0;
     planSig = planShape();
     renderPlan();
@@ -6725,7 +6932,9 @@ export const APP = String.raw`
   // The two single-day writes, each behind one door — the speed pass wants
   // these lines optimistic and can have them here.
   function planAdd(day, workoutId) {
-    return sb.from("plan").insert({ user_id: state.user.id, day: day, workout_id: workoutId });
+    planRev++;
+    return sb.from("plan").insert({ user_id: state.user.id, day: day, workout_id: workoutId })
+      .then(function (r) { planRev++; return r; });
   }
 
   // Off the day on the tap. A row the server has not confirmed yet has no id to
@@ -6734,11 +6943,17 @@ export const APP = String.raw`
   // the row; now it is put back and said.
   function planDrop(p) {
     if (String(p.id).indexOf("tmp-") === 0) return Promise.resolve();
+    planRev++;
+    var epoch = accountEpoch, uid = state.user.id;
+    var range = JSON.stringify(planRange());
     var kept = state.plan;
     state.plan = (state.plan || []).filter(function (q) { return q.id !== p.id; });
     today.at = 0;
     renderPlan();
     return sb.from("plan").delete().eq("id", p.id).then(function (r) {
+      if (!accountNow(epoch, uid)) return;
+      planRev++;
+      if (range !== JSON.stringify(planRange())) { loadPlan(true); return; }
       if (r && r.error) {
         state.plan = kept;
         renderPlan();
@@ -7180,16 +7395,23 @@ export const APP = String.raw`
 
   function loadLogs() {
     if (state.logs) return Promise.resolve(state.logs);
+    if (!state.user) return Promise.resolve([]);
+    var uid = state.user.id, epoch = accountEpoch, rev = logsRev;
     var since = new Date(Date.now() - 182 * 86400000).toISOString();
-    return sb.from("workout_logs").select("*").gte("started_at", since)
-      .order("started_at", { ascending: false }).limit(400)
-      .then(function (r) {
-        state.logs = r.data || [];
-        // The today card draws its week line from these and was drawn before they
-        // existed: warmPages reads the logs after the library has landed.
-        if (today.shown) renderToday();
-        return state.logs;
-      });
+    return readOnce("logs:" + rev, function () {
+      return sb.from("workout_logs").select("*").eq("user_id", uid).gte("started_at", since)
+        .order("started_at", { ascending: false }).limit(400).then(function (r) {
+          if (!accountNow(epoch, uid)) return [];
+          if (rev !== logsRev) return loadLogs();
+          if (r.error) throw r.error;
+          state.logs = r.data || [];
+          if (today.shown) renderToday();
+          return state.logs;
+        }).catch(function () {
+          if (accountNow(epoch, uid)) toast("Could not load your history. Open Progress to try again.");
+          return [];
+        });
+    });
   }
 
   function volumeOf(log) {
@@ -7535,13 +7757,15 @@ export const APP = String.raw`
     // A fresh sign-in asks again: the table may have arrived since, and the next
     // person on this phone is not the one whose read failed.
     awardsOff = false;
-    return sb.from("achievements").select("kind,key,earned_at,meta")
+    var epoch = accountEpoch, uid = state.user && state.user.id;
+    return readOnce("awards", function () { return sb.from("achievements").select("kind,key,earned_at,meta")
       .order("earned_at", { ascending: false }).limit(300)
       .then(function (r) {
-        if (r.error) awardsOff = true;
+        if (!accountNow(epoch, uid)) return [];
+        if (r.error) { awardsOff = true; return []; }
         state.awards = r.data || [];
         return state.awards;
-      });
+      }).catch(function () { if (accountNow(epoch, uid)) awardsOff = true; return []; }); });
   }
 
   // Written after the screen is drawn, and never waited on. ON CONFLICT DO
@@ -7646,6 +7870,7 @@ export const APP = String.raw`
   }
 
   function renderProgress() {
+    if (!state.user || !state.logs) return;
     var v = $("progressview");
     v.innerHTML = "";
     var logs = state.logs || [];
@@ -7844,9 +8069,13 @@ export const APP = String.raw`
     head.style.color = "var(--ember-ink)";
     v.appendChild(head);
     var month = "";
+    // Four hundred sessions used to construct eight hundred locale formatters
+    // during one draw. The locale and options are shared by the whole list.
+    var monthDate = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" });
+    var sessionDate = new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric" });
     logs.forEach(function (l) {
       var d = new Date(l.started_at);
-      var mk = d.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+      var mk = monthDate.format(d);
       if (mk !== month) { month = mk; v.appendChild(el("div", "monthhead", mk)); }
       var card = el("div", "chartcard");
       card.style.padding = "14px 16px";
@@ -7856,7 +8085,7 @@ export const APP = String.raw`
       var sets = 0;
       (l.entries || []).forEach(function (e) { sets += (e.sets || []).filter(Boolean).length; });
       n.appendChild(el("span", null,
-        d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }) +
+        sessionDate.format(d) +
         " · " + sets + (sets === 1 ? " set" : " sets") +
         (l.duration_seconds ? " · " + Math.round(l.duration_seconds / 60) + " min" : "")));
       row.appendChild(n);
@@ -7895,7 +8124,7 @@ export const APP = String.raw`
           sb.from("workout_logs").delete().eq("id", l.id).then(function (r) {
             if (!r || !r.error) return;
             toast("That did not delete. The session is still here.");
-            state.logs = null;
+            invalidateLogs();
             loadLogs().then(renderProgress);
           });
         }, function () {
@@ -7961,6 +8190,7 @@ export const APP = String.raw`
   // hops with a renderPumpy() between, so the greeting card was drawn and taken
   // away 194ms later. A greeting is not a placeholder, it is the wrong final state.
   function loadPumpy(warm) {
+    if (!state.user) return;
     if (!warm) ensurePumpyMeter();
     // Warmed content is already drawn. Rebuilding at the end of a tab swipe
     // would replace the greeting just as its visible animation begins.
@@ -7977,8 +8207,12 @@ export const APP = String.raw`
       .order("updated_at", { ascending: false }).limit(1)
       .order("id", { referencedTable: "pumpy_messages", ascending: true })
       .limit(80, { referencedTable: "pumpy_messages" })
-      .then(function (r) { finish(r && r.data && r.data[0]); })
-      .catch(function () { finish(null); });
+      .then(function (r) { if (r.error) throw r.error; finish(r && r.data && r.data[0]); })
+      .catch(function () {
+        if (!state.user || state.user.id !== uid || seq !== (pumpy.openSeq || 0)) return;
+        pumpy.loading = false;
+        if (!warm) toast("Could not open your chat. Open Pumpy again to retry.");
+      });
   }
 
   function settlePumpy(t) {
@@ -8041,8 +8275,10 @@ export const APP = String.raw`
   // a first open gives the network TH_WAIT before leaving with three grey rows.
   function openPumpyThreads() {
     if (pumpy.opening) return;   // one tap, one sheet
+    var epoch = accountEpoch, uid = state.user && state.user.id;
     var timer = 0, opened = false;
     function present(rows, err) {
+      if (!accountNow(epoch, uid)) return;
       if (opened) return;
       opened = true;
       pumpy.opening = false;
@@ -8062,14 +8298,18 @@ export const APP = String.raw`
     sb.from("pumpy_threads")
       .select("id,title,updated_at,workout_id,workouts(title)")
       .order("updated_at", { ascending: false }).limit(50)
-      .then(function (r) { pumpy.threads = (r && r.data) || []; land(pumpy.threads); })
-      .catch(function () { land(pumpy.threads || [], 1); });
+      .then(function (r) {
+        if (!accountNow(epoch, uid)) return;
+        if (r.error) throw r.error;
+        pumpy.threads = (r && r.data) || []; land(pumpy.threads);
+      }).catch(function () { if (accountNow(epoch, uid)) land(pumpy.threads || [], 1); });
   }
 
   // Nothing redraws the list inside the sheet's 380ms spring, for the reason above.
   function sheetSettled(fn) {
+    var epoch = accountEpoch;
     var left = 400 - (now() - (pumpy.sheetAt || 0));
-    if (left <= 0) fn(); else setTimeout(fn, left);
+    if (left <= 0) fn(); else setTimeout(function () { if (epoch === accountEpoch) fn(); }, left);
   }
 
   function threadId() { return pumpy.thread ? pumpy.thread.id : null; }
@@ -8172,7 +8412,7 @@ export const APP = String.raw`
     // conversation is a better wait than none. The composer goes with it, or it
     // would post into a thread the log is not showing.
     var timer = setTimeout(function () {
-      if (swapped) return;
+      if (swapped || seq !== pumpy.openSeq) return;
       closed = true;
       log.classList.add("waiting");
       $("pumpysend").disabled = true;
@@ -8181,6 +8421,7 @@ export const APP = String.raw`
     sb.from("pumpy_messages").select("*").eq("thread_id", t.id).order("id", { ascending: true }).limit(80)
       .then(function (m) {
         if (seq !== pumpy.openSeq) return;   // switched again while loading
+        if (m.error) throw m.error;
         clearTimeout(timer);
         swapped = true;
         pumpy.thread = { id: t.id, title: t.title, updated_at: t.updated_at, workout_id: t.workout_id };
@@ -8355,11 +8596,15 @@ export const APP = String.raw`
     }
     // The thread is rebuilt every render; animating every bubble would replay it.
     var before = pumpy.shownCount || 0;
+    var previous = pumpy.nodes || {}, next = {};
     shown.forEach(function (m, i) {
-      var node = renderMsg(m);
-      if (before && i >= before) node.classList.add("msgin");
+      var key = m.id || i, sig = JSON.stringify(m), entry = previous[key];
+      var node = entry && entry.sig === sig ? entry.node : renderMsg(m);
+      if (node !== (entry && entry.node) && before && i >= before) node.classList.add("msgin");
+      next[key] = { sig: sig, node: node };
       frag.appendChild(node);
     });
+    pumpy.nodes = next;
     pumpy.shownCount = shown.length;
     if (pumpy.busy && pumpy.live) {
       frag.appendChild(pumpy.live.row);   // built once; a rebuild only re-hangs it
@@ -8586,7 +8831,8 @@ export const APP = String.raw`
     var row = el("div", "msgrow msgin"), col = el("div", "msgcol");
     var st = el("div", "msgstatus hide"), bub = el("div", "msg pumpy live hide");
     var tn = document.createTextNode("");
-    bub.setAttribute("aria-live", "polite");
+    // Announce completion once; announcing this node per token repeats the answer.
+    bub.setAttribute("aria-live", "off");
     bub.appendChild(tn);
     col.appendChild(st);
     col.appendChild(bub);
@@ -8625,12 +8871,19 @@ export const APP = String.raw`
       L.tn.deleteData(0, L.tn.length);
       L.bub.classList.add("hide");
     }
-    pumpyFollow();
+    // Text is available immediately. Only the layout-dependent scroll follows
+    // once per frame, even when several deltas arrive in the same network chunk.
+    if (!L.frame) L.frame = requestAnimationFrame(function () {
+      L.frame = null;
+      if (pumpy.live === L && !document.hidden) pumpyFollow();
+    });
   }
 
   function sendPumpy(text) {
     text = String(text || $("pumpyinput").value || "").trim();
     if (!text || pumpy.busy) return;
+    var owner = pumpy;
+    $("pumpyannounce").textContent = "";
     if (pumpy.refs.length) guideLearn("refs");
     var box = $("pumpyinput");
     box.value = "";
@@ -8651,8 +8904,11 @@ export const APP = String.raw`
       workout_ids: ids
     };
     apiStream("pumpy/chat", payload, function (r) {
+      if (pumpy !== owner) return;
       if (r.t !== "final") { liveEvent(r); return; }
       pumpy.busy = false;
+      $("pumpyannounce").textContent = "Pumpy’s answer is ready.";
+      var live = pumpy.live;
       pumpy.live = null;
       // renderPumpy() ends at the bottom, which is right for a reader who was
       // following along and rude to one who had scrolled up to re-read.
@@ -8676,21 +8932,33 @@ export const APP = String.raw`
       if (!pumpy.thread || pumpy.thread.id !== r.thread_id) pumpy.thread = { id: r.thread_id };
       if (r.user_message) pumpy.messages.push(r.user_message);
       (r.messages || []).forEach(function (m) { pumpy.messages.push(m); });
+      var last = (r.messages || []).slice(-1)[0];
+      if (live && last && last.role === "assistant" && last.content) {
+        live.st.classList.add("hide"); live.bub.classList.remove("live", "hide");
+        live.tn.data = last.content;
+        if (last.meta && last.meta.proposal) live.bub.parentNode.appendChild(renderProposal(last, last.meta.proposal));
+        pumpy.nodes = pumpy.nodes || {};
+        pumpy.nodes[last.id] = {sig:JSON.stringify(last),node:live.row};
+      }
       renderPumpy();
       if (keep >= 0) $("pumpyview").scrollTop = keep;
     }).then(function () {
       // Still busy means the body ended with no final line — a dead isolate or a
       // dropped connection. Same recovery as a throw, one handler below.
-      if (pumpy.busy) throw new Error("cut");
+      if (pumpy === owner && pumpy.busy) throw new Error("cut");
     }).catch(function () {
-      if (!pumpy.busy) return;
+      if (pumpy !== owner || !pumpy.busy) return;
       pumpy.busy = false;
       // Whatever arrived before it broke is kept: it is still what the coach said.
+      $("pumpyannounce").textContent = "Connection ended. You can read the partial answer and try again.";
       var half = pumpy.live && pumpy.live.tn.data;
+      var keep = pumpy.stick ? -1 : $("pumpyview").scrollTop;
       pumpy.live = null;
       pumpy.messages.push({ id: "local-err-" + Date.now(), role: "assistant",
         content: half || "I couldn’t reach Spotter — check your connection." });
       renderPumpy();
+      if (keep >= 0) $("pumpyview").scrollTop = keep;
+      toast("The connection ended. Your partial answer is kept; reopen the chat before sending again.", 5200);
     });
   }
 
@@ -8791,10 +9059,13 @@ export const APP = String.raw`
   function loadSub() {
     if (billing.subAsked) return Promise.resolve(billing.sub);
     billing.subAsked = true;
+    var epoch = accountEpoch, uid = state.user && state.user.id;
     return sb.from("subscriptions").select("*").maybeSingle().then(function (r) {
+      if (!accountNow(epoch, uid)) return null;
+      if (r.error) throw r.error;
       billing.sub = (r && !r.error && r.data) ? r.data : null;
       return billing.sub;
-    }).catch(function () { billing.sub = null; return null; });
+    }).catch(function () { if (accountNow(epoch, uid)) billing.subAsked = false; return null; });
   }
 
   function capNum(n) { return n === null || n === undefined ? null : num(n); }
@@ -11285,7 +11556,8 @@ export const APP = String.raw`
   // when the slide ends, so a screen reader is never told about a page the user
   // has already left. Pages nobody is on go inert: not focusable, not read out.
   function commit(i) {
-    if (idx !== i) { guideClear(); guideStill(); guide.visit = null; }
+    var changed = idx !== i;
+    if (changed) { guideClear(); guideStill(); guide.visit = null; }
     idx = i;
     state.view = VIEWS[i];
     var tabs = document.querySelectorAll(".tab"), n, k;
@@ -11306,6 +11578,7 @@ export const APP = String.raw`
       if (k % 4 === i) strips[k].removeAttribute("aria-hidden");
       else strips[k].setAttribute("aria-hidden", "true");
     }
+    if (changed && state.user) preparePage(i);
   }
 
   // A swipe must never uncover a blank page, and arriving must never replay an
@@ -11316,6 +11589,14 @@ export const APP = String.raw`
     var v = VIEWS[i];
     guide.visit = v;
     setTimeout(function () { guidePage(v); }, 450);
+    if (v === "library") renderToday();
+    if (v === "progress" && state.logs) countStats();
+  }
+
+  // Start independent reads on navigation intent, while the spring is moving.
+  // Contextual help still waits for arrive(); warming cannot count as a visit.
+  function preparePage(i) {
+    var v = VIEWS[i];
     // Library's grid is kept fresh by realtime and load(); only the today card
     // is a snapshot, and renderToday() decides for itself whether it has aged.
     if (v === "library") { renderToday(); return; }
@@ -11793,7 +12074,7 @@ export const APP = String.raw`
   var ptrStart = 0, ptrPulling = false;
 
   function refreshActive() {
-    state.logs = null;
+    invalidateLogs();
     return load();
   }
 
@@ -11923,7 +12204,7 @@ export const APP = String.raw`
   $("refreshbtn").onclick = function () {
     var b = $("refreshbtn");
     b.classList.add("spin");
-    state.logs = null;
+    invalidateLogs();
     load().then(function () { b.classList.remove("spin"); });
   };
   $("settingsbtn").onclick = openSettings;
@@ -12099,7 +12380,11 @@ export const APP = String.raw`
   });
 
   document.addEventListener("visibilitychange", function () {
-    if (document.visibilityState !== "visible" || !state.user) return;
+    document.body.classList.toggle("asleep", document.hidden);
+    if (document.visibilityState !== "visible") { clearTimeout(pendTimer); pendTimer = null; return; }
+    if (!state.user) return;
+    pendPolls = 0;
+    watchPending();
     // The interval was throttled while the phone was away; the deadline was not.
     // One tick puts the ring right, and ends a rest that ran out in a pocket.
     if (restUntil) tickRest();

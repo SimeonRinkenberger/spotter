@@ -1,9 +1,9 @@
 // Builds the page users actually download, from the three String.raw template modules
 // the app is authored in. Those modules are ~30% comment by weight: the comments say why
 // the code is the way it is, which is worth a lot to whoever opens the source and nothing
-// at all to a phone on hotel wifi. So they stop here. Everything else — whitespace,
-// indentation, identifiers, the DOM — is left exactly as written, because the page still
-// has to be readable in devtools when something goes wrong at 6am.
+// at all to a phone on hotel wifi. So they stop here. JavaScript syntax is compacted,
+// but names and multiline formatting remain readable in devtools; CSS and markup
+// keep their existing formatting.
 //
 // The stripped page is produced ONCE and written to both places that serve it:
 //   docs/index.html                        GitHub Pages
@@ -69,14 +69,17 @@ function isJavaScript(openTag) {
 
 // esbuild drops comments by parsing and re-printing, which is the whole point: a regex
 // over JavaScript cannot tell a comment from the "//" in an https:// string or from a
-// division sign next to a regex literal, and this file is full of both. minify stays off
-// so the output is still something a human can read in the Sources panel; the es5 target
+// division sign next to a regex literal, and this file is full of both. Identifier and
+// whitespace minification stay off for debugging; the es5 target
 // matches the house rule for app.ts, so the printer keeps { a: a } rather than reaching
 // for shorthand the target does not have.
 function stripCode(source, loader, where) {
   const { code, warnings } = transformSync(source, {
     loader,
     minify: false,
+    // Fold redundant syntax, retaining function/variable names and multiline
+    // formatting for debugging. Measured separately from full minification.
+    minifySyntax: loader === "js",
     legalComments: "none",
     target: loader === "js" ? "es5" : undefined,
   });

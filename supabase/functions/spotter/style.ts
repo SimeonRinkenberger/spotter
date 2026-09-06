@@ -1,5 +1,6 @@
 // Spotter design system. Wrapped in String.raw; never use backticks or "${" inside.
 export const STYLE = String.raw`<style>
+  .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
   :root {
     color-scheme: light dark;
     /* surfaces — cool graphite, never pure white */
@@ -430,6 +431,8 @@ export const STYLE = String.raw`<style>
   .carditem:active { transform: scale(.968); }
   .carditem.in { animation: cardin var(--t-4) var(--e-out) both; }
   @keyframes cardin { from { opacity: 0; transform: translateY(14px); } }
+  .carditem.fresh { animation: fadeonly var(--t-2) var(--e-out); }
+  @media (prefers-reduced-motion: reduce) { .carditem.fresh { animation: none; } }
   .thumbwrap { position: relative; aspect-ratio: 4 / 5; border-radius: 18px; overflow: hidden;
     background: var(--sand); box-shadow: var(--sh-md); isolation: isolate; }
   .thumbwrap img { width: 100%; height: 100%; object-fit: cover; display: block;
@@ -479,7 +482,11 @@ export const STYLE = String.raw`<style>
     transform: translateX(-100%); animation: shimmer 1.5s var(--e-soft) infinite; }
   .carditem.pending .cardtitle, .carditem.pending .cardmeta { opacity: .62; }
   .carditem.pending .catpill { color: var(--muted); }
-  .thumbwrap.pending .noimg, .thumbwrap.failed .noimg { animation: floaty 3.4s ease-in-out infinite; }
+  .thumbwrap.pending .noimg { animation: floaty 3.4s ease-in-out infinite; }
+  .carditem.pending .noimg, .carditem.pending .thumbwrap::after { animation-play-state: paused; }
+  .carditem.pending.awake .noimg, .carditem.pending.awake .thumbwrap::after { animation-play-state: running; }
+  .asleep .carditem.pending .noimg, .asleep .carditem.pending .thumbwrap::after,
+  .page[inert] .carditem.pending .noimg, .page[inert] .carditem.pending .thumbwrap::after { animation-play-state: paused; }
   .thumbwrap.failed { background: var(--sand); }
   .carditem.failed .catpill { color: var(--ember-ink); }
   .retryline { color: var(--ember-ink); font-weight: 650; white-space: normal;

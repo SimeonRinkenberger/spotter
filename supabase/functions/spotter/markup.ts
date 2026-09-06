@@ -204,6 +204,7 @@ export const MARKUP_BODY = String.raw`</head>
           <button id="pumpynew" title="New chat" aria-label="New chat"><svg class="ic"><use href="#i-plus"></use></svg></button>
         </div>
         <div id="pumpylog"></div>
+        <div id="pumpyannounce" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
         <div class="composer" id="pumpycomposer">
           <div class="pumpyctx hide" id="pumpyctx"></div>
           <div class="pumpycredits hide" id="pumpycredits"></div>

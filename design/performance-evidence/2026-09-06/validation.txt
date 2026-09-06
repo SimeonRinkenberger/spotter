@@ -1,0 +1,116 @@
+$ node build.mjs
+wrote docs/index.html and supabase/functions/spotter/page.gen.ts
+  MARKUP_HEAD     2,432 ->     1,704  (-29.9%)
+  STYLE         148,471 ->   107,162  (-27.8%)
+  MARKUP_BODY    42,673 ->    34,481  (-19.2%)
+  APP           570,810 ->   396,304  (-30.6%)
+  page          764,386 ->   539,651  (-29.4%)
+  gzip          236,633 ->   144,530  (-38.9%)
+Exit: 0
+
+$ node tools/pumpy-harness.mjs
+PASS warm rendering is not a visit
+PASS a visit creates one tip, not an impression yet
+PASS an inert page cannot spend an impression
+PASS visible tip is counted and persisted once
+PASS redraw reattaches same tip without counting twice
+PASS a tip does not repeat after leaving and returning
+PASS an existing plan retires introductory planning help
+PASS cooldown prevents a second tip on the next action
+PASS closed sheets do not count a prepared tip
+PASS opening the sheet makes its tip eligible
+PASS session cap holds even after cooldown
+PASS learned action retires an unseen tip
+PASS all tips can be disabled
+PASS account switch clears active DOM and preferences
+PASS returning account gets its own preferences
+PASS storage failure does not break a tip
+PASS hidden tab cannot offer a tip
+PASS reduced motion never requests animation
+PASS one visible wing beat returns to its still
+PASS in-flight motion stops when requested
+PASS wing motion waits for visibility and stops offscreen
+PASS guide stays available even when automatic tips are off
+PASS a rerender cannot restart the same decorative animation
+PASS slow animation loading gets a full playback window
+PASS failed animation falls back to its still illustration
+PASS closing a sheet keeps the tip geometry through its exit
+PASS saving a preference preserves other profile settings
+PASS an existing account is not interrupted by a new introduction
+PASS a new account gets exactly three introduction steps
+PASS next and back show one accessible step without rebuilding it
+PASS finishing retires the intro locally and on the profile
+PASS manual replay remains available after completion
+PASS skip also completes the intro and keeps contextual tips enabled
+PASS an account already using the library does not get interrupted
+PASS height transitions cancel and retarget safely
+PASS arriving on a warmed Pumpy tab preserves the greeting and its animation
+PASS the greeting loops without a timer or repeat network requests
+PASS the greeting pauses offscreen and resumes on a later visit
+PASS backgrounding, overlays, and motion preferences pause the repeating blink
+PASS a failed idle asset stays on its still without a retry loop
+PASS the idle asset changes only the existing animation loop header
+PASS Ask Pumpy shows the chosen workout chip without rebuilding the conversation
+PASS asking about an already attached workout puts it first without duplicates
+PASS a selection made before or during initial chat loading wins over old context
+PASS removing a pending attachment cannot be undone by late chat history
+PASS existing context still loads when no new reference was selected
+PASS the next question sends the selected workout IDs to Pumpy
+PASS built page equals edge-function page
+48 checks passed
+Exit: 0
+
+$ node tools/performance-harness.mjs
+PASS overlapping library reads share three requests; rows present before collections
+PASS late library rows cannot flash after account changes
+PASS a newer realtime revision wins and triggers reconciliation
+PASS failed collection reads retain known membership
+PASS history shares requests and retries failed reads without caching empty data
+PASS a completion invalidates an earlier history request
+PASS late history cannot populate another account
+PASS Plan shares identical ranges and discards a reversed week response
+PASS Plan read failure preserves known rows and shows recovery
+PASS optimistic Plan repaint invalidates earlier reads
+PASS polling reads pending ids only, shares no collections, reconciles deletion
+PASS hidden tabs and busy polls perform no background reads
+PASS poll errors do not delete processing cards and schedule recovery
+PASS deadline aborts once without replaying an ambiguous operation
+PASS account teardown clears old counts, chips, chat, panels and toast
+PASS navigation starts reads before arrival but never grants a help visit
+PASS stream delivers fragmented UTF-8 and final exactly once
+PASS malformed stream keeps already delivered text and rejects without replay
+PASS stream 401 expires visibly; 429/503 JSON refusals reach recovery once
+PASS stream retires on account change without old events or expiry toast
+20 performance/freshness checks passed
+Exit: 0
+
+$ node tools/sw-harness.mjs
+PASS upgrade copies previous shell before retiring old cache
+PASS fresh navigation returns and stores the new shell
+PASS offline startup gets the stored shell
+PASS a 503 never replaces a valid shell
+PASS slow network falls back and late success updates the next launch
+PASS private API responses and unrelated navigations bypass shell cache
+PASS versioned mascot URLs retain distinct cached content
+7 service-worker checks passed
+Exit: 0
+
+$ deno run --allow-env --allow-read tools/stream-harness.ts
+ssrf guard: static checks on, dns resolution on
+edge runtime: waitUntil UNAVAILABLE (worker runs inline)
+openai stream gpt-5.6-luna 500 nope
+groq stream openai/gpt-oss-120b 404 — rotating to next model
+ok 111/111 checks
+Exit: 0
+
+$ deno run --allow-env tools/strava-harness.ts
+ok  38/38 checks
+Exit: 0
+
+$ deno check supabase/functions/spotter/page.ts
+Check supabase/functions/spotter/page.ts
+Exit: 0
+
+$ git diff --check
+Exit: 0
+

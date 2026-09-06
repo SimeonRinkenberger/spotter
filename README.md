@@ -224,10 +224,11 @@ the selected workout in the composer and includes it as the primary reference in
 message. Explicit reference edits take precedence over chat history that is still loading.
 [Art direction, research, prompts and behavior](design/pumpy.md).
 
-The next speed and interaction pass is specified in the
-[performance and motion implementation prompt](design/performance-motion-prompt.md),
-with a [source audit and build-size baseline](design/performance-motion-audit.md).
-These documents define the work and verification; they do not claim it has shipped.
+The local speed and interaction pass implements account-scoped read sharing, early
+Library presentation, stable cards/detail/chat, targeted pending polling and bounded
+transport recovery. The [performance audit](design/performance-motion-audit.md) records
+before/after measurements, regression checks and remaining device/deployment work.
+The [implementation prompt](design/performance-motion-prompt.md) remains the acceptance brief.
 
 The tab itself is a column sized between the sticky header and the fixed tab
 bar, so the composer sits on the tab bar whether the thread is empty or endless; a slim bar
@@ -326,9 +327,10 @@ they stop at the build: 663,375 → 478,162 bytes raw, 202,339 → 120,837 gzipp
 and CSS go through **esbuild**, which drops comments by re-printing the parsed tree — a regex
 cannot tell a comment from the `//` in an `https://` string or from a slash beside a regex
 literal, and this app is full of both. HTML comments go through a scanner that steps over
-`<script>`, `<style>`, `<textarea>`, `<pre>` and `<title>` bodies. **Nothing is minified**:
-whitespace, indentation and identifiers survive exactly as written, because the page still has
-to be readable in devtools. esbuild is a devDependency of `package.json` and is never imported
+`<script>`, `<style>`, `<textarea>`, `<pre>` and `<title>` bodies. **JavaScript syntax is optimized**, while esbuild keeps
+multiline formatting and descriptive identifiers for devtools. CSS retains its readable
+formatting. The September performance audit records the current raw/gzip tradeoff; the
+numbers above describe the original comment-stripping pass. esbuild is a devDependency of `package.json` and is never imported
 by Deno; `stripe` is listed there too, because Deno switches to `node_modules` resolution as
 soon as it finds a `package.json` above the function and would otherwise fail to resolve
 `npm:stripe@^22` during `deno check`.

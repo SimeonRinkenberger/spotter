@@ -1,0 +1,149 @@
+{
+  "kind": "startup",
+  "version": "after",
+  "mode": "uncached",
+  "run": 0,
+  "browser": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+  "viewport": [
+    375,
+    812
+  ],
+  "longTasks": [],
+  "firstLibrary": 114.39999985694885,
+  "renderMs": 1.1000001430511475,
+  "firstLibraryFrame": 119.39999985694885,
+  "navigation": {
+    "ttfb": 7.599999904632568,
+    "domContentLoaded": 49.5,
+    "encoded": 538839,
+    "decoded": 538839
+  },
+  "resources": [
+    {
+      "path": "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js",
+      "duration": 0,
+      "transfer": 0,
+      "encoded": 55125
+    },
+    {
+      "path": "https://fonts.googleapis.com/css2",
+      "duration": 0,
+      "transfer": 0,
+      "encoded": 760
+    },
+    {
+      "path": "https://api.fontshare.com/v2/css",
+      "duration": 0,
+      "transfer": 0,
+      "encoded": 0
+    },
+    {
+      "path": "http://localhost:8000/icon.png",
+      "duration": 0,
+      "transfer": 0,
+      "encoded": 4994
+    },
+    {
+      "path": "http://localhost:8000/strava-connect.svg",
+      "duration": 0,
+      "transfer": 0,
+      "encoded": 1328
+    },
+    {
+      "path": "https://mtzevoxxpsktmrbbuxva.supabase.co/auth/v1/settings",
+      "duration": 59.200000047683716,
+      "transfer": 0,
+      "encoded": 0
+    },
+    {
+      "path": "https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7W0Q5nw.woff2",
+      "duration": 0,
+      "transfer": 0,
+      "encoded": 48432
+    },
+    {
+      "path": "https://cdn.fontshare.com/wf/XMXWOHABYLQDJ42L65EFRYNVRY37HQCB/B2O4O6V3JMFM2WDCYQI3A47L5U4THDUL/WN5274VQ3AUBDFP74GB4EC4XYJ3EKVNE.woff2",
+      "duration": 0,
+      "transfer": 0,
+      "encoded": 0
+    },
+    {
+      "path": "https://cdn.fontshare.com/wf/ZX6AQLSFYVDPN2URWO2MQFGTYYOHIS64/TPYPKOYWFQVNJHLLRXD4KFYX4LUOUW4Z/6QH2ALVTTK7IRVO5MYOQQ3OZNXW5SSS3.woff2",
+      "duration": 0,
+      "transfer": 0,
+      "encoded": 0
+    },
+    {
+      "path": "https://mtzevoxxpsktmrbbuxva.supabase.co/rest/v1/profiles",
+      "duration": 73.29999995231628,
+      "transfer": 0,
+      "encoded": 0
+    },
+    {
+      "path": "https://mtzevoxxpsktmrbbuxva.supabase.co/rest/v1/workouts",
+      "duration": 67.5,
+      "transfer": 0,
+      "encoded": 0
+    },
+    {
+      "path": "https://mtzevoxxpsktmrbbuxva.supabase.co/rest/v1/collections",
+      "duration": 72.70000004768372,
+      "transfer": 0,
+      "encoded": 0
+    },
+    {
+      "path": "https://mtzevoxxpsktmrbbuxva.supabase.co/rest/v1/collection_items",
+      "duration": 72.70000004768372,
+      "transfer": 0,
+      "encoded": 0
+    },
+    {
+      "path": "https://mtzevoxxpsktmrbbuxva.supabase.co/rest/v1/plan",
+      "duration": 54,
+      "transfer": 0,
+      "encoded": 0
+    },
+    {
+      "path": "https://mtzevoxxpsktmrbbuxva.supabase.co/rest/v1/workout_logs",
+      "duration": 56.200000047683716,
+      "transfer": 0,
+      "encoded": 0
+    },
+    {
+      "path": "https://mtzevoxxpsktmrbbuxva.supabase.co/rest/v1/plan",
+      "duration": 58.19999980926514,
+      "transfer": 0,
+      "encoded": 0
+    },
+    {
+      "path": "https://mtzevoxxpsktmrbbuxva.supabase.co/rest/v1/workout_logs",
+      "duration": 61.90000009536743,
+      "transfer": 0,
+      "encoded": 0
+    },
+    {
+      "path": "https://mtzevoxxpsktmrbbuxva.supabase.co/rest/v1/workout_logs",
+      "duration": 89.59999990463257,
+      "transfer": 0,
+      "encoded": 0
+    },
+    {
+      "path": "https://mtzevoxxpsktmrbbuxva.supabase.co/rest/v1/exercise_catalog",
+      "duration": 63,
+      "transfer": 0,
+      "encoded": 0
+    },
+    {
+      "path": "https://mtzevoxxpsktmrbbuxva.supabase.co/rest/v1/achievements",
+      "duration": 63.200000047683716,
+      "transfer": 0,
+      "encoded": 0
+    },
+    {
+      "path": "https://mtzevoxxpsktmrbbuxva.supabase.co/rest/v1/pumpy_threads",
+      "duration": 62.59999990463257,
+      "transfer": 0,
+      "encoded": 0
+    }
+  ]
+}

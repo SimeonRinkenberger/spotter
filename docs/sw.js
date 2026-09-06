@@ -10,20 +10,34 @@
 // arrives — still refreshes the cache for next time. That is the pattern Workbox
 // calls NetworkFirst with networkTimeoutSeconds, and 1.5s is the number that keeps a
 // bad connection from holding a blank screen while never beating a good one.
-var CACHE = "spotter-shell-v6";
+var CACHE = "spotter-shell-v7";
 var SHELL = ["icon.png", "manifest.webmanifest"];
 var PAGE = "index.html";
 var NET_TIMEOUT = 1500;
 
 self.addEventListener("install", function (e) {
-  e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(SHELL); }).then(function () {
+  e.waitUntil(caches.open(CACHE).then(function (c) {
+    return c.addAll(SHELL).then(function () {
+      // Keep a usable shell if the phone goes offline just after an upgrade.
+      return caches.keys().then(function (keys) {
+        var previous = keys.filter(function (k) { return k !== CACHE && k.indexOf("spotter-shell-") === 0; }).reverse();
+        function copy(i) {
+          if (i >= previous.length) return;
+          return caches.open(previous[i]).then(function (old) { return old.match(PAGE); }).then(function (hit) {
+            return hit ? c.put(PAGE, hit) : copy(i + 1);
+          });
+        }
+        return copy(0);
+      });
+    });
+  }).then(function () {
     return self.skipWaiting();
   }));
 });
 
 self.addEventListener("activate", function (e) {
   e.waitUntil(caches.keys().then(function (keys) {
-    return Promise.all(keys.filter(function (k) { return k !== CACHE; })
+    return Promise.all(keys.filter(function (k) { return k !== CACHE && k.indexOf("spotter-shell-") === 0; })
       .map(function (k) { return caches.delete(k); }));
   }).then(function () { return self.clients.claim(); }));
 });
@@ -37,7 +51,11 @@ function unredirect(res) {
   });
 }
 
-function page(req) {
+function page(req, event) {
+  // A timeout may answer first; keep the late network/cache write alive too.
+  var finish;
+  var lifetime = new Promise(function (resolve) { finish = resolve; });
+  if (event) event.waitUntil(lifetime);
   return caches.open(CACHE).then(function (c) {
     return new Promise(function (resolve) {
       var settled = false;
@@ -51,13 +69,16 @@ function page(req) {
         clearTimeout(timer);
         // Cached even when the timeout already answered from the shelf: this launch
         // is what makes the next one right.
-        if (res && res.ok) unredirect(res.clone()).then(function (keep) { c.put(PAGE, keep); });
+        var save = res && res.ok ? unredirect(res.clone()).then(function (keep) { return c.put(PAGE, keep); }) : Promise.resolve();
+        save.then(finish, finish);
+        if (!res.ok) { c.match(PAGE).then(function (hit) { done(hit || res); }); return; }
         unredirect(res).then(function (out) {
           done(out);
           // The network lost the race but still came back — nothing to hand over
           // now, and the put above has already taken care of next time.
         });
       }, function () {
+        finish();
         clearTimeout(timer);
         c.match(PAGE).then(function (hit) { done(hit || Response.error()); });
       });
@@ -74,7 +95,7 @@ self.addEventListener("fetch", function (e) {
   // somebody is waiting on in a lift; on a slow link a timeout would hand them
   // the app instead of the page they asked for.
   if (e.request.mode === "navigate") {
-    if (/\/$|\/index\.html$/.test(url.pathname)) e.respondWith(page(e.request));
+    if (/\/$|\/index\.html$/.test(url.pathname)) e.respondWith(page(e.request, e));
     return;
   }
   // Small first-party drawings are cached only after use. Installing the shell
