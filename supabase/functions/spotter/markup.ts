@@ -305,14 +305,18 @@ export const MARKUP_BODY = String.raw`</head>
   <div class="grabber"></div>
   <h2 id="settitle">Log set</h2>
   <div class="wnote setlast" id="setlast"></div>
-  <div class="stepper">
+  <!-- data-noswipe on the row: a thumb pressing "+" fifteen times rolls, and past
+       24px of roll the sheet's own dismissal drag took the gesture, slid under the
+       finger and swallowed that press. The grabber still throws the sheet away.
+       The number is a button because it is one — it swaps in the field beside it. -->
+  <div class="stepper" data-noswipe>
     <button id="repsdown" aria-label="Fewer reps"><svg class="ic"><use href="#i-minus"></use></svg></button>
-    <div class="val"><span id="repsval">10</span><small>reps</small></div>
+    <div class="val" id="repsbox"><button class="num" id="repsval" aria-label="Reps — tap to type a number">10</button><input class="numin" id="repsin" type="text" inputmode="numeric" enterkeyhint="done" autocomplete="off" aria-label="Reps"><small>reps</small></div>
     <button id="repsup" aria-label="More reps"><svg class="ic"><use href="#i-plus"></use></svg></button>
   </div>
-  <div class="stepper">
+  <div class="stepper" data-noswipe>
     <button id="wtdown" aria-label="Less weight"><svg class="ic"><use href="#i-minus"></use></svg></button>
-    <div class="val"><span id="wtval">0</span><small id="wtunit">lb</small></div>
+    <div class="val" id="wtbox"><button class="num" id="wtval" aria-label="Weight — tap to type a number">0</button><input class="numin" id="wtin" type="text" inputmode="decimal" enterkeyhint="done" autocomplete="off" aria-label="Weight"><small id="wtunit">lb</small></div>
     <button id="wtup" aria-label="More weight"><svg class="ic"><use href="#i-plus"></use></svg></button>
   </div>
   <div class="btnrow">

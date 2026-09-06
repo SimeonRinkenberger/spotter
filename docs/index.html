@@ -1470,6 +1470,13 @@
   .wdot.done { background: var(--good); }
   .wmain { flex: 1; display: flex; flex-direction: column; justify-content: center;
     padding: 10px 26px; text-align: center; overflow-y: auto; }
+  /* No touch-action, for the pager's reason: WebKit holds the vertical scroll
+     until the non-passive touchmove has run, by which time app.ts has chosen the
+     axis. .wmease is timing — on for the release, off while a finger holds it, so
+     tracking is 1:1 and the let-go is the only thing that eases. */
+  .wmain.wmease { transition: transform var(--t-2) var(--e-out), opacity var(--t-2) var(--e-out); }
+  .wmain.wmin { animation: wmin var(--t-3) var(--e-out); }
+  @keyframes wmin { from { opacity: 0; transform: translateX(var(--wmx, 30px)); } }
   .wblock { font-size: 12.5px; font-weight: 650; color: var(--ember-ink); margin-bottom: 12px; }
   .wname { font-family: var(--display); font-size: 32px; font-weight: 800; line-height: 1.12;
     letter-spacing: -.021em; margin: 0 0 12px; }
@@ -1628,11 +1635,32 @@
      view's embed so the close button stays on screen with it. */
   #watchbody .embedwrap, #watchbody .dphoto { margin-bottom: 14px; }
   #watchbody .embedwrap.vertical iframe { height: 56vh; }
+  /* #copysheet's word, needed here for its reason: with touch-action auto WebKit
+     holds every tap 350ms for a possible second, and the second one that comes is
+     a double tap — which Safari answers by zooming, having ignored
+     user-scalable=no since iOS 10. That zoom is the jump when the plus is tapped
+     a lot. The sheet is outside #workout, so that rule never reached it. */
+  #setsheet button { touch-action: manipulation; }
   .stepper { display: flex; align-items: center; gap: 12px; justify-content: center; margin: 14px 0; }
   .stepper button { width: 46px; height: 46px; border-radius: 999px; border: 1px solid var(--line-2);
-    background: var(--card); color: var(--ink); font-size: 20px; line-height: 1; }
-  .stepper .val { font-family: var(--display); font-size: 30px; font-weight: 700; min-width: 96px;
-    text-align: center; font-variant-numeric: tabular-nums; letter-spacing: -.018em; }
+    background: var(--card); color: var(--ink); font-size: 20px; line-height: 1;
+    transition: transform var(--t-1) var(--e-out); }
+  .stepper button:active { transform: scale(.92); }
+  /* A width, not a min-width: the value is the only thing between the two
+     buttons, so whatever changes its box moves both. The field is the same box
+     in the same face, so tapping to type moves nothing either. */
+  .stepper .val { width: 96px; text-align: center; font-family: var(--display); font-size: 30px;
+    font-weight: 700; letter-spacing: -.018em; font-variant-numeric: tabular-nums; }
+  .stepper .val .num, .stepper .val .numin { font: inherit; letter-spacing: inherit;
+    display: block; width: 100%; height: 34px; line-height: 34px; padding: 0; border: 0;
+    border-radius: 0; background: none; color: var(--ink); text-align: center; }
+  /* 34px is what the figure needs, 46 what a finger does. */
+  .stepper .val .num { position: relative; }
+  .stepper .val .num::after { content: ""; position: absolute; inset: -6px 0; }
+  .stepper .val .numin { display: none; outline: none; appearance: none;
+    caret-color: var(--ember); box-shadow: inset 0 -2px 0 var(--ember); }
+  .stepper .val.editing .num { display: none; }
+  .stepper .val.editing .numin { display: block; }
   .stepper .val small { display: block; font-size: 11px; font-weight: 600;
     color: var(--muted); margin-top: 4px; }
 
@@ -1919,6 +1947,12 @@
     .overlay, .overlay.open, .overlay.closing { transform: none;
       transition-duration: var(--t-2); }
     .sheetbody, .sheet.open .sheetbody { transform: none; transition: none; }
+    /* The press still answers, it just answers at once. */
+    .stepper button { transition: none; }
+    /* The exercise still changes and says so, crossfading rather than sliding.
+       The drag moves nothing at all: app.ts asks lessMotion() first. */
+    .wmain.wmease { transition: none; }
+    .wmain.wmin { animation-name: fadeonly; animation-duration: var(--t-2); }
     /* The travel stays: it is the gesture itself. The spring goes. */
     .exmain, .exacts, .exact {
       transition-duration: var(--t-1); transition-timing-function: var(--e-soft); }
@@ -2204,14 +2238,18 @@
   <div class="grabber"></div>
   <h2 id="settitle">Log set</h2>
   <div class="wnote setlast" id="setlast"></div>
-  <div class="stepper">
+  <!-- data-noswipe on the row: a thumb pressing "+" fifteen times rolls, and past
+       24px of roll the sheet's own dismissal drag took the gesture, slid under the
+       finger and swallowed that press. The grabber still throws the sheet away.
+       The number is a button because it is one — it swaps in the field beside it. -->
+  <div class="stepper" data-noswipe>
     <button id="repsdown" aria-label="Fewer reps"><svg class="ic"><use href="#i-minus"></use></svg></button>
-    <div class="val"><span id="repsval">10</span><small>reps</small></div>
+    <div class="val" id="repsbox"><button class="num" id="repsval" aria-label="Reps — tap to type a number">10</button><input class="numin" id="repsin" type="text" inputmode="numeric" enterkeyhint="done" autocomplete="off" aria-label="Reps"><small>reps</small></div>
     <button id="repsup" aria-label="More reps"><svg class="ic"><use href="#i-plus"></use></svg></button>
   </div>
-  <div class="stepper">
+  <div class="stepper" data-noswipe>
     <button id="wtdown" aria-label="Less weight"><svg class="ic"><use href="#i-minus"></use></svg></button>
-    <div class="val"><span id="wtval">0</span><small id="wtunit">lb</small></div>
+    <div class="val" id="wtbox"><button class="num" id="wtval" aria-label="Weight — tap to type a number">0</button><input class="numin" id="wtin" type="text" inputmode="decimal" enterkeyhint="done" autocomplete="off" aria-label="Weight"><small id="wtunit">lb</small></div>
     <button id="wtup" aria-label="More weight"><svg class="ic"><use href="#i-plus"></use></svg></button>
   </div>
   <div class="btnrow">
@@ -7103,6 +7141,13 @@
     var main = $("wmain"), dots = $("wdots");
     main.innerHTML = "";
     dots.innerHTML = "";
+    // A swipe's lean, taken back without animating the way back: the entrance
+    // at the foot of this function is the move.
+    var slide = woSlide;
+    woSlide = 0;
+    main.classList.remove("wmease", "wmin");
+    main.style.transform = "";
+    main.style.opacity = "";
 
     var n = Math.max(wo.screens.length, 1);
     for (var k = 0; k < n; k++) {
@@ -7171,7 +7216,13 @@
     acts.appendChild(swapChip);
     main.appendChild(acts);
 
-    if (!hush) viewIn(main);
+    // A swipe said which way the lifter went, so the exercise arrives from that
+    // side. An arrow did not, and keeps the entrance it had.
+    if (slide) {
+      main.style.setProperty("--wmx", (slide > 0 ? 30 : -30) + "px");
+      void main.offsetWidth;
+      main.classList.add("wmin");
+    } else if (!hush) viewIn(main);
   }
 
   // Read once by the next render: the pill is rebuilt, not transitioned, so this
@@ -7227,6 +7278,10 @@
       if (m) targetReps = parseInt(m[0], 10);
     }
     var h = hist[exKey(entry)];
+    // A figure half-typed for another set is dropped, not committed sideways.
+    editing = null;
+    $("repsbox").classList.remove("editing");
+    $("wtbox").classList.remove("editing");
     setCtx.idx = idx;
     setCtx.reps = existing ? existing.reps : targetReps;
     setCtx.weight = existing ? toUnit(existing.weight, existing.unit) : (h ? toUnit(h.weight, h.unit) : 0);
@@ -7246,8 +7301,86 @@
     $("wtval").textContent = setCtx.weight.toLocaleString();
   }
 
+  // ---------- the two ways to change a number ----------
+  //
+  // A tap, a hold and a typed figure all land here, so one clamp covers all
+  // three: 999 reps and 9999 of anything are past what a barbell does.
+  function setNum(key, n, dp) {
+    var p = dp ? 10 : 1;
+    n = clamp(Math.round((n || 0) * p) / p, 0, dp ? 9999 : 999);
+    if (n === setCtx[key]) return false;
+    setCtx[key] = n;
+    drawStepper();
+    return true;
+  }
+
+  function setReps(n) { return setNum("reps", n, 0); }
+  function setWeight(n) { return setNum("weight", n, 1); }
+  function plate() { return state.unit === "kg" ? 2.5 : 5; }
+
+  // "so i dont have to tap it a bunch": Apple's steppers repeat while held and
+  // speed up the longer the hold lasts (UIStepper.autorepeat, on by default).
+  // Half a second first, so a tap is never read as a hold; the click that ends a
+  // hold is dropped, the repeats having counted it. A click with no pointer
+  // before it is a keyboard, and steps once, as it always did.
+  function wireStep(id, step) {
+    var btn = $(id), t = 0, n = 0;
+    function tick() {
+      n++;
+      if (!step()) { stop(); return; }
+      t = setTimeout(tick, n < 5 ? 140 : n < 13 ? 95 : 62);
+    }
+    function stop() { clearTimeout(t); t = 0; }
+    btn.onpointerdown = function (e) {
+      if (!e.isPrimary) return;
+      endEdit();
+      stop();
+      n = 0;
+      t = setTimeout(tick, 480);
+    };
+    btn.onpointerup = btn.onpointercancel = btn.onpointerleave = stop;
+    btn.onclick = function () { endEdit(); if (!n) step(); n = 0; };
+  }
+
+  // Tapping the number opens a field over it. inputmode rather than type=number,
+  // so iOS raises its keypad without the spinner, the stray e and + a number
+  // field takes, or a scroll wheel no phone has.
+  var editing = null;
+
+  function wireNum(box, btn, input, commit) {
+    btn.onclick = function () {
+      endEdit();
+      editing = { box: box, input: input, commit: commit };
+      input.value = btn.textContent.replace(/,/g, "");
+      box.classList.add("editing");
+      // Laid out before it is focused, and focused inside the tap that asked:
+      // the only call iOS answers with a keyboard.
+      void input.offsetWidth;
+      input.focus();
+      input.select();
+    };
+    input.onkeydown = function (e) {
+      if (e.key === "Enter") { e.preventDefault(); input.blur(); }
+    };
+    input.onblur = endEdit;
+  }
+
+  // Enter, the blur, the next tap on a stepper and Save all end the same way; an
+  // empty field or a typo leaves the number alone rather than zeroing it.
+  function endEdit() {
+    if (!editing) return;
+    var e = editing;
+    editing = null;
+    e.box.classList.remove("editing");
+    var v = parseFloat(e.input.value);
+    if (!isNaN(v)) e.commit(v);
+    if (document.activeElement === e.input) e.input.blur();
+  }
+
   function saveSet() {
     if (!wo) return;
+    // Type 12, press Save: the field has to be read before the set is.
+    endEdit();
     // Usually the session's first gesture, and iOS starts audio in nothing else.
     unlockAudio();
     var entry = wo.entries[wo.i];
@@ -7596,6 +7729,99 @@
     wo.i = next;
     saveDraft();
     renderWorkout();
+  }
+
+  // ---------- workout · swiping between exercises ----------
+  //
+  // "swipe left and right on the working out card so i can switch between
+  // exercises". The discipline is the pager's and the week bar's, being the two
+  // surfaces this has to feel like: one axis verdict once the finger clears the
+  // slop, the touch cancelled only while we hold that axis, a fling or two fifths
+  // to commit. The angle is the week bar's 45 degrees and not the pager's 65,
+  // because an exercise with notes scrolls. Nothing inside is excluded: a drag
+  // off a set pill pages if it travels, and the click behind it is swallowed.
+  var WM_LEAD = 72, WM_BAND = 26, woSlide = 0;
+
+  function wireWmain(main) {
+    var md = null;
+
+    // A damped half of the travel, a capped fifth at the first exercise and the
+    // last — the whole of saying there is nothing that way.
+    function paint(dx) {
+      if (md.calm) return;
+      var end = dx < 0 ? wo.i >= Math.max(wo.screens.length, 1) - 1 : wo.i <= 0;
+      var lead = end ? clamp(dx / 5, -WM_BAND, WM_BAND) : clamp(dx / 2, -WM_LEAD, WM_LEAD);
+      main.style.transform = "translateX(" + lead + "px)";
+      main.style.opacity = String(1 - Math.abs(lead) / 320);
+    }
+
+    function stop(e, cancelled) {
+      if (!md || (e && e.pointerId !== md.id)) return;
+      var d = md;
+      md = null;
+      if (!d.lock) return;
+      try { main.releasePointerCapture(d.id); } catch (err) { /* already gone */ }
+      swallowClick();
+      var s = d.s, a = s[0], b = s[s.length - 1], dt = (b.t - a.t) / 1000;
+      var v = dt > 0.004 ? (b.x - a.x) / dt : 0;
+      var far = Math.abs(d.dx) > main.offsetWidth * 0.4;
+      // Left is forwards, the way the arrows under it are laid out.
+      var n = cancelled || !wo ? 0
+        : (v < -FLING || (far && d.dx < 0)) ? 1
+        : (v > FLING || (far && d.dx > 0)) ? -1 : 0;
+      if (n > 0 && wo.i >= Math.max(wo.screens.length, 1) - 1) n = 0;
+      if (n < 0 && wo.i <= 0) n = 0;
+      // Timing back on before the offset goes, so a refused swipe springs home
+      // rather than snapping; a committed one has its lean cleared by the render.
+      main.classList.add("wmease");
+      main.style.transform = "";
+      main.style.opacity = "";
+      if (!n) return;
+      woSlide = n;
+      woGo(n);
+      haptic("tap");
+    }
+
+    main.addEventListener("pointerdown", function (e) {
+      if (e.pointerType !== "touch" && e.pointerType !== "pen") return;
+      // Not on the summary, and not under a sheet: overlayShowing cannot be
+      // asked here, Workout Mode being the overlay it would answer for.
+      if (md || !e.isPrimary || !wo || wo.finished) return;
+      if (document.querySelector(".sheet.open") || noDragIn(e.target)) return;
+      // Safari's back gesture owns the very edge inside a browser tab.
+      if (!standalone() && e.clientX < 24) return;
+      md = { id: e.pointerId, x: e.clientX, y: e.clientY, dx: 0, lock: false,
+        calm: lessMotion(), s: [{ t: now(), x: e.clientX }] };
+    });
+
+    main.addEventListener("pointermove", function (e) {
+      if (!md || e.pointerId !== md.id) return;
+      var dx = e.clientX - md.x, dy = e.clientY - md.y;
+      if (!md.lock) {
+        if (dx * dx + dy * dy < SLOP * SLOP) return;
+        if (Math.abs(dy) > Math.abs(dx)) { md = null; return; }
+        md.lock = true;
+        // Re-datum on the lock point so the screen does not jump the slop.
+        md.x = e.clientX;
+        dx = 0;
+        main.classList.remove("wmease", "wmin");
+        try { main.setPointerCapture(md.id); } catch (err) { /* not fatal */ }
+      }
+      md.dx = dx;
+      md.s.push({ t: now(), x: e.clientX });
+      while (md.s.length > 2 && md.s[md.s.length - 1].t - md.s[0].t > VWIN) md.s.shift();
+      paint(dx);
+    });
+
+    // .wmain scrolls, and WebKit settles that on the touch rather than the
+    // pointer event before it, so cancelling the touch while we hold the axis is
+    // what lets this element go on declaring no touch-action.
+    main.addEventListener("touchmove", function (e) {
+      if (md && md.lock && e.cancelable) e.preventDefault();
+    }, { passive: false });
+
+    main.addEventListener("pointerup", function (e) { stop(e, false); });
+    main.addEventListener("pointercancel", function (e) { stop(e, true); });
   }
 
   function finishWorkout() {
@@ -12873,6 +13099,7 @@
   };
 
   $("wclose").onclick = function () { history.back(); };
+  wireWmain($("wmain"));
   $("wprev").onclick = function () { woGo(-1); };
   $("wnext").onclick = skipMove;
   $("wfinish").onclick = finishWorkout;
@@ -12904,13 +13131,13 @@
   $("restskip").onclick = function () { var t = restThen; stopRest(); if (t) t(); };
   $("watchclose").onclick = function () { closeSheet("watchsheet"); };
 
-  $("repsup").onclick = function () { setCtx.reps++; drawStepper(); };
-  $("repsdown").onclick = function () { if (setCtx.reps > 0) setCtx.reps--; drawStepper(); };
-  $("wtup").onclick = function () { setCtx.weight += (state.unit === "kg" ? 2.5 : 5); drawStepper(); };
-  $("wtdown").onclick = function () {
-    setCtx.weight = Math.max(0, setCtx.weight - (state.unit === "kg" ? 2.5 : 5));
-    drawStepper();
-  };
+  wireStep("repsup", function () { return setReps(setCtx.reps + 1); });
+  wireStep("repsdown", function () { return setReps(setCtx.reps - 1); });
+  // Read at the press, not at the wiring: Settings can change the unit under it.
+  wireStep("wtup", function () { return setWeight(setCtx.weight + plate()); });
+  wireStep("wtdown", function () { return setWeight(setCtx.weight - plate()); });
+  wireNum($("repsbox"), $("repsval"), $("repsin"), setReps);
+  wireNum($("wtbox"), $("wtval"), $("wtin"), setWeight);
   $("setsave").onclick = saveSet;
   $("setclear").onclick = function () {
     if (!wo) return;
