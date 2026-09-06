@@ -4805,9 +4805,23 @@ export async function claudeStream(
  * it, in the owner's case, with the rep table on slide four — and stopping at
  * three reads a third of the document. Neither default needs a row in app_config
  * to work; the compiled-in numbers are the shipped behaviour.
+ *
+ * `concurrency` is how many slide reads are allowed to be outstanding at once.
+ * Three, because each one is its own isolate and the parent only holds a socket
+ * open while it waits: nine slides in a row at ~18 seconds each is ~160 seconds,
+ * which no request survives, and nine in three batches is ~55. It is not higher
+ * because the sub-requests share the vision model's rate limit and the parent's
+ * own connection pool, and because a batch is the unit a resume checkpoints on —
+ * a wider batch is more work to lose.
+ *
+ * `slides_budget_ms` is the only dial with no useful fixed default: the caller
+ * computes one from the slide count and passes it in, and a row in app_config
+ * still overrides it. See the slides loop in buildCard.
  */
 function visionLimit(
-  key: "max_bytes" | "max_slides" | "max_slides_carousel" | "timeout_ms" | "slides_budget_ms",
+  key:
+    | "max_bytes" | "max_slides" | "max_slides_carousel"
+    | "timeout_ms" | "slides_budget_ms" | "concurrency",
   dflt: number,
 ): number {
   const fromCfg = Number(runtimeCfg["vision." + key]);
@@ -4996,23 +5010,42 @@ async function extractFromImage(imgUrl: string, slide: number, fallback: Card, c
 type VisionRequest = { image: string; slide: number; fallback: Card; user_id: string | null };
 
 /**
+ * What one slide read came back with.
+ *
+ * `card` is null for every failure, exactly as before: a poisoned image costs one
+ * slide and nothing else. `timedOut` is the one distinction worth drawing on top
+ * of that, because it is the only failure that says nothing about the picture. A
+ * slide with no workout on it will be empty again in a second attempt; a read cut
+ * off at the ceiling was never finished, and on the owner's carousel two of nine
+ * slides died that way at a 20-second ceiling on an 18-second average read. That
+ * is a stopwatch problem, not a slide problem, and it earns a second look.
+ */
+type SlideRead = { card: Card | null; timedOut: boolean };
+
+/**
  * Ask a fresh isolate to read one slide.
  *
- * Every failure mode collapses to the same answer — null, meaning "no workout on
+ * Every failure mode collapses to the same card — null, meaning "no workout on
  * this slide" — and that is the whole design. A CPU-killed isolate returns a 5xx
  * or drops the connection; a timeout throws; a malformed body parses to nothing.
  * None of them can propagate into the worker that called it, so a poisoned image
  * costs one slide rather than a batch of unrelated saves.
+ *
+ * The ceiling is 35 seconds rather than 20. A read of a 150-260KB slide measured
+ * ~18 seconds on the live vision model, so 20 seconds was under half a standard
+ * slide's own variance away from the mean — it was not catching broken reads, it
+ * was catching slow ones, and it caught two of nine.
  */
 async function runVisionRemote(
   imgUrl: string, slide: number, fallback: Card, ctx: AiCtx,
-): Promise<Card | null> {
+): Promise<SlideRead> {
   if (!WORKER_SECRET) {
     // No secret means no sub-request is possible. Running it inline is the old,
     // dangerous behaviour, so it is refused rather than silently reinstated —
-    // a missing caption beats a dead worker.
+    // a missing caption beats a dead worker. Not a timeout: retrying it would
+    // fail identically, forever.
     console.error("vision skipped: WORKER_SECRET is not set, refusing to encode inline");
-    return null;
+    return { card: null, timedOut: false };
   }
   const body: VisionRequest = { image: imgUrl, slide, fallback, user_id: ctx.userId };
   try {
@@ -5020,20 +5053,27 @@ async function runVisionRemote(
       method: "POST",
       headers: { "content-type": "application/json", "x-worker-secret": WORKER_SECRET },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(visionLimit("timeout_ms", 20_000)),
+      signal: AbortSignal.timeout(visionLimit("timeout_ms", 35_000)),
     });
     if (!r.ok) {
       console.error("vision sub-request", r.status, (await r.text()).slice(0, 200));
-      return null;
+      // 408 and 504 are the same stopwatch, reported by whatever sits between the
+      // two isolates instead of by our own abort signal. 5xx from the vision
+      // isolate itself is a killed worker, which a retry cannot help.
+      return { card: null, timedOut: r.status === 408 || r.status === 504 };
     }
     const out = await r.json();
-    return out?.card ? (out.card as Card) : null;
+    return { card: out?.card ? (out.card as Card) : null, timedOut: false };
   } catch (e) {
     // Includes the case this whole arrangement exists for: the vision isolate was
     // terminated mid-encode and the socket closed. The worker notices, shrugs, and
     // keeps its other jobs.
     console.error("vision sub-request failed for slide", slide, "—", String(e).slice(0, 200));
-    return null;
+    // AbortSignal.timeout rejects with a DOMException named TimeoutError. The
+    // string test is the belt to that braces: an abort that arrives wrapped by a
+    // fetch layer still reads as a timeout rather than as a dead slide.
+    const name = (e as { name?: unknown })?.name;
+    return { card: null, timedOut: name === "TimeoutError" || /TimeoutError/.test(String(e)) };
   }
 }
 
@@ -5530,10 +5570,10 @@ async function buildCard(
   // here, and re-asking it against a card the earlier slides have already improved
   // would abandon a carousel halfway through for having partly worked.
   //
-  // One slide per sub-request, and the parent checkpoints between them. A carousel
-  // that kills an isolate now costs one slide of progress rather than the job, and
-  // a job that dies here resumes at the slide it had reached rather than paying for
-  // the earlier ones again.
+  // One slide per sub-request, three sub-requests in flight, and the parent
+  // checkpoints after each batch. A carousel that kills an isolate costs one batch
+  // of progress rather than the job, and a job that dies here resumes at the batch
+  // it had reached rather than paying for the earlier ones again.
   if (meta.images?.length && (startSlide > 0 || slidesWouldHelp(card, picturesAreAPage(meta, p)))) {
     // A carousel is read to the end. The old cap of three was written for a single
     // attached screenshot and, on the owner's nine-slide post, would have stopped
@@ -5547,37 +5587,166 @@ async function buildCard(
     console.log("vision: reading", slides.length, "of", meta.images.length, "slide(s) —",
       "caption gave", before.total, "exercise(s),", before.missing, "without a dose",
       startSlide ? "(resuming at slide " + startSlide + ")" : "");
-    // A second bound, on the clock rather than the count, because ten slides at the
-    // twenty-second per-slide ceiling is longer than a request is allowed to live.
-    // Ten healthy slides take well under this; it only bites when the vision tier
-    // is degraded, and then the card keeps whatever the slides before it gave
-    // instead of the whole save timing out. Reprocess needs it most: that path is
-    // synchronous, with the owner watching a spinner.
-    const deadline = Date.now() + visionLimit("slides_budget_ms", 90_000);
+
+    // Three at a time. One at a time was the shipped behaviour and it is what ran
+    // the owner's nine-slide post out of clock: a read measures ~18 seconds against
+    // the live vision model, nine of those in a row is ~160 seconds, and the loop
+    // gave up at slide seven. Each read is already its own isolate — the parent is
+    // only holding sockets open while they work — so three in flight turns 160
+    // seconds of waiting into about 55 without asking any one isolate to do more.
+    const conc = Math.max(1, Math.min(6, Math.round(visionLimit("concurrency", 3))));
+    const todo = Math.max(1, slides.length - startSlide);
+    const batches = Math.ceil(todo / conc);
+    // The second bound, on the clock rather than the count, and now scaled to the
+    // work. Supabase gives an edge function 150 seconds of wall clock on the free
+    // plan (400 on paid) and — on every plan — returns 504 to the caller if the
+    // function has sent nothing after 150 seconds:
+    // https://supabase.com/docs/guides/functions/limits. Reprocess answers that
+    // caller synchronously, with the owner watching a spinner, so the WHOLE request
+    // has to fit inside 150 seconds, slides plus the caption extraction before them
+    // and the thumbnail and writes after. 35 seconds a batch (one per-slide ceiling)
+    // plus 20 of slack lands on 90 seconds for anything up to two batches and the
+    // 110-second ceiling for the nine-slide case — which leaves ~40 seconds for the
+    // rest of the request, and that is the margin. It only bites when the vision
+    // tier is degraded, and then the card keeps whatever the earlier batches gave
+    // instead of the whole save timing out.
+    const perSlide = visionLimit("timeout_ms", 35_000);
+    const budget = visionLimit("slides_budget_ms",
+      Math.min(110_000, Math.max(90_000, perSlide * batches + 20_000)));
+    const deadline = Date.now() + budget;
+    // The arithmetic, written down where a log reader can check it against the
+    // clock in the timestamps rather than against this comment.
+    console.log("vision: " + batches + " batch(es) of " + conc + ", " +
+      budget + " ms budget, " + perSlide + " ms a slide");
+
     let filled = 0, matched = 0, by: string | null = null;
-    for (let i = startSlide; i < slides.length; i++) {
-      if (i > startSlide && Date.now() > deadline) {
-        console.log("vision: out of time at slide", i, "of", slides.length, "— keeping what the earlier slides gave");
-        break;
-      }
-      const fromImage = await runVisionRemote(slides[i], i, card, ctx);
+    let readOk = 0, timedOut = 0, retried = 0, abandoned = 0;
+    const slow: number[] = [];          // slides whose first read ran out of stopwatch
+
+    /**
+     * Fold one landed slide into the card, and say so. The retry pass at the end
+     * does exactly this to a slide the first pass could not finish, which is why
+     * it is a function and not four lines inside the loop.
+     */
+    function absorb(i: number, got: SlideRead, tag: string): void {
+      const from = got.card;
       // Logged for every slide, including the ones that returned nothing. The bug
       // this whole pass exists to fix was invisible precisely because a slide that
       // was never read and a slide that was read and held no workout wrote the same
       // thing to the log: nothing at all.
-      const got = fromImage ? doseGap(fromImage) : { total: 0, missing: 0, share: 0 };
-      console.log("vision: slide", i, "→", got.total, "exercise(s),", got.total - got.missing, "with a dose");
-      if (fromImage?.has_full_workout) {
-        const m = mergeSlideCard(card, fromImage);
+      const g = from ? doseGap(from) : { total: 0, missing: 0, share: 0 };
+      console.log("vision: slide " + i + " → " + g.total + " exercise(s), " +
+        (g.total - g.missing) + " with a dose" + (got.timedOut ? " (timed out)" : "") + tag);
+      if (from?.has_full_workout) {
+        const m = mergeSlideCard(card, from);
         filled += m.filled;
         matched += m.matched;
-        if (!by && fromImage.extracted_by) by = fromImage.extracted_by;
+        if (!by && from.extracted_by) by = from.extracted_by;
         if (m.capped) console.log("vision: slide", i, "hit the", MERGE_MAX_EXERCISES, "exercise merge cap");
       }
-      if (onSlide) await onSlide(i + 1, card);
     }
+
+    /**
+     * One batch: fire up to `conc` reads together, wait for all of them but never
+     * past the budget, then fold what landed IN SLIDE ORDER.
+     *
+     * The order is the whole reason this collects before it merges. mergeSlideCard
+     * appends a movement the caption never had, so merging on arrival would order
+     * the card by which sub-request happened to answer first — the same post would
+     * reprocess into a differently ordered card each time, and the user would watch
+     * their exercises shuffle for no reason they could see.
+     *
+     * A read that answers after the budget is dropped rather than merged. The loop
+     * has already moved on and the card may already be on its way back to the
+     * caller; a late mutation is the one way a straggler could corrupt a card
+     * rather than merely fail to improve it.
+     */
+    async function readBatch(idx: number[], retry: boolean, first: boolean): Promise<void> {
+      const landed: Array<SlideRead | null> = idx.map(() => null);
+      let closed = false;
+      // The catch is not decoration. Once the race below has settled on the clock,
+      // nothing is awaiting these any more — a straggler that rejected instead of
+      // resolving would be an unhandled rejection, and Deno kills the isolate for
+      // one of those. runVisionRemote swallows its own failures today; this is the
+      // promise that it will keep doing so even if it stops.
+      const flights = idx.map((i, k) =>
+        runVisionRemote(slides[i], i, card, ctx)
+          .then((r) => { if (!closed) landed[k] = r; })
+          .catch((e) => { console.error("vision: slide", i, "threw past its own catch", e); })
+      );
+      // The first batch is never cut short by the clock: every read in it is already
+      // bounded by its own ceiling, and a budget misconfigured below that ceiling
+      // should read one batch and stop rather than read nothing at all.
+      const left = Math.max(deadline - Date.now(), first ? perSlide + 2_000 : 0);
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          Promise.all(flights),
+          new Promise<void>((res) => { timer = setTimeout(res, left); }),
+        ]);
+      } finally {
+        if (timer !== undefined) clearTimeout(timer);
+        closed = true;
+      }
+      for (let k = 0; k < idx.length; k++) {
+        const got = landed[k];
+        if (!got) {
+          abandoned++;
+          console.log("vision: slide " + idx[k] + " → abandoned, the budget ran out while it was in flight");
+          continue;
+        }
+        if (retry) retried++;
+        if (got.timedOut) {
+          timedOut++;
+          if (!retry) slow.push(idx[k]);
+        } else readOk++;
+        absorb(idx[k], got, retry ? " (retry)" : "");
+      }
+    }
+
+    for (let start = startSlide; start < slides.length; start += conc) {
+      // Do not pay for a read there is no time left to wait for. Half a per-slide
+      // ceiling — about one measured read — is the least a batch is worth firing:
+      // below that its sub-requests would be launched and abandoned in the same
+      // breath, and a slide is a Gemini call whether or not anyone waits for it.
+      if (start > startSlide && deadline - Date.now() < perSlide / 2) {
+        console.log("vision: out of time at slide", start, "of", slides.length, "— keeping what the earlier slides gave");
+        break;
+      }
+      const idx: number[] = [];
+      for (let i = start; i < Math.min(start + conc, slides.length); i++) idx.push(i);
+      const t0 = Date.now();
+      await readBatch(idx, false, start === startSlide);
+      console.log("vision: batch " + (Math.floor((start - startSlide) / conc) + 1) + " of " + batches +
+        " → slides " + idx[0] + "-" + idx[idx.length - 1] + " in " + (Date.now() - t0) + " ms");
+      // Checkpointed on the batch, not the slide. A resume that started mid-batch
+      // would re-pay for the batch-mates it had already read, and the card the
+      // checkpoint carries is the merged one either way.
+      if (onSlide) await onSlide(idx[idx.length - 1] + 1, card);
+    }
+
+    // One more look at the slides that ran out of stopwatch rather than out of
+    // content. A ceiling hit at 35 seconds on a 37-second read is not a broken
+    // slide, and on the owner's carousel that distinction was two of nine. Once
+    // only, and only with half a ceiling left — about one measured read — because a
+    // retry fired into an empty budget is a sub-request that gets abandoned the
+    // moment it is launched, and one that overruns costs the whole card at the
+    // gateway rather than one slide.
+    if (slow.length && deadline - Date.now() >= perSlide / 2) {
+      console.log("vision: retrying", slow.length, "slide(s) that ran out of time —", slow.join(", "));
+      for (let start = 0; start < slow.length; start += conc) {
+        if (start > 0 && Date.now() > deadline) break;
+        await readBatch(slow.slice(start, start + conc), true, false);
+      }
+      // A retry that improved the card and was never written down would be paid for
+      // again by the next attempt.
+      if (onSlide) await onSlide(slides.length, card);
+    }
+
     console.log("vision: merged → exercises " + before.total + "/" + countExercises(card) +
-      ", doses filled " + filled + ", matched " + matched);
+      ", doses filled " + filled + ", matched " + matched +
+      " — " + readOk + " read, " + timedOut + " timed out, " + retried + " retried, " +
+      abandoned + " abandoned");
     // Provenance has to say the card is a blend. It used to read "vision:…" because
     // the slide replaced the caption's card outright; now the caption's extractor
     // and the slide reader both have a claim on it, and a cache row that says which
