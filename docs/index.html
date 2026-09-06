@@ -5298,6 +5298,42 @@ button.kv.row:not([disabled]):active {
   min-width: 20px;
   text-align: center;
 }
+.remset {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.remtime {
+  font: inherit;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  background: var(--sand);
+  border: none;
+  border-radius: 999px;
+  padding: 7px 10px;
+  min-height: 32px;
+  -webkit-appearance: none;
+  appearance: none;
+  transition: opacity var(--t-2) var(--e-soft);
+}
+.remtime::-webkit-date-and-time-value {
+  text-align: right;
+  margin: 0;
+}
+.remtime::-webkit-calendar-picker-indicator {
+  display: none;
+}
+.remtime[disabled],
+#remplan[disabled],
+#remrisk[disabled] {
+  opacity: .38;
+}
+@media (prefers-reduced-motion: reduce) {
+  .remtime {
+    transition: none;
+  }
+}
 .kv .chev {
   flex: 0 0 auto;
   width: 16px;
@@ -6008,6 +6044,15 @@ select:focus-visible {
   <div class="setnote">The sounds are three ticks and a chime, and only play while Spotter is
     open &mdash; also switchable from Workout Mode's top bar. How long you rest comes from the
     card the video made, not from here.</div>
+
+  <h3 class="seth">Reminders</h3>
+  <div class="setgroup">
+    <div class="kv"><span class="k">Plan-day reminder</span>
+      <span class="v remset"><input class="remtime" id="remtime" type="time" value="17:30" aria-label="Time of the plan-day reminder"><button class="chip" id="remplan">Off</button></span></div>
+    <div class="kv"><span class="k">Week at risk</span>
+      <span class="v"><button class="chip" id="remrisk">Off</button></span></div>
+  </div>
+  <div class="setnote" id="setremnote"></div>
 
   <h3 class="seth">Save from your phone</h3>
   <p class="lede"><b>Android</b> &mdash; install Spotter, then share any video to it from the share
@@ -6841,6 +6886,11 @@ select:focus-visible {
         if (s.unit) state.unit = s.unit;
         if (typeof s.sounds === "boolean") state.sounds = s.sounds;
         if (typeof s.haptics === "boolean") state.haptics = s.haptics;
+        if (s.remind) {
+          remind.plan = !!s.remind.plan;
+          remind.risk = !!s.remind.risk;
+        }
+        if (typeof s.remindAt === "number") remind.at = s.remindAt;
         paintSounds();
         if (billing.said) state.profile.plan = billing.said;
         renderLibCount();
@@ -14854,6 +14904,7 @@ select:focus-visible {
     $("haptictoggle").textContent = state.haptics ? "On" : "Off";
     $("sethapticrow").classList.toggle("hide", !navigator.vibrate);
     paintSounds();
+    loadRemind();
     var key = state.profile ? state.profile.ingest_key : null;
     $("setkey").textContent = key ? API + "ingest?key=" + key : "Loading\u2026";
     $("setsaves").textContent = "\u2026";
@@ -14896,6 +14947,9 @@ select:focus-visible {
     var s = { unit: state.unit, sounds: state.sounds, haptics: state.haptics };
     var g = goalSetting();
     if (g) s.goal = g;
+    s.remind = { plan: remind.plan, risk: remind.risk };
+    s.remindAt = remind.at;
+    s.tz = tzName();
     if (state.profile) state.profile.settings = s;
     sb.from("profiles").update({ settings: s }).eq("id", state.user.id).then(function(r) {
       if (r.error) toast("That setting did not save. Try again in a moment.");
@@ -14938,6 +14992,166 @@ select:focus-visible {
   function toggleWorkoutSounds() {
     setSounds(!state.sounds);
     toast(state.sounds ? "Timer sounds on." : "Timer sounds off.", 1800);
+  }
+  var remind = { plan: false, risk: false, at: 1050, sub: null, key: null, busy: false };
+  function pushable() {
+    return !!(navigator.serviceWorker && window.PushManager && window.Notification);
+  }
+  function denied() {
+    return pushable() && window.Notification.permission === "denied";
+  }
+  function tzName() {
+    try {
+      return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+    } catch (e) {
+      return "UTC";
+    }
+  }
+  function hhmm(m) {
+    return ("0" + Math.floor(m / 60)).slice(-2) + ":" + ("0" + m % 60).slice(-2);
+  }
+  function remindNote() {
+    if (!pushable()) {
+      return standalone() ? "This browser cannot show reminders." : "Install Spotter to your Home Screen to get reminders \u2014 tap Share, then Add to Home Screen.";
+    }
+    if (denied()) return "Reminders are off in your phone's Settings.";
+    return "Two at most and never more than one a day: today's plan at the hour nearest the time you pick, and one on the last day the week's goal is still reachable.";
+  }
+  function paintRemind() {
+    var can = pushable() && !denied() && !remind.busy, t = $("remtime");
+    ["plan", "risk"].forEach(function(k) {
+      var b = $("rem" + k);
+      b.textContent = remind[k] ? "On" : "Off";
+      b.classList.toggle("active", remind[k]);
+      b.disabled = !can;
+    });
+    t.disabled = !can || !remind.plan;
+    t.value = hhmm(remind.at);
+    $("setremnote").textContent = remindNote();
+  }
+  function loadRemind() {
+    paintRemind();
+    if (!pushable()) return;
+    navigator.serviceWorker.ready.then(function(reg) {
+      return reg.pushManager.getSubscription();
+    }).then(function(sub) {
+      remind.sub = sub || null;
+      if (!sub) {
+        remind.plan = false;
+        remind.risk = false;
+        paintRemind();
+        return;
+      }
+      return sb.from("push_subscriptions").select("remind_plan,remind_risk,remind_at").eq("endpoint", sub.endpoint).maybeSingle().then(function(r) {
+        var w = r.data || {};
+        remind.plan = !!w.remind_plan;
+        remind.risk = !!w.remind_risk;
+        if (typeof w.remind_at === "number") remind.at = w.remind_at;
+        paintRemind();
+      });
+    }).catch(paintRemind);
+  }
+  function pushKey() {
+    if (remind.key) return Promise.resolve(remind.key);
+    return api("push/config", { method: "GET" }).then(function(r) {
+      remind.key = r && r.status === "ok" && r.configured && r.key || null;
+      return remind.key;
+    }, function() {
+      return null;
+    });
+  }
+  function keyBytes(k) {
+    var s = (k + "===".slice((k.length + 3) % 4)).replace(/-/g, "+").replace(/_/g, "/");
+    return Uint8Array.from(atob(s), function(c) {
+      return c.charCodeAt(0);
+    });
+  }
+  function askPermission() {
+    return new Promise(function(res) {
+      var r = window.Notification.requestPermission(res);
+      if (r && r.then) r.then(res, res);
+    });
+  }
+  function subscribeRemind() {
+    return askPermission().then(function(p) {
+      return p === "granted" ? pushKey() : null;
+    }).then(function(key) {
+      if (!key) return null;
+      return navigator.serviceWorker.ready.then(function(reg) {
+        return reg.pushManager.getSubscription().then(function(have) {
+          return have || reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: keyBytes(key)
+          });
+        });
+      });
+    });
+  }
+  function saveRemind() {
+    var sub = remind.sub, k = sub ? sub.toJSON().keys : null;
+    if (!k) return;
+    sb.from("push_subscriptions").upsert({
+      user_id: state.user.id,
+      endpoint: sub.endpoint,
+      p256dh: k.p256dh,
+      auth: k.auth,
+      tz: tzName(),
+      remind_plan: remind.plan,
+      remind_risk: remind.risk,
+      remind_at: remind.at
+    }, { onConflict: "endpoint" }).then(function(r) {
+      if (r.error) toast("That reminder did not save. Try again in a moment.");
+    });
+  }
+  function offRemind() {
+    var sub = remind.sub;
+    remind.sub = null;
+    if (!sub) return;
+    sb.from("push_subscriptions").delete().eq("endpoint", sub.endpoint).then(function() {
+      sub.unsubscribe();
+    });
+  }
+  function toggleRemind(kind) {
+    if (remind.busy || !pushable() || denied()) return;
+    if (remind[kind]) {
+      remind[kind] = false;
+      haptic("tap");
+      paintRemind();
+      saveSettings();
+      if (remind.plan || remind.risk) saveRemind();
+      else offRemind();
+      return;
+    }
+    remind.busy = true;
+    paintRemind();
+    subscribeRemind().then(function(sub) {
+      remind.busy = false;
+      if (!sub) {
+        paintRemind();
+        if (!denied()) toast("Reminders are not switched on for this app yet.");
+        return;
+      }
+      remind.sub = sub;
+      remind[kind] = true;
+      haptic("tap");
+      paintRemind();
+      saveSettings();
+      saveRemind();
+    }, function() {
+      remind.busy = false;
+      paintRemind();
+      toast("Could not switch that reminder on \u2014 try again in a moment.");
+    });
+  }
+  function setRemindAt() {
+    var v = /^(\d\d):(\d\d)$/.exec($("remtime").value || "");
+    if (!v) {
+      paintRemind();
+      return;
+    }
+    remind.at = Math.max(0, Math.min(1439, Number(v[1]) * 60 + Number(v[2])));
+    saveSettings();
+    if (remind.sub) saveRemind();
   }
   function isEmailAccount() {
     var u = state.user;
@@ -15951,6 +16165,13 @@ select:focus-visible {
   };
   $("soundtoggle").onclick = toggleSounds;
   $("haptictoggle").onclick = toggleHaptics;
+  $("remplan").onclick = function() {
+    toggleRemind("plan");
+  };
+  $("remrisk").onclick = function() {
+    toggleRemind("risk");
+  };
+  $("remtime").onchange = setRemindAt;
   $("setnamerow").onclick = openName;
   $("setpwrow").onclick = openPassword;
   $("setmailrow").onclick = openEmail;
