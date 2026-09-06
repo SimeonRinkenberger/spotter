@@ -8538,7 +8538,8 @@
     else if (d.prs.length) bits.push(d.prs.length + " new bests");
     if (vol[1] !== "bodyweight") bits.push(vol[0] + " " + vol[1]);
     bits.push(d.figs[1][0] + " " + d.figs[1][1]);
-    out.push(d.title + " — " + bits.join(", ") + ".");
+    // A middot, not a dash: half the titles people save already carry a dash.
+    out.push(d.title + " · " + bits.join(", ") + ".");
     if (d.coach) out.push("Built with Pumpy in Spotter.");
     else {
       if (d.credit) out.push("Workout " + d.credit + ".");
