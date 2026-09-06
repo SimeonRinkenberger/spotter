@@ -2351,7 +2351,7 @@ async function groqTranscribe(
     }
     if (r.status === 400 || r.status === 415 || r.status === 422) {
       throw new SoftFailure(
-        "Spotter could not hear a workout in that file — check it has sound, or paste the caption instead.",
+        "Spotter could not get any sound out of that file — check it plays, or paste the workout text instead.",
         `groq ${r.status}`,
       );
     }
@@ -2472,7 +2472,10 @@ async function uploadMeta(p: Parsed, job?: Job): Promise<Meta> {
       "in", Date.now() - t0, "ms");
     if (!got.text) {
       throw new SoftFailure(
-        "Spotter could not hear a workout in that file — check it has sound, or paste the caption instead.",
+        route.first === "video"
+          ? "Spotter watched that video and listened to it, and could not find a workout in either. " +
+            "Paste the workout text instead."
+          : "Spotter could not hear a workout in that file — check it has sound, or paste the workout text instead.",
         "empty transcript",
       );
     }
@@ -6139,8 +6142,11 @@ async function runJob(job: Job): Promise<void> {
   // empty upload card is a row that can only disappoint. Fail it instead, with a
   // sentence that points at the one thing that still works.
   if (!cacheable && !card.blocks.length) {
+    // "what was said" was true when Groq was the only reader. An mp4 is watched
+    // now, so the sentence has to cover a video whose workout was neither spoken
+    // nor on the screen — and it must stay true of an mp3, which is only heard.
     throw new SoftFailure(
-      "Spotter could not make out a workout in what was said in that video. " +
+      "Spotter read that file and could not make out a workout in it. " +
       "Paste the workout text instead.",
       "upload produced no exercises",
     );
