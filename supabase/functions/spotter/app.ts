@@ -1662,6 +1662,7 @@ export const APP = String.raw`
   function cardNode(w, i) {
     var pending = isPending(w), failed = isFailed(w);
     var card = el("button", "carditem" + (pending ? " pending" : "") + (failed ? " failed" : ""));
+    card.setAttribute("data-id", w.id);   // the shelf's order, read back by the detail's swipe
     cardIn(card, w.id);
 
     var tw = el("div", "thumbwrap loading");
@@ -1774,6 +1775,10 @@ export const APP = String.raw`
       frame = el("iframe");
       frame.src = "https://www.tiktok.com/embed/v2/" + String(w.shortcode).replace(/^tt-/, "");
       frame.setAttribute("allow", "encrypted-media");
+      // Instagram's frame has always said this and TikTok's never did, which is why
+      // only TikTok ate the first swipe. A slot a few pixels short now clips the
+      // embed's own bottom bar for a moment instead of becoming a second scroller.
+      frame.setAttribute("scrolling", "no");
     } else if (w.platform === "youtube") {
       wrap = el("div", "embedwrap wide");
       frame = el("iframe");
@@ -1801,6 +1806,37 @@ export const APP = String.raw`
     return wrap;
   }
 
+  // ---------- the embed opens at its real height ----------
+  //
+  // The slot used to be one number for everything, 640px, and every vertical embed
+  // spent its first second either scrolling inside itself or growing under the
+  // title once the platform reported. Both halves of that are the same fault: the
+  // height is knowable before the frame says it. Wave 12 measured TikTok answering
+  // 739 at 339 and at 360 wide — no width dependence seen — and Instagram
+  // answering the frame's own width times 1.25 plus 210. Those are the openers; the
+  // number a platform last reported at this exact width is better than either, so
+  // it is kept and used first. Bucketed by width because Instagram's answer moves
+  // with it, and a phone rotated or a window dragged wider is a different question.
+
+  function embedHKey(p, px) { return "spotter_embed_h:" + p + ":" + px; }
+
+  function embedGuess(p, px) {
+    if (p === "instagram") return Math.round(px * 1.25 + 210);
+    return p === "tiktok" ? 739 : 640;
+  }
+
+  // Called the moment the wrap is in the document and before anything is painted:
+  // clientWidth is a real number only once it is, and the height has to be on the
+  // frame by the first frame or the jump is back. Inline, so it outranks the slot.
+  function fitEmbed(wrap, p) {
+    if (!wrap || !wrap.classList || !wrap.classList.contains("vertical")) return;
+    var px = wrap.clientWidth, h = 0, v = null;
+    try { v = localStorage.getItem(embedHKey(p, px)); } catch (e) { /* private mode */ }
+    if (v) h = parseInt(v, 10);
+    if (!(h > 0)) h = embedGuess(p, px);
+    wrap.firstChild.style.height = h + "px";
+  }
+
   // A vertical embed is taller than the slot the stylesheet guesses, so the frame
   // scrolled inside itself — and a touch belongs to the scroller it began in, so the
   // first swipe down an open card moved the video, not the card. Apple's rule is not
@@ -1820,7 +1856,14 @@ export const APP = String.raw`
     h = Math.max(200, Math.min(2000, Math.round(h)));
     var all = document.querySelectorAll(".embedwrap iframe");
     for (var i = 0; i < all.length; i++) {
-      if (all[i].contentWindow === e.source) all[i].style.height = h + "px";
+      if (all[i].contentWindow !== e.source) continue;
+      all[i].style.height = h + "px";
+      // The correction, kept: what this platform actually reported at this width is
+      // what the next card of it opens at, so the correction is usually nothing.
+      try {
+        localStorage.setItem(embedHKey(ig ? "instagram" : "tiktok",
+          all[i].parentNode.clientWidth), String(h));
+      } catch (err) { /* private mode */ }
     }
   });
 
@@ -1920,9 +1963,21 @@ export const APP = String.raw`
     $("detail").classList.remove("closing");
     var d = $("dinner");
     d.innerHTML = "";
+    // Whatever the last swipe left on it: a lean the finger did not carry out, or
+    // an entrance still running. The step below re-arms both.
+    d.classList.remove("din", "dmove");
+    d.style.transform = "";
+    d.style.opacity = "";
+    // The neighbours a swipe steps to, decided once per open. navFrom is set by the
+    // capture listener over the library grid, which runs before the card's own
+    // click: opened off the shelf there is an order to step through, opened from
+    // today or a plan row or a citation there is not. A card swapped into an
+    // already-open overlay (a citation chip) is a new place with no order either.
+    if (navFrom) { dNav = gridNav(w.id); navFrom = false; }
+    else if (dNav && dNav.ids[dNav.i] !== w.id) dNav = null;
 
     var em = embedNode(w);
-    if (em) d.appendChild(em);
+    if (em) { d.appendChild(em); fitEmbed(em, w.platform); }
 
     d.appendChild(el("div", "dkick", isPending(w)
       ? stageOf(w).kick
@@ -1986,6 +2041,7 @@ export const APP = String.raw`
       if (!isUp) d.appendChild(originalLink(w));
 
       setFav(w);
+      paintNav();
       $("detail").classList.add("open");
       if (!keepHistory) { $("detail").scrollTop = 0; history.pushState({ detail: 1 }, ""); }
       return;
@@ -2267,6 +2323,7 @@ export const APP = String.raw`
     if (w.source_url || w.platform === "web") d.appendChild(originalLink(w));
 
     setFav(w);
+    paintNav();
     $("detail").classList.add("open");
     if (!keepHistory) { $("detail").scrollTop = 0; history.pushState({ detail: 1 }, ""); }
   }
@@ -2639,6 +2696,198 @@ export const APP = String.raw`
     };
     return b;
   }
+
+  // ---------- stepping to the next workout ----------
+  //
+  // A card opened off the shelf is one of a row of them, and every app that shows
+  // one full-screen lets you walk that row without going back for it: Photos pages
+  // through the album you came in from, Instagram through the grid you tapped,
+  // Music through the queue. The order here is the same order — the library grid
+  // exactly as drawn, sections and all, read once at the moment the card opened.
+  // Opened from anywhere else (today, a plan row, Pumpy, a citation) there is no
+  // row to walk, and the chevrons say so by not being there.
+  //
+  // Discipline and constants are the pager's and the week bar's: slop before an
+  // axis, one verdict never revisited, the touch cancelled only while we hold the
+  // lock, a fling or two fifths of the width to commit. What the finger holds is
+  // the card's own content, leaning; the card that lands arrives from the far side.
+  //
+  // Two drags cannot be ours, and the honest answer to both is the chevrons. One
+  // that starts on the video belongs to the embed — a cross-origin iframe is
+  // another process and the touch never reaches this document at all. One that
+  // starts on an exercise row and goes LEFT is that row's drawer; going right on a
+  // row with nothing showing is ours, because a closed row has no leading actions
+  // to offer a finger travelling that way.
+
+  var D_LEAD = 72;        // px of lean at full stretch, half of what the finger did
+  var dNav = null;        // { ids: the shelf in view order, i: where this card sits }
+  var navFrom = false;    // the open being built came off a card in the grid
+  var dDrag = null;
+  var dNavBox = null, dPrev = null, dNext = null;
+
+  var dTold = false;
+  try { dTold = localStorage.getItem("spotter_dswipe_told") === "1"; } catch (e) { /* ignore */ }
+
+  // Capture, on the grid: it runs before the card's own click handler, so the open
+  // that follows knows where it came from without the card having to say.
+  $("grid").addEventListener("click", function (e) {
+    if (e.target.closest && e.target.closest(".carditem")) navFrom = true;
+  }, true);
+
+  function gridNav(id) {
+    var n = $("grid").querySelectorAll(".carditem[data-id]"), ids = [], k = -1, i;
+    for (i = 0; i < n.length; i++) {
+      if (n[i].getAttribute("data-id") === id) k = i;
+      ids.push(n[i].getAttribute("data-id"));
+    }
+    return k < 0 || ids.length < 2 ? null : { ids: ids, i: k };
+  }
+
+  // Apple asks a gesture to supplement a control rather than stand in for it, and
+  // WCAG 2.5.7 asks the same thing in more words. Built once, into the bar already
+  // sticky at the top of every card, and reachable by mouse and by Tab.
+  function dChevrons() {
+    if (dNavBox) return;
+    var top = document.querySelector("#detail .dtop");
+    dNavBox = el("div", "dnav");
+    dPrev = icon(el("button", "iconbtn"), "chev");
+    dPrev.setAttribute("aria-label", "Previous workout");
+    dPrev.onclick = function () { stepDetail(-1); };
+    dNext = icon(el("button", "iconbtn"), "chev");
+    dNext.setAttribute("aria-label", "Next workout");
+    dNext.onclick = function () { stepDetail(1); };
+    dNavBox.appendChild(dPrev);
+    dNavBox.appendChild(dNext);
+    top.insertBefore(dNavBox, top.children[1]);
+  }
+
+  // Hidden at the ends rather than taken out: a chevron that vanishes and lets the
+  // other slide across is a control moving under the thumb about to press it.
+  function paintNav() {
+    dChevrons();
+    dNavBox.classList.toggle("gone", !dNav);
+    dPrev.classList.toggle("gone", !dNav || dNav.i <= 0);
+    dNext.classList.toggle("gone", !dNav || dNav.i >= dNav.ids.length - 1);
+    if (!dNav || dTold) return;
+    // Once per device, and after the card has arrived rather than over it. It says
+    // what to do, not what happened, which is the only kind of hint worth a toast.
+    dTold = true;
+    try { localStorage.setItem("spotter_dswipe_told", "1"); } catch (err) { /* ignore */ }
+    setTimeout(function () { toast("Swipe for the next workout"); }, 700);
+  }
+
+  function canStep(n) {
+    var j = dNav ? dNav.i + n : -1;
+    return !!dNav && j >= 0 && j < dNav.ids.length;
+  }
+
+  // One card along, keeping the overlay's single history entry: stepping five cards
+  // and then going back should leave the library, not walk the five back.
+  function stepDetail(n) {
+    if (!canStep(n) || document.querySelector(".sheet.open")) return;
+    var w = srcById(dNav.ids[dNav.i + n]), d;
+    if (!w) return;                 // removed under us since the shelf was read
+    dNav.i += n;
+    openDetail(w, true);
+    exOv.scrollTop = 0;
+    d = $("dinner");
+    d.style.setProperty("--pin", (n > 0 ? 26 : -26) + "px");
+    void d.offsetWidth;             // the class came off a moment ago; restart it
+    d.classList.add("din");
+    haptic("tap");
+  }
+
+  exOv.addEventListener("pointerdown", function (e) {
+    if (e.pointerType !== "touch" && e.pointerType !== "pen") return;
+    if (dDrag || !e.isPrimary || !dNav) return;
+    if (noDragIn(e.target) || document.querySelector(".sheet.open")) return;
+    // Inside a browser tab the left edge is Safari's back gesture and the right its
+    // forward one; taking either strands the user. Installed, the width is ours.
+    if (!standalone() && (e.clientX < 24 || e.clientX > window.innerWidth - 24)) return;
+    dDrag = { id: e.pointerId, x: e.clientX, y: e.clientY, dx: 0, lock: false,
+      calm: lessMotion(), on: e.target,
+      row: e.target.closest ? e.target.closest(".exrow") : null,
+      s: [{ t: now(), x: e.clientX }] };
+  });
+
+  exOv.addEventListener("pointermove", function (e) {
+    if (!dDrag || e.pointerId !== dDrag.id) return;
+    var dx = e.clientX - dDrag.x, dy = e.clientY - dDrag.y, lead, lim, d;
+    if (!dDrag.lock) {
+      if (dx * dx + dy * dy < SLOP * SLOP) return;
+      // Forty-five degrees, tie to the scroller. The pager leans to 65 because a
+      // page that will not turn is the worse fault there; a card is a long read,
+      // and one that steals the scroll it was opened to do is the worse fault here.
+      if (Math.abs(dy) > Math.abs(dx)) { dDrag = null; return; }
+      // The row's half of the bargain, said here too so which listener the browser
+      // calls first cannot decide it.
+      if (dDrag.row && (dx < 0 || dDrag.row.classList.contains("open"))) { dDrag = null; return; }
+      // A sideways scroller with somewhere left to go owns the drag: the pill rows
+      // and the strip of borrowed videos are exactly that.
+      if (scrollerInWay(dDrag.on, dx)) { dDrag = null; return; }
+      dDrag.lock = true;
+      // Re-datum on the lock point so the card does not jump the slop distance.
+      dDrag.x = e.clientX;
+      dx = 0;
+      $("dinner").classList.remove("dmove");
+      try { exOv.setPointerCapture(dDrag.id); } catch (err) { /* not fatal */ }
+    }
+    dDrag.dx = dx;
+    dDrag.s.push({ t: now(), x: e.clientX });
+    while (dDrag.s.length > 2 &&
+      dDrag.s[dDrag.s.length - 1].t - dDrag.s[0].t > VWIN) dDrag.s.shift();
+    if (dDrag.calm) return;
+    // Half the travel, and a third of that where there is nothing to step to:
+    // Apple answers a page that has run out with resistance, not with a wall.
+    lim = canStep(dx < 0 ? 1 : -1) ? D_LEAD : D_LEAD / 3;
+    lead = clamp(dx / 2, -lim, lim);
+    d = $("dinner");
+    d.style.transform = "translateX(" + lead + "px)";
+    d.style.opacity = String(1 - Math.abs(lead) / 260);
+  });
+
+  // The overlay scrolls, and WebKit settles that on the touch rather than on the
+  // pointer event before it: cancelling the touch while we hold the axis is what
+  // keeps the card still under a sideways drag.
+  exOv.addEventListener("touchmove", function (e) {
+    if (dDrag && dDrag.lock && e.cancelable) e.preventDefault();
+  }, { passive: false });
+
+  function endDetailDrag(e, cancelled) {
+    if (!dDrag || (e && e.pointerId !== dDrag.id)) return;
+    var d = dDrag, s, a, b, dt, v, far, n, dn;
+    dDrag = null;
+    if (!d.lock) return;
+    try { exOv.releasePointerCapture(d.id); } catch (err) { /* already gone */ }
+    // One click follows the finger up, and it belongs to whatever the drag began on.
+    swallowClick();
+    s = d.s; a = s[0]; b = s[s.length - 1]; dt = (b.t - a.t) / 1000;
+    v = dt > 0.004 ? (b.x - a.x) / dt : 0;
+    far = Math.abs(d.dx) > exOv.offsetWidth * PART;
+    // Left is forwards, the way a shelf reads.
+    n = cancelled ? 0
+      : (v < -FLING || (far && d.dx < 0)) ? 1
+      : (v > FLING || (far && d.dx > 0)) ? -1 : 0;
+    if (n && !canStep(n)) n = 0;
+    if (n) { stepDetail(n); return; }
+    // Timing back on before the offset goes, so it springs home rather than snaps.
+    dn = $("dinner");
+    dn.classList.add("dmove");
+    dn.style.transform = "";
+    dn.style.opacity = "";
+  }
+
+  exOv.addEventListener("pointerup", function (e) { endDetailDrag(e, false); });
+  exOv.addEventListener("pointercancel", function (e) { endDetailDrag(e, true); });
+
+  // The same order for a keyboard, which has no swipe to make and should not have
+  // to reach for a chevron with the Tab key to walk a shelf.
+  document.addEventListener("keydown", function (e) {
+    if (!dNav || !$("detail").classList.contains("open")) return;
+    if (noDragIn(e.target) || document.querySelector(".sheet.open")) return;
+    if (e.key === "ArrowRight") stepDetail(1);
+    else if (e.key === "ArrowLeft") stepDetail(-1);
+  });
 
   // ---------- correcting an exercise ----------
   //
