@@ -5362,6 +5362,54 @@ export const APP = String.raw`
     done.onclick = leaveWorkout;
     main.appendChild(done);
     viewIn(main);
+    // Last, so the awards are evaluated against a screen that is already drawn.
+    sealAwards(payload, main);
+  }
+
+  // ---------- the ember seal ----------
+  //
+  // The celebration at the end of a session. Confetti was never on the table: it
+  // is a party for the app, not for the person who just trained. One object, one
+  // sweep, one haptic, half a second — and then it settles and stays on the card
+  // as a badge, which is what an award is.
+  function sealAwards(payload, main) {
+    // No awards loaded means no way to tell a new one from an old one, and a seal
+    // for something earned last March would be a lie. Progress backfills instead.
+    if (!state.awards || !state.logs) return;
+    var logs = state.logs.concat([payload]);
+    var st = weekStats(logs, state.plan, goalSetting(), new Date());
+    var won = grantAwards(awardsFor(logs, st, wo && wo.prs))
+      .filter(function (a) { return a.kind !== "freeze"; });
+    if (!won.length) return;
+
+    var block = main.querySelector(".wblock");
+    // Three or more is a list, not a moment: they collapse into one seal and the
+    // case is a tap away. Two arrive 120ms apart.
+    var show = won.length > 2 ? [{ kind: won[0].kind, all: won.length }] : won;
+    show.forEach(function (a, i) {
+      setTimeout(function () {
+        if (!main.isConnected) return;
+        var seal = el("div", "seal");
+        var disc = el("div", "sdisc");
+        disc.appendChild(ringSvg(1, "srim", 0));
+        disc.appendChild(ic(AW_ICON[a.kind] || "star"));
+        seal.appendChild(disc);
+        seal.appendChild(el("div", "sname",
+          a.all ? a.all + " new awards" : awardTitle(a)));
+        main.insertBefore(seal, main.querySelector(".sumfigs"));
+        if (!lessMotion()) seal.classList.add("in");
+        // The title says what just happened rather than what always happens.
+        if (!i && block) {
+          block.classList.add("fade");
+          setTimeout(function () {
+            block.textContent = a.all ? "Session complete" : awardTitle(a);
+            block.classList.remove("fade");
+          }, 220);
+        }
+        // On the frame the arc closes, not on the frame it starts.
+        setTimeout(function () { haptic("done"); }, lessMotion() ? 0 : 450);
+      }, i * 120);
+    });
   }
 
   var woCloseTimer = null;
@@ -6948,18 +6996,25 @@ export const APP = String.raw`
     // of breaking the run: free, automatic, silent, one per rolling four weeks
     // (two on Plus). A streak you can only keep by paying is a hostage.
     var allow = isFree() ? 1 : 2;
-    var fz = [], streak = done >= goal ? 1 : 0;
+    var fz = [], froze = [], streak = done >= goal ? 1 : 0;
     for (var n = 1; n < 260; n++) {
-      var got = per[ymd(new Date(monday.getTime() - n * WEEK_MS))] || 0;
+      var pk = ymd(new Date(monday.getTime() - n * WEEK_MS)), got = per[pk] || 0;
       if (got >= goal) streak++;
-      else if (goal - got === 1 && fzIn(fz, n) < allow) { fz.push(n); streak++; }
+      else if (goal - got === 1 && fzIn(fz, n) < allow) { fz.push(n); froze.push(pk); streak++; }
       else break;
+    }
+
+    // Did the plan: every day this week that the plan asked for has a session.
+    var planAll = pm.n > 0;
+    for (i = 0; i < 7 && planAll; i++) {
+      var pkey = ymd(addDays(monday, i));
+      if (pm.days[pkey] && !mine[pkey]) planAll = false;
     }
 
     return { weekKey: wk, done: done, goal: goal, needed: needed, daysLeft: daysLeft,
       atRisk: needed > 0 && needed === daysLeft, unreachable: needed > daysLeft,
-      dots: dots, streakWeeks: streak, freezesUsed: fz.length,
-      freezeAvailable: fzIn(fz, 4) < allow };
+      dots: dots, streakWeeks: streak, planAll: planAll, frozen: froze,
+      freezesUsed: fz.length, freezeAvailable: fzIn(fz, 4) < allow };
   }
 
   // null until the logs land: a caller leaves its line out rather than print a zero.
@@ -7061,6 +7116,211 @@ export const APP = String.raw`
     return box;
   }
 
+  // ---------- awards ----------
+  //
+  // Nine families, every one of them a thing that ACTUALLY HAPPENED: a record, a
+  // count of sessions, a week completed. Nothing is granted for opening the app
+  // and nothing for paying, because an award that points at a made-up currency
+  // displaces the reason people train rather than adding to it.
+  //
+  // The ring is computed live and changes when a log is deleted; an award does
+  // not. That is why these are rows: an award must be stable, it needs a date to
+  // be ordered by, and the finish moment has to know which one is NEW — a
+  // question about the past, not the present.
+
+  var AW_SESSIONS = [7, 30, 100, 250, 500, 1000];
+  var AW_STREAK = [4, 12, 26, 52];
+  var AW_VOL = [10000, 100000, 500000, 1000000];
+  var AW_ICON = { first: "star", sessions: "dumbbell", streak: "trend", pr: "arrow-up",
+    volume: "arrow-up-right", plan: "check", month: "calendar", comeback: "refresh",
+    time: "hourglass" };
+  // One failed write is enough to know the table is not there yet; asking again
+  // every time Progress is opened would only be noise in the console.
+  var awardsOff = false;
+
+  // Volume is banked in POUNDS whatever the phone is set to, or a unit toggle
+  // would move a milestone that has already been passed.
+  function volLb(log) {
+    var v = 0;
+    (log.entries || []).forEach(function (e) {
+      (e.sets || []).forEach(function (s) {
+        if (s && s.reps && s.weight) v += s.reps * (s.unit === "kg" ? s.weight * LB_PER_KG : s.weight);
+      });
+    });
+    return v;
+  }
+
+  function fmtK(n) {
+    return n >= 1000000 ? Math.round(n / 100000) / 10 + "M"
+      : n >= 1000 ? Math.round(n / 1000) + "k" : String(Math.round(n));
+  }
+
+  function volText(lb) { return fmtK(toUnit(lb, "lb")) + " " + state.unit; }
+
+  function awardTitle(a) {
+    var v = String(a.key).split(":"), m = a.meta || {};
+    if (a.kind === "sessions") return v[1] + " sessions";
+    if (a.kind === "streak") return v[1] + " week streak";
+    if (a.kind === "volume") return volText(Number(v[1])) + " lifted";
+    if (a.kind === "pr") return "New best" + (m.name ? " · " + m.name : "");
+    if (a.kind === "time") return (v[1] === "early" ? "Early bird" : "Night owl") +
+      (v[2] === "1" ? "" : " ×" + v[2]);
+    return { first: "First workout", plan: "Did the plan", month: "Perfect month",
+      comeback: "Comeback" }[a.kind] || "Award";
+  }
+
+  function awardKeys() {
+    var m = {};
+    (state.awards || []).forEach(function (a) { m[a.key] = 1; });
+    return m;
+  }
+
+  // prs is the live PR map from Workout Mode, present only at the end of a
+  // session: a record is detected as it is set, and history cannot say which of
+  // an old session's bests was new at the time.
+  function awardsFor(logs, st, prs) {
+    var have = awardKeys(), out = [], i, vol = 0, early = 0, night = 0, k;
+
+    function add(kind, key, meta) {
+      if (have[key]) return;
+      have[key] = 1;
+      out.push({ kind: kind, key: key, meta: meta || {} });
+    }
+
+    // One pass: the totals, the hours, and the gaps that make a comeback.
+    var sorted = logs.filter(isSession).sort(function (a, b) {
+      return new Date(a.started_at) - new Date(b.started_at);
+    });
+    var prev = null;
+    sorted.forEach(function (l) {
+      vol += volLb(l);
+      var d = new Date(l.started_at), h = d.getHours();
+      if (h < 7) early++;
+      if (h >= 21) night++;
+      // The anti-guilt award, and the most important one in the list: it is the
+      // only thing this app says to somebody who has already broken a streak.
+      if (prev && d - prev >= 14 * 86400000) add("comeback", "comeback:" + ymd(d));
+      prev = d;
+    });
+
+    var n = sorted.length;
+    // Endowed progress: the case is never empty after a first finished session.
+    if (n) add("first", "first");
+    AW_SESSIONS.forEach(function (m) { if (n >= m) add("sessions", "sessions:" + m); });
+    AW_VOL.forEach(function (m) { if (vol >= m) add("volume", "volume:" + m); });
+    [1, 10].forEach(function (m) {
+      if (early >= m) add("time", "time:early:" + m);
+      if (night >= m) add("time", "time:night:" + m);
+    });
+
+    // Peloton's lesson: the ladder must not end, or the best users fall off it.
+    AW_STREAK.forEach(function (m) { if (st.streakWeeks >= m) add("streak", "streak:" + m); });
+    for (i = 104; i <= st.streakWeeks; i += 52) add("streak", "streak:" + i);
+    if (st.planAll) add("plan", "plan:" + st.weekKey);
+    if (st.streakWeeks && st.streakWeeks % 4 === 0) add("month", "month:" + st.weekKey);
+
+    for (k in (prs || {})) {
+      if (Object.prototype.hasOwnProperty.call(prs, k)) {
+        add("pr", "pr:" + k, { name: prs[k].name });
+      }
+    }
+
+    // A spent freeze is an event with a date, which is what a row here is. It is
+    // ledger rather than trophy, so the case never shows one.
+    st.frozen.forEach(function (wk) { add("freeze", "freeze:" + wk); });
+    return out;
+  }
+
+  // Told after the fact and warmly, never asked for and never sold. Only for the
+  // week that just closed: an older freeze being written down is bookkeeping.
+  function tellFreeze(won, st) {
+    var last = ymd(new Date(mondayOf(new Date()).getTime() - WEEK_MS));
+    for (var i = 0; i < won.length; i++) {
+      if (won[i].key !== "freeze:" + last) continue;
+      toast("Last week came up one short. A freeze covered it — your streak is still on.", 5200);
+      return;
+    }
+  }
+
+  function loadAwards() {
+    if (state.awards) return Promise.resolve(state.awards);
+    return sb.from("achievements").select("kind,key,earned_at,meta")
+      .order("earned_at", { ascending: false }).limit(300)
+      .then(function (r) {
+        if (r.error) awardsOff = true;
+        state.awards = r.data || [];
+        return state.awards;
+      });
+  }
+
+  // Written after the screen has already been drawn, and the screen never waits
+  // on the answer. ON CONFLICT DO NOTHING is what makes a second run free.
+  function grantAwards(rows) {
+    if (!rows.length || awardsOff || !state.user) return rows;
+    var now = new Date().toISOString();
+    var payload = rows.map(function (a) {
+      return { user_id: state.user.id, kind: a.kind, key: a.key, earned_at: now, meta: a.meta };
+    });
+    state.awards = payload.concat(state.awards || []);
+    sb.from("achievements").upsert(payload, { onConflict: "user_id,key", ignoreDuplicates: true })
+      .then(function (r) { if (r && r.error) awardsOff = true; });
+    return rows;
+  }
+
+  function medallion(a, lock) {
+    var n = el("div", "medal" + (lock ? " lock" : ""));
+    n.appendChild(icon(el("div", "mdisc"), AW_ICON[a.kind] || "star"));
+    n.appendChild(el("div", "mname", lock ? a.title : awardTitle(a)));
+    n.appendChild(el("div", "mwhen", lock ? a.note
+      : new Date(a.earned_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })));
+    return n;
+  }
+
+  // The next rung of each ladder, never the whole ladder: a visible goal pulls
+  // (the goal-gradient result), a wall of grey discs only says how far behind you
+  // are. Nothing offers "take a fortnight off" as a target, either.
+  function lockedAwards(st, logs) {
+    var have = awardKeys(), out = [], n = 0, vol = 0, i;
+    logs.forEach(function (l) { if (isSession(l)) { n++; vol += volLb(l); } });
+    for (i = 0; i < AW_SESSIONS.length; i++) if (!have["sessions:" + AW_SESSIONS[i]]) {
+      out.push({ kind: "sessions", title: AW_SESSIONS[i] + " sessions",
+        note: (AW_SESSIONS[i] - n) + " to go" });
+      break;
+    }
+    for (i = 0; i < AW_STREAK.length; i++) if (!have["streak:" + AW_STREAK[i]]) {
+      out.push({ kind: "streak", title: AW_STREAK[i] + " week streak",
+        note: (AW_STREAK[i] - st.streakWeeks) + " to go" });
+      break;
+    }
+    for (i = 0; i < AW_VOL.length; i++) if (!have["volume:" + AW_VOL[i]]) {
+      out.push({ kind: "volume", title: volText(AW_VOL[i]) + " lifted",
+        note: volText(AW_VOL[i] - vol) + " to go" });
+      break;
+    }
+    if (!have["plan:" + st.weekKey] && st.dots.indexOf("plan") >= 0) {
+      out.push({ kind: "plan", title: "Did the plan", note: "every planned day this week" });
+    }
+    return out;
+  }
+
+  function trophyCase(st, logs) {
+    var have = (state.awards || []).filter(function (a) { return a.kind !== "freeze"; });
+    var box = el("div", "chartcard");
+    box.appendChild(el("h3", null, "Awards"));
+    var grid = el("div", "tgrid");
+    var shown = isFree() ? have.slice(0, 12) : have;
+    shown.forEach(function (a) { grid.appendChild(medallion(a)); });
+    lockedAwards(st, logs).forEach(function (l) { grid.appendChild(medallion(l, true)); });
+    box.appendChild(grid);
+    // A count, not a paywall: nothing earned here is ever taken away, and the
+    // rows stay on the account whether or not anybody pays for anything.
+    if (isFree() && have.length > 12) {
+      box.appendChild(el("div", "bodynote",
+        (have.length - 12) + " earlier awards are kept in Plus."));
+    }
+    return box;
+  }
+
   // The headline figure counts up the first time Progress is LOOKED AT, and
   // never again: a number that re-counts on every swipe back is a fidget, not a
   // result.
@@ -7119,6 +7379,19 @@ export const APP = String.raw`
     hero.appendChild(el("div", "rmeta",
       logs.length + (logs.length === 1 ? " session" : " sessions") + " logged"));
     v.appendChild(hero);
+
+    // The case fills itself in from history the first time it is looked at, so an
+    // account with two hundred sessions behind it never opens on an empty shelf.
+    // A detached slot means a later render replaced the box this answer was for.
+    var awSlot = el("div");
+    v.appendChild(awSlot);
+    loadAwards().then(function () {
+      if (!awSlot.isConnected) return;
+      var won = grantAwards(awardsFor(logs, st, null));
+      tellFreeze(won, st);
+      awSlot.innerHTML = "";
+      awSlot.appendChild(trophyCase(st, logs));
+    });
 
     // What you've hit this week, from the sessions actually logged: each logged
     // entry carries the canonical_id it was started with, and the catalog says

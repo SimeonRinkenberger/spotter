@@ -1362,7 +1362,38 @@ export const STYLE = String.raw`<style>
   .sumweek.full { color: var(--good); }
   .ring.small { width: 26px; height: 26px; flex: 0 0 auto; }
   .ring.small .rtrack, .ring.small .rarc { stroke-width: 9; }
+  /* Medallions: an ember disc for what happened, a sand silhouette carrying the
+     requirement for what has not. auto-fill at 96px is three across on a 375px
+     phone and simply grows on anything wider. */
+  .tgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+    gap: 15px 8px; }
+  .medal { text-align: center; animation: cardin var(--t-3) var(--e-out) both; }
+  .mdisc, .sdisc { border-radius: 999px; background: var(--ember-soft); color: var(--ember-ink);
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: inset 0 0 0 1px var(--line); }
+  .mdisc { width: 54px; height: 54px; margin: 0 auto 8px; }
+  .mdisc .ic { width: 22px; height: 22px; }
+  .medal.lock .mdisc { background: var(--sand); color: var(--muted); }
+  .mname { font-size: 12px; font-weight: 650; line-height: 1.3; }
+  .medal.lock .mname { color: var(--ink-2); font-weight: 600; }
+  .mwhen { font-size: 10.5px; color: var(--muted); margin-top: 2px;
+    font-variant-numeric: tabular-nums; }
+  /* The ember seal. One object, one sweep, one haptic — then it settles and stays
+     on the card as a badge, which is what an award is. Confetti is a party for
+     the app rather than for the person who just trained. */
+  .seal { display: flex; flex-direction: column; align-items: center; gap: 9px; margin: 15px 0 0; }
+  .sdisc { position: relative; width: 74px; height: 74px; }
+  .sdisc .ic { width: 30px; height: 30px; }
+  .sdisc .ring { position: absolute; inset: -6px; width: auto; height: auto; }
+  .seal .rtrack { display: none; }
+  .seal.in .sdisc { animation: sealin var(--t-4) var(--e-spring) both; }
+  @keyframes sealin { from { opacity: 0; transform: scale(.86); } }
+  .sname { font-family: var(--display); font-size: 15px; font-weight: 700; letter-spacing: -.01em; }
+  #workout.summary .wblock { transition: opacity var(--t-2) var(--e-soft); }
+  #workout.summary .wblock.fade { opacity: 0; }
   @media (prefers-reduced-motion: reduce) {
+    /* The seal keeps the crossfade and loses the sweep and the scale. */
+    .medal, .seal.in .sdisc { animation: none; }
     /* The arc still says the right thing without travelling to say it, and the
        at-risk week still glows — it just stops breathing. */
     .rarc, .wdots i { transition: none; }
