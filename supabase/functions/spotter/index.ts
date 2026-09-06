@@ -5815,7 +5815,7 @@ function storedBlocks(old: any): Block[] {
 /** Everything fillEmptyDose can move, as one comparable string. */
 function doseOf(ex: Exercise): string {
   return [ex.sets, ex.reps, ex.duration_seconds, ex.rest_seconds, ex.weight, ex.equipment, ex.notes]
-    .map((v) => (v === null || v === undefined ? "" : String(v))).join("");
+    .map((v) => (v === null || v === undefined ? "" : String(v))).join("|");
 }
 
 /**
