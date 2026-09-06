@@ -1,0 +1,16 @@
+{
+  "name": "spotter-build",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "//": "Build-time only. esbuild strips the comments out of the three template modules in build.mjs; nothing here is shipped to a browser and Deno never imports it. stripe is listed because Deno switches to node_modules resolution as soon as it finds a package.json above the function, and without the entry 'deno check supabase/functions/spotter/index.ts' cannot resolve npm:stripe@^22. Run: npm install, then node build.mjs",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "stripe": "^22"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}
