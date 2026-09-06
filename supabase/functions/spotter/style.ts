@@ -1663,8 +1663,9 @@ export const STYLE = String.raw`<style>
      Apple pins the sidebar toggle and will not let it be customised away: the way
      out of a thread cannot be something you scroll back up to find. Icon only, a
      capsule in the header's glass, over the messages and under the sheets. */
-  .pumpybar { position: sticky; top: var(--hdr, 92px); z-index: 5; align-self: flex-start;
-    display: flex; gap: 2px; margin: 2px 0 6px; padding: 0 3px; border-radius: 999px;
+  .pumpybar { position: sticky; top: calc(var(--hdr, 92px) + 6px); z-index: 5;
+    align-self: flex-start; display: flex; gap: 2px; margin: 6px 0 8px; padding: 0 3px;
+    border-radius: 999px;
     box-shadow: 0 0 0 1px var(--line), var(--sh-sm);
     background: color-mix(in srgb, var(--paper) 82%, transparent);
     -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); }
