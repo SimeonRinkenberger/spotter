@@ -1825,6 +1825,19 @@
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .threadrow .tmain span { display: block; font-size: 11.5px; color: var(--muted); margin-top: 2px; }
   .threadrow.on .tmain b { color: var(--ember-ink); }
+  /* No cached list to take a height from, so three grey rows stand in at the REAL
+     row height — the point is that the sheet never resizes once it is moving. The
+     numbers are a real row's line boxes: 1.35em the title's line-height, 14px the
+     second line's. */
+  .threadrow.skel .tmain b, .threadrow.skel .tmain span {
+    background: var(--line-2); border-radius: 6px; animation: skelfade 1.5s var(--e-soft) infinite; }
+  .threadrow.skel .tmain b { width: 62%; height: 1.35em; }
+  .threadrow.skel .tmain span { width: 40%; height: 14px; }
+  @keyframes skelfade { 50% { opacity: .42; } }
+  /* A thread slower than the sheet: the conversation you were reading stays and
+     goes quiet rather than being replaced by an empty log. */
+  #pumpylog { transition: opacity var(--t-2) var(--e-soft); }
+  #pumpylog.waiting { opacity: .42; }
   .threadrow .tdel { flex: 0 0 auto; border: none; background: none; color: var(--muted);
     font-size: 12px; font-weight: 600; padding: 11px 8px; border-radius: 999px; }
   .threadrow .tdel[data-armed="1"] { color: var(--ember-ink); }
@@ -1967,6 +1980,8 @@
     /* The chip still has to leave before the row behind it moves: fade, no travel. */
     .refchip.gone { animation-name: fadeout; animation-duration: var(--t-1); }
     .thumbwrap img { transition: none; }
+    /* The bars stay — they are the shape of the list, not a moving part. */
+    .threadrow.skel .tmain b, .threadrow.skel .tmain span { animation: none; }
     #ptr.back { transition-duration: var(--t-1); }
   }
 </style>
@@ -9784,19 +9799,48 @@
   // sizePumpy() measured the header and the tab bar for this one view. Every
   // page needs the same two numbers now, so measureChrome() in the pager section
   // owns them and keeps the --ptab name the composer is written against.
+  // One round trip, not two: thread then messages left the column blank for two
+  // hops with a renderPumpy() between, so the greeting card was drawn and taken
+  // away 194ms later. A greeting is not a placeholder, it is the wrong final state.
   function loadPumpy(warm) {
     if (!warm) ensurePumpyMeter();
     if (pumpy.loaded) { renderPumpy(); return; }
-    sb.from("pumpy_threads").select("*").order("updated_at", { ascending: false }).limit(1).then(function (r) {
-      var t = r.data && r.data[0];
-      if (!t) { pumpy.loaded = true; renderPumpy(); return; }
-      pumpy.thread = t;
-      return sb.from("pumpy_messages").select("*").eq("thread_id", t.id).order("id", { ascending: true }).limit(80)
-        .then(function (m) { pumpy.messages = m.data || []; pumpy.loaded = true; renderPumpy(); });
-    });
+    if (pumpy.loading) return;
+    pumpy.loading = true;
+    sb.from("pumpy_threads")
+      .select("id,title,updated_at,workout_id,pumpy_messages(*)")
+      .order("updated_at", { ascending: false }).limit(1)
+      .order("id", { referencedTable: "pumpy_messages", ascending: true })
+      .limit(80, { referencedTable: "pumpy_messages" })
+      .then(function (r) { settlePumpy(r && r.data && r.data[0]); })
+      .catch(function () { settlePumpy(null); });
+  }
+
+  function settlePumpy(t) {
+    pumpy.loading = false;
+    pumpy.loaded = true;
+    if (t) {
+      pumpy.thread = { id: t.id, title: t.title, updated_at: t.updated_at, workout_id: t.workout_id };
+      pumpy.messages = t.pumpy_messages || [];
+      pumpy.refs = lastRefs(pumpy.messages, t.workout_id);
+    }
+    pumpy.shownCount = 0;   // loaded history is not new: it arrives without msgin
+    renderPumpy();
+  }
+
+  // Chips come back off the most recent turn that had any, so picking a
+  // conversation up leaves it where you left it.
+  function lastRefs(msgs, workoutId) {
+    for (var i = msgs.length - 1; i >= 0; i--) {
+      var u = msgs[i];
+      if (u.role === "user" && u.meta && u.meta.refs && u.meta.refs.length) return u.meta.refs;
+    }
+    return workoutId ? [workoutId] : [];
   }
 
   function newPumpyThread() {
+    pumpy.openSeq = (pumpy.openSeq || 0) + 1;   // a thread still loading loses
+    $("pumpylog").classList.remove("waiting");
     pumpy.thread = null;
     pumpy.messages = [];
     pumpy.refs = [];
@@ -9818,81 +9862,176 @@
     return new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric" });
   }
 
+  // How long a cold list may keep the sheet still, and a tapped thread may keep it
+  // open. Both inside the second Nielsen calls the limit of held thought.
+  var TH_WAIT = 220, OPEN_WAIT = 320;
+
+  // Draw first, move second. The sheet used to start on one line of text and take
+  // its rows 180-280ms later: anchored to the bottom edge, its TOP jumped 187.8 to
+  // 344.9px with three chats, to 714.6 with fifty, both inside the 380ms spring —
+  // it grew out from under the thumb. No long task was recorded either time, so it
+  // was never main-thread cost. The list drawn last time is true enough to open at;
+  // a first open gives the network TH_WAIT before leaving with three grey rows.
   function openPumpyThreads() {
-    var list = $("pumpythreads");
-    list.innerHTML = "";
-    list.appendChild(el("div", "threadnone", "Finding your chats…"));
-    openSheet("pumpysheet");
+    if (pumpy.opening) return;   // one tap, one sheet
+    var timer = 0, opened = false;
+    function present(rows, err) {
+      if (opened) return;
+      opened = true;
+      pumpy.opening = false;
+      clearTimeout(timer);
+      renderThreads(rows, err);
+      openSheet("pumpysheet");
+      pumpy.sheetAt = now();
+    }
+    // Behind an opening sheet a matching refresh is two strings in a fixed box and
+    // moves nothing; anything else waits for the spring.
+    function land(rows, err) {
+      if (opened && (err || !patchThreads(rows))) sheetSettled(function () { renderThreads(rows, err); });
+      else present(rows, err);
+    }
+    if (pumpy.threads) present(pumpy.threads);
+    else { pumpy.opening = true; timer = setTimeout(function () { present(null); }, TH_WAIT); }
     sb.from("pumpy_threads")
       .select("id,title,updated_at,workout_id,workouts(title)")
       .order("updated_at", { ascending: false }).limit(50)
-      .then(function (r) { renderThreads((r && r.data) || []); })
-      .catch(function () {
-        list.innerHTML = "";
-        list.appendChild(el("div", "threadnone", "Could not load your chats — try again in a moment."));
-      });
+      .then(function (r) { pumpy.threads = (r && r.data) || []; land(pumpy.threads); })
+      .catch(function () { land(pumpy.threads || [], 1); });
   }
 
-  function renderThreads(rows) {
-    var list = $("pumpythreads");
-    list.innerHTML = "";
-    if (!rows.length) {
-      list.appendChild(el("div", "threadnone",
-        "No chats yet. Ask Pumpy something and it will keep the conversation here."));
-      return;
-    }
-    rows.forEach(function (t) {
-      var open = pumpy.thread && pumpy.thread.id === t.id;
-      var row = el("div", "threadrow" + (open ? " on" : ""));
-      var main = el("button", "tmain");
-      main.appendChild(el("b", null, t.title || "New chat"));
-      var bits = [];
-      if (agoText(t.updated_at)) bits.push(agoText(t.updated_at));
-      if (t.workout_id) bits.push("About " + ((t.workouts && t.workouts.title) || "a workout"));
-      if (open) bits.push("Open");
-      main.appendChild(el("span", null, bits.join(" · ")));
-      main.onclick = function () { openThread(t); };
-      row.appendChild(main);
+  // Nothing redraws the list inside the sheet's 380ms spring, for the reason above.
+  function sheetSettled(fn) {
+    var left = 400 - (now() - (pumpy.sheetAt || 0));
+    if (left <= 0) fn(); else setTimeout(fn, left);
+  }
 
-      var del = el("button", "tdel", "Delete");
-      del.setAttribute("aria-label", "Delete this chat");
-      del.onclick = function () {
-        armed(del, "Delete?", function () {
-          sb.from("pumpy_threads").delete().eq("id", t.id).then(function (r) {
-            if (r && r.error) { toast("That chat did not delete. It is still here."); return; }
-            row.parentNode && row.parentNode.removeChild(row);
-            if (pumpy.thread && pumpy.thread.id === t.id) newPumpyThread();
-            if (!list.querySelector(".threadrow")) renderThreads([]);
-          });
+  function threadId() { return pumpy.thread ? pumpy.thread.id : null; }
+
+  function rowBits(t) {
+    var bits = [], a = agoText(t.updated_at);
+    if (a) bits.push(a);
+    if (t.workout_id) bits.push("About " + ((t.workouts && t.workouts.title) || "a workout"));
+    if (threadId() === t.id) bits.push("Open");
+    return bits.join(" · ");
+  }
+
+  function threadRow(t) {
+    var row = el("div", "threadrow" + (threadId() === t.id ? " on" : ""));
+    row.setAttribute("data-t", t.id);
+    row.thread = t;   // patchThreads rewrites this, so the handlers read it
+    var main = el("button", "tmain");
+    main.appendChild(el("b", null, t.title || "New chat"));
+    main.appendChild(el("span", null, rowBits(t)));
+    main.onclick = function () { openThread(row.thread, row); };
+    row.appendChild(main);
+
+    var del = el("button", "tdel", "Delete");
+    del.setAttribute("aria-label", "Delete this chat");
+    del.onclick = function () {
+      armed(del, "Delete?", function () {
+        sb.from("pumpy_threads").delete().eq("id", t.id).then(function (r) {
+          if (r && r.error) { toast("That chat did not delete. It is still here."); return; }
+          row.parentNode && row.parentNode.removeChild(row);
+          // The cache is what the next open draws before it moves, so it forgets
+          // the row too, or the chat is back for a frame.
+          pumpy.threads = (pumpy.threads || []).filter(function (x) { return x.id !== t.id; });
+          if (threadId() === t.id) newPumpyThread();
+          if (!$("pumpythreads").querySelector(".threadrow")) renderThreads([]);
         });
-      };
-      row.appendChild(del);
-      list.appendChild(row);
-    });
+      });
+    };
+    row.appendChild(del);
+    return row;
   }
 
-  function openThread(t) {
-    closeSheet("pumpysheet");
-    pumpy.thread = { id: t.id, title: t.title, updated_at: t.updated_at, workout_id: t.workout_id };
-    pumpy.messages = [];
-    pumpy.loaded = true;
-    pumpy.shownCount = 0;
-    pumpy.stick = true;   // a thread opens on its newest message, always
-    // The thread row remembers one workout; the messages remember all of them.
-    // This stands in until they land, and is all a pre-references thread has.
-    pumpy.refs = t.workout_id ? [t.workout_id] : [];
-    renderPumpy();
+  // rows null is "never asked yet": three grey rows at the REAL row height, so even
+  // a first open takes a plausible size before it moves. Seen only past TH_WAIT —
+  // under a second, no loading state at all is the researched answer.
+  function renderThreads(rows, err) {
+    var list = $("pumpythreads"), f = document.createDocumentFragment(), i;
+    if (!rows) {
+      for (i = 0; i < 3; i++) {
+        var s = el("div", "threadrow skel"), m = el("div", "tmain");
+        m.appendChild(el("b"));
+        m.appendChild(el("span"));
+        s.appendChild(m);
+        f.appendChild(s);
+      }
+    } else {
+      // A refresh that failed still leaves the rows: what we hold is stale, not
+      // wrong, and the line above them says so.
+      if (err) f.appendChild(el("div", "threadnone", "Could not load your chats — try again in a moment."));
+      else if (!rows.length) f.appendChild(el("div", "threadnone",
+        "No chats yet. Ask Pumpy something and it will keep the conversation here."));
+      rows.forEach(function (t) { f.appendChild(threadRow(t)); });
+    }
+    // Grey bars say nothing out loud, so the wait is announced the ARIA way.
+    if (rows) list.removeAttribute("aria-busy"); else list.setAttribute("aria-busy", "true");
+    // Built whole, hung once: the sheet has one layout to open at, not one per row.
+    list.innerHTML = "";
+    list.appendChild(f);
+  }
+
+  // True when the refresh matched the rows on screen one for one, the usual answer.
+  function patchThreads(rows) {
+    var have = $("pumpythreads").querySelectorAll(".threadrow[data-t]"), i;
+    if (have.length !== rows.length) return false;
+    for (i = 0; i < rows.length; i++) if (have[i].getAttribute("data-t") !== rows[i].id) return false;
+    for (i = 0; i < rows.length; i++) {
+      have[i].thread = rows[i];
+      have[i].querySelector("b").textContent = rows[i].title || "New chat";
+      have[i].querySelector(".tmain span").textContent = rowBits(rows[i]);
+      have[i].classList.toggle("on", threadId() === rows[i].id);
+    }
+    return true;
+  }
+
+  // iOS Messages never shows an empty conversation on the way to a full one: UIKit
+  // gives it viewIsAppearing(), laid out but not yet seen, expressly so the scroll
+  // can be set without a jump. A sheet closing over 260ms under a 55% scrim is the
+  // same free cover, so the swap happens BEHIND it and the close starts after.
+  // Tapping used to empty the log in the same frame: the hello card stood 208ms and
+  // the page went 1858 to 576 to 1170px, scrollTop 1282 to 0 to 594, mid-slide.
+  function openThread(t, row) {
+    if (threadId() === t.id) { closeSheet("pumpysheet"); return; }   // already reading it
+    var seq = (pumpy.openSeq = (pumpy.openSeq || 0) + 1);
+    var log = $("pumpylog"), swapped = false, closed = false;
+    var was = $("pumpythreads").querySelector(".threadrow.on");
+    if (was) was.classList.remove("on");
+    if (row) row.classList.add("on");   // the tap's own answer, before a byte lands
+    // A slow network does not hold the sheet open. Past OPEN_WAIT it goes and the
+    // thread you were reading stays, quiet, until its replacement is ready: an old
+    // conversation is a better wait than none. The composer goes with it, or it
+    // would post into a thread the log is not showing.
+    var timer = setTimeout(function () {
+      if (swapped) return;
+      closed = true;
+      log.classList.add("waiting");
+      $("pumpysend").disabled = true;
+      closeSheet("pumpysheet");
+    }, OPEN_WAIT);
     sb.from("pumpy_messages").select("*").eq("thread_id", t.id).order("id", { ascending: true }).limit(80)
       .then(function (m) {
-        if (!pumpy.thread || pumpy.thread.id !== t.id) return;   // switched again while loading
+        if (seq !== pumpy.openSeq) return;   // switched again while loading
+        clearTimeout(timer);
+        swapped = true;
+        pumpy.thread = { id: t.id, title: t.title, updated_at: t.updated_at, workout_id: t.workout_id };
         pumpy.messages = (m && m.data) || [];
-        // Chips come back off the most recent turn that had any, so picking a
-        // conversation up leaves it where you left it.
-        for (var i = pumpy.messages.length - 1; i >= 0; i--) {
-          var u = pumpy.messages[i];
-          if (u.role === "user" && u.meta && u.meta.refs && u.meta.refs.length) { pumpy.refs = u.meta.refs; break; }
-        }
-        renderPumpy();
+        pumpy.refs = lastRefs(pumpy.messages, t.workout_id);
+        pumpy.loaded = true;
+        pumpy.shownCount = 0;   // loaded history arrives without msgin
+        pumpy.stick = true;     // a thread opens on its newest message, always
+        log.classList.remove("waiting");
+        renderPumpy();          // one fragment, one swap, one scrollTop
+        if (!closed) closeSheet("pumpysheet");
+      })
+      .catch(function () {
+        if (seq !== pumpy.openSeq) return;
+        clearTimeout(timer);
+        log.classList.remove("waiting");
+        $("pumpysend").disabled = !!pumpy.busy;
+        closeSheet("pumpysheet");
+        toast("That chat did not open — try again in a moment.");
       });
   }
 
@@ -10020,12 +10159,17 @@
 
   function renderPumpy() {
     var log = $("pumpylog");
-    log.innerHTML = "";
+    // Assembled off the page and hung in one move. Not for the append count, which
+    // is noise: for the one moment of valid layout it leaves, which is what lets
+    // the single scrollTop at the foot of this function land on the right pixel.
+    var frag = document.createDocumentFragment();
     var shown = pumpy.messages.filter(function (m) { return m.role === "user" || m.role === "assistant"; });
     // With nothing said yet the log is empty space, so the greeting sits in the
     // middle of it rather than clinging to the top.
     log.classList.toggle("hello", !shown.length);
-    if (!shown.length) {
+    // And only once we KNOW there is nothing: before the first fetch lands it is a
+    // final state that has to be taken away again, which reads as a flash.
+    if (!shown.length && pumpy.loaded) {
       var hello = el("div", "pumpyhello");
       hello.appendChild(pumpyMark("pmark"));
       hello.appendChild(el("h2", null, "Hey, I’m Pumpy"));
@@ -10039,18 +10183,18 @@
         q.appendChild(c);
       });
       hello.appendChild(q);
-      log.appendChild(hello);
+      frag.appendChild(hello);
     }
     // The thread is rebuilt every render; animating every bubble would replay it.
     var before = pumpy.shownCount || 0;
     shown.forEach(function (m, i) {
       var node = renderMsg(m);
       if (before && i >= before) node.classList.add("msgin");
-      log.appendChild(node);
+      frag.appendChild(node);
     });
     pumpy.shownCount = shown.length;
     if (pumpy.busy && pumpy.live) {
-      log.appendChild(pumpy.live.row);   // built once; a rebuild only re-hangs it
+      frag.appendChild(pumpy.live.row);   // built once; a rebuild only re-hangs it
     } else if (pumpy.busy) {
       var row = el("div", "msgrow msgin");
       row.appendChild(pumpyMark("pmark"));
@@ -10062,8 +10206,10 @@
       dots.appendChild(el("i"));
       dots.appendChild(el("i"));
       row.appendChild(dots);
-      log.appendChild(row);
+      frag.appendChild(row);
     }
+    log.innerHTML = "";
+    log.appendChild(frag);
     renderPumpyCtx();
     renderPumpyCredits();
     $("pumpysend").disabled = !!pumpy.busy;
