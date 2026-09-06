@@ -6,6 +6,12 @@ add measured comparisons, changes, regression evidence and remaining acceptance 
 for the [implementation prompt](performance-motion-prompt.md). Starting hypotheses
 are retained as historical context, not presented as measurements.
 
+## Newer edits published — 6 September 2026
+
+The subsequent Plan/workout/Pumpy edits are now also deployed, in runtime commit
+`3b70b7e` and Supabase version 141. See the [follow-up release verification](ux-release-2026-09-06.md).
+This supersedes the earlier note below saying those edits were still uncommitted.
+
 ## Deployment follow-up — 6 September 2026
 
 After the owner clarified deployment intent, runtime commit `a324632425538e3ca6445ccd07331d3e9ed93227`
