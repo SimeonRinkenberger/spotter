@@ -217,8 +217,11 @@ so share canvases can draw it too. Four expressive poses live in `docs/assets/pu
 accounts receive a skippable three-step introduction (save, Library, Pumpy); completion is
 saved in `profiles.settings.pumpyWelcome` and on the device. Brief contextual tips appear
 when a feature is visited. Settings → Pumpy offers a quick guide, intro replay, tip controls
-and subtle-motion controls. The rack pose uses a restrained Midjourney blink; decorative
-motion plays once per pose per page load and respects Reduce Motion.
+and subtle-motion controls. The rack pose repeats its restrained Midjourney blink while the
+greeting is visible; the wing beat plays once per page load. Both respect Reduce Motion and
+Little animations, and pause when hidden. “Ask Pumpy about this workout” immediately shows
+the selected workout in the composer and includes it as the primary reference in the next
+message. Explicit reference edits take precedence over chat history that is still loading.
 [Art direction, research, prompts and behavior](design/pumpy.md).
 The tab itself is a column sized between the sticky header and the fixed tab
 bar, so the composer sits on the tab bar whether the thread is empty or endless; a slim bar

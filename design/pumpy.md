@@ -19,10 +19,10 @@ The automatic introduction is eligible for accounts created on or after 6 Septem
 
 Settings → Pumpy has Helpful tips, Little animations, and Quick guide, including Replay the short introduction. The guide uses expandable topics and includes a deliberate reset. Preferences and impressions use localStorage scoped by user ID; storage failure falls back to session behavior. No migration, analytics event or AI request is needed. Intro completion adds one profile-settings write; tips remain local.
 
-Motion: one restrained blink on the “Hey, I’m Pumpy” empty chat screen (five-second asset, mostly still), or one 2.4-second wing beat in an empty Progress state or completed-workout summary. Each pose plays at most once per page load. Animated WebP preserves an image-only path, with no audio session or video player. Assets start only when 80% visible and stop on leaving the viewport, navigation, backgrounding, disabling motion or system Reduce Motion. Slow-loading assets receive their full playback window; failures fall back to the still. Unused animations are not fetched. The introduction itself uses still artwork. Optional GIF downloads are available in the gallery.
+Motion: a restrained blink repeats about every five seconds on the “Hey, I’m Pumpy” empty chat screen, with stillness between blinks. A separate 2.4-second wing beat in an empty Progress state or completed-workout summary plays at most once per page load. Animated WebP preserves an image-only path, with no audio session or video player. Assets start only when 80% visible and stop on leaving the viewport, navigation, backgrounding, disabling motion or system Reduce Motion. Slow-loading assets receive their full playback window; failures fall back to the still. The greeting also pauses behind overlays and resumes when visible again or motion is re-enabled; it never retries a failed animation in a loop. Unused animations are not fetched. The introduction itself uses still artwork. Optional GIF downloads are available in the gallery.
 
 Help disclosures and tip dismissal use interruptible 240ms height transitions. Sheet exits hold the retiring tip’s geometry while the sheet slides away. The introduction uses a stable three-page grid and a small eased crossfade/slide. Reduce Motion removes the sliding/size animation. Existing tab swipes retain their interruptible spring.
-The avatar stays inside a self-contained SVG with a data-embedded WebP, preserving the existing share-canvas rendering contract. Larger artwork is loaded from first-party WebP files and cached on demand by service worker v5. App art URLs are versioned to refresh existing caches. The edge-served page points at the same assets on GitHub Pages. The supplied video has a baked checkerboard background, so it is reference only and is not shipped.
+The avatar stays inside a self-contained SVG with a data-embedded WebP, preserving the existing share-canvas rendering contract. Larger artwork is loaded from first-party WebP files and cached on demand by service worker v6. App art URLs are versioned to refresh existing caches. The edge-served page points at the same assets on GitHub Pages. The supplied video has a baked checkerboard background, so it is reference only and is not shipped.
 
 Incidental fixes: arriving on a warmed Pumpy tab preserves the existing greeting instead of interrupting its animation with a redundant redraw; profile loading ignores late responses after an account switch; replay closes the underlying guide/settings sheets before returning focus to the app; saving a preference preserves unrelated existing profile settings.
 
@@ -35,7 +35,8 @@ Incidental fixes: arriving on a warmed Pumpy tab preserves the existing greeting
 | [proud.webp](../docs/assets/pumpy/proud.webp) | Progress and session completion |
 | [avatar.webp](../docs/assets/pumpy/avatar.webp) | Compact identity and share canvas |
 | [hello.webp](../docs/assets/pumpy/hello.webp) | Relaxed rack pose for chat and introduction |
-| [hello-motion.webp](../docs/assets/pumpy/hello-motion.webp) | One isolated Midjourney blink |
+| [hello-motion.webp](../docs/assets/pumpy/hello-motion.webp) | One isolated Midjourney blink for the gallery |
+| [hello-idle.webp](../docs/assets/pumpy/hello-idle.webp) | Identical frames with a native repeating loop for the greeting |
 | [proud-wing.webp](../docs/assets/pumpy/proud-wing.webp) | One smooth wing beat |
 | [hello-motion.gif](../docs/assets/pumpy/hello-motion.gif), [proud-wing.gif](../docs/assets/pumpy/proud-wing.gif) | Optional downloads; app uses smaller animated WebP |
 
@@ -99,4 +100,32 @@ The prompt alone did not enforce stillness; the spatial edit above does.
 
 ## Verification
 
-Run `node build.mjs`, then `node tools/pumpy-harness.mjs`. The harness needs LinkeDOM; install it outside the repository with `npm install --prefix /tmp/spotter-qa linkedom`, or set `SPOTTER_DOM_MODULE` to its ESM entry point. Checks cover real helper code with controlled visibility, account changes, persistence failures, cooldown, session cap, disabled tips, reduced motion, offscreen motion, and generated page parity. The 37 checks include intro eligibility, three steps, Back/Next, skip/completion persistence, replay returning to the app, animation loading failures, one-play behavior and interruptible resizing. Browser QA used a disposable account, 375×812 dark mode and 375×667 light-mode CSS fixture. All three intro steps kept the same sheet height; focus wrapping, skip and profile completion were verified. A reduced-motion fixture displayed only the still image. Temporary frame instrumentation observed progressive disclosure heights with no runtime errors. No owner workout data was changed. These browser checks do not claim physical iPhone or VoiceOver testing.
+Run `node build.mjs`, then `node tools/pumpy-harness.mjs`. The harness needs LinkeDOM; install it outside the repository with `npm install --prefix /tmp/spotter-qa linkedom`, or set `SPOTTER_DOM_MODULE` to its ESM entry point. Checks cover real helper code with controlled visibility, account changes, persistence failures, cooldown, session cap, disabled tips, reduced motion, offscreen motion, and generated page parity. The 48 checks include intro eligibility, three steps, Back/Next, skip/completion persistence, replay returning to the app, animation loading failures, one-play behavior and interruptible resizing. Browser QA used a disposable account, 375×812 dark mode and 375×667 light-mode CSS fixture. All three intro steps kept the same sheet height; focus wrapping, skip and profile completion were verified. A reduced-motion fixture displayed only the still image. Temporary frame instrumentation observed progressive disclosure heights with no runtime errors. No owner workout data was changed. These browser checks do not claim physical iPhone or VoiceOver testing.
+
+## 0.12: repeating presence and workout context
+
+The owner requested continuous subtle presence on the greeting. `hello-idle.webp` copies the
+existing blink exactly, changing only the WebP ANIM loop count from 1 to 0. This uses native
+image playback without a recurring JavaScript timer, source swapping at every blink, or
+new downloads for each cycle. Visibility, overlay, page-inert, preference and Reduce Motion
+gates pause it and resume it when appropriate. The wing beat and gallery preview remain
+one-play. Assets use v12 URLs; service worker v6 caches the new idle file on demand.
+
+The Library’s “Ask Pumpy about this workout” now updates only the composer’s reference chips,
+preserving the chat/greeting DOM. It moves that workout to the front, deduplicates the list
+and respects the existing six-reference cap. The next message sends its ID in both
+`workout_id` and `workout_ids`. A reference-edit revision protects user selections/removals
+from initial or explicitly opened chat history arriving later. Stale initial history also
+cannot overwrite a newer thread selection or a different account.
+
+Verification adds native loop-header/frame parity, repeated visibility/overlay/preferences
+changes, failed-asset behavior, warm attachment display, reference priority/deduplication,
+late history, removing pending references, restoring historical context, and the actual
+message payload. Browser QA uses a disposable saved workout and follows Library → card →
+Ask Pumpy, checks the visible title chip, observes the blink beyond one cycle, and verifies
+Settings pauses it and closing Settings resumes it.
+
+The live chat check used the configured `http://localhost:8000` origin (8041 is not in the
+API CORS allowlist). Pumpy replied with the disposable workout’s exact title, and the saved
+user message’s `meta.refs` plus the thread’s `workout_id` matched the selected workout ID.
+The disposable account, workout and conversation were removed after verification.

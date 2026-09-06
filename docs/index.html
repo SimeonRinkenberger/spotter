@@ -6441,7 +6441,7 @@ select:focus-visible {
   var sb = window.supabase.createClient(SB_URL, SB_ANON, {
     auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
   });
-  var VERSION = "0.11";
+  var VERSION = "0.12";
   var REST_FALLBACK = 90;
   var CATEGORIES = [
     "Push",
@@ -8630,6 +8630,7 @@ select:focus-visible {
     detailCloseTimer = setTimeout(function() {
       d.classList.remove("closing");
       if (!d.classList.contains("open")) $("dinner").innerHTML = "";
+      guideWake();
     }, 240);
   }
   function patchWorkout(w, fields) {
@@ -10941,6 +10942,7 @@ select:focus-visible {
     clearTimeout(woCloseTimer);
     woCloseTimer = setTimeout(function() {
       n.classList.remove("closing");
+      guideWake();
     }, 260);
   }
   function offerResume() {
@@ -13246,6 +13248,7 @@ select:focus-visible {
     messages: [],
     busy: false,
     refs: [],
+    refsRev: 0,
     loaded: false,
     meter: null,
     meterAsked: false,
@@ -13262,7 +13265,13 @@ select:focus-visible {
   ];
   var NO_TOUCH = !("ontouchstart" in window) && !(navigator.maxTouchPoints > 0);
   function openPumpy(w) {
-    if (w && pumpy.refs.indexOf(w.id) < 0) pumpy.refs = [w.id].concat(pumpy.refs).slice(0, MAX_REFS);
+    if (w) {
+      pumpy.refs = [w.id].concat(pumpy.refs.filter(function(id) {
+        return id !== w.id;
+      })).slice(0, MAX_REFS);
+      pumpy.refsRev++;
+      renderPumpyCtx();
+    }
     setView("pumpy");
   }
   function loadPumpy(warm) {
@@ -13270,10 +13279,15 @@ select:focus-visible {
     if (pumpy.loaded) return;
     if (pumpy.loading) return;
     pumpy.loading = true;
+    var seq = pumpy.openSeq || 0, uid = state.user.id;
+    function finish(t) {
+      if (!state.user || state.user.id !== uid || seq !== (pumpy.openSeq || 0)) return;
+      settlePumpy(t);
+    }
     sb.from("pumpy_threads").select("id,title,updated_at,workout_id,pumpy_messages(*)").order("updated_at", { ascending: false }).limit(1).order("id", { referencedTable: "pumpy_messages", ascending: true }).limit(80, { referencedTable: "pumpy_messages" }).then(function(r) {
-      settlePumpy(r && r.data && r.data[0]);
+      finish(r && r.data && r.data[0]);
     }).catch(function() {
-      settlePumpy(null);
+      finish(null);
     });
   }
   function settlePumpy(t) {
@@ -13282,7 +13296,7 @@ select:focus-visible {
     if (t) {
       pumpy.thread = { id: t.id, title: t.title, updated_at: t.updated_at, workout_id: t.workout_id };
       pumpy.messages = t.pumpy_messages || [];
-      pumpy.refs = lastRefs(pumpy.messages, t.workout_id);
+      if (!pumpy.refsRev) pumpy.refs = lastRefs(pumpy.messages, t.workout_id);
     }
     pumpy.shownCount = 0;
     renderPumpy();
@@ -13300,6 +13314,7 @@ select:focus-visible {
     pumpy.thread = null;
     pumpy.messages = [];
     pumpy.refs = [];
+    pumpy.refsRev++;
     pumpy.loaded = true;
     pumpy.shownCount = 0;
     renderPumpy();
@@ -13438,6 +13453,7 @@ select:focus-visible {
       return;
     }
     var seq = pumpy.openSeq = (pumpy.openSeq || 0) + 1;
+    var refsRev = pumpy.refsRev;
     var log = $("pumpylog"), swapped = false, closed = false;
     var was = $("pumpythreads").querySelector(".threadrow.on");
     if (was) was.classList.remove("on");
@@ -13455,7 +13471,7 @@ select:focus-visible {
       swapped = true;
       pumpy.thread = { id: t.id, title: t.title, updated_at: t.updated_at, workout_id: t.workout_id };
       pumpy.messages = m && m.data || [];
-      pumpy.refs = lastRefs(pumpy.messages, t.workout_id);
+      if (pumpy.refsRev === refsRev) pumpy.refs = lastRefs(pumpy.messages, t.workout_id);
       pumpy.loaded = true;
       pumpy.shownCount = 0;
       pumpy.stick = true;
@@ -13742,6 +13758,7 @@ select:focus-visible {
           pumpy.refs = pumpy.refs.filter(function(id) {
             return id !== w.id;
           });
+          pumpy.refsRev++;
           delete ctxSeen[w.id];
           renderPumpyCtx();
           if ($("refsheet").classList.contains("open")) renderRefList();
@@ -13787,6 +13804,7 @@ select:focus-visible {
         pumpy.refs = on ? pumpy.refs.filter(function(id) {
           return id !== w.id;
         }) : pumpy.refs.concat([w.id]);
+        pumpy.refsRev++;
         renderRefList();
         renderPumpyCtx();
       };
@@ -14623,7 +14641,7 @@ select:focus-visible {
   }
   function pumpyAsset(name) {
     var base = location.hostname.endsWith("supabase.co") ? "https://simeonrinkenberger.github.io/spotter/" : "./";
-    return base + "assets/pumpy/" + name + "?v=11";
+    return base + "assets/pumpy/" + name + "?v=12";
   }
   function pumpyArt(pose, animate) {
     var frame = el("span", "pumpyart"), im = el("img");
@@ -14635,43 +14653,52 @@ select:focus-visible {
     var staticSrc = pumpyAsset(pose + ".webp");
     im.src = staticSrc;
     im.onerror = function() {
-      if (im.hasAttribute("data-pumpy-still")) still();
-      else frame.classList.add("artfailed");
+      if (im.hasAttribute("data-pumpy-still")) {
+        failed = true;
+        still();
+        ob.disconnect();
+      } else frame.classList.add("artfailed");
     };
     frame.appendChild(im);
     if (animate && window.IntersectionObserver) {
       var still2 = function() {
+        clearTimeout(timer);
         if (im.hasAttribute("data-pumpy-still")) {
           im.src = im.getAttribute("data-pumpy-still");
           im.removeAttribute("data-pumpy-still");
         }
-        ob.disconnect();
-      };
-      var played = false, motion = pose === "hello" ? "hello-motion.webp" : "proud-wing.webp";
-      var duration = pose === "hello" ? 5200 : 2400;
-      im.onload = function() {
-        if (im.hasAttribute("data-pumpy-still")) setTimeout(still2, duration);
-      };
-      var ob = new IntersectionObserver(function(entries) {
+        if (!loop && played) ob.disconnect();
+      }, sync = function() {
         if (!frame.isConnected) {
+          still2();
           ob.disconnect();
           return;
         }
-        if (played) {
-          if (!entries[0].isIntersecting) still2();
+        var page = frame.closest(".page");
+        if (!visible2 || document.hidden || !guide.motion || lessMotion() || page && page.inert || loop && overlayShowing()) {
+          still2();
           return;
         }
-        if (entries[0].intersectionRatio < 0.8 || document.hidden || !guide.motion || lessMotion()) return;
-        var page = frame.closest(".page");
-        if (page && page.inert) return;
-        if (guide.played[pose]) {
+        if (failed || im.hasAttribute("data-pumpy-still")) return;
+        if (!loop && (played || guide.played[pose])) {
           ob.disconnect();
           return;
         }
         played = true;
-        guide.played[pose] = true;
-        im.setAttribute("data-pumpy-still", im.src);
+        if (!loop) guide.played[pose] = true;
+        im.setAttribute("data-pumpy-still", staticSrc);
         im.src = pumpyAsset(motion);
+      };
+      var loop = pose === "hello", played = false, visible2 = false, failed = false, timer;
+      var motion = loop ? "hello-idle.webp" : "proud-wing.webp";
+      im.onload = function() {
+        if (!loop && im.hasAttribute("data-pumpy-still")) timer = setTimeout(still2, 2400);
+      };
+      frame._pumpyPause = still2;
+      frame._pumpySync = sync;
+      var ob = new IntersectionObserver(function(entries) {
+        visible2 = entries[0].intersectionRatio >= 0.8;
+        sync();
       }, { threshold: 0.8 });
       setTimeout(function() {
         if (frame.isConnected) ob.observe(frame);
@@ -14681,8 +14708,16 @@ select:focus-visible {
   }
   function guideStill() {
     document.querySelectorAll("[data-pumpy-still]").forEach(function(im) {
-      im.src = im.getAttribute("data-pumpy-still");
-      im.removeAttribute("data-pumpy-still");
+      if (im.parentNode._pumpyPause) im.parentNode._pumpyPause();
+      else {
+        im.src = im.getAttribute("data-pumpy-still");
+        im.removeAttribute("data-pumpy-still");
+      }
+    });
+  }
+  function guideWake() {
+    document.querySelectorAll(".pumpyart").forEach(function(frame) {
+      if (frame._pumpySync) frame._pumpySync();
     });
   }
   function guideCard(id, dismiss) {
@@ -14817,7 +14852,8 @@ select:focus-visible {
   $("pumpymotion").onclick = function() {
     guideUser();
     guide.motion = !guide.motion;
-    if (!guide.motion) guideStill();
+    if (guide.motion) guideWake();
+    else guideStill();
     guideSave();
     guidePaintSettings();
   };
@@ -14930,10 +14966,12 @@ select:focus-visible {
   });
   document.addEventListener("visibilitychange", function() {
     if (document.hidden) guideStill();
+    else guideWake();
   });
   var guideMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
   if (guideMotionQuery.addEventListener) guideMotionQuery.addEventListener("change", function(e) {
     if (e.matches) guideStill();
+    else guideWake();
   });
   document.addEventListener("click", function(e) {
     if (e.target.closest(".exact, .exmain")) guideLearn("detail");
@@ -14982,6 +15020,7 @@ select:focus-visible {
       n.classList.remove("closing");
       if (id === "watchsheet") $("watchbody").innerHTML = "";
       if (id === "explainsheet") $("explainvidin").innerHTML = "";
+      guideWake();
     }, 260);
     if (sheetNav && !document.querySelector(".sheet.open")) {
       sheetNav = false;

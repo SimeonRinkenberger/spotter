@@ -28,7 +28,7 @@ const context = vm.createContext({
   setTimeout: (fn, ms) => { const timer = {fn,ms}; timers.push(timer); return timer; },
   clearTimeout: timer => { const i = timers.indexOf(timer); if (i >= 0) timers.splice(i,1); },
   state: { user: { id: 'alice' }, view: 'library', logs: [], workouts: [] },
-  pumpy: { loaded: true, messages: [], refs: [] }, planBody: document.createElement('div'),
+  pumpy: { loaded: true, messages: [], refs: [], refsRev: 0 }, planBody: document.createElement('div'),
   $: id => document.getElementById(id),
   el: (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; },
   icon: n => n, lessMotion: () => reduced,
@@ -105,14 +105,14 @@ check('hidden tab cannot offer a tip', () => {
 check('reduced motion never requests animation', () => {
   reduced = true; run('var art = pumpyArt("proud", true); document.body.appendChild(art)');
   while(timers.length) timers.shift().fn(); observers.at(-1).show();
-  assert.match(run('art.firstChild.src'), /proud\.webp\?v=11$/); reduced = false;
+  assert.match(run('art.firstChild.src'), /proud\.webp\?v=12$/); reduced = false;
 });
 check('one visible wing beat returns to its still', () => {
   run('guide.motion = true; var art2 = pumpyArt("proud", true); document.body.appendChild(art2)');
   while(timers.length) timers.shift().fn(); observers.at(-1).show();
-  assert.match(run('art2.firstChild.src'), /proud-wing\.webp\?v=11$/);
+  assert.match(run('art2.firstChild.src'), /proud-wing\.webp\?v=12$/);
   run('art2.firstChild.onload()');
-  while(timers.length) timers.shift().fn(); assert.match(run('art2.firstChild.src'), /proud\.webp\?v=11$/);
+  while(timers.length) timers.shift().fn(); assert.match(run('art2.firstChild.src'), /proud\.webp\?v=12$/);
 });
 check('in-flight motion stops when requested', () => {
   run('art2.firstChild.setAttribute("data-pumpy-still", "proud.webp"); art2.firstChild.src = "proud-wing.gif"; guideStill()');
@@ -123,10 +123,10 @@ check('wing motion waits for visibility and stops offscreen', () => {
   while(timers.length) timers.shift().fn();
   const observer = observers.at(-1);
   observer.fn([{isIntersecting:true, intersectionRatio:0.1}]);
-  assert.match(run('art3.firstChild.src'), /proud\.webp\?v=11$/);
-  observer.show(); assert.match(run('art3.firstChild.src'), /proud-wing\.webp\?v=11$/);
+  assert.match(run('art3.firstChild.src'), /proud\.webp\?v=12$/);
+  observer.show(); assert.match(run('art3.firstChild.src'), /proud-wing\.webp\?v=12$/);
   observer.fn([{isIntersecting:false, intersectionRatio:0}]);
-  assert.match(run('art3.firstChild.src'), /proud\.webp\?v=11$/); assert.equal(observer.disconnected, true);
+  assert.match(run('art3.firstChild.src'), /proud\.webp\?v=12$/); assert.equal(observer.disconnected, true);
 });
 check('guide stays available even when automatic tips are off', () => {
   run('guide.off = true; openPumpyGuide()'); assert.equal(document.querySelectorAll('.guide-topic').length, 6);
@@ -134,20 +134,20 @@ check('guide stays available even when automatic tips are off', () => {
 check('a rerender cannot restart the same decorative animation', () => {
   run('var art4 = pumpyArt("proud", true); document.body.appendChild(art4)');
   while(timers.length) timers.shift().fn(); observers.at(-1).show();
-  assert.match(run('art4.firstChild.src'), /proud\.webp\?v=11$/);
+  assert.match(run('art4.firstChild.src'), /proud\.webp\?v=12$/);
 });
 check('slow animation loading gets a full playback window', () => {
-  run('guide.played = {}; var slow = pumpyArt("hello", true); document.body.appendChild(slow)');
+  run('guide.played = {}; var slow = pumpyArt("proud", true); document.body.appendChild(slow)');
   while(timers.length) timers.shift().fn(); observers.at(-1).show();
   assert.equal(timers.length, 0); run('slow.firstChild.onload()');
-  assert.equal(timers.at(-1).ms, 5200);
+  assert.equal(timers.at(-1).ms, 2400);
   while(timers.length) timers.shift().fn();
-  assert.match(run('slow.firstChild.src'), /hello\.webp\?v=11$/);
+  assert.match(run('slow.firstChild.src'), /proud\.webp\?v=12$/);
 });
 check('failed animation falls back to its still illustration', () => {
   run('guide.played = {}; var failed = pumpyArt("hello", true); document.body.appendChild(failed)');
   while(timers.length) timers.shift().fn(); observers.at(-1).show();
-  run('failed.firstChild.onerror()'); assert.match(run('failed.firstChild.src'), /hello\.webp\?v=11$/);
+  run('failed.firstChild.onerror()'); assert.match(run('failed.firstChild.src'), /hello\.webp\?v=12$/);
   assert.equal(run('failed.classList.contains("artfailed")'), false);
 });
 check('closing a sheet keeps the tip geometry through its exit', () => {
@@ -233,6 +233,101 @@ check('arriving on a warmed Pumpy tab preserves the greeting and its animation',
   run(app.slice(app.indexOf('  function loadPumpy(warm)'), app.indexOf('  function settlePumpy(t)')));
   run('pumpy.loaded=true; loadPumpy(true); loadPumpy()');
   assert.equal(redraws, 0); assert.equal(meters, 1);
+});
+check('the greeting loops without a timer or repeat network requests', () => {
+  run('guide.motion=true; var idleArt=pumpyArt("hello",true); document.getElementById("pumpyview").inert=false; document.getElementById("pumpyview").appendChild(idleArt)');
+  while(timers.length) timers.shift().fn(); observers.at(-1).show();
+  assert.match(run('idleArt.firstChild.src'), /hello-idle\.webp\?v=12$/);
+  run('idleArt.firstChild.onload()'); assert.equal(timers.length, 0);
+  const source = run('idleArt.firstChild.src'); run('guideWake(); guideWake()');
+  assert.equal(run('idleArt.firstChild.src'), source);
+  assert.equal(run('guide.played.hello'), undefined);
+});
+check('the greeting pauses offscreen and resumes on a later visit', () => {
+  const observer = observers.at(-1);
+  observer.fn([{isIntersecting:false, intersectionRatio:0}]);
+  assert.match(run('idleArt.firstChild.src'), /hello\.webp\?v=12$/);
+  assert.equal(observer.disconnected, false); run('guideWake()');
+  assert.equal(run('idleArt.firstChild.hasAttribute("data-pumpy-still")'), false);
+  observer.show(); assert.match(run('idleArt.firstChild.src'), /hello-idle\.webp\?v=12$/);
+  run('document.getElementById("pumpyview").inert=true; guideWake()');
+  assert.equal(run('idleArt.firstChild.hasAttribute("data-pumpy-still")'), false);
+  run('document.getElementById("pumpyview").inert=false; guideWake()');
+  assert.equal(run('idleArt.firstChild.hasAttribute("data-pumpy-still")'), true);
+});
+check('backgrounding, overlays, and motion preferences pause the repeating blink', () => {
+  document.hidden=true; run('guideStill(); guideWake()');
+  assert.equal(run('idleArt.firstChild.hasAttribute("data-pumpy-still")'), false);
+  document.hidden=false; run('guideWake()');
+  assert.equal(run('idleArt.firstChild.hasAttribute("data-pumpy-still")'), true);
+  run('openSheet("settingssheet"); guideWake()');
+  assert.equal(run('idleArt.firstChild.hasAttribute("data-pumpy-still")'), false);
+  run('closeSheet("settingssheet")'); while(timers.length) timers.shift().fn();
+  assert.equal(run('idleArt.firstChild.hasAttribute("data-pumpy-still")'), true);
+  reduced=true; run('guideWake()'); assert.equal(run('idleArt.firstChild.hasAttribute("data-pumpy-still")'), false);
+  reduced=false; run('guide.motion=false; guideWake()'); assert.equal(run('idleArt.firstChild.hasAttribute("data-pumpy-still")'), false);
+  run('guide.motion=true; guideWake()'); assert.equal(run('idleArt.firstChild.hasAttribute("data-pumpy-still")'), true);
+});
+check('a failed idle asset stays on its still without a retry loop', () => {
+  run('idleArt.firstChild.onerror(); guideWake()');
+  assert.match(run('idleArt.firstChild.src'), /hello\.webp\?v=12$/);
+  assert.equal(observers.at(-1).disconnected, true);
+});
+check('the idle asset changes only the existing animation loop header', () => {
+  const once=fs.readFileSync('docs/assets/pumpy/hello-motion.webp');
+  const idle=fs.readFileSync('docs/assets/pumpy/hello-idle.webp');
+  let i=12; while(once.toString('ascii',i,i+4)!=='ANIM') { const n=once.readUInt32LE(i+4); i+=8+n+(n%2); assert.ok(i<once.length); }
+  assert.equal(once.readUInt16LE(i+12),1); assert.equal(idle.readUInt16LE(i+12),0);
+  const expected=Buffer.from(once); expected.writeUInt16LE(0,i+12); assert.deepEqual(idle,expected);
+});
+
+// Use the real reference renderer, request builder and cold-load completion.
+context.MAX_REFS=6; context.ctxSeen={}; context.NO_TOUCH=false;
+context.srcById=id=>context.state.workouts.find(w=>w.id===id);
+context.setView=v=>{context.state.view=v;};
+context.renderPumpy=()=>run('renderPumpyCtx()');
+run(app.slice(app.indexOf('  function openPumpy(w)'),app.indexOf('  // sizePumpy()')));
+run(app.slice(app.indexOf('  function settlePumpy(t)'),app.indexOf('  // ---------- Pumpy · the thread list')));
+run(app.slice(app.indexOf('  function renderPumpyCtx()'),app.indexOf('  function openRefSheet()')));
+run(app.slice(app.indexOf('  function sendPumpy(text)'),app.indexOf('  function confirmPumpy(')));
+const chosen={id:'chosen',title:'Kettlebell strength'}, other={id:'old',title:'Earlier workout'};
+context.state.workouts=[chosen,other]; context.chosen=chosen;
+const past={id:'thread',title:'Old chat',workout_id:'old',pumpy_messages:[{role:'user',meta:{refs:['old']}}]};
+context.past=past;
+check('Ask Pumpy shows the chosen workout chip without rebuilding the conversation', () => {
+  run('pumpy.refs=[]; pumpy.refsRev=0; openPumpy(chosen)');
+  assert.equal(context.state.view,'pumpy'); assert.deepEqual(Array.from(context.pumpy.refs),['chosen']);
+  assert.equal(document.querySelector('#pumpyctx .refchip b').textContent,chosen.title);
+  assert.equal(document.getElementById('pumpyctx').classList.contains('hide'),false);
+});
+check('asking about an already attached workout puts it first without duplicates', () => {
+  run('pumpy.refs=["old","chosen","a","b","c","d"]; openPumpy(chosen)');
+  assert.deepEqual(Array.from(context.pumpy.refs),['chosen','old','a','b','c','d']);
+  run('pumpy.refs=["old","a","b","c","d","e"]; openPumpy(chosen)');
+  assert.equal(context.pumpy.refs.length,6); assert.equal(context.pumpy.refs[0],'chosen');
+});
+check('a selection made before or during initial chat loading wins over old context', () => {
+  run('pumpy.refs=[]; pumpy.refsRev=0; openPumpy(chosen); settlePumpy(past)');
+  assert.deepEqual(Array.from(context.pumpy.refs),['chosen']);
+  assert.equal(document.querySelector('#pumpyctx .refchip b').textContent,chosen.title);
+});
+check('removing a pending attachment cannot be undone by late chat history', () => {
+  document.querySelector('#pumpyctx .refchip button').onclick();
+  while(timers.length) timers.shift().fn(); run('settlePumpy(past)');
+  assert.deepEqual(Array.from(context.pumpy.refs),[]);
+  assert.equal(document.getElementById('pumpyctx').classList.contains('hide'),true);
+});
+check('existing context still loads when no new reference was selected', () => {
+  run('pumpy.refs=[]; pumpy.refsRev=0; settlePumpy(past)');
+  assert.deepEqual(Array.from(context.pumpy.refs),['old']);
+});
+check('the next question sends the selected workout IDs to Pumpy', () => {
+  let sent;
+  context.apiStream=(path,payload)=>{sent={path,payload}; return {then(){return {catch(){}};}};};
+  run('pumpy.busy=false; openPumpy(chosen); sendPumpy("How should I warm up for this?")');
+  assert.equal(sent.path,'pumpy/chat'); assert.equal(sent.payload.workout_id,'chosen');
+  assert.deepEqual(Array.from(sent.payload.workout_ids),['chosen','old']);
+  assert.equal(sent.payload.message,'How should I warm up for this?');
 });
 check('built page equals edge-function page', () => {
   const generated = fs.readFileSync('supabase/functions/spotter/page.gen.ts', 'utf8');

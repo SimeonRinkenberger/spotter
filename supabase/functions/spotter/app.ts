@@ -26,7 +26,7 @@ export const APP = String.raw`
 
   // The one place the version is written down. It names the entry at the top of
   // docs/whats-new.html, and the settings sheet reads it from here.
-  var VERSION = "0.11";
+  var VERSION = "0.12";
 
   // What a rest is when the card says nothing. It was a Settings row until the
   // obvious objection landed: how long to rest belongs to the program or to the
@@ -2501,6 +2501,7 @@ export const APP = String.raw`
     detailCloseTimer = setTimeout(function () {
       d.classList.remove("closing");
       if (!d.classList.contains("open")) $("dinner").innerHTML = "";
+      guideWake();
     }, 240);
   }
 
@@ -5404,7 +5405,7 @@ export const APP = String.raw`
     n.classList.remove("summary");
     n.classList.add("closing");
     clearTimeout(woCloseTimer);
-    woCloseTimer = setTimeout(function () { n.classList.remove("closing"); }, 260);
+    woCloseTimer = setTimeout(function () { n.classList.remove("closing"); guideWake(); }, 260);
   }
 
   function offerResume() {
@@ -7924,7 +7925,7 @@ export const APP = String.raw`
     return s;
   }
 
-  var pumpy = { thread: null, messages: [], busy: false, refs: [], loaded: false,
+  var pumpy = { thread: null, messages: [], busy: false, refs: [], refsRev: 0, loaded: false,
     meter: null, meterAsked: false, live: null, stick: true, wired: false };
 
   // Six, because references are written into the prompt in full and it already
@@ -7945,7 +7946,11 @@ export const APP = String.raw`
 
   function openPumpy(w) {
     // "Ask Pumpy about this workout" is the first reference, picked for you.
-    if (w && pumpy.refs.indexOf(w.id) < 0) pumpy.refs = [w.id].concat(pumpy.refs).slice(0, MAX_REFS);
+    if (w) {
+      pumpy.refs = [w.id].concat(pumpy.refs.filter(function (id) { return id !== w.id; })).slice(0, MAX_REFS);
+      pumpy.refsRev++;
+      renderPumpyCtx();
+    }
     setView("pumpy");
   }
 
@@ -7962,13 +7967,18 @@ export const APP = String.raw`
     if (pumpy.loaded) return;
     if (pumpy.loading) return;
     pumpy.loading = true;
+    var seq = pumpy.openSeq || 0, uid = state.user.id;
+    function finish(t) {
+      if (!state.user || state.user.id !== uid || seq !== (pumpy.openSeq || 0)) return;
+      settlePumpy(t);
+    }
     sb.from("pumpy_threads")
       .select("id,title,updated_at,workout_id,pumpy_messages(*)")
       .order("updated_at", { ascending: false }).limit(1)
       .order("id", { referencedTable: "pumpy_messages", ascending: true })
       .limit(80, { referencedTable: "pumpy_messages" })
-      .then(function (r) { settlePumpy(r && r.data && r.data[0]); })
-      .catch(function () { settlePumpy(null); });
+      .then(function (r) { finish(r && r.data && r.data[0]); })
+      .catch(function () { finish(null); });
   }
 
   function settlePumpy(t) {
@@ -7977,7 +7987,8 @@ export const APP = String.raw`
     if (t) {
       pumpy.thread = { id: t.id, title: t.title, updated_at: t.updated_at, workout_id: t.workout_id };
       pumpy.messages = t.pumpy_messages || [];
-      pumpy.refs = lastRefs(pumpy.messages, t.workout_id);
+      // Any explicit selection this session, before or during loading, wins over history.
+      if (!pumpy.refsRev) pumpy.refs = lastRefs(pumpy.messages, t.workout_id);
     }
     pumpy.shownCount = 0;   // loaded history is not new: it arrives without msgin
     renderPumpy();
@@ -7999,6 +8010,7 @@ export const APP = String.raw`
     pumpy.thread = null;
     pumpy.messages = [];
     pumpy.refs = [];
+    pumpy.refsRev++;
     pumpy.loaded = true;
     pumpy.shownCount = 0;
     renderPumpy();
@@ -8150,6 +8162,7 @@ export const APP = String.raw`
   function openThread(t, row) {
     if (threadId() === t.id) { closeSheet("pumpysheet"); return; }   // already reading it
     var seq = (pumpy.openSeq = (pumpy.openSeq || 0) + 1);
+    var refsRev = pumpy.refsRev;
     var log = $("pumpylog"), swapped = false, closed = false;
     var was = $("pumpythreads").querySelector(".threadrow.on");
     if (was) was.classList.remove("on");
@@ -8172,7 +8185,7 @@ export const APP = String.raw`
         swapped = true;
         pumpy.thread = { id: t.id, title: t.title, updated_at: t.updated_at, workout_id: t.workout_id };
         pumpy.messages = (m && m.data) || [];
-        pumpy.refs = lastRefs(pumpy.messages, t.workout_id);
+        if (pumpy.refsRev === refsRev) pumpy.refs = lastRefs(pumpy.messages, t.workout_id);
         pumpy.loaded = true;
         pumpy.shownCount = 0;   // loaded history arrives without msgin
         pumpy.stick = true;     // a thread opens on its newest message, always
@@ -8495,6 +8508,7 @@ export const APP = String.raw`
         chip.classList.add("gone");
         setTimeout(function () {
           pumpy.refs = pumpy.refs.filter(function (id) { return id !== w.id; });
+          pumpy.refsRev++;
           delete ctxSeen[w.id];
           renderPumpyCtx();
           // The picker is behind the composer and may still be open on the row
@@ -8547,6 +8561,7 @@ export const APP = String.raw`
         pumpy.refs = on
           ? pumpy.refs.filter(function (id) { return id !== w.id; })
           : pumpy.refs.concat([w.id]);
+        pumpy.refsRev++;
         renderRefList();
         renderPumpyCtx();
       };
@@ -9391,7 +9406,7 @@ export const APP = String.raw`
     // The edge function serves the same page, but the artwork lives on Pages.
     var base = location.hostname.endsWith("supabase.co")
       ? "https://simeonrinkenberger.github.io/spotter/" : "./";
-    return base + "assets/pumpy/" + name + "?v=11";
+    return base + "assets/pumpy/" + name + "?v=12";
   }
 
   function pumpyArt(pose, animate) {
@@ -9401,38 +9416,42 @@ export const APP = String.raw`
     var staticSrc = pumpyAsset(pose + ".webp");
     im.src = staticSrc;
     im.onerror = function () {
-      if (im.hasAttribute("data-pumpy-still")) still();
+      if (im.hasAttribute("data-pumpy-still")) { failed = true; still(); ob.disconnect(); }
       else frame.classList.add("artfailed");
     };
     frame.appendChild(im);
     // Animated WebP stays an image: no audio session to interrupt gym music.
     // A decoded animation gets its full duration, even on a slow connection.
     if (animate && window.IntersectionObserver) {
-      var played = false, motion = pose === "hello" ? "hello-motion.webp" : "proud-wing.webp";
-      var duration = pose === "hello" ? 5200 : 2400;
+      var loop = pose === "hello", played = false, visible = false, failed = false, timer;
+      var motion = loop ? "hello-idle.webp" : "proud-wing.webp";
       function still() {
+        clearTimeout(timer);
         if (im.hasAttribute("data-pumpy-still")) {
           im.src = im.getAttribute("data-pumpy-still"); im.removeAttribute("data-pumpy-still");
         }
-        ob.disconnect();
+        if (!loop && played) ob.disconnect();
       }
       im.onload = function () {
-        if (im.hasAttribute("data-pumpy-still")) setTimeout(still, duration);
+        if (!loop && im.hasAttribute("data-pumpy-still")) timer = setTimeout(still, 2400);
       };
-      var ob = new IntersectionObserver(function (entries) {
-        if (!frame.isConnected) { ob.disconnect(); return; }
-        if (played) {
-          if (!entries[0].isIntersecting) still();
-          return;
-        }
-        if (entries[0].intersectionRatio < 0.8 || document.hidden || !guide.motion || lessMotion()) return;
+      function sync() {
+        if (!frame.isConnected) { still(); ob.disconnect(); return; }
         var page = frame.closest(".page");
-        if (page && page.inert) return;
-        if (guide.played[pose]) { ob.disconnect(); return; }
+        if (!visible || document.hidden || !guide.motion || lessMotion() || (page && page.inert) ||
+            (loop && overlayShowing())) { still(); return; }
+        if (failed || im.hasAttribute("data-pumpy-still")) return;
+        if (!loop && (played || guide.played[pose])) { ob.disconnect(); return; }
         played = true;
-        guide.played[pose] = true;
-        im.setAttribute("data-pumpy-still", im.src);
+        if (!loop) guide.played[pose] = true;
+        im.setAttribute("data-pumpy-still", staticSrc);
         im.src = pumpyAsset(motion);
+      }
+      frame._pumpyPause = still;
+      frame._pumpySync = sync;
+      var ob = new IntersectionObserver(function (entries) {
+        visible = entries[0].intersectionRatio >= 0.8;
+        sync();
       }, { threshold: 0.8 });
       // Observe only after the caller has mounted it, never an orphaned drawing.
       setTimeout(function () { if (frame.isConnected) ob.observe(frame); }, 0);
@@ -9442,7 +9461,14 @@ export const APP = String.raw`
 
   function guideStill() {
     document.querySelectorAll("[data-pumpy-still]").forEach(function (im) {
-      im.src = im.getAttribute("data-pumpy-still"); im.removeAttribute("data-pumpy-still");
+      if (im.parentNode._pumpyPause) im.parentNode._pumpyPause();
+      else { im.src = im.getAttribute("data-pumpy-still"); im.removeAttribute("data-pumpy-still"); }
+    });
+  }
+
+  function guideWake() {
+    document.querySelectorAll(".pumpyart").forEach(function (frame) {
+      if (frame._pumpySync) frame._pumpySync();
     });
   }
 
@@ -9556,7 +9582,8 @@ export const APP = String.raw`
     guideUser(); guide.off = !guide.off; guideClear(); guideSave(); guidePaintSettings();
   };
   $("pumpymotion").onclick = function () {
-    guideUser(); guide.motion = !guide.motion; if (!guide.motion) guideStill();
+    guideUser(); guide.motion = !guide.motion;
+    if (guide.motion) guideWake(); else guideStill();
     guideSave(); guidePaintSettings();
   };
   $("pumpyhelp").onclick = openPumpyGuide;
@@ -9643,10 +9670,10 @@ export const APP = String.raw`
     if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
     else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
   });
-  document.addEventListener("visibilitychange", function () { if (document.hidden) guideStill(); });
+  document.addEventListener("visibilitychange", function () { if (document.hidden) guideStill(); else guideWake(); });
   var guideMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
   if (guideMotionQuery.addEventListener) guideMotionQuery.addEventListener("change", function (e) {
-    if (e.matches) guideStill();
+    if (e.matches) guideStill(); else guideWake();
   });
   document.addEventListener("click", function (e) {
     if (e.target.closest(".exact, .exmain")) guideLearn("detail");
@@ -9709,6 +9736,7 @@ export const APP = String.raw`
       // iframe always leaves the page — and only once it has finished sliding away.
       if (id === "watchsheet") $("watchbody").innerHTML = "";
       if (id === "explainsheet") $("explainvidin").innerHTML = "";
+      guideWake();
     }, 260);
     // Give the entry back when the last sheet goes — unless the browser has
     // already taken it (a back gesture) or another sheet is standing in its place.

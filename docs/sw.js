@@ -10,7 +10,7 @@
 // arrives — still refreshes the cache for next time. That is the pattern Workbox
 // calls NetworkFirst with networkTimeoutSeconds, and 1.5s is the number that keeps a
 // bad connection from holding a blank screen while never beating a good one.
-var CACHE = "spotter-shell-v5";
+var CACHE = "spotter-shell-v6";
 var SHELL = ["icon.png", "manifest.webmanifest"];
 var PAGE = "index.html";
 var NET_TIMEOUT = 1500;
@@ -79,7 +79,7 @@ self.addEventListener("fetch", function (e) {
   }
   // Small first-party drawings are cached only after use. Installing the shell
   // never waits on mascot art, and no unused animation is downloaded up front.
-  if (/\/assets\/pumpy\/(coach|plan|proud|avatar|hello|hello-motion|proud-wing)\.webp$/.test(url.pathname)) {
+  if (/\/assets\/pumpy\/(coach|plan|proud|avatar|hello|hello-motion|hello-idle|proud-wing)\.webp$/.test(url.pathname)) {
     e.respondWith(caches.open(CACHE).then(function (c) {
       return c.match(e.request).then(function (hit) {
         return hit || fetch(e.request).then(function (r) {
