@@ -4551,7 +4551,8 @@ export const APP = String.raw`
     // The first clock to run on this phone is the first time it makes a noise.
     tellSounds();
     if (!restFace) {
-      $("reststrip").className = "reststrip on";
+      // Assigned whole, so the muted note paintSounds hung on it has to be said again.
+      $("reststrip").className = "reststrip on" + (state.sounds ? "" : " muted");
       $("restword").textContent = "Rest";
     }
     drawRest(restTotal);
