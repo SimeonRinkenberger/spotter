@@ -1565,11 +1565,34 @@ export const STYLE = String.raw`<style>
      view's embed so the close button stays on screen with it. */
   #watchbody .embedwrap, #watchbody .dphoto { margin-bottom: 14px; }
   #watchbody .embedwrap.vertical iframe { height: 56vh; }
+  /* The same word #copysheet needs, for the same reason and measured the same
+     way: with touch-action auto WebKit holds every tap 350ms to see whether a
+     second is coming, and the second one that does come is a double tap — which
+     Safari answers by zooming, because it has ignored user-scalable=no since
+     iOS 10. That zoom is the jump when the plus is tapped a lot. The sheet sits
+     outside #workout, so the manipulation rule up there never reached it. */
+  #setsheet button { touch-action: manipulation; }
   .stepper { display: flex; align-items: center; gap: 12px; justify-content: center; margin: 14px 0; }
   .stepper button { width: 46px; height: 46px; border-radius: 999px; border: 1px solid var(--line-2);
-    background: var(--card); color: var(--ink); font-size: 20px; line-height: 1; }
-  .stepper .val { font-family: var(--display); font-size: 30px; font-weight: 700; min-width: 96px;
-    text-align: center; font-variant-numeric: tabular-nums; letter-spacing: -.018em; }
+    background: var(--card); color: var(--ink); font-size: 20px; line-height: 1;
+    transition: transform var(--t-1) var(--e-out); }
+  .stepper button:active { transform: scale(.92); }
+  /* A width, not a min-width: the value is the only thing between the two
+     buttons, so anything that changes its box moves them both. Tabular figures
+     hold the digits still inside it, and the field is the same box in the same
+     face as the number it replaces, so tapping to type moves nothing either. */
+  .stepper .val { width: 96px; }
+  .stepper .val .num, .stepper .val .numin { display: block; width: 100%; height: 34px;
+    padding: 0; border: 0; border-radius: 0; background: none; color: var(--ink);
+    text-align: center; font-family: var(--display); font-size: 30px; font-weight: 700;
+    line-height: 34px; letter-spacing: -.018em; font-variant-numeric: tabular-nums; }
+  /* 34px is what the figure needs; 46 is what a finger needs. */
+  .stepper .val .num { position: relative; }
+  .stepper .val .num::after { content: ""; position: absolute; inset: -6px 0; }
+  .stepper .val .numin { display: none; outline: none; -webkit-appearance: none; appearance: none;
+    caret-color: var(--ember); box-shadow: inset 0 -2px 0 var(--ember); }
+  .stepper .val.editing .num { display: none; }
+  .stepper .val.editing .numin { display: block; }
   .stepper .val small { display: block; font-size: 11px; font-weight: 600;
     color: var(--muted); margin-top: 4px; }
 
@@ -1856,6 +1879,8 @@ export const STYLE = String.raw`<style>
     .overlay, .overlay.open, .overlay.closing { transform: none;
       transition-duration: var(--t-2); }
     .sheetbody, .sheet.open .sheetbody { transform: none; transition: none; }
+    /* The press still answers, it just answers at once. */
+    .stepper button { transition: none; }
     /* The travel stays: it is the gesture itself. The spring goes. */
     .exmain, .exacts, .exact {
       transition-duration: var(--t-1); transition-timing-function: var(--e-soft); }

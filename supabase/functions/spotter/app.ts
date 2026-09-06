@@ -4454,6 +4454,11 @@ export const APP = String.raw`
       if (m) targetReps = parseInt(m[0], 10);
     }
     var h = hist[exKey(entry)];
+    // Whatever the last visit left half-typed belongs to the set it was typed
+    // for, not to this one, so it is dropped rather than committed sideways.
+    editing = null;
+    $("repsbox").classList.remove("editing");
+    $("wtbox").classList.remove("editing");
     setCtx.idx = idx;
     setCtx.reps = existing ? existing.reps : targetReps;
     setCtx.weight = existing ? toUnit(existing.weight, existing.unit) : (h ? toUnit(h.weight, h.unit) : 0);
@@ -4473,8 +4478,102 @@ export const APP = String.raw`
     $("wtval").textContent = setCtx.weight.toLocaleString();
   }
 
+  // ---------- the two ways to change a number ----------
+  //
+  // "make sure it stays stable. also i want to be able to tap the numbers and
+  // type my own number in so i dont have to tap it a bunch." Both halves land
+  // here, and both clamp on the way through, so a set nobody did cannot be
+  // logged however it was entered: 999 reps and 9999 of anything are past what a
+  // barbell does and short of what a stuck key can produce.
+
+  function setReps(n) {
+    n = clamp(Math.round(n) || 0, 0, 999);
+    if (n === setCtx.reps) return false;
+    setCtx.reps = n;
+    drawStepper();
+    return true;
+  }
+
+  function setWeight(n) {
+    n = clamp(Math.round((n || 0) * 10) / 10, 0, 9999);
+    if (n === setCtx.weight) return false;
+    setCtx.weight = n;
+    drawStepper();
+    return true;
+  }
+
+  function wtStep() { return state.unit === "kg" ? 2.5 : 5; }
+
+  // Apple's steppers repeat while they are held and speed up the longer the hold
+  // lasts (UIStepper.autorepeat, on by default), which is the difference between
+  // asking for 25 reps and tapping fifteen times for it. Half a second before the
+  // first repeat, so a tap can never be read as a hold. The click that follows a
+  // hold is dropped: the repeats already counted it. A click with no pointer
+  // before it is a keyboard pressing Enter, and steps once, as it always did.
+  function wireStep(id, step) {
+    var btn = $(id), t = 0, n = 0;
+    function tick() {
+      n++;
+      if (!step()) { stop(); return; }
+      t = setTimeout(tick, n < 5 ? 140 : n < 13 ? 95 : 62);
+    }
+    function stop() { clearTimeout(t); t = 0; }
+    btn.addEventListener("pointerdown", function (e) {
+      if (!e.isPrimary) return;
+      endEdit();
+      stop();
+      n = 0;
+      t = setTimeout(tick, 480);
+    });
+    ["pointerup", "pointercancel", "pointerleave"].forEach(function (name) {
+      btn.addEventListener(name, stop);
+    });
+    btn.addEventListener("click", function () { endEdit(); if (!n) step(); n = 0; });
+  }
+
+  // Tapping the number opens a field in its place: inputmode rather than
+  // type=number, so iOS raises its keypad without the spinner, the stray e and +
+  // a number field accepts, or a scroll wheel no phone has. Digits for reps, a
+  // decimal point for weight. The field is the same box in the same face as the
+  // figure it replaces, so the swap moves nothing on the screen.
+  var editing = null;
+
+  function wireNum(box, btn, input, commit) {
+    btn.addEventListener("click", function () {
+      endEdit();
+      editing = { box: box, input: input, commit: commit };
+      input.value = btn.textContent.replace(/,/g, "");
+      box.classList.add("editing");
+      // Measured before it is focused — WebKit will not focus a box it has not
+      // laid out — and focused inside the tap that asked for it, which is the
+      // only call iOS answers with a keyboard.
+      void input.offsetWidth;
+      input.focus();
+      input.select();
+    });
+    input.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") { e.preventDefault(); input.blur(); }
+    });
+    input.addEventListener("blur", endEdit);
+  }
+
+  // Enter, the blur, the next tap on a stepper, and Save all end the same way.
+  // An empty field or a typo means the number was left alone, not zeroed.
+  function endEdit() {
+    if (!editing) return;
+    var e = editing;
+    editing = null;
+    e.box.classList.remove("editing");
+    var v = parseFloat(e.input.value);
+    if (!isNaN(v)) e.commit(v);
+    if (document.activeElement === e.input) e.input.blur();
+  }
+
   function saveSet() {
     if (!wo) return;
+    // Saving without leaving the field first is the ordinary way to use this:
+    // type 12, press Save. The number has to be taken before it is read.
+    endEdit();
     // Usually the session's first gesture, and iOS starts audio in nothing else.
     unlockAudio();
     var entry = wo.entries[wo.i];
@@ -10131,13 +10230,12 @@ export const APP = String.raw`
   $("restskip").onclick = function () { var t = restThen; stopRest(); if (t) t(); };
   $("watchclose").onclick = function () { closeSheet("watchsheet"); };
 
-  $("repsup").onclick = function () { setCtx.reps++; drawStepper(); };
-  $("repsdown").onclick = function () { if (setCtx.reps > 0) setCtx.reps--; drawStepper(); };
-  $("wtup").onclick = function () { setCtx.weight += (state.unit === "kg" ? 2.5 : 5); drawStepper(); };
-  $("wtdown").onclick = function () {
-    setCtx.weight = Math.max(0, setCtx.weight - (state.unit === "kg" ? 2.5 : 5));
-    drawStepper();
-  };
+  wireStep("repsup", function () { return setReps(setCtx.reps + 1); });
+  wireStep("repsdown", function () { return setReps(setCtx.reps - 1); });
+  wireStep("wtup", function () { return setWeight(setCtx.weight + wtStep()); });
+  wireStep("wtdown", function () { return setWeight(setCtx.weight - wtStep()); });
+  wireNum($("repsbox"), $("repsval"), $("repsin"), setReps);
+  wireNum($("wtbox"), $("wtval"), $("wtin"), setWeight);
   $("setsave").onclick = saveSet;
   $("setclear").onclick = function () {
     if (!wo) return;
