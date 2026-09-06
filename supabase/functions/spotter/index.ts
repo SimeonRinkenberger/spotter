@@ -5612,8 +5612,12 @@ async function buildCard(
     // instead of the whole save timing out.
     const perSlide = visionLimit("timeout_ms", 35_000);
     const budget = visionLimit("slides_budget_ms",
-      Math.min(110_000, Math.max(90_000, 35_000 * batches + 20_000)));
+      Math.min(110_000, Math.max(90_000, perSlide * batches + 20_000)));
     const deadline = Date.now() + budget;
+    // The arithmetic, written down where a log reader can check it against the
+    // clock in the timestamps rather than against this comment.
+    console.log("vision: " + batches + " batch(es) of " + conc + ", " +
+      budget + " ms budget, " + perSlide + " ms a slide");
 
     let filled = 0, matched = 0, by: string | null = null;
     let readOk = 0, timedOut = 0, retried = 0, abandoned = 0;

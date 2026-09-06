@@ -30,6 +30,11 @@
 //   5. The LOG LINES. The per-slide and post-merge lines are the whole reason the
 //      next one of these is diagnosable, so they are asserted as output, not
 //      assumed.
+//   6. The SCHEDULE. Three reads in flight and never four; the merge landing in
+//      slide order however the sub-requests answer; a slide that runs out of
+//      stopwatch retried once and then let go; the budget arithmetic; and a read
+//      that answers after the budget dropped rather than merged into a card that
+//      is already on its way back to the caller.
 //
 // The functions are lifted OUT OF index.ts rather than copied in. A copy would
 // pass forever after the shipping code broke, which is the one failure mode a
@@ -152,10 +157,23 @@ export const harness = {
   // every prompt geminiGenerate was asked for, and what it was told to answer
   prompts: [] as string[],
   geminiText: null as string | null,
-  // the slide indexes the mocked worker sub-request was actually asked for
+  // the slide indexes the mocked worker sub-request was actually asked for, in the
+  // order it was asked; a slide asked for twice is a retry
   asked: [] as number[],
-  // how long the mocked sub-request pretends to take, for the clock budget
+  // and the order they came BACK in, which is what proves the merge does not
+  // depend on which sub-request happened to answer first
+  landed: [] as number[],
+  // how long the mocked sub-request pretends to take, for the clock budget, and
+  // the per-slide override that makes a batch answer out of order
   delayMs: 0,
+  delayOf: {} as Record<number, number>,
+  // slide indexes whose FIRST read hits the ceiling and whose second succeeds —
+  // the retry path — and the ones that hit it every time
+  slow: [] as number[],
+  alwaysSlow: [] as number[],
+  // sub-requests outstanding right now, and the most there have ever been at once
+  live: 0,
+  peak: 0,
 };
 
 function geminiGenerate(body: any, _ctx: any, _model?: string): Promise<Generated> {
@@ -185,7 +203,7 @@ function scoreAndStamp(_c: any, _m: any, _p: string, _h: number): any {
 const NAMES = [
   // types
   "ExerciseSource", "Exercise", "Block", "Card", "Meta", "Parsed", "AiCtx",
-  "VisionRequest", "DoseGap", "SlideMerge", "VisionProgress",
+  "VisionRequest", "SlideRead", "DoseGap", "SlideMerge", "VisionProgress",
   // taxonomies the normalizer validates against
   "CATEGORIES", "MUSCLES", "EQUIPMENT", "BLOCK_TYPES", "DIFFICULTIES",
   // the dials
@@ -229,7 +247,9 @@ type Lifted = {
   runtimeCfg: Record<string, string>;
   harness: {
     caption: unknown; slides: unknown[]; prompts: string[];
-    geminiText: string | null; asked: number[]; delayMs: number;
+    geminiText: string | null; asked: number[]; landed: number[];
+    delayMs: number; delayOf: Record<number, number>;
+    slow: number[]; alwaysSlow: number[]; live: number; peak: number;
   };
   MERGE_MAX_EXERCISES: number;
   visionLimit(key: string, dflt: number): number;
@@ -611,12 +631,30 @@ check("a mangled reply is nothing rather than a throw",
 
 globalThis.fetch = (async (_input: unknown, init?: { body?: unknown }) => {
   const body = JSON.parse(String(init?.body ?? "{}"));
-  harness.asked.push(body.slide);
-  if (harness.delayMs) await new Promise((r) => setTimeout(r, harness.delayMs));
-  const slide = harness.slides[body.slide] ?? null;
-  return new Response(JSON.stringify({ status: "ok", card: slide }), {
-    headers: { "content-type": "application/json" },
-  });
+  const n = Number(body.slide);
+  // How many times this slide has been asked for before now. One means a first
+  // read; two means the retry pass came back for it.
+  const nth = harness.asked.filter((x) => x === n).length + 1;
+  harness.asked.push(n);
+  harness.live++;
+  if (harness.live > harness.peak) harness.peak = harness.live;
+  try {
+    const wait = harness.delayOf[n] ?? harness.delayMs;
+    if (wait) await new Promise((r) => setTimeout(r, wait));
+    if (harness.alwaysSlow.includes(n) || (harness.slow.includes(n) && nth === 1)) {
+      // Exactly what AbortSignal.timeout rejects a fetch with, because that name is
+      // the only thing telling runVisionRemote a ceiling was hit rather than a
+      // slide being empty.
+      throw new DOMException("Signal timed out.", "TimeoutError");
+    }
+    harness.landed.push(n);
+    const slide = harness.slides[n] ?? null;
+    return new Response(JSON.stringify({ status: "ok", card: slide }), {
+      headers: { "content-type": "application/json" },
+    });
+  } finally {
+    harness.live--;
+  }
 }) as typeof fetch;
 
 const logs: string[] = [];
@@ -625,19 +663,44 @@ console.log = (...a: unknown[]) => { logs.push(a.map((x) => String(x)).join(" ")
 const P = { platform: "tiktok", shortcode: "tt-harness", kind: "photo", clean: "https://x/y" };
 const CTX = { purpose: "extract", userId: null };
 
+type Sched = {
+  delayMs?: number;                 // every slide takes this long
+  delayOf?: Record<number, number>; // ... except these, which is how a batch answers out of order
+  slow?: number[];                  // first read hits the ceiling, the retry does not
+  alwaysSlow?: number[];            // every read hits the ceiling
+};
+
 async function run(
   caption: unknown, slides: unknown[], images: number, startSlide = 0, kind = "photo",
+  sched: Sched = {},
 ) {
   harness.caption = caption;
   harness.slides = slides;
   harness.asked = [];
+  harness.landed = [];
+  // Reset before the counters, not after: a previous test's abandoned sub-requests
+  // are still in flight and will decrement `live` on their way out.
+  harness.live = 0;
+  harness.peak = 0;
+  harness.delayMs = sched.delayMs ?? 0;
+  harness.delayOf = sched.delayOf ?? {};
+  harness.slow = sched.slow ?? [];
+  harness.alwaysSlow = sched.alwaysSlow ?? [];
   logs.length = 0;
   const meta = {
     caption: "x", thumb: null, author: null,
     images: Array.from({ length: images }, (_, i) => "https://cdn/slide-" + i + ".jpg"),
   };
   const out = await M.buildCard(meta, { ...P, kind }, CTX, undefined, startSlide);
-  return { card: out, logs: logs.slice(), asked: harness.asked.slice() };
+  return {
+    card: out, logs: logs.slice(), asked: harness.asked.slice(),
+    landed: harness.landed.slice(), peak: harness.peak,
+  };
+}
+
+/** The one line that states what the loop decided before it started spending. */
+function budgetLine(logs: string[]): string {
+  return logs.find((l) => /^vision: \d+ batch\(es\)/.test(l)) ?? "(no budget line)";
 }
 
 // The owner's post, reconstructed: nine slides, a caption with sets and no reps,
@@ -694,22 +757,19 @@ async function run(
   delete M.runtimeCfg["vision.max_slides_carousel"];
 }
 
-// The other bound, on the clock. Ten slides at the twenty-second per-slide
-// ceiling outlives a request, and reprocess runs this synchronously with the
-// owner watching, so a degraded vision tier has to give back a partial card
-// rather than a timeout.
+// The other bound, on the clock. Ten slides at the per-slide ceiling outlives a
+// request, and reprocess runs this synchronously with the owner watching, so a
+// degraded vision tier has to give back a partial card rather than a timeout.
 {
   M.runtimeCfg["vision.slides_budget_ms"] = "1";
-  harness.delayMs = 8;
   const table = card([block([ex("Goblet Squat", { reps: "12" })])],
     { extracted_by: "vision:gemini-harness" });
-  const r = await run(dosed0, [table, table, table, table], 4);
-  eq("the budget stops the loop after the slide it was already reading", r.asked, [0]);
-  check("and says so", r.logs.some((l) => l.startsWith("vision: out of time at slide 1 of 4")),
+  const r = await run(dosed0, [table, table, table, table, table, table], 6, 0, "photo", { delayMs: 8 });
+  eq("the budget stops the loop after the batch it was already reading", r.asked, [0, 1, 2]);
+  check("and says so", r.logs.some((l) => l.startsWith("vision: out of time at slide 3 of 6")),
     r.logs.join(" | ").slice(0, 200));
-  eq("what the slides did give is still merged", M.countExercises(r.card), 7);
+  eq("what the batch did give is still merged", M.countExercises(r.card), 7);
   eq("including the dose", doses(r.card)[0], "Goblet Squat: 3x12");
-  harness.delayMs = 0;
   delete M.runtimeCfg["vision.slides_budget_ms"];
 }
 
@@ -772,20 +832,223 @@ async function run(
   eq("and the slide it had not reached yet is still merged", M.countExercises(r.card), 3);
 }
 
-// Progress is checkpointed after every slide now, not only after a barren one:
-// the merged card is what a resume has to start from.
-{
+// Progress is checkpointed after every BATCH now, with the merged card. Per slide
+// would be a lie once three are in flight: a resume that restarted mid-batch would
+// re-pay for the batch-mates it had already read.
+async function checkpoints(slides: unknown[], images: number): Promise<Array<[number, number]>> {
   const seen: Array<[number, number]> = [];
   harness.caption = dosed0;
-  harness.slides = [card([block([ex("Goblet Squat", { reps: "12" })])]), null];
+  harness.slides = slides;
   harness.asked = [];
+  harness.landed = [];
+  harness.delayMs = 0;
+  harness.delayOf = {};
+  harness.slow = [];
+  harness.alwaysSlow = [];
   logs.length = 0;
-  const meta = { caption: "x", thumb: null, author: null, images: ["https://cdn/a", "https://cdn/b"] };
+  const meta = {
+    caption: "x", thumb: null, author: null,
+    images: Array.from({ length: images }, (_, i) => "https://cdn/slide-" + i + ".jpg"),
+  };
   await M.buildCard(meta, P, CTX, (n: number, partial: { blocks: Array<{ exercises: unknown[] }> }) => {
     seen.push([n, partial.blocks.reduce((t, b) => t + b.exercises.length, 0)]);
     return Promise.resolve();
   }, 0);
-  eq("every slide checkpoints, and with the merged card", seen, [[1, 7], [2, 7]]);
+  return seen;
+}
+{
+  const seen = await checkpoints([card([block([ex("Goblet Squat", { reps: "12" })])]), null], 2);
+  eq("a carousel that fits in one batch checkpoints once, past its last slide", seen, [[2, 7]]);
+}
+{
+  const seen = await checkpoints([null, null, null, card([block([ex("Hip Thrust", { reps: "12" })])])], 4);
+  eq("two batches checkpoint twice, and the second carries the merged card",
+    seen, [[3, 7], [4, 8]]);
+}
+
+// ---------- 6. the schedule: three in flight, in order, with a second look ----------
+//
+// What the live nine-slide reprocess actually died of. One read at a time at ~18s
+// each is ~160s of wall clock, a 20s ceiling killed two reads that were merely
+// slow, and the 90s budget ran out at slide seven. Four of seven exercises got
+// their reps.
+
+// Three at a time, and never four. The peak is counted inside the mocked
+// sub-request, so it is outstanding SUB-REQUESTS being measured, which is the
+// thing the concurrency bound is about.
+{
+  const r = await run(dosed0, new Array(9).fill(null), 9, 0, "photo", { delayMs: 20 });
+  eq("all nine slides are still asked for, in slide order", r.asked, [0, 1, 2, 3, 4, 5, 6, 7, 8]);
+  eq("three sub-requests in flight at the peak, never four", r.peak, 3);
+  eq("which is three batches", r.logs.filter((l) => l.startsWith("vision: batch ")).length, 3);
+  check("and each batch names the slides it covered",
+    r.logs.some((l) => l.startsWith("vision: batch 1 of 3 → slides 0-2 in")) &&
+    r.logs.some((l) => l.startsWith("vision: batch 3 of 3 → slides 6-8 in")),
+    r.logs.filter((l) => l.startsWith("vision: batch")).join(" | "));
+}
+
+// A trailing partial batch is still a batch.
+{
+  const r = await run(dosed0, new Array(7).fill(null), 7, 0, "photo", { delayMs: 10 });
+  eq("seven slides is three batches, the last of one", r.asked, [0, 1, 2, 3, 4, 5, 6]);
+  check("and the short one says so",
+    r.logs.some((l) => l.startsWith("vision: batch 3 of 3 → slides 6-6 in")),
+    r.logs.filter((l) => l.startsWith("vision: batch")).join(" | "));
+}
+
+// The dial behind it, so a degraded vision tier can be put back to one at a time
+// from app_config without a deploy.
+{
+  M.runtimeCfg["vision.concurrency"] = "1";
+  const r = await run(dosed0, new Array(4).fill(null), 4, 0, "photo", { delayMs: 10 });
+  eq("app_config can put it back to one read at a time", r.peak, 1);
+  eq("and then it is four batches", r.logs.filter((l) => l.startsWith("vision: batch ")).length, 4);
+  delete M.runtimeCfg["vision.concurrency"];
+}
+{
+  M.runtimeCfg["vision.concurrency"] = "99";
+  const r = await run(dosed0, new Array(9).fill(null), 9, 0, "photo", { delayMs: 10 });
+  check("but it cannot be turned up past six, whatever the row says", r.peak <= 6, "peak " + r.peak);
+  delete M.runtimeCfg["vision.concurrency"];
+}
+
+// Order. Three slides answering in the reverse of the order they were asked must
+// still produce the card the caption's reader would have produced sequentially —
+// otherwise the same post reprocesses into a differently ordered card each time
+// and the user watches their exercises shuffle.
+function slideNamed(name: string) {
+  return card([block([ex(name, { reps: "10" })])], { extracted_by: "vision:gemini-harness" });
+}
+{
+  const three = [slideNamed("Alpha"), slideNamed("Bravo"), slideNamed("Charlie")];
+  const backwards = await run(card([]), three, 3, 0, "photo", { delayOf: { 0: 90, 1: 45, 2: 5 } });
+  eq("the slides answered in the reverse of the order they were asked", backwards.landed, [2, 1, 0]);
+  eq("and the card is still in slide order", names(backwards.card), ["Alpha", "Bravo", "Charlie"]);
+
+  const forwards = await run(card([]), three, 3, 0, "photo", { delayOf: { 0: 5, 1: 45, 2: 90 } });
+  eq("the same three answering in order", forwards.landed, [0, 1, 2]);
+  eq("produce the identical card", names(forwards.card), names(backwards.card));
+}
+
+// The budget arithmetic, stated in the log so a reader of the live logs can check
+// it against the timestamps rather than against a comment. One per-slide ceiling
+// per batch plus 20s of slack, floored at 90s and capped at 110s — the cap being
+// the margin the rest of a synchronous reprocess needs inside Supabase's 150s.
+{
+  const one = await run(dosed0, new Array(3).fill(null), 3);
+  eq("three slides is one batch, on the floor", budgetLine(one.logs),
+    "vision: 1 batch(es) of 3, 90000 ms budget, 35000 ms a slide");
+  const two = await run(dosed0, new Array(6).fill(null), 6);
+  eq("six slides is two batches, still on the floor", budgetLine(two.logs),
+    "vision: 2 batch(es) of 3, 90000 ms budget, 35000 ms a slide");
+  const three = await run(dosed0, new Array(9).fill(null), 9);
+  eq("nine slides is three batches and buys the ceiling", budgetLine(three.logs),
+    "vision: 3 batch(es) of 3, 110000 ms budget, 35000 ms a slide");
+  const ten = await run(dosed0, new Array(12).fill(null), 12);
+  eq("a twelve-slide post is capped at ten slides, four batches, same ceiling",
+    budgetLine(ten.logs), "vision: 4 batch(es) of 3, 110000 ms budget, 35000 ms a slide");
+  const resumed = await run(dosed0, new Array(9).fill(null), 9, 6);
+  eq("a resume budgets for the slides it has left, not the ones already paid for",
+    budgetLine(resumed.logs), "vision: 1 batch(es) of 3, 90000 ms budget, 35000 ms a slide");
+}
+{
+  M.runtimeCfg["vision.timeout_ms"] = "50000";
+  const r = await run(dosed0, new Array(9).fill(null), 9);
+  eq("a longer per-slide ceiling buys a longer budget, up to the cap", budgetLine(r.logs),
+    "vision: 3 batch(es) of 3, 110000 ms budget, 50000 ms a slide");
+  delete M.runtimeCfg["vision.timeout_ms"];
+  M.runtimeCfg["vision.slides_budget_ms"] = "45000";
+  const fixed = await run(dosed0, new Array(9).fill(null), 9);
+  eq("and app_config can still name the budget outright", budgetLine(fixed.logs),
+    "vision: 3 batch(es) of 3, 45000 ms budget, 35000 ms a slide");
+  delete M.runtimeCfg["vision.slides_budget_ms"];
+}
+
+// The retry. A ceiling hit at 35s on a 37s read is a fact about the stopwatch, not
+// about the picture, and on the owner's carousel it was two slides of nine.
+{
+  const withReps = card([block([ex("Romanian Deadlift", { reps: "10" })])],
+    { extracted_by: "vision:gemini-harness" });
+  const first = card([block([ex("Goblet Squat", { reps: "12" })])],
+    { extracted_by: "vision:gemini-harness" });
+  const r = await run(dosed0, [first, withReps, null], 3, 0, "photo", { delayMs: 4, slow: [1] });
+  eq("the slide that ran out of stopwatch is asked for a second time, at the end",
+    r.asked, [0, 1, 2, 1]);
+  check("the retry pass announces itself",
+    r.logs.some((l) => l.startsWith("vision: retrying 1 slide(s) that ran out of time — 1")),
+    r.logs.join(" | "));
+  check("the first read is logged as a timeout rather than as an empty slide",
+    r.logs.includes("vision: slide 1 → 0 exercise(s), 0 with a dose (timed out)"), r.logs.join(" | "));
+  check("and the second is logged as a retry",
+    r.logs.includes("vision: slide 1 → 1 exercise(s), 1 with a dose (retry)"), r.logs.join(" | "));
+  eq("the dose the slide was carrying landed after all",
+    doses(r.card).slice(0, 2), ["Goblet Squat: 3x12", "Romanian Deadlift: 3x10"]);
+  check("and the merged line counts the reads, the timeouts and the retries",
+    r.logs.some((l) => l.includes("— 3 read, 1 timed out, 1 retried, 0 abandoned")),
+    r.logs.filter((l) => l.startsWith("vision: merged")).join(" | "));
+}
+
+// Once, and then let go. A slide that cannot be read is not worth a third isolate
+// and definitely not worth the gateway's 150 seconds.
+{
+  const r = await run(dosed0, [null, null, null], 3, 0, "photo", { delayMs: 4, alwaysSlow: [2] });
+  eq("a slide that times out twice is asked for twice and no more", r.asked, [0, 1, 2, 2]);
+  check("and the retry's own timeout is logged as one",
+    r.logs.includes("vision: slide 2 → 0 exercise(s), 0 with a dose (timed out) (retry)"),
+    r.logs.join(" | "));
+  check("the merged line reports two timeouts against one retry",
+    r.logs.some((l) => l.includes("— 2 read, 2 timed out, 1 retried, 0 abandoned")),
+    r.logs.filter((l) => l.startsWith("vision: merged")).join(" | "));
+}
+{
+  const r = await run(dosed0, new Array(3).fill(null), 3, 0, "photo", { delayMs: 4 });
+  check("a carousel with no timeouts never opens the retry pass",
+    !r.logs.some((l) => l.startsWith("vision: retrying")), r.logs.join(" | "));
+  check("and says so in the counts",
+    r.logs.some((l) => l.includes("— 3 read, 0 timed out, 0 retried, 0 abandoned")),
+    r.logs.filter((l) => l.startsWith("vision: merged")).join(" | "));
+}
+{
+  // Half a ceiling — about one measured read — is the least a retry is worth
+  // firing into. Below that it would be launched and abandoned in the same breath.
+  M.runtimeCfg["vision.slides_budget_ms"] = "40";
+  const r = await run(dosed0, [null, null, null], 3, 0, "photo", { delayMs: 4, slow: [1] });
+  eq("a timed-out slide is NOT retried into a budget that has nothing left", r.asked, [0, 1, 2]);
+  check("and the counts still say a slide was lost to the clock",
+    r.logs.some((l) => l.includes("— 2 read, 1 timed out, 0 retried, 0 abandoned")),
+    r.logs.filter((l) => l.startsWith("vision: merged")).join(" | "));
+  delete M.runtimeCfg["vision.slides_budget_ms"];
+}
+
+// A read that answers after the budget is over. It cannot be merged: the loop has
+// moved on and the card may already be on its way back to the caller, so a late
+// merge is the one way a straggler could corrupt a card rather than merely fail to
+// improve it. This is deliberately last in the file — the abandoned sub-requests
+// are still in flight when it returns.
+{
+  M.runtimeCfg["vision.slides_budget_ms"] = "300";
+  const six = [
+    slideNamed("Read A"), slideNamed("Read B"), slideNamed("Read C"),
+    slideNamed("Late D"), slideNamed("Late E"), slideNamed("Late F"),
+  ];
+  const r = await run(card([]), six, 6, 0, "photo", { delayMs: 200 });
+  eq("the first batch is never cut short by the clock — its reads have their own ceiling",
+    names(r.card), ["Read A", "Read B", "Read C"]);
+  eq("the second batch was launched, because the budget had not run out yet",
+    r.asked, [0, 1, 2, 3, 4, 5]);
+  for (const i of [3, 4, 5]) {
+    check("slide " + i + " says it was abandoned rather than saying nothing",
+      r.logs.includes("vision: slide " + i + " → abandoned, the budget ran out while it was in flight"),
+      r.logs.filter((l) => l.startsWith("vision: slide")).join(" | "));
+  }
+  check("and the merged line counts them",
+    r.logs.some((l) => l.includes("— 3 read, 0 timed out, 0 retried, 3 abandoned")),
+    r.logs.filter((l) => l.startsWith("vision: merged")).join(" | "));
+  delete M.runtimeCfg["vision.slides_budget_ms"];
+  // Let the stragglers land, and prove they changed nothing on their way out.
+  const settled = JSON.stringify(r.card);
+  await new Promise((res) => setTimeout(res, 400));
+  eq("the late answers touched nothing when they finally arrived", JSON.stringify(r.card), settled);
 }
 
 console.log = say;
