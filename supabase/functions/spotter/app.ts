@@ -5417,7 +5417,7 @@ export const APP = String.raw`
   // tap may hand straight to the sheet, and the MP4 once it has recorded itself.
   var sc = { bg: "dark", file: null, blob: null, url: null, card: null,
     img: null, hint: null, seq: 0, watching: false,
-    vfile: null, vurl: null, vbtn: null, vseq: 0, vst: 2 };
+    vfile: null, vurl: null, vbtn: null, vseq: 0, vst: 2, vno: false };
   try { if (localStorage.getItem("spotter_card") === "light") sc.bg = "light"; }
   catch (e) { /* a browser with storage shut off keeps the default */ }
 
@@ -5729,7 +5729,7 @@ export const APP = String.raw`
     return scAssets(card).then(function (a) {
       return new Promise(function (ok, no) {
         var cv = document.createElement("canvas"), ctx, rec, str,
-          ch = [], raf = 0, hard = 0, t0 = 0, over = false;
+          ch = [], raf = 0, hard = 0, t0 = 0, last = -99, over = false;
         cv.width = SC_W; cv.height = SC_H;
         ctx = cv.getContext("2d");
         scDraw(ctx, card, a.p, a.face, a.marks, 0);
@@ -5758,7 +5758,13 @@ export const APP = String.raw`
           if (over) return;
           if (!t0) t0 = ts;
           var t = Math.min(1, (ts - t0) / SC_MS);
-          scDraw(ctx, card, a.p, a.face, a.marks, t);
+          // The stream samples thirty a second. Repainting two million pixels on
+          // every tick of a 120Hz phone would pay four times over for frames
+          // nothing captures, and that is how a recorder falls behind and stalls.
+          if (ts - last >= 31 || t === 1) {
+            last = ts;
+            scDraw(ctx, card, a.p, a.face, a.marks, t);
+          }
           if (t < 1) { raf = requestAnimationFrame(tick); return; }
           shut();
           setTimeout(give, 600);      // WebKit has been seen to skip onstop
@@ -5854,6 +5860,7 @@ export const APP = String.raw`
     // just closed to throw its clip away rather than arm a button nobody can see.
     sc.vseq++;
     sc.vst = 2;
+    sc.vno = false;
     sc.url = sc.blob = sc.file = sc.card = sc.img = sc.hint = null;
     sc.vurl = sc.vfile = sc.vbtn = null;
   }
@@ -5893,6 +5900,10 @@ export const APP = String.raw`
     var mime = scMime(), mine = ++sc.vseq;
     if (sc.vurl) URL.revokeObjectURL(sc.vurl);
     sc.vurl = sc.vfile = null;
+    // Once a recorder has failed on this summary the button is gone for good — a
+    // button that reappeared five seconds later would land under a moving thumb —
+    // so a later chip tap must not spend another five seconds encoding for nobody.
+    if (sc.vno) return;
     sc.vst = mime ? 0 : 2;
     scArm();
     if (!mime) return;
@@ -5903,7 +5914,7 @@ export const APP = String.raw`
       sc.vurl = URL.createObjectURL(b);
       sc.vst = 1;
       scArm();
-    }, function () { if (mine === sc.vseq) { sc.vst = 2; scArm(); } });
+    }, function () { if (mine === sc.vseq) { sc.vst = 2; sc.vno = true; scArm(); } });
   }
 
   // The clip is five seconds of wall clock behind the card, so its button is there
