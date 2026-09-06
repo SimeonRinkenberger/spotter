@@ -2472,8 +2472,12 @@ async function uploadMeta(p: Parsed, job?: Job): Promise<Meta> {
       "in", Date.now() - t0, "ms");
     if (!got.text) {
       throw new SoftFailure(
+        // Not "could not find a workout": the card sheet's own heading already
+        // says that directly above this line, and a paragraph that repeats its
+        // heading reads as an app with nothing to add. What this sentence is for
+        // is telling the user BOTH readers ran, so trying again would not help.
         route.first === "video"
-          ? "Spotter watched that video and listened to it, and could not find a workout in either. " +
+          ? "Spotter watched this one and listened to it, and found no exercises either way. " +
             "Paste the workout text instead."
           : "Spotter could not hear a workout in that file — check it has sound, or paste the workout text instead.",
         "empty transcript",

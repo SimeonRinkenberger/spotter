@@ -2095,7 +2095,7 @@ export const APP = String.raw`
     capFor = w;
     $("capinput").value = "";
     $("caplede").textContent = isUpload(w)
-      ? "Type or paste the workout as the video says it. Spotter builds the card from your text — the file itself is already gone."
+      ? "Type or paste the workout the video shows. Spotter builds the card from your text — the file itself is already gone."
       : isFailed(w)
       ? "Copy the workout text off the post and paste it here. Spotter reads what you paste instead of trying the video again."
       : "Copy the workout text off the post and paste it here. Spotter rebuilds the card from your text.";
