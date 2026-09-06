@@ -5909,7 +5909,8 @@ export const APP = String.raw`
     var mine = ++sc.seq;
     sc.card.bg = sc.bg;
     return renderShareCard(sc.card).then(function (b) {
-      if (mine !== sc.seq) return null;        // a second chip tap already won
+      // A second chip tap already won, or Done was pressed while this was drawing.
+      if (mine !== sc.seq || !sc.card) return null;
       if (sc.url) URL.revokeObjectURL(sc.url);
       sc.blob = b;
       sc.file = scFileOf(b);
