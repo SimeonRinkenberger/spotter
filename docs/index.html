@@ -3484,34 +3484,288 @@ body:not(.app) #toast.show {
     animation: planswap var(--t-2) var(--e-out);
   }
 }
-.statrow {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 9px;
-  margin: 4px 0 18px;
-}
-.stat {
+.ringhero {
   background: var(--card);
   border: 1px solid var(--line);
-  border-radius: 15px;
-  padding: 14px 10px;
-  text-align: center;
+  border-radius: 20px;
+  padding: 17px 16px 8px;
+  margin: 4px 0 14px;
   box-shadow: var(--sh-sm);
+  text-align: center;
 }
-.stat .v {
+.reyebrow {
   font-family: var(--display);
-  font-size: 24px;
+  font-size: 13px;
   font-weight: 700;
-  letter-spacing: -.018em;
-  line-height: 1;
-  color: var(--ink);
-  font-variant-numeric: tabular-nums;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--ember-ink);
 }
-.stat .k {
+.ringhero.miss .reyebrow {
+  color: var(--muted);
+}
+.ringwrap {
+  position: relative;
+  width: min(96px, 26vw);
+  height: min(96px, 26vw);
+  margin: 13px auto 11px;
+}
+.ring {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.rtrack,
+.rarc {
+  fill: none;
+  stroke-width: 4.2;
+}
+.rtrack {
+  stroke: var(--sand);
+}
+.rarc {
+  stroke: var(--ember);
+  stroke-linecap: round;
+  transform: rotate(-90deg);
+  transform-origin: 50% 50%;
+  transition: stroke-dashoffset var(--t-4) var(--e-out), stroke var(--t-3) var(--e-soft);
+}
+.ringhero.full .rarc,
+.sumweek.full .rarc {
+  stroke: var(--good);
+}
+.ringhero.risk .ring {
+  animation: ringpulse 2s var(--e-soft) 1;
+}
+@keyframes ringpulse {
+  0%, 100% {
+    filter: none;
+  }
+  50% {
+    filter: drop-shadow(0 0 6px var(--glow));
+  }
+}
+.rmid {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+}
+.rnum {
+  font-family: var(--display);
+  font-size: min(40px, 11vw);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -.02em;
+  color: var(--ink);
+}
+.rof {
   font-size: 11px;
   font-weight: 600;
   color: var(--muted);
-  margin-top: 6px;
+}
+.rcheck {
+  display: flex;
+  color: var(--good);
+}
+.rcheck .ic {
+  width: 34px;
+  height: 34px;
+  stroke-width: 2.6;
+}
+.rnum,
+.rof,
+.reyebrow,
+.rmeta,
+.tweek,
+.sumweek {
+  font-variant-numeric: tabular-nums;
+}
+.rlabel {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.ringhero.risk .rlabel {
+  color: var(--ember-ink);
+}
+.ringhero.full .rlabel {
+  color: var(--good);
+}
+.wdots {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  margin: 0 auto;
+  padding: 15px 12px;
+  min-height: 44px;
+  background: none;
+  border: 0;
+}
+.wdots i {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--sand);
+  transition: background var(--t-2) var(--e-out), box-shadow var(--t-2) var(--e-out);
+}
+.wdots i.on {
+  background: var(--ember);
+}
+.wdots i.plan {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--line-2);
+}
+.rmeta {
+  font-size: 11.5px;
+  color: var(--muted);
+  padding-bottom: 8px;
+}
+.tweek {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ember-ink);
+  margin: 0 0 12px;
+}
+.tweek.risk {
+  color: var(--ember);
+}
+.tdose + .tweek {
+  margin-top: -7px;
+}
+.sumweek {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  margin: 13px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.sumweek.full {
+  color: var(--good);
+}
+.ring.small {
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+}
+.ring.small .rtrack,
+.ring.small .rarc {
+  stroke-width: 9;
+}
+.tgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 15px 8px;
+}
+.medal {
+  text-align: center;
+  animation: cardin var(--t-3) var(--e-out) both;
+}
+.mdisc,
+.sdisc {
+  border-radius: 999px;
+  background: var(--ember-soft);
+  color: var(--ember-ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.mdisc {
+  width: 54px;
+  height: 54px;
+  margin: 0 auto 8px;
+}
+.mdisc .ic {
+  width: 22px;
+  height: 22px;
+}
+.medal.lock .mdisc {
+  background: var(--sand);
+  color: var(--muted);
+}
+.mname {
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.3;
+}
+.medal.lock .mname {
+  color: var(--ink-2);
+  font-weight: 600;
+}
+.mwhen {
+  font-size: 10.5px;
+  color: var(--muted);
+  margin-top: 2px;
+  font-variant-numeric: tabular-nums;
+}
+.seal {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 9px;
+  margin: 15px 0 0;
+}
+.sdisc {
+  position: relative;
+  width: 74px;
+  height: 74px;
+}
+.sdisc .ic {
+  width: 30px;
+  height: 30px;
+}
+.sdisc .ring {
+  position: absolute;
+  inset: -6px;
+  width: auto;
+  height: auto;
+}
+.seal .rtrack {
+  display: none;
+}
+.seal.in .sdisc {
+  animation: sealin var(--t-4) var(--e-spring) both;
+}
+@keyframes sealin {
+  from {
+    opacity: 0;
+    transform: scale(.86);
+  }
+}
+.sname {
+  font-family: var(--display);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -.01em;
+}
+#workout.summary .wblock {
+  transition: opacity var(--t-2) var(--e-soft);
+}
+#workout.summary .wblock.fade {
+  opacity: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .medal,
+  .seal.in .sdisc {
+    animation: none;
+  }
+  .rarc,
+  .wdots i {
+    transition: none;
+  }
+  .ringhero.risk .ring {
+    animation: none;
+    filter: drop-shadow(0 0 6px var(--glow));
+  }
 }
 .chartcard {
   background: var(--card);
@@ -5022,6 +5276,24 @@ a.kv.row:active,
 button.kv.row:not([disabled]):active {
   background: var(--sand);
 }
+.goalset {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.goalset .chip {
+  min-width: 32px;
+  padding: 6px 0;
+  justify-content: center;
+  font-size: 15px;
+}
+.goalset .chip[disabled] {
+  opacity: .38;
+}
+.goalset b {
+  min-width: 20px;
+  text-align: center;
+}
 .kv .chev {
   flex: 0 0 auto;
   width: 16px;
@@ -5604,6 +5876,17 @@ select:focus-visible {
   <button class="planadd" id="dayadd">+ Add a workout</button>
 </div></div>
 
+<div class="sheet" id="countsheet"><div class="sheetbody">
+  <div class="grabber"></div>
+  <h2>What counts</h2>
+  <p class="lede">A session is a workout you finished with at least one set logged. Two in one
+    day count as two. Rest days are free &mdash; the week only asks for the number you set, and it
+    starts again on Monday.</p>
+  <p class="lede">Come up one session short and a freeze covers the week, automatically and once
+    every four weeks. It costs nothing, and you are told afterwards.</p>
+  <div class="btnrow"><button class="btn" id="countdone">Done</button></div>
+</div></div>
+
 <div class="sheet" id="copysheet"><div class="sheetbody">
   <div class="grabber"></div>
   <h2>Copy a week</h2>
@@ -5709,6 +5992,8 @@ select:focus-visible {
 
   <h3 class="seth">Preferences</h3>
   <div class="setgroup">
+    <div class="kv"><span class="k">Sessions a week</span>
+      <span class="v goalset"><button class="chip" id="goalless" aria-label="One session a week fewer">&minus;</button><b id="goalnum">3</b><button class="chip" id="goalmore" aria-label="One session a week more">+</button></span></div>
     <div class="kv"><span class="k">Weight unit</span>
       <span class="v"><button class="chip" id="unittoggle">lb</button></span></div>
     <div class="kv"><span class="k">Timer sounds</span>
@@ -5823,7 +6108,9 @@ select:focus-visible {
     weekStart: null,
     unit: "lb",
     sounds: true,
-    haptics: true
+    haptics: true,
+    goal: null,
+    awards: null
   };
   function $(id) {
     return document.getElementById(id);
@@ -6425,6 +6712,7 @@ select:focus-visible {
       state.workouts = [];
       state.logs = null;
       state.plan = null;
+      state.awards = null;
       state.filter = "All";
       state.q = "";
       $("search").value = "";
@@ -7133,6 +7421,8 @@ select:focus-visible {
     card.appendChild(t);
     var dose = [todayDose(w), list.length > 1 ? "+" + (list.length - 1) + " more today" : null].filter(Boolean).join(" \xB7 ");
     if (dose) card.appendChild(el("div", "tdose", dose));
+    var wk = thisWeek();
+    if (wk) card.appendChild(el("div", "tweek" + (wk.atRisk ? " risk" : ""), weekLine(wk)));
     var go = el(
       "button",
       "btn tstart" + (today.done ? " ghost" : ""),
@@ -10234,6 +10524,13 @@ select:focus-visible {
       figs.appendChild(box);
     });
     main.appendChild(figs);
+    var wk = thisWeek(payload);
+    if (wk) {
+      var wl = el("div", "sumweek" + (wk.done >= wk.goal ? " full" : ""));
+      if (wk.done === wk.goal) wl.appendChild(ringSvg(1, "small", (wk.goal - 1) / wk.goal));
+      wl.appendChild(el("span", null, weekLine(wk)));
+      main.appendChild(wl);
+    }
     var mg = wo.workout.muscle_groups || [];
     if (mg.length) main.appendChild(el("div", "wnote", mg.slice(0, 6).join(" \xB7 ")));
     var beaten = Object.keys(wo.prs);
@@ -10253,6 +10550,45 @@ select:focus-visible {
     done.onclick = leaveWorkout;
     main.appendChild(done);
     viewIn(main);
+    sealAwards(payload, main);
+  }
+  function sealAwards(payload, main) {
+    if (!state.awards || !state.logs) return;
+    var logs = state.logs.concat([payload]);
+    var st = weekStats(logs, state.plan, goalSetting(), /* @__PURE__ */ new Date());
+    var won = grantAwards(awardsFor(logs, st, wo && wo.prs)).filter(function(a) {
+      return a.kind !== "freeze";
+    });
+    if (!won.length) return;
+    var block = main.querySelector(".wblock");
+    var show = won.length > 2 ? [{ kind: won[0].kind, all: won.length }] : won;
+    show.forEach(function(a, i) {
+      setTimeout(function() {
+        if (!main.isConnected) return;
+        var seal = el("div", "seal");
+        var disc = el("div", "sdisc");
+        disc.appendChild(ringSvg(1, "srim", 0));
+        disc.appendChild(ic(AW_ICON[a.kind] || "star"));
+        seal.appendChild(disc);
+        seal.appendChild(el(
+          "div",
+          "sname",
+          a.all ? a.all + " new awards" : awardTitle(a)
+        ));
+        main.insertBefore(seal, main.querySelector(".sumfigs"));
+        if (!lessMotion()) seal.classList.add("in");
+        if (!i && block) {
+          block.classList.add("fade");
+          setTimeout(function() {
+            block.textContent = a.all ? "Session complete" : awardTitle(a);
+            block.classList.remove("fade");
+          }, 220);
+        }
+        setTimeout(function() {
+          haptic("done");
+        }, lessMotion() ? 0 : 450);
+      }, i * 120);
+    });
   }
   var woCloseTimer = null;
   function exitWorkout() {
@@ -11618,6 +11954,7 @@ select:focus-visible {
     var since = new Date(Date.now() - 182 * 864e5).toISOString();
     return sb.from("workout_logs").select("*").gte("started_at", since).order("started_at", { ascending: false }).limit(400).then(function(r) {
       state.logs = r.data || [];
+      if (today.shown) renderToday();
       return state.logs;
     });
   }
@@ -11634,10 +11971,356 @@ select:focus-visible {
   function weekKey(iso) {
     return ymd(mondayOf(new Date(iso)));
   }
+  var GOAL_FALLBACK = 3;
+  var WEEK_MS = 7 * 864e5;
+  function goalSetting() {
+    if (state.goal) return state.goal;
+    var s = state.profile && state.profile.settings;
+    return s && s.goal || null;
+  }
+  function planMap(plan, monday) {
+    var days = {}, n = 0, i;
+    for (i = 0; i < 7; i++) days[ymd(addDays(monday, i))] = false;
+    (plan || []).forEach(function(p) {
+      if (p && days[p.day] === false) {
+        days[p.day] = true;
+        n++;
+      }
+    });
+    return { days: days, n: n };
+  }
+  function isSession(l) {
+    if (!l || !l.completed_at) return false;
+    var e = l.entries || [];
+    for (var i = 0; i < e.length; i++) if ((e[i].sets || []).filter(Boolean).length) return true;
+    return false;
+  }
+  function fzIn(fz, n) {
+    var c = 0;
+    for (var i = 0; i < fz.length; i++) if (fz[i] > n - 4 && fz[i] < n) c++;
+    return c;
+  }
+  function weekStats(logs, plan, goalSet, now2) {
+    var monday = mondayOf(now2), wk = ymd(monday), i;
+    var per = {}, mine = {};
+    (logs || []).forEach(function(l) {
+      if (!isSession(l)) return;
+      var k = weekKey(l.started_at);
+      per[k] = (per[k] || 0) + 1;
+      if (k === wk) mine[ymd(new Date(l.started_at))] = 1;
+    });
+    var pm = planMap(plan, monday);
+    var goal = Math.max(1, goalSet || pm.n || GOAL_FALLBACK);
+    var done = per[wk] || 0, needed = Math.max(0, goal - done);
+    var daysLeft = 7 - (now2.getDay() + 6) % 7;
+    var dots = [];
+    for (i = 0; i < 7; i++) {
+      var key = ymd(addDays(monday, i));
+      dots.push(mine[key] ? "on" : i >= 7 - daysLeft && pm.days[key] ? "plan" : "");
+    }
+    var allow = isFree() ? 1 : 2;
+    var fz = [], froze = [], streak = done >= goal ? 1 : 0;
+    for (var n = 1; n < 260; n++) {
+      var pk = ymd(new Date(monday.getTime() - n * WEEK_MS)), got = per[pk] || 0;
+      if (got >= goal) streak++;
+      else if (goal - got === 1 && fzIn(fz, n) < allow) {
+        fz.push(n);
+        froze.push(pk);
+        streak++;
+      } else break;
+    }
+    var planAll = pm.n > 0;
+    for (i = 0; i < 7 && planAll; i++) {
+      var pkey = ymd(addDays(monday, i));
+      if (pm.days[pkey] && !mine[pkey]) planAll = false;
+    }
+    return {
+      weekKey: wk,
+      done: done,
+      goal: goal,
+      needed: needed,
+      daysLeft: daysLeft,
+      atRisk: needed > 0 && needed === daysLeft,
+      unreachable: needed > daysLeft,
+      dots: dots,
+      streakWeeks: streak,
+      planAll: planAll,
+      frozen: froze,
+      freezesUsed: fz.length,
+      freezeAvailable: fzIn(fz, 4) < allow
+    };
+  }
+  function thisWeek(extra) {
+    if (!state.logs) return null;
+    var logs = extra ? state.logs.concat([extra]) : state.logs;
+    return weekStats(logs, state.plan, goalSetting(), /* @__PURE__ */ new Date());
+  }
+  var RING_R = 44, RING_C = 2 * Math.PI * RING_R;
+  function svgNode(name, cls) {
+    var n = document.createElementNS("http://www.w3.org/2000/svg", name);
+    if (cls) n.setAttribute("class", cls);
+    return n;
+  }
+  function ringCircle(cls) {
+    var c = svgNode("circle", cls);
+    c.setAttribute("cx", "50");
+    c.setAttribute("cy", "50");
+    c.setAttribute("r", String(RING_R));
+    return c;
+  }
+  function ringOff(pct) {
+    return (RING_C * (1 - Math.max(0, Math.min(1, pct || 0)))).toFixed(1);
+  }
+  function ringSvg(pct, cls, from) {
+    var s = svgNode("svg", "ring" + (cls ? " " + cls : ""));
+    s.setAttribute("viewBox", "0 0 100 100");
+    s.setAttribute("aria-hidden", "true");
+    s.appendChild(ringCircle("rtrack"));
+    var arc = ringCircle("rarc");
+    arc.style.strokeDasharray = RING_C.toFixed(1);
+    arc.style.strokeDashoffset = ringOff(from);
+    s.appendChild(arc);
+    var to = ringOff(pct);
+    if (lessMotion()) arc.style.strokeDashoffset = to;
+    else setTimeout(function() {
+      arc.style.strokeDashoffset = to;
+    }, 30);
+    return s;
+  }
+  function weekDots(st) {
+    var b = el("button", "wdots");
+    b.setAttribute("aria-label", "What counts as a session");
+    st.dots.forEach(function(d) {
+      b.appendChild(el("i", d));
+    });
+    b.onclick = function() {
+      openSheet("countsheet");
+    };
+    return b;
+  }
+  function ringLabel(st) {
+    if (st.done >= st.goal) return "Week complete";
+    if (st.unreachable) return "Next week starts Monday.";
+    if (st.atRisk) return st.needed + " to go \xB7 " + st.daysLeft + (st.daysLeft === 1 ? " day left" : " days left");
+    return st.done + " of " + st.goal + (st.streakWeeks > 0 ? " this week" : "");
+  }
+  function weekLine(st) {
+    if (st.streakWeeks > 0) {
+      return "Week " + st.streakWeeks + " \xB7 " + st.done + " of " + st.goal + (st.done >= st.goal ? " \u2014 week complete" : "");
+    }
+    return st.done + " of " + st.goal + " this week";
+  }
+  function weekHero(st) {
+    var box = el("div", "ringhero" + (st.done >= st.goal ? " full" : "") + (st.atRisk ? " risk" : "") + (st.unreachable ? " miss" : ""));
+    box.appendChild(el(
+      "div",
+      "reyebrow",
+      st.streakWeeks > 0 ? "Week " + st.streakWeeks : "This week"
+    ));
+    var wrap = el("div", "ringwrap");
+    wrap.appendChild(ringSvg(st.goal ? st.done / st.goal : 0));
+    var mid = el("div", "rmid");
+    if (st.done >= st.goal) {
+      mid.appendChild(icon(el("div", "rcheck"), "check"));
+    } else {
+      mid.appendChild(el("div", "rnum countup", String(st.done)));
+      mid.appendChild(el("div", "rof", "of " + st.goal));
+    }
+    wrap.appendChild(mid);
+    box.appendChild(wrap);
+    box.appendChild(el("div", "rlabel", ringLabel(st)));
+    box.appendChild(weekDots(st));
+    return box;
+  }
+  var AW_SESSIONS = [7, 30, 100, 250, 500, 1e3];
+  var AW_STREAK = [4, 12, 26, 52];
+  var AW_VOL = [1e4, 1e5, 5e5, 1e6];
+  var AW_ICON = {
+    first: "star",
+    sessions: "dumbbell",
+    streak: "trend",
+    pr: "arrow-up",
+    volume: "arrow-up-right",
+    plan: "check",
+    month: "calendar",
+    comeback: "refresh",
+    time: "hourglass"
+  };
+  var awardsOff = false;
+  function volLb(log) {
+    var v = 0;
+    (log.entries || []).forEach(function(e) {
+      (e.sets || []).forEach(function(s) {
+        if (s && s.reps && s.weight) v += s.reps * (s.unit === "kg" ? s.weight * LB_PER_KG : s.weight);
+      });
+    });
+    return v;
+  }
+  function fmtK(n) {
+    return n >= 1e6 ? Math.round(n / 1e5) / 10 + "M" : n >= 1e3 ? Math.round(n / 1e3) + "k" : String(Math.round(n));
+  }
+  function volText(lb) {
+    return fmtK(toUnit(lb, "lb")) + " " + state.unit;
+  }
+  function awardTitle(a) {
+    var v = String(a.key).split(":"), m = a.meta || {};
+    if (a.kind === "sessions") return v[1] + " sessions";
+    if (a.kind === "streak") return v[1] + " week streak";
+    if (a.kind === "volume") return volText(Number(v[1])) + " lifted";
+    if (a.kind === "pr") return "New best" + (m.name ? " \xB7 " + m.name : "");
+    if (a.kind === "time") return (v[1] === "early" ? "Early bird" : "Night owl") + (v[2] === "1" ? "" : " \xD7" + v[2]);
+    return {
+      first: "First workout",
+      plan: "Did the plan",
+      month: "Perfect month",
+      comeback: "Comeback"
+    }[a.kind] || "Award";
+  }
+  function awardKeys() {
+    var m = {};
+    (state.awards || []).forEach(function(a) {
+      m[a.key] = 1;
+    });
+    return m;
+  }
+  function awardsFor(logs, st, prs) {
+    var have = awardKeys(), out = [], i, vol = 0, early = 0, night = 0, k;
+    function add(kind, key, meta) {
+      if (have[key]) return;
+      have[key] = 1;
+      out.push({ kind: kind, key: key, meta: meta || {} });
+    }
+    var sorted = logs.filter(isSession).sort(function(a, b) {
+      return new Date(a.started_at) - new Date(b.started_at);
+    });
+    var prev = null;
+    sorted.forEach(function(l) {
+      vol += volLb(l);
+      var d = new Date(l.started_at), h = d.getHours();
+      if (h < 7) early++;
+      if (h >= 21) night++;
+      if (prev && d - prev >= 14 * 864e5) add("comeback", "comeback:" + ymd(d));
+      prev = d;
+    });
+    var n = sorted.length;
+    if (n) add("first", "first");
+    AW_SESSIONS.forEach(function(m) {
+      if (n >= m) add("sessions", "sessions:" + m);
+    });
+    AW_VOL.forEach(function(m) {
+      if (vol >= m) add("volume", "volume:" + m);
+    });
+    [1, 10].forEach(function(m) {
+      if (early >= m) add("time", "time:early:" + m);
+      if (night >= m) add("time", "time:night:" + m);
+    });
+    AW_STREAK.forEach(function(m) {
+      if (st.streakWeeks >= m) add("streak", "streak:" + m);
+    });
+    for (i = 104; i <= st.streakWeeks; i += 52) add("streak", "streak:" + i);
+    if (st.planAll) add("plan", "plan:" + st.weekKey);
+    if (st.streakWeeks && st.streakWeeks % 4 === 0) add("month", "month:" + st.weekKey);
+    for (k in prs || {}) {
+      if (Object.prototype.hasOwnProperty.call(prs, k)) {
+        add("pr", "pr:" + k, { name: prs[k].name });
+      }
+    }
+    st.frozen.forEach(function(wk) {
+      add("freeze", "freeze:" + wk);
+    });
+    return out;
+  }
+  function tellFreeze(won, st) {
+    var last = ymd(new Date(mondayOf(/* @__PURE__ */ new Date()).getTime() - WEEK_MS));
+    for (var i = 0; i < won.length; i++) {
+      if (won[i].key !== "freeze:" + last) continue;
+      toast("Last week came up one short. A freeze covered it \u2014 your streak is still on.", 5200);
+      return;
+    }
+  }
+  function loadAwards() {
+    if (state.awards) return Promise.resolve(state.awards);
+    awardsOff = false;
+    return sb.from("achievements").select("kind,key,earned_at,meta").order("earned_at", { ascending: false }).limit(300).then(function(r) {
+      if (r.error) awardsOff = true;
+      state.awards = r.data || [];
+      return state.awards;
+    });
+  }
+  function grantAwards(rows) {
+    if (!rows.length || awardsOff || !state.user) return rows;
+    var now2 = (/* @__PURE__ */ new Date()).toISOString();
+    var payload = rows.map(function(a) {
+      return { user_id: state.user.id, kind: a.kind, key: a.key, earned_at: now2, meta: a.meta };
+    });
+    state.awards = payload.concat(state.awards || []);
+    sb.from("achievements").upsert(payload, { onConflict: "user_id,key", ignoreDuplicates: true }).then(function(r) {
+      if (r && r.error) awardsOff = true;
+    });
+    return rows;
+  }
+  function medallion(a, lock) {
+    var n = el("div", "medal" + (lock ? " lock" : ""));
+    n.appendChild(icon(el("div", "mdisc"), AW_ICON[a.kind] || "star"));
+    n.appendChild(el("div", "mname", lock ? a.title : awardTitle(a)));
+    n.appendChild(el("div", "mwhen", lock ? a.note : new Date(a.earned_at).toLocaleDateString(void 0, { month: "short", day: "numeric" })));
+    return n;
+  }
+  var AW_LADDER = [
+    ["sessions", AW_SESSIONS, " sessions"],
+    ["streak", AW_STREAK, " week streak"],
+    ["volume", AW_VOL, " lifted"]
+  ];
+  function lockedAwards(st, logs) {
+    var have = awardKeys(), out = [], n = 0, vol = 0;
+    logs.forEach(function(l) {
+      if (isSession(l)) {
+        n++;
+        vol += volLb(l);
+      }
+    });
+    var at = { sessions: n, streak: st.streakWeeks, volume: vol };
+    AW_LADDER.forEach(function(f) {
+      for (var i = 0; i < f[1].length; i++) {
+        var v = f[1][i], num2 = f[0] === "volume" ? volText : String;
+        if (have[f[0] + ":" + v] || v <= at[f[0]]) continue;
+        out.push({ kind: f[0], title: num2(v) + f[2], note: num2(v - at[f[0]]) + " to go" });
+        return;
+      }
+    });
+    if (!have["plan:" + st.weekKey] && st.dots.indexOf("plan") >= 0) {
+      out.push({ kind: "plan", title: "Did the plan", note: "every planned day this week" });
+    }
+    return out;
+  }
+  function trophyCase(st, logs) {
+    var have = (state.awards || []).filter(function(a) {
+      return a.kind !== "freeze";
+    });
+    var box = el("div", "chartcard");
+    box.appendChild(el("h3", null, "Awards"));
+    var grid = el("div", "tgrid");
+    var shown = isFree() ? have.slice(0, 12) : have;
+    shown.forEach(function(a) {
+      grid.appendChild(medallion(a));
+    });
+    lockedAwards(st, logs).forEach(function(l) {
+      grid.appendChild(medallion(l, true));
+    });
+    box.appendChild(grid);
+    if (isFree() && have.length > 12) {
+      box.appendChild(el(
+        "div",
+        "bodynote",
+        have.length - 12 + " earlier awards are kept in Plus."
+      ));
+    }
+    return box;
+  }
   var statsCounted = false;
   function countStats() {
     if (statsCounted || state.view !== "progress") return;
-    var nodes = document.querySelectorAll("#progressview .stat .v");
+    var nodes = document.querySelectorAll("#progressview .countup");
     if (!nodes.length) return;
     statsCounted = true;
     if (lessMotion()) return;
@@ -11667,31 +12350,23 @@ select:focus-visible {
       viewIn(v);
       return;
     }
-    var weeks = {};
-    logs.forEach(function(l) {
-      weeks[weekKey(l.started_at)] = true;
+    var st = weekStats(logs, state.plan, goalSetting(), /* @__PURE__ */ new Date());
+    var hero = weekHero(st);
+    hero.appendChild(el(
+      "div",
+      "rmeta",
+      logs.length + (logs.length === 1 ? " session" : " sessions") + " logged"
+    ));
+    v.appendChild(hero);
+    var awSlot = el("div");
+    v.appendChild(awSlot);
+    loadAwards().then(function() {
+      if (!awSlot.isConnected) return;
+      var won = grantAwards(awardsFor(logs, st, null));
+      tellFreeze(won, st);
+      awSlot.innerHTML = "";
+      awSlot.appendChild(trophyCase(st, logs));
     });
-    var streak = 0;
-    var cursor = mondayOf(/* @__PURE__ */ new Date());
-    while (weeks[ymd(cursor)]) {
-      streak++;
-      cursor = new Date(cursor.getTime() - 7 * 864e5);
-    }
-    var thisWeek = logs.filter(function(l) {
-      return weekKey(l.started_at) === ymd(mondayOf(/* @__PURE__ */ new Date()));
-    }).length;
-    var row = el("div", "statrow");
-    [
-      [streak, streak === 1 ? "Week in a row" : "Weeks in a row"],
-      [thisWeek, "This week"],
-      [logs.length, "Sessions"]
-    ].forEach(function(s) {
-      var c = el("div", "stat");
-      c.appendChild(el("div", "v", String(s[0])));
-      c.appendChild(el("div", "k", s[1]));
-      row.appendChild(c);
-    });
-    v.appendChild(row);
     var monday = ymd(mondayOf(/* @__PURE__ */ new Date()));
     var weekLogs = logs.filter(function(l) {
       return weekKey(l.started_at) === monday;
@@ -13311,7 +13986,8 @@ select:focus-visible {
     "daysheet",
     "copysheet",
     "sortsheet",
-    "refsheet"
+    "refsheet",
+    "countsheet"
   ].forEach(wireSheet);
   function overlayShowing() {
     if ($("detail").classList.contains("open")) return true;
@@ -13859,6 +14535,7 @@ select:focus-visible {
     $("setmailrow").disabled = !mine;
     $("setname").textContent = displayName() || "Not set";
     $("unittoggle").textContent = state.unit;
+    paintGoal();
     $("haptictoggle").textContent = state.haptics ? "On" : "Off";
     $("sethapticrow").classList.toggle("hide", !navigator.vibrate);
     paintSounds();
@@ -13902,6 +14579,8 @@ select:focus-visible {
   }
   function saveSettings() {
     var s = { unit: state.unit, sounds: state.sounds, haptics: state.haptics };
+    var g = goalSetting();
+    if (g) s.goal = g;
     if (state.profile) state.profile.settings = s;
     sb.from("profiles").update({ settings: s }).eq("id", state.user.id).then(function(r) {
       if (r.error) toast("That setting did not save. Try again in a moment.");
@@ -13914,6 +14593,23 @@ select:focus-visible {
     if (!drawn.progress) return;
     if (state.logs) renderProgress();
     else quietly(loadLogs().then(renderProgress));
+  }
+  function paintGoal() {
+    var st = thisWeek();
+    var g = goalSetting() || (st ? st.goal : planMap(state.plan, mondayOf(/* @__PURE__ */ new Date())).n || GOAL_FALLBACK);
+    $("goalnum").textContent = String(g);
+    $("goalless").disabled = g <= 1;
+    $("goalmore").disabled = g >= 7;
+    return g;
+  }
+  function bumpGoal(by) {
+    var g = Math.max(1, Math.min(7, paintGoal() + by));
+    state.goal = g;
+    paintGoal();
+    haptic("tap");
+    saveSettings();
+    if (drawn.progress && state.logs) renderProgress();
+    if (today.shown) renderToday();
   }
   function toggleSounds() {
     setSounds(!state.sounds);
@@ -14929,6 +15625,15 @@ select:focus-visible {
   };
   $("rotatekey").onclick = rotateKey;
   $("unittoggle").onclick = toggleUnit;
+  $("goalless").onclick = function() {
+    bumpGoal(-1);
+  };
+  $("goalmore").onclick = function() {
+    bumpGoal(1);
+  };
+  $("countdone").onclick = function() {
+    closeSheet("countsheet");
+  };
   $("soundtoggle").onclick = toggleSounds;
   $("haptictoggle").onclick = toggleHaptics;
   $("setnamerow").onclick = openName;

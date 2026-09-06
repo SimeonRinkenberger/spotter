@@ -42,7 +42,7 @@ export const APP = String.raw`
     user: null, profile: null, workouts: [], logs: null, plan: null,
     collections: [], colItems: [],
     filter: "All", q: "", view: "library", weekStart: null, unit: "lb",
-    sounds: true, haptics: true
+    sounds: true, haptics: true, goal: null, awards: null
   };
 
   function $(id) { return document.getElementById(id); }
@@ -736,7 +736,7 @@ export const APP = String.raw`
       if (first) setTimeout(boot, 0);
     } else {
       state.user = null;
-      state.workouts = []; state.logs = null; state.plan = null;
+      state.workouts = []; state.logs = null; state.plan = null; state.awards = null;
       // What the last person was looking for is not what the next one is. The
       // library came back narrowed to a search and a creator nobody had typed.
       state.filter = "All"; state.q = ""; $("search").value = "";
@@ -1541,6 +1541,9 @@ export const APP = String.raw`
     var dose = [todayDose(w), list.length > 1 ? "+" + (list.length - 1) + " more today" : null]
       .filter(Boolean).join(" · ");
     if (dose) card.appendChild(el("div", "tdose", dose));
+    // Where the week stands, on the card already answering "what am I doing today".
+    var wk = thisWeek();
+    if (wk) card.appendChild(el("div", "tweek" + (wk.atRisk ? " risk" : ""), weekLine(wk)));
     // The detail overlay's own start call, so finishing lands in the same place.
     var go = el("button", "btn tstart" + (today.done ? " ghost" : ""),
       today.done ? "Log another" : "Start");
@@ -5322,6 +5325,17 @@ export const APP = String.raw`
       });
     main.appendChild(figs);
 
+    // Where this session put the week. It is not in state.logs yet — the insert is
+    // still in the air — so it is handed in, the same "draw from memory" rule the
+    // rest of this screen follows.
+    var wk = thisWeek(payload);
+    if (wk) {
+      var wl = el("div", "sumweek" + (wk.done >= wk.goal ? " full" : ""));
+      if (wk.done === wk.goal) wl.appendChild(ringSvg(1, "small", (wk.goal - 1) / wk.goal));
+      wl.appendChild(el("span", null, weekLine(wk)));
+      main.appendChild(wl);
+    }
+
     // What was worked, in the card's own words. The anatomical map stays in the
     // detail view; a list says as much here for a fraction of the page.
     var mg = wo.workout.muscle_groups || [];
@@ -5348,6 +5362,53 @@ export const APP = String.raw`
     done.onclick = leaveWorkout;
     main.appendChild(done);
     viewIn(main);
+    // Last, so the awards are evaluated against a screen that is already drawn.
+    sealAwards(payload, main);
+  }
+
+  // ---------- the ember seal ----------
+  //
+  // Confetti was never on the table: it is a party for the app, not for the person
+  // who just trained. One object, one sweep, one haptic, half a second — then it
+  // settles and stays on the card as a badge, which is what an award is.
+  function sealAwards(payload, main) {
+    // With nothing loaded there is no way to tell a new award from an old one, and
+    // a seal for one earned in March is a lie. Progress backfills instead.
+    if (!state.awards || !state.logs) return;
+    var logs = state.logs.concat([payload]);
+    var st = weekStats(logs, state.plan, goalSetting(), new Date());
+    var won = grantAwards(awardsFor(logs, st, wo && wo.prs))
+      .filter(function (a) { return a.kind !== "freeze"; });
+    if (!won.length) return;
+
+    var block = main.querySelector(".wblock");
+    // Three or more is a list, not a moment: they collapse, and the case is a tap
+    // away. Two arrive 120ms apart.
+    var show = won.length > 2 ? [{ kind: won[0].kind, all: won.length }] : won;
+    show.forEach(function (a, i) {
+      setTimeout(function () {
+        if (!main.isConnected) return;
+        var seal = el("div", "seal");
+        var disc = el("div", "sdisc");
+        disc.appendChild(ringSvg(1, "srim", 0));
+        disc.appendChild(ic(AW_ICON[a.kind] || "star"));
+        seal.appendChild(disc);
+        seal.appendChild(el("div", "sname",
+          a.all ? a.all + " new awards" : awardTitle(a)));
+        main.insertBefore(seal, main.querySelector(".sumfigs"));
+        if (!lessMotion()) seal.classList.add("in");
+        // The title says what just happened rather than what always happens.
+        if (!i && block) {
+          block.classList.add("fade");
+          setTimeout(function () {
+            block.textContent = a.all ? "Session complete" : awardTitle(a);
+            block.classList.remove("fade");
+          }, 220);
+        }
+        // On the frame the arc closes, not on the frame it starts.
+        setTimeout(function () { haptic("done"); }, lessMotion() ? 0 : 450);
+      }, i * 120);
+    });
   }
 
   var woCloseTimer = null;
@@ -6832,6 +6893,9 @@ export const APP = String.raw`
       .order("started_at", { ascending: false }).limit(400)
       .then(function (r) {
         state.logs = r.data || [];
+        // The today card draws its week line from these and was drawn before they
+        // existed: warmPages reads the logs after the library has landed.
+        if (today.shown) renderToday();
         return state.logs;
       });
   }
@@ -6851,7 +6915,407 @@ export const APP = String.raw`
     return ymd(mondayOf(new Date(iso)));
   }
 
-  // The three headline figures count up the first time Progress is LOOKED AT, and
+  // ---------- the week, the streak, the freeze ----------
+  //
+  // The unit is a WEEK, not a day. A day streak punishes rest, and rest is in the
+  // programme the plan already writes down: Duolingo's day would buy junk volume
+  // here and pay for it in injuries. A week counts when it met the goal, and the
+  // goal is the user's own — their setting, or what their plan asks for. Nothing
+  // here ever raises it. All computed from rows already in memory: one pass over
+  // the logs Progress reads anyway, no table, no round trip.
+
+  var GOAL_FALLBACK = 3;
+  var WEEK_MS = 7 * 86400000;
+
+  function goalSetting() {
+    if (state.goal) return state.goal;
+    var s = state.profile && state.profile.settings;
+    return (s && s.goal) || null;
+  }
+
+  // Which days of a Mon-Sun week the plan has something on. state.plan holds only
+  // the range the Plan tab is looking at, so this answers 0 once the user pages
+  // away, and the goal falls back to the setting rather than to nothing.
+  function planMap(plan, monday) {
+    var days = {}, n = 0, i;
+    for (i = 0; i < 7; i++) days[ymd(addDays(monday, i))] = false;
+    (plan || []).forEach(function (p) {
+      if (p && days[p.day] === false) { days[p.day] = true; n++; }
+    });
+    return { days: days, n: n };
+  }
+
+  // A finished workout with at least one set in it: an abandoned session that
+  // logged nothing is not training and must not fill a ring.
+  function isSession(l) {
+    if (!l || !l.completed_at) return false;
+    var e = l.entries || [];
+    for (var i = 0; i < e.length; i++) if ((e[i].sets || []).filter(Boolean).length) return true;
+    return false;
+  }
+
+  // Freezes spent in the three weeks more recent than week n, n being weeks ago.
+  // Week n may take one only if that count is under the allowance, which is what
+  // holds it to one per rolling four weeks. Asked with n = 4, it answers the same
+  // question about now: weeks 1, 2 and 3 ago.
+  function fzIn(fz, n) {
+    var c = 0;
+    for (var i = 0; i < fz.length; i++) if (fz[i] > n - 4 && fz[i] < n) c++;
+    return c;
+  }
+
+  function weekStats(logs, plan, goalSet, now) {
+    var monday = mondayOf(now), wk = ymd(monday), i;
+
+    // Two sessions in a day are two toward the goal but one dot: the dot is a
+    // calendar, the goal is a count.
+    var per = {}, mine = {};
+    (logs || []).forEach(function (l) {
+      if (!isSession(l)) return;
+      var k = weekKey(l.started_at);
+      per[k] = (per[k] || 0) + 1;
+      if (k === wk) mine[ymd(new Date(l.started_at))] = 1;
+    });
+
+    var pm = planMap(plan, monday);
+    var goal = Math.max(1, goalSet || pm.n || GOAL_FALLBACK);
+    var done = per[wk] || 0, needed = Math.max(0, goal - done);
+    // Today still counts, so Monday has seven days left and Sunday has one.
+    var daysLeft = 7 - ((now.getDay() + 6) % 7);
+
+    var dots = [];
+    for (i = 0; i < 7; i++) {
+      var key = ymd(addDays(monday, i));
+      dots.push(mine[key] ? "on" : (i >= 7 - daysLeft && pm.days[key] ? "plan" : ""));
+    }
+
+    // Walking back from the week before this one. The week being lived in is never
+    // asked to be finished — it can only add — which is what stops a Wednesday
+    // from reading as a failure. A week EXACTLY one short spends a freeze instead
+    // of breaking the run: free, automatic, silent, one per rolling four weeks
+    // (two on Plus). A streak you can only keep by paying is a hostage.
+    var allow = isFree() ? 1 : 2;
+    var fz = [], froze = [], streak = done >= goal ? 1 : 0;
+    for (var n = 1; n < 260; n++) {
+      var pk = ymd(new Date(monday.getTime() - n * WEEK_MS)), got = per[pk] || 0;
+      if (got >= goal) streak++;
+      else if (goal - got === 1 && fzIn(fz, n) < allow) { fz.push(n); froze.push(pk); streak++; }
+      else break;
+    }
+
+    // Did the plan: every day this week that the plan asked for has a session.
+    var planAll = pm.n > 0;
+    for (i = 0; i < 7 && planAll; i++) {
+      var pkey = ymd(addDays(monday, i));
+      if (pm.days[pkey] && !mine[pkey]) planAll = false;
+    }
+
+    return { weekKey: wk, done: done, goal: goal, needed: needed, daysLeft: daysLeft,
+      atRisk: needed > 0 && needed === daysLeft, unreachable: needed > daysLeft,
+      dots: dots, streakWeeks: streak, planAll: planAll, frozen: froze,
+      freezesUsed: fz.length, freezeAvailable: fzIn(fz, 4) < allow };
+  }
+
+  // null until the logs land: a caller leaves its line out rather than print a zero.
+  function thisWeek(extra) {
+    if (!state.logs) return null;
+    var logs = extra ? state.logs.concat([extra]) : state.logs;
+    return weekStats(logs, state.plan, goalSetting(), new Date());
+  }
+
+  // ---------- the ring ----------
+  //
+  // Apple's Activity ring with one arc instead of three: one glanceable goal is
+  // the point of the shape. Only stroke-dashoffset moves.
+
+  var RING_R = 44, RING_C = 2 * Math.PI * RING_R;
+
+  function svgNode(name, cls) {
+    var n = document.createElementNS("http://www.w3.org/2000/svg", name);
+    if (cls) n.setAttribute("class", cls);
+    return n;
+  }
+
+  function ringCircle(cls) {
+    var c = svgNode("circle", cls);
+    c.setAttribute("cx", "50"); c.setAttribute("cy", "50"); c.setAttribute("r", String(RING_R));
+    return c;
+  }
+
+  // Drawn empty, then handed its real offset a beat after the caller has put it on
+  // the page: that is what sweeps the arc round rather than it simply being there.
+  function ringOff(pct) {
+    return (RING_C * (1 - Math.max(0, Math.min(1, pct || 0)))).toFixed(1);
+  }
+
+  function ringSvg(pct, cls, from) {
+    var s = svgNode("svg", "ring" + (cls ? " " + cls : ""));
+    s.setAttribute("viewBox", "0 0 100 100"); s.setAttribute("aria-hidden", "true");
+    s.appendChild(ringCircle("rtrack"));
+    var arc = ringCircle("rarc");
+    arc.style.strokeDasharray = RING_C.toFixed(1);
+    arc.style.strokeDashoffset = ringOff(from);
+    s.appendChild(arc);
+    var to = ringOff(pct);
+    if (lessMotion()) arc.style.strokeDashoffset = to;
+    else setTimeout(function () { arc.style.strokeDashoffset = to; }, 30);
+    return s;
+  }
+
+  // Mon-Sun, in a 44px row: they open the sheet that says what counts.
+  function weekDots(st) {
+    var b = el("button", "wdots");
+    b.setAttribute("aria-label", "What counts as a session");
+    st.dots.forEach(function (d) { b.appendChild(el("i", d)); });
+    b.onclick = function () { openSheet("countsheet"); };
+    return b;
+  }
+
+  // Never a scold: a week that can no longer be met stops counting and points at
+  // Monday — the fresh-start framing rather than the failure one.
+  function ringLabel(st) {
+    if (st.done >= st.goal) return "Week complete";
+    if (st.unreachable) return "Next week starts Monday.";
+    if (st.atRisk) return st.needed + " to go · " + st.daysLeft +
+      (st.daysLeft === 1 ? " day left" : " days left");
+    // The eyebrow says "This week" when there is no streak; do not say it twice.
+    return st.done + " of " + st.goal + (st.streakWeeks > 0 ? " this week" : "");
+  }
+
+  // The compact form: one line, no ring, for the today card and the summary.
+  function weekLine(st) {
+    if (st.streakWeeks > 0) {
+      return "Week " + st.streakWeeks + " · " + st.done + " of " + st.goal +
+        (st.done >= st.goal ? " — week complete" : "");
+    }
+    return st.done + " of " + st.goal + " this week";
+  }
+
+  function weekHero(st) {
+    var box = el("div", "ringhero" + (st.done >= st.goal ? " full" : "") +
+      (st.atRisk ? " risk" : "") + (st.unreachable ? " miss" : ""));
+    // The streak, in weeks. A streak of nothing says nothing, so it reads as itself.
+    box.appendChild(el("div", "reyebrow",
+      st.streakWeeks > 0 ? "Week " + st.streakWeeks : "This week"));
+
+    var wrap = el("div", "ringwrap");
+    wrap.appendChild(ringSvg(st.goal ? st.done / st.goal : 0));
+    var mid = el("div", "rmid");
+    if (st.done >= st.goal) {
+      mid.appendChild(icon(el("div", "rcheck"), "check"));
+    } else {
+      mid.appendChild(el("div", "rnum countup", String(st.done)));
+      mid.appendChild(el("div", "rof", "of " + st.goal));
+    }
+    wrap.appendChild(mid);
+    box.appendChild(wrap);
+
+    box.appendChild(el("div", "rlabel", ringLabel(st)));
+    box.appendChild(weekDots(st));
+    return box;
+  }
+
+  // ---------- awards ----------
+  //
+  // Nine families, every one a thing that ACTUALLY HAPPENED: a record, a count of
+  // sessions, a week completed. Nothing for opening the app and nothing for
+  // paying — an award pointing at a made-up currency displaces the reason people
+  // train. The ring is computed live and moves when a log is deleted; an award
+  // does not, which is why these are rows: it must be stable, dated, and able to
+  // answer "which one is new" — a question about the past, not the present.
+
+  var AW_SESSIONS = [7, 30, 100, 250, 500, 1000];
+  var AW_STREAK = [4, 12, 26, 52];
+  var AW_VOL = [10000, 100000, 500000, 1000000];
+  var AW_ICON = { first: "star", sessions: "dumbbell", streak: "trend", pr: "arrow-up",
+    volume: "arrow-up-right", plan: "check", month: "calendar", comeback: "refresh",
+    time: "hourglass" };
+  // One failure is enough to know the table is not there yet.
+  var awardsOff = false;
+
+  // Banked in POUNDS whatever the phone is set to, or a unit toggle would move a
+  // milestone that has already been passed.
+  function volLb(log) {
+    var v = 0;
+    (log.entries || []).forEach(function (e) {
+      (e.sets || []).forEach(function (s) {
+        if (s && s.reps && s.weight) v += s.reps * (s.unit === "kg" ? s.weight * LB_PER_KG : s.weight);
+      });
+    });
+    return v;
+  }
+
+  function fmtK(n) {
+    return n >= 1000000 ? Math.round(n / 100000) / 10 + "M"
+      : n >= 1000 ? Math.round(n / 1000) + "k" : String(Math.round(n));
+  }
+
+  function volText(lb) { return fmtK(toUnit(lb, "lb")) + " " + state.unit; }
+
+  function awardTitle(a) {
+    var v = String(a.key).split(":"), m = a.meta || {};
+    if (a.kind === "sessions") return v[1] + " sessions";
+    if (a.kind === "streak") return v[1] + " week streak";
+    if (a.kind === "volume") return volText(Number(v[1])) + " lifted";
+    if (a.kind === "pr") return "New best" + (m.name ? " · " + m.name : "");
+    if (a.kind === "time") return (v[1] === "early" ? "Early bird" : "Night owl") +
+      (v[2] === "1" ? "" : " ×" + v[2]);
+    return { first: "First workout", plan: "Did the plan", month: "Perfect month",
+      comeback: "Comeback" }[a.kind] || "Award";
+  }
+
+  function awardKeys() {
+    var m = {};
+    (state.awards || []).forEach(function (a) { m[a.key] = 1; });
+    return m;
+  }
+
+  // prs is Workout Mode's live map, present only at the end of a session: history
+  // cannot say which of an old session's bests was new at the time.
+  function awardsFor(logs, st, prs) {
+    var have = awardKeys(), out = [], i, vol = 0, early = 0, night = 0, k;
+
+    function add(kind, key, meta) {
+      if (have[key]) return;
+      have[key] = 1;
+      out.push({ kind: kind, key: key, meta: meta || {} });
+    }
+
+    // One pass: totals, hours, and the gaps that make a comeback.
+    var sorted = logs.filter(isSession).sort(function (a, b) {
+      return new Date(a.started_at) - new Date(b.started_at);
+    });
+    var prev = null;
+    sorted.forEach(function (l) {
+      vol += volLb(l);
+      var d = new Date(l.started_at), h = d.getHours();
+      if (h < 7) early++;
+      if (h >= 21) night++;
+      // The anti-guilt award, and the most important one here: the only thing
+      // this app says to somebody who has already broken a streak.
+      if (prev && d - prev >= 14 * 86400000) add("comeback", "comeback:" + ymd(d));
+      prev = d;
+    });
+
+    var n = sorted.length;
+    // Endowed progress: the case is never empty after a first finished session.
+    if (n) add("first", "first");
+    AW_SESSIONS.forEach(function (m) { if (n >= m) add("sessions", "sessions:" + m); });
+    AW_VOL.forEach(function (m) { if (vol >= m) add("volume", "volume:" + m); });
+    [1, 10].forEach(function (m) {
+      if (early >= m) add("time", "time:early:" + m);
+      if (night >= m) add("time", "time:night:" + m);
+    });
+
+    // Peloton's lesson: the ladder must not end, or the best users fall off it.
+    AW_STREAK.forEach(function (m) { if (st.streakWeeks >= m) add("streak", "streak:" + m); });
+    for (i = 104; i <= st.streakWeeks; i += 52) add("streak", "streak:" + i);
+    if (st.planAll) add("plan", "plan:" + st.weekKey);
+    if (st.streakWeeks && st.streakWeeks % 4 === 0) add("month", "month:" + st.weekKey);
+
+    for (k in (prs || {})) {
+      if (Object.prototype.hasOwnProperty.call(prs, k)) {
+        add("pr", "pr:" + k, { name: prs[k].name });
+      }
+    }
+
+    // A spent freeze is an event with a date, which is what a row here is —
+    // ledger rather than trophy, so the case never shows one.
+    st.frozen.forEach(function (wk) { add("freeze", "freeze:" + wk); });
+    return out;
+  }
+
+  // After the fact and warmly, never asked for and never sold — and only for the
+  // week that just closed: an older one being written down is bookkeeping.
+  function tellFreeze(won, st) {
+    var last = ymd(new Date(mondayOf(new Date()).getTime() - WEEK_MS));
+    for (var i = 0; i < won.length; i++) {
+      if (won[i].key !== "freeze:" + last) continue;
+      toast("Last week came up one short. A freeze covered it — your streak is still on.", 5200);
+      return;
+    }
+  }
+
+  function loadAwards() {
+    if (state.awards) return Promise.resolve(state.awards);
+    // A fresh sign-in asks again: the table may have arrived since, and the next
+    // person on this phone is not the one whose read failed.
+    awardsOff = false;
+    return sb.from("achievements").select("kind,key,earned_at,meta")
+      .order("earned_at", { ascending: false }).limit(300)
+      .then(function (r) {
+        if (r.error) awardsOff = true;
+        state.awards = r.data || [];
+        return state.awards;
+      });
+  }
+
+  // Written after the screen is drawn, and never waited on. ON CONFLICT DO
+  // NOTHING is what makes a second run free.
+  function grantAwards(rows) {
+    if (!rows.length || awardsOff || !state.user) return rows;
+    var now = new Date().toISOString();
+    var payload = rows.map(function (a) {
+      return { user_id: state.user.id, kind: a.kind, key: a.key, earned_at: now, meta: a.meta };
+    });
+    state.awards = payload.concat(state.awards || []);
+    sb.from("achievements").upsert(payload, { onConflict: "user_id,key", ignoreDuplicates: true })
+      .then(function (r) { if (r && r.error) awardsOff = true; });
+    return rows;
+  }
+
+  function medallion(a, lock) {
+    var n = el("div", "medal" + (lock ? " lock" : ""));
+    n.appendChild(icon(el("div", "mdisc"), AW_ICON[a.kind] || "star"));
+    n.appendChild(el("div", "mname", lock ? a.title : awardTitle(a)));
+    n.appendChild(el("div", "mwhen", lock ? a.note
+      : new Date(a.earned_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })));
+    return n;
+  }
+
+  // The next rung of each ladder only: a visible goal pulls, a wall of grey discs
+  // just says how far behind you are. Nor is "take a fortnight off" a target.
+  var AW_LADDER = [["sessions", AW_SESSIONS, " sessions"], ["streak", AW_STREAK, " week streak"],
+    ["volume", AW_VOL, " lifted"]];
+
+  function lockedAwards(st, logs) {
+    var have = awardKeys(), out = [], n = 0, vol = 0;
+    logs.forEach(function (l) { if (isSession(l)) { n++; vol += volLb(l); } });
+    var at = { sessions: n, streak: st.streakWeeks, volume: vol };
+    AW_LADDER.forEach(function (f) {
+      for (var i = 0; i < f[1].length; i++) {
+        // Past it counts as reached even where the row never landed: "7 sessions,
+        // -4 to go" is what a failed write looks like from the front.
+        var v = f[1][i], num = f[0] === "volume" ? volText : String;
+        if (have[f[0] + ":" + v] || v <= at[f[0]]) continue;
+        out.push({ kind: f[0], title: num(v) + f[2], note: num(v - at[f[0]]) + " to go" });
+        return;
+      }
+    });
+    if (!have["plan:" + st.weekKey] && st.dots.indexOf("plan") >= 0) {
+      out.push({ kind: "plan", title: "Did the plan", note: "every planned day this week" });
+    }
+    return out;
+  }
+
+  function trophyCase(st, logs) {
+    var have = (state.awards || []).filter(function (a) { return a.kind !== "freeze"; });
+    var box = el("div", "chartcard");
+    box.appendChild(el("h3", null, "Awards"));
+    var grid = el("div", "tgrid");
+    var shown = isFree() ? have.slice(0, 12) : have;
+    shown.forEach(function (a) { grid.appendChild(medallion(a)); });
+    lockedAwards(st, logs).forEach(function (l) { grid.appendChild(medallion(l, true)); });
+    box.appendChild(grid);
+    // A count, not a paywall: nothing earned here is ever taken away.
+    if (isFree() && have.length > 12) {
+      box.appendChild(el("div", "bodynote",
+        (have.length - 12) + " earlier awards are kept in Plus."));
+    }
+    return box;
+  }
+
+  // The headline figure counts up the first time Progress is LOOKED AT, and
   // never again: a number that re-counts on every swipe back is a fidget, not a
   // result.
   //
@@ -6866,7 +7330,7 @@ export const APP = String.raw`
 
   function countStats() {
     if (statsCounted || state.view !== "progress") return;
-    var nodes = document.querySelectorAll("#progressview .stat .v");
+    var nodes = document.querySelectorAll("#progressview .countup");
     if (!nodes.length) return;
     statsCounted = true;
     if (lessMotion()) return;
@@ -6902,31 +7366,26 @@ export const APP = String.raw`
       return;
     }
 
-    // stat row: streak of consecutive weeks with at least one session
-    var weeks = {};
-    logs.forEach(function (l) { weeks[weekKey(l.started_at)] = true; });
-    var streak = 0;
-    var cursor = mondayOf(new Date());
-    while (weeks[ymd(cursor)]) {
-      streak++;
-      cursor = new Date(cursor.getTime() - 7 * 86400000);
-    }
-    var thisWeek = logs.filter(function (l) {
-      return weekKey(l.started_at) === ymd(mondayOf(new Date()));
-    }).length;
+    // One goal, one arc, the streak above it. The three bare figures that used to
+    // sit here counted weeks with ANY session in them, which is not a goal.
+    var st = weekStats(logs, state.plan, goalSetting(), new Date());
+    var hero = weekHero(st);
+    hero.appendChild(el("div", "rmeta",
+      logs.length + (logs.length === 1 ? " session" : " sessions") + " logged"));
+    v.appendChild(hero);
 
-    var row = el("div", "statrow");
-    // "1 · Week streak" was never right, and the ternary meant to fix it had the
-    // same string in both arms. A streak is weeks in a row; one is still one.
-    [[streak, streak === 1 ? "Week in a row" : "Weeks in a row"],
-     [thisWeek, "This week"],
-     [logs.length, "Sessions"]].forEach(function (s) {
-      var c = el("div", "stat");
-      c.appendChild(el("div", "v", String(s[0])));
-      c.appendChild(el("div", "k", s[1]));
-      row.appendChild(c);
+    // The case fills itself in from history the first time it is looked at, so an
+    // account with two hundred sessions behind it never opens on an empty shelf.
+    // A detached slot means a later render replaced the box this answer was for.
+    var awSlot = el("div");
+    v.appendChild(awSlot);
+    loadAwards().then(function () {
+      if (!awSlot.isConnected) return;
+      var won = grantAwards(awardsFor(logs, st, null));
+      tellFreeze(won, st);
+      awSlot.innerHTML = "";
+      awSlot.appendChild(trophyCase(st, logs));
     });
-    v.appendChild(row);
 
     // What you've hit this week, from the sessions actually logged: each logged
     // entry carries the canonical_id it was started with, and the catalog says
@@ -8706,7 +9165,7 @@ export const APP = String.raw`
 
   ["addsheet", "setsheet", "watchsheet", "exsheet", "exeditsheet", "explainsheet", "picksheet",
    "settingssheet", "colsheet", "renamesheet", "swapsheet", "pumpysheet", "capsheet", "plansheet",
-   "daysheet", "copysheet", "sortsheet", "refsheet"]
+   "daysheet", "copysheet", "sortsheet", "refsheet", "countsheet"]
     .forEach(wireSheet);
 
   function overlayShowing() {
@@ -9355,6 +9814,7 @@ export const APP = String.raw`
     $("setmailrow").disabled = !mine;
     $("setname").textContent = displayName() || "Not set";
     $("unittoggle").textContent = state.unit;
+    paintGoal();
     $("haptictoggle").textContent = state.haptics ? "On" : "Off";
     $("sethapticrow").classList.toggle("hide", !navigator.vibrate);
     paintSounds();
@@ -9414,6 +9874,10 @@ export const APP = String.raw`
   // of them used to be enough to drop the others.
   function saveSettings() {
     var s = { unit: state.unit, sounds: state.sounds, haptics: state.haptics };
+    // The column is written WHOLE, so a key left out here is a key deleted by the
+    // next unit toggle. goalSetting() is the reader, so it is also the source.
+    var g = goalSetting();
+    if (g) s.goal = g;
     if (state.profile) state.profile.settings = s;
     // The then() is what sends it. A supabase-js builder is lazy — it only runs
     // the request when something awaits it — so this line without one has been
@@ -9430,6 +9894,29 @@ export const APP = String.raw`
     // relabelled — reloading the logs first if something has already dropped them.
     if (!drawn.progress) return;
     if (state.logs) renderProgress(); else quietly(loadLogs().then(renderProgress));
+  }
+
+  // One to seven. It opens on what the ring is already using — the plan's own
+  // number where nothing was set — so the first tap adjusts, never invents.
+  function paintGoal() {
+    var st = thisWeek();
+    var g = goalSetting() || (st ? st.goal
+      : planMap(state.plan, mondayOf(new Date())).n || GOAL_FALLBACK);
+    $("goalnum").textContent = String(g);
+    $("goalless").disabled = g <= 1;
+    $("goalmore").disabled = g >= 7;
+    return g;
+  }
+
+  function bumpGoal(by) {
+    var g = Math.max(1, Math.min(7, paintGoal() + by));
+    state.goal = g;
+    paintGoal();
+    haptic("tap");
+    saveSettings();
+    // The ring, its label, the streak and the today card all read this number.
+    if (drawn.progress && state.logs) renderProgress();
+    if (today.shown) renderToday();
   }
 
   function toggleSounds() { setSounds(!state.sounds); }
@@ -10562,6 +11049,9 @@ export const APP = String.raw`
   };
   $("rotatekey").onclick = rotateKey;
   $("unittoggle").onclick = toggleUnit;
+  $("goalless").onclick = function () { bumpGoal(-1); };
+  $("goalmore").onclick = function () { bumpGoal(1); };
+  $("countdone").onclick = function () { closeSheet("countsheet"); };
   $("soundtoggle").onclick = toggleSounds;
   $("haptictoggle").onclick = toggleHaptics;
   $("setnamerow").onclick = openName;

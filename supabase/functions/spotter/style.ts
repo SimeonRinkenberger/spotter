@@ -1310,13 +1310,95 @@ export const STYLE = String.raw`<style>
     .planin { animation: planswap var(--t-2) var(--e-out); }
   }
 
-  /* ---------- progress / history ---------- */
-  .statrow { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; margin: 4px 0 18px; }
-  .stat { background: var(--card); border: 1px solid var(--line); border-radius: 15px; padding: 14px 10px;
-    text-align: center; box-shadow: var(--sh-sm); }
-  .stat .v { font-family: var(--display); font-size: 24px; font-weight: 700; letter-spacing: -.018em;
-    line-height: 1; color: var(--ink); font-variant-numeric: tabular-nums; }
-  .stat .k { font-size: 11px; font-weight: 600; color: var(--muted); margin-top: 6px; }
+  /* ---------- progress / history ----------
+     The week ring: Apple's Activity shape with ONE arc, because a second ring is
+     a second thing to fail at. Only stroke-dashoffset moves, and every colour is
+     a token, so the dark scheme costs nothing. */
+  .ringhero { background: var(--card); border: 1px solid var(--line); border-radius: 20px;
+    padding: 17px 16px 8px; margin: 4px 0 14px; box-shadow: var(--sh-sm); text-align: center; }
+  .reyebrow { font-family: var(--display); font-size: 13px; font-weight: 700; letter-spacing: .09em;
+    text-transform: uppercase; color: var(--ember-ink); }
+  .ringhero.miss .reyebrow { color: var(--muted); }
+  .ringwrap { position: relative; width: min(96px, 26vw); height: min(96px, 26vw);
+    margin: 13px auto 11px; }
+  .ring { display: block; width: 100%; height: 100%; overflow: visible; }
+  .rtrack, .rarc { fill: none; stroke-width: 4.2; }
+  .rtrack { stroke: var(--sand); }
+  .rarc { stroke: var(--ember); stroke-linecap: round;
+    transform: rotate(-90deg); transform-origin: 50% 50%;
+    transition: stroke-dashoffset var(--t-4) var(--e-out), stroke var(--t-3) var(--e-soft); }
+  .ringhero.full .rarc, .sumweek.full .rarc { stroke: var(--good); }
+  /* Once, two seconds, on a week still winnable but tight. Something that pulses
+     forever is an alarm; this is a nudge. */
+  .ringhero.risk .ring { animation: ringpulse 2s var(--e-soft) 1; }
+  @keyframes ringpulse { 0%, 100% { filter: none; }
+    50% { filter: drop-shadow(0 0 6px var(--glow)); } }
+  .rmid { position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 1px; }
+  .rnum { font-family: var(--display); font-size: min(40px, 11vw); font-weight: 800;
+    line-height: 1; letter-spacing: -.02em; color: var(--ink); }
+  .rof { font-size: 11px; font-weight: 600; color: var(--muted); }
+  .rcheck { display: flex; color: var(--good); }
+  .rcheck .ic { width: 34px; height: 34px; stroke-width: 2.6; }
+  .rnum, .rof, .reyebrow, .rmeta, .tweek, .sumweek { font-variant-numeric: tabular-nums; }
+  .rlabel { font-size: 13.5px; font-weight: 600; color: var(--ink-2); }
+  .ringhero.risk .rlabel { color: var(--ember-ink); }
+  .ringhero.full .rlabel { color: var(--good); }
+  /* Mon to Sun: filled for a session, ringed for a planned day still ahead, empty
+     for a free one. 44px of row around them, because they open a sheet. */
+  .wdots { display: flex; align-items: center; justify-content: center; gap: 9px;
+    margin: 0 auto; padding: 15px 12px; min-height: 44px; background: none; border: 0; }
+  .wdots i { width: 8px; height: 8px; border-radius: 999px; background: var(--sand);
+    transition: background var(--t-2) var(--e-out), box-shadow var(--t-2) var(--e-out); }
+  .wdots i.on { background: var(--ember); }
+  .wdots i.plan { background: transparent; box-shadow: inset 0 0 0 1.5px var(--line-2); }
+  .rmeta { font-size: 11.5px; color: var(--muted); padding-bottom: 8px; }
+  /* The same sentence on the today card and at the end of a session. */
+  .tweek { font-size: 12px; font-weight: 600; color: var(--ember-ink); margin: 0 0 12px; }
+  .tweek.risk { color: var(--ember); }
+  .tdose + .tweek { margin-top: -7px; }
+  .sumweek { display: flex; align-items: center; justify-content: center; gap: 9px;
+    margin: 13px 0 0; font-size: 13px; font-weight: 600; color: var(--ink-2); }
+  .sumweek.full { color: var(--good); }
+  .ring.small { width: 26px; height: 26px; flex: 0 0 auto; }
+  .ring.small .rtrack, .ring.small .rarc { stroke-width: 9; }
+  /* Medallions: an ember disc for what happened, a sand silhouette carrying the
+     requirement for what has not. auto-fill at 96px is three across on a 375px
+     phone and simply grows on anything wider. */
+  .tgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+    gap: 15px 8px; }
+  .medal { text-align: center; animation: cardin var(--t-3) var(--e-out) both; }
+  .mdisc, .sdisc { border-radius: 999px; background: var(--ember-soft); color: var(--ember-ink);
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: inset 0 0 0 1px var(--line); }
+  .mdisc { width: 54px; height: 54px; margin: 0 auto 8px; }
+  .mdisc .ic { width: 22px; height: 22px; }
+  .medal.lock .mdisc { background: var(--sand); color: var(--muted); }
+  .mname { font-size: 12px; font-weight: 650; line-height: 1.3; }
+  .medal.lock .mname { color: var(--ink-2); font-weight: 600; }
+  .mwhen { font-size: 10.5px; color: var(--muted); margin-top: 2px;
+    font-variant-numeric: tabular-nums; }
+  /* The ember seal. One object, one sweep, one haptic — then it settles and stays
+     on the card as a badge, which is what an award is. Confetti is a party for
+     the app rather than for the person who just trained. */
+  .seal { display: flex; flex-direction: column; align-items: center; gap: 9px; margin: 15px 0 0; }
+  .sdisc { position: relative; width: 74px; height: 74px; }
+  .sdisc .ic { width: 30px; height: 30px; }
+  .sdisc .ring { position: absolute; inset: -6px; width: auto; height: auto; }
+  .seal .rtrack { display: none; }
+  .seal.in .sdisc { animation: sealin var(--t-4) var(--e-spring) both; }
+  @keyframes sealin { from { opacity: 0; transform: scale(.86); } }
+  .sname { font-family: var(--display); font-size: 15px; font-weight: 700; letter-spacing: -.01em; }
+  #workout.summary .wblock { transition: opacity var(--t-2) var(--e-soft); }
+  #workout.summary .wblock.fade { opacity: 0; }
+  @media (prefers-reduced-motion: reduce) {
+    /* The seal keeps the crossfade and loses the sweep and the scale. */
+    .medal, .seal.in .sdisc { animation: none; }
+    /* The arc still says the right thing without travelling to say it, and the
+       at-risk week still glows — it just stops breathing. */
+    .rarc, .wdots i { transition: none; }
+    .ringhero.risk .ring { animation: none; filter: drop-shadow(0 0 6px var(--glow)); }
+  }
   .chartcard { background: var(--card); border: 1px solid var(--line); border-radius: 18px;
     padding: 16px; margin-bottom: 14px; box-shadow: var(--sh-sm); }
   .chartcard h3 { font-family: var(--display); font-size: 12px; font-weight: 700; letter-spacing: .11em;
@@ -1861,6 +1943,12 @@ export const STYLE = String.raw`<style>
     border-top: 1px solid var(--line);
     transition: background-color var(--t-1) var(--e-out); }
   a.kv.row:active, button.kv.row:not([disabled]):active { background: var(--sand); }
+  /* A stepper, not a cycling chip: seven taps to walk 3 round to 2 is not a
+     control. Apple's Activity goal is a stepper for the same reason. */
+  .goalset { display: flex; align-items: center; gap: 4px; }
+  .goalset .chip { min-width: 32px; padding: 6px 0; justify-content: center; font-size: 15px; }
+  .goalset .chip[disabled] { opacity: .38; }
+  .goalset b { min-width: 20px; text-align: center; }
   .kv .chev { flex: 0 0 auto; width: 16px; height: 16px; color: var(--line-2); margin-right: -3px; }
   .kv.row[disabled] .chev { display: none; }
   .kv.del .k { color: var(--ember-ink); font-weight: 650; }
