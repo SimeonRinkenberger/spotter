@@ -736,7 +736,7 @@ export const APP = String.raw`
       if (first) setTimeout(boot, 0);
     } else {
       state.user = null;
-      state.workouts = []; state.logs = null; state.plan = null;
+      state.workouts = []; state.logs = null; state.plan = null; state.awards = null;
       // What the last person was looking for is not what the next one is. The
       // library came back narrowed to a search and a creator nobody had typed.
       state.filter = "All"; state.q = ""; $("search").value = "";
@@ -5368,13 +5368,12 @@ export const APP = String.raw`
 
   // ---------- the ember seal ----------
   //
-  // The celebration at the end of a session. Confetti was never on the table: it
-  // is a party for the app, not for the person who just trained. One object, one
-  // sweep, one haptic, half a second — and then it settles and stays on the card
-  // as a badge, which is what an award is.
+  // Confetti was never on the table: it is a party for the app, not for the person
+  // who just trained. One object, one sweep, one haptic, half a second — then it
+  // settles and stays on the card as a badge, which is what an award is.
   function sealAwards(payload, main) {
-    // No awards loaded means no way to tell a new one from an old one, and a seal
-    // for something earned last March would be a lie. Progress backfills instead.
+    // With nothing loaded there is no way to tell a new award from an old one, and
+    // a seal for one earned in March is a lie. Progress backfills instead.
     if (!state.awards || !state.logs) return;
     var logs = state.logs.concat([payload]);
     var st = weekStats(logs, state.plan, goalSetting(), new Date());
@@ -5383,8 +5382,8 @@ export const APP = String.raw`
     if (!won.length) return;
 
     var block = main.querySelector(".wblock");
-    // Three or more is a list, not a moment: they collapse into one seal and the
-    // case is a tap away. Two arrive 120ms apart.
+    // Three or more is a list, not a moment: they collapse, and the case is a tap
+    // away. Two arrive 120ms apart.
     var show = won.length > 2 ? [{ kind: won[0].kind, all: won.length }] : won;
     show.forEach(function (a, i) {
       setTimeout(function () {
@@ -7118,15 +7117,12 @@ export const APP = String.raw`
 
   // ---------- awards ----------
   //
-  // Nine families, every one of them a thing that ACTUALLY HAPPENED: a record, a
-  // count of sessions, a week completed. Nothing is granted for opening the app
-  // and nothing for paying, because an award that points at a made-up currency
-  // displaces the reason people train rather than adding to it.
-  //
-  // The ring is computed live and changes when a log is deleted; an award does
-  // not. That is why these are rows: an award must be stable, it needs a date to
-  // be ordered by, and the finish moment has to know which one is NEW — a
-  // question about the past, not the present.
+  // Nine families, every one a thing that ACTUALLY HAPPENED: a record, a count of
+  // sessions, a week completed. Nothing for opening the app and nothing for
+  // paying — an award pointing at a made-up currency displaces the reason people
+  // train. The ring is computed live and moves when a log is deleted; an award
+  // does not, which is why these are rows: it must be stable, dated, and able to
+  // answer "which one is new" — a question about the past, not the present.
 
   var AW_SESSIONS = [7, 30, 100, 250, 500, 1000];
   var AW_STREAK = [4, 12, 26, 52];
@@ -7134,12 +7130,11 @@ export const APP = String.raw`
   var AW_ICON = { first: "star", sessions: "dumbbell", streak: "trend", pr: "arrow-up",
     volume: "arrow-up-right", plan: "check", month: "calendar", comeback: "refresh",
     time: "hourglass" };
-  // One failed write is enough to know the table is not there yet; asking again
-  // every time Progress is opened would only be noise in the console.
+  // One failure is enough to know the table is not there yet.
   var awardsOff = false;
 
-  // Volume is banked in POUNDS whatever the phone is set to, or a unit toggle
-  // would move a milestone that has already been passed.
+  // Banked in POUNDS whatever the phone is set to, or a unit toggle would move a
+  // milestone that has already been passed.
   function volLb(log) {
     var v = 0;
     (log.entries || []).forEach(function (e) {
@@ -7175,9 +7170,8 @@ export const APP = String.raw`
     return m;
   }
 
-  // prs is the live PR map from Workout Mode, present only at the end of a
-  // session: a record is detected as it is set, and history cannot say which of
-  // an old session's bests was new at the time.
+  // prs is Workout Mode's live map, present only at the end of a session: history
+  // cannot say which of an old session's bests was new at the time.
   function awardsFor(logs, st, prs) {
     var have = awardKeys(), out = [], i, vol = 0, early = 0, night = 0, k;
 
@@ -7187,7 +7181,7 @@ export const APP = String.raw`
       out.push({ kind: kind, key: key, meta: meta || {} });
     }
 
-    // One pass: the totals, the hours, and the gaps that make a comeback.
+    // One pass: totals, hours, and the gaps that make a comeback.
     var sorted = logs.filter(isSession).sort(function (a, b) {
       return new Date(a.started_at) - new Date(b.started_at);
     });
@@ -7197,8 +7191,8 @@ export const APP = String.raw`
       var d = new Date(l.started_at), h = d.getHours();
       if (h < 7) early++;
       if (h >= 21) night++;
-      // The anti-guilt award, and the most important one in the list: it is the
-      // only thing this app says to somebody who has already broken a streak.
+      // The anti-guilt award, and the most important one here: the only thing
+      // this app says to somebody who has already broken a streak.
       if (prev && d - prev >= 14 * 86400000) add("comeback", "comeback:" + ymd(d));
       prev = d;
     });
@@ -7225,14 +7219,14 @@ export const APP = String.raw`
       }
     }
 
-    // A spent freeze is an event with a date, which is what a row here is. It is
+    // A spent freeze is an event with a date, which is what a row here is —
     // ledger rather than trophy, so the case never shows one.
     st.frozen.forEach(function (wk) { add("freeze", "freeze:" + wk); });
     return out;
   }
 
-  // Told after the fact and warmly, never asked for and never sold. Only for the
-  // week that just closed: an older freeze being written down is bookkeeping.
+  // After the fact and warmly, never asked for and never sold — and only for the
+  // week that just closed: an older one being written down is bookkeeping.
   function tellFreeze(won, st) {
     var last = ymd(new Date(mondayOf(new Date()).getTime() - WEEK_MS));
     for (var i = 0; i < won.length; i++) {
@@ -7244,6 +7238,9 @@ export const APP = String.raw`
 
   function loadAwards() {
     if (state.awards) return Promise.resolve(state.awards);
+    // A fresh sign-in asks again: the table may have arrived since, and the next
+    // person on this phone is not the one whose read failed.
+    awardsOff = false;
     return sb.from("achievements").select("kind,key,earned_at,meta")
       .order("earned_at", { ascending: false }).limit(300)
       .then(function (r) {
@@ -7253,8 +7250,8 @@ export const APP = String.raw`
       });
   }
 
-  // Written after the screen has already been drawn, and the screen never waits
-  // on the answer. ON CONFLICT DO NOTHING is what makes a second run free.
+  // Written after the screen is drawn, and never waited on. ON CONFLICT DO
+  // NOTHING is what makes a second run free.
   function grantAwards(rows) {
     if (!rows.length || awardsOff || !state.user) return rows;
     var now = new Date().toISOString();
@@ -7276,27 +7273,25 @@ export const APP = String.raw`
     return n;
   }
 
-  // The next rung of each ladder, never the whole ladder: a visible goal pulls
-  // (the goal-gradient result), a wall of grey discs only says how far behind you
-  // are. Nothing offers "take a fortnight off" as a target, either.
+  // The next rung of each ladder only: a visible goal pulls, a wall of grey discs
+  // just says how far behind you are. Nor is "take a fortnight off" a target.
+  var AW_LADDER = [["sessions", AW_SESSIONS, " sessions"], ["streak", AW_STREAK, " week streak"],
+    ["volume", AW_VOL, " lifted"]];
+
   function lockedAwards(st, logs) {
-    var have = awardKeys(), out = [], n = 0, vol = 0, i;
+    var have = awardKeys(), out = [], n = 0, vol = 0;
     logs.forEach(function (l) { if (isSession(l)) { n++; vol += volLb(l); } });
-    for (i = 0; i < AW_SESSIONS.length; i++) if (!have["sessions:" + AW_SESSIONS[i]]) {
-      out.push({ kind: "sessions", title: AW_SESSIONS[i] + " sessions",
-        note: (AW_SESSIONS[i] - n) + " to go" });
-      break;
-    }
-    for (i = 0; i < AW_STREAK.length; i++) if (!have["streak:" + AW_STREAK[i]]) {
-      out.push({ kind: "streak", title: AW_STREAK[i] + " week streak",
-        note: (AW_STREAK[i] - st.streakWeeks) + " to go" });
-      break;
-    }
-    for (i = 0; i < AW_VOL.length; i++) if (!have["volume:" + AW_VOL[i]]) {
-      out.push({ kind: "volume", title: volText(AW_VOL[i]) + " lifted",
-        note: volText(AW_VOL[i] - vol) + " to go" });
-      break;
-    }
+    var at = { sessions: n, streak: st.streakWeeks, volume: vol };
+    AW_LADDER.forEach(function (f) {
+      for (var i = 0; i < f[1].length; i++) {
+        // Past it counts as reached even where the row never landed: "7 sessions,
+        // -4 to go" is what a failed write looks like from the front.
+        var v = f[1][i], num = f[0] === "volume" ? volText : String;
+        if (have[f[0] + ":" + v] || v <= at[f[0]]) continue;
+        out.push({ kind: f[0], title: num(v) + f[2], note: num(v - at[f[0]]) + " to go" });
+        return;
+      }
+    });
     if (!have["plan:" + st.weekKey] && st.dots.indexOf("plan") >= 0) {
       out.push({ kind: "plan", title: "Did the plan", note: "every planned day this week" });
     }
@@ -7312,8 +7307,7 @@ export const APP = String.raw`
     shown.forEach(function (a) { grid.appendChild(medallion(a)); });
     lockedAwards(st, logs).forEach(function (l) { grid.appendChild(medallion(l, true)); });
     box.appendChild(grid);
-    // A count, not a paywall: nothing earned here is ever taken away, and the
-    // rows stay on the account whether or not anybody pays for anything.
+    // A count, not a paywall: nothing earned here is ever taken away.
     if (isFree() && have.length > 12) {
       box.appendChild(el("div", "bodynote",
         (have.length - 12) + " earlier awards are kept in Plus."));
