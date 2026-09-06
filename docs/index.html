@@ -9577,11 +9577,13 @@
     return false;
   }
 
-  // Freezes spent inside the four-week window ending at week n (n is weeks ago,
-  // so the window is n-3..n and every entry in fz is more recent).
+  // Freezes spent in the three weeks more recent than week n, n being weeks ago.
+  // Week n may take one only if that count is under the allowance, which is what
+  // holds it to one per rolling four weeks. Asked with n = 4, it answers the same
+  // question about now: weeks 1, 2 and 3 ago.
   function fzIn(fz, n) {
     var c = 0;
-    for (var i = 0; i < fz.length; i++) if (fz[i] > n - 4) c++;
+    for (var i = 0; i < fz.length; i++) if (fz[i] > n - 4 && fz[i] < n) c++;
     return c;
   }
 
@@ -9627,7 +9629,7 @@
     return { weekKey: wk, done: done, goal: goal, needed: needed, daysLeft: daysLeft,
       atRisk: needed > 0 && needed === daysLeft, unreachable: needed > daysLeft,
       dots: dots, streakWeeks: streak, freezesUsed: fz.length,
-      freezeAvailable: fzIn(fz, 0) < allow };
+      freezeAvailable: fzIn(fz, 4) < allow };
   }
 
   // null until the logs land: a caller leaves its line out rather than print a zero.
