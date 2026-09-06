@@ -1,0 +1,16 @@
+{
+  "name": "spotter-build",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Build-time tooling for the Spotter page. Only build.mjs uses it; the edge function and the served page have no npm dependencies.",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  },
+  "dependencies": {
+    "stripe": "^22"
+  }
+}
