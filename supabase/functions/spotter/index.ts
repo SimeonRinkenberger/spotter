@@ -5780,21 +5780,229 @@ async function buildCard(
   return card;
 }
 
+/**
+ * One stored exercise, made safe to merge with.
+ *
+ * A row in `workouts.blocks` is JSON the schema grew around: a card written
+ * before `duration_seconds` existed has no such key at all, and `undefined`
+ * handed to fillEmptyDose would write "no field" over a real null. Copied rather
+ * than aliased, so nothing below can write back into the row the caller holds.
+ */
+function storedExercise(raw: any): Exercise {
+  const ex = { ...(raw ?? {}) } as Record<string, unknown>;
+  ex.name = typeof ex.name === "string" ? ex.name : String(ex.name ?? "");
+  for (
+    const k of ["canonical_id", "sets", "reps", "duration_seconds", "rest_seconds",
+      "weight", "equipment", "notes"]
+  ) if (ex[k] === undefined) ex[k] = null;
+  return ex as unknown as Exercise;
+}
+
+/** The stored card's blocks, in the shape the merge expects. Nameless rows are dropped. */
+function storedBlocks(old: any): Block[] {
+  const rows: any[] = Array.isArray(old?.blocks) ? old.blocks : [];
+  return rows.map((b: any) => ({
+    title: typeof b?.title === "string" ? b.title : null,
+    type: typeof b?.type === "string" && b.type ? b.type : "straight",
+    rounds: typeof b?.rounds === "number" ? b.rounds : null,
+    rest_seconds: typeof b?.rest_seconds === "number" ? b.rest_seconds : null,
+    exercises: (Array.isArray(b?.exercises) ? b.exercises : [])
+      .filter((e: any) => e && typeof e.name === "string" && e.name.trim())
+      .map(storedExercise),
+  }));
+}
+
+/** Everything fillEmptyDose can move, as one comparable string. */
+function doseOf(ex: Exercise): string {
+  return [ex.sets, ex.reps, ex.duration_seconds, ex.rest_seconds, ex.weight, ex.equipment, ex.notes]
+    .map((v) => (v === null || v === undefined ? "" : String(v))).join("");
+}
+
+/**
+ * Where an old block's survivors live now: the block most of its exercises were
+ * matched into, else one wearing the same title, else the block that now holds
+ * its position. `sure` is false for that last case — it is a different block at
+ * the same index, so its own furniture must not be overwritten with the dead
+ * block's rounds.
+ */
+function homeFor(out: Card, hits: Map<Block, number>, ob: Block, bi: number): { block: Block; sure: boolean } {
+  let best: Block | null = null;
+  let most = 0;
+  for (const [b, n] of hits) if (n > most) { most = n; best = b; }
+  if (best) return { block: best, sure: true };
+  const t = (ob.title ?? "").trim().toLowerCase();
+  if (t) for (const b of out.blocks) if ((b.title ?? "").trim().toLowerCase() === t) return { block: b, sure: true };
+  const near = out.blocks[bi] ?? out.blocks[out.blocks.length - 1];
+  if (near) return { block: near, sure: false };
+  const fresh: Block = { ...ob, exercises: [] };
+  out.blocks.push(fresh);
+  return { block: fresh, sure: true };
+}
+
+type Rescue = { kept: number; filled: number; evidence: boolean };
+
+/**
+ * Put back every exercise the stored card had and the re-read did not produce.
+ * Mutates `out` — the merge owns it.
+ *
+ * Matching is the same two-step as mergeSlideCard, and for the same reason: the
+ * catalog answers "are these one movement" wherever it knows the name, and
+ * `nameKey` catches the case, punctuation and plural it does not. A next-side
+ * exercise can be claimed once, so a stored card that really did have two sets of
+ * dips keeps both rather than collapsing into the one the re-read found.
+ *
+ * PRECEDENCE, which is the whole decision this function makes: the fresh read
+ * wins field by field wherever it has a value, and the stored card fills only
+ * what the fresh read left empty. A re-read is usually the better text — it has
+ * the newer caption, the transcript, and whatever the slides said — so it should
+ * be able to correct "10 reps" to "10 each side". What it may never do is take a
+ * number away: a dose the user could see yesterday must still be there today.
+ * That is fillEmptyDose in the direction old -> next, never next -> old.
+ */
+function keepWhatTheReRunDropped(out: Card, oldBlocks: Block[]): Rescue {
+  type Slot = { block: Block; ex: Exercise; id: string | null; key: string };
+  const slots: Slot[] = [];
+  // canonicalize as the fallback on both sides: `fresh` has been through
+  // applyCatalog, but the card the media path merges has not, and a row stored
+  // before CARD_V 5 carries no ids at all.
+  const idOf = (ex: Exercise): string | null => ex.canonical_id ?? (canonicalize(ex.name)?.id ?? null);
+  for (const b of out.blocks) {
+    for (const ex of b.exercises) slots.push({ block: b, ex, id: idOf(ex), key: nameKey(ex.name) });
+  }
+  const taken = new Set<Exercise>();
+  function claim(ox: Exercise): Slot | null {
+    const id = idOf(ox);
+    const k = nameKey(ox.name);
+    if (id) for (const s of slots) if (!taken.has(s.ex) && s.id === id) { taken.add(s.ex); return s; }
+    if (k) for (const s of slots) if (!taken.has(s.ex) && s.key === k) { taken.add(s.ex); return s; }
+    return null;
+  }
+
+  let kept = 0, filled = 0, evidence = false;
+  for (let bi = 0; bi < oldBlocks.length; bi++) {
+    const ob = oldBlocks[bi];
+    const hits = new Map<Block, number>();
+    const missing: { ex: Exercise; after: Exercise | null }[] = [];
+    let firstHit: Exercise | null = null;
+    let anchor: Exercise | null = null;
+    for (const ox of ob.exercises) {
+      const slot = claim(ox);
+      if (!slot) {
+        // Its old position is the exercise before it, wherever that one landed.
+        missing.push({ ex: ox, after: anchor });
+        kept++;
+        if (ox.evidence && ox.evidence.source !== "none") evidence = true;
+        continue;
+      }
+      hits.set(slot.block, (hits.get(slot.block) ?? 0) + 1);
+      if (!firstHit) firstHit = slot.ex;
+      const was = doseOf(slot.ex);
+      fillEmptyDose(slot.ex, ox);
+      // fillEmptyDose leaves notes alone on purpose, because a slide's note is
+      // whatever text sat near the table. The stored card's note is the creator's
+      // sentence or the user's own correction, so here it is worth keeping when
+      // the re-read has nothing to put in its place.
+      if (!slot.ex.notes && ox.notes) slot.ex.notes = ox.notes;
+      if (doseOf(slot.ex) !== was) filled++;
+      anchor = slot.ex;
+    }
+    const home = homeFor(out, hits, ob, bi);
+    // Block furniture from the re-read, with the stored block filling its gaps.
+    // "3 rounds" printed once above a list is the first thing a thin read loses.
+    if (home.sure) {
+      if (!home.block.title && ob.title) home.block.title = ob.title;
+      if (!home.block.type && ob.type) home.block.type = ob.type;
+      if (home.block.rounds === null && ob.rounds !== null) home.block.rounds = ob.rounds;
+      if (home.block.rest_seconds === null && ob.rest_seconds !== null) {
+        home.block.rest_seconds = ob.rest_seconds;
+      }
+    }
+    // MERGE_MAX_EXERCISES deliberately does not apply here. It is a bound on what
+    // a badly transcribed picture may ADD; a bound that deleted stored rows would
+    // be the exact bug this function exists to prevent.
+    let prevAfter: Exercise | null = null;
+    let prevIns: Exercise | null = null;
+    for (const m of missing) {
+      // A run of consecutive drops keeps its own order: the second one follows the
+      // first, not the shared anchor.
+      const after = prevIns && m.after === prevAfter ? prevIns : m.after;
+      let at = after ? home.block.exercises.indexOf(after) : -1;
+      if (at >= 0) at += 1;
+      else if (!after && firstHit && home.block.exercises.indexOf(firstHit) >= 0) {
+        // It came before everything of its block that survived, so it still does.
+        at = home.block.exercises.indexOf(firstHit);
+      } else at = home.block.exercises.length;
+      home.block.exercises.splice(at, 0, m.ex);
+      prevAfter = m.after;
+      prevIns = m.ex;
+    }
+  }
+  return { kept, filled, evidence };
+}
+
+/** Both extractors, in the order they touched the card, deduplicated. */
+function bothExtractors(older: unknown, newer: unknown): string | null {
+  const parts: string[] = [];
+  for (const s of [older, newer]) {
+    if (typeof s !== "string") continue;
+    for (const one of s.split("+")) {
+      const t = one.trim();
+      if (t && parts.indexOf(t) < 0) parts.push(t);
+    }
+  }
+  return parts.length ? parts.join(" + ").slice(0, 80) : null;
+}
+
 // Reprocess must never make a card worse: a quota-exhausted re-run comes back
 // empty, and silently wiping a good workout would be the worst possible bug.
+//
+// "Worse" used to mean only "empty", and on 6 September that was not enough. A
+// nine-slide TikTok was re-read: the caption pass returned nothing that time
+// (model variance, not a quota), the slides gave four exercises, and four is not
+// zero — so a card the user had with seven exercises on it was written back with
+// four. Tapping the retry button deleted three movements. The promise has to hold
+// per exercise or it is not a promise: a re-read may add, and it may correct, but
+// it may not subtract.
 function mergeNoDowngrade(old: any, next: Card, meta: Meta, platform: string): Card {
   const out: Card = { ...next };
   let tookOldBlocks = false;
+  let oldHadEvidence = false;
+  let kept = 0, filled = 0;
   if (!next.blocks.length && Array.isArray(old.blocks) && old.blocks.length) {
+    // The re-run came back with nothing at all. The stored blocks are taken whole,
+    // by reference, exactly as they always were — there is nothing to weave them
+    // into, and re-building them would only risk dropping a field.
     out.blocks = old.blocks;
     out.has_full_workout = !!old.has_full_workout;
     tookOldBlocks = true;
+    kept = (old.blocks as any[]).reduce((n: number, b: any) => n + (b?.exercises ?? []).length, 0);
+    // Read BEFORE scoreAndStamp: out.blocks and old.blocks are the same objects, and
+    // attachEvidence writes an evidence field onto every one of them. A moment later
+    // this question has no answer.
+    oldHadEvidence = (old.blocks as any[]).some((b: any) =>
+      (b?.exercises ?? []).some((ex: any) => ex?.evidence && ex.evidence.source !== "none"));
+  } else if (next.blocks.length) {
+    const r = keepWhatTheReRunDropped(out, storedBlocks(old));
+    kept = r.kept;
+    filled = r.filled;
+    // Same question, same reason it is asked here and not later — but only of the
+    // exercises that actually came forward, since they are the only ones the
+    // re-score could punish for a field their schema never had.
+    oldHadEvidence = r.evidence;
+    tookOldBlocks = kept > 0;
+    if (old.has_full_workout && countExercises(out) > 0) out.has_full_workout = true;
   }
-  // Read BEFORE scoreAndStamp: out.blocks and old.blocks are the same objects, and
-  // attachEvidence writes an evidence field onto every one of them. A moment later
-  // this question has no answer.
-  const oldHadEvidence = tookOldBlocks && (old.blocks as any[]).some((b: any) =>
-    (b?.exercises ?? []).some((ex: any) => ex?.evidence && ex.evidence.source !== "none"));
+  if (kept || filled) {
+    // The line the next incident is diagnosed from. It is deliberately the count
+    // of what the merge PUT BACK, because that is the number nobody could get out
+    // of the logs on 6 September.
+    console.log("reprocess: kept", kept, "exercise(s) the re-read dropped, filled", filled,
+      "dose(s) from the old card");
+    // Provenance has to say the card is a blend: rows on it were read by the
+    // extractor that ran before this one.
+    const by = bothExtractors(old.extracted_by, out.extracted_by ?? null);
+    if (by) out.extracted_by = by;
+  }
   if (out.category === "Other" && old.category && old.category !== "Other") out.category = old.category;
   if (!out.muscle_groups.length && old.muscle_groups?.length) out.muscle_groups = old.muscle_groups;
   if (!out.equipment.length && old.equipment?.length) out.equipment = old.equipment;
@@ -5831,8 +6039,8 @@ function mergeNoDowngrade(old: any, next: Card, meta: Meta, platform: string): C
     out.confidence_notes = [
       ...(out.confidence_notes ?? []),
       merged.score === null
-        ? `left unscored: the saved card predates scoring and its blocks came back unchanged (the re-score would have said ${c.score})`
-        : `kept the saved card's score ${merged.score} over the re-score ${c.score}: its blocks are what survived the merge`,
+        ? `left unscored: the saved card predates scoring and ${kept} exercise(s) came forward from it (the re-score would have said ${c.score})`
+        : `kept the saved card's score ${merged.score} over the re-score ${c.score}: ${kept} exercise(s) on it came forward from the saved card`,
     ];
     console.log("merge kept the stored score", merged.score ?? "(none)", "over", c.score,
       oldHadEvidence ? "(old blocks had evidence)" : "(old blocks predate evidence)");
