@@ -4517,16 +4517,62 @@ function intOrNull(v: unknown, max: number): number | null {
   return Math.min(Math.round(n), max);
 }
 
+/**
+ * What a rep column can say, folded into the two fields the app actually reads.
+ *
+ * The vision prompt asks for this split and mostly gets it; this is the safety net
+ * for when it does not, and it is worth having because both failures are silent.
+ * A card carrying reps "3 x 10" has no `sets`, so Workout Mode offers one set of
+ * a string nobody can log against. A card carrying reps "30 sec" has no
+ * `duration_seconds`, so the timer never appears and the user counts to thirty in
+ * their head. Neither shows up as an error anywhere.
+ *
+ * Only whole-string matches are touched — "3 x 10-12", not "3 x 10-12 slow" — and
+ * a value the model did state is never overruled. Everything else is left exactly
+ * as written, because the rep column is the creator's notation and transcription
+ * is the promise.
+ */
+type Dose = { reps: string | null; sets: number | null; seconds: number | null };
+
+function splitDose(reps: string | null, sets: number | null, seconds: number | null): Dose {
+  if (!reps) return { reps, sets, seconds };
+  // "3 x 10-12": the sets column and the reps column were printed as one string.
+  const mult = reps.match(/^(\d{1,2})\s*[x×*]\s*(\S.*)$/i);
+  if (mult && sets === null) {
+    const n = intOrNull(mult[1], 30);
+    if (n) { sets = n; reps = mult[2].trim().slice(0, 24) || null; }
+  }
+  if (!reps) return { reps, sets, seconds };
+  // A time in the reps cell is a time. "0:45" is included because a stopwatch is
+  // how half of these tables write a hold.
+  const clock = reps.match(/^(\d{1,2}):([0-5]\d)$/);
+  const unit = reps.match(/^(\d{1,4})\s*(s|sec|secs|second|seconds|m|min|mins|minute|minutes)$/i);
+  if (seconds === null && (clock || unit)) {
+    const n = clock
+      ? Number(clock[1]) * 60 + Number(clock[2])
+      : Number(unit![1]) * (/^m/i.test(unit![2]) ? 60 : 1);
+    if (n > 0 && n <= 7200) { seconds = n; reps = null; }
+  }
+  return { reps, sets, seconds };
+}
+
 function normalizeExercise(raw: any): Exercise | null {
   const name = typeof raw?.name === "string" ? cleanTitle(raw.name) : "";
   if (!name || name.length < 2) return null;
-  const reps = raw?.reps === null || raw?.reps === undefined ? null : String(raw.reps).slice(0, 24).trim() || null;
+  // A slide read of a "12 / 10 / 8" column comes back as the cells often enough to
+  // be worth spelling out: the model hands over an array, and the card wants the
+  // line the creator printed.
+  const rawReps = Array.isArray(raw?.reps)
+    ? raw.reps.filter((r: unknown) => r !== null && r !== undefined && r !== "").join("/")
+    : raw?.reps;
+  const written = rawReps === null || rawReps === undefined ? null : String(rawReps).slice(0, 24).trim() || null;
+  const dose = splitDose(written, intOrNull(raw?.sets, 30), intOrNull(raw?.duration_seconds, 7200));
   return {
     name,
     canonical_id: null,   // filled by applyCatalog once the card is assembled
-    sets: intOrNull(raw?.sets, 30),
-    reps,
-    duration_seconds: intOrNull(raw?.duration_seconds, 7200),
+    sets: dose.sets,
+    reps: dose.reps,
+    duration_seconds: dose.seconds,
     rest_seconds: intOrNull(raw?.rest_seconds, 3600),
     weight: typeof raw?.weight === "string" ? raw.weight.slice(0, 40).trim() || null : null,
     equipment: typeof raw?.equipment === "string" ? raw.equipment.slice(0, 40).trim().toLowerCase() || null : null,
@@ -4750,8 +4796,20 @@ export async function claudeStream(
 //      job that dies partway through a three-slide carousel resumes at slide two
 //      instead of paying for slide one again.
 
-/** Vision dials, read from app_config with an env and a compiled-in fallback. */
-function visionLimit(key: "max_bytes" | "max_slides" | "timeout_ms", dflt: number): number {
+/**
+ * Vision dials, read from app_config with an env and a compiled-in fallback.
+ *
+ * `max_slides` and `max_slides_carousel` are two dials rather than one because
+ * they answer different questions. A single image is a screenshot somebody
+ * attached and three reads is generous. A carousel IS the workout — nine slides of
+ * it, in the owner's case, with the rep table on slide four — and stopping at
+ * three reads a third of the document. Neither default needs a row in app_config
+ * to work; the compiled-in numbers are the shipped behaviour.
+ */
+function visionLimit(
+  key: "max_bytes" | "max_slides" | "max_slides_carousel" | "timeout_ms" | "slides_budget_ms",
+  dflt: number,
+): number {
   const fromCfg = Number(runtimeCfg["vision." + key]);
   if (Number.isFinite(fromCfg) && fromCfg > 0) return fromCfg;
   const fromEnv = Number(Deno.env.get("VISION_" + key.toUpperCase()));
@@ -4847,6 +4905,46 @@ async function visionCard(dataB64: string, mime: string, fallback: Card, ctx: Ai
     '"reps": string or null, "duration_seconds": int or null, "rest_seconds": int or null, "weight": string or null, ' +
     '"equipment": string or null, "notes": string or null}]}]}. ' +
     "Transcribe exactly what is written, keeping the exercise order from the image. " +
+    // The reason this call exists at all, and the half it used to skip.
+    //
+    // A carousel slide is nearly always a table: a column of movements, a column of
+    // sets, a column of reps, sometimes a weight. The old prompt said "transcribe"
+    // and nothing else, and what came back was names — seven of them, on the
+    // owner's post, with the rep column left on the picture.
+    //
+    // Two things changed, both straight out of the vendors' own prompting guidance.
+    // Google's file-prompting strategies say to drop hints about which aspects of
+    // the image to draw from, so the column layout is named BEFORE the rules; and
+    // both Google ("we recommend to always include few-shot examples… prompts
+    // without few-shot examples are likely to be less effective") and Anthropic
+    // ("examples are one of the most reliable ways to steer output format",
+    // three to five of them, fenced off from the instructions) say that a mapping
+    // is taught by showing the pair, not by describing it. "3 x 10-12" is one
+    // printed string that has to become two JSON fields; prose about that is a
+    // rule the model applies unevenly, and the pair is not.
+    //
+    // The image is sent before this text, which is the order Google's document and
+    // file-prompting pages both recommend for a single page.
+    "The workout on a slide is usually laid out as a table or a numbered list, one " +
+    "row per movement: a name, then some combination of a sets column, a reps " +
+    "column, a load column and a rest note. READ THOSE COLUMNS — a workout without " +
+    "reps is one the reader cannot follow. Work down the rows, take every row " +
+    "including the last, and match each number to the heading printed above it.\n" +
+    "<examples>\n" +
+    'printed "3 x 10-12"      -> sets: 3, reps: "10-12"\n' +
+    'printed "4x8"            -> sets: 4, reps: "8"\n' +
+    'printed "12/10/8"        -> sets: 3, reps: "12/10/8"   (one number per set: keep all three)\n' +
+    'printed "AMRAP"          -> reps: "AMRAP"              (also "to failure", "max reps")\n' +
+    'printed "10 each side"   -> reps: "10 each side"       (also "8 e/s", "10 per leg")\n' +
+    'printed "30 sec"         -> duration_seconds: 30, reps: null   (a time is never reps; "0:45" is 45)\n' +
+    'printed "60kg"           -> weight: "60kg"             (also "RPE 8", "70% 1RM", "moderate" — verbatim)\n' +
+    'printed "rest 60s"       -> rest_seconds: 60 on that exercise\n' +
+    'printed "3 ROUNDS" over a list -> rounds: 3 on the BLOCK, not sets on each exercise\n' +
+    'printed "Push Ups" with an empty reps cell -> reps: null\n' +
+    "</examples>\n" +
+    "A cell that is genuinely blank is null. Never carry a number down from the row " +
+    "above it, never spread one row's numbers across the others, and never write a " +
+    "dose that is not printed on the image. " +
     "If the image does NOT contain a written workout (it is just a person, a gym, or a video frame), " +
     'reply with exactly {"none": true}. Never invent text that is not readable in the image.';
   const gen = await geminiGenerate({
@@ -5185,6 +5283,231 @@ function scoreAndStamp(card: Card, meta: Meta, platform: string, heuristicCount:
   return c;
 }
 
+// ---------- what a carousel slide is actually for ----------
+//
+// The owner saved a nine-slide TikTok photo post and got a card with seven
+// exercises, seven sets figures and no reps at all. The caption was 2,182
+// characters long and named every movement, so `has_full_workout` came back true,
+// so the gate below — which used to ask only "did the caption produce a workout" —
+// decided the pictures had nothing left to say. The reps were on the pictures.
+//
+// The lesson is that presence is the wrong question. A card exists to answer "what
+// do I do, and how much of it", and half of that answer can be missing from a card
+// that looks finished. So the gate asks about the dose, and the slides are merged
+// into the caption's card rather than replacing it.
+
+/** Reps or a time. Sets alone is not a dose — three sets of what? */
+function hasDose(ex: Exercise): boolean {
+  return !!(ex.reps && String(ex.reps).trim()) || typeof ex.duration_seconds === "number";
+}
+
+type DoseGap = { total: number; missing: number; share: number };
+
+function doseGap(card: Card): DoseGap {
+  let total = 0, missing = 0;
+  for (const b of card.blocks) {
+    for (const ex of b.exercises) {
+      total++;
+      if (!hasDose(ex)) missing++;
+    }
+  }
+  return { total, missing, share: total ? missing / total : 0 };
+}
+
+// One movement without a dose is ordinary — a plank held as long as you can, a
+// stretch at the end, a finisher the creator left open. A third of the card AND at
+// least two of them is a pattern, and a pattern means the numbers were written
+// somewhere the caption is not. Both halves are load-bearing: the share on its own
+// would send a three-exercise card to the vision tier over one missing hold, and
+// the count on its own would let a twenty-exercise card lose two doses in silence.
+const DOSE_GAP_SHARE = 1 / 3;
+const DOSE_GAP_MIN = 2;
+
+/**
+ * Whether the pictures on this post are a PAGE — something a plan can be written
+ * on — or just a cover.
+ *
+ * More than one picture is always a page: nobody publishes a carousel of cover
+ * frames. A single picture is a page only when the post is a still, and the
+ * distinction is not pedantry — `igMeta` files a reel's cover frame under
+ * `images` so that a caption which produced nothing could still be rescued by
+ * reading it. That fallback is worth keeping. Paying for a vision read of every
+ * reel cover whose caption merely skipped some reps is not: reels are most of
+ * what Spotter saves, and a frame of somebody mid-rep has never held a rep table.
+ */
+function picturesAreAPage(meta: Meta, p: Parsed): boolean {
+  if ((meta.images?.length ?? 0) > 1) return true;
+  return p.kind !== "reel" && p.kind !== "tv" && p.kind !== "video";
+}
+
+/**
+ * Whether reading the slides could still improve this card.
+ *
+ * Keeps the old case — a caption that produced nothing at all, which is read off
+ * whatever picture exists, cover frame included — and adds the one that cost the
+ * owner his reps, which only a page can answer.
+ */
+function slidesWouldHelp(card: Card, pictureIsAPage: boolean): boolean {
+  if (!card.has_full_workout) return true;
+  if (!pictureIsAPage) return false;
+  const g = doseGap(card);
+  if (!g.total) return true;
+  return g.missing >= DOSE_GAP_MIN && g.share >= DOSE_GAP_SHARE;
+}
+
+/**
+ * The key two spellings of one movement must share before they are merged.
+ *
+ * The catalog answers this properly wherever it recognises the name — "DB
+ * Bulgarians" and "Bulgarian Split Squat" are one id, and that match is tried
+ * first — so this only has to catch what the catalog does not know: case,
+ * punctuation, accents and a plural. The stem is the catalog's own crude rule,
+ * repeated here rather than imported because what matters is that it is applied
+ * identically to both sides, not that it produces real words.
+ */
+function nameKey(name: string): string {
+  const flat = name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ").trim();
+  if (!flat) return "";
+  return flat.split(" ").map((w) => {
+    let t = w;
+    if (t.length > 4 && t.endsWith("ies")) t = t.slice(0, -3) + "y";
+    while (t.length > 3 && (t.endsWith("s") || t.endsWith("e"))) t = t.slice(0, -1);
+    return t;
+  }).join(" ");
+}
+
+/**
+ * Take from the slide only what the card is missing.
+ *
+ * `notes` is deliberately not on this list. The caption's note is a sentence the
+ * creator wrote; a slide's note is whatever text happened to sit near the table,
+ * which makes it the field most likely to carry the picture's furniture — a
+ * watermark, a week number, a call to follow — rather than the workout.
+ */
+function fillEmptyDose(into: Exercise, from: Exercise): void {
+  if (into.sets === null && from.sets !== null) into.sets = from.sets;
+  if (!into.reps && from.reps) into.reps = from.reps;
+  if (into.duration_seconds === null && from.duration_seconds !== null) {
+    into.duration_seconds = from.duration_seconds;
+  }
+  if (into.rest_seconds === null && from.rest_seconds !== null) into.rest_seconds = from.rest_seconds;
+  if (!into.weight && from.weight) into.weight = from.weight;
+  if (!into.equipment && from.equipment) into.equipment = from.equipment;
+}
+
+// A carousel cannot legitimately grow a card past this. Ten slides of fifteen
+// exercises is a hundred and fifty rows, which is not a session and not something
+// the app can show; a real nine-slide plan lands around twenty-five. The cap is a
+// bound on a bad transcription, not a design decision about workouts.
+const MERGE_MAX_EXERCISES = 40;
+
+type SlideMerge = { filled: number; added: number; matched: number; capped: boolean };
+
+/**
+ * Fold what one slide said into the card the caption produced. Mutates `card` —
+ * the vision loop owns it and checkpoints it between slides.
+ *
+ * The old behaviour was a replacement: the first slide that looked like a workout
+ * BECAME the card, and everything the caption found was discarded. That is the
+ * wrong shape for a carousel, where slide four is the rep table for the exercises
+ * slide one named, and it is unsafe besides — one badly transcribed picture could
+ * delete a good card.
+ *
+ * So nothing is ever removed. An exercise the card already has takes the slide's
+ * numbers only where it has none of its own; an exercise the caption never
+ * mentioned is appended in slide order; the caption keeps its title and category
+ * unless it never had one. `mergeNoDowngrade` makes the same promise to reprocess,
+ * for the same reason.
+ */
+function mergeSlideCard(card: Card, slide: Card): SlideMerge {
+  type Slot = { block: Block; ex: Exercise };
+  const byId = new Map<string, Slot>();
+  const byName = new Map<string, Slot>();
+  // canonicalize rather than reading ex.canonical_id: applyCatalog has not run yet
+  // at this point in buildCard, so every id on the card is still null.
+  for (const b of card.blocks) {
+    for (const ex of b.exercises) {
+      const id = ex.canonical_id ?? (canonicalize(ex.name)?.id ?? null);
+      if (id && !byId.has(id)) byId.set(id, { block: b, ex });
+      const k = nameKey(ex.name);
+      if (k && !byName.has(k)) byName.set(k, { block: b, ex });
+    }
+  }
+
+  let filled = 0, matched = 0, capped = false;
+  const room = MERGE_MAX_EXERCISES - countExercises(card);
+  const extras: Exercise[] = [];
+  const extraOf = new Map<Exercise, Block>();
+  const hits = new Map<Block, number>();
+
+  for (const sb of slide.blocks) {
+    for (const sx of sb.exercises) {
+      const id = sx.canonical_id ?? (canonicalize(sx.name)?.id ?? null);
+      const k = nameKey(sx.name);
+      const slot = (id ? byId.get(id) : undefined) ?? (k ? byName.get(k) : undefined);
+      if (slot) {
+        matched++;
+        hits.set(slot.block, (hits.get(slot.block) ?? 0) + 1);
+        const had = hasDose(slot.ex);
+        fillEmptyDose(slot.ex, sx);
+        if (!had && hasDose(slot.ex)) filled++;
+        // "3 rounds" printed once over the list belongs to the block, and a block
+        // that never had rounds is the only one that can be told.
+        if (slot.block.rounds === null && sb.rounds !== null) slot.block.rounds = sb.rounds;
+        if (slot.block.rest_seconds === null && sb.rest_seconds !== null) {
+          slot.block.rest_seconds = sb.rest_seconds;
+        }
+      } else if (extras.length < room) {
+        extras.push(sx);
+        extraOf.set(sx, sb);
+      } else {
+        capped = true;
+      }
+    }
+  }
+
+  if (extras.length) {
+    // Where the leftovers go. A slide that matched something is describing the same
+    // workout the caption described, so its unmatched movements belong in the block
+    // its matches landed in — slides carry one or two exercises each, and a block
+    // per slide would shred one workout into nine headings. A slide that matched
+    // nothing is describing something the caption never covered, and that is a
+    // block of its own; its own structure is kept, because it is the only structure
+    // anyone has for it.
+    let home: Block | null = null;
+    let best = 0;
+    for (const [b, n] of hits) if (n > best) { best = n; home = b; }
+    if (home) {
+      for (const ex of extras) home.exercises.push(ex);
+    } else {
+      for (const sb of slide.blocks) {
+        const keep = sb.exercises.filter((ex) => extraOf.get(ex) === sb);
+        if (keep.length) card.blocks.push({ ...sb, exercises: keep });
+      }
+    }
+  }
+
+  // The caption's own words for what this is. A slide's title is the text printed
+  // on a picture — "DAY 3", "SAVE THIS" — and is worse than anything the caption
+  // gave. "Saved workout" is the extractor's placeholder, so it counts as nothing.
+  if (!card.title.trim() || card.title.trim() === "Saved workout") {
+    if (slide.title && slide.title.trim()) card.title = slide.title;
+  }
+  if (card.category === "Other" && slide.category && slide.category !== "Other") {
+    card.category = slide.category;
+  }
+  if (!card.muscle_groups.length && slide.muscle_groups.length) card.muscle_groups = slide.muscle_groups;
+  if (!card.equipment.length && slide.equipment.length) card.equipment = slide.equipment;
+  if (!card.difficulty && slide.difficulty) card.difficulty = slide.difficulty;
+  if (!card.duration_minutes && slide.duration_minutes) card.duration_minutes = slide.duration_minutes;
+  if (!card.calories && slide.calories) card.calories = slide.calories;
+  if (!card.tags.length && slide.tags.length) card.tags = slide.tags;
+  card.has_full_workout = card.blocks.some((b) => b.exercises.length > 0);
+
+  return { filled, added: extras.length, matched, capped };
+}
+
 /** Progress hook so a job can persist how far through a carousel it got. */
 type VisionProgress = (slide: number, card: Card) => Promise<void>;
 
@@ -5198,19 +5521,69 @@ async function buildCard(
   // TikTok photo post, and whatever names slides next. The gate is the slides
   // themselves rather than the platform: a provider that could not name any never
   // reaches this, and one that did has the same thing to read whoever served it.
-  // Read only when the caption produced nothing, since vision burns the scarcest
-  // quota.
+  // What the gate ASKS is slidesWouldHelp: not "did the caption produce a workout"
+  // — which a caption naming seven movements and no reps passes — but "can this
+  // card tell the user how much to do". Vision is still the scarcest quota, and a
+  // card that is already complete never reaches it.
+  //
+  // A resumed job skips the question. It was asked once, when the job first got
+  // here, and re-asking it against a card the earlier slides have already improved
+  // would abandon a carousel halfway through for having partly worked.
   //
   // One slide per sub-request, and the parent checkpoints between them. A carousel
   // that kills an isolate now costs one slide of progress rather than the job, and
   // a job that dies here resumes at the slide it had reached rather than paying for
   // the earlier ones again.
-  if (!card.has_full_workout && meta.images?.length) {
-    const slides = meta.images.slice(0, visionLimit("max_slides", 3));
+  if (meta.images?.length && (startSlide > 0 || slidesWouldHelp(card, picturesAreAPage(meta, p)))) {
+    // A carousel is read to the end. The old cap of three was written for a single
+    // attached screenshot and, on the owner's nine-slide post, would have stopped
+    // six slides before the rep table. Cost stays bounded — by the slide count the
+    // platform published, and by the cap over it.
+    const cap = meta.images.length > 1
+      ? visionLimit("max_slides_carousel", 10)
+      : visionLimit("max_slides", 3);
+    const slides = meta.images.slice(0, cap);
+    const before = doseGap(card);
+    console.log("vision: reading", slides.length, "of", meta.images.length, "slide(s) —",
+      "caption gave", before.total, "exercise(s),", before.missing, "without a dose",
+      startSlide ? "(resuming at slide " + startSlide + ")" : "");
+    // A second bound, on the clock rather than the count, because ten slides at the
+    // twenty-second per-slide ceiling is longer than a request is allowed to live.
+    // Ten healthy slides take well under this; it only bites when the vision tier
+    // is degraded, and then the card keeps whatever the slides before it gave
+    // instead of the whole save timing out. Reprocess needs it most: that path is
+    // synchronous, with the owner watching a spinner.
+    const deadline = Date.now() + visionLimit("slides_budget_ms", 90_000);
+    let filled = 0, matched = 0, by: string | null = null;
     for (let i = startSlide; i < slides.length; i++) {
+      if (i > startSlide && Date.now() > deadline) {
+        console.log("vision: out of time at slide", i, "of", slides.length, "— keeping what the earlier slides gave");
+        break;
+      }
       const fromImage = await runVisionRemote(slides[i], i, card, ctx);
-      if (fromImage?.has_full_workout) { card = fromImage; break; }
+      // Logged for every slide, including the ones that returned nothing. The bug
+      // this whole pass exists to fix was invisible precisely because a slide that
+      // was never read and a slide that was read and held no workout wrote the same
+      // thing to the log: nothing at all.
+      const got = fromImage ? doseGap(fromImage) : { total: 0, missing: 0, share: 0 };
+      console.log("vision: slide", i, "→", got.total, "exercise(s),", got.total - got.missing, "with a dose");
+      if (fromImage?.has_full_workout) {
+        const m = mergeSlideCard(card, fromImage);
+        filled += m.filled;
+        matched += m.matched;
+        if (!by && fromImage.extracted_by) by = fromImage.extracted_by;
+        if (m.capped) console.log("vision: slide", i, "hit the", MERGE_MAX_EXERCISES, "exercise merge cap");
+      }
       if (onSlide) await onSlide(i + 1, card);
+    }
+    console.log("vision: merged → exercises " + before.total + "/" + countExercises(card) +
+      ", doses filled " + filled + ", matched " + matched);
+    // Provenance has to say the card is a blend. It used to read "vision:…" because
+    // the slide replaced the caption's card outright; now the caption's extractor
+    // and the slide reader both have a claim on it, and a cache row that says which
+    // is what makes an old card worth re-running.
+    if (by && (filled || countExercises(card) > before.total)) {
+      card.extracted_by = ((card.extracted_by ? card.extracted_by + " + " : "") + by).slice(0, 80);
     }
   }
 
