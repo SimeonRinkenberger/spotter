@@ -285,13 +285,43 @@ gets the not-medical-advice line appended whether or not the model wrote it.
 | `supabase/functions/spotter/style.ts` | Design tokens and every component style |
 | `supabase/functions/spotter/markup.ts` | Page head, landing page, app shell, sheets |
 | `supabase/functions/spotter/app.ts` | All app logic: auth, library, Workout Mode, plan, progress |
-| `supabase/functions/spotter/page.ts` | Stitches the three together for the function |
-| `build.mjs` | Same stitch, writing `docs/index.html` for GitHub Pages |
+| `supabase/functions/spotter/page.ts` | One line: re-exports `PAGE_HTML` from the generated module |
+| `supabase/functions/spotter/page.gen.ts` | **Generated** — the built page as a JSON string. Never edit it |
+| `build.mjs` | The build: stitches the three, strips their comments, writes both copies |
+| `package.json` | Build-time dependencies only (esbuild). Nothing here is shipped |
 | `supabase/migrations/` | Schema, RLS policies, profile trigger, storage buckets, exercise catalog, ingest queue, corrections, collections, Pumpy |
 | `tools/` | Catalog migration generator, normalizer + confidence test batteries, one-time backfill, `census.py` (hash the real users' rows before/after a change), `throwaway.py` (drive disposable accounts against the live deployment) |
 
 The three frontend modules are `String.raw` templates, so they must never contain a
 backtick or `${`. `build.mjs` fails loudly if they do.
+
+**The build.** Run `npm install` once, then `node build.mjs` from the repo root after every
+edit to `markup.ts`, `style.ts` or `app.ts`. It concatenates the three templates, strips the
+comments out of the result, and writes that one string to both places that serve it —
+`docs/index.html` for GitHub Pages and `supabase/functions/spotter/page.gen.ts` for the edge
+function, the latter as a JSON string literal so the generated module carries no backtick or
+`${` of its own. One string, two writes: the copies cannot drift, and `page.ts` is now just
+`export { PAGE_HTML } from "./page.gen.ts"`, so nothing imports the templates at runtime.
+Commit `docs/index.html` and `page.gen.ts` together with the source you changed.
+
+Roughly 30% of those templates is comment. The comments explain why the code is the way it
+is, which is worth a lot to whoever opens the source and nothing to a phone on hotel wifi, so
+they stop at the build: 663,375 → 478,162 bytes raw, 202,339 → 120,837 gzipped. JavaScript
+and CSS go through **esbuild**, which drops comments by re-printing the parsed tree — a regex
+cannot tell a comment from the `//` in an `https://` string or from a slash beside a regex
+literal, and this app is full of both. HTML comments go through a scanner that steps over
+`<script>`, `<style>`, `<textarea>`, `<pre>` and `<title>` bodies. **Nothing is minified**:
+whitespace, indentation and identifiers survive exactly as written, because the page still has
+to be readable in devtools. esbuild is a devDependency of `package.json` and is never imported
+by Deno; `stripe` is listed there too, because Deno switches to `node_modules` resolution as
+soon as it finds a `package.json` above the function and would otherwise fail to resolve
+`npm:stripe@^22` during `deno check`.
+
+To assert the two copies really are the same bytes:
+
+```bash
+node -e 'const fs=require("node:fs");const Q=String.fromCharCode(34);const m=fs.readFileSync("supabase/functions/spotter/page.gen.ts","utf8");const gen=JSON.parse(m.slice(m.indexOf(Q),m.lastIndexOf(Q)+1));const web=fs.readFileSync("docs/index.html","utf8");console.log(gen===web?"byte-identical, "+web.length+" chars":"DIFFER");process.exit(gen===web?0:1)'
+```
 
 **The provider registry.** Everything that knows how a video is obtained lives in one table
 in `index.ts`, so nothing else has to. A provider declares how to recognise a link (`match`),
@@ -311,6 +341,7 @@ ask how the media was obtained. Adding a source is a new object in `PROVIDERS`.
 ### Deploying
 
 ```bash
+npm install                                                        # once, for esbuild
 node build.mjs && git add -A && git commit -m "..." && git push   # frontend
 supabase functions deploy spotter --no-verify-jwt                  # backend
 supabase db push                                                   # schema
@@ -931,7 +962,7 @@ after in History. `capacity`, `disconnected` and `rate_limited` each get their o
    on conflict (key) do update set value = excluded.value;
    ```
 5. `supabase functions deploy spotter --no-verify-jwt`.
-6. Put your project URL and anon key at the top of `app.ts`, run `node build.mjs`, and
+6. Put your project URL and anon key at the top of `app.ts`, run `npm install && node build.mjs`, and
    serve `docs/` (GitHub Pages works: Settings → Pages → main branch, `/docs`).
 7. Auth hardening. `supabase/config.toml` carries TOTP MFA
    (`[auth.mfa.totp] enroll_enabled/verify_enabled`), which `supabase config push` applies —
@@ -995,7 +1026,8 @@ into Supabase.
 4. Copy the **Client ID** and **Client secret**. Supabase Dashboard → **Authentication →
    Providers → Google** → enable, paste both, Save. The button appears on the next page load.
 5. Paste the **Client ID** (only the id) into `PUBLIC_AUTH.google_client_id`, run
-   `node build.mjs`, and commit `docs/index.html` with it. Without this step the button
+   `node build.mjs`, and commit `docs/index.html` and `page.gen.ts` with it. Without this
+   step the button
    still works — it just takes the redirect fallback instead of the in-page flow.
 
 #### 2. Apple
@@ -1028,7 +1060,7 @@ all — it works on the deployed site or not at all.
    - **Client IDs**: the Services ID from step 2
    - **Secret Key**: the JWT from step 4
 6. Paste the **Services ID** into `PUBLIC_AUTH.apple_services_id`, run `node build.mjs`,
-   commit `docs/index.html`.
+   commit `docs/index.html` and `page.gen.ts`.
 
 #### 3. What changes for the people using it
 
