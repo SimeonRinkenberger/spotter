@@ -4330,6 +4330,13 @@ export const APP = String.raw`
     var main = $("wmain"), dots = $("wdots");
     main.innerHTML = "";
     dots.innerHTML = "";
+    // Whatever a swipe left on it, taken back without animating the way back:
+    // the entrance at the foot of this function is the move.
+    var slide = woSlide;
+    woSlide = 0;
+    main.classList.remove("wmease", "wmin");
+    main.style.transform = "";
+    main.style.opacity = "";
 
     var n = Math.max(wo.screens.length, 1);
     for (var k = 0; k < n; k++) {
@@ -4398,7 +4405,13 @@ export const APP = String.raw`
     acts.appendChild(swapChip);
     main.appendChild(acts);
 
-    if (!hush) viewIn(main);
+    // A swipe said which way the lifter went, so the movement arrives from that
+    // side; an arrow or a logged set did not, and keeps the entrance it had.
+    if (slide) {
+      main.style.setProperty("--wmx", (slide > 0 ? 30 : -30) + "px");
+      void main.offsetWidth;
+      main.classList.add("wmin");
+    } else if (!hush) viewIn(main);
   }
 
   // Read once by the next render: the pill is rebuilt, not transitioned, so this
@@ -4922,6 +4935,106 @@ export const APP = String.raw`
     wo.i = next;
     saveDraft();
     renderWorkout();
+  }
+
+  // ---------- workout · swiping between exercises ----------
+  //
+  // "i want to be able to swipe left and right on the working out card so i can
+  // switch between exercises". The discipline is the pager's and the week bar's,
+  // because those are the two surfaces this has to feel like: Pointer Events, one
+  // axis verdict taken the moment the finger clears the slop, the touch cancelled
+  // only while we hold that axis, a fling or two fifths of the screen to commit.
+  //
+  // The angle is the week bar's 45 degrees rather than the pager's 65: an
+  // exercise with notes scrolls, and a scroll that turns the page is the worse
+  // fault here — the arrows below are still the reliable way through. Nothing
+  // inside is excluded either: a drag that starts on a set pill still pages if it
+  // travels, and the click that follows the finger up is swallowed, exactly as a
+  // drag off a library card is. The rest strip is outside .wmain and untouched.
+  var WM_LEAD = 72, WM_BAND = 26, woSlide = 0;
+
+  function wireWmain(main) {
+    var md = null;
+
+    // The screen leans a damped half of the travel; at the first exercise or the
+    // last it leans a fifth, which is the whole of the message that there is
+    // nothing that way. Transform and opacity, so it is one composited layer.
+    function paint(dx) {
+      if (md.calm) return;
+      var end = dx < 0 ? wo.i >= Math.max(wo.screens.length, 1) - 1 : wo.i <= 0;
+      var lead = end ? clamp(dx / 5, -WM_BAND, WM_BAND) : clamp(dx / 2, -WM_LEAD, WM_LEAD);
+      main.style.transform = "translateX(" + lead + "px)";
+      main.style.opacity = String(1 - Math.abs(lead) / 320);
+    }
+
+    function stop(e, cancelled) {
+      if (!md || (e && e.pointerId !== md.id)) return;
+      var d = md;
+      md = null;
+      if (!d.lock) return;
+      try { main.releasePointerCapture(d.id); } catch (err) { /* already gone */ }
+      swallowClick();
+      var s = d.s, a = s[0], b = s[s.length - 1], dt = (b.t - a.t) / 1000;
+      var v = dt > 0.004 ? (b.x - a.x) / dt : 0;
+      var far = Math.abs(d.dx) > main.offsetWidth * 0.4;
+      // Left is forwards, the way the arrows under it are laid out.
+      var n = cancelled || !wo ? 0
+        : (v < -FLING || (far && d.dx < 0)) ? 1
+        : (v > FLING || (far && d.dx > 0)) ? -1 : 0;
+      if (n > 0 && wo.i >= Math.max(wo.screens.length, 1) - 1) n = 0;
+      if (n < 0 && wo.i <= 0) n = 0;
+      // Timing back on before the offset goes, so a refused swipe springs home
+      // rather than snapping; a committed one has its lean cleared by the render.
+      main.classList.add("wmease");
+      main.style.transform = "";
+      main.style.opacity = "";
+      if (!n) return;
+      woSlide = n;
+      woGo(n);
+      haptic("tap");
+    }
+
+    main.addEventListener("pointerdown", function (e) {
+      if (e.pointerType !== "touch" && e.pointerType !== "pen") return;
+      // Not on the summary, which has no exercises left to walk, and not under a
+      // sheet: overlayShowing cannot be asked here, because Workout Mode is
+      // itself the overlay it would answer for.
+      if (md || !e.isPrimary || !wo || wo.finished) return;
+      if (document.querySelector(".sheet.open") || noDragIn(e.target)) return;
+      // Safari's back gesture owns the very edge inside a browser tab.
+      if (!standalone() && e.clientX < 24) return;
+      md = { id: e.pointerId, x: e.clientX, y: e.clientY, dx: 0, lock: false,
+        calm: lessMotion(), s: [{ t: now(), x: e.clientX }] };
+    });
+
+    main.addEventListener("pointermove", function (e) {
+      if (!md || e.pointerId !== md.id) return;
+      var dx = e.clientX - md.x, dy = e.clientY - md.y;
+      if (!md.lock) {
+        if (dx * dx + dy * dy < SLOP * SLOP) return;
+        if (Math.abs(dy) > Math.abs(dx)) { md = null; return; }
+        md.lock = true;
+        // Re-datum on the lock point so the screen does not jump the slop.
+        md.x = e.clientX;
+        dx = 0;
+        main.classList.remove("wmease", "wmin");
+        try { main.setPointerCapture(md.id); } catch (err) { /* not fatal */ }
+      }
+      md.dx = dx;
+      md.s.push({ t: now(), x: e.clientX });
+      while (md.s.length > 2 && md.s[md.s.length - 1].t - md.s[0].t > VWIN) md.s.shift();
+      paint(dx);
+    });
+
+    // .wmain scrolls, and WebKit settles that on the touch rather than on the
+    // pointer event before it: cancelling the touch while we hold the axis is
+    // what lets this element go on declaring no touch-action of its own.
+    main.addEventListener("touchmove", function (e) {
+      if (md && md.lock && e.cancelable) e.preventDefault();
+    }, { passive: false });
+
+    main.addEventListener("pointerup", function (e) { stop(e, false); });
+    main.addEventListener("pointercancel", function (e) { stop(e, true); });
   }
 
   function finishWorkout() {
@@ -10199,6 +10312,7 @@ export const APP = String.raw`
   };
 
   $("wclose").onclick = function () { history.back(); };
+  wireWmain($("wmain"));
   $("wprev").onclick = function () { woGo(-1); };
   $("wnext").onclick = skipMove;
   $("wfinish").onclick = finishWorkout;

@@ -1407,6 +1407,14 @@ export const STYLE = String.raw`<style>
   .wdot.done { background: var(--good); }
   .wmain { flex: 1; display: flex; flex-direction: column; justify-content: center;
     padding: 10px 26px; text-align: center; overflow-y: auto; }
+  /* No touch-action here either, and for the pager's reason: WebKit has to hold
+     the vertical scroll until the non-passive touchmove has run, by which time
+     app.ts has already chosen the axis. Only two properties move, so the drag is
+     one composited layer; .wmease is timing, on for the release and off while a
+     finger is holding it, so tracking is 1:1 and the let-go is what eases. */
+  .wmain.wmease { transition: transform var(--t-2) var(--e-out), opacity var(--t-2) var(--e-out); }
+  .wmain.wmin { animation: wmin var(--t-3) var(--e-out); }
+  @keyframes wmin { from { opacity: 0; transform: translateX(var(--wmx, 30px)); } }
   .wblock { font-size: 12.5px; font-weight: 650; color: var(--ember-ink); margin-bottom: 12px; }
   .wname { font-family: var(--display); font-size: 32px; font-weight: 800; line-height: 1.12;
     letter-spacing: -.021em; margin: 0 0 12px; }
@@ -1881,6 +1889,10 @@ export const STYLE = String.raw`<style>
     .sheetbody, .sheet.open .sheetbody { transform: none; transition: none; }
     /* The press still answers, it just answers at once. */
     .stepper button { transition: none; }
+    /* The exercise still changes and still says so, with a crossfade rather than
+       a slide. The drag itself moves nothing: app.ts asks lessMotion() first. */
+    .wmain.wmease { transition: none; }
+    .wmain.wmin { animation-name: fadeonly; animation-duration: var(--t-2); }
     /* The travel stays: it is the gesture itself. The spring goes. */
     .exmain, .exacts, .exact {
       transition-duration: var(--t-1); transition-timing-function: var(--e-soft); }
