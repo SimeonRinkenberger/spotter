@@ -1385,10 +1385,13 @@ export const APP = String.raw`
     return out;
   }
 
-  function openSort() {
+  // chose: a choice made under an open sheet, the only case that animates.
+  function openSort(chose) {
     var sl = $("sortlist");
     sl.innerHTML = "";
     sl.setAttribute("role", "radiogroup");
+    $("sorttitle").textContent = sortMode === "new" ? "Sort by"
+      : "Sorted by " + SORTLBL[sortMode].toLowerCase();
     SORTS.forEach(function (k) {
       var on = sortMode === k;
       var r = el("button", "pickrow sortrow" + (on ? " on" : ""));
@@ -1401,11 +1404,12 @@ export const APP = String.raw`
       r.onclick = function () { setSort(k); };
       sl.appendChild(r);
     });
-    renderJump();
+    renderJump(chose);
     openSheet("sortsheet");
   }
 
   function setSort(k) {
+    var had = sortMode;
     if (k !== sortMode) {
       sortMode = k;
       try { localStorage.setItem(SORT_KEY, k); } catch (e) { /* the order still applies today */ }
@@ -1415,7 +1419,10 @@ export const APP = String.raw`
       viewIn($("grid"));
       libTop();
     }
-    // iOS dismisses a picker on the choice rather than asking to be dismissed too.
+    // A menu leaves on the choice; a sheet need not, and here the choice is what
+    // makes the sections — leaving would hide the one thing the tap produced. No
+    // sections to show, or the same order asked for twice, and it goes as before.
+    if (k !== had && $("grid").querySelectorAll(".gname").length > 1) { openSort(true); return; }
     closeSheet("sortsheet");
   }
 
@@ -1423,7 +1430,7 @@ export const APP = String.raw`
   // does not fit: down the trailing edge of a 375px screen each section gets about
   // 20pt, under iOS's 44pt default and Android's 48dp floor, and it eats the width
   // of a two-column grid. A sheet of full 44pt rows clears both.
-  function renderJump() {
+  function renderJump(chose) {
     var wrap = $("jumpwrap"), jl = $("jumplist");
     // Read off the headings themselves, so the list cannot describe a grid that has
     // moved on underneath it.
@@ -1431,6 +1438,7 @@ export const APP = String.raw`
     jl.innerHTML = "";
     if (heads.length < 2) { wrap.classList.add("hide"); return; }
     wrap.classList.remove("hide");
+    $("jumphead").textContent = "Jump to a " + SORTLBL[sortMode].toLowerCase();
     Array.prototype.forEach.call(heads, function (h) {
       var r = el("button", "pickrow sortrow");
       r.appendChild(el("b", null, h.children[0].textContent));
@@ -1438,6 +1446,13 @@ export const APP = String.raw`
       r.onclick = function () { closeSheet("sortsheet"); jumpTo(h.parentNode.parentNode); };
       jl.appendChild(r);
     });
+    if (!chose) return;
+    // A sheet sits on the bottom edge, so a list that simply appeared at its foot
+    // would shove the rows above it up in one frame. The read both restarts the
+    // animation and tells it how tall the list it is uncovering is.
+    wrap.classList.remove("in");
+    wrap.style.setProperty("--jh", wrap.offsetHeight + "px");
+    wrap.classList.add("in");
   }
 
   function jumpTo(sec) {

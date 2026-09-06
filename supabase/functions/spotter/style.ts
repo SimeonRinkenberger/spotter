@@ -1046,6 +1046,13 @@ export const STYLE = String.raw`<style>
   .jumpwrap { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); }
   .jumpwrap h3 { margin: 0 0 4px 6px; font-family: inherit; font-size: 11.5px; font-weight: 700;
     letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
+  /* The sheet stays open on the choice, so its new sections have to arrive rather
+     than be there: it grows into the measured --jh and the rows above ride up.
+     Reduced motion keeps the fade and drops the growing. */
+  .jumpwrap.in { overflow: hidden; animation: jumpin var(--t-2) var(--e-out) backwards; }
+  @keyframes jumpin { from { max-height: 0; margin-top: 0; padding-top: 0; opacity: 0; }
+    to { max-height: var(--jh, 70vh); } }
+  @media (prefers-reduced-motion: reduce) { .jumpwrap.in { animation-name: fadein; } }
 
   /* ---------- toast ---------- */
   /* Hung from the frame's bottom edge, not the layout viewport's — not the same
