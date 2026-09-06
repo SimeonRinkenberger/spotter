@@ -4532,9 +4532,9 @@ function intOrNull(v: unknown, max: number): number | null {
  * as written, because the rep column is the creator's notation and transcription
  * is the promise.
  */
-function splitDose(
-  reps: string | null, sets: number | null, seconds: number | null,
-): { reps: string | null; sets: number | null; seconds: number | null } {
+type Dose = { reps: string | null; sets: number | null; seconds: number | null };
+
+function splitDose(reps: string | null, sets: number | null, seconds: number | null): Dose {
   if (!reps) return { reps, sets, seconds };
   // "3 x 10-12": the sets column and the reps column were printed as one string.
   const mult = reps.match(/^(\d{1,2})\s*[x×*]\s*(\S.*)$/i);
