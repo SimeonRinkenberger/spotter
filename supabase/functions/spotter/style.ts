@@ -1303,8 +1303,8 @@ export const STYLE = String.raw`<style>
   /* Already 44, and stacked between two controls whose hit areas it would eat. */
   .planbtn.wide::after { display: none; }
   .planbody > .planbtn.wide { margin-top: 16px; }
-  .planbtn .pumpmark { width: 18px; height: 18px; color: var(--ember); flex: 0 0 auto; }
-  .planbtn .pumpmark svg { width: 100%; height: 100%; display: block; }
+  .planbtn .pumpmark { border-radius: 50%; overflow: hidden; width: 18px; height: 18px; color: var(--ember); flex: 0 0 auto; }
+  .planbtn .pumpmark svg { border-radius: 50%; width: 100%; height: 100%; display: block; }
   /* The answer without the travel: the pill still moves, instantly. */
   @media (prefers-reduced-motion: reduce) {
     .segpill { transition: none; }
@@ -1391,7 +1391,7 @@ export const STYLE = String.raw`<style>
   .seal { display: flex; flex-direction: column; align-items: center; gap: 9px; margin: 15px 0 0; }
   .sdisc { position: relative; width: 74px; height: 74px; }
   .sdisc .ic { width: 30px; height: 30px; }
-  .sdisc .wring { position: absolute; inset: -6px; width: auto; height: auto; }
+  .sdisc .wring { position: absolute; inset: 0; width: 100%; height: 100%; }
   .seal .rtrack { display: none; }
   .seal.in .sdisc { animation: sealin var(--t-4) var(--e-spring) both; }
   @keyframes sealin { from { opacity: 0; transform: scale(.86); } }
@@ -1641,6 +1641,9 @@ export const STYLE = String.raw`<style>
     --sc-light: #F1F3F6 #FFFFFF #14171A #68727E #E8551F #E2E6EC;
   }
 
+  .sumawards { display: flex; flex-wrap: wrap; justify-content: center; gap: 16px 24px; }
+  .sumawards:empty { display: none; }
+  .sumawards .seal { flex: 0 1 140px; min-width: 0; }
   .sumfigs { margin-top: 20px; }
   .sumfigs .setpill b { font-size: 23px; letter-spacing: -.035em; }
   .sumfigs .setpill, .sumprs .setpill { animation: viewin var(--t-2) var(--e-out) both; }
@@ -2090,7 +2093,17 @@ export const STYLE = String.raw`<style>
   .pumpyart.artfailed { display: none; }
   .pumpyhello .pumpyart { width: 140px; height: 140px; margin-bottom: 16px; }
   #workout.summary .pumpyart { width: 88px; height: 88px; border-radius: 22px; margin-bottom: 12px; }
-  #workout.summary .wmain { justify-content: flex-start; padding-top: 22px; }
+  #workout.summary .wmain { justify-content: flex-start; align-items: center;
+    padding: 22px 20px calc(28px + env(safe-area-inset-bottom)); }
+  #workout.summary .wmain > :not(.pumpyart) { max-width: 440px; width: 100%; }
+  #workout.summary .sharewrap { text-align: center; }
+  #workout.summary .sharerow { align-items: center; justify-content: center; }
+  #workout.summary .scside { flex: 0 1 220px; }
+  @media (max-width: 380px) {
+    #workout.summary .sharerow { flex-direction: column; }
+    #workout.summary .scprev { flex: none; }
+    #workout.summary .scside { flex: auto; width: 100%; }
+  }
   #workout.summary .wmain > * { flex-shrink: 0; }
   #guideclose { width: 44px; height: 44px; }
   .pmark { overflow: hidden; background: #F5F1E8; }

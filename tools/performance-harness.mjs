@@ -30,7 +30,7 @@ function setup() {
       return b;
     }}
   });
-  for(const name of ['accountNow','readOnce','invalidateLogs','load','isPending','watchPending','pollPending','loadLogs','loadPlan','repaintPlan','planRange','ymd','mondayOf','addDays','monthOfWeek','firstOf'])vm.runInContext(fn(name),c);
+  for(const name of ['accountNow','readOnce','invalidateLogs','load','isPending','watchPending','pollPending','loadLogs','loadPlan','repaintPlan','planRange','ymd','mondayOf','addDays','monthOfWeek','firstOf','restorePlan'])vm.runInContext(fn(name),c);
   c.planShape=()=>JSON.stringify(c.state.plan);
   c.state.weekStart=new Date(2026,8,7);
   return {c,requests,toasts,timers,run:s=>vm.runInContext(s,c)};
@@ -125,7 +125,14 @@ await test('navigation starts reads before arrival but never grants a help visit
   const x=setup();let planReads=0;
   Object.assign(x.c,{VIEWS:['library','plan','progress','pumpy'],drawn:{},quietly:p=>p,
     guide:{visit:null},loadPlan:()=>{planReads++;return Promise.resolve();},countStats(){}});
-  vm.runInContext(fn('preparePage'),x.c);x.run('preparePage(1)');assert.equal(planReads,1);assert.equal(x.c.guide.visit,null);
+  vm.runInContext(fn('preparePage'),x.c);x.run('preparePage(1)');assert.equal(planReads,1);assert.equal(x.c.guide.visit,null);assert.equal(x.run('ymd(state.weekStart)'),x.run('ymd(mondayOf(new Date()))'));assert.equal(x.c.planMode,'week');
+});
+await test('Plan opens on the local current week across Sunday, Monday and year boundaries', async()=>{
+  for(const [day, expected] of [['2026-09-06T17:00:00','2026-08-31'],['2026-09-07T00:01:00','2026-09-07'],['2027-01-01T12:00:00','2026-12-28']]) {
+    const x=setup();x.c.Date=class extends Date {constructor(...args){super(...(args.length?args:[day]));}};
+    x.c.planMode='month';x.c.state.weekStart=new Date(2020,0,1);x.run('restorePlan()');
+    assert.equal(x.run('ymd(state.weekStart)'),expected);assert.equal(x.c.planMode,'week');
+  }
 });
 function transport(response) {
   const x=setup();let calls=0;

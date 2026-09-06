@@ -84,6 +84,59 @@ export const APP = String.raw`
     return node;
   }
 
+  // Watch the activated control so every icon swap (including async results) uses
+  // the same transition. Initial rendering and background refreshes stay still.
+  function wireIconMotion() {
+    var watching = new WeakMap();
+    document.addEventListener("click", function (event) {
+      var button = event.target.closest && event.target.closest("button, [role=button]");
+      if (!button || lessMotion() || !window.MutationObserver) return;
+      if (watching.has(button)) watching.get(button)();
+      function snapshot() {
+        var svg = button.querySelector("svg");
+        if (!svg) return null;
+        var cs = getComputedStyle(svg);
+        return { svg: svg, clone: svg.cloneNode(true), color: cs.color, fill: cs.fill,
+          key: svg.outerHTML + "|" + button.getAttribute("aria-pressed") + "|" +
+            button.getAttribute("aria-selected") + "|" + button.getAttribute("aria-expanded") +
+            "|" + button.classList.contains("on") };
+      }
+      var before = snapshot(), ghost = null, incoming = null;
+      function clearMotion() {
+        if (ghost) { ghost.remove(); ghost = null; }
+        if (incoming) { incoming.cancel(); incoming = null; }
+      }
+      var observer = new MutationObserver(function () {
+        var after = snapshot();
+        if (before && after && before.key !== after.key && button.isConnected && !lessMotion()) {
+          clearMotion();
+          var rect = after.svg.getBoundingClientRect();
+          if (rect.width && rect.height && after.svg.animate) {
+            ghost = before.clone;
+            ghost.setAttribute("aria-hidden", "true");
+            ghost.removeAttribute("id");
+            ghost.style.cssText = "position:fixed;pointer-events:none;z-index:10000;margin:0;left:" +
+              rect.left + "px;top:" + rect.top + "px;width:" + rect.width + "px;height:" + rect.height +
+              "px;color:" + before.color + ";fill:" + before.fill + ";";
+            document.body.appendChild(ghost);
+            var outgoing = ghost;
+            ghost.animate([{opacity:1, transform:"scale(1)"}, {opacity:0, transform:"scale(.65)"}],
+              {duration:180, easing:"ease-out"}).onfinish = function () { outgoing.remove(); };
+            incoming = after.svg.animate([{opacity:0, transform:"scale(.65)"}, {opacity:1, transform:"scale(1)"}],
+              {duration:220, easing:"cubic-bezier(.2,.8,.2,1)"});
+          }
+        }
+        before = after;
+      });
+      observer.observe(button, {subtree:true, childList:true, attributes:true,
+        attributeFilter:["href", "class", "aria-pressed", "aria-selected", "aria-expanded"]});
+      var timer = setTimeout(stop, 5000);
+      function stop() { observer.disconnect(); clearTimeout(timer); clearMotion(); watching.delete(button); }
+      watching.set(button, stop);
+    }, true);
+  }
+  wireIconMotion();
+
   var toastTimer = null;
   function toast(msg, ms) {
     var t = $("toast");
@@ -4891,12 +4944,25 @@ export const APP = String.raw`
     openSheet("setsheet");
   }
 
-  function drawStepper() {
+  function drawStepper(animate) {
     // Steps of 2.5 on a converted seed drift into 45.599999999999994, and every
     // change passes here on its way to the screen and to the saved set.
     setCtx.weight = Math.round(setCtx.weight * 10) / 10;
-    $("repsval").textContent = String(setCtx.reps);
-    $("wtval").textContent = setCtx.weight.toLocaleString();
+    animateNumber($("repsval"), String(setCtx.reps), animate);
+    animateNumber($("wtval"), setCtx.weight.toLocaleString(), animate);
+  }
+
+  function animateNumber(node, value, animate) {
+    var previous = node.textContent;
+    if (previous === value) return;
+    if (node._numberMotion) node._numberMotion.cancel();
+    node.textContent = value;
+    if (!animate || !previous || lessMotion() || !node.animate) return;
+    var up = Number(value.replace(/,/g, "")) > Number(previous.replace(/,/g, ""));
+    node._numberMotion = node.animate([
+      {opacity:0, transform:"translateY(" + (up ? "35%" : "-35%") + ")"},
+      {opacity:1, transform:"translateY(0)"}
+    ], {duration:180, easing:"cubic-bezier(.2,.8,.2,1)"});
   }
 
   // ---------- the two ways to change a number ----------
@@ -4908,7 +4974,7 @@ export const APP = String.raw`
     n = clamp(Math.round((n || 0) * p) / p, 0, dp ? 9999 : 999);
     if (n === setCtx[key]) return false;
     setCtx[key] = n;
-    drawStepper();
+    drawStepper(true);
     return true;
   }
 
@@ -5502,6 +5568,7 @@ export const APP = String.raw`
         box.appendChild(document.createTextNode(f[1]));
         figs.appendChild(box);
       });
+    main.appendChild(el("div", "sumawards"));
     main.appendChild(figs);
 
     // Where this session put the week. It is not in state.logs yet — the insert is
@@ -5566,7 +5633,7 @@ export const APP = String.raw`
     var show = won.length > 2 ? [{ kind: won[0].kind, all: won.length }] : won;
     show.forEach(function (a, i) {
       setTimeout(function () {
-        if (!main.isConnected) return;
+        if (!main.isConnected || !block || !block.isConnected || !$("workout").classList.contains("summary")) return;
         var seal = el("div", "seal");
         var disc = el("div", "sdisc");
         disc.appendChild(ringSvg(1, "srim", 0));
@@ -5574,7 +5641,7 @@ export const APP = String.raw`
         seal.appendChild(disc);
         seal.appendChild(el("div", "sname",
           a.all ? a.all + " new awards" : awardTitle(a)));
-        main.insertBefore(seal, main.querySelector(".sumfigs"));
+        main.querySelector(".sumawards").appendChild(seal);
         if (!lessMotion()) seal.classList.add("in");
         // The title says what just happened rather than what always happens.
         if (!i && block) {
@@ -6542,15 +6609,6 @@ export const APP = String.raw`
   // needs a control. An anchor each, not one, so coming back to Week lands on
   // the week you were reading.
   var planMode = "week", monthStart = null;
-  var PLAN_AT = "spotter_plan_at";
-
-  function rememberPlan() {
-    try {
-      localStorage.setItem(PLAN_AT,
-        planMode + "|" + ymd(planMode === "month" ? monthStart : state.weekStart));
-    } catch (e) { /* a browser that will not remember is not an error */ }
-  }
-
   // The week that speaks for a month: today's when today is in it, else the first.
   function weekInMonth(m) {
     var now = new Date();
@@ -6562,19 +6620,10 @@ export const APP = String.raw`
   function monthOfWeek(w) { return firstOf(addDays(w, 3)); }
 
   function restorePlan() {
-    var raw = "";
-    try { raw = localStorage.getItem(PLAN_AT) || ""; } catch (e) { return; }
-    var bits = raw.split("|");
-    var d = bits.length > 1 ? dayDate(bits[1]) : null;
-    if (!d || isNaN(d.getTime())) return;
-    if (bits[0] === "month") {
-      planMode = "month";
-      monthStart = firstOf(d);
-      state.weekStart = weekInMonth(monthStart);
-    } else {
-      state.weekStart = mondayOf(d);
-      monthStart = monthOfWeek(state.weekStart);
-    }
+    // Open on this week, including after a tab visit or a new calendar day.
+    planMode = "week";
+    state.weekStart = mondayOf(new Date());
+    monthStart = monthOfWeek(state.weekStart);
   }
   restorePlan();
 
@@ -6697,7 +6746,6 @@ export const APP = String.raw`
     barToday.onclick = function () {
       if (planMode === "month") monthStart = firstOf(new Date());
       state.weekStart = mondayOf(new Date());
-      rememberPlan();
       loadPlan();
     };
     acts.appendChild(barToday);
@@ -6719,7 +6767,6 @@ export const APP = String.raw`
       state.weekStart = addDays(state.weekStart, 7 * n);
       monthStart = monthOfWeek(state.weekStart);
     }
-    rememberPlan();
     loadPlan();
   }
 
@@ -6838,7 +6885,6 @@ export const APP = String.raw`
     planSwap = true;
     // Painted before the fetch: the slide belongs to the tap, not to the rows.
     paintPlanBar();
-    rememberPlan();
     loadPlan();
   }
 
@@ -8228,12 +8274,11 @@ export const APP = String.raw`
     renderPumpy();
   }
 
-  // Chips come back off the most recent turn that had any, so picking a
-  // conversation up leaves it where you left it.
+  // The newest explicit selection wins, including an empty list after clearing.
   function lastRefs(msgs, workoutId) {
     for (var i = msgs.length - 1; i >= 0; i--) {
       var u = msgs[i];
-      if (u.role === "user" && u.meta && u.meta.refs && u.meta.refs.length) return u.meta.refs;
+      if (u.role === "user" && u.meta && Array.isArray(u.meta.refs)) return u.meta.refs;
     }
     return workoutId ? [workoutId] : [];
   }
@@ -11601,6 +11646,8 @@ export const APP = String.raw`
     // is a snapshot, and renderToday() decides for itself whether it has aged.
     if (v === "library") { renderToday(); return; }
     if (v === "plan") {
+      restorePlan();
+      $("planview").scrollTop = 0;
       drawn.plan = true;
       quietly(loadPlan(true));
     } else if (v === "progress") {

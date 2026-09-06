@@ -3485,12 +3485,15 @@ body:not(.app) #toast.show {
   margin-top: 16px;
 }
 .planbtn .pumpmark {
+  border-radius: 50%;
+  overflow: hidden;
   width: 18px;
   height: 18px;
   color: var(--ember);
   flex: 0 0 auto;
 }
 .planbtn .pumpmark svg {
+  border-radius: 50%;
   width: 100%;
   height: 100%;
   display: block;
@@ -3757,9 +3760,9 @@ body:not(.app) #toast.show {
 }
 .sdisc .wring {
   position: absolute;
-  inset: -6px;
-  width: auto;
-  height: auto;
+  inset: 0;
+  width: 100%;
+  height: 100%;
 }
 .seal .rtrack {
   display: none;
@@ -4447,6 +4450,19 @@ body:not(.app) #toast.show {
 :root {
   --sc-dark: #0E1013 #171B20 #F2F5F8 #98A3AF #FF7A45 #2A3138;
   --sc-light: #F1F3F6 #FFFFFF #14171A #68727E #E8551F #E2E6EC;
+}
+.sumawards {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 16px 24px;
+}
+.sumawards:empty {
+  display: none;
+}
+.sumawards .seal {
+  flex: 0 1 140px;
+  min-width: 0;
 }
 .sumfigs {
   margin-top: 20px;
@@ -5647,7 +5663,34 @@ select:focus-visible {
 }
 #workout.summary .wmain {
   justify-content: flex-start;
-  padding-top: 22px;
+  align-items: center;
+  padding: 22px 20px calc(28px + env(safe-area-inset-bottom));
+}
+#workout.summary .wmain > :not(.pumpyart) {
+  max-width: 440px;
+  width: 100%;
+}
+#workout.summary .sharewrap {
+  text-align: center;
+}
+#workout.summary .sharerow {
+  align-items: center;
+  justify-content: center;
+}
+#workout.summary .scside {
+  flex: 0 1 220px;
+}
+@media (max-width: 380px) {
+  #workout.summary .sharerow {
+    flex-direction: column;
+  }
+  #workout.summary .scprev {
+    flex: none;
+  }
+  #workout.summary .scside {
+    flex: auto;
+    width: 100%;
+  }
 }
 #workout.summary .wmain > * {
   flex-shrink: 0;
@@ -6524,6 +6567,63 @@ select:focus-visible {
   function icon(node, name, text) {
     return node.appendChild(ic(name)), text && node.appendChild(document.createTextNode(text)), node;
   }
+  function wireIconMotion() {
+    var watching = /* @__PURE__ */ new WeakMap();
+    document.addEventListener("click", function(event) {
+      var button = event.target.closest && event.target.closest("button, [role=button]");
+      if (!button || lessMotion() || !window.MutationObserver) return;
+      watching.has(button) && watching.get(button)();
+      function snapshot() {
+        var svg = button.querySelector("svg");
+        if (!svg) return null;
+        var cs = getComputedStyle(svg);
+        return {
+          svg: svg,
+          clone: svg.cloneNode(!0),
+          color: cs.color,
+          fill: cs.fill,
+          key: svg.outerHTML + "|" + button.getAttribute("aria-pressed") + "|" + button.getAttribute("aria-selected") + "|" + button.getAttribute("aria-expanded") + "|" + button.classList.contains("on")
+        };
+      }
+      var before = snapshot(), ghost = null, incoming = null;
+      function clearMotion() {
+        ghost && (ghost.remove(), ghost = null), incoming && (incoming.cancel(), incoming = null);
+      }
+      var observer = new MutationObserver(function() {
+        var after = snapshot();
+        if (before && after && before.key !== after.key && button.isConnected && !lessMotion()) {
+          clearMotion();
+          var rect = after.svg.getBoundingClientRect();
+          if (rect.width && rect.height && after.svg.animate) {
+            ghost = before.clone, ghost.setAttribute("aria-hidden", "true"), ghost.removeAttribute("id"), ghost.style.cssText = "position:fixed;pointer-events:none;z-index:10000;margin:0;left:" + rect.left + "px;top:" + rect.top + "px;width:" + rect.width + "px;height:" + rect.height + "px;color:" + before.color + ";fill:" + before.fill + ";", document.body.appendChild(ghost);
+            var outgoing = ghost;
+            ghost.animate(
+              [{ opacity: 1, transform: "scale(1)" }, { opacity: 0, transform: "scale(.65)" }],
+              { duration: 180, easing: "ease-out" }
+            ).onfinish = function() {
+              outgoing.remove();
+            }, incoming = after.svg.animate(
+              [{ opacity: 0, transform: "scale(.65)" }, { opacity: 1, transform: "scale(1)" }],
+              { duration: 220, easing: "cubic-bezier(.2,.8,.2,1)" }
+            );
+          }
+        }
+        before = after;
+      });
+      observer.observe(button, {
+        subtree: !0,
+        childList: !0,
+        attributes: !0,
+        attributeFilter: ["href", "class", "aria-pressed", "aria-selected", "aria-expanded"]
+      });
+      var timer = setTimeout(stop, 5e3);
+      function stop() {
+        observer.disconnect(), clearTimeout(timer), clearMotion(), watching.delete(button);
+      }
+      watching.set(button, stop);
+    }, !0);
+  }
+  wireIconMotion();
   var toastTimer = null;
   function toast(msg, ms) {
     var t = $("toast");
@@ -9338,12 +9438,22 @@ select:focus-visible {
       editing = null, $("repsbox").classList.remove("editing"), $("wtbox").classList.remove("editing"), setCtx.idx = idx2, setCtx.reps = existing ? existing.reps : targetReps, setCtx.weight = existing ? toUnit(existing.weight, existing.unit) : h ? toUnit(h.weight, h.unit) : 0, $("settitle").textContent = (s && s.ex ? s.ex.name : "Set") + " \xB7 set " + (idx2 + 1), $("setlast").textContent = lastLine(entry), $("wtunit").textContent = state.unit, drawStepper(), openSheet("setsheet");
     }
   }
-  function drawStepper() {
-    setCtx.weight = Math.round(setCtx.weight * 10) / 10, $("repsval").textContent = String(setCtx.reps), $("wtval").textContent = setCtx.weight.toLocaleString();
+  function drawStepper(animate) {
+    setCtx.weight = Math.round(setCtx.weight * 10) / 10, animateNumber($("repsval"), String(setCtx.reps), animate), animateNumber($("wtval"), setCtx.weight.toLocaleString(), animate);
+  }
+  function animateNumber(node, value, animate) {
+    var previous = node.textContent;
+    if (previous !== value && (node._numberMotion && node._numberMotion.cancel(), node.textContent = value, !(!animate || !previous || lessMotion() || !node.animate))) {
+      var up = Number(value.replace(/,/g, "")) > Number(previous.replace(/,/g, ""));
+      node._numberMotion = node.animate([
+        { opacity: 0, transform: "translateY(" + (up ? "35%" : "-35%") + ")" },
+        { opacity: 1, transform: "translateY(0)" }
+      ], { duration: 180, easing: "cubic-bezier(.2,.8,.2,1)" });
+    }
   }
   function setNum(key, n, dp) {
     var p = dp ? 10 : 1;
-    return n = clamp(Math.round((n || 0) * p) / p, 0, dp ? 9999 : 999), n === setCtx[key] ? !1 : (setCtx[key] = n, drawStepper(), !0);
+    return n = clamp(Math.round((n || 0) * p) / p, 0, dp ? 9999 : 999), n === setCtx[key] ? !1 : (setCtx[key] = n, drawStepper(!0), !0);
   }
   function setReps(n) {
     return setNum("reps", n, 0);
@@ -9707,7 +9817,7 @@ select:focus-visible {
     ].forEach(function(f) {
       var box = el("div", "setpill");
       box.appendChild(el("b", null, f[0])), box.appendChild(document.createTextNode(f[1])), figs.appendChild(box);
-    }), main.appendChild(figs);
+    }), main.appendChild(el("div", "sumawards")), main.appendChild(figs);
     var wk = thisWeek(payload);
     if (wk) {
       var wl = el("div", "sumweek" + (wk.done >= wk.goal ? " full" : ""));
@@ -9736,13 +9846,13 @@ select:focus-visible {
         var block = main.querySelector(".wblock"), show = won.length > 2 ? [{ kind: won[0].kind, all: won.length }] : won;
         show.forEach(function(a, i) {
           setTimeout(function() {
-            if (main.isConnected) {
+            if (!(!main.isConnected || !block || !block.isConnected || !$("workout").classList.contains("summary"))) {
               var seal = el("div", "seal"), disc = el("div", "sdisc");
               disc.appendChild(ringSvg(1, "srim", 0)), disc.appendChild(ic(AW_ICON[a.kind] || "star")), seal.appendChild(disc), seal.appendChild(el(
                 "div",
                 "sname",
                 a.all ? a.all + " new awards" : awardTitle(a)
-              )), main.insertBefore(seal, main.querySelector(".sumfigs")), lessMotion() || seal.classList.add("in"), !i && block && (block.classList.add("fade"), setTimeout(function() {
+              )), main.querySelector(".sumawards").appendChild(seal), lessMotion() || seal.classList.add("in"), !i && block && (block.classList.add("fade"), setTimeout(function() {
                 block.textContent = a.all ? "Session complete" : awardTitle(a), block.classList.remove("fade");
               }, 220)), setTimeout(function() {
                 haptic("done");
@@ -10348,16 +10458,7 @@ select:focus-visible {
   function dayDate(key) {
     return /* @__PURE__ */ new Date(key + "T12:00:00");
   }
-  var planMode = "week", monthStart = null, PLAN_AT = "spotter_plan_at";
-  function rememberPlan() {
-    try {
-      localStorage.setItem(
-        PLAN_AT,
-        planMode + "|" + ymd(planMode === "month" ? monthStart : state.weekStart)
-      );
-    } catch (e) {
-    }
-  }
+  var planMode = "week", monthStart = null;
   function weekInMonth(m) {
     var now2 = /* @__PURE__ */ new Date();
     return now2.getFullYear() === m.getFullYear() && now2.getMonth() === m.getMonth() ? mondayOf(now2) : mondayOf(m);
@@ -10366,14 +10467,7 @@ select:focus-visible {
     return firstOf(addDays(w, 3));
   }
   function restorePlan() {
-    var raw = "";
-    try {
-      raw = localStorage.getItem(PLAN_AT) || "";
-    } catch (e) {
-      return;
-    }
-    var bits = raw.split("|"), d = bits.length > 1 ? dayDate(bits[1]) : null;
-    !d || isNaN(d.getTime()) || (bits[0] === "month" ? (planMode = "month", monthStart = firstOf(d), state.weekStart = weekInMonth(monthStart)) : (state.weekStart = mondayOf(d), monthStart = monthOfWeek(state.weekStart)));
+    planMode = "week", state.weekStart = mondayOf(/* @__PURE__ */ new Date()), monthStart = monthOfWeek(state.weekStart);
   }
   restorePlan();
   function planRange() {
@@ -10454,13 +10548,13 @@ select:focus-visible {
     }), row.appendChild(barSeg);
     var acts = el("div", "planacts");
     return barToday = el("button", "planbtn", "Today"), barToday.onclick = function() {
-      planMode === "month" && (monthStart = firstOf(/* @__PURE__ */ new Date())), state.weekStart = mondayOf(/* @__PURE__ */ new Date()), rememberPlan(), loadPlan();
+      planMode === "month" && (monthStart = firstOf(/* @__PURE__ */ new Date())), state.weekStart = mondayOf(/* @__PURE__ */ new Date()), loadPlan();
     }, acts.appendChild(barToday), barCopy = el("button", "planbtn", "Copy"), barCopy.onclick = function() {
       openCopy();
     }, acts.appendChild(barCopy), row.appendChild(acts), planBar.appendChild(row), planBar;
   }
   function stepPlan(n) {
-    planMode === "month" ? (monthStart = new Date(monthStart.getFullYear(), monthStart.getMonth() + n, 1), state.weekStart = weekInMonth(monthStart)) : (state.weekStart = addDays(state.weekStart, 7 * n), monthStart = monthOfWeek(state.weekStart)), rememberPlan(), loadPlan();
+    planMode === "month" ? (monthStart = new Date(monthStart.getFullYear(), monthStart.getMonth() + n, 1), state.weekStart = weekInMonth(monthStart)) : (state.weekStart = addDays(state.weekStart, 7 * n), monthStart = monthOfWeek(state.weekStart)), loadPlan();
   }
   var WB_LEAD = 64, planSlide = 0;
   function wireWeekBar(bar) {
@@ -10522,7 +10616,7 @@ select:focus-visible {
     });
   }
   function setPlanMode(m) {
-    m !== planMode && (m === "month" ? monthStart = monthOfWeek(state.weekStart) : state.weekStart = weekInMonth(monthStart), planMode = m, planSwap = !0, paintPlanBar(), rememberPlan(), loadPlan());
+    m !== planMode && (m === "month" ? monthStart = monthOfWeek(state.weekStart) : state.weekStart = weekInMonth(monthStart), planMode = m, planSwap = !0, paintPlanBar(), loadPlan());
   }
   function showingToday() {
     var now2 = /* @__PURE__ */ new Date();
@@ -11360,7 +11454,7 @@ select:focus-visible {
   function lastRefs(msgs, workoutId) {
     for (var i = msgs.length - 1; i >= 0; i--) {
       var u = msgs[i];
-      if (u.role === "user" && u.meta && u.meta.refs && u.meta.refs.length) return u.meta.refs;
+      if (u.role === "user" && u.meta && Array.isArray(u.meta.refs)) return u.meta.refs;
     }
     return workoutId ? [workoutId] : [];
   }
@@ -13535,7 +13629,7 @@ select:focus-visible {
       renderToday();
       return;
     }
-    v === "plan" ? (drawn.plan = !0, quietly(loadPlan(!0))) : v === "progress" ? !drawn.progress || !state.logs ? (drawn.progress = !0, quietly(loadLogs().then(renderProgress))) : countStats() : v === "pumpy" && loadPumpy();
+    v === "plan" ? (restorePlan(), $("planview").scrollTop = 0, drawn.plan = !0, quietly(loadPlan(!0))) : v === "progress" ? !drawn.progress || !state.logs ? (drawn.progress = !0, quietly(loadLogs().then(renderProgress))) : countStats() : v === "pumpy" && loadPumpy();
   }
   function settled() {
     arrivedAt !== idx && (arrivedAt = idx, arrive(idx));
