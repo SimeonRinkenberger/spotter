@@ -42,7 +42,7 @@ export const APP = String.raw`
     user: null, profile: null, workouts: [], logs: null, plan: null,
     collections: [], colItems: [],
     filter: "All", q: "", view: "library", weekStart: null, unit: "lb",
-    sounds: true, haptics: true
+    sounds: true, haptics: true, goal: null, awards: null
   };
 
   function $(id) { return document.getElementById(id); }
@@ -1541,6 +1541,9 @@ export const APP = String.raw`
     var dose = [todayDose(w), list.length > 1 ? "+" + (list.length - 1) + " more today" : null]
       .filter(Boolean).join(" · ");
     if (dose) card.appendChild(el("div", "tdose", dose));
+    // Where the week stands, on the card already answering "what am I doing today".
+    var wk = thisWeek();
+    if (wk) card.appendChild(el("div", "tweek" + (wk.atRisk ? " risk" : ""), weekLine(wk)));
     // The detail overlay's own start call, so finishing lands in the same place.
     var go = el("button", "btn tstart" + (today.done ? " ghost" : ""),
       today.done ? "Log another" : "Start");
@@ -5322,6 +5325,17 @@ export const APP = String.raw`
       });
     main.appendChild(figs);
 
+    // Where this session put the week. It is not in state.logs yet — the insert is
+    // still in the air — so it is handed in, the same "draw from memory" rule the
+    // rest of this screen follows.
+    var wk = thisWeek(payload);
+    if (wk) {
+      var wl = el("div", "sumweek" + (wk.done >= wk.goal ? " full" : ""));
+      if (wk.done === wk.goal) wl.appendChild(ringSvg(1, "small", (wk.goal - 1) / wk.goal));
+      wl.appendChild(el("span", null, weekLine(wk)));
+      main.appendChild(wl);
+    }
+
     // What was worked, in the card's own words. The anatomical map stays in the
     // detail view; a list says as much here for a fraction of the page.
     var mg = wo.workout.muscle_groups || [];
@@ -6832,6 +6846,9 @@ export const APP = String.raw`
       .order("started_at", { ascending: false }).limit(400)
       .then(function (r) {
         state.logs = r.data || [];
+        // The today card draws its week line from these and was drawn before they
+        // existed: warmPages reads the logs after the library has landed.
+        if (today.shown) renderToday();
         return state.logs;
       });
   }
@@ -6851,7 +6868,198 @@ export const APP = String.raw`
     return ymd(mondayOf(new Date(iso)));
   }
 
-  // The three headline figures count up the first time Progress is LOOKED AT, and
+  // ---------- the week, the streak, the freeze ----------
+  //
+  // The unit is a WEEK, not a day. A day streak punishes rest, and rest is in the
+  // programme the plan already writes down: Duolingo's day would buy junk volume
+  // here and pay for it in injuries. A week counts when it met the goal, and the
+  // goal is the user's own — their setting, or what their plan asks for. Nothing
+  // here ever raises it. All computed from rows already in memory: one pass over
+  // the logs Progress reads anyway, no table, no round trip.
+
+  var GOAL_FALLBACK = 3;
+  var WEEK_MS = 7 * 86400000;
+
+  function goalSetting() {
+    if (state.goal) return state.goal;
+    var s = state.profile && state.profile.settings;
+    return (s && s.goal) || null;
+  }
+
+  // Which days of a Mon-Sun week the plan has something on. state.plan holds only
+  // the range the Plan tab is looking at, so this answers 0 once the user pages
+  // away, and the goal falls back to the setting rather than to nothing.
+  function planMap(plan, monday) {
+    var days = {}, n = 0, i;
+    for (i = 0; i < 7; i++) days[ymd(addDays(monday, i))] = false;
+    (plan || []).forEach(function (p) {
+      if (p && days[p.day] === false) { days[p.day] = true; n++; }
+    });
+    return { days: days, n: n };
+  }
+
+  // A finished workout with at least one set in it: an abandoned session that
+  // logged nothing is not training and must not fill a ring.
+  function isSession(l) {
+    if (!l || !l.completed_at) return false;
+    var e = l.entries || [];
+    for (var i = 0; i < e.length; i++) if ((e[i].sets || []).filter(Boolean).length) return true;
+    return false;
+  }
+
+  // Freezes spent inside the four-week window ending at week n (n is weeks ago,
+  // so the window is n-3..n and every entry in fz is more recent).
+  function fzIn(fz, n) {
+    var c = 0;
+    for (var i = 0; i < fz.length; i++) if (fz[i] > n - 4) c++;
+    return c;
+  }
+
+  function weekStats(logs, plan, goalSet, now) {
+    var monday = mondayOf(now), wk = ymd(monday), i;
+
+    // Two sessions in a day are two toward the goal but one dot: the dot is a
+    // calendar, the goal is a count.
+    var per = {}, mine = {};
+    (logs || []).forEach(function (l) {
+      if (!isSession(l)) return;
+      var k = weekKey(l.started_at);
+      per[k] = (per[k] || 0) + 1;
+      if (k === wk) mine[ymd(new Date(l.started_at))] = 1;
+    });
+
+    var pm = planMap(plan, monday);
+    var goal = Math.max(1, goalSet || pm.n || GOAL_FALLBACK);
+    var done = per[wk] || 0, needed = Math.max(0, goal - done);
+    // Today still counts, so Monday has seven days left and Sunday has one.
+    var daysLeft = 7 - ((now.getDay() + 6) % 7);
+
+    var dots = [];
+    for (i = 0; i < 7; i++) {
+      var key = ymd(addDays(monday, i));
+      dots.push(mine[key] ? "on" : (i >= 7 - daysLeft && pm.days[key] ? "plan" : ""));
+    }
+
+    // Walking back from the week before this one. The week being lived in is never
+    // asked to be finished — it can only add — which is what stops a Wednesday
+    // from reading as a failure. A week EXACTLY one short spends a freeze instead
+    // of breaking the run: free, automatic, silent, one per rolling four weeks
+    // (two on Plus). A streak you can only keep by paying is a hostage.
+    var allow = isFree() ? 1 : 2;
+    var fz = [], streak = done >= goal ? 1 : 0;
+    for (var n = 1; n < 260; n++) {
+      var got = per[ymd(new Date(monday.getTime() - n * WEEK_MS))] || 0;
+      if (got >= goal) streak++;
+      else if (goal - got === 1 && fzIn(fz, n) < allow) { fz.push(n); streak++; }
+      else break;
+    }
+
+    return { weekKey: wk, done: done, goal: goal, needed: needed, daysLeft: daysLeft,
+      atRisk: needed > 0 && needed === daysLeft, unreachable: needed > daysLeft,
+      dots: dots, streakWeeks: streak, freezesUsed: fz.length,
+      freezeAvailable: fzIn(fz, 0) < allow };
+  }
+
+  // null until the logs land: a caller leaves its line out rather than print a zero.
+  function thisWeek(extra) {
+    if (!state.logs) return null;
+    var logs = extra ? state.logs.concat([extra]) : state.logs;
+    return weekStats(logs, state.plan, goalSetting(), new Date());
+  }
+
+  // ---------- the ring ----------
+  //
+  // Apple's Activity ring with one arc instead of three: one glanceable goal is
+  // the point of the shape. Only stroke-dashoffset moves.
+
+  var RING_R = 44, RING_C = 2 * Math.PI * RING_R;
+
+  function svgNode(name, cls) {
+    var n = document.createElementNS("http://www.w3.org/2000/svg", name);
+    if (cls) n.setAttribute("class", cls);
+    return n;
+  }
+
+  function ringCircle(cls) {
+    var c = svgNode("circle", cls);
+    c.setAttribute("cx", "50"); c.setAttribute("cy", "50"); c.setAttribute("r", String(RING_R));
+    return c;
+  }
+
+  // Drawn empty, then handed its real offset a beat after the caller has put it on
+  // the page: that is what sweeps the arc round rather than it simply being there.
+  function ringOff(pct) {
+    return (RING_C * (1 - Math.max(0, Math.min(1, pct || 0)))).toFixed(1);
+  }
+
+  function ringSvg(pct, cls, from) {
+    var s = svgNode("svg", "ring" + (cls ? " " + cls : ""));
+    s.setAttribute("viewBox", "0 0 100 100"); s.setAttribute("aria-hidden", "true");
+    s.appendChild(ringCircle("rtrack"));
+    var arc = ringCircle("rarc");
+    arc.style.strokeDasharray = RING_C.toFixed(1);
+    arc.style.strokeDashoffset = ringOff(from);
+    s.appendChild(arc);
+    var to = ringOff(pct);
+    if (lessMotion()) arc.style.strokeDashoffset = to;
+    else setTimeout(function () { arc.style.strokeDashoffset = to; }, 30);
+    return s;
+  }
+
+  // Mon-Sun, in a 44px row: they open the sheet that says what counts.
+  function weekDots(st) {
+    var b = el("button", "wdots");
+    b.setAttribute("aria-label", "What counts as a session");
+    st.dots.forEach(function (d) { b.appendChild(el("i", d)); });
+    b.onclick = function () { openSheet("countsheet"); };
+    return b;
+  }
+
+  // Never a scold: a week that can no longer be met stops counting and points at
+  // Monday — the fresh-start framing rather than the failure one.
+  function ringLabel(st) {
+    if (st.done >= st.goal) return "Week complete";
+    if (st.unreachable) return "Next week starts Monday.";
+    if (st.atRisk) return st.needed + " to go · " + st.daysLeft +
+      (st.daysLeft === 1 ? " day left" : " days left");
+    // The eyebrow says "This week" when there is no streak; do not say it twice.
+    return st.done + " of " + st.goal + (st.streakWeeks > 0 ? " this week" : "");
+  }
+
+  // The compact form: one line, no ring, for the today card and the summary.
+  function weekLine(st) {
+    if (st.streakWeeks > 0) {
+      return "Week " + st.streakWeeks + " · " + st.done + " of " + st.goal +
+        (st.done >= st.goal ? " — week complete" : "");
+    }
+    return st.done + " of " + st.goal + " this week";
+  }
+
+  function weekHero(st) {
+    var box = el("div", "ringhero" + (st.done >= st.goal ? " full" : "") +
+      (st.atRisk ? " risk" : "") + (st.unreachable ? " miss" : ""));
+    // The streak, in weeks. A streak of nothing says nothing, so it reads as itself.
+    box.appendChild(el("div", "reyebrow",
+      st.streakWeeks > 0 ? "Week " + st.streakWeeks : "This week"));
+
+    var wrap = el("div", "ringwrap");
+    wrap.appendChild(ringSvg(st.goal ? st.done / st.goal : 0));
+    var mid = el("div", "rmid");
+    if (st.done >= st.goal) {
+      mid.appendChild(icon(el("div", "rcheck"), "check"));
+    } else {
+      mid.appendChild(el("div", "rnum countup", String(st.done)));
+      mid.appendChild(el("div", "rof", "of " + st.goal));
+    }
+    wrap.appendChild(mid);
+    box.appendChild(wrap);
+
+    box.appendChild(el("div", "rlabel", ringLabel(st)));
+    box.appendChild(weekDots(st));
+    return box;
+  }
+
+  // The headline figure counts up the first time Progress is LOOKED AT, and
   // never again: a number that re-counts on every swipe back is a fidget, not a
   // result.
   //
@@ -6866,7 +7074,7 @@ export const APP = String.raw`
 
   function countStats() {
     if (statsCounted || state.view !== "progress") return;
-    var nodes = document.querySelectorAll("#progressview .stat .v");
+    var nodes = document.querySelectorAll("#progressview .countup");
     if (!nodes.length) return;
     statsCounted = true;
     if (lessMotion()) return;
@@ -6902,31 +7110,13 @@ export const APP = String.raw`
       return;
     }
 
-    // stat row: streak of consecutive weeks with at least one session
-    var weeks = {};
-    logs.forEach(function (l) { weeks[weekKey(l.started_at)] = true; });
-    var streak = 0;
-    var cursor = mondayOf(new Date());
-    while (weeks[ymd(cursor)]) {
-      streak++;
-      cursor = new Date(cursor.getTime() - 7 * 86400000);
-    }
-    var thisWeek = logs.filter(function (l) {
-      return weekKey(l.started_at) === ymd(mondayOf(new Date()));
-    }).length;
-
-    var row = el("div", "statrow");
-    // "1 · Week streak" was never right, and the ternary meant to fix it had the
-    // same string in both arms. A streak is weeks in a row; one is still one.
-    [[streak, streak === 1 ? "Week in a row" : "Weeks in a row"],
-     [thisWeek, "This week"],
-     [logs.length, "Sessions"]].forEach(function (s) {
-      var c = el("div", "stat");
-      c.appendChild(el("div", "v", String(s[0])));
-      c.appendChild(el("div", "k", s[1]));
-      row.appendChild(c);
-    });
-    v.appendChild(row);
+    // One goal, one arc, the streak above it. The three bare figures that used to
+    // sit here counted weeks with ANY session in them, which is not a goal.
+    var st = weekStats(logs, state.plan, goalSetting(), new Date());
+    var hero = weekHero(st);
+    hero.appendChild(el("div", "rmeta",
+      logs.length + (logs.length === 1 ? " session" : " sessions") + " logged"));
+    v.appendChild(hero);
 
     // What you've hit this week, from the sessions actually logged: each logged
     // entry carries the canonical_id it was started with, and the catalog says
@@ -8706,7 +8896,7 @@ export const APP = String.raw`
 
   ["addsheet", "setsheet", "watchsheet", "exsheet", "exeditsheet", "explainsheet", "picksheet",
    "settingssheet", "colsheet", "renamesheet", "swapsheet", "pumpysheet", "capsheet", "plansheet",
-   "daysheet", "copysheet", "sortsheet", "refsheet"]
+   "daysheet", "copysheet", "sortsheet", "refsheet", "countsheet"]
     .forEach(wireSheet);
 
   function overlayShowing() {
@@ -9355,6 +9545,7 @@ export const APP = String.raw`
     $("setmailrow").disabled = !mine;
     $("setname").textContent = displayName() || "Not set";
     $("unittoggle").textContent = state.unit;
+    paintGoal();
     $("haptictoggle").textContent = state.haptics ? "On" : "Off";
     $("sethapticrow").classList.toggle("hide", !navigator.vibrate);
     paintSounds();
@@ -9414,6 +9605,10 @@ export const APP = String.raw`
   // of them used to be enough to drop the others.
   function saveSettings() {
     var s = { unit: state.unit, sounds: state.sounds, haptics: state.haptics };
+    // The column is written WHOLE, so a key left out here is a key deleted by the
+    // next unit toggle. goalSetting() is the reader, so it is also the source.
+    var g = goalSetting();
+    if (g) s.goal = g;
     if (state.profile) state.profile.settings = s;
     // The then() is what sends it. A supabase-js builder is lazy — it only runs
     // the request when something awaits it — so this line without one has been
@@ -9430,6 +9625,29 @@ export const APP = String.raw`
     // relabelled — reloading the logs first if something has already dropped them.
     if (!drawn.progress) return;
     if (state.logs) renderProgress(); else quietly(loadLogs().then(renderProgress));
+  }
+
+  // One to seven. It opens on what the ring is already using — the plan's own
+  // number where nothing was set — so the first tap adjusts, never invents.
+  function paintGoal() {
+    var st = thisWeek();
+    var g = goalSetting() || (st ? st.goal
+      : planMap(state.plan, mondayOf(new Date())).n || GOAL_FALLBACK);
+    $("goalnum").textContent = String(g);
+    $("goalless").disabled = g <= 1;
+    $("goalmore").disabled = g >= 7;
+    return g;
+  }
+
+  function bumpGoal(by) {
+    var g = Math.max(1, Math.min(7, paintGoal() + by));
+    state.goal = g;
+    paintGoal();
+    haptic("tap");
+    saveSettings();
+    // The ring, its label, the streak and the today card all read this number.
+    if (drawn.progress && state.logs) renderProgress();
+    if (today.shown) renderToday();
   }
 
   function toggleSounds() { setSounds(!state.sounds); }
@@ -10562,6 +10780,9 @@ export const APP = String.raw`
   };
   $("rotatekey").onclick = rotateKey;
   $("unittoggle").onclick = toggleUnit;
+  $("goalless").onclick = function () { bumpGoal(-1); };
+  $("goalmore").onclick = function () { bumpGoal(1); };
+  $("countdone").onclick = function () { closeSheet("countsheet"); };
   $("soundtoggle").onclick = toggleSounds;
   $("haptictoggle").onclick = toggleHaptics;
   $("setnamerow").onclick = openName;

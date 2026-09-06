@@ -435,6 +435,19 @@ export const MARKUP_BODY = String.raw`</head>
   <button class="planadd" id="dayadd">+ Add a workout</button>
 </div></div>
 
+<!-- What the ring counts, one tap under the dots: a goal whose rules are hidden
+     is a goal people quietly stop believing. -->
+<div class="sheet" id="countsheet"><div class="sheetbody">
+  <div class="grabber"></div>
+  <h2>What counts</h2>
+  <p class="lede">A session is a workout you finished with at least one set logged. Two in one
+    day count as two. Rest days are free &mdash; the week only asks for the number you set, and it
+    starts again on Monday.</p>
+  <p class="lede">Come up one session short and a freeze covers the week, automatically and once
+    every four weeks. It costs nothing, and you are told afterwards.</p>
+  <div class="btnrow"><button class="btn" id="countdone">Done</button></div>
+</div></div>
+
 <div class="sheet" id="copysheet"><div class="sheetbody">
   <div class="grabber"></div>
   <h2>Copy a week</h2>
@@ -561,6 +574,10 @@ export const MARKUP_BODY = String.raw`</head>
 
   <h3 class="seth">Preferences</h3>
   <div class="setgroup">
+    <!-- What the week ring is measured against: the user's own number, prefilled
+         from the plan, and never raised by this app. -->
+    <div class="kv"><span class="k">Sessions a week</span>
+      <span class="v goalset"><button class="chip" id="goalless" aria-label="One session a week fewer">&minus;</button><b id="goalnum">3</b><button class="chip" id="goalmore" aria-label="One session a week more">+</button></span></div>
     <div class="kv"><span class="k">Weight unit</span>
       <span class="v"><button class="chip" id="unittoggle">lb</button></span></div>
     <div class="kv"><span class="k">Timer sounds</span>

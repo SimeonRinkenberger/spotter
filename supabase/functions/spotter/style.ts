@@ -1310,13 +1310,64 @@ export const STYLE = String.raw`<style>
     .planin { animation: planswap var(--t-2) var(--e-out); }
   }
 
-  /* ---------- progress / history ---------- */
-  .statrow { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; margin: 4px 0 18px; }
-  .stat { background: var(--card); border: 1px solid var(--line); border-radius: 15px; padding: 14px 10px;
-    text-align: center; box-shadow: var(--sh-sm); }
-  .stat .v { font-family: var(--display); font-size: 24px; font-weight: 700; letter-spacing: -.018em;
-    line-height: 1; color: var(--ink); font-variant-numeric: tabular-nums; }
-  .stat .k { font-size: 11px; font-weight: 600; color: var(--muted); margin-top: 6px; }
+  /* ---------- progress / history ----------
+     The week ring: Apple's Activity shape with ONE arc, because a second ring is
+     a second thing to fail at. Only stroke-dashoffset moves, and every colour is
+     a token, so the dark scheme costs nothing. */
+  .ringhero { background: var(--card); border: 1px solid var(--line); border-radius: 20px;
+    padding: 17px 16px 8px; margin: 4px 0 14px; box-shadow: var(--sh-sm); text-align: center; }
+  .reyebrow { font-family: var(--display); font-size: 13px; font-weight: 700; letter-spacing: .09em;
+    text-transform: uppercase; color: var(--ember-ink); }
+  .ringhero.miss .reyebrow { color: var(--muted); }
+  .ringwrap { position: relative; width: min(96px, 26vw); height: min(96px, 26vw);
+    margin: 13px auto 11px; }
+  .ring { display: block; width: 100%; height: 100%; overflow: visible; }
+  .rtrack, .rarc { fill: none; stroke-width: 4.2; }
+  .rtrack { stroke: var(--sand); }
+  .rarc { stroke: var(--ember); stroke-linecap: round;
+    transform: rotate(-90deg); transform-origin: 50% 50%;
+    transition: stroke-dashoffset var(--t-4) var(--e-out), stroke var(--t-3) var(--e-soft); }
+  .ringhero.full .rarc, .sumweek.full .rarc { stroke: var(--good); }
+  /* Once, two seconds, on a week still winnable but tight. Something that pulses
+     forever is an alarm; this is a nudge. */
+  .ringhero.risk .ring { animation: ringpulse 2s var(--e-soft) 1; }
+  @keyframes ringpulse { 0%, 100% { filter: none; }
+    50% { filter: drop-shadow(0 0 6px var(--glow)); } }
+  .rmid { position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 1px; }
+  .rnum { font-family: var(--display); font-size: min(40px, 11vw); font-weight: 800;
+    line-height: 1; letter-spacing: -.02em; color: var(--ink); }
+  .rof { font-size: 11px; font-weight: 600; color: var(--muted); }
+  .rcheck { display: flex; color: var(--good); }
+  .rcheck .ic { width: 34px; height: 34px; stroke-width: 2.6; }
+  .rnum, .rof, .reyebrow, .rmeta, .tweek, .sumweek { font-variant-numeric: tabular-nums; }
+  .rlabel { font-size: 13.5px; font-weight: 600; color: var(--ink-2); }
+  .ringhero.risk .rlabel { color: var(--ember-ink); }
+  .ringhero.full .rlabel { color: var(--good); }
+  /* Mon to Sun: filled for a session, ringed for a planned day still ahead, empty
+     for a free one. 44px of row around them, because they open a sheet. */
+  .wdots { display: flex; align-items: center; justify-content: center; gap: 9px;
+    margin: 0 auto; padding: 15px 12px; min-height: 44px; background: none; border: 0; }
+  .wdots i { width: 8px; height: 8px; border-radius: 999px; background: var(--sand);
+    transition: background var(--t-2) var(--e-out), box-shadow var(--t-2) var(--e-out); }
+  .wdots i.on { background: var(--ember); }
+  .wdots i.plan { background: transparent; box-shadow: inset 0 0 0 1.5px var(--line-2); }
+  .rmeta { font-size: 11.5px; color: var(--muted); padding-bottom: 8px; }
+  /* The same sentence on the today card and at the end of a session. */
+  .tweek { font-size: 12px; font-weight: 600; color: var(--ember-ink); margin: 0 0 12px; }
+  .tweek.risk { color: var(--ember); }
+  .tdose + .tweek { margin-top: -7px; }
+  .sumweek { display: flex; align-items: center; justify-content: center; gap: 9px;
+    margin: 13px 0 0; font-size: 13px; font-weight: 600; color: var(--ink-2); }
+  .sumweek.full { color: var(--good); }
+  .ring.small { width: 26px; height: 26px; flex: 0 0 auto; }
+  .ring.small .rtrack, .ring.small .rarc { stroke-width: 9; }
+  @media (prefers-reduced-motion: reduce) {
+    /* The arc still says the right thing without travelling to say it, and the
+       at-risk week still glows — it just stops breathing. */
+    .rarc, .wdots i { transition: none; }
+    .ringhero.risk .ring { animation: none; filter: drop-shadow(0 0 6px var(--glow)); }
+  }
   .chartcard { background: var(--card); border: 1px solid var(--line); border-radius: 18px;
     padding: 16px; margin-bottom: 14px; box-shadow: var(--sh-sm); }
   .chartcard h3 { font-family: var(--display); font-size: 12px; font-weight: 700; letter-spacing: .11em;
@@ -1848,6 +1899,12 @@ export const STYLE = String.raw`<style>
     border-top: 1px solid var(--line);
     transition: background-color var(--t-1) var(--e-out); }
   a.kv.row:active, button.kv.row:not([disabled]):active { background: var(--sand); }
+  /* A stepper, not a cycling chip: seven taps to walk 3 round to 2 is not a
+     control. Apple's Activity goal is a stepper for the same reason. */
+  .goalset { display: flex; align-items: center; gap: 4px; }
+  .goalset .chip { min-width: 32px; padding: 6px 0; justify-content: center; font-size: 15px; }
+  .goalset .chip[disabled] { opacity: .38; }
+  .goalset b { min-width: 20px; text-align: center; }
   .kv .chev { flex: 0 0 auto; width: 16px; height: 16px; color: var(--line-2); margin-right: -3px; }
   .kv.row[disabled] .chev { display: none; }
   .kv.del .k { color: var(--ember-ink); font-weight: 650; }
