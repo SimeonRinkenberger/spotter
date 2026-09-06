@@ -1734,6 +1734,19 @@ export const STYLE = String.raw`<style>
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .threadrow .tmain span { display: block; font-size: 11.5px; color: var(--muted); margin-top: 2px; }
   .threadrow.on .tmain b { color: var(--ember-ink); }
+  /* No cached list to take a height from, so three grey rows stand in at the REAL
+     row height — the point is that the sheet never resizes once it is moving. The
+     numbers are a real row's line boxes: 1.35em the title's line-height, 14px the
+     second line's. */
+  .threadrow.skel .tmain b, .threadrow.skel .tmain span {
+    background: var(--line-2); border-radius: 6px; animation: skelfade 1.5s var(--e-soft) infinite; }
+  .threadrow.skel .tmain b { width: 62%; height: 1.35em; }
+  .threadrow.skel .tmain span { width: 40%; height: 14px; }
+  @keyframes skelfade { 50% { opacity: .42; } }
+  /* A thread slower than the sheet: the conversation you were reading stays and
+     goes quiet rather than being replaced by an empty log. */
+  #pumpylog { transition: opacity var(--t-2) var(--e-soft); }
+  #pumpylog.waiting { opacity: .42; }
   .threadrow .tdel { flex: 0 0 auto; border: none; background: none; color: var(--muted);
     font-size: 12px; font-weight: 600; padding: 11px 8px; border-radius: 999px; }
   .threadrow .tdel[data-armed="1"] { color: var(--ember-ink); }
@@ -1870,6 +1883,8 @@ export const STYLE = String.raw`<style>
     /* The chip still has to leave before the row behind it moves: fade, no travel. */
     .refchip.gone { animation-name: fadeout; animation-duration: var(--t-1); }
     .thumbwrap img { transition: none; }
+    /* The bars stay — they are the shape of the list, not a moving part. */
+    .threadrow.skel .tmain b, .threadrow.skel .tmain span { animation: none; }
     #ptr.back { transition-duration: var(--t-1); }
   }
 </style>
