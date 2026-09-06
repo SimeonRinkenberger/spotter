@@ -696,7 +696,15 @@ export const MARKUP_BODY = String.raw`</head>
   <h2>A little help from Pumpy</h2>
   <p class="lede">Pick what you’re working on.</p>
   <div id="guidebody"></div>
+  <button class="setlink" id="welcomereplay">Replay the short introduction</button>
   <button class="setlink" id="guidereset">Show tips again as I go</button>
+</div></div>
+
+<div class="sheet" id="welcomesheet" role="dialog" aria-modal="true" aria-label="Welcome to Spotter"><div class="sheetbody">
+  <div class="grabber"></div>
+  <div class="welcome-top"><span id="welcomecount" aria-live="polite"></span><button id="welcomeskip">Skip intro</button></div>
+  <div id="welcomestage"></div>
+  <div class="welcome-actions"><button class="btn ghost" id="welcomeback">Back</button><button class="btn" id="welcomenext">Next</button></div>
 </div></div>
 
 <div id="toast"></div>

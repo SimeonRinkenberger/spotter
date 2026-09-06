@@ -1,0 +1,6 @@
+[1:v]scale=480:480,format=gbrp,trim=start_frame=15:end_frame=18,setpts=2*(PTS-STARTPTS),split[f][r];
+[r]reverse[rev];
+[f][rev]concat=n=2:v=1:a=0,minterpolate=fps=48:mi_mode=blend,tpad=start_duration=1.5:stop_duration=3:start_mode=clone:stop_mode=clone[blink];
+[0:v]fps=48,format=gbrp,split[base][maskbase];
+[maskbase]format=gray,geq=lum='255*min(1,max(0,min(min(X-217,249-X),min(Y-176,208-Y))/3)+max(0,min(min(X-262,292-X),min(Y-176,208-Y))/3))*if(between(T,1.5,2),min(1,min((T-1.5)/0.06,(2-T)/0.06)),0)',format=gbrp[mask];
+[base][blink][mask]maskedmerge,scale=320:320[out]

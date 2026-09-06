@@ -213,9 +213,13 @@ A Pumpy-made workout carries `extracted_by: pumpy:<model>`; exercises it appends
 `corrections` as adds tagged `added_by: pumpy`. Conversations persist in `pumpy_threads` /
 `pumpy_messages` under owner-only RLS with no client writes.
 `PUMPY_MARK` in `app.ts` is the compact illustrated avatar, embedded in a self-contained SVG
-so share canvases can draw it too. Larger poses live in `docs/assets/pumpy/`. Brief contextual
-tips appear only when a feature is visited; Settings → Pumpy offers an optional quick guide,
-tip controls and subtle-motion controls. [Art direction, research, prompts and behavior](design/pumpy.md).
+so share canvases can draw it too. Four expressive poses live in `docs/assets/pumpy/`. New
+accounts receive a skippable three-step introduction (save, Library, Pumpy); completion is
+saved in `profiles.settings.pumpyWelcome` and on the device. Brief contextual tips appear
+when a feature is visited. Settings → Pumpy offers a quick guide, intro replay, tip controls
+and subtle-motion controls. The rack pose uses a restrained Midjourney blink; decorative
+motion plays once per pose per page load and respects Reduce Motion.
+[Art direction, research, prompts and behavior](design/pumpy.md).
 The tab itself is a column sized between the sticky header and the fixed tab
 bar, so the composer sits on the tab bar whether the thread is empty or endless; a slim bar
 above it opens the chat list — every thread the caller owns, newest first, with the workout it

@@ -5502,6 +5502,9 @@ select:focus-visible {
   .sumdone,
   .sumfigs .setpill,
   .sumprs .setpill,
+  .sharewrap,
+  .scbtns.in,
+  .scvid,
   .proposal .done,
   .proposal .declined {
     animation-name: fadeonly;
@@ -5647,6 +5650,11 @@ select:focus-visible {
   color: var(--ink);
   animation: fadeonly var(--t-2) var(--e-soft) both;
 }
+.pumpy-tip-slot {
+  display: flow-root;
+  overflow: hidden;
+  flex: 0 0 auto;
+}
 .pumpy-tip .pumpyart {
   width: 64px;
   height: 64px;
@@ -5720,6 +5728,7 @@ select:focus-visible {
 }
 .guide-topic {
   border-top: 1px solid var(--line);
+  overflow: hidden;
 }
 .guide-topic summary {
   min-height: 48px;
@@ -5741,6 +5750,82 @@ select:focus-visible {
   min-height: 44px;
   margin-top: 12px;
 }
+#welcomereplay {
+  min-height: 44px;
+  margin-top: 12px;
+}
+.welcome-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 44px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 550;
+}
+#welcomeskip {
+  min-height: 44px;
+  padding: 8px 0 8px 16px;
+  border: 0;
+  background: none;
+  color: var(--ink-2);
+  font-size: 14px;
+  touch-action: manipulation;
+}
+#welcomestage {
+  display: grid;
+  margin: 14px 0 24px;
+}
+.welcome-page {
+  grid-area: 1 / 1;
+  opacity: 0;
+  transform: translateX(12px);
+  pointer-events: none;
+  transition: opacity var(--t-2) var(--e-soft), transform var(--t-3) var(--e-out);
+  text-align: center;
+}
+.welcome-page.on {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+.welcome-page .pumpyart {
+  width: 144px;
+  height: 144px;
+  margin-bottom: 22px;
+}
+.welcome-page h2 {
+  margin-bottom: 12px;
+}
+.welcome-page p {
+  margin: 0 auto;
+  max-width: 320px;
+  color: var(--ink-2);
+  font-size: 14px;
+  line-height: 1.65;
+}
+.welcome-actions {
+  display: flex;
+  gap: 12px;
+}
+.welcome-actions .btn {
+  flex: 1;
+  min-height: 48px;
+}
+#welcomeback:disabled {
+  opacity: 0;
+  pointer-events: none;
+}
+@media (max-height: 600px) {
+  .welcome-page .pumpyart {
+    width: 88px;
+    height: 88px;
+    margin-bottom: 12px;
+  }
+  #welcomestage {
+    margin: 4px 0 16px;
+  }
+}
 @media (max-width: 390px) {
   .pumpy-tip {
     gap: 10px;
@@ -5755,6 +5840,30 @@ select:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   .pumpy-tip {
     animation: none;
+  }
+  .welcome-page {
+    transform: none;
+    transition: opacity var(--t-1) var(--e-soft);
+  }
+  .btn:active,
+  .iconbtn:active,
+  .addbtn:active,
+  .chip:active,
+  .carditem:active,
+  .mbtn:active,
+  .startbtn:active,
+  .addex:active,
+  .planbtn:active,
+  .mcell:active,
+  .setpill:active,
+  .wnav:active,
+  .wfinish:active,
+  .ring:active,
+  .scmini:active,
+  .uploadrow:active,
+  .askpumpy:active,
+  .pumpybar button:active {
+    transform: none;
   }
 }
 </style>
@@ -6308,7 +6417,15 @@ select:focus-visible {
   <h2>A little help from Pumpy</h2>
   <p class="lede">Pick what you’re working on.</p>
   <div id="guidebody"></div>
+  <button class="setlink" id="welcomereplay">Replay the short introduction</button>
   <button class="setlink" id="guidereset">Show tips again as I go</button>
+</div></div>
+
+<div class="sheet" id="welcomesheet" role="dialog" aria-modal="true" aria-label="Welcome to Spotter"><div class="sheetbody">
+  <div class="grabber"></div>
+  <div class="welcome-top"><span id="welcomecount" aria-live="polite"></span><button id="welcomeskip">Skip intro</button></div>
+  <div id="welcomestage"></div>
+  <div class="welcome-actions"><button class="btn ghost" id="welcomeback">Back</button><button class="btn" id="welcomenext">Next</button></div>
 </div></div>
 
 <div id="toast"></div>
@@ -6324,7 +6441,7 @@ select:focus-visible {
   var sb = window.supabase.createClient(SB_URL, SB_ANON, {
     auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
   });
-  var VERSION = "0.10";
+  var VERSION = "0.11";
   var REST_FALLBACK = 90;
   var CATEGORIES = [
     "Push",
@@ -6972,10 +7089,12 @@ select:focus-visible {
     guideUser();
     if (booting) return booting;
     paintCache();
-    loadProfile();
+    var profileReady = loadProfile();
     maybeInstallHint();
     watchWorkouts();
-    booting = load().then(consumeShare).then(consumeBilling).then(warmPages);
+    booting = load().then(consumeShare).then(consumeBilling).then(warmPages).then(function() {
+      return profileReady;
+    }).then(welcomeMaybe);
     return booting;
   }
   var drawn = { plan: false, progress: false, pumpy: false };
@@ -7077,7 +7196,9 @@ select:focus-visible {
     }, 4e3);
   }
   function loadProfile() {
-    sb.from("profiles").select("*").eq("id", state.user.id).maybeSingle().then(function(r) {
+    var uid = state.user.id;
+    return sb.from("profiles").select("*").eq("id", uid).maybeSingle().then(function(r) {
+      if (!state.user || state.user.id !== uid) return;
       if (r.data) {
         state.profile = r.data;
         var s = r.data.settings || {};
@@ -13146,10 +13267,7 @@ select:focus-visible {
   }
   function loadPumpy(warm) {
     if (!warm) ensurePumpyMeter();
-    if (pumpy.loaded) {
-      renderPumpy();
-      return;
-    }
+    if (pumpy.loaded) return;
     if (pumpy.loading) return;
     pumpy.loading = true;
     sb.from("pumpy_threads").select("id,title,updated_at,workout_id,pumpy_messages(*)").order("updated_at", { ascending: false }).limit(1).order("id", { referencedTable: "pumpy_messages", ascending: true }).limit(80, { referencedTable: "pumpy_messages" }).then(function(r) {
@@ -13462,7 +13580,7 @@ select:focus-visible {
     log.classList.toggle("hello", !shown.length);
     if (!shown.length && pumpy.loaded) {
       var hello = el("div", "pumpyhello");
-      hello.appendChild(pumpyArt("coach", false));
+      hello.appendChild(pumpyArt("hello", true));
       hello.appendChild(el("h2", null, "Hey, I\u2019m Pumpy"));
       hello.appendChild(el(
         "p",
@@ -14383,11 +14501,13 @@ select:focus-visible {
     seen: {},
     off: false,
     motion: true,
+    welcome: false,
     active: null,
     count: 0,
     last: 0,
     visit: null,
-    observer: null
+    observer: null,
+    played: {}
   };
   var GUIDE_TIPS = {
     save: {
@@ -14432,14 +14552,17 @@ select:focus-visible {
     guide.seen = {};
     guide.off = false;
     guide.motion = true;
+    guide.welcome = false;
     guide.count = 0;
     guide.last = 0;
     guide.visit = null;
+    guide.played = {};
     if (id) try {
       var saved = JSON.parse(localStorage.getItem(guideKey()) || "{}");
       if (saved && typeof saved.seen === "object" && saved.seen) guide.seen = saved.seen;
       guide.off = saved.off === true;
       guide.motion = saved.motion !== false;
+      guide.welcome = saved.welcome === true;
     } catch (e) {
     }
     guidePaintSettings();
@@ -14450,29 +14573,57 @@ select:focus-visible {
       localStorage.setItem(guideKey(), JSON.stringify({
         seen: guide.seen,
         off: guide.off,
-        motion: guide.motion
+        motion: guide.motion,
+        welcome: guide.welcome
       }));
     } catch (e) {
     }
   }
-  function guideClear() {
+  function sizeMotion(node, from, to, done) {
+    if (node._sizeMotion) node._sizeMotion.cancel();
+    if (lessMotion() || !node.animate) {
+      if (done) done();
+      return;
+    }
+    var a = node.animate(
+      [{ height: from + "px" }, { height: to + "px" }],
+      { duration: 240, easing: "cubic-bezier(.22,.9,.3,1)" }
+    );
+    node._sizeMotion = a;
+    a.onfinish = function() {
+      if (node._sizeMotion !== a) return;
+      node._sizeMotion = null;
+      if (done) done();
+    };
+  }
+  function guideClear(mode) {
     if (guide.observer) {
       guide.observer.disconnect();
       guide.observer = null;
     }
     var a = guide.active;
-    if (a && a.node.parentNode) a.node.parentNode.removeChild(a.node);
     guide.active = null;
+    if (!a || !a.node.parentNode) return;
+    var node = a.node;
+    function remove() {
+      if (node.parentNode) node.parentNode.removeChild(node);
+    }
+    node.classList.add("tip-retiring");
+    node.inert = true;
+    node.setAttribute("aria-hidden", "true");
+    if (mode === "dismiss") sizeMotion(node, node.getBoundingClientRect().height, 0, remove);
+    else if (mode === "hold") setTimeout(remove, 480);
+    else remove();
   }
-  function guideLearn(id) {
+  function guideLearn(id, mode) {
     guideUser();
     guide.seen[id] = true;
     guideSave();
-    if (guide.active && guide.active.id === id) guideClear();
+    if (guide.active && guide.active.id === id) guideClear(mode || "hold");
   }
   function pumpyAsset(name) {
     var base = location.hostname.endsWith("supabase.co") ? "https://simeonrinkenberger.github.io/spotter/" : "./";
-    return base + "assets/pumpy/" + name;
+    return base + "assets/pumpy/" + name + "?v=11";
   }
   function pumpyArt(pose, animate) {
     var frame = el("span", "pumpyart"), im = el("img");
@@ -14481,36 +14632,46 @@ select:focus-visible {
     im.width = 160;
     im.height = 160;
     im.decoding = "async";
-    im.src = pumpyAsset(pose + ".webp");
+    var staticSrc = pumpyAsset(pose + ".webp");
+    im.src = staticSrc;
     im.onerror = function() {
-      frame.classList.add("artfailed");
+      if (im.hasAttribute("data-pumpy-still")) still();
+      else frame.classList.add("artfailed");
     };
     frame.appendChild(im);
     if (animate && window.IntersectionObserver) {
-      var still = function() {
+      var still2 = function() {
         if (im.hasAttribute("data-pumpy-still")) {
           im.src = im.getAttribute("data-pumpy-still");
           im.removeAttribute("data-pumpy-still");
         }
         ob.disconnect();
       };
-      var played = false;
+      var played = false, motion = pose === "hello" ? "hello-motion.webp" : "proud-wing.webp";
+      var duration = pose === "hello" ? 5200 : 2400;
+      im.onload = function() {
+        if (im.hasAttribute("data-pumpy-still")) setTimeout(still2, duration);
+      };
       var ob = new IntersectionObserver(function(entries) {
         if (!frame.isConnected) {
           ob.disconnect();
           return;
         }
         if (played) {
-          if (!entries[0].isIntersecting) still();
+          if (!entries[0].isIntersecting) still2();
           return;
         }
         if (entries[0].intersectionRatio < 0.8 || document.hidden || !guide.motion || lessMotion()) return;
         var page = frame.closest(".page");
         if (page && page.inert) return;
+        if (guide.played[pose]) {
+          ob.disconnect();
+          return;
+        }
         played = true;
+        guide.played[pose] = true;
         im.setAttribute("data-pumpy-still", im.src);
-        im.src = pumpyAsset("proud-wing.gif");
-        setTimeout(still, 2500);
+        im.src = pumpyAsset(motion);
       }, { threshold: 0.8 });
       setTimeout(function() {
         if (frame.isConnected) ob.observe(frame);
@@ -14526,6 +14687,8 @@ select:focus-visible {
   }
   function guideCard(id, dismiss) {
     var t = GUIDE_TIPS[id], box = el("aside", "pumpy-tip"), copy = el("div", "pumpy-tip-copy");
+    var slot = el("div", "pumpy-tip-slot");
+    slot.appendChild(box);
     box.setAttribute("aria-label", "Pumpy\u2019s tip");
     box.setAttribute("data-noswipe", "");
     box.appendChild(pumpyArt(t.art, false));
@@ -14536,14 +14699,16 @@ select:focus-visible {
       var x = icon(el("button", "pumpy-tip-close"), "x");
       x.setAttribute("aria-label", "Dismiss Pumpy\u2019s tip");
       x.onclick = function() {
-        var parent = box.parentNode;
-        guideLearn(id);
-        var next = parent && parent.querySelector("button, input, textarea");
+        var parent = slot.parentNode;
+        guideLearn(id, "dismiss");
+        var next = parent && Array.from(parent.querySelectorAll("button, input, textarea")).filter(function(n) {
+          return !slot.contains(n);
+        })[0];
         if (next) next.focus({ preventScroll: true });
       };
       box.appendChild(x);
     }
-    return box;
+    return slot;
   }
   function guideOffer(id, host, before) {
     guideUser();
@@ -14551,8 +14716,10 @@ select:focus-visible {
     var a = guide.active;
     if (a && a.id !== id) return;
     if (!a && (guide.seen[id] || guide.count >= 2 || Date.now() - guide.last < 9e4)) return;
+    var fresh = !a;
     if (!a) a = guide.active = { id: id, node: guideCard(id, true), counted: false };
     host.insertBefore(a.node, before || null);
+    if (fresh && !host.closest(".sheet")) sizeMotion(a.node, 0, a.node.getBoundingClientRect().height);
     if (a.counted) return;
     function shown() {
       if (guide.active !== a || !a.node.isConnected || document.hidden) return;
@@ -14574,7 +14741,7 @@ select:focus-visible {
       guide.observer = new IntersectionObserver(function(es) {
         if (es[0].intersectionRatio >= 0.8) shown();
       }, { threshold: 0.8 });
-      guide.observer.observe(a.node);
+      guide.observer.observe(a.node.querySelector(".pumpy-tip"));
     } else setTimeout(shown, 450);
   }
   function guidePage(v) {
@@ -14623,6 +14790,19 @@ select:focus-visible {
       var row = el("details", "guide-topic"), title = el("summary", null, names[id]);
       row.appendChild(title);
       row.appendChild(el("p", null, GUIDE_TIPS[id].text));
+      title.onclick = function(e) {
+        e.preventDefault();
+        var start = row.getBoundingClientRect().height;
+        var open = row._target == null ? !row.open : !row._target;
+        row._target = open;
+        row.open = true;
+        var end = title.getBoundingClientRect().height + 1;
+        if (open) end += row.querySelector("p").getBoundingClientRect().height;
+        sizeMotion(row, start, end, function() {
+          row.open = open;
+          row._target = null;
+        });
+      };
       body.appendChild(row);
     });
     openSheet("guidesheet");
@@ -14656,6 +14836,98 @@ select:focus-visible {
   $("guideclose").onclick = function() {
     closeSheet("guidesheet");
   };
+  var WELCOME_SINCE = "2026-09-06T14:30:00Z", welcomeStep = 0, welcomeReturn = null;
+  var WELCOME_STEPS = [
+    { art: "coach", title: "Save a workout", text: "Copy a link from TikTok, Instagram or YouTube. Tap + in Spotter and paste it.", label: "Save" },
+    { art: "plan", title: "Find it in your Library", text: "Open a saved card to see the exercises. Tap Start workout when you\u2019re ready to train.", label: "Library" },
+    { art: "hello", title: "Meet your coach", text: "Open the Pumpy tab to build a workout, adjust one, or plan your week.", label: "Pumpy" }
+  ];
+  function welcomeEligible() {
+    return !!(state.user && state.profile && !guide.welcome && !(state.profile.settings || {}).pumpyWelcome && Date.parse(state.user.created_at) >= Date.parse(WELCOME_SINCE) && !state.workouts.length);
+  }
+  function welcomeMaybe() {
+    guideUser();
+    if (!welcomeEligible() || document.hidden || state.view !== "library" || overlayShowing()) return;
+    openWelcome();
+  }
+  function welcomeDone() {
+    if (!state.user) return;
+    guide.welcome = true;
+    guideSave();
+    if (!state.profile || (state.profile.settings || {}).pumpyWelcome) return;
+    var s = Object.assign({}, state.profile.settings || {}, { pumpyWelcome: 1 });
+    state.profile.settings = s;
+    sb.from("profiles").update({ settings: s }).eq("id", state.user.id).then(function() {
+    });
+  }
+  function welcomePaint() {
+    var pages = $("welcomestage").children;
+    for (var i = 0; i < pages.length; i++) {
+      var on = i === welcomeStep;
+      pages[i].classList.toggle("on", on);
+      pages[i].inert = !on;
+      pages[i].setAttribute("aria-hidden", on ? "false" : "true");
+    }
+    $("welcomecount").textContent = welcomeStep + 1 + " of 3 \xB7 " + WELCOME_STEPS[welcomeStep].label;
+    $("welcomeback").disabled = welcomeStep === 0;
+    $("welcomenext").textContent = welcomeStep === 2 ? "Let\u2019s go" : "Next";
+  }
+  function openWelcome() {
+    welcomeReturn = document.activeElement;
+    var stage = $("welcomestage");
+    stage.innerHTML = "";
+    welcomeStep = 0;
+    WELCOME_STEPS.forEach(function(step2) {
+      var page = el("section", "welcome-page");
+      page.appendChild(pumpyArt(step2.art, false));
+      page.appendChild(el("h2", null, step2.title));
+      page.appendChild(el("p", null, step2.text));
+      stage.appendChild(page);
+    });
+    welcomePaint();
+    openSheet("welcomesheet");
+    $("welcomenext").focus({ preventScroll: true });
+  }
+  $("welcomenext").onclick = function() {
+    if (welcomeStep === 2) {
+      closeSheet("welcomesheet");
+      return;
+    }
+    welcomeStep++;
+    welcomePaint();
+  };
+  $("welcomeback").onclick = function() {
+    welcomeStep = Math.max(0, welcomeStep - 1);
+    welcomePaint();
+  };
+  $("welcomeskip").onclick = function() {
+    closeSheet("welcomesheet");
+  };
+  $("welcomereplay").onclick = function() {
+    openWelcome();
+    closeSheet("guidesheet");
+    closeSheet("settingssheet");
+    welcomeReturn = $("addbtn");
+  };
+  $("welcomesheet").addEventListener("keydown", function(e) {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      closeSheet("welcomesheet");
+      return;
+    }
+    if (e.key !== "Tab") return;
+    var controls = Array.from(this.querySelectorAll("button")).filter(function(b) {
+      return !b.disabled;
+    });
+    var first = controls[0], last = controls[controls.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  });
   document.addEventListener("visibilitychange", function() {
     if (document.hidden) guideStill();
   });
@@ -14669,10 +14941,13 @@ select:focus-visible {
   var closeTimers = {};
   var sheetNav = false, sheetBack = 0;
   function openSheet(id) {
-    guideClear();
+    guideClear("hold");
     guideStill();
     guideSheet(id);
     var n = $(id), b = n.querySelector(".sheetbody");
+    n.querySelectorAll(".tip-retiring").forEach(function(tip) {
+      tip.remove();
+    });
     clearTimeout(closeTimers[id]);
     n.classList.remove("closing");
     if (b) {
@@ -14689,7 +14964,12 @@ select:focus-visible {
   function closeSheet(id, fromPop) {
     var n = $(id);
     if (!n.classList.contains("open")) return;
-    guideClear();
+    guideClear("hold");
+    if (id === "welcomesheet") {
+      welcomeDone();
+      var focus = welcomeReturn && welcomeReturn.isConnected && !welcomeReturn.closest("#landing, .sheet:not(.open)") ? welcomeReturn : $("addbtn");
+      if (focus) focus.focus({ preventScroll: true });
+    }
     var b = n.querySelector(".sheetbody");
     if (b) {
       b.classList.remove("dragging");
@@ -14809,7 +15089,8 @@ select:focus-visible {
     "sortsheet",
     "refsheet",
     "countsheet",
-    "guidesheet"
+    "guidesheet",
+    "welcomesheet"
   ].forEach(wireSheet);
   function overlayShowing() {
     if ($("detail").classList.contains("open")) return true;

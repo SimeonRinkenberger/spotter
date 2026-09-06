@@ -17,7 +17,7 @@
   h1 { font-size:36px; line-height:1.15; letter-spacing:-.05em; margin:24px 0 12px; }
   h2 { font-size:16px; margin:0 0 6px; }
   p { color:var(--muted); margin:0; }
-  .grid { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; }
+  .grid { display:grid; grid-template-columns:repeat(2,1fr); gap:16px; }
   figure { margin:0; padding:12px; border:1px solid var(--line); border-radius:22px; background:var(--card); }
   figure img { display:block; width:100%; aspect-ratio:1; border-radius:14px; }
   figcaption { padding:14px 4px 4px; }
@@ -34,19 +34,32 @@
 <body><main>
   <header><a href="./">&larr; Open Spotter</a><h1>A little more Pumpy.</h1><p>A familiar face, a few useful words, and room to get on with your workout.</p></header>
   <div class="grid">
-    <figure><img src="assets/pumpy/coach.webp" alt="Pumpy holding a clipboard and offering a hand"><figcaption><h2>Here to help</h2><p>A calm introduction, and a pointer when you need one.</p></figcaption></figure>
-    <figure><img src="assets/pumpy/plan.webp" alt="Pumpy planning a week on a gym bench"><figcaption><h2>Make a little room</h2><p>Your saved workouts, with a place in your week.</p></figcaption></figure>
-    <figure><img src="assets/pumpy/proud.webp" alt="Pumpy giving a small thumbs-up"><figcaption><h2>That’s work done</h2><p>A quiet nod to the session you finished.</p></figcaption></figure>
+    <figure><img src="assets/pumpy/coach.webp?v=11" alt="Pumpy holding a clipboard and offering a hand"><figcaption><h2>Here to help</h2><p>A raised brow and a few useful words.</p></figcaption></figure>
+    <figure><img src="assets/pumpy/plan.webp?v=11" alt="Pumpy planning a week on a gym bench"><figcaption><h2>Make a little room</h2><p>A thoughtful glance at the week ahead.</p></figcaption></figure>
+    <figure><img src="assets/pumpy/proud.webp?v=11" alt="Pumpy giving a small thumbs-up"><figcaption><h2>That’s work done</h2><p>A pleased smile for the work you put in.</p></figcaption></figure>
+    <figure><img src="assets/pumpy/hello.webp?v=11" alt="Pumpy leaning on a squat rack, ankles crossed, holding a peace sign"><figcaption><h2>Hey, I’m Pumpy</h2><p>A relaxed coach, ready when you are.</p></figcaption></figure>
   </div>
-  <section class="motion"><img id="wing" src="assets/pumpy/proud.webp" alt="Pumpy with small feather wings"><div><h2>A small movement</h2><p>Just the wings. One gentle beat, then still.</p><button id="play">Preview motion</button></div></section>
-  <footer>In the app: Settings &rarr; Pumpy &rarr; Quick guide. Tips and little animations can both be turned off.</footer>
+  <section class="motion" data-pose="hello" data-motion="hello-motion" data-duration="5000"><img src="assets/pumpy/hello.webp?v=11" alt="Pumpy leaning against a squat rack"><div><h2>Just a blink</h2><p>The rack, peace sign and relaxed smile stay put.</p><button>Preview blink</button><p><a href="assets/pumpy/hello-motion.gif" download>Download GIF</a></p></div></section>
+  <section class="motion" data-pose="proud" data-motion="proud-wing" data-duration="2400"><img src="assets/pumpy/proud.webp?v=11" alt="Pumpy with small feather wings"><div><h2>A quiet finish</h2><p>One gentle wing beat, then still.</p><button>Preview wings</button><p><a href="assets/pumpy/proud-wing.gif" download>Download GIF</a></p></div></section>
+  <footer>In the app: Settings &rarr; Pumpy &rarr; Quick guide. Replay the three-step intro there. Tips and little animations can both be turned off.</footer>
 </main>
 <script>
-var im=document.getElementById('wing'),button=document.getElementById('play'),timer;
-var reduced=matchMedia('(prefers-reduced-motion: reduce)');
-function stop(){clearTimeout(timer);im.src='assets/pumpy/proud.webp';button.disabled=false;}
-button.onclick=function(){if(reduced.matches){button.textContent='Reduce Motion is on';return;}button.disabled=true;im.src='assets/pumpy/proud-wing.gif?play='+Date.now();timer=setTimeout(stop,2500);};
-document.addEventListener('visibilitychange',function(){if(document.hidden)stop();});
-if(reduced.addEventListener)reduced.addEventListener('change',function(e){if(e.matches)stop();});
+var reduced=matchMedia('(prefers-reduced-motion: reduce)'),stops=[];
+document.querySelectorAll('.motion').forEach(function(row){
+  var im=row.querySelector('img'),button=row.querySelector('button'),label=button.textContent,timer,playing=false;
+  var still='assets/pumpy/'+row.dataset.pose+'.webp?v=11';
+  function stop(){playing=false;clearTimeout(timer);im.src=still;button.disabled=false;button.textContent=label;}
+  stops.push(stop);
+  im.onload=function(){if(playing)timer=setTimeout(stop,Number(row.dataset.duration));};
+  im.onerror=function(){if(playing){stop();button.textContent='Try again';}};
+  button.onclick=function(){
+    if(reduced.matches){button.textContent='Reduce Motion is on';return;}
+    stops.forEach(function(fn){fn();});playing=true;button.disabled=true;button.textContent='Playing…';
+    im.src='assets/pumpy/'+row.dataset.motion+'.webp?play='+Date.now();
+  };
+});
+function stopAll(){stops.forEach(function(fn){fn();});}
+document.addEventListener('visibilitychange',function(){if(document.hidden)stopAll();});
+if(reduced.addEventListener)reduced.addEventListener('change',function(e){if(e.matches)stopAll();});
 </script>
 </body></html>

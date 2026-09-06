@@ -2039,7 +2039,7 @@ export const STYLE = String.raw`<style>
   @keyframes fadeonly { from { opacity: 0; } }
   @media (prefers-reduced-motion: reduce) {
     .viewin, .carditem.in, .msgin, .bodyfig, .reststrip, .sumdone,
-    .sumfigs .setpill, .sumprs .setpill,
+    .sumfigs .setpill, .sumprs .setpill, .sharewrap, .scbtns.in, .scvid,
     .proposal .done, .proposal .declined {
       animation-name: fadeonly; animation-duration: var(--t-2); animation-delay: 0ms; }
     #workout.closing, .reststrip.gone {
@@ -2093,6 +2093,7 @@ export const STYLE = String.raw`<style>
     text-align: left; margin: 12px 0 18px; padding: 12px 42px 12px 12px;
     background: var(--card); border: 1px solid var(--line-2); border-radius: 18px;
     color: var(--ink); animation: fadeonly var(--t-2) var(--e-soft) both; }
+  .pumpy-tip-slot { display: flow-root; overflow: hidden; flex: 0 0 auto; }
   .pumpy-tip .pumpyart { width: 64px; height: 64px; margin: 0; border-radius: 15px; }
   .pumpy-tip-copy { min-width: 0; flex: 1; }
   .pumpy-tip-copy b { display: block; font-size: 13px; font-weight: 650; line-height: 1.35; }
@@ -2108,17 +2109,41 @@ export const STYLE = String.raw`<style>
     color: var(--ink); font: inherit; border: 0; }
   #pumpyhelp .ic { width: 16px; height: 16px; color: var(--muted); }
   #guidebody > .pumpyart { width: 100px; height: 100px; border-radius: 24px; margin: 4px auto 18px; }
-  .guide-topic { border-top: 1px solid var(--line); }
+  .guide-topic { border-top: 1px solid var(--line); overflow: hidden; }
   .guide-topic summary { min-height: 48px; padding: 13px 6px; font-size: 14px; font-weight: 550;
     cursor: pointer; color: var(--ink); touch-action: manipulation; }
   .guide-topic p { margin: 0; padding: 0 6px 16px; font-size: 14px; line-height: 1.6; color: var(--ink-2); }
   #guidereset { min-height: 44px; margin-top: 12px; }
+  #welcomereplay { min-height: 44px; margin-top: 12px; }
+  .welcome-top { display: flex; align-items: center; justify-content: space-between; min-height: 44px;
+    color: var(--muted); font-size: 12px; font-weight: 550; }
+  #welcomeskip { min-height: 44px; padding: 8px 0 8px 16px; border: 0; background: none;
+    color: var(--ink-2); font-size: 14px; touch-action: manipulation; }
+  #welcomestage { display: grid; margin: 14px 0 24px; }
+  .welcome-page { grid-area: 1 / 1; opacity: 0; transform: translateX(12px); pointer-events: none;
+    transition: opacity var(--t-2) var(--e-soft), transform var(--t-3) var(--e-out); text-align: center; }
+  .welcome-page.on { opacity: 1; transform: none; pointer-events: auto; }
+  .welcome-page .pumpyart { width: 144px; height: 144px; margin-bottom: 22px; }
+  .welcome-page h2 { margin-bottom: 12px; }
+  .welcome-page p { margin: 0 auto; max-width: 320px; color: var(--ink-2); font-size: 14px; line-height: 1.65; }
+  .welcome-actions { display: flex; gap: 12px; }
+  .welcome-actions .btn { flex: 1; min-height: 48px; }
+  #welcomeback:disabled { opacity: 0; pointer-events: none; }
+  @media (max-height: 600px) {
+    .welcome-page .pumpyart { width: 88px; height: 88px; margin-bottom: 12px; }
+    #welcomestage { margin: 4px 0 16px; }
+  }
   @media (max-width: 390px) {
     .pumpy-tip { gap: 10px; padding-left: 10px; }
     .pumpy-tip .pumpyart { width: 52px; height: 52px; border-radius: 13px; }
   }
   @media (prefers-reduced-motion: reduce) {
     .pumpy-tip { animation: none; }
+    .welcome-page { transform: none; transition: opacity var(--t-1) var(--e-soft); }
+    .btn:active, .iconbtn:active, .addbtn:active, .chip:active, .carditem:active,
+    .mbtn:active, .startbtn:active, .addex:active, .planbtn:active, .mcell:active,
+    .setpill:active, .wnav:active, .wfinish:active, .ring:active, .scmini:active,
+    .uploadrow:active, .askpumpy:active, .pumpybar button:active { transform: none; }
   }
 </style>
 `;

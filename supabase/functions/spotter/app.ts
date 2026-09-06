@@ -26,7 +26,7 @@ export const APP = String.raw`
 
   // The one place the version is written down. It names the entry at the top of
   // docs/whats-new.html, and the settings sheet reads it from here.
-  var VERSION = "0.10";
+  var VERSION = "0.11";
 
   // What a rest is when the card says nothing. It was a Settings row until the
   // obvious objection landed: how long to rest belongs to the program or to the
@@ -762,12 +762,13 @@ export const APP = String.raw`
     // Before the network is asked anything: the library someone is looking at is
     // almost always the one they left.
     paintCache();
-    loadProfile();
+    var profileReady = loadProfile();
     maybeInstallHint();
     watchWorkouts();
     // A shared link is saved only once the library is in hand, so the card it
     // creates lands in a rendered grid rather than into an empty one.
-    booting = load().then(consumeShare).then(consumeBilling).then(warmPages);
+    booting = load().then(consumeShare).then(consumeBilling).then(warmPages)
+      .then(function () { return profileReady; }).then(welcomeMaybe);
     return booting;
   }
 
@@ -895,7 +896,9 @@ export const APP = String.raw`
   }
 
   function loadProfile() {
-    sb.from("profiles").select("*").eq("id", state.user.id).maybeSingle().then(function (r) {
+    var uid = state.user.id;
+    return sb.from("profiles").select("*").eq("id", uid).maybeSingle().then(function (r) {
+      if (!state.user || state.user.id !== uid) return;
       if (r.data) {
         state.profile = r.data;
         var s = r.data.settings || {};
@@ -7954,7 +7957,9 @@ export const APP = String.raw`
   // away 194ms later. A greeting is not a placeholder, it is the wrong final state.
   function loadPumpy(warm) {
     if (!warm) ensurePumpyMeter();
-    if (pumpy.loaded) { renderPumpy(); return; }
+    // Warmed content is already drawn. Rebuilding at the end of a tab swipe
+    // would replace the greeting just as its visible animation begins.
+    if (pumpy.loaded) return;
     if (pumpy.loading) return;
     pumpy.loading = true;
     sb.from("pumpy_threads")
@@ -8321,7 +8326,7 @@ export const APP = String.raw`
     // final state that has to be taken away again, which reads as a flash.
     if (!shown.length && pumpy.loaded) {
       var hello = el("div", "pumpyhello");
-      hello.appendChild(pumpyArt("coach", false));
+      hello.appendChild(pumpyArt("hello", true));
       hello.appendChild(el("h2", null, "Hey, I’m Pumpy"));
       hello.appendChild(el("p", null,
         "I know what you’ve saved. Ask me to build a workout from it, add to one, or plan your week. " +
@@ -9308,9 +9313,9 @@ export const APP = String.raw`
   // ---------- Pumpy · a little help, where it belongs ----------
   // Rendering is not a visit: warmPages prepares tabs nobody has opened. Tips
   // require a real arrival, and an impression is counted only once it is visible.
-  // Local to this account on this browser; no coach credits or network writes.
-  var guide = { user: null, seen: {}, off: false, motion: true, active: null,
-    count: 0, last: 0, visit: null, observer: null };
+  // Tips stay local to this account/browser; intro completion also syncs to the profile.
+  var guide = { user: null, seen: {}, off: false, motion: true, welcome: false, active: null,
+    count: 0, last: 0, visit: null, observer: null, played: {} };
   var GUIDE_TIPS = {
     save: { title: "Save it now. Train it later.", art: "coach",
       text: "Paste the workout link, then tap Save workout. You can leave while I read it." },
@@ -9331,12 +9336,13 @@ export const APP = String.raw`
     var id = state.user && state.user.id;
     if (guide.user === id) return;
     guideClear();
-    guide.user = id; guide.seen = {}; guide.off = false; guide.motion = true;
-    guide.count = 0; guide.last = 0; guide.visit = null;
+    guide.user = id; guide.seen = {}; guide.off = false; guide.motion = true; guide.welcome = false;
+    guide.count = 0; guide.last = 0; guide.visit = null; guide.played = {};
     if (id) try {
       var saved = JSON.parse(localStorage.getItem(guideKey()) || "{}");
       if (saved && typeof saved.seen === "object" && saved.seen) guide.seen = saved.seen;
       guide.off = saved.off === true; guide.motion = saved.motion !== false;
+      guide.welcome = saved.welcome === true;
     } catch (e) { /* private storage still gets session-only tips */ }
     guidePaintSettings();
   }
@@ -9344,47 +9350,75 @@ export const APP = String.raw`
   function guideSave() {
     if (!guide.user) return;
     try { localStorage.setItem(guideKey(), JSON.stringify({ seen: guide.seen,
-      off: guide.off, motion: guide.motion })); } catch (e) { /* session still works */ }
+      off: guide.off, motion: guide.motion, welcome: guide.welcome })); } catch (e) { /* session still works */ }
   }
 
-  function guideClear() {
+  // Height changes belong to the small changing region. Repeated taps retarget
+  // from the current rendered height, rather than snapping to an old endpoint.
+  function sizeMotion(node, from, to, done) {
+    if (node._sizeMotion) node._sizeMotion.cancel();
+    if (lessMotion() || !node.animate) { if (done) done(); return; }
+    var a = node.animate([{ height: from + "px" }, { height: to + "px" }],
+      { duration: 240, easing: "cubic-bezier(.22,.9,.3,1)" });
+    node._sizeMotion = a;
+    a.onfinish = function () { if (node._sizeMotion !== a) return;
+      node._sizeMotion = null; if (done) done(); };
+  }
+
+  function guideClear(mode) {
     if (guide.observer) { guide.observer.disconnect(); guide.observer = null; }
     var a = guide.active;
-    if (a && a.node.parentNode) a.node.parentNode.removeChild(a.node);
     guide.active = null;
+    if (!a || !a.node.parentNode) return;
+    var node = a.node;
+    function remove() { if (node.parentNode) node.parentNode.removeChild(node); }
+    node.classList.add("tip-retiring"); node.inert = true;
+    node.setAttribute("aria-hidden", "true");
+    if (mode === "dismiss") sizeMotion(node, node.getBoundingClientRect().height, 0, remove);
+    // Keep a closing sheet's geometry until its slide has finished.
+    else if (mode === "hold") setTimeout(remove, 480);
+    else remove();
   }
 
-  function guideLearn(id) {
+  function guideLearn(id, mode) {
     guideUser();
     guide.seen[id] = true;
     guideSave();
-    if (guide.active && guide.active.id === id) guideClear();
+    if (guide.active && guide.active.id === id) guideClear(mode || "hold");
   }
 
   function pumpyAsset(name) {
     // The edge function serves the same page, but the artwork lives on Pages.
     var base = location.hostname.endsWith("supabase.co")
       ? "https://simeonrinkenberger.github.io/spotter/" : "./";
-    return base + "assets/pumpy/" + name;
+    return base + "assets/pumpy/" + name + "?v=11";
   }
 
   function pumpyArt(pose, animate) {
     var frame = el("span", "pumpyart"), im = el("img");
     frame.setAttribute("aria-hidden", "true");
     im.alt = ""; im.width = 160; im.height = 160; im.decoding = "async";
-    im.src = pumpyAsset(pose + ".webp");
-    im.onerror = function () { frame.classList.add("artfailed"); };
+    var staticSrc = pumpyAsset(pose + ".webp");
+    im.src = staticSrc;
+    im.onerror = function () {
+      if (im.hasAttribute("data-pumpy-still")) still();
+      else frame.classList.add("artfailed");
+    };
     frame.appendChild(im);
-    // One gentle wing beat, then the still drawing. No loop, sound or playback
-    // session; the GIF never downloads for Reduce Motion or a hidden page.
+    // Animated WebP stays an image: no audio session to interrupt gym music.
+    // A decoded animation gets its full duration, even on a slow connection.
     if (animate && window.IntersectionObserver) {
-      var played = false;
+      var played = false, motion = pose === "hello" ? "hello-motion.webp" : "proud-wing.webp";
+      var duration = pose === "hello" ? 5200 : 2400;
       function still() {
         if (im.hasAttribute("data-pumpy-still")) {
           im.src = im.getAttribute("data-pumpy-still"); im.removeAttribute("data-pumpy-still");
         }
         ob.disconnect();
       }
+      im.onload = function () {
+        if (im.hasAttribute("data-pumpy-still")) setTimeout(still, duration);
+      };
       var ob = new IntersectionObserver(function (entries) {
         if (!frame.isConnected) { ob.disconnect(); return; }
         if (played) {
@@ -9394,10 +9428,11 @@ export const APP = String.raw`
         if (entries[0].intersectionRatio < 0.8 || document.hidden || !guide.motion || lessMotion()) return;
         var page = frame.closest(".page");
         if (page && page.inert) return;
+        if (guide.played[pose]) { ob.disconnect(); return; }
         played = true;
+        guide.played[pose] = true;
         im.setAttribute("data-pumpy-still", im.src);
-        im.src = pumpyAsset("proud-wing.gif");
-        setTimeout(still, 2500);
+        im.src = pumpyAsset(motion);
       }, { threshold: 0.8 });
       // Observe only after the caller has mounted it, never an orphaned drawing.
       setTimeout(function () { if (frame.isConnected) ob.observe(frame); }, 0);
@@ -9413,6 +9448,7 @@ export const APP = String.raw`
 
   function guideCard(id, dismiss) {
     var t = GUIDE_TIPS[id], box = el("aside", "pumpy-tip"), copy = el("div", "pumpy-tip-copy");
+    var slot = el("div", "pumpy-tip-slot"); slot.appendChild(box);
     box.setAttribute("aria-label", "Pumpy’s tip");
     box.setAttribute("data-noswipe", "");
     box.appendChild(pumpyArt(t.art, false));
@@ -9423,15 +9459,16 @@ export const APP = String.raw`
       var x = icon(el("button", "pumpy-tip-close"), "x");
       x.setAttribute("aria-label", "Dismiss Pumpy’s tip");
       x.onclick = function () {
-        var parent = box.parentNode;
-        guideLearn(id);
+        var parent = slot.parentNode;
+        guideLearn(id, "dismiss");
         // No lost keyboard focus when its close button leaves the document.
-        var next = parent && parent.querySelector("button, input, textarea");
+        var next = parent && Array.from(parent.querySelectorAll("button, input, textarea"))
+          .filter(function (n) { return !slot.contains(n); })[0];
         if (next) next.focus({ preventScroll: true });
       };
       box.appendChild(x);
     }
-    return box;
+    return slot;
   }
 
   function guideOffer(id, host, before) {
@@ -9440,8 +9477,10 @@ export const APP = String.raw`
     var a = guide.active;
     if (a && a.id !== id) return;
     if (!a && (guide.seen[id] || guide.count >= 2 || Date.now() - guide.last < 90000)) return;
+    var fresh = !a;
     if (!a) a = guide.active = { id: id, node: guideCard(id, true), counted: false };
     host.insertBefore(a.node, before || null);
+    if (fresh && !host.closest(".sheet")) sizeMotion(a.node, 0, a.node.getBoundingClientRect().height);
     if (a.counted) return;
     function shown() {
       if (guide.active !== a || !a.node.isConnected || document.hidden) return;
@@ -9457,7 +9496,7 @@ export const APP = String.raw`
       guide.observer = new IntersectionObserver(function (es) {
         if (es[0].intersectionRatio >= 0.8) shown();
       }, { threshold: 0.8 });
-      guide.observer.observe(a.node);
+      guide.observer.observe(a.node.querySelector(".pumpy-tip"));
     } else setTimeout(shown, 450);
   }
 
@@ -9499,6 +9538,15 @@ export const APP = String.raw`
       var row = el("details", "guide-topic"), title = el("summary", null, names[id]);
       row.appendChild(title);
       row.appendChild(el("p", null, GUIDE_TIPS[id].text));
+      title.onclick = function (e) {
+        e.preventDefault();
+        var start = row.getBoundingClientRect().height;
+        var open = row._target == null ? !row.open : !row._target;
+        row._target = open; row.open = true;
+        var end = title.getBoundingClientRect().height + 1;
+        if (open) end += row.querySelector("p").getBoundingClientRect().height;
+        sizeMotion(row, start, end, function () { row.open = open; row._target = null; });
+      };
       body.appendChild(row);
     });
     openSheet("guidesheet");
@@ -9518,6 +9566,83 @@ export const APP = String.raw`
     toast("Tips will appear when you use each feature.");
   };
   $("guideclose").onclick = function () { closeSheet("guidesheet"); };
+
+  // Only accounts created after this rollout get the automatic introduction.
+  // A returning user can replay it explicitly; an email-confirmation delay does
+  // not make a genuinely new account miss it. Completion also follows the account.
+  var WELCOME_SINCE = "2026-09-06T14:30:00Z", welcomeStep = 0, welcomeReturn = null;
+  var WELCOME_STEPS = [
+    { art: "coach", title: "Save a workout", text: "Copy a link from TikTok, Instagram or YouTube. Tap + in Spotter and paste it.", label: "Save" },
+    { art: "plan", title: "Find it in your Library", text: "Open a saved card to see the exercises. Tap Start workout when you’re ready to train.", label: "Library" },
+    { art: "hello", title: "Meet your coach", text: "Open the Pumpy tab to build a workout, adjust one, or plan your week.", label: "Pumpy" }
+  ];
+
+  function welcomeEligible() {
+    return !!(state.user && state.profile && !guide.welcome &&
+      !(state.profile.settings || {}).pumpyWelcome &&
+      Date.parse(state.user.created_at) >= Date.parse(WELCOME_SINCE) &&
+      !state.workouts.length);
+  }
+
+  function welcomeMaybe() {
+    guideUser();
+    if (!welcomeEligible() || document.hidden || state.view !== "library" || overlayShowing()) return;
+    openWelcome();
+  }
+
+  function welcomeDone() {
+    if (!state.user) return;
+    guide.welcome = true; guideSave();
+    if (!state.profile || (state.profile.settings || {}).pumpyWelcome) return;
+    var s = Object.assign({}, state.profile.settings || {}, { pumpyWelcome: 1 });
+    state.profile.settings = s;
+    sb.from("profiles").update({ settings: s }).eq("id", state.user.id)
+      .then(function () { /* device flag still works if offline */ });
+  }
+
+  function welcomePaint() {
+    var pages = $("welcomestage").children;
+    for (var i = 0; i < pages.length; i++) {
+      var on = i === welcomeStep;
+      pages[i].classList.toggle("on", on); pages[i].inert = !on;
+      pages[i].setAttribute("aria-hidden", on ? "false" : "true");
+    }
+    $("welcomecount").textContent = (welcomeStep + 1) + " of 3 · " + WELCOME_STEPS[welcomeStep].label;
+    $("welcomeback").disabled = welcomeStep === 0;
+    $("welcomenext").textContent = welcomeStep === 2 ? "Let’s go" : "Next";
+  }
+
+  function openWelcome() {
+    welcomeReturn = document.activeElement;
+    var stage = $("welcomestage"); stage.innerHTML = ""; welcomeStep = 0;
+    WELCOME_STEPS.forEach(function (step) {
+      var page = el("section", "welcome-page");
+      page.appendChild(pumpyArt(step.art, false));
+      page.appendChild(el("h2", null, step.title));
+      page.appendChild(el("p", null, step.text)); stage.appendChild(page);
+    });
+    welcomePaint(); openSheet("welcomesheet");
+    $("welcomenext").focus({ preventScroll: true });
+  }
+
+  $("welcomenext").onclick = function () {
+    if (welcomeStep === 2) { closeSheet("welcomesheet"); return; }
+    welcomeStep++; welcomePaint();
+  };
+  $("welcomeback").onclick = function () { welcomeStep = Math.max(0, welcomeStep - 1); welcomePaint(); };
+  $("welcomeskip").onclick = function () { closeSheet("welcomesheet"); };
+  $("welcomereplay").onclick = function () {
+    openWelcome(); closeSheet("guidesheet"); closeSheet("settingssheet");
+    welcomeReturn = $("addbtn");
+  };
+  $("welcomesheet").addEventListener("keydown", function (e) {
+    if (e.key === "Escape") { e.preventDefault(); closeSheet("welcomesheet"); return; }
+    if (e.key !== "Tab") return;
+    var controls = Array.from(this.querySelectorAll("button")).filter(function (b) { return !b.disabled; });
+    var first = controls[0], last = controls[controls.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  });
   document.addEventListener("visibilitychange", function () { if (document.hidden) guideStill(); });
   var guideMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
   if (guideMotionQuery.addEventListener) guideMotionQuery.addEventListener("change", function (e) {
@@ -9544,10 +9669,11 @@ export const APP = String.raw`
   var sheetNav = false, sheetBack = 0;
 
   function openSheet(id) {
-    guideClear();
+    guideClear("hold");
     guideStill();
     guideSheet(id);
     var n = $(id), b = n.querySelector(".sheetbody");
+    n.querySelectorAll(".tip-retiring").forEach(function (tip) { tip.remove(); });
     clearTimeout(closeTimers[id]);
     n.classList.remove("closing");
     // Whatever a drag left behind, plus the scroller display:none wound back for
@@ -9560,7 +9686,13 @@ export const APP = String.raw`
   function closeSheet(id, fromPop) {
     var n = $(id);
     if (!n.classList.contains("open")) return;
-    guideClear();
+    guideClear("hold");
+    if (id === "welcomesheet") {
+      welcomeDone();
+      var focus = welcomeReturn && welcomeReturn.isConnected && !welcomeReturn.closest("#landing, .sheet:not(.open)")
+        ? welcomeReturn : $("addbtn");
+      if (focus) focus.focus({ preventScroll: true });
+    }
     // A drag hands the sheet back to CSS here — every close route passes through
     // this line — and in the same style change as the class swap: an inline
     // transform outranks the stylesheet, so the close carries on from where it is.
@@ -9681,7 +9813,7 @@ export const APP = String.raw`
 
   ["addsheet", "setsheet", "watchsheet", "exsheet", "exeditsheet", "explainsheet", "picksheet",
    "settingssheet", "colsheet", "renamesheet", "swapsheet", "pumpysheet", "capsheet", "plansheet",
-   "daysheet", "copysheet", "sortsheet", "refsheet", "countsheet", "guidesheet"]
+   "daysheet", "copysheet", "sortsheet", "refsheet", "countsheet", "guidesheet", "welcomesheet"]
     .forEach(wireSheet);
 
   function overlayShowing() {
