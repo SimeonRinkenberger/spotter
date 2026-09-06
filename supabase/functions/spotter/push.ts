@@ -74,11 +74,6 @@ function vapidCfg(): Vapid | null {
   return { publicKey, privateKey, subject };
 }
 
-/** Is web push set up on this deployment at all? The app asks before it offers. */
-export function pushConfigured(): boolean {
-  return vapidCfg() !== null;
-}
-
 /**
  * What `GET /api/push/config` answers. The public key is not a secret — it ends
  * up in every subscription — but it is read from the environment rather than

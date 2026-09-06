@@ -95,6 +95,11 @@ select cron.schedule('spotter-push-tick', '0 * * * *', $cron$
     body    := jsonb_build_object('source', 'cron'),
     timeout_milliseconds := 10000
   )
-  where exists (select 1 from public.app_config where key = 'worker_url')
+  -- The derivation has to actually have derived something. replace() on a URL
+  -- that does not contain the worker's path returns it unchanged, and an hourly
+  -- POST to /api/worker/tick carrying a push body would quietly drain the ingest
+  -- queue instead — a wrong job that looks exactly like a working one.
+  where exists (select 1 from public.app_config
+                 where key = 'worker_url' and value like '%/api/worker/tick')
     and exists (select 1 from public.push_subscriptions where remind_plan or remind_risk);
 $cron$);
