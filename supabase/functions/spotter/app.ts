@@ -5949,7 +5949,7 @@ export const APP = String.raw`
   function scArm() {
     if (sc.vst === 2 && sc.vbtn) { sc.vbtn.parentNode.removeChild(sc.vbtn); sc.vbtn = null; }
     if (sc.vst === 2 || !sc.btns) return;
-    if (!sc.vbtn) sc.btns.appendChild(sc.vbtn = scBtn("Making video…", "btn ghost", null, scVideo));
+    if (!sc.vbtn) sc.btns.appendChild(sc.vbtn = scBtn("Making video…", "btn ghost scvid", null, scVideo));
     sc.vbtn.disabled = sc.vst !== 1;
     sc.vbtn.textContent = sc.vst !== 1 ? "Making video…"
       : scCan() === 2 && sc.vfile ? "Share video" : "Save video";
@@ -5962,9 +5962,8 @@ export const APP = String.raw`
   }
 
   function scPress(v) {
-    if (sc.pair) {
-      sc.pair.forEach(function (x) { x[0].setAttribute("aria-pressed", x[1] === v ? "true" : "false"); });
-    }
+    if (!sc.pair) return;
+    sc.pair.forEach(function (x) { x[0].setAttribute("aria-pressed", x[1] === v ? "true" : "false"); });
   }
 
   // The transparent card is not a post on its own, and nobody knows that unless
@@ -5990,7 +5989,8 @@ export const APP = String.raw`
     }
     function slow() {
       var im = new Image();
-      im.onload = function () { took(im); };
+      // Revoking after load is safe: a decoded image does not go back for its URL.
+      im.onload = function () { took(im); URL.revokeObjectURL(url); };
       im.onerror = function () { URL.revokeObjectURL(url); toast("Could not read that picture."); };
       im.src = url;
     }
