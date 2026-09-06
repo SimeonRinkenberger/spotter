@@ -1659,9 +1659,22 @@ export const STYLE = String.raw`<style>
   #pumpyview { display: flex; flex-direction: column; padding-bottom: 0; }
   #pumpylog { display: flex; flex-direction: column; gap: 10px; padding: 6px 0 14px; flex: 1 1 auto; }
   #pumpylog.hello { justify-content: center; }
-  .pumpybar { display: flex; align-items: center; justify-content: space-between; gap: 10px;
-    padding: 2px 0 4px; }
-  .pumpybar .chip { padding: 8px 13px; font-size: 12.5px; }
+  /* Stuck under the header for a whole conversation, at the leading edge where
+     Apple pins the sidebar toggle and will not let it be customised away: the way
+     out of a thread cannot be something you scroll back up to find. Icon only, a
+     capsule in the header's glass, over the messages and under the sheets. */
+  .pumpybar { position: sticky; top: calc(var(--hdr, 92px) + 6px); z-index: 5;
+    align-self: flex-start; display: flex; gap: 2px; margin: 6px 0 8px; padding: 0 3px;
+    border-radius: 999px;
+    box-shadow: 0 0 0 1px var(--line), var(--sh-sm);
+    background: color-mix(in srgb, var(--paper) 82%, transparent);
+    -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); }
+  .pumpybar button { width: 44px; height: 44px; font-size: 19px; border: none;
+    background: none; border-radius: 999px; color: var(--ink-2); display: grid;
+    place-items: center; transition: transform var(--t-1) var(--e-out),
+      background-color var(--t-2) var(--e-soft); }
+  .pumpybar button:active { transform: scale(.9); background: var(--sand); color: var(--ink); }
+  @media (prefers-reduced-motion: reduce) { .pumpybar button { transition: none; } }
   .pumpyhello { text-align: center; padding: 22px 12px 8px; color: var(--ink-2); font-size: 14px; line-height: 1.6; }
   .pumpyhello .pmark { width: 60px; height: 60px; margin: 0 auto 12px; box-shadow: var(--sh-md); }
   .pumpyhello .pmark svg { width: 34px; height: 34px; }
