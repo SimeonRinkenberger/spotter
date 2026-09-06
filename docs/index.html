@@ -2434,17 +2434,10 @@
          navigator.vibrate at all, and a switch over nothing is a lie. -->
     <div class="kv hide" id="sethapticrow"><span class="k">Vibration</span>
       <span class="v"><button class="chip" id="haptictoggle">On</button></span></div>
-    <!-- Hidden where no card can appear, for the same reason as Vibration above. -->
-    <div class="kv hide" id="setlivrow"><span class="k">Show workout on lock screen</span>
-      <span class="v"><button class="chip" id="livetoggle">On</button></span></div>
   </div>
   <div class="setnote">The sounds are three ticks and a chime, and only play while Spotter is
     open &mdash; also switchable from Workout Mode's top bar. How long you rest comes from the
     card the video made, not from here.</div>
-  <!-- The side effect nobody would guess: the card exists only while something is
-       playing, and a phone plays one thing at a time. -->
-  <div class="setnote">The lock screen card shows the set, the rest clock and the controls. It
-    uses your phone's media slot, so starting a workout pauses whatever else was playing.</div>
 
   <h3 class="seth">Save from your phone</h3>
   <p class="lede"><b>Android</b> &mdash; install Spotter, then share any video to it from the share
@@ -2562,7 +2555,7 @@
     user: null, profile: null, workouts: [], logs: null, plan: null,
     collections: [], colItems: [],
     filter: "All", q: "", view: "library", weekStart: null, unit: "lb",
-    sounds: true, haptics: true, live: true
+    sounds: true, haptics: true
   };
 
   function $(id) { return document.getElementById(id); }
@@ -3422,7 +3415,6 @@
         // profile may still carry s.rest; it is ignored on purpose.
         if (typeof s.sounds === "boolean") state.sounds = s.sounds;
         if (typeof s.haptics === "boolean") state.haptics = s.haptics;
-        if (typeof s.live === "boolean") state.live = s.live;
         // The top-bar button and the strip were drawn from the default; correct them.
         paintSounds();
         // The plan is on this row, and the shelf counter is drawn from the plan.
@@ -6745,8 +6737,6 @@
     $("workout").classList.add("open");
     stopRest();
     acquireWake();
-    // The tap that opened this overlay is the gesture iOS wants before audio.
-    liveStart();
     renderWorkout();
     startClock();
     history.pushState({ workout: 1 }, "");
@@ -6850,9 +6840,6 @@
   // hush: no entrance; a logged round changed a number.
   function renderWorkout(hush) {
     if (!wo) return;
-    // Whatever moved the screen moved the card, which is drawn from the session
-    // rather than from the DOM below.
-    liveDraw();
     var main = $("wmain"), dots = $("wdots");
     main.innerHTML = "";
     dots.innerHTML = "";
@@ -7076,7 +7063,6 @@
       $("restword").textContent = "Rest";
     }
     drawRest(restTotal);
-    liveDraw();
     restTimer = setInterval(tickRest, 200);
   }
 
@@ -7085,8 +7071,6 @@
     var left = restUntil - Date.now();
     if (left <= 0) { doneRest(); return; }
     drawRest(left);
-    // The Lock Screen counts down with the ring; nothing leaves until it moves.
-    liveDraw();
     // 3, 2 and 1 once each: a throttled tab lands two ticks in a second, or none.
     var s = Math.ceil(left / 1000);
     if (s <= 3 && s < restCued) { restCued = s; beep(880, .05, 0); }
@@ -7122,7 +7106,6 @@
     restHeld = 0;
     var onRing = restFace;
     restFace = restThen = null;
-    liveDraw();
     if (onRing) return;
     var strip = $("reststrip");
     if (!strip.classList.contains("on")) return;
@@ -7141,7 +7124,6 @@
       restHeld = Math.max(0, restUntil - Date.now());
       clearInterval(restTimer);
     }
-    liveDraw();
     if (restFace) { paintPhase(); return; }
     var strip = $("reststrip");
     if (restHeld) strip.classList.add("paused"); else strip.classList.remove("paused");
@@ -7163,9 +7145,6 @@
   var actx = null;
 
   function unlockAudio() {
-    // The loop wants the same gesture and is not a sound, so it starts above the
-    // mute switch rather than under it.
-    liveStart();
     if (!state.sounds) return;
     try {
       if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
@@ -7185,178 +7164,6 @@
       g.gain.exponentialRampToValueAtTime(.0001, t + len);
       o.start(t); o.stop(t + len + .03);
     } catch (e) { /* a silent cue is not a failure */ }
-  }
-
-  // ---------- the workout on the lock screen ----------
-  //
-  // Fitness, Strava, Hevy and Strong put a Live Activity there. ActivityKit is
-  // native-only, so this is the nearest true thing the web has: a Now Playing card,
-  // whose price is that something must be playing. Six seconds of silence loop while
-  // Workout Mode is open and mediaSession writes the words on it. Free with it: the
-  // transport buttons become pause-the-rest and skip, and a phone playing audio does
-  // not throttle this page's timers while locked. The cost, said in Settings too: a
-  // phone plays one thing at a time, so this takes it from the music.
-  var LIVE_TAG = "spotter-live";
-  var live = null, liveWired = false;
-
-  function liveCan() { return !!(navigator.mediaSession && window.MediaMetadata); }
-
-  function liveStart() {
-    if (!liveCan() || !state.live || !wo || wo.finished) return;
-    if (!live) {
-      var a = el("audio");
-      a.loop = true;
-      // Made here, not shipped: 16-bit silence is two zero bytes over and over,
-      // whose base64 is four characters over and over. Six seconds and not one
-      // because Chrome on Android ignores media shorter than five, loop or no.
-      a.src = "data:audio/wav;base64,UklGRih3AQBXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQR3AQAA" +
-        new Array(32002).join("AAAA");
-      // Attached, and never left paused: a detached element gets no audio session,
-      // and an iOS web app cannot restart from the Lock Screen a loop that has been
-      // paused half a minute. So an interruption — a call — is answered by playing.
-      document.body.appendChild(a);
-      live = { el: a, line: "", key: "", art: null };
-      a.onpause = function () { if (live && wo && !wo.finished) livePlay(); };
-      // The only session type allowed past the lock button and the ringer switch.
-      // It is also why the music stops, and Settings is the way out of that.
-      try { if (navigator.audioSession) navigator.audioSession.type = "playback"; } catch (e) { /* ignore */ }
-      // The Lock Screen may only do what the rest strip already does. A remote that
-      // could do more would be a second engine to keep in step with this one.
-      "play:toggle pause:toggle nexttrack:next previoustrack:prev".split(" ").forEach(function (m) {
-        var p = m.split(":");
-        try { navigator.mediaSession.setActionHandler(p[0], function () { liveDo(p[1]); }); }
-        catch (e) { /* not every action exists everywhere */ }
-      });
-      // The far end of the wire the worker posts a tapped shade button down.
-      if (!liveWired && navigator.serviceWorker) {
-        liveWired = true;
-        navigator.serviceWorker.addEventListener("message", function (e) {
-          if (e.data && e.data.spotter === "live") liveDo(e.data.action);
-        });
-      }
-    }
-    livePlay();
-    liveDraw(1);
-    liveTell();
-  }
-
-  // Refused outside a gesture, and a refusal costs the card and nothing else. Free
-  // while it plays, so every tap in Workout Mode is another attempt.
-  function livePlay() {
-    var q = live.el.play();
-    if (q && q.catch) q.catch(function () { /* no card, no harm */ });
-  }
-
-  function liveStop() {
-    liveNote(1);
-    if (liveCan()) navigator.mediaSession.metadata = null;
-    if (!live) return;
-    var a = live.el;
-    live = null;
-    // Pausing is not enough: iOS keeps the card up for a source it can still see.
-    try { a.pause(); a.removeAttribute("src"); a.load(); } catch (e) { /* ignore */ }
-    document.body.removeChild(a);
-  }
-
-  // What Hevy's Live Activity carries, in the room this one has: clock, set or
-  // round, movement. Apple's guidance is glanceable-first, so the countdown leads.
-  function liveLine() {
-    var s = wo.screens[wo.i], bits = [];
-    if (restUntil) {
-      var n = Math.max(0, Math.ceil((restHeld || restUntil - Date.now()) / 1000));
-      bits.push((restHeld ? "Paused" : woPhase === "ready" ? "Get ready"
-        : woPhase === "work" ? "Work" : "Rest") + " " +
-        (n >= 60 ? Math.floor(n / 60) + ":" + String(n % 60).padStart(2, "0") : n + "s"));
-    }
-    if (!s) return bits.concat(["Freestyle"]).join(" · ");
-    if (isCircuit(s.block)) bits.push("Round " + roundOf(s.bi) + " of " + roundsOf(s.block));
-    else if (!restUntil) bits.push("Set " +
-      Math.min(wo.entries[wo.i].sets.length + 1, targetOf(s)) + " of " + targetOf(s));
-    bits.push(s.ex.name);
-    return bits.join(" · ");
-  }
-
-  // The rest ticks five times a second, so this is a string compare until something
-  // moved: new metadata makes the OS re-read the artwork and the ring must not
-  // stutter. Apple asks the same of a Live Activity.
-  function liveDraw(force) {
-    if (!live || !wo || wo.finished) return;
-    // Strava and Hevy both headline elapsed time, and album is the spare line.
-    var mins = Math.floor((Date.now() - new Date(wo.startedAt).getTime()) / 60000);
-    var line = liveLine(), key = line + "|" + mins;
-    if (!force && key === live.key) return;
-    live.key = key;
-    live.line = line;
-    // 512 is what iOS 18 and Chrome's shade both want, and an empty artwork slot
-    // reads as a broken app rather than a plain one.
-    if (!live.art) live.art = [wo.workout.thumb_url
-      ? { src: wo.workout.thumb_url, sizes: "512x512", type: "image/jpeg" }
-      : { src: "icon.png", sizes: "512x512", type: "image/png" }];
-    try {
-      navigator.mediaSession.metadata = new window.MediaMetadata({
-        title: wo.workout.title || "Workout", artist: line,
-        album: "Spotter · " + mins + " min", artwork: live.art
-      });
-      // The button says what pressing it does — the rest timer's state, not the
-      // silence underneath, which never stops.
-      navigator.mediaSession.playbackState = restHeld ? "paused" : "playing";
-    } catch (e) { /* an older WebKit simply shows less */ }
-    liveNote();
-  }
-
-  function liveDo(act) {
-    if (!wo || wo.finished || !act) return;
-    if (act === "toggle") { if (restUntil) pauseRest(); liveDraw(1); }
-    else if (act === "next") {
-      if (restUntil) { var then = restThen; stopRest(); if (then) then(); } else skipMove();
-    } else if (act === "prev") woGo(-1);
-  }
-
-  // Android's shade wants the same sentence: a media notification carries the
-  // transport but not the words. One fixed tag makes an update replace the row
-  // rather than stack under it, and a replacement never re-alerts. iOS has none of
-  // this, so the path detects itself away and the card stands alone.
-  function liveNote(close) {
-    if (!navigator.serviceWorker || !window.Notification || Notification.permission !== "granted") return;
-    navigator.serviceWorker.ready.then(function (reg) {
-      if (close || !live || !wo || wo.finished) {
-        reg.getNotifications({ tag: LIVE_TAG })
-          .then(function (ns) { ns.forEach(function (n) { n.close(); }); });
-        return;
-      }
-      reg.showNotification(wo.workout.title || "Workout", {
-        tag: LIVE_TAG, body: live.line, icon: "icon.png", badge: "icon.png",
-        // Silent, so a ticking rest never lights the screen. Nothing asks for
-        // persistence: Android holds a row until it is dealt with.
-        silent: true,
-        actions: [{ action: "toggle", title: restHeld ? "Resume" : "Pause" },
-          { action: "next", title: "Skip" }]
-      }).catch(function () { /* a phone that refuses actions still has the card */ });
-    }).catch(function () { /* no worker, no shade */ });
-  }
-
-  // Once per device, as the timer sounds do it: something appeared outside the app
-  // and the sentence explaining it carries the way out — and on Android it is the
-  // reason for the prompt, so the tap comes before the dialog.
-  var liveTold = false;
-  try { liveTold = localStorage.getItem("spotter_live_told") === "1"; } catch (e) { /* ignore */ }
-
-  function liveTell() {
-    var t = $("toast");
-    if (liveTold || t.classList.contains("show")) return;
-    liveTold = true;
-    try { localStorage.setItem("spotter_live_told", "1"); } catch (e) { /* ignore */ }
-    var ask = !!navigator.serviceWorker && !!window.Notification && Notification.permission === "default";
-    toast(ask ? "This workout is on your lock screen · Tap to add it to the shade"
-      : "This workout is on your lock screen — set, rest clock and controls", ask ? 5600 : 4200);
-    if (!ask) return;
-    t.classList.add("tappable");
-    t.onclick = function () {
-      t.onclick = null;
-      t.classList.remove("tappable");
-      try { Notification.requestPermission().then(function () { liveDraw(1); }); }
-      catch (e) { /* a browser that will not be asked is not a failure */ }
-    };
   }
 
   // ---------- timed moves and circuits ----------
@@ -7566,7 +7373,6 @@
     });
     clearInterval(woTimer);
     stopRest();
-    liveStop();
     clearDraft();
     wo.finished = true;
     haptic("done");
@@ -7644,7 +7450,6 @@
   function exitWorkout() {
     clearInterval(woTimer);
     stopRest();
-    liveStop();
     releaseWake();
     clearDraft();
     // The clip sheet can outlive the overlay it was opened from.
@@ -11516,8 +11321,6 @@
     $("unittoggle").textContent = state.unit;
     $("haptictoggle").textContent = state.haptics ? "On" : "Off";
     $("sethapticrow").classList.toggle("hide", !navigator.vibrate);
-    $("livetoggle").textContent = state.live ? "On" : "Off";
-    $("setlivrow").classList.toggle("hide", !liveCan());
     paintSounds();
     var key = state.profile ? state.profile.ingest_key : null;
     $("setkey").textContent = key ? API + "ingest?key=" + key : "Loading…";
@@ -11574,7 +11377,7 @@
   // The column is written whole, so every preference goes up together: saving one
   // of them used to be enough to drop the others.
   function saveSettings() {
-    var s = { unit: state.unit, sounds: state.sounds, haptics: state.haptics, live: state.live };
+    var s = { unit: state.unit, sounds: state.sounds, haptics: state.haptics };
     if (state.profile) state.profile.settings = s;
     // The then() is what sends it. A supabase-js builder is lazy — it only runs
     // the request when something awaits it — so this line without one has been
@@ -11600,16 +11403,6 @@
     $("haptictoggle").textContent = state.haptics ? "On" : "Off";
     // The switch answers in the language it is about.
     if (state.haptics) haptic("tap");
-    saveSettings();
-  }
-
-  // Off has to take effect on the workout already running underneath this sheet,
-  // or the switch is a promise about next time. On cannot: the card needs audio,
-  // and audio needs a gesture inside Workout Mode, so it starts at the next set.
-  function toggleLive() {
-    state.live = !state.live;
-    $("livetoggle").textContent = state.live ? "On" : "Off";
-    if (!state.live) liveStop();
     saveSettings();
   }
 
@@ -12735,7 +12528,6 @@
   $("unittoggle").onclick = toggleUnit;
   $("soundtoggle").onclick = toggleSounds;
   $("haptictoggle").onclick = toggleHaptics;
-  $("livetoggle").onclick = toggleLive;
   $("setnamerow").onclick = openName;
   $("setpwrow").onclick = openPassword;
   $("setmailrow").onclick = openEmail;

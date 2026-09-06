@@ -10,7 +10,7 @@
 // arrives — still refreshes the cache for next time. That is the pattern Workbox
 // calls NetworkFirst with networkTimeoutSeconds, and 1.5s is the number that keeps a
 // bad connection from holding a blank screen while never beating a good one.
-var CACHE = "spotter-shell-v3";
+var CACHE = "spotter-shell-v2";
 var SHELL = ["icon.png", "manifest.webmanifest"];
 var PAGE = "index.html";
 var NET_TIMEOUT = 1500;
@@ -80,26 +80,4 @@ self.addEventListener("fetch", function (e) {
   if (SHELL.some(function (p) { return url.pathname.endsWith(p); })) {
     e.respondWith(caches.match(e.request).then(function (r) { return r || fetch(e.request); }));
   }
-});
-
-// The workout notification is a remote control, not a link. Its buttons have to
-// reach the page, because the rest timer and the log live there and nothing in a
-// worker can touch them — so a button is forwarded to the open window and stops
-// there, leaving the phone where it was. Tapping the body of the notification is
-// the one gesture that means "take me back", and only that one focuses the app.
-self.addEventListener("notificationclick", function (e) {
-  var act = e.action;
-  if (!act) e.notification.close();
-  e.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true })
-    .then(function (list) {
-      var app = null;
-      for (var i = 0; i < list.length; i++) {
-        if (list[i].url.indexOf(self.registration.scope) === 0) { app = list[i]; break; }
-      }
-      // Nothing open means the notification outlived the workout that drew it, and
-      // a button press has nowhere to land; opening the app is the honest answer.
-      if (!app) return act ? undefined : self.clients.openWindow(self.registration.scope);
-      app.postMessage({ spotter: "live", action: act || "open" });
-      return act ? undefined : app.focus();
-    }));
 });
