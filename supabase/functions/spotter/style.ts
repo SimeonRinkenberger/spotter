@@ -1574,21 +1574,15 @@ export const STYLE = String.raw`<style>
   .scprev img.in { opacity: 1; }
   .scside { flex: 1; min-width: 0; display: flex; flex-direction: column;
     justify-content: center; gap: 12px; }
-  /* Two to a row rather than one long line: the look chips and the format chips
-     stack as the card learns to be more things, and four 44px targets across a
-     140px column would clip at 375px. */
+  /* Two to a row rather than one long line: four 44px targets across a 140px
+     column would clip at 375px. */
   .scchips { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .scchips[hidden] { display: none; }
   .scchip { min-width: 0; min-height: 44px; padding: 10px 4px; font-size: 13px;
     font-weight: 650; border: 1px solid var(--line-2); border-radius: 12px;
     background: var(--card); color: var(--ink-2);
-    transition: background-color var(--t-2), border-color var(--t-2), color var(--t-2),
-      opacity var(--t-2); }
+    transition: background-color var(--t-2), border-color var(--t-2), color var(--t-2); }
   .scchip[aria-pressed="true"] { background: var(--pill); border-color: var(--ember);
     color: var(--ember-ink); }
-  /* The clip takes five seconds of wall clock to record, so the chip is there and
-     visibly not ready rather than appearing under a thumb that was already moving. */
-  .scchip[disabled] { opacity: .45; }
   .schint { font-size: 11.5px; line-height: 1.45; color: var(--muted); }
   .scbtns { display: flex; flex-direction: column; gap: 9px; }
   .scbtns.in { margin-top: 14px; animation: viewin var(--t-2) var(--e-out) both; }

@@ -1607,21 +1607,15 @@
   .scprev img.in { opacity: 1; }
   .scside { flex: 1; min-width: 0; display: flex; flex-direction: column;
     justify-content: center; gap: 12px; }
-  /* Two to a row rather than one long line: the look chips and the format chips
-     stack as the card learns to be more things, and four 44px targets across a
-     140px column would clip at 375px. */
+  /* Two to a row rather than one long line: four 44px targets across a 140px
+     column would clip at 375px. */
   .scchips { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .scchips[hidden] { display: none; }
   .scchip { min-width: 0; min-height: 44px; padding: 10px 4px; font-size: 13px;
     font-weight: 650; border: 1px solid var(--line-2); border-radius: 12px;
     background: var(--card); color: var(--ink-2);
-    transition: background-color var(--t-2), border-color var(--t-2), color var(--t-2),
-      opacity var(--t-2); }
+    transition: background-color var(--t-2), border-color var(--t-2), color var(--t-2); }
   .scchip[aria-pressed="true"] { background: var(--pill); border-color: var(--ember);
     color: var(--ember-ink); }
-  /* The clip takes five seconds of wall clock to record, so the chip is there and
-     visibly not ready rather than appearing under a thumb that was already moving. */
-  .scchip[disabled] { opacity: .45; }
   .schint { font-size: 11.5px; line-height: 1.45; color: var(--muted); }
   .scbtns { display: flex; flex-direction: column; gap: 9px; }
   .scbtns.in { margin-top: 14px; animation: viewin var(--t-2) var(--e-out) both; }
@@ -8001,10 +7995,10 @@
   //
   // "When a workout is done I want to export it to a story." One mechanism does
   // that from a web app: navigator.share with a file, into the OS share sheet,
-  // where Instagram, TikTok, Snapchat and Messages all appear. What a share
-  // extension then does with a handed-in PNG is its own business, so nothing here
-  // promises a Story, and Save image stands beside Share at the same size because
-  // on iOS that is how most people get a card into one.
+  // where Instagram, TikTok, Snapchat and Messages all appear. What an extension
+  // does with a handed-in file is its own business, so nothing here promises a
+  // Story, and Save image stands beside Share because on iOS that is how most
+  // people get a card into one.
   //
   // The picture is drawn by hand: every HTML-to-image library either reimplements
   // CSS badly or leans on foreignObject, which is where WebKit breaks, and one
@@ -8018,7 +8012,7 @@
   var SC_WHERE = { tiktok: "TikTok", instagram: "Instagram", youtube: "YouTube" };
 
   // What the summary holds for the card: the look the poster picked, the File a
-  // tap may hand straight to the sheet, and the MP4 once it has recorded itself.
+  // tap may hand to the sheet, and the MP4 once it has recorded itself.
   var sc = { bg: "dark", file: null, blob: null, url: null, card: null,
     img: null, hint: null, seq: 0, watching: false, photo: null, pair: null,
     btns: null, tip: "", vfile: null, vurl: null, vbtn: null, vseq: 0, vst: 2, vno: false };
@@ -8108,8 +8102,8 @@
   }
 
   // A five-digit volume is twice the width of a two-digit minute count, so in the
-  // one row where the numbers shout, the size follows the text — measured against
-  // where a counting figure lands, so it cannot shrink under itself mid-clip.
+  // one row where the numbers shout, the size follows the text - measured where a
+  // counting figure lands, so it cannot shrink under itself mid-clip.
   function scBig(c, s, x, y, max, face, col, ms) {
     var size = 104;
     c.fillStyle = col;
@@ -8119,9 +8113,8 @@
     c.fillText(s, x, y);
   }
 
-  // The clip's whole motion vocabulary: how far a window between two moments has
-  // got, eased out, and a figure counted up to it. "bodyweight" is not a number
-  // and stands still.
+  // How far a window between two moments has got, eased out; and a figure counted
+  // up to it, except "bodyweight", which is not a number and sits still.
   function scSeg(t, a, b) {
     return 1 - Math.pow(1 - Math.max(0, Math.min(1, (t - a) / (b - a))), 3);
   }
@@ -8132,20 +8125,20 @@
   }
 
   // t is where the card is in its own five seconds; 1, or left out, is the
-  // finished card, which is the PNG and the clip's last two seconds both.
+  // finished card - the PNG, and the clip's last two seconds.
   function scDraw(c, d, p, face, marks, t) {
     var L = SC_PAD, R = SC_W - SC_PAD, W = R - L, i, a;
-    // Clear is the overlay asset: shorter, no ground, and dropped on top of the
-    // poster's own clip in the Story editor. Photo is their own picture under the
-    // usual card — never the creator's clip frame, which is a third party's work.
+    // Clear is the overlay asset: no ground, dropped on the poster's own clip in
+    // the Story editor. Photo is their own picture - never the creator's clip
+    // frame, which is a third party's work.
     var clear = d.bg === "clear", photo = d.bg === "photo" && marks.photo;
     var H = clear ? SC_CH : SC_H, TOP = clear ? 64 : SC_TOP,
       BASE = H - (clear ? 64 : SC_H - SC_BASE);
     if (t === undefined) t = 1;
     c.clearRect(0, 0, SC_W, H);
     if (photo) {
-      // Cover-cropped, because the poster framed it; a wash and a scrim down the
-      // lower half so white text survives a bright gym.
+      // Cover-cropped because the poster framed it; wash and scrim so white text
+      // survives a bright gym.
       var iw = marks.photo.width, ih = marks.photo.height, k = Math.max(SC_W / iw, H / ih);
       c.drawImage(marks.photo, (SC_W - iw * k) / 2, (H - ih * k) / 2, iw * k, ih * k);
       var sg = c.createLinearGradient(0, H * 0.4, 0, H);
@@ -8170,13 +8163,11 @@
       c.drawImage(sm, 0, (a - 1) * 90, SC_W, H);
       c.globalAlpha = 1;
     }
-    // Over a photo, and over whatever a Story editor puts behind a transparent
-    // card, every run of text has to bring its own ground with it.
+    // Neither knows what is behind it, so every run of text brings its own ground.
     if (clear || photo) { c.shadowColor = "rgba(0,0,0,.55)"; c.shadowBlur = 20; }
 
-    // Each row arrives a beat after the one above it while the clip runs, and in
-    // the still they are all simply there. One call fades the next row in and says
-    // how far it still has to rise.
+    // Each row arrives a beat after the one above while the clip runs; in the still
+    // they are all simply there. This fades the next in and says how far it rises.
     var n = 0;
     function scStep() {
       var e = scSeg(t, 0.25 + n * 0.03, 0.62);
@@ -8194,8 +8185,8 @@
     var headH = 118, titleH = tl.length * 104 + 34, figH = 246;
     var prH = shown ? shown * 110 + (!clear && d.prs.length > shown ? 50 : 0) + 22 : 0;
     var credH = d.credit ? 62 : 0;
-    // An overlay has to be small or it covers the clip it is laid on, so Clear
-    // drops the date and the muscle line and keeps three rows at most.
+    // An overlay that hides the clip under it is not one, so Clear drops the date
+    // and the muscle line and keeps three rows.
     var lab = clear ? "" : d.label, rowH = 72, labH = 0, rows = 0, pass, room, cap = clear ? 3 : 8;
     for (pass = 0; pass < 3; pass++) {
       labH = lab ? 46 : 0;
@@ -8226,8 +8217,7 @@
     for (i = 0; i < tl.length; i++) c.fillText(tl[i], L, y + 76 + i * 104);
     y += titleH;
 
-    // Over a photo or over nothing the panel goes translucent, so what is behind
-    // the card still reads through the one solid shape on it.
+    // The one solid shape on the card must not blind what is behind it.
     c.fillStyle = clear || photo ? p.panel + "C4" : p.panel;
     scRR(c, L, y, W, 216, 34); c.fill();
     c.strokeStyle = p.line; c.lineWidth = 2; c.stroke();
@@ -8311,9 +8301,8 @@
     c.globalAlpha = 1;
   }
 
-  // The palette, the face and the marks: everything a draw needs that costs a
-  // promise. The recorder resolves them once, then draws a hundred and fifty
-  // times with nothing left to wait for.
+  // Everything a draw needs that costs a promise: resolved once, then drawn a
+  // hundred and fifty times with nothing left to wait for.
   function scAssets(card) {
     var p = scPalette(card.bg);
     return Promise.all([scFace(),
@@ -8345,10 +8334,10 @@
   // ---------- the five seconds ----------
   //
   // TikTok and Reels are video shelves and a still card is a dead end on both, and
-  // this card already knows how to paint any moment of itself. So it records itself
-  // while the poster is still reading the summary — never in the tap, where five
-  // seconds of wall clock is five the sheet's activation window has not got.
-  // MP4 or nothing: iOS Photos will not take a WebM and the extensions ignore it.
+  // this card can already paint any moment of itself. So it records itself while
+  // the poster reads the summary - never in the tap, where five seconds of wall
+  // clock is five the activation window has not got. MP4 or nothing: iOS Photos
+  // will not take a WebM and the extensions ignore it.
   var SC_MS = 5000;
 
   function scMime() {
@@ -8374,7 +8363,7 @@
           clearTimeout(hard); cancelAnimationFrame(raf);
           document.removeEventListener("visibilitychange", hide);
           try { rec.stop(); } catch (e) { /* already stopped */ }
-          // A stream torn down under a recorder still flushing loses the last chunk.
+          // A stream torn down under a flushing recorder loses the last chunk.
           setTimeout(function () { str.getTracks().forEach(function (t) { t.stop(); }); }, 400);
         }
         function give() {
@@ -8384,16 +8373,15 @@
           if (b.size) ok(b); else no(0);
         }
         function fail() { if (!over) { over = true; shut(); no(0); } }
-        // A backgrounded tab stops rAF dead, so the rest of the clip would be one
-        // frozen frame. No video beats a still one pretending to be a video.
+        // A backgrounded tab stops rAF dead: the rest would be one frozen frame,
+        // and no video beats a still one pretending to be one.
         function hide() { if (document.hidden) fail(); }
         function tick(ts) {
           if (over) return;
           if (!t0) t0 = ts;
           var t = Math.min(1, (ts - t0) / SC_MS);
-          // The stream samples thirty a second. Repainting two million pixels on
-          // every tick of a 120Hz phone would pay four times over for frames
-          // nothing captures, and that is how a recorder falls behind and stalls.
+          // The stream samples thirty a second; repainting two million pixels on
+          // every tick of a 120Hz phone is how a recorder falls behind and stalls.
           if (ts - last >= 31 || t === 1) {
             last = ts;
             scDraw(ctx, card, a.p, a.face, a.marks, t);
@@ -8489,14 +8477,13 @@
   function scForget() {
     if (sc.url) URL.revokeObjectURL(sc.url);
     if (sc.vurl) URL.revokeObjectURL(sc.vurl);
-    // Bumping the sequence tells a recorder still running for the summary that has
-    // just closed to throw its clip away rather than arm a button nobody can see.
+    // The sequence tells a recorder still running for the summary that just closed
+    // to bin its clip rather than arm a button nobody can see.
     sc.vseq++;
     sc.vst = 2;
     sc.vno = false;
-    // The picture belonged to that session. Holding a decoded 1080-wide bitmap
-    // after the summary has gone is megabytes a phone has better uses for, and a
-    // new session must not quietly inherit someone's last gym selfie.
+    // The picture belonged to that session: megabytes a phone has better uses for,
+    // and the next session must not inherit someone's last gym selfie.
     if (sc.photo && sc.photo.close) sc.photo.close();
     if (sc.bg === "photo") sc.bg = "dark";
     sc.photo = null;
@@ -8531,20 +8518,15 @@
     });
   }
 
-  // The clip belongs to the card on screen, so a chip tap that changes the look
-  // records again; the sequence keeps a slow recorder off a card nobody can see.
-  // A recorder that fails takes its own button away: nobody asked for a video, so
-  // a toast about one would be noise.
+  // The clip belongs to the card on screen, so a chip tap records again. A failure
+  // takes the button away: nobody asked for a video, so a toast would be noise.
   function scMakeVideo() {
     var mime = scMime(), mine = ++sc.vseq;
     if (sc.vurl) URL.revokeObjectURL(sc.vurl);
     sc.vurl = sc.vfile = null;
-    // Once a recorder has failed on this summary the button is gone for good — a
-    // button that reappeared five seconds later would land under a moving thumb —
-    // so a later chip tap must not spend another five seconds encoding for nobody.
-    // A clip has no alpha either, so the transparent card has nothing to record;
-    // its button leaves and comes back with the chip that asked for it, which is
-    // a shift the poster's own thumb caused.
+    // Gone for good once it fails, so a later chip tap must not encode for nobody.
+    // A clip has no alpha either, so Clear has nothing to record and its button
+    // leaves with the chip that asked for it - a shift the poster's thumb caused.
     if (sc.vno) return;
     if (sc.card.bg === "clear") mime = "";
     sc.vst = mime ? 0 : 2;
@@ -8560,9 +8542,8 @@
     }, function () { if (mine === sc.vseq) { sc.vst = 2; sc.vno = true; scArm(); } });
   }
 
-  // The clip is five seconds of wall clock behind the card, so its button is there
-  // from the start and simply cannot be pressed yet: one that appeared late would
-  // land under a thumb already moving towards Done.
+  // Five seconds of wall clock behind the card, so the button is there from the
+  // start and cannot be pressed yet: one arriving late lands under a moving thumb.
   function scArm() {
     if (sc.vst === 2 && sc.vbtn) { sc.vbtn.parentNode.removeChild(sc.vbtn); sc.vbtn = null; }
     if (sc.vst === 2 || !sc.btns) return;
@@ -8584,18 +8565,17 @@
     }
   }
 
-  // The transparent card is not a post on its own — it is the thing you drop on
-  // top of your own clip — and nobody knows that unless the row says so.
+  // The transparent card is not a post on its own, and nobody knows that unless
+  // the row says so.
   function scSay() {
     if (!sc.hint) return;
     sc.hint.textContent = sc.bg === "clear"
       ? "Save it, then add it over your own clip in the Story editor." : sc.tip;
   }
 
-  // A 48MP phone photo decoded whole is about 190MB of canvas and an older iPhone
-  // kills the tab for it, so the decoder is asked for 1080 wide where it can do
-  // that. A blob URL from our own origin does not taint the canvas, so toBlob
-  // still comes back with a card.
+  // A 48MP photo decoded whole is ~190MB of canvas and an older iPhone kills the
+  // tab for it, so the decoder is asked for 1080 wide where it can. Our own blob
+  // URL does not taint the canvas, so toBlob still returns a card.
   function scPhoto(f) {
     var url = URL.createObjectURL(f), p = null;
     function took(im) {
@@ -8621,17 +8601,16 @@
   }
 
   // Neither Instagram nor TikTok makes caption text tappable, so a caption is not
-  // traffic here — it is credit and discovery. A best beats volume in the first
-  // line, the creator is named the way the card names them, and five hashtags is
-  // Instagram's own guidance. It goes on the clipboard and never into
-  // share({text}): on iOS some targets take the text and drop the file.
+  // traffic here - it is credit and discovery. A best beats volume, the creator is
+  // named as the card names them, five hashtags is Instagram's own guidance.
+  // Clipboard only, never share({text}): on iOS some targets drop the file for it.
   function scCaption(d) {
     var out = [], bits = [], tags = ["#gym"], vol = d.figs[2], i, s, g;
     if (d.prs.length === 1) bits.push("a new best on " + String(d.prs[0]).split(" · ")[0]);
     else if (d.prs.length) bits.push(d.prs.length + " new bests");
     if (vol[1] !== "bodyweight") bits.push(vol[0] + " " + vol[1]);
     bits.push(d.figs[1][0] + " " + d.figs[1][1]);
-    // A middot, not a dash: half the titles people save already carry a dash.
+    // A middot, not a dash: half these titles carry a dash already.
     out.push(d.title + " · " + bits.join(", ") + ".");
     if (d.coach) out.push("Built with Pumpy in Spotter.");
     else {
@@ -8651,8 +8630,7 @@
   function scCopyCaption() {
     haptic("tap");
     var s = scCaption(sc.card), okd = false, t;
-    // execCommand is deprecated everywhere and is still the only clipboard a
-    // WebView without the async one has.
+    // Deprecated everywhere, and still the only clipboard some WebViews have.
     function old() {
       t = el("textarea");
       t.value = s;
@@ -8766,8 +8744,7 @@
   function scButtons(btns) {
     var can = scCan();
     sc.btns = btns;
-    // Above Share on purpose: by the time Instagram's caption field opens the
-    // clipboard is already loaded, and the poster has one paste left to do.
+    // Above Share, so the clipboard is loaded by the time the caption field opens.
     btns.appendChild(scBtn("Copy caption", "btn ghost", null, scCopyCaption));
     if (can === 2) {
       btns.appendChild(scBtn("Share", "btn", "share", scShare));
@@ -8798,9 +8775,9 @@
     prev.appendChild(sc.img);
     row.appendChild(prev);
 
-    // Two chips to a row and never four across: at 375px four 44px targets beside
-    // a 140px preview clip. The camera roll is a hidden file input with no capture
-    // attribute — capture would open the camera and skip the roll entirely.
+    // Two to a row, never four across: at 375px four 44px targets beside a 140px
+    // preview clip. No capture attribute on the input - capture would open the
+    // camera and skip the roll.
     var side = el("div", "scside"), chips = el("div", "scchips");
     var pin = el("input");
     pin.type = "file";
@@ -8818,8 +8795,7 @@
         b.type = "button";
         b.onclick = function () {
           haptic("tap");
-          // Photo always opens the roll: once a picture is chosen, changing it is
-          // the only thing the chip has left to do.
+          // Photo always opens the roll: changing it is all it has left to do.
           if (t[0] === "photo") { pin.click(); return; }
           if (sc.bg === t[0]) return;
           sc.bg = t[0];
