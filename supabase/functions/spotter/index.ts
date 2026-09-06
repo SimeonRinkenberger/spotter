@@ -4683,7 +4683,7 @@ function fallbackTitle(meta: Meta, p: Parsed): string {
     return from ? `Workout from ${from}` : "Saved workout";
   }
   const label = PLATFORM_LABEL[p.platform] ?? "Saved";
-  const kind = p.platform === "instagram" ? (p.kind === "reel" ? "reel" : "post") : "video";
+  const kind = p.platform === "instagram" ? (p.kind === "reel" ? "reel" : "post") : (p.kind === "photo" ? "post" : "video");
   return who ? `${label} ${kind} by ${who}` : `${label} ${kind}`;
 }
 
@@ -5926,7 +5926,10 @@ async function escalateToMedia(
   // A photo post has no video in it. tiktokMedia would fetch the watch page a
   // second time and log "named no media", and the slides — which is where the
   // workout is — were already read by vision above. Nothing to escalate to.
-  if (p.kind === "photo" || meta.images?.length) {
+  // Slides alone are not the test: igMeta puts the thumbnail in meta.images on
+  // nearly every Instagram post, so the day Instagram grows a media() this line
+  // would switch its escalation off. Only TikTok names slides for a carousel.
+  if (p.kind === "photo" || (p.platform === "tiktok" && meta.images?.length)) {
     console.log("media: skipping", p.shortcode, "— a photo post has slides, not a video");
     return { card, meta, ran };
   }
