@@ -6943,7 +6943,6 @@ export const APP = String.raw`
         s.appendChild(m);
         f.appendChild(s);
       }
-      f.firstChild.setAttribute("aria-label", "Finding your chats");
     } else {
       // A refresh that failed still leaves the rows: what we hold is stale, not
       // wrong, and the line above them says so.
@@ -6952,6 +6951,8 @@ export const APP = String.raw`
         "No chats yet. Ask Pumpy something and it will keep the conversation here."));
       rows.forEach(function (t) { f.appendChild(threadRow(t)); });
     }
+    // Grey bars say nothing out loud, so the wait is announced the ARIA way.
+    if (rows) list.removeAttribute("aria-busy"); else list.setAttribute("aria-busy", "true");
     // Built whole, hung once: the sheet has one layout to open at, not one per row.
     list.innerHTML = "";
     list.appendChild(f);
