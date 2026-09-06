@@ -18,9 +18,11 @@
 //      catalog id, bring a movement the caption never had, say nothing at all, and
 //      say LESS than the card already knew. The invariant across all of them:
 //      nothing the card had is ever lost.
-//   3. The CAP. `max_slides_carousel` for a post with more than one image,
-//      `max_slides` for a single attached screenshot, and both readable from
-//      app_config.
+//   3. The BOUNDS. `max_slides_carousel` for a post with more than one image,
+//      `max_slides` for a single attached screenshot, the clock budget over the
+//      whole loop, and all three readable from app_config. Plus the one that
+//      decides whether the dose question may be asked at all: a reel's cover
+//      frame is filed under `images` and is not a page.
 //   4. The PROMPT. Every notation the prompt teaches, pushed through the real
 //      `visionCard` with Gemini mocked, so the mapping is checked where it
 //      actually happens — in `normalizeCard`/`normalizeExercise` — rather than
@@ -152,6 +154,8 @@ export const harness = {
   geminiText: null as string | null,
   // the slide indexes the mocked worker sub-request was actually asked for
   asked: [] as number[],
+  // how long the mocked sub-request pretends to take, for the clock budget
+  delayMs: 0,
 };
 
 function geminiGenerate(body: any, _ctx: any, _model?: string): Promise<Generated> {
@@ -225,7 +229,7 @@ type Lifted = {
   runtimeCfg: Record<string, string>;
   harness: {
     caption: unknown; slides: unknown[]; prompts: string[];
-    geminiText: string | null; asked: number[];
+    geminiText: string | null; asked: number[]; delayMs: number;
   };
   MERGE_MAX_EXERCISES: number;
   visionLimit(key: string, dflt: number): number;
@@ -543,10 +547,7 @@ async function readSlide(exercises: unknown[]): Promise<Record<string, unknown> 
   return await M.visionCard("ZmFrZQ==", "image/jpeg", card([]), { purpose: "vision", userId: null });
 }
 
-const harness = M.harness as {
-  caption: unknown; slides: unknown[]; prompts: string[];
-  geminiText: string | null; asked: number[];
-};
+const harness = M.harness;
 
 {
   const got = await readSlide([{ name: "Goblet Squat", sets: 3, reps: "10-12" }]);
@@ -608,13 +609,14 @@ check("a mangled reply is nothing rather than a throw",
 // buildCard is the real one. Only the sub-request to /api/worker/vision is
 // mocked, which is exactly the seam the production code already put there.
 
-globalThis.fetch = ((_input: unknown, init?: { body?: unknown }) => {
+globalThis.fetch = (async (_input: unknown, init?: { body?: unknown }) => {
   const body = JSON.parse(String(init?.body ?? "{}"));
   harness.asked.push(body.slide);
+  if (harness.delayMs) await new Promise((r) => setTimeout(r, harness.delayMs));
   const slide = harness.slides[body.slide] ?? null;
-  return Promise.resolve(new Response(JSON.stringify({ status: "ok", card: slide }), {
+  return new Response(JSON.stringify({ status: "ok", card: slide }), {
     headers: { "content-type": "application/json" },
-  }));
+  });
 }) as typeof fetch;
 
 const logs: string[] = [];
@@ -690,6 +692,25 @@ async function run(
   eq("the dial bounds what is paid for", r.asked, [0, 1, 2, 3]);
   check("and the log says so", r.logs.some((l) => l.startsWith("vision: reading 4 of 9 slide(s)")));
   delete M.runtimeCfg["vision.max_slides_carousel"];
+}
+
+// The other bound, on the clock. Ten slides at the twenty-second per-slide
+// ceiling outlives a request, and reprocess runs this synchronously with the
+// owner watching, so a degraded vision tier has to give back a partial card
+// rather than a timeout.
+{
+  M.runtimeCfg["vision.slides_budget_ms"] = "1";
+  harness.delayMs = 8;
+  const table = card([block([ex("Goblet Squat", { reps: "12" })])],
+    { extracted_by: "vision:gemini-harness" });
+  const r = await run(dosed0, [table, table, table, table], 4);
+  eq("the budget stops the loop after the slide it was already reading", r.asked, [0]);
+  check("and says so", r.logs.some((l) => l.startsWith("vision: out of time at slide 1 of 4")),
+    r.logs.join(" | ").slice(0, 200));
+  eq("what the slides did give is still merged", M.countExercises(r.card), 7);
+  eq("including the dose", doses(r.card)[0], "Goblet Squat: 3x12");
+  harness.delayMs = 0;
+  delete M.runtimeCfg["vision.slides_budget_ms"];
 }
 
 // A single attached image is not a carousel and keeps the old cap of three.

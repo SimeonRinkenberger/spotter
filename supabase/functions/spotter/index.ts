@@ -4807,7 +4807,8 @@ export async function claudeStream(
  * to work; the compiled-in numbers are the shipped behaviour.
  */
 function visionLimit(
-  key: "max_bytes" | "max_slides" | "max_slides_carousel" | "timeout_ms", dflt: number,
+  key: "max_bytes" | "max_slides" | "max_slides_carousel" | "timeout_ms" | "slides_budget_ms",
+  dflt: number,
 ): number {
   const fromCfg = Number(runtimeCfg["vision." + key]);
   if (Number.isFinite(fromCfg) && fromCfg > 0) return fromCfg;
@@ -5546,8 +5547,19 @@ async function buildCard(
     console.log("vision: reading", slides.length, "of", meta.images.length, "slide(s) —",
       "caption gave", before.total, "exercise(s),", before.missing, "without a dose",
       startSlide ? "(resuming at slide " + startSlide + ")" : "");
+    // A second bound, on the clock rather than the count, because ten slides at the
+    // twenty-second per-slide ceiling is longer than a request is allowed to live.
+    // Ten healthy slides take well under this; it only bites when the vision tier
+    // is degraded, and then the card keeps whatever the slides before it gave
+    // instead of the whole save timing out. Reprocess needs it most: that path is
+    // synchronous, with the owner watching a spinner.
+    const deadline = Date.now() + visionLimit("slides_budget_ms", 90_000);
     let filled = 0, matched = 0, by: string | null = null;
     for (let i = startSlide; i < slides.length; i++) {
+      if (i > startSlide && Date.now() > deadline) {
+        console.log("vision: out of time at slide", i, "of", slides.length, "— keeping what the earlier slides gave");
+        break;
+      }
       const fromImage = await runVisionRemote(slides[i], i, card, ctx);
       // Logged for every slide, including the ones that returned nothing. The bug
       // this whole pass exists to fix was invisible precisely because a slide that
