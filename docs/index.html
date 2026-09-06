@@ -11783,12 +11783,21 @@
     // browser and an external keyboard both focus a field without taking a pixel.
     var kb = !!vv && (kbOn || kbSettle) && vv.height < window.innerHeight - 80;
     document.body.classList.toggle("kb", kb);
-    if (kb) {
+    // iOS 26 hands a dismissed keyboard back short: visualViewport.height stays a
+    // couple of dozen pixels under innerHeight and does not catch up (WebKit 297779,
+    // FB19889436), so 100dvh then describes a frame taller than the screen shows and
+    // the bottom bar hangs under the edge. Installed only — a browser tab's toolbars
+    // make that gap on purpose and dvh already follows them.
+    var gap = vv ? window.innerHeight - vv.height : 0;
+    var short = !kb && gap >= 4 && gap < 80 && standalone();
+    if (kb || short) {
       root.style.setProperty("--vvh", vv.height + "px");
       root.style.setProperty("--vvtop", vv.offsetTop + "px");
     } else {
       root.style.removeProperty("--vvh");
       root.style.removeProperty("--vvtop");
+    }
+    if (!kb) {
       kbSettle = false;             // the viewport is back; the settle is over
       var off = window.scrollY + ((vv && vv.offsetTop) || 0);
       if (off) { kbDriftN++; if (off > kbDrift) kbDrift = off; }
