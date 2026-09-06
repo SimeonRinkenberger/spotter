@@ -4677,10 +4677,6 @@ export const APP = String.raw`
   // not throttle this page's timers while locked. The cost, said in Settings too: a
   // phone plays one thing at a time, so this takes it from the music.
   var LIVE_TAG = "spotter-live";
-  // The shade is Android's. An installed iOS app has the same API and would answer
-  // it with a banner re-posted every second of a rest, so the row is Android only;
-  // iOS keeps the media card, which is the whole answer there.
-  var ANDROID = /Android/i.test(navigator.userAgent);
   var live = null, liveWired = false;
 
   function liveCan() { return !!(navigator.mediaSession && window.MediaMetadata); }
@@ -4801,7 +4797,7 @@ export const APP = String.raw`
   // rather than stack under it, and a replacement never re-alerts. iOS has none of
   // this, so the path detects itself away and the card stands alone.
   function liveNote(close) {
-    if (!ANDROID || !navigator.serviceWorker || !window.Notification || Notification.permission !== "granted") return;
+    if (!navigator.serviceWorker || !window.Notification || Notification.permission !== "granted") return;
     navigator.serviceWorker.ready.then(function (reg) {
       if (close || !live || !wo || wo.finished) {
         reg.getNotifications({ tag: LIVE_TAG })
@@ -4830,7 +4826,7 @@ export const APP = String.raw`
     if (liveTold || t.classList.contains("show")) return;
     liveTold = true;
     try { localStorage.setItem("spotter_live_told", "1"); } catch (e) { /* ignore */ }
-    var ask = ANDROID && !!navigator.serviceWorker && !!window.Notification && Notification.permission === "default";
+    var ask = !!navigator.serviceWorker && !!window.Notification && Notification.permission === "default";
     toast(ask ? "This workout is on your lock screen · Tap to add it to the shade"
       : "This workout is on your lock screen — set, rest clock and controls", ask ? 5600 : 4200);
     if (!ask) return;
