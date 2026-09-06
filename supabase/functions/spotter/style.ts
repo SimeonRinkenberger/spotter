@@ -529,11 +529,10 @@ export const STYLE = String.raw`<style>
     justify-content: center; transition: transform var(--t-1) var(--e-out); flex: 0 0 auto; }
   .iconbtn:active { transform: scale(.92); }
   .iconbtn.on { background: var(--ember); color: var(--on-ember); }
-  /* The chevrons that step to the next saved workout, next to Back because that is
+  /* The chevrons that step to the next saved workout, beside Back because that is
      where the other way through a stack lives. Auto margin, not a slot in the
-     space-between: the header's own buttons stay pinned at the far end. Hidden at
-     the ends rather than removed, so the one that is left does not slide across
-     under a thumb. The ::after buys the 44px reach the 38px button does not have. */
+     space-between: the header's own buttons stay pinned at the far end. The ::after
+     buys the 44px of reach a 38px button does not have. */
   .dnav { display: flex; gap: 4px; margin-right: auto; }
   .dnav button { position: relative;
     transition: transform var(--t-1) var(--e-out), opacity var(--t-1) var(--e-soft); }
@@ -541,13 +540,12 @@ export const STYLE = String.raw`<style>
   .dnav button:first-child .ic { transform: rotate(180deg); }
   .dnav.gone, .dnav .gone { opacity: 0; visibility: hidden; pointer-events: none; }
   .dinner { padding: 4px 18px calc(46px + var(--sab)); max-width: 720px; margin: 0 auto; }
-  /* The card leans with a sideways drag, which pushes its own right edge past the
-     overlay: clipped, or the scroller it lives in offers a sideways scroll of its
-     own and refuses the very drag that caused it. */
+  /* A lean pushes the card's right edge past the overlay: clipped, or the scroller
+     it lives in grows a sideways scroll and refuses the drag that caused it. */
   #detail { overflow-x: hidden; }
-  /* Timing is off while a finger is holding the lean and back on for the release,
-     so a drag that does not commit springs home rather than snapping. The card that
-     does land borrows the plan's entrance, from whichever side the finger came. */
+  /* Timing off while a finger holds the lean and back on for the release, so a drag
+     that does not commit springs home rather than snapping. The card that does land
+     borrows the plan's entrance, from whichever side the finger came. */
   .dinner.dmove { transition: transform var(--t-2) var(--e-out), opacity var(--t-2) var(--e-out); }
   .dinner.din { animation: planin var(--t-3) var(--e-out); }
   @media (prefers-reduced-motion: reduce) {
