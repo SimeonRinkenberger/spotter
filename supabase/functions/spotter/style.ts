@@ -1321,7 +1321,7 @@ export const STYLE = String.raw`<style>
   .ringhero.miss .reyebrow { color: var(--muted); }
   .ringwrap { position: relative; width: min(96px, 26vw); height: min(96px, 26vw);
     margin: 13px auto 11px; }
-  .ring { display: block; width: 100%; height: 100%; overflow: visible; }
+  .wring { display: block; width: 100%; height: 100%; overflow: visible; }
   .rtrack, .rarc { fill: none; stroke-width: 4.2; }
   .rtrack { stroke: var(--sand); }
   .rarc { stroke: var(--ember); stroke-linecap: round;
@@ -1330,7 +1330,7 @@ export const STYLE = String.raw`<style>
   .ringhero.full .rarc, .sumweek.full .rarc { stroke: var(--good); }
   /* Once, two seconds, on a week still winnable but tight. Something that pulses
      forever is an alarm; this is a nudge. */
-  .ringhero.risk .ring { animation: ringpulse 2s var(--e-soft) 1; }
+  .ringhero.risk .wring { animation: ringpulse 2s var(--e-soft) 1; }
   @keyframes ringpulse { 0%, 100% { filter: none; }
     50% { filter: drop-shadow(0 0 6px var(--glow)); } }
   .rmid { position: absolute; inset: 0; display: flex; flex-direction: column;
@@ -1360,8 +1360,8 @@ export const STYLE = String.raw`<style>
   .sumweek { display: flex; align-items: center; justify-content: center; gap: 9px;
     margin: 13px 0 0; font-size: 13px; font-weight: 600; color: var(--ink-2); }
   .sumweek.full { color: var(--good); }
-  .ring.small { width: 26px; height: 26px; flex: 0 0 auto; }
-  .ring.small .rtrack, .ring.small .rarc { stroke-width: 9; }
+  .wring.small { width: 26px; height: 26px; flex: 0 0 auto; }
+  .wring.small .rtrack, .wring.small .rarc { stroke-width: 9; }
   /* Medallions: an ember disc for what happened, a sand silhouette carrying the
      requirement for what has not. auto-fill at 96px is three across on a 375px
      phone and simply grows on anything wider. */
@@ -1384,7 +1384,7 @@ export const STYLE = String.raw`<style>
   .seal { display: flex; flex-direction: column; align-items: center; gap: 9px; margin: 15px 0 0; }
   .sdisc { position: relative; width: 74px; height: 74px; }
   .sdisc .ic { width: 30px; height: 30px; }
-  .sdisc .ring { position: absolute; inset: -6px; width: auto; height: auto; }
+  .sdisc .wring { position: absolute; inset: -6px; width: auto; height: auto; }
   .seal .rtrack { display: none; }
   .seal.in .sdisc { animation: sealin var(--t-4) var(--e-spring) both; }
   @keyframes sealin { from { opacity: 0; transform: scale(.86); } }
@@ -1397,7 +1397,7 @@ export const STYLE = String.raw`<style>
     /* The arc still says the right thing without travelling to say it, and the
        at-risk week still glows — it just stops breathing. */
     .rarc, .wdots i { transition: none; }
-    .ringhero.risk .ring { animation: none; filter: drop-shadow(0 0 6px var(--glow)); }
+    .ringhero.risk .wring { animation: none; filter: drop-shadow(0 0 6px var(--glow)); }
   }
   .chartcard { background: var(--card); border: 1px solid var(--line); border-radius: 18px;
     padding: 16px; margin-bottom: 14px; box-shadow: var(--sh-sm); }

@@ -7362,7 +7362,9 @@ export const APP = String.raw`
   }
 
   function ringSvg(pct, cls, from) {
-    var s = svgNode("svg", "ring" + (cls ? " " + cls : ""));
+    // wring, not ring: the rest strip's round button owns .ring, and its 44px
+    // conic disc landed on this SVG the first time the owner opened Progress.
+    var s = svgNode("svg", "wring" + (cls ? " " + cls : ""));
     s.setAttribute("viewBox", "0 0 100 100"); s.setAttribute("aria-hidden", "true");
     s.appendChild(ringCircle("rtrack"));
     var arc = ringCircle("rarc");
