@@ -223,6 +223,12 @@ Little animations, and pause when hidden. “Ask Pumpy about this workout” imm
 the selected workout in the composer and includes it as the primary reference in the next
 message. Explicit reference edits take precedence over chat history that is still loading.
 [Art direction, research, prompts and behavior](design/pumpy.md).
+
+The next speed and interaction pass is specified in the
+[performance and motion implementation prompt](design/performance-motion-prompt.md),
+with a [source audit and build-size baseline](design/performance-motion-audit.md).
+These documents define the work and verification; they do not claim it has shipped.
+
 The tab itself is a column sized between the sticky header and the fixed tab
 bar, so the composer sits on the tab bar whether the thread is empty or endless; a slim bar
 above it opens the chat list — every thread the caller owns, newest first, with the workout it
