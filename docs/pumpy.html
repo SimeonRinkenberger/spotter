@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Pumpy — Spotter</title>
+<link rel="icon" href="icon.png">
+<style>
+  :root { color-scheme:light dark; --paper:#F5F6F8; --card:#fff; --ink:#14171a; --muted:#58626e; --line:#dce1e8; --accent:#be3f0e; }
+  @media(prefers-color-scheme:dark) { :root { --paper:#101214; --card:#191d21; --ink:#eef2f6; --muted:#afbac6; --line:#343a42; --accent:#ff9166; } }
+  * { box-sizing:border-box; }
+  body { background:var(--paper); color:var(--ink); font:15px/1.6 system-ui,sans-serif; margin:0; }
+  main { max-width:840px; margin:auto; padding:36px 22px 64px; }
+  a { color:var(--accent); }
+  header { max-width:550px; margin:0 0 28px; }
+  h1 { font-size:36px; line-height:1.15; letter-spacing:-.05em; margin:24px 0 12px; }
+  h2 { font-size:16px; margin:0 0 6px; }
+  p { color:var(--muted); margin:0; }
+  .grid { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; }
+  figure { margin:0; padding:12px; border:1px solid var(--line); border-radius:22px; background:var(--card); }
+  figure img { display:block; width:100%; aspect-ratio:1; border-radius:14px; }
+  figcaption { padding:14px 4px 4px; }
+  figcaption p { font-size:13px; }
+  button { min-height:44px; background:var(--card); border:1px solid var(--line); border-radius:12px; color:var(--ink); padding:8px 16px; font:inherit; cursor:pointer; }
+  button:focus-visible,a:focus-visible { outline:2px solid var(--accent); outline-offset:4px; }
+  .motion { margin-top:28px; padding:22px; border:1px solid var(--line); border-radius:22px; display:flex; gap:24px; align-items:center; }
+  .motion img { width:140px; height:140px; border-radius:24px; }
+  .motion button { margin-top:14px; }
+  footer { margin-top:30px; color:var(--muted); font-size:13px; }
+  @media(max-width:600px) { .grid { grid-template-columns:1fr; } figure { display:flex; gap:16px; align-items:center; } figure img { width:42%; } .motion { padding:16px; gap:16px; } .motion img { width:100px; height:100px; } }
+</style>
+</head>
+<body><main>
+  <header><a href="./">&larr; Open Spotter</a><h1>A little more Pumpy.</h1><p>A familiar face, a few useful words, and room to get on with your workout.</p></header>
+  <div class="grid">
+    <figure><img src="assets/pumpy/coach.webp" alt="Pumpy holding a clipboard and offering a hand"><figcaption><h2>Here to help</h2><p>A calm introduction, and a pointer when you need one.</p></figcaption></figure>
+    <figure><img src="assets/pumpy/plan.webp" alt="Pumpy planning a week on a gym bench"><figcaption><h2>Make a little room</h2><p>Your saved workouts, with a place in your week.</p></figcaption></figure>
+    <figure><img src="assets/pumpy/proud.webp" alt="Pumpy giving a small thumbs-up"><figcaption><h2>That’s work done</h2><p>A quiet nod to the session you finished.</p></figcaption></figure>
+  </div>
+  <section class="motion"><img id="wing" src="assets/pumpy/proud.webp" alt="Pumpy with small feather wings"><div><h2>A small movement</h2><p>Just the wings. One gentle beat, then still.</p><button id="play">Preview motion</button></div></section>
+  <footer>In the app: Settings &rarr; Pumpy &rarr; Quick guide. Tips and little animations can both be turned off.</footer>
+</main>
+<script>
+var im=document.getElementById('wing'),button=document.getElementById('play'),timer;
+var reduced=matchMedia('(prefers-reduced-motion: reduce)');
+function stop(){clearTimeout(timer);im.src='assets/pumpy/proud.webp';button.disabled=false;}
+button.onclick=function(){if(reduced.matches){button.textContent='Reduce Motion is on';return;}button.disabled=true;im.src='assets/pumpy/proud-wing.gif?play='+Date.now();timer=setTimeout(stop,2500);};
+document.addEventListener('visibilitychange',function(){if(document.hidden)stop();});
+if(reduced.addEventListener)reduced.addEventListener('change',function(e){if(e.matches)stop();});
+</script>
+</body></html>

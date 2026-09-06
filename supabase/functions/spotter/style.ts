@@ -1727,7 +1727,7 @@ export const STYLE = String.raw`<style>
   .tab .ti svg { width: 21px; height: 21px; display: block; }
   .pmark { width: 28px; height: 28px; border-radius: 999px; background: var(--ember-soft); color: var(--ember-ink);
     display: flex; align-items: center; justify-content: center; flex: 0 0 auto; }
-  .pmark svg { width: 17px; height: 17px; display: block; }
+  .pmark svg { width: 100%; height: 100%; display: block; border-radius: inherit; }
   .noimg.pumpyimg { color: var(--ember); opacity: .9; }
   .noimg.pumpyimg svg { width: 46px; height: 46px; }
   /* Pumpy is a column inside its own scroller, ending exactly on the tab bar so
@@ -2073,6 +2073,52 @@ export const STYLE = String.raw`<style>
     /* The bars stay — they are the shape of the list, not a moving part. */
     .threadrow.skel .tmain b, .threadrow.skel .tmain span { animation: none; }
     #ptr.back { transition-duration: var(--t-1); }
+  }
+  /* Pumpy's drawings are printed on warm stock. One small illustration per
+     surface keeps the orange in the character, and the rest of the UI quiet. */
+  .pumpyart { display: block; flex: 0 0 auto; width: 152px; height: 152px;
+    margin: 0 auto 20px; overflow: hidden; border-radius: 32px;
+    background: #F5F1E8; box-shadow: 0 0 0 1px var(--line); }
+  .pumpyart img { display: block; width: 100%; height: 100%; object-fit: cover; }
+  .pumpyart.artfailed { display: none; }
+  .pumpyhello .pumpyart { width: 140px; height: 140px; margin-bottom: 16px; }
+  #workout.summary .pumpyart { width: 88px; height: 88px; border-radius: 22px; margin-bottom: 12px; }
+  #workout.summary .wmain { justify-content: flex-start; padding-top: 22px; }
+  #workout.summary .wmain > * { flex-shrink: 0; }
+  #guideclose { width: 44px; height: 44px; }
+  .pmark { overflow: hidden; background: #F5F1E8; }
+  #pumpytab svg { border-radius: 50%; }
+  .pumpyimg svg { border-radius: 50%; width: 72px; height: 72px; }
+  .pumpy-tip { position: relative; display: flex; align-items: center; gap: 12px;
+    text-align: left; margin: 12px 0 18px; padding: 12px 42px 12px 12px;
+    background: var(--card); border: 1px solid var(--line-2); border-radius: 18px;
+    color: var(--ink); animation: fadeonly var(--t-2) var(--e-soft) both; }
+  .pumpy-tip .pumpyart { width: 64px; height: 64px; margin: 0; border-radius: 15px; }
+  .pumpy-tip-copy { min-width: 0; flex: 1; }
+  .pumpy-tip-copy b { display: block; font-size: 13px; font-weight: 650; line-height: 1.35; }
+  .pumpy-tip-copy p { font-size: 12.5px; line-height: 1.5; color: var(--ink-2); margin: 5px 0 0; }
+  .pumpy-tip-close { position: absolute; top: 0; right: 0; width: 44px; height: 44px;
+    display: grid; place-items: center; border: 0; background: none; color: var(--muted);
+    cursor: pointer; border-radius: 14px; touch-action: manipulation; }
+  .pumpy-tip-close .ic { width: 15px; height: 15px; }
+  #pumpycomposer .pumpy-tip { margin: 0 0 10px; }
+  #pumpycomposer .pumpy-tip .pumpyart { width: 48px; height: 48px; }
+  .kb #pumpycomposer .pumpy-tip { display: none; }
+  #pumpyhelp { width: 100%; cursor: pointer; text-align: left; background: none;
+    color: var(--ink); font: inherit; border: 0; }
+  #pumpyhelp .ic { width: 16px; height: 16px; color: var(--muted); }
+  #guidebody > .pumpyart { width: 100px; height: 100px; border-radius: 24px; margin: 4px auto 18px; }
+  .guide-topic { border-top: 1px solid var(--line); }
+  .guide-topic summary { min-height: 48px; padding: 13px 6px; font-size: 14px; font-weight: 550;
+    cursor: pointer; color: var(--ink); touch-action: manipulation; }
+  .guide-topic p { margin: 0; padding: 0 6px 16px; font-size: 14px; line-height: 1.6; color: var(--ink-2); }
+  #guidereset { min-height: 44px; margin-top: 12px; }
+  @media (max-width: 390px) {
+    .pumpy-tip { gap: 10px; padding-left: 10px; }
+    .pumpy-tip .pumpyart { width: 52px; height: 52px; border-radius: 13px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .pumpy-tip { animation: none; }
   }
 </style>
 `;

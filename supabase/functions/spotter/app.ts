@@ -26,7 +26,7 @@ export const APP = String.raw`
 
   // The one place the version is written down. It names the entry at the top of
   // docs/whats-new.html, and the settings sheet reads it from here.
-  var VERSION = "0.9";
+  var VERSION = "0.10";
 
   // What a rest is when the card says nothing. It was a Settings row until the
   // obvious objection landed: how long to rest belongs to the program or to the
@@ -736,6 +736,7 @@ export const APP = String.raw`
       if (first) setTimeout(boot, 0);
     } else {
       state.user = null;
+      guideUser();
       state.workouts = []; state.logs = null; state.plan = null; state.awards = null;
       // What the last person was looking for is not what the next one is. The
       // library came back narrowed to a search and a creator nobody had typed.
@@ -756,6 +757,7 @@ export const APP = String.raw`
   var booting = null;
 
   function boot() {
+    guideUser();
     if (booting) return booting;
     // Before the network is asked anything: the library someone is looking at is
     // almost always the one they left.
@@ -1610,7 +1612,7 @@ export const APP = String.raw`
       grid.classList.remove("grouped");
       empty.classList.remove("hide");
       empty.innerHTML = "";
-      empty.appendChild(icon(el("div", "big"), state.workouts.length ? "search" : "dumbbell"));
+      empty.appendChild(state.workouts.length ? icon(el("div", "big"), "search") : pumpyArt("coach", false));
       if (!state.workouts.length) {
         empty.appendChild(el("h2", null, "Your gym bag is empty"));
         var p = el("p");
@@ -1975,6 +1977,7 @@ export const APP = String.raw`
   // keepHistory is set when Realtime re-renders an open card in place: the overlay
   // is already on the history stack and pushing again would need two back gestures.
   function openDetail(w, keepHistory) {
+    if (!keepHistory) { guideClear(); guideStill(); }
     current = w;
     // Reopened mid-close: cancel it and the teardown behind it.
     clearTimeout(detailCloseTimer);
@@ -2237,12 +2240,12 @@ export const APP = String.raw`
           explain(ex, w);
         };
         sect.appendChild(row);
-        teachExSwipe(sect, row);
       });
       var addex = el("button", "addex", "+ Add an exercise Spotter missed");
       addex.onclick = function () { openExAdd(w, bi); };
       sect.appendChild(addex);
       d.appendChild(sect);
+      if (bi === 0) guideOffer("detail", sect, sect.querySelector(".exrow"));
     });
 
     if (!(w.blocks || []).length) {
@@ -2565,36 +2568,6 @@ export const APP = String.raw`
     if (!quiet && !was) haptic("tap");
   }
 
-  // Taught once, by showing: the first card with exercises this device opens nudges
-  // its first row and lets it spring back. A touch cancels it.
-  var exTold = false, exPeekT = null, exPeeking = null;
-  try { exTold = localStorage.getItem("spotter_exswipe_told") === "1"; } catch (e) { /* ignore */ }
-
-  function exPeekStop() {
-    clearTimeout(exPeekT);
-    if (exPeeking) { exPaint(exPeeking, null); exPeeking = null; }
-  }
-
-  function teachExSwipe(sect, row) {
-    if (exTold) return;
-    exTold = true;
-    try { localStorage.setItem("spotter_exswipe_told", "1"); } catch (err) { /* ignore */ }
-    // Motion off: say it once instead. Replace the travel, not the meaning.
-    if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      var h = el("div", "exhint", "Swipe an exercise left for more.");
-      // Placed once the block has finished building, or it lands between two rows.
-      // Last child by then is the add button, and the line belongs above it.
-      setTimeout(function () { sect.insertBefore(h, sect.lastChild); }, 0);
-      return;
-    }
-    // After the card has arrived, or it lands on a page still sliding up.
-    exPeekT = setTimeout(function () {
-      exPeeking = row;
-      exPaint(row, 56);
-      exPeekT = setTimeout(exPeekStop, 820);
-    }, 420);
-  }
-
   exOv.addEventListener("pointerdown", function (e) {
     // Fingers and pen. A mouse has hover, the better answer for a mouse.
     if (e.pointerType !== "touch" && e.pointerType !== "pen") return;
@@ -2606,7 +2579,6 @@ export const APP = String.raw`
     // The pager's left-edge guard, mirrored: in a tab the right edge is Safari's
     // forward swipe, and taking it strands the user.
     if (!standalone() && e.clientX > window.innerWidth - 24) return;
-    exPeekStop();
     exDrag = { id: e.pointerId, x: e.clientX, y: e.clientY, row: row, d: 0,
       lock: false, held: false, base: row.classList.contains("open") ? exWidth(row) : 0,
       s: [{ t: now(), x: e.clientX }] };
@@ -2736,8 +2708,6 @@ export const APP = String.raw`
   var dNav = null;        // { ids: the shelf in view order, i: where this card sits }
   var navFrom = false;    // the open being built came off a card in the grid
   var dDrag = null, dNavBox = null, dPrev = null, dNext = null;
-  var dTold = false;
-  try { dTold = localStorage.getItem("spotter_dswipe_told") === "1"; } catch (e) { /* ignore */ }
 
   function anySheet() { return !!document.querySelector(".sheet.open"); }
 
@@ -2777,11 +2747,7 @@ export const APP = String.raw`
     dNavBox.classList.toggle("gone", !dNav);
     dPrev.classList.toggle("gone", !dNav || dNav.i <= 0);
     dNext.classList.toggle("gone", !dNav || dNav.i >= dNav.ids.length - 1);
-    if (!dNav || dTold) return;
-    // Once per device, after the card has arrived rather than over it.
-    dTold = true;
-    try { localStorage.setItem("spotter_dswipe_told", "1"); } catch (err) { /* ignore */ }
-    setTimeout(function () { toast("Swipe for the next workout"); }, 700);
+    // Chevrons keep navigation discoverable without a second automatic toast.
   }
 
   function canStep(n) {
@@ -4438,6 +4404,7 @@ export const APP = String.raw`
   }
 
   function startWorkout(w, resume) {
+    guideClear(); guideStill();
     var screens = flatten(w);
     wo = {
       workout: w, screens: screens, i: (resume && resume.i) || 0,
@@ -4805,6 +4772,7 @@ export const APP = String.raw`
 
   function saveSet() {
     if (!wo) return;
+    guideLearn("set");
     // Type 12, press Save: the field has to be read before the set is.
     endEdit();
     // Usually the session's first gesture, and iOS starts audio in nothing else.
@@ -5302,6 +5270,7 @@ export const APP = String.raw`
   function renderSummary(payload, logged) {
     var main = $("wmain");
     main.innerHTML = "";
+    main.scrollTop = 0;
     $("workout").classList.add("summary");
 
     var mins = Math.max(1, Math.round(payload.duration_seconds / 60));
@@ -5315,6 +5284,7 @@ export const APP = String.raw`
       });
     });
 
+    main.appendChild(pumpyArt("proud", true));
     main.appendChild(el("div", "wblock", "Session complete"));
     main.appendChild(el("h2", "wname", wo.workout.title || "Workout"));
 
@@ -6711,6 +6681,7 @@ export const APP = String.raw`
       planMode === "month" ? weekInMonth(monthStart) : state.weekStart));
     // A second window onto these same rows; redrawn here so the two agree.
     if ($("daysheet").classList.contains("open")) renderDay();
+    guidePage("plan");
     void planBody.offsetWidth;
     // A swipe said which way time went, so the week arrives from that side. A
     // tap on the segmented control did not, and gets the crossfade it always had.
@@ -7677,7 +7648,7 @@ export const APP = String.raw`
 
     if (!logs.length) {
       var e = el("div", "empty");
-      e.appendChild(icon(el("div", "big"), "trend"));
+      e.appendChild(pumpyArt("proud", true));
       e.appendChild(el("h2", null, "No sessions yet"));
       e.appendChild(el("p", null, "Finish a workout and your volume, personal records and every logged session show up here."));
       v.appendChild(e);
@@ -7688,6 +7659,7 @@ export const APP = String.raw`
     // One goal, one arc, the streak above it. The three bare figures that used to
     // sit here counted weeks with ANY session in them, which is not a goal.
     var st = weekStats(logs, state.plan, goalSetting(), new Date());
+    guidePage("progress");
     var hero = weekHero(st);
     hero.appendChild(el("div", "rmeta",
       logs.length + (logs.length === 1 ? " session" : " sessions") + " logged"));
@@ -7936,16 +7908,12 @@ export const APP = String.raw`
   //
   // The coach. Everything Pumpy knows comes from server-side tools that only see
   // this user's rows, and every write comes back as a proposal card that is
-  // confirmed here before anything is saved. The mark below is a PLACEHOLDER:
-  // swap PUMPY_MARK for the real art and every avatar, tab icon and card follows.
+  // confirmed here before anything is saved. The small portrait is self-contained
+  // SVG markup so canvas share cards work without cross-origin image requests.
 
   var PUMPY_MARK =
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
-    '<path d="M8.6 8.4a3.4 3.4 0 0 1 6.8 0"/>' +
-    '<circle cx="12" cy="14.2" r="6.3"/>' +
-    '<path d="M9.7 13.3h.01M14.3 13.3h.01"/>' +
-    '<path d="M9.8 16.2c.7.9 1.5 1.3 2.2 1.3s1.5-.4 2.2-1.3"/>' +
-    '</svg>';
+    '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">' +
+    '<image x="0" y="0" width="24" height="24" href="data:image/webp;base64,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"/></svg>';
 
   function pumpyMark(cls) {
     var s = el("span", cls || "pmark");
@@ -8353,7 +8321,7 @@ export const APP = String.raw`
     // final state that has to be taken away again, which reads as a flash.
     if (!shown.length && pumpy.loaded) {
       var hello = el("div", "pumpyhello");
-      hello.appendChild(pumpyMark("pmark"));
+      hello.appendChild(pumpyArt("coach", false));
       hello.appendChild(el("h2", null, "Hey, I’m Pumpy"));
       hello.appendChild(el("p", null,
         "I know what you’ve saved. Ask me to build a workout from it, add to one, or plan your week. " +
@@ -8394,6 +8362,7 @@ export const APP = String.raw`
     log.appendChild(frag);
     renderPumpyCtx();
     renderPumpyCredits();
+    guidePage("pumpy");
     $("pumpysend").disabled = !!pumpy.busy;
     // The thread is its own scroller now, so "go to the bottom" is a property on
     // this page rather than a jump of the whole document.
@@ -8642,6 +8611,7 @@ export const APP = String.raw`
   function sendPumpy(text) {
     text = String(text || $("pumpyinput").value || "").trim();
     if (!text || pumpy.busy) return;
+    if (pumpy.refs.length) guideLearn("refs");
     var box = $("pumpyinput");
     box.value = "";
     box.style.height = "auto";
@@ -9335,6 +9305,229 @@ export const APP = String.raw`
     return false;
   }
 
+  // ---------- Pumpy · a little help, where it belongs ----------
+  // Rendering is not a visit: warmPages prepares tabs nobody has opened. Tips
+  // require a real arrival, and an impression is counted only once it is visible.
+  // Local to this account on this browser; no coach credits or network writes.
+  var guide = { user: null, seen: {}, off: false, motion: true, active: null,
+    count: 0, last: 0, visit: null, observer: null };
+  var GUIDE_TIPS = {
+    save: { title: "Save it now. Train it later.", art: "coach",
+      text: "Paste the workout link, then tap Save workout. You can leave while I read it." },
+    detail: { title: "Make this workout yours", art: "coach",
+      text: "Tap an exercise for a demo. Swipe its row left to edit, swap or remove it." },
+    set: { title: "Your numbers go here", art: "coach",
+      text: "Tap a number to type your reps or weight. Save set logs it and starts your rest." },
+    plan: { title: "Give your workout a day", art: "plan",
+      text: "Tap a day to add a saved workout. Use Week or Month to see what’s ahead." },
+    progress: { title: "A week at your pace", art: "proud",
+      text: "The ring counts finished sessions toward your weekly goal. Tap the day dots to see what counts." },
+    refs: { title: "Show me what you have in mind", art: "coach",
+      text: "Tap + beside the message box to choose workouts. I’ll use them in my answer and show changes before saving." }
+  };
+
+  function guideKey() { return "spotter_pumpy_v1:" + guide.user; }
+  function guideUser() {
+    var id = state.user && state.user.id;
+    if (guide.user === id) return;
+    guideClear();
+    guide.user = id; guide.seen = {}; guide.off = false; guide.motion = true;
+    guide.count = 0; guide.last = 0; guide.visit = null;
+    if (id) try {
+      var saved = JSON.parse(localStorage.getItem(guideKey()) || "{}");
+      if (saved && typeof saved.seen === "object" && saved.seen) guide.seen = saved.seen;
+      guide.off = saved.off === true; guide.motion = saved.motion !== false;
+    } catch (e) { /* private storage still gets session-only tips */ }
+    guidePaintSettings();
+  }
+
+  function guideSave() {
+    if (!guide.user) return;
+    try { localStorage.setItem(guideKey(), JSON.stringify({ seen: guide.seen,
+      off: guide.off, motion: guide.motion })); } catch (e) { /* session still works */ }
+  }
+
+  function guideClear() {
+    if (guide.observer) { guide.observer.disconnect(); guide.observer = null; }
+    var a = guide.active;
+    if (a && a.node.parentNode) a.node.parentNode.removeChild(a.node);
+    guide.active = null;
+  }
+
+  function guideLearn(id) {
+    guideUser();
+    guide.seen[id] = true;
+    guideSave();
+    if (guide.active && guide.active.id === id) guideClear();
+  }
+
+  function pumpyAsset(name) {
+    // The edge function serves the same page, but the artwork lives on Pages.
+    var base = location.hostname.endsWith("supabase.co")
+      ? "https://simeonrinkenberger.github.io/spotter/" : "./";
+    return base + "assets/pumpy/" + name;
+  }
+
+  function pumpyArt(pose, animate) {
+    var frame = el("span", "pumpyart"), im = el("img");
+    frame.setAttribute("aria-hidden", "true");
+    im.alt = ""; im.width = 160; im.height = 160; im.decoding = "async";
+    im.src = pumpyAsset(pose + ".webp");
+    im.onerror = function () { frame.classList.add("artfailed"); };
+    frame.appendChild(im);
+    // One gentle wing beat, then the still drawing. No loop, sound or playback
+    // session; the GIF never downloads for Reduce Motion or a hidden page.
+    if (animate && window.IntersectionObserver) {
+      var played = false;
+      function still() {
+        if (im.hasAttribute("data-pumpy-still")) {
+          im.src = im.getAttribute("data-pumpy-still"); im.removeAttribute("data-pumpy-still");
+        }
+        ob.disconnect();
+      }
+      var ob = new IntersectionObserver(function (entries) {
+        if (!frame.isConnected) { ob.disconnect(); return; }
+        if (played) {
+          if (!entries[0].isIntersecting) still();
+          return;
+        }
+        if (entries[0].intersectionRatio < 0.8 || document.hidden || !guide.motion || lessMotion()) return;
+        var page = frame.closest(".page");
+        if (page && page.inert) return;
+        played = true;
+        im.setAttribute("data-pumpy-still", im.src);
+        im.src = pumpyAsset("proud-wing.gif");
+        setTimeout(still, 2500);
+      }, { threshold: 0.8 });
+      // Observe only after the caller has mounted it, never an orphaned drawing.
+      setTimeout(function () { if (frame.isConnected) ob.observe(frame); }, 0);
+    }
+    return frame;
+  }
+
+  function guideStill() {
+    document.querySelectorAll("[data-pumpy-still]").forEach(function (im) {
+      im.src = im.getAttribute("data-pumpy-still"); im.removeAttribute("data-pumpy-still");
+    });
+  }
+
+  function guideCard(id, dismiss) {
+    var t = GUIDE_TIPS[id], box = el("aside", "pumpy-tip"), copy = el("div", "pumpy-tip-copy");
+    box.setAttribute("aria-label", "Pumpy’s tip");
+    box.setAttribute("data-noswipe", "");
+    box.appendChild(pumpyArt(t.art, false));
+    copy.appendChild(el("b", null, t.title));
+    copy.appendChild(el("p", null, t.text));
+    box.appendChild(copy);
+    if (dismiss) {
+      var x = icon(el("button", "pumpy-tip-close"), "x");
+      x.setAttribute("aria-label", "Dismiss Pumpy’s tip");
+      x.onclick = function () {
+        var parent = box.parentNode;
+        guideLearn(id);
+        // No lost keyboard focus when its close button leaves the document.
+        var next = parent && parent.querySelector("button, input, textarea");
+        if (next) next.focus({ preventScroll: true });
+      };
+      box.appendChild(x);
+    }
+    return box;
+  }
+
+  function guideOffer(id, host, before) {
+    guideUser();
+    if (!host || !guide.user || guide.off || document.hidden) return;
+    var a = guide.active;
+    if (a && a.id !== id) return;
+    if (!a && (guide.seen[id] || guide.count >= 2 || Date.now() - guide.last < 90000)) return;
+    if (!a) a = guide.active = { id: id, node: guideCard(id, true), counted: false };
+    host.insertBefore(a.node, before || null);
+    if (a.counted) return;
+    function shown() {
+      if (guide.active !== a || !a.node.isConnected || document.hidden) return;
+      var page = a.node.closest(".page"), sheet = a.node.closest(".sheet");
+      if ((page && page.inert) || (sheet && !sheet.classList.contains("open"))) return;
+      if (overlayShowing() && !sheet && !a.node.closest("#detail")) return;
+      a.counted = true; guide.count++; guide.last = Date.now();
+      guide.seen[id] = true; guideSave();
+      if (guide.observer) { guide.observer.disconnect(); guide.observer = null; }
+    }
+    if (guide.observer) guide.observer.disconnect();
+    if (window.IntersectionObserver) {
+      guide.observer = new IntersectionObserver(function (es) {
+        if (es[0].intersectionRatio >= 0.8) shown();
+      }, { threshold: 0.8 });
+      guide.observer.observe(a.node);
+    } else setTimeout(shown, 450);
+  }
+
+  function guidePage(v) {
+    if (state.view !== v || guide.visit !== v || overlayShowing()) return;
+    if (v === "plan" && state.plan && state.plan.length) { guideLearn("plan"); return; }
+    if (v === "plan" && planBody) guideOffer("plan", planBody, planBody.firstChild);
+    if (v === "progress" && state.logs && state.logs.length) {
+      var pg = $("progressview"); guideOffer("progress", pg, pg.firstChild);
+    }
+    if (v === "pumpy" && pumpy.loaded && pumpy.messages.length && !pumpy.refs.length) {
+      var c = $("pumpycomposer"); guideOffer("refs", c, c.firstChild);
+    }
+  }
+
+  function guideSheet(id) {
+    var tip = id === "addsheet" ? "save" : id === "setsheet" ? "set" : null;
+    if (tip) {
+      var b = $(id).querySelector(".sheetbody");
+      // Appended before opening: its height is settled before the sheet moves.
+      guideOffer(tip, b, b.querySelector(".field, .stepper"));
+    }
+  }
+
+  function guidePaintSettings() {
+    if (!$("pumpytips")) return;
+    $("pumpytips").textContent = guide.off ? "Off" : "On";
+    $("pumpytips").setAttribute("aria-pressed", guide.off ? "false" : "true");
+    $("pumpymotion").textContent = guide.motion ? "On" : "Off";
+    $("pumpymotion").setAttribute("aria-pressed", guide.motion ? "true" : "false");
+  }
+
+  function openPumpyGuide() {
+    var body = $("guidebody"); body.innerHTML = "";
+    body.appendChild(pumpyArt("plan", false));
+    var names = { save: "Saving videos", detail: "Exercise options", set: "Logging a set",
+      plan: "Planning your week", progress: "Your weekly goal", refs: "Working with Pumpy" };
+    Object.keys(GUIDE_TIPS).forEach(function (id) {
+      var row = el("details", "guide-topic"), title = el("summary", null, names[id]);
+      row.appendChild(title);
+      row.appendChild(el("p", null, GUIDE_TIPS[id].text));
+      body.appendChild(row);
+    });
+    openSheet("guidesheet");
+  }
+
+  $("pumpytips").onclick = function () {
+    guideUser(); guide.off = !guide.off; guideClear(); guideSave(); guidePaintSettings();
+  };
+  $("pumpymotion").onclick = function () {
+    guideUser(); guide.motion = !guide.motion; if (!guide.motion) guideStill();
+    guideSave(); guidePaintSettings();
+  };
+  $("pumpyhelp").onclick = openPumpyGuide;
+  $("guidereset").onclick = function () {
+    guideUser(); guideClear(); guide.seen = {}; guide.count = 0; guide.last = 0;
+    guide.off = false; guideSave(); guidePaintSettings();
+    toast("Tips will appear when you use each feature.");
+  };
+  $("guideclose").onclick = function () { closeSheet("guidesheet"); };
+  document.addEventListener("visibilitychange", function () { if (document.hidden) guideStill(); });
+  var guideMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+  if (guideMotionQuery.addEventListener) guideMotionQuery.addEventListener("change", function (e) {
+    if (e.matches) guideStill();
+  });
+  document.addEventListener("click", function (e) {
+    if (e.target.closest(".exact, .exmain")) guideLearn("detail");
+  });
+
+
   // ---------- sheets ----------
   //
   // A sheet is always in the page now, hidden between showings rather than
@@ -9351,6 +9544,9 @@ export const APP = String.raw`
   var sheetNav = false, sheetBack = 0;
 
   function openSheet(id) {
+    guideClear();
+    guideStill();
+    guideSheet(id);
     var n = $(id), b = n.querySelector(".sheetbody");
     clearTimeout(closeTimers[id]);
     n.classList.remove("closing");
@@ -9364,6 +9560,7 @@ export const APP = String.raw`
   function closeSheet(id, fromPop) {
     var n = $(id);
     if (!n.classList.contains("open")) return;
+    guideClear();
     // A drag hands the sheet back to CSS here — every close route passes through
     // this line — and in the same style change as the class swap: an inline
     // transform outranks the stylesheet, so the close carries on from where it is.
@@ -9484,7 +9681,7 @@ export const APP = String.raw`
 
   ["addsheet", "setsheet", "watchsheet", "exsheet", "exeditsheet", "explainsheet", "picksheet",
    "settingssheet", "colsheet", "renamesheet", "swapsheet", "pumpysheet", "capsheet", "plansheet",
-   "daysheet", "copysheet", "sortsheet", "refsheet", "countsheet"]
+   "daysheet", "copysheet", "sortsheet", "refsheet", "countsheet", "guidesheet"]
     .forEach(wireSheet);
 
   function overlayShowing() {
@@ -9505,6 +9702,7 @@ export const APP = String.raw`
    * extension already says which verb is true, so the first frame can use it.
    */
   function placePending(r, url, platform, stage) {
+    guideLearn("save");
     var known = false;
     for (var i = 0; i < state.workouts.length; i++) {
       if (state.workouts[i].id === r.id) { known = true; break; }
@@ -10120,6 +10318,8 @@ export const APP = String.raw`
   // ---------- settings ----------
 
   function openSettings() {
+    guideUser();
+    guidePaintSettings();
     $("setver").textContent = "v" + VERSION;
     $("setemail").textContent = state.user ? state.user.email : "—";
     var how = signInMethod();
@@ -10193,7 +10393,8 @@ export const APP = String.raw`
   // The column is written whole, so every preference goes up together: saving one
   // of them used to be enough to drop the others.
   function saveSettings() {
-    var s = { unit: state.unit, sounds: state.sounds, haptics: state.haptics };
+    var s = Object.assign({}, (state.profile && state.profile.settings) || {},
+      { unit: state.unit, sounds: state.sounds, haptics: state.haptics });
     // The column is written WHOLE, so a key left out here is a key deleted by the
     // next unit toggle. goalSetting() is the reader, so it is also the source.
     var g = goalSetting();
@@ -10924,6 +11125,7 @@ export const APP = String.raw`
   // when the slide ends, so a screen reader is never told about a page the user
   // has already left. Pages nobody is on go inert: not focusable, not read out.
   function commit(i) {
+    if (idx !== i) { guideClear(); guideStill(); guide.visit = null; }
     idx = i;
     state.view = VIEWS[i];
     var tabs = document.querySelectorAll(".tab"), n, k;
@@ -10952,6 +11154,8 @@ export const APP = String.raw`
   // re-render would throw away where the page was scrolled to.
   function arrive(i) {
     var v = VIEWS[i];
+    guide.visit = v;
+    setTimeout(function () { guidePage(v); }, 450);
     // Library's grid is kept fresh by realtime and load(); only the today card
     // is a snapshot, and renderToday() decides for itself whether it has aged.
     if (v === "library") { renderToday(); return; }

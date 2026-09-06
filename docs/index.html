@@ -4668,9 +4668,10 @@ body:not(.app) #toast.show {
   flex: 0 0 auto;
 }
 .pmark svg {
-  width: 17px;
-  height: 17px;
+  width: 100%;
+  height: 100%;
   display: block;
+  border-radius: inherit;
 }
 .noimg.pumpyimg {
   color: var(--ember);
@@ -5578,6 +5579,184 @@ select:focus-visible {
     transition-duration: var(--t-1);
   }
 }
+.pumpyart {
+  display: block;
+  flex: 0 0 auto;
+  width: 152px;
+  height: 152px;
+  margin: 0 auto 20px;
+  overflow: hidden;
+  border-radius: 32px;
+  background: #F5F1E8;
+  box-shadow: 0 0 0 1px var(--line);
+}
+.pumpyart img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.pumpyart.artfailed {
+  display: none;
+}
+.pumpyhello .pumpyart {
+  width: 140px;
+  height: 140px;
+  margin-bottom: 16px;
+}
+#workout.summary .pumpyart {
+  width: 88px;
+  height: 88px;
+  border-radius: 22px;
+  margin-bottom: 12px;
+}
+#workout.summary .wmain {
+  justify-content: flex-start;
+  padding-top: 22px;
+}
+#workout.summary .wmain > * {
+  flex-shrink: 0;
+}
+#guideclose {
+  width: 44px;
+  height: 44px;
+}
+.pmark {
+  overflow: hidden;
+  background: #F5F1E8;
+}
+#pumpytab svg {
+  border-radius: 50%;
+}
+.pumpyimg svg {
+  border-radius: 50%;
+  width: 72px;
+  height: 72px;
+}
+.pumpy-tip {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  margin: 12px 0 18px;
+  padding: 12px 42px 12px 12px;
+  background: var(--card);
+  border: 1px solid var(--line-2);
+  border-radius: 18px;
+  color: var(--ink);
+  animation: fadeonly var(--t-2) var(--e-soft) both;
+}
+.pumpy-tip .pumpyart {
+  width: 64px;
+  height: 64px;
+  margin: 0;
+  border-radius: 15px;
+}
+.pumpy-tip-copy {
+  min-width: 0;
+  flex: 1;
+}
+.pumpy-tip-copy b {
+  display: block;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+.pumpy-tip-copy p {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink-2);
+  margin: 5px 0 0;
+}
+.pumpy-tip-close {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: 14px;
+  touch-action: manipulation;
+}
+.pumpy-tip-close .ic {
+  width: 15px;
+  height: 15px;
+}
+#pumpycomposer .pumpy-tip {
+  margin: 0 0 10px;
+}
+#pumpycomposer .pumpy-tip .pumpyart {
+  width: 48px;
+  height: 48px;
+}
+.kb #pumpycomposer .pumpy-tip {
+  display: none;
+}
+#pumpyhelp {
+  width: 100%;
+  cursor: pointer;
+  text-align: left;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  border: 0;
+}
+#pumpyhelp .ic {
+  width: 16px;
+  height: 16px;
+  color: var(--muted);
+}
+#guidebody > .pumpyart {
+  width: 100px;
+  height: 100px;
+  border-radius: 24px;
+  margin: 4px auto 18px;
+}
+.guide-topic {
+  border-top: 1px solid var(--line);
+}
+.guide-topic summary {
+  min-height: 48px;
+  padding: 13px 6px;
+  font-size: 14px;
+  font-weight: 550;
+  cursor: pointer;
+  color: var(--ink);
+  touch-action: manipulation;
+}
+.guide-topic p {
+  margin: 0;
+  padding: 0 6px 16px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--ink-2);
+}
+#guidereset {
+  min-height: 44px;
+  margin-top: 12px;
+}
+@media (max-width: 390px) {
+  .pumpy-tip {
+    gap: 10px;
+    padding-left: 10px;
+  }
+  .pumpy-tip .pumpyart {
+    width: 52px;
+    height: 52px;
+    border-radius: 13px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pumpy-tip {
+    animation: none;
+  }
+}
 </style>
 </head>
 <body>
@@ -6030,6 +6209,14 @@ select:focus-visible {
     </button>
   </div>
 
+  <h3 class="seth">Pumpy</h3>
+  <div class="setgroup">
+    <div class="kv"><span class="k">Helpful tips</span><span class="v"><button class="chip" id="pumpytips" aria-label="Pumpy helpful tips" aria-pressed="true">On</button></span></div>
+    <div class="kv"><span class="k">Little animations</span><span class="v"><button class="chip" id="pumpymotion" aria-label="Pumpy little animations" aria-pressed="true">On</button></span></div>
+    <button class="kv setrow" id="pumpyhelp"><span class="k">Quick guide</span><svg class="ic"><use href="#i-chev"></use></svg></button>
+  </div>
+  <div class="setnote">Short tips when you need them. These choices apply to this account on this device. Reduce Motion is always respected.</div>
+
   <h3 class="seth">Preferences</h3>
   <div class="setgroup">
     <div class="kv"><span class="k">Sessions a week</span>
@@ -6115,6 +6302,15 @@ select:focus-visible {
   </div>
 </div></div>
 
+<div class="sheet" id="guidesheet"><div class="sheetbody">
+  <div class="grabber"></div>
+  <button class="sheetx" id="guideclose" aria-label="Close quick guide"><svg class="ic"><use href="#i-x"></use></svg></button>
+  <h2>A little help from Pumpy</h2>
+  <p class="lede">Pick what you’re working on.</p>
+  <div id="guidebody"></div>
+  <button class="setlink" id="guidereset">Show tips again as I go</button>
+</div></div>
+
 <div id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
@@ -6128,7 +6324,7 @@ select:focus-visible {
   var sb = window.supabase.createClient(SB_URL, SB_ANON, {
     auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
   });
-  var VERSION = "0.9";
+  var VERSION = "0.10";
   var REST_FALLBACK = 90;
   var CATEGORIES = [
     "Push",
@@ -6758,6 +6954,7 @@ select:focus-visible {
       if (first) setTimeout(boot, 0);
     } else {
       state.user = null;
+      guideUser();
       state.workouts = [];
       state.logs = null;
       state.plan = null;
@@ -6772,6 +6969,7 @@ select:focus-visible {
   });
   var booting = null;
   function boot() {
+    guideUser();
     if (booting) return booting;
     paintCache();
     loadProfile();
@@ -7535,7 +7733,7 @@ select:focus-visible {
       grid.classList.remove("grouped");
       empty.classList.remove("hide");
       empty.innerHTML = "";
-      empty.appendChild(icon(el("div", "big"), state.workouts.length ? "search" : "dumbbell"));
+      empty.appendChild(state.workouts.length ? icon(el("div", "big"), "search") : pumpyArt("coach", false));
       if (!state.workouts.length) {
         empty.appendChild(el("h2", null, "Your gym bag is empty"));
         var p = el("p");
@@ -7826,6 +8024,10 @@ select:focus-visible {
     return el("div", "exfrom", src ? "From " + (src.author ? "@" + src.author : src.title || "a saved video") : "From a video you removed");
   }
   function openDetail(w, keepHistory) {
+    if (!keepHistory) {
+      guideClear();
+      guideStill();
+    }
     current = w;
     clearTimeout(detailCloseTimer);
     $("detail").classList.remove("closing");
@@ -8077,7 +8279,6 @@ select:focus-visible {
           explain(ex, w);
         };
         sect.appendChild(row);
-        teachExSwipe(sect, row);
       });
       var addex = el("button", "addex", "+ Add an exercise Spotter missed");
       addex.onclick = function() {
@@ -8085,6 +8286,7 @@ select:focus-visible {
       };
       sect.appendChild(addex);
       d.appendChild(sect);
+      if (bi === 0) guideOffer("detail", sect, sect.querySelector(".exrow"));
     });
     if (!(w.blocks || []).length) {
       var none = el("div", "sect");
@@ -8350,38 +8552,6 @@ select:focus-visible {
     exQuiet = now() + 450;
     if (!quiet2 && !was) haptic("tap");
   }
-  var exTold = false, exPeekT = null, exPeeking = null;
-  try {
-    exTold = localStorage.getItem("spotter_exswipe_told") === "1";
-  } catch (e) {
-  }
-  function exPeekStop() {
-    clearTimeout(exPeekT);
-    if (exPeeking) {
-      exPaint(exPeeking, null);
-      exPeeking = null;
-    }
-  }
-  function teachExSwipe(sect, row) {
-    if (exTold) return;
-    exTold = true;
-    try {
-      localStorage.setItem("spotter_exswipe_told", "1");
-    } catch (err) {
-    }
-    if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      var h = el("div", "exhint", "Swipe an exercise left for more.");
-      setTimeout(function() {
-        sect.insertBefore(h, sect.lastChild);
-      }, 0);
-      return;
-    }
-    exPeekT = setTimeout(function() {
-      exPeeking = row;
-      exPaint(row, 56);
-      exPeekT = setTimeout(exPeekStop, 820);
-    }, 420);
-  }
   exOv.addEventListener("pointerdown", function(e) {
     if (e.pointerType !== "touch" && e.pointerType !== "pen") return;
     if (exDrag || !e.isPrimary) return;
@@ -8389,7 +8559,6 @@ select:focus-visible {
     if (!row || noDragIn(e.target)) return;
     if (row.children[1].contains(e.target)) return;
     if (!standalone() && e.clientX > window.innerWidth - 24) return;
-    exPeekStop();
     exDrag = {
       id: e.pointerId,
       x: e.clientX,
@@ -8502,11 +8671,6 @@ select:focus-visible {
   var dNav = null;
   var navFrom = false;
   var dDrag = null, dNavBox = null, dPrev = null, dNext = null;
-  var dTold = false;
-  try {
-    dTold = localStorage.getItem("spotter_dswipe_told") === "1";
-  } catch (e) {
-  }
   function anySheet() {
     return !!document.querySelector(".sheet.open");
   }
@@ -8543,15 +8707,6 @@ select:focus-visible {
     dNavBox.classList.toggle("gone", !dNav);
     dPrev.classList.toggle("gone", !dNav || dNav.i <= 0);
     dNext.classList.toggle("gone", !dNav || dNav.i >= dNav.ids.length - 1);
-    if (!dNav || dTold) return;
-    dTold = true;
-    try {
-      localStorage.setItem("spotter_dswipe_told", "1");
-    } catch (err) {
-    }
-    setTimeout(function() {
-      toast("Swipe for the next workout");
-    }, 700);
   }
   function canStep(n) {
     return !!dNav && dNav.i + n >= 0 && dNav.i + n < dNav.ids.length;
@@ -9788,6 +9943,8 @@ select:focus-visible {
     }
   }
   function startWorkout(w, resume) {
+    guideClear();
+    guideStill();
     var screens = flatten(w);
     wo = {
       workout: w,
@@ -10117,6 +10274,7 @@ select:focus-visible {
   }
   function saveSet() {
     if (!wo) return;
+    guideLearn("set");
     endEdit();
     unlockAudio();
     var entry = wo.entries[wo.i];
@@ -10553,6 +10711,7 @@ select:focus-visible {
   function renderSummary(payload, logged) {
     var main = $("wmain");
     main.innerHTML = "";
+    main.scrollTop = 0;
     $("workout").classList.add("summary");
     var mins = Math.max(1, Math.round(payload.duration_seconds / 60));
     $("wclock").textContent = mins + " min";
@@ -10564,6 +10723,7 @@ select:focus-visible {
         if (s.reps && s.weight) vol += s.reps * toUnit(s.weight, s.unit);
       });
     });
+    main.appendChild(pumpyArt("proud", true));
     main.appendChild(el("div", "wblock", "Session complete"));
     main.appendChild(el("h2", "wname", wo.workout.title || "Workout"));
     var figs = el("div", "setpills sumfigs");
@@ -11876,6 +12036,7 @@ select:focus-visible {
       planMode === "month" ? weekInMonth(monthStart) : state.weekStart
     ));
     if ($("daysheet").classList.contains("open")) renderDay();
+    guidePage("plan");
     void planBody.offsetWidth;
     if (planSlide) {
       planBody.style.setProperty("--pin", (planSlide > 0 ? 26 : -26) + "px");
@@ -12708,7 +12869,7 @@ select:focus-visible {
     var logs = state.logs || [];
     if (!logs.length) {
       var e = el("div", "empty");
-      e.appendChild(icon(el("div", "big"), "trend"));
+      e.appendChild(pumpyArt("proud", true));
       e.appendChild(el("h2", null, "No sessions yet"));
       e.appendChild(el("p", null, "Finish a workout and your volume, personal records and every logged session show up here."));
       v.appendChild(e);
@@ -12716,6 +12877,7 @@ select:focus-visible {
       return;
     }
     var st = weekStats(logs, state.plan, goalSetting(), /* @__PURE__ */ new Date());
+    guidePage("progress");
     var hero = weekHero(st);
     hero.appendChild(el(
       "div",
@@ -12952,7 +13114,7 @@ select:focus-visible {
       v.appendChild(card);
     });
   }
-  var PUMPY_MARK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8.6 8.4a3.4 3.4 0 0 1 6.8 0"/><circle cx="12" cy="14.2" r="6.3"/><path d="M9.7 13.3h.01M14.3 13.3h.01"/><path d="M9.8 16.2c.7.9 1.5 1.3 2.2 1.3s1.5-.4 2.2-1.3"/></svg>';
+  var PUMPY_MARK = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><image x="0" y="0" width="24" height="24" href="data:image/webp;base64,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"/></svg>';
   function pumpyMark(cls) {
     var s = el("span", cls || "pmark");
     s.innerHTML = PUMPY_MARK;
@@ -13300,7 +13462,7 @@ select:focus-visible {
     log.classList.toggle("hello", !shown.length);
     if (!shown.length && pumpy.loaded) {
       var hello = el("div", "pumpyhello");
-      hello.appendChild(pumpyMark("pmark"));
+      hello.appendChild(pumpyArt("coach", false));
       hello.appendChild(el("h2", null, "Hey, I\u2019m Pumpy"));
       hello.appendChild(el(
         "p",
@@ -13342,6 +13504,7 @@ select:focus-visible {
     log.appendChild(frag);
     renderPumpyCtx();
     renderPumpyCredits();
+    guidePage("pumpy");
     $("pumpysend").disabled = !!pumpy.busy;
     var pg = $("pumpyview");
     if (shown.length || pumpy.busy) pg.scrollTop = pg.scrollHeight;
@@ -13561,6 +13724,7 @@ select:focus-visible {
   function sendPumpy(text) {
     text = String(text || $("pumpyinput").value || "").trim();
     if (!text || pumpy.busy) return;
+    if (pumpy.refs.length) guideLearn("refs");
     var box = $("pumpyinput");
     box.value = "";
     box.style.height = "auto";
@@ -14214,9 +14378,300 @@ select:focus-visible {
     if (fallbackMsg !== null) toast(r && r.message || fallbackMsg);
     return false;
   }
+  var guide = {
+    user: null,
+    seen: {},
+    off: false,
+    motion: true,
+    active: null,
+    count: 0,
+    last: 0,
+    visit: null,
+    observer: null
+  };
+  var GUIDE_TIPS = {
+    save: {
+      title: "Save it now. Train it later.",
+      art: "coach",
+      text: "Paste the workout link, then tap Save workout. You can leave while I read it."
+    },
+    detail: {
+      title: "Make this workout yours",
+      art: "coach",
+      text: "Tap an exercise for a demo. Swipe its row left to edit, swap or remove it."
+    },
+    set: {
+      title: "Your numbers go here",
+      art: "coach",
+      text: "Tap a number to type your reps or weight. Save set logs it and starts your rest."
+    },
+    plan: {
+      title: "Give your workout a day",
+      art: "plan",
+      text: "Tap a day to add a saved workout. Use Week or Month to see what\u2019s ahead."
+    },
+    progress: {
+      title: "A week at your pace",
+      art: "proud",
+      text: "The ring counts finished sessions toward your weekly goal. Tap the day dots to see what counts."
+    },
+    refs: {
+      title: "Show me what you have in mind",
+      art: "coach",
+      text: "Tap + beside the message box to choose workouts. I\u2019ll use them in my answer and show changes before saving."
+    }
+  };
+  function guideKey() {
+    return "spotter_pumpy_v1:" + guide.user;
+  }
+  function guideUser() {
+    var id = state.user && state.user.id;
+    if (guide.user === id) return;
+    guideClear();
+    guide.user = id;
+    guide.seen = {};
+    guide.off = false;
+    guide.motion = true;
+    guide.count = 0;
+    guide.last = 0;
+    guide.visit = null;
+    if (id) try {
+      var saved = JSON.parse(localStorage.getItem(guideKey()) || "{}");
+      if (saved && typeof saved.seen === "object" && saved.seen) guide.seen = saved.seen;
+      guide.off = saved.off === true;
+      guide.motion = saved.motion !== false;
+    } catch (e) {
+    }
+    guidePaintSettings();
+  }
+  function guideSave() {
+    if (!guide.user) return;
+    try {
+      localStorage.setItem(guideKey(), JSON.stringify({
+        seen: guide.seen,
+        off: guide.off,
+        motion: guide.motion
+      }));
+    } catch (e) {
+    }
+  }
+  function guideClear() {
+    if (guide.observer) {
+      guide.observer.disconnect();
+      guide.observer = null;
+    }
+    var a = guide.active;
+    if (a && a.node.parentNode) a.node.parentNode.removeChild(a.node);
+    guide.active = null;
+  }
+  function guideLearn(id) {
+    guideUser();
+    guide.seen[id] = true;
+    guideSave();
+    if (guide.active && guide.active.id === id) guideClear();
+  }
+  function pumpyAsset(name) {
+    var base = location.hostname.endsWith("supabase.co") ? "https://simeonrinkenberger.github.io/spotter/" : "./";
+    return base + "assets/pumpy/" + name;
+  }
+  function pumpyArt(pose, animate) {
+    var frame = el("span", "pumpyart"), im = el("img");
+    frame.setAttribute("aria-hidden", "true");
+    im.alt = "";
+    im.width = 160;
+    im.height = 160;
+    im.decoding = "async";
+    im.src = pumpyAsset(pose + ".webp");
+    im.onerror = function() {
+      frame.classList.add("artfailed");
+    };
+    frame.appendChild(im);
+    if (animate && window.IntersectionObserver) {
+      var still = function() {
+        if (im.hasAttribute("data-pumpy-still")) {
+          im.src = im.getAttribute("data-pumpy-still");
+          im.removeAttribute("data-pumpy-still");
+        }
+        ob.disconnect();
+      };
+      var played = false;
+      var ob = new IntersectionObserver(function(entries) {
+        if (!frame.isConnected) {
+          ob.disconnect();
+          return;
+        }
+        if (played) {
+          if (!entries[0].isIntersecting) still();
+          return;
+        }
+        if (entries[0].intersectionRatio < 0.8 || document.hidden || !guide.motion || lessMotion()) return;
+        var page = frame.closest(".page");
+        if (page && page.inert) return;
+        played = true;
+        im.setAttribute("data-pumpy-still", im.src);
+        im.src = pumpyAsset("proud-wing.gif");
+        setTimeout(still, 2500);
+      }, { threshold: 0.8 });
+      setTimeout(function() {
+        if (frame.isConnected) ob.observe(frame);
+      }, 0);
+    }
+    return frame;
+  }
+  function guideStill() {
+    document.querySelectorAll("[data-pumpy-still]").forEach(function(im) {
+      im.src = im.getAttribute("data-pumpy-still");
+      im.removeAttribute("data-pumpy-still");
+    });
+  }
+  function guideCard(id, dismiss) {
+    var t = GUIDE_TIPS[id], box = el("aside", "pumpy-tip"), copy = el("div", "pumpy-tip-copy");
+    box.setAttribute("aria-label", "Pumpy\u2019s tip");
+    box.setAttribute("data-noswipe", "");
+    box.appendChild(pumpyArt(t.art, false));
+    copy.appendChild(el("b", null, t.title));
+    copy.appendChild(el("p", null, t.text));
+    box.appendChild(copy);
+    if (dismiss) {
+      var x = icon(el("button", "pumpy-tip-close"), "x");
+      x.setAttribute("aria-label", "Dismiss Pumpy\u2019s tip");
+      x.onclick = function() {
+        var parent = box.parentNode;
+        guideLearn(id);
+        var next = parent && parent.querySelector("button, input, textarea");
+        if (next) next.focus({ preventScroll: true });
+      };
+      box.appendChild(x);
+    }
+    return box;
+  }
+  function guideOffer(id, host, before) {
+    guideUser();
+    if (!host || !guide.user || guide.off || document.hidden) return;
+    var a = guide.active;
+    if (a && a.id !== id) return;
+    if (!a && (guide.seen[id] || guide.count >= 2 || Date.now() - guide.last < 9e4)) return;
+    if (!a) a = guide.active = { id: id, node: guideCard(id, true), counted: false };
+    host.insertBefore(a.node, before || null);
+    if (a.counted) return;
+    function shown() {
+      if (guide.active !== a || !a.node.isConnected || document.hidden) return;
+      var page = a.node.closest(".page"), sheet = a.node.closest(".sheet");
+      if (page && page.inert || sheet && !sheet.classList.contains("open")) return;
+      if (overlayShowing() && !sheet && !a.node.closest("#detail")) return;
+      a.counted = true;
+      guide.count++;
+      guide.last = Date.now();
+      guide.seen[id] = true;
+      guideSave();
+      if (guide.observer) {
+        guide.observer.disconnect();
+        guide.observer = null;
+      }
+    }
+    if (guide.observer) guide.observer.disconnect();
+    if (window.IntersectionObserver) {
+      guide.observer = new IntersectionObserver(function(es) {
+        if (es[0].intersectionRatio >= 0.8) shown();
+      }, { threshold: 0.8 });
+      guide.observer.observe(a.node);
+    } else setTimeout(shown, 450);
+  }
+  function guidePage(v) {
+    if (state.view !== v || guide.visit !== v || overlayShowing()) return;
+    if (v === "plan" && state.plan && state.plan.length) {
+      guideLearn("plan");
+      return;
+    }
+    if (v === "plan" && planBody) guideOffer("plan", planBody, planBody.firstChild);
+    if (v === "progress" && state.logs && state.logs.length) {
+      var pg = $("progressview");
+      guideOffer("progress", pg, pg.firstChild);
+    }
+    if (v === "pumpy" && pumpy.loaded && pumpy.messages.length && !pumpy.refs.length) {
+      var c = $("pumpycomposer");
+      guideOffer("refs", c, c.firstChild);
+    }
+  }
+  function guideSheet(id) {
+    var tip = id === "addsheet" ? "save" : id === "setsheet" ? "set" : null;
+    if (tip) {
+      var b = $(id).querySelector(".sheetbody");
+      guideOffer(tip, b, b.querySelector(".field, .stepper"));
+    }
+  }
+  function guidePaintSettings() {
+    if (!$("pumpytips")) return;
+    $("pumpytips").textContent = guide.off ? "Off" : "On";
+    $("pumpytips").setAttribute("aria-pressed", guide.off ? "false" : "true");
+    $("pumpymotion").textContent = guide.motion ? "On" : "Off";
+    $("pumpymotion").setAttribute("aria-pressed", guide.motion ? "true" : "false");
+  }
+  function openPumpyGuide() {
+    var body = $("guidebody");
+    body.innerHTML = "";
+    body.appendChild(pumpyArt("plan", false));
+    var names = {
+      save: "Saving videos",
+      detail: "Exercise options",
+      set: "Logging a set",
+      plan: "Planning your week",
+      progress: "Your weekly goal",
+      refs: "Working with Pumpy"
+    };
+    Object.keys(GUIDE_TIPS).forEach(function(id) {
+      var row = el("details", "guide-topic"), title = el("summary", null, names[id]);
+      row.appendChild(title);
+      row.appendChild(el("p", null, GUIDE_TIPS[id].text));
+      body.appendChild(row);
+    });
+    openSheet("guidesheet");
+  }
+  $("pumpytips").onclick = function() {
+    guideUser();
+    guide.off = !guide.off;
+    guideClear();
+    guideSave();
+    guidePaintSettings();
+  };
+  $("pumpymotion").onclick = function() {
+    guideUser();
+    guide.motion = !guide.motion;
+    if (!guide.motion) guideStill();
+    guideSave();
+    guidePaintSettings();
+  };
+  $("pumpyhelp").onclick = openPumpyGuide;
+  $("guidereset").onclick = function() {
+    guideUser();
+    guideClear();
+    guide.seen = {};
+    guide.count = 0;
+    guide.last = 0;
+    guide.off = false;
+    guideSave();
+    guidePaintSettings();
+    toast("Tips will appear when you use each feature.");
+  };
+  $("guideclose").onclick = function() {
+    closeSheet("guidesheet");
+  };
+  document.addEventListener("visibilitychange", function() {
+    if (document.hidden) guideStill();
+  });
+  var guideMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+  if (guideMotionQuery.addEventListener) guideMotionQuery.addEventListener("change", function(e) {
+    if (e.matches) guideStill();
+  });
+  document.addEventListener("click", function(e) {
+    if (e.target.closest(".exact, .exmain")) guideLearn("detail");
+  });
   var closeTimers = {};
   var sheetNav = false, sheetBack = 0;
   function openSheet(id) {
+    guideClear();
+    guideStill();
+    guideSheet(id);
     var n = $(id), b = n.querySelector(".sheetbody");
     clearTimeout(closeTimers[id]);
     n.classList.remove("closing");
@@ -14234,6 +14689,7 @@ select:focus-visible {
   function closeSheet(id, fromPop) {
     var n = $(id);
     if (!n.classList.contains("open")) return;
+    guideClear();
     var b = n.querySelector(".sheetbody");
     if (b) {
       b.classList.remove("dragging");
@@ -14352,7 +14808,8 @@ select:focus-visible {
     "copysheet",
     "sortsheet",
     "refsheet",
-    "countsheet"
+    "countsheet",
+    "guidesheet"
   ].forEach(wireSheet);
   function overlayShowing() {
     if ($("detail").classList.contains("open")) return true;
@@ -14361,6 +14818,7 @@ select:focus-visible {
     return sheets.length > 0;
   }
   function placePending(r, url, platform, stage) {
+    guideLearn("save");
     var known = false;
     for (var i = 0; i < state.workouts.length; i++) {
       if (state.workouts[i].id === r.id) {
@@ -14890,6 +15348,8 @@ select:focus-visible {
   window.addEventListener("focus", stravaBack);
   document.addEventListener("visibilitychange", stravaBack);
   function openSettings() {
+    guideUser();
+    guidePaintSettings();
     $("setver").textContent = "v" + VERSION;
     $("setemail").textContent = state.user ? state.user.email : "\u2014";
     var how = signInMethod();
@@ -14944,7 +15404,11 @@ select:focus-visible {
     });
   }
   function saveSettings() {
-    var s = { unit: state.unit, sounds: state.sounds, haptics: state.haptics };
+    var s = Object.assign(
+      {},
+      state.profile && state.profile.settings || {},
+      { unit: state.unit, sounds: state.sounds, haptics: state.haptics }
+    );
     var g = goalSetting();
     if (g) s.goal = g;
     s.remind = { plan: remind.plan, risk: remind.risk };
@@ -15636,6 +16100,11 @@ select:focus-visible {
     spRaf = requestAnimationFrame(step);
   }
   function commit(i) {
+    if (idx !== i) {
+      guideClear();
+      guideStill();
+      guide.visit = null;
+    }
     idx = i;
     state.view = VIEWS[i];
     var tabs = document.querySelectorAll(".tab"), n, k;
@@ -15659,6 +16128,10 @@ select:focus-visible {
   }
   function arrive(i) {
     var v = VIEWS[i];
+    guide.visit = v;
+    setTimeout(function() {
+      guidePage(v);
+    }, 450);
     if (v === "library") {
       renderToday();
       return;

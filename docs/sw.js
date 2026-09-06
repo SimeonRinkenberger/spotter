@@ -1,5 +1,5 @@
 // Service worker for the installed app. Still deliberately not an offline cache of
-// everything: only the icon, the manifest and the page itself are ever kept, and a
+// everything: only the shell and first-party mascot art are kept, and a
 // Supabase or CDN response is never touched — a stale workout row would be a lie,
 // and a stale page is only yesterday's build.
 //
@@ -10,7 +10,7 @@
 // arrives — still refreshes the cache for next time. That is the pattern Workbox
 // calls NetworkFirst with networkTimeoutSeconds, and 1.5s is the number that keeps a
 // bad connection from holding a blank screen while never beating a good one.
-var CACHE = "spotter-shell-v3";
+var CACHE = "spotter-shell-v4";
 var SHELL = ["icon.png", "manifest.webmanifest"];
 var PAGE = "index.html";
 var NET_TIMEOUT = 1500;
@@ -75,6 +75,19 @@ self.addEventListener("fetch", function (e) {
   // the app instead of the page they asked for.
   if (e.request.mode === "navigate") {
     if (/\/$|\/index\.html$/.test(url.pathname)) e.respondWith(page(e.request));
+    return;
+  }
+  // Small first-party drawings are cached only after use. Installing the shell
+  // never waits on mascot art, and no unused animation is downloaded up front.
+  if (/\/assets\/pumpy\/(coach|plan|proud|avatar)\.webp$|\/assets\/pumpy\/proud-wing\.gif$/.test(url.pathname)) {
+    e.respondWith(caches.open(CACHE).then(function (c) {
+      return c.match(e.request).then(function (hit) {
+        return hit || fetch(e.request).then(function (r) {
+          if (r.ok) c.put(e.request, r.clone());
+          return r;
+        });
+      });
+    }));
     return;
   }
   if (SHELL.some(function (p) { return url.pathname.endsWith(p); })) {

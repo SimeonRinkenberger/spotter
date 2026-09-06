@@ -572,6 +572,14 @@ export const MARKUP_BODY = String.raw`</head>
     </button>
   </div>
 
+  <h3 class="seth">Pumpy</h3>
+  <div class="setgroup">
+    <div class="kv"><span class="k">Helpful tips</span><span class="v"><button class="chip" id="pumpytips" aria-label="Pumpy helpful tips" aria-pressed="true">On</button></span></div>
+    <div class="kv"><span class="k">Little animations</span><span class="v"><button class="chip" id="pumpymotion" aria-label="Pumpy little animations" aria-pressed="true">On</button></span></div>
+    <button class="kv setrow" id="pumpyhelp"><span class="k">Quick guide</span><svg class="ic"><use href="#i-chev"></use></svg></button>
+  </div>
+  <div class="setnote">Short tips when you need them. These choices apply to this account on this device. Reduce Motion is always respected.</div>
+
   <h3 class="seth">Preferences</h3>
   <div class="setgroup">
     <!-- What the week ring is measured against: the user's own number, prefilled
@@ -680,6 +688,15 @@ export const MARKUP_BODY = String.raw`</head>
     <button class="btn ghost" id="acccancel">Cancel</button>
     <button class="btn" id="accgo">Save</button>
   </div>
+</div></div>
+
+<div class="sheet" id="guidesheet"><div class="sheetbody">
+  <div class="grabber"></div>
+  <button class="sheetx" id="guideclose" aria-label="Close quick guide"><svg class="ic"><use href="#i-x"></use></svg></button>
+  <h2>A little help from Pumpy</h2>
+  <p class="lede">Pick what you’re working on.</p>
+  <div id="guidebody"></div>
+  <button class="setlink" id="guidereset">Show tips again as I go</button>
 </div></div>
 
 <div id="toast"></div>
