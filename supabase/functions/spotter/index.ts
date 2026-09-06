@@ -1015,10 +1015,20 @@ function matchInstagram(u: string): Parsed | null {
   return { platform: "instagram", shortcode: m[2], kind, clean: `https://www.instagram.com/${kind}/${m[2]}/` };
 }
 
+// `/@user/photo/<id>` is the swipe-right carousel: the same id space as a video,
+// with no video in it. Until it matched here it fell through to webParsed, which
+// refuses tiktok.com hostnames, so resolveShare answered null and ingest replied
+// "No workout link found in what was shared." That sentence is the error the owner
+// reported, and this regex is most of the fix.
 function matchTikTok(u: string): Parsed | null {
-  const m = u.match(/tiktok\.com\/(?:@[^/]+\/video|v)\/(\d+)/);
+  const m = u.match(/tiktok\.com\/(?:@[^/]+\/(video|photo)|v)\/(\d+)/);
   if (!m) return null;
-  return { platform: "tiktok", shortcode: `tt-${m[1]}`, kind: "video", clean: u.split("?")[0] };
+  return {
+    platform: "tiktok",
+    shortcode: `tt-${m[2]}`,
+    kind: m[1] === "photo" ? "photo" : "video",
+    clean: u.split("?")[0],
+  };
 }
 
 function matchYouTube(u: string): Parsed | null {
@@ -1493,7 +1503,11 @@ async function igMeta(p: Parsed): Promise<Meta> {
 // crawler view of the video page carries a thumbnail and a handle but no caption,
 // which is worth having when the caption comes from somewhere else.
 
-type TtRaw = { caption: string | null; thumb: string | null; author: string | null; seconds?: number };
+type TtRaw = {
+  caption: string | null; thumb: string | null; author: string | null; seconds?: number;
+  /** A photo post's slides, in order. Absent on a video, which has none. */
+  images?: string[];
+};
 
 function ttPickCover(covers: unknown): string | null {
   if (typeof covers === "string") return covers.startsWith("http") ? covers : null;
@@ -1503,8 +1517,43 @@ function ttPickCover(covers: unknown): string | null {
   return null;
 }
 
+/** Every image on a photo post arrives as a list of CDN mirrors. The first answers. */
+function ttPickUrl(list: unknown): string | null {
+  if (!Array.isArray(list)) return null;
+  for (const u of list) if (typeof u === "string" && u.startsWith("http")) return u;
+  return null;
+}
+
 function ttSome(r: TtRaw): TtRaw | null {
-  return r.caption || r.thumb || r.author ? r : null;
+  return r.caption || r.thumb || r.author || r.images?.length ? r : null;
+}
+
+/**
+ * A photo post read out of the rehydration blob's itemStruct.
+ *
+ * The post says two separate things and neither summarises the other:
+ * `imagePost.title` is the line the app draws over the first slide, `desc` is the
+ * hashtag caption under it. Both go into the caption, because "Push day" plus
+ * "#gymtok" is what a caption-only extraction has to work with — and the slides,
+ * which is where the sets and reps actually are, are what vision reads afterwards.
+ */
+function ttPhotoRaw(it: any): TtRaw | null {
+  const ip = it?.imagePost;
+  if (!ip) return null;
+  const images: string[] = [];
+  for (const im of (Array.isArray(ip.images) ? ip.images : [])) {
+    const u = ttPickUrl(im?.imageURL?.urlList);
+    if (u && !images.includes(u)) images.push(u);
+  }
+  const title = typeof ip.title === "string" && ip.title.trim() ? ip.title.trim() : null;
+  const desc = typeof it?.desc === "string" && it.desc.trim() ? it.desc.trim() : null;
+  return ttSome({
+    caption: [title, desc].filter(Boolean).join("\n") || null,
+    // The cover IS the first slide on a photo post, so either order is honest.
+    thumb: ttPickUrl(ip.cover?.imageURL?.urlList) ?? images[0] ?? ttPickCover(it?.video?.cover),
+    author: it?.author?.nickname || it?.author?.uniqueId || null,
+    images,
+  });
 }
 
 /** oEmbed JSON. `title` is the whole caption, hashtags and all. */
@@ -1531,11 +1580,19 @@ function ttFromEmbedState(html: string): TtRaw | null {
       if (!vd) continue;
       const it = vd.itemInfos ?? {};
       const au = vd.authorInfos ?? {};
+      // The embed page is the one rung that answers for a photo post without being
+      // asked for the video address, and it names the slides under its own key.
+      const images: string[] = [];
+      for (const d of (Array.isArray(vd.imagePostInfo?.displayImages) ? vd.imagePostInfo.displayImages : [])) {
+        const u = ttPickUrl(d?.urlList);
+        if (u && !images.includes(u)) images.push(u);
+      }
       const hit = ttSome({
         caption: typeof it.text === "string" && it.text.trim() ? it.text : null,
         thumb: ttPickCover(it.covers) ?? ttPickCover(it.coversOrigin) ?? ttPickCover(it.shareCover),
         author: au.nickName || au.uniqueId || null,
         seconds: Number(it.video?.videoMeta?.duration) || undefined,
+        images: images.length ? images : undefined,
       });
       if (hit) return hit;
     }
@@ -1545,18 +1602,19 @@ function ttFromEmbedState(html: string): TtRaw | null {
 
 /** The full watch page's rehydration blob. Same facts, different envelope. */
 function ttFromUniversalData(html: string): TtRaw | null {
-  const m = html.match(/<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__"[^>]*>([\s\S]*?)<\/script>/);
-  if (!m) return null;
-  try {
-    const it = JSON.parse(m[1])?.__DEFAULT_SCOPE__?.["webapp.video-detail"]?.itemInfo?.itemStruct;
-    if (!it) return null;
-    return ttSome({
-      caption: typeof it.desc === "string" && it.desc.trim() ? it.desc : null,
-      thumb: ttPickCover(it.video?.cover) ?? ttPickCover(it.video?.originCover) ?? ttPickCover(it.video?.dynamicCover),
-      author: it.author?.nickname || it.author?.uniqueId || null,
-      seconds: Number(it.video?.duration) || undefined,
-    });
-  } catch { return null; }
+  const it = ttItemStruct(html);
+  if (!it) return null;
+  // A photo post's itemStruct carries a `video` object too — all zeroes, with the
+  // first slide as its cover. So imagePost is asked about first, or a carousel
+  // would be read as a video of no length and its slides never looked at.
+  const photo = ttPhotoRaw(it);
+  if (photo) return photo;
+  return ttSome({
+    caption: typeof it.desc === "string" && it.desc.trim() ? it.desc : null,
+    thumb: ttPickCover(it.video?.cover) ?? ttPickCover(it.video?.originCover) ?? ttPickCover(it.video?.dynamicCover),
+    author: it.author?.nickname || it.author?.uniqueId || null,
+    seconds: Number(it.video?.duration) || undefined,
+  });
 }
 
 /**
@@ -1605,8 +1663,25 @@ function ttParseHtml(html: string): Meta {
     if (!out.thumb && raw.thumb) out.thumb = raw.thumb;
     if (!out.author && raw.author) out.author = raw.author;
     if (!out.seconds && raw.seconds) out.seconds = raw.seconds;
+    if (!out.images?.length && raw.images?.length) out.images = raw.images;
   }
   return out;
+}
+
+/**
+ * The page a SERVER can read for this post.
+ *
+ * Measured 2026-09-05 from this Mac's residential IP against a live photo post:
+ * a plain GET of `/@user/photo/<id>` with a desktop UA answers 200 with a 370KB
+ * shell — no rehydration blob, no og: tags, the title "TikTok - Make Your Day" —
+ * while the SAME id at `/@user/video/<id>` answers with the whole itemStruct,
+ * imagePost and all. TikTok treats the video address as the canonical one and
+ * only renders the photo address in a real browser. So every scraper here asks
+ * for the video address; `clean` keeps the photo one, because that is the link
+ * the user shared and the link the card has to open.
+ */
+function ttWatchUrl(clean: string): string {
+  return clean.replace(/\/photo\/(\d+)/, "/video/$1");
 }
 
 type TtSource = {
@@ -1614,6 +1689,13 @@ type TtSource = {
   url: (id: string, clean: string) => string;
   ua: string;
   parse: (body: string) => TtRaw | null;
+  /**
+   * Skipped for a photo post. Only oEmbed sets it: measured 2026-09-05, oEmbed
+   * answers HTTP 400 `{"message":"Something went wrong","code":400}` for a
+   * `/photo/` URL, which is where a carousel save used to lose its title, author
+   * and thumbnail all at once.
+   */
+  videoOnly?: boolean;
 };
 
 // Ordered by cost, and trimmed to what earned its place when seven candidate
@@ -1628,14 +1710,14 @@ type TtSource = {
 // nothing is missing, so the usual save costs one 3KB request; the later rungs
 // exist for the day oEmbed stops answering.
 const TT_SOURCES: TtSource[] = [
-  { name: "oembed", ua: DESKTOP_UA, parse: ttFromOembed,
+  { name: "oembed", ua: DESKTOP_UA, parse: ttFromOembed, videoOnly: true,
     url: (_id, clean) => `https://www.tiktok.com/oembed?url=${encodeURIComponent(clean)}` },
   { name: "embed-v2", ua: DESKTOP_UA, parse: (b) => ttFromEmbedState(b) ?? ttFromOg(b),
     url: (id) => `https://www.tiktok.com/embed/v2/${id}` },
   { name: "page-crawler", ua: CRAWLER_UA, parse: (b) => ttFromUniversalData(b) ?? ttFromOg(b),
-    url: (_id, clean) => clean },
+    url: (_id, clean) => ttWatchUrl(clean) },
   { name: "page-desktop", ua: DESKTOP_UA, parse: (b) => ttFromUniversalData(b) ?? ttFromOg(b),
-    url: (_id, clean) => clean },
+    url: (_id, clean) => ttWatchUrl(clean) },
 ];
 
 async function ttFetchSource(s: TtSource, id: string, clean: string):
@@ -1656,9 +1738,14 @@ async function ttMeta(p: Parsed): Promise<Meta> {
   const id = p.shortcode.replace(/^tt-/, "");
   const out: Meta = { caption: null, thumb: null, author: null };
   const used: string[] = [];
+  const photo = p.kind === "photo";
+  let images: string[] = [];
 
   for (const s of TT_SOURCES) {
-    if (out.caption && out.thumb && out.author) break;
+    if (photo && s.videoOnly) continue;
+    // A photo post is not finished until its slides are in hand: the caption on a
+    // carousel is usually a hashtag line, and the workout is on the pictures.
+    if (out.caption && out.thumb && out.author && (!photo || images.length)) break;
     const got = await ttFetchSource(s, id, p.clean);
     if (!got.raw) {
       if (got.status && got.status !== 200) console.error("tiktok", s.name, "http", got.status);
@@ -1670,12 +1757,29 @@ async function ttMeta(p: Parsed): Promise<Meta> {
     if (!out.thumb && got.raw.thumb) { out.thumb = got.raw.thumb; gained = true; }
     if (!out.author && got.raw.author) { out.author = got.raw.author; gained = true; }
     if (!out.seconds && got.raw.seconds) { out.seconds = got.raw.seconds; gained = true; }
+    // Through the outbound guard's static half here as well as safeFetch's DNS
+    // half at fetch time, so a slide the guard would refuse is dropped once and
+    // legibly rather than thrown from inside the vision sub-request.
+    if (!images.length && got.raw.images?.length) {
+      for (const u of got.raw.images) {
+        const keep = keepFetchableUrl(u, "tiktok slide");
+        if (keep && !images.includes(keep)) images.push(keep);
+      }
+      if (images.length) gained = true;
+    }
     if (gained) used.push(s.name);
   }
 
+  // A one-slide post has its only picture as the cover, exactly as a one-image
+  // Instagram post does. Slides are recorded whatever `kind` said, because a
+  // carousel shared by its /video/ alias is still a carousel.
+  if (!images.length && photo && out.thumb) images = [out.thumb];
+  if (images.length) out.images = images;
+
   out.source = used.join(",") || "none";
-  console.log("tiktok meta", id, "sources:", out.source,
-    "caption:", out.caption?.length ?? 0, "thumb:", !!out.thumb, "author:", out.author ?? "-");
+  console.log("tiktok meta", id, photo ? "(photo)" : "", "sources:", out.source,
+    "caption:", out.caption?.length ?? 0, "thumb:", !!out.thumb, "author:", out.author ?? "-",
+    "slides:", images.length);
   return out;
 }
 
@@ -2247,7 +2351,7 @@ async function groqTranscribe(
     }
     if (r.status === 400 || r.status === 415 || r.status === 422) {
       throw new SoftFailure(
-        "Spotter could not hear a workout in that file — check it has sound, or paste the caption instead.",
+        "Spotter could not get any sound out of that file — check it plays, or paste the workout text instead.",
         `groq ${r.status}`,
       );
     }
@@ -2259,8 +2363,60 @@ async function groqTranscribe(
   );
 }
 
+// Which of the extensions the bucket accepts actually have pictures in them.
+// The rest are audio, and there is nothing for a video reader to look at.
+const UPLOAD_VIDEO_EXTS = new Set(["mp4", "mov", "webm", "m4v"]);
+
+type UploadRoute = { first: "video" | "transcript"; fallback: boolean; why: string | null };
+
 /**
- * The upload provider's fetchMeta. Sign, transcribe, price, delete — and delete
+ * Which reader an upload goes to.
+ *
+ * The old answer was always Groq, and that made the add sheet's promise — "for
+ * creators who say the workout instead of writing it" — a real limit rather than
+ * a description: a video whose whole workout is written on the screen and never
+ * spoken came back as silence. A model that watches has existed in this file
+ * since the TikTok media tier; this is the decision about when to use it.
+ *
+ * Video first, transcript behind it, because watching is strictly more
+ * informative — the reader is given the audio as well as the pictures — and
+ * because the file is deleted the moment either returns, so there is exactly one
+ * pass to spend. Audio-only files have nothing to watch and skip straight to
+ * Groq. Every gate that stops the paid media tier stops this too, and a gated
+ * video is not a failed save: it is heard instead, which is what used to happen
+ * to every upload.
+ *
+ * A decision rather than a side effect, so tools/media-harness.ts can check it
+ * without a bucket, a Groq key or a Gemini key.
+ */
+function uploadRoute(
+  f: { ext: string; videoTier: boolean; paid: boolean; overCap: boolean },
+): UploadRoute {
+  if (!UPLOAD_VIDEO_EXTS.has(f.ext)) return { first: "transcript", fallback: false, why: null };
+  if (!f.videoTier) return { first: "transcript", fallback: false, why: "media.video_enabled is off" };
+  if (!f.paid) return { first: "transcript", fallback: false, why: "today's spend ceiling is reached" };
+  if (f.overCap) return { first: "transcript", fallback: false, why: "this account is over its media cap for today" };
+  return { first: "video", fallback: true, why: null };
+}
+
+/**
+ * Has this account run out of media steps for today? Answers "yes" when it cannot
+ * tell, on the media tier's own principle: a count that could not be read is not
+ * a count of zero, and the cost of being wrong here is one file heard rather than
+ * watched, which is what every upload used to get.
+ */
+async function overMediaCapToday(userId: string): Promise<boolean> {
+  try {
+    const [u, uc] = await settledAll<unknown>([mediaCountToday(userId), capsFor(userId)]);
+    return overCap(u as number, (uc as UserCaps).caps.media);
+  } catch (e) {
+    console.error("upload: cannot read today's media count for", userId, "— not watching", e);
+    return true;
+  }
+}
+
+/**
+ * The upload provider's fetchMeta. Sign, read, price, delete — and delete
  * whatever happened, which is why the whole body sits inside a try/finally.
  */
 async function uploadMeta(p: Parsed, job?: Job): Promise<Meta> {
@@ -2285,6 +2441,23 @@ async function uploadMeta(p: Parsed, job?: Job): Promise<Meta> {
         "spend ceiling",
       );
     }
+
+    // ---- watched, when there is anything to watch ----
+    const route = uploadRoute({
+      ext: ref.ext,
+      videoTier: videoTierEnabled(),
+      paid: true,   // asked above, and a refusal there never reaches this line
+      overCap: job?.user_id ? await overMediaCapToday(job.user_id) : false,
+    });
+    if (route.why) console.log("upload: listening to", p.shortcode, "rather than watching —", route.why);
+    if (route.first === "video" && job) {
+      const seen = await uploadVideoRead(p, job);
+      if (seen) return seen;
+      console.log("upload: the video reader found nothing in", p.shortcode, "— listening instead");
+    }
+
+    // ---- heard: the original path, and still the only one for an audio file ----
+    await setMediaStage(p.shortcode, "listening");
     const signed = await signUpload(ref.path);
     const t0 = Date.now();
     const got = await groqTranscribe(signed);
@@ -2299,7 +2472,14 @@ async function uploadMeta(p: Parsed, job?: Job): Promise<Meta> {
       "in", Date.now() - t0, "ms");
     if (!got.text) {
       throw new SoftFailure(
-        "Spotter could not hear a workout in that file — check it has sound, or paste the caption instead.",
+        // Not "could not find a workout": the card sheet's own heading already
+        // says that directly above this line, and a paragraph that repeats its
+        // heading reads as an app with nothing to add. What this sentence is for
+        // is telling the user BOTH readers ran, so trying again would not help.
+        route.first === "video"
+          ? "Spotter watched this one and listened to it, and found no exercises either way. " +
+            "Paste the workout text instead."
+          : "Spotter could not hear a workout in that file — check it has sound, or paste the workout text instead.",
         "empty transcript",
       );
     }
@@ -2309,6 +2489,8 @@ async function uploadMeta(p: Parsed, job?: Job): Promise<Meta> {
       author: null,
       seconds: got.seconds || undefined,
       source: "transcript",
+      // Which machine made this text, on the same column the media tier writes.
+      media_source: "upload:groq",
       // Supplied in the sense that matters here: it came from the user, not from a
       // scrape, so topUpMeta must never go looking for a page to complete it.
       supplied: true,
@@ -2318,6 +2500,62 @@ async function uploadMeta(p: Parsed, job?: Job): Promise<Meta> {
   } finally {
     await deleteUpload(ref.path);
   }
+}
+
+/**
+ * Watch the upload, in the media isolate, and hand back the meta for a card that
+ * is already finished. Null means "that produced nothing" — a refusal, an
+ * exhausted quota, a file with no workout in it — and the caller listens instead.
+ *
+ * Why this returns a finished card rather than text: the provider interface hands
+ * fetchMeta's caller a Meta, and the video reader's answer is a Card. The card
+ * travels on the job, which is where runJob already looks for one when the step
+ * says a media tier produced it — the same route the TikTok video tier uses. What
+ * that route skips is the tail of buildCard, so the catalog, the title fallback
+ * and the score are applied here rather than left undone. An upload's job has
+ * max_attempts 1 (the file is gone either way), so this is the only pass, and
+ * nothing here has to survive a resume.
+ */
+async function uploadVideoRead(p: Parsed, job: Job): Promise<Meta | null> {
+  await setMediaStage(p.shortcode, "watching");
+  const out = await runMediaRemote(p, "video", job.user_id, null);
+  // Charged whether or not it answered, exactly as the media tier charges: a
+  // sub-request that died mid-stream still moved the bytes.
+  await logMediaStep(job.user_id, p, job.id, out);
+  if (!out?.card) {
+    console.log("upload: watched", p.shortcode, "and got no card",
+      out?.detail ? "— " + out.detail.slice(0, 200) : "");
+    return null;
+  }
+
+  const card = out.card;
+  const meta: Meta = {
+    caption: null,
+    thumb: null,
+    author: null,
+    source: "video",
+    media_source: out.media_source ?? "video:gemini",
+    supplied: true,
+    topped_up: true,
+    filename: job.meta?.filename,
+  };
+  if (!card.title.trim() || card.title.trim() === "Saved workout") {
+    card.title = cleanTitle(fallbackTitle(meta, p)) || "Uploaded workout";
+  }
+  applyCatalog(card);
+  scoreAndStamp(card, meta, p.platform, 0);
+  // The job is how a card reaches runJob from here. Persisted as well as set in
+  // memory so the row and the isolate agree about what happened.
+  job.card = card;
+  job.step = "media:video";
+  try {
+    await jobStep(job.id, "media:video", { card });
+  } catch (e) {
+    console.error("upload: could not checkpoint the watched card", job.id, e);
+  }
+  console.log("upload: watched", p.shortcode, "->", countExercises(card),
+    "exercise(s), confidence", card.confidence ?? "-", "by", card.extracted_by ?? "-");
+  return meta;
 }
 
 /**
@@ -2962,12 +3200,24 @@ type MediaSource = {
   seconds: number | null;
 };
 
-/** The rehydration blob's itemStruct, or null. Shared by the parsers above. */
+/**
+ * The rehydration blob's itemStruct, or null. Shared by the parsers above.
+ *
+ * Two envelopes hold the same object, and which one arrives is a fact about the
+ * User-Agent rather than about the post. A desktop browser gets
+ * `webapp.video-detail`; a phone gets the reflow page, which puts the identical
+ * itemStruct under `webapp.reflow.video.detail`. The second one matters because
+ * the HTML a phone posts to /api/ingest is the phone's page, not ours — measured
+ * 2026-09-05 against a live photo post, an iPhone UA is the only way a GET of a
+ * `/photo/` URL comes back carrying anything at all.
+ */
 function ttItemStruct(html: string): any {
   const m = html.match(/<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__"[^>]*>([\s\S]*?)<\/script>/);
   if (!m) return null;
   try {
-    return JSON.parse(m[1])?.__DEFAULT_SCOPE__?.["webapp.video-detail"]?.itemInfo?.itemStruct ?? null;
+    const scope = JSON.parse(m[1])?.__DEFAULT_SCOPE__ ?? {};
+    return scope["webapp.video-detail"]?.itemInfo?.itemStruct ??
+      scope["webapp.reflow.video.detail"]?.itemInfo?.itemStruct ?? null;
   } catch { return null; }
 }
 
@@ -3182,6 +3432,41 @@ async function mediaVideo(
 }
 
 /**
+ * Where a user's own upload is, as a MediaSource — the shape the video reader
+ * already takes, so watching a file somebody uploaded and watching a TikTok are
+ * the same code below this line.
+ *
+ * The object is located rather than named: the request carries the shortcode
+ * (`up-<uuid>`) and the owner, and the folder listing supplies the extension.
+ * That is deliberate. A path in the request would be a caller-supplied string
+ * arriving at a service-role storage call, and this route — behind the worker
+ * secret though it is — has no need of one.
+ */
+async function uploadMediaSource(shortcode: string, userId: string | null): Promise<MediaSource | null> {
+  const id = shortcode.replace(/^up-/, "");
+  if (!userId || !UUID_RE.test(userId) || !UUID_RE.test(id)) {
+    console.error("media: refusing to read upload", shortcode, "— not an owned uuid");
+    return null;
+  }
+  const rows = await listUploads(`${userId}/`, 100, false, id);
+  const hit = rows.find((o) => o.id !== null && o.name.startsWith(id + "."));
+  const ref = hit ? parseUploadPath(`${userId}/${hit.name}`, userId) : null;
+  if (!ref) {
+    console.error("media: no object in the bucket for", shortcode);
+    return null;
+  }
+  // No cookies and no Referer: this is our own bucket, and the signed URL is the
+  // whole credential. It expires in a quarter of an hour, which comfortably
+  // outlives one upload to the Files API.
+  return {
+    urls: [{ field: "upload", url: await signUpload(ref.path), kind: "video" }],
+    headers: {},
+    soundIsVideo: false,
+    seconds: null,
+  };
+}
+
+/**
  * The media isolate. Same shared secret and the same reason as /api/worker/vision:
  * this is where a multi-megabyte stream and a two-minute model call live, and when
  * one of them kills the isolate it must take nothing else with it.
@@ -3196,6 +3481,24 @@ async function handleMediaTick(req: Request): Promise<Response> {
   if (!body?.url || !body?.shortcode || !body?.platform) {
     return json({ status: "error", tier, media_source: null, detail: "incomplete request" }, 400);
   }
+  // An upload has no link to match and no provider media(): its bytes are in our
+  // own private bucket rather than on a platform's CDN. The isolate finds the
+  // object from the same shortcode every other part of the job uses and signs it
+  // here, so no caller-supplied path ever reaches a service-role storage call —
+  // and the transcript tier is refused, because Groq's retries and Groq's billing
+  // live in uploadMeta, where the file still exists.
+  if (body.platform === "upload") {
+    if (tier !== "video") {
+      return json({ status: "ok", tier, media_source: null, detail: "the worker transcribes uploads itself" }, 200);
+    }
+    const src = await uploadMediaSource(body.shortcode, body.user_id ?? null);
+    if (!src) return json({ status: "ok", tier, media_source: null, detail: "no object to read" }, 200);
+    return json(
+      await mediaVideo(src, body.shortcode, { purpose: "video", userId: body.user_id ?? null }, body.caption ?? null),
+      200,
+    );
+  }
+
   const provider = providerFor(body.platform);
   if (!provider.media) {
     return json({ status: "ok", tier, media_source: null, detail: "provider has no media" }, 200);
@@ -4466,14 +4769,18 @@ async function buildCard(
   let card = await extractCard(meta, p.platform, ctx);
   const heuristicCount = countExercises(heuristicCard(meta, p.platform, "x"));
 
-  // Instagram carousels often put the written plan on a later slide — read it only
-  // when the caption produced nothing, since vision burns the scarcest quota.
+  // Carousels put the written plan on the pictures — an Instagram carousel, a
+  // TikTok photo post, and whatever names slides next. The gate is the slides
+  // themselves rather than the platform: a provider that could not name any never
+  // reaches this, and one that did has the same thing to read whoever served it.
+  // Read only when the caption produced nothing, since vision burns the scarcest
+  // quota.
   //
   // One slide per sub-request, and the parent checkpoints between them. A carousel
   // that kills an isolate now costs one slide of progress rather than the job, and
   // a job that dies here resumes at the slide it had reached rather than paying for
   // the earlier ones again.
-  if (!card.has_full_workout && p.platform === "instagram" && meta.images?.length) {
+  if (!card.has_full_workout && meta.images?.length) {
     const slides = meta.images.slice(0, visionLimit("max_slides", 3));
     for (let i = startSlide; i < slides.length; i++) {
       const fromImage = await runVisionRemote(slides[i], i, card, ctx);
@@ -5520,9 +5827,12 @@ async function failJob(job: Job, err: unknown): Promise<void> {
       // generic line, because "TypeError: undefined is not an object" on a card is
       // worse than no explanation at all.
       const said = err instanceof SoftFailure ? err.userMessage : null;
+      // "video" is wrong for a swipe-right photo post, and a user told the wrong
+      // noun reasonably concludes Spotter did not understand what they sent.
+      const noun = job.kind === "photo" ? "photo post" : "video";
       await dbPatchMany("workouts", `ingest_job_id=eq.${job.id}&ingest_status=eq.processing`, {
         ingest_status: "failed",
-        ingest_error: said ?? "Spotter could not read this video. Tap ↻ to try again.",
+        ingest_error: said ?? `Spotter could not read this ${noun}. Tap ↻ to try again.`,
       });
     }
   } catch (e) {
@@ -5613,6 +5923,13 @@ async function escalateToMedia(
     if (m[1] === "video") done.add("video");
   }
   if (!providerFor(p.platform).media) return { card, meta, ran };
+  // A photo post has no video in it. tiktokMedia would fetch the watch page a
+  // second time and log "named no media", and the slides — which is where the
+  // workout is — were already read by vision above. Nothing to escalate to.
+  if (p.kind === "photo" || meta.images?.length) {
+    console.log("media: skipping", p.shortcode, "— a photo post has slides, not a video");
+    return { card, meta, ran };
+  }
   if (!cardIsThin(card)) return { card, meta, ran };
 
   for (const tier of ["transcript", "video"] as MediaTier[]) {
@@ -5829,8 +6146,11 @@ async function runJob(job: Job): Promise<void> {
   // empty upload card is a row that can only disappoint. Fail it instead, with a
   // sentence that points at the one thing that still works.
   if (!cacheable && !card.blocks.length) {
+    // "what was said" was true when Groq was the only reader. An mp4 is watched
+    // now, so the sentence has to cover a video whose workout was neither spoken
+    // nor on the screen — and it must stay true of an mp3, which is only heard.
     throw new SoftFailure(
-      "Spotter could not make out a workout in what was said in that video. " +
+      "Spotter read that file and could not make out a workout in it. " +
       "Paste the workout text instead.",
       "upload produced no exercises",
     );

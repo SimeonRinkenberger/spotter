@@ -1060,13 +1060,21 @@ export const APP = String.raw`
     upload: {
       kick: "Listening", glyph: "ear", line: "Listening to the video…",
       head: "Still listening to this one",
-      body: "Spotter is transcribing what the creator says, then pulling the workout out of it. " +
+      body: "Spotter is listening to your file and pulling the workout out of what is said. " +
         "The card fills in here as soon as it lands — you can close this and carry on."
+    },
+    // An upload is watched AND heard in one pass, which neither line above says.
+    upwatch: {
+      kick: "Watching", glyph: "eye", line: "Watching the video…",
+      head: "Still watching this one",
+      body: "Spotter is watching your video and listening at once, so it reads the screen as " +
+        "well as what is said. The card fills in as soon as it lands."
     }
   };
 
   function stageOf(w) {
-    if (isUpload(w)) return STAGES.upload;
+    // An upload names the reader that is running. Audio is only ever heard.
+    if (isUpload(w)) return w.media_stage === "watching" ? STAGES.upwatch : STAGES.upload;
     if (w.media_stage === "watching") return STAGES.watching;
     if (w.media_stage === "listening") return STAGES.listening;
     return STAGES.reading;
@@ -1498,7 +1506,7 @@ export const APP = String.raw`
 
   function cardMeta(w) {
     if (isPending(w)) return stageOf(w).line;
-    if (isFailed(w)) return isUpload(w) ? "Could not hear it — tap to see why" : "Could not read it — tap to retry";
+    if (isFailed(w)) return isUpload(w) ? "No workout in it — tap to see why" : "Could not read it — tap to retry";
     var bits = [];
     var n = exerciseNames(w).length;
     if (n) bits.push(n + (n === 1 ? " exercise" : " exercises"));
@@ -1908,14 +1916,14 @@ export const APP = String.raw`
       var note = el("div", "sect");
       note.appendChild(el("h3", null, isPending(w)
         ? stage.head
-        : (isUp ? "Could not hear a workout in this one" : "Could not read this one")));
+        : (isUp ? "Could not find a workout in this one" : "Could not read this one")));
       note.appendChild(el("div", "capbox", isPending(w)
         ? stage.body
         : (w.ingest_error || (isUp
           ? "Spotter could not make out a workout in that file."
           : "Spotter could not get anything back from this link.")) +
           (isUp
-            ? " The file itself is already deleted — Spotter keeps uploads only long enough to listen to them."
+            ? " The file itself is already deleted — Spotter keeps uploads only long enough to read them."
             : " The link is saved either way, so nothing is lost.")));
       d.appendChild(note);
 
@@ -2311,7 +2319,7 @@ export const APP = String.raw`
     capFor = w;
     $("capinput").value = "";
     $("caplede").textContent = isUpload(w)
-      ? "Type or paste the workout as the video says it. Spotter builds the card from your text — the file itself is already gone."
+      ? "Type or paste the workout the video shows. Spotter builds the card from your text — the file itself is already gone."
       : isFailed(w)
       ? "Copy the workout text off the post and paste it here. Spotter reads what you paste instead of trying the video again."
       : "Copy the workout text off the post and paste it here. Spotter rebuilds the card from your text.";
@@ -8129,8 +8137,11 @@ export const APP = String.raw`
    * The row the user sees the instant a save is accepted, before the worker has
    * put anything in it. Shared by the link path and the upload path so both land
    * in the library the same way and Realtime fills either one in.
+   *
+   * The stage argument is the upload path's optimistic media_stage — the file's
+   * extension already says which verb is true, so the first frame can use it.
    */
-  function placePending(r, url, platform) {
+  function placePending(r, url, platform, stage) {
     var known = false;
     for (var i = 0; i < state.workouts.length; i++) {
       if (state.workouts[i].id === r.id) { known = true; break; }
@@ -8138,7 +8149,8 @@ export const APP = String.raw`
     if (!known) {
       state.workouts.unshift({
         id: r.id, url: url, platform: platform || null,
-        title: r.title || (platform === "upload" ? "Listening to the video…" : "Reading the video…"),
+        title: r.title || (platform === "upload" ? "Reading your video…" : "Reading the video…"),
+        media_stage: stage || null,
         ingest_status: "processing", category: "Other",
         blocks: [], muscle_groups: [], equipment: [], tags: [],
         has_full_workout: false, favorite: false,
@@ -8291,11 +8303,11 @@ export const APP = String.raw`
     doAdd(true);
   }
 
-  // ---------- upload a video you saved ----------
+  // ---------- upload a video from your phone ----------
   //
-  // The bottom of the ingest ladder, for the creator who says the workout out loud
-  // and writes nothing down. There is no caption anywhere to fetch, so the user
-  // hands over the video they already saved and Spotter listens to it.
+  // The bottom of the ingest ladder, for the video that lives only on the phone.
+  // No caption to fetch, so the user hands over the file and the server watches
+  // it as well as listening — which is why the copy now says both.
   //
   // The bytes go from this device straight into the user's own folder of the
   // private uploads bucket, under the storage policies. They never pass through
@@ -8314,6 +8326,9 @@ export const APP = String.raw`
     m4a: "audio/mp4", mp3: "audio/mpeg", wav: "audio/wav", weba: "audio/webm"
   };
   var UPLOAD_KINDS = "MP4, MOV, M4A, MP3, WAV or WebM";
+  // Which of those have pictures in them — the server's UPLOAD_VIDEO_EXTS, kept in
+  // step — so the progress line can say the true verb.
+  var UPLOAD_WATCHED = { mp4: 1, m4v: 1, mov: 1, webm: 1 };
   var uploading = false;
 
   function uuid() {
@@ -8390,7 +8405,7 @@ export const APP = String.raw`
     var dot = name.lastIndexOf(".");
     var ext = dot > 0 ? name.slice(dot + 1).toLowerCase() : "";
     if (!UPLOAD_TYPES[ext]) {
-      upError("Spotter cannot listen to a ." + (ext || "?") + " file. Send " + UPLOAD_KINDS + ".");
+      upError("Spotter cannot read a ." + (ext || "?") + " file. Send " + UPLOAD_KINDS + ".");
       $("addfile").value = "";
       return;
     }
@@ -8409,10 +8424,11 @@ export const APP = String.raw`
     var path = state.user.id + "/" + uuid() + "." + ext;
     upProgress(0, "Uploading… 0%");
 
+    var watched = !!UPLOAD_WATCHED[ext];
     putObject(file, path, UPLOAD_TYPES[ext]).then(function () {
-      // The bytes have landed. What happens next is a different kind of waiting —
-      // somebody else's machine listening — so it gets a different word.
-      upProgress(1, "Uploaded — Spotter is listening…");
+      // The bytes have landed, and somebody else's machine reading them is a
+      // different wait — so it gets its own verb, and the true one for this file.
+      upProgress(1, watched ? "Uploaded — Spotter is watching it…" : "Uploaded — Spotter is listening…");
       return api("ingest", {
         method: "POST",
         body: JSON.stringify({ upload_path: path, filename: name.slice(0, 160) })
@@ -8421,8 +8437,8 @@ export const APP = String.raw`
       if (r.status === "processing") {
         closeSheet("addsheet");
         resetUpload();
-        placePending(r, "", "upload");
-        toast(withShelf("Uploaded — listening to the video…"), 3400);
+        placePending(r, "", "upload", watched ? "watching" : "listening");
+        toast(withShelf(watched ? "Uploaded — watching the video…" : "Uploaded — listening to it…"), 3400);
         return;
       }
       if (r.status === "exists") {

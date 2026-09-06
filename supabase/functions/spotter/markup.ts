@@ -279,16 +279,16 @@ export const MARKUP_BODY = String.raw`</head>
   <div class="field"><input id="addurl" type="url" placeholder="https://..." autocapitalize="off" autocomplete="off" spellcheck="false"></div>
   <button class="btn" id="addgo">Save workout</button>
 
-  <!-- The last rung of the ingest ladder, and deliberately the quiet one: pasting a
-       link is the everyday path, and this is for the video nobody wrote a caption
-       for. The size limit is stated here rather than only in the error, so being
-       told the file is too big confirms a rule the user already read. -->
+  <!-- The last rung of the ingest ladder, and deliberately the quiet one: pasting
+       a link is the everyday path, this is for the video that lives only on the
+       phone. It says "watches" because that is what changed, and the size limit
+       is stated here rather than only in the error. -->
   <div class="upblock">
     <button class="uploadrow" id="uploadrow" type="button">
       <span class="upmark" aria-hidden="true"><svg class="ic"><use href="#i-upload"></use></svg></span>
       <span class="uptext">
-        <b>Upload a video you saved</b>
-        <small>For creators who say the workout instead of writing it. MP4, M4A, MP3, WAV or WebM, up to 25 MB.</small>
+        <b>Upload a video from your phone</b>
+        <small>Spotter watches and listens to it, so it works when nothing is written down. MP4, MOV, M4A, MP3, WAV or WebM, up to 25 MB.</small>
       </span>
     </button>
     <input id="addfile" type="file" accept="video/*,audio/*" hidden>
