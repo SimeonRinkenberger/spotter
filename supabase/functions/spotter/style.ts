@@ -1629,6 +1629,15 @@ export const STYLE = String.raw`<style>
   @keyframes typedot { 0%, 65%, 100% { opacity: .3; } 30% { opacity: 1; } }
   .msgin { animation: msgin var(--t-3) var(--e-out); }
   @keyframes msgin { from { opacity: 0; transform: translateY(9px); } }
+  /* What the coach is doing while a tool runs; it gives way to the words. */
+  .msgstatus { font-size: 12.5px; color: var(--ink-2); line-height: 1.4; padding: 2px 4px;
+    animation: msgin var(--t-2) var(--e-out); }
+  /* Without a caret a paused stream and a finished one look the same. Opacity
+     only, so it costs the compositor nothing while words are arriving. */
+  .msg.pumpy.live::after { content: ""; display: inline-block; width: 7px; height: 14px;
+    margin-left: 2px; vertical-align: -2px; border-radius: 2px; background: var(--ember);
+    animation: caret 1.05s var(--e-soft) infinite; }
+  @keyframes caret { 0%, 45% { opacity: 1; } 55%, 100% { opacity: .18; } }
   .proposal { background: var(--card); border: 1.5px solid var(--ember); border-radius: 18px; padding: 14px 16px 12px;
     box-shadow: var(--sh-md); }
   .proposal h4 { font-family: var(--display); font-size: 12.5px; font-weight: 700;
@@ -1671,10 +1680,40 @@ export const STYLE = String.raw`<style>
   .composer .addbtn { width: 44px; height: 44px; border-radius: 15px; font-size: 20px; }
   .composer .addbtn[disabled] { opacity: .4; box-shadow: none; }
   .pumpycredits { font-size: 11.5px; color: var(--muted); margin: 0 0 7px 6px; line-height: 1.4; }
-  .pumpyctx { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-2); margin: 0 0 8px 6px; }
-  .pumpyctx b { color: var(--ink); font-weight: 650; }
-  .pumpyctx button { border: none; background: var(--sand); color: var(--muted); border-radius: 999px;
-    width: 22px; height: 22px; font-size: 14px; line-height: 1; }
+  /* Six of these wrap rather than run off the phone. Half a row each, so six is
+     three rows and not six: at full width one long title per line turned the
+     composer into a third of the screen. The cap is the backstop for a phone
+     with larger text, and it scrolls rather than pushing the box off-screen. */
+  .pumpyctx { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12px;
+    color: var(--ink-2); margin: 0 0 8px 2px; max-height: 118px; overflow-y: auto;
+    /* A wrapped flex box counts the gap after its last row as overflow, so three
+       rows that fit are still six scrollable pixels. Hidden the way every other
+       strip in here hides one, rather than let a bar sit beside two chips. */
+    scrollbar-width: none; }
+  .pumpyctx::-webkit-scrollbar { display: none; }
+  .refchip { display: inline-flex; align-items: center; gap: 5px; max-width: calc(50% - 5px);
+    background: var(--sand); border-radius: 999px; padding: 5px 5px 5px 11px; }
+  .refchip b { color: var(--ink); font-weight: 650; min-width: 0; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  .pumpyctx button { border: none; background: var(--line); color: var(--ink-2); border-radius: 999px;
+    width: 22px; height: 22px; font-size: 14px; line-height: 1; flex: 0 0 auto; }
+  .pumpyctx button .ic { width: 12px; height: 12px; }
+  /* 22px of ink, 44px of finger — the shared rule below gives every small button
+     34px, and a chip that will not let go of a workout is worse than a wide one. */
+  .pumpyctx .refchip button::after { inset: -11px; }
+  .refchip.in { animation: chipin var(--t-2) var(--e-out); }
+  .refchip.gone { animation: chipout var(--t-2) var(--e-in) forwards; }
+  @keyframes chipin { from { opacity: 0; transform: scale(.86); } }
+  @keyframes chipout { to { opacity: 0; transform: scale(.86); } }
+  /* #picksheet's list with a state: a check mark that stays, per the HIG. */
+  .pickrow .ck { width: 20px; flex: 0 0 auto; color: var(--ember); opacity: 0;
+    transition: opacity var(--t-1) var(--e-out); }
+  .pickrow .ck .ic { width: 18px; height: 18px; display: block; }
+  .pickrow.on .ck { opacity: 1; }
+  .pickrow.on .pt b { color: var(--ember-ink); }
+  .pickrow[disabled] { opacity: .42; }
+  #reflist { max-height: 46vh; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  #refsheet .newcol { margin: 0 0 8px; }
   .askpumpy { width: 100%; display: flex; align-items: center; justify-content: center; gap: 9px;
     border: 1px solid var(--line); border-radius: 16px; background: var(--card); color: var(--ink);
     padding: 12px; font-size: 14px; font-weight: 650; margin: -8px 0 22px; box-shadow: var(--sh-sm);
@@ -1819,8 +1858,13 @@ export const STYLE = String.raw`<style>
     .setpill.just, .setpill.just.pr,
     .empty .big, .thumbwrap.pending .noimg, .thumbwrap.failed .noimg,
     .thumbwrap.loading::after, .thumbwrap.pending::after { animation: none; }
-    /* The dots stop but stay: they are the only thing saying an answer is coming. */
+    /* The dots stop but stay: they are the only thing saying an answer is coming.
+       The caret stays for the same reason — it says the words are not finished. */
     .msg.typing i { animation: none; opacity: .6; }
+    .msg.pumpy.live::after { animation: none; opacity: .55; }
+    .msgstatus, .refchip.in { animation-name: fadeonly; animation-duration: var(--t-2); }
+    /* The chip still has to leave before the row behind it moves: fade, no travel. */
+    .refchip.gone { animation-name: fadeout; animation-duration: var(--t-1); }
     .thumbwrap img { transition: none; }
     #ptr.back { transition-duration: var(--t-1); }
   }

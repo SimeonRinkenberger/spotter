@@ -208,6 +208,7 @@ export const MARKUP_BODY = String.raw`</head>
           <div class="pumpyctx hide" id="pumpyctx"></div>
           <div class="pumpycredits hide" id="pumpycredits"></div>
           <div class="composerrow">
+            <button class="addbtn ghost" id="pumpyplus" aria-label="Pick workouts to work on"><svg class="ic"><use href="#i-plus"></use></svg></button>
             <textarea id="pumpyinput" rows="1" placeholder="Ask Pumpy…" autocapitalize="sentences"></textarea>
             <button class="addbtn" id="pumpysend" aria-label="Send"><svg class="ic"><use href="#i-arrow-up"></use></svg></button>
           </div>
@@ -410,6 +411,17 @@ export const MARKUP_BODY = String.raw`</head>
     <h3>Jump to</h3>
     <div class="picklist" id="jumplist"></div>
   </div>
+</div></div>
+
+<div class="sheet" id="refsheet"><div class="sheetbody">
+  <div class="grabber"></div>
+  <h2>Work on these together</h2>
+  <p class="lede">Pumpy knows all your workouts by name — pick the ones you’re thinking about and work on them together.</p>
+  <div class="newcol">
+    <input class="nm" id="refsearch" type="search" placeholder="Search your workouts" autocapitalize="off" autocomplete="off" aria-label="Search your workouts">
+  </div>
+  <div class="picklist" id="reflist"></div>
+  <div class="btnrow"><button class="btn" id="refdone">Done</button></div>
 </div></div>
 
 <div class="sheet" id="daysheet"><div class="sheetbody">
