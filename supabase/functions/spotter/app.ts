@@ -256,14 +256,13 @@ export const APP = String.raw`
     return p;
   }
 
-  // The same call, read as it arrives. The server answers NDJSON — one JSON
-  // object per line, the last of them exactly the body api() would have handed
-  // back — so onEvent always ends with a t:"final" carrying today's answer, and
-  // a reply that is not a stream (a refusal at the cap, a function not yet
-  // redeployed) is parsed whole and delivered as that one event. Callers get one
-  // path either way. The flag rides in the BODY, never a header: a new header
-  // would move the CORS preflight allowlist, and every page already in a pocket
-  // would fail against the function until it caught up.
+  // The same call, read as it arrives. NDJSON, one object per line, the last of
+  // them exactly the body api() would have returned — so onEvent always ends
+  // with a t:"final", and a reply that is NOT a stream (a refusal at the cap, a
+  // function not yet redeployed) is parsed whole and delivered as that one
+  // event. Callers get one path either way. The flag rides in the BODY: a new
+  // header would move the CORS preflight allowlist, and every page already in a
+  // pocket would fail against the function until it caught up.
   function apiStream(path, body, onEvent) {
     body.stream = true;
     return sb.auth.getSession().then(function (s) {
@@ -6766,11 +6765,10 @@ export const APP = String.raw`
 
   // ---------- Pumpy · the workouts a turn is about ----------
   //
-  // The coach has always known the library by title, but reading one cost it a
-  // tool call — so people described their own workouts back to it. The + at the
-  // head of the composer names up to six and sends them written out in full.
-  // ChatGPT's attach affordance, and its removable chips above the box, which
-  // are the only way to see before you send what the answer will be about.
+  // The coach knows the library by title, but READING one cost it a tool call,
+  // so people described their own workouts back to it. The + names up to six and
+  // sends them written out in full. ChatGPT's attach affordance, and its chips
+  // above the box: the only way to see, before sending, what the answer is about.
 
   var ctxSeen = {};   // chips already on screen, so only new ones fly in
 
@@ -6857,11 +6855,10 @@ export const APP = String.raw`
   // ---------- Pumpy · the answer as it is written ----------
   //
   // Two rules, both about the reader. Follow the bottom only while the reader is
-  // already there — use-stick-to-bottom, the library bolt.new uses, calls it
-  // seventy pixels — so anyone who scrolled up to re-read is never yanked back
-  // mid-sentence. And write INTO the bubble: renderPumpy() rebuilds the whole
-  // log, so running it per token would throw the DOM away several times a
-  // second, and one appended text node is what Chrome's guidance asks for.
+  // already there — use-stick-to-bottom calls it seventy pixels — so anyone who
+  // scrolled up to re-read is never yanked back mid-sentence. And write INTO the
+  // bubble: renderPumpy() rebuilds the whole log, and running that per token
+  // would throw the DOM away several times a second.
 
   function pumpyFollow() { var p = $("pumpyview"); if (pumpy.stick) p.scrollTop = p.scrollHeight; }
 

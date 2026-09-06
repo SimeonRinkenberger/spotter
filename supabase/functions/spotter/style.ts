@@ -1600,7 +1600,12 @@ export const STYLE = String.raw`<style>
      composer into a third of the screen. The cap is the backstop for a phone
      with larger text, and it scrolls rather than pushing the box off-screen. */
   .pumpyctx { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12px;
-    color: var(--ink-2); margin: 0 0 8px 2px; max-height: 118px; overflow-y: auto; }
+    color: var(--ink-2); margin: 0 0 8px 2px; max-height: 118px; overflow-y: auto;
+    /* A wrapped flex box counts the gap after its last row as overflow, so three
+       rows that fit are still six scrollable pixels. Hidden the way every other
+       strip in here hides one, rather than let a bar sit beside two chips. */
+    scrollbar-width: none; }
+  .pumpyctx::-webkit-scrollbar { display: none; }
   .refchip { display: inline-flex; align-items: center; gap: 5px; max-width: calc(50% - 5px);
     background: var(--sand); border-radius: 999px; padding: 5px 5px 5px 11px; }
   .refchip b { color: var(--ink); font-weight: 650; min-width: 0; overflow: hidden;
