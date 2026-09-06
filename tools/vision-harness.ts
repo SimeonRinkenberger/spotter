@@ -873,6 +873,49 @@ async function checkpoints(slides: unknown[], images: number): Promise<Array<[nu
 // slow, and the 90s budget ran out at slide seven. Four of seven exercises got
 // their reps.
 
+// The live run of 02:43-02:45, replayed against the fix. Nine slides, a caption
+// with seven movements and no reps, the rep table spread down the middle of the
+// carousel, and the same two slides running out of stopwatch that ran out on the
+// day. Before: four of seven exercises got their reps. This is the number the
+// senior session should see in the live logs.
+{
+  function slideOf(...exs: Ex[]) {
+    return card([block(exs)], { extracted_by: "vision:gemini-harness" });
+  }
+  const nine = [
+    null,                                                                   // the cover
+    slideOf(ex("Goblet Squat", { reps: "12" }), ex("Romanian Deadlift", { reps: "10" })),
+    slideOf(ex("Walking Lunge", { reps: "10 each side" })),
+    slideOf(ex("Leg Press", { reps: "12" })),
+    slideOf(ex("Calf Raise", { reps: "15" })),
+    slideOf(ex("Leg Curl", { reps: "12" })),
+    slideOf(ex("Plank", { duration_seconds: 45 })),
+    null,                                                                   // a photo of a person
+    slideOf(ex("Hip Thrust", { sets: 3, reps: "12" })),                     // the caption never had it
+  ];
+  const r = await run(dosed0, nine, 9, 0, "photo", { delayMs: 3, slow: [1, 5] });
+  eq("every slide is read, and the two that ran out of stopwatch are read again",
+    r.asked, [0, 1, 2, 3, 4, 5, 6, 7, 8, 1, 5]);
+  for (let i = 0; i < 9; i++) {
+    check("slide " + i + " still writes a line of its own",
+      r.logs.some((l) => l.startsWith("vision: slide " + i + " →")),
+      r.logs.filter((l) => l.startsWith("vision: slide")).join(" | "));
+  }
+  eq("all seven of the caption's movements end up dosed", M.doseGap(r.card).missing, 0);
+  check("which is the number the live logs must show: doses filled 7, not 4",
+    r.logs.some((l) => l.startsWith("vision: merged → exercises 7/8, doses filled 7, matched 7")),
+    r.logs.filter((l) => l.startsWith("vision: merged")).join(" | "));
+  check("and the tail of that line accounts for every read",
+    r.logs.some((l) => l.includes("— 9 read, 2 timed out, 2 retried, 0 abandoned")),
+    r.logs.filter((l) => l.startsWith("vision: merged")).join(" | "));
+  eq("the reps landed on the caption's own rows, in the caption's own order",
+    doses(r.card), [
+      "Goblet Squat: 3x12", "Romanian Deadlift: 3x10", "Walking Lunge: 3x10 each side",
+      "Leg Press: 4x12", "Calf Raise: 4x15", "Leg Curl: 3x12", "Plank: 3x45",
+      "Hip Thrust: 3x12",
+    ]);
+}
+
 // Three at a time, and never four. The peak is counted inside the mocked
 // sub-request, so it is outstanding SUB-REQUESTS being measured, which is the
 // thing the concurrency bound is about.
