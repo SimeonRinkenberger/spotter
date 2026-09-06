@@ -190,7 +190,7 @@ const NAMES = [
   "cleanLine", "cleanTitle", "intOrNull", "pickFrom", "parseJsonLoose",
   "splitDose", "normalizeExercise", "normalizeCard",
   // the pass itself
-  "countExercises", "hasDose", "doseGap", "slidesWouldHelp",
+  "countExercises", "hasDose", "doseGap", "picturesAreAPage", "slidesWouldHelp",
   "nameKey", "fillEmptyDose", "mergeSlideCard",
   "visionCard", "runVisionRemote", "buildCard",
 ];
@@ -231,7 +231,8 @@ type Lifted = {
   visionLimit(key: string, dflt: number): number;
   hasDose(ex: Partial<Ex>): boolean;
   doseGap(card: Crd): Gap;
-  slidesWouldHelp(card: Crd): boolean;
+  picturesAreAPage(meta: { images?: string[] }, p: { kind: string }): boolean;
+  slidesWouldHelp(card: Crd, pictureIsAPage: boolean): boolean;
   nameKey(name: string): string;
   countExercises(card: Crd): number;
   mergeSlideCard(card: Crd, slide: Crd): Merge;
@@ -303,7 +304,7 @@ function doses(c: Crd): string[] {
 
 const noWorkout = card([]);
 check("a caption that produced nothing still sends the slides to be read",
-  M.slidesWouldHelp(noWorkout) === true);
+  M.slidesWouldHelp(noWorkout, true) === true);
 
 // 0% dosed — the owner's card, in miniature. Seven names, seven sets, no reps.
 const dosed0 = card([block([
@@ -314,7 +315,7 @@ const dosed0 = card([block([
 ])], { extracted_by: "openai:gpt-harness" });
 eq("the owner's card reads as 0% dosed", M.doseGap(dosed0).missing, 7);
 check("a card with sets and no reps at all is read off the slides",
-  M.slidesWouldHelp(dosed0) === true);
+  M.slidesWouldHelp(dosed0, true) === true);
 
 // 30% dosed — seven of ten missing. Well over the third.
 const dosed30 = card([block([
@@ -322,7 +323,7 @@ const dosed30 = card([block([
   ex("D"), ex("E"), ex("F"), ex("G"), ex("H"), ex("I"), ex("J"),
 ])]);
 eq("a 30% dosed card has seven gaps of ten", [M.doseGap(dosed30).total, M.doseGap(dosed30).missing], [10, 7]);
-check("a 30% dosed card is read off the slides", M.slidesWouldHelp(dosed30) === true);
+check("a 30% dosed card is read off the slides", M.slidesWouldHelp(dosed30, true) === true);
 
 // 100% dosed — the case that must NOT spend a vision call.
 const dosed100 = card([block([
@@ -330,31 +331,49 @@ const dosed100 = card([block([
   ex("C", { duration_seconds: 45 }), ex("D", { reps: "AMRAP" }),
 ])]);
 eq("a fully dosed card has no gap", M.doseGap(dosed100).missing, 0);
-check("a fully dosed card never reaches the vision tier", M.slidesWouldHelp(dosed100) === false);
+check("a fully dosed card never reaches the vision tier", M.slidesWouldHelp(dosed100, true) === false);
 
 // Exactly on the boundary, from both sides.
 const oneOfThree = card([block([
   ex("A", { reps: "10" }), ex("B", { reps: "10" }), ex("C"),
 ])]);
 check("one missing dose in three is a hold or a stretch, not a pattern",
-  M.slidesWouldHelp(oneOfThree) === false, "share is 1/3 but only one exercise is bare");
+  M.slidesWouldHelp(oneOfThree, true) === false, "share is 1/3 but only one exercise is bare");
 const twoOfSix = card([block([
   ex("A", { reps: "10" }), ex("B", { reps: "10" }), ex("C", { reps: "10" }),
   ex("D", { reps: "10" }), ex("E"), ex("F"),
 ])]);
 check("two missing in six is a third, and is read",
-  M.slidesWouldHelp(twoOfSix) === true);
+  M.slidesWouldHelp(twoOfSix, true) === true);
 const twoOfTwenty = card([block([
   ...Array.from({ length: 18 }, (_, i) => ex("Dosed " + i, { reps: "10" })),
   ex("Bare A"), ex("Bare B"),
 ])]);
 check("two missing in twenty is below the share and is left alone",
-  M.slidesWouldHelp(twoOfTwenty) === false);
+  M.slidesWouldHelp(twoOfTwenty, true) === false);
 
 // A time counts as a dose; sets on their own never do — three sets of what?
-check("a timed movement is dosed", M.hasDose({ reps: null, duration_seconds: 40 } as never) === true);
-check("sets alone is not a dose", M.hasDose({ reps: null, duration_seconds: null, sets: 4 } as never) === false);
-check("an empty reps string is not a dose", M.hasDose({ reps: "  ", duration_seconds: null } as never) === false);
+check("a timed movement is dosed", M.hasDose({ reps: null, duration_seconds: 40 }) === true);
+check("sets alone is not a dose", M.hasDose({ reps: null, duration_seconds: null, sets: 4 }) === false);
+check("an empty reps string is not a dose", M.hasDose({ reps: "  ", duration_seconds: null }) === false);
+
+// Which pictures the dose question may be asked about. This is the cost control,
+// and getting it wrong is expensive in one direction and useless in the other:
+// igMeta files a reel's COVER FRAME under `images` so that a caption producing
+// nothing could still be rescued by reading it, and reels are most of what
+// Spotter saves. A frame of somebody mid-rep has never held a rep table.
+const oneImage = { images: ["https://cdn/cover.jpg"] };
+const manyImages = { images: ["https://cdn/a.jpg", "https://cdn/b.jpg"] };
+check("a reel's single cover frame is not a page", M.picturesAreAPage(oneImage, { kind: "reel" }) === false);
+check("nor is an IGTV cover", M.picturesAreAPage(oneImage, { kind: "tv" }) === false);
+check("a single-image Instagram post IS a page", M.picturesAreAPage(oneImage, { kind: "p" }) === true);
+check("so is a one-slide TikTok photo post", M.picturesAreAPage(oneImage, { kind: "photo" }) === true);
+check("more than one picture is always a page, whatever the kind said",
+  M.picturesAreAPage(manyImages, { kind: "reel" }) === true);
+check("a reel whose caption gave a workout with missing reps is left alone",
+  M.slidesWouldHelp(dosed0, false) === false);
+check("but a reel whose caption gave NOTHING is still read, as it always was",
+  M.slidesWouldHelp(noWorkout, false) === true);
 
 // ---------- 2. the merge ----------
 //
@@ -604,7 +623,9 @@ console.log = (...a: unknown[]) => { logs.push(a.map((x) => String(x)).join(" ")
 const P = { platform: "tiktok", shortcode: "tt-harness", kind: "photo", clean: "https://x/y" };
 const CTX = { purpose: "extract", userId: null };
 
-async function run(caption: unknown, slides: unknown[], images: number, startSlide = 0) {
+async function run(
+  caption: unknown, slides: unknown[], images: number, startSlide = 0, kind = "photo",
+) {
   harness.caption = caption;
   harness.slides = slides;
   harness.asked = [];
@@ -613,7 +634,7 @@ async function run(caption: unknown, slides: unknown[], images: number, startSli
     caption: "x", thumb: null, author: null,
     images: Array.from({ length: images }, (_, i) => "https://cdn/slide-" + i + ".jpg"),
   };
-  const out = await M.buildCard(meta, P, CTX, undefined, startSlide);
+  const out = await M.buildCard(meta, { ...P, kind }, CTX, undefined, startSlide);
   return { card: out, logs: logs.slice(), asked: harness.asked.slice() };
 }
 
@@ -699,6 +720,23 @@ async function run(caption: unknown, slides: unknown[], images: number, startSli
   const r = await run(card([]), [card([block([ex("Push Up", { sets: 3, reps: "20" })])])], 2);
   eq("an empty caption still reads the slides", r.asked, [0, 1]);
   eq("and the slide becomes the card", names(r.card), ["Push Up"]);
+}
+
+// The bill. An Instagram reel arrives carrying its cover frame in `images`, and
+// a reel is most of what gets saved: the dose question must not be asked of it.
+{
+  const r = await run(dosed0, [card([block([ex("Never Read", { reps: "10" })])])], 1, 0, "reel");
+  eq("a reel's cover frame is never read for a missing dose", r.asked, []);
+  eq("and the caption's card is untouched", M.countExercises(r.card), 7);
+}
+{
+  const r = await run(card([]), [card([block([ex("Push Up", { reps: "20" })])])], 1, 0, "reel");
+  eq("a reel whose caption produced nothing is still read, as it always was", r.asked, [0]);
+  eq("and the cover rescued the card", names(r.card), ["Push Up"]);
+}
+{
+  const r = await run(dosed0, [card([block([ex("Goblet Squat", { reps: "12" })])])], 1, 0, "p");
+  eq("a single-image Instagram post is a page, and is read", r.asked, [0]);
 }
 
 // A resumed job does not re-ask the question. Slides 0-2 already improved the

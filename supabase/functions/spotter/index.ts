@@ -5323,13 +5323,32 @@ const DOSE_GAP_SHARE = 1 / 3;
 const DOSE_GAP_MIN = 2;
 
 /**
+ * Whether the pictures on this post are a PAGE — something a plan can be written
+ * on — or just a cover.
+ *
+ * More than one picture is always a page: nobody publishes a carousel of cover
+ * frames. A single picture is a page only when the post is a still, and the
+ * distinction is not pedantry — `igMeta` files a reel's cover frame under
+ * `images` so that a caption which produced nothing could still be rescued by
+ * reading it. That fallback is worth keeping. Paying for a vision read of every
+ * reel cover whose caption merely skipped some reps is not: reels are most of
+ * what Spotter saves, and a frame of somebody mid-rep has never held a rep table.
+ */
+function picturesAreAPage(meta: Meta, p: Parsed): boolean {
+  if ((meta.images?.length ?? 0) > 1) return true;
+  return p.kind !== "reel" && p.kind !== "tv" && p.kind !== "video";
+}
+
+/**
  * Whether reading the slides could still improve this card.
  *
- * Keeps the old case — a caption that produced nothing at all — and adds the one
- * that cost the owner his reps.
+ * Keeps the old case — a caption that produced nothing at all, which is read off
+ * whatever picture exists, cover frame included — and adds the one that cost the
+ * owner his reps, which only a page can answer.
  */
-function slidesWouldHelp(card: Card): boolean {
+function slidesWouldHelp(card: Card, pictureIsAPage: boolean): boolean {
   if (!card.has_full_workout) return true;
+  if (!pictureIsAPage) return false;
   const g = doseGap(card);
   if (!g.total) return true;
   return g.missing >= DOSE_GAP_MIN && g.share >= DOSE_GAP_SHARE;
@@ -5514,7 +5533,7 @@ async function buildCard(
   // that kills an isolate now costs one slide of progress rather than the job, and
   // a job that dies here resumes at the slide it had reached rather than paying for
   // the earlier ones again.
-  if (meta.images?.length && (startSlide > 0 || slidesWouldHelp(card))) {
+  if (meta.images?.length && (startSlide > 0 || slidesWouldHelp(card, picturesAreAPage(meta, p)))) {
     // A carousel is read to the end. The old cap of three was written for a single
     // attached screenshot and, on the owner's nine-slide post, would have stopped
     // six slides before the rep table. Cost stays bounded — by the slide count the
