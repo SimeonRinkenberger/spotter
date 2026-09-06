@@ -1020,18 +1020,55 @@ function slideNamed(name: string) {
   delete M.runtimeCfg["vision.slides_budget_ms"];
 }
 
+// Where a RETRIED slide's own movement lands. Pinned here so it is a decision
+// rather than an accident: the retry pass runs at the end, so a movement only a
+// retried slide knew about is appended after the later slides'. The alternative —
+// holding the whole carousel back until every retry has landed — would mean a job
+// that died in the retry pass lost the batches it had already banked.
+{
+  const only1 = card([block([ex("Copenhagen Plank", { reps: "8" })])],
+    { extracted_by: "vision:gemini-harness" });
+  const only2 = card([block([ex("Face Pull", { reps: "15" })])],
+    { extracted_by: "vision:gemini-harness" });
+  const r = await run(card([]), [null, only1, only2], 3, 0, "photo", { delayMs: 4, slow: [1] });
+  eq("a retried slide merges at the end, after the slides that answered first",
+    names(r.card), ["Face Pull", "Copenhagen Plank"]);
+  eq("and nothing it carried was lost on the way", doses(r.card).sort(),
+    ["Copenhagen Plank: -x8", "Face Pull: -x15"]);
+}
+
+// The other half of the same rule as the retry gate: a BATCH is not fired into a
+// budget it cannot wait out either, because a slide is a Gemini call whether or
+// not anyone is still listening for the answer.
+{
+  M.runtimeCfg["vision.timeout_ms"] = "100";
+  M.runtimeCfg["vision.slides_budget_ms"] = "320";
+  const r = await run(dosed0, new Array(6).fill(null), 6, 0, "photo", { delayMs: 300 });
+  eq("a second batch is not fired into 20ms it could never wait out", r.asked, [0, 1, 2]);
+  check("and the loop says why it stopped",
+    r.logs.some((l) => l.startsWith("vision: out of time at slide 3 of 6")), r.logs.join(" | "));
+  check("nothing is reported as abandoned, because nothing was paid for",
+    r.logs.some((l) => l.includes("— 3 read, 0 timed out, 0 retried, 0 abandoned")),
+    r.logs.filter((l) => l.startsWith("vision: merged")).join(" | "));
+  delete M.runtimeCfg["vision.slides_budget_ms"];
+  delete M.runtimeCfg["vision.timeout_ms"];
+}
+
 // A read that answers after the budget is over. It cannot be merged: the loop has
 // moved on and the card may already be on its way back to the caller, so a late
 // merge is the one way a straggler could corrupt a card rather than merely fail to
 // improve it. This is deliberately last in the file — the abandoned sub-requests
 // are still in flight when it returns.
 {
-  M.runtimeCfg["vision.slides_budget_ms"] = "300";
+  // A ceiling of 100ms makes the "is another batch worth firing" floor 50ms, so the
+  // second batch is launched with 200ms of budget left and its reads take 300.
+  M.runtimeCfg["vision.timeout_ms"] = "100";
+  M.runtimeCfg["vision.slides_budget_ms"] = "500";
   const six = [
     slideNamed("Read A"), slideNamed("Read B"), slideNamed("Read C"),
     slideNamed("Late D"), slideNamed("Late E"), slideNamed("Late F"),
   ];
-  const r = await run(card([]), six, 6, 0, "photo", { delayMs: 200 });
+  const r = await run(card([]), six, 6, 0, "photo", { delayMs: 300 });
   eq("the first batch is never cut short by the clock — its reads have their own ceiling",
     names(r.card), ["Read A", "Read B", "Read C"]);
   eq("the second batch was launched, because the budget had not run out yet",
@@ -1045,9 +1082,10 @@ function slideNamed(name: string) {
     r.logs.some((l) => l.includes("— 3 read, 0 timed out, 0 retried, 3 abandoned")),
     r.logs.filter((l) => l.startsWith("vision: merged")).join(" | "));
   delete M.runtimeCfg["vision.slides_budget_ms"];
+  delete M.runtimeCfg["vision.timeout_ms"];
   // Let the stragglers land, and prove they changed nothing on their way out.
   const settled = JSON.stringify(r.card);
-  await new Promise((res) => setTimeout(res, 400));
+  await new Promise((res) => setTimeout(res, 500));
   eq("the late answers touched nothing when they finally arrived", JSON.stringify(r.card), settled);
 }
 

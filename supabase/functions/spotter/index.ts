@@ -5664,8 +5664,15 @@ async function buildCard(
     async function readBatch(idx: number[], retry: boolean, first: boolean): Promise<void> {
       const landed: Array<SlideRead | null> = idx.map(() => null);
       let closed = false;
+      // The catch is not decoration. Once the race below has settled on the clock,
+      // nothing is awaiting these any more — a straggler that rejected instead of
+      // resolving would be an unhandled rejection, and Deno kills the isolate for
+      // one of those. runVisionRemote swallows its own failures today; this is the
+      // promise that it will keep doing so even if it stops.
       const flights = idx.map((i, k) =>
-        runVisionRemote(slides[i], i, card, ctx).then((r) => { if (!closed) landed[k] = r; })
+        runVisionRemote(slides[i], i, card, ctx)
+          .then((r) => { if (!closed) landed[k] = r; })
+          .catch((e) => { console.error("vision: slide", i, "threw past its own catch", e); })
       );
       // The first batch is never cut short by the clock: every read in it is already
       // bounded by its own ceiling, and a budget misconfigured below that ceiling
@@ -5698,7 +5705,11 @@ async function buildCard(
     }
 
     for (let start = startSlide; start < slides.length; start += conc) {
-      if (start > startSlide && Date.now() > deadline) {
+      // Do not pay for a read there is no time left to wait for. Half a per-slide
+      // ceiling — about one measured read — is the least a batch is worth firing:
+      // below that its sub-requests would be launched and abandoned in the same
+      // breath, and a slide is a Gemini call whether or not anyone waits for it.
+      if (start > startSlide && deadline - Date.now() < perSlide / 2) {
         console.log("vision: out of time at slide", start, "of", slides.length, "— keeping what the earlier slides gave");
         break;
       }
