@@ -5789,12 +5789,10 @@ async function buildCard(
  * than aliased, so nothing below can write back into the row the caller holds.
  */
 function storedExercise(raw: any): Exercise {
+  const fields = ["canonical_id", "sets", "reps", "duration_seconds", "rest_seconds", "weight", "equipment", "notes"];
   const ex = { ...(raw ?? {}) } as Record<string, unknown>;
   ex.name = typeof ex.name === "string" ? ex.name : String(ex.name ?? "");
-  for (
-    const k of ["canonical_id", "sets", "reps", "duration_seconds", "rest_seconds",
-      "weight", "equipment", "notes"]
-  ) if (ex[k] === undefined) ex[k] = null;
+  for (const k of fields) if (ex[k] === undefined) ex[k] = null;
   return ex as unknown as Exercise;
 }
 
