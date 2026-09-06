@@ -8010,7 +8010,7 @@
   // CSS badly or leans on foreignObject, which is where WebKit breaks, and one
   // Supabase thumbnail drawn in would taint the canvas so toBlob throws.
 
-  var SC_W = 1080, SC_H = 1920, SC_PAD = 88;
+  var SC_W = 1080, SC_H = 1920, SC_CH = 1200, SC_PAD = 88;
   // Instagram covers the top ~250px with the avatar and the bottom ~250 with the
   // reply box. Nothing that has to be read leaves the strip between these two.
   var SC_TOP = 262, SC_BASE = 1580;
@@ -8020,10 +8020,12 @@
   // What the summary holds for the card: the look the poster picked, the File a
   // tap may hand straight to the sheet, and the MP4 once it has recorded itself.
   var sc = { bg: "dark", file: null, blob: null, url: null, card: null,
-    img: null, hint: null, seq: 0, watching: false,
-    vfile: null, vurl: null, vbtn: null, vseq: 0, vst: 2, vno: false };
-  try { if (localStorage.getItem("spotter_card") === "light") sc.bg = "light"; }
-  catch (e) { /* a browser with storage shut off keeps the default */ }
+    img: null, hint: null, seq: 0, watching: false, photo: null, pair: null,
+    btns: null, tip: "", vfile: null, vurl: null, vbtn: null, vseq: 0, vst: 2, vno: false };
+  try {
+    var scWas = localStorage.getItem("spotter_card");
+    if (scWas === "light" || scWas === "clear") sc.bg = scWas;
+  } catch (e) { /* a browser with storage shut off keeps the default */ }
 
   // Both palettes are declared in style.ts and both exist in both schemes: the
   // card's look is the poster's choice, not the phone's.
@@ -8133,23 +8135,44 @@
   // finished card, which is the PNG and the clip's last two seconds both.
   function scDraw(c, d, p, face, marks, t) {
     var L = SC_PAD, R = SC_W - SC_PAD, W = R - L, i, a;
+    // Clear is the overlay asset: shorter, no ground, and dropped on top of the
+    // poster's own clip in the Story editor. Photo is their own picture under the
+    // usual card — never the creator's clip frame, which is a third party's work.
+    var clear = d.bg === "clear", photo = d.bg === "photo" && marks.photo;
+    var H = clear ? SC_CH : SC_H, TOP = clear ? 64 : SC_TOP,
+      BASE = H - (clear ? 64 : SC_H - SC_BASE);
     if (t === undefined) t = 1;
-    c.fillStyle = p.bg; c.fillRect(0, 0, SC_W, SC_H);
-    // One bloom of the accent behind the numbers: a flat rectangle reads as a
-    // screenshot and nobody posts a screenshot. It is painted at a tenth size and
-    // blown up on purpose — a full-size radial gradient is two million pixels PNG
-    // cannot compress, and it measured 700KB of card on its own. Blurred, a
-    // gradient is still that gradient. In the clip it sweeps in first.
-    var sm = document.createElement("canvas"), s2;
-    sm.width = 108; sm.height = 192;
-    s2 = sm.getContext("2d");
-    var glow = s2.createRadialGradient(94, 34, 0, 94, 34, 88);
-    glow.addColorStop(0, p.ember + "4E"); glow.addColorStop(1, p.ember + "00");
-    s2.fillStyle = glow; s2.fillRect(0, 0, 108, 192);
-    a = scSeg(t, 0, 0.18);
-    c.globalAlpha = a;
-    c.drawImage(sm, 0, (a - 1) * 90, SC_W, SC_H);
-    c.globalAlpha = 1;
+    c.clearRect(0, 0, SC_W, H);
+    if (photo) {
+      // Cover-cropped, because the poster framed it; a wash and a scrim down the
+      // lower half so white text survives a bright gym.
+      var iw = marks.photo.width, ih = marks.photo.height, k = Math.max(SC_W / iw, H / ih);
+      c.drawImage(marks.photo, (SC_W - iw * k) / 2, (H - ih * k) / 2, iw * k, ih * k);
+      var sg = c.createLinearGradient(0, H * 0.4, 0, H);
+      sg.addColorStop(0, "rgba(0,0,0,0)"); sg.addColorStop(1, "rgba(0,0,0,.55)");
+      c.fillStyle = "rgba(0,0,0,.34)"; c.fillRect(0, 0, SC_W, H);
+      c.fillStyle = sg; c.fillRect(0, H * 0.4, SC_W, H * 0.6);
+    } else if (!clear) {
+      c.fillStyle = p.bg; c.fillRect(0, 0, SC_W, H);
+      // One bloom of the accent behind the numbers: a flat rectangle reads as a
+      // screenshot and nobody posts a screenshot. It is painted at a tenth size and
+      // blown up on purpose — a full-size radial gradient is two million pixels PNG
+      // cannot compress, and it measured 700KB of card on its own. Blurred, a
+      // gradient is still that gradient. In the clip it sweeps in first.
+      var sm = document.createElement("canvas"), s2;
+      sm.width = 108; sm.height = 192;
+      s2 = sm.getContext("2d");
+      var glow = s2.createRadialGradient(94, 34, 0, 94, 34, 88);
+      glow.addColorStop(0, p.ember + "4E"); glow.addColorStop(1, p.ember + "00");
+      s2.fillStyle = glow; s2.fillRect(0, 0, 108, 192);
+      a = scSeg(t, 0, 0.18);
+      c.globalAlpha = a;
+      c.drawImage(sm, 0, (a - 1) * 90, SC_W, H);
+      c.globalAlpha = 1;
+    }
+    // Over a photo, and over whatever a Story editor puts behind a transparent
+    // card, every run of text has to bring its own ground with it.
+    if (clear || photo) { c.shadowColor = "rgba(0,0,0,.55)"; c.shadowBlur = 20; }
 
     // Each row arrives a beat after the one above it while the clip runs, and in
     // the still they are all simply there. One call fades the next row in and says
@@ -8167,16 +8190,18 @@
     // page first from the muscle line, then from the row height, then from rows.
     c.textBaseline = "alphabetic";
     scSet(c, "800 92px " + face, p.ink, "left", -2.5);
-    var tl = scWrap(c, d.title, W, 3), shown = Math.min(d.prs.length, 2);
+    var tl = scWrap(c, d.title, W, clear ? 2 : 3), shown = Math.min(d.prs.length, clear ? 1 : 2);
     var headH = 118, titleH = tl.length * 104 + 34, figH = 246;
-    var prH = shown ? shown * 110 + (d.prs.length > shown ? 50 : 0) + 22 : 0;
+    var prH = shown ? shown * 110 + (!clear && d.prs.length > shown ? 50 : 0) + 22 : 0;
     var credH = d.credit ? 62 : 0;
-    var lab = d.label, rowH = 72, labH = 0, rows = 0, pass, room;
+    // An overlay has to be small or it covers the clip it is laid on, so Clear
+    // drops the date and the muscle line and keeps three rows at most.
+    var lab = clear ? "" : d.label, rowH = 72, labH = 0, rows = 0, pass, room, cap = clear ? 3 : 8;
     for (pass = 0; pass < 3; pass++) {
       labH = lab ? 46 : 0;
-      room = SC_BASE - SC_TOP - (headH + titleH + figH + prH + labH + credH) - 18;
-      rows = Math.max(0, Math.min(8, Math.floor(room / rowH)));
-      if (rows >= 6 || rows >= d.exercises.length) break;
+      room = BASE - TOP - (headH + titleH + figH + prH + labH + credH) - 18;
+      rows = Math.max(0, Math.min(cap, Math.floor(room / rowH)));
+      if (rows >= Math.min(6, cap) || rows >= d.exercises.length) break;
       if (pass === 0) lab = ""; else rowH = 64;
     }
     var list = d.exercises.slice(0), more = 0;
@@ -8185,21 +8210,25 @@
       list = list.slice(0, Math.max(0, rows - 1));
     }
     var listH = (list.length + (more ? 1 : 0)) * rowH + (list.length ? 18 : 0);
-    var y = SC_TOP + Math.max(0, Math.floor((SC_BASE - SC_TOP -
+    var y = TOP + Math.max(0, Math.floor((BASE - TOP -
       (headH + titleH + figH + prH + labH + credH + listH)) / 2));
 
     if (marks.mark) c.drawImage(marks.mark, L, y, 62, 62);
     scSet(c, "800 50px " + face, p.ink, "left", -1);
     c.fillText("Spotter", L + (marks.mark ? 80 : 0), y + 49);
-    scSet(c, "500 30px " + SC_SANS, p.dim, "right", 0);
-    c.fillText(d.date, R, y + 45);
+    if (!clear) {
+      scSet(c, "500 30px " + SC_SANS, p.dim, "right", 0);
+      c.fillText(d.date, R, y + 45);
+    }
     y += headH;
 
     scSet(c, "800 92px " + face, p.ink, "left", -2.5);
     for (i = 0; i < tl.length; i++) c.fillText(tl[i], L, y + 76 + i * 104);
     y += titleH;
 
-    c.fillStyle = p.panel;
+    // Over a photo or over nothing the panel goes translucent, so what is behind
+    // the card still reads through the one solid shape on it.
+    c.fillStyle = clear || photo ? p.panel + "C4" : p.panel;
     scRR(c, L, y, W, 216, 34); c.fill();
     c.strokeStyle = p.line; c.lineWidth = 2; c.stroke();
     var cw = W / 3;
@@ -8278,7 +8307,7 @@
     // advert does not get posted.
     scSet(c, "500 29px " + SC_SANS, p.dim, "center", 2);
     c.globalAlpha = 0.72;
-    c.fillText("Logged with Spotter", SC_W / 2, 1636);
+    c.fillText("Logged with Spotter", SC_W / 2, H - (clear ? 40 : 284));
     c.globalAlpha = 1;
   }
 
@@ -8292,7 +8321,7 @@
       card.coach ? scMark(PUMPY_MARK.replace(/^<svg[^>]*>/, "").replace(/<\/svg>$/, ""), p.dim, 40)
         : Promise.resolve(null)
     ]).then(function (r) {
-      return { p: p, face: r[0], marks: { mark: r[1], coach: r[2] } };
+      return { p: p, face: r[0], marks: { mark: r[1], coach: r[2], photo: sc.photo } };
     });
   }
 
@@ -8302,7 +8331,7 @@
       // A fixed asset, not a screen surface, so devicePixelRatio never comes into
       // it: at DPR 3 this would be 18.6M pixels, past the canvas area cap on every
       // iPhone before iOS 18, and the whole draw would come back blank.
-      cv.width = SC_W; cv.height = SC_H;
+      cv.width = SC_W; cv.height = card.bg === "clear" ? SC_CH : SC_H;
       scDraw(cv.getContext("2d"), card, a.p, a.face, a.marks, 1);
       return new Promise(function (ok, no) {
         // A tainted canvas, no toBlob, a phone out of memory: one failure, and the
@@ -8465,8 +8494,14 @@
     sc.vseq++;
     sc.vst = 2;
     sc.vno = false;
+    // The picture belonged to that session. Holding a decoded 1080-wide bitmap
+    // after the summary has gone is megabytes a phone has better uses for, and a
+    // new session must not quietly inherit someone's last gym selfie.
+    if (sc.photo && sc.photo.close) sc.photo.close();
+    if (sc.bg === "photo") sc.bg = "dark";
+    sc.photo = null;
     sc.url = sc.blob = sc.file = sc.card = sc.img = sc.hint = null;
-    sc.vurl = sc.vfile = sc.vbtn = null;
+    sc.vurl = sc.vfile = sc.vbtn = sc.btns = sc.pair = null;
   }
 
   // The summary leaves by Done, by the back gesture, or under a resumed draft, and
@@ -8507,7 +8542,11 @@
     // Once a recorder has failed on this summary the button is gone for good — a
     // button that reappeared five seconds later would land under a moving thumb —
     // so a later chip tap must not spend another five seconds encoding for nobody.
+    // A clip has no alpha either, so the transparent card has nothing to record;
+    // its button leaves and comes back with the chip that asked for it, which is
+    // a shift the poster's own thumb caused.
     if (sc.vno) return;
+    if (sc.card.bg === "clear") mime = "";
     sc.vst = mime ? 0 : 2;
     scArm();
     if (!mime) return;
@@ -8525,8 +8564,9 @@
   // from the start and simply cannot be pressed yet: one that appeared late would
   // land under a thumb already moving towards Done.
   function scArm() {
-    if (!sc.vbtn) return;
-    if (sc.vst === 2) { sc.vbtn.parentNode.removeChild(sc.vbtn); sc.vbtn = null; return; }
+    if (sc.vst === 2 && sc.vbtn) { sc.vbtn.parentNode.removeChild(sc.vbtn); sc.vbtn = null; }
+    if (sc.vst === 2 || !sc.btns) return;
+    if (!sc.vbtn) sc.btns.appendChild(sc.vbtn = scBtn("Making video…", "btn ghost", null, scVideo));
     sc.vbtn.disabled = sc.vst !== 1;
     sc.vbtn.textContent = sc.vst !== 1 ? "Making video…"
       : scCan() === 2 && sc.vfile ? "Share video" : "Save video";
@@ -8536,6 +8576,48 @@
     haptic("tap");
     if (sc.vfile && scCan() === 2 && scSheet(sc.vfile, scHold)) return;
     if (sc.vurl) scDrop(sc.vurl, false, "spotter-workout.mp4"); else scHold();
+  }
+
+  function scPress(v) {
+    if (sc.pair) {
+      sc.pair.forEach(function (x) { x[0].setAttribute("aria-pressed", x[1] === v ? "true" : "false"); });
+    }
+  }
+
+  // The transparent card is not a post on its own — it is the thing you drop on
+  // top of your own clip — and nobody knows that unless the row says so.
+  function scSay() {
+    if (!sc.hint) return;
+    sc.hint.textContent = sc.bg === "clear"
+      ? "Save it, then add it over your own clip in the Story editor." : sc.tip;
+  }
+
+  // A 48MP phone photo decoded whole is about 190MB of canvas and an older iPhone
+  // kills the tab for it, so the decoder is asked for 1080 wide where it can do
+  // that. A blob URL from our own origin does not taint the canvas, so toBlob
+  // still comes back with a card.
+  function scPhoto(f) {
+    var url = URL.createObjectURL(f), p = null;
+    function took(im) {
+      if (sc.photo && sc.photo.close) sc.photo.close();
+      sc.photo = im;
+      sc.bg = "photo";
+      scPress("photo");
+      scSay();
+      scPaint();
+    }
+    function slow() {
+      var im = new Image();
+      im.onload = function () { took(im); };
+      im.onerror = function () { URL.revokeObjectURL(url); toast("Could not read that picture."); };
+      im.src = url;
+    }
+    if (window.createImageBitmap) {
+      try { p = createImageBitmap(f, { resizeWidth: SC_W, resizeQuality: "high" }); }
+      catch (e) { p = null; }
+    }
+    if (p && p.then) p.then(function (im) { URL.revokeObjectURL(url); took(im); }, slow);
+    else slow();
   }
 
   // Neither Instagram nor TikTok makes caption text tappable, so a caption is not
@@ -8683,6 +8765,7 @@
   // Photos. Only a browser with no sheet at all gets a download.
   function scButtons(btns) {
     var can = scCan();
+    sc.btns = btns;
     // Above Share on purpose: by the time Instagram's caption field opens the
     // clipboard is already loaded, and the poster has one paste left to do.
     btns.appendChild(scBtn("Copy caption", "btn ghost", null, scCopyCaption));
@@ -8692,19 +8775,17 @@
     } else if (can === 1) {
       btns.appendChild(scBtn("Share", "btn", "share", scLinkShare));
       btns.appendChild(scBtn("Save image", "btn ghost", null, scSave));
-      sc.hint.textContent = "This browser can only share a link. Save the image and post it yourself.";
     } else {
       btns.appendChild(scBtn("Download", "btn", null, scSave));
       if (window.ClipboardItem && navigator.clipboard && navigator.clipboard.write) {
         btns.appendChild(scBtn("Copy image", "btn ghost", null, scCopy));
       }
-      sc.hint.textContent = "Download it, or copy it straight into a post.";
     }
-    if (sc.vst !== 2) {
-      sc.vbtn = scBtn("Making video…", "btn ghost", null, scVideo);
-      btns.appendChild(sc.vbtn);
-      scArm();
-    }
+    sc.tip = can === 1 ? "This browser can only share a link. Save the image and post it yourself."
+      : can === 0 ? "Download it, or copy it straight into a post."
+        : "Share to Instagram, TikTok, Messages — or save it to Photos.";
+    scSay();
+    scArm();
     btns.classList.add("in");
   }
 
@@ -8718,24 +8799,41 @@
     row.appendChild(prev);
 
     // Two chips to a row and never four across: at 375px four 44px targets beside
-    // a 140px preview clip.
-    var side = el("div", "scside"), chips = el("div", "scchips"), pair = [];
-    [["dark", "Dark"], ["light", "Light"]].forEach(function (t) {
-      var b = el("button", "scchip", t[1]);
-      b.type = "button";
-      b.onclick = function () {
-        if (sc.bg === t[0]) return;
-        sc.bg = t[0];
-        try { localStorage.setItem("spotter_card", t[0]); } catch (e) { /* ignore */ }
-        pair.forEach(function (x) { x[0].setAttribute("aria-pressed", x[1] === sc.bg ? "true" : "false"); });
-        haptic("tap");
-        scPaint();
-      };
-      pair.push([b, t[0]]);
-      b.setAttribute("aria-pressed", sc.bg === t[0] ? "true" : "false");
-      chips.appendChild(b);
-    });
+    // a 140px preview clip. The camera roll is a hidden file input with no capture
+    // attribute — capture would open the camera and skip the roll entirely.
+    var side = el("div", "scside"), chips = el("div", "scchips");
+    var pin = el("input");
+    pin.type = "file";
+    pin.accept = "image/*";
+    pin.hidden = true;
+    pin.onchange = function () {
+      var f = pin.files && pin.files[0];
+      pin.value = "";
+      if (f) scPhoto(f);
+    };
+    sc.pair = [];
+    [["dark", "Dark"], ["light", "Light"], ["clear", "Clear"], ["photo", "Photo"]]
+      .forEach(function (t) {
+        var b = el("button", "scchip", t[1]);
+        b.type = "button";
+        b.onclick = function () {
+          haptic("tap");
+          // Photo always opens the roll: once a picture is chosen, changing it is
+          // the only thing the chip has left to do.
+          if (t[0] === "photo") { pin.click(); return; }
+          if (sc.bg === t[0]) return;
+          sc.bg = t[0];
+          try { localStorage.setItem("spotter_card", t[0]); } catch (e) { /* ignore */ }
+          scPress(t[0]);
+          scSay();
+          scPaint();
+        };
+        sc.pair.push([b, t[0]]);
+        chips.appendChild(b);
+      });
+    scPress(sc.bg);
     side.appendChild(chips);
+    side.appendChild(pin);
     sc.hint = el("div", "schint", "Share to Instagram, TikTok, Messages — or save it to Photos.");
     side.appendChild(sc.hint);
     row.appendChild(side);
