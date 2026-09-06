@@ -1407,11 +1407,10 @@ export const STYLE = String.raw`<style>
   .wdot.done { background: var(--good); }
   .wmain { flex: 1; display: flex; flex-direction: column; justify-content: center;
     padding: 10px 26px; text-align: center; overflow-y: auto; }
-  /* No touch-action here either, and for the pager's reason: WebKit has to hold
-     the vertical scroll until the non-passive touchmove has run, by which time
-     app.ts has already chosen the axis. Only two properties move, so the drag is
-     one composited layer; .wmease is timing, on for the release and off while a
-     finger is holding it, so tracking is 1:1 and the let-go is what eases. */
+  /* No touch-action, for the pager's reason: WebKit holds the vertical scroll
+     until the non-passive touchmove has run, by which time app.ts has chosen the
+     axis. .wmease is timing — on for the release, off while a finger holds it, so
+     tracking is 1:1 and the let-go is the only thing that eases. */
   .wmain.wmease { transition: transform var(--t-2) var(--e-out), opacity var(--t-2) var(--e-out); }
   .wmain.wmin { animation: wmin var(--t-3) var(--e-out); }
   @keyframes wmin { from { opacity: 0; transform: translateX(var(--wmx, 30px)); } }
@@ -1573,12 +1572,11 @@ export const STYLE = String.raw`<style>
      view's embed so the close button stays on screen with it. */
   #watchbody .embedwrap, #watchbody .dphoto { margin-bottom: 14px; }
   #watchbody .embedwrap.vertical iframe { height: 56vh; }
-  /* The same word #copysheet needs, for the same reason and measured the same
-     way: with touch-action auto WebKit holds every tap 350ms to see whether a
-     second is coming, and the second one that does come is a double tap — which
-     Safari answers by zooming, because it has ignored user-scalable=no since
-     iOS 10. That zoom is the jump when the plus is tapped a lot. The sheet sits
-     outside #workout, so the manipulation rule up there never reached it. */
+  /* #copysheet's word, needed here for its reason: with touch-action auto WebKit
+     holds every tap 350ms for a possible second, and the second one that comes is
+     a double tap — which Safari answers by zooming, having ignored
+     user-scalable=no since iOS 10. That zoom is the jump when the plus is tapped
+     a lot. The sheet is outside #workout, so that rule never reached it. */
   #setsheet button { touch-action: manipulation; }
   .stepper { display: flex; align-items: center; gap: 12px; justify-content: center; margin: 14px 0; }
   .stepper button { width: 46px; height: 46px; border-radius: 999px; border: 1px solid var(--line-2);
@@ -1586,18 +1584,17 @@ export const STYLE = String.raw`<style>
     transition: transform var(--t-1) var(--e-out); }
   .stepper button:active { transform: scale(.92); }
   /* A width, not a min-width: the value is the only thing between the two
-     buttons, so anything that changes its box moves them both. Tabular figures
-     hold the digits still inside it, and the field is the same box in the same
-     face as the number it replaces, so tapping to type moves nothing either. */
-  .stepper .val { width: 96px; }
-  .stepper .val .num, .stepper .val .numin { display: block; width: 100%; height: 34px;
-    padding: 0; border: 0; border-radius: 0; background: none; color: var(--ink);
-    text-align: center; font-family: var(--display); font-size: 30px; font-weight: 700;
-    line-height: 34px; letter-spacing: -.018em; font-variant-numeric: tabular-nums; }
-  /* 34px is what the figure needs; 46 is what a finger needs. */
+     buttons, so whatever changes its box moves both. The field is the same box
+     in the same face, so tapping to type moves nothing either. */
+  .stepper .val { width: 96px; text-align: center; font-family: var(--display); font-size: 30px;
+    font-weight: 700; letter-spacing: -.018em; font-variant-numeric: tabular-nums; }
+  .stepper .val .num, .stepper .val .numin { font: inherit; letter-spacing: inherit;
+    display: block; width: 100%; height: 34px; line-height: 34px; padding: 0; border: 0;
+    border-radius: 0; background: none; color: var(--ink); text-align: center; }
+  /* 34px is what the figure needs, 46 what a finger does. */
   .stepper .val .num { position: relative; }
   .stepper .val .num::after { content: ""; position: absolute; inset: -6px 0; }
-  .stepper .val .numin { display: none; outline: none; -webkit-appearance: none; appearance: none;
+  .stepper .val .numin { display: none; outline: none; appearance: none;
     caret-color: var(--ember); box-shadow: inset 0 -2px 0 var(--ember); }
   .stepper .val.editing .num { display: none; }
   .stepper .val.editing .numin { display: block; }
@@ -1889,8 +1886,8 @@ export const STYLE = String.raw`<style>
     .sheetbody, .sheet.open .sheetbody { transform: none; transition: none; }
     /* The press still answers, it just answers at once. */
     .stepper button { transition: none; }
-    /* The exercise still changes and still says so, with a crossfade rather than
-       a slide. The drag itself moves nothing: app.ts asks lessMotion() first. */
+    /* The exercise still changes and says so, crossfading rather than sliding.
+       The drag moves nothing at all: app.ts asks lessMotion() first. */
     .wmain.wmease { transition: none; }
     .wmain.wmin { animation-name: fadeonly; animation-duration: var(--t-2); }
     /* The travel stays: it is the gesture itself. The spring goes. */

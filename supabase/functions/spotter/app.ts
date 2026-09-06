@@ -4330,8 +4330,8 @@ export const APP = String.raw`
     var main = $("wmain"), dots = $("wdots");
     main.innerHTML = "";
     dots.innerHTML = "";
-    // Whatever a swipe left on it, taken back without animating the way back:
-    // the entrance at the foot of this function is the move.
+    // A swipe's lean, taken back without animating the way back: the entrance
+    // at the foot of this function is the move.
     var slide = woSlide;
     woSlide = 0;
     main.classList.remove("wmease", "wmin");
@@ -4405,8 +4405,8 @@ export const APP = String.raw`
     acts.appendChild(swapChip);
     main.appendChild(acts);
 
-    // A swipe said which way the lifter went, so the movement arrives from that
-    // side; an arrow or a logged set did not, and keeps the entrance it had.
+    // A swipe said which way the lifter went, so the exercise arrives from that
+    // side. An arrow did not, and keeps the entrance it had.
     if (slide) {
       main.style.setProperty("--wmx", (slide > 0 ? 30 : -30) + "px");
       void main.offsetWidth;
@@ -4467,8 +4467,7 @@ export const APP = String.raw`
       if (m) targetReps = parseInt(m[0], 10);
     }
     var h = hist[exKey(entry)];
-    // Whatever the last visit left half-typed belongs to the set it was typed
-    // for, not to this one, so it is dropped rather than committed sideways.
+    // A figure half-typed for another set is dropped, not committed sideways.
     editing = null;
     $("repsbox").classList.remove("editing");
     $("wtbox").classList.remove("editing");
@@ -4493,36 +4492,26 @@ export const APP = String.raw`
 
   // ---------- the two ways to change a number ----------
   //
-  // "make sure it stays stable. also i want to be able to tap the numbers and
-  // type my own number in so i dont have to tap it a bunch." Both halves land
-  // here, and both clamp on the way through, so a set nobody did cannot be
-  // logged however it was entered: 999 reps and 9999 of anything are past what a
-  // barbell does and short of what a stuck key can produce.
-
-  function setReps(n) {
-    n = clamp(Math.round(n) || 0, 0, 999);
-    if (n === setCtx.reps) return false;
-    setCtx.reps = n;
+  // A tap, a hold and a typed figure all land here, so one clamp covers all
+  // three: 999 reps and 9999 of anything are past what a barbell does.
+  function setNum(key, n, dp) {
+    var p = dp ? 10 : 1;
+    n = clamp(Math.round((n || 0) * p) / p, 0, dp ? 9999 : 999);
+    if (n === setCtx[key]) return false;
+    setCtx[key] = n;
     drawStepper();
     return true;
   }
 
-  function setWeight(n) {
-    n = clamp(Math.round((n || 0) * 10) / 10, 0, 9999);
-    if (n === setCtx.weight) return false;
-    setCtx.weight = n;
-    drawStepper();
-    return true;
-  }
+  function setReps(n) { return setNum("reps", n, 0); }
+  function setWeight(n) { return setNum("weight", n, 1); }
+  function plate() { return state.unit === "kg" ? 2.5 : 5; }
 
-  function wtStep() { return state.unit === "kg" ? 2.5 : 5; }
-
-  // Apple's steppers repeat while they are held and speed up the longer the hold
-  // lasts (UIStepper.autorepeat, on by default), which is the difference between
-  // asking for 25 reps and tapping fifteen times for it. Half a second before the
-  // first repeat, so a tap can never be read as a hold. The click that follows a
-  // hold is dropped: the repeats already counted it. A click with no pointer
-  // before it is a keyboard pressing Enter, and steps once, as it always did.
+  // "so i dont have to tap it a bunch": Apple's steppers repeat while held and
+  // speed up the longer the hold lasts (UIStepper.autorepeat, on by default).
+  // Half a second first, so a tap is never read as a hold; the click that ends a
+  // hold is dropped, the repeats having counted it. A click with no pointer
+  // before it is a keyboard, and steps once, as it always did.
   function wireStep(id, step) {
     var btn = $(id), t = 0, n = 0;
     function tick() {
@@ -4531,47 +4520,42 @@ export const APP = String.raw`
       t = setTimeout(tick, n < 5 ? 140 : n < 13 ? 95 : 62);
     }
     function stop() { clearTimeout(t); t = 0; }
-    btn.addEventListener("pointerdown", function (e) {
+    btn.onpointerdown = function (e) {
       if (!e.isPrimary) return;
       endEdit();
       stop();
       n = 0;
       t = setTimeout(tick, 480);
-    });
-    ["pointerup", "pointercancel", "pointerleave"].forEach(function (name) {
-      btn.addEventListener(name, stop);
-    });
-    btn.addEventListener("click", function () { endEdit(); if (!n) step(); n = 0; });
+    };
+    btn.onpointerup = btn.onpointercancel = btn.onpointerleave = stop;
+    btn.onclick = function () { endEdit(); if (!n) step(); n = 0; };
   }
 
-  // Tapping the number opens a field in its place: inputmode rather than
-  // type=number, so iOS raises its keypad without the spinner, the stray e and +
-  // a number field accepts, or a scroll wheel no phone has. Digits for reps, a
-  // decimal point for weight. The field is the same box in the same face as the
-  // figure it replaces, so the swap moves nothing on the screen.
+  // Tapping the number opens a field over it. inputmode rather than type=number,
+  // so iOS raises its keypad without the spinner, the stray e and + a number
+  // field takes, or a scroll wheel no phone has.
   var editing = null;
 
   function wireNum(box, btn, input, commit) {
-    btn.addEventListener("click", function () {
+    btn.onclick = function () {
       endEdit();
       editing = { box: box, input: input, commit: commit };
       input.value = btn.textContent.replace(/,/g, "");
       box.classList.add("editing");
-      // Measured before it is focused — WebKit will not focus a box it has not
-      // laid out — and focused inside the tap that asked for it, which is the
-      // only call iOS answers with a keyboard.
+      // Laid out before it is focused, and focused inside the tap that asked:
+      // the only call iOS answers with a keyboard.
       void input.offsetWidth;
       input.focus();
       input.select();
-    });
-    input.addEventListener("keydown", function (e) {
+    };
+    input.onkeydown = function (e) {
       if (e.key === "Enter") { e.preventDefault(); input.blur(); }
-    });
-    input.addEventListener("blur", endEdit);
+    };
+    input.onblur = endEdit;
   }
 
-  // Enter, the blur, the next tap on a stepper, and Save all end the same way.
-  // An empty field or a typo means the number was left alone, not zeroed.
+  // Enter, the blur, the next tap on a stepper and Save all end the same way; an
+  // empty field or a typo leaves the number alone rather than zeroing it.
   function endEdit() {
     if (!editing) return;
     var e = editing;
@@ -4584,8 +4568,7 @@ export const APP = String.raw`
 
   function saveSet() {
     if (!wo) return;
-    // Saving without leaving the field first is the ordinary way to use this:
-    // type 12, press Save. The number has to be taken before it is read.
+    // Type 12, press Save: the field has to be read before the set is.
     endEdit();
     // Usually the session's first gesture, and iOS starts audio in nothing else.
     unlockAudio();
@@ -4939,26 +4922,20 @@ export const APP = String.raw`
 
   // ---------- workout · swiping between exercises ----------
   //
-  // "i want to be able to swipe left and right on the working out card so i can
-  // switch between exercises". The discipline is the pager's and the week bar's,
-  // because those are the two surfaces this has to feel like: Pointer Events, one
-  // axis verdict taken the moment the finger clears the slop, the touch cancelled
-  // only while we hold that axis, a fling or two fifths of the screen to commit.
-  //
-  // The angle is the week bar's 45 degrees rather than the pager's 65: an
-  // exercise with notes scrolls, and a scroll that turns the page is the worse
-  // fault here — the arrows below are still the reliable way through. Nothing
-  // inside is excluded either: a drag that starts on a set pill still pages if it
-  // travels, and the click that follows the finger up is swallowed, exactly as a
-  // drag off a library card is. The rest strip is outside .wmain and untouched.
+  // "swipe left and right on the working out card so i can switch between
+  // exercises". The discipline is the pager's and the week bar's, being the two
+  // surfaces this has to feel like: one axis verdict once the finger clears the
+  // slop, the touch cancelled only while we hold that axis, a fling or two fifths
+  // to commit. The angle is the week bar's 45 degrees and not the pager's 65,
+  // because an exercise with notes scrolls. Nothing inside is excluded: a drag
+  // off a set pill pages if it travels, and the click behind it is swallowed.
   var WM_LEAD = 72, WM_BAND = 26, woSlide = 0;
 
   function wireWmain(main) {
     var md = null;
 
-    // The screen leans a damped half of the travel; at the first exercise or the
-    // last it leans a fifth, which is the whole of the message that there is
-    // nothing that way. Transform and opacity, so it is one composited layer.
+    // A damped half of the travel, a capped fifth at the first exercise and the
+    // last — the whole of saying there is nothing that way.
     function paint(dx) {
       if (md.calm) return;
       var end = dx < 0 ? wo.i >= Math.max(wo.screens.length, 1) - 1 : wo.i <= 0;
@@ -4996,9 +4973,8 @@ export const APP = String.raw`
 
     main.addEventListener("pointerdown", function (e) {
       if (e.pointerType !== "touch" && e.pointerType !== "pen") return;
-      // Not on the summary, which has no exercises left to walk, and not under a
-      // sheet: overlayShowing cannot be asked here, because Workout Mode is
-      // itself the overlay it would answer for.
+      // Not on the summary, and not under a sheet: overlayShowing cannot be
+      // asked here, Workout Mode being the overlay it would answer for.
       if (md || !e.isPrimary || !wo || wo.finished) return;
       if (document.querySelector(".sheet.open") || noDragIn(e.target)) return;
       // Safari's back gesture owns the very edge inside a browser tab.
@@ -5026,9 +5002,9 @@ export const APP = String.raw`
       paint(dx);
     });
 
-    // .wmain scrolls, and WebKit settles that on the touch rather than on the
-    // pointer event before it: cancelling the touch while we hold the axis is
-    // what lets this element go on declaring no touch-action of its own.
+    // .wmain scrolls, and WebKit settles that on the touch rather than the
+    // pointer event before it, so cancelling the touch while we hold the axis is
+    // what lets this element go on declaring no touch-action.
     main.addEventListener("touchmove", function (e) {
       if (md && md.lock && e.cancelable) e.preventDefault();
     }, { passive: false });
@@ -10346,8 +10322,9 @@ export const APP = String.raw`
 
   wireStep("repsup", function () { return setReps(setCtx.reps + 1); });
   wireStep("repsdown", function () { return setReps(setCtx.reps - 1); });
-  wireStep("wtup", function () { return setWeight(setCtx.weight + wtStep()); });
-  wireStep("wtdown", function () { return setWeight(setCtx.weight - wtStep()); });
+  // Read at the press, not at the wiring: Settings can change the unit under it.
+  wireStep("wtup", function () { return setWeight(setCtx.weight + plate()); });
+  wireStep("wtdown", function () { return setWeight(setCtx.weight - plate()); });
   wireNum($("repsbox"), $("repsval"), $("repsin"), setReps);
   wireNum($("wtbox"), $("wtval"), $("wtin"), setWeight);
   $("setsave").onclick = saveSet;

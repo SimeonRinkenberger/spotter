@@ -305,12 +305,10 @@ export const MARKUP_BODY = String.raw`</head>
   <div class="grabber"></div>
   <h2 id="settitle">Log set</h2>
   <div class="wnote setlast" id="setlast"></div>
-  <!-- data-noswipe, on the row and not the buttons: a thumb pressing "+" fifteen
-       times rolls, and past 24px of roll the sheet's own dismissal drag used to
-       take the gesture, slide under the finger and swallow that press. The
-       grabber and the rest of the sheet still throw it away.
-       The number is a button because it is one: tapping it swaps in the field
-       beside it, which is the same box in the same face so nothing moves. -->
+  <!-- data-noswipe on the row: a thumb pressing "+" fifteen times rolls, and past
+       24px of roll the sheet's own dismissal drag took the gesture, slid under the
+       finger and swallowed that press. The grabber still throws the sheet away.
+       The number is a button because it is one — it swaps in the field beside it. -->
   <div class="stepper" data-noswipe>
     <button id="repsdown" aria-label="Fewer reps"><svg class="ic"><use href="#i-minus"></use></svg></button>
     <div class="val" id="repsbox"><button class="num" id="repsval" aria-label="Reps — tap to type a number">10</button><input class="numin" id="repsin" type="text" inputmode="numeric" enterkeyhint="done" autocomplete="off" aria-label="Reps"><small>reps</small></div>
