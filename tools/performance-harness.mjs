@@ -110,16 +110,19 @@ await test('deadline aborts once without replaying an ambiguous operation',async
 });
 await test('account teardown clears old counts, chips, chat, panels and toast',async()=>{
   const x=setup(),nodes=new Map();
+  let motionCancelled=false;
   x.c.$=id=>{if(!nodes.has(id))nodes.set(id,{innerHTML:'old-private-content',textContent:'old-private-title',classList:{add(){},remove(){}}});return nodes.get(id);};
   Object.assign(x.c,{wkChannel:null,pendingMotion:null,wo:null,woTimer:null,hist:{},histReady:true,strava:{},
     pumpy:{openSeq:3,wired:true,messages:[{content:'old'}]},billing:{said:'plus'},toastTimer:null,
     undoTimer:{},undoFn:()=>assert.fail('old account delete'),detailCloseTimer:null,woCloseTimer:null,
-    clearInterval(){},stopRest(){},releaseWake(){},guideClear(){},guideStill(){},dropCache(){},saveDraft(){}});
+    pumpyReset:{animations:[{cancel(){motionCancelled=true;}}]},clearInterval(){},stopRest(){},releaseWake(){},guideClear(){},guideStill(){},dropCache(){},saveDraft(){}});
+  vm.runInContext(fn('cancelPumpyReset'),x.c);
   x.c.document.querySelectorAll=()=>[];vm.runInContext(fn('clearAccount'),x.c);x.run('clearAccount()');
   for(const id of ['grid','chips','colbar','libcount','pumpylog','planview','progressview'])assert.equal(nodes.get(id).innerHTML,'',id);
   assert.equal(nodes.get('toast').textContent,'');assert.equal(x.c.state.workouts.length,0);assert.equal(x.c.pumpy.messages.length,0);
   assert.equal(x.c.pumpy.openSeq,4);assert.equal(x.c.billing.said,null);assert.equal(x.c.accountEpoch,2);
   assert.equal(x.c.undoFn,null);assert.equal(x.c.undoTimer,null);
+  assert.equal(motionCancelled,true);assert.equal(x.c.pumpyReset,null);
 });
 await test('navigation starts reads before arrival but never grants a help visit',async()=>{
   const x=setup();let planReads=0;

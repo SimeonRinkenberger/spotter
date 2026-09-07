@@ -1915,6 +1915,7 @@ export const STYLE = String.raw`<style>
      goes quiet rather than being replaced by an empty log. */
   #pumpylog { transition: opacity var(--t-2) var(--e-soft); }
   #pumpylog.waiting { opacity: .42; }
+  #pumpylog.resetting { transition: none; overflow-anchor: none; }
   .threadrow .tdel { flex: 0 0 auto; border: none; background: none; color: var(--muted);
     font-size: 12px; font-weight: 600; padding: 11px 8px; border-radius: 999px; }
   .threadrow .tdel[data-armed="1"] { color: var(--ember-ink); }
@@ -2092,6 +2093,8 @@ export const STYLE = String.raw`<style>
   .pumpyart img { display: block; width: 100%; height: 100%; object-fit: cover; }
   .pumpyart.artfailed { display: none; }
   .pumpyhello .pumpyart { width: 140px; height: 140px; margin-bottom: 16px; }
+  /* An unavailable drawing must not move the greeting halfway through its entrance. */
+  .pumpyhello .pumpyart.artfailed { display: block; visibility: hidden; }
   #workout.summary .pumpyart { width: 88px; height: 88px; border-radius: 22px; margin-bottom: 12px; }
   #workout.summary .wmain { justify-content: flex-start; align-items: center;
     padding: 22px 20px calc(28px + env(safe-area-inset-bottom)); }

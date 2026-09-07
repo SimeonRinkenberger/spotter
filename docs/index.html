@@ -5245,6 +5245,10 @@ body.kb .tabbar {
 #pumpylog.waiting {
   opacity: .42;
 }
+#pumpylog.resetting {
+  transition: none;
+  overflow-anchor: none;
+}
 .threadrow .tdel {
   flex: 0 0 auto;
   border: none;
@@ -5654,6 +5658,10 @@ select:focus-visible {
   width: 140px;
   height: 140px;
   margin-bottom: 16px;
+}
+.pumpyhello .pumpyart.artfailed {
+  display: block;
+  visibility: hidden;
 }
 #workout.summary .pumpyart {
   width: 88px;
@@ -7088,7 +7096,7 @@ select:focus-visible {
     }));
   }
   function clearAccount() {
-    if (pendingMotion && pendingMotion.disconnect(), $("app").classList.add("hide"), accountEpoch++, reads = {}, inFlight = {}, libraryRev++, logsRev++, planRev++, clearTimeout(undoTimer), undoTimer = null, undoFn = null, clearTimeout(detailCloseTimer), clearTimeout(woCloseTimer), clearTimeout(pendTimer), pendTimer = null, pendPolls = 0, pendBusy = !1, wkChannel && (sb.removeChannel(wkChannel), wkChannel = null), booting = null, state.profile = null, state.workouts = [], state.logs = null, state.plan = null, state.planLogs = [], state.awards = null, state.goal = null, state.unit = "lb", state.sounds = !0, state.haptics = !0, state.collections = [], state.colItems = [], seenCards = {}, gridCards = {}, expCache = {}, expWaiting = {}, vidCache = {}, expKey = "", today.rows = [], today.at = 0, today.day = null, today.busy = !1, today.shown = !1, current = null, wo && saveDraft(), clearInterval(woTimer), stopRest(), releaseWake(), wo = null, hist = {}, histReady = !1, strava && (strava = { asked: !1, configured: !1, connected: !1, athlete: null, busy: !1 }), pumpy) {
+    if (cancelPumpyReset(), pendingMotion && pendingMotion.disconnect(), $("app").classList.add("hide"), accountEpoch++, reads = {}, inFlight = {}, libraryRev++, logsRev++, planRev++, clearTimeout(undoTimer), undoTimer = null, undoFn = null, clearTimeout(detailCloseTimer), clearTimeout(woCloseTimer), clearTimeout(pendTimer), pendTimer = null, pendPolls = 0, pendBusy = !1, wkChannel && (sb.removeChannel(wkChannel), wkChannel = null), booting = null, state.profile = null, state.workouts = [], state.logs = null, state.plan = null, state.planLogs = [], state.awards = null, state.goal = null, state.unit = "lb", state.sounds = !0, state.haptics = !0, state.collections = [], state.colItems = [], seenCards = {}, gridCards = {}, expCache = {}, expWaiting = {}, vidCache = {}, expKey = "", today.rows = [], today.at = 0, today.day = null, today.busy = !1, today.shown = !1, current = null, wo && saveDraft(), clearInterval(woTimer), stopRest(), releaseWake(), wo = null, hist = {}, histReady = !1, strava && (strava = { asked: !1, configured: !1, connected: !1, athlete: null, busy: !1 }), pumpy) {
       var seq = (pumpy.openSeq || 0) + 1, wired = pumpy.wired;
       pumpy = {
         thread: null,
@@ -11458,8 +11466,64 @@ select:focus-visible {
     }
     return workoutId ? [workoutId] : [];
   }
+  var pumpyReset = null;
+  function cancelPumpyReset() {
+    var moving = pumpyReset;
+    moving && (pumpyReset = null, clearTimeout(moving.timer), moving.animations.forEach(function(a) {
+      a.onfinish = null, a.cancel();
+    }), $("pumpylog").classList.remove("resetting"), $("pumpylog").inert = !1, $("pumpyctx").inert = !1);
+  }
   function newPumpyThread() {
-    pumpy.openSeq = (pumpy.openSeq || 0) + 1, $("pumpylog").classList.remove("waiting"), pumpy.thread = null, pumpy.messages = [], pumpy.refs = [], pumpy.refsRev++, pumpy.loaded = !0, pumpy.shownCount = 0, renderPumpy();
+    if (pumpy.loaded && !pumpy.loading && !pumpy.thread && !pumpy.messages.length && !pumpy.busy && !pumpy.refs.length) return;
+    cancelPumpyReset(), pumpy = Object.assign({}, pumpy, {
+      thread: null,
+      messages: [],
+      refs: [],
+      refsRev: pumpy.refsRev + 1,
+      openSeq: (pumpy.openSeq || 0) + 1,
+      loaded: !0,
+      loading: !1,
+      busy: !1,
+      live: null,
+      nodes: {},
+      shownCount: 0,
+      stick: !0
+    });
+    var owner = pumpy, log = $("pumpylog"), ctx = $("pumpyctx");
+    log.classList.remove("waiting"), $("pumpysend").disabled = !1, $("pumpyannounce").textContent = "New chat ready.";
+    function draw() {
+      renderPumpy(), $("pumpyview").scrollTop = 0;
+    }
+    if (lessMotion() || document.hidden || state.view !== "pumpy" || !log.animate || !log.firstChild) {
+      draw();
+      return;
+    }
+    var css = getComputedStyle(log), leave = parseFloat(css.getPropertyValue("--t-1")) || 150, enter = parseFloat(css.getPropertyValue("--t-3")) || 320, moving = pumpyReset = { animations: [], timer: null };
+    log.classList.add("resetting"), log.inert = !0, ctx.inert = !0;
+    var out = log.animate(
+      [{ opacity: 1 }, { opacity: 0 }],
+      { duration: leave, easing: css.getPropertyValue("--e-in").trim(), fill: "both" }
+    );
+    moving.animations.push(out), ctx.classList.contains("hide") || moving.animations.push(ctx.animate(
+      [{ opacity: 1 }, { opacity: 0 }],
+      { duration: leave, easing: "ease-out", fill: "both" }
+    ));
+    function arrive2() {
+      if (pumpyReset !== moving || pumpy !== owner || (draw(), lessMotion() || document.hidden || state.view !== "pumpy")) return;
+      var incoming = log.animate(
+        [
+          { opacity: 0, transform: "translateY(9px)" },
+          { opacity: 1, transform: "translateY(0)" }
+        ],
+        { duration: enter, easing: css.getPropertyValue("--e-out").trim(), fill: "both" }
+      ), arriving = pumpyReset = { animations: [incoming], timer: null };
+      log.classList.add("resetting");
+      function finish() {
+        pumpyReset === arriving && cancelPumpyReset();
+      }
+      incoming.onfinish = finish, arriving.timer = setTimeout(finish, enter + 80);
+    }
+    out.onfinish = arrive2, moving.timer = setTimeout(arrive2, leave + 80);
   }
   function agoText(iso) {
     var t = Date.parse(iso || "");
@@ -11551,7 +11615,7 @@ select:focus-visible {
     return !0;
   }
   function openThread(t, row) {
-    if (threadId() === t.id) {
+    if (pumpyReset && renderPumpy(), threadId() === t.id) {
       closeSheet("pumpysheet");
       return;
     }
@@ -11641,6 +11705,7 @@ select:focus-visible {
     }
   }
   function renderPumpy() {
+    cancelPumpyReset();
     var log = $("pumpylog"), frag = document.createDocumentFragment(), shown = pumpy.messages.filter(function(m) {
       return m.role === "user" || m.role === "assistant";
     });
@@ -13606,7 +13671,7 @@ select:focus-visible {
   }
   function commit(i) {
     var changed = idx !== i;
-    changed && (guideClear(), guideStill(), guide.visit = null), idx = i, state.view = VIEWS[i];
+    changed && (guideClear(), guideStill(), guide.visit = null), idx = i, state.view = VIEWS[i], changed && pumpyReset && renderPumpy();
     var tabs = document.querySelectorAll(".tab"), n, k;
     for (k = 0; k < tabs.length; k++)
       n = k === i, tabs[k].classList.toggle("active", n), tabs[k].setAttribute("aria-selected", n ? "true" : "false"), tabs[k].tabIndex = n ? 0 : -1;

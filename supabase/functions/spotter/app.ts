@@ -826,6 +826,7 @@ export const APP = String.raw`
   }
 
   function clearAccount() {
+    cancelPumpyReset();
     if (pendingMotion) pendingMotion.disconnect();
     $("app").classList.add("hide");
     accountEpoch++; reads = {}; inFlight = {}; libraryRev++; logsRev++; planRev++;
@@ -8283,16 +8284,66 @@ export const APP = String.raw`
     return workoutId ? [workoutId] : [];
   }
 
+  var pumpyReset = null;
+
+  function cancelPumpyReset() {
+    var moving = pumpyReset;
+    if (!moving) return;
+    pumpyReset = null;
+    clearTimeout(moving.timer);
+    moving.animations.forEach(function (a) { a.onfinish = null; a.cancel(); });
+    $("pumpylog").classList.remove("resetting");
+    $("pumpylog").inert = false;
+    $("pumpyctx").inert = false;
+  }
+
   function newPumpyThread() {
-    pumpy.openSeq = (pumpy.openSeq || 0) + 1;   // a thread still loading loses
-    $("pumpylog").classList.remove("waiting");
-    pumpy.thread = null;
-    pumpy.messages = [];
-    pumpy.refs = [];
-    pumpy.refsRev++;
-    pumpy.loaded = true;
-    pumpy.shownCount = 0;
-    renderPumpy();
+    // Repeated taps on an empty chat should not restart its drawing or blink.
+    if (pumpy.loaded && !pumpy.loading && !pumpy.thread && !pumpy.messages.length &&
+        !pumpy.busy && !pumpy.refs.length) return;
+    cancelPumpyReset();
+    // A new owner retires the old stream immediately. Its last packet can still
+    // save to that conversation, but cannot put a reply into this new one.
+    pumpy = Object.assign({}, pumpy, { thread: null, messages: [], refs: [],
+      refsRev: pumpy.refsRev + 1, openSeq: (pumpy.openSeq || 0) + 1,
+      loaded: true, loading: false, busy: false, live: null, nodes: {}, shownCount: 0, stick: true });
+    var owner = pumpy, log = $("pumpylog"), ctx = $("pumpyctx");
+    log.classList.remove("waiting");
+    $("pumpysend").disabled = false;
+    $("pumpyannounce").textContent = "New chat ready.";
+    function draw() { renderPumpy(); $("pumpyview").scrollTop = 0; }
+    if (lessMotion() || document.hidden || state.view !== "pumpy" || !log.animate || !log.firstChild) {
+      draw(); return;
+    }
+    // Keep the old layout through the exit, then replace it at zero opacity.
+    // The pinned composer and toolbar never leave, so a draft keeps its focus.
+    var css = getComputedStyle(log);
+    var leave = parseFloat(css.getPropertyValue("--t-1")) || 150;
+    var enter = parseFloat(css.getPropertyValue("--t-3")) || 320;
+    var moving = pumpyReset = { animations: [], timer: null };
+    log.classList.add("resetting");
+    log.inert = true; ctx.inert = true;
+    var out = log.animate([{ opacity: 1 }, { opacity: 0 }],
+      { duration: leave, easing: css.getPropertyValue("--e-in").trim(), fill: "both" });
+    moving.animations.push(out);
+    if (!ctx.classList.contains("hide")) moving.animations.push(ctx.animate([{ opacity: 1 }, { opacity: 0 }],
+      { duration: leave, easing: "ease-out", fill: "both" }));
+    function arrive() {
+      if (pumpyReset !== moving || pumpy !== owner) return;
+      draw();   // cancels the exit before hanging the new, already sized content
+      if (lessMotion() || document.hidden || state.view !== "pumpy") return;
+      var incoming = log.animate([{ opacity: 0, transform: "translateY(9px)" },
+        { opacity: 1, transform: "translateY(0)" }],
+        { duration: enter, easing: css.getPropertyValue("--e-out").trim(), fill: "both" });
+      var arriving = pumpyReset = { animations: [incoming], timer: null };
+      log.classList.add("resetting");
+      function finish() { if (pumpyReset === arriving) cancelPumpyReset(); }
+      incoming.onfinish = finish;
+      arriving.timer = setTimeout(finish, enter + 80);
+    }
+    out.onfinish = arrive;
+    // Background tabs may withhold animation events; never leave a chat inert.
+    moving.timer = setTimeout(arrive, leave + 80);
   }
 
   // ---------- Pumpy · the thread list ----------
@@ -8445,6 +8496,7 @@ export const APP = String.raw`
   // Tapping used to empty the log in the same frame: the hello card stood 208ms and
   // the page went 1858 to 576 to 1170px, scrollTop 1282 to 0 to 594, mid-slide.
   function openThread(t, row) {
+    if (pumpyReset) renderPumpy();
     if (threadId() === t.id) { closeSheet("pumpysheet"); return; }   // already reading it
     var seq = (pumpy.openSeq = (pumpy.openSeq || 0) + 1);
     var refsRev = pumpy.refsRev;
@@ -8612,6 +8664,8 @@ export const APP = String.raw`
   }
 
   function renderPumpy() {
+    // Sending or opening another conversation can interrupt New chat at any frame.
+    cancelPumpyReset();
     var log = $("pumpylog");
     // Assembled off the page and hung in one move. Not for the append count, which
     // is noise: for the one moment of valid layout it leaves, which is what lets
@@ -11605,6 +11659,7 @@ export const APP = String.raw`
     if (changed) { guideClear(); guideStill(); guide.visit = null; }
     idx = i;
     state.view = VIEWS[i];
+    if (changed && pumpyReset) renderPumpy();
     var tabs = document.querySelectorAll(".tab"), n, k;
     for (k = 0; k < tabs.length; k++) {
       n = k === i;
