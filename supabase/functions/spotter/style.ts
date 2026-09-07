@@ -2174,19 +2174,43 @@ export const STYLE = String.raw`<style>
   .firstsave { margin-top: 22px; }
   .detail-actions { display: flex; gap: 10px; margin: 8px 0 14px; }
   .detail-actions .chip { min-height: 44px; flex: 1; justify-content: center; }
+  #dinner > .startbtn { margin-bottom: 12px; box-shadow: var(--sh-sm); }
+  #dinner > .detail-actions { margin: 0 0 20px; }
+  #detail { background-image: none; }
+  .workout-block { padding: 16px 16px 6px; box-shadow: none; }
+  .workout-block > h3 { text-transform: none; letter-spacing: -.01em; font-size: 15px; color: var(--ink); margin-bottom: 4px; }
   .disclosure { border: 1px solid var(--line); background: var(--card); border-radius: 16px; margin: 12px 0; }
-  .disclosure > summary { cursor: pointer; padding: 13px 16px; min-height: 44px; font-size: 13px; font-weight: 650; color: var(--ink-2); }
+  .disclosure > summary { cursor: pointer; padding: 14px 16px; min-height: 48px; font-size: 13px; font-weight: 600; color: var(--ink-2); }
   .disclosure-body { padding: 0 14px 14px; }
   .disclosure-body .embedwrap { margin-top: 12px; }
-  .exercise-card { border: 1px solid var(--line); background: var(--card); border-radius: 16px; margin: 8px 0; overflow: hidden; }
-  .exercise-main { display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px 4px; }
+  .exercise-card { background: var(--card); margin: 0; padding: 4px 0; contain: layout style; }
+  .exercise-card + .exercise-card { border-top: 1px solid var(--line); }
+  .exercise-main { display: flex; gap: 12px; align-items: flex-start; padding: 14px 0 6px; }
   .exercise-main .exname { flex: 1; min-width: 0; overflow-wrap: anywhere; }
   .exercise-main .exdose { flex: 0 0 auto; max-width: 42%; white-space: normal; text-align: right; }
-  .exercise-actions { display: flex; align-items: flex-start; gap: 2px; padding: 0 8px 6px; flex-wrap: wrap; }
-  .exercise-actions > .setlink { width: auto; flex: 1; margin: 0; min-height: 44px; padding: 10px 8px; font-size: 12px; }
-  .exercise-options { border: 0; margin: 0 0 0 auto; border-radius: 0; background: none; }
-  .exercise-options > summary { font-size: 12px; padding: 12px 8px; }
-  .exercise-options .disclosure-body { padding: 0 0 4px; }
+  /* A stable full-width drawer keeps secondary actions quiet, without a flex
+     row renegotiating its width when the hidden labels become visible. */
+  .exercise-actions { display: block; width: 100%; min-width: 0; padding: 0; }
+  .exercise-options { border: 0; margin: 0; border-radius: 0; background: none; min-width: 0; }
+  .exercise-actions > .exercise-options { width: 100%; }
+  .exercise-options > summary { width: 100%; font-size: 12px; min-height: 44px; padding: 10px 6px;
+    justify-content: flex-end; border-radius: 10px; }
+  .wactions .exercise-options > summary { justify-content: center; background: var(--sand); border-radius: 12px; font-size: 13px; }
+  /* Keep the exercise and logging controls anchored when supporting actions open.
+     Centering the whole stack makes every item drift upward during expansion. */
+  #workout:not(.summary) .wmain { justify-content: flex-start; min-height: 0;
+    padding-top: clamp(28px, calc(var(--vvh) * .12), 112px); }
+  #workout:not(.summary) .wmain > * { flex-shrink: 0; }
+  .exercise-options .disclosure-body { padding: 4px 12px; margin: 4px 0 10px; background: var(--sand); border-radius: 12px; overflow: hidden; }
+  .exercise-options .pickrow { width: 100%; min-height: 48px; padding: 12px 2px; border-radius: 0;
+    font-size: 13px; font-weight: 550; background: transparent; color: var(--ink); justify-content: flex-start;
+    transition: background-color var(--t-1) var(--e-soft); }
+  .exercise-options .pickrow + .pickrow { border-top: 1px solid var(--line); }
+  .exercise-options .pickrow .ic { width: 18px; height: 18px; color: var(--ink-2); }
+  .exercise-options .pickrow:active { background: var(--card); }
+  .exercise-options > summary:active { background: var(--sand); transform: none; }
+  .exercise-options[open] > summary { color: var(--ember-ink); }
+  .exercise-options.details-closing > summary { color: var(--ink-2); }
   #workmanage .managerow { flex-direction: column; }
   #workmanage .mbtn { flex: auto; min-height: 44px; justify-content: flex-start; }
   #workoptions .pickrow { min-height: 48px; }
@@ -2203,25 +2227,34 @@ export const STYLE = String.raw`<style>
   #explainask { min-height: 44px; }
   .disclosure summary:focus-visible, .exercise-actions button:focus-visible { outline: 2px solid var(--ember-ink); outline-offset: 2px; }
   .workout-meta { margin: 6px 0 16px; color: var(--ink-2); font-size: 13px; }
-  .history-card > summary { cursor: pointer; list-style: none; min-height: 44px; }
+  .history-card > summary { position: relative; cursor: pointer; list-style: none; min-height: 44px; padding-right: 20px; }
   .history-card > summary::-webkit-details-marker { display: none; }
-  .history-card > summary::after { content: "View session ▸"; display: block; font-size: 11px; font-weight: 600; color: var(--ember-ink); margin-top: 8px; }
-  .history-card[open] > summary::after { content: "Hide details ▾"; }
+  .history-card > summary::after { content: "Session details"; display: block; font-size: 11px; font-weight: 600; color: var(--ember-ink); margin-top: 8px; }
+  .history-card > summary::before { content: ""; position: absolute; right: 2px; top: 8px; width: 6px; height: 6px;
+    border-right: 1.5px solid var(--ink-2); border-bottom: 1.5px solid var(--ink-2);
+    transform: rotate(-45deg); transition: transform var(--t-3) var(--e-soft); }
+  .history-card[open] > summary::before { transform: rotate(45deg); }
+  .history-card.details-closing > summary::before { transform: rotate(-45deg); }
   .session-head .histrow { border: 0; padding: 0; }
   #scheduleerror { display: block; }
   #scheduleerror:empty { display: none; }
   /* Measured height moves the following content with the opening section. Only
      the section in flight is clipped; settled content returns to natural height. */
-  details.details-moving { overflow: hidden; overflow-anchor: none; }
-  .disclosure > summary, .guide-topic > summary { list-style: none; }
+  details { overflow-anchor: none; }
+  details.details-moving { overflow: clip; }
+  details.details-moving > :not(summary) { will-change: opacity; }
+  .disclosure > summary, .guide-topic > summary { list-style: none; display: flex; align-items: center; gap: 10px;
+    -webkit-user-select: none; user-select: none; }
   .disclosure > summary::-webkit-details-marker, .guide-topic > summary::-webkit-details-marker { display: none; }
-  .disclosure > summary::before, .guide-topic > summary::before { content: ""; display: inline-block; width: 6px; height: 6px;
-    border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; margin-right: 10px; vertical-align: 2px;
-    transform: rotate(-45deg); transition: transform var(--t-2) var(--e-out); }
-  .disclosure[open] > summary::before, .guide-topic[open] > summary::before { transform: rotate(45deg); }
-  .disclosure.details-closing > summary::before, .guide-topic.details-closing > summary::before { transform: rotate(-45deg); }
+  .disclosure > summary::after, .guide-topic > summary::after { content: ""; flex: 0 0 auto; width: 6px; height: 6px;
+    border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; margin-left: auto;
+    transform: rotate(-45deg); transition: transform var(--t-3) var(--e-soft); }
+  .exercise-options > summary::after { margin-left: 0; }
+  .disclosure[open] > summary::after, .guide-topic[open] > summary::after { transform: rotate(45deg); }
+  .disclosure.details-closing > summary::after, .guide-topic.details-closing > summary::after { transform: rotate(-45deg); }
   @media (prefers-reduced-motion: reduce) {
-    .disclosure > summary::before, .guide-topic > summary::before { transition: none; }
+    .disclosure > summary::after, .guide-topic > summary::after, .history-card > summary::before,
+    .exercise-options .pickrow { transition: none; }
   }
 </style>
 

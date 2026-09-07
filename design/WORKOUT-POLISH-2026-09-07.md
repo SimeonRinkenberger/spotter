@@ -1,0 +1,20 @@
+# Workout menus and motion — 7 September 2026
+
+The reported sideways jerk was real: opening exercise Options expanded a flex item's intrinsic width and squeezed its sibling controls. A Chrome trace of the actual page measured a 32.09px summary shift. The earlier standalone disclosure test missed the parent layout. Workout mode also centered the whole content stack vertically, moving the name and sets upward as supporting content grew.
+
+## Final behavior
+- Per the user's follow-up, each exercise has one Options disclosure containing Review/Edit, Demo and Swap. Workout Options contains source clip (when available), Demo and Swap. Source warnings and primary workout/logging controls remain visible. Four tabs stay.
+- Both use a full-width action list with stable geometry and 48px action rows. The workout name and sets are anchored; longer content scrolls rather than squeezing controls.
+- Expansion and collapse share the existing 320ms soft easing. Opacity follows the same timeline; interrupted motion starts from current geometry/opacity and returns over a proportionate duration. Native summary keyboard behavior and reduced motion remain. Closing measurements no longer toggle native content off/on. Transient clipping uses overflow:clip, avoiding creation of a new scrolling box during the transition. Scroll anchoring is consistently disabled on disclosures instead of toggled only during animation.
+- Exercise rows use inset separators within one group, with quieter heading/primary-action styling, reduced gaps and no grain on the detail page. Supporting section chevrons align consistently; history labels stay the same width when toggled. No new animation library, API, migration or backend changes. HTML growth is 3,131 bytes over the schedule fix.
+
+## Verification
+93 existing regression checks passed (simplify 8, Pumpy 46, performance 21, transition 11, service worker 7). Build outputs match and git diff --check passes.
+
+The expanded tools/disclosure-harness.mjs passed 15 checks in Chrome and 15 in WebKit 26.5. It now samples actual menu-row geometry throughout opening/closing at 320, 375, 393, 430 and 1280px; verifies workout name/set Y positions during both directions at 667/812px heights; and covers rapid reversal, nesting, native keyboard activation, focus, reduced motion, resize, cancellation and fallback completion. SPOTTER_BROWSER=webkit selects WebKit; PLAYWRIGHT_MODULE/PLAYWRIGHT_BROWSERS_PATH can point to installed test dependencies.
+
+The actual-app Chrome walkthrough passed 25 checks, including hidden-by-default actions, opening Options to access review/demo, explicit AI explanation, source/timestamp access, scheduling and logging. Seven actual-app WebKit checks passed: last exercise, nine rapid taps, anchored title, workout action list, nested phone Settings, history and no runtime errors. Localhost WebKit was rejected by the existing CORS policy for three settings endpoints; repeating with the same local HTML intercepted at the allowed production origin passed, without modifying CORS. All writes belonged only to the disposable polish-sep7 account; AI/media were mocked where exercised.
+
+A final Chrome run at 4x CPU slowdown measured 0px horizontal shift (previously 32.09px); sampled frame-gap p95 was about 16.7ms. This is a desktop diagnostic, not an iPhone FPS guarantee. Physical iPhone/PWA, 120Hz, native date picker and assistive-technology behavior remain unverified. Evidence: workout-polish-evidence/2026-09-07. The scheduling-field fix from 4177ac9 is included; its evidence screenshots now show settled color/focus state.
+
+Design basis: [Apple HIG Motion](https://developer.apple.com/design/human-interface-guidelines/motion), [WebKit Web Animations](https://webkit.org/blog/10266/web-animations-in-safari-13-1/) and [WebKit power usage](https://webkit.org/blog/8970/how-web-content-can-affect-power-usage/), checked 7 September 2026. Applied consistent state transitions, stable controls, and reduced rendering work. Height still requires layout to move following content; only the content fade is compositor-friendly. No claim that height animations are GPU-only.

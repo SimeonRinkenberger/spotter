@@ -2185,8 +2185,10 @@ export const APP = String.raw`
     if (!summary || summary.tagName !== "SUMMARY") return;
     var start = box.getBoundingClientRect().height;
     var previous = box._disclosureRun;
+    var body = box.children[1];
+    var opacity = previous && body ? getComputedStyle(body).opacity : (open ? "0" : "1");
     if (previous) previous.stop();
-    var run = { open: open, animation: null, timer: null, inert: [] };
+    var run = { open: open, animation: null, contentAnimation: null, timer: null, inert: [] };
     box._disclosureRun = run;
     movingDisclosures.push(box);
     run.stop = function () {
@@ -2194,6 +2196,7 @@ export const APP = String.raw`
       box._disclosureRun = null;
       clearTimeout(run.timer);
       if (run.animation) run.animation.cancel();
+      if (run.contentAnimation) run.contentAnimation.cancel();
       run.inert.forEach(function (item) { item.node.inert = item.was; });
       box.classList.remove("details-moving", "details-closing");
       summary.removeAttribute("aria-expanded");
@@ -2211,22 +2214,31 @@ export const APP = String.raw`
     if (lessMotion() || document.hidden || !box.animate || !box.isConnected) { run.finish(); return; }
     box.classList.add("details-moving");
     box.classList.toggle("details-closing", !open);
+    var css = getComputedStyle(box);
+    var full = box.getBoundingClientRect().height;
+    // The closed size comes from the summary, without hiding and remounting
+    // native details content just to measure it (costly for an iOS player).
+    var shut = summary.getBoundingClientRect().height + parseFloat(css.paddingTop) + parseFloat(css.paddingBottom) +
+      parseFloat(css.borderTopWidth) + parseFloat(css.borderBottomWidth);
     var end;
-    if (open) end = box.getBoundingClientRect().height;
+    if (open) end = full;
     else {
       if (box.contains(document.activeElement) && !summary.contains(document.activeElement)) summary.focus({ preventScroll: true });
-      box.open = false; end = box.getBoundingClientRect().height; box.open = true;
+      end = shut;
       Array.from(box.children).slice(1).forEach(function (node) {
         run.inert.push({ node: node, was: node.inert }); node.inert = true;
       });
     }
     if (Math.abs(start - end) < 1) { run.finish(); return; }
     summary.setAttribute("aria-expanded", open ? "true" : "false");
-    var css = getComputedStyle(box);
-    var duration = parseFloat(css.getPropertyValue(open ? "--t-3" : "--t-2")) || (open ? 320 : 220);
-    var easing = css.getPropertyValue("--e-out").trim() || "cubic-bezier(.22,.9,.3,1)";
+    var duration = parseFloat(css.getPropertyValue("--t-3")) || 320;
+    // A reversed tap travels only the remaining distance, not another full beat.
+    if (previous) duration = Math.max(90, duration * Math.min(1, Math.abs(end - start) / Math.max(1, full - shut)));
+    var easing = css.getPropertyValue("--e-soft").trim() || "cubic-bezier(.4,0,.2,1)";
     try {
       run.animation = box.animate([{ height: start + "px" }, { height: end + "px" }],
+        { duration: duration, easing: easing, fill: "both" });
+      if (body) run.contentAnimation = body.animate([{ opacity: opacity }, { opacity: open ? 1 : 0 }],
         { duration: duration, easing: easing, fill: "both" });
       run.animation.onfinish = run.finish;
       run.animation.oncancel = run.finish;
@@ -2461,11 +2473,11 @@ export const APP = String.raw`
     }
 
     (w.blocks || []).forEach(function (b, bi) {
-      var sect = el("div", "sect");
+      var sect = el("div", "sect workout-block");
       // A block has a name in the data — "Warm-up", "Finisher". The card printed
       // "Block 1" above it and the name underneath: label and caption the wrong way
       // round. The name IS the heading.
-      sect.appendChild(el("h3", null, b.title || "Block " + (bi + 1)));
+      sect.appendChild(el("h3", null, b.title || (w.blocks.length === 1 ? "Exercises" : "Block " + (bi + 1))));
       var bm = blockMetaText(b);
       if (bm) sect.appendChild(el("div", "blockmeta", bm));
       (b.exercises || []).forEach(function (ex, ei) {
@@ -2487,15 +2499,16 @@ export const APP = String.raw`
         if (dose) main.appendChild(el("div", "exdose", dose));
         row.appendChild(main);
         var acts = el("div", "exercise-actions");
-        var edit = el("button", "setlink", "Review / Edit");
-        edit.onclick = function () { openExEdit(w, bi, ei, ex); };
-        acts.appendChild(edit);
-        var demo = el("button", "setlink", "Demo");
-        demo.onclick = function () { explain(ex, w); };
-        acts.appendChild(demo);
         var options = disclosure("Options", "exercise-options");
-        var swap = el("button", "pickrow", "Swap or modify");
-        swap.onclick = function () { options.open = false; openSwap(ex.name, w.title); };
+        options.firstChild.setAttribute("aria-label", "Options for " + ex.name);
+        var edit = icon(el("button", "pickrow"), "pencil", "Review / Edit");
+        edit.onclick = function () { openExEdit(w, bi, ei, ex); };
+        options.lastChild.appendChild(edit);
+        var demo = icon(el("button", "pickrow"), "play", "Demo");
+        demo.onclick = function () { explain(ex, w); };
+        options.lastChild.appendChild(demo);
+        var swap = icon(el("button", "pickrow"), "swap", "Swap or modify");
+        swap.onclick = function () { openSwap(ex.name, w.title); };
         options.lastChild.appendChild(swap);
         acts.appendChild(options);
         row.appendChild(acts);
@@ -4873,26 +4886,26 @@ export const APP = String.raw`
       renderSetPills(main, entry, s.ex, targetOf(s));
     }
 
-    var acts = el("div", "wactions");
-    // First in the row: when the name of a movement is not enough, the video it
-    // came from is the answer, and this is the moment it is wanted. Absent rather
-    // than dead when the card has no embed and no thumbnail to show.
+    var acts = el("div", "wactions exercise-actions");
+    var extra = disclosure("Options", "exercise-options");
+    extra.firstChild.setAttribute("aria-label", "Options for " + s.ex.name);
+    // Supporting actions stay together so sets and the timer remain the focus.
+    // A source with no embed or thumbnail simply has no Watch action.
     // A coach's card has no video of its own; a borrowed movement does. So the clip
     // follows the exercise rather than the workout, and the button names whose video
     // is coming. An uncited line on a coach's card still offers nothing.
     var w = wo.workout, clip = sourceOf(s.ex) || w;
     if (clip.thumb_url || (clip.shortcode && /^(instagram|tiktok|youtube)$/.test(clip.platform))) {
       var whose = clip.id !== w.id && clip.author ? "@" + clip.author + "’s" : "the";
-      var watch = icon(el("button", "chip"), "play", "Watch " + whose + " clip");
+      var watch = icon(el("button", "pickrow"), "play", "Watch " + whose + " clip");
       watch.onclick = function () { openWatch(clip, s.ex); };
-      acts.appendChild(watch);
+      extra.lastChild.appendChild(watch);
     }
-    var help = icon(el("button", "chip"), "help", "Demo");
+    var help = icon(el("button", "pickrow"), "help", "Demo");
     help.onclick = function () { explain(s.ex, wo.workout); };
-    acts.appendChild(help);
-    var swapChip = icon(el("button", "chip"), "swap", "Swap or modify");
+    extra.lastChild.appendChild(help);
+    var swapChip = icon(el("button", "pickrow"), "swap", "Swap or modify");
     swapChip.onclick = function () { openSwap(s.ex.name, wo.workout.title); };
-    var extra = disclosure("Options", "exercise-options");
     extra.lastChild.appendChild(swapChip);
     acts.appendChild(extra);
     main.appendChild(acts);

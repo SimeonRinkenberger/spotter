@@ -5975,6 +5975,27 @@ select:focus-visible {
   flex: 1;
   justify-content: center;
 }
+#dinner > .startbtn {
+  margin-bottom: 12px;
+  box-shadow: var(--sh-sm);
+}
+#dinner > .detail-actions {
+  margin: 0 0 20px;
+}
+#detail {
+  background-image: none;
+}
+.workout-block {
+  padding: 16px 16px 6px;
+  box-shadow: none;
+}
+.workout-block > h3 {
+  text-transform: none;
+  letter-spacing: -.01em;
+  font-size: 15px;
+  color: var(--ink);
+  margin-bottom: 4px;
+}
 .disclosure {
   border: 1px solid var(--line);
   background: var(--card);
@@ -5983,10 +6004,10 @@ select:focus-visible {
 }
 .disclosure > summary {
   cursor: pointer;
-  padding: 13px 16px;
-  min-height: 44px;
+  padding: 14px 16px;
+  min-height: 48px;
   font-size: 13px;
-  font-weight: 650;
+  font-weight: 600;
   color: var(--ink-2);
 }
 .disclosure-body {
@@ -5996,17 +6017,19 @@ select:focus-visible {
   margin-top: 12px;
 }
 .exercise-card {
-  border: 1px solid var(--line);
   background: var(--card);
-  border-radius: 16px;
-  margin: 8px 0;
-  overflow: hidden;
+  margin: 0;
+  padding: 4px 0;
+  contain: layout style;
+}
+.exercise-card + .exercise-card {
+  border-top: 1px solid var(--line);
 }
 .exercise-main {
   display: flex;
   gap: 12px;
   align-items: flex-start;
-  padding: 14px 16px 4px;
+  padding: 14px 0 6px;
 }
 .exercise-main .exname {
   flex: 1;
@@ -6020,32 +6043,82 @@ select:focus-visible {
   text-align: right;
 }
 .exercise-actions {
-  display: flex;
-  align-items: flex-start;
-  gap: 2px;
-  padding: 0 8px 6px;
-  flex-wrap: wrap;
-}
-.exercise-actions > .setlink {
-  width: auto;
-  flex: 1;
-  margin: 0;
-  min-height: 44px;
-  padding: 10px 8px;
-  font-size: 12px;
+  display: block;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
 }
 .exercise-options {
   border: 0;
-  margin: 0 0 0 auto;
+  margin: 0;
   border-radius: 0;
   background: none;
+  min-width: 0;
+}
+.exercise-actions > .exercise-options {
+  width: 100%;
 }
 .exercise-options > summary {
+  width: 100%;
   font-size: 12px;
-  padding: 12px 8px;
+  min-height: 44px;
+  padding: 10px 6px;
+  justify-content: flex-end;
+  border-radius: 10px;
+}
+.wactions .exercise-options > summary {
+  justify-content: center;
+  background: var(--sand);
+  border-radius: 12px;
+  font-size: 13px;
+}
+#workout:not(.summary) .wmain {
+  justify-content: flex-start;
+  min-height: 0;
+  padding-top: clamp(28px, calc(var(--vvh) * .12), 112px);
+}
+#workout:not(.summary) .wmain > * {
+  flex-shrink: 0;
 }
 .exercise-options .disclosure-body {
-  padding: 0 0 4px;
+  padding: 4px 12px;
+  margin: 4px 0 10px;
+  background: var(--sand);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.exercise-options .pickrow {
+  width: 100%;
+  min-height: 48px;
+  padding: 12px 2px;
+  border-radius: 0;
+  font-size: 13px;
+  font-weight: 550;
+  background: transparent;
+  color: var(--ink);
+  justify-content: flex-start;
+  transition: background-color var(--t-1) var(--e-soft);
+}
+.exercise-options .pickrow + .pickrow {
+  border-top: 1px solid var(--line);
+}
+.exercise-options .pickrow .ic {
+  width: 18px;
+  height: 18px;
+  color: var(--ink-2);
+}
+.exercise-options .pickrow:active {
+  background: var(--card);
+}
+.exercise-options > summary:active {
+  background: var(--sand);
+  transform: none;
+}
+.exercise-options[open] > summary {
+  color: var(--ember-ink);
+}
+.exercise-options.details-closing > summary {
+  color: var(--ink-2);
 }
 #workmanage .managerow {
   flex-direction: column;
@@ -6111,23 +6184,40 @@ select:focus-visible {
   font-size: 13px;
 }
 .history-card > summary {
+  position: relative;
   cursor: pointer;
   list-style: none;
   min-height: 44px;
+  padding-right: 20px;
 }
 .history-card > summary::-webkit-details-marker {
   display: none;
 }
 .history-card > summary::after {
-  content: "View session \25b8";
+  content: "Session details";
   display: block;
   font-size: 11px;
   font-weight: 600;
   color: var(--ember-ink);
   margin-top: 8px;
 }
-.history-card[open] > summary::after {
-  content: "Hide details \25be";
+.history-card > summary::before {
+  content: "";
+  position: absolute;
+  right: 2px;
+  top: 8px;
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid var(--ink-2);
+  border-bottom: 1.5px solid var(--ink-2);
+  transform: rotate(-45deg);
+  transition: transform var(--t-3) var(--e-soft);
+}
+.history-card[open] > summary::before {
+  transform: rotate(45deg);
+}
+.history-card.details-closing > summary::before {
+  transform: rotate(-45deg);
 }
 .session-head .histrow {
   border: 0;
@@ -6139,42 +6229,56 @@ select:focus-visible {
 #scheduleerror:empty {
   display: none;
 }
-details.details-moving {
-  overflow: hidden;
+details {
   overflow-anchor: none;
+}
+details.details-moving {
+  overflow: clip;
+}
+details.details-moving > :not(summary) {
+  will-change: opacity;
 }
 .disclosure > summary,
 .guide-topic > summary {
   list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  -webkit-user-select: none;
+  user-select: none;
 }
 .disclosure > summary::-webkit-details-marker,
 .guide-topic > summary::-webkit-details-marker {
   display: none;
 }
-.disclosure > summary::before,
-.guide-topic > summary::before {
+.disclosure > summary::after,
+.guide-topic > summary::after {
   content: "";
-  display: inline-block;
+  flex: 0 0 auto;
   width: 6px;
   height: 6px;
   border-right: 1.5px solid currentColor;
   border-bottom: 1.5px solid currentColor;
-  margin-right: 10px;
-  vertical-align: 2px;
+  margin-left: auto;
   transform: rotate(-45deg);
-  transition: transform var(--t-2) var(--e-out);
+  transition: transform var(--t-3) var(--e-soft);
 }
-.disclosure[open] > summary::before,
-.guide-topic[open] > summary::before {
+.exercise-options > summary::after {
+  margin-left: 0;
+}
+.disclosure[open] > summary::after,
+.guide-topic[open] > summary::after {
   transform: rotate(45deg);
 }
-.disclosure.details-closing > summary::before,
-.guide-topic.details-closing > summary::before {
+.disclosure.details-closing > summary::after,
+.guide-topic.details-closing > summary::after {
   transform: rotate(-45deg);
 }
 @media (prefers-reduced-motion: reduce) {
-  .disclosure > summary::before,
-  .guide-topic > summary::before {
+  .disclosure > summary::after,
+  .guide-topic > summary::after,
+  .history-card > summary::before,
+  .exercise-options .pickrow {
     transition: none;
   }
 }
@@ -8266,11 +8370,11 @@ details.details-moving {
   function animateDisclosure(box, open) {
     var summary = box.firstElementChild;
     if (!(!summary || summary.tagName !== "SUMMARY")) {
-      var start = box.getBoundingClientRect().height, previous = box._disclosureRun;
+      var start = box.getBoundingClientRect().height, previous = box._disclosureRun, body = box.children[1], opacity = previous && body ? getComputedStyle(body).opacity : open ? "0" : "1";
       previous && previous.stop();
-      var run = { open: open, animation: null, timer: null, inert: [] };
+      var run = { open: open, animation: null, contentAnimation: null, timer: null, inert: [] };
       if (box._disclosureRun = run, movingDisclosures.push(box), run.stop = function() {
-        box._disclosureRun === run && (box._disclosureRun = null, clearTimeout(run.timer), run.animation && run.animation.cancel(), run.inert.forEach(function(item) {
+        box._disclosureRun === run && (box._disclosureRun = null, clearTimeout(run.timer), run.animation && run.animation.cancel(), run.contentAnimation && run.contentAnimation.cancel(), run.inert.forEach(function(item) {
           item.node.inert = item.was;
         }), box.classList.remove("details-moving", "details-closing"), summary.removeAttribute("aria-expanded"), movingDisclosures = movingDisclosures.filter(function(n) {
           return n !== box;
@@ -8282,20 +8386,25 @@ details.details-moving {
         return;
       }
       box.classList.add("details-moving"), box.classList.toggle("details-closing", !open);
-      var end;
-      if (open ? end = box.getBoundingClientRect().height : (box.contains(document.activeElement) && !summary.contains(document.activeElement) && summary.focus({ preventScroll: !0 }), box.open = !1, end = box.getBoundingClientRect().height, box.open = !0, Array.from(box.children).slice(1).forEach(function(node) {
+      var css = getComputedStyle(box), full = box.getBoundingClientRect().height, shut = summary.getBoundingClientRect().height + parseFloat(css.paddingTop) + parseFloat(css.paddingBottom) + parseFloat(css.borderTopWidth) + parseFloat(css.borderBottomWidth), end;
+      if (open ? end = full : (box.contains(document.activeElement) && !summary.contains(document.activeElement) && summary.focus({ preventScroll: !0 }), end = shut, Array.from(box.children).slice(1).forEach(function(node) {
         run.inert.push({ node: node, was: node.inert }), node.inert = !0;
       })), Math.abs(start - end) < 1) {
         run.finish();
         return;
       }
       summary.setAttribute("aria-expanded", open ? "true" : "false");
-      var css = getComputedStyle(box), duration = parseFloat(css.getPropertyValue(open ? "--t-3" : "--t-2")) || (open ? 320 : 220), easing = css.getPropertyValue("--e-out").trim() || "cubic-bezier(.22,.9,.3,1)";
+      var duration = parseFloat(css.getPropertyValue("--t-3")) || 320;
+      previous && (duration = Math.max(90, duration * Math.min(1, Math.abs(end - start) / Math.max(1, full - shut))));
+      var easing = css.getPropertyValue("--e-soft").trim() || "cubic-bezier(.4,0,.2,1)";
       try {
         run.animation = box.animate(
           [{ height: start + "px" }, { height: end + "px" }],
           { duration: duration, easing: easing, fill: "both" }
-        ), run.animation.onfinish = run.finish, run.animation.oncancel = run.finish, run.timer = setTimeout(run.finish, duration + 120);
+        ), body && (run.contentAnimation = body.animate(
+          [{ opacity: opacity }, { opacity: open ? 1 : 0 }],
+          { duration: duration, easing: easing, fill: "both" }
+        )), run.animation.onfinish = run.finish, run.animation.oncancel = run.finish, run.timer = setTimeout(run.finish, duration + 120);
       } catch (e) {
         run.finish();
       }
@@ -8416,8 +8525,8 @@ details.details-moving {
       }), built.appendChild(strip), d.appendChild(built);
     }
     if ((w.blocks || []).forEach(function(b, bi) {
-      var sect = el("div", "sect");
-      sect.appendChild(el("h3", null, b.title || "Block " + (bi + 1)));
+      var sect = el("div", "sect workout-block");
+      sect.appendChild(el("h3", null, b.title || (w.blocks.length === 1 ? "Exercises" : "Block " + (bi + 1))));
       var bm = blockMetaText(b);
       bm && sect.appendChild(el("div", "blockmeta", bm)), (b.exercises || []).forEach(function(ex, ei) {
         var row = el("div", "exercise-card"), main = el("div", "exercise-main"), name = el("div", "exname");
@@ -8426,17 +8535,19 @@ details.details-moving {
         fl && name.appendChild(fl), main.appendChild(name);
         var dose = doseText(ex);
         dose && main.appendChild(el("div", "exdose", dose)), row.appendChild(main);
-        var acts = el("div", "exercise-actions"), edit = el("button", "setlink", "Review / Edit");
+        var acts = el("div", "exercise-actions"), options = disclosure("Options", "exercise-options");
+        options.firstChild.setAttribute("aria-label", "Options for " + ex.name);
+        var edit = icon(el("button", "pickrow"), "pencil", "Review / Edit");
         edit.onclick = function() {
           openExEdit(w, bi, ei, ex);
-        }, acts.appendChild(edit);
-        var demo = el("button", "setlink", "Demo");
+        }, options.lastChild.appendChild(edit);
+        var demo = icon(el("button", "pickrow"), "play", "Demo");
         demo.onclick = function() {
           explain(ex, w);
-        }, acts.appendChild(demo);
-        var options = disclosure("Options", "exercise-options"), swap = el("button", "pickrow", "Swap or modify");
+        }, options.lastChild.appendChild(demo);
+        var swap = icon(el("button", "pickrow"), "swap", "Swap or modify");
         swap.onclick = function() {
-          options.open = !1, openSwap(ex.name, w.title);
+          openSwap(ex.name, w.title);
         }, options.lastChild.appendChild(swap), acts.appendChild(options), row.appendChild(acts), sect.appendChild(row);
       });
       var addex = el("button", "addex", "+ Add an exercise Spotter missed");
@@ -9665,23 +9776,23 @@ details.details-moving {
         var last = el("div", "wnote wlast", lastLine(entry));
         last.id = "wlast", main.appendChild(last), s.ex.weight && main.appendChild(el("div", "wnote", "Suggested load: " + s.ex.weight)), s.ex.notes && main.appendChild(el("div", "wnote", s.ex.notes)), renderSetPills(main, entry, s.ex, targetOf(s));
       }
-      var acts = el("div", "wactions"), w = wo.workout, clip = sourceOf(s.ex) || w;
+      var acts = el("div", "wactions exercise-actions"), extra = disclosure("Options", "exercise-options");
+      extra.firstChild.setAttribute("aria-label", "Options for " + s.ex.name);
+      var w = wo.workout, clip = sourceOf(s.ex) || w;
       if (clip.thumb_url || clip.shortcode && /^(instagram|tiktok|youtube)$/.test(clip.platform)) {
-        var whose = clip.id !== w.id && clip.author ? "@" + clip.author + "\u2019s" : "the", watch = icon(el("button", "chip"), "play", "Watch " + whose + " clip");
+        var whose = clip.id !== w.id && clip.author ? "@" + clip.author + "\u2019s" : "the", watch = icon(el("button", "pickrow"), "play", "Watch " + whose + " clip");
         watch.onclick = function() {
           openWatch(clip, s.ex);
-        }, acts.appendChild(watch);
+        }, extra.lastChild.appendChild(watch);
       }
-      var help = icon(el("button", "chip"), "help", "Demo");
+      var help = icon(el("button", "pickrow"), "help", "Demo");
       help.onclick = function() {
         explain(s.ex, wo.workout);
-      }, acts.appendChild(help);
-      var swapChip = icon(el("button", "chip"), "swap", "Swap or modify");
+      }, extra.lastChild.appendChild(help);
+      var swapChip = icon(el("button", "pickrow"), "swap", "Swap or modify");
       swapChip.onclick = function() {
         openSwap(s.ex.name, wo.workout.title);
-      };
-      var extra = disclosure("Options", "exercise-options");
-      extra.lastChild.appendChild(swapChip), acts.appendChild(extra), main.appendChild(acts), slide ? (main.style.setProperty("--wmx", (slide > 0 ? 30 : -30) + "px"), main.offsetWidth, main.classList.add("wmin")) : hush || viewIn(main);
+      }, extra.lastChild.appendChild(swapChip), acts.appendChild(extra), main.appendChild(acts), slide ? (main.style.setProperty("--wmx", (slide > 0 ? 30 : -30) + "px"), main.offsetWidth, main.classList.add("wmin")) : hush || viewIn(main);
     }
   }
   var justSet = -1;
