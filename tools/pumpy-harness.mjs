@@ -171,50 +171,34 @@ check('saving a preference preserves other profile settings', () => {
 context.localStorage.setItem = (k,v) => storage.set(k,v);
 context.history = {pushState(){}, back(){}};
 run(app.slice(app.indexOf('  var closeTimers ='), app.indexOf('  // ---------- pushing a sheet away')));
-check('an existing account is not interrupted by a new introduction', () => {
-  run('state.user.created_at="2026-09-01T12:00:00Z"; guide.welcome=false;');
-  assert.equal(run('welcomeEligible()'), false);
+check('new and returning accounts stay in the task instead of an automatic tour', () => {
+  for (const created of ['2026-09-01T12:00:00Z','2026-09-07T12:00:00Z']) {
+    context.state.user.created_at = created;
+    run('state.view="library"; welcomeMaybe()');
+    assert.equal(document.getElementById('welcomesheet').classList.contains('open'), false);
+  }
 });
-check('a new account gets exactly three introduction steps', () => {
-  run('state.user.created_at="2026-09-06T15:00:00Z"; state.view="library"; welcomeMaybe()');
-  assert.equal(document.querySelectorAll('.welcome-page').length, 3);
-  assert.equal(document.getElementById('welcomesheet').classList.contains('open'), true);
-  assert.equal(document.getElementById('welcomeback').disabled, true);
-});
-check('next and back show one accessible step without rebuilding it', () => {
-  const first = document.querySelector('.welcome-page');
-  document.getElementById('welcomenext').onclick();
-  assert.equal(document.querySelectorAll('.welcome-page.on').length, 1);
-  assert.equal(first.inert, true); assert.equal(run('welcomeStep'), 1);
-  document.getElementById('welcomeback').onclick(); assert.equal(run('welcomeStep'), 0);
-  assert.equal(first, document.querySelector('.welcome-page'));
-});
-check('finishing retires the intro locally and on the profile', () => {
-  document.getElementById('welcomenext').onclick(); document.getElementById('welcomenext').onclick();
-  assert.equal(document.getElementById('welcomenext').textContent, 'Let’s go');
-  document.getElementById('welcomenext').onclick();
-  assert.equal(run('guide.welcome'), true); assert.equal(run('state.profile.settings.pumpyWelcome'), 1);
-  assert.equal(run('state.profile.settings.futurePreference'), 'keep');
-  assert.equal(JSON.parse(storage.get('spotter_pumpy_v1:alice')).welcome, true);
-  assert.equal(run('welcomeEligible()'), false);
-});
-check('manual replay remains available after completion', () => {
+check('manual help has one clear save action and no secondary feature tour', () => {
   run('openSheet("settingssheet"); openPumpyGuide()');
   document.getElementById('welcomereplay').onclick();
-  assert.equal(document.getElementById('welcomesheet').classList.contains('open'), true);
-  assert.equal(run('welcomeStep'), 0);
   assert.deepEqual(Array.from(document.querySelectorAll('.sheet.open')).map(n => n.id), ['welcomesheet']);
-  assert.equal(run('welcomeReturn.id'), 'addbtn');
+  assert.equal(document.querySelectorAll('.welcome-page').length, 1);
+  assert.equal(document.getElementById('welcomenext').textContent, 'Save a workout');
+  assert.equal(document.getElementById('welcomeback'), null);
 });
-check('skip also completes the intro and keeps contextual tips enabled', () => {
-  run('guide.off=false; guide.welcome=false; delete state.profile.settings.pumpyWelcome;');
+check('manual help hands off to save without losing preferences or stacking sheets', () => {
+  document.getElementById('addbtn').click = () => run('openSheet("addsheet")');
+  document.getElementById('welcomenext').onclick();
+  assert.deepEqual(Array.from(document.querySelectorAll('.sheet.open')).map(n => n.id), ['addsheet']);
+  assert.equal(run('guide.welcome'), true);
+  assert.equal(run('state.profile.settings.futurePreference'), 'keep');
+  run('closeSheet("addsheet")');
+});
+check('closing manual help keeps contextual tips enabled', () => {
+  run('guide.off=false; openWelcome()');
   document.getElementById('welcomeskip').onclick();
-  assert.equal(run('guide.welcome'), true); assert.equal(run('guide.off'), false);
+  assert.equal(run('guide.off'), false);
   assert.equal(document.getElementById('welcomesheet').classList.contains('open'), false);
-});
-check('an account already using the library does not get interrupted', () => {
-  run('guide.welcome=false; delete state.profile.settings.pumpyWelcome; state.workouts=[{}];');
-  assert.equal(run('welcomeEligible()'), false);
 });
 check('height transitions cancel and retarget safely', () => {
   const node = document.createElement('div'); let cancelled = 0, done = 0;

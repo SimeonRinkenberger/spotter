@@ -166,8 +166,7 @@ export const MARKUP_BODY = String.raw`</head>
       </div>
       <div class="hbtns">
         <button class="addbtn ghost" id="settingsbtn" title="Settings" aria-label="Settings"><svg class="ic"><use href="#i-settings"></use></svg></button>
-        <button class="addbtn ghost" id="refreshbtn" title="Refresh" aria-label="Refresh"><svg class="ic"><use href="#i-refresh"></use></svg></button>
-        <button class="addbtn" id="addbtn" title="Add a workout" aria-label="Add a workout"><svg class="ic"><use href="#i-plus"></use></svg></button>
+        <button class="addbtn savebtn" id="addbtn"><svg class="ic"><use href="#i-plus"></use></svg><span>Save workout</span></button>
       </div>
     </div>
   </header>
@@ -220,7 +219,7 @@ export const MARKUP_BODY = String.raw`</head>
 
   <nav class="tabbar" role="tablist" aria-label="Sections">
     <div class="tabpill" aria-hidden="true"></div>
-    <button class="tab active" id="tab0" role="tab" aria-selected="true" aria-controls="libpage" data-view="library"><span class="ti"><svg class="ic"><use href="#i-dumbbell"></use></svg></span><span class="tl">Library</span></button>
+    <button class="tab active" id="tab0" role="tab" aria-selected="true" aria-controls="libpage" data-view="library"><span class="ti"><svg class="ic"><use href="#i-dumbbell"></use></svg></span><span class="tl">Workouts</span></button>
     <button class="tab" id="tab1" role="tab" aria-selected="false" aria-controls="planview" data-view="plan"><span class="ti"><svg class="ic"><use href="#i-calendar"></use></svg></span><span class="tl">Plan</span></button>
     <button class="tab" id="tab2" role="tab" aria-selected="false" aria-controls="progressview" data-view="progress"><span class="ti"><svg class="ic"><use href="#i-trend"></use></svg></span><span class="tl">Progress</span></button>
     <button class="tab" id="tab3" role="tab" aria-selected="false" aria-controls="pumpyview" data-view="pumpy"><span class="ti" id="pumpytab"></span><span class="tl">Pumpy</span></button>
@@ -233,12 +232,33 @@ export const MARKUP_BODY = String.raw`</head>
     <button class="iconbtn" id="dclose" aria-label="Back"><svg class="ic"><use href="#i-arrow-left"></use></svg></button>
     <div class="hbtns">
       <button class="iconbtn" id="dfav" title="Favourite" aria-label="Favourite" aria-pressed="false"><svg class="ic"><use href="#i-star"></use></svg></button>
-      <button class="iconbtn" id="dshare" title="Share" aria-label="Share"><svg class="ic"><use href="#i-share"></use></svg></button>
-      <button class="iconbtn" id="dreproc" title="Read it again" aria-label="Read it again"><svg class="ic"><use href="#i-refresh"></use></svg></button>
+      <button class="chip" id="dmore" aria-haspopup="dialog">Options</button>
     </div>
   </div>
   <div class="dinner" id="dinner"></div>
 </div>
+
+
+<div class="sheet" id="workoptions" role="dialog" aria-modal="true" aria-labelledby="workoptiontitle"><div class="sheetbody">
+  <div class="grabber"></div>
+  <h2 id="workoptiontitle">Workout options</h2>
+  <div id="workmanage"></div>
+  <button class="pickrow" id="dshare">Share workout</button>
+  <button class="pickrow" id="dreproc">Read it again</button>
+  <button class="btn ghost" data-close="workoptions">Done</button>
+</div></div>
+<div class="sheet" id="filtersheet" role="dialog" aria-modal="true" aria-labelledby="filtertitle"><div class="sheetbody">
+  <div class="grabber"></div><h2 id="filtertitle">Filters</h2>
+  <div id="filterlist"></div>
+  <button class="btn ghost" data-close="filtersheet">Done</button>
+</div></div>
+<div class="sheet" id="schedulesheet" role="dialog" aria-modal="true" aria-labelledby="scheduletitle"><div class="sheetbody">
+  <div class="grabber"></div><h2 id="scheduletitle">Schedule workout</h2>
+  <p class="lede" id="schedulename"></p>
+  <div class="field"><label for="scheduledate">Choose a day</label><input id="scheduledate" type="date" required></div>
+  <p class="autherr" id="scheduleerror" role="status"></p>
+  <div class="btnrow"><button class="btn ghost" data-close="schedulesheet">Cancel</button><button class="btn" id="schedulego">Add to plan</button></div>
+</div></div>
 
 <!-- ---------- workout mode ---------- -->
 <div id="workout">
@@ -382,7 +402,8 @@ export const MARKUP_BODY = String.raw`</head>
   <h2 id="explaintitle">How to do it</h2>
   <div id="explainpre"></div>
   <div class="vslot" id="explainvid"><div id="explainvidin"></div></div>
-  <div class="aitext" id="explaintext">Reading up on it&hellip;</div>
+  <button class="setlink" id="explainask">Explain this exercise with AI</button>
+  <div class="aitext hide" id="explaintext" role="status"></div>
   <div class="btnrow"><button class="btn ghost" id="swapgo"><svg class="ic"><use href="#i-swap"></use></svg>Swap or modify</button></div>
 </div></div>
 
@@ -617,17 +638,15 @@ export const MARKUP_BODY = String.raw`</head>
        has three things to say and only one of them is about reminders arriving. -->
   <div class="setnote" id="setremnote"></div>
 
-  <h3 class="seth">Save from your phone</h3>
-  <p class="lede"><b>Android</b> &mdash; install Spotter, then share any video to it from the share
-    sheet. Nothing below is needed.</p>
-  <p class="lede"><b>iPhone</b> &mdash; for now, make a Shortcut that POSTs the shared link to this
-    address. A native share option is coming with the App Store version. Keep the address
-    private &mdash; it works without your password.</p>
-  <div class="keybox" id="setkey">&mdash;</div>
-  <div class="btnrow">
-    <button class="btn ghost" id="copykey">Copy address</button>
-    <button class="btn ghost" id="rotatekey">New key</button>
-  </div>
+  <details class="disclosure" id="phonesave"><summary>Save from your phone</summary><div class="disclosure-body">
+    <p class="lede"><b>On any phone</b> — copy a video link, then tap <b>Save workout</b> in Spotter.</p>
+    <p class="lede"><b>Android</b> — install Spotter, then choose it in the video app’s share sheet.</p>
+    <details class="disclosure"><summary>iPhone Shortcut setup (advanced)</summary><div class="disclosure-body">
+      <p class="lede">For direct sharing on iPhone, create a Shortcut that sends the shared URL as a POST to this address. Keep it private — it works without your password.</p>
+      <div class="keybox" id="setkey">&mdash;</div>
+      <div class="btnrow"><button class="btn ghost" id="copykey">Copy address</button><button class="btn ghost" id="rotatekey">New key</button></div>
+    </div></details>
+  </div></details>
 
   <h3 class="seth">Data &amp; privacy</h3>
   <div class="setgroup">
@@ -639,6 +658,7 @@ export const MARKUP_BODY = String.raw`</head>
 
   <h3 class="seth">About</h3>
   <div class="setgroup">
+    <button class="kv row" id="refreshbtn"><span class="k">Refresh workouts</span><svg class="ic"><use href="#i-refresh"></use></svg></button>
     <a class="kv row" href="whats-new.html"><span class="k">What&rsquo;s new</span><span class="v" id="setver">&mdash;</span><svg class="ic chev"><use href="#i-chev"></use></svg></a>
     <button class="kv row" id="settell"><span class="k">Tell a friend</span><svg class="ic chev"><use href="#i-chev"></use></svg></button>
     <a class="kv row" href="https://github.com/SimeonRinkenberger/spotter/issues" target="_blank" rel="noopener"><span class="k">Something wrong? Tell me</span><svg class="ic chev"><use href="#i-chev"></use></svg></a>
@@ -697,15 +717,15 @@ export const MARKUP_BODY = String.raw`</head>
   <h2>A little help from Pumpy</h2>
   <p class="lede">Pick what you’re working on.</p>
   <div id="guidebody"></div>
-  <button class="setlink" id="welcomereplay">Replay the short introduction</button>
+  <button class="setlink" id="welcomereplay">How to save a workout</button>
   <button class="setlink" id="guidereset">Show tips again as I go</button>
 </div></div>
 
 <div class="sheet" id="welcomesheet" role="dialog" aria-modal="true" aria-label="Welcome to Spotter"><div class="sheetbody">
   <div class="grabber"></div>
-  <div class="welcome-top"><span id="welcomecount" aria-live="polite"></span><button id="welcomeskip">Skip intro</button></div>
+  <div class="welcome-top"><span id="welcomecount" aria-live="polite"></span><button id="welcomeskip">Close</button></div>
   <div id="welcomestage"></div>
-  <div class="welcome-actions"><button class="btn ghost" id="welcomeback">Back</button><button class="btn" id="welcomenext">Next</button></div>
+  <div class="welcome-actions"><button class="btn" id="welcomenext">Next</button></div>
 </div></div>
 
 <div id="toast"></div>

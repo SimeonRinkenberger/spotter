@@ -1,0 +1,28 @@
+{
+  "checks": [
+    "four labeled tabs remain",
+    "no automatic introduction",
+    "filter limits workouts",
+    "source player is deferred",
+    "review and demo are visible without swiping",
+    "warning is visible",
+    "muscle map collapsed",
+    "demo makes no AI explanation request",
+    "explicit AI request works",
+    "timestamp preserves workout title",
+    "timestamp opens source at correct second",
+    "review opens populated exercise fields",
+    "schedule acknowledges save",
+    "management actions accessible in menu",
+    "options returns keyboard focus",
+    "closing source removes player",
+    "logging and demo stay visible in workout mode",
+    "set logging still works",
+    "training details collapsed by default",
+    "charts hidden until expanded",
+    "charts remain accessible",
+    "375px detail has no horizontal overflow",
+    "no runtime errors"
+  ],
+  "errors": []
+}

@@ -1168,41 +1168,6 @@ export const APP = String.raw`
     render();
   }
 
-  // The ninety milliseconds between a finger landing and the tap it becomes are
-  // already spent — instant.page measures 90ms on touch, 80ms on a mouse. Both of
-  // the explain sheet's questions are decided by the exercise under the finger, so
-  // the press asks them and the answers land in the same two caches the sheet
-  // reads. api() shares the in-flight answer for these routes, so the press and
-  // the tap together cost one AI credit rather than two; the only waste left is a
-  // press that turns into a scroll, and even that is recovered next time. Nothing
-  // is prefetched for the swap sheet — a swap needs a reason nobody has picked yet.
-  function prefetchExplain(ex, w) {
-    if (!ex || !ex.name) return;
-    var quote = ex.evidence && ex.evidence.quote ? String(ex.evidence.quote).trim() : "";
-    var vk = vidKey(ex);
-    if (!vidCache[vk]) {
-      api("demo-video", { method: "POST", body: JSON.stringify({
-        exercise: ex.name, canonical_id: ex.canonical_id || null
-      }) }).then(function (r) {
-        if (r && r.status === "ok") vidCache[vk] = r;
-      }).catch(function () { });
-    }
-    var key = ex.name + "\n" + quote;
-    if (expCache[key] || expWaiting[key]) return;
-    // The press does not stream — nothing is open yet to watch it in — and the
-    // promise is kept so the tap ninety milliseconds later joins THIS call.
-    // api()'s in-flight sharing cannot reach across the two transports, and an
-    // explanation costs a helper credit whichever one asked for it.
-    expWaiting[key] = api("explain", { method: "POST", body: JSON.stringify({
-      exercise: ex.name, title: w ? (w.title || "") : "", quote: quote,
-      source: ex.evidence ? ex.evidence.source : null, canonical_id: ex.canonical_id || null
-    }) }).then(function (r) {
-      delete expWaiting[key];
-      if (r && r.status === "ok") expCache[key] = r.text;
-      return r;
-    }).catch(function () { delete expWaiting[key]; return null; });
-  }
-
   // ---------- library ----------
 
   function load(retry) {
@@ -1259,21 +1224,21 @@ export const APP = String.raw`
     if (JSON.stringify(current) === JSON.stringify(w)) return;
     var old = current, d = $("dinner"), scroll = $("detail").scrollTop;
     if (!$("detail").classList.contains("open")) { current = w; return; }
-    var media = d.firstElementChild;
-    var keepMedia = media && media.querySelector("iframe") && old.url === w.url && old.platform === w.platform;
-    var expanded = [];
-    Array.prototype.forEach.call(d.querySelectorAll(".exrow"), function (row, i) {
-      if (row.classList.contains("open")) expanded.push(i);
+    var source = d.querySelector(".source-disclosure");
+    var keepSource = source && old.url === w.url && old.caption === w.caption && old.platform === w.platform;
+    var opened = Array.from(d.querySelectorAll(".disclosure")).map(function (box) {
+      return { title: box.firstChild.textContent, open: box.open };
     });
-    var active = document.activeElement;
-    if (keepMedia) media.remove();
     openDetail(w, true);
-    if (keepMedia && d.firstElementChild && d.firstElementChild.querySelector("iframe")) d.replaceChild(media, d.firstElementChild);
     if (JSON.stringify(old.blocks) === JSON.stringify(w.blocks)) {
-      var rows = d.querySelectorAll(".exrow");
-      expanded.forEach(function (i) { if (rows[i]) rows[i].classList.add("open"); });
+      d.querySelectorAll(".disclosure").forEach(function (box, i) {
+        if (opened[i] && opened[i].title === box.firstChild.textContent) box.open = opened[i].open;
+      });
     }
-    if (active && active.isConnected && active !== document.body) active.focus({ preventScroll: true });
+    if (keepSource) {
+      var replacement = d.querySelector(".source-disclosure");
+      if (replacement) replacement.replaceWith(source);
+    }
     $("detail").scrollTop = scroll;
   }
 
@@ -1458,60 +1423,43 @@ export const APP = String.raw`
 
   function renderChips() {
     var wrap = $("chips");
-    var counts = {}, favs = 0;
-    state.workouts.forEach(function (w) {
-      counts[w.category] = (counts[w.category] || 0) + 1;
-      if (w.favorite) favs++;
-    });
-    // A collection can be deleted under the chip filtering on it, and clearing beats
-    // an empty grid explaining itself. The bar below does the same for the narrows
-    // that no longer have a chip.
     if (isColFilter(state.filter) && !colById(state.filter.slice(4))) state.filter = "All";
-
-    // Sort leads the row and stays pinned while the filters scroll under it: it is
-    // not one more filter to hunt for, it decides the shape of everything below.
-    // Apple's repeated "Sort by" is the sheet title, so the chip carries the answer.
-    var list = [{ key: "__sort", cls: "sortchip", label: SORTLBL[sortMode], icon: "sort", n: null }];
-    list.push({ key: "All", label: "All", n: state.workouts.length });
-    if (favs) list.push({ key: "Favorites", label: "Favourites", icon: "star", n: favs });
-    // The three busiest creators used to sit here, and they were the complaint: three
-    // out of however many a library is made of, the rest reachable only by dragging
-    // the row. Creator sort now lists every one, with a count and a jump.
-    state.collections.forEach(function (c) {
-      list.push({ key: "col:" + c.id, label: colLabel(c), n: colCount(c.id) });
-    });
-    if (state.workouts.length) list.push({ key: "__newcol", label: "Collection", icon: "plus", n: null });
-    CATEGORIES.forEach(function (c) { if (counts[c]) list.push({ key: c, label: c, n: counts[c] }); });
-
-    // The chips have carried a 220ms transition on their lit state that never once
-    // ran: render() threw every chip away, and a new node cannot transition from a
-    // value it never held. Unchanged row, kept buttons.
-    var sig = list.map(function (i) { return i.key + "" + i.label + "" + i.icon + "" + i.n; }).join("");
-    var kids = wrap.children;
-    if (sig === chipSig && kids.length === list.length) {
-      for (var k = 0; k < list.length; k++) {
-        kids[k].classList.toggle("active", state.filter === list[k].key);
-      }
-      return;
-    }
-    chipSig = sig;
     wrap.innerHTML = "";
+    wrap.classList.toggle("hide", !state.workouts.length);
+    function control(label, fn, active) {
+      var b = el("button", "chip" + (active ? " active" : ""), label);
+      b.onclick = fn; wrap.appendChild(b);
+    }
+    var filterLabel = state.filter !== "All" && !isColFilter(state.filter) && !isByFilter(state.filter) && !isMgFilter(state.filter) ? "Filter: " + state.filter : "Filters";
+    control(filterLabel, function () { openLibraryFilters(false); }, state.filter !== "All" && !isColFilter(state.filter));
+    control("Collections", function () { openLibraryFilters(true); }, isColFilter(state.filter));
+    control("Sort: " + SORTLBL[sortMode], function () { openSort(); });
+    if (state.filter !== "All") control("Clear filter", function () { state.filter = "All"; render(); });
+  }
 
-    list.forEach(function (item) {
-      var b = el("button", "chip" + (item.cls ? " " + item.cls : "") +
-        (state.filter === item.key ? " active" : ""));
-      if (item.icon) b.appendChild(ic(item.icon));
-      b.appendChild(document.createTextNode(item.label));
-      if (item.n !== null) b.appendChild(el("span", "n", String(item.n)));
-      b.onclick = function () {
-        if (item.key === "__sort") { openSort(); return; }
-        if (item.key === "__newcol") { openCollections(null); return; }
-        state.filter = item.key;
-        render();
-        viewIn($("grid"));
-      };
-      wrap.appendChild(b);
-    });
+  function openLibraryFilters(collections) {
+    var list = $("filterlist"); list.innerHTML = "";
+    $("filtertitle").textContent = collections ? "Collections" : "Filters";
+    function option(key, label) {
+      var b = el("button", "pickrow", label);
+      b.setAttribute("aria-pressed", state.filter === key ? "true" : "false");
+      if (state.filter === key) b.appendChild(ic("check"));
+      b.onclick = function () { state.filter = key; render(); closeSheet("filtersheet"); };
+      list.appendChild(b);
+    }
+    option("All", "All workouts");
+    if (collections) {
+      state.collections.forEach(function (c) { option("col:" + c.id, colLabel(c) + " · " + colCount(c.id)); });
+      var manage = el("button", "pickrow", "Create or manage collections");
+      manage.onclick = function () { openCollections(null); closeSheet("filtersheet"); };
+      list.appendChild(manage);
+    } else {
+      option("Favorites", "Favourites");
+      CATEGORIES.forEach(function (c) {
+        if (state.workouts.some(function (w) { return w.category === c; })) option(c, c);
+      });
+    }
+    openSheet("filtersheet");
   }
 
   // Rename / delete for the collection currently filtering the library. Shown
@@ -1855,13 +1803,11 @@ export const APP = String.raw`
       empty.innerHTML = "";
       empty.appendChild(state.workouts.length ? icon(el("div", "big"), "search") : pumpyArt("coach", false));
       if (!state.workouts.length) {
-        empty.appendChild(el("h2", null, "Your gym bag is empty"));
-        var p = el("p");
-        p.appendChild(document.createTextNode("Tap "));
-        var b = el("b", null, "+");
-        p.appendChild(b);
-        p.appendChild(document.createTextNode(" and paste a link to a workout video. Spotter reads the exercises out of it."));
-        empty.appendChild(p);
+        empty.appendChild(el("h2", null, "Your saved videos become workouts."));
+        empty.appendChild(el("p", null, "Paste a TikTok, Instagram, or YouTube link to get started."));
+        var first = el("button", "btn firstsave", "Save your first workout");
+        first.onclick = function () { $("addbtn").click(); };
+        empty.appendChild(first);
       } else {
         // Naming the search back, and saying what it looks in, turns a dead end
         // into an instruction.
@@ -1869,7 +1815,7 @@ export const APP = String.raw`
         empty.appendChild(el("h2", null, q ? "Nothing matches “" + q + "”" : "Nothing under this filter"));
         empty.appendChild(el("p", null, q
           ? "Spotter searches titles, exercise names, muscles and equipment. Try one word instead of three."
-          : "Nothing in your library is filed here yet. Tap All to see everything."));
+          : "Nothing is filed here yet. Clear the filter to see all workouts."));
       }
       viewIn(empty);
       return;
@@ -2030,6 +1976,8 @@ export const APP = String.raw`
     renderGrid();
     renderLibCount();
     var n = state.workouts.length;
+    $("searchwrap").classList.toggle("hide", !n);
+    maybeInstallHint();
     $("count0").textContent = n ? n + (n === 1 ? " workout" : " workouts") : "No workouts yet";
   }
 
@@ -2229,6 +2177,14 @@ export const APP = String.raw`
 
   // keepHistory is set when Realtime re-renders an open card in place: the overlay
   // is already on the history stack and pushing again would need two back gestures.
+  function disclosure(title, cls) {
+    var box = el("details", "disclosure" + (cls ? " " + cls : ""));
+    box.setAttribute("data-noswipe", "");
+    box.appendChild(el("summary", null, title));
+    box.appendChild(el("div", "disclosure-body"));
+    return box;
+  }
+
   function openDetail(w, keepHistory) {
     if (!keepHistory) { guideClear(); guideStill(); }
     current = w;
@@ -2247,18 +2203,15 @@ export const APP = String.raw`
     if (navFrom) { dNav = gridNav(w.id); navFrom = false; }
     else if (dNav && dNav.ids[dNav.i] !== w.id) dNav = null;
 
-    var em = embedNode(w);
-    if (em) { d.appendChild(em); fitEmbed(em, w.platform); }
+    $("workmanage").innerHTML = "";
+    $("workmanage").appendChild(manageRow(w));
+    $("dreproc").disabled = isPending(w);
+    $("dreproc").hidden = isUpload(w) || w.platform === "pumpy";
 
     d.appendChild(el("div", "dkick", isPending(w)
       ? stageOf(w).kick
       : (isFailed(w) ? "Needs another try" : (w.category || "Other"))));
     var titleEl = el("h2", "dtitle", w.title || "Untitled workout");
-    if (!isPending(w)) {
-      titleEl.classList.add("editable");
-      titleEl.title = "Tap to rename";
-      titleEl.onclick = function () { openRename("workout", w.id, w.title || ""); };
-    }
     d.appendChild(titleEl);
     // The handle does what a collection pill does: close the card, land in a library
     // already narrowed to that creator. setView only moves the pager now — arriving
@@ -2271,8 +2224,7 @@ export const APP = String.raw`
       };
       d.appendChild(au);
     }
-    d.appendChild(manageRow(w));
-    d.appendChild(colPills(w));
+
 
     // A card whose extraction has not landed yet, or one whose job gave up. Both
     // are real rows with a real link — the user keeps what they saved either way.
@@ -2319,7 +2271,7 @@ export const APP = String.raw`
     }
 
     var pills = el("div", "pillrow");
-    (w.muscle_groups || []).forEach(function (m) { pills.appendChild(el("span", "pill accent", m)); });
+
     (w.equipment || []).forEach(function (e) { pills.appendChild(el("span", "pill", e)); });
     if (!(w.equipment || []).length && w.has_full_workout) pills.appendChild(el("span", "pill", "bodyweight"));
     if (pills.children.length) d.appendChild(pills);
@@ -2330,16 +2282,11 @@ export const APP = String.raw`
     var exN = exerciseNames(w).length;
     if (exN) specs.push([String(exN), "Exercises"]);
     if (w.difficulty) specs.push([capWord(w.difficulty), "Level"]);
-    if (w.calories) specs.push([String(w.calories), "Est. kcal"]);
+
     if (specs.length) {
-      var strip = el("div", "specstrip");
-      specs.forEach(function (s) {
-        var c = el("div", "spec");
-        c.appendChild(el("div", "v", s[0]));
-        c.appendChild(el("div", "k", s[1]));
-        strip.appendChild(c);
-      });
-      d.appendChild(strip);
+      d.appendChild(el("div", "workout-meta", specs.map(function (v) {
+        return v[0] + (v[1] === "Exercises" ? " exercises" : "");
+      }).join(" · ")));
     }
 
     // The confidence score, translated into the only thing a user needs from it:
@@ -2397,37 +2344,30 @@ export const APP = String.raw`
     start.onclick = function () { startWorkout(w); };
     d.appendChild(start);
 
-    var ask = el("button", "askpumpy");
-    ask.appendChild(pumpyMark("pmark"));
-    ask.appendChild(document.createTextNode("Ask Pumpy about this workout"));
+    var actions = el("div", "detail-actions");
+    var schedule = el("button", "chip", "Schedule");
+    schedule.onclick = function () { scheduleWorkout(w); };
+    actions.appendChild(schedule);
+    var ask = el("button", "chip", "Ask coach");
     ask.onclick = function () { history.back(); openPumpy(w); };
-    d.appendChild(ask);
+    actions.appendChild(ask);
+    d.appendChild(actions);
 
-    // What this hits: catalog muscles through canonical_id, nothing else. Filled
-    // in once the catalog map is here, which after the first card is immediate.
-    if (exN) {
-      var hits = el("div", "sect");
-      hits.appendChild(el("h3", null, "What this hits"));
-      var slot = el("div");
-      hits.appendChild(slot);
-      hits.appendChild(el("div", null, " "));
-      d.appendChild(hits);
-      loadCatalog().then(function () {
-        if (!current || current.id !== w.id) return;
-        var r = cardHits(allExercises(w));
-        slot.innerHTML = "";
-        slot.appendChild(bodyMap(r.levels, 2, bodyLegend([
-          { lv: [2], text: "Primary" },
-          { lv: [1], text: "Secondary" },
-          { lv: [0], text: "Not targeted" }
-        ]), cardCaption(r.names)));
-        if (!r.mapped) {
-          slot.appendChild(el("div", "bodynote",
-            "None of these exercises matched Spotter’s catalog yet, so nothing is highlighted."));
-        }
-        bodyNotes(slot, r, "exercises");
-      });
-    }
+    var original = disclosure("Watch original / source", "source-disclosure");
+    var sourceBody = original.lastChild;
+    if (!isUpload(w) && w.url) sourceBody.appendChild(originalLink(w));
+    if (w.caption) sourceBody.appendChild(el("div", "capbox", w.caption));
+    original.addEventListener("toggle", function () {
+      if (!original.open) {
+        var old = sourceBody.querySelector(".embedwrap, .dphoto");
+        if (old) old.remove();
+        return;
+      }
+      if (sourceBody.querySelector(".embedwrap, .dphoto")) return;
+      var em = embedNode(w);
+      if (em) { sourceBody.insertBefore(em, sourceBody.firstChild); fitEmbed(em, w.platform); }
+    });
+    if (w.platform !== "pumpy") d.appendChild(original);
 
     // Above the blocks: a coach's card arrives with no video attached, and whose
     // videos it came out of is the first thing worth knowing about it.
@@ -2450,8 +2390,8 @@ export const APP = String.raw`
       var bm = blockMetaText(b);
       if (bm) sect.appendChild(el("div", "blockmeta", bm));
       (b.exercises || []).forEach(function (ex, ei) {
-        var row = el("div", "exrow");
-        var main = el("div", "exmain");
+        var row = el("div", "exercise-card");
+        var main = el("div", "exercise-main");
         var name = el("div", "exname");
         name.appendChild(document.createTextNode(ex.name));
         if (ex.notes) name.appendChild(el("div", "exnote", ex.notes));
@@ -2467,38 +2407,26 @@ export const APP = String.raw`
         var dose = doseText(ex);
         if (dose) main.appendChild(el("div", "exdose", dose));
         row.appendChild(main);
-        // Trailing actions are edge-first on iOS — last written is nearest the
-        // screen edge — so what the row is mostly opened for needs no aiming.
-        var acts = el("div", "exacts");
-        acts.appendChild(exAct(row, "pencil", "Edit", "Fix this exercise", false,
-          function () { openExEdit(w, bi, ei, ex); }));
-        acts.appendChild(exAct(row, "swap", "Swap", "Swap or modify this exercise", false,
-          function () { openSwap(ex.name, w.title); }));
-        var how = exAct(row, "help", "How to", "How to do this exercise", true,
-          function () { explain(ex, w); });
-        // The press starts the two questions the tap is about to ask, and the tap
-        // finds them already in flight. Only where a press is an intent: the drawer
-        // button, and a mouse on the row. A finger landing on a row is as often the
-        // start of a scroll, and two AI calls per scroll touch is money for nothing.
-        how.addEventListener("pointerdown", function () { prefetchExplain(ex, w); });
-        main.addEventListener("pointerdown", function (e) {
-          if (e.pointerType === "mouse") prefetchExplain(ex, w);
-        });
-        acts.appendChild(how);
+        var acts = el("div", "exercise-actions");
+        var edit = el("button", "setlink", "Review / Edit");
+        edit.onclick = function () { openExEdit(w, bi, ei, ex); };
+        acts.appendChild(edit);
+        var demo = el("button", "setlink", "Demo");
+        demo.onclick = function () { explain(ex, w); };
+        acts.appendChild(demo);
+        var options = disclosure("Options", "exercise-options");
+        var swap = el("button", "pickrow", "Swap or modify");
+        swap.onclick = function () { options.open = false; openSwap(ex.name, w.title); };
+        options.lastChild.appendChild(swap);
+        acts.appendChild(options);
         row.appendChild(acts);
-        // A closed row answers a tap with what it is most asked for; an open one
-        // answers by putting itself away, as iOS does.
-        main.onclick = function () {
-          if (row.classList.contains("open")) { closeExRow(row); return; }
-          explain(ex, w);
-        };
         sect.appendChild(row);
       });
       var addex = el("button", "addex", "+ Add an exercise Spotter missed");
       addex.onclick = function () { openExAdd(w, bi); };
       sect.appendChild(addex);
       d.appendChild(sect);
-      if (bi === 0) guideOffer("detail", sect, sect.querySelector(".exrow"));
+
     });
 
     if (!(w.blocks || []).length) {
@@ -2516,7 +2444,7 @@ export const APP = String.raw`
           ? "Spotter read the video itself and still could not make out a workout in it. " +
             "You can watch it and log a freestyle session, or type the exercises in yourself."
           : "This video did not include a written workout, so there is nothing to step through. " +
-            "You can still watch it and log a freestyle session, use Read it again at the top of " +
+            "You can still watch it and log a freestyle session, use Read it again in Options on " +
             "this card to have another go, or type the exercises in yourself."));
       none.appendChild(np);
       none.appendChild(el("div", null, " "));
@@ -2530,6 +2458,37 @@ export const APP = String.raw`
       none.appendChild(addfirst);
       d.appendChild(none);
     }
+
+    // What this hits: catalog muscles through canonical_id, nothing else. Filled
+    // in once the catalog map is here, which after the first card is immediate.
+    if (exN) {
+      var hitDetails = disclosure("Muscles worked");
+      var hits = hitDetails.lastChild;
+      var slot = el("div");
+      hits.appendChild(slot);
+      hits.appendChild(el("div", null, " "));
+      d.appendChild(hitDetails);
+      loadCatalog().then(function () {
+        if (!current || current.id !== w.id) return;
+        var r = cardHits(allExercises(w));
+        slot.innerHTML = "";
+        slot.appendChild(bodyMap(r.levels, 2, bodyLegend([
+          { lv: [2], text: "Primary" },
+          { lv: [1], text: "Secondary" },
+          { lv: [0], text: "Not targeted" }
+        ]), cardCaption(r.names)));
+        if (!r.mapped) {
+          slot.appendChild(el("div", "bodynote",
+            "None of these exercises matched Spotter’s catalog yet, so nothing is highlighted."));
+        }
+        bodyNotes(slot, r, "exercises");
+      });
+    }
+
+    var notesDetails = disclosure("Notes and category");
+    var notesBody = notesDetails.lastChild;
+    notesBody.appendChild(colPills(w));
+    d.appendChild(notesDetails);
 
     var cat = el("div", "selectrow");
     var sel = el("select");
@@ -2555,7 +2514,7 @@ export const APP = String.raw`
     };
     cat.appendChild(el("span", "pill", "Category"));
     cat.appendChild(sel);
-    d.appendChild(cat);
+    notesBody.appendChild(cat);
 
     var notesSect = el("div", "sect");
     notesSect.appendChild(el("h3", null, "Notes"));
@@ -2579,19 +2538,7 @@ export const APP = String.raw`
     };
     notesSect.appendChild(ta);
     notesSect.appendChild(el("div", null, " "));
-    d.appendChild(notesSect);
-
-    if (w.caption) {
-      var capSect = el("div", "sect");
-      // Nobody wrote an upload's text — a speech model heard it — so calling it a
-      // caption would be claiming a source that does not exist.
-      capSect.appendChild(el("h3", null, isUpload(w) ? "What was said in the video" : "Original caption"));
-      capSect.appendChild(el("div", "capbox", w.caption));
-      capSect.appendChild(el("div", null, " "));
-      d.appendChild(capSect);
-    }
-
-    if (w.source_url || w.platform === "web") d.appendChild(originalLink(w));
+    notesBody.appendChild(notesSect);
 
     setFav(w);
     paintNav();
@@ -4201,18 +4148,12 @@ export const APP = String.raw`
   function watchBit(w, t) {
     var em = embedNode(w, t);
     if (!em) return;
-    // The sheet whenever the card in front of the user is not this video's own —
-    // Workout Mode, or a coach's card quoting one it borrowed from. Only a card
-    // showing its own embed can reload it in place; anywhere else this would drop
-    // somebody else's video into the top of the card.
-    if ((wo && wo.workout) || !current || current.id !== w.id) {
-      $("watchbody").innerHTML = "";
-      $("watchbody").appendChild(em);
-      // Open before close: the sheet layer's one history entry survives a handover.
-      openSheet("watchsheet");
-    } else if ($("dinner").firstChild) {
-      $("dinner").replaceChild(em, $("dinner").firstChild);
-    }
+    // Source video always opens in its own sheet, so a timestamp never replaces
+    // the title or expands the workout's collapsed source section unexpectedly.
+    $("watchbody").innerHTML = "";
+    $("watchbody").appendChild(em);
+    openSheet("watchsheet");
+    fitEmbed(em, w.platform);
     closeSheet("explainsheet");
   }
 
@@ -4447,7 +4388,9 @@ export const APP = String.raw`
     if (s) pre.appendChild(s);
     // Spotter's pending vocabulary is reading, listening, watching. "Thinking" is
     // a chatbot's word for the same wait and belongs to a different app.
-    $("explaintext").textContent = expCache[key] || "Reading up on it…";
+    $("explaintext").textContent = "";
+    $("explaintext").classList.add("hide");
+    $("explainask").classList.remove("hide");
     // Open before close: the swap sheet takes over the sheet layer's one history
     // entry, and closing first would hand that entry back mid-handover.
     $("swapgo").onclick = function () { openSwap(name, title); closeSheet("explainsheet"); };
@@ -4474,31 +4417,36 @@ export const APP = String.raw`
       }).catch(function () {});
     }
 
-    if (expCache[key]) return;
-    function done(r) {
-      if (!r) { if (expKey === key) $("explaintext").textContent = EXFAIL; return; }
-      var text = r.status === "ok" ? r.text : (r.message || EXFAIL);
-      expCache[key] = r.status === "ok" ? text : null;
-      if (expKey === key) $("explaintext").textContent = text;
-      limitHit(r, null);
-    }
-    // Joining the press costs nothing; asking again costs a credit. Only a sheet
-    // opened cold gets to watch the words arrive.
-    if (expWaiting[key]) { expWaiting[key].then(done); return; }
-    var got = "";
-    apiStream("explain", {
-      exercise: name, title: title, quote: quote,
-      source: ev ? ev.source : null, canonical_id: ex.canonical_id || null
-    }, function (r) {
-      if (r.t === "delta") {
-        got += r.text || "";
-        if (expKey === key) $("explaintext").textContent = got;
-        return;
+    $("explainask").onclick = function () {
+      this.classList.add("hide");
+      $("explaintext").classList.remove("hide");
+      $("explaintext").textContent = expCache[key] || "Reading up on it…";
+      if (expCache[key]) return;
+      function done(r) {
+        if (!r) { if (expKey === key) $("explaintext").textContent = EXFAIL; return; }
+        var text = r.status === "ok" ? r.text : (r.message || EXFAIL);
+        expCache[key] = r.status === "ok" ? text : null;
+        if (expKey === key) $("explaintext").textContent = text;
+        limitHit(r, null);
       }
-      done(r);
-    }).catch(function () {
-      if (expKey === key) $("explaintext").textContent = got || EXFAIL;
-    });
+      // Joining the press costs nothing; asking again costs a credit. Only a sheet
+      // opened cold gets to watch the words arrive.
+      if (expWaiting[key]) { expWaiting[key].then(done); return; }
+      var got = "";
+      apiStream("explain", {
+        exercise: name, title: title, quote: quote,
+        source: ev ? ev.source : null, canonical_id: ex.canonical_id || null
+      }, function (r) {
+        if (r.t === "delta") {
+          got += r.text || "";
+          if (expKey === key) $("explaintext").textContent = got;
+          return;
+        }
+        done(r);
+      }).catch(function () {
+        if (expKey === key) $("explaintext").textContent = got || EXFAIL;
+      });
+    };
   }
 
   // ---------- swap or modify ----------
@@ -4860,12 +4808,14 @@ export const APP = String.raw`
       watch.onclick = function () { openWatch(clip, s.ex); };
       acts.appendChild(watch);
     }
-    var help = icon(el("button", "chip"), "help", "How to do this");
+    var help = icon(el("button", "chip"), "help", "Demo");
     help.onclick = function () { explain(s.ex, wo.workout); };
     acts.appendChild(help);
     var swapChip = icon(el("button", "chip"), "swap", "Swap or modify");
     swapChip.onclick = function () { openSwap(s.ex.name, wo.workout.title); };
-    acts.appendChild(swapChip);
+    var extra = disclosure("Options", "exercise-options");
+    extra.lastChild.appendChild(swapChip);
+    acts.appendChild(extra);
     main.appendChild(acts);
 
     // A swipe said which way the lifter went, so the exercise arrives from that
@@ -7438,6 +7388,34 @@ export const APP = String.raw`
     openSheet("picksheet");
   }
 
+  var scheduleCtx = null;
+  function scheduleWorkout(w) {
+    scheduleCtx = { w: w, uid: state.user.id, epoch: accountEpoch };
+    $("schedulename").textContent = w.title || "Workout";
+    $("scheduledate").value = ymd(new Date());
+    $("scheduleerror").textContent = "";
+    $("schedulego").disabled = false;
+    $("schedulego").textContent = "Add to plan";
+    openSheet("schedulesheet");
+  }
+  $("schedulego").onclick = function () {
+    var ctx = scheduleCtx, day = $("scheduledate").value, b = this;
+    if (!ctx || !accountNow(ctx.epoch, ctx.uid) || b.disabled) return;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) { $("scheduleerror").textContent = "Choose a day first."; return; }
+    b.disabled = true; b.textContent = "Adding…";
+    planAdd(day, ctx.w.id).then(function (r) {
+      if (!accountNow(ctx.epoch, ctx.uid) || scheduleCtx !== ctx) return;
+      b.disabled = false; b.textContent = "Add to plan";
+      if (r.error) { $("scheduleerror").textContent = "Could not add it. Try again."; return; }
+      closeSheet("schedulesheet"); today.at = 0; loadPlan(); loadToday();
+      toast("Added to your plan.");
+    }).catch(function () {
+      if (scheduleCtx !== ctx || !accountNow(ctx.epoch, ctx.uid)) return;
+      b.disabled = false; b.textContent = "Add to plan";
+      $("scheduleerror").textContent = "Could not connect. Try again.";
+    });
+  };
+
   // ---------- logs, progress, history ----------
 
   function loadLogs() {
@@ -7940,12 +7918,23 @@ export const APP = String.raw`
     hero.appendChild(el("div", "rmeta",
       logs.length + (logs.length === 1 ? " session" : " sessions") + " logged"));
     v.appendChild(hero);
+    renderHistoryInto(v, logs.slice(0, 5));
+    if (logs.length > 5) {
+      var older = disclosure("Earlier sessions (" + (logs.length - 5) + ")");
+      renderHistoryInto(older.lastChild, logs.slice(5));
+      v.appendChild(older);
+    }
+    var metrics = disclosure("Training details · charts and muscles");
+    var metricsBody = metrics.lastChild;
+    v.appendChild(metrics);
+    var awards = disclosure("Achievements");
+    v.appendChild(awards);
 
     // The case fills itself in from history the first time it is looked at, so an
     // account with two hundred sessions behind it never opens on an empty shelf.
     // A detached slot means a later render replaced the box this answer was for.
     var awSlot = el("div");
-    v.appendChild(awSlot);
+    awards.lastChild.appendChild(awSlot);
     loadAwards().then(function () {
       if (!awSlot.isConnected) return;
       var won = grantAwards(awardsFor(logs, st, null));
@@ -7965,7 +7954,7 @@ export const APP = String.raw`
     hit.appendChild(el("h3", null, "What you’ve hit this week"));
     var hitSlot = el("div");
     hit.appendChild(hitSlot);
-    v.appendChild(hit);
+    metricsBody.appendChild(hit);
     loadCatalog().then(function () {
       // Whether this render was superseded, not whether Progress is the page being
       // looked at. warmPages() draws this page while the Library is still on
@@ -8031,7 +8020,7 @@ export const APP = String.raw`
         svg.appendChild(t);
       });
       card.appendChild(svg);
-      v.appendChild(card);
+      metricsBody.appendChild(card);
     }
 
     // Personal records, by estimated 1RM (Epley). Grouped by catalog id where the
@@ -8071,7 +8060,7 @@ export const APP = String.raw`
         r.appendChild(el("div", "v", Math.round(p.est) + " " + state.unit));
         pc.appendChild(r);
       });
-      v.appendChild(pc);
+      metricsBody.appendChild(pc);
     }
 
     // muscle-group distribution, joined through the saved workout
@@ -8099,11 +8088,11 @@ export const APP = String.raw`
         r.appendChild(el("div", "num", String(mg[m])));
         mc.appendChild(r);
       });
-      v.appendChild(mc);
+      metricsBody.appendChild(mc);
     }
 
     // The session list, under the numbers it feeds. One tab, one scroll.
-    renderHistoryInto(v, logs);
+
     viewIn(v);
     // For the arrival that had to wait for its own read: the page was empty when
     // arrive() ran and there was nothing to count yet.
@@ -8124,7 +8113,8 @@ export const APP = String.raw`
       var d = new Date(l.started_at);
       var mk = monthDate.format(d);
       if (mk !== month) { month = mk; v.appendChild(el("div", "monthhead", mk)); }
-      var card = el("div", "chartcard");
+      var card = el("details", "chartcard history-card");
+      var summary = el("summary", "session-head");
       card.style.padding = "14px 16px";
       var row = el("div", "histrow");
       var n = el("div", "n");
@@ -8138,7 +8128,10 @@ export const APP = String.raw`
       row.appendChild(n);
       var vol = volumeOf(l);
       if (vol) row.appendChild(el("div", "v", Math.round(vol) + " " + state.unit));
-      card.appendChild(row);
+      summary.appendChild(row);
+      card.appendChild(summary);
+      var sessionBody = el("div", "session-body");
+      card.appendChild(sessionBody);
 
       (l.entries || []).forEach(function (e) {
         if (!(e.sets || []).length) return;
@@ -8147,7 +8140,7 @@ export const APP = String.raw`
         en.appendChild(document.createTextNode(e.name));
         en.appendChild(el("span", null, e.sets.filter(Boolean).map(setText).join("  ")));
         er.appendChild(en);
-        card.appendChild(er);
+        sessionBody.appendChild(er);
       });
 
       // A past session goes out the same door as a fresh one, and Strava's own
@@ -8158,7 +8151,7 @@ export const APP = String.raw`
         var sbn = stravaBtn(l);
         if (sbn) acts.appendChild(sbn);
       }
-      card.appendChild(acts);
+      sessionBody.appendChild(acts);
 
       var del = el("button", "danger", "Delete session");
       del.onclick = function () {
@@ -8179,7 +8172,7 @@ export const APP = String.raw`
           renderProgress();
         });
       };
-      card.appendChild(del);
+      sessionBody.appendChild(del);
       v.appendChild(card);
     });
   }
@@ -9705,7 +9698,7 @@ export const APP = String.raw`
     save: { title: "Save it now. Train it later.", art: "coach",
       text: "Paste the workout link, then tap Save workout. You can leave while I read it." },
     detail: { title: "Make this workout yours", art: "coach",
-      text: "Tap an exercise for a demo. Swipe its row left to edit, swap or remove it." },
+      text: "Use Review / Edit to check an exercise, Demo to see it, and Options for a swap." },
     set: { title: "Your numbers go here", art: "coach",
       text: "Tap a number to type your reps or weight. Save set logs it and starts your rest." },
     plan: { title: "Give your workout a day", art: "plan",
@@ -9967,25 +9960,8 @@ export const APP = String.raw`
   // Only accounts created after this rollout get the automatic introduction.
   // A returning user can replay it explicitly; an email-confirmation delay does
   // not make a genuinely new account miss it. Completion also follows the account.
-  var WELCOME_SINCE = "2026-09-06T14:30:00Z", welcomeStep = 0, welcomeReturn = null;
-  var WELCOME_STEPS = [
-    { art: "coach", title: "Save a workout", text: "Copy a link from TikTok, Instagram or YouTube. Tap + in Spotter and paste it.", label: "Save" },
-    { art: "plan", title: "Find it in your Library", text: "Open a saved card to see the exercises. Tap Start workout when you’re ready to train.", label: "Library" },
-    { art: "hello", title: "Meet your coach", text: "Open the Pumpy tab to build a workout, adjust one, or plan your week.", label: "Pumpy" }
-  ];
-
-  function welcomeEligible() {
-    return !!(state.user && state.profile && !guide.welcome &&
-      !(state.profile.settings || {}).pumpyWelcome &&
-      Date.parse(state.user.created_at) >= Date.parse(WELCOME_SINCE) &&
-      !state.workouts.length);
-  }
-
-  function welcomeMaybe() {
-    guideUser();
-    if (!welcomeEligible() || document.hidden || state.view !== "library" || overlayShowing()) return;
-    openWelcome();
-  }
+  var welcomeReturn = null;
+  function welcomeMaybe() { /* The empty state is the introduction, with no modal to dismiss. */ }
 
   function welcomeDone() {
     if (!state.user) return;
@@ -9997,36 +9973,21 @@ export const APP = String.raw`
       .then(function () { /* device flag still works if offline */ });
   }
 
-  function welcomePaint() {
-    var pages = $("welcomestage").children;
-    for (var i = 0; i < pages.length; i++) {
-      var on = i === welcomeStep;
-      pages[i].classList.toggle("on", on); pages[i].inert = !on;
-      pages[i].setAttribute("aria-hidden", on ? "false" : "true");
-    }
-    $("welcomecount").textContent = (welcomeStep + 1) + " of 3 · " + WELCOME_STEPS[welcomeStep].label;
-    $("welcomeback").disabled = welcomeStep === 0;
-    $("welcomenext").textContent = welcomeStep === 2 ? "Let’s go" : "Next";
-  }
-
   function openWelcome() {
     welcomeReturn = document.activeElement;
-    var stage = $("welcomestage"); stage.innerHTML = ""; welcomeStep = 0;
-    WELCOME_STEPS.forEach(function (step) {
-      var page = el("section", "welcome-page");
-      page.appendChild(pumpyArt(step.art, false));
-      page.appendChild(el("h2", null, step.title));
-      page.appendChild(el("p", null, step.text)); stage.appendChild(page);
-    });
-    welcomePaint(); openSheet("welcomesheet");
+    var stage = $("welcomestage"); stage.innerHTML = "";
+    var page = el("section", "welcome-page on");
+    page.appendChild(pumpyArt("coach", false));
+    page.appendChild(el("h2", null, "Your saved videos become workouts."));
+    page.appendChild(el("p", null, "Paste a TikTok, Instagram, or YouTube link. Check the exercises, then start when you’re ready."));
+    stage.appendChild(page);
+    $("welcomecount").textContent = "Save · check · train";
+    $("welcomenext").textContent = "Save a workout";
+    openSheet("welcomesheet");
     $("welcomenext").focus({ preventScroll: true });
   }
 
-  $("welcomenext").onclick = function () {
-    if (welcomeStep === 2) { closeSheet("welcomesheet"); return; }
-    welcomeStep++; welcomePaint();
-  };
-  $("welcomeback").onclick = function () { welcomeStep = Math.max(0, welcomeStep - 1); welcomePaint(); };
+  $("welcomenext").onclick = function () { $("addbtn").click(); closeSheet("welcomesheet"); };
   $("welcomeskip").onclick = function () { closeSheet("welcomesheet"); };
   $("welcomereplay").onclick = function () {
     openWelcome(); closeSheet("guidesheet"); closeSheet("settingssheet");
@@ -10046,7 +10007,7 @@ export const APP = String.raw`
     if (e.matches) guideStill(); else guideWake();
   });
   document.addEventListener("click", function (e) {
-    if (e.target.closest(".exact, .exmain")) guideLearn("detail");
+    if (e.target.closest(".exercise-actions button")) guideLearn("detail");
   });
 
 
@@ -10077,6 +10038,11 @@ export const APP = String.raw`
     // free and Settings needs at its top. Before .open, so its transition is honest.
     if (b) { b.classList.remove("dragging"); b.style.transform = ""; b.scrollTop = 0; }
     n.classList.add("open");
+    if (["workoptions", "filtersheet", "schedulesheet"].indexOf(id) >= 0) {
+      n._returnFocus = document.activeElement;
+      var first = n.querySelector("button, input");
+      if (first) first.focus({ preventScroll: true });
+    }
     if (!sheetNav) { sheetNav = true; history.pushState({ sheet: id }, ""); }
   }
 
@@ -10097,6 +10063,9 @@ export const APP = String.raw`
     if (b) { b.classList.remove("dragging"); b.style.transform = ""; }
     n.classList.remove("open");
     n.classList.add("closing");
+    if (n._returnFocus && n._returnFocus.isConnected && !document.querySelector(".sheet.open")) {
+      n._returnFocus.focus({ preventScroll: true }); n._returnFocus = null;
+    }
     clearTimeout(closeTimers[id]);
     // A timer, not transitionend: a sheet reopened mid-close never fires one. It
     // outlasts the transition, and dropping the class is what hides the sheet.
@@ -10211,7 +10180,8 @@ export const APP = String.raw`
 
   ["addsheet", "setsheet", "watchsheet", "exsheet", "exeditsheet", "explainsheet", "picksheet",
    "settingssheet", "colsheet", "renamesheet", "swapsheet", "pumpysheet", "capsheet", "plansheet",
-   "daysheet", "copysheet", "sortsheet", "refsheet", "countsheet", "guidesheet", "welcomesheet"]
+   "daysheet", "copysheet", "sortsheet", "refsheet", "countsheet", "guidesheet", "welcomesheet",
+   "workoptions", "filtersheet", "schedulesheet"]
     .forEach(wireSheet);
 
   function overlayShowing() {
@@ -12232,7 +12202,8 @@ export const APP = String.raw`
   }
 
   function maybeInstallHint() {
-    if (standalone()) return;
+    $("hint").classList.remove("show");
+    if (!state.user || !state.workouts.some(function (w) { return !isPending(w) && !isFailed(w); }) || standalone()) return;
     var dismissed = false;
     try { dismissed = localStorage.getItem("spotter_hint_done") === "1"; } catch (e) { /* ignore */ }
     if (dismissed) return;
@@ -12241,10 +12212,16 @@ export const APP = String.raw`
     if (!isIOS && !isAndroid) return;
     // Why, then how. The old line was only the how — two steps for no given reason.
     $("hinttext").innerHTML = isIOS
-      ? "Spotter works better installed — full screen, and it opens like an app. " +
+      ? "Make your next visit easier. Install Spotter for a full-screen app. " +
         "Tap <b>Share</b>, then <b>Add to Home Screen</b>."
-      : "Install Spotter and it joins your share sheet — then any video goes " +
+      : "Make your next save easier. Install Spotter to add it to your share sheet — then a video goes " +
         "straight to it with <b>Share</b>.";
+    var help = el("button", "setlink", "Phone save options");
+    help.onclick = function () {
+      openSettings(); $("phonesave").open = true;
+      $("phonesave").scrollIntoView({ block: "start" });
+    };
+    $("hinttext").appendChild(help);
     $("hint").classList.add("show");
   }
 
@@ -12372,6 +12349,25 @@ export const APP = String.raw`
       render();
     });
   };
+  $("dmore").onclick = function () { openSheet("workoptions"); };
+  $("workoptions").addEventListener("click", function (e) {
+    var b = e.target.closest("button");
+    if (b && b.id !== "dreproc" && b.getAttribute("data-armed") !== "1") closeSheet("workoptions");
+  });
+  document.querySelectorAll("[data-close]").forEach(function (b) {
+    b.onclick = function () { closeSheet(b.getAttribute("data-close")); };
+  });
+  ["workoptions", "filtersheet", "schedulesheet"].forEach(function (id) {
+    $(id).addEventListener("keydown", function (e) {
+      if (e.key === "Escape") { e.preventDefault(); closeSheet(id); }
+      if (e.key !== "Tab") return;
+      var nodes = Array.from(this.querySelectorAll("button, input")).filter(function (n) { return !n.disabled && !n.hidden && n.offsetParent !== null; });
+      var first = nodes[0], last = nodes[nodes.length - 1];
+      if (!first) return;
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    });
+  });
   $("dshare").onclick = function () {
     if (!current) return;
     var lines = [current.title || "Workout"];

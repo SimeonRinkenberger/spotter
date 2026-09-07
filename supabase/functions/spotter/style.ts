@@ -2168,5 +2168,46 @@ export const STYLE = String.raw`<style>
     .setpill:active, .wnav:active, .wfinish:active, .ring:active, .scmini:active,
     .uploadrow:active, .askpumpy:active, .pumpybar button:active { transform: none; }
   }
+  /* Keep the workout visible; supporting detail opens in place on request. */
+  .savebtn { width: auto; min-height: 44px; padding: 0 12px; gap: 5px; font-size: 12px; font-weight: 650; white-space: nowrap; }
+  .hbtns { align-items: center; flex-shrink: 0; }
+  .firstsave { margin-top: 22px; }
+  .detail-actions { display: flex; gap: 10px; margin: 8px 0 14px; }
+  .detail-actions .chip { min-height: 44px; flex: 1; justify-content: center; }
+  .disclosure { border: 1px solid var(--line); background: var(--card); border-radius: 16px; margin: 12px 0; }
+  .disclosure > summary { cursor: pointer; padding: 13px 16px; min-height: 44px; font-size: 13px; font-weight: 650; color: var(--ink-2); }
+  .disclosure-body { padding: 0 14px 14px; }
+  .disclosure[open] > .disclosure-body { animation: disclose-in var(--t-2) var(--e-out); }
+  @keyframes disclose-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+  .disclosure-body .embedwrap { margin-top: 12px; }
+  .exercise-card { border: 1px solid var(--line); background: var(--card); border-radius: 16px; margin: 8px 0; overflow: hidden; }
+  .exercise-main { display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px 4px; }
+  .exercise-main .exname { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .exercise-main .exdose { flex: 0 0 auto; max-width: 42%; white-space: normal; text-align: right; }
+  .exercise-actions { display: flex; align-items: flex-start; gap: 2px; padding: 0 8px 6px; flex-wrap: wrap; }
+  .exercise-actions > .setlink { width: auto; flex: 1; margin: 0; min-height: 44px; padding: 10px 8px; font-size: 12px; }
+  .exercise-options { border: 0; margin: 0 0 0 auto; border-radius: 0; background: none; }
+  .exercise-options > summary { font-size: 12px; padding: 12px 8px; }
+  .exercise-options .disclosure-body { padding: 0 0 4px; }
+  #workmanage .managerow { flex-direction: column; }
+  #workmanage .mbtn { flex: auto; min-height: 44px; justify-content: flex-start; }
+  #workoptions .pickrow { min-height: 48px; }
+  #dmore { min-height: 44px; }
+  #chips { flex-wrap: wrap; }
+  #scheduledate { max-width: 100%; min-height: 48px; }
+  #explainask { min-height: 44px; }
+  .disclosure summary:focus-visible, .exercise-actions button:focus-visible { outline: 2px solid var(--ember-ink); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { .disclosure[open] > .disclosure-body { animation: none; } }
+  .workout-meta { margin: 6px 0 16px; color: var(--ink-2); font-size: 13px; }
+  .history-card > summary { cursor: pointer; list-style: none; min-height: 44px; }
+  .history-card > summary::-webkit-details-marker { display: none; }
+  .history-card > summary::after { content: "View session ▸"; display: block; font-size: 11px; font-weight: 600; color: var(--ember-ink); margin-top: 8px; }
+  .history-card[open] > summary::after { content: "Hide details ▾"; }
+  .session-head .histrow { border: 0; padding: 0; }
+  .history-card[open] .session-body { animation: disclose-in var(--t-2) var(--e-out); }
+  @media (prefers-reduced-motion: reduce) { .history-card[open] .session-body { animation: none; } }
+  #scheduleerror { display: block; }
+  #scheduleerror:empty { display: none; }
 </style>
+
 `;

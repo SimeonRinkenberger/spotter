@@ -5949,7 +5949,195 @@ select:focus-visible {
     transform: none;
   }
 }
+.savebtn {
+  width: auto;
+  min-height: 44px;
+  padding: 0 12px;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+.hbtns {
+  align-items: center;
+  flex-shrink: 0;
+}
+.firstsave {
+  margin-top: 22px;
+}
+.detail-actions {
+  display: flex;
+  gap: 10px;
+  margin: 8px 0 14px;
+}
+.detail-actions .chip {
+  min-height: 44px;
+  flex: 1;
+  justify-content: center;
+}
+.disclosure {
+  border: 1px solid var(--line);
+  background: var(--card);
+  border-radius: 16px;
+  margin: 12px 0;
+}
+.disclosure > summary {
+  cursor: pointer;
+  padding: 13px 16px;
+  min-height: 44px;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--ink-2);
+}
+.disclosure-body {
+  padding: 0 14px 14px;
+}
+.disclosure[open] > .disclosure-body {
+  animation: disclose-in var(--t-2) var(--e-out);
+}
+@keyframes disclose-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.disclosure-body .embedwrap {
+  margin-top: 12px;
+}
+.exercise-card {
+  border: 1px solid var(--line);
+  background: var(--card);
+  border-radius: 16px;
+  margin: 8px 0;
+  overflow: hidden;
+}
+.exercise-main {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 14px 16px 4px;
+}
+.exercise-main .exname {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.exercise-main .exdose {
+  flex: 0 0 auto;
+  max-width: 42%;
+  white-space: normal;
+  text-align: right;
+}
+.exercise-actions {
+  display: flex;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 0 8px 6px;
+  flex-wrap: wrap;
+}
+.exercise-actions > .setlink {
+  width: auto;
+  flex: 1;
+  margin: 0;
+  min-height: 44px;
+  padding: 10px 8px;
+  font-size: 12px;
+}
+.exercise-options {
+  border: 0;
+  margin: 0 0 0 auto;
+  border-radius: 0;
+  background: none;
+}
+.exercise-options > summary {
+  font-size: 12px;
+  padding: 12px 8px;
+}
+.exercise-options .disclosure-body {
+  padding: 0 0 4px;
+}
+#workmanage .managerow {
+  flex-direction: column;
+}
+#workmanage .mbtn {
+  flex: auto;
+  min-height: 44px;
+  justify-content: flex-start;
+}
+#workoptions .pickrow {
+  min-height: 48px;
+}
+#dmore {
+  min-height: 44px;
+}
+#chips {
+  flex-wrap: wrap;
+}
+#scheduledate {
+  max-width: 100%;
+  min-height: 48px;
+}
+#explainask {
+  min-height: 44px;
+}
+.disclosure summary:focus-visible,
+.exercise-actions button:focus-visible {
+  outline: 2px solid var(--ember-ink);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .disclosure[open] > .disclosure-body {
+    animation: none;
+  }
+}
+.workout-meta {
+  margin: 6px 0 16px;
+  color: var(--ink-2);
+  font-size: 13px;
+}
+.history-card > summary {
+  cursor: pointer;
+  list-style: none;
+  min-height: 44px;
+}
+.history-card > summary::-webkit-details-marker {
+  display: none;
+}
+.history-card > summary::after {
+  content: "View session \25b8";
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ember-ink);
+  margin-top: 8px;
+}
+.history-card[open] > summary::after {
+  content: "Hide details \25be";
+}
+.session-head .histrow {
+  border: 0;
+  padding: 0;
+}
+.history-card[open] .session-body {
+  animation: disclose-in var(--t-2) var(--e-out);
+}
+@media (prefers-reduced-motion: reduce) {
+  .history-card[open] .session-body {
+    animation: none;
+  }
+}
+#scheduleerror {
+  display: block;
+}
+#scheduleerror:empty {
+  display: none;
+}
 </style>
+
 </head>
 <body>
 
@@ -6051,8 +6239,7 @@ select:focus-visible {
       </div>
       <div class="hbtns">
         <button class="addbtn ghost" id="settingsbtn" title="Settings" aria-label="Settings"><svg class="ic"><use href="#i-settings"></use></svg></button>
-        <button class="addbtn ghost" id="refreshbtn" title="Refresh" aria-label="Refresh"><svg class="ic"><use href="#i-refresh"></use></svg></button>
-        <button class="addbtn" id="addbtn" title="Add a workout" aria-label="Add a workout"><svg class="ic"><use href="#i-plus"></use></svg></button>
+        <button class="addbtn savebtn" id="addbtn"><svg class="ic"><use href="#i-plus"></use></svg><span>Save workout</span></button>
       </div>
     </div>
   </header>
@@ -6102,7 +6289,7 @@ select:focus-visible {
 
   <nav class="tabbar" role="tablist" aria-label="Sections">
     <div class="tabpill" aria-hidden="true"></div>
-    <button class="tab active" id="tab0" role="tab" aria-selected="true" aria-controls="libpage" data-view="library"><span class="ti"><svg class="ic"><use href="#i-dumbbell"></use></svg></span><span class="tl">Library</span></button>
+    <button class="tab active" id="tab0" role="tab" aria-selected="true" aria-controls="libpage" data-view="library"><span class="ti"><svg class="ic"><use href="#i-dumbbell"></use></svg></span><span class="tl">Workouts</span></button>
     <button class="tab" id="tab1" role="tab" aria-selected="false" aria-controls="planview" data-view="plan"><span class="ti"><svg class="ic"><use href="#i-calendar"></use></svg></span><span class="tl">Plan</span></button>
     <button class="tab" id="tab2" role="tab" aria-selected="false" aria-controls="progressview" data-view="progress"><span class="ti"><svg class="ic"><use href="#i-trend"></use></svg></span><span class="tl">Progress</span></button>
     <button class="tab" id="tab3" role="tab" aria-selected="false" aria-controls="pumpyview" data-view="pumpy"><span class="ti" id="pumpytab"></span><span class="tl">Pumpy</span></button>
@@ -6114,12 +6301,33 @@ select:focus-visible {
     <button class="iconbtn" id="dclose" aria-label="Back"><svg class="ic"><use href="#i-arrow-left"></use></svg></button>
     <div class="hbtns">
       <button class="iconbtn" id="dfav" title="Favourite" aria-label="Favourite" aria-pressed="false"><svg class="ic"><use href="#i-star"></use></svg></button>
-      <button class="iconbtn" id="dshare" title="Share" aria-label="Share"><svg class="ic"><use href="#i-share"></use></svg></button>
-      <button class="iconbtn" id="dreproc" title="Read it again" aria-label="Read it again"><svg class="ic"><use href="#i-refresh"></use></svg></button>
+      <button class="chip" id="dmore" aria-haspopup="dialog">Options</button>
     </div>
   </div>
   <div class="dinner" id="dinner"></div>
 </div>
+
+
+<div class="sheet" id="workoptions" role="dialog" aria-modal="true" aria-labelledby="workoptiontitle"><div class="sheetbody">
+  <div class="grabber"></div>
+  <h2 id="workoptiontitle">Workout options</h2>
+  <div id="workmanage"></div>
+  <button class="pickrow" id="dshare">Share workout</button>
+  <button class="pickrow" id="dreproc">Read it again</button>
+  <button class="btn ghost" data-close="workoptions">Done</button>
+</div></div>
+<div class="sheet" id="filtersheet" role="dialog" aria-modal="true" aria-labelledby="filtertitle"><div class="sheetbody">
+  <div class="grabber"></div><h2 id="filtertitle">Filters</h2>
+  <div id="filterlist"></div>
+  <button class="btn ghost" data-close="filtersheet">Done</button>
+</div></div>
+<div class="sheet" id="schedulesheet" role="dialog" aria-modal="true" aria-labelledby="scheduletitle"><div class="sheetbody">
+  <div class="grabber"></div><h2 id="scheduletitle">Schedule workout</h2>
+  <p class="lede" id="schedulename"></p>
+  <div class="field"><label for="scheduledate">Choose a day</label><input id="scheduledate" type="date" required></div>
+  <p class="autherr" id="scheduleerror" role="status"></p>
+  <div class="btnrow"><button class="btn ghost" data-close="schedulesheet">Cancel</button><button class="btn" id="schedulego">Add to plan</button></div>
+</div></div>
 
 <div id="workout">
   <div class="wtop">
@@ -6237,7 +6445,8 @@ select:focus-visible {
   <h2 id="explaintitle">How to do it</h2>
   <div id="explainpre"></div>
   <div class="vslot" id="explainvid"><div id="explainvidin"></div></div>
-  <div class="aitext" id="explaintext">Reading up on it&hellip;</div>
+  <button class="setlink" id="explainask">Explain this exercise with AI</button>
+  <div class="aitext hide" id="explaintext" role="status"></div>
   <div class="btnrow"><button class="btn ghost" id="swapgo"><svg class="ic"><use href="#i-swap"></use></svg>Swap or modify</button></div>
 </div></div>
 
@@ -6434,17 +6643,15 @@ select:focus-visible {
   </div>
   <div class="setnote" id="setremnote"></div>
 
-  <h3 class="seth">Save from your phone</h3>
-  <p class="lede"><b>Android</b> &mdash; install Spotter, then share any video to it from the share
-    sheet. Nothing below is needed.</p>
-  <p class="lede"><b>iPhone</b> &mdash; for now, make a Shortcut that POSTs the shared link to this
-    address. A native share option is coming with the App Store version. Keep the address
-    private &mdash; it works without your password.</p>
-  <div class="keybox" id="setkey">&mdash;</div>
-  <div class="btnrow">
-    <button class="btn ghost" id="copykey">Copy address</button>
-    <button class="btn ghost" id="rotatekey">New key</button>
-  </div>
+  <details class="disclosure" id="phonesave"><summary>Save from your phone</summary><div class="disclosure-body">
+    <p class="lede"><b>On any phone</b> — copy a video link, then tap <b>Save workout</b> in Spotter.</p>
+    <p class="lede"><b>Android</b> — install Spotter, then choose it in the video app’s share sheet.</p>
+    <details class="disclosure"><summary>iPhone Shortcut setup (advanced)</summary><div class="disclosure-body">
+      <p class="lede">For direct sharing on iPhone, create a Shortcut that sends the shared URL as a POST to this address. Keep it private — it works without your password.</p>
+      <div class="keybox" id="setkey">&mdash;</div>
+      <div class="btnrow"><button class="btn ghost" id="copykey">Copy address</button><button class="btn ghost" id="rotatekey">New key</button></div>
+    </div></details>
+  </div></details>
 
   <h3 class="seth">Data &amp; privacy</h3>
   <div class="setgroup">
@@ -6456,6 +6663,7 @@ select:focus-visible {
 
   <h3 class="seth">About</h3>
   <div class="setgroup">
+    <button class="kv row" id="refreshbtn"><span class="k">Refresh workouts</span><svg class="ic"><use href="#i-refresh"></use></svg></button>
     <a class="kv row" href="whats-new.html"><span class="k">What&rsquo;s new</span><span class="v" id="setver">&mdash;</span><svg class="ic chev"><use href="#i-chev"></use></svg></a>
     <button class="kv row" id="settell"><span class="k">Tell a friend</span><svg class="ic chev"><use href="#i-chev"></use></svg></button>
     <a class="kv row" href="https://github.com/SimeonRinkenberger/spotter/issues" target="_blank" rel="noopener"><span class="k">Something wrong? Tell me</span><svg class="ic chev"><use href="#i-chev"></use></svg></a>
@@ -6501,15 +6709,15 @@ select:focus-visible {
   <h2>A little help from Pumpy</h2>
   <p class="lede">Pick what you’re working on.</p>
   <div id="guidebody"></div>
-  <button class="setlink" id="welcomereplay">Replay the short introduction</button>
+  <button class="setlink" id="welcomereplay">How to save a workout</button>
   <button class="setlink" id="guidereset">Show tips again as I go</button>
 </div></div>
 
 <div class="sheet" id="welcomesheet" role="dialog" aria-modal="true" aria-label="Welcome to Spotter"><div class="sheetbody">
   <div class="grabber"></div>
-  <div class="welcome-top"><span id="welcomecount" aria-live="polite"></span><button id="welcomeskip">Skip intro</button></div>
+  <div class="welcome-top"><span id="welcomecount" aria-live="polite"></span><button id="welcomeskip">Close</button></div>
   <div id="welcomestage"></div>
-  <div class="welcome-actions"><button class="btn ghost" id="welcomeback">Back</button><button class="btn" id="welcomenext">Next</button></div>
+  <div class="welcome-actions"><button class="btn" id="welcomenext">Next</button></div>
 </div></div>
 
 <div id="toast"></div>
@@ -7141,7 +7349,7 @@ select:focus-visible {
     }).then(function() {
       return profileReady;
     }).then(function() {
-      accountNow(epoch, uid) && welcomeMaybe();
+      accountNow(epoch, uid) && void 0;
     }), booting;
   }
   var drawn = { plan: !1, progress: !1, pumpy: !1 };
@@ -7303,30 +7511,6 @@ select:focus-visible {
       render();
     }
   }
-  function prefetchExplain(ex, w) {
-    if (!(!ex || !ex.name)) {
-      var quote = ex.evidence && ex.evidence.quote ? String(ex.evidence.quote).trim() : "", vk = vidKey(ex);
-      vidCache[vk] || api("demo-video", { method: "POST", body: JSON.stringify({
-        exercise: ex.name,
-        canonical_id: ex.canonical_id || null
-      }) }).then(function(r) {
-        r && r.status === "ok" && (vidCache[vk] = r);
-      }).catch(function() {
-      });
-      var key = ex.name + "\n" + quote;
-      expCache[key] || expWaiting[key] || (expWaiting[key] = api("explain", { method: "POST", body: JSON.stringify({
-        exercise: ex.name,
-        title: w && w.title || "",
-        quote: quote,
-        source: ex.evidence ? ex.evidence.source : null,
-        canonical_id: ex.canonical_id || null
-      }) }).then(function(r) {
-        return delete expWaiting[key], r && r.status === "ok" && (expCache[key] = r.text), r;
-      }).catch(function() {
-        return delete expWaiting[key], null;
-      }));
-    }
-  }
   function load(retry) {
     if (!state.user) return Promise.resolve();
     var uid = state.user.id, epoch = accountEpoch, rev = libraryRev;
@@ -7380,18 +7564,16 @@ select:focus-visible {
         current = w;
         return;
       }
-      var media = d.firstElementChild, keepMedia = media && media.querySelector("iframe") && old.url === w.url && old.platform === w.platform, expanded = [];
-      Array.prototype.forEach.call(d.querySelectorAll(".exrow"), function(row, i) {
-        row.classList.contains("open") && expanded.push(i);
+      var source = d.querySelector(".source-disclosure"), keepSource = source && old.url === w.url && old.caption === w.caption && old.platform === w.platform, opened = Array.from(d.querySelectorAll(".disclosure")).map(function(box) {
+        return { title: box.firstChild.textContent, open: box.open };
       });
-      var active = document.activeElement;
-      if (keepMedia && media.remove(), openDetail(w, !0), keepMedia && d.firstElementChild && d.firstElementChild.querySelector("iframe") && d.replaceChild(media, d.firstElementChild), JSON.stringify(old.blocks) === JSON.stringify(w.blocks)) {
-        var rows = d.querySelectorAll(".exrow");
-        expanded.forEach(function(i) {
-          rows[i] && rows[i].classList.add("open");
-        });
+      if (openDetail(w, !0), JSON.stringify(old.blocks) === JSON.stringify(w.blocks) && d.querySelectorAll(".disclosure").forEach(function(box, i) {
+        opened[i] && opened[i].title === box.firstChild.textContent && (box.open = opened[i].open);
+      }), keepSource) {
+        var replacement = d.querySelector(".source-disclosure");
+        replacement && replacement.replaceWith(source);
       }
-      active && active.isConnected && active !== document.body && active.focus({ preventScroll: !0 }), $("detail").scrollTop = scroll;
+      $("detail").scrollTop = scroll;
     }
   }
   function isPending(w) {
@@ -7560,38 +7742,47 @@ select:focus-visible {
   }
   var chipSig = null;
   function renderChips() {
-    var wrap = $("chips"), counts = {}, favs = 0;
-    state.workouts.forEach(function(w) {
-      counts[w.category] = (counts[w.category] || 0) + 1, w.favorite && favs++;
-    }), isColFilter(state.filter) && !colById(state.filter.slice(4)) && (state.filter = "All");
-    var list = [{ key: "__sort", cls: "sortchip", label: SORTLBL[sortMode], icon: "sort", n: null }];
-    list.push({ key: "All", label: "All", n: state.workouts.length }), favs && list.push({ key: "Favorites", label: "Favourites", icon: "star", n: favs }), state.collections.forEach(function(c) {
-      list.push({ key: "col:" + c.id, label: colLabel(c), n: colCount(c.id) });
-    }), state.workouts.length && list.push({ key: "__newcol", label: "Collection", icon: "plus", n: null }), CATEGORIES.forEach(function(c) {
-      counts[c] && list.push({ key: c, label: c, n: counts[c] });
-    });
-    var sig = list.map(function(i) {
-      return i.key + "" + i.label + "" + i.icon + "" + i.n;
-    }).join(""), kids = wrap.children;
-    if (sig === chipSig && kids.length === list.length) {
-      for (var k = 0; k < list.length; k++)
-        kids[k].classList.toggle("active", state.filter === list[k].key);
-      return;
+    var wrap = $("chips");
+    isColFilter(state.filter) && !colById(state.filter.slice(4)) && (state.filter = "All"), wrap.innerHTML = "", wrap.classList.toggle("hide", !state.workouts.length);
+    function control(label, fn, active) {
+      var b = el("button", "chip" + (active ? " active" : ""), label);
+      b.onclick = fn, wrap.appendChild(b);
     }
-    chipSig = sig, wrap.innerHTML = "", list.forEach(function(item) {
-      var b = el("button", "chip" + (item.cls ? " " + item.cls : "") + (state.filter === item.key ? " active" : ""));
-      item.icon && b.appendChild(ic(item.icon)), b.appendChild(document.createTextNode(item.label)), item.n !== null && b.appendChild(el("span", "n", String(item.n))), b.onclick = function() {
-        if (item.key === "__sort") {
-          openSort();
-          return;
-        }
-        if (item.key === "__newcol") {
-          openCollections(null);
-          return;
-        }
-        state.filter = item.key, render(), viewIn($("grid"));
-      }, wrap.appendChild(b);
+    var filterLabel = state.filter !== "All" && !isColFilter(state.filter) && !isByFilter(state.filter) && !isMgFilter(state.filter) ? "Filter: " + state.filter : "Filters";
+    control(filterLabel, function() {
+      openLibraryFilters(!1);
+    }, state.filter !== "All" && !isColFilter(state.filter)), control("Collections", function() {
+      openLibraryFilters(!0);
+    }, isColFilter(state.filter)), control("Sort: " + SORTLBL[sortMode], function() {
+      openSort();
+    }), state.filter !== "All" && control("Clear filter", function() {
+      state.filter = "All", render();
     });
+  }
+  function openLibraryFilters(collections) {
+    var list = $("filterlist");
+    list.innerHTML = "", $("filtertitle").textContent = collections ? "Collections" : "Filters";
+    function option(key, label) {
+      var b = el("button", "pickrow", label);
+      b.setAttribute("aria-pressed", state.filter === key ? "true" : "false"), state.filter === key && b.appendChild(ic("check")), b.onclick = function() {
+        state.filter = key, render(), closeSheet("filtersheet");
+      }, list.appendChild(b);
+    }
+    if (option("All", "All workouts"), collections) {
+      state.collections.forEach(function(c) {
+        option("col:" + c.id, colLabel(c) + " \xB7 " + colCount(c.id));
+      });
+      var manage = el("button", "pickrow", "Create or manage collections");
+      manage.onclick = function() {
+        openCollections(null), closeSheet("filtersheet");
+      }, list.appendChild(manage);
+    } else
+      option("Favorites", "Favourites"), CATEGORIES.forEach(function(c) {
+        state.workouts.some(function(w) {
+          return w.category === c;
+        }) && option(c, c);
+      });
+    openSheet("filtersheet");
   }
   function renderColBar() {
     var bar = $("colbar");
@@ -7836,13 +8027,13 @@ select:focus-visible {
     if (newThisPass = 0, !items.length) {
       if (pendingMotion && pendingMotion.disconnect(), grid.innerHTML = "", gridCards = {}, grid.classList.add("hide"), grid.classList.remove("grouped"), empty.classList.remove("hide"), empty.innerHTML = "", empty.appendChild(state.workouts.length ? icon(el("div", "big"), "search") : pumpyArt("coach", !1)), state.workouts.length) {
         var q = state.q.trim();
-        empty.appendChild(el("h2", null, q ? "Nothing matches \u201C" + q + "\u201D" : "Nothing under this filter")), empty.appendChild(el("p", null, q ? "Spotter searches titles, exercise names, muscles and equipment. Try one word instead of three." : "Nothing in your library is filed here yet. Tap All to see everything."));
+        empty.appendChild(el("h2", null, q ? "Nothing matches \u201C" + q + "\u201D" : "Nothing under this filter")), empty.appendChild(el("p", null, q ? "Spotter searches titles, exercise names, muscles and equipment. Try one word instead of three." : "Nothing is filed here yet. Clear the filter to see all workouts."));
       } else {
-        empty.appendChild(el("h2", null, "Your gym bag is empty"));
-        var p = el("p");
-        p.appendChild(document.createTextNode("Tap "));
-        var b = el("b", null, "+");
-        p.appendChild(b), p.appendChild(document.createTextNode(" and paste a link to a workout video. Spotter reads the exercises out of it.")), empty.appendChild(p);
+        empty.appendChild(el("h2", null, "Your saved videos become workouts.")), empty.appendChild(el("p", null, "Paste a TikTok, Instagram, or YouTube link to get started."));
+        var first = el("button", "btn firstsave", "Save your first workout");
+        first.onclick = function() {
+          $("addbtn").click();
+        }, empty.appendChild(first);
       }
       viewIn(empty);
       return;
@@ -7928,7 +8119,7 @@ select:focus-visible {
   function render() {
     renderChips(), renderColBar(), renderToday(), renderGrid(), renderLibCount();
     var n = state.workouts.length;
-    $("count0").textContent = n ? n + (n === 1 ? " workout" : " workouts") : "No workouts yet";
+    $("searchwrap").classList.toggle("hide", !n), maybeInstallHint(), $("count0").textContent = n ? n + (n === 1 ? " workout" : " workouts") : "No workouts yet";
   }
   var current = null;
   function embedNode(w, start) {
@@ -8029,22 +8220,22 @@ select:focus-visible {
     var src = sourceOf(ex);
     return el("div", "exfrom", src ? "From " + (src.author ? "@" + src.author : src.title || "a saved video") : "From a video you removed");
   }
+  function disclosure(title, cls) {
+    var box = el("details", "disclosure" + (cls ? " " + cls : ""));
+    return box.setAttribute("data-noswipe", ""), box.appendChild(el("summary", null, title)), box.appendChild(el("div", "disclosure-body")), box;
+  }
   function openDetail(w, keepHistory) {
     keepHistory || (guideClear(), guideStill()), current = w, clearTimeout(detailCloseTimer), $("detail").classList.remove("closing");
     var d = $("dinner");
-    d.innerHTML = "", d.classList.remove("din", "dmove"), d.style.transform = "", d.style.opacity = "", navFrom ? (dNav = gridNav(w.id), navFrom = !1) : dNav && dNav.ids[dNav.i] !== w.id && (dNav = null);
-    var em = embedNode(w);
-    em && (d.appendChild(em), fitEmbed(em, w.platform)), d.appendChild(el("div", "dkick", isPending(w) ? stageOf(w).kick : isFailed(w) ? "Needs another try" : w.category || "Other"));
+    d.innerHTML = "", d.classList.remove("din", "dmove"), d.style.transform = "", d.style.opacity = "", navFrom ? (dNav = gridNav(w.id), navFrom = !1) : dNav && dNav.ids[dNav.i] !== w.id && (dNav = null), $("workmanage").innerHTML = "", $("workmanage").appendChild(manageRow(w)), $("dreproc").disabled = isPending(w), $("dreproc").hidden = isUpload(w) || w.platform === "pumpy", d.appendChild(el("div", "dkick", isPending(w) ? stageOf(w).kick : isFailed(w) ? "Needs another try" : w.category || "Other"));
     var titleEl = el("h2", "dtitle", w.title || "Untitled workout");
-    if (isPending(w) || (titleEl.classList.add("editable"), titleEl.title = "Tap to rename", titleEl.onclick = function() {
-      openRename("workout", w.id, w.title || "");
-    }), d.appendChild(titleEl), w.author) {
+    if (d.appendChild(titleEl), w.author) {
       var au = el("button", "dauthor", "@" + w.author);
       au.onclick = function() {
         state.filter = "by:" + authorKey(w.author), render(), history.back(), setView("library");
       }, d.appendChild(au);
     }
-    if (d.appendChild(manageRow(w)), d.appendChild(colPills(w)), isPending(w) || isFailed(w)) {
+    if (isPending(w) || isFailed(w)) {
       var isUp = isUpload(w), stage = stageOf(w), note = el("div", "sect");
       if (note.appendChild(el("h3", null, isPending(w) ? stage.head : isUp ? "Could not find a workout in this one" : "Could not read this one")), note.appendChild(el("div", "capbox", isPending(w) ? stage.body : (w.ingest_error || (isUp ? "Spotter could not make out a workout in that file." : "Spotter could not get anything back from this link.")) + (isUp ? " The file itself is already deleted \u2014 Spotter keeps uploads only long enough to read them." : " The link is saved either way, so nothing is lost."))), d.appendChild(note), isFailed(w)) {
         if (!isUp) {
@@ -8062,21 +8253,15 @@ select:focus-visible {
       return;
     }
     var pills = el("div", "pillrow");
-    (w.muscle_groups || []).forEach(function(m) {
-      pills.appendChild(el("span", "pill accent", m));
-    }), (w.equipment || []).forEach(function(e) {
+    (w.equipment || []).forEach(function(e) {
       pills.appendChild(el("span", "pill", e));
     }), !(w.equipment || []).length && w.has_full_workout && pills.appendChild(el("span", "pill", "bodyweight")), pills.children.length && d.appendChild(pills);
     var specs = [], dur = fmtDur(w.duration_minutes);
     dur && specs.push([dur, "Duration"]);
     var exN = exerciseNames(w).length;
-    if (exN && specs.push([String(exN), "Exercises"]), w.difficulty && specs.push([capWord(w.difficulty), "Level"]), w.calories && specs.push([String(w.calories), "Est. kcal"]), specs.length) {
-      var strip = el("div", "specstrip");
-      specs.forEach(function(s) {
-        var c = el("div", "spec");
-        c.appendChild(el("div", "v", s[0])), c.appendChild(el("div", "k", s[1])), strip.appendChild(c);
-      }), d.appendChild(strip);
-    }
+    exN && specs.push([String(exN), "Exercises"]), w.difficulty && specs.push([capWord(w.difficulty), "Level"]), specs.length && d.appendChild(el("div", "workout-meta", specs.map(function(v) {
+      return v[0] + (v[1] === "Exercises" ? " exercises" : "");
+    }).join(" \xB7 ")));
     var conf = typeof w.confidence == "number" ? w.confidence : null, from = readFrom(w);
     if (w.has_full_workout && conf !== null && conf < 0.7) {
       var warn = el("div", "unverified");
@@ -8105,28 +8290,26 @@ select:focus-visible {
     start.onclick = function() {
       startWorkout(w);
     }, d.appendChild(start);
-    var ask = el("button", "askpumpy");
-    if (ask.appendChild(pumpyMark("pmark")), ask.appendChild(document.createTextNode("Ask Pumpy about this workout")), ask.onclick = function() {
+    var actions = el("div", "detail-actions"), schedule = el("button", "chip", "Schedule");
+    schedule.onclick = function() {
+      scheduleWorkout(w);
+    }, actions.appendChild(schedule);
+    var ask = el("button", "chip", "Ask coach");
+    ask.onclick = function() {
       history.back(), openPumpy(w);
-    }, d.appendChild(ask), exN) {
-      var hits = el("div", "sect");
-      hits.appendChild(el("h3", null, "What this hits"));
-      var slot = el("div");
-      hits.appendChild(slot), hits.appendChild(el("div", null, " ")), d.appendChild(hits), loadCatalog().then(function() {
-        if (!(!current || current.id !== w.id)) {
-          var r = cardHits(allExercises(w));
-          slot.innerHTML = "", slot.appendChild(bodyMap(r.levels, 2, bodyLegend([
-            { lv: [2], text: "Primary" },
-            { lv: [1], text: "Secondary" },
-            { lv: [0], text: "Not targeted" }
-          ]), cardCaption(r.names))), r.mapped || slot.appendChild(el(
-            "div",
-            "bodynote",
-            "None of these exercises matched Spotter\u2019s catalog yet, so nothing is highlighted."
-          )), bodyNotes(slot, r, "exercises");
-        }
-      });
-    }
+    }, actions.appendChild(ask), d.appendChild(actions);
+    var original = disclosure("Watch original / source", "source-disclosure"), sourceBody = original.lastChild;
+    !isUpload(w) && w.url && sourceBody.appendChild(originalLink(w)), w.caption && sourceBody.appendChild(el("div", "capbox", w.caption)), original.addEventListener("toggle", function() {
+      if (!original.open) {
+        var old = sourceBody.querySelector(".embedwrap, .dphoto");
+        old && old.remove();
+        return;
+      }
+      if (!sourceBody.querySelector(".embedwrap, .dphoto")) {
+        var em = embedNode(w);
+        em && (sourceBody.insertBefore(em, sourceBody.firstChild), fitEmbed(em, w.platform));
+      }
+    }), w.platform !== "pumpy" && d.appendChild(original);
     var cites = citedSources(w);
     if (cites.length) {
       var built = el("div", "sect");
@@ -8141,62 +8324,33 @@ select:focus-visible {
       sect.appendChild(el("h3", null, b.title || "Block " + (bi + 1)));
       var bm = blockMetaText(b);
       bm && sect.appendChild(el("div", "blockmeta", bm)), (b.exercises || []).forEach(function(ex, ei) {
-        var row = el("div", "exrow"), main = el("div", "exmain"), name = el("div", "exname");
+        var row = el("div", "exercise-card"), main = el("div", "exercise-main"), name = el("div", "exname");
         name.appendChild(document.createTextNode(ex.name)), ex.notes && name.appendChild(el("div", "exnote", ex.notes)), ex.added_by_user ? name.appendChild(el("div", "exmine", "Added by you")) : ex.edited_by_user && name.appendChild(el("div", "exmine", "Edited by you"));
         var fl = fromLine(ex);
         fl && name.appendChild(fl), main.appendChild(name);
         var dose = doseText(ex);
         dose && main.appendChild(el("div", "exdose", dose)), row.appendChild(main);
-        var acts = el("div", "exacts");
-        acts.appendChild(exAct(
-          row,
-          "pencil",
-          "Edit",
-          "Fix this exercise",
-          !1,
-          function() {
-            openExEdit(w, bi, ei, ex);
-          }
-        )), acts.appendChild(exAct(
-          row,
-          "swap",
-          "Swap",
-          "Swap or modify this exercise",
-          !1,
-          function() {
-            openSwap(ex.name, w.title);
-          }
-        ));
-        var how = exAct(
-          row,
-          "help",
-          "How to",
-          "How to do this exercise",
-          !0,
-          function() {
-            explain(ex, w);
-          }
-        );
-        how.addEventListener("pointerdown", function() {
-          prefetchExplain(ex, w);
-        }), main.addEventListener("pointerdown", function(e) {
-          e.pointerType === "mouse" && prefetchExplain(ex, w);
-        }), acts.appendChild(how), row.appendChild(acts), main.onclick = function() {
-          if (row.classList.contains("open")) {
-            closeExRow(row);
-            return;
-          }
+        var acts = el("div", "exercise-actions"), edit = el("button", "setlink", "Review / Edit");
+        edit.onclick = function() {
+          openExEdit(w, bi, ei, ex);
+        }, acts.appendChild(edit);
+        var demo = el("button", "setlink", "Demo");
+        demo.onclick = function() {
           explain(ex, w);
-        }, sect.appendChild(row);
+        }, acts.appendChild(demo);
+        var options = disclosure("Options", "exercise-options"), swap = el("button", "pickrow", "Swap or modify");
+        swap.onclick = function() {
+          options.open = !1, openSwap(ex.name, w.title);
+        }, options.lastChild.appendChild(swap), acts.appendChild(options), row.appendChild(acts), sect.appendChild(row);
       });
       var addex = el("button", "addex", "+ Add an exercise Spotter missed");
       addex.onclick = function() {
         openExAdd(w, bi);
-      }, sect.appendChild(addex), d.appendChild(sect), bi === 0 && guideOffer("detail", sect, sect.querySelector(".exrow"));
+      }, sect.appendChild(addex), d.appendChild(sect);
     }), !(w.blocks || []).length) {
       var none = el("div", "sect");
       none.appendChild(el("h3", null, "No exercises found"));
-      var canRead = canReadVideo(w), np = el("div", "capbox", canRead ? "The caption on this one names no exercises. Spotter can go and read the video itself \u2014 listen to what the creator says, and read what is written on the screen. It takes a minute or so, and the card fills in here." : from.video || from.speech ? "Spotter read the video itself and still could not make out a workout in it. You can watch it and log a freestyle session, or type the exercises in yourself." : "This video did not include a written workout, so there is nothing to step through. You can still watch it and log a freestyle session, use Read it again at the top of this card to have another go, or type the exercises in yourself.");
+      var canRead = canReadVideo(w), np = el("div", "capbox", canRead ? "The caption on this one names no exercises. Spotter can go and read the video itself \u2014 listen to what the creator says, and read what is written on the screen. It takes a minute or so, and the card fills in here." : from.video || from.speech ? "Spotter read the video itself and still could not make out a workout in it. You can watch it and log a freestyle session, or type the exercises in yourself." : "This video did not include a written workout, so there is nothing to step through. You can still watch it and log a freestyle session, use Read it again in Options on this card to have another go, or type the exercises in yourself.");
       if (none.appendChild(np), none.appendChild(el("div", null, " ")), canRead) {
         var rvb = el("button", "retrybtn", "Read the video");
         rvb.onclick = function() {
@@ -8208,6 +8362,25 @@ select:focus-visible {
         openExAdd(w, 0);
       }, none.appendChild(addfirst), d.appendChild(none);
     }
+    if (exN) {
+      var hitDetails = disclosure("Muscles worked"), hits = hitDetails.lastChild, slot = el("div");
+      hits.appendChild(slot), hits.appendChild(el("div", null, " ")), d.appendChild(hitDetails), loadCatalog().then(function() {
+        if (!(!current || current.id !== w.id)) {
+          var r = cardHits(allExercises(w));
+          slot.innerHTML = "", slot.appendChild(bodyMap(r.levels, 2, bodyLegend([
+            { lv: [2], text: "Primary" },
+            { lv: [1], text: "Secondary" },
+            { lv: [0], text: "Not targeted" }
+          ]), cardCaption(r.names))), r.mapped || slot.appendChild(el(
+            "div",
+            "bodynote",
+            "None of these exercises matched Spotter\u2019s catalog yet, so nothing is highlighted."
+          )), bodyNotes(slot, r, "exercises");
+        }
+      });
+    }
+    var notesDetails = disclosure("Notes and category"), notesBody = notesDetails.lastChild;
+    notesBody.appendChild(colPills(w)), d.appendChild(notesDetails);
     var cat = el("div", "selectrow"), sel = el("select");
     CATEGORIES.forEach(function(c) {
       var o = el("option", null, c);
@@ -8217,24 +8390,20 @@ select:focus-visible {
       w.category = sel.value, render(), patchWorkout(w, { category: sel.value }).then(function(ok) {
         ok || (w.category = was, sel.value = was || "Other", render());
       });
-    }, cat.appendChild(el("span", "pill", "Category")), cat.appendChild(sel), d.appendChild(cat);
+    }, cat.appendChild(el("span", "pill", "Category")), cat.appendChild(sel), notesBody.appendChild(cat);
     var notesSect = el("div", "sect");
     notesSect.appendChild(el("h3", null, "Notes"));
     var ta = el("textarea", "notesarea");
     ta.placeholder = "How it felt, weights to try next time\u2026", ta.value = w.notes || "";
     var noteTimer = null;
-    if (ta.oninput = function() {
+    ta.oninput = function() {
       clearTimeout(noteTimer), noteTimer = setTimeout(function() {
         var was = w.notes, sent = ta.value;
         w.notes = sent, patchWorkout(w, { notes: sent }).then(function(ok) {
           !ok && w.notes === sent && (w.notes = was);
         });
       }, 700);
-    }, notesSect.appendChild(ta), notesSect.appendChild(el("div", null, " ")), d.appendChild(notesSect), w.caption) {
-      var capSect = el("div", "sect");
-      capSect.appendChild(el("h3", null, isUpload(w) ? "What was said in the video" : "Original caption")), capSect.appendChild(el("div", "capbox", w.caption)), capSect.appendChild(el("div", null, " ")), d.appendChild(capSect);
-    }
-    (w.source_url || w.platform === "web") && d.appendChild(originalLink(w)), setFav(w), paintNav(), $("detail").classList.add("open"), keepHistory || ($("detail").scrollTop = 0, history.pushState({ detail: 1 }, ""));
+    }, notesSect.appendChild(ta), notesSect.appendChild(el("div", null, " ")), notesBody.appendChild(notesSect), setFav(w), paintNav(), $("detail").classList.add("open"), keepHistory || ($("detail").scrollTop = 0, history.pushState({ detail: 1 }, ""));
   }
   function originalLink(w) {
     var a = icon(el("a", "pill accent"), "arrow-up-right");
@@ -9016,7 +9185,7 @@ select:focus-visible {
   }
   function watchBit(w, t) {
     var em = embedNode(w, t);
-    em && (wo && wo.workout || !current || current.id !== w.id ? ($("watchbody").innerHTML = "", $("watchbody").appendChild(em), openSheet("watchsheet")) : $("dinner").firstChild && $("dinner").replaceChild(em, $("dinner").firstChild), closeSheet("explainsheet"));
+    em && ($("watchbody").innerHTML = "", $("watchbody").appendChild(em), openSheet("watchsheet"), fitEmbed(em, w.platform), closeSheet("explainsheet"));
   }
   var vidCache = {};
   function vidKey(ex) {
@@ -9119,11 +9288,11 @@ select:focus-visible {
     var pre = $("explainpre");
     pre.innerHTML = "", src && pre.appendChild(el("div", "saidlab", src.author ? "In @" + src.author + "\u2019s " + (src.title || "saved workout") : "In " + (src.title || "a workout you saved")));
     var s = saidNode(ex, qw);
-    s && pre.appendChild(s), $("explaintext").textContent = expCache[key] || "Reading up on it\u2026", $("swapgo").onclick = function() {
+    s && pre.appendChild(s), $("explaintext").textContent = "", $("explaintext").classList.add("hide"), $("explainask").classList.remove("hide"), $("swapgo").onclick = function() {
       openSwap(name, title), closeSheet("explainsheet");
     }, openSheet("explainsheet"), $("explainvid").classList.remove("on"), $("explainvidin").innerHTML = "";
     var vk = vidKey(ex);
-    if (vidCache[vk] ? vidFill(vidCache[vk]) : api("demo-video", {
+    vidCache[vk] ? vidFill(vidCache[vk]) : api("demo-video", {
       method: "POST",
       body: JSON.stringify({ exercise: name, canonical_id: ex.canonical_id || null })
     }).then(function(r) {
@@ -9133,35 +9302,37 @@ select:focus-visible {
       }
       vidCache[vk] = r, expKey === key && vidFill(r);
     }).catch(function() {
-    }), expCache[key]) return;
-    function done(r) {
-      if (!r) {
-        expKey === key && ($("explaintext").textContent = EXFAIL);
+    }), $("explainask").onclick = function() {
+      if (this.classList.add("hide"), $("explaintext").classList.remove("hide"), $("explaintext").textContent = expCache[key] || "Reading up on it\u2026", expCache[key]) return;
+      function done(r) {
+        if (!r) {
+          expKey === key && ($("explaintext").textContent = EXFAIL);
+          return;
+        }
+        var text = r.status === "ok" ? r.text : r.message || EXFAIL;
+        expCache[key] = r.status === "ok" ? text : null, expKey === key && ($("explaintext").textContent = text), limitHit(r, null);
+      }
+      if (expWaiting[key]) {
+        expWaiting[key].then(done);
         return;
       }
-      var text = r.status === "ok" ? r.text : r.message || EXFAIL;
-      expCache[key] = r.status === "ok" ? text : null, expKey === key && ($("explaintext").textContent = text), limitHit(r, null);
-    }
-    if (expWaiting[key]) {
-      expWaiting[key].then(done);
-      return;
-    }
-    var got = "";
-    apiStream("explain", {
-      exercise: name,
-      title: title,
-      quote: quote,
-      source: ev ? ev.source : null,
-      canonical_id: ex.canonical_id || null
-    }, function(r) {
-      if (r.t === "delta") {
-        got += r.text || "", expKey === key && ($("explaintext").textContent = got);
-        return;
-      }
-      done(r);
-    }).catch(function() {
-      expKey === key && ($("explaintext").textContent = got || EXFAIL);
-    });
+      var got = "";
+      apiStream("explain", {
+        exercise: name,
+        title: title,
+        quote: quote,
+        source: ev ? ev.source : null,
+        canonical_id: ex.canonical_id || null
+      }, function(r) {
+        if (r.t === "delta") {
+          got += r.text || "", expKey === key && ($("explaintext").textContent = got);
+          return;
+        }
+        done(r);
+      }).catch(function() {
+        expKey === key && ($("explaintext").textContent = got || EXFAIL);
+      });
+    };
   }
   var SWAP_REASONS = [["no_equipment", "No equipment"], ["station_busy", "Station busy"], ["pain", "It hurts"]], BODY_AREAS = ["shoulder", "elbow", "wrist", "neck", "upper back", "lower back", "hip", "knee", "ankle"], swapCtx = null;
   function openSwap(name, title) {
@@ -9405,14 +9576,16 @@ select:focus-visible {
           openWatch(clip, s.ex);
         }, acts.appendChild(watch);
       }
-      var help = icon(el("button", "chip"), "help", "How to do this");
+      var help = icon(el("button", "chip"), "help", "Demo");
       help.onclick = function() {
         explain(s.ex, wo.workout);
       }, acts.appendChild(help);
       var swapChip = icon(el("button", "chip"), "swap", "Swap or modify");
       swapChip.onclick = function() {
         openSwap(s.ex.name, wo.workout.title);
-      }, acts.appendChild(swapChip), main.appendChild(acts), slide ? (main.style.setProperty("--wmx", (slide > 0 ? 30 : -30) + "px"), main.offsetWidth, main.classList.add("wmin")) : hush || viewIn(main);
+      };
+      var extra = disclosure("Options", "exercise-options");
+      extra.lastChild.appendChild(swapChip), acts.appendChild(extra), main.appendChild(acts), slide ? (main.style.setProperty("--wmx", (slide > 0 ? 30 : -30) + "px"), main.offsetWidth, main.classList.add("wmin")) : hush || viewIn(main);
     }
   }
   var justSet = -1;
@@ -10944,6 +11117,30 @@ select:focus-visible {
       }, list.appendChild(row);
     }), openSheet("picksheet");
   }
+  var scheduleCtx = null;
+  function scheduleWorkout(w) {
+    scheduleCtx = { w: w, uid: state.user.id, epoch: accountEpoch }, $("schedulename").textContent = w.title || "Workout", $("scheduledate").value = ymd(/* @__PURE__ */ new Date()), $("scheduleerror").textContent = "", $("schedulego").disabled = !1, $("schedulego").textContent = "Add to plan", openSheet("schedulesheet");
+  }
+  $("schedulego").onclick = function() {
+    var ctx = scheduleCtx, day = $("scheduledate").value, b = this;
+    if (!(!ctx || !accountNow(ctx.epoch, ctx.uid) || b.disabled)) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) {
+        $("scheduleerror").textContent = "Choose a day first.";
+        return;
+      }
+      b.disabled = !0, b.textContent = "Adding\u2026", planAdd(day, ctx.w.id).then(function(r) {
+        if (!(!accountNow(ctx.epoch, ctx.uid) || scheduleCtx !== ctx)) {
+          if (b.disabled = !1, b.textContent = "Add to plan", r.error) {
+            $("scheduleerror").textContent = "Could not add it. Try again.";
+            return;
+          }
+          closeSheet("schedulesheet"), today.at = 0, loadPlan(), loadToday(), toast("Added to your plan.");
+        }
+      }).catch(function() {
+        scheduleCtx !== ctx || !accountNow(ctx.epoch, ctx.uid) || (b.disabled = !1, b.textContent = "Add to plan", $("scheduleerror").textContent = "Could not connect. Try again.");
+      });
+    }
+  };
   function loadLogs() {
     if (state.logs) return Promise.resolve(state.logs);
     if (!state.user) return Promise.resolve([]);
@@ -11256,13 +11453,20 @@ select:focus-visible {
       var st = weekStats(logs, state.plan, goalSetting(), /* @__PURE__ */ new Date());
       guidePage("progress");
       var hero = weekHero(st);
-      hero.appendChild(el(
+      if (hero.appendChild(el(
         "div",
         "rmeta",
         logs.length + (logs.length === 1 ? " session" : " sessions") + " logged"
-      )), v.appendChild(hero);
+      )), v.appendChild(hero), renderHistoryInto(v, logs.slice(0, 5)), logs.length > 5) {
+        var older = disclosure("Earlier sessions (" + (logs.length - 5) + ")");
+        renderHistoryInto(older.lastChild, logs.slice(5)), v.appendChild(older);
+      }
+      var metrics = disclosure("Training details \xB7 charts and muscles"), metricsBody = metrics.lastChild;
+      v.appendChild(metrics);
+      var awards = disclosure("Achievements");
+      v.appendChild(awards);
       var awSlot = el("div");
-      v.appendChild(awSlot), loadAwards().then(function() {
+      awards.lastChild.appendChild(awSlot), loadAwards().then(function() {
         if (awSlot.isConnected) {
           var won = grantAwards(awardsFor(logs, st, null));
           tellFreeze(won, st), awSlot.innerHTML = "", awSlot.appendChild(trophyCase(st, logs));
@@ -11273,7 +11477,7 @@ select:focus-visible {
       }), hit = el("div", "chartcard");
       hit.appendChild(el("h3", null, "What you\u2019ve hit this week"));
       var hitSlot = el("div");
-      hit.appendChild(hitSlot), v.appendChild(hit), loadCatalog().then(function() {
+      hit.appendChild(hitSlot), metricsBody.appendChild(hit), loadCatalog().then(function() {
         if (hitSlot.isConnected) {
           var entries = [];
           weekLogs.forEach(function(l) {
@@ -11311,7 +11515,7 @@ select:focus-visible {
           r.setAttribute("class", "bar" + (b.v ? "" : " dim")), r.setAttribute("x", String(pad + i2 * bw + bw * 0.18)), r.setAttribute("y", String(H - h)), r.setAttribute("width", String(bw * 0.64)), r.setAttribute("height", String(h)), r.setAttribute("rx", "3"), svg.appendChild(r);
           var t = document.createElementNS("http://www.w3.org/2000/svg", "text");
           t.setAttribute("class", "axis"), t.setAttribute("x", String(pad + i2 * bw + bw * 0.5)), t.setAttribute("y", String(H + 15)), t.setAttribute("text-anchor", "middle"), t.textContent = b.label, svg.appendChild(t);
-        }), card.appendChild(svg), v.appendChild(card);
+        }), card.appendChild(svg), metricsBody.appendChild(card);
       }
       var prs = {};
       logs.forEach(function(l) {
@@ -11337,7 +11541,7 @@ select:focus-visible {
             null,
             wtText(p.weight) + " " + state.unit + " \xD7 " + p.reps + " \xB7 " + new Date(p.date).toLocaleDateString(void 0, { month: "short", day: "numeric" })
           )), r.appendChild(nm), r.appendChild(el("div", "v", Math.round(p.est) + " " + state.unit)), pc.appendChild(r);
-        }), v.appendChild(pc);
+        }), metricsBody.appendChild(pc);
       }
       var byId = {};
       state.workouts.forEach(function(w) {
@@ -11362,9 +11566,9 @@ select:focus-visible {
           r.appendChild(el("div", "lbl", m));
           var bar = el("div", "mgbar"), fill = el("i");
           fill.style.width = Math.round(mg[m] / mgMax * 100) + "%", bar.appendChild(fill), r.appendChild(bar), r.appendChild(el("div", "num", String(mg[m]))), mc.appendChild(r);
-        }), v.appendChild(mc);
+        }), metricsBody.appendChild(mc);
       }
-      renderHistoryInto(v, logs), viewIn(v), countStats();
+      viewIn(v), countStats();
     }
   }
   function renderHistoryInto(v, logs) {
@@ -11374,7 +11578,7 @@ select:focus-visible {
     logs.forEach(function(l) {
       var d = new Date(l.started_at), mk = monthDate.format(d);
       mk !== month && (month = mk, v.appendChild(el("div", "monthhead", mk)));
-      var card = el("div", "chartcard");
+      var card = el("details", "chartcard history-card"), summary = el("summary", "session-head");
       card.style.padding = "14px 16px";
       var row = el("div", "histrow"), n = el("div", "n");
       n.appendChild(document.createTextNode(l.workout_title || "Workout"));
@@ -11387,10 +11591,12 @@ select:focus-visible {
         sessionDate.format(d) + " \xB7 " + sets + (sets === 1 ? " set" : " sets") + (l.duration_seconds ? " \xB7 " + Math.round(l.duration_seconds / 60) + " min" : "")
       )), row.appendChild(n);
       var vol = volumeOf(l);
-      vol && row.appendChild(el("div", "v", Math.round(vol) + " " + state.unit)), card.appendChild(row), (l.entries || []).forEach(function(e) {
+      vol && row.appendChild(el("div", "v", Math.round(vol) + " " + state.unit)), summary.appendChild(row), card.appendChild(summary);
+      var sessionBody = el("div", "session-body");
+      card.appendChild(sessionBody), (l.entries || []).forEach(function(e) {
         if ((e.sets || []).length) {
           var er = el("div", "histrow"), en = el("div", "n");
-          en.appendChild(document.createTextNode(e.name)), en.appendChild(el("span", null, e.sets.filter(Boolean).map(setText).join("  "))), er.appendChild(en), card.appendChild(er);
+          en.appendChild(document.createTextNode(e.name)), en.appendChild(el("span", null, e.sets.filter(Boolean).map(setText).join("  "))), er.appendChild(en), sessionBody.appendChild(er);
         }
       });
       var acts = el("div", "cardacts");
@@ -11398,7 +11604,7 @@ select:focus-visible {
         var sbn = stravaBtn(l);
         sbn && acts.appendChild(sbn);
       }
-      card.appendChild(acts);
+      sessionBody.appendChild(acts);
       var del = el("button", "danger", "Delete session");
       del.onclick = function() {
         var at = state.logs.indexOf(l);
@@ -11411,7 +11617,7 @@ select:focus-visible {
         }, function() {
           state.logs.splice(at < 0 ? state.logs.length : at, 0, l), renderProgress();
         });
-      }, card.appendChild(del), v.appendChild(card);
+      }, sessionBody.appendChild(del), v.appendChild(card);
     });
   }
   var PUMPY_MARK = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><image x="0" y="0" width="24" height="24" href="data:image/webp;base64,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"/></svg>';
@@ -12348,7 +12554,7 @@ select:focus-visible {
     detail: {
       title: "Make this workout yours",
       art: "coach",
-      text: "Tap an exercise for a demo. Swipe its row left to edit, swap or remove it."
+      text: "Use Review / Edit to check an exercise, Demo to see it, and Options for a swap."
     },
     set: {
       title: "Your numbers go here",
@@ -12566,16 +12772,8 @@ select:focus-visible {
   }, $("guideclose").onclick = function() {
     closeSheet("guidesheet");
   };
-  var WELCOME_SINCE = "2026-09-06T14:30:00Z", welcomeStep = 0, welcomeReturn = null, WELCOME_STEPS = [
-    { art: "coach", title: "Save a workout", text: "Copy a link from TikTok, Instagram or YouTube. Tap + in Spotter and paste it.", label: "Save" },
-    { art: "plan", title: "Find it in your Library", text: "Open a saved card to see the exercises. Tap Start workout when you\u2019re ready to train.", label: "Library" },
-    { art: "hello", title: "Meet your coach", text: "Open the Pumpy tab to build a workout, adjust one, or plan your week.", label: "Pumpy" }
-  ];
-  function welcomeEligible() {
-    return !!(state.user && state.profile && !guide.welcome && !(state.profile.settings || {}).pumpyWelcome && Date.parse(state.user.created_at) >= Date.parse(WELCOME_SINCE) && !state.workouts.length);
-  }
+  var welcomeReturn = null;
   function welcomeMaybe() {
-    guideUser(), !(!welcomeEligible() || document.hidden || state.view !== "library" || overlayShowing()) && openWelcome();
   }
   function welcomeDone() {
     if (state.user && (guide.welcome = !0, guideSave(), !(!state.profile || (state.profile.settings || {}).pumpyWelcome))) {
@@ -12584,29 +12782,15 @@ select:focus-visible {
       });
     }
   }
-  function welcomePaint() {
-    for (var pages = $("welcomestage").children, i = 0; i < pages.length; i++) {
-      var on = i === welcomeStep;
-      pages[i].classList.toggle("on", on), pages[i].inert = !on, pages[i].setAttribute("aria-hidden", on ? "false" : "true");
-    }
-    $("welcomecount").textContent = welcomeStep + 1 + " of 3 \xB7 " + WELCOME_STEPS[welcomeStep].label, $("welcomeback").disabled = welcomeStep === 0, $("welcomenext").textContent = welcomeStep === 2 ? "Let\u2019s go" : "Next";
-  }
   function openWelcome() {
     welcomeReturn = document.activeElement;
     var stage = $("welcomestage");
-    stage.innerHTML = "", welcomeStep = 0, WELCOME_STEPS.forEach(function(step2) {
-      var page = el("section", "welcome-page");
-      page.appendChild(pumpyArt(step2.art, !1)), page.appendChild(el("h2", null, step2.title)), page.appendChild(el("p", null, step2.text)), stage.appendChild(page);
-    }), welcomePaint(), openSheet("welcomesheet"), $("welcomenext").focus({ preventScroll: !0 });
+    stage.innerHTML = "";
+    var page = el("section", "welcome-page on");
+    page.appendChild(pumpyArt("coach", !1)), page.appendChild(el("h2", null, "Your saved videos become workouts.")), page.appendChild(el("p", null, "Paste a TikTok, Instagram, or YouTube link. Check the exercises, then start when you\u2019re ready.")), stage.appendChild(page), $("welcomecount").textContent = "Save \xB7 check \xB7 train", $("welcomenext").textContent = "Save a workout", openSheet("welcomesheet"), $("welcomenext").focus({ preventScroll: !0 });
   }
   $("welcomenext").onclick = function() {
-    if (welcomeStep === 2) {
-      closeSheet("welcomesheet");
-      return;
-    }
-    welcomeStep++, welcomePaint();
-  }, $("welcomeback").onclick = function() {
-    welcomeStep = Math.max(0, welcomeStep - 1), welcomePaint();
+    $("addbtn").click(), closeSheet("welcomesheet");
   }, $("welcomeskip").onclick = function() {
     closeSheet("welcomesheet");
   }, $("welcomereplay").onclick = function() {
@@ -12629,15 +12813,20 @@ select:focus-visible {
   guideMotionQuery.addEventListener && guideMotionQuery.addEventListener("change", function(e) {
     e.matches ? guideStill() : guideWake();
   }), document.addEventListener("click", function(e) {
-    e.target.closest(".exact, .exmain") && guideLearn("detail");
+    e.target.closest(".exercise-actions button") && guideLearn("detail");
   });
   var closeTimers = {}, sheetNav = !1, sheetBack = 0;
   function openSheet(id) {
     guideClear("hold"), guideStill(), guideSheet(id);
     var n = $(id), b = n.querySelector(".sheetbody");
-    n.querySelectorAll(".tip-retiring").forEach(function(tip) {
+    if (n.querySelectorAll(".tip-retiring").forEach(function(tip) {
       tip.remove();
-    }), clearTimeout(closeTimers[id]), n.classList.remove("closing"), b && (b.classList.remove("dragging"), b.style.transform = "", b.scrollTop = 0), n.classList.add("open"), sheetNav || (sheetNav = !0, history.pushState({ sheet: id }, ""));
+    }), clearTimeout(closeTimers[id]), n.classList.remove("closing"), b && (b.classList.remove("dragging"), b.style.transform = "", b.scrollTop = 0), n.classList.add("open"), ["workoptions", "filtersheet", "schedulesheet"].indexOf(id) >= 0) {
+      n._returnFocus = document.activeElement;
+      var first = n.querySelector("button, input");
+      first && first.focus({ preventScroll: !0 });
+    }
+    sheetNav || (sheetNav = !0, history.pushState({ sheet: id }, ""));
   }
   function closeSheet(id, fromPop) {
     var n = $(id);
@@ -12648,7 +12837,7 @@ select:focus-visible {
         focus && focus.focus({ preventScroll: !0 });
       }
       var b = n.querySelector(".sheetbody");
-      b && (b.classList.remove("dragging"), b.style.transform = ""), n.classList.remove("open"), n.classList.add("closing"), clearTimeout(closeTimers[id]), closeTimers[id] = setTimeout(function() {
+      b && (b.classList.remove("dragging"), b.style.transform = ""), n.classList.remove("open"), n.classList.add("closing"), n._returnFocus && n._returnFocus.isConnected && !document.querySelector(".sheet.open") && (n._returnFocus.focus({ preventScroll: !0 }), n._returnFocus = null), clearTimeout(closeTimers[id]), closeTimers[id] = setTimeout(function() {
         n.classList.remove("closing"), id === "watchsheet" && ($("watchbody").innerHTML = ""), id === "explainsheet" && ($("explainvidin").innerHTML = ""), guideWake();
       }, 260), sheetNav && !document.querySelector(".sheet.open") && (sheetNav = !1, fromPop || (sheetBack++, history.back()));
     }
@@ -12741,7 +12930,10 @@ select:focus-visible {
     "refsheet",
     "countsheet",
     "guidesheet",
-    "welcomesheet"
+    "welcomesheet",
+    "workoptions",
+    "filtersheet",
+    "schedulesheet"
   ].forEach(wireSheet);
   function overlayShowing() {
     if ($("detail").classList.contains("open") || $("workout").classList.contains("open")) return !0;
@@ -13943,7 +14135,9 @@ select:focus-visible {
     return !!(window.navigator.standalone || window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
   }
   function maybeInstallHint() {
-    if (!standalone()) {
+    if ($("hint").classList.remove("show"), !(!state.user || !state.workouts.some(function(w) {
+      return !isPending(w) && !isFailed(w);
+    }) || standalone())) {
       var dismissed = !1;
       try {
         dismissed = localStorage.getItem("spotter_hint_done") === "1";
@@ -13951,7 +14145,13 @@ select:focus-visible {
       }
       if (!dismissed) {
         var isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent), isAndroid = /android/i.test(navigator.userAgent);
-        !isIOS && !isAndroid || ($("hinttext").innerHTML = isIOS ? "Spotter works better installed \u2014 full screen, and it opens like an app. Tap <b>Share</b>, then <b>Add to Home Screen</b>." : "Install Spotter and it joins your share sheet \u2014 then any video goes straight to it with <b>Share</b>.", $("hint").classList.add("show"));
+        if (!(!isIOS && !isAndroid)) {
+          $("hinttext").innerHTML = isIOS ? "Make your next visit easier. Install Spotter for a full-screen app. Tap <b>Share</b>, then <b>Add to Home Screen</b>." : "Make your next save easier. Install Spotter to add it to your share sheet \u2014 then a video goes straight to it with <b>Share</b>.";
+          var help = el("button", "setlink", "Phone save options");
+          help.onclick = function() {
+            openSettings(), $("phonesave").open = !0, $("phonesave").scrollIntoView({ block: "start" });
+          }, $("hinttext").appendChild(help), $("hint").classList.add("show");
+        }
       }
     }
   }
@@ -14039,7 +14239,25 @@ select:focus-visible {
         ok || (w.favorite = !w.favorite, current === w && setFav(w), render());
       });
     }
-  }, $("dshare").onclick = function() {
+  }, $("dmore").onclick = function() {
+    openSheet("workoptions");
+  }, $("workoptions").addEventListener("click", function(e) {
+    var b = e.target.closest("button");
+    b && b.id !== "dreproc" && b.getAttribute("data-armed") !== "1" && closeSheet("workoptions");
+  }), document.querySelectorAll("[data-close]").forEach(function(b) {
+    b.onclick = function() {
+      closeSheet(b.getAttribute("data-close"));
+    };
+  }), ["workoptions", "filtersheet", "schedulesheet"].forEach(function(id) {
+    $(id).addEventListener("keydown", function(e) {
+      if (e.key === "Escape" && (e.preventDefault(), closeSheet(id)), e.key === "Tab") {
+        var nodes = Array.from(this.querySelectorAll("button, input")).filter(function(n) {
+          return !n.disabled && !n.hidden && n.offsetParent !== null;
+        }), first = nodes[0], last = nodes[nodes.length - 1];
+        first && (e.shiftKey && document.activeElement === first && (e.preventDefault(), last.focus()), !e.shiftKey && document.activeElement === last && (e.preventDefault(), first.focus()));
+      }
+    });
+  }), $("dshare").onclick = function() {
     if (current) {
       var lines = [current.title || "Workout"];
       (current.blocks || []).forEach(function(b) {
