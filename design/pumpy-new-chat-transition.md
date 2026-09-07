@@ -40,4 +40,12 @@ library or new artwork was introduced.
   VoiceOver behavior remain unverified on device.
 - Built page: 546,045 bytes / 146,295 gzip, +2,648 / +709 versus the prior release.
 
-Deployment verification will be recorded after publication.
+## Deployment
+
+Runtime commit `67a29a4d96afce9c423224a8ecc625a38808a22d` is on main.
+GitHub Pages reports built; Supabase function `spotter` is active at version 142.
+Both deployed endpoints return HTTP 200 and exactly match the 546,045-byte build:
+SHA-256 `914ed7dfd0b89ba8f6f442f0eb7fed2706219e2a3bc636071a4b10baa779615b`.
+The live landing page opens with no application console errors. A local pending
+reply fixture also confirmed that its late final packet leaves the new greeting
+intact and Send enabled. No database/configuration/secret changes.
