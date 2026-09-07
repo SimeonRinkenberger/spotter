@@ -1,0 +1,20 @@
+{
+  "expected_sha256": "5736ac65c83408a8b0c4e1705504769c7a95df5a0e52b7012e57e09633a3e3dc",
+  "checks": [
+    {
+      "entry": "pages",
+      "status": 200,
+      "bytes": 552596,
+      "sha256": "5736ac65c83408a8b0c4e1705504769c7a95df5a0e52b7012e57e09633a3e3dc",
+      "matches_build": true
+    },
+    {
+      "entry": "edge",
+      "status": 200,
+      "bytes": 552596,
+      "sha256": "5736ac65c83408a8b0c4e1705504769c7a95df5a0e52b7012e57e09633a3e3dc",
+      "matches_build": true
+    }
+  ],
+  "unauthenticated_api_status": 401
+}

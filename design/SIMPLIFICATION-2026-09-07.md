@@ -23,4 +23,10 @@ Screenshots are in simplification-evidence/2026-09-07. Some walkthrough frames i
 ## Design basis
 Research checked 7 September 2026. Hevy: explicit opt-in advanced logging (https://help.hevyapp.com/hc/en-us/articles/35687721776663-How-to-Use-RPE-Rate-of-Perceived-Exertion). Crouton: saved content, planning and execution as recognizable tasks (https://crouton.app/). NN/g: defer secondary controls while preserving visible primary navigation (https://www.nngroup.com/articles/progressive-disclosure/, https://www.nngroup.com/articles/hamburger-menus/). Apple HIG: stable, labeled navigation destinations (https://developer.apple.com/design/human-interface-guidelines/tab-bars).
 
-Deployment verification is recorded after publishing. Rollback is a revert of the implementation commit followed by the normal Pages push and edge function deployment; no migration rollback is involved.
+## Live deployment
+Implementation commit: 8f6c1591fbac01da66c3ef577bc2e9a5a0d9ef61. GitHub Pages build status: built. Supabase function spotter: ACTIVE, version 143. Both public HTML entry points returned HTTP 200 with identical 552,596-byte bodies and SHA-256 5736ac65c83408a8b0c4e1705504769c7a95df5a0e52b7012e57e09633a3e3dc, matching the local build. An unauthenticated /api/limits request returned 401. Live browser login, all four tabs, detail actions and deferred video mounting passed without runtime errors.
+
+Automatic approval review initially rejected the deploy flag as a potential authentication change. Read-only verification established that live version 142 already used verify_jwt=false, matching unchanged configuration and the unchanged in-function Bearer validation. Review accepted the same deployment after this evidence; version 143 preserves the setting. No authentication boundary was changed.
+
+The disposable simplify-sep7 test account and its fixtures were removed after verification.
+ Rollback is a revert of the implementation commit followed by the normal Pages push and edge function deployment; no migration rollback is involved.
