@@ -255,7 +255,7 @@ export const MARKUP_BODY = String.raw`</head>
 <div class="sheet" id="schedulesheet" role="dialog" aria-modal="true" aria-labelledby="scheduletitle"><div class="sheetbody">
   <div class="grabber"></div><h2 id="scheduletitle">Schedule workout</h2>
   <p class="lede" id="schedulename"></p>
-  <div class="field"><label for="scheduledate">Choose a day</label><input id="scheduledate" type="date" required></div>
+  <div class="field"><label for="scheduledate">Choose a day</label><div class="schedule-date-control"><input id="scheduledate" type="date" required></div></div>
   <p class="autherr" id="scheduleerror" role="status"></p>
   <div class="btnrow"><button class="btn ghost" data-close="schedulesheet">Cancel</button><button class="btn" id="schedulego">Add to plan</button></div>
 </div></div>

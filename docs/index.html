@@ -6064,9 +6064,38 @@ select:focus-visible {
 #chips {
   flex-wrap: wrap;
 }
+.schedule-date-control {
+  display: flex;
+  min-width: 0;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--sand);
+  transition: border-color var(--t-2), background-color var(--t-2);
+}
+.schedule-date-control:focus-within {
+  border-color: var(--ember);
+  background: var(--card);
+}
 #scheduledate {
+  display: block;
+  flex: 1;
+  width: 100%;
+  min-width: 0;
   max-width: 100%;
   min-height: 48px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  -webkit-appearance: none;
+  appearance: none;
+}
+#scheduledate::-webkit-date-and-time-value {
+  min-height: 24px;
+  line-height: 24px;
+  text-align: left;
 }
 #explainask {
   min-height: 44px;
@@ -6337,7 +6366,7 @@ details.details-moving {
 <div class="sheet" id="schedulesheet" role="dialog" aria-modal="true" aria-labelledby="scheduletitle"><div class="sheetbody">
   <div class="grabber"></div><h2 id="scheduletitle">Schedule workout</h2>
   <p class="lede" id="schedulename"></p>
-  <div class="field"><label for="scheduledate">Choose a day</label><input id="scheduledate" type="date" required></div>
+  <div class="field"><label for="scheduledate">Choose a day</label><div class="schedule-date-control"><input id="scheduledate" type="date" required></div></div>
   <p class="autherr" id="scheduleerror" role="status"></p>
   <div class="btnrow"><button class="btn ghost" data-close="schedulesheet">Cancel</button><button class="btn" id="schedulego">Add to plan</button></div>
 </div></div>

@@ -2192,7 +2192,14 @@ export const STYLE = String.raw`<style>
   #workoptions .pickrow { min-height: 48px; }
   #dmore { min-height: 44px; }
   #chips { flex-wrap: wrap; }
-  #scheduledate { max-width: 100%; min-height: 48px; }
+  /* iOS date inputs can add padding outside their declared width. Let a normal
+     box own the inset and border; the native picker remains an unpadded input. */
+  .schedule-date-control { display: flex; min-width: 0; padding: 0 14px; border: 1px solid var(--line);
+    border-radius: 13px; background: var(--sand); transition: border-color var(--t-2), background-color var(--t-2); }
+  .schedule-date-control:focus-within { border-color: var(--ember); background: var(--card); }
+  #scheduledate { display: block; flex: 1; width: 100%; min-width: 0; max-width: 100%; min-height: 48px;
+    margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; -webkit-appearance: none; appearance: none; }
+  #scheduledate::-webkit-date-and-time-value { min-height: 24px; line-height: 24px; text-align: left; }
   #explainask { min-height: 44px; }
   .disclosure summary:focus-visible, .exercise-actions button:focus-visible { outline: 2px solid var(--ember-ink); outline-offset: 2px; }
   .workout-meta { margin: 6px 0 16px; color: var(--ink-2); font-size: 13px; }
