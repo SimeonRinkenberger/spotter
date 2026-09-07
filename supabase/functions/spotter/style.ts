@@ -2177,8 +2177,6 @@ export const STYLE = String.raw`<style>
   .disclosure { border: 1px solid var(--line); background: var(--card); border-radius: 16px; margin: 12px 0; }
   .disclosure > summary { cursor: pointer; padding: 13px 16px; min-height: 44px; font-size: 13px; font-weight: 650; color: var(--ink-2); }
   .disclosure-body { padding: 0 14px 14px; }
-  .disclosure[open] > .disclosure-body { animation: disclose-in var(--t-2) var(--e-out); }
-  @keyframes disclose-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
   .disclosure-body .embedwrap { margin-top: 12px; }
   .exercise-card { border: 1px solid var(--line); background: var(--card); border-radius: 16px; margin: 8px 0; overflow: hidden; }
   .exercise-main { display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px 4px; }
@@ -2197,17 +2195,27 @@ export const STYLE = String.raw`<style>
   #scheduledate { max-width: 100%; min-height: 48px; }
   #explainask { min-height: 44px; }
   .disclosure summary:focus-visible, .exercise-actions button:focus-visible { outline: 2px solid var(--ember-ink); outline-offset: 2px; }
-  @media (prefers-reduced-motion: reduce) { .disclosure[open] > .disclosure-body { animation: none; } }
   .workout-meta { margin: 6px 0 16px; color: var(--ink-2); font-size: 13px; }
   .history-card > summary { cursor: pointer; list-style: none; min-height: 44px; }
   .history-card > summary::-webkit-details-marker { display: none; }
   .history-card > summary::after { content: "View session ▸"; display: block; font-size: 11px; font-weight: 600; color: var(--ember-ink); margin-top: 8px; }
   .history-card[open] > summary::after { content: "Hide details ▾"; }
   .session-head .histrow { border: 0; padding: 0; }
-  .history-card[open] .session-body { animation: disclose-in var(--t-2) var(--e-out); }
-  @media (prefers-reduced-motion: reduce) { .history-card[open] .session-body { animation: none; } }
   #scheduleerror { display: block; }
   #scheduleerror:empty { display: none; }
+  /* Measured height moves the following content with the opening section. Only
+     the section in flight is clipped; settled content returns to natural height. */
+  details.details-moving { overflow: hidden; overflow-anchor: none; }
+  .disclosure > summary, .guide-topic > summary { list-style: none; }
+  .disclosure > summary::-webkit-details-marker, .guide-topic > summary::-webkit-details-marker { display: none; }
+  .disclosure > summary::before, .guide-topic > summary::before { content: ""; display: inline-block; width: 6px; height: 6px;
+    border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; margin-right: 10px; vertical-align: 2px;
+    transform: rotate(-45deg); transition: transform var(--t-2) var(--e-out); }
+  .disclosure[open] > summary::before, .guide-topic[open] > summary::before { transform: rotate(45deg); }
+  .disclosure.details-closing > summary::before, .guide-topic.details-closing > summary::before { transform: rotate(-45deg); }
+  @media (prefers-reduced-motion: reduce) {
+    .disclosure > summary::before, .guide-topic > summary::before { transition: none; }
+  }
 </style>
 
 `;

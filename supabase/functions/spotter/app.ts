@@ -2175,8 +2175,84 @@ export const APP = String.raw`
       : "From a video you removed");
   }
 
-  // keepHistory is set when Realtime re-renders an open card in place: the overlay
-  // is already on the history stack and pushing again would need two back gestures.
+  // A details element hides its body immediately on close. Keep it open while
+  // its measured height shrinks, then let the native element hide the content.
+  // One delegated handler covers current and future sections, including nested
+  // settings and history. Keyboard activation still comes from native summary.
+  var movingDisclosures = [];
+  function animateDisclosure(box, open) {
+    var summary = box.firstElementChild;
+    if (!summary || summary.tagName !== "SUMMARY") return;
+    var start = box.getBoundingClientRect().height;
+    var previous = box._disclosureRun;
+    if (previous) previous.stop();
+    var run = { open: open, animation: null, timer: null, inert: [] };
+    box._disclosureRun = run;
+    movingDisclosures.push(box);
+    run.stop = function () {
+      if (box._disclosureRun !== run) return;
+      box._disclosureRun = null;
+      clearTimeout(run.timer);
+      if (run.animation) run.animation.cancel();
+      run.inert.forEach(function (item) { item.node.inert = item.was; });
+      box.classList.remove("details-moving", "details-closing");
+      summary.removeAttribute("aria-expanded");
+      movingDisclosures = movingDisclosures.filter(function (n) { return n !== box; });
+    };
+    run.finish = function () {
+      if (box._disclosureRun !== run) return;
+      box.open = run.open;
+      run.stop();
+    };
+    box.open = true;
+    // Mount the source's known-size player before measuring. A queued toggle
+    // event would otherwise add the whole video after the animation had begun.
+    if (open && box._prepareDisclosure) box._prepareDisclosure();
+    if (lessMotion() || document.hidden || !box.animate || !box.isConnected) { run.finish(); return; }
+    box.classList.add("details-moving");
+    box.classList.toggle("details-closing", !open);
+    var end;
+    if (open) end = box.getBoundingClientRect().height;
+    else {
+      if (box.contains(document.activeElement) && !summary.contains(document.activeElement)) summary.focus({ preventScroll: true });
+      box.open = false; end = box.getBoundingClientRect().height; box.open = true;
+      Array.from(box.children).slice(1).forEach(function (node) {
+        run.inert.push({ node: node, was: node.inert }); node.inert = true;
+      });
+    }
+    if (Math.abs(start - end) < 1) { run.finish(); return; }
+    summary.setAttribute("aria-expanded", open ? "true" : "false");
+    var css = getComputedStyle(box);
+    var duration = parseFloat(css.getPropertyValue(open ? "--t-3" : "--t-2")) || (open ? 320 : 220);
+    var easing = css.getPropertyValue("--e-out").trim() || "cubic-bezier(.22,.9,.3,1)";
+    try {
+      run.animation = box.animate([{ height: start + "px" }, { height: end + "px" }],
+        { duration: duration, easing: easing, fill: "both" });
+      run.animation.onfinish = run.finish;
+      run.animation.oncancel = run.finish;
+      // Background tabs can withhold animation events; never leave fixed height
+      // or inert content behind. Normal completion clears this fallback.
+      run.timer = setTimeout(run.finish, duration + 120);
+    } catch (e) { run.finish(); }
+  }
+  function settleDisclosures() {
+    movingDisclosures.slice().forEach(function (box) { if (box._disclosureRun) box._disclosureRun.finish(); });
+  }
+  document.addEventListener("click", function (e) {
+    var summary = e.target.closest && e.target.closest("summary");
+    var box = summary && summary.parentElement;
+    if (e.defaultPrevented || !box || box.tagName !== "DETAILS") return;
+    if (e.target.closest("a, button, input, select, textarea")) return;
+    e.preventDefault();
+    animateDisclosure(box, box._disclosureRun ? !box._disclosureRun.open : !box.open);
+  });
+  document.addEventListener("visibilitychange", function () { if (document.hidden) settleDisclosures(); });
+  window.addEventListener("resize", settleDisclosures);
+  var disclosureMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+  if (disclosureMotionQuery.addEventListener) disclosureMotionQuery.addEventListener("change", function (e) {
+    if (e.matches) settleDisclosures();
+  });
+
   function disclosure(title, cls) {
     var box = el("details", "disclosure" + (cls ? " " + cls : ""));
     box.setAttribute("data-noswipe", "");
@@ -2185,6 +2261,8 @@ export const APP = String.raw`
     return box;
   }
 
+  // keepHistory is set when Realtime re-renders an open card in place: the overlay
+  // is already on the history stack and pushing again would need two back gestures.
   function openDetail(w, keepHistory) {
     if (!keepHistory) { guideClear(); guideStill(); }
     current = w;
@@ -2357,7 +2435,7 @@ export const APP = String.raw`
     var sourceBody = original.lastChild;
     if (!isUpload(w) && w.url) sourceBody.appendChild(originalLink(w));
     if (w.caption) sourceBody.appendChild(el("div", "capbox", w.caption));
-    original.addEventListener("toggle", function () {
+    original._prepareDisclosure = function () {
       if (!original.open) {
         var old = sourceBody.querySelector(".embedwrap, .dphoto");
         if (old) old.remove();
@@ -2366,7 +2444,8 @@ export const APP = String.raw`
       if (sourceBody.querySelector(".embedwrap, .dphoto")) return;
       var em = embedNode(w);
       if (em) { sourceBody.insertBefore(em, sourceBody.firstChild); fitEmbed(em, w.platform); }
-    });
+    };
+    original.addEventListener("toggle", original._prepareDisclosure);
     if (w.platform !== "pumpy") d.appendChild(original);
 
     // Above the blocks: a coach's card arrives with no video attached, and whose
@@ -9927,15 +10006,6 @@ export const APP = String.raw`
       var row = el("details", "guide-topic"), title = el("summary", null, names[id]);
       row.appendChild(title);
       row.appendChild(el("p", null, GUIDE_TIPS[id].text));
-      title.onclick = function (e) {
-        e.preventDefault();
-        var start = row.getBoundingClientRect().height;
-        var open = row._target == null ? !row.open : !row._target;
-        row._target = open; row.open = true;
-        var end = title.getBoundingClientRect().height + 1;
-        if (open) end += row.querySelector("p").getBoundingClientRect().height;
-        sizeMotion(row, start, end, function () { row.open = open; row._target = null; });
-      };
       body.appendChild(row);
     });
     openSheet("guidesheet");
@@ -12218,7 +12288,7 @@ export const APP = String.raw`
         "straight to it with <b>Share</b>.";
     var help = el("button", "setlink", "Phone save options");
     help.onclick = function () {
-      openSettings(); $("phonesave").open = true;
+      openSettings(); animateDisclosure($("phonesave"), true);
       $("phonesave").scrollIntoView({ block: "start" });
     };
     $("hinttext").appendChild(help);

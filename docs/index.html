@@ -5992,19 +5992,6 @@ select:focus-visible {
 .disclosure-body {
   padding: 0 14px 14px;
 }
-.disclosure[open] > .disclosure-body {
-  animation: disclose-in var(--t-2) var(--e-out);
-}
-@keyframes disclose-in {
-  from {
-    opacity: 0;
-    transform: translateY(-4px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
 .disclosure-body .embedwrap {
   margin-top: 12px;
 }
@@ -6089,11 +6076,6 @@ select:focus-visible {
   outline: 2px solid var(--ember-ink);
   outline-offset: 2px;
 }
-@media (prefers-reduced-motion: reduce) {
-  .disclosure[open] > .disclosure-body {
-    animation: none;
-  }
-}
 .workout-meta {
   margin: 6px 0 16px;
   color: var(--ink-2);
@@ -6122,19 +6104,50 @@ select:focus-visible {
   border: 0;
   padding: 0;
 }
-.history-card[open] .session-body {
-  animation: disclose-in var(--t-2) var(--e-out);
-}
-@media (prefers-reduced-motion: reduce) {
-  .history-card[open] .session-body {
-    animation: none;
-  }
-}
 #scheduleerror {
   display: block;
 }
 #scheduleerror:empty {
   display: none;
+}
+details.details-moving {
+  overflow: hidden;
+  overflow-anchor: none;
+}
+.disclosure > summary,
+.guide-topic > summary {
+  list-style: none;
+}
+.disclosure > summary::-webkit-details-marker,
+.guide-topic > summary::-webkit-details-marker {
+  display: none;
+}
+.disclosure > summary::before,
+.guide-topic > summary::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  margin-right: 10px;
+  vertical-align: 2px;
+  transform: rotate(-45deg);
+  transition: transform var(--t-2) var(--e-out);
+}
+.disclosure[open] > summary::before,
+.guide-topic[open] > summary::before {
+  transform: rotate(45deg);
+}
+.disclosure.details-closing > summary::before,
+.guide-topic.details-closing > summary::before {
+  transform: rotate(-45deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .disclosure > summary::before,
+  .guide-topic > summary::before {
+    transition: none;
+  }
 }
 </style>
 
@@ -8220,6 +8233,60 @@ select:focus-visible {
     var src = sourceOf(ex);
     return el("div", "exfrom", src ? "From " + (src.author ? "@" + src.author : src.title || "a saved video") : "From a video you removed");
   }
+  var movingDisclosures = [];
+  function animateDisclosure(box, open) {
+    var summary = box.firstElementChild;
+    if (!(!summary || summary.tagName !== "SUMMARY")) {
+      var start = box.getBoundingClientRect().height, previous = box._disclosureRun;
+      previous && previous.stop();
+      var run = { open: open, animation: null, timer: null, inert: [] };
+      if (box._disclosureRun = run, movingDisclosures.push(box), run.stop = function() {
+        box._disclosureRun === run && (box._disclosureRun = null, clearTimeout(run.timer), run.animation && run.animation.cancel(), run.inert.forEach(function(item) {
+          item.node.inert = item.was;
+        }), box.classList.remove("details-moving", "details-closing"), summary.removeAttribute("aria-expanded"), movingDisclosures = movingDisclosures.filter(function(n) {
+          return n !== box;
+        }));
+      }, run.finish = function() {
+        box._disclosureRun === run && (box.open = run.open, run.stop());
+      }, box.open = !0, open && box._prepareDisclosure && box._prepareDisclosure(), lessMotion() || document.hidden || !box.animate || !box.isConnected) {
+        run.finish();
+        return;
+      }
+      box.classList.add("details-moving"), box.classList.toggle("details-closing", !open);
+      var end;
+      if (open ? end = box.getBoundingClientRect().height : (box.contains(document.activeElement) && !summary.contains(document.activeElement) && summary.focus({ preventScroll: !0 }), box.open = !1, end = box.getBoundingClientRect().height, box.open = !0, Array.from(box.children).slice(1).forEach(function(node) {
+        run.inert.push({ node: node, was: node.inert }), node.inert = !0;
+      })), Math.abs(start - end) < 1) {
+        run.finish();
+        return;
+      }
+      summary.setAttribute("aria-expanded", open ? "true" : "false");
+      var css = getComputedStyle(box), duration = parseFloat(css.getPropertyValue(open ? "--t-3" : "--t-2")) || (open ? 320 : 220), easing = css.getPropertyValue("--e-out").trim() || "cubic-bezier(.22,.9,.3,1)";
+      try {
+        run.animation = box.animate(
+          [{ height: start + "px" }, { height: end + "px" }],
+          { duration: duration, easing: easing, fill: "both" }
+        ), run.animation.onfinish = run.finish, run.animation.oncancel = run.finish, run.timer = setTimeout(run.finish, duration + 120);
+      } catch (e) {
+        run.finish();
+      }
+    }
+  }
+  function settleDisclosures() {
+    movingDisclosures.slice().forEach(function(box) {
+      box._disclosureRun && box._disclosureRun.finish();
+    });
+  }
+  document.addEventListener("click", function(e) {
+    var summary = e.target.closest && e.target.closest("summary"), box = summary && summary.parentElement;
+    e.defaultPrevented || !box || box.tagName !== "DETAILS" || e.target.closest("a, button, input, select, textarea") || (e.preventDefault(), animateDisclosure(box, box._disclosureRun ? !box._disclosureRun.open : !box.open));
+  }), document.addEventListener("visibilitychange", function() {
+    document.hidden && settleDisclosures();
+  }), window.addEventListener("resize", settleDisclosures);
+  var disclosureMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+  disclosureMotionQuery.addEventListener && disclosureMotionQuery.addEventListener("change", function(e) {
+    e.matches && settleDisclosures();
+  });
   function disclosure(title, cls) {
     var box = el("details", "disclosure" + (cls ? " " + cls : ""));
     return box.setAttribute("data-noswipe", ""), box.appendChild(el("summary", null, title)), box.appendChild(el("div", "disclosure-body")), box;
@@ -8299,7 +8366,7 @@ select:focus-visible {
       history.back(), openPumpy(w);
     }, actions.appendChild(ask), d.appendChild(actions);
     var original = disclosure("Watch original / source", "source-disclosure"), sourceBody = original.lastChild;
-    !isUpload(w) && w.url && sourceBody.appendChild(originalLink(w)), w.caption && sourceBody.appendChild(el("div", "capbox", w.caption)), original.addEventListener("toggle", function() {
+    !isUpload(w) && w.url && sourceBody.appendChild(originalLink(w)), w.caption && sourceBody.appendChild(el("div", "capbox", w.caption)), original._prepareDisclosure = function() {
       if (!original.open) {
         var old = sourceBody.querySelector(".embedwrap, .dphoto");
         old && old.remove();
@@ -8309,7 +8376,7 @@ select:focus-visible {
         var em = embedNode(w);
         em && (sourceBody.insertBefore(em, sourceBody.firstChild), fitEmbed(em, w.platform));
       }
-    }), w.platform !== "pumpy" && d.appendChild(original);
+    }, original.addEventListener("toggle", original._prepareDisclosure), w.platform !== "pumpy" && d.appendChild(original);
     var cites = citedSources(w);
     if (cites.length) {
       var built = el("div", "sect");
@@ -12752,15 +12819,7 @@ select:focus-visible {
     };
     Object.keys(GUIDE_TIPS).forEach(function(id) {
       var row = el("details", "guide-topic"), title = el("summary", null, names[id]);
-      row.appendChild(title), row.appendChild(el("p", null, GUIDE_TIPS[id].text)), title.onclick = function(e) {
-        e.preventDefault();
-        var start = row.getBoundingClientRect().height, open = row._target == null ? !row.open : !row._target;
-        row._target = open, row.open = !0;
-        var end = title.getBoundingClientRect().height + 1;
-        open && (end += row.querySelector("p").getBoundingClientRect().height), sizeMotion(row, start, end, function() {
-          row.open = open, row._target = null;
-        });
-      }, body.appendChild(row);
+      row.appendChild(title), row.appendChild(el("p", null, GUIDE_TIPS[id].text)), body.appendChild(row);
     }), openSheet("guidesheet");
   }
   $("pumpytips").onclick = function() {
@@ -14149,7 +14208,7 @@ select:focus-visible {
           $("hinttext").innerHTML = isIOS ? "Make your next visit easier. Install Spotter for a full-screen app. Tap <b>Share</b>, then <b>Add to Home Screen</b>." : "Make your next save easier. Install Spotter to add it to your share sheet \u2014 then a video goes straight to it with <b>Share</b>.";
           var help = el("button", "setlink", "Phone save options");
           help.onclick = function() {
-            openSettings(), $("phonesave").open = !0, $("phonesave").scrollIntoView({ block: "start" });
+            openSettings(), animateDisclosure($("phonesave"), !0), $("phonesave").scrollIntoView({ block: "start" });
           }, $("hinttext").appendChild(help), $("hint").classList.add("show");
         }
       }

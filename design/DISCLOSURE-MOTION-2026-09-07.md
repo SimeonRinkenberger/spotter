@@ -1,0 +1,11 @@
+# Expandable section motion — 7 September 2026
+
+All native details sections share measured-height opening (320ms) and closing (220ms), using Spotter's existing easing tokens. Following content moves with the section. The shared handler covers source media, exercise Options, supporting workout details, Progress/history, Settings (including nested phone setup) and Pumpy guide topics. Four tabs remain. Existing bottom sheets retain their transitions.
+
+Rapid taps reverse from the displayed height. Closing contents become inert until hidden; keyboard activation remains native. Completion/cancellation, resize, reduced-motion changes and backgrounding release transient animation state. Reduced motion opens/closes immediately. Source embeds mount before measuring and unload after collapse. There are no API, schema, authentication or dependency changes; the shipped HTML grew 3,406 bytes.
+
+Verification: 93 existing regression checks passed. tools/disclosure-harness.mjs adds 13 real-Chrome fixture checks with network blocked: intermediate heights in both directions for every disclosure style, rapid reversal, source lifecycle, nested geometry, keyboard activation, focus, cancellation/resize, reduced motion, absent animation APIs, fallback completion, and 375px light/dark overflow. Run with PLAYWRIGHT_MODULE pointing to an installed Playwright entry when not installed as a local package.
+
+An additional 23 actual-app Chrome checks passed on the disposable motion-sep7 account: navigation, filters, source/timestamps, review, demo/explicit explanation, scheduling, menu focus, set logging, charts, mobile overflow and runtime errors. Only synthetic account records were written; media and AI responses were mocked. Screenshots: disclosure-evidence/2026-09-07. Physical iPhone/Safari and screen-reader behavior remain unverified.
+
+Design basis checked 7 September 2026: [Apple HIG Motion](https://developer.apple.com/design/human-interface-guidelines/motion) for purposeful state transitions; [MDN details](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/details) for native disclosure and toggle semantics; [WebKit reduced motion](https://webkit.org/blog/7551/responsive-design-for-motion/) for respecting the system preference. Height animation is bounded to a user-triggered section; settled content returns to natural height.
