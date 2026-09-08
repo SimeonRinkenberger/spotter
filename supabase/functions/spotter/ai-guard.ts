@@ -69,6 +69,12 @@ export function createGuardedFetch(rpc: Rpc, nativeFetch: typeof fetch = (...arg
       reserve=tokenCost(model,inputBound,output);
     } else if (url.hostname === 'generativelanguage.googleapis.com' && /:(?:generateContent|streamGenerateContent)$/.test(url.pathname)) {
       provider='gemini'; model=decodeURIComponent(url.pathname.split('/models/')[1].split(':')[0]);
+      // Google is reserved for input modalities Luna cannot read directly. A
+      // transient Luna failure must not send text, chat or images to Google.
+      const parts = Array.isArray(body?.contents) ? body.contents.flatMap((c: any) => Array.isArray(c?.parts) ? c.parts : []) : [];
+      if (!parts.some((p: any) => p.fileData?.fileUri && /^(audio|video)\//.test(p.fileData?.mimeType ?? '')) ||
+          parts.some((p: any) => p.inline_data || p.inlineData)) throw new GuardError('gemini_media_only');
+
       if (!tokenPrice(model)) throw new GuardError('unknown_price');
       const output=Number(body?.generationConfig?.maxOutputTokens);
       if (!(output>0&&output<=8000)) throw new GuardError('invalid_output_bound');

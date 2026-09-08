@@ -45,8 +45,13 @@ const gemini=createGuardedFetch(async(name,args)=>{operations.push(name);return 
  if(String(input).includes('countTokens')){operations.push('countTokens');return Response.json({totalTokens:1000});}
  operations.push('generate');return Response.json({usageMetadata:{promptTokenCount:1000,candidatesTokenCount:20}});
 });
-await aiActor.run(actor(),()=>gemini('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent',{method:'POST',body:JSON.stringify({contents:[{parts:[{text:'read'}]}],generationConfig:{maxOutputTokens:4000}})}));
+await aiActor.run(actor(),()=>gemini('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent',{method:'POST',body:JSON.stringify({contents:[{parts:[{fileData:{fileUri:'https://generativelanguage.googleapis.com/v1beta/files/fixture',mimeType:'video/mp4'}},{text:'read'}]}],generationConfig:{maxOutputTokens:4000}})}));
 ok(operations.join(',')==='countTokens,ai_reserve,generate,ai_settle','Gemini uses input token preflight before paid generation');
+for (const parts of [[{text:'private chat'}],[{inline_data:{mime_type:'image/png',data:'fixture'}}],[{fileData:{fileUri:'fixture',mimeType:'image/png'}}]]) {
+ const denied=fixture(response);
+ await aiActor.run(actor(),async()=>{try{await denied.fetcher('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent',{method:'POST',body:JSON.stringify({contents:[{parts}],generationConfig:{maxOutputTokens:4000}})});}catch(e){ok(e instanceof GuardError && e.reason==='gemini_media_only','Google rejects text/image input');}});
+ ok(denied.network===0&&denied.calls.length===0,'disallowed Google request never reserves or reaches network');
+}
 const unavailable=createGuardedFetch(async()=>{throw new Error('DB down');},async()=>{throw new Error('network must not run');});
 await aiActor.run(actor(),async()=>{try{await unavailable(url,request);}catch(e){ok(String(e).includes('DB down')||e instanceof GuardError,'accounting outage refuses calls');}});
 f=fixture(response);

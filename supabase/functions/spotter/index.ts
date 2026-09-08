@@ -1607,7 +1607,7 @@ export async function openaiStream(
   return partial(text, "openai:" + model, u);
 }
 
-// Luna first, then one configured Gemini fallback. Each provider independently
+// Luna only for text. Raw audio/video uses a separate Gemini reader that independently
 // reserves its maximum permitted cost immediately before generation.
 async function textGenerate(system: string, user: string, wantJson: boolean, ctx: AiCtx): Promise<Generated> {
   const paid = await paidAllowed();
@@ -1617,22 +1617,6 @@ async function textGenerate(system: string, user: string, wantJson: boolean, ctx
   let out: Generated = NOTHING;
   if (allowed("openai")) out = await openaiGenerate(system, user, wantJson, ctx);
   if (aiActor.getStore()?.blocked) throw new GuardError(aiActor.getStore()!.blocked!);
-  if (!out.text && GEMINI_API_KEY && allowed("gemini")) {
-    out = await geminiGenerate({
-      systemInstruction: { parts: [{ text: system }] },
-      contents: [{ role: "user", parts: [{ text: user }] }],
-      // Extraction wants structured output, not reasoning. Thinking tokens are billed
-      // against maxOutputTokens, so leaving it on can consume the entire budget and
-      // return an empty candidate. Budgets are generous for the same reason.
-      generationConfig: wantJson
-        ? {
-          responseMimeType: "application/json",
-          maxOutputTokens: outCap(ctx, 8000),
-          thinkingConfig: { thinkingBudget: 0 },
-        }
-        : { maxOutputTokens: outCap(ctx, 3000), thinkingConfig: { thinkingBudget: 0 } },
-    }, ctx);
-  }
   return out;
 }
 
@@ -1672,9 +1656,6 @@ export async function textStream(
   let out: Generated = NOTHING;
   if (allowed("openai")) out = await openaiStream(system, user, wantJson, ctx, onDelta);
   if (aiActor.getStore()?.blocked) throw new GuardError(aiActor.getStore()!.blocked!);
-  if (!out.text && GEMINI_API_KEY && allowed("gemini")) {
-    out = await geminiStream(geminiBody(system, user, wantJson, ctx), ctx, system, user, onDelta);
-  }
   return out;
 }
 
@@ -4761,7 +4742,7 @@ async function visionCard(dataB64: string, mime: string, fallback: Card, ctx: Ai
     'reply with exactly {"none": true}. If workout text is present but unreadable, reply {"unreadable": true}. Never invent text that is not readable in the image.';
   const paid = await paidAllowed();
   const read = await readVisionImage(dataB64, mime, prompt, {
-    openaiKey: OPENAI_API_KEY, geminiKey: GEMINI_API_KEY,
+    openaiKey: OPENAI_API_KEY, geminiKey: "", // Luna supports images; no cross-provider retry.
     openaiModel: runtimeCfg["model.openai_vision"] || "gpt-5.6-luna",
     geminiModel: models().geminiVision,
     timeoutMs: Math.max(100, visionLimit("timeout_ms", 35_000) - 4_000),

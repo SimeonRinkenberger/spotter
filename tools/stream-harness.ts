@@ -315,7 +315,7 @@ const CTX = { purpose: "chat", userId: null, maxOut: 1500 };
   const seen = mockFetch([{ match: "generativelanguage.googleapis.com", body: sse }]);
   const got: string[] = [];
   const gen = await S.geminiStream(
-    { systemInstruction: { parts: [{ text: "sys" }] }, contents: [], generationConfig: { maxOutputTokens:4000, thinkingConfig: { thinkingBudget: 0 } } },
+    { systemInstruction: { parts: [{ text: "sys" }] }, contents: [{parts:[{fileData:{fileUri:"https://generativelanguage.googleapis.com/v1beta/files/fixture",mimeType:"video/mp4"}}]}], generationConfig: { maxOutputTokens:4000, thinkingConfig: { thinkingBudget: 0 } } },
     CTX, "sys", "usr", (t) => got.push(t),
   );
   eq("gemini deltas arrive in order", got, ["Try ", "goblet squats."]);
@@ -326,7 +326,7 @@ const CTX = { purpose: "chat", userId: null, maxOut: 1500 };
 {
   const seen=mockFetch([{match:"generativelanguage.googleapis.com",body:"",status:400}]);
   const gen=await S.geminiStream({contents:[],generationConfig:{maxOutputTokens:4000}},CTX,"s","u",()=>{});
-  eq("Gemini failure is bounded to one generation",seen.length,1);
+  eq("Gemini text fallback is blocked before network",seen.length,0);
   eq("Gemini unsupported request does not rotate aliases",gen.text,null);
 }
 
