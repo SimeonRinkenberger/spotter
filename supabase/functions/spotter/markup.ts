@@ -5,8 +5,9 @@ export const MARKUP_HEAD = String.raw`<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="google-site-verification" content="unLzcq6TBz9Bm6q4KHpbTmZ88dQ_tTnViacVX5BLzS0">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
-<title>Spotter — save any workout video</title>
+<title>Spotter by Quarterdeck Collective — save any workout video</title>
 <meta name="description" content="Save fitness videos from TikTok, Instagram and YouTube. Spotter pulls out the exercises, sets and reps, then walks you through the workout and logs what you lifted.">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -143,7 +144,7 @@ export const MARKUP_BODY = String.raw`</head>
     <!-- Somebody made this. Software with no maker, no version and no way to say
          something is wrong reads as unowned however good it is, and that absence
          was the loudest thing about this page. -->
-    <div class="landfoot">Made by Simeon Rinkenberger · Free to start ·
+    <div class="landfoot">Spotter by Quarterdeck Collective · Free to start ·
       <a href="whats-new.html">What&rsquo;s new</a> · <a href="terms.html">Terms</a> ·
       <a href="privacy.html">Privacy</a></div>
   </div>
