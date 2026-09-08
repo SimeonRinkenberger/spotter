@@ -37,6 +37,8 @@ const realFetch = globalThis.fetch;
   addr: { transport: "tcp", hostname: "127.0.0.1", port: 0 },
 });
 
+const { aiActor } = await import("../supabase/functions/spotter/ai-guard.ts");
+aiActor.enterWith({userId:"00000000-0000-4000-8000-000000000001",workKey:"stream-fixture"});
 const S = await import("../supabase/functions/spotter/index.ts");
 
 let failures = 0;
@@ -249,6 +251,8 @@ function mockFetch(routes: { match: string; body: string; status?: number }[], s
   const seen: { url: string; body: any }[] = [];
   globalThis.fetch = ((input: any, init?: any) => {
     const url = String(input);
+    if (url.includes("/rpc/ai_reserve")) return Promise.resolve(Response.json("ok"));
+    if (url.includes(":countTokens")) return Promise.resolve(Response.json({totalTokens:1000}));
     const hit = routes.find((r) => url.includes(r.match));
     if (!hit) return Promise.resolve(new Response("[]", { status: 200, headers: { "content-type": "application/json" } }));
     seen.push({ url, body: init?.body ? JSON.parse(String(init.body)) : null });
@@ -293,22 +297,12 @@ const CTX = { purpose: "chat", userId: null, maxOut: 1500 };
   eq("a refused openai stream hands the ladder nothing", gen.text, null);
 }
 
-// -- Anthropic: input usage on message_start, output usage on message_delta.
+// Retired paid fallbacks fail closed even if their keys remain configured.
 {
-  const sse = [
-    'event: message_start\ndata: {"type":"message_start","message":{"usage":{"input_tokens":900,"cache_read_input_tokens":100,"cache_creation_input_tokens":20}}}',
-    'event: content_block_delta\ndata: {"type":"content_block_delta","delta":{"type":"text_delta","text":"Nice "}}',
-    'event: content_block_delta\ndata: {"type":"content_block_delta","delta":{"type":"text_delta","text":"one."}}',
-    'event: message_delta\ndata: {"type":"message_delta","usage":{"output_tokens":55}}',
-    'event: message_stop\ndata: {"type":"message_stop"}', "",
-  ].join("\n\n");
-  mockFetch([{ match: "api.anthropic.com", body: sse }]);
-  const got: string[] = [];
-  const gen = await S.claudeStream("sys", "usr", CTX, (t) => got.push(t));
-  eq("anthropic deltas arrive in order", got, ["Nice ", "one."]);
-  eq("anthropic folds cache reads and writes into inTok", gen.usage?.inTok, 1020);
-  eq("anthropic reports the cached subset", gen.usage?.cachedTok, 100);
-  eq("anthropic output tokens come off message_delta", gen.usage?.outTok, 55);
+  const seen = mockFetch([{match:"api.anthropic.com",body:""}]);
+  const gen=await S.claudeStream("sys","usr",CTX,()=>{});
+  eq("unpriced Anthropic adapter makes no provider call",seen.length,0);
+  eq("unpriced Anthropic adapter returns no generation",gen.text,null);
 }
 
 // -- Gemini: text under candidates[0].content.parts[], usage on the last chunk.
@@ -321,7 +315,7 @@ const CTX = { purpose: "chat", userId: null, maxOut: 1500 };
   const seen = mockFetch([{ match: "generativelanguage.googleapis.com", body: sse }]);
   const got: string[] = [];
   const gen = await S.geminiStream(
-    { systemInstruction: { parts: [{ text: "sys" }] }, contents: [], generationConfig: { thinkingConfig: { thinkingBudget: 0 } } },
+    { systemInstruction: { parts: [{ text: "sys" }] }, contents: [], generationConfig: { maxOutputTokens:4000, thinkingConfig: { thinkingBudget: 0 } } },
     CTX, "sys", "usr", (t) => got.push(t),
   );
   eq("gemini deltas arrive in order", got, ["Try ", "goblet squats."]);
@@ -330,55 +324,17 @@ const CTX = { purpose: "chat", userId: null, maxOut: 1500 };
   eq("gemini prompt tokens", gen.usage?.inTok, 800);
 }
 {
-  // The older models reject thinkingConfig outright; the adapter drops it and asks
-  // that same model again rather than rotating away from it.
-  let call = 0;
-  globalThis.fetch = ((input: any, init?: any) => {
-    const url = String(input);
-    if (!url.includes("generativelanguage")) return Promise.resolve(new Response("[]", { status: 200 }));
-    call++;
-    if (call === 1) return Promise.resolve(new Response("thinkingConfig unsupported", { status: 400 }));
-    const body = JSON.parse(String(init.body));
-    check("the retry has no thinkingConfig", !("thinkingConfig" in (body.generationConfig ?? {})));
-    return Promise.resolve(new Response(
-      chunkedBody('data: {"candidates":[{"content":{"parts":[{"text":"ok"}]}}]}\n\n', 9),
-      { status: 200 },
-    ));
-  }) as typeof fetch;
-  const gen = await S.geminiStream(
-    { systemInstruction: { parts: [{ text: "s" }] }, contents: [], generationConfig: { thinkingConfig: { thinkingBudget: 0 } } },
-    CTX, "s", "u", () => {},
-  );
-  eq("gemini retries the same model without thinkingConfig", gen.text, "ok");
+  const seen=mockFetch([{match:"generativelanguage.googleapis.com",body:"",status:400}]);
+  const gen=await S.geminiStream({contents:[],generationConfig:{maxOutputTokens:4000}},CTX,"s","u",()=>{});
+  eq("Gemini failure is bounded to one generation",seen.length,1);
+  eq("Gemini unsupported request does not rotate aliases",gen.text,null);
 }
 
-// -- Groq: OpenAI's shape, usage under x_groq on the final chunk.
 {
-  const sse = [
-    'data: {"choices":[{"delta":{"content":"Kettlebell "}}]}',
-    'data: {"choices":[{"delta":{"content":"swings."}}],"x_groq":{"usage":{"prompt_tokens":600,"completion_tokens":25}}}',
-    "data: [DONE]", "",
-  ].join("\n\n");
-  mockFetch([{ match: "api.groq.com", body: sse }]);
-  const got: string[] = [];
-  const gen = await S.groqStream("sys", "usr", true, CTX, (t) => got.push(t));
-  eq("groq deltas arrive in order", got, ["Kettlebell ", "swings."]);
-  eq("groq usage is read from x_groq", [gen.usage?.inTok, gen.usage?.outTok], [600, 25]);
-}
-{
-  // A model that is gone rotates to the next in the pool rather than failing the turn.
-  let call = 0;
-  globalThis.fetch = ((input: any) => {
-    const url = String(input);
-    if (!url.includes("api.groq.com")) return Promise.resolve(new Response("[]", { status: 200 }));
-    call++;
-    if (call === 1) return Promise.resolve(new Response("decommissioned", { status: 404 }));
-    return Promise.resolve(new Response(
-      chunkedBody('data: {"choices":[{"delta":{"content":"second"}}]}\n\n', 5), { status: 200 },
-    ));
-  }) as typeof fetch;
-  const gen = await S.groqStream("sys", "usr", true, CTX, () => {});
-  eq("groq rotates past a decommissioned model", gen.text, "second");
+  const seen=mockFetch([{match:"api.groq.com",body:""}]);
+  const gen=await S.groqStream("sys","usr",true,CTX,()=>{});
+  eq("unpriced Groq text adapters make no provider calls",seen.length,0);
+  eq("unpriced Groq text adapters return no generation",gen.text,null);
 }
 
 // -- the line splitter itself, with UTF-8 cut in half.

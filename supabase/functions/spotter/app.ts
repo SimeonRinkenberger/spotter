@@ -7,6 +7,9 @@ export const APP = String.raw`
 (function () {
   "use strict";
 
+  var native = window.SpotterNative || null;
+  var AUTH_RETURN = native ? "https://simeonrinkenberger.github.io/spotter/" : location.origin + location.pathname;
+
   var SB_URL = "https://mtzevoxxpsktmrbbuxva.supabase.co";
   var SB_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10emV2b3h4cHNrdG1yYmJ1eHZhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgyMjM5ODgsImV4cCI6MjEwMzc5OTk4OH0._vpNhLJtv2bVGgXXClva9O5cX8Y5eJdTgbgAO81NnmU";
   var API = SB_URL + "/functions/v1/spotter/api/";
@@ -21,7 +24,7 @@ export const APP = String.raw`
   var PUBLIC_AUTH = { google_client_id: "", apple_services_id: "" };
 
   var sb = window.supabase.createClient(SB_URL, SB_ANON, {
-    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: !native, storage: native ? native.authStorage : undefined },
     global: { fetch: function (url, opts) {
       // Only idempotent database reads get the short deadline. Auth and writes
       // retain the SDK's semantics; a timed-out write must never be replayed here.
@@ -160,14 +163,16 @@ export const APP = String.raw`
   // This is also the seam for going native: when Spotter is wrapped in Capacitor,
   // only this function changes — Haptics.impact for tap and success, notification
   // for pr and done — and every call below starts driving the Taptic Engine.
-  var BUZZ = { tap: 8, success: 12, pr: [14, 60, 22], done: [35, 55, 35] };
+  var BUZZ = { tap: 8, stream: 5, success: 12, pr: [14, 60, 22], done: [35, 55, 35] };
 
   // One gate, which is what makes a Vibration switch possible at all: every call
   // site in the app comes through here. navigator.vibrate does not exist on iOS at
   // any setting, so there the switch is not offered rather than lying.
   function haptic(kind) {
     var p = BUZZ[kind];
-    if (!p || !state.haptics || !navigator.vibrate) return;
+    if (!p || !state.haptics) return;
+    if (native) { native.haptic(kind); return; }
+    if (!navigator.vibrate) return;
     try { navigator.vibrate(p); } catch (e) { /* a phone that will not buzz is fine */ }
   }
 
@@ -383,7 +388,7 @@ export const APP = String.raw`
       function pump() {
         return rd.read().then(function (x) {
           if (!accountNow(epoch, uid)) { rd.cancel(); return; }
-          buf += x.done ? "" : dec.decode(x.value, { stream: true });
+          buf += x.done ? dec.decode() : dec.decode(x.value, { stream: true });
           while ((nl = buf.indexOf("\n")) >= 0) { feed(buf.slice(0, nl).trim()); buf = buf.slice(nl + 1); }
           if (x.done) { feed(buf.trim()); return; }
           return pump();
@@ -458,7 +463,7 @@ export const APP = String.raw`
     btn.disabled = true;
     btn.textContent = authMode === "signup" ? "Creating…" : "Signing in…";
     var p = authMode === "signup"
-      ? sb.auth.signUp({ email: email, password: pw })
+      ? sb.auth.signUp({ email: email, password: pw, options: { emailRedirectTo: AUTH_RETURN } })
       : sb.auth.signInWithPassword({ email: email, password: pw });
     p.then(function (r) {
       btn.disabled = false;
@@ -617,7 +622,7 @@ export const APP = String.raw`
   function oauthRedirect(provider) {
     sb.auth.signInWithOAuth({
       provider: provider,
-      options: { redirectTo: location.origin + location.pathname }
+      options: { redirectTo: AUTH_RETURN }
     }).then(function (r) {
       if (r && r.error) oauthFailed(r.error);
       // On success the browser is already navigating; leave the button busy.
@@ -657,6 +662,7 @@ export const APP = String.raw`
   }
 
   function googleSignIn() {
+    if (native) { toast("Use email and password in this development build. Native Google sign-in is not configured yet."); return; }
     if (oauthBusy) return;
     setOauthBusy("oagoogle");
     authError("");
@@ -712,6 +718,7 @@ export const APP = String.raw`
   }
 
   function appleSignIn() {
+    if (native) { toast("Use email and password in this development build. Native Apple sign-in awaits setup."); return; }
     if (oauthBusy) return;
     setOauthBusy("oaapple");
     authError("");
@@ -731,7 +738,7 @@ export const APP = String.raw`
         // With usePopup the result comes back by postMessage to this window, so the
         // redirect URI has to be this page's own origin — and that origin has to be
         // registered against the Services ID. README has the exact values.
-        redirectURI: location.origin + location.pathname,
+        redirectURI: AUTH_RETURN,
         usePopup: true,
         nonce: hashed
       });
@@ -803,6 +810,7 @@ export const APP = String.raw`
   }
 
   function showLanding() {
+    if (native) $("pumpyinput").value = "";
     document.body.classList.remove("app");
     $("landing").classList.add("open");
     $("app").classList.add("hide");
@@ -826,6 +834,7 @@ export const APP = String.raw`
   }
 
   function clearAccount() {
+    if (native) native.configureSharing(null).catch(function () {});
     cancelPumpyReset();
     if (pendingMotion) pendingMotion.disconnect();
     $("app").classList.add("hide");
@@ -1076,6 +1085,7 @@ export const APP = String.raw`
       if (!accountNow(epoch, uid)) return;
       if (r.data) {
         state.profile = r.data;
+        if (native) native.configureSharing(r.data.ingest_key).catch(function () {});
         var s = r.data.settings || {};
         if (s.unit) state.unit = s.unit;
         // false is a real answer, so these test presence, not truth. An older
@@ -2295,7 +2305,7 @@ export const APP = String.raw`
 
     $("workmanage").innerHTML = "";
     $("workmanage").appendChild(manageRow(w));
-    $("dreproc").disabled = isPending(w);
+    syncRereadButton(w);
     $("dreproc").hidden = isUpload(w) || w.platform === "pumpy";
 
     d.appendChild(el("div", "dkick", isPending(w)
@@ -2315,6 +2325,13 @@ export const APP = String.raw`
       d.appendChild(au);
     }
 
+
+    if (!isPending(w) && !isFailed(w) && w.ingest_error) {
+      var incomplete = el("div", "sect");
+      incomplete.appendChild(el("h3", null, "Some details are missing"));
+      incomplete.appendChild(el("div", "capbox", w.ingest_error));
+      d.appendChild(incomplete);
+    }
 
     // A card whose extraction has not landed yet, or one whose job gave up. Both
     // are real rows with a real link — the user keeps what they saved either way.
@@ -4687,16 +4704,19 @@ export const APP = String.raw`
   function draftKey() { return "spotter_draft"; }
 
   function saveDraft() {
-    if (!wo) return;
+    if (!wo || wo.finished) return;
     try {
       localStorage.setItem(draftKey(), JSON.stringify({
         workoutId: wo.workout.id, title: wo.workout.title,
-        entries: wo.entries, startedAt: wo.startedAt, i: wo.i, rounds: wo.rounds
+        entries: wo.entries, startedAt: wo.startedAt, i: wo.i, rounds: wo.rounds,
+        rest: restUntil && !restFace ? { until: restUntil, total: restTotal, held: restHeld } : null
       }));
+      if (native) native.saveDraft(localStorage.getItem(draftKey()));
     } catch (e) { /* private mode */ }
   }
 
   function clearDraft() {
+    if (native) native.saveDraft(null);
     try { localStorage.removeItem(draftKey()); } catch (e) { /* ignore */ }
   }
 
@@ -4727,6 +4747,15 @@ export const APP = String.raw`
     acquireWake();
     renderWorkout();
     startClock();
+    // Restore ordinary rest deadlines after process termination. Timed exercise
+    // callbacks cannot be serialized: those restart idle and never log unseen sets.
+    if (resume && resume.rest && resume.rest.total > 0 && (resume.rest.held || resume.rest.until > Date.now())) {
+      startRest(resume.rest.total / 1000);
+      restUntil = resume.rest.until;
+      restHeld = resume.rest.held || 0;
+      if (restHeld) { clearInterval(restTimer); drawRest(restHeld); } else tickRest();
+    }
+    saveDraft();
     history.pushState({ workout: 1 }, "");
     lastWeights();
   }
@@ -4808,12 +4837,14 @@ export const APP = String.raw`
 
   function startClock() {
     clearInterval(woTimer);
-    woTimer = setInterval(function () {
-      if (!wo) return;
+    function tickClock() {
+      if (!wo || wo.finished) return;
       var s = Math.floor((Date.now() - new Date(wo.startedAt).getTime()) / 1000);
       var m = Math.floor(s / 60);
       $("wclock").textContent = m + ":" + String(s % 60).padStart(2, "0");
-    }, 1000);
+    }
+    tickClock();
+    woTimer = setInterval(tickClock, 1000);
   }
 
   function acquireWake() {
@@ -5165,6 +5196,7 @@ export const APP = String.raw`
     }
     drawRest(restTotal);
     restTimer = setInterval(tickRest, 200);
+    saveDraft();
   }
 
   function tickRest() {
@@ -5207,6 +5239,7 @@ export const APP = String.raw`
     restHeld = 0;
     var onRing = restFace;
     restFace = restThen = null;
+    saveDraft();
     if (onRing) return;
     var strip = $("reststrip");
     if (!strip.classList.contains("on")) return;
@@ -5225,6 +5258,7 @@ export const APP = String.raw`
       restHeld = Math.max(0, restUntil - Date.now());
       clearInterval(restTimer);
     }
+    saveDraft();
     if (restFace) { paintPhase(); return; }
     var strip = $("reststrip");
     if (restHeld) strip.classList.add("paused"); else strip.classList.remove("paused");
@@ -5239,6 +5273,7 @@ export const APP = String.raw`
     if (restHeld) restHeld += ms; else restUntil += ms;
     restCued = 4;
     drawRest(restHeld || restUntil - Date.now());
+    saveDraft();
   }
 
   // Three ticks and a chime, from a context a tap unlocked. A bonus on top of the
@@ -5731,7 +5766,7 @@ export const APP = String.raw`
     if (!w) { clearDraft(); return; }
     var any = (d.entries || []).some(function (e) { return e.sets && e.sets.length; });
     if (!any) { clearDraft(); return; }
-    toast("Tap to resume " + (d.title || "your workout"));
+    toast("Tap to resume " + (d.title || "your workout"), native ? 30000 : undefined);
     // #toast is pointer-events: none, so this said "tap to resume" untappably.
     var t = $("toast");
     t.classList.add("tappable");
@@ -6412,6 +6447,13 @@ export const APP = String.raw`
   // An anchor over a blob URL, never a navigation: in a standalone PWA a step out
   // of scope ejects the whole session into Safari.
   function scDrop(url, temp, name) {
+    if (native) {
+      fetch(url).then(function (r) { return r.blob(); }).then(function (b) {
+        return navigator.share({ files: [new File([b], name || "spotter-workout.png", { type: b.type })] });
+      }).catch(function (e) { if (e.name !== "AbortError") toast("Could not open the share sheet."); })
+        .then(function () { if (temp) URL.revokeObjectURL(url); });
+      return;
+    }
     var a = el("a");
     name = name || "spotter-workout.png";
     a.href = url;
@@ -6464,7 +6506,7 @@ export const APP = String.raw`
     haptic("tap");
     try {
       var p = navigator.share({ title: "Spotter", text: sc.card ? sc.card.title : "Workout",
-        url: location.origin + location.pathname });
+        url: AUTH_RETURN });
       if (p && p.then) p.then(null, function () { /* cancelled, or nothing took it */ });
     } catch (e) { scHold(); }
   }
@@ -9043,6 +9085,7 @@ export const APP = String.raw`
       L.st.classList.toggle("hide", !ev.text);
     } else if (ev.t === "delta") {
       L.tn.appendData(ev.text || "");
+      pumpyStreamHaptic(L, ev.text);
       L.bub.classList.remove("hide");
       L.st.classList.add("hide");
     } else if (ev.t === "retract") {
@@ -9061,6 +9104,16 @@ export const APP = String.raw`
       L.frame = null;
       if (pumpy.live === L && !document.hidden) pumpyFollow();
     });
+  }
+
+  function pumpyStreamHaptic(live, text) {
+    if (!native || !text || !state.haptics || document.hidden || state.view !== "pumpy" || overlayShowing()) return;
+    var now = performance.now();
+    // A light pulse follows fresh text, at most every 90ms. No timer means no
+    // lingering vibration after completion, a pause in delivery, or navigation.
+    if (live.lastHaptic != null && now - live.lastHaptic < 90) return;
+    live.lastHaptic = now;
+    haptic("stream");
   }
 
   function sendPumpy(text) {
@@ -9520,7 +9573,7 @@ export const APP = String.raw`
       method: "POST",
       body: JSON.stringify({
         plan: "plus", interval: billing.interval,
-        return_url: location.origin + location.pathname
+        return_url: AUTH_RETURN
       })
     }).then(function (r) {
       if (r && r.status === "ok" && r.url) {
@@ -9529,7 +9582,7 @@ export const APP = String.raw`
         // with storage of its own, so this flag, in OUR storage, is the only thing
         // still here when the person comes back.
         setPending("plus");
-        location.assign(r.url);
+        if (native) native.open(r.url); else location.assign(r.url);
         return;                                  // left busy on purpose: we are leaving
       }
       billing.busy = false;
@@ -9550,9 +9603,9 @@ export const APP = String.raw`
     var was = btn ? btn.textContent : null;
     if (btn) { btn.disabled = true; btn.textContent = "Opening…"; }
     api("billing/portal", {
-      method: "POST", body: JSON.stringify({ return_url: location.origin + location.pathname })
+      method: "POST", body: JSON.stringify({ return_url: AUTH_RETURN })
     }).then(function (r) {
-      if (r && r.status === "ok" && r.url) { location.assign(r.url); return; }
+      if (r && r.status === "ok" && r.url) { if (native) native.open(r.url); else location.assign(r.url); return; }
       if (btn) { btn.disabled = false; btn.textContent = was; }
       toast((r && r.message) || "Could not open the billing page just now.");
     }).catch(function () {
@@ -10569,7 +10622,10 @@ export const APP = String.raw`
     upProgress(0, "Uploading… 0%");
 
     var watched = !!UPLOAD_WATCHED[ext];
-    putObject(file, path, UPLOAD_TYPES[ext]).then(function () {
+    api("uploads/authorize", { method: "POST", body: JSON.stringify({ path: path, bytes: file.size }) }).then(function (permit) {
+      if (permit.status !== "ok") { var denied = new Error(permit.message || "Upload is paused. Please try again later."); denied.uploadLimit = true; throw denied; }
+      return putObject(file, path, UPLOAD_TYPES[ext]);
+    }).then(function () {
       // The bytes have landed, and somebody else's machine reading them is a
       // different wait — so it gets its own verb, and the true one for this file.
       upProgress(1, watched ? "Uploaded — Spotter is watching it…" : "Uploaded — Spotter is listening…");
@@ -10598,7 +10654,9 @@ export const APP = String.raw`
     }).catch(function (e) {
       var msg = String(e && e.message ? e.message : e);
       resetUpload();
-      if (msg === "413") {
+      if (e && e.uploadLimit) {
+        upError(msg);
+      } else if (msg === "413") {
         upError("That file is too big for Spotter’s storage. The limit is " + mb(UPLOAD_MAX) + " MB.");
       } else if (msg === "400" || msg === "415") {
         upError("Spotter’s storage would not take that file. Send " + UPLOAD_KINDS + ".");
@@ -10745,7 +10803,7 @@ export const APP = String.raw`
       // Marked before the page leaves: this flag, in OUR storage, is what tells the
       // app to ask the server how it went when it next comes to front.
       stravaWait(true);
-      location.href = r.url;
+      if (native) native.open(r.url); else location.href = r.url;
     }).catch(function () {
       b.disabled = false;
       toast("Could not reach Spotter — check your connection.");
@@ -10918,9 +10976,11 @@ export const APP = String.raw`
     $("unittoggle").textContent = state.unit;
     paintGoal();
     $("haptictoggle").textContent = state.haptics ? "On" : "Off";
-    $("sethapticrow").classList.toggle("hide", !navigator.vibrate);
+    $("sethapticrow").classList.toggle("hide", !native && !navigator.vibrate);
     paintSounds();
     loadRemind();
+    $("shortcutsetup").classList.toggle("hide", !!native);
+    $("nativesharehelp").classList.toggle("hide", !native);
     var key = state.profile ? state.profile.ingest_key : null;
     $("setkey").textContent = key ? API + "ingest?key=" + key : "Loading…";
     $("setsaves").textContent = "…";
@@ -10965,11 +11025,14 @@ export const APP = String.raw`
   }
 
   function rotateKey() {
+    var uid = state.user && state.user.id, epoch = accountEpoch;
     api("rotate-key", { method: "POST", body: "{}" }).then(function (r) {
+      if (!accountNow(epoch, uid)) return;
       if (r.status !== "ok") { toast("Could not make a new key — try again in a moment."); return; }
       if (state.profile) state.profile.ingest_key = r.ingest_key;
       $("setkey").textContent = API + "ingest?key=" + r.ingest_key;
-      toast("New key made — update your Shortcut.");
+      if (native) native.configureSharing(r.ingest_key).catch(function () {});
+      toast(native ? "Sharing key refreshed." : "New key made — update your Shortcut.");
     });
   }
 
@@ -11067,7 +11130,7 @@ export const APP = String.raw`
   var remind = { plan: false, risk: false, at: 1050, sub: null, key: null, busy: false };
 
   function pushable() {
-    return !!(navigator.serviceWorker && window.PushManager && window.Notification);
+    return !native && !!(navigator.serviceWorker && window.PushManager && window.Notification);
   }
 
   function denied() { return pushable() && window.Notification.permission === "denied"; }
@@ -11085,6 +11148,7 @@ export const APP = String.raw`
   // work. Never a second prompt: a refused permission is undoable only in the OS,
   // so this says where rather than offering a button that would be ignored.
   function remindNote() {
+    if (native) return "Native reminders are not configured in this development build.";
     if (!pushable()) {
       // The same two steps the install hint gives, because it is the same ask.
       return standalone() ? "This browser cannot show reminders."
@@ -11457,7 +11521,7 @@ export const APP = String.raw`
     if (!email) { authError("Type your email above first, then tap this."); return; }
     var b = $("forgotpw");
     b.disabled = true;
-    sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname })
+    sb.auth.resetPasswordForEmail(email, { redirectTo: AUTH_RETURN })
       .then(function (r) {
         b.disabled = false;
         if (r.error) { authError(authMessage(r.error.message)); return; }
@@ -11592,7 +11656,7 @@ export const APP = String.raw`
   }
 
   function tellFriend() {
-    var url = location.origin + location.pathname;
+    var url = AUTH_RETURN;
     var text = "Spotter reads the workout out of a fitness video and walks you through it.";
     if (navigator.share) {
       navigator.share({ title: "Spotter", text: text, url: url }).catch(function () { });
@@ -11830,7 +11894,12 @@ export const APP = String.raw`
     var h = hdrEl.getBoundingClientRect().height;
     var b = Math.round(tabbar.getBoundingClientRect().height);
     if (h) root.style.setProperty("--hdr", h + "px");
-    if (b) root.style.setProperty("--ptab", b + "px");
+    // Keep the resting clearance through dismissal too: WKWebView's safe area
+    // is briefly shorter while UIKit expands its frame. Measuring that transient
+    // bar retargets the composer's transition, then jumps again at the last frame.
+    if (b && (!native || (!native.keyboardVisible && !native.keyboardMoving))) {
+      root.style.setProperty("--ptab", b + "px");
+    }
     var w = pagesEl.clientWidth;
     if (w && w !== pageW) {
       // A rotation must not leave the track parked between two pages, and a
@@ -12168,6 +12237,15 @@ export const APP = String.raw`
 
   function fitViewport() {
     var vv = window.visualViewport, root = document.documentElement;
+    // UIKit's keyboard layout guide already reduces the layout viewport. Do not
+    // resize it again, infer keyboard visibility from a now-zero height gap,
+    // or fight WKWebView's focus scrolling with repeated window.scrollTo calls.
+    if (native) {
+      document.body.classList.toggle("kb", !!native.keyboardVisible);
+      root.style.removeProperty("--vvh");
+      root.style.removeProperty("--vvtop");
+      return;
+    }
     // The test is height actually lost to the keyboard, not focus: a desktop
     // browser and an external keyboard both focus a field without taking a pixel.
     var kb = !!vv && (kbOn || kbSettle) && vv.height < window.innerHeight - 80;
@@ -12206,12 +12284,14 @@ export const APP = String.raw`
     return (t === "INPUT" || t === "TEXTAREA") && !$("landing").contains(n);
   }
   document.addEventListener("focusin", function (e) {
+    if (native) return;
     if (!kbField(e.target)) return;
     kbOn = true;
     kbSettle = false;
     fitViewport();
   });
   document.addEventListener("focusout", function (e) {
+    if (native) return;
     if (!kbField(e.target)) return;
     kbOn = false;
     kbSettle = true;
@@ -12280,7 +12360,7 @@ export const APP = String.raw`
   // on Android it also buys a place in the share sheet, which is the whole reason
   // an Android user would bother, so the hint says that instead.
   function standalone() {
-    return !!(window.navigator.standalone ||
+    return !!(native || window.navigator.standalone ||
       (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches));
   }
 
@@ -12351,6 +12431,15 @@ export const APP = String.raw`
     this.style.height = "auto";
     this.style.height = Math.min(this.scrollHeight, 138) + "px";
   });
+  if (native && window.ResizeObserver) {
+    // Follow the conversation during UIKit's keyboard movement and multiline
+    // input growth. A reader who scrolled up keeps their place in the history.
+    var chatResize = new ResizeObserver(function () {
+      if (state.view === "pumpy" && pumpy.stick && !document.hidden) pumpyFollow();
+    });
+    chatResize.observe($("pumpyview"));
+    chatResize.observe($("pumpycomposer"));
+  }
   $("swaphavego").onclick = function () { runSwap(); };
   $("swaphaveinput").addEventListener("keydown", function (e) { if (e.key === "Enter") runSwap(); });
 
@@ -12464,30 +12553,42 @@ export const APP = String.raw`
     if (navigator.share) navigator.share({ title: current.title || "Workout", text: text }).catch(function () { });
     else if (navigator.clipboard) { navigator.clipboard.writeText(text); toast("Copied."); }
   };
+  var rereading = {};
+  function syncRereadButton(w) {
+    var b = $("dreproc"), busy = !!(w && rereading[w.id]);
+    b.disabled = busy || !!(w && isPending(w));
+    b.textContent = busy ? "Reading…" : "Read it again";
+    b.setAttribute("aria-busy", busy ? "true" : "false");
+  }
   $("dreproc").onclick = function () {
-    if (!current) return;
+    if (!current || rereading[current.id]) return;
     // A card that never finished goes back on the queue instead of being re-run
     // inline; retryWorkout owns that path and the pending UI that goes with it.
     if (isPending(current) || isFailed(current)) { retryWorkout(current, null); return; }
-    var b = $("dreproc");
-    b.classList.add("spin");
-    api("workouts/" + current.id + "/reprocess", { method: "POST", body: "{}" })
+    // Keep the label still and prevent duplicate reads. Capture the card so a
+    // response cannot change a different workout opened while this one reads.
+    var w = current;
+    rereading[w.id] = true;
+    syncRereadButton(current);
+    function finishRead() { delete rereading[w.id]; syncRereadButton(current); }
+    api("workouts/" + w.id + "/reprocess", { method: "POST", body: "{}" })
       .then(function (r) {
-        b.classList.remove("spin");
+        finishRead();
         // The row went back on the queue rather than being re-read inline — the
         // requeue already happened, so this only has to reflect it.
         if (r.status === "processing") {
-          if (current) { current.ingest_status = "processing"; current.ingest_error = null; openDetail(current, true); }
+          w.ingest_status = "processing"; w.ingest_error = null;
+          if (current && current.id === w.id) openDetail(w, true);
           render(); watchPending(); toast("Reading it again…");
           return;
         }
         if (r.status !== "ok") { limitHit(r, "Could not read that video again — try again in a minute."); return; }
-        load().then(function () {
-          var w = state.workouts.filter(function (x) { return x.id === r.workout.id; })[0];
-          if (w) openDetail(w);
-          toast("Re-read the video.");
+        return load().then(function () {
+          var fresh = state.workouts.filter(function (x) { return x.id === r.workout.id; })[0];
+          if (fresh && current && current.id === w.id) openDetail(fresh);
+          toast("Re-read the workout.");
         });
-      }).catch(function () { b.classList.remove("spin"); toast("Could not read that video again — try again in a minute."); });
+      }).catch(function () { finishRead(); toast("Could not read that workout again — try again in a minute."); });
   };
 
   $("wclose").onclick = function () { history.back(); };
@@ -12560,7 +12661,21 @@ export const APP = String.raw`
     if ($("detail").classList.contains("open")) closeDetail();
   });
 
+  window.addEventListener("spotter:keyboard-settled", measureChrome);
+  window.addEventListener("spotter:share-unavailable", function () {
+    toast("Sharing isn’t ready. Reopen Spotter to try again.");
+  });
+  window.addEventListener("spotter:native-state", function (e) {
+    if (!e.detail.isActive) { saveDraft(); sb.auth.stopAutoRefresh(); return; }
+    sb.auth.startAutoRefresh();
+    if (restUntil) tickRest();
+    if (wo && !wo.finished) { startClock(); acquireWake(); }
+    watchBilling(); stravaBack();
+    if (state.user && !wo && !overlayShowing()) load();
+  });
+
   document.addEventListener("visibilitychange", function () {
+    if (document.hidden) saveDraft();
     document.body.classList.toggle("asleep", document.hidden);
     if (document.visibilityState !== "visible") { clearTimeout(pendTimer); pendTimer = null; return; }
     if (!state.user) return;
@@ -12604,7 +12719,7 @@ export const APP = String.raw`
     }
   });
 
-  if ("serviceWorker" in navigator) {
+  if (!native && "serviceWorker" in navigator) {
     window.addEventListener("load", function () {
       navigator.serviceWorker.register("sw.js").catch(function () { /* not fatal */ });
     });

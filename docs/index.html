@@ -5023,6 +5023,48 @@ body.kb .page {
 body.kb .tabbar {
   visibility: hidden;
 }
+html.native {
+  --vvh: 100%;
+  --sab: env(safe-area-inset-bottom);
+}
+html.native:has(body.kb) {
+  --sab: 0px;
+}
+html.native input,
+html.native textarea {
+  scroll-margin-block: 16px;
+}
+html.native.keyboard-moving .composer {
+  transition: bottom var(--keyboard-duration) var(--keyboard-curve), margin-bottom var(--keyboard-duration) var(--keyboard-curve);
+}
+html.native.keyboard-moving .page {
+  transition: padding-bottom var(--keyboard-duration) var(--keyboard-curve);
+}
+html.native.keyboard-moving .sheetbody {
+  transition: padding-bottom var(--keyboard-duration) var(--keyboard-curve), transform var(--t-2) var(--e-in);
+}
+html.native.keyboard-moving .sheet.open .sheetbody {
+  transition: padding-bottom var(--keyboard-duration) var(--keyboard-curve), transform .38s var(--e-spring);
+}
+html.native .tabbar {
+  visibility: visible;
+  opacity: 1;
+  transition: opacity var(--keyboard-duration, .25s) var(--keyboard-curve, ease-in-out);
+}
+html.native body.kb .tabbar {
+  visibility: visible;
+  opacity: 0;
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  html.native.keyboard-moving .composer,
+  html.native.keyboard-moving .page,
+  html.native.keyboard-moving .sheetbody,
+  html.native.keyboard-moving .sheet.open .sheetbody,
+  html.native .tabbar {
+    transition: none;
+  }
+}
 .composerrow {
   display: flex;
   gap: 8px;
@@ -6591,7 +6633,7 @@ details.details-moving > :not(summary) {
   <h2 id="explaintitle">How to do it</h2>
   <div id="explainpre"></div>
   <div class="vslot" id="explainvid"><div id="explainvidin"></div></div>
-  <button class="setlink" id="explainask">Explain this exercise with AI</button>
+  <button class="setlink" id="explainask">Explain this exercise with Pumpy</button>
   <div class="aitext hide" id="explaintext" role="status"></div>
   <div class="btnrow"><button class="btn ghost" id="swapgo"><svg class="ic"><use href="#i-swap"></use></svg>Swap or modify</button></div>
 </div></div>
@@ -6792,7 +6834,8 @@ details.details-moving > :not(summary) {
   <details class="disclosure" id="phonesave"><summary>Save from your phone</summary><div class="disclosure-body">
     <p class="lede"><b>On any phone</b> — copy a video link, then tap <b>Save workout</b> in Spotter.</p>
     <p class="lede"><b>Android</b> — install Spotter, then choose it in the video app’s share sheet.</p>
-    <details class="disclosure"><summary>iPhone Shortcut setup (advanced)</summary><div class="disclosure-body">
+    <p id="nativesharehelp" class="lede hide">In TikTok, YouTube, Instagram or another app, share the post’s link and choose Spotter. If needed, open More to find Spotter in the iPhone share menu.</p>
+    <details id="shortcutsetup" class="disclosure"><summary>iPhone Shortcut setup (advanced)</summary><div class="disclosure-body">
       <p class="lede">For direct sharing on iPhone, create a Shortcut that sends the shared URL as a POST to this address. Keep it private — it works without your password.</p>
       <div class="keybox" id="setkey">&mdash;</div>
       <div class="btnrow"><button class="btn ghost" id="copykey">Copy address</button><button class="btn ghost" id="rotatekey">New key</button></div>
@@ -6872,8 +6915,8 @@ details.details-moving > :not(summary) {
 <script>
 (function() {
   "use strict";
-  var SB_URL = "https://mtzevoxxpsktmrbbuxva.supabase.co", SB_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10emV2b3h4cHNrdG1yYmJ1eHZhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgyMjM5ODgsImV4cCI6MjEwMzc5OTk4OH0._vpNhLJtv2bVGgXXClva9O5cX8Y5eJdTgbgAO81NnmU", API = SB_URL + "/functions/v1/spotter/api/", PUBLIC_AUTH = { google_client_id: "", apple_services_id: "" }, sb = window.supabase.createClient(SB_URL, SB_ANON, {
-    auth: { persistSession: !0, autoRefreshToken: !0, detectSessionInUrl: !0 },
+  var native = window.SpotterNative || null, AUTH_RETURN = native ? "https://simeonrinkenberger.github.io/spotter/" : location.origin + location.pathname, SB_URL = "https://mtzevoxxpsktmrbbuxva.supabase.co", SB_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10emV2b3h4cHNrdG1yYmJ1eHZhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgyMjM5ODgsImV4cCI6MjEwMzc5OTk4OH0._vpNhLJtv2bVGgXXClva9O5cX8Y5eJdTgbgAO81NnmU", API = SB_URL + "/functions/v1/spotter/api/", PUBLIC_AUTH = { google_client_id: "", apple_services_id: "" }, sb = window.supabase.createClient(SB_URL, SB_ANON, {
+    auth: { persistSession: !0, autoRefreshToken: !0, detectSessionInUrl: !native, storage: native ? native.authStorage : void 0 },
     global: { fetch: function(url, opts) {
       return String(url).indexOf("/rest/v1/") < 0 || opts && opts.method && opts.method !== "GET" ? fetch(url, opts) : deadline(function(signal) {
         return fetch(url, Object.assign({}, opts || {}, { signal: signal })).then(function(r) {
@@ -6993,14 +7036,20 @@ details.details-moving > :not(summary) {
       t.classList.remove("show"), t.classList.remove("tappable"), t.onclick = null;
     }, ms || 2800);
   }
-  var BUZZ = { tap: 8, success: 12, pr: [14, 60, 22], done: [35, 55, 35] };
+  var BUZZ = { tap: 8, stream: 5, success: 12, pr: [14, 60, 22], done: [35, 55, 35] };
   function haptic(kind) {
     var p = BUZZ[kind];
-    if (!(!p || !state.haptics || !navigator.vibrate))
-      try {
-        navigator.vibrate(p);
-      } catch (e) {
+    if (!(!p || !state.haptics)) {
+      if (native) {
+        native.haptic(kind);
+        return;
       }
+      if (navigator.vibrate)
+        try {
+          navigator.vibrate(p);
+        } catch (e) {
+        }
+    }
   }
   var soundTold = !1;
   try {
@@ -7156,7 +7205,7 @@ details.details-moving > :not(summary) {
               rd.cancel();
               return;
             }
-            for (buf += x.done ? "" : dec.decode(x.value, { stream: !0 }); (nl = buf.indexOf("\n")) >= 0; )
+            for (buf += x.done ? dec.decode() : dec.decode(x.value, { stream: !0 }); (nl = buf.indexOf("\n")) >= 0; )
               feed(buf.slice(0, nl).trim()), buf = buf.slice(nl + 1);
             if (x.done) {
               feed(buf.trim());
@@ -7208,7 +7257,7 @@ details.details-moving > :not(summary) {
     }
     var btn = $("authgo");
     btn.disabled = !0, btn.textContent = authMode === "signup" ? "Creating\u2026" : "Signing in\u2026";
-    var p = authMode === "signup" ? sb.auth.signUp({ email: email, password: pw }) : sb.auth.signInWithPassword({ email: email, password: pw });
+    var p = authMode === "signup" ? sb.auth.signUp({ email: email, password: pw, options: { emailRedirectTo: AUTH_RETURN } }) : sb.auth.signInWithPassword({ email: email, password: pw });
     p.then(function(r) {
       if (btn.disabled = !1, setAuthMode(authMode), r.error) {
         authError(authMessage(r.error.message));
@@ -7288,7 +7337,7 @@ details.details-moving > :not(summary) {
   function oauthRedirect(provider) {
     sb.auth.signInWithOAuth({
       provider: provider,
-      options: { redirectTo: location.origin + location.pathname }
+      options: { redirectTo: AUTH_RETURN }
     }).then(function(r) {
       r && r.error && oauthFailed(r.error);
     }).catch(oauthFailed);
@@ -7319,6 +7368,10 @@ details.details-moving > :not(summary) {
     });
   }
   function googleSignIn() {
+    if (native) {
+      toast("Use email and password in this development build. Native Google sign-in is not configured yet.");
+      return;
+    }
     if (!oauthBusy) {
       if (setOauthBusy("oagoogle"), authError(""), !PUBLIC_AUTH.google_client_id) {
         oauthRedirect("google");
@@ -7372,6 +7425,10 @@ details.details-moving > :not(summary) {
     }
   }
   function appleSignIn() {
+    if (native) {
+      toast("Use email and password in this development build. Native Apple sign-in awaits setup.");
+      return;
+    }
     if (!oauthBusy) {
       if (setOauthBusy("oaapple"), authError(""), !PUBLIC_AUTH.apple_services_id) {
         oauthRedirect("apple");
@@ -7388,7 +7445,7 @@ details.details-moving > :not(summary) {
           // With usePopup the result comes back by postMessage to this window, so the
           // redirect URI has to be this page's own origin — and that origin has to be
           // registered against the Services ID. README has the exact values.
-          redirectURI: location.origin + location.pathname,
+          redirectURI: AUTH_RETURN,
           usePopup: !0,
           nonce: hashed
         }), window.AppleID.auth.signIn();
@@ -7441,7 +7498,7 @@ details.details-moving > :not(summary) {
     return p === "google" ? "Google" : p === "apple" ? "Apple" : p === "email" ? "Email and password" : p ? String(p) : null;
   }
   function showLanding() {
-    document.body.classList.remove("app"), $("landing").classList.add("open"), $("app").classList.add("hide");
+    native && ($("pumpyinput").value = ""), document.body.classList.remove("app"), $("landing").classList.add("open"), $("app").classList.add("hide");
   }
   function showApp() {
     var wasHidden = $("app").classList.contains("hide");
@@ -7450,7 +7507,8 @@ details.details-moving > :not(summary) {
     }));
   }
   function clearAccount() {
-    if (cancelPumpyReset(), pendingMotion && pendingMotion.disconnect(), $("app").classList.add("hide"), accountEpoch++, reads = {}, inFlight = {}, libraryRev++, logsRev++, planRev++, clearTimeout(undoTimer), undoTimer = null, undoFn = null, clearTimeout(detailCloseTimer), clearTimeout(woCloseTimer), clearTimeout(pendTimer), pendTimer = null, pendPolls = 0, pendBusy = !1, wkChannel && (sb.removeChannel(wkChannel), wkChannel = null), booting = null, state.profile = null, state.workouts = [], state.logs = null, state.plan = null, state.planLogs = [], state.awards = null, state.goal = null, state.unit = "lb", state.sounds = !0, state.haptics = !0, state.collections = [], state.colItems = [], seenCards = {}, gridCards = {}, expCache = {}, expWaiting = {}, vidCache = {}, expKey = "", today.rows = [], today.at = 0, today.day = null, today.busy = !1, today.shown = !1, current = null, wo && saveDraft(), clearInterval(woTimer), stopRest(), releaseWake(), wo = null, hist = {}, histReady = !1, strava && (strava = { asked: !1, configured: !1, connected: !1, athlete: null, busy: !1 }), pumpy) {
+    if (native && native.configureSharing(null).catch(function() {
+    }), cancelPumpyReset(), pendingMotion && pendingMotion.disconnect(), $("app").classList.add("hide"), accountEpoch++, reads = {}, inFlight = {}, libraryRev++, logsRev++, planRev++, clearTimeout(undoTimer), undoTimer = null, undoFn = null, clearTimeout(detailCloseTimer), clearTimeout(woCloseTimer), clearTimeout(pendTimer), pendTimer = null, pendPolls = 0, pendBusy = !1, wkChannel && (sb.removeChannel(wkChannel), wkChannel = null), booting = null, state.profile = null, state.workouts = [], state.logs = null, state.plan = null, state.planLogs = [], state.awards = null, state.goal = null, state.unit = "lb", state.sounds = !0, state.haptics = !0, state.collections = [], state.colItems = [], seenCards = {}, gridCards = {}, expCache = {}, expWaiting = {}, vidCache = {}, expKey = "", today.rows = [], today.at = 0, today.day = null, today.busy = !1, today.shown = !1, current = null, wo && saveDraft(), clearInterval(woTimer), stopRest(), releaseWake(), wo = null, hist = {}, histReady = !1, strava && (strava = { asked: !1, configured: !1, connected: !1, athlete: null, busy: !1 }), pumpy) {
       var seq = (pumpy.openSeq || 0) + 1, wired = pumpy.wired;
       pumpy = {
         thread: null,
@@ -7597,7 +7655,8 @@ details.details-moving > :not(summary) {
     var uid = state.user.id, epoch = accountEpoch;
     return sb.from("profiles").select("*").eq("id", uid).maybeSingle().then(function(r) {
       if (accountNow(epoch, uid) && r.data) {
-        state.profile = r.data;
+        state.profile = r.data, native && native.configureSharing(r.data.ingest_key).catch(function() {
+        });
         var s = r.data.settings || {};
         s.unit && (state.unit = s.unit), typeof s.sounds == "boolean" && (state.sounds = s.sounds), typeof s.haptics == "boolean" && (state.haptics = s.haptics), s.remind && (remind.plan = !!s.remind.plan, remind.risk = !!s.remind.risk), typeof s.remindAt == "number" && (remind.at = s.remindAt), paintSounds(), billing.said && (state.profile.plan = billing.said), renderLibCount();
       }
@@ -8432,13 +8491,17 @@ details.details-moving > :not(summary) {
   function openDetail(w, keepHistory) {
     keepHistory || (guideClear(), guideStill()), current = w, clearTimeout(detailCloseTimer), $("detail").classList.remove("closing");
     var d = $("dinner");
-    d.innerHTML = "", d.classList.remove("din", "dmove"), d.style.transform = "", d.style.opacity = "", navFrom ? (dNav = gridNav(w.id), navFrom = !1) : dNav && dNav.ids[dNav.i] !== w.id && (dNav = null), $("workmanage").innerHTML = "", $("workmanage").appendChild(manageRow(w)), $("dreproc").disabled = isPending(w), $("dreproc").hidden = isUpload(w) || w.platform === "pumpy", d.appendChild(el("div", "dkick", isPending(w) ? stageOf(w).kick : isFailed(w) ? "Needs another try" : w.category || "Other"));
+    d.innerHTML = "", d.classList.remove("din", "dmove"), d.style.transform = "", d.style.opacity = "", navFrom ? (dNav = gridNav(w.id), navFrom = !1) : dNav && dNav.ids[dNav.i] !== w.id && (dNav = null), $("workmanage").innerHTML = "", $("workmanage").appendChild(manageRow(w)), syncRereadButton(w), $("dreproc").hidden = isUpload(w) || w.platform === "pumpy", d.appendChild(el("div", "dkick", isPending(w) ? stageOf(w).kick : isFailed(w) ? "Needs another try" : w.category || "Other"));
     var titleEl = el("h2", "dtitle", w.title || "Untitled workout");
     if (d.appendChild(titleEl), w.author) {
       var au = el("button", "dauthor", "@" + w.author);
       au.onclick = function() {
         state.filter = "by:" + authorKey(w.author), render(), history.back(), setView("library");
       }, d.appendChild(au);
+    }
+    if (!isPending(w) && !isFailed(w) && w.ingest_error) {
+      var incomplete = el("div", "sect");
+      incomplete.appendChild(el("h3", null, "Some details are missing")), incomplete.appendChild(el("div", "capbox", w.ingest_error)), d.appendChild(incomplete);
     }
     if (isPending(w) || isFailed(w)) {
       var isUp = isUpload(w), stage = stageOf(w), note = el("div", "sect");
@@ -9632,7 +9695,7 @@ details.details-moving > :not(summary) {
     return "spotter_draft";
   }
   function saveDraft() {
-    if (wo)
+    if (!(!wo || wo.finished))
       try {
         localStorage.setItem(draftKey(), JSON.stringify({
           workoutId: wo.workout.id,
@@ -9640,12 +9703,14 @@ details.details-moving > :not(summary) {
           entries: wo.entries,
           startedAt: wo.startedAt,
           i: wo.i,
-          rounds: wo.rounds
-        }));
+          rounds: wo.rounds,
+          rest: restUntil && !restFace ? { until: restUntil, total: restTotal, held: restHeld } : null
+        })), native && native.saveDraft(localStorage.getItem(draftKey()));
       } catch (e) {
       }
   }
   function clearDraft() {
+    native && native.saveDraft(null);
     try {
       localStorage.removeItem(draftKey());
     } catch (e) {
@@ -9673,7 +9738,7 @@ details.details-moving > :not(summary) {
       prs: {},
       rounds: resume && resume.rounds || {},
       finished: !1
-    }, woPhase = "idle", wo.entries.length || (wo.entries = [{ name: "Freestyle", canonical_id: null, block: 0, exercise: 0, sets: [] }]), clearTimeout(woCloseTimer), $("workout").classList.remove("closing"), $("workout").classList.remove("summary"), $("workout").classList.add("open"), stopRest(), acquireWake(), renderWorkout(), startClock(), history.pushState({ workout: 1 }, ""), lastWeights();
+    }, woPhase = "idle", wo.entries.length || (wo.entries = [{ name: "Freestyle", canonical_id: null, block: 0, exercise: 0, sets: [] }]), clearTimeout(woCloseTimer), $("workout").classList.remove("closing"), $("workout").classList.remove("summary"), $("workout").classList.add("open"), stopRest(), acquireWake(), renderWorkout(), startClock(), resume && resume.rest && resume.rest.total > 0 && (resume.rest.held || resume.rest.until > Date.now()) && (startRest(resume.rest.total / 1e3), restUntil = resume.rest.until, restHeld = resume.rest.held || 0, restHeld ? (clearInterval(restTimer), drawRest(restHeld)) : tickRest()), saveDraft(), history.pushState({ workout: 1 }, ""), lastWeights();
   }
   function exKey(e) {
     return e ? e.canonical_id ? "c:" + e.canonical_id : "n:" + (e.name || "") : "n:";
@@ -9722,12 +9787,14 @@ details.details-moving > :not(summary) {
     return !h || !h.date ? "first time logging this." : "last time \xB7 " + h.sets + " \xD7 " + h.reps + (h.weight ? " at " + wtText(h.weight, h.unit) + " " + state.unit : "") + " \xB7 " + agoText(h.date);
   }
   function startClock() {
-    clearInterval(woTimer), woTimer = setInterval(function() {
-      if (wo) {
+    clearInterval(woTimer);
+    function tickClock() {
+      if (!(!wo || wo.finished)) {
         var s = Math.floor((Date.now() - new Date(wo.startedAt).getTime()) / 1e3), m = Math.floor(s / 60);
         $("wclock").textContent = m + ":" + String(s % 60).padStart(2, "0");
       }
-    }, 1e3);
+    }
+    tickClock(), woTimer = setInterval(tickClock, 1e3);
   }
   function acquireWake() {
     !navigator.wakeLock || !wo || navigator.wakeLock.request("screen").then(function(l) {
@@ -9915,7 +9982,7 @@ details.details-moving > :not(summary) {
   }
   var restUntil = 0, restTotal = 0, restHeld = 0, restCued = 0, restFace = null, restThen = null;
   function startRest(seconds, face, then) {
-    face && !restFace && stopRest(), clearInterval(restTimer), restTotal = seconds * 1e3, restUntil = Date.now() + restTotal, restHeld = 0, restCued = 4, restFace = face || null, restThen = then || null, tellSounds(), restFace || ($("reststrip").className = "reststrip on" + (state.sounds ? "" : " muted"), $("restword").textContent = "Rest"), drawRest(restTotal), restTimer = setInterval(tickRest, 200);
+    face && !restFace && stopRest(), clearInterval(restTimer), restTotal = seconds * 1e3, restUntil = Date.now() + restTotal, restHeld = 0, restCued = 4, restFace = face || null, restThen = then || null, tellSounds(), restFace || ($("reststrip").className = "reststrip on" + (state.sounds ? "" : " muted"), $("restword").textContent = "Rest"), drawRest(restTotal), restTimer = setInterval(tickRest, 200), saveDraft();
   }
   function tickRest() {
     if (!(!restUntil || restHeld)) {
@@ -9944,7 +10011,7 @@ details.details-moving > :not(summary) {
   function stopRest() {
     clearInterval(restTimer), restUntil = 0, restHeld = 0;
     var onRing = restFace;
-    if (restFace = restThen = null, !onRing) {
+    if (restFace = restThen = null, saveDraft(), !onRing) {
       var strip = $("reststrip");
       strip.classList.contains("on") && (strip.className = "reststrip on gone", setTimeout(function() {
         restUntil || (strip.className = "reststrip");
@@ -9953,7 +10020,7 @@ details.details-moving > :not(summary) {
   }
   function pauseRest() {
     if (restUntil) {
-      if (restHeld ? (restUntil = Date.now() + restHeld, restHeld = 0, restTimer = setInterval(tickRest, 200), tickRest()) : (restHeld = Math.max(0, restUntil - Date.now()), clearInterval(restTimer)), restFace) {
+      if (restHeld ? (restUntil = Date.now() + restHeld, restHeld = 0, restTimer = setInterval(tickRest, 200), tickRest()) : (restHeld = Math.max(0, restUntil - Date.now()), clearInterval(restTimer)), saveDraft(), restFace) {
         paintPhase();
         return;
       }
@@ -9962,7 +10029,7 @@ details.details-moving > :not(summary) {
     }
   }
   function addRest(ms) {
-    restUntil && (restTotal += ms, restHeld ? restHeld += ms : restUntil += ms, restCued = 4, drawRest(restHeld || restUntil - Date.now()));
+    restUntil && (restTotal += ms, restHeld ? restHeld += ms : restUntil += ms, restCued = 4, drawRest(restHeld || restUntil - Date.now()), saveDraft());
   }
   var actx = null;
   function unlockAudio() {
@@ -10289,7 +10356,7 @@ details.details-moving > :not(summary) {
           clearDraft();
           return;
         }
-        toast("Tap to resume " + (d.title || "your workout"));
+        toast("Tap to resume " + (d.title || "your workout"), native ? 3e4 : void 0);
         var t = $("toast");
         t.classList.add("tappable"), t.onclick = function() {
           t.onclick = null, t.classList.remove("tappable"), t.classList.remove("show"), startWorkout(w, d);
@@ -10711,6 +10778,18 @@ details.details-moving > :not(summary) {
     }
   }
   function scDrop(url, temp, name) {
+    if (native) {
+      fetch(url).then(function(r) {
+        return r.blob();
+      }).then(function(b) {
+        return navigator.share({ files: [new File([b], name || "spotter-workout.png", { type: b.type })] });
+      }).catch(function(e) {
+        e.name !== "AbortError" && toast("Could not open the share sheet.");
+      }).then(function() {
+        temp && URL.revokeObjectURL(url);
+      });
+      return;
+    }
     var a = el("a");
     name = name || "spotter-workout.png", a.href = url, a.download = name, document.body.appendChild(a), a.click(), a.remove(), temp && setTimeout(function() {
       URL.revokeObjectURL(url);
@@ -10747,7 +10826,7 @@ details.details-moving > :not(summary) {
       var p = navigator.share({
         title: "Spotter",
         text: sc.card ? sc.card.title : "Workout",
-        url: location.origin + location.pathname
+        url: AUTH_RETURN
       });
       p && p.then && p.then(null, function() {
       });
@@ -12276,7 +12355,7 @@ details.details-moving > :not(summary) {
     if (ev.t === "status")
       L.st.textContent = ev.text || "", L.st.classList.toggle("hide", !ev.text);
     else if (ev.t === "delta")
-      L.tn.appendData(ev.text || ""), L.bub.classList.remove("hide"), L.st.classList.add("hide");
+      L.tn.appendData(ev.text || ""), pumpyStreamHaptic(L, ev.text), L.bub.classList.remove("hide"), L.st.classList.add("hide");
     else if (ev.t === "retract") {
       var n = Math.min(L.tn.length, ev.chars || 0);
       n && L.tn.deleteData(L.tn.length - n, n);
@@ -12284,6 +12363,12 @@ details.details-moving > :not(summary) {
     L.frame || (L.frame = requestAnimationFrame(function() {
       L.frame = null, pumpy.live === L && !document.hidden && pumpyFollow();
     }));
+  }
+  function pumpyStreamHaptic(live, text) {
+    if (!(!native || !text || !state.haptics || document.hidden || state.view !== "pumpy" || overlayShowing())) {
+      var now2 = performance.now();
+      live.lastHaptic != null && now2 - live.lastHaptic < 90 || (live.lastHaptic = now2, haptic("stream"));
+    }
   }
   function sendPumpy(text) {
     if (text = String(text || $("pumpyinput").value || "").trim(), !(!text || pumpy.busy)) {
@@ -12571,11 +12656,11 @@ details.details-moving > :not(summary) {
         body: JSON.stringify({
           plan: "plus",
           interval: billing.interval,
-          return_url: location.origin + location.pathname
+          return_url: AUTH_RETURN
         })
       }).then(function(r) {
         if (r && r.status === "ok" && r.url) {
-          setPending("plus"), location.assign(r.url);
+          setPending("plus"), native ? native.open(r.url) : location.assign(r.url);
           return;
         }
         if (billing.busy = !1, b.disabled = !1, r && r.code === "already_subscribed") {
@@ -12596,10 +12681,10 @@ details.details-moving > :not(summary) {
     var was = btn ? btn.textContent : null;
     btn && (btn.disabled = !0, btn.textContent = "Opening\u2026"), api("billing/portal", {
       method: "POST",
-      body: JSON.stringify({ return_url: location.origin + location.pathname })
+      body: JSON.stringify({ return_url: AUTH_RETURN })
     }).then(function(r) {
       if (r && r.status === "ok" && r.url) {
-        location.assign(r.url);
+        native ? native.open(r.url) : location.assign(r.url);
         return;
       }
       btn && (btn.disabled = !1, btn.textContent = was), toast(r && r.message || "Could not open the billing page just now.");
@@ -13322,7 +13407,13 @@ details.details-moving > :not(summary) {
       var path = state.user.id + "/" + uuid() + "." + ext;
       upProgress(0, "Uploading\u2026 0%");
       var watched = !!UPLOAD_WATCHED[ext];
-      putObject(file, path, UPLOAD_TYPES[ext]).then(function() {
+      api("uploads/authorize", { method: "POST", body: JSON.stringify({ path: path, bytes: file.size }) }).then(function(permit) {
+        if (permit.status !== "ok") {
+          var denied2 = new Error(permit.message || "Upload is paused. Please try again later.");
+          throw denied2.uploadLimit = !0, denied2;
+        }
+        return putObject(file, path, UPLOAD_TYPES[ext]);
+      }).then(function() {
         return upProgress(1, watched ? "Uploaded \u2014 Spotter is watching it\u2026" : "Uploaded \u2014 Spotter is listening\u2026"), api("ingest", {
           method: "POST",
           body: JSON.stringify({ upload_path: path, filename: name.slice(0, 160) })
@@ -13339,7 +13430,7 @@ details.details-moving > :not(summary) {
         resetUpload(), !limitHit(r, null) && upError(r.message || "Spotter could not start reading that upload.");
       }).catch(function(e) {
         var msg = String(e && e.message ? e.message : e);
-        resetUpload(), upError(msg === "413" ? "That file is too big for Spotter\u2019s storage. The limit is " + mb(UPLOAD_MAX) + " MB." : msg === "400" || msg === "415" ? "Spotter\u2019s storage would not take that file. Send " + UPLOAD_KINDS + "." : msg === "401" || msg === "403" ? "Session expired \u2014 sign in again." : "The upload did not finish. Check your connection and try again.");
+        resetUpload(), e && e.uploadLimit ? upError(msg) : upError(msg === "413" ? "That file is too big for Spotter\u2019s storage. The limit is " + mb(UPLOAD_MAX) + " MB." : msg === "400" || msg === "415" ? "Spotter\u2019s storage would not take that file. Send " + UPLOAD_KINDS + "." : msg === "401" || msg === "403" ? "Session expired \u2014 sign in again." : "The upload did not finish. Check your connection and try again.");
       });
     }
   }
@@ -13421,7 +13512,7 @@ details.details-moving > :not(summary) {
         b.disabled = !1, toast(r && r.message || "Could not start the Strava connection.");
         return;
       }
-      stravaWait(!0), location.href = r.url;
+      stravaWait(!0), native ? native.open(r.url) : location.href = r.url;
     }).catch(function() {
       b.disabled = !1, toast("Could not reach Spotter \u2014 check your connection.");
     });
@@ -13512,7 +13603,7 @@ details.details-moving > :not(summary) {
     var how = signInMethod();
     $("setprov").textContent = how || "\u2014", $("setprovrow").classList.toggle("hide", !how);
     var mine = isEmailAccount();
-    $("setpwrow").classList.toggle("hide", !mine), $("setmailrow").disabled = !mine, $("setname").textContent = displayName() || "Not set", $("unittoggle").textContent = state.unit, paintGoal(), $("haptictoggle").textContent = state.haptics ? "On" : "Off", $("sethapticrow").classList.toggle("hide", !navigator.vibrate), paintSounds(), loadRemind();
+    $("setpwrow").classList.toggle("hide", !mine), $("setmailrow").disabled = !mine, $("setname").textContent = displayName() || "Not set", $("unittoggle").textContent = state.unit, paintGoal(), $("haptictoggle").textContent = state.haptics ? "On" : "Off", $("sethapticrow").classList.toggle("hide", !native && !navigator.vibrate), paintSounds(), loadRemind(), $("shortcutsetup").classList.toggle("hide", !!native), $("nativesharehelp").classList.toggle("hide", !native);
     var key = state.profile ? state.profile.ingest_key : null;
     $("setkey").textContent = key ? API + "ingest?key=" + key : "Loading\u2026", $("setsaves").textContent = "\u2026", renderSettingsMeter(), paintPlanGroup(), paintPlanUse(billing.limits), Promise.all([loadPrices(), loadSub()]).then(paintPlanGroup), paintStrava(), askStrava(), api("limits", { method: "GET" }).then(function(r) {
       if (pumpy.meterAsked = !0, absorbMeter(r && r.pumpy), r.status === "ok") {
@@ -13527,12 +13618,16 @@ details.details-moving > :not(summary) {
     }), openSheet("settingssheet");
   }
   function rotateKey() {
+    var uid = state.user && state.user.id, epoch = accountEpoch;
     api("rotate-key", { method: "POST", body: "{}" }).then(function(r) {
-      if (r.status !== "ok") {
-        toast("Could not make a new key \u2014 try again in a moment.");
-        return;
+      if (accountNow(epoch, uid)) {
+        if (r.status !== "ok") {
+          toast("Could not make a new key \u2014 try again in a moment.");
+          return;
+        }
+        state.profile && (state.profile.ingest_key = r.ingest_key), $("setkey").textContent = API + "ingest?key=" + r.ingest_key, native && native.configureSharing(r.ingest_key).catch(function() {
+        }), toast(native ? "Sharing key refreshed." : "New key made \u2014 update your Shortcut.");
       }
-      state.profile && (state.profile.ingest_key = r.ingest_key), $("setkey").textContent = API + "ingest?key=" + r.ingest_key, toast("New key made \u2014 update your Shortcut.");
     });
   }
   function saveSettings() {
@@ -13567,7 +13662,7 @@ details.details-moving > :not(summary) {
   }
   var remind = { plan: !1, risk: !1, at: 1050, sub: null, key: null, busy: !1 };
   function pushable() {
-    return !!(navigator.serviceWorker && window.PushManager && window.Notification);
+    return !native && !!(navigator.serviceWorker && window.PushManager && window.Notification);
   }
   function denied() {
     return pushable() && window.Notification.permission === "denied";
@@ -13583,7 +13678,7 @@ details.details-moving > :not(summary) {
     return ("0" + Math.floor(m / 60)).slice(-2) + ":" + ("0" + m % 60).slice(-2);
   }
   function remindNote() {
-    return pushable() ? denied() ? "Reminders are off in your phone's Settings." : "Two at most and never more than one a day: today's plan at the hour nearest the time you pick, and one on the last day the week's goal is still reachable." : standalone() ? "This browser cannot show reminders." : "Install Spotter to your Home Screen to get reminders \u2014 tap Share, then Add to Home Screen.";
+    return native ? "Native reminders are not configured in this development build." : pushable() ? denied() ? "Reminders are off in your phone's Settings." : "Two at most and never more than one a day: today's plan at the hour nearest the time you pick, and one on the last day the week's goal is still reachable." : standalone() ? "This browser cannot show reminders." : "Install Spotter to your Home Screen to get reminders \u2014 tap Share, then Add to Home Screen.";
   }
   function paintRemind() {
     var can = pushable() && !denied() && !remind.busy, t = $("remtime");
@@ -13869,7 +13964,7 @@ details.details-moving > :not(summary) {
       return;
     }
     var b = $("forgotpw");
-    b.disabled = !0, sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname }).then(function(r) {
+    b.disabled = !0, sb.auth.resetPasswordForEmail(email, { redirectTo: AUTH_RETURN }).then(function(r) {
       if (b.disabled = !1, r.error) {
         authError(authMessage(r.error.message));
         return;
@@ -13998,7 +14093,7 @@ details.details-moving > :not(summary) {
     }, 4e3), toast("Saved " + name, 4e3);
   }
   function tellFriend() {
-    var url = location.origin + location.pathname, text = "Spotter reads the workout out of a fitness video and walks you through it.";
+    var url = AUTH_RETURN, text = "Spotter reads the workout out of a fitness video and walks you through it.";
     if (navigator.share) {
       navigator.share({ title: "Spotter", text: text, url: url }).catch(function() {
       });
@@ -14116,7 +14211,7 @@ details.details-moving > :not(summary) {
   }
   function measureChrome() {
     var root = document.documentElement, h = hdrEl.getBoundingClientRect().height, b = Math.round(tabbar.getBoundingClientRect().height);
-    h && root.style.setProperty("--hdr", h + "px"), b && root.style.setProperty("--ptab", b + "px");
+    h && root.style.setProperty("--hdr", h + "px"), b && (!native || !native.keyboardVisible && !native.keyboardMoving) && root.style.setProperty("--ptab", b + "px");
     var w = pagesEl.clientWidth;
     if (w && w !== pageW) {
       pageW = w, spTarget = idx * pageW, land();
@@ -14267,7 +14362,12 @@ details.details-moving > :not(summary) {
   })();
   var kbOn = !1, kbSettle = !1, kbDrift = 0, kbDriftN = 0;
   function fitViewport() {
-    var vv = window.visualViewport, root = document.documentElement, kb = !!vv && (kbOn || kbSettle) && vv.height < window.innerHeight - 80;
+    var vv = window.visualViewport, root = document.documentElement;
+    if (native) {
+      document.body.classList.toggle("kb", !!native.keyboardVisible), root.style.removeProperty("--vvh"), root.style.removeProperty("--vvtop");
+      return;
+    }
+    var kb = !!vv && (kbOn || kbSettle) && vv.height < window.innerHeight - 80;
     document.body.classList.toggle("kb", kb);
     var gap = vv ? window.innerHeight - vv.height : 0, short = !kb && gap >= 4 && gap < 80 && standalone();
     if (kb || short ? (root.style.setProperty("--vvh", vv.height + "px"), root.style.setProperty("--vvtop", vv.offsetTop + "px")) : (root.style.removeProperty("--vvh"), root.style.removeProperty("--vvtop")), !kb) {
@@ -14283,9 +14383,9 @@ details.details-moving > :not(summary) {
     return (t === "INPUT" || t === "TEXTAREA") && !$("landing").contains(n);
   }
   document.addEventListener("focusin", function(e) {
-    kbField(e.target) && (kbOn = !0, kbSettle = !1, fitViewport());
+    native || kbField(e.target) && (kbOn = !0, kbSettle = !1, fitViewport());
   }), document.addEventListener("focusout", function(e) {
-    if (kbField(e.target)) {
+    if (!native && kbField(e.target)) {
       kbOn = !1, kbSettle = !0;
       for (var i = 0, ms = [0, 60, 150, 300, 600]; i < ms.length; i++) setTimeout(fitViewport, ms[i]);
     }
@@ -14331,7 +14431,7 @@ details.details-moving > :not(summary) {
     }
   }, { passive: !0 });
   function standalone() {
-    return !!(window.navigator.standalone || window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
+    return !!(native || window.navigator.standalone || window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
   }
   function maybeInstallHint() {
     if ($("hint").classList.remove("show"), !(!state.user || !state.workouts.some(function(w) {
@@ -14354,7 +14454,7 @@ details.details-moving > :not(summary) {
       }
     }
   }
-  $("authgo").onclick = doAuth, $("forgotpw").onclick = forgotPassword, $("oagoogle").onclick = googleSignIn, $("oaapple").onclick = appleSignIn, oaLabelOf("oagoogle"), oaLabelOf("oaapple"), loadAuthProviders(), $("pw").addEventListener("keydown", function(e) {
+  if ($("authgo").onclick = doAuth, $("forgotpw").onclick = forgotPassword, $("oagoogle").onclick = googleSignIn, $("oaapple").onclick = appleSignIn, oaLabelOf("oagoogle"), oaLabelOf("oaapple"), loadAuthProviders(), $("pw").addEventListener("keydown", function(e) {
     e.key === "Enter" && doAuth();
   }), $("addbtn").onclick = function() {
     $("addurl").value = "", resetUpload(), openSheet("addsheet");
@@ -14379,7 +14479,13 @@ details.details-moving > :not(summary) {
     NO_TOUCH && e.key === "Enter" && !e.shiftKey && (e.preventDefault(), sendPumpy());
   }), $("pumpyinput").addEventListener("input", function() {
     this.style.height = "auto", this.style.height = Math.min(this.scrollHeight, 138) + "px";
-  }), $("swaphavego").onclick = function() {
+  }), native && window.ResizeObserver) {
+    var chatResize = new ResizeObserver(function() {
+      state.view === "pumpy" && pumpy.stick && !document.hidden && pumpyFollow();
+    });
+    chatResize.observe($("pumpyview")), chatResize.observe($("pumpycomposer"));
+  }
+  $("swaphavego").onclick = function() {
     runSwap();
   }, $("swaphaveinput").addEventListener("keydown", function(e) {
     e.key === "Enter" && runSwap();
@@ -14468,32 +14574,41 @@ details.details-moving > :not(summary) {
       navigator.share ? navigator.share({ title: current.title || "Workout", text: text }).catch(function() {
       }) : navigator.clipboard && (navigator.clipboard.writeText(text), toast("Copied."));
     }
-  }, $("dreproc").onclick = function() {
-    if (current) {
-      if (isPending(current) || isFailed(current)) {
-        retryWorkout(current, null);
+  };
+  var rereading = {};
+  function syncRereadButton(w) {
+    var b = $("dreproc"), busy = !!(w && rereading[w.id]);
+    b.disabled = busy || !!(w && isPending(w)), b.textContent = busy ? "Reading\u2026" : "Read it again", b.setAttribute("aria-busy", busy ? "true" : "false");
+  }
+  $("dreproc").onclick = function() {
+    if (!current || rereading[current.id]) return;
+    if (isPending(current) || isFailed(current)) {
+      retryWorkout(current, null);
+      return;
+    }
+    var w = current;
+    rereading[w.id] = !0, syncRereadButton(current);
+    function finishRead() {
+      delete rereading[w.id], syncRereadButton(current);
+    }
+    api("workouts/" + w.id + "/reprocess", { method: "POST", body: "{}" }).then(function(r) {
+      if (finishRead(), r.status === "processing") {
+        w.ingest_status = "processing", w.ingest_error = null, current && current.id === w.id && openDetail(w, !0), render(), watchPending(), toast("Reading it again\u2026");
         return;
       }
-      var b = $("dreproc");
-      b.classList.add("spin"), api("workouts/" + current.id + "/reprocess", { method: "POST", body: "{}" }).then(function(r) {
-        if (b.classList.remove("spin"), r.status === "processing") {
-          current && (current.ingest_status = "processing", current.ingest_error = null, openDetail(current, !0)), render(), watchPending(), toast("Reading it again\u2026");
-          return;
-        }
-        if (r.status !== "ok") {
-          limitHit(r, "Could not read that video again \u2014 try again in a minute.");
-          return;
-        }
-        load().then(function() {
-          var w = state.workouts.filter(function(x) {
-            return x.id === r.workout.id;
-          })[0];
-          w && openDetail(w), toast("Re-read the video.");
-        });
-      }).catch(function() {
-        b.classList.remove("spin"), toast("Could not read that video again \u2014 try again in a minute.");
+      if (r.status !== "ok") {
+        limitHit(r, "Could not read that video again \u2014 try again in a minute.");
+        return;
+      }
+      return load().then(function() {
+        var fresh = state.workouts.filter(function(x) {
+          return x.id === r.workout.id;
+        })[0];
+        fresh && current && current.id === w.id && openDetail(fresh), toast("Re-read the workout.");
       });
-    }
+    }).catch(function() {
+      finishRead(), toast("Could not read that workout again \u2014 try again in a minute.");
+    });
   }, $("wclose").onclick = function() {
     history.back();
   }, wireWmain($("wmain")), $("wprev").onclick = function() {
@@ -14550,8 +14665,16 @@ details.details-moving > :not(summary) {
       return;
     }
     $("detail").classList.contains("open") && closeDetail();
+  }), window.addEventListener("spotter:keyboard-settled", measureChrome), window.addEventListener("spotter:share-unavailable", function() {
+    toast("Sharing isn\u2019t ready. Reopen Spotter to try again.");
+  }), window.addEventListener("spotter:native-state", function(e) {
+    if (!e.detail.isActive) {
+      saveDraft(), sb.auth.stopAutoRefresh();
+      return;
+    }
+    sb.auth.startAutoRefresh(), restUntil && tickRest(), wo && !wo.finished && (startClock(), acquireWake()), watchBilling(), stravaBack(), state.user && !wo && !overlayShowing() && load();
   }), document.addEventListener("visibilitychange", function() {
-    if (document.body.classList.toggle("asleep", document.hidden), document.visibilityState !== "visible") {
+    if (document.hidden && saveDraft(), document.body.classList.toggle("asleep", document.hidden), document.visibilityState !== "visible") {
       clearTimeout(pendTimer), pendTimer = null;
       return;
     }
@@ -14564,7 +14687,7 @@ details.details-moving > :not(summary) {
     }
   }), window.addEventListener("pageshow", watchBilling), window.addEventListener("focus", watchBilling), setAuthMode("signup"), captureShare(), captureBilling(), captureStrava(), sb.auth.getSession().then(function(r) {
     r.data.session && r.data.session.user ? (state.user = r.data.session.user, showApp(), boot().then(offerResume)) : (showLanding(), sharePending() && toast("Sign in to save the link you shared."));
-  }), "serviceWorker" in navigator && window.addEventListener("load", function() {
+  }), !native && "serviceWorker" in navigator && window.addEventListener("load", function() {
     navigator.serviceWorker.register("sw.js").catch(function() {
     });
   });

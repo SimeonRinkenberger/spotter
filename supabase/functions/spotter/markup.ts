@@ -402,7 +402,7 @@ export const MARKUP_BODY = String.raw`</head>
   <h2 id="explaintitle">How to do it</h2>
   <div id="explainpre"></div>
   <div class="vslot" id="explainvid"><div id="explainvidin"></div></div>
-  <button class="setlink" id="explainask">Explain this exercise with AI</button>
+  <button class="setlink" id="explainask">Explain this exercise with Pumpy</button>
   <div class="aitext hide" id="explaintext" role="status"></div>
   <div class="btnrow"><button class="btn ghost" id="swapgo"><svg class="ic"><use href="#i-swap"></use></svg>Swap or modify</button></div>
 </div></div>
@@ -641,7 +641,8 @@ export const MARKUP_BODY = String.raw`</head>
   <details class="disclosure" id="phonesave"><summary>Save from your phone</summary><div class="disclosure-body">
     <p class="lede"><b>On any phone</b> — copy a video link, then tap <b>Save workout</b> in Spotter.</p>
     <p class="lede"><b>Android</b> — install Spotter, then choose it in the video app’s share sheet.</p>
-    <details class="disclosure"><summary>iPhone Shortcut setup (advanced)</summary><div class="disclosure-body">
+    <p id="nativesharehelp" class="lede hide">In TikTok, YouTube, Instagram or another app, share the post’s link and choose Spotter. If needed, open More to find Spotter in the iPhone share menu.</p>
+    <details id="shortcutsetup" class="disclosure"><summary>iPhone Shortcut setup (advanced)</summary><div class="disclosure-body">
       <p class="lede">For direct sharing on iPhone, create a Shortcut that sends the shared URL as a POST to this address. Keep it private — it works without your password.</p>
       <div class="keybox" id="setkey">&mdash;</div>
       <div class="btnrow"><button class="btn ghost" id="copykey">Copy address</button><button class="btn ghost" id="rotatekey">New key</button></div>

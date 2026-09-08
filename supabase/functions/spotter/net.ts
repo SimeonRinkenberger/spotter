@@ -102,7 +102,7 @@ export function dnsAvailable(): boolean {
 }
 
 async function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
-  let t = 0;
+  let t: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
       p,

@@ -142,7 +142,12 @@ type Generated = { text: string | null; by: string | null };
 // dial is live without going near the real table.
 export const runtimeCfg: Record<string, string> = {};
 
+const aiFetch = fetch;
+const aiActor = {getStore:()=>null};
+function aiSignal(t:number){return AbortSignal.timeout(t); }
 const GEMINI_API_KEY = "harness-gemini";
+const OPENAI_API_KEY = "harness-openai";
+function recordCost(): Promise<void> { return Promise.resolve(); }
 const WORKER_SECRET = "harness-secret";
 const SELF_URL = "https://harness.invalid/functions/v1/spotter";
 function isPaidProvider(_p: string): boolean { return false; }
@@ -176,11 +181,10 @@ export const harness = {
   peak: 0,
 };
 
-function geminiGenerate(body: any, _ctx: any, _model?: string): Promise<Generated> {
-  const text = (body?.contents?.[0]?.parts ?? [])
-    .map((p: any) => (typeof p?.text === "string" ? p.text : "")).join("");
-  harness.prompts.push(text);
-  return Promise.resolve({ text: harness.geminiText, by: "gemini:gemini-harness" });
+async function readVisionImage(_data: string, _mime: string, prompt: string, _options: any): Promise<any> {
+  harness.prompts.push(prompt);
+  const raw = JSON.parse(harness.geminiText || "");
+  return { raw, by: "vision:gemini-harness" };
 }
 
 // buildCard's neighbours. None of them is what this harness is about, and each
@@ -214,7 +218,7 @@ const NAMES = [
   // the pass itself
   "countExercises", "hasDose", "doseGap", "picturesAreAPage", "slidesWouldHelp",
   "nameKey", "fillEmptyDose", "mergeSlideCard",
-  "visionCard", "runVisionRemote", "buildCard",
+  "visionCard", "runVisionRemote", "visionWarning", "buildCard",
 ];
 
 // ---------- what the assembled module is allowed to be asked for ----------
@@ -238,6 +242,7 @@ type Crd = {
   title: string; category: string; muscle_groups: string[]; equipment: string[];
   difficulty: string | null; duration_minutes: number | null; calories: number | null;
   tags: string[]; has_full_workout: boolean; blocks: Blk[]; extracted_by?: string | null;
+  vision?: {total: number; completed: number[]; missing: number[]};
 };
 type Merge = { filled: number; added: number; matched: number; capped: boolean };
 type Gap = { total: number; missing: number; share: number };
@@ -264,7 +269,7 @@ type Lifted = {
   visionCard(b64: string, mime: string, fallback: Crd, ctx: unknown): Promise<Crd | null>;
   buildCard(
     meta: unknown, p: unknown, ctx: unknown,
-    onSlide?: (n: number, card: Crd) => Promise<void>, startSlide?: number,
+    onSlide?: (n: number, card: Crd) => Promise<void>, startSlide?: number, resumeCard?: Crd,
   ): Promise<Crd>;
 };
 
@@ -621,8 +626,10 @@ harness.geminiText = JSON.stringify({ none: true });
 check("a slide with no workout on it stays nothing",
   (await M.visionCard("ZmFrZQ==", "image/jpeg", card([]), { purpose: "vision", userId: null })) === null);
 harness.geminiText = "not json at all";
-check("a mangled reply is nothing rather than a throw",
-  (await M.visionCard("ZmFrZQ==", "image/jpeg", card([]), { purpose: "jpeg", userId: null })) === null);
+let malformedRejected = false;
+try { await M.visionCard("ZmFrZQ==", "image/jpeg", card([]), { purpose: "jpeg", userId: null }); }
+catch { malformedRejected = true; }
+check("a mangled reply is a failed read, never an empty slide", malformedRejected);
 
 // ---------- 5. the whole pass, with the worker sub-request mocked ----------
 //
@@ -672,7 +679,7 @@ type Sched = {
 
 async function run(
   caption: unknown, slides: unknown[], images: number, startSlide = 0, kind = "photo",
-  sched: Sched = {},
+  sched: Sched = {}, resumeCard?: Crd,
 ) {
   harness.caption = caption;
   harness.slides = slides;
@@ -691,7 +698,7 @@ async function run(
     caption: "x", thumb: null, author: null,
     images: Array.from({ length: images }, (_, i) => "https://cdn/slide-" + i + ".jpg"),
   };
-  const out = await M.buildCard(meta, { ...P, kind }, CTX, undefined, startSlide);
+  const out = await M.buildCard(meta, { ...P, kind }, CTX, undefined, startSlide, resumeCard);
   return {
     card: out, logs: logs.slice(), asked: harness.asked.slice(),
     landed: harness.landed.slice(), peak: harness.peak,
@@ -1132,6 +1139,30 @@ function slideNamed(name: string) {
   eq("the late answers touched nothing when they finally arrived", JSON.stringify(r.card), settled);
 }
 
+{
+  const range = M.normalizeExercise({name:"Leg curl",sets:"2-3",reps:"6-8"});
+  eq("set ranges are not silently narrowed", range?.sets, null);
+  eq("set range source notation survives", range?.notes, "Sets: 2-3");
+  check("image prompt preserves alternatives", harness.prompts.some(p=>p.includes("ONE exercise named A OR B")));
+}
+// Missing-slide checkpoints must retain success and skip it on the next job claim.
+{
+  const slides = [card([block([ex("Squat", {sets:3,reps:"8"})])]),
+    card([block([ex("Leg curl", {sets:2,reps:"10"})])]), null];
+  const first = await run(card([]), slides, 3, 0, "photo", {alwaysSlow:[1]});
+  eq("failed slide stays missing", first.card.vision?.missing, [1]);
+  eq("confirmed empty cover is completed", first.card.vision?.completed, [0,2]);
+  const second = await run(card([]), slides, 3, 0, "photo", {}, first.card);
+  eq("resume pays only for the missing slide", second.asked, [1]);
+  eq("resume retains earlier exercises", second.card.blocks.flatMap(b=>b.exercises.map(e=>e.name)), ["Squat","Leg curl"]);
+  eq("resume clears incomplete coverage", second.card.vision?.missing, []);
+}
+{
+  M.runtimeCfg["vision.max_slides_carousel"] = "2";
+  const r = await run(card([]), [null,null,null], 3);
+  eq("slide cap is disclosed as incomplete", r.card.vision?.missing, [2]);
+  delete M.runtimeCfg["vision.max_slides_carousel"];
+}
 console.log = say;
 
 // ---------- done ----------

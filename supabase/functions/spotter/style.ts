@@ -1844,6 +1844,32 @@ export const STYLE = String.raw`<style>
   body.kb .composer { bottom: 0; margin-bottom: 0; }
   body.kb .page { padding-bottom: 24px; }
   body.kb .tabbar { visibility: hidden; }
+  /* The native webview ends at the keyboard; there is no home indicator there.
+     Restore the real device inset automatically when the keyboard closes. */
+  html.native { --vvh: 100%; --sab: env(safe-area-inset-bottom); }
+  html.native:has(body.kb) { --sab: 0px; }
+  html.native input, html.native textarea { scroll-margin-block: 16px; }
+  /* UIKit resizes the outer frame. Animate only the web content's keyboard
+     clearance, so the composer and form padding do not snap ahead of it. */
+  html.native.keyboard-moving .composer {
+    transition: bottom var(--keyboard-duration) var(--keyboard-curve),
+      margin-bottom var(--keyboard-duration) var(--keyboard-curve); }
+  html.native.keyboard-moving .page {
+    transition: padding-bottom var(--keyboard-duration) var(--keyboard-curve); }
+  html.native.keyboard-moving .sheetbody {
+    transition: padding-bottom var(--keyboard-duration) var(--keyboard-curve),
+      transform var(--t-2) var(--e-in); }
+  html.native.keyboard-moving .sheet.open .sheetbody {
+    transition: padding-bottom var(--keyboard-duration) var(--keyboard-curve),
+      transform .38s var(--e-spring); }
+  html.native .tabbar { visibility: visible; opacity: 1;
+    transition: opacity var(--keyboard-duration, .25s) var(--keyboard-curve, ease-in-out); }
+  html.native body.kb .tabbar { visibility: visible; opacity: 0; pointer-events: none; }
+  @media (prefers-reduced-motion: reduce) {
+    html.native.keyboard-moving .composer, html.native.keyboard-moving .page,
+    html.native.keyboard-moving .sheetbody, html.native.keyboard-moving .sheet.open .sheetbody,
+    html.native .tabbar { transition: none; }
+  }
   .composerrow { display: flex; gap: 8px; align-items: flex-end; }
   .composer textarea { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 16px; padding: 12px 14px;
     font-size: 16px; line-height: 1.4; background: var(--card); color: var(--ink); outline: none; resize: none;
