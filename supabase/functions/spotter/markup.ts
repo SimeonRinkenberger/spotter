@@ -27,7 +27,7 @@ export const MARKUP_HEAD = String.raw`<!DOCTYPE html>
      happens until it has run. Neither line carries crossorigin: the script tag is
      a plain one, and a preload in another mode is a second download. -->
 <link rel="preconnect" href="https://cdn.jsdelivr.net">
-<link rel="preload" as="script" href="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js">
+<link rel="preload" as="script" href="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/dist/umd/supabase.js">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <!-- Two font hosts now, so two preconnects: the display face lives at Fontshare,

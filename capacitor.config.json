@@ -1,0 +1,15 @@
+{
+  "appId": "app.spotter.dev",
+  "appName": "Spotter",
+  "webDir": "native-dist",
+  "ios": {
+    "contentInset": "never",
+    "backgroundColor": "#F5F6F8"
+  },
+  "plugins": {
+    "Keyboard": {
+      "resize": "none"
+    }
+  },
+  "loggingBehavior": "none"
+}

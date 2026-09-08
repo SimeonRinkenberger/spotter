@@ -2,7 +2,7 @@
 // Reads and simple writes go straight to PostgREST through supabase-js under RLS;
 // only ingest, reprocess and the AI helpers go through the edge function.
 export const APP = String.raw`
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/dist/umd/supabase.js"></script>
 <script>
 (function () {
   "use strict";
@@ -9477,7 +9477,7 @@ export const APP = String.raw`
     } else { trial.textContent = ""; trial.classList.add("hide"); }
     setBuyLabel(yearly && days > 0 ? "Start " + days + " free days"
       : "Subscribe for " + money(pay, cur) + (yearly ? " a year" : " a month"));
-    $("planfine").textContent = finePrint(p, plus, iv, pay, full, days);
+    $("planfine").textContent = finePrint(p, plus, iv, pay, full, days) + " AI reading and coaching have daily and monthly usage limits. During beta, new AI work can also pause when the shared allowance is reached; saved workouts remain available.";
   }
 
   function pickInterval(iv) {

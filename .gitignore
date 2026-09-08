@@ -6,3 +6,8 @@ node_modules/
 HANDOFF.md
 census-*.json
 .demo-cache/
+native-dist/
+ios/App/App/public/
+ios/App/App/capacitor.config.json
+ios/App/Local.xcconfig
+.native-build/

@@ -124,5 +124,21 @@ let rolled=false;try{await enqueue('atomic-two');}catch{rolled=true;}
 ok(rolled,'over-quota enqueue rejected inside original SQL function');
 ok((await q('select count(*)::int as n from ingest_jobs'))[0].n===before,'rejected enqueue leaves no orphan job');
 ok((await q("select * from workouts where shortcode='atomic-two'")).length===0,'rejected enqueue leaves no workout');
+// Independent tenant isolation regression: one public URL, two private jobs.
+await db.exec(`
+ alter table workouts add column ingest_error text;
+ create function handle_new_user() returns trigger language plpgsql as $$ begin return new; end $$;
+ create function apply_subscription_plan() returns trigger language plpgsql as $$ begin return new; end $$;
+`);
+await db.exec(readFileSync('supabase/migrations/20260908170000_source_trust.sql','utf8'));
+await q('update profiles set limits=$1',[JSON.stringify({extract:100,saves:100,library:null})]);
+const tenantSave=async(user)=>q("select * from enqueue_ingest($1,'https://example.com','private-shared','tiktok','photo','Workout')",[user]);
+const privateFirst=(await tenantSave(uid))[0]; const privateSecond=(await tenantSave(uid2))[0];
+ok(privateFirst.job_id!==privateSecond.job_id,'different accounts never join private-input jobs');
+ok((await tenantSave(uid))[0].already,'same-user duplicate remains idempotent');
+const retried=(await q('select * from requeue_ingest($1,$2)',[uid2,privateSecond.workout_id]))[0];
+ok(retried.job_id===privateSecond.job_id,'retry joins only own job');
+ok((await q('select * from requeue_ingest($1,$2)',[uid,privateSecond.workout_id])).length===0,'cross-user retry cannot access workout');
+ok(!(await q("select has_function_privilege('anon','handle_new_user()','execute') as yes"))[0].yes,'trigger not executable anonymously');
 await db.close();
 console.log(`${checks} database guard checks passed (isolated PostgreSQL/PGlite; no production writes).`);

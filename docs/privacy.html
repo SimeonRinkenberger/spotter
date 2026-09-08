@@ -25,7 +25,7 @@
 <body>
 <main>
   <h1>Privacy</h1>
-  <div class="date">Last updated 4 September 2026</div>
+  <div class="date">Last updated 8 September 2026</div>
 
   <p>Spotter is a small, independent app. This page says plainly what it stores and what it does
     not do. If anything here is unclear, email
@@ -55,23 +55,25 @@
   <ul>
     <li>No ads, no trackers, no analytics scripts, no cookies beyond the sign-in session your
       browser needs.</li>
-    <li>Your library, logs and plan are private to your account and are never sold, shared, or
-      used to train anything.</li>
-    <li>No health, biometric, or location data is collected. Spotter never asks for it.</li>
+    <li>Your library, logs and plan are private to your account and are not sold. Relevant details
+      are processed by the service providers described below when you use AI features.</li>
+    <li>Spotter does not access device health, biometric or location sensors. Workout logs are
+      fitness information, and anything you type into notes or Pumpy may include sensitive information.</li>
   </ul>
 
   <h2>Other services involved</h2>
-  <p>Saving a video sends its public caption or description to an AI model (currently OpenAI,
-    with Google Gemini and Groq as fallbacks) so the exercises can be pulled out. Only that
-    public text is sent.</p>
+  <p>Saving a post can send its caption, description, carousel images, or text you supply to
+    OpenAI to extract exercises. Google Gemini is used for supported audio/video reads and
+    as a fallback. Private uploads can also be processed by Google. Groq is no longer part of
+    the active reading workflow.</p>
   <p>Asking Pumpy, tapping <i>How to do this</i>, or <i>Swap or modify</i> also sends an AI
     model what you typed plus what it needs to answer: the titles, exercises, equipment and
     collection names of the workouts you have saved, your planned days, and a summary of your
     recent sessions (how many, which muscles, how much volume). Pumpy sends a short index of
     that — titles, categories, equipment, collection names, your planned days — at the start
     of every message so it needs fewer round trips, and sends a workout's exercises only when
-    it needs them to answer. Your email and your notes are
-    never sent, and nothing from any other account ever is. Pumpy cannot change anything in
+    it needs them to answer. Account email is not deliberately included in these requests. Text you put in a message,
+    exercise detail or selected workout may be included, so avoid adding sensitive information unnecessarily. Pumpy cannot change anything in
     your library until you confirm it in the app.</p>
   <p>Data is stored with
     <a href="https://supabase.com/privacy" target="_blank" rel="noopener">Supabase</a> in the
@@ -139,29 +141,21 @@
     <a href="https://www.strava.com/settings/apps" target="_blank" rel="noopener">your Strava
     settings</a>.</p>
 
-  <h2>Videos you upload</h2>
-  <p>If you upload a video yourself — the option under the link box, for creators who say the
-    workout out loud instead of writing it down — the file goes straight from your device into
-    private storage that only you and Spotter's server can reach. Spotter then gives
-    <a href="https://groq.com/privacy-policy/" target="_blank" rel="noopener">Groq</a> a link
-    to it that expires in fifteen minutes, so Groq can transcribe the speech, and
-    <b>deletes the file within minutes</b> — as soon as the transcript comes back, or as soon
-    as the attempt fails. Anything still there after two hours is deleted by a sweep. What is
-    kept is the transcript, on your card, where you can read and edit it. The video itself is
-    not kept, not shared with anyone else, and never added to the shared cache below.</p>
-
-  <h2>When Spotter reads the video itself</h2>
-  <p>Some videos say the workout out loud, or write it on the screen, and put none of it in the
-    caption. When a card comes out thin, Spotter may go and read the video the link points at.
-    First it sends the audio to
-    <a href="https://groq.com/privacy-policy/" target="_blank" rel="noopener">Groq</a> to be
-    transcribed; if nobody is speaking, it sends the video to
-    <a href="https://ai.google.dev/gemini-api/terms" target="_blank" rel="noopener">Google</a>
-    to read what is written on the screen. Neither of them keeps it — the copy Google needs for
-    the few seconds it is reading is deleted straight afterwards, every time — and Spotter never
-    stores the video either. What Spotter keeps is the transcript and the exercises it found,
-    nothing else. This runs only on a card that came out thin, only for links (never for a video
-    you uploaded), and you can also ask for it yourself with the <i>Read the video</i> button.</p>
+  <h2>Files and video reading</h2>
+  <p>Uploads enter private temporary storage. Spotter's server sends supported audio or video
+    to Google Gemini for transcription or workout extraction. Spotter attempts to delete its
+    temporary file and Google's uploaded file after processing, including failed attempts.
+    A cleanup sweep targets files left in Spotter storage after two hours; outages can delay cleanup.
+    Extracted text and workout details remain on your saved card.</p>
+  <p>For public links with little written workout information, Spotter may also read available
+    audio or video, automatically or when you request it. Source material fetched from a public
+    post may contribute to the shared cache below. Your private uploads and supplied captions or
+    HTML are excluded from new shared cache entries.</p>
+  <p>Deleting a temporary uploaded file does not erase a provider's separate processing or abuse
+    monitoring records. Provider handling depends on the account and service configuration; see
+    <a href="https://developers.openai.com/api/docs/guides/your-data" target="_blank" rel="noopener">OpenAI's data controls</a>
+    and <a href="https://ai.google.dev/gemini-api/terms" target="_blank" rel="noopener">Google's API terms</a>.
+    In particular, Google's paid and unpaid services have different data-use terms.</p>
 
   <h2>Shared extraction cache</h2>
   <p>When a video is read for the first time, the resulting workout is cached under the video's
@@ -180,7 +174,7 @@
   <h2 id="delete">Deleting your account</h2>
   <p>Removing a workout deletes it immediately. To delete your <b>whole account</b>, open Spotter
     and go to Settings &rarr; Data &amp; privacy &rarr; <b>Delete account</b>. You will be asked to
-    type DELETE to confirm, and then the following are erased straight away and permanently:</p>
+    type DELETE to confirm, and then the following are removed from the active app:</p>
   <ul>
     <li>your workout cards, and any video files you uploaded;</li>
     <li>every session you have logged, and your plan;</li>
@@ -193,9 +187,11 @@
       access keys are deleted;</li>
     <li>the sign-in account itself.</li>
   </ul>
-  <p>None of it can be recovered afterwards, so export your data first if you want to keep it.
+  <p>Export your data first if you want to keep it. Account deletion cannot be undone in the app.
+    Backup copies and provider security records may remain under their separate retention policies.
     Spotter keeps its own record of what the AI cost to run, and the deletion strips your account
-    id out of those rows rather than keeping them attached to you.</p>
+    id out of those rows rather than keeping them attached to you. New AI reservation records
+    are retained for up to 90 days; request admission records for up to 40 days, with scheduled cleanup.</p>
   <p>If you cannot sign in, email
     <a href="mailto:simeonrinkenberger@gmail.com">simeonrinkenberger@gmail.com</a> from your
     account's address and it will be erased for you.</p>

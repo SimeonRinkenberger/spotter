@@ -1,0 +1,4 @@
+CAPACITOR_DEBUG = true
+
+SPOTTER_BUNDLE_ID = app.spotter.dev
+#include? "App/Local.xcconfig"

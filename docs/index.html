@@ -17,7 +17,7 @@
 <link rel="preconnect" href="https://mtzevoxxpsktmrbbuxva.supabase.co" crossorigin>
 <link rel="dns-prefetch" href="https://mtzevoxxpsktmrbbuxva.supabase.co">
 <link rel="preconnect" href="https://cdn.jsdelivr.net">
-<link rel="preload" as="script" href="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js">
+<link rel="preload" as="script" href="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/dist/umd/supabase.js">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="preconnect" href="https://cdn.fontshare.com" crossorigin>
@@ -6911,7 +6911,7 @@ details.details-moving > :not(summary) {
 
 <div id="toast"></div>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/dist/umd/supabase.js"></script>
 <script>
 (function() {
   "use strict";
@@ -12602,7 +12602,7 @@ details.details-moving > :not(summary) {
         cards[i].classList.toggle("on", on), cards[i].setAttribute("aria-checked", on ? "true" : "false");
       }
       var full = plus[iv].amount, pay = yearly && p.founding ? p.founding.first_year_amount : full, days = num(p.trial_days) || 0, trial = $("plantrial");
-      yearly && days > 0 ? (trial.textContent = "Free for " + days + " days. We will not charge you before " + new Date(Date.now() + days * 864e5).toLocaleDateString(void 0, { day: "numeric", month: "long" }) + ", and you can cancel before then.", trial.classList.remove("hide")) : (trial.textContent = "", trial.classList.add("hide")), setBuyLabel(yearly && days > 0 ? "Start " + days + " free days" : "Subscribe for " + money(pay, cur) + (yearly ? " a year" : " a month")), $("planfine").textContent = finePrint(p, plus, iv, pay, full, days);
+      yearly && days > 0 ? (trial.textContent = "Free for " + days + " days. We will not charge you before " + new Date(Date.now() + days * 864e5).toLocaleDateString(void 0, { day: "numeric", month: "long" }) + ", and you can cancel before then.", trial.classList.remove("hide")) : (trial.textContent = "", trial.classList.add("hide")), setBuyLabel(yearly && days > 0 ? "Start " + days + " free days" : "Subscribe for " + money(pay, cur) + (yearly ? " a year" : " a month")), $("planfine").textContent = finePrint(p, plus, iv, pay, full, days) + " AI reading and coaching have daily and monthly usage limits. During beta, new AI work can also pause when the shared allowance is reached; saved workouts remain available.";
     }
   }
   function pickInterval(iv) {

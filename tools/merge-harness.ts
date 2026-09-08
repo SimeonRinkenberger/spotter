@@ -673,6 +673,19 @@ const LIVE_OLD = [
   check("400 generated pairs, and not one of them lost an exercise", bad === 0, worst);
 }
 
+// Live six-slide carousel: alternatives are choices, not additional work.
+{
+  const evidence = {source:"carousel",slide:1,quote:"Squat OR Hack Squat",verified:false} as any;
+  const before = stored([block([ex("Squat",{sets:3,evidence}),ex("Hack Squat",{sets:3,evidence})])]);
+  const next = card([block([ex("Squat OR Hack Squat",{sets:null,notes:"Choose one; 2-3 sets",evidence})])]);
+  const result=M.mergeNoDowngrade(before,next,META,"tiktok");
+  eq("same-slide OR options replace previously duplicated alternatives",result.blocks[0].exercises.length,1);
+  eq("explicit set range cannot be filled from an old endpoint",result.blocks[0].exercises[0].sets,null);
+  const otherSlide=stored([block([ex("Hack Squat",{evidence:{...evidence,slide:2}})])]);
+  const fresh=card([block([ex("Squat OR Hack Squat",{evidence})])]);
+  eq("different-slide exercise is retained",M.mergeNoDowngrade(otherSlide,fresh,META,"tiktok").blocks[0].exercises.length,2);
+}
+
 // ---------- done ----------
 
 say((failures ? "FAILED " : "ok ") + (checks - failures) + "/" + checks + " checks");

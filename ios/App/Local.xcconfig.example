@@ -1,0 +1,3 @@
+// Copy to Local.xcconfig (gitignored), then fill in from Xcode.
+DEVELOPMENT_TEAM = YOUR_PERSONAL_TEAM_ID
+SPOTTER_BUNDLE_ID = app.spotter.yourname.dev

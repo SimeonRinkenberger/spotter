@@ -1,5 +1,7 @@
 # Spotter
 
+Local iPhone development: [iOS setup](IOS-SETUP.md) · [verification record](IOS-VERIFICATION.md).
+
 Save a fitness video from TikTok, Instagram or YouTube. Spotter reads the exercises, sets
 and reps out of the caption, gives you a real workout card, then walks you through it one
 move at a time and logs what you lifted.
@@ -10,8 +12,8 @@ move at a time and logs what you lifted.
 
 ## What it does
 
-- **Save** — paste a link, share to Spotter from Android's share sheet, or, on iPhone, run a
-  one-step Shortcut until the native share extension ships.
+- **Save** — paste a link, share to Spotter from Android's share sheet, or use the
+  native Share Extension in the iPhone app (see iOS setup for installation status).
 - **Extract** — the caption or description becomes a structured card: title, workout type,
   muscle groups, equipment, difficulty, duration, and exercise blocks with sets, reps,
   rest and circuit rounds.
@@ -1114,8 +1116,8 @@ all — it works on the deployed site or not at all.
 
 ## Saving from your phone
 
-Two routes that work today, and which one you get is decided by the phone rather than by
-Spotter. A third — a native app with a real share extension — is the plan below.
+Android uses the installed web app. The iPhone app now includes a native Share Extension;
+see IOS-SHARING.md for behavior, signing and verification status.
 
 ### Android — the share sheet, no setup
 
@@ -1166,7 +1168,7 @@ relative form, though the spec and Chromium's own docs do not.
 commented 23 May 2026, seven years after it was filed. Nothing on the web platform puts a PWA
 in the iPhone share sheet today. Hence the next two sections.
 
-### iPhone — a Shortcut, until the app ships
+### iPhone website only — optional advanced Shortcut
 
 Settings in the app shows a personal save address containing your own key. `POST` to it with
 a JSON body:
@@ -1210,44 +1212,26 @@ Share any reel to it and the workout is in your library before you put the phone
 The key is not your password, but it can save to your account — rotate it in Settings if it
 leaks.
 
-### Native app (planned)
+### Native iPhone app
 
-The Shortcut is an interim, not the destination. The launch path is a thin native shell around
-this same web app, so that "share to Spotter" is one tap on both phones and nobody is asked to
-build anything.
+The Xcode project embeds `ShareExtension.appex`. Users sign into Spotter normally,
+then share a post and choose **Spotter** in the iPhone share sheet. No Shortcut or
+extension-specific login is required. iOS controls the ordering and may put it
+under **More**. TikTok's own menu may require opening the system share sheet first.
 
-**The shape of it.** [Capacitor](https://capacitorjs.com) wraps `docs/` as an iOS and an Android
-app — the same HTML, CSS and JS, the same Supabase project, no second frontend to keep in step.
-On top of that:
+The extension accepts one HTTP(S) link, including links embedded in shared text.
+It posts directly to the existing ingest endpoint, which saves/queues the workout,
+and confirms only after the server acknowledges the library item. A save-only key
+is synchronized from the signed-in profile into a shared Keychain access group.
+Sign-out clears it; account changes and key rotation update it. No password, refresh
+token, App Group, custom URL scheme or unsupported app-opening workaround is used.
 
-- **iOS Share Extension.** iOS only accepts shares into an *extension* target, never into the
-  app itself, so the Xcode project gains a Share Extension alongside the app, an **App Group**
-  the two can both read, and a custom URL scheme the extension uses to hand off. Community
-  plugins already cover the wiring: [Cap-go/capacitor-share-target](https://github.com/Cap-go/capacitor-share-target)
-  (MPL-2.0, free), [calvinckho/capacitor-share-extension](https://github.com/calvinckho/capacitor-share-extension),
-  and Capawesome's [share-target](https://capawesome.io/docs/sdks/capacitor/share-target/)
-  (paid, Insiders only). All three deliver the shared link into the web layer, where
-  `handleSharedUrl` — the same function Android's share sheet reaches — takes it.
-- **The extension can fetch the page itself.** An app extension may use `URLSession`, so the
-  share extension can `GET` the shared link over the phone's own connection and post
-  `{url, html}` exactly as Shortcut recipe 2 does. That is worth keeping: it is the residential
-  IP that makes Instagram and YouTube answer honestly, and it is why the Shortcut beats the
-  server's own fetch today. Extensions run under a short time budget, so the safe version posts
-  `{url}` immediately and adds `html` only if the fetch returns in time — the server already
-  treats `html` as optional and falls back on its own.
-- **Android intent filter.** For completeness the Capacitor Android app declares an
-  `ACTION_SEND` intent filter and routes it into the same function. The installed PWA already
-  covers Android, so this is parity rather than need.
+TikTok, YouTube and Instagram retain dedicated readers. Public Facebook posts and
+other social/web URLs use the general reader. Link acceptance does not guarantee
+full extraction from private, deleted, paywalled or login-only posts. File attachments
+are not handled by this extension; the main app retains its existing upload flow.
 
-**What it costs.** Apple Developer Program **$99/yr** — required to run a Share Extension on a
-real device beyond a 7-day free provisioning profile, and required for TestFlight and the App
-Store. Google Play Console **$25 once**. Both figures current for 2026. No Apple account exists
-yet, which is why this section is a plan and not a feature.
-
-**What does not change.** The Supabase project, the edge function, the schema, RLS, the
-extraction ladder — none of it. The native shell adds a share entry point and a store listing;
-it does not add a backend. The PWA keeps working exactly as it does now, and stays the way in
-for anyone on a desktop or unwilling to install anything.
+See [native sharing](IOS-SHARING.md) for checks and current installation blockers.
 
 ### When nothing automated works
 
