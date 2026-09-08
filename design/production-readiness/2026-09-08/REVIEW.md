@@ -15,6 +15,8 @@ Decision: improved beta, not yet approved for unrestricted public launch. This i
 - Privacy text corrected for image/video processing, Google routing, fitness information and provider retention. Paid-plan screen discloses beta AI usage pauses.
 - Credential-free release workflow added: isolated PostgreSQL guard tests, real helper-contract regression, transport/admission/merge tests, Deno type check, dependency audit and generated web asset consistency. Official actions pinned by commit. Branch protection must make these checks required before they become an enforced gate.
 
+Release evidence: GitHub Pages published `806a571`; the new GitHub Release checks workflow passed on that commit. Supabase backend version 149 is active. The final signed development iOS build succeeded; the paired iPhone remained unavailable, so it was not installed.
+
 ## Independent observations
 
 Live metadata audit (`supabase db query --linked --file tools/production-audit.sql`): all 29 public tables have RLS enabled; database approximately 26 MB; no queued/running jobs, stale uploads or unknown recent AI charges at the sampled time. User APIs rejected anonymous access with 401; worker routes rejected it with 404. RLS enablement is necessary but does not prove every ownership policy and foreign-key relationship correct.
@@ -27,7 +29,7 @@ Security advisors still report pg_net's extension location, the intentional uplo
 
 | Priority | Finding / risk | Required completion evidence |
 | --- | --- | --- |
-| P0 | Account creation is still a weak abuse boundary: local config disables email confirmation; CAPTCHA/custom SMTP and IP controls were not established. Per-user caps can be multiplied with accounts; the global cap limits model spend but an attacker can exhaust service for everybody. | Verify live Auth settings, configure a verified sender and confirmation flow, integrate CAPTCHA and platform-side signup/login limits; test signup, reset, expired links and native return. Do not enable confirmation without a working sender. |
+| P0 | Account creation is still a weak abuse boundary: live Auth reports signup enabled and email autoconfirm enabled; CAPTCHA/custom SMTP and IP controls were not established. Per-user caps can be multiplied with accounts; the global cap limits model spend but an attacker can exhaust service for everybody. | Configure a verified sender and confirmation flow, integrate CAPTCHA and platform-side signup/login limits; test signup, reset, expired links and native return. Do not enable confirmation without a working sender. |
 | P0 | Google billing/data-use mode is not verified. Unpaid and paid API terms differ; old app claims that providers never retain data were incorrect. Audience/region restrictions also need review. | Confirm active billed Google project and intended age/region eligibility before private user content is processed; document provider accounts, retention, DPA and access owners. Do not infer paid status from successful calls or zero ledger entries. |
 | P0 | Native distribution is a development build. Session tokens use Preferences/UserDefaults, not Keychain; native social sign-in and distribution billing are unfinished. | Keychain-backed session storage with upgrade/logout tests; organization signing, App Store privacy review and purchase-path review; real-device share, upload, sign-in and account-switch tests. Signed development build is not App Store deployment. |
 | P0 | No verified restoration drill, operational alert delivery or incident owner/escalation path. Database size alone says nothing about recovery. | Restore a recent backup into an isolated project, measure data loss/recovery window; configure health, queue age, auth spikes, unknown reservations, provider errors and storage-growth alerts with a tested destination. |
@@ -44,6 +46,8 @@ Security advisors still report pg_net's extension location, the intentional uplo
 Keep Luna as the default for text and images. Use Gemini only for the supported raw audio/video path or one bounded fallback. Cache trusted complete reads, resume completed slides, avoid paying again for deterministic repairs and keep normal extraction reasoning disabled. Do not switch models based on one failure before distinguishing fetching, provider, parsing and merge failures.
 
 At the observed $0.006595 per carousel, $0.50 buys roughly 75 similar imports/day and $10 about 1,516/month before coaching/other reads. The configured Plus account allowance of $0.50/month is roughly 75 similar imports/month, not the larger event-rate ceiling advertised by daily quotas. Both constrain usage. These arithmetic examples use one sample; do not market them as included import counts. Raise the global budget only from measured usage and subscription economics. Current regular Plus is $39.99/year, founding first year $29.99; no prices were changed.
+
+The repository is public and documents a permanent development login. Keep that account strictly synthetic; do not use it for real personal data, production administrator privileges or live payment details. Move real owner use to a private credential before public launch.
 
 ## Rules for future AI-assisted changes
 
