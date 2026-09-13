@@ -145,8 +145,8 @@ export const MARKUP_BODY = String.raw`</head>
          something is wrong reads as unowned however good it is, and that absence
          was the loudest thing about this page. -->
     <div class="landfoot">Spotter by Quarterdeck Collective · Free to start ·
-      <a href="whats-new.html">What&rsquo;s new</a> · <a href="terms.html">Terms</a> ·
-      <a href="privacy.html">Privacy</a></div>
+      <a href="https://quarterdeckcollective.com/spotter/whats-new/">What&rsquo;s new</a> · <a href="https://quarterdeckcollective.com/spotter/terms/">Terms</a> ·
+      <a href="https://quarterdeckcollective.com/spotter/privacy/">Privacy</a></div>
   </div>
 </div>
 
@@ -653,15 +653,15 @@ export const MARKUP_BODY = String.raw`</head>
   <h3 class="seth">Data &amp; privacy</h3>
   <div class="setgroup">
     <button class="kv row" id="setexport"><span class="k">Export my data</span><span class="v" id="setexportv">JSON</span><svg class="ic chev"><use href="#i-chev"></use></svg></button>
-    <a class="kv row" href="terms.html"><span class="k">Terms of use</span><svg class="ic chev"><use href="#i-chev"></use></svg></a>
-    <a class="kv row" href="privacy.html"><span class="k">Privacy policy</span><svg class="ic chev"><use href="#i-chev"></use></svg></a>
+    <a class="kv row" href="https://quarterdeckcollective.com/spotter/terms/"><span class="k">Terms of use</span><svg class="ic chev"><use href="#i-chev"></use></svg></a>
+    <a class="kv row" href="https://quarterdeckcollective.com/spotter/privacy/"><span class="k">Privacy policy</span><svg class="ic chev"><use href="#i-chev"></use></svg></a>
     <button class="kv row del" id="setdelete"><span class="k">Delete account</span><svg class="ic chev"><use href="#i-chev"></use></svg></button>
   </div>
 
   <h3 class="seth">About</h3>
   <div class="setgroup">
     <button class="kv row" id="refreshbtn"><span class="k">Refresh workouts</span><svg class="ic"><use href="#i-refresh"></use></svg></button>
-    <a class="kv row" href="whats-new.html"><span class="k">What&rsquo;s new</span><span class="v" id="setver">&mdash;</span><svg class="ic chev"><use href="#i-chev"></use></svg></a>
+    <a class="kv row" href="https://quarterdeckcollective.com/spotter/whats-new/"><span class="k">What&rsquo;s new</span><span class="v" id="setver">&mdash;</span><svg class="ic chev"><use href="#i-chev"></use></svg></a>
     <button class="kv row" id="settell"><span class="k">Tell a friend</span><svg class="ic chev"><use href="#i-chev"></use></svg></button>
     <a class="kv row" href="https://github.com/SimeonRinkenberger/spotter/issues" target="_blank" rel="noopener"><span class="k">Something wrong? Tell me</span><svg class="ic chev"><use href="#i-chev"></use></svg></a>
   </div>
@@ -690,8 +690,8 @@ export const MARKUP_BODY = String.raw`</head>
   <button class="plannot" id="plannot">Not now</button>
   <div class="planfine" id="planfine"></div>
   <div class="planlegal">
-    <a href="terms.html">Terms</a><span aria-hidden="true">&middot;</span>
-    <a href="privacy.html">Privacy</a><span aria-hidden="true" id="plandot2">&middot;</span>
+    <a href="https://quarterdeckcollective.com/spotter/terms/">Terms</a><span aria-hidden="true">&middot;</span>
+    <a href="https://quarterdeckcollective.com/spotter/privacy/">Privacy</a><span aria-hidden="true" id="plandot2">&middot;</span>
     <button id="planrestore">Restore purchase</button>
   </div>
 </div></div>
