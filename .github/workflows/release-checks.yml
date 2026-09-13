@@ -31,3 +31,4 @@ jobs:
       - run: deno run --allow-read tools/merge-harness.ts
       - run: deno run --allow-read --allow-env tools/ingest-coverage-harness.ts
       - run: node build.mjs && git diff --exit-code -- docs/index.html supabase/functions/spotter/page.gen.ts
+      - run: npm run parity:check

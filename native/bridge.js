@@ -1,3 +1,5 @@
+import { signInWithApple } from './apple-auth.js';
+import { signInWithGoogle } from './google-auth.js';
 import { shareAccess } from './share-access.js';
 import { Capacitor, CapacitorHttp, registerPlugin } from '@capacitor/core';
 import { streamFetch } from './stream.js';
@@ -20,6 +22,8 @@ const configureSharing = shareAccess(registerPlugin('ShareAccess'), () => {
 });
 window.SpotterNative = {
   configureSharing,
+  signInWithApple: sb => signInWithApple(sb, registerPlugin('AppleAuth')),
+  signInWithGoogle: sb => signInWithGoogle(sb, registerPlugin('GoogleAuth')),
   authStorage: {
     getItem: async key => (await Preferences.get({ key })).value,
     setItem: (key, value) => Preferences.set({ key, value }),

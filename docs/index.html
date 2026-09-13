@@ -6916,8 +6916,8 @@ details.details-moving > :not(summary) {
 <script>
 (function() {
   "use strict";
-  var native = window.SpotterNative || null, AUTH_RETURN = native ? "https://simeonrinkenberger.github.io/spotter/" : location.origin + location.pathname, SB_URL = "https://mtzevoxxpsktmrbbuxva.supabase.co", SB_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10emV2b3h4cHNrdG1yYmJ1eHZhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgyMjM5ODgsImV4cCI6MjEwMzc5OTk4OH0._vpNhLJtv2bVGgXXClva9O5cX8Y5eJdTgbgAO81NnmU", API = SB_URL + "/functions/v1/spotter/api/", PUBLIC_AUTH = { google_client_id: "", apple_services_id: "" }, sb = window.supabase.createClient(SB_URL, SB_ANON, {
-    auth: { persistSession: !0, autoRefreshToken: !0, detectSessionInUrl: !native, storage: native ? native.authStorage : void 0 },
+  var native = window.SpotterNative || null, AUTH_RETURN = native ? "https://simeonrinkenberger.github.io/spotter/" : location.origin + location.pathname, SB_URL = "https://mtzevoxxpsktmrbbuxva.supabase.co", SB_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10emV2b3h4cHNrdG1yYmJ1eHZhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgyMjM5ODgsImV4cCI6MjEwMzc5OTk4OH0._vpNhLJtv2bVGgXXClva9O5cX8Y5eJdTgbgAO81NnmU", API = SB_URL + "/functions/v1/spotter/api/", PUBLIC_AUTH = { google_client_id: "48831784248-dh1o2fhiem9kqgs6ambnnvaba8vojrf2.apps.googleusercontent.com", apple_services_id: "" }, sb = window.supabase.createClient(SB_URL, SB_ANON, {
+    auth: { persistSession: !0, autoRefreshToken: !0, detectSessionInUrl: !native, flowType: native ? "pkce" : "implicit", storage: native ? native.authStorage : void 0 },
     global: { fetch: function(url, opts) {
       return String(url).indexOf("/rest/v1/") < 0 || opts && opts.method && opts.method !== "GET" ? fetch(url, opts) : deadline(function(signal) {
         return fetch(url, Object.assign({}, opts || {}, { signal: signal })).then(function(r) {
@@ -7368,13 +7368,24 @@ details.details-moving > :not(summary) {
     }, function() {
     });
   }
+  function nativeGoogleSignIn() {
+    clearTimeout(oauthWatchdog), native.signInWithGoogle(sb).then(function() {
+      setOauthBusy(null);
+    }).catch(function(e) {
+      if (e && e.code === "AUTH_CANCELLED") {
+        setOauthBusy(null);
+        return;
+      }
+      oauthFailed(e);
+    });
+  }
   function googleSignIn() {
-    if (native) {
-      toast("Use email and password in this development build. Native Google sign-in is not configured yet.");
-      return;
-    }
     if (!oauthBusy) {
-      if (setOauthBusy("oagoogle"), authError(""), !PUBLIC_AUTH.google_client_id) {
+      if (setOauthBusy("oagoogle"), authError(""), native) {
+        nativeGoogleSignIn();
+        return;
+      }
+      if (!PUBLIC_AUTH.google_client_id) {
         oauthRedirect("google");
         return;
       }
@@ -7425,13 +7436,24 @@ details.details-moving > :not(summary) {
       });
     }
   }
+  function nativeAppleSignIn() {
+    clearTimeout(oauthWatchdog), native.signInWithApple(sb).then(function(result) {
+      setOauthBusy(null), result.fullName && saveProviderName(result.user, result.fullName);
+    }).catch(function(e) {
+      if (e && e.code === "AUTH_CANCELLED") {
+        setOauthBusy(null);
+        return;
+      }
+      oauthFailed(e);
+    });
+  }
   function appleSignIn() {
-    if (native) {
-      toast("Use email and password in this development build. Native Apple sign-in awaits setup.");
-      return;
-    }
     if (!oauthBusy) {
-      if (setOauthBusy("oaapple"), authError(""), !PUBLIC_AUTH.apple_services_id) {
+      if (setOauthBusy("oaapple"), authError(""), native) {
+        nativeAppleSignIn();
+        return;
+      }
+      if (!PUBLIC_AUTH.apple_services_id) {
         oauthRedirect("apple");
         return;
       }

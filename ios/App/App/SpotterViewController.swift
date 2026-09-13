@@ -16,6 +16,8 @@ class SpotterViewController: CAPBridgeViewController {
     override func capacitorDidLoad() {
         bridge?.registerPluginInstance(PumpyStreamPlugin())
         bridge?.registerPluginInstance(ShareAccessPlugin())
+        bridge?.registerPluginInstance(GoogleAuthPlugin())
+        bridge?.registerPluginInstance(AppleAuthPlugin())
     }
 
     override func viewDidLoad() {
