@@ -25,9 +25,9 @@
 <body>
 <main>
   <h1>Privacy</h1>
-  <div class="date">Last updated 8 September 2026</div>
+  <div class="date">Last updated 13 September 2026</div>
 
-  <p>Spotter is a small, independent app. This page says plainly what it stores and what it does
+  <p>Spotter is operated by Quarterdeck Collective LLC. This page says plainly what it stores and what it does
     not do. If anything here is unclear, email
     <a href="mailto:business@quarterdeckcollective.com">business@quarterdeckcollective.com</a>.</p>
 
@@ -46,14 +46,14 @@
       any time from Settings.</li>
     <li><b>Your conversations with Pumpy</b>, the coach, so you can pick a chat up where you left
       it, and the changes you confirmed from them. They are private to your account.</li>
-    <li><b>If you subscribe to Spotter Plus</b>, an identifier for you at Stripe and the state of
+    <li><b>If you subscribe to Spotter Plus</b>, an identifier for you at your payment provider and the state of
       your subscription — the plan, whether it is running, and the date it renews or ends. Never
       your card. See <a href="#payments">Payments</a> below.</li>
   </ul>
 
   <h2>What Spotter does not do</h2>
   <ul>
-    <li>No ads, no trackers, no analytics scripts, no cookies beyond the sign-in session your
+    <li>No ads or advertising trackers, no web analytics scripts, and no cookies beyond the sign-in session your
       browser needs.</li>
     <li>Your library, logs and plan are private to your account and are not sold. Relevant details
       are processed by the service providers described below when you use AI features.</li>
@@ -94,12 +94,14 @@
     again when you close the sheet. The link beside it opens YouTube's own search results.</p>
 
   <h2 id="payments">Payments</h2>
-  <p>Spotter Plus is paid for through
+  <p>In the native Android and iPhone apps, purchases are handled by Google Play or Apple. RevenueCat validates purchases and synchronizes subscription access with your Spotter account. RevenueCat receives your Spotter account ID, purchase history, product and transaction identifiers, subscription status, and technical information needed to process purchases. It does not receive your workout library or coaching conversations. Payment-card details stay with the store. See <a href="https://www.revenuecat.com/privacy">RevenueCat’s privacy policy</a>.</p>
+  <p>Store subscriptions renew until cancelled in Google Play or Apple subscription settings. Deleting your Spotter account or uninstalling the app does not cancel store subscriptions. Cancel in the store first if you want billing to stop. Store providers may retain transaction records required for tax, accounting, fraud prevention, and legal obligations.</p>
+
+  <p>On the web, Spotter Plus is paid for through
     <a href="https://stripe.com/privacy" target="_blank" rel="noopener">Stripe</a>, and the payment
     happens on Stripe's own checkout page, not on Spotter's. Your card number, the security code
     on the back of it and whatever address your bank wants go to Stripe and stop there.
-    <b>Spotter never sees any of it</b>, has no way to ask for it, and could not charge your card
-    by itself if it wanted to.</p>
+    <b>Spotter does not store your payment-card details.</b></p>
   <p>What Spotter keeps, on a row attached to your account, is only what it needs to know whether
     you are on the paid plan today:</p>
   <ul>
@@ -117,7 +119,7 @@
     Spotter sends it your account identifier so a payment can be matched back to you, and your
     email address if you give Stripe one at checkout.</p>
   <p>If you cancel, the row stays until the period you paid for runs out and then says you are on
-    the free plan. <b>Deleting your account cancels the subscription first</b>, then deletes your
+    the free plan. <b>Deleting your account cancels a Stripe subscription first</b>, then deletes your
     customer record at Stripe along with everything else. Stripe keeps its own record of the
     payments themselves for as long as tax and accounting law says it must — that part is not
     Spotter's to delete.</p>
@@ -181,8 +183,8 @@
     <li>your collections and the corrections you made to cards;</li>
     <li>your chats with Pumpy;</li>
     <li>your profile, your settings and your personal save key;</li>
-    <li>your subscription, if you have one — it is cancelled at Stripe first, and your customer
-      record there is deleted with it;</li>
+    <li>your subscription record in Spotter; a Stripe subscription is cancelled and its customer
+      record deleted. Google Play and Apple subscriptions must be cancelled in the store separately;</li>
     <li>your Strava connection, if you made one — Strava is told to forget Spotter and both
       access keys are deleted;</li>
     <li>the sign-in account itself.</li>
