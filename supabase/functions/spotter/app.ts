@@ -21,10 +21,10 @@ export const APP = String.raw`
   // "Sign in with Google / Apple". Leaving one blank does not break anything: the
   // button only appears once the provider is switched on for the Supabase project,
   // and a blank id simply sends that button down the redirect fallback.
-  var PUBLIC_AUTH = { google_client_id: "", apple_services_id: "" };
+  var PUBLIC_AUTH = { google_client_id: "48831784248-dh1o2fhiem9kqgs6ambnnvaba8vojrf2.apps.googleusercontent.com", apple_services_id: "" };
 
   var sb = window.supabase.createClient(SB_URL, SB_ANON, {
-    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: !native, storage: native ? native.authStorage : undefined },
+    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: !native, flowType: native ? "pkce" : "implicit", storage: native ? native.authStorage : undefined },
     global: { fetch: function (url, opts) {
       // Only idempotent database reads get the short deadline. Auth and writes
       // retain the SDK's semantics; a timed-out write must never be replayed here.
@@ -661,11 +661,25 @@ export const APP = String.raw`
       }, function () {});
   }
 
+  // The system authentication sheet returns a one-use code to this app. The
+  // verifier stays in native auth storage and Supabase validates the exchange.
+  function nativeGoogleSignIn() {
+    // A native sheet reliably reports completion/cancellation. Do not let the web
+    // watchdog enable a second attempt and overwrite an in-flight PKCE verifier.
+    clearTimeout(oauthWatchdog);
+    native.signInWithGoogle(sb).then(function () {
+      setOauthBusy(null);
+    }).catch(function (e) {
+      if (e && e.code === "AUTH_CANCELLED") { setOauthBusy(null); return; }
+      oauthFailed(e);
+    });
+  }
+
   function googleSignIn() {
-    if (native) { toast("Use email and password in this development build. Native Google sign-in is not configured yet."); return; }
     if (oauthBusy) return;
     setOauthBusy("oagoogle");
     authError("");
+    if (native) { nativeGoogleSignIn(); return; }
     if (!PUBLIC_AUTH.google_client_id) { oauthRedirect("google"); return; }
     var raw = randomNonce();
     var hashed = null;
@@ -717,11 +731,24 @@ export const APP = String.raw`
     });
   }
 
+  function nativeAppleSignIn() {
+    clearTimeout(oauthWatchdog);
+    native.signInWithApple(sb).then(function (result) {
+      setOauthBusy(null);
+      // Apple provides the name only on first authorization; preserve it using
+      // the same placeholder-only profile update as the existing web flow.
+      if (result.fullName) saveProviderName(result.user, result.fullName);
+    }).catch(function (e) {
+      if (e && e.code === "AUTH_CANCELLED") { setOauthBusy(null); return; }
+      oauthFailed(e);
+    });
+  }
+
   function appleSignIn() {
-    if (native) { toast("Use email and password in this development build. Native Apple sign-in awaits setup."); return; }
     if (oauthBusy) return;
     setOauthBusy("oaapple");
     authError("");
+    if (native) { nativeAppleSignIn(); return; }
     if (!PUBLIC_AUTH.apple_services_id) { oauthRedirect("apple"); return; }
     var raw = randomNonce();
     var hashed = null;

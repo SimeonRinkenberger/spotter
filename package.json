@@ -10,7 +10,8 @@
     "ios:sync": "npm run ios:assets && cap sync ios",
     "ios:open": "cap open ios",
     "ios:build": "node tools/ios/build-simulator.mjs",
-    "ios:check": "node tools/ios/check.mjs && node tools/ios/keyboard-check.mjs && node tools/ios/stream-check.mjs && node tools/ios/share-check.mjs"
+    "ios:check": "node tools/ios/check.mjs && node tools/ios/keyboard-check.mjs && node tools/ios/stream-check.mjs && node tools/ios/share-check.mjs && node tools/ios/google-auth-check.mjs && node tools/ios/apple-auth-check.mjs",
+    "parity:check": "npm run ios:assets && node tools/parity-check.mjs && npm run ios:check"
   },
   "dependencies": {
     "@capacitor/app": "8.1.1",
