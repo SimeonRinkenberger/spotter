@@ -8524,6 +8524,36 @@ async function handleWorkerProbe(req: Request): Promise<Response> {
     console.log("probe tiktok-media", url, "->", JSON.stringify(out).slice(0, 400));
     return json(out, 200);
   }
+  // Does TikTok's own caption track actually come back to THIS datacenter?
+  //
+  // The MP4 on the same CDN family answers 403 bare and 206 with the watch page's
+  // cookies, measured 2026-09-02. The VTT is expected to behave the same way and
+  // the whole free-transcript half of the pack rests on it, so this proves it
+  // rather than assuming it: status, bytes, and the first 200 characters, both
+  // with and without the cookies. It fetches a caption file and nothing else — no
+  // video moves, no model is called, nothing is saved.
+  if (body?.kind === "tiktok-vtt") {
+    const got = await pageWithCookies(url, DESKTOP_UA);
+    const it = got.html ? ttItemStruct(got.html) : null;
+    const tracks = it ? ttSubtitles(it) : [];
+    const out: Record<string, unknown> = {
+      page: got.status,
+      cookies: got.cookie ? got.cookie.split("; ").length : 0,
+      tracks: tracks.map((t) => ({ lang: t.lang, source: t.source, host: mediaUrlBrief(t.url) })),
+    };
+    if (tracks.length) {
+      const headers = got.cookie
+        ? { ...mediaHeaders("tiktok"), Cookie: got.cookie }
+        : mediaHeaders("tiktok");
+      const withCookies = await fetchTikTokVtt(tracks[0].url, headers);
+      const bare = await fetchTikTokVtt(tracks[0].url, mediaHeaders("tiktok"));
+      out.with_cookies = { status: withCookies.status, bytes: withCookies.bytes, head: withCookies.text?.slice(0, 200) ?? null };
+      out.bare = { status: bare.status, bytes: bare.bytes, head: bare.text?.slice(0, 200) ?? null };
+      out.parsed = withCookies.text ? parseVtt(withCookies.text).length : 0;
+    }
+    console.log("probe tiktok-vtt", url, "->", JSON.stringify(out).slice(0, 600));
+    return json(out, 200);
+  }
   if (body?.kind === "gemini-files") return json(await geminiListFiles(), 200);
   if (body?.kind === "gemini-video") {
     const out = await probeGeminiVideo(url);
