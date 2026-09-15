@@ -10618,12 +10618,41 @@ export const APP = String.raw`
    * once it has been taken off the address bar, so a failed share puts it back in
    * the add sheet instead of dropping it.
    */
+  /**
+   * Frames, cut by the phone, for the save that is about to go out.
+   *
+   * Only the native shells can do this: a few seconds of local decoding turns a
+   * reader that HEARS the workout into one that SEES it — which is how the card
+   * learns that the push-ups are done with both hands on the kettlebell handle.
+   * Strictly best effort. Every failure resolves to null and the save goes out
+   * exactly as it did before, and the server falls back to watching the video
+   * itself; nothing here may block or fail a save.
+   */
+  function deviceFrames(opts) {
+    if (!native || !native.contactSheet) return Promise.resolve(null);
+    return sb.auth.getSession().then(function (r) {
+      var s = r.data.session;
+      if (!s) return null;
+      opts.uid = s.user.id;
+      opts.token = s.access_token;
+      return native.contactSheet(opts);
+    }).then(function (out) {
+      return out && out.ok ? out.frames : null;
+    }).catch(function () { return null; });
+  }
+
+  function cuttingFrames(url) {
+    return !!(native && native.contactSheet && /tiktok\.com\//i.test(url));
+  }
+
   function doAdd(fromShare) {
     var url = $("addurl").value.trim();
     if (!url) { toast("Paste a link first."); return; }
     var btn = $("addgo");
     btn.disabled = true;
-    btn.textContent = "Saving…";
+    // Two different waits deserve two different words. The phone reading the
+    // video is not the server saving it, and it is the longer of the two.
+    btn.textContent = cuttingFrames(url) ? "Reading…" : "Saving…";
 
     function recover() {
       if (!fromShare) return;
@@ -10631,7 +10660,12 @@ export const APP = String.raw`
       openSheet("addsheet");
     }
 
-    api("ingest", { method: "POST", body: JSON.stringify({ url: url }) })
+    deviceFrames({ url: url }).then(function (frames) {
+      var body = { url: url };
+      if (frames) body.frames = frames;
+      btn.textContent = "Saving…";
+      return api("ingest", { method: "POST", body: JSON.stringify(body) });
+    })
       .then(function (r) {
         btn.disabled = false;
         btn.textContent = "Save workout";
@@ -10880,11 +10914,17 @@ export const APP = String.raw`
     }).then(function () {
       // The bytes have landed, and somebody else's machine reading them is a
       // different wait — so it gets its own verb, and the true one for this file.
+      // On a native shell the phone reads the file it still has, first: the
+      // shortcode is up-<the uuid this client just made>, which is the same one
+      // the server derives from the path, so the sheets land where it looks.
+      if (!watched || !native || !native.contactSheet) return null;
+      upProgress(1, "Uploaded — reading the video…");
+      return deviceFrames({ file: file, shortcode: "up-" + path.split("/")[1].split(".")[0] });
+    }).then(function (frames) {
       upProgress(1, watched ? "Uploaded — Spotter is watching it…" : "Uploaded — Spotter is listening…");
-      return api("ingest", {
-        method: "POST",
-        body: JSON.stringify({ upload_path: path, filename: name.slice(0, 160) })
-      });
+      var body = { upload_path: path, filename: name.slice(0, 160) };
+      if (frames) body.frames = frames;
+      return api("ingest", { method: "POST", body: JSON.stringify(body) });
     }).then(function (r) {
       if (r.status === "processing") {
         closeSheet("addsheet");
