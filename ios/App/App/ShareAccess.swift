@@ -59,19 +59,20 @@ public class ShareAccessPlugin: CAPPlugin, CAPBridgedPlugin {
                                                   auth: .bearer(token), deadline: deadline)
             }
             guard let sheet = outcome else { call.resolve(["ok": false, "reason": "no-frames"]); return }
+            let sheets: [JSObject] = sheet.sheets.map { page in
+                ["path": page.path, "cols": page.cols, "rows": page.rows,
+                 "cell_w": page.cellW, "cell_h": page.cellH, "times": page.times]
+            }
             call.resolve([
                 "ok": true,
                 "frames": [
                     "source": "device",
                     "duration_s": sheet.durationS,
-                    "sheets": [[
-                        "path": sheet.path, "cols": sheet.cols, "rows": sheet.rows,
-                        "cell_w": sheet.cellW, "cell_h": sheet.cellH, "times": sheet.times
-                    ] as JSObject]
+                    "sheets": sheets
                 ] as JSObject,
                 "bytes": sheet.bytes,
                 "ms": sheet.milliseconds,
-                "kept": sheet.times.count,
+                "kept": sheet.framesKept,
                 "requested": sheet.framesRequested
             ])
         }

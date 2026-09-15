@@ -15,27 +15,30 @@ import Foundation
  */
 enum SheetSpec {
     static let minFrames = 8
-    static let maxFrames = 25
-    static let secondsPerFrame = 3.5
+    static let maxFrames = 36
+    static let secondsPerFrame = 2.5
     static let edgeInset = 0.5
 
-    static let portrait = (w: 216, h: 384)
-    static let landscape = (w: 384, h: 216)
-    static let square = (w: 300, h: 300)
+    static let portrait = (w: 270, h: 480)
+    static let landscape = (w: 480, h: 270)
+    static let square = (w: 360, h: 360)
     static let squareBand = 0.05
 
-    static let cols = 5
+    static let cols = 4
+    static let rowsPerSheet = 3
+    static let cellsPerSheet = 12
+    static let maxSheets = 3
     static let gutter = 2
 
-    static let labelFontSize = 14.0
-    static let labelInset = 6.0
+    static let labelFontSize = 16.0
+    static let labelInset = 8.0
     static let labelPillAlpha = 0.6
     static let labelPillRadius = 6.0
     static let labelPadX = 6.0
     static let labelPadY = 3.0
 
-    static let jpegQuality = 0.7
-    static let jpegFallbackQuality = 0.6
+    static let jpegQuality = 0.72
+    static let jpegFallbackQuality = 0.62
     static let jpegMaxBytes = 614_400
 
     static let budgetMs = 8_000.0
@@ -43,7 +46,7 @@ enum SheetSpec {
 
     static let contentType = "image/jpeg"
 
-    /// One frame per 3.5 s, floored at 8 and capped at one 5x5 sheet.
+    /// One frame per 2.5 s, floored at 8 and capped at three full sheets.
     static func frameCount(duration: Double) -> Int {
         guard duration.isFinite, duration > 0 else { return minFrames }
         let wanted = Int(ceil(duration / secondsPerFrame))
@@ -82,22 +85,43 @@ enum SheetSpec {
         return square
     }
 
+    /// Rows a sheet holding this many cells needs.
     static func rows(count: Int) -> Int {
-        max(1, Int(ceil(Double(max(1, count)) / Double(cols))))
+        min(rowsPerSheet, max(1, Int(ceil(Double(max(1, count)) / Double(cols)))))
     }
 
-    /// Canvas size. No outer margin; gutters live between cells only.
+    /// Sheets this many frames are spread over, one to three.
+    static func sheetCount(frames: Int) -> Int {
+        min(maxSheets, max(1, Int(ceil(Double(max(1, frames)) / Double(cellsPerSheet)))))
+    }
+
+    /// Cells on sheet `index` — the last one is the short one.
+    static func cells(inSheet index: Int, frames: Int) -> Int {
+        max(0, min(cellsPerSheet, frames - index * cellsPerSheet))
+    }
+
+    /**
+     * Canvas size for a sheet of this many cells.
+     *
+     * Exactly cols x cell for a full sheet — 1080x1440 portrait, which is the
+     * number in the contract — because the gutter is drawn INSIDE each cell by
+     * `frame`, not added between them. A short last sheet is proportionally
+     * shorter rather than padded with empty rows: empty black cells are pixels
+     * the reader pays tokens for and learns nothing from.
+     */
     static func canvas(count: Int, cell: (w: Int, h: Int)) -> (w: Int, h: Int) {
-        let r = rows(count: count)
-        let c = min(cols, max(1, count))
-        return (w: c * cell.w + (c - 1) * gutter,
-                h: r * cell.h + (r - 1) * gutter)
+        (w: min(cols, max(1, count)) * cell.w, h: rows(count: count) * cell.h)
     }
 
-    /// Top-left of cell `index`, row-major, so reading order is time order.
+    /// Top-left of cell `index` within its sheet, row-major = time order.
     static func origin(index: Int, cell: (w: Int, h: Int)) -> (x: Int, y: Int) {
-        let col = index % cols, row = index / cols
-        return (x: col * (cell.w + gutter), y: row * (cell.h + gutter))
+        (x: (index % cols) * cell.w, y: (index / cols) * cell.h)
+    }
+
+    /// Where the picture goes inside that cell: the gutter, split between neighbours.
+    static func frame(index: Int, cell: (w: Int, h: Int)) -> (x: Int, y: Int, w: Int, h: Int) {
+        let o = origin(index: index, cell: cell), inset = gutter / 2
+        return (x: o.x + inset, y: o.y + inset, w: cell.w - gutter, h: cell.h - gutter)
     }
 
     /**
@@ -119,10 +143,16 @@ enum SheetSpec {
         let order = times.indices.sorted { times[$0] == times[$1] ? $0 < $1 : times[$0] < times[$1] }
         var out: [Int] = []
         var last = -Double.greatestFiniteMagnitude
-        for i in order where times[i].isFinite && times[i] >= 0 && times[i] - last >= minGap {
+        for i in order where accepts(times[i], after: last) {
             out.append(i); last = times[i]
         }
         return out
+    }
+
+    /// The same rule, one frame at a time, for a builder that renders a sheet as
+    /// soon as its twelve cells are full and never holds all thirty-six.
+    static func accepts(_ time: Double, after previous: Double) -> Bool {
+        time.isFinite && time >= 0 && time - previous >= minGap
     }
 
     /// `M:SS` of the frame's own time, which is what the server prompt reads.

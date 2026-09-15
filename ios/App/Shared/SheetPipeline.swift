@@ -23,30 +23,39 @@ enum SheetAuth {
 }
 
 /**
- * One built and uploaded sheet, in the server's own vocabulary.
+ * One uploaded sheet, in the server's own vocabulary.
  *
- * The fields are kept apart rather than stored as the finished `frames`
- * dictionary because the two callers need two different containers for the same
- * numbers: the extension serialises them with JSONSerialization, and the plugin
- * has to hand Capacitor a JSObject. `frames` is the extension's view.
+ * The fields are kept apart rather than stored as the finished dictionary
+ * because the two callers need two different containers for the same numbers:
+ * the extension serialises them with JSONSerialization, and the plugin has to
+ * hand Capacitor a JSObject.
  */
-struct SheetOutcome {
+struct UploadedSheet {
     let path: String
     let cols: Int
     let rows: Int
     let cellW: Int
     let cellH: Int
     let times: [Double]
-    let durationS: Double
     let bytes: Int
+}
+
+struct SheetOutcome {
+    let sheets: [UploadedSheet]
+    let durationS: Double
     let milliseconds: Int
     let framesRequested: Int
+
+    var bytes: Int { sheets.reduce(0) { $0 + $1.bytes } }
+    var framesKept: Int { sheets.reduce(0) { $0 + $1.times.count } }
 
     /// Exactly the `frames` object POST /api/ingest takes.
     var frames: [String: Any] {
         ["source": "device", "duration_s": durationS,
-         "sheets": [["path": path, "cols": cols, "rows": rows,
-                     "cell_w": cellW, "cell_h": cellH, "times": times]]]
+         "sheets": sheets.map { sheet in
+             ["path": sheet.path, "cols": sheet.cols, "rows": sheet.rows,
+              "cell_w": sheet.cellW, "cell_h": sheet.cellH, "times": sheet.times]
+         }]
     }
 }
 
@@ -118,25 +127,36 @@ enum SheetPipeline {
     private static func finish(mp4: URL, duration: Double, shortcode: String, uid: String?,
                                auth: SheetAuth, deadline: Date, started: Date,
                                session: URLSession) async -> SheetOutcome? {
-        let sheet: ContactSheetResult
+        let built: ContactSheetResult
         do {
-            sheet = try await ContactSheetBuilder.build(mp4: mp4, duration: duration, deadline: deadline)
+            built = try await ContactSheetBuilder.build(mp4: mp4, duration: duration, deadline: deadline)
         } catch { return nil }
 
-        guard let path = await upload(jpeg: sheet.jpeg, shortcode: shortcode, index: 0,
-                                      uid: uid, auth: auth, session: session) else { return nil }
+        // Uploaded in order and counted as they land. Past the deadline, or after
+        // an upload that would not go, whatever is already up is what goes with
+        // the save — the sheets are in time order, so a short set is the first
+        // part of the video rather than a hole in the middle of it.
+        var uploaded: [UploadedSheet] = []
+        for (index, page) in built.pages.enumerated() {
+            guard let path = await upload(jpeg: page.jpeg, shortcode: shortcode, index: index,
+                                          uid: uid, auth: auth, session: session) else { break }
+            uploaded.append(UploadedSheet(path: path, cols: page.cols, rows: page.rows,
+                                          cellW: built.cellW, cellH: built.cellH,
+                                          times: page.times, bytes: page.jpeg.count))
+            if Date() >= deadline { break }
+        }
+        guard !uploaded.isEmpty else { return nil }
 
         // A local file's duration is whatever AVFoundation measured, and the last
         // frame's own time plus the half-second inset is that number back again —
         // close enough that the server's "times inside duration_s" check passes,
         // and never a value the phone did not observe.
+        let lastTime = uploaded.last?.times.last ?? 0
         return SheetOutcome(
-            path: path, cols: sheet.cols, rows: sheet.rows, cellW: sheet.cellW, cellH: sheet.cellH,
-            times: sheet.times,
-            durationS: duration > 0 ? duration : (sheet.times.last ?? 0) + SheetSpec.edgeInset,
-            bytes: sheet.jpeg.count,
+            sheets: uploaded,
+            durationS: built.duration > 0 ? built.duration : lastTime + SheetSpec.edgeInset,
             milliseconds: Int(Date().timeIntervalSince(started) * 1000),
-            framesRequested: sheet.requested)
+            framesRequested: built.requested)
     }
 
     // MARK: - storage

@@ -36,15 +36,23 @@ export function cell(w, h) {
   return [C.square.w, C.square.h];
 }
 
-export const rows = count => Math.max(1, Math.ceil(Math.max(1, count) / G.cols));
+export const rows = count => Math.min(G.rows_per_sheet, Math.max(1, Math.ceil(Math.max(1, count) / G.cols)));
 
-export function canvas(count, box) {
-  const c = Math.min(G.cols, Math.max(1, count));
-  return [c * box[0] + (c - 1) * G.gutter_px, rows(count) * box[1] + (rows(count) - 1) * G.gutter_px];
-}
+export const sheetCount = frames =>
+  Math.min(G.max_sheets, Math.max(1, Math.ceil(Math.max(1, frames) / G.cells_per_sheet)));
 
-export const origin = (i, box) =>
-  [(i % G.cols) * (box[0] + G.gutter_px), Math.floor(i / G.cols) * (box[1] + G.gutter_px)];
+export const cellsInSheet = (index, frames) =>
+  Math.max(0, Math.min(G.cells_per_sheet, frames - index * G.cells_per_sheet));
+
+export const canvas = (count, box) =>
+  [Math.min(G.cols, Math.max(1, count)) * box[0], rows(count) * box[1]];
+
+export const origin = (i, box) => [(i % G.cols) * box[0], Math.floor(i / G.cols) * box[1]];
+
+export const frame = (i, box) => {
+  const [x, y] = origin(i, box), inset = Math.floor(G.gutter_px / 2);
+  return [x + inset, y + inset, box[0] - G.gutter_px, box[1] - G.gutter_px];
+};
 
 export function keep(times) {
   const order = times.map((t, i) => i).sort((a, b) => times[a] - times[b] || a - b);
@@ -69,7 +77,8 @@ export const objectPath = (uid, shortcode, i) => `${uid}/pack/${shortcode}/sheet
 // the clip too short to hold the half-second inset at both ends.
 export const DURATIONS = [0, -5, NaN, 0.8, 1, 12, 28, 28.1, 84.3, 87.5, 200];
 export const SIZES = [[1080, 1920], [1920, 1080], [1080, 1080], [1080, 1100], [1100, 1080], [0, 0]];
-export const COUNTS = [1, 3, 5, 8, 24, 25];
+export const COUNTS = [1, 3, 4, 5, 8, 11, 12];
+export const FRAME_TOTALS = [1, 8, 12, 13, 24, 25, 35, 36];
 export const LABEL_SECONDS = [0, 0.4, 4, 9.5, 59.6, 83.8, 125, 599];
 // Arrival order, not time order: a duplicate sync sample (3.5 twice), a frame
 // that came back early, one negative and one NaN from a generator that failed
@@ -86,14 +95,18 @@ export function expected() {
       labelPillAlpha: spec.label.pill_alpha, labelPillRadius: spec.label.pill_radius_px,
       labelPadX: spec.label.pill_pad_x_px, labelPadY: spec.label.pill_pad_y_px,
       jpegMaxBytes: spec.jpeg.max_bytes, budgetMs: spec.budget.wall_clock_ms,
-      budgetBytes: spec.budget.download_bytes, minGap: F.min_gap_s
+      budgetBytes: spec.budget.download_bytes, minGap: F.min_gap_s,
+      rowsPerSheet: G.rows_per_sheet, cellsPerSheet: G.cells_per_sheet, maxSheets: G.max_sheets
     },
+    sheetCounts: FRAME_TOTALS.map(sheetCount),
+    lastSheetCells: FRAME_TOTALS.map(n => cellsInSheet(sheetCount(n) - 1, n)),
+    frames: [0, 3, 4, 11].map(i => frame(i, [C.portrait.w, C.portrait.h])),
     keeps: ARRIVALS.map(keep),
     counts: DURATIONS.map(frameCount),
     times: DURATIONS.map(times),
     cells: SIZES.map(([w, h]) => cell(w, h)),
     canvases: COUNTS.map(n => canvas(n, [C.portrait.w, C.portrait.h])),
-    origins: [0, 4, 5, 24].map(i => origin(i, [C.portrait.w, C.portrait.h])),
+    origins: [0, 3, 4, 11].map(i => origin(i, [C.portrait.w, C.portrait.h])),
     labels: LABEL_SECONDS.map(label),
     path: objectPath('11111111-2222-3333-4444-555555555555', 'tt-7679960172495785246', 0)
   };
@@ -131,6 +144,13 @@ export function contractHolds(duration) {
   for (let i = 1; i < t.length; i++) if (!(t[i] >= t[i - 1])) return 'times not ascending';
   if (duration > 1 && (t[0] < 0 || t[t.length - 1] > duration)) return 'time outside duration';
   if (n < spec.frames.min || n > spec.frames.max) return 'frame count outside bounds';
-  if (n > spec.grid.cols * rows(n)) return 'grid too small';
+  if (n > spec.grid.cells_per_sheet * spec.grid.max_sheets) return 'more frames than sheets can hold';
+  let laid = 0;
+  for (let s = 0; s < sheetCount(n); s++) {
+    const cells = cellsInSheet(s, n);
+    if (cells > spec.grid.cols * rows(cells)) return 'grid too small';
+    laid += cells;
+  }
+  if (laid !== n) return 'frames lost between sheets';
   return '';
 }

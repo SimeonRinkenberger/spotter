@@ -74,22 +74,36 @@ public final class SheetPipeline {
         }
     }
 
-    private static Outcome finish(ContactSheet.Result sheet, String shortcode,
+    private static Outcome finish(ContactSheet.Result built, String shortcode,
                                   String uid, String token, long started) throws Exception {
-        String path = upload(sheet.jpeg, shortcode, 0, uid, token);
-        if (path == null) return null;
+        // Uploaded in order and counted as they land. After an upload that would
+        // not go, whatever is already up is what goes with the save — the sheets
+        // are in time order, so a short set is the first part of the video rather
+        // than a hole in the middle of it.
+        JSONArray sheets = new JSONArray();
+        String first = null;
+        int bytes = 0, kept = 0;
+        for (int i = 0; i < built.pages.size(); i++) {
+            ContactSheet.Page page = built.pages.get(i);
+            String path = upload(page.jpeg, shortcode, i, uid, token);
+            if (path == null) break;
+            if (first == null) first = path;
+            JSONArray times = new JSONArray();
+            for (double t : page.times) times.put(t);
+            sheets.put(new JSONObject()
+                    .put("path", path).put("cols", page.cols).put("rows", page.rows)
+                    .put("cell_w", built.cellW).put("cell_h", built.cellH).put("times", times));
+            bytes += page.jpeg.length;
+            kept += page.times.length;
+        }
+        if (sheets.length() == 0) return null;
 
-        JSONArray times = new JSONArray();
-        for (double t : sheet.times) times.put(t);
-        JSONObject one = new JSONObject()
-                .put("path", path).put("cols", sheet.cols).put("rows", sheet.rows)
-                .put("cell_w", sheet.cellW).put("cell_h", sheet.cellH).put("times", times);
         JSONObject frames = new JSONObject()
                 .put("source", "device")
-                .put("duration_s", sheet.durationS)
-                .put("sheets", new JSONArray().put(one));
-        return new Outcome(frames, path, sheet.jpeg.length, sheet.times.length,
-                sheet.requested, System.currentTimeMillis() - started);
+                .put("duration_s", built.durationS)
+                .put("sheets", sheets);
+        return new Outcome(frames, first, bytes, kept, built.requested,
+                System.currentTimeMillis() - started);
     }
 
     /**

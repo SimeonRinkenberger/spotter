@@ -7,7 +7,7 @@ import { mkdtempSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { spec, expected, same, contractHolds, DURATIONS, SIZES, COUNTS, LABEL_SECONDS, ARRIVALS } from '../sheet-cases.mjs';
+import { spec, expected, same, contractHolds, DURATIONS, SIZES, COUNTS, FRAME_TOTALS, LABEL_SECONDS, ARRIVALS } from '../sheet-cases.mjs';
 
 // The same JDK gradle uses when it is there, so the harness cannot pass on a
 // compiler the app is never built with; any JDK on PATH otherwise.
@@ -31,6 +31,7 @@ public final class SheetCheck {
         double[] durations = { ${DURATIONS.map(literal).join(', ')} };
         double[][] sizes = { ${SIZES.map(([w, h]) => `{ ${w}, ${h} }`).join(', ')} };
         int[] counts = { ${COUNTS.join(', ')} };
+        int[] totals = { ${FRAME_TOTALS.join(', ')} };
         double[] labelSeconds = { ${LABEL_SECONDS.join(', ')} };
         double[][] arrivals = { ${ARRIVALS.map(a => '{ ' + a.map(v => Number.isFinite(v) ? v : 'Double.NaN').join(', ') + ' }').join(', ')} };
         int[] box = { SheetSpec.PORTRAIT_W, SheetSpec.PORTRAIT_H };
@@ -53,7 +54,26 @@ public final class SheetCheck {
         o.append(",\\"budgetMs\\":").append(SheetSpec.BUDGET_MS);
         o.append(",\\"budgetBytes\\":").append(SheetSpec.BUDGET_BYTES);
         o.append(",\\"minGap\\":").append(SheetSpec.MIN_GAP);
+        o.append(",\\"rowsPerSheet\\":").append(SheetSpec.ROWS_PER_SHEET);
+        o.append(",\\"cellsPerSheet\\":").append(SheetSpec.CELLS_PER_SHEET);
+        o.append(",\\"maxSheets\\":").append(SheetSpec.MAX_SHEETS);
         o.append("},");
+
+        o.append("\\"sheetCounts\\":[");
+        for (int i = 0; i < totals.length; i++) { if (i > 0) o.append(','); o.append(SheetSpec.sheetCount(totals[i])); }
+        o.append("],\\"lastSheetCells\\":[");
+        for (int i = 0; i < totals.length; i++) {
+            if (i > 0) o.append(',');
+            o.append(SheetSpec.cellsInSheet(SheetSpec.sheetCount(totals[i]) - 1, totals[i]));
+        }
+        o.append("],\\"frames\\":[");
+        int[] cellsWanted = { 0, 3, 4, 11 };
+        for (int i = 0; i < cellsWanted.length; i++) {
+            if (i > 0) o.append(',');
+            int[] f = SheetSpec.frame(cellsWanted[i], box);
+            o.append('[').append(f[0]).append(',').append(f[1]).append(',').append(f[2]).append(',').append(f[3]).append(']');
+        }
+        o.append("],");
 
         o.append("\\"keeps\\":[");
         for (int i = 0; i < arrivals.length; i++) {
@@ -88,7 +108,7 @@ public final class SheetCheck {
             o.append('[').append(c[0]).append(',').append(c[1]).append(']');
         }
         o.append("],\\"origins\\":[");
-        int[] want = { 0, 4, 5, 24 };
+        int[] want = { 0, 3, 4, 11 };
         for (int i = 0; i < want.length; i++) {
             if (i > 0) o.append(',');
             int[] p = SheetSpec.origin(want[i], box);
@@ -104,12 +124,10 @@ public final class SheetCheck {
          .append("\\"}");
 
         int[] wide = { SheetSpec.LANDSCAPE_W, SheetSpec.LANDSCAPE_H };
-        int[] o5 = SheetSpec.origin(5, wide);
-        if (o5[0] != 0 || o5[1] != wide[1] + SheetSpec.GUTTER) throw new AssertionError("landscape row wrap");
-        int[] c25 = SheetSpec.canvas(25, wide);
-        if (c25[0] != 5 * wide[0] + 4 * SheetSpec.GUTTER || c25[1] != 5 * wide[1] + 4 * SheetSpec.GUTTER) {
-            throw new AssertionError("landscape canvas");
-        }
+        int[] o4 = SheetSpec.origin(4, wide);
+        if (o4[0] != 0 || o4[1] != wide[1]) throw new AssertionError("landscape row wrap");
+        int[] full = SheetSpec.canvas(12, wide);
+        if (full[0] != 4 * wide[0] || full[1] != 3 * wide[1]) throw new AssertionError("landscape canvas");
         System.out.print(o);
     }
 }
@@ -138,11 +156,15 @@ for (let i = 0; i < DURATIONS.length; i++) {
 const box = [spec.cell.portrait.w, spec.cell.portrait.h];
 for (const n of COUNTS) {
   const [w, h] = actual.canvases[COUNTS.indexOf(n)];
-  const c = Math.min(spec.grid.cols, n), rows = Math.ceil(n / spec.grid.cols);
-  assert.equal(w, c * box[0] + (c - 1) * spec.grid.gutter_px);
-  assert.equal(h, rows * box[1] + (rows - 1) * spec.grid.gutter_px);
+  assert.equal(w, Math.min(spec.grid.cols, n) * box[0], `canvas width at ${n}`);
+  assert.equal(h, Math.ceil(n / spec.grid.cols) * box[1], `canvas height at ${n}`);
 }
-assert.deepEqual(actual.origins[3], [4 * (box[0] + spec.grid.gutter_px), 4 * (box[1] + spec.grid.gutter_px)]);
+assert.deepEqual(actual.canvases[COUNTS.indexOf(12)], [1080, 1440]);
+assert.deepEqual(actual.origins[3], [3 * box[0], 2 * box[1]]);
+const inset = spec.grid.gutter_px / 2;
+assert.deepEqual(actual.frames[0], [inset, inset, box[0] - spec.grid.gutter_px, box[1] - spec.grid.gutter_px]);
+assert.deepEqual(actual.sheetCounts, [1, 1, 1, 2, 2, 3, 3, 3]);
+assert.deepEqual(actual.lastSheetCells, [1, 8, 12, 1, 12, 1, 11, 12]);
 assert.match(actual.path, /^[0-9a-f-]{36}\/pack\/[a-z0-9-]+\/sheet-1\.jpg$/);
 assert.deepEqual(actual.labels, ['0:00', '0:00', '0:04', '0:10', '1:00', '1:24', '2:05', '9:59']);
 assert.deepEqual(actual.keeps[0], [0, 2, 1, 4, 7, 9]);
@@ -151,4 +173,4 @@ for (const kept of actual.keeps) {
   for (let i = 1; i < t.length; i++) assert(t[i] - t[i - 1] >= spec.frames.min_gap_s, 'kept frames too close');
 }
 
-console.log('PASS Android sheet spec: identical frame counts, times, cells, tiling and M:SS labels to the iOS build and to native/sheet-spec.json');
+console.log('PASS Android sheet spec: identical frame counts, times, cells, 4x3 tiling, sheet splitting and M:SS labels to the iOS build and to native/sheet-spec.json');

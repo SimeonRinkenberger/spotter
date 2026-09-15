@@ -15,27 +15,30 @@ public final class SheetSpec {
     private SheetSpec() {}
 
     public static final int MIN_FRAMES = 8;
-    public static final int MAX_FRAMES = 25;
-    public static final double SECONDS_PER_FRAME = 3.5;
+    public static final int MAX_FRAMES = 36;
+    public static final double SECONDS_PER_FRAME = 2.5;
     public static final double EDGE_INSET = 0.5;
 
-    public static final int PORTRAIT_W = 216, PORTRAIT_H = 384;
-    public static final int LANDSCAPE_W = 384, LANDSCAPE_H = 216;
-    public static final int SQUARE_W = 300, SQUARE_H = 300;
+    public static final int PORTRAIT_W = 270, PORTRAIT_H = 480;
+    public static final int LANDSCAPE_W = 480, LANDSCAPE_H = 270;
+    public static final int SQUARE_W = 360, SQUARE_H = 360;
     public static final double SQUARE_BAND = 0.05;
 
-    public static final int COLS = 5;
+    public static final int COLS = 4;
+    public static final int ROWS_PER_SHEET = 3;
+    public static final int CELLS_PER_SHEET = 12;
+    public static final int MAX_SHEETS = 3;
     public static final int GUTTER = 2;
 
-    public static final double LABEL_FONT_SIZE = 14;
-    public static final double LABEL_INSET = 6;
+    public static final double LABEL_FONT_SIZE = 16;
+    public static final double LABEL_INSET = 8;
     public static final double LABEL_PILL_ALPHA = 0.6;
     public static final double LABEL_PILL_RADIUS = 6;
     public static final double LABEL_PAD_X = 6;
     public static final double LABEL_PAD_Y = 3;
 
-    public static final int JPEG_QUALITY = 70;
-    public static final int JPEG_FALLBACK_QUALITY = 60;
+    public static final int JPEG_QUALITY = 72;
+    public static final int JPEG_FALLBACK_QUALITY = 62;
     public static final int JPEG_MAX_BYTES = 614400;
 
     public static final long BUDGET_MS = 8000;
@@ -43,7 +46,7 @@ public final class SheetSpec {
 
     public static final String CONTENT_TYPE = "image/jpeg";
 
-    /** One frame per 3.5 s, floored at 8 and capped at one 5x5 sheet. */
+    /** One frame per 2.5 s, floored at 8 and capped at three full sheets. */
     public static int frameCount(double duration) {
         if (Double.isNaN(duration) || Double.isInfinite(duration) || duration <= 0) return MIN_FRAMES;
         int wanted = (int) Math.ceil(duration / SECONDS_PER_FRAME);
@@ -78,20 +81,44 @@ public final class SheetSpec {
         return new int[] { SQUARE_W, SQUARE_H };
     }
 
+    /** Rows a sheet holding this many cells needs. */
     public static int rows(int count) {
-        return Math.max(1, (int) Math.ceil(Math.max(1, count) / (double) COLS));
+        return Math.min(ROWS_PER_SHEET, Math.max(1, (int) Math.ceil(Math.max(1, count) / (double) COLS)));
     }
 
-    /** Canvas size {w, h}. No outer margin; gutters live between cells only. */
+    /** Sheets this many frames are spread over, one to three. */
+    public static int sheetCount(int frames) {
+        return Math.min(MAX_SHEETS, Math.max(1, (int) Math.ceil(Math.max(1, frames) / (double) CELLS_PER_SHEET)));
+    }
+
+    /** Cells on sheet index — the last one is the short one. */
+    public static int cellsInSheet(int index, int frames) {
+        return Math.max(0, Math.min(CELLS_PER_SHEET, frames - index * CELLS_PER_SHEET));
+    }
+
+    /**
+     * Canvas size {w, h} for a sheet of this many cells.
+     *
+     * Exactly cols x cell for a full sheet — 1080x1440 portrait, the number in
+     * the contract — because the gutter is drawn INSIDE each cell by frame(),
+     * not added between them. A short last sheet is proportionally shorter
+     * rather than padded: empty black cells are pixels the reader pays tokens
+     * for and learns nothing from.
+     */
     public static int[] canvas(int count, int[] cell) {
-        int r = rows(count);
-        int c = Math.min(COLS, Math.max(1, count));
-        return new int[] { c * cell[0] + (c - 1) * GUTTER, r * cell[1] + (r - 1) * GUTTER };
+        return new int[] { Math.min(COLS, Math.max(1, count)) * cell[0], rows(count) * cell[1] };
     }
 
-    /** Top-left {x, y} of cell index, row-major, so reading order is time order. */
+    /** Top-left {x, y} of cell index within its sheet, row-major = time order. */
     public static int[] origin(int index, int[] cell) {
-        return new int[] { (index % COLS) * (cell[0] + GUTTER), (index / COLS) * (cell[1] + GUTTER) };
+        return new int[] { (index % COLS) * cell[0], (index / COLS) * cell[1] };
+    }
+
+    /** Where the picture goes inside that cell: the gutter, split between neighbours. */
+    public static int[] frame(int index, int[] cell) {
+        int[] o = origin(index, cell);
+        int inset = GUTTER / 2;
+        return new int[] { o[0] + inset, o[1] + inset, cell[0] - GUTTER, cell[1] - GUTTER };
     }
 
     public static final double MIN_GAP = 0.05;
@@ -114,11 +141,19 @@ public final class SheetSpec {
         int n = 0;
         double last = -Double.MAX_VALUE;
         for (int i : order) {
-            if (!Double.isFinite(times[i]) || times[i] < 0 || times[i] - last < MIN_GAP) continue;
+            if (!accepts(times[i], last)) continue;
             out[n++] = i;
             last = times[i];
         }
         return java.util.Arrays.copyOf(out, n);
+    }
+
+    /**
+     * The same rule, one frame at a time, for a builder that renders a sheet as
+     * soon as its twelve cells are full and never holds all thirty-six.
+     */
+    public static boolean accepts(double time, double previous) {
+        return Double.isFinite(time) && time >= 0 && time - previous >= MIN_GAP;
     }
 
     /** M:SS of the frame's own time, which is what the server prompt reads. */

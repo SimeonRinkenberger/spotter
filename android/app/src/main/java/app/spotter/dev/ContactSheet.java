@@ -43,17 +43,23 @@ public final class ContactSheet {
     /** Below this a sheet says less than nothing; the save goes without frames. */
     public static final int MIN_USABLE_FRAMES = 4;
 
-    public static final class Result {
+    /** One sheet: the JPEG, and the times of the cells on it, in cell order. */
+    public static final class Page {
         public final byte[] jpeg;
         public final double[] times;
-        public final int cols, rows, cellW, cellH, requested;
-        public final double durationS;
-
-        Result(byte[] jpeg, double[] times, int cols, int rows,
-               int cellW, int cellH, int requested, double durationS) {
+        public final int cols, rows;
+        Page(byte[] jpeg, double[] times, int cols, int rows) {
             this.jpeg = jpeg; this.times = times; this.cols = cols; this.rows = rows;
-            this.cellW = cellW; this.cellH = cellH; this.requested = requested;
-            this.durationS = durationS;
+        }
+    }
+
+    public static final class Result {
+        public final List<Page> pages;
+        public final int cellW, cellH, requested;
+        public final double durationS;
+        Result(List<Page> pages, int cellW, int cellH, int requested, double durationS) {
+            this.pages = pages; this.cellW = cellW; this.cellH = cellH;
+            this.requested = requested; this.durationS = durationS;
         }
     }
 
@@ -64,8 +70,9 @@ public final class ContactSheet {
      */
     public static Result build(String source, Map<String, String> headers, long deadline) throws Exception {
         MediaMetadataRetriever retriever = new MediaMetadataRetriever();
-        List<Bitmap> frames = new ArrayList<>();
-        List<Double> kept = new ArrayList<>();
+        List<Bitmap> chunk = new ArrayList<>();
+        List<Double> chunkTimes = new ArrayList<>();
+        List<Page> pages = new ArrayList<>();
         try {
             if (headers != null && !headers.isEmpty()) retriever.setDataSource(source, headers);
             else retriever.setDataSource(source);
@@ -83,27 +90,48 @@ public final class ContactSheet {
             int[] cell = SheetSpec.cell(width, height);
             double[] wanted = SheetSpec.times(duration);
             Bitmap previous = null;
+            int kept = 0;
 
+            // Twelve cells make a sheet, and the sheet is drawn and its frames
+            // released before the next twelve are asked for: peak memory is one
+            // sheet's worth of bitmaps, not three.
             for (double t : wanted) {
-                if (System.currentTimeMillis() >= deadline) break;
+                if (System.currentTimeMillis() >= deadline || pages.size() >= SheetSpec.MAX_SHEETS) break;
                 Bitmap frame = frameAt(retriever, (long) (t * 1_000_000L), cell[0], cell[1]);
                 if (frame == null) continue;
                 if (previous != null && frame.sameAs(previous)) { frame.recycle(); continue; }
-                frames.add(frame);
-                kept.add(t);
+                chunk.add(frame);
+                chunkTimes.add(t);
+                // Only a reference for the next sameAs() test — the bitmap itself
+                // belongs to the chunk until flush() has drawn and released it.
                 previous = frame;
+                kept++;
+                if (chunk.size() == SheetSpec.CELLS_PER_SHEET) {
+                    pages.add(flush(chunk, chunkTimes, cell));
+                    previous = null;
+                }
             }
-            if (frames.size() < MIN_USABLE_FRAMES) throw new IllegalStateException("too few frames");
-
-            double[] times = new double[kept.size()];
-            for (int i = 0; i < times.length; i++) times[i] = kept.get(i);
-            byte[] jpeg = draw(frames, times, cell);
-            return new Result(jpeg, times, Math.min(SheetSpec.COLS, times.length),
-                    SheetSpec.rows(times.length), cell[0], cell[1], wanted.length, duration);
+            if (!chunk.isEmpty() && pages.size() < SheetSpec.MAX_SHEETS) {
+                pages.add(flush(chunk, chunkTimes, cell));
+                previous = null;
+            }
+            if (kept < MIN_USABLE_FRAMES || pages.isEmpty()) throw new IllegalStateException("too few frames");
+            return new Result(pages, cell[0], cell[1], wanted.length, duration);
         } finally {
-            for (Bitmap b : frames) if (!b.isRecycled()) b.recycle();
+            for (Bitmap b : chunk) if (!b.isRecycled()) b.recycle();
             try { retriever.release(); } catch (Exception ignored) {}
         }
+    }
+
+    /** Draw the frames held so far into a sheet and let go of them. */
+    private static Page flush(List<Bitmap> chunk, List<Double> chunkTimes, int[] cell) {
+        double[] times = new double[chunkTimes.size()];
+        for (int i = 0; i < times.length; i++) times[i] = chunkTimes.get(i);
+        byte[] jpeg = draw(chunk, times, cell);
+        for (Bitmap b : chunk) if (!b.isRecycled()) b.recycle();
+        chunk.clear();
+        chunkTimes.clear();
+        return new Page(jpeg, times, Math.min(SheetSpec.COLS, times.length), SheetSpec.rows(times.length));
     }
 
     private static byte[] draw(List<Bitmap> frames, double[] times, int[] cell) {
@@ -127,20 +155,23 @@ public final class ContactSheet {
 
             for (int i = 0; i < frames.size(); i++) {
                 Bitmap frame = frames.get(i);
-                int[] origin = SheetSpec.origin(i, cell);
+                // The slot is the cell inset by half a gutter on every side, so two
+                // neighbouring frames are two black pixels apart and the sheet is
+                // still exactly cols*cell_w by rows*cell_h.
+                int[] slot = SheetSpec.frame(i, cell);
                 // Fit, never fill: a crop is exactly where the second kettlebell at
                 // the edge of the frame would have gone missing.
-                float scale = Math.min(cell[0] / (float) frame.getWidth(), cell[1] / (float) frame.getHeight());
+                float scale = Math.min(slot[2] / (float) frame.getWidth(), slot[3] / (float) frame.getHeight());
                 float w = frame.getWidth() * scale, h = frame.getHeight() * scale;
-                float left = origin[0] + (cell[0] - w) / 2f, top = origin[1] + (cell[1] - h) / 2f;
+                float left = slot[0] + (slot[2] - w) / 2f, top = slot[1] + (slot[3] - h) / 2f;
                 canvas.drawBitmap(frame, new Rect(0, 0, frame.getWidth(), frame.getHeight()),
                         new RectF(left, top, left + w, top + h), image);
 
                 String label = SheetSpec.label(times[i]);
                 float pillW = text.measureText(label) + (float) SheetSpec.LABEL_PAD_X * 2;
                 float pillH = lineHeight + (float) SheetSpec.LABEL_PAD_Y * 2;
-                float pillX = origin[0] + (float) SheetSpec.LABEL_INSET;
-                float pillY = origin[1] + cell[1] - (float) SheetSpec.LABEL_INSET - pillH;
+                float pillX = slot[0] + (float) SheetSpec.LABEL_INSET;
+                float pillY = slot[1] + slot[3] - (float) SheetSpec.LABEL_INSET - pillH;
                 canvas.drawRoundRect(new RectF(pillX, pillY, pillX + pillW, pillY + pillH),
                         (float) SheetSpec.LABEL_PILL_RADIUS, (float) SheetSpec.LABEL_PILL_RADIUS, pill);
                 canvas.drawText(label, pillX + (float) SheetSpec.LABEL_PAD_X,
