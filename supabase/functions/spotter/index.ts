@@ -4050,14 +4050,27 @@ async function buildVideoPack(
     tr = src ? await packTranscript(src, p.shortcode, ctx) : NO_TRANSCRIPT;
     seen = await observeFromSheets(frames, tr.transcript, ctx, p.shortcode);
   } else if (reader === "gemini_video" && src) {
-    const both = await settledAll<unknown>([
-      packTranscript(src, p.shortcode, ctx),
+    // Two channels that do not need each other, so they go out together and the
+    // job pays for one round trip instead of two. Each keeps its own failure: a
+    // caption track the CDN refused must not cost the visual read, and a video the
+    // model would not watch must not cost the words. A GuardError is the exception
+    // — a spent budget or a dead deadline stops everything, as it should.
+    let heldGuard: unknown = null;
+    const guarded = <T>(e: unknown, fallback: T): T => {
+      if (e instanceof GuardError) heldGuard = e;
+      else console.error("pack: channel failed for", p.shortcode, String(e).slice(0, 200));
+      return fallback;
+    };
+    const [trR, seenR] = await Promise.all([
+      packTranscript(src, p.shortcode, ctx).catch((e) => guarded(e, NO_TRANSCRIPT)),
       videoTierEnabled()
         ? observeFromVideo(src, p.shortcode, ctx)
-        : Promise.resolve({ obs: null, bytes: 0, detail: "media.video_enabled is off" }),
+          .catch((e) => guarded<ObservationRead>(e, { obs: null, bytes: 0, detail: "read failed" }))
+        : Promise.resolve({ obs: null, bytes: 0, detail: "media.video_enabled is off" } as ObservationRead),
     ]);
-    tr = (both[0] ?? NO_TRANSCRIPT) as PackTranscript;
-    seen = (both[1] ?? { obs: null, bytes: 0, detail: "read failed" }) as ObservationRead;
+    if (heldGuard) throw heldGuard;
+    tr = trR;
+    seen = seenR;
   } else if (src) {
     tr = await packTranscript(src, p.shortcode, ctx);
   }
@@ -8606,15 +8619,6 @@ async function handleWorkerProbe(req: Request): Promise<Response> {
 // ---------- reading the video on request ----------
 
 /**
- * The meta and the card a media-only job starts from.
- *
- * The card comes from the GLOBAL cache row and never from the user's own, and
- * that is not fussiness: finishJob writes what the job produces back to
- * video_cache, so seeding from a row somebody has hand-corrected would push one
- * person's edits into the card every other user receives. With no cache row to
- * seed from, the job starts one step earlier and rebuilds from the caption.
- */
-/**
  * A stored pack this build still understands.
  *
  * Version-gated on its OWN number rather than on the card's, because a pack
@@ -8629,6 +8633,15 @@ function usablePack(row: any): Pack | undefined {
   return pack as Pack;
 }
 
+/**
+ * The meta and the card a media-only job starts from.
+ *
+ * The card comes from the GLOBAL cache row and never from the user's own, and
+ * that is not fussiness: finishJob writes what the job produces back to
+ * video_cache, so seeding from a row somebody has hand-corrected would push one
+ * person's edits into the card every other user receives. With no cache row to
+ * seed from, the job starts one step earlier and rebuilds from the caption.
+ */
 function mediaSeed(cached: any, w: any): { step: string; meta: Meta; card: Card | null } {
   const meta: Meta = {
     caption: cached?.caption ?? w.caption ?? null,
