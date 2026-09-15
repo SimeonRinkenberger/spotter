@@ -36,7 +36,6 @@ public class ShareAccessPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func contactSheet(_ call: CAPPluginCall) {
         let token = call.getString("token") ?? ""
         guard !token.isEmpty else { call.resolve(["ok": false, "reason": "no-session"]); return }
-        let uid = call.getString("uid")
         let shortcode = call.getString("shortcode") ?? ""
         let html = call.getString("html")
         let file = call.getString("path") ?? ""
@@ -50,12 +49,12 @@ public class ShareAccessPlugin: CAPPlugin, CAPBridgedPlugin {
             var outcome: SheetOutcome?
             if !file.isEmpty, !shortcode.isEmpty {
                 let url = URL(fileURLWithPath: file)
-                outcome = await SheetPipeline.runLocal(file: url, shortcode: shortcode, uid: uid,
+                outcome = await SheetPipeline.runLocal(file: url, shortcode: shortcode,
                                                        auth: .bearer(token), deadline: deadline)
                 // A file the page handed over for this purpose is ours to clean up.
                 try? FileManager.default.removeItem(at: url)
             } else if let link = link {
-                outcome = await SheetPipeline.run(pageURL: link, html: html, uid: uid,
+                outcome = await SheetPipeline.run(pageURL: link, html: html,
                                                   auth: .bearer(token), deadline: deadline)
             }
             guard let sheet = outcome else { call.resolve(["ok": false, "reason": "no-frames"]); return }

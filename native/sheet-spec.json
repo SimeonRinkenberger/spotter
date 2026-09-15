@@ -57,8 +57,11 @@
   },
 
   "upload": {
-    "_": "Object path and MIME the server has to authorise, one per sheet. <n> is 1-based and never exceeds grid.max_sheets.",
-    "path": "<uid>/pack/<shortcode>/sheet-<n>.jpg",
+    "_": "ONE authorize per save, then one PUT per sheet. The client never builds an object path: it sends the sizes, the server names the objects and hands back a pre-signed address for each, which is what lets the iOS Share Extension take part at all (it holds the ingest key and no Supabase session). The PUTs carry content_type and no session header; append ?token=<token> only if the address does not already carry one.",
+    "authorize": "POST /api/uploads/authorize",
+    "auth": "session bearer, or x-ingest-key exactly as POST /api/ingest takes it",
+    "request": { "kind": "pack", "shortcode": "<shortcode>", "sheets": [{ "bytes": 0 }] },
+    "response": { "sheets": [{ "path": "<uid>/pack/<shortcode>/sheet-<n>.jpg", "upload_url": "<signed URL>", "token": "<token>" }], "expires_in": 900 },
     "content_type": "image/jpeg"
   },
 

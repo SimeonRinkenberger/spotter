@@ -61,11 +61,6 @@ struct SheetOutcome {
 
 enum SheetPipeline {
     static let functionBase = "https://mtzevoxxpsktmrbbuxva.supabase.co/functions/v1/spotter"
-    static let storageBase = "https://mtzevoxxpsktmrbbuxva.supabase.co/storage/v1"
-    /// The same public anon key the web page ships with; Storage wants it on every
-    /// request even when the bearer token is what actually authorises the write.
-    static let anonKey =
-        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10emV2b3h4cHNrdG1yYmJ1eHZhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgyMjM5ODgsImV4cCI6MjEwMzc5OTk4OH0._vpNhLJtv2bVGgXXClva9O5cX8Y5eJdTgbgAO81NnmU"
 
     /**
      * The TikTok path: watch page, MP4, sheet, upload.
@@ -76,7 +71,7 @@ enum SheetPipeline {
      * watch page set moments earlier, and a caller's cached HTML has no cookies
      * attached to it.
      */
-    static func run(pageURL: URL, html: String?, uid: String?,
+    static func run(pageURL: URL, html: String?,
                     auth: SheetAuth, deadline: Date) async -> SheetOutcome? {
         let started = Date()
         guard TikTokMedia.isTikTok(pageURL) else { return nil }
@@ -105,7 +100,7 @@ enum SheetPipeline {
         // Never persist somebody else's media, on any path out of this function.
         defer { try? FileManager.default.removeItem(at: mp4) }
 
-        return await finish(mp4: mp4, duration: video.duration, shortcode: shortcode, uid: uid,
+        return await finish(mp4: mp4, duration: video.duration, shortcode: shortcode,
                             auth: auth, deadline: deadline, started: started, session: session)
     }
 
@@ -113,18 +108,18 @@ enum SheetPipeline {
      * The upload path: a file already on the phone, so no page, no cookies and no
      * download budget — the same builder from step three onwards.
      */
-    static func runLocal(file: URL, shortcode: String, uid: String?,
+    static func runLocal(file: URL, shortcode: String,
                          auth: SheetAuth, deadline: Date) async -> SheetOutcome? {
         let started = Date()
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 15
         let session = URLSession(configuration: config)
         defer { session.finishTasksAndInvalidate() }
-        return await finish(mp4: file, duration: 0, shortcode: shortcode, uid: uid,
+        return await finish(mp4: file, duration: 0, shortcode: shortcode,
                             auth: auth, deadline: deadline, started: started, session: session)
     }
 
-    private static func finish(mp4: URL, duration: Double, shortcode: String, uid: String?,
+    private static func finish(mp4: URL, duration: Double, shortcode: String,
                                auth: SheetAuth, deadline: Date, started: Date,
                                session: URLSession) async -> SheetOutcome? {
         let built: ContactSheetResult
@@ -132,15 +127,17 @@ enum SheetPipeline {
             built = try await ContactSheetBuilder.build(mp4: mp4, duration: duration, deadline: deadline)
         } catch { return nil }
 
-        // Uploaded in order and counted as they land. Past the deadline, or after
-        // an upload that would not go, whatever is already up is what goes with
-        // the save — the sheets are in time order, so a short set is the first
-        // part of the video rather than a hole in the middle of it.
+        // One authorize for the whole save, then the bytes. Uploaded in order and
+        // counted as they land: past the deadline, or after a PUT that would not
+        // go, whatever is already up is what goes with the save — the sheets are
+        // in time order, so a short set is the first part of the video rather
+        // than a hole in the middle of it.
+        let slots = await authorize(shortcode: shortcode, sizes: built.pages.map { $0.jpeg.count },
+                                    auth: auth, session: session)
         var uploaded: [UploadedSheet] = []
-        for (index, page) in built.pages.enumerated() {
-            guard let path = await upload(jpeg: page.jpeg, shortcode: shortcode, index: index,
-                                          uid: uid, auth: auth, session: session) else { break }
-            uploaded.append(UploadedSheet(path: path, cols: page.cols, rows: page.rows,
+        for (index, page) in built.pages.enumerated() where index < slots.count {
+            guard await put(page.jpeg, to: slots[index].url, session: session) else { break }
+            uploaded.append(UploadedSheet(path: slots[index].path, cols: page.cols, rows: page.rows,
                                           cellW: built.cellW, cellH: built.cellH,
                                           times: page.times, bytes: page.jpeg.count))
             if Date() >= deadline { break }
@@ -161,69 +158,68 @@ enum SheetPipeline {
 
     // MARK: - storage
 
+    /// A place the server has agreed to accept one sheet: where the bytes go, and
+    /// what to call the object in the ingest body afterwards.
+    private struct Slot {
+        let path: String
+        let url: URL
+    }
+
     /**
-     * Authorise, then put the bytes. Returns the object path the server accepted.
+     * One authorize for the whole save.
      *
-     * TWO SHAPES, deliberately. What `/api/uploads/authorize` answers TODAY is
-     * `{status:"ok", path}` and nothing else, and the direct Storage write that
-     * follows it needs a Supabase session — which the app has and the extension
-     * does not. So this also reads an `upload_url` out of the reply and, when one
-     * is there, puts the bytes at that pre-signed address with no session at all.
-     * That single extra field is what the Share Extension needs from vcp-a; until
-     * it exists the extension's authorize call fails its auth gate, `nil` comes
-     * back, and the share saves without frames exactly as it does today.
+     * Every sheet's size goes up together and the server answers with a
+     * pre-signed address for each, which is what lets the Share Extension take
+     * part at all: it holds the 32-hex ingest key and no Supabase session, so it
+     * could never write to Storage itself. The PUTs that follow carry no session
+     * header on either path — the token in the address is the whole authority,
+     * and it is good for fifteen minutes, which is a hundred times the budget.
      */
-    private static func upload(jpeg: Data, shortcode: String, index: Int, uid: String?,
-                               auth: SheetAuth, session: URLSession) async -> String? {
-        var body: [String: Any] = [
-            "bytes": jpeg.count,
-            "content_type": SheetSpec.contentType,
+    private static func authorize(shortcode: String, sizes: [Int],
+                                  auth: SheetAuth, session: URLSession) async -> [Slot] {
+        let body: [String: Any] = [
             "kind": "pack",
             "shortcode": shortcode,
-            "sheet": index + 1
+            "sheets": sizes.map { ["bytes": $0] }
         ]
-        if let uid = uid, !uid.isEmpty {
-            body["path"] = SheetSpec.objectPath(uid: uid, shortcode: shortcode, index: index)
-        }
-
         var request = URLRequest(url: URL(string: functionBase + "/api/uploads/authorize")!)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        apply(auth, to: &request)
+        switch auth {
+        case .bearer(let token): request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
+        case .ingestKey(let key): request.setValue(key, forHTTPHeaderField: "x-ingest-key")
+        }
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
         guard let (data, response) = try? await session.data(for: request),
               let http = response as? HTTPURLResponse, http.statusCode == 200,
               let reply = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-              (reply["status"] as? String) == "ok",
-              let path = (reply["path"] as? String) ?? body["path"] as? String else { return nil }
+              let sheets = reply["sheets"] as? [[String: Any]] else { return [] }
 
-        let signed = (reply["upload_url"] as? String).flatMap(URL.init(string:))
-        var put = URLRequest(url: signed ?? URL(string: storageBase + "/object/uploads/" + path)!)
-        put.httpMethod = "PUT"
-        put.setValue(SheetSpec.contentType, forHTTPHeaderField: "Content-Type")
-        put.setValue(anonKey, forHTTPHeaderField: "apikey")
-        put.setValue("false", forHTTPHeaderField: "x-upsert")
-        if let token = reply["token"] as? String {
-            put.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
-        } else if signed == nil {
-            apply(auth, to: &put, storage: true)
+        var slots: [Slot] = []
+        for sheet in sheets {
+            guard let path = sheet["path"] as? String, !path.isEmpty,
+                  let address = sheet["upload_url"] as? String, !address.isEmpty else { break }
+            // The token may already be in the address; appending a second copy
+            // would be the kind of bug that only shows up on the server's next
+            // refactor, so it is added only when it is missing.
+            var full = address
+            if let token = sheet["token"] as? String, !token.isEmpty,
+               !address.contains("token=") {
+                full += (address.contains("?") ? "&" : "?") + "token=" + token
+            }
+            guard let url = URL(string: full) else { break }
+            slots.append(Slot(path: path, url: url))
         }
-
-        guard let (_, upResponse) = try? await session.upload(for: put, from: jpeg),
-              let code = (upResponse as? HTTPURLResponse)?.statusCode,
-              (200...299).contains(code) else { return nil }
-        return path
+        return slots
     }
 
-    /// The extension's key is not a bearer token and Storage would not know what to
-    /// do with it, so it is only ever sent to the function's own endpoints.
-    private static func apply(_ auth: SheetAuth, to request: inout URLRequest, storage: Bool = false) {
-        switch auth {
-        case .bearer(let token):
-            request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
-        case .ingestKey(let key):
-            if !storage { request.setValue(key, forHTTPHeaderField: "x-ingest-key") }
-        }
+    private static func put(_ jpeg: Data, to url: URL, session: URLSession) async -> Bool {
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.setValue(SheetSpec.contentType, forHTTPHeaderField: "Content-Type")
+        guard let (_, response) = try? await session.upload(for: request, from: jpeg),
+              let code = (response as? HTTPURLResponse)?.statusCode else { return false }
+        return (200...299).contains(code)
     }
 }

@@ -70,8 +70,6 @@ export function label(seconds) {
   return Math.floor(whole / 60) + ':' + String(whole % 60).padStart(2, '0');
 }
 
-export const objectPath = (uid, shortcode, i) => `${uid}/pack/${shortcode}/sheet-${i + 1}.jpg`;
-
 // Durations that matter: zero and nonsense (a retriever that could not read the
 // header), the WODfather clip the design is built on, the floor and the cap, and
 // the clip too short to hold the half-second inset at both ends.
@@ -107,8 +105,7 @@ export function expected() {
     cells: SIZES.map(([w, h]) => cell(w, h)),
     canvases: COUNTS.map(n => canvas(n, [C.portrait.w, C.portrait.h])),
     origins: [0, 3, 4, 11].map(i => origin(i, [C.portrait.w, C.portrait.h])),
-    labels: LABEL_SECONDS.map(label),
-    path: objectPath('11111111-2222-3333-4444-555555555555', 'tt-7679960172495785246', 0)
+    labels: LABEL_SECONDS.map(label)
   };
 }
 

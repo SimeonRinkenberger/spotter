@@ -119,9 +119,7 @@ public final class SheetCheck {
             if (i > 0) o.append(',');
             o.append("\\"").append(SheetSpec.label(labelSeconds[i])).append("\\"");
         }
-        o.append("],\\"path\\":\\"")
-         .append(SheetSpec.objectPath("11111111-2222-3333-4444-555555555555", "tt-7679960172495785246", 0))
-         .append("\\"}");
+        o.append("]}");
 
         int[] wide = { SheetSpec.LANDSCAPE_W, SheetSpec.LANDSCAPE_H };
         int[] o4 = SheetSpec.origin(4, wide);
@@ -165,7 +163,6 @@ const inset = spec.grid.gutter_px / 2;
 assert.deepEqual(actual.frames[0], [inset, inset, box[0] - spec.grid.gutter_px, box[1] - spec.grid.gutter_px]);
 assert.deepEqual(actual.sheetCounts, [1, 1, 1, 2, 2, 3, 3, 3]);
 assert.deepEqual(actual.lastSheetCells, [1, 8, 12, 1, 12, 1, 11, 12]);
-assert.match(actual.path, /^[0-9a-f-]{36}\/pack\/[a-z0-9-]+\/sheet-1\.jpg$/);
 assert.deepEqual(actual.labels, ['0:00', '0:00', '0:04', '0:10', '1:00', '1:24', '2:05', '9:59']);
 assert.deepEqual(actual.keeps[0], [0, 2, 1, 4, 7, 9]);
 for (const kept of actual.keeps) {

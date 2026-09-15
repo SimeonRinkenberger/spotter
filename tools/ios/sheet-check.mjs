@@ -45,9 +45,7 @@ let out: [String: Any] = [
   "cells": sizes.map { s -> [Int] in let c = SheetSpec.cell(videoWidth: s[0], videoHeight: s[1]); return [c.w, c.h] },
   "canvases": counts.map { n -> [Int] in let c = SheetSpec.canvas(count: n, cell: box); return [c.w, c.h] },
   "origins": [0, 3, 4, 11].map { i -> [Int] in let o = SheetSpec.origin(index: i, cell: box); return [o.x, o.y] },
-  "labels": labelSeconds.map { SheetSpec.label(seconds: $0) },
-  "path": SheetSpec.objectPath(uid: "11111111-2222-3333-4444-555555555555",
-                               shortcode: "tt-7679960172495785246", index: 0)
+  "labels": labelSeconds.map { SheetSpec.label(seconds: $0) }
 ]
 // Portrait cells are what a TikTok save actually produces; the landscape box has
 // to tile without overlap too, so it is checked on the way past.
@@ -116,7 +114,6 @@ for (const n of FRAME_TOTALS) {
 }
 assert.deepEqual(actual.sheetCounts, [1, 1, 1, 2, 2, 3, 3, 3]);
 assert.deepEqual(actual.lastSheetCells, [1, 8, 12, 1, 12, 1, 11, 12]);
-assert.match(actual.path, /^[0-9a-f-]{36}\/pack\/[a-z0-9-]+\/sheet-1\.jpg$/);
 assert.deepEqual(actual.labels, ['0:00', '0:00', '0:04', '0:10', '1:00', '1:24', '2:05', '9:59']);
 
 // A duplicate sync sample, a NaN and a negative from a generator that gave up on
@@ -128,4 +125,4 @@ for (const kept of actual.keeps) {
   for (let i = 1; i < t.length; i++) assert(t[i] - t[i - 1] >= spec.frames.min_gap_s, 'kept frames too close');
 }
 
-console.log('PASS iOS sheet spec: frame count floor/cap/NaN, uniform times inside the duration, portrait/landscape/square cells, 4x3 tiling with inside-cell gutters, 1 to 3 sheets with every frame placed once, M:SS labels across the minute boundary, object path — all against native/sheet-spec.json');
+console.log('PASS iOS sheet spec: frame count floor/cap/NaN, uniform times inside the duration, portrait/landscape/square cells, 4x3 tiling with inside-cell gutters, 1 to 3 sheets with every frame placed once, M:SS labels across the minute boundary — all against native/sheet-spec.json');

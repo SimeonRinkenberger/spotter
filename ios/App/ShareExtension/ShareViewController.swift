@@ -129,7 +129,7 @@ final class ShareViewController: UIViewController {
         if TikTokMedia.isTikTok(link) {
             statusLabel.text = "Reading the video…"
             let deadline = Date().addingTimeInterval(SheetSpec.budgetMs / 1000)
-            if let sheet = await SheetPipeline.run(pageURL: link, html: nil, uid: nil,
+            if let sheet = await SheetPipeline.run(pageURL: link, html: nil,
                                                    auth: .ingestKey(key), deadline: deadline) {
                 payload["frames"] = sheet.frames
             }

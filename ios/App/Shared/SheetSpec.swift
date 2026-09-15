@@ -160,9 +160,4 @@ enum SheetSpec {
         let whole = max(0, Int((seconds.isFinite ? seconds : 0).rounded()))
         return "\(whole / 60):" + String(format: "%02d", whole % 60)
     }
-
-    /// `<uid>/pack/<shortcode>/sheet-<n>.jpg`, 1-based, per the server contract.
-    static func objectPath(uid: String, shortcode: String, index: Int) -> String {
-        "\(uid)/pack/\(shortcode)/sheet-\(index + 1).jpg"
-    }
 }

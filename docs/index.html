@@ -13767,7 +13767,7 @@ details.details-moving > :not(summary) {
   function deviceFrames(opts) {
     return !native || !native.contactSheet ? Promise.resolve(null) : sb.auth.getSession().then(function(r) {
       var s = r.data.session;
-      return s ? (opts.uid = s.user.id, opts.token = s.access_token, native.contactSheet(opts)) : null;
+      return s ? (opts.token = s.access_token, native.contactSheet(opts)) : null;
     }).then(function(out) {
       return out && out.ok ? out.frames : null;
     }).catch(function() {

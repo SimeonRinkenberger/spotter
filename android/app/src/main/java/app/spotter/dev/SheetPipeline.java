@@ -30,10 +30,6 @@ public final class SheetPipeline {
     private SheetPipeline() {}
 
     static final String FUNCTION_BASE = "https://mtzevoxxpsktmrbbuxva.supabase.co/functions/v1/spotter";
-    static final String STORAGE_BASE = "https://mtzevoxxpsktmrbbuxva.supabase.co/storage/v1";
-    /** The same public anon key the web page ships with; Storage wants it present. */
-    static final String ANON_KEY =
-            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10emV2b3h4cHNrdG1yYmJ1eHZhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgyMjM5ODgsImV4cCI6MjEwMzc5OTk4OH0._vpNhLJtv2bVGgXXClva9O5cX8Y5eJdTgbgAO81NnmU";
 
     public static final class Outcome {
         public final JSONObject frames;
@@ -47,7 +43,7 @@ public final class SheetPipeline {
     }
 
     /** The TikTok path. No download: the retriever reads ranges off the CDN itself. */
-    public static Outcome run(String pageUrl, String uid, String token, long deadline) {
+    public static Outcome run(String pageUrl, String token, long deadline) {
         long started = System.currentTimeMillis();
         try {
             if (!TikTokPage.isTikTok(pageUrl)) return null;
@@ -58,35 +54,39 @@ public final class SheetPipeline {
             if (shortcode == null || video == null || System.currentTimeMillis() >= deadline) return null;
             Map<String, String> headers = TikTokPage.headers(page.cookie);
             return finish(ContactSheet.build(video.playAddr, headers, deadline),
-                    shortcode, uid, token, started);
+                    shortcode, token, started);
         } catch (Exception e) {
             return null;
         }
     }
 
     /** The upload path: a file already on the phone, same builder from here on. */
-    public static Outcome runLocal(String file, String shortcode, String uid, String token, long deadline) {
+    public static Outcome runLocal(String file, String shortcode, String token, long deadline) {
         long started = System.currentTimeMillis();
         try {
-            return finish(ContactSheet.build(file, null, deadline), shortcode, uid, token, started);
+            return finish(ContactSheet.build(file, null, deadline), shortcode, token, started);
         } catch (Exception e) {
             return null;
         }
     }
 
     private static Outcome finish(ContactSheet.Result built, String shortcode,
-                                  String uid, String token, long started) throws Exception {
-        // Uploaded in order and counted as they land. After an upload that would
-        // not go, whatever is already up is what goes with the save — the sheets
-        // are in time order, so a short set is the first part of the video rather
-        // than a hole in the middle of it.
+                                  String token, long started) throws Exception {
+        // One authorize for the whole save, then the bytes. Uploaded in order and
+        // counted as they land: after a PUT that would not go, whatever is already
+        // up is what goes with the save — the sheets are in time order, so a short
+        // set is the first part of the video rather than a hole in the middle.
+        int[] sizes = new int[built.pages.size()];
+        for (int i = 0; i < sizes.length; i++) sizes[i] = built.pages.get(i).jpeg.length;
+        Slot[] slots = authorize(shortcode, sizes, token);
+
         JSONArray sheets = new JSONArray();
         String first = null;
         int bytes = 0, kept = 0;
-        for (int i = 0; i < built.pages.size(); i++) {
+        for (int i = 0; i < built.pages.size() && i < slots.length; i++) {
             ContactSheet.Page page = built.pages.get(i);
-            String path = upload(page.jpeg, shortcode, i, uid, token);
-            if (path == null) break;
+            if (!put(page.jpeg, slots[i].url)) break;
+            String path = slots[i].path;
             if (first == null) first = path;
             JSONArray times = new JSONArray();
             for (double t : page.times) times.put(t);
@@ -106,28 +106,25 @@ public final class SheetPipeline {
                 System.currentTimeMillis() - started);
     }
 
+    /** A place the server has agreed to accept one sheet. */
+    private static final class Slot {
+        final String path, url;
+        Slot(String path, String url) { this.path = path; this.url = url; }
+    }
+
     /**
-     * Authorise, then put the bytes. Returns the object path the server accepted.
+     * One authorize for the whole save.
      *
-     * What /api/uploads/authorize answers TODAY is {status:"ok", path} and the
-     * direct Storage write that follows needs the user's session, which this
-     * caller has. An `upload_url` in the reply is used instead when it is there —
-     * that is the field the iOS Share Extension needs, and reading it here keeps
-     * the two clients on one contract.
+     * Every sheet's size goes up together and the server answers with a
+     * pre-signed address for each; the PUTs that follow carry no session header,
+     * because the token in the address is the whole authority and it is good for
+     * fifteen minutes — a hundred times the budget this all has to fit inside.
      */
-    private static String upload(byte[] jpeg, String shortcode, int index, String uid, String token)
-            throws Exception {
+    private static Slot[] authorize(String shortcode, int[] sizes, String token) throws Exception {
+        JSONArray wanted = new JSONArray();
+        for (int size : sizes) wanted.put(new JSONObject().put("bytes", size));
         JSONObject body = new JSONObject()
-                .put("bytes", jpeg.length)
-                .put("content_type", SheetSpec.CONTENT_TYPE)
-                .put("kind", "pack")
-                .put("shortcode", shortcode)
-                .put("sheet", index + 1);
-        String guess = null;
-        if (uid != null && !uid.isEmpty()) {
-            guess = SheetSpec.objectPath(uid, shortcode, index);
-            body.put("path", guess);
-        }
+                .put("kind", "pack").put("shortcode", shortcode).put("sheets", wanted);
 
         HttpURLConnection connection = (HttpURLConnection) new URL(FUNCTION_BASE + "/api/uploads/authorize").openConnection();
         JSONObject reply;
@@ -142,19 +139,36 @@ public final class SheetPipeline {
             try (OutputStream out = connection.getOutputStream()) {
                 out.write(body.toString().getBytes(StandardCharsets.UTF_8));
             }
-            if (connection.getResponseCode() != 200) return null;
+            if (connection.getResponseCode() != 200) return new Slot[0];
             reply = new JSONObject(read(connection.getInputStream()));
         } finally {
             connection.disconnect();
         }
-        if (!"ok".equals(reply.optString("status"))) return null;
-        String path = reply.optString("path", guess == null ? "" : guess);
-        if (path.isEmpty()) return null;
 
-        String signed = reply.optString("upload_url", "");
-        HttpURLConnection put = (HttpURLConnection) new URL(
-                signed.isEmpty() ? STORAGE_BASE + "/object/uploads/" + path : signed).openConnection();
+        JSONArray granted = reply.optJSONArray("sheets");
+        if (granted == null) return new Slot[0];
+        Slot[] slots = new Slot[granted.length()];
+        int n = 0;
+        for (int i = 0; i < granted.length(); i++) {
+            JSONObject sheet = granted.optJSONObject(i);
+            if (sheet == null) break;
+            String path = sheet.optString("path", ""), address = sheet.optString("upload_url", "");
+            if (path.isEmpty() || address.isEmpty()) break;
+            // The token may already be in the address; a second copy would be the
+            // kind of bug that only shows up on the server's next refactor.
+            String ticket = sheet.optString("token", "");
+            if (!ticket.isEmpty() && !address.contains("token=")) {
+                address += (address.contains("?") ? "&" : "?") + "token=" + ticket;
+            }
+            slots[n++] = new Slot(path, address);
+        }
+        return java.util.Arrays.copyOf(slots, n);
+    }
+
+    private static boolean put(byte[] jpeg, String address) {
+        HttpURLConnection put = null;
         try {
+            put = (HttpURLConnection) new URL(address).openConnection();
             put.setInstanceFollowRedirects(false);
             put.setConnectTimeout(8000);
             put.setReadTimeout(20000);
@@ -162,15 +176,13 @@ public final class SheetPipeline {
             put.setDoOutput(true);
             put.setFixedLengthStreamingMode(jpeg.length);
             put.setRequestProperty("Content-Type", SheetSpec.CONTENT_TYPE);
-            put.setRequestProperty("apikey", ANON_KEY);
-            put.setRequestProperty("x-upsert", "false");
-            String bearer = reply.optString("token", "");
-            put.setRequestProperty("Authorization", "Bearer " + (bearer.isEmpty() ? token : bearer));
             try (OutputStream out = put.getOutputStream()) { out.write(jpeg); }
             int status = put.getResponseCode();
-            return status >= 200 && status < 300 ? path : null;
+            return status >= 200 && status < 300;
+        } catch (Exception e) {
+            return false;
         } finally {
-            put.disconnect();
+            if (put != null) put.disconnect();
         }
     }
 

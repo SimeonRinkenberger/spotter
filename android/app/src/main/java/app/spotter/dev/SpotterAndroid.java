@@ -54,7 +54,6 @@ public class SpotterAndroid extends Plugin {
         String url = call.getString("url", "");
         String file = call.getString("path", "");
         String shortcode = call.getString("shortcode", "");
-        String uid = call.getString("uid", "");
         // The page may shorten the budget — it knows how long the user has been
         // watching a spinner — but may not extend it past half a minute.
         double budget = Math.min(call.getDouble("timeout", (double) SheetSpec.BUDGET_MS), 30000);
@@ -63,11 +62,11 @@ public class SpotterAndroid extends Plugin {
         sheets.execute(() -> {
             SheetPipeline.Outcome outcome = null;
             if (!file.isEmpty() && !shortcode.isEmpty()) {
-                outcome = SheetPipeline.runLocal(file, shortcode, uid, token, deadline);
+                outcome = SheetPipeline.runLocal(file, shortcode, token, deadline);
                 // A file the page handed over for this purpose is ours to clean up.
                 try { new File(file).delete(); } catch (Exception ignored) {}
             } else if (!url.isEmpty()) {
-                outcome = SheetPipeline.run(url, uid, token, deadline);
+                outcome = SheetPipeline.run(url, token, deadline);
             }
             if (outcome == null) { call.resolve(new JSObject().put("ok", false).put("reason", "no-frames")); return; }
             call.resolve(new JSObject()

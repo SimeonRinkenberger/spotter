@@ -10626,7 +10626,6 @@ export const APP = String.raw`
     return sb.auth.getSession().then(function (r) {
       var s = r.data.session;
       if (!s) return null;
-      opts.uid = s.user.id;
       opts.token = s.access_token;
       return native.contactSheet(opts);
     }).then(function (out) {

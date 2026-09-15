@@ -161,9 +161,4 @@ public final class SheetSpec {
         long whole = Math.max(0, Math.round(Double.isFinite(seconds) ? seconds : 0));
         return whole / 60 + String.format(Locale.US, ":%02d", whole % 60);
     }
-
-    /** {@code <uid>/pack/<shortcode>/sheet-<n>.jpg}, 1-based, per the server contract. */
-    public static String objectPath(String uid, String shortcode, int index) {
-        return uid + "/pack/" + shortcode + "/sheet-" + (index + 1) + ".jpg";
-    }
 }
