@@ -24,6 +24,7 @@
 
 import {
   assemblePack, bestSeenFact, deltaFrom, type Frames, mergeCues, type Observation, OBSERVE_PROMPT,
+  packInTimeOrder, sharesHeadNoun,
   type Pack, PACK_V, packBlock, parseFrames, parseStampedTranscript, parseVtt,
   readObservation, secondsToMmss, sheetPathFor, SHEET_MAX_BYTES, sheetsPrompt,
   type TranscriptSeg, titleCase, validatePack, vttCues,
@@ -104,7 +105,7 @@ function lift(name: string): string {
 // mentions half the file otherwise.
 const STUBS = "import { normText } from '" +
   new URL("supabase/functions/spotter/evidence.ts", ROOT).href + "';\n" +
-  "import { bestSeenFact } from '" +
+  "import { bestSeenFact, packInTimeOrder, sharesHeadNoun } from '" +
   new URL("supabase/functions/spotter/pack.ts", ROOT).href + "';\n" +
   "type Pack = Record<string, any>;\n" +
   "type Card = { blocks: { exercises: any[] }[] };\n" +
@@ -892,6 +893,118 @@ eq("and to nothing when the camera saw nothing", bestSeenFact([], null), null);
   check("the sheets prompt asks which surface bears the weight",
     prompt2.includes("say which surface actually bears the weight (on the object, or on the " +
       "floor next to it); if the frames cannot show it, say unsure rather than guessing."));
+}
+
+// ---------- 13. what the first live GEMINI fallback got wrong ----------
+//
+// Read at low resolution in 19.5 s, 3,641 tokens in and 2,644 out — and the output
+// half was three quarters of the bill, because every field came back as a sentence.
+
+// 1. Terseness, stated in the prompt rather than trimmed after the fact: a field
+//    that was never written costs nothing to throw away.
+check("the observe prompt caps every string field at 12 words",
+  OBSERVE_PROMPT.includes("Every string field is at most 12 words, `range_of_motion` at most 20"));
+check("and asks for fragments rather than sentences",
+  /Write fragments, not sentences/.test(OBSERVE_PROMPT));
+check("and forbids repeating the movement's name inside its own fields",
+  OBSERVE_PROMPT.includes("Never repeat the movement's name inside its own fields"));
+check("and the schema is untouched",
+  OBSERVE_PROMPT.includes('"range_of_motion": string, "tempo": string, "reps_visible": number or null'));
+
+// 2. delta came back as the observation's whole load sentence, pasted:
+//    "load Dumbbell resting on floor pulled to waist level; with dumbbell".
+{
+  const row = deltaFrom("renegade-row", {
+    equipment: ["dumbbell"],            // the catalog entry says "dumbbells"
+    hand_placement: "one hand on the floor, one on the bell",
+    surface: null, grip_width: null,
+    load_position: "Dumbbell resting on floor pulled to waist level",
+    stance: null, unilateral: true, tempo: null, range_of_motion: null,
+  });
+  check("a dumbbell row whose catalog entry says dumbbells is not a variation on itself",
+    row === null || !/dumbbell/i.test(row), JSON.stringify(row));
+
+  eq("singular, plural and abbreviation are one implement", [
+    deltaFrom("goblet-squat", { ...pack.exercises[3].variant, equipment: ["kettlebells"] }),
+    deltaFrom("goblet-squat", { ...pack.exercises[3].variant, equipment: ["kb"] }),
+    deltaFrom("goblet-squat", { ...pack.exercises[3].variant, equipment: ["dumbbell"] }),
+  ], [null, null, null]);
+
+  // Every clause is an attribute, short enough to read at a glance.
+  const push = String(pack.exercises[0].delta_from_standard);
+  eq("the push-up delta is the attribute, not the sentence", push, "hands on the kettlebell handle");
+  for (const ex of pack.exercises) {
+    const d = ex.delta_from_standard;
+    if (!d) continue;
+    for (const clause of d.split(";")) {
+      check("delta clause '" + clause.trim() + "' is at most 8 words",
+        clause.trim().split(/\s+/).length <= 8);
+    }
+  }
+  check("and the implement is not named twice in one delta", !/;\s*with kettlebell/.test(push));
+
+  // A bodyweight entry performed with an implement still says so.
+  check("an implement the standard version does not have is still a delta",
+    /kettlebell/.test(String(deltaFrom("diamond-push-up", {
+      ...pack.exercises[0].variant, surface: null,
+    }))), String(deltaFrom("diamond-push-up", { ...pack.exercises[0].variant, surface: null })));
+}
+
+// 3. Two of four exercises went unstamped, because a creator's compound name
+//    shares no wording with what a camera calls the same movement.
+{
+  check("a compound name shares its head noun with the camera's name",
+    sharesHeadNoun("Squat Alt Knee Drive Twist", "squat with alternating knee drive and torso twist"));
+  check("and so does a two-movement name",
+    sharesHeadNoun("Sumo Squat Front Raise Calf Raise", "sumo squat into front raise"));
+  check("but two different movements share nothing",
+    !sharesHeadNoun("Renegade Row", "Goblet Squat"));
+  check("and a name with no movement noun in it never aligns",
+    !sharesHeadNoun("Complex Fives", "goblet squat"));
+
+  check("a pack whose movements run forwards is alignable", packInTimeOrder(pack));
+  check("one that jumps backwards is not", !packInTimeOrder({
+    ...pack,
+    exercises: [pack.exercises[3], pack.exercises[0], pack.exercises[1], pack.exercises[2], pack.exercises[4]],
+  } as Pack));
+
+  // Four names a camera would never produce, in the card's order.
+  const renamed = {
+    blocks: [{
+      exercises: [
+        "Push Up Complex On Bell", "Deadlift Into High Pull",
+        "Two Hand Swing", "Deep Goblet Squat", "Overhead Press Finisher",
+      ].map((n) => M.normalizeExercise({ name: n })),
+    }],
+  };
+  for (const ex of renamed.blocks[0].exercises) ex.canonical_id = null;
+  M.applyPack(renamed, pack);
+  const stamped = renamed.blocks[0].exercises.filter((e: any) => e.as_performed).length;
+  check("every exercise is stamped when the counts, the order and the head nouns agree",
+    stamped === 5, stamped + " of 5");
+  eq("and by position, so the fourth card row gets the fourth segment",
+    renamed.blocks[0].exercises[3].t0, pack.exercises[3].t0);
+
+  // The guard: same count, same order, nothing in common.
+  const unrelated = {
+    blocks: [{
+      exercises: ["Bicep Curl", "Plank Hold", "Calf Raise", "Box Jump", "Wall Sit"]
+        .map((n) => M.normalizeExercise({ name: n })),
+    }],
+  };
+  for (const ex of unrelated.blocks[0].exercises) ex.canonical_id = null;
+  M.applyPack(unrelated, pack);
+  eq("five unrelated names are left unstamped rather than stapled to the list",
+    unrelated.blocks[0].exercises.filter((e: any) => e.as_performed).length, 0);
+
+  // A different count is not an alignment at all.
+  const short = {
+    blocks: [{ exercises: [M.normalizeExercise({ name: "Push Up Complex On Bell" })] }],
+  };
+  short.blocks[0].exercises[0].canonical_id = null;
+  M.applyPack(short, pack);
+  eq("a card with fewer exercises than the camera saw does not align by order",
+    short.blocks[0].exercises[0].as_performed, null);
 }
 
 eq("title case leaves the little words alone",

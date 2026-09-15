@@ -67,7 +67,8 @@ import {
 import {
   assemblePack, type Frames, type Observation, OBSERVE_PROMPT, type Pack, PACK_V,
   packBlock, type PackExercise, type PackReader, parseFrames, parseStampedTranscript,
-  parseVtt, readObservation, secondsToMmss, bestSeenFact, type Sheet, SHEET_MAX, SHEET_MAX_BYTES,
+  packInTimeOrder, parseVtt, readObservation, secondsToMmss, sharesHeadNoun, bestSeenFact,
+  type Sheet, SHEET_MAX, SHEET_MAX_BYTES,
   sheetPathFor, sheetsPrompt, type TranscriptSeg, type TranscriptSource, validatePack,
   type VttCue, vttCues,
 } from "./pack.ts";
@@ -5262,30 +5263,65 @@ function packEvidence(pe: PackExercise): Evidence | null {
  */
 function applyPack(card: Card, pack: Pack | undefined): void {
   if (!pack?.exercises?.length) return;
+  const flat: Exercise[] = [];
+  for (const b of card.blocks) for (const ex of b.exercises) flat.push(ex);
   const used = new Set<number>();
-  let stamped = 0;
-  for (const b of card.blocks) {
-    for (const ex of b.exercises) {
-      const pe = matchPackExercise(pack, ex, used);
-      if (!pe) continue;
+  const hit: (PackExercise | null)[] = flat.map(() => null);
+
+  // Pass one: the catalog id, then the words. Whole-card before anything
+  // positional, so an early guess cannot steal a segment that a later exercise
+  // would have matched outright.
+  for (let k = 0; k < flat.length; k++) {
+    const pe = matchPackExercise(pack, flat[k], used);
+    if (pe) { used.add(pe.i); hit[k] = pe; }
+  }
+
+  // Pass two: position, and only when position means something.
+  //
+  // The first live fallback stamped 2 of 4 exercises, because a creator's compound
+  // name — "Squat Alt Knee Drive Twist" — shares no wording with what a camera
+  // calls the same movement. When the camera counted the same number of movements
+  // as the card lists and saw them in the order the card lists them, the fourth
+  // segment IS the fourth exercise. The head-noun guard is what stops that from
+  // becoming an assumption: two lists of four that agree on nothing are two
+  // different readings, not an alignment.
+  let byOrder = 0;
+  if (pack.exercises.length === flat.length && packInTimeOrder(pack)) {
+    for (let k = 0; k < flat.length; k++) {
+      if (hit[k]) continue;
+      const pe = pack.exercises[k];
+      if (!pe || used.has(pe.i)) continue;
+      const agrees = sharesHeadNoun(flat[k].name, pe.name_shown) ||
+        (!!pe.name_said && sharesHeadNoun(flat[k].name, pe.name_said));
+      if (!agrees) continue;
       used.add(pe.i);
-      stamped++;
-      ex.as_performed = pe.variant;
-      ex.delta = pe.delta_from_standard;
-      ex.t0 = pe.t0;
-      ex.t1 = pe.t1;
-      // The pack canonicalized with the SEEN equipment in hand, which is the tie
-      // the card's name alone could not break. It fills a gap, never overrules.
-      if (!ex.canonical_id && pe.canonical_id) ex.canonical_id = pe.canonical_id;
-      const ev = packEvidence(pe);
-      if (ev) {
-        ex.evidence = ev;
-        delete ex.evidence_quote;
-      }
+      hit[k] = pe;
+      byOrder++;
     }
   }
-  console.log("pack: stamped", stamped, "of", countExercises(card), "exercise(s) on",
-    pack.shortcode, "read by", pack.reader);
+
+  let stamped = 0;
+  for (let k = 0; k < flat.length; k++) {
+    const pe = hit[k];
+    if (!pe) continue;
+    const ex = flat[k];
+    stamped++;
+    ex.as_performed = pe.variant;
+    ex.delta = pe.delta_from_standard;
+    ex.t0 = pe.t0;
+    ex.t1 = pe.t1;
+    // The pack canonicalized with the SEEN equipment in hand, which is the tie
+    // the card's name alone could not break. It fills a gap, never overrules.
+    if (!ex.canonical_id && pe.canonical_id) ex.canonical_id = pe.canonical_id;
+    const ev = packEvidence(pe);
+    if (ev) {
+      ex.evidence = ev;
+      delete ex.evidence_quote;
+    }
+  }
+  console.log("pack: stamped", stamped, "of", flat.length, "exercise(s) on",
+    pack.shortcode, "read by", pack.reader,
+    byOrder ? "(" + byOrder + " aligned by order)" : "");
 }
 
 async function parseWithClaude(system: string, user: string, ctx: AiCtx): Promise<Generated> {
