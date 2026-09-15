@@ -76,3 +76,6 @@ verify_enabled = true
 enabled = true
 verify_jwt = false
 entrypoint = "./functions/spotter/index.ts"
+
+[functions.spotter-purchases]
+verify_jwt = false

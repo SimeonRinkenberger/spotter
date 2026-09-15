@@ -1,0 +1,11 @@
+
+> spotter-build@0.0.0 ios:check
+> node tools/ios/check.mjs && node tools/ios/keyboard-check.mjs && node tools/ios/stream-check.mjs && node tools/ios/share-check.mjs
+
+PASS native/web haptics preference gate, missing hardware fallback, rest deadline after suspension, exactly-once completion, paused rest, packaged shell, no remote runtime scripts, native SW guard.
+PASS completed workouts cannot be resurrected by background draft saves.
+PASS keyboard timing/refocus, all input types, focus-zoom prevention, accessible navigation, viewport ownership, and Send focus.
+PASS stable composer clearance during keyboard dismissal, rapid refocus and final safe-area reconciliation.
+PASS streaming before completion, split Unicode, cancellation, network error, JSON refusal, and haptic throttling/preferences/visibility.
+PASS native activation including mixed thumbnail/link payloads, 17 social/web URL formats, captions, invalid inputs, deduplication, multiple links, durable-save acknowledgement and error responses
+PASS serialized account switching, sign-out, credential-write failure recovery

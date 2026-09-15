@@ -1,0 +1,9 @@
+
+scores  rich 1  mixed 0.869  carousel 0.52  fabricated-doses 0.7  chapters-only 0.45  thin 0.2
+rich parts     {"evidence":1,"numbers":1,"agreement":1,"catalog":1,"duration":1}
+chapters parts {"evidence":1,"numbers":0.5,"agreement":1,"catalog":0.25,"duration":0}  ["no sets/reps/durations claimed","every exercise traces only to chapter timestamps"]
+chapter junk   dropped ["Warm up","Workout","Cool down"]  parts {"evidence":0,"numbers":0,"agreement":0,"catalog":0,"duration":0,"dropped_chapter_junk":3}  kept on a real chapter list ["Goblet Squat","Kettlebell Swing"]
+media scores   caption+transcript 0.86  video-only 0.55
+merge scores   unevidenced-old 0.8  pre-scoring null  rescore-wins 0.7  old-wins 0.9  no-merge 0.3
+
+all 90 confidence checks passed

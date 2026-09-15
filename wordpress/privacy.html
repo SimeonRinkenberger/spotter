@@ -1,0 +1,177 @@
+<!-- wp:html -->
+<div class="spotter-info" style="max-width:760px;margin:0 auto;line-height:1.7"><nav aria-label="Spotter pages"><p><a href="https://quarterdeckcollective.com/spotter/">Spotter</a> · <a href="https://quarterdeckcollective.com/spotter/privacy/">Privacy policy</a> · <a href="https://quarterdeckcollective.com/spotter/terms/">Terms of use</a> · <a href="https://quarterdeckcollective.com/spotter/whats-new/">What’s new</a></p></nav><h1 style="font-size:clamp(2rem,5vw,3rem);line-height:1.15;text-transform:none">Spotter Privacy Policy</h1>
+  
+  <div class="date">Last updated 8 September 2026</div>
+
+  <p>Spotter is a small, independent app. This page says plainly what it stores and what it does
+    not do. If anything here is unclear, email
+    <a href="mailto:business@quarterdeckcollective.com">business@quarterdeckcollective.com</a>.</p>
+
+  <h2>What Spotter stores</h2>
+  <ul>
+    <li><b>Your email address and password.</b> Handled by Supabase Auth; the password is stored
+      only as a salted hash and is never visible to us.</li>
+    <li><b>If you continue with Google or Apple</b>, Spotter receives only your name and your
+      email address from them — nothing else, and no password ever reaches us; Apple lets you
+      hide your real address behind a private relay, and that relay address works here.</li>
+    <li><b>The videos you save</b> — the link, the creator name, the caption or description that
+      was public on the post, and the workout extracted from it.</li>
+    <li><b>What you log</b> — the sets, reps and weights you record in Workout Mode, plus any
+      notes and planned days you add.</li>
+    <li><b>A personal save key</b> so an iOS Shortcut can add videos for you. You can replace it
+      any time from Settings.</li>
+    <li><b>Your conversations with Pumpy</b>, the coach, so you can pick a chat up where you left
+      it, and the changes you confirmed from them. They are private to your account.</li>
+    <li><b>If you subscribe to Spotter Plus</b>, an identifier for you at Stripe and the state of
+      your subscription — the plan, whether it is running, and the date it renews or ends. Never
+      your card. See <a href="#payments">Payments</a> below.</li>
+  </ul>
+
+  <h2>What Spotter does not do</h2>
+  <ul>
+    <li>No ads, no trackers, no analytics scripts, no cookies beyond the sign-in session your
+      browser needs.</li>
+    <li>Your library, logs and plan are private to your account and are not sold. Relevant details
+      are processed by the service providers described below when you use AI features.</li>
+    <li>Spotter does not access device health, biometric or location sensors. Workout logs are
+      fitness information, and anything you type into notes or Pumpy may include sensitive information.</li>
+  </ul>
+
+  <h2>Other services involved</h2>
+  <p>Saving a post can send its caption, description, carousel images, or text you supply to
+    OpenAI to extract exercises. Google Gemini is used only for supported audio/video reads. Text, coaching and image
+    requests do not automatically fall back to Google. Private uploads can also be processed by Google. Groq is no longer part of
+    the active reading workflow.</p>
+  <p>Asking Pumpy, tapping <i>How to do this</i>, or <i>Swap or modify</i> also sends an AI
+    model what you typed plus what it needs to answer: the titles, exercises, equipment and
+    collection names of the workouts you have saved, your planned days, and a summary of your
+    recent sessions (how many, which muscles, how much volume). Pumpy sends a short index of
+    that — titles, categories, equipment, collection names, your planned days — at the start
+    of every message so it needs fewer round trips, and sends a workout's exercises only when
+    it needs them to answer. Account email is not deliberately included in these requests. Text you put in a message,
+    exercise detail or selected workout may be included, so avoid adding sensitive information unnecessarily. Pumpy cannot change anything in
+    your library until you confirm it in the app.</p>
+  <p>Data is stored with
+    <a href="https://supabase.com/privacy" target="_blank" rel="noopener">Supabase</a> in the
+    United States. Fonts are loaded from Google Fonts.</p>
+  <p>Video playback happens in an embedded player from Instagram, TikTok or YouTube. Those
+    players are the platforms' own and follow the platforms' privacy policies.</p>
+  <p>When you ask how an exercise is done, Spotter shows a short demonstration clip. These come
+    from a short list of fitness creators' public YouTube channels, collected in advance and
+    stored by exercise, so most of the time nothing is looked up at all — the answer is already
+    in Spotter's own list, and more than one creator may be offered for the same movement. For a
+    movement that list does not cover, the server falls back to searching YouTube, preferring
+    those same channels. Either way only the name of the exercise is sent — never your email,
+    your account or anything else about you — and any search result is cached and shared by
+    everyone, so the same movement is looked up once for all of Spotter rather than once per
+    person. The thumbnail is loaded from Google's image host, and the clip, if you tap it, plays in a
+    <a href="https://support.google.com/youtube/answer/171780" target="_blank" rel="noopener">privacy-enhanced
+    (no-cookie)</a> YouTube player that is only added to the page once you tap and is removed
+    again when you close the sheet. The link beside it opens YouTube's own search results.</p>
+
+  <h2 id="payments">Payments</h2>
+  <p>Spotter Plus is paid for through
+    <a href="https://stripe.com/privacy" target="_blank" rel="noopener">Stripe</a>, and the payment
+    happens on Stripe's own checkout page, not on Spotter's. Your card number, the security code
+    on the back of it and whatever address your bank wants go to Stripe and stop there.
+    <b>Spotter never sees any of it</b>, has no way to ask for it, and could not charge your card
+    by itself if it wanted to.</p>
+  <p>What Spotter keeps, on a row attached to your account, is only what it needs to know whether
+    you are on the paid plan today:</p>
+  <ul>
+    <li>the customer and subscription identifiers Stripe gave you, so the two systems can talk
+      about the same person;</li>
+    <li>which plan it is, whether it is on trial, running, cancelled or unpaid, whether it is set
+      to stop at the end of the period, and the date that period ends;</li>
+    <li>the date a payment last failed, if one has, so the app can say so and offer the fix;</li>
+    <li>a log of the notifications Stripe sends — the identifier and type of each one, and when it
+      was handled. That log is how Spotter avoids acting on the same message twice. It holds no
+      payment details.</li>
+  </ul>
+  <p>Stripe is its own company and handles your payment data under
+    <a href="https://stripe.com/privacy" target="_blank" rel="noopener">its own privacy policy</a>.
+    Spotter sends it your account identifier so a payment can be matched back to you, and your
+    email address if you give Stripe one at checkout.</p>
+  <p>If you cancel, the row stays until the period you paid for runs out and then says you are on
+    the free plan. <b>Deleting your account cancels the subscription first</b>, then deletes your
+    customer record at Stripe along with everything else. Stripe keeps its own record of the
+    payments themselves for as long as tax and accounting law says it must — that part is not
+    Spotter's to delete.</p>
+
+  <h2 id="connections">Connections</h2>
+  <p>Spotter can connect to <a href="https://www.strava.com/legal/privacy" target="_blank" rel="noopener">Strava</a>,
+    if you choose to, so that a workout you have just finished can be sent there as an activity.
+    You connect it yourself in Settings &rarr; Connections, and nothing happens until you do.</p>
+  <p>The connection is <b>one-way</b>. Spotter <b>writes</b> to Strava and never reads from it:
+    it does not see your activities, your friends, your routes, your segments or your profile,
+    and no Strava data is ever given to any of the AI services above. What gets sent, and only
+    when you tap <b>Send to Strava</b> on a session, is the workout's name, when you started it
+    and how long it took, one line per exercise with the sets you logged, your total volume, any
+    personal bests from that session, and a link back to Spotter.</p>
+  <p>When you connect, Strava gives Spotter's server two access keys. They are held on a row
+    attached to your account <b>on the server only</b> — the app in your browser never receives
+    them and cannot read them — together with your Strava athlete number and the identifier of
+    each activity Spotter created, so the same session is never posted twice.
+    <b>Disconnecting deletes both keys and tells Strava to forget Spotter</b>, and so does
+    deleting your account. You can also revoke Spotter yourself at any time from
+    <a href="https://www.strava.com/settings/apps" target="_blank" rel="noopener">your Strava
+    settings</a>.</p>
+
+  <h2>Files and video reading</h2>
+  <p>Uploads enter private temporary storage. Spotter's server sends supported audio or video
+    to Google Gemini for transcription or workout extraction. Spotter attempts to delete its
+    temporary file and Google's uploaded file after processing, including failed attempts.
+    A cleanup sweep targets files left in Spotter storage after two hours; outages can delay cleanup.
+    Extracted text and workout details remain on your saved card.</p>
+  <p>For public links with little written workout information, Spotter may also read available
+    audio or video, automatically or when you request it. Source material fetched from a public
+    post may contribute to the shared cache below. Your private uploads and supplied captions or
+    HTML are excluded from new shared cache entries.</p>
+  <p>Deleting a temporary uploaded file does not erase a provider's separate processing or abuse
+    monitoring records. Provider handling depends on the account and service configuration; see
+    <a href="https://developers.openai.com/api/docs/guides/your-data" target="_blank" rel="noopener">OpenAI's data controls</a>
+    and <a href="https://ai.google.dev/gemini-api/terms" target="_blank" rel="noopener">Google's API terms</a>.
+    In particular, Google's paid and unpaid services have different data-use terms.</p>
+
+  <h2>Shared extraction cache</h2>
+  <p>When a video is read for the first time, the resulting workout is cached under the video's
+    public ID so the next person who saves the same video gets it instantly and no AI call is
+    needed. That cache holds only information taken from the public post — never anything about
+    who saved it. It is not linked to any account, so deleting an account does not remove it.</p>
+
+  <h2 id="export">Taking your data with you</h2>
+  <p>Settings &rarr; Data &amp; privacy &rarr; <b>Export my data</b> writes everything you put into
+    Spotter &mdash; your workout cards, every session you have logged, your plan, your collections,
+    your chats with Pumpy and your settings &mdash; into a single JSON file on your device. It is a
+    plain, structured, machine-readable format, so you can read it yourself or move it somewhere
+    else. Your personal save key is deliberately left out of the file, because it works without a
+    password and files get forwarded.</p>
+
+  <h2 id="delete">Deleting your account</h2>
+  <p>Removing a workout deletes it immediately. To delete your <b>whole account</b>, open Spotter
+    and go to Settings &rarr; Data &amp; privacy &rarr; <b>Delete account</b>. You will be asked to
+    type DELETE to confirm, and then the following are removed from the active app:</p>
+  <ul>
+    <li>your workout cards, and any video files you uploaded;</li>
+    <li>every session you have logged, and your plan;</li>
+    <li>your collections and the corrections you made to cards;</li>
+    <li>your chats with Pumpy;</li>
+    <li>your profile, your settings and your personal save key;</li>
+    <li>your subscription, if you have one — it is cancelled at Stripe first, and your customer
+      record there is deleted with it;</li>
+    <li>your Strava connection, if you made one — Strava is told to forget Spotter and both
+      access keys are deleted;</li>
+    <li>the sign-in account itself.</li>
+  </ul>
+  <p>Export your data first if you want to keep it. Account deletion cannot be undone in the app.
+    Backup copies and provider security records may remain under their separate retention policies.
+    Spotter keeps its own record of what the AI cost to run, and the deletion strips your account
+    id out of those rows rather than keeping them attached to you. New AI reservation records
+    are retained for up to 90 days; request admission records for up to 40 days, with scheduled cleanup.</p>
+  <p>If you cannot sign in, email
+    <a href="mailto:business@quarterdeckcollective.com">business@quarterdeckcollective.com</a> from your
+    account's address and it will be erased for you.</p>
+
+  <p style="margin-top:40px"><a href="https://simeonrinkenberger.github.io/spotter/">← Back to Spotter</a></p>
+<nav aria-label="Spotter pages"><p><a href="https://quarterdeckcollective.com/spotter/">Spotter</a> · <a href="https://quarterdeckcollective.com/spotter/privacy/">Privacy policy</a> · <a href="https://quarterdeckcollective.com/spotter/terms/">Terms of use</a> · <a href="https://quarterdeckcollective.com/spotter/whats-new/">What’s new</a></p></nav></div>
+<!-- /wp:html -->

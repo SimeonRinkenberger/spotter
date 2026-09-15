@@ -1009,7 +1009,7 @@ button only where the `external` map says `true`. Until you do the steps below t
 screen looks exactly as it did before, which is the intended resting state — nothing to
 comment out, nothing to remember to remove.
 
-Both buttons run the **in-page token flow** (`signInWithIdToken`), not a whole-page
+On the website, both buttons run the **in-page token flow** (`signInWithIdToken`), not a whole-page
 redirect: an installed PWA on iOS that navigates out to a provider finishes the sign-in in
 Safari, where the session lands in a storage the PWA cannot read. `signInWithOAuth` is kept
 as the automatic fallback for when the provider script is blocked, when Google's One Tap
@@ -1025,6 +1025,10 @@ var PUBLIC_AUTH = { google_client_id: "", apple_services_id: "" };
 Neither is a secret — a Google web client id and an Apple Services ID are visible to anyone
 who views source. The real secrets (Google's client secret, Apple's `.p8` key) only ever go
 into Supabase.
+
+The native iPhone app uses a system authentication sheet with PKCE, returning directly
+to the app. See [Google authentication setup](GOOGLE-AUTH.md) for the required native
+redirect allowlist and activation checklist.
 
 #### 1. Google
 
@@ -1051,6 +1055,9 @@ into Supabase.
    still works — it just takes the redirect fallback instead of the in-page flow.
 
 #### 2. Apple
+
+Native iPhone integration is prepared; membership approval and provider activation
+are pending. See [Apple authentication status and setup](APPLE-AUTH.md).
 
 Sign in with Apple on the web needs a paid **Apple Developer Program** membership. Apple
 also refuses `http://` and `localhost` return URLs, so this one cannot be tested locally at

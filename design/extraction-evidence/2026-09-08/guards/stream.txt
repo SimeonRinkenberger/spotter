@@ -1,0 +1,37 @@
+ssrf guard: static checks on, dns resolution on
+edge runtime: waitUntil UNAVAILABLE (worker runs inline)
+openai stream gpt-5.6-luna 500 nope
+anthropic stream failed GuardError: AI work paused: unpriced_provider
+    at file:///Users/simeon/Desktop/CLAUDE%20COWORK/spotter/supabase/functions/spotter/ai-guard.ts:84:18
+    at Module.claudeStream (file:///Users/simeon/Desktop/CLAUDE%20COWORK/spotter/supabase/functions/spotter/index.ts:4527:21)
+    at file:///Users/simeon/Desktop/CLAUDE%20COWORK/spotter/tools/stream-harness.ts:303:21 {
+  reason: "unpriced_provider"
+}
+gemini stream gemini-3.6-flash 400 — rotating to next model
+gemini stream: all models exhausted
+groq stream failed openai/gpt-oss-120b GuardError: AI work paused: unpriced_provider
+    at file:///Users/simeon/Desktop/CLAUDE%20COWORK/spotter/supabase/functions/spotter/ai-guard.ts:84:18
+    at Module.groqStream (file:///Users/simeon/Desktop/CLAUDE%20COWORK/spotter/supabase/functions/spotter/index.ts:1472:23)
+    at file:///Users/simeon/Desktop/CLAUDE%20COWORK/spotter/tools/stream-harness.ts:335:21 {
+  reason: "unpriced_provider"
+}
+groq stream failed llama-3.3-70b-versatile GuardError: AI work paused: unpriced_provider
+    at file:///Users/simeon/Desktop/CLAUDE%20COWORK/spotter/supabase/functions/spotter/ai-guard.ts:84:18
+    at Module.groqStream (file:///Users/simeon/Desktop/CLAUDE%20COWORK/spotter/supabase/functions/spotter/index.ts:1472:23)
+    at async file:///Users/simeon/Desktop/CLAUDE%20COWORK/spotter/tools/stream-harness.ts:335:13 {
+  reason: "unpriced_provider"
+}
+groq stream failed meta-llama/llama-4-maverick-17b-128e-instruct GuardError: AI work paused: unpriced_provider
+    at file:///Users/simeon/Desktop/CLAUDE%20COWORK/spotter/supabase/functions/spotter/ai-guard.ts:84:18
+    at Module.groqStream (file:///Users/simeon/Desktop/CLAUDE%20COWORK/spotter/supabase/functions/spotter/index.ts:1472:23)
+    at async file:///Users/simeon/Desktop/CLAUDE%20COWORK/spotter/tools/stream-harness.ts:335:13 {
+  reason: "unpriced_provider"
+}
+groq stream failed openai/gpt-oss-20b GuardError: AI work paused: unpriced_provider
+    at file:///Users/simeon/Desktop/CLAUDE%20COWORK/spotter/supabase/functions/spotter/ai-guard.ts:84:18
+    at Module.groqStream (file:///Users/simeon/Desktop/CLAUDE%20COWORK/spotter/supabase/functions/spotter/index.ts:1472:23)
+    at async file:///Users/simeon/Desktop/CLAUDE%20COWORK/spotter/tools/stream-harness.ts:335:13 {
+  reason: "unpriced_provider"
+}
+groq stream: all models failed
+ok 117/117 checks

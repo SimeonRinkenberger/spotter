@@ -831,6 +831,14 @@ export const STYLE = String.raw`<style>
   .pmeta { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 6px;
     font-size: 11.5px; line-height: 1.45; color: var(--muted); }
   .pmeta .pill { font-size: 10.5px; padding: 5px 9px; }
+  .pcard .pamt { font-size: 24px; }
+  .pcard .pold { font-size: 14px; }
+  .psavings { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 12px 0 5px;
+    color: var(--ember-ink); font-size: 16px; line-height: 1.4; }
+  .psavebadge { display: inline-block; padding: 4px 9px; border-radius: 8px;
+    background: var(--ember); color: var(--on-ember); font-size: 12px; font-weight: 750; }
+  .pcompare, .prenew { color: var(--ink-2); font-size: 12px; line-height: 1.5; }
+  .prenew { margin-top: 5px; font-weight: 650; }
   .plantrial, .plansoon { font-size: 13px; line-height: 1.5; color: var(--ink-2); margin: 4px 0 14px; }
   .plansoon { color: var(--muted); }
   .planbuy { margin-top: 4px; min-height: 48px; }
@@ -1606,6 +1614,35 @@ export const STYLE = String.raw`<style>
   .reststrip.muted .wmute { display: block; }
   .reststrip .chip { min-height: 44px; display: flex; align-items: center; }
 
+  /* Rest stays above the controls while the exercise area remains scrollable. */
+  .reststrip { flex-shrink: 0; margin: 8px 16px 0; padding: 14px; gap: 16px;
+    border: 1px solid var(--ember); border-radius: 24px; background: var(--ember-soft); }
+  .reststrip .ring { width: 88px; height: 88px; }
+  .reststrip .ring::after { inset: 6px; }
+  .reststrip .ring span { font-family: var(--display); font-size: 29px; }
+  .restinfo { flex: 1; min-width: 0; }
+  .restheading { display: flex; align-items: center; gap: 8px; }
+  .restword { font-family: var(--display); font-size: 21px; font-weight: 750; }
+  .resthint { color: var(--ink-2); font-size: 12px; margin: 4px 0 8px; }
+  .restcontrols { display: flex; gap: 8px; }
+  .restcontrols .chip { justify-content: center; padding: 8px 12px; background: var(--card); }
+  .reststrip.paused { border-color: var(--line-2); background: var(--sand); }
+  .wbottom { flex-shrink: 0; display: grid; grid-template-columns: 52px minmax(0, 1fr) 52px; }
+  #waddexercise { grid-column: 2; grid-row: 1; min-height: 48px; }
+  #wnext { grid-column: 3; grid-row: 1; }
+  .wfinish { grid-column: 1 / -1; grid-row: 2; width: 100%; min-height: 60px; font-size: 18px; padding: 18px; border-radius: 18px; }
+  .wmain { min-height: 0; justify-content: flex-start; }
+  .wmain > * { flex-shrink: 0; }
+  .wo-extra-set { min-height: 48px; width: 100%; margin-bottom: 10px; }
+  #woadderror:empty { display: none; }
+  .wtimer.resting { border: 1px solid var(--ember); border-radius: 24px; background: var(--ember-soft); padding: 16px; }
+  .wtimer.resting .wphase { font-size: 22px; font-weight: 750; }
+  @media (max-width: 350px) {
+    .reststrip { gap: 10px; padding: 10px; }
+    .reststrip .ring { width: 76px; height: 76px; }
+    .restcontrols .chip { padding: 8px; }
+  }
+
   /* ---------- a timed move ----------
      The rest ring again, at the size a countdown needs when the phone is on the
      floor and you are not, and doubling as the start/pause button. */
@@ -1785,6 +1822,11 @@ export const STYLE = String.raw`<style>
     line-height: 1.3; padding: 9px 13px; }
   .msgrow { display: flex; gap: 8px; align-items: flex-end; max-width: 92%; }
   .msgcol { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .reportresponse { align-self: flex-start; min-height: 44px; padding: 8px 0;
+    border: 0; background: none; color: var(--muted); font: inherit; font-size: 12px;
+    text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+  .reportresponse[data-armed="1"] { color: var(--ember-ink); }
+  .reportresponse:disabled { cursor: default; text-decoration: none; }
   .msg { padding: 11px 14px; border-radius: 18px; font-size: 14.5px; line-height: 1.55; white-space: pre-wrap;
     word-break: break-word; }
   .msg.me { align-self: flex-end; max-width: 86%; background: var(--ember); color: var(--on-ember);
@@ -2225,7 +2267,7 @@ export const STYLE = String.raw`<style>
   /* Keep the exercise and logging controls anchored when supporting actions open.
      Centering the whole stack makes every item drift upward during expansion. */
   #workout:not(.summary) .wmain { justify-content: flex-start; min-height: 0;
-    padding-top: clamp(28px, calc(var(--vvh) * .12), 112px); }
+    padding-top: clamp(20px, calc(var(--vvh) * .04), 32px); }
   #workout:not(.summary) .wmain > * { flex-shrink: 0; }
   .exercise-options .disclosure-body { padding: 4px 12px; margin: 4px 0 10px; background: var(--sand); border-radius: 12px; overflow: hidden; }
   .exercise-options .pickrow { width: 100%; min-height: 48px; padding: 12px 2px; border-radius: 0;
@@ -2261,6 +2303,38 @@ export const STYLE = String.raw`<style>
     transform: rotate(-45deg); transition: transform var(--t-3) var(--e-soft); }
   .history-card[open] > summary::before { transform: rotate(45deg); }
   .history-card.details-closing > summary::before { transform: rotate(-45deg); }
+  .progress-totals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px;
+    padding: 18px 0; margin-bottom: 16px; border-bottom: 1px solid var(--line); text-align: center; }
+  .progress-totals b { display: block; font-family: var(--display); font-size: clamp(20px, 5vw, 28px); overflow-wrap: anywhere; }
+  .progress-totals span { display: block; color: var(--ink-2); font-size: 12px; margin-top: 4px; }
+  .session-journal h2 { font-family: var(--display); margin: 20px 0 6px; }
+  .session-search { width: 100%; min-height: 46px; margin: 14px 0 10px; }
+  .session-link { display: block; width: 100%; padding: 16px; text-align: left; color: var(--ink);
+    cursor: pointer; transition: border-color var(--t-2), background-color var(--t-2); }
+  .session-link:hover { border-color: var(--ember); background: var(--ember-soft); }
+  .session-link:focus-visible { outline: 2px solid var(--ember-ink); outline-offset: 3px; }
+  .session-link .histrow { border: 0; padding: 0; }
+  .session-link .n { min-width: 0; overflow-wrap: anywhere; }
+  .session-invite { display: block; color: var(--ember-ink); font-size: 12px; font-weight: 650; margin-top: 12px; }
+  #sessionsheet .sheetbody { max-width: 560px; }
+  #sessionclose { margin-bottom: 20px; min-height: 44px; }
+  #sessiontitle { font-size: 28px; overflow-wrap: anywhere; }
+  #sessioncontent h3 { font-family: var(--display); font-size: 18px; }
+  #sessioncontent .sharewrap { margin-top: 12px; animation-delay: 0ms; }
+  #sessioncontent .sharerow { flex-direction: column; align-items: center; }
+  #sessioncontent .scprev { flex: none; width: 198px; height: 352px; }
+  #sessioncontent .scprev img { object-fit: contain; }
+  #sessioncontent .scside { width: 100%; }
+  #sessioncontent .scchips { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  #sessioncontent .schint { text-align: center; }
+  .session-exercises-title { margin-top: 28px; }
+  .session-exercise { padding: 14px 0; border-bottom: 1px solid var(--line); }
+  .session-exercise h4 { margin: 0 0 10px; overflow-wrap: anywhere; }
+  .session-set { display: flex; justify-content: space-between; gap: 16px; padding: 6px 0; font-size: 13px; }
+  .session-set span { color: var(--ink-2); flex-shrink: 0; }
+  .session-set b { text-align: right; overflow-wrap: anywhere; }
+  #sessioncontent > .danger { min-height: 44px; margin-top: 24px; }
+  @media (prefers-reduced-motion: reduce) { .session-link { transition: none; } }
   .session-head .histrow { border: 0; padding: 0; }
   #scheduleerror { display: block; }
   #scheduleerror:empty { display: none; }

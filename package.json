@@ -11,9 +11,13 @@
     "ios:open": "cap open ios",
     "ios:build": "node tools/ios/build-simulator.mjs",
     "ios:check": "node tools/ios/check.mjs && node tools/ios/keyboard-check.mjs && node tools/ios/stream-check.mjs && node tools/ios/share-check.mjs && node tools/ios/google-auth-check.mjs && node tools/ios/apple-auth-check.mjs",
-    "parity:check": "npm run ios:assets && node tools/parity-check.mjs && npm run ios:check"
+    "parity:check": "npm run ios:assets && node tools/parity-check.mjs && npm run ios:check",
+    "android:sync": "npm run ios:assets && cap sync android",
+    "android:open": "cap open android",
+    "android:build": "node tools/android/build.mjs"
   },
   "dependencies": {
+    "@capacitor/android": "8.5.1",
     "@capacitor/app": "8.1.1",
     "@capacitor/browser": "8.0.4",
     "@capacitor/core": "8.5.1",
@@ -24,6 +28,7 @@
     "@capacitor/preferences": "8.0.1",
     "@capacitor/share": "8.0.1",
     "@capacitor/status-bar": "8.0.3",
+    "@revenuecat/purchases-capacitor": "13.5.1",
     "@supabase/supabase-js": "2.115.0",
     "stripe": "^22"
   },

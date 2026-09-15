@@ -812,7 +812,7 @@ export const APP = String.raw`
     var wrap = $("oauthwrap");
     if (!wrap) return;
     var hasGoogle = !!(authProviders && authProviders.google);
-    var hasApple = !!(authProviders && authProviders.apple);
+    var hasApple = !!(authProviders && authProviders.apple) && !(native && native.platform === "android");
     $("oagoogle").classList.toggle("hide", !hasGoogle);
     $("oaapple").classList.toggle("hide", !hasApple);
     wrap.classList.toggle("hide", !(hasGoogle || hasApple));
@@ -879,6 +879,7 @@ export const APP = String.raw`
     expCache = {}; expWaiting = {}; vidCache = {}; expKey = "";
     today.rows = []; today.at = 0; today.day = null; today.busy = false; today.shown = false;
     current = null;
+    if (sc) scForget();
     if (wo) saveDraft();
     clearInterval(woTimer); stopRest(); releaseWake(); wo = null; hist = {}; histReady = false;
     if (strava) strava = { asked: false, configured: false, connected: false, athlete: null, busy: false };
@@ -887,8 +888,9 @@ export const APP = String.raw`
       pumpy = { thread: null, messages: [], refs: [], refsRev: 0, loaded: false,
         busy: false, live: null, stick: true, wired: wired, openSeq: seq };
     }
-    if (billing) { billing.sub = null; billing.subAsked = false; billing.limits = null; billing.said = null; billing.ctx = null; }
-    ["grid", "chips", "colbar", "libcount", "empty", "dinner", "pumpylog", "pumpyannounce", "pumpyctx", "pumpythreads", "planview", "progressview", "today"].forEach(function (id) {
+    if (native && native.purchases) native.purchases.clear().catch(function () {});
+    if (billing) { billing.prices = null; billing.sub = null; billing.subAsked = false; billing.limits = null; billing.said = null; billing.ctx = null; }
+    ["grid", "chips", "colbar", "libcount", "empty", "dinner", "pumpylog", "pumpyannounce", "pumpyctx", "pumpythreads", "planview", "progressview", "today", "sessioncontent"].forEach(function (id) {
       var n = $(id); if (n) n.innerHTML = "";
     });
     $("count0").textContent = "Reading your library";
@@ -4735,7 +4737,7 @@ export const APP = String.raw`
     try {
       localStorage.setItem(draftKey(), JSON.stringify({
         workoutId: wo.workout.id, title: wo.workout.title,
-        entries: wo.entries, startedAt: wo.startedAt, i: wo.i, rounds: wo.rounds,
+        entries: wo.entries, blocks: wo.workout.blocks, startedAt: wo.startedAt, i: wo.i, rounds: wo.rounds,
         rest: restUntil && !restFace ? { until: restUntil, total: restTotal, held: restHeld } : null
       }));
       if (native) native.saveDraft(localStorage.getItem(draftKey()));
@@ -4749,6 +4751,8 @@ export const APP = String.raw`
 
   function startWorkout(w, resume) {
     guideClear(); guideStill();
+    // The session owns its exercise list, including additions recovered from a draft.
+    w = Object.assign({}, w, { blocks: JSON.parse(JSON.stringify((resume && resume.blocks) || w.blocks || [])) });
     var screens = flatten(w);
     wo = {
       workout: w, screens: screens, i: (resume && resume.i) || 0,
@@ -4785,6 +4789,79 @@ export const APP = String.raw`
     saveDraft();
     history.pushState({ workout: 1 }, "");
     lastWeights();
+  }
+
+  function openWorkoutAdd() {
+    if (!wo || wo.finished) return;
+    $("woaddname").value = "";
+    $("woaddsets").value = "3";
+    $("woaddreps").value = "10";
+    $("woaddsecs").value = "";
+    $("woadderror").textContent = "";
+    var options = $("woaddsuggestions"), names = {};
+    options.innerHTML = "";
+    state.workouts.forEach(function (w) {
+      flatten(w).forEach(function (s) {
+        if (!s.ex.name || names[s.ex.name]) return;
+        names[s.ex.name] = true;
+        var opt = el("option"); opt.value = s.ex.name; options.appendChild(opt);
+      });
+    });
+    $("woaddsheet")._returnFocus = document.activeElement;
+    openSheet("woaddsheet");
+    $("woaddname").focus();
+  }
+
+  function appendSessionExercise(ex) {
+    if (!wo || wo.finished) return false;
+    // Give an existing freestyle log its own screen before appending, so its
+    // completed sets stay attached to the movement that produced them.
+    if (!wo.screens.length) {
+      wo.workout.blocks = [{ title: "Freestyle", type: "straight", exercises: [
+        { name: wo.entries[0].name || "Freestyle", sets: 1 }
+      ] }];
+      wo.screens = flatten(wo.workout);
+    }
+    var bi = wo.workout.blocks.length;
+    var block = { title: "Added this session", type: "straight", exercises: [ex] };
+    wo.workout.blocks.push(block);
+    wo.screens.push({ block: block, bi: bi, ei: 0, ex: ex });
+    wo.entries.push({ name: ex.name, canonical_id: ex.canonical_id || null, block: bi, exercise: 0, sets: [] });
+    stopWork();
+    // Ordinary rest can continue, but a circuit callback must not advance the
+    // new exercise on behalf of the station the lifter just left.
+    restThen = null;
+    wo.i = wo.screens.length - 1;
+    saveDraft();
+    renderWorkout();
+    return true;
+  }
+
+  function saveWorkoutAdd() {
+    if (!wo || wo.finished) return;
+    var name = $("woaddname").value.trim();
+    var sets = Number($("woaddsets").value), reps = Number($("woaddreps").value);
+    var rawSecs = $("woaddsecs").value.trim(), secs = Number(rawSecs);
+    if (!name || name.length > 100 || sets < 1 || sets > 99 || sets % 1 ||
+      (rawSecs ? !isFinite(secs) || secs < 1 || secs > 3600 || secs % 1
+        : !isFinite(reps) || reps < 1 || reps > 999 || reps % 1) || !isFinite(sets)) {
+      $("woadderror").textContent = "Enter a name, 1–99 sets, and 1–999 reps or 1–3600 seconds.";
+      return;
+    }
+    var ex = { name: name, sets: sets, reps: rawSecs ? null : String(reps),
+      duration_seconds: rawSecs ? secs : null, rest_seconds: REST_FALLBACK };
+    // Reuse a known identity only for an exact name; a custom movement remains custom.
+    state.workouts.some(function (w) {
+      return flatten(w).some(function (s) {
+        if ((s.ex.name || "").toLowerCase() !== name.toLowerCase() || !s.ex.canonical_id) return false;
+        ex.canonical_id = s.ex.canonical_id;
+        return true;
+      });
+    });
+    if (appendSessionExercise(ex)) {
+      closeSheet("woaddsheet");
+      toast("Added " + name + " to this session.");
+    }
   }
 
   // The grouping key for "the same movement". The catalog id when the name mapped,
@@ -4916,7 +4993,7 @@ export const APP = String.raw`
         "This video had no written exercises. Log what you do — tap the button below to add a set."));
       var addSet = el("button", "btn", "Log a set");
       addSet.style.marginTop = "22px";
-      addSet.onclick = function () { openSetSheet(0); };
+      addSet.onclick = function () { openSetSheet(entry.sets.length); };
       main.appendChild(addSet);
       renderSetPills(main, entry, null);
       return;
@@ -4945,6 +5022,12 @@ export const APP = String.raw`
     }
 
     var acts = el("div", "wactions exercise-actions");
+    var add = el("button", "btn ghost wo-extra-set", isTimed(s.ex) ? "Log extra hold" : "+ Add set");
+    add.onclick = function () {
+      if (isTimed(s.ex)) { logHold(entry.sets.length, s.ex.duration_seconds); renderWorkout(); }
+      else openSetSheet(entry.sets.length);
+    };
+    acts.appendChild(add);
     var extra = disclosure("Options", "exercise-options");
     extra.firstChild.setAttribute("aria-label", "Options for " + s.ex.name);
     // Supporting actions stay together so sets and the timer remain the focus.
@@ -5021,6 +5104,8 @@ export const APP = String.raw`
 
   function openSetSheet(idx) {
     if (!wo) return;
+    // Editing a set must not save it against a different circuit station when rest ends.
+    if (!restFace) restThen = null;
     var s = wo.screens[wo.i];
     var entry = wo.entries[wo.i];
     var existing = entry.sets[idx];
@@ -5219,7 +5304,7 @@ export const APP = String.raw`
     if (!restFace) {
       // Assigned whole, so the muted note paintSounds hung on it has to be said again.
       $("reststrip").className = "reststrip on" + (state.sounds ? "" : " muted");
-      $("restword").textContent = "Rest";
+      $("restword").textContent = "Rest period";
     }
     drawRest(restTotal);
     restTimer = setInterval(tickRest, 200);
@@ -5242,6 +5327,12 @@ export const APP = String.raw`
     // The dial can be gone mid-tick. The deadline is what stands.
     if (!ring || !num) return;
     ring.style.setProperty("--rest", String(Math.max(0, left) / restTotal));
+    if (!restFace) {
+      $("reststrip").classList.toggle("paused", !!restHeld);
+      $("restword").textContent = restHeld ? "Rest paused" : "Rest period";
+      $("resthint").textContent = restHeld ? "Tap timer to resume" : "Breathe. Next set soon.";
+      ring.setAttribute("aria-label", restHeld ? "Resume rest timer" : "Pause rest timer");
+    }
     num.textContent = s >= 60
       ? Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0") : String(s);
   }
@@ -5289,7 +5380,7 @@ export const APP = String.raw`
     if (restFace) { paintPhase(); return; }
     var strip = $("reststrip");
     if (restHeld) strip.classList.add("paused"); else strip.classList.remove("paused");
-    $("restword").textContent = restHeld ? "Paused" : "Rest";
+    drawRest(restHeld || restUntil - Date.now());
   }
 
   function addRest(ms) {
@@ -5386,7 +5477,7 @@ export const APP = String.raw`
     var t = $("wtimer");
     if (!t) return;
     var held = !!(restHeld && restFace);
-    t.className = "wtimer" + (woPhase !== "idle" && !held ? "" : " idle");
+    t.className = "wtimer" + (woPhase !== "idle" && !held ? "" : " idle") + (woPhase === "rest" ? " resting" : "");
     $("wphase").textContent = held ? "Paused"
       : woPhase === "ready" ? "Get ready"
       : woPhase === "rest" ? (atRoundEnd() ? "Round done" : "Rest")
@@ -6294,6 +6385,7 @@ export const APP = String.raw`
     // The sequence tells a recorder still running for the summary that just closed
     // to bin its clip rather than arm a button nobody can see.
     sc.vseq++;
+    sc.seq++;
     sc.vst = 2;
     sc.vno = false;
     // The picture belonged to that session: megabytes a phone has better uses for,
@@ -6391,8 +6483,9 @@ export const APP = String.raw`
   // tab for it, so the decoder is asked for 1080 wide where it can. Our own blob
   // URL does not taint the canvas, so toBlob still returns a card.
   function scPhoto(f) {
-    var url = URL.createObjectURL(f), p = null;
+    var url = URL.createObjectURL(f), p = null, owner = sc.card;
     function took(im) {
+      if (!owner || sc.card !== owner) { if (im.close) im.close(); return; }
       if (sc.photo && sc.photo.close) sc.photo.close();
       sc.photo = im;
       sc.bg = "photo";
@@ -6588,10 +6681,11 @@ export const APP = String.raw`
     btns.classList.add("in");
   }
 
-  function shareRow(payload, logged) {
+  function shareRow(payload, logged, past) {
     var wrap = el("div", "sharewrap"), row = el("div", "sharerow"), prev = el("div", "scprev");
-    sc.card = scFromSession(payload, logged);
-    scWatchSummary();
+    scForget();
+    sc.card = past ? scFromLog(payload) : scFromSession(payload, logged);
+    if (!past) scWatchSummary();
     sc.img = el("img");
     sc.img.alt = "The session as a card, ready to share";
     prev.appendChild(sc.img);
@@ -7583,9 +7677,8 @@ export const APP = String.raw`
     if (state.logs) return Promise.resolve(state.logs);
     if (!state.user) return Promise.resolve([]);
     var uid = state.user.id, epoch = accountEpoch, rev = logsRev;
-    var since = new Date(Date.now() - 182 * 86400000).toISOString();
     return readOnce("logs:" + rev, function () {
-      return sb.from("workout_logs").select("*").eq("user_id", uid).gte("started_at", since)
+      return sb.from("workout_logs").select("*").eq("user_id", uid)
         .order("started_at", { ascending: false }).limit(400).then(function (r) {
           if (!accountNow(epoch, uid)) return [];
           if (rev !== logsRev) return loadLogs();
@@ -8079,12 +8172,53 @@ export const APP = String.raw`
     hero.appendChild(el("div", "rmeta",
       logs.length + (logs.length === 1 ? " session" : " sessions") + " logged"));
     v.appendChild(hero);
-    renderHistoryInto(v, logs.slice(0, 5));
-    if (logs.length > 5) {
-      var older = disclosure("Earlier sessions (" + (logs.length - 5) + ")");
-      renderHistoryInto(older.lastChild, logs.slice(5));
-      v.appendChild(older);
+    var overview = el("div", "progress-totals");
+    var minutes = 0, totalSets = 0;
+    logs.forEach(function (l) {
+      minutes += (l.duration_seconds || 0) / 60;
+      (l.entries || []).forEach(function (e) { totalSets += (e.sets || []).filter(Boolean).length; });
+    });
+    [[logs.length, "sessions"], [Math.round(minutes).toLocaleString(), "minutes"],
+      [totalSets.toLocaleString(), "sets logged"]].forEach(function (f) {
+      var stat = el("div");
+      stat.appendChild(el("b", null, String(f[0])));
+      stat.appendChild(el("span", null, f[1]));
+      overview.appendChild(stat);
+    });
+    v.appendChild(overview);
+    var journal = el("section", "session-journal");
+    journal.appendChild(el("h2", null, "Your sessions"));
+    journal.appendChild(el("p", "rmeta", (logs.length >= 400 ? "Your latest 400 sessions. " : "") +
+      "Revisit a workout. Make a card worth sharing."));
+    var search = el("input", "session-search");
+    search.type = "search";
+    search.placeholder = "Search workouts or exercises";
+    search.setAttribute("aria-label", "Search session history");
+    journal.appendChild(search);
+    var results = el("div", "rmeta");
+    results.setAttribute("role", "status");
+    journal.appendChild(results);
+    var list = el("div");
+    journal.appendChild(list);
+    var more = el("button", "btn ghost", "Show more sessions"), shown = 10;
+    journal.appendChild(more);
+    function drawSessions() {
+      var q = search.value.trim().toLowerCase();
+      var matches = logs.filter(function (l) {
+        return ((l.workout_title || "Workout") + " " + (l.entries || []).map(function (e) {
+          return e.name || "";
+        }).join(" ")).toLowerCase().indexOf(q) >= 0;
+      });
+      list.innerHTML = "";
+      renderHistoryInto(list, matches.slice(0, shown));
+      results.textContent = matches.length ? "Showing " + Math.min(shown, matches.length) + " of " + matches.length +
+        (matches.length === 1 ? " session" : " sessions") : "No matching sessions. Try another workout or exercise.";
+      more.hidden = shown >= matches.length;
     }
+    search.oninput = function () { shown = 10; drawSessions(); };
+    more.onclick = function () { shown += 10; drawSessions(); };
+    drawSessions();
+    v.appendChild(journal);
     var metrics = disclosure("Training details · charts and muscles");
     var metricsBody = metrics.lastChild;
     v.appendChild(metrics);
@@ -8260,64 +8394,45 @@ export const APP = String.raw`
     countStats();
   }
 
-  function renderHistoryInto(v, logs) {
-    var head = el("div", "monthhead", "History");
-    head.style.marginTop = "26px";
-    head.style.color = "var(--ember-ink)";
-    v.appendChild(head);
-    var month = "";
-    // Four hundred sessions used to construct eight hundred locale formatters
-    // during one draw. The locale and options are shared by the whole list.
-    var monthDate = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" });
-    var sessionDate = new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric" });
-    logs.forEach(function (l) {
-      var d = new Date(l.started_at);
-      var mk = monthDate.format(d);
-      if (mk !== month) { month = mk; v.appendChild(el("div", "monthhead", mk)); }
-      var card = el("details", "chartcard history-card");
-      var summary = el("summary", "session-head");
-      card.style.padding = "14px 16px";
-      var row = el("div", "histrow");
-      var n = el("div", "n");
-      n.appendChild(document.createTextNode(l.workout_title || "Workout"));
-      var sets = 0;
-      (l.entries || []).forEach(function (e) { sets += (e.sets || []).filter(Boolean).length; });
-      n.appendChild(el("span", null,
-        sessionDate.format(d) +
-        " · " + sets + (sets === 1 ? " set" : " sets") +
-        (l.duration_seconds ? " · " + Math.round(l.duration_seconds / 60) + " min" : "")));
-      row.appendChild(n);
-      var vol = volumeOf(l);
-      if (vol) row.appendChild(el("div", "v", Math.round(vol) + " " + state.unit));
-      summary.appendChild(row);
-      card.appendChild(summary);
-      var sessionBody = el("div", "session-body");
-      card.appendChild(sessionBody);
-
-      (l.entries || []).forEach(function (e) {
-        if (!(e.sets || []).length) return;
-        var er = el("div", "histrow");
-        var en = el("div", "n");
-        en.appendChild(document.createTextNode(e.name));
-        en.appendChild(el("span", null, e.sets.filter(Boolean).map(setText).join("  ")));
-        er.appendChild(en);
-        sessionBody.appendChild(er);
+  function openSession(l) {
+    // History uses its own sheet: reading an old session must never clear a draft,
+    // finish a workout, or award a record again.
+    if (wo) { toast("Close your current workout before opening a past session."); return; }
+    var body = $("sessioncontent");
+    body.innerHTML = "";
+    $("sessiontitle").textContent = l.workout_title || "Workout";
+    var card = scFromLog(l);
+    body.appendChild(el("p", "rmeta", new Date(l.started_at).toLocaleDateString(undefined,
+      { weekday: "long", month: "long", day: "numeric", year: "numeric" })));
+    var stats = el("div", "progress-totals");
+    card.figs.forEach(function (f) {
+      var stat = el("div");
+      stat.appendChild(el("b", null, f[0]));
+      stat.appendChild(el("span", null, f[1]));
+      stats.appendChild(stat);
+    });
+    body.appendChild(stats);
+    body.appendChild(el("h3", null, "Your share card"));
+    body.appendChild(shareRow(l, l.entries || [], true));
+    body.appendChild(el("h3", "session-exercises-title", "What you logged"));
+    (l.entries || []).forEach(function (e) {
+      var sets = (e.sets || []).filter(Boolean);
+      if (!sets.length) return;
+      var row = el("div", "session-exercise");
+      row.appendChild(el("h4", null, e.name || "Exercise"));
+      sets.forEach(function (set, i) {
+        var line = el("div", "session-set");
+        line.appendChild(el("span", null, "Set " + (i + 1)));
+        line.appendChild(el("b", null, setText(set) + (set.weight && !set.seconds ? " " + state.unit : "")));
+        row.appendChild(line);
       });
-
-      // A past session goes out the same door as a fresh one, and Strava's own
-      // button sits beside it on the same row.
-      var acts = el("div", "cardacts");
-      acts.appendChild(scLogBtn(l));
-      if (typeof stravaBtn === "function") {
-        var sbn = stravaBtn(l);
-        if (sbn) acts.appendChild(sbn);
-      }
-      sessionBody.appendChild(acts);
-
+      body.appendChild(row);
+    });
       var del = el("button", "danger", "Delete session");
       del.onclick = function () {
         // Everything on this screen is derived from state.logs, so taking the
         // session out of that array and redrawing IS the optimistic update.
+        closeSheet("sessionsheet");
         var at = state.logs.indexOf(l);
         state.logs = state.logs.filter(function (x) { return x.id !== l.id; });
         renderProgress();
@@ -8333,7 +8448,31 @@ export const APP = String.raw`
           renderProgress();
         });
       };
-      sessionBody.appendChild(del);
+    body.appendChild(del);
+    $("sessionsheet")._returnFocus = document.activeElement;
+    openSheet("sessionsheet");
+    $("sessionclose").focus({ preventScroll: true });
+  }
+
+  function renderHistoryInto(v, logs) {
+    var month = "";
+    var monthDate = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" });
+    var sessionDate = new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric" });
+    logs.forEach(function (l) {
+      var d = new Date(l.started_at), mk = monthDate.format(d);
+      if (mk !== month) { month = mk; v.appendChild(el("div", "monthhead", mk)); }
+      var card = el("button", "chartcard session-link");
+      card.type = "button";
+      card.setAttribute("aria-haspopup", "dialog");
+      var row = el("div", "histrow"), n = el("div", "n"), sets = 0;
+      (l.entries || []).forEach(function (e) { sets += (e.sets || []).filter(Boolean).length; });
+      n.appendChild(el("b", null, l.workout_title || "Workout"));
+      n.appendChild(el("span", null, sessionDate.format(d) + " · " + sets + " sets" +
+        (l.duration_seconds ? " · " + Math.max(1, Math.round(l.duration_seconds / 60)) + " min" : "")));
+      row.appendChild(n);
+      card.appendChild(row);
+      card.appendChild(el("span", "session-invite", "View recap & share card"));
+      card.onclick = function () { openSession(l); };
       v.appendChild(card);
     });
   }
@@ -8899,8 +9038,33 @@ export const APP = String.raw`
     }
     var p = m.meta && m.meta.proposal;
     if (p) col.appendChild(renderProposal(m, p));
+    appendResponseReport(col, m);
     row.appendChild(col);
     return row;
+  }
+
+  function appendResponseReport(col, m) {
+    if (/^[0-9]+$/.test(String(m.id)) && (m.content || (m.meta && m.meta.proposal))) {
+      var report = el("button", "reportresponse", "Report response");
+      report.title = "Send this response to Spotter for safety review";
+      report.onclick = function () {
+        armed(report, "Report as unsafe?", function () {
+          var epoch = accountEpoch;
+          report.disabled = true;
+          report.textContent = "Sending report…";
+          sb.rpc("report_pumpy_response", { message_id: m.id }).then(function (r) {
+            if (r.error) throw r.error;
+            report.textContent = "Response reported";
+            if (epoch === accountEpoch) toast("Thank you. This response was sent to Spotter for safety review.");
+          }).catch(function () {
+            report.disabled = false;
+            report.textContent = "Report response";
+            if (epoch === accountEpoch) toast("Report could not be sent. Please try again.");
+          });
+        });
+      };
+      col.appendChild(report);
+    }
   }
 
   function proposalLine(name, dose) {
@@ -9201,6 +9365,7 @@ export const APP = String.raw`
         live.st.classList.add("hide"); live.bub.classList.remove("live", "hide");
         live.tn.data = last.content;
         if (last.meta && last.meta.proposal) live.bub.parentNode.appendChild(renderProposal(last, last.meta.proposal));
+        appendResponseReport(live.bub.parentNode, last);
         pumpy.nodes = pumpy.nodes || {};
         pumpy.nodes[last.id] = {sig:JSON.stringify(last),node:live.row};
       }
@@ -9302,6 +9467,11 @@ export const APP = String.raw`
   }
 
   function loadPrices() {
+    if (native && native.purchases) {
+      return native.purchases.prices(state.user && state.user.id).then(function (r) {
+        billing.prices = r; return r;
+      }).catch(function () { billing.prices = { configured: false, nativeStore: true }; return billing.prices; });
+    }
     if (billing.prices) return Promise.resolve(billing.prices);
     if (billing.waiting) return billing.waiting;
     billing.waiting = api("billing/prices", { method: "GET" }).then(function (r) {
@@ -9324,7 +9494,15 @@ export const APP = String.raw`
     if (billing.subAsked) return Promise.resolve(billing.sub);
     billing.subAsked = true;
     var epoch = accountEpoch, uid = state.user && state.user.id;
-    return sb.from("subscriptions").select("*").maybeSingle().then(function (r) {
+    var legacy = sb.from("subscriptions").select("*").maybeSingle();
+    var request = native && native.purchases ? Promise.all([legacy, sb.from("store_entitlements").select("*").maybeSingle()]).then(function (rows) {
+      var store = rows[1].data;
+      if (store && store.active && (!store.expires_at || Date.parse(store.expires_at) > Date.now())) {
+        return { data: { source: store.source, plan: "plus", status: "active", current_period_end: store.expires_at } };
+      }
+      return rows[0];
+    }) : legacy;
+    return request.then(function (r) {
       if (!accountNow(epoch, uid)) return null;
       if (r.error) throw r.error;
       billing.sub = (r && !r.error && r.data) ? r.data : null;
@@ -9439,16 +9617,24 @@ export const APP = String.raw`
     // The founding price does not hide the standing one: struck through beside it
     // is the only way to show the discount without implying the second year keeps it.
     if (pay !== full) amt.appendChild(el("span", "pold", money(full, cur)));
-    amt.appendChild(document.createTextNode(money(pay, cur)));
+    amt.appendChild(document.createTextNode(p.nativeStore ? plus[iv].localized : money(pay, cur)));
     row.appendChild(amt);
     b.appendChild(row);
+    var monthlyYear = plus.month.amount * 12;
     if (yearly) {
-      var meta = el("div", "pmeta");
-      meta.appendChild(el("span", null, money(Math.round(pay / 12), cur) + " a month" +
-        (pay !== full ? " for your first year" : "")));
-      var save = Math.round((1 - pay / (plus.month.amount * 12)) * 100);
-      if (save >= 5) meta.appendChild(el("span", "pill accent", "SAVE " + save + "%"));
-      b.appendChild(meta);
+      var intro = pay !== full, saved = monthlyYear - pay;
+      if (monthlyYear > 0 && saved > 0) {
+        var savings = el("div", "psavings");
+        savings.appendChild(el("b", null, "Save " + money(saved, cur) + (intro ? " in your first year" : " a year")));
+        savings.appendChild(el("span", "psavebadge", Math.round(saved / monthlyYear * 100) + "% less"));
+        b.appendChild(savings);
+        b.appendChild(el("div", "pcompare", "Compared with " + money(monthlyYear, cur) + " for 12 monthly payments."));
+      }
+      b.appendChild(el("div", "pmeta", money(Math.round(pay / 12), cur) + "/month equivalent" +
+        (intro ? " in your first year" : "") + " · billed yearly"));
+      if (intro) b.appendChild(el("div", "prenew", "Then " + money(full, cur) + "/year."));
+    } else {
+      b.appendChild(el("div", "pmeta", money(monthlyYear, cur) + " over 12 months · billed monthly"));
     }
     b.onclick = function () { pickInterval(iv); };
     return b;
@@ -9466,6 +9652,7 @@ export const APP = String.raw`
 
   function finePrint(p, plus, iv, pay, full, days) {
     var cur = p.currency, first;
+    if (p.nativeStore) return "Renews automatically at " + (plus[iv].localized || money(full, cur)) + (iv === "month" ? " per month" : " per year") + " until cancelled. Manage or cancel in your store subscription settings. Any eligible offer and its terms appear in the store confirmation.";
     if (iv === "month") {
       first = money(pay, cur) + " a month until you cancel.";
     } else if (pay !== full) {
@@ -9503,7 +9690,7 @@ export const APP = String.raw`
       trial.classList.remove("hide");
     } else { trial.textContent = ""; trial.classList.add("hide"); }
     setBuyLabel(yearly && days > 0 ? "Start " + days + " free days"
-      : "Subscribe for " + money(pay, cur) + (yearly ? " a year" : " a month"));
+      : "Subscribe for " + (p.nativeStore ? plus[iv].localized : money(pay, cur)) + (yearly ? " a year" : " a month"));
     $("planfine").textContent = finePrint(p, plus, iv, pay, full, days) + " AI reading and coaching have daily and monthly usage limits. During beta, new AI work can also pause when the shared allowance is reached; saved workouts remain available.";
   }
 
@@ -9529,7 +9716,8 @@ export const APP = String.raw`
     $("plansoon").classList.toggle("hide", ready);
     $("planbuy").classList.toggle("hide", !ready);
     $("plandot2").classList.toggle("hide", !ready);
-    $("planrestore").classList.toggle("hide", !ready);
+    $("planrestore").classList.toggle("hide", !ready && !(native && native.purchases));
+    if (p.nativeStore) $("plansoon").textContent = "Subscriptions are temporarily unavailable. Please try again later. Existing purchases can be restored below.";
     if (!ready) {
       $("plantrial").classList.add("hide");
       $("planfine").textContent = "";
@@ -9590,7 +9778,35 @@ export const APP = String.raw`
     return bits[0] || null;
   }
 
+  // Store purchases never grant access from a client-supplied receipt or flag.
+  // The server fetches the account entitlement from RevenueCat before updating it.
+  function syncNativePurchase() {
+    return sb.functions.invoke("spotter-purchases", { body: {} }).then(function (r) {
+      if (r.error || !r.data || r.data.status !== "ok") throw new Error("Your purchase is saved. Tap Restore purchase when your connection returns.");
+      return r.data;
+    });
+  }
+
+  function nativePurchase(restore, btn) {
+    if (!state.user || billing.busy) return;
+    var uid = state.user.id;
+    billing.busy = true;
+    if (btn) btn.disabled = true;
+    var work = restore ? native.purchases.restore(uid) : native.purchases.purchase(uid, billing.interval);
+    work.then(syncNativePurchase).then(function (r) {
+      if (!state.user || state.user.id !== uid) return;
+      absorbPlan(r, !restore);
+      toast(r.plan === "free" ? "No active subscription was found for this account." : "Your " + planWord(r.plan) + " access is up to date.");
+    }).catch(function (e) {
+      if (!e.userCancelled && String(e.code) !== "1") toast(e.message || "Could not complete the purchase. Please try again.");
+    }).then(function () {
+      billing.busy = false;
+      if (btn) btn.disabled = false;
+    });
+  }
+
   function startCheckout() {
+    if (native && native.purchases) { nativePurchase(false, $("planbuy")); return; }
     if (billing.busy) return;
     var b = $("planbuy"), was = b.querySelector("b").textContent;
     billing.busy = true;
@@ -9627,6 +9843,13 @@ export const APP = String.raw`
   }
 
   function openPortal(btn) {
+    if (native && native.purchases) {
+      var source = billing.sub && billing.sub.source;
+      if (source === "stripe" || (source === "apple" && native.platform === "android") || (source === "google" && native.platform === "ios")) {
+        toast("Manage this subscription in the store or service where you originally purchased it."); return;
+      }
+      native.open(native.purchases.managementUrl()); return;
+    }
     var was = btn ? btn.textContent : null;
     if (btn) { btn.disabled = true; btn.textContent = "Opening…"; }
     api("billing/portal", {
@@ -9727,6 +9950,7 @@ export const APP = String.raw`
   }
 
   function refreshBilling(btn) {
+    if (native && native.purchases) { nativePurchase(true, btn); return; }
     var was = btn.textContent;
     btn.disabled = true;
     btn.textContent = "Checking…";
@@ -9777,7 +10001,7 @@ export const APP = String.raw`
     $("setmanage").classList.toggle("hide", !canManage);
     $("setpay").classList.toggle("hide", !(canManage && failed));
     $("setplanbtns").classList.toggle("hide", !(canBuy || canManage));
-    $("setrefresh").classList.toggle("hide", !configured);
+    $("setrefresh").classList.toggle("hide", !configured && !(native && native.purchases));
   }
 
   // Two copies of "which plan is this": the profile row the webhook writes, and
@@ -10213,6 +10437,7 @@ export const APP = String.raw`
     var n = $(id);
     if (!n.classList.contains("open")) return;
     guideClear("hold");
+    if (id === "sessionsheet") scForget();
     if (id === "welcomesheet") {
       welcomeDone();
       var focus = welcomeReturn && welcomeReturn.isConnected && !welcomeReturn.closest("#landing, .sheet:not(.open)")
@@ -10344,7 +10569,7 @@ export const APP = String.raw`
   ["addsheet", "setsheet", "watchsheet", "exsheet", "exeditsheet", "explainsheet", "picksheet",
    "settingssheet", "colsheet", "renamesheet", "swapsheet", "pumpysheet", "capsheet", "plansheet",
    "daysheet", "copysheet", "sortsheet", "refsheet", "countsheet", "guidesheet", "welcomesheet",
-   "workoptions", "filtersheet", "schedulesheet"]
+   "workoptions", "filtersheet", "schedulesheet", "sessionsheet", "woaddsheet"]
     .forEach(wireSheet);
 
   function overlayShowing() {
@@ -11008,6 +11233,7 @@ export const APP = String.raw`
     loadRemind();
     $("shortcutsetup").classList.toggle("hide", !!native);
     $("nativesharehelp").classList.toggle("hide", !native);
+    if (native && native.platform === "android") $("nativesharehelp").textContent = "In TikTok, YouTube, Instagram or another app, share the post’s link and choose Spotter from the Android share sheet.";
     var key = state.profile ? state.profile.ingest_key : null;
     $("setkey").textContent = key ? API + "ingest?key=" + key : "Loading…";
     $("setsaves").textContent = "…";
@@ -11596,7 +11822,7 @@ export const APP = String.raw`
       title: "Delete your account",
       lede: "This erases your workout cards, every session you have logged, your plan, your " +
         "collections, your chats with Pumpy, and the account itself. It cannot be undone and " +
-        "there is no copy. Export your data first if you want to keep it.",
+        "there is no copy. Export your data first if you want to keep it. If you subscribed through Google Play or Apple, cancel that subscription in your store settings before deleting your account; deleting Spotter does not cancel store billing.",
       fields: [{ name: "sure", label: "Type DELETE to confirm", placeholder: "DELETE" }],
       go: "Delete everything", busy: "Deleting…", danger: true,
       arm: function () { return accVal("sure").trim().toUpperCase() === "DELETE"; },
@@ -12556,7 +12782,7 @@ export const APP = String.raw`
   document.querySelectorAll("[data-close]").forEach(function (b) {
     b.onclick = function () { closeSheet(b.getAttribute("data-close")); };
   });
-  ["workoptions", "filtersheet", "schedulesheet"].forEach(function (id) {
+  ["workoptions", "filtersheet", "schedulesheet", "sessionsheet", "woaddsheet"].forEach(function (id) {
     $(id).addEventListener("keydown", function (e) {
       if (e.key === "Escape") { e.preventDefault(); closeSheet(id); }
       if (e.key !== "Tab") return;
@@ -12623,6 +12849,9 @@ export const APP = String.raw`
   $("wprev").onclick = function () { woGo(-1); };
   $("wnext").onclick = skipMove;
   $("wfinish").onclick = finishWorkout;
+  $("waddexercise").onclick = openWorkoutAdd;
+  $("woaddsave").onclick = saveWorkoutAdd;
+  $("woaddname").addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); saveWorkoutAdd(); } });
   $("wlist").onclick = function () {
     if (!wo) return;
     var list = $("exlist");
@@ -12688,6 +12917,13 @@ export const APP = String.raw`
     if ($("detail").classList.contains("open")) closeDetail();
   });
 
+  window.addEventListener("spotter:shared-url", function (e) {
+    var u = firstUrlIn(e.detail && e.detail.url);
+    if (!u) return;
+    sessionStorage.setItem(SHARE_KEY, u);
+    if (state.user && !sharing) consumeShare();
+    else if (!state.user) toast("Sign in to save the shared workout.");
+  });
   window.addEventListener("spotter:keyboard-settled", measureChrome);
   window.addEventListener("spotter:share-unavailable", function () {
     toast("Sharing isn’t ready. Reopen Spotter to try again.");

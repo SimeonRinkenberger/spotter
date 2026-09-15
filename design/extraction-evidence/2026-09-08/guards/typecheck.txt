@@ -1,0 +1,1 @@
+Check supabase/functions/spotter/index.ts
