@@ -2457,6 +2457,40 @@ h1 {
   margin-top: 11px;
   padding: 11px 15px;
 }
+.perf {
+  margin-bottom: 18px;
+}
+.perfchips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.exmarks {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+.dchip {
+  min-width: 0;
+  border-radius: 999px;
+  padding: 3px 9px;
+  background: var(--ember-soft);
+  color: var(--ember-ink);
+  font-size: 11px;
+  font-weight: 650;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.t {
+  flex: 0 0 auto;
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
 .vslot {
   display: grid;
   grid-template-rows: 0fr;
@@ -2474,6 +2508,19 @@ h1 {
 }
 .ytbox .saidlab {
   margin-bottom: 7px;
+}
+.ytrel,
+.perfdelta {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+.ytrel {
+  margin: -3px 0 9px;
+}
+.perfdelta {
+  margin-top: 9px;
 }
 .ytface {
   display: block;
@@ -2659,7 +2706,29 @@ h1 {
   box-shadow: none;
   border: 1px solid var(--line);
 }
+.votes {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+  animation: msgin var(--t-3) var(--e-out) both;
+}
+.vote {
+  width: 36px;
+  padding: 0;
+  justify-content: center;
+}
+.vote .ic {
+  width: 16px;
+  height: 16px;
+}
+.votefix {
+  margin-left: auto;
+}
 @media (prefers-reduced-motion: reduce) {
+  .votes {
+    animation: none;
+  }
   .vslot {
     transition: none;
   }
@@ -5652,6 +5721,7 @@ select:focus-visible {
 .planbtn,
 .chips .chip,
 .said .chip,
+.votes .chip,
 .pumpyctx button,
 .threadrow .tdel,
 .ttitle {
@@ -5669,6 +5739,7 @@ select:focus-visible {
 .danger::after,
 .chips .chip::after,
 .said .chip::after,
+.votes .chip::after,
 .pumpyctx button::after,
 .threadrow .tdel::after,
 .ttitle::after,
@@ -5713,7 +5784,8 @@ select:focus-visible {
   inset: -3px 0;
 }
 .chips .chip::after,
-.said .chip::after {
+.said .chip::after,
+.votes .chip::after {
   inset: -6px 0;
 }
 .pumpyctx button::after {
@@ -6671,6 +6743,8 @@ details.details-moving > :not(summary) {
 <symbol id="i-volume-2" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5.2a10 10 0 0 1 0 13.6"/></symbol>
 <symbol id="i-volume-x" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="m22 9-6 6"/><path d="m16 9 6 6"/></symbol>
 <symbol id="i-youtube" viewBox="0 0 24 24"><rect width="20" height="14" x="2" y="5" rx="4.5"/><path d="m10.2 9 4.6 3-4.6 3z"/></symbol>
+<symbol id="i-thumb-up" viewBox="0 0 24 24"><path d="M7 20v-9l4-8a2.5 2.5 0 0 1 2 3.5L12 11h6a2 2 0 0 1 2 2.5l-1.5 6a2 2 0 0 1-2 .5z"/><rect width="5" height="10" x="2" y="10" rx="1.5"/></symbol>
+<symbol id="i-thumb-down" viewBox="0 0 24 24"><path d="M7 4v9l4 8a2.5 2.5 0 0 0 2-3.5L12 13h6a2 2 0 0 0 2-2.5l-1.5-6a2 2 0 0 0-2-.5z"/><rect width="5" height="10" x="2" y="4" rx="1.5"/></symbol>
 </svg>
 
 <div id="landing">
@@ -6965,9 +7039,15 @@ details.details-moving > :not(summary) {
   <div class="grabber"></div>
   <h2 id="explaintitle">How to do it</h2>
   <div id="explainpre"></div>
+  <div id="explainperf"></div>
   <div class="vslot" id="explainvid"><div id="explainvidin"></div></div>
   <button class="setlink" id="explainask">Explain this exercise with Pumpy</button>
   <div class="aitext hide" id="explaintext" role="status"></div>
+  <div class="votes hide" id="explainvotes">
+    <button class="chip vote" id="explainup" aria-label="This explanation looks right" aria-pressed="false"><svg class="ic"><use href="#i-thumb-up"></use></svg></button>
+    <button class="chip vote" id="explaindown" aria-label="This explanation looks wrong" aria-pressed="false"><svg class="ic"><use href="#i-thumb-down"></use></svg></button>
+    <button class="chip votefix" id="explainfix">Not quite right?</button>
+  </div>
   <div class="btnrow"><button class="btn ghost" id="swapgo"><svg class="ic"><use href="#i-swap"></use></svg>Swap or modify</button></div>
 </div></div>
 
@@ -8949,7 +9029,11 @@ details.details-moving > :not(summary) {
       var bm = blockMetaText(b);
       bm && sect.appendChild(el("div", "blockmeta", bm)), (b.exercises || []).forEach(function(ex, ei) {
         var row = el("div", "exercise-card"), main = el("div", "exercise-main"), name = el("div", "exname");
-        name.appendChild(document.createTextNode(ex.name)), ex.notes && name.appendChild(el("div", "exnote", ex.notes)), ex.added_by_user ? name.appendChild(el("div", "exmine", "Added by you")) : ex.edited_by_user && name.appendChild(el("div", "exmine", "Edited by you"));
+        name.appendChild(document.createTextNode(ex.name));
+        var cue = cueOf(ex);
+        cue && name.appendChild(el("div", "exnote", cue));
+        var marks = rowMarks(ex);
+        marks && name.appendChild(marks), ex.added_by_user ? name.appendChild(el("div", "exmine", "Added by you")) : ex.edited_by_user && name.appendChild(el("div", "exmine", "Edited by you"));
         var fl = fromLine(ex);
         fl && name.appendChild(fl), main.appendChild(name);
         var dose = doseText(ex);
@@ -9780,6 +9864,12 @@ details.details-moving > :not(summary) {
       });
     }), out;
   }
+  function rowMarks(ex) {
+    var delta = ex && ex.delta ? String(ex.delta).trim() : "", t = startOf(ex);
+    if (!delta && t === null) return null;
+    var row = el("div", "exmarks");
+    return delta && row.appendChild(el("span", "dchip", delta)), t !== null && row.appendChild(el("span", "t", clock(t))), row;
+  }
   var expCache = {}, expWaiting = {}, expKey = "", EXFAIL = "Could not get an explanation just now. Try again in a moment.", SAID = {
     caption: ["From the caption", "Spotter read this in the caption"],
     description: ["From the description", "Spotter read this in the description"],
@@ -9789,9 +9879,46 @@ details.details-moving > :not(summary) {
     video: ["Read off the screen", "Spotter read this off the screen"],
     heuristic: ["From the source", "Spotter read this in the source"]
   };
-  function bitOf(ex) {
-    var t = ex && ex.evidence ? ex.evidence.t : null;
+  function cueOf(ex) {
+    return ex && (ex.cue || ex.notes) || "";
+  }
+  function clock(t) {
+    return Math.floor(t / 60) + ":" + String(t % 60).padStart(2, "0");
+  }
+  function secOf(t) {
     return typeof t != "number" || !(t >= 0 && t < 86400) ? null : Math.round(t);
+  }
+  function startOf(ex) {
+    return secOf(ex ? ex.t0 : null);
+  }
+  var CHIP_DROP = { both: 1, the: 1, a: 1, an: 1, his: 1, her: 1, their: 1, one: 1, two: 1, own: 1 }, CHIP_TRAIL = { on: 1, to: 1, in: 1, at: 1, with: 1, and: 1, or: 1, of: 1, from: 1, by: 1, for: 1, into: 1, onto: 1 }, CHIP_FIELDS = ["equipment", "hand_placement", "surface", "tempo"];
+  function chipWords(clause) {
+    for (var words = String(clause).toLowerCase().replace(/[^a-z0-9 -]/g, " ").split(/\s+/), kept = [], i = 0; i < words.length && !(!(!words[i] || CHIP_DROP[words[i]]) && (kept.push(words[i]), kept.length === 3)); i++)
+      ;
+    for (; kept.length > 1 && CHIP_TRAIL[kept[kept.length - 1]]; ) kept.pop();
+    return !kept.length || CHIP_TRAIL[kept[0]] ? "" : kept.join(" ");
+  }
+  function chipsFor(ex) {
+    var ap = ex && ex.as_performed;
+    if (!ap || typeof ap != "object") return [];
+    for (var out = [], used = {}, f = 0; f < CHIP_FIELDS.length && out.length < 4; f++) {
+      var raw = ap[CHIP_FIELDS[f]];
+      if (raw && raw.join && (raw = raw.join(", ")), !(typeof raw != "string" || !raw.trim()))
+        for (var clauses = raw.split(/[,;]/), c = 0; c < clauses.length; c++) {
+          var phrase = chipWords(clauses[c]);
+          if (phrase) {
+            var head = phrase.split(" ")[0];
+            if (!used[head]) {
+              used[head] = 1, out.push(phrase.charAt(0).toUpperCase() + phrase.slice(1));
+              break;
+            }
+          }
+        }
+    }
+    return out;
+  }
+  function bitOf(ex) {
+    return secOf(ex && ex.evidence ? ex.evidence.t : null);
   }
   function bitBtn(w, ex) {
     var t = bitOf(ex);
@@ -9805,9 +9932,27 @@ details.details-moving > :not(summary) {
     var ev = ex.evidence, quote = ev && ev.quote ? String(ev.quote).trim() : "", pair = ev ? SAID[ev.source] : null;
     if (!quote || !pair) return null;
     var box = el("div", "said"), t = bitOf(ex), lab = pair[ev.verified === !1 ? 1 : 0];
-    t !== null && (lab += " \xB7 at " + Math.floor(t / 60) + ":" + String(t % 60).padStart(2, "0")), box.appendChild(el("div", "saidlab", lab)), box.appendChild(el("div", "saidq", quote));
+    t !== null && (lab += " \xB7 at " + clock(t)), box.appendChild(el("div", "saidlab", lab)), box.appendChild(el("div", "saidq", quote));
     var b = bitBtn(w, ex);
     return b && box.appendChild(b), box;
+  }
+  function authorOf(ex, w) {
+    var src = sourceOf(ex) || w;
+    return src && src.author ? String(src.author) : "";
+  }
+  function perfNode(ex, w) {
+    var chips = chipsFor(ex), delta = ex && ex.delta ? String(ex.delta).trim() : "";
+    if (!chips.length && !delta) return null;
+    var who = authorOf(ex, w), box = el("div", "perf");
+    if (box.appendChild(el(
+      "div",
+      "saidlab",
+      (who ? "As @" + who + " does it" : "As it was done in the video") + " \xB7 Spotter saw"
+    )), chips.length) {
+      for (var row = el("div", "perfchips"), i = 0; i < chips.length; i++) row.appendChild(el("span", "chip", chips[i]));
+      box.appendChild(row);
+    }
+    return delta && box.appendChild(el("div", "perfdelta", "Differs from the standard: " + delta)), box;
   }
   function watchBit(w, t) {
     var em = embedNode(w, t);
@@ -9815,7 +9960,7 @@ details.details-moving > :not(summary) {
   }
   var vidCache = {};
   function vidKey(ex) {
-    return "v:" + (ex.canonical_id || String(ex.name || "").toLowerCase());
+    return "v:" + (ex.canonical_id || String(ex.name || "").toLowerCase()) + "|" + (ex.delta || "");
   }
   function vidLen(secs) {
     var s = Math.round(Number(secs) || 0);
@@ -9871,6 +10016,8 @@ details.details-moving > :not(summary) {
   function vidSwap(box, st, i) {
     if (!(i === st.i || !st.clips[i])) {
       st.i = i, vidChips(box, st);
+      var head = box.querySelector(".ythead");
+      head && (head.innerHTML = "", vidHead(head, st.clips[i].relation, st.who));
       var fr = box.querySelector(".embedwrap iframe");
       fr && (fr.src = vidSrc(st.clips[i]), fr.title = st.clips[i].title || "Exercise demonstration");
       var fade = [], by = box.querySelector(".ytby"), face = box.querySelector(".ytface");
@@ -9885,11 +10032,15 @@ details.details-moving > :not(summary) {
       }, 220);
     }
   }
-  function vidNode(v, searchUrl, alternates, curated) {
+  function vidHead(box, rel, who) {
+    var kind = rel ? rel.kind : "same", head = "Watch how it is done", sub = "";
+    kind === "standard" ? (head = "The standard version", sub = (who ? "@" + who + "\u2019s version: " : "In the video: ") + (rel.differs || "done differently")) : kind === "similar" && (head = "A similar movement", sub = rel && rel.shared && rel.shared.length ? "Same muscles, different movement" : "Not the same movement"), box.appendChild(el("div", "saidlab", head)), sub && box.appendChild(el("div", "ytrel", sub));
+  }
+  function vidNode(v, searchUrl, alternates, curated, who) {
     var box = el("div", "ytbox");
     if (v && v.id) {
-      var st = { clips: [v].concat(alternates || []), i: 0, curated: !!curated };
-      box.appendChild(el("div", "saidlab", "Watch how it is done")), box.appendChild(vidFace(box, st)), box.appendChild(el("div", "ytby")), st.clips.length > 1 && box.appendChild(el("div", "ytalts")), vidPaint(box, st), vidChips(box, st);
+      var st = { clips: [v].concat(alternates || []), i: 0, curated: !!curated, who: who || "" }, head = el("div", "ythead");
+      vidHead(head, v.relation, st.who), box.appendChild(head), box.appendChild(vidFace(box, st)), box.appendChild(el("div", "ytby")), st.clips.length > 1 && box.appendChild(el("div", "ytalts")), vidPaint(box, st), vidChips(box, st);
     }
     if (searchUrl) {
       var a = el("a", "ytmore", "More on YouTube");
@@ -9897,59 +10048,117 @@ details.details-moving > :not(summary) {
     }
     return box;
   }
-  function vidFill(r) {
+  function vidFill(r, who) {
     var slot = $("explainvid"), inner = $("explainvidin");
     inner.innerHTML = "", inner.appendChild(vidNode(
       r.video,
       r.search_url,
       r.alternates,
-      r.video && r.video.curated
+      r.video && r.video.curated,
+      who
     )), window.requestAnimationFrame ? requestAnimationFrame(function() {
       slot.classList.add("on");
     }) : slot.classList.add("on");
   }
+  function sliceOf(ex, w, quote, source) {
+    return {
+      exercise: ex.name,
+      canonical_id: ex.canonical_id || null,
+      title: w && w.title || "",
+      author: authorOf(ex, w) || null,
+      quote: quote,
+      source: source,
+      cue: cueOf(ex) || null,
+      as_performed: ex.as_performed || null,
+      delta: ex.delta || null,
+      t0: typeof ex.t0 == "number" ? ex.t0 : null
+    };
+  }
+  function sliceHash(slice) {
+    for (var s = JSON.stringify(slice), h = 5381, i = 0; i < s.length; i++) h = (h * 33 ^ s.charCodeAt(i)) >>> 0;
+    return h.toString(36);
+  }
+  function exAt(w, ex) {
+    for (var bs = w && w.blocks || [], bi = 0; bi < bs.length; bi++)
+      for (var xs = bs[bi].exercises || [], ei = 0; ei < xs.length; ei++) if (xs[ei] === ex) return { bi: bi, ei: ei };
+    return null;
+  }
+  function votesNow() {
+    return state.profile && state.profile.settings && state.profile.settings.explainVotes || {};
+  }
+  var VOTE_BTN = [["explainup", 1], ["explaindown", -1]];
+  function paintVotes(id) {
+    for (var v = id ? votesNow()[id] : null, i = 0; i < VOTE_BTN.length; i++) {
+      var b = $(VOTE_BTN[i][0]), on = v === VOTE_BTN[i][1];
+      b.classList.toggle("active", on), b.setAttribute("aria-pressed", on ? "true" : "false");
+    }
+  }
+  function vote(id, val) {
+    if (!(!id || !state.profile || !state.user)) {
+      var votes = Object.assign({}, votesNow());
+      votes[id] === val ? delete votes[id] : votes[id] = val;
+      var s = Object.assign({}, state.profile.settings || {}, { explainVotes: votes });
+      state.profile.settings = s, paintVotes(id), haptic("tap"), sb.from("profiles").update({ settings: s }).eq("id", state.user.id).then(function(r) {
+        r.error && toast("That did not save. Try again in a moment.");
+      });
+    }
+  }
   function explain(ex, w) {
-    var name = ex.name, title = w && w.title || "", src = sourceOf(ex), qw = src || w, ev = ex.evidence || null, quote = ev && ev.quote ? String(ev.quote).trim() : "", key = name + "\n" + quote;
+    var name = ex.name, title = w && w.title || "", src = sourceOf(ex), qw = src || w, ev = ex.evidence || null, quote = ev && ev.quote ? String(ev.quote).trim() : "", slice = sliceOf(ex, w, quote, ev ? ev.source : null), key = name + "\n" + sliceHash(slice);
     expKey = key, $("explaintitle").textContent = name;
     var pre = $("explainpre");
     pre.innerHTML = "", src && pre.appendChild(el("div", "saidlab", src.author ? "In @" + src.author + "\u2019s " + (src.title || "saved workout") : "In " + (src.title || "a workout you saved")));
     var s = saidNode(ex, qw);
-    s && pre.appendChild(s), $("explaintext").textContent = "", $("explaintext").classList.add("hide"), $("explainask").classList.remove("hide"), $("swapgo").onclick = function() {
+    s && pre.appendChild(s);
+    var perf2 = $("explainperf"), pn = perfNode(ex, w);
+    perf2.innerHTML = "", pn && perf2.appendChild(pn), $("explaintext").textContent = "", $("explaintext").classList.add("hide"), $("explainask").classList.remove("hide"), $("explainvotes").classList.add("hide");
+    var voteId = ex.canonical_id || name;
+    paintVotes(voteId), $("explainup").onclick = function() {
+      vote(voteId, 1);
+    }, $("explaindown").onclick = function() {
+      vote(voteId, -1);
+    };
+    var at = exAt(w, ex);
+    $("explainfix").classList.toggle("hide", !at), $("explainfix").onclick = function() {
+      at && (openExEdit(w, at.bi, at.ei, ex), closeSheet("explainsheet"));
+    }, $("swapgo").onclick = function() {
       openSwap(name, title), closeSheet("explainsheet");
     }, openSheet("explainsheet"), $("explainvid").classList.remove("on"), $("explainvidin").innerHTML = "";
-    var vk = vidKey(ex);
-    vidCache[vk] ? vidFill(vidCache[vk]) : api("demo-video", {
+    var vk = vidKey(ex), who = authorOf(ex, w);
+    vidCache[vk] ? vidFill(vidCache[vk], who) : api("demo-video", {
       method: "POST",
-      body: JSON.stringify({ exercise: name, canonical_id: ex.canonical_id || null })
+      body: JSON.stringify({
+        exercise: name,
+        canonical_id: ex.canonical_id || null,
+        delta: slice.delta,
+        as_performed: slice.as_performed
+      })
     }).then(function(r) {
       if (!r || r.status !== "ok") {
         limitHit(r, null);
         return;
       }
-      vidCache[vk] = r, expKey === key && vidFill(r);
+      vidCache[vk] = r, expKey === key && vidFill(r, who);
     }).catch(function() {
     }), $("explainask").onclick = function() {
-      if (this.classList.add("hide"), $("explaintext").classList.remove("hide"), $("explaintext").textContent = expCache[key] || "Reading up on it\u2026", expCache[key]) return;
+      if (this.classList.add("hide"), $("explaintext").classList.remove("hide"), $("explaintext").textContent = expCache[key] || "Reading up on it\u2026", expCache[key]) {
+        $("explainvotes").classList.remove("hide");
+        return;
+      }
       function done(r) {
         if (!r) {
           expKey === key && ($("explaintext").textContent = EXFAIL);
           return;
         }
         var text = r.status === "ok" ? r.text : r.message || EXFAIL;
-        expCache[key] = r.status === "ok" ? text : null, expKey === key && ($("explaintext").textContent = text), limitHit(r, null);
+        expCache[key] = r.status === "ok" ? text : null, expKey === key && ($("explaintext").textContent = text, r.status === "ok" && $("explainvotes").classList.remove("hide")), limitHit(r, null);
       }
       if (expWaiting[key]) {
         expWaiting[key].then(done);
         return;
       }
       var got = "";
-      apiStream("explain", {
-        exercise: name,
-        title: title,
-        quote: quote,
-        source: ev ? ev.source : null,
-        canonical_id: ex.canonical_id || null
-      }, function(r) {
+      apiStream("explain", slice, function(r) {
         if (r.t === "delta") {
           got += r.text || "", expKey === key && ($("explaintext").textContent = got);
           return;
@@ -10242,7 +10451,9 @@ details.details-moving > :not(summary) {
         timedBody(main, s, entry);
       else {
         var last = el("div", "wnote wlast", lastLine(entry));
-        last.id = "wlast", main.appendChild(last), s.ex.weight && main.appendChild(el("div", "wnote", "Suggested load: " + s.ex.weight)), s.ex.notes && main.appendChild(el("div", "wnote", s.ex.notes)), renderSetPills(main, entry, s.ex, targetOf(s));
+        last.id = "wlast", main.appendChild(last), s.ex.weight && main.appendChild(el("div", "wnote", "Suggested load: " + s.ex.weight));
+        var wcue = cueOf(s.ex);
+        wcue && main.appendChild(el("div", "wnote", wcue)), renderSetPills(main, entry, s.ex, targetOf(s));
       }
       var acts = el("div", "wactions exercise-actions"), add = el("button", "btn ghost wo-extra-set", isTimed(s.ex) ? "Log extra hold" : "+ Add set");
       add.onclick = function() {

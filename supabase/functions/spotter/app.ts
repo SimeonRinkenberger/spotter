@@ -2531,7 +2531,14 @@ export const APP = String.raw`
         var main = el("div", "exercise-main");
         var name = el("div", "exname");
         name.appendChild(document.createTextNode(ex.name));
-        if (ex.notes) name.appendChild(el("div", "exnote", ex.notes));
+        var cue = cueOf(ex);
+        if (cue) name.appendChild(el("div", "exnote", cue));
+        // Under the cue: how this differed from the standard version, and when in
+        // the video it happens. Both are one glance each, and both are things the
+        // row could never say before — the delta because nothing computed it, the
+        // second because nothing knew it.
+        var marks = rowMarks(ex);
+        if (marks) name.appendChild(marks);
         // Say which lines are the user's own. Everything else on the card is the
         // creator's wording, and the difference matters when they come back to it.
         if (ex.added_by_user) name.appendChild(el("div", "exmine", "Added by you"));
@@ -4224,6 +4231,23 @@ export const APP = String.raw`
     return out;
   }
 
+  /**
+   * The delta and the timestamp, under an exercise's cue on the card.
+   *
+   * One chip and one pill, on one line that never wraps to two: the delta truncates
+   * because the sheet says it in full, and the second is pushed to the end where a
+   * reader's eye already goes for a duration. Null when the row has neither, which
+   * is every card saved before the pack existed.
+   */
+  function rowMarks(ex) {
+    var delta = ex && ex.delta ? String(ex.delta).trim() : "", t = startOf(ex);
+    if (!delta && t === null) return null;
+    var row = el("div", "exmarks");
+    if (delta) row.appendChild(el("span", "dchip", delta));
+    if (t !== null) row.appendChild(el("span", "t", clock(t)));
+    return row;
+  }
+
   // ---------- how to do this ----------
   //
   // Three answers in the order they earn: what the creator said, somebody filming
@@ -4249,12 +4273,86 @@ export const APP = String.raw`
     heuristic: ["From the source", "Spotter read this in the source"]
   };
 
-  // The second of the video this line was read at, when there is one.
-  function bitOf(ex) {
-    var t = ex && ex.evidence ? ex.evidence.t : null;
+  // The one line under the exercise name. It used to be "notes", which the
+  // extraction prompt never explained, so the model filled it with a rep scheme or
+  // "keep good form". The cue is the same line with a job — the creator's coaching
+  // point first, then the one setup detail the name alone would get wrong — and
+  // "notes" is what every card saved before this wave still carries.
+  function cueOf(ex) {
+    return (ex && (ex.cue || ex.notes)) || "";
+  }
+
+  // Seconds as a clock. The row, the sheet and the said block all show the same
+  // second, so they all round it the same way.
+  function clock(t) {
+    return Math.floor(t / 60) + ":" + String(t % 60).padStart(2, "0");
+  }
+
+  // A second of a video, or null for anything that is not one. Both timestamps on
+  // this sheet go through it: where the quoted line was SAID, and where the movement
+  // is performed. They are seconds of the same clip and only one is the exercise.
+  function secOf(t) {
     if (typeof t !== "number" || !(t >= 0 && t < 86400)) return null;
     return Math.round(t);
   }
+
+  function startOf(ex) { return secOf(ex ? ex.t0 : null); }
+
+  // ---------- as performed ----------
+  //
+  // Three or four words, each true, each read off the frames. The pack writes these
+  // fields as fragments of up to twelve words, which is right for a prompt and far
+  // too long for a chip: a row of twelve-word chips is a paragraph with borders.
+  //
+  // So each field is cut to its first clause, stripped of the words that carry
+  // nothing in three words ("both", "the"), and capped at three. A clause whose
+  // first word has already been used is skipped for the next clause of the same
+  // field — that is what turns a surface of "hands elevated on the bell, feet on the
+  // mat" into "Feet on mat" once hand placement has already said "Hands stacked",
+  // rather than into the same word twice.
+  var CHIP_DROP = { both: 1, the: 1, a: 1, an: 1, his: 1, her: 1, their: 1, one: 1, two: 1, own: 1 };
+  var CHIP_TRAIL = { on: 1, to: 1, in: 1, at: 1, with: 1, and: 1, or: 1, of: 1, from: 1, by: 1, for: 1, into: 1, onto: 1 };
+  var CHIP_FIELDS = ["equipment", "hand_placement", "surface", "tempo"];
+
+  function chipWords(clause) {
+    var words = String(clause).toLowerCase().replace(/[^a-z0-9 -]/g, " ").split(/\s+/);
+    var kept = [];
+    for (var i = 0; i < words.length; i++) {
+      if (!words[i] || CHIP_DROP[words[i]]) continue;
+      kept.push(words[i]);
+      if (kept.length === 3) break;
+    }
+    while (kept.length > 1 && CHIP_TRAIL[kept[kept.length - 1]]) kept.pop();
+    if (!kept.length || CHIP_TRAIL[kept[0]]) return "";
+    return kept.join(" ");
+  }
+
+  // Two to four chips, in the order a person describes a movement: what is in the
+  // hands, where the hands are, what the body is on, how fast.
+  function chipsFor(ex) {
+    var ap = ex && ex.as_performed;
+    if (!ap || typeof ap !== "object") return [];
+    var out = [], used = {};
+    for (var f = 0; f < CHIP_FIELDS.length && out.length < 4; f++) {
+      var raw = ap[CHIP_FIELDS[f]];
+      if (raw && raw.join) raw = raw.join(", ");
+      if (typeof raw !== "string" || !raw.trim()) continue;
+      var clauses = raw.split(/[,;]/);
+      for (var c = 0; c < clauses.length; c++) {
+        var phrase = chipWords(clauses[c]);
+        if (!phrase) continue;
+        var head = phrase.split(" ")[0];
+        if (used[head]) continue;
+        used[head] = 1;
+        out.push(phrase.charAt(0).toUpperCase() + phrase.slice(1));
+        break;
+      }
+    }
+    return out;
+  }
+
+  // The second of the video this line was read at, when there is one.
+  function bitOf(ex) { return secOf(ex && ex.evidence ? ex.evidence.t : null); }
 
   // A button on YouTube only: that is the one embed that starts where it is asked
   // to, and a button that could only fail is worse than no button.
@@ -4273,11 +4371,49 @@ export const APP = String.raw`
     if (!quote || !pair) return null;
     var box = el("div", "said"), t = bitOf(ex);
     var lab = pair[ev.verified === false ? 1 : 0];
-    if (t !== null) lab += " · at " + Math.floor(t / 60) + ":" + String(t % 60).padStart(2, "0");
+    if (t !== null) lab += " · at " + clock(t);
     box.appendChild(el("div", "saidlab", lab));
     box.appendChild(el("div", "saidq", quote));
     var b = bitBtn(w, ex);
     if (b) box.appendChild(b);
+    return box;
+  }
+
+  // Whose video this is, for a sheet that has to keep saying so. The borrowed line
+  // on a coach's card belongs to the creator it was lifted from, not to Pumpy.
+  function authorOf(ex, w) {
+    var src = sourceOf(ex) || w;
+    return (src && src.author) ? String(src.author) : "";
+  }
+
+  /**
+   * "As @thewodfather does it" — the chips, the delta, and who saw them.
+   *
+   * This is the section the whole wave exists for. The sheet already had the
+   * creator's words and a stranger's demonstration; what it never had was the thing
+   * in between, which is what the creator actually DID. Null for a card saved before
+   * the pack, because a heading over nothing is worse than no heading.
+   *
+   * Provenance is stated in a band rather than a percentage — "Spotter saw" — which
+   * is the pattern NotebookLM, Granola and every calibrated-confidence write-up
+   * settle on: a reader can check a band, and cannot check 0.87.
+   */
+  function perfNode(ex, w) {
+    var chips = chipsFor(ex), delta = ex && ex.delta ? String(ex.delta).trim() : "";
+    if (!chips.length && !delta) return null;
+    var who = authorOf(ex, w);
+    var box = el("div", "perf");
+    box.appendChild(el("div", "saidlab",
+      (who ? "As @" + who + " does it" : "As it was done in the video") + " · Spotter saw"));
+    if (chips.length) {
+      var row = el("div", "perfchips");
+      for (var i = 0; i < chips.length; i++) row.appendChild(el("span", "chip", chips[i]));
+      box.appendChild(row);
+    }
+    // The delta reads as a sentence rather than as another chip: it is the one line
+    // here that makes a claim about a version nobody filmed, and a claim should not
+    // be dressed as a label.
+    if (delta) box.appendChild(el("div", "perfdelta", "Differs from the standard: " + delta));
     return box;
   }
 
@@ -4324,8 +4460,13 @@ export const APP = String.raw`
   // spelling of a movement shares one answer, and the name where there is not.
   // Prefixed, so an exercise called "constructor" reads its own cache entry rather
   // than Object's prototype.
+  // The delta is part of the key because it is part of the ANSWER: the same catalog
+  // movement performed plainly and performed on a kettlebell get the same clips back
+  // under two different headers, and a cache that only knew the id would show the
+  // second card the first card's caption.
   function vidKey(ex) {
-    return "v:" + (ex.canonical_id || String(ex.name || "").toLowerCase());
+    return "v:" + (ex.canonical_id || String(ex.name || "").toLowerCase()) +
+      "|" + (ex.delta || "");
   }
 
   // Seconds as a clock, the way every player writes them. Zero and nonsense come
@@ -4442,6 +4583,11 @@ export const APP = String.raw`
     if (i === st.i || !st.clips[i]) return;
     st.i = i;
     vidChips(box, st);
+    // The header describes the clip, not the shelf. Every clip carries its own
+    // relation, so a swap redraws it rather than leaving "the standard version"
+    // standing over a clip it was never about.
+    var head = box.querySelector(".ythead");
+    if (head) { head.innerHTML = ""; vidHead(head, st.clips[i].relation, st.who); }
     // Already playing: the honest thing is to start the clip that was asked for
     // rather than fall back to a still of it.
     var fr = box.querySelector(".embedwrap iframe");
@@ -4464,11 +4610,36 @@ export const APP = String.raw`
   // The link row is not a fallback for the clip — it is the other half of the
   // answer, and on a phone it hands off to the YouTube app. When nothing was found
   // it is the whole answer, which is still more than the sheet had before.
-  function vidNode(v, searchUrl, alternates, curated) {
+  // What the clip IS, said out loud. The server never answers without a relation
+  // now, and the sheet never draws one without printing it: a demonstration shown
+  // with no caption is a claim that it is this exercise, and for the close-grip
+  // push-up that claim was a close-grip bench press.
+  //
+  // Three headers, weakest claim last. "Same muscles, different movement" is the
+  // line Fitbod's alternatives screen needs and does not have.
+  function vidHead(box, rel, who) {
+    var kind = rel ? rel.kind : "same";
+    var head = "Watch how it is done", sub = "";
+    if (kind === "standard") {
+      head = "The standard version";
+      sub = (who ? "@" + who + "’s version: " : "In the video: ") + (rel.differs || "done differently");
+    } else if (kind === "similar") {
+      head = "A similar movement";
+      sub = (rel && rel.shared && rel.shared.length)
+        ? "Same muscles, different movement"
+        : "Not the same movement";
+    }
+    box.appendChild(el("div", "saidlab", head));
+    if (sub) box.appendChild(el("div", "ytrel", sub));
+  }
+
+  function vidNode(v, searchUrl, alternates, curated, who) {
     var box = el("div", "ytbox");
     if (v && v.id) {
-      var st = { clips: [v].concat(alternates || []), i: 0, curated: !!curated };
-      box.appendChild(el("div", "saidlab", "Watch how it is done"));
+      var st = { clips: [v].concat(alternates || []), i: 0, curated: !!curated, who: who || "" };
+      var head = el("div", "ythead");
+      vidHead(head, v.relation, st.who);
+      box.appendChild(head);
       box.appendChild(vidFace(box, st));
       box.appendChild(el("div", "ytby"));
       // One clip is not a choice, and a row of exactly one chip would read as a
@@ -4492,16 +4663,96 @@ export const APP = String.raw`
   // explanation below it glides down rather than jumping when the answer lands
   // late. One frame between filling it and opening it, or the browser has nothing
   // to animate from.
-  function vidFill(r) {
+  function vidFill(r, who) {
     var slot = $("explainvid"), inner = $("explainvidin");
     inner.innerHTML = "";
     inner.appendChild(vidNode(r.video, r.search_url, r.alternates,
-      r.video && r.video.curated));
+      r.video && r.video.curated, who));
     if (window.requestAnimationFrame) {
       requestAnimationFrame(function () { slot.classList.add("on"); });
     } else {
       slot.classList.add("on");
     }
+  }
+
+  // The slice of the pack this exercise carries, as it goes over the wire. One
+  // object, built once, sent to both routes: the clip needs the delta to caption
+  // itself and the explanation needs all of it, and two payloads that were supposed
+  // to describe the same exercise are two payloads that can disagree.
+  function sliceOf(ex, w, quote, source) {
+    return {
+      exercise: ex.name,
+      canonical_id: ex.canonical_id || null,
+      title: w ? (w.title || "") : "",
+      author: authorOf(ex, w) || null,
+      quote: quote,
+      source: source,
+      cue: cueOf(ex) || null,
+      as_performed: ex.as_performed || null,
+      delta: ex.delta || null,
+      t0: typeof ex.t0 === "number" ? ex.t0 : null
+    };
+  }
+
+  // A cache key for a slice. The explanation is an answer about THIS version, so two
+  // cards of the same movement with different overlays are two different answers and
+  // the old key — name plus quote — would have served the first one's text for the
+  // second. djb2 over the serialised slice: short, stable, and it changes the moment
+  // any field of the overlay does.
+  function sliceHash(slice) {
+    var s = JSON.stringify(slice), h = 5381;
+    for (var i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
+    return h.toString(36);
+  }
+
+  // Where this exercise sits in its workout, by identity rather than by name: two
+  // rounds of a circuit share a name and the edit has to land on the one that was
+  // opened. Null when the object did not come out of this card, which is the only
+  // case where the sheet offers no way to correct it.
+  function exAt(w, ex) {
+    var bs = (w && w.blocks) || [];
+    for (var bi = 0; bi < bs.length; bi++) {
+      var xs = bs[bi].exercises || [];
+      for (var ei = 0; ei < xs.length; ei++) if (xs[ei] === ex) return { bi: bi, ei: ei };
+    }
+    return null;
+  }
+
+  // ---------- was that right? ----------
+  //
+  // A thumb is the cheapest true thing a reader can say about an explanation, and
+  // every AI surface people have learned to trust offers one. It is stored on the
+  // profile rather than in a table of its own: nothing reads it yet, and a vote with
+  // no reader does not deserve a migration.
+  function votesNow() {
+    return (state.profile && state.profile.settings && state.profile.settings.explainVotes) || {};
+  }
+
+  var VOTE_BTN = [["explainup", 1], ["explaindown", -1]];
+
+  function paintVotes(id) {
+    var v = id ? votesNow()[id] : null;
+    for (var i = 0; i < VOTE_BTN.length; i++) {
+      var b = $(VOTE_BTN[i][0]), on = v === VOTE_BTN[i][1];
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-pressed", on ? "true" : "false");
+    }
+  }
+
+  // Tapping the thumb you already gave takes it back, the way every rating control
+  // people have used works. The write is narrow — one key merged into the column —
+  // because saveSettings() writes the column WHOLE and this is not the moment to
+  // send the user's goal and reminders up with it.
+  function vote(id, val) {
+    if (!id || !state.profile || !state.user) return;
+    var votes = Object.assign({}, votesNow());
+    if (votes[id] === val) delete votes[id]; else votes[id] = val;
+    var s = Object.assign({}, state.profile.settings || {}, { explainVotes: votes });
+    state.profile.settings = s;
+    paintVotes(id);
+    haptic("tap");
+    sb.from("profiles").update({ settings: s }).eq("id", state.user.id)
+      .then(function (r) { if (r.error) toast("That did not save. Try again in a moment."); });
   }
 
   function explain(ex, w) {
@@ -4511,9 +4762,10 @@ export const APP = String.raw`
     var src = sourceOf(ex), qw = src || w;
     var ev = ex.evidence || null;
     var quote = ev && ev.quote ? String(ev.quote).trim() : "";
-    // Keyed by name AND quote: explained against the creator's own cue it is a
-    // different answer, and the generic one would drop what made this worth opening.
-    var key = name + "\n" + quote;
+    var slice = sliceOf(ex, w, quote, ev ? ev.source : null);
+    // Keyed by the whole slice, not by name and quote: the answer is about THIS
+    // version, and the version is what the overlay says it is.
+    var key = name + "\n" + sliceHash(slice);
     expKey = key;
     $("explaintitle").textContent = name;
     var pre = $("explainpre");
@@ -4524,11 +4776,31 @@ export const APP = String.raw`
       : "In " + (src.title || "a workout you saved")));
     var s = saidNode(ex, qw);
     if (s) pre.appendChild(s);
+    // What the camera saw, under what the creator said and above the stranger's
+    // demonstration. Hidden outright on a card saved before the pack existed.
+    var perf = $("explainperf"), pn = perfNode(ex, w);
+    perf.innerHTML = "";
+    if (pn) perf.appendChild(pn);
     // Spotter's pending vocabulary is reading, listening, watching. "Thinking" is
     // a chatbot's word for the same wait and belongs to a different app.
     $("explaintext").textContent = "";
     $("explaintext").classList.add("hide");
     $("explainask").classList.remove("hide");
+    $("explainvotes").classList.add("hide");
+    var voteId = ex.canonical_id || name;
+    paintVotes(voteId);
+    $("explainup").onclick = function () { vote(voteId, 1); };
+    $("explaindown").onclick = function () { vote(voteId, -1); };
+    // The correction path. It is the edit sheet the card already has, because a
+    // reader who knows the movement better than Spotter does should be able to put
+    // it right on their own copy rather than only score it wrong.
+    var at = exAt(w, ex);
+    $("explainfix").classList.toggle("hide", !at);
+    $("explainfix").onclick = function () {
+      if (!at) return;
+      openExEdit(w, at.bi, at.ei, ex);
+      closeSheet("explainsheet");
+    };
     // Open before close: the swap sheet takes over the sheet layer's one history
     // entry, and closing first would hand that entry back mid-handover.
     $("swapgo").onclick = function () { openSwap(name, title); closeSheet("explainsheet"); };
@@ -4541,17 +4813,20 @@ export const APP = String.raw`
     // Asked alongside the explanation rather than after it. They are two different
     // questions with two very different latencies — a cached clip is one round trip
     // and a completion is several seconds — and neither should wait for the other.
-    var vk = vidKey(ex);
+    var vk = vidKey(ex), who = authorOf(ex, w);
     if (vidCache[vk]) {
-      vidFill(vidCache[vk]);
+      vidFill(vidCache[vk], who);
     } else {
       api("demo-video", {
         method: "POST",
-        body: JSON.stringify({ exercise: name, canonical_id: ex.canonical_id || null })
+        body: JSON.stringify({
+          exercise: name, canonical_id: ex.canonical_id || null,
+          delta: slice.delta, as_performed: slice.as_performed
+        })
       }).then(function (r) {
         if (!r || r.status !== "ok") { limitHit(r, null); return; }
         vidCache[vk] = r;
-        if (expKey === key) vidFill(r);
+        if (expKey === key) vidFill(r, who);
       }).catch(function () {});
     }
 
@@ -4559,22 +4834,24 @@ export const APP = String.raw`
       this.classList.add("hide");
       $("explaintext").classList.remove("hide");
       $("explaintext").textContent = expCache[key] || "Reading up on it…";
-      if (expCache[key]) return;
+      if (expCache[key]) { $("explainvotes").classList.remove("hide"); return; }
       function done(r) {
         if (!r) { if (expKey === key) $("explaintext").textContent = EXFAIL; return; }
         var text = r.status === "ok" ? r.text : (r.message || EXFAIL);
         expCache[key] = r.status === "ok" ? text : null;
-        if (expKey === key) $("explaintext").textContent = text;
+        if (expKey === key) {
+          $("explaintext").textContent = text;
+          // Only a real answer can be voted on. A cap notice is not the model's
+          // opinion about a push-up and a thumb on it would mean nothing.
+          if (r.status === "ok") $("explainvotes").classList.remove("hide");
+        }
         limitHit(r, null);
       }
       // Joining the press costs nothing; asking again costs a credit. Only a sheet
       // opened cold gets to watch the words arrive.
       if (expWaiting[key]) { expWaiting[key].then(done); return; }
       var got = "";
-      apiStream("explain", {
-        exercise: name, title: title, quote: quote,
-        source: ev ? ev.source : null, canonical_id: ex.canonical_id || null
-      }, function (r) {
+      apiStream("explain", slice, function (r) {
         if (r.t === "delta") {
           got += r.text || "";
           if (expKey === key) $("explaintext").textContent = got;
@@ -5017,7 +5294,10 @@ export const APP = String.raw`
       last.id = "wlast";
       main.appendChild(last);
       if (s.ex.weight) main.appendChild(el("div", "wnote", "Suggested load: " + s.ex.weight));
-      if (s.ex.notes) main.appendChild(el("div", "wnote", s.ex.notes));
+      // The cue, not "notes": mid-set is exactly where the creator's own coaching
+      // point and the one setup detail the name would get wrong are worth reading.
+      var wcue = cueOf(s.ex);
+      if (wcue) main.appendChild(el("div", "wnote", wcue));
       renderSetPills(main, entry, s.ex, targetOf(s));
     }
 
