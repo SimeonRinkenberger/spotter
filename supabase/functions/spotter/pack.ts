@@ -107,6 +107,17 @@ export type PackVariant = {
 
 export type PackCue = { t: number; quote: string };
 
+/**
+ * Which eye read this video.
+ *
+ * The native shells cut frames on the phone — AVAssetImageGenerator and
+ * MediaMetadataRetriever, both free — and send contact sheets with the save, so
+ * Luna reads images and nobody pays to move a video anywhere. Gemini video is the
+ * fallback for saves that arrive without frames: the web app during the
+ * transition, and anything the phone could not fetch itself.
+ */
+export type PackReader = "luna_sheets" | "gemini_video" | "none";
+
 export type PackExercise = {
   i: number;
   /** What the creator called it, in their words, verbatim from the transcript. */
@@ -124,6 +135,13 @@ export type PackExercise = {
   seen_not_said: string[];
   provenance: { name: Provenance; reps: Provenance; variant: Provenance; cues: Provenance };
   confidence: number;
+  /**
+   * The channels disagree about this segment, or the camera could not see it
+   * clearly. The Gemini path re-asks for this clip alone at 2 fps and high
+   * resolution; the sheets path cannot yet, so it leaves the flag standing for a
+   * later native pass to answer with a denser strip.
+   */
+  needs_requery: boolean;
 };
 
 export type PackSession = ObservationSession & { load_seen: string | null };
@@ -139,6 +157,7 @@ export type Pack = {
    * so a thin pack reads as "nobody looked" rather than "there was nothing to see".
    */
   visual: "read" | "unavailable";
+  reader: PackReader;
   session: PackSession;
   transcript_source: TranscriptSource;
   transcript: TranscriptSeg[];
@@ -374,6 +393,135 @@ export const OBSERVE_PROMPT =
   '"range_of_motion": string, "tempo": string, "reps_visible": number or null, ' +
   '"unilateral": boolean or null, "confidence": number}]}\n' +
   'If there is no exercise in this video at all, reply with exactly {"none": true}.';
+
+// ---------- frames the phone cut for us ----------
+
+/** One contact sheet: a grid of stills, row-major, each cell at a known second. */
+export type Sheet = {
+  path: string;
+  cols: number;
+  rows: number;
+  cell_w: number;
+  cell_h: number;
+  /** One entry per cell, row-major, in seconds. Ascending. */
+  times: number[];
+};
+
+export type Frames = { source: string; duration_s: number; sheets: Sheet[] };
+
+/** ≤ 3 sheets a save, ≤ 600 KB each — the ceiling the authorize route enforces. */
+export const SHEET_MAX = 3;
+export const SHEET_MAX_BYTES = 600 * 1024;
+
+/** `<uid>/pack/<shortcode>/sheet-<n>.jpg`, and nothing else. */
+export function sheetPathFor(uid: string, shortcode: string, n: number): string {
+  return uid + "/pack/" + shortcode + "/sheet-" + n + ".jpg";
+}
+
+/**
+ * The `frames` block on a save, validated or refused by name.
+ *
+ * This is a caller-supplied structure that ends in a service-role storage call and
+ * in a paid model request, so it is checked the way parseUploadPath is checked: a
+ * whitelist of exact shapes, the owner compared against the caller, and a refusal
+ * that names the field rather than a generic 400 the phone cannot act on. Nothing
+ * here trusts the phone about anything except the pixels.
+ */
+export function parseFrames(
+  raw: unknown, uid: string, shortcode: string,
+): { frames: Frames } | { error: string } {
+  if (raw === undefined || raw === null) return { error: "frames: absent" };
+  const f = raw as Record<string, unknown>;
+  if (typeof f !== "object") return { error: "frames must be an object" };
+  const duration = Number(f.duration_s);
+  if (!Number.isFinite(duration) || duration <= 0 || duration > 7200) {
+    return { error: "frames.duration_s must be a positive number of seconds" };
+  }
+  const list = Array.isArray(f.sheets) ? f.sheets : null;
+  if (!list || !list.length) return { error: "frames.sheets must be a non-empty array" };
+  if (list.length > SHEET_MAX) return { error: "frames.sheets holds at most " + SHEET_MAX + " sheets" };
+
+  const sheets: Sheet[] = [];
+  for (let i = 0; i < list.length; i++) {
+    const s = list[i] as Record<string, unknown>;
+    const where = "frames.sheets[" + i + "]";
+    const path = typeof s?.path === "string" ? s.path.trim() : "";
+    if (path !== sheetPathFor(uid, shortcode, i + 1)) {
+      return { error: where + ".path must be " + sheetPathFor(uid, shortcode, i + 1) };
+    }
+    const cols = Number(s.cols), rows = Number(s.rows);
+    const cw = Number(s.cell_w), ch = Number(s.cell_h);
+    if (!Number.isInteger(cols) || cols < 1 || cols > 12) return { error: where + ".cols must be 1-12" };
+    if (!Number.isInteger(rows) || rows < 1 || rows > 12) return { error: where + ".rows must be 1-12" };
+    if (!Number.isInteger(cw) || cw < 32 || cw > 2000) return { error: where + ".cell_w must be 32-2000" };
+    if (!Number.isInteger(ch) || ch < 32 || ch > 2000) return { error: where + ".cell_h must be 32-2000" };
+    const times = Array.isArray(s.times) ? s.times.map(Number) : null;
+    if (!times || !times.length) return { error: where + ".times must be a non-empty array" };
+    // A full sheet has exactly cols*rows cells. Only the LAST sheet may be short,
+    // because that is the only one the phone can run out of frames in the middle of.
+    const cells = cols * rows;
+    const last = i === list.length - 1;
+    if (times.length > cells || (!last && times.length !== cells)) {
+      return { error: where + ".times must hold " + cells + " entries, one per cell" };
+    }
+    for (let j = 0; j < times.length; j++) {
+      if (!Number.isFinite(times[j]) || times[j] < 0 || times[j] > duration + 1) {
+        return { error: where + ".times[" + j + "] is outside the video" };
+      }
+      if (j && times[j] <= times[j - 1]) return { error: where + ".times must ascend" };
+    }
+    // Sheet two starts after sheet one ends: the phone walks the clip once.
+    const prev = sheets[sheets.length - 1];
+    if (prev && times[0] <= prev.times[prev.times.length - 1]) {
+      return { error: where + ".times must continue after the previous sheet" };
+    }
+    sheets.push({ path, cols, rows, cell_w: cw, cell_h: ch, times });
+  }
+  return {
+    frames: {
+      source: typeof f.source === "string" ? f.source.slice(0, 24) : "device",
+      duration_s: round2(duration),
+      sheets,
+    },
+  };
+}
+
+/**
+ * The observe prompt, addressed to a grid of stills instead of a video.
+ *
+ * Same output schema, deliberately: assemblePack must not be able to tell which
+ * eye produced an observation, or the two readers drift apart and only one of them
+ * stays tested. What changes is how the model is told to find the clock — the
+ * native app burns the timestamp into each cell, and the harness (and any build
+ * that does not) gets the times listed in the prompt, which costs a few dozen
+ * tokens and removes the guess entirely.
+ */
+export function sheetsPrompt(frames: Frames, transcript: TranscriptSeg[]): string {
+  const lines: string[] = [OBSERVE_PROMPT, "", "HOW TO READ THE IMAGES"];
+  lines.push(
+    "Each image is a contact sheet: a grid of still frames from one video, in order, " +
+    "row-major (left to right, then down). Every cell is labelled with its timestamp in the " +
+    "bottom-left corner. Use those labels for t0 and t1. The video is " +
+    frames.duration_s + " seconds long.",
+  );
+  for (let i = 0; i < frames.sheets.length; i++) {
+    const s = frames.sheets[i];
+    lines.push(
+      "  Sheet " + (i + 1) + ": " + s.cols + " columns x " + s.rows + " rows, " +
+      s.times.length + " frames at " + s.times.map((t) => secondsToMmss(t)).join(", "),
+    );
+  }
+  if (transcript.length) {
+    lines.push(
+      "",
+      "WHAT THE CREATOR SAYS, on the same clock. Evidence about naming and intent, never about " +
+      "what is visible — if the speech and the frames disagree, the frames win and you say what " +
+      "you can see.",
+    );
+    for (const s of transcript.slice(0, 60)) lines.push("  " + secondsToMmss(s.t0) + " " + s.text);
+  }
+  return lines.join("\n");
+}
 
 // ---------- reading an observation back ----------
 
@@ -639,7 +787,7 @@ function allCues(transcript: TranscriptSeg[], words: StampedWord[]): PackCue[] {
 // ---------- the variant, read off the observation ----------
 
 const SURFACE_WORD =
-  /\b(?:floor|ground|mat|bench|box|wall|bar|rack|deck|step|platform|chair|towel|sand|turf|bell)\b/i;
+  /\b(?:floor|ground|mat|bench|box|wall|bar|rack|deck|step|platform|chair|towel|sand|turf)\b/i;
 const GRIP_WORD = /\b(?:narrow|close|wide|shoulder[- ]width|neutral|staggered|overhand|underhand|mixed)\b/i;
 
 /** Facts a contact line asserts, one per clause. */
@@ -699,6 +847,48 @@ function sameish(a: string, b: string): boolean {
   return hit / x.length >= 0.5;
 }
 
+// A delta is written for a person, so it has to be about something a person would
+// notice. Both of these fold a dozen ways of saying a position into the handful of
+// positions that actually exist, because "at the chest", "front rack at the
+// sternum" and "goblet" are one place and reporting them as three would put a
+// delta on every goblet squat ever filmed.
+const SURFACE_CLASS: [string, RegExp][] = [
+  ["floor", /\b(?:floor|ground|mat|deck|carpet)\b/i],
+  ["raised", /\b(?:bench|box|step|chair|platform|elevated)\b/i],
+  ["bar", /\b(?:bar|rack|rig)\b/i],
+  ["wall", /\bwall\b/i],
+];
+const LOAD_CLASS: [string, RegExp][] = [
+  ["overhead", /\b(?:overhead|lockout|locked out|above the head)\b/i],
+  ["front", /\b(?:chest|sternum|front|rack|goblet|horns|clavicle|shoulder)\b/i],
+  ["back", /\b(?:on the back|upper back|traps|behind the neck)\b/i],
+  ["low", /\b(?:floor|ground|between the (?:feet|legs)|hang|thigh|shin|hip)\b/i],
+  ["side", /\b(?:side|suitcase|arm's length|by the hips)\b/i],
+];
+
+function classesIn(table: [string, RegExp][], s: string): Set<string> {
+  const out = new Set<string>();
+  for (const [name, re] of table) if (re.test(s)) out.add(name);
+  return out;
+}
+
+/** Does the performed description explicitly deny the standard's own noun? */
+function negates(performed: string, standard: string): boolean {
+  for (const t of contentTokens(standard)) {
+    if (new RegExp("\\bnot\\b[^.;]{0,20}\\b" + t + "\\b", "i").test(performed)) return true;
+  }
+  return false;
+}
+
+/** Whether two position descriptions land in the same place, class-wise. */
+function samePlace(table: [string, RegExp][], std: string, performed: string): boolean {
+  const a = classesIn(table, std);
+  const b = classesIn(table, performed);
+  if (!a.size || !b.size) return true;   // nothing to compare is not a difference
+  for (const c of a) if (b.has(c)) return true;
+  return false;
+}
+
 /**
  * How this rep differed from the version in the book.
  *
@@ -713,15 +903,16 @@ export function deltaFrom(canonicalId: string | null, variant: PackVariant): str
   if (!m) return null;
   const std = standardOf(m.entry);
   const parts: string[] = [];
-  if (std.surface && variant.surface && !sameish(std.surface, variant.surface)) {
-    parts.push(variant.surface + " rather than " + std.surface);
+  if (std.surface && variant.surface &&
+      (negates(variant.surface, std.surface) || !samePlace(SURFACE_CLASS, std.surface, variant.surface))) {
+    parts.push(variant.surface);
   }
-  if (std.load_position && variant.load_position && !sameish(std.load_position, variant.load_position)) {
-    parts.push("the load " + variant.load_position + " rather than " + std.load_position);
+  if (std.load_position && variant.load_position &&
+      !samePlace(LOAD_CLASS, std.load_position, variant.load_position)) {
+    parts.push("load " + variant.load_position);
   }
   const extra = variant.equipment.filter((e) => !std.equipment.includes(e));
-  if (extra.length) parts.push("done with " + extra.join(" and "));
-  else if (!variant.equipment.length && std.equipment.length) parts.push("no implement visible");
+  if (extra.length) parts.push("with " + extra.join(" and "));
   return parts.length ? parts.join("; ").slice(0, 200) : null;
 }
 
@@ -753,7 +944,25 @@ export type AssembleInput = {
   /** The raw WebVTT cues, when the transcript came from one. Finer clock. */
   cues?: VttCue[] | null;
   observation?: Observation | null;
+  reader?: PackReader;
 };
+
+/** Below this the camera did not see the segment well enough to be believed. */
+export const REQUERY_CONFIDENCE = 0.6;
+/** Below this the two channels are not talking about the same movement. */
+export const REQUERY_AGREEMENT = 0.3;
+
+/** Jaccard overlap of two names' content tokens. 1 is the same words. */
+function agreement(a: string | null, b: string): number {
+  if (!a) return 1;
+  const x = contentTokens(a);
+  const y = contentTokens(b);
+  if (!x.length || !y.length) return 1;
+  const set = new Set(y);
+  let hit = 0;
+  for (const t of x) if (set.has(t)) hit++;
+  return hit / (x.length + y.length - hit);
+}
 
 const REPS_SAID = /\b(?:\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|twelve|fifteen|twenty)\s+(?:reps?|repetitions?)\b/i;
 
@@ -839,6 +1048,8 @@ export function assemblePack(input: AssembleInput): Pack {
         cues: mine.length ? "said" : "none",
       },
       confidence: round2(Math.max(0, Math.min(1, seg.confidence))),
+      needs_requery: seg.confidence < REQUERY_CONFIDENCE ||
+        agreement(said, seg.movement) < REQUERY_AGREEMENT,
     });
   }
 
@@ -848,6 +1059,7 @@ export function assemblePack(input: AssembleInput): Pack {
     platform: input.platform,
     duration_s: duration,
     visual: obs ? "read" : "unavailable",
+    reader: input.reader ?? (obs ? "gemini_video" : "none"),
     session: {
       format: obs?.session.format ?? null,
       scheme: obs?.session.scheme ?? null,
