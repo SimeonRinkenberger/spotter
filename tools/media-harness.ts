@@ -86,7 +86,11 @@ function declEnd(src: string, from: number, isFunction: boolean): number {
       continue;
     }
     if (c === "{" || c === "[" || c === "(") {
-      if (isFunction && c === "{" && depth === 0) inBody = true;
+      // A `{` straight after a `:` opens an object TYPE, not a body — a braced
+      // return annotation like `): { step: string; meta: Meta }` would otherwise
+      // be read as the function's body and the declaration would end at its own
+      // signature. `): Promise<Response> {` is unaffected: prev is `>` there.
+      if (isFunction && c === "{" && depth === 0 && prev !== ":") inBody = true;
       depth++;
     } else if (c === "}" || c === "]" || c === ")") {
       depth--;

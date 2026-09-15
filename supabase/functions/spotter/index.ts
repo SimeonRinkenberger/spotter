@@ -2564,6 +2564,40 @@ async function deleteUpload(path: string): Promise<void> {
   }
 }
 
+/**
+ * A one-shot address a client can PUT one object to, with no session at all.
+ *
+ * Minted by the service role and handed out, which is the only shape that works
+ * for an iOS Share Extension: a separate process, its own container, holding the
+ * per-account ingest key and no Supabase bearer. The alternative — teaching the
+ * extension to sign in — would put a session where a share sheet can reach it,
+ * which is a worse trade than a URL that can write exactly one object at exactly
+ * one path.
+ *
+ * Storage returns the path-and-token half; the token is pulled out separately
+ * because the client sends it as a query parameter and reading it out of a URL on
+ * the phone is a parsing job nobody should have to do twice.
+ */
+async function signUploadTarget(
+  path: string,
+): Promise<{ upload_url: string; token: string }> {
+  const r = await fetch(`${SUPABASE_URL}/storage/v1/object/upload/sign/uploads/${path}`, {
+    method: "POST",
+    headers: dbHeaders,
+    body: JSON.stringify({ expiresIn: UPLOAD_SIGN_SECONDS }),
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!r.ok) throw new Error(`sign upload ${r.status}: ${(await r.text()).slice(0, 200)}`);
+  const body = await r.json();
+  const rel = body?.url ?? body?.signedURL ?? body?.signedUrl ?? null;
+  if (typeof rel !== "string" || !rel) throw new Error("sign upload returned no url");
+  const full = `${SUPABASE_URL}/storage/v1${rel.startsWith("/") ? "" : "/"}${rel}`;
+  let token = "";
+  try { token = new URL(full).searchParams.get("token") ?? ""; } catch { /* keep empty */ }
+  if (!token) throw new Error("sign upload returned no token");
+  return { upload_url: full, token };
+}
+
 /** A URL Groq can fetch once, valid for a quarter of an hour. */
 async function signUpload(path: string): Promise<string> {
   const r = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/uploads/${path}`, {
@@ -7942,7 +7976,10 @@ async function escalateToMedia(
   // not need a provider: the stills are already in our own bucket, cut on the
   // device from a video this function never has to reach. A YouTube link the user
   // watched in the native shell is readable for exactly that reason.
-  if (packEligible(p, meta) && !meta.pack && providerFor(p.platform).cacheable) {
+  // Frames are the reason this job exists when they are present — a "re-read this
+  // video" with better stills — so a cached reading must not be replayed over them.
+  if (packEligible(p, meta) && !meta.pack && !meta.frames?.sheets?.length &&
+      providerFor(p.platform).cacheable) {
     // Somebody may have read this video already. The lookup is deliberately NOT
     // gated on CARD_V: bumping the card version to change a prompt must not make
     // every previously-read video be watched again, because the reading is the
@@ -8760,19 +8797,49 @@ async function mediaCapReached(userId: string, cap: number | null): Promise<numb
  * business inside a request the user is holding open, and the queue is what owns
  * the backoff, the one-job-per-video guarantee and the dead-letter cutoff.
  */
-async function handleReadVideo(id: string, userId: string, cors: Cors): Promise<Response> {
+async function handleReadVideo(
+  id: string, userId: string, req: Request, cors: Cors,
+): Promise<Response> {
   const rows = await dbSelect("workouts", `id=eq.${id}&user_id=eq.${userId}&select=*`);
   if (!rows.length) return json({ status: "error", message: "Not found." }, 404, cors);
   const w = rows[0];
 
-  if (!providerFor(w.platform).media) {
+  // "Re-read this video", from the native app, with frames it has just cut.
+  //
+  // This is the one route that is ALLOWED to pay twice for the same video, and it
+  // is deliberate: the frames are the new evidence. A 200 px sheet could not show
+  // whether a hand was on a kettlebell handle or beside it and a 270 px one can,
+  // so a person who asks for the re-read is asking for the better frames to be
+  // used — and answering "already read, nothing new" would make the action a
+  // no-op. Without frames the route behaves exactly as it did: the cached reading
+  // wins and nobody pays for a second one.
+  const body = await req.json().catch(() => null) as Record<string, unknown> | null;
+  let frames: Frames | null = null;
+  if (body?.frames !== undefined && body?.frames !== null) {
+    const parsed = parseFrames(body.frames, userId, w.shortcode);
+    if ("error" in parsed) {
+      console.log("re-read: frames refused for", w.shortcode, "—", parsed.error);
+      return json({ status: "error", message: parsed.error }, 400, cors);
+    }
+    frames = parsed.frames;
+  }
+  // Every answer that is not "the worker will read this" leaves the sheets with
+  // nobody to read them.
+  const bail = async (r: Response): Promise<Response> => {
+    if (frames) await deleteSheets(frames);
+    return r;
+  };
+
+  // A provider this function cannot fetch media from is still readable when the
+  // phone did the looking: the stills are already in our own bucket.
+  if (!providerFor(w.platform).media && !frames) {
     return json({
       status: "error",
       message: "Spotter cannot reach the video behind this link — paste the workout text instead.",
     }, 400, cors);
   }
   if (w.ingest_status === "processing") {
-    return json({ status: "processing", id, message: "Already reading that one." }, 200, cors);
+    return await bail(json({ status: "processing", id, message: "Already reading that one." }, 200, cors));
   }
 
   const sc = encodeURIComponent(w.shortcode);
@@ -8786,26 +8853,35 @@ async function handleReadVideo(id: string, userId: string, cors: Cors): Promise<
   const cached = (cachedR as PromiseFulfilledResult<any[]>).value[0] ?? null;
   const uc = (capsR as PromiseFulfilledResult<UserCaps>).value;
 
-  if (cached?.media_tried) {
+  // Frames are new evidence, so "already read" is not an answer to them.
+  if (cached?.media_tried && !frames) {
     return json({
       status: "ok",
       message: "Spotter has already read this one — there was nothing in the video the card does not show.",
     }, 200, cors);
   }
-  if (overCap(counts.extracts, uc.caps.extract)) return extractLimitResponse(cors, uc, counts.extracts);
+  if (overCap(counts.extracts, uc.caps.extract)) {
+    return await bail(await extractLimitResponse(cors, uc, counts.extracts));
+  }
   const over = await mediaCapReached(userId, uc.caps.media);
-  if (over !== null) return capLimit("media", uc, over, cors);
+  if (over !== null) return await bail(await capLimit("media", uc, over, cors));
   if (!(await paidAllowed())) {
-    return json({
+    return await bail(json({
       status: "limit",
       message: "Spotter's daily budget is spent — try reading this one again tomorrow.",
-    }, 429, cors);
+    }, 429, cors));
   }
 
   const q = (await rpc("requeue_ingest", { p_user: userId, p_workout: id }))[0];
-  if (!q) return json({ status: "error", message: "Not found." }, 404, cors);
+  if (!q) return await bail(json({ status: "error", message: "Not found." }, 404, cors));
   if (q.job_created) {
     const seed = mediaSeed(cached, w);
+    if (frames) {
+      // The reading that exists is the one being replaced. Carrying it forward
+      // would make escalateToMedia replay it and the new frames would never be
+      // looked at, which is the whole action.
+      seed.meta = { ...seed.meta, frames, pack: undefined };
+    }
     try {
       await jobStep(q.job_id, seed.step, { meta: seed.meta, card: seed.card });
     } catch (e) {
@@ -8813,20 +8889,23 @@ async function handleReadVideo(id: string, userId: string, cors: Cors): Promise<
       // not a failed one.
       console.error("could not seed the media job", q.job_id, e);
     }
-    console.log("read-the-video queued", w.platform, w.shortcode, "job", q.job_id, "from step", seed.step);
+    console.log("read-the-video queued", w.platform, w.shortcode, "job", q.job_id,
+      "from step", seed.step, frames ? "with " + frames.sheets.length + " fresh sheet(s)" : "");
   } else {
     console.log("read-the-video joined an existing job for", w.shortcode, "— not seeded");
+    // That job owns the reading and knows nothing about these sheets.
+    if (frames) await deleteSheets(frames);
   }
   // The stage is set here rather than only by the worker: between this response
   // and the worker reaching the media step there are a few seconds in which the
   // card would otherwise say "Reading the video", which is not what was asked for
   // and not what is about to happen.
-  try { await dbPatch("workouts", `id=eq.${id}`, { media_stage: "listening" }); }
+  try { await dbPatch("workouts", `id=eq.${id}`, { media_stage: frames ? "watching" : "listening" }); }
   catch (e) { console.error("could not set the media stage on", id, e); }
   kickWorker();
   return json({
     status: "processing", id, job_id: q.job_id,
-    message: "Listening to the video…",
+    message: frames ? "Reading the frames…" : "Listening to the video…",
   }, 202, cors);
 }
 
@@ -11617,43 +11696,81 @@ async function authorizeSheets(
   body: Record<string, unknown>, userId: string, cors: Cors,
 ): Promise<Response> {
   const shortcode = typeof body.shortcode === "string" ? body.shortcode.trim() : "";
-  const count = Number(body.sheets);
-  const bytes = Number(body.bytes);
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(shortcode)) {
     return json({ status: "error", message: "shortcode must be the save's own shortcode." }, 400, cors);
   }
-  if (!Number.isInteger(count) || count < 1 || count > SHEET_MAX) {
-    return json({ status: "error", message: "sheets must be 1 to " + SHEET_MAX + "." }, 400, cors);
-  }
-  if (!Number.isInteger(bytes) || bytes < 1 || bytes > SHEET_MAX_BYTES) {
+  // One entry per sheet, each declaring its own size. The phone knows how big each
+  // JPEG came out and there is no reason to make it pretend they are all the same.
+  const list = Array.isArray(body.sheets) ? body.sheets : null;
+  if (!list || !list.length || list.length > SHEET_MAX) {
     return json({
       status: "error",
-      message: "Each sheet must be a JPEG under " + Math.round(SHEET_MAX_BYTES / 1024) + " KB.",
+      message: "sheets must be an array of 1 to " + SHEET_MAX + " entries, each with its bytes.",
     }, 400, cors);
   }
+  const sizes: number[] = [];
+  for (let i = 0; i < list.length; i++) {
+    const n = Number((list[i] as Record<string, unknown>)?.bytes);
+    if (!Number.isInteger(n) || n < 1 || n > SHEET_MAX_BYTES) {
+      return json({
+        status: "error",
+        message: "sheets[" + i + "].bytes must be a JPEG size under " +
+          Math.round(SHEET_MAX_BYTES / 1024) + " KB.",
+      }, 400, cors);
+    }
+    sizes.push(n);
+  }
+
   const uc = await capsFor(userId);
   if (overCap(await libraryCount(userId), uc.caps.library)) {
     return await capLimit("library", uc, uc.caps.library ?? 0, cors);
   }
   if (!(await paidAllowed())) throw new GuardError("budget");
-  const paths: string[] = [];
-  for (let i = 1; i <= count; i++) paths.push(sheetPathFor(userId, shortcode, i));
-  const issued = await rpc("issue_sheet_permits", { p_user: userId, p_paths: paths, p_bytes: bytes });
+
+  const paths = sizes.map((_n, i) => sheetPathFor(userId, shortcode, i + 1));
+  // The permits still go out, and they are still what ties a path to this person
+  // and this video. parseFrames recomputes the same path from the uid and the
+  // shortcode on the way in, so nothing here is load-bearing for security — but a
+  // permit row is how the outstanding-sheet ceiling and the release bookkeeping
+  // work, and dropping it would quietly remove both.
+  const issued = await rpc("issue_sheet_permits", {
+    p_user: userId, p_paths: paths, p_bytes: Math.max(...sizes),
+  });
   if (issued !== "ok") {
     return json({
       status: "limit",
       message: "Spotter is busy reading other videos right now. Save the link on its own and try frames again shortly.",
     }, 429, cors);
   }
-  return json({ status: "ok", paths }, 200, cors);
+
+  let targets: { upload_url: string; token: string }[];
+  try {
+    targets = await Promise.all(paths.map((path) => signUploadTarget(path)));
+  } catch (e) {
+    console.error("sheets: could not sign the upload targets for", shortcode, e);
+    return json({
+      status: "error",
+      message: "Spotter could not open a place to put those frames. Save the link on its own.",
+    }, 502, cors);
+  }
+  console.log("sheets: authorized", paths.length, "for", shortcode, "—",
+    sizes.map((n) => Math.round(n / 1024) + "KB").join(", "));
+  return json({
+    status: "ok",
+    sheets: paths.map((path, i) => ({ path, ...targets[i] })),
+    // The permit's own window, which is the shorter of the two clocks on this
+    // hand-off and the one the caller should plan against.
+    expires_in: UPLOAD_SIGN_SECONDS,
+  }, 200, cors);
 }
 
 async function authorizeUpload(req: Request, userId: string, cors: Cors): Promise<Response> {
   const body = await req.json().catch(() => null);
-  // Two kinds of object go into this bucket now. A request naming a shortcode and
-  // a sheet count is the phone asking to hand over the frames it just cut; a
-  // request naming a path is the original single-file upload, unchanged.
-  if (body && typeof body.shortcode === "string") {
+  // Two kinds of object go into this bucket now. `kind: "pack"` is the phone
+  // asking to hand over the contact sheets it just cut; a request naming a path is
+  // the original single-file upload, unchanged and still bearer-only in practice
+  // because only the containing app ever makes one.
+  if (body && (body.kind === "pack" || (typeof body.shortcode === "string" && Array.isArray(body.sheets)))) {
     return await authorizeSheets(body as Record<string, unknown>, userId, cors);
   }
   const ref = parseUploadPath(body?.path, userId);
@@ -11751,10 +11868,18 @@ Deno.serve(async (req: Request) => {
     // out, which names the user and expires ten minutes after it was made.
     if (req.method === "GET" && path === "/api/strava/callback") return await handleCallback(req);
 
-    // One auth resolution for every API route. Ingest is the only route that also
-    // accepts the long-lived per-user key.
+    // One auth resolution for every API route. Two of them also accept the
+    // long-lived per-user key, and they are the two an iOS Share Extension calls.
+    //
+    // A share extension is a separate process with its own container. It holds the
+    // ingest key — which is what it was made for — and it has no session bearer to
+    // hold, because the account it would come from lives in the containing app. So
+    // a route it must reach that only accepted a bearer was a route it could not
+    // reach at all, and handing the frames over is exactly such a route.
     let userId = await userFromBearer(req);
-    if (!userId && path === "/api/ingest") userId = await userFromIngestKey(req, url);
+    if (!userId && (path === "/api/ingest" || path === "/api/uploads/authorize")) {
+      userId = await userFromIngestKey(req, url);
+    }
     if (!userId) return json({ status: "error", message: "Sign in to use Spotter." }, 401, cors);
 
     if (req.method === "POST") req = await boundedRequest(req);
@@ -11766,7 +11891,7 @@ Deno.serve(async (req: Request) => {
     if (req.method === "POST" && reproc) return await handleReprocess(reproc[1], userId, req, cors);
 
     const readvid = path.match(/^\/api\/workouts\/([0-9a-f-]{36})\/media$/);
-    if (req.method === "POST" && readvid) return await handleReadVideo(readvid[1], userId, cors);
+    if (req.method === "POST" && readvid) return await handleReadVideo(readvid[1], userId, req, cors);
 
     const fix = path.match(/^\/api\/workouts\/([0-9a-f-]{36})\/exercises$/);
     if (req.method === "POST" && fix) return await handleCorrection(fix[1], userId, req, cors);

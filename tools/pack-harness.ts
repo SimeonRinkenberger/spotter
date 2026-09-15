@@ -24,7 +24,7 @@
 
 import {
   assemblePack, bestSeenFact, deltaFrom, type Frames, mergeCues, type Observation, OBSERVE_PROMPT,
-  packInTimeOrder, sharesHeadNoun,
+  packInTimeOrder, sharesHeadNoun, SHEET_MAX,
   type Pack, PACK_V, packBlock, parseFrames, parseStampedTranscript, parseVtt,
   readObservation, secondsToMmss, sheetPathFor, SHEET_MAX_BYTES, sheetsPrompt,
   type TranscriptSeg, titleCase, validatePack, vttCues,
@@ -76,7 +76,11 @@ function declEnd(src: string, from: number, isFunction: boolean): number {
       continue;
     }
     if (c === "{" || c === "[" || c === "(") {
-      if (isFunction && c === "{" && depth === 0) inBody = true;
+      // A `{` straight after a `:` opens an object TYPE, not a body — a braced
+      // return annotation like `): { step: string; meta: Meta }` would otherwise
+      // be read as the function's body and the declaration would end at its own
+      // signature. `): Promise<Response> {` is unaffected: prev is `>` there.
+      if (isFunction && c === "{" && depth === 0 && prev !== ":") inBody = true;
       depth++;
     } else if (c === "}" || c === "]" || c === ")") {
       depth--;
@@ -105,8 +109,32 @@ function lift(name: string): string {
 // mentions half the file otherwise.
 const STUBS = "import { normText } from '" +
   new URL("supabase/functions/spotter/evidence.ts", ROOT).href + "';\n" +
-  "import { bestSeenFact, packInTimeOrder, sharesHeadNoun } from '" +
+  "import { bestSeenFact, packInTimeOrder, sharesHeadNoun, parseFrames, sheetPathFor, SHEET_MAX, SHEET_MAX_BYTES, PACK_V } from '" +
   new URL("supabase/functions/spotter/pack.ts", ROOT).href + "';\n" +
+  "type Frames = any; type Cors = any; type Counts = any; type UserCaps = any;\n" +
+  // The route's collaborators, one line each. Everything with real judgement in
+  // it — the validation, the path composition, the decision to read again — is
+  // the shipping code; everything that talks to Postgres or Storage is here.
+  "export const spy: any = { seeded: null, signed: [], rpc: [], deleted: 0, patched: null };\n" +
+  "class GuardError extends Error {}\n" +
+  "function json(b: any, status = 200) { return { status, body: b } as any; }\n" +
+  "declare const DB: any;\n" +
+  "async function dbSelect(t: string, q: string) { return DB[t] ? DB[t](q) : []; }\n" +
+  "async function dbPatch(_t: string, _f: string, patch: any) { spy.patched = patch; }\n" +
+  "function providerFor(name: string) { return { media: name === 'tiktok' ? (() => null) : undefined, cacheable: true }; }\n" +
+  "async function deleteSheets(f: any) { spy.deleted += f?.sheets?.length ?? 0; }\n" +
+  "async function countsFor() { return { extracts: 0, saves: 0, helpers: 0 }; }\n" +
+  "async function capsFor() { return { caps: { extract: 50, media: 20, library: 200 } }; }\n" +
+  "async function libraryCount() { return 1; }\n" +
+  "function overCap(used: number, cap: number | null) { return cap !== null && used >= cap; }\n" +
+  "async function capLimit(kind: string) { return json({ status: 'limit', kind }, 429); }\n" +
+  "async function extractLimitResponse() { return json({ status: 'limit', kind: 'extract' }, 429); }\n" +
+  "async function mediaCapReached() { return null; }\n" +
+  "async function paidAllowed() { return true; }\n" +
+  "async function rpc(name: string, args: any) { spy.rpc.push([name, args]); return DB.rpc(name, args); }\n" +
+  "async function jobStep(_id: string, step: string, patch: any) { spy.seeded = { step, ...patch }; }\n" +
+  "async function signUploadTarget(path: string) { spy.signed.push(path); return { upload_url: 'https://sb/storage/v1/object/upload/sign/uploads/' + path + '?token=tok-' + path.slice(-6), token: 'tok-' + path.slice(-6) }; }\n" +
+  "function kickWorker() {}\n" +
   "type Pack = Record<string, any>;\n" +
   "type Card = { blocks: { exercises: any[] }[] };\n" +
   "type Evidence = Record<string, unknown>;\n" +
@@ -120,12 +148,17 @@ const NAMES = [
   "intOrNull", "numOrNullBounded", "trimCue", "splitDose", "normalizeExercise",
   "ttSubtitles",
   "countExercises", "matchPackExercise", "packEvidence", "applyPack",
+  // The two routes the native share extension and the "Re-read this video" action
+  // call. Their collaborators are stubbed above; the judgement is the real code.
+  "CARD_V", "UPLOAD_SIGN_SECONDS", "usablePack", "mediaSeed", "authorizeSheets", "handleReadVideo",
+  "userFromIngestKey",
 ];
 
 // cleanTitle is declared as a function in index.ts but drags the whole title
 // ladder with it, so the harness supplies the one behaviour normalizeExercise
 // needs from it: whitespace-collapsed trimming.
-const SHIM = "\nglobalThis.cleanTitle = function (s) { return String(s || '').replace(/\\s+/g, ' ').trim(); };\n";
+const SHIM = "\nglobalThis.cleanTitle = function (s) { return String(s || '').replace(/\\s+/g, ' ').trim(); };\n" +
+  "globalThis.DB = { rpc: () => 'ok' };\n";
 
 const module = STUBS + SHIM + NAMES.map(lift).join("\n\n") + "\n";
 const M = await import("data:application/typescript," + encodeURIComponent(module));
@@ -1006,6 +1039,176 @@ check("and the schema is untouched",
   eq("a card with fewer exercises than the camera saw does not align by order",
     short.blocks[0].exercises[0].as_performed, null);
 }
+
+// ---------- 14. the share extension's contract ----------
+//
+// An iOS Share Extension is a separate process with its own container. It holds
+// the per-account ingest key — which is what the key is for — and has no Supabase
+// session to hold, because the account lives in the containing app. So a route it
+// must reach that only accepted a bearer was a route it could not reach.
+
+check("the router resolves the ingest key for the authorize route as well as ingest",
+  /path === "\/api\/ingest" \|\| path === "\/api\/uploads\/authorize"/.test(SRC));
+check("and the authorize route dispatches kind:\"pack\" to the sheets branch",
+  /body\.kind === "pack"/.test(SRC));
+
+{
+  // The key resolver itself, against a stubbed profiles lookup.
+  (globalThis as any).DB = {
+    rpc: () => "ok",
+    profiles: (q: string) => q.includes("ingest_key=eq." + "a".repeat(32)) ? [{ id: UID }] : [],
+  };
+  const keyReq = (k: string) => new Request("https://x/api/uploads/authorize", { headers: { "x-ingest-key": k } });
+  eq("a live ingest key resolves to its owner",
+    await M.userFromIngestKey(keyReq("a".repeat(32)), new URL("https://x/")), UID);
+  eq("an unknown key resolves to nobody",
+    await M.userFromIngestKey(keyReq("b".repeat(32)), new URL("https://x/")), null);
+  eq("a key that is not 32 hex characters never reaches PostgREST",
+    await M.userFromIngestKey(keyReq("' or 1=1 --"), new URL("https://x/")), null);
+}
+
+{
+  // Three sheets, three signed upload targets. The same body, whichever auth form
+  // carried it here: authorizeSheets is reached with a resolved uid and cannot
+  // tell a bearer from a key, which is exactly the property that makes both work.
+  (globalThis as any).DB = { rpc: () => "ok" };
+  M.spy.signed = []; M.spy.rpc = [];
+  const ok = await M.authorizeSheets({
+    kind: "pack", shortcode: SC,
+    sheets: [{ bytes: 408_000 }, { bytes: 431_000 }, { bytes: 364_000 }],
+  }, UID, {});
+  eq("three sheets are authorized", ok.status, 200);
+  eq("one entry per sheet, at the path parseFrames will recompute",
+    ok.body.sheets.map((x: any) => x.path),
+    [1, 2, 3].map((n) => sheetPathFor(UID, SC, n)));
+  check("each carries a signed upload URL a session-less client can PUT to",
+    ok.body.sheets.every((x: any) =>
+      /\/storage\/v1\/object\/upload\/sign\/uploads\//.test(x.upload_url) && x.upload_url.includes("token=")));
+  check("and the token on its own, so the phone does not have to parse a URL",
+    ok.body.sheets.every((x: any) => !!x.token && x.upload_url.includes(x.token)));
+  eq("the window the caller should plan against", ok.body.expires_in, 900);
+  eq("the permits still go out, for the same three paths",
+    M.spy.rpc[0][1].p_paths, ok.body.sheets.map((x: any) => x.path));
+  eq("sized by the largest sheet, which is what the ceiling is about",
+    M.spy.rpc[0][1].p_bytes, 431_000);
+
+  const four = await M.authorizeSheets({
+    kind: "pack", shortcode: SC,
+    sheets: [{ bytes: 1 }, { bytes: 1 }, { bytes: 1 }, { bytes: 1 }],
+  }, UID, {});
+  eq("a fourth sheet is refused", four.status, 400);
+  check("and says how many are allowed", /1 to 3 entries/.test(four.body.message), four.body.message);
+
+  const big = await M.authorizeSheets({
+    kind: "pack", shortcode: SC, sheets: [{ bytes: 408_000 }, { bytes: 700_000 }],
+  }, UID, {});
+  eq("a 700 KB sheet is refused", big.status, 400);
+  check("by index, so the phone knows which one", /sheets\[1\]\.bytes/.test(big.body.message), big.body.message);
+  eq("the ceiling the message quotes", SHEET_MAX_BYTES, 600 * 1024);
+  eq("and the sheet ceiling it enforces", SHEET_MAX, 3);
+
+  const nameless = await M.authorizeSheets({ kind: "pack", sheets: [{ bytes: 1 }] }, UID, {});
+  eq("a request with no shortcode is refused", nameless.status, 400);
+  const empty = await M.authorizeSheets({ kind: "pack", shortcode: SC, sheets: [] }, UID, {});
+  eq("and so is one with no sheets", empty.status, 400);
+}
+
+// The native builder reports the GRID, not the fill: a last sheet that is only
+// ten twelfths full still says 4 x 3.
+{
+  const partial = parseFrames({
+    source: "device", duration_s: 84.3,
+    sheets: [
+      { path: sheetPathFor(UID, SC, 1), cols: 4, rows: 3, cell_w: 270, cell_h: 480,
+        times: Array.from({ length: 12 }, (_, i) => i * 3.5) },
+      { path: sheetPathFor(UID, SC, 2), cols: 4, rows: 3, cell_w: 270, cell_h: 480,
+        times: Array.from({ length: 10 }, (_, i) => 42 + i * 3.5) },
+    ],
+  }, UID, SC);
+  check("a last sheet reporting a full grid with ten times is accepted",
+    "frames" in partial, "error" in partial ? partial.error : "");
+  if ("frames" in partial) {
+    eq("and keeps all ten", partial.frames.sheets[1].times.length, 10);
+    eq("while still reporting the grid it was cut on",
+      [partial.frames.sheets[1].cols, partial.frames.sheets[1].rows], [4, 3]);
+  }
+}
+
+// ---------- 15. "Re-read this video" ----------
+
+{
+  const w = {
+    id: "w1", shortcode: SC, platform: "tiktok", ingest_status: "ready",
+    caption: "Complex fives", author: "thewodfather", thumb_url: null,
+  };
+  const readVideo = async (cached: any, body: unknown) => {
+    (globalThis as any).DB = {
+      rpc: () => [{ job_id: "j1", job_created: true }],
+      workouts: () => [w],
+      video_cache: () => (cached ? [cached] : []),
+    };
+    M.spy.seeded = null; M.spy.deleted = 0; M.spy.patched = null;
+    return await M.handleReadVideo("w1", UID, new Request("https://x/", {
+      method: "POST", body: JSON.stringify(body ?? {}), headers: { "content-type": "application/json" },
+    }), {});
+  };
+  const framesBody = {
+    frames: {
+      source: "device", duration_s: 84.3,
+      sheets: [{ path: sheetPathFor(UID, SC, 1), cols: 4, rows: 3, cell_w: 270, cell_h: 480,
+        times: Array.from({ length: 12 }, (_, i) => i * 7) }],
+    },
+  };
+  const alreadyRead = { v: M.CARD_V, card: { blocks: [] }, media_tried: true, pack: { ...pack }, pack_v: PACK_V };
+
+  // Without frames, nothing changes: the reading that exists is the answer.
+  const plain = await readVideo(alreadyRead, {});
+  eq("a re-read with no frames still says it has already read this one", plain.status, 200);
+  check("and queues nothing", M.spy.seeded === null);
+
+  // With frames, the same card is read again — that is the whole action.
+  const again = await readVideo(alreadyRead, framesBody);
+  eq("a re-read WITH frames queues a job", again.status, 202);
+  check("and tells the user what is about to happen",
+    /frames/i.test(again.body.message), again.body.message);
+  eq("the card says watching, not listening", M.spy.patched?.media_stage, "watching");
+  eq("the job carries the new sheets", M.spy.seeded?.meta?.frames?.sheets?.length, 1);
+  eq("and NOT the reading they are replacing", M.spy.seeded?.meta?.pack, undefined);
+  eq("nothing was deleted, because the worker still needs them", M.spy.deleted, 0);
+
+  // A video nobody has read yet behaves the same way with frames.
+  const fresh = await readVideo(null, framesBody);
+  eq("a first reading with frames queues too", fresh.status, 202);
+  eq("and seeds them", fresh.body.status, "processing");
+
+  // Every answer that is not "the worker will read this" hands the sheets back.
+  const busy = await readVideo({ ...alreadyRead, media_tried: false }, framesBody);
+  eq("a queued job keeps its sheets", busy.status, 202);
+  (globalThis as any).DB = {
+    rpc: () => [{ job_id: "j1", job_created: false }],
+    workouts: () => [w], video_cache: () => [alreadyRead],
+  };
+  M.spy.deleted = 0;
+  await M.handleReadVideo("w1", UID, new Request("https://x/", {
+    method: "POST", body: JSON.stringify(framesBody), headers: { "content-type": "application/json" },
+  }), {});
+  eq("but a job that was already in flight owns the reading, so the sheets go",
+    M.spy.deleted, 1);
+
+  // Somebody else's uid in the path is refused before anything is charged.
+  const stolen = await readVideo(null, {
+    frames: {
+      ...framesBody.frames,
+      sheets: [{ ...framesBody.frames.sheets[0], path: sheetPathFor("99999999-2222-4333-8444-555555555555", SC, 1) }],
+    },
+  });
+  eq("frames naming somebody else's folder are refused", stolen.status, 400);
+  check("and no job is queued", M.spy.seeded === null);
+}
+
+check("a cached reading is not replayed over fresh frames",
+  /!meta\.frames\?\.sheets\?\.length &&\s*\n?\s*providerFor\(p\.platform\)\.cacheable/.test(SRC) ||
+  SRC.includes("!meta.frames?.sheets?.length"));
 
 eq("title case leaves the little words alone",
   titleCase("close-grip push-up on kettlebell"), "Close-Grip Push-Up on Kettlebell");
