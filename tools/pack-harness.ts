@@ -31,7 +31,7 @@ import {
 } from "../supabase/functions/spotter/pack.ts";
 import { canonicalize, CATALOG_CONFLICTS, standardOf } from "../supabase/functions/spotter/catalog.ts";
 import { normText } from "../supabase/functions/spotter/evidence.ts";
-import { tokenPrice } from "../supabase/functions/spotter/ai-guard.ts";
+import { aiActor, createGuardedFetch, GuardError, tokenPrice } from "../supabase/functions/spotter/ai-guard.ts";
 
 const ROOT = new URL("../", import.meta.url);
 const SRC = await Deno.readTextFile(new URL("supabase/functions/spotter/index.ts", ROOT));
@@ -51,6 +51,10 @@ function declEnd(src: string, from: number, isFunction: boolean): number {
   let depth = 0;
   let inBody = false;
   let prev = "";
+  // Generic depth, counted only until the body opens. A `{` inside an unclosed
+  // `<...>` is part of a type — `): Promise<{ obs: Observation }>` — and reading
+  // it as the body would end the declaration at its own signature.
+  let angle = 0;
   for (let i = from; i < src.length; i++) {
     const c = src[i];
     if (c === "/" && src[i + 1] === "/") { while (i < src.length && src[i] !== "\n") i++; continue; }
@@ -75,12 +79,14 @@ function declEnd(src: string, from: number, isFunction: boolean): number {
       prev = "/";
       continue;
     }
+    if (!inBody && isFunction && c === "<") angle++;
+    else if (!inBody && isFunction && c === ">" && prev !== "=") angle = Math.max(0, angle - 1);
     if (c === "{" || c === "[" || c === "(") {
-      // A `{` straight after a `:` opens an object TYPE, not a body — a braced
-      // return annotation like `): { step: string; meta: Meta }` would otherwise
-      // be read as the function's body and the declaration would end at its own
-      // signature. `): Promise<Response> {` is unaffected: prev is `>` there.
-      if (isFunction && c === "{" && depth === 0 && prev !== ":") inBody = true;
+      // Two ways a `{` at depth zero is a TYPE rather than a body, and both would
+      // otherwise end the declaration at its own signature: straight after a `:`
+      // (`): { step: string; meta: Meta }`), or inside an unclosed generic
+      // (`): Promise<{ obs: Observation }>`). `): Promise<Response> {` is neither.
+      if (isFunction && c === "{" && depth === 0 && prev !== ":" && angle === 0) inBody = true;
       depth++;
     } else if (c === "}" || c === "]" || c === ")") {
       depth--;
@@ -109,13 +115,15 @@ function lift(name: string): string {
 // mentions half the file otherwise.
 const STUBS = "import { normText } from '" +
   new URL("supabase/functions/spotter/evidence.ts", ROOT).href + "';\n" +
-  "import { bestSeenFact, packInTimeOrder, sharesHeadNoun, parseFrames, sheetPathFor, SHEET_MAX, SHEET_MAX_BYTES, PACK_V } from '" +
+  "import { bestSeenFact, packInTimeOrder, sharesHeadNoun, parseFrames, readObservation, sheetPathFor, sheetsPrompt, SHEET_MAX, SHEET_MAX_BYTES, PACK_V } from '" +
   new URL("supabase/functions/spotter/pack.ts", ROOT).href + "';\n" +
+  "import { tokenCost, tokenPrice } from '" +
+  new URL("supabase/functions/spotter/ai-guard.ts", ROOT).href + "';\n" +
   "type Frames = any; type Cors = any; type Counts = any; type UserCaps = any;\n" +
   // The route's collaborators, one line each. Everything with real judgement in
   // it — the validation, the path composition, the decision to read again — is
   // the shipping code; everything that talks to Postgres or Storage is here.
-  "export const spy: any = { seeded: null, signed: [], rpc: [], deleted: 0, patched: null };\n" +
+  "export const spy: any = { seeded: null, signed: [], rpc: [], deleted: 0, patched: null, calls: [], cost: [], store: null };\n" +
   "class GuardError extends Error {}\n" +
   "function json(b: any, status = 200) { return { status, body: b } as any; }\n" +
   "declare const DB: any;\n" +
@@ -135,6 +143,18 @@ const STUBS = "import { normText } from '" +
   "async function jobStep(_id: string, step: string, patch: any) { spy.seeded = { step, ...patch }; }\n" +
   "async function signUploadTarget(path: string) { spy.signed.push(path); return { upload_url: 'https://sb/storage/v1/object/upload/sign/uploads/' + path + '?token=tok-' + path.slice(-6), token: 'tok-' + path.slice(-6) }; }\n" +
   "function kickWorker() {}\n" +
+  "const OPENAI_API_KEY = 'sk-test'; const GEMINI_API_KEY = 'g-test';\n" +
+  "const PACK_EVAL_KEY = 'e'.repeat(32);\n" +
+  "function secretEquals(a: string, b: string) { return !!a && !!b && a === b; }\n" +
+  "async function ensureConfig() {}\n" +
+  "function packSheetsModel() { return DB.model ?? 'gpt-5.6-luna'; }\n" +
+  "function approxTokens(s: string) { return Math.ceil(s.length / 4); }\n" +
+  "function matchTikTok() { return null; }\n" +
+  "async function tiktokMedia() { return null; }\n" +
+  "async function packTranscript() { return { transcript: [], cues: null, source: 'none', text: '', media_source: null }; }\n" +
+  "async function recordCost(provider: string, model: string, _c: any, u: any, ok: boolean) { spy.cost.push({ provider, model, ...u, ok }); }\n" +
+  "const aiActor = { getStore: () => spy.store, run: (a: any, fn: any) => { spy.store = a; return fn(); } };\n" +
+  "async function aiFetch(url: string, init: any) { spy.calls.push({ url, body: JSON.parse(init.body), purpose: spy.store?.purpose }); return DB.reply(url); }\n" +
   "type Pack = Record<string, any>;\n" +
   "type Card = { blocks: { exercises: any[] }[] };\n" +
   "type Evidence = Record<string, unknown>;\n" +
@@ -145,13 +165,15 @@ const STUBS = "import { normText } from '" +
 
 const NAMES = [
   "CUE_MAX", "CUE_RULE", "TRANSCRIBE_PROMPT",
-  "intOrNull", "numOrNullBounded", "trimCue", "splitDose", "normalizeExercise",
+  "intOrNull", "numOrNullBounded", "trimCue", "parseJsonLoose", "splitDose", "normalizeExercise",
   "ttSubtitles",
   "countExercises", "matchPackExercise", "packEvidence", "applyPack",
   // The two routes the native share extension and the "Re-read this video" action
   // call. Their collaborators are stubbed above; the judgement is the real code.
   "CARD_V", "UPLOAD_SIGN_SECONDS", "usablePack", "mediaSeed", "authorizeSheets", "handleReadVideo",
   "scopeFor", "isPackAuthorize",
+  // The A/B bench for the sheets reader.
+  "readSheetImages", "handleEvalSheets",
   "userFromIngestKey",
 ];
 
@@ -1263,6 +1285,161 @@ check("and the authorize route dispatches kind:\"pack\" to the sheets branch",
 check("a cached reading is not replayed over fresh frames",
   /!meta\.frames\?\.sheets\?\.length &&\s*\n?\s*providerFor\(p\.platform\)\.cacheable/.test(SRC) ||
   SRC.includes("!meta.frames?.sheets?.length"));
+
+// ---------- 16. A/B-ing the sheets reader ----------
+//
+// On identical magnified sheets where a person can see the hands wrapped around a
+// kettlebell, Luna reported "hands on the mat". That is not a question a prompt
+// change answers, so the two readers have to be comparable on identical input.
+
+const JPEG = btoa("\xff\xd8\xff" + "x".repeat(600));
+
+function evalReply(url: string) {
+  return /generativelanguage/.test(url)
+    ? new Response(JSON.stringify({
+      candidates: [{ content: { parts: [{ text: JSON.stringify(mock) }] } }],
+      usageMetadata: { promptTokenCount: 5200, candidatesTokenCount: 1100 },
+    }), { headers: { "content-type": "application/json" } })
+    : new Response(JSON.stringify({
+      choices: [{ message: { content: JSON.stringify(mock) }, finish_reason: "stop" }],
+      usage: { prompt_tokens: 4200, completion_tokens: 900 },
+    }), { headers: { "content-type": "application/json" } });
+}
+
+{
+  (globalThis as any).DB = { rpc: () => "ok", reply: evalReply };
+  M.spy.calls = []; M.spy.cost = []; M.spy.store = { userId: null, workKey: "t" };
+  const images = [{ b64: JPEG, mime: "image/jpeg" }];
+
+  const luna = await M.readSheetImages(images, "PROMPT", "gpt-5.6-luna", { purpose: "pack", userId: null });
+  eq("a gpt-* model goes to OpenAI", new URL(M.spy.calls[0].url).hostname, "api.openai.com");
+  const lb = M.spy.calls[0].body;
+  check("as a data URL at detail high, images before the text part",
+    lb.messages[1].content[0].type === "image_url" &&
+    lb.messages[1].content[0].image_url.detail === "high" &&
+    /^data:image\/jpeg;base64,/.test(lb.messages[1].content[0].image_url.url) &&
+    lb.messages[1].content[1].type === "text");
+  eq("and reads back into the same observation shape", luna.obs?.segments.length, 5);
+
+  const gem = await M.readSheetImages(images, "PROMPT", "gemini-3.6-flash", { purpose: "pack", userId: null });
+  eq("a gemini-* model goes to Google",
+    new URL(M.spy.calls[1].url).hostname, "generativelanguage.googleapis.com");
+  const gb = M.spy.calls[1].body;
+  check("as inline image parts, images before the text part",
+    !!gb.contents[0].parts[0].inline_data && gb.contents[0].parts[0].inline_data.mime_type === "image/jpeg" &&
+    typeof gb.contents[0].parts[1].text === "string");
+  eq("at high media resolution, because fine detail is the whole question",
+    gb.generationConfig.mediaResolution, "MEDIA_RESOLUTION_HIGH");
+  eq("and answers in the same schema", gem.obs?.segments.length, 5);
+  eq("both readers are charged to their own provider",
+    M.spy.cost.map((c: any) => c.provider), ["openai", "gemini"]);
+  eq("the actor's purpose is stamped for the guard while the call is in flight",
+    [M.spy.calls[0].purpose, M.spy.calls[1].purpose], ["pack", "pack"]);
+  eq("and restored afterwards", M.spy.store.purpose, undefined);
+
+  eq("gpt-5.6-terra is priced so it can be A/B'd", tokenPrice("gpt-5.6-terra"), [2, 12, 0.2]);
+}
+
+// The guard's exception, against the real guard.
+{
+  const reserved: string[] = [];
+  const rpcSpy = (name: string) => { reserved.push(name); return Promise.resolve("ok"); };
+  const guarded = createGuardedFetch(rpcSpy as any, ((u: any, init: any) => {
+    // countTokens preflight, then the call itself.
+    if (String(u).includes(":countTokens")) {
+      return Promise.resolve(new Response(JSON.stringify({ totalTokens: 5000 }),
+        { headers: { "content-type": "application/json" } }));
+    }
+    return Promise.resolve(evalReply(String(u)));
+  }) as any);
+
+  const geminiBody = (images: number, bytes: number) => JSON.stringify({
+    contents: [{
+      role: "user",
+      parts: [
+        ...Array.from({ length: images }, () => ({
+          inline_data: { mime_type: "image/jpeg", data: "A".repeat(Math.ceil(bytes * 4 / 3)) },
+        })),
+        { text: "read these" },
+      ],
+    }],
+    generationConfig: { maxOutputTokens: 6000 },
+  });
+  const url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent";
+  const call = async (purpose: string | undefined, images: number, bytes: number) => {
+    try {
+      await aiActor.run({ userId: null, workKey: "t", purpose }, () =>
+        guarded(url, { method: "POST", body: geminiBody(images, bytes), headers: {} }));
+      return "ok";
+    } catch (e) {
+      return e instanceof GuardError ? e.reason : "threw " + String(e).slice(0, 60);
+    }
+  };
+
+  eq("three sheets under the cap are admitted for the pack", await call("pack", 3, 400_000), "ok");
+  eq("and for the eval bench", await call("pack_eval", 1, 400_000), "ok");
+  eq("a fourth image is refused", await call("pack", 4, 10_000), "gemini_media_only");
+  eq("an oversize image is refused", await call("pack", 1, 700_000), "gemini_image_too_large");
+  eq("and any other purpose is refused outright", await call("chat", 1, 10_000), "gemini_media_only");
+  eq("including no purpose at all", await call(undefined, 1, 10_000), "gemini_media_only");
+}
+
+// The bench's gate.
+{
+  (globalThis as any).DB = { rpc: () => "ok", reply: evalReply, model: "gpt-5.6-luna" };
+  const sheet = {
+    b64: JPEG, cols: 4, rows: 3, cell_w: 270, cell_h: 480,
+    times: Array.from({ length: 12 }, (_, i) => i * 7),
+  };
+  const ask = (headers: Record<string, string>, body: unknown) =>
+    M.handleEvalSheets(new Request("https://x/api/worker/eval-sheets", {
+      method: "POST", headers: { "content-type": "application/json", ...headers },
+      body: JSON.stringify(body),
+    }));
+  const KEY = { "x-pack-eval-key": "e".repeat(32) };
+  const good = { model: "gpt-5.6-luna", duration_s: 84.3, sheets: [sheet], transcript: false };
+
+  eq("no key is a 404, not a 401 — the bench does not announce itself",
+    (await ask({}, good)).status, 404);
+  eq("the wrong key is the same 404",
+    (await ask({ "x-pack-eval-key": "f".repeat(32) }, good)).status, 404);
+  eq("the worker secret does not open it either",
+    (await ask({ "x-worker-secret": "e".repeat(32) }, good)).status, 404);
+
+  const ran = await ask(KEY, good);
+  eq("the right key runs the read", ran.status, 200);
+  eq("and reports what it saw", ran.body.observation?.segments?.length, 5);
+  eq("what it cost", ran.body.tokens_in > 0 && ran.body.cost_usd > 0, true);
+  eq("and how long it took", typeof ran.body.ms, "number");
+  eq("blind by default", ran.body.transcript_lines, 0);
+
+  eq("an unpriced model is refused",
+    (await ask(KEY, { ...good, model: "gpt-9-imaginary" })).status, 400);
+  eq("a fourth sheet is refused",
+    (await ask(KEY, { ...good, sheets: [sheet, sheet, sheet, sheet] })).status, 400);
+  eq("an oversize sheet is refused",
+    (await ask(KEY, { ...good, sheets: [{ ...sheet, b64: "A".repeat(900_000) }] })).status, 400);
+  eq("no duration is refused", (await ask(KEY, { ...good, duration_s: 0 })).status, 400);
+
+  check("the route is matched above the user-auth gate, so no bearer can reach it",
+    SRC.indexOf('path === "/api/worker/eval-sheets"') < SRC.indexOf("let userId = await userFromBearer(req);"));
+  check("and an unset secret refuses everything",
+    /!PACK_EVAL_KEY \|\| !secretEquals/.test(SRC));
+}
+
+// With the transcript out, the prompt says nothing about what the creator called
+// the movement — which is how to find out whether "push ups" was anchoring the
+// reader onto a floor push-up before it ever looked at the hands.
+{
+  const frames = (parseFrames(goodFrames, UID, SC) as { frames: Frames }).frames;
+  const blind = sheetsPrompt(frames, []);
+  check("a blind prompt never mentions the creator", !/creator/i.test(blind));
+  check("nor quotes a word of speech", !blind.includes("close grip push"));
+  check("but still asks the question that matters",
+    blind.includes("For every segment name every object the body is in contact with and how"));
+  check("the sighted prompt does carry the words",
+    sheetsPrompt(frames, segs).includes("0:15 I want you to take these slow"));
+}
 
 eq("title case leaves the little words alone",
   titleCase("close-grip push-up on kettlebell"), "Close-Grip Push-Up on Kettlebell");

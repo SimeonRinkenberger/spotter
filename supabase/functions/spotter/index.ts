@@ -685,6 +685,10 @@ function aiSignal(timeout: number): AbortSignal {
 // ---------- background worker ----------
 
 const WORKER_SECRET = Deno.env.get("WORKER_SECRET") ?? "";
+// The A/B bench for the sheets reader. Unset in production, and an unset secret
+// is a route that answers 404 — this is the owner's measuring instrument, not a
+// feature, and it spends real money on models by design.
+const PACK_EVAL_KEY = Deno.env.get("PACK_EVAL_KEY") ?? "";
 const WORKER_BATCH = Number(Deno.env.get("WORKER_BATCH") ?? "4");
 // How long a claimed job may sit untouched before it is assumed its worker died.
 const WORKER_STALE_SECONDS = Number(Deno.env.get("WORKER_STALE_SECONDS") ?? "300");
@@ -3960,26 +3964,140 @@ async function observeFromVideo(
 }
 
 /**
+ * One contact-sheet read, whichever model is asked to do it.
+ *
+ * The provider is chosen by the model's own name, because the owner is measuring
+ * one against the other on identical input: Luna reported "hands on the mat" on
+ * frames where a person can plainly see the hands wrapped around a kettlebell, and
+ * "which reader sees it" is not a question a prompt change can answer. So both
+ * sides take the same images in the same order and the same OBSERVE schema out,
+ * and the only difference is who read them.
+ *
+ * Images before the text part on both, which is each provider's own guidance for
+ * a single question about several pictures — and, on OpenAI, the only shape
+ * ai-guard admits at all.
+ */
+async function readSheetImages(
+  images: { b64: string; mime: string }[], prompt: string, model: string, ctx: AiCtx,
+): Promise<{ obs: Observation | null; usage: Usage; detail?: string }> {
+  const none: Usage = { inTok: 0, outTok: 0 };
+  if (!images.length) return { obs: null, usage: none, detail: "no images" };
+  const gemini = /^gemini-/.test(model);
+  if (gemini ? !GEMINI_API_KEY : !OPENAI_API_KEY) {
+    return { obs: null, usage: none, detail: "no key for " + model };
+  }
+
+  const url = gemini
+    ? `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`
+    : "https://api.openai.com/v1/chat/completions";
+  const headers: Record<string, string> = gemini
+    ? { "content-type": "application/json", "x-goog-api-key": GEMINI_API_KEY }
+    : { authorization: `Bearer ${OPENAI_API_KEY}`, "content-type": "application/json" };
+  const tail = "The " + images.length + " image(s) above are the contact sheets, in order. " +
+    "Return the observation JSON.";
+  const body = gemini
+    ? {
+      contents: [{
+        role: "user",
+        parts: [
+          ...images.map((im) => ({ inline_data: { mime_type: im.mime, data: im.b64 } })),
+          { text: prompt + "\n\n" + tail },
+        ],
+      }],
+      generationConfig: {
+        maxOutputTokens: 6000,
+        responseMimeType: "application/json",
+        // Fine detail is the whole question here — whether a hand is ON the
+        // handle or beside it — and these are a handful of stills rather than a
+        // video's worth of frames, so the expensive setting is affordable.
+        mediaResolution: "MEDIA_RESOLUTION_HIGH",
+        thinkingConfig: { thinkingBudget: 0 },
+      },
+    }
+    : {
+      model,
+      reasoning_effort: "none",
+      max_completion_tokens: 6000,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: prompt },
+        {
+          role: "user",
+          content: [
+            ...images.map((im) => ({
+              type: "image_url",
+              image_url: { url: "data:" + im.mime + ";base64," + im.b64, detail: "high" },
+            })),
+            { type: "text", text: tail },
+          ],
+        },
+      ],
+    };
+
+  // The guard's inline-image exception is scoped to this work by the actor's
+  // purpose, so it is stamped here rather than asserted in a comment. Same store
+  // object, restored afterwards, so a `blocked` set inside still propagates out.
+  const store = aiActor.getStore();
+  const wasPurpose = store?.purpose;
+  if (store) store.purpose = ctx.purpose;
+  let raw: Response;
+  try {
+    raw = await aiFetch(url, { method: "POST", headers, body: JSON.stringify(body) });
+  } catch (e) {
+    if (store) store.purpose = wasPurpose;
+    throw e;
+  } finally {
+    if (store) store.purpose = wasPurpose;
+  }
+
+  if (!raw.ok) {
+    const detail = (await raw.text()).slice(0, 300);
+    console.error("pack: sheets read", model, raw.status, detail);
+    await recordCost(gemini ? "gemini" : "openai", model, ctx, none, false);
+    return { obs: null, usage: none, detail: "http " + raw.status + " " + detail.slice(0, 160) };
+  }
+  const data = await raw.json();
+  const out = gemini
+    ? ((data?.candidates?.[0]?.content?.parts ?? [])
+      .filter((pp: { thought?: unknown }) => !pp?.thought)
+      .map((pp: { text?: unknown }) => String(pp?.text ?? "")).join("").trim())
+    : (data?.choices?.[0]?.message?.content ?? "");
+  const um = gemini ? data?.usageMetadata : data?.usage;
+  const usage: Usage = gemini
+    ? {
+      inTok: Number(um?.promptTokenCount) || 0,
+      outTok: (Number(um?.candidatesTokenCount) || 0) + (Number(um?.thoughtsTokenCount) || 0),
+      cachedTok: Number(um?.cachedContentTokenCount) || 0,
+    }
+    : {
+      inTok: Number(um?.prompt_tokens) || approxTokens(prompt),
+      outTok: Number(um?.completion_tokens) || approxTokens(out),
+      cachedTok: Number(um?.prompt_tokens_details?.cached_tokens) || 0,
+    };
+  await recordCost(gemini ? "gemini" : "openai", model, ctx, usage, !!out);
+  if (!out) return { obs: null, usage, detail: "empty candidate" };
+  try {
+    return { obs: readObservation(parseJsonLoose(out)), usage };
+  } catch (e) {
+    return { obs: null, usage, detail: "unparseable: " + String(e).slice(0, 160) };
+  }
+}
+
+/**
  * The visual read, by contact sheet.
  *
  * The native shells cut stills on the device — AVAssetImageGenerator on iOS,
  * MediaMetadataRetriever on Android, both free and both instant — and upload two
  * or three JPEG grids with the save. That makes the phone the primary eye and
  * Gemini video the fallback, which is the right shape for an app that is being
- * built to be native: no video ever moves, no video model is involved, and Luna
- * reads the frames as images.
- *
- * The request shape is the one ai-guard admits and nothing else: `detail: "high"`
- * on a `data:image/` URL, images before the text part. Anything else is refused by
- * the guard as `unsupported_image`, which is deliberate — it is the rule that keeps
- * a stray image call from being priced as text.
+ * built to be native: no video ever moves, no video model is involved, and the
+ * frames are read as images.
  */
 async function observeFromSheets(
   frames: Frames, transcript: TranscriptSeg[], ctx: AiCtx, shortcode: string,
 ): Promise<ObservationRead> {
-  if (!OPENAI_API_KEY) return { obs: null, bytes: 0, detail: "no openai key" };
   const model = packSheetsModel();
-  const images: string[] = [];
+  const images: { b64: string; mime: string }[] = [];
   let bytes = 0;
   for (const sheet of frames.sheets) {
     let signed: string;
@@ -3988,58 +4106,13 @@ async function observeFromSheets(
     const got = await fetchCapped(signed, SHEET_MAX_BYTES);
     if (!got) return { obs: null, bytes, detail: "sheet " + sheet.path.split("/").pop() + " unreadable" };
     bytes += got.buf.byteLength;
-    images.push("data:image/jpeg;base64," + await b64encode(got.buf));
+    images.push({ b64: await b64encode(got.buf), mime: "image/jpeg" });
   }
-
-  const system = sheetsPrompt(frames, transcript);
-  const body = {
-    model,
-    reasoning_effort: "none",
-    max_completion_tokens: 6000,
-    response_format: { type: "json_object" },
-    messages: [
-      { role: "system", content: system },
-      {
-        role: "user",
-        content: [
-          ...images.map((url) => ({ type: "image_url", image_url: { url, detail: "high" } })),
-          {
-            type: "text",
-            text: "The " + images.length + " image(s) above are the contact sheets, in order. " +
-              "Return the observation JSON.",
-          },
-        ],
-      },
-    ],
-  };
-  try {
-    const r = await aiFetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: { authorization: `Bearer ${OPENAI_API_KEY}`, "content-type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    if (!r.ok) {
-      const detail = (await r.text()).slice(0, 300);
-      console.error("pack: sheets read", model, r.status, detail);
-      await recordCost("openai", model, ctx, { inTok: 0, outTok: 0 }, false);
-      return { obs: null, bytes, detail: "http " + r.status };
-    }
-    const data = await r.json();
-    const out = data?.choices?.[0]?.message?.content ?? "";
-    const usage: Usage = {
-      inTok: Number(data?.usage?.prompt_tokens) || approxTokens(system),
-      outTok: Number(data?.usage?.completion_tokens) || approxTokens(out),
-      cachedTok: Number(data?.usage?.prompt_tokens_details?.cached_tokens) || 0,
-    };
-    await recordCost("openai", model, ctx, usage, !!out);
-    console.log("pack: read", images.length, "sheet(s) of", shortcode, "—", bytes, "bytes,",
-      "tokens", usage.inTok + "/" + usage.outTok, "by", model);
-    if (!out) return { obs: null, bytes, detail: "empty candidate" };
-    return { obs: readObservation(parseJsonLoose(out)), bytes };
-  } catch (e) {
-    console.error("pack: sheets read failed for", shortcode, String(e).slice(0, 200));
-    return { obs: null, bytes, detail: String(e).slice(0, 160) };
-  }
+  const read = await readSheetImages(images, sheetsPrompt(frames, transcript), model, ctx);
+  console.log("pack: read", images.length, "sheet(s) of", shortcode, "—", bytes, "bytes,",
+    "tokens", read.usage.inTok + "/" + read.usage.outTok, "by", model,
+    read.detail ? "— " + read.detail : "");
+  return { obs: read.obs, bytes, detail: read.detail };
 }
 
 /**
@@ -8615,6 +8688,108 @@ async function probeGeminiVideo(url: string): Promise<unknown> {
 }
 
 /**
+ * The sheets A/B bench.
+ *
+ * On identical magnified sheets where a person can see the hands wrapped around a
+ * kettlebell, Luna reported "hands on the mat". That is not a question a prompt
+ * change answers, and it is not a question a production save can answer either —
+ * a save reads the video once and keeps the answer, which is the opposite of an
+ * experiment. So this route takes the pixels directly, runs one named model over
+ * them, and hands back what it saw and what it cost. Nothing is cached, no card is
+ * built, and no user's row is touched.
+ *
+ * Its own secret rather than the worker's, and a distinct header, because it is
+ * the one route in this file whose whole purpose is to spend money on demand. An
+ * unset PACK_EVAL_KEY is a 404: a bench nobody configured is a bench nobody meant
+ * to leave running. It is matched above the user-auth gate and therefore can never
+ * be reached with a user bearer.
+ */
+async function handleEvalSheets(req: Request): Promise<Response> {
+  if (!PACK_EVAL_KEY || !secretEquals(req.headers.get("x-pack-eval-key") ?? "", PACK_EVAL_KEY)) {
+    return json({ status: "error", message: "Not found" }, 404);
+  }
+  await ensureConfig();
+  const body = await req.json().catch(() => null) as Record<string, unknown> | null;
+  const model = typeof body?.model === "string" ? body.model.trim() : "";
+  if (!model || !tokenPrice(model)) {
+    return json({ status: "error", message: "model must be one ai-guard prices" }, 400);
+  }
+  const rawSheets = Array.isArray(body?.sheets) ? body.sheets : [];
+  if (!rawSheets.length || rawSheets.length > SHEET_MAX) {
+    return json({ status: "error", message: "sheets must be 1 to " + SHEET_MAX + " entries" }, 400);
+  }
+  const duration = Number(body?.duration_s);
+  if (!Number.isFinite(duration) || duration <= 0) {
+    return json({ status: "error", message: "duration_s must be a positive number" }, 400);
+  }
+
+  // The same Frames shape the phone sends, built here from the bytes rather than
+  // from a bucket, so the prompt the bench sends is the prompt production sends.
+  const sheets: Sheet[] = [];
+  const images: { b64: string; mime: string }[] = [];
+  for (let i = 0; i < rawSheets.length; i++) {
+    const sh = rawSheets[i] as Record<string, unknown>;
+    const b64 = typeof sh?.b64 === "string" ? sh.b64.replace(/^data:[^,]*,/, "") : "";
+    if (!b64 || Math.floor(b64.length * 3 / 4) > SHEET_MAX_BYTES) {
+      return json({ status: "error", message: "sheets[" + i + "].b64 missing or over the sheet cap" }, 400);
+    }
+    const times = Array.isArray(sh?.times) ? sh.times.map(Number).filter((n) => Number.isFinite(n)) : [];
+    if (!times.length) return json({ status: "error", message: "sheets[" + i + "].times is required" }, 400);
+    sheets.push({
+      path: "eval/sheet-" + (i + 1) + ".jpg",
+      cols: Number(sh?.cols) || times.length,
+      rows: Number(sh?.rows) || 1,
+      cell_w: Number(sh?.cell_w) || 270,
+      cell_h: Number(sh?.cell_h) || 480,
+      times,
+    });
+    images.push({ b64, mime: "image/jpeg" });
+  }
+
+  const frames: Frames = { source: "eval", duration_s: duration, sheets };
+  // The A/B's other axis. With the transcript out, the prompt says nothing at all
+  // about what the creator called the movement — which is the way to find out
+  // whether the words "push ups" were anchoring the reader onto a floor push-up
+  // before it ever looked at the hands.
+  const wantTranscript = body?.transcript === true;
+  let transcript: TranscriptSeg[] = [];
+  if (wantTranscript && typeof body?.url === "string" && body.url) {
+    const p = matchTikTok(body.url);
+    const src = p ? await tiktokMedia(p) : null;
+    if (src) {
+      const got = await packTranscript(src, p!.shortcode, { purpose: "pack_eval", userId: null });
+      transcript = got.transcript;
+    }
+  }
+
+  const t0 = Date.now();
+  const ctx: AiCtx = { purpose: "pack_eval", userId: null };
+  const read = await aiActor.run(
+    { userId: null, workKey: "eval:" + model, deadline: Date.now() + 120_000 },
+    () => readSheetImages(images, sheetsPrompt(frames, transcript), model, ctx),
+  );
+  const ms = Date.now() - t0;
+  let cost = 0;
+  try { cost = tokenCost(model, read.usage.inTok, read.usage.outTok, read.usage.cachedTok ?? 0); }
+  catch { cost = 0; }
+  console.log("eval-sheets", model, wantTranscript ? "with transcript" : "blind",
+    images.length, "sheet(s),", read.usage.inTok + "/" + read.usage.outTok, "tokens,",
+    ms, "ms", read.detail ? "— " + read.detail : "");
+  return json({
+    status: "ok",
+    model,
+    transcript: wantTranscript,
+    transcript_lines: transcript.length,
+    observation: read.obs,
+    tokens_in: read.usage.inTok,
+    tokens_out: read.usage.outTok,
+    cost_usd: Number(cost.toFixed(6)),
+    ms,
+    detail: read.detail,
+  }, 200);
+}
+
+/**
  * A measurement, not a feature.
  *
  * `gemini-youtube` was the first question this route existed to ask: does Gemini
@@ -11884,6 +12059,9 @@ Deno.serve(async (req: Request) => {
     // An experiment behind the same secret: does Gemini describe a YouTube video
     // given only its URL? Measurement only, wired into nothing.
     if (req.method === "POST" && path === "/api/worker/probe") return await handleWorkerProbe(req);
+    // The sheets A/B bench, behind its own secret. Matched here, above the user
+    // gate, so it can never be reached with a user bearer.
+    if (req.method === "POST" && path === "/api/worker/eval-sheets") return await handleEvalSheets(req);
 
     // The reminders pass, on the hour from pg_cron. Same shared secret and the
     // same reason as the worker's routes: nobody is signed in. `?dry=1` reports
