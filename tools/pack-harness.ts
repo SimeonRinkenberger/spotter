@@ -151,6 +151,7 @@ const NAMES = [
   // The two routes the native share extension and the "Re-read this video" action
   // call. Their collaborators are stubbed above; the judgement is the real code.
   "CARD_V", "UPLOAD_SIGN_SECONDS", "usablePack", "mediaSeed", "authorizeSheets", "handleReadVideo",
+  "scopeFor", "isPackAuthorize",
   "userFromIngestKey",
 ];
 
@@ -1132,6 +1133,59 @@ check("and the authorize route dispatches kind:\"pack\" to the sheets branch",
     eq("while still reporting the grid it was cut on",
       [partial.frames.sheets[1].cols, partial.frames.sheets[1].rows], [4, 3]);
   }
+}
+
+// Which daily cap the hand-off is charged against. It cost a free user their
+// frames on the first day it shipped: `uploads` is a 1/day ceiling on holding
+// somebody's 25 MB video, and a second save of the day was refused at the door
+// before the frames it had already cut went anywhere.
+{
+  eq("a pack authorize is charged as the save it is the first half of",
+    M.scopeFor("/api/uploads/authorize", true), "saves");
+  eq("a media upload is still charged against uploads",
+    M.scopeFor("/api/uploads/authorize", false), "uploads");
+  eq("and every other route is where it was", [
+    M.scopeFor("/api/ingest", false),
+    M.scopeFor("/api/pumpy/chat", false),
+    M.scopeFor("/api/workouts/abc/reprocess", false),
+    M.scopeFor("/api/workouts/abc/media", false),
+    M.scopeFor("/api/explain", false),
+  ], ["saves", "chat", "extract", "extract", "helper"]);
+
+  const peek = (body: unknown) =>
+    M.isPackAuthorize(new Request("https://x/", { method: "POST", body: JSON.stringify(body) }));
+  eq("kind:pack is recognised", await peek({ kind: "pack", shortcode: SC, sheets: [{ bytes: 1 }] }), true);
+  eq("so is the same body without the kind", await peek({ shortcode: SC, sheets: [{ bytes: 1 }] }), true);
+  eq("a media upload is not", await peek({ path: UID + "/" + UID + ".mp4", bytes: 10 }), false);
+  eq("and neither is a body that will not parse",
+    await M.isPackAuthorize(new Request("https://x/", { method: "POST", body: "{oh no" })), false);
+  // The peek must leave the body for the handler.
+  const req = new Request("https://x/", { method: "POST", body: JSON.stringify({ kind: "pack" }) });
+  await M.isPackAuthorize(req);
+  eq("and the handler still reads the same body afterwards",
+    (await req.json()).kind, "pack");
+}
+
+// The phone may ask twice — it holds the frames and nothing else does. The paths
+// are a pure function of the uid and the shortcode, so a retry asks for exactly
+// what it asked for the first time.
+{
+  const body = {
+    source: "device", duration_s: 84.3,
+    sheets: [{ path: sheetPathFor(UID, SC, 1), cols: 4, rows: 3, cell_w: 270, cell_h: 480,
+      times: Array.from({ length: 12 }, (_, i) => i * 7) }],
+  };
+  const first = parseFrames(body, UID, SC);
+  const second = parseFrames(body, UID, SC);
+  eq("a second authorize for the same video wants the same paths",
+    JSON.stringify(first), JSON.stringify(second));
+  (globalThis as any).DB = { rpc: () => "ok" };
+  M.spy.signed = [];
+  const a = await M.authorizeSheets({ kind: "pack", shortcode: SC, sheets: [{ bytes: 1000 }] }, UID, {});
+  const b = await M.authorizeSheets({ kind: "pack", shortcode: SC, sheets: [{ bytes: 1000 }] }, UID, {});
+  eq("and authorize hands back the same path both times",
+    a.body.sheets[0].path, b.body.sheets[0].path);
+  check("with a fresh token each time", a.body.sheets[0].token === b.body.sheets[0].token);
 }
 
 // ---------- 15. "Re-read this video" ----------

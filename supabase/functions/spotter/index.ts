@@ -2584,7 +2584,12 @@ async function signUploadTarget(
   const r = await fetch(`${SUPABASE_URL}/storage/v1/object/upload/sign/uploads/${path}`, {
     method: "POST",
     headers: dbHeaders,
-    body: JSON.stringify({ expiresIn: UPLOAD_SIGN_SECONDS }),
+    // `upsert` so a phone that lost the network halfway through a sheet can send
+    // it again. The bucket's no-overwrite rule exists to stop bytes being swapped
+    // under a signed READ url already handed to somebody else; a pack sheet has no
+    // such reader — the only thing that ever fetches one is our own isolate, from
+    // a url minted seconds earlier, and the object is deleted immediately after.
+    body: JSON.stringify({ expiresIn: UPLOAD_SIGN_SECONDS, upsert: true }),
     signal: AbortSignal.timeout(10_000),
   });
   if (!r.ok) throw new Error(`sign upload ${r.status}: ${(await r.text()).slice(0, 200)}`);
@@ -11637,6 +11642,42 @@ async function boundedRequest(req: Request): Promise<Request> {
   return new Request(req.url, { method: req.method, headers: req.headers, body });
 }
 
+/**
+ * Whether this authorize is the phone handing over a save's frames.
+ *
+ * Peeks at a body boundedRequest has already buffered, so nothing is consumed and
+ * the handler reads the same bytes afterwards. A body that will not parse is not a
+ * pack authorize; the route itself will say why.
+ */
+async function isPackAuthorize(req: Request): Promise<boolean> {
+  try {
+    const body = await req.clone().json();
+    return body?.kind === "pack" ||
+      (typeof body?.shortcode === "string" && Array.isArray(body?.sheets));
+  } catch { return false; }
+}
+
+/**
+ * Which daily cap a route is charged against.
+ *
+ * The one that is not obvious from the path is the pack authorize, and it cost a
+ * free user their frames on the first day it shipped. `uploads` is a 1/day ceiling
+ * on holding somebody's 25 MB video in a shared bucket; a pack authorize holds
+ * three JPEGs for ninety seconds and is the FIRST HALF OF A SAVE, so a second save
+ * on a free plan was refused at the door and the frames it had already cut went
+ * nowhere. It is charged as a save, the same as the /api/ingest call it precedes.
+ *
+ * What the reading costs is charged separately and still is: the `media` cap
+ * counts the steps that actually spend money on a model, which is where the money
+ * actually goes.
+ */
+function scopeFor(path: string, packAuthorize: boolean): string {
+  if (path.endsWith("/ingest")) return "saves";
+  if (path.endsWith("/authorize")) return packAuthorize ? "saves" : "uploads";
+  if (path.endsWith("/chat")) return "chat";
+  return /\/(reprocess|media)$/.test(path) ? "extract" : "helper";
+}
+
 async function guardedUserRequest(
   req: Request, path: string, userId: string, cors: Cors, handle: () => Promise<Response>,
 ): Promise<Response> {
@@ -11644,8 +11685,7 @@ async function guardedUserRequest(
   if (!aiRoute) return await aiActor.run({ userId, workKey: crypto.randomUUID() }, handle);
   await ensureConfig();
   const uc = await capsFor(userId);
-  const scope = path.endsWith("/ingest") ? "saves" : path.endsWith("/authorize") ? "uploads" :
-    path.endsWith("/chat") ? "chat" : /\/(reprocess|media)$/.test(path) ? "extract" : "helper";
+  const scope = scopeFor(path, path.endsWith("/authorize") && await isPackAuthorize(req));
   const meter = scope === "chat" ? await pumpyMeter(userId) : null;
   const id = crypto.randomUUID();
   const admitted = await rpc("ai_admit", { p_id: id, p_user: userId, p_scope: scope,
