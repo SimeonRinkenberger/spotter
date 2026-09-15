@@ -46,6 +46,17 @@ export function canvas(count, box) {
 export const origin = (i, box) =>
   [(i % G.cols) * (box[0] + G.gutter_px), Math.floor(i / G.cols) * (box[1] + G.gutter_px)];
 
+export function keep(times) {
+  const order = times.map((t, i) => i).sort((a, b) => times[a] - times[b] || a - b);
+  const out = [];
+  let last = -Infinity;
+  for (const i of order) {
+    if (!Number.isFinite(times[i]) || times[i] < 0 || times[i] - last < F.min_gap_s) continue;
+    out.push(i); last = times[i];
+  }
+  return out;
+}
+
 export function label(seconds) {
   const whole = Math.max(0, Math.round(Number.isFinite(seconds) ? seconds : 0));
   return Math.floor(whole / 60) + ':' + String(whole % 60).padStart(2, '0');
@@ -60,6 +71,10 @@ export const DURATIONS = [0, -5, NaN, 0.8, 1, 12, 28, 28.1, 84.3, 87.5, 200];
 export const SIZES = [[1080, 1920], [1920, 1080], [1080, 1080], [1080, 1100], [1100, 1080], [0, 0]];
 export const COUNTS = [1, 3, 5, 8, 24, 25];
 export const LABEL_SECONDS = [0, 0.4, 4, 9.5, 59.6, 83.8, 125, 599];
+// Arrival order, not time order: a duplicate sync sample (3.5 twice), a frame
+// that came back early, one negative and one NaN from a generator that failed
+// that time, and a pair 0.04 s apart — closer than one frame of 24 fps video.
+export const ARRIVALS = [[0.5, 4.0, 3.5, 3.5, 7.5, -1, NaN, 11.0, 11.04, 14.5]];
 
 /** What both platforms must print, as one comparable object. */
 export function expected() {
@@ -71,8 +86,9 @@ export function expected() {
       labelPillAlpha: spec.label.pill_alpha, labelPillRadius: spec.label.pill_radius_px,
       labelPadX: spec.label.pill_pad_x_px, labelPadY: spec.label.pill_pad_y_px,
       jpegMaxBytes: spec.jpeg.max_bytes, budgetMs: spec.budget.wall_clock_ms,
-      budgetBytes: spec.budget.download_bytes
+      budgetBytes: spec.budget.download_bytes, minGap: F.min_gap_s
     },
+    keeps: ARRIVALS.map(keep),
     counts: DURATIONS.map(frameCount),
     times: DURATIONS.map(times),
     cells: SIZES.map(([w, h]) => cell(w, h)),

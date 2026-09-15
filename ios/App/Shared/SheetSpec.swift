@@ -41,6 +41,8 @@ enum SheetSpec {
     static let budgetMs = 8_000.0
     static let budgetBytes = 26_214_400
 
+    static let contentType = "image/jpeg"
+
     /// One frame per 3.5 s, floored at 8 and capped at one 5x5 sheet.
     static func frameCount(duration: Double) -> Int {
         guard duration.isFinite, duration > 0 else { return minFrames }
@@ -96,6 +98,31 @@ enum SheetSpec {
     static func origin(index: Int, cell: (w: Int, h: Int)) -> (x: Int, y: Int) {
         let col = index % cols, row = index / cols
         return (x: col * (cell.w + gutter), y: row * (cell.h + gutter))
+    }
+
+    /**
+     * Which of the frames that came back are worth a cell.
+     *
+     * The generator is allowed half a second of slack either way, so two
+     * neighbouring requests can land on the same sync sample and hand back the
+     * same picture twice. A duplicate cell is a wasted 216x384 of the model's
+     * attention and would also make the `times` array stop ascending, which the
+     * server rejects outright. Both problems die the same way: keep the first of
+     * any pair closer together than `minGap`, drop the rest.
+     *
+     * Takes the times in arrival order, returns the indices to keep in time
+     * order, so the caller can pick the matching images without re-sorting them.
+     */
+    static let minGap = 0.05
+
+    static func keep(times: [Double]) -> [Int] {
+        let order = times.indices.sorted { times[$0] == times[$1] ? $0 < $1 : times[$0] < times[$1] }
+        var out: [Int] = []
+        var last = -Double.greatestFiniteMagnitude
+        for i in order where times[i].isFinite && times[i] >= 0 && times[i] - last >= minGap {
+            out.append(i); last = times[i]
+        }
+        return out
     }
 
     /// `M:SS` of the frame's own time, which is what the server prompt reads.

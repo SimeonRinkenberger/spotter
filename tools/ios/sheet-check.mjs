@@ -8,7 +8,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { spec, expected, same, contractHolds, DURATIONS, SIZES, COUNTS, LABEL_SECONDS } from '../sheet-cases.mjs';
+import { spec, expected, same, contractHolds, DURATIONS, SIZES, COUNTS, LABEL_SECONDS, ARRIVALS } from '../sheet-cases.mjs';
 
 const dir = mkdtempSync(join(tmpdir(), 'spotter-sheet-test-'));
 
@@ -19,6 +19,7 @@ let durations: [Double] = [${DURATIONS.map(d => Number.isFinite(d) ? d : 'Double
 let sizes: [[Double]] = [${SIZES.map(([w, h]) => `[${w}, ${h}]`).join(', ')}]
 let counts: [Int] = [${COUNTS.join(', ')}]
 let labelSeconds: [Double] = [${LABEL_SECONDS.join(', ')}]
+let arrivals: [[Double]] = [${ARRIVALS.map(a => '[' + a.map(v => Number.isFinite(v) ? v : 'Double.nan').join(', ') + ']').join(', ')}]
 let box = (w: SheetSpec.portrait.w, h: SheetSpec.portrait.h)
 
 let out: [String: Any] = [
@@ -30,8 +31,9 @@ let out: [String: Any] = [
     "labelPillAlpha": SheetSpec.labelPillAlpha, "labelPillRadius": SheetSpec.labelPillRadius,
     "labelPadX": SheetSpec.labelPadX, "labelPadY": SheetSpec.labelPadY,
     "jpegMaxBytes": SheetSpec.jpegMaxBytes, "budgetMs": SheetSpec.budgetMs,
-    "budgetBytes": SheetSpec.budgetBytes
+    "budgetBytes": SheetSpec.budgetBytes, "minGap": SheetSpec.minGap
   ],
+  "keeps": arrivals.map { SheetSpec.keep(times: $0) },
   "counts": durations.map { SheetSpec.frameCount(duration: $0) },
   "times": durations.map { SheetSpec.times(duration: $0) },
   "cells": sizes.map { s -> [Int] in let c = SheetSpec.cell(videoWidth: s[0], videoHeight: s[1]); return [c.w, c.h] },
@@ -92,5 +94,14 @@ for (const n of COUNTS) {
 assert.deepEqual(actual.origins[3], [4 * (box[0] + spec.grid.gutter_px), 4 * (box[1] + spec.grid.gutter_px)]);
 assert.match(actual.path, /^[0-9a-f-]{36}\/pack\/[a-z0-9-]+\/sheet-1\.jpg$/);
 assert.deepEqual(actual.labels, ['0:00', '0:00', '0:04', '0:10', '1:00', '1:24', '2:05', '9:59']);
+
+// A duplicate sync sample, a NaN and a negative from a generator that gave up on
+// one time must all leave the kept frames strictly ascending — the server rejects
+// a frames block whose times are not.
+assert.deepEqual(actual.keeps[0], [0, 2, 1, 4, 7, 9]);
+for (const kept of actual.keeps) {
+  const t = kept.map(i => ARRIVALS[0][i]);
+  for (let i = 1; i < t.length; i++) assert(t[i] - t[i - 1] >= spec.frames.min_gap_s, 'kept frames too close');
+}
 
 console.log('PASS iOS sheet spec: frame count floor/cap/NaN, uniform times inside the duration, portrait/landscape/square cells, exact tiling with gutters, M:SS labels across the minute boundary, object path — all against native/sheet-spec.json');

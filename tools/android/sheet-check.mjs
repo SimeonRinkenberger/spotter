@@ -7,7 +7,7 @@ import { mkdtempSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { spec, expected, same, contractHolds, DURATIONS, SIZES, COUNTS, LABEL_SECONDS } from '../sheet-cases.mjs';
+import { spec, expected, same, contractHolds, DURATIONS, SIZES, COUNTS, LABEL_SECONDS, ARRIVALS } from '../sheet-cases.mjs';
 
 // The same JDK gradle uses when it is there, so the harness cannot pass on a
 // compiler the app is never built with; any JDK on PATH otherwise.
@@ -32,6 +32,7 @@ public final class SheetCheck {
         double[][] sizes = { ${SIZES.map(([w, h]) => `{ ${w}, ${h} }`).join(', ')} };
         int[] counts = { ${COUNTS.join(', ')} };
         double[] labelSeconds = { ${LABEL_SECONDS.join(', ')} };
+        double[][] arrivals = { ${ARRIVALS.map(a => '{ ' + a.map(v => Number.isFinite(v) ? v : 'Double.NaN').join(', ') + ' }').join(', ')} };
         int[] box = { SheetSpec.PORTRAIT_W, SheetSpec.PORTRAIT_H };
 
         o.append('{');
@@ -51,7 +52,18 @@ public final class SheetCheck {
         o.append(",\\"jpegMaxBytes\\":").append(SheetSpec.JPEG_MAX_BYTES);
         o.append(",\\"budgetMs\\":").append(SheetSpec.BUDGET_MS);
         o.append(",\\"budgetBytes\\":").append(SheetSpec.BUDGET_BYTES);
+        o.append(",\\"minGap\\":").append(SheetSpec.MIN_GAP);
         o.append("},");
+
+        o.append("\\"keeps\\":[");
+        for (int i = 0; i < arrivals.length; i++) {
+            if (i > 0) o.append(',');
+            int[] k = SheetSpec.keep(arrivals[i]);
+            o.append('[');
+            for (int j = 0; j < k.length; j++) { if (j > 0) o.append(','); o.append(k[j]); }
+            o.append(']');
+        }
+        o.append("],");
 
         o.append("\\"counts\\":[");
         for (int i = 0; i < durations.length; i++) { if (i > 0) o.append(','); o.append(SheetSpec.frameCount(durations[i])); }
@@ -133,5 +145,10 @@ for (const n of COUNTS) {
 assert.deepEqual(actual.origins[3], [4 * (box[0] + spec.grid.gutter_px), 4 * (box[1] + spec.grid.gutter_px)]);
 assert.match(actual.path, /^[0-9a-f-]{36}\/pack\/[a-z0-9-]+\/sheet-1\.jpg$/);
 assert.deepEqual(actual.labels, ['0:00', '0:00', '0:04', '0:10', '1:00', '1:24', '2:05', '9:59']);
+assert.deepEqual(actual.keeps[0], [0, 2, 1, 4, 7, 9]);
+for (const kept of actual.keeps) {
+  const t = kept.map(i => ARRIVALS[0][i]);
+  for (let i = 1; i < t.length; i++) assert(t[i] - t[i - 1] >= spec.frames.min_gap_s, 'kept frames too close');
+}
 
 console.log('PASS Android sheet spec: identical frame counts, times, cells, tiling and M:SS labels to the iOS build and to native/sheet-spec.json');

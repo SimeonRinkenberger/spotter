@@ -7,7 +7,9 @@
     "min": 8,
     "max": 25,
     "seconds_per_frame": 3.5,
-    "edge_inset_s": 0.5
+    "edge_inset_s": 0.5,
+    "min_gap_s": 0.05,
+    "__min_gap": "The generator is allowed half a second of slack, so two neighbouring requests can return the same sync sample. Frames closer together than this are dropped rather than given a duplicate cell — that also keeps the times array strictly ascending, which the server requires."
   },
 
   "cell": {

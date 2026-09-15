@@ -41,6 +41,8 @@ public final class SheetSpec {
     public static final long BUDGET_MS = 8000;
     public static final long BUDGET_BYTES = 26214400L;
 
+    public static final String CONTENT_TYPE = "image/jpeg";
+
     /** One frame per 3.5 s, floored at 8 and capped at one 5x5 sheet. */
     public static int frameCount(double duration) {
         if (Double.isNaN(duration) || Double.isInfinite(duration) || duration <= 0) return MIN_FRAMES;
@@ -90,6 +92,33 @@ public final class SheetSpec {
     /** Top-left {x, y} of cell index, row-major, so reading order is time order. */
     public static int[] origin(int index, int[] cell) {
         return new int[] { (index % COLS) * (cell[0] + GUTTER), (index / COLS) * (cell[1] + GUTTER) };
+    }
+
+    public static final double MIN_GAP = 0.05;
+
+    /**
+     * Which of the frames that came back are worth a cell.
+     *
+     * The retriever is asked for the closest sync sample, so two neighbouring
+     * requests can land on the same one and hand back the same picture twice. A
+     * duplicate cell is a wasted 216x384 of the model's attention and would also
+     * make the times array stop ascending, which the server rejects. Both
+     * problems die the same way: keep the first of any pair closer together than
+     * MIN_GAP, drop the rest. Returns indices in time order.
+     */
+    public static int[] keep(double[] times) {
+        Integer[] order = new Integer[times.length];
+        for (int i = 0; i < times.length; i++) order[i] = i;
+        java.util.Arrays.sort(order, (a, b) -> times[a] == times[b] ? a - b : Double.compare(times[a], times[b]));
+        int[] out = new int[times.length];
+        int n = 0;
+        double last = -Double.MAX_VALUE;
+        for (int i : order) {
+            if (!Double.isFinite(times[i]) || times[i] < 0 || times[i] - last < MIN_GAP) continue;
+            out[n++] = i;
+            last = times[i];
+        }
+        return java.util.Arrays.copyOf(out, n);
     }
 
     /** M:SS of the frame's own time, which is what the server prompt reads. */
