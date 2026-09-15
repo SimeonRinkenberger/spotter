@@ -650,11 +650,17 @@ check("the user is told what the coach is doing while it runs",
 // measured. So it is written out of the same construction: `--write-fixture`
 // regenerates it, and every plain run refuses to let it rot.
 
+// The shortcode the live rows are filed under. NOT the real one: the pack row
+// goes into the GLOBAL video_cache, and a hand-authored pack sitting on the id of
+// a real TikTok video is a pack every other person who saves that clip would be
+// served. Nothing produces this id from a URL, so it collides with nothing.
+const LIVE_SHORTCODE = "tt-vcp-fixture";
+
 {
   const LIVE = new URL("tools/fixtures/pumpy-wodfather-card.json", ROOT);
   const row = {
     url: "https://www.tiktok.com/@thewodfather/video/7679960172495785246",
-    shortcode: FX.shortcode,
+    shortcode: LIVE_SHORTCODE,
     platform: FX.platform,
     author: "thewodfather",
     title: FX.card_expectations.title,
@@ -673,6 +679,36 @@ check("the user is told what the coach is doing while it runs",
   }
   const onDisk = await Deno.readTextFile(LIVE).catch(() => "");
   eq("the card the live steps post is the card this battery measured", onDisk.trim(), text.trim());
+
+  // And the pack behind it, so the live ask exercises the read from video_cache
+  // rather than only the fallback. Same pack this battery ran every check above
+  // against, filed under the fixture shortcode.
+  const PACK_FILE = new URL("tools/fixtures/pumpy-wodfather-pack.json", ROOT);
+  const packRow = {
+    shortcode: LIVE_SHORTCODE,
+    url: row.url,
+    platform: FX.platform,
+    author: "thewodfather",
+    caption: "Complex Fives — one kettlebell, 15 minutes.",
+    v: 1,
+    // video_cache holds the finished card next to the reading it was built from,
+    // and the column is NOT NULL. This is the card above, in the shape the column
+    // stores: no id, no owner, just what anybody who saves this clip would get.
+    card: {
+      title: row.title, category: row.category, muscle_groups: row.muscle_groups,
+      equipment: row.equipment, difficulty: "beginner", duration_minutes: row.duration_minutes,
+      calories: null, tags: ["kettlebell"], has_full_workout: true, blocks: stampedCard,
+    },
+    pack_v: PACK_V,
+    pack: { ...PACK, shortcode: LIVE_SHORTCODE },
+  };
+  const packText = JSON.stringify(packRow, null, 1) + "\n";
+  if (Deno.args.includes("--write-fixture")) {
+    await Deno.writeTextFile(PACK_FILE, packText);
+    console.log("wrote tools/fixtures/pumpy-wodfather-pack.json");
+  }
+  eq("the pack the live steps post is the pack this battery read",
+    (await Deno.readTextFile(PACK_FILE).catch(() => "")).trim(), packText.trim());
 }
 
 // ---------- done ----------
