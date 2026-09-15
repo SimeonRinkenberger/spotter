@@ -10612,13 +10612,6 @@ export const APP = String.raw`
   }
 
   /**
-   * One save path for the link box and for the share sheet. fromShare only changes
-   * two things: the wording of the confirmation, and where a failure leaves the
-   * user — a link that arrived from another app exists nowhere else on this device
-   * once it has been taken off the address bar, so a failed share puts it back in
-   * the add sheet instead of dropping it.
-   */
-  /**
    * Frames, cut by the phone, for the save that is about to go out.
    *
    * Only the native shells can do this: a few seconds of local decoding turns a
@@ -10645,6 +10638,13 @@ export const APP = String.raw`
     return !!(native && native.contactSheet && /tiktok\.com\//i.test(url));
   }
 
+  /**
+   * One save path for the link box and for the share sheet. fromShare only changes
+   * two things: the wording of the confirmation, and where a failure leaves the
+   * user — a link that arrived from another app exists nowhere else on this device
+   * once it has been taken off the address bar, so a failed share puts it back in
+   * the add sheet instead of dropping it.
+   */
   function doAdd(fromShare) {
     var url = $("addurl").value.trim();
     if (!url) { toast("Paste a link first."); return; }
