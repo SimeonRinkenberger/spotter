@@ -10154,7 +10154,7 @@ const PUMPY_DELTA_CHARS = 56;
 
 /**
  * A field cut where a person would cut it: at a sentence end inside the budget
- * when there is one, then at a comma, then at a word — never mid-word and never
+ * when there is one, then at a clause, then at a word — never mid-word and never
  * leaving a dangling comma. The same rule trimCue applies to the card's own line,
  * at a much tighter budget, which is why the sentence floor is lower: at 78
  * characters "Slow and controlled for time under tension, core tight." is a whole
@@ -10444,8 +10444,10 @@ async function toolExerciseDetail(userId: string, args: any) {
     source_platform: w.platform ?? null,
     // The one thing a coach must never paper over: whether anybody actually
     // watched this video. Without it "the video did not show that" and "nobody
-    // has looked" are the same silence, and only one of them is honest.
-    video_read: !!pe,
+    // has looked" are the same silence, and only one of them is honest. The
+    // overlay counts as well as the pack: a card stamped at ingest was read by
+    // somebody, whether or not the global cache still holds the reading.
+    video_read: !!(pe || ex.as_performed),
   });
 }
 

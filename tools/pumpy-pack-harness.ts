@@ -628,6 +628,53 @@ check("the user is told what the coach is doing while it runs",
   eq("and gains nothing it was not owed", [getup.as_performed ?? null, getup.delta ?? null], [null, null]);
 }
 
+// ---------- 8. a card stamped at ingest, whose reading the cache no longer holds ----------
+//
+// video_cache is a cache. A card keeps the overlay the ingest wrote on it whether
+// or not the row behind it is still there, and an answer about that card is still
+// an answer about a video somebody watched.
+
+{
+  const kept = await M.toolExerciseDetail(UID, { id: H_STAMPED, block: 0, index: 0 });
+  eq("a stamped card with no cache row still says the video was read", kept.video_read, true);
+  check("and still knows where the hands were",
+    /kettlebell handle/.test(String(kept.as_performed?.hand_placement)), JSON.stringify(kept.as_performed));
+  eq("and still quotes the creator, from the evidence the card carries",
+    kept.creator_cues[0].quote, FX.exercises[0].creator_cues[0].quote);
+}
+
+// ---------- the card the live steps post ----------
+//
+// The senior session's throwaway needs a card in the WODfather shape, and a card
+// hand-typed into a shell command is a card that drifts from the one this battery
+// measured. So it is written out of the same construction: `--write-fixture`
+// regenerates it, and every plain run refuses to let it rot.
+
+{
+  const LIVE = new URL("tools/fixtures/pumpy-wodfather-card.json", ROOT);
+  const row = {
+    url: "https://www.tiktok.com/@thewodfather/video/7679960172495785246",
+    shortcode: FX.shortcode,
+    platform: FX.platform,
+    author: "thewodfather",
+    title: FX.card_expectations.title,
+    category: "Strength",
+    muscle_groups: ["full body"],
+    equipment: ["kettlebell"],
+    duration_minutes: 15,
+    has_full_workout: true,
+    ingest_status: "ready",
+    blocks: stampedCard,
+  };
+  const text = JSON.stringify(row, null, 1) + "\n";
+  if (Deno.args.includes("--write-fixture")) {
+    await Deno.writeTextFile(LIVE, text);
+    console.log("wrote tools/fixtures/pumpy-wodfather-card.json");
+  }
+  const onDisk = await Deno.readTextFile(LIVE).catch(() => "");
+  eq("the card the live steps post is the card this battery measured", onDisk.trim(), text.trim());
+}
+
 // ---------- done ----------
 
 console.log((failures ? "FAILED " : "ok ") + (checks - failures) + "/" + checks + " checks");
