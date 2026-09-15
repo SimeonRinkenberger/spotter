@@ -10167,8 +10167,11 @@ function pumpyShort(raw: unknown, max: number): string | null {
   const head = t.slice(0, max);
   const sentence = head.match(/^[\s\S]*[.!?]/);
   if (sentence && sentence[0].trim().length >= 24) return sentence[0].trim();
-  const comma = head.lastIndexOf(",");
-  if (comma >= 24) return head.slice(0, comma);
+  // Then a clause. The semicolon matters as much as the comma here: "Take your
+  // time so the legs do not add momentum; the upper body should do the pulling"
+  // is two thoughts, and the first one is the coaching point.
+  const clause = head.search(/[,;:][^,;:]*$/);
+  if (clause >= 24) return head.slice(0, clause);
   const space = head.lastIndexOf(" ");
   return (space > 16 ? head.slice(0, space) : head).replace(/[\s,;:.\-–—]+$/, "");
 }
@@ -10457,6 +10460,11 @@ function pumpyFitDetail(d: Record<string, any>): Record<string, any> {
   d.execution = null;
   if (!over()) return d;
   d.setup = null;
+  // Then the card's own line, but only while a verbatim one survives it. `cue` is
+  // a paraphrase of exactly two things that are still here in the words they were
+  // said and seen in — the creator's coaching point and the one visible setup
+  // detail — so under pressure it is the copy, not a source.
+  if (over() && d.creator_cues.length) d.cue = null;
   while (over() && d.creator_cues.length > 1) d.creator_cues.pop();
   while (over() && d.seen_not_said.length > 1) d.seen_not_said.pop();
   if (over()) {
