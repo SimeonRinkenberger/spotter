@@ -23,7 +23,7 @@
 // rename in index.ts is a loud error here rather than a quiet lie.
 
 import {
-  assemblePack, deltaFrom, type Frames, mergeCues, type Observation, OBSERVE_PROMPT,
+  assemblePack, bestSeenFact, deltaFrom, type Frames, mergeCues, type Observation, OBSERVE_PROMPT,
   type Pack, PACK_V, packBlock, parseFrames, parseStampedTranscript, parseVtt,
   readObservation, secondsToMmss, sheetPathFor, SHEET_MAX_BYTES, sheetsPrompt,
   type TranscriptSeg, titleCase, validatePack, vttCues,
@@ -104,6 +104,8 @@ function lift(name: string): string {
 // mentions half the file otherwise.
 const STUBS = "import { normText } from '" +
   new URL("supabase/functions/spotter/evidence.ts", ROOT).href + "';\n" +
+  "import { bestSeenFact } from '" +
+  new URL("supabase/functions/spotter/pack.ts", ROOT).href + "';\n" +
   "type Pack = Record<string, any>;\n" +
   "type Card = { blocks: { exercises: any[] }[] };\n" +
   "type Evidence = Record<string, unknown>;\n" +
@@ -114,7 +116,7 @@ const STUBS = "import { normText } from '" +
 
 const NAMES = [
   "CUE_MAX", "CUE_RULE", "TRANSCRIBE_PROMPT",
-  "intOrNull", "numOrNullBounded", "splitDose", "normalizeExercise",
+  "intOrNull", "numOrNullBounded", "trimCue", "splitDose", "normalizeExercise",
   "ttSubtitles",
   "countExercises", "matchPackExercise", "packEvidence", "applyPack",
 ];
@@ -496,9 +498,13 @@ check("a push-up never reaches a barbell entry",
   eq("a nonsense timestamp is dropped rather than defaulted to zero",
     [junkT.t0, junkT.t1], [null, null]);
 
-  check("the prompt states the cue rule verbatim",
-    M.CUE_RULE.includes("at most two short sentences, 140 characters total") &&
+  check("the prompt states the cue rule, with the shape ahead of the count",
+    M.CUE_RULE.includes("at most two short sentences, about 140 characters") &&
+    M.CUE_RULE.includes("the shape matters more than the count") &&
     M.CUE_RULE.includes("drive the floor away"));
+  check("and tells the model what to do when the creator coached nothing",
+    M.CUE_RULE.includes("the cue is that visible setup detail on its own") &&
+    M.CUE_RULE.includes("Empty string only when there is neither"));
   check("the transcription prompt now asks for MM:SS",
     /MM:SS/.test(M.TRANSCRIBE_PROMPT) && /00:14/.test(M.TRANSCRIBE_PROMPT));
 }
@@ -759,7 +765,12 @@ refused("no sheets at all is refused", (f) => { f.sheets = []; }, /non-empty arr
   eq("a movement with no cue falls back to what was seen",
     [(ex4.evidence as any).source, (ex4.evidence as any).verified],
     ["seen", false]);
-  eq("and quotes a contact fact", (ex4.evidence as any).quote, FX.exercises[4].seen_not_said[0]);
+  // NOT seen_not_said[0] — "a shallow knee dip starts every rep" is the fact a
+  // reader already knew. The line naming an object wins.
+  eq("and quotes the contact fact that names an object",
+    (ex4.evidence as any).quote, "the bell is pressed with both hands from the goblet position");
+  check("never the least informative line",
+    !/^both feet/i.test(String((ex4.evidence as any).quote)));
 
   // Each pack movement is claimed once, so a complex that repeats a movement
   // cannot stamp every repetition with the first one's timestamps.
@@ -781,6 +792,106 @@ refused("no sheets at all is refused", (f) => { f.sheets = []; }, /non-empty arr
   const bare = { blocks: [{ exercises: [M.normalizeExercise({ name: "Goblet Squat" })] }] };
   M.applyPack(bare, undefined);
   eq("no pack changes nothing", bare.blocks[0].exercises[0].as_performed, null);
+}
+
+// ---------- 12. what the first live read got wrong ----------
+//
+// Four things the WODfather video exposed on the real pipeline. Each is checked
+// against the shape that produced it, not against a string the model happened to
+// emit that day.
+
+// 1. A mat is not a kettlebell. The observation honestly lists the mat it can see
+//    on an outdoor deck; leaving it in `variant.equipment` put "with mat" on every
+//    single exercise, and a delta on everything says as much as a delta on nothing.
+{
+  const matty = readObservation({
+    ...mock,
+    session: { ...FX.session, equipment_seen: ["kettlebell", "exercise mat", "wooden deck"] },
+    segments: mock.segments.map((sg) => ({
+      ...sg,
+      contact: sg.contact + "; both feet contact the mat on the wooden deck",
+    })),
+  }) as Observation;
+  const p3 = assemblePack({
+    shortcode: FX.shortcode, platform: FX.platform, durationS: FX.duration_s,
+    transcript: segs, transcriptSource: "tiktok_vtt", cues, observation: matty,
+  });
+  eq("a mat and a deck never reach variant.equipment",
+    p3.exercises.map((e) => e.variant.equipment),
+    FX.exercises.map(() => ["kettlebell"]));
+  eq("so the swing and the goblet squat still have no delta",
+    [p3.exercises[2].delta_from_standard, p3.exercises[3].delta_from_standard], [null, null]);
+  check("and the push-up delta names only the kettlebell under the hands",
+    /kettlebell/i.test(String(p3.exercises[0].delta_from_standard)) &&
+    !/\bmat\b|\bdeck\b/i.test(String(p3.exercises[0].delta_from_standard)),
+    String(p3.exercises[0].delta_from_standard));
+  check("a bench is a surface here too, not an implement",
+    !assemblePack({
+      shortcode: "x", platform: "tiktok", transcript: [], transcriptSource: "none",
+      observation: readObservation({
+        ...mock,
+        session: { ...FX.session, equipment_seen: ["bench"] },
+        segments: [{ ...mock.segments[0], contact: "feet elevated on a bench, hands on the floor" }],
+      }),
+    }).exercises[0].variant.equipment.length);
+}
+
+// 2. Cues were cut mid-word at 140 ("…handle together in front of"). A cue is read
+//    by a person mid-set.
+{
+  const twoSentences =
+    "Slow and controlled for time under tension, core tight. Stack both hands on the kettlebell " +
+    "handle together in front of your chest and keep the feet together.";
+  const cut = M.trimCue(twoSentences);
+  check("a long cue stops at a sentence end, not mid-word",
+    /[.!?]$/.test(cut) && !/\bin front of$/.test(cut), JSON.stringify(cut));
+  check("and stays inside the hard ceiling", cut.length <= M.CUE_MAX, cut.length + " chars");
+  eq("one sentence that fits is left exactly alone",
+    M.trimCue("Drive the floor away."), "Drive the floor away.");
+  const noStop = M.trimCue("keep the core tight and the hips square " + "and the elbows tucked ".repeat(8));
+  check("a cue with no sentence end stops at a word boundary",
+    !/\s$/.test(noStop) && noStop.length <= M.CUE_MAX && !noStop.endsWith("elbo"), JSON.stringify(noStop.slice(-24)));
+  check("and leaves no dangling punctuation", !/[,;:\-–—.]$/.test(noStop), JSON.stringify(noStop.slice(-8)));
+  eq("the ceiling has the slack the prompt's 140 needs", M.CUE_MAX, 170);
+  const kept = M.normalizeExercise({ name: "Push Up", cue: twoSentences });
+  check("normalizeExercise uses the same trim", /[.!?]$/.test(String(kept.cue)), String(kept.cue));
+}
+
+// 4. (3 is a prompt rule, checked above.) The seen quote for an uncoached
+//    movement, in isolation.
+eq("bestSeenFact prefers the line that names an object",
+  bestSeenFact([
+    "Both feet contact the mat",
+    "a shallow knee dip starts every rep",
+    "the bell is pressed with both hands from the chest",
+  ]), "the bell is pressed with both hands from the chest");
+eq("and falls back to the load position when nothing names an object",
+  bestSeenFact(["Both feet contact the mat"], "racked at the shoulders"), "racked at the shoulders");
+eq("and to the first fact when there is no load either",
+  bestSeenFact(["Both feet contact the mat"], null), "Both feet contact the mat");
+eq("and to nothing when the camera saw nothing", bestSeenFact([], null), null);
+
+// The sheets, at the geometry the native shells are moving to.
+{
+  const native = {
+    source: "device", duration_s: 84.3,
+    sheets: [1, 2, 3].map((n) => ({
+      path: sheetPathFor(UID, SC, n),
+      cols: 4, rows: 3, cell_w: 270, cell_h: 480,
+      times: Array.from({ length: 12 }, (_, i) => (n - 1) * 12 * 2.4 + i * 2.4),
+    })),
+  };
+  const r = parseFrames(native, UID, SC);
+  check("three 4x3 sheets of 270x480 cells are accepted",
+    "frames" in r, "error" in r ? r.error : "");
+  check("and a 320 px cell is well inside the bound",
+    "frames" in parseFrames({
+      ...native, sheets: [{ ...native.sheets[0], cell_w: 320, cell_h: 568 }],
+    }, UID, SC));
+  const prompt2 = sheetsPrompt((r as { frames: Frames }).frames, []);
+  check("the sheets prompt asks which surface bears the weight",
+    prompt2.includes("say which surface actually bears the weight (on the object, or on the " +
+      "floor next to it); if the frames cannot show it, say unsure rather than guessing."));
 }
 
 eq("title case leaves the little words alone",

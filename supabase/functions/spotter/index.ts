@@ -67,7 +67,7 @@ import {
 import {
   assemblePack, type Frames, type Observation, OBSERVE_PROMPT, type Pack, PACK_V,
   packBlock, type PackExercise, type PackReader, parseFrames, parseStampedTranscript,
-  parseVtt, readObservation, secondsToMmss, type Sheet, SHEET_MAX, SHEET_MAX_BYTES,
+  parseVtt, readObservation, secondsToMmss, bestSeenFact, type Sheet, SHEET_MAX, SHEET_MAX_BYTES,
   sheetPathFor, sheetsPrompt, type TranscriptSeg, type TranscriptSource, validatePack,
   type VttCue, vttCues,
 } from "./pack.ts";
@@ -4878,11 +4878,14 @@ function heuristicWorkout(
  * also how good creators actually talk.
  */
 const CUE_RULE =
-  "cue: at most two short sentences, 140 characters total. First the creator's own coaching point " +
+  "cue: at most two short sentences, about 140 characters — the shape matters more than the count, " +
+  "so finish the sentence rather than stopping at a number. First the creator's own coaching point " +
   "for this movement in their words (verb first, an external target — 'drive the floor away', not " +
   "'contract your quads'). Then the one setup detail someone reading only the name would get wrong, " +
   "taken from what is visible (hands on the kettlebell handle, feet elevated, single bell between " +
-  "the feet). Nothing generic. Empty string if the source gives neither.";
+  "the feet). If the creator gave no coaching point for this movement, the cue is that visible setup " +
+  "detail on its own — 'Dip a few inches and drive the bell overhead with both hands from the chest.' " +
+  "Nothing generic. Empty string only when there is neither a coaching point nor a visible detail.";
 
 function buildPrompt(): string {
   return "You turn social-media fitness video captions and descriptions into structured workout cards. " +
@@ -5028,7 +5031,7 @@ function normalizeExercise(raw: any): Exercise | null {
   // blank the line under every exercise name in the app.
   const rawCue = typeof raw?.cue === "string" ? raw.cue.trim() : "";
   const rawNotes = typeof raw?.notes === "string" ? raw.notes.trim() : "";
-  const cue = (rawCue || rawNotes).slice(0, CUE_MAX) || "";
+  const cue = trimCue(rawCue || rawNotes);
   const notes = setRange ? "Sets: " + setRange + (cue ? ". " + cue : "") : cue;
   const t0 = numOrNullBounded(raw?.t0, 7200);
   return {
@@ -5055,8 +5058,33 @@ function normalizeExercise(raw: any): Exercise | null {
   };
 }
 
-/** The cue's ceiling, stated once: the prompt asks for 140 and this enforces it. */
-const CUE_MAX = 140;
+/**
+ * The cue's hard ceiling. The prompt asks for about 140 characters; this is the
+ * slack above that, so a cue that lands at 150 to finish its second sentence is
+ * kept whole instead of being cut off.
+ */
+const CUE_MAX = 170;
+
+/**
+ * A cue, cut where a person would cut it.
+ *
+ * The first live pack produced "…handle together in front of" under a push-up,
+ * because the cap was a `slice` and a slice does not know what a word is. A cue is
+ * read by a person mid-set, so it stops at a sentence end when there is one inside
+ * the budget and at a word boundary otherwise — never mid-word, and never leaving
+ * a dangling comma.
+ */
+function trimCue(raw: string): string {
+  const t = raw.replace(/\s+/g, " ").trim();
+  if (t.length <= CUE_MAX) return t;
+  const head = t.slice(0, CUE_MAX);
+  // Everything up to the LAST sentence end inside the budget, when that leaves
+  // enough to be worth reading. One whole sentence beats two thirds of two.
+  const sentence = head.match(/^[\s\S]*[.!?]/);
+  if (sentence && sentence[0].trim().length >= 60) return sentence[0].trim();
+  const space = head.lastIndexOf(" ");
+  return (space > 40 ? head.slice(0, space) : head).replace(/[\s,;:.\-–—]+$/, "").trim();
+}
 
 function numOrNullBounded(v: unknown, max: number): number | null {
   const n = typeof v === "number" ? v : Number(v);
@@ -5209,7 +5237,10 @@ function packEvidence(pe: PackExercise): Evidence | null {
       verified: true,
     };
   }
-  const seen = pe.seen_not_said[0];
+  // Not simply the first fact: the first live pack quoted "Both feet contact the
+  // mat" under a push press, which is the one thing in the list a reader already
+  // knew. bestSeenFact prefers the line that names an object.
+  const seen = bestSeenFact(pe.seen_not_said, pe.variant.load_position);
   if (seen) {
     return {
       source: "seen", line: null, offset: null,

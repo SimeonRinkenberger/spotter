@@ -453,6 +453,11 @@ export function parseFrames(
     const cw = Number(s.cell_w), ch = Number(s.cell_h);
     if (!Number.isInteger(cols) || cols < 1 || cols > 12) return { error: where + ".cols must be 1-12" };
     if (!Number.isInteger(rows) || rows < 1 || rows > 12) return { error: where + ".rows must be 1-12" };
+    // The native shells cut 270x480 cells, 4 x 3 to a sheet, up to three sheets —
+    // a bigger cell than the first 200 px build, because a 200 px frame could not
+    // show whether a hand was ON the kettlebell handle or beside it. The bounds
+    // stay generous above that: this is a sanity check on a number the phone
+    // reports, not a specification of the phone's geometry.
     if (!Number.isInteger(cw) || cw < 32 || cw > 2000) return { error: where + ".cell_w must be 32-2000" };
     if (!Number.isInteger(ch) || ch < 32 || ch > 2000) return { error: where + ".cell_h must be 32-2000" };
     const times = Array.isArray(s.times) ? s.times.map(Number) : null;
@@ -503,6 +508,14 @@ export function sheetsPrompt(frames: Frames, transcript: TranscriptSeg[]): strin
     "row-major (left to right, then down). Every cell is labelled with its timestamp in the " +
     "bottom-left corner. Use those labels for t0 and t1. The video is " +
     frames.duration_s + " seconds long.",
+    // The first live read hedged a push-up done ON a kettlebell handle as "hands
+    // on the mat near the kettlebell handle". Both halves of that are visible and
+    // the answer is still wrong, because the question a reader needs answered is
+    // which of the two is taking the load. Asking for that directly — and giving
+    // the model an explicit way to decline — is cheaper than a denser sheet.
+    "When a hand or foot is on or beside an object, say which surface actually bears the " +
+    "weight (on the object, or on the floor next to it); if the frames cannot show it, say " +
+    "unsure rather than guessing.",
   );
   for (let i = 0; i < frames.sheets.length; i++) {
     const s = frames.sheets[i];
@@ -803,12 +816,38 @@ function contactFacts(contact: string): string[] {
  * "push-up" whose equipment came from the word "push-up" would be a bodyweight
  * push-up again, which is exactly the card the owner complained about.
  */
+// A mat is not a kettlebell.
+//
+// The observation lists everything it can see, and on an outdoor deck that
+// honestly includes the mat and the decking. Those are SURFACES — things the body
+// rests ON — and `variant.surface` already carries them. Left in
+// `variant.equipment` they made every movement in the first live pack read "with
+// mat" or "with kettlebell and mat", and a delta on every exercise says exactly as
+// much as a delta on none.
+//
+// A bench and a box are on this list too, deliberately. When one of them IS the
+// implement — a bench press, a box jump — the catalog entry already lists it, so
+// `deltaFrom` has nothing to report either way; when it is what the feet are
+// raised on, it is a surface and belongs in the surface line.
+const SURFACE_NOUNS = new Set([
+  "mat", "mats", "floor", "ground", "deck", "decking", "carpet", "rug", "turf",
+  "grass", "pavement", "sidewalk", "concrete", "sand", "towel", "wall", "ceiling",
+  "bench", "box", "step", "steps", "platform", "chair", "stool", "couch", "sofa",
+  "bed", "stairs", "curb", "kerb",
+]);
+
+/** Whether an observed item is something the body rests on rather than lifts. */
+function isSurfaceTerm(term: string): boolean {
+  const words = term.toLowerCase().trim().split(/\s+/).filter(Boolean);
+  return !!words.length && SURFACE_NOUNS.has(words[words.length - 1]);
+}
+
 function equipmentOf(seg: ObservationSegment, seen: string[]): string[] {
   const hay = [seg.contact, seg.hand_placement, seg.foot_placement, seg.load_position].join(" ").toLowerCase();
   const out: string[] = [];
   for (const term of seen) {
     const words = term.split(/\s+/).filter(Boolean);
-    if (!words.length) continue;
+    if (!words.length || isSurfaceTerm(term)) continue;
     const forms = [term];
     // "the bell" is how every coach on earth refers to a kettlebell mid-sentence.
     if (/bell$/.test(term) && term !== "bell") forms.push("bell");
@@ -835,6 +874,30 @@ function variantOf(seg: ObservationSegment, seen: string[]): PackVariant {
     tempo: seg.tempo || null,
     range_of_motion: seg.range_of_motion || null,
   };
+}
+
+// Things a person could not have guessed from the exercise's name. The floor and
+// the mat are not on this list on purpose: every bodyweight movement happens on
+// one, so "Both feet contact the mat" is true, verifiable and worth nothing.
+const NAMES_AN_OBJECT =
+  /\b(?:kettlebell|kettle bell|bell|dumbbell|barbell|bar|handle|horns?|band|rope|ball|rings?|rack|sled|cable|machine|bench|box|wall|chair|strap|plate|towel)\b/i;
+
+/**
+ * The most informative thing the camera saw, for an exercise the creator never
+ * coached.
+ *
+ * The first live pack quoted "Both feet contact the mat" under a push press,
+ * which is the one fact in the list a reader already knew. So the line that names
+ * an OBJECT wins — the bell, the handle, the bench — then the load position, and
+ * only then whatever came first.
+ */
+export function bestSeenFact(
+  seenNotSaid: string[], loadPosition?: string | null,
+): string | null {
+  const named = seenNotSaid.find((f) => NAMES_AN_OBJECT.test(f));
+  if (named) return named;
+  if (loadPosition && loadPosition.trim().length >= 8) return loadPosition.trim();
+  return seenNotSaid[0] ?? null;
 }
 
 /** Two descriptions of the same thing, near enough that a delta would be noise. */
