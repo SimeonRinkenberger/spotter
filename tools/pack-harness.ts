@@ -102,7 +102,11 @@ function lift(name: string): string {
 // The types and globals the lifted code mentions but does not need to be honest
 // about here. `Exercise` is stubbed loose because normalizeExercise's return type
 // mentions half the file otherwise.
-const STUBS = "type Evidence = Record<string, unknown>;\n" +
+const STUBS = "import { normText } from '" +
+  new URL("supabase/functions/spotter/evidence.ts", ROOT).href + "';\n" +
+  "type Pack = Record<string, any>;\n" +
+  "type Card = { blocks: { exercises: any[] }[] };\n" +
+  "type Evidence = Record<string, unknown>;\n" +
   "type PackExercise = { variant: Record<string, unknown> };\n" +
   "type Exercise = Record<string, unknown>;\n" +
   "type Dose = { reps: string | null; sets: number | null; seconds: number | null };\n" +
@@ -112,6 +116,7 @@ const NAMES = [
   "CUE_MAX", "CUE_RULE", "TRANSCRIBE_PROMPT",
   "intOrNull", "numOrNullBounded", "splitDose", "normalizeExercise",
   "ttSubtitles",
+  "countExercises", "matchPackExercise", "packEvidence", "applyPack",
 ];
 
 // cleanTitle is declared as a function in index.ts but drags the whole title
@@ -716,6 +721,66 @@ refused("no sheets at all is refused", (f) => { f.sheets = []; }, /non-empty arr
   // Token budget: the whole point is that this is cheap enough to send every time.
   check("the pack block stays small — " + block.length + " chars",
     block.length < 4000, block.length + " chars");
+}
+
+// ---------- 11. the pack laid over a finished card ----------
+//
+// The last mile: everything above produces a verified pack, and this is what the
+// user actually receives.
+
+{
+  const card = {
+    blocks: [{
+      exercises: FX.exercises.map((e) => M.normalizeExercise({
+        name: e.name_said.replace(/\b\w/g, (c: string) => c.toUpperCase()),
+        sets: 1, reps: "5",
+      })),
+    }],
+  };
+  // The catalog runs before the pack in buildCard, so the ids are already there.
+  for (const ex of card.blocks[0].exercises) ex.canonical_id = canon(ex.name as string);
+  M.applyPack(card, pack);
+
+  const ex0 = card.blocks[0].exercises[0];
+  eq("the push-up carries what the video actually did",
+    (ex0.as_performed as Record<string, unknown>).equipment, ["kettlebell"]);
+  check("and how that differs from the standard version",
+    /kettlebell/i.test(String(ex0.delta)), String(ex0.delta));
+  eq("and when it happens", [ex0.t0, ex0.t1], [pack.exercises[0].t0, pack.exercises[0].t1]);
+  eq("its evidence is the creator's own verified words",
+    [(ex0.evidence as any).source, (ex0.evidence as any).quote, (ex0.evidence as any).verified],
+    ["transcript", FX.exercises[0].creator_cues[0].quote, true]);
+  check("and never the exercise's own name, which is the claim restated",
+    (ex0.evidence as any).quote !== ex0.name);
+
+  // A movement the creator never coached still carries something checkable: the
+  // contact line, marked unverified because there is no text to check it against.
+  const ex4 = card.blocks[0].exercises[4];
+  eq("a movement with no cue falls back to what was seen",
+    [(ex4.evidence as any).source, (ex4.evidence as any).verified],
+    ["seen", false]);
+  eq("and quotes a contact fact", (ex4.evidence as any).quote, FX.exercises[4].seen_not_said[0]);
+
+  // Each pack movement is claimed once, so a complex that repeats a movement
+  // cannot stamp every repetition with the first one's timestamps.
+  const dupe = {
+    blocks: [{
+      exercises: [
+        M.normalizeExercise({ name: "Kettlebell Swings" }),
+        M.normalizeExercise({ name: "Kettlebell Swings" }),
+      ],
+    }],
+  };
+  for (const ex of dupe.blocks[0].exercises) ex.canonical_id = "kettlebell-swing";
+  M.applyPack(dupe, pack);
+  check("a repeated movement does not reuse the same pack segment",
+    dupe.blocks[0].exercises[1].as_performed === null,
+    JSON.stringify(dupe.blocks[0].exercises[1].t0));
+
+  // A card built without a pack is exactly the card that was built yesterday.
+  const bare = { blocks: [{ exercises: [M.normalizeExercise({ name: "Goblet Squat" })] }] };
+  M.applyPack(bare, undefined);
+  eq("no pack changes nothing", bare.blocks[0].exercises[0].as_performed, null);
 }
 
 eq("title case leaves the little words alone",

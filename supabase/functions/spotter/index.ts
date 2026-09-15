@@ -7874,7 +7874,11 @@ async function escalateToMedia(
         prior.exercises.length, "movement(s), read by", prior.reader);
     }
   }
-  if (packEligible(p, meta) && !meta.pack) {
+  // A job that already reached the pack step does not pay for it again: whatever
+  // it read is on the job's own meta, checkpointed below, and a retry is here for
+  // the tiers that come after it.
+  const packDone = /^media:(pack|transcript|video)$/.test(job.step);
+  if (packEligible(p, meta) && !meta.pack && !packDone) {
     const before = countExercises(card);
     const out = await runPackTier(job, p, meta, card);
     card = out.card;
@@ -7882,6 +7886,11 @@ async function escalateToMedia(
     if (out.ran) {
       ran.push("pack");
       console.log("media: pack on", p.shortcode, before, "->", countExercises(card), "exercise(s)");
+      try {
+        await jobStep(job.id, "media:pack", { card, meta });
+      } catch (e) {
+        console.error("job could not checkpoint the pack", job.id, e);
+      }
     }
   }
 
