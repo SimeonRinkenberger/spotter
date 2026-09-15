@@ -583,6 +583,24 @@ check("the user is told what the coach is doing while it runs",
     M.PUMPY_STATIC.includes("Never describe equipment or hand placement the detail does not contain"));
   check("the rule tells the coach to say when the video did not show something",
     M.PUMPY_STATIC.includes("say plainly when the video did not show something"));
+
+  // The first live turn of this wave explained the push-ups correctly and then
+  // signed off with the not-medical-advice line, because the old pain rule said
+  // "when pain comes up" and "what went wrong in an exercise" was close enough.
+  // The trigger is the user's own words now, and nothing in the detail rule may
+  // reach for it.
+  check("the medical line is tied to what the USER said, not to what the answer is about",
+    M.PUMPY_STATIC.includes("ONLY when the user's own message mentions pain, injury or discomfort"),
+    (M.PUMPY_STATIC.match(/[^\n]*pain[^\n]*/) ?? [""])[0]);
+  check("and is forbidden on every other answer, in as many words",
+    M.PUMPY_STATIC.includes("Never put that line on any other answer") &&
+    M.PUMPY_STATIC.includes("is coaching, not medicine"));
+  eq("the line itself is instructed exactly once, so there is nothing to weigh up",
+    M.PUMPY_STATIC.split(M.PAIN_NOTE).length - 1, 1);
+  check("and the rule that reads the pack never mentions pain or injury",
+    !/pain|injur|discomfort/i.test(
+      M.PUMPY_STATIC.split("When the user asks how to do")[1]?.split("\n")[0] ?? "pain"),
+    M.PUMPY_STATIC.split("When the user asks how to do")[1]?.split("\n")[0] ?? "");
   console.log("PUMPY_STATIC: " + M.PUMPY_STATIC.length + " chars, " + tokens(M.PUMPY_STATIC) + " tokens");
 }
 
