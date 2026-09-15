@@ -2754,6 +2754,45 @@ async function uploadMeta(p: Parsed, job?: Job): Promise<Meta> {
  */
 async function uploadVideoRead(p: Parsed, job: Job): Promise<Meta | null> {
   await setMediaStage(p.shortcode, "watching");
+
+  // The pack first, when it is switched on. It reads the same file the video tier
+  // would, in the same isolate, and hands back MORE than a card: the words with a
+  // clock on them and one observation per movement. The card is then built by the
+  // ordinary extractor, which knows the cue rule and the catalog — this function
+  // does not, which is why it had to re-apply both by hand below.
+  //
+  // An upload is never cached: the shortcode is a uuid nobody else can produce,
+  // so this reading is paid for by exactly one person and thrown away with the
+  // file. That is the honest cost of a file the platform never published.
+  if (packEnabled()) {
+    const packed = await runMediaRemote(p, "pack", job.user_id, null, job.meta?.frames ?? null);
+    await logMediaStep(job.user_id, p, job.id, packed);
+    if (packed?.pack_problems?.length) {
+      console.error("upload: pack rejected for", p.shortcode, "—", packed.pack_problems.join(" | "));
+    }
+    if (packed && (packed.pack || packed.text)) {
+      console.log("upload: packed", p.shortcode, "—",
+        packed.pack?.transcript.length ?? 0, "said,", packed.pack?.exercises.length ?? 0, "seen");
+      // No card and no job.card: runJob's ordinary buildCard path takes it from
+      // here, which is the whole point of returning a Meta rather than a Card.
+      return {
+        caption: null,
+        thumb: null,
+        author: null,
+        source: "video",
+        media_source: packed.media_source ?? "video:pack",
+        supplied: true,
+        topped_up: true,
+        filename: job.meta?.filename,
+        transcript: packed.text || undefined,
+        pack: packed.pack ?? undefined,
+        seconds: packed.seconds ?? undefined,
+      };
+    }
+    console.log("upload: the pack tier read nothing in", p.shortcode,
+      packed?.detail ? "— " + packed.detail.slice(0, 160) : "", "— falling back to the video reader");
+  }
+
   const out = await runMediaRemote(p, "video", job.user_id, null);
   // Charged whether or not it answered, exactly as the media tier charges: a
   // sub-request that died mid-stream still moved the bytes.
@@ -4164,9 +4203,6 @@ async function handleMediaTick(req: Request): Promise<Response> {
   }
 
   const provider = providerFor(body.platform);
-  if (!provider.media) {
-    return json({ status: "ok", tier, media_source: null, detail: "provider has no media" }, 200);
-  }
   // The link is re-parsed by the provider's own matcher rather than trusted, and
   // the shortcode it yields has to be the one the caller claimed. Nothing outside
   // this function can reach this route — it is behind the worker secret — but the
@@ -4177,8 +4213,20 @@ async function handleMediaTick(req: Request): Promise<Response> {
     console.error("media: refusing", String(body.url).slice(0, 120), "— it is not", body.shortcode);
     return json({ status: "error", tier, media_source: null, detail: "url does not match its shortcode" }, 400);
   }
+  // A provider with no media used to be the end of the road. It is not any more:
+  // when the phone sent contact sheets it has already done the looking, so a
+  // YouTube link the user watched in the native shell can still be read — without
+  // a transcript, but with a visual channel, which is the half that was missing.
+  const framed = !!body.frames?.sheets?.length;
+  if (!provider.media) {
+    if (tier === "pack" && framed) return json(await packReply(p, null, body, 200), 200);
+    return json({ status: "ok", tier, media_source: null, detail: "provider has no media" }, 200);
+  }
   const src = await provider.media(p);
-  if (!src) return json({ status: "ok", tier, media_source: null, detail: "no media url" }, 200);
+  if (!src) {
+    if (tier === "pack" && framed) return json(await packReply(p, null, body, 200), 200);
+    return json({ status: "ok", tier, media_source: null, detail: "no media url" }, 200);
+  }
 
   if (tier === "pack") return json(await packReply(p, src, body, 200), 200);
   const ctx: AiCtx = { purpose: tier === "video" ? "video" : "transcribe", userId: body.user_id ?? null };
@@ -6459,6 +6507,17 @@ function keepWhatTheReRunDropped(out: Card, oldBlocks: Block[]): Rescue {
       // sentence or the user's own correction, so here it is worth keeping when
       // the re-read has nothing to put in its place.
       if (!slot.ex.notes && ox.notes) slot.ex.notes = ox.notes;
+      if (!slot.ex.cue && ox.cue) slot.ex.cue = ox.cue;
+      // What the video was SEEN to do survives a re-read that never watched it.
+      // The reading cost money once and is a fact about the video rather than
+      // about this extraction, so an extraction with nothing to say about it must
+      // not be able to erase it.
+      if (!slot.ex.as_performed && ox.as_performed) {
+        slot.ex.as_performed = ox.as_performed;
+        slot.ex.delta = slot.ex.delta ?? ox.delta ?? null;
+        slot.ex.t0 = slot.ex.t0 ?? ox.t0 ?? null;
+        slot.ex.t1 = slot.ex.t1 ?? ox.t1 ?? null;
+      }
       if (doseOf(slot.ex) !== was) filled++;
       anchor = slot.ex;
     }
@@ -7791,6 +7850,41 @@ async function escalateToMedia(
     done.add("transcript");
     if (m[1] === "video") done.add("video");
   }
+  // Tier 3 first, and NOT gated on the card being thin.
+  //
+  // That gate is the bug this wave exists to fix. A well-narrated video produced a
+  // confident card, so nothing ever watched it, so nothing ever knew what the
+  // creator's hands were on. The pack runs on every video the app can see, once,
+  // and the reading is cached globally — so what it costs is one low-resolution
+  // read per UNIQUE video rather than one per save.
+  //
+  // The pack gate is asked BEFORE the provider gate, because the phone's frames do
+  // not need a provider: the stills are already in our own bucket, cut on the
+  // device from a video this function never has to reach. A YouTube link the user
+  // watched in the native shell is readable for exactly that reason.
+  if (packEligible(p, meta) && !meta.pack && providerFor(p.platform).cacheable) {
+    // Somebody may have read this video already. The lookup is deliberately NOT
+    // gated on CARD_V: bumping the card version to change a prompt must not make
+    // every previously-read video be watched again, because the reading is the
+    // expensive half and it is still correct.
+    const prior = await cachedPack(p.shortcode);
+    if (prior) {
+      meta = { ...meta, pack: prior, frames: undefined };
+      console.log("pack: replaying a cached reading of", p.shortcode, "—",
+        prior.exercises.length, "movement(s), read by", prior.reader);
+    }
+  }
+  if (packEligible(p, meta) && !meta.pack) {
+    const before = countExercises(card);
+    const out = await runPackTier(job, p, meta, card);
+    card = out.card;
+    meta = out.meta;
+    if (out.ran) {
+      ran.push("pack");
+      console.log("media: pack on", p.shortcode, before, "->", countExercises(card), "exercise(s)");
+    }
+  }
+
   if (!providerFor(p.platform).media) return { card, meta, ran };
   // A photo post has no video in it. tiktokMedia would fetch the watch page a
   // second time and log "named no media", and the slides — which is where the
@@ -7801,38 +7895,6 @@ async function escalateToMedia(
   if (p.kind === "photo" || (p.platform === "tiktok" && meta.images?.length)) {
     console.log("media: skipping", p.shortcode, "— a photo post has slides, not a video");
     return { card, meta, ran };
-  }
-
-  // Tier 3 first, and NOT gated on the card being thin.
-  //
-  // That gate is the bug. A well-narrated video produced a confident card, so
-  // nothing ever watched it, so nothing ever knew what the creator's hands were
-  // on. The pack runs on every video the app can actually see, once, and the
-  // reading is cached globally — so what it costs is one low-resolution read per
-  // UNIQUE video rather than per save.
-  if (packEligible(p, meta) && !meta.pack) {
-    // Somebody may have read this video already. The lookup is deliberately NOT
-    // gated on CARD_V: bumping the card version to change a prompt must not make
-    // every previously-read video be watched again, because the reading is the
-    // expensive half and it is still correct.
-    if (providerFor(p.platform).cacheable) {
-      const prior = await cachedPack(p.shortcode);
-      if (prior) {
-        meta = { ...meta, pack: prior, frames: undefined };
-        console.log("pack: replaying a cached reading of", p.shortcode, "—",
-          prior.exercises.length, "movement(s), read by", prior.reader);
-      }
-    }
-  }
-  if (packEligible(p, meta) && !meta.pack) {
-    const before = countExercises(card);
-    const out = await runPackTier(job, p, meta, card);
-    card = out.card;
-    meta = out.meta;
-    if (out.ran) ran.push("pack");
-    if (out.ran) {
-      console.log("media: pack on", p.shortcode, before, "->", countExercises(card), "exercise(s)");
-    }
   }
 
   if (!cardIsThin(card)) return { card, meta, ran };

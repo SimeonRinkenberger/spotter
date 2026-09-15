@@ -198,6 +198,9 @@ function heuristicCard(_meta: any, _platform: string, _title: string): any {
 }
 function fallbackTitle(_meta: any, _p: any): string { return "Saved workout"; }
 function applyCatalog(c: any): any { return c; }
+// The Video Context Pack overlay. Stubbed for the same reason applyCatalog is:
+// this file is about what the slides do to a card, and a carousel has no pack.
+function applyPack(_c: any, _p: any): void {}
 function scoreAndStamp(_c: any, _m: any, _p: string, _h: number): any {
   return { score: 0.5, parts: {}, evidence_pct: 0, chapters_used: false,
     chapters_only: false, exercises: 0, notes: [] };
@@ -214,7 +217,10 @@ const NAMES = [
   "DOSE_GAP_SHARE", "DOSE_GAP_MIN", "MERGE_MAX_EXERCISES", "visionLimit",
   // normalization
   "cleanLine", "cleanTitle", "intOrNull", "pickFrom", "parseJsonLoose",
-  "splitDose", "normalizeExercise", "normalizeCard",
+  // CUE_MAX and numOrNullBounded arrived with the Video Context Pack: the line
+  // under an exercise name is a typed `cue` now, and a card carries when in the
+  // video the movement happens. normalizeExercise reads both.
+  "CUE_MAX", "numOrNullBounded", "splitDose", "normalizeExercise", "normalizeCard",
   // the pass itself
   "countExercises", "hasDose", "doseGap", "picturesAreAPage", "slidesWouldHelp",
   "nameKey", "fillEmptyDose", "mergeSlideCard",
