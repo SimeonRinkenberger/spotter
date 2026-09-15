@@ -10139,11 +10139,54 @@ async function resolveHandle(userId: string, s: unknown, ids?: string[]): Promis
   return hits[0];
 }
 
+// -- the two lines of a card that say it was not the standard version --
+//
+// How much of a cue and a delta ride along in the library-level view of a card.
+// A pack-built cue is two sentences by design — the creator's coaching point,
+// then the one setup detail a reader would get wrong — and six of those is a
+// third of a snapshot for something the coach may not be asked about at all. So
+// get_workout carries the first sentence, which is the coaching point, and
+// get_exercise_detail carries the whole thing. The delta is cut at its first
+// clause for the same reason: "hands on the kettlebell handle instead of the
+// floor" is the part that tells the coach there is something here to look at.
+const PUMPY_CUE_CHARS = 78;
+const PUMPY_DELTA_CHARS = 56;
+
+/**
+ * A field cut where a person would cut it: at a sentence end inside the budget
+ * when there is one, then at a comma, then at a word — never mid-word and never
+ * leaving a dangling comma. The same rule trimCue applies to the card's own line,
+ * at a much tighter budget, which is why the sentence floor is lower: at 78
+ * characters "Slow and controlled for time under tension, core tight." is a whole
+ * thought and trimCue's 60-character floor would have thrown it away.
+ */
+function pumpyShort(raw: unknown, max: number): string | null {
+  const t = String(raw ?? "").replace(/\s+/g, " ").trim();
+  if (!t) return null;
+  if (t.length <= max) return t;
+  const head = t.slice(0, max);
+  const sentence = head.match(/^[\s\S]*[.!?]/);
+  if (sentence && sentence[0].trim().length >= 24) return sentence[0].trim();
+  const comma = head.lastIndexOf(",");
+  if (comma >= 24) return head.slice(0, comma);
+  const space = head.lastIndexOf(" ");
+  return (space > 16 ? head.slice(0, space) : head).replace(/[\s,;:.\-–—]+$/, "");
+}
+
 function compactExercise(e: any) {
-  return {
+  const out: Record<string, unknown> = {
     name: e?.name ?? null, canonical_id: e?.canonical_id ?? null, sets: e?.sets ?? null, reps: e?.reps ?? null,
     duration_seconds: e?.duration_seconds ?? null, rest_seconds: e?.rest_seconds ?? null,
   };
+  // Present only when there is something in them. Six `"cue":null` pairs is sixty
+  // tokens of the model being told nothing, and in a JSON tool result an absent
+  // key reads as "nothing here" exactly as a null one does. `notes` is the
+  // pre-wave spelling of the same line and is still on most saved cards.
+  const cue = pumpyShort(e?.cue ?? e?.notes, PUMPY_CUE_CHARS);
+  if (cue) out.cue = cue;
+  const delta = pumpyShort(e?.delta, PUMPY_DELTA_CHARS);
+  if (delta) out.delta = delta;
+  return out;
 }
 
 /** Muscles a card trains, by the catalog through canonical_id — the same rule the body diagram uses. */
@@ -10228,6 +10271,199 @@ async function toolGetWorkout(userId: string, idOrHandle: string) {
       exercises: (b?.exercises ?? []).map(compactExercise),
     })),
   };
+}
+
+// -- one exercise, the way the video actually did it --
+//
+// The owner, watching Pumpy explain the close-grip push-ups out of @thewodfather's
+// "Complex Fives": "he reads the internet but does not reference the video with
+// his explanation ... he does not reference how your hands should be on the
+// kettlebell." He was right, and nothing the coach had could have told him
+// otherwise — compactExercise was a name, a set count and a rep string, so an
+// answer about hand placement had nowhere to come from except the model's memory
+// of push-ups in general.
+//
+// This is the one tool that opens a single exercise, and it is deliberately
+// narrow: one movement, about 200 tokens, and everything in it traceable to this
+// video. The creator's cues are verbatim substrings of a timed transcript that
+// validatePack refused the pack without; the contact facts are what the camera
+// saw and nobody said. The WORKOUT is resolved owner-scoped first and the pack is
+// then fetched by that workout's shortcode, so the only videos reachable through
+// this tool are ones the caller has in their own library — video_cache itself is
+// global on purpose, because a pack is what everyone who saved the clip already
+// paid for, not one person's row.
+
+/** About 200 tokens at four characters to the token, with the tail shed to fit. */
+const PUMPY_DETAIL_CHARS = 820;
+const PUMPY_DETAIL_CUES = 2;
+const PUMPY_DETAIL_SEEN = 3;
+const PUMPY_QUOTE_CHARS = 130;
+
+/** The pack this video was read into, or null. Global cache, keyed by shortcode. */
+async function pumpyPack(shortcode: unknown): Promise<Pack | null> {
+  const sc = String(shortcode ?? "").trim();
+  if (!sc) return null;
+  try {
+    // `eq` and not `gte`: PACK_V is bumped when the SHAPE changes, so a pack
+    // written by a newer shape is one this code cannot read rather than one it
+    // should try to.
+    const rows = await dbSelect("video_cache",
+      `shortcode=eq.${encodeURIComponent(sc)}&pack_v=eq.${PACK_V}&select=pack`);
+    const pack = rows[0]?.pack ?? null;
+    return pack && Array.isArray(pack.exercises) ? pack as Pack : null;
+  } catch (e) {
+    // A coach that 500s because the cache blinked is worse than a coach that
+    // answers from the card. The fallback below is a real answer, not an apology.
+    console.error("pumpy detail: could not read the pack for", sc, "—", String(e).slice(0, 200));
+    return null;
+  }
+}
+
+/** The overlay with its empty fields gone: a null hand_placement is not a fact. */
+function pumpyVariant(v: unknown): Record<string, unknown> | null {
+  if (!v || typeof v !== "object") return null;
+  const out: Record<string, unknown> = {};
+  for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+    if (val === null || val === undefined) continue;
+    if (Array.isArray(val)) {
+      if (val.length) out[k] = val.slice(0, 4).map((x) => String(x).slice(0, 40));
+      continue;
+    }
+    if (typeof val === "string") {
+      const s = pumpyShort(val, 80);
+      if (s) out[k] = s;
+      continue;
+    }
+    out[k] = val;
+  }
+  return Object.keys(out).length ? out : null;
+}
+
+/**
+ * Where the model means. `block` and `index` are positions in the blocks
+ * get_workout just handed it; `name` is the same question asked the way a model
+ * is actually good at asking it, and is worth accepting because the alternative
+ * to a spelling is a wasted tool step and a turn with one fewer left.
+ */
+function pumpyExerciseAt(blocks: any[], args: any):
+  { ex: any; block: number; index: number } | { error: string } {
+  const bi = Math.trunc(Number(args?.block ?? args?.block_index));
+  const ei = Math.trunc(Number(args?.index ?? args?.exercise_index));
+  const direct = blocks[bi]?.exercises?.[ei];
+  if (direct) return { ex: direct, block: bi, index: ei };
+
+  const want = pumpyExName(args?.name ?? args?.exercise);
+  if (want) {
+    let loose: { ex: any; block: number; index: number } | null = null;
+    for (let b = 0; b < blocks.length; b++) {
+      const list: any[] = Array.isArray(blocks[b]?.exercises) ? blocks[b].exercises : [];
+      for (let i = 0; i < list.length; i++) {
+        const got = pumpyExName(list[i]?.name);
+        if (!got) continue;
+        if (got === want) return { ex: list[i], block: b, index: i };
+        if (!loose && (got.includes(want) || want.includes(got))) loose = { ex: list[i], block: b, index: i };
+      }
+    }
+    if (loose) return loose;
+  }
+  // Say where the exercises ARE rather than only that they are not there — the
+  // model spent a tool step to get here and should not have to spend another
+  // guessing at the shape of a card it has already been shown.
+  const shape = blocks.map((b: any, i: number) => "block " + i + " has " +
+    (Array.isArray(b?.exercises) ? b.exercises.length : 0)).join(", ");
+  return { error: "no exercise there — " + (shape || "that workout has no blocks") + "; pass block and index, or name" };
+}
+
+async function toolExerciseDetail(userId: string, args: any) {
+  const resolved = await resolveHandle(userId, args?.id ?? args?.workout_id ?? "");
+  if (typeof resolved !== "string") return resolved;
+  const rows = await dbSelect("workouts",
+    `id=eq.${resolved}&user_id=eq.${userId}&select=id,title,author,platform,shortcode,blocks`);
+  if (!rows.length) return { error: "no such workout in this library" };
+  const w = rows[0];
+  const blocks: any[] = Array.isArray(w.blocks) ? deepCopy(w.blocks) : [];
+
+  // The overlay is applied HERE, on a copy, rather than trusted off the row: a
+  // card saved before the pack tier existed, or before anybody had read its
+  // video, then answers with everything known about it today. On a card that was
+  // already stamped at ingest this lands on the same values it already had, and
+  // nothing is written back — the coach reads, the ingest writes.
+  const pack = await pumpyPack(w.shortcode);
+  if (pack) applyPack({ blocks } as unknown as Card, pack);
+
+  const at = pumpyExerciseAt(blocks, args);
+  if ("error" in at) return at;
+  const ex = at.ex;
+
+  // Which segment of the video this is. applyPack stamps t0/t1 straight off the
+  // pack exercise it matched and claims each one at most once, so the pair of
+  // timestamps identifies the segment without this function having to repeat
+  // applyPack's matching — which is the half of it most likely to drift.
+  const pe = pack
+    ? pack.exercises.find((p) => p.t0 === ex.t0 && p.t1 === ex.t1) ?? null
+    : null;
+  const extra = pe as unknown as { setup?: unknown; execution?: unknown } | null;
+
+  const cues = (pe?.creator_cues ?? []).slice(0, PUMPY_DETAIL_CUES)
+    .map((c) => ({ t: secondsToMmss(c.t), quote: String(c.quote).slice(0, PUMPY_QUOTE_CHARS) }));
+  const seen = (pe?.seen_not_said ?? []).slice(0, PUMPY_DETAIL_SEEN).map((s) => String(s).slice(0, 100));
+
+  // No pack behind this card — an older save, a provider that hands us no media,
+  // or a clip nobody has read yet. The card still carries the ONE checked line
+  // packEvidence put on it, so the coach still gets a quote with a clock on it
+  // instead of nothing at all.
+  const ev = ex.evidence;
+  if (!cues.length && ev?.source === "transcript" && ev.quote) {
+    cues.push({ t: secondsToMmss(Number(ev.t) || 0), quote: String(ev.quote).slice(0, PUMPY_QUOTE_CHARS) });
+  }
+  if (!seen.length && ev?.source === "seen" && ev.quote) seen.push(String(ev.quote).slice(0, 100));
+
+  return pumpyFitDetail({
+    name: ex.name ?? null,
+    canonical_id: ex.canonical_id ?? null,
+    as_performed: pumpyVariant(ex.as_performed),
+    delta: pumpyShort(ex.delta, 140),
+    cue: pumpyShort(ex.cue ?? ex.notes, 170),
+    creator_cues: cues,
+    seen_not_said: seen,
+    // The assembler does not write these yet — the golden fixture does, and wave
+    // D's pack will. Reading them here means the day it does, the coach has them
+    // without another change to this file.
+    setup: pumpyShort(extra?.setup, 160),
+    execution: pumpyShort(extra?.execution, 160),
+    // MM:SS rather than seconds, because the only thing anybody does with these
+    // is print them, and a model asked to print 15.4 as "0:15" sometimes prints
+    // "15 seconds into the 84-second video" instead.
+    t0: typeof ex.t0 === "number" ? secondsToMmss(ex.t0) : null,
+    t1: typeof ex.t1 === "number" ? secondsToMmss(ex.t1) : null,
+    author: w.author ?? null,
+    title: w.title ?? null,
+    source_platform: w.platform ?? null,
+    // The one thing a coach must never paper over: whether anybody actually
+    // watched this video. Without it "the video did not show that" and "nobody
+    // has looked" are the same silence, and only one of them is honest.
+    video_read: !!pe,
+  });
+}
+
+/**
+ * Shed from the tail until the slice fits. The order is the point: the first
+ * creator cue and the contact facts are what the call is FOR, so what goes first
+ * is the prose a coach can write perfectly well for itself.
+ */
+function pumpyFitDetail(d: Record<string, any>): Record<string, any> {
+  const over = () => JSON.stringify(d).length > PUMPY_DETAIL_CHARS;
+  if (!over()) return d;
+  d.execution = null;
+  if (!over()) return d;
+  d.setup = null;
+  while (over() && d.creator_cues.length > 1) d.creator_cues.pop();
+  while (over() && d.seen_not_said.length > 1) d.seen_not_said.pop();
+  if (over()) {
+    console.warn("pumpy detail:", JSON.stringify(d.name), "is still",
+      JSON.stringify(d).length, "characters after shedding");
+  }
+  return d;
 }
 
 // -- catalog search --
@@ -10471,10 +10707,11 @@ async function runPumpyTool(userId: string, name: string, args: any): Promise<un
   switch (name) {
     case "list_library": return await toolListLibrary(userId, args?.query ?? args?.q);
     case "get_workout": return await toolGetWorkout(userId, String(args?.id ?? args?.workout_id ?? ""));
+    case "get_exercise_detail": return await toolExerciseDetail(userId, args ?? {});
     case "search_catalog": return toolSearchCatalog(String(args?.query ?? args?.q ?? ""));
     case "get_plan": return await toolGetPlan(userId, args?.week_start ? String(args.week_start) : undefined, Number(args?.weeks ?? 1));
     case "get_logs_summary": return await toolLogsSummary(userId, Number(args?.days ?? 14));
-    default: return { error: "unknown tool " + name + "; the tools are list_library, get_workout, search_catalog, get_plan, get_logs_summary" };
+    default: return { error: "unknown tool " + name + "; the tools are list_library, get_workout, get_exercise_detail, search_catalog, get_plan, get_logs_summary" };
   }
 }
 
@@ -10742,6 +10979,20 @@ async function pumpyAttachSources(userId: string, blocks: Block[], cited: Map<st
     // video's evidence a citation would be a name with nothing behind it.
     const src = row.blocks?.[found.block_index]?.exercises?.[found.exercise_index];
     ex.evidence = src?.evidence ?? null;
+    // And so does everything the pack read off that video. A borrowed push press
+    // is the push press THAT CREATOR did — two hands on one bell, dip and drive —
+    // and a card that kept the quote but dropped the hand placement would put the
+    // coach right back where the owner found it. The card's own line is left
+    // alone and the rest is pure addition, the same rule applyPack follows:
+    // normalizeExercise has already dropped every field it does not know, so
+    // nothing a model wrote can reach these through this door.
+    if (src) {
+      if (!ex.cue && src.cue) ex.cue = String(src.cue).slice(0, CUE_MAX);
+      if (src.as_performed) ex.as_performed = src.as_performed;
+      if (src.delta) ex.delta = src.delta;
+      if (typeof src.t0 === "number") ex.t0 = src.t0;
+      if (typeof src.t1 === "number") ex.t1 = src.t1;
+    }
     kept++;
   });
   console.log("pumpy cite:", kept, "attached,", dropped, "dropped, across", uuids.length, "workout(s)");
@@ -10924,7 +11175,12 @@ const PUMPY_STATIC = [
   "You can call tools. Every tool sees only this user's own data. Tools:",
   "- list_library {query?} → saved workouts matching query (title, category, muscle, equipment or collection), " +
   "at most 40, without exercise names.",
-  "- get_workout {id} → one workout with every block and exercise.",
+  "- get_workout {id} → one workout with every block and exercise, each with the creator's cue and, when the " +
+  "video did it differently from the standard version, a one-line delta.",
+  "- get_exercise_detail {id, block, index} → how ONE exercise in a saved workout was actually performed in the " +
+  "video it came from: the creator's own words with timestamps, the equipment, hand placement and surface the " +
+  "camera saw, how it differed from the standard version, and whether the video was ever read at all. block and " +
+  "index are positions in that workout's blocks as get_workout lists them; {id, name} works instead.",
   "- search_catalog {query} → exercises Spotter knows, best first (id, name, muscles, equipment). query is a " +
   "phrase, a muscle, a piece of equipment, or a comma-separated list of names to check several spellings at once.",
   "- get_plan {week_start?, weeks?} → what is planned and done on each day of a week, or of up to 6 consecutive " +
@@ -10950,6 +11206,10 @@ const PUMPY_STATIC = [
   "you are planning, so you add to what is already there instead of over it — never one call per week. " +
   "Progress the weeks — a set, a round, a harder variation or less rest — unless the user asks for a plain " +
   "repeat, and then repeat the week exactly as it stands.",
+  "When the user asks how to do, what to feel, or what went wrong in an exercise from one of their saved videos, " +
+  "call get_exercise_detail first and describe the movement the way that creator actually did it — name the " +
+  "creator, quote their cue, mention the moment (0:15) — and say plainly when the video did not show something. " +
+  "Never describe equipment or hand placement the detail does not contain.",
   'When an exercise is taken from one of the user\'s saved workouts, set that exercise\'s "from" to that ' +
   "workout's id — only ever the id of a workout that really contains the movement, otherwise leave it out — and " +
   "in say name the workouts you drew from by their titles.",
@@ -11181,6 +11441,7 @@ export function makeSayGate(limit: number): SayGate {
 export const PUMPY_TOOL_STATUS: Record<string, string> = {
   list_library: "Looking through your library…",
   get_workout: "Reading that workout…",
+  get_exercise_detail: "Watching how they did it…",
   search_catalog: "Checking the exercise catalog…",
   get_plan: "Reading your plan…",
   get_logs_summary: "Looking at your recent sessions…",
@@ -11212,6 +11473,8 @@ function pumpyNamesFrom(result: unknown): string[] {
   if (Array.isArray(result)) {
     for (const r of result) if (r && typeof r === "object") add((r as any).name);
   } else if (result && typeof result === "object") {
+    // get_exercise_detail answers about one movement and names it at the top.
+    add((result as any).name);
     for (const b of ((result as any).blocks ?? []) as any[]) {
       for (const e of (b?.exercises ?? []) as any[]) add(e?.name);
     }
