@@ -36,7 +36,7 @@ export async function installKeyboard(Keyboard, win = window, doc = document) {
   await Keyboard.addListener('keyboardDidHide', () => fallback(false));
   // Ordinary text/search/email/URL/password fields get the regular system
   // keyboard. Keep Done for number pads, pickers and multiline forms.
-  await Keyboard.setAccessoryBarVisible({ isVisible: false });
+  await Keyboard.setAccessoryBarVisible({ isVisible: false }).catch(() => {});
   let accessoryVisible = false;
   const prepare = target => {
     if (!target || !/^(INPUT|TEXTAREA)$/.test(target.tagName)) return;

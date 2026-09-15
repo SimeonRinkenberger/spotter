@@ -11,3 +11,4 @@ ios/App/App/public/
 ios/App/App/capacitor.config.json
 ios/App/Local.xcconfig
 .native-build/
+releases/

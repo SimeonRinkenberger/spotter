@@ -1,3 +1,4 @@
+import { createPurchases } from './purchases.js';
 import { signInWithApple } from './apple-auth.js';
 import { signInWithGoogle } from './google-auth.js';
 import { shareAccess } from './share-access.js';
@@ -16,11 +17,15 @@ import * as supabase from '@supabase/supabase-js';
 
 window.supabase = supabase;
 const ignore = () => {};
+const android = Capacitor.getPlatform() === "android";
+const AndroidHost = registerPlugin("SpotterAndroid");
 let draftWrites = Promise.resolve();
-const configureSharing = shareAccess(registerPlugin('ShareAccess'), () => {
+const configureSharing = shareAccess(android ? { configure: async () => {} } : registerPlugin('ShareAccess'), () => {
   window.dispatchEvent(new Event('spotter:share-unavailable'));
 });
 window.SpotterNative = {
+  platform: Capacitor.getPlatform(),
+  purchases: createPurchases(Capacitor.getPlatform()),
   configureSharing,
   signInWithApple: sb => signInWithApple(sb, registerPlugin('AppleAuth')),
   signInWithGoogle: sb => signInWithGoogle(sb, registerPlugin('GoogleAuth')),
@@ -116,6 +121,23 @@ async function boot() {
       event.preventDefault(); window.SpotterNative.open('https://simeonrinkenberger.github.io/spotter/' + url.pathname.split('/').pop());
     }
   }, true);
+  if (android) {
+    document.documentElement.classList.add('android');
+    await App.addListener('backButton', () => {
+      const field = document.activeElement;
+      if (window.SpotterNative.keyboardVisible && field?.matches('input, textarea, [contenteditable="true"]') && field.getClientRects().length) {
+        field.blur();
+        window.SpotterNative.keyboardVisible = false;
+        Keyboard.hide().catch(ignore);
+        return;
+      }
+      if (document.querySelector('.sheet.open, #detail.open, #workout.open')) history.back();
+      else AndroidHost.background().catch(ignore);
+    });
+    await AndroidHost.addListener('sharedUrl', ({ url }) => window.dispatchEvent(new CustomEvent('spotter:shared-url', { detail: { url } })));
+    const pending = await AndroidHost.takeShare();
+    if (pending.url) sessionStorage.setItem('spotter_share_pending', pending.url);
+  }
   const script = document.createElement('script'); script.src = 'app.js'; document.body.appendChild(script);
 }
 boot().catch(() => { document.body.textContent = 'Spotter could not open local storage. Close and reopen the app.'; });

@@ -1,0 +1,9 @@
+catalog entries: 224 · match floor: 0.72
+
+72/72 cases pass
+
+variant convergence:
+  "DB Bulgarians"              -> bulgarian-split-squat (fuzzy 0.88)
+  "Bulgarian Split Squats"     -> bulgarian-split-squat (exact 1)
+  "bulgarian split squat"      -> bulgarian-split-squat (exact 1)
+  all three map to one id: yes (bulgarian-split-squat)

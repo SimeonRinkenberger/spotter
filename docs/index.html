@@ -2252,6 +2252,41 @@ h1 {
   font-size: 10.5px;
   padding: 5px 9px;
 }
+.pcard .pamt {
+  font-size: 24px;
+}
+.pcard .pold {
+  font-size: 14px;
+}
+.psavings {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0 5px;
+  color: var(--ember-ink);
+  font-size: 16px;
+  line-height: 1.4;
+}
+.psavebadge {
+  display: inline-block;
+  padding: 4px 9px;
+  border-radius: 8px;
+  background: var(--ember);
+  color: var(--on-ember);
+  font-size: 12px;
+  font-weight: 750;
+}
+.pcompare,
+.prenew {
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.prenew {
+  margin-top: 5px;
+  font-weight: 650;
+}
 .plantrial,
 .plansoon {
   font-size: 13px;
@@ -4404,6 +4439,119 @@ body:not(.app) #toast.show {
   display: flex;
   align-items: center;
 }
+.reststrip {
+  flex-shrink: 0;
+  margin: 8px 16px 0;
+  padding: 14px;
+  gap: 16px;
+  border: 1px solid var(--ember);
+  border-radius: 24px;
+  background: var(--ember-soft);
+}
+.reststrip .ring {
+  width: 88px;
+  height: 88px;
+}
+.reststrip .ring::after {
+  inset: 6px;
+}
+.reststrip .ring span {
+  font-family: var(--display);
+  font-size: 29px;
+}
+.restinfo {
+  flex: 1;
+  min-width: 0;
+}
+.restheading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.restword {
+  font-family: var(--display);
+  font-size: 21px;
+  font-weight: 750;
+}
+.resthint {
+  color: var(--ink-2);
+  font-size: 12px;
+  margin: 4px 0 8px;
+}
+.restcontrols {
+  display: flex;
+  gap: 8px;
+}
+.restcontrols .chip {
+  justify-content: center;
+  padding: 8px 12px;
+  background: var(--card);
+}
+.reststrip.paused {
+  border-color: var(--line-2);
+  background: var(--sand);
+}
+.wbottom {
+  flex-shrink: 0;
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) 52px;
+}
+#waddexercise {
+  grid-column: 2;
+  grid-row: 1;
+  min-height: 48px;
+}
+#wnext {
+  grid-column: 3;
+  grid-row: 1;
+}
+.wfinish {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  width: 100%;
+  min-height: 60px;
+  font-size: 18px;
+  padding: 18px;
+  border-radius: 18px;
+}
+.wmain {
+  min-height: 0;
+  justify-content: flex-start;
+}
+.wmain > * {
+  flex-shrink: 0;
+}
+.wo-extra-set {
+  min-height: 48px;
+  width: 100%;
+  margin-bottom: 10px;
+}
+#woadderror:empty {
+  display: none;
+}
+.wtimer.resting {
+  border: 1px solid var(--ember);
+  border-radius: 24px;
+  background: var(--ember-soft);
+  padding: 16px;
+}
+.wtimer.resting .wphase {
+  font-size: 22px;
+  font-weight: 750;
+}
+@media (max-width: 350px) {
+  .reststrip {
+    gap: 10px;
+    padding: 10px;
+  }
+  .reststrip .ring {
+    width: 76px;
+    height: 76px;
+  }
+  .restcontrols .chip {
+    padding: 8px;
+  }
+}
 .wtimer {
   display: flex;
   flex-direction: column;
@@ -4837,6 +4985,26 @@ body:not(.app) #toast.show {
   flex-direction: column;
   gap: 8px;
   min-width: 0;
+}
+.reportresponse {
+  align-self: flex-start;
+  min-height: 44px;
+  padding: 8px 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.reportresponse[data-armed="1"] {
+  color: var(--ember-ink);
+}
+.reportresponse:disabled {
+  cursor: default;
+  text-decoration: none;
 }
 .msg {
   padding: 11px 14px;
@@ -6118,7 +6286,7 @@ select:focus-visible {
 #workout:not(.summary) .wmain {
   justify-content: flex-start;
   min-height: 0;
-  padding-top: clamp(28px, calc(var(--vvh) * .12), 112px);
+  padding-top: clamp(20px, calc(var(--vvh) * .04), 32px);
 }
 #workout:not(.summary) .wmain > * {
   flex-shrink: 0;
@@ -6261,6 +6429,143 @@ select:focus-visible {
 }
 .history-card.details-closing > summary::before {
   transform: rotate(-45deg);
+}
+.progress-totals {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 18px 0;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+  text-align: center;
+}
+.progress-totals b {
+  display: block;
+  font-family: var(--display);
+  font-size: clamp(20px, 5vw, 28px);
+  overflow-wrap: anywhere;
+}
+.progress-totals span {
+  display: block;
+  color: var(--ink-2);
+  font-size: 12px;
+  margin-top: 4px;
+}
+.session-journal h2 {
+  font-family: var(--display);
+  margin: 20px 0 6px;
+}
+.session-search {
+  width: 100%;
+  min-height: 46px;
+  margin: 14px 0 10px;
+}
+.session-link {
+  display: block;
+  width: 100%;
+  padding: 16px;
+  text-align: left;
+  color: var(--ink);
+  cursor: pointer;
+  transition: border-color var(--t-2), background-color var(--t-2);
+}
+.session-link:hover {
+  border-color: var(--ember);
+  background: var(--ember-soft);
+}
+.session-link:focus-visible {
+  outline: 2px solid var(--ember-ink);
+  outline-offset: 3px;
+}
+.session-link .histrow {
+  border: 0;
+  padding: 0;
+}
+.session-link .n {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.session-invite {
+  display: block;
+  color: var(--ember-ink);
+  font-size: 12px;
+  font-weight: 650;
+  margin-top: 12px;
+}
+#sessionsheet .sheetbody {
+  max-width: 560px;
+}
+#sessionclose {
+  margin-bottom: 20px;
+  min-height: 44px;
+}
+#sessiontitle {
+  font-size: 28px;
+  overflow-wrap: anywhere;
+}
+#sessioncontent h3 {
+  font-family: var(--display);
+  font-size: 18px;
+}
+#sessioncontent .sharewrap {
+  margin-top: 12px;
+  animation-delay: 0ms;
+}
+#sessioncontent .sharerow {
+  flex-direction: column;
+  align-items: center;
+}
+#sessioncontent .scprev {
+  flex: none;
+  width: 198px;
+  height: 352px;
+}
+#sessioncontent .scprev img {
+  object-fit: contain;
+}
+#sessioncontent .scside {
+  width: 100%;
+}
+#sessioncontent .scchips {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+#sessioncontent .schint {
+  text-align: center;
+}
+.session-exercises-title {
+  margin-top: 28px;
+}
+.session-exercise {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+}
+.session-exercise h4 {
+  margin: 0 0 10px;
+  overflow-wrap: anywhere;
+}
+.session-set {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 6px 0;
+  font-size: 13px;
+}
+.session-set span {
+  color: var(--ink-2);
+  flex-shrink: 0;
+}
+.session-set b {
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+#sessioncontent > .danger {
+  min-height: 44px;
+  margin-top: 24px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .session-link {
+    transition: none;
+  }
 }
 .session-head .histrow {
   border: 0;
@@ -6531,14 +6836,18 @@ details.details-moving > :not(summary) {
   <div class="wmain" id="wmain"></div>
   <div class="reststrip" id="reststrip">
     <button class="ring" id="restring" aria-label="Pause or resume the rest"><span id="restnum">0</span></button>
-    <span class="restword" id="restword">Rest</span>
-    <svg class="ic wmute" aria-hidden="true"><use href="#i-volume-x"></use></svg>
-    <button class="chip" id="restplus">+15 s</button>
-    <button class="chip" id="restskip">Skip</button>
+    <div class="restinfo">
+      <div class="restheading"><span class="restword" id="restword">Rest period</span>
+        <svg class="ic wmute" aria-hidden="true"><use href="#i-volume-x"></use></svg></div>
+      <div class="resthint" id="resthint">Breathe. Next set soon.</div>
+      <div class="restcontrols"><button class="chip" id="restplus">+15 s</button>
+        <button class="chip" id="restskip">Skip rest</button></div>
+    </div>
   </div>
   <div class="wbottom">
     <button class="wnav" id="wprev" aria-label="Previous exercise"><svg class="ic"><use href="#i-arrow-left"></use></svg></button>
-    <button class="wfinish" id="wfinish">Finish workout</button>
+    <button class="btn ghost" id="waddexercise">+ Add exercise</button>
+    <button class="wfinish" id="wfinish">Save workout</button>
     <button class="wnav" id="wnext" aria-label="Next exercise"><svg class="ic"><use href="#i-arrow-right"></use></svg></button>
   </div>
 </div>
@@ -6585,6 +6894,28 @@ details.details-moving > :not(summary) {
     <button class="btn ghost" id="setclear">Clear</button>
     <button class="btn" id="setsave">Save set</button>
   </div>
+</div></div>
+
+<div class="sheet" id="woaddsheet" role="dialog" aria-modal="true" aria-labelledby="woaddtitle"><div class="sheetbody">
+  <div class="grabber"></div>
+  <h2 id="woaddtitle">Add to this workout</h2>
+  <p class="lede">Choose a movement you’ve saved or type your own. It will be added at the end of this session.</p>
+  <div class="field"><label for="woaddname">Exercise</label><input id="woaddname" type="text" maxlength="100" autocomplete="off" list="woaddsuggestions" placeholder="e.g. Dumbbell row"><datalist id="woaddsuggestions"></datalist></div>
+  <div class="fieldrow">
+    <div class="field"><label for="woaddsets">Sets</label><input id="woaddsets" type="number" inputmode="numeric" min="1" max="99" value="3"></div>
+    <div class="field"><label for="woaddreps">Reps</label><input id="woaddreps" type="number" inputmode="numeric" min="1" max="999" value="10"></div>
+  </div>
+  <div class="field"><label for="woaddsecs">Seconds per set (instead of reps)</label><input id="woaddsecs" type="number" inputmode="numeric" min="1" max="3600" placeholder="Optional, for timed exercises"></div>
+  <p id="woadderror" class="error" role="alert"></p>
+  <div class="btnrow"><button class="btn ghost" data-close="woaddsheet">Cancel</button><button class="btn" id="woaddsave">Add exercise</button></div>
+</div></div>
+
+<div class="sheet" id="sessionsheet" role="dialog" aria-modal="true" aria-labelledby="sessiontitle"><div class="sheetbody">
+  <div class="grabber"></div>
+  <button class="btn ghost" id="sessionclose" data-close="sessionsheet">Back to Progress</button>
+  <div class="wblock">Session recap</div>
+  <h2 id="sessiontitle">Workout</h2>
+  <div id="sessioncontent"></div>
 </div></div>
 
 <div class="sheet" id="watchsheet"><div class="sheetbody">
@@ -7507,7 +7838,7 @@ details.details-moving > :not(summary) {
   function renderAuthProviders() {
     var wrap = $("oauthwrap");
     if (wrap) {
-      var hasGoogle = !!(authProviders && authProviders.google), hasApple = !!(authProviders && authProviders.apple);
+      var hasGoogle = !!(authProviders && authProviders.google), hasApple = !!(authProviders && authProviders.apple) && !(native && native.platform === "android");
       if ($("oagoogle").classList.toggle("hide", !hasGoogle), $("oaapple").classList.toggle("hide", !hasApple), wrap.classList.toggle("hide", !(hasGoogle || hasApple)), hasApple && isAppleDevice()) {
         var box = $("oauthbtns");
         box.insertBefore($("oaapple"), box.firstChild);
@@ -7531,7 +7862,7 @@ details.details-moving > :not(summary) {
   }
   function clearAccount() {
     if (native && native.configureSharing(null).catch(function() {
-    }), cancelPumpyReset(), pendingMotion && pendingMotion.disconnect(), $("app").classList.add("hide"), accountEpoch++, reads = {}, inFlight = {}, libraryRev++, logsRev++, planRev++, clearTimeout(undoTimer), undoTimer = null, undoFn = null, clearTimeout(detailCloseTimer), clearTimeout(woCloseTimer), clearTimeout(pendTimer), pendTimer = null, pendPolls = 0, pendBusy = !1, wkChannel && (sb.removeChannel(wkChannel), wkChannel = null), booting = null, state.profile = null, state.workouts = [], state.logs = null, state.plan = null, state.planLogs = [], state.awards = null, state.goal = null, state.unit = "lb", state.sounds = !0, state.haptics = !0, state.collections = [], state.colItems = [], seenCards = {}, gridCards = {}, expCache = {}, expWaiting = {}, vidCache = {}, expKey = "", today.rows = [], today.at = 0, today.day = null, today.busy = !1, today.shown = !1, current = null, wo && saveDraft(), clearInterval(woTimer), stopRest(), releaseWake(), wo = null, hist = {}, histReady = !1, strava && (strava = { asked: !1, configured: !1, connected: !1, athlete: null, busy: !1 }), pumpy) {
+    }), cancelPumpyReset(), pendingMotion && pendingMotion.disconnect(), $("app").classList.add("hide"), accountEpoch++, reads = {}, inFlight = {}, libraryRev++, logsRev++, planRev++, clearTimeout(undoTimer), undoTimer = null, undoFn = null, clearTimeout(detailCloseTimer), clearTimeout(woCloseTimer), clearTimeout(pendTimer), pendTimer = null, pendPolls = 0, pendBusy = !1, wkChannel && (sb.removeChannel(wkChannel), wkChannel = null), booting = null, state.profile = null, state.workouts = [], state.logs = null, state.plan = null, state.planLogs = [], state.awards = null, state.goal = null, state.unit = "lb", state.sounds = !0, state.haptics = !0, state.collections = [], state.colItems = [], seenCards = {}, gridCards = {}, expCache = {}, expWaiting = {}, vidCache = {}, expKey = "", today.rows = [], today.at = 0, today.day = null, today.busy = !1, today.shown = !1, current = null, sc && scForget(), wo && saveDraft(), clearInterval(woTimer), stopRest(), releaseWake(), wo = null, hist = {}, histReady = !1, strava && (strava = { asked: !1, configured: !1, connected: !1, athlete: null, busy: !1 }), pumpy) {
       var seq = (pumpy.openSeq || 0) + 1, wired = pumpy.wired;
       pumpy = {
         thread: null,
@@ -7546,7 +7877,8 @@ details.details-moving > :not(summary) {
         openSeq: seq
       };
     }
-    billing && (billing.sub = null, billing.subAsked = !1, billing.limits = null, billing.said = null, billing.ctx = null), ["grid", "chips", "colbar", "libcount", "empty", "dinner", "pumpylog", "pumpyannounce", "pumpyctx", "pumpythreads", "planview", "progressview", "today"].forEach(function(id) {
+    native && native.purchases && native.purchases.clear().catch(function() {
+    }), billing && (billing.prices = null, billing.sub = null, billing.subAsked = !1, billing.limits = null, billing.said = null, billing.ctx = null), ["grid", "chips", "colbar", "libcount", "empty", "dinner", "pumpylog", "pumpyannounce", "pumpyctx", "pumpythreads", "planview", "progressview", "today", "sessioncontent"].forEach(function(id) {
       var n = $(id);
       n && (n.innerHTML = "");
     }), $("count0").textContent = "Reading your library", clearTimeout(toastTimer), $("toast").classList.remove("show"), $("toast").textContent = "", Array.prototype.forEach.call(document.querySelectorAll(".sheet.open, #detail.open, #workout.open"), function(n) {
@@ -9724,6 +10056,7 @@ details.details-moving > :not(summary) {
           workoutId: wo.workout.id,
           title: wo.workout.title,
           entries: wo.entries,
+          blocks: wo.workout.blocks,
           startedAt: wo.startedAt,
           i: wo.i,
           rounds: wo.rounds,
@@ -9740,7 +10073,7 @@ details.details-moving > :not(summary) {
     }
   }
   function startWorkout(w, resume) {
-    guideClear(), guideStill();
+    guideClear(), guideStill(), w = Object.assign({}, w, { blocks: JSON.parse(JSON.stringify(resume && resume.blocks || w.blocks || [])) });
     var screens = flatten(w);
     wo = {
       workout: w,
@@ -9762,6 +10095,50 @@ details.details-moving > :not(summary) {
       rounds: resume && resume.rounds || {},
       finished: !1
     }, woPhase = "idle", wo.entries.length || (wo.entries = [{ name: "Freestyle", canonical_id: null, block: 0, exercise: 0, sets: [] }]), clearTimeout(woCloseTimer), $("workout").classList.remove("closing"), $("workout").classList.remove("summary"), $("workout").classList.add("open"), stopRest(), acquireWake(), renderWorkout(), startClock(), resume && resume.rest && resume.rest.total > 0 && (resume.rest.held || resume.rest.until > Date.now()) && (startRest(resume.rest.total / 1e3), restUntil = resume.rest.until, restHeld = resume.rest.held || 0, restHeld ? (clearInterval(restTimer), drawRest(restHeld)) : tickRest()), saveDraft(), history.pushState({ workout: 1 }, ""), lastWeights();
+  }
+  function openWorkoutAdd() {
+    if (!(!wo || wo.finished)) {
+      $("woaddname").value = "", $("woaddsets").value = "3", $("woaddreps").value = "10", $("woaddsecs").value = "", $("woadderror").textContent = "";
+      var options = $("woaddsuggestions"), names = {};
+      options.innerHTML = "", state.workouts.forEach(function(w) {
+        flatten(w).forEach(function(s) {
+          if (!(!s.ex.name || names[s.ex.name])) {
+            names[s.ex.name] = !0;
+            var opt = el("option");
+            opt.value = s.ex.name, options.appendChild(opt);
+          }
+        });
+      }), $("woaddsheet")._returnFocus = document.activeElement, openSheet("woaddsheet"), $("woaddname").focus();
+    }
+  }
+  function appendSessionExercise(ex) {
+    if (!wo || wo.finished) return !1;
+    wo.screens.length || (wo.workout.blocks = [{ title: "Freestyle", type: "straight", exercises: [
+      { name: wo.entries[0].name || "Freestyle", sets: 1 }
+    ] }], wo.screens = flatten(wo.workout));
+    var bi = wo.workout.blocks.length, block = { title: "Added this session", type: "straight", exercises: [ex] };
+    return wo.workout.blocks.push(block), wo.screens.push({ block: block, bi: bi, ei: 0, ex: ex }), wo.entries.push({ name: ex.name, canonical_id: ex.canonical_id || null, block: bi, exercise: 0, sets: [] }), stopWork(), restThen = null, wo.i = wo.screens.length - 1, saveDraft(), renderWorkout(), !0;
+  }
+  function saveWorkoutAdd() {
+    if (!(!wo || wo.finished)) {
+      var name = $("woaddname").value.trim(), sets = Number($("woaddsets").value), reps = Number($("woaddreps").value), rawSecs = $("woaddsecs").value.trim(), secs = Number(rawSecs);
+      if (!name || name.length > 100 || sets < 1 || sets > 99 || sets % 1 || (rawSecs ? !isFinite(secs) || secs < 1 || secs > 3600 || secs % 1 : !isFinite(reps) || reps < 1 || reps > 999 || reps % 1) || !isFinite(sets)) {
+        $("woadderror").textContent = "Enter a name, 1\u201399 sets, and 1\u2013999 reps or 1\u20133600 seconds.";
+        return;
+      }
+      var ex = {
+        name: name,
+        sets: sets,
+        reps: rawSecs ? null : String(reps),
+        duration_seconds: rawSecs ? secs : null,
+        rest_seconds: REST_FALLBACK
+      };
+      state.workouts.some(function(w) {
+        return flatten(w).some(function(s) {
+          return (s.ex.name || "").toLowerCase() !== name.toLowerCase() || !s.ex.canonical_id ? !1 : (ex.canonical_id = s.ex.canonical_id, !0);
+        });
+      }), appendSessionExercise(ex) && (closeSheet("woaddsheet"), toast("Added " + name + " to this session."));
+    }
   }
   function exKey(e) {
     return e ? e.canonical_id ? "c:" + e.canonical_id : "n:" + (e.name || "") : "n:";
@@ -9853,7 +10230,7 @@ details.details-moving > :not(summary) {
         ));
         var addSet = el("button", "btn", "Log a set");
         addSet.style.marginTop = "22px", addSet.onclick = function() {
-          openSetSheet(0);
+          openSetSheet(entry.sets.length);
         }, main.appendChild(addSet), renderSetPills(main, entry, null);
         return;
       }
@@ -9866,7 +10243,11 @@ details.details-moving > :not(summary) {
         var last = el("div", "wnote wlast", lastLine(entry));
         last.id = "wlast", main.appendChild(last), s.ex.weight && main.appendChild(el("div", "wnote", "Suggested load: " + s.ex.weight)), s.ex.notes && main.appendChild(el("div", "wnote", s.ex.notes)), renderSetPills(main, entry, s.ex, targetOf(s));
       }
-      var acts = el("div", "wactions exercise-actions"), extra = disclosure("Options", "exercise-options");
+      var acts = el("div", "wactions exercise-actions"), add = el("button", "btn ghost wo-extra-set", isTimed(s.ex) ? "Log extra hold" : "+ Add set");
+      add.onclick = function() {
+        isTimed(s.ex) ? (logHold(entry.sets.length, s.ex.duration_seconds), renderWorkout()) : openSetSheet(entry.sets.length);
+      }, acts.appendChild(add);
+      var extra = disclosure("Options", "exercise-options");
       extra.firstChild.setAttribute("aria-label", "Options for " + s.ex.name);
       var w = wo.workout, clip = sourceOf(s.ex) || w;
       if (clip.thumb_url || clip.shortcode && /^(instagram|tiktok|youtube)$/.test(clip.platform)) {
@@ -9907,6 +10288,7 @@ details.details-moving > :not(summary) {
   var setCtx = { idx: 0, reps: 10, weight: 0 };
   function openSetSheet(idx2) {
     if (wo) {
+      restFace || (restThen = null);
       var s = wo.screens[wo.i], entry = wo.entries[wo.i], existing = entry.sets[idx2], targetReps = 10;
       if (s && s.ex && s.ex.reps) {
         var m = String(s.ex.reps).match(/\d+/);
@@ -10005,7 +10387,7 @@ details.details-moving > :not(summary) {
   }
   var restUntil = 0, restTotal = 0, restHeld = 0, restCued = 0, restFace = null, restThen = null;
   function startRest(seconds, face, then) {
-    face && !restFace && stopRest(), clearInterval(restTimer), restTotal = seconds * 1e3, restUntil = Date.now() + restTotal, restHeld = 0, restCued = 4, restFace = face || null, restThen = then || null, tellSounds(), restFace || ($("reststrip").className = "reststrip on" + (state.sounds ? "" : " muted"), $("restword").textContent = "Rest"), drawRest(restTotal), restTimer = setInterval(tickRest, 200), saveDraft();
+    face && !restFace && stopRest(), clearInterval(restTimer), restTotal = seconds * 1e3, restUntil = Date.now() + restTotal, restHeld = 0, restCued = 4, restFace = face || null, restThen = then || null, tellSounds(), restFace || ($("reststrip").className = "reststrip on" + (state.sounds ? "" : " muted"), $("restword").textContent = "Rest period"), drawRest(restTotal), restTimer = setInterval(tickRest, 200), saveDraft();
   }
   function tickRest() {
     if (!(!restUntil || restHeld)) {
@@ -10021,7 +10403,7 @@ details.details-moving > :not(summary) {
   }
   function drawRest(left) {
     var s = Math.max(0, Math.ceil(left / 1e3)), ring = $(restFace ? "wring" : "restring"), num2 = $(restFace ? "wnum" : "restnum");
-    !ring || !num2 || (ring.style.setProperty("--rest", String(Math.max(0, left) / restTotal)), num2.textContent = s >= 60 ? Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0") : String(s));
+    !ring || !num2 || (ring.style.setProperty("--rest", String(Math.max(0, left) / restTotal)), restFace || ($("reststrip").classList.toggle("paused", !!restHeld), $("restword").textContent = restHeld ? "Rest paused" : "Rest period", $("resthint").textContent = restHeld ? "Tap timer to resume" : "Breathe. Next set soon.", ring.setAttribute("aria-label", restHeld ? "Resume rest timer" : "Pause rest timer")), num2.textContent = s >= 60 ? Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0") : String(s));
   }
   function doneRest() {
     var then = restThen, onRing = restFace;
@@ -10048,7 +10430,7 @@ details.details-moving > :not(summary) {
         return;
       }
       var strip = $("reststrip");
-      restHeld ? strip.classList.add("paused") : strip.classList.remove("paused"), $("restword").textContent = restHeld ? "Paused" : "Rest";
+      restHeld ? strip.classList.add("paused") : strip.classList.remove("paused"), drawRest(restHeld || restUntil - Date.now());
     }
   }
   function addRest(ms) {
@@ -10105,7 +10487,7 @@ details.details-moving > :not(summary) {
     var t = $("wtimer");
     if (t) {
       var held = !!(restHeld && restFace);
-      t.className = "wtimer" + (woPhase !== "idle" && !held ? "" : " idle"), $("wphase").textContent = held ? "Paused" : woPhase === "ready" ? "Get ready" : woPhase === "rest" ? atRoundEnd() ? "Round done" : "Rest" : woPhase === "work" ? "Work" : "Tap to start", $("wgobtn").textContent = woPhase === "idle" ? "Start" : held ? "Resume" : "Pause", restUntil && restFace && drawRest(restHeld || restUntil - Date.now());
+      t.className = "wtimer" + (woPhase !== "idle" && !held ? "" : " idle") + (woPhase === "rest" ? " resting" : ""), $("wphase").textContent = held ? "Paused" : woPhase === "ready" ? "Get ready" : woPhase === "rest" ? atRoundEnd() ? "Round done" : "Rest" : woPhase === "work" ? "Work" : "Tap to start", $("wgobtn").textContent = woPhase === "idle" ? "Start" : held ? "Resume" : "Pause", restUntil && restFace && drawRest(restHeld || restUntil - Date.now());
     }
   }
   function ringTap() {
@@ -10701,7 +11083,7 @@ details.details-moving > :not(summary) {
     );
   }
   function scForget() {
-    sc.url && URL.revokeObjectURL(sc.url), sc.vurl && URL.revokeObjectURL(sc.vurl), sc.vseq++, sc.vst = 2, sc.vno = !1, sc.photo && sc.photo.close && sc.photo.close(), sc.bg === "photo" && (sc.bg = "dark"), sc.photo = null, sc.url = sc.blob = sc.file = sc.card = sc.img = sc.hint = null, sc.vurl = sc.vfile = sc.vbtn = sc.btns = sc.pair = null;
+    sc.url && URL.revokeObjectURL(sc.url), sc.vurl && URL.revokeObjectURL(sc.vurl), sc.vseq++, sc.seq++, sc.vst = 2, sc.vno = !1, sc.photo && sc.photo.close && sc.photo.close(), sc.bg === "photo" && (sc.bg = "dark"), sc.photo = null, sc.url = sc.blob = sc.file = sc.card = sc.img = sc.hint = null, sc.vurl = sc.vfile = sc.vbtn = sc.btns = sc.pair = null;
   }
   function scWatchSummary() {
     if (!(sc.watching || !window.MutationObserver)) {
@@ -10747,8 +11129,12 @@ details.details-moving > :not(summary) {
     sc.hint && (sc.hint.textContent = sc.bg === "clear" ? "Save it, then add it over your own clip in the Story editor." : sc.tip);
   }
   function scPhoto(f) {
-    var url = URL.createObjectURL(f), p = null;
+    var url = URL.createObjectURL(f), p = null, owner = sc.card;
     function took(im) {
+      if (!owner || sc.card !== owner) {
+        im.close && im.close();
+        return;
+      }
       sc.photo && sc.photo.close && sc.photo.close(), sc.photo = im, sc.bg = "photo", scPress("photo"), scSay(), scPaint();
     }
     function slow() {
@@ -10875,9 +11261,9 @@ details.details-moving > :not(summary) {
     var can = scCan();
     sc.btns = btns, btns.appendChild(scBtn("Copy caption", "btn ghost", null, scCopyCaption)), can === 2 ? (btns.appendChild(scBtn("Share", "btn", "share", scShare)), btns.appendChild(scBtn("Save image", "btn ghost", null, scShare))) : can === 1 ? (btns.appendChild(scBtn("Share", "btn", "share", scLinkShare)), btns.appendChild(scBtn("Save image", "btn ghost", null, scSave))) : (btns.appendChild(scBtn("Download", "btn", null, scSave)), window.ClipboardItem && navigator.clipboard && navigator.clipboard.write && btns.appendChild(scBtn("Copy image", "btn ghost", null, scCopy))), sc.tip = can === 1 ? "This browser can only share a link. Save the image and post it yourself." : can === 0 ? "Download it, or copy it straight into a post." : "Share to Instagram, TikTok, Messages \u2014 or save it to Photos.", scSay(), scArm(), btns.classList.add("in");
   }
-  function shareRow(payload, logged) {
+  function shareRow(payload, logged, past) {
     var wrap = el("div", "sharewrap"), row = el("div", "sharerow"), prev = el("div", "scprev");
-    sc.card = scFromSession(payload, logged), scWatchSummary(), sc.img = el("img"), sc.img.alt = "The session as a card, ready to share", prev.appendChild(sc.img), row.appendChild(prev);
+    scForget(), sc.card = past ? scFromLog(payload) : scFromSession(payload, logged), past || scWatchSummary(), sc.img = el("img"), sc.img.alt = "The session as a card, ready to share", prev.appendChild(sc.img), row.appendChild(prev);
     var side = el("div", "scside"), chips = el("div", "scchips"), pin = el("input");
     pin.type = "file", pin.accept = "image/*", pin.hidden = !0, pin.onchange = function() {
       var f = pin.files && pin.files[0];
@@ -11453,9 +11839,9 @@ details.details-moving > :not(summary) {
   function loadLogs() {
     if (state.logs) return Promise.resolve(state.logs);
     if (!state.user) return Promise.resolve([]);
-    var uid = state.user.id, epoch = accountEpoch, rev = logsRev, since = new Date(Date.now() - 182 * 864e5).toISOString();
+    var uid = state.user.id, epoch = accountEpoch, rev = logsRev;
     return readOnce("logs:" + rev, function() {
-      return sb.from("workout_logs").select("*").eq("user_id", uid).gte("started_at", since).order("started_at", { ascending: !1 }).limit(400).then(function(r) {
+      return sb.from("workout_logs").select("*").eq("user_id", uid).order("started_at", { ascending: !1 }).limit(400).then(function(r) {
         if (!accountNow(epoch, uid)) return [];
         if (rev !== logsRev) return loadLogs();
         if (r.error) throw r.error;
@@ -11750,183 +12136,222 @@ details.details-moving > :not(summary) {
     }
   }
   function renderProgress() {
-    if (!(!state.user || !state.logs)) {
-      var v = $("progressview");
-      v.innerHTML = "";
-      var logs = state.logs || [];
-      if (!logs.length) {
-        var e = el("div", "empty");
-        e.appendChild(pumpyArt("proud", !0)), e.appendChild(el("h2", null, "No sessions yet")), e.appendChild(el("p", null, "Finish a workout and your volume, personal records and every logged session show up here.")), v.appendChild(e), viewIn(v);
-        return;
-      }
-      var st = weekStats(logs, state.plan, goalSetting(), /* @__PURE__ */ new Date());
-      guidePage("progress");
-      var hero = weekHero(st);
-      if (hero.appendChild(el(
-        "div",
-        "rmeta",
-        logs.length + (logs.length === 1 ? " session" : " sessions") + " logged"
-      )), v.appendChild(hero), renderHistoryInto(v, logs.slice(0, 5)), logs.length > 5) {
-        var older = disclosure("Earlier sessions (" + (logs.length - 5) + ")");
-        renderHistoryInto(older.lastChild, logs.slice(5)), v.appendChild(older);
-      }
-      var metrics = disclosure("Training details \xB7 charts and muscles"), metricsBody = metrics.lastChild;
-      v.appendChild(metrics);
-      var awards = disclosure("Achievements");
-      v.appendChild(awards);
-      var awSlot = el("div");
-      awards.lastChild.appendChild(awSlot), loadAwards().then(function() {
-        if (awSlot.isConnected) {
-          var won = grantAwards(awardsFor(logs, st, null));
-          tellFreeze(won, st), awSlot.innerHTML = "", awSlot.appendChild(trophyCase(st, logs));
-        }
-      });
-      var monday = ymd(mondayOf(/* @__PURE__ */ new Date())), weekLogs = logs.filter(function(l) {
-        return weekKey(l.started_at) === monday;
-      }), hit = el("div", "chartcard");
-      hit.appendChild(el("h3", null, "What you\u2019ve hit this week"));
-      var hitSlot = el("div");
-      hit.appendChild(hitSlot), metricsBody.appendChild(hit), loadCatalog().then(function() {
-        if (hitSlot.isConnected) {
-          var entries = [];
-          weekLogs.forEach(function(l) {
-            (l.entries || []).forEach(function(e2) {
-              entries.push(e2);
-            });
-          });
-          var r = weekHits(entries);
-          hitSlot.innerHTML = "", hitSlot.appendChild(bodyMap(r.levels, 4, bodyLegend([
-            { lv: [0], text: "Not trained" },
-            { lv: [1, 2, 3, 4], text: "Fewer to more sets" }
-          ]), weekCaption(r))), r.mapped || hitSlot.appendChild(el("div", "bodynote", weekLogs.length ? "This week\u2019s logged exercises are not in the catalog, so nothing is highlighted." : "Nothing logged this week yet.")), bodyNotes(hitSlot, r, "logged exercises");
-        }
-      });
-      for (var buckets = [], start = mondayOf(/* @__PURE__ */ new Date()), i = 7; i >= 0; i--) {
-        var wk = new Date(start.getTime() - i * 7 * 864e5);
-        buckets.push({ key: ymd(wk), label: wk.getMonth() + 1 + "/" + wk.getDate(), v: 0 });
-      }
-      logs.forEach(function(l) {
-        for (var k = weekKey(l.started_at), i2 = 0; i2 < buckets.length; i2++)
-          if (buckets[i2].key === k) {
-            buckets[i2].v += volumeOf(l);
-            break;
-          }
-      });
-      var max = Math.max.apply(null, buckets.map(function(b) {
-        return b.v;
-      }).concat([1]));
-      if (max > 1) {
-        var card = el("div", "chartcard");
-        card.appendChild(el("h3", null, "Weekly volume (" + state.unit + ")"));
-        var W = 320, H = 120, pad = 16, bw = (W - pad * 2) / buckets.length, svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-        svg.setAttribute("viewBox", "0 0 " + W + " " + (H + 22)), svg.setAttribute("role", "img"), buckets.forEach(function(b, i2) {
-          var h = Math.max(2, Math.round(b.v / max * H)), r = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-          r.setAttribute("class", "bar" + (b.v ? "" : " dim")), r.setAttribute("x", String(pad + i2 * bw + bw * 0.18)), r.setAttribute("y", String(H - h)), r.setAttribute("width", String(bw * 0.64)), r.setAttribute("height", String(h)), r.setAttribute("rx", "3"), svg.appendChild(r);
-          var t = document.createElementNS("http://www.w3.org/2000/svg", "text");
-          t.setAttribute("class", "axis"), t.setAttribute("x", String(pad + i2 * bw + bw * 0.5)), t.setAttribute("y", String(H + 15)), t.setAttribute("text-anchor", "middle"), t.textContent = b.label, svg.appendChild(t);
-        }), card.appendChild(svg), metricsBody.appendChild(card);
-      }
-      var prs = {};
-      logs.forEach(function(l) {
-        (l.entries || []).forEach(function(e2) {
-          var k = exKey(e2);
-          (e2.sets || []).forEach(function(s) {
-            if (s && !(!s.reps || !s.weight)) {
-              var wt = toUnit(s.weight, s.unit), est = wt * (1 + s.reps / 30);
-              prs[k] || (prs[k] = { est: 0, label: e2.name || "Exercise" }), est > prs[k].est && (prs[k].est = est, prs[k].weight = wt, prs[k].reps = s.reps, prs[k].date = l.started_at);
-            }
-          });
-        });
-      });
-      var prKeys = Object.keys(prs).sort(function(a, b) {
-        return prs[b].est - prs[a].est;
-      }).slice(0, 12);
-      if (prKeys.length) {
-        var pc = el("div", "chartcard");
-        pc.appendChild(el("h3", null, "Personal records")), prKeys.forEach(function(n) {
-          var p = prs[n], r = el("div", "prrow"), nm = el("div", "n");
-          nm.appendChild(document.createTextNode(p.label)), nm.appendChild(el(
-            "span",
-            null,
-            wtText(p.weight) + " " + state.unit + " \xD7 " + p.reps + " \xB7 " + new Date(p.date).toLocaleDateString(void 0, { month: "short", day: "numeric" })
-          )), r.appendChild(nm), r.appendChild(el("div", "v", Math.round(p.est) + " " + state.unit)), pc.appendChild(r);
-        }), metricsBody.appendChild(pc);
-      }
-      var byId = {};
-      state.workouts.forEach(function(w) {
-        byId[w.id] = w;
-      });
-      var mg = {};
-      logs.forEach(function(l) {
-        var w = byId[l.workout_id];
-        w && (w.muscle_groups || []).forEach(function(m) {
-          mg[m] = (mg[m] || 0) + 1;
-        });
-      });
-      var mgNames = Object.keys(mg).sort(function(a, b) {
-        return mg[b] - mg[a];
-      });
-      if (mgNames.length) {
-        var mc = el("div", "chartcard");
-        mc.appendChild(el("h3", null, "What you train"));
-        var mgMax = mg[mgNames[0]];
-        mgNames.forEach(function(m) {
-          var r = el("div", "mgrow");
-          r.appendChild(el("div", "lbl", m));
-          var bar = el("div", "mgbar"), fill = el("i");
-          fill.style.width = Math.round(mg[m] / mgMax * 100) + "%", bar.appendChild(fill), r.appendChild(bar), r.appendChild(el("div", "num", String(mg[m]))), mc.appendChild(r);
-        }), metricsBody.appendChild(mc);
-      }
-      viewIn(v), countStats();
+    if (!state.user || !state.logs) return;
+    var v = $("progressview");
+    v.innerHTML = "";
+    var logs = state.logs || [];
+    if (!logs.length) {
+      var e = el("div", "empty");
+      e.appendChild(pumpyArt("proud", !0)), e.appendChild(el("h2", null, "No sessions yet")), e.appendChild(el("p", null, "Finish a workout and your volume, personal records and every logged session show up here.")), v.appendChild(e), viewIn(v);
+      return;
     }
+    var st = weekStats(logs, state.plan, goalSetting(), /* @__PURE__ */ new Date());
+    guidePage("progress");
+    var hero = weekHero(st);
+    hero.appendChild(el(
+      "div",
+      "rmeta",
+      logs.length + (logs.length === 1 ? " session" : " sessions") + " logged"
+    )), v.appendChild(hero);
+    var overview = el("div", "progress-totals"), minutes = 0, totalSets = 0;
+    logs.forEach(function(l) {
+      minutes += (l.duration_seconds || 0) / 60, (l.entries || []).forEach(function(e2) {
+        totalSets += (e2.sets || []).filter(Boolean).length;
+      });
+    }), [
+      [logs.length, "sessions"],
+      [Math.round(minutes).toLocaleString(), "minutes"],
+      [totalSets.toLocaleString(), "sets logged"]
+    ].forEach(function(f) {
+      var stat = el("div");
+      stat.appendChild(el("b", null, String(f[0]))), stat.appendChild(el("span", null, f[1])), overview.appendChild(stat);
+    }), v.appendChild(overview);
+    var journal = el("section", "session-journal");
+    journal.appendChild(el("h2", null, "Your sessions")), journal.appendChild(el("p", "rmeta", (logs.length >= 400 ? "Your latest 400 sessions. " : "") + "Revisit a workout. Make a card worth sharing."));
+    var search = el("input", "session-search");
+    search.type = "search", search.placeholder = "Search workouts or exercises", search.setAttribute("aria-label", "Search session history"), journal.appendChild(search);
+    var results = el("div", "rmeta");
+    results.setAttribute("role", "status"), journal.appendChild(results);
+    var list = el("div");
+    journal.appendChild(list);
+    var more = el("button", "btn ghost", "Show more sessions"), shown = 10;
+    journal.appendChild(more);
+    function drawSessions() {
+      var q = search.value.trim().toLowerCase(), matches = logs.filter(function(l) {
+        return ((l.workout_title || "Workout") + " " + (l.entries || []).map(function(e2) {
+          return e2.name || "";
+        }).join(" ")).toLowerCase().indexOf(q) >= 0;
+      });
+      list.innerHTML = "", renderHistoryInto(list, matches.slice(0, shown)), results.textContent = matches.length ? "Showing " + Math.min(shown, matches.length) + " of " + matches.length + (matches.length === 1 ? " session" : " sessions") : "No matching sessions. Try another workout or exercise.", more.hidden = shown >= matches.length;
+    }
+    search.oninput = function() {
+      shown = 10, drawSessions();
+    }, more.onclick = function() {
+      shown += 10, drawSessions();
+    }, drawSessions(), v.appendChild(journal);
+    var metrics = disclosure("Training details \xB7 charts and muscles"), metricsBody = metrics.lastChild;
+    v.appendChild(metrics);
+    var awards = disclosure("Achievements");
+    v.appendChild(awards);
+    var awSlot = el("div");
+    awards.lastChild.appendChild(awSlot), loadAwards().then(function() {
+      if (awSlot.isConnected) {
+        var won = grantAwards(awardsFor(logs, st, null));
+        tellFreeze(won, st), awSlot.innerHTML = "", awSlot.appendChild(trophyCase(st, logs));
+      }
+    });
+    var monday = ymd(mondayOf(/* @__PURE__ */ new Date())), weekLogs = logs.filter(function(l) {
+      return weekKey(l.started_at) === monday;
+    }), hit = el("div", "chartcard");
+    hit.appendChild(el("h3", null, "What you\u2019ve hit this week"));
+    var hitSlot = el("div");
+    hit.appendChild(hitSlot), metricsBody.appendChild(hit), loadCatalog().then(function() {
+      if (hitSlot.isConnected) {
+        var entries = [];
+        weekLogs.forEach(function(l) {
+          (l.entries || []).forEach(function(e2) {
+            entries.push(e2);
+          });
+        });
+        var r = weekHits(entries);
+        hitSlot.innerHTML = "", hitSlot.appendChild(bodyMap(r.levels, 4, bodyLegend([
+          { lv: [0], text: "Not trained" },
+          { lv: [1, 2, 3, 4], text: "Fewer to more sets" }
+        ]), weekCaption(r))), r.mapped || hitSlot.appendChild(el("div", "bodynote", weekLogs.length ? "This week\u2019s logged exercises are not in the catalog, so nothing is highlighted." : "Nothing logged this week yet.")), bodyNotes(hitSlot, r, "logged exercises");
+      }
+    });
+    for (var buckets = [], start = mondayOf(/* @__PURE__ */ new Date()), i = 7; i >= 0; i--) {
+      var wk = new Date(start.getTime() - i * 7 * 864e5);
+      buckets.push({ key: ymd(wk), label: wk.getMonth() + 1 + "/" + wk.getDate(), v: 0 });
+    }
+    logs.forEach(function(l) {
+      for (var k = weekKey(l.started_at), i2 = 0; i2 < buckets.length; i2++)
+        if (buckets[i2].key === k) {
+          buckets[i2].v += volumeOf(l);
+          break;
+        }
+    });
+    var max = Math.max.apply(null, buckets.map(function(b) {
+      return b.v;
+    }).concat([1]));
+    if (max > 1) {
+      var card = el("div", "chartcard");
+      card.appendChild(el("h3", null, "Weekly volume (" + state.unit + ")"));
+      var W = 320, H = 120, pad = 16, bw = (W - pad * 2) / buckets.length, svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      svg.setAttribute("viewBox", "0 0 " + W + " " + (H + 22)), svg.setAttribute("role", "img"), buckets.forEach(function(b, i2) {
+        var h = Math.max(2, Math.round(b.v / max * H)), r = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        r.setAttribute("class", "bar" + (b.v ? "" : " dim")), r.setAttribute("x", String(pad + i2 * bw + bw * 0.18)), r.setAttribute("y", String(H - h)), r.setAttribute("width", String(bw * 0.64)), r.setAttribute("height", String(h)), r.setAttribute("rx", "3"), svg.appendChild(r);
+        var t = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        t.setAttribute("class", "axis"), t.setAttribute("x", String(pad + i2 * bw + bw * 0.5)), t.setAttribute("y", String(H + 15)), t.setAttribute("text-anchor", "middle"), t.textContent = b.label, svg.appendChild(t);
+      }), card.appendChild(svg), metricsBody.appendChild(card);
+    }
+    var prs = {};
+    logs.forEach(function(l) {
+      (l.entries || []).forEach(function(e2) {
+        var k = exKey(e2);
+        (e2.sets || []).forEach(function(s) {
+          if (s && !(!s.reps || !s.weight)) {
+            var wt = toUnit(s.weight, s.unit), est = wt * (1 + s.reps / 30);
+            prs[k] || (prs[k] = { est: 0, label: e2.name || "Exercise" }), est > prs[k].est && (prs[k].est = est, prs[k].weight = wt, prs[k].reps = s.reps, prs[k].date = l.started_at);
+          }
+        });
+      });
+    });
+    var prKeys = Object.keys(prs).sort(function(a, b) {
+      return prs[b].est - prs[a].est;
+    }).slice(0, 12);
+    if (prKeys.length) {
+      var pc = el("div", "chartcard");
+      pc.appendChild(el("h3", null, "Personal records")), prKeys.forEach(function(n) {
+        var p = prs[n], r = el("div", "prrow"), nm = el("div", "n");
+        nm.appendChild(document.createTextNode(p.label)), nm.appendChild(el(
+          "span",
+          null,
+          wtText(p.weight) + " " + state.unit + " \xD7 " + p.reps + " \xB7 " + new Date(p.date).toLocaleDateString(void 0, { month: "short", day: "numeric" })
+        )), r.appendChild(nm), r.appendChild(el("div", "v", Math.round(p.est) + " " + state.unit)), pc.appendChild(r);
+      }), metricsBody.appendChild(pc);
+    }
+    var byId = {};
+    state.workouts.forEach(function(w) {
+      byId[w.id] = w;
+    });
+    var mg = {};
+    logs.forEach(function(l) {
+      var w = byId[l.workout_id];
+      w && (w.muscle_groups || []).forEach(function(m) {
+        mg[m] = (mg[m] || 0) + 1;
+      });
+    });
+    var mgNames = Object.keys(mg).sort(function(a, b) {
+      return mg[b] - mg[a];
+    });
+    if (mgNames.length) {
+      var mc = el("div", "chartcard");
+      mc.appendChild(el("h3", null, "What you train"));
+      var mgMax = mg[mgNames[0]];
+      mgNames.forEach(function(m) {
+        var r = el("div", "mgrow");
+        r.appendChild(el("div", "lbl", m));
+        var bar = el("div", "mgbar"), fill = el("i");
+        fill.style.width = Math.round(mg[m] / mgMax * 100) + "%", bar.appendChild(fill), r.appendChild(bar), r.appendChild(el("div", "num", String(mg[m]))), mc.appendChild(r);
+      }), metricsBody.appendChild(mc);
+    }
+    viewIn(v), countStats();
+  }
+  function openSession(l) {
+    if (wo) {
+      toast("Close your current workout before opening a past session.");
+      return;
+    }
+    var body = $("sessioncontent");
+    body.innerHTML = "", $("sessiontitle").textContent = l.workout_title || "Workout";
+    var card = scFromLog(l);
+    body.appendChild(el("p", "rmeta", new Date(l.started_at).toLocaleDateString(
+      void 0,
+      { weekday: "long", month: "long", day: "numeric", year: "numeric" }
+    )));
+    var stats = el("div", "progress-totals");
+    card.figs.forEach(function(f) {
+      var stat = el("div");
+      stat.appendChild(el("b", null, f[0])), stat.appendChild(el("span", null, f[1])), stats.appendChild(stat);
+    }), body.appendChild(stats), body.appendChild(el("h3", null, "Your share card")), body.appendChild(shareRow(l, l.entries || [], !0)), body.appendChild(el("h3", "session-exercises-title", "What you logged")), (l.entries || []).forEach(function(e) {
+      var sets = (e.sets || []).filter(Boolean);
+      if (sets.length) {
+        var row = el("div", "session-exercise");
+        row.appendChild(el("h4", null, e.name || "Exercise")), sets.forEach(function(set, i) {
+          var line = el("div", "session-set");
+          line.appendChild(el("span", null, "Set " + (i + 1))), line.appendChild(el("b", null, setText(set) + (set.weight && !set.seconds ? " " + state.unit : ""))), row.appendChild(line);
+        }), body.appendChild(row);
+      }
+    });
+    var del = el("button", "danger", "Delete session");
+    del.onclick = function() {
+      closeSheet("sessionsheet");
+      var at = state.logs.indexOf(l);
+      state.logs = state.logs.filter(function(x) {
+        return x.id !== l.id;
+      }), renderProgress(), offerUndo("Session deleted", function() {
+        sb.from("workout_logs").delete().eq("id", l.id).then(function(r) {
+          !r || !r.error || (toast("That did not delete. The session is still here."), invalidateLogs(), loadLogs().then(renderProgress));
+        });
+      }, function() {
+        state.logs.splice(at < 0 ? state.logs.length : at, 0, l), renderProgress();
+      });
+    }, body.appendChild(del), $("sessionsheet")._returnFocus = document.activeElement, openSheet("sessionsheet"), $("sessionclose").focus({ preventScroll: !0 });
   }
   function renderHistoryInto(v, logs) {
-    var head = el("div", "monthhead", "History");
-    head.style.marginTop = "26px", head.style.color = "var(--ember-ink)", v.appendChild(head);
     var month = "", monthDate = new Intl.DateTimeFormat(void 0, { month: "long", year: "numeric" }), sessionDate = new Intl.DateTimeFormat(void 0, { weekday: "short", month: "short", day: "numeric" });
     logs.forEach(function(l) {
       var d = new Date(l.started_at), mk = monthDate.format(d);
       mk !== month && (month = mk, v.appendChild(el("div", "monthhead", mk)));
-      var card = el("details", "chartcard history-card"), summary = el("summary", "session-head");
-      card.style.padding = "14px 16px";
-      var row = el("div", "histrow"), n = el("div", "n");
-      n.appendChild(document.createTextNode(l.workout_title || "Workout"));
-      var sets = 0;
+      var card = el("button", "chartcard session-link");
+      card.type = "button", card.setAttribute("aria-haspopup", "dialog");
+      var row = el("div", "histrow"), n = el("div", "n"), sets = 0;
       (l.entries || []).forEach(function(e) {
         sets += (e.sets || []).filter(Boolean).length;
-      }), n.appendChild(el(
-        "span",
-        null,
-        sessionDate.format(d) + " \xB7 " + sets + (sets === 1 ? " set" : " sets") + (l.duration_seconds ? " \xB7 " + Math.round(l.duration_seconds / 60) + " min" : "")
-      )), row.appendChild(n);
-      var vol = volumeOf(l);
-      vol && row.appendChild(el("div", "v", Math.round(vol) + " " + state.unit)), summary.appendChild(row), card.appendChild(summary);
-      var sessionBody = el("div", "session-body");
-      card.appendChild(sessionBody), (l.entries || []).forEach(function(e) {
-        if ((e.sets || []).length) {
-          var er = el("div", "histrow"), en = el("div", "n");
-          en.appendChild(document.createTextNode(e.name)), en.appendChild(el("span", null, e.sets.filter(Boolean).map(setText).join("  "))), er.appendChild(en), sessionBody.appendChild(er);
-        }
-      });
-      var acts = el("div", "cardacts");
-      if (acts.appendChild(scLogBtn(l)), typeof stravaBtn == "function") {
-        var sbn = stravaBtn(l);
-        sbn && acts.appendChild(sbn);
-      }
-      sessionBody.appendChild(acts);
-      var del = el("button", "danger", "Delete session");
-      del.onclick = function() {
-        var at = state.logs.indexOf(l);
-        state.logs = state.logs.filter(function(x) {
-          return x.id !== l.id;
-        }), renderProgress(), offerUndo("Session deleted", function() {
-          sb.from("workout_logs").delete().eq("id", l.id).then(function(r) {
-            !r || !r.error || (toast("That did not delete. The session is still here."), invalidateLogs(), loadLogs().then(renderProgress));
-          });
-        }, function() {
-          state.logs.splice(at < 0 ? state.logs.length : at, 0, l), renderProgress();
-        });
-      }, sessionBody.appendChild(del), v.appendChild(card);
+      }), n.appendChild(el("b", null, l.workout_title || "Workout")), n.appendChild(el("span", null, sessionDate.format(d) + " \xB7 " + sets + " sets" + (l.duration_seconds ? " \xB7 " + Math.max(1, Math.round(l.duration_seconds / 60)) + " min" : ""))), row.appendChild(n), card.appendChild(row), card.appendChild(el("span", "session-invite", "View recap & share card")), card.onclick = function() {
+        openSession(l);
+      }, v.appendChild(card);
     });
   }
   var PUMPY_MARK = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><image x="0" y="0" width="24" height="24" href="data:image/webp;base64,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"/></svg>';
@@ -12267,7 +12692,23 @@ details.details-moving > :not(summary) {
       }, col.appendChild(see);
     }
     var p = m.meta && m.meta.proposal;
-    return p && col.appendChild(renderProposal(m, p)), row.appendChild(col), row;
+    return p && col.appendChild(renderProposal(m, p)), appendResponseReport(col, m), row.appendChild(col), row;
+  }
+  function appendResponseReport(col, m) {
+    if (/^[0-9]+$/.test(String(m.id)) && (m.content || m.meta && m.meta.proposal)) {
+      var report = el("button", "reportresponse", "Report response");
+      report.title = "Send this response to Spotter for safety review", report.onclick = function() {
+        armed(report, "Report as unsafe?", function() {
+          var epoch = accountEpoch;
+          report.disabled = !0, report.textContent = "Sending report\u2026", sb.rpc("report_pumpy_response", { message_id: m.id }).then(function(r) {
+            if (r.error) throw r.error;
+            report.textContent = "Response reported", epoch === accountEpoch && toast("Thank you. This response was sent to Spotter for safety review.");
+          }).catch(function() {
+            report.disabled = !1, report.textContent = "Report response", epoch === accountEpoch && toast("Report could not be sent. Please try again.");
+          });
+        });
+      }, col.appendChild(report);
+    }
   }
   function proposalLine(name, dose) {
     var l = el("div", "pline");
@@ -12434,7 +12875,7 @@ details.details-moving > :not(summary) {
             pumpy.messages.push(m);
           });
           var last = (r.messages || []).slice(-1)[0];
-          live && last && last.role === "assistant" && last.content && (live.st.classList.add("hide"), live.bub.classList.remove("live", "hide"), live.tn.data = last.content, last.meta && last.meta.proposal && live.bub.parentNode.appendChild(renderProposal(last, last.meta.proposal)), pumpy.nodes = pumpy.nodes || {}, pumpy.nodes[last.id] = { sig: JSON.stringify(last), node: live.row }), renderPumpy(), keep >= 0 && ($("pumpyview").scrollTop = keep);
+          live && last && last.role === "assistant" && last.content && (live.st.classList.add("hide"), live.bub.classList.remove("live", "hide"), live.tn.data = last.content, last.meta && last.meta.proposal && live.bub.parentNode.appendChild(renderProposal(last, last.meta.proposal)), appendResponseReport(live.bub.parentNode, last), pumpy.nodes = pumpy.nodes || {}, pumpy.nodes[last.id] = { sig: JSON.stringify(last), node: live.row }), renderPumpy(), keep >= 0 && ($("pumpyview").scrollTop = keep);
         }
       }).then(function() {
         if (pumpy === owner && pumpy.busy) throw new Error("cut");
@@ -12512,7 +12953,11 @@ details.details-moving > :not(summary) {
     return isNaN(d.getTime()) ? "" : d.toLocaleDateString(void 0, { day: "numeric", month: long ? "long" : "short" });
   }
   function loadPrices() {
-    return billing.prices ? Promise.resolve(billing.prices) : (billing.waiting || (billing.waiting = api("billing/prices", { method: "GET" }).then(function(r) {
+    return native && native.purchases ? native.purchases.prices(state.user && state.user.id).then(function(r) {
+      return billing.prices = r, r;
+    }).catch(function() {
+      return billing.prices = { configured: !1, nativeStore: !0 }, billing.prices;
+    }) : billing.prices ? Promise.resolve(billing.prices) : (billing.waiting || (billing.waiting = api("billing/prices", { method: "GET" }).then(function(r) {
       return billing.waiting = null, billing.prices = r && r.status === "ok" && r.configured ? r : { configured: !1 }, billing.prices;
     }).catch(function() {
       return billing.waiting = null, billing.prices = { configured: !1 }, billing.prices;
@@ -12521,8 +12966,11 @@ details.details-moving > :not(summary) {
   function loadSub() {
     if (billing.subAsked) return Promise.resolve(billing.sub);
     billing.subAsked = !0;
-    var epoch = accountEpoch, uid = state.user && state.user.id;
-    return sb.from("subscriptions").select("*").maybeSingle().then(function(r) {
+    var epoch = accountEpoch, uid = state.user && state.user.id, legacy = sb.from("subscriptions").select("*").maybeSingle(), request = native && native.purchases ? Promise.all([legacy, sb.from("store_entitlements").select("*").maybeSingle()]).then(function(rows) {
+      var store = rows[1].data;
+      return store && store.active && (!store.expires_at || Date.parse(store.expires_at) > Date.now()) ? { data: { source: store.source, plan: "plus", status: "active", current_period_end: store.expires_at } } : rows[0];
+    }) : legacy;
+    return request.then(function(r) {
       if (!accountNow(epoch, uid)) return null;
       if (r.error) throw r.error;
       return billing.sub = r && !r.error && r.data ? r.data : null, billing.sub;
@@ -12584,12 +13032,17 @@ details.details-moving > :not(summary) {
     var row = el("div", "prow");
     row.appendChild(el("span", "pname", yearly ? "Yearly" : "Monthly"));
     var amt = el("span", "pamt");
-    if (pay !== full && amt.appendChild(el("span", "pold", money(full, cur))), amt.appendChild(document.createTextNode(money(pay, cur))), row.appendChild(amt), b.appendChild(row), yearly) {
-      var meta = el("div", "pmeta");
-      meta.appendChild(el("span", null, money(Math.round(pay / 12), cur) + " a month" + (pay !== full ? " for your first year" : "")));
-      var save = Math.round((1 - pay / (plus.month.amount * 12)) * 100);
-      save >= 5 && meta.appendChild(el("span", "pill accent", "SAVE " + save + "%")), b.appendChild(meta);
-    }
+    pay !== full && amt.appendChild(el("span", "pold", money(full, cur))), amt.appendChild(document.createTextNode(p.nativeStore ? plus[iv].localized : money(pay, cur))), row.appendChild(amt), b.appendChild(row);
+    var monthlyYear = plus.month.amount * 12;
+    if (yearly) {
+      var intro = pay !== full, saved = monthlyYear - pay;
+      if (monthlyYear > 0 && saved > 0) {
+        var savings = el("div", "psavings");
+        savings.appendChild(el("b", null, "Save " + money(saved, cur) + (intro ? " in your first year" : " a year"))), savings.appendChild(el("span", "psavebadge", Math.round(saved / monthlyYear * 100) + "% less")), b.appendChild(savings), b.appendChild(el("div", "pcompare", "Compared with " + money(monthlyYear, cur) + " for 12 monthly payments."));
+      }
+      b.appendChild(el("div", "pmeta", money(Math.round(pay / 12), cur) + "/month equivalent" + (intro ? " in your first year" : "") + " \xB7 billed yearly")), intro && b.appendChild(el("div", "prenew", "Then " + money(full, cur) + "/year."));
+    } else
+      b.appendChild(el("div", "pmeta", money(monthlyYear, cur) + " over 12 months \xB7 billed monthly"));
     return b.onclick = function() {
       pickInterval(iv);
     }, b;
@@ -12608,6 +13061,7 @@ details.details-moving > :not(summary) {
   }
   function finePrint(p, plus, iv, pay, full, days) {
     var cur = p.currency, first;
+    if (p.nativeStore) return "Renews automatically at " + (plus[iv].localized || money(full, cur)) + (iv === "month" ? " per month" : " per year") + " until cancelled. Manage or cancel in your store subscription settings. Any eligible offer and its terms appear in the store confirmation.";
     if (iv === "month")
       first = money(pay, cur) + " a month until you cancel.";
     else if (pay !== full) {
@@ -12625,7 +13079,7 @@ details.details-moving > :not(summary) {
         cards[i].classList.toggle("on", on), cards[i].setAttribute("aria-checked", on ? "true" : "false");
       }
       var full = plus[iv].amount, pay = yearly && p.founding ? p.founding.first_year_amount : full, days = num(p.trial_days) || 0, trial = $("plantrial");
-      yearly && days > 0 ? (trial.textContent = "Free for " + days + " days. We will not charge you before " + new Date(Date.now() + days * 864e5).toLocaleDateString(void 0, { day: "numeric", month: "long" }) + ", and you can cancel before then.", trial.classList.remove("hide")) : (trial.textContent = "", trial.classList.add("hide")), setBuyLabel(yearly && days > 0 ? "Start " + days + " free days" : "Subscribe for " + money(pay, cur) + (yearly ? " a year" : " a month")), $("planfine").textContent = finePrint(p, plus, iv, pay, full, days) + " AI reading and coaching have daily and monthly usage limits. During beta, new AI work can also pause when the shared allowance is reached; saved workouts remain available.";
+      yearly && days > 0 ? (trial.textContent = "Free for " + days + " days. We will not charge you before " + new Date(Date.now() + days * 864e5).toLocaleDateString(void 0, { day: "numeric", month: "long" }) + ", and you can cancel before then.", trial.classList.remove("hide")) : (trial.textContent = "", trial.classList.add("hide")), setBuyLabel(yearly && days > 0 ? "Start " + days + " free days" : "Subscribe for " + (p.nativeStore ? plus[iv].localized : money(pay, cur)) + (yearly ? " a year" : " a month")), $("planfine").textContent = finePrint(p, plus, iv, pay, full, days) + " AI reading and coaching have daily and monthly usage limits. During beta, new AI work can also pause when the shared allowance is reached; saved workouts remain available.";
     }
   }
   function pickInterval(iv) {
@@ -12638,7 +13092,7 @@ details.details-moving > :not(summary) {
       row.appendChild(ic("check")), row.appendChild(el("span", null, t)), good.appendChild(row);
     });
     var plus = p.plans && p.plans.plus, ready = !!(p.configured && plus && plus.month && plus.year);
-    if ($("plansoon").classList.toggle("hide", ready), $("planbuy").classList.toggle("hide", !ready), $("plandot2").classList.toggle("hide", !ready), $("planrestore").classList.toggle("hide", !ready), !ready) {
+    if ($("plansoon").classList.toggle("hide", ready), $("planbuy").classList.toggle("hide", !ready), $("plandot2").classList.toggle("hide", !ready), $("planrestore").classList.toggle("hide", !ready && !(native && native.purchases)), p.nativeStore && ($("plansoon").textContent = "Subscriptions are temporarily unavailable. Please try again later. Existing purchases can be restored below."), !ready) {
       $("plantrial").classList.add("hide"), $("planfine").textContent = "";
       return;
     }
@@ -12671,7 +13125,31 @@ details.details-moving > :not(summary) {
     var bits = String(v).split("|"), at = parseInt(bits[1], 10);
     return at && Date.now() - at > BILL_TTL ? (setPending(null), null) : bits[0] || null;
   }
+  function syncNativePurchase() {
+    return sb.functions.invoke("spotter-purchases", { body: {} }).then(function(r) {
+      if (r.error || !r.data || r.data.status !== "ok") throw new Error("Your purchase is saved. Tap Restore purchase when your connection returns.");
+      return r.data;
+    });
+  }
+  function nativePurchase(restore, btn) {
+    if (!(!state.user || billing.busy)) {
+      var uid = state.user.id;
+      billing.busy = !0, btn && (btn.disabled = !0);
+      var work = restore ? native.purchases.restore(uid) : native.purchases.purchase(uid, billing.interval);
+      work.then(syncNativePurchase).then(function(r) {
+        !state.user || state.user.id !== uid || (absorbPlan(r, !restore), toast(r.plan === "free" ? "No active subscription was found for this account." : "Your " + planWord(r.plan) + " access is up to date."));
+      }).catch(function(e) {
+        !e.userCancelled && String(e.code) !== "1" && toast(e.message || "Could not complete the purchase. Please try again.");
+      }).then(function() {
+        billing.busy = !1, btn && (btn.disabled = !1);
+      });
+    }
+  }
   function startCheckout() {
+    if (native && native.purchases) {
+      nativePurchase(!1, $("planbuy"));
+      return;
+    }
     if (!billing.busy) {
       var b = $("planbuy"), was = b.querySelector("b").textContent;
       billing.busy = !0, b.disabled = !0, setBuyLabel("Opening\u2026"), api("billing/checkout", {
@@ -12701,6 +13179,15 @@ details.details-moving > :not(summary) {
     }
   }
   function openPortal(btn) {
+    if (native && native.purchases) {
+      var source = billing.sub && billing.sub.source;
+      if (source === "stripe" || source === "apple" && native.platform === "android" || source === "google" && native.platform === "ios") {
+        toast("Manage this subscription in the store or service where you originally purchased it.");
+        return;
+      }
+      native.open(native.purchases.managementUrl());
+      return;
+    }
     var was = btn ? btn.textContent : null;
     btn && (btn.disabled = !0, btn.textContent = "Opening\u2026"), api("billing/portal", {
       method: "POST",
@@ -12787,6 +13274,10 @@ details.details-moving > :not(summary) {
     billRound = !0, askBilling(o.session_id, 3);
   }
   function refreshBilling(btn) {
+    if (native && native.purchases) {
+      nativePurchase(!0, btn);
+      return;
+    }
     var was = btn.textContent;
     btn.disabled = !0, btn.textContent = "Checking\u2026", api("billing/sync", { method: "POST", body: "{}" }).then(function(r) {
       if (btn.disabled = !1, btn.textContent = was, !r || r.status !== "ok") {
@@ -12811,7 +13302,7 @@ details.details-moving > :not(summary) {
       var warn = $("setplanwarn"), until = failed && dayMonth(s.current_period_end, !0);
       warn.textContent = failed ? "The last payment did not go through. " + word + " keeps working" + (until ? " until " + until : "") + " while we retry." : "", warn.classList.toggle("hide", !failed);
       var canBuy = configured && !paid && !staff, canManage = configured && paid;
-      $("setupgrade").classList.toggle("hide", !canBuy), $("setmanage").classList.toggle("hide", !canManage), $("setpay").classList.toggle("hide", !(canManage && failed)), $("setplanbtns").classList.toggle("hide", !(canBuy || canManage)), $("setrefresh").classList.toggle("hide", !configured);
+      $("setupgrade").classList.toggle("hide", !canBuy), $("setmanage").classList.toggle("hide", !canManage), $("setpay").classList.toggle("hide", !(canManage && failed)), $("setplanbtns").classList.toggle("hide", !(canBuy || canManage)), $("setrefresh").classList.toggle("hide", !configured && !(native && native.purchases));
     }
   }
   function adoptPlan(plan) {
@@ -13138,7 +13629,7 @@ details.details-moving > :not(summary) {
   function closeSheet(id, fromPop) {
     var n = $(id);
     if (n.classList.contains("open")) {
-      if (guideClear("hold"), id === "welcomesheet") {
+      if (guideClear("hold"), id === "sessionsheet" && scForget(), id === "welcomesheet") {
         welcomeDone();
         var focus = welcomeReturn && welcomeReturn.isConnected && !welcomeReturn.closest("#landing, .sheet:not(.open)") ? welcomeReturn : $("addbtn");
         focus && focus.focus({ preventScroll: !0 });
@@ -13240,7 +13731,9 @@ details.details-moving > :not(summary) {
     "welcomesheet",
     "workoptions",
     "filtersheet",
-    "schedulesheet"
+    "schedulesheet",
+    "sessionsheet",
+    "woaddsheet"
   ].forEach(wireSheet);
   function overlayShowing() {
     if ($("detail").classList.contains("open") || $("workout").classList.contains("open")) return !0;
@@ -13626,7 +14119,7 @@ details.details-moving > :not(summary) {
     var how = signInMethod();
     $("setprov").textContent = how || "\u2014", $("setprovrow").classList.toggle("hide", !how);
     var mine = isEmailAccount();
-    $("setpwrow").classList.toggle("hide", !mine), $("setmailrow").disabled = !mine, $("setname").textContent = displayName() || "Not set", $("unittoggle").textContent = state.unit, paintGoal(), $("haptictoggle").textContent = state.haptics ? "On" : "Off", $("sethapticrow").classList.toggle("hide", !native && !navigator.vibrate), paintSounds(), loadRemind(), $("shortcutsetup").classList.toggle("hide", !!native), $("nativesharehelp").classList.toggle("hide", !native);
+    $("setpwrow").classList.toggle("hide", !mine), $("setmailrow").disabled = !mine, $("setname").textContent = displayName() || "Not set", $("unittoggle").textContent = state.unit, paintGoal(), $("haptictoggle").textContent = state.haptics ? "On" : "Off", $("sethapticrow").classList.toggle("hide", !native && !navigator.vibrate), paintSounds(), loadRemind(), $("shortcutsetup").classList.toggle("hide", !!native), $("nativesharehelp").classList.toggle("hide", !native), native && native.platform === "android" && ($("nativesharehelp").textContent = "In TikTok, YouTube, Instagram or another app, share the post\u2019s link and choose Spotter from the Android share sheet.");
     var key = state.profile ? state.profile.ingest_key : null;
     $("setkey").textContent = key ? API + "ingest?key=" + key : "Loading\u2026", $("setsaves").textContent = "\u2026", renderSettingsMeter(), paintPlanGroup(), paintPlanUse(billing.limits), Promise.all([loadPrices(), loadSub()]).then(paintPlanGroup), paintStrava(), askStrava(), api("limits", { method: "GET" }).then(function(r) {
       if (pumpy.meterAsked = !0, absorbMeter(r && r.pumpy), r.status === "ok") {
@@ -14032,7 +14525,7 @@ details.details-moving > :not(summary) {
   function openDelete() {
     accSheet({
       title: "Delete your account",
-      lede: "This erases your workout cards, every session you have logged, your plan, your collections, your chats with Pumpy, and the account itself. It cannot be undone and there is no copy. Export your data first if you want to keep it.",
+      lede: "This erases your workout cards, every session you have logged, your plan, your collections, your chats with Pumpy, and the account itself. It cannot be undone and there is no copy. Export your data first if you want to keep it. If you subscribed through Google Play or Apple, cancel that subscription in your store settings before deleting your account; deleting Spotter does not cancel store billing.",
       fields: [{ name: "sure", label: "Type DELETE to confirm", placeholder: "DELETE" }],
       go: "Delete everything",
       busy: "Deleting\u2026",
@@ -14576,7 +15069,7 @@ details.details-moving > :not(summary) {
     b.onclick = function() {
       closeSheet(b.getAttribute("data-close"));
     };
-  }), ["workoptions", "filtersheet", "schedulesheet"].forEach(function(id) {
+  }), ["workoptions", "filtersheet", "schedulesheet", "sessionsheet", "woaddsheet"].forEach(function(id) {
     $(id).addEventListener("keydown", function(e) {
       if (e.key === "Escape" && (e.preventDefault(), closeSheet(id)), e.key === "Tab") {
         var nodes = Array.from(this.querySelectorAll("button, input")).filter(function(n) {
@@ -14636,7 +15129,9 @@ details.details-moving > :not(summary) {
     history.back();
   }, wireWmain($("wmain")), $("wprev").onclick = function() {
     woGo(-1);
-  }, $("wnext").onclick = skipMove, $("wfinish").onclick = finishWorkout, $("wlist").onclick = function() {
+  }, $("wnext").onclick = skipMove, $("wfinish").onclick = finishWorkout, $("waddexercise").onclick = openWorkoutAdd, $("woaddsave").onclick = saveWorkoutAdd, $("woaddname").addEventListener("keydown", function(e) {
+    e.key === "Enter" && (e.preventDefault(), saveWorkoutAdd());
+  }), $("wlist").onclick = function() {
     if (wo) {
       var list = $("exlist");
       list.innerHTML = "", wo.screens.forEach(function(s, i) {
@@ -14688,6 +15183,9 @@ details.details-moving > :not(summary) {
       return;
     }
     $("detail").classList.contains("open") && closeDetail();
+  }), window.addEventListener("spotter:shared-url", function(e) {
+    var u = firstUrlIn(e.detail && e.detail.url);
+    u && (sessionStorage.setItem(SHARE_KEY, u), state.user && !sharing ? consumeShare() : state.user || toast("Sign in to save the shared workout."));
   }), window.addEventListener("spotter:keyboard-settled", measureChrome), window.addEventListener("spotter:share-unavailable", function() {
     toast("Sharing isn\u2019t ready. Reopen Spotter to try again.");
   }), window.addEventListener("spotter:native-state", function(e) {

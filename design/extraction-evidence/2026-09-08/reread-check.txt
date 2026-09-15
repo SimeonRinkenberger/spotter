@@ -1,0 +1,1 @@
+PASS: stationary busy label, duplicate-click guard, success/error/rejection cleanup, queued response, and navigation during reread.

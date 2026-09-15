@@ -280,16 +280,18 @@ export const MARKUP_BODY = String.raw`</head>
        screen they happen to be looking at. Swiping on used to throw it away. -->
   <div class="reststrip" id="reststrip">
     <button class="ring" id="restring" aria-label="Pause or resume the rest"><span id="restnum">0</span></button>
-    <span class="restword" id="restword">Rest</span>
-    <!-- A clock that used to chime and now does not should say why, right here,
-         rather than leave the silence to be read as a bug. -->
-    <svg class="ic wmute" aria-hidden="true"><use href="#i-volume-x"></use></svg>
-    <button class="chip" id="restplus">+15 s</button>
-    <button class="chip" id="restskip">Skip</button>
+    <div class="restinfo">
+      <div class="restheading"><span class="restword" id="restword">Rest period</span>
+        <svg class="ic wmute" aria-hidden="true"><use href="#i-volume-x"></use></svg></div>
+      <div class="resthint" id="resthint">Breathe. Next set soon.</div>
+      <div class="restcontrols"><button class="chip" id="restplus">+15 s</button>
+        <button class="chip" id="restskip">Skip rest</button></div>
+    </div>
   </div>
   <div class="wbottom">
     <button class="wnav" id="wprev" aria-label="Previous exercise"><svg class="ic"><use href="#i-arrow-left"></use></svg></button>
-    <button class="wfinish" id="wfinish">Finish workout</button>
+    <button class="btn ghost" id="waddexercise">+ Add exercise</button>
+    <button class="wfinish" id="wfinish">Save workout</button>
     <button class="wnav" id="wnext" aria-label="Next exercise"><svg class="ic"><use href="#i-arrow-right"></use></svg></button>
   </div>
 </div>
@@ -351,6 +353,28 @@ export const MARKUP_BODY = String.raw`</head>
      barbell. #watchbody is filled on open and emptied on close — an Instagram or
      TikTok iframe left alive behind Workout Mode keeps loading, and takes the audio
      with it. -->
+<div class="sheet" id="woaddsheet" role="dialog" aria-modal="true" aria-labelledby="woaddtitle"><div class="sheetbody">
+  <div class="grabber"></div>
+  <h2 id="woaddtitle">Add to this workout</h2>
+  <p class="lede">Choose a movement you’ve saved or type your own. It will be added at the end of this session.</p>
+  <div class="field"><label for="woaddname">Exercise</label><input id="woaddname" type="text" maxlength="100" autocomplete="off" list="woaddsuggestions" placeholder="e.g. Dumbbell row"><datalist id="woaddsuggestions"></datalist></div>
+  <div class="fieldrow">
+    <div class="field"><label for="woaddsets">Sets</label><input id="woaddsets" type="number" inputmode="numeric" min="1" max="99" value="3"></div>
+    <div class="field"><label for="woaddreps">Reps</label><input id="woaddreps" type="number" inputmode="numeric" min="1" max="999" value="10"></div>
+  </div>
+  <div class="field"><label for="woaddsecs">Seconds per set (instead of reps)</label><input id="woaddsecs" type="number" inputmode="numeric" min="1" max="3600" placeholder="Optional, for timed exercises"></div>
+  <p id="woadderror" class="error" role="alert"></p>
+  <div class="btnrow"><button class="btn ghost" data-close="woaddsheet">Cancel</button><button class="btn" id="woaddsave">Add exercise</button></div>
+</div></div>
+
+<div class="sheet" id="sessionsheet" role="dialog" aria-modal="true" aria-labelledby="sessiontitle"><div class="sheetbody">
+  <div class="grabber"></div>
+  <button class="btn ghost" id="sessionclose" data-close="sessionsheet">Back to Progress</button>
+  <div class="wblock">Session recap</div>
+  <h2 id="sessiontitle">Workout</h2>
+  <div id="sessioncontent"></div>
+</div></div>
+
 <div class="sheet" id="watchsheet"><div class="sheetbody">
   <div class="grabber"></div>
   <h2>Watch the clip</h2>
