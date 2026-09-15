@@ -12,6 +12,11 @@ export class GuardError extends Error {
 export function tokenPrice(model: string, now = new Date()): [number, number, number] | null {
   if (model === 'gpt-5.6-luna') return [.20, 1.20, .02];
   if (model === 'gemini-3.6-flash') return now < new Date('2027-01-01T00:00:00Z') ? [.75,3.75,.075] : [1.50,7.50,.15];
+  // Flash-Lite does video, at a third of Flash's input price and no promotional
+  // cliff to fall off. Read from https://ai.google.dev/gemini-api/docs/pricing on
+  // 2026-09-15: $0.25/M in, $1.50/M out, $0.025/M cached. It is here so the owner
+  // can move `pack.model` to it by config; nothing routes to it by default.
+  if (model === 'gemini-3.1-flash-lite') return [.25,1.50,.025];
   return null;
 }
 export function tokenCost(model: string, input: number, output: number, cached = 0): number {

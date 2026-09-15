@@ -119,7 +119,12 @@ const ROWS: Row[] = [
   ["snatch", "Snatch", "snatches;barbell snatch;power snatch", "fb", "qu,gl,bk,sh,tr", "bb", 0],
   ["push-jerk", "Push Jerk", "push jerks", "sh,tr,qu", "gl,co,bk", "bb", 0],
   ["split-jerk", "Split Jerk", "split jerks", "sh,qu", "tr,gl,co", "bb", 0],
-  ["sumo-deadlift-high-pull", "Sumo Deadlift High Pull", "sdhp;sumo dl high pull", "fb,sh,bk", "qu,gl,fa", "bb", 0],
+  // The kettlebell version is the one people actually film: one bell between the
+  // feet, wide stance, elbows finishing above the hands. Adding `kb` here is not a
+  // cosmetic widening — it is what lets the pack's SEEN equipment break the tie
+  // against the barbell entries, and it is what "deadlift with a high pull" over a
+  // single bell has to land on for the demo clip to show the same movement.
+  ["sumo-deadlift-high-pull", "Sumo Deadlift High Pull", "sdhp;sumo dl high pull;deadlift high pull;kettlebell sumo deadlift high pull;kb sumo deadlift high pull", "fb,sh,bk", "qu,gl,fa", "bb,kb", 0],
   ["kettlebell-clean", "Kettlebell Clean", "kettlebell cleans;kb clean", "sh,bk,gl", "ha,fa,co", "kb", 1],
   ["kettlebell-snatch", "Kettlebell Snatch", "kettlebell snatches;kb snatch", "sh,bk,gl", "ha,fa,co", "kb", 1],
   ["turkish-get-up", "Turkish Get Up", "turkish get ups;turkish getup;tgu;get up", "fb,co,sh", "tr,gl,qu", "kb", 1],
@@ -157,7 +162,11 @@ const ROWS: Row[] = [
   ["dumbbell-shoulder-press", "Dumbbell Shoulder Press", "shoulder press;shoulder presses;db shoulder press;dumbbell overhead press;db overhead press;seated dumbbell press", "sh,tr", "co", "db", 0],
   ["machine-shoulder-press", "Machine Shoulder Press", "shoulder press machine;seated machine shoulder press", "sh,tr", "ch,co", "mc", 0],
   ["arnold-press", "Arnold Press", "arnold presses;arnolds", "sh,tr", "ch,co", "db", 0],
-  ["push-press", "Push Press", "push presses", "sh,tr,qu", "gl,co", "bb,db", 0],
+  // A push press is a dip and a drive, whatever is overhead at the end of it. The
+  // bell — one in each hand, or one held by the horns in front of the chest — is as
+  // common on video as the bar, and leaving `kb` off sent "kettlebell push press"
+  // hunting through the barbell entries.
+  ["push-press", "Push Press", "push presses;kettlebell push press;kb push press;dumbbell push press;db push press", "sh,tr,qu", "gl,co", "bb,db,kb", 0],
   ["handstand-push-up", "Handstand Push-Up", "handstand push ups;handstand pushup;hspu", "sh,tr", "co,bk", "", 0],
   ["lateral-raise", "Lateral Raise", "lateral raises;side raise;side lateral raise;lat raise;db lateral raise;dumbbell lateral raise;cable lateral raise", "sh", "bk", "db,cb", 0],
   ["front-raise", "Front Raise", "front raises;dumbbell front raise;db front raise;plate front raise", "sh", "ch,co", "db", 0],
@@ -366,6 +375,20 @@ function normalizeText(s: string): string {
   t = t.replace(/\b(?:each|per|every)\s+(?:side|leg|arm|hand)s?\b/g, " ");
   t = t.replace(/\bboth\s+sides?\b/g, " ");
   t = t.replace(/\b(?:alternating|alternate|alt)\b/g, " ");
+  // Compound spellings, folded to one form BEFORE anything tokenizes.
+  //
+  // This is the fix for the bug that started this wave. "Close Grip Pushups" was
+  // three tokens — close, grip, pushups — where the catalog alias is four —
+  // close, grip, push, up. The exact and key stages both missed, fuzzy ran, and
+  // "pushups" (a token nothing else in the catalog carries) dragged the score down
+  // just far enough that `close-grip-bench-press` won at 0.74 against a floor of
+  // 0.72. The explain sheet then showed a bench press demo for a push-up.
+  //
+  // Folding the joined and the plural-spaced forms onto the same two words makes
+  // all four spellings — "pushup", "pushups", "push up", "push ups" — the same
+  // string, so the exact stage answers and fuzzy never gets the chance to be
+  // creative. `\s*` covers the joined form; `ups?` covers the plural.
+  t = t.replace(/\b(push|pull|sit|step|chin|press)\s*ups?\b/g, "$1 up");
   t = t.replace(ABBR_RE, (m) => " " + ABBREVIATIONS[m] + " ");
   return t.replace(/\s+/g, " ").trim();
 }
@@ -459,16 +482,161 @@ function f1(query: string[], entry: string[]): number {
   return (2 * cq * ce) / (cq + ce);
 }
 
+// ---------- movement families ----------
+//
+// The fuzzy stage compares bags of words, and a bag of words does not know that a
+// push-up and a bench press are different movements performed by different bodies
+// in different postures — it only sees that both say "close grip". That is exactly
+// how "Close Grip Pushups" landed on `close-grip-bench-press` at 0.74.
+//
+// So the head noun gets a veto. Every catalog entry and every incoming name is
+// assigned the family of its head movement, and fuzzy may only compare two names
+// that agree about what kind of thing they are. Order matters below: the compound
+// families are listed before the bare verbs they contain, so "sumo deadlift high
+// pull" is a deadlift rather than a pull, and "push up" is a push-up rather than a
+// press.
+const FAMILY_PATTERNS: [string, RegExp][] = [
+  ["push up", /\bpush up\b/],
+  ["pull up", /\b(?:pull up|chin up|muscle up)\b/],
+  ["sit up", /\bsit up\b/],
+  ["step up", /\bstep up\b/],
+  ["deadlift", /\bdeadlift\b/],
+  ["swing", /\bswing/],
+  ["carry", /\b(?:carry|carries|farmer)\b/],
+  ["lunge", /\blunge/],
+  ["plank", /\bplank/],
+  ["crunch", /\bcrunch/],
+  ["squat", /\bsquat/],
+  ["row", /\brow/],
+  ["curl", /\bcurl/],
+  ["raise", /\braise/],
+  ["jump", /\b(?:jump|hop)\b/],
+  ["press", /\bpress/],
+  ["pull", /\bpull/],
+];
+
+/** The family of a NORMALIZED name, or null when it names no family at all. */
+function familyOf(norm: string): string | null {
+  for (const [name, re] of FAMILY_PATTERNS) if (re.test(norm)) return name;
+  return null;
+}
+
+// Families whose standard version is the body and nothing else. A name in one of
+// these may not resolve to an entry built around a loaded implement unless the
+// name itself — or the equipment the video was SEEN to use — says that implement.
+const BODYWEIGHT_FAMILIES = new Set(["push up", "pull up", "sit up", "plank", "crunch"]);
+const LOADED_CODES = new Set(["bb", "db", "kb", "cb", "mc"]);
+const IMPLEMENT_WORDS: Record<string, RegExp> = {
+  bb: /\bbarbell|smith\b/,
+  db: /\bdumbbell\b/,
+  kb: /\bkettlebell\b/,
+  cb: /\bcable\b/,
+  mc: /\bmachine\b/,
+};
+
+/** The equipment codes a name (plus whatever was seen) actually claims. */
+function implementsNamed(norm: string, hintEquip: string[]): Set<string> {
+  const hay = (norm + " " + hintEquip.join(" ")).toLowerCase();
+  const out = new Set<string>();
+  for (const [code, re] of Object.entries(IMPLEMENT_WORDS)) if (re.test(hay)) out.add(code);
+  return out;
+}
+
+const CODE_FOR_EQUIP: Record<string, string> = Object.fromEntries(
+  Object.entries(EQUIP_CODES).map(([code, name]) => [name, code]),
+);
+
+/** What the fuzzy stage is allowed to consider, given who is asking. */
+function fuzzyAllows(
+  queryFamily: string | null, named: Set<string>, entry: CatalogEntry, entryFamily: string | null,
+): boolean {
+  // Two names that both declare a family have to declare the same one. A name with
+  // no family (a proper noun like "Turkish Get Up") is not held to this.
+  if (queryFamily && entryFamily && queryFamily !== entryFamily) return false;
+  if (!queryFamily || !BODYWEIGHT_FAMILIES.has(queryFamily)) return true;
+  const loaded = entry.equipment.filter((q) => LOADED_CODES.has(CODE_FOR_EQUIP[q] ?? ""));
+  if (!loaded.length) return true;
+  // A loaded entry is still reachable — "kettlebell push up" is a real thing — but
+  // only when the implement was named or seen, never as a fuzzy accident.
+  return loaded.some((q) => named.has(CODE_FOR_EQUIP[q]));
+}
+
+/** Cached per entry: the family of its display name, which is its head movement. */
+const FAMILY_BY_ID = new Map<string, string | null>();
+for (const e of CATALOG) FAMILY_BY_ID.set(e.id, familyOf(normalizeText(e.name)));
+
+/** What the catalog says this movement normally looks like, for `delta`. */
+export type StandardVariant = {
+  /** Equipment names, as the catalog spells them. [] means bodyweight. */
+  equipment: string[];
+  /** What the body is normally on, when the family has an answer. */
+  surface: string | null;
+  /** Where the load normally sits, when there is a load. */
+  load_position: string | null;
+};
+
+// Deliberately small, and deliberately keyed on the FAMILY rather than on the
+// entry: wave B gives the catalog real per-entry attribute defaults, and this
+// table is what stands in until it does. Everything in it is the thing a reader
+// who only saw the name would assume, which is the only comparison `delta` makes.
+const STANDARD_BY_FAMILY: Record<string, { surface: string | null; load: string | null }> = {
+  "push up": { surface: "hands on the floor", load: null },
+  "pull up": { surface: "hanging from a bar", load: null },
+  "sit up": { surface: "back on the floor", load: null },
+  "plank": { surface: "forearms or hands on the floor", load: null },
+  "crunch": { surface: "back on the floor", load: null },
+  "squat": { surface: "feet on the floor", load: "on the back" },
+  "deadlift": { surface: "load starts on the floor", load: "in front of the thighs" },
+  "swing": { surface: "feet on the floor", load: "between the legs" },
+  "press": { surface: null, load: "at the shoulders" },
+  "row": { surface: null, load: "hanging at arm's length" },
+  "curl": { surface: null, load: "hanging at arm's length" },
+  "lunge": { surface: "feet on the floor", load: null },
+  "carry": { surface: null, load: "at the sides" },
+};
+
+/**
+ * The standard version of a catalog entry: what somebody reading only the name
+ * would picture. `delta` is the difference between this and what the video showed,
+ * and it exists so a demo clip can be labelled honestly — "the standard version,
+ * shown on the floor" — instead of silently presenting a different movement.
+ */
+export function standardOf(entry: CatalogEntry): StandardVariant {
+  const fam = FAMILY_BY_ID.get(entry.id) ?? familyOf(normalizeText(entry.name));
+  const row = fam ? STANDARD_BY_FAMILY[fam] : undefined;
+  // A squat with no equipment is an air squat; there is nothing for a load to be
+  // positioned at, and saying "on the back" would invent a barbell.
+  let load = entry.equipment.length ? (row?.load ?? null) : null;
+  // A squat's standard load position is a fact about the implement, not about the
+  // word "squat": a barbell sits on the back and a single bell sits at the chest,
+  // and calling a goblet squat's standard "on the back" would manufacture a delta
+  // on every goblet squat ever filmed.
+  if (fam === "squat" && load) {
+    load = entry.equipment.includes("barbell") ? "on the back" : "at the chest";
+  }
+  return { equipment: entry.equipment.slice(), surface: row?.surface ?? null, load_position: load };
+}
+
 /**
  * Map a model-produced exercise name to a catalog entry.
  * Returns null when nothing clears MATCH_FLOOR — callers store canonical_id: null
  * and keep the raw name, rather than guessing.
+ *
+ * `hint.equipment` is what the video was SEEN to use — the Video Context Pack's
+ * `variant.equipment`. It never invents a match; it breaks ties between entries
+ * that are otherwise equally close, and it is what lets a name the creator said
+ * loosely ("deadlift with a high pull") reach the entry that matches what is
+ * actually in their hands.
  */
-export function canonicalize(rawName: string | null | undefined): Match | null {
+export function canonicalize(
+  rawName: string | null | undefined,
+  hint?: { equipment?: string[] },
+): Match | null {
   if (!rawName || typeof rawName !== "string") return null;
 
   const norm = normalizeText(rawName);
   if (!norm) return null;
+  const hintEquip = (hint?.equipment ?? []).filter((e): e is string => typeof e === "string");
 
   const exact = exactIndex.get(norm);
   if (exact) return { id: exact, entry: BY_ID.get(exact)!, confidence: 1, method: "exact" };
@@ -486,20 +654,37 @@ export function canonicalize(rawName: string | null | undefined): Match | null {
   // already answered by the two exact stages above, so fuzzy needs two tokens.
   if (toks.length < 2) return null;
 
+  const queryFamily = familyOf(norm);
+  const named = implementsNamed(norm, hintEquip);
+
   let bestId = "";
   let bestScore = 0;
   for (const sets of entryTokenSets) {
     for (const s of sets) {
+      const entry = BY_ID.get(s.id);
+      if (!entry) continue;
+      if (!fuzzyAllows(queryFamily, named, entry, FAMILY_BY_ID.get(s.id) ?? null)) continue;
       const score = f1(toks, s.tokens);
-      if (score > bestScore) { bestScore = score; bestId = s.id; }
+      // The hint is worth a hair, never a match: a candidate the video's own
+      // equipment agrees with wins a photo finish and loses everything else.
+      const tuned = hintEquip.length && entry.equipment.some((q) => hintEquip.includes(q))
+        ? score + 0.02
+        : score;
+      if (tuned > bestScore) { bestScore = tuned; bestId = s.id; }
     }
   }
   if (!bestId || bestScore < MATCH_FLOOR) return null;
-  return { id: bestId, entry: BY_ID.get(bestId)!, confidence: Math.round(bestScore * 100) / 100, method: "fuzzy" };
+  return {
+    id: bestId, entry: BY_ID.get(bestId)!,
+    confidence: Math.round(Math.min(1, bestScore) * 100) / 100, method: "fuzzy",
+  };
 }
 
 /** Convenience for callers that only want the id. */
-export function canonicalIdFor(rawName: string | null | undefined): string | null {
-  const m = canonicalize(rawName);
+export function canonicalIdFor(
+  rawName: string | null | undefined,
+  hint?: { equipment?: string[] },
+): string | null {
+  const m = canonicalize(rawName, hint);
   return m ? m.id : null;
 }
