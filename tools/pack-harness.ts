@@ -1427,6 +1427,58 @@ function evalReply(url: string) {
     /!PACK_EVAL_KEY \|\| !secretEquals/.test(SRC));
 }
 
+// The bench has no user, and on v161 that was a 429 on every call: ai_reserve
+// refuses a null p_user, correctly, because everywhere else a null user is an
+// actor that lost track of who it was working for.
+{
+  const seen: { name: string; args: any }[] = [];
+  const rpcSpy = (name: string, args: any) => { seen.push({ name, args }); return Promise.resolve("ok"); };
+  const guarded = createGuardedFetch(rpcSpy as any, (() =>
+    Promise.resolve(new Response(JSON.stringify({
+      choices: [{ message: { content: "{}" }, finish_reason: "stop" }],
+      usage: { prompt_tokens: 4200, completion_tokens: 900 },
+    }), { headers: { "content-type": "application/json" } }))) as any);
+
+  await aiActor.run({ userId: null, workKey: "sys:eval:gpt-5.6-luna", purpose: "pack_eval" }, () =>
+    guarded("https://api.openai.com/v1/chat/completions", {
+      method: "POST", headers: {},
+      body: JSON.stringify({
+        model: "gpt-5.6-luna", max_completion_tokens: 6000,
+        messages: [{ role: "user", content: [
+          { type: "image_url", image_url: { url: "data:image/jpeg;base64,AAAA", detail: "high" } },
+        ] }],
+      }),
+    }));
+
+  eq("the bench reserves and settles, in that order",
+    seen.map((c) => c.name), ["ai_reserve", "ai_settle"]);
+  eq("against no user at all", seen[0].args.p_user, null);
+  check("under a work key that says it is system work",
+    /^sys:/.test(seen[0].args.p_work), seen[0].args.p_work);
+  check("with the model in it, so each model gets its own daily work budget",
+    seen[0].args.p_work.endsWith("gpt-5.6-luna"));
+  check("and a real cost is settled rather than left unknown",
+    typeof seen[1].args.p_usd === "number" && seen[1].args.p_usd > 0, JSON.stringify(seen[1].args));
+  check("no admission call is made — that gate is for user routes",
+    !seen.some((c) => c.name === "ai_admit"));
+
+  // The rule the migration writes down: a null user is admitted ONLY as system
+  // work, so every other path that loses its user still fails closed.
+  const SQL = Deno.readTextFileSync(
+    new URL("supabase/migrations/20260915160000_system_reservations.sql", ROOT));
+  check("a null user with any other work key is still invalid_user",
+    SQL.includes("if p_user is null and p_work not like 'sys:%' then return 'invalid_user'; end if;"));
+  check("the per-user plan cap is skipped only when there is no user",
+    SQL.includes("if p_user is not null then") && SQL.includes("user_monthly_budget"));
+  check("and the global ceilings are still enforced",
+    SQL.includes("return 'daily_budget'") && SQL.includes("return 'monthly_budget'") &&
+    SQL.includes("return 'work_budget'"));
+  check("the bench names itself the way the migration requires",
+    SRC.includes('workKey: "sys:eval:" + model'));
+  check("and still waits on the project's own daily ceiling",
+    /if \(!\(await paidAllowed\(\)\)\) \{\s*\n\s*return json\(\{ status: "limit", message: "the day's AI budget is spent" \}/.test(SRC));
+}
+
 // With the transcript out, the prompt says nothing about what the creator called
 // the movement — which is how to find out whether "push ups" was anchoring the
 // reader onto a floor push-up before it ever looked at the hands.

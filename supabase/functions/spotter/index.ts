@@ -8762,10 +8762,29 @@ async function handleEvalSheets(req: Request): Promise<Response> {
     }
   }
 
+  // The project's own ceiling still applies. A bench is the owner's instrument,
+  // not an exemption from the bill: when the day's budget is spent, it waits like
+  // everything else.
+  if (!(await paidAllowed())) {
+    return json({ status: "limit", message: "the day's AI budget is spent" }, 429);
+  }
+
   const t0 = Date.now();
   const ctx: AiCtx = { purpose: "pack_eval", userId: null };
+  // A SYSTEM actor, and it says so in its work key.
+  //
+  // ai_reserve refuses a null user everywhere else, and it is right to: a null
+  // user is usually an actor that lost track of who it was working for, and a
+  // spend nobody can be held to is a spend nobody notices. This one genuinely has
+  // no user — it is a worker route behind its own secret, above the user gate —
+  // so it names itself `sys:` and is admitted on that basis alone. Everything that
+  // bounds a normal reservation still bounds it: the global daily and monthly
+  // ceilings, the provider cooldown, the concurrency cap, and the per-work-key
+  // budget, which with the model in the key gives each model its own $0.25 a day.
+  // Nothing here touches a real user's month: the reservation and the cost row
+  // both carry a null user, and no per-user cap is consulted or spent.
   const read = await aiActor.run(
-    { userId: null, workKey: "eval:" + model, deadline: Date.now() + 120_000 },
+    { userId: null, workKey: "sys:eval:" + model, deadline: Date.now() + 120_000 },
     () => readSheetImages(images, sheetsPrompt(frames, transcript), model, ctx),
   );
   const ms = Date.now() - t0;
