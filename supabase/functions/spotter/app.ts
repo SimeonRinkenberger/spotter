@@ -5090,27 +5090,6 @@ export const APP = String.raw`
     lastWeights();
   }
 
-  function openWorkoutAdd() {
-    if (!wo || wo.finished) return;
-    $("woaddname").value = "";
-    $("woaddsets").value = "3";
-    $("woaddreps").value = "10";
-    $("woaddsecs").value = "";
-    $("woadderror").textContent = "";
-    var options = $("woaddsuggestions"), names = {};
-    options.innerHTML = "";
-    state.workouts.forEach(function (w) {
-      flatten(w).forEach(function (s) {
-        if (!s.ex.name || names[s.ex.name]) return;
-        names[s.ex.name] = true;
-        var opt = el("option"); opt.value = s.ex.name; options.appendChild(opt);
-      });
-    });
-    $("woaddsheet")._returnFocus = document.activeElement;
-    openSheet("woaddsheet");
-    $("woaddname").focus();
-  }
-
   function appendSessionExercise(ex) {
     if (!wo || wo.finished) return false;
     // Give an existing freestyle log its own screen before appending, so its
@@ -5136,31 +5115,378 @@ export const APP = String.raw`
     return true;
   }
 
-  function saveWorkoutAdd() {
-    if (!wo || wo.finished) return;
-    var name = $("woaddname").value.trim();
-    var sets = Number($("woaddsets").value), reps = Number($("woaddreps").value);
-    var rawSecs = $("woaddsecs").value.trim(), secs = Number(rawSecs);
-    if (!name || name.length > 100 || sets < 1 || sets > 99 || sets % 1 ||
-      (rawSecs ? !isFinite(secs) || secs < 1 || secs > 3600 || secs % 1
-        : !isFinite(reps) || reps < 1 || reps > 999 || reps % 1) || !isFinite(sets)) {
-      $("woadderror").textContent = "Enter a name, 1–99 sets, and 1–999 reps or 1–3600 seconds.";
-      return;
-    }
-    var ex = { name: name, sets: sets, reps: rawSecs ? null : String(reps),
-      duration_seconds: rawSecs ? secs : null, rest_seconds: REST_FALLBACK };
-    // Reuse a known identity only for an exact name; a custom movement remains custom.
-    state.workouts.some(function (w) {
-      return flatten(w).some(function (s) {
-        if ((s.ex.name || "").toLowerCase() !== name.toLowerCase() || !s.ex.canonical_id) return false;
-        ex.canonical_id = s.ex.canonical_id;
-        return true;
+  /**
+   * Put a movement INSIDE the card the session is holding, at a given block and
+   * position, and hand back the screen it became.
+   *
+   * wo.entries is index-parallel with wo.screens — every reader of entries[i]
+   * depends on that — and each entry also carries the block/exercise pair that
+   * cxEntry and the saved log read. So both have to move together: the entries
+   * after it in the same block shift one along, the new entry is spliced in at the
+   * same offset flatten() will put its screen, and the screens are rebuilt from
+   * the blocks rather than patched, which is the only way the two cannot drift.
+   */
+  function insertSessionExercise(bi, ei, ex) {
+    var blk = wo.workout.blocks[bi], at = 0, i;
+    blk.exercises.splice(ei, 0, ex);
+    for (i = 0; i < bi; i++) at += (wo.workout.blocks[i].exercises || []).length;
+    at += ei;
+    wo.entries.forEach(function (e) { if (e.block === bi && e.exercise >= ei) e.exercise++; });
+    wo.entries.splice(at, 0, {
+      name: ex.name, canonical_id: ex.canonical_id || null, block: bi, exercise: ei, sets: []
+    });
+    wo.screens = flatten(wo.workout);
+    return at;
+  }
+
+  // ---------- adding a movement mid-workout ----------
+  //
+  // "Be able to add diff exercises mid workout". The old sheet was a text field
+  // with a datalist and a default 3 x 10, and what it added always went to the
+  // end of the session in a block of its own. Three things were missing, and all
+  // three are things the trackers people already use get right: you pick a
+  // movement off a LIST rather than spell it (Hevy and Strong both open a
+  // searchable library mid-session; Fitbod puts the same picker behind a
+  // "+ Add Exercise" at the FOOT of the exercise list); the dose arrives already
+  // filled in from the last time you did it (Hevy carries over sets, reps and
+  // weight); and it lands where you are, not at the end of everything.
+  //
+  // The list is ordered the way Apple's search-field guidance asks for: prior
+  // things first, results grouped into named sections, and filtering that starts
+  // on the first keystroke. The one thing not taken from them is the keyboard —
+  // the field is NOT focused on open, because on a phone the keyboard would cover
+  // the Recent rows, which are the fast path and usually the whole answer.
+
+  // The picker's own state: the query is read off the field, so only the choice,
+  // the destination and the card toggle live here.
+  var woa = null;
+
+  // The catalog, read once per session and then searched in memory. One read of a
+  // couple of hundred rows of reference data beats a round trip per keystroke on
+  // gym wifi, it is the only way to match an ALIAS at all (PostgREST cannot
+  // substring a text[] column), and ordered by pattern it also hands the list its
+  // sections for free.
+  var woaCat = null, woaCatLoad = null;
+
+  function woaCatalog() {
+    if (woaCat) return Promise.resolve(woaCat);
+    if (woaCatLoad) return woaCatLoad;
+    woaCatLoad = sb.from("exercise_catalog").select("id,display_name,aliases,muscle_groups,equipment,pattern")
+      .order("pattern").order("display_name").limit(1000)
+      .then(function (r) {
+        woaCatLoad = null;
+        if (!r.error && r.data) woaCat = r.data;
+        return woaCat || [];
+      }).catch(function () { woaCatLoad = null; return []; });
+    return woaCatLoad;
+  }
+
+  /**
+   * Every movement that could be added, on three shelves in the order they earn:
+   * what you lifted lately, what your own cards hold, then the catalog.
+   *
+   * src doubles as the tie-break and as the section, and the same movement is one
+   * row — the shelf above wins, because Recent knows what you lifted and the
+   * catalog only knows the name. The catalog's aliases move onto that kept row
+   * rather than dying with its own, or "goblets" would stop finding the goblet
+   * squat the moment you saved a card with one on it.
+   */
+  // One shape for every shelf, so the rows are interchangeable everywhere below:
+  // the key that says which movement this is, what it is called, the identity
+  // behind it, the line under the name, the shelf, and whatever else that shelf
+  // happens to know — the dose, the date, the aliases.
+  function woaMake(key, name, id, sub, src, more) {
+    var r = more || {};
+    r.key = key;
+    r.name = name;
+    r.canonical_id = id;
+    r.sub = sub;
+    r.src = src;
+    return r;
+  }
+
+  function woaRows() {
+    var out = [], seen = {};
+    Object.keys(hist).forEach(function (k) {
+      var h = hist[k];
+      if (!h.date || !h.name) return;
+      var r = woaMake(k, h.name, k.indexOf("c:") === 0 ? k.slice(2) : null, "", 1,
+        { sets: h.sets, reps: h.reps, at: h.date });
+      r.sub = lastLine(r);
+      out.push(r);
+    });
+    out.sort(function (a, b) { return a.at < b.at ? 1 : a.at > b.at ? -1 : 0; });
+    out.forEach(function (r) { seen[r.key] = r; });
+    state.workouts.forEach(function (w) {
+      (w.blocks || []).forEach(function (b) {
+        (b.exercises || []).forEach(function (ex) {
+          var k = ex && ex.name ? exKey(ex) : null;
+          if (!k || seen[k]) return;
+          seen[k] = woaMake(k, ex.name, ex.canonical_id || null,
+            [doseText(ex), w.title].filter(Boolean).join(" · "), 2,
+            { sets: ex.sets, reps: ex.reps, secs: ex.duration_seconds });
+          out.push(seen[k]);
+        });
       });
     });
-    if (appendSessionExercise(ex)) {
-      closeSheet("woaddsheet");
-      toast("Added " + name + " to this session.");
+    (woaCat || []).forEach(function (c) {
+      var dup = seen["c:" + c.id];
+      if (dup) { dup.aliases = c.aliases || []; return; }
+      out.push(woaMake("c:" + c.id, c.display_name, c.id,
+        (c.muscle_groups || []).concat(c.equipment || []).join(" · "), 3,
+        { aliases: c.aliases || [], pattern: c.pattern }));
+    });
+    return out;
+  }
+
+  /**
+   * How well a row answers the query. Lower is better, -1 is "not an answer".
+   *
+   * The ladder every good picker uses: the whole name, then the start of it, then
+   * the start of a word in it, then anywhere in it — and an alias hit sits half a
+   * step below the same shape of name hit, so "db bulgarians" still finds the
+   * Bulgarian Split Squat without that alias ever outranking a row literally
+   * called what was typed.
+   */
+  function woaHit(t, q) {
+    var i = t.indexOf(q);
+    return t === q ? 0 : i === 0 ? 1 : i < 0 ? -1 : t.charAt(i - 1) === " " ? 2 : 3;
+  }
+
+  function woaScore(q, row) {
+    if (!q) return row.src;
+    var s = woaHit(String(row.name || "").toLowerCase(), q), al = row.aliases || [], j, a;
+    if (s >= 0) return s;
+    for (j = 0; j < al.length; j++) {
+      a = woaHit(String(al[j]).toLowerCase(), q);
+      if (a >= 0 && (s < 0 || a < s)) s = a;
     }
+    return s < 0 ? -1 : s + 0.5;
+  }
+
+  // Stable below the score: rows that answer the query equally well keep the shelf
+  // order they arrived in, so Recent stays in date order and the catalog stays
+  // alphabetical inside its pattern.
+  function woaRank(q, rows) {
+    q = String(q || "").toLowerCase().trim();
+    var out = [];
+    rows.forEach(function (r, i) {
+      var s = woaScore(q, r);
+      if (s >= 0) out.push({ r: r, s: s, i: i });
+    });
+    out.sort(function (a, b) { return a.s - b.s || a.r.src - b.r.src || a.i - b.i; });
+    return out.map(function (x) { return x.r; });
+  }
+
+  function woaRow(list, r, label) {
+    var b = el("button", "pickrow"), t = el("div", "pt");
+    t.appendChild(el("b", null, label || r.name));
+    if (r.sub) t.appendChild(el("span", null, r.sub));
+    b.appendChild(t);
+    b.onclick = function () { woaChoose(r); };
+    list.appendChild(b);
+  }
+
+  // How many of each shelf a cold list shows. Recent and the library are a
+  // shortcut, not an archive; the catalog is the archive and is shown whole.
+  var WOA_CAP = { 1: 6, 2: 8 };
+  var WOA_WAIT = "Still reading the exercise catalog…";
+  var WOA_NOSAVE = "Added for today — it did not save to the card.";
+
+  function woaRender() {
+    var list = $("woalist"), raw = $("woaq").value.trim(), q = raw.toLowerCase();
+    var rows = woaRows(), head = null, n = {};
+    list.innerHTML = "";
+    if (q) {
+      // One ranked list while searching: sections would put the best answer third.
+      var hits = woaRank(q, rows).slice(0, 20), known = null;
+      hits.forEach(function (r) { woaRow(list, r); });
+      // Free text is never taken away — the catalog is a couple of hundred
+      // movements and a gym has more in it than that, so a sled push stays one tap
+      // from here. It borrows an identity only from an exact spelling, because a
+      // guessed one silently merges two different lifts' records.
+      if (!hits.length || String(hits[0].name).toLowerCase() !== q) {
+        rows.some(function (r) {
+          if (String(r.name).toLowerCase() !== q && (r.aliases || []).indexOf(q) < 0) return false;
+          known = r.canonical_id;
+          return true;
+        });
+        woaRow(list, woaMake(known ? "c:" + known : "n:" + raw, raw, known,
+          "Add it exactly as you typed it", 4), "Add “" + raw + "”");
+      }
+      if (!woaCat) list.appendChild(el("p", "lede", WOA_WAIT));
+      return;
+    }
+    // Cold, it is sections, in the order Apple asks results to be organised in:
+    // what you did lately, what your own cards hold, then the catalog by movement
+    // pattern — which arrives already grouped, the read having ordered it.
+    rows.forEach(function (r) {
+      var cap = WOA_CAP[r.src], h;
+      n[r.src] = (n[r.src] || 0) + 1;
+      if (cap && n[r.src] > cap) return;
+      h = r.src === 1 ? "Recent" : r.src === 2 ? "In your library" : capWord(r.pattern || "other");
+      if (h !== head) { head = h; list.appendChild(el("div", "woahead", h)); }
+      woaRow(list, r);
+    });
+    if (!woaCat) list.appendChild(el("p", "lede", WOA_WAIT));
+  }
+
+  // ---------- the second pane: how much of it, and where ----------
+
+  function woaPane(dose) {
+    $("woapick").classList.toggle("hide", !!dose);
+    $("woadose").classList.toggle("hide", !dose);
+    viewIn($(dose ? "woadose" : "woapick"));
+  }
+
+  // How many blocks the SAVED card has, or null when there is no card to keep
+  // anything on: the corrections endpoint refuses a row still being read, and a
+  // session resumed from the draft of a deleted card has nothing to write to.
+  function woaCardBlocks() {
+    var w = wo && wo.workout, card = null;
+    if (!w || !w.id) return null;
+    state.workouts.forEach(function (x) { if (x.id === w.id) card = x; });
+    return card && card.ingest_status === "ready" ? (card.blocks || []).length : null;
+  }
+
+  function woaKeepPaint() {
+    $("woakeep").classList.toggle("on", !!woa.keep);
+    $("woakeep").setAttribute("aria-pressed", woa.keep ? "true" : "false");
+    $("woakeepnote").textContent = woa.keep
+      ? "It will be on the card the next time you open it."
+      : "Off — today's session only.";
+  }
+
+  function woaChoose(r) {
+    var s = wo.screens[wo.i], cx = s && s.cx && !s.ei ? s.cx : null;
+    var h = hist[r.key], m = String(r.reps || "").match(/\d+/), where = $("woawhere");
+    woa.pick = r;
+    woa.keep = false;
+    woa.where = cx ? "complex" : s && wo.i < endStop() ? "after" : "end";
+    haptic("tap");
+    $("woaddtitle").textContent = r.name;
+    // Hevy carries the last session's numbers into a movement you add back; so
+    // does this, and the line under the name says where the numbers came from.
+    $("woalast").textContent = lastLine(r);
+    $("woaddsets").value = String((h && h.sets) || r.sets || 3);
+    $("woaddreps").value = String((h && h.reps) || (m ? m[0] : 10));
+    $("woaddsecs").value = r.secs ? String(r.secs) : "";
+    // Where it lands. Inside a complex there is nothing to choose — a movement
+    // added to an AMRAP is part of the AMRAP — and on the last exercise the two
+    // answers are the same one, so neither gets chips it cannot use.
+    where.innerHTML = "";
+    if (cx) {
+      where.appendChild(el("div", "wnote",
+        "Joins the round list — part of this complex from the next round on."));
+    } else if (woa.where === "after") {
+      ["After this one", "At the end"].forEach(function (t, k) {
+        var b = el("button", "chip" + (k ? "" : " active"), t);
+        b.onclick = function () {
+          woa.where = k ? "end" : "after";
+          Array.prototype.forEach.call(where.children, function (c) {
+            c.classList.toggle("active", c === b);
+          });
+        };
+        where.appendChild(b);
+      });
+    }
+    $("woakeep").classList.toggle("hide", woaCardBlocks() === null);
+    woaKeepPaint();
+    woaPane(1);
+  }
+
+  function openWorkoutAdd() {
+    if (!wo || wo.finished) return;
+    haptic("tap");
+    woa = { pick: null, where: "after", keep: false };
+    $("woaddtitle").textContent = "Add an exercise";
+    $("woaq").value = "";
+    woaPane(0);
+    woaRender();
+    $("woaddsheet")._returnFocus = document.activeElement;
+    openSheet("woaddsheet");
+    // Deliberately not focused: on a phone the keyboard would land on top of the
+    // Recent rows, which are the fast path and usually the whole answer. Apple
+    // asks for the same restraint wherever a raised keyboard covers its results.
+    if (!woaCat) {
+      woaCatalog().then(function () {
+        if ($("woaddsheet").classList.contains("open")) woaRender();
+      });
+    }
+  }
+
+  // Where the movement goes in the session. Three answers, and the complex is the
+  // interesting one: a sixth movement in a five-movement AMRAP is not a sixth
+  // screen, it is a sixth row in the round list — which is also why it carries the
+  // round it joined at, so cxSync never credits it with rounds finished before it
+  // existed.
+  function woaPlace(ex) {
+    var s = wo.screens[wo.i], cx = s && s.cx && !s.ei ? s.cx : null;
+    if (!s || woa.where === "end") return appendSessionExercise(ex);
+    stopWork();
+    restThen = null;
+    if (cx) {
+      ex.from_round = (wo.amrap[s.bi] || {}).rounds || 0;
+      insertSessionExercise(s.bi, s.block.exercises.length, ex);
+    } else {
+      wo.i = insertSessionExercise(s.bi, s.ei + 1, ex);
+    }
+    saveDraft();
+    renderWorkout();
+    return true;
+  }
+
+  /**
+   * "Keep on this workout" — the same corrections endpoint the exercise editor
+   * uses, so the movement is recorded as a user correction and is on the card the
+   * next time it is opened.
+   *
+   * The server appends to the block it is handed and has no index to insert at, so
+   * on the CARD the movement sits at the end of that block rather than beside the
+   * one it followed today; today's session has it in the right place either way.
+   * A block the card does not have is clamped by the server to one fresh block at
+   * the end, which is what asking for blocks.length means here.
+   */
+  function woaKeep(ex, bi) {
+    var w = wo.workout, n = woaCardBlocks();
+    if (n === null) return;
+    api("workouts/" + w.id + "/exercises", { method: "POST", body: JSON.stringify({
+      op: "add", block: bi < n ? bi : n,
+      fields: { name: ex.name, sets: ex.sets, reps: ex.reps, duration_seconds: ex.duration_seconds }
+    }) }).then(function (r) {
+      if (!r || r.status !== "ok") { limitHit(r, WOA_NOSAVE); return; }
+      absorbWorkout(r.workout);
+      toast("Kept on " + (w.title || "the workout") + " for next time.");
+    }).catch(function () { toast(WOA_NOSAVE); });
+  }
+
+  // A dose field, clamped to what the server and a barbell both accept, and
+  // written back so the number that was added is the number on screen. Clamping
+  // rather than refusing, because there is no wrong answer here to protect —
+  // unlike a correction, which is training data and is refused instead.
+  function woaNum(id, dflt, hi) {
+    var n = clamp(Math.round(Number($(id).value) || dflt), 1, hi);
+    $(id).value = String(n);
+    return n;
+  }
+
+  function saveWorkoutAdd() {
+    if (!wo || wo.finished || !woa || !woa.pick) return;
+    var name = String(woa.pick.name || "").trim().slice(0, 100);
+    var secs = $("woaddsecs").value.trim() ? woaNum("woaddsecs", 30, 3600) : 0;
+    if (!name) return;
+    var ex = { name: name, canonical_id: woa.pick.canonical_id || null,
+      sets: woaNum("woaddsets", 3, 99), reps: secs ? null : String(woaNum("woaddreps", 10, 999)),
+      duration_seconds: secs || null, rest_seconds: REST_FALLBACK };
+    var s = wo.screens[wo.i], keep = woa.keep;
+    var bi = s && woa.where !== "end" ? s.bi : woaCardBlocks() || 0;
+    if (!woaPlace(ex)) return;
+    closeSheet("woaddsheet");
+    haptic("success");
+    toast("Added " + name + " to this session.");
+    // After the session has it: the card write is a round trip with its own
+    // sentence, and it must never be what stands between a lifter and the set.
+    if (keep) woaKeep(ex, bi);
   }
 
   // The grouping key for "the same movement". The catalog id when the name mapped,
@@ -5201,6 +5527,10 @@ export const APP = String.raw`
             // Newest first: the first session carrying this movement IS last time.
             if (h.date) return;
             var top = sets.filter(function (s) { return s.weight; }).pop() || sets[sets.length - 1];
+            // The name as the newest session spelled it, which is what the add
+            // picker's Recent shelf has to show: hist is keyed by identity, and an
+            // id is not a thing to put on a row.
+            h.name = e.name;
             h.date = log.started_at;
             h.sets = sets.length;
             h.reps = top.reps;
@@ -5363,8 +5693,26 @@ export const APP = String.raw`
     var swapChip = icon(el("button", "pickrow"), "swap", "Swap or modify");
     swapChip.onclick = function () { openSwap(focus.name, wo.workout.title); };
     extra.lastChild.appendChild(swapChip);
+    // Swapping one movement for another and adding one that was never on the card
+    // are the same thought arriving from two directions, so they sit together.
+    var addChip = icon(el("button", "pickrow"), "plus", "Add an exercise");
+    addChip.onclick = openWorkoutAdd;
+    extra.lastChild.appendChild(addChip);
     acts.appendChild(extra);
     main.appendChild(acts);
+
+    // Fitbod puts "+ Add Exercise" at the FOOT of the exercise list, which is
+    // where somebody looks when the card has run out and they are not done. A
+    // pager has no foot, so its last stop is one.
+    if (wo.i >= endStop()) {
+      var tile = icon(el("button", "pickrow waddcard"), "plus");
+      var tt = el("div", "pt");
+      tt.appendChild(el("b", null, "Add an exercise"));
+      tt.appendChild(el("span", null, "Something you are doing that this card did not say."));
+      tile.appendChild(tt);
+      tile.onclick = openWorkoutAdd;
+      main.appendChild(tile);
+    }
 
     // A swipe said which way the lifter went, so the exercise arrives from that
     // side. An arrow did not, and keeps the entrance it had.
@@ -6139,7 +6487,10 @@ export const APP = String.raw`
     (blk.exercises || []).forEach(function (ex, j) {
       var e = cxEntry(bi, j);
       if (!e) return;
-      var n = a.rounds + (a.marks[j] ? 1 : 0);
+      // from_round is the round count a movement ADDED mid-workout joined at, so
+      // the three rounds finished before it existed are not written against it.
+      // Absent on every movement the card came with, which is 0 and the old sum.
+      var n = Math.max(0, a.rounds - (ex.from_round || 0)) + (a.marks[j] ? 1 : 0);
       while (e.sets.length > n) e.sets.pop();
       while (e.sets.length < n) e.sets.push(cxSet(ex, e));
     });
@@ -13860,7 +14211,20 @@ export const APP = String.raw`
   $("wfinish").onclick = finishWorkout;
   $("waddexercise").onclick = openWorkoutAdd;
   $("woaddsave").onclick = saveWorkoutAdd;
-  $("woaddname").addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); saveWorkoutAdd(); } });
+  $("woaback").onclick = function () { woaPane(0); };
+  $("woakeep").onclick = function () { woa.keep = !woa.keep; haptic("tap"); woaKeepPaint(); };
+  // Filtering starts on the first keystroke, as Apple's search fields do. No
+  // debounce: the catalog is already in memory, so the delay would be the only
+  // latency there is.
+  $("woaq").addEventListener("input", woaRender);
+  $("woaq").addEventListener("keydown", function (e) {
+    // Enter on a search field means "take the best answer", not "submit a form" —
+    // there is nothing else on this pane it could mean.
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    var first = $("woalist").querySelector("button");
+    if (first) first.click(); else this.blur();
+  });
   $("wlist").onclick = function () {
     if (!wo) return;
     var list = $("exlist");
