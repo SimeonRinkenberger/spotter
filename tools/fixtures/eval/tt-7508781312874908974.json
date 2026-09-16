@@ -1,0 +1,288 @@
+{
+  "$comment": "EVAL FIXTURE for tools/pack-eval — the silent-video case. Hand-assembled 2026-09-16 from what the repo and the senior session's logs ACTUALLY recorded about the 15 Sept live Gemini fallback read of this video (spotter function v157, gemini-3.6-flash, mediaResolution LOW, 19.5 s, 3641 in / 2644 out tokens, pack valid, 0 re-queries, 4 segments seen, 0 said, 2 of 4 card exercises stamped). Nothing here is invented: every value is either printed in those logs or is a direct consequence of them, and everything that was never written down is null with a note saying so. This is the fixture that covers the half of the pipeline the WODfather video cannot reach — no speech at all, so no creator cue, no name_said, and the card's names come from the camera alone.",
+  "fixture_v": 1,
+  "pack_v": 1,
+  "shortcode": "tt-7508781312874908974",
+  "platform": "tiktok",
+  "duration_s": 34,
+  "visual": "read",
+  "reader": "gemini_video",
+  "source": {
+    "platform": "tiktok",
+    "url": "https://www.tiktok.com/@fernandashaw_/video/7508781312874908974",
+    "author": "Fernanda Shaw",
+    "consent": "public creator content, used for evaluation only",
+    "duration_s": 34,
+    "captured": "2026-09-15",
+    "$note": "No pixels of this post are stored. The author name and the 34 s duration are from the ingest log ('tiktok meta 7508781312874908974 sources: oembed caption: 233 thumb: true author: Fernanda Shaw slides: 0' and 'sound is a song (57s vs 34s)'). The URL's handle is the one the oEmbed lookup resolved; if it ever 404s, the shortcode is what identifies the post."
+  },
+  "caption": null,
+  "$caption": "233 characters per the ingest log, and it names no exercises — that is why this video went to the media tier at all. The text itself was never copied into the repo.",
+  "transcript_vtt": null,
+  "sheets": null,
+  "$sheets": "None. This video was read by the Gemini video tier, not from contact sheets, so the live runner has no pixels to post for it and skips it.",
+  "session": {
+    "format": "circuit",
+    "scheme": "3 rounds, 45 s work",
+    "equipment_seen": [
+      "dumbbell"
+    ],
+    "equipment_count": {},
+    "load_seen": null,
+    "setting": null,
+    "$note": "format, rounds and the 45 s work interval are the card's own block fields from the live read (circuit, rounds 3, duration_seconds 45 on every exercise). equipment_count and setting were never printed. The REST interval is contested — the 15 Sept read put it at 60 s, a 2 Sept media-tier read of the same video reported 20 s — so it is left out of the scheme string and carried as a soft expectation on the block instead."
+  },
+  "transcript_source": "none",
+  "transcript": [],
+  "$transcript": "The video is silent — the sound is a licensed song, 57 s of it over a 34 s clip — and the pack log says '0 said'. There is no ASR track and none was bought.",
+  "on_screen": null,
+  "$on_screen": "Never recorded. The 2 Sept media-tier read got the work and rest intervals 'off the screen', so there IS on-screen text; its strings and times are unknown, and null says so rather than [] claiming the frames were blank.",
+  "exercises": [
+    {
+      "i": 0,
+      "observed": false,
+      "$movement": "squat with an alternating knee drive and twist — the card called it 'Squat Alt Knee Drive Twist'. the observation's own segment for this movement was never written down anywhere: the live card shows it unstamped, so its t0/t1, contact and placements did not survive. \"observed\": false keeps it out of the derived observation and out of the missing/extra tally rather than guessing at a number.",
+      "name_said": null,
+      "name_shown": null,
+      "canonical_id": null,
+      "t0": null,
+      "t1": null,
+      "reps_seen": null,
+      "variant": {
+        "equipment": [],
+        "hand_placement": null,
+        "surface": null,
+        "grip_width": null,
+        "load_position": null,
+        "stance": null,
+        "unilateral": null,
+        "tempo": null,
+        "range_of_motion": null
+      },
+      "delta_from_standard": null,
+      "creator_cues": [],
+      "seen_not_said": null,
+      "provenance": null,
+      "confidence": null
+    },
+    {
+      "i": 1,
+      "observed": false,
+      "$movement": "sumo squat into a front raise and a calf raise — the card called it 'Sumo Squat Front Raise Calf Raise'. the observation's own segment for this movement was never written down anywhere: the live card shows it unstamped, so its t0/t1, contact and placements did not survive. \"observed\": false keeps it out of the derived observation and out of the missing/extra tally rather than guessing at a number.",
+      "name_said": null,
+      "name_shown": null,
+      "canonical_id": null,
+      "t0": null,
+      "t1": null,
+      "reps_seen": null,
+      "variant": {
+        "equipment": [],
+        "hand_placement": null,
+        "surface": null,
+        "grip_width": null,
+        "load_position": null,
+        "stance": null,
+        "unilateral": null,
+        "tempo": null,
+        "range_of_motion": null
+      },
+      "delta_from_standard": null,
+      "creator_cues": [],
+      "seen_not_said": null,
+      "provenance": null,
+      "confidence": null
+    },
+    {
+      "i": 2,
+      "observed": true,
+      "name_said": null,
+      "name_shown": "Alternating Dumbbell Snatch",
+      "canonical_id": "snatch",
+      "t0": 16,
+      "t1": 25,
+      "reps_seen": null,
+      "variant": {
+        "equipment": [
+          "dumbbell"
+        ],
+        "hand_placement": "Single hand on dumbbell handle, switching hands on ground",
+        "surface": null,
+        "grip_width": null,
+        "load_position": "Floor to overhead lockout",
+        "stance": null,
+        "unilateral": null,
+        "tempo": null,
+        "range_of_motion": null
+      },
+      "delta_from_standard": "one dumbbell rather than a barbell, snatched from the floor to a locked-out arm one side at a time",
+      "creator_cues": [],
+      "seen_not_said": [],
+      "provenance": {
+        "name": "seen",
+        "reps": "none",
+        "variant": "seen",
+        "cues": "none"
+      },
+      "confidence": null,
+      "$confidence": "Never printed per segment. The pack log reports 0 re-queries, so every segment was at or above REQUERY_CONFIDENCE (0.6); the runner uses that floor, which is the only number the log actually proves."
+    },
+    {
+      "i": 3,
+      "observed": true,
+      "name_said": null,
+      "name_shown": "Plank Alternating Row",
+      "canonical_id": "renegade-row",
+      "t0": 25,
+      "t1": 34,
+      "reps_seen": null,
+      "variant": {
+        "equipment": [
+          "dumbbell"
+        ],
+        "hand_placement": "Palms on floor, single hand gripping dumbbell to row",
+        "surface": null,
+        "grip_width": null,
+        "load_position": "Dumbbell resting on floor pulled to waist level",
+        "stance": null,
+        "unilateral": null,
+        "tempo": null,
+        "range_of_motion": null
+      },
+      "delta_from_standard": null,
+      "creator_cues": [],
+      "seen_not_said": [],
+      "provenance": {
+        "name": "seen",
+        "reps": "none",
+        "variant": "seen",
+        "cues": "none"
+      },
+      "confidence": null,
+      "$confidence": "As above — the 0.6 floor the 0-re-queries log proves."
+    }
+  ],
+  "$seen_not_said": "[] on both observed movements, and that is read off the live evidence rather than assumed: packEvidence quotes bestSeenFact first and fell back to the load position on BOTH of them ('Floor to overhead lockout', 'Dumbbell resting on floor pulled to waist level'), which only happens when the contact line produced no facts at all.",
+  "card_input": {
+    "$note": "The card as Luna produced it on 15 Sept, with the pack's own stamps (t0/t1, as_performed, delta, evidence) taken back off: this is the input applyPack is given. The cue text here is OBSERVED model output, not a hand-authored target — it is kept verbatim so a prompt change that makes cues worse shows up as a diff against something real.",
+    "title": null,
+    "category": "Full Body",
+    "muscle_groups": [],
+    "equipment": [
+      "dumbbells"
+    ],
+    "duration_minutes": null,
+    "has_full_workout": true,
+    "blocks": [
+      {
+        "title": "Full Body Circuit",
+        "type": "circuit",
+        "rounds": 3,
+        "rest_seconds": 60,
+        "exercises": [
+          {
+            "name": "Squat Alt Knee Drive Twist",
+            "canonical_id": null,
+            "sets": null,
+            "reps": null,
+            "duration_seconds": 45,
+            "rest_seconds": null,
+            "weight": null,
+            "equipment": "dumbbells",
+            "cue": "Hold both dumbbell ends at chest level; feet stay on the floor."
+          },
+          {
+            "name": "Sumo Squat Front Raise Calf Raise",
+            "canonical_id": null,
+            "sets": null,
+            "reps": null,
+            "duration_seconds": 45,
+            "rest_seconds": null,
+            "weight": null,
+            "equipment": "dumbbells",
+            "cue": "Raise the dumbbell to shoulder height; hold it between your legs with both hands."
+          },
+          {
+            "name": "Alternating Dumbbell Snatch",
+            "canonical_id": "snatch",
+            "sets": null,
+            "reps": null,
+            "duration_seconds": 45,
+            "rest_seconds": null,
+            "weight": null,
+            "equipment": "dumbbells",
+            "cue": "Switch hands on the ground; move the dumbbell from the floor to overhead lockout."
+          },
+          {
+            "name": "Plank Alternating Row",
+            "canonical_id": "renegade-row",
+            "sets": null,
+            "reps": null,
+            "duration_seconds": 45,
+            "rest_seconds": null,
+            "weight": null,
+            "equipment": "dumbbells",
+            "cue": "Row the dumbbell to waist level; keep your hands and toes on the floor."
+          }
+        ]
+      }
+    ]
+  },
+  "card_expectations": {
+    "$comment": "What the pipeline must produce from card_input plus this fixture's own pack. The two unstamped exercises are an EXPECTATION, not an oversight: the camera's compound names share no wording with the card's, the pack has fewer segments than the card has exercises, so applyPack's positional pass cannot run and it correctly leaves them alone. If a future change stamps 4, that is a real behaviour change and this number is what makes somebody look at it.",
+    "title": null,
+    "block": {
+      "type": "circuit",
+      "rounds": 3,
+      "rest_seconds": 60,
+      "duration_minutes": null
+    },
+    "stamped": 2,
+    "cues": [
+      "Hold both dumbbell ends at chest level; feet stay on the floor.",
+      "Raise the dumbbell to shoulder height; hold it between your legs with both hands.",
+      "Switch hands on the ground; move the dumbbell from the floor to overhead lockout.",
+      "Row the dumbbell to waist level; keep your hands and toes on the floor."
+    ],
+    "canonical_ids": [
+      null,
+      null,
+      "snatch",
+      "renegade-row"
+    ],
+    "deltas": {
+      "$note": "Both non-null values here were BUGS on 15 Sept and are fixed: the snatch read 'with dumbbell' (the standard version's own implement was never named) and the renegade row read 'load Dumbbell resting on floor pulled to waist level; with dumbbell' (the exercise's own definition reported as a difference from itself). Today deltaFrom answers 'dumbbell, not barbell' and null. This row is what stops either from coming back.",
+      "values": [
+        null,
+        null,
+        "dumbbell, not barbell",
+        null
+      ]
+    },
+    "must_not": [
+      {
+        "never": "kettlebell",
+        "why": "one dumbbell is the only implement in the clip"
+      },
+      {
+        "never": "bench",
+        "why": "every movement is on the floor; no bench is in frame"
+      },
+      {
+        "never": "amrap",
+        "why": "a fixed 3-round circuit, not an AMRAP"
+      },
+      {
+        "never": "load dumbbell resting",
+        "why": "the exact 15 Sept delta bug, pinned as a string so it cannot return quietly"
+      },
+      {
+        "field": "weight",
+        "why": "no load is stated and none is legible on the dumbbell"
+      },
+      {
+        "field": "reps",
+        "why": "the circuit is timed at 45 s a movement; a rep count here would be invented"
+      }
+    ]
+  }
+}
