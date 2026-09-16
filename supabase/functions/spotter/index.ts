@@ -68,7 +68,7 @@ import {
   assemblePack, type Frames, type Observation, OBSERVE_PROMPT, type Pack, PACK_V,
   packBlock, type PackExercise, type PackEye, packReader, type PackReader, parseFrames,
   parseStampedTranscript,
-  packInTimeOrder, parseVtt, readObservation, readerEye, repairPack, secondsToMmss,
+  packInTimeOrder, parseVtt, readObservation, repairPack, secondsToMmss,
   sharesHeadNoun, bestSeenFact,
   type Sheet, SHEET_MAX, SHEET_MAX_BYTES,
   sheetPathFor, sheetsPrompt, type TranscriptSeg, type TranscriptSource, validatePack,
