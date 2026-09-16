@@ -5899,23 +5899,17 @@ export const APP = String.raw`
   // A movement carries a dose and no set count: five reps, not three sets of five.
   function cxDosed(e) { return !!e && !e.sets && (!!e.reps || e.duration_seconds > 0); }
 
-  // The card's duration only belongs to this block when there is nothing else on
-  // the card to spend it on: a warm-up plus an AMRAP shares those fifteen minutes.
-  function cxSole(w) {
-    var n = 0;
-    (w.blocks || []).forEach(function (b) { if ((b.exercises || []).length) n++; });
-    return n === 1;
-  }
-
   // The cap, in seconds. The extraction schema has no field for one, so this reads
   // the three places a cap can actually end up, most explicit first: a block that
-  // says so, a card whose whole duration IS this block, and — only on an AMRAP,
-  // where a between-round rest is a contradiction in terms — a rest long enough
-  // that it can only have been the clock. Under a minute or over an hour it is not
-  // a cap, it is a number that landed in the wrong field.
+  // says so; a card whose whole duration IS this block, which only holds when there
+  // is nothing else on the card to spend those fifteen minutes on; and — only on an
+  // AMRAP, where a between-round rest is a contradiction in terms — a rest long
+  // enough that it can only have been the clock. Under a minute or over an hour it
+  // is not a cap, it is a number that landed in the wrong field.
   function cxCap(b, w) {
-    var s = b.duration_seconds || 0;
-    if (!s && w.duration_minutes > 0 && cxSole(w)) s = w.duration_minutes * 60;
+    var s = b.duration_seconds || 0, sole = 0;
+    (w.blocks || []).forEach(function (x) { if ((x.exercises || []).length) sole++; });
+    if (!s && sole === 1 && w.duration_minutes > 0) s = w.duration_minutes * 60;
     if (!s && b.type === "amrap" && b.rest_seconds >= 180) s = b.rest_seconds;
     s = Math.round(s || 0);
     return s >= 60 && s <= 3600 ? s : 0;
@@ -5958,12 +5952,10 @@ export const APP = String.raw`
 
   // A complex's dot is lit by any of its movements, since one round logs them all.
   function stopDone(i) {
-    var s = wo.screens[i], j;
-    if (!s || !s.cx) return !!(wo.entries[i] && wo.entries[i].sets.length);
-    for (j = 0; j < wo.entries.length; j++) {
-      if (wo.entries[j].block === s.bi && wo.entries[j].sets.length) return true;
-    }
-    return false;
+    var s = wo.screens[i];
+    return wo.entries.some(function (e, j) {
+      return e.sets.length && (s && s.cx ? e.block === s.bi : j === i);
+    });
   }
 
   // Kept on the session and not on the card: a reload restores it, and the same
@@ -6005,11 +5997,9 @@ export const APP = String.raw`
   function cxTick() {
     var bi = cxRunning();
     if (bi === null) { cxOff(); return; }
-    var a = wo.amrap[bi], left = Math.max(0, a.until - Date.now());
-    cxDial(left, a.cap);
+    var a = wo.amrap[bi], left = cxDial(a), s = Math.ceil(left / 1000);
     // 3, 2 and 1 once each, the way the rest timer counts itself out: a throttled
     // tab lands two ticks in one second, or none.
-    var s = Math.ceil(left / 1000);
     if (s <= 3 && s < a.cued) { a.cued = s; beep(880, .05, 0); }
     if (left > 0) return;
     a.until = 0;
@@ -6023,27 +6013,41 @@ export const APP = String.raw`
     toast("Time — save the session when you are ready.");
   }
 
-  // The dial can be gone mid-tick, the lifter having swiped to another block. The
-  // deadline is what stands; the screen catches up when it comes back.
-  function cxDial(left, cap) {
-    var ring = $("cxring"), num = $("cxnum"), box = $("cxtimer");
-    if (!ring || !num) return;
-    var s = Math.max(0, Math.ceil(left / 1000));
-    ring.style.setProperty("--rest", String(cap ? Math.max(0, left) / (cap * 1000) : 1));
-    // Always m:ss, unlike the rest ring: a cap that drops from 1:00 to 59 reads as
-    // a different clock at exactly the moment nobody can spare a second look.
-    num.textContent = Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
-    // The last minute is the one people sprint. It goes ember, not louder.
-    if (box) box.classList.toggle("last", s > 0 && s <= 60);
+  // Whatever the clock is now — running, paused, never started or spent — and the
+  // milliseconds of it, for the caller. The dial can be gone mid-tick, the lifter
+  // having swiped to another block; the deadline is what stands, and the screen
+  // catches up when it comes back.
+  function cxDial(a) {
+    var ring = $("cxring"), left = cxLeft(a), s = Math.ceil(left / 1000);
+    if (ring) {
+      ring.style.setProperty("--rest", String(a.cap ? left / (a.cap * 1000) : 1));
+      // Always m:ss, unlike the rest ring: a cap that drops from 1:00 to 59 reads
+      // as a different clock at the one moment nobody can spare a second look.
+      $("cxnum").textContent = Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+      // The last minute is the one people sprint. It goes ember, not louder.
+      $("cxtimer").classList.toggle("last", s > 0 && s <= 60);
+    }
+    return left;
   }
 
-  // Counting a round before the clock was started means the clock was started.
+  // Starting and resuming are the same move: a fresh deadline out of whatever is
+  // left. Counting a round before the clock was started starts it.
   function cxGo(a) {
-    if (a.until || a.held || a.over || !a.cap) return;
-    a.until = Date.now() + a.cap * 1000;
-    a.cued = 4;
+    if (a.until || a.over || !a.cap) return;
+    a.until = Date.now() + (a.held || a.cap * 1000);
+    if (!a.held) a.cued = 4;
+    a.held = 0;
     tellSounds();
     cxArm();
+  }
+
+  // Every count lands the same way: the log rebuilt, the draft written, the screen
+  // redrawn without an entrance, because a changed number is not an arrival.
+  function cxAfter(bi, buzz) {
+    haptic(buzz);
+    cxSync(bi);
+    saveDraft();
+    renderWorkout(1);
   }
 
   function cxTap(bi, cx) {
@@ -6051,7 +6055,6 @@ export const APP = String.raw`
     var a = cxOf(bi, cx);
     if (a.over || !cx.cap) return;
     if (a.until) { a.held = Math.max(1, a.until - Date.now()); a.until = 0; }
-    else if (a.held) { a.until = Date.now() + a.held; a.held = 0; cxArm(); }
     else cxGo(a);
     saveDraft();
     renderWorkout(1);
@@ -6065,26 +6068,20 @@ export const APP = String.raw`
     cxGo(a);
     a.rounds++;
     a.marks = [];
-    haptic("success");
-    cxSync(bi);
-    saveDraft();
-    renderWorkout(1);
+    cxAfter(bi, "success");
   }
 
   // Undo takes back the smallest thing that was counted: the partial round if one
-  // is open, the last whole round otherwise. Nothing has been written to the
-  // server yet, so this is a plain reversal rather than the delayed commit a
-  // deletion needs — and it stays on screen rather than expiring with a toast,
-  // because a double-tap gets noticed a minute later as often as a second later.
+  // is open, the last whole round otherwise. Nothing has been written to the server
+  // yet, so this is a plain reversal rather than the delayed commit a deletion
+  // needs — and it stays on screen rather than expiring with a toast, because a
+  // double-tap gets noticed a minute later as often as a second later.
   function cxUndo(bi, cx) {
     var a = cxOf(bi, cx);
     if (cxMarks(a, cx)) a.marks = [];
     else if (a.rounds) a.rounds--;
     else return;
-    haptic("tap");
-    cxSync(bi);
-    saveDraft();
-    renderWorkout(1);
+    cxAfter(bi, "tap");
   }
 
   function cxMark(bi, cx, j) {
@@ -6095,11 +6092,7 @@ export const APP = String.raw`
     // Every movement marked IS a round, and asking for a sixth tap to say so is
     // the kind of small insult an app gets to make once. Hevy's supersets roll over
     // the same way when the last exercise of the group is ticked.
-    if (cxMarks(a, cx) === cx.n) { cxRound(bi, cx); return; }
-    haptic("tap");
-    cxSync(bi);
-    saveDraft();
-    renderWorkout(1);
+    if (cxMarks(a, cx) === cx.n) cxRound(bi, cx); else cxAfter(bi, "tap");
   }
 
   function cxMarks(a, cx) {
@@ -6115,10 +6108,9 @@ export const APP = String.raw`
   }
 
   function cxEntry(bi, j) {
-    for (var i = 0; i < wo.entries.length; i++) {
-      if (wo.entries[i].block === bi && wo.entries[i].exercise === j) return wo.entries[i];
-    }
-    return null;
+    return wo.entries.filter(function (e) {
+      return e.block === bi && e.exercise === j;
+    })[0] || null;
   }
 
   // The card's own dose, and the load this movement was last done with — the same
@@ -6127,9 +6119,9 @@ export const APP = String.raw`
   // today has not earned a record.
   function cxSet(ex, e) {
     if (isTimed(ex)) return { seconds: ex.duration_seconds, done: true };
-    var h = hist[exKey(e)], w = h ? toUnit(h.weight, h.unit) : 0;
-    var m = String(ex.reps || "").match(/\d+/);
-    return { reps: m ? parseInt(m[0], 10) : null, weight: w || null, unit: state.unit, done: true };
+    var h = hist[exKey(e)], m = String(ex.reps || "").match(/\d+/);
+    return { reps: m ? parseInt(m[0], 10) : null, unit: state.unit, done: true,
+      weight: (h ? toUnit(h.weight, h.unit) : 0) || null };
   }
 
   // Every completed round is one set of every movement; a partial round is one set
@@ -6149,12 +6141,12 @@ export const APP = String.raw`
     });
   }
 
-  function cxTail(r, x) {
-    return (r === 1 ? "round" : "rounds") +
+  // bare leaves the round count off, for the one place it is drawn at four times
+  // the size of the words after it.
+  function cxScore(r, x, bare) {
+    return (bare ? "" : r + " ") + (r === 1 ? "round" : "rounds") +
       (x ? " + " + x + (x === 1 ? " movement" : " movements") : "");
   }
-
-  function cxScore(r, x) { return r + " " + cxTail(r, x); }
 
   // The delta is a sentence about a version nobody filmed, and a row has space for
   // its first clause: "hands on the kettlebell handle instead of the floor, which
@@ -6193,25 +6185,21 @@ export const APP = String.raw`
     // the clock. "3 rounds + 2 movements" is the whole of what a lifter reports.
     var line = el("div", "cxscore");
     line.appendChild(el("b", null, String(a.rounds)));
-    line.appendChild(el("span", null, cxTail(a.rounds, extra)));
+    line.appendChild(el("span", null, cxScore(a.rounds, extra, 1)));
     main.appendChild(line);
 
     var list = el("div", "cxlist");
     (s.block.exercises || []).forEach(function (ex, j) {
-      var did = !!a.marks[j], e = cxEntry(s.bi, j);
-      var row = el("button", "cxmove" + (did ? " did" : "") + (j === cur && !did ? " on" : ""));
+      var did = !!a.marks[j], e = cxEntry(s.bi, j), set = e ? cxSet(ex, e) : null;
+      var row = el("button", "pickrow cxmove" + (did ? " on" : j === cur ? " cur" : ""));
+      var tx = el("div", "pt"), bits = [doseText(ex) || "—"], d = cxDelta(ex);
       row.setAttribute("aria-pressed", did ? "true" : "false");
-      row.appendChild(el("span", "cxn", String(j + 1)));
-      var tx = el("div", "cxtext"), bits = [doseText(ex) || "—"], set = e ? cxSet(ex, e) : null;
       if (set && set.weight) bits.push(wtText(set.weight, set.unit) + " " + state.unit);
-      var d = cxDelta(ex);
       if (d) bits.push(d);
       tx.appendChild(el("b", null, ex.name));
       tx.appendChild(el("span", null, bits.join(" · ")));
       row.appendChild(tx);
-      var tick = ic("check");
-      tick.setAttribute("class", "ic cxtick");
-      row.appendChild(tick);
+      row.appendChild(icon(el("span", "ck"), "check"));
       row.onclick = function () { cxMark(s.bi, cx, j); };
       list.appendChild(row);
     });
@@ -6229,7 +6217,7 @@ export const APP = String.raw`
       main.appendChild(un);
     }
 
-    cxDial(cxLeft(a), cx.cap);
+    cxDial(a);
     return s.block.exercises[cur] || s.ex;
   }
 
@@ -6242,25 +6230,21 @@ export const APP = String.raw`
    * live counter or from a log written six weeks ago.
    */
   function cxScoreOf(w, entries) {
-    var out = null;
+    var out = null, rows = entries || [];
     ((w && w.blocks) || []).forEach(function (b, bi) {
-      if (out) return;
-      var cx = complexOf(b, w);
+      var cx = out ? null : complexOf(b, w), reps = 0, low, x = 0;
       if (!cx) return;
       var counts = (b.exercises || []).map(function (ex, j) {
-        var n = 0;
-        (entries || []).forEach(function (e) {
-          if (e.block === bi && e.exercise === j) n = (e.sets || []).filter(Boolean).length;
-        });
-        return n;
+        var sets = (rows.filter(function (e) {
+          return e.block === bi && e.exercise === j;
+        })[0] || {}).sets || [];
+        sets = sets.filter(Boolean);
+        sets.forEach(function (st) { reps += st.reps || 0; });
+        return sets.length;
       });
       if (!counts.length || !Math.max.apply(null, counts)) return;
-      var low = Math.min.apply(null, counts), x = 0, reps = 0;
+      low = Math.min.apply(null, counts);
       counts.forEach(function (n) { if (n > low) x++; });
-      (entries || []).forEach(function (e) {
-        if (e.block !== bi) return;
-        (e.sets || []).forEach(function (st) { if (st && st.reps) reps += st.reps; });
-      });
       out = { rounds: low, extra: x, reps: reps, cap: cx.cap, text: cxScore(low, x) };
     });
     return out;

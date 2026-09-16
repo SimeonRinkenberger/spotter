@@ -4667,14 +4667,8 @@ body:not(.app) #toast.show {
   width: 132px;
   height: 132px;
 }
-.wtimer.cap .ring::after {
-  inset: 8px;
-}
 .wtimer.cap .ring span {
   font-size: 34px;
-}
-.wtimer.cap .wphase {
-  margin-top: 10px;
 }
 .wtimer.cap.last .ring span {
   color: var(--ember-ink);
@@ -4702,19 +4696,13 @@ body:not(.app) #toast.show {
 .cxlist {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
   margin-top: 16px;
-  text-align: left;
 }
 .cxmove {
-  display: flex;
-  align-items: center;
-  gap: 11px;
-  width: 100%;
-  min-height: 56px;
+  min-height: 54px;
   padding: 9px 12px;
   border: 1px solid var(--line);
-  border-radius: 15px;
   background: var(--card);
   transition:
     transform var(--t-1) var(--e-out),
@@ -4724,67 +4712,21 @@ body:not(.app) #toast.show {
 .cxmove:active {
   transform: scale(.985);
 }
-.cxmove.on {
+.cxmove.cur {
   border-color: var(--ember);
 }
-.cxmove.did {
+.cxmove.on {
   background: var(--ember-soft);
   border-color: var(--ember);
 }
-.cxn {
-  flex: 0 0 24px;
-  height: 24px;
-  border-radius: 999px;
-  background: var(--sand);
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-variant-numeric: tabular-nums;
-  transition: background-color var(--t-2) var(--e-soft), color var(--t-2) var(--e-soft);
-}
-.cxmove.on .cxn {
-  background: var(--ember);
-  color: var(--on-ember);
-}
-.cxtext {
-  flex: 1;
-  min-width: 0;
-}
-.cxtext b {
+.cxmove .pt span {
   display: block;
-  font-size: 14.5px;
-  font-weight: 650;
-  color: var(--ink);
-  line-height: 1.25;
-}
-.cxtext span {
-  display: block;
-  font-size: 12px;
-  color: var(--muted);
-  line-height: 1.4;
-  margin-top: 2px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.cxmove.on .cxtext span {
+.cxmove.cur .pt span {
   white-space: normal;
-}
-.cxtick {
-  flex: 0 0 18px;
-  width: 18px;
-  height: 18px;
-  color: var(--ember-ink);
-  opacity: 0;
-  transform: scale(.7);
-  transition: opacity var(--t-2) var(--e-out), transform var(--t-3) var(--e-spring);
-}
-.cxmove.did .cxtick {
-  opacity: 1;
-  transform: none;
 }
 .cxdone {
   min-height: 64px;
@@ -4796,13 +4738,6 @@ body:not(.app) #toast.show {
   margin-top: 8px;
   padding: 10px;
   font-size: 14px;
-}
-@media (prefers-reduced-motion: reduce) {
-  .cxmove,
-  .cxn,
-  .cxtick {
-    transition: none;
-  }
 }
 #workout.summary .wdots,
 #workout.summary .wbottom,
@@ -6024,6 +5959,9 @@ select:focus-visible {
   .wmain.wmin {
     animation-name: fadeonly;
     animation-duration: var(--t-2);
+  }
+  .cxmove {
+    transition: none;
   }
   .exmain,
   .exacts,
@@ -10930,15 +10868,11 @@ details.details-moving > :not(summary) {
   function cxDosed(e) {
     return !!e && !e.sets && (!!e.reps || e.duration_seconds > 0);
   }
-  function cxSole(w) {
-    var n = 0;
-    return (w.blocks || []).forEach(function(b) {
-      (b.exercises || []).length && n++;
-    }), n === 1;
-  }
   function cxCap(b, w) {
-    var s = b.duration_seconds || 0;
-    return !s && w.duration_minutes > 0 && cxSole(w) && (s = w.duration_minutes * 60), !s && b.type === "amrap" && b.rest_seconds >= 180 && (s = b.rest_seconds), s = Math.round(s || 0), s >= 60 && s <= 3600 ? s : 0;
+    var s = b.duration_seconds || 0, sole = 0;
+    return (w.blocks || []).forEach(function(x) {
+      (x.exercises || []).length && sole++;
+    }), !s && sole === 1 && w.duration_minutes > 0 && (s = w.duration_minutes * 60), !s && b.type === "amrap" && b.rest_seconds >= 180 && (s = b.rest_seconds), s = Math.round(s || 0), s >= 60 && s <= 3600 ? s : 0;
   }
   function complexOf(b, w) {
     if (!b || b.type === "emom" || (b.rounds || 0) > 1) return null;
@@ -10956,11 +10890,10 @@ details.details-moving > :not(summary) {
     return i;
   }
   function stopDone(i) {
-    var s = wo.screens[i], j;
-    if (!s || !s.cx) return !!(wo.entries[i] && wo.entries[i].sets.length);
-    for (j = 0; j < wo.entries.length; j++)
-      if (wo.entries[j].block === s.bi && wo.entries[j].sets.length) return !0;
-    return !1;
+    var s = wo.screens[i];
+    return wo.entries.some(function(e, j) {
+      return e.sets.length && (s && s.cx ? e.block === s.bi : j === i);
+    });
   }
   function cxOf(bi, cx) {
     var a = wo.amrap[bi];
@@ -10987,46 +10920,40 @@ details.details-moving > :not(summary) {
       cxOff();
       return;
     }
-    var a = wo.amrap[bi], left = Math.max(0, a.until - Date.now());
-    cxDial(left, a.cap);
-    var s = Math.ceil(left / 1e3);
+    var a = wo.amrap[bi], left = cxDial(a), s = Math.ceil(left / 1e3);
     s <= 3 && s < a.cued && (a.cued = s, beep(880, 0.05, 0)), !(left > 0) && (a.until = 0, a.over = 1, cxOff(), saveDraft(), beep(880, 0.16, 0), beep(1318.5, 0.34, 0.13), haptic("done"), renderWorkout(1), toast("Time \u2014 save the session when you are ready."));
   }
-  function cxDial(left, cap) {
-    var ring = $("cxring"), num2 = $("cxnum"), box = $("cxtimer");
-    if (!(!ring || !num2)) {
-      var s = Math.max(0, Math.ceil(left / 1e3));
-      ring.style.setProperty("--rest", String(cap ? Math.max(0, left) / (cap * 1e3) : 1)), num2.textContent = Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"), box && box.classList.toggle("last", s > 0 && s <= 60);
-    }
+  function cxDial(a) {
+    var ring = $("cxring"), left = cxLeft(a), s = Math.ceil(left / 1e3);
+    return ring && (ring.style.setProperty("--rest", String(a.cap ? left / (a.cap * 1e3) : 1)), $("cxnum").textContent = Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"), $("cxtimer").classList.toggle("last", s > 0 && s <= 60)), left;
   }
   function cxGo(a) {
-    a.until || a.held || a.over || !a.cap || (a.until = Date.now() + a.cap * 1e3, a.cued = 4, tellSounds(), cxArm());
+    a.until || a.over || !a.cap || (a.until = Date.now() + (a.held || a.cap * 1e3), a.held || (a.cued = 4), a.held = 0, tellSounds(), cxArm());
+  }
+  function cxAfter(bi, buzz) {
+    haptic(buzz), cxSync(bi), saveDraft(), renderWorkout(1);
   }
   function cxTap(bi, cx) {
     unlockAudio();
     var a = cxOf(bi, cx);
-    a.over || !cx.cap || (a.until ? (a.held = Math.max(1, a.until - Date.now()), a.until = 0) : a.held ? (a.until = Date.now() + a.held, a.held = 0, cxArm()) : cxGo(a), saveDraft(), renderWorkout(1));
+    a.over || !cx.cap || (a.until ? (a.held = Math.max(1, a.until - Date.now()), a.until = 0) : cxGo(a), saveDraft(), renderWorkout(1));
   }
   function cxRound(bi, cx) {
     unlockAudio();
     var a = cxOf(bi, cx);
-    cxGo(a), a.rounds++, a.marks = [], haptic("success"), cxSync(bi), saveDraft(), renderWorkout(1);
+    cxGo(a), a.rounds++, a.marks = [], cxAfter(bi, "success");
   }
   function cxUndo(bi, cx) {
     var a = cxOf(bi, cx);
     if (cxMarks(a, cx)) a.marks = [];
     else if (a.rounds) a.rounds--;
     else return;
-    haptic("tap"), cxSync(bi), saveDraft(), renderWorkout(1);
+    cxAfter(bi, "tap");
   }
   function cxMark(bi, cx, j) {
     unlockAudio();
     var a = cxOf(bi, cx);
-    if (cxGo(a), a.marks[j] = a.marks[j] ? 0 : 1, cxMarks(a, cx) === cx.n) {
-      cxRound(bi, cx);
-      return;
-    }
-    haptic("tap"), cxSync(bi), saveDraft(), renderWorkout(1);
+    cxGo(a), a.marks[j] = a.marks[j] ? 0 : 1, cxMarks(a, cx) === cx.n ? cxRound(bi, cx) : cxAfter(bi, "tap");
   }
   function cxMarks(a, cx) {
     var n = 0, k;
@@ -11038,14 +10965,19 @@ details.details-moving > :not(summary) {
     return 0;
   }
   function cxEntry(bi, j) {
-    for (var i = 0; i < wo.entries.length; i++)
-      if (wo.entries[i].block === bi && wo.entries[i].exercise === j) return wo.entries[i];
-    return null;
+    return wo.entries.filter(function(e) {
+      return e.block === bi && e.exercise === j;
+    })[0] || null;
   }
   function cxSet(ex, e) {
     if (isTimed(ex)) return { seconds: ex.duration_seconds, done: !0 };
-    var h = hist[exKey(e)], w = h ? toUnit(h.weight, h.unit) : 0, m = String(ex.reps || "").match(/\d+/);
-    return { reps: m ? parseInt(m[0], 10) : null, weight: w || null, unit: state.unit, done: !0 };
+    var h = hist[exKey(e)], m = String(ex.reps || "").match(/\d+/);
+    return {
+      reps: m ? parseInt(m[0], 10) : null,
+      unit: state.unit,
+      done: !0,
+      weight: (h ? toUnit(h.weight, h.unit) : 0) || null
+    };
   }
   function cxSync(bi) {
     var blk = wo.workout.blocks[bi], a = wo.amrap[bi];
@@ -11057,11 +10989,8 @@ details.details-moving > :not(summary) {
       }
     });
   }
-  function cxTail(r, x) {
-    return (r === 1 ? "round" : "rounds") + (x ? " + " + x + (x === 1 ? " movement" : " movements") : "");
-  }
-  function cxScore(r, x) {
-    return r + " " + cxTail(r, x);
+  function cxScore(r, x, bare) {
+    return (bare ? "" : r + " ") + (r === 1 ? "round" : "rounds") + (x ? " + " + x + (x === 1 ? " movement" : " movements") : "");
   }
   function cxDelta(ex) {
     var d = ex && ex.delta ? String(ex.delta).trim() : "";
@@ -11076,17 +11005,11 @@ details.details-moving > :not(summary) {
       }, ring.appendChild(num2), t.appendChild(ring), word.textContent = a.over ? "Time" : a.until ? "Time remaining" : a.held ? "Paused" : "Tap to start", t.appendChild(word), main.appendChild(t);
     }
     var line = el("div", "cxscore");
-    line.appendChild(el("b", null, String(a.rounds))), line.appendChild(el("span", null, cxTail(a.rounds, extra))), main.appendChild(line);
+    line.appendChild(el("b", null, String(a.rounds))), line.appendChild(el("span", null, cxScore(a.rounds, extra, 1))), main.appendChild(line);
     var list = el("div", "cxlist");
     (s.block.exercises || []).forEach(function(ex, j) {
-      var did = !!a.marks[j], e = cxEntry(s.bi, j), row = el("button", "cxmove" + (did ? " did" : "") + (j === cur && !did ? " on" : ""));
-      row.setAttribute("aria-pressed", did ? "true" : "false"), row.appendChild(el("span", "cxn", String(j + 1)));
-      var tx = el("div", "cxtext"), bits = [doseText(ex) || "\u2014"], set = e ? cxSet(ex, e) : null;
-      set && set.weight && bits.push(wtText(set.weight, set.unit) + " " + state.unit);
-      var d = cxDelta(ex);
-      d && bits.push(d), tx.appendChild(el("b", null, ex.name)), tx.appendChild(el("span", null, bits.join(" \xB7 "))), row.appendChild(tx);
-      var tick = ic("check");
-      tick.setAttribute("class", "ic cxtick"), row.appendChild(tick), row.onclick = function() {
+      var did = !!a.marks[j], e = cxEntry(s.bi, j), set = e ? cxSet(ex, e) : null, row = el("button", "pickrow cxmove" + (did ? " on" : j === cur ? " cur" : "")), tx = el("div", "pt"), bits = [doseText(ex) || "\u2014"], d = cxDelta(ex);
+      row.setAttribute("aria-pressed", did ? "true" : "false"), set && set.weight && bits.push(wtText(set.weight, set.unit) + " " + state.unit), d && bits.push(d), tx.appendChild(el("b", null, ex.name)), tx.appendChild(el("span", null, bits.join(" \xB7 "))), row.appendChild(tx), row.appendChild(icon(el("span", "ck"), "check")), row.onclick = function() {
         cxMark(s.bi, cx, j);
       }, list.appendChild(row);
     }), main.appendChild(list);
@@ -11099,31 +11022,24 @@ details.details-moving > :not(summary) {
         cxUndo(s.bi, cx);
       }, main.appendChild(un);
     }
-    return cxDial(cxLeft(a), cx.cap), s.block.exercises[cur] || s.ex;
+    return cxDial(a), s.block.exercises[cur] || s.ex;
   }
   function cxScoreOf(w, entries) {
-    var out = null;
+    var out = null, rows = entries || [];
     return (w && w.blocks || []).forEach(function(b, bi) {
-      if (!out) {
-        var cx = complexOf(b, w);
-        if (cx) {
-          var counts = (b.exercises || []).map(function(ex, j) {
-            var n = 0;
-            return (entries || []).forEach(function(e) {
-              e.block === bi && e.exercise === j && (n = (e.sets || []).filter(Boolean).length);
-            }), n;
-          });
-          if (!(!counts.length || !Math.max.apply(null, counts))) {
-            var low = Math.min.apply(null, counts), x = 0, reps = 0;
-            counts.forEach(function(n) {
-              n > low && x++;
-            }), (entries || []).forEach(function(e) {
-              e.block === bi && (e.sets || []).forEach(function(st) {
-                st && st.reps && (reps += st.reps);
-              });
-            }), out = { rounds: low, extra: x, reps: reps, cap: cx.cap, text: cxScore(low, x) };
-          }
-        }
+      var cx = out ? null : complexOf(b, w), reps = 0, low, x = 0;
+      if (cx) {
+        var counts = (b.exercises || []).map(function(ex, j) {
+          var sets = (rows.filter(function(e) {
+            return e.block === bi && e.exercise === j;
+          })[0] || {}).sets || [];
+          return sets = sets.filter(Boolean), sets.forEach(function(st) {
+            reps += st.reps || 0;
+          }), sets.length;
+        });
+        !counts.length || !Math.max.apply(null, counts) || (low = Math.min.apply(null, counts), counts.forEach(function(n) {
+          n > low && x++;
+        }), out = { rounds: low, extra: x, reps: reps, cap: cx.cap, text: cxScore(low, x) });
       }
     }), out;
   }

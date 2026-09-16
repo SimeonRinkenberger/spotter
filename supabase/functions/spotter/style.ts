@@ -1719,12 +1719,12 @@ export const STYLE = String.raw`<style>
      it at once: the cap, the score, every movement in order, and a button wide
      enough to hit with a kettlebell still in the other hand. The dial is the rest
      ring again at a smaller 132 — the list below it is the substance here, and a
-     164 clock pushed the round button off a 812pt screen. */
+     164 clock pushed the round button off an 812pt screen. The rows are the picker
+     list, which already draws a name over a detail with a check that fades in on
+     .on, so a marked movement here is a checked row there and costs nothing. */
   .wtimer.cap { margin: 4px 0 0; }
   .wtimer.cap .ring { width: 132px; height: 132px; }
-  .wtimer.cap .ring::after { inset: 8px; }
   .wtimer.cap .ring span { font-size: 34px; }
-  .wtimer.cap .wphase { margin-top: 10px; }
   /* The last minute is the one people sprint. Ember, not louder. */
   .wtimer.cap.last .ring span { color: var(--ember-ink); }
   .cxscore { display: flex; align-items: baseline; justify-content: center; gap: 8px;
@@ -1732,37 +1732,22 @@ export const STYLE = String.raw`<style>
   .cxscore b { font-family: var(--display); font-size: 40px; font-weight: 800;
     letter-spacing: -.035em; color: var(--ember-ink); font-variant-numeric: tabular-nums; }
   .cxscore span { font-size: 14px; font-weight: 600; color: var(--ink-2); }
-  .cxlist { display: flex; flex-direction: column; gap: 6px; margin-top: 16px; text-align: left; }
-  .cxmove { display: flex; align-items: center; gap: 11px; width: 100%; min-height: 56px;
-    padding: 9px 12px; border: 1px solid var(--line); border-radius: 15px; background: var(--card);
-    transition: transform var(--t-1) var(--e-out), background-color var(--t-2) var(--e-soft),
-      border-color var(--t-2) var(--e-soft); }
+  .cxlist { display: flex; flex-direction: column; gap: 5px; margin-top: 16px; }
+  .cxmove { min-height: 54px; padding: 9px 12px; border: 1px solid var(--line);
+    background: var(--card); transition: transform var(--t-1) var(--e-out),
+      background-color var(--t-2) var(--e-soft), border-color var(--t-2) var(--e-soft); }
   .cxmove:active { transform: scale(.985); }
-  .cxmove.on { border-color: var(--ember); }
-  .cxmove.did { background: var(--ember-soft); border-color: var(--ember); }
-  .cxn { flex: 0 0 24px; height: 24px; border-radius: 999px; background: var(--sand);
-    color: var(--muted); font-size: 12px; font-weight: 700; display: flex; align-items: center;
-    justify-content: center; font-variant-numeric: tabular-nums;
-    transition: background-color var(--t-2) var(--e-soft), color var(--t-2) var(--e-soft); }
-  .cxmove.on .cxn { background: var(--ember); color: var(--on-ember); }
-  .cxtext { flex: 1; min-width: 0; }
-  .cxtext b { display: block; font-size: 14.5px; font-weight: 650; color: var(--ink); line-height: 1.25; }
+  .cxmove.cur { border-color: var(--ember); }
+  .cxmove.on { background: var(--ember-soft); border-color: var(--ember); }
   /* One line per movement, so five of them still leave room for the button. The
      one being done gets the whole of its line — the delta is the detail you want
      for the movement you are on, and clutter on the four you are not. */
-  .cxtext span { display: block; font-size: 12px; color: var(--muted); line-height: 1.4;
-    margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .cxmove.on .cxtext span { white-space: normal; }
-  .cxtick { flex: 0 0 18px; width: 18px; height: 18px; color: var(--ember-ink); opacity: 0;
-    transform: scale(.7);
-    transition: opacity var(--t-2) var(--e-out), transform var(--t-3) var(--e-spring); }
-  .cxmove.did .cxtick { opacity: 1; transform: none; }
-  /* 64px because it is tapped mid-effort, by someone not looking at it. */
+  .cxmove .pt span { display: block; white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis; }
+  .cxmove.cur .pt span { white-space: normal; }
+  /* 64px because it is tapped mid-effort, by someone who is not looking at it. */
   .cxdone { min-height: 64px; margin-top: 16px; font-size: 17px; }
   .cxundo { min-height: 44px; margin-top: 8px; padding: 10px; font-size: 14px; }
-  @media (prefers-reduced-motion: reduce) {
-    .cxmove, .cxn, .cxtick { transition: none; }
-  }
 
   /* ---------- the session summary ----------
      Finishing used to be a toast, gone before the phone was back in the pocket.
@@ -2247,6 +2232,8 @@ export const STYLE = String.raw`<style>
        The drag moves nothing at all: app.ts asks lessMotion() first. */
     .wmain.wmease { transition: none; }
     .wmain.wmin { animation-name: fadeonly; animation-duration: var(--t-2); }
+    /* A marked movement still fills and still ticks; it just does it at once. */
+    .cxmove { transition: none; }
     /* The travel stays: it is the gesture itself. The spring goes. */
     .exmain, .exacts, .exact {
       transition-duration: var(--t-1); transition-timing-function: var(--e-soft); }
