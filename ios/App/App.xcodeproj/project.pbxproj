@@ -23,6 +23,14 @@
 		1F03AE43625643738264F941 /* SpotterViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33935BB01C3C4BF698FC24CE /* SpotterViewController.swift */; };
 		D533B178E91C4F7DAADBE6FE /* ShareExtension.appex in Copy Files */ = {isa = PBXBuildFile; fileRef = E24E7C16EE9D471BB63EFB5E /* ShareExtension.appex */; };
 		AFD32F87277B4C27B86FC250 /* ShareAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E296ACDC66A4975B9382321 /* ShareAccess.swift */; };
+		A9CE70000000000000000200 /* SheetSpec.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9CE70000000000000000100 /* SheetSpec.swift */; };
+		A9CE70000000000000000300 /* SheetSpec.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9CE70000000000000000100 /* SheetSpec.swift */; };
+		A9CE70000000000000000201 /* ContactSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9CE70000000000000000101 /* ContactSheet.swift */; };
+		A9CE70000000000000000301 /* ContactSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9CE70000000000000000101 /* ContactSheet.swift */; };
+		A9CE70000000000000000202 /* TikTokMedia.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9CE70000000000000000102 /* TikTokMedia.swift */; };
+		A9CE70000000000000000302 /* TikTokMedia.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9CE70000000000000000102 /* TikTokMedia.swift */; };
+		A9CE70000000000000000203 /* SheetPipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9CE70000000000000000103 /* SheetPipeline.swift */; };
+		A9CE70000000000000000303 /* SheetPipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9CE70000000000000000103 /* SheetPipeline.swift */; };
 		C37C7E6F93E24A97BB2FC068 /* ShareCredential.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AB54298CCDB4359AF92B825 /* ShareCredential.swift */; };
 		A91D72E3076443E9A17A80D0 /* SharedLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 888CA8D430694205B0923980 /* SharedLink.swift */; };
 		6BDD45E8985D41DDA9F16612 /* ShareCredential.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AB54298CCDB4359AF92B825 /* ShareCredential.swift */; };
@@ -48,6 +56,10 @@
 		33935BB01C3C4BF698FC24CE /* SpotterViewController.swift */ = {isa = PBXFileReference; name = "SpotterViewController.swift"; path = "SpotterViewController.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; explicitFileType = undefined; includeInIndex = 0; };
 		E24E7C16EE9D471BB63EFB5E /* ShareExtension.appex */ = {isa = PBXFileReference; name = "ShareExtension.appex"; path = "ShareExtension.appex"; sourceTree = BUILT_PRODUCTS_DIR; fileEncoding = undefined; lastKnownFileType = undefined; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; };
 		5E296ACDC66A4975B9382321 /* ShareAccess.swift */ = {isa = PBXFileReference; name = "ShareAccess.swift"; path = "App/ShareAccess.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; explicitFileType = undefined; includeInIndex = 0; };
+		A9CE70000000000000000100 /* SheetSpec.swift */ = {isa = PBXFileReference; name = "SheetSpec.swift"; path = "Shared/SheetSpec.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; explicitFileType = undefined; includeInIndex = 0; };
+		A9CE70000000000000000101 /* ContactSheet.swift */ = {isa = PBXFileReference; name = "ContactSheet.swift"; path = "Shared/ContactSheet.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; explicitFileType = undefined; includeInIndex = 0; };
+		A9CE70000000000000000102 /* TikTokMedia.swift */ = {isa = PBXFileReference; name = "TikTokMedia.swift"; path = "Shared/TikTokMedia.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; explicitFileType = undefined; includeInIndex = 0; };
+		A9CE70000000000000000103 /* SheetPipeline.swift */ = {isa = PBXFileReference; name = "SheetPipeline.swift"; path = "Shared/SheetPipeline.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; explicitFileType = undefined; includeInIndex = 0; };
 		3AB54298CCDB4359AF92B825 /* ShareCredential.swift */ = {isa = PBXFileReference; name = "ShareCredential.swift"; path = "Shared/ShareCredential.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; explicitFileType = undefined; includeInIndex = 0; };
 		888CA8D430694205B0923980 /* SharedLink.swift */ = {isa = PBXFileReference; name = "SharedLink.swift"; path = "Shared/SharedLink.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; explicitFileType = undefined; includeInIndex = 0; };
 		C4075202865E412782C634D9 /* ShareViewController.swift */ = {isa = PBXFileReference; name = "ShareViewController.swift"; path = "ShareExtension/ShareViewController.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; explicitFileType = undefined; includeInIndex = 0; };
@@ -125,6 +137,10 @@
 				A90208000000000000000002 /* GoogleAuth.swift */,
 				A90208000000000000000004 /* AppleAuth.swift */,
 				3AB54298CCDB4359AF92B825 /* ShareCredential.swift */,
+				A9CE70000000000000000100 /* SheetSpec.swift */,
+				A9CE70000000000000000101 /* ContactSheet.swift */,
+				A9CE70000000000000000102 /* TikTokMedia.swift */,
+				A9CE70000000000000000103 /* SheetPipeline.swift */,
 				888CA8D430694205B0923980 /* SharedLink.swift */,
 				C4075202865E412782C634D9 /* ShareViewController.swift */,
 			);
@@ -261,6 +277,10 @@
 				A90208000000000000000001 /* GoogleAuth.swift in Sources */,
 				A90208000000000000000003 /* AppleAuth.swift in Sources */,
 				6BDD45E8985D41DDA9F16612 /* ShareCredential.swift in Sources */,
+				A9CE70000000000000000200 /* SheetSpec.swift in Sources */,
+				A9CE70000000000000000201 /* ContactSheet.swift in Sources */,
+				A9CE70000000000000000202 /* TikTokMedia.swift in Sources */,
+				A9CE70000000000000000203 /* SheetPipeline.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -269,6 +289,10 @@
 			buildActionMask = 2147483647;
 			files = (
 				C37C7E6F93E24A97BB2FC068 /* ShareCredential.swift in Sources */,
+				A9CE70000000000000000300 /* SheetSpec.swift in Sources */,
+				A9CE70000000000000000301 /* ContactSheet.swift in Sources */,
+				A9CE70000000000000000302 /* TikTokMedia.swift in Sources */,
+				A9CE70000000000000000303 /* SheetPipeline.swift in Sources */,
 				A91D72E3076443E9A17A80D0 /* SharedLink.swift in Sources */,
 				C5C7A98AF2AD468F9429D2AC /* ShareViewController.swift in Sources */,
 			);

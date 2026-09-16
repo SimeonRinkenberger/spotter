@@ -13764,6 +13764,19 @@ details.details-moving > :not(summary) {
       created_at: (/* @__PURE__ */ new Date()).toISOString()
     }), setView("library"), render(), watchPending();
   }
+  function deviceFrames(opts) {
+    return !native || !native.contactSheet ? Promise.resolve(null) : sb.auth.getSession().then(function(r) {
+      var s = r.data.session;
+      return s ? (opts.token = s.access_token, native.contactSheet(opts)) : null;
+    }).then(function(out) {
+      return out && out.ok ? out.frames : null;
+    }).catch(function() {
+      return null;
+    });
+  }
+  function cuttingFrames(url) {
+    return !!(native && native.contactSheet && /tiktok\.com\//i.test(url));
+  }
   function doAdd(fromShare) {
     var url = $("addurl").value.trim();
     if (!url) {
@@ -13771,11 +13784,14 @@ details.details-moving > :not(summary) {
       return;
     }
     var btn = $("addgo");
-    btn.disabled = !0, btn.textContent = "Saving\u2026";
+    btn.disabled = !0, btn.textContent = cuttingFrames(url) ? "Reading\u2026" : "Saving\u2026";
     function recover() {
       fromShare && (resetUpload(), openSheet("addsheet"));
     }
-    api("ingest", { method: "POST", body: JSON.stringify({ url: url }) }).then(function(r) {
+    deviceFrames({ url: url }).then(function(frames) {
+      var body = { url: url };
+      return frames && (body.frames = frames), btn.textContent = "Saving\u2026", api("ingest", { method: "POST", body: JSON.stringify(body) });
+    }).then(function(r) {
       if (btn.disabled = !1, btn.textContent = "Save workout", r.status === "processing") {
         $("addurl").value = "", closeSheet("addsheet"), placePending(r, url, null), toast(withShelf(fromShare ? "Saved from the share sheet \u2014 reading it\u2026" : "Saved \u2014 reading the video\u2026"), 3400);
         return;
@@ -13930,10 +13946,11 @@ details.details-moving > :not(summary) {
         }
         return putObject(file, path, UPLOAD_TYPES[ext]);
       }).then(function() {
-        return upProgress(1, watched ? "Uploaded \u2014 Spotter is watching it\u2026" : "Uploaded \u2014 Spotter is listening\u2026"), api("ingest", {
-          method: "POST",
-          body: JSON.stringify({ upload_path: path, filename: name.slice(0, 160) })
-        });
+        return !watched || !native || !native.contactSheet ? null : (upProgress(1, "Uploaded \u2014 reading the video\u2026"), deviceFrames({ file: file, shortcode: "up-" + path.split("/")[1].split(".")[0] }));
+      }).then(function(frames) {
+        upProgress(1, watched ? "Uploaded \u2014 Spotter is watching it\u2026" : "Uploaded \u2014 Spotter is listening\u2026");
+        var body = { upload_path: path, filename: name.slice(0, 160) };
+        return frames && (body.frames = frames), api("ingest", { method: "POST", body: JSON.stringify(body) });
       }).then(function(r) {
         if (r.status === "processing") {
           closeSheet("addsheet"), resetUpload(), placePending(r, "", "upload", watched ? "watching" : "listening"), toast(withShelf(watched ? "Uploaded \u2014 watching the video\u2026" : "Uploaded \u2014 listening to it\u2026"), 3400);

@@ -19,14 +19,63 @@ window.supabase = supabase;
 const ignore = () => {};
 const android = Capacitor.getPlatform() === "android";
 const AndroidHost = registerPlugin("SpotterAndroid");
+const ShareAccessHost = registerPlugin('ShareAccess');
 let draftWrites = Promise.resolve();
-const configureSharing = shareAccess(android ? { configure: async () => {} } : registerPlugin('ShareAccess'), () => {
+const configureSharing = shareAccess(android ? { configure: async () => {} } : ShareAccessHost, () => {
   window.dispatchEvent(new Event('spotter:share-unavailable'));
 });
+
+// ---------- frames from the phone ----------
+//
+// The native shells cut stills out of the video and send them with the save, so
+// the reader sees the workout instead of only hearing it. The JPEGs never cross
+// this bridge: the plugin uploads them itself and hands back the `frames` block
+// to put in the ingest body, which is a few hundred bytes however heavy the
+// video was.
+//
+// For a link that is all it takes. For a video picked out of the photo library
+// there is no path to give the plugin — a File in a WKWebView is a handle, not a
+// file — so the bytes are streamed to a cache file four megabytes at a time.
+// Chunked because base64 inflates by a third and a 25 MB video read whole would
+// mean a 33 MB string in the page's heap; the native side deletes the file when
+// it is done with it, and so does the `finally` below if it never got that far.
+const frameHost = android ? AndroidHost : ShareAccessHost;
+const SHEET_CHUNK = 4 * 1024 * 1024;
+
+const base64 = blob => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(reader.result.split(',')[1]);
+  reader.onerror = () => reject(reader.error || new Error('read failed'));
+  reader.readAsDataURL(blob);
+});
+
+async function spillToCache(file) {
+  const path = 'spotter-frames-' + crypto.randomUUID() + '.mp4';
+  for (let at = 0; at < file.size; at += SHEET_CHUNK) {
+    const data = await base64(file.slice(at, at + SHEET_CHUNK));
+    await (at === 0
+      ? Filesystem.writeFile({ path, data, directory: Directory.Cache })
+      : Filesystem.appendFile({ path, data, directory: Directory.Cache }));
+  }
+  const { uri } = await Filesystem.getUri({ path, directory: Directory.Cache });
+  return { path, native: decodeURIComponent(uri.replace(/^file:\/\//, '')) };
+}
+
+async function contactSheet({ file, ...options }) {
+  if (!file) return frameHost.contactSheet(options);
+  let spilled = null;
+  try {
+    spilled = await spillToCache(file);
+    return await frameHost.contactSheet({ ...options, path: spilled.native });
+  } finally {
+    if (spilled) Filesystem.deleteFile({ path: spilled.path, directory: Directory.Cache }).catch(ignore);
+  }
+}
 window.SpotterNative = {
   platform: Capacitor.getPlatform(),
   purchases: createPurchases(Capacitor.getPlatform()),
   configureSharing,
+  contactSheet,
   signInWithApple: sb => signInWithApple(sb, registerPlugin('AppleAuth')),
   signInWithGoogle: sb => signInWithGoogle(sb, registerPlugin('GoogleAuth')),
   authStorage: {

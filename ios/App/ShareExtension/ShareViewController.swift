@@ -114,12 +114,34 @@ final class ShareViewController: UIViewController {
             return
         }
         spinner.startAnimating()
+
+        // The frames, before the save that carries them.
+        //
+        // This is the one thing the phone can do that the server cannot: cut
+        // stills out of the video and send them with the link, so the reader
+        // looks at the workout instead of only listening to it. It is strictly
+        // best effort and strictly budgeted — eight seconds, after which the save
+        // goes out exactly as it did before and the server falls back to reading
+        // the video itself. The wording changes because the wait changed: a
+        // person watching a share sheet for four seconds deserves to know the
+        // phone is doing something for them, not stalling.
+        var payload: [String: Any] = ["url": link.absoluteString]
+        if TikTokMedia.isTikTok(link) {
+            statusLabel.text = "Reading the video…"
+            let deadline = Date().addingTimeInterval(SheetSpec.budgetMs / 1000)
+            if let sheet = await SheetPipeline.run(pageURL: link, html: nil,
+                                                   auth: .ingestKey(key), deadline: deadline) {
+                payload["frames"] = sheet.frames
+            }
+            guard !Task.isCancelled else { spinner.stopAnimating(); return }
+        }
+
         statusLabel.text = "Saving to your library…"
         var request = URLRequest(url: URL(string: "https://mtzevoxxpsktmrbbuxva.supabase.co/functions/v1/spotter/api/ingest")!)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(key, forHTTPHeaderField: "x-ingest-key")
-        request.httpBody = try? JSONSerialization.data(withJSONObject: ["url": link.absoluteString])
+        request.httpBody = try? JSONSerialization.data(withJSONObject: payload)
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 25
         config.timeoutIntervalForResource = 30

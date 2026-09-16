@@ -1,0 +1,72 @@
+{
+  "version": 2,
+  "_": "The contact-sheet contract. Swift (ios/App/Shared/SheetSpec.swift) and Java (android/app/src/main/java/app/spotter/dev/SheetSpec.java) each mirror these numbers in code because neither shell can parse a repo file at runtime; tools/ios/sheet-check.mjs and tools/android/sheet-check.mjs compile those mirrors and assert them against this file, so a change here that is not made in both places fails the harness.",
+  "__v2": "Revised 15 Sept after the first live read. At 200 px cells the reader hedged — 'hands on the mat near the kettlebell' when they are ON the handle — so the cells grew to 270 px and the grid shrank to 4x3, with up to three sheets carrying the same total pixel budget across more of the clip.",
+
+  "frames": {
+    "_": "One frame per 2.5 s of video, never fewer than 8 and never more than three full sheets. Times are uniform from edge_inset_s to duration - edge_inset_s, so neither the cold-open logo frame nor the trailing black frame is ever the only look at an exercise.",
+    "min": 8,
+    "max": 36,
+    "seconds_per_frame": 2.5,
+    "edge_inset_s": 0.5,
+    "min_gap_s": 0.05,
+    "__min_gap": "The generator is allowed half a second of slack, so two neighbouring requests can return the same sync sample. Frames closer together than this are dropped rather than given a duplicate cell — that also keeps the times array strictly ascending, which the server requires."
+  },
+
+  "cell": {
+    "_": "Aspect-fit into a fixed box, never cropped: the model has to see what is at the edge of a portrait frame (a kettlebell on the floor, a second dumbbell) and a crop is exactly where that goes missing. Unused box area is black. The orientation is decided from the video's own pixel dimensions with a 5 percent dead band so 1080x1088 does not read as landscape.",
+    "portrait": { "w": 270, "h": 480 },
+    "landscape": { "w": 480, "h": 270 },
+    "square": { "w": 360, "h": 360 },
+    "square_band": 0.05
+  },
+
+  "grid": {
+    "_": "4 columns by 3 rows, twelve cells to a sheet, up to three sheets per save. Row-major within a sheet and sheet after sheet, so reading order is time order across the whole set. A portrait sheet is exactly cols*cell_w by rows*cell_h — 1080x1440 — which is why the 2 px gutter is drawn INSIDE each cell (a 1 px inset on every side) rather than added between them: two portrait frames of the same person against the same wall merge into one image without a gutter, and the sheet has to stay the size the contract says it is.",
+    "cols": 4,
+    "rows_per_sheet": 3,
+    "cells_per_sheet": 12,
+    "max_sheets": 3,
+    "gutter_px": 2
+  },
+
+  "label": {
+    "_": "The timestamp is the whole point of the labels: the server prompt tells the model to read t0/t1 off them, and the transcript it gets alongside is on the same clock. Bottom-left, because that corner is background in a portrait video far more often than any other.",
+    "format": "M:SS",
+    "font_px": 16,
+    "bold": true,
+    "inset_px": 8,
+    "pill_alpha": 0.6,
+    "pill_radius_px": 6,
+    "pill_pad_x_px": 6,
+    "pill_pad_y_px": 3,
+    "text_color": "#FFFFFF"
+  },
+
+  "jpeg": {
+    "_": "0.72 is where JPEG stops paying for itself on video stills. The 600 KB ceiling is the server's per-object limit; one re-encode at 0.62 is allowed rather than a search, because the second pass costs another full encode and the frames are best-effort anyway.",
+    "quality": 0.72,
+    "fallback_quality": 0.62,
+    "max_bytes": 614400
+  },
+
+  "budget": {
+    "_": "Hard limits on a save that must never be blocked by them. Past either one, whatever sheets are finished go with the save and the rest are dropped; with none finished the save goes without frames and the server falls back to reading the video with Gemini.",
+    "wall_clock_ms": 8000,
+    "download_bytes": 26214400
+  },
+
+  "upload": {
+    "_": "ONE authorize per save, then one PUT per sheet. The client never builds an object path: it sends the sizes, the server names the objects and hands back a pre-signed address for each, which is what lets the iOS Share Extension take part at all (it holds the ingest key and no Supabase session). The PUTs carry content_type and no session header; append ?token=<token> only if the address does not already carry one.",
+    "authorize": "POST /api/uploads/authorize",
+    "auth": "session bearer, or x-ingest-key exactly as POST /api/ingest takes it",
+    "request": { "kind": "pack", "shortcode": "<shortcode>", "sheets": [{ "bytes": 0 }] },
+    "response": { "sheets": [{ "path": "<uid>/pack/<shortcode>/sheet-<n>.jpg", "upload_url": "<signed URL>", "token": "<token>" }], "expires_in": 900 },
+    "content_type": "image/jpeg"
+  },
+
+  "ingest": {
+    "_": "The frames block added to the POST /api/ingest body. Exactly the shape in BRIEF-VCP-A-ADDENDUM.",
+    "source": "device"
+  }
+}
