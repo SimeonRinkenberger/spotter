@@ -175,6 +175,19 @@ ok('but the score outranks the shelf — the best answer is never third', () => 
     'two rows scoring the same did not fall back to the shelf order');
 });
 
+ok('Recent is worth one rung: "squat" reaches the one you did, not the catalog', () => {
+  // Goblet Squats has the query at a word boundary and Back Squat has it in the
+  // same place, so without the bonus they would tie and the catalog's own order
+  // would decide. It must not.
+  const r = rank('squat');
+  assert.equal(r[0], 'Goblet Squats');
+  // One rung and no more: a row that IS what was typed still wins outright.
+  const rows = [{ key: 'a', name: 'Squat Thing', src: 1 }, { key: 'b', name: 'Squat', src: 3 }];
+  assert.deepEqual(
+    run('woaRank("squat", ' + JSON.stringify(rows) + ').map(function (x) { return x.name; })'),
+    ['Squat', 'Squat Thing']);
+});
+
 ok('an empty query is the shelf order itself', () => {
   const r = run('woaRank("", woaRows()).map(function (x) { return x.src; })');
   assert.deepEqual(r, r.slice().sort((a, b) => a - b), 'shelves are out of order');

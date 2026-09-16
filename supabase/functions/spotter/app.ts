@@ -5272,7 +5272,13 @@ export const APP = String.raw`
     var out = [];
     rows.forEach(function (r, i) {
       var s = woaScore(q, r);
-      if (s >= 0) out.push({ r: r, s: s, i: i });
+      if (s < 0) return;
+      // A movement you lifted last week is a better answer than a stranger the
+      // catalog happens to sort first, so Recent is worth one rung of the ladder:
+      // enough that "bench" reaches your bench press past a bench dip, never
+      // enough to beat a row that IS what was typed.
+      if (q && r.src === 1 && s > 0) s = Math.max(0.5, s - 1);
+      out.push({ r: r, s: s, i: i });
     });
     out.sort(function (a, b) { return a.s - b.s || a.r.src - b.r.src || a.i - b.i; });
     return out.map(function (x) { return x.r; });

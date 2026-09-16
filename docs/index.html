@@ -10632,7 +10632,7 @@ details.details-moving > :not(summary) {
     var out = [];
     return rows.forEach(function(r, i) {
       var s = woaScore(q, r);
-      s >= 0 && out.push({ r: r, s: s, i: i });
+      s < 0 || (q && r.src === 1 && s > 0 && (s = Math.max(0.5, s - 1)), out.push({ r: r, s: s, i: i }));
     }), out.sort(function(a, b) {
       return a.s - b.s || a.r.src - b.r.src || a.i - b.i;
     }), out.map(function(x) {
