@@ -358,18 +358,30 @@ export const MARKUP_BODY = String.raw`</head>
      barbell. #watchbody is filled on open and emptied on close — an Instagram or
      TikTok iframe left alive behind Workout Mode keeps loading, and takes the audio
      with it. -->
+<!-- Two panes, one sheet: pick the movement, then say how much of it. Splitting
+     them is what lets the first pane be a list you scan rather than a form you
+     fill in — Hevy, Strong and Fitbod all put the picker first and the dose
+     second, and the dose is the step that already knows your last set. -->
 <div class="sheet" id="woaddsheet" role="dialog" aria-modal="true" aria-labelledby="woaddtitle"><div class="sheetbody">
   <div class="grabber"></div>
-  <h2 id="woaddtitle">Add to this workout</h2>
-  <p class="lede">Choose a movement you’ve saved or type your own. It will be added at the end of this session.</p>
-  <div class="field"><label for="woaddname">Exercise</label><input id="woaddname" type="text" maxlength="100" autocomplete="off" list="woaddsuggestions" placeholder="e.g. Dumbbell row"><datalist id="woaddsuggestions"></datalist></div>
-  <div class="fieldrow">
-    <div class="field"><label for="woaddsets">Sets</label><input id="woaddsets" type="number" inputmode="numeric" min="1" max="99" value="3"></div>
-    <div class="field"><label for="woaddreps">Reps</label><input id="woaddreps" type="number" inputmode="numeric" min="1" max="999" value="10"></div>
+  <button class="chip woaback hide" id="woaback"><svg class="ic"><use href="#i-arrow-left"></use></svg>All exercises</button>
+  <h2 id="woaddtitle">Add an exercise</h2>
+  <div id="woapick">
+    <label class="woasearch"><span class="searchico"><svg class="ic"><use href="#i-search"></use></svg></span>
+      <input class="search" id="woaq" type="search" enterkeyhint="done" placeholder="Search exercises" autocapitalize="off" autocomplete="off" spellcheck="false" aria-label="Search exercises"></label>
+    <div class="picklist" id="woalist"></div>
   </div>
-  <div class="field"><label for="woaddsecs">Seconds per set (instead of reps)</label><input id="woaddsecs" type="number" inputmode="numeric" min="1" max="3600" placeholder="Optional, for timed exercises"></div>
-  <p id="woadderror" class="error" role="alert"></p>
-  <div class="btnrow"><button class="btn ghost" data-close="woaddsheet">Cancel</button><button class="btn" id="woaddsave">Add exercise</button></div>
+  <div id="woadose" class="hide">
+    <div class="wnote" id="woalast"></div>
+    <div class="fieldrow">
+      <div class="field"><label for="woaddsets">Sets</label><input id="woaddsets" type="number" inputmode="numeric" min="1" max="99" value="3"></div>
+      <div class="field"><label for="woaddreps">Reps</label><input id="woaddreps" type="number" inputmode="numeric" min="1" max="999" value="10"></div>
+      <div class="field"><label for="woaddsecs">Seconds</label><input id="woaddsecs" type="number" inputmode="numeric" min="1" max="3600" placeholder="—"></div>
+    </div>
+    <div class="pillrow" id="woawhere"></div>
+    <button class="pickrow woakeep hide" id="woakeep" aria-pressed="false"><div class="pt"><b>Keep on this workout</b><span id="woakeepnote">Off — today’s session only.</span></div><span class="ck"><svg class="ic"><use href="#i-check"></use></svg></span></button>
+    <div class="btnrow"><button class="btn ghost" data-close="woaddsheet">Cancel</button><button class="btn" id="woaddsave">Add exercise</button></div>
+  </div>
 </div></div>
 
 <div class="sheet" id="recapsheet" role="dialog" aria-modal="true" aria-labelledby="recaptitle"><div class="sheetbody">

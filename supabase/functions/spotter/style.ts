@@ -1692,7 +1692,41 @@ export const STYLE = String.raw`<style>
   .wmain { min-height: 0; justify-content: flex-start; }
   .wmain > * { flex-shrink: 0; }
   .wo-extra-set { min-height: 48px; width: 100%; margin-bottom: 10px; }
-  #woadderror:empty { display: none; }
+
+  /* ---------- adding a movement mid-workout ----------
+     The picker is a list first and a form second, so the only chrome it gets is
+     the field that filters it — the Library's own search field, in a band that
+     stays put while the list scrolls under it: a couple of hundred movements is a
+     long way to scroll back to change a word. */
+  .woasearch { position: sticky; top: 0; z-index: 2; display: block;
+    margin: 0 -20px 4px; padding: 2px 20px 10px;
+    background: var(--paper); background-image: var(--grain); }
+  .woasearch .searchico { left: 34px; top: 2px; bottom: 10px; }
+  .woasearch .search { min-height: 44px; box-sizing: border-box; }
+  .woahead { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+    color: var(--muted); padding: 14px 2px 4px; }
+  #woalist .pickrow { min-height: 52px; }
+  .woaback { min-height: 44px; margin-bottom: 12px; }
+  #woalast { margin: 6px 0 16px; }
+  #woalast:empty, #woawhere:empty { display: none; }
+  #woawhere { margin: 16px 0 4px; }
+  #woawhere .wnote { margin: 0; }
+  /* A switch drawn as a row, because it carries a sentence that changes with it. */
+  .woakeep { min-height: 56px; margin-bottom: 4px; padding: 10px 13px;
+    border: 1px solid var(--line-2); border-radius: 15px; background: var(--card);
+    transition: border-color var(--t-2) var(--e-out), background-color var(--t-2) var(--e-out); }
+  .woakeep.on { border-color: var(--ember); background: var(--ember-soft); }
+  /* The foot of the list, where Fitbod keeps the same action. Dashed, because it
+     is an invitation and not one of the card's own exercises. */
+  .waddcard { margin-top: 14px; padding: 13px; border: 1px dashed var(--line-2);
+    border-radius: 18px; background: none;
+    transition: background-color var(--t-2) var(--e-out), transform var(--t-1) var(--e-out); }
+  .waddcard:active { transform: scale(.985); }
+  .waddcard .ic { flex: 0 0 auto; color: var(--ember); }
+  @media (prefers-reduced-motion: reduce) {
+    .woakeep, .waddcard { transition: none; }
+    .waddcard:active { transform: none; }
+  }
   .wtimer.resting { border: 1px solid var(--ember); border-radius: 24px; background: var(--ember-soft); padding: 16px; }
   .wtimer.resting .wphase { font-size: 22px; font-weight: 750; }
   @media (max-width: 350px) {

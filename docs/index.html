@@ -4599,8 +4599,89 @@ body:not(.app) #toast.show {
   width: 100%;
   margin-bottom: 10px;
 }
-#woadderror:empty {
+.woasearch {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: block;
+  margin: 0 -20px 4px;
+  padding: 2px 20px 10px;
+  background: var(--paper);
+  background-image: var(--grain);
+}
+.woasearch .searchico {
+  left: 34px;
+  top: 2px;
+  bottom: 10px;
+}
+.woasearch .search {
+  min-height: 44px;
+  box-sizing: border-box;
+}
+.woahead {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 14px 2px 4px;
+}
+#woalist .pickrow {
+  min-height: 52px;
+}
+.woaback {
+  min-height: 44px;
+  margin-bottom: 12px;
+}
+#woalast {
+  margin: 6px 0 16px;
+}
+#woalast:empty,
+#woawhere:empty {
   display: none;
+}
+#woawhere {
+  margin: 16px 0 4px;
+}
+#woawhere .wnote {
+  margin: 0;
+}
+.woakeep {
+  min-height: 56px;
+  margin-bottom: 4px;
+  padding: 10px 13px;
+  border: 1px solid var(--line-2);
+  border-radius: 15px;
+  background: var(--card);
+  transition: border-color var(--t-2) var(--e-out), background-color var(--t-2) var(--e-out);
+}
+.woakeep.on {
+  border-color: var(--ember);
+  background: var(--ember-soft);
+}
+.waddcard {
+  margin-top: 14px;
+  padding: 13px;
+  border: 1px dashed var(--line-2);
+  border-radius: 18px;
+  background: none;
+  transition: background-color var(--t-2) var(--e-out), transform var(--t-1) var(--e-out);
+}
+.waddcard:active {
+  transform: scale(.985);
+}
+.waddcard .ic {
+  flex: 0 0 auto;
+  color: var(--ember);
+}
+@media (prefers-reduced-motion: reduce) {
+  .woakeep,
+  .waddcard {
+    transition: none;
+  }
+  .waddcard:active {
+    transform: none;
+  }
 }
 .wtimer.resting {
   border: 1px solid var(--ember);
@@ -7099,16 +7180,24 @@ details.details-moving > :not(summary) {
 
 <div class="sheet" id="woaddsheet" role="dialog" aria-modal="true" aria-labelledby="woaddtitle"><div class="sheetbody">
   <div class="grabber"></div>
-  <h2 id="woaddtitle">Add to this workout</h2>
-  <p class="lede">Choose a movement you’ve saved or type your own. It will be added at the end of this session.</p>
-  <div class="field"><label for="woaddname">Exercise</label><input id="woaddname" type="text" maxlength="100" autocomplete="off" list="woaddsuggestions" placeholder="e.g. Dumbbell row"><datalist id="woaddsuggestions"></datalist></div>
-  <div class="fieldrow">
-    <div class="field"><label for="woaddsets">Sets</label><input id="woaddsets" type="number" inputmode="numeric" min="1" max="99" value="3"></div>
-    <div class="field"><label for="woaddreps">Reps</label><input id="woaddreps" type="number" inputmode="numeric" min="1" max="999" value="10"></div>
+  <button class="chip woaback hide" id="woaback"><svg class="ic"><use href="#i-arrow-left"></use></svg>All exercises</button>
+  <h2 id="woaddtitle">Add an exercise</h2>
+  <div id="woapick">
+    <label class="woasearch"><span class="searchico"><svg class="ic"><use href="#i-search"></use></svg></span>
+      <input class="search" id="woaq" type="search" enterkeyhint="done" placeholder="Search exercises" autocapitalize="off" autocomplete="off" spellcheck="false" aria-label="Search exercises"></label>
+    <div class="picklist" id="woalist"></div>
   </div>
-  <div class="field"><label for="woaddsecs">Seconds per set (instead of reps)</label><input id="woaddsecs" type="number" inputmode="numeric" min="1" max="3600" placeholder="Optional, for timed exercises"></div>
-  <p id="woadderror" class="error" role="alert"></p>
-  <div class="btnrow"><button class="btn ghost" data-close="woaddsheet">Cancel</button><button class="btn" id="woaddsave">Add exercise</button></div>
+  <div id="woadose" class="hide">
+    <div class="wnote" id="woalast"></div>
+    <div class="fieldrow">
+      <div class="field"><label for="woaddsets">Sets</label><input id="woaddsets" type="number" inputmode="numeric" min="1" max="99" value="3"></div>
+      <div class="field"><label for="woaddreps">Reps</label><input id="woaddreps" type="number" inputmode="numeric" min="1" max="999" value="10"></div>
+      <div class="field"><label for="woaddsecs">Seconds</label><input id="woaddsecs" type="number" inputmode="numeric" min="1" max="3600" placeholder="—"></div>
+    </div>
+    <div class="pillrow" id="woawhere"></div>
+    <button class="pickrow woakeep hide" id="woakeep" aria-pressed="false"><div class="pt"><b>Keep on this workout</b><span id="woakeepnote">Off — today’s session only.</span></div><span class="ck"><svg class="ic"><use href="#i-check"></use></svg></span></button>
+    <div class="btnrow"><button class="btn ghost" data-close="woaddsheet">Cancel</button><button class="btn" id="woaddsave">Add exercise</button></div>
+  </div>
 </div></div>
 
 <div class="sheet" id="recapsheet" role="dialog" aria-modal="true" aria-labelledby="recaptitle"><div class="sheetbody">
@@ -10444,21 +10533,6 @@ details.details-moving > :not(summary) {
       a.until && a.until <= Date.now() && (a.until = 0, a.over = 1);
     }), cxArm(), wo.entries.length || (wo.entries = [{ name: "Freestyle", canonical_id: null, block: 0, exercise: 0, sets: [] }]), clearTimeout(woCloseTimer), $("workout").classList.remove("closing"), $("workout").classList.remove("summary", "past"), $("wclose").setAttribute("aria-label", "Exit workout"), $("workout").classList.add("open"), stopRest(), acquireWake(), renderWorkout(), startClock(), resume && resume.rest && resume.rest.total > 0 && (resume.rest.held || resume.rest.until > Date.now()) && (startRest(resume.rest.total / 1e3), restUntil = resume.rest.until, restHeld = resume.rest.held || 0, restHeld ? (clearInterval(restTimer), drawRest(restHeld)) : tickRest()), saveDraft(), history.pushState({ workout: 1 }, ""), lastWeights();
   }
-  function openWorkoutAdd() {
-    if (!(!wo || wo.finished)) {
-      $("woaddname").value = "", $("woaddsets").value = "3", $("woaddreps").value = "10", $("woaddsecs").value = "", $("woadderror").textContent = "";
-      var options = $("woaddsuggestions"), names = {};
-      options.innerHTML = "", state.workouts.forEach(function(w) {
-        flatten(w).forEach(function(s) {
-          if (!(!s.ex.name || names[s.ex.name])) {
-            names[s.ex.name] = !0;
-            var opt = el("option");
-            opt.value = s.ex.name, options.appendChild(opt);
-          }
-        });
-      }), $("woaddsheet")._returnFocus = document.activeElement, openSheet("woaddsheet"), $("woaddname").focus();
-    }
-  }
   function appendSessionExercise(ex) {
     if (!wo || wo.finished) return !1;
     wo.screens.length || (wo.workout.blocks = [{ title: "Freestyle", type: "straight", exercises: [
@@ -10467,25 +10541,203 @@ details.details-moving > :not(summary) {
     var bi = wo.workout.blocks.length, block = { title: "Added this session", type: "straight", exercises: [ex] };
     return wo.workout.blocks.push(block), wo.screens.push({ block: block, bi: bi, ei: 0, ex: ex, cx: null }), wo.entries.push({ name: ex.name, canonical_id: ex.canonical_id || null, block: bi, exercise: 0, sets: [] }), stopWork(), restThen = null, wo.i = wo.screens.length - 1, saveDraft(), renderWorkout(), !0;
   }
-  function saveWorkoutAdd() {
-    if (!(!wo || wo.finished)) {
-      var name = $("woaddname").value.trim(), sets = Number($("woaddsets").value), reps = Number($("woaddreps").value), rawSecs = $("woaddsecs").value.trim(), secs = Number(rawSecs);
-      if (!name || name.length > 100 || sets < 1 || sets > 99 || sets % 1 || (rawSecs ? !isFinite(secs) || secs < 1 || secs > 3600 || secs % 1 : !isFinite(reps) || reps < 1 || reps > 999 || reps % 1) || !isFinite(sets)) {
-        $("woadderror").textContent = "Enter a name, 1\u201399 sets, and 1\u2013999 reps or 1\u20133600 seconds.";
+  function insertSessionExercise(bi, ei, ex) {
+    var blk = wo.workout.blocks[bi], at = 0, i;
+    for (blk.exercises.splice(ei, 0, ex), i = 0; i < bi; i++) at += (wo.workout.blocks[i].exercises || []).length;
+    return at += ei, wo.entries.forEach(function(e) {
+      e.block === bi && e.exercise >= ei && e.exercise++;
+    }), wo.entries.splice(at, 0, {
+      name: ex.name,
+      canonical_id: ex.canonical_id || null,
+      block: bi,
+      exercise: ei,
+      sets: []
+    }), wo.screens = flatten(wo.workout), at;
+  }
+  var woa = null, woaCat = null, woaCatLoad = null;
+  function woaCatalog() {
+    return woaCat ? Promise.resolve(woaCat) : woaCatLoad || (woaCatLoad = sb.from("exercise_catalog").select("id,display_name,aliases,muscle_groups,equipment,pattern").order("pattern").order("display_name").limit(1e3).then(function(r) {
+      return woaCatLoad = null, !r.error && r.data && (woaCat = r.data), woaCat || [];
+    }).catch(function() {
+      return woaCatLoad = null, [];
+    }), woaCatLoad);
+  }
+  function woaMake(key, name, id, sub, src, more) {
+    var r = more || {};
+    return r.key = key, r.name = name, r.canonical_id = id, r.sub = sub, r.src = src, r;
+  }
+  function woaRows() {
+    var out = [], seen = {};
+    return Object.keys(hist).forEach(function(k) {
+      var h = hist[k];
+      if (!(!h.date || !h.name)) {
+        var r = woaMake(
+          k,
+          h.name,
+          k.indexOf("c:") === 0 ? k.slice(2) : null,
+          "",
+          1,
+          { sets: h.sets, reps: h.reps, at: h.date }
+        );
+        r.sub = lastLine(r), out.push(r);
+      }
+    }), out.sort(function(a, b) {
+      return a.at < b.at ? 1 : a.at > b.at ? -1 : 0;
+    }), out.forEach(function(r) {
+      seen[r.key] = r;
+    }), state.workouts.forEach(function(w) {
+      (w.blocks || []).forEach(function(b) {
+        (b.exercises || []).forEach(function(ex) {
+          var k = ex && ex.name ? exKey(ex) : null;
+          !k || seen[k] || (seen[k] = woaMake(
+            k,
+            ex.name,
+            ex.canonical_id || null,
+            [doseText(ex), w.title].filter(Boolean).join(" \xB7 "),
+            2,
+            { sets: ex.sets, reps: ex.reps, secs: ex.duration_seconds }
+          ), out.push(seen[k]));
+        });
+      });
+    }), (woaCat || []).forEach(function(c) {
+      var dup = seen["c:" + c.id];
+      if (dup) {
+        dup.aliases = c.aliases || [];
         return;
       }
-      var ex = {
-        name: name,
-        sets: sets,
-        reps: rawSecs ? null : String(reps),
-        duration_seconds: rawSecs ? secs : null,
-        rest_seconds: REST_FALLBACK
-      };
-      state.workouts.some(function(w) {
-        return flatten(w).some(function(s) {
-          return (s.ex.name || "").toLowerCase() !== name.toLowerCase() || !s.ex.canonical_id ? !1 : (ex.canonical_id = s.ex.canonical_id, !0);
+      out.push(woaMake(
+        "c:" + c.id,
+        c.display_name,
+        c.id,
+        (c.muscle_groups || []).concat(c.equipment || []).join(" \xB7 "),
+        3,
+        { aliases: c.aliases || [], pattern: c.pattern }
+      ));
+    }), out;
+  }
+  function woaHit(t, q) {
+    var i = t.indexOf(q);
+    return t === q ? 0 : i === 0 ? 1 : i < 0 ? -1 : t.charAt(i - 1) === " " ? 2 : 3;
+  }
+  function woaScore(q, row) {
+    if (!q) return row.src;
+    var s = woaHit(String(row.name || "").toLowerCase(), q), al = row.aliases || [], j, a;
+    if (s >= 0) return s;
+    for (j = 0; j < al.length; j++)
+      a = woaHit(String(al[j]).toLowerCase(), q), a >= 0 && (s < 0 || a < s) && (s = a);
+    return s < 0 ? -1 : s + 0.5;
+  }
+  function woaRank(q, rows) {
+    q = String(q || "").toLowerCase().trim();
+    var out = [];
+    return rows.forEach(function(r, i) {
+      var s = woaScore(q, r);
+      s < 0 || (q && r.src === 1 && s > 0 && (s = Math.max(0.5, s - 1)), out.push({ r: r, s: s, i: i }));
+    }), out.sort(function(a, b) {
+      return a.s - b.s || a.r.src - b.r.src || a.i - b.i;
+    }), out.map(function(x) {
+      return x.r;
+    });
+  }
+  function woaRow(list, r, label) {
+    var b = el("button", "pickrow"), t = el("div", "pt");
+    t.appendChild(el("b", null, label || r.name)), r.sub && t.appendChild(el("span", null, r.sub)), b.appendChild(t), b.onclick = function() {
+      woaChoose(r);
+    }, list.appendChild(b);
+  }
+  var WOA_CAP = { 1: 6, 2: 8 }, WOA_WAIT = "Still reading the exercise catalog\u2026", WOA_NOSAVE = "Added for today \u2014 it did not save to the card.";
+  function woaRender() {
+    var list = $("woalist"), raw = $("woaq").value.trim(), q = raw.toLowerCase(), rows = woaRows(), head = null, n = {};
+    if (list.innerHTML = "", q) {
+      var hits = woaRank(q, rows).slice(0, 20), known = null;
+      hits.forEach(function(r) {
+        woaRow(list, r);
+      }), (!hits.length || String(hits[0].name).toLowerCase() !== q) && (rows.some(function(r) {
+        return String(r.name).toLowerCase() !== q && (r.aliases || []).indexOf(q) < 0 ? !1 : (known = r.canonical_id, !0);
+      }), woaRow(list, woaMake(
+        known ? "c:" + known : "n:" + raw,
+        raw,
+        known,
+        "Add it exactly as you typed it",
+        4
+      ), "Add \u201C" + raw + "\u201D")), woaCat || list.appendChild(el("p", "lede", WOA_WAIT));
+      return;
+    }
+    rows.forEach(function(r) {
+      var cap = WOA_CAP[r.src], h;
+      n[r.src] = (n[r.src] || 0) + 1, !(cap && n[r.src] > cap) && (h = r.src === 1 ? "Recent" : r.src === 2 ? "In your library" : capWord(r.pattern || "other"), h !== head && (head = h, list.appendChild(el("div", "woahead", h))), woaRow(list, r));
+    }), woaCat || list.appendChild(el("p", "lede", WOA_WAIT));
+  }
+  function woaPane(dose) {
+    $("woapick").classList.toggle("hide", !!dose), $("woadose").classList.toggle("hide", !dose), $("woaback").classList.toggle("hide", !dose), viewIn($(dose ? "woadose" : "woapick"));
+  }
+  function woaCardBlocks() {
+    var w = wo && wo.workout, card = null;
+    return !w || !w.id ? null : (state.workouts.forEach(function(x) {
+      x.id === w.id && (card = x);
+    }), card && card.ingest_status === "ready" ? (card.blocks || []).length : null);
+  }
+  function woaKeepPaint() {
+    $("woakeep").classList.toggle("on", !!woa.keep), $("woakeep").setAttribute("aria-pressed", woa.keep ? "true" : "false"), $("woakeepnote").textContent = woa.keep ? "It will be on the card the next time you open it." : "Off \u2014 today\u2019s session only.";
+  }
+  function woaChoose(r) {
+    var s = wo.screens[wo.i], cx = s && s.cx && !s.ei ? s.cx : null, h = hist[r.key], m = String(r.reps || "").match(/\d+/), where = $("woawhere");
+    woa.pick = r, woa.keep = !1, woa.where = cx ? "complex" : s && wo.i < endStop() ? "after" : "end", haptic("tap"), $("woaddtitle").textContent = r.name, $("woalast").textContent = lastLine(r), $("woaddsets").value = String(h && h.sets || r.sets || 3), $("woaddreps").value = String(h && h.reps || (m ? m[0] : 10)), $("woaddsecs").value = r.secs ? String(r.secs) : "", where.innerHTML = "", $("woaddsets").parentNode.classList.toggle("hide", !!cx), cx ? where.appendChild(el(
+      "div",
+      "wnote",
+      "Joins the round list \u2014 part of this complex from the next round on."
+    )) : woa.where === "after" && ["After this one", "At the end"].forEach(function(t, k) {
+      var b = el("button", "chip" + (k ? "" : " active"), t);
+      b.onclick = function() {
+        woa.where = k ? "end" : "after", Array.prototype.forEach.call(where.children, function(c) {
+          c.classList.toggle("active", c === b);
         });
-      }), appendSessionExercise(ex) && (closeSheet("woaddsheet"), toast("Added " + name + " to this session."));
+      }, where.appendChild(b);
+    }), $("woakeep").classList.toggle("hide", woaCardBlocks() === null), woaKeepPaint(), woaPane(1);
+  }
+  function openWorkoutAdd() {
+    !wo || wo.finished || (haptic("tap"), woa = { pick: null, where: "after", keep: !1 }, $("woaddtitle").textContent = "Add an exercise", $("woaq").value = "", woaPane(0), woaRender(), $("woaddsheet")._returnFocus = document.activeElement, openSheet("woaddsheet"), woaCat || woaCatalog().then(function() {
+      $("woaddsheet").classList.contains("open") && woaRender();
+    }));
+  }
+  function woaPlace(ex) {
+    var s = wo.screens[wo.i], cx = s && s.cx && !s.ei ? s.cx : null;
+    return !s || woa.where === "end" ? appendSessionExercise(ex) : (stopWork(), restThen = null, cx ? (ex.sets = null, ex.from_round = (wo.amrap[s.bi] || {}).rounds || 0, insertSessionExercise(s.bi, s.block.exercises.length, ex)) : wo.i = insertSessionExercise(s.bi, s.ei + 1, ex), saveDraft(), renderWorkout(), !0);
+  }
+  function woaKeep(ex, bi) {
+    var w = wo.workout, n = woaCardBlocks();
+    n !== null && api("workouts/" + w.id + "/exercises", { method: "POST", body: JSON.stringify({
+      op: "add",
+      block: bi < n ? bi : n,
+      fields: { name: ex.name, sets: ex.sets, reps: ex.reps, duration_seconds: ex.duration_seconds }
+    }) }).then(function(r) {
+      if (!r || r.status !== "ok") {
+        limitHit(r, WOA_NOSAVE);
+        return;
+      }
+      absorbWorkout(r.workout), toast("Kept on " + (w.title || "the workout") + " for next time.");
+    }).catch(function() {
+      toast(WOA_NOSAVE);
+    });
+  }
+  function woaNum(id, dflt, hi) {
+    var n = clamp(Math.round(Number($(id).value) || dflt), 1, hi);
+    return $(id).value = String(n), n;
+  }
+  function saveWorkoutAdd() {
+    if (!(!wo || wo.finished || !woa || !woa.pick)) {
+      var name = String(woa.pick.name || "").trim().slice(0, 100), secs = $("woaddsecs").value.trim() ? woaNum("woaddsecs", 30, 3600) : 0;
+      if (name) {
+        var ex = {
+          name: name,
+          canonical_id: woa.pick.canonical_id || null,
+          sets: woaNum("woaddsets", 3, 99),
+          reps: secs ? null : String(woaNum("woaddreps", 10, 999)),
+          duration_seconds: secs || null,
+          rest_seconds: REST_FALLBACK
+        }, s = wo.screens[wo.i], keep = woa.keep, bi = s && woa.where !== "end" ? s.bi : woaCardBlocks() || 0;
+        woaPlace(ex) && (closeSheet("woaddsheet"), haptic("success"), toast("Added " + name + " to this session."), keep && woaKeep(ex, bi));
+      }
     }
   }
   function exKey(e) {
@@ -10511,7 +10763,7 @@ details.details-moving > :not(summary) {
                   var top = sets.filter(function(s) {
                     return s.weight;
                   }).pop() || sets[sets.length - 1];
-                  h.date = log.started_at, h.sets = sets.length, h.reps = top.reps, h.weight = top.weight || 0, h.unit = top.unit || state.unit;
+                  h.name = e.name, h.date = log.started_at, h.sets = sets.length, h.reps = top.reps, h.weight = top.weight || 0, h.unit = top.unit || state.unit;
                 }
               }
             }
@@ -10622,7 +10874,13 @@ details.details-moving > :not(summary) {
       var swapChip = icon(el("button", "pickrow"), "swap", "Swap or modify");
       swapChip.onclick = function() {
         openSwap(focus.name, wo.workout.title);
-      }, extra.lastChild.appendChild(swapChip), acts.appendChild(extra), main.appendChild(acts), slide ? (main.style.setProperty("--wmx", (slide > 0 ? 30 : -30) + "px"), main.offsetWidth, main.classList.add("wmin")) : hush || viewIn(main);
+      }, extra.lastChild.appendChild(swapChip);
+      var addChip = icon(el("button", "pickrow"), "plus", "Add an exercise");
+      if (addChip.onclick = openWorkoutAdd, extra.lastChild.appendChild(addChip), acts.appendChild(extra), main.appendChild(acts), wo.i >= endStop()) {
+        var tile = icon(el("button", "pickrow waddcard"), "plus"), tt = el("div", "pt");
+        tt.appendChild(el("b", null, "Add an exercise")), tt.appendChild(el("span", null, "Something this card did not say.")), tile.appendChild(tt), tile.onclick = openWorkoutAdd, main.appendChild(tile);
+      }
+      slide ? (main.style.setProperty("--wmx", (slide > 0 ? 30 : -30) + "px"), main.offsetWidth, main.classList.add("wmin")) : hush || viewIn(main);
     }
   }
   var justSet = -1;
@@ -11026,7 +11284,7 @@ details.details-moving > :not(summary) {
     !blk || !a || (blk.exercises || []).forEach(function(ex, j) {
       var e = cxEntry(bi, j);
       if (e) {
-        for (var n = a.rounds + (a.marks[j] ? 1 : 0); e.sets.length > n; ) e.sets.pop();
+        for (var n = Math.max(0, a.rounds - (ex.from_round || 0)) + (a.marks[j] ? 1 : 0); e.sets.length > n; ) e.sets.pop();
         for (; e.sets.length < n; ) e.sets.push(cxSet(ex, e));
       }
     });
@@ -15784,8 +16042,16 @@ details.details-moving > :not(summary) {
     history.back();
   }, $("wmore").onclick = openRecapOptions, wireProof(), wireWmain($("wmain")), $("wprev").onclick = function() {
     woGo(-1);
-  }, $("wnext").onclick = skipMove, $("wfinish").onclick = finishWorkout, $("waddexercise").onclick = openWorkoutAdd, $("woaddsave").onclick = saveWorkoutAdd, $("woaddname").addEventListener("keydown", function(e) {
-    e.key === "Enter" && (e.preventDefault(), saveWorkoutAdd());
+  }, $("wnext").onclick = skipMove, $("wfinish").onclick = finishWorkout, $("waddexercise").onclick = openWorkoutAdd, $("woaddsave").onclick = saveWorkoutAdd, $("woaback").onclick = function() {
+    woaPane(0);
+  }, $("woakeep").onclick = function() {
+    woa.keep = !woa.keep, haptic("tap"), woaKeepPaint();
+  }, $("woaq").addEventListener("input", woaRender), $("woaq").addEventListener("keydown", function(e) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      var first = $("woalist").querySelector("button");
+      first ? first.click() : this.blur();
+    }
   }), $("wlist").onclick = function() {
     if (wo) {
       var list = $("exlist");
