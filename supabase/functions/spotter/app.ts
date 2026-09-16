@@ -890,7 +890,7 @@ export const APP = String.raw`
     }
     if (native && native.purchases) native.purchases.clear().catch(function () {});
     if (billing) { billing.prices = null; billing.sub = null; billing.subAsked = false; billing.limits = null; billing.said = null; billing.ctx = null; }
-    ["grid", "chips", "colbar", "libcount", "empty", "dinner", "pumpylog", "pumpyannounce", "pumpyctx", "pumpythreads", "planview", "progressview", "today", "recapopts"].forEach(function (id) {
+    ["grid", "chips", "colbar", "libcount", "empty", "dinner", "pumpylog", "pumpyannounce", "pumpyctx", "pumpythreads", "trainview", "today", "recapopts"].forEach(function (id) {
       var n = $(id); if (n) n.innerHTML = "";
     });
     $("count0").textContent = "Reading your library";
@@ -957,11 +957,11 @@ export const APP = String.raw`
     return booting;
   }
 
-  // All four pages are mounted all the time now, which means a swipe can uncover
-  // one before anybody has drawn it. These three are drawn in idle time once the
+  // All three pages are mounted all the time now, which means a swipe can uncover
+  // one before anybody has drawn it. The other two are drawn in idle time once the
   // library has landed — staggered, because they are database reads and the
   // library's thumbnails are still arriving.
-  var drawn = { plan: false, progress: false, pumpy: false };
+  var drawn = { train: false, pumpy: false };
 
   function idle(fn, ms) {
     setTimeout(function () {
@@ -974,16 +974,10 @@ export const APP = String.raw`
     var epoch = accountEpoch, uid = state.user && state.user.id;
     idle(function () {
       if (!accountNow(epoch, uid)) return;
-      if (drawn.plan) return;
-      drawn.plan = true;
-      quietly(loadPlan(true));
-    }, 150);
-    idle(function () {
-      if (!accountNow(epoch, uid)) return;
-      if (drawn.progress) return;
-      drawn.progress = true;
-      quietly(loadLogs().then(renderProgress));
-    }, 300);
+      if (drawn.train) return;
+      drawn.train = true;
+      quietly(prepareTrain());
+    }, 200);
     idle(function () {
       if (!accountNow(epoch, uid)) return;
       // Drawn before it is loaded so the column is never empty, then filled in.
@@ -8459,8 +8453,16 @@ export const APP = String.raw`
     barToday.classList.toggle("hide", showingToday());
   }
 
+  var trainSeg = "calendar";
+
+  function prepareTrain() {
+    return Promise.all([loadPlan(true), loadLogs()]).then(function () { renderTrain(); });
+  }
+
+  function renderTrain() { renderPlan(); renderProgress(); }
+
   function renderPlan() {
-    var v = $("planview");
+    var v = $("trainview");
     if (!planBody || planBody.parentNode !== v) {
       v.innerHTML = "";
       v.appendChild(buildPlanBar());
@@ -8480,7 +8482,8 @@ export const APP = String.raw`
       planMode === "month" ? weekInMonth(monthStart) : state.weekStart));
     // A second window onto these same rows; redrawn here so the two agree.
     if ($("daysheet").classList.contains("open")) renderDay();
-    guidePage("plan");
+    if (!$("pslot")) { var ps = el("div"); ps.id = "pslot"; v.appendChild(ps); }
+    guidePage("train");
     void planBody.offsetWidth;
     // A swipe said which way time went, so the week arrives from that side. A
     // tap on the segmented control did not, and gets the crossfade it always had.
@@ -9448,7 +9451,7 @@ export const APP = String.raw`
     return box;
   }
 
-  // The headline figure counts up the first time Progress is LOOKED AT, and
+  // The headline figure counts up the first time Records is LOOKED AT, and
   // never again: a number that re-counts on every swipe back is a fidget, not a
   // result.
   //
@@ -9462,8 +9465,8 @@ export const APP = String.raw`
   var statsCounted = false;
 
   function countStats() {
-    if (statsCounted || state.view !== "progress") return;
-    var nodes = document.querySelectorAll("#progressview .countup");
+    if (statsCounted || state.view !== "train") return;
+    var nodes = document.querySelectorAll("#trainview .countup");
     if (!nodes.length) return;
     statsCounted = true;
     if (lessMotion()) return;
@@ -9486,7 +9489,7 @@ export const APP = String.raw`
 
   function renderProgress() {
     if (!state.user || !state.logs) return;
-    var v = $("progressview");
+    var v = $("pslot") || $("trainview");
     v.innerHTML = "";
     var logs = state.logs || [];
 
@@ -9503,7 +9506,6 @@ export const APP = String.raw`
     // One goal, one arc, the streak above it. The three bare figures that used to
     // sit here counted weeks with ANY session in them, which is not a goal.
     var st = weekStats(logs, state.plan, goalSetting(), new Date());
-    guidePage("progress");
     var hero = weekHero(st);
     hero.appendChild(el("div", "rmeta",
       logs.length + (logs.length === 1 ? " session" : " sessions") + " logged"));
@@ -11433,10 +11435,8 @@ export const APP = String.raw`
       text: "Use Review / Edit to check an exercise, Demo to see it, and Options for a swap." },
     set: { title: "Your numbers go here", art: "coach",
       text: "Tap a number to type your reps or weight. Save set logs it and starts your rest." },
-    plan: { title: "Give your workout a day", art: "plan",
-      text: "Tap a day to add a saved workout. Use Week or Month to see what’s ahead." },
-    progress: { title: "A week at your pace", art: "proud",
-      text: "The ring counts finished sessions toward your weekly goal. Tap the day dots to see what counts." },
+    train: { title: "Your week, in one place", art: "plan",
+      text: "Swipe the days to change week, tap one to plan it. Calendar, Progress and Records live under the strip." },
     refs: { title: "Show me what you have in mind", art: "coach",
       text: "Tap + beside the message box to choose workouts. I’ll use them in my answer and show changes before saving." }
   };
@@ -11623,11 +11623,8 @@ export const APP = String.raw`
 
   function guidePage(v) {
     if (state.view !== v || guide.visit !== v || overlayShowing()) return;
-    if (v === "plan" && state.plan && state.plan.length) { guideLearn("plan"); return; }
-    if (v === "plan" && planBody) guideOffer("plan", planBody, planBody.firstChild);
-    if (v === "progress" && state.logs && state.logs.length) {
-      var pg = $("progressview"); guideOffer("progress", pg, pg.firstChild);
-    }
+    if (v === "train" && state.plan && state.plan.length) { guideLearn("train"); return; }
+    if (v === "train" && planBody) guideOffer("train", planBody, planBody.firstChild);
     if (v === "pumpy" && pumpy.loaded && pumpy.messages.length && !pumpy.refs.length) {
       var c = $("pumpycomposer"); guideOffer("refs", c, c.firstChild);
     }
@@ -11654,7 +11651,7 @@ export const APP = String.raw`
     var body = $("guidebody"); body.innerHTML = "";
     body.appendChild(pumpyArt("plan", false));
     var names = { save: "Saving videos", detail: "Exercise options", set: "Logging a set",
-      plan: "Planning your week", progress: "Your weekly goal", refs: "Working with Pumpy" };
+      train: "Your training week", refs: "Working with Pumpy" };
     Object.keys(GUIDE_TIPS).forEach(function (id) {
       var row = el("details", "guide-topic"), title = el("summary", null, names[id]);
       row.appendChild(title);
@@ -12690,10 +12687,10 @@ export const APP = String.raw`
     state.unit = state.unit === "lb" ? "kg" : "lb";
     $("unittoggle").textContent = state.unit;
     saveSettings();
-    // A drawn Progress has to be drawn again to be read in the new unit, not just
+    // A drawn Train has to be drawn again to be read in the new unit, not just
     // relabelled — reloading the logs first if something has already dropped them.
-    if (!drawn.progress) return;
-    if (state.logs) renderProgress(); else quietly(loadLogs().then(renderProgress));
+    if (!drawn.train) return;
+    if (state.logs) renderTrain(); else quietly(loadLogs().then(renderTrain));
   }
 
   // One to seven. It opens on what the ring is already using — the plan's own
@@ -12715,7 +12712,7 @@ export const APP = String.raw`
     haptic("tap");
     saveSettings();
     // The ring, its label, the streak and the today card all read this number.
-    if (drawn.progress && state.logs) renderProgress();
+    if (drawn.train && state.logs) renderTrain();
     if (today.shown) renderToday();
   }
 
@@ -13295,15 +13292,15 @@ export const APP = String.raw`
 
   // ---------- the pager ----------
   //
-  // Four pages on one track. It all comes down to one number — pos, the track's
+  // Three pages on one track. It all comes down to one number — pos, the track's
   // offset in pixels: it follows the finger 1:1, rubber-bands past the ends, and
   // is settled by a spring starting at the velocity the finger let go at. The tab
   // bar and the header's title strips are not animated alongside it, they are
   // DRAWN from it every frame, which is why a tap, a fling and a finger stopped
   // between two pages all agree with one another.
 
-  var VIEWS = ["library", "plan", "progress", "pumpy"];
-  var PAGE_IDS = ["libpage", "planview", "progressview", "pumpyview"];
+  var VIEWS = ["library", "train", "pumpy"];
+  var PAGE_IDS = ["libpage", "trainview", "pumpyview"];
   var LAST = VIEWS.length - 1;
 
   var pagesEl = $("pages"), track = $("track"), tabbar = document.querySelector(".tabbar");
@@ -13416,17 +13413,17 @@ export const APP = String.raw`
       n.inert = k !== i;
       if (k === i) n.removeAttribute("aria-hidden"); else n.setAttribute("aria-hidden", "true");
     }
-    // Eight strips, four titles then four subtitles; only the pair being read.
+    // Six strips, three titles then three subtitles; only the pair being read.
     var strips = document.querySelectorAll(".ts");
     for (k = 0; k < strips.length; k++) {
-      if (k % 4 === i) strips[k].removeAttribute("aria-hidden");
+      if (k % VIEWS.length === i) strips[k].removeAttribute("aria-hidden");
       else strips[k].setAttribute("aria-hidden", "true");
     }
     if (changed && state.user) preparePage(i);
   }
 
   // A swipe must never uncover a blank page, and arriving must never replay an
-  // entrance. warmPages() draws all four once; arriving after that is a quiet
+  // entrance. warmPages() draws both once; arriving after that is a quiet
   // refresh, with no re-render at all when the answer has not changed — a
   // re-render would throw away where the page was scrolled to.
   function arrive(i) {
@@ -13434,7 +13431,7 @@ export const APP = String.raw`
     guide.visit = v;
     setTimeout(function () { guidePage(v); }, 450);
     if (v === "library") renderToday();
-    if (v === "progress" && state.logs) countStats();
+    if (v === "train" && state.logs) countStats();
   }
 
   // Start independent reads on navigation intent, while the spring is moving.
@@ -13444,18 +13441,13 @@ export const APP = String.raw`
     // Library's grid is kept fresh by realtime and load(); only the today card
     // is a snapshot, and renderToday() decides for itself whether it has aged.
     if (v === "library") { renderToday(); return; }
-    if (v === "plan") {
+    if (v === "train") {
+      // The strip opens on this week on every visit, the way Plan always did —
+      // but the segment and the scroll offset are where the visitor left them:
+      // a tab you come back to should be the page you left, minus the stale week.
       restorePlan();
-      $("planview").scrollTop = 0;
-      drawn.plan = true;
-      quietly(loadPlan(true));
-    } else if (v === "progress") {
-      // state.logs is nulled at every point that invalidates it — finishing a
-      // workout, the refresh button, a pull. Nothing to do while it still stands.
-      if (!drawn.progress || !state.logs) {
-        drawn.progress = true;
-        quietly(loadLogs().then(renderProgress));
-      } else countStats();
+      drawn.train = true;
+      quietly(prepareTrain());
     } else if (v === "pumpy") {
       loadPumpy();
     }
@@ -13488,8 +13480,11 @@ export const APP = String.raw`
   // Same signature every caller already uses. Nothing scrolls to the top: each
   // page keeps its own offset, the way native tabs do.
   function setView(v) {
-    // History lives under Progress now; anything still routing to it lands there.
+    // Plan and Progress are one tab now, and both names still name a place in it:
+    // an old link, a notification or a console call lands on Train, on the
+    // segment it asked for. History has lived under Progress since the recap wave.
     if (v === "history") v = "progress";
+    if (v === "plan" || v === "progress") { trainSeg = v === "plan" ? "calendar" : "progress"; v = "train"; }
     var i = VIEWS.indexOf(v);
     if (i < 0) i = 0;
     // Nothing to slide while the app is off screen: a share landing on Library,
@@ -13501,7 +13496,7 @@ export const APP = String.raw`
     if (!pagesEl) return;
     stopSpring();
     idx = 0; arrivedAt = 0; state.view = "library";
-    drawn = { plan: false, progress: false, pumpy: false };
+    drawn = { train: false, pumpy: false };
     planSig = "";
     statsCounted = false;
     for (var k = 0; k < PAGE_IDS.length; k++) $(PAGE_IDS[k]).scrollTop = 0;
@@ -13513,7 +13508,7 @@ export const APP = String.raw`
 
   // The header and the tab bar decide where every page begins and ends, and both
   // change height with the safe area — what sizePumpy() measured for one view,
-  // now for all four, off the live layout.
+  // now for all three, off the live layout.
   function measureChrome() {
     var root = document.documentElement;
     // Unrounded: the spacer ends and the search sticks at the header's own bottom

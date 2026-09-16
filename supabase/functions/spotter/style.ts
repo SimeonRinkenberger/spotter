@@ -257,7 +257,6 @@ export const STYLE = String.raw`<style>
   .ts:nth-child(1) { --i: 0; }
   .ts:nth-child(2) { --i: 1; }
   .ts:nth-child(3) { --i: 2; }
-  .ts:nth-child(4) { --i: 3; }
   .hbtns { display: flex; gap: 8px; }
 
   /* ---------- the pager ----------
@@ -1191,7 +1190,7 @@ export const STYLE = String.raw`<style>
      is a whole tab wide so translateX(100%) is exactly one tab; the visible
      capsule is the inset pseudo-element. */
   .tabpill { position: absolute; left: 6px; top: 8px; bottom: calc(6px + var(--sab));
-    width: calc((100% - 12px) / 4); pointer-events: none;
+    width: calc((100% - 12px) / 3); pointer-events: none;
     transform: translateX(calc(var(--x, 0) * 100%)); }
   .tabpill::after { content: ""; position: absolute; inset: 0 5px; border-radius: 14px;
     background: var(--pill); }
@@ -1205,7 +1204,6 @@ export const STYLE = String.raw`<style>
   .tab:nth-child(2) { --i: 0; }
   .tab:nth-child(3) { --i: 1; }
   .tab:nth-child(4) { --i: 2; }
-  .tab:nth-child(5) { --i: 3; }
   .tab:focus-visible { outline: 2px solid var(--ember); outline-offset: -3px; border-radius: 14px; }
   /* The grayscale filter is gone with the emoji it was there to launder: a line
      icon in currentColor already takes the muted-to-ember mix on the .tab above,

@@ -77,6 +77,7 @@ export const MARKUP_BODY = String.raw`</head>
 <symbol id="i-dumbbell" viewBox="0 0 24 24"><path d="M2.5 9.5v5"/><path d="M6 6.5v11"/><path d="M18 6.5v11"/><path d="M21.5 9.5v5"/><path d="M6 12h12"/></symbol>
 <symbol id="i-calendar" viewBox="0 0 24 24"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></symbol>
 <symbol id="i-trend" viewBox="0 0 24 24"><path d="M22 7 13.5 15.5 8.5 10.5 2 17"/><path d="M16 7h6v6"/></symbol>
+<symbol id="i-train" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="3"/><path d="M3 10h18"/><path d="M8 2v4"/><path d="M16 2v4"/><path d="M8 15l2.5 2.5L16 13"/></symbol>
 <symbol id="i-play" viewBox="0 0 24 24"><path d="M6 3.5 20 12 6 20.5z"/></symbol>
 <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12"/><circle cx="12" cy="12" r="3"/></symbol>
 <symbol id="i-eye-off" viewBox="0 0 24 24"><path d="M10.7 5.1a10.7 10.7 0 0 1 11.2 6.6 1 1 0 0 1 0 .7 10.7 10.7 0 0 1-1.4 2.5"/><path d="M14.1 14.2a3 3 0 0 1-4.2-4.2"/><path d="M17.5 17.5a10.7 10.7 0 0 1-15.4-5.2 1 1 0 0 1 0-.7 10.7 10.7 0 0 1 4.4-5.1"/><path d="m2 2 20 20"/></symbol>
@@ -165,8 +166,8 @@ export const MARKUP_BODY = String.raw`</head>
   <header>
     <div class="titlerow">
       <div class="tstack">
-        <h1 id="apptitle"><span class="ts">Spotter</span><span class="ts" aria-hidden="true">Plan</span><span class="ts" aria-hidden="true">Progress</span><span class="ts" aria-hidden="true">Pumpy</span></h1>
-        <div class="count" id="count"><span class="ts" id="count0">Reading your library</span><span class="ts" aria-hidden="true">This week</span><span class="ts" aria-hidden="true">Your numbers</span><span class="ts" aria-hidden="true">Your coach</span></div>
+        <h1 id="apptitle"><span class="ts">Spotter</span><span class="ts" aria-hidden="true">Train</span><span class="ts" aria-hidden="true">Pumpy</span></h1>
+        <div class="count" id="count"><span class="ts" id="count0">Reading your library</span><span class="ts" id="count1" aria-hidden="true">This week</span><span class="ts" aria-hidden="true">Your coach</span></div>
       </div>
       <div class="hbtns">
         <button class="addbtn ghost" id="settingsbtn" title="Settings" aria-label="Settings"><svg class="ic"><use href="#i-settings"></use></svg></button>
@@ -199,9 +200,8 @@ export const MARKUP_BODY = String.raw`</head>
         <div class="empty hide" id="empty"></div>
       </div>
 
-      <div class="page view" id="planview" role="tabpanel" aria-labelledby="tab1"></div>
-      <div class="page view" id="progressview" role="tabpanel" aria-labelledby="tab2"></div>
-      <div class="page view" id="pumpyview" role="tabpanel" aria-labelledby="tab3">
+      <div class="page view" id="trainview" role="tabpanel" aria-labelledby="tab1"></div>
+      <div class="page view" id="pumpyview" role="tabpanel" aria-labelledby="tab2">
         <div class="pumpybar">
           <button id="pumpychats" title="Chats" aria-label="Chats"><svg class="ic"><use href="#i-list"></use></svg></button>
           <button id="pumpynew" title="New chat" aria-label="New chat"><svg class="ic"><use href="#i-plus"></use></svg></button>
@@ -224,9 +224,8 @@ export const MARKUP_BODY = String.raw`</head>
   <nav class="tabbar" role="tablist" aria-label="Sections">
     <div class="tabpill" aria-hidden="true"></div>
     <button class="tab active" id="tab0" role="tab" aria-selected="true" aria-controls="libpage" data-view="library"><span class="ti"><svg class="ic"><use href="#i-dumbbell"></use></svg></span><span class="tl">Workouts</span></button>
-    <button class="tab" id="tab1" role="tab" aria-selected="false" aria-controls="planview" data-view="plan"><span class="ti"><svg class="ic"><use href="#i-calendar"></use></svg></span><span class="tl">Plan</span></button>
-    <button class="tab" id="tab2" role="tab" aria-selected="false" aria-controls="progressview" data-view="progress"><span class="ti"><svg class="ic"><use href="#i-trend"></use></svg></span><span class="tl">Progress</span></button>
-    <button class="tab" id="tab3" role="tab" aria-selected="false" aria-controls="pumpyview" data-view="pumpy"><span class="ti" id="pumpytab"></span><span class="tl">Pumpy</span></button>
+    <button class="tab" id="tab1" role="tab" aria-selected="false" aria-controls="trainview" data-view="train"><span class="ti"><svg class="ic"><use href="#i-train"></use></svg></span><span class="tl">Train</span></button>
+    <button class="tab" id="tab2" role="tab" aria-selected="false" aria-controls="pumpyview" data-view="pumpy"><span class="ti" id="pumpytab"></span><span class="tl">Pumpy</span></button>
   </nav>
 </div>
 

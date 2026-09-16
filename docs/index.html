@@ -626,9 +626,6 @@ h1 {
 .ts:nth-child(3) {
   --i: 2;
 }
-.ts:nth-child(4) {
-  --i: 3;
-}
 .hbtns {
   display: flex;
   gap: 8px;
@@ -3116,7 +3113,7 @@ body:not(.app) #toast.show {
   left: 6px;
   top: 8px;
   bottom: calc(6px + var(--sab));
-  width: calc((100% - 12px) / 4);
+  width: calc((100% - 12px) / 3);
   pointer-events: none;
   transform: translateX(calc(var(--x, 0) * 100%));
 }
@@ -3154,9 +3151,6 @@ body:not(.app) #toast.show {
 }
 .tab:nth-child(4) {
   --i: 2;
-}
-.tab:nth-child(5) {
-  --i: 3;
 }
 .tab:focus-visible {
   outline: 2px solid var(--ember);
@@ -6939,6 +6933,7 @@ details.details-moving > :not(summary) {
 <symbol id="i-dumbbell" viewBox="0 0 24 24"><path d="M2.5 9.5v5"/><path d="M6 6.5v11"/><path d="M18 6.5v11"/><path d="M21.5 9.5v5"/><path d="M6 12h12"/></symbol>
 <symbol id="i-calendar" viewBox="0 0 24 24"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></symbol>
 <symbol id="i-trend" viewBox="0 0 24 24"><path d="M22 7 13.5 15.5 8.5 10.5 2 17"/><path d="M16 7h6v6"/></symbol>
+<symbol id="i-train" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="3"/><path d="M3 10h18"/><path d="M8 2v4"/><path d="M16 2v4"/><path d="M8 15l2.5 2.5L16 13"/></symbol>
 <symbol id="i-play" viewBox="0 0 24 24"><path d="M6 3.5 20 12 6 20.5z"/></symbol>
 <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12"/><circle cx="12" cy="12" r="3"/></symbol>
 <symbol id="i-eye-off" viewBox="0 0 24 24"><path d="M10.7 5.1a10.7 10.7 0 0 1 11.2 6.6 1 1 0 0 1 0 .7 10.7 10.7 0 0 1-1.4 2.5"/><path d="M14.1 14.2a3 3 0 0 1-4.2-4.2"/><path d="M17.5 17.5a10.7 10.7 0 0 1-15.4-5.2 1 1 0 0 1 0-.7 10.7 10.7 0 0 1 4.4-5.1"/><path d="m2 2 20 20"/></symbol>
@@ -7009,8 +7004,8 @@ details.details-moving > :not(summary) {
   <header>
     <div class="titlerow">
       <div class="tstack">
-        <h1 id="apptitle"><span class="ts">Spotter</span><span class="ts" aria-hidden="true">Plan</span><span class="ts" aria-hidden="true">Progress</span><span class="ts" aria-hidden="true">Pumpy</span></h1>
-        <div class="count" id="count"><span class="ts" id="count0">Reading your library</span><span class="ts" aria-hidden="true">This week</span><span class="ts" aria-hidden="true">Your numbers</span><span class="ts" aria-hidden="true">Your coach</span></div>
+        <h1 id="apptitle"><span class="ts">Spotter</span><span class="ts" aria-hidden="true">Train</span><span class="ts" aria-hidden="true">Pumpy</span></h1>
+        <div class="count" id="count"><span class="ts" id="count0">Reading your library</span><span class="ts" id="count1" aria-hidden="true">This week</span><span class="ts" aria-hidden="true">Your coach</span></div>
       </div>
       <div class="hbtns">
         <button class="addbtn ghost" id="settingsbtn" title="Settings" aria-label="Settings"><svg class="ic"><use href="#i-settings"></use></svg></button>
@@ -7040,9 +7035,8 @@ details.details-moving > :not(summary) {
         <div class="empty hide" id="empty"></div>
       </div>
 
-      <div class="page view" id="planview" role="tabpanel" aria-labelledby="tab1"></div>
-      <div class="page view" id="progressview" role="tabpanel" aria-labelledby="tab2"></div>
-      <div class="page view" id="pumpyview" role="tabpanel" aria-labelledby="tab3">
+      <div class="page view" id="trainview" role="tabpanel" aria-labelledby="tab1"></div>
+      <div class="page view" id="pumpyview" role="tabpanel" aria-labelledby="tab2">
         <div class="pumpybar">
           <button id="pumpychats" title="Chats" aria-label="Chats"><svg class="ic"><use href="#i-list"></use></svg></button>
           <button id="pumpynew" title="New chat" aria-label="New chat"><svg class="ic"><use href="#i-plus"></use></svg></button>
@@ -7065,9 +7059,8 @@ details.details-moving > :not(summary) {
   <nav class="tabbar" role="tablist" aria-label="Sections">
     <div class="tabpill" aria-hidden="true"></div>
     <button class="tab active" id="tab0" role="tab" aria-selected="true" aria-controls="libpage" data-view="library"><span class="ti"><svg class="ic"><use href="#i-dumbbell"></use></svg></span><span class="tl">Workouts</span></button>
-    <button class="tab" id="tab1" role="tab" aria-selected="false" aria-controls="planview" data-view="plan"><span class="ti"><svg class="ic"><use href="#i-calendar"></use></svg></span><span class="tl">Plan</span></button>
-    <button class="tab" id="tab2" role="tab" aria-selected="false" aria-controls="progressview" data-view="progress"><span class="ti"><svg class="ic"><use href="#i-trend"></use></svg></span><span class="tl">Progress</span></button>
-    <button class="tab" id="tab3" role="tab" aria-selected="false" aria-controls="pumpyview" data-view="pumpy"><span class="ti" id="pumpytab"></span><span class="tl">Pumpy</span></button>
+    <button class="tab" id="tab1" role="tab" aria-selected="false" aria-controls="trainview" data-view="train"><span class="ti"><svg class="ic"><use href="#i-train"></use></svg></span><span class="tl">Train</span></button>
+    <button class="tab" id="tab2" role="tab" aria-selected="false" aria-controls="pumpyview" data-view="pumpy"><span class="ti" id="pumpytab"></span><span class="tl">Pumpy</span></button>
   </nav>
 </div>
 
@@ -8178,7 +8171,7 @@ details.details-moving > :not(summary) {
       };
     }
     native && native.purchases && native.purchases.clear().catch(function() {
-    }), billing && (billing.prices = null, billing.sub = null, billing.subAsked = !1, billing.limits = null, billing.said = null, billing.ctx = null), ["grid", "chips", "colbar", "libcount", "empty", "dinner", "pumpylog", "pumpyannounce", "pumpyctx", "pumpythreads", "planview", "progressview", "today", "recapopts"].forEach(function(id) {
+    }), billing && (billing.prices = null, billing.sub = null, billing.subAsked = !1, billing.limits = null, billing.said = null, billing.ctx = null), ["grid", "chips", "colbar", "libcount", "empty", "dinner", "pumpylog", "pumpyannounce", "pumpyctx", "pumpythreads", "trainview", "today", "recapopts"].forEach(function(id) {
       var n = $(id);
       n && (n.innerHTML = "");
     }), $("count0").textContent = "Reading your library", clearTimeout(toastTimer), $("toast").classList.remove("show"), $("toast").textContent = "", Array.prototype.forEach.call(document.querySelectorAll(".sheet.open, #detail.open, #workout.open"), function(n) {
@@ -8211,7 +8204,7 @@ details.details-moving > :not(summary) {
       accountNow(epoch, uid) && void 0;
     }), booting;
   }
-  var drawn = { plan: !1, progress: !1, pumpy: !1 };
+  var drawn = { train: !1, pumpy: !1 };
   function idle(fn, ms) {
     setTimeout(function() {
       window.requestIdleCallback ? requestIdleCallback(function() {
@@ -8222,10 +8215,8 @@ details.details-moving > :not(summary) {
   function warmPages() {
     var epoch = accountEpoch, uid = state.user && state.user.id;
     idle(function() {
-      accountNow(epoch, uid) && (drawn.plan || (drawn.plan = !0, quietly(loadPlan(!0))));
-    }, 150), idle(function() {
-      accountNow(epoch, uid) && (drawn.progress || (drawn.progress = !0, quietly(loadLogs().then(renderProgress))));
-    }, 300), idle(function() {
+      accountNow(epoch, uid) && (drawn.train || (drawn.train = !0, quietly(prepareTrain())));
+    }, 200), idle(function() {
       accountNow(epoch, uid) && (pumpy.loaded || renderPumpy(), loadPumpy(!0));
     }, 450), idle(function() {
       accountNow(epoch, uid) && isFree() && loadPrices().then(renderLibCount);
@@ -12415,12 +12406,25 @@ details.details-moving > :not(summary) {
     var tabs = barSeg.querySelectorAll(".segbtn");
     tabs[0].setAttribute("aria-selected", month ? "false" : "true"), tabs[1].setAttribute("aria-selected", month ? "true" : "false"), barToday.classList.toggle("hide", showingToday());
   }
+  var trainSeg = "calendar";
+  function prepareTrain() {
+    return Promise.all([loadPlan(!0), loadLogs()]).then(function() {
+      renderTrain();
+    });
+  }
+  function renderTrain() {
+    renderPlan(), renderProgress();
+  }
   function renderPlan() {
-    var v = $("planview");
-    (!planBody || planBody.parentNode !== v) && (v.innerHTML = "", v.appendChild(buildPlanBar()), planBody = el("div", "planbody"), v.appendChild(planBody)), paintPlanBar(), planBody.innerHTML = "", planBody.classList.remove("planswap", "planin", "pbmove"), planBody.style.transform = "", planBody.style.opacity = "", planMode === "month" ? renderMonth(planBody) : renderWeek(planBody), planBody.appendChild(pumpyProgramBtn(
+    var v = $("trainview");
+    if ((!planBody || planBody.parentNode !== v) && (v.innerHTML = "", v.appendChild(buildPlanBar()), planBody = el("div", "planbody"), v.appendChild(planBody)), paintPlanBar(), planBody.innerHTML = "", planBody.classList.remove("planswap", "planin", "pbmove"), planBody.style.transform = "", planBody.style.opacity = "", planMode === "month" ? renderMonth(planBody) : renderWeek(planBody), planBody.appendChild(pumpyProgramBtn(
       el("button", "planbtn wide"),
       planMode === "month" ? weekInMonth(monthStart) : state.weekStart
-    )), $("daysheet").classList.contains("open") && renderDay(), guidePage("plan"), planBody.offsetWidth, planSlide ? (planBody.style.setProperty("--pin", (planSlide > 0 ? 26 : -26) + "px"), planSlide = 0, planBody.classList.add("planin")) : planSwap ? (planSwap = !1, planBody.classList.add("planswap")) : viewIn(planBody);
+    )), $("daysheet").classList.contains("open") && renderDay(), !$("pslot")) {
+      var ps = el("div");
+      ps.id = "pslot", v.appendChild(ps);
+    }
+    guidePage("train"), planBody.offsetWidth, planSlide ? (planBody.style.setProperty("--pin", (planSlide > 0 ? 26 : -26) + "px"), planSlide = 0, planBody.classList.add("planin")) : planSwap ? (planSwap = !1, planBody.classList.add("planswap")) : viewIn(planBody);
   }
   var DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
   function planItem(p) {
@@ -13021,8 +13025,8 @@ details.details-moving > :not(summary) {
   }
   var statsCounted = !1;
   function countStats() {
-    if (!(statsCounted || state.view !== "progress")) {
-      var nodes = document.querySelectorAll("#progressview .countup");
+    if (!(statsCounted || state.view !== "train")) {
+      var nodes = document.querySelectorAll("#trainview .countup");
       if (nodes.length && (statsCounted = !0, !lessMotion()))
         for (var i = 0; i < nodes.length; i++) countUp(nodes[i], parseInt(nodes[i].textContent, 10) || 0);
     }
@@ -13039,7 +13043,7 @@ details.details-moving > :not(summary) {
   }
   function renderProgress() {
     if (!state.user || !state.logs) return;
-    var v = $("progressview");
+    var v = $("pslot") || $("trainview");
     v.innerHTML = "";
     var logs = state.logs || [];
     if (!logs.length) {
@@ -13047,9 +13051,7 @@ details.details-moving > :not(summary) {
       e.appendChild(pumpyArt("proud", !0)), e.appendChild(el("h2", null, "No sessions yet")), e.appendChild(el("p", null, "Finish a workout and your volume, personal records and every logged session show up here.")), v.appendChild(e), viewIn(v);
       return;
     }
-    var st = weekStats(logs, state.plan, goalSetting(), /* @__PURE__ */ new Date());
-    guidePage("progress");
-    var hero = weekHero(st);
+    var st = weekStats(logs, state.plan, goalSetting(), /* @__PURE__ */ new Date()), hero = weekHero(st);
     hero.appendChild(el(
       "div",
       "rmeta",
@@ -14263,15 +14265,10 @@ details.details-moving > :not(summary) {
       art: "coach",
       text: "Tap a number to type your reps or weight. Save set logs it and starts your rest."
     },
-    plan: {
-      title: "Give your workout a day",
+    train: {
+      title: "Your week, in one place",
       art: "plan",
-      text: "Tap a day to add a saved workout. Use Week or Month to see what\u2019s ahead."
-    },
-    progress: {
-      title: "A week at your pace",
-      art: "proud",
-      text: "The ring counts finished sessions toward your weekly goal. Tap the day dots to see what counts."
+      text: "Swipe the days to change week, tap one to plan it. Calendar, Progress and Records live under the strip."
     },
     refs: {
       title: "Show me what you have in mind",
@@ -14417,15 +14414,11 @@ details.details-moving > :not(summary) {
   }
   function guidePage(v) {
     if (!(state.view !== v || guide.visit !== v || overlayShowing())) {
-      if (v === "plan" && state.plan && state.plan.length) {
-        guideLearn("plan");
+      if (v === "train" && state.plan && state.plan.length) {
+        guideLearn("train");
         return;
       }
-      if (v === "plan" && planBody && guideOffer("plan", planBody, planBody.firstChild), v === "progress" && state.logs && state.logs.length) {
-        var pg = $("progressview");
-        guideOffer("progress", pg, pg.firstChild);
-      }
-      if (v === "pumpy" && pumpy.loaded && pumpy.messages.length && !pumpy.refs.length) {
+      if (v === "train" && planBody && guideOffer("train", planBody, planBody.firstChild), v === "pumpy" && pumpy.loaded && pumpy.messages.length && !pumpy.refs.length) {
         var c = $("pumpycomposer");
         guideOffer("refs", c, c.firstChild);
       }
@@ -14448,8 +14441,7 @@ details.details-moving > :not(summary) {
       save: "Saving videos",
       detail: "Exercise options",
       set: "Logging a set",
-      plan: "Planning your week",
-      progress: "Your weekly goal",
+      train: "Your training week",
       refs: "Working with Pumpy"
     };
     Object.keys(GUIDE_TIPS).forEach(function(id) {
@@ -15070,7 +15062,7 @@ details.details-moving > :not(summary) {
     });
   }
   function toggleUnit() {
-    state.unit = state.unit === "lb" ? "kg" : "lb", $("unittoggle").textContent = state.unit, saveSettings(), drawn.progress && (state.logs ? renderProgress() : quietly(loadLogs().then(renderProgress)));
+    state.unit = state.unit === "lb" ? "kg" : "lb", $("unittoggle").textContent = state.unit, saveSettings(), drawn.train && (state.logs ? renderTrain() : quietly(loadLogs().then(renderTrain)));
   }
   function paintGoal() {
     var st = thisWeek(), g = goalSetting() || (st ? st.goal : planMap(state.plan, mondayOf(/* @__PURE__ */ new Date())).n || GOAL_FALLBACK);
@@ -15078,7 +15070,7 @@ details.details-moving > :not(summary) {
   }
   function bumpGoal(by) {
     var g = Math.max(1, Math.min(7, paintGoal() + by));
-    state.goal = g, paintGoal(), haptic("tap"), saveSettings(), drawn.progress && state.logs && renderProgress(), today.shown && renderToday();
+    state.goal = g, paintGoal(), haptic("tap"), saveSettings(), drawn.train && state.logs && renderTrain(), today.shown && renderToday();
   }
   function toggleSounds() {
     setSounds(!state.sounds);
@@ -15534,7 +15526,7 @@ details.details-moving > :not(summary) {
     }
     toast(url, 5e3);
   }
-  var VIEWS = ["library", "plan", "progress", "pumpy"], PAGE_IDS = ["libpage", "planview", "progressview", "pumpyview"], LAST = VIEWS.length - 1, pagesEl = $("pages"), track = $("track"), tabbar = document.querySelector(".tabbar"), hdrEl = $("app").querySelector("header"), searchEl = $("searchwrap"), pos = 0, pageW = 0, idx = 0, arrivedAt = 0, perf = window.performance && window.performance.now ? window.performance : null;
+  var VIEWS = ["library", "train", "pumpy"], PAGE_IDS = ["libpage", "trainview", "pumpyview"], LAST = VIEWS.length - 1, pagesEl = $("pages"), track = $("track"), tabbar = document.querySelector(".tabbar"), hdrEl = $("app").querySelector("header"), searchEl = $("searchwrap"), pos = 0, pageW = 0, idx = 0, arrivedAt = 0, perf = window.performance && window.performance.now ? window.performance : null;
   function now() {
     return perf ? perf.now() : Date.now();
   }
@@ -15594,14 +15586,14 @@ details.details-moving > :not(summary) {
       n = $(PAGE_IDS[k]), n.inert = k !== i, k === i ? n.removeAttribute("aria-hidden") : n.setAttribute("aria-hidden", "true");
     var strips = document.querySelectorAll(".ts");
     for (k = 0; k < strips.length; k++)
-      k % 4 === i ? strips[k].removeAttribute("aria-hidden") : strips[k].setAttribute("aria-hidden", "true");
+      k % VIEWS.length === i ? strips[k].removeAttribute("aria-hidden") : strips[k].setAttribute("aria-hidden", "true");
     changed && state.user && preparePage(i);
   }
   function arrive(i) {
     var v = VIEWS[i];
     guide.visit = v, setTimeout(function() {
       guidePage(v);
-    }, 450), v === "library" && renderToday(), v === "progress" && state.logs && countStats();
+    }, 450), v === "library" && renderToday(), v === "train" && state.logs && countStats();
   }
   function preparePage(i) {
     var v = VIEWS[i];
@@ -15609,7 +15601,7 @@ details.details-moving > :not(summary) {
       renderToday();
       return;
     }
-    v === "plan" ? (restorePlan(), $("planview").scrollTop = 0, drawn.plan = !0, quietly(loadPlan(!0))) : v === "progress" ? !drawn.progress || !state.logs ? (drawn.progress = !0, quietly(loadLogs().then(renderProgress))) : countStats() : v === "pumpy" && loadPumpy();
+    v === "train" ? (restorePlan(), drawn.train = !0, quietly(prepareTrain())) : v === "pumpy" && loadPumpy();
   }
   function settled() {
     arrivedAt !== idx && (arrivedAt = idx, arrive(idx));
@@ -15627,13 +15619,13 @@ details.details-moving > :not(summary) {
     springTo(spTarget, spVel);
   }
   function setView(v) {
-    v === "history" && (v = "progress");
+    v === "history" && (v = "progress"), (v === "plan" || v === "progress") && (trainSeg = v === "plan" ? "calendar" : "progress", v = "train");
     var i = VIEWS.indexOf(v);
     i < 0 && (i = 0), goTo(i, !$("app").classList.contains("hide"));
   }
   function resetPager() {
     if (pagesEl) {
-      stopSpring(), idx = 0, arrivedAt = 0, state.view = "library", drawn = { plan: !1, progress: !1, pumpy: !1 }, planSig = "", statsCounted = !1;
+      stopSpring(), idx = 0, arrivedAt = 0, state.view = "library", drawn = { train: !1, pumpy: !1 }, planSig = "", statsCounted = !1;
       for (var k = 0; k < PAGE_IDS.length; k++) $(PAGE_IDS[k]).scrollTop = 0;
       measureChrome(), pos = 0, spTarget = 0, spVel = 0, commit(0), paint();
     }
