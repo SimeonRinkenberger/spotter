@@ -5068,8 +5068,10 @@ export const APP = String.raw`
     clearTimeout(woCloseTimer);
     $("workout").classList.remove("closing");
     // .past belongs to a session being read; a live one must never wear it, or the
-    // overflow that only history has would be sitting over a workout in progress.
+    // overflow that only history has would be sitting over a workout in progress,
+    // and the X would still be offering the way back to a screen nobody is on.
     $("workout").classList.remove("summary", "past");
+    $("wclose").setAttribute("aria-label", "Exit workout");
     $("workout").classList.add("open");
     stopRest();
     acquireWake();
@@ -7617,13 +7619,15 @@ export const APP = String.raw`
   // drew, alone on the screen with nothing else on it, and one press of the
   // phone's own buttons is the proof.
   //
-  // FITTED, not filled. The card is 1080x1920 — 9:16, Instagram's own Story
-  // frame, which is why it is drawn at that size. The phones it is screenshotted
-  // on are 19.5:9, taller and narrower, and covering one with the other takes 9%
-  // off each side: past the card's 88px margin and into the title, the figures and
-  // the creator's handle. Cropping the proof is the one thing the proof cannot
-  // do. So the card is fitted whole and the ground it was drawn on runs to the
-  // edges behind it — the same colour, so it reads as one surface and not as bars.
+  // RE-LAID, not cropped. The card is 1080x1920 — 9:16, Instagram's own Story
+  // frame, which is why it is drawn at that size and why it leaves the phone at
+  // that size. The phones it is screenshotted ON are 19.5:9, taller and
+  // narrower, and neither way of forcing one into the other is a proof: covering
+  // the screen takes 9% off each side, past the card's 88px margin and into the
+  // title, and fitting it whole leaves a third of the screen as bare ground. So
+  // the proof asks the same draw for a card at the screen's own aspect. The
+  // ground still runs to the edges behind it, for the clamp and for a window
+  // this was never meant for.
   var proofOn = false, proofTimer = null, proofUrl = null, proofSeq = 0;
 
   /**
@@ -9429,7 +9433,6 @@ export const APP = String.raw`
       if (mk !== month) { month = mk; v.appendChild(el("div", "monthhead", mk)); }
       var card = el("button", "chartcard session-link");
       card.type = "button";
-      card.setAttribute("aria-haspopup", "dialog");
       var row = el("div", "histrow"), n = el("div", "n"), sets = 0;
       (l.entries || []).forEach(function (e) { sets += (e.sets || []).filter(Boolean).length; });
       n.appendChild(el("b", null, l.workout_title || "Workout"));

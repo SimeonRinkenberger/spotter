@@ -10442,7 +10442,7 @@ details.details-moving > :not(summary) {
     Object.keys(wo.amrap).forEach(function(k) {
       var a = wo.amrap[k];
       a.until && a.until <= Date.now() && (a.until = 0, a.over = 1);
-    }), cxArm(), wo.entries.length || (wo.entries = [{ name: "Freestyle", canonical_id: null, block: 0, exercise: 0, sets: [] }]), clearTimeout(woCloseTimer), $("workout").classList.remove("closing"), $("workout").classList.remove("summary", "past"), $("workout").classList.add("open"), stopRest(), acquireWake(), renderWorkout(), startClock(), resume && resume.rest && resume.rest.total > 0 && (resume.rest.held || resume.rest.until > Date.now()) && (startRest(resume.rest.total / 1e3), restUntil = resume.rest.until, restHeld = resume.rest.held || 0, restHeld ? (clearInterval(restTimer), drawRest(restHeld)) : tickRest()), saveDraft(), history.pushState({ workout: 1 }, ""), lastWeights();
+    }), cxArm(), wo.entries.length || (wo.entries = [{ name: "Freestyle", canonical_id: null, block: 0, exercise: 0, sets: [] }]), clearTimeout(woCloseTimer), $("workout").classList.remove("closing"), $("workout").classList.remove("summary", "past"), $("wclose").setAttribute("aria-label", "Exit workout"), $("workout").classList.add("open"), stopRest(), acquireWake(), renderWorkout(), startClock(), resume && resume.rest && resume.rest.total > 0 && (resume.rest.held || resume.rest.until > Date.now()) && (startRest(resume.rest.total / 1e3), restUntil = resume.rest.until, restHeld = resume.rest.held || 0, restHeld ? (clearInterval(restTimer), drawRest(restHeld)) : tickRest()), saveDraft(), history.pushState({ workout: 1 }, ""), lastWeights();
   }
   function openWorkoutAdd() {
     if (!(!wo || wo.finished)) {
@@ -12983,7 +12983,7 @@ details.details-moving > :not(summary) {
       var d = new Date(l.started_at), mk = monthDate.format(d);
       mk !== month && (month = mk, v.appendChild(el("div", "monthhead", mk)));
       var card = el("button", "chartcard session-link");
-      card.type = "button", card.setAttribute("aria-haspopup", "dialog");
+      card.type = "button";
       var row = el("div", "histrow"), n = el("div", "n"), sets = 0;
       (l.entries || []).forEach(function(e) {
         sets += (e.sets || []).filter(Boolean).length;

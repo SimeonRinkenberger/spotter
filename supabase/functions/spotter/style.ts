@@ -1846,12 +1846,12 @@ export const STYLE = String.raw`<style>
      buttons IS the proof, and a creator gets one image rather than a cropped
      thread of them. Above every other layer in the page, toast included.
 
-     object-fit: contain and not cover, deliberately. The card is 9:16 and the
-     phone is 19.5:9; covering one with the other takes 9% off each side, which is
-     more than the card's margin and eats into the title and the figures. So it is
-     fitted whole, and #proof carries the card's own ground colour behind it —
-     set inline from the palette the card was drawn in — so the fit reads as bleed
-     rather than as letterboxing. */
+     The picture app.ts hands this element is already drawn at the screen's own
+     aspect, so it fills it. contain and not cover is the guard for when it is
+     not — a window past the clamp, a rotation mid-view — because cropping is the
+     one thing a proof cannot do; #proof carries the card's own ground colour
+     behind it, set inline from the palette it was drawn in, so a fit that is
+     not exact reads as bleed rather than as letterboxing. */
   #proof { position: fixed; inset: 0; z-index: 95; display: none;
     align-items: center; justify-content: center; background: var(--paper); }
   #proof.open { display: flex; animation: fadein var(--t-3) var(--e-soft); }
