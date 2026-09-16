@@ -4660,48 +4660,66 @@ body:not(.app) #toast.show {
   max-width: 280px;
   margin-top: 16px;
 }
+.cxtitle {
+  font-size: 19px;
+  margin-bottom: 8px;
+}
+.cxhead {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+}
 .wtimer.cap {
-  margin: 4px 0 0;
+  margin: 0;
 }
 .wtimer.cap .ring {
-  width: 132px;
-  height: 132px;
+  width: 104px;
+  height: 104px;
+}
+.wtimer.cap .ring::after {
+  inset: 7px;
 }
 .wtimer.cap .ring span {
-  font-size: 34px;
+  font-size: 27px;
+}
+.wtimer.cap .wphase {
+  margin-top: 8px;
 }
 .wtimer.cap.last .ring span {
   color: var(--ember-ink);
 }
 .cxscore {
-  display: flex;
-  align-items: baseline;
-  justify-content: center;
-  gap: 8px;
-  margin-top: 14px;
+  min-width: 0;
+  text-align: left;
 }
 .cxscore b {
+  display: block;
   font-family: var(--display);
-  font-size: 40px;
+  font-size: 42px;
   font-weight: 800;
   letter-spacing: -.035em;
+  line-height: 1;
   color: var(--ember-ink);
   font-variant-numeric: tabular-nums;
 }
 .cxscore span {
-  font-size: 14px;
+  display: block;
+  font-size: 13px;
   font-weight: 600;
   color: var(--ink-2);
+  line-height: 1.35;
+  margin-top: 4px;
 }
 .cxlist {
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  margin-top: 16px;
+  gap: 4px;
+  margin-top: 14px;
 }
 .cxmove {
-  min-height: 54px;
-  padding: 9px 12px;
+  min-height: 50px;
+  padding: 7px 11px;
   border: 1px solid var(--line);
   background: var(--card);
   transition:
@@ -4728,9 +4746,12 @@ body:not(.app) #toast.show {
 .cxmove.cur .pt span {
   white-space: normal;
 }
+.cxmove.on .pt span {
+  color: var(--ink-2);
+}
 .cxdone {
   min-height: 64px;
-  margin-top: 16px;
+  margin-top: 14px;
   font-size: 17px;
 }
 .cxundo {
@@ -10998,14 +11019,16 @@ details.details-moving > :not(summary) {
   }
   function cxBody(main, s, cx) {
     var a = cxOf(s.bi, cx), cur = cxCurrent(a, cx), extra = cxMarks(a, cx);
-    if (main.appendChild(el("div", "wblock", cx.cap ? "AMRAP \xB7 " + Math.round(cx.cap / 60) + " min" : "Complex \xB7 " + cx.n + " movements")), main.appendChild(el("h2", "wname", s.block.title || wo.workout.title || "Complex")), cx.cap) {
-      var t = el("div", "wtimer cap" + (a.until ? "" : " idle")), ring = el("button", "ring"), num2 = el("span", null, "0:00"), word = el("div", "wblock wphase");
-      t.id = "cxtimer", ring.id = "cxring", num2.id = "cxnum", ring.setAttribute("aria-label", a.until ? "Pause the time cap" : "Start the time cap"), ring.onclick = function() {
+    main.appendChild(el("div", "wblock", cx.cap ? "AMRAP \xB7 " + Math.round(cx.cap / 60) + " min" : cx.n + " movements")), main.appendChild(el("h2", "wname cxtitle", s.block.title || wo.workout.title || "Complex"));
+    var head = el("div", "cxhead");
+    if (cx.cap) {
+      var t = el("div", "wtimer cap" + (a.until ? "" : " idle")), ring = el("button", "ring");
+      t.id = "cxtimer", ring.id = "cxring", ring.setAttribute("aria-label", a.until ? "Pause the time cap" : "Start the time cap"), ring.onclick = function() {
         cxTap(s.bi, cx);
-      }, ring.appendChild(num2), t.appendChild(ring), word.textContent = a.over ? "Time" : a.until ? "Time remaining" : a.held ? "Paused" : "Tap to start", t.appendChild(word), main.appendChild(t);
+      }, ring.appendChild(el("span", null, "0:00")).id = "cxnum", t.appendChild(ring), t.appendChild(el("div", "wblock wphase", a.over ? "Time" : a.until ? "Time remaining" : a.held ? "Paused" : "Tap to start")), head.appendChild(t);
     }
     var line = el("div", "cxscore");
-    line.appendChild(el("b", null, String(a.rounds))), line.appendChild(el("span", null, cxScore(a.rounds, extra, 1))), main.appendChild(line);
+    line.appendChild(el("b", null, String(a.rounds))), line.appendChild(el("span", null, cxScore(a.rounds, extra, 1))), head.appendChild(line), main.appendChild(head);
     var list = el("div", "cxlist");
     (s.block.exercises || []).forEach(function(ex, j) {
       var did = !!a.marks[j], e = cxEntry(s.bi, j), set = e ? cxSet(ex, e) : null, row = el("button", "pickrow cxmove" + (did ? " on" : j === cur ? " cur" : "")), tx = el("div", "pt"), bits = [doseText(ex) || "\u2014"], d = cxDelta(ex);
@@ -11025,19 +11048,19 @@ details.details-moving > :not(summary) {
     return cxDial(a), s.block.exercises[cur] || s.ex;
   }
   function cxScoreOf(w, entries) {
-    var out = null, rows = entries || [];
-    return (w && w.blocks || []).forEach(function(b, bi) {
+    var out = null, by = {};
+    return (entries || []).forEach(function(e) {
+      by[e.block + ":" + e.exercise] = e;
+    }), (w && w.blocks || []).forEach(function(b, bi) {
       var cx = out ? null : complexOf(b, w), reps = 0, low, x = 0;
       if (cx) {
         var counts = (b.exercises || []).map(function(ex, j) {
-          var sets = (rows.filter(function(e) {
-            return e.block === bi && e.exercise === j;
-          })[0] || {}).sets || [];
-          return sets = sets.filter(Boolean), sets.forEach(function(st) {
+          var sets = ((by[bi + ":" + j] || {}).sets || []).filter(Boolean);
+          return sets.forEach(function(st) {
             reps += st.reps || 0;
           }), sets.length;
         });
-        !counts.length || !Math.max.apply(null, counts) || (low = Math.min.apply(null, counts), counts.forEach(function(n) {
+        Math.max.apply(null, counts.concat(0)) && (low = Math.min.apply(null, counts), counts.forEach(function(n) {
           n > low && x++;
         }), out = { rounds: low, extra: x, reps: reps, cap: cx.cap, text: cxScore(low, x) });
       }
@@ -11169,7 +11192,7 @@ details.details-moving > :not(summary) {
     var figs = el("div", "setpills sumfigs");
     [
       [String(mins), "min"],
-      [String(sets), sets === 1 ? "set" : "sets"],
+      cs ? [String(cs.rounds), cs.rounds === 1 ? "round" : "rounds"] : [String(sets), sets === 1 ? "set" : "sets"],
       [vol ? Math.round(vol).toLocaleString() : "\u2014", vol ? state.unit : "bodyweight"]
     ].forEach(function(f) {
       var box = el("div", "setpill");

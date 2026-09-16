@@ -1722,18 +1722,23 @@ export const STYLE = String.raw`<style>
      164 clock pushed the round button off an 812pt screen. The rows are the picker
      list, which already draws a name over a detail with a check that fades in on
      .on, so a marked movement here is a checked row there and costs nothing. */
-  .wtimer.cap { margin: 4px 0 0; }
-  .wtimer.cap .ring { width: 132px; height: 132px; }
-  .wtimer.cap .ring span { font-size: 34px; }
+  .cxtitle { font-size: 19px; margin-bottom: 8px; }
+  .cxhead { display: flex; align-items: center; justify-content: center; gap: 18px; }
+  .wtimer.cap { margin: 0; }
+  .wtimer.cap .ring { width: 104px; height: 104px; }
+  .wtimer.cap .ring::after { inset: 7px; }
+  .wtimer.cap .ring span { font-size: 27px; }
+  .wtimer.cap .wphase { margin-top: 8px; }
   /* The last minute is the one people sprint. Ember, not louder. */
   .wtimer.cap.last .ring span { color: var(--ember-ink); }
-  .cxscore { display: flex; align-items: baseline; justify-content: center; gap: 8px;
-    margin-top: 14px; }
-  .cxscore b { font-family: var(--display); font-size: 40px; font-weight: 800;
-    letter-spacing: -.035em; color: var(--ember-ink); font-variant-numeric: tabular-nums; }
-  .cxscore span { font-size: 14px; font-weight: 600; color: var(--ink-2); }
-  .cxlist { display: flex; flex-direction: column; gap: 5px; margin-top: 16px; }
-  .cxmove { min-height: 54px; padding: 9px 12px; border: 1px solid var(--line);
+  .cxscore { min-width: 0; text-align: left; }
+  .cxscore b { display: block; font-family: var(--display); font-size: 42px; font-weight: 800;
+    letter-spacing: -.035em; line-height: 1; color: var(--ember-ink);
+    font-variant-numeric: tabular-nums; }
+  .cxscore span { display: block; font-size: 13px; font-weight: 600; color: var(--ink-2);
+    line-height: 1.35; margin-top: 4px; }
+  .cxlist { display: flex; flex-direction: column; gap: 4px; margin-top: 14px; }
+  .cxmove { min-height: 50px; padding: 7px 11px; border: 1px solid var(--line);
     background: var(--card); transition: transform var(--t-1) var(--e-out),
       background-color var(--t-2) var(--e-soft), border-color var(--t-2) var(--e-soft); }
   .cxmove:active { transform: scale(.985); }
@@ -1745,8 +1750,12 @@ export const STYLE = String.raw`<style>
   .cxmove .pt span { display: block; white-space: nowrap; overflow: hidden;
     text-overflow: ellipsis; }
   .cxmove.cur .pt span { white-space: normal; }
+  /* Muted on the ember wash measures 4.29:1, which is under AA. The detail line
+     steps up to ink-2 on a marked row rather than the wash being lightened, so the
+     row still reads as filled from across a gym. */
+  .cxmove.on .pt span { color: var(--ink-2); }
   /* 64px because it is tapped mid-effort, by someone who is not looking at it. */
-  .cxdone { min-height: 64px; margin-top: 16px; font-size: 17px; }
+  .cxdone { min-height: 64px; margin-top: 14px; font-size: 17px; }
   .cxundo { min-height: 44px; margin-top: 8px; padding: 10px; font-size: 14px; }
 
   /* ---------- the session summary ----------

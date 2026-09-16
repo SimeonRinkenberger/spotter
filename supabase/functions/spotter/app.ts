@@ -6164,29 +6164,33 @@ export const APP = String.raw`
   function cxBody(main, s, cx) {
     var a = cxOf(s.bi, cx), cur = cxCurrent(a, cx), extra = cxMarks(a, cx);
     main.appendChild(el("div", "wblock", cx.cap
-      ? "AMRAP · " + Math.round(cx.cap / 60) + " min" : "Complex · " + cx.n + " movements"));
-    main.appendChild(el("h2", "wname", s.block.title || wo.workout.title || "Complex"));
+      ? "AMRAP · " + Math.round(cx.cap / 60) + " min" : cx.n + " movements"));
+    // Smaller than an exercise name is on every other screen, and deliberately: on
+    // this one the clock and the round count are what has to be legible at arm's
+    // length, and the name of the block is not competing for that.
+    main.appendChild(el("h2", "wname cxtitle", s.block.title || wo.workout.title || "Complex"));
 
+    // Clock on the left, score on the right — the header every WOD timer settled
+    // on, and the only arrangement that leaves the round button above the fold on
+    // a five-movement complex at 812pt.
+    var head = el("div", "cxhead");
     if (cx.cap) {
-      var t = el("div", "wtimer cap" + (a.until ? "" : " idle")), ring = el("button", "ring"),
-        num = el("span", null, "0:00"), word = el("div", "wblock wphase");
-      t.id = "cxtimer"; ring.id = "cxring"; num.id = "cxnum";
+      var t = el("div", "wtimer cap" + (a.until ? "" : " idle")), ring = el("button", "ring");
+      t.id = "cxtimer"; ring.id = "cxring";
       ring.setAttribute("aria-label", a.until ? "Pause the time cap" : "Start the time cap");
       ring.onclick = function () { cxTap(s.bi, cx); };
-      ring.appendChild(num);
+      ring.appendChild(el("span", null, "0:00")).id = "cxnum";
       t.appendChild(ring);
-      word.textContent = a.over ? "Time" : a.until ? "Time remaining"
-        : a.held ? "Paused" : "Tap to start";
-      t.appendChild(word);
-      main.appendChild(t);
+      t.appendChild(el("div", "wblock wphase", a.over ? "Time" : a.until ? "Time remaining"
+        : a.held ? "Paused" : "Tap to start"));
+      head.appendChild(t);
     }
-
-    // The score, with the round count as the one big figure on the screen after
-    // the clock. "3 rounds + 2 movements" is the whole of what a lifter reports.
+    // "3 rounds + 2 movements" is the whole of what a lifter reports afterwards.
     var line = el("div", "cxscore");
     line.appendChild(el("b", null, String(a.rounds)));
     line.appendChild(el("span", null, cxScore(a.rounds, extra, 1)));
-    main.appendChild(line);
+    head.appendChild(line);
+    main.appendChild(head);
 
     var list = el("div", "cxlist");
     (s.block.exercises || []).forEach(function (ex, j) {
@@ -6230,19 +6234,17 @@ export const APP = String.raw`
    * live counter or from a log written six weeks ago.
    */
   function cxScoreOf(w, entries) {
-    var out = null, rows = entries || [];
+    var out = null, by = {};
+    (entries || []).forEach(function (e) { by[e.block + ":" + e.exercise] = e; });
     ((w && w.blocks) || []).forEach(function (b, bi) {
       var cx = out ? null : complexOf(b, w), reps = 0, low, x = 0;
       if (!cx) return;
       var counts = (b.exercises || []).map(function (ex, j) {
-        var sets = (rows.filter(function (e) {
-          return e.block === bi && e.exercise === j;
-        })[0] || {}).sets || [];
-        sets = sets.filter(Boolean);
+        var sets = ((by[bi + ":" + j] || {}).sets || []).filter(Boolean);
         sets.forEach(function (st) { reps += st.reps || 0; });
         return sets.length;
       });
-      if (!counts.length || !Math.max.apply(null, counts)) return;
+      if (!Math.max.apply(null, counts.concat(0))) return;
       low = Math.min.apply(null, counts);
       counts.forEach(function (n) { if (n > low) x++; });
       out = { rounds: low, extra: x, reps: reps, cap: cx.cap, text: cxScore(low, x) };
@@ -6452,7 +6454,9 @@ export const APP = String.raw`
       (cs.reps ? " · " + cs.reps + " reps" : "")));
 
     var figs = el("div", "setpills sumfigs");
-    [[String(mins), "min"], [String(sets), sets === 1 ? "set" : "sets"],
+    [[String(mins), "min"],
+     cs ? [String(cs.rounds), cs.rounds === 1 ? "round" : "rounds"]
+       : [String(sets), sets === 1 ? "set" : "sets"],
      [vol ? Math.round(vol).toLocaleString() : "—", vol ? state.unit : "bodyweight"]]
       .forEach(function (f) {
         var box = el("div", "setpill");
