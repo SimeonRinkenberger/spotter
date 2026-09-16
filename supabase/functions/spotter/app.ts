@@ -8577,8 +8577,11 @@ export const APP = String.raw`
       left.appendChild(el("div", "wksub",
         "streak" + (fz ? " · " + fz + (fz === 1 ? " freeze" : " freezes") : "")));
     } else {
-      // No run to name yet, so the line says where this week stands instead.
-      left.appendChild(el("div", "wksub", ringLabel(st)));
+      // No run to name yet. The ring beside it already says "1 of 4", so the line
+      // only speaks when it has something the ring does not: a week at risk, a
+      // week that can no longer be met, a week already done.
+      left.appendChild(el("div", "wksub",
+        st.done >= st.goal || st.atRisk || st.unreachable ? ringLabel(st) : "This week"));
     }
     heroBox.appendChild(left);
 
@@ -8714,6 +8717,13 @@ export const APP = String.raw`
   }
 
   // ---------- train · the render ----------
+  //
+  // Both reads, one page. Either may land first and either may repaint; the quiet
+  // planSig check is what stops a tab swipe re-rendering an unchanged page and
+  // throwing away where it was scrolled to.
+  function prepareTrain() {
+    return Promise.all([loadPlan(true), loadLogs().then(function () { renderTrain(); })]);
+  }
 
   function renderTrain() {
     if (!state.user) return;

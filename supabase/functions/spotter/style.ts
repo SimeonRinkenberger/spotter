@@ -1397,8 +1397,8 @@ export const STYLE = String.raw`<style>
      sessions above them. */
   #daylist { margin-bottom: 4px; }
   #daylist .lede { margin: 10px 0 0; }
-  .dayses { width: 100%; min-height: 44px; background: none; border-top: 1px solid var(--line);
-    text-align: left; color: var(--ink); }
+  .dayses { width: 100%; min-height: 44px; background: none; border: 0;
+    border-top: 1px solid var(--line); text-align: left; color: var(--ink); }
   .dayses:first-child { border-top: none; }
   .dayses .ic { color: var(--muted); flex: 0 0 auto; }
 

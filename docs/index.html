@@ -3656,6 +3656,7 @@ body:not(.app) #toast.show {
   width: 100%;
   min-height: 44px;
   background: none;
+  border: 0;
   border-top: 1px solid var(--line);
   text-align: left;
   color: var(--ink);
@@ -12680,7 +12681,11 @@ details.details-moving > :not(summary) {
         "streak" + (fz ? " \xB7 " + fz + (fz === 1 ? " freeze" : " freezes") : "")
       ));
     } else
-      left.appendChild(el("div", "wksub", ringLabel(st)));
+      left.appendChild(el(
+        "div",
+        "wksub",
+        st.done >= st.goal || st.atRisk || st.unreachable ? ringLabel(st) : "This week"
+      ));
     heroBox.appendChild(left);
     var ring = el("button", "ringwrap rsm");
     ring.setAttribute("aria-label", "What counts as a session"), ring.appendChild(ringSvg(st.goal ? st.done / st.goal : 0));
@@ -12767,6 +12772,11 @@ details.details-moving > :not(summary) {
       }, rest.appendChild(ask), card.appendChild(rest);
     }
     cardBox.appendChild(card);
+  }
+  function prepareTrain() {
+    return Promise.all([loadPlan(!0), loadLogs().then(function() {
+      renderTrain();
+    })]);
   }
   function renderTrain() {
     if (state.user) {
