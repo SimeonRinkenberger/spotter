@@ -4997,11 +4997,16 @@ export const APP = String.raw`
   var woTimer = null;
   var restTimer = null;
 
+  // One screen per exercise still, because wo.entries is this list: a complex
+  // carries its descriptor on every screen of the block, and navigation stops only
+  // on the first of them. Collapsing the list instead would have cost every reader
+  // of entries[i] its parallel index.
   function flatten(w) {
     var screens = [];
     (w.blocks || []).forEach(function (b, bi) {
+      var cx = complexOf(b, w);
       (b.exercises || []).forEach(function (ex, ei) {
-        screens.push({ block: b, bi: bi, ex: ex, ei: ei });
+        screens.push({ block: b, bi: bi, ex: ex, ei: ei, cx: cx });
       });
     });
     return screens;
@@ -5015,6 +5020,7 @@ export const APP = String.raw`
       localStorage.setItem(draftKey(), JSON.stringify({
         workoutId: wo.workout.id, title: wo.workout.title,
         entries: wo.entries, blocks: wo.workout.blocks, startedAt: wo.startedAt, i: wo.i, rounds: wo.rounds,
+        amrap: wo.amrap,
         rest: restUntil && !restFace ? { until: restUntil, total: restTotal, held: restHeld } : null
       }));
       if (native) native.saveDraft(localStorage.getItem(draftKey()));
@@ -5041,9 +5047,21 @@ export const APP = String.raw`
       }),
       startedAt: (resume && resume.startedAt) || new Date().toISOString(),
       // prs: what fell today, keyed by movement. rounds: the lap of each circuit.
-      wake: null, prs: {}, rounds: (resume && resume.rounds) || {}, finished: false
+      // amrap: the clock, the round count and the partial round of each complex.
+      wake: null, prs: {}, rounds: (resume && resume.rounds) || {},
+      amrap: (resume && resume.amrap) || {}, finished: false
     };
     woPhase = "idle";
+    // A draft saved before this wave — or one whose block has since stopped being
+    // read as a complex — can point at a movement navigation no longer stops on.
+    while (wo.i > 0 && !isStop(wo.i)) wo.i--;
+    // A cap that ran out while the phone was in a drawer ran out. Resuming its
+    // deadline would put a clock on screen that is already spent.
+    Object.keys(wo.amrap).forEach(function (k) {
+      var a = wo.amrap[k];
+      if (a.until && a.until <= Date.now()) { a.until = 0; a.over = 1; }
+    });
+    cxArm();
     if (!wo.entries.length) {
       wo.entries = [{ name: "Freestyle", canonical_id: null, block: 0, exercise: 0, sets: [] }];
     }
@@ -5102,7 +5120,7 @@ export const APP = String.raw`
     var bi = wo.workout.blocks.length;
     var block = { title: "Added this session", type: "straight", exercises: [ex] };
     wo.workout.blocks.push(block);
-    wo.screens.push({ block: block, bi: bi, ei: 0, ex: ex });
+    wo.screens.push({ block: block, bi: bi, ei: 0, ex: ex, cx: null });
     wo.entries.push({ name: ex.name, canonical_id: ex.canonical_id || null, block: bi, exercise: 0, sets: [] });
     stopWork();
     // Ordinary rest can continue, but a circuit callback must not advance the
@@ -5253,10 +5271,13 @@ export const APP = String.raw`
     main.style.transform = "";
     main.style.opacity = "";
 
+    // One dot per stop: a complex is one thing to do, so it is one dot, and it is
+    // lit the moment any of its movements has been logged.
     var n = Math.max(wo.screens.length, 1);
     for (var k = 0; k < n; k++) {
+      if (wo.screens.length && !isStop(k)) continue;
       var dot = el("div", "wdot" + (k === wo.i ? " on" : ""));
-      if (wo.entries[k] && wo.entries[k].sets.length) dot.classList.add("done");
+      if (stopDone(k)) dot.classList.add("done");
       dots.appendChild(dot);
     }
 
@@ -5276,57 +5297,67 @@ export const APP = String.raw`
       return;
     }
 
-    var blockLabel = s.block.title || (s.block.type && s.block.type !== "straight" ? s.block.type : "Block " + (s.bi + 1));
-    if (s.block.rounds) blockLabel += " · " + s.block.rounds + " rounds";
-    main.appendChild(el("div", "wblock", blockLabel));
-    main.appendChild(el("h2", "wname", s.ex.name));
-
-    // The lap outranks the dose: the reps do not change between rounds.
-    var dose = doseText(s.ex);
-    if (isCircuit(s.block)) dose = "Round " + roundOf(s.bi) + " of " +
-      roundsOf(s.block) + (dose ? " · " + dose : "");
-    if (dose) main.appendChild(el("div", "wdose", dose));
-
-    if (isTimed(s.ex)) {
-      timedBody(main, s, entry);
+    // A complex replaces the whole per-exercise body: the block is the screen. The
+    // options row below still belongs to ONE movement, so it follows the one the
+    // list is pointing at.
+    var cx = s.cx && !s.ei ? s.cx : null, focus = s.ex;
+    if (cx) {
+      focus = cxBody(main, s, cx);
     } else {
-      var last = el("div", "wnote wlast", lastLine(entry));
-      last.id = "wlast";
-      main.appendChild(last);
-      if (s.ex.weight) main.appendChild(el("div", "wnote", "Suggested load: " + s.ex.weight));
-      // The cue, not "notes": mid-set is exactly where the creator's own coaching
-      // point and the one setup detail the name would get wrong are worth reading.
-      var wcue = cueOf(s.ex);
-      if (wcue) main.appendChild(el("div", "wnote", wcue));
-      renderSetPills(main, entry, s.ex, targetOf(s));
+      var blockLabel = s.block.title || (s.block.type && s.block.type !== "straight" ? s.block.type : "Block " + (s.bi + 1));
+      if (s.block.rounds) blockLabel += " · " + s.block.rounds + " rounds";
+      main.appendChild(el("div", "wblock", blockLabel));
+      main.appendChild(el("h2", "wname", s.ex.name));
+
+      // The lap outranks the dose: the reps do not change between rounds.
+      var dose = doseText(s.ex);
+      if (isCircuit(s.block)) dose = "Round " + roundOf(s.bi) + " of " +
+        roundsOf(s.block) + (dose ? " · " + dose : "");
+      if (dose) main.appendChild(el("div", "wdose", dose));
+
+      if (isTimed(s.ex)) {
+        timedBody(main, s, entry);
+      } else {
+        var last = el("div", "wnote wlast", lastLine(entry));
+        last.id = "wlast";
+        main.appendChild(last);
+        if (s.ex.weight) main.appendChild(el("div", "wnote", "Suggested load: " + s.ex.weight));
+        // The cue, not "notes": mid-set is exactly where the creator's own coaching
+        // point and the one setup detail the name would get wrong are worth reading.
+        var wcue = cueOf(s.ex);
+        if (wcue) main.appendChild(el("div", "wnote", wcue));
+        renderSetPills(main, entry, s.ex, targetOf(s));
+      }
     }
 
     var acts = el("div", "wactions exercise-actions");
-    var add = el("button", "btn ghost wo-extra-set", isTimed(s.ex) ? "Log extra hold" : "+ Add set");
-    add.onclick = function () {
-      if (isTimed(s.ex)) { logHold(entry.sets.length, s.ex.duration_seconds); renderWorkout(); }
-      else openSetSheet(entry.sets.length);
-    };
-    acts.appendChild(add);
+    if (!cx) {
+      var add = el("button", "btn ghost wo-extra-set", isTimed(s.ex) ? "Log extra hold" : "+ Add set");
+      add.onclick = function () {
+        if (isTimed(s.ex)) { logHold(entry.sets.length, s.ex.duration_seconds); renderWorkout(); }
+        else openSetSheet(entry.sets.length);
+      };
+      acts.appendChild(add);
+    }
     var extra = disclosure("Options", "exercise-options");
-    extra.firstChild.setAttribute("aria-label", "Options for " + s.ex.name);
+    extra.firstChild.setAttribute("aria-label", "Options for " + focus.name);
     // Supporting actions stay together so sets and the timer remain the focus.
     // A source with no embed or thumbnail simply has no Watch action.
     // A coach's card has no video of its own; a borrowed movement does. So the clip
     // follows the exercise rather than the workout, and the button names whose video
     // is coming. An uncited line on a coach's card still offers nothing.
-    var w = wo.workout, clip = sourceOf(s.ex) || w;
+    var w = wo.workout, clip = sourceOf(focus) || w;
     if (clip.thumb_url || (clip.shortcode && /^(instagram|tiktok|youtube)$/.test(clip.platform))) {
       var whose = clip.id !== w.id && clip.author ? "@" + clip.author + "’s" : "the";
       var watch = icon(el("button", "pickrow"), "play", "Watch " + whose + " clip");
-      watch.onclick = function () { openWatch(clip, s.ex); };
+      watch.onclick = function () { openWatch(clip, focus); };
       extra.lastChild.appendChild(watch);
     }
     var help = icon(el("button", "pickrow"), "help", "Demo");
-    help.onclick = function () { explain(s.ex, wo.workout); };
+    help.onclick = function () { explain(focus, wo.workout); };
     extra.lastChild.appendChild(help);
     var swapChip = icon(el("button", "pickrow"), "swap", "Swap or modify");
-    swapChip.onclick = function () { openSwap(s.ex.name, wo.workout.title); };
+    swapChip.onclick = function () { openSwap(focus.name, wo.workout.title); };
     extra.lastChild.appendChild(swapChip);
     acts.appendChild(extra);
     main.appendChild(acts);
@@ -5831,7 +5862,10 @@ export const APP = String.raw`
   function skipMove() {
     var s = wo && wo.screens[wo.i];
     stopWork();
-    if (s && isCircuit(s.block)) nextMove(); else woGo(1);
+    // A complex has no station to walk to — the arrow leaves the whole block.
+    if (s && s.cx && !s.ei) woGo(1);
+    else if (s && isCircuit(s.block)) nextMove();
+    else woGo(1);
   }
 
   // A held second logs as a set with no reps, so set counts include it and volume
@@ -5842,6 +5876,380 @@ export const APP = String.raw`
     if (toggle && st[idx]) st.splice(idx, 1);
     else st[Math.min(idx, st.length)] = { seconds: secs, done: true };
     saveDraft();
+  }
+
+  // ---------- complexes and AMRAPs ----------
+  //
+  // "since complexes are a popular thing right now can we have a little adjustment
+  // to the workout mode when it detects a complex like it can have a counter and
+  // show it all at once so that way it keeps track of how many you did in the 15
+  // minutes". A complex is not five exercises. It is one thing, done five ways,
+  // against a clock, as many times as you can — and walking it one screen at a
+  // time asks for four swipes a round with a kettlebell in your hands, while
+  // losing the only number anybody writes down afterwards.
+  //
+  // So a complex takes ONE screen. The shape is what every WOD timer settled on
+  // and what none of the lifting trackers have: the cap counting DOWN, one tap
+  // target big enough to hit while gasping (SmartWOD Round Counter makes the whole
+  // screen that target), and a score written the way SugarWOD and Beyond the
+  // Whiteboard write it — rounds plus what was done of the next one. The partial
+  // is counted in MOVEMENTS rather than reps, because a movement on this card is
+  // already five reps and "3 + 10" would mean two different things on two cards.
+
+  // A movement carries a dose and no set count: five reps, not three sets of five.
+  function cxDosed(e) { return !!e && !e.sets && (!!e.reps || e.duration_seconds > 0); }
+
+  // The cap, in seconds. The extraction schema has no field for one, so this reads
+  // the three places a cap can actually end up, most explicit first: a block that
+  // says so; a card whose whole duration IS this block, which only holds when there
+  // is nothing else on the card to spend those fifteen minutes on; and — only on an
+  // AMRAP, where a between-round rest is a contradiction in terms — a rest long
+  // enough that it can only have been the clock. Under a minute or over an hour it
+  // is not a cap, it is a number that landed in the wrong field.
+  function cxCap(b, w) {
+    var s = b.duration_seconds || 0, sole = 0;
+    (w.blocks || []).forEach(function (x) { if ((x.exercises || []).length) sole++; });
+    if (!s && sole === 1 && w.duration_minutes > 0) s = w.duration_minutes * 60;
+    if (!s && b.type === "amrap" && b.rest_seconds >= 180) s = b.rest_seconds;
+    s = Math.round(s || 0);
+    return s >= 60 && s <= 3600 ? s : 0;
+  }
+
+  /**
+   * Is this block a complex? Null for everything else, which is how the rest of
+   * Workout Mode keeps the behaviour it had.
+   *
+   * An AMRAP block is one because it said so — with or without a clock; without
+   * one it is a counted complex and the counter is still the point. A circuit is
+   * one when it is DOSED like a complex (every movement a dose, no set counts) and
+   * something said how long it runs. A block with its rounds written down is never
+   * this: the count is already known and the follow-along flow walks it better.
+   * EMOM is a different clock and waits for its own wave.
+   */
+  function complexOf(b, w) {
+    if (!b || b.type === "emom" || (b.rounds || 0) > 1) return null;
+    var ex = b.exercises || [];
+    if (ex.length < 2) return null;
+    var cap = cxCap(b, w || {});
+    if (b.type === "amrap") return { cap: cap, n: ex.length };
+    // An all-timed circuit is an interval workout; its own countdown per station
+    // says more than a round counter would.
+    if (b.type !== "circuit" || !cap || !ex.every(cxDosed) || ex.every(isTimed)) return null;
+    return { cap: cap, n: ex.length };
+  }
+
+  // Navigation stops on the first movement of a complex and steps over the rest.
+  function isStop(i) {
+    var s = wo && wo.screens[i];
+    return !!s && (!s.cx || !s.ei);
+  }
+
+  function endStop() {
+    var i = Math.max((wo ? wo.screens.length : 0), 1) - 1;
+    while (i > 0 && !isStop(i)) i--;
+    return i;
+  }
+
+  // A complex's dot is lit by any of its movements, since one round logs them all.
+  function stopDone(i) {
+    var s = wo.screens[i];
+    return wo.entries.some(function (e, j) {
+      return e.sets.length && (s && s.cx ? e.block === s.bi : j === i);
+    });
+  }
+
+  // Kept on the session and not on the card: a reload restores it, and the same
+  // card run again starts from zero. until is a wall-clock deadline for the reason
+  // the rest timer uses one — setInterval stops the moment the phone goes in a
+  // pocket, and a fifteen-minute cap is fifteen minutes of pocket. This is a second
+  // clock rather than a second face on the rest engine because the two are true at
+  // once: a cap runs while the lifter rests, and stopping one must not stop the
+  // other. Neither counts ticks, so neither drifts.
+  function cxOf(bi, cx) {
+    var a = wo.amrap[bi];
+    if (!a) a = wo.amrap[bi] = { cap: cx.cap, until: 0, held: 0, cued: 4, over: 0, rounds: 0, marks: [] };
+    return a;
+  }
+
+  var cxTimer = null;
+
+  function cxLeft(a) {
+    if (a.over) return 0;
+    if (a.held) return a.held;
+    return a.until ? Math.max(0, a.until - Date.now()) : a.cap * 1000;
+  }
+
+  function cxRunning() {
+    var k, m = (wo && wo.amrap) || {};
+    for (k in m) if (m[k].until) return k;
+    return null;
+  }
+
+  function cxArm() {
+    if (!cxTimer) cxTimer = setInterval(cxTick, 200);
+  }
+
+  function cxOff() {
+    clearInterval(cxTimer);
+    cxTimer = null;
+  }
+
+  function cxTick() {
+    var bi = cxRunning();
+    if (bi === null) { cxOff(); return; }
+    var a = wo.amrap[bi], left = cxDial(a), s = Math.ceil(left / 1000);
+    // 3, 2 and 1 once each, the way the rest timer counts itself out: a throttled
+    // tab lands two ticks in one second, or none.
+    if (s <= 3 && s < a.cued) { a.cued = s; beep(880, .05, 0); }
+    if (left > 0) return;
+    a.until = 0;
+    a.over = 1;
+    cxOff();
+    saveDraft();
+    beep(880, .16, 0);
+    beep(1318.5, .34, .13);
+    haptic("done");
+    renderWorkout(1);
+    toast("Time — save the session when you are ready.");
+  }
+
+  // Whatever the clock is now — running, paused, never started or spent — and the
+  // milliseconds of it, for the caller. The dial can be gone mid-tick, the lifter
+  // having swiped to another block; the deadline is what stands, and the screen
+  // catches up when it comes back.
+  function cxDial(a) {
+    var ring = $("cxring"), left = cxLeft(a), s = Math.ceil(left / 1000);
+    if (ring) {
+      ring.style.setProperty("--rest", String(a.cap ? left / (a.cap * 1000) : 1));
+      // Always m:ss, unlike the rest ring: a cap that drops from 1:00 to 59 reads
+      // as a different clock at the one moment nobody can spare a second look.
+      $("cxnum").textContent = Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+      // The last minute is the one people sprint. It goes ember, not louder.
+      $("cxtimer").classList.toggle("last", s > 0 && s <= 60);
+    }
+    return left;
+  }
+
+  // Starting and resuming are the same move: a fresh deadline out of whatever is
+  // left. Counting a round before the clock was started starts it.
+  function cxGo(a) {
+    if (a.until || a.over || !a.cap) return;
+    a.until = Date.now() + (a.held || a.cap * 1000);
+    if (!a.held) a.cued = 4;
+    a.held = 0;
+    tellSounds();
+    cxArm();
+  }
+
+  // Every count lands the same way: the log rebuilt, the draft written, the screen
+  // redrawn without an entrance, because a changed number is not an arrival.
+  function cxAfter(bi, buzz) {
+    haptic(buzz);
+    cxSync(bi);
+    saveDraft();
+    renderWorkout(1);
+  }
+
+  function cxTap(bi, cx) {
+    unlockAudio();
+    var a = cxOf(bi, cx);
+    if (a.over || !cx.cap) return;
+    if (a.until) { a.held = Math.max(1, a.until - Date.now()); a.until = 0; }
+    else cxGo(a);
+    saveDraft();
+    renderWorkout(1);
+  }
+
+  // A round is the whole complex, once. The marks reset because the next round
+  // starts at the first movement again.
+  function cxRound(bi, cx) {
+    unlockAudio();
+    var a = cxOf(bi, cx);
+    cxGo(a);
+    a.rounds++;
+    a.marks = [];
+    cxAfter(bi, "success");
+  }
+
+  // Undo takes back the smallest thing that was counted: the partial round if one
+  // is open, the last whole round otherwise. Nothing has been written to the server
+  // yet, so this is a plain reversal rather than the delayed commit a deletion
+  // needs — and it stays on screen rather than expiring with a toast, because a
+  // double-tap gets noticed a minute later as often as a second later.
+  function cxUndo(bi, cx) {
+    var a = cxOf(bi, cx);
+    if (cxMarks(a, cx)) a.marks = [];
+    else if (a.rounds) a.rounds--;
+    else return;
+    cxAfter(bi, "tap");
+  }
+
+  function cxMark(bi, cx, j) {
+    unlockAudio();
+    var a = cxOf(bi, cx);
+    cxGo(a);
+    a.marks[j] = a.marks[j] ? 0 : 1;
+    // Every movement marked IS a round, and asking for a sixth tap to say so is
+    // the kind of small insult an app gets to make once. Hevy's supersets roll over
+    // the same way when the last exercise of the group is ticked.
+    if (cxMarks(a, cx) === cx.n) cxRound(bi, cx); else cxAfter(bi, "tap");
+  }
+
+  function cxMarks(a, cx) {
+    var n = 0, k;
+    for (k = 0; k < cx.n; k++) if (a.marks[k]) n++;
+    return n;
+  }
+
+  // The movement the lifter is on: the first one this round has not had yet.
+  function cxCurrent(a, cx) {
+    for (var k = 0; k < cx.n; k++) if (!a.marks[k]) return k;
+    return 0;
+  }
+
+  function cxEntry(bi, j) {
+    return wo.entries.filter(function (e) {
+      return e.block === bi && e.exercise === j;
+    })[0] || null;
+  }
+
+  // The card's own dose, and the load this movement was last done with — the same
+  // number the set sheet would have opened on, shown on the row so it is never a
+  // figure that appeared out of nowhere. Never marked a best: a weight nobody typed
+  // today has not earned a record.
+  function cxSet(ex, e) {
+    if (isTimed(ex)) return { seconds: ex.duration_seconds, done: true };
+    var h = hist[exKey(e)], m = String(ex.reps || "").match(/\d+/);
+    return { reps: m ? parseInt(m[0], 10) : null, unit: state.unit, done: true,
+      weight: (h ? toUnit(h.weight, h.unit) : 0) || null };
+  }
+
+  // Every completed round is one set of every movement; a partial round is one set
+  // of the movements that were marked. That is exactly the shape workout_logs
+  // already holds, which is why Progress, the muscle map and the records read a
+  // complex with no server change at all. Rebuilt from the counter rather than
+  // appended to, so undo is a subtraction and not a second bookkeeping system.
+  function cxSync(bi) {
+    var blk = wo.workout.blocks[bi], a = wo.amrap[bi];
+    if (!blk || !a) return;
+    (blk.exercises || []).forEach(function (ex, j) {
+      var e = cxEntry(bi, j);
+      if (!e) return;
+      var n = a.rounds + (a.marks[j] ? 1 : 0);
+      while (e.sets.length > n) e.sets.pop();
+      while (e.sets.length < n) e.sets.push(cxSet(ex, e));
+    });
+  }
+
+  // bare leaves the round count off, for the one place it is drawn at four times
+  // the size of the words after it.
+  function cxScore(r, x, bare) {
+    return (bare ? "" : r + " ") + (r === 1 ? "round" : "rounds") +
+      (x ? " + " + x + (x === 1 ? " movement" : " movements") : "");
+  }
+
+  // The delta is a sentence about a version nobody filmed, and a row has space for
+  // its first clause: "hands on the kettlebell handle instead of the floor, which
+  // narrows the grip" is one true thing followed by two explanations of it. A
+  // clause too long to sit on a row is dropped whole rather than cut in half — a
+  // half-claim about someone's form is worse than none.
+  function cxDelta(ex) {
+    var d = ex && ex.delta ? String(ex.delta).trim() : "";
+    if (!d) return "";
+    d = d.split(/[,;]| instead | which | rather than /)[0].trim();
+    return d.length > 3 && d.length <= 42 ? d : "";
+  }
+
+  // Returns the movement the options row should act on.
+  function cxBody(main, s, cx) {
+    var a = cxOf(s.bi, cx), cur = cxCurrent(a, cx), extra = cxMarks(a, cx);
+    main.appendChild(el("div", "wblock", cx.cap
+      ? "AMRAP · " + Math.round(cx.cap / 60) + " min" : cx.n + " movements"));
+    // Smaller than an exercise name is on every other screen, and deliberately: on
+    // this one the clock and the round count are what has to be legible at arm's
+    // length, and the name of the block is not competing for that.
+    main.appendChild(el("h2", "wname cxtitle", s.block.title || wo.workout.title || "Complex"));
+
+    // Clock on the left, score on the right — the header every WOD timer settled
+    // on, and the only arrangement that leaves the round button above the fold on
+    // a five-movement complex at 812pt.
+    var head = el("div", "cxhead");
+    if (cx.cap) {
+      var t = el("div", "wtimer cap" + (a.until ? "" : " idle")), ring = el("button", "ring");
+      t.id = "cxtimer"; ring.id = "cxring";
+      ring.setAttribute("aria-label", a.until ? "Pause the time cap" : "Start the time cap");
+      ring.onclick = function () { cxTap(s.bi, cx); };
+      ring.appendChild(el("span", null, "0:00")).id = "cxnum";
+      t.appendChild(ring);
+      t.appendChild(el("div", "wblock wphase", a.over ? "Time" : a.until ? "Time remaining"
+        : a.held ? "Paused" : "Tap to start"));
+      head.appendChild(t);
+    }
+    // "3 rounds + 2 movements" is the whole of what a lifter reports afterwards.
+    var line = el("div", "cxscore");
+    line.appendChild(el("b", null, String(a.rounds)));
+    line.appendChild(el("span", null, cxScore(a.rounds, extra, 1)));
+    head.appendChild(line);
+    main.appendChild(head);
+
+    var list = el("div", "cxlist");
+    (s.block.exercises || []).forEach(function (ex, j) {
+      var did = !!a.marks[j], e = cxEntry(s.bi, j), set = e ? cxSet(ex, e) : null;
+      var row = el("button", "pickrow cxmove" + (did ? " on" : j === cur ? " cur" : ""));
+      var tx = el("div", "pt"), bits = [doseText(ex) || "—"], d = cxDelta(ex);
+      row.setAttribute("aria-pressed", did ? "true" : "false");
+      if (set && set.weight) bits.push(wtText(set.weight, set.unit) + " " + state.unit);
+      if (d) bits.push(d);
+      tx.appendChild(el("b", null, ex.name));
+      tx.appendChild(el("span", null, bits.join(" · ")));
+      row.appendChild(tx);
+      row.appendChild(icon(el("span", "ck"), "check"));
+      row.onclick = function () { cxMark(s.bi, cx, j); };
+      list.appendChild(row);
+    });
+    main.appendChild(list);
+
+    var go = el("button", "btn cxdone", "Round " + (a.rounds + 1) + " done");
+    go.onclick = function () { cxRound(s.bi, cx); };
+    main.appendChild(go);
+
+    if (a.rounds || extra) {
+      var un = el("button", "btn ghost cxundo", extra
+        ? "Undo " + extra + (extra === 1 ? " movement" : " movements")
+        : "Undo round " + a.rounds);
+      un.onclick = function () { cxUndo(s.bi, cx); };
+      main.appendChild(un);
+    }
+
+    cxDial(a);
+    return s.block.exercises[cur] || s.ex;
+  }
+
+  /**
+   * The score of a complex, read back off the entries rather than off the session,
+   * so a card opened from history scores the way the summary did.
+   *
+   * rounds is what EVERY movement got through, and the movements that got one more
+   * are the partial round — which is the same arithmetic whether it is read from a
+   * live counter or from a log written six weeks ago.
+   */
+  function cxScoreOf(w, entries) {
+    var out = null, by = {};
+    (entries || []).forEach(function (e) { by[e.block + ":" + e.exercise] = e; });
+    ((w && w.blocks) || []).forEach(function (b, bi) {
+      var cx = out ? null : complexOf(b, w), reps = 0, low, x = 0;
+      if (!cx) return;
+      var counts = (b.exercises || []).map(function (ex, j) {
+        var sets = ((by[bi + ":" + j] || {}).sets || []).filter(Boolean);
+        sets.forEach(function (st) { reps += st.reps || 0; });
+        return sets.length;
+      });
+      if (!Math.max.apply(null, counts.concat(0))) return;
+      low = Math.min.apply(null, counts);
+      counts.forEach(function (n) { if (n > low) x++; });
+      out = { rounds: low, extra: x, reps: reps, cap: cx.cap, text: cxScore(low, x) };
+    });
+    return out;
   }
 
   // w is the session's workout, or the video this exercise was borrowed from.
@@ -5863,7 +6271,10 @@ export const APP = String.raw`
 
   function woGo(delta) {
     if (!wo) return;
+    // Walk over the movements of a complex rather than into them: the arrows and
+    // the swipe move between things to do, and the block is one of those.
     var next = wo.i + delta;
+    while (next > 0 && next < wo.screens.length && !isStop(next)) next += delta;
     if (next < 0 || next >= Math.max(wo.screens.length, 1)) return;
     // A rest belongs to the lifter; a countdown to the move on screen.
     stopWork();
@@ -5890,7 +6301,7 @@ export const APP = String.raw`
     // last — the whole of saying there is nothing that way.
     function paint(dx) {
       if (md.calm) return;
-      var end = dx < 0 ? wo.i >= Math.max(wo.screens.length, 1) - 1 : wo.i <= 0;
+      var end = dx < 0 ? wo.i >= endStop() : wo.i <= 0;
       var lead = end ? clamp(dx / 5, -WM_BAND, WM_BAND) : clamp(dx / 2, -WM_LEAD, WM_LEAD);
       main.style.transform = "translateX(" + lead + "px)";
       main.style.opacity = String(1 - Math.abs(lead) / 320);
@@ -5910,7 +6321,7 @@ export const APP = String.raw`
       var n = cancelled || !wo ? 0
         : (v < -FLING || (far && d.dx < 0)) ? 1
         : (v > FLING || (far && d.dx > 0)) ? -1 : 0;
-      if (n > 0 && wo.i >= Math.max(wo.screens.length, 1) - 1) n = 0;
+      if (n > 0 && wo.i >= endStop()) n = 0;
       if (n < 0 && wo.i <= 0) n = 0;
       // Timing back on before the offset goes, so a refused swipe springs home
       // rather than snapping; a committed one has its lean cleared by the render.
@@ -5999,6 +6410,7 @@ export const APP = String.raw`
       renderToday();
     });
     clearInterval(woTimer);
+    cxOff();
     stopRest();
     clearDraft();
     wo.finished = true;
@@ -6035,8 +6447,16 @@ export const APP = String.raw`
     main.appendChild(el("div", "wblock", "Session complete"));
     main.appendChild(el("h2", "wname", wo.workout.title || "Workout"));
 
+    // A complex is not scored in sets. "4 rounds + 2 movements in 15:00" is the
+    // line that would go on a whiteboard, so it is the line that goes here.
+    var cs = cxScoreOf(wo.workout, logged);
+    if (cs) main.appendChild(el("div", "wdose", cs.text + (cs.cap ? " in " + clock(cs.cap) : "") +
+      (cs.reps ? " · " + cs.reps + " reps" : "")));
+
     var figs = el("div", "setpills sumfigs");
-    [[String(mins), "min"], [String(sets), sets === 1 ? "set" : "sets"],
+    [[String(mins), "min"],
+     cs ? [String(cs.rounds), cs.rounds === 1 ? "round" : "rounds"]
+       : [String(sets), sets === 1 ? "set" : "sets"],
      [vol ? Math.round(vol).toLocaleString() : "—", vol ? state.unit : "bodyweight"]]
       .forEach(function (f) {
         var box = el("div", "setpill");
@@ -6137,6 +6557,7 @@ export const APP = String.raw`
 
   function exitWorkout() {
     clearInterval(woTimer);
+    cxOff();
     stopRest();
     releaseWake();
     clearDraft();
@@ -6613,12 +7034,18 @@ export const APP = String.raw`
     if (w.platform === "pumpy") credit = "Built with Pumpy";
     else if (w.author) credit = "from @" + w.author +
       (SC_WHERE[w.platform] ? " on " + SC_WHERE[w.platform] : "");
+    // A complex posts as rounds, not as sets: "4 ROUNDS + 2 MOVEMENTS IN 15:00" is
+    // what the person actually did, and a set count of twenty says nothing.
+    var cs = cxScoreOf(w, entries), lab = (w.muscle_groups || []).slice(0, 4).join("  ·  ");
+    if (cs) lab = cs.text + (cs.cap ? " in " + clock(cs.cap) : "") + (lab ? "  ·  " + lab : "");
     return {
       bg: sc.bg, title: title || "Workout", prs: prs, exercises: ex, credit: credit,
       date: new Date(when).toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" }),
-      figs: [[String(mins), "min"], [String(sets), sets === 1 ? "set" : "sets"],
+      figs: [[String(mins), "min"],
+        cs ? [String(cs.rounds), cs.rounds === 1 ? "round" : "rounds"]
+          : [String(sets), sets === 1 ? "set" : "sets"],
         [vol ? Math.round(vol).toLocaleString() : "—", vol ? state.unit : "bodyweight"]],
-      label: (w.muscle_groups || []).slice(0, 4).join("  ·  "),
+      label: lab,
       coach: w.platform === "pumpy"
     };
   }
@@ -13176,12 +13603,18 @@ export const APP = String.raw`
     var list = $("exlist");
     list.innerHTML = "";
     wo.screens.forEach(function (s, i) {
+      // A complex is one row, named as the block: five rows that all jump to the
+      // same screen would be five ways of saying the same thing.
+      if (!isStop(i)) return;
+      var cxh = s.cx && !s.ei ? s.cx : null;
       var row = el("button", "pickrow");
       var t = el("div", "pt");
-      t.appendChild(el("b", null, s.ex.name));
-      t.appendChild(el("span", null, doseText(s.ex) || "—"));
+      t.appendChild(el("b", null, cxh ? (s.block.title || "Complex") : s.ex.name));
+      t.appendChild(el("span", null, cxh
+        ? cxh.n + " movements" + (cxh.cap ? " · " + Math.round(cxh.cap / 60) + " min" : "")
+        : doseText(s.ex) || "—"));
       row.appendChild(t);
-      if (wo.entries[i] && wo.entries[i].sets.length) {
+      if (stopDone(i)) {
         var tick = icon(el("span", "daydone"), "check");
         tick.setAttribute("role", "img");
         tick.setAttribute("aria-label", "Logged");
