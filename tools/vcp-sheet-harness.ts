@@ -336,5 +336,39 @@ const SWING = golden.exercises[2];
     !/BANANA/.test(smuggled.ask), smuggled.ask);
 }
 
+// ---------- 5. the thumbs are still a thumb-sized target ----------
+//
+// The one thing measuring the built page caught that no assertion about a string
+// could: .vote sets padding to 0 so the icon centres in a square, and a chip with no
+// padding is as tall as its glyph — 16px, hit 28px, well under the floor the rest of
+// the app holds. So the arithmetic is read out of the stylesheet rather than trusted.
+
+{
+  const STYLE = await Deno.readTextFile(new URL("supabase/functions/spotter/style.ts", ROOT));
+  const rule = (sel: string) => {
+    const m = STYLE.match(new RegExp("(^|[,}])\\s*" + sel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*\\{([^}]*)\\}", "m"));
+    return m ? m[2] : "";
+  };
+  const px = (body: string, prop: string) => {
+    const m = body.match(new RegExp("(?:^|;)\\s*" + prop + "\\s*:\\s*(-?[\\d.]+)px"));
+    return m ? Number(m[1]) : null;
+  };
+  const vote = rule(".vote");
+  const after = rule(".votes .vote::after");
+  const w = px(vote, "width"), h = px(vote, "height"), inset = px(after, "inset");
+  check("the thumb states its own height", h !== null, vote.trim());
+  check("and its own width", w !== null);
+  check("and the hit area it is inset by", inset !== null, after.trim());
+  check("so the target is 44 across", (w ?? 0) - 2 * (inset ?? 0) >= 44, String(w) + " / " + String(inset));
+  check("and 44 down", (h ?? 0) - 2 * (inset ?? 0) >= 44, String(h) + " / " + String(inset));
+  // Both schemes and reduced motion, for the three things this wave draws.
+  check("the votes row gives up its entrance under reduced motion",
+    /@media \(prefers-reduced-motion: reduce\) \{\s*\n\s*\.votes \{ animation: none; \}/.test(STYLE));
+  for (const cls of [".dchip", ".perfdelta", ".ytrel", ".exmarks"]) {
+    check("no new class hard-codes a colour: " + cls,
+      !/#[0-9a-fA-F]{3,8}|rgba?\(/.test(rule(cls)), rule(cls).trim());
+  }
+}
+
 console.log(failures ? "\n" + failures + " FAILED of " + checks : "ok " + checks + "/" + checks + " checks");
 if (failures) Deno.exit(1);

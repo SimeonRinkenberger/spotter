@@ -1023,10 +1023,17 @@ export const STYLE = String.raw`<style>
      second pill for it would be a second pill to keep in step with the first. */
   .votes { display: flex; align-items: center; gap: 8px; margin-top: 16px;
     animation: msgin var(--t-3) var(--e-out) both; }
-  /* Square, because the label is the icon. Drawn 36, hit 44 — Apple's floor, and
-     the same ::after the filter chips use rather than a second one of its own. */
-  .vote { width: 36px; padding: 0; justify-content: center; }
+  /* Square, because the label is the icon. The height has to be stated: a chip is
+     as tall as its padding makes it, and a chip with no padding is as tall as a
+     16px glyph. Drawn 36, hit 44 — Apple's floor, from the ::after the filter chips
+     already use, inset the 4px that makes 36 into 44 in both directions. */
+  .vote { width: 36px; height: 36px; padding: 0; justify-content: center; }
   .vote .ic { width: 16px; height: 16px; }
+  /* A thumbs-down is a thumbs-up reflected in its own middle — the two paths are the
+     same fourteen curves with every y mirrored about 12 — so the page carries one
+     symbol and this turns it over. Nothing about the drawing changes; it is one
+     fewer copy of a path to keep in step with the other. */
+  .vote.down .ic { transform: scaleY(-1); }
   /* The way out, at the end of the row: a reader who knows the movement better than
      Spotter does should be able to fix the card, not only mark the answer wrong. */
   .votefix { margin-left: auto; }
@@ -2150,6 +2157,9 @@ export const STYLE = String.raw`<style>
   .mbtn::after { inset: -6px 0; }
   .danger::after, .threadrow .tdel::after { inset: -3px 0; }
   .chips .chip::after, .said .chip::after, .votes .chip::after { inset: -6px 0; }
+  /* A square control needs the inset on all four sides: 36 + 4 + 4 is 44 across as
+     well as down, and -6px 0 would have left the thumbs 36 wide and 28 tall. */
+  .votes .vote::after { inset: -4px; }
   .pumpyctx button::after { inset: -7px; }
   /* Up into the label, which is text and not a control; down to the dose line. */
   .ttitle::after { inset: -14px 0 -5px; }

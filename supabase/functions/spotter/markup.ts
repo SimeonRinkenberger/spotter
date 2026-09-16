@@ -88,7 +88,6 @@ export const MARKUP_BODY = String.raw`</head>
 <symbol id="i-volume-x" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="m22 9-6 6"/><path d="m16 9 6 6"/></symbol>
 <symbol id="i-youtube" viewBox="0 0 24 24"><rect width="20" height="14" x="2" y="5" rx="4.5"/><path d="m10.2 9 4.6 3-4.6 3z"/></symbol>
 <symbol id="i-thumb-up" viewBox="0 0 24 24"><path d="M7 20v-9l4-8a2.5 2.5 0 0 1 2 3.5L12 11h6a2 2 0 0 1 2 2.5l-1.5 6a2 2 0 0 1-2 .5z"/><rect width="5" height="10" x="2" y="10" rx="1.5"/></symbol>
-<symbol id="i-thumb-down" viewBox="0 0 24 24"><path d="M7 4v9l4 8a2.5 2.5 0 0 0 2-3.5L12 13h6a2 2 0 0 0 2-2.5l-1.5-6a2 2 0 0 0-2-.5z"/><rect width="5" height="10" x="2" y="4" rx="1.5"/></symbol>
 </svg>
 
 <!-- ---------- signed out ---------- -->
@@ -443,7 +442,7 @@ export const MARKUP_BODY = String.raw`</head>
        writes to the user's own copy of the card. -->
   <div class="votes hide" id="explainvotes">
     <button class="chip vote" id="explainup" aria-label="This explanation looks right" aria-pressed="false"><svg class="ic"><use href="#i-thumb-up"></use></svg></button>
-    <button class="chip vote" id="explaindown" aria-label="This explanation looks wrong" aria-pressed="false"><svg class="ic"><use href="#i-thumb-down"></use></svg></button>
+    <button class="chip vote down" id="explaindown" aria-label="This explanation looks wrong" aria-pressed="false"><svg class="ic"><use href="#i-thumb-up"></use></svg></button>
     <button class="chip votefix" id="explainfix">Not quite right?</button>
   </div>
   <div class="btnrow"><button class="btn ghost" id="swapgo"><svg class="ic"><use href="#i-swap"></use></svg>Swap or modify</button></div>

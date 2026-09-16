@@ -2715,12 +2715,16 @@ h1 {
 }
 .vote {
   width: 36px;
+  height: 36px;
   padding: 0;
   justify-content: center;
 }
 .vote .ic {
   width: 16px;
   height: 16px;
+}
+.vote.down .ic {
+  transform: scaleY(-1);
 }
 .votefix {
   margin-left: auto;
@@ -5788,6 +5792,9 @@ select:focus-visible {
 .votes .chip::after {
   inset: -6px 0;
 }
+.votes .vote::after {
+  inset: -4px;
+}
 .pumpyctx button::after {
   inset: -7px;
 }
@@ -6744,7 +6751,6 @@ details.details-moving > :not(summary) {
 <symbol id="i-volume-x" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="m22 9-6 6"/><path d="m16 9 6 6"/></symbol>
 <symbol id="i-youtube" viewBox="0 0 24 24"><rect width="20" height="14" x="2" y="5" rx="4.5"/><path d="m10.2 9 4.6 3-4.6 3z"/></symbol>
 <symbol id="i-thumb-up" viewBox="0 0 24 24"><path d="M7 20v-9l4-8a2.5 2.5 0 0 1 2 3.5L12 11h6a2 2 0 0 1 2 2.5l-1.5 6a2 2 0 0 1-2 .5z"/><rect width="5" height="10" x="2" y="10" rx="1.5"/></symbol>
-<symbol id="i-thumb-down" viewBox="0 0 24 24"><path d="M7 4v9l4 8a2.5 2.5 0 0 0 2-3.5L12 13h6a2 2 0 0 0 2-2.5l-1.5-6a2 2 0 0 0-2-.5z"/><rect width="5" height="10" x="2" y="4" rx="1.5"/></symbol>
 </svg>
 
 <div id="landing">
@@ -7045,7 +7051,7 @@ details.details-moving > :not(summary) {
   <div class="aitext hide" id="explaintext" role="status"></div>
   <div class="votes hide" id="explainvotes">
     <button class="chip vote" id="explainup" aria-label="This explanation looks right" aria-pressed="false"><svg class="ic"><use href="#i-thumb-up"></use></svg></button>
-    <button class="chip vote" id="explaindown" aria-label="This explanation looks wrong" aria-pressed="false"><svg class="ic"><use href="#i-thumb-down"></use></svg></button>
+    <button class="chip vote down" id="explaindown" aria-label="This explanation looks wrong" aria-pressed="false"><svg class="ic"><use href="#i-thumb-up"></use></svg></button>
     <button class="chip votefix" id="explainfix">Not quite right?</button>
   </div>
   <div class="btnrow"><button class="btn ghost" id="swapgo"><svg class="ic"><use href="#i-swap"></use></svg>Swap or modify</button></div>
@@ -9891,12 +9897,12 @@ details.details-moving > :not(summary) {
   function startOf(ex) {
     return secOf(ex ? ex.t0 : null);
   }
-  var CHIP_DROP = { both: 1, the: 1, a: 1, an: 1, his: 1, her: 1, their: 1, one: 1, two: 1, own: 1 }, CHIP_TRAIL = { on: 1, to: 1, in: 1, at: 1, with: 1, and: 1, or: 1, of: 1, from: 1, by: 1, for: 1, into: 1, onto: 1 }, CHIP_FIELDS = ["equipment", "hand_placement", "surface", "tempo"];
+  var CHIP_DROP = /^(both|the|an?|his|her|their|one|two|own)$/, CHIP_TRAIL = /^(on|to|in|at|with|and|or|of|from|by|for|into|onto)$/, CHIP_FIELDS = ["equipment", "hand_placement", "surface", "tempo"];
   function chipWords(clause) {
-    for (var words = String(clause).toLowerCase().replace(/[^a-z0-9 -]/g, " ").split(/\s+/), kept = [], i = 0; i < words.length && !(!(!words[i] || CHIP_DROP[words[i]]) && (kept.push(words[i]), kept.length === 3)); i++)
+    for (var words = String(clause).toLowerCase().replace(/[^a-z0-9 -]/g, " ").split(/\s+/), kept = [], i = 0; i < words.length && !(!(!words[i] || CHIP_DROP.test(words[i])) && (kept.push(words[i]), kept.length === 3)); i++)
       ;
-    for (; kept.length > 1 && CHIP_TRAIL[kept[kept.length - 1]]; ) kept.pop();
-    return !kept.length || CHIP_TRAIL[kept[0]] ? "" : kept.join(" ");
+    for (; kept.length > 1 && CHIP_TRAIL.test(kept[kept.length - 1]); ) kept.pop();
+    return !kept.length || CHIP_TRAIL.test(kept[0]) ? "" : kept.join(" ");
   }
   function chipsFor(ex) {
     var ap = ex && ex.as_performed;

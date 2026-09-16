@@ -4310,20 +4310,20 @@ export const APP = String.raw`
   // field — that is what turns a surface of "hands elevated on the bell, feet on the
   // mat" into "Feet on mat" once hand placement has already said "Hands stacked",
   // rather than into the same word twice.
-  var CHIP_DROP = { both: 1, the: 1, a: 1, an: 1, his: 1, her: 1, their: 1, one: 1, two: 1, own: 1 };
-  var CHIP_TRAIL = { on: 1, to: 1, in: 1, at: 1, with: 1, and: 1, or: 1, of: 1, from: 1, by: 1, for: 1, into: 1, onto: 1 };
+  var CHIP_DROP = /^(both|the|an?|his|her|their|one|two|own)$/;
+  var CHIP_TRAIL = /^(on|to|in|at|with|and|or|of|from|by|for|into|onto)$/;
   var CHIP_FIELDS = ["equipment", "hand_placement", "surface", "tempo"];
 
   function chipWords(clause) {
     var words = String(clause).toLowerCase().replace(/[^a-z0-9 -]/g, " ").split(/\s+/);
     var kept = [];
     for (var i = 0; i < words.length; i++) {
-      if (!words[i] || CHIP_DROP[words[i]]) continue;
+      if (!words[i] || CHIP_DROP.test(words[i])) continue;
       kept.push(words[i]);
       if (kept.length === 3) break;
     }
-    while (kept.length > 1 && CHIP_TRAIL[kept[kept.length - 1]]) kept.pop();
-    if (!kept.length || CHIP_TRAIL[kept[0]]) return "";
+    while (kept.length > 1 && CHIP_TRAIL.test(kept[kept.length - 1])) kept.pop();
+    if (!kept.length || CHIP_TRAIL.test(kept[0])) return "";
     return kept.join(" ");
   }
 
