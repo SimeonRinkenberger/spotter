@@ -155,7 +155,7 @@ export const MARKUP_BODY = String.raw`</head>
 </div>
 
 <!-- ---------- signed in ---------- -->
-<!-- Four pages side by side on one track, not four boxes taking turns at
+<!-- Three pages side by side on one track, not three boxes taking turns at
      display:none. The header and the tab bar sit above the track and are told
      where it is every frame, so the title strips and the tab capsule move with
      the finger instead of jumping when a view swaps. Each page is its own

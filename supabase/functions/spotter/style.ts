@@ -207,7 +207,7 @@ export const STYLE = String.raw`<style>
   .landfoot a { color: var(--muted); }
 
   /* ---------- app shell, and the frame everything full-screen is drawn in ----------
-     #app owns the viewport instead of the document: the four pages scroll inside
+     #app owns the viewport instead of the document: the three pages scroll inside
      it while the header and the tab bar stay put, which is the only arrangement
      in which a page can slide sideways. Its size is --vvh/--vvtop, and so is every
      other full-screen layer's. The frame is the dynamic viewport, and nothing
