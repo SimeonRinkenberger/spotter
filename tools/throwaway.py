@@ -6,6 +6,8 @@
   tw.py magic   <tag>                  print an admin magic link for browser sign-in
   tw.py api     <tag> <METHOD> <path> [json]   call the edge function as that user
   tw.py rest    <tag> <METHOD> <path> [json]   call PostgREST as that user (RLS applies)
+  tw.py srest   <tag> <METHOD> <path> [json]   call PostgREST as the SERVICE ROLE, with
+                                               user_id filled in for that throwaway
   tw.py delete  <tag>                  delete the account (cascades its data)
   tw.py list                           list every throwaway currently in auth
 """
@@ -39,7 +41,8 @@ def call(url, method="GET", body=None, headers=None):
         except Exception: return e.code, raw
 
 def admin(path, method="GET", body=None):
-    return call(SB + path, method, body, {"apikey": SVC, "authorization": "Bearer " + SVC})
+    return call(SB + path, method, body,
+                {"apikey": SVC, "authorization": "Bearer " + SVC, "prefer": "return=representation"})
 
 def email(tag): return "spotter-tw-%s@example.com" % tag
 
@@ -89,16 +92,25 @@ def main():
         if not u: print("no such user"); return
         st, d = admin("/auth/v1/admin/users/" + u["id"], "DELETE")
         print("deleted", u["email"], st); return
-    if cmd in ("api", "rest"):
+    if cmd in ("api", "rest", "srest"):
         method, path = a[2], a[3]
         body = json.loads(a[4]) if len(a) > 4 else None
-        tok = token(tag)
         if cmd == "api":
-            st, d = call(API + path, method, body, {"authorization": "Bearer " + tok})
-        else:
+            st, d = call(API + path, method, body, {"authorization": "Bearer " + token(tag)})
+        elif cmd == "rest":
             st, d = call(SB + "/rest/v1/" + path, method, body,
-                         {"apikey": ANON, "authorization": "Bearer " + tok,
+                         {"apikey": ANON, "authorization": "Bearer " + token(tag),
                           "prefer": "return=representation"})
+        else:
+            # Fixture rows, written the only way they still can be. The cost guards of
+            # 8 Sept revoked insert on public.workouts from authenticated — a card is
+            # supposed to arrive through the edge function, which is the thing that
+            # counts saves and spends money. A harness giving itself a card is not that,
+            # so it writes with the service role and fills in the owner itself, which is
+            # the one field RLS would otherwise have enforced.
+            if isinstance(body, dict) and "user_id" not in body:
+                body = dict(body, user_id=ensure(tag))
+            st, d = admin("/rest/v1/" + path, method, body)
         print(st)
         print(json.dumps(d, indent=1) if not isinstance(d, str) else d)
         return
