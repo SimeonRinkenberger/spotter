@@ -6,7 +6,8 @@
   "platform": "tiktok",
   "duration_s": 84.3,
   "visual": "read",
-  "reader": "luna_sheets",
+  "eye": "sheets",
+  "$eye": "Which EYE reads this video, not which model — the model is chosen at run time and the runner builds the pack's `reader` label from the two with packReader(), which is the whole point of the `<eye>:<model>` shape main adopted in #12. Offline reads label themselves `sheets:fixture` / `video:fixture`, because what produced the observation was this file and not a model.",
   "source": {
     "platform": "tiktok",
     "url": "https://www.tiktok.com/@thewodfather/video/7679960172495785246",
@@ -481,10 +482,10 @@
       "push-press"
     ],
     "deltas": {
-      "$note": "The machine-written delta applyPack puts on the card, NOT the golden pack's prose `delta_from_standard`. Compared by keyword overlap and by null-vs-non-null, because the wording is allowed to improve and the judgement is not: the swing, the goblet squat and the push press ARE the standard version and must stay null.",
+      "$note": "The machine-written delta applyPack puts on the card, NOT the golden pack's prose `delta_from_standard`. Compared by keyword overlap and by null-vs-non-null, because the wording is allowed to improve and the judgement is not: the swing, the goblet squat and the push press ARE the standard version and must stay null.\nThe deadlift high pull became null on 16 Sept and that is an IMPROVEMENT, caught by this row. Before wave B the catalog only knew a family-level standard, so a single bell between the feet read as a difference from a barbell in front of the thighs; wave B's per-entry attributes give sumo-deadlift-high-pull its own load_position of 'between the feet', which is what the athlete is doing, so there is nothing left to report. The golden pack's prose delta still describes it for a human, and that is the right place for it.",
       "values": [
         "hands on the kettlebell handle",
-        "load between the feet",
+        null,
         null,
         null,
         null

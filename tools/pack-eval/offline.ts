@@ -24,7 +24,7 @@
 // broken. It is the floor. The bench above it is the live runner.
 
 import {
-  assemblePack, type Observation, type PackReader, parseVtt, readObservation,
+  assemblePack, type Observation, type PackEye, packReader, parseVtt, readObservation,
   REQUERY_CONFIDENCE, secondsToMmss, type TranscriptSeg, type TranscriptSource, vttCues,
 } from "../../supabase/functions/spotter/pack.ts";
 import { applyPack } from "./lift.ts";
@@ -35,6 +35,7 @@ const FIXTURES = new URL("../fixtures/eval/", HERE);
 
 /** A fixture as it sits on disk: the scorer's shape plus what the runner needs. */
 type EvalFixture = Fixture & {
+  eye?: PackEye;
   transcript_vtt?: string | null;
   transcript?: TranscriptSeg[];
   transcript_source?: TranscriptSource;
@@ -156,7 +157,10 @@ export async function run(path: string | URL): Promise<Run> {
     transcriptSource: fx.transcript_source ?? "none",
     cues,
     observation: observationFrom(fx),
-    reader: (fx.reader as PackReader) ?? "none",
+    // `<eye>:<model>` is the label main adopted so a pack cannot claim it was read
+    // by a model that did not read it. Nothing read anything here — the observation
+    // came out of the fixture — so the label says so.
+    reader: packReader((fx.eye as PackEye) ?? "none", "fixture"),
   });
 
   const card = cardFrom(fx);

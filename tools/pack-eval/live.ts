@@ -29,7 +29,8 @@
 // work key with a null user, so a bench run cannot eat somebody's monthly budget.
 
 import {
-  assemblePack, type Observation, parseVtt, readObservation, type TranscriptSeg, vttCues,
+  assemblePack, type Observation, type PackEye, packReader, parseVtt, readObservation,
+  type TranscriptSeg, vttCues,
 } from "../../supabase/functions/spotter/pack.ts";
 import { applyPack } from "./lift.ts";
 import { type EvalCard, exitCodeFor, EXIT, type Fixture, formatReport, type Report, score } from "./score.ts";
@@ -39,6 +40,7 @@ const FIXTURES = new URL("../fixtures/eval/", HERE);
 
 type SheetFile = { file: string; times: number[] };
 type EvalFixture = Fixture & {
+  eye?: PackEye;
   transcript_vtt?: string | null;
   transcript?: TranscriptSeg[];
   transcript_source?: string;
@@ -193,9 +195,10 @@ async function once(
     transcriptSource: (fx.transcript_source as "tiktok_vtt" | "gemini_audio" | "none") ?? "none",
     cues,
     observation: obs,
-    // Frames were used, so this is the sheets path whichever model read them —
-    // exactly as buildVideoPack decides it.
-    reader: "luna_sheets",
+    // Frames were used, so the eye is `sheets` whichever model read them — and the
+    // label carries the model, because a pack that said `luna_sheets` while Gemini
+    // was doing the looking is the exact bug #12 fixed.
+    reader: packReader((fx.eye as PackEye) ?? "sheets", model),
   });
 
   const card = fx.card_input

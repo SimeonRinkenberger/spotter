@@ -6,7 +6,8 @@
   "platform": "tiktok",
   "duration_s": 34,
   "visual": "read",
-  "reader": "gemini_video",
+  "eye": "video",
+  "$eye": "Which EYE reads this video, not which model — the model is chosen at run time and the runner builds the pack's `reader` label from the two with packReader(), which is the whole point of the `<eye>:<model>` shape main adopted in #12. Offline reads label themselves `sheets:fixture` / `video:fixture`, because what produced the observation was this file and not a model.",
   "source": {
     "platform": "tiktok",
     "url": "https://www.tiktok.com/@fernandashaw_/video/7508781312874908974",

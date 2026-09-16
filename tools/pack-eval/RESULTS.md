@@ -12,13 +12,27 @@ the diff that moved it is the one to look at.
 
 ## 2026-09-16 — offline baseline (no model, no network)
 
-`npm run eval:offline` · main at `5081680` + branch `vcp-d` · **PASS 3/3, 7 movements matched**
+`npm run eval:offline` · main at `b6a2cb6` (wave B's catalog attributes and #12's reader label)
++ branch `vcp-d` · **PASS 3/3, 7 movements matched**
 
-| fixture | movements | missing | extra | stamped | mean \|Δt0\| | equipment | cues within rules | deltas |
-|---|---|---|---|---|---|---|---|---|
-| `tt-7679960172495785246` (WODfather, sheets) | 5 of 5 | 0 | 0 | 5 / 5 | 0.38 s | 5/5 exact | 5/5 length, 5/5 two-sentence, 4/4 quote the creator | 5/5 |
-| `tt-7508781312874908974` (silent, Gemini video) | 2 of 4 recorded | 0 | 0 | 2 / 2 | 0.00 s | 2/2 exact | 4/4 length and sentences, no creator to quote | 4/4 |
-| `ig-dumbbell-finisher` (caption only) | — | — | — | 0 / 0 | — | — | no cues in the fixture | 4/4 null |
+| fixture | eye | movements | missing | extra | stamped | mean \|Δt0\| | equipment | cues within rules | deltas |
+|---|---|---|---|---|---|---|---|---|---|
+| `tt-7679960172495785246` (WODfather) | sheets | 5 of 5 | 0 | 0 | 5 / 5 | 0.38 s | 5/5 exact | 5/5 length, 5/5 two-sentence, 4/4 quote the creator | 5/5 |
+| `tt-7508781312874908974` (silent) | video | 2 of 4 recorded | 0 | 0 | 2 / 2 | 0.00 s | 2/2 exact | 4/4 length and sentences, no creator to quote | 4/4 |
+| `ig-dumbbell-finisher` (caption only) | none | — | — | — | 0 / 0 | — | — | no cues in the fixture | 4/4 null |
+
+An offline run labels its pack `sheets:fixture` or `video:fixture`. That is deliberate: since #12
+a reader label names the model that actually looked, and nothing looked here — the observation came
+out of the fixture. The live runner labels its packs `sheets:<the model it benched>`.
+
+**The first thing it caught, on the day it was written.** Run against main at `5081680` the
+fixtures passed 3/3; rebased onto `b6a2cb6` one delta failed — the kettlebell sumo deadlift high
+pull lost `load between the feet`. That turned out to be an improvement, not a regression: before
+wave B the catalog knew only a family-level standard, so a single bell between the feet read as a
+difference from a barbell in front of the thighs, and wave B's per-entry attributes give that
+entry its own `load_position: "between the feet"`. Nothing is left to report, so the delta is
+correctly null and the fixture was updated to say so. **That is the whole shape of the thing: the
+eval does not decide whether a change is good, it makes sure somebody looks.**
 
 Advisory, not failures:
 
