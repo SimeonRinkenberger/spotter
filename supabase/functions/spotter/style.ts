@@ -1867,7 +1867,7 @@ export const STYLE = String.raw`<style>
      takes the tap that dismisses. */
   .proofhint { position: absolute; left: 50%; top: calc(20px + env(safe-area-inset-top));
     transform: translateX(-50%); padding: 8px 15px; border-radius: 999px;
-    background: rgba(0, 0, 0, .45); color: #FFF; font-size: 12px; font-weight: 600;
+    background: rgba(0, 0, 0, .62); color: #FFF; font-size: 12px; font-weight: 600;
     white-space: nowrap; pointer-events: none;
     transition: opacity var(--t-4) var(--e-soft); }
   .proofhint.gone { opacity: 0; }
