@@ -119,7 +119,6 @@
       "seen_not_said": [],
       "provenance": {
         "name": "seen",
-        "reps": "none",
         "variant": "seen",
         "cues": "none"
       },
@@ -153,7 +152,6 @@
       "seen_not_said": [],
       "provenance": {
         "name": "seen",
-        "reps": "none",
         "variant": "seen",
         "cues": "none"
       },
@@ -284,5 +282,6 @@
         "why": "the circuit is timed at 45 s a movement; a rep count here would be invented"
       }
     ]
-  }
+  },
+  "$provenance": "The observed movements carry name/variant/cues and NOT `reps`, and the gap is deliberate. reps_visible was null on this read (the circuit is timed, not counted), and readObservation's numOrNull turns a JSON null into 0 — Number(null) === 0 — so the pack's provenance for reps comes out 'seen' with reps_seen 0 when the model writes the key and 'none' when it omits it. Which of those Gemini did on 15 Sept was never recorded, so the expectation is left out rather than guessed, and the underlying readObservation behaviour is reported to the senior session as a bug to fix in pack.ts — out of this wave's reach."
 }
