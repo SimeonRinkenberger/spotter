@@ -8317,7 +8317,7 @@ details.details-moving > :not(summary) {
   }
   function clearAccount() {
     if (native && native.configureSharing(null).catch(function() {
-    }), cancelPumpyReset(), pendingMotion && pendingMotion.disconnect(), $("app").classList.add("hide"), accountEpoch++, reads = {}, inFlight = {}, libraryRev++, logsRev++, planRev++, clearTimeout(undoTimer), undoTimer = null, undoFn = null, clearTimeout(detailCloseTimer), clearTimeout(woCloseTimer), clearTimeout(pendTimer), pendTimer = null, pendPolls = 0, pendBusy = !1, wkChannel && (sb.removeChannel(wkChannel), wkChannel = null), booting = null, state.profile = null, state.workouts = [], state.logs = null, state.plan = null, state.awards = null, state.goal = null, state.unit = "lb", state.sounds = !0, state.haptics = !0, state.collections = [], state.colItems = [], seenCards = {}, gridCards = {}, expCache = {}, expWaiting = {}, vidCache = {}, expKey = "", today.rows = [], today.at = 0, today.day = null, today.busy = !1, today.shown = !1, current = null, sc && scForget(), wo && saveDraft(), clearInterval(woTimer), stopRest(), releaseWake(), wo = null, hist = {}, histReady = !1, strava && (strava = { asked: !1, configured: !1, connected: !1, athlete: null, busy: !1 }), pumpy) {
+    }), cancelPumpyReset(), pendingMotion && pendingMotion.disconnect(), $("app").classList.add("hide"), accountEpoch++, reads = {}, inFlight = {}, libraryRev++, logsRev++, planRev++, clearTimeout(undoTimer), undoTimer = null, undoFn = null, clearTimeout(detailCloseTimer), clearTimeout(woCloseTimer), clearTimeout(pendTimer), pendTimer = null, pendPolls = 0, pendBusy = !1, wkChannel && (sb.removeChannel(wkChannel), wkChannel = null), booting = null, state.profile = null, state.workouts = [], state.logs = null, state.plan = null, state.awards = null, state.goal = null, heroPct = 0, trainSeg = null, state.unit = "lb", state.sounds = !0, state.haptics = !0, state.collections = [], state.colItems = [], seenCards = {}, gridCards = {}, expCache = {}, expWaiting = {}, vidCache = {}, expKey = "", today.rows = [], today.at = 0, today.day = null, today.busy = !1, today.shown = !1, current = null, sc && scForget(), wo && saveDraft(), clearInterval(woTimer), stopRest(), releaseWake(), wo = null, hist = {}, histReady = !1, strava && (strava = { asked: !1, configured: !1, connected: !1, athlete: null, busy: !1 }), pumpy) {
       var seq = (pumpy.openSeq || 0) + 1, wired = pumpy.wired;
       pumpy = {
         thread: null,
@@ -12481,7 +12481,7 @@ details.details-moving > :not(summary) {
       return x.id === id;
     })[0];
   }
-  var trainSeg = null, trainBar = null, trainLean = null, trainBody = null, stripRow = null, cardBox = null, heroBox = null, segTrack = null, trainSwap = !1, barTitle = null, barPrev = null, barNext = null, barToday = null, DOW = ["M", "T", "W", "T", "F", "S", "S"], SEGS = [["calendar", "Calendar"], ["progress", "Progress"], ["records", "Records"]];
+  var trainSeg = null, heroPct = 0, trainBar = null, trainLean = null, trainBody = null, stripRow = null, cardBox = null, heroBox = null, segTrack = null, trainSwap = !1, barTitle = null, barPrev = null, barNext = null, barToday = null, DOW = ["M", "T", "W", "T", "F", "S", "S"], SEGS = [["calendar", "Calendar"], ["progress", "Progress"], ["records", "Records"]];
   function readTrainSeg() {
     var s = state.profile && state.profile.settings, v = s && s.trainSeg;
     if (!v)
@@ -12638,7 +12638,9 @@ details.details-moving > :not(summary) {
       ));
     heroBox.appendChild(left);
     var ring = el("button", "ringwrap rsm");
-    ring.setAttribute("aria-label", "What counts as a session"), ring.appendChild(ringSvg(st.goal ? st.done / st.goal : 0));
+    ring.setAttribute("aria-label", "What counts as a session");
+    var pct = st.goal ? st.done / st.goal : 0;
+    ring.appendChild(ringSvg(pct, null, heroPct)), heroPct = pct;
     var mid = el("div", "rmid");
     st.done >= st.goal ? mid.appendChild(icon(el("div", "rcheck"), "check")) : (mid.appendChild(el("div", "rnum", String(st.done))), mid.appendChild(el("div", "rof", "of " + st.goal))), ring.appendChild(mid), ring.onclick = function() {
       openSheet("countsheet");

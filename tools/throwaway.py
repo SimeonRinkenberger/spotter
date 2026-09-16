@@ -108,8 +108,16 @@ def main():
             # counts saves and spends money. A harness giving itself a card is not that,
             # so it writes with the service role and fills in the owner itself, which is
             # the one field RLS would otherwise have enforced.
+            uid = ensure(tag)
             if isinstance(body, dict) and "user_id" not in body:
-                body = dict(body, user_id=ensure(tag))
+                body = dict(body, user_id=uid)
+            # The service role sees every account, so a DELETE or PATCH whose
+            # filter forgets the owner reaches every account. On 16 Sept an agent
+            # ran `srest <tag> DELETE "plan?day=eq.<date>"` and took that date off
+            # every user who had one. Every destructive verb is scoped to this
+            # throwaway's rows here unless the caller already said whose.
+            if method.upper() in ("DELETE", "PATCH", "PUT") and "user_id=" not in path:
+                path += ("&" if "?" in path else "?") + "user_id=eq." + uid
             st, d = admin("/rest/v1/" + path, method, body)
         print(st)
         print(json.dumps(d, indent=1) if not isinstance(d, str) else d)

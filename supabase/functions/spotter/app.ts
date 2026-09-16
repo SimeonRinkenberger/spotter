@@ -876,7 +876,7 @@ export const APP = String.raw`
     clearTimeout(pendTimer); pendTimer = null; pendPolls = 0; pendBusy = false;
     if (wkChannel) { sb.removeChannel(wkChannel); wkChannel = null; }
     booting = null; state.profile = null; state.workouts = []; state.logs = null;
-    state.plan = null; state.awards = null; state.goal = null;
+    state.plan = null; state.awards = null; state.goal = null; heroPct = 0; trainSeg = null;
     state.unit = "lb"; state.sounds = true; state.haptics = true;
     state.collections = []; state.colItems = []; seenCards = {}; gridCards = {};
     expCache = {}; expWaiting = {}; vidCache = {}; expKey = "";
@@ -8287,7 +8287,7 @@ export const APP = String.raw`
   // tap it. Apple's own guidance is that a gesture supplements a control rather
   // than replacing it, so this does both: swipe the band, or press an arrow.
 
-  var trainSeg = null;
+  var trainSeg = null, heroPct = 0;
   var trainBar = null, trainLean = null, trainBody = null, stripRow = null;
   var cardBox = null, heroBox = null, segTrack = null, trainSwap = false;
   var barTitle = null, barPrev = null, barNext = null, barToday = null;
@@ -8590,7 +8590,12 @@ export const APP = String.raw`
 
     var ring = el("button", "ringwrap rsm");
     ring.setAttribute("aria-label", "What counts as a session");
-    ring.appendChild(ringSvg(st.goal ? st.done / st.goal : 0));
+    // The arc sweeps once, the first time it has something to say. A week swipe
+    // or a quiet refresh redraws this row and must not replay it: a ring that
+    // fills itself again on every render is a fidget, not a result.
+    var pct = st.goal ? st.done / st.goal : 0;
+    ring.appendChild(ringSvg(pct, null, heroPct));
+    heroPct = pct;
     var mid = el("div", "rmid");
     if (st.done >= st.goal) mid.appendChild(icon(el("div", "rcheck"), "check"));
     else {
