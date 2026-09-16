@@ -1,0 +1,63 @@
+{
+ "artboards": [
+  {
+   "file": "Main.dc.html",
+   "x": 0,
+   "y": 0,
+   "w": 390,
+   "h": 844,
+   "title": "Train \u00b7 Calendar (recommended)"
+  },
+  {
+   "file": "TrainProgress.dc.html",
+   "x": 480,
+   "y": 0,
+   "w": 390,
+   "h": 844,
+   "title": "Train \u00b7 Progress segment"
+  },
+  {
+   "file": "TabBar.dc.html",
+   "x": 960,
+   "y": 0,
+   "w": 390,
+   "h": 330,
+   "title": "Tab bar \u00b7 before and after"
+  },
+  {
+   "file": "DirectionA.dc.html",
+   "x": 0,
+   "y": 980,
+   "w": 390,
+   "h": 844,
+   "title": "Alternate A \u00b7 calendar hub"
+  },
+  {
+   "file": "DirectionC.dc.html",
+   "x": 480,
+   "y": 980,
+   "w": 390,
+   "h": 844,
+   "title": "Alternate C \u00b7 dashboard"
+  }
+ ],
+ "annotations": [
+  {
+   "id": "why",
+   "x": 960,
+   "y": 420,
+   "w": 390,
+   "text": "Recommendation: merge Plan and Progress into one tab, Train.\\n\\nHeader keeps the week ring and streak. A 7-day strip shows planned (hollow), done (filled) and as-planned (filled with ring) on the same day. Today card = the planned workout with Start. Then a sticky segmented control: Calendar \u00b7 Progress \u00b7 Records, last segment remembered.\\n\\nWhy this shape: every plan-first app (TrainingPeaks, Intervals, Garmin, Runna, Centr) keeps planned and completed in ONE calendar, and the apps that buried stats behind a merge (MyFitnessPal Apr 2026, Fitbit May 2026) got one-star campaigns. Stats stay one tap away here.\\n\\nFourth slot: three tabs (Workouts \u00b7 Train \u00b7 Pumpy), which Oura, Apple Fitness and Hevy all run on; the iOS 26 search tab can carry Explore later."
+  },
+  {
+   "id": "alts",
+   "x": 960,
+   "y": 980,
+   "w": 390,
+   "text": "The two alternates, for comparison.\\n\\nA (calendar hub): strongest for people who plan; stats are one link away, which is the thing users complain about losing.\\n\\nC (dashboard): zero navigation, best for a today-first product; buries the month grid and records below the fold, the exact pattern behind the MyFitnessPal and Fitbit complaints."
+  }
+ ],
+ "launch": {
+  "view": "canvas"
+ }
+}
