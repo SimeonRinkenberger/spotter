@@ -559,6 +559,23 @@ neither a link nor a file left over, an upload whose extraction finds **no exerc
 fails the card rather than leaving an empty one; every URL-addressed provider still keeps its
 empty card, because there the link is worth having on its own.
 
+### Evaluating the pack
+
+A pack that is wrong is never wrong in a way that looks wrong — the cues are the creator's own
+words and the exercises are real exercises; only the fact nobody wrote down is missing. So no
+prompt or model change ships without `tools/pack-eval` first. `npm run eval:offline` replays
+three consented golden fixtures (a narrated TikTok read from contact sheets, a silent one read
+from the video, an Instagram caption nobody could watch) through the shipping `assemblePack` and
+`applyPack` and scores exercises missing and extra, timestamp error, variant accuracy, cue rule
+compliance, delta correctness, forbidden phrases and provenance. It costs nothing, needs no
+network, and must stay at 3/3. `npm run eval:test` breaks a correct pack one way at a time and
+checks the scorer notices each break. `npm run eval:live -- --model <id>` posts the same contact
+sheets to `/api/worker/eval-sheets` and prints the same report plus tokens, cost and p50/p95
+latency; it needs `PACK_EVAL_KEY` set on the function and it spends money. Exit codes: **2** a
+phrase the fixture forbids turned up, **3** a movement went missing, **4** any other hard failure,
+**1** bad arguments. Every live run belongs in `tools/pack-eval/RESULTS.md`, which is also where
+the 15 Sept bench explains why `pack.sheets_model` is Gemini.
+
 ## The account
 
 Settings is five titled groups, in the order the questions get asked — **Account**,
