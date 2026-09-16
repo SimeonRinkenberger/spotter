@@ -24,7 +24,7 @@
 
 import {
   assemblePack, bestSeenFact, deltaFrom, type Frames, mergeCues, type Observation, OBSERVE_PROMPT,
-  packInTimeOrder, sharesHeadNoun, SHEET_MAX,
+  packInTimeOrder, packReader, readerEye, readerModel, repairPack, sharesHeadNoun, SHEET_MAX,
   type Pack, PACK_V, packBlock, parseFrames, parseStampedTranscript, parseVtt,
   readObservation, secondsToMmss, sheetPathFor, SHEET_MAX_BYTES, sheetsPrompt,
   type TranscriptSeg, titleCase, validatePack, vttCues,
@@ -345,11 +345,12 @@ const pack = assemblePack({
   transcriptSource: "tiktok_vtt",
   cues,
   observation: obs,
-  reader: "luna_sheets",
+  reader: packReader("sheets", "gemini-3.6-flash"),
 });
 
 eq("the pack is version 1", pack.pack_v, PACK_V);
-eq("it knows which eye read it", pack.reader, "luna_sheets");
+eq("it knows which eye read it, and what that eye was",
+  pack.reader, "sheets:gemini-3.6-flash");
 eq("and that something did", pack.visual, "read");
 eq("it found every movement", pack.exercises.length, FX.exercises.length);
 
@@ -438,6 +439,27 @@ check("'Repeat that complex as many times as you can' is not a push-press cue",
   check("but keeps the words", blind.transcript.length === segs.length);
 }
 
+// ---------- 2b. which eye, and which model behind it ----------
+//
+// The first live sheets read after `pack.sheets_model` was pointed at Gemini
+// labelled itself `luna_sheets`, which is the owner's own A/B answering with the
+// wrong name. The label carries the model now; the two old bare names still parse,
+// because packs wearing them are in the global cache and cost money to make.
+
+eq("a sheets read names the model that read", packReader("sheets", "gpt-5.6-luna"), "sheets:gpt-5.6-luna");
+eq("so does a video read", packReader("video", "gemini-3.6-flash"), "video:gemini-3.6-flash");
+eq("nobody looking names nobody", packReader("none", "gpt-5.6-luna"), "none");
+eq("a read with no model recorded still admits which eye", packReader("sheets", null), "sheets:unknown");
+
+eq("the old bare sheets label still reads as sheets", readerEye("luna_sheets"), "sheets");
+eq("the old bare video label still reads as video", readerEye("gemini_video"), "video");
+eq("and so do the new ones", [readerEye("sheets:gemini-3.6-flash"), readerEye("video:gemini-3.6-flash")],
+  ["sheets", "video"]);
+eq("a pack nobody read names no eye", [readerEye("none"), readerEye(null), readerEye("who?")],
+  ["none", "none", "none"]);
+eq("the model comes back out of the label", readerModel("sheets:gemini-3.6-flash"), "gemini-3.6-flash");
+eq("and an old label names no model", readerModel("luna_sheets"), null);
+
 // ---------- 3. the verifier ----------
 //
 // A bad pack is believed by every call downstream and is inherited by everybody
@@ -476,6 +498,148 @@ function broken(mutate: (p: Pack) => void): ReturnType<typeof validatePack> {
   // the last frame of the video and rejecting every pack for that helps nobody.
   const r = broken((p) => { p.transcript[p.transcript.length - 1].t1 = p.duration_s + 0.5; });
   check("half a second past the end is tolerated", r.ok, r.problems.join("|"));
+}
+
+// ---------- 3b. repair, before anything is thrown away ----------
+//
+// Function v162, the owner's own save, read by Gemini off the phone's three
+// contact sheets: 4527 tokens in, 958 out, 7.7 seconds, the hands correctly on
+// the handle — and `validatePack` answered "segments overlap at Kettlebell
+// Overhead Press" and dropped the entire reading, so the card silently kept a
+// stale pack. The reading was not wrong about the video. It named one set of
+// presses twice as the strip crossed it, which is a clock error with an obvious
+// repair, and throwing away the facts over it is the expensive mistake.
+//
+// So: sort, clip, merge — then reject only what no repair could have invented.
+
+function repaired(mutate: (p: Pack) => void) {
+  const copy = structuredClone(pack);
+  mutate(copy);
+  const fixed = repairPack(copy);
+  return { ...fixed, check: validatePack(fixed.pack) };
+}
+
+/** The last segment, read a second time under a longer name, as v162 saw it. */
+function readTwice(p: Pack): void {
+  const last = structuredClone(p.exercises[4]);
+  p.exercises.push({
+    ...last,
+    i: 5,
+    name_said: null,
+    name_shown: "Kettlebell Overhead Press",
+    t0: 66, t1: 74,
+    reps_seen: null,
+    creator_cues: [],
+    seen_not_said: ["the bell finishes locked out over the crown of the head"],
+    provenance: { ...last.provenance, name: "seen", reps: "none", cues: "none" },
+    confidence: 0.7,
+  });
+}
+
+{
+  // The live failure, reproduced exactly — then repaired.
+  const before = broken(readTwice);
+  check("the live v162 pack was rejected before this wave", !before.ok);
+  check("with the sentence the owner saw in the logs",
+    before.problems.some((s) => s === "segments overlap at Kettlebell Overhead Press"),
+    before.problems.join("|"));
+
+  const r = repaired(readTwice);
+  check("the same pack now verifies", r.check.ok, r.check.problems.join("|"));
+  eq("because the two readings of one press became one movement", r.pack.exercises.length, 5);
+
+  const merged = r.pack.exercises[4];
+  eq("the merged movement keeps the longer, more specific name",
+    merged.name_shown, "Two-Hand Kettlebell Push Press");
+  eq("and spans the earliest start to the latest end", [merged.t0, merged.t1], [65, 74]);
+  eq("and keeps the catalog id", merged.canonical_id, "push-press");
+  eq("and takes the lower confidence of the two, because it needed repairing",
+    merged.confidence, 0.7);
+  check("and carries what BOTH readings saw",
+    merged.seen_not_said.some((s) => /shallow knee dip/.test(s)) &&
+    merged.seen_not_said.some((s) => /locked out over the crown/.test(s)),
+    JSON.stringify(merged.seen_not_said));
+  check("the repair says what it did, with names and times",
+    r.repairs.some((s) => /merged Kettlebell Overhead Press 1:06–1:14 into Two-Hand Kettlebell Push Press 1:05–1:13 — one movement read twice, now Two-Hand Kettlebell Push Press 1:05–1:14/.test(s)),
+    JSON.stringify(r.repairs));
+  eq("and nothing else was touched", r.repairs.length, 1);
+}
+
+{
+  // Two DIFFERENT movements that overlap are not one movement: the earlier one is
+  // clipped to where the later one starts, which is the only honest reading of a
+  // camera that saw the swing begin at 0:38.
+  const r = repaired((p) => { p.exercises[2].t0 = 38; });
+  check("an overlap between two unrelated movements verifies after repair",
+    r.check.ok, r.check.problems.join("|"));
+  eq("every movement is still there", r.pack.exercises.length, 5);
+  eq("the earlier one ends where the later one starts", r.pack.exercises[1].t1, 38);
+  eq("and the later one is untouched", [r.pack.exercises[2].t0, r.pack.exercises[2].t1], [38, 54]);
+  check("the repair names both movements and the time it moved",
+    r.repairs.some((s) =>
+      /clipped Kettlebell Sumo Deadlift High Pull 0:26–0:41 to end at 0:38, where Kettlebell Swing starts/.test(s)),
+    JSON.stringify(r.repairs));
+}
+
+{
+  // A second of overlap is a cut, not an error, and repairing it would rewrite a
+  // reading that was never wrong.
+  const r = repaired((p) => { p.exercises[2].t0 = p.exercises[1].t1 - 0.8; });
+  eq("an overlap inside the slack is left alone", r.repairs, []);
+  check("and still verifies", r.check.ok, r.check.problems.join("|"));
+}
+
+{
+  // Segments that arrive out of order are a reading whose clock is fine and whose
+  // list is shuffled. Sorting is the whole repair.
+  const r = repaired((p) => { p.exercises.reverse(); });
+  check("a shuffled pack verifies after repair", r.check.ok, r.check.problems.join("|"));
+  eq("the movements come back in time order",
+    r.pack.exercises.map((e) => e.name_shown), FX.exercises.map((e) => e.name_shown));
+  eq("and are renumbered, so no two answer to the same index",
+    r.pack.exercises.map((e) => e.i), [0, 1, 2, 3, 4]);
+  check("the repair says it sorted them", r.repairs.some((s) => /sorted 5 movements/.test(s)),
+    JSON.stringify(r.repairs));
+}
+
+{
+  // What repair must NOT do is invent. A time outside the video and a sentence the
+  // creator never said are still refusals, and the pack is still dropped whole.
+  const late = repaired((p) => { p.exercises[1].t1 = p.duration_s + 30; });
+  eq("a pack whose clock leaves the video is not repaired at all", late.repairs, []);
+  check("a timestamp past the end of the video survives repair and is rejected", !late.check.ok);
+  check("and says which movement", late.check.problems.some((s) => /outside the video/.test(s)),
+    late.check.problems.join("|"));
+
+  const fake = repaired((p) => {
+    p.exercises[0].creator_cues[0].quote = "take these nice and slow for time under tension";
+  });
+  check("a paraphrased cue is still rejected after repair", !fake.check.ok);
+  check("and says it is not verbatim",
+    fake.check.problems.some((s) => /not verbatim/.test(s)), fake.check.problems.join("|"));
+}
+
+{
+  // Merging cannot smuggle a quote past the verifier either: both halves' cues
+  // ride along, and every one of them is still checked against the transcript.
+  const r = repaired((p) => {
+    readTwice(p);
+    p.exercises[5].creator_cues = [{ t: 66, quote: "press it straight up over your head" }];
+  });
+  check("a cue carried through a merge is checked like any other", !r.check.ok);
+  check("and named", r.check.problems.some((s) => /not verbatim/.test(s)),
+    r.check.problems.join("|"));
+}
+
+{
+  // A pack that needs nothing is handed back as-is — the same object, so a repair
+  // pass costs a clean reading nothing at all.
+  const fixed = repairPack(pack);
+  eq("a pack that needs no repair reports none", fixed.repairs, []);
+  check("and is not rewritten", fixed.pack === pack);
+  eq("a pack with one movement is never touched",
+    repairPack({ ...pack, exercises: pack.exercises.slice(0, 1) }).repairs, []);
+  eq("and neither is an empty one", repairPack({ ...pack, exercises: [] }).repairs, []);
 }
 
 // ---------- 4. the canonicalizer ----------

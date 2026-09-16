@@ -66,8 +66,10 @@ import {
 } from "./evidence.ts";
 import {
   assemblePack, type Frames, type Observation, OBSERVE_PROMPT, type Pack, PACK_V,
-  packBlock, type PackExercise, type PackReader, parseFrames, parseStampedTranscript,
-  packInTimeOrder, parseVtt, readObservation, secondsToMmss, sharesHeadNoun, bestSeenFact,
+  packBlock, type PackExercise, type PackEye, packReader, type PackReader, parseFrames,
+  parseStampedTranscript,
+  packInTimeOrder, parseVtt, readObservation, readerEye, repairPack, secondsToMmss,
+  sharesHeadNoun, bestSeenFact,
   type Sheet, SHEET_MAX, SHEET_MAX_BYTES,
   sheetPathFor, sheetsPrompt, type TranscriptSeg, type TranscriptSource, validatePack,
   type VttCue, vttCues,
@@ -704,7 +706,13 @@ const WORKER_ID = crypto.randomUUID().slice(0, 8);
 //    model that produced it. The prompt now asks for a verbatim source quote per
 //    exercise, so the output shape changed materially in both directions.
 // 7: explicit source trust and no sharing of client-supplied extraction results.
-const CARD_V = 8;
+// 8: the card is built from the Video Context Pack — a typed `cue` in place of
+//    `notes`, and `as_performed`, `delta`, `t0`, `t1` per exercise.
+// 9: the cue and delta rules changed under the same prompt — a delta is one
+//    attribute rather than a pasted sentence, and a cue's second clause is what
+//    the camera saw. Cards cached before that read correctly and say it worse, so
+//    they are rebuilt the next time anybody saves the video.
+const CARD_V = 9;
 
 const ALLOWED_ORIGINS = (Deno.env.get("ALLOWED_ORIGINS") ??
   "https://simeonrinkenberger.github.io,http://localhost:8000,http://127.0.0.1:8000")
@@ -1219,6 +1227,14 @@ type Meta = {
   // caller's own uid at the door, carried on the job because the WORKER is what
   // reads them, and deleted the moment the read returns.
   frames?: Frames;
+  // This job exists to REPLACE a reading, not to make a first one: somebody asked
+  // "read this video again" and sent better frames with the request. It changes
+  // what a rejected pack means. On a first save a pack the verifier refused is a
+  // quiet non-event — the card is built from the caption exactly as it would have
+  // been. Here it is the answer to something the user asked for, and silently
+  // keeping the old reading while reporting success is how a re-read looks like it
+  // worked and changed nothing.
+  pack_reread?: boolean;
   // A thumbnail already sitting in our own bucket under this shortcode. A job
   // seeded from the cache has no ORIGINAL url to re-fetch, and storeThumb answers
   // null for that — which would strip the picture off a card that has one.
@@ -2481,10 +2497,30 @@ async function webMeta(p: Parsed): Promise<Meta> {
  */
 class SoftFailure extends Error {
   readonly userMessage: string;
-  constructor(userMessage: string, detail?: string) {
+  /**
+   * A failure that will fail identically next time, so the backoff is pointless.
+   * The frames a re-read was given are deleted the moment they are read, and a
+   * pack the verifier refused will be refused again — retrying either only puts
+   * the user's card back in "processing" three more times before saying the same
+   * thing. Everything else keeps the ordinary attempts-then-dead ladder.
+   */
+  readonly final: boolean;
+  /**
+   * The job failed; the CARD did not. A re-read that could not be trusted leaves
+   * a row that was complete a minute ago exactly as complete as it was, and a
+   * detail view for a "failed" card renders the apology instead of the workout —
+   * so this one comes back ready, with the reason in `ingest_error`, which is
+   * where a card says what it is missing without hiding what it has.
+   */
+  readonly keepCard: boolean;
+  constructor(
+    userMessage: string, detail?: string, opts?: { final?: boolean; keepCard?: boolean },
+  ) {
     super(detail ? `${userMessage} [${detail}]` : userMessage);
     this.name = "SoftFailure";
     this.userMessage = userMessage;
+    this.final = !!opts?.final;
+    this.keepCard = !!opts?.keepCard;
   }
 }
 
@@ -3929,7 +3965,13 @@ async function packTranscript(
   };
 }
 
-type ObservationRead = { obs: Observation | null; bytes: number; detail?: string };
+/**
+ * What a visual read came back with. `model` is the one that actually looked,
+ * carried out rather than re-derived: `pack.sheets_model` is read at call time and
+ * a label composed from a second read of the config would name whatever the config
+ * says now rather than what did the work.
+ */
+type ObservationRead = { obs: Observation | null; bytes: number; detail?: string; model?: string };
 
 /**
  * The visual read, by video.
@@ -3946,20 +3988,21 @@ async function observeFromVideo(
 ): Promise<ObservationRead> {
   const video = src.urls.find((u) => u.kind === "video");
   if (!video) return { obs: null, bytes: 0, detail: "no video url" };
+  const model = packModel();
   const read = await geminiReadVideo(video.url, src.headers, shortcode, OBSERVE_PROMPT, ctx, {
-    model: packModel(),
+    model,
     // The number that makes reading every video affordable. A clipped re-read is
     // the one place the expensive setting is worth it, because it is one movement.
     mediaResolution: clip ? "MEDIA_RESOLUTION_HIGH" : "MEDIA_RESOLUTION_LOW",
     clip,
   });
   if (!read.text) {
-    return { obs: null, bytes: read.bytes, detail: read.detail ?? ("http " + read.status) };
+    return { obs: null, bytes: read.bytes, detail: read.detail ?? ("http " + read.status), model };
   }
   try {
-    return { obs: readObservation(parseJsonLoose(read.text)), bytes: read.bytes };
+    return { obs: readObservation(parseJsonLoose(read.text)), bytes: read.bytes, model };
   } catch (e) {
-    return { obs: null, bytes: read.bytes, detail: "unparseable: " + String(e).slice(0, 160) };
+    return { obs: null, bytes: read.bytes, detail: "unparseable: " + String(e).slice(0, 160), model };
   }
 }
 
@@ -4102,9 +4145,9 @@ async function observeFromSheets(
   for (const sheet of frames.sheets) {
     let signed: string;
     try { signed = await signUpload(sheet.path); }
-    catch (e) { return { obs: null, bytes, detail: "sheet sign failed: " + String(e).slice(0, 120) }; }
+    catch (e) { return { obs: null, bytes, model, detail: "sheet sign failed: " + String(e).slice(0, 120) }; }
     const got = await fetchCapped(signed, SHEET_MAX_BYTES);
-    if (!got) return { obs: null, bytes, detail: "sheet " + sheet.path.split("/").pop() + " unreadable" };
+    if (!got) return { obs: null, bytes, model, detail: "sheet " + sheet.path.split("/").pop() + " unreadable" };
     bytes += got.buf.byteLength;
     images.push({ b64: await b64encode(got.buf), mime: "image/jpeg" });
   }
@@ -4112,7 +4155,7 @@ async function observeFromSheets(
   console.log("pack: read", images.length, "sheet(s) of", shortcode, "—", bytes, "bytes,",
     "tokens", read.usage.inTok + "/" + read.usage.outTok, "by", model,
     read.detail ? "— " + read.detail : "");
-  return { obs: read.obs, bytes, detail: read.detail };
+  return { obs: read.obs, bytes, model, detail: read.detail };
 }
 
 /**
@@ -4152,17 +4195,20 @@ async function buildVideoPack(
   p: Parsed, src: MediaSource | null, frames: Frames | null, ctx: AiCtx, caption: string | null,
 ): Promise<PackBuild> {
   const t0 = Date.now();
-  const reader: PackReader = frames ? "luna_sheets" : (src ? "gemini_video" : "none");
+  // Which eye, decided here; which MODEL, reported by the read itself, because
+  // `pack.sheets_model` is what chooses between them and a label composed from the
+  // eye alone said "luna_sheets" on the day Gemini was reading the phone's sheets.
+  const eye: PackEye = frames ? "sheets" : (src ? "video" : "none");
 
   // Sheets need the transcript in their prompt (it is the clock the frames are
   // aligned to), so that path fetches the words first. The video path does not,
   // so it sends both requests at once.
   let tr: PackTranscript = NO_TRANSCRIPT;
   let seen: ObservationRead = { obs: null, bytes: 0 };
-  if (reader === "luna_sheets" && frames) {
+  if (eye === "sheets" && frames) {
     tr = src ? await packTranscript(src, p.shortcode, ctx) : NO_TRANSCRIPT;
     seen = await observeFromSheets(frames, tr.transcript, ctx, p.shortcode);
-  } else if (reader === "gemini_video" && src) {
+  } else if (eye === "video" && src) {
     // Two channels that do not need each other, so they go out together and the
     // job pays for one round trip instead of two. Each keeps its own failure: a
     // caption track the CDN refused must not cost the visual read, and a video the
@@ -4197,7 +4243,7 @@ async function buildVideoPack(
     transcriptSource: tr.source,
     cues: tr.cues,
     observation: seen.obs,
-    reader: seen.obs ? reader : "none",
+    reader: seen.obs ? packReader(eye, seen.model) : "none",
   });
 
   // Escalate the doubt, not the video. A segment the camera could not see clearly,
@@ -4205,7 +4251,7 @@ async function buildVideoPack(
   // full resolution. The sheets path cannot do this yet — the phone would have to
   // cut a denser strip — so it leaves needs_requery standing for a later pass.
   let requeries = 0;
-  if (reader === "gemini_video" && src && seen.obs && videoTierEnabled()) {
+  if (eye === "video" && src && seen.obs && videoTierEnabled()) {
     const cap = packMaxRequeries();
     for (const ex of pack.exercises) {
       if (!ex.needs_requery || requeries >= cap) continue;
@@ -4231,14 +4277,24 @@ async function buildVideoPack(
         shortcode: p.shortcode, platform: p.platform, caption,
         durationS: src.seconds ?? null,
         transcript: tr.transcript, transcriptSource: tr.source, cues: tr.cues,
-        observation: seen.obs, reader,
+        observation: seen.obs, reader: packReader(eye, seen.model),
       });
     }
   }
 
+  // Repair what can be repaired, and say so. A reading whose facts are right and
+  // whose clock is tangled — the same movement named twice as the strip crosses
+  // it — used to be thrown away whole, which cost the owner a correct read of his
+  // own video. Every repair is logged with the names and times it touched,
+  // because a silent one is how a pack drifts from the video unnoticed.
+  const fixed = repairPack(pack);
+  pack = fixed.pack;
+  for (const r of fixed.repairs) console.log("pack: repaired", p.shortcode, "—", r);
+
   const check = validatePack(pack);
   console.log("pack:", p.shortcode, "read by", pack.reader, "in", Date.now() - t0, "ms —",
     pack.transcript.length, "said,", pack.exercises.length, "seen,", requeries, "re-quer(ies),",
+    fixed.repairs.length, "repair(s),",
     check.ok ? "valid" : "REJECTED: " + check.problems.join(" | "));
 
   return {
@@ -4249,7 +4305,9 @@ async function buildVideoPack(
     reader: pack.reader,
     transcript: tr.text,
     transcript_source: tr.source,
-    media_source: tr.media_source ?? (seen.obs ? "video:" + pack.reader : null),
+    // The reader label already names the eye, so the old "video:" + reader now
+    // reads "video:sheets:gemini-3.6-flash". One prefix is enough.
+    media_source: tr.media_source ?? (seen.obs ? "pack:" + pack.reader : null),
     bytes: seen.bytes,
     problems: check.problems,
     detail: seen.detail,
@@ -7845,7 +7903,9 @@ async function failJob(job: Job, err: unknown): Promise<void> {
     return;
   }
   const msg = String(err).slice(0, 500);
-  const dead = job.attempts >= job.max_attempts;
+  // A final failure is dead on the first attempt: nothing about the next one
+  // would be different, and the user is watching a card that says "processing".
+  const dead = job.attempts >= job.max_attempts || (err instanceof SoftFailure && err.final);
   console.error("job", dead ? "DEAD" : "failed", job.id, job.platform, job.shortcode,
     "attempt", job.attempts, "of", job.max_attempts, "—", msg);
   const now = new Date().toISOString();
@@ -7874,10 +7934,17 @@ async function failJob(job: Job, err: unknown): Promise<void> {
       // "video" is wrong for a swipe-right photo post, and a user told the wrong
       // noun reasonably concludes Spotter did not understand what they sent.
       const noun = job.kind === "photo" ? "photo post" : "video";
-      await dbPatchMany("workouts", `ingest_job_id=eq.${job.id}&ingest_status=eq.processing`, {
-        ingest_status: "failed",
-        ingest_error: said ?? `Spotter could not read this ${noun}. Tap ↻ to try again.`,
-      });
+      // A job that failed over something the card already survives — a re-read
+      // whose new reading could not be trusted — hands the row back the way it
+      // found it, with the reason on it. Marking it failed would replace a working
+      // workout with an apology, which is a worse answer than the one it had.
+      const keep = err instanceof SoftFailure && err.keepCard;
+      await dbPatchMany("workouts", `ingest_job_id=eq.${job.id}&ingest_status=eq.processing`, keep
+        ? { ingest_status: "ready", ingest_error: said, media_stage: null }
+        : {
+          ingest_status: "failed",
+          ingest_error: said ?? `Spotter could not read this ${noun}. Tap ↻ to try again.`,
+        });
     }
   } catch (e) {
     console.error("failJob could not record the failure", job.id, e);
@@ -7996,6 +8063,23 @@ async function runPackTier(
   }
   if (out.pack_problems?.length) {
     console.error("pack: rejected for", p.shortcode, "—", out.pack_problems.join(" | "));
+    // A re-read was somebody asking for this video to be looked at AGAIN, with
+    // better frames. If the new reading cannot be trusted, the old one stays —
+    // it is still the best thing anybody has — but the job must say so instead
+    // of finishing "ready" over a card that did not change. The reason is the
+    // verifier's own sentence, because "segments overlap at Kettlebell Overhead
+    // Press" tells the owner what to look at and "something went wrong" does not.
+    if (meta.pack_reread && !out.pack) {
+      throw new SoftFailure(
+        "Spotter read those frames but could not trust what it saw — " +
+          String(out.pack_problems[0]).slice(0, 120) +
+          ". This card keeps the reading it already had.",
+        "pack rejected on re-read: " + out.pack_problems.join(" | "),
+        // Final: the frames have been read and deleted, so a retry would read
+        // nothing. keepCard: the row is exactly as good as it was a minute ago.
+        { final: true, keepCard: true },
+      );
+    }
   }
 
   // The frames have been read and deleted; nothing may try again with them.
@@ -9078,8 +9162,10 @@ async function handleReadVideo(
     if (frames) {
       // The reading that exists is the one being replaced. Carrying it forward
       // would make escalateToMedia replay it and the new frames would never be
-      // looked at, which is the whole action.
-      seed.meta = { ...seed.meta, frames, pack: undefined };
+      // looked at, which is the whole action. `pack_reread` is what remembers
+      // that this was a replacement, so a new reading the verifier refuses is
+      // reported to the person who asked for it rather than swallowed.
+      seed.meta = { ...seed.meta, frames, pack: undefined, pack_reread: true };
     }
     try {
       await jobStep(q.job_id, seed.step, { meta: seed.meta, card: seed.card });
@@ -10641,7 +10727,13 @@ async function toolExerciseDetail(userId: string, args: any) {
     // has looked" are the same silence, and only one of them is honest. The
     // overlay counts as well as the pack: a card stamped at ingest was read by
     // somebody, whether or not the global cache still holds the reading.
-    video_read: !!(pe || ex.as_performed),
+    //
+    // The reader is asked about rather than named, because a label says which eye
+    // AND which model — `sheets:gemini-3.6-flash`, `video:gemini-3.6-flash`, the
+    // older bare `luna_sheets` — and the only fact this line needs from it is that
+    // it is not "none". A pack with no visual channel has no segments to match
+    // anyway; this says so out loud rather than by side effect.
+    video_read: !!(pe && String(pack?.reader ?? "") !== "none") || !!ex.as_performed,
   });
 }
 
