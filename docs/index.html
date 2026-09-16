@@ -556,15 +556,18 @@ button {
   height: var(--vvh);
   overflow: hidden;
 }
+header,
+.trainseg {
+  background: color-mix(in srgb, var(--paper) 84%, transparent);
+  -webkit-backdrop-filter: blur(20px) saturate(1.5);
+  backdrop-filter: blur(20px) saturate(1.5);
+}
 header {
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
   z-index: 20;
-  background: color-mix(in srgb, var(--paper) 84%, transparent);
-  -webkit-backdrop-filter: blur(20px) saturate(1.5);
-  backdrop-filter: blur(20px) saturate(1.5);
   padding: calc(12px + env(safe-area-inset-top)) 18px 12px;
 }
 header::after {
@@ -3262,7 +3265,8 @@ body:not(.app) #toast.show {
   gap: 8px;
   margin: 0 0 10px;
 }
-.weekbar b {
+.weekbar b,
+.secthead b {
   font-family: var(--display);
   font-size: 16px;
   font-weight: 700;
@@ -3330,11 +3334,14 @@ body:not(.app) #toast.show {
 }
 .dmark.as {
   background: var(--ember);
-  box-shadow: 0 0 0 2px var(--paper), 0 0 0 3.5px var(--ember);
+  box-shadow: 0 0 0 2px var(--dbg, var(--paper)), 0 0 0 3.5px var(--ember);
 }
-.mcell .dmark.as,
-.wday.today .dmark.as {
-  box-shadow: 0 0 0 2px var(--card), 0 0 0 3.5px var(--ember);
+.mcell,
+.wday.today {
+  --dbg: var(--card);
+}
+.mcell.out {
+  --dbg: var(--paper);
 }
 .dmark.plan {
   background: none;
@@ -3358,9 +3365,6 @@ body:not(.app) #toast.show {
   display: flex;
   align-items: center;
   gap: 6px;
-}
-.dlegend .dmark.as {
-  box-shadow: 0 0 0 2px var(--paper), 0 0 0 3.5px var(--ember);
 }
 .daycard {
   background: var(--card);
@@ -3498,9 +3502,6 @@ body:not(.app) #toast.show {
   z-index: 5;
   margin: 0 -18px 14px;
   padding: 8px 18px 10px;
-  background: color-mix(in srgb, var(--paper) 84%, transparent);
-  -webkit-backdrop-filter: blur(20px) saturate(1.5);
-  backdrop-filter: blur(20px) saturate(1.5);
 }
 .seg {
   position: relative;
@@ -3629,9 +3630,6 @@ body:not(.app) #toast.show {
   color: var(--muted);
   font-weight: 600;
 }
-.mcell.out .dmark.as {
-  box-shadow: 0 0 0 2px var(--paper), 0 0 0 3.5px var(--ember);
-}
 .mcell.today {
   border-color: var(--ember);
   box-shadow: 0 0 0 1px var(--ember);
@@ -3685,11 +3683,6 @@ body:not(.app) #toast.show {
   flex: 0 0 auto;
 }
 .cardnum {
-  font-family: var(--display);
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--ember-ink);
-  font-variant-numeric: tabular-nums;
   flex: 0 0 auto;
 }
 .sbars {
@@ -3727,12 +3720,6 @@ body:not(.app) #toast.show {
   justify-content: space-between;
   gap: 10px;
   margin: 18px 2px 8px;
-}
-.secthead b {
-  font-family: var(--display);
-  font-size: 16px;
-  font-weight: 700;
-  letter-spacing: -.012em;
 }
 .linkbtn {
   background: none;
@@ -4171,47 +4158,13 @@ body:not(.app) #toast.show {
   font-weight: 400;
   margin-top: 2px;
 }
-.prrow .v {
+.prrow .v,
+.cardnum {
   font-family: var(--display);
   font-size: 14px;
   font-weight: 700;
   color: var(--ember-ink);
   font-variant-numeric: tabular-nums;
-}
-.mgrow {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 9px;
-}
-.mgrow .lbl {
-  width: 82px;
-  flex: 0 0 auto;
-  font-size: 11.5px;
-  color: var(--ink-2);
-  font-weight: 600;
-  text-transform: capitalize;
-}
-.mgbar {
-  flex: 1;
-  height: 8px;
-  border-radius: 999px;
-  background: var(--sand);
-  overflow: hidden;
-}
-.mgbar i {
-  display: block;
-  height: 100%;
-  border-radius: 999px;
-  background: var(--ember);
-}
-.mgrow .num {
-  width: 26px;
-  text-align: right;
-  font-size: 11.5px;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-  font-weight: 600;
 }
 .monthhead {
   font-family: var(--display);
@@ -6972,10 +6925,6 @@ select:focus-visible {
   color: var(--ink-2);
   font-size: 12px;
   margin-top: 4px;
-}
-.session-journal h2 {
-  font-family: var(--display);
-  margin: 20px 0 6px;
 }
 .session-search {
   width: 100%;

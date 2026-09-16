@@ -230,9 +230,9 @@ export const STYLE = String.raw`<style>
     overflow: hidden; }
 
   /* ---------- header ---------- */
+  header, .trainseg { background: color-mix(in srgb, var(--paper) 84%, transparent);
+    -webkit-backdrop-filter: blur(20px) saturate(1.5); backdrop-filter: blur(20px) saturate(1.5); }
   header { position: absolute; top: 0; left: 0; right: 0; z-index: 20;
-    background: color-mix(in srgb, var(--paper) 84%, transparent);
-    -webkit-backdrop-filter: blur(20px) saturate(1.5); backdrop-filter: blur(20px) saturate(1.5);
     padding: calc(12px + env(safe-area-inset-top)) 18px 12px; }
   /* The hairline belongs at the bottom of the whole translucent bar, and on
      Library that bar ends at the search field, which carries its own and slides
@@ -1258,7 +1258,8 @@ export const STYLE = String.raw`<style>
   .rsm .rcheck .ic { width: 26px; height: 26px; }
 
   .weekbar { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; }
-  .weekbar b { font-family: var(--display); font-size: 16px; font-weight: 700; letter-spacing: -.012em; }
+  .weekbar b, .secthead b { font-family: var(--display); font-size: 16px; font-weight: 700;
+    letter-spacing: -.012em; }
   .wbnav { margin-left: auto; display: flex; align-items: center; gap: 2px; }
 
   /* Seven days, one row, one dot each. The cell is the target — 48px across on a
@@ -1283,15 +1284,14 @@ export const STYLE = String.raw`<style>
     display: block; flex: 0 0 auto; }
   .dmark.on { background: var(--ember); }
   .dmark.as { background: var(--ember);
-    box-shadow: 0 0 0 2px var(--paper), 0 0 0 3.5px var(--ember); }
-  .mcell .dmark.as, .wday.today .dmark.as { box-shadow: 0 0 0 2px var(--card), 0 0 0 3.5px var(--ember); }
+    box-shadow: 0 0 0 2px var(--dbg, var(--paper)), 0 0 0 3.5px var(--ember); }
+  .mcell, .wday.today { --dbg: var(--card); }
+  .mcell.out { --dbg: var(--paper); }
   .dmark.plan { background: none; box-shadow: inset 0 0 0 1.6px var(--ember); }
   .dmark.miss { background: none; box-shadow: inset 0 0 0 1.6px var(--warn); }
   .dlegend { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; margin: 9px 2px 0;
     font-size: 11.5px; font-weight: 600; color: var(--muted); }
   .dlegend .lg { display: flex; align-items: center; gap: 6px; }
-  /* The key's swatch is decoration; the words beside it are the label. */
-  .dlegend .dmark.as { box-shadow: 0 0 0 2px var(--paper), 0 0 0 3.5px var(--ember); }
 
   /* ---------- train / today ---------- */
   .daycard { background: var(--card); border: 1px solid var(--line); border-radius: 16px;
@@ -1335,9 +1335,7 @@ export const STYLE = String.raw`<style>
      not. No touch-action anywhere in here: the pager's axis lock depends on the
      page declaring nothing. */
   .trainseg { position: sticky; top: var(--hdr, 92px); z-index: 5; margin: 0 -18px 14px;
-    padding: 8px 18px 10px;
-    background: color-mix(in srgb, var(--paper) 84%, transparent);
-    -webkit-backdrop-filter: blur(20px) saturate(1.5); backdrop-filter: blur(20px) saturate(1.5); }
+    padding: 8px 18px 10px; }
   .seg { position: relative; display: flex; flex: 0 0 auto; background: var(--sand);
     border-radius: 11px; padding: 3px; }
   .segpill { position: absolute; top: 3px; bottom: 3px; left: 3px;
@@ -1388,7 +1386,6 @@ export const STYLE = String.raw`<style>
   /* Colour and weight, not opacity: --muted measures 4.52 on paper, and ink at
      .45 lands on 3.4 and stops being AA. */
   .mcell.out .mnum { color: var(--muted); font-weight: 600; }
-  .mcell.out .dmark.as { box-shadow: 0 0 0 2px var(--paper), 0 0 0 3.5px var(--ember); }
   .mcell.today { border-color: var(--ember); box-shadow: 0 0 0 1px var(--ember); }
   .mnum { font-size: 12.5px; font-weight: 700; color: var(--ink); line-height: 1;
     font-variant-numeric: tabular-nums; }
@@ -1409,8 +1406,7 @@ export const STYLE = String.raw`<style>
     margin: 0 0 12px; }
   .cardhead h3 { margin: 0; }
   .cardsub { font-size: 12px; font-weight: 600; color: var(--muted); flex: 0 0 auto; }
-  .cardnum { font-family: var(--display); font-size: 14px; font-weight: 700; color: var(--ember-ink);
-    font-variant-numeric: tabular-nums; flex: 0 0 auto; }
+  .cardnum { flex: 0 0 auto; }
   .sbars { display: flex; gap: 6px; align-items: flex-end; }
   .sbcol { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center;
     gap: 5px; justify-content: flex-end; }
@@ -1420,7 +1416,6 @@ export const STYLE = String.raw`<style>
   .sbl { font-size: 10.5px; font-weight: 650; color: var(--muted); }
   .secthead { display: flex; align-items: center; justify-content: space-between; gap: 10px;
     margin: 18px 2px 8px; }
-  .secthead b { font-family: var(--display); font-size: 16px; font-weight: 700; letter-spacing: -.012em; }
   .linkbtn { background: none; border: 0; color: var(--ember-ink); font-size: 12.5px;
     font-weight: 700; padding: 6px 2px; }
 
@@ -1561,15 +1556,8 @@ export const STYLE = String.raw`<style>
   .prrow .n, .histrow .n { flex: 1; min-width: 0; font-size: 14px; font-weight: 550; line-height: 1.35; }
   .prrow .n span, .histrow .n span { display: block; font-size: 11.5px; color: var(--muted);
     font-weight: 400; margin-top: 2px; }
-  .prrow .v { font-family: var(--display); font-size: 14px; font-weight: 700; color: var(--ember-ink);
-    font-variant-numeric: tabular-nums; }
-  .mgrow { display: flex; align-items: center; gap: 10px; margin-bottom: 9px; }
-  .mgrow .lbl { width: 82px; flex: 0 0 auto; font-size: 11.5px; color: var(--ink-2); font-weight: 600;
-    text-transform: capitalize; }
-  .mgbar { flex: 1; height: 8px; border-radius: 999px; background: var(--sand); overflow: hidden; }
-  .mgbar i { display: block; height: 100%; border-radius: 999px; background: var(--ember); }
-  .mgrow .num { width: 26px; text-align: right; font-size: 11.5px; color: var(--muted);
-    font-variant-numeric: tabular-nums; font-weight: 600; }
+  .prrow .v, .cardnum { font-family: var(--display); font-size: 14px; font-weight: 700;
+    color: var(--ember-ink); font-variant-numeric: tabular-nums; }
   .monthhead { font-family: var(--display); font-size: 12px; font-weight: 700; letter-spacing: .11em;
     text-transform: uppercase; color: var(--muted); margin: 20px 0 8px; }
 
@@ -2572,7 +2560,6 @@ export const STYLE = String.raw`<style>
     padding: 18px 0; margin-bottom: 16px; border-bottom: 1px solid var(--line); text-align: center; }
   .progress-totals b { display: block; font-family: var(--display); font-size: clamp(20px, 5vw, 28px); overflow-wrap: anywhere; }
   .progress-totals span { display: block; color: var(--ink-2); font-size: 12px; margin-top: 4px; }
-  .session-journal h2 { font-family: var(--display); margin: 20px 0 6px; }
   .session-search { width: 100%; min-height: 46px; margin: 14px 0 10px; }
   .session-link { display: block; width: 100%; padding: 16px; text-align: left; color: var(--ink);
     cursor: pointer; transition: border-color var(--t-2), background-color var(--t-2); }
