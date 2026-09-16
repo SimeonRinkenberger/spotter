@@ -17,11 +17,14 @@ move at a time and logs what you lifted.
 - **Extract** — the caption or description becomes a structured card: title, workout type,
   muscle groups, equipment, difficulty, duration, and exercise blocks with sets, reps,
   rest and circuit rounds.
-- **Train** — full-screen Workout Mode, one exercise per screen, screen kept awake, with
+- **Work out** — full-screen Workout Mode, one exercise per screen, screen kept awake, with
   set-by-set logging of reps and weight (prefilled from the last time you did that move).
-- **Plan** — drop saved workouts onto a week and see which days you actually trained.
-- **Track** — weekly volume, per-exercise personal records (estimated 1RM), muscle-group
-  balance, an anatomical muscle map of what you hit this week, and every logged session.
+- **Train tab** — one tab for the plan and the progress. A seven-day strip you swipe to change
+  week, today's workout with Start and Move on a card, and three segments under it: **Calendar**,
+  a month grid where one dot a day says planned, trained, trained as planned or missed;
+  **Progress**, the week's muscle map, sets per day, eight weeks of volume and the sessions you
+  finished; **Records**, your totals, per-exercise personal records (estimated 1RM) and awards.
+  The segment you were last on is where the tab opens next time.
 - **Organise** — favourites, and collections a workout can sit in several of ("Leg day",
   "Hotel gym", "Quick 10 min"). Rename any card.
 - **Swap or modify** — no equipment, station busy, or it hurts: alternatives with an honest
@@ -1274,7 +1277,7 @@ better than it was.
 ## The muscle map
 
 Two anatomical figures, front and back side by side, on a card's detail (**What this hits**)
-and at the top of Progress (**What you've hit this week**). Every muscle Spotter has a word
+and at the top of Train › Progress (**Muscles this week**). Every muscle Spotter has a word
 for is its own shape on a neutral body; a shape is grey until something asks for it.
 
 **Where the highlighting comes from.** Only from `exercise_catalog`, reached through each
@@ -1313,7 +1316,7 @@ figure, and a note under the map says that is what happened.
 
 **Tapping.** Every muscle is a `role="button"` path with an `aria-label` and keyboard focus.
 Tapping one names it under the figure: on a card, the exercises that hit it with the secondary
-ones marked; on Progress, its sets this week. Tapping it again, or anywhere off a muscle,
+ones marked; on Train › Progress, its sets this week. Tapping it again, or anywhere off a muscle,
 clears it. The adductors are not one of Spotter's twelve muscle words, so they ride one step
 below the quads on the front and the hamstrings on the back, and tapping them selects that
 group.
