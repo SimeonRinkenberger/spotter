@@ -600,6 +600,11 @@ function strOrNull(v: unknown, cap = 240): string | null {
 }
 
 function numOrNull(v: unknown, max: number): number | null {
+  // JSON null, an empty string and booleans all coerce to a number ("Number(null) === 0"), which
+  // turned a model's honest `"reps_visible": null` on a timed circuit into `reps_seen: 0` with
+  // provenance "seen". Only a number, or a string that holds one, counts.
+  if (v === null || v === undefined || typeof v === "boolean") return null;
+  if (typeof v === "string" && v.trim() === "") return null;
   const n = typeof v === "number" ? v : Number(v);
   return Number.isFinite(n) && n >= 0 && n <= max ? n : null;
 }
