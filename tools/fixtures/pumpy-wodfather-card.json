@@ -1,0 +1,225 @@
+{
+ "url": "https://www.tiktok.com/@thewodfather/video/7679960172495785246",
+ "shortcode": "tt-vcp-fixture",
+ "platform": "tiktok",
+ "author": "thewodfather",
+ "title": "Complex Fives",
+ "category": "Strength",
+ "muscle_groups": [
+  "full body"
+ ],
+ "equipment": [
+  "kettlebell"
+ ],
+ "duration_minutes": 15,
+ "has_full_workout": true,
+ "ingest_status": "ready",
+ "blocks": [
+  {
+   "title": "Complex",
+   "type": "amrap",
+   "rounds": null,
+   "rest_seconds": null,
+   "exercises": [
+    {
+     "name": "Close Grip Push Ups",
+     "canonical_id": "diamond-push-up",
+     "sets": null,
+     "reps": "5",
+     "duration_seconds": null,
+     "rest_seconds": null,
+     "weight": null,
+     "equipment": "kettlebell",
+     "cue": "Slow and controlled for time under tension, core tight. Both hands stacked on the kettlebell handle, chest to the bell.",
+     "notes": "Slow and controlled for time under tension, core tight. Both hands stacked on the kettlebell handle, chest to the bell.",
+     "evidence": {
+      "source": "transcript",
+      "line": null,
+      "offset": null,
+      "quote": "take these slow and controlled so that we get time under tension",
+      "t": 15,
+      "slide": null,
+      "verified": true
+     },
+     "as_performed": {
+      "equipment": [
+       "kettlebell"
+      ],
+      "hand_placement": "both hands stacked on the kettlebell handle, thumbs touching",
+      "surface": "hands elevated on the bell, feet on the mat",
+      "grip_width": "narrow",
+      "load_position": null,
+      "stance": "feet together",
+      "unilateral": false,
+      "tempo": "slow eccentric, controlled",
+      "range_of_motion": "chest lowers to the bell"
+     },
+     "delta": "with kettlebell",
+     "t0": 10.5,
+     "t1": 25
+    },
+    {
+     "name": "Deadlift With A High Pull",
+     "canonical_id": "sumo-deadlift-high-pull",
+     "sets": null,
+     "reps": "5",
+     "duration_seconds": null,
+     "rest_seconds": null,
+     "weight": null,
+     "equipment": "kettlebell",
+     "cue": "Take your time so the legs do not add momentum; the upper body should do the pulling. One bell between the feet, elbows finish high.",
+     "notes": "Take your time so the legs do not add momentum; the upper body should do the pulling. One bell between the feet, elbows finish high.",
+     "evidence": {
+      "source": "transcript",
+      "line": null,
+      "offset": null,
+      "quote": "Take your time with these reps so you don't get too much momentum from the legs",
+      "t": 30,
+      "slide": null,
+      "verified": true
+     },
+     "as_performed": {
+      "equipment": [
+       "kettlebell"
+      ],
+      "hand_placement": "both hands on the handle, bell between the feet",
+      "surface": null,
+      "grip_width": "narrow",
+      "load_position": "between the feet, hangs at arm's length",
+      "stance": "wide, toes turned out slightly",
+      "unilateral": false,
+      "tempo": "deliberate, no bounce",
+      "range_of_motion": "floor to upper chest, elbows finish above the hands"
+     },
+     "delta": "load between the feet",
+     "t0": 25.5,
+     "t1": 40.5
+    },
+    {
+     "name": "Kettlebell Swings",
+     "canonical_id": "kettlebell-swing",
+     "sets": null,
+     "reps": "5",
+     "duration_seconds": null,
+     "rest_seconds": null,
+     "weight": null,
+     "equipment": "kettlebell",
+     "cue": "Hip hinge, tension through the glutes and hamstrings. Two hands, bell to chest height.",
+     "notes": "Hip hinge, tension through the glutes and hamstrings. Two hands, bell to chest height.",
+     "evidence": {
+      "source": "transcript",
+      "line": null,
+      "offset": null,
+      "quote": "focusing on the hip hinge, finding that tension through the glutes and the hamstrings",
+      "t": 46,
+      "slide": null,
+      "verified": true
+     },
+     "as_performed": {
+      "equipment": [
+       "kettlebell"
+      ],
+      "hand_placement": "two hands on the handle",
+      "surface": null,
+      "grip_width": "narrow",
+      "load_position": "hangs between the legs, swings to chest height",
+      "stance": "shoulder width",
+      "unilateral": false,
+      "tempo": "rhythmic",
+      "range_of_motion": "Russian swing, bell to chest height, not overhead"
+     },
+     "delta": null,
+     "t0": 41,
+     "t1": 54
+    },
+    {
+     "name": "Goblet Squats",
+     "canonical_id": "goblet-squat",
+     "sets": null,
+     "reps": "5",
+     "duration_seconds": null,
+     "rest_seconds": null,
+     "weight": null,
+     "equipment": "kettlebell",
+     "cue": "Below 90 degrees, then drive the ground away from you. Bell held by the horns at the chest.",
+     "notes": "Below 90 degrees, then drive the ground away from you. Bell held by the horns at the chest.",
+     "evidence": {
+      "source": "transcript",
+      "line": null,
+      "offset": null,
+      "quote": "dropping down below 90 degrees and driving the ground away from you",
+      "t": 58,
+      "slide": null,
+      "verified": true
+     },
+     "as_performed": {
+      "equipment": [
+       "kettlebell"
+      ],
+      "hand_placement": "bell held by the horns at the chest",
+      "surface": null,
+      "grip_width": null,
+      "load_position": "front rack at the sternum",
+      "stance": "shoulder width, toes slightly out",
+      "unilateral": false,
+      "tempo": "controlled",
+      "range_of_motion": "below parallel"
+     },
+     "delta": null,
+     "t0": 54.5,
+     "t1": 64
+    },
+    {
+     "name": "Push Press",
+     "canonical_id": "push-press",
+     "sets": null,
+     "reps": "5",
+     "duration_seconds": null,
+     "rest_seconds": null,
+     "weight": null,
+     "equipment": "kettlebell",
+     "cue": "Dip a few inches and drive the bell overhead with both hands from the goblet position.",
+     "notes": "Dip a few inches and drive the bell overhead with both hands from the goblet position.",
+     "evidence": {
+      "source": "seen",
+      "line": null,
+      "offset": null,
+      "quote": "the bell is pressed with both hands from the goblet position",
+      "t": 65,
+      "slide": null,
+      "verified": false
+     },
+     "as_performed": {
+      "equipment": [
+       "kettlebell"
+      ],
+      "hand_placement": "both hands on the horns, bell upside down",
+      "surface": null,
+      "grip_width": null,
+      "load_position": "starts at the chest in the goblet position, finishes overhead with arms locked",
+      "stance": "shoulder width",
+      "unilateral": false,
+      "tempo": "dip and drive",
+      "range_of_motion": "chest to full overhead lockout"
+     },
+     "delta": null,
+     "t0": 64.6,
+     "t1": 72.5
+    },
+    {
+     "name": "Plank Hold",
+     "canonical_id": "plank",
+     "sets": 1,
+     "reps": null,
+     "duration_seconds": 60,
+     "rest_seconds": null,
+     "weight": null,
+     "equipment": null,
+     "cue": "Squeeze the glutes and do not let the hips sag. Elbows under the shoulders.",
+     "notes": "Squeeze the glutes and do not let the hips sag. Elbows under the shoulders.",
+     "evidence": null
+    }
+   ]
+  }
+ ]
+}
