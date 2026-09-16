@@ -327,17 +327,6 @@ export const STYLE = String.raw`<style>
   .chip.active { background: var(--ember); color: var(--on-ember); box-shadow: 0 3px 12px var(--glow); }
   .chip .n { opacity: .5; font-weight: 700; margin-left: 5px; font-size: 11px; font-variant-numeric: tabular-nums; }
   .chip.active .n { opacity: .75; }
-  /* Sort stays put while the filters scroll under it: what decides the shape of the
-     page below cannot be something you drag the row to find. Stuck at the row's own
-     18px inset, so at rest it has not moved. The paper edge on its right is what the
-     chips vanish behind — a lit pill floating over sand would read as a bug. */
-  .chips .chip.sortchip { position: sticky; left: 18px; z-index: 2;
-    background: var(--card); color: var(--ink); box-shadow: 0 0 0 1px var(--line); }
-  .chips .chip.sortchip .ic { color: var(--ember-ink); }
-  .chip.sortchip::before { content: ""; position: absolute; left: 100%; top: -14px; bottom: -6px;
-    width: 18px; pointer-events: none;
-    background: linear-gradient(90deg, var(--paper) 30%, transparent); }
-
   /* ---------- today ----------
      The Plan's own day card, borrowed to answer the question the app is opened
      with. It sits beside the chip row and hides with it: the view switch turns
@@ -585,7 +574,6 @@ export const STYLE = String.raw`<style>
   /* ---------- managing a card ----------
      Rename, collections and remove as one row, in the same quiet card style as
      .sect. Favourite stays in the top bar: it is a state, these are actions. */
-  .dtitle.editable { cursor: pointer; }
   .managerow { display: flex; gap: 8px; margin: 0 0 12px; }
   .mbtn { flex: 1; min-width: 0; border: 1px solid var(--line); background: var(--card);
     color: var(--ink-2); border-radius: 13px; padding: 10px 8px; font-size: 12.5px; font-weight: 650;
@@ -602,8 +590,6 @@ export const STYLE = String.raw`<style>
   .pill { font-size: 12px; font-weight: 600; padding: 7px 11px; border-radius: 999px;
     background: var(--sand); color: var(--ink-2); line-height: 1; }
   .pill.accent { background: var(--ember-soft); color: var(--ember-ink); }
-  .specstrip { display: flex; gap: 0; background: var(--card); border: 1px solid var(--line);
-    border-radius: 16px; overflow: hidden; margin-bottom: 20px; box-shadow: var(--sh-sm); }
   /* Content-sized rather than four equal quarters: the values are a duration, a
      count and a word, and "Intermediate" needs more room than "3". Equal cells
      made the longest one bleed into its own padding. Each still grows into the
@@ -672,8 +658,6 @@ export const STYLE = String.raw`<style>
   @media (hover: hover) {
     .exrow:hover .exacts, .exrow:hover .exact { transform: none; }
   }
-  /* What the first-run peek says instead of performing it, when motion is off. */
-  .exhint { font-size: 11.5px; font-weight: 600; color: var(--muted); margin: 10px 0 2px; }
   .exhelp { flex: 0 0 auto; width: 26px; height: 26px; border-radius: 999px; border: 1px solid var(--line-2);
     background: none; color: var(--muted); font-size: 12px; line-height: 1; display: flex;
     align-items: center; justify-content: center; }
@@ -2201,11 +2185,6 @@ export const STYLE = String.raw`<style>
   .pickrow[disabled] { opacity: .42; }
   #reflist { max-height: 46vh; overflow-y: auto; -webkit-overflow-scrolling: touch; }
   #refsheet .newcol { margin: 0 0 8px; }
-  .askpumpy { width: 100%; display: flex; align-items: center; justify-content: center; gap: 9px;
-    border: 1px solid var(--line); border-radius: 16px; background: var(--card); color: var(--ink);
-    padding: 12px; font-size: 14px; font-weight: 650; margin: -8px 0 22px; box-shadow: var(--sh-sm);
-    transition: transform var(--t-1) var(--e-out); }
-  .askpumpy:active { transform: scale(.982); }
   /* One conversation per row: the thread on the left, a two-tap delete on the
      right, the open one marked in ember. */
   .threadrow { display: flex; align-items: center; gap: 6px; border-top: 1px solid var(--line); }
@@ -2491,7 +2470,7 @@ export const STYLE = String.raw`<style>
     .btn:active, .iconbtn:active, .addbtn:active, .chip:active, .carditem:active,
     .mbtn:active, .startbtn:active, .addex:active, .planbtn:active, .mcell:active,
     .setpill:active, .wnav:active, .wfinish:active, .ring:active, .scprev:active,
-    .uploadrow:active, .askpumpy:active, .pumpybar button:active { transform: none; }
+    .uploadrow:active, .pumpybar button:active { transform: none; }
   }
   /* Keep the workout visible; supporting detail opens in place on request. */
   .savebtn { width: auto; min-height: 44px; padding: 0 12px; gap: 5px; font-size: 12px; font-weight: 650; white-space: nowrap; }
@@ -2581,7 +2560,6 @@ export const STYLE = String.raw`<style>
   .session-set span { color: var(--ink-2); flex-shrink: 0; }
   .session-set b { text-align: right; overflow-wrap: anywhere; }
   @media (prefers-reduced-motion: reduce) { .session-link { transition: none; } }
-  .session-head .histrow { border: 0; padding: 0; }
   #scheduleerror { display: block; }
   #scheduleerror:empty { display: none; }
   /* Measured height moves the following content with the opening section. Only
