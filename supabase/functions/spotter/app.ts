@@ -13759,7 +13759,16 @@ export const APP = String.raw`
     // an old link, a notification or a console call lands on Train, on the
     // segment it asked for. History has lived under Progress since the recap wave.
     if (v === "history") v = "progress";
-    if (v === "plan" || v === "progress") { trainSeg = v === "plan" ? "calendar" : "progress"; v = "train"; }
+    if (v === "plan" || v === "progress") {
+      trainSeg = v === "plan" ? "calendar" : "progress";
+      v = "train";
+      // goTo() only prepares a page it had to change to, so a link naming a
+      // segment of the page you are already on moved nothing: the control stayed
+      // where it was while trainSeg quietly said otherwise, and the next refresh
+      // swapped the body under the reader. Repaint here — with the crossfade a
+      // tap gets, and without the selection tick, because no thumb asked.
+      if (state.view === "train" && trainLean) { trainSwap = true; paintSeg(); drawTrainBody(); }
+    }
     var i = VIEWS.indexOf(v);
     if (i < 0) i = 0;
     // Nothing to slide while the app is off screen: a share landing on Library,
@@ -13774,6 +13783,9 @@ export const APP = String.raw`
     drawn = { train: false, pumpy: false };
     trainSeg = null;
     trainLean = null;
+    // The arc's starting point, too: left behind, the next account's first ring
+    // would animate out of the last account's number instead of out of nothing.
+    heroPct = 0;
     planSig = "";
     statsCounted = false;
     for (var k = 0; k < PAGE_IDS.length; k++) $(PAGE_IDS[k]).scrollTop = 0;

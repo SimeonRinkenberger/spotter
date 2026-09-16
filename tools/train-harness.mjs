@@ -138,12 +138,19 @@ check('sets per day counts logged sets by local day, and holes are not sets', ()
 });
 
 // ---------- 5. the old view names still name a place ----------
-check('plan, progress and history all land on Train, on the segment they asked for', () => {
-  const went = [];
+function viewCtx(view) {
+  const went = [], painted = [];
   const c = vm.createContext({ VIEWS: ['library', 'train', 'pumpy'], trainSeg: null,
+    trainSwap: false, trainLean: {}, state: { view: view || 'library' },
     goTo: (i, animate) => went.push([i, animate]),
+    paintSeg: () => painted.push('seg'), drawTrainBody: () => painted.push('body'),
     $: () => ({ classList: { contains: () => false } }) });
   vm.runInContext(fn('setView'), c);
+  return { c, went, painted };
+}
+
+check('plan, progress and history all land on Train, on the segment they asked for', () => {
+  const { c, went } = viewCtx('library');
   for (const [name, seg] of [['plan', 'calendar'], ['progress', 'progress'], ['history', 'progress']]) {
     c.trainSeg = null;
     vm.runInContext('setView(' + JSON.stringify(name) + ')', c);
@@ -153,6 +160,21 @@ check('plan, progress and history all land on Train, on the segment they asked f
   // A name nothing knows still lands somewhere real rather than off the end.
   vm.runInContext('setView("nonsense")', c);
   assert.equal(went[went.length - 1][0], 0);
+});
+
+// goTo() only prepares a page it had to change to, so a deep link naming a
+// segment of the page already on screen has to move the control itself.
+check('a deep link repaints the segment when Train is already the page', () => {
+  const here = viewCtx('train');
+  vm.runInContext('setView("progress")', here.c);
+  assert.equal(here.c.trainSeg, 'progress');
+  assert.deepEqual(here.painted, ['seg', 'body']);
+  assert.equal(here.c.trainSwap, true, 'the body crossfades, as a tap does');
+  // Coming from another tab, the arrival draws it: painting here as well would
+  // build the body twice for one visit.
+  const away = viewCtx('library');
+  vm.runInContext('setView("progress")', away.c);
+  assert.deepEqual(away.painted, []);
 });
 
 console.log(checks + ' Train checks passed');

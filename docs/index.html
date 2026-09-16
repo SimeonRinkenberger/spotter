@@ -15918,13 +15918,13 @@ details.details-moving > :not(summary) {
     springTo(spTarget, spVel);
   }
   function setView(v) {
-    v === "history" && (v = "progress"), (v === "plan" || v === "progress") && (trainSeg = v === "plan" ? "calendar" : "progress", v = "train");
+    v === "history" && (v = "progress"), (v === "plan" || v === "progress") && (trainSeg = v === "plan" ? "calendar" : "progress", v = "train", state.view === "train" && trainLean && (trainSwap = !0, paintSeg(), drawTrainBody()));
     var i = VIEWS.indexOf(v);
     i < 0 && (i = 0), goTo(i, !$("app").classList.contains("hide"));
   }
   function resetPager() {
     if (pagesEl) {
-      stopSpring(), idx = 0, arrivedAt = 0, state.view = "library", drawn = { train: !1, pumpy: !1 }, trainSeg = null, trainLean = null, planSig = "", statsCounted = !1;
+      stopSpring(), idx = 0, arrivedAt = 0, state.view = "library", drawn = { train: !1, pumpy: !1 }, trainSeg = null, trainLean = null, heroPct = 0, planSig = "", statsCounted = !1;
       for (var k = 0; k < PAGE_IDS.length; k++) $(PAGE_IDS[k]).scrollTop = 0;
       measureChrome(), pos = 0, spTarget = 0, spVel = 0, commit(0), paint();
     }
