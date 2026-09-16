@@ -89,6 +89,10 @@ window.SpotterNative = {
       : Preferences.set({ key: 'spotter_draft', value })).catch(ignore);
   },
   haptic(kind) {
+    // A segmented control is not a knock. selectionChanged is the tick UIKit gives
+    // a UISegmentedControl, and on Android it plays the plugin's selection
+    // waveform; the plugin re-prepares the generator after each one.
+    if (kind === 'select') { Haptics.selectionChanged().catch(ignore); return; }
     const request = kind === 'pr' || kind === 'done'
       ? Haptics.notification({ type: NotificationType.Success })
       : Haptics.impact({ style: kind === 'tap' || kind === 'stream' ? ImpactStyle.Light : ImpactStyle.Medium });
@@ -159,6 +163,11 @@ async function boot() {
   const style = () => StatusBar.setStyle({ style: appearance.matches ? Style.Dark : Style.Light }).catch(ignore);
   style(); appearance.addEventListener('change', style);
   await installKeyboard(Keyboard);
+  // Once, at boot: on iOS this keeps a prepared UISelectionFeedbackGenerator so
+  // the first segment tap of a session ticks as fast as the tenth, and on Android
+  // it arms the selection waveform. selectionEnd is never called — ending it would
+  // throw the generator away and put the warm-up cost back on the next tap.
+  await Haptics.selectionStart().catch(ignore);
   await App.addListener('appStateChange', ({ isActive }) => window.dispatchEvent(new CustomEvent('spotter:native-state', { detail: { isActive } })));
   await Browser.addListener('browserFinished', () => window.dispatchEvent(new Event('focus')));
   document.addEventListener('click', event => {

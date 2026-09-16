@@ -16,11 +16,11 @@ function setup() {
   const nodes = new Map();
   const state={user:{id:'alice'},workouts:[],collections:[],colItems:[],logs:null,plan:[{id:'known'}],planLogs:[]};
   const c=vm.createContext({console,Promise,Date,JSON,AbortController,Response,TextDecoder,
-    state,accountEpoch:1,reads:{},libraryRev:0,logsRev:0,planRev:0,
-    current:null,today:{at:0,shown:false},planMode:'week',monthStart:new Date(2026,8,1),planSig:'',
+    state,accountEpoch:1,reads:{},libraryRev:0,logsRev:0,planRev:0,native:null,sc:null,scForget(){},
+    current:null,today:{at:0,shown:false},trainSeg:'calendar',monthStart:new Date(2026,8,1),planSig:'',
     pendTimer:null,pendPolls:0,pendBusy:false,document:{hidden:false}, renders:0,plans:0,
     $:id=>{if(!nodes.has(id))nodes.set(id,{classList:{contains:()=>false}});return nodes.get(id);},
-    render(){c.renders++;},renderPlan(){c.plans++;},renderToday(){},refreshDetail(){},
+    render(){c.renders++;},renderTrain(){c.plans++;},renderToday(){},refreshDetail(){},
     idle(){},writeCache(){},toast:m=>toasts.push(m),
     setTimeout:(f,ms)=>{const t={f,ms};timers.push(t);return t;},clearTimeout:t=>{if(t)t.cancelled=true;},
     sb:{from(table){
@@ -71,18 +71,18 @@ await test('late history cannot populate another account',async()=>{
   const x=setup(),p=x.run('loadLogs()');await flush();x.c.accountEpoch++;x.c.state.user={id:'bob'};
   x.requests[0].resolve({data:[{id:'private'}]});await p;assert.equal(x.c.state.logs,null);
 });
-await test('Plan shares identical ranges and discards a reversed week response',async()=>{
-  const x=setup(),old=x.run('loadPlan(true)'),same=x.run('loadPlan(true)');await flush();assert.equal(old,same);assert.equal(x.requests.length,2);
-  x.c.state.weekStart=new Date(2026,8,14);const fresh=x.run('loadPlan()');await flush();assert.equal(x.requests.length,4);
-  x.requests[2].resolve({data:[{id:'current-week'}]});x.requests[3].resolve({data:[]});await fresh;
-  x.requests[0].resolve({data:[{id:'old-week'}]});x.requests[1].resolve({data:[]});await old;
-  assert.equal(x.c.state.plan[0].id,'current-week');assert.equal(x.c.plans,1);
+await test('Train shares identical ranges, asks once, and discards a reversed month response',async()=>{
+  const x=setup(),old=x.run('loadPlan(true)'),same=x.run('loadPlan(true)');await flush();assert.equal(old,same);assert.equal(x.requests.length,1);
+  x.c.state.weekStart=new Date(2026,9,5);x.c.monthStart=new Date(2026,9,1);const fresh=x.run('loadPlan()');await flush();assert.equal(x.requests.length,2);
+  x.requests[1].resolve({data:[{id:'current-month'}]});await fresh;
+  x.requests[0].resolve({data:[{id:'old-month'}]});await old;
+  assert.equal(x.c.state.plan[0].id,'current-month');assert.equal(x.c.plans,1);
 });
-await test('Plan read failure preserves known rows and shows recovery',async()=>{
+await test('Train read failure preserves known rows and shows recovery',async()=>{
   const x=setup(),p=x.run('loadPlan()');await flush();x.requests.forEach(r=>r.resolve({error:{status:503}}));await p;
   assert.equal(x.c.state.plan[0].id,'known');assert.equal(x.toasts.length,1);
 });
-await test('optimistic Plan repaint invalidates earlier reads',async()=>{
+await test('optimistic Train repaint invalidates earlier reads',async()=>{
   const x=setup(),p=x.run('loadPlan()');await flush();x.c.state.plan=[{id:'optimistic'}];x.run('repaintPlan()');
   x.requests.forEach(r=>r.resolve({data:[]}));await p;assert.equal(x.c.state.plan[0].id,'optimistic');
 });
@@ -118,23 +118,24 @@ await test('account teardown clears old counts, chips, chat, panels and toast',a
     pumpyReset:{animations:[{cancel(){motionCancelled=true;}}]},clearInterval(){},stopRest(){},releaseWake(){},guideClear(){},guideStill(){},dropCache(){},saveDraft(){}});
   vm.runInContext(fn('cancelPumpyReset'),x.c);
   x.c.document.querySelectorAll=()=>[];vm.runInContext(fn('clearAccount'),x.c);x.run('clearAccount()');
-  for(const id of ['grid','chips','colbar','libcount','pumpylog','planview','progressview'])assert.equal(nodes.get(id).innerHTML,'',id);
+  for(const id of ['grid','chips','colbar','libcount','pumpylog','trainview'])assert.equal(nodes.get(id).innerHTML,'',id);
   assert.equal(nodes.get('toast').textContent,'');assert.equal(x.c.state.workouts.length,0);assert.equal(x.c.pumpy.messages.length,0);
   assert.equal(x.c.pumpy.openSeq,4);assert.equal(x.c.billing.said,null);assert.equal(x.c.accountEpoch,2);
   assert.equal(x.c.undoFn,null);assert.equal(x.c.undoTimer,null);
   assert.equal(motionCancelled,true);assert.equal(x.c.pumpyReset,null);
 });
 await test('navigation starts reads before arrival but never grants a help visit',async()=>{
-  const x=setup();let planReads=0;
-  Object.assign(x.c,{VIEWS:['library','plan','progress','pumpy'],drawn:{},quietly:p=>p,
-    guide:{visit:null},loadPlan:()=>{planReads++;return Promise.resolve();},countStats(){}});
-  vm.runInContext(fn('preparePage'),x.c);x.run('preparePage(1)');assert.equal(planReads,1);assert.equal(x.c.guide.visit,null);assert.equal(x.run('ymd(state.weekStart)'),x.run('ymd(mondayOf(new Date()))'));assert.equal(x.c.planMode,'week');
+  const x=setup();let trainReads=0;
+  Object.assign(x.c,{VIEWS:['library','train','pumpy'],drawn:{},quietly:p=>p,
+    guide:{visit:null},prepareTrain:()=>{trainReads++;return Promise.resolve();},countStats(){}});
+  vm.runInContext(fn('preparePage'),x.c);x.run('preparePage(1)');assert.equal(trainReads,1);assert.equal(x.c.drawn.train,true);assert.equal(x.c.guide.visit,null);assert.equal(x.run('ymd(state.weekStart)'),x.run('ymd(mondayOf(new Date()))'));
 });
-await test('Plan opens on the local current week across Sunday, Monday and year boundaries', async()=>{
+await test('Train opens on the local current week across Sunday, Monday and year boundaries', async()=>{
   for(const [day, expected] of [['2026-09-06T17:00:00','2026-08-31'],['2026-09-07T00:01:00','2026-09-07'],['2027-01-01T12:00:00','2026-12-28']]) {
     const x=setup();x.c.Date=class extends Date {constructor(...args){super(...(args.length?args:[day]));}};
-    x.c.planMode='month';x.c.state.weekStart=new Date(2020,0,1);x.run('restorePlan()');
-    assert.equal(x.run('ymd(state.weekStart)'),expected);assert.equal(x.c.planMode,'week');
+    x.c.state.weekStart=new Date(2020,0,1);x.run('restorePlan()');
+    assert.equal(x.run('ymd(state.weekStart)'),expected);
+    assert.equal(x.run('ymd(monthStart)'),x.run('ymd(monthOfWeek(state.weekStart))'));
   }
 });
 function transport(response) {

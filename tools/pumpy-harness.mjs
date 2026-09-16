@@ -28,7 +28,8 @@ const context = vm.createContext({
   setTimeout: (fn, ms) => { const timer = {fn,ms}; timers.push(timer); return timer; },
   clearTimeout: timer => { const i = timers.indexOf(timer); if (i >= 0) timers.splice(i,1); },
   state: { user: { id: 'alice' }, view: 'library', logs: [], workouts: [] },
-  pumpy: { loaded: true, messages: [], refs: [], refsRev: 0 }, planBody: document.createElement('div'),
+  pumpy: { loaded: true, messages: [], refs: [], refsRev: 0 },
+  trainLean: document.createElement('div'), cardBox: null, trainSeg: null,
   $: id => document.getElementById(id),
   el: (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; },
   icon: n => n, lessMotion: () => reduced,
@@ -41,32 +42,32 @@ function showTip() { run('guide.observer.show()'); }
 function reset() { run('guideClear(); guide.seen = {}; guide.count = 0; guide.last = 0; guide.off = false;'); }
 vm.runInContext(app.slice(app.indexOf('  // ---------- Pumpy · a little help'), app.indexOf('  // ---------- sheets ----------')), context);
 run('guideUser()');
-const plan = document.getElementById('planview'); plan.appendChild(context.planBody);
+const plan = document.getElementById('trainview'); plan.appendChild(context.trainLean);
 check('warm rendering is not a visit', () => {
-  run('state.view = "plan"; guidePage("plan")');
+  run('state.view = "train"; guidePage("train")');
   assert.equal(run('guide.active'), null);
 });
 check('a visit creates one tip, not an impression yet', () => {
-  run('guide.visit = "plan"; guidePage("plan")');
-  assert.equal(run('guide.active.id'), 'plan'); assert.equal(run('guide.count'), 0);
+  run('guide.visit = "train"; guidePage("train")');
+  assert.equal(run('guide.active.id'), 'train'); assert.equal(run('guide.count'), 0);
 });
 check('an inert page cannot spend an impression', () => {
   plan.inert = true; showTip(); assert.equal(run('guide.count'), 0); plan.inert = false;
 });
 check('visible tip is counted and persisted once', () => {
-  showTip(); assert.equal(run('guide.count'), 1); assert.equal(run('guide.seen.plan'), true);
-  assert.equal(JSON.parse(storage.get('spotter_pumpy_v1:alice')).seen.plan, true);
+  showTip(); assert.equal(run('guide.count'), 1); assert.equal(run('guide.seen.train'), true);
+  assert.equal(JSON.parse(storage.get('spotter_pumpy_v1:alice')).seen.train, true);
 });
 check('redraw reattaches same tip without counting twice', () => {
-  const node = run('guide.active.node'); context.planBody.innerHTML = '';
-  run('guidePage("plan")'); assert.equal(run('guide.active.node'), node); assert.equal(run('guide.count'), 1);
+  const node = run('guide.active.node'); context.trainLean.innerHTML = '';
+  run('guidePage("train")'); assert.equal(run('guide.active.node'), node); assert.equal(run('guide.count'), 1);
 });
 check('a tip does not repeat after leaving and returning', () => {
-  run('guideClear(); guidePage("plan")'); assert.equal(run('guide.active'), null);
+  run('guideClear(); guidePage("train")'); assert.equal(run('guide.active'), null);
 });
 check('an existing plan retires introductory planning help', () => {
-  run('state.plan = [{}]; guidePage("plan")');
-  assert.equal(run('guide.active'), null); assert.equal(run('guide.seen.plan'), true);
+  run('state.plan = [{}]; guidePage("train")');
+  assert.equal(run('guide.active'), null); assert.equal(run('guide.seen.train'), true);
   run('state.plan = []');
 });
 check('cooldown prevents a second tip on the next action', () => {
@@ -129,7 +130,7 @@ check('wing motion waits for visibility and stops offscreen', () => {
   assert.match(run('art3.firstChild.src'), /proud\.webp\?v=12$/); assert.equal(observer.disconnected, true);
 });
 check('guide stays available even when automatic tips are off', () => {
-  run('guide.off = true; openPumpyGuide()'); assert.equal(document.querySelectorAll('.guide-topic').length, 6);
+  run('guide.off = true; openPumpyGuide()'); assert.equal(document.querySelectorAll('.guide-topic').length, 5);
 });
 check('a rerender cannot restart the same decorative animation', () => {
   run('var art4 = pumpyArt("proud", true); document.body.appendChild(art4)');

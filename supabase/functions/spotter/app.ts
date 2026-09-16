@@ -157,13 +157,16 @@ export const APP = String.raw`
 
   // ---------- haptics ----------
   //
-  // Four kinds, one door. Android answers navigator.vibrate; iOS Safari answers
+  // Five kinds, one door. Android answers navigator.vibrate; iOS Safari answers
   // nothing at all and always has, so every call site treats a buzz as a bonus on
   // top of something the screen already said.
   // This is also the seam for going native: when Spotter is wrapped in Capacitor,
   // only this function changes — Haptics.impact for tap and success, notification
-  // for pr and done — and every call below starts driving the Taptic Engine.
-  var BUZZ = { tap: 8, stream: 5, success: 12, pr: [14, 60, 22], done: [35, 55, 35] };
+  // for pr and done, selectionChanged for select — and every call below starts
+  // driving the Taptic Engine.
+  // select is the shortest of them: a segmented control on iOS gives a tick, not a
+  // knock, and 4ms is as close as navigator.vibrate gets to one.
+  var BUZZ = { tap: 8, stream: 5, select: 4, success: 12, pr: [14, 60, 22], done: [35, 55, 35] };
 
   // One gate, which is what makes a Vibration switch possible at all: every call
   // site in the app comes through here. navigator.vibrate does not exist on iOS at
@@ -6813,7 +6816,7 @@ export const APP = String.raw`
     $("workout").classList.toggle("past", !!past);
     // The X is the only way out of a live session and the way back to Progress
     // from a read one, and it should say which it is.
-    $("wclose").setAttribute("aria-label", past ? "Back to Progress" : "Exit workout");
+    $("wclose").setAttribute("aria-label", past ? "Back to Train" : "Exit workout");
 
     var mins = Math.max(1, Math.round((payload.duration_seconds || 60) / 60));
     $("wclock").textContent = mins + " min";
@@ -8108,7 +8111,7 @@ export const APP = String.raw`
     });
   }
 
-  // ---------- plan ----------
+  // ---------- train · calendar arithmetic ----------
 
   function mondayOf(date) {
     var d = new Date(date);
@@ -9282,7 +9285,7 @@ export const APP = String.raw`
           if (today.shown) renderToday();
           return state.logs;
         }).catch(function () {
-          if (accountNow(epoch, uid)) toast("Could not load your history. Open Progress to try again.");
+          if (accountNow(epoch, uid)) toast("Could not load your history. Open Train to try again.");
           return [];
         });
     });

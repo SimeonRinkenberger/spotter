@@ -7873,7 +7873,7 @@ details.details-moving > :not(summary) {
       t.classList.remove("show"), t.classList.remove("tappable"), t.onclick = null;
     }, ms || 2800);
   }
-  var BUZZ = { tap: 8, stream: 5, success: 12, pr: [14, 60, 22], done: [35, 55, 35] };
+  var BUZZ = { tap: 8, stream: 5, select: 4, success: 12, pr: [14, 60, 22], done: [35, 55, 35] };
   function haptic(kind) {
     var p = BUZZ[kind];
     if (!(!p || !state.haptics)) {
@@ -11660,7 +11660,7 @@ details.details-moving > :not(summary) {
   }
   function renderSummary(payload, logged, past) {
     var main = $("wmain"), w = past ? logWorkout(payload) : wo && wo.workout || {}, prs = past ? prsOfLog(logged) : wo && wo.prs || {};
-    main.innerHTML = "", main.scrollTop = 0, $("workout").classList.add("summary"), $("workout").classList.toggle("past", !!past), $("wclose").setAttribute("aria-label", past ? "Back to Progress" : "Exit workout");
+    main.innerHTML = "", main.scrollTop = 0, $("workout").classList.add("summary"), $("workout").classList.toggle("past", !!past), $("wclose").setAttribute("aria-label", past ? "Back to Train" : "Exit workout");
     var mins = Math.max(1, Math.round((payload.duration_seconds || 60) / 60));
     $("wclock").textContent = mins + " min";
     var sets = 0, vol = 0;
@@ -13107,7 +13107,7 @@ details.details-moving > :not(summary) {
         if (r.error) throw r.error;
         return state.logs = r.data || [], today.shown && renderToday(), state.logs;
       }).catch(function() {
-        return accountNow(epoch, uid) && toast("Could not load your history. Open Progress to try again."), [];
+        return accountNow(epoch, uid) && toast("Could not load your history. Open Train to try again."), [];
       });
     });
   }
