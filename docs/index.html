@@ -4817,6 +4817,23 @@ body:not(.app) #toast.show {
   margin-top: 24px;
   animation: viewin var(--t-3) var(--e-out) 260ms both;
 }
+#wmore {
+  display: none;
+}
+#workout.summary.past #wmore {
+  display: flex;
+}
+.sumlog {
+  text-align: left;
+  margin-top: 18px;
+}
+.sumlog .session-exercise:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+.session-set b.was {
+  color: var(--ember-ink);
+}
 .sharewrap {
   margin-top: 22px;
   animation: viewin var(--t-2) var(--e-out) 250ms both;
@@ -4830,10 +4847,20 @@ body:not(.app) #toast.show {
   width: 140px;
   height: 249px;
   border-radius: 16px;
+  padding: 0;
   overflow: hidden;
   background: var(--sand);
   border: 1px solid var(--line);
   box-shadow: var(--sh-md);
+  cursor: pointer;
+  transition: transform var(--t-1) var(--e-out);
+}
+.scprev:active {
+  transform: scale(.97);
+}
+.scprev:focus-visible {
+  outline: 2px solid var(--ember-ink);
+  outline-offset: 3px;
 }
 .scprev img {
   width: 100%;
@@ -4911,32 +4938,61 @@ body:not(.app) #toast.show {
     transition: none;
   }
 }
-.cardacts {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-top: 12px;
-}
-.scmini {
-  display: inline-flex;
+#proof {
+  position: fixed;
+  inset: 0;
+  z-index: 95;
+  display: none;
   align-items: center;
-  gap: 7px;
-  min-height: 44px;
-  padding: 11px 15px;
-  border: 1px solid var(--line-2);
+  justify-content: center;
+  background: var(--paper);
+}
+#proof.open {
+  display: flex;
+  animation: fadein var(--t-3) var(--e-soft);
+}
+#proof.closing {
+  display: flex;
+  pointer-events: none;
+  animation: fadeout var(--t-2) var(--e-in) both;
+}
+#proof img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+#proof:not(.dragging) {
+  transition: transform var(--t-2) var(--e-out), opacity var(--t-2) var(--e-out);
+}
+.proofhint {
+  position: absolute;
+  left: 50%;
+  bottom: calc(24px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  padding: 8px 15px;
   border-radius: 999px;
-  background: var(--card);
-  color: var(--ink-2);
-  font-size: 13px;
+  background: rgba(0, 0, 0, .45);
+  color: #FFF;
+  font-size: 12px;
   font-weight: 600;
-  transition: transform var(--t-1) var(--e-out), opacity var(--t-2);
+  white-space: nowrap;
+  pointer-events: none;
+  transition: opacity var(--t-4) var(--e-soft);
 }
-.scmini .ic {
-  width: 15px;
-  height: 15px;
+.proofhint.gone {
+  opacity: 0;
 }
-.scmini:active {
-  transform: scale(.96);
+@media (prefers-reduced-motion: reduce) {
+  #proof.open {
+    animation-duration: var(--t-2);
+  }
+  #proof.closing {
+    animation-duration: var(--t-1);
+  }
+  #proof:not(.dragging) {
+    transition: none;
+  }
 }
 #watchbody .embedwrap,
 #watchbody .dphoto {
@@ -6335,7 +6391,7 @@ select:focus-visible {
   .wnav:active,
   .wfinish:active,
   .ring:active,
-  .scmini:active,
+  .scprev:active,
   .uploadrow:active,
   .askpumpy:active,
   .pumpybar button:active {
@@ -6674,49 +6730,6 @@ select:focus-visible {
   font-weight: 650;
   margin-top: 12px;
 }
-#sessionsheet .sheetbody {
-  max-width: 560px;
-}
-#sessionclose {
-  margin-bottom: 20px;
-  min-height: 44px;
-}
-#sessiontitle {
-  font-size: 28px;
-  overflow-wrap: anywhere;
-}
-#sessioncontent h3 {
-  font-family: var(--display);
-  font-size: 18px;
-}
-#sessioncontent .sharewrap {
-  margin-top: 12px;
-  animation-delay: 0ms;
-}
-#sessioncontent .sharerow {
-  flex-direction: column;
-  align-items: center;
-}
-#sessioncontent .scprev {
-  flex: none;
-  width: 198px;
-  height: 352px;
-}
-#sessioncontent .scprev img {
-  object-fit: contain;
-}
-#sessioncontent .scside {
-  width: 100%;
-}
-#sessioncontent .scchips {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-#sessioncontent .schint {
-  text-align: center;
-}
-.session-exercises-title {
-  margin-top: 28px;
-}
 .session-exercise {
   padding: 14px 0;
   border-bottom: 1px solid var(--line);
@@ -6739,10 +6752,6 @@ select:focus-visible {
 .session-set b {
   text-align: right;
   overflow-wrap: anywhere;
-}
-#sessioncontent > .danger {
-  min-height: 44px;
-  margin-top: 24px;
 }
 @media (prefers-reduced-motion: reduce) {
   .session-link {
@@ -6824,6 +6833,7 @@ details.details-moving > :not(summary) {
 <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
 <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
 <symbol id="i-chev" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+<symbol id="i-more" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></symbol>
 <symbol id="i-star" viewBox="0 0 24 24"><path d="m12 2.6 2.9 6 6.6.9-4.8 4.6 1.2 6.5-5.9-3.1-5.9 3.1 1.2-6.5L2.5 9.5l6.6-.9z"/></symbol>
 <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
 <symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></symbol>
@@ -7014,6 +7024,7 @@ details.details-moving > :not(summary) {
     <div class="wtools">
       <button class="iconbtn" id="wsound" aria-label="Timer sounds" aria-pressed="true"><svg class="ic"><use href="#i-volume-2"></use></svg></button>
       <button class="iconbtn" id="wlist" aria-label="All exercises"><svg class="ic"><use href="#i-list"></use></svg></button>
+      <button class="iconbtn" id="wmore" aria-label="Session options" aria-haspopup="dialog"><svg class="ic"><use href="#i-more"></use></svg></button>
     </div>
   </div>
   <div class="wdots" id="wdots"></div>
@@ -7094,12 +7105,11 @@ details.details-moving > :not(summary) {
   <div class="btnrow"><button class="btn ghost" data-close="woaddsheet">Cancel</button><button class="btn" id="woaddsave">Add exercise</button></div>
 </div></div>
 
-<div class="sheet" id="sessionsheet" role="dialog" aria-modal="true" aria-labelledby="sessiontitle"><div class="sheetbody">
+<div class="sheet" id="recapsheet" role="dialog" aria-modal="true" aria-labelledby="recaptitle"><div class="sheetbody">
   <div class="grabber"></div>
-  <button class="btn ghost" id="sessionclose" data-close="sessionsheet">Back to Progress</button>
-  <div class="wblock">Session recap</div>
-  <h2 id="sessiontitle">Workout</h2>
-  <div id="sessioncontent"></div>
+  <h2 id="recaptitle">Session options</h2>
+  <div id="recapopts"></div>
+  <button class="btn ghost" data-close="recapsheet">Done</button>
 </div></div>
 
 <div class="sheet" id="watchsheet"><div class="sheetbody">
@@ -7430,6 +7440,11 @@ details.details-moving > :not(summary) {
   <div id="welcomestage"></div>
   <div class="welcome-actions"><button class="btn" id="welcomenext">Next</button></div>
 </div></div>
+
+<div id="proof" aria-hidden="true">
+  <img id="proofimg" alt="Your session as one card">
+  <div class="proofhint" id="proofhint">Tap anywhere to close</div>
+</div>
 
 <div id="toast"></div>
 
@@ -8068,7 +8083,7 @@ details.details-moving > :not(summary) {
       };
     }
     native && native.purchases && native.purchases.clear().catch(function() {
-    }), billing && (billing.prices = null, billing.sub = null, billing.subAsked = !1, billing.limits = null, billing.said = null, billing.ctx = null), ["grid", "chips", "colbar", "libcount", "empty", "dinner", "pumpylog", "pumpyannounce", "pumpyctx", "pumpythreads", "planview", "progressview", "today", "sessioncontent"].forEach(function(id) {
+    }), billing && (billing.prices = null, billing.sub = null, billing.subAsked = !1, billing.limits = null, billing.said = null, billing.ctx = null), ["grid", "chips", "colbar", "libcount", "empty", "dinner", "pumpylog", "pumpyannounce", "pumpyctx", "pumpythreads", "planview", "progressview", "today", "recapopts"].forEach(function(id) {
       var n = $(id);
       n && (n.innerHTML = "");
     }), $("count0").textContent = "Reading your library", clearTimeout(toastTimer), $("toast").classList.remove("show"), $("toast").textContent = "", Array.prototype.forEach.call(document.querySelectorAll(".sheet.open, #detail.open, #workout.open"), function(n) {
@@ -11176,18 +11191,21 @@ details.details-moving > :not(summary) {
     var openedFromDetail = $("detail").classList.contains("open");
     exitWorkout(), history.go(openedFromDetail ? -2 : -1);
   }
-  function renderSummary(payload, logged) {
-    var main = $("wmain");
-    main.innerHTML = "", main.scrollTop = 0, $("workout").classList.add("summary");
-    var mins = Math.max(1, Math.round(payload.duration_seconds / 60));
+  function renderSummary(payload, logged, past) {
+    var main = $("wmain"), w = past ? logWorkout(payload) : wo && wo.workout || {}, prs = past ? prsOfLog(logged) : wo && wo.prs || {};
+    main.innerHTML = "", main.scrollTop = 0, $("workout").classList.add("summary"), $("workout").classList.toggle("past", !!past), $("wclose").setAttribute("aria-label", past ? "Back to Progress" : "Exit workout");
+    var mins = Math.max(1, Math.round((payload.duration_seconds || 60) / 60));
     $("wclock").textContent = mins + " min";
     var sets = 0, vol = 0;
     logged.forEach(function(e) {
       e.sets.forEach(function(s) {
         s && (sets++, s.reps && s.weight && (vol += s.reps * toUnit(s.weight, s.unit)));
       });
-    }), main.appendChild(pumpyArt("proud", !0)), main.appendChild(el("div", "wblock", "Session complete")), main.appendChild(el("h2", "wname", wo.workout.title || "Workout"));
-    var cs = cxScoreOf(wo.workout, logged);
+    }), main.appendChild(pumpyArt("proud", !0)), main.appendChild(el("div", "wblock", past ? new Date(payload.started_at).toLocaleDateString(
+      void 0,
+      { weekday: "long", month: "long", day: "numeric" }
+    ) : "Session complete")), main.appendChild(el("h2", "wname", payload.workout_title || "Workout"));
+    var cs = cxScoreOf(w, logged);
     cs && main.appendChild(el("div", "wdose", cs.text + (cs.cap ? " in " + clock(cs.cap) : "") + (cs.reps ? " \xB7 " + cs.reps + " reps" : "")));
     var figs = el("div", "setpills sumfigs");
     [
@@ -11198,24 +11216,76 @@ details.details-moving > :not(summary) {
       var box = el("div", "setpill");
       box.appendChild(el("b", null, f[0])), box.appendChild(document.createTextNode(f[1])), figs.appendChild(box);
     }), main.appendChild(el("div", "sumawards")), main.appendChild(figs);
-    var wk = thisWeek(payload);
+    var wk = past ? null : thisWeek(payload);
     if (wk) {
       var wl = el("div", "sumweek" + (wk.done >= wk.goal ? " full" : ""));
       wk.done === wk.goal && wl.appendChild(ringSvg(1, "small", (wk.goal - 1) / wk.goal)), wl.appendChild(el("span", null, weekLine(wk))), main.appendChild(wl);
     }
-    var mg = wo.workout.muscle_groups || [];
+    var mg = w.muscle_groups || [];
     mg.length && main.appendChild(el("div", "wnote", mg.slice(0, 6).join(" \xB7 ")));
-    var beaten = Object.keys(wo.prs);
+    var beaten = Object.keys(prs);
     if (beaten.length) {
-      var prs = el("div", "setpills sumprs");
+      var pills = el("div", "setpills sumprs");
       beaten.forEach(function(k) {
-        var p = wo.prs[k], row = el("div", "setpill pr");
-        row.appendChild(el("b", null, "New best")), row.appendChild(document.createTextNode(p.name + " \xB7 " + wtText(p.weight, p.unit) + " " + state.unit + " \xD7 " + p.reps)), prs.appendChild(row);
-      }), main.appendChild(prs);
+        var row = el("div", "setpill pr");
+        row.appendChild(el("b", null, past ? "Best at the time" : "New best")), row.appendChild(document.createTextNode(prText(prs[k]))), pills.appendChild(row);
+      }), main.appendChild(pills);
     }
-    main.appendChild(shareRow(payload, logged));
-    var done = el("button", "btn sumdone", "Done");
-    done.onclick = leaveWorkout, main.appendChild(done), viewIn(main), sealAwards(payload, main);
+    main.appendChild(shareRow(payload, logged, past)), logged.length && main.appendChild(sumLog(logged));
+    var done = el("button", "btn sumdone", past ? "Back" : "Done");
+    done.onclick = past ? function() {
+      history.back();
+    } : leaveWorkout, main.appendChild(done), viewIn(main), past ? pastSeals(payload, main) : sealAwards(payload, main);
+  }
+  function prText(p) {
+    return p.name + " \xB7 " + wtText(p.weight, p.unit) + " " + state.unit + " \xD7 " + p.reps;
+  }
+  function logWorkout(l) {
+    var w = null;
+    return (state.workouts || []).forEach(function(x) {
+      x.id === l.workout_id && (w = x);
+    }), w || {};
+  }
+  function prsOfLog(entries) {
+    var out = {};
+    return (entries || []).forEach(function(e) {
+      (e.sets || []).forEach(function(s) {
+        if (!(!s || !s.pr || !s.weight)) {
+          var k = exKey(e), est = toUnit(s.weight, s.unit) * (1 + (s.reps || 0) / 30);
+          out[k] && out[k].est >= est || (out[k] = {
+            name: e.name || "Exercise",
+            reps: s.reps,
+            weight: s.weight,
+            unit: s.unit,
+            est: est
+          });
+        }
+      });
+    }), out;
+  }
+  function sumLog(logged) {
+    var box = disclosure("What you logged", "sumlog"), body = box.lastChild;
+    return logged.forEach(function(e) {
+      var row = el("div", "session-exercise");
+      row.appendChild(el("h4", null, e.name || "Exercise")), e.sets.forEach(function(s, i) {
+        var line = el("div", "session-set");
+        line.appendChild(el("span", null, "Set " + (i + 1)));
+        var b = el("b", null, setText(s) + (s.weight && !s.seconds ? " " + state.unit : ""));
+        s.pr && b.classList.add("was"), line.appendChild(b), row.appendChild(line);
+      }), body.appendChild(row);
+    }), box;
+  }
+  function pastSeals(l, main) {
+    if (!(!state.awards || !l.completed_at)) {
+      var from = new Date(l.started_at).getTime(), to = new Date(l.completed_at).getTime() + 9e5, box = main.querySelector(".sumawards");
+      state.awards.filter(function(a) {
+        var t = new Date(a.earned_at).getTime();
+        return a.kind !== "freeze" && t >= from && t <= to;
+      }).slice(0, 3).forEach(function(a) {
+        var seal = el("div", "seal"), disc = el("div", "sdisc");
+        disc.appendChild(ringSvg(1, "srim", 1)), disc.appendChild(ic(AW_ICON[a.kind] || "star")), seal.appendChild(disc), seal.appendChild(el("div", "sname", awardTitle(a))), box.appendChild(seal);
+      });
+    }
   }
   function sealAwards(payload, main) {
     if (!(!state.awards || !state.logs)) {
@@ -11245,9 +11315,9 @@ details.details-moving > :not(summary) {
   }
   var woCloseTimer = null;
   function exitWorkout() {
-    clearInterval(woTimer), cxOff(), stopRest(), releaseWake(), clearDraft(), closeSheet("watchsheet"), wo = null;
+    wo && (clearInterval(woTimer), cxOff(), stopRest(), releaseWake(), clearDraft()), closeSheet("watchsheet"), wo = null, recapLog = null;
     var n = $("workout");
-    n.classList.contains("open") && (n.classList.remove("open"), n.classList.remove("summary"), n.classList.add("closing"), clearTimeout(woCloseTimer), woCloseTimer = setTimeout(function() {
+    n.classList.contains("open") && (n.classList.remove("open"), n.classList.remove("summary"), n.classList.remove("past"), n.classList.add("closing"), recapFocus && recapFocus.isConnected && recapFocus.focus({ preventScroll: !0 }), recapFocus = null, clearTimeout(woCloseTimer), woCloseTimer = setTimeout(function() {
       n.classList.remove("closing"), guideWake();
     }, 260));
   }
@@ -11567,40 +11637,38 @@ details.details-moving > :not(summary) {
   }
   function scFromSession(payload, logged) {
     var w = wo && wo.workout || {}, sets = 0, vol = 0;
-    logged.forEach(function(e) {
+    return logged.forEach(function(e) {
       e.sets.forEach(function(s) {
         s && (sets++, s.reps && s.weight && (vol += s.reps * toUnit(s.weight, s.unit)));
       });
-    });
-    var prs = Object.keys(wo && wo.prs || {}).map(function(k) {
-      var p = wo.prs[k];
-      return p.name + " \xB7 " + wtText(p.weight, p.unit) + " " + state.unit + " \xD7 " + p.reps;
-    });
-    return scCard(
+    }), scCard(
       w,
       payload.workout_title,
       payload.started_at,
       Math.max(1, Math.round(payload.duration_seconds / 60)),
       sets,
       vol,
-      prs,
+      prNames(wo && wo.prs),
       logged
     );
   }
+  function prNames(prs) {
+    return Object.keys(prs || {}).map(function(k) {
+      return prText(prs[k]);
+    });
+  }
   function scFromLog(l) {
-    var by = {}, sets = 0;
-    return state.workouts.forEach(function(w) {
-      by[w.id] = w;
-    }), (l.entries || []).forEach(function(e) {
+    var sets = 0;
+    return (l.entries || []).forEach(function(e) {
       sets += (e.sets || []).filter(Boolean).length;
     }), scCard(
-      by[l.workout_id] || {},
+      logWorkout(l),
       l.workout_title,
       l.started_at,
       Math.max(1, Math.round((l.duration_seconds || 60) / 60)),
       sets,
       volumeOf(l),
-      [],
+      prNames(prsOfLog(l.entries)),
       l.entries || []
     );
   }
@@ -11781,11 +11849,13 @@ details.details-moving > :not(summary) {
   }
   function scButtons(btns) {
     var can = scCan();
-    sc.btns = btns, btns.appendChild(scBtn("Copy caption", "btn ghost", null, scCopyCaption)), can === 2 ? (btns.appendChild(scBtn("Share", "btn", "share", scShare)), btns.appendChild(scBtn("Save image", "btn ghost", null, scShare))) : can === 1 ? (btns.appendChild(scBtn("Share", "btn", "share", scLinkShare)), btns.appendChild(scBtn("Save image", "btn ghost", null, scSave))) : (btns.appendChild(scBtn("Download", "btn", null, scSave)), window.ClipboardItem && navigator.clipboard && navigator.clipboard.write && btns.appendChild(scBtn("Copy image", "btn ghost", null, scCopy))), sc.tip = can === 1 ? "This browser can only share a link. Save the image and post it yourself." : can === 0 ? "Download it, or copy it straight into a post." : "Share to Instagram, TikTok, Messages \u2014 or save it to Photos.", scSay(), scArm(), btns.classList.add("in");
+    sc.btns = btns, btns.appendChild(scBtn("Show proof", "btn ghost", null, openProof)), btns.appendChild(scBtn("Copy caption", "btn ghost", null, scCopyCaption)), can === 2 ? (btns.appendChild(scBtn("Share", "btn", "share", scShare)), btns.appendChild(scBtn("Save image", "btn ghost", null, scShare))) : can === 1 ? (btns.appendChild(scBtn("Share", "btn", "share", scLinkShare)), btns.appendChild(scBtn("Save image", "btn ghost", null, scSave))) : (btns.appendChild(scBtn("Download", "btn", null, scSave)), window.ClipboardItem && navigator.clipboard && navigator.clipboard.write && btns.appendChild(scBtn("Copy image", "btn ghost", null, scCopy))), sc.tip = can === 1 ? "This browser can only share a link. Save the image and post it yourself." : can === 0 ? "Download it, or copy it straight into a post." : "Share to Instagram, TikTok, Messages \u2014 or save it to Photos.", scSay(), scArm(), btns.classList.add("in");
   }
   function shareRow(payload, logged, past) {
-    var wrap = el("div", "sharewrap"), row = el("div", "sharerow"), prev = el("div", "scprev");
-    scForget(), sc.card = past ? scFromLog(payload) : scFromSession(payload, logged), past || scWatchSummary(), sc.img = el("img"), sc.img.alt = "The session as a card, ready to share", prev.appendChild(sc.img), row.appendChild(prev);
+    var wrap = el("div", "sharewrap"), row = el("div", "sharerow");
+    scForget(), sc.card = past ? scFromLog(payload) : scFromSession(payload, logged), scWatchSummary();
+    var prev = el("button", "scprev");
+    prev.type = "button", prev.setAttribute("aria-label", "Show the card full screen"), prev.onclick = openProof, sc.img = el("img"), sc.img.alt = "The session as a card, ready to share", prev.appendChild(sc.img), row.appendChild(prev);
     var side = el("div", "scside"), chips = el("div", "scchips"), pin = el("input");
     pin.type = "file", pin.accept = "image/*", pin.hidden = !0, pin.onchange = function() {
       var f = pin.files && pin.files[0];
@@ -11818,24 +11888,51 @@ details.details-moving > :not(summary) {
     }
     return wrap;
   }
-  function scLogCard(l) {
-    var card = scFromLog(l);
-    return card.bg = sc.bg, renderShareCard(card).then(function(b) {
-      return { blob: b, file: scFileOf(b) };
+  var proofOn = !1, proofTimer = null;
+  function openProof() {
+    if (!sc.url) {
+      scHold();
+      return;
+    }
+    haptic("tap");
+    var n = $("proof");
+    $("proofimg").src = sc.url, n.style.background = sc.bg === "clear" || sc.bg === "photo" ? "" : scPalette(sc.bg).bg, clearTimeout(proofTimer), n.classList.remove("closing"), n.classList.add("open"), n.setAttribute("aria-hidden", "false"), proofOn = !0;
+    var tip = $("proofhint");
+    tip.classList.remove("gone"), setTimeout(function() {
+      proofOn && tip.classList.add("gone");
+    }, 2200), history.pushState({ proof: 1 }, "");
+  }
+  function closeProof(fromPop) {
+    if (proofOn) {
+      proofOn = !1, haptic("tap");
+      var n = $("proof");
+      n.style.transform = "", n.style.opacity = "", n.classList.remove("open", "dragging"), n.classList.add("closing"), n.setAttribute("aria-hidden", "true"), clearTimeout(proofTimer), proofTimer = setTimeout(function() {
+        n.classList.remove("closing"), $("proofimg").src = "";
+      }, 240), fromPop || (sheetBack++, history.back());
+    }
+  }
+  function wireProof() {
+    var n = $("proof"), d = null;
+    n.addEventListener("click", function() {
+      closeProof();
+    }), n.addEventListener("pointerdown", function(e) {
+      e.pointerType !== "touch" && e.pointerType !== "pen" || !proofOn || (d = { id: e.pointerId, y: e.clientY, dy: 0 }, n.classList.add("dragging"));
+    }), n.addEventListener("pointermove", function(e) {
+      !d || e.pointerId !== d.id || (d.dy = e.clientY - d.y, n.style.transform = "translateY(" + (d.dy > 0 ? d.dy : d.dy / 3) + "px)", n.style.opacity = String(Math.max(0.3, 1 - Math.max(0, d.dy) / 560)));
     });
-  }
-  function scHandOff(r) {
-    r.file && navigator.canShare && navigator.canShare({ files: [r.file] }) && scSheet(r.file) || scDrop(URL.createObjectURL(r.blob), !0);
-  }
-  function scLogBtn(l) {
-    var b = el("button", "scmini"), drawn2 = null;
-    return b.type = "button", icon(b, "share", "Share"), b.onpointerdown = function() {
-      drawn2 || (drawn2 = scLogCard(l));
-    }, b.onclick = function() {
-      haptic("tap"), drawn2 || (drawn2 = scLogCard(l)), drawn2.then(scHandOff, function() {
-        drawn2 = null, toast("Could not draw that card.");
-      });
-    }, b;
+    function up() {
+      if (d) {
+        var far = d.dy > 110;
+        if (d = null, n.classList.remove("dragging"), far) {
+          closeProof();
+          return;
+        }
+        n.style.transform = "", n.style.opacity = "";
+      }
+    }
+    n.addEventListener("pointerup", up), n.addEventListener("pointercancel", up), document.addEventListener("keydown", function(e) {
+      proofOn && e.key === "Escape" && (e.preventDefault(), closeProof());
+    });
   }
   function mondayOf(date) {
     var d = new Date(date);
@@ -12820,46 +12917,40 @@ details.details-moving > :not(summary) {
     }
     viewIn(v), countStats();
   }
+  var recapLog = null, recapFocus = null;
   function openSession(l) {
     if (wo) {
       toast("Close your current workout before opening a past session.");
       return;
     }
-    var body = $("sessioncontent");
-    body.innerHTML = "", $("sessiontitle").textContent = l.workout_title || "Workout";
-    var card = scFromLog(l);
-    body.appendChild(el("p", "rmeta", new Date(l.started_at).toLocaleDateString(
-      void 0,
-      { weekday: "long", month: "long", day: "numeric", year: "numeric" }
-    )));
-    var stats = el("div", "progress-totals");
-    card.figs.forEach(function(f) {
-      var stat = el("div");
-      stat.appendChild(el("b", null, f[0])), stat.appendChild(el("span", null, f[1])), stats.appendChild(stat);
-    }), body.appendChild(stats), body.appendChild(el("h3", null, "Your share card")), body.appendChild(shareRow(l, l.entries || [], !0)), body.appendChild(el("h3", "session-exercises-title", "What you logged")), (l.entries || []).forEach(function(e) {
-      var sets = (e.sets || []).filter(Boolean);
-      if (sets.length) {
-        var row = el("div", "session-exercise");
-        row.appendChild(el("h4", null, e.name || "Exercise")), sets.forEach(function(set, i) {
-          var line = el("div", "session-set");
-          line.appendChild(el("span", null, "Set " + (i + 1))), line.appendChild(el("b", null, setText(set) + (set.weight && !set.seconds ? " " + state.unit : ""))), row.appendChild(line);
-        }), body.appendChild(row);
-      }
+    recapLog = l, recapFocus = document.activeElement;
+    var logged = (l.entries || []).map(function(e) {
+      return Object.assign({}, e, { sets: (e.sets || []).filter(Boolean) });
+    }).filter(function(e) {
+      return e.sets.length;
     });
-    var del = el("button", "danger", "Delete session");
-    del.onclick = function() {
-      closeSheet("sessionsheet");
-      var at = state.logs.indexOf(l);
-      state.logs = state.logs.filter(function(x) {
-        return x.id !== l.id;
-      }), renderProgress(), offerUndo("Session deleted", function() {
-        sb.from("workout_logs").delete().eq("id", l.id).then(function(r) {
-          !r || !r.error || (toast("That did not delete. The session is still here."), invalidateLogs(), loadLogs().then(renderProgress));
+    clearTimeout(woCloseTimer);
+    var n = $("workout");
+    n.classList.remove("closing"), n.classList.add("open"), renderSummary(l, logged, l), history.pushState({ workout: 1 }, ""), $("wclose").focus({ preventScroll: !0 });
+  }
+  function openRecapOptions() {
+    var box = $("recapopts"), l = recapLog;
+    if (box.innerHTML = "", !!l) {
+      var del = el("button", "pickrow danger", "Delete session");
+      del.onclick = function() {
+        closeSheet("recapsheet", !0), history.go(-2);
+        var at = state.logs.indexOf(l);
+        state.logs = state.logs.filter(function(x) {
+          return x.id !== l.id;
+        }), renderProgress(), offerUndo("Session deleted", function() {
+          sb.from("workout_logs").delete().eq("id", l.id).then(function(r) {
+            !r || !r.error || (toast("That did not delete. The session is still here."), invalidateLogs(), loadLogs().then(renderProgress));
+          });
+        }, function() {
+          state.logs.splice(at < 0 ? state.logs.length : at, 0, l), renderProgress();
         });
-      }, function() {
-        state.logs.splice(at < 0 ? state.logs.length : at, 0, l), renderProgress();
-      });
-    }, body.appendChild(del), $("sessionsheet")._returnFocus = document.activeElement, openSheet("sessionsheet"), $("sessionclose").focus({ preventScroll: !0 });
+      }, box.appendChild(del), openSheet("recapsheet");
+    }
   }
   function renderHistoryInto(v, logs) {
     var month = "", monthDate = new Intl.DateTimeFormat(void 0, { month: "long", year: "numeric" }), sessionDate = new Intl.DateTimeFormat(void 0, { weekday: "short", month: "short", day: "numeric" });
@@ -14151,7 +14242,7 @@ details.details-moving > :not(summary) {
   function closeSheet(id, fromPop) {
     var n = $(id);
     if (n.classList.contains("open")) {
-      if (guideClear("hold"), id === "sessionsheet" && scForget(), id === "welcomesheet") {
+      if (guideClear("hold"), id === "welcomesheet") {
         welcomeDone();
         var focus = welcomeReturn && welcomeReturn.isConnected && !welcomeReturn.closest("#landing, .sheet:not(.open)") ? welcomeReturn : $("addbtn");
         focus && focus.focus({ preventScroll: !0 });
@@ -14254,7 +14345,7 @@ details.details-moving > :not(summary) {
     "workoptions",
     "filtersheet",
     "schedulesheet",
-    "sessionsheet",
+    "recapsheet",
     "woaddsheet"
   ].forEach(wireSheet);
   function overlayShowing() {
@@ -15608,7 +15699,7 @@ details.details-moving > :not(summary) {
     b.onclick = function() {
       closeSheet(b.getAttribute("data-close"));
     };
-  }), ["workoptions", "filtersheet", "schedulesheet", "sessionsheet", "woaddsheet"].forEach(function(id) {
+  }), ["workoptions", "filtersheet", "schedulesheet", "recapsheet", "woaddsheet"].forEach(function(id) {
     $(id).addEventListener("keydown", function(e) {
       if (e.key === "Escape" && (e.preventDefault(), closeSheet(id)), e.key === "Tab") {
         var nodes = Array.from(this.querySelectorAll("button, input")).filter(function(n) {
@@ -15666,7 +15757,7 @@ details.details-moving > :not(summary) {
     });
   }, $("wclose").onclick = function() {
     history.back();
-  }, wireWmain($("wmain")), $("wprev").onclick = function() {
+  }, $("wmore").onclick = openRecapOptions, wireProof(), wireWmain($("wmain")), $("wprev").onclick = function() {
     woGo(-1);
   }, $("wnext").onclick = skipMove, $("wfinish").onclick = finishWorkout, $("waddexercise").onclick = openWorkoutAdd, $("woaddsave").onclick = saveWorkoutAdd, $("woaddname").addEventListener("keydown", function(e) {
     e.key === "Enter" && (e.preventDefault(), saveWorkoutAdd());
@@ -15712,6 +15803,10 @@ details.details-moving > :not(summary) {
   }, window.addEventListener("popstate", function() {
     if (sheetBack) {
       sheetBack--;
+      return;
+    }
+    if (proofOn) {
+      closeProof(!0);
       return;
     }
     var open = document.querySelectorAll(".sheet.open");
