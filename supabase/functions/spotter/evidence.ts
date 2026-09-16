@@ -26,6 +26,7 @@ export type EvidenceSource =
   | "chapters"     // a timestamped line in a YouTube description
   | "carousel"     // read off a carousel slide by vision — no text to check against
   | "video"        // read off the screen of the video itself — same, with a timestamp
+  | "seen"         // watched happening in the video — a Video Context Pack observation
   | "heuristic"    // the deterministic parser, which knows exactly which line it read
   | "none";
 
@@ -759,9 +760,12 @@ export function scoreCard(card: ScorableCard, ctx: ScoreContext): Confidence {
     // Two sources with nothing to check them against, and the same partial credit
     // for the same reason: a slide and a video frame are both real observations
     // that no text can confirm.
-    else if (e.source === "carousel" || e.source === "video") { evSum += 0.4; }
+    else if (e.source === "carousel" || e.source === "video" || e.source === "seen") { evSum += 0.4; }
     if (e.source === "carousel") carouselEv++;
-    if (e.source === "video") videoEv++;
+    // "seen" is a pack observation and "video" is the old screen read. Different
+    // provenance, identical standing here: both are real observations of pixels
+    // that no text can confirm, and both are counted as the video half of the card.
+    if (e.source === "video" || e.source === "seen") videoEv++;
     if (e.source === "chapters") chapterEv++;
   }
   const evidence = clamp01(evSum / exercises.length);

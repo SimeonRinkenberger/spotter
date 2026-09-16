@@ -61,6 +61,10 @@ function declEnd(src: string, from: number, isFunction: boolean): number {
   let depth = 0;
   let inBody = false;
   let prev = "";
+  // Generic depth, counted only until the body opens. A `{` inside an unclosed
+  // `<...>` is part of a type — `): Promise<{ obs: Observation }>` — and reading
+  // it as the body would end the declaration at its own signature.
+  let angle = 0;
   for (let i = from; i < src.length; i++) {
     const c = src[i];
     if (c === "/" && src[i + 1] === "/") { while (i < src.length && src[i] !== "\n") i++; continue; }
@@ -85,8 +89,14 @@ function declEnd(src: string, from: number, isFunction: boolean): number {
       prev = "/";
       continue;
     }
+    if (!inBody && isFunction && c === "<") angle++;
+    else if (!inBody && isFunction && c === ">" && prev !== "=") angle = Math.max(0, angle - 1);
     if (c === "{" || c === "[" || c === "(") {
-      if (isFunction && c === "{" && depth === 0) inBody = true;
+      // Two ways a `{` at depth zero is a TYPE rather than a body, and both would
+      // otherwise end the declaration at its own signature: straight after a `:`
+      // (`): { step: string; meta: Meta }`), or inside an unclosed generic
+      // (`): Promise<{ obs: Observation }>`). `): Promise<Response> {` is neither.
+      if (isFunction && c === "{" && depth === 0 && prev !== ":" && angle === 0) inBody = true;
       depth++;
     } else if (c === "}" || c === "]" || c === ")") {
       depth--;

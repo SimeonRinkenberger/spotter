@@ -1,6 +1,8 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 
-export type Actor = { userId: string | null; workKey: string; actionId?: string; blocked?: string; deadline?: number };
+export type Actor = { userId: string | null; workKey: string; actionId?: string; blocked?: string; deadline?: number;
+  /** What this unit of work is for. Only the image exception below reads it. */
+  purpose?: string };
 export const aiActor = new AsyncLocalStorage<Actor>();
 type Rpc = (name: string, args: Record<string, unknown>) => Promise<any>;
 export class GuardError extends Error {
@@ -12,6 +14,16 @@ export class GuardError extends Error {
 export function tokenPrice(model: string, now = new Date()): [number, number, number] | null {
   if (model === 'gpt-5.6-luna') return [.20, 1.20, .02];
   if (model === 'gemini-3.6-flash') return now < new Date('2027-01-01T00:00:00Z') ? [.75,3.75,.075] : [1.50,7.50,.15];
+  // Flash-Lite does video, at a third of Flash's input price and no promotional
+  // cliff to fall off. Read from https://ai.google.dev/gemini-api/docs/pricing on
+  // 2026-09-15: $0.25/M in, $1.50/M out, $0.025/M cached. It is here so the owner
+  // can move `pack.model` to it by config; nothing routes to it by default.
+  if (model === 'gemini-3.1-flash-lite') return [.25,1.50,.025];
+  // The frontier reader, priced so the pack eval can A/B it against Luna on the
+  // same contact sheets. Read from https://developers.openai.com/api/docs/models
+  // on 2026-09-15: $2/M in, $12/M out, $0.20/M cached. Nothing routes to it by
+  // default; it is reachable only through pack.sheets_model and the eval route.
+  if (model === 'gpt-5.6-terra') return [2,12,.2];
   return null;
 }
 export function tokenCost(model: string, input: number, output: number, cached = 0): number {
@@ -72,8 +84,36 @@ export function createGuardedFetch(rpc: Rpc, nativeFetch: typeof fetch = (...arg
       // Google is reserved for input modalities Luna cannot read directly. A
       // transient Luna failure must not send text, chat or images to Google.
       const parts = Array.isArray(body?.contents) ? body.contents.flatMap((c: any) => Array.isArray(c?.parts) ? c.parts : []) : [];
-      if (!parts.some((p: any) => p.fileData?.fileUri && /^(audio|video)\//.test(p.fileData?.mimeType ?? '')) ||
-          parts.some((p: any) => p.inline_data || p.inlineData)) throw new GuardError('gemini_media_only');
+      const inline = parts.map((p: any) => p.inline_data ?? p.inlineData).filter(Boolean);
+      if (inline.length) {
+        // The one exception, and it is deliberate rather than a loosening.
+        //
+        // The rule above exists because Google is reserved for input modalities
+        // Luna cannot read directly: a transient Luna failure must never end with
+        // text, chat or a user's images being sent there instead. That is
+        // fallback LEAKAGE, and it is what `inline_data` almost always means.
+        //
+        // The Video Context Pack's sheets reader is the opposite case. It is a
+        // DESIGNED image read: the phone cuts contact sheets on the device, and
+        // which model reads them is a measurement the owner is running — Luna
+        // reported "hands on the mat" on frames where a person can see the hands
+        // wrapped around a kettlebell, so the two readers have to be comparable on
+        // identical input. So the exception is scoped to exactly that work and
+        // bounded on every axis it can be bounded on: only the pack's own two
+        // purposes, only images, at most three of them, each within the same
+        // ceiling the upload route enforces on a sheet.
+        const purpose = actor.purpose ?? '';
+        if (purpose !== 'pack' && purpose !== 'pack_eval') throw new GuardError('gemini_media_only');
+        if (inline.length !== parts.length - 1 || inline.length > 3) throw new GuardError('gemini_media_only');
+        for (const d of inline) {
+          if (!/^image\//.test(d?.mime_type ?? d?.mimeType ?? '')) throw new GuardError('gemini_media_only');
+          const b64 = String(d?.data ?? '');
+          // Decoded length, not the base64 length: the ceiling is about the JPEG.
+          if (Math.floor(b64.length * 3 / 4) > 600 * 1024) throw new GuardError('gemini_image_too_large');
+        }
+      } else if (!parts.some((p: any) => p.fileData?.fileUri && /^(audio|video)\//.test(p.fileData?.mimeType ?? ''))) {
+        throw new GuardError('gemini_media_only');
+      }
 
       if (!tokenPrice(model)) throw new GuardError('unknown_price');
       const output=Number(body?.generationConfig?.maxOutputTokens);
