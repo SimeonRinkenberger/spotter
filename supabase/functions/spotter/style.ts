@@ -1792,14 +1792,29 @@ export const STYLE = String.raw`<style>
   .sumprs .setpill { animation-delay: 210ms; }
   .sumprs .setpill b { color: var(--ember-ink); font-size: 12px; }
   .sumdone { margin-top: 24px; animation: viewin var(--t-3) var(--e-out) 260ms both; }
+  /* The overflow exists only where there is something in it: a live session is
+     ended by its own Save button and has nothing to delete yet. */
+  #wmore { display: none; }
+  #workout.summary.past #wmore { display: flex; }
+  /* The receipt under the figures. Left-aligned inside a centred screen, because
+     a column of "Set 3 / 205 lb" reads down its two edges and not down its middle. */
+  .sumlog { text-align: left; margin-top: 18px; }
+  .sumlog .session-exercise:last-child { border-bottom: 0; padding-bottom: 0; }
+  /* The one line in it that was a record on the day, marked as the pill above is. */
+  .session-set b.was { color: var(--ember-ink); }
   /* The card's own row: a preview at the size of a thumbnail, the two themes
      beside it, and the buttons under both. The buttons are only added once the
      File exists, so one that says Share is one that can. */
   .sharewrap { margin-top: 22px; animation: viewin var(--t-2) var(--e-out) 250ms both; }
   .sharerow { display: flex; gap: 14px; }
-  .scprev { flex: 0 0 140px; width: 140px; height: 249px; border-radius: 16px;
+  /* A button, because it opens the card full screen the way a thumbnail does in
+     Photos. Padding off: the picture is the control, there is nothing around it. */
+  .scprev { flex: 0 0 140px; width: 140px; height: 249px; border-radius: 16px; padding: 0;
     overflow: hidden; background: var(--sand); border: 1px solid var(--line);
-    box-shadow: var(--sh-md); }
+    box-shadow: var(--sh-md); cursor: pointer;
+    transition: transform var(--t-1) var(--e-out); }
+  .scprev:active { transform: scale(.97); }
+  .scprev:focus-visible { outline: 2px solid var(--ember-ink); outline-offset: 3px; }
   .scprev img { width: 100%; height: 100%; display: block; object-fit: cover; opacity: 0;
     transition: opacity var(--t-3) var(--e-out); }
   .scprev img.in { opacity: 1; }
@@ -1825,15 +1840,45 @@ export const STYLE = String.raw`<style>
     .sharewrap, .scbtns.in, .scvid { animation-name: fadeonly; animation-delay: 0ms; }
     .scprev img { transition: none; }
   }
-  /* On a past session there is no room for a preview, so the card is drawn on
-     the tap and handed straight to the sheet. Strava's button lands beside it. */
-  .cardacts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
-  .scmini { display: inline-flex; align-items: center; gap: 7px; min-height: 44px;
-    padding: 11px 15px; border: 1px solid var(--line-2); border-radius: 999px;
-    background: var(--card); color: var(--ink-2); font-size: 13px; font-weight: 600;
-    transition: transform var(--t-1) var(--e-out), opacity var(--t-2); }
-  .scmini .ic { width: 15px; height: 15px; }
-  .scmini:active { transform: scale(.96); }
+  /* ---------- proof, in one screenshot ----------
+     The card the summary drew, alone on the screen: no tab bar, no header, no
+     buttons, nothing of the app at all — so one press of the phone's own screenshot
+     buttons IS the proof, and a creator gets one image rather than a cropped
+     thread of them. Above every other layer in the page, toast included.
+
+     The picture app.ts hands this element is already drawn at the screen's own
+     aspect, so it fills it. contain and not cover is the guard for when it is
+     not — a window past the clamp, a rotation mid-view — because cropping is the
+     one thing a proof cannot do; #proof carries the card's own ground colour
+     behind it, set inline from the palette it was drawn in, so a fit that is
+     not exact reads as bleed rather than as letterboxing. */
+  #proof { position: fixed; inset: 0; z-index: 95; display: none;
+    align-items: center; justify-content: center; background: var(--paper); }
+  #proof.open { display: flex; animation: fadein var(--t-3) var(--e-soft); }
+  #proof.closing { display: flex; pointer-events: none;
+    animation: fadeout var(--t-2) var(--e-in) both; }
+  #proof img { display: block; width: 100%; height: 100%; object-fit: contain; }
+  /* Timing on for the release, off while a finger holds it: the dismissal tracks
+     1:1 and only the let-go eases, which is the rule every sheet here follows. */
+  #proof:not(.dragging) { transition: transform var(--t-2) var(--e-out),
+    opacity var(--t-2) var(--e-out); }
+  /* Said once, then out of the shot, and at the top because the bottom of a card
+     laid out for this screen is where "Logged with Spotter" already is. It never
+     takes the tap that dismisses. */
+  .proofhint { position: absolute; left: 50%; top: calc(20px + env(safe-area-inset-top));
+    transform: translateX(-50%); padding: 8px 15px; border-radius: 999px;
+    background: rgba(0, 0, 0, .62); color: #FFF; font-size: 12px; font-weight: 600;
+    white-space: nowrap; pointer-events: none;
+    transition: opacity var(--t-4) var(--e-soft); }
+  .proofhint.gone { opacity: 0; }
+  /* Both animations here are opacity and nothing else, which the house rule keeps
+     under reduced motion; they only get shorter. The release is what loses its
+     easing, so a dismissal that was refused snaps home instead of springing. */
+  @media (prefers-reduced-motion: reduce) {
+    #proof.open { animation-duration: var(--t-2); }
+    #proof.closing { animation-duration: var(--t-1); }
+    #proof:not(.dragging) { transition: none; }
+  }
   /* The clip, in a sheet, at the moment it is wanted. Shorter than the detail
      view's embed so the close button stays on screen with it. */
   #watchbody .embedwrap, #watchbody .dphoto { margin-bottom: 14px; }
@@ -2341,7 +2386,7 @@ export const STYLE = String.raw`<style>
     .welcome-page { transform: none; transition: opacity var(--t-1) var(--e-soft); }
     .btn:active, .iconbtn:active, .addbtn:active, .chip:active, .carditem:active,
     .mbtn:active, .startbtn:active, .addex:active, .planbtn:active, .mcell:active,
-    .setpill:active, .wnav:active, .wfinish:active, .ring:active, .scmini:active,
+    .setpill:active, .wnav:active, .wfinish:active, .ring:active, .scprev:active,
     .uploadrow:active, .askpumpy:active, .pumpybar button:active { transform: none; }
   }
   /* Keep the workout visible; supporting detail opens in place on request. */
@@ -2389,7 +2434,10 @@ export const STYLE = String.raw`<style>
   .exercise-options.details-closing > summary { color: var(--ink-2); }
   #workmanage .managerow { flex-direction: column; }
   #workmanage .mbtn { flex: auto; min-height: 44px; justify-content: flex-start; }
-  #workoptions .pickrow { min-height: 48px; }
+  #workoptions .pickrow, #recapopts .pickrow { min-height: 48px; }
+  /* Destructive, so it takes the one red the system has - the same red Settings
+     gives its delete - rather than the muted grey that reads as unavailable. */
+  #recapopts .danger { color: var(--ember-ink); font-size: 15px; font-weight: 650; }
   #dmore { min-height: 44px; }
   #chips { flex-wrap: wrap; }
   /* iOS date inputs can add padding outside their declared width. Let a normal
@@ -2424,24 +2472,11 @@ export const STYLE = String.raw`<style>
   .session-link .histrow { border: 0; padding: 0; }
   .session-link .n { min-width: 0; overflow-wrap: anywhere; }
   .session-invite { display: block; color: var(--ember-ink); font-size: 12px; font-weight: 650; margin-top: 12px; }
-  #sessionsheet .sheetbody { max-width: 560px; }
-  #sessionclose { margin-bottom: 20px; min-height: 44px; }
-  #sessiontitle { font-size: 28px; overflow-wrap: anywhere; }
-  #sessioncontent h3 { font-family: var(--display); font-size: 18px; }
-  #sessioncontent .sharewrap { margin-top: 12px; animation-delay: 0ms; }
-  #sessioncontent .sharerow { flex-direction: column; align-items: center; }
-  #sessioncontent .scprev { flex: none; width: 198px; height: 352px; }
-  #sessioncontent .scprev img { object-fit: contain; }
-  #sessioncontent .scside { width: 100%; }
-  #sessioncontent .scchips { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-  #sessioncontent .schint { text-align: center; }
-  .session-exercises-title { margin-top: 28px; }
   .session-exercise { padding: 14px 0; border-bottom: 1px solid var(--line); }
   .session-exercise h4 { margin: 0 0 10px; overflow-wrap: anywhere; }
   .session-set { display: flex; justify-content: space-between; gap: 16px; padding: 6px 0; font-size: 13px; }
   .session-set span { color: var(--ink-2); flex-shrink: 0; }
   .session-set b { text-align: right; overflow-wrap: anywhere; }
-  #sessioncontent > .danger { min-height: 44px; margin-top: 24px; }
   @media (prefers-reduced-motion: reduce) { .session-link { transition: none; } }
   .session-head .histrow { border: 0; padding: 0; }
   #scheduleerror { display: block; }

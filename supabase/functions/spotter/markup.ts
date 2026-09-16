@@ -58,6 +58,7 @@ export const MARKUP_BODY = String.raw`</head>
 <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
 <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
 <symbol id="i-chev" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+<symbol id="i-more" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></symbol>
 <symbol id="i-star" viewBox="0 0 24 24"><path d="m12 2.6 2.9 6 6.6.9-4.8 4.6 1.2 6.5-5.9-3.1-5.9 3.1 1.2-6.5L2.5 9.5l6.6-.9z"/></symbol>
 <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
 <symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></symbol>
@@ -274,6 +275,8 @@ export const MARKUP_BODY = String.raw`</head>
     <div class="wtools">
       <button class="iconbtn" id="wsound" aria-label="Timer sounds" aria-pressed="true"><svg class="ic"><use href="#i-volume-2"></use></svg></button>
       <button class="iconbtn" id="wlist" aria-label="All exercises"><svg class="ic"><use href="#i-list"></use></svg></button>
+      <!-- Only on a past session, where it is the one place Delete lives. -->
+      <button class="iconbtn" id="wmore" aria-label="Session options" aria-haspopup="dialog"><svg class="ic"><use href="#i-more"></use></svg></button>
     </div>
   </div>
   <div class="wdots" id="wdots"></div>
@@ -369,12 +372,11 @@ export const MARKUP_BODY = String.raw`</head>
   <div class="btnrow"><button class="btn ghost" data-close="woaddsheet">Cancel</button><button class="btn" id="woaddsave">Add exercise</button></div>
 </div></div>
 
-<div class="sheet" id="sessionsheet" role="dialog" aria-modal="true" aria-labelledby="sessiontitle"><div class="sheetbody">
+<div class="sheet" id="recapsheet" role="dialog" aria-modal="true" aria-labelledby="recaptitle"><div class="sheetbody">
   <div class="grabber"></div>
-  <button class="btn ghost" id="sessionclose" data-close="sessionsheet">Back to Progress</button>
-  <div class="wblock">Session recap</div>
-  <h2 id="sessiontitle">Workout</h2>
-  <div id="sessioncontent"></div>
+  <h2 id="recaptitle">Session options</h2>
+  <div id="recapopts"></div>
+  <button class="btn ghost" data-close="recapsheet">Done</button>
 </div></div>
 
 <div class="sheet" id="watchsheet"><div class="sheetbody">
@@ -769,6 +771,14 @@ export const MARKUP_BODY = String.raw`</head>
   <div id="welcomestage"></div>
   <div class="welcome-actions"><button class="btn" id="welcomenext">Next</button></div>
 </div></div>
+
+<!-- The chrome-free card, at the top of the stack: nothing of the app may appear
+     in a screenshot whose whole job is to be the proof. aria-hidden while closed,
+     because a picture nobody can see is still read out otherwise. -->
+<div id="proof" aria-hidden="true">
+  <img id="proofimg" alt="Your session as one card">
+  <div class="proofhint" id="proofhint">Tap anywhere to close</div>
+</div>
 
 <div id="toast"></div>
 `;

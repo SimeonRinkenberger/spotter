@@ -890,7 +890,7 @@ export const APP = String.raw`
     }
     if (native && native.purchases) native.purchases.clear().catch(function () {});
     if (billing) { billing.prices = null; billing.sub = null; billing.subAsked = false; billing.limits = null; billing.said = null; billing.ctx = null; }
-    ["grid", "chips", "colbar", "libcount", "empty", "dinner", "pumpylog", "pumpyannounce", "pumpyctx", "pumpythreads", "planview", "progressview", "today", "sessioncontent"].forEach(function (id) {
+    ["grid", "chips", "colbar", "libcount", "empty", "dinner", "pumpylog", "pumpyannounce", "pumpyctx", "pumpythreads", "planview", "progressview", "today", "recapopts"].forEach(function (id) {
       var n = $(id); if (n) n.innerHTML = "";
     });
     $("count0").textContent = "Reading your library";
@@ -5067,7 +5067,11 @@ export const APP = String.raw`
     }
     clearTimeout(woCloseTimer);
     $("workout").classList.remove("closing");
-    $("workout").classList.remove("summary");
+    // .past belongs to a session being read; a live one must never wear it, or the
+    // overflow that only history has would be sitting over a workout in progress,
+    // and the X would still be offering the way back to a screen nobody is on.
+    $("workout").classList.remove("summary", "past");
+    $("wclose").setAttribute("aria-label", "Exit workout");
     $("workout").classList.add("open");
     stopRest();
     acquireWake();
@@ -6426,13 +6430,31 @@ export const APP = String.raw`
     history.go(openedFromDetail ? -2 : -1);
   }
 
-  function renderSummary(payload, logged) {
-    var main = $("wmain");
+  // ---------- the session summary ----------
+  //
+  // One screen with two doorways: the moment a session ends, and that same
+  // session opened from Progress six weeks later. Hevy's finished-workout screen
+  // and its history detail are the same screen, and Strava's post-activity view
+  // is its activity page — because a person who wants to see what they did has
+  // one question, and answering it twice in two layouts means one of the two is
+  // the worse answer. So there is one renderer, and "past" is the only argument
+  // that differs: it is the log row being read back, and null in the live moment.
+  //
+  // Everything the screen needs comes through the parameters rather than off the
+  // live session, which is what lets history build one without waking Workout
+  // Mode: no clock, no wake lock, no draft, no award granted a second time.
+  function renderSummary(payload, logged, past) {
+    var main = $("wmain"), w = past ? logWorkout(payload) : (wo && wo.workout) || {};
+    var prs = past ? prsOfLog(logged) : (wo && wo.prs) || {};
     main.innerHTML = "";
     main.scrollTop = 0;
     $("workout").classList.add("summary");
+    $("workout").classList.toggle("past", !!past);
+    // The X is the only way out of a live session and the way back to Progress
+    // from a read one, and it should say which it is.
+    $("wclose").setAttribute("aria-label", past ? "Back to Progress" : "Exit workout");
 
-    var mins = Math.max(1, Math.round(payload.duration_seconds / 60));
+    var mins = Math.max(1, Math.round((payload.duration_seconds || 60) / 60));
     $("wclock").textContent = mins + " min";
     var sets = 0, vol = 0;
     logged.forEach(function (e) {
@@ -6444,12 +6466,21 @@ export const APP = String.raw`
     });
 
     main.appendChild(pumpyArt("proud", true));
-    main.appendChild(el("div", "wblock", "Session complete"));
-    main.appendChild(el("h2", "wname", wo.workout.title || "Workout"));
+    // The eyebrow says what the screen is: the moment, live — the day, in
+    // history. With the duration already on the clock line above it, that is the
+    // date and the duration in the header, which is all a past session's header
+    // has to add to a live one's.
+    main.appendChild(el("div", "wblock", past
+      ? new Date(payload.started_at).toLocaleDateString(undefined,
+        { weekday: "long", month: "long", day: "numeric" })
+      : "Session complete"));
+    main.appendChild(el("h2", "wname", payload.workout_title || "Workout"));
 
     // A complex is not scored in sets. "4 rounds + 2 movements in 15:00" is the
-    // line that would go on a whiteboard, so it is the line that goes here.
-    var cs = cxScoreOf(wo.workout, logged);
+    // line that would go on a whiteboard, so it is the line that goes here — and
+    // cxScoreOf reads it back off the entries, so the sentence a session ended on
+    // is the sentence it is still wearing when it is opened again.
+    var cs = cxScoreOf(w, logged);
     if (cs) main.appendChild(el("div", "wdose", cs.text + (cs.cap ? " in " + clock(cs.cap) : "") +
       (cs.reps ? " · " + cs.reps + " reps" : "")));
 
@@ -6469,8 +6500,9 @@ export const APP = String.raw`
 
     // Where this session put the week. It is not in state.logs yet — the insert is
     // still in the air — so it is handed in, the same "draw from memory" rule the
-    // rest of this screen follows.
-    var wk = thisWeek(payload);
+    // rest of this screen follows. A session from March says nothing about this
+    // week, so the line belongs to the live screen only.
+    var wk = past ? null : thisWeek(payload);
     if (wk) {
       var wl = el("div", "sumweek" + (wk.done >= wk.goal ? " full" : ""));
       if (wk.done === wk.goal) wl.appendChild(ringSvg(1, "small", (wk.goal - 1) / wk.goal));
@@ -6480,32 +6512,120 @@ export const APP = String.raw`
 
     // What was worked, in the card's own words. The anatomical map stays in the
     // detail view; a list says as much here for a fraction of the page.
-    var mg = wo.workout.muscle_groups || [];
+    var mg = w.muscle_groups || [];
     if (mg.length) main.appendChild(el("div", "wnote", mg.slice(0, 6).join(" · ")));
 
-    var beaten = Object.keys(wo.prs);
+    var beaten = Object.keys(prs);
     if (beaten.length) {
-      var prs = el("div", "setpills sumprs");
+      var pills = el("div", "setpills sumprs");
       beaten.forEach(function (k) {
-        var p = wo.prs[k];
         var row = el("div", "setpill pr");
-        row.appendChild(el("b", null, "New best"));
-        row.appendChild(document.createTextNode(p.name + " · " +
-          wtText(p.weight, p.unit) + " " + state.unit + " × " + p.reps));
-        prs.appendChild(row);
+        // Read back, the claim has to be the one that was true on the day. It was
+        // settled then, against the history that existed then, and the pill says so
+        // rather than quietly letting a two-year-old lift read as today's best.
+        row.appendChild(el("b", null, past ? "Best at the time" : "New best"));
+        row.appendChild(document.createTextNode(prText(prs[k])));
+        pills.appendChild(row);
       });
-      main.appendChild(prs);
+      main.appendChild(pills);
     }
 
     // The card, and every way off this phone with it.
-    main.appendChild(shareRow(payload, logged));
+    main.appendChild(shareRow(payload, logged, past));
+    // What was actually lifted, set by set. Closed, because the figures are the
+    // headline and this is the receipt under them — but present on both screens,
+    // since a session opened from Progress is usually opened to settle exactly
+    // this. The old history sheet's list, in the one place a session is read now.
+    if (logged.length) main.appendChild(sumLog(logged));
 
-    var done = el("button", "btn sumdone", "Done");
-    done.onclick = leaveWorkout;
+    var done = el("button", "btn sumdone", past ? "Back" : "Done");
+    done.onclick = past ? function () { history.back(); } : leaveWorkout;
     main.appendChild(done);
     viewIn(main);
     // Last, so the awards are evaluated against a screen that is already drawn.
-    sealAwards(payload, main);
+    if (past) pastSeals(payload, main); else sealAwards(payload, main);
+  }
+
+  // One phrase for a best, in the one place it is written: the summary pill, the
+  // share card and the caption all said it, and all three said it differently.
+  function prText(p) {
+    return p.name + " · " + wtText(p.weight, p.unit) + " " + state.unit + " × " + p.reps;
+  }
+
+  // The card a session was run from, or an empty one: a log outlives the workout
+  // it came from, and a deleted card must not take its history down with it.
+  function logWorkout(l) {
+    var w = null;
+    (state.workouts || []).forEach(function (x) { if (x.id === l.workout_id) w = x; });
+    return w || {};
+  }
+
+  /**
+   * The bests of a past session, read off the sets themselves.
+   *
+   * Which lifts were records was settled on the day and written into the set as
+   * it was logged, so a session opened in December says what it said in March.
+   * Deciding it again now, out of a history that has since grown, would either
+   * demote a real best or invent one — and the person was there.
+   *
+   * Keyed by movement like the live map, so the screen gets one line per lift:
+   * the top of that day rather than every step up to it.
+   */
+  function prsOfLog(entries) {
+    var out = {};
+    (entries || []).forEach(function (e) {
+      (e.sets || []).forEach(function (s) {
+        if (!s || !s.pr || !s.weight) return;
+        var k = exKey(e), est = toUnit(s.weight, s.unit) * (1 + (s.reps || 0) / 30);
+        if (out[k] && out[k].est >= est) return;
+        out[k] = { name: e.name || "Exercise", reps: s.reps, weight: s.weight,
+          unit: s.unit, est: est };
+      });
+    });
+    return out;
+  }
+
+  // Set by set, in a disclosure: it is long, it is not the headline, and a
+  // summary that opens on a wall of numbers has buried the ones that matter.
+  function sumLog(logged) {
+    var box = disclosure("What you logged", "sumlog"), body = box.lastChild;
+    logged.forEach(function (e) {
+      var row = el("div", "session-exercise");
+      row.appendChild(el("h4", null, e.name || "Exercise"));
+      e.sets.forEach(function (s, i) {
+        var line = el("div", "session-set");
+        line.appendChild(el("span", null, "Set " + (i + 1)));
+        var b = el("b", null, setText(s) + (s.weight && !s.seconds ? " " + state.unit : ""));
+        if (s.pr) b.classList.add("was");
+        line.appendChild(b);
+        row.appendChild(line);
+      });
+      body.appendChild(row);
+    });
+    return box;
+  }
+
+  // The badges that session earned, read off the case rather than worked out
+  // again. An award carries the moment it was granted and the grant happens as
+  // the summary is drawn, so the ones stamped between the first set and a quarter
+  // of an hour past the last are that session's. Nothing is written here: history
+  // is read, and a seal is a record of a moment, not the moment itself — so no
+  // sweep, no haptic, no title swap.
+  function pastSeals(l, main) {
+    if (!state.awards || !l.completed_at) return;
+    var from = new Date(l.started_at).getTime(), to = new Date(l.completed_at).getTime() + 900000;
+    var box = main.querySelector(".sumawards");
+    state.awards.filter(function (a) {
+      var t = new Date(a.earned_at).getTime();
+      return a.kind !== "freeze" && t >= from && t <= to;
+    }).slice(0, 3).forEach(function (a) {
+      var seal = el("div", "seal"), disc = el("div", "sdisc");
+      disc.appendChild(ringSvg(1, "srim", 1));
+      disc.appendChild(ic(AW_ICON[a.kind] || "star"));
+      seal.appendChild(disc);
+      seal.appendChild(el("div", "sname", awardTitle(a)));
+      box.appendChild(seal);
+    });
   }
 
   // ---------- the ember seal ----------
@@ -6556,19 +6676,30 @@ export const APP = String.raw`
   var woCloseTimer = null;
 
   function exitWorkout() {
-    clearInterval(woTimer);
-    cxOff();
-    stopRest();
-    releaseWake();
-    clearDraft();
+    // Only a live session owns the clock, the wake lock and the draft. A past one
+    // borrows this overlay to be read in and owns none of it, so closing a recap
+    // must not end a rest or throw away the draft of a workout somebody paused
+    // this morning — which is what the old history sheet was kept separate for.
+    if (wo) {
+      clearInterval(woTimer);
+      cxOff();
+      stopRest();
+      releaseWake();
+      clearDraft();
+    }
     // The clip sheet can outlive the overlay it was opened from.
     closeSheet("watchsheet");
     wo = null;
+    recapLog = null;
     var n = $("workout");
     if (!n.classList.contains("open")) return;
     n.classList.remove("open");
     n.classList.remove("summary");
+    n.classList.remove("past");
     n.classList.add("closing");
+    // The row in Progress that opened this, so the list is not left focus-less.
+    if (recapFocus && recapFocus.isConnected) recapFocus.focus({ preventScroll: true });
+    recapFocus = null;
     clearTimeout(woCloseTimer);
     woCloseTimer = setTimeout(function () { n.classList.remove("closing"); guideWake(); }, 260);
   }
@@ -6624,7 +6755,11 @@ export const APP = String.raw`
     btns: null, tip: "", vfile: null, vurl: null, vbtn: null, vseq: 0, vst: 2, vno: false };
   try {
     var scWas = localStorage.getItem("spotter_card");
-    if (scWas === "light" || scWas === "clear") sc.bg = scWas;
+    // A card the poster has picked keeps its look whatever the phone is set to.
+    // A first card has nothing to keep, and the one thing it can reasonably look
+    // like is the app around it — which is also the scheme a proof opens in.
+    if (scWas === "light" || scWas === "clear" || scWas === "dark") sc.bg = scWas;
+    else if (!darkNow()) sc.bg = "light";
   } catch (e) { /* a browser with storage shut off keeps the default */ }
 
   // Both palettes are declared in style.ts and both exist in both schemes: the
@@ -6738,8 +6873,13 @@ export const APP = String.raw`
     // the Story editor. Photo is their own picture - never the creator's clip
     // frame, which is a third party's work.
     var clear = d.bg === "clear", photo = d.bg === "photo" && marks.photo;
-    var H = clear ? SC_CH : SC_H, TOP = clear ? 64 : SC_TOP,
-      BASE = H - (clear ? 64 : SC_H - SC_BASE);
+    // Three frames, one draw. A Story card keeps Instagram's furniture off its
+    // text, which is what SC_TOP and SC_BASE are; an overlay and a proof own every
+    // pixel they are drawn on, so they take a plain margin instead - and a proof
+    // brings its own height, the phone's, so it can fill a screen without being
+    // cropped to fit one.
+    var H = d.h || (clear ? SC_CH : SC_H), inset = d.h ? 150 : clear ? 64 : 0;
+    var TOP = inset || SC_TOP, BASE = H - (inset || (SC_H - SC_BASE));
     if (t === undefined) t = 1;
     c.clearRect(0, 0, SC_W, H);
     if (photo) {
@@ -6903,7 +7043,7 @@ export const APP = String.raw`
     // advert does not get posted.
     scSet(c, "500 29px " + SC_SANS, p.dim, "center", 2);
     c.globalAlpha = 0.72;
-    c.fillText("Logged with Spotter", SC_W / 2, H - (clear ? 40 : 284));
+    c.fillText("Logged with Spotter", SC_W / 2, H - (inset ? inset - 24 : 284));
     c.globalAlpha = 1;
   }
 
@@ -6926,7 +7066,7 @@ export const APP = String.raw`
       // A fixed asset, not a screen surface, so devicePixelRatio never comes into
       // it: at DPR 3 this would be 18.6M pixels, past the canvas area cap on every
       // iPhone before iOS 18, and the whole draw would come back blank.
-      cv.width = SC_W; cv.height = card.bg === "clear" ? SC_CH : SC_H;
+      cv.width = SC_W; cv.height = card.h || (card.bg === "clear" ? SC_CH : SC_H);
       scDraw(cv.getContext("2d"), card, a.p, a.face, a.marks, 1);
       return new Promise(function (ok, no) {
         // A tainted canvas, no toBlob, a phone out of memory: one failure, and the
@@ -7059,22 +7199,23 @@ export const APP = String.raw`
         if (s.reps && s.weight) vol += s.reps * toUnit(s.weight, s.unit);
       });
     });
-    var prs = Object.keys((wo && wo.prs) || {}).map(function (k) {
-      var p = wo.prs[k];
-      return p.name + " · " + wtText(p.weight, p.unit) + " " + state.unit + " × " + p.reps;
-    });
     return scCard(w, payload.workout_title, payload.started_at,
-      Math.max(1, Math.round(payload.duration_seconds / 60)), sets, vol, prs, logged);
+      Math.max(1, Math.round(payload.duration_seconds / 60)), sets, vol, prNames(wo && wo.prs), logged);
   }
 
-  // No bests on a past session: which lifts were records was settled on the day,
-  // and deciding it again now out of a longer history would be a claim.
+  function prNames(prs) {
+    return Object.keys(prs || {}).map(function (k) { return prText(prs[k]); });
+  }
+
+  // A past session's bests are the ones its own sets were stamped with on the
+  // day, so the card a session was shared with in March is the card it still
+  // draws — rather than one that has quietly dropped its best line since.
   function scFromLog(l) {
-    var by = {}, sets = 0;
-    state.workouts.forEach(function (w) { by[w.id] = w; });
+    var sets = 0;
     (l.entries || []).forEach(function (e) { sets += (e.sets || []).filter(Boolean).length; });
-    return scCard(by[l.workout_id] || {}, l.workout_title, l.started_at,
-      Math.max(1, Math.round((l.duration_seconds || 60) / 60)), sets, volumeOf(l), [], l.entries || []);
+    return scCard(logWorkout(l), l.workout_title, l.started_at,
+      Math.max(1, Math.round((l.duration_seconds || 60) / 60)), sets, volumeOf(l),
+      prNames(prsOfLog(l.entries)), l.entries || []);
   }
 
   // ---------- the doorway ----------
@@ -7097,6 +7238,7 @@ export const APP = String.raw`
     sc.vno = false;
     // The picture belonged to that session: megabytes a phone has better uses for,
     // and the next session must not inherit someone's last gym selfie.
+    if (proofUrl) { URL.revokeObjectURL(proofUrl); proofUrl = null; }
     if (sc.photo && sc.photo.close) sc.photo.close();
     if (sc.bg === "photo") sc.bg = "dark";
     sc.photo = null;
@@ -7366,6 +7508,10 @@ export const APP = String.raw`
   function scButtons(btns) {
     var can = scCan();
     sc.btns = btns;
+    // First, because it is the one action that needs nothing of the phone: no
+    // share sheet, no clipboard, no Photos permission. Whatever else this browser
+    // refuses, the screenshot always works.
+    btns.appendChild(scBtn("Show proof", "btn ghost", null, openProof));
     // Above Share, so the clipboard is loaded by the time the caption field opens.
     btns.appendChild(scBtn("Copy caption", "btn ghost", null, scCopyCaption));
     if (can === 2) {
@@ -7389,10 +7535,18 @@ export const APP = String.raw`
   }
 
   function shareRow(payload, logged, past) {
-    var wrap = el("div", "sharewrap"), row = el("div", "sharerow"), prev = el("div", "scprev");
+    var wrap = el("div", "sharewrap"), row = el("div", "sharerow");
     scForget();
     sc.card = past ? scFromLog(payload) : scFromSession(payload, logged);
-    if (!past) scWatchSummary();
+    // Live or read back, the row now lives on the same screen, and that screen
+    // losing .summary is what says the card belongs to nobody any more.
+    scWatchSummary();
+    // The thumbnail is the door to the full-screen card, the way a thumbnail is
+    // in Photos: a picture of something at 140px is asking to be tapped.
+    var prev = el("button", "scprev");
+    prev.type = "button";
+    prev.setAttribute("aria-label", "Show the card full screen");
+    prev.onclick = openProof;
     sc.img = el("img");
     sc.img.alt = "The session as a card, ready to share";
     prev.appendChild(sc.img);
@@ -7454,35 +7608,143 @@ export const APP = String.raw`
     return wrap;
   }
 
-  // A past session draws its card on the tap. That measured 10 to 28ms, nothing
-  // against an activation window counted in seconds — and the pointerdown starts
-  // the draw early anyway, the way the AI prefetch already does, so by the click
-  // there is usually a File waiting.
-  function scLogCard(l) {
-    var card = scFromLog(l);
-    card.bg = sc.bg;
-    return renderShareCard(card).then(function (b) { return { blob: b, file: scFileOf(b) }; });
+  // ---------- proof, in one screenshot ----------
+  //
+  // "Get the workout to be easily screenshottable with one screenshot to be able
+  // to show proof to content creators." A creator wants one image in a DM, not a
+  // thread of them, and what people actually screenshot is Strava's activity page
+  // and Nike Run Club's finish screen — chrome and all, tab bar and battery icon
+  // included, which is why third-party apps exist to clean those up afterwards.
+  // So the app hands over the clean frame itself: the card the summary already
+  // drew, alone on the screen with nothing else on it, and one press of the
+  // phone's own buttons is the proof.
+  //
+  // RE-LAID, not cropped. The card is 1080x1920 — 9:16, Instagram's own Story
+  // frame, which is why it is drawn at that size and why it leaves the phone at
+  // that size. The phones it is screenshotted ON are 19.5:9, taller and
+  // narrower, and neither way of forcing one into the other is a proof: covering
+  // the screen takes 9% off each side, past the card's 88px margin and into the
+  // title, and fitting it whole leaves a third of the screen as bare ground. So
+  // the proof asks the same draw for a card at the screen's own aspect. The
+  // ground still runs to the edges behind it, for the clamp and for a window
+  // this was never meant for.
+  var proofOn = false, proofTimer = null, proofUrl = null, proofSeq = 0;
+
+  /**
+   * The same card, re-laid for the screen it is about to fill.
+   *
+   * 1080x1920 is Instagram's frame and the right one to leave the phone as. It is
+   * the wrong one to fill a phone WITH: fitted to 19.5:9 it leaves a third of the
+   * screen as bare ground, and filled to it, 9% comes off each side. So the proof
+   * asks for the same draw at the screen's own aspect - one number, the same
+   * arithmetic underneath - and the layout spreads into the room it gets.
+   *
+   * Clamped either side: a desktop window is not a phone, and neither a square
+   * nor a 1080x6000 canvas is a card anybody wants sent to them.
+   *
+   * Clear has no ground of its own and is meant to be dropped on someone else's
+   * clip, which is not what a proof is, so it borrows the scheme in use instead.
+   */
+  function proofCard() {
+    var c = {}, k;
+    for (k in sc.card) if (Object.prototype.hasOwnProperty.call(sc.card, k)) c[k] = sc.card[k];
+    c.bg = sc.bg === "clear" ? (darkNow() ? "dark" : "light") : sc.bg;
+    c.h = Math.round(SC_W * Math.min(2.4, Math.max(1.5,
+      (window.innerHeight || SC_H) / (window.innerWidth || SC_W))));
+    return c;
   }
 
-  // The same doorway without the preview: whatever this phone can do with the
-  // card, straight out of the tap.
-  function scHandOff(r) {
-    if (r.file && navigator.canShare && navigator.canShare({ files: [r.file] }) &&
-      scSheet(r.file)) return;
-    scDrop(URL.createObjectURL(r.blob), true);
+  function darkNow() {
+    try { return window.matchMedia("(prefers-color-scheme: dark)").matches; }
+    catch (e) { return true; }
   }
 
-  function scLogBtn(l) {
-    var b = el("button", "scmini"), drawn = null;
-    b.type = "button";
-    icon(b, "share", "Share");
-    b.onpointerdown = function () { if (!drawn) drawn = scLogCard(l); };
-    b.onclick = function () {
-      haptic("tap");
-      if (!drawn) drawn = scLogCard(l);
-      drawn.then(scHandOff, function () { drawn = null; toast("Could not draw that card."); });
-    };
-    return b;
+  function openProof() {
+    // Only ever opened from a card that exists: the button is built out of one.
+    if (!sc.card) { scHold(); return; }
+    haptic("tap");
+    var n = $("proof"), card = proofCard(), mine = ++proofSeq;
+    // The ground first and the picture when it is drawn, inside the fade that is
+    // already running: a card measured at 10 to 28ms does not need a spinner, and
+    // the one thing it must not do is arrive as a white flash.
+    n.style.background = scPalette(card.bg).bg;
+    $("proofimg").removeAttribute("src");
+    renderShareCard(card).then(function (b) {
+      if (mine !== proofSeq || !proofOn) return;
+      if (proofUrl) URL.revokeObjectURL(proofUrl);
+      proofUrl = URL.createObjectURL(b);
+      $("proofimg").src = proofUrl;
+    }, function () { if (mine === proofSeq) { closeProof(); scHold(); } });
+    clearTimeout(proofTimer);
+    n.classList.remove("closing");
+    n.classList.add("open");
+    n.setAttribute("aria-hidden", "false");
+    proofOn = true;
+    // The way out has to be said once and then get out of the shot: a hint still
+    // on screen when the screenshot is framed is the chrome this view removed.
+    // The gesture it describes goes on working long after it has faded.
+    var tip = $("proofhint");
+    tip.classList.remove("gone");
+    setTimeout(function () { if (proofOn) tip.classList.add("gone"); }, 2200);
+    history.pushState({ proof: 1 }, "");
+  }
+
+  function closeProof(fromPop) {
+    if (!proofOn) return;
+    proofOn = false;
+    haptic("tap");
+    var n = $("proof");
+    n.style.transform = "";
+    n.style.opacity = "";
+    n.classList.remove("open", "dragging");
+    n.classList.add("closing");
+    n.setAttribute("aria-hidden", "true");
+    clearTimeout(proofTimer);
+    // The src goes with the animation, not before it: a blank frame sliding away
+    // is worse than no animation at all.
+    proofTimer = setTimeout(function () {
+      n.classList.remove("closing");
+      $("proofimg").removeAttribute("src");
+    }, 240);
+    // The same bookkeeping every sheet does — our own pop, so the popstate
+    // listener knows not to read it as the phone's back gesture.
+    if (!fromPop) { sheetBack++; history.back(); }
+  }
+
+  // Tap anywhere, swipe down, Escape, or the phone's own back: Apple's rule for a
+  // full-screen modal is that the way out is obvious, and the only way to keep it
+  // obvious with nothing drawn on screen is for every gesture to be the way out.
+  function wireProof() {
+    var n = $("proof"), d = null;
+    n.addEventListener("click", function () { closeProof(); });
+    n.addEventListener("pointerdown", function (e) {
+      if (e.pointerType !== "touch" && e.pointerType !== "pen" || !proofOn) return;
+      d = { id: e.pointerId, y: e.clientY, dy: 0 };
+      n.classList.add("dragging");
+    });
+    n.addEventListener("pointermove", function (e) {
+      if (!d || e.pointerId !== d.id) return;
+      d.dy = e.clientY - d.y;
+      // Down is the dismissal and tracks 1:1; up is not, and is answered with a
+      // third of itself — the resistance every sheet in the app already gives.
+      n.style.transform = "translateY(" + (d.dy > 0 ? d.dy : d.dy / 3) + "px)";
+      n.style.opacity = String(Math.max(0.3, 1 - Math.max(0, d.dy) / 560));
+    });
+    function up() {
+      if (!d) return;
+      var far = d.dy > 110;
+      d = null;
+      n.classList.remove("dragging");
+      if (far) { closeProof(); return; }
+      // Not far enough: timing back and the offset cleared together, so it springs.
+      n.style.transform = "";
+      n.style.opacity = "";
+    }
+    n.addEventListener("pointerup", up);
+    n.addEventListener("pointercancel", up);
+    document.addEventListener("keydown", function (e) {
+      if (proofOn && e.key === "Escape") { e.preventDefault(); closeProof(); }
+    });
   }
 
   // ---------- plan ----------
@@ -9101,64 +9363,65 @@ export const APP = String.raw`
     countStats();
   }
 
+  // The session being read back, so the options sheet and its Delete know which
+  // one they are about without either being rebuilt per row.
+  var recapLog = null, recapFocus = null;
+
   function openSession(l) {
-    // History uses its own sheet: reading an old session must never clear a draft,
-    // finish a workout, or award a record again.
+    // One session at a time. Reading an old one must never finish a live workout
+    // or award a record again, and while one is open this screen is that one.
     if (wo) { toast("Close your current workout before opening a past session."); return; }
-    var body = $("sessioncontent");
-    body.innerHTML = "";
-    $("sessiontitle").textContent = l.workout_title || "Workout";
-    var card = scFromLog(l);
-    body.appendChild(el("p", "rmeta", new Date(l.started_at).toLocaleDateString(undefined,
-      { weekday: "long", month: "long", day: "numeric", year: "numeric" })));
-    var stats = el("div", "progress-totals");
-    card.figs.forEach(function (f) {
-      var stat = el("div");
-      stat.appendChild(el("b", null, f[0]));
-      stat.appendChild(el("span", null, f[1]));
-      stats.appendChild(stat);
-    });
-    body.appendChild(stats);
-    body.appendChild(el("h3", null, "Your share card"));
-    body.appendChild(shareRow(l, l.entries || [], true));
-    body.appendChild(el("h3", "session-exercises-title", "What you logged"));
-    (l.entries || []).forEach(function (e) {
-      var sets = (e.sets || []).filter(Boolean);
-      if (!sets.length) return;
-      var row = el("div", "session-exercise");
-      row.appendChild(el("h4", null, e.name || "Exercise"));
-      sets.forEach(function (set, i) {
-        var line = el("div", "session-set");
-        line.appendChild(el("span", null, "Set " + (i + 1)));
-        line.appendChild(el("b", null, setText(set) + (set.weight && !set.seconds ? " " + state.unit : "")));
-        row.appendChild(line);
-      });
-      body.appendChild(row);
-    });
-      var del = el("button", "danger", "Delete session");
-      del.onclick = function () {
-        // Everything on this screen is derived from state.logs, so taking the
-        // session out of that array and redrawing IS the optimistic update.
-        closeSheet("sessionsheet");
-        var at = state.logs.indexOf(l);
-        state.logs = state.logs.filter(function (x) { return x.id !== l.id; });
-        renderProgress();
-        offerUndo("Session deleted", function () {
-          sb.from("workout_logs").delete().eq("id", l.id).then(function (r) {
-            if (!r || !r.error) return;
-            toast("That did not delete. The session is still here.");
-            invalidateLogs();
-            loadLogs().then(renderProgress);
-          });
-        }, function () {
-          state.logs.splice(at < 0 ? state.logs.length : at, 0, l);
-          renderProgress();
+    recapLog = l;
+    recapFocus = document.activeElement;
+    // Holes in a set array are what JSON makes of logging set 2 before set 1, and
+    // every reader downstream trips over the nulls. finishWorkout closes them on
+    // the way in; a row written before it did needs the same pass on the way out.
+    var logged = (l.entries || []).map(function (e) {
+      return Object.assign({}, e, { sets: (e.sets || []).filter(Boolean) });
+    }).filter(function (e) { return e.sets.length; });
+    clearTimeout(woCloseTimer);
+    var n = $("workout");
+    n.classList.remove("closing");
+    n.classList.add("open");
+    renderSummary(l, logged, l);
+    // The overlay's own history entry, exactly as a live session pushes one, so
+    // the phone's back gesture leaves the recap rather than the app.
+    history.pushState({ workout: 1 }, "");
+    $("wclose").focus({ preventScroll: true });
+  }
+
+  // Delete lives behind Options rather than under the summary: a red button at
+  // the bottom of a screen someone opened to enjoy is a trap, and iOS puts the
+  // destructive action of a detail view one tap further in for that reason.
+  function openRecapOptions() {
+    var box = $("recapopts"), l = recapLog;
+    box.innerHTML = "";
+    if (!l) return;
+    var del = el("button", "pickrow danger", "Delete session");
+    del.onclick = function () {
+      // Everything on this screen is derived from state.logs, so taking the
+      // session out of that array and redrawing IS the optimistic update.
+      // The sheet's entry and the summary's go together: go(-2) is what
+      // leaveWorkout does for a session opened from a card, for the same reason.
+      closeSheet("recapsheet", true);
+      history.go(-2);
+      var at = state.logs.indexOf(l);
+      state.logs = state.logs.filter(function (x) { return x.id !== l.id; });
+      renderProgress();
+      offerUndo("Session deleted", function () {
+        sb.from("workout_logs").delete().eq("id", l.id).then(function (r) {
+          if (!r || !r.error) return;
+          toast("That did not delete. The session is still here.");
+          invalidateLogs();
+          loadLogs().then(renderProgress);
         });
-      };
-    body.appendChild(del);
-    $("sessionsheet")._returnFocus = document.activeElement;
-    openSheet("sessionsheet");
-    $("sessionclose").focus({ preventScroll: true });
+      }, function () {
+        state.logs.splice(at < 0 ? state.logs.length : at, 0, l);
+        renderProgress();
+      });
+    };
+    box.appendChild(del);
+    openSheet("recapsheet");
   }
 
   function renderHistoryInto(v, logs) {
@@ -9170,7 +9433,6 @@ export const APP = String.raw`
       if (mk !== month) { month = mk; v.appendChild(el("div", "monthhead", mk)); }
       var card = el("button", "chartcard session-link");
       card.type = "button";
-      card.setAttribute("aria-haspopup", "dialog");
       var row = el("div", "histrow"), n = el("div", "n"), sets = 0;
       (l.entries || []).forEach(function (e) { sets += (e.sets || []).filter(Boolean).length; });
       n.appendChild(el("b", null, l.workout_title || "Workout"));
@@ -11144,7 +11406,6 @@ export const APP = String.raw`
     var n = $(id);
     if (!n.classList.contains("open")) return;
     guideClear("hold");
-    if (id === "sessionsheet") scForget();
     if (id === "welcomesheet") {
       welcomeDone();
       var focus = welcomeReturn && welcomeReturn.isConnected && !welcomeReturn.closest("#landing, .sheet:not(.open)")
@@ -11276,7 +11537,7 @@ export const APP = String.raw`
   ["addsheet", "setsheet", "watchsheet", "exsheet", "exeditsheet", "explainsheet", "picksheet",
    "settingssheet", "colsheet", "renamesheet", "swapsheet", "pumpysheet", "capsheet", "plansheet",
    "daysheet", "copysheet", "sortsheet", "refsheet", "countsheet", "guidesheet", "welcomesheet",
-   "workoptions", "filtersheet", "schedulesheet", "sessionsheet", "woaddsheet"]
+   "workoptions", "filtersheet", "schedulesheet", "recapsheet", "woaddsheet"]
     .forEach(wireSheet);
 
   function overlayShowing() {
@@ -13528,7 +13789,7 @@ export const APP = String.raw`
   document.querySelectorAll("[data-close]").forEach(function (b) {
     b.onclick = function () { closeSheet(b.getAttribute("data-close")); };
   });
-  ["workoptions", "filtersheet", "schedulesheet", "sessionsheet", "woaddsheet"].forEach(function (id) {
+  ["workoptions", "filtersheet", "schedulesheet", "recapsheet", "woaddsheet"].forEach(function (id) {
     $(id).addEventListener("keydown", function (e) {
       if (e.key === "Escape") { e.preventDefault(); closeSheet(id); }
       if (e.key !== "Tab") return;
@@ -13591,6 +13852,8 @@ export const APP = String.raw`
   };
 
   $("wclose").onclick = function () { history.back(); };
+  $("wmore").onclick = openRecapOptions;
+  wireProof();
   wireWmain($("wmain"));
   $("wprev").onclick = function () { woGo(-1); };
   $("wnext").onclick = skipMove;
@@ -13658,6 +13921,9 @@ export const APP = String.raw`
     // Our own pop, from a sheet the UI has already closed; reading it as a gesture
     // would close the overlay that sheet was sitting on.
     if (sheetBack) { sheetBack--; return; }
+    // The proof is the topmost thing there is — it is drawn over every sheet and
+    // over Workout Mode — so its entry is the one a back gesture spends first.
+    if (proofOn) { closeProof(true); return; }
     // Sheets first: while one is open its entry is the top one, even over Workout
     // Mode, so it is the entry this pop just spent.
     var open = document.querySelectorAll(".sheet.open");
