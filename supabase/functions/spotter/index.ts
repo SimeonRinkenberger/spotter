@@ -8073,7 +8073,7 @@ async function runPackTier(
       throw new SoftFailure(
         "Spotter read those frames but could not trust what it saw — " +
           String(out.pack_problems[0]).slice(0, 120) +
-          ". This card keeps the reading it already had.",
+          ". This card is unchanged.",
         "pack rejected on re-read: " + out.pack_problems.join(" | "),
         // Final: the frames have been read and deleted, so a retry would read
         // nothing. keepCard: the row is exactly as good as it was a minute ago.
