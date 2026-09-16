@@ -31,6 +31,8 @@ jobs:
       - run: deno run --allow-read tools/source-trust-check.ts
       - run: deno run --allow-read tools/merge-harness.ts
       - run: deno run --allow-read --allow-env tools/ingest-coverage-harness.ts
+      - run: deno run --allow-read tools/pack-eval/offline.ts
+      - run: deno run --allow-read tools/pack-eval/score-test.ts
       - run: node build.mjs && git diff --exit-code -- docs/index.html supabase/functions/spotter/page.gen.ts
   native-parity:
     runs-on: macos-14

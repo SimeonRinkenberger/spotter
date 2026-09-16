@@ -1,0 +1,159 @@
+{
+  "$comment": "EVAL FIXTURE for tools/pack-eval — the caption-only case, where NOBODY LOOKED. Instagram exposes no media URL to a server or to a phone (verified repeatedly, most recently by wave N), so an Instagram save has a caption and nothing else: no transcript, no frames, no observation. The pack for such a save is `visual: \"unavailable\"` with no exercises, and the whole point of this fixture is that the card must then carry NO visual claim — no as_performed, no t0/t1, no delta, no `seen` evidence. A pack that says it watched a video it could not fetch is the most expensive kind of wrong, because it is cached globally and every call downstream believes it.\nThe caption and the card are the ones already in the repo, hand-authored on ~1 Sept for tools/test-confidence.mjs (IG_CAPTION / richCard) and copied here verbatim. They are SYNTHETIC — no creator's post is reproduced — which is also why `source.url` is null.",
+  "fixture_v": 1,
+  "pack_v": 1,
+  "shortcode": "ig-dumbbell-finisher",
+  "platform": "instagram",
+  "duration_s": null,
+  "visual": "unavailable",
+  "eye": "none",
+  "$eye": "Which EYE reads this video, not which model — the model is chosen at run time and the runner builds the pack's `reader` label from the two with packReader(), which is the whole point of the `<eye>:<model>` shape main adopted in #12. Offline reads label themselves `sheets:fixture` / `video:fixture`, because what produced the observation was this file and not a model.",
+  "source": {
+    "platform": "instagram",
+    "url": null,
+    "author": null,
+    "consent": "synthetic fixture written in this repo (tools/test-confidence.mjs, IG_CAPTION); no creator content is reproduced",
+    "duration_s": null,
+    "captured": "2026-09-01"
+  },
+  "caption": "FULL BODY DUMBBELL FINISHER 🔥\n3 rounds, 60s rest between rounds\n▶️ Goblet Squat 3x12\n▶️ DB Bulgarians 3x10 each side\n▶️ Renegade Row 3x8\n▶️ Plank 45 sec\nSave this for later 💪 #fitness",
+  "transcript_vtt": null,
+  "sheets": null,
+  "session": {
+    "format": null,
+    "scheme": null,
+    "equipment_seen": [],
+    "equipment_count": {},
+    "load_seen": null,
+    "setting": null,
+    "$note": "Empty on purpose. Every field of the session block comes from the observation, and there is no observation."
+  },
+  "transcript_source": "none",
+  "transcript": [],
+  "on_screen": [],
+  "exercises": [],
+  "$exercises": "Empty, and that is the expectation. assemblePack with no observation produces a pack with visual 'unavailable', reader 'none' and no exercises — a record that nobody looked, which is a different thing from a record that there was nothing to see.",
+  "card_input": {
+    "$note": "richCard from tools/test-confidence.mjs, the caption-only card the evidence scorer already uses, with its cue lines left empty because that fixture never had any. The scorer skips a cue it was given nothing to check.",
+    "title": "Full Body Dumbbell Finisher",
+    "category": "Full Body",
+    "muscle_groups": [],
+    "equipment": [
+      "dumbbells"
+    ],
+    "duration_minutes": 18,
+    "has_full_workout": true,
+    "blocks": [
+      {
+        "title": null,
+        "type": "circuit",
+        "rounds": 3,
+        "rest_seconds": 60,
+        "exercises": [
+          {
+            "name": "Goblet Squat",
+            "canonical_id": "goblet-squat",
+            "sets": 3,
+            "reps": "12",
+            "duration_seconds": null,
+            "rest_seconds": null,
+            "weight": null,
+            "equipment": "dumbbells",
+            "cue": ""
+          },
+          {
+            "name": "Bulgarian Split Squat",
+            "canonical_id": "bulgarian-split-squat",
+            "sets": 3,
+            "reps": "10",
+            "duration_seconds": null,
+            "rest_seconds": null,
+            "weight": null,
+            "equipment": "dumbbells",
+            "cue": ""
+          },
+          {
+            "name": "Renegade Row",
+            "canonical_id": "renegade-row",
+            "sets": 3,
+            "reps": "8",
+            "duration_seconds": null,
+            "rest_seconds": null,
+            "weight": null,
+            "equipment": "dumbbells",
+            "cue": ""
+          },
+          {
+            "name": "Plank",
+            "canonical_id": "plank",
+            "sets": null,
+            "reps": null,
+            "duration_seconds": 45,
+            "rest_seconds": null,
+            "weight": null,
+            "equipment": null,
+            "cue": ""
+          }
+        ]
+      }
+    ]
+  },
+  "card_expectations": {
+    "$comment": "Nothing may be stamped. The canonical ids are the card's own, from the caption; the deltas must all be null because a delta is a statement about how a movement was PERFORMED and nobody saw it performed.",
+    "title": "Full Body Dumbbell Finisher",
+    "block": {
+      "type": "circuit",
+      "rounds": 3,
+      "rest_seconds": 60,
+      "duration_minutes": 18
+    },
+    "stamped": 0,
+    "cues": [
+      null,
+      null,
+      null,
+      null
+    ],
+    "canonical_ids": [
+      "goblet-squat",
+      "bulgarian-split-squat",
+      "renegade-row",
+      "plank"
+    ],
+    "deltas": {
+      "$note": "All null, and the provenance check is what enforces the reason: with visual 'unavailable' there is no as_performed for a delta to be computed from.",
+      "values": [
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    "must_not": [
+      {
+        "never": "the video shows",
+        "why": "no video was ever fetched; this phrasing on a caption-only card is a fabrication"
+      },
+      {
+        "never": "on screen",
+        "why": "there are no frames to read text off"
+      },
+      {
+        "never": "barbell",
+        "why": "the caption names dumbbells only"
+      },
+      {
+        "never": "bench press",
+        "why": "'DB Bulgarians' needs a bench to stand on, not a bench press"
+      },
+      {
+        "field": "rest_seconds",
+        "why": "the caption prescribes 60 s between ROUNDS; a per-exercise rest would be invented"
+      },
+      {
+        "field": "weight",
+        "why": "the caption states no load"
+      }
+    ]
+  }
+}

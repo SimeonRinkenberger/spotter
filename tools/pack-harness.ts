@@ -1711,6 +1711,19 @@ function evalReply(url: string) {
   eq("a switch of pack.sheets_model changes what the pack says read it",
     luna.pack.reader, "sheets:gpt-5.6-luna");
 
+  // A timed circuit has no reps to count, and a model that says so with JSON null must not be
+  // turned into "reps seen 0" (Number(null) === 0) — the eval's first-day finding.
+  const nullReps = structuredClone(mock) as typeof mock;
+  nullReps.segments[0].reps_visible = null;
+  (nullReps as any).session.equipment_count = { kettlebell: null };
+  const readNull = readObservation(nullReps)!;
+  eq("a null reps_visible stays null through the parser", readNull.segments[0].reps_visible, null);
+  (globalThis as any).DB.seen = { obs: readNull, bytes: 4096, model: "gemini-3.6-flash" };
+  const unc = await M.buildVideoPack(p, null, frames, ctx, null);
+  eq("and the pack records no rep count for that movement", unc.pack.exercises[0].reps_seen, null);
+  check("and does not claim to have seen one", unc.pack.exercises[0].provenance.reps !== "seen",
+    unc.pack.exercises[0].provenance.reps);
+
   // And what no repair can rescue is still refused, with the reason travelling
   // back to the tier that has to decide what to tell the user.
   const outside = structuredClone(mock) as typeof mock;
