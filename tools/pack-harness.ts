@@ -24,7 +24,7 @@
 
 import {
   assemblePack, bestSeenFact, deltaFrom, type Frames, mergeCues, type Observation, OBSERVE_PROMPT,
-  packInTimeOrder, sharesHeadNoun, SHEET_MAX,
+  packInTimeOrder, packReader, readerEye, readerModel, repairPack, sharesHeadNoun, SHEET_MAX,
   type Pack, PACK_V, packBlock, parseFrames, parseStampedTranscript, parseVtt,
   readObservation, secondsToMmss, sheetPathFor, SHEET_MAX_BYTES, sheetsPrompt,
   type TranscriptSeg, titleCase, validatePack, vttCues,
@@ -115,7 +115,7 @@ function lift(name: string): string {
 // mentions half the file otherwise.
 const STUBS = "import { normText } from '" +
   new URL("supabase/functions/spotter/evidence.ts", ROOT).href + "';\n" +
-  "import { bestSeenFact, packInTimeOrder, sharesHeadNoun, parseFrames, readObservation, sheetPathFor, sheetsPrompt, SHEET_MAX, SHEET_MAX_BYTES, PACK_V } from '" +
+  "import { assemblePack, bestSeenFact, packInTimeOrder, packReader, repairPack, secondsToMmss, sharesHeadNoun, parseFrames, readObservation, sheetPathFor, sheetsPrompt, validatePack, SHEET_MAX, SHEET_MAX_BYTES, PACK_V } from '" +
   new URL("supabase/functions/spotter/pack.ts", ROOT).href + "';\n" +
   "import { tokenCost, tokenPrice } from '" +
   new URL("supabase/functions/spotter/ai-guard.ts", ROOT).href + "';\n" +
@@ -123,12 +123,25 @@ const STUBS = "import { normText } from '" +
   // The route's collaborators, one line each. Everything with real judgement in
   // it — the validation, the path composition, the decision to read again — is
   // the shipping code; everything that talks to Postgres or Storage is here.
-  "export const spy: any = { seeded: null, signed: [], rpc: [], deleted: 0, patched: null, calls: [], cost: [], store: null };\n" +
+  "export const spy: any = { seeded: null, signed: [], rpc: [], deleted: 0, patched: null, patchedMany: [], stage: null, mediaSteps: 0, calls: [], cost: [], store: null };\n" +
   "class GuardError extends Error {}\n" +
   "function json(b: any, status = 200) { return { status, body: b } as any; }\n" +
   "declare const DB: any;\n" +
   "async function dbSelect(t: string, q: string) { return DB[t] ? DB[t](q) : []; }\n" +
   "async function dbPatch(_t: string, _f: string, patch: any) { spy.patched = patch; }\n" +
+  // The worker's own collaborators: the two rows a failed job writes, the stage a
+  // card shows while it waits, and the sub-request the pack tier sends.
+  "async function dbPatchMany(t: string, filter: string, patch: any) { spy.patchedMany.push({ t, filter, patch }); return [{ id: 'row' }]; }\n" +
+  "const WORKER_ID = 'w-test';\n" +
+  "function backoffMs() { return 1000; }\n" +
+  "function utcNextMidnight() { return Date.now() + 3600000; }\n" +
+  "async function setMediaStage(_sc: string, stage: any) { spy.stage = stage; }\n" +
+  "async function logMediaStep() { spy.mediaSteps++; }\n" +
+  "async function mediaCountToday() { return 0; }\n" +
+  "async function settledAll(a: any[]) { return Promise.all(a); }\n" +
+  "async function runMediaRemote() { return DB.mediaReply ?? null; }\n" +
+  "async function buildCard() { return DB.built ?? { blocks: [] }; }\n" +
+  "function mergeNoDowngrade(a: any) { return a; }\n" +
   "function providerFor(name: string) { return { media: name === 'tiktok' ? (() => null) : undefined, cacheable: true }; }\n" +
   "async function deleteSheets(f: any) { spy.deleted += f?.sheets?.length ?? 0; }\n" +
   "async function countsFor() { return { extracts: 0, saves: 0, helpers: 0 }; }\n" +
@@ -151,7 +164,14 @@ const STUBS = "import { normText } from '" +
   "function approxTokens(s: string) { return Math.ceil(s.length / 4); }\n" +
   "function matchTikTok() { return null; }\n" +
   "async function tiktokMedia() { return null; }\n" +
-  "async function packTranscript() { return { transcript: [], cues: null, source: 'none', text: '', media_source: null }; }\n" +
+  "const NO_TRANSCRIPT = { transcript: [], cues: null, source: 'none', text: '', media_source: null };\n" +
+  "async function packTranscript() { return DB.transcript ?? NO_TRANSCRIPT; }\n" +
+  // The two eyes, mocked at the seam where a model would be: what they SAW is the
+  // fixture's own observation, so the build path is exercised and nothing is paid.
+  "async function observeFromSheets() { return DB.seen ?? { obs: null, bytes: 0 }; }\n" +
+  "async function observeFromVideo() { return DB.seen ?? { obs: null, bytes: 0 }; }\n" +
+  "function videoTierEnabled() { return DB.videoTier !== false; }\n" +
+  "function packMaxRequeries() { return 2; }\n" +
   "async function recordCost(provider: string, model: string, _c: any, u: any, ok: boolean) { spy.cost.push({ provider, model, ...u, ok }); }\n" +
   "const aiActor = { getStore: () => spy.store, run: (a: any, fn: any) => { spy.store = a; return fn(); } };\n" +
   "async function aiFetch(url: string, init: any) { spy.calls.push({ url, body: JSON.parse(init.body), purpose: spy.store?.purpose }); return DB.reply(url); }\n" +
@@ -172,6 +192,9 @@ const NAMES = [
   // call. Their collaborators are stubbed above; the judgement is the real code.
   "CARD_V", "UPLOAD_SIGN_SECONDS", "usablePack", "mediaSeed", "authorizeSheets", "handleReadVideo",
   "scopeFor", "isPackAuthorize",
+  // The tier that spends the money, and the two things that happen to a job when
+  // the reading it paid for cannot be trusted.
+  "SoftFailure", "buildVideoPack", "runPackTier", "failJob",
   // The A/B bench for the sheets reader.
   "readSheetImages", "handleEvalSheets",
   "userFromIngestKey",
@@ -345,11 +368,12 @@ const pack = assemblePack({
   transcriptSource: "tiktok_vtt",
   cues,
   observation: obs,
-  reader: "luna_sheets",
+  reader: packReader("sheets", "gemini-3.6-flash"),
 });
 
 eq("the pack is version 1", pack.pack_v, PACK_V);
-eq("it knows which eye read it", pack.reader, "luna_sheets");
+eq("it knows which eye read it, and what that eye was",
+  pack.reader, "sheets:gemini-3.6-flash");
 eq("and that something did", pack.visual, "read");
 eq("it found every movement", pack.exercises.length, FX.exercises.length);
 
@@ -438,6 +462,27 @@ check("'Repeat that complex as many times as you can' is not a push-press cue",
   check("but keeps the words", blind.transcript.length === segs.length);
 }
 
+// ---------- 2b. which eye, and which model behind it ----------
+//
+// The first live sheets read after `pack.sheets_model` was pointed at Gemini
+// labelled itself `luna_sheets`, which is the owner's own A/B answering with the
+// wrong name. The label carries the model now; the two old bare names still parse,
+// because packs wearing them are in the global cache and cost money to make.
+
+eq("a sheets read names the model that read", packReader("sheets", "gpt-5.6-luna"), "sheets:gpt-5.6-luna");
+eq("so does a video read", packReader("video", "gemini-3.6-flash"), "video:gemini-3.6-flash");
+eq("nobody looking names nobody", packReader("none", "gpt-5.6-luna"), "none");
+eq("a read with no model recorded still admits which eye", packReader("sheets", null), "sheets:unknown");
+
+eq("the old bare sheets label still reads as sheets", readerEye("luna_sheets"), "sheets");
+eq("the old bare video label still reads as video", readerEye("gemini_video"), "video");
+eq("and so do the new ones", [readerEye("sheets:gemini-3.6-flash"), readerEye("video:gemini-3.6-flash")],
+  ["sheets", "video"]);
+eq("a pack nobody read names no eye", [readerEye("none"), readerEye(null), readerEye("who?")],
+  ["none", "none", "none"]);
+eq("the model comes back out of the label", readerModel("sheets:gemini-3.6-flash"), "gemini-3.6-flash");
+eq("and an old label names no model", readerModel("luna_sheets"), null);
+
 // ---------- 3. the verifier ----------
 //
 // A bad pack is believed by every call downstream and is inherited by everybody
@@ -476,6 +521,148 @@ function broken(mutate: (p: Pack) => void): ReturnType<typeof validatePack> {
   // the last frame of the video and rejecting every pack for that helps nobody.
   const r = broken((p) => { p.transcript[p.transcript.length - 1].t1 = p.duration_s + 0.5; });
   check("half a second past the end is tolerated", r.ok, r.problems.join("|"));
+}
+
+// ---------- 3b. repair, before anything is thrown away ----------
+//
+// Function v162, the owner's own save, read by Gemini off the phone's three
+// contact sheets: 4527 tokens in, 958 out, 7.7 seconds, the hands correctly on
+// the handle — and `validatePack` answered "segments overlap at Kettlebell
+// Overhead Press" and dropped the entire reading, so the card silently kept a
+// stale pack. The reading was not wrong about the video. It named one set of
+// presses twice as the strip crossed it, which is a clock error with an obvious
+// repair, and throwing away the facts over it is the expensive mistake.
+//
+// So: sort, clip, merge — then reject only what no repair could have invented.
+
+function repaired(mutate: (p: Pack) => void) {
+  const copy = structuredClone(pack);
+  mutate(copy);
+  const fixed = repairPack(copy);
+  return { ...fixed, check: validatePack(fixed.pack) };
+}
+
+/** The last segment, read a second time under a longer name, as v162 saw it. */
+function readTwice(p: Pack): void {
+  const last = structuredClone(p.exercises[4]);
+  p.exercises.push({
+    ...last,
+    i: 5,
+    name_said: null,
+    name_shown: "Kettlebell Overhead Press",
+    t0: 66, t1: 74,
+    reps_seen: null,
+    creator_cues: [],
+    seen_not_said: ["the bell finishes locked out over the crown of the head"],
+    provenance: { ...last.provenance, name: "seen", reps: "none", cues: "none" },
+    confidence: 0.7,
+  });
+}
+
+{
+  // The live failure, reproduced exactly — then repaired.
+  const before = broken(readTwice);
+  check("the live v162 pack was rejected before this wave", !before.ok);
+  check("with the sentence the owner saw in the logs",
+    before.problems.some((s) => s === "segments overlap at Kettlebell Overhead Press"),
+    before.problems.join("|"));
+
+  const r = repaired(readTwice);
+  check("the same pack now verifies", r.check.ok, r.check.problems.join("|"));
+  eq("because the two readings of one press became one movement", r.pack.exercises.length, 5);
+
+  const merged = r.pack.exercises[4];
+  eq("the merged movement keeps the longer, more specific name",
+    merged.name_shown, "Two-Hand Kettlebell Push Press");
+  eq("and spans the earliest start to the latest end", [merged.t0, merged.t1], [65, 74]);
+  eq("and keeps the catalog id", merged.canonical_id, "push-press");
+  eq("and takes the lower confidence of the two, because it needed repairing",
+    merged.confidence, 0.7);
+  check("and carries what BOTH readings saw",
+    merged.seen_not_said.some((s) => /shallow knee dip/.test(s)) &&
+    merged.seen_not_said.some((s) => /locked out over the crown/.test(s)),
+    JSON.stringify(merged.seen_not_said));
+  check("the repair says what it did, with names and times",
+    r.repairs.some((s) => /merged Kettlebell Overhead Press 1:06–1:14 into Two-Hand Kettlebell Push Press 1:05–1:13 — one movement read twice, now Two-Hand Kettlebell Push Press 1:05–1:14/.test(s)),
+    JSON.stringify(r.repairs));
+  eq("and nothing else was touched", r.repairs.length, 1);
+}
+
+{
+  // Two DIFFERENT movements that overlap are not one movement: the earlier one is
+  // clipped to where the later one starts, which is the only honest reading of a
+  // camera that saw the swing begin at 0:38.
+  const r = repaired((p) => { p.exercises[2].t0 = 38; });
+  check("an overlap between two unrelated movements verifies after repair",
+    r.check.ok, r.check.problems.join("|"));
+  eq("every movement is still there", r.pack.exercises.length, 5);
+  eq("the earlier one ends where the later one starts", r.pack.exercises[1].t1, 38);
+  eq("and the later one is untouched", [r.pack.exercises[2].t0, r.pack.exercises[2].t1], [38, 54]);
+  check("the repair names both movements and the time it moved",
+    r.repairs.some((s) =>
+      /clipped Kettlebell Sumo Deadlift High Pull 0:26–0:41 to end at 0:38, where Kettlebell Swing starts/.test(s)),
+    JSON.stringify(r.repairs));
+}
+
+{
+  // A second of overlap is a cut, not an error, and repairing it would rewrite a
+  // reading that was never wrong.
+  const r = repaired((p) => { p.exercises[2].t0 = p.exercises[1].t1 - 0.8; });
+  eq("an overlap inside the slack is left alone", r.repairs, []);
+  check("and still verifies", r.check.ok, r.check.problems.join("|"));
+}
+
+{
+  // Segments that arrive out of order are a reading whose clock is fine and whose
+  // list is shuffled. Sorting is the whole repair.
+  const r = repaired((p) => { p.exercises.reverse(); });
+  check("a shuffled pack verifies after repair", r.check.ok, r.check.problems.join("|"));
+  eq("the movements come back in time order",
+    r.pack.exercises.map((e) => e.name_shown), FX.exercises.map((e) => e.name_shown));
+  eq("and are renumbered, so no two answer to the same index",
+    r.pack.exercises.map((e) => e.i), [0, 1, 2, 3, 4]);
+  check("the repair says it sorted them", r.repairs.some((s) => /sorted 5 movements/.test(s)),
+    JSON.stringify(r.repairs));
+}
+
+{
+  // What repair must NOT do is invent. A time outside the video and a sentence the
+  // creator never said are still refusals, and the pack is still dropped whole.
+  const late = repaired((p) => { p.exercises[1].t1 = p.duration_s + 30; });
+  eq("a pack whose clock leaves the video is not repaired at all", late.repairs, []);
+  check("a timestamp past the end of the video survives repair and is rejected", !late.check.ok);
+  check("and says which movement", late.check.problems.some((s) => /outside the video/.test(s)),
+    late.check.problems.join("|"));
+
+  const fake = repaired((p) => {
+    p.exercises[0].creator_cues[0].quote = "take these nice and slow for time under tension";
+  });
+  check("a paraphrased cue is still rejected after repair", !fake.check.ok);
+  check("and says it is not verbatim",
+    fake.check.problems.some((s) => /not verbatim/.test(s)), fake.check.problems.join("|"));
+}
+
+{
+  // Merging cannot smuggle a quote past the verifier either: both halves' cues
+  // ride along, and every one of them is still checked against the transcript.
+  const r = repaired((p) => {
+    readTwice(p);
+    p.exercises[5].creator_cues = [{ t: 66, quote: "press it straight up over your head" }];
+  });
+  check("a cue carried through a merge is checked like any other", !r.check.ok);
+  check("and named", r.check.problems.some((s) => /not verbatim/.test(s)),
+    r.check.problems.join("|"));
+}
+
+{
+  // A pack that needs nothing is handed back as-is — the same object, so a repair
+  // pass costs a clean reading nothing at all.
+  const fixed = repairPack(pack);
+  eq("a pack that needs no repair reports none", fixed.repairs, []);
+  check("and is not rewritten", fixed.pack === pack);
+  eq("a pack with one movement is never touched",
+    repairPack({ ...pack, exercises: pack.exercises.slice(0, 1) }).repairs, []);
+  eq("and neither is an empty one", repairPack({ ...pack, exercises: [] }).repairs, []);
 }
 
 // ---------- 4. the canonicalizer ----------
@@ -756,8 +943,10 @@ refused("no sheets at all is refused", (f) => { f.sheets = []; }, /non-empty arr
   const fromSheets = assemblePack({
     shortcode: FX.shortcode, platform: FX.platform, durationS: frames.duration_s,
     transcript: segs, transcriptSource: "tiktok_vtt", cues, observation: read,
-    reader: "luna_sheets",
+    reader: packReader("sheets", "gpt-5.6-luna"),
   });
+  eq("a sheets pack records which model did the looking",
+    fromSheets.reader, "sheets:gpt-5.6-luna");
   eq("and produces the same canonical ids as the fixture",
     fromSheets.exercises.map((e) => e.canonical_id),
     FX.exercises.map((e) => e.canonical_id));
@@ -1250,6 +1439,9 @@ check("and the authorize route dispatches kind:\"pack\" to the sheets branch",
   eq("the card says watching, not listening", M.spy.patched?.media_stage, "watching");
   eq("the job carries the new sheets", M.spy.seeded?.meta?.frames?.sheets?.length, 1);
   eq("and NOT the reading they are replacing", M.spy.seeded?.meta?.pack, undefined);
+  // What the worker needs in order to tell "this reading is new" from "this
+  // reading REPLACES one somebody is looking at right now".
+  eq("but it does say it is a replacement", M.spy.seeded?.meta?.pack_reread, true);
   eq("nothing was deleted, because the worker still needs them", M.spy.deleted, 0);
 
   // A video nobody has read yet behaves the same way with frames.
@@ -1478,6 +1670,149 @@ function evalReply(url: string) {
   check("and still waits on the project's own daily ceiling",
     /if \(!\(await paidAllowed\(\)\)\) \{\s*\n\s*return json\(\{ status: "limit", message: "the day's AI budget is spent" \}/.test(SRC));
 }
+
+// ---------- 16b. the build path, from what the eye saw to what is stored ----------
+//
+// The repair and the label are only worth anything if the job actually runs them,
+// so the shipping buildVideoPack is exercised with both eyes mocked at the seam a
+// model would sit behind. Nothing here is paid for; what is checked is the wiring
+// that v162 got wrong.
+
+{
+  const p = { platform: "tiktok", shortcode: SC, kind: "video", clean: "https://tiktok/x" };
+  const ctx = { purpose: "pack", userId: UID };
+  const frames = (parseFrames(goodFrames, UID, SC) as { frames: Frames }).frames;
+  // The observation as the sheets read returned it on v162: correct about the
+  // video, and one set of presses written down twice.
+  const seenTwice = structuredClone(mock) as typeof mock;
+  seenTwice.segments.push({
+    ...structuredClone(seenTwice.segments[4]),
+    t0: "1:06", t1: "1:14", movement: "kettlebell overhead press",
+    reps_visible: null, confidence: 0.7,
+  });
+
+  (globalThis as any).DB = {
+    rpc: () => "ok",
+    seen: { obs: readObservation(seenTwice), bytes: 4096, model: "gemini-3.6-flash" },
+  };
+  const built = await M.buildVideoPack(p, null, frames, ctx, null);
+
+  check("the reading that v162 threw away is stored now", !!built.pack, JSON.stringify(built.problems));
+  eq("with nothing left for the verifier to object to", built.problems, []);
+  eq("and one movement per set of presses", built.pack.exercises.length, 5);
+  eq("the pack names the model that actually read the sheets",
+    built.pack.reader, "sheets:gemini-3.6-flash");
+  eq("and so does the route recorded on the save", built.media_source, "pack:sheets:gemini-3.6-flash");
+
+  // The same frames read by the other model, which is the whole point of the
+  // label: `pack.sheets_model` decides who looks, so the pack has to say who did.
+  (globalThis as any).DB.seen = { obs: readObservation(mock), bytes: 4096, model: "gpt-5.6-luna" };
+  const luna = await M.buildVideoPack(p, null, frames, ctx, null);
+  eq("a switch of pack.sheets_model changes what the pack says read it",
+    luna.pack.reader, "sheets:gpt-5.6-luna");
+
+  // And what no repair can rescue is still refused, with the reason travelling
+  // back to the tier that has to decide what to tell the user.
+  const outside = structuredClone(mock) as typeof mock;
+  outside.segments[2].t1 = "3:00";
+  (globalThis as any).DB.seen = { obs: readObservation(outside), bytes: 4096, model: "gemini-3.6-flash" };
+  const bad = await M.buildVideoPack(p, null, frames, ctx, null);
+  eq("a reading whose clock leaves the video is still refused whole", bad.pack, null);
+  check("and the reason comes back with it",
+    bad.problems.some((s: string) => /outside the video/.test(s)), JSON.stringify(bad.problems));
+}
+
+// ---------- 17. a re-read whose new reading could not be trusted ----------
+//
+// The other half of the v162 failure. The card kept a stale pack and the job
+// finished "ready", so the owner asked for a re-read, watched it run, and got a
+// card that had not changed and said nothing about why. A reading somebody ASKED
+// for is not a background upgrade: when the replacement is refused, the old pack
+// stays — it is still the best anybody has — and the job says so on the row.
+
+{
+  const job = {
+    id: "j-reread", user_id: UID, shortcode: SC, platform: "tiktok", kind: "video",
+    step: "media", attempts: 0, max_attempts: 3,
+  };
+  const p = { platform: "tiktok", shortcode: SC, kind: "video", clean: "https://tiktok/x" };
+  const card = { blocks: [{ exercises: [{ name: "Close Grip Push Ups" }] }] };
+  const refused = "segments overlap at Kettlebell Overhead Press";
+  (globalThis as any).DB = {
+    rpc: () => "ok",
+    mediaReply: {
+      status: "ok", tier: "pack", media_source: null, text: null, pack: null,
+      pack_problems: [refused],
+    },
+  };
+
+  let threw: any = null;
+  try {
+    await M.runPackTier(job, p, { caption: null, pack_reread: true }, card);
+  } catch (e) { threw = e; }
+
+  check("a re-read whose new pack is refused fails the job", !!threw, String(threw));
+  check("with the verifier's own sentence, which says what to go and look at",
+    threw?.userMessage?.includes(refused), threw?.userMessage);
+  check("and says the card did not change, because it did not",
+    /this card is unchanged/i.test(threw?.userMessage ?? ""), threw?.userMessage);
+  eq("it is final — the frames are read and deleted, so a retry reads nothing",
+    threw?.final, true);
+  eq("and it keeps the card, which is exactly as good as it was", threw?.keepCard, true);
+  check("the detail is the whole list of problems, for the logs",
+    threw?.message?.includes("pack rejected on re-read"), threw?.message);
+
+  // The same refusal on a FIRST reading is a quiet non-event: nobody was shown a
+  // promise, the card is built from the caption exactly as it would have been.
+  M.spy.mediaSteps = 0;
+  const first = await M.runPackTier(job, p, { caption: null }, card);
+  eq("a first save whose pack is refused still finishes", first.ran, true);
+  eq("and hands back the card it was given", first.card, card);
+  eq("and the step was still charged for, because it still ran", M.spy.mediaSteps, 1);
+
+  // What the user actually sees. A "failed" card renders the apology INSTEAD of
+  // the workout, so this failure comes back ready with the reason on it.
+  M.spy.patchedMany = [];
+  await M.failJob(job, threw);
+  const rows = M.spy.patchedMany.filter((x: any) => x.t === "workouts");
+  const jobs = M.spy.patchedMany.filter((x: any) => x.t === "ingest_jobs");
+  eq("the job is dead on the first attempt rather than retried three times",
+    jobs[0]?.patch?.status, "dead");
+  eq("the card comes back ready, not failed", rows[0]?.patch?.ingest_status, "ready");
+  check("carrying the reason where a card says what it is missing",
+    String(rows[0]?.patch?.ingest_error).includes(refused), JSON.stringify(rows[0]?.patch));
+  eq("and nothing is left watching a video that finished", rows[0]?.patch?.media_stage, null);
+
+  // Every other soft failure keeps the ladder it had: retried to the cap, and
+  // then a failed card with its own sentence on it.
+  M.spy.patchedMany = [];
+  await M.failJob({ ...job, attempts: 3 },
+    new M.SoftFailure("Some images could not be read. Try again shortly."));
+  const ordinary = M.spy.patchedMany.filter((x: any) => x.t === "workouts")[0];
+  eq("an ordinary soft failure at the cap still fails the card",
+    ordinary?.patch?.ingest_status, "failed");
+  eq("and still says what it knew", ordinary?.patch?.ingest_error,
+    "Some images could not be read. Try again shortly.");
+
+  M.spy.patchedMany = [];
+  await M.failJob({ ...job, attempts: 0 },
+    new M.SoftFailure("Some images could not be read. Try again shortly."));
+  eq("and below the cap it is queued again rather than given up on",
+    M.spy.patchedMany.filter((x: any) => x.t === "ingest_jobs")[0]?.patch?.status, "queued");
+  check("with the card left alone while it waits",
+    !M.spy.patchedMany.some((x: any) => x.t === "workouts"), JSON.stringify(M.spy.patchedMany));
+}
+
+// ---------- 18. the card version ----------
+//
+// The cue and the delta both changed shape under the same prompt, so a card
+// cached before them reads correctly and says it worse. Bumped, they rebuild on
+// the next save; the PACK version is untouched, because the reading itself is
+// still right and cost real money.
+
+eq("cards cached before the cue and delta fixes are a miss now", M.CARD_V, 9);
+eq("but the reading they were built from is still the shape this build stores",
+  PACK_V, 1);
 
 // With the transcript out, the prompt says nothing about what the creator called
 // the movement — which is how to find out whether "push ups" was anchoring the

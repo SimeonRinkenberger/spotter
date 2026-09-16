@@ -30,10 +30,12 @@
 //      paraphrase attributed to a creator is a fabrication with their name on it,
 //      so a quote that cannot be found in the transcript is dropped rather than
 //      softened.
-//   3. **A bad pack is worse than no pack.** validatePack rejects the whole thing
-//      when a timestamp falls outside the video, when segments overlap, or when a
-//      cue cannot be located. The caller then stores nothing and the card is built
-//      the way it was built yesterday.
+//   3. **A bad pack is worse than no pack — but a repairable one is not a bad
+//      one.** repairPack puts the movements in time order, clips a segment that
+//      runs into the next and merges two readings of one movement; validatePack
+//      then rejects the whole thing when a timestamp falls outside the video, when
+//      segments still overlap, or when a cue cannot be located. The caller stores
+//      nothing and the card is built the way it was built yesterday.
 //
 // Pure and side-effect free throughout, so tools/pack-harness.ts can exercise every
 // line of it against the golden fixture without a network or a key.
@@ -108,15 +110,57 @@ export type PackVariant = {
 export type PackCue = { t: number; quote: string };
 
 /**
- * Which eye read this video.
+ * Which eye read this video, and which model was behind it.
  *
  * The native shells cut frames on the phone — AVAssetImageGenerator and
  * MediaMetadataRetriever, both free — and send contact sheets with the save, so
- * Luna reads images and nobody pays to move a video anywhere. Gemini video is the
- * fallback for saves that arrive without frames: the web app during the
- * transition, and anything the phone could not fetch itself.
+ * the sheets reader works on images and nobody pays to move a video anywhere.
+ * Gemini video is the fallback for saves that arrive without frames: the web app
+ * during the transition, and anything the phone could not fetch itself.
+ *
+ * The label names the MODEL because the two readers are being measured against
+ * each other and `pack.sheets_model` decides which one runs: the first live read
+ * after that switch was labelled `luna_sheets` while Gemini was the thing that
+ * had actually looked at the frames, which is a pack telling the owner's own
+ * A/B the wrong answer. So the shape is `<eye>:<model>` — `sheets:gpt-5.6-luna`,
+ * `sheets:gemini-3.6-flash`, `video:gemini-3.6-flash` — and the two bare names
+ * stay readable forever, because packs carrying them are in the global cache and
+ * cost real money to produce.
  */
-export type PackReader = "luna_sheets" | "gemini_video" | "none";
+export type PackEye = "sheets" | "video" | "none";
+export type PackReader =
+  | "none"
+  | "luna_sheets"
+  | "gemini_video"
+  | `sheets:${string}`
+  | `video:${string}`;
+
+/** The label for a read that just happened: which eye, and what it ran on. */
+export function packReader(eye: PackEye, model?: string | null): PackReader {
+  if (eye === "none") return "none";
+  const m = String(model ?? "").trim();
+  return (eye + ":" + (m || "unknown")) as PackReader;
+}
+
+/**
+ * Which eye a label names, old form or new.
+ *
+ * Every switch on a reader goes through here rather than comparing strings, so
+ * the day a third model is configured nothing downstream has to be told about it.
+ */
+export function readerEye(reader: string | null | undefined): PackEye {
+  const r = String(reader ?? "").trim().toLowerCase();
+  if (r === "luna_sheets" || r.startsWith("sheets:")) return "sheets";
+  if (r === "gemini_video" || r.startsWith("video:")) return "video";
+  return "none";
+}
+
+/** The model a label names, when it names one. `luna_sheets` names none. */
+export function readerModel(reader: string | null | undefined): string | null {
+  const r = String(reader ?? "").trim();
+  const i = r.indexOf(":");
+  return i > 0 ? r.slice(i + 1) || null : null;
+}
 
 export type PackExercise = {
   i: number;
@@ -869,6 +913,12 @@ function equipmentOf(seg: ObservationSegment, seen: string[]): string[] {
   return out;
 }
 
+/** Whether the camera actually reported anything about how this was done. */
+function variantSeen(v: PackVariant): boolean {
+  return !!(v.equipment.length || v.hand_placement || v.surface || v.load_position ||
+    v.stance || v.range_of_motion);
+}
+
 function variantOf(seg: ObservationSegment, seen: string[]): PackVariant {
   const surfaceFact = contactFacts(seg.contact).find((f) => SURFACE_WORD.test(f)) ?? null;
   const grip = seg.hand_placement.match(GRIP_WORD);
@@ -1230,9 +1280,6 @@ export function assemblePack(input: AssembleInput): Pack {
       .map((s) => s.text).join(" ");
     const seenNotSaid = notSaid(contactFacts(seg.contact), windowText);
 
-    const variantSeen = !!(variant.equipment.length || variant.hand_placement ||
-      variant.surface || variant.load_position || variant.stance || variant.range_of_motion);
-
     exercises.push({
       i,
       name_said: said,
@@ -1248,7 +1295,7 @@ export function assemblePack(input: AssembleInput): Pack {
       provenance: {
         name: said ? "said" : "seen",
         reps: seg.reps_visible === null ? "none" : (schemeSaysReps ? "said" : "seen"),
-        variant: variantSeen ? "seen" : "none",
+        variant: variantSeen(variant) ? "seen" : "none",
         cues: mine.length ? "said" : "none",
       },
       confidence: round2(Math.max(0, Math.min(1, seg.confidence))),
@@ -1263,7 +1310,9 @@ export function assemblePack(input: AssembleInput): Pack {
     platform: input.platform,
     duration_s: duration,
     visual: obs ? "read" : "unavailable",
-    reader: input.reader ?? (obs ? "gemini_video" : "none"),
+    // A caller that read something and did not say what with is recorded as a
+    // video read by a model nobody wrote down, which is the truth about it.
+    reader: input.reader ?? (obs ? packReader("video", null) : "none"),
     session: {
       format: obs?.session.format ?? null,
       scheme: obs?.session.scheme ?? null,
@@ -1307,7 +1356,188 @@ function notSaid(facts: string[], windowText: string): string[] {
   return out;
 }
 
-// ---------- verification ----------
+// ---------- repair, then verification ----------
+
+/**
+ * One second of slack everywhere. A cut is a moment rather than an instant: two
+ * movements genuinely share the frame for about that long, and a VTT cue routinely
+ * runs a few frames past the last frame of the video.
+ */
+export const PACK_SLACK_S = 1;
+
+export type PackRepair = { pack: Pack; repairs: string[] };
+
+/** `Kettlebell Overhead Press 0:26–0:35`, for a log line a person can act on. */
+function spanOf(ex: PackExercise): string {
+  return (ex.name_shown || "unnamed") + " " + secondsToMmss(ex.t0) + "–" + secondsToMmss(ex.t1);
+}
+
+/**
+ * Two segments the readers cut apart that are one movement.
+ *
+ * The head noun is the test, not the whole name: a reader that saw "press" at 0:26
+ * and "kettlebell overhead press" at 0:28 saw one set of presses and wrote it down
+ * twice. A shared catalog id settles it outright.
+ */
+function oneMovement(a: PackExercise, b: PackExercise): boolean {
+  if (a.canonical_id && a.canonical_id === b.canonical_id) return true;
+  const names = (e: PackExercise) => [e.name_shown, e.name_said].filter(Boolean) as string[];
+  for (const x of names(a)) for (const y of names(b)) if (sharesHeadNoun(x, y)) return true;
+  return false;
+}
+
+/** The union of two readings of the same equipment, in first-seen order. */
+function mergeVariant(base: PackVariant, other: PackVariant): PackVariant {
+  const equipment = base.equipment.slice();
+  for (const e of other.equipment) if (!equipment.includes(e)) equipment.push(e);
+  return {
+    equipment,
+    hand_placement: base.hand_placement ?? other.hand_placement,
+    surface: base.surface ?? other.surface,
+    grip_width: base.grip_width ?? other.grip_width,
+    load_position: base.load_position ?? other.load_position,
+    stance: base.stance ?? other.stance,
+    unilateral: base.unilateral ?? other.unilateral,
+    tempo: base.tempo ?? other.tempo,
+    range_of_motion: base.range_of_motion ?? other.range_of_motion,
+  };
+}
+
+/**
+ * Two halves of one movement, put back together.
+ *
+ * The longer name wins because it is the more specific one — "Kettlebell Overhead
+ * Press" says everything "Press" says and one thing more — and the reader of a
+ * card gets exactly one line per movement. Everything else is a union, except the
+ * confidence, which takes the lower of the two: a reading that had to be repaired
+ * is not more trustworthy than its worse half.
+ */
+function mergeExercises(a: PackExercise, b: PackExercise): PackExercise {
+  const longer = (b.name_shown ?? "").length > (a.name_shown ?? "").length ? b : a;
+  const other = longer === a ? b : a;
+  const variant = mergeVariant(longer.variant, other.variant);
+  const id = longer.canonical_id ?? other.canonical_id;
+
+  const cues: PackCue[] = [];
+  for (const c of [...a.creator_cues, ...b.creator_cues].sort((x, y) => x.t - y.t)) {
+    if (cues.some((k) => normText(k.quote) === normText(c.quote))) continue;
+    cues.push(c);
+    if (cues.length >= 3) break;
+  }
+  const seen: string[] = [];
+  for (const f of [...a.seen_not_said, ...b.seen_not_said]) {
+    if (seen.some((k) => sameish(f, k))) continue;
+    seen.push(f);
+    if (seen.length >= 4) break;
+  }
+  // Two counts of one set of reps: the higher of them is the one that saw more of
+  // it, and neither is invented, so nothing here can make up a number.
+  const reps = a.reps_seen === null
+    ? b.reps_seen
+    : b.reps_seen === null ? a.reps_seen : Math.max(a.reps_seen, b.reps_seen);
+  const said = longer.name_said ?? other.name_said;
+
+  return {
+    i: a.i,
+    name_said: said,
+    name_shown: longer.name_shown,
+    canonical_id: id,
+    t0: round2(Math.min(a.t0, b.t0)),
+    t1: round2(Math.max(a.t1, b.t1)),
+    reps_seen: reps,
+    variant,
+    delta_from_standard: deltaFrom(id, variant),
+    creator_cues: cues,
+    seen_not_said: seen,
+    provenance: {
+      name: said ? "said" : "seen",
+      reps: reps === null ? "none" : (a.reps_seen !== null ? a.provenance.reps : b.provenance.reps),
+      variant: variantSeen(variant) ? "seen" : "none",
+      cues: cues.length ? "said" : "none",
+    },
+    confidence: round2(Math.min(a.confidence, b.confidence)),
+    needs_requery: a.needs_requery || b.needs_requery,
+  };
+}
+
+/**
+ * What can be fixed, fixed — before anything is thrown away.
+ *
+ * The rule used to be that a pack either verified or was dropped whole, and the
+ * first live sheets read cost the owner a card for it: Gemini read three contact
+ * sheets correctly, named the overhead press twice as the strip crossed it, and
+ * `validatePack` answered "segments overlap at Kettlebell Overhead Press" and
+ * refused the lot. That is the wrong trade. An overlap is a clock error in a
+ * reading whose FACTS — hands on the handle, the bell overhead — are the whole
+ * reason the pack exists, and a clock error has an obvious repair.
+ *
+ * So: the movements are put in time order; a segment that runs into the next one
+ * is clipped to where the next one starts; and two segments that are mostly the
+ * same span and share a head noun were one movement read twice, so they become
+ * one. What is left for the verifier is what no repair can honestly invent — a
+ * time outside the video, a span still tangled after all of that, a sentence the
+ * creator never said.
+ *
+ * Every repair is returned as a sentence with names and times in it, because a
+ * silent repair is how a reading drifts from the video without anybody noticing.
+ */
+export function repairPack(pack: Pack | null | undefined): PackRepair {
+  const repairs: string[] = [];
+  if (!pack || typeof pack !== "object" || !Array.isArray(pack.exercises)) {
+    return { pack: pack as Pack, repairs };
+  }
+  if (pack.exercises.length < 2) return { pack, repairs };
+
+  // A reading that reports a time the video does not have is not one arithmetic
+  // can fix. Clipping such a segment to its neighbour would land it back inside
+  // the video and hide the only signal that this clock cannot be trusted at all,
+  // so a pack with a time outside the duration goes to the verifier untouched.
+  const dur = Number(pack.duration_s);
+  const cap = (Number.isFinite(dur) ? dur : 0) + PACK_SLACK_S;
+  const timed = (t: unknown) => typeof t === "number" && Number.isFinite(t) && t >= 0 && t <= cap;
+  if (pack.exercises.some((e) => !timed(e.t0) || !timed(e.t1) || e.t1 < e.t0)) {
+    return { pack, repairs };
+  }
+
+  // Shallow copies: clipping writes a t1 and merging builds fresh arrays, so
+  // nothing nested is ever mutated and the caller's pack is left as it was.
+  const sorted = pack.exercises.map((e) => ({ ...e }))
+    .sort((a, b) => (a.t0 - b.t0) || (a.t1 - b.t1) || (a.i - b.i));
+  if (sorted.some((e, k) => e.i !== pack.exercises[k].i)) {
+    repairs.push("sorted " + sorted.length + " movements into time order");
+  }
+
+  const kept: PackExercise[] = [];
+  for (const seg of sorted) {
+    const prev = kept[kept.length - 1];
+    if (!prev) { kept.push(seg); continue; }
+    // Sorted, so seg starts at or after prev: the shared span is whatever of prev
+    // is still running when seg begins.
+    const overlap = Math.min(prev.t1, seg.t1) - seg.t0;
+    if (overlap > 0) {
+      const shorter = Math.min(prev.t1 - prev.t0, seg.t1 - seg.t0);
+      if ((shorter <= 0 || overlap > shorter / 2) && oneMovement(prev, seg)) {
+        const merged = mergeExercises(prev, seg);
+        repairs.push("merged " + spanOf(seg) + " into " + spanOf(prev) +
+          " — one movement read twice, now " + spanOf(merged));
+        kept[kept.length - 1] = merged;
+        continue;
+      }
+      if (overlap > PACK_SLACK_S) {
+        repairs.push("clipped " + spanOf(prev) + " to end at " + secondsToMmss(seg.t0) +
+          ", where " + (seg.name_shown || "the next movement") + " starts");
+        prev.t1 = round2(seg.t0);
+      }
+    }
+    kept.push(seg);
+  }
+
+  if (!repairs.length) return { pack, repairs };
+  // Renumbered, because `i` is how a downstream call tells one segment from
+  // another and two movements that became one must not both answer to the same
+  // number. Only ever touched on a pack that was already being rewritten.
+  return { pack: { ...pack, exercises: kept.map((e, k) => ({ ...e, i: k })) }, repairs };
+}
 
 export type PackCheck = { ok: boolean; problems: string[] };
 
@@ -1320,6 +1550,9 @@ export type PackCheck = { ok: boolean; problems: string[] };
  * a timestamp past the end of the clip, a sentence the creator never said. So the
  * checks are the three that catch those, the answer is all-or-nothing, and the
  * caller logs the problems rather than storing a pack with a warning on it.
+ *
+ * Asked AFTER repairPack, never instead of it. Everything this function refuses
+ * is something no repair could have invented an honest answer for.
  */
 export function validatePack(pack: Pack | null | undefined): PackCheck {
   const problems: string[] = [];
@@ -1328,7 +1561,7 @@ export function validatePack(pack: Pack | null | undefined): PackCheck {
   if (!Number.isFinite(dur) || dur <= 0) problems.push("duration_s is not a positive number");
   // One second of slack everywhere: a VTT cue routinely runs a few frames past the
   // last frame of the video, and rejecting a pack for that would reject every pack.
-  const cap = (Number.isFinite(dur) ? dur : 0) + 1;
+  const cap = (Number.isFinite(dur) ? dur : 0) + PACK_SLACK_S;
   const inRange = (t: unknown) => typeof t === "number" && Number.isFinite(t) && t >= 0 && t <= cap;
 
   for (const s of pack.transcript ?? []) {
@@ -1346,7 +1579,9 @@ export function validatePack(pack: Pack | null | undefined): PackCheck {
     if (ex.t1 < ex.t0) problems.push("segment ends before it starts: " + ex.name_shown);
     // Ordered and non-overlapping, with a second of slack — a cut is a moment, not
     // an instant, and two movements genuinely share the frame for about that long.
-    if (ex.t0 + 1 < prevEnd) problems.push("segments overlap at " + ex.name_shown);
+    // repairPack has already clipped and merged what it could; an overlap that
+    // survives that is two readings that cannot both be true.
+    if (ex.t0 + PACK_SLACK_S < prevEnd) problems.push("segments overlap at " + ex.name_shown);
     prevEnd = ex.t1;
     for (const c of ex.creator_cues ?? []) {
       if (!inRange(c.t)) problems.push("cue outside the video at " + c.t);
