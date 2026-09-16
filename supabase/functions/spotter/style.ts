@@ -899,6 +899,30 @@ export const STYLE = String.raw`<style>
     line-height: 1.4; }
   .saidq { font-size: 15px; line-height: 1.55; color: var(--ink); word-break: break-word; }
   .said .chip, #watchbody .chip { margin-top: 11px; padding: 11px 15px; }
+  /* ---------- as performed ----------
+     The section between what the creator SAID and a stranger's demonstration, and
+     the only one that can contradict the clip below it. It is not quoted, so it does
+     not wear the ember rule the said block wears: this is Spotter reporting what it
+     saw, and the ink weight is the difference between a quote and an observation.
+
+     The chips are the app's own .chip, unchanged: they are the same object the
+     filter row and the said block already use, and a second pill that looked almost
+     like the first would be a second pill to keep in step. They wrap rather than
+     scroll — there are at most four and they are at most three words each, and a
+     horizontal scroller for that is a scrollbar nobody asked for. */
+  .perf { margin-bottom: 18px; }
+  .perfchips { display: flex; flex-wrap: wrap; gap: 7px; }
+  /* ---------- the delta and the second, on a card row ---------- */
+  .exmarks { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+  /* One line, truncated: the sheet says the delta in full, and a row whose height
+     depends on how long a delta turned out to be makes the list breathe unevenly. */
+  .dchip { min-width: 0; border-radius: 999px; padding: 3px 9px;
+    background: var(--ember-soft); color: var(--ember-ink); font-size: 11px; font-weight: 650;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* The second is pushed to the end, where a reader's eye already goes for a
+     duration, and set in tabular digits so a column of them lines up. */
+  .t { flex: 0 0 auto; margin-left: auto; font-size: 11px; font-weight: 650;
+    color: var(--muted); font-variant-numeric: tabular-nums; }
   /* ---------- the demonstration clip ----------
      One 16:9 slot, a byline, the other creators who filmed it, a way out — the shape
      Hevy, Fitbod and Nike Training Club all settled on for the demo inside an exercise
@@ -915,6 +939,14 @@ export const STYLE = String.raw`<style>
   .vslot > div { overflow: hidden; min-height: 0; }
   .ytbox { padding-top: 2px; }
   .ytbox .saidlab { margin-bottom: 7px; }
+  /* What the clip is, when it is not simply this exercise, and how the creator's
+     version differed. Both sit between a header and the thing they qualify, because
+     that is the order the claim is made in: "the standard version" first, then whose
+     version differs and how. */
+  .ytrel, .perfdelta { font-size: 12.5px; line-height: 1.5; color: var(--ink-2);
+    overflow-wrap: anywhere; }
+  .ytrel { margin: -3px 0 9px; }
+  .perfdelta { margin-top: 9px; }
   .ytface { display: block; width: 100%; margin: 0; padding: 0; border: 0; background: none;
     text-align: left; color: inherit; font: inherit;
     transition: transform var(--t-1) var(--e-out), opacity var(--t-2) var(--e-soft); }
@@ -980,7 +1012,33 @@ export const STYLE = String.raw`<style>
      shadow: the slot clips its own overflow, and a clipped shadow is a hard edge. */
   .ytbox .embedwrap.wide { margin-bottom: 0; border-radius: 14px; box-shadow: none;
     border: 1px solid var(--line); }
+  /* ---------- was that right? ----------
+     Under the explanation, never beside it: the verdict is about the paragraph above
+     and a control that floats next to prose reads as part of the prose. The row
+     fades in with the text rather than being there waiting, because there is nothing
+     to have an opinion about until the words arrive.
+
+     All three are .chip, which already carries the padding, the press and the lit
+     state: a thumb is a filter pill that happens to hold a mark, and inventing a
+     second pill for it would be a second pill to keep in step with the first. */
+  .votes { display: flex; align-items: center; gap: 8px; margin-top: 16px;
+    animation: msgin var(--t-3) var(--e-out) both; }
+  /* Square, because the label is the icon. The height has to be stated: a chip is
+     as tall as its padding makes it, and a chip with no padding is as tall as a
+     16px glyph. Drawn 36, hit 44 — Apple's floor, from the ::after the filter chips
+     already use, inset the 4px that makes 36 into 44 in both directions. */
+  .vote { width: 36px; height: 36px; padding: 0; justify-content: center; }
+  .vote .ic { width: 16px; height: 16px; }
+  /* A thumbs-down is a thumbs-up reflected in its own middle — the two paths are the
+     same fourteen curves with every y mirrored about 12 — so the page carries one
+     symbol and this turns it over. Nothing about the drawing changes; it is one
+     fewer copy of a path to keep in step with the other. */
+  .vote.down .ic { transform: scaleY(-1); }
+  /* The way out, at the end of the row: a reader who knows the movement better than
+     Spotter does should be able to fix the card, not only mark the answer wrong. */
+  .votefix { margin-left: auto; }
   @media (prefers-reduced-motion: reduce) {
+    .votes { animation: none; }
     .vslot { transition: none; }
     .ytface { transition: none; }
     .ytface:active { transform: none; }
@@ -2081,10 +2139,11 @@ export const STYLE = String.raw`<style>
      Insets come off the padding box: a bordered control needs a pixel more. */
   .iconbtn, .addbtn, .exhelp, .planx, .planadd, .mbtn, .addex, .danger, .libcount,
   .planlegal a, .planlegal button, .segbtn, .planbtn,
-  .chips .chip, .said .chip, .pumpyctx button, .threadrow .tdel, .ttitle { position: relative; }
+  .chips .chip, .said .chip, .votes .chip, .pumpyctx button, .threadrow .tdel, .ttitle { position: relative; }
   .iconbtn::after, .addbtn::after, .exhelp::after, .planx::after, .planadd::after,
   .segbtn::after, .planbtn::after,
   .mbtn::after, .addex::after, .danger::after, .chips .chip::after, .said .chip::after,
+  .votes .chip::after,
   .pumpyctx button::after, .threadrow .tdel::after, .ttitle::after,
   .libcount::after, .planlegal a::after, .planlegal button::after { content: ""; position: absolute; }
   .libcount::after { inset: -9px; }
@@ -2097,7 +2156,10 @@ export const STYLE = String.raw`<style>
   .segbtn::after, .planbtn::after { inset: -6px 0; }
   .mbtn::after { inset: -6px 0; }
   .danger::after, .threadrow .tdel::after { inset: -3px 0; }
-  .chips .chip::after, .said .chip::after { inset: -6px 0; }
+  .chips .chip::after, .said .chip::after, .votes .chip::after { inset: -6px 0; }
+  /* A square control needs the inset on all four sides: 36 + 4 + 4 is 44 across as
+     well as down, and -6px 0 would have left the thumbs 36 wide and 28 tall. */
+  .votes .vote::after { inset: -4px; }
   .pumpyctx button::after { inset: -7px; }
   /* Up into the label, which is text and not a control; down to the dose line. */
   .ttitle::after { inset: -14px 0 -5px; }

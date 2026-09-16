@@ -87,6 +87,7 @@ export const MARKUP_BODY = String.raw`</head>
 <symbol id="i-volume-2" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5.2a10 10 0 0 1 0 13.6"/></symbol>
 <symbol id="i-volume-x" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="m22 9-6 6"/><path d="m16 9 6 6"/></symbol>
 <symbol id="i-youtube" viewBox="0 0 24 24"><rect width="20" height="14" x="2" y="5" rx="4.5"/><path d="m10.2 9 4.6 3-4.6 3z"/></symbol>
+<symbol id="i-thumb-up" viewBox="0 0 24 24"><path d="M7 20v-9l4-8a2.5 2.5 0 0 1 2 3.5L12 11h6a2 2 0 0 1 2 2.5l-1.5 6a2 2 0 0 1-2 .5z"/><rect width="5" height="10" x="2" y="10" rx="1.5"/></symbol>
 </svg>
 
 <!-- ---------- signed out ---------- -->
@@ -427,9 +428,23 @@ export const MARKUP_BODY = String.raw`</head>
   <div class="grabber"></div>
   <h2 id="explaintitle">How to do it</h2>
   <div id="explainpre"></div>
+  <!-- What the camera saw, between what the creator SAID and the stranger's
+       demonstration: it is the second most specific thing on the sheet and the only
+       one that can contradict the clip below it. Empty and hidden on a card saved
+       before the pack existed. -->
+  <div id="explainperf"></div>
   <div class="vslot" id="explainvid"><div id="explainvidin"></div></div>
   <button class="setlink" id="explainask">Explain this exercise with Pumpy</button>
   <div class="aitext hide" id="explaintext" role="status"></div>
+  <!-- Thumbs and a way out. Every AI surface that people trust has both: a verdict
+       that costs one tap, and somewhere for a reader who knows better to put what
+       they know. The edit sheet is that somewhere — it already exists and it already
+       writes to the user's own copy of the card. -->
+  <div class="votes hide" id="explainvotes">
+    <button class="chip vote" id="explainup" aria-label="This explanation looks right" aria-pressed="false"><svg class="ic"><use href="#i-thumb-up"></use></svg></button>
+    <button class="chip vote down" id="explaindown" aria-label="This explanation looks wrong" aria-pressed="false"><svg class="ic"><use href="#i-thumb-up"></use></svg></button>
+    <button class="chip votefix" id="explainfix">Not quite right?</button>
+  </div>
   <div class="btnrow"><button class="btn ghost" id="swapgo"><svg class="ic"><use href="#i-swap"></use></svg>Swap or modify</button></div>
 </div></div>
 
