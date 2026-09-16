@@ -873,7 +873,7 @@ export const APP = String.raw`
     clearTimeout(pendTimer); pendTimer = null; pendPolls = 0; pendBusy = false;
     if (wkChannel) { sb.removeChannel(wkChannel); wkChannel = null; }
     booting = null; state.profile = null; state.workouts = []; state.logs = null;
-    state.plan = null; state.planLogs = []; state.awards = null; state.goal = null;
+    state.plan = null; state.awards = null; state.goal = null;
     state.unit = "lb"; state.sounds = true; state.haptics = true;
     state.collections = []; state.colItems = []; seenCards = {}; gridCards = {};
     expCache = {}; expWaiting = {}; vidCache = {}; expKey = "";
@@ -8139,12 +8139,12 @@ export const APP = String.raw`
   // anywhere west of London.
   function dayDate(key) { return new Date(key + "T12:00:00"); }
 
-  // ---------- plan · where you are looking ----------
+  // ---------- train · where you are looking ----------
   //
-  // iOS Calendar reaches its week by having the phone rotated; held upright it
-  // needs a control. An anchor each, not one, so coming back to Week lands on
-  // the week you were reading.
-  var planMode = "week", monthStart = null;
+  // Two anchors, because the page shows two spans at once: the strip is a week
+  // and the Calendar segment is the month that week belongs to. Move either and
+  // the other follows, so they can never describe different places.
+  var monthStart = null;
   // The week that speaks for a month: today's when today is in it, else the first.
   function weekInMonth(m) {
     var now = new Date();
@@ -8157,20 +8157,28 @@ export const APP = String.raw`
 
   function restorePlan() {
     // Open on this week, including after a tab visit or a new calendar day.
-    planMode = "week";
     state.weekStart = mondayOf(new Date());
     monthStart = monthOfWeek(state.weekStart);
   }
   restorePlan();
 
-  // Same two questions, one window: a month runs Monday-on-or-before-the-1st to
-  // Sunday-on-or-after-the-last, so the grid is always whole weeks.
+  // One window for both questions: a month runs Monday-on-or-before-the-1st to
+  // Sunday-on-or-after-the-last, so the grid is always whole weeks — and the week
+  // the strip is showing is always one of them, which is why the strip and the
+  // grid can be drawn from the same rows without a second fetch.
   function planRange() {
-    if (planMode === "month") {
-      var last = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0);
-      return { from: mondayOf(monthStart), to: addDays(mondayOf(last), 6) };
-    }
-    return { from: state.weekStart, to: addDays(state.weekStart, 6) };
+    var last = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0);
+    return { from: mondayOf(monthStart), to: addDays(mondayOf(last), 6) };
+  }
+
+  // The ISO week number, for the subtitle. Thursday is the day that decides which
+  // year a week belongs to, which is the whole rule: the week holding 1 January's
+  // Thursday is week 1, and 31 December can therefore be week 1 of the next year.
+  function isoWeek(d) {
+    var t = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    t.setDate(t.getDate() + 3 - ((t.getDay() + 6) % 7));
+    var jan4 = new Date(t.getFullYear(), 0, 4);
+    return 1 + Math.round(((t - jan4) / 86400000 - 3 + ((jan4.getDay() + 6) % 7)) / 7);
   }
 
   // What the visible range actually holds, cheaply. Arriving on a tab must not
@@ -8180,8 +8188,8 @@ export const APP = String.raw`
 
   function planShape() {
     var r = planRange();
-    return JSON.stringify([state.plan, state.planLogs, planMode, ymd(r.from), ymd(r.to),
-      state.workouts.length]);
+    return JSON.stringify([state.plan, ymd(state.weekStart), ymd(r.from), ymd(r.to),
+      trainSeg, state.logs && state.logs.length, state.workouts.length]);
   }
 
   function loadPlan(silent) {
@@ -8190,24 +8198,24 @@ export const APP = String.raw`
     if (!monthStart) monthStart = monthOfWeek(state.weekStart);
     var r = planRange(), from = ymd(r.from), to = ymd(r.to);
     var uid = state.user.id, epoch = accountEpoch, rev = planRev;
+    // One query, not two. The second one used to fetch a slim list of logs just
+    // for the ticks, which meant the strip, the grid and the ring could each hold
+    // a different opinion about the same Tuesday. state.logs is the one answer
+    // now, and isSession is the one rule — the ring's rule.
     return readOnce("plan:" + from + ":" + to + ":" + rev, function () {
-      return Promise.all([
-        sb.from("plan").select("*").eq("user_id", uid).gte("day", from).lte("day", to),
-        sb.from("workout_logs").select("id,started_at").eq("user_id", uid)
-          .gte("started_at", ymd(addDays(r.from, -1)) + "T00:00:00Z")
-          .lte("started_at", ymd(addDays(r.to, 1)) + "T23:59:59Z")
-      ]).then(function (rs) {
+      return sb.from("plan").select("*").eq("user_id", uid).gte("day", from).lte("day", to)
+        .then(function (r0) {
         if (!accountNow(epoch, uid) || rev !== planRev) return;
         var nowRange = planRange();
         if (from !== ymd(nowRange.from) || to !== ymd(nowRange.to)) return;
-        if (rs[0].error || rs[1].error) throw new Error("Plan unavailable");
-        state.plan = rs[0].data || []; state.planLogs = rs[1].data || [];
+        if (r0.error) throw new Error("Plan unavailable");
+        state.plan = r0.data || [];
         today.at = 0;
         var shape = planShape();
         if (silent && shape === planSig) return;
-        planSig = shape; renderPlan();
+        planSig = shape; renderTrain();
       }).catch(function () {
-        if (accountNow(epoch, uid)) toast("Could not refresh your plan. Try opening Plan again.");
+        if (accountNow(epoch, uid)) toast("Could not refresh your plan. Try opening Train again.");
       });
     });
   }
@@ -8217,101 +8225,202 @@ export const APP = String.raw`
     planRev++;
     today.at = 0;
     planSig = planShape();
-    renderPlan();
+    renderTrain();
   }
 
   function rowsFor(key) {
     return (state.plan || []).filter(function (p) { return p.day === key; });
   }
 
-  function loggedOn(key) {
-    return (state.planLogs || []).some(function (l) {
-      return l.started_at && ymd(new Date(l.started_at)) === key;
+  // The finished sessions of one LOCAL day. Comparing UTC dates ticked the wrong
+  // day every evening west of Greenwich, which is most of an evening's training.
+  function sessionsOn(key) {
+    return (state.logs || []).filter(function (l) {
+      return isSession(l) && l.started_at && ymd(new Date(l.started_at)) === key;
     });
+  }
+
+  function loggedOn(key) { return sessionsOn(key).length > 0; }
+
+  // state.logs is the newest 400. Past that horizon a day the plan asked for and
+  // no log answers is not a failure, it is a question we cannot answer — so it
+  // reads as planned rather than missed. Silence is not evidence.
+  function knowable(key) {
+    var logs = state.logs || [];
+    if (logs.length < 400) return true;
+    var oldest = logs[logs.length - 1];
+    return !oldest || !oldest.started_at || key >= ymd(new Date(oldest.started_at));
+  }
+
+  // ONE dot language, spoken by the week strip, the month grid and the legend
+  // under it. Five words and no sixth: done, done exactly as planned, planned,
+  // planned and missed, nothing.
+  function dayMark(key) {
+    var sessions = sessionsOn(key), planned = rowsFor(key);
+    if (sessions.length) {
+      for (var i = 0; i < planned.length; i++) {
+        for (var j = 0; j < sessions.length; j++) {
+          if (sessions[j].workout_id && sessions[j].workout_id === planned[i].workout_id) return "as";
+        }
+      }
+      return "on";
+    }
+    if (planned.length && key < ymd(new Date()) && knowable(key)) return "miss";
+    return planned.length ? "plan" : "";
   }
 
   function planWorkout(id) {
     return state.workouts.filter(function (x) { return x.id === id; })[0];
   }
 
-  // ---------- plan · the bar ----------
+  // ---------- train · the band ----------
   //
-  // Built once and kept, unlike the body under it: a pill replaced rather than
-  // moved cannot slide, and the slide is the point of the control.
+  // Built once and kept, unlike the body under it: a node replaced rather than
+  // moved cannot slide, and the slide is the point of these controls.
+  //
+  // Research, 16 Sept: Apple Fitness, Garmin Connect, Runna and Peloton all put
+  // a seven-day strip at the top of the training screen and let it carry the
+  // whole page under it. Runna and Garmin swipe it; Apple Fitness and Peloton
+  // tap it. Apple's own guidance is that a gesture supplements a control rather
+  // than replacing it, so this does both: swipe the band, or press an arrow.
 
-  var planBar = null, planBody = null, planSwap = false;
-  var barTitle = null, barPrev = null, barNext = null, barSeg = null, barToday = null, barCopy = null;
+  var trainSeg = null;
+  var trainBar = null, trainLean = null, trainBody = null, stripRow = null;
+  var cardBox = null, heroBox = null, segTrack = null, trainSwap = false;
+  var barTitle = null, barPrev = null, barNext = null, barToday = null;
 
-  function buildPlanBar() {
-    planBar = el("div", "planbar");
-    var top = el("div", "weekbar");
-    barPrev = icon(el("button", "iconbtn"), "arrow-left");
-    barPrev.onclick = function () { stepPlan(-1); };
-    barTitle = el("b");
-    barNext = icon(el("button", "iconbtn"), "arrow-right");
-    barNext.onclick = function () { stepPlan(1); };
-    top.appendChild(barPrev);
-    top.appendChild(barTitle);
-    top.appendChild(barNext);
-    // The one word that keeps the pager off this band, so the drag below can
-    // have it. Everything else about the pager is left alone.
-    top.setAttribute("data-noswipe", "");
-    wireWeekBar(top);
-    planBar.appendChild(top);
+  var DOW = ["M", "T", "W", "T", "F", "S", "S"];
+  var SEGS = [["calendar", "Calendar"], ["progress", "Progress"], ["records", "Records"]];
 
-    var row = el("div", "planctl");
-    // Apple's rule: up to five equal segments, title-case nouns, and no action
-    // among them — which is why Copy sits beside the pill, not inside it.
-    barSeg = el("div", "seg");
-    barSeg.setAttribute("role", "tablist");
-    barSeg.setAttribute("aria-label", "How to view the plan");
-    barSeg.appendChild(el("span", "segpill"));
-    ["week", "month"].forEach(function (m) {
-      var b = el("button", "segbtn", m === "week" ? "Week" : "Month");
-      b.setAttribute("role", "tab");
-      b.onclick = function () { setPlanMode(m); };
-      barSeg.appendChild(b);
-    });
-    row.appendChild(barSeg);
-
-    // What you do TO a plan, not how you look at it.
-    var acts = el("div", "planacts");
-    // Google Calendar keeps a way back to today in reach; it earns its place
-    // only while today is off screen, so it comes and goes.
-    barToday = el("button", "planbtn", "Today");
-    barToday.onclick = function () {
-      if (planMode === "month") monthStart = firstOf(new Date());
-      state.weekStart = mondayOf(new Date());
-      loadPlan();
-    };
-    acts.appendChild(barToday);
-    // Boostcamp duplicates a week; TrainHeroic and TrueCoach copy and ask where
-    // to paste. Copy is the word all three answer to.
-    barCopy = el("button", "planbtn", "Copy");
-    barCopy.onclick = function () { openCopy(); };
-    acts.appendChild(barCopy);
-    row.appendChild(acts);
-    planBar.appendChild(row);
-    return planBar;
+  // ---------- train · which segment ----------
+  //
+  // Peloton's profile remembers which of Progress / History / Achievements you
+  // were last on, and coming back to a different one is the small daily tax that
+  // makes people stop opening a tab. The profile is the truth so a second device
+  // opens where the first one left off; localStorage answers before the profile
+  // has landed, and an unknown word is not an error, it is just Calendar.
+  function readTrainSeg() {
+    var s = state.profile && state.profile.settings, v = s && s.trainSeg;
+    if (!v) { try { v = localStorage.getItem("spotter_trainseg"); } catch (e) { /* ignore */ } }
+    for (var i = 0; i < SEGS.length; i++) if (SEGS[i][0] === v) return v;
+    return "calendar";
   }
 
-  function stepPlan(n) {
-    if (planMode === "month") {
-      monthStart = new Date(monthStart.getFullYear(), monthStart.getMonth() + n, 1);
-      state.weekStart = weekInMonth(monthStart);
-    } else {
-      state.weekStart = addDays(state.weekStart, 7 * n);
+  function curSeg() {
+    if (!trainSeg) trainSeg = readTrainSeg();
+    return trainSeg;
+  }
+
+  // The tap is local at once and the column follows a beat later: settings is one
+  // JSON column written WHOLE, and three taps along the control are not three
+  // writes. saveSettings carries trainSeg itself, so a unit toggle cannot erase it.
+  var segSaveTimer = null;
+  function rememberSeg(name) {
+    try { localStorage.setItem("spotter_trainseg", name); } catch (e) { /* ignore */ }
+    if (!state.user) return;
+    clearTimeout(segSaveTimer);
+    segSaveTimer = setTimeout(function () { saveSettings(); }, 800);
+  }
+
+  function setTrainSeg(name) {
+    if (name === curSeg()) return;
+    trainSeg = name;
+    trainSwap = true;
+    // A segmented control is the one place iOS spends a selection tick, and the
+    // shells route this kind to the generator UIKit uses for its own.
+    haptic("select");
+    rememberSeg(name);
+    paintSeg();
+    drawTrainBody();
+    countStats();
+  }
+
+  // ---------- train · the page ----------
+
+  function buildTrain(v) {
+    v.innerHTML = "";
+    heroBox = el("div", "trainhero");
+    v.appendChild(heroBox);
+
+    trainBar = el("div", "weekbar");
+    barTitle = el("b");
+    trainBar.appendChild(barTitle);
+    // Google Calendar keeps a way back to today in reach; it earns its place only
+    // while today is off screen, so it comes and goes.
+    barToday = el("button", "planbtn", "Today");
+    barToday.onclick = function () {
+      state.weekStart = mondayOf(new Date());
       monthStart = monthOfWeek(state.weekStart);
-    }
+      loadPlan();
+    };
+    trainBar.appendChild(barToday);
+    var nav = el("div", "wbnav");
+    barPrev = icon(el("button", "iconbtn"), "arrow-left");
+    barPrev.setAttribute("aria-label", "The week before");
+    barPrev.onclick = function () { stepWeek(-1); };
+    barNext = icon(el("button", "iconbtn"), "arrow-right");
+    barNext.setAttribute("aria-label", "The week after");
+    barNext.onclick = function () { stepWeek(1); };
+    nav.appendChild(barPrev);
+    nav.appendChild(barNext);
+    trainBar.appendChild(nav);
+    // The one word that keeps the pager off this band, so the drag below can have
+    // it. Everything else about the pager is left alone.
+    trainBar.setAttribute("data-noswipe", "");
+    v.appendChild(trainBar);
+
+    // Everything the week owns leans together, because it is one week: the days,
+    // the card and whichever segment is open. The hero above stays put — its ring
+    // is always the calendar week, whatever week is being read.
+    trainLean = el("div", "trainlean");
+    stripRow = el("div", "wstrip");
+    stripRow.setAttribute("data-noswipe", "");
+    trainLean.appendChild(stripRow);
+    cardBox = el("div", "tcardwrap");
+    trainLean.appendChild(cardBox);
+
+    var segWrap = el("div", "trainseg");
+    segTrack = el("div", "seg");
+    segTrack.style.setProperty("--n", String(SEGS.length));
+    segTrack.setAttribute("role", "tablist");
+    segTrack.setAttribute("aria-label", "What to show for this week");
+    segTrack.appendChild(el("span", "segpill"));
+    SEGS.forEach(function (s) {
+      var b = el("button", "segbtn", s[1]);
+      b.setAttribute("role", "tab");
+      b.onclick = function () { setTrainSeg(s[0]); };
+      segTrack.appendChild(b);
+    });
+    segWrap.appendChild(segTrack);
+    trainLean.appendChild(segWrap);
+
+    trainBody = el("div", "trainbody");
+    trainLean.appendChild(trainBody);
+    v.appendChild(trainLean);
+
+    var ctx = { bar: trainBar, lean: trainLean, title: barTitle, step: stepWeek };
+    wireWeekBar(trainBar, ctx);
+    wireWeekBar(stripRow, ctx);
+  }
+
+  function stepWeek(n) {
+    state.weekStart = addDays(state.weekStart, 7 * n);
+    monthStart = monthOfWeek(state.weekStart);
     loadPlan();
   }
 
-  // ---------- plan · the bar is the control ----------
+  function stepMonth(n) {
+    monthStart = new Date(monthStart.getFullYear(), monthStart.getMonth() + n, 1);
+    state.weekStart = weekInMonth(monthStart);
+    loadPlan();
+  }
+
+  // ---------- train · the band is the control ----------
   //
   // Material lets a tab strip and the content under it each answer a sideways
-  // drag and mean different things by it. Here the content is the app's four
+  // drag and mean different things by it. Here the content is the app's three
   // tabs, so data-noswipe hands every drag starting on this band to the code
-  // below and the pager never sees one; a drag on the days still pages. The
+  // below and the pager never sees one; a drag anywhere else still pages. The
   // arrows stay: Apple asks a gesture to supplement a control, not replace it.
   //
   // Nothing is fetched for the week arriving, so the body leans the way the
@@ -8322,17 +8431,17 @@ export const APP = String.raw`
   // hold it, a fling or two fifths of the bar to commit.
   var WB_LEAD = 64, planSlide = 0;
 
-  function wireWeekBar(bar) {
+  function wireWeekBar(node, ctx) {
     var wd = null;
 
     function rest(keepBody) {
-      bar.classList.remove("wbdrag");
-      barTitle.style.transform = "";
+      ctx.bar.classList.remove("wbdrag");
+      ctx.title.style.transform = "";
       if (keepBody) return;
       // Timing back on before the offset goes, so it springs home rather than snaps.
-      planBody.classList.add("pbmove");
-      planBody.style.transform = "";
-      planBody.style.opacity = "";
+      ctx.lean.classList.add("pbmove");
+      ctx.lean.style.transform = "";
+      ctx.lean.style.opacity = "";
     }
 
     function stop(e, cancelled) {
@@ -8340,33 +8449,33 @@ export const APP = String.raw`
       var d = wd;
       wd = null;
       if (!d.lock) return;
-      try { bar.releasePointerCapture(d.id); } catch (err) { /* already gone */ }
-      // One click follows the finger up, and it belongs to whichever arrow the
-      // drag started on.
+      try { node.releasePointerCapture(d.id); } catch (err) { /* already gone */ }
+      // One click follows the finger up, and it belongs to whichever arrow or day
+      // the drag started on.
       swallowClick();
       var s = d.s, a = s[0], b = s[s.length - 1], dt = (b.t - a.t) / 1000;
       var v = dt > 0.004 ? (b.x - a.x) / dt : 0;
-      var far = Math.abs(d.dx) > bar.offsetWidth * PART;
+      var far = Math.abs(d.dx) > node.offsetWidth * PART;
       // Left is forwards, the way a calendar reads.
       var n = cancelled ? 0
         : (v < -FLING || (far && d.dx < 0)) ? 1
         : (v > FLING || (far && d.dx > 0)) ? -1 : 0;
       rest(!!n);
       if (!n) return;
-      // The title belongs to the finger, not to the fetch — the rule the
-      // segmented control already follows when it paints before it loads.
+      // The week belongs to the finger, not to the fetch — the rule the segmented
+      // control already follows when it paints before it loads.
       planSlide = n;
       if (!d.calm) {
-        planBody.classList.add("pbmove");
-        planBody.style.transform = "translateX(" + (n > 0 ? -WB_LEAD : WB_LEAD) + "px)";
-        planBody.style.opacity = "0";
+        ctx.lean.classList.add("pbmove");
+        ctx.lean.style.transform = "translateX(" + (n > 0 ? -WB_LEAD : WB_LEAD) + "px)";
+        ctx.lean.style.opacity = "0";
       }
-      stepPlan(n);
-      paintPlanBar();
+      ctx.step(n);
+      paintTrainBar();
       haptic("tap");
     }
 
-    bar.addEventListener("pointerdown", function (e) {
+    node.addEventListener("pointerdown", function (e) {
       if (e.pointerType !== "touch" && e.pointerType !== "pen") return;
       if (wd || !e.isPrimary || overlayShowing()) return;
       // Safari's back gesture owns the very edge inside a browser tab.
@@ -8375,61 +8484,46 @@ export const APP = String.raw`
         calm: lessMotion(), s: [{ t: now(), x: e.clientX }] };
     });
 
-    bar.addEventListener("pointermove", function (e) {
+    node.addEventListener("pointermove", function (e) {
       if (!wd || e.pointerId !== wd.id) return;
       var dx = e.clientX - wd.x, dy = e.clientY - wd.y;
       if (!wd.lock) {
         if (dx * dx + dy * dy < SLOP * SLOP) return;
         // Forty-five degrees and no wider. The pager leans to 65 because a page
-        // that will not turn is the worse fault there; this band is 44px tall and
-        // sits where people start a scroll, so a drag that leans down is theirs.
+        // that will not turn is the worse fault there; this band sits where people
+        // start a scroll, so a drag that leans down is theirs.
         if (Math.abs(dy) > Math.abs(dx)) { wd = null; return; }
         wd.lock = true;
         // Re-datum on the lock point so the week does not jump the slop.
         wd.x = e.clientX;
         dx = 0;
-        bar.classList.add("wbdrag");
-        planBody.classList.remove("pbmove");
-        try { bar.setPointerCapture(wd.id); } catch (err) { /* not fatal */ }
+        ctx.bar.classList.add("wbdrag");
+        ctx.lean.classList.remove("pbmove");
+        try { node.setPointerCapture(wd.id); } catch (err) { /* not fatal */ }
       }
       wd.dx = dx;
       wd.s.push({ t: now(), x: e.clientX });
       while (wd.s.length > 2 && wd.s[wd.s.length - 1].t - wd.s[0].t > VWIN) wd.s.shift();
       if (wd.calm) return;
       var lead = clamp(dx / 2, -WB_LEAD, WB_LEAD);
-      planBody.style.transform = "translateX(" + lead + "px)";
-      planBody.style.opacity = String(1 - Math.abs(lead) / 256);
-      barTitle.style.transform = "translateX(" + (lead * 0.18) + "px)";
+      ctx.lean.style.transform = "translateX(" + lead + "px)";
+      ctx.lean.style.opacity = String(1 - Math.abs(lead) / 256);
+      ctx.title.style.transform = "translateX(" + (lead * 0.18) + "px)";
     });
 
     // The page under this band scrolls, and WebKit settles that on the touch, not
     // on the pointer event before it: cancelling the touch while we hold the axis
-    // is the whole reason the bar can declare no touch-action, as the pager does.
-    bar.addEventListener("touchmove", function (e) {
+    // is the whole reason the band can declare no touch-action, as the pager does.
+    node.addEventListener("touchmove", function (e) {
       if (wd && wd.lock && e.cancelable) e.preventDefault();
     }, { passive: false });
 
-    bar.addEventListener("pointerup", function (e) { stop(e, false); });
-    bar.addEventListener("pointercancel", function (e) { stop(e, true); });
-  }
-
-  function setPlanMode(m) {
-    if (m === planMode) return;
-    if (m === "month") monthStart = monthOfWeek(state.weekStart);
-    else state.weekStart = weekInMonth(monthStart);
-    planMode = m;
-    planSwap = true;
-    // Painted before the fetch: the slide belongs to the tap, not to the rows.
-    paintPlanBar();
-    loadPlan();
+    node.addEventListener("pointerup", function (e) { stop(e, false); });
+    node.addEventListener("pointercancel", function (e) { stop(e, true); });
   }
 
   function showingToday() {
-    var now = new Date();
-    if (planMode === "month") {
-      return now.getFullYear() === monthStart.getFullYear() && now.getMonth() === monthStart.getMonth();
-    }
-    var key = ymd(now);
+    var key = ymd(new Date());
     return key >= ymd(state.weekStart) && key <= ymd(addDays(state.weekStart, 6));
   }
 
@@ -8439,67 +8533,234 @@ export const APP = String.raw`
 
   function weekLabel(w) { return shortDate(w) + " – " + shortDate(addDays(w, 6)); }
 
-  function paintPlanBar() {
-    var month = planMode === "month";
-    barTitle.textContent = month
-      ? monthStart.toLocaleDateString(undefined, { month: "long", year: "numeric" })
-      : weekLabel(state.weekStart);
-    barPrev.setAttribute("aria-label", month ? "The month before" : "The week before");
-    barNext.setAttribute("aria-label", month ? "The month after" : "The week after");
-    barSeg.classList.toggle("m", month);
-    var tabs = barSeg.querySelectorAll(".segbtn");
-    tabs[0].setAttribute("aria-selected", month ? "false" : "true");
-    tabs[1].setAttribute("aria-selected", month ? "true" : "false");
+  function dayLabel(d) {
+    return d.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+  }
+
+  // The one sentence a screen reader gets for a dot, wherever the dot is drawn.
+  function markWord(m) {
+    return m === "as" ? ", trained as planned" : m === "on" ? ", trained"
+      : m === "miss" ? ", planned and missed" : m === "plan" ? ", planned"
+      : ", nothing planned";
+  }
+
+  function paintTrainBar() {
+    barTitle.textContent = weekLabel(state.weekStart);
     barToday.classList.toggle("hide", showingToday());
+    $("count1").textContent = "Week " + isoWeek(state.weekStart);
   }
 
-  var trainSeg = "calendar";
-
-  function prepareTrain() {
-    return Promise.all([loadPlan(true), loadLogs()]).then(function () { renderTrain(); });
-  }
-
-  function renderTrain() { renderPlan(); renderProgress(); }
-
-  function renderPlan() {
-    var v = $("trainview");
-    if (!planBody || planBody.parentNode !== v) {
-      v.innerHTML = "";
-      v.appendChild(buildPlanBar());
-      planBody = el("div", "planbody");
-      v.appendChild(planBody);
+  function paintSeg() {
+    var seg = curSeg(), i;
+    for (i = 0; i < SEGS.length; i++) if (SEGS[i][0] === seg) break;
+    segTrack.style.setProperty("--s", String(i));
+    var tabs = segTrack.querySelectorAll(".segbtn");
+    for (var k = 0; k < tabs.length; k++) {
+      tabs[k].setAttribute("aria-selected", k === i ? "true" : "false");
     }
-    paintPlanBar();
-    planBody.innerHTML = "";
-    // Whatever a swipe left on it, taken back without animating the way back:
-    // the entrance below is the move, and a transition under it would fight it.
-    planBody.classList.remove("planswap", "planin", "pbmove");
-    planBody.style.transform = "";
-    planBody.style.opacity = "";
-    if (planMode === "month") renderMonth(planBody); else renderWeek(planBody);
-    // Under the plan, not in the bar: it is what you do once you have looked.
-    planBody.appendChild(pumpyProgramBtn(el("button", "planbtn wide"),
-      planMode === "month" ? weekInMonth(monthStart) : state.weekStart));
+  }
+
+  // ---------- train · the hero ----------
+  //
+  // The streak in weeks on the left, the ring on the right. A week is the unit
+  // everywhere in this app, and the ring is ALWAYS this calendar week however far
+  // back the strip is reading: a number that changed as you browsed would answer
+  // a question nobody asked.
+  function drawHero(st) {
+    heroBox.innerHTML = "";
+    heroBox.className = "trainhero" + (st.done >= st.goal ? " full" : "") +
+      (st.atRisk ? " risk" : "") + (st.unreachable ? " miss" : "");
+    var left = el("div", "wkleft");
+    if (st.streakWeeks > 0) {
+      left.appendChild(el("div", "wkbig", st.streakWeeks + " wk"));
+      var fz = (st.frozen || []).length;
+      left.appendChild(el("div", "wksub",
+        "streak" + (fz ? " · " + fz + (fz === 1 ? " freeze" : " freezes") : "")));
+    } else {
+      // No run to name yet, so the line says where this week stands instead.
+      left.appendChild(el("div", "wksub", ringLabel(st)));
+    }
+    heroBox.appendChild(left);
+
+    var ring = el("button", "ringwrap rsm");
+    ring.setAttribute("aria-label", "What counts as a session");
+    ring.appendChild(ringSvg(st.goal ? st.done / st.goal : 0));
+    var mid = el("div", "rmid");
+    if (st.done >= st.goal) mid.appendChild(icon(el("div", "rcheck"), "check"));
+    else {
+      mid.appendChild(el("div", "rnum", String(st.done)));
+      mid.appendChild(el("div", "rof", "of " + st.goal));
+    }
+    ring.appendChild(mid);
+    ring.onclick = function () { openSheet("countsheet"); };
+    heroBox.appendChild(ring);
+  }
+
+  // ---------- train · the seven days ----------
+
+  function drawStrip() {
+    stripRow.innerHTML = "";
+    var todayStr = ymd(new Date());
+    for (var i = 0; i < 7; i++) {
+      (function (i) {
+        var d = addDays(state.weekStart, i), key = ymd(d);
+        var cell = el("button", "wday" + (key === todayStr ? " today" : ""));
+        cell.appendChild(el("span", "wdl", DOW[i]));
+        cell.appendChild(el("span", "wdn", String(d.getDate())));
+        var m = dayMark(key);
+        cell.appendChild(el("span", "dmark" + (m ? " " + m : "")));
+        cell.setAttribute("aria-label", dayLabel(d) + markWord(m));
+        cell.onclick = function () { openDay(key); };
+        stripRow.appendChild(cell);
+      })(i);
+    }
+  }
+
+  // done / planned / as planned / missed, spelled out once under the grid. Four
+  // shapes carrying four meanings need a key, and a key is cheaper than four
+  // words in every cell.
+  function markLegend() {
+    var row = el("div", "dlegend");
+    [["on", "done"], ["plan", "planned"], ["as", "as planned"], ["miss", "missed"]]
+      .forEach(function (p) {
+        var s = el("span", "lg");
+        s.appendChild(el("i", "dmark " + p[0]));
+        s.appendChild(document.createTextNode(p[1]));
+        row.appendChild(s);
+      });
+    return row;
+  }
+
+  // ---------- train · today ----------
+  //
+  // Always today, whatever week the strip is showing: the question the app is
+  // opened with does not move when you go looking at October.
+  function todayRows() {
+    var key = ymd(new Date()), r = planRange();
+    if (key >= ymd(r.from) && key <= ymd(r.to)) return rowsFor(key);
+    // Paged away to another month, so the range no longer holds today. The
+    // Library's card reads the same two rows and keeps its own snapshot of them.
+    if (today.day === key) return today.rows;
+    loadToday();
+    return [];
+  }
+
+  function todayMeta(w, extra) {
+    return [w.author, fmtDur(w.duration_minutes), (w.equipment || [])[0] || w.category, extra]
+      .filter(Boolean).join(" · ");
+  }
+
+  function drawToday(st) {
+    var d = new Date(), key = ymd(d);
+    cardBox.innerHTML = "";
+    var list = [];
+    todayRows().forEach(function (p) {
+      var w = planWorkout(p.workout_id);
+      if (w) list.push({ row: p, w: w });
+    });
+    var done = loggedOn(key);
+    var card = el("div", "daycard today tcard" + (done && !list.length ? " done" : ""));
+    var head = el("div", "dayhead");
+    head.appendChild(el("div", "dayname", "Today · " +
+      d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })));
+    var more = icon(el("button", "iconbtn tmore"), "more");
+    more.setAttribute("aria-label", "More");
+    more.onclick = function () { openSheet("trainmore"); };
+    head.appendChild(more);
+    card.appendChild(head);
+
+    if (list.length) {
+      var w = list[0].w;
+      var body = el("div", "tbody");
+      var thumb;
+      if (w.thumb_url) { thumb = el("img", "tthumb"); thumb.src = w.thumb_url; thumb.alt = ""; }
+      else thumb = el("div", "tthumb");
+      body.appendChild(thumb);
+      var txt = el("div", "ttxt");
+      var t = el("button", "ttitle", w.title || "Workout");
+      t.onclick = function () { openDetail(w); };
+      txt.appendChild(t);
+      var meta = todayMeta(w, list.length > 1
+        ? "+" + (list.length - 1) + " more today" : null);
+      if (meta) txt.appendChild(el("div", "tdose", meta));
+      body.appendChild(txt);
+      card.appendChild(body);
+      var row = el("div", "tbtns");
+      // The detail overlay's own start call, so finishing lands in the same place.
+      var go = el("button", "btn tstart" + (done ? " ghost" : ""),
+        done ? "Log another" : "Start workout");
+      go.onclick = function () { startWorkout(w); };
+      row.appendChild(go);
+      var mv = el("button", "btn ghost tmove", "Move");
+      mv.onclick = function () { scheduleWorkout(w, list[0].row); };
+      row.appendChild(mv);
+      card.appendChild(row);
+    } else if (done) {
+      card.appendChild(el("div", "tdose",
+        "Done for today." + (st ? " " + weekLine(st) : "")));
+    } else {
+      // Nothing planned is not a problem to solve, but it is worth two doors.
+      card.appendChild(el("div", "tdose", "Rest day — add one, or ask Pumpy."));
+      var rest = el("div", "tbtns");
+      var add = el("button", "btn ghost", "Add a workout");
+      add.onclick = function () { openPicker(key, dayLabel(d)); };
+      rest.appendChild(add);
+      var ask = el("button", "btn ghost", "Ask Pumpy");
+      ask.onclick = function () { programWithPumpy(state.weekStart); };
+      rest.appendChild(ask);
+      card.appendChild(rest);
+    }
+    cardBox.appendChild(card);
+  }
+
+  // ---------- train · the render ----------
+
+  function renderTrain() {
+    if (!state.user) return;
+    var v = $("trainview");
+    if (!trainLean || trainLean.parentNode !== v) buildTrain(v);
+    paintTrainBar();
+    var st = state.logs ? weekStats(state.logs, state.plan, goalSetting(), new Date()) : null;
+    if (st) drawHero(st); else heroBox.innerHTML = "";
+    drawStrip();
+    drawToday(st);
+    paintSeg();
+    // Whatever a swipe left on it, taken back without animating the way back: the
+    // entrance below is the move, and a transition under it would fight it.
+    trainLean.classList.remove("planin", "pbmove");
+    trainLean.style.transform = "";
+    trainLean.style.opacity = "";
+    drawTrainBody();
     // A second window onto these same rows; redrawn here so the two agree.
     if ($("daysheet").classList.contains("open")) renderDay();
-    if (!$("pslot")) { var ps = el("div"); ps.id = "pslot"; v.appendChild(ps); }
     guidePage("train");
-    void planBody.offsetWidth;
-    // A swipe said which way time went, so the week arrives from that side. A
-    // tap on the segmented control did not, and gets the crossfade it always had.
+    void trainLean.offsetWidth;
+    // A swipe said which way time went, so the week arrives from that side. A tap
+    // on the segmented control did not, and gets the crossfade instead.
     if (planSlide) {
-      planBody.style.setProperty("--pin", (planSlide > 0 ? 26 : -26) + "px");
+      trainLean.style.setProperty("--pin", (planSlide > 0 ? 26 : -26) + "px");
       planSlide = 0;
-      planBody.classList.add("planin");
-    } else if (planSwap) { planSwap = false; planBody.classList.add("planswap"); }
-    else viewIn(planBody);
+      trainLean.classList.add("planin");
+    } else viewIn(trainLean);
+    countStats();
   }
 
-  // ---------- plan · the week ----------
+  function drawTrainBody() {
+    var seg = curSeg();
+    trainBody.innerHTML = "";
+    trainBody.classList.remove("planswap");
+    if (seg === "progress") drawProgressSeg(trainBody);
+    else if (seg === "records") drawRecordsSeg(trainBody);
+    else drawCalendarSeg(trainBody);
+    if (!trainSwap) return;
+    trainSwap = false;
+    void trainBody.offsetWidth;
+    trainBody.classList.add("planswap");
+  }
 
-  var DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+  // ---------- train · one row of a plan ----------
 
-  // One row, drawn the same on a day card and in the day sheet.
+  // One row, drawn the same on the today card's sheet and in the day sheet.
   function planItem(p) {
     var w = planWorkout(p.workout_id);
     if (!w) return null;
@@ -8540,14 +8801,14 @@ export const APP = String.raw`
     var kept = state.plan;
     state.plan = (state.plan || []).filter(function (q) { return q.id !== p.id; });
     today.at = 0;
-    renderPlan();
+    renderTrain();
     return sb.from("plan").delete().eq("id", p.id).then(function (r) {
       if (!accountNow(epoch, uid)) return;
       planRev++;
       if (range !== JSON.stringify(planRange())) { loadPlan(true); return; }
       if (r && r.error) {
         state.plan = kept;
-        renderPlan();
+        renderTrain();
         toast("That did not come off the day — it is still planned.");
         return;
       }
@@ -8555,59 +8816,42 @@ export const APP = String.raw`
     });
   }
 
-  function renderWeek(v) {
-    // Seven dashed boxes and no sentence assumes you know what they are for.
-    if (!(state.plan || []).length) {
-      v.appendChild(el("div", "planlede",
-        "Nothing planned this week. Put a workout on a day and it shows up here, " +
-        "with a tick once you have done it."));
-    }
-
-    var todayStr = ymd(new Date());
-    var planned = 0, done = 0;
-
-    for (var i = 0; i < 7; i++) {
-      (function (i) {
-        var d = addDays(state.weekStart, i);
-        var key = ymd(d);
-        var card = el("div", "daycard" + (key === todayStr ? " today" : ""));
-        var head = el("div", "dayhead");
-        var label = DAY_NAMES[i] + " " + d.getDate();
-        head.appendChild(el("div", "dayname", label));
-        if (loggedOn(key)) { head.appendChild(icon(el("div", "daydone"), "check", "done")); done++; }
-        card.appendChild(head);
-
-        var rows = rowsFor(key);
-        planned += rows.length;
-        rows.forEach(function (p) {
-          var item = planItem(p);
-          if (item) card.appendChild(item);
-        });
-
-        var add = el("button", "planadd", "+ Add a workout");
-        add.onclick = function () { openPicker(key, label); };
-        card.appendChild(add);
-        v.appendChild(card);
-      })(i);
-    }
-
-    v.appendChild(planSummary(planned + " planned · " + done + " done this week"));
-  }
-
-  function planSummary(text) {
-    var summary = el("div", "count", text);
-    summary.style.textAlign = "center";
-    summary.style.marginTop = "14px";
-    return summary;
-  }
-
-  // ---------- plan · the month ----------
+  // ---------- train · the calendar segment ----------
   //
-  // iOS Calendar's compact month: one cell a day, three marks at most, today
-  // ringed, the days either side present but quiet. A thumbnail where the card
-  // has one — pictures are recognisable in a way identical dots are not.
+  // iOS Calendar's compact month: one cell a day, one mark, today ringed, the
+  // days either side present but quiet. The thumbnails that used to fill a cell
+  // are gone: with a legend under the grid one dot says more than three pictures,
+  // and past and future finally read in the same language.
+  function drawCalendarSeg(v) {
+    var head = el("div", "weekbar");
+    head.appendChild(el("b", null,
+      monthStart.toLocaleDateString(undefined, { month: "long", year: "numeric" })));
+    var nav = el("div", "wbnav");
+    var prev = icon(el("button", "iconbtn"), "arrow-left");
+    prev.setAttribute("aria-label", "The month before");
+    prev.onclick = function () { stepMonth(-1); };
+    var next = icon(el("button", "iconbtn"), "arrow-right");
+    next.setAttribute("aria-label", "The month after");
+    next.onclick = function () { stepMonth(1); };
+    nav.appendChild(prev);
+    nav.appendChild(next);
+    head.appendChild(nav);
+    v.appendChild(head);
 
-  var DOW = ["M", "T", "W", "T", "F", "S", "S"];
+    var acts = el("div", "planacts");
+    // Boostcamp duplicates a week; TrainHeroic and TrueCoach copy and ask where
+    // to paste. Copy is the word all three answer to.
+    var copy = el("button", "planbtn", "Copy week");
+    copy.onclick = function () { openCopy(); };
+    acts.appendChild(copy);
+    acts.appendChild(pumpyProgramBtn(el("button", "planbtn"), state.weekStart, "Build with Pumpy"));
+    v.appendChild(acts);
+
+    renderMonth(v);
+    v.appendChild(markLegend());
+    // Under the plan, not in the bar: it is what you do once you have looked.
+    v.appendChild(pumpyProgramBtn(el("button", "planbtn wide"), state.weekStart));
+  }
 
   function renderMonth(v) {
     var r = planRange();
@@ -8619,7 +8863,6 @@ export const APP = String.raw`
     }
     var todayStr = ymd(new Date());
     var days = Math.round((r.to.getTime() - r.from.getTime()) / 86400000) + 1;
-    var planned = 0, done = 0;
 
     for (var i = 0; i < days; i++) {
       (function (i) {
@@ -8627,38 +8870,16 @@ export const APP = String.raw`
         var key = ymd(d);
         var out = d.getMonth() !== monthStart.getMonth();
         var cell = el("button", "mcell" + (out ? " out" : "") + (key === todayStr ? " today" : ""));
-        var top = el("div", "mtop");
-        top.appendChild(el("span", "mnum", String(d.getDate())));
-        var did = loggedOn(key);
-        // Beside the number, not among the marks: a mark says what is coming.
-        if (did) top.appendChild(ic("check"));
-        cell.appendChild(top);
-
-        var ws = rowsFor(key).map(function (row) { return planWorkout(row.workout_id); })
-          .filter(Boolean);
-        if (!out) { planned += ws.length; if (did) done++; }
-        var marks = el("div", "mmarks");
-        // Three, and no "+2": at 45px a cell holds the count or the pictures.
-        ws.slice(0, 3).forEach(function (w) {
-          if (!w.thumb_url) { marks.appendChild(el("span", "mdot")); return; }
-          var img = el("img");
-          img.src = w.thumb_url;
-          img.alt = "";
-          marks.appendChild(img);
-        });
-        cell.appendChild(marks);
-        // Three pictures and nothing a screen reader could read.
-        cell.setAttribute("aria-label", d.toLocaleDateString(undefined,
-          { weekday: "long", month: "long", day: "numeric" }) +
-          (ws.length ? ", " + ws.length + " planned" : ", nothing planned") +
-          (did ? ", trained" : ""));
+        cell.appendChild(el("span", "mnum", String(d.getDate())));
+        var m = dayMark(key);
+        cell.appendChild(el("span", "dmark" + (m ? " " + m : "")));
+        // One dot and nothing a screen reader could read.
+        cell.setAttribute("aria-label", dayLabel(d) + markWord(m));
         cell.onclick = function () { openDay(key); };
         grid.appendChild(cell);
       })(i);
     }
     v.appendChild(grid);
-    v.appendChild(planSummary(planned + " planned · " + done + " done in " +
-      monthStart.toLocaleDateString(undefined, { month: "long" })));
   }
 
   // ---------- plan · one day ----------
@@ -8678,12 +8899,28 @@ export const APP = String.raw`
   function renderDay() {
     if (!dayKey) return;
     var d = dayDate(dayKey);
-    var label = d.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+    var label = dayLabel(d);
     $("daytitle").textContent = label;
     var list = $("daylist");
     list.innerHTML = "";
+    // What happened, before what is meant to happen: "what did I do on the 15th"
+    // is the question a past day is tapped with, and the answer used to live two
+    // tabs away. Handed over rather than stacked — the recap pushes its own
+    // history entry, exactly as dayadd hands over to the picker.
+    var done = sessionsOn(dayKey);
+    done.forEach(function (l) {
+      var b = el("button", "histrow dayses"), n = el("div", "n"), sets = 0;
+      (l.entries || []).forEach(function (e) { sets += (e.sets || []).filter(Boolean).length; });
+      n.appendChild(el("b", null, l.workout_title || "Workout"));
+      n.appendChild(el("span", null, sets + (sets === 1 ? " set" : " sets") +
+        (l.duration_seconds ? " · " + Math.max(1, Math.round(l.duration_seconds / 60)) + " min" : "")));
+      b.appendChild(n);
+      b.appendChild(ic("chev"));
+      b.onclick = function () { closeSheet("daysheet"); openSession(l); };
+      list.appendChild(b);
+    });
     var rows = rowsFor(dayKey);
-    if (!rows.length) list.appendChild(el("p", "lede", "Nothing planned for this day."));
+    if (!rows.length && !done.length) list.appendChild(el("p", "lede", "Nothing planned for this day."));
     rows.forEach(function (row) {
       var item = planItem(row);
       if (item) list.appendChild(item);
@@ -8735,7 +8972,7 @@ export const APP = String.raw`
   var copyWkChips = null, copySumWk = null, copySumN = null, copyRowEls = null, copyRepEls = null;
 
   function openCopy() {
-    copySrc = planMode === "month" ? weekInMonth(monthStart) : state.weekStart;
+    copySrc = state.weekStart;
     copyDest = addDays(copySrc, 7);
     copyReps = 1;
     copyRows = null;
@@ -8758,19 +8995,17 @@ export const APP = String.raw`
     var head = $("copyhead");
     head.innerHTML = "";
     copyWkChips = null;
-    // In month view no week is "the" week yet, so the sheet asks which — a chip
-    // per week the month touches.
-    if (planMode === "month") {
-      var wks = el("div", "copywks");
-      copyWkChips = [];
-      monthWeeks().forEach(function (w) {
-        var c = el("button", "chip", shortDate(w));
-        c.onclick = function () { copySrc = w; copyDest = addDays(w, 7); paintCopy(); };
-        copyWkChips.push({ w: w, node: c });
-        wks.appendChild(c);
-      });
-      head.appendChild(wks);
-    }
+    // The strip's week is offered first, and every other week the month touches
+    // is a chip beside it: the sheet never assumes which week you meant.
+    var wks = el("div", "copywks");
+    copyWkChips = [];
+    monthWeeks().forEach(function (w) {
+      var c = el("button", "chip", shortDate(w));
+      c.onclick = function () { copySrc = w; copyDest = addDays(w, 7); paintCopy(); };
+      copyWkChips.push({ w: w, node: c });
+      wks.appendChild(c);
+    });
+    head.appendChild(wks);
     var sum = el("div", "copysum");
     copySumWk = el("b");
     copySumN = document.createTextNode("");
@@ -8909,13 +9144,14 @@ export const APP = String.raw`
     if (NO_TOUCH) box.focus();
   }
 
-  // Two places, one function, whichever node it is handed.
-  function pumpyProgramBtn(node, week) {
+  // Three places, one function, whichever node it is handed. The label is short
+  // where the button sits in a row of pills and long where it is the wide one.
+  function pumpyProgramBtn(node, week, label) {
     if (!node.childNodes.length) {
       var mark = el("span", "pumpmark");
       mark.innerHTML = PUMPY_MARK;
       node.appendChild(mark);
-      node.appendChild(document.createTextNode("Build a program with Pumpy"));
+      node.appendChild(document.createTextNode(label || "Build a program with Pumpy"));
     }
     node.onclick = function () { programWithPumpy(week); };
     return node;
@@ -8966,11 +9202,11 @@ export const APP = String.raw`
           { id: "tmp-" + Date.now(), day: day, workout_id: w.id, user_id: state.user.id }
         ]);
         today.at = 0;
-        renderPlan();
+        renderTrain();
         planAdd(day, w.id).then(function (r) {
           if (r.error) {
             state.plan = kept;
-            renderPlan();
+            renderTrain();
             toast("Could not add it to that day. Try again in a moment.");
             return;
           }
@@ -8982,30 +9218,40 @@ export const APP = String.raw`
     openSheet("picksheet");
   }
 
+  // One sheet, two errands. Handed a plan row it is a move — same date picker,
+  // and the old row goes only once the new one is in, so a failed write leaves
+  // the workout where it was rather than nowhere.
   var scheduleCtx = null;
-  function scheduleWorkout(w) {
-    scheduleCtx = { w: w, uid: state.user.id, epoch: accountEpoch };
+  function scheduleWorkout(w, from) {
+    var row = from && from.id && String(from.id).indexOf("tmp-") !== 0 ? from : null;
+    scheduleCtx = { w: w, from: row, uid: state.user.id, epoch: accountEpoch };
+    $("scheduletitle").textContent = row ? "Move workout" : "Schedule workout";
     $("schedulename").textContent = w.title || "Workout";
-    $("scheduledate").value = ymd(new Date());
+    $("scheduledate").value = row ? row.day : ymd(new Date());
     $("scheduleerror").textContent = "";
     $("schedulego").disabled = false;
-    $("schedulego").textContent = "Add to plan";
+    $("schedulego").textContent = row ? "Move" : "Add to plan";
     openSheet("schedulesheet");
   }
   $("schedulego").onclick = function () {
     var ctx = scheduleCtx, day = $("scheduledate").value, b = this;
     if (!ctx || !accountNow(ctx.epoch, ctx.uid) || b.disabled) return;
+    var word = ctx.from ? "Move" : "Add to plan";
     if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) { $("scheduleerror").textContent = "Choose a day first."; return; }
-    b.disabled = true; b.textContent = "Adding…";
+    // Moved to the day it is already on: nothing to write, and writing it would
+    // be an insert and a delete of the same row.
+    if (ctx.from && day === ctx.from.day) { closeSheet("schedulesheet"); return; }
+    b.disabled = true; b.textContent = ctx.from ? "Moving…" : "Adding…";
     planAdd(day, ctx.w.id).then(function (r) {
       if (!accountNow(ctx.epoch, ctx.uid) || scheduleCtx !== ctx) return;
-      b.disabled = false; b.textContent = "Add to plan";
-      if (r.error) { $("scheduleerror").textContent = "Could not add it. Try again."; return; }
+      b.disabled = false; b.textContent = word;
+      if (r.error) { $("scheduleerror").textContent = "Could not " + (ctx.from ? "move" : "add") + " it. Try again."; return; }
+      if (ctx.from) planDrop(ctx.from);
       closeSheet("schedulesheet"); today.at = 0; loadPlan(); loadToday();
-      toast("Added to your plan.");
+      toast(ctx.from ? "Moved to another day." : "Added to your plan.");
     }).catch(function () {
       if (scheduleCtx !== ctx || !accountNow(ctx.epoch, ctx.uid)) return;
-      b.disabled = false; b.textContent = "Add to plan";
+      b.disabled = false; b.textContent = word;
       $("scheduleerror").textContent = "Could not connect. Try again.";
     });
   };
@@ -9196,15 +9442,6 @@ export const APP = String.raw`
     return s;
   }
 
-  // Mon-Sun, in a 44px row: they open the sheet that says what counts.
-  function weekDots(st) {
-    var b = el("button", "wdots");
-    b.setAttribute("aria-label", "What counts as a session");
-    st.dots.forEach(function (d) { b.appendChild(el("i", d)); });
-    b.onclick = function () { openSheet("countsheet"); };
-    return b;
-  }
-
   // Never a scold: a week that can no longer be met stops counting and points at
   // Monday — the fresh-start framing rather than the failure one.
   function ringLabel(st) {
@@ -9223,30 +9460,6 @@ export const APP = String.raw`
         (st.done >= st.goal ? " — week complete" : "");
     }
     return st.done + " of " + st.goal + " this week";
-  }
-
-  function weekHero(st) {
-    var box = el("div", "ringhero" + (st.done >= st.goal ? " full" : "") +
-      (st.atRisk ? " risk" : "") + (st.unreachable ? " miss" : ""));
-    // The streak, in weeks. A streak of nothing says nothing, so it reads as itself.
-    box.appendChild(el("div", "reyebrow",
-      st.streakWeeks > 0 ? "Week " + st.streakWeeks : "This week"));
-
-    var wrap = el("div", "ringwrap");
-    wrap.appendChild(ringSvg(st.goal ? st.done / st.goal : 0));
-    var mid = el("div", "rmid");
-    if (st.done >= st.goal) {
-      mid.appendChild(icon(el("div", "rcheck"), "check"));
-    } else {
-      mid.appendChild(el("div", "rnum countup", String(st.done)));
-      mid.appendChild(el("div", "rof", "of " + st.goal));
-    }
-    wrap.appendChild(mid);
-    box.appendChild(wrap);
-
-    box.appendChild(el("div", "rlabel", ringLabel(st)));
-    box.appendChild(weekDots(st));
-    return box;
   }
 
   // ---------- awards ----------
@@ -9459,7 +9672,7 @@ export const APP = String.raw`
   // matter. warmPages() draws this page in idle time a few hundred milliseconds
   // after boot, while the Library is still on screen — counting there spends the
   // whole thing on nobody. And arriving later does NOT redraw a page that is
-  // already drawn and still current, so hanging it off renderProgress alone means
+  // already drawn and still current, so hanging it off renderTrain alone means
   // it never runs at all. countStats() is therefore called from both, and guards
   // itself: it reads the figures back off the page it is animating.
   var statsCounted = false;
@@ -9487,178 +9700,235 @@ export const APP = String.raw`
     });
   }
 
-  function renderProgress() {
-    if (!state.user || !state.logs) return;
-    var v = $("pslot") || $("trainview");
-    v.innerHTML = "";
-    var logs = state.logs || [];
+  // ---------- train · the progress segment ----------
+  //
+  // Scoped to the week the strip is showing, which is the whole reason the two
+  // pages became one: "what did this week look like" used to mean leaving the
+  // calendar. MyFitnessPal and Fitbit both merged screens in 2026 and buried the
+  // numbers a level down, and both were made to roll it back; a segmented control
+  // is one tap, in sight, and remembers where you were.
 
-    if (!logs.length) {
-      var e = el("div", "empty");
-      e.appendChild(pumpyArt("proud", true));
-      e.appendChild(el("h2", null, "No sessions yet"));
-      e.appendChild(el("p", null, "Finish a workout and your volume, personal records and every logged session show up here."));
-      v.appendChild(e);
-      viewIn(v);
-      return;
+  function emptyLogs() {
+    var e = el("div", "empty");
+    e.appendChild(pumpyArt("proud", true));
+    e.appendChild(el("h2", null, "No sessions yet"));
+    e.appendChild(el("p", null, "Finish a workout and your volume, personal records and every logged session show up here."));
+    return e;
+  }
+
+  // A card's heading and the figure or the span it is about, on one line.
+  function cardHead(card, title, right, cls) {
+    var head = el("div", "cardhead");
+    head.appendChild(el("h3", null, title));
+    if (right) head.appendChild(el("span", cls || "cardsub", right));
+    card.appendChild(head);
+    return head;
+  }
+
+  function weekSessions() {
+    var monday = ymd(state.weekStart);
+    return (state.logs || []).filter(function (l) {
+      return isSession(l) && weekKey(l.started_at) === monday;
+    });
+  }
+
+  // What this week has actually hit, from the sets logged: each logged entry
+  // carries the canonical_id it was started with, and the catalog says which
+  // muscles that is. Intensity is sets — full for a muscle the movement is for,
+  // half for one it assists — against fixed bands, so a light week reads as a
+  // light week instead of being stretched to fill the ramp.
+  function musclesCard() {
+    var weekLogs = weekSessions();
+    var card = el("div", "chartcard");
+    cardHead(card, "Muscles this week", weekLabel(state.weekStart));
+    var slot = el("div");
+    card.appendChild(slot);
+    loadCatalog().then(function () {
+      // Whether this render was superseded, not whether Train is the page being
+      // looked at: warmPages() draws this while the Library is still on screen.
+      // A detached slot is the honest question.
+      if (!slot.isConnected) return;
+      var entries = [];
+      weekLogs.forEach(function (l) { (l.entries || []).forEach(function (e) { entries.push(e); }); });
+      var r = weekHits(entries);
+      slot.innerHTML = "";
+      slot.appendChild(bodyMap(r.levels, 4, bodyLegend([
+        { lv: [0], text: "Not trained" },
+        { lv: [1, 2, 3, 4], text: "Fewer to more sets" }
+      ]), weekCaption(r)));
+      if (!r.mapped) {
+        slot.appendChild(el("div", "bodynote", weekLogs.length
+          ? "This week’s logged exercises are not in the catalog, so nothing is highlighted."
+          : "Nothing logged this week yet."));
+      }
+      bodyNotes(slot, r, "logged exercises");
+    });
+    return card;
+  }
+
+  // Seven bars, no axes and no SVG: the shape of a week is the whole message, and
+  // the number beside the heading is the only figure worth reading exactly.
+  function setsCard() {
+    var counts = [], total = 0, max = 1, i;
+    for (i = 0; i < 7; i++) {
+      var n = 0;
+      sessionsOn(ymd(addDays(state.weekStart, i))).forEach(function (l) {
+        (l.entries || []).forEach(function (e) { n += (e.sets || []).filter(Boolean).length; });
+      });
+      counts.push(n);
+      total += n;
+      if (n > max) max = n;
     }
+    var card = el("div", "chartcard");
+    cardHead(card, "Sets per day", total + " this week", "cardnum");
+    var row = el("div", "sbars");
+    counts.forEach(function (n, k) {
+      var col = el("div", "sbcol");
+      var bar = el("div", "sbar" + (n ? "" : " zero"));
+      bar.style.height = (n ? Math.max(4, Math.round(n / max * 80)) : 4) + "px";
+      col.appendChild(bar);
+      col.appendChild(el("span", "sbl", DOW[k]));
+      col.setAttribute("aria-label", n + (n === 1 ? " set" : " sets") + " on " +
+        dayLabel(addDays(state.weekStart, k)));
+      row.appendChild(col);
+    });
+    card.appendChild(row);
+    return card;
+  }
 
-    // One goal, one arc, the streak above it. The three bare figures that used to
-    // sit here counted weeks with ANY session in them, which is not a goal.
-    var st = weekStats(logs, state.plan, goalSetting(), new Date());
-    var hero = weekHero(st);
-    hero.appendChild(el("div", "rmeta",
-      logs.length + (logs.length === 1 ? " session" : " sessions") + " logged"));
-    v.appendChild(hero);
-    var overview = el("div", "progress-totals");
-    var minutes = 0, totalSets = 0;
+  // Eight weeks of volume, and the one card here that is deliberately NOT scoped
+  // to the strip's week: a trend is the comparison, not the week.
+  function volumeCard() {
+    var logs = state.logs || [];
+    var buckets = [], i;
+    var start = mondayOf(new Date());
+    for (i = 7; i >= 0; i--) {
+      var wk = new Date(start.getTime() - i * 7 * 86400000);
+      buckets.push({ key: ymd(wk), label: (wk.getMonth() + 1) + "/" + wk.getDate(), v: 0 });
+    }
     logs.forEach(function (l) {
-      minutes += (l.duration_seconds || 0) / 60;
-      (l.entries || []).forEach(function (e) { totalSets += (e.sets || []).filter(Boolean).length; });
+      var k = weekKey(l.started_at);
+      for (var j = 0; j < buckets.length; j++) {
+        if (buckets[j].key === k) { buckets[j].v += volumeOf(l); break; }
+      }
     });
-    [[logs.length, "sessions"], [Math.round(minutes).toLocaleString(), "minutes"],
-      [totalSets.toLocaleString(), "sets logged"]].forEach(function (f) {
-      var stat = el("div");
-      stat.appendChild(el("b", null, String(f[0])));
-      stat.appendChild(el("span", null, f[1]));
-      overview.appendChild(stat);
+    var max = Math.max.apply(null, buckets.map(function (b) { return b.v; }).concat([1]));
+    if (max <= 1) return null;
+    var card = el("div", "chartcard");
+    card.appendChild(el("h3", null, "Weekly volume (" + state.unit + ")"));
+    var W = 320, H = 120, pad = 16, bw = (W - pad * 2) / buckets.length;
+    var svg = svgNode("svg");
+    svg.setAttribute("viewBox", "0 0 " + W + " " + (H + 22));
+    svg.setAttribute("role", "img");
+    buckets.forEach(function (b, k) {
+      var h = Math.max(2, Math.round((b.v / max) * H));
+      var r = svgNode("rect", "bar" + (b.v ? "" : " dim"));
+      r.setAttribute("x", String(pad + k * bw + bw * 0.18));
+      r.setAttribute("y", String(H - h));
+      r.setAttribute("width", String(bw * 0.64));
+      r.setAttribute("height", String(h));
+      r.setAttribute("rx", "3");
+      svg.appendChild(r);
+      var t = svgNode("text", "axis");
+      t.setAttribute("x", String(pad + k * bw + bw * 0.5));
+      t.setAttribute("y", String(H + 15));
+      t.setAttribute("text-anchor", "middle");
+      t.textContent = b.label;
+      svg.appendChild(t);
     });
-    v.appendChild(overview);
-    var journal = el("section", "session-journal");
-    journal.appendChild(el("h2", null, "Your sessions"));
-    journal.appendChild(el("p", "rmeta", (logs.length >= 400 ? "Your latest 400 sessions. " : "") +
-      "Revisit a workout. Make a card worth sharing."));
+    card.appendChild(svg);
+    return card;
+  }
+
+  // The whole journal, search and all, swapped into the place the week's list was:
+  // "All" is a widening, not a trip to another screen.
+  function journalInto(list) {
+    var logs = state.logs || [];
     var search = el("input", "session-search");
     search.type = "search";
     search.placeholder = "Search workouts or exercises";
     search.setAttribute("aria-label", "Search session history");
-    journal.appendChild(search);
+    list.appendChild(search);
     var results = el("div", "rmeta");
     results.setAttribute("role", "status");
-    journal.appendChild(results);
-    var list = el("div");
-    journal.appendChild(list);
+    list.appendChild(results);
+    var rows = el("div");
+    list.appendChild(rows);
     var more = el("button", "btn ghost", "Show more sessions"), shown = 10;
-    journal.appendChild(more);
-    function drawSessions() {
+    list.appendChild(more);
+    function draw() {
       var q = search.value.trim().toLowerCase();
       var matches = logs.filter(function (l) {
         return ((l.workout_title || "Workout") + " " + (l.entries || []).map(function (e) {
           return e.name || "";
         }).join(" ")).toLowerCase().indexOf(q) >= 0;
       });
-      list.innerHTML = "";
-      renderHistoryInto(list, matches.slice(0, shown));
-      results.textContent = matches.length ? "Showing " + Math.min(shown, matches.length) + " of " + matches.length +
-        (matches.length === 1 ? " session" : " sessions") : "No matching sessions. Try another workout or exercise.";
+      rows.innerHTML = "";
+      renderHistoryInto(rows, matches.slice(0, shown));
+      results.textContent = matches.length
+        ? (logs.length >= 400 ? "Your latest 400 sessions. " : "") +
+          "Showing " + Math.min(shown, matches.length) + " of " + matches.length +
+          (matches.length === 1 ? " session" : " sessions")
+        : "No matching sessions. Try another workout or exercise.";
       more.hidden = shown >= matches.length;
     }
-    search.oninput = function () { shown = 10; drawSessions(); };
-    more.onclick = function () { shown += 10; drawSessions(); };
-    drawSessions();
-    v.appendChild(journal);
-    var metrics = disclosure("Training details · charts and muscles");
-    var metricsBody = metrics.lastChild;
-    v.appendChild(metrics);
-    var awards = disclosure("Achievements");
-    v.appendChild(awards);
+    search.oninput = function () { shown = 10; draw(); };
+    more.onclick = function () { shown += 10; draw(); };
+    draw();
+  }
 
-    // The case fills itself in from history the first time it is looked at, so an
-    // account with two hundred sessions behind it never opens on an empty shelf.
-    // A detached slot means a later render replaced the box this answer was for.
-    var awSlot = el("div");
-    awards.lastChild.appendChild(awSlot);
-    loadAwards().then(function () {
-      if (!awSlot.isConnected) return;
-      var won = grantAwards(awardsFor(logs, st, null));
-      tellFreeze(won, st);
-      awSlot.innerHTML = "";
-      awSlot.appendChild(trophyCase(st, logs));
-    });
+  function drawProgressSeg(v) {
+    if (!state.logs) return;
+    if (!state.logs.length) { v.appendChild(emptyLogs()); return; }
+    v.appendChild(musclesCard());
+    v.appendChild(setsCard());
+    var vol = volumeCard();
+    if (vol) v.appendChild(vol);
 
-    // What you've hit this week, from the sessions actually logged: each logged
-    // entry carries the canonical_id it was started with, and the catalog says
-    // which muscles that is. Intensity is sets — full for a muscle the movement is
-    // for, half for one it assists — against fixed bands, so a light week reads as
-    // a light week instead of being stretched to fill the ramp.
-    var monday = ymd(mondayOf(new Date()));
-    var weekLogs = logs.filter(function (l) { return weekKey(l.started_at) === monday; });
-    var hit = el("div", "chartcard");
-    hit.appendChild(el("h3", null, "What you’ve hit this week"));
-    var hitSlot = el("div");
-    hit.appendChild(hitSlot);
-    metricsBody.appendChild(hit);
-    loadCatalog().then(function () {
-      // Whether this render was superseded, not whether Progress is the page being
-      // looked at. warmPages() draws this page while the Library is still on
-      // screen, so the old test was false exactly when the first draw happened and
-      // the figure never arrived at all — and arriving later does not redraw a page
-      // that is already drawn. A detached slot is the honest question: it means
-      // some later render replaced the box this answer was for.
-      if (!hitSlot.isConnected) return;
-      var entries = [];
-      weekLogs.forEach(function (l) { (l.entries || []).forEach(function (e) { entries.push(e); }); });
-      var r = weekHits(entries);
-      hitSlot.innerHTML = "";
-      hitSlot.appendChild(bodyMap(r.levels, 4, bodyLegend([
-        { lv: [0], text: "Not trained" },
-        { lv: [1, 2, 3, 4], text: "Fewer to more sets" }
-      ]), weekCaption(r)));
-      if (!r.mapped) {
-        hitSlot.appendChild(el("div", "bodynote", weekLogs.length
-          ? "This week’s logged exercises are not in the catalog, so nothing is highlighted."
-          : "Nothing logged this week yet."));
-      }
-      bodyNotes(hitSlot, r, "logged exercises");
-    });
+    var head = el("div", "secthead");
+    head.appendChild(el("b", null, "Finished sessions"));
+    var all = el("button", "linkbtn", "All");
+    head.appendChild(all);
+    v.appendChild(head);
+    var list = el("div");
+    v.appendChild(list);
+    var mine = weekSessions();
+    if (mine.length) renderHistoryInto(list, mine);
+    else list.appendChild(el("p", "lede", "No sessions this week yet."));
+    all.onclick = function () {
+      head.removeChild(all);
+      list.innerHTML = "";
+      journalInto(list);
+    };
+  }
 
-    // weekly volume bars, last 8 weeks
-    var buckets = [];
-    var start = mondayOf(new Date());
-    for (var i = 7; i >= 0; i--) {
-      var wk = new Date(start.getTime() - i * 7 * 86400000);
-      buckets.push({ key: ymd(wk), label: (wk.getMonth() + 1) + "/" + wk.getDate(), v: 0 });
-    }
+  // ---------- train · the records segment ----------
+  //
+  // The lifetime numbers, and the only place in the app where a figure is meant
+  // to be read as a total rather than as this week.
+  function drawRecordsSeg(v) {
+    var logs = state.logs || [];
+    if (!logs.length) { v.appendChild(emptyLogs()); return; }
+    var st = weekStats(logs, state.plan, goalSetting(), new Date());
+
+    var overview = el("div", "progress-totals");
+    var minutes = 0, totalSets = 0;
     logs.forEach(function (l) {
-      var k = weekKey(l.started_at);
-      for (var i = 0; i < buckets.length; i++) {
-        if (buckets[i].key === k) { buckets[i].v += volumeOf(l); break; }
-      }
+      minutes += (l.duration_seconds || 0) / 60;
+      (l.entries || []).forEach(function (e) { totalSets += (e.sets || []).filter(Boolean).length; });
     });
-    var max = Math.max.apply(null, buckets.map(function (b) { return b.v; }).concat([1]));
-
-    if (max > 1) {
-      var card = el("div", "chartcard");
-      card.appendChild(el("h3", null, "Weekly volume (" + state.unit + ")"));
-      var W = 320, H = 120, pad = 16, bw = (W - pad * 2) / buckets.length;
-      var svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-      svg.setAttribute("viewBox", "0 0 " + W + " " + (H + 22));
-      svg.setAttribute("role", "img");
-      buckets.forEach(function (b, i) {
-        var h = Math.max(2, Math.round((b.v / max) * H));
-        var r = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-        r.setAttribute("class", "bar" + (b.v ? "" : " dim"));
-        r.setAttribute("x", String(pad + i * bw + bw * 0.18));
-        r.setAttribute("y", String(H - h));
-        r.setAttribute("width", String(bw * 0.64));
-        r.setAttribute("height", String(h));
-        r.setAttribute("rx", "3");
-        svg.appendChild(r);
-        var t = document.createElementNS("http://www.w3.org/2000/svg", "text");
-        t.setAttribute("class", "axis");
-        t.setAttribute("x", String(pad + i * bw + bw * 0.5));
-        t.setAttribute("y", String(H + 15));
-        t.setAttribute("text-anchor", "middle");
-        t.textContent = b.label;
-        svg.appendChild(t);
+    [[logs.length, "sessions"], [Math.round(minutes), "minutes"], [totalSets, "sets logged"]]
+      .forEach(function (f) {
+        var stat = el("div");
+        stat.appendChild(el("b", "countup", String(f[0])));
+        stat.appendChild(el("span", null, f[1]));
+        overview.appendChild(stat);
       });
-      card.appendChild(svg);
-      metricsBody.appendChild(card);
-    }
+    v.appendChild(overview);
 
     // Personal records, by estimated 1RM (Epley). Grouped by catalog id where the
-    // exercise name mapped, so a PR does not fragment across three spellings of the
-    // same lift; the label keeps the most recent raw name the user actually saw.
+    // exercise name mapped, so a PR does not fragment across three spellings of
+    // the same lift; the label keeps the most recent raw name the user saw.
     var prs = {};
     logs.forEach(function (l) {
       (l.entries || []).forEach(function (e) {
@@ -9693,43 +9963,21 @@ export const APP = String.raw`
         r.appendChild(el("div", "v", Math.round(p.est) + " " + state.unit));
         pc.appendChild(r);
       });
-      metricsBody.appendChild(pc);
+      v.appendChild(pc);
     }
 
-    // muscle-group distribution, joined through the saved workout
-    var byId = {};
-    state.workouts.forEach(function (w) { byId[w.id] = w; });
-    var mg = {};
-    logs.forEach(function (l) {
-      var w = byId[l.workout_id];
-      if (!w) return;
-      (w.muscle_groups || []).forEach(function (m) { mg[m] = (mg[m] || 0) + 1; });
+    // The case fills itself in from history the first time it is looked at, so an
+    // account with two hundred sessions behind it never opens on an empty shelf.
+    // A detached slot means a later render replaced the box this answer was for.
+    var awSlot = el("div");
+    v.appendChild(awSlot);
+    loadAwards().then(function () {
+      if (!awSlot.isConnected) return;
+      var won = grantAwards(awardsFor(logs, st, null));
+      tellFreeze(won, st);
+      awSlot.innerHTML = "";
+      awSlot.appendChild(trophyCase(st, logs));
     });
-    var mgNames = Object.keys(mg).sort(function (a, b) { return mg[b] - mg[a]; });
-    if (mgNames.length) {
-      var mc = el("div", "chartcard");
-      mc.appendChild(el("h3", null, "What you train"));
-      var mgMax = mg[mgNames[0]];
-      mgNames.forEach(function (m) {
-        var r = el("div", "mgrow");
-        r.appendChild(el("div", "lbl", m));
-        var bar = el("div", "mgbar");
-        var fill = el("i");
-        fill.style.width = Math.round((mg[m] / mgMax) * 100) + "%";
-        bar.appendChild(fill);
-        r.appendChild(bar);
-        r.appendChild(el("div", "num", String(mg[m])));
-        mc.appendChild(r);
-      });
-      metricsBody.appendChild(mc);
-    }
-
-    // The session list, under the numbers it feeds. One tab, one scroll.
-
-    viewIn(v);
-    // For the arrival that had to wait for its own read: the page was empty when
-    // arrive() ran and there was nothing to count yet.
-    countStats();
   }
 
   // The session being read back, so the options sheet and its Delete know which
@@ -9776,17 +10024,17 @@ export const APP = String.raw`
       history.go(-2);
       var at = state.logs.indexOf(l);
       state.logs = state.logs.filter(function (x) { return x.id !== l.id; });
-      renderProgress();
+      renderTrain();
       offerUndo("Session deleted", function () {
         sb.from("workout_logs").delete().eq("id", l.id).then(function (r) {
           if (!r || !r.error) return;
           toast("That did not delete. The session is still here.");
           invalidateLogs();
-          loadLogs().then(renderProgress);
+          loadLogs().then(renderTrain);
         });
       }, function () {
         state.logs.splice(at < 0 ? state.logs.length : at, 0, l);
-        renderProgress();
+        renderTrain();
       });
     };
     box.appendChild(del);
@@ -11624,7 +11872,7 @@ export const APP = String.raw`
   function guidePage(v) {
     if (state.view !== v || guide.visit !== v || overlayShowing()) return;
     if (v === "train" && state.plan && state.plan.length) { guideLearn("train"); return; }
-    if (v === "train" && planBody) guideOffer("train", planBody, planBody.firstChild);
+    if (v === "train" && trainLean) guideOffer("train", trainLean, cardBox);
     if (v === "pumpy" && pumpy.loaded && pumpy.messages.length && !pumpy.refs.length) {
       var c = $("pumpycomposer"); guideOffer("refs", c, c.firstChild);
     }
@@ -12665,6 +12913,9 @@ export const APP = String.raw`
   function saveSettings() {
     var s = Object.assign({}, (state.profile && state.profile.settings) || {},
       { unit: state.unit, sounds: state.sounds, haptics: state.haptics });
+    // The column is written WHOLE, so the segment has to ride along with every
+    // other preference or a unit toggle would quietly forget where Train was left.
+    if (trainSeg) s.trainSeg = trainSeg;
     // The column is written WHOLE, so a key left out here is a key deleted by the
     // next unit toggle. goalSetting() is the reader, so it is also the source.
     var g = goalSetting();
@@ -13497,6 +13748,8 @@ export const APP = String.raw`
     stopSpring();
     idx = 0; arrivedAt = 0; state.view = "library";
     drawn = { train: false, pumpy: false };
+    trainSeg = null;
+    trainLean = null;
     planSig = "";
     statsCounted = false;
     for (var k = 0; k < PAGE_IDS.length; k++) $(PAGE_IDS[k]).scrollTop = 0;
@@ -14093,6 +14346,11 @@ export const APP = String.raw`
   $("goalless").onclick = function () { bumpGoal(-1); };
   $("goalmore").onclick = function () { bumpGoal(1); };
   $("countdone").onclick = function () { closeSheet("countsheet"); };
+  // Handed over rather than stacked, the way dayadd hands over to the picker: the
+  // sheet layer holds one history entry and the next sheet keeps it.
+  $("tmcopy").onclick = function () { openCopy(); closeSheet("trainmore"); };
+  $("tmpumpy").onclick = function () { programWithPumpy(state.weekStart); closeSheet("trainmore"); };
+  $("tmcount").onclick = function () { openSheet("countsheet"); closeSheet("trainmore"); };
   $("soundtoggle").onclick = toggleSounds;
   $("haptictoggle").onclick = toggleHaptics;
   $("remplan").onclick = function () { toggleRemind("plan"); };

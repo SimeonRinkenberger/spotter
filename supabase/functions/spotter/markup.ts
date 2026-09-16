@@ -504,6 +504,17 @@ export const MARKUP_BODY = String.raw`</head>
   <div class="btnrow"><button class="btn" id="refdone">Done</button></div>
 </div></div>
 
+<!-- The today card's overflow: what you do TO a week, one tap off the card that
+     already answers what you are doing today. -->
+<div class="sheet" id="trainmore"><div class="sheetbody">
+  <div class="grabber"></div>
+  <h2>This week</h2>
+  <button class="pickrow" id="tmcopy">Copy week</button>
+  <button class="pickrow" id="tmpumpy">Build with Pumpy</button>
+  <button class="pickrow" id="tmcount">What counts</button>
+  <button class="btn ghost" data-close="trainmore">Done</button>
+</div></div>
+
 <div class="sheet" id="daysheet"><div class="sheetbody">
   <div class="grabber"></div>
   <h2 id="daytitle">Day</h2>
