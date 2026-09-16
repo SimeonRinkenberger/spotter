@@ -51,7 +51,7 @@
   --ember-soft: #FDEDE6;
   --on-ember: #17100C;
   --good: #178055;
-  --warn: #C98A00;
+  --warn: #AE7400;
   --pill: color-mix(in srgb, var(--ember) 7%, transparent);
   --body-skin: #DCE1E8;
   --body-mus: #AEB7C3;
@@ -3447,6 +3447,7 @@ body:not(.app) #toast.show {
 .tbtns .btn {
   flex: 1;
   min-width: 0;
+  min-height: 44px;
 }
 .tbtns .tmove {
   flex: 0 0 auto;
@@ -12693,7 +12694,7 @@ details.details-moving > :not(summary) {
       meta && txt.appendChild(el("div", "tdose", meta)), body.appendChild(txt), card.appendChild(body);
       var row = el("div", "tbtns"), go = el(
         "button",
-        "btn tstart" + (done ? " ghost" : ""),
+        "btn" + (done ? " ghost" : ""),
         done ? "Log another" : "Start workout"
       );
       go.onclick = function() {

@@ -137,4 +137,22 @@ check('sets per day counts logged sets by local day, and holes are not sets', ()
   assert.deepEqual(Array.from(counts), [0, 3, 0, 0, 0, 2, 0]);
 });
 
+// ---------- 5. the old view names still name a place ----------
+check('plan, progress and history all land on Train, on the segment they asked for', () => {
+  const went = [];
+  const c = vm.createContext({ VIEWS: ['library', 'train', 'pumpy'], trainSeg: null,
+    goTo: (i, animate) => went.push([i, animate]),
+    $: () => ({ classList: { contains: () => false } }) });
+  vm.runInContext(fn('setView'), c);
+  for (const [name, seg] of [['plan', 'calendar'], ['progress', 'progress'], ['history', 'progress']]) {
+    c.trainSeg = null;
+    vm.runInContext('setView(' + JSON.stringify(name) + ')', c);
+    assert.equal(c.trainSeg, seg, name);
+  }
+  assert.deepEqual(went.map(w => w[0]), [1, 1, 1]);
+  // A name nothing knows still lands somewhere real rather than off the end.
+  vm.runInContext('setView("nonsense")', c);
+  assert.equal(went[went.length - 1][0], 0);
+});
+
 console.log(checks + ' Train checks passed');

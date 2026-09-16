@@ -8693,7 +8693,7 @@ export const APP = String.raw`
       card.appendChild(body);
       var row = el("div", "tbtns");
       // The detail overlay's own start call, so finishing lands in the same place.
-      var go = el("button", "btn tstart" + (done ? " ghost" : ""),
+      var go = el("button", "btn" + (done ? " ghost" : ""),
         done ? "Log another" : "Start workout");
       go.onclick = function () { startWorkout(w); };
       row.appendChild(go);

@@ -14,7 +14,7 @@ export const STYLE = String.raw`<style>
        ink ON it does — near-white was 3.48:1, and this is the ink dark mode
        already uses, so the schemes agree instead of inverting. */
     --ember: #E8551F; --ember-ink: #BE3F0E; --ember-soft: #FDEDE6; --on-ember: #17100C;
-    --good: #178055; --warn: #C98A00;
+    --good: #178055; --warn: #AE7400;
     /* The tab bar's selection capsule: a tint read as glass, not a second
        accent. 7% is where it stops costing the lit label its AA — a tenth put
        ember-ink on 4.41 against it, under the 4.5 that 10px type needs; this
@@ -1288,6 +1288,9 @@ export const STYLE = String.raw`<style>
   .mcell, .wday.today { --dbg: var(--card); }
   .mcell.out { --dbg: var(--paper); }
   .dmark.plan { background: none; box-shadow: inset 0 0 0 1.6px var(--ember); }
+  /* The missed ring is the only consumer of --warn, and at #C98A00 it measured 2.73
+     on paper — under the 3:1 a graphical object has to make. Darkened to 3.67 on
+     paper and 3.96 on a card; the dark scheme's amber was already 9.0 and stays. */
   .dmark.miss { background: none; box-shadow: inset 0 0 0 1.6px var(--warn); }
   .dlegend { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; margin: 9px 2px 0;
     font-size: 11.5px; font-weight: 600; color: var(--muted); }
@@ -1314,7 +1317,7 @@ export const STYLE = String.raw`<style>
   .tcard .ttitle { font-size: 17px; padding: 0; }
   .tcard .tdose { margin: 3px 0 0; font-size: 13px; color: var(--ink-2); }
   .tbtns { display: flex; gap: 8px; }
-  .tbtns .btn { flex: 1; min-width: 0; }
+  .tbtns .btn { flex: 1; min-width: 0; min-height: 44px; }
   .tbtns .tmove { flex: 0 0 auto; width: auto; padding: 14px 16px; font-size: 14px; }
   .planitem { display: flex; align-items: center; gap: 11px; margin-top: 9px; }
   .planitem img { width: 42px; height: 42px; border-radius: 10px; object-fit: cover;
