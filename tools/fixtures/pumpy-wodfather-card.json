@@ -91,7 +91,7 @@
       "tempo": "deliberate, no bounce",
       "range_of_motion": "floor to upper chest, elbows finish above the hands"
      },
-     "delta": "load between the feet",
+     "delta": null,
      "t0": 25.5,
      "t1": 40.5
     },

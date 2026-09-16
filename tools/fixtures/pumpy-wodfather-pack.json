@@ -98,7 +98,7 @@
        "tempo": "deliberate, no bounce",
        "range_of_motion": "floor to upper chest, elbows finish above the hands"
       },
-      "delta": "load between the feet",
+      "delta": null,
       "t0": 25.5,
       "t1": 40.5
      },
@@ -389,7 +389,7 @@
      "tempo": "deliberate, no bounce",
      "range_of_motion": "floor to upper chest, elbows finish above the hands"
     },
-    "delta_from_standard": "load between the feet",
+    "delta_from_standard": null,
     "setup": "Stand wide over the bell, hinge and squat down to grip the handle with both hands, chest up.",
     "execution": "Stand up through the heels, then keep pulling with the elbows high until the bell reaches the upper chest; lower under control back to the floor.",
     "creator_cues": [
