@@ -5336,6 +5336,9 @@ export const APP = String.raw`
   function woaPane(dose) {
     $("woapick").classList.toggle("hide", !!dose);
     $("woadose").classList.toggle("hide", !dose);
+    // The way back out sits above the title, where a back control belongs, which
+    // is why it is not inside either pane.
+    $("woaback").classList.toggle("hide", !dose);
     viewIn($(dose ? "woadose" : "woapick"));
   }
 
@@ -5354,7 +5357,7 @@ export const APP = String.raw`
     $("woakeep").setAttribute("aria-pressed", woa.keep ? "true" : "false");
     $("woakeepnote").textContent = woa.keep
       ? "It will be on the card the next time you open it."
-      : "Off — today's session only.";
+      : "Off — today’s session only.";
   }
 
   function woaChoose(r) {
@@ -5375,6 +5378,9 @@ export const APP = String.raw`
     // added to an AMRAP is part of the AMRAP — and on the last exercise the two
     // answers are the same one, so neither gets chips it cannot use.
     where.innerHTML = "";
+    // A complex's movements carry a dose and no set count — five reps, not three
+    // sets of five — so the field that would ask for one is not offered.
+    $("woaddsets").parentNode.classList.toggle("hide", !!cx);
     if (cx) {
       where.appendChild(el("div", "wnote",
         "Joins the round list — part of this complex from the next round on."));
@@ -5426,6 +5432,10 @@ export const APP = String.raw`
     stopWork();
     restThen = null;
     if (cx) {
+      // Dosed, not set-counted: complexOf reads a circuit as a complex only while
+      // every movement in it is, so a set count arriving on one would take the
+      // round counter off the screen in the middle of the workout.
+      ex.sets = null;
       ex.from_round = (wo.amrap[s.bi] || {}).rounds || 0;
       insertSessionExercise(s.bi, s.block.exercises.length, ex);
     } else {
@@ -5708,7 +5718,7 @@ export const APP = String.raw`
       var tile = icon(el("button", "pickrow waddcard"), "plus");
       var tt = el("div", "pt");
       tt.appendChild(el("b", null, "Add an exercise"));
-      tt.appendChild(el("span", null, "Something you are doing that this card did not say."));
+      tt.appendChild(el("span", null, "Something this card did not say."));
       tile.appendChild(tt);
       tile.onclick = openWorkoutAdd;
       main.appendChild(tile);

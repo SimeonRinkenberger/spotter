@@ -1699,15 +1699,17 @@ export const STYLE = String.raw`<style>
      stays put while the list scrolls under it: a couple of hundred movements is a
      long way to scroll back to change a word. */
   .woasearch { position: sticky; top: 0; z-index: 2; display: block;
-    margin: 0 -20px 4px; padding: 2px 20px 10px; background: var(--paper); }
+    margin: 0 -20px 4px; padding: 2px 20px 10px;
+    background: var(--paper); background-image: var(--grain); }
   .woasearch .searchico { left: 34px; top: 2px; bottom: 10px; }
   .woasearch .search { min-height: 44px; box-sizing: border-box; }
   .woahead { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
     color: var(--muted); padding: 14px 2px 4px; }
   #woalist .pickrow { min-height: 52px; }
-  .woaback { min-height: 44px; margin-bottom: 14px; }
+  .woaback { min-height: 44px; margin-bottom: 12px; }
+  #woalast { margin: 6px 0 16px; }
   #woalast:empty, #woawhere:empty { display: none; }
-  #woawhere { margin-top: 16px; }
+  #woawhere { margin: 16px 0 4px; }
   #woawhere .wnote { margin: 0; }
   /* A switch drawn as a row, because it carries a sentence that changes with it. */
   .woakeep { min-height: 56px; margin-bottom: 4px; padding: 10px 13px;

@@ -364,14 +364,14 @@ export const MARKUP_BODY = String.raw`</head>
      second, and the dose is the step that already knows your last set. -->
 <div class="sheet" id="woaddsheet" role="dialog" aria-modal="true" aria-labelledby="woaddtitle"><div class="sheetbody">
   <div class="grabber"></div>
+  <button class="chip woaback hide" id="woaback"><svg class="ic"><use href="#i-arrow-left"></use></svg>All exercises</button>
   <h2 id="woaddtitle">Add an exercise</h2>
   <div id="woapick">
     <label class="woasearch"><span class="searchico"><svg class="ic"><use href="#i-search"></use></svg></span>
-      <input class="search" id="woaq" type="search" enterkeyhint="done" placeholder="Search your movements and the catalog" autocapitalize="off" autocomplete="off" spellcheck="false" aria-label="Search exercises"></label>
+      <input class="search" id="woaq" type="search" enterkeyhint="done" placeholder="Search exercises" autocapitalize="off" autocomplete="off" spellcheck="false" aria-label="Search exercises"></label>
     <div class="picklist" id="woalist"></div>
   </div>
   <div id="woadose" class="hide">
-    <button class="chip woaback" id="woaback"><svg class="ic"><use href="#i-arrow-left"></use></svg>All exercises</button>
     <div class="wnote" id="woalast"></div>
     <div class="fieldrow">
       <div class="field"><label for="woaddsets">Sets</label><input id="woaddsets" type="number" inputmode="numeric" min="1" max="99" value="3"></div>

@@ -4607,6 +4607,7 @@ body:not(.app) #toast.show {
   margin: 0 -20px 4px;
   padding: 2px 20px 10px;
   background: var(--paper);
+  background-image: var(--grain);
 }
 .woasearch .searchico {
   left: 34px;
@@ -4630,14 +4631,17 @@ body:not(.app) #toast.show {
 }
 .woaback {
   min-height: 44px;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
+}
+#woalast {
+  margin: 6px 0 16px;
 }
 #woalast:empty,
 #woawhere:empty {
   display: none;
 }
 #woawhere {
-  margin-top: 16px;
+  margin: 16px 0 4px;
 }
 #woawhere .wnote {
   margin: 0;
@@ -7176,14 +7180,14 @@ details.details-moving > :not(summary) {
 
 <div class="sheet" id="woaddsheet" role="dialog" aria-modal="true" aria-labelledby="woaddtitle"><div class="sheetbody">
   <div class="grabber"></div>
+  <button class="chip woaback hide" id="woaback"><svg class="ic"><use href="#i-arrow-left"></use></svg>All exercises</button>
   <h2 id="woaddtitle">Add an exercise</h2>
   <div id="woapick">
     <label class="woasearch"><span class="searchico"><svg class="ic"><use href="#i-search"></use></svg></span>
-      <input class="search" id="woaq" type="search" enterkeyhint="done" placeholder="Search your movements and the catalog" autocapitalize="off" autocomplete="off" spellcheck="false" aria-label="Search exercises"></label>
+      <input class="search" id="woaq" type="search" enterkeyhint="done" placeholder="Search exercises" autocapitalize="off" autocomplete="off" spellcheck="false" aria-label="Search exercises"></label>
     <div class="picklist" id="woalist"></div>
   </div>
   <div id="woadose" class="hide">
-    <button class="chip woaback" id="woaback"><svg class="ic"><use href="#i-arrow-left"></use></svg>All exercises</button>
     <div class="wnote" id="woalast"></div>
     <div class="fieldrow">
       <div class="field"><label for="woaddsets">Sets</label><input id="woaddsets" type="number" inputmode="numeric" min="1" max="99" value="3"></div>
@@ -10665,7 +10669,7 @@ details.details-moving > :not(summary) {
     }), woaCat || list.appendChild(el("p", "lede", WOA_WAIT));
   }
   function woaPane(dose) {
-    $("woapick").classList.toggle("hide", !!dose), $("woadose").classList.toggle("hide", !dose), viewIn($(dose ? "woadose" : "woapick"));
+    $("woapick").classList.toggle("hide", !!dose), $("woadose").classList.toggle("hide", !dose), $("woaback").classList.toggle("hide", !dose), viewIn($(dose ? "woadose" : "woapick"));
   }
   function woaCardBlocks() {
     var w = wo && wo.workout, card = null;
@@ -10674,11 +10678,11 @@ details.details-moving > :not(summary) {
     }), card && card.ingest_status === "ready" ? (card.blocks || []).length : null);
   }
   function woaKeepPaint() {
-    $("woakeep").classList.toggle("on", !!woa.keep), $("woakeep").setAttribute("aria-pressed", woa.keep ? "true" : "false"), $("woakeepnote").textContent = woa.keep ? "It will be on the card the next time you open it." : "Off \u2014 today's session only.";
+    $("woakeep").classList.toggle("on", !!woa.keep), $("woakeep").setAttribute("aria-pressed", woa.keep ? "true" : "false"), $("woakeepnote").textContent = woa.keep ? "It will be on the card the next time you open it." : "Off \u2014 today\u2019s session only.";
   }
   function woaChoose(r) {
     var s = wo.screens[wo.i], cx = s && s.cx && !s.ei ? s.cx : null, h = hist[r.key], m = String(r.reps || "").match(/\d+/), where = $("woawhere");
-    woa.pick = r, woa.keep = !1, woa.where = cx ? "complex" : s && wo.i < endStop() ? "after" : "end", haptic("tap"), $("woaddtitle").textContent = r.name, $("woalast").textContent = lastLine(r), $("woaddsets").value = String(h && h.sets || r.sets || 3), $("woaddreps").value = String(h && h.reps || (m ? m[0] : 10)), $("woaddsecs").value = r.secs ? String(r.secs) : "", where.innerHTML = "", cx ? where.appendChild(el(
+    woa.pick = r, woa.keep = !1, woa.where = cx ? "complex" : s && wo.i < endStop() ? "after" : "end", haptic("tap"), $("woaddtitle").textContent = r.name, $("woalast").textContent = lastLine(r), $("woaddsets").value = String(h && h.sets || r.sets || 3), $("woaddreps").value = String(h && h.reps || (m ? m[0] : 10)), $("woaddsecs").value = r.secs ? String(r.secs) : "", where.innerHTML = "", $("woaddsets").parentNode.classList.toggle("hide", !!cx), cx ? where.appendChild(el(
       "div",
       "wnote",
       "Joins the round list \u2014 part of this complex from the next round on."
@@ -10698,7 +10702,7 @@ details.details-moving > :not(summary) {
   }
   function woaPlace(ex) {
     var s = wo.screens[wo.i], cx = s && s.cx && !s.ei ? s.cx : null;
-    return !s || woa.where === "end" ? appendSessionExercise(ex) : (stopWork(), restThen = null, cx ? (ex.from_round = (wo.amrap[s.bi] || {}).rounds || 0, insertSessionExercise(s.bi, s.block.exercises.length, ex)) : wo.i = insertSessionExercise(s.bi, s.ei + 1, ex), saveDraft(), renderWorkout(), !0);
+    return !s || woa.where === "end" ? appendSessionExercise(ex) : (stopWork(), restThen = null, cx ? (ex.sets = null, ex.from_round = (wo.amrap[s.bi] || {}).rounds || 0, insertSessionExercise(s.bi, s.block.exercises.length, ex)) : wo.i = insertSessionExercise(s.bi, s.ei + 1, ex), saveDraft(), renderWorkout(), !0);
   }
   function woaKeep(ex, bi) {
     var w = wo.workout, n = woaCardBlocks();
@@ -10874,7 +10878,7 @@ details.details-moving > :not(summary) {
       var addChip = icon(el("button", "pickrow"), "plus", "Add an exercise");
       if (addChip.onclick = openWorkoutAdd, extra.lastChild.appendChild(addChip), acts.appendChild(extra), main.appendChild(acts), wo.i >= endStop()) {
         var tile = icon(el("button", "pickrow waddcard"), "plus"), tt = el("div", "pt");
-        tt.appendChild(el("b", null, "Add an exercise")), tt.appendChild(el("span", null, "Something you are doing that this card did not say.")), tile.appendChild(tt), tile.onclick = openWorkoutAdd, main.appendChild(tile);
+        tt.appendChild(el("b", null, "Add an exercise")), tt.appendChild(el("span", null, "Something this card did not say.")), tile.appendChild(tt), tile.onclick = openWorkoutAdd, main.appendChild(tile);
       }
       slide ? (main.style.setProperty("--wmx", (slide > 0 ? 30 : -30) + "px"), main.offsetWidth, main.classList.add("wmin")) : hush || viewIn(main);
     }

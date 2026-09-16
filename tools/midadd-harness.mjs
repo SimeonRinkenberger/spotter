@@ -283,6 +283,22 @@ ok('the score read back off the log is the rounds EVERY movement got through', (
   assert.equal(s.extra, 3);
 });
 
+ok('a movement joining a complex arrives dosed, so the block stays one', () => {
+  // complexOf reads a CIRCUIT as a complex only while every movement carries a
+  // dose and no set count, so a 3 x 10 landing in one would take the round
+  // counter off the screen mid-workout. woaPlace strips the set count for this.
+  assert(src.includes('ex.sets = null;'), 'woaPlace no longer strips the set count');
+  const block = (extra) => ({
+    title: 'Fives', type: 'circuit', duration_seconds: 600,
+    exercises: [{ name: 'A', reps: '5' }, { name: 'B', reps: '5' }].concat(extra || [])
+  });
+  const isComplex = (b) => !!run('complexOf(' + JSON.stringify(b) + ', ' +
+    JSON.stringify({ blocks: [b], duration_minutes: 10 }) + ')');
+  assert(isComplex(block()), 'the fixture was never a complex');
+  assert(!isComplex(block([{ name: 'C', sets: 3, reps: '10' }])), 'a set count did not break it');
+  assert(isComplex(block([{ name: 'C', sets: null, reps: '10' }])), 'a dosed movement broke it');
+});
+
 ok('a movement the card came with is unaffected — from_round is absent and means 0', () => {
   session(AMRAP);
   vm.runInContext('wo.amrap[0] = { cap: 900, rounds: 5, marks: [], until: 0, held: 0, cued: 4, over: 0 };', ctx);
