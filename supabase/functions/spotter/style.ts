@@ -2327,10 +2327,10 @@ export const STYLE = String.raw`<style>
      hit area grows, capped at the gap to the next control so no two overlap.
      Insets come off the padding box: a bordered control needs a pixel more. */
   .iconbtn, .addbtn, .exhelp, .planx, .planadd, .mbtn, .addex, .danger, .libcount,
-  .planlegal a, .planlegal button, .segbtn, .planbtn,
+  .planlegal a, .planlegal button, .segbtn, .planbtn, .linkbtn,
   .chips .chip, .said .chip, .votes .chip, .pumpyctx button, .threadrow .tdel, .ttitle { position: relative; }
   .iconbtn::after, .addbtn::after, .exhelp::after, .planx::after, .planadd::after,
-  .segbtn::after, .planbtn::after,
+  .segbtn::after, .planbtn::after, .linkbtn::after,
   .mbtn::after, .addex::after, .danger::after, .chips .chip::after, .said .chip::after,
   .votes .chip::after,
   .pumpyctx button::after, .threadrow .tdel::after, .ttitle::after,
@@ -2343,6 +2343,10 @@ export const STYLE = String.raw`<style>
   .planx::after { inset: -7px -4px; }
   .planadd::after, .addex::after { inset: -5px 0; }
   .segbtn::after, .planbtn::after { inset: -6px 0; }
+  /* "All" is two letters and drew a 20x27 target — the smallest control in the
+     app. Nothing interactive sits beside it in the section head, so it can have
+     the room on all four sides: 44 across and 45 down. */
+  .linkbtn::after { inset: -9px -12px; }
   .mbtn::after { inset: -6px 0; }
   .danger::after, .threadrow .tdel::after { inset: -3px 0; }
   .chips .chip::after, .said .chip::after, .votes .chip::after { inset: -6px 0; }
