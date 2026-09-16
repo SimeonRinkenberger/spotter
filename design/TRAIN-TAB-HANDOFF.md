@@ -1,5 +1,8 @@
 # Handoff: the Train tab (Plan + Progress merged)
 
+Built on branch `train`, 16 Sept 2026 — see `briefs/BRIEF-TRAIN.md` for the decisions that
+filled the gaps.
+
 Owner decision, 16 September 2026: "I like that train tab." Build it in a fresh session from this
 file alone. Mockups: https://claude.ai/artifact/FuKP8v7qXPfcJajXVbTgTa (editable canvas) and the
 same artboards as source in `design/train-tab-mockups/` (`Main.dc.html` = Calendar segment,

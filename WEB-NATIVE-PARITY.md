@@ -9,7 +9,7 @@ Run `npm run parity:check` before publishing either build. CI runs this too.
 | Link saves, video uploads, extraction and corrections | Shared application | Shared application |
 | Library, favorites, collections, editing | Shared application | Shared application |
 | Workout mode, sets, weights, rest timer, resume | Shared application; browser storage | Shared application; native draft persistence also |
-| Plan, progress, muscle map, records, achievements | Shared application | Shared application |
+| Train tab: week strip, today card, calendar, progress, muscle map, records, achievements | Shared application | Shared application; selection haptics through the shell |
 | Pumpy chat, streaming, workout tools, exercise helpers | Browser streaming | Native streaming adapter |
 | Google / Apple sign-in | Web provider flow, subject to provider configuration | System authentication adapters, subject to signing/provider configuration |
 | Account, export, deletion, plan access, Strava | Shared application | Shared application; system browser for external flows |
