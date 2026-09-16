@@ -4968,7 +4968,7 @@ body:not(.app) #toast.show {
 .proofhint {
   position: absolute;
   left: 50%;
-  bottom: calc(24px + env(safe-area-inset-bottom));
+  top: calc(20px + env(safe-area-inset-top));
   transform: translateX(-50%);
   padding: 8px 15px;
   border-radius: 999px;
@@ -6577,8 +6577,14 @@ select:focus-visible {
   min-height: 44px;
   justify-content: flex-start;
 }
-#workoptions .pickrow {
+#workoptions .pickrow,
+#recapopts .pickrow {
   min-height: 48px;
+}
+#recapopts .danger {
+  color: var(--ember-ink);
+  font-size: 15px;
+  font-weight: 650;
 }
 #dmore {
   min-height: 44px;
@@ -10436,7 +10442,7 @@ details.details-moving > :not(summary) {
     Object.keys(wo.amrap).forEach(function(k) {
       var a = wo.amrap[k];
       a.until && a.until <= Date.now() && (a.until = 0, a.over = 1);
-    }), cxArm(), wo.entries.length || (wo.entries = [{ name: "Freestyle", canonical_id: null, block: 0, exercise: 0, sets: [] }]), clearTimeout(woCloseTimer), $("workout").classList.remove("closing"), $("workout").classList.remove("summary"), $("workout").classList.add("open"), stopRest(), acquireWake(), renderWorkout(), startClock(), resume && resume.rest && resume.rest.total > 0 && (resume.rest.held || resume.rest.until > Date.now()) && (startRest(resume.rest.total / 1e3), restUntil = resume.rest.until, restHeld = resume.rest.held || 0, restHeld ? (clearInterval(restTimer), drawRest(restHeld)) : tickRest()), saveDraft(), history.pushState({ workout: 1 }, ""), lastWeights();
+    }), cxArm(), wo.entries.length || (wo.entries = [{ name: "Freestyle", canonical_id: null, block: 0, exercise: 0, sets: [] }]), clearTimeout(woCloseTimer), $("workout").classList.remove("closing"), $("workout").classList.remove("summary", "past"), $("workout").classList.add("open"), stopRest(), acquireWake(), renderWorkout(), startClock(), resume && resume.rest && resume.rest.total > 0 && (resume.rest.held || resume.rest.until > Date.now()) && (startRest(resume.rest.total / 1e3), restUntil = resume.rest.until, restHeld = resume.rest.held || 0, restHeld ? (clearInterval(restTimer), drawRest(restHeld)) : tickRest()), saveDraft(), history.pushState({ workout: 1 }, ""), lastWeights();
   }
   function openWorkoutAdd() {
     if (!(!wo || wo.finished)) {
@@ -11382,7 +11388,7 @@ details.details-moving > :not(summary) {
   };
   try {
     var scWas = localStorage.getItem("spotter_card");
-    (scWas === "light" || scWas === "clear") && (sc.bg = scWas);
+    scWas === "light" || scWas === "clear" || scWas === "dark" ? sc.bg = scWas : darkNow() || (sc.bg = "light");
   } catch (e) {
   }
   function scPalette(bg) {
@@ -11457,7 +11463,7 @@ details.details-moving > :not(summary) {
     return k >= 1 || !/^[\d,]+$/.test(s) ? s : Math.round(parseFloat(s.replace(/,/g, "")) * k).toLocaleString();
   }
   function scDraw(c, d, p, face, marks, t) {
-    var L = SC_PAD, R = SC_W - SC_PAD, W = R - L, i, a, clear = d.bg === "clear", photo = d.bg === "photo" && marks.photo, H = clear ? SC_CH : SC_H, TOP = clear ? 64 : SC_TOP, BASE = H - (clear ? 64 : SC_H - SC_BASE);
+    var L = SC_PAD, R = SC_W - SC_PAD, W = R - L, i, a, clear = d.bg === "clear", photo = d.bg === "photo" && marks.photo, H = d.h || (clear ? SC_CH : SC_H), inset = d.h ? 150 : clear ? 64 : 0, TOP = inset || SC_TOP, BASE = H - (inset || SC_H - SC_BASE);
     if (t === void 0 && (t = 1), c.clearRect(0, 0, SC_W, H), photo) {
       var iw = marks.photo.width, ih = marks.photo.height, k = Math.max(SC_W / iw, H / ih);
       c.drawImage(marks.photo, (SC_W - iw * k) / 2, (H - ih * k) / 2, iw * k, ih * k);
@@ -11507,7 +11513,7 @@ details.details-moving > :not(summary) {
       var cx = L;
       dy = scStep(), marks.coach && (c.drawImage(marks.coach, L, y + dy + 2, 40, 40), cx = L + 54), scSet(c, "500 31px " + SC_SANS, p.dim, "left", 0), c.fillText(scFit(c, d.credit, R - cx), cx, y + dy + 34);
     }
-    scSet(c, "500 29px " + SC_SANS, p.dim, "center", 2), c.globalAlpha = 0.72, c.fillText("Logged with Spotter", SC_W / 2, H - (clear ? 40 : 284)), c.globalAlpha = 1;
+    scSet(c, "500 29px " + SC_SANS, p.dim, "center", 2), c.globalAlpha = 0.72, c.fillText("Logged with Spotter", SC_W / 2, H - (inset ? inset - 24 : 284)), c.globalAlpha = 1;
   }
   function scAssets(card) {
     var p = scPalette(card.bg);
@@ -11522,7 +11528,7 @@ details.details-moving > :not(summary) {
   function renderShareCard(card) {
     return scAssets(card).then(function(a) {
       var cv = document.createElement("canvas");
-      return cv.width = SC_W, cv.height = card.bg === "clear" ? SC_CH : SC_H, scDraw(cv.getContext("2d"), card, a.p, a.face, a.marks, 1), new Promise(function(ok, no) {
+      return cv.width = SC_W, cv.height = card.h || (card.bg === "clear" ? SC_CH : SC_H), scDraw(cv.getContext("2d"), card, a.p, a.face, a.marks, 1), new Promise(function(ok, no) {
         try {
           cv.toBlob(function(b) {
             b ? ok(b) : no(new Error("no blob"));
@@ -11673,7 +11679,7 @@ details.details-moving > :not(summary) {
     );
   }
   function scForget() {
-    sc.url && URL.revokeObjectURL(sc.url), sc.vurl && URL.revokeObjectURL(sc.vurl), sc.vseq++, sc.seq++, sc.vst = 2, sc.vno = !1, sc.photo && sc.photo.close && sc.photo.close(), sc.bg === "photo" && (sc.bg = "dark"), sc.photo = null, sc.url = sc.blob = sc.file = sc.card = sc.img = sc.hint = null, sc.vurl = sc.vfile = sc.vbtn = sc.btns = sc.pair = null;
+    sc.url && URL.revokeObjectURL(sc.url), sc.vurl && URL.revokeObjectURL(sc.vurl), sc.vseq++, sc.seq++, sc.vst = 2, sc.vno = !1, proofUrl && (URL.revokeObjectURL(proofUrl), proofUrl = null), sc.photo && sc.photo.close && sc.photo.close(), sc.bg === "photo" && (sc.bg = "dark"), sc.photo = null, sc.url = sc.blob = sc.file = sc.card = sc.img = sc.hint = null, sc.vurl = sc.vfile = sc.vbtn = sc.btns = sc.pair = null;
   }
   function scWatchSummary() {
     if (!(sc.watching || !window.MutationObserver)) {
@@ -11888,15 +11894,34 @@ details.details-moving > :not(summary) {
     }
     return wrap;
   }
-  var proofOn = !1, proofTimer = null;
+  var proofOn = !1, proofTimer = null, proofUrl = null, proofSeq = 0;
+  function proofCard() {
+    var c = {}, k;
+    for (k in sc.card) Object.prototype.hasOwnProperty.call(sc.card, k) && (c[k] = sc.card[k]);
+    return c.bg = sc.bg === "clear" ? darkNow() ? "dark" : "light" : sc.bg, c.h = Math.round(SC_W * Math.min(2.4, Math.max(
+      1.5,
+      (window.innerHeight || SC_H) / (window.innerWidth || SC_W)
+    ))), c;
+  }
+  function darkNow() {
+    try {
+      return window.matchMedia("(prefers-color-scheme: dark)").matches;
+    } catch (e) {
+      return !0;
+    }
+  }
   function openProof() {
-    if (!sc.url) {
+    if (!sc.card) {
       scHold();
       return;
     }
     haptic("tap");
-    var n = $("proof");
-    $("proofimg").src = sc.url, n.style.background = sc.bg === "clear" || sc.bg === "photo" ? "" : scPalette(sc.bg).bg, clearTimeout(proofTimer), n.classList.remove("closing"), n.classList.add("open"), n.setAttribute("aria-hidden", "false"), proofOn = !0;
+    var n = $("proof"), card = proofCard(), mine = ++proofSeq;
+    n.style.background = scPalette(card.bg).bg, $("proofimg").removeAttribute("src"), renderShareCard(card).then(function(b) {
+      mine !== proofSeq || !proofOn || (proofUrl && URL.revokeObjectURL(proofUrl), proofUrl = URL.createObjectURL(b), $("proofimg").src = proofUrl);
+    }, function() {
+      mine === proofSeq && (closeProof(), scHold());
+    }), clearTimeout(proofTimer), n.classList.remove("closing"), n.classList.add("open"), n.setAttribute("aria-hidden", "false"), proofOn = !0;
     var tip = $("proofhint");
     tip.classList.remove("gone"), setTimeout(function() {
       proofOn && tip.classList.add("gone");
@@ -11907,7 +11932,7 @@ details.details-moving > :not(summary) {
       proofOn = !1, haptic("tap");
       var n = $("proof");
       n.style.transform = "", n.style.opacity = "", n.classList.remove("open", "dragging"), n.classList.add("closing"), n.setAttribute("aria-hidden", "true"), clearTimeout(proofTimer), proofTimer = setTimeout(function() {
-        n.classList.remove("closing"), $("proofimg").src = "";
+        n.classList.remove("closing"), $("proofimg").removeAttribute("src");
       }, 240), fromPop || (sheetBack++, history.back());
     }
   }

@@ -1862,8 +1862,10 @@ export const STYLE = String.raw`<style>
      1:1 and only the let-go eases, which is the rule every sheet here follows. */
   #proof:not(.dragging) { transition: transform var(--t-2) var(--e-out),
     opacity var(--t-2) var(--e-out); }
-  /* Said once, then out of the shot. It never takes the tap that dismisses. */
-  .proofhint { position: absolute; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom));
+  /* Said once, then out of the shot, and at the top because the bottom of a card
+     laid out for this screen is where "Logged with Spotter" already is. It never
+     takes the tap that dismisses. */
+  .proofhint { position: absolute; left: 50%; top: calc(20px + env(safe-area-inset-top));
     transform: translateX(-50%); padding: 8px 15px; border-radius: 999px;
     background: rgba(0, 0, 0, .45); color: #FFF; font-size: 12px; font-weight: 600;
     white-space: nowrap; pointer-events: none;
@@ -2432,7 +2434,10 @@ export const STYLE = String.raw`<style>
   .exercise-options.details-closing > summary { color: var(--ink-2); }
   #workmanage .managerow { flex-direction: column; }
   #workmanage .mbtn { flex: auto; min-height: 44px; justify-content: flex-start; }
-  #workoptions .pickrow { min-height: 48px; }
+  #workoptions .pickrow, #recapopts .pickrow { min-height: 48px; }
+  /* Destructive, so it takes the one red the system has - the same red Settings
+     gives its delete - rather than the muted grey that reads as unavailable. */
+  #recapopts .danger { color: var(--ember-ink); font-size: 15px; font-weight: 650; }
   #dmore { min-height: 44px; }
   #chips { flex-wrap: wrap; }
   /* iOS date inputs can add padding outside their declared width. Let a normal

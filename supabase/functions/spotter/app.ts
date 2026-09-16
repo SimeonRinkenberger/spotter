@@ -5067,7 +5067,9 @@ export const APP = String.raw`
     }
     clearTimeout(woCloseTimer);
     $("workout").classList.remove("closing");
-    $("workout").classList.remove("summary");
+    // .past belongs to a session being read; a live one must never wear it, or the
+    // overflow that only history has would be sitting over a workout in progress.
+    $("workout").classList.remove("summary", "past");
     $("workout").classList.add("open");
     stopRest();
     acquireWake();
@@ -6751,7 +6753,11 @@ export const APP = String.raw`
     btns: null, tip: "", vfile: null, vurl: null, vbtn: null, vseq: 0, vst: 2, vno: false };
   try {
     var scWas = localStorage.getItem("spotter_card");
-    if (scWas === "light" || scWas === "clear") sc.bg = scWas;
+    // A card the poster has picked keeps its look whatever the phone is set to.
+    // A first card has nothing to keep, and the one thing it can reasonably look
+    // like is the app around it — which is also the scheme a proof opens in.
+    if (scWas === "light" || scWas === "clear" || scWas === "dark") sc.bg = scWas;
+    else if (!darkNow()) sc.bg = "light";
   } catch (e) { /* a browser with storage shut off keeps the default */ }
 
   // Both palettes are declared in style.ts and both exist in both schemes: the
@@ -6865,8 +6871,13 @@ export const APP = String.raw`
     // the Story editor. Photo is their own picture - never the creator's clip
     // frame, which is a third party's work.
     var clear = d.bg === "clear", photo = d.bg === "photo" && marks.photo;
-    var H = clear ? SC_CH : SC_H, TOP = clear ? 64 : SC_TOP,
-      BASE = H - (clear ? 64 : SC_H - SC_BASE);
+    // Three frames, one draw. A Story card keeps Instagram's furniture off its
+    // text, which is what SC_TOP and SC_BASE are; an overlay and a proof own every
+    // pixel they are drawn on, so they take a plain margin instead - and a proof
+    // brings its own height, the phone's, so it can fill a screen without being
+    // cropped to fit one.
+    var H = d.h || (clear ? SC_CH : SC_H), inset = d.h ? 150 : clear ? 64 : 0;
+    var TOP = inset || SC_TOP, BASE = H - (inset || (SC_H - SC_BASE));
     if (t === undefined) t = 1;
     c.clearRect(0, 0, SC_W, H);
     if (photo) {
@@ -7030,7 +7041,7 @@ export const APP = String.raw`
     // advert does not get posted.
     scSet(c, "500 29px " + SC_SANS, p.dim, "center", 2);
     c.globalAlpha = 0.72;
-    c.fillText("Logged with Spotter", SC_W / 2, H - (clear ? 40 : 284));
+    c.fillText("Logged with Spotter", SC_W / 2, H - (inset ? inset - 24 : 284));
     c.globalAlpha = 1;
   }
 
@@ -7053,7 +7064,7 @@ export const APP = String.raw`
       // A fixed asset, not a screen surface, so devicePixelRatio never comes into
       // it: at DPR 3 this would be 18.6M pixels, past the canvas area cap on every
       // iPhone before iOS 18, and the whole draw would come back blank.
-      cv.width = SC_W; cv.height = card.bg === "clear" ? SC_CH : SC_H;
+      cv.width = SC_W; cv.height = card.h || (card.bg === "clear" ? SC_CH : SC_H);
       scDraw(cv.getContext("2d"), card, a.p, a.face, a.marks, 1);
       return new Promise(function (ok, no) {
         // A tainted canvas, no toBlob, a phone out of memory: one failure, and the
@@ -7225,6 +7236,7 @@ export const APP = String.raw`
     sc.vno = false;
     // The picture belonged to that session: megabytes a phone has better uses for,
     // and the next session must not inherit someone's last gym selfie.
+    if (proofUrl) { URL.revokeObjectURL(proofUrl); proofUrl = null; }
     if (sc.photo && sc.photo.close) sc.photo.close();
     if (sc.bg === "photo") sc.bg = "dark";
     sc.photo = null;
@@ -7612,17 +7624,53 @@ export const APP = String.raw`
   // the creator's handle. Cropping the proof is the one thing the proof cannot
   // do. So the card is fitted whole and the ground it was drawn on runs to the
   // edges behind it — the same colour, so it reads as one surface and not as bars.
-  var proofOn = false, proofTimer = null;
+  var proofOn = false, proofTimer = null, proofUrl = null, proofSeq = 0;
+
+  /**
+   * The same card, re-laid for the screen it is about to fill.
+   *
+   * 1080x1920 is Instagram's frame and the right one to leave the phone as. It is
+   * the wrong one to fill a phone WITH: fitted to 19.5:9 it leaves a third of the
+   * screen as bare ground, and filled to it, 9% comes off each side. So the proof
+   * asks for the same draw at the screen's own aspect - one number, the same
+   * arithmetic underneath - and the layout spreads into the room it gets.
+   *
+   * Clamped either side: a desktop window is not a phone, and neither a square
+   * nor a 1080x6000 canvas is a card anybody wants sent to them.
+   *
+   * Clear has no ground of its own and is meant to be dropped on someone else's
+   * clip, which is not what a proof is, so it borrows the scheme in use instead.
+   */
+  function proofCard() {
+    var c = {}, k;
+    for (k in sc.card) if (Object.prototype.hasOwnProperty.call(sc.card, k)) c[k] = sc.card[k];
+    c.bg = sc.bg === "clear" ? (darkNow() ? "dark" : "light") : sc.bg;
+    c.h = Math.round(SC_W * Math.min(2.4, Math.max(1.5,
+      (window.innerHeight || SC_H) / (window.innerWidth || SC_W))));
+    return c;
+  }
+
+  function darkNow() {
+    try { return window.matchMedia("(prefers-color-scheme: dark)").matches; }
+    catch (e) { return true; }
+  }
 
   function openProof() {
     // Only ever opened from a card that exists: the button is built out of one.
-    if (!sc.url) { scHold(); return; }
+    if (!sc.card) { scHold(); return; }
     haptic("tap");
-    var n = $("proof");
-    $("proofimg").src = sc.url;
-    // Clear and Photo carry their own ground to the edge of the card and nothing
-    // beyond it, so the page's own paper stands in rather than a guessed colour.
-    n.style.background = sc.bg === "clear" || sc.bg === "photo" ? "" : scPalette(sc.bg).bg;
+    var n = $("proof"), card = proofCard(), mine = ++proofSeq;
+    // The ground first and the picture when it is drawn, inside the fade that is
+    // already running: a card measured at 10 to 28ms does not need a spinner, and
+    // the one thing it must not do is arrive as a white flash.
+    n.style.background = scPalette(card.bg).bg;
+    $("proofimg").removeAttribute("src");
+    renderShareCard(card).then(function (b) {
+      if (mine !== proofSeq || !proofOn) return;
+      if (proofUrl) URL.revokeObjectURL(proofUrl);
+      proofUrl = URL.createObjectURL(b);
+      $("proofimg").src = proofUrl;
+    }, function () { if (mine === proofSeq) { closeProof(); scHold(); } });
     clearTimeout(proofTimer);
     n.classList.remove("closing");
     n.classList.add("open");
@@ -7652,7 +7700,7 @@ export const APP = String.raw`
     // is worse than no animation at all.
     proofTimer = setTimeout(function () {
       n.classList.remove("closing");
-      $("proofimg").src = "";
+      $("proofimg").removeAttribute("src");
     }, 240);
     // The same bookkeeping every sheet does — our own pop, so the popstate
     // listener knows not to read it as the phone's back gesture.
