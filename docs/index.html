@@ -12836,7 +12836,7 @@ details.details-moving > :not(summary) {
         (l.entries || []).forEach(function(e) {
           sets += (e.sets || []).filter(Boolean).length;
         }), n.appendChild(el("b", null, l.workout_title || "Workout")), n.appendChild(el("span", null, sets + (sets === 1 ? " set" : " sets") + (l.duration_seconds ? " \xB7 " + Math.max(1, Math.round(l.duration_seconds / 60)) + " min" : ""))), b.appendChild(n), b.appendChild(ic("chev")), b.onclick = function() {
-          closeSheet("daysheet"), openSession(l);
+          openSession(l), closeSheet("daysheet");
         }, list.appendChild(b);
       });
       var rows = rowsFor(dayKey);

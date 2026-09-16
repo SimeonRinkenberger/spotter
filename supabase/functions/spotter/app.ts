@@ -8924,7 +8924,13 @@ export const APP = String.raw`
     // What happened, before what is meant to happen: "what did I do on the 15th"
     // is the question a past day is tapped with, and the answer used to live two
     // tabs away. Handed over rather than stacked — the recap pushes its own
-    // history entry, exactly as dayadd hands over to the picker.
+    // history entry, exactly as dayadd hands over to the picker: the new screen
+    // opens FIRST and the sheet closes behind it. Closing first gave the entry
+    // back and pushed the recap's in the same task, and a queued traversal plus a
+    // pushState cancel each other out — the recap ended up sitting on the app's
+    // own entry, so the X and the phone's back gesture left Spotter instead of
+    // the recap. Order is the whole fix; every other sheet here is already
+    // balanced because it never hands over at all.
     var done = sessionsOn(dayKey);
     done.forEach(function (l) {
       var b = el("button", "histrow dayses"), n = el("div", "n"), sets = 0;
@@ -8934,7 +8940,7 @@ export const APP = String.raw`
         (l.duration_seconds ? " · " + Math.max(1, Math.round(l.duration_seconds / 60)) + " min" : "")));
       b.appendChild(n);
       b.appendChild(ic("chev"));
-      b.onclick = function () { closeSheet("daysheet"); openSession(l); };
+      b.onclick = function () { openSession(l); closeSheet("daysheet"); };
       list.appendChild(b);
     });
     var rows = rowsFor(dayKey);
