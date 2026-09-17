@@ -168,6 +168,30 @@ export const STYLE = String.raw`<style>
     background: var(--ember-soft); padding: 10px 12px; border-radius: 11px; display: none; }
   .autherr.show { display: block; }
 
+  /* ---------- the signup abuse boundary ----------
+     The captcha box only exists once a site key does; .on is set by the code
+     that renders the widget, so a page with no key keeps the card's old spacing
+     to the pixel. Centred because an interactive Turnstile challenge is a fixed
+     300px block that would otherwise hang off the leading edge at 375. */
+  .capbox { display: none; }
+  .capbox.on { display: flex; justify-content: center; margin-bottom: 12px; }
+  /* One face at a time. Everything the card was offering is a dead end until the
+     link in the inbox is followed, so it goes away rather than greying out. */
+  .authcard.sent > :not(#mailsent) { display: none; }
+  .mailsent { animation: cardin var(--t-3) var(--e-out); }
+  .mailsent:focus { outline: none; }
+  .mailsent h2 { font-family: var(--display); font-size: 19px; margin: 14px 0 8px;
+    font-weight: 700; letter-spacing: -.012em; }
+  .mailsent p { font-size: 14px; line-height: 1.55; color: var(--ink-2); margin: 0 0 18px; }
+  /* An address is the one string on this card that has no natural break, and a
+     long one must wrap rather than widen the card past the viewport. */
+  .mailsent b { color: var(--ink); font-weight: 650; overflow-wrap: anywhere; }
+  .mailmark { display: flex; align-items: center; justify-content: center;
+    width: 44px; height: 44px; border-radius: 999px;
+    background: var(--ember-soft); color: var(--ember-ink); }
+  .mailmark .ic { width: 21px; height: 21px; }
+  @media (prefers-reduced-motion: reduce) { .mailsent { animation: none; } }
+
   /* ---------- provider sign-in (Google / Apple) ----------
      Both marks sit on the same neutral button so the row reads as one control
      type. --card is the only surface token that satisfies both brand rules at
