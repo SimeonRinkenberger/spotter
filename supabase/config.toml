@@ -13,6 +13,87 @@ enable_signup = true
 # Built-in SMTP only allows ~2-4 mails/hour, which would stall every signup.
 # Turn this on together with custom SMTP (Resend free tier) before real launch.
 enable_confirmations = false
+# Minimum gap between two mails to the same address. The default is already "1m",
+# which is what the "Resend in 60s" countdown on the landing card is counting; if
+# this is ever changed, change the 60 that mailCount() is given in app.ts with it.
+# max_frequency = "1m"
+
+# ---------- the signup abuse boundary ----------
+# LEFT COMMENTED ON PURPOSE, same convention as the Google/Apple blocks below:
+# `supabase config push` writes whatever is uncommented here to the live project,
+# and every one of these three switches breaks live signups if it is flipped
+# before the thing behind it exists.
+#
+# The order matters and is not negotiable:
+#
+#   1. Resend: add quarterdeckcollective.com as a domain and publish the DKIM,
+#      SPF and DMARC records it prints, then wait for "Verified". Create an SMTP
+#      credential. Until the domain verifies, mail sends and silently lands in
+#      spam, which looks exactly like mail that was never sent.
+#   2. Uncomment [auth.email.smtp], export SUPABASE_AUTH_SMTP_PASS, push, and send
+#      yourself one password reset. Confirm it arrives from the sender below.
+#   3. Only then set enable_confirmations = true above, and push. From that moment
+#      signUp returns a user with no session and the app shows "Check your email"
+#      (the frontend already handles both shapes, so this step is a one-line
+#      change with no deploy).
+#   4. Turnstile: create the widget, paste the SITE key into PUBLIC_CAPTCHA in
+#      supabase/functions/spotter/app.ts, rebuild, ship the page, and only after
+#      that page is live uncomment [auth.captcha] and push. Flipping the server
+#      first locks out every browser still holding the old page.
+#      NOT VERIFIED on the Capacitor shells: Cloudflare states Turnstile needs a
+#      WebView, which both shells are, but nobody has run it from
+#      capacitor://localhost (iOS) or http://localhost (Android) on a device yet.
+#      If it cannot get a token there, native signups break the moment this is
+#      pushed. [auth.rate_limit] below is the part that is safe on every client
+#      and can go first on its own.
+#
+# The whole sequence is one command each time: `supabase config push`.
+
+# [auth.captcha]
+# enabled = true
+# provider = "turnstile"
+# # The widget's SECRET key. The site key is public and lives in PUBLIC_CAPTCHA in
+# # app.ts; only this half is a secret, and only the reference to it is committed.
+# secret = "env(SUPABASE_AUTH_CAPTCHA_SECRET)"
+
+# [auth.email.smtp]
+# enabled = true
+# host = "smtp.resend.com"
+# # 465 is implicit TLS and is what Resend recommends where the client supports it.
+# port = 465
+# # Resend's SMTP username is the literal string "resend"; the API key is the pass.
+# user = "resend"
+# pass = "env(SUPABASE_AUTH_SMTP_PASS)"
+# # Must be on a domain verified in Resend, or every message is unauthenticated.
+# admin_email = "no-reply@quarterdeckcollective.com"
+# sender_name = "Spotter"
+
+# ---------- rate limits ----------
+# These are the per-IP caps gotrue applies before anything else, and they are the
+# half of the boundary that does not depend on Cloudflare or on Resend. Every key
+# below is in the CLI config reference at 2.116, so they push. Defaults are in
+# brackets; the values are sized for a launch at small volume, where a human never
+# hits them and a script farming accounts does.
+#
+# [auth.rate_limit]
+# # Emails per hour, project-wide. Resend's free tier is 100/day, so this is the
+# # ceiling that keeps a signup flood from spending the whole day's quota in an
+# # hour. Raise it with the Resend plan, not before. (default 2, which only suits
+# # the built-in sender)
+# email_sent = 30
+# # Sign-ups and sign-ins per 5 minutes per IP. Six a minute is more than any
+# # person types and far less than a farm needs. (default 30)
+# sign_in_sign_ups = 12
+# # Confirmation and recovery link verifications per 5 minutes per IP. (default 30)
+# token_verifications = 12
+# # Session refreshes per 5 minutes per IP. Left at the default: a household or an
+# # office behind one address refreshes far more than it signs in. (default 150)
+# token_refresh = 150
+#
+# Anonymous sign-ins are NOT rate-limited to zero here on purpose: 0 in a gotrue
+# rate limit is not "none allowed", and the switch that actually closes that door
+# is `enable_anonymous_sign_ins` under [auth], which is false by default and has
+# never been turned on. Leave it that way rather than guessing at a limit.
 
 # ---------- MFA ----------
 # The Supabase advisors flag "insufficient MFA options": a project where the only
