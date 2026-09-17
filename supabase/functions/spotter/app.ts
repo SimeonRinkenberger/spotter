@@ -2046,6 +2046,7 @@ export const APP = String.raw`
       wrap = el("div", "embedwrap vertical");
       frame = el("iframe");
       frame.src = "https://www.tiktok.com/player/v1/" + String(w.shortcode).replace(/^tt-/, "") + "?controls=1&description=0&rel=0";
+      frame.setAttribute("data-tiktok", "true"); frame._workout = w;
       if (typeof start === "number") frame.setAttribute("data-seek", String(start));
       frame.setAttribute("allow", "encrypted-media");
       // Instagram's frame has always said this and TikTok's never did, which is why
@@ -2082,9 +2083,16 @@ export const APP = String.raw`
 
   window.addEventListener("message", function (event) {
     if (event.origin !== "https://www.tiktok.com" || !event.data || !event.data["x-tiktok-player"]) return;
-    document.querySelectorAll('iframe[data-seek]').forEach(function (frame) {
-      if (frame.contentWindow !== event.source || event.data.type !== "onPlayerReady") return;
-      frame.contentWindow.postMessage({ type: "seekTo", value: Number(frame.getAttribute("data-seek")), "x-tiktok-player": true }, "https://www.tiktok.com");
+    document.querySelectorAll('iframe[data-tiktok]').forEach(function (frame) {
+      if (frame.contentWindow !== event.source) return;
+      if (event.data.type === "onPlayerReady" && frame.hasAttribute("data-seek")) {
+        frame.contentWindow.postMessage({ type: "seekTo", value: Number(frame.getAttribute("data-seek")), "x-tiktok-player": true }, "https://www.tiktok.com");
+      } else if (event.data.type === "onPlayerError" && !frame.parentNode.querySelector(".player-fallback")) {
+        frame.style.display = "none";
+        var fallback = el("div", "reader-offer player-fallback");
+        fallback.appendChild(el("p", null, "TikTok could not play this video here. Open the original and use the exercise timestamp shown above."));
+        fallback.appendChild(originalLink(frame._workout)); frame.parentNode.appendChild(fallback);
+      }
     });
   });
 

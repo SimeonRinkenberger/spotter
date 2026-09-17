@@ -61,6 +61,9 @@ try{
  assert.match(await page.locator('#watchbody iframe').getAttribute('src'),/tiktok.com\/player\/v1/);
  assert.equal(await page.locator('#watchbody iframe').getAttribute('data-seek'),'15');
  assert.match(await page.locator('.segment-label').innerText(),/0:15–0:25/);
+ await page.evaluate(()=>{var frame=document.querySelector('#watchbody iframe');window.dispatchEvent(new MessageEvent('message',{origin:'https://www.tiktok.com',source:frame.contentWindow,data:{'x-tiktok-player':true,type:'onPlayerError',value:{errorCode:2001}}}));});
+ assert.match(await page.locator('.player-fallback').innerText(),/Open the original/);
+ assert(await page.locator('.player-fallback a').getAttribute('href'));
  assert.deepEqual(errors,[]);
  console.log('PASS native-shell 375px light/dark, preview quota, swipe Delete/Undo, set goal before/after/extra, Plus disclosure and TikTok segment selection.');
 }finally{await browser.close();}

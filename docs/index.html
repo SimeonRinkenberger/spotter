@@ -9179,7 +9179,7 @@ details.details-moving > :not(summary) {
     if (w.platform === "instagram")
       wrap = el("div", "embedwrap vertical"), frame = el("iframe"), frame.src = "https://www.instagram.com/" + (w.kind === "p" ? "p" : "reel") + "/" + w.shortcode + "/embed/", frame.setAttribute("scrolling", "no"), frame.setAttribute("allowtransparency", "true");
     else if (w.platform === "tiktok")
-      wrap = el("div", "embedwrap vertical"), frame = el("iframe"), frame.src = "https://www.tiktok.com/player/v1/" + String(w.shortcode).replace(/^tt-/, "") + "?controls=1&description=0&rel=0", typeof start == "number" && frame.setAttribute("data-seek", String(start)), frame.setAttribute("allow", "encrypted-media"), frame.setAttribute("scrolling", "no");
+      wrap = el("div", "embedwrap vertical"), frame = el("iframe"), frame.src = "https://www.tiktok.com/player/v1/" + String(w.shortcode).replace(/^tt-/, "") + "?controls=1&description=0&rel=0", frame.setAttribute("data-tiktok", "true"), frame._workout = w, typeof start == "number" && frame.setAttribute("data-seek", String(start)), frame.setAttribute("allow", "encrypted-media"), frame.setAttribute("scrolling", "no");
     else if (w.platform === "youtube")
       wrap = el("div", "embedwrap wide"), frame = el("iframe"), frame.src = "https://www.youtube.com/embed/" + String(w.shortcode).replace(/^yt-/, "") + (start ? "?start=" + start + "&autoplay=1" : ""), frame.setAttribute("allow", "accelerometer; encrypted-media; picture-in-picture; fullscreen"), frame.setAttribute("allowfullscreen", "");
     else {
@@ -9192,8 +9192,16 @@ details.details-moving > :not(summary) {
     return frame.title = "Workout video", frame.setAttribute("loading", "lazy"), wrap.appendChild(frame), wrap;
   }
   window.addEventListener("message", function(event) {
-    event.origin !== "https://www.tiktok.com" || !event.data || !event.data["x-tiktok-player"] || document.querySelectorAll("iframe[data-seek]").forEach(function(frame) {
-      frame.contentWindow !== event.source || event.data.type !== "onPlayerReady" || frame.contentWindow.postMessage({ type: "seekTo", value: Number(frame.getAttribute("data-seek")), "x-tiktok-player": !0 }, "https://www.tiktok.com");
+    event.origin !== "https://www.tiktok.com" || !event.data || !event.data["x-tiktok-player"] || document.querySelectorAll("iframe[data-tiktok]").forEach(function(frame) {
+      if (frame.contentWindow === event.source) {
+        if (event.data.type === "onPlayerReady" && frame.hasAttribute("data-seek"))
+          frame.contentWindow.postMessage({ type: "seekTo", value: Number(frame.getAttribute("data-seek")), "x-tiktok-player": !0 }, "https://www.tiktok.com");
+        else if (event.data.type === "onPlayerError" && !frame.parentNode.querySelector(".player-fallback")) {
+          frame.style.display = "none";
+          var fallback = el("div", "reader-offer player-fallback");
+          fallback.appendChild(el("p", null, "TikTok could not play this video here. Open the original and use the exercise timestamp shown above.")), fallback.appendChild(originalLink(frame._workout)), frame.parentNode.appendChild(fallback);
+        }
+      }
     });
   });
   function embedHKey(p, px) {

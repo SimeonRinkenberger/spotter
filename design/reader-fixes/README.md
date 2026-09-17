@@ -94,3 +94,7 @@ Flash-Lite was roughly 62% cheaper in this small test. This is not enough eviden
 Replaced `docs/assets/pumpy/workout-upper.webp` using the built-in image-generation tool, then inspected and resized to the native 640px WebP asset. Final prompt: preserve Pumpy's orange plate, cheerful face, shoes, wings, cream background and vintage ink style; redraw exactly two arms and white-gloved hands in a relaxed standing curl, each with a coherent closed grip around the center handle of one dumbbell, clear thumbs, no fused/extra digits or floating equipment. Both native builds package the replacement.
 
 Sources: Google Gemini pricing, model and context-cache documentation; Apple Human Interface Guidelines on gestures. Cache reuse removes duplicate work rather than reducing the evidence seen by the reader. Swipe actions retain a visible alternative and Undo.
+
+Live TikTok verification: the provider returned `onPlayerError` / `SERVER_ERROR` (2001) for the public evaluation video. The app now replaces the failed player with a clear Open original fallback while preserving the timestamp range. Readiness/seek messaging and this error path are regression-tested, but successful third-party playback/seek cannot be claimed from this run.
+
+Production OAuth verification: the native PKCE authorization request redirects to Google's authorization host. The retired evaluator returns 404 without credentials; Supabase confirmed removal of both the evaluator and Groq secrets.
