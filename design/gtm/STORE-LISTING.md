@@ -133,6 +133,11 @@ store fields are the inconsistent ones.
 > train it, choose exercises that are right for you, and get qualified guidance when you need it.
 
 Notes on the draft above:
+- **Verify the number 20 before publishing.** The free library limit is `20` as seeded in
+  `limits.plans` (migration `20260904200000_billing.sql`), and the same number appears in the two
+  subscription disclosure paragraphs below. `app_config` is live-editable and agents may not read
+  or write it, so the live value was not checked. If it differs, change all three places or drop
+  the number and say "a limited library".
 - No superlatives, no user counts, no "unlimited", no claimed results. 1.4.1 and Play's Health
   Content and Services policy both turn on claims, and there are none here.
 - The explicit "AI reading and AI answers can be wrong" line is the same promise the app already
