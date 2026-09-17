@@ -23,6 +23,7 @@
 		1F03AE43625643738264F941 /* SpotterViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33935BB01C3C4BF698FC24CE /* SpotterViewController.swift */; };
 		D533B178E91C4F7DAADBE6FE /* ShareExtension.appex in Copy Files */ = {isa = PBXBuildFile; fileRef = E24E7C16EE9D471BB63EFB5E /* ShareExtension.appex */; };
 		AFD32F87277B4C27B86FC250 /* ShareAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E296ACDC66A4975B9382321 /* ShareAccess.swift */; };
+		A9CE70000000000000000400 /* SecureSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9CE70000000000000000110 /* SecureSession.swift */; };
 		A9CE70000000000000000200 /* SheetSpec.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9CE70000000000000000100 /* SheetSpec.swift */; };
 		A9CE70000000000000000300 /* SheetSpec.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9CE70000000000000000100 /* SheetSpec.swift */; };
 		A9CE70000000000000000201 /* ContactSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9CE70000000000000000101 /* ContactSheet.swift */; };
@@ -39,6 +40,7 @@
 
 /* Begin PBXFileReference section */
 		A90208000000000000000004 /* AppleAuth.swift */ = {isa = PBXFileReference; path = "App/AppleAuth.swift"; sourceTree = "<group>"; lastKnownFileType = sourcecode.swift; };
+		A9CE70000000000000000110 /* SecureSession.swift */ = {isa = PBXFileReference; path = "App/SecureSession.swift"; sourceTree = "<group>"; lastKnownFileType = sourcecode.swift; };
 		A90208000000000000000002 /* GoogleAuth.swift */ = {isa = PBXFileReference; path = "App/GoogleAuth.swift"; sourceTree = "<group>"; lastKnownFileType = sourcecode.swift; };
 		2FAD9762203C412B000D30F8 /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
 		50379B222058CBB4000EE86E /* capacitor.config.json */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.json; path = capacitor.config.json; sourceTree = "<group>"; };
@@ -137,6 +139,7 @@
 				A90208000000000000000002 /* GoogleAuth.swift */,
 				A90208000000000000000004 /* AppleAuth.swift */,
 				3AB54298CCDB4359AF92B825 /* ShareCredential.swift */,
+				A9CE70000000000000000110 /* SecureSession.swift */,
 				A9CE70000000000000000100 /* SheetSpec.swift */,
 				A9CE70000000000000000101 /* ContactSheet.swift */,
 				A9CE70000000000000000102 /* TikTokMedia.swift */,
@@ -274,6 +277,7 @@
 				9593A5889F1E4058B595C3CA /* PumpyStream.swift in Sources */,
 				1F03AE43625643738264F941 /* SpotterViewController.swift in Sources */,
 				AFD32F87277B4C27B86FC250 /* ShareAccess.swift in Sources */,
+				A9CE70000000000000000400 /* SecureSession.swift in Sources */,
 				A90208000000000000000001 /* GoogleAuth.swift in Sources */,
 				A90208000000000000000003 /* AppleAuth.swift in Sources */,
 				6BDD45E8985D41DDA9F16612 /* ShareCredential.swift in Sources */,

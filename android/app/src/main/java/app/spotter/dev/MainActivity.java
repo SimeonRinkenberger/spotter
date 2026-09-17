@@ -8,6 +8,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(SpotterAndroid.class);
         registerPlugin(GoogleAuth.class);
         registerPlugin(PumpyStream.class);
+        registerPlugin(SecureSession.class);
         super.onCreate(state);
     }
 }
