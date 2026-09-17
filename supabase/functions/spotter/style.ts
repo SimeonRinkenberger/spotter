@@ -173,6 +173,16 @@ export const STYLE = String.raw`<style>
      keeps its old spacing to the pixel. Centred once the widget is in, because an
      interactive challenge is a fixed 300px block that would otherwise hang off
      the leading edge at 375. */
+  /* The consent sentence: small, quiet, and never below the fold of the card —
+     it has to be read before the button under it is pressed. --ink-2 rather than
+     --muted because this is the one line on the page a person is being asked to
+     agree to, and --muted is only just AA at this size. */
+  .consent { font-size: 12.5px; line-height: 1.55; color: var(--ink-2); margin: 0 0 14px; }
+  .consent a { color: var(--ink-2); text-decoration: underline; text-underline-offset: 2px; }
+  .consentrow { border: 1px solid var(--line-2); border-radius: 16px;
+    padding: 14px 14px 12px; margin-bottom: 20px; }
+  .consentrow .consent { margin-bottom: 12px; }
+  .consentrow .btn { padding: 11px; font-size: 14.5px; }
   .capgate:not(:empty) { display: flex; justify-content: center; margin-bottom: 12px; }
   /* One face at a time. Everything the card was offering is a dead end until the
      link in the inbox is followed, so it goes away rather than greying out — but

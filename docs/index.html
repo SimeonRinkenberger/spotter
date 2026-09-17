@@ -446,6 +446,30 @@ button {
 .autherr.show {
   display: block;
 }
+.consent {
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--ink-2);
+  margin: 0 0 14px;
+}
+.consent a {
+  color: var(--ink-2);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.consentrow {
+  border: 1px solid var(--line-2);
+  border-radius: 16px;
+  padding: 14px 14px 12px;
+  margin-bottom: 20px;
+}
+.consentrow .consent {
+  margin-bottom: 12px;
+}
+.consentrow .btn {
+  padding: 11px;
+  font-size: 14.5px;
+}
 .capgate:not(:empty) {
   display: flex;
   justify-content: center;
@@ -7209,6 +7233,7 @@ details.details-moving > :not(summary) {
           <button type="button" class="pweye" aria-label="Show password" aria-pressed="false"><svg class="ic"><use href="#i-eye"></use></svg></button>
         </div>
       </div>
+      <p class="consent hide" id="consent"></p>
       <div class="capgate" id="capgate"></div>
       <button class="btn" id="authgo">Create account</button>
       <div class="autherr" id="autherr"></div>
@@ -7631,6 +7656,11 @@ details.details-moving > :not(summary) {
   <div class="grabber"></div>
   <button class="iconbtn sheetx" id="setclose" aria-label="Close settings"><svg class="ic"><use href="#i-x"></use></svg></button>
   <h2>Settings</h2>
+
+  <div class="consentrow hide" id="consentrow">
+    <p class="consent" id="consentset"></p>
+    <button class="btn ghost" id="consentok">Got it</button>
+  </div>
 
   <h3 class="seth">Account</h3>
   <div class="setgroup">
@@ -8108,7 +8138,7 @@ details.details-moving > :not(summary) {
     var b = el("button", null, isUp ? "Sign in" : "Create an account");
     b.onclick = function() {
       setAuthMode(isUp ? "signin" : "signup");
-    }, $("authswap").appendChild(b), $("forgotwrap").classList.toggle("hide", isUp);
+    }, $("authswap").appendChild(b), $("forgotwrap").classList.toggle("hide", isUp), $("consent").classList.toggle("hide", !isUp);
   }
   function authError(msg) {
     var e = $("autherr");
@@ -8124,6 +8154,21 @@ details.details-moving > :not(summary) {
   }
   function authMessage(m) {
     return m = String(m || ""), /captcha/i.test(m) ? "The security check did not finish. Try that once more." : /already regist/i.test(m) ? "That email already has an account \u2014 sign in instead." : /invalid login|invalid.*credential/i.test(m) ? "Wrong email or password." : /rate limit|too many|for security purposes/i.test(m) ? "Too many tries. Give it a minute." : /confirm/i.test(m) ? "Check your email to confirm your account, then sign in." : /network|fetch|failed to fetch/i.test(m) ? "Could not reach Spotter \u2014 check your connection." : /password/i.test(m) && /weak|short|least|6 char/i.test(m) ? "Use at least 8 characters." : /email/i.test(m) && /invalid|valid/i.test(m) ? "That email address does not look right." : authMode === "signup" ? "Could not create your account. Try again in a moment." : "Could not sign you in. Try again in a moment.";
+  }
+  var consentGiven = !1;
+  function consentLink(href, text) {
+    var a = el("a", null, text);
+    return a.href = href, a;
+  }
+  function consentFill(node) {
+    node.innerHTML = "", node.appendChild(document.createTextNode("By creating an account you agree to the ")), node.appendChild(consentLink("terms.html", "Terms")), node.appendChild(document.createTextNode(" and to Spotter sending the videos and captions you save to AI providers (OpenAI, Google) to build your workout cards. ")), node.appendChild(consentLink("https://quarterdeckcollective.com/spotter/privacy/", "Privacy policy")), node.appendChild(document.createTextNode("."));
+  }
+  function consentAt() {
+    var s = state.profile && state.profile.settings;
+    return s ? s.ai_consent_at : null;
+  }
+  function noteConsent() {
+    !state.profile || consentAt() || (state.profile.settings = state.profile.settings || {}, state.profile.settings.ai_consent_at = (/* @__PURE__ */ new Date()).toISOString(), saveSettings());
   }
   var TURNSTILE_SRC = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit", capRendered = null, capPending = null, capTimer = null;
   function capOn() {
@@ -8204,7 +8249,7 @@ details.details-moving > :not(summary) {
         authError(authMessage(r.error.message));
         return;
       }
-      r.data.session || mailSent(email);
+      mode === "signup" && (consentGiven = !0), r.data.session || mailSent(email);
     }).catch(function(e) {
       idle2(), authError(authMessage(e && e.message ? e.message : e));
     });
@@ -8576,7 +8621,7 @@ details.details-moving > :not(summary) {
     }).then(function() {
       return profileReady;
     }).then(function() {
-      accountNow(epoch, uid) && void 0;
+      accountNow(epoch, uid) && (consentGiven && noteConsent(), void 0);
     }), booting;
   }
   var drawn = { train: !1, pumpy: !1 };
@@ -15690,6 +15735,8 @@ details.details-moving > :not(summary) {
     guideUser(), guidePaintSettings(), $("setver").textContent = "v" + VERSION, $("setemail").textContent = state.user ? state.user.email : "\u2014";
     var how = signInMethod();
     $("setprov").textContent = how || "\u2014", $("setprovrow").classList.toggle("hide", !how);
+    var owed = !!state.profile && !consentAt();
+    $("consentrow").classList.toggle("hide", !owed), owed && consentFill($("consentset"));
     var mine = isEmailAccount();
     $("setpwrow").classList.toggle("hide", !mine), $("setmailrow").disabled = !mine, $("setname").textContent = displayName() || "Not set", $("unittoggle").textContent = state.unit, paintGoal(), $("haptictoggle").textContent = state.haptics ? "On" : "Off", $("sethapticrow").classList.toggle("hide", !native && !navigator.vibrate), paintSounds(), loadRemind(), $("shortcutsetup").classList.toggle("hide", !!native), $("nativesharehelp").classList.toggle("hide", !native), native && native.platform === "android" && ($("nativesharehelp").textContent = "In TikTok, YouTube, Instagram or another app, share the post\u2019s link and choose Spotter from the Android share sheet.");
     var key = state.profile ? state.profile.ingest_key : null;
@@ -16546,7 +16593,9 @@ details.details-moving > :not(summary) {
       }
     }
   }
-  if ($("authgo").onclick = doAuth, $("forgotpw").onclick = forgotPassword, $("mailresend").onclick = mailResend, $("mailback").onclick = mailBack, $("oagoogle").onclick = googleSignIn, $("oaapple").onclick = appleSignIn, oaLabelOf("oagoogle"), oaLabelOf("oaapple"), loadAuthProviders(), $("pw").addEventListener("keydown", function(e) {
+  if ($("authgo").onclick = doAuth, $("forgotpw").onclick = forgotPassword, consentFill($("consent")), $("consentok").onclick = function() {
+    noteConsent(), $("consentrow").classList.add("hide");
+  }, $("mailresend").onclick = mailResend, $("mailback").onclick = mailBack, $("oagoogle").onclick = googleSignIn, $("oaapple").onclick = appleSignIn, oaLabelOf("oagoogle"), oaLabelOf("oaapple"), loadAuthProviders(), $("pw").addEventListener("keydown", function(e) {
     e.key === "Enter" && doAuth();
   }), $("addbtn").onclick = function() {
     $("addurl").value = "", resetUpload(), openSheet("addsheet");

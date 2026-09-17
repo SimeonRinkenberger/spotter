@@ -431,6 +431,9 @@ export const APP = String.raw`
     b.onclick = function () { setAuthMode(isUp ? "signin" : "signup"); };
     $("authswap").appendChild(b);
     $("forgotwrap").classList.toggle("hide", isUp);
+    // Same rule as Forgot your password, the other way round: the sentence is
+    // about creating an account, so it belongs to the face that creates one.
+    $("consent").classList.toggle("hide", !isUp);
   }
 
   function authError(msg) {
@@ -468,6 +471,49 @@ export const APP = String.raw`
     return authMode === "signup"
       ? "Could not create your account. Try again in a moment."
       : "Could not sign you in. Try again in a moment.";
+  }
+
+  // ---------- AI consent (App Store 5.1.2(i)) ----------
+  //
+  // A saved video and its caption go to OpenAI and to Google to become a workout
+  // card. 5.1.2(i) says the person has to have agreed to that in so many words
+  // first, and the sign-up form had nothing of the kind. The sentence is built
+  // here rather than written twice in markup: it is shown above Create account,
+  // and once at the top of Settings for an account made before it existed, and
+  // two copies of a consent sentence are two sentences that will drift.
+  //
+  // What is stored is the moment, not the fact — profiles.settings.ai_consent_at,
+  // an ISO string, written through saveSettings() like every other preference.
+  // settings is user-writable, so no migration and no new column.
+  var consentGiven = false;
+
+  function consentLink(href, text) {
+    var a = el("a", null, text);
+    a.href = href;
+    return a;
+  }
+
+  function consentFill(node) {
+    node.innerHTML = "";
+    node.appendChild(document.createTextNode("By creating an account you agree to the "));
+    node.appendChild(consentLink("terms.html", "Terms"));
+    node.appendChild(document.createTextNode(" and to Spotter sending the videos and captions you save to AI providers (OpenAI, Google) to build your workout cards. "));
+    node.appendChild(consentLink("https://quarterdeckcollective.com/spotter/privacy/", "Privacy policy"));
+    node.appendChild(document.createTextNode("."));
+  }
+
+  function consentAt() {
+    var s = state.profile && state.profile.settings;
+    return s ? s.ai_consent_at : null;
+  }
+
+  // Idempotent on purpose: the sign-up path and the Settings line both call it,
+  // and an account that has already agreed is never asked or written again.
+  function noteConsent() {
+    if (!state.profile || consentAt()) return;
+    state.profile.settings = state.profile.settings || {};
+    state.profile.settings.ai_consent_at = new Date().toISOString();
+    saveSettings();
   }
 
   // ---------- Cloudflare Turnstile ----------
@@ -574,6 +620,10 @@ export const APP = String.raw`
         authError(authMessage(r.error.message));
         return;
       }
+      // The button that was just pressed carried the sentence above it, so this
+      // is the agreement. It is written once there is a profile row to write it
+      // on, which is after boot.
+      if (mode === "signup") consentGiven = true;
       // Confirmations on: signUp answers with a user and no session. gotrue
       // answers exactly the same way for an address that already has an account,
       // and that is right — this form must not be a way to ask which addresses
@@ -1159,7 +1209,11 @@ export const APP = String.raw`
       .then(function () { if (accountNow(epoch, uid)) return consumeBilling(); })
       .then(function () { if (accountNow(epoch, uid)) return warmPages(); })
       .then(function () { return profileReady; })
-      .then(function () { if (accountNow(epoch, uid)) welcomeMaybe(); });
+      .then(function () {
+        if (!accountNow(epoch, uid)) return;
+        if (consentGiven) noteConsent();
+        welcomeMaybe();
+      });
     return booting;
   }
 
@@ -13239,6 +13293,10 @@ export const APP = String.raw`
     // Only an email account owns its own password and address; Google and Apple
     // own theirs, and offering to change them here would send somebody round a
     // loop that ends at a provider screen we do not control.
+    // Asked once, and only of an account that predates the sign-up sentence.
+    var owed = !!state.profile && !consentAt();
+    $("consentrow").classList.toggle("hide", !owed);
+    if (owed) consentFill($("consentset"));
     var mine = isEmailAccount();
     $("setpwrow").classList.toggle("hide", !mine);
     $("setmailrow").disabled = !mine;
@@ -14679,6 +14737,11 @@ export const APP = String.raw`
 
   $("authgo").onclick = doAuth;
   $("forgotpw").onclick = forgotPassword;
+  consentFill($("consent"));
+  $("consentok").onclick = function () {
+    noteConsent();
+    $("consentrow").classList.add("hide");
+  };
   $("mailresend").onclick = mailResend;
   $("mailback").onclick = mailBack;
   $("oagoogle").onclick = googleSignIn;

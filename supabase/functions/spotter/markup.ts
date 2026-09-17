@@ -120,6 +120,13 @@ export const MARKUP_BODY = String.raw`</head>
           <button type="button" class="pweye" aria-label="Show password" aria-pressed="false"><svg class="ic"><use href="#i-eye"></use></svg></button>
         </div>
       </div>
+      <!-- App Store 5.1.2(i): nobody's content reaches a third-party model
+           without them having read, in so many words, that it will. The sentence
+           is on the sign-up face only, and it sits directly above the button,
+           because pressing that button IS the agreement. Filled from
+           consentFill() in app.ts so this sentence and the one Settings shows an
+           older account cannot drift apart. -->
+      <p class="consent hide" id="consent"></p>
       <!-- Cloudflare Turnstile mounts here, and only once PUBLIC_CAPTCHA in
            app.ts carries a site key: with none it is display:none and empty, so
            the card is byte-for-byte the card that shipped before. The widget is
@@ -628,6 +635,15 @@ export const MARKUP_BODY = String.raw`</head>
   <div class="grabber"></div>
   <button class="iconbtn sheetx" id="setclose" aria-label="Close settings"><svg class="ic"><use href="#i-x"></use></svg></button>
   <h2>Settings</h2>
+
+  <!-- The same sentence, once, for an account that was made before there was one
+       to read. Dismissing it is the agreement; it is recorded and never asked
+       again. First thing in the sheet because it is the one thing here that is
+       not a preference. -->
+  <div class="consentrow hide" id="consentrow">
+    <p class="consent" id="consentset"></p>
+    <button class="btn ghost" id="consentok">Got it</button>
+  </div>
 
   <h3 class="seth">Account</h3>
   <div class="setgroup">
