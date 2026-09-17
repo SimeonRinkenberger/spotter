@@ -446,13 +446,16 @@ button {
 .autherr.show {
   display: block;
 }
-.capgate {
+.capgate:not(:empty) {
   display: flex;
   justify-content: center;
   margin-bottom: 12px;
 }
-.authcard.sent > :not(#mailsent) {
+.authcard.sent > :not(#mailsent):not(#capgate) {
   display: none;
+}
+.authcard.sent > #capgate {
+  margin: 0;
 }
 .mailsent {
   animation: cardin var(--t-3) var(--e-out);
@@ -7206,7 +7209,7 @@ details.details-moving > :not(summary) {
           <button type="button" class="pweye" aria-label="Show password" aria-pressed="false"><svg class="ic"><use href="#i-eye"></use></svg></button>
         </div>
       </div>
-      <div class="capgate hide" id="capgate"></div>
+      <div class="capgate" id="capgate"></div>
       <button class="btn" id="authgo">Create account</button>
       <div class="autherr" id="autherr"></div>
       <div class="authswap hide" id="forgotwrap"><button id="forgotpw" type="button">Forgot your password?</button></div>
@@ -8134,9 +8137,9 @@ details.details-moving > :not(summary) {
   function capRender() {
     return capRendered || (capRendered = loadScript(TURNSTILE_SRC).then(function() {
       if (!window.turnstile || !window.turnstile.render) throw new Error("captcha unavailable");
-      var box = $("capgate"), none = function() {
+      var none = function() {
         capSettle(null);
-      }, id = window.turnstile.render(box, {
+      }, id = window.turnstile.render($("capgate"), {
         sitekey: PUBLIC_CAPTCHA.turnstile_site_key,
         execution: "execute",
         appearance: "interaction-only",
@@ -8146,7 +8149,7 @@ details.details-moving > :not(summary) {
         "expired-callback": none,
         "timeout-callback": none
       });
-      return box.classList.remove("hide"), id;
+      return id;
     }), capRendered.catch(function() {
       capRendered = null;
     }), capRendered);

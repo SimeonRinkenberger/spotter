@@ -500,18 +500,16 @@ export const APP = String.raw`
     if (capRendered) return capRendered;
     capRendered = loadScript(TURNSTILE_SRC).then(function () {
       if (!window.turnstile || !window.turnstile.render) throw new Error("captcha unavailable");
-      var box = $("capgate");
       // Every way this widget can end without a token — a Cloudflare error, a
       // token that went stale in the box, an untouched challenge — is the same
       // answer to the attempt waiting on it.
       var none = function () { capSettle(null); };
-      var id = window.turnstile.render(box, {
+      var id = window.turnstile.render($("capgate"), {
         sitekey: PUBLIC_CAPTCHA.turnstile_site_key,
         execution: "execute", appearance: "interaction-only", theme: "auto",
         callback: capSettle, "error-callback": none, "expired-callback": none,
         "timeout-callback": none
       });
-      box.classList.remove("hide");
       return id;
     });
     // A blocked script on a flaky connection is not a permanent verdict.

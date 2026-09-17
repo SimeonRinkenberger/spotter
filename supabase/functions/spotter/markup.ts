@@ -126,7 +126,7 @@ export const MARKUP_BODY = String.raw`</head>
            rendered interaction-only, which means a visitor Cloudflare can vouch
            for never sees anything at all and a suspected bot gets a checkbox
            here, above the button it is standing in the way of. -->
-      <div class="capgate hide" id="capgate"></div>
+      <div class="capgate" id="capgate"></div>
       <button class="btn" id="authgo">Create account</button>
       <div class="autherr" id="autherr"></div>
       <!-- Only on the sign-in face. Offering it while somebody is creating an

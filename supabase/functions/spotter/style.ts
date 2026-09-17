@@ -169,14 +169,17 @@ export const STYLE = String.raw`<style>
   .autherr.show { display: block; }
 
   /* ---------- the signup abuse boundary ----------
-     The Turnstile box keeps .hide until the widget is actually rendered, so a
-     page with no site key keeps the card's old spacing to the pixel. Centred
-     because an interactive challenge is a fixed 300px block that would otherwise
-     hang off the leading edge at 375. */
-  .capgate { display: flex; justify-content: center; margin-bottom: 12px; }
+     An empty box is a box with no site key behind it: no rule fires, so the card
+     keeps its old spacing to the pixel. Centred once the widget is in, because an
+     interactive challenge is a fixed 300px block that would otherwise hang off
+     the leading edge at 375. */
+  .capgate:not(:empty) { display: flex; justify-content: center; margin-bottom: 12px; }
   /* One face at a time. Everything the card was offering is a dead end until the
-     link in the inbox is followed, so it goes away rather than greying out. */
-  .authcard.sent > :not(#mailsent) { display: none; }
+     link in the inbox is followed, so it goes away rather than greying out — but
+     NOT the captcha box, because Resend needs a token too and a challenge nobody
+     can see is a challenge nobody can answer. */
+  .authcard.sent > :not(#mailsent):not(#capgate) { display: none; }
+  .authcard.sent > #capgate { margin: 0; }
   .mailsent { animation: cardin var(--t-3) var(--e-out); outline: none; }
   .mailsent h2 { font-family: var(--display); font-size: 19px; margin: 14px 0 8px;
     font-weight: 700; letter-spacing: -.012em; }
