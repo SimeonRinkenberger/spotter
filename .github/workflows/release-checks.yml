@@ -25,6 +25,10 @@ jobs:
       - run: node tools/ai-guard-db-check.mjs
         env:
           PGLITE_MODULE: ${{ runner.temp }}/guard-db/node_modules/@electric-sql/pglite/dist/index.js
+      - run: node tools/reader-access-check.mjs
+      - run: node tools/reader-db-check.mjs
+        env:
+          PGLITE_MODULE: ${{ runner.temp }}/guard-db/node_modules/@electric-sql/pglite/dist/index.js
       - run: deno check supabase/functions/spotter/index.ts
       - run: deno run --allow-env tools/ai-guard-check.ts
       - run: deno run --allow-read --allow-env tools/ai-admission-check.ts

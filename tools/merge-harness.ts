@@ -686,6 +686,12 @@ const LIVE_OLD = [
   eq("different-slide exercise is retained",M.mergeNoDowngrade(otherSlide,fresh,META,"tiktok").blocks[0].exercises.length,2);
 }
 
+{
+  const prior = stored([block([ex("Kettlebell swing to clean and press", {sets:3,reps:"8"})])]);
+  const fresh = card([block([ex("Swing + clean + press", {sets:3,reps:"8"})])]);
+  eq("compound wording does not duplicate the same video movement", M.mergeNoDowngrade(prior,fresh,META,"tiktok").blocks[0].exercises.length,1);
+}
+
 // ---------- done ----------
 
 say((failures ? "FAILED " : "ok ") + (checks - failures) + "/" + checks + " checks");

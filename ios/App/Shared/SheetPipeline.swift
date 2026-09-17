@@ -82,6 +82,21 @@ enum SheetPipeline {
         let session = URLSession(configuration: config)
         defer { session.finishTasksAndInvalidate() }
 
+        // The extension has no app profile/cache. Ask before downloading the MP4.
+        // App callers already performed this check and may be explicit rereads.
+        if case .ingestKey(let key) = auth {
+            var check = URLRequest(url: URL(string: functionBase + "/api/ingest/prepare")!)
+            check.httpMethod = "POST"
+            check.timeoutInterval = 5
+            check.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            check.setValue(key, forHTTPHeaderField: "x-ingest-key")
+            check.httpBody = try? JSONSerialization.data(withJSONObject: ["url": pageURL.absoluteString])
+            if let (data, response) = try? await session.data(for: check),
+               (response as? HTTPURLResponse)?.statusCode == 200,
+               let reply = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+               reply["needs_frames"] as? Bool == false { return nil }
+        }
+
         var page: (html: String, cookie: String, url: URL)
         do {
             page = try await TikTokMedia.page(pageURL, session: session)

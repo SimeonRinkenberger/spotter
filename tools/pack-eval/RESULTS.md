@@ -137,3 +137,8 @@ Record the date, the function version, the exact command, the numbers the runner
 (tokens in/out, cost, p50/p95 ms) and — the part that matters six months from now — **what the
 run changed your mind about**. A row of numbers with no decision attached to it is a row nobody
 reads twice.
+
+
+## 2026-09-17 — bounded Flash-Lite comparison
+
+Identical WODfather native sheets, transcript included, two calls per model via the protected live evaluator. Gemini 3.1 Flash-Lite averaged $0.0026/read ($0.0053 total); Gemini 3.6 Flash averaged $0.0069/read ($0.0138 total). Neither passed every strict fixture check (0/2 clean each). Flash-Lite had timing/catalog/provenance/detail mismatches. Current Flash also had catalog/timing/detail mismatches, with overhead press substituted for push press in one run. No production model change: a 62% cost advantage on one fixture does not establish equal accuracy. Temporary evaluator access is removed after testing. New cost savings instead reuse entitled cached results, skip redundant native work and deduplicate exactly repeated transcript text. Full report: `design/reader-fixes/README.md`.

@@ -9,6 +9,14 @@ class GuardError extends Error {}
 export const state:any={cached:[],result:null,steps:[],finished:[],seed:null};
 class SoftFailure extends Error { constructor(public userMessage:string, message:string){super(message);} }
 function providerFor(){return {cacheable:true};}
+async function premiumAccess(){return false;}
+async function capsFor(){return {plan:'free'};}
+function cacheForAccess(row:any){return row;}
+function visuallyRead(){return false;}
+function usablePack(){return undefined;}
+function packEligible(){return false;}
+function readQuality(){return 'basic';}
+function labelRecommendations(){}
 async function dbSelect(){return state.cached;}
 async function finishJob(...args:any[]){state.finished.push(args);}
 async function topUpMeta(_p:any,m:any){return m;}

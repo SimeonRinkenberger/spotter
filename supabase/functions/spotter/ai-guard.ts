@@ -53,7 +53,7 @@ function usageCost(model: string, body: any): number | null {
     const duration = Number(body?.duration);
     return Number.isFinite(duration)&&duration>=0 ? Math.max(10,duration)/3600*.04 : null;
   }
-  const u = body?.usageMetadata ?? body?.usage ?? body?.x_groq?.usage;
+  const u = body?.usageMetadata ?? body?.usage;
   if (!u) return null;
   const input = u.prompt_tokens ?? u.promptTokenCount;
   const output = u.completion_tokens ?? ((u.candidatesTokenCount ?? 0)+(u.thoughtsTokenCount ?? 0));

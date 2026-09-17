@@ -125,7 +125,7 @@ const NAMES = [
   "PUMPY_CATALOG_INDEX", "PUMPY_STATIC", "PUMPY_TOOL_STATUS",
   "PUMPY_CUE_CHARS", "PUMPY_DELTA_CHARS",
   "PUMPY_DETAIL_CHARS", "PUMPY_DETAIL_CUES", "PUMPY_DETAIL_SEEN", "PUMPY_QUOTE_CHARS",
-  "PUMPY_MAX_REFS", "PUMPY_REF_CHARS", "WEEKDAYS",
+  "PUMPY_MAX_REFS", "WEEKDAYS",
   "utcMonday", "ymdUtc", "isUuid", "isHandle", "handleOf", "workoutIds", "resolveHandle",
   "deepCopy", "dbSelect",
   "matchPackExercise", "packEvidence", "applyPack",

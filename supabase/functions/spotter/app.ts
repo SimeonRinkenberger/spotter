@@ -26,6 +26,11 @@ export const APP = String.raw`
   var sb = window.supabase.createClient(SB_URL, SB_ANON, {
     auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: !native, flowType: native ? "pkce" : "implicit", storage: native ? native.authStorage : undefined },
     global: { fetch: function (url, opts) {
+      if (String(url).indexOf("/auth/v1/") >= 0) {
+        return deadline(function (signal) {
+          return fetch(url, Object.assign({}, opts || {}, { signal: signal }));
+        }, 20000);
+      }
       // Only idempotent database reads get the short deadline. Auth and writes
       // retain the SDK's semantics; a timed-out write must never be replayed here.
       if (String(url).indexOf("/rest/v1/") < 0 || (opts && opts.method && opts.method !== "GET")) return fetch(url, opts);
@@ -603,7 +608,9 @@ export const APP = String.raw`
     // fires no moment. Without this, one of those leaves the buttons disabled until
     // the page is reloaded. Long enough that it never interrupts a real sign-in.
     clearTimeout(oauthWatchdog);
-    if (id) oauthWatchdog = setTimeout(function () { setOauthBusy(null); }, 90000);
+    if (id) oauthWatchdog = setTimeout(function () {
+      setOauthBusy(null); authError("Sign-in did not open. Try again, or use email while we reconnect.");
+    }, 30000);
   }
 
   function oauthMessage(e) {
@@ -711,7 +718,7 @@ export const APP = String.raw`
         try { type = note && note.getMomentType ? note.getMomentType() : null; } catch (e) { type = null; }
         // FedCM is always on now, and it took isNotDisplayed/getNotDisplayedReason
         // with it; getMomentType and getDismissedReason are what is left.
-        if (type === "skipped") {
+        if (type === "skipped" || (note && note.isNotDisplayed && note.isNotDisplayed())) {
           // No Google session in this browser, or One Tap suppressed. The whole-page
           // flow can still sign this person in, so send them there.
           handed = true;
@@ -1291,6 +1298,8 @@ export const APP = String.raw`
   // each tier starts and clears it when the job ends, so this is a fact about the
   // job rather than a guess from the client.
   var STAGES = {
+    basic: { kick: "Basic read", glyph: "hourglass", line: "Reading available text…",
+      head: "Building your Basic workout", body: "Free reads the available caption. Plus can also read movements, spoken cues and on-screen details. You get four Plus video previews each month." },
     reading: {
       kick: "Reading", glyph: "hourglass", line: "Reading the video…",
       head: "Still reading this one",
@@ -1330,7 +1339,7 @@ export const APP = String.raw`
     if (isUpload(w)) return w.media_stage === "watching" ? STAGES.upwatch : STAGES.upload;
     if (w.media_stage === "watching") return STAGES.watching;
     if (w.media_stage === "listening") return STAGES.listening;
-    return STAGES.reading;
+    return isFree() ? STAGES.basic : STAGES.reading;
   }
 
   // What this card was actually read out of. The caveat has to be able to say so:
@@ -1358,7 +1367,7 @@ export const APP = String.raw`
     if (w.platform !== "tiktok") return false;
     if (isPending(w) || isFailed(w)) return false;
     var from = readFrom(w);
-    return !from.video && !from.speech;
+    return w.read_quality !== "premium";
   }
 
   // ---------- collections: lookups ----------
@@ -1944,8 +1953,10 @@ export const APP = String.raw`
       card.onclick = function () { openDetail(w); };
       return card;
     }
-    if (w.thumb_url) {
-      var img = el("img");
+    var cover = w.platform === "pumpy" ? pumpyAsset("workout-" +
+      (w.category === "Legs" ? "legs" : w.category === "Core" ? "core" : "upper") + ".webp") : w.thumb_url;
+    if (cover) {
+      var img = el("img", w.platform === "pumpy" ? "pumpy-cover" : null);
       // The four above the fold are the first thing anybody looks at, so they
       // are told to hurry; the rest keep the lazy default. decoding=async on all
       // of them, because a thumbnail decoded on the main thread is one decoded
@@ -1954,7 +1965,7 @@ export const APP = String.raw`
       img.decoding = "async";
       if (i < 4) img.setAttribute("fetchpriority", "high");
       img.alt = "";
-      img.src = w.thumb_url;
+      img.src = cover;
       img.onload = function () { tw.classList.remove("loading"); tw.classList.add("loaded"); };
       img.onerror = function () {
         tw.classList.remove("loading");
@@ -2034,7 +2045,9 @@ export const APP = String.raw`
     } else if (w.platform === "tiktok") {
       wrap = el("div", "embedwrap vertical");
       frame = el("iframe");
-      frame.src = "https://www.tiktok.com/embed/v2/" + String(w.shortcode).replace(/^tt-/, "");
+      frame.src = "https://www.tiktok.com/player/v1/" + String(w.shortcode).replace(/^tt-/, "") + "?controls=1&description=0&rel=0";
+      frame.setAttribute("data-tiktok", "true"); frame._workout = w;
+      if (typeof start === "number") frame.setAttribute("data-seek", String(start));
       frame.setAttribute("allow", "encrypted-media");
       // Instagram's frame has always said this and TikTok's never did, which is why
       // only TikTok ate the first swipe. Both engines still honour it, and on a
@@ -2062,10 +2075,26 @@ export const APP = String.raw`
     // while a src-less one has an about:blank document built in this process and
     // costs 2.1ms — so deferring buys nothing on the main thread and delays the
     // video. The lazy hint stays, for an embed that opens below the fold.
+    frame.title = "Workout video";
     frame.setAttribute("loading", "lazy");
     wrap.appendChild(frame);
     return wrap;
   }
+
+  window.addEventListener("message", function (event) {
+    if (event.origin !== "https://www.tiktok.com" || !event.data || !event.data["x-tiktok-player"]) return;
+    document.querySelectorAll('iframe[data-tiktok]').forEach(function (frame) {
+      if (frame.contentWindow !== event.source) return;
+      if (event.data.type === "onPlayerReady" && frame.hasAttribute("data-seek")) {
+        frame.contentWindow.postMessage({ type: "seekTo", value: Number(frame.getAttribute("data-seek")), "x-tiktok-player": true }, "https://www.tiktok.com");
+      } else if (event.data.type === "onPlayerError" && !frame.parentNode.querySelector(".player-fallback")) {
+        frame.style.display = "none";
+        var fallback = el("div", "reader-offer player-fallback");
+        fallback.appendChild(el("p", null, "TikTok could not play this video here. Open the original and use the exercise timestamp shown above."));
+        fallback.appendChild(originalLink(frame._workout)); frame.parentNode.appendChild(fallback);
+      }
+    });
+  });
 
   // ---------- the embed opens at its real height ----------
   //
@@ -2473,6 +2502,28 @@ export const APP = String.raw`
       d.appendChild(warn);
     }
 
+    if (w.platform !== "pumpy" && w.read_quality !== "premium") {
+      var quality = el("div", "reader-offer");
+      quality.appendChild(el("b", null, "Basic read"));
+      quality.appendChild(el("p", null, "Plus reads the video’s movements, spoken cues and on-screen details to build a more complete workout."));
+      if (w.platform === "tiktok" && w.kind !== "photo") {
+        var trial = el("button", "btn ghost", isFree() ? "Try a Plus read · 4 per month" : "Read with Plus");
+        trial.onclick = function () { readVideo(w, trial, isFree()); };
+        quality.appendChild(trial);
+        if (isFree()) api("limits").then(function (r) {
+          if (!trial.isConnected || !r.video_previews) return;
+          var left = Math.max(0, r.video_previews.cap - r.video_previews.used);
+          trial.textContent = left ? "Try a Plus read · " + left + " left this month" : "Explore Spotter Plus";
+          if (!left) trial.onclick = function () { openPlans({ kind: "media" }); };
+        }).catch(function () {});
+      }
+      if (isFree()) {
+        var value = el("button", "fixlink", "See everything in Plus");
+        value.onclick = function () { openPlans({ kind: "media" }); };
+        quality.appendChild(value);
+      }
+      d.appendChild(quality);
+    }
     var start = el("button", "startbtn", w.has_full_workout ? "Start workout" : "Start & log freestyle");
     start.onclick = function () { startWorkout(w); };
     d.appendChild(start);
@@ -2520,7 +2571,19 @@ export const APP = String.raw`
       // A block has a name in the data — "Warm-up", "Finisher". The card printed
       // "Block 1" above it and the name underneath: label and caption the wrong way
       // round. The name IS the heading.
-      sect.appendChild(el("h3", null, b.title || (w.blocks.length === 1 ? "Exercises" : "Block " + (bi + 1))));
+      var blockRow = el("div", "exrow delete-swipe block-swipe");
+      var blockFront = el("div", "exmain");
+      blockFront.appendChild(el("h3", null, b.title || (w.blocks.length === 1 ? "Exercises" : "Block " + (bi + 1))));
+      var blockMore = el("button", "linkbtn", "Remove block");
+      blockMore.setAttribute("aria-label", "Remove " + (b.title || "block " + (bi + 1)));
+      blockMore.onclick = function () { deleteBlock(w, bi); };
+      blockFront.appendChild(blockMore);
+      var blockActions = el("div", "exacts");
+      var blockDelete = icon(el("button", "exact danger"), "trash", "Delete");
+      blockDelete.setAttribute("aria-label", "Delete " + (b.title || "block " + (bi + 1)));
+      blockDelete.onclick = function () { deleteBlock(w, bi); };
+      blockActions.appendChild(blockDelete); blockRow.appendChild(blockFront); blockRow.appendChild(blockActions);
+      sect.appendChild(blockRow);
       var bm = blockMetaText(b);
       if (bm) sect.appendChild(el("div", "blockmeta", bm));
       (b.exercises || []).forEach(function (ex, ei) {
@@ -2536,6 +2599,9 @@ export const APP = String.raw`
         // second because nothing knew it.
         var marks = rowMarks(ex);
         if (marks) name.appendChild(marks);
+        var segment = bitBtn(sourceOf(ex) || w, ex);
+        if (segment) name.appendChild(segment);
+        if (ex.recommendation) name.appendChild(el("div", "exnote recommendation", ex.recommendation.note));
         // Say which lines are the user's own. Everything else on the card is the
         // creator's wording, and the difference matters when they come back to it.
         if (ex.added_by_user) name.appendChild(el("div", "exmine", "Added by you"));
@@ -2562,7 +2628,21 @@ export const APP = String.raw`
         options.lastChild.appendChild(swap);
         acts.appendChild(options);
         row.appendChild(acts);
-        sect.appendChild(row);
+        var swipe = el("div", "exrow delete-swipe");
+        var front = el("div", "exmain");
+        front.appendChild(row);
+        var drawer = el("div", "exacts");
+        var del = icon(el("button", "exact danger"), "trash", "Delete");
+        del.setAttribute("aria-label", "Remove " + ex.name);
+        del.onclick = function () {
+          exEdit = { w: w, block: bi, index: ei, name: ex.name, mode: "edit" };
+          deleteExEdit();
+        };
+        drawer.appendChild(del);
+        swipe.appendChild(front); swipe.appendChild(drawer); sect.appendChild(swipe);
+        var remove = icon(el("button", "pickrow"), "trash", "Remove exercise");
+        remove.onclick = del.onclick;
+        options.lastChild.appendChild(remove);
       });
       var addex = el("button", "addex", "+ Add an exercise Spotter missed");
       addex.onclick = function () { openExAdd(w, bi); };
@@ -2743,11 +2823,16 @@ export const APP = String.raw`
    * same machinery. media_stage is set optimistically to "listening" so the copy
    * is right from the first frame rather than from the first Realtime update.
    */
-  function readVideo(w, btn) {
+  function readVideo(w, btn, preview) {
     if (btn) { btn.disabled = true; btn.textContent = "Queued…"; }
-    api("workouts/" + w.id + "/media", { method: "POST", body: "{}" })
+    deviceFrames({ url: w.url, preview: !!preview, reread: true }).then(function (frames) {
+      var payload = { preview: !!preview };
+      if (frames) payload.frames = frames;
+      return api("workouts/" + w.id + "/media", { method: "POST", body: JSON.stringify(payload) });
+    })
       .then(function (r) {
         if (btn) { btn.disabled = false; btn.textContent = "Read the video"; }
+        if (r.status === "ok" && r.workout) { absorbWorkout(r.workout); if (current && current.id === w.id) openDetail(r.workout, true); render(); toast("Your Plus preview is ready."); return; }
         if (r.status !== "processing") { limitHit(r, "Could not start reading that — try again in a minute."); return; }
         w.ingest_status = "processing";
         w.ingest_error = null;
@@ -2879,7 +2964,7 @@ export const APP = String.raw`
   // Measured off the stylesheet, but only ever once: offsetWidth is a synchronous
   // layout, and this is read on every pointermove.
   var exW = 0;
-  function exWidth(row) { return exW || (exW = row.children[1].offsetWidth || 192); }
+  function exWidth(row) { return row.classList.contains("delete-swipe") ? 64 : (exW || (exW = row.children[1].offsetWidth || 192)); }
 
   // Each button slides out from under the one to its right, so they unfold rather
   // than arrive as a slab. Transform only. A d of null hands the row back to the
@@ -3288,6 +3373,20 @@ export const APP = String.raw`
   // The one correction that takes something away, so the only one with an undo.
   // The card loses the row now, the server when the toast goes — which also means
   // the server's expect_name guard still sees the exercise it is asked to delete.
+  function deleteBlock(w, bi) {
+    var before = JSON.parse(JSON.stringify(w.blocks || []));
+    if (!before[bi]) return;
+    var expected = before[bi];
+    function redraw() { if (current && current.id === w.id) openDetail(w, true); render(); }
+    function restore(msg) { w.blocks = before; redraw(); if (msg) toast(msg); }
+    w.blocks.splice(bi, 1); redraw();
+    offerUndo("Removed " + (expected.title || "block"), function () {
+      api("workouts/" + w.id + "/exercises", { method: "POST", body: JSON.stringify({ op: "delete_block", block: bi, expect_block: expected }) })
+        .then(function (r) { if (r.status === "ok") absorbWorkout(r.workout); else restore(r.message || "Could not remove that block."); })
+        .catch(function () { restore("Could not reach Spotter — the block is back."); });
+    }, function () { restore(null); });
+  }
+
   function deleteExEdit() {
     if (!exEdit || exEdit.mode !== "edit") return;
     var ctx = exEdit;
@@ -4354,10 +4453,11 @@ export const APP = String.raw`
   // A button on YouTube only: that is the one embed that starts where it is asked
   // to, and a button that could only fail is worse than no button.
   function bitBtn(w, ex) {
-    var t = bitOf(ex);
-    if (t === null || !w || w.platform !== "youtube") return null;
+    var t = startOf(ex);
+    if (t === null) t = bitOf(ex);
+    if (t === null || !w || !/^(youtube|tiktok)$/.test(w.platform)) return null;
     var b = icon(el("button", "chip"), "play", "Watch this bit");
-    b.onclick = function () { watchBit(w, t); };
+    b.onclick = function () { watchBit(w, t, ex); };
     return b;
   }
 
@@ -4416,12 +4516,14 @@ export const APP = String.raw`
 
   // The clip, at the second the line came from. In Workout Mode the video lives in
   // the clip sheet, so that opens; from a card the detail's own embed reloads.
-  function watchBit(w, t) {
+  function watchBit(w, t, ex) {
     var em = embedNode(w, t);
     if (!em) return;
     // Source video always opens in its own sheet, so a timestamp never replaces
     // the title or expands the workout's collapsed source section unexpectedly.
     $("watchbody").innerHTML = "";
+    if (ex) $("watchbody").appendChild(el("div", "segment-label", ex.name + " · " + clock(t) +
+      (secOf(ex.t1) !== null ? "–" + clock(ex.t1) : "")));
     $("watchbody").appendChild(em);
     openSheet("watchsheet");
     fitEmbed(em, w.platform);
@@ -5003,6 +5105,12 @@ export const APP = String.raw`
     (w.blocks || []).forEach(function (b, bi) {
       var cx = complexOf(b, w);
       (b.exercises || []).forEach(function (ex, ei) {
+        if (ex.recommendation) {
+          ex = Object.assign({}, ex);
+          ["sets", "reps", "duration_seconds", "rest_seconds"].forEach(function (key) {
+            if (ex[key] == null && ex.recommendation[key] != null) ex[key] = ex.recommendation[key];
+          });
+        }
         screens.push({ block: b, bi: bi, ex: ex, ei: ei, cx: cx });
       });
     });
@@ -5661,6 +5769,7 @@ export const APP = String.raw`
       if (isCircuit(s.block)) dose = "Round " + roundOf(s.bi) + " of " +
         roundsOf(s.block) + (dose ? " · " + dose : "");
       if (dose) main.appendChild(el("div", "wdose", dose));
+      if (s.ex.recommendation) main.appendChild(el("div", "wnote", s.ex.recommendation.note));
 
       if (isTimed(s.ex)) {
         timedBody(main, s, entry);
@@ -5677,6 +5786,15 @@ export const APP = String.raw`
       }
     }
 
+    if (!cx) {
+      var intended = targetOf(s), completed = entry.sets.filter(Boolean).length;
+      var reached = completed >= intended;
+      var goal = el("div", "set-goal" + (reached ? " reached" : ""),
+        (reached ? "Goal reached · " : "") + completed + " / " + intended +
+        (isCircuit(s.block) ? " rounds" : " sets") + (reached ? " · Extras welcome" : " completed"));
+      goal.setAttribute("role", "status");
+      main.appendChild(goal);
+    }
     var acts = el("div", "wactions exercise-actions");
     if (!cx) {
       var add = el("button", "btn ghost wo-extra-set", isTimed(s.ex) ? "Log extra hold" : "+ Add set");
@@ -6559,6 +6677,12 @@ export const APP = String.raw`
     line.appendChild(el("span", null, cxScore(a.rounds, extra, 1)));
     head.appendChild(line);
     main.appendChild(head);
+    if (s.block.rounds > 0) {
+      var hit = a.rounds >= s.block.rounds;
+      var roundGoal = el("div", "set-goal" + (hit ? " reached" : ""),
+        (hit ? "Goal reached · " : "") + a.rounds + " / " + s.block.rounds + " rounds" + (hit ? " · Extras welcome" : " completed"));
+      roundGoal.setAttribute("role", "status"); main.appendChild(roundGoal);
+    }
 
     var list = el("div", "cxlist");
     (s.block.exercises || []).forEach(function (ex, j) {
@@ -6624,7 +6748,7 @@ export const APP = String.raw`
   function openWatch(w, ex) {
     if (!wo) return;
     w = w || wo.workout;
-    var em = embedNode(w);
+    var em = embedNode(w, startOf(ex));
     if (!em) return;
     var body = $("watchbody");
     body.innerHTML = "";
@@ -10574,6 +10698,14 @@ export const APP = String.raw`
     // is noise: for the one moment of valid layout it leaves, which is what lets
     // the single scrollTop at the foot of this function land on the right pixel.
     var frag = document.createDocumentFragment();
+    if (isFree()) {
+      var offer = el("div", "reader-offer");
+      offer.appendChild(el("b", null, "Pumpy · Included with Spotter Plus"));
+      offer.appendChild(el("p", null, "Combine your saved workouts, build a routine for your goals, get coaching and find alternate exercises. Upgrade to let Pumpy work with your attachments."));
+      var upgrade = el("button", "btn", "Explore Spotter Plus");
+      upgrade.onclick = function () { openPlans({ kind: "pumpy" }); };
+      offer.appendChild(upgrade); frag.appendChild(offer);
+    }
     var shown = pumpy.messages.filter(function (m) { return m.role === "user" || m.role === "assistant"; });
     // With nothing said yet the log is empty space, so the greeting sits in the
     // middle of it rather than clinging to the top.
@@ -10920,6 +11052,7 @@ export const APP = String.raw`
   function sendPumpy(text) {
     text = String(text || $("pumpyinput").value || "").trim();
     if (!text || pumpy.busy) return;
+    if (isFree()) { openPlans({ kind: "pumpy" }); return; }
     var owner = pumpy;
     $("pumpyannounce").textContent = "";
     if (pumpy.refs.length) guideLearn("refs");
@@ -11015,7 +11148,7 @@ export const APP = String.raw`
         m.meta.status = accept ? "done" : "declined";
         (r.messages || []).forEach(function (x) { pumpy.messages.push(x); });
         if (r.workout) {
-          if (r.created) state.workouts.unshift(r.workout);
+          if (r.created && !state.workouts.some(function (w) { return w.id === r.workout.id; })) state.workouts.unshift(r.workout);
           else absorbWorkout(r.workout);
         }
         if (r.plan) state.plan = null;
@@ -12226,12 +12359,16 @@ export const APP = String.raw`
    * itself; nothing here may block or fail a save.
    */
   function deviceFrames(opts) {
-    if (!native || !native.contactSheet) return Promise.resolve(null);
-    return sb.auth.getSession().then(function (r) {
+    if (!native || !native.contactSheet || (isFree() && !opts.preview)) return Promise.resolve(null);
+    var prepare = opts.url ? api("ingest/prepare", { method: "POST", body: JSON.stringify({ url: opts.url, preview: !!opts.preview, reread: !!opts.reread }) }) : Promise.resolve({ needs_frames: true });
+    return prepare.catch(function () { return { needs_frames: true }; }).then(function (hint) {
+      if (hint.needs_frames === false) return null;
+      return sb.auth.getSession().then(function (r) {
       var s = r.data.session;
       if (!s) return null;
       opts.token = s.access_token;
       return native.contactSheet(opts);
+      });
     }).then(function (out) {
       return out && out.ok ? out.frames : null;
     }).catch(function () { return null; });
@@ -12280,8 +12417,8 @@ export const APP = String.raw`
           $("addurl").value = "";
           closeSheet("addsheet");
           placePending(r, url, null);
-          toast(withShelf(fromShare ? "Saved from the share sheet — reading it…"
-            : "Saved — reading the video…"), 3400);
+          toast(withShelf(isFree() ? "Saved — building a Basic read from available text…" : (fromShare ? "Saved from the share sheet — reading it…"
+            : "Saved — reading the video…")), 3400);
           return;
         }
 
