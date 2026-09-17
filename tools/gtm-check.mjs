@@ -12,6 +12,7 @@ const checks = [
   ['Purchase SDK races', 'node', ['tools/ios/purchases-check.mjs']],
   ['Reader transactional completion', 'node', ['tools/reader-completion-db-check.mjs']],
   ['Pumpy transactional confirmation', 'node', ['tools/pumpy-confirm-db-check.mjs']],
+  ['Operational scorecard and alerts', 'node', ['tools/ops-check.mjs']],
   ['Extraction source and sampling fidelity', 'deno', ['run','--allow-read','tools/pack-eval/fidelity-test.ts']],
   ['Complete reader pipeline fixtures', 'deno', ['run','--allow-read','--allow-env','tools/pack-harness.ts']],
   ['Pumpy source context fixtures', 'deno', ['run','--allow-read','tools/pumpy-pack-harness.ts']],
