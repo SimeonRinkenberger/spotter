@@ -1,0 +1,112 @@
+{
+  "$comment": "GROUND-TRUTH TEMPLATE for the $5 screen, NOT ground truth. Shape: tools/fixtures/golden-tt-7679960172495785246.json and the tools/pack-eval/score.ts Fixture type, extended with the source-claim contract from PROMPTS-AND-CONTRACTS.md (prescribed vs demonstrated, provenance said/seen/written). Everything filled in here came from text this repo actually fetched — the platform caption and, where the platform publishes one, the free ASR WebVTT. NOBODY HAS WATCHED THIS VIDEO. No frame was extracted, no AI call was made, nothing was saved in the app. Every TODO_REVIEW is a decision for the human reviewer, and a visible count is never one of the things text alone can decide.",
+  "truth_v": 1,
+  "status": "TEMPLATE_UNREVIEWED",
+  "reviewed_by": "TODO_REVIEW",
+  "adjudicated_by": "TODO_REVIEW",
+  "shortcode": "yt-6zIaiaeWRWQ",
+  "platform": "youtube",
+  "url": "https://www.youtube.com/watch?v=6zIaiaeWRWQ",
+  "kind": "video",
+  "category": "long_sparse",
+  "selection": "alternate",
+  "duration_s": 2178,
+  "visual": "read",
+  "$visual": "score.ts reads this: 'unavailable' means nobody looked and the card must carry no visual claim (score.ts:459-470). A carousel has no video, so the video path is unavailable even though slides exist.",
+  "source": {
+    "platform": "youtube",
+    "url": "https://www.youtube.com/watch?v=6zIaiaeWRWQ",
+    "author": "MadFit",
+    "handle": "@MadFit",
+    "profile_url": "https://www.youtube.com/@MadFit",
+    "duration_s": 2178,
+    "consent": "Public post, referenced by URL only. No media is redistributed in this repo. Credit line: MadFit — https://www.youtube.com/watch?v=6zIaiaeWRWQ. Handle recorded so credit and consent can be handled before any published result names this creator.",
+    "paid_program_flag": "none seen in the caption or on the watch page; re-check before publishing any result that names the creator",
+    "verified_at": "2026-09-17T22:00:10Z",
+    "verification": "curl GET of the platform oEmbed endpoint; the title and author below are the bytes it returned, not a search-result summary",
+    "oembed_http": "200",
+    "oembed_title": "30 MIN FULL BODY WORKOUT - Small Space Friendly (No Repeats, No Equipment, No Jumping)"
+  },
+  "evidence_this_template_read": {
+    "caption": "fetched",
+    "asr_vtt": "track listed (en/asr) but NOT fetchable from a server: timedtext returned 0 bytes",
+    "asr_vtt_local_copy": null,
+    "frames": "NONE EXTRACTED",
+    "$frames": "frame_source for a real run is youtube-storyboard (see SET.json)."
+  },
+  "session": {
+    "format": "circuit",
+    "scheme": "TODO_REVIEW",
+    "equipment_seen": [],
+    "equipment_count": {},
+    "load_seen": null,
+    "setting": "TODO_REVIEW",
+    "creator_goal": "30 min no-repeat full body workout in a small space with no equipment",
+    "said_at": {}
+  },
+  "transcript_source": "none_fetchable",
+  "transcript": [],
+  "$transcript": "Only the dose-bearing and structure-bearing cues are reproduced, with their real VTT times, so the reviewer can check a claim without this repo carrying a full transcript of somebody else's video. The complete fetched track is at the path in evidence_this_template_read.asr_vtt_local_copy.",
+  "on_screen": "TODO_REVIEW",
+  "source_claims": [
+    {
+      "claim_id": "c1",
+      "field": "equipment",
+      "value": {
+        "text": "no equipment",
+        "minimum": null,
+        "maximum": null,
+        "unit": "text",
+        "per_side": false,
+        "to_failure": false,
+        "provenance": [
+          "written"
+        ],
+        "quote_said": null,
+        "t_said": null,
+        "quote_written": "can be done in a small space, with NO EQUIPMENT!",
+        "conflict": null
+      },
+      "scope": "session",
+      "source_kind": [
+        "creator_description"
+      ],
+      "ambiguous": false,
+      "$note": "A NEGATION CASE. 'NO EQUIPMENT' must produce an empty equipment list, never an equipment claim. score.ts:436-448 exempts a mention negated within the five preceding tokens; 'with NO EQUIPMENT' is inside that window, but a later affirmative mention anywhere in the pack would still fail, which is the intended behaviour."
+    }
+  ],
+  "$source_claims": "reader-v2 claim shape: field, value, scope, source_kind, quote. A claim here is the CREATOR'S instruction, never an observation and never a recommendation.",
+  "exercises": [],
+  "card_expectations": {
+    "$comment": "What a correct card must and must not contain. Fill after review; score.ts reads title/block/stamped/cues/canonical_ids/acceptable_canonical_ids/deltas/must_not.",
+    "title": "TODO_REVIEW",
+    "block": "TODO_REVIEW",
+    "stamped": "TODO_REVIEW",
+    "cues": "TODO_REVIEW",
+    "canonical_ids": "TODO_REVIEW",
+    "acceptable_canonical_ids": "TODO_REVIEW",
+    "deltas": "TODO_REVIEW",
+    "must_not": [
+      {
+        "never": "TODO_REVIEW",
+        "why": "a conflation this video makes tempting"
+      },
+      {
+        "field": "weight",
+        "why": "no load may appear unless the creator gave one"
+      }
+    ]
+  },
+  "reviewer_checklist": [
+    "Watch the whole video once before writing anything down.",
+    "Enumerate occurrences in chronological order, including repeats and both sides; repeats are separate occurrences even when the name matches.",
+    "For every occurrence set demonstrated.count to a number ONLY if continuous evidence shows every counted cycle. Otherwise leave 'unknown'.",
+    "Write acceptable_canonical_ids before you see any model output.",
+    "Record t0/t1 as the boundary you would accept plus uncertainty_s, not a point you had to guess.",
+    "Mark any claim you cannot resolve from the source as unresolvable rather than choosing the likely answer.",
+    "The spoken intro carries session-level instructions; the workout body does not. Check that an intro-only claim is scoped to the session and not to the first movement.",
+    "'No repeats' over 36 minutes: count the distinct movements and treat a miss as a coverage failure."
+  ],
+  "reviewer_notes": "TODO_REVIEW",
+  "$exercises": "Empty. The description does not list the movements and no transcript is fetchable."
+}

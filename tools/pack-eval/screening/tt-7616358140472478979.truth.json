@@ -1,0 +1,308 @@
+{
+  "$comment": "GROUND-TRUTH TEMPLATE for the $5 screen, NOT ground truth. Shape: tools/fixtures/golden-tt-7679960172495785246.json and the tools/pack-eval/score.ts Fixture type, extended with the source-claim contract from PROMPTS-AND-CONTRACTS.md (prescribed vs demonstrated, provenance said/seen/written). Everything filled in here came from text this repo actually fetched — the platform caption and, where the platform publishes one, the free ASR WebVTT. NOBODY HAS WATCHED THIS VIDEO. No frame was extracted, no AI call was made, nothing was saved in the app. Every TODO_REVIEW is a decision for the human reviewer, and a visible count is never one of the things text alone can decide.",
+  "truth_v": 1,
+  "status": "TEMPLATE_UNREVIEWED",
+  "reviewed_by": "TODO_REVIEW",
+  "adjudicated_by": "TODO_REVIEW",
+  "shortcode": "tt-7616358140472478979",
+  "platform": "tiktok",
+  "url": "https://www.tiktok.com/@albariciosa/video/7616358140472478979",
+  "kind": "video",
+  "category": "circuit_repeated_movements",
+  "selection": "primary",
+  "duration_s": 44,
+  "visual": "read",
+  "$visual": "score.ts reads this: 'unavailable' means nobody looked and the card must carry no visual claim (score.ts:459-470). A carousel has no video, so the video path is unavailable even though slides exist.",
+  "source": {
+    "platform": "tiktok",
+    "url": "https://www.tiktok.com/@albariciosa/video/7616358140472478979",
+    "author": "Alba Moreno",
+    "handle": "@albariciosa",
+    "profile_url": "https://www.tiktok.com/@albariciosa",
+    "duration_s": 44,
+    "consent": "Public post, referenced by URL only. No media is redistributed in this repo. Credit line: Alba Moreno — https://www.tiktok.com/@albariciosa/video/7616358140472478979. Handle recorded so credit and consent can be handled before any published result names this creator.",
+    "paid_program_flag": "none seen in the caption or on the watch page; re-check before publishing any result that names the creator",
+    "verified_at": "2026-09-17T21:59:59Z",
+    "verification": "curl GET of the platform oEmbed endpoint; the title and author below are the bytes it returned, not a search-result summary",
+    "oembed_http": "200",
+    "oembed_title": "Amrap 12’  Deadlift (100/70) T2b Lateral burpees 4-8-12-16-20… #crossfitgirl #crossfit #crossfitspain #crossfitgames  "
+  },
+  "evidence_this_template_read": {
+    "caption": "fetched",
+    "asr_vtt": "no track published",
+    "asr_vtt_local_copy": null,
+    "frames": "NONE EXTRACTED",
+    "$frames": "frame_source for a real run is tiktok-mp4 (see SET.json)."
+  },
+  "session": {
+    "format": "amrap",
+    "scheme": "AMRAP 12 minutes, ladder 4-8-12-16-20 across three movements",
+    "scheme_provenance": [
+      "written"
+    ],
+    "equipment_seen": [
+      "barbell",
+      "pull-up bar"
+    ],
+    "equipment_count": "TODO_REVIEW",
+    "load_seen": {
+      "text": "(100/70)",
+      "provenance": [
+        "written"
+      ],
+      "quote": "Deadlift (100/70)",
+      "$note": "Rx loads in kg, men's/women's. NOT a rep count and NOT a percentage."
+    },
+    "setting": "TODO_REVIEW",
+    "creator_goal": "TODO_REVIEW",
+    "said_at": {}
+  },
+  "transcript_source": "none",
+  "transcript": [],
+  "$transcript": "Only the dose-bearing and structure-bearing cues are reproduced, with their real VTT times, so the reviewer can check a claim without this repo carrying a full transcript of somebody else's video. The complete fetched track is at the path in evidence_this_template_read.asr_vtt_local_copy.",
+  "on_screen": "TODO_REVIEW",
+  "source_claims": [
+    {
+      "claim_id": "c1",
+      "field": "duration_seconds",
+      "value": {
+        "text": "Amrap 12'",
+        "minimum": 720,
+        "maximum": 720,
+        "unit": "seconds",
+        "per_side": false,
+        "to_failure": false,
+        "provenance": [
+          "written"
+        ],
+        "quote_said": null,
+        "t_said": null,
+        "quote_written": "Amrap 12’",
+        "conflict": null
+      },
+      "scope": "session",
+      "source_kind": [
+        "creator_caption"
+      ],
+      "ambiguous": false
+    },
+    {
+      "claim_id": "c2",
+      "field": "reps",
+      "value": {
+        "text": "4-8-12-16-20 ladder",
+        "minimum": 4,
+        "maximum": 20,
+        "unit": "reps",
+        "per_side": false,
+        "to_failure": false,
+        "provenance": [
+          "written"
+        ],
+        "quote_said": null,
+        "t_said": null,
+        "quote_written": "4-8-12-16-20…",
+        "conflict": null
+      },
+      "scope": "session",
+      "source_kind": [
+        "creator_caption"
+      ],
+      "ambiguous": true,
+      "$note": "An ascending ladder applied to every movement each round. It is ONE session-scoped scheme, not five separate rep claims per exercise, and the trailing ellipsis means it continues past 20 — record that the top of the range is open, not 20."
+    }
+  ],
+  "$source_claims": "reader-v2 claim shape: field, value, scope, source_kind, quote. A claim here is the CREATOR'S instruction, never an observation and never a recommendation.",
+  "exercises": [
+    {
+      "i": 0,
+      "name_said": "Deadlift",
+      "name_shown": "TODO_REVIEW",
+      "canonical_id": "deadlift",
+      "canonical_id_status": "proposed from text alone — nobody has watched the video; confirm or replace",
+      "acceptable_canonical_ids": [
+        "deadlift",
+        "sumo-deadlift"
+      ],
+      "$acceptable_canonical_ids": "the brief's acceptable_alternatives, written under the name tools/pack-eval/score.ts:53 and :296 already read, so a reviewer's decision here actually changes a score",
+      "prescribed": {
+        "text": "ladder 4-8-12-16-20 per round",
+        "minimum": 4,
+        "maximum": 20,
+        "unit": "reps",
+        "per_side": false,
+        "to_failure": false,
+        "provenance": [
+          "written"
+        ],
+        "quote_said": null,
+        "t_said": null,
+        "quote_written": "Deadlift (100/70)",
+        "conflict": null
+      },
+      "demonstrated": {
+        "count": "unknown",
+        "method": "unknown",
+        "$why": "No frames were extracted for this template. A creator saying N reps does not make N cycles visible; set a number only if continuous evidence shows every counted cycle."
+      },
+      "equipment": {
+        "value": [
+          "barbell"
+        ],
+        "status": "inferred from caption/transcript text only",
+        "alternatives": []
+      },
+      "variation_notes": "Stance decides deadlift vs sumo-deadlift and text cannot. Record both as acceptable until the video is watched.",
+      "t0": "TODO_REVIEW",
+      "t1": "TODO_REVIEW",
+      "uncertainty_s": "TODO_REVIEW",
+      "$t": "Record an ACCEPTED INTERVAL, not a point: t0/t1 are the reviewer's best boundary and uncertainty_s is half the interval they would accept. score.ts today reads t0/t1 as scalars against a single global 1.5 s slack (score.ts:194, 559-568) and ignores uncertainty_s — see the scorer gap list.",
+      "reps_seen": null,
+      "$reps_seen": "Null means nobody counted. score.ts:577 skips a null; it does NOT currently fail a pack that asserts a count where the truth says unknown.",
+      "provenance": {
+        "name": "TODO_REVIEW",
+        "reps": "TODO_REVIEW",
+        "variant": "TODO_REVIEW",
+        "cues": "TODO_REVIEW"
+      },
+      "reviewer_notes": "TODO_REVIEW"
+    },
+    {
+      "i": 1,
+      "name_said": "T2b",
+      "name_shown": "TODO_REVIEW",
+      "canonical_id": "toes-to-bar",
+      "canonical_id_status": "proposed from text alone — nobody has watched the video; confirm or replace",
+      "acceptable_canonical_ids": [
+        "toes-to-bar",
+        "hanging-leg-raise"
+      ],
+      "$acceptable_canonical_ids": "the brief's acceptable_alternatives, written under the name tools/pack-eval/score.ts:53 and :296 already read, so a reviewer's decision here actually changes a score",
+      "prescribed": {
+        "text": "ladder 4-8-12-16-20 per round",
+        "minimum": 4,
+        "maximum": 20,
+        "unit": "reps",
+        "per_side": false,
+        "to_failure": false,
+        "provenance": [
+          "written"
+        ],
+        "quote_said": null,
+        "t_said": null,
+        "quote_written": "T2b",
+        "conflict": null
+      },
+      "demonstrated": {
+        "count": "unknown",
+        "method": "unknown",
+        "$why": "No frames were extracted for this template. A creator saying N reps does not make N cycles visible; set a number only if continuous evidence shows every counted cycle."
+      },
+      "equipment": {
+        "value": [
+          "pull-up bar"
+        ],
+        "status": "inferred from caption/transcript text only",
+        "alternatives": []
+      },
+      "variation_notes": "'T2b' is the CrossFit abbreviation for toes-to-bar. Whether a partial rep is a hanging knee raise instead is a visual call.",
+      "t0": "TODO_REVIEW",
+      "t1": "TODO_REVIEW",
+      "uncertainty_s": "TODO_REVIEW",
+      "$t": "Record an ACCEPTED INTERVAL, not a point: t0/t1 are the reviewer's best boundary and uncertainty_s is half the interval they would accept. score.ts today reads t0/t1 as scalars against a single global 1.5 s slack (score.ts:194, 559-568) and ignores uncertainty_s — see the scorer gap list.",
+      "reps_seen": null,
+      "$reps_seen": "Null means nobody counted. score.ts:577 skips a null; it does NOT currently fail a pack that asserts a count where the truth says unknown.",
+      "provenance": {
+        "name": "TODO_REVIEW",
+        "reps": "TODO_REVIEW",
+        "variant": "TODO_REVIEW",
+        "cues": "TODO_REVIEW"
+      },
+      "reviewer_notes": "TODO_REVIEW"
+    },
+    {
+      "i": 2,
+      "name_said": "Lateral burpees",
+      "name_shown": "TODO_REVIEW",
+      "canonical_id": "burpee",
+      "canonical_id_status": "proposed from text alone — nobody has watched the video; confirm or replace",
+      "acceptable_canonical_ids": [
+        "burpee"
+      ],
+      "$acceptable_canonical_ids": "the brief's acceptable_alternatives, written under the name tools/pack-eval/score.ts:53 and :296 already read, so a reviewer's decision here actually changes a score",
+      "prescribed": {
+        "text": "ladder 4-8-12-16-20 per round",
+        "minimum": 4,
+        "maximum": 20,
+        "unit": "reps",
+        "per_side": false,
+        "to_failure": false,
+        "provenance": [
+          "written"
+        ],
+        "quote_said": null,
+        "t_said": null,
+        "quote_written": "Lateral burpees",
+        "conflict": null
+      },
+      "demonstrated": {
+        "count": "unknown",
+        "method": "unknown",
+        "$why": "No frames were extracted for this template. A creator saying N reps does not make N cycles visible; set a number only if continuous evidence shows every counted cycle."
+      },
+      "equipment": {
+        "value": [
+          "barbell"
+        ],
+        "status": "inferred from caption/transcript text only",
+        "alternatives": []
+      },
+      "variation_notes": "Lateral (over-the-bar) burpee. Same as the other CrossFit case: the orientation is a variation note, not a separate id.",
+      "t0": "TODO_REVIEW",
+      "t1": "TODO_REVIEW",
+      "uncertainty_s": "TODO_REVIEW",
+      "$t": "Record an ACCEPTED INTERVAL, not a point: t0/t1 are the reviewer's best boundary and uncertainty_s is half the interval they would accept. score.ts today reads t0/t1 as scalars against a single global 1.5 s slack (score.ts:194, 559-568) and ignores uncertainty_s — see the scorer gap list.",
+      "reps_seen": null,
+      "$reps_seen": "Null means nobody counted. score.ts:577 skips a null; it does NOT currently fail a pack that asserts a count where the truth says unknown.",
+      "provenance": {
+        "name": "TODO_REVIEW",
+        "reps": "TODO_REVIEW",
+        "variant": "TODO_REVIEW",
+        "cues": "TODO_REVIEW"
+      },
+      "reviewer_notes": "TODO_REVIEW"
+    }
+  ],
+  "card_expectations": {
+    "$comment": "What a correct card must and must not contain. Fill after review; score.ts reads title/block/stamped/cues/canonical_ids/acceptable_canonical_ids/deltas/must_not.",
+    "title": "TODO_REVIEW",
+    "block": "TODO_REVIEW",
+    "stamped": "TODO_REVIEW",
+    "cues": "TODO_REVIEW",
+    "canonical_ids": "TODO_REVIEW",
+    "acceptable_canonical_ids": "TODO_REVIEW",
+    "deltas": "TODO_REVIEW",
+    "must_not": [
+      {
+        "never": "TODO_REVIEW",
+        "why": "a conflation this video makes tempting"
+      },
+      {
+        "field": "weight",
+        "why": "no load may appear unless the creator gave one"
+      }
+    ]
+  },
+  "reviewer_checklist": [
+    "Watch the whole video once before writing anything down.",
+    "Enumerate occurrences in chronological order, including repeats and both sides; repeats are separate occurrences even when the name matches.",
+    "For every occurrence set demonstrated.count to a number ONLY if continuous evidence shows every counted cycle. Otherwise leave 'unknown'.",
+    "Write acceptable_canonical_ids before you see any model output.",
+    "Record t0/t1 as the boundary you would accept plus uncertainty_s, not a point you had to guess.",
+    "Mark any claim you cannot resolve from the source as unresolvable rather than choosing the likely answer.",
+    "The rep count CHANGES every round. Record the per-round dose per occurrence, and make sure the ladder is not flattened to a single number.",
+    "Caption is Spanish-adjacent CrossFit shorthand. Keep the quote in the source language; translate only the label.",
+    "(100/70) must end up as a load, in kg, with two scopes — not as reps and not as a percentage."
+  ],
+  "reviewer_notes": "TODO_REVIEW"
+}
