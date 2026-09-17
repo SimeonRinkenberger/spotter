@@ -126,7 +126,7 @@ export const MARKUP_BODY = String.raw`</head>
            rendered interaction-only, which means a visitor Cloudflare can vouch
            for never sees anything at all and a suspected bot gets a checkbox
            here, above the button it is standing in the way of. -->
-      <div class="capbox" id="capbox"></div>
+      <div class="capgate hide" id="capgate"></div>
       <button class="btn" id="authgo">Create account</button>
       <div class="autherr" id="autherr"></div>
       <!-- Only on the sign-in face. Offering it while somebody is creating an
@@ -163,9 +163,9 @@ export const MARKUP_BODY = String.raw`</head>
         <span class="mailmark" aria-hidden="true"><svg class="ic"><use href="#i-mail"></use></svg></span>
         <h2>Check your email</h2>
         <p>We sent a confirmation link to <b id="mailaddr"></b>. Open it and you are in.
-          It can take a minute to arrive, and it is worth a look in spam.</p>
-        <button class="btn ghost" id="mailresend" type="button">Resend the email</button>
-        <div class="authswap"><button id="mailback" type="button">Use a different email</button></div>
+          It can take a minute, and it is worth a look in spam.</p>
+        <button class="btn ghost" id="mailresend">Resend the email</button>
+        <div class="authswap"><button id="mailback">Use a different email</button></div>
       </div>
     </div>
     <!-- Somebody made this. Software with no maker, no version and no way to say

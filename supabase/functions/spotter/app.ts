@@ -482,9 +482,7 @@ export const APP = String.raw`
   // Tokens are single-use and expire after five minutes, so each attempt resets
   // the widget and asks for a fresh one instead of holding one from page load.
   var TURNSTILE_SRC = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
-  var CAP_WAIT = 90000;
 
-  var capWidget = null;    // whatever turnstile.render handed back
   var capRendered = null;  // one promise, so a double tap shares one widget
   var capPending = null;   // the attempt currently waiting on a token
   var capTimer = null;
@@ -502,19 +500,19 @@ export const APP = String.raw`
     if (capRendered) return capRendered;
     capRendered = loadScript(TURNSTILE_SRC).then(function () {
       if (!window.turnstile || !window.turnstile.render) throw new Error("captcha unavailable");
-      var box = $("capbox");
-      capWidget = window.turnstile.render(box, {
+      var box = $("capgate");
+      // Every way this widget can end without a token — a Cloudflare error, a
+      // token that went stale in the box, an untouched challenge — is the same
+      // answer to the attempt waiting on it.
+      var none = function () { capSettle(null); };
+      var id = window.turnstile.render(box, {
         sitekey: PUBLIC_CAPTCHA.turnstile_site_key,
-        execution: "execute",
-        appearance: "interaction-only",
-        theme: "auto",
-        callback: function (t) { capSettle(t); },
-        "error-callback": function () { capSettle(null); },
-        "expired-callback": function () { capSettle(null); },
-        "timeout-callback": function () { capSettle(null); }
+        execution: "execute", appearance: "interaction-only", theme: "auto",
+        callback: capSettle, "error-callback": none, "expired-callback": none,
+        "timeout-callback": none
       });
-      box.classList.add("on");
-      return capWidget;
+      box.classList.remove("hide");
+      return id;
     });
     // A blocked script on a flaky connection is not a permanent verdict.
     capRendered.catch(function () { capRendered = null; });
@@ -532,7 +530,7 @@ export const APP = String.raw`
       return new Promise(function (resolve) {
         capSettle(null);
         capPending = resolve;
-        capTimer = setTimeout(function () { capSettle(null); }, CAP_WAIT);
+        capTimer = setTimeout(capSettle, 90000);
         try {
           window.turnstile.reset(id);
           window.turnstile.execute(id);
@@ -541,9 +539,12 @@ export const APP = String.raw`
     }).catch(function () { return null; });
   }
 
-  // The script is fetched when the landing form appears rather than at boot: a
-  // signed-in person who never sees this card never pays for it.
-  function capWarm() { if (capOn()) capRender().catch(function () {}); }
+  // Carries the token only when there is one, so a page with no site key sends
+  // the request it has always sent, byte for byte.
+  function withCap(opts, tok) {
+    if (tok) opts.captchaToken = tok;
+    return opts;
+  }
 
   function doAuth() {
     var email = $("email").value.trim();
@@ -560,9 +561,8 @@ export const APP = String.raw`
     function idle() { btn.disabled = false; setAuthMode(authMode); }
     capToken().then(function (tok) {
       if (mode === "signup") {
-        var opts = { emailRedirectTo: AUTH_RETURN };
-        if (tok) opts.captchaToken = tok;
-        return sb.auth.signUp({ email: email, password: pw, options: opts });
+        return sb.auth.signUp({ email: email, password: pw,
+          options: withCap({ emailRedirectTo: AUTH_RETURN }, tok) });
       }
       var args = { email: email, password: pw };
       if (tok) args.options = { captchaToken: tok };
@@ -594,8 +594,6 @@ export const APP = String.raw`
   // does not arrive. The resend sits behind a countdown because gotrue's
   // max_frequency refuses a second send inside a minute anyway, and a button that
   // fails for a reason nobody explained is worse than a button that says wait.
-  var RESEND_WAIT = 60;
-
   var mailAddr = null;
   var mailLeft = 0;
   var mailTick = null;
@@ -623,7 +621,7 @@ export const APP = String.raw`
     $("mailaddr").textContent = email;
     $("mailsent").classList.remove("hide");
     $("authcard").classList.add("sent");
-    mailCount(RESEND_WAIT);
+    mailCount(60);
     // The card's heading changed under a screen reader that was reading a form.
     $("mailsent").focus();
   }
@@ -649,15 +647,14 @@ export const APP = String.raw`
     b.disabled = true;
     b.textContent = "Sending…";
     capToken().then(function (tok) {
-      var opts = { emailRedirectTo: AUTH_RETURN };
-      if (tok) opts.captchaToken = tok;
-      return sb.auth.resend({ type: "signup", email: mailAddr, options: opts });
+      return sb.auth.resend({ type: "signup", email: mailAddr,
+        options: withCap({ emailRedirectTo: AUTH_RETURN }, tok) });
     }).then(function (r) {
-      mailCount(RESEND_WAIT);
+      mailCount(60);
       if (r && r.error) { toast(authMessage(r.error.message)); return; }
       toast("Sent again. Give it a minute.");
     }).catch(function (e) {
-      mailCount(RESEND_WAIT);
+      mailCount(60);
       toast(authMessage(e && e.message ? e.message : e));
     });
   }
@@ -676,9 +673,9 @@ export const APP = String.raw`
     if (!code) return;
     try { history.replaceState(null, "", location.pathname); } catch (e) { /* ignore */ }
     if (state.user) return;
-    authError(/expired|invalid|denied/i.test(code)
-      ? "That link has expired or was already used. Sign in below, or ask for a new one."
-      : "That link could not be opened. Sign in below, or ask for a new one.");
+    authError((/expired|invalid|denied/i.test(code)
+      ? "That link has expired or was already used."
+      : "That link could not be opened.") + " Sign in below, or ask for a new one.");
   }
 
   // ---------- provider sign-in (Google / Apple) ----------
@@ -1049,7 +1046,9 @@ export const APP = String.raw`
     document.body.classList.remove("app");
     $("landing").classList.add("open");
     $("app").classList.add("hide");
-    capWarm();
+    // The Turnstile script is fetched when this card appears rather than at boot:
+    // a signed-in person who never sees it never pays for it.
+    if (capOn()) capRender().catch(function () {});
   }
 
   function showApp() {
@@ -13799,9 +13798,7 @@ export const APP = String.raw`
     var b = $("forgotpw");
     b.disabled = true;
     capToken().then(function (tok) {
-      var opts = { redirectTo: AUTH_RETURN };
-      if (tok) opts.captchaToken = tok;
-      return sb.auth.resetPasswordForEmail(email, opts);
+      return sb.auth.resetPasswordForEmail(email, withCap({ redirectTo: AUTH_RETURN }, tok));
     }).then(function (r) {
       b.disabled = false;
       if (r.error) { authError(authMessage(r.error.message)); return; }

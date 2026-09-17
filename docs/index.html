@@ -446,10 +446,7 @@ button {
 .autherr.show {
   display: block;
 }
-.capbox {
-  display: none;
-}
-.capbox.on {
+.capgate {
   display: flex;
   justify-content: center;
   margin-bottom: 12px;
@@ -459,8 +456,6 @@ button {
 }
 .mailsent {
   animation: cardin var(--t-3) var(--e-out);
-}
-.mailsent:focus {
   outline: none;
 }
 .mailsent h2 {
@@ -7211,7 +7206,7 @@ details.details-moving > :not(summary) {
           <button type="button" class="pweye" aria-label="Show password" aria-pressed="false"><svg class="ic"><use href="#i-eye"></use></svg></button>
         </div>
       </div>
-      <div class="capbox" id="capbox"></div>
+      <div class="capgate hide" id="capgate"></div>
       <button class="btn" id="authgo">Create account</button>
       <div class="autherr" id="autherr"></div>
       <div class="authswap hide" id="forgotwrap"><button id="forgotpw" type="button">Forgot your password?</button></div>
@@ -7233,9 +7228,9 @@ details.details-moving > :not(summary) {
         <span class="mailmark" aria-hidden="true"><svg class="ic"><use href="#i-mail"></use></svg></span>
         <h2>Check your email</h2>
         <p>We sent a confirmation link to <b id="mailaddr"></b>. Open it and you are in.
-          It can take a minute to arrive, and it is worth a look in spam.</p>
-        <button class="btn ghost" id="mailresend" type="button">Resend the email</button>
-        <div class="authswap"><button id="mailback" type="button">Use a different email</button></div>
+          It can take a minute, and it is worth a look in spam.</p>
+        <button class="btn ghost" id="mailresend">Resend the email</button>
+        <div class="authswap"><button id="mailback">Use a different email</button></div>
       </div>
     </div>
     <div class="landfoot">Spotter by Quarterdeck Collective · Free to start ·
@@ -8127,7 +8122,7 @@ details.details-moving > :not(summary) {
   function authMessage(m) {
     return m = String(m || ""), /captcha/i.test(m) ? "The security check did not finish. Try that once more." : /already regist/i.test(m) ? "That email already has an account \u2014 sign in instead." : /invalid login|invalid.*credential/i.test(m) ? "Wrong email or password." : /rate limit|too many|for security purposes/i.test(m) ? "Too many tries. Give it a minute." : /confirm/i.test(m) ? "Check your email to confirm your account, then sign in." : /network|fetch|failed to fetch/i.test(m) ? "Could not reach Spotter \u2014 check your connection." : /password/i.test(m) && /weak|short|least|6 char/i.test(m) ? "Use at least 8 characters." : /email/i.test(m) && /invalid|valid/i.test(m) ? "That email address does not look right." : authMode === "signup" ? "Could not create your account. Try again in a moment." : "Could not sign you in. Try again in a moment.";
   }
-  var TURNSTILE_SRC = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit", CAP_WAIT = 9e4, capWidget = null, capRendered = null, capPending = null, capTimer = null;
+  var TURNSTILE_SRC = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit", capRendered = null, capPending = null, capTimer = null;
   function capOn() {
     return !!PUBLIC_CAPTCHA.turnstile_site_key;
   }
@@ -8139,25 +8134,19 @@ details.details-moving > :not(summary) {
   function capRender() {
     return capRendered || (capRendered = loadScript(TURNSTILE_SRC).then(function() {
       if (!window.turnstile || !window.turnstile.render) throw new Error("captcha unavailable");
-      var box = $("capbox");
-      return capWidget = window.turnstile.render(box, {
+      var box = $("capgate"), none = function() {
+        capSettle(null);
+      }, id = window.turnstile.render(box, {
         sitekey: PUBLIC_CAPTCHA.turnstile_site_key,
         execution: "execute",
         appearance: "interaction-only",
         theme: "auto",
-        callback: function(t) {
-          capSettle(t);
-        },
-        "error-callback": function() {
-          capSettle(null);
-        },
-        "expired-callback": function() {
-          capSettle(null);
-        },
-        "timeout-callback": function() {
-          capSettle(null);
-        }
-      }), box.classList.add("on"), capWidget;
+        callback: capSettle,
+        "error-callback": none,
+        "expired-callback": none,
+        "timeout-callback": none
+      });
+      return box.classList.remove("hide"), id;
     }), capRendered.catch(function() {
       capRendered = null;
     }), capRendered);
@@ -8165,9 +8154,7 @@ details.details-moving > :not(summary) {
   function capToken() {
     return capOn() ? capRender().then(function(id) {
       return new Promise(function(resolve) {
-        capSettle(null), capPending = resolve, capTimer = setTimeout(function() {
-          capSettle(null);
-        }, CAP_WAIT);
+        capSettle(null), capPending = resolve, capTimer = setTimeout(capSettle, 9e4);
         try {
           window.turnstile.reset(id), window.turnstile.execute(id);
         } catch (e) {
@@ -8178,9 +8165,8 @@ details.details-moving > :not(summary) {
       return null;
     }) : Promise.resolve(null);
   }
-  function capWarm() {
-    capOn() && capRender().catch(function() {
-    });
+  function withCap(opts, tok) {
+    return tok && (opts.captchaToken = tok), opts;
   }
   function doAuth() {
     var email = $("email").value.trim(), pw = $("pw").value;
@@ -8198,10 +8184,12 @@ details.details-moving > :not(summary) {
       btn.disabled = !1, setAuthMode(authMode);
     }
     capToken().then(function(tok) {
-      if (mode === "signup") {
-        var opts = { emailRedirectTo: AUTH_RETURN };
-        return tok && (opts.captchaToken = tok), sb.auth.signUp({ email: email, password: pw, options: opts });
-      }
+      if (mode === "signup")
+        return sb.auth.signUp({
+          email: email,
+          password: pw,
+          options: withCap({ emailRedirectTo: AUTH_RETURN }, tok)
+        });
       var args = { email: email, password: pw };
       return tok && (args.options = { captchaToken: tok }), sb.auth.signInWithPassword(args);
     }).then(function(r) {
@@ -8218,7 +8206,7 @@ details.details-moving > :not(summary) {
       idle2(), authError(authMessage(e && e.message ? e.message : e));
     });
   }
-  var RESEND_WAIT = 60, mailAddr = null, mailLeft = 0, mailTick = null;
+  var mailAddr = null, mailLeft = 0, mailTick = null;
   function mailLabel() {
     var b = $("mailresend");
     b.disabled = mailLeft > 0, b.textContent = mailLeft > 0 ? "Resend in " + mailLeft + "s" : "Resend the email";
@@ -8229,7 +8217,7 @@ details.details-moving > :not(summary) {
     }, 1e3));
   }
   function mailSent(email) {
-    mailAddr = email, $("mailaddr").textContent = email, $("mailsent").classList.remove("hide"), $("authcard").classList.add("sent"), mailCount(RESEND_WAIT), $("mailsent").focus();
+    mailAddr = email, $("mailaddr").textContent = email, $("mailsent").classList.remove("hide"), $("authcard").classList.add("sent"), mailCount(60), $("mailsent").focus();
   }
   function mailClose() {
     clearInterval(mailTick), mailAddr = null, $("mailsent").classList.add("hide"), $("authcard").classList.remove("sent");
@@ -8241,16 +8229,19 @@ details.details-moving > :not(summary) {
     if (!(!mailAddr || mailLeft > 0)) {
       var b = $("mailresend");
       b.disabled = !0, b.textContent = "Sending\u2026", capToken().then(function(tok) {
-        var opts = { emailRedirectTo: AUTH_RETURN };
-        return tok && (opts.captchaToken = tok), sb.auth.resend({ type: "signup", email: mailAddr, options: opts });
+        return sb.auth.resend({
+          type: "signup",
+          email: mailAddr,
+          options: withCap({ emailRedirectTo: AUTH_RETURN }, tok)
+        });
       }).then(function(r) {
-        if (mailCount(RESEND_WAIT), r && r.error) {
+        if (mailCount(60), r && r.error) {
           toast(authMessage(r.error.message));
           return;
         }
         toast("Sent again. Give it a minute.");
       }).catch(function(e) {
-        mailCount(RESEND_WAIT), toast(authMessage(e && e.message ? e.message : e));
+        mailCount(60), toast(authMessage(e && e.message ? e.message : e));
       });
     }
   }
@@ -8269,7 +8260,7 @@ details.details-moving > :not(summary) {
           history.replaceState(null, "", location.pathname);
         } catch (e) {
         }
-        state.user || authError(/expired|invalid|denied/i.test(code) ? "That link has expired or was already used. Sign in below, or ask for a new one." : "That link could not be opened. Sign in below, or ask for a new one.");
+        state.user || authError((/expired|invalid|denied/i.test(code) ? "That link has expired or was already used." : "That link could not be opened.") + " Sign in below, or ask for a new one.");
       }
     }
   }
@@ -8525,7 +8516,8 @@ details.details-moving > :not(summary) {
     return p === "google" ? "Google" : p === "apple" ? "Apple" : p === "email" ? "Email and password" : p ? String(p) : null;
   }
   function showLanding() {
-    native && ($("pumpyinput").value = ""), mailClose(), document.body.classList.remove("app"), $("landing").classList.add("open"), $("app").classList.add("hide"), capWarm();
+    native && ($("pumpyinput").value = ""), mailClose(), document.body.classList.remove("app"), $("landing").classList.add("open"), $("app").classList.add("hide"), capOn() && capRender().catch(function() {
+    });
   }
   function showApp() {
     var wasHidden = $("app").classList.contains("hide");
@@ -16060,8 +16052,7 @@ details.details-moving > :not(summary) {
     }
     var b = $("forgotpw");
     b.disabled = !0, capToken().then(function(tok) {
-      var opts = { redirectTo: AUTH_RETURN };
-      return tok && (opts.captchaToken = tok), sb.auth.resetPasswordForEmail(email, opts);
+      return sb.auth.resetPasswordForEmail(email, withCap({ redirectTo: AUTH_RETURN }, tok));
     }).then(function(r) {
       if (b.disabled = !1, r.error) {
         authError(authMessage(r.error.message));

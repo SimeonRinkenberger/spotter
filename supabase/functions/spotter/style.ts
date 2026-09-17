@@ -169,17 +169,15 @@ export const STYLE = String.raw`<style>
   .autherr.show { display: block; }
 
   /* ---------- the signup abuse boundary ----------
-     The captcha box only exists once a site key does; .on is set by the code
-     that renders the widget, so a page with no key keeps the card's old spacing
-     to the pixel. Centred because an interactive Turnstile challenge is a fixed
-     300px block that would otherwise hang off the leading edge at 375. */
-  .capbox { display: none; }
-  .capbox.on { display: flex; justify-content: center; margin-bottom: 12px; }
+     The Turnstile box keeps .hide until the widget is actually rendered, so a
+     page with no site key keeps the card's old spacing to the pixel. Centred
+     because an interactive challenge is a fixed 300px block that would otherwise
+     hang off the leading edge at 375. */
+  .capgate { display: flex; justify-content: center; margin-bottom: 12px; }
   /* One face at a time. Everything the card was offering is a dead end until the
      link in the inbox is followed, so it goes away rather than greying out. */
   .authcard.sent > :not(#mailsent) { display: none; }
-  .mailsent { animation: cardin var(--t-3) var(--e-out); }
-  .mailsent:focus { outline: none; }
+  .mailsent { animation: cardin var(--t-3) var(--e-out); outline: none; }
   .mailsent h2 { font-family: var(--display); font-size: 19px; margin: 14px 0 8px;
     font-weight: 700; letter-spacing: -.012em; }
   .mailsent p { font-size: 14px; line-height: 1.55; color: var(--ink-2); margin: 0 0 18px; }
