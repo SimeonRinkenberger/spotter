@@ -40,6 +40,7 @@
   "devDependencies": {
     "@capacitor/cli": "8.5.1",
     "esbuild": "0.28.2",
+    "pg": "^8.23.0",
     "web-push": "^3.6.7"
   },
   "overrides": {
