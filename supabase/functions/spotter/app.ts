@@ -899,7 +899,7 @@ export const APP = String.raw`
         busy: false, live: null, stick: true, wired: wired, openSeq: seq };
     }
     if (native && native.purchases) native.purchases.clear().catch(function () {});
-    if (billing) { billing.prices = null; billing.sub = null; billing.subAsked = false; billing.limits = null; billing.said = null; billing.ctx = null; }
+    if (billing) { billing.prices = null; billing.waiting = null; billing.busy = false; billing.sub = null; billing.subAsked = false; billing.limits = null; billing.said = null; billing.ctx = null; }
     ["grid", "chips", "colbar", "libcount", "empty", "dinner", "pumpylog", "pumpyannounce", "pumpyctx", "pumpythreads", "trainview", "today", "recapopts"].forEach(function (id) {
       var n = $(id); if (n) n.innerHTML = "";
     });
@@ -2795,9 +2795,13 @@ export const APP = String.raw`
   // rather than re-running inline, so it gets the same backoff and the same
   // give-up point as the original save.
   function retryWorkout(w, btn) {
+    if (!state.user) return;
+    var epoch = accountEpoch, uid = state.user.id;
     if (btn) { btn.disabled = true; btn.textContent = "Queued…"; }
     api("workouts/" + w.id + "/reprocess", { method: "POST", body: "{}" })
       .then(function (r) {
+        if (!accountNow(epoch, uid)) return;
+        w = state.workouts.filter(function (x) { return x.id === w.id; })[0] || w;
         if (btn) { btn.disabled = false; btn.textContent = "Try reading it again"; }
         if (r.status !== "processing" && r.status !== "ok") {
           limitHit(r, "Could not start reading that — try again in a minute."); return;
@@ -2807,9 +2811,10 @@ export const APP = String.raw`
         if (current && current.id === w.id) openDetail(w, true);
         render();
         watchPending();
-        toast("Reading it again…");
+        toast(w.user_workout_override ? "Refreshing the source; your personal exercise list will be kept." : "Reading it again…");
       })
       .catch(function () {
+        if (!accountNow(epoch, uid)) return;
         if (btn) { btn.disabled = false; btn.textContent = "Try reading it again"; }
         toast("Could not start reading that — try again in a minute.");
       });
@@ -2824,15 +2829,26 @@ export const APP = String.raw`
    * is right from the first frame rather than from the first Realtime update.
    */
   function readVideo(w, btn, preview) {
+    if (!state.user) return;
+    var epoch = accountEpoch, uid = state.user.id;
     if (btn) { btn.disabled = true; btn.textContent = "Queued…"; }
     deviceFrames({ url: w.url, preview: !!preview, reread: true }).then(function (frames) {
+      if (!accountNow(epoch, uid)) return null;
       var payload = { preview: !!preview };
       if (frames) payload.frames = frames;
       return api("workouts/" + w.id + "/media", { method: "POST", body: JSON.stringify(payload) });
     })
       .then(function (r) {
+        if (!accountNow(epoch, uid)) return;
+        w = state.workouts.filter(function (x) { return x.id === w.id; })[0] || w;
         if (btn) { btn.disabled = false; btn.textContent = "Read the video"; }
-        if (r.status === "ok" && r.workout) { absorbWorkout(r.workout); if (current && current.id === w.id) openDetail(r.workout, true); render(); toast("Your Plus preview is ready."); return; }
+        if (r.status === "ok" && r.workout) {
+          // A newer correction already received locally must not be replaced by an older cached response.
+          var delivered = Number(w.user_edit_revision || 0) > Number(r.workout.user_edit_revision || 0) ? w : r.workout;
+          absorbWorkout(delivered);
+          if (current && current.id === w.id) openDetail(delivered, true);
+          render(); toast(delivered.user_workout_override ? "Source refreshed; your personal exercise list was kept." : "Your Plus preview is ready."); return;
+        }
         if (r.status !== "processing") { limitHit(r, "Could not start reading that — try again in a minute."); return; }
         w.ingest_status = "processing";
         w.ingest_error = null;
@@ -2840,9 +2856,10 @@ export const APP = String.raw`
         if (current && current.id === w.id) openDetail(w, true);
         render();
         watchPending();
-        toast("Listening to the video…");
+        toast(w.user_workout_override ? "Refreshing the source; your personal exercise list will be kept." : "Listening to the video…");
       })
       .catch(function () {
+        if (!accountNow(epoch, uid)) return;
         if (btn) { btn.disabled = false; btn.textContent = "Read the video"; }
         toast("Could not start reading that — try again in a minute.");
       });
@@ -11210,18 +11227,25 @@ export const APP = String.raw`
   }
 
   function loadPrices() {
+    var epoch = accountEpoch, uid = state.user && state.user.id;
     if (native && native.purchases) {
-      return native.purchases.prices(state.user && state.user.id).then(function (r) {
+      return native.purchases.prices(uid).then(function (r) {
+        if (!accountNow(epoch, uid)) return null;
         billing.prices = r; return r;
-      }).catch(function () { billing.prices = { configured: false, nativeStore: true }; return billing.prices; });
+      }).catch(function () {
+        if (!accountNow(epoch, uid)) return null;
+        billing.prices = { configured: false, nativeStore: true }; return billing.prices;
+      });
     }
     if (billing.prices) return Promise.resolve(billing.prices);
     if (billing.waiting) return billing.waiting;
     billing.waiting = api("billing/prices", { method: "GET" }).then(function (r) {
+      if (!accountNow(epoch, uid)) return null;
       billing.waiting = null;
       billing.prices = (r && r.status === "ok" && r.configured) ? r : { configured: false };
       return billing.prices;
     }).catch(function () {
+      if (!accountNow(epoch, uid)) return null;
       // A route that has not shipped, or a browser that would not make the call.
       billing.waiting = null;
       billing.prices = { configured: false };
@@ -11272,14 +11296,9 @@ export const APP = String.raw`
     out.push(lib === null
       ? "Keep every workout you save — the free plan holds " + f.library + "."
       : "Hold " + capMany(lib) + " saved workouts, instead of " + f.library + ".");
-    out.push("Read " + capMany(capNum(p.extract)) + " new videos a day, instead of " + f.extract + ".");
-    out.push("Watch " + capMany(capNum(p.media)) + " silent clips a day, instead of " + f.media +
-      " — the ones with no caption to read.");
-    out.push("Send " + capMany(capNum(p.uploads)) + " of your own videos a day, instead of " + f.uploads + ".");
-    if (num(p.pumpy_month) && num(f.pumpy_month)) {
-      out.push("About " + msgCount(p.pumpy_month) + " coach messages a month, instead of " +
-        msgCount(f.pumpy_month) + ".");
-    }
+    out.push("Read visible movements and on-screen instructions in supported videos.");
+    out.push("Use Pumpy to adapt saved workouts and suggest exercise alternatives.");
+    out.push("Video reading and coaching have usage limits; they are not unlimited.");
     out.push("Stop whenever you like. Everything you saved stays yours, and stays readable.");
     return out;
   }
@@ -11471,7 +11490,7 @@ export const APP = String.raw`
     // Superwall's tests. Monthly is still one tap away.
     cards.appendChild(priceCard("year", plus, p));
     cards.appendChild(priceCard("month", plus, p));
-    $("planbuy").disabled = false;
+    $("planbuy").disabled = billing.busy;
     paintChoice();
   }
 
@@ -11482,13 +11501,14 @@ export const APP = String.raw`
   }
 
   function openPlans(ctx) {
+    var epoch = accountEpoch, uid = state.user && state.user.id;
     billing.ctx = ctx && ctx.kind ? ctx : null;
     billing.interval = "year";
-    billing.busy = false;
     paintCtx();
     if (!billing.prices) paintSkeleton();
     openSheet("plansheet");
     loadPrices().then(function () {
+      if (!accountNow(epoch, uid)) return;
       if ($("plansheet").classList.contains("open")) paintPlans();
     });
   }
@@ -11523,8 +11543,14 @@ export const APP = String.raw`
 
   // Store purchases never grant access from a client-supplied receipt or flag.
   // The server fetches the account entitlement from RevenueCat before updating it.
-  function syncNativePurchase() {
-    return sb.functions.invoke("spotter-purchases", { body: {} }).then(function (r) {
+  function syncNativePurchase(epoch, uid) {
+    return sb.auth.getSession().then(function (auth) {
+      var session = auth && auth.data && auth.data.session;
+      if (!accountNow(epoch, uid) || !session || session.user.id !== uid) return null;
+      // Bind the request to this account even if auth changes during invocation.
+      return sb.functions.invoke("spotter-purchases", { body: {}, headers: { Authorization: "Bearer " + session.access_token } });
+    }).then(function (r) {
+      if (!accountNow(epoch, uid) || !r) return null;
       if (r.error || !r.data || r.data.status !== "ok") throw new Error("Your purchase is saved. Tap Restore purchase when your connection returns.");
       return r.data;
     });
@@ -11532,17 +11558,22 @@ export const APP = String.raw`
 
   function nativePurchase(restore, btn) {
     if (!state.user || billing.busy) return;
-    var uid = state.user.id;
+    var uid = state.user.id, epoch = accountEpoch;
     billing.busy = true;
     if (btn) btn.disabled = true;
     var work = restore ? native.purchases.restore(uid) : native.purchases.purchase(uid, billing.interval);
-    work.then(syncNativePurchase).then(function (r) {
-      if (!state.user || state.user.id !== uid) return;
+    work.then(function () {
+      if (!accountNow(epoch, uid)) return null;
+      return syncNativePurchase(epoch, uid);
+    }).then(function (r) {
+      if (!accountNow(epoch, uid) || !r) return;
       absorbPlan(r, !restore);
       toast(r.plan === "free" ? "No active subscription was found for this account." : "Your " + planWord(r.plan) + " access is up to date.");
     }).catch(function (e) {
+      if (!accountNow(epoch, uid)) return;
       if (!e.userCancelled && String(e.code) !== "1") toast(e.message || "Could not complete the purchase. Please try again.");
     }).then(function () {
+      if (!accountNow(epoch, uid)) return;
       billing.busy = false;
       if (btn) btn.disabled = false;
     });
@@ -12360,18 +12391,29 @@ export const APP = String.raw`
    */
   function deviceFrames(opts) {
     if (!native || !native.contactSheet || (isFree() && !opts.preview)) return Promise.resolve(null);
+    var epoch = accountEpoch, uid = state.user && state.user.id;
     var prepare = opts.url ? api("ingest/prepare", { method: "POST", body: JSON.stringify({ url: opts.url, preview: !!opts.preview, reread: !!opts.reread }) }) : Promise.resolve({ needs_frames: true });
-    return prepare.catch(function () { return { needs_frames: true }; }).then(function (hint) {
+    return prepare.catch(function () {
+      if (!accountNow(epoch, uid)) throw new Error("Account changed");
+      return { needs_frames: true };
+    }).then(function (hint) {
+      if (!accountNow(epoch, uid)) throw new Error("Account changed");
       if (hint.needs_frames === false) return null;
       return sb.auth.getSession().then(function (r) {
       var s = r.data.session;
-      if (!s) return null;
+      if (!accountNow(epoch, uid) || !s || !s.user || s.user.id !== uid) throw new Error("Account changed");
       opts.token = s.access_token;
       return native.contactSheet(opts);
       });
     }).then(function (out) {
+      if (!accountNow(epoch, uid)) throw new Error("Account changed");
       return out && out.ok ? out.frames : null;
-    }).catch(function () { return null; });
+    }).catch(function (error) {
+      // Callers may save without frames after ordinary capture failure, but must
+      // not continue under a replacement account after identity changed.
+      if (!accountNow(epoch, uid) || (error && error.message === "Account changed")) throw error;
+      return null;
+    });
   }
 
   function cuttingFrames(url) {
@@ -14608,40 +14650,47 @@ export const APP = String.raw`
   };
   var rereading = {};
   function syncRereadButton(w) {
-    var b = $("dreproc"), busy = !!(w && rereading[w.id]);
+    var b = $("dreproc"), busy = !!(w && rereading[w.id] && rereading[w.id].epoch === accountEpoch);
     b.disabled = busy || !!(w && isPending(w));
     b.textContent = busy ? "Reading…" : "Read it again";
     b.setAttribute("aria-busy", busy ? "true" : "false");
   }
   $("dreproc").onclick = function () {
-    if (!current || rereading[current.id]) return;
+    if (!state.user || !current || (rereading[current.id] && rereading[current.id].epoch === accountEpoch)) return;
     // A card that never finished goes back on the queue instead of being re-run
     // inline; retryWorkout owns that path and the pending UI that goes with it.
     if (isPending(current) || isFailed(current)) { retryWorkout(current, null); return; }
     // Keep the label still and prevent duplicate reads. Capture the card so a
     // response cannot change a different workout opened while this one reads.
-    var w = current;
-    rereading[w.id] = true;
+    var w = current, epoch = accountEpoch, uid = state.user.id;
+    var ticket = { epoch: epoch };
+    rereading[w.id] = ticket;
     syncRereadButton(current);
-    function finishRead() { delete rereading[w.id]; syncRereadButton(current); }
+    function finishRead() {
+      if (rereading[w.id] === ticket) delete rereading[w.id];
+      if (accountNow(epoch, uid)) syncRereadButton(current);
+    }
     api("workouts/" + w.id + "/reprocess", { method: "POST", body: "{}" })
       .then(function (r) {
         finishRead();
+        if (!accountNow(epoch, uid)) return;
+        w = state.workouts.filter(function (x) { return x.id === w.id; })[0] || w;
         // The row went back on the queue rather than being re-read inline — the
         // requeue already happened, so this only has to reflect it.
         if (r.status === "processing") {
           w.ingest_status = "processing"; w.ingest_error = null;
           if (current && current.id === w.id) openDetail(w, true);
-          render(); watchPending(); toast("Reading it again…");
+          render(); watchPending(); toast(w.user_workout_override ? "Refreshing the source; your personal exercise list will be kept." : "Reading it again…");
           return;
         }
         if (r.status !== "ok") { limitHit(r, "Could not read that video again — try again in a minute."); return; }
         return load().then(function () {
+          if (!accountNow(epoch, uid)) return;
           var fresh = state.workouts.filter(function (x) { return x.id === r.workout.id; })[0];
           if (fresh && current && current.id === w.id) openDetail(fresh);
-          toast("Re-read the workout.");
+          toast((fresh || w).user_workout_override ? "Source refreshed; your personal exercise list was kept." : "Re-read the workout.");
         });
-      }).catch(function () { finishRead(); toast("Could not read that workout again — try again in a minute."); });
+      }).catch(function () { finishRead(); if (!accountNow(epoch, uid)) return; toast("Could not read that workout again — try again in a minute."); });
   };
 
   $("wclose").onclick = function () { history.back(); };

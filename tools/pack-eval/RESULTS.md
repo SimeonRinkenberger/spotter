@@ -1,3 +1,5 @@
+> **17 September 2026 scorer revision:** Historical model pass/fail totals below are not comparable with the repaired scorer. Pack v2 separates prescribed reps from visible counts, uses a push-up family match unless diamond hand shape is supported, excludes immediately negated prohibited phrases, and reports missing timestamp boundaries. The kettlebell fixture's visible rep counts are now unknown; handle-versus-body contact still needs human adjudication. Offline fixture assembly and the current live fixture-card runner do **not** measure real end-to-end synthesis accuracy. No new paid comparison was run for this revision.
+
 # pack-eval — the bench log
 
 Every run that changed a decision about how Spotter reads a video. Newest first. Add a

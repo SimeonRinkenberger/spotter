@@ -9,10 +9,10 @@
 // costs nothing.
 //
 // What that proves, and what it does not. It cannot tell you whether a model read
-// a video correctly; only tools/pack-eval/live.ts can, and that costs money. What
+// a video correctly; a live reader test can help measure perception, and that costs money. The current live runner uses a fixture card, so it does not evaluate paid card synthesis. What
 // it proves is that the pure half of the pipeline is STABLE against input it is
 // already known to handle: that a change to the canonicalizer still lands the
-// push-up on `diamond-push-up`, that deltaFrom still says nothing about a swing
+// push-up on its movement family, that deltaFrom still says nothing about a swing
 // that was standard, that a cue still fits on a card, that a card built from a
 // post nobody could watch still makes no visual claim. Those are exactly the
 // regressions that are invisible in a diff and obvious to a user, and there have

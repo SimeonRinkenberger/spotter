@@ -3,7 +3,8 @@ const source = await Deno.readTextFile(new URL('../supabase/functions/spotter/in
 const jobCode = source.slice(source.indexOf('async function runJob('), source.indexOf('async function handleWorkerTick('));
 const stubs = `
 type Job=any; type Parsed=any; type AiCtx=any; type Meta=any; type Card=any; type MediaTier=any; type VisionProgress=any;
-const CARD_V=6;
+const CARD_V=11;
+const WORKER_ID="worker";
 const aiActor={run:(_a:any,f:any)=>f(),getStore:()=>null};
 class GuardError extends Error {}
 export const state:any={cached:[],result:null,steps:[],finished:[],seed:null};
@@ -31,7 +32,11 @@ function countExercises(c:any){return c.blocks.flatMap((b:any)=>b.exercises).len
 async function escalateToMedia(_j:any,_p:any,meta:any,card:any){return {meta,card,ran:[]};}
 async function storeThumb(){return 'thumb';}
 async function captionMayOverwriteCache(){return true;}
-async function dbUpsert(){}
+async function rpc(name:string,args:any){
+ if(name!=='publish_ingest_cache') throw new Error('Unexpected RPC '+name);
+ if(args.p_user!=='user'||args.p_job!=='job'||args.p_generation!==2) throw new Error('Missing cache claim fence');
+ return true;
+}
 `;
 const m=await import('data:application/typescript,'+encodeURIComponent(stubs+'\nexport '+jobCode));
 let checks=0;
@@ -40,7 +45,7 @@ const partial={title:'Workout',blocks:[{exercises:[{name:'Squat'}]}],vision:{tot
 async function run(attempts:number,result:any,cached:any[]=[],seed?:any){
  Object.assign(m.state,{cached,result,steps:[],finished:[],seed:null});
  let failed=false;
- try{await m.runJob({id:'job',user_id:'user',platform:'tiktok',shortcode:'tt-test',kind:'photo',url:'https://example.com',step:seed?'vision:2':'meta',card:seed,meta:seed?{caption:'Workout',images:['a','b']}:null,attempts,max_attempts:4});}catch(e){failed=String(e).includes('incomplete carousel');}
+ try{await m.runJob({id:'job',user_id:'user',claim_generation:2,created_at:'2026-09-17T00:00:00Z',platform:'tiktok',shortcode:'tt-test',kind:'photo',url:'https://example.com',step:seed?'vision:2':'meta',card:seed,meta:seed?{caption:'Workout',images:['a','b']}:null,attempts,max_attempts:4});}catch(e){if(!String(e).includes('incomplete carousel')) throw e;failed=true;}
  return failed;
 }
 check(await run(1,partial),'incomplete first attempt must retry');

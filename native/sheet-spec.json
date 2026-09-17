@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "_": "The contact-sheet contract. Swift (ios/App/Shared/SheetSpec.swift) and Java (android/app/src/main/java/app/spotter/dev/SheetSpec.java) each mirror these numbers in code because neither shell can parse a repo file at runtime; tools/ios/sheet-check.mjs and tools/android/sheet-check.mjs compile those mirrors and assert them against this file, so a change here that is not made in both places fails the harness.",
   "__v2": "Revised 15 Sept after the first live read. At 200 px cells the reader hedged — 'hands on the mat near the kettlebell' when they are ON the handle — so the cells grew to 270 px and the grid shrank to 4x3, with up to three sheets carrying the same total pixel budget across more of the clip.",
 
@@ -31,8 +31,8 @@
   },
 
   "label": {
-    "_": "The timestamp is the whole point of the labels: the server prompt tells the model to read t0/t1 off them, and the transcript it gets alongside is on the same clock. Bottom-left, because that corner is background in a portrait video far more often than any other.",
-    "format": "M:SS",
+    "_": "Labels preserve tenths; the numeric times manifest is authoritative. Android prefixes ~ because nearest-keyframe PTS is unknown. Sparse cells cannot prove exact exercise boundaries. Bottom-left, because that corner is background in a portrait video far more often than any other.",
+    "format": "M:SS.s",
     "font_px": 16,
     "bold": true,
     "inset_px": 8,
@@ -51,7 +51,7 @@
   },
 
   "budget": {
-    "_": "Hard limits on a save that must never be blocked by them. Past either one, whatever sheets are finished go with the save and the rest are dropped; with none finished the save goes without frames and the server falls back to reading the video with Gemini.",
+    "_": "Best-effort capture budget. Interrupted sampling or incomplete upload returns no frames so the existing server fallback handles the video. All scheduled sample requests must decode; deduplicated frames are allowed. Completing sparse sampling does not imply observing every frame.",
     "wall_clock_ms": 8000,
     "download_bytes": 26214400
   },
@@ -66,7 +66,17 @@
   },
 
   "ingest": {
-    "_": "The frames block added to the POST /api/ingest body. Exactly the shape in BRIEF-VCP-A-ADDENDUM.",
-    "source": "device"
+    "_": "The frames block added to POST /api/ingest. Version 3 adds evidence metadata; sampling_complete means every scheduled sample decoded, never that every video frame was seen. No partially uploaded set is published.",
+    "source": "device",
+    "evidence": {
+      "version": 3,
+      "sampling": "sparse_uniform",
+      "timestamp_basis": "actual_pts on iOS; requested_nearest_keyframe on Android",
+      "timing_uncertainty_s": "0 for the iOS frame PTS (not the exercise boundary); null on Android",
+      "requested_frames": "scheduled sample requests",
+      "captured_frames": "deduplicated retained frames",
+      "uploaded_frames": "must equal captured_frames",
+      "sampling_complete": true
+    }
   }
 }

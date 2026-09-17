@@ -210,7 +210,7 @@ function scoreAndStamp(_c: any, _m: any, _p: string, _h: number): any {
 const NAMES = [
   // types
   "ExerciseSource", "Exercise", "Block", "Card", "Meta", "Parsed", "AiCtx",
-  "VisionRequest", "SlideRead", "DoseGap", "SlideMerge", "VisionProgress",
+  "UsageTrace", "usageTrace", "VisionRequest", "SlideRead", "DoseGap", "SlideMerge", "VisionProgress",
   // taxonomies the normalizer validates against
   "CATEGORIES", "MUSCLES", "EQUIPMENT", "BLOCK_TYPES", "DIFFICULTIES",
   // the dials

@@ -84,7 +84,7 @@ const FIXTURE: Fixture = {
       variant: variant(),
       creator_cues: [{ t: 15, quote: "take these slow and controlled so that we get time under tension" }],
       seen_not_said: ["both hands are on the kettlebell handle, not the floor"],
-      provenance: { name: "said", reps: "said", variant: "seen", cues: "said" },
+      provenance: { name: "said", reps: "seen", variant: "seen", cues: "said" },
       confidence: 0.9,
     },
     {
@@ -103,7 +103,7 @@ const FIXTURE: Fixture = {
       }),
       creator_cues: [{ t: 30, quote: "focusing on the hip hinge, finding that tension through the glutes" }],
       seen_not_said: ["bell peaks at chest height, not overhead"],
-      provenance: { name: "said", reps: "said", variant: "seen", cues: "said" },
+      provenance: { name: "said", reps: "seen", variant: "seen", cues: "said" },
       confidence: 0.95,
     },
   ] as FixtureExercise[],
@@ -123,7 +123,7 @@ const FIXTURE: Fixture = {
 };
 
 const PACK: Pack = {
-  pack_v: 1,
+  pack_v: 2,
   shortcode: "tt-test",
   platform: "tiktok",
   duration_s: 40,
@@ -151,7 +151,7 @@ const PACK: Pack = {
       delta_from_standard: "hands on the kettlebell handle",
       creator_cues: [{ t: 15, quote: "take these slow and controlled so that we get time under tension" }],
       seen_not_said: ["both hands are on the kettlebell handle, not the floor"],
-      provenance: { name: "said", reps: "said", variant: "seen", cues: "said" },
+      provenance: { name: "said", reps: "seen", variant: "seen", cues: "said" },
       confidence: 0.9,
       needs_requery: false,
     },
@@ -171,7 +171,7 @@ const PACK: Pack = {
       delta_from_standard: null,
       creator_cues: [{ t: 30, quote: "focusing on the hip hinge, finding that tension through the glutes" }],
       seen_not_said: ["bell peaks at chest height, not overhead"],
-      provenance: { name: "said", reps: "said", variant: "seen", cues: "said" },
+      provenance: { name: "said", reps: "seen", variant: "seen", cues: "said" },
       confidence: 0.95,
       needs_requery: false,
     },

@@ -662,9 +662,11 @@ one outcome that must never happen.
 
 ## Plans and billing
 
-Spotter sells one paid tier: **Plus, $6.99 a month or $39.99 a year**, with a 7-day trial on the
-annual price only (a card is taken up front — the free tier is the monthly plan's trial). At
-launch the first 200 annual subscribers pay **$29.99 for the first year**. Everything that made
+The configured target prices are **Plus, $6.99 a month or $50 a year**, with a 7-day trial on the
+annual price only (a card is taken up front — the free tier is the monthly plan's trial). The
+launch plan disables the automatic founding discount for new purchases; existing purchases
+and explicit promises must be honored. A live Stripe coupon is unchanged until a separate,
+reviewed billing update. These are repository targets: Stripe and the native Apple/Google product prices must be published separately and verified before these amounts are described as live. Everything that made
 Spotter worth using stays free for ever — logging, Workout Mode, the plan, progress, the muscle
 map, collections and export are not metered and never will be.
 

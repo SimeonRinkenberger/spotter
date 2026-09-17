@@ -6,7 +6,7 @@ const handler=source.slice(source.indexOf('  var rereading = {};'),source.indexO
 function fixture(){
  const button={disabled:false,textContent:'Read it again',setAttribute(k,v){this[k]=v;}};
  const calls=[],opened=[]; let resolve,reject;
- const c={current:{id:'a'},$:()=>button,isPending:w=>w.ingest_status==='processing',isFailed:()=>false,retryWorkout:()=>{},api:(path)=>{calls.push(path);return new Promise((a,b)=>{resolve=a;reject=b;});},state:{workouts:[{id:'a'}]},load:()=>Promise.resolve(),openDetail:w=>opened.push(w.id),render:()=>{},watchPending:()=>{},toast:()=>{},limitHit:()=>{}};
+ const c={current:{id:'a'},$:()=>button,isPending:w=>w.ingest_status==='processing',isFailed:()=>false,retryWorkout:()=>{},api:(path)=>{calls.push(path);return new Promise((a,b)=>{resolve=a;reject=b;});},state:{user:{id:'alice'},workouts:[]},accountEpoch:1,accountNow:(e,u)=>e===c.accountEpoch&&c.state.user?.id===u,load:()=>Promise.resolve(),openDetail:w=>opened.push(w.id),render:()=>{},watchPending:()=>{},toast:()=>{},limitHit:()=>{}};
  vm.createContext(c); vm.runInContext(handler,c);
  return {c,button,calls,opened,resolve:v=>resolve(v),reject:()=>reject(new Error('offline'))};
 }
@@ -22,4 +22,12 @@ for(const outcome of ['ok','processing']){
  x.resolve({status:outcome,workout:{id:'a'}});await flush();assert.deepEqual(x.opened,[]);assert.equal(x.c.current.ingest_status,undefined);
  if(outcome==='processing')assert.equal(original.ingest_status,'processing');
 }
-console.log('PASS: stationary busy label, duplicate-click guard, success/error/rejection cleanup, queued response, and navigation during reread.');
+for (const outcome of ['ok','processing','reject']) {
+ const x=fixture(); x.button.onclick(); x.c.accountEpoch++; x.c.state.user={id:'bob'};
+ x.c.current={id:'b'}; x.c.syncRereadButton(x.c.current);
+ x.c.toast=()=>{throw new Error('stale account toast');};
+ x.c.load=()=>{throw new Error('stale account load');};
+ if(outcome==='reject')x.reject();else x.resolve({status:outcome,workout:{id:'a'}});
+ await flush(); assert.deepEqual(x.opened,[]); assert.equal(x.c.current.ingest_status,undefined);
+}
+console.log('PASS: account changes, stationary busy label, duplicate-click guard, success/error/rejection cleanup, queued response, and navigation during reread.');

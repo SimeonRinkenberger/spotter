@@ -295,7 +295,7 @@ async function loadFounding(): Promise<Stripe.Coupon | null> {
  * The prices and the founding coupon, fetched together and cached together.
  *
  * They are one thing as far as the paywall is concerned — a yearly card either
- * shows $39.99 or $29.99-then-$39.99 — so caching them separately would let the
+ * shows the regular annual price or the discounted first year and renewal price — so caching them separately would let the
  * sheet show an offer that checkout no longer applies, for up to five minutes.
  * One round trip pair, one expiry.
  */

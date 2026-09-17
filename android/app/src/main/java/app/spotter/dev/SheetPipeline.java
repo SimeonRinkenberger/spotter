@@ -72,10 +72,8 @@ public final class SheetPipeline {
 
     private static Outcome finish(ContactSheet.Result built, String shortcode,
                                   String token, long started) throws Exception {
-        // One authorize for the whole save, then the bytes. Uploaded in order and
-        // counted as they land: after a PUT that would not go, whatever is already
-        // up is what goes with the save — the sheets are in time order, so a short
-        // set is the first part of the video rather than a hole in the middle.
+        // One authorization, then all pages. An interrupted upload uses the
+        // existing fallback instead of publishing only the beginning of the clip.
         int[] sizes = new int[built.pages.size()];
         for (int i = 0; i < sizes.length; i++) sizes[i] = built.pages.get(i).jpeg.length;
         Slot[] slots = authorize(shortcode, sizes, token);
@@ -96,11 +94,18 @@ public final class SheetPipeline {
             bytes += page.jpeg.length;
             kept += page.times.length;
         }
-        if (sheets.length() == 0) return null;
+        // Never pass only the first uploaded pages as a full video overview.
+        if (sheets.length() == 0 || sheets.length() != built.pages.size()) return null;
 
         JSONObject frames = new JSONObject()
                 .put("source", "device")
                 .put("duration_s", built.durationS)
+                .put("evidence", new JSONObject()
+                        .put("version", 3).put("sampling", "sparse_uniform")
+                        .put("timestamp_basis", "requested_nearest_keyframe")
+                        .put("timing_uncertainty_s", JSONObject.NULL)
+                        .put("requested_frames", built.requested).put("captured_frames", kept)
+                        .put("uploaded_frames", kept).put("sampling_complete", true))
                 .put("sheets", sheets);
         return new Outcome(frames, first, bytes, kept, built.requested,
                 System.currentTimeMillis() - started);

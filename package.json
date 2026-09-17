@@ -17,6 +17,7 @@
     "android:check": "node tools/android/sheet-check.mjs",
     "android:build": "node tools/android/build.mjs",
     "eval:offline": "deno run --allow-read tools/pack-eval/offline.ts",
+    "gtm:check": "node tools/gtm-check.mjs",
     "eval:test": "deno run --allow-read tools/pack-eval/score-test.ts",
     "eval:live": "deno run --allow-read --allow-net --allow-env tools/pack-eval/live.ts"
   },

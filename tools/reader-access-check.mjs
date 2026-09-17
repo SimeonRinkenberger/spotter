@@ -36,7 +36,7 @@ c.card={blocks:[{type:'amrap',exercises:[{recommendation:{sets:3,reps:'10'}}]}]}
 assert.equal(c.card.blocks[0].exercises[0].recommendation.sets,null);assert.match(c.card.blocks[0].exercises[0].recommendation.note,/available source/);
 // All attached movements, including the last, must reach the coach.
 c.handleOf=x=>x;c.w={id:'fixture',title:'Long workout',blocks:[{exercises:Array.from({length:60},(_,i)=>({name:'Exercise '+i+' '+ 'x'.repeat(35),sets:3,reps:'10'}))}]};
-vm.runInContext(transformSync(fn('pumpyRefBlock'),{loader:'ts',format:'cjs'}).code,c);
+vm.runInContext(transformSync(fn('pumpyAttachmentError')+'\n'+fn('pumpyRefBlock'),{loader:'ts',format:'cjs'}).code,c);
 assert.match(vm.runInContext('pumpyRefBlock(w)',c),/Exercise 59/);
 console.log('PASS cache tier isolation, legacy media protection, stale Basic rebuild, honest recommendations, AMRAP structure and complete Pumpy attachments.');
 // Run the actual completion path with another account processing the same URL.
@@ -50,6 +50,11 @@ c.dbSelect=async(table,query)=>{
   return [{id:'owned',user_id:'plus'}];
  }
  return [];
+};
+c.rpc=async(name,args)=>{
+ assert.equal(name,'finish_ingest_job');assert.equal(args.p_user,'plus');assert.equal(args.p_job,'job');
+ updates.push({table:'workouts',query:'user_id=eq.'+args.p_user,body:args.p_payload});
+ return {status:'done',filled:1};
 };
 c.dbPatchMany=async(table,query,body)=>{updates.push({table,query,body});return [{id:'owned'}];};
 c.dbDelete=async()=>{};
