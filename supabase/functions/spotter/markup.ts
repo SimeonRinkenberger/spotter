@@ -169,8 +169,19 @@ export const MARKUP_BODY = String.raw`</head>
       <div class="mailsent hide" id="mailsent" tabindex="-1">
         <span class="mailmark" aria-hidden="true"><svg class="ic"><use href="#i-mail"></use></svg></span>
         <h2>Check your email</h2>
-        <p>We sent a confirmation link to <b id="mailaddr"></b>. Open it and you are in.
-          It can take a minute, and it is worth a look in spam.</p>
+        <p id="mailbody"></p>
+        <!-- One field, not six boxes. WebKit's own guidance for
+             autocomplete="one-time-code" is a single input: iOS offers the code
+             out of the message above the keyboard and fills it in one go, and a
+             row of one-character boxes is exactly where that autofill stops
+             working. Instagram's confirmation screen is a single field too. The
+             link in the mail still works for anyone reading it on a desktop. -->
+        <div class="field">
+          <label for="otp">Six-digit code</label>
+          <input id="otp" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456" autocapitalize="off" spellcheck="false">
+        </div>
+        <button class="btn" id="otpgo">Confirm</button>
+        <div class="autherr" id="otperr"></div>
         <button class="btn ghost" id="mailresend">Resend the email</button>
         <div class="authswap"><button id="mailback">Use a different email</button></div>
       </div>

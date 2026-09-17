@@ -32,11 +32,15 @@ enable_confirmations = false
 #      spam, which looks exactly like mail that was never sent.
 #   2. Uncomment [auth.email.smtp], export SUPABASE_AUTH_SMTP_PASS, push, and send
 #      yourself one password reset. Confirm it arrives from the sender below.
-#   3. Only then set enable_confirmations = true above, and push. From that moment
-#      signUp returns a user with no session and the app shows "Check your email"
-#      (the frontend already handles both shapes, so this step is a one-line
-#      change with no deploy).
-#   4. Turnstile: create the widget, paste the SITE key into PUBLIC_CAPTCHA in
+#   3. Dashboard -> Authentication -> Email Templates: put {{ .Token }} above the
+#      link in BOTH "Confirm signup" and "Reset password". The card's six-digit
+#      code field reads that token, and it is the only way an account lands inside
+#      the native app rather than in whatever browser opened the link. Raise
+#      email_sent below in the same push. Only then set enable_confirmations = true
+#      above, and push again. From that moment signUp returns a user with no
+#      session and the app shows "Check your email" (the frontend already handles
+#      both shapes, so this step is a one-line change with no deploy).
+#   5. Turnstile: create the widget, paste the SITE key into PUBLIC_CAPTCHA in
 #      supabase/functions/spotter/app.ts, rebuild, ship the page, and only after
 #      that page is live uncomment [auth.captcha] and push. Flipping the server
 #      first locks out every browser still holding the old page.

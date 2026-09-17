@@ -194,6 +194,12 @@ export const STYLE = String.raw`<style>
   .mailsent h2 { font-family: var(--display); font-size: 19px; margin: 14px 0 8px;
     font-weight: 700; letter-spacing: -.012em; }
   .mailsent p { font-size: 14px; line-height: 1.55; color: var(--ink-2); margin: 0 0 18px; }
+  /* A code is read digit by digit, so it is set that way. The indent pays back
+     the trailing letter-space, which would otherwise sit the digits left of the
+     centre by about half a character. */
+  .mailsent .field input { text-align: center; letter-spacing: .28em; text-indent: .28em;
+    font-weight: 600; }
+  .mailsent .btn.ghost { margin-top: 12px; }
   /* An address is the one string on this card that has no natural break, and a
      long one must wrap rather than widen the card past the viewport. */
   .mailsent b { color: var(--ink); font-weight: 650; overflow-wrap: anywhere; }

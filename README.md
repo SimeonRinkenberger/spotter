@@ -1055,12 +1055,38 @@ after in History. `capacity`, `disconnected` and `rate_limited` each get their o
    3. `export SUPABASE_AUTH_SMTP_PASS=...`, uncomment `[auth.email.smtp]`,
       `supabase config push`, then send yourself one **Forgot your password?** from the
       live page and confirm it arrives from `Spotter <no-reply@quarterdeckcollective.com>`.
-   4. Only then set `enable_confirmations = true` and push again. From that moment a
-      signup returns no session and the card shows **Check your email**, which the page
-      already handles — no redeploy.
-   5. Dashboard → Authentication → **URL Configuration** → Redirect URLs must list
+   4. Dashboard → Authentication → **Email Templates**. In **Confirm signup** and in
+      **Reset password**, put the code above the link:
+
+      ```html
+      <p>Your code: <strong>{{ .Token }}</strong></p>
+      ```
+
+      This is not optional. The confirmation link signs a person in **wherever it
+      opens**, which on a phone is the browser and not the app — the native shells have
+      no universal link back. The six-digit code is how the account lands in the app the
+      person is actually standing in; the link stays for anyone reading the mail on a
+      desktop. Without `{{ .Token }}` in the template the code field on the card has
+      nothing to receive.
+   5. Raise `[auth.rate_limit].email_sent` above its **2/hour project-wide** default in
+      the same push. Two an hour was sized for the built-in sender and will stall every
+      signup the moment confirmations are on; the commented block suggests 30 against
+      Resend's free 100/day.
+   6. Only then set `enable_confirmations = true` and push again. From that moment a
+      signup returns no session and the card shows **Check your email** with the code
+      field, which the page already handles — no redeploy.
+   7. Dashboard → Authentication → **URL Configuration** → Redirect URLs must list
       `https://simeonrinkenberger.github.io/spotter/`, or the link in the mail bounces to
       the Site URL. It is the same list the reset link needs.
+
+   **AI consent.** App Store 5.1.2(i) needs an explicit agreement before a person's
+   content goes to a third-party model. The sign-up face of the card carries that
+   sentence above the button, with links to the Terms and the privacy policy, and the
+   moment of agreement is recorded as `ai_consent_at` (ISO string) in
+   `profiles.settings` — a user-writable column, so there is no migration and nothing
+   for the owner to run. An account made before this existed is asked once, at the top
+   of Settings; dismissing that line is the agreement and records the same field.
+   Nothing here needs a dashboard change.
 
    **Rate limits.** `[auth.rate_limit]` in `config.toml` is the third block, and the only
    one that depends on nothing external — per-IP caps gotrue applies before anything else.
@@ -1077,11 +1103,13 @@ after in History. `capacity`, `disconnected` and `rate_limited` each get their o
 
    | Step | Expect |
    | --- | --- |
-   | Sign up with a fresh address | "Check your email", the address echoed back, Resend counting down from 60 |
+   | Sign up with a fresh address | "Check your email", the address echoed back, a six-digit code field, Resend counting down from 60 |
+   | Type the code from the mail | Signs in on this device, in this app, without touching the link |
+   | Type a wrong code | "That code is wrong or has expired. Ask for a new one." and the field reselected |
    | Open the link in the mail | Lands signed in, library empty, no error box |
    | Open the same link a second time | "That link has expired or was already used." — a sentence, not a dump |
    | Sign in with the unconfirmed account | The same "Check your email" card, with a working Resend |
-   | Forgot your password? | The reset mail arrives from the Resend sender; the link opens "Choose a new password" |
+   | Forgot your password? | The same card, "recovery" wording; the code or the link both open "Choose a new password" |
    | Tap Create account 20 times in a minute | "Too many tries. Give it a minute." and no stuck button |
    | Sign up in the native shell | A token, or a captcha error — this is the unknown above |
 

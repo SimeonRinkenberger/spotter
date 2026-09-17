@@ -461,6 +461,9 @@ export const APP = String.raw`
     // Before the rate-limit line, because gotrue's captcha refusal is a 400 whose
     // text reads "captcha protection: request disallowed".
     if (/captcha/i.test(m)) return "The security check did not finish. Try that once more.";
+    // A six-digit code that is wrong and one that has been used read the same to
+    // gotrue ("Token has expired or is invalid"), and they read the same here.
+    if (/token|otp/i.test(m)) return "That code is wrong or has expired. Ask for a new one.";
     if (/already regist/i.test(m)) return "That email already has an account — sign in instead.";
     if (/invalid login|invalid.*credential/i.test(m)) return "Wrong email or password.";
     if (/rate limit|too many|for security purposes/i.test(m)) return "Too many tries. Give it a minute.";
@@ -643,6 +646,7 @@ export const APP = String.raw`
   // max_frequency refuses a second send inside a minute anyway, and a button that
   // fails for a reason nobody explained is worse than a button that says wait.
   var mailAddr = null;
+  var mailType = "signup";
   var mailLeft = 0;
   var mailTick = null;
 
@@ -664,9 +668,21 @@ export const APP = String.raw`
     }, 1000);
   }
 
-  function mailSent(email) {
+  function mailSent(email, type) {
     mailAddr = email;
-    $("mailaddr").textContent = email;
+    mailType = type === "recovery" ? "recovery" : "signup";
+    var p = $("mailbody");
+    p.innerHTML = "";
+    // Recovery keeps the sentence that promises nothing: whether that address has
+    // an account is not a question this form is allowed to answer.
+    p.appendChild(document.createTextNode(mailType === "recovery"
+      ? "If that address has an account, a reset link and a six-digit code are on their way to "
+      : "We sent a confirmation link and a six-digit code to "));
+    p.appendChild(el("b", null, email));
+    p.appendChild(document.createTextNode(". Tap the link, or type the code in below. It can " +
+      "take a minute, and it is worth a look in spam."));
+    $("otp").value = "";
+    otpError("");
     $("mailsent").classList.remove("hide");
     $("authcard").classList.add("sent");
     mailCount(60);
@@ -674,9 +690,53 @@ export const APP = String.raw`
     $("mailsent").focus();
   }
 
+  // ---------- the six-digit code ----------
+  //
+  // The confirmation link signs a person in wherever it opens, which on a phone
+  // is the browser and not this app. A code is the way out of that: it is typed
+  // into the session that asked for it, so the account lands where the person is
+  // standing. The link still works untouched for anyone reading the mail on a
+  // desktop. gotrue puts the code in the template as {{ .Token }} — README,
+  // "Self-hosting", item 8.
+  function otpError(msg) {
+    var e = $("otperr");
+    e.textContent = msg || "";
+    e.classList.toggle("show", !!msg);
+  }
+
+  function otpGo() {
+    var code = $("otp").value.replace(/[^0-9]/g, "");
+    if (code.length < 6) { otpError("Type the six digits from the email."); return; }
+    var b = $("otpgo");
+    b.disabled = true;
+    b.textContent = "Checking…";
+    otpError("");
+    function idle() { b.disabled = false; b.textContent = "Confirm"; }
+    capToken().then(function (tok) {
+      var args = { email: mailAddr, token: code, type: mailType };
+      if (tok) args.options = { captchaToken: tok };
+      return sb.auth.verifyOtp(args);
+    }).then(function (r) {
+      idle();
+      if (r.error) {
+        otpError(authMessage(r.error.message));
+        $("otp").select();
+        return;
+      }
+      // A session came back. onAuthStateChange has already swapped the view, and
+      // for a recovery code it has already opened "Choose a new password".
+    }).catch(function (e) {
+      idle();
+      otpError(authMessage(e && e.message ? e.message : e));
+    });
+  }
+
   function mailClose() {
     clearInterval(mailTick);
     mailAddr = null;
+    // A code left in a field is a code the next person at this browser can read.
+    $("otp").value = "";
+    otpError("");
     $("mailsent").classList.add("hide");
     $("authcard").classList.remove("sent");
   }
@@ -695,8 +755,12 @@ export const APP = String.raw`
     b.disabled = true;
     b.textContent = "Sending…";
     capToken().then(function (tok) {
-      return sb.auth.resend({ type: "signup", email: mailAddr,
-        options: withCap({ emailRedirectTo: AUTH_RETURN }, tok) });
+      // Two different endpoints send the two mails, and resend only knows about
+      // the confirmation one; asking for a reset again is asking for a reset.
+      return mailType === "recovery"
+        ? sb.auth.resetPasswordForEmail(mailAddr, withCap({ redirectTo: AUTH_RETURN }, tok))
+        : sb.auth.resend({ type: "signup", email: mailAddr,
+            options: withCap({ emailRedirectTo: AUTH_RETURN }, tok) });
     }).then(function (r) {
       mailCount(60);
       if (r && r.error) { toast(authMessage(r.error.message)); return; }
@@ -13858,8 +13922,7 @@ export const APP = String.raw`
     }).then(function (r) {
       b.disabled = false;
       if (r.error) { authError(authMessage(r.error.message)); return; }
-      authOK("If that address has an account, a reset link is on its way. If it does not " +
-        "arrive in a few minutes, try again later.");
+      mailSent(email, "recovery");
     }, function () {
       b.disabled = false;
       authError("Could not ask for a link. Check your connection.");
@@ -14742,6 +14805,18 @@ export const APP = String.raw`
     noteConsent();
     $("consentrow").classList.add("hide");
   };
+  $("otpgo").onclick = otpGo;
+  // Six digits is the whole answer, so there is nothing left to press. Both
+  // Apple's and Instagram's code screens go on their own the moment the last
+  // digit lands, and waiting for a tap after that reads as a screen that did not
+  // notice. Non-digits are stripped as they arrive, which is also what a pasted
+  // "123 456" needs.
+  $("otp").addEventListener("input", function () {
+    var v = this.value.replace(/[^0-9]/g, "").slice(0, 6);
+    if (v !== this.value) this.value = v;
+    if (v.length === 6) otpGo();
+  });
+  $("otp").addEventListener("keydown", function (e) { if (e.key === "Enter") otpGo(); });
   $("mailresend").onclick = mailResend;
   $("mailback").onclick = mailBack;
   $("oagoogle").onclick = googleSignIn;

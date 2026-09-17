@@ -498,6 +498,15 @@ button {
   color: var(--ink-2);
   margin: 0 0 18px;
 }
+.mailsent .field input {
+  text-align: center;
+  letter-spacing: .28em;
+  text-indent: .28em;
+  font-weight: 600;
+}
+.mailsent .btn.ghost {
+  margin-top: 12px;
+}
 .mailsent b {
   color: var(--ink);
   font-weight: 650;
@@ -7255,8 +7264,13 @@ details.details-moving > :not(summary) {
       <div class="mailsent hide" id="mailsent" tabindex="-1">
         <span class="mailmark" aria-hidden="true"><svg class="ic"><use href="#i-mail"></use></svg></span>
         <h2>Check your email</h2>
-        <p>We sent a confirmation link to <b id="mailaddr"></b>. Open it and you are in.
-          It can take a minute, and it is worth a look in spam.</p>
+        <p id="mailbody"></p>
+        <div class="field">
+          <label for="otp">Six-digit code</label>
+          <input id="otp" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456" autocapitalize="off" spellcheck="false">
+        </div>
+        <button class="btn" id="otpgo">Confirm</button>
+        <div class="autherr" id="otperr"></div>
         <button class="btn ghost" id="mailresend">Resend the email</button>
         <div class="authswap"><button id="mailback">Use a different email</button></div>
       </div>
@@ -8153,7 +8167,7 @@ details.details-moving > :not(summary) {
     e.textContent = msg, e.classList.add("show"), e.classList.add("ok");
   }
   function authMessage(m) {
-    return m = String(m || ""), /captcha/i.test(m) ? "The security check did not finish. Try that once more." : /already regist/i.test(m) ? "That email already has an account \u2014 sign in instead." : /invalid login|invalid.*credential/i.test(m) ? "Wrong email or password." : /rate limit|too many|for security purposes/i.test(m) ? "Too many tries. Give it a minute." : /confirm/i.test(m) ? "Check your email to confirm your account, then sign in." : /network|fetch|failed to fetch/i.test(m) ? "Could not reach Spotter \u2014 check your connection." : /password/i.test(m) && /weak|short|least|6 char/i.test(m) ? "Use at least 8 characters." : /email/i.test(m) && /invalid|valid/i.test(m) ? "That email address does not look right." : authMode === "signup" ? "Could not create your account. Try again in a moment." : "Could not sign you in. Try again in a moment.";
+    return m = String(m || ""), /captcha/i.test(m) ? "The security check did not finish. Try that once more." : /token|otp/i.test(m) ? "That code is wrong or has expired. Ask for a new one." : /already regist/i.test(m) ? "That email already has an account \u2014 sign in instead." : /invalid login|invalid.*credential/i.test(m) ? "Wrong email or password." : /rate limit|too many|for security purposes/i.test(m) ? "Too many tries. Give it a minute." : /confirm/i.test(m) ? "Check your email to confirm your account, then sign in." : /network|fetch|failed to fetch/i.test(m) ? "Could not reach Spotter \u2014 check your connection." : /password/i.test(m) && /weak|short|least|6 char/i.test(m) ? "Use at least 8 characters." : /email/i.test(m) && /invalid|valid/i.test(m) ? "That email address does not look right." : authMode === "signup" ? "Could not create your account. Try again in a moment." : "Could not sign you in. Try again in a moment.";
   }
   var consentGiven = !1;
   function consentLink(href, text) {
@@ -8254,7 +8268,7 @@ details.details-moving > :not(summary) {
       idle2(), authError(authMessage(e && e.message ? e.message : e));
     });
   }
-  var mailAddr = null, mailLeft = 0, mailTick = null;
+  var mailAddr = null, mailType = "signup", mailLeft = 0, mailTick = null;
   function mailLabel() {
     var b = $("mailresend");
     b.disabled = mailLeft > 0, b.textContent = mailLeft > 0 ? "Resend in " + mailLeft + "s" : "Resend the email";
@@ -8264,11 +8278,40 @@ details.details-moving > :not(summary) {
       mailLeft--, mailLabel(), mailLeft <= 0 && clearInterval(mailTick);
     }, 1e3));
   }
-  function mailSent(email) {
-    mailAddr = email, $("mailaddr").textContent = email, $("mailsent").classList.remove("hide"), $("authcard").classList.add("sent"), mailCount(60), $("mailsent").focus();
+  function mailSent(email, type) {
+    mailAddr = email, mailType = type === "recovery" ? "recovery" : "signup";
+    var p = $("mailbody");
+    p.innerHTML = "", p.appendChild(document.createTextNode(mailType === "recovery" ? "If that address has an account, a reset link and a six-digit code are on their way to " : "We sent a confirmation link and a six-digit code to ")), p.appendChild(el("b", null, email)), p.appendChild(document.createTextNode(". Tap the link, or type the code in below. It can take a minute, and it is worth a look in spam.")), $("otp").value = "", otpError(""), $("mailsent").classList.remove("hide"), $("authcard").classList.add("sent"), mailCount(60), $("mailsent").focus();
+  }
+  function otpError(msg) {
+    var e = $("otperr");
+    e.textContent = msg || "", e.classList.toggle("show", !!msg);
+  }
+  function otpGo() {
+    var code = $("otp").value.replace(/[^0-9]/g, "");
+    if (code.length < 6) {
+      otpError("Type the six digits from the email.");
+      return;
+    }
+    var b = $("otpgo");
+    b.disabled = !0, b.textContent = "Checking\u2026", otpError("");
+    function idle2() {
+      b.disabled = !1, b.textContent = "Confirm";
+    }
+    capToken().then(function(tok) {
+      var args = { email: mailAddr, token: code, type: mailType };
+      return tok && (args.options = { captchaToken: tok }), sb.auth.verifyOtp(args);
+    }).then(function(r) {
+      if (idle2(), r.error) {
+        otpError(authMessage(r.error.message)), $("otp").select();
+        return;
+      }
+    }).catch(function(e) {
+      idle2(), otpError(authMessage(e && e.message ? e.message : e));
+    });
   }
   function mailClose() {
-    clearInterval(mailTick), mailAddr = null, $("mailsent").classList.add("hide"), $("authcard").classList.remove("sent");
+    clearInterval(mailTick), mailAddr = null, $("otp").value = "", otpError(""), $("mailsent").classList.add("hide"), $("authcard").classList.remove("sent");
   }
   function mailBack() {
     mailClose(), authError(""), setAuthMode("signup"), $("email").value = "", $("email").focus();
@@ -8277,7 +8320,7 @@ details.details-moving > :not(summary) {
     if (!(!mailAddr || mailLeft > 0)) {
       var b = $("mailresend");
       b.disabled = !0, b.textContent = "Sending\u2026", capToken().then(function(tok) {
-        return sb.auth.resend({
+        return mailType === "recovery" ? sb.auth.resetPasswordForEmail(mailAddr, withCap({ redirectTo: AUTH_RETURN }, tok)) : sb.auth.resend({
           type: "signup",
           email: mailAddr,
           options: withCap({ emailRedirectTo: AUTH_RETURN }, tok)
@@ -16108,7 +16151,7 @@ details.details-moving > :not(summary) {
         authError(authMessage(r.error.message));
         return;
       }
-      authOK("If that address has an account, a reset link is on its way. If it does not arrive in a few minutes, try again later.");
+      mailSent(email, "recovery");
     }, function() {
       b.disabled = !1, authError("Could not ask for a link. Check your connection.");
     });
@@ -16595,7 +16638,12 @@ details.details-moving > :not(summary) {
   }
   if ($("authgo").onclick = doAuth, $("forgotpw").onclick = forgotPassword, consentFill($("consent")), $("consentok").onclick = function() {
     noteConsent(), $("consentrow").classList.add("hide");
-  }, $("mailresend").onclick = mailResend, $("mailback").onclick = mailBack, $("oagoogle").onclick = googleSignIn, $("oaapple").onclick = appleSignIn, oaLabelOf("oagoogle"), oaLabelOf("oaapple"), loadAuthProviders(), $("pw").addEventListener("keydown", function(e) {
+  }, $("otpgo").onclick = otpGo, $("otp").addEventListener("input", function() {
+    var v = this.value.replace(/[^0-9]/g, "").slice(0, 6);
+    v !== this.value && (this.value = v), v.length === 6 && otpGo();
+  }), $("otp").addEventListener("keydown", function(e) {
+    e.key === "Enter" && otpGo();
+  }), $("mailresend").onclick = mailResend, $("mailback").onclick = mailBack, $("oagoogle").onclick = googleSignIn, $("oaapple").onclick = appleSignIn, oaLabelOf("oagoogle"), oaLabelOf("oaapple"), loadAuthProviders(), $("pw").addEventListener("keydown", function(e) {
     e.key === "Enter" && doAuth();
   }), $("addbtn").onclick = function() {
     $("addurl").value = "", resetUpload(), openSheet("addsheet");
