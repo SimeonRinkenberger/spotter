@@ -212,8 +212,8 @@ billing party. Verify on a real device before submission.
 > download, host or re-serve creator video. Creator attribution is preserved on every card.
 >
 > AI processing (5.1.2): captions, post text and, for supported videos, audio or sampled frames are
-> sent to OpenAI and Google to extract the workout. This is disclosed on the privacy page and in
-> the app before the first read.
+> sent to OpenAI and Google to extract the workout. This is disclosed on the privacy page, which is
+> linked from the sign-in screen, from Settings > Data & privacy and from the subscription sheet.
 
 ### Reviewer demo account — owner action, and it must be new
 
