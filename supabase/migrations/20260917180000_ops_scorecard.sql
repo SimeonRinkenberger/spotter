@@ -723,11 +723,18 @@ grant execute on function public.ops_alert_check() to service_role;
 -- rather than stored a third time. One address to fix if the project moves, and
 -- no new secret to forget.
 --
--- Two statements, not one. The check must run and record its alerts whether or
--- not the worker URL is configured or reachable — an alerting system that only
--- remembers what happened when the notifier was healthy is an alerting system
--- that forgets exactly the outages worth remembering. The push is the second
--- statement and is allowed to be the part that fails.
+-- Written as a DO block rather than as the one-line `select net.http_post(...)
+-- where exists (...)` the other ticks use, and the reason is worth keeping.
+--
+-- The check has to run and record its alerts whether or not the notifier can be
+-- reached. An alerting system that only remembers what happened while the
+-- notifier was healthy forgets exactly the outages worth remembering. Expressed
+-- as a single SELECT, `ops_alert_check()` would sit in a FROM clause next to an
+-- `exists (select … from app_config …)` in the WHERE, and the planner is allowed
+-- to evaluate that EXISTS as an InitPlan and put a one-time false filter above
+-- the scan — which would mean the alert rows were never written at all on a
+-- project where worker_url happened to be missing. Imperative order removes the
+-- question: check first, record, then decide whether anyone can be told.
 --
 -- Fifteen minutes: the brief's interval, and the same number the notifier's
 -- lookback window uses, so nothing falls between two ticks.
@@ -737,24 +744,29 @@ grant execute on function public.ops_alert_check() to service_role;
 -- path returns it unchanged, and a POST of an ops body to /api/worker/tick would
 -- quietly drain the ingest queue instead — a wrong job that looks like a right one.
 
-do $$ begin
+do $migrate$ begin
   if to_regnamespace('cron') is not null then
     perform cron.schedule('spotter-ops-tick', '*/15 * * * *', $cron$
-      select count(*) from public.ops_alert_check();
-      select net.http_post(
-        url     := replace((select value from public.app_config where key = 'worker_url'),
-                           '/api/worker/tick', '/api/worker/ops-alert'),
-        headers := jsonb_build_object(
-                     'content-type', 'application/json',
-                     'x-worker-secret', (select value from public.app_config where key = 'worker_secret')),
-        body    := jsonb_build_object('source', 'cron'),
-        timeout_milliseconds := 10000
-      )
-      where exists (select 1 from public.app_config
-                     where key = 'worker_url' and value like '%/api/worker/tick')
-        and exists (select 1 from public.ops_alerts
-                     where created_at > now() - interval '15 minutes'
-                       and detail->>'notified' is null);
+      do $tick$
+      declare fired int; target text; secret text;
+      begin
+        select count(*) into fired from public.ops_alert_check();
+        if fired = 0 then return; end if;
+
+        select value into target from public.app_config where key = 'worker_url';
+        select value into secret from public.app_config where key = 'worker_secret';
+        if target is null or target not like '%/api/worker/tick' then
+          raise warning 'ops tick: % alert(s) recorded but worker_url is not set; nobody was told', fired;
+          return;
+        end if;
+
+        perform net.http_post(
+          url     := replace(target, '/api/worker/tick', '/api/worker/ops-alert'),
+          headers := jsonb_build_object('content-type', 'application/json',
+                                        'x-worker-secret', secret),
+          body    := jsonb_build_object('source', 'cron', 'fired', fired),
+          timeout_milliseconds := 10000);
+      end $tick$;
     $cron$);
   end if;
-end $$;
+end $migrate$;

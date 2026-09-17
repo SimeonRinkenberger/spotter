@@ -44,9 +44,17 @@ create table public.upload_permits(path text primary key,user_id uuid,created_at
 create table storage.objects(id uuid primary key default gen_random_uuid(),bucket_id text,name text,
   created_at timestamptz not null default now());
 insert into public.ai_guard_policy values(true,0.50,10);
-alter default privileges in schema public grant all on tables to anon,authenticated;`);
+alter default privileges in schema public grant all on tables to anon,authenticated;
+-- pg_net, reduced to "record what you were asked to post". The cron body is run
+-- verbatim further down, so the argument names here have to match the call.
+create schema net;
+create table public.net_calls(url text,headers jsonb,body jsonb,called_at timestamptz default now());
+create function net.http_post(url text,headers jsonb default '{}'::jsonb,body jsonb default '{}'::jsonb,
+  timeout_milliseconds int default 5000) returns bigint language plpgsql as $net$
+begin insert into public.net_calls(url,headers,body) values(url,headers,body); return 1; end $net$;`);
 
-await db.exec(readFileSync('supabase/migrations/20260917180000_ops_scorecard.sql','utf8'));
+const migration=readFileSync('supabase/migrations/20260917180000_ops_scorecard.sql','utf8');
+await db.exec(migration);
 
 // ---------- fixtures ----------
 // Four real accounts, one staff comp and one throwaway. The last two must not
@@ -260,6 +268,50 @@ const tomorrow=await fire();
 assert.equal(Object.keys(tomorrow).length,expected.length+1,'a new UTC day re-arms every alert');
 assert.equal((await db.query('select count(*)::int as n from public.ops_alerts')).rows[0].n,2*(expected.length+1));
 
+// ---------- the fifteen-minute tick ----------
+// The cron command, lifted verbatim out of the migration and run against the
+// pg_net stub. This is the whole delivery path below the edge function: if this
+// body is wrong, alerts are recorded and nobody is ever told, which is the exact
+// failure the whole file exists to prevent and the one a view test cannot see.
+const tick=migration.split('$cron$')[1];
+assert.ok(tick.includes('ops_alert_check'),'the cron body was extracted, not an empty string');
+const posts=async()=>(await db.query('select * from public.net_calls order by called_at')).rows;
+
+// Nothing new fired: the check runs, finds today's rows already there, and stops
+// before spending a request.
+await db.exec(tick);
+assert.equal((await posts()).length,0,'a tick with nothing new to report posts nothing');
+
+// Alerts fire but worker_url is not configured. The rows must still be written —
+// an alerting system that only remembers outages while the notifier is healthy
+// forgets the ones worth remembering.
+await db.query('delete from public.ops_alerts');
+await db.exec(tick);
+assert.equal((await db.query('select count(*)::int as n from public.ops_alerts')).rows[0].n,expected.length+1,
+  'the check records its alerts even when there is nowhere to send them');
+assert.equal((await posts()).length,0,'and does not post to a URL it does not have');
+
+// Configured. Now the same tick reaches the worker route with the shared secret.
+await db.query(`insert into public.app_config(key,value) values
+  ('worker_url','https://project.supabase.co/functions/v1/spotter/api/worker/tick'),
+  ('worker_secret','test-secret')`);
+await db.query('delete from public.ops_alerts');
+await db.exec(tick);
+const post=only(await posts());
+assert.equal(post.url,'https://project.supabase.co/functions/v1/spotter/api/worker/ops-alert',
+  'the ops URL is derived from the worker URL, not stored a third time');
+assert.equal(post.headers['x-worker-secret'],'test-secret','machine to machine, behind the existing secret');
+assert.equal(Number(post.body.fired),expected.length+1);
+
+// A worker_url that does not contain the worker path must not be posted to:
+// replace() would return it unchanged and an ops body would drain the queue.
+await db.query(`update public.app_config set value='https://project.supabase.co/functions/v1/spotter' where key='worker_url'`);
+await db.query('delete from public.ops_alerts');
+await db.exec(tick);
+assert.equal((await posts()).length,1,'a worker_url of the wrong shape is refused rather than guessed at');
+assert.equal((await db.query('select count(*)::int as n from public.ops_alerts')).rows[0].n,expected.length+1,
+  'and the alerts are recorded anyway');
+
 // ---------- reachability ----------
 // Supabase grants anon and authenticated all privileges on new public tables by
 // default (replicated above). These revokes are the only thing standing between
@@ -281,10 +333,17 @@ for (const role of ['anon','authenticated','public'])
 assert.equal((await db.query("select has_function_privilege('service_role','public.ops_alert_check()','execute') as ok")).rows[0].ok,true);
 
 // Re-runnable: the whole migration applies a second time without error and
-// without duplicating the price book or losing an alert.
-await db.exec(readFileSync('supabase/migrations/20260917180000_ops_scorecard.sql','utf8'));
+// without duplicating the price book, losing an alert or dropping a view other
+// views depend on.
+const alertsBefore=(await db.query('select count(*)::int as n from public.ops_alerts')).rows[0].n;
+await db.exec(migration);
 assert.equal((await db.query('select count(*)::int as n from public.ops_price_book')).rows[0].n,8,'price book seed is idempotent');
-assert.equal((await db.query('select count(*)::int as n from public.ops_alerts')).rows[0].n,2*(expected.length+1),'re-applying keeps alert history');
+assert.equal((await db.query('select count(*)::int as n from public.ops_alerts')).rows[0].n,alertsBefore,'re-applying keeps alert history');
+// Four seeded accounts plus the twenty-one signup-spike users, none of which
+// have a profile row yet — an account whose profile has not been created is
+// still a signup, and dropping it would understate the number a launch watches.
+assert.equal((await db.query('select count(*)::int as n from public.ops_included_accounts')).rows[0].n,25,
+  'a view other views depend on is replaced in place, not dropped');
 
 await db.close();
-console.log('PASS ops scorecard SQL: nine weekly views with staff/throwaway exclusion, straight-line recognized revenue, unpriced store products surfaced, critical-correction proxy, reliability incident signals, cost per delivered card over a cached denominator, free-user subsidy, ingest percentiles, thirteen alert thresholds firing once per UTC day and re-arming the next, and anon/authenticated locked out of all of it.');
+console.log('PASS ops scorecard SQL: nine weekly views with staff/throwaway exclusion, straight-line recognized revenue, unpriced store products surfaced, critical-correction proxy, reliability incident signals, cost per delivered card over a cached denominator, free-user subsidy, ingest percentiles, thirteen alert thresholds firing once per UTC day and re-arming the next, the cron tick posting to the derived worker URL and still recording alerts when it cannot, and anon/authenticated locked out of all of it.');
