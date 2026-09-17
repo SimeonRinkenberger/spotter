@@ -35,7 +35,6 @@ Where to get them:
                    precedence over everything below once set. Buy credits first and set
                    a budget cap. A ChatGPT subscription does NOT include API access.)
   GEMINI_API_KEY   https://aistudio.google.com/apikey     (existing keys are viewable)
-  GROQ_API_KEY     https://console.groq.com/keys          (create new — Groq shows a key once)
   YOUTUBE_API_KEY  https://console.cloud.google.com/apis/credentials
                    Its own Google Cloud project with YouTube Data API v3 enabled.
                    Restrict the key to that API only — no referrer or IP restriction,
@@ -44,7 +43,6 @@ INTRO
 
 ask OPENAI_API_KEY  "OpenAI key — GPT-5.6 Luna, the paid primary extractor"
 ask GEMINI_API_KEY  "Google AI Studio key — extraction + vision"
-ask GROQ_API_KEY    "Groq key — fallback, 14,400 requests/day free"
 ask YOUTUBE_API_KEY "YouTube Data API key — video descriptions (optional)"
 
 if [ ! -s "$TMP" ]; then echo -e "\nNothing entered. No changes made."; exit 0; fi

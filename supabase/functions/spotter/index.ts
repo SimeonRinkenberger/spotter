@@ -87,7 +87,6 @@ const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY") ?? "";
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY") ?? "";
 const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY") ?? "";
-const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY") ?? "";
 
 // ---------- model identifiers, and why they are not constants ----------
 //
@@ -108,10 +107,6 @@ type ModelCfg = {
   gemini: string;
   geminiPool: string[];
   geminiVision: string;
-  groq: string;
-  groqPool: string[];
-  /** Speech-to-text, for videos the user uploaded. Same key, different endpoint. */
-  transcribeAudio: string;
 };
 
 const MODEL_DEFAULTS: ModelCfg = {
@@ -124,12 +119,7 @@ const MODEL_DEFAULTS: ModelCfg = {
   // app_config; this is only the floor for a database that cannot answer.
   geminiPool: ["gemini-3.6-flash", "gemini-flash-latest", "gemini-flash-lite-latest"],
   geminiVision: "gemini-3.6-flash",
-  groq: "openai/gpt-oss-120b",
-  groqPool: [
-    "openai/gpt-oss-120b", "llama-3.3-70b-versatile",
-    "meta-llama/llama-4-maverick-17b-128e-instruct", "openai/gpt-oss-20b",
-  ],
-  transcribeAudio: "whisper-large-v3-turbo",
+
 };
 
 // ---------- Pumpy's dials, on the same timer ----------
@@ -194,16 +184,12 @@ function buildModelCfg(rows: Record<string, string>): ModelCfg {
     return [...new Set([head, ...list])];
   };
   const gemini = one("model.gemini", "GEMINI_MODEL", MODEL_DEFAULTS.gemini);
-  const groq = one("model.groq", "GROQ_MODEL", MODEL_DEFAULTS.groq);
   return {
     openai: one("model.openai", "OPENAI_MODEL", MODEL_DEFAULTS.openai),
     anthropic: one("model.anthropic", "CLAUDE_MODEL", MODEL_DEFAULTS.anthropic),
     gemini,
     geminiPool: many("model.gemini_pool", "GEMINI_MODEL_POOL", MODEL_DEFAULTS.geminiPool, gemini),
     geminiVision: one("model.gemini_vision", "GEMINI_VISION_MODEL", gemini),
-    groq,
-    groqPool: many("model.groq_pool", "GROQ_MODEL_POOL", MODEL_DEFAULTS.groqPool, groq),
-    transcribeAudio: one("model.groq_transcribe", "GROQ_TRANSCRIBE_MODEL", MODEL_DEFAULTS.transcribeAudio),
   };
 }
 
@@ -641,24 +627,14 @@ const LIMIT_CORRECTIONS = Number(Deno.env.get("LIMIT_CORRECTIONS") ?? "500");
 // who says the workout out loud and writes nothing leaves no text anywhere, so the
 // user hands us the video they already saved and we listen to it.
 //
-// The design rule that shapes all of this: edge functions move URLs, never media
-// bytes. The file goes phone -> Supabase Storage directly (supabase-js, under RLS),
-// and the function hands Groq a short-lived signed URL. Nothing here ever holds a
-// video in memory, and the object is deleted the moment transcription returns.
-
-// Groq's transcription endpoint takes 25 MB on the free tier and 100 MB on the dev
-// tier. This is the free-tier number because that is what the key is on today; it
-// is one constant, quoted to the user in the add sheet and in the README, so
-// moving tiers is a one-line change.
+// Uploads go directly from the phone to private Supabase Storage. Gemini reads
+// them through the bounded media pipeline; temporary objects are then deleted.
+// Keep the upload limit aligned with the bucket and the native picker.
 const UPLOAD_MAX_BYTES = Number(Deno.env.get("UPLOAD_MAX_BYTES") ?? String(25 * 1024 * 1024));
 // What the bucket accepts, and the only extensions an upload_path may end in. Kept
 // in step with allowed_mime_types on the bucket itself, which is the enforcing copy.
 const UPLOAD_EXTS = ["mp4", "mov", "webm", "m4v", "mp3", "m4a", "wav", "weba"];
-// USD per hour of audio transcribed. Groq bills whisper-large-v3-turbo by audio
-// duration rather than by token, which is why it needs its own price and its own
-// row shape in the ledger. Env-overridable like every other price.
-const PRICE_GROQ_WHISPER_PER_HOUR = Number(Deno.env.get("PRICE_GROQ_WHISPER_PER_HOUR") ?? "0.04");
-// A signed URL only has to outlive one Groq request.
+// Signed media links expire after fifteen minutes.
 const UPLOAD_SIGN_SECONDS = 900;
 // Below this many characters, a transcript cannot be describing a workout. This is
 // the load-bearing half of the silence test: measured 2026-09-02, one second of
@@ -712,7 +688,7 @@ const WORKER_ID = crypto.randomUUID().slice(0, 8);
 //    attribute rather than a pasted sentence, and a cue's second clause is what
 //    the camera saw. Cards cached before that read correctly and say it worse, so
 //    they are rebuilt the next time anybody saves the video.
-const CARD_V = 9;
+const CARD_V = 10;
 
 const ALLOWED_ORIGINS = (Deno.env.get("ALLOWED_ORIGINS") ??
   "https://simeonrinkenberger.github.io,http://localhost:8000,http://127.0.0.1:8000")
@@ -1013,7 +989,6 @@ let warnedNoCachedColumn = false;
 async function recordCost(
   provider: string, model: string, ctx: AiCtx, u: Usage, ok: boolean,
 ): Promise<void> {
-  if (provider === "groq" && model.startsWith("gemini:")) return;
   const est = estimateCost(provider, u, model);
   const row: Record<string, unknown> = {
     user_id: ctx.userId,
@@ -1183,6 +1158,7 @@ async function resolveShare(raw: string): Promise<WebParse> {
 // ---------- AI chain ----------
 
 type Meta = {
+  read_plan?: string;
   caption: string | null;
   thumb: string | null;
   author: string | null;
@@ -1444,114 +1420,6 @@ export async function geminiStream(
 }
 
 // Groq free tier is 14,400 requests/day, no card. OpenAI-compatible API.
-let groqGoodModel: string | null = null;
-
-async function groqGenerate(system: string, user: string, wantJson: boolean, ctx: AiCtx): Promise<Generated> {
-  if (!GROQ_API_KEY) return NOTHING;
-  const pool = models().groqPool;
-  const order = groqGoodModel
-    ? [groqGoodModel, ...pool.filter((m) => m !== groqGoodModel)]
-    : pool;
-  for (const model of order) {
-    for (let attempt = 0; attempt < 1; attempt++) {
-      const r = await aiFetch("https://api.groq.com/openai/v1/chat/completions", {
-        method: "POST",
-        headers: { authorization: `Bearer ${GROQ_API_KEY}`, "content-type": "application/json" },
-        body: JSON.stringify({
-          model,
-          messages: [{ role: "system", content: system }, { role: "user", content: user }],
-          max_tokens: outCap(ctx, 4000),
-          ...(wantJson ? { response_format: { type: "json_object" } } : {}),
-        }),
-      });
-      if (r.status === 429 && attempt === 0) {
-        await r.body?.cancel();
-        await new Promise((res) => setTimeout(res, 2500));
-        continue;
-      }
-      if (r.status === 429 || r.status === 404 || r.status === 400) {
-        // 404/400: decommissioned model or unsupported json mode — rotate
-        console.error("groq", model, r.status, "— rotating to next model");
-        await r.body?.cancel();
-        if (groqGoodModel === model) groqGoodModel = null;
-        break;
-      }
-      if (!r.ok) { console.error("groq error", model, r.status, await r.text()); return NOTHING; }
-      const data = await r.json();
-      const out = data.choices?.[0]?.message?.content ?? null;
-      const usage: Usage = {
-        inTok: Number(data?.usage?.prompt_tokens) || approxTokens(system + user),
-        outTok: Number(data?.usage?.completion_tokens) || approxTokens(out ?? ""),
-      };
-      await recordCost("groq", model, ctx, usage, !!out);
-      groqGoodModel = model;
-      return { text: out, by: out ? "groq:" + model : null, usage };
-    }
-  }
-  console.error("groq: all models failed");
-  return NOTHING;
-}
-
-/**
- * Groq's streamed shape is OpenAI's, with one wrinkle: the totals ride on the
- * FINAL chunk under `x_groq.usage` rather than under `usage`, and only sometimes
- * under both. Read whichever arrives.
- */
-export async function groqStream(
-  system: string, user: string, wantJson: boolean, ctx: AiCtx, onDelta: OnDelta,
-): Promise<Generated> {
-  if (!GROQ_API_KEY) return NOTHING;
-  const pool = models().groqPool;
-  const order = groqGoodModel ? [groqGoodModel, ...pool.filter((m) => m !== groqGoodModel)] : pool;
-  for (const model of order) {
-    let text = "";
-    let usage: Usage = { inTok: 0, outTok: 0 };
-    try {
-      const r = await aiFetch("https://api.groq.com/openai/v1/chat/completions", {
-        method: "POST",
-        headers: { authorization: `Bearer ${GROQ_API_KEY}`, "content-type": "application/json" },
-        body: JSON.stringify({
-          model,
-          messages: [{ role: "system", content: system }, { role: "user", content: user }],
-          max_tokens: outCap(ctx, 4000),
-          stream: true,
-          stream_options: { include_usage: true },
-          ...(wantJson ? { response_format: { type: "json_object" } } : {}),
-        }),
-      });
-      if (!r.ok) {
-        console.error("groq stream", model, r.status, "— rotating to next model");
-        await r.body?.cancel();
-        if (groqGoodModel === model) groqGoodModel = null;
-        continue;
-      }
-      for await (const d of sseObjects(r.body)) {
-        const piece = d?.choices?.[0]?.delta?.content;
-        if (typeof piece === "string" && piece) { text += piece; onDelta(piece); }
-        const u = d?.x_groq?.usage ?? d?.usage;
-        if (u) {
-          usage = {
-            inTok: Number(u.prompt_tokens) || usage.inTok,
-            outTok: Number(u.completion_tokens) || usage.outTok,
-          };
-        }
-      }
-    } catch (e) {
-      console.error("groq stream failed", model, e);
-      if (!text) { if (groqGoodModel === model) groqGoodModel = null; continue; }
-    }
-    const u = usageOr(usage, system, user, text);
-    await recordCost("groq", model, ctx, u, !!text);
-    if (!text) { if (groqGoodModel === model) groqGoodModel = null; continue; }
-    groqGoodModel = model;
-    return partial(text, "groq:" + model, u);
-  }
-  console.error("groq stream: all models failed");
-  return NOTHING;
-}
-
-// OpenAI (GPT-5.6 Luna by default): the paid tier's cheapest flagship-family model.
-// The 5.6 series rejects max_tokens in favour of max_completion_tokens.
 async function openaiGenerate(system: string, user: string, wantJson: boolean, ctx: AiCtx): Promise<Generated> {
   if (!OPENAI_API_KEY) return NOTHING;
   const model = models().openai;
@@ -1697,7 +1565,7 @@ export async function textStream(
 }
 
 function haveAI(): boolean {
-  return !!(OPENAI_API_KEY || ANTHROPIC_API_KEY || GEMINI_API_KEY || GROQ_API_KEY);
+  return !!(OPENAI_API_KEY || ANTHROPIC_API_KEY || GEMINI_API_KEY);
 }
 
 // ---------- metadata scraping ----------
@@ -2643,7 +2511,7 @@ async function signUploadTarget(
   return { upload_url: full, token };
 }
 
-/** A URL Groq can fetch once, valid for a quarter of an hour. */
+/** A temporary signed URL for the media reader. */
 async function signUpload(path: string): Promise<string> {
   const r = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/uploads/${path}`, {
     method: "POST",
@@ -2658,17 +2526,7 @@ async function signUpload(path: string): Promise<string> {
   return `${SUPABASE_URL}/storage/v1${rel.startsWith("/") ? "" : "/"}${rel}`;
 }
 
-/**
- * Speech to text, by URL.
- *
- * The `url` field is the whole reason this design is allowed to exist: Groq
- * fetches the media itself, so the bytes go storage -> Groq and never through this
- * function. A `file` part would mean reading a 25 MB video into an isolate that
- * has neither the memory budget nor any business holding it.
- *
- * Retries live here rather than in the job because the object is deleted when this
- * returns — one 429 must not cost the user their upload.
- */
+/** Token-counted Gemini transcription through the bounded media pipeline. */
 async function transcribeAudio(signed: string): Promise<{ text: string; seconds: number; model: string }> {
   // Compressed bytes do not bound audio duration. Until a trusted media worker
   // can inspect/trim audio, use the token-counted reader so an uploaded silence
@@ -2806,7 +2664,7 @@ async function uploadMeta(p: Parsed, job?: Job): Promise<Meta> {
       seconds: got.seconds || undefined,
       source: "transcript",
       // Which machine made this text, on the same column the media tier writes.
-      media_source: "upload:groq",
+      media_source: "upload:gemini",
       // Supplied in the sense that matters here: it came from the user, not from a
       // scrape, so topUpMeta must never go looking for a page to complete it.
       supplied: true,
@@ -3163,16 +3021,9 @@ function mediaLimit(key: "max_bytes" | "timeout_ms", dflt: number): number {
   return Number.isFinite(fromEnv) && fromEnv > 0 ? fromEnv : dflt;
 }
 
-/** Groq's own ceiling on an uploaded file, which is lower than the streaming cap. */
-const GROQ_UPLOAD_MAX_BYTES = 24 * 1024 * 1024;
-
 type Transcribed = { text: string; seconds: number; model: string; bytes: number; status: number; detail?: string };
 
-/**
- * Speech to text for a URL Groq cannot fetch itself: this function fetches it and
- * pipes the body through. Returns rather than throws — the caller is a tier that
- * has a next rung, not an upload with nothing else to try.
- */
+/** Gemini transcription with source headers and bounded streamed media. */
 async function transcribeFetchedMedia(
   url: string, headers: Record<string, string>, filename: string,
 ): Promise<Transcribed> {
@@ -3209,7 +3060,7 @@ const VIDEO_PROMPT =
   "This is a short fitness video. Read the workout out of it: every exercise that is DEMONSTRATED " +
   "or WRITTEN ON SCREEN, in the order it appears, using the wording on screen when there is any. " +
   "Include the sets, reps, seconds of work and seconds of rest ONLY where they are shown on screen " +
-  "or clearly said out loud. " +
+  "or clearly said out loud. If an identified exercise is missing a dose, keep its source fields null and add a separate recommendation object with conservative sets, reps or duration_seconds and rest_seconds only for missing fields. Respect block rounds and timed schemes. " +
   "Reply with ONLY a JSON object in this shape: " +
   `{"title": string, "category": one of ${JSON.stringify(CATEGORIES)}, "muscle_groups": string[], ` +
   '"equipment": string[], "difficulty": string or null, "duration_minutes": int or null, "calories": int or null, ' +
@@ -4767,6 +4618,7 @@ type Exercise = {
   /** When this movement is performed in the video, in seconds. */
   t0?: number | null;
   t1?: number | null;
+  recommendation?: { sets?: number | null; reps?: string | null; duration_seconds?: number | null; rest_seconds?: number | null; note: string } | null;
   // Where this exercise came from, and where in that source. Filled by
   // attachEvidence once the card is assembled; carousel-read exercises arrive with
   // it already set because only the vision call knows which slide it read.
@@ -4997,7 +4849,7 @@ function heuristicWorkout(
     }
     exercises.push({
       name,
-      canonical_id: null,   // filled by applyCatalog once the card is assembled
+    canonical_id: null,   // filled by applyCatalog once the card is assembled
       sets: sr ? parseInt(sr[1], 10) : null,
       reps: sr ? sr[2].replace(/\s+/g, "") : null,
       duration_seconds: seconds,
@@ -5078,6 +4930,7 @@ function buildPrompt(): string {
     'Each exercise is {"name": string, "sets": integer or null, "reps": string or null such as "10" or "8-12" or "AMRAP", ' +
     '"duration_seconds": integer or null for timed moves, "rest_seconds": integer or null, ' +
     '"weight": string or null such as "moderate" or "70% 1RM", "equipment": string or null, "cue": string, ' +
+    '"recommendation": null or {"sets": integer|null, "reps": string|null, "duration_seconds": integer|null, "rest_seconds": integer|null}, ' +
     // The falsifiable field. Asking for a self-rated confidence would produce a
     // number that is high whenever the writing is fluent; asking for the line it
     // read produces something that can be looked up and found missing.
@@ -5085,7 +4938,8 @@ function buildPrompt(): string {
     'verbatim and unaltered, at most 100 characters. Never paraphrase it and never write ' +
     'a line that is not in the source. If no line supports it, use null}.\n' +
     CUE_RULE + "\n" +
-    "Use null for anything the text does not state — do not guess sets or reps. " +
+    "Use null for source fields the text does not state — do not guess sets or reps there. " +
+    "For an identified exercise missing dose details, add recommendation:{sets,reps,duration_seconds,rest_seconds} with conservative beginner-appropriate defaults only for the missing fields. Use a hold duration rather than reps for static movements. Respect shared rounds and timed/AMRAP/EMOM schemes; never add sets if the block already defines the structure. Recommendations are separate from source facts. " +
     "Preserve set ranges verbatim in the cue with sets null. Alternatives joined by OR are one exercise slot, with the alternatives in the cue. " +
     "NEVER invent exercises that are not in the text: a video with no written workout gets blocks: [] and has_full_workout: false.";
 }
@@ -5207,6 +5061,13 @@ function normalizeExercise(raw: any): Exercise | null {
   const t0 = numOrNullBounded(raw?.t0, 7200);
   return {
     name,
+      recommendation: raw?.recommendation && typeof raw.recommendation === "object" ? {
+      sets: dose.sets === null ? intOrNull(raw.recommendation.sets, 6) : null,
+      reps: !dose.reps && !dose.seconds && typeof raw.recommendation.reps === "string" ? raw.recommendation.reps.slice(0,24) : null,
+      duration_seconds: !dose.reps && !dose.seconds ? intOrNull(raw.recommendation.duration_seconds, 300) : null,
+      rest_seconds: raw.rest_seconds == null ? intOrNull(raw.recommendation.rest_seconds, 300) : null,
+      note: "",
+    } : null,
     canonical_id: null,   // filled by applyCatalog once the card is assembled
     sets: dose.sets,
     reps: dose.reps,
@@ -5973,14 +5834,22 @@ function heuristicCard(meta: Meta, platform: string, title: string): Card {
   return written;
 }
 
+/** Only omit duplicate prose when the entire transcript is already in packBlock. */
+function transcriptInPack(meta: Meta): boolean {
+  if (!meta.transcript || !meta.pack?.transcript.length || meta.pack.transcript.length > 80) return false;
+  const compact = (text: string) => text.replace(/^\s*\d{1,2}:\d{2}(?::\d{2})?\s+/gm, "").replace(/\s+/g, " ").trim();
+  return compact(meta.transcript) === compact(meta.pack.transcript.map((s) => s.text).join(" "));
+}
+
 async function extractCard(meta: Meta, platform: string, ctx: AiCtx): Promise<Card> {
   const kind = sourceKind(platform);
   const fallbackTitle = cleanTitle(meta.caption?.split("\n")[0] ?? "") || "Saved workout";
   const base = heuristicCard(meta, platform, fallbackTitle);
   base.extracted_by = base.blocks.length ? "heuristic" : null;
-  if ((!meta.caption && !meta.transcript) || !haveAI()) return base;
+  if ((!meta.caption && !meta.transcript && !meta.pack?.exercises.length) || !haveAI()) return base;
 
   const system = buildPrompt();
+  const transcript = transcriptInPack(meta) ? null : meta.transcript;
   const user = [
     meta.author ? `Creator: ${meta.author}` : "",
     `Platform: ${platform}`,
@@ -5999,12 +5868,12 @@ async function extractCard(meta: Meta, platform: string, ctx: AiCtx): Promise<Ca
     // The second text, announced as a second text. The caption usually carries the
     // SHAPE of the session — "3 rounds, 45 on, 20 off" — and the speech carries the
     // MOVEMENTS, so the model is told to use both rather than pick one.
-    meta.transcript
+    transcript
       ? "TRANSCRIPT — what the creator says out loud in the video, one phrase per line " +
         "(speech, so it has no formatting and may contain mishearings). The caption above " +
         "may give the rounds, work and rest; this gives the movements. Use both."
       : "",
-    meta.transcript ? meta.transcript.slice(0, 8000) : "",
+    transcript ? transcript.slice(0, 8000) : "",
     chapterBlock(meta.chapters ?? []),
     // The pack, last, because it is the strongest evidence and the model reads the
     // end of a long message best. It supersedes the raw transcript block above for
@@ -6729,6 +6598,13 @@ function keepWhatTheReRunDropped(out: Card, oldBlocks: Block[]): Rescue {
     const compatible = (s: Slot) => !/\sOR\s/i.test(s.ex.name) || s.ex.evidence?.slide === ox.evidence?.slide;
     if (id) for (const s of slots) if (!taken.has(s.ex) && compatible(s) && s.id === id) { taken.add(s.ex); return s; }
     if (k) for (const s of slots) if (!taken.has(s.ex) && compatible(s) && s.key === k) { taken.add(s.ex); return s; }
+    const compound = (name: string) => name.toLowerCase().replace(/[’']/g, "").replace(/\b(to|and|with)\b|[+&]/g, " ")
+      .replace(/\b(kettlebell|dumbbell|alternating)\b/g, " ").replace(/swings\b/g, "swing").replace(/[^a-z0-9]/g, "");
+    const ck = compound(ox.name);
+    if (ck && !ox.edited_by_user) for (const s of slots) {
+      if (taken.has(s.ex) || !compatible(s) || s.ex.edited_by_user) continue;
+      if (compound(s.ex.name) === ck) { taken.add(s.ex); return s; }
+    }
     return null;
   }
 
@@ -7032,13 +6908,13 @@ async function rpc(name: string, args: Record<string, unknown>): Promise<any> {
  * So: one retry, because a cold-start blip should not fail a user's save; then
  * throw, because an unreadable cap must never read as an empty one.
  */
-async function dbCount(table: string, query: string): Promise<number> {
+async function dbCount(table: string, query: string, column = "id"): Promise<number> {
   let last = "";
   for (let attempt = 0; attempt < 2; attempt++) {
     if (attempt) await new Promise((res) => setTimeout(res, 150));
     let r: Response;
     try {
-      r = await fetch(`${rest(table)}?${query}&select=id`, {
+      r = await fetch(`${rest(table)}?${query}&select=${encodeURIComponent(column)}`, {
         method: "HEAD",
         headers: { ...dbHeaders, prefer: "count=exact" },
       });
@@ -7467,6 +7343,24 @@ async function ingestUpload(
   }, 202, cors);
 }
 
+/** Cheap authenticated advice before a phone downloads and decodes a video.
+ * This returns no cached content and never grants premium access. */
+async function handleIngestPrepare(req: Request, userId: string, cors: Cors): Promise<Response> {
+  const body = await req.json().catch(() => ({}));
+  const p = await resolveShare(String(body?.url ?? "").slice(0, 4096));
+  if (!p || p === BLOCKED || p.platform !== "tiktok" || p.kind === "photo")
+    return json({ status: "ok", needs_frames: false }, 200, cors);
+  const sc = encodeURIComponent(p.shortcode);
+  const [owned, cached, uc] = await Promise.all([
+    dbSelect("workouts", `user_id=eq.${userId}&shortcode=eq.${sc}&select=id`),
+    dbSelect("video_cache", `shortcode=eq.${sc}&select=pack,pack_v`), capsFor(userId),
+  ]);
+  const eligible = plusPlan(uc.plan) || body?.preview === true;
+  const fresh = body?.reread === true && plusPlan(uc.plan);
+  return json({ status: "ok", needs_frames: eligible && (fresh || (!visuallyRead(cached[0]) && (!owned.length || body?.preview === true))),
+    url: p.clean }, 200, cors);
+}
+
 async function handleIngest(req: Request, userId: string, cors: Cors): Promise<Response> {
   const t0 = Date.now();
   let shared = "";
@@ -7570,7 +7464,9 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
   }
   const dupe = (dupeR as PromiseFulfilledResult<any[]>).value;
   const counts = (countsR as PromiseFulfilledResult<Counts>).value;
-  const cached = (cachedR as PromiseFulfilledResult<any[]>).value;
+  const cacheRows = (cachedR as PromiseFulfilledResult<any[]>).value;
+  const visibleCache = cacheForAccess(cacheRows[0], await premiumAccess(userId, p.shortcode));
+  const cached = visibleCache ? [visibleCache] : [];
   const uc = (capsR as PromiseFulfilledResult<UserCaps>).value;
   const held = (libR as PromiseFulfilledResult<number>).value;
 
@@ -7600,10 +7496,17 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
 
   if (overCap(counts.saves, uc.caps.saves)) return await bail(await capLimit("saves", uc, counts.saves, cors));
 
+  // Ordinary saves reuse proven visual evidence even when an older native shell
+  // already uploaded frames. Only the explicit media/reread route replaces it.
+  if (frames && !supplied && cached.length &&
+      (visuallyRead(cached[0]) || !plusPlan(uc.plan))) {
+    await deleteSheets(frames); frames = null;
+  }
+
   // A cache hit costs nothing and already answers in well under a second. Pushing
   // it through the queue would make the fast path slower to no purpose, so it
   // stays synchronous and comes back as a finished card.
-  if (!supplied && cached.length && !cached[0].card?.vision?.missing?.length) {
+  if (!supplied && !frames && cached.length && !cached[0].card?.vision?.missing?.length) {
     const c = cached[0];
     const card = c.card as Card;
     const meta: Meta = { caption: c.caption, thumb: c.thumb_url, author: c.author, source: "cache" };
@@ -7621,6 +7524,7 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
         // score rather than recomputing it, because it is the same card.
         confidence: typeof card.confidence === "number" ? card.confidence : (c.confidence ?? null),
         extracted_by: card.extracted_by ?? c.extracted_by ?? null,
+        read_quality: visuallyRead(c) ? "premium" : "basic", read_plan: c.read_plan ?? "unknown",
         ingest_status: "ready", ingest_error: visionWarning(card),
       });
     } catch (e) {
@@ -7826,18 +7730,45 @@ async function jobStep(id: string, step: string, extra: Record<string, unknown>)
 async function finishJob(
   job: Job, p: Parsed, meta: Meta, card: Card, thumbUrl: string | null, degraded: boolean,
 ): Promise<void> {
+  labelRecommendations(card, meta);
   const sc = encodeURIComponent(p.shortcode);
-  const filled = await dbPatchMany("workouts", `shortcode=eq.${sc}&ingest_status=eq.processing`, {
+  const waiting = await dbSelect("workouts", `ingest_job_id=eq.${job.id}&user_id=eq.${job.user_id}&ingest_status=eq.processing&select=id,user_id`);
+  const access = await Promise.all(waiting.map(async (w: any) => ({ ...w, premium: await premiumAccess(w.user_id, p.shortcode) })));
+  let basic: Card | null = readQuality(meta) === "basic" ? card : null;
+  const basicOwner = access.find((w: any) => !w.premium);
+  if (!basic && basicOwner) {
+    const shared = (await dbSelect("video_cache", `shortcode=eq.${sc}&select=*`))[0];
+    basic = cacheForAccess(shared, false)?.card ?? null;
+    if (!basic) {
+      const bm = basicMeta(meta);
+      basic = await aiActor.run({ userId: basicOwner.user_id, workKey: p.shortcode, deadline: Date.now() + 120_000 },
+        () => buildCard(bm, p, { purpose: "extract", userId: basicOwner.user_id }));
+      labelRecommendations(basic, bm);
+      if (providerFor(p.platform).cacheable && await captionMayOverwriteCache(p.shortcode, bm))
+        await dbPatch("video_cache", `shortcode=eq.${sc}`, { basic_card: basic, basic_v: CARD_V });
+    }
+  }
+  const filled: any[] = [];
+  for (const recipient of access) {
+    const delivered = recipient.premium ? card : basic!;
+    const quality = recipient.premium ? readQuality(meta) : "basic";
+    const rows = await dbPatchMany("workouts", `id=eq.${recipient.id}&user_id=eq.${recipient.user_id}&ingest_status=eq.processing`, {
     url: p.clean, platform: p.platform, kind: p.kind,
-    author: meta.author, title: card.title, caption: meta.caption, thumb_url: thumbUrl,
-    category: card.category, muscle_groups: card.muscle_groups, equipment: card.equipment,
-    difficulty: card.difficulty, duration_minutes: card.duration_minutes, calories: card.calories,
-    blocks: card.blocks, tags: card.tags, has_full_workout: card.has_full_workout,
-    source_url: card.source_url ?? null,
-    confidence: typeof card.confidence === "number" ? card.confidence : null,
-    extracted_by: card.extracted_by ?? null,
-    ingest_status: "ready", ingest_error: visionWarning(card), media_stage: null,
+    author: meta.author, title: delivered.title, caption: meta.caption, thumb_url: thumbUrl,
+    category: delivered.category, muscle_groups: delivered.muscle_groups, equipment: delivered.equipment,
+    difficulty: delivered.difficulty, duration_minutes: delivered.duration_minutes, calories: delivered.calories,
+    blocks: delivered.blocks, tags: delivered.tags, has_full_workout: delivered.has_full_workout,
+    read_quality: quality, read_plan: recipient.premium ? (meta.read_plan ?? "unknown") : "free",
+    source_url: delivered.source_url ?? null,
+    confidence: typeof delivered.confidence === "number" ? delivered.confidence : null,
+    extracted_by: delivered.extracted_by ?? null,
+    ingest_status: "ready", ingest_error: visionWarning(delivered), media_stage: null,
   });
+    filled.push(...rows);
+    const previewFilter = `user_id=eq.${recipient.user_id}&shortcode=eq.${sc}&month=eq.${new Date().toISOString().slice(0,7)}-01`;
+    if (quality === "premium") await dbPatchMany("video_previews", previewFilter, { completed: true });
+    else await dbDelete("video_previews", previewFilter + "&completed=eq.false");
+  }
 
   // The rate-limit row was written at enqueue time so a burst could not slip past
   // the cap; the quality metrics only exist now, so they are patched in afterwards.
@@ -7927,6 +7858,7 @@ async function failJob(job: Job, err: unknown): Promise<void> {
     // now, and a card that says otherwise while it waits out a backoff is lying.
     await setMediaStage(job.shortcode, null, job.user_id);
     if (dead) {
+      await dbDelete("video_previews", `user_id=eq.${job.user_id}&shortcode=eq.${encodeURIComponent(job.shortcode)}&completed=eq.false`);
       // A failure that knew what it was gets to say so. Everything else keeps the
       // generic line, because "TypeError: undefined is not an object" on a card is
       // worse than no explanation at all.
@@ -8019,6 +7951,48 @@ async function cachedPack(shortcode: string): Promise<Pack | undefined> {
   }
 }
 
+/** Select an entitled result before copying any data into a user's RLS-visible row. */
+function cacheForAccess(row: any, premium: boolean): any | null {
+  if (!row) return null;
+  if (premium) return row;
+  if (row.read_quality === "basic" && !visuallyRead(row) && !row.media_source) return row;
+  if (!row.basic_card || Number(row.basic_v) < CARD_V) return null;
+  return { ...row, card: row.basic_card, v: row.basic_v, read_quality: "basic", read_plan: "free",
+    pack: null, pack_v: null, media_text: null, media_source: null, media_tried: false };
+}
+function basicMeta(meta: Meta): Meta {
+  return { caption: meta.caption, author: meta.author, thumb: meta.thumb, source: meta.source,
+    supplied: meta.supplied, read_plan: "free" };
+}
+
+function plusPlan(plan: string): boolean { return ["plus", "pro", "staff"].includes(plan); }
+function visuallyRead(row: any): boolean {
+  const pack = usablePack(row);
+  return !!pack && pack.reader !== "none" && pack.exercises.length > 0;
+}
+function labelRecommendations(card: Card, meta: Meta): void {
+  for (const b of card.blocks) for (const ex of b.exercises) {
+    const r = ex.recommendation;
+    if (!r) continue;
+    if (ex.sets || b.rounds || b.type !== "straight") r.sets = null;
+    if (ex.reps || ex.duration_seconds) { r.reps = null; r.duration_seconds = null; }
+    if (ex.rest_seconds || b.rest_seconds) r.rest_seconds = null;
+    const bits = [r.sets ? r.sets + " sets" : "", r.reps ? r.reps + " reps" : "",
+      r.duration_seconds ? r.duration_seconds + " seconds" : "", r.rest_seconds ? r.rest_seconds + "s rest" : ""].filter(Boolean);
+    if (!bits.length) { ex.recommendation = null; continue; }
+    r.note = (readQuality(meta) === "premium" ? "The creator did not specify this dose. " : "These dose details were not found in the available source. ") + "Pumpy suggests " + bits.join(", ") + ".";
+  }
+}
+
+function readQuality(meta: Meta): string {
+  return (meta.pack && meta.pack.reader !== "none" && meta.pack.exercises.length) || /^video:/.test(meta.media_source ?? "") ? "premium" : "basic";
+}
+async function premiumAccess(userId: string, shortcode: string): Promise<boolean> {
+  if (plusPlan((await capsFor(userId)).plan)) return true;
+  const rows = await dbSelect("video_previews", `user_id=eq.${userId}&shortcode=eq.${encodeURIComponent(shortcode)}&month=eq.${new Date().toISOString().slice(0, 7)}-01&select=shortcode`);
+  return rows.length > 0;
+}
+
 function packEligible(p: Parsed, meta: Meta): boolean {
   if (!packEnabled()) return false;
   if (meta.frames?.sheets?.length) return true;
@@ -8037,11 +8011,12 @@ function packEligible(p: Parsed, meta: Meta): boolean {
 async function runPackTier(
   job: Job, p: Parsed, meta: Meta, card: Card,
 ): Promise<{ card: Card; meta: Meta; ran: boolean }> {
+  if (!(await premiumAccess(job.user_id, p.shortcode))) return { card, meta, ran: false };
   if (!(await paidAllowed())) throw new GuardError("budget");
   if (job.user_id) {
     try {
       const [u, uc] = await settledAll<any>([mediaCountToday(job.user_id), capsFor(job.user_id)]);
-      if (overCap(u as number, (uc as UserCaps).caps.media)) {
+      if (overCap(u as number, plusPlan((uc as UserCaps).plan) ? (uc as UserCaps).caps.media : 15)) {
         console.log("pack: skipping", p.shortcode, "—", job.user_id, "is over today's media cap");
         return { card, meta, ran: false };
       }
@@ -8141,14 +8116,15 @@ async function escalateToMedia(
   // Frames are the reason this job exists when they are present — a "re-read this
   // video" with better stills — so a cached reading must not be replayed over them.
   if (packEligible(p, meta) && !meta.pack && !meta.frames?.sheets?.length &&
-      providerFor(p.platform).cacheable) {
+      providerFor(p.platform).cacheable && await premiumAccess(job.user_id, p.shortcode)) {
     // Somebody may have read this video already. The lookup is deliberately NOT
     // gated on CARD_V: bumping the card version to change a prompt must not make
     // every previously-read video be watched again, because the reading is the
     // expensive half and it is still correct.
     const prior = await cachedPack(p.shortcode);
-    if (prior) {
+    if (prior && prior.reader !== "none" && prior.exercises.length) {
       meta = { ...meta, pack: prior, frames: undefined };
+      card = await buildCard(meta, p, { purpose: "extract", userId: job.user_id });
       console.log("pack: replaying a cached reading of", p.shortcode, "—",
         prior.exercises.length, "movement(s), read by", prior.reader);
     }
@@ -8156,6 +8132,7 @@ async function escalateToMedia(
   // A job that already reached the pack step does not pay for it again: whatever
   // it read is on the job's own meta, checkpointed below, and a retry is here for
   // the tiers that come after it.
+  if (meta.pack?.reader === "none") meta = { ...meta, pack: undefined };
   const packDone = /^media:(pack|transcript|video)$/.test(job.step);
   if (packEligible(p, meta) && !meta.pack && !packDone) {
     const before = countExercises(card);
@@ -8173,6 +8150,10 @@ async function escalateToMedia(
     }
   }
 
+  if (!(await premiumAccess(job.user_id, p.shortcode))) {
+    if (meta.frames) await deleteSheets(meta.frames);
+    return { card, meta: { ...meta, frames: undefined }, ran };
+  }
   if (!providerFor(p.platform).media) return { card, meta, ran };
   // A photo post has no video in it. tiktokMedia would fetch the watch page a
   // second time and log "named no media", and the slides — which is where the
@@ -8210,7 +8191,7 @@ async function escalateToMedia(
         // carried on the job: a plan bought while a job was queued should count.
         const [u, uc] = await settledAll<any>([mediaCountToday(job.user_id), capsFor(job.user_id)]);
         used = u as number;
-        cap = (uc as UserCaps).caps.media;
+        cap = plusPlan((uc as UserCaps).plan) ? (uc as UserCaps).caps.media : 15;
       } catch (e) {
         // A count that could not be read is not a count of zero. Skipping costs one
         // thin card; guessing costs an uncapped bill.
@@ -8315,13 +8296,16 @@ async function runJobGuarded(job: Job): Promise<void> {
   // the point of having a cache at all. Skipped entirely for a provider whose
   // cards are not shareable — an upload key is unique to one file, so the lookup
   // could only ever miss.
-  const cached = cacheable && !mediaJob && !job.meta?.supplied
+  const cacheRows = cacheable && !mediaJob && !job.meta?.supplied
     ? await dbSelect("video_cache", `shortcode=eq.${sc}&v=gte.${CARD_V}&select=*`)
     : [];
-  if (cached.length && !cached[0].card?.vision?.missing?.length) {
+  const accessible = cacheForAccess(cacheRows[0], await premiumAccess(job.user_id, p.shortcode));
+  const cached = accessible ? [accessible] : [];
+  if (cached.length && !job.meta?.frames?.sheets?.length && !cached[0].card?.vision?.missing?.length &&
+      (visuallyRead(cached[0]) || !(await premiumAccess(job.user_id, p.shortcode)))) {
     const c = cached[0];
     await finishJob(job, p,
-      { caption: c.caption, thumb: c.thumb_url, author: c.author, source: "cache" },
+      { caption: c.caption, thumb: c.thumb_url, author: c.author, source: "cache", pack: usablePack(c), read_plan: c.read_plan },
       c.card as Card, c.thumb_url, false);
     return;
   }
@@ -8358,6 +8342,8 @@ async function runJobGuarded(job: Job): Promise<void> {
     await jobStep(job.id, "card", { meta });
   }
 
+  meta.read_plan = (await capsFor(job.user_id)).plan;
+  const packFirst = !job.card && packEligible(p, meta) && !meta.pack && await premiumAccess(job.user_id, p.shortcode);
   let card: Card;
   let degraded = false;
   let mediaRan: MediaTier[] = [];
@@ -8370,6 +8356,8 @@ async function runJobGuarded(job: Job): Promise<void> {
     // for an answer that is on the job.
     if (/^media(:|$)/.test(job.step) && job.card) {
       card = job.card;
+    } else if (packFirst) {
+      card = minimalCard(meta, p);
     } else {
       // New checkpoints retain successful indices, including genuinely empty
       // slides. Older jobs retain their cursor for backwards compatibility.
@@ -8408,6 +8396,7 @@ async function runJobGuarded(job: Job): Promise<void> {
     card = esc.card;
     meta = esc.meta;
     mediaRan = esc.ran;
+    if (packFirst && !meta.pack && !countExercises(card)) card = await buildCard(meta, p, ctx);
     await jobStep(job.id, "thumb", { card, meta });
   }
 
@@ -8448,6 +8437,7 @@ async function runJobGuarded(job: Job): Promise<void> {
       " (tried " + (meta.source ?? "none") + ")");
   }
 
+  labelRecommendations(card, meta);
   // Only cache a card worth reusing. Writing an empty scrape at the current
   // extraction version would pin that emptiness for everyone who saves the video
   // next and for every retry of this one, which is the opposite of failing soft.
@@ -8464,6 +8454,7 @@ async function runJobGuarded(job: Job): Promise<void> {
     const row: Record<string, unknown> = {
       shortcode: p.shortcode, url: p.clean, platform: p.platform, kind: p.kind,
       author: meta.author, caption: meta.caption, thumb_url: thumbUrl,
+      read_quality: readQuality(meta), read_plan: meta.read_plan ?? "unknown",
       card, v: CARD_V, updated_at: new Date().toISOString(),
       confidence: typeof card.confidence === "number" ? card.confidence : null,
       extracted_by: card.extracted_by ?? null,
@@ -8486,9 +8477,11 @@ async function runJobGuarded(job: Job): Promise<void> {
       row.pack = meta.pack;
       row.pack_v = PACK_V;
     }
+    if (readQuality(meta) === "basic") { row.basic_card = card; row.basic_v = CARD_V; }
     await dbUpsert("video_cache", row);
   }
 
+  labelRecommendations(card, meta);
   await finishJob(job, p, meta, card, thumbUrl, degraded);
 }
 
@@ -8578,40 +8571,6 @@ async function probeMediaUrl(u: string, headers: Record<string, string>): Promis
   };
 }
 
-/**
- * Groq, asked to fetch a URL itself. The raw answer, not transcribeAudio's — the
- * question is what the service says, and a helper that turns a 400 into a friendly
- * sentence is the wrong instrument for asking it.
- */
-async function probeGroqUrl(u: string): Promise<{ status: number; chars: number; head: string; duration?: number }> {
-  if (!GROQ_API_KEY) return { status: 0, chars: 0, head: "no groq key" };
-  const form = new FormData();
-  form.append("url", u);
-  form.append("model", models().transcribeAudio);
-  form.append("response_format", "verbose_json");
-  form.append("temperature", "0");
-  try {
-    const r = await aiFetch("https://api.groq.com/openai/v1/audio/transcriptions", {
-      method: "POST",
-      headers: { authorization: `Bearer ${GROQ_API_KEY}` },
-      body: form,
-      signal: AbortSignal.timeout(150_000),
-    });
-    const raw = await r.text();
-    if (!r.ok) return { status: r.status, chars: raw.length, head: raw.slice(0, 300) };
-    let text = "";
-    let duration: number | undefined;
-    try {
-      const d = JSON.parse(raw);
-      text = String(d?.text ?? "").trim();
-      duration = Number(d?.duration) || undefined;
-    } catch { text = raw.slice(0, 300); }
-    return { status: r.status, chars: text.length, head: text.slice(0, 300), duration };
-  } catch (e) {
-    return { status: 0, chars: 0, head: String(e).slice(0, 300) };
-  }
-}
-
 /** One page of HTML, reported by what it contained rather than by its contents. */
 async function probePage(url: string, ua: string): Promise<{ status: number; bytes: number; error?: string; html?: string }> {
   try {
@@ -8681,11 +8640,6 @@ async function probeTikTokMedia(url: string, suppliedHtml: string | null): Promi
     });
   }
 
-  // Question 1: can Groq, on its own IP with no cookies, fetch what the page named?
-  const byUrl = found.find((c) => c.kind === "audio") ?? found[0] ?? null;
-  const groq_by_url = byUrl ? await probeGroqUrl(byUrl.url) : null;
-
-  // Question 2: if not, can this function fetch it and pipe the bytes through?
   const toStream = found.find((c) => c.kind === "video") ?? null;
   const streamed = toStream
     ? await transcribeFetchedMedia(toStream.url, withCookie, id + ".mp4")
@@ -8693,8 +8647,7 @@ async function probeTikTokMedia(url: string, suppliedHtml: string | null): Promi
 
   return {
     status: "ok", id, pages, music, media,
-    groq_by_url: byUrl ? { field: byUrl.field, source: mediaUrlBrief(byUrl.url), result: groq_by_url } : null,
-    groq_streamed: toStream
+    gemini_streamed: toStream
       ? {
         field: toStream.field, source: mediaUrlBrief(toStream.url),
         status: streamed?.status, bytes: streamed?.bytes, seconds: streamed?.seconds,
@@ -8733,15 +8686,12 @@ async function probeIgMedia(url: string, suppliedHtml: string | null): Promise<u
     media.push({ field: c.field, kind: c.kind, ...(await probeMediaUrl(c.url, headers)) });
   }
   const candidate = found[0] ?? null;
-  const groq = candidate ? await probeGroqUrl(candidate.url) : null;
   return {
     status: "ok", shortcode: p.shortcode, pages,
     og_video: !!metaTag(html, "og:video"),
     og_video_secure: !!metaTag(html, "og:video:secure_url"),
     video_url_field: html.includes('"video_url"'),
     media,
-    groq_tried: candidate ? { field: candidate.field, host: mediaUrlBrief(candidate.url) } : null,
-    groq,
   };
 }
 
@@ -9136,17 +9086,41 @@ async function handleReadVideo(
   const cached = (cachedR as PromiseFulfilledResult<any[]>).value[0] ?? null;
   const uc = (capsR as PromiseFulfilledResult<UserCaps>).value;
 
-  // Frames are new evidence, so "already read" is not an answer to them.
-  if (cached?.media_tried && !frames) {
-    return json({
-      status: "ok",
-      message: "Spotter has already read this one — there was nothing in the video the card does not show.",
-    }, 200, cors);
+  // A first preview of a verified current card needs no model, decoding or queue.
+  // A paid explicit reread deliberately bypasses this fast path.
+  if (!plusPlan(uc.plan) && visuallyRead(cached) && cached?.card && !cached.card.vision?.missing?.length &&
+      (body?.preview === true || await premiumAccess(userId, w.shortcode))) {
+    if (await rpc("reserve_video_preview", { p_user: userId, p_shortcode: w.shortcode }) !== true)
+      return await bail(json({ status: "limit", kind: "media", upgrade: true,
+        message: "You have used all four Plus video previews this month." }, 429, cors));
+    const cm: Meta = { caption: cached.caption, author: cached.author, thumb: cached.thumb_url,
+      pack: usablePack(cached), source: "cache", read_plan: cached.read_plan };
+    const card = mergeNoDowngrade(w, cached.card, cm, w.platform);
+    labelRecommendations(card, cm);
+    const updated = await dbPatch("workouts", `id=eq.${id}&user_id=eq.${userId}`, {
+      title: card.title, blocks: card.blocks, category: card.category, muscle_groups: card.muscle_groups,
+      equipment: card.equipment, difficulty: card.difficulty, duration_minutes: card.duration_minutes,
+      calories: card.calories, tags: card.tags, has_full_workout: card.has_full_workout,
+      confidence: card.confidence, extracted_by: card.extracted_by, read_quality: "premium",
+      read_plan: cached.read_plan ?? "plus", ingest_status: "ready", ingest_error: null, media_stage: null,
+    });
+    await dbPatchMany("video_previews", `user_id=eq.${userId}&shortcode=eq.${sc}&month=eq.${new Date().toISOString().slice(0,7)}-01`, { completed: true });
+    return await bail(json({ status: "ok", workout: updated, cached: true }, 200, cors));
   }
+
+  // Frames are new evidence, so "already read" is not an answer to them.
+
   if (overCap(counts.extracts, uc.caps.extract)) {
     return await bail(await extractLimitResponse(cors, uc, counts.extracts));
   }
-  const over = await mediaCapReached(userId, uc.caps.media);
+  if (!plusPlan(uc.plan)) {
+    if (body?.preview !== true && !(await premiumAccess(userId, w.shortcode))) {
+      return await bail(json({ status: "limit", kind: "media", upgrade: true, plan: uc.plan,
+        message: "Full video reading is included with Spotter Plus. Try a Plus video read — four previews each month." }, 403, cors));
+    }
+
+  }
+  const over = await mediaCapReached(userId, plusPlan(uc.plan) ? uc.caps.media : 15);
   if (over !== null) return await bail(await capLimit("media", uc, over, cors));
   if (!(await paidAllowed())) {
     return await bail(json({
@@ -9155,8 +9129,21 @@ async function handleReadVideo(
     }, 429, cors));
   }
 
+  if (!plusPlan(uc.plan)) {
+    if (body?.preview === true) {
+      const admitted = await rpc("reserve_video_preview", { p_user: userId, p_shortcode: w.shortcode });
+      if (admitted !== true) return await bail(json({ status: "limit", kind: "media", upgrade: true, plan: uc.plan,
+        message: "You have used all four Plus video previews this month. They reset on the first, or continue with Spotter Plus." }, 429, cors));
+    }
+  }
+  // A preview can use an existing full read; paying to repeat identical evidence
+  // gives the person no additional value. A subscriber's explicit re-read still can.
+  if (!plusPlan(uc.plan) && visuallyRead(cached) && frames) { await deleteSheets(frames); frames = null; }
   const q = (await rpc("requeue_ingest", { p_user: userId, p_workout: id }))[0];
-  if (!q) return await bail(json({ status: "error", message: "Not found." }, 404, cors));
+  if (!q) {
+    await dbDelete("video_previews", `user_id=eq.${userId}&shortcode=eq.${sc}&completed=eq.false`);
+    return await bail(json({ status: "error", message: "Not found." }, 404, cors));
+  }
   if (q.job_created) {
     const seed = mediaSeed(cached, w);
     if (frames) {
@@ -9206,10 +9193,11 @@ async function handleReadVideo(
 async function upgradeCachedCard(
   userId: string, p: Parsed, cached: any, workoutId: string, cors: Cors,
 ): Promise<Response | null> {
-  if (cached.media_tried) return null;
+  if (visuallyRead(cached)) return null;
+  if (!(await premiumAccess(userId, p.shortcode))) return null;
   if (!providerFor(p.platform).media) return null;
   const card = cached.card as Card;
-  if (!card || !cardIsThin(card)) return null;
+  if (!card) return null;
 
   const [counts, uc] = await settledAll<any>([countsFor(userId), capsFor(userId)]);
   if (overCap((counts as Counts).extracts, (uc as UserCaps).caps.extract)) return null;
@@ -9297,6 +9285,10 @@ async function handleReprocess(id: string, userId: string, req: Request, cors: C
   const p: Parsed = {
     platform: old.platform, shortcode: old.shortcode, kind: old.kind ?? "video", clean: old.url,
   };
+  if (!pasted && providerFor(p.platform).media && await premiumAccess(userId, p.shortcode)) {
+    const shared = (await dbSelect("video_cache", `shortcode=eq.${encodeURIComponent(p.shortcode)}&select=*`))[0];
+    if (!visuallyRead(shared)) return await handleReadVideo(id, userId, new Request(req.url, { method: "POST", body: "{}" }), cors);
+  }
   const reservation = await dbInsert("saves_log", { user_id: userId, shortcode: p.shortcode, cached: false, kind: "reprocess", platform: p.platform });
   if (!reservation?.id) throw new GuardError("accounting_unavailable");
   if (aiActor.getStore()) aiActor.getStore()!.workKey = p.shortcode;
@@ -9327,8 +9319,9 @@ async function handleReprocess(id: string, userId: string, req: Request, cors: C
   // is asked to justify a card built from two texts while holding one, and the
   // evidence on every spoken exercise would evaporate for no better reason than
   // that nobody handed the transcript back.
-  const cachedRow = (await dbSelect("video_cache",
-    `shortcode=eq.${encodeURIComponent(p.shortcode)}&v=gte.${CARD_V}&select=card,media_tried,media_source,media_text,pack,pack_v`))[0] ?? null;
+  const sharedRow = (await dbSelect("video_cache",
+    `shortcode=eq.${encodeURIComponent(p.shortcode)}&v=gte.${CARD_V}&select=*`))[0] ?? null;
+  const cachedRow = cacheForAccess(sharedRow, await premiumAccess(userId, p.shortcode));
   // A reprocess re-runs the extraction, not the reading. The pack cost money once.
   if (!meta.pack) meta.pack = usablePack(cachedRow);
   if (!meta.transcript && typeof cachedRow?.media_text === "string" && cachedRow.media_text) {
@@ -9358,7 +9351,10 @@ async function handleReprocess(id: string, userId: string, req: Request, cors: C
   } catch (e) {
     console.error("reprocess storeThumb failed", p.shortcode, e);
   }
+  labelRecommendations(card, meta);
+  labelRecommendations(pure, meta);
   const updated = await dbPatch("workouts", `id=eq.${id}&user_id=eq.${userId}`, {
+    read_quality: readQuality(meta), read_plan: (uc as UserCaps).plan,
     title: card.title, category: card.category, muscle_groups: card.muscle_groups,
     equipment: card.equipment, difficulty: card.difficulty, duration_minutes: card.duration_minutes,
     calories: card.calories, blocks: card.blocks, tags: card.tags,
@@ -9401,6 +9397,8 @@ async function handleReprocess(id: string, userId: string, req: Request, cors: C
     await dbUpsert("video_cache", {
       shortcode: p.shortcode, url: p.clean, platform: p.platform, kind: p.kind,
       author: meta.author ?? old.author, caption: meta.caption ?? old.caption, thumb_url: thumbUrl,
+      ...(readQuality(meta) === "basic" ? { basic_card: pure, basic_v: CARD_V } : {}),
+      read_quality: readQuality(meta), read_plan: (uc as UserCaps).plan,
       card: pure, v: CARD_V, updated_at: new Date().toISOString(),
       confidence: typeof pure.confidence === "number" ? pure.confidence : null,
       extracted_by: pure.extracted_by ?? null,
@@ -9491,7 +9489,7 @@ function deepCopy<T>(v: T): T {
 async function handleCorrection(id: string, userId: string, req: Request, cors: Cors): Promise<Response> {
   const body = await req.json().catch(() => ({} as Record<string, unknown>));
   const op = String((body as any)?.op ?? "");
-  if (op !== "edit" && op !== "add" && op !== "delete") {
+  if (op !== "edit" && op !== "add" && op !== "delete" && op !== "delete_block") {
     return json({ status: "error", message: "Unknown edit." }, 400, cors);
   }
 
@@ -9540,7 +9538,15 @@ async function handleCorrection(id: string, userId: string, req: Request, cors: 
   try {
     if (bi < 0 || bi > 40) throw new BadEdit("That block does not exist.");
 
-    if (op === "add") {
+    if (op === "delete_block") {
+      const block = blocks[bi];
+      if (!block || JSON.stringify(block) !== JSON.stringify((body as any).expect_block))
+        return json({ status: "stale", message: "This block changed — reopen the workout and try again." }, 409, cors);
+      for (const ex of block.exercises ?? []) changes.push({ field: "exercise", old: String(ex.name), new: null,
+        oldCanon: ex.canonical_id ?? null, newCanon: null, oldEx: deepCopy(ex), newEx: null });
+      subject = { name: block.title || "Workout block" };
+      blocks.splice(bi, 1);
+    } else if (op === "add") {
       // A card with nothing in it is the common case for "the extractor missed
       // everything", so the first block is created rather than demanded.
       while (blocks.length <= bi) {
@@ -9672,7 +9678,7 @@ async function handleCorrection(id: string, userId: string, req: Request, cors: 
     workout_id: id,
     shortcode: w.shortcode,
     platform: w.platform,
-    kind: op,
+    kind: op === "delete_block" ? "delete" : op,
     field: c.field,
     old_value: c.old === null || c.old === undefined ? null : String(c.old),
     new_value: c.new === null || c.new === undefined ? null : String(c.new),
@@ -11498,8 +11504,8 @@ const PUMPY_STATIC = [
   "CATALOG INDEX — every exercise Spotter knows, grouped by the muscle it trains first:\n" + PUMPY_CATALOG_INDEX,
   "The catalog index above is the list of exercises Spotter knows. Spell exercises exactly as listed. Call " +
   "search_catalog only for something not in the index. Call it at most twice per turn.",
-  "If the library is empty, design the workout from the catalog index and propose create_workout right away — " +
-  "do not search first.",
+  "Before creating a workout, if the conversation and attachments leave essential context unclear, ask one or two concise questions about goal, available time or equipment. Return no proposal until answered. Do not re-ask known details; if the user says to choose, use stated assumptions. When context is sufficient, use the catalog index without searching first.",
+  "When suggesting missing sets, reps or rest, explicitly say the creator did not specify them and label your values as Pumpy recommendations. Never present them as quoted video instructions.",
   "Writes never happen directly. When the user wants something saved, return a proposal; they confirm it in the app:",
   '- {"kind":"create_workout","title":string,"category":one of ' + JSON.stringify(CATEGORIES) +
   ',"duration_minutes":int|null,"equipment":[from ' + JSON.stringify(EQUIPMENT) + '],"blocks":[{"title":string|null,"type":one of ' +
@@ -11537,10 +11543,9 @@ const PUMPY_STATIC = [
 // about, and get_workout costs a whole round trip each. So the composer lets a
 // person name up to six, and those six arrive already open — head line, blocks
 // and exercises — which is the difference between "I will look that up" and an
-// answer. Six and 1,200 characters each because the snapshot and the transcript
-// are on the same prompt and this is the part that can run away.
+// answer. The attachment count is bounded; exercise lists stay complete so the
+// coach cannot silently omit the later movements in a long workout.
 const PUMPY_MAX_REFS = 6;
-const PUMPY_REF_CHARS = 1200;
 
 /** An explicit composer list, including [], replaces legacy thread context. */
 export function pumpyReferenceIds(body: any, threadWorkoutId: unknown): string[] {
@@ -11575,7 +11580,7 @@ export function pumpyRefBlock(w: any): string {
       lines.push("  - " + [String(e?.name ?? "").slice(0, 60), dose].filter(Boolean).join(" — "));
     }
   }
-  return lines.join("\n").slice(0, PUMPY_REF_CHARS);
+  return lines.join("\n");
 }
 
 /**
@@ -11901,6 +11906,8 @@ async function handlePumpyChat(req: Request, userId: string, cors: Cors): Promis
   await ensureConfig();
   const cfg = pumpyConfig();
   const meter = await pumpyMeter(userId);
+  if (!plusPlan(meter.plan)) return json({ status: "limit", kind: "pumpy", plan: meter.plan, upgrade: true,
+    message: "Pumpy coaching is included with Spotter Plus: combine saved workouts, build a plan, get exercise alternatives and personalized recommendations." }, 403, cors);
   const over = (used: number, cap: number | null) => cap !== null && used >= cap;
 
   if (meter.totals.minute >= cfg.perMinute) {
@@ -12219,6 +12226,9 @@ async function handlePumpyConfirm(req: Request, userId: string, cors: Cors): Pro
     const a = await say("No problem — nothing was changed.");
     return json({ status: "ok", messages: [a] }, 200, cors);
   }
+
+  if (!plusPlan((await capsFor(userId)).plan)) return json({ status: "limit", kind: "pumpy", upgrade: true,
+    message: "Pumpy coaching and workout creation are included with Spotter Plus." }, 403, cors);
 
   // A coached workout is a workouts row like any other, so it answers to the
   // same shelf. Only `create_workout` makes one — appending exercises edits a row
@@ -12683,7 +12693,7 @@ Deno.serve(async (req: Request) => {
     // a route it must reach that only accepted a bearer was a route it could not
     // reach at all, and handing the frames over is exactly such a route.
     let userId = await userFromBearer(req);
-    if (!userId && (path === "/api/ingest" || path === "/api/uploads/authorize")) {
+    if (!userId && (path === "/api/ingest" || path === "/api/ingest/prepare" || path === "/api/uploads/authorize")) {
       userId = await userFromIngestKey(req, url);
     }
     if (!userId) return json({ status: "error", message: "Sign in to use Spotter." }, 401, cors);
@@ -12691,6 +12701,7 @@ Deno.serve(async (req: Request) => {
     if (req.method === "POST") req = await boundedRequest(req);
     return await guardedUserRequest(req, path, userId, cors, async () => {
     if (req.method === "POST" && path === "/api/uploads/authorize") return await authorizeUpload(req, userId!, cors);
+    if (req.method === "POST" && path === "/api/ingest/prepare") return await handleIngestPrepare(req, userId, cors);
     if (req.method === "POST" && path === "/api/ingest") return await handleIngest(req, userId, cors);
 
     const reproc = path.match(/^\/api\/workouts\/([0-9a-f-]{36})\/reprocess$/);
@@ -12783,6 +12794,7 @@ Deno.serve(async (req: Request) => {
         ai_allowance: await rpc("ai_budget_user_status", { p_user: userId }),
         paid_enabled: await paidAllowed(),
         cache_pct_today: cachePct,
+        video_previews: { cap: 4, used: await dbCount("video_previews", `user_id=eq.${userId}&month=eq.${new Date().toISOString().slice(0, 7)}-01`, "shortcode"), resets_at: utcNextMonth() },
         pumpy: pumpyBlock(meter),
       }, 200, cors);
     }

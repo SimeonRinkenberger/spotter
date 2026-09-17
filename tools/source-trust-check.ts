@@ -19,7 +19,10 @@ async function fetch(){state.inserted++;return Response.json([{id:42}]);}
 async function dbSelect(t:string){if(t==='workouts')return [{id:'w',platform:'tiktok',ingest_status:'ready',shortcode:'tt-test',url:'https://example.com'}];return [];}
 async function settledAll(a:any[]){return Promise.all(a);}
 async function countsFor(){return {extracts:0};}
-async function capsFor(){return {caps:{extract:10}};}
+async function capsFor(){return {plan:'free',caps:{extract:10}};}
+function providerFor(){return {media:true};}
+async function premiumAccess(){return false;}
+function cacheForAccess(row:any){return row ?? null;}
 function overCap(){return false;}
 async function fetchMeta(){state.reads++;return {caption:'Squat 3x10',author:'Trainer'};}
 async function buildCard(){throw new GuardError('test stops at provider boundary');}

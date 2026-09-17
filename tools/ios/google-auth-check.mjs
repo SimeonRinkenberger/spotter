@@ -37,6 +37,18 @@ await assert.rejects(signInWithGoogle(sb, system(GOOGLE_AUTH_RETURN)), /provider
 assert.equal(starts.length, startCount);
 console.log('PASS native Google: PKCE request, callback validation, exchange errors, cancellation, duplicate taps, retry, disabled provider.');
 
+// Short-operation hangs must reset the busy state and allow a clean retry.
+const realTimeout = globalThis.setTimeout;
+try {
+  globalThis.setTimeout = (fn, ms, ...args) => realTimeout(fn, ms === 20000 ? 1 : ms, ...args);
+  await assert.rejects(signInWithGoogle({auth:{signInWithOAuth:()=>new Promise(()=>{})}}, system(GOOGLE_AUTH_RETURN)), /Opening Google sign-in timed out/);
+  const ready = async () => ({data:{url:'https://mtzevoxxpsktmrbbuxva.supabase.co/auth/v1/authorize'}});
+  await assert.rejects(signInWithGoogle({auth:{signInWithOAuth:ready,exchangeCodeForSession:()=>new Promise(()=>{})}}, system(GOOGLE_AUTH_RETURN+'?code=stuck')), /Finishing Google sign-in timed out/);
+  sb.auth.signInWithOAuth=ready;
+  await signInWithGoogle(sb,system(GOOGLE_AUTH_RETURN+'?code=after-timeout'));
+} finally { globalThis.setTimeout=realTimeout; }
+console.log('PASS Google preparation/exchange timeout and retry after both hangs.');
+
 // Exercise the actual shared app's provider visibility and button routing.
 const { readFileSync } = await import('node:fs');
 const { default: vm } = await import('node:vm');

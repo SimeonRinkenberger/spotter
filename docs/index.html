@@ -6991,8 +6991,101 @@ details.details-moving > :not(summary) {
     transition: none;
   }
 }
+.reader-offer {
+  background: var(--ember-soft);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 16px;
+  margin: 16px 0;
+}
+.reader-offer p {
+  color: var(--ink-2);
+  font-size: 14px;
+  line-height: 1.5;
+  margin: 8px 0 12px;
+}
+.reader-offer .fixlink {
+  background: none;
+  border: 0;
+  color: var(--ember-ink);
+  font: inherit;
+  text-align: left;
+  padding: 0;
+  display: block;
+  margin-top: 12px;
+  min-height: 44px;
+}
+.set-goal {
+  color: #bd3434;
+  border: 1px solid currentColor;
+  border-radius: 12px;
+  padding: 12px;
+  margin: 16px 0;
+  font-size: 14px;
+  font-weight: 650;
+  text-align: center;
+}
+.set-goal.reached {
+  color: var(--good);
+}
+@media (prefers-color-scheme: dark) {
+  .set-goal:not(.reached) {
+    color: #ff9292;
+  }
+}
+.delete-swipe {
+  margin: 0;
+  border-radius: 12px;
+}
+.delete-swipe > .exmain {
+  display: block;
+  padding: 0;
+  background: var(--card);
+}
+.delete-swipe .exercise-card {
+  width: 100%;
+  box-sizing: border-box;
+}
+.delete-swipe.open > .exmain {
+  transform: translateX(-64px);
+}
+.exact.danger {
+  background: #bb3030;
+  color: #fff;
+}
+.segment-label {
+  padding: 12px 16px;
+  background: var(--ember-soft);
+  color: var(--ink);
+  font-weight: 650;
+}
+.recommendation {
+  color: var(--ember-ink);
+}
+.thumbwrap img.pumpy-cover {
+  object-fit: contain;
+  background: #f8efdf;
+}
+.block-swipe {
+  margin-bottom: 8px;
+}
+.block-swipe .exmain {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  background: var(--paper);
+}
+.block-swipe h3 {
+  margin: 0;
+}
+.block-swipe .linkbtn {
+  font-size: 12px;
+  min-height: 44px;
+  color: var(--muted);
+}
 </style>
-
 </head>
 <body>
 
@@ -7641,7 +7734,9 @@ details.details-moving > :not(summary) {
   var native = window.SpotterNative || null, AUTH_RETURN = native ? "https://simeonrinkenberger.github.io/spotter/" : location.origin + location.pathname, SB_URL = "https://mtzevoxxpsktmrbbuxva.supabase.co", SB_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10emV2b3h4cHNrdG1yYmJ1eHZhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgyMjM5ODgsImV4cCI6MjEwMzc5OTk4OH0._vpNhLJtv2bVGgXXClva9O5cX8Y5eJdTgbgAO81NnmU", API = SB_URL + "/functions/v1/spotter/api/", PUBLIC_AUTH = { google_client_id: "48831784248-dh1o2fhiem9kqgs6ambnnvaba8vojrf2.apps.googleusercontent.com", apple_services_id: "" }, sb = window.supabase.createClient(SB_URL, SB_ANON, {
     auth: { persistSession: !0, autoRefreshToken: !0, detectSessionInUrl: !native, flowType: native ? "pkce" : "implicit", storage: native ? native.authStorage : void 0 },
     global: { fetch: function(url, opts) {
-      return String(url).indexOf("/rest/v1/") < 0 || opts && opts.method && opts.method !== "GET" ? fetch(url, opts) : deadline(function(signal) {
+      return String(url).indexOf("/auth/v1/") >= 0 ? deadline(function(signal) {
+        return fetch(url, Object.assign({}, opts || {}, { signal: signal }));
+      }, 2e4) : String(url).indexOf("/rest/v1/") < 0 || opts && opts.method && opts.method !== "GET" ? fetch(url, opts) : deadline(function(signal) {
         return fetch(url, Object.assign({}, opts || {}, { signal: signal })).then(function(r) {
           return r.arrayBuffer().then(function(body) {
             return new Response(body, { status: r.status, statusText: r.statusText, headers: r.headers });
@@ -8047,8 +8142,8 @@ details.details-moving > :not(summary) {
       var node = $(b);
       node && (node.disabled = !!id, node.querySelector(".oalabel").textContent = b === id ? "Opening\u2026" : oaLabelOf(b));
     }), oauthBusy = !!id, clearTimeout(oauthWatchdog), id && (oauthWatchdog = setTimeout(function() {
-      setOauthBusy(null);
-    }, 9e4));
+      setOauthBusy(null), authError("Sign-in did not open. Try again, or use email while we reconnect.");
+    }, 3e4));
   }
   function oauthMessage(e) {
     var m = e && e.message ? String(e.message) : String(e || "");
@@ -8138,7 +8233,7 @@ details.details-moving > :not(summary) {
             } catch (e) {
               type = null;
             }
-            if (type === "skipped") {
+            if (type === "skipped" || note && note.isNotDisplayed && note.isNotDisplayed()) {
               handed = !0, oauthRedirect("google");
               return;
             }
@@ -8535,6 +8630,13 @@ details.details-moving > :not(summary) {
     return w.platform === "upload";
   }
   var STAGES = {
+    basic: {
+      kick: "Basic read",
+      glyph: "hourglass",
+      line: "Reading available text\u2026",
+      head: "Building your Basic workout",
+      body: "Free reads the available caption. Plus can also read movements, spoken cues and on-screen details. You get four Plus video previews each month."
+    },
     reading: {
       kick: "Reading",
       glyph: "hourglass",
@@ -8573,7 +8675,7 @@ details.details-moving > :not(summary) {
     }
   };
   function stageOf(w) {
-    return isUpload(w) ? w.media_stage === "watching" ? STAGES.upwatch : STAGES.upload : w.media_stage === "watching" ? STAGES.watching : w.media_stage === "listening" ? STAGES.listening : STAGES.reading;
+    return isUpload(w) ? w.media_stage === "watching" ? STAGES.upwatch : STAGES.upload : w.media_stage === "watching" ? STAGES.watching : w.media_stage === "listening" ? STAGES.listening : isFree() ? STAGES.basic : STAGES.reading;
   }
   function readFrom(w) {
     var out = { video: !1, speech: !1 };
@@ -8587,7 +8689,7 @@ details.details-moving > :not(summary) {
   function canReadVideo(w) {
     if (w.platform !== "tiktok" || isPending(w) || isFailed(w)) return !1;
     var from = readFrom(w);
-    return !from.video && !from.speech;
+    return w.read_quality !== "premium";
   }
   function isColFilter(f) {
     return typeof f == "string" && f.indexOf("col:") === 0;
@@ -9040,9 +9142,10 @@ details.details-moving > :not(summary) {
         openDetail(w);
       }, card;
     }
-    if (w.thumb_url) {
-      var img = el("img");
-      img.loading = i < 4 ? "eager" : "lazy", img.decoding = "async", i < 4 && img.setAttribute("fetchpriority", "high"), img.alt = "", img.src = w.thumb_url, img.onload = function() {
+    var cover = w.platform === "pumpy" ? pumpyAsset("workout-" + (w.category === "Legs" ? "legs" : w.category === "Core" ? "core" : "upper") + ".webp") : w.thumb_url;
+    if (cover) {
+      var img = el("img", w.platform === "pumpy" ? "pumpy-cover" : null);
+      img.loading = i < 4 ? "eager" : "lazy", img.decoding = "async", i < 4 && img.setAttribute("fetchpriority", "high"), img.alt = "", img.src = cover, img.onload = function() {
         tw.classList.remove("loading"), tw.classList.add("loaded");
       }, img.onerror = function() {
         tw.classList.remove("loading"), tw.appendChild(icon(el("div", "noimg"), "dumbbell"));
@@ -9076,7 +9179,7 @@ details.details-moving > :not(summary) {
     if (w.platform === "instagram")
       wrap = el("div", "embedwrap vertical"), frame = el("iframe"), frame.src = "https://www.instagram.com/" + (w.kind === "p" ? "p" : "reel") + "/" + w.shortcode + "/embed/", frame.setAttribute("scrolling", "no"), frame.setAttribute("allowtransparency", "true");
     else if (w.platform === "tiktok")
-      wrap = el("div", "embedwrap vertical"), frame = el("iframe"), frame.src = "https://www.tiktok.com/embed/v2/" + String(w.shortcode).replace(/^tt-/, ""), frame.setAttribute("allow", "encrypted-media"), frame.setAttribute("scrolling", "no");
+      wrap = el("div", "embedwrap vertical"), frame = el("iframe"), frame.src = "https://www.tiktok.com/player/v1/" + String(w.shortcode).replace(/^tt-/, "") + "?controls=1&description=0&rel=0", typeof start == "number" && frame.setAttribute("data-seek", String(start)), frame.setAttribute("allow", "encrypted-media"), frame.setAttribute("scrolling", "no");
     else if (w.platform === "youtube")
       wrap = el("div", "embedwrap wide"), frame = el("iframe"), frame.src = "https://www.youtube.com/embed/" + String(w.shortcode).replace(/^yt-/, "") + (start ? "?start=" + start + "&autoplay=1" : ""), frame.setAttribute("allow", "accelerometer; encrypted-media; picture-in-picture; fullscreen"), frame.setAttribute("allowfullscreen", "");
     else {
@@ -9086,8 +9189,13 @@ details.details-moving > :not(summary) {
       }
       return null;
     }
-    return frame.setAttribute("loading", "lazy"), wrap.appendChild(frame), wrap;
+    return frame.title = "Workout video", frame.setAttribute("loading", "lazy"), wrap.appendChild(frame), wrap;
   }
+  window.addEventListener("message", function(event) {
+    event.origin !== "https://www.tiktok.com" || !event.data || !event.data["x-tiktok-player"] || document.querySelectorAll("iframe[data-seek]").forEach(function(frame) {
+      frame.contentWindow !== event.source || event.data.type !== "onPlayerReady" || frame.contentWindow.postMessage({ type: "seekTo", value: Number(frame.getAttribute("data-seek")), "x-tiktok-player": !0 }, "https://www.tiktok.com");
+    });
+  });
   function embedHKey(p, px) {
     return "spotter_embed_h:" + p + ":" + px;
   }
@@ -9298,6 +9406,30 @@ details.details-moving > :not(summary) {
       }
       warn.appendChild(wt), d.appendChild(warn);
     }
+    if (w.platform !== "pumpy" && w.read_quality !== "premium") {
+      var quality = el("div", "reader-offer");
+      if (quality.appendChild(el("b", null, "Basic read")), quality.appendChild(el("p", null, "Plus reads the video\u2019s movements, spoken cues and on-screen details to build a more complete workout.")), w.platform === "tiktok" && w.kind !== "photo") {
+        var trial = el("button", "btn ghost", isFree() ? "Try a Plus read \xB7 4 per month" : "Read with Plus");
+        trial.onclick = function() {
+          readVideo(w, trial, isFree());
+        }, quality.appendChild(trial), isFree() && api("limits").then(function(r) {
+          if (!(!trial.isConnected || !r.video_previews)) {
+            var left = Math.max(0, r.video_previews.cap - r.video_previews.used);
+            trial.textContent = left ? "Try a Plus read \xB7 " + left + " left this month" : "Explore Spotter Plus", left || (trial.onclick = function() {
+              openPlans({ kind: "media" });
+            });
+          }
+        }).catch(function() {
+        });
+      }
+      if (isFree()) {
+        var value = el("button", "fixlink", "See everything in Plus");
+        value.onclick = function() {
+          openPlans({ kind: "media" });
+        }, quality.appendChild(value);
+      }
+      d.appendChild(quality);
+    }
     var start = el("button", "startbtn", w.has_full_workout ? "Start workout" : "Start & log freestyle");
     start.onclick = function() {
       startWorkout(w);
@@ -9332,8 +9464,16 @@ details.details-moving > :not(summary) {
       }), built.appendChild(strip), d.appendChild(built);
     }
     if ((w.blocks || []).forEach(function(b, bi) {
-      var sect = el("div", "sect workout-block");
-      sect.appendChild(el("h3", null, b.title || (w.blocks.length === 1 ? "Exercises" : "Block " + (bi + 1))));
+      var sect = el("div", "sect workout-block"), blockRow = el("div", "exrow delete-swipe block-swipe"), blockFront = el("div", "exmain");
+      blockFront.appendChild(el("h3", null, b.title || (w.blocks.length === 1 ? "Exercises" : "Block " + (bi + 1))));
+      var blockMore = el("button", "linkbtn", "Remove block");
+      blockMore.setAttribute("aria-label", "Remove " + (b.title || "block " + (bi + 1))), blockMore.onclick = function() {
+        deleteBlock(w, bi);
+      }, blockFront.appendChild(blockMore);
+      var blockActions = el("div", "exacts"), blockDelete = icon(el("button", "exact danger"), "trash", "Delete");
+      blockDelete.setAttribute("aria-label", "Delete " + (b.title || "block " + (bi + 1))), blockDelete.onclick = function() {
+        deleteBlock(w, bi);
+      }, blockActions.appendChild(blockDelete), blockRow.appendChild(blockFront), blockRow.appendChild(blockActions), sect.appendChild(blockRow);
       var bm = blockMetaText(b);
       bm && sect.appendChild(el("div", "blockmeta", bm)), (b.exercises || []).forEach(function(ex, ei) {
         var row = el("div", "exercise-card"), main = el("div", "exercise-main"), name = el("div", "exname");
@@ -9341,7 +9481,9 @@ details.details-moving > :not(summary) {
         var cue = cueOf(ex);
         cue && name.appendChild(el("div", "exnote", cue));
         var marks = rowMarks(ex);
-        marks && name.appendChild(marks), ex.added_by_user ? name.appendChild(el("div", "exmine", "Added by you")) : ex.edited_by_user && name.appendChild(el("div", "exmine", "Edited by you"));
+        marks && name.appendChild(marks);
+        var segment = bitBtn(sourceOf(ex) || w, ex);
+        segment && name.appendChild(segment), ex.recommendation && name.appendChild(el("div", "exnote recommendation", ex.recommendation.note)), ex.added_by_user ? name.appendChild(el("div", "exmine", "Added by you")) : ex.edited_by_user && name.appendChild(el("div", "exmine", "Edited by you"));
         var fl = fromLine(ex);
         fl && name.appendChild(fl), main.appendChild(name);
         var dose = doseText(ex);
@@ -9359,7 +9501,15 @@ details.details-moving > :not(summary) {
         var swap = icon(el("button", "pickrow"), "swap", "Swap or modify");
         swap.onclick = function() {
           openSwap(ex.name, w.title);
-        }, options.lastChild.appendChild(swap), acts.appendChild(options), row.appendChild(acts), sect.appendChild(row);
+        }, options.lastChild.appendChild(swap), acts.appendChild(options), row.appendChild(acts);
+        var swipe = el("div", "exrow delete-swipe"), front = el("div", "exmain");
+        front.appendChild(row);
+        var drawer = el("div", "exacts"), del = icon(el("button", "exact danger"), "trash", "Delete");
+        del.setAttribute("aria-label", "Remove " + ex.name), del.onclick = function() {
+          exEdit = { w: w, block: bi, index: ei, name: ex.name, mode: "edit" }, deleteExEdit();
+        }, drawer.appendChild(del), swipe.appendChild(front), swipe.appendChild(drawer), sect.appendChild(swipe);
+        var remove = icon(el("button", "pickrow"), "trash", "Remove exercise");
+        remove.onclick = del.onclick, options.lastChild.appendChild(remove);
       });
       var addex = el("button", "addex", "+ Add an exercise Spotter missed");
       addex.onclick = function() {
@@ -9442,9 +9592,16 @@ details.details-moving > :not(summary) {
       btn && (btn.disabled = !1, btn.textContent = "Try reading it again"), toast("Could not start reading that \u2014 try again in a minute.");
     });
   }
-  function readVideo(w, btn) {
-    btn && (btn.disabled = !0, btn.textContent = "Queued\u2026"), api("workouts/" + w.id + "/media", { method: "POST", body: "{}" }).then(function(r) {
-      if (btn && (btn.disabled = !1, btn.textContent = "Read the video"), r.status !== "processing") {
+  function readVideo(w, btn, preview) {
+    btn && (btn.disabled = !0, btn.textContent = "Queued\u2026"), deviceFrames({ url: w.url, preview: !!preview, reread: !0 }).then(function(frames) {
+      var payload = { preview: !!preview };
+      return frames && (payload.frames = frames), api("workouts/" + w.id + "/media", { method: "POST", body: JSON.stringify(payload) });
+    }).then(function(r) {
+      if (btn && (btn.disabled = !1, btn.textContent = "Read the video"), r.status === "ok" && r.workout) {
+        absorbWorkout(r.workout), current && current.id === w.id && openDetail(r.workout, !0), render(), toast("Your Plus preview is ready.");
+        return;
+      }
+      if (r.status !== "processing") {
         limitHit(r, "Could not start reading that \u2014 try again in a minute.");
         return;
       }
@@ -9504,7 +9661,7 @@ details.details-moving > :not(summary) {
   }
   var EX_FLING = 300, EX_BAND = 0.55, EX_HOLD = 480, exOv = $("detail"), openEx = null, exDrag = null, exQuiet = 0, exW = 0;
   function exWidth(row) {
-    return exW || (exW = row.children[1].offsetWidth || 192);
+    return row.classList.contains("delete-swipe") ? 64 : exW || (exW = row.children[1].offsetWidth || 192);
   }
   function exPaint(row, d) {
     var a = row.children[1], n = a.children.length, w = exWidth(row), i, u = d < w ? d : w;
@@ -9746,6 +9903,26 @@ details.details-moving > :not(summary) {
       var body = exEdit.mode === "add" ? { op: "add", block: exEdit.block, fields: fields } : { op: "edit", block: exEdit.block, index: exEdit.index, expect_name: exEdit.name, fields: fields };
       sendCorrection(body, $("exeditsave"), exEdit.mode === "add" ? "Added it" : "Fixed \u2014 thanks");
     }
+  }
+  function deleteBlock(w, bi) {
+    var before = JSON.parse(JSON.stringify(w.blocks || []));
+    if (!before[bi]) return;
+    var expected = before[bi];
+    function redraw() {
+      current && current.id === w.id && openDetail(w, !0), render();
+    }
+    function restore(msg) {
+      w.blocks = before, redraw(), msg && toast(msg);
+    }
+    w.blocks.splice(bi, 1), redraw(), offerUndo("Removed " + (expected.title || "block"), function() {
+      api("workouts/" + w.id + "/exercises", { method: "POST", body: JSON.stringify({ op: "delete_block", block: bi, expect_block: expected }) }).then(function(r) {
+        r.status === "ok" ? absorbWorkout(r.workout) : restore(r.message || "Could not remove that block.");
+      }).catch(function() {
+        restore("Could not reach Spotter \u2014 the block is back.");
+      });
+    }, function() {
+      restore(null);
+    });
   }
   function deleteExEdit() {
     if (!exEdit || exEdit.mode !== "edit") return;
@@ -10229,11 +10406,11 @@ details.details-moving > :not(summary) {
     return secOf(ex && ex.evidence ? ex.evidence.t : null);
   }
   function bitBtn(w, ex) {
-    var t = bitOf(ex);
-    if (t === null || !w || w.platform !== "youtube") return null;
+    var t = startOf(ex);
+    if (t === null && (t = bitOf(ex)), t === null || !w || !/^(youtube|tiktok)$/.test(w.platform)) return null;
     var b = icon(el("button", "chip"), "play", "Watch this bit");
     return b.onclick = function() {
-      watchBit(w, t);
+      watchBit(w, t, ex);
     }, b;
   }
   function saidNode(ex, w) {
@@ -10262,9 +10439,9 @@ details.details-moving > :not(summary) {
     }
     return delta && box.appendChild(el("div", "perfdelta", "Differs from the standard: " + delta)), box;
   }
-  function watchBit(w, t) {
+  function watchBit(w, t, ex) {
     var em = embedNode(w, t);
-    em && ($("watchbody").innerHTML = "", $("watchbody").appendChild(em), openSheet("watchsheet"), fitEmbed(em, w.platform), closeSheet("explainsheet"));
+    em && ($("watchbody").innerHTML = "", ex && $("watchbody").appendChild(el("div", "segment-label", ex.name + " \xB7 " + clock(t) + (secOf(ex.t1) !== null ? "\u2013" + clock(ex.t1) : ""))), $("watchbody").appendChild(em), openSheet("watchsheet"), fitEmbed(em, w.platform), closeSheet("explainsheet"));
   }
   var vidCache = {};
   function vidKey(ex) {
@@ -10561,7 +10738,9 @@ details.details-moving > :not(summary) {
     return (w.blocks || []).forEach(function(b, bi) {
       var cx = complexOf(b, w);
       (b.exercises || []).forEach(function(ex, ei) {
-        screens.push({ block: b, bi: bi, ex: ex, ei: ei, cx: cx });
+        ex.recommendation && (ex = Object.assign({}, ex), ["sets", "reps", "duration_seconds", "rest_seconds"].forEach(function(key) {
+          ex[key] == null && ex.recommendation[key] != null && (ex[key] = ex.recommendation[key]);
+        })), screens.push({ block: b, bi: bi, ex: ex, ei: ei, cx: cx });
       });
     }), screens;
   }
@@ -10931,7 +11110,7 @@ details.details-moving > :not(summary) {
         var blockLabel = s.block.title || (s.block.type && s.block.type !== "straight" ? s.block.type : "Block " + (s.bi + 1));
         s.block.rounds && (blockLabel += " \xB7 " + s.block.rounds + " rounds"), main.appendChild(el("div", "wblock", blockLabel)), main.appendChild(el("h2", "wname", s.ex.name));
         var dose = doseText(s.ex);
-        if (isCircuit(s.block) && (dose = "Round " + roundOf(s.bi) + " of " + roundsOf(s.block) + (dose ? " \xB7 " + dose : "")), dose && main.appendChild(el("div", "wdose", dose)), isTimed(s.ex))
+        if (isCircuit(s.block) && (dose = "Round " + roundOf(s.bi) + " of " + roundsOf(s.block) + (dose ? " \xB7 " + dose : "")), dose && main.appendChild(el("div", "wdose", dose)), s.ex.recommendation && main.appendChild(el("div", "wnote", s.ex.recommendation.note)), isTimed(s.ex))
           timedBody(main, s, entry);
         else {
           var last = el("div", "wnote wlast", lastLine(entry));
@@ -10939,6 +11118,14 @@ details.details-moving > :not(summary) {
           var wcue = cueOf(s.ex);
           wcue && main.appendChild(el("div", "wnote", wcue)), renderSetPills(main, entry, s.ex, targetOf(s));
         }
+      }
+      if (!cx) {
+        var intended = targetOf(s), completed = entry.sets.filter(Boolean).length, reached = completed >= intended, goal = el(
+          "div",
+          "set-goal" + (reached ? " reached" : ""),
+          (reached ? "Goal reached \xB7 " : "") + completed + " / " + intended + (isCircuit(s.block) ? " rounds" : " sets") + (reached ? " \xB7 Extras welcome" : " completed")
+        );
+        goal.setAttribute("role", "status"), main.appendChild(goal);
       }
       var acts = el("div", "wactions exercise-actions");
       if (!cx) {
@@ -11396,7 +11583,14 @@ details.details-moving > :not(summary) {
       }, ring.appendChild(el("span", null, "0:00")).id = "cxnum", t.appendChild(ring), t.appendChild(el("div", "wblock wphase", a.over ? "Time" : a.until ? "Time remaining" : a.held ? "Paused" : "Tap to start")), head.appendChild(t);
     }
     var line = el("div", "cxscore");
-    line.appendChild(el("b", null, String(a.rounds))), line.appendChild(el("span", null, cxScore(a.rounds, extra, 1))), head.appendChild(line), main.appendChild(head);
+    if (line.appendChild(el("b", null, String(a.rounds))), line.appendChild(el("span", null, cxScore(a.rounds, extra, 1))), head.appendChild(line), main.appendChild(head), s.block.rounds > 0) {
+      var hit = a.rounds >= s.block.rounds, roundGoal = el(
+        "div",
+        "set-goal" + (hit ? " reached" : ""),
+        (hit ? "Goal reached \xB7 " : "") + a.rounds + " / " + s.block.rounds + " rounds" + (hit ? " \xB7 Extras welcome" : " completed")
+      );
+      roundGoal.setAttribute("role", "status"), main.appendChild(roundGoal);
+    }
     var list = el("div", "cxlist");
     (s.block.exercises || []).forEach(function(ex, j) {
       var did = !!a.marks[j], e = cxEntry(s.bi, j), set = e ? cxSet(ex, e) : null, row = el("button", "pickrow cxmove" + (did ? " on" : j === cur ? " cur" : "")), tx = el("div", "pt"), bits = [doseText(ex) || "\u2014"], d = cxDelta(ex);
@@ -11437,7 +11631,7 @@ details.details-moving > :not(summary) {
   function openWatch(w, ex) {
     if (wo) {
       w = w || wo.workout;
-      var em = embedNode(w);
+      var em = embedNode(w, startOf(ex));
       if (em) {
         var body = $("watchbody");
         body.innerHTML = "", body.appendChild(em);
@@ -13777,7 +13971,16 @@ details.details-moving > :not(summary) {
   }
   function renderPumpy() {
     cancelPumpyReset();
-    var log = $("pumpylog"), frag = document.createDocumentFragment(), shown = pumpy.messages.filter(function(m) {
+    var log = $("pumpylog"), frag = document.createDocumentFragment();
+    if (isFree()) {
+      var offer = el("div", "reader-offer");
+      offer.appendChild(el("b", null, "Pumpy \xB7 Included with Spotter Plus")), offer.appendChild(el("p", null, "Combine your saved workouts, build a routine for your goals, get coaching and find alternate exercises. Upgrade to let Pumpy work with your attachments."));
+      var upgrade = el("button", "btn", "Explore Spotter Plus");
+      upgrade.onclick = function() {
+        openPlans({ kind: "pumpy" });
+      }, offer.appendChild(upgrade), frag.appendChild(offer);
+    }
+    var shown = pumpy.messages.filter(function(m) {
       return m.role === "user" || m.role === "assistant";
     });
     if (log.classList.toggle("hello", !shown.length), !shown.length && pumpy.loaded) {
@@ -13967,6 +14170,10 @@ details.details-moving > :not(summary) {
   }
   function sendPumpy(text) {
     if (text = String(text || $("pumpyinput").value || "").trim(), !(!text || pumpy.busy)) {
+      if (isFree()) {
+        openPlans({ kind: "pumpy" });
+        return;
+      }
       var owner = pumpy;
       $("pumpyannounce").textContent = "", pumpy.refs.length && guideLearn("refs");
       var box = $("pumpyinput");
@@ -14031,7 +14238,9 @@ details.details-moving > :not(summary) {
       }
       m.meta.status = accept ? "done" : "declined", (r.messages || []).forEach(function(x) {
         pumpy.messages.push(x);
-      }), r.workout && (r.created ? state.workouts.unshift(r.workout) : absorbWorkout(r.workout)), r.plan && (state.plan = null), renderPumpy();
+      }), r.workout && (r.created && !state.workouts.some(function(w) {
+        return w.id === r.workout.id;
+      }) ? state.workouts.unshift(r.workout) : absorbWorkout(r.workout)), r.plan && (state.plan = null), renderPumpy();
     }).catch(function() {
       toast("Could not reach Spotter \u2014 check your connection."), noBtn.disabled = !1, yesBtn.disabled = !1;
     });
@@ -14886,9 +15095,15 @@ details.details-moving > :not(summary) {
     }), setView("library"), render(), watchPending();
   }
   function deviceFrames(opts) {
-    return !native || !native.contactSheet ? Promise.resolve(null) : sb.auth.getSession().then(function(r) {
-      var s = r.data.session;
-      return s ? (opts.token = s.access_token, native.contactSheet(opts)) : null;
+    if (!native || !native.contactSheet || isFree() && !opts.preview) return Promise.resolve(null);
+    var prepare = opts.url ? api("ingest/prepare", { method: "POST", body: JSON.stringify({ url: opts.url, preview: !!opts.preview, reread: !!opts.reread }) }) : Promise.resolve({ needs_frames: !0 });
+    return prepare.catch(function() {
+      return { needs_frames: !0 };
+    }).then(function(hint) {
+      return hint.needs_frames === !1 ? null : sb.auth.getSession().then(function(r) {
+        var s = r.data.session;
+        return s ? (opts.token = s.access_token, native.contactSheet(opts)) : null;
+      });
     }).then(function(out) {
       return out && out.ok ? out.frames : null;
     }).catch(function() {
@@ -14914,7 +15129,7 @@ details.details-moving > :not(summary) {
       return frames && (body.frames = frames), btn.textContent = "Saving\u2026", api("ingest", { method: "POST", body: JSON.stringify(body) });
     }).then(function(r) {
       if (btn.disabled = !1, btn.textContent = "Save workout", r.status === "processing") {
-        $("addurl").value = "", closeSheet("addsheet"), placePending(r, url, null), toast(withShelf(fromShare ? "Saved from the share sheet \u2014 reading it\u2026" : "Saved \u2014 reading the video\u2026"), 3400);
+        $("addurl").value = "", closeSheet("addsheet"), placePending(r, url, null), toast(withShelf(isFree() ? "Saved \u2014 building a Basic read from available text\u2026" : fromShare ? "Saved from the share sheet \u2014 reading it\u2026" : "Saved \u2014 reading the video\u2026"), 3400);
         return;
       }
       if (r.status === "saved")

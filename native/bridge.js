@@ -71,6 +71,12 @@ async function contactSheet({ file, ...options }) {
     if (spilled) Filesystem.deleteFile({ path: spilled.path, directory: Directory.Cache }).catch(ignore);
   }
 }
+function authPreference(work) {
+  let timer;
+  return Promise.race([Promise.resolve().then(work), new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error('Secure sign-in storage is not responding. Restart Spotter and try again.')), 10000);
+  })]).finally(() => clearTimeout(timer));
+}
 window.SpotterNative = {
   platform: Capacitor.getPlatform(),
   purchases: createPurchases(Capacitor.getPlatform()),
@@ -79,9 +85,9 @@ window.SpotterNative = {
   signInWithApple: sb => signInWithApple(sb, registerPlugin('AppleAuth')),
   signInWithGoogle: sb => signInWithGoogle(sb, registerPlugin('GoogleAuth')),
   authStorage: {
-    getItem: async key => (await Preferences.get({ key })).value,
-    setItem: (key, value) => Preferences.set({ key, value }),
-    removeItem: key => Preferences.remove({ key })
+    getItem: async key => (await authPreference(() => Preferences.get({ key }))).value,
+    setItem: (key, value) => authPreference(() => Preferences.set({ key, value })),
+    removeItem: key => authPreference(() => Preferences.remove({ key }))
   },
   saveDraft(value) {
     draftWrites = draftWrites.then(() => value === null
