@@ -39,6 +39,8 @@
 //   POST /api/worker/tick           drain the ingest queue (shared secret, not a user)
 //   POST /api/worker/media          one tier of reading the video, in its own isolate
 //   POST /api/worker/probe          one-off measurement behind the same secret
+//   POST /api/worker/ops-alert      push what ops_alert_check() fired to staff devices
+//   GET  /api/ops/scorecard         this week's operating review as JSON (staff only)
 //
 // Ingest is asynchronous: it enqueues and returns in ~200ms, and the worker fills
 // the row in afterwards. The browser watches its own workouts row over Realtime.
@@ -56,7 +58,8 @@ import {
   handleWebhook, pricesBlock, returnBaseFrom, sellablePlans, syncFromSession, syncUser,
 } from "./billing.ts";
 import { forgetStravaQuietly, handleCallback, handleStrava } from "./strava.ts";
-import { pushConfig, runPushTick } from "./push.ts";
+import { pushConfig, runPushTick, sendPush } from "./push.ts";
+import { opsScorecard, runOpsAlert } from "./ops.ts";
 import { CATALOG, type CatalogEntry, canonicalize, catalogById, standardOf } from "./catalog.ts";
 import { assertPublicUrl, checkUrl, dnsAvailable, safeFetch } from "./net.ts";
 import {
@@ -12650,6 +12653,21 @@ Deno.serve(async (req: Request) => {
       return json({ status: "ok", ...out });
     }
 
+    // The operational pager, every fifteen minutes from pg_cron. Same shared
+    // secret and the same reason as the routes above: nobody is signed in, and
+    // the whole point of this one is that it works while the owner is asleep.
+    //
+    // `?dry=1` reports the notification it would have sent without sending it,
+    // which is how you find out why a phone stayed quiet without breaking
+    // something at 3 am to make it ring.
+    if (req.method === "POST" && path === "/api/worker/ops-alert") {
+      if (!secretEquals(req.headers.get("x-worker-secret") ?? "", WORKER_SECRET)) {
+        return json({ status: "error", message: "Not found" }, 404);
+      }
+      const out = await runOpsAlert(sendPush, Date.now(), url.searchParams.get("dry") === "1");
+      return json({ status: "ok", ...out });
+    }
+
     // Stripe holds no Supabase token and never will, so its events are matched
     // here, above the gate, for the same reason the worker's routes are. The
     // request is authenticated instead by the signature over its raw body.
@@ -12674,6 +12692,21 @@ Deno.serve(async (req: Request) => {
       userId = await userFromIngestKey(req, url);
     }
     if (!userId) return json({ status: "error", message: "Sign in to use Spotter." }, 401, cors);
+
+    // The weekly scorecard, for staff and nobody else. Matched here, above the
+    // metered user routes, because it spends no allowance and calls no model —
+    // it is nine aggregate reads of service-role-only views.
+    //
+    // 404 rather than 403 for a non-staff account: the existence of an admin
+    // surface is itself information, and a signed-in stranger learning that
+    // Spotter has one is the first step of looking for a hole in it.
+    if (req.method === "GET" && path === "/api/ops/scorecard") {
+      let plan = "free";
+      try { plan = String((await dbSelect("profiles", `id=eq.${userId}&select=plan`))[0]?.plan ?? "free"); }
+      catch (e) { console.error("ops: could not read the plan for the scorecard request", e); }
+      if (plan !== "staff") return json({ status: "error", message: "Not found" }, 404, cors);
+      return json(await opsScorecard(Date.now(), url.searchParams.get("week") ?? undefined), 200, cors);
+    }
 
     if (req.method === "POST") req = await boundedRequest(req);
     return await guardedUserRequest(req, path, userId, cors, async () => {
