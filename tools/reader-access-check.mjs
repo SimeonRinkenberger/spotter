@@ -66,7 +66,7 @@ const written=updates.filter(x=>x.table==='workouts');assert.equal(written.lengt
 assert.match(written[0].query,/user_id=eq.plus/);assert.equal(written[0].body.read_quality,'premium');
 // A downgrade while a visual job runs must produce a new Basic card.
 updates.length=0;c.premiumAccess=async()=>false;c.buildCard=async meta=>{assert.equal(meta.pack,undefined);return structuredClone(basic);};
-c.aiActor={run:async(_,f)=>f()};c.providerFor=()=>({cacheable:false});
+c.aiActor={run:async(_,f)=>f(),getStore:()=>undefined};c.providerFor=()=>({cacheable:false});
 await vm.runInContext('finishJob(job,p,meta,card,null,false)',c);
 assert.equal(updates.find(x=>x.table==='workouts').body.title,'Basic');
 assert.equal(updates.find(x=>x.table==='workouts').body.read_quality,'basic');
