@@ -7777,6 +7777,29 @@ async function jobStep(id: string, step: string, extra: Record<string, unknown>,
 }
 
 /**
+ * Publish to the shared cache, and say so when the fence refuses.
+ *
+ * `publish_ingest_cache` returns false — it does not raise — when this worker has
+ * been reclaimed, which is the one condition the fence was added to surface. Both
+ * call sites used to discard that boolean, so a fenced-out worker carried on into
+ * `finish_ingest_job` as though the cache had been written. The write correctly
+ * did not happen either way; what was lost was the signal
+ * design/reader-fixes/RELIABILITY-GTM.md step 5 asks the owner to watch.
+ *
+ * A warning and nothing else, deliberately: the job is already doomed at the next
+ * fenced RPC, and the ops-alerts work reads stale commits out of SQL rather than
+ * from a counter this function would have to keep.
+ */
+async function publishCache(job: Job, cache: Record<string, unknown>, patch = false): Promise<boolean> {
+  const ok = await rpc("publish_ingest_cache", {
+    p_job: job.id, p_user: job.user_id, p_worker: WORKER_ID,
+    p_generation: job.claim_generation, p_cache: cache, p_patch: patch,
+  });
+  if (ok !== true) console.warn("stale cache publication rejected", job.id, cache.shortcode ?? "-");
+  return ok === true;
+}
+
+/**
  * Write the finished card onto every workouts row waiting for this video, not
  * just the one that triggered the job. This is why the job is keyed on the
  * shortcode: two users saving the same reel at the same moment share one
@@ -7800,8 +7823,7 @@ async function finishJob(
         () => buildCard(bm, p, { purpose: "extract", userId: basicOwner.user_id }));
       labelRecommendations(basic, bm);
       if (providerFor(p.platform).cacheable && await captionMayOverwriteCache(p.shortcode, bm))
-        await rpc("publish_ingest_cache", { p_job: job.id, p_user: job.user_id, p_worker: WORKER_ID,
-          p_generation: job.claim_generation, p_cache: { shortcode: p.shortcode, basic_card: basic, basic_v: CARD_V }, p_patch: true });
+        await publishCache(job, { shortcode: p.shortcode, basic_card: basic, basic_v: CARD_V }, true);
     }
   }
   // The database owns the final authorization and claim check. Nothing visible
@@ -8508,8 +8530,7 @@ async function runJobGuarded(job: Job): Promise<void> {
       row.pack_v = PACK_V;
     }
     if (readQuality(meta) === "basic") { row.basic_card = card; row.basic_v = CARD_V; }
-    await rpc("publish_ingest_cache", { p_job: job.id, p_user: job.user_id, p_worker: WORKER_ID,
-      p_generation: job.claim_generation, p_cache: row });
+    await publishCache(job, row);
   }
 
   labelRecommendations(card, meta);
@@ -12304,8 +12325,22 @@ async function handlePumpyConfirm(req: Request, userId: string, cors: Cors): Pro
   const rows = await dbSelect("pumpy_messages", `id=eq.${mid}&user_id=eq.${userId}&role=eq.assistant&select=*`);
   const m = rows[0];
   if (!m?.meta?.proposal) return json({ status: "error", message: "Not found." }, 404, cors);
-  // A lost HTTP response is safe to retry, including after an entitlement change.
-  if (m.meta.confirm_response) return json(m.meta.confirm_response, 200, cors);
+  // A lost HTTP response is safe to retry, including after an entitlement change —
+  // but only for the SAME decision. Accepting after declining used to land here
+  // and get 200 with the decline receipt ("No problem — nothing was changed.")
+  // because the idempotency key was the message and not the decision. It is a
+  // conflict, and the receipt rides along so the client still has the message the
+  // thread already holds. `confirm_pumpy_proposal` makes the same distinction, so
+  // a racing second request gets the same answer from the database.
+  if (m.meta.confirm_response) {
+    const decided = m.meta.confirm_accept ?? (m.meta.status === "done");
+    if (decided !== body.accept) {
+      return json({ ...m.meta.confirm_response, status: "conflict",
+        message: m.meta.status === "declined" ? "That one was already declined." : "That one was already accepted." },
+        409, cors);
+    }
+    return json(m.meta.confirm_response, 200, cors);
+  }
   if (m.meta.status !== "pending") return json({ status: "error", message: "That proposal was already resolved." }, 409, cors);
   try {
     const prepared = body.accept ? await execProposal(userId, m.meta.proposal as PumpyProposal, m.meta.model ?? null) : {};
