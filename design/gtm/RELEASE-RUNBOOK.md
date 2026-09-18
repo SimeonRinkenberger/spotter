@@ -30,10 +30,10 @@ marked **OWNER**. Everything else the senior session runs from the main checkout
    (`select cron.alter_job(jobid, active := false) from cron.job where jobname = 'spotter-worker-tick';`)
 3. Confirm no job is queued or running (re-run the audit). If any are running, wait for them — the edge
    deadline is 8 s per tick — then re-check. Do not proceed with a running job.
-4. Apply the three migrations in file order (one command; the CLI applies them in sequence):
+4. Apply the four migrations in file order (one command; the CLI applies them in sequence):
    `supabase db push --yes`
    **Note the wall-clock time (UTC) this returns.** Expect exactly `20260917130000`, `20260917140000`,
-   `20260917150000` in the applied list.
+   `20260917150000`, `20260917180000` (ops scorecard + alerts) in the applied list.
 5. **Immediately**, with no other step in between, deploy the edge function (no `--no-verify-jwt` flag;
    `config.toml` carries `verify_jwt = false`):
    `supabase functions deploy spotter`
