@@ -1,0 +1,1121 @@
+{
+  "$comment": "PAIRED PUMPY CASES for the $5 screen, per EXPERIMENT-5-DOLLAR.md: 'Add 12 paired Pumpy cases (24 calls maximum): two complete attachments, repeated exercises, conflicting time/equipment constraints, unavailable attachment, missing essential context, and sufficient context that should not trigger questions.' Cases are in pairs (field 'pair'): each pair puts the same failure mode under two different surfaces so a difference between them is attributable. The attached cards are SYNTHETIC fixtures written in this repo in the shape of tools/fixtures/pumpy-wodfather-card.json — no user's real workout and no creator's media is reproduced. NOTHING HERE HAS BEEN RUN: no AI call, no thread, no save.",
+  "cases_v": 1,
+  "counts": {
+    "paired_cases": 12,
+    "spares": 1,
+    "pairs": 6
+  },
+  "$counts": "Twelve paired cases, per EXPERIMENT-5-DOLLAR.md, plus one spare (P07) that is NOT part of the twelve and is not in the call budget.",
+  "built_at": "2026-09-17",
+  "call_budget": "24 model calls maximum across all cases at two repetitions each; P01, P03, P04 and P08 are expected to cost zero, so the real ceiling is lower.",
+  "deterministic_baseline": "tools/pumpy-combine-test.ts pins deterministicCombine's behaviour: it produces a proposal only for a literal 'combine these' request with two or more distinct attachments and no added constraint, and returns null for the interrogative form, for any constraint or addition, for a single attachment, for duplicates and over the size cap. supabase/functions/spotter/index.ts:11970 additionally disables it whenever a thread already exists. Cases marked route 'deterministic_combine' are the free comparison for the model arms; a model arm that does worse than free code on P01/P03/P04 is a finding on its own.",
+  "question_ceiling": "The Pumpy system prompt (supabase/functions/spotter/index.ts:11455) allows one or two concise questions about goal, available time or equipment when essential context is unclear, and no proposal until answered. plan-v2's planner instruction says the same. max_questions in each case is therefore a hard ceiling, and an unnecessary question is a scored failure, not a style note.",
+  "scoring_note": "Score each case on the metrics named in what_is_scored, not on prose quality. EXPERIMENT-PLAN.md section 3: 'Reviewers should not reward verbosity or superficial resemblance to a reference answer.'",
+  "not_verified": [
+    "No case has been executed. Every 'expected' field is a pre-registered expectation written before any output exists, which is the point.",
+    "The HTTP 400 text in P08 was read from supabase/functions/spotter/index.ts:11960 in this worktree; it has not been exercised against a running server."
+  ],
+  "attachment_fixtures": {
+    "10000000-0000-4000-8000-000000000001": {
+      "id": "10000000-0000-4000-8000-000000000001",
+      "url": "https://www.tiktok.com/@thewodfather/video/7679960172495785246",
+      "platform": "tiktok",
+      "author": "thewodfather",
+      "title": "Complex Fives",
+      "category": "Strength",
+      "muscle_groups": [
+        "full body"
+      ],
+      "equipment": [
+        "kettlebell"
+      ],
+      "duration_minutes": 15,
+      "has_full_workout": true,
+      "ingest_status": "ready",
+      "blocks": [
+        {
+          "title": "Complex",
+          "type": "amrap",
+          "rounds": null,
+          "rest_seconds": null,
+          "exercises": [
+            {
+              "name": "Close Grip Push Ups",
+              "canonical_id": "push-up",
+              "sets": null,
+              "reps": "5",
+              "duration_seconds": null,
+              "rest_seconds": null,
+              "weight": null,
+              "equipment": "kettlebell",
+              "cue": "Slow and controlled for time under tension, core tight.",
+              "as_performed": {
+                "equipment": [
+                  "kettlebell"
+                ],
+                "hand_placement": "both hands stacked on the kettlebell handle",
+                "grip_width": "narrow",
+                "surface": "hands elevated on the bell, feet on the mat"
+              },
+              "evidence": {
+                "source": "transcript",
+                "quote": "take these slow and controlled so that we get time under tension",
+                "t": 15,
+                "verified": true
+              },
+              "t0": 10.5,
+              "t1": 25,
+              "delta": "hands on the kettlebell handle instead of the floor"
+            },
+            {
+              "name": "Kettlebell Swing",
+              "canonical_id": "kettlebell-swing",
+              "sets": null,
+              "reps": "5",
+              "duration_seconds": null,
+              "rest_seconds": null,
+              "weight": null,
+              "equipment": "kettlebell",
+              "cue": "Hip hinge, tension through the glutes and hamstrings.",
+              "as_performed": {
+                "equipment": [
+                  "kettlebell"
+                ],
+                "hand_placement": "two hands on the handle",
+                "range_of_motion": "bell to chest height, not overhead"
+              },
+              "evidence": {
+                "source": "transcript",
+                "quote": "finding that tension through the glutes and the hamstrings",
+                "t": 45,
+                "verified": true
+              },
+              "t0": 41,
+              "t1": 54
+            },
+            {
+              "name": "Goblet Squat",
+              "canonical_id": "goblet-squat",
+              "sets": null,
+              "reps": "5",
+              "duration_seconds": null,
+              "rest_seconds": null,
+              "weight": null,
+              "equipment": "kettlebell",
+              "cue": "Below 90 degrees, then drive the ground away from you.",
+              "as_performed": {
+                "equipment": [
+                  "kettlebell"
+                ],
+                "load_position": "held by the horns at the chest"
+              },
+              "t0": 54.5,
+              "t1": 64
+            }
+          ]
+        }
+      ]
+    },
+    "20000000-0000-4000-8000-000000000002": {
+      "id": "20000000-0000-4000-8000-000000000002",
+      "url": null,
+      "platform": null,
+      "author": null,
+      "title": "Full Body Dumbbell Finisher",
+      "category": "Full Body",
+      "muscle_groups": [
+        "full body"
+      ],
+      "equipment": [
+        "dumbbells"
+      ],
+      "duration_minutes": 18,
+      "has_full_workout": true,
+      "ingest_status": "ready",
+      "blocks": [
+        {
+          "title": null,
+          "type": "circuit",
+          "rounds": 3,
+          "rest_seconds": 60,
+          "exercises": [
+            {
+              "name": "Goblet Squat",
+              "canonical_id": "goblet-squat",
+              "sets": 3,
+              "reps": "12",
+              "duration_seconds": null,
+              "rest_seconds": null,
+              "weight": null,
+              "equipment": "dumbbells",
+              "cue": ""
+            },
+            {
+              "name": "Bulgarian Split Squat",
+              "canonical_id": "bulgarian-split-squat",
+              "sets": 3,
+              "reps": "10",
+              "duration_seconds": null,
+              "rest_seconds": null,
+              "weight": null,
+              "equipment": "dumbbells",
+              "cue": ""
+            },
+            {
+              "name": "Renegade Row",
+              "canonical_id": "renegade-row",
+              "sets": 3,
+              "reps": "8",
+              "duration_seconds": null,
+              "rest_seconds": null,
+              "weight": null,
+              "equipment": "dumbbells",
+              "cue": ""
+            },
+            {
+              "name": "Plank",
+              "canonical_id": "plank",
+              "sets": null,
+              "reps": null,
+              "duration_seconds": 45,
+              "rest_seconds": null,
+              "weight": null,
+              "equipment": null,
+              "cue": ""
+            }
+          ]
+        }
+      ]
+    },
+    "30000000-0000-4000-8000-000000000003": {
+      "id": "30000000-0000-4000-8000-000000000003",
+      "url": null,
+      "platform": null,
+      "author": null,
+      "title": "AMRAP 20",
+      "category": "Conditioning",
+      "muscle_groups": [
+        "full body"
+      ],
+      "equipment": [
+        "barbell"
+      ],
+      "duration_minutes": 20,
+      "has_full_workout": true,
+      "ingest_status": "ready",
+      "blocks": [
+        {
+          "title": "AMRAP 20",
+          "type": "circuit",
+          "rounds": null,
+          "rest_seconds": null,
+          "exercises": [
+            {
+              "name": "Power Clean",
+              "canonical_id": "power-clean",
+              "sets": null,
+              "reps": "5",
+              "duration_seconds": null,
+              "rest_seconds": null,
+              "weight": "135 lb",
+              "equipment": "barbell",
+              "cue": "",
+              "t0": 0.5,
+              "t1": 4.0
+            },
+            {
+              "name": "Bar Facing Burpee",
+              "canonical_id": "burpee",
+              "sets": null,
+              "reps": "10",
+              "duration_seconds": null,
+              "rest_seconds": null,
+              "weight": null,
+              "equipment": "barbell",
+              "cue": "",
+              "t0": 4.0,
+              "t1": 8.5
+            },
+            {
+              "name": "Air Squat",
+              "canonical_id": "bodyweight-squat",
+              "sets": null,
+              "reps": "15",
+              "duration_seconds": null,
+              "rest_seconds": null,
+              "weight": null,
+              "equipment": null,
+              "cue": "",
+              "t0": 8.5,
+              "t1": 12.0
+            },
+            {
+              "name": "Power Clean",
+              "canonical_id": "power-clean",
+              "sets": null,
+              "reps": "5",
+              "duration_seconds": null,
+              "rest_seconds": null,
+              "weight": "135 lb",
+              "equipment": "barbell",
+              "cue": "",
+              "t0": 12.0,
+              "t1": 15.0
+            },
+            {
+              "name": "Bar Facing Burpee",
+              "canonical_id": "burpee",
+              "sets": null,
+              "reps": "10",
+              "duration_seconds": null,
+              "rest_seconds": null,
+              "weight": null,
+              "equipment": "barbell",
+              "cue": "",
+              "t0": 15.0,
+              "t1": 18.5
+            },
+            {
+              "name": "Air Squat",
+              "canonical_id": "bodyweight-squat",
+              "sets": null,
+              "reps": "15",
+              "duration_seconds": null,
+              "rest_seconds": null,
+              "weight": null,
+              "equipment": null,
+              "cue": "",
+              "t0": 18.5,
+              "t1": 22.0
+            }
+          ]
+        }
+      ]
+    },
+    "40000000-0000-4000-8000-000000000004": {
+      "id": "40000000-0000-4000-8000-000000000004",
+      "url": null,
+      "platform": null,
+      "author": null,
+      "title": "Push-Up Grips",
+      "category": "Push",
+      "muscle_groups": [
+        "chest"
+      ],
+      "equipment": [
+        "kettlebell"
+      ],
+      "duration_minutes": 8,
+      "has_full_workout": true,
+      "ingest_status": "ready",
+      "blocks": [
+        {
+          "title": "Grips",
+          "type": "sequence",
+          "rounds": null,
+          "rest_seconds": null,
+          "exercises": [
+            {
+              "name": "Push-Up",
+              "canonical_id": "push-up",
+              "sets": null,
+              "reps": "8",
+              "duration_seconds": null,
+              "rest_seconds": null,
+              "weight": null,
+              "equipment": null,
+              "cue": "Hands on the bell, thumbs touching.",
+              "as_performed": {
+                "grip_width": "narrow",
+                "surface": "hands elevated on the kettlebell handle"
+              },
+              "t0": 2,
+              "t1": 9,
+              "delta": "hands on the kettlebell handle instead of the floor"
+            },
+            {
+              "name": "Push-Up",
+              "canonical_id": "push-up",
+              "sets": null,
+              "reps": "8",
+              "duration_seconds": null,
+              "rest_seconds": null,
+              "weight": null,
+              "equipment": null,
+              "cue": "Hands wide, chest to the floor.",
+              "as_performed": {
+                "grip_width": "wide",
+                "surface": "hands on the floor"
+              },
+              "t0": 12,
+              "t1": 19
+            },
+            {
+              "name": "Push-Up",
+              "canonical_id": "push-up",
+              "sets": null,
+              "reps": "8",
+              "duration_seconds": null,
+              "rest_seconds": null,
+              "weight": null,
+              "equipment": null,
+              "cue": "Feet on the box.",
+              "as_performed": {
+                "grip_width": "shoulder width",
+                "surface": "feet elevated on a box"
+              },
+              "t0": 22,
+              "t1": 30
+            }
+          ]
+        }
+      ]
+    },
+    "50000000-0000-4000-8000-000000000005": {
+      "id": "50000000-0000-4000-8000-000000000005",
+      "url": null,
+      "platform": null,
+      "author": null,
+      "title": "Leg Day (edited)",
+      "category": "Legs",
+      "muscle_groups": [
+        "quads",
+        "glutes"
+      ],
+      "equipment": [
+        "barbell",
+        "bench"
+      ],
+      "duration_minutes": 45,
+      "has_full_workout": true,
+      "ingest_status": "ready",
+      "blocks": [
+        {
+          "title": "Main",
+          "type": "straight",
+          "rounds": null,
+          "rest_seconds": 150,
+          "exercises": [
+            {
+              "name": "Back Squat",
+              "canonical_id": "back-squat",
+              "sets": 5,
+              "reps": "5",
+              "duration_seconds": null,
+              "rest_seconds": null,
+              "weight": "100 kg",
+              "equipment": "barbell",
+              "cue": "Hips below the knees.",
+              "edited_by_user": true
+            },
+            {
+              "name": "Romanian Deadlift",
+              "canonical_id": "romanian-deadlift",
+              "sets": 3,
+              "reps": "8",
+              "duration_seconds": null,
+              "rest_seconds": null,
+              "weight": null,
+              "equipment": "barbell",
+              "cue": "",
+              "recommendation": {
+                "rest_seconds": 90,
+                "note": "Suggested, not specified in source",
+                "origin": "ai_recommendation"
+              }
+            },
+            {
+              "name": "Bulgarian Split Squat",
+              "canonical_id": "bulgarian-split-squat",
+              "sets": 3,
+              "reps": "10",
+              "duration_seconds": null,
+              "rest_seconds": null,
+              "weight": null,
+              "equipment": "bench",
+              "cue": "",
+              "edited_by_user": true
+            },
+            {
+              "name": "Calf Raise",
+              "canonical_id": "calf-raise",
+              "sets": 4,
+              "reps": "15",
+              "duration_seconds": null,
+              "rest_seconds": null,
+              "weight": null,
+              "equipment": null,
+              "cue": ""
+            }
+          ]
+        }
+      ]
+    },
+    "60000000-0000-4000-8000-000000000006": {
+      "id": "60000000-0000-4000-8000-000000000006",
+      "url": null,
+      "platform": null,
+      "author": null,
+      "title": "30 Min No Repeats",
+      "category": "Conditioning",
+      "muscle_groups": [
+        "full body"
+      ],
+      "equipment": [],
+      "duration_minutes": 30,
+      "has_full_workout": true,
+      "ingest_status": "ready",
+      "blocks": [
+        {
+          "title": "Circuit",
+          "type": "circuit",
+          "rounds": 1,
+          "rest_seconds": 15,
+          "exercises": [
+            {
+              "name": "Jumping Jack",
+              "canonical_id": "jumping-jack",
+              "sets": null,
+              "reps": null,
+              "duration_seconds": 45,
+              "rest_seconds": null,
+              "weight": null,
+              "equipment": null,
+              "cue": ""
+            },
+            {
+              "name": "Mountain Climber",
+              "canonical_id": "mountain-climber",
+              "sets": null,
+              "reps": null,
+              "duration_seconds": 45,
+              "rest_seconds": null,
+              "weight": null,
+              "equipment": null,
+              "cue": ""
+            },
+            {
+              "name": "Burpee",
+              "canonical_id": "burpee",
+              "sets": null,
+              "reps": null,
+              "duration_seconds": 45,
+              "rest_seconds": null,
+              "weight": null,
+              "equipment": null,
+              "cue": ""
+            },
+            {
+              "name": "High Knees",
+              "canonical_id": "high-knees",
+              "sets": null,
+              "reps": null,
+              "duration_seconds": 45,
+              "rest_seconds": null,
+              "weight": null,
+              "equipment": null,
+              "cue": ""
+            },
+            {
+              "name": "Squat Jump",
+              "canonical_id": "jump-squat",
+              "sets": null,
+              "reps": null,
+              "duration_seconds": 45,
+              "rest_seconds": null,
+              "weight": null,
+              "equipment": null,
+              "cue": ""
+            },
+            {
+              "name": "Plank Shoulder Tap",
+              "canonical_id": "plank-shoulder-tap",
+              "sets": null,
+              "reps": null,
+              "duration_seconds": 45,
+              "rest_seconds": null,
+              "weight": null,
+              "equipment": null,
+              "cue": ""
+            },
+            {
+              "name": "Reverse Lunge",
+              "canonical_id": "reverse-lunge",
+              "sets": null,
+              "reps": null,
+              "duration_seconds": 45,
+              "rest_seconds": null,
+              "weight": null,
+              "equipment": null,
+              "cue": ""
+            },
+            {
+              "name": "Bicycle Crunch",
+              "canonical_id": "bicycle-crunch",
+              "sets": null,
+              "reps": null,
+              "duration_seconds": 45,
+              "rest_seconds": null,
+              "weight": null,
+              "equipment": null,
+              "cue": ""
+            },
+            {
+              "name": "Skater Jump",
+              "canonical_id": "skater-jump",
+              "sets": null,
+              "reps": null,
+              "duration_seconds": 45,
+              "rest_seconds": null,
+              "weight": null,
+              "equipment": null,
+              "cue": ""
+            },
+            {
+              "name": "Push-Up",
+              "canonical_id": "push-up",
+              "sets": null,
+              "reps": null,
+              "duration_seconds": 45,
+              "rest_seconds": null,
+              "weight": null,
+              "equipment": null,
+              "cue": ""
+            },
+            {
+              "name": "Glute Bridge",
+              "canonical_id": "glute-bridge",
+              "sets": null,
+              "reps": null,
+              "duration_seconds": 45,
+              "rest_seconds": null,
+              "weight": null,
+              "equipment": null,
+              "cue": ""
+            },
+            {
+              "name": "Dead Bug",
+              "canonical_id": "dead-bug",
+              "sets": null,
+              "reps": null,
+              "duration_seconds": 45,
+              "rest_seconds": null,
+              "weight": null,
+              "equipment": null,
+              "cue": ""
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "cases": [
+    {
+      "case_id": "P01",
+      "kind": "two_complete_attachments",
+      "pair": "A",
+      "selection": "primary",
+      "attachments": [
+        {
+          "workout_id": "10000000-0000-4000-8000-000000000001",
+          "title": "Complex Fives",
+          "available": true
+        },
+        {
+          "workout_id": "20000000-0000-4000-8000-000000000002",
+          "title": "Full Body Dumbbell Finisher",
+          "available": true
+        }
+      ],
+      "prior_turns": [],
+      "user_message": "combine these",
+      "expected": {
+        "route": "deterministic_combine",
+        "model_calls": 0,
+        "mode": "proposal",
+        "max_questions": 0,
+        "must": [
+          "every block of both attachments present, in order",
+          "Complex Fives keeps type amrap with rounds null; the Finisher keeps rounds 3 and rest_seconds 60",
+          "each exercise keeps its as_performed, evidence quote, t0/t1 and delta",
+          "each combined exercise carries a source pointing at the attached original's block and exercise index",
+          "equipment unions to ['kettlebell','dumbbells']; duration_minutes is null, not 15+18"
+        ],
+        "must_not": [
+          "a model call",
+          "an invented session duration",
+          "a merged 'Goblet Squat' — the two attachments each have one and both survive"
+        ]
+      },
+      "what_is_scored": [
+        "attachment acknowledgment",
+        "occurrence coverage",
+        "no invented programming",
+        "cost (must be zero)"
+      ],
+      "reviewer_notes": "The zero-cost baseline. tools/pumpy-combine-test.ts already asserts most of this; the case exists here so the paid arms are compared against it rather than against each other."
+    },
+    {
+      "case_id": "P02",
+      "kind": "two_complete_attachments",
+      "pair": "A",
+      "selection": "primary",
+      "attachments": [
+        {
+          "workout_id": "10000000-0000-4000-8000-000000000001",
+          "title": "Complex Fives",
+          "available": true
+        },
+        {
+          "workout_id": "20000000-0000-4000-8000-000000000002",
+          "title": "Full Body Dumbbell Finisher",
+          "available": true
+        }
+      ],
+      "prior_turns": [],
+      "user_message": "can you combine these workouts?",
+      "expected": {
+        "route": "model",
+        "model_calls": 1,
+        "mode": "proposal",
+        "max_questions": 0,
+        "must": [
+          "the same proposal content P01 produces deterministically",
+          "attachment_acknowledgments names both workout ids with their revisions",
+          "coverage lists every event with disposition 'included'"
+        ],
+        "must_not": [
+          "a question — nothing essential is missing",
+          "any dropped occurrence relative to P01"
+        ]
+      },
+      "what_is_scored": [
+        "paired difference against P01's deterministic output",
+        "unnecessary-question rate",
+        "cost and latency vs P01"
+      ],
+      "reviewer_notes": "PAIRED WITH P01 ON PURPOSE. Same attachments, same intent, phrased as a question — which routes past deterministicCombine (it returns null for the interrogative form, per tools/pumpy-combine-test.ts). Any content difference from P01 is a model defect with a free correct answer sitting next to it."
+    },
+    {
+      "case_id": "P03",
+      "kind": "repeated_exercises",
+      "pair": "B",
+      "selection": "primary",
+      "attachments": [
+        {
+          "workout_id": "30000000-0000-4000-8000-000000000003",
+          "title": "AMRAP 20",
+          "available": true
+        },
+        {
+          "workout_id": "20000000-0000-4000-8000-000000000002",
+          "title": "Full Body Dumbbell Finisher",
+          "available": true
+        }
+      ],
+      "prior_turns": [],
+      "user_message": "combine these",
+      "expected": {
+        "route": "deterministic_combine",
+        "model_calls": 0,
+        "mode": "proposal",
+        "max_questions": 0,
+        "must": [
+          "all six occurrences of the AMRAP survive — clean, burpee, squat, clean, burpee, squat",
+          "the second Power Clean keeps its own source exercise_index (3), not the first's"
+        ],
+        "must_not": [
+          "deduplication of repeated movements",
+          "reordering into one clean, one burpee, one squat"
+        ]
+      },
+      "what_is_scored": [
+        "occurrence coverage on repeats",
+        "source index correctness"
+      ],
+      "reviewer_notes": "Repeated movements are the case where 'helpful' tidying destroys the creator's structure."
+    },
+    {
+      "case_id": "P04",
+      "kind": "repeated_exercises",
+      "pair": "B",
+      "selection": "primary",
+      "attachments": [
+        {
+          "workout_id": "40000000-0000-4000-8000-000000000004",
+          "title": "Push-Up Grips",
+          "available": true
+        },
+        {
+          "workout_id": "10000000-0000-4000-8000-000000000001",
+          "title": "Complex Fives",
+          "available": true
+        }
+      ],
+      "prior_turns": [],
+      "user_message": "combine these workouts",
+      "expected": {
+        "route": "deterministic_combine",
+        "model_calls": 0,
+        "mode": "proposal",
+        "max_questions": 0,
+        "must": [
+          "three Push-Up occurrences survive with grip_width narrow / wide / shoulder width intact",
+          "the narrow one keeps surface 'hands elevated on the kettlebell handle' and its delta",
+          "the fourth push-up from Complex Fives stays separate from all three"
+        ],
+        "must_not": [
+          "merging same-named exercises into one",
+          "copying one occurrence's as_performed onto another"
+        ]
+      },
+      "what_is_scored": [
+        "variation/equipment error rate",
+        "occurrence coverage"
+      ],
+      "reviewer_notes": "PAIRED WITH P03. Same structural risk, but here the repeats share a NAME and differ only in as_performed — the failure the golden fixture's diamond dispute is about."
+    },
+    {
+      "case_id": "P05",
+      "kind": "conflicting_time_constraint",
+      "pair": "C",
+      "selection": "primary",
+      "attachments": [
+        {
+          "workout_id": "10000000-0000-4000-8000-000000000001",
+          "title": "Complex Fives",
+          "available": true
+        },
+        {
+          "workout_id": "50000000-0000-4000-8000-000000000005",
+          "title": "Leg Day (edited)",
+          "available": true
+        }
+      ],
+      "prior_turns": [],
+      "user_message": "combine these into 20 minutes",
+      "expected": {
+        "route": "model",
+        "model_calls": 1,
+        "mode": "proposal",
+        "max_questions": 1,
+        "must": [
+          "constraint_results carries the 20-minute constraint with status satisfied or conflict and an explanation",
+          "everything dropped appears in coverage with disposition 'omitted' and a reason",
+          "duration_assumptions states what a set was assumed to cost",
+          "the Back Squat's edited_by_user flag and 100 kg survive if it is kept"
+        ],
+        "must_not": [
+          "silently dropping movements without a coverage entry",
+          "re-attributing a shortened dose to the creator",
+          "an estimated calorie figure or an invented user capacity"
+        ]
+      },
+      "what_is_scored": [
+        "hard constraint retention",
+        "honest omission labels",
+        "attribution error"
+      ],
+      "reviewer_notes": "deterministicCombine returns null for a constrained combine (pumpy-combine-test.ts), so this is genuinely a model job. 45+15 minutes into 20 forces real omission."
+    },
+    {
+      "case_id": "P06",
+      "kind": "conflicting_equipment_constraint",
+      "pair": "C",
+      "selection": "primary",
+      "attachments": [
+        {
+          "workout_id": "10000000-0000-4000-8000-000000000001",
+          "title": "Complex Fives",
+          "available": true
+        }
+      ],
+      "prior_turns": [],
+      "user_message": "I only have dumbbells, no kettlebell — make this work",
+      "expected": {
+        "route": "model",
+        "model_calls": 1,
+        "mode": "proposal",
+        "max_questions": 1,
+        "must": [
+          "every substitution labelled as a change, with the original movement named",
+          "the creator's 5-rep dose stays attached to the creator even where the movement was swapped, or is dropped — never silently transferred",
+          "the negated word 'kettlebell' in the user's message does not become an equipment claim"
+        ],
+        "must_not": [
+          "presenting a dumbbell substitute as what the creator demonstrated",
+          "keeping as_performed ('both hands stacked on the kettlebell handle') on a substituted movement"
+        ]
+      },
+      "what_is_scored": [
+        "variation/equipment error",
+        "attribution error",
+        "Pumpy completeness"
+      ],
+      "reviewer_notes": "PAIRED WITH P05 — same 'constraint conflicts with the source' shape, one constraint about time and one about equipment. 'no kettlebell' is also the literal negation case: score.ts:436-448 exempts a mention negated within five tokens, and this is the user-side version of it."
+    },
+    {
+      "case_id": "P07",
+      "kind": "conflicting_time_and_equipment",
+      "pair": "C",
+      "selection": "spare",
+      "attachments": [
+        {
+          "workout_id": "30000000-0000-4000-8000-000000000003",
+          "title": "AMRAP 20",
+          "available": true
+        }
+      ],
+      "prior_turns": [],
+      "user_message": "turn this into a 10 minute workout I can do in a hotel room with no equipment",
+      "expected": {
+        "route": "model",
+        "model_calls": 1,
+        "mode": "clarify_or_proposal",
+        "max_questions": 2,
+        "must": [
+          "the conflict is stated: a barbell AMRAP cannot be performed with no equipment, so this is a new workout inspired by the source, not the source",
+          "constraint_results has an entry per constraint (time, equipment, location)",
+          "coverage marks the barbell movements 'replaced' with a reason"
+        ],
+        "must_not": [
+          "claiming the creator prescribed the bodyweight version",
+          "quietly keeping the 135 lb load on a substituted movement"
+        ]
+      },
+      "what_is_scored": [
+        "clarification quality",
+        "hard constraint retention",
+        "attribution error"
+      ],
+      "reviewer_notes": "SPARE, not one of the twelve. Both constraints at once, and they conflict with each other as well as with the source. Two questions is the ceiling; zero is acceptable if the assumptions are stated explicitly. Swap it in for P05 or P06 if either turns out to be too easy."
+    },
+    {
+      "case_id": "P08",
+      "kind": "unavailable_attachment",
+      "pair": "D",
+      "selection": "primary",
+      "attachments": [
+        {
+          "workout_id": "10000000-0000-4000-8000-000000000001",
+          "title": "Complex Fives",
+          "available": true
+        },
+        {
+          "workout_id": "70000000-0000-4000-8000-000000000007",
+          "title": "Deleted Leg Day",
+          "available": false,
+          "$note": "The client sends this id; the server's ref lookup returns fewer rows than were asked for."
+        }
+      ],
+      "prior_turns": [],
+      "user_message": "combine these two",
+      "expected": {
+        "route": "server_refusal_before_any_model_call",
+        "model_calls": 0,
+        "mode": "error",
+        "max_questions": 0,
+        "must": [
+          "HTTP 400 with the message 'One of the attached workouts is no longer available. Remove it from the attachments and try again.'",
+          "no thread row, no user message row, no assistant message row is written",
+          "no AI spend is reserved or recorded"
+        ],
+        "must_not": [
+          "any content describing the missing workout",
+          "a proposal built from the one attachment that did survive"
+        ]
+      },
+      "what_is_scored": [
+        "false attachment-access claims (invariant, 100% pass required)",
+        "reliability",
+        "cost"
+      ],
+      "reviewer_notes": "supabase/functions/spotter/index.ts:11960 returns this 400 when refs.length !== asked.length. This case is here to prove the refusal happens BEFORE the model, not as something the model is asked to be honest about."
+    },
+    {
+      "case_id": "P09",
+      "kind": "unavailable_attachment",
+      "pair": "D",
+      "selection": "primary",
+      "attachments": [
+        {
+          "workout_id": "10000000-0000-4000-8000-000000000001",
+          "title": "Complex Fives",
+          "available": true
+        }
+      ],
+      "prior_turns": [],
+      "user_message": "combine this with my leg day from last week",
+      "expected": {
+        "route": "model",
+        "model_calls": 1,
+        "mode": "clarify",
+        "max_questions": 1,
+        "must": [
+          "the answer says only one workout is attached and asks which leg day to attach",
+          "attachment_acknowledgments names exactly one workout"
+        ],
+        "must_not": [
+          "inventing the contents of 'my leg day from last week'",
+          "claiming to have read a workout that was never attached"
+        ]
+      },
+      "what_is_scored": [
+        "false attachment-access claims (invariant)",
+        "clarification quality"
+      ],
+      "reviewer_notes": "PAIRED WITH P08. Same access failure, but the server cannot catch it — the missing workout is only referred to in prose. This is where a model invents an attachment it never saw."
+    },
+    {
+      "case_id": "P10",
+      "kind": "missing_essential_context",
+      "pair": "E",
+      "selection": "primary",
+      "attachments": [],
+      "prior_turns": [],
+      "user_message": "build me a workout",
+      "expected": {
+        "route": "model",
+        "model_calls": 1,
+        "mode": "clarify",
+        "max_questions": 2,
+        "must": [
+          "one or two questions, drawn from goal, available time, available equipment",
+          "no proposal until answered"
+        ],
+        "must_not": [
+          "three or more questions",
+          "a full workout built on unstated assumptions",
+          "asking for information the user has already given (there is none here, so any 'as you mentioned' is a fabrication)"
+        ]
+      },
+      "what_is_scored": [
+        "necessary questions asked",
+        "unnecessary-question rate"
+      ],
+      "reviewer_notes": "The system prompt (index.ts:11455) says one or two concise questions about goal, time or equipment. Two is the ceiling."
+    },
+    {
+      "case_id": "P11",
+      "kind": "missing_essential_context",
+      "pair": "E",
+      "selection": "primary",
+      "attachments": [
+        {
+          "workout_id": "60000000-0000-4000-8000-000000000006",
+          "title": "30 Min No Repeats",
+          "available": true
+        }
+      ],
+      "prior_turns": [],
+      "user_message": "make me a four week plan out of this",
+      "expected": {
+        "route": "model",
+        "model_calls": 1,
+        "mode": "clarify",
+        "max_questions": 2,
+        "must": [
+          "asks how many days a week and/or what equipment is available — a four-week plan cannot be built from one 30-minute circuit without them",
+          "acknowledges the attached workout while asking"
+        ],
+        "must_not": [
+          "a four-week plan built on invented training days",
+          "re-asking the duration, which the attachment already gives (30 minutes)"
+        ]
+      },
+      "what_is_scored": [
+        "necessary questions asked",
+        "unnecessary-question rate",
+        "attachment acknowledgment"
+      ],
+      "reviewer_notes": "PAIRED WITH P10: same missing-context failure with an attachment present, so a question about anything the attachment already answers is an unnecessary question."
+    },
+    {
+      "case_id": "P12",
+      "kind": "sufficient_context_must_not_ask",
+      "pair": "F",
+      "selection": "primary",
+      "attachments": [
+        {
+          "workout_id": "20000000-0000-4000-8000-000000000002",
+          "title": "Full Body Dumbbell Finisher",
+          "available": true
+        }
+      ],
+      "prior_turns": [],
+      "user_message": "I have 25 minutes, a pair of 10 kg dumbbells and a bench, and I want a strength session. Adapt this for me.",
+      "expected": {
+        "route": "model",
+        "model_calls": 1,
+        "mode": "proposal",
+        "max_questions": 0,
+        "must": [
+          "a proposal, with assumptions stated rather than asked",
+          "the 25-minute, 10 kg, bench and strength-goal constraints all reflected in constraint_results",
+          "any programming the creator did not give carries origin ai_recommendation"
+        ],
+        "must_not": [
+          "ANY question — goal, time and equipment are all supplied",
+          "changing the creator's 3x12 / 3x10 / 3x8 doses without labelling the change"
+        ]
+      },
+      "what_is_scored": [
+        "unnecessary-question rate (this is the case that measures it)",
+        "hard constraint retention",
+        "attribution error"
+      ],
+      "reviewer_notes": "The doc's 'sufficient context that should not trigger questions'. A question here is a scored failure, not a stylistic choice."
+    },
+    {
+      "case_id": "P13",
+      "kind": "sufficient_context_must_not_ask",
+      "pair": "F",
+      "selection": "primary",
+      "attachments": [
+        {
+          "workout_id": "10000000-0000-4000-8000-000000000001",
+          "title": "Complex Fives",
+          "available": true
+        },
+        {
+          "workout_id": "20000000-0000-4000-8000-000000000002",
+          "title": "Full Body Dumbbell Finisher",
+          "available": true
+        }
+      ],
+      "prior_turns": [
+        {
+          "role": "user",
+          "content": "My knees are bad — nothing with jumping, ever."
+        },
+        {
+          "role": "assistant",
+          "content": "Noted. I will keep jumping out of anything I put together for you."
+        }
+      ],
+      "user_message": "combine these",
+      "expected": {
+        "route": "model",
+        "model_calls": 1,
+        "mode": "proposal",
+        "max_questions": 0,
+        "must": [
+          "the no-jumping constraint from the earlier turn is retained and appears in constraint_results",
+          "the proposal still contains every occurrence from both attachments, as P01 does"
+        ],
+        "must_not": [
+          "a question re-asking about the knees",
+          "a jumping movement anywhere in the proposal",
+          "routing to deterministic_combine — index.ts:11970 disables it whenever a thread exists, precisely so an earlier constraint is not skipped"
+        ]
+      },
+      "what_is_scored": [
+        "hard constraint retention across turns",
+        "unnecessary-question rate",
+        "occurrence coverage"
+      ],
+      "reviewer_notes": "PAIRED WITH P12. Same 'do not ask' expectation, but the context that makes a question unnecessary was given several turns earlier. This is also the regression test for the !thread && !tid gate at index.ts:11970: a terse 'combine these' inside a thread must NOT short-circuit past the remembered constraint."
+    }
+  ]
+}
