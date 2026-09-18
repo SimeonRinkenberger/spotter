@@ -30,7 +30,7 @@
     "exercises": [
      {
       "name": "Close Grip Push Ups",
-      "canonical_id": "diamond-push-up",
+      "canonical_id": "push-up",
       "sets": null,
       "reps": "5",
       "duration_seconds": null,
@@ -230,9 +230,9 @@
    }
   ]
  },
- "pack_v": 1,
+ "pack_v": 2,
  "pack": {
-  "pack_v": 1,
+  "pack_v": 2,
   "shortcode": "tt-vcp-fixture",
   "platform": "tiktok",
   "duration_s": 84.3,
@@ -325,10 +325,10 @@
     "i": 0,
     "name_said": "close grip push ups",
     "name_shown": "Close-Grip Push-Up on Kettlebell",
-    "canonical_id": "diamond-push-up",
+    "canonical_id": "push-up",
     "t0": 10.5,
     "t1": 25,
-    "reps_seen": 5,
+    "reps_seen": null,
     "variant": {
      "equipment": [
       "kettlebell"
@@ -361,7 +361,7 @@
     ],
     "provenance": {
      "name": "said",
-     "reps": "said",
+     "reps": "none",
      "variant": "seen",
      "cues": "said"
     },
@@ -375,7 +375,7 @@
     "canonical_id": "sumo-deadlift-high-pull",
     "t0": 25.5,
     "t1": 40.5,
-    "reps_seen": 5,
+    "reps_seen": null,
     "variant": {
      "equipment": [
       "kettlebell"
@@ -409,7 +409,7 @@
     ],
     "provenance": {
      "name": "said",
-     "reps": "said",
+     "reps": "none",
      "variant": "seen",
      "cues": "said"
     },
@@ -423,7 +423,7 @@
     "canonical_id": "kettlebell-swing",
     "t0": 41,
     "t1": 54,
-    "reps_seen": 5,
+    "reps_seen": null,
     "variant": {
      "equipment": [
       "kettlebell"
@@ -451,7 +451,7 @@
     ],
     "provenance": {
      "name": "said",
-     "reps": "said",
+     "reps": "none",
      "variant": "seen",
      "cues": "said"
     },
@@ -465,7 +465,7 @@
     "canonical_id": "goblet-squat",
     "t0": 54.5,
     "t1": 64,
-    "reps_seen": 5,
+    "reps_seen": null,
     "variant": {
      "equipment": [
       "kettlebell"
@@ -493,7 +493,7 @@
     ],
     "provenance": {
      "name": "said",
-     "reps": "said",
+     "reps": "none",
      "variant": "seen",
      "cues": "said"
     },
@@ -507,7 +507,7 @@
     "canonical_id": "push-press",
     "t0": 64.6,
     "t1": 72.5,
-    "reps_seen": 5,
+    "reps_seen": null,
     "variant": {
      "equipment": [
       "kettlebell"
@@ -532,7 +532,7 @@
     ],
     "provenance": {
      "name": "said",
-     "reps": "said",
+     "reps": "none",
      "variant": "seen",
      "cues": "none"
     },

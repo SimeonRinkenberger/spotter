@@ -1,0 +1,321 @@
+{
+  "$comment": "GROUND-TRUTH TEMPLATE for the $5 screen, NOT ground truth. Shape: tools/fixtures/golden-tt-7679960172495785246.json and the tools/pack-eval/score.ts Fixture type, extended with the source-claim contract from PROMPTS-AND-CONTRACTS.md (prescribed vs demonstrated, provenance said/seen/written). Everything filled in here came from text this repo actually fetched — the platform caption and, where the platform publishes one, the free ASR WebVTT. NOBODY HAS WATCHED THIS VIDEO. No frame was extracted, no AI call was made, nothing was saved in the app. Every TODO_REVIEW is a decision for the human reviewer, and a visible count is never one of the things text alone can decide.",
+  "truth_v": 1,
+  "status": "TEMPLATE_UNREVIEWED",
+  "reviewed_by": "TODO_REVIEW",
+  "adjudicated_by": "TODO_REVIEW",
+  "shortcode": "tt-7269956760260103470",
+  "platform": "tiktok",
+  "url": "https://www.tiktok.com/@asgooch/video/7269956760260103470",
+  "kind": "video",
+  "category": "conflicting_dose",
+  "selection": "primary",
+  "duration_s": 34,
+  "visual": "read",
+  "$visual": "score.ts reads this: 'unavailable' means nobody looked and the card must carry no visual claim (score.ts:459-470). A carousel has no video, so the video path is unavailable even though slides exist.",
+  "source": {
+    "platform": "tiktok",
+    "url": "https://www.tiktok.com/@asgooch/video/7269956760260103470",
+    "author": "Adam Gooch",
+    "handle": "@asgooch",
+    "profile_url": "https://www.tiktok.com/@asgooch",
+    "duration_s": 34,
+    "consent": "Public post, referenced by URL only. No media is redistributed in this repo. Credit line: Adam Gooch — https://www.tiktok.com/@asgooch/video/7269956760260103470. Handle recorded so credit and consent can be handled before any published result names this creator.",
+    "paid_program_flag": "none seen in the caption or on the watch page; re-check before publishing any result that names the creator",
+    "verified_at": "2026-09-17T22:00:01Z",
+    "verification": "curl GET of the platform oEmbed endpoint; the title and author below are the bytes it returned, not a search-result summary",
+    "oembed_http": "200",
+    "oembed_title": "Single Kettlebell Upper Body Complex: 5 rounds x 5 reps (3 rows, 1 clean, 1 press) Grab a friend, hit your obligatory start dance and get after it. ✔️  #kettlebell #workout #kettlebells #kettlebellworkout #kettlebelleorkouts #kettlebellcomplex #kettlebelltraining #upperbody #workout "
+  },
+  "evidence_this_template_read": {
+    "caption": "fetched",
+    "asr_vtt": "yes — ASR/eng-US",
+    "asr_vtt_local_copy": "/private/tmp/claude-501/-Users-simeon-Desktop-CLAUDE-COWORK/f83e3c45-9ece-4ff1-96cf-c461f42dfdcd/scratchpad/vtt/tt-7269956760260103470.vtt",
+    "frames": "NONE EXTRACTED",
+    "$frames": "frame_source for a real run is tiktok-mp4 (see SET.json)."
+  },
+  "session": {
+    "format": "complex",
+    "scheme": "5 rounds x 5 reps, decomposed as 3 rows, 1 clean, 1 press",
+    "scheme_provenance": [
+      "written"
+    ],
+    "equipment_seen": [
+      "kettlebell"
+    ],
+    "equipment_count": {
+      "kettlebell": 1
+    },
+    "load_seen": null,
+    "setting": "TODO_REVIEW",
+    "creator_goal": "single kettlebell upper body complex",
+    "said_at": {}
+  },
+  "transcript_source": "tiktok_vtt",
+  "transcript": [
+    {
+      "t0": 7.84,
+      "t1": 18.89,
+      "text": "1 2 3. Now jerk down. 2. Clean. Jerk. Down."
+    },
+    {
+      "t0": 20.25,
+      "t1": 25.29,
+      "text": "2. Clean. Jerk. Down."
+    },
+    {
+      "t0": 28.05,
+      "t1": 29.93,
+      "text": "Clean. Clean. Jerk."
+    }
+  ],
+  "$transcript": "Only the dose-bearing and structure-bearing cues are reproduced, with their real VTT times, so the reviewer can check a claim without this repo carrying a full transcript of somebody else's video. The complete fetched track is at the path in evidence_this_template_read.asr_vtt_local_copy.",
+  "on_screen": "TODO_REVIEW",
+  "source_claims": [
+    {
+      "claim_id": "c1",
+      "field": "rounds",
+      "value": {
+        "text": "5 rounds",
+        "minimum": 5,
+        "maximum": 5,
+        "unit": "rounds",
+        "per_side": false,
+        "to_failure": false,
+        "provenance": [
+          "written"
+        ],
+        "quote_said": null,
+        "t_said": null,
+        "quote_written": "5 rounds x 5 reps (3 rows, 1 clean, 1 press)",
+        "conflict": null
+      },
+      "scope": "session",
+      "source_kind": [
+        "creator_caption"
+      ],
+      "ambiguous": false
+    },
+    {
+      "claim_id": "c2",
+      "field": "reps",
+      "value": {
+        "text": "5 reps",
+        "minimum": 5,
+        "maximum": 5,
+        "unit": "reps",
+        "per_side": false,
+        "to_failure": false,
+        "provenance": [
+          "written"
+        ],
+        "quote_said": null,
+        "t_said": null,
+        "quote_written": "5 rounds x 5 reps (3 rows, 1 clean, 1 press)",
+        "conflict": "THE CONFLICT. '5 reps' does NOT distribute over the three movements — the parenthesis decomposes it as 3 rows + 1 clean + 1 press = 5 reps TOTAL per round. A reader that binds 'reps: 5' to each of the three exercises has multiplied the creator's dose by three."
+      },
+      "scope": "session",
+      "source_kind": [
+        "creator_caption"
+      ],
+      "ambiguous": true
+    }
+  ],
+  "$source_claims": "reader-v2 claim shape: field, value, scope, source_kind, quote. A claim here is the CREATOR'S instruction, never an observation and never a recommendation.",
+  "exercises": [
+    {
+      "i": 0,
+      "name_said": "rows",
+      "name_shown": "TODO_REVIEW",
+      "canonical_id": "bent-over-row",
+      "canonical_id_status": "proposed from text alone — nobody has watched the video; confirm or replace",
+      "acceptable_canonical_ids": [
+        "bent-over-row",
+        "dumbbell-row",
+        "renegade-row"
+      ],
+      "$acceptable_canonical_ids": "the brief's acceptable_alternatives, written under the name tools/pack-eval/score.ts:53 and :296 already read, so a reviewer's decision here actually changes a score",
+      "prescribed": {
+        "text": "3",
+        "minimum": 3,
+        "maximum": 3,
+        "unit": "reps",
+        "per_side": false,
+        "to_failure": false,
+        "provenance": [
+          "written"
+        ],
+        "quote_said": null,
+        "t_said": null,
+        "quote_written": "(3 rows, 1 clean, 1 press)",
+        "conflict": null
+      },
+      "demonstrated": {
+        "count": "unknown",
+        "method": "unknown",
+        "$why": "No frames were extracted for this template. A creator saying N reps does not make N cycles visible; set a number only if continuous evidence shows every counted cycle."
+      },
+      "equipment": {
+        "value": [
+          "kettlebell"
+        ],
+        "status": "inferred from caption/transcript text only",
+        "alternatives": []
+      },
+      "variation_notes": "Which row? Single-arm bent-over is most likely with one bell but text cannot decide.",
+      "t0": "TODO_REVIEW",
+      "t1": "TODO_REVIEW",
+      "uncertainty_s": "TODO_REVIEW",
+      "$t": "Record an ACCEPTED INTERVAL, not a point: t0/t1 are the reviewer's best boundary and uncertainty_s is half the interval they would accept. score.ts today reads t0/t1 as scalars against a single global 1.5 s slack (score.ts:194, 559-568) and ignores uncertainty_s — see the scorer gap list.",
+      "reps_seen": null,
+      "$reps_seen": "Null means nobody counted. score.ts:577 skips a null; it does NOT currently fail a pack that asserts a count where the truth says unknown.",
+      "provenance": {
+        "name": "TODO_REVIEW",
+        "reps": "TODO_REVIEW",
+        "variant": "TODO_REVIEW",
+        "cues": "TODO_REVIEW"
+      },
+      "reviewer_notes": "TODO_REVIEW"
+    },
+    {
+      "i": 1,
+      "name_said": "clean",
+      "name_shown": "TODO_REVIEW",
+      "canonical_id": "kettlebell-clean",
+      "canonical_id_status": "proposed from text alone — nobody has watched the video; confirm or replace",
+      "acceptable_canonical_ids": [
+        "kettlebell-clean",
+        "power-clean",
+        "hang-clean"
+      ],
+      "$acceptable_canonical_ids": "the brief's acceptable_alternatives, written under the name tools/pack-eval/score.ts:53 and :296 already read, so a reviewer's decision here actually changes a score",
+      "prescribed": {
+        "text": "1",
+        "minimum": 1,
+        "maximum": 1,
+        "unit": "reps",
+        "per_side": false,
+        "to_failure": false,
+        "provenance": [
+          "written"
+        ],
+        "quote_said": null,
+        "t_said": null,
+        "quote_written": "(3 rows, 1 clean, 1 press)",
+        "conflict": null
+      },
+      "demonstrated": {
+        "count": "unknown",
+        "method": "unknown",
+        "$why": "No frames were extracted for this template. A creator saying N reps does not make N cycles visible; set a number only if continuous evidence shows every counted cycle."
+      },
+      "equipment": {
+        "value": [
+          "kettlebell"
+        ],
+        "status": "inferred from caption/transcript text only",
+        "alternatives": []
+      },
+      "variation_notes": "catalog.ts has kettlebell-clean as its own entry.",
+      "t0": "TODO_REVIEW",
+      "t1": "TODO_REVIEW",
+      "uncertainty_s": "TODO_REVIEW",
+      "$t": "Record an ACCEPTED INTERVAL, not a point: t0/t1 are the reviewer's best boundary and uncertainty_s is half the interval they would accept. score.ts today reads t0/t1 as scalars against a single global 1.5 s slack (score.ts:194, 559-568) and ignores uncertainty_s — see the scorer gap list.",
+      "reps_seen": null,
+      "$reps_seen": "Null means nobody counted. score.ts:577 skips a null; it does NOT currently fail a pack that asserts a count where the truth says unknown.",
+      "provenance": {
+        "name": "TODO_REVIEW",
+        "reps": "TODO_REVIEW",
+        "variant": "TODO_REVIEW",
+        "cues": "TODO_REVIEW"
+      },
+      "reviewer_notes": "TODO_REVIEW"
+    },
+    {
+      "i": 2,
+      "name_said": "press",
+      "name_shown": "TODO_REVIEW",
+      "canonical_id": "overhead-press",
+      "canonical_id_status": "proposed from text alone — nobody has watched the video; confirm or replace",
+      "acceptable_canonical_ids": [
+        "overhead-press",
+        "push-press",
+        "push-jerk"
+      ],
+      "$acceptable_canonical_ids": "the brief's acceptable_alternatives, written under the name tools/pack-eval/score.ts:53 and :296 already read, so a reviewer's decision here actually changes a score",
+      "prescribed": {
+        "text": "1",
+        "minimum": 1,
+        "maximum": 1,
+        "unit": "reps",
+        "per_side": false,
+        "to_failure": false,
+        "provenance": [
+          "written"
+        ],
+        "quote_said": null,
+        "t_said": null,
+        "quote_written": "(3 rows, 1 clean, 1 press)",
+        "conflict": null
+      },
+      "demonstrated": {
+        "count": "unknown",
+        "method": "unknown",
+        "$why": "No frames were extracted for this template. A creator saying N reps does not make N cycles visible; set a number only if continuous evidence shows every counted cycle."
+      },
+      "equipment": {
+        "value": [
+          "kettlebell"
+        ],
+        "status": "inferred from caption/transcript text only",
+        "alternatives": []
+      },
+      "variation_notes": "THE SECOND TRAP. The caption says 'press' but the ASR track is the creator counting 'Clean. Jerk. Down.' A jerk is not a press and not a push press. Adjudicate which the video actually shows and record the others as unacceptable conflations, not acceptable alternatives, if the distinction is visible.",
+      "t0": "TODO_REVIEW",
+      "t1": "TODO_REVIEW",
+      "uncertainty_s": "TODO_REVIEW",
+      "$t": "Record an ACCEPTED INTERVAL, not a point: t0/t1 are the reviewer's best boundary and uncertainty_s is half the interval they would accept. score.ts today reads t0/t1 as scalars against a single global 1.5 s slack (score.ts:194, 559-568) and ignores uncertainty_s — see the scorer gap list.",
+      "reps_seen": null,
+      "$reps_seen": "Null means nobody counted. score.ts:577 skips a null; it does NOT currently fail a pack that asserts a count where the truth says unknown.",
+      "provenance": {
+        "name": "TODO_REVIEW",
+        "reps": "TODO_REVIEW",
+        "variant": "TODO_REVIEW",
+        "cues": "TODO_REVIEW"
+      },
+      "reviewer_notes": "TODO_REVIEW"
+    }
+  ],
+  "card_expectations": {
+    "$comment": "What a correct card must and must not contain. Fill after review; score.ts reads title/block/stamped/cues/canonical_ids/acceptable_canonical_ids/deltas/must_not.",
+    "title": "TODO_REVIEW",
+    "block": "TODO_REVIEW",
+    "stamped": "TODO_REVIEW",
+    "cues": "TODO_REVIEW",
+    "canonical_ids": "TODO_REVIEW",
+    "acceptable_canonical_ids": "TODO_REVIEW",
+    "deltas": "TODO_REVIEW",
+    "must_not": [
+      {
+        "never": "TODO_REVIEW",
+        "why": "a conflation this video makes tempting"
+      },
+      {
+        "field": "weight",
+        "why": "no load may appear unless the creator gave one"
+      }
+    ]
+  },
+  "reviewer_checklist": [
+    "Watch the whole video once before writing anything down.",
+    "Enumerate occurrences in chronological order, including repeats and both sides; repeats are separate occurrences even when the name matches.",
+    "For every occurrence set demonstrated.count to a number ONLY if continuous evidence shows every counted cycle. Otherwise leave 'unknown'.",
+    "Write acceptable_canonical_ids before you see any model output.",
+    "Record t0/t1 as the boundary you would accept plus uncertainty_s, not a point you had to guess.",
+    "Mark any claim you cannot resolve from the source as unresolvable rather than choosing the likely answer.",
+    "Adjudicate the 5-vs-3+1+1 arithmetic explicitly and write the expected binding down.",
+    "The ASR track is somebody counting reps out loud. That is NOT evidence of a visible count — demonstrated.count stays unknown unless the frames show every cycle.",
+    "Caption says 'press', speech says 'jerk'. Record which source wins and why."
+  ],
+  "reviewer_notes": "TODO_REVIEW"
+}

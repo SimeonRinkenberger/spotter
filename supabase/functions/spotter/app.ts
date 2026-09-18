@@ -23,6 +23,14 @@ export const APP = String.raw`
   // and a blank id simply sends that button down the redirect fallback.
   var PUBLIC_AUTH = { google_client_id: "48831784248-dh1o2fhiem9kqgs6ambnnvaba8vojrf2.apps.googleusercontent.com", apple_services_id: "" };
 
+  // The other half of the signup boundary, and public for the same reason: a
+  // Turnstile SITE key is meant to be read off the page. Its secret twin lives in
+  // Supabase ([auth.captcha] in config.toml) and nothing in this file can verify
+  // anything — the server is the only place a token means something. Empty is
+  // today's behaviour exactly: no script, no widget, no token on any auth call.
+  // Fill it in and the same four calls start carrying one. README, "Self-hosting".
+  var PUBLIC_CAPTCHA = { turnstile_site_key: "" };
+
   var sb = window.supabase.createClient(SB_URL, SB_ANON, {
     auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: !native, flowType: native ? "pkce" : "implicit", storage: native ? native.authStorage : undefined },
     global: { fetch: function (url, opts) {
@@ -423,6 +431,9 @@ export const APP = String.raw`
     b.onclick = function () { setAuthMode(isUp ? "signin" : "signup"); };
     $("authswap").appendChild(b);
     $("forgotwrap").classList.toggle("hide", isUp);
+    // Same rule as Forgot your password, the other way round: the sentence is
+    // about creating an account, so it belongs to the face that creates one.
+    $("consent").classList.toggle("hide", !isUp);
   }
 
   function authError(msg) {
@@ -447,6 +458,12 @@ export const APP = String.raw`
   // gets the honest generic, never the class name of an exception.
   function authMessage(m) {
     m = String(m || "");
+    // Before the rate-limit line, because gotrue's captcha refusal is a 400 whose
+    // text reads "captcha protection: request disallowed".
+    if (/captcha/i.test(m)) return "The security check did not finish. Try that once more.";
+    // A six-digit code that is wrong and one that has been used read the same to
+    // gotrue ("Token has expired or is invalid"), and they read the same here.
+    if (/token|otp/i.test(m)) return "That code is wrong or has expired. Ask for a new one.";
     if (/already regist/i.test(m)) return "That email already has an account — sign in instead.";
     if (/invalid login|invalid.*credential/i.test(m)) return "Wrong email or password.";
     if (/rate limit|too many|for security purposes/i.test(m)) return "Too many tries. Give it a minute.";
@@ -459,6 +476,132 @@ export const APP = String.raw`
       : "Could not sign you in. Try again in a moment.";
   }
 
+  // ---------- AI consent (App Store 5.1.2(i)) ----------
+  //
+  // A saved video and its caption go to OpenAI and to Google to become a workout
+  // card. 5.1.2(i) says the person has to have agreed to that in so many words
+  // first, and the sign-up form had nothing of the kind. The sentence is built
+  // here rather than written twice in markup: it is shown above Create account,
+  // and once at the top of Settings for an account made before it existed, and
+  // two copies of a consent sentence are two sentences that will drift.
+  //
+  // What is stored is the moment, not the fact — profiles.settings.ai_consent_at,
+  // an ISO string, written through saveSettings() like every other preference.
+  // settings is user-writable, so no migration and no new column.
+  var consentGiven = false;
+
+  function consentLink(href, text) {
+    var a = el("a", null, text);
+    a.href = href;
+    return a;
+  }
+
+  // Both links are the hosted pages the rest of the app already points at, and
+  // deliberately not the docs/ copies: tools/ios/build.mjs packs only index.html,
+  // assets and the icon into native-dist, so a relative terms.html is a dead link
+  // inside both shells — which is the one place a reviewer reading 5.1.2(i) taps.
+  // Only the opening clause differs between the two places this is shown: an
+  // account made last month was not created by the button being pressed now, and
+  // a sentence that says it was is a sentence a person reads past. The part that
+  // is actually being agreed to — what leaves the phone and who receives it — is
+  // written once and cannot drift.
+  function consentFill(node, opening) {
+    node.innerHTML = "";
+    node.appendChild(document.createTextNode(opening));
+    node.appendChild(consentLink("https://quarterdeckcollective.com/spotter/terms/", "Terms"));
+    node.appendChild(document.createTextNode(" and to Spotter sending the videos and captions you save to AI providers (OpenAI, Google) to build your workout cards. "));
+    node.appendChild(consentLink("https://quarterdeckcollective.com/spotter/privacy/", "Privacy policy"));
+    node.appendChild(document.createTextNode("."));
+  }
+
+  function consentAt() {
+    var s = state.profile && state.profile.settings;
+    return s ? s.ai_consent_at : null;
+  }
+
+  // Idempotent on purpose: the sign-up path and the Settings line both call it,
+  // and an account that has already agreed is never asked or written again.
+  function noteConsent() {
+    if (!state.profile || consentAt()) return;
+    state.profile.settings = state.profile.settings || {};
+    state.profile.settings.ai_consent_at = new Date().toISOString();
+    saveSettings();
+  }
+
+  // ---------- Cloudflare Turnstile ----------
+  //
+  // Per-account caps are only a cap if an account costs something to make. A
+  // captcha is what that costs, and it is deliberately the cheapest possible one
+  // for a real person: rendered interaction-only, so Cloudflare shows a checkbox
+  // to a visitor it cannot vouch for and shows nobody else anything. execution
+  // "execute" means the challenge does not even start until a form is submitted,
+  // which keeps an idle landing page free of third-party work.
+  //
+  // Tokens are single-use and expire after five minutes, so each attempt resets
+  // the widget and asks for a fresh one instead of holding one from page load.
+  var TURNSTILE_SRC = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+
+  var capRendered = null;  // one promise, so a double tap shares one widget
+  var capPending = null;   // the attempt currently waiting on a token
+  var capTimer = null;
+
+  function capOn() { return !!PUBLIC_CAPTCHA.turnstile_site_key; }
+
+  function capSettle(token) {
+    clearTimeout(capTimer);
+    var p = capPending;
+    capPending = null;
+    if (p) p(token || null);
+  }
+
+  function capRender() {
+    if (capRendered) return capRendered;
+    capRendered = loadScript(TURNSTILE_SRC).then(function () {
+      if (!window.turnstile || !window.turnstile.render) throw new Error("captcha unavailable");
+      // Every way this widget can end without a token — a Cloudflare error, a
+      // token that went stale in the box, an untouched challenge — is the same
+      // answer to the attempt waiting on it.
+      var none = function () { capSettle(null); };
+      var id = window.turnstile.render($("capgate"), {
+        sitekey: PUBLIC_CAPTCHA.turnstile_site_key,
+        execution: "execute", appearance: "interaction-only", theme: "auto",
+        callback: capSettle, "error-callback": none, "expired-callback": none,
+        "timeout-callback": none
+      });
+      return id;
+    });
+    // A blocked script on a flaky connection is not a permanent verdict.
+    capRendered.catch(function () { capRendered = null; });
+    return capRendered;
+  }
+
+  // Resolves with a token, or with null — never rejects. Null is the honest
+  // answer in every environment where Turnstile cannot run at all: an ad blocker,
+  // no network, a WebView Cloudflare does not serve. The request goes out without
+  // one and the SERVER decides, which is the only place that decision is worth
+  // anything; refusing here would only invent a dead end on the client.
+  function capToken() {
+    if (!capOn()) return Promise.resolve(null);
+    return capRender().then(function (id) {
+      return new Promise(function (resolve) {
+        capSettle(null);
+        capPending = resolve;
+        capTimer = setTimeout(capSettle, 90000);
+        try {
+          window.turnstile.reset(id);
+          window.turnstile.execute(id);
+        } catch (e) { capSettle(null); }
+      });
+    }).catch(function () { return null; });
+  }
+
+  // Carries the token only when there is one, so a page with no site key sends
+  // the request it has always sent, byte for byte.
+  function withCap(opts, tok) {
+    if (tok) opts.captchaToken = tok;
+    return opts;
+  }
+
   function doAuth() {
     var email = $("email").value.trim();
     var pw = $("pw").value;
@@ -468,21 +611,197 @@ export const APP = String.raw`
       authError("Use at least 8 characters."); return;
     }
     var btn = $("authgo");
+    var mode = authMode;
     btn.disabled = true;
-    btn.textContent = authMode === "signup" ? "Creating…" : "Signing in…";
-    var p = authMode === "signup"
-      ? sb.auth.signUp({ email: email, password: pw, options: { emailRedirectTo: AUTH_RETURN } })
-      : sb.auth.signInWithPassword({ email: email, password: pw });
-    p.then(function (r) {
-      btn.disabled = false;
-      setAuthMode(authMode);
-      if (r.error) { authError(authMessage(r.error.message)); return; }
-      if (!r.data.session) { authError("Check your email to confirm your account, then sign in."); }
+    btn.textContent = mode === "signup" ? "Creating…" : "Signing in…";
+    function idle() { btn.disabled = false; setAuthMode(authMode); }
+    capToken().then(function (tok) {
+      if (mode === "signup") {
+        return sb.auth.signUp({ email: email, password: pw,
+          options: withCap({ emailRedirectTo: AUTH_RETURN }, tok) });
+      }
+      var args = { email: email, password: pw };
+      if (tok) args.options = { captchaToken: tok };
+      return sb.auth.signInWithPassword(args);
+    }).then(function (r) {
+      idle();
+      if (r.error) {
+        // An account that exists but was never confirmed is not a wrong password,
+        // and the one thing it needs is the resend button, not a red box.
+        if (/not confirmed/i.test(r.error.message)) { mailSent(email); return; }
+        authError(authMessage(r.error.message));
+        return;
+      }
+      // The button that was just pressed carried the sentence above it, so this
+      // is the agreement. It is written once there is a profile row to write it
+      // on, which is after boot.
+      if (mode === "signup") consentGiven = true;
+      // Confirmations on: signUp answers with a user and no session. gotrue
+      // answers exactly the same way for an address that already has an account,
+      // and that is right — this form must not be a way to ask which addresses
+      // are registered.
+      if (!r.data.session) mailSent(email);
     }).catch(function (e) {
-      btn.disabled = false;
-      setAuthMode(authMode);
+      idle();
       authError(authMessage(e && e.message ? e.message : e));
     });
+  }
+
+  // ---------- check your email ----------
+  //
+  // Apple's own account sheets answer three things at this moment and so does
+  // this one: what was sent, which address it went to, and what to do when it
+  // does not arrive. The resend sits behind a countdown because gotrue's
+  // max_frequency refuses a second send inside a minute anyway, and a button that
+  // fails for a reason nobody explained is worse than a button that says wait.
+  var mailAddr = null;
+  var mailType = "signup";
+  var mailLeft = 0;
+  var mailTick = null;
+
+  function mailLabel() {
+    var b = $("mailresend");
+    b.disabled = mailLeft > 0;
+    b.textContent = mailLeft > 0 ? "Resend in " + mailLeft + "s" : "Resend the email";
+  }
+
+  function mailCount(secs) {
+    clearInterval(mailTick);
+    mailLeft = secs;
+    mailLabel();
+    if (!secs) return;
+    mailTick = setInterval(function () {
+      mailLeft--;
+      mailLabel();
+      if (mailLeft <= 0) clearInterval(mailTick);
+    }, 1000);
+  }
+
+  function mailSent(email, type) {
+    mailAddr = email;
+    mailType = type === "recovery" ? "recovery" : "signup";
+    var p = $("mailbody");
+    p.innerHTML = "";
+    // Recovery keeps the sentence that promises nothing: whether that address has
+    // an account is not a question this form is allowed to answer.
+    p.appendChild(document.createTextNode(mailType === "recovery"
+      ? "If that address has an account, a reset link and a six-digit code are on their way to "
+      : "We sent a confirmation link and a six-digit code to "));
+    p.appendChild(el("b", null, email));
+    p.appendChild(document.createTextNode(". Tap the link, or type the code in below. It can " +
+      "take a minute, and it is worth a look in spam."));
+    $("otp").value = "";
+    otpError("");
+    $("mailsent").classList.remove("hide");
+    $("authcard").classList.add("sent");
+    mailCount(60);
+    // The card's heading changed under a screen reader that was reading a form.
+    $("mailsent").focus();
+  }
+
+  // ---------- the six-digit code ----------
+  //
+  // The confirmation link signs a person in wherever it opens, which on a phone
+  // is the browser and not this app. A code is the way out of that: it is typed
+  // into the session that asked for it, so the account lands where the person is
+  // standing. The link still works untouched for anyone reading the mail on a
+  // desktop. gotrue puts the code in the template as {{ .Token }} — README,
+  // "Self-hosting", item 8.
+  function otpError(msg) {
+    var e = $("otperr");
+    e.textContent = msg || "";
+    e.classList.toggle("show", !!msg);
+  }
+
+  function otpGo() {
+    var b = $("otpgo");
+    // A code is single-use, so a second send of the same one comes back invalid
+    // and would put "that code is wrong" under a code that was right. The button
+    // is already disabled while a check is in flight; this is the same fence for
+    // the two doors that do not go through it, autofill and Enter.
+    if (b.disabled) return;
+    var code = $("otp").value.replace(/[^0-9]/g, "");
+    if (code.length < 6) { otpError("Type the six digits from the email."); return; }
+    b.disabled = true;
+    b.textContent = "Checking…";
+    otpError("");
+    function idle() { b.disabled = false; b.textContent = "Confirm"; }
+    capToken().then(function (tok) {
+      var args = { email: mailAddr, token: code, type: mailType };
+      if (tok) args.options = { captchaToken: tok };
+      return sb.auth.verifyOtp(args);
+    }).then(function (r) {
+      idle();
+      if (r.error) {
+        otpError(authMessage(r.error.message));
+        $("otp").select();
+        return;
+      }
+      // A session came back. onAuthStateChange has already swapped the view, and
+      // for a recovery code it has already opened "Choose a new password".
+    }).catch(function (e) {
+      idle();
+      otpError(authMessage(e && e.message ? e.message : e));
+    });
+  }
+
+  function mailClose() {
+    clearInterval(mailTick);
+    mailAddr = null;
+    // A code left in a field is a code the next person at this browser can read.
+    $("otp").value = "";
+    otpError("");
+    $("mailsent").classList.add("hide");
+    $("authcard").classList.remove("sent");
+  }
+
+  function mailBack() {
+    mailClose();
+    authError("");
+    setAuthMode("signup");
+    $("email").value = "";
+    $("email").focus();
+  }
+
+  function mailResend() {
+    if (!mailAddr || mailLeft > 0) return;
+    var b = $("mailresend");
+    b.disabled = true;
+    b.textContent = "Sending…";
+    capToken().then(function (tok) {
+      // Two different endpoints send the two mails, and resend only knows about
+      // the confirmation one; asking for a reset again is asking for a reset.
+      return mailType === "recovery"
+        ? sb.auth.resetPasswordForEmail(mailAddr, withCap({ redirectTo: AUTH_RETURN }, tok))
+        : sb.auth.resend({ type: "signup", email: mailAddr,
+            options: withCap({ emailRedirectTo: AUTH_RETURN }, tok) });
+    }).then(function (r) {
+      mailCount(60);
+      if (r && r.error) { toast(authMessage(r.error.message)); return; }
+      toast("Sent again. Give it a minute.");
+    }).catch(function (e) {
+      mailCount(60);
+      toast(authMessage(e && e.message ? e.message : e));
+    });
+  }
+
+  // Coming back on a link that is spent. gotrue answers an expired link and an
+  // already-used one identically — the token is consumed either way — so one
+  // sentence covers both, and it is a sentence rather than the error_description
+  // gotrue wrote for a log. Only the error case is touched: a good link still
+  // carries its session past here untouched.
+  function linkProblem() {
+    var q = location.hash.indexOf("error") > 0 ? location.hash.slice(1) : location.search.slice(1);
+    if (q.indexOf("error") < 0) return;
+    var p;
+    try { p = new URLSearchParams(q); } catch (e) { return; }
+    var code = p.get("error_code") || p.get("error") || "";
+    if (!code) return;
+    try { history.replaceState(null, "", location.pathname); } catch (e) { /* ignore */ }
+    if (state.user) return;
+    authError((/expired|invalid|denied/i.test(code)
+      ? "That link has expired or was already used."
+      : "That link could not be opened.") + " Sign in below, or ask for a new one.");
   }
 
   // ---------- provider sign-in (Google / Apple) ----------
@@ -848,9 +1167,14 @@ export const APP = String.raw`
 
   function showLanding() {
     if (native) $("pumpyinput").value = "";
+    // Whoever signs in next is not the person who was told to check an inbox.
+    mailClose();
     document.body.classList.remove("app");
     $("landing").classList.add("open");
     $("app").classList.add("hide");
+    // The Turnstile script is fetched when this card appears rather than at boot:
+    // a signed-in person who never sees it never pays for it.
+    if (capOn()) capRender().catch(function () {});
   }
 
   function showApp() {
@@ -899,7 +1223,7 @@ export const APP = String.raw`
         busy: false, live: null, stick: true, wired: wired, openSeq: seq };
     }
     if (native && native.purchases) native.purchases.clear().catch(function () {});
-    if (billing) { billing.prices = null; billing.sub = null; billing.subAsked = false; billing.limits = null; billing.said = null; billing.ctx = null; }
+    if (billing) { billing.prices = null; billing.waiting = null; billing.busy = false; billing.sub = null; billing.subAsked = false; billing.limits = null; billing.said = null; billing.ctx = null; }
     ["grid", "chips", "colbar", "libcount", "empty", "dinner", "pumpylog", "pumpyannounce", "pumpyctx", "pumpythreads", "trainview", "today", "recapopts"].forEach(function (id) {
       var n = $(id); if (n) n.innerHTML = "";
     });
@@ -963,7 +1287,11 @@ export const APP = String.raw`
       .then(function () { if (accountNow(epoch, uid)) return consumeBilling(); })
       .then(function () { if (accountNow(epoch, uid)) return warmPages(); })
       .then(function () { return profileReady; })
-      .then(function () { if (accountNow(epoch, uid)) welcomeMaybe(); });
+      .then(function () {
+        if (!accountNow(epoch, uid)) return;
+        if (consentGiven) noteConsent();
+        welcomeMaybe();
+      });
     return booting;
   }
 
@@ -2507,7 +2835,13 @@ export const APP = String.raw`
       quality.appendChild(el("b", null, "Basic read"));
       quality.appendChild(el("p", null, "Plus reads the video’s movements, spoken cues and on-screen details to build a more complete workout."));
       if (w.platform === "tiktok" && w.kind !== "photo") {
-        var trial = el("button", "btn ghost", isFree() ? "Try a Plus read · 4 per month" : "Read with Plus");
+        // No number until one is known. The count used to be hard-coded here as
+        // four, which is right today and would go quietly wrong the moment the
+        // allowance moved in config; the read below fills it in a moment later.
+        var pv = billing.limits && billing.limits.video_previews;
+        var trial = el("button", "btn ghost", !isFree() ? "Read with Plus"
+          : pv ? "Try a Plus read · " + Math.max(0, pv.cap - pv.used) + " left this month"
+          : "Try a Plus read");
         trial.onclick = function () { readVideo(w, trial, isFree()); };
         quality.appendChild(trial);
         if (isFree()) api("limits").then(function (r) {
@@ -2795,9 +3129,13 @@ export const APP = String.raw`
   // rather than re-running inline, so it gets the same backoff and the same
   // give-up point as the original save.
   function retryWorkout(w, btn) {
+    if (!state.user) return;
+    var epoch = accountEpoch, uid = state.user.id;
     if (btn) { btn.disabled = true; btn.textContent = "Queued…"; }
     api("workouts/" + w.id + "/reprocess", { method: "POST", body: "{}" })
       .then(function (r) {
+        if (!accountNow(epoch, uid)) return;
+        w = state.workouts.filter(function (x) { return x.id === w.id; })[0] || w;
         if (btn) { btn.disabled = false; btn.textContent = "Try reading it again"; }
         if (r.status !== "processing" && r.status !== "ok") {
           limitHit(r, "Could not start reading that — try again in a minute."); return;
@@ -2807,9 +3145,10 @@ export const APP = String.raw`
         if (current && current.id === w.id) openDetail(w, true);
         render();
         watchPending();
-        toast("Reading it again…");
+        toast(w.user_workout_override ? "Refreshing the source; your personal exercise list will be kept." : "Reading it again…");
       })
       .catch(function () {
+        if (!accountNow(epoch, uid)) return;
         if (btn) { btn.disabled = false; btn.textContent = "Try reading it again"; }
         toast("Could not start reading that — try again in a minute.");
       });
@@ -2824,15 +3163,26 @@ export const APP = String.raw`
    * is right from the first frame rather than from the first Realtime update.
    */
   function readVideo(w, btn, preview) {
+    if (!state.user) return;
+    var epoch = accountEpoch, uid = state.user.id;
     if (btn) { btn.disabled = true; btn.textContent = "Queued…"; }
     deviceFrames({ url: w.url, preview: !!preview, reread: true }).then(function (frames) {
+      if (!accountNow(epoch, uid)) return null;
       var payload = { preview: !!preview };
       if (frames) payload.frames = frames;
       return api("workouts/" + w.id + "/media", { method: "POST", body: JSON.stringify(payload) });
     })
       .then(function (r) {
+        if (!accountNow(epoch, uid)) return;
+        w = state.workouts.filter(function (x) { return x.id === w.id; })[0] || w;
         if (btn) { btn.disabled = false; btn.textContent = "Read the video"; }
-        if (r.status === "ok" && r.workout) { absorbWorkout(r.workout); if (current && current.id === w.id) openDetail(r.workout, true); render(); toast("Your Plus preview is ready."); return; }
+        if (r.status === "ok" && r.workout) {
+          // A newer correction already received locally must not be replaced by an older cached response.
+          var delivered = Number(w.user_edit_revision || 0) > Number(r.workout.user_edit_revision || 0) ? w : r.workout;
+          absorbWorkout(delivered);
+          if (current && current.id === w.id) openDetail(delivered, true);
+          render(); toast(delivered.user_workout_override ? "Source refreshed; your personal exercise list was kept." : "Your Plus preview is ready."); return;
+        }
         if (r.status !== "processing") { limitHit(r, "Could not start reading that — try again in a minute."); return; }
         w.ingest_status = "processing";
         w.ingest_error = null;
@@ -2840,9 +3190,10 @@ export const APP = String.raw`
         if (current && current.id === w.id) openDetail(w, true);
         render();
         watchPending();
-        toast("Listening to the video…");
+        toast(w.user_workout_override ? "Refreshing the source; your personal exercise list will be kept." : "Listening to the video…");
       })
       .catch(function () {
+        if (!accountNow(epoch, uid)) return;
         if (btn) { btn.disabled = false; btn.textContent = "Read the video"; }
         toast("Could not start reading that — try again in a minute.");
       });
@@ -10648,10 +10999,10 @@ export const APP = String.raw`
   }
 
   function renderSettingsMeter() {
+    var staff = (state.profile && state.profile.plan === "staff") ||
+      (pumpy.meter && pumpy.meter.plan === "staff");
     var d = $("setdiag");
     if (d) {
-      var staff = (state.profile && state.profile.plan === "staff") ||
-        (pumpy.meter && pumpy.meter.plan === "staff");
       d.textContent = staff ? layoutLine() : "";
       d.classList.toggle("hide", !staff);
     }
@@ -10661,11 +11012,19 @@ export const APP = String.raw`
     var day = p && bucket(p.day);
     var month = p && bucket(p.month);
     if (!p || (!day && !month)) { n.textContent = ""; n.classList.add("hide"); return; }
+    // Credits are the accounting unit and nobody buys one. Settings > Plan now
+    // says "Coaching answers 41 of 300 this month", which is the number that was
+    // sold; printing 5,000 credits beside it is the same two-numbers-for-one-
+    // question problem the daily counts were. Staff keep it as a diagnostic.
+    if (!staff) { n.textContent = ""; n.classList.add("hide"); return; }
     var bits = ["Pumpy"];
     if (typeof p.plan === "string" && p.plan) {
       bits.push(p.plan.charAt(0).toUpperCase() + p.plan.slice(1) + " plan");
     }
-    if (day) bits.push(countText(day, "credits today"));
+    // The month only. The day's credits are a burst stop, and printing both here
+    // — beside "Coaching answers 12 of 300 this month" under Plan — is three
+    // numbers for one question. The low-fuel warning in the coach still names
+    // the day when the day is genuinely what is about to stop you.
     if (month) bits.push(countText(month, "this month"));
     n.textContent = bits.join(" · ");
     n.classList.remove("hide");
@@ -11187,7 +11546,7 @@ export const APP = String.raw`
   // free stays lower case: it is a description, the paid ones are names.
   function planWord(p) {
     p = String(p || "free");
-    return p === "free" ? "free" : p.charAt(0).toUpperCase() + p.slice(1);
+    return p === "free" ? "Basic" : p.charAt(0).toUpperCase() + p.slice(1);
   }
 
   function money(cents, cur) {
@@ -11210,18 +11569,25 @@ export const APP = String.raw`
   }
 
   function loadPrices() {
+    var epoch = accountEpoch, uid = state.user && state.user.id;
     if (native && native.purchases) {
-      return native.purchases.prices(state.user && state.user.id).then(function (r) {
+      return native.purchases.prices(uid).then(function (r) {
+        if (!accountNow(epoch, uid)) return null;
         billing.prices = r; return r;
-      }).catch(function () { billing.prices = { configured: false, nativeStore: true }; return billing.prices; });
+      }).catch(function () {
+        if (!accountNow(epoch, uid)) return null;
+        billing.prices = { configured: false, nativeStore: true }; return billing.prices;
+      });
     }
     if (billing.prices) return Promise.resolve(billing.prices);
     if (billing.waiting) return billing.waiting;
     billing.waiting = api("billing/prices", { method: "GET" }).then(function (r) {
+      if (!accountNow(epoch, uid)) return null;
       billing.waiting = null;
       billing.prices = (r && r.status === "ok" && r.configured) ? r : { configured: false };
       return billing.prices;
     }).catch(function () {
+      if (!accountNow(epoch, uid)) return null;
       // A route that has not shipped, or a browser that would not make the call.
       billing.waiting = null;
       billing.prices = { configured: false };
@@ -11265,34 +11631,45 @@ export const APP = String.raw`
     return (n >= 100 ? Math.round(n / 50) * 50 : Math.round(n / 10) * 10).toLocaleString();
   }
 
+  // The sell is the allowance, so the allowance is what the rows say. Every
+  // number here is the same number the server counts a refusal against — it
+  // comes down in the caps payload — because a benefit row that quotes a figure nothing
+  // enforces is how the old "15 video reads a day" got onto a price page while
+  // the money funded fewer than one.
   function planBenefits(caps) {
     var f = caps && caps.free, p = caps && caps.plus;
     if (!f || !p) return [];
-    var out = [], lib = capNum(p.library);
+    var out = [], lib = capNum(p.library), reads = capNum(p.month_reads);
     out.push(lib === null
-      ? "Keep every workout you save — the free plan holds " + f.library + "."
+      ? "Keep every workout you save — Basic holds " + f.library + "."
       : "Hold " + capMany(lib) + " saved workouts, instead of " + f.library + ".");
-    out.push("Read " + capMany(capNum(p.extract)) + " new videos a day, instead of " + f.extract + ".");
-    out.push("Watch " + capMany(capNum(p.media)) + " silent clips a day, instead of " + f.media +
-      " — the ones with no caption to read.");
-    out.push("Send " + capMany(capNum(p.uploads)) + " of your own videos a day, instead of " + f.uploads + ".");
-    if (num(p.pumpy_month) && num(f.pumpy_month)) {
-      out.push("About " + msgCount(p.pumpy_month) + " coach messages a month, instead of " +
-        msgCount(f.pumpy_month) + ".");
+    if (reads === null) {
+      // An older function that does not send the allowances yet. Say the shape
+      // of the thing rather than a number this page cannot stand behind.
+      out.push("Read the movements, the spoken cues and the text on screen in supported videos.");
+      out.push("Video reading and coaching have monthly allowances; Settings shows what is left.");
+    } else {
+      out.push("Read " + reads + " videos a month in full — the movements, the spoken cues and the " +
+        "text on screen. Basic reads " + capMany(capNum(f.month_reads)) + ".");
+      out.push(capMany(capNum(p.month_answers)) + " coaching answers a month from Pumpy, and " +
+        capMany(capNum(p.month_helpers)) + " explanations and swaps.");
     }
-    out.push("Stop whenever you like. Everything you saved stays yours, and stays readable.");
+    out.push("Saving from a caption, logging, your plan and your progress are free and are never metered.");
+    out.push("Stop whenever you like — everything you saved stays yours, and stays readable.");
     return out;
   }
 
   // A limit line has to carry three things — what you hit, when it comes back,
   // what the paid plan does about it — and every number for all three is off the
-  // 429. Each cap gets the verb it actually earns.
+  // 429. Each cap gets the verb it actually earns; which clock it is on comes
+  // from the refusal's own scope field, because three of these are the allowance a
+  // person bought and two are only burst stops that still reset at midnight.
   var CAP_WORDS = {
-    extract: ["new videos read today", "reads", " a day"],
-    media: ["silent clips watched today", "watches", " a day"],
-    uploads: ["uploads today", "takes", " a day"],
-    saves: ["saves today", "saves", " a day"],
-    helper: ["explanations and swaps today", "allows", ""]
+    extract: ["new videos read", "reads"],
+    media: ["video reads", "reads"],
+    uploads: ["uploads", "takes"],
+    saves: ["saves", "saves"],
+    helper: ["explanations and swaps", "allows"]
   };
   var MULT = ["", "", "twice", "three times", "four times", "five times", "six times"];
 
@@ -11310,21 +11687,23 @@ export const APP = String.raw`
     var cap = num(c.cap), next = capNum(c.next_cap);
     var mine = "the " + planWord(c.plan) + " plan", up = planWord(c.next_plan || "plus");
     if (c.kind === "library") {
-      return "That is " + cap + " saved workouts, which is " + mine + "'s shelf. " + up +
+      return "That is " + cap + " saved workouts, which is " + mine + "’s shelf. " + up +
         " takes the lid off, and nothing you have saved is going anywhere in the meantime.";
     }
-    // Pumpy's two stay in his own first person, wherever they are read.
+    // Pumpy stays in his own first person, wherever this is read. There used to
+    // be a second, daily branch here saying his credits came back at midnight;
+    // they never did — the ladder has always been monthly — so it is gone.
     if (c.kind === "pumpy") {
-      var m = c.pumpy && bucket(c.pumpy.month);
-      return (m && m.cap !== null && m.left <= 0
-        ? "That is this month's coaching used up — my credits come back on the 1st. "
-        : "That is my coaching done for today — my credits come back at midnight UTC. ") + pumpyRoom(up);
+      return "That is this month’s coaching used up — my credits come back on the 1st. " + pumpyRoom(up);
     }
     var w = CAP_WORDS[c.kind];
     if (!w || cap === null) return "";
-    var noun = c.kind === "uploads" && cap === 1 ? "upload today" : w[0];
-    return "That is " + cap + " " + noun + ", " + mine + "'s daily limit. It resets at midnight UTC. " +
-      (next === null ? up + " has no daily limit." : up + " " + w[1] + " " + next + w[2] + ".");
+    var month = c.scope === "month";
+    var noun = c.kind === "uploads" && cap === 1 ? "upload" : w[0];
+    return "That is " + cap + " " + noun + (month ? " this month, " : " today, ") + mine + "’s " +
+      (month ? "whole allowance. It comes back on the 1st. " : "burst limit. It resets at midnight UTC. ") +
+      (next === null ? up + " has no limit here."
+        : up + " " + w[1] + " " + next + (month ? " a month." : " a day."));
   }
 
   // ---------- the sheet ----------
@@ -11434,7 +11813,12 @@ export const APP = String.raw`
     } else { trial.textContent = ""; trial.classList.add("hide"); }
     setBuyLabel(yearly && days > 0 ? "Start " + days + " free days"
       : "Subscribe for " + (p.nativeStore ? plus[iv].localized : money(pay, cur)) + (yearly ? " a year" : " a month"));
-    $("planfine").textContent = finePrint(p, plus, iv, pay, full, days) + " AI reading and coaching have daily and monthly usage limits. During beta, new AI work can also pause when the shared allowance is reached; saved workouts remain available.";
+    // What Basic keeps, said on the paid screen rather than only on the free
+    // one: nobody should have to buy Plus to find out what they already had.
+    var fr = p.caps && p.caps.free, basic = capNum(fr && fr.month_reads);
+    $("planfine").textContent = finePrint(p, plus, iv, pay, full, days) +
+      (basic === null ? "" : " Basic reads " + basic + " videos a month in full, and everything you have already saved stays readable for ever.") +
+      " Allowances reset on the 1st, 00:00 UTC. During beta, new AI work can also pause when Spotter’s shared allowance is reached; saved workouts remain available.";
   }
 
   function pickInterval(iv) {
@@ -11471,7 +11855,7 @@ export const APP = String.raw`
     // Superwall's tests. Monthly is still one tap away.
     cards.appendChild(priceCard("year", plus, p));
     cards.appendChild(priceCard("month", plus, p));
-    $("planbuy").disabled = false;
+    $("planbuy").disabled = billing.busy;
     paintChoice();
   }
 
@@ -11482,13 +11866,14 @@ export const APP = String.raw`
   }
 
   function openPlans(ctx) {
+    var epoch = accountEpoch, uid = state.user && state.user.id;
     billing.ctx = ctx && ctx.kind ? ctx : null;
     billing.interval = "year";
-    billing.busy = false;
     paintCtx();
     if (!billing.prices) paintSkeleton();
     openSheet("plansheet");
     loadPrices().then(function () {
+      if (!accountNow(epoch, uid)) return;
       if ($("plansheet").classList.contains("open")) paintPlans();
     });
   }
@@ -11523,8 +11908,14 @@ export const APP = String.raw`
 
   // Store purchases never grant access from a client-supplied receipt or flag.
   // The server fetches the account entitlement from RevenueCat before updating it.
-  function syncNativePurchase() {
-    return sb.functions.invoke("spotter-purchases", { body: {} }).then(function (r) {
+  function syncNativePurchase(epoch, uid) {
+    return sb.auth.getSession().then(function (auth) {
+      var session = auth && auth.data && auth.data.session;
+      if (!accountNow(epoch, uid) || !session || session.user.id !== uid) return null;
+      // Bind the request to this account even if auth changes during invocation.
+      return sb.functions.invoke("spotter-purchases", { body: {}, headers: { Authorization: "Bearer " + session.access_token } });
+    }).then(function (r) {
+      if (!accountNow(epoch, uid) || !r) return null;
       if (r.error || !r.data || r.data.status !== "ok") throw new Error("Your purchase is saved. Tap Restore purchase when your connection returns.");
       return r.data;
     });
@@ -11532,17 +11923,22 @@ export const APP = String.raw`
 
   function nativePurchase(restore, btn) {
     if (!state.user || billing.busy) return;
-    var uid = state.user.id;
+    var uid = state.user.id, epoch = accountEpoch;
     billing.busy = true;
     if (btn) btn.disabled = true;
     var work = restore ? native.purchases.restore(uid) : native.purchases.purchase(uid, billing.interval);
-    work.then(syncNativePurchase).then(function (r) {
-      if (!state.user || state.user.id !== uid) return;
+    work.then(function () {
+      if (!accountNow(epoch, uid)) return null;
+      return syncNativePurchase(epoch, uid);
+    }).then(function (r) {
+      if (!accountNow(epoch, uid) || !r) return;
       absorbPlan(r, !restore);
       toast(r.plan === "free" ? "No active subscription was found for this account." : "Your " + planWord(r.plan) + " access is up to date.");
     }).catch(function (e) {
+      if (!accountNow(epoch, uid)) return;
       if (!e.userCancelled && String(e.code) !== "1") toast(e.message || "Could not complete the purchase. Please try again.");
     }).then(function () {
+      if (!accountNow(epoch, uid)) return;
       billing.busy = false;
       if (btn) btn.disabled = false;
     });
@@ -11720,7 +12116,7 @@ export const APP = String.raw`
     if (!row) return;
     var configured = billOn(), plan = myPlan(), s = billing.sub;
     var staff = plan === "staff", paid = plan === "plus" || plan === "pro";
-    var word = planWord(plan), text = staff ? "Staff" : (paid ? word : "Free"), failed = false;
+    var word = planWord(plan), text = staff ? "Staff" : (paid ? word : "Basic"), failed = false;
     if (paid && s) {
       var ends = dayMonth(s.current_period_end), trial = dayMonth(s.trial_end || s.current_period_end);
       // A failed payment outranks everything: it is the one state with something
@@ -11761,21 +12157,70 @@ export const APP = String.raw`
     paintPlanGroup();
   }
 
-  function capLine(used, cap, word) {
-    var c = capNum(cap);
-    return (c === null ? used : used + " of " + c) + " " + word;
+  // The four allowances, in the order they cost money, each on its own line. The
+  // shape is the one the card's preview counter already uses and the one iOS
+  // Settings uses for iCloud storage: what you have used, what you have, and the
+  // date it comes back. Nothing else — a progress bar here would be decoration
+  // over four small integers, and the date is spelled out because "resets
+  // monthly" reads to most people as "some time, maybe".
+  var ALLOW_ROWS = [
+    ["reads", "Video reads"],
+    ["answers", "Coaching answers"],
+    ["helpers", "Explanations and swaps"],
+    ["uploads", "Uploads"]
+  ];
+
+  // In UTC, always. The allowances come back at 00:00 UTC on the 1st, and west
+  // of Greenwich a local rendering of that instant says the 30th — a reset date
+  // a day early is exactly the kind of small lie this whole change is undoing.
+  function resetDay(iso) {
+    var d = iso ? new Date(iso) : null;
+    if (!d || isNaN(d.getTime())) return "";
+    return d.toLocaleDateString(undefined, { day: "numeric", month: "short", timeZone: "UTC" });
+  }
+
+  // The reset clause is passed separately and kept whole: at 375px the longest of these lines
+  // wraps, and it must not wrap between "resets" and the date — a line ending on
+  // "resets" reads for a beat as though nothing is coming back.
+  function useRow(label, value, tail, back, out) {
+    var row = el("div", out ? "usel out" : "usel");
+    row.appendChild(document.createTextNode(label + " "));
+    row.appendChild(el("b", null, value));
+    if (tail) row.appendChild(document.createTextNode(tail));
+    if (back) row.appendChild(el("span", "nobr", " · resets " + back));
+    return row;
   }
 
   function paintPlanUse(r) {
-    var n = $("setplanuse"), lim = r && r.limits, bits = [];
-    if (lim) {
-      if (capNum(lim.library) !== null && num(r.library_count) !== null) {
-        bits.push(capLine(r.library_count, lim.library, "workouts saved"));
-      }
-      if (num(r.extracts_today) !== null) bits.push(capLine(r.extracts_today, lim.extract, "read today"));
+    var n = $("setplanuse"), lim = r && r.limits, m = r && r.month;
+    var hidden = n.classList.contains("hide");
+    n.innerHTML = "";
+    // The shelf is a stock, not a month, so it never says "this month" and never
+    // carries a reset date. A plan with no ceiling has nothing to count.
+    if (lim && capNum(lim.library) !== null && num(r.library_count) !== null) {
+      n.appendChild(useRow("Library", r.library_count + " of " + capNum(lim.library), " saved", null,
+        r.library_count >= capNum(lim.library)));
     }
-    n.textContent = bits.join(" · ");
-    n.classList.toggle("hide", !bits.length);
+    if (m) {
+      var back = resetDay(m.resets_at);
+      ALLOW_ROWS.forEach(function (a) {
+        var cap = capNum(m[a[0] + "_cap"]), used = num(m[a[0]]);
+        // A null cap is uncapped: there is no allowance to count towards, so the
+        // line would be a number with nothing to mean.
+        if (used === null || cap === null) return;
+        n.appendChild(useRow(a[1], used + " of " + cap, " this month", back, used >= cap));
+      });
+    }
+    // The one thing here that is not an allowance: Spotter's own shared budget.
+    // A person whose cards have gone thin deserves the reason, and the reason is
+    // not anything they did.
+    if (r && r.paid_enabled === false) {
+      n.appendChild(el("div", "usel out",
+        "Spotter's shared AI budget is spent for today — new video reads start again tomorrow. Everything you have saved stays readable."));
+    }
+    var empty = !n.childNodes.length;
+    n.classList.toggle("hide", empty);
+    if (hidden && !empty) n.classList.add("viewin");
   }
 
   // ---------- how full the free shelf is ----------
@@ -12360,18 +12805,29 @@ export const APP = String.raw`
    */
   function deviceFrames(opts) {
     if (!native || !native.contactSheet || (isFree() && !opts.preview)) return Promise.resolve(null);
+    var epoch = accountEpoch, uid = state.user && state.user.id;
     var prepare = opts.url ? api("ingest/prepare", { method: "POST", body: JSON.stringify({ url: opts.url, preview: !!opts.preview, reread: !!opts.reread }) }) : Promise.resolve({ needs_frames: true });
-    return prepare.catch(function () { return { needs_frames: true }; }).then(function (hint) {
+    return prepare.catch(function () {
+      if (!accountNow(epoch, uid)) throw new Error("Account changed");
+      return { needs_frames: true };
+    }).then(function (hint) {
+      if (!accountNow(epoch, uid)) throw new Error("Account changed");
       if (hint.needs_frames === false) return null;
       return sb.auth.getSession().then(function (r) {
       var s = r.data.session;
-      if (!s) return null;
+      if (!accountNow(epoch, uid) || !s || !s.user || s.user.id !== uid) throw new Error("Account changed");
       opts.token = s.access_token;
       return native.contactSheet(opts);
       });
     }).then(function (out) {
+      if (!accountNow(epoch, uid)) throw new Error("Account changed");
       return out && out.ok ? out.frames : null;
-    }).catch(function () { return null; });
+    }).catch(function (error) {
+      // Callers may save without frames after ordinary capture failure, but must
+      // not continue under a replacement account after identity changed.
+      if (!accountNow(epoch, uid) || (error && error.message === "Account changed")) throw error;
+      return null;
+    });
   }
 
   function cuttingFrames(url) {
@@ -13001,6 +13457,10 @@ export const APP = String.raw`
     // Only an email account owns its own password and address; Google and Apple
     // own theirs, and offering to change them here would send somebody round a
     // loop that ends at a provider screen we do not control.
+    // Asked once, and only of an account that predates the sign-up sentence.
+    var owed = !!state.profile && !consentAt();
+    $("consentrow").classList.toggle("hide", !owed);
+    if (owed) consentFill($("consentset"), "Using Spotter means you agree to the ");
     var mine = isEmailAccount();
     $("setpwrow").classList.toggle("hide", !mine);
     $("setmailrow").disabled = !mine;
@@ -13016,7 +13476,6 @@ export const APP = String.raw`
     if (native && native.platform === "android") $("nativesharehelp").textContent = "In TikTok, YouTube, Instagram or another app, share the post’s link and choose Spotter from the Android share sheet.";
     var key = state.profile ? state.profile.ingest_key : null;
     $("setkey").textContent = key ? API + "ingest?key=" + key : "Loading…";
-    $("setsaves").textContent = "…";
     renderSettingsMeter();
     // Drawn at once from whatever is already known so the group never opens
     // blank, then again when the two reads behind it land. Both of them shrug
@@ -13036,24 +13495,13 @@ export const APP = String.raw`
       if (r.status === "ok") {
         billing.limits = r;
         adoptPlan(r.plan);
+        // The day's counts used to be printed under Account. They are burst
+        // stops — sized above every allowance, nobody is sold one, and showing
+        // one invites the question "so which number is mine?". Settings now
+        // shows the month, under Plan, where what you bought is.
         paintPlanUse(r);
-        // Plan-aware once the server sends caps per plan, and today's sentence
-        // until it does — which is the page as it stands while billing is off.
-        var line = r.limits
-          ? capLine(r.saves_today, r.limits.saves, "saves") + " · " +
-            capLine(r.extracts_today, r.limits.extract, "read")
-          : r.saves_today + " of " + r.limit_saves +
-            " (" + r.extracts_today + "/" + r.limit_extract + " extractions, " +
-            r.helpers_today + "/" + r.limit_helper + " coaching" +
-            // The credits line below is the real Pumpy meter; the turn count is only
-            // shown while the server does not send one.
-            (r.pumpy ? ")" : ", " + (r.chats_today || 0) + "/" + (r.limit_chat || "—") + " Pumpy)");
-        // Say so plainly when the day's spend ceiling has switched the paid
-        // extractors off — cards get thinner and the user should know why.
-        if (r.paid_enabled === false) line += " · budget reached, using the free reader";
-        $("setsaves").textContent = line;
       }
-    }).catch(function () { $("setsaves").textContent = "—"; });
+    }).catch(function () {});
     openSheet("settingssheet");
   }
 
@@ -13557,16 +14005,16 @@ export const APP = String.raw`
     if (!email) { authError("Type your email above first, then tap this."); return; }
     var b = $("forgotpw");
     b.disabled = true;
-    sb.auth.resetPasswordForEmail(email, { redirectTo: AUTH_RETURN })
-      .then(function (r) {
-        b.disabled = false;
-        if (r.error) { authError(authMessage(r.error.message)); return; }
-        authOK("If that address has an account, a reset link is on its way. If it does not " +
-          "arrive in a few minutes, try again later.");
-      }, function () {
-        b.disabled = false;
-        authError("Could not ask for a link. Check your connection.");
-      });
+    capToken().then(function (tok) {
+      return sb.auth.resetPasswordForEmail(email, withCap({ redirectTo: AUTH_RETURN }, tok));
+    }).then(function (r) {
+      b.disabled = false;
+      if (r.error) { authError(authMessage(r.error.message)); return; }
+      mailSent(email, "recovery");
+    }, function () {
+      b.disabled = false;
+      authError("Could not ask for a link. Check your connection.");
+    });
   }
 
   // Following the link lands back here with a recovery session already built from
@@ -14440,6 +14888,25 @@ export const APP = String.raw`
 
   $("authgo").onclick = doAuth;
   $("forgotpw").onclick = forgotPassword;
+  consentFill($("consent"), "By creating an account you agree to the ");
+  $("consentok").onclick = function () {
+    noteConsent();
+    $("consentrow").classList.add("hide");
+  };
+  $("otpgo").onclick = otpGo;
+  // Six digits is the whole answer, so there is nothing left to press. Both
+  // Apple's and Instagram's code screens go on their own the moment the last
+  // digit lands, and waiting for a tap after that reads as a screen that did not
+  // notice. Non-digits are stripped as they arrive, which is also what a pasted
+  // "123 456" needs.
+  $("otp").addEventListener("input", function () {
+    var v = this.value.replace(/[^0-9]/g, "").slice(0, 6);
+    if (v !== this.value) this.value = v;
+    if (v.length === 6) otpGo();
+  });
+  $("otp").addEventListener("keydown", function (e) { if (e.key === "Enter") otpGo(); });
+  $("mailresend").onclick = mailResend;
+  $("mailback").onclick = mailBack;
   $("oagoogle").onclick = googleSignIn;
   $("oaapple").onclick = appleSignIn;
   oaLabelOf("oagoogle");
@@ -14608,40 +15075,47 @@ export const APP = String.raw`
   };
   var rereading = {};
   function syncRereadButton(w) {
-    var b = $("dreproc"), busy = !!(w && rereading[w.id]);
+    var b = $("dreproc"), busy = !!(w && rereading[w.id] && rereading[w.id].epoch === accountEpoch);
     b.disabled = busy || !!(w && isPending(w));
     b.textContent = busy ? "Reading…" : "Read it again";
     b.setAttribute("aria-busy", busy ? "true" : "false");
   }
   $("dreproc").onclick = function () {
-    if (!current || rereading[current.id]) return;
+    if (!state.user || !current || (rereading[current.id] && rereading[current.id].epoch === accountEpoch)) return;
     // A card that never finished goes back on the queue instead of being re-run
     // inline; retryWorkout owns that path and the pending UI that goes with it.
     if (isPending(current) || isFailed(current)) { retryWorkout(current, null); return; }
     // Keep the label still and prevent duplicate reads. Capture the card so a
     // response cannot change a different workout opened while this one reads.
-    var w = current;
-    rereading[w.id] = true;
+    var w = current, epoch = accountEpoch, uid = state.user.id;
+    var ticket = { epoch: epoch };
+    rereading[w.id] = ticket;
     syncRereadButton(current);
-    function finishRead() { delete rereading[w.id]; syncRereadButton(current); }
+    function finishRead() {
+      if (rereading[w.id] === ticket) delete rereading[w.id];
+      if (accountNow(epoch, uid)) syncRereadButton(current);
+    }
     api("workouts/" + w.id + "/reprocess", { method: "POST", body: "{}" })
       .then(function (r) {
         finishRead();
+        if (!accountNow(epoch, uid)) return;
+        w = state.workouts.filter(function (x) { return x.id === w.id; })[0] || w;
         // The row went back on the queue rather than being re-read inline — the
         // requeue already happened, so this only has to reflect it.
         if (r.status === "processing") {
           w.ingest_status = "processing"; w.ingest_error = null;
           if (current && current.id === w.id) openDetail(w, true);
-          render(); watchPending(); toast("Reading it again…");
+          render(); watchPending(); toast(w.user_workout_override ? "Refreshing the source; your personal exercise list will be kept." : "Reading it again…");
           return;
         }
         if (r.status !== "ok") { limitHit(r, "Could not read that video again — try again in a minute."); return; }
         return load().then(function () {
+          if (!accountNow(epoch, uid)) return;
           var fresh = state.workouts.filter(function (x) { return x.id === r.workout.id; })[0];
           if (fresh && current && current.id === w.id) openDetail(fresh);
-          toast("Re-read the workout.");
+          toast((fresh || w).user_workout_override ? "Source refreshed; your personal exercise list was kept." : "Re-read the workout.");
         });
-      }).catch(function () { finishRead(); toast("Could not read that workout again — try again in a minute."); });
+      }).catch(function () { finishRead(); if (!accountNow(epoch, uid)) return; toast("Could not read that workout again — try again in a minute."); });
   };
 
   $("wclose").onclick = function () { history.back(); };
@@ -14791,6 +15265,8 @@ export const APP = String.raw`
   captureShare();
   captureBilling();
   captureStrava();
+  // After the three captures, because it strips the query it reads from.
+  linkProblem();
 
   // A session restored from storage does not always fire onAuthStateChange in time.
   sb.auth.getSession().then(function (r) {

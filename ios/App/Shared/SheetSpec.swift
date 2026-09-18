@@ -157,7 +157,7 @@ enum SheetSpec {
 
     /// `M:SS` of the frame's own time, which is what the server prompt reads.
     static func label(seconds: Double) -> String {
-        let whole = max(0, Int((seconds.isFinite ? seconds : 0).rounded()))
-        return "\(whole / 60):" + String(format: "%02d", whole % 60)
+        let tenths = max(0, Int(((seconds.isFinite ? seconds : 0) * 10).rounded()))
+        return "\(tenths / 600):" + String(format: "%02d.%d", (tenths / 10) % 60, tenths % 10)
     }
 }

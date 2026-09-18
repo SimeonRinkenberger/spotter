@@ -66,8 +66,8 @@ export function keep(times) {
 }
 
 export function label(seconds) {
-  const whole = Math.max(0, Math.round(Number.isFinite(seconds) ? seconds : 0));
-  return Math.floor(whole / 60) + ':' + String(whole % 60).padStart(2, '0');
+  const tenths = Math.max(0, Math.round((Number.isFinite(seconds) ? seconds : 0) * 10));
+  return Math.floor(tenths / 600) + ':' + String(Math.floor(tenths / 10) % 60).padStart(2, '0') + '.' + tenths % 10;
 }
 
 // Durations that matter: zero and nonsense (a retriever that could not read the

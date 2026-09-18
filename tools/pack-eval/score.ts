@@ -50,6 +50,8 @@ export type FixtureExercise = {
   name_said?: string | null;
   name_shown?: string | null;
   canonical_id?: string | null;
+  acceptable_canonical_ids?: (string | null)[];
+  reps_prescribed?: number | null;
   t0?: number | null;
   t1?: number | null;
   reps_seen?: number | null;
@@ -69,6 +71,7 @@ export type CardExpectations = {
   stamped?: number | null;
   cues?: (string | null)[];
   canonical_ids?: (string | null)[];
+  acceptable_canonical_ids?: (string | null)[][];
   deltas?: { values?: (string | null)[] } | null;
   must_not?: MustNot[];
 };
@@ -290,7 +293,7 @@ export function align(fixture: Fixture, pack: Pack): { pairs: Pairing[]; extra: 
   for (const fx of fixture.exercises) {
     if (fx.observed === false) { pairs.push({ fixture: fx, actual: null, by: null }); continue; }
     let hit = fx.canonical_id
-      ? free.find((pe, k) => !taken.has(k) && pe.canonical_id === fx.canonical_id)
+      ? free.find((pe, k) => !taken.has(k) && (fx.acceptable_canonical_ids ?? [fx.canonical_id]).includes(pe.canonical_id))
       : undefined;
     let by: Pairing["by"] = hit ? "canonical_id" : null;
     if (!hit) {
@@ -347,7 +350,7 @@ export type Report = {
   };
   missing: string[];
   extra: string[];
-  timestamps: { n: number; mean_dt0: number | null; mean_dt1: number | null; max_dt: number | null };
+  timestamps: { n: number; expected_boundaries: number; measured_boundaries: number; missing_boundaries: number; within_slack: number; mean_dt0: number | null; mean_dt1: number | null; max_dt: number | null };
   attributes: {
     equipment_checked: number;
     equipment_exact: number;
@@ -426,6 +429,20 @@ function textFields(pack: Pack | null, card: EvalCard | null): { where: string; 
   });
   if (pack) push("pack.session", pack.session);
   return out;
+}
+
+/** Limited literal negation handling; not a semantic judge. Only immediately
+ * negated mentions are exempt. Later affirmative mentions still fail. */
+export function hasAffirmedPhrase(text: string, phrase: string): boolean {
+  const tokens = normText(text).split(" ");
+  const wanted = normText(phrase).split(" ");
+  for (let i = 0; i <= tokens.length - wanted.length; i++) {
+    if (!wanted.every((w, j) => tokens[i + j] === w)) continue;
+    const prefix = tokens.slice(Math.max(0, i - 5), i).join(" ");
+    if (/(?:^| )(?:not|no|without|rather than|instead of)(?: (?:a|an|the))?$/.test(prefix)) continue;
+    return true;
+  }
+  return false;
 }
 
 /** A card field that must have been left alone, checked on every exercise. */
@@ -545,13 +562,21 @@ export function score(fixture: Fixture, pack: Pack, card: EvalCard | null): Repo
 
     let canonOk: boolean | null = null;
     if (observed && a && fx.canonical_id !== undefined && fx.canonical_id !== null) {
-      canonOk = a.canonical_id === fx.canonical_id;
+      canonOk = (fx.acceptable_canonical_ids ?? [fx.canonical_id]).includes(a.canonical_id);
       if (!canonOk) {
         problems.push("exercise " + fx.i + " (" + label + "): canonical_id " +
           JSON.stringify(a.canonical_id) + ", fixture says " + JSON.stringify(fx.canonical_id));
       }
     }
 
+    if (observed && a && fx.reps_prescribed !== undefined &&
+        (a.reps_prescribed ?? null) !== fx.reps_prescribed) {
+      problems.push("exercise " + fx.i + " prescribed reps differ from creator evidence");
+    }
+    // Null means no verified visible count in the fixture, not a request to invent one.
+    if (observed && a && typeof fx.reps_seen === "number" && a.reps_seen !== fx.reps_seen) {
+      problems.push("exercise " + fx.i + " visible reps differ from the counted demonstration");
+    }
     exercises.push({
       i: fx.i,
       observed,
@@ -612,7 +637,7 @@ export function score(fixture: Fixture, pack: Pack, card: EvalCard | null): Repo
   (ce.canonical_ids ?? []).forEach((want, k) => {
     if (want === undefined) return;
     const got = flat[k]?.canonical_id ?? null;
-    if (got !== want) {
+    if (!(ce.acceptable_canonical_ids?.[k] ?? [want]).includes(got)) {
       problems.push("card exercise " + k + " canonical_id " + JSON.stringify(got) +
         ", fixture says " + JSON.stringify(want));
     }
@@ -656,7 +681,7 @@ export function score(fixture: Fixture, pack: Pack, card: EvalCard | null): Repo
       const needle = normText(rule.never);
       if (!needle) continue;
       for (const f of fields) {
-        if (normText(f.text).includes(needle)) {
+        if (hasAffirmedPhrase(f.text, needle)) {
           violations.push({ rule: rule.never, why: rule.why ?? "", where: f.where, text: f.text.slice(0, 120) });
         }
       }
@@ -724,6 +749,12 @@ export function score(fixture: Fixture, pack: Pack, card: EvalCard | null): Repo
     extra: extra.map((e) => e.name_shown),
     timestamps: {
       n: dt0s.length,
+      expected_boundaries: fixture.exercises.filter((e) => e.observed !== false)
+        .reduce((n, e) => n + Number(typeof e.t0 === "number") + Number(typeof e.t1 === "number"), 0),
+      measured_boundaries: dt0s.length + dt1s.length,
+      missing_boundaries: pairs.filter((p) => p.fixture.observed !== false && !p.actual)
+        .reduce((n, p) => n + Number(typeof p.fixture.t0 === "number") + Number(typeof p.fixture.t1 === "number"), 0),
+      within_slack: [...dt0s, ...dt1s].filter((d) => d <= TIMESTAMP_SLACK_S).length,
       mean_dt0: mean(dt0s),
       mean_dt1: mean(dt1s),
       max_dt: dt0s.concat(dt1s).length ? Math.max(...dt0s.concat(dt1s)) : null,
@@ -776,7 +807,7 @@ export function formatReport(r: Report): string {
   L.push("  stamped     " + r.counts.stamped +
     (r.counts.stamped_expected === null ? "" : " of " + r.counts.stamped_expected + " expected"));
   L.push("  timestamps  mean |dt0| " + num(r.timestamps.mean_dt0) + " s · mean |dt1| " +
-    num(r.timestamps.mean_dt1) + " s · worst " + num(r.timestamps.max_dt) + " s (n=" + r.timestamps.n + ")");
+    num(r.timestamps.mean_dt1) + " s · worst " + num(r.timestamps.max_dt) + " s (matched n=" + r.timestamps.n + "; " + r.timestamps.measured_boundaries + "/" + r.timestamps.expected_boundaries + " boundaries measured; " + r.timestamps.missing_boundaries + " missing)");
   L.push("  attributes  equipment exact " + r.attributes.equipment_exact + "/" + r.attributes.equipment_checked +
     " · hands " + num(r.attributes.hand_placement_mean) +
     " · surface " + num(r.attributes.surface_mean) +

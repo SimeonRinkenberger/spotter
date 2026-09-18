@@ -44,7 +44,19 @@ import { normText } from "./evidence.ts";
 import { canonicalize, standardOf } from "./catalog.ts";
 
 /** Bumped when the SHAPE of a pack changes, so a stored pack can be told apart. */
-export const PACK_V = 1;
+export const PACK_V = 2;
+
+/**
+ * The oldest pack shape this build still SERVES. See MIN_USABLE_CARD_V in
+ * index.ts for the whole rule: PACK_V is what we write, this is what we read.
+ *
+ * A v1 pack carries no `reps_prescribed`, no `rep_prescriptions` and no
+ * `caption`. Every consumer treats those as fields that are ABSENT — `?? []`,
+ * `!= null` — never as zero, so an old reading degrades gracefully instead of
+ * being thrown away and paid for again. Raise this only when an old shape is
+ * genuinely unreadable.
+ */
+export const MIN_USABLE_PACK_V = 1;
 
 // ---------- shapes ----------
 
@@ -109,6 +121,15 @@ export type PackVariant = {
 
 export type PackCue = { t: number; quote: string };
 
+/** A conservative, verbatim creator prescription; never a visible rep count. */
+export type RepPrescription = {
+  value: number;
+  source: "said" | "written";
+  scope: "all_exercises";
+  t: number | null;
+  quote: string;
+};
+
 /**
  * Which eye read this video, and which model was behind it.
  *
@@ -172,6 +193,9 @@ export type PackExercise = {
   t0: number;
   t1: number;
   reps_seen: number | null;
+  /** Null when missing or conflicting. Claims remain available for review. */
+  reps_prescribed?: number | null;
+  rep_prescriptions?: RepPrescription[];
   variant: PackVariant;
   delta_from_standard: string | null;
   creator_cues: PackCue[];
@@ -203,6 +227,7 @@ export type Pack = {
   visual: "read" | "unavailable";
   reader: PackReader;
   session: PackSession;
+  caption?: string | null;
   transcript_source: TranscriptSource;
   transcript: TranscriptSeg[];
   on_screen: { t: number; text: string }[];
@@ -460,7 +485,17 @@ export type Sheet = {
   times: number[];
 };
 
-export type Frames = { source: string; duration_s: number; sheets: Sheet[] };
+export type FrameEvidence = {
+  version: 3;
+  sampling: "sparse_uniform";
+  timestamp_basis: "actual_pts" | "requested_nearest_keyframe";
+  timing_uncertainty_s: number | null;
+  requested_frames: number;
+  captured_frames: number;
+  uploaded_frames: number;
+  sampling_complete: true;
+};
+export type Frames = { source: string; duration_s: number; sheets: Sheet[]; evidence?: FrameEvidence };
 
 /** ≤ 3 sheets a save, ≤ 600 KB each — the ceiling the authorize route enforces. */
 export const SHEET_MAX = 3;
@@ -535,11 +570,37 @@ export function parseFrames(
     }
     sheets.push({ path, cols, rows, cell_w: cw, cell_h: ch, times });
   }
+  let evidence: FrameEvidence | undefined;
+  if (f.evidence !== undefined) {
+    const e = f.evidence as Record<string, unknown> | null;
+    if (!e || e.version !== 3 || e.sampling !== "sparse_uniform" || e.sampling_complete !== true ||
+        !["actual_pts", "requested_nearest_keyframe"].includes(String(e.timestamp_basis))) {
+      return { error: "frames.evidence must describe a completed v3 sparse sample" };
+    }
+    const total = sheets.reduce((n, sheet) => n + sheet.times.length, 0);
+    if (![e.requested_frames, e.captured_frames, e.uploaded_frames]
+          .every((n) => typeof n === "number" && Number.isInteger(n) && n > 0 && n <= 36) ||
+        e.captured_frames !== total || e.uploaded_frames !== total || Number(e.requested_frames) < total) {
+      return { error: "frames.evidence counts do not match the uploaded cells" };
+    }
+    if (e.timestamp_basis === "requested_nearest_keyframe" && e.timing_uncertainty_s !== null) {
+      return { error: "nearest-keyframe timing uncertainty must remain unknown" };
+    }
+    if (e.timestamp_basis === "actual_pts" &&
+        (typeof e.timing_uncertainty_s !== "number" || !Number.isFinite(e.timing_uncertainty_s) || e.timing_uncertainty_s < 0)) {
+      return { error: "actual PTS uncertainty must be a nonnegative number" };
+    }
+    evidence = { version: 3, sampling: "sparse_uniform", timestamp_basis: e.timestamp_basis as FrameEvidence["timestamp_basis"],
+      timing_uncertainty_s: e.timing_uncertainty_s as number | null,
+      requested_frames: e.requested_frames as number, captured_frames: total, uploaded_frames: total,
+      sampling_complete: true };
+  }
   return {
     frames: {
       source: typeof f.source === "string" ? f.source.slice(0, 24) : "device",
       duration_s: round2(duration),
       sheets,
+      ...(evidence ? { evidence } : {}),
     },
   };
 }
@@ -559,7 +620,7 @@ export function sheetsPrompt(frames: Frames, transcript: TranscriptSeg[]): strin
   lines.push(
     "Each image is a contact sheet: a grid of still frames from one video, in order, " +
     "row-major (left to right, then down). Every cell is labelled with its timestamp in the " +
-    "bottom-left corner. Use those labels for t0 and t1. The video is " +
+    "bottom-left corner. The decimal seconds in the manifest below are authoritative over rounded labels. The video is " +
     frames.duration_s + " seconds long.",
     // The first live read hedged a push-up done ON a kettlebell handle as "hands
     // on the mat near the kettlebell handle". Both halves of that are visible and
@@ -570,11 +631,20 @@ export function sheetsPrompt(frames: Frames, transcript: TranscriptSeg[]): strin
     "weight (on the object, or on the floor next to it); if the frames cannot show it, say " +
     "unsure rather than guessing.",
   );
+  lines.push(
+    "These are sparse samples, not continuous video. Unseen movements or transitions may exist between " +
+    "samples. Never count prescribed reps as visible reps; use reps_visible:null unless complete cycles are observed. " +
+    "Boundary times between samples are estimates, not exact exercise start/end times.",
+    "Sampling evidence: " + (frames.evidence ? JSON.stringify(frames.evidence) : "legacy manifest; timing basis and completeness unknown"),
+    frames.evidence?.timestamp_basis === "actual_pts"
+      ? "Times identify actual decoded frames. Accurate frame times do not make inferred movement boundaries exact."
+      : "Frame times are approximate requested positions or have unknown timing basis. Keyframe displacement is unbounded here; do not claim exact playback times.",
+  );
   for (let i = 0; i < frames.sheets.length; i++) {
     const s = frames.sheets[i];
     lines.push(
       "  Sheet " + (i + 1) + ": " + s.cols + " columns x " + s.rows + " rows, " +
-      s.times.length + " frames at " + s.times.map((t) => secondsToMmss(t)).join(", "),
+      s.times.length + " frames at " + s.times.map((t) => String(t) + "s").join(", "),
     );
   }
   if (transcript.length) {
@@ -629,8 +699,8 @@ export function readObservation(raw: unknown): Observation | null {
     const movement = str(seg.movement, 80);
     if (t0 === null || t1 === null || !movement) continue;
     segments.push({
-      t0: secondsToMmss(t0),
-      t1: secondsToMmss(Math.max(t0, t1)),
+      t0: String(t0),
+      t1: String(Math.max(t0, t1)),
       movement,
       contact: str(seg.contact, 400),
       hand_placement: str(seg.hand_placement),
@@ -1223,7 +1293,38 @@ function agreement(a: string | null, b: string): number {
   return hit / (x.length + y.length - hit);
 }
 
-const REPS_SAID = /\b(?:\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|twelve|fifteen|twenty)\s+(?:reps?|repetitions?)\b/i;
+// Deliberately limited to explicit universal prescriptions. Temporal proximity
+// alone cannot establish which movement an instruction applies to. Unsupported
+// language remains in the original evidence for the card reader, never guessed.
+export function universalRepPrescriptions(
+  text: string, source: "said" | "written", t: number | null, exerciseCount?: number,
+): RepPrescription[] {
+  const values: Record<string, number> = { one: 1, two: 2, three: 3, four: 4,
+    five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, twelve: 12,
+    fifteen: 15, twenty: 20 };
+  const out: RepPrescription[] = [];
+  if (/\b(?:except|but|unless)\b/i.test(text)) return out;
+  for (const clause of text.split(/[.!?;\n]+/)) {
+    // Conditional, negative, historical/demo counts require semantic review.
+    if (/\b(?:not|never|don't|do not|instead|rather|if|could|might|demo|demonstrat\w*|did|performed|completed|example|warmup|warm-up|circuit|block|round|superset|cooldown|cool-down)\b/i.test(clause)) continue;
+    const pattern = /\b(\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|twelve|fifteen|twenty)\s+(?:reps?|repetitions?)\s+(?:apiece|each(?:\s+exercise)?|(?:per|for (?:each|every))\s+(?:exercise|movement))\b/gi;
+    for (const match of clause.matchAll(pattern)) {
+      // “Each side/arm/leg” says nothing about the other exercises.
+      if (/^\s+(?:side|arm|leg|hand|round|set)\b/i.test(clause.slice((match.index ?? 0) + match[0].length))) continue;
+      // Bare “each/apiece” needs explicit exercise scope in this statement.
+      if (!/\b(?:exercises?|movements?)\b/i.test(clause)) continue;
+      const namedCount = clause.match(/\b(\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten|twelve)\s+(?:different\s+)?(?:exercises|movements)\b/i);
+      const coversCount = !!namedCount && exerciseCount !== undefined &&
+        (values[namedCount[1].toLowerCase()] ?? Number(namedCount[1])) === exerciseCount;
+      // A named subset (e.g. “two exercises”) is not necessarily the whole video.
+      if (!coversCount && !/\b(?:all|every|each)\s+(?:the\s+)?(?:exercises?|movements?)\b/i.test(clause) &&
+          !/\b(?:per exercise|each exercise|every exercise|per movement|each movement|every movement)\b/i.test(match[0])) continue;
+      const value = values[match[1].toLowerCase()] ?? Number(match[1]);
+      if (value > 0) out.push({ value, source, scope: "all_exercises", t, quote: clause.trim() });
+    }
+  }
+  return out;
+}
 
 /**
  * The pack, from three channels and no model call.
@@ -1253,8 +1354,12 @@ export function assemblePack(input: AssembleInput): Pack {
   const words = wordStream(transcript, input.cues);
   const cues = allCues(transcript, words);
   const claimed = new Set<number>();
-  const wholeTranscript = transcript.map((s) => s.text).join(" ");
-  const schemeSaysReps = REPS_SAID.test(wholeTranscript);
+  const repClaims = [
+    ...transcript.flatMap((s) => universalRepPrescriptions(s.text, "said", s.t0, obs?.segments.length)),
+    ...(obs?.on_screen ?? []).flatMap((s) => universalRepPrescriptions(s.text, "written", mmssToSeconds(s.t), obs?.segments.length)),
+    ...universalRepPrescriptions(input.caption ?? "", "written", null, obs?.segments.length),
+  ];
+  const repValues = [...new Set(repClaims.map((c) => c.value))];
 
   const exercises: PackExercise[] = [];
   const segs = obs?.segments ?? [];
@@ -1266,8 +1371,13 @@ export function assemblePack(input: AssembleInput): Pack {
     const said = nameSaid(words, seg.movement, t0, t1);
     // The creator's own wording first, because it is what the catalog aliases were
     // written for; what the camera saw second; the seen equipment breaks ties.
-    const match = (said ? canonicalize(said, { equipment: variant.equipment }) : null) ??
+    let match = (said ? canonicalize(said, { equipment: variant.equipment }) : null) ??
       canonicalize(seg.movement, { equipment: variant.equipment });
+    // A narrow grip on a bell does not establish the diamond hand shape.
+    if (match?.id === "diamond-push-up" &&
+        !/\bdiamond\b/i.test(seg.movement + " " + seg.hand_placement)) {
+      match = canonicalize("push-up");
+    }
 
     // A cue belongs to one movement. Claimed in segment order so a sentence said
     // while the next exercise is already on screen goes to the one being coached.
@@ -1293,13 +1403,15 @@ export function assemblePack(input: AssembleInput): Pack {
       t0: round2(t0),
       t1: round2(t1),
       reps_seen: seg.reps_visible,
+      reps_prescribed: repValues.length === 1 ? repValues[0] : null,
+      rep_prescriptions: repClaims,
       variant,
       delta_from_standard: deltaFrom(match ? match.id : null, variant),
       creator_cues: mine,
       seen_not_said: seenNotSaid,
       provenance: {
         name: said ? "said" : "seen",
-        reps: seg.reps_visible === null ? "none" : (schemeSaysReps ? "said" : "seen"),
+        reps: seg.reps_visible === null ? "none" : "seen",
         variant: variantSeen(variant) ? "seen" : "none",
         cues: mine.length ? "said" : "none",
       },
@@ -1326,6 +1438,7 @@ export function assemblePack(input: AssembleInput): Pack {
       setting: obs?.session.setting ?? null,
       load_seen: null,
     },
+    caption: input.caption ?? null,
     transcript_source: input.transcriptSource,
     transcript,
     on_screen: (obs?.on_screen ?? [])
@@ -1450,6 +1563,9 @@ function mergeExercises(a: PackExercise, b: PackExercise): PackExercise {
     t0: round2(Math.min(a.t0, b.t0)),
     t1: round2(Math.max(a.t1, b.t1)),
     reps_seen: reps,
+    rep_prescriptions: [...(a.rep_prescriptions ?? []), ...(b.rep_prescriptions ?? [])]
+      .filter((c, i, all) => all.findIndex((d) => JSON.stringify(d) === JSON.stringify(c)) === i),
+    reps_prescribed: a.reps_prescribed === b.reps_prescribed ? a.reps_prescribed ?? null : null,
     variant,
     delta_from_standard: deltaFrom(id, variant),
     creator_cues: cues,
@@ -1588,6 +1704,21 @@ export function validatePack(pack: Pack | null | undefined): PackCheck {
     // survives that is two readings that cannot both be true.
     if (ex.t0 + PACK_SLACK_S < prevEnd) problems.push("segments overlap at " + ex.name_shown);
     prevEnd = ex.t1;
+    if (ex.reps_seen !== null && ex.provenance.reps !== "seen") {
+      problems.push("visible reps must have seen provenance: " + ex.name_shown);
+    }
+    for (const claim of ex.rep_prescriptions ?? []) {
+      const sources = claim.source === "said" ? (pack.transcript ?? []).map((s) => s.text)
+        : [...(pack.on_screen ?? []).map((s) => s.text), pack.caption ?? ""];
+      if (!Number.isInteger(claim.value) || claim.value <= 0 || claim.scope !== "all_exercises" ||
+          !claim.quote || !sources.some((text) => text.includes(claim.quote))) {
+        problems.push("invalid creator rep prescription: " + ex.name_shown);
+      }
+    }
+    const prescribed = [...new Set((ex.rep_prescriptions ?? []).map((c) => c.value))];
+    if (ex.reps_prescribed != null && (prescribed.length !== 1 || prescribed[0] !== ex.reps_prescribed)) {
+      problems.push("prescribed reps lack unambiguous creator evidence: " + ex.name_shown);
+    }
     for (const c of ex.creator_cues ?? []) {
       if (!inRange(c.t)) problems.push("cue outside the video at " + c.t);
       const want = normText(c.quote ?? "");
@@ -1604,12 +1735,11 @@ export function validatePack(pack: Pack | null | undefined): PackCheck {
 /**
  * The pack as a block of text for the extraction prompt.
  *
- * Deliberately two things and not the whole pack: the timestamped transcript,
+ * Compact source evidence and full movement variants: the timestamped transcript,
  * because the creator's words are where the cue comes from; and ONE line per
  * exercise of what the camera saw, because that is the setup detail a reader would
- * otherwise get wrong. Everything else in the pack — provenance, confidence, the
- * full variant — is for the explain sheet and the demo matcher, and sending it here
- * would cost tokens on every save to tell the card things the card does not use.
+ * otherwise get wrong. Claims appear once and movement variants stay complete
+ * so compression does not erase details that change how the exercise is done.
  */
 export function packBlock(pack: Pack): string {
   const lines: string[] = [
@@ -1621,22 +1751,30 @@ export function packBlock(pack: Pack): string {
   for (const s of pack.transcript.slice(0, 80)) {
     lines.push("  " + secondsToMmss(s.t0) + " " + s.text);
   }
+  // The caller already sends the caption once; keep it in the pack only for claim validation.
+  if (pack.session.format || pack.session.scheme) {
+    lines.push("", "Reader session interpretation (verify against source text): " +
+      JSON.stringify({ format: pack.session.format, scheme: pack.session.scheme }));
+  }
   if (pack.on_screen.length) {
     lines.push("", "Text written ON SCREEN:");
     for (const o of pack.on_screen.slice(0, 20)) lines.push("  " + secondsToMmss(o.t) + " " + o.text);
   }
+  const claims = pack.exercises.flatMap((ex) => ex.rep_prescriptions ?? [])
+    .filter((c, i, all) => all.findIndex((d) => JSON.stringify(d) === JSON.stringify(c)) === i);
+  if (claims.length) lines.push("", "Creator prescriptions (scope applies): " + JSON.stringify(claims));
   if (pack.exercises.length) {
     lines.push("", "What the camera SEES, one line per movement:");
     for (const ex of pack.exercises) {
-      const bits = [
-        ex.variant.surface ?? ex.seen_not_said[0] ?? "",
-        ex.variant.hand_placement ?? "",
-        ex.variant.load_position ?? "",
-        ex.reps_seen === null ? "" : "reps seen " + ex.reps_seen,
-      ].filter(Boolean).join("; ");
+      const bits = Object.entries(ex.variant)
+        .filter(([, v]) => v !== null && v !== "" && !(Array.isArray(v) && !v.length))
+        .map(([k, v]) => k + "=" + (Array.isArray(v) ? v.join(",") : String(v)));
+      if (ex.reps_seen !== null) bits.push("demonstration reps observed=" + ex.reps_seen + " (NOT a prescription)");
+      if (ex.reps_prescribed != null) bits.push("creator prescribed reps=" + ex.reps_prescribed);
+      if (ex.needs_requery) bits.push("visual detail uncertain; do not assert unclear details as facts");
       lines.push(
         "  [" + secondsToMmss(ex.t0) + "–" + secondsToMmss(ex.t1) + "] " + ex.name_shown +
-        (bits ? ": " + bits : ""),
+        (bits.length ? ": " + bits.join("; ") : ""),
       );
     }
   }
@@ -1644,7 +1782,10 @@ export function packBlock(pack: Pack): string {
     "",
     "Use the SAID lines for each exercise's cue, in the creator's own words. Use the SEEN line " +
     "for the one setup detail somebody reading only the name would get wrong. Never take an " +
-    "exercise name from a line you were not shown, and never invent a number.",
+    "exercise name from a line you were not shown, and never invent a number. " +
+    "Visible demonstration counts never supply prescribed reps. Conflicting creator claims remain " +
+    "unresolved. Keep missing creator programming null; put any suggested dose only in the " +
+    "separate recommendation field and explicitly label it as not provided by the creator.",
   );
   return lines.join("\n");
 }

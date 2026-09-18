@@ -240,9 +240,10 @@ bar, so the composer sits on the tab bar whether the thread is empty or endless;
 above it opens the chat list — every thread the caller owns, newest first, with the workout it
 was opened from and a two-tap delete that takes the messages with it — or starts a new one.
 When a response carries a `pumpy` credit meter (`plan`, `day`, `month`, each cap possibly
-null for unlimited), Settings shows the day and month counts and the composer adds a quiet
-line once either allowance falls under a fifth; every field is optional and nothing new
-appears while the server omits them.
+null for unlimited), Settings shows the month count — the day's credits are a burst stop and
+nobody is sold one — and the composer adds a quiet line once either allowance falls under a
+fifth, naming the day only when the day is genuinely what is about to stop you; every field is
+optional and nothing new appears while the server omits them.
 
 **A turn is one model call, not three.** Every turn opens with a *snapshot* — an index of
 the ready library (one line each: short id, title, category, minutes, equipment, ★,
@@ -365,11 +366,26 @@ ask how the media was obtained. Adding a source is a new object in `PROVIDERS`.
 
 ```bash
 npm install                                                        # once, for esbuild
+npm run verify:local                                               # everything CI's verify job runs
 node build.mjs && git add -A && git commit -m "..." && git push   # frontend
 supabase functions deploy spotter --no-verify-jwt                  # backend
 supabase db push                                                   # schema
 node tools/test-normalize.mjs && node tools/test-confidence.mjs    # both batteries
 ```
+
+**`npm run verify:local`** runs every step of the `verify` job in
+`.github/workflows/release-checks.yml`, in the same order, and stops at the first failure — the
+PGlite database checks, `npm run gtm:check`, `deno check`, the Deno harnesses, both pack evals,
+`npm audit` and the `build.mjs` byte diff. It needs PGlite once:
+
+```bash
+npm install --prefix /tmp/spotter-reader-db --ignore-scripts --no-audit --no-fund @electric-sql/pglite@0.5.8
+```
+
+`gtm:check` alone is not enough and is not meant to be: it is the launch regression groups, and
+none of them is `reader-access-check`, `deno check` or the build diff. A green `gtm:check` sat
+next to a red PR for an afternoon for exactly that reason. The macos-14 `native-parity` job
+(`npm run parity:check`) needs Xcode and stays separate.
 
 Changing a model, or turning the vision size cap down, needs none of the above:
 
@@ -399,9 +415,12 @@ Cache hits count only against `LIMIT_SAVES`, so saving videos other people alrea
 effectively free.
 
 **A ceiling on the day's bill.** Every model call records an estimated cost in
-`ai_cost_log` from the provider's own token counts. Once the day's total crosses
-`DAILY_SPEND_USD` (default `5`), providers that carry a price are switched off and
-extraction falls through to the free path — a thinner card, never a failed save. A provider
+`ai_cost_log` from the provider's own token counts. Once the day's total crosses the
+ceiling in `ai_guard_policy.daily_usd`, providers that carry a price are switched off and
+extraction falls through to the free path — a thinner card, never a failed save. The
+`DAILY_SPEND_USD` constant in `index.ts` is only the display fallback for a policy row that
+cannot be read; `spend_limit` reports the policy row, so moving the guard moves the number
+the app shows. A provider
 is "paid" iff a price is configured for it (`PRICE_OPENAI_IN` / `_OUT`, and the same for
 `ANTHROPIC`, `GEMINI`, `GROQ`), so putting a key on a paid plan is a config change, not a
 code change. `GET /api/limits` reports `spend_today`, `spend_limit` and `paid_enabled`.
@@ -660,17 +679,28 @@ before a single row goes. If Stripe cannot be reached the whole deletion stops w
 nothing is deleted, because an account that is gone but still charging a card every month is the
 one outcome that must never happen.
 
+Strava and RevenueCat are then told, in that order and best effort — an outage at either must not
+hold up an erasure, and neither is what charges the card. The RevenueCat subscriber id **is** the
+Supabase user id (`native/purchases.js` passes it as `appUserID`), so the delete is
+`DELETE https://api.revenuecat.com/v1/subscribers/<user id>`, and it runs only when the `spotter`
+function has a `REVENUECAT_API_KEY` secret — a web-only deploy makes no call. Deleting a
+subscriber needs a **secret** RevenueCat key; the public SDK key `spotter-purchases` reads
+customer info with is refused, which shows up as a logged 401 rather than as a failed erasure.
+
 ## Plans and billing
 
-Spotter sells one paid tier: **Plus, $6.99 a month or $39.99 a year**, with a 7-day trial on the
-annual price only (a card is taken up front — the free tier is the monthly plan's trial). At
-launch the first 200 annual subscribers pay **$29.99 for the first year**. Everything that made
+The configured target prices are **Plus, $6.99 a month or $50 a year**, with a 7-day trial on the
+annual price only (a card is taken up front — the free tier is the monthly plan's trial). The
+launch plan disables the automatic founding discount for new purchases; existing purchases
+and explicit promises must be honored. A live Stripe coupon is unchanged until a separate,
+reviewed billing update. These are repository targets: Stripe and the native Apple/Google product prices must be published separately and verified before these amounts are described as live. Everything that made
 Spotter worth using stays free for ever — logging, Workout Mode, the plan, progress, the muscle
 map, collections and export are not metered and never will be.
 
 **The free gate is the shelf, not the day.** A free account holds **20 workouts**; Plus is
-unlimited. The five daily caps below exist to stop abuse and are set where an ordinary week never
-touches them, because a daily ceiling teaches people to save *less*, which is the opposite of
+unlimited. What is sold on top of that is a monthly allowance (see *Prices and caps are data*);
+the five daily caps below it are silent burst stops, set where an ordinary week never touches
+them, because a daily ceiling teaches people to save *less*, which is the opposite of
 what a library wants. The library cap is checked only where a new row would be created — a save,
 an upload, a workout Pumpy proposes — and never on reading, logging, editing, planning or
 deleting. Nothing already saved is ever taken away, including from an account that goes over the
@@ -757,6 +787,13 @@ each create their own. Nothing else differs.
 >    tax cloud-only SaaS and every economic-nexus threshold is many times away, so calculation
 >    would collect nothing and add a renewal-time failure mode. Monitoring is free at zero
 >    registrations and is what will tell you when that stops being true.
+> 7. Products → Coupons → **delete `SPOTTER_FOUNDING_YEAR`**, in the same session as any price
+>    change. `"founding": {"enabled": false}` in `tools/stripe-plans.json` is read only by this
+>    script and deletes nothing. The function's own switch is the `app_config` row
+>    `billing.founding`, which must hold the string `true` for the discount to be shown on the
+>    paywall or applied at Checkout — nothing seeds that row, so an absent row is already full
+>    price. Deleting the coupon is the second half: it is what stops an old Checkout Session or a
+>    direct API call from redeeming it. Skip both and a $50 annual plan sells for $40.
 
 Testing without the Stripe CLI: card `4242 4242 4242 4242` for the happy path,
 `4000 0000 0000 0341` to make a *renewal* fail (it attaches fine and declines when charged),
@@ -794,14 +831,47 @@ to change:
 | What | Where | Notes |
 | --- | --- | --- |
 | Product names, amounts, intervals, trial length, the founding offer | `tools/stripe-plans.json` | The source of truth for what the setup script creates. Amounts in cents. |
-| The caps per plan | `app_config.limits.plans` | Read on the same 5-minute cache as the model ids. `null` = unlimited. |
+| The monthly allowances people are sold | `app_config.allowances.monthly` | What Settings and the paywall print and what a 429 counts against. Same 5-minute cache. `null` = uncapped. |
+| The daily burst stops | `app_config.limits.plans` | Abuse stops, never shown to users. Read on the same 5-minute cache as the model ids. `null` = unlimited. |
 | Trial length the function applies | `app_config.billing.trial_days` | Annual only. Keep it equal to `trial_days` in the JSON. `0` switches trials off. |
 | Stripe Tax | `app_config.billing.tax` | `false` at launch. The checkout code already reads it. |
 | One person's caps | `profiles.limits` | A JSON override, field by field, beating the plan. |
 
-Today's numbers:
+**What a person is sold is a month.** These are the numbers in Settings, on the paywall and in
+every 429, and the only ones anybody outside this file ever sees. They reset on the **1st at
+00:00 UTC** — the same instant the dollar guards, `video_previews` and Pumpy's credits already
+come back on. Source: `design/gtm/ALLOWANCES.md` section 3.
 
-| Cap | Free | Plus |
+| Monthly allowance | Basic | Plus |
+| --- | --- | --- |
+| `reads` video reads — movements, spoken cues, on-screen text | 4 | 20 |
+| `answers` Pumpy coaching answers | 100 | 300 |
+| `helpers` explanations and swaps | 20 | 100 |
+| `uploads` | 1 | 10 |
+| Library held (a shelf, not a month) | 20 | no ceiling |
+| Caption saves, logging, Workout Mode, plan, Progress, export | free, unmetered | free, unmetered |
+
+`GET /api/limits` carries them as a `month` object — `reads`, `answers`, `helpers`, `uploads`,
+`previews`, each with a `_cap`, plus `resets_at` — beside the older `*_today` fields, which stay
+so an app that has not reloaded since yesterday keeps working. A monthly refusal is the same 429
+shape as a daily one with `scope: "month"` and `resets_at` on the 1st, so the client renders both
+through one path. For a Basic account `month.reads` **is** its preview count, because
+`reserve_video_preview` is what enforces it.
+
+A **video read** is one video, counted by shortcode: an escalation that listens and then watches
+is one read, and re-reading a video this account already read this month costs nothing. A cache
+hit never consumes an allowance and is never refused. Basic's four are enforced in exactly one
+place, the `reserve_video_preview` function in SQL, and `allowances.monthly` can lower what Basic
+is *shown* but can never raise it past what that function will admit.
+
+`answers` is the number promised; the enforcing gate is Pumpy's credit ladder, sized so that many
+answers can never be refused. Nothing in the function counts it.
+
+**The daily caps are burst stops, not shown to users.** They exist to stop a script in one
+sitting, they are sized at or above the monthly allowance they guard, and the month is always
+checked first so the number that speaks is the number on the paywall.
+
+| Burst stop (per day, not shown to users) | Free | Plus |
 | --- | --- | --- |
 | `library` workouts held (**not** per day) | 20 | unlimited |
 | `saves` per day | 30 | 200 |
@@ -813,19 +883,53 @@ Today's numbers:
 Pumpy's credits are a separate dial (`app_config.pumpy.plans`, `profiles.pumpy_limits`) and are
 unchanged: free 150/day and 1,500/month, Plus 400/day and 5,000/month.
 
+**`LIMIT_*` secrets fill gaps; they never beat config.** `LIMIT_SAVES`, `LIMIT_EXTRACT`,
+`LIMIT_MEDIA`, `LIMIT_UPLOADS` and `LIMIT_HELPER` are set as function secrets. They predate plans,
+so each one is folded into the **free** row only, as its floor — and `limits.plans` is read over
+that floor field by field. So: where `limits.plans` names a number for a cap, config wins and the
+secret is irrelevant; where it does not (key absent, or a value that is neither `null` nor a
+non-negative number), the secret fills the gap; with no secret and no config row, the compiled
+default applies. `LIMIT_CHAT` (200/day) is plan-independent and is a backstop under Pumpy's
+credits, not a cap anybody is sold. None of them touches `allowances.monthly`.
+
+**Seeding the allowances.** The compiled defaults in `index.ts` are the table above, so the app is
+correct with no row at all. To move a number without a deploy:
+
+```sql
+insert into public.app_config (key, value) values ('allowances.monthly',
+  '{"free":{"reads":4,"answers":100,"helpers":20,"uploads":1},'
+  '"plus":{"reads":20,"answers":300,"helpers":100,"uploads":10},'
+  '"pro":{"reads":60,"answers":900,"helpers":300,"uploads":25},'
+  '"staff":{"reads":null,"answers":null,"helpers":null,"uploads":null}}')
+on conflict (key) do update set value = excluded.value, updated_at = now();
+```
+
+Raising an allowance without also raising the matching burst stop and the per-account dollar
+ceiling (`ai_guard_policy.user_monthly_usd`) sells something the guards will refuse —
+`design/gtm/ALLOWANCES.md` section 5 has the arithmetic and the SQL for all three.
+
+Two checks guard all of this. `deno run --allow-read tools/allowance-table-check.ts` proves the
+table, the config fallbacks and the refusal copy, and runs inside `npm run gtm:check`.
+`node tools/allowance-harness.mjs` additionally renders Settings › Plan for Basic and Plus at
+nothing, part and all used and asserts the line and the UTC reset date; it needs linkedom
+(`npm install --prefix /tmp/spotter-qa linkedom`), which is why it is not in the suite.
+
 **Changing a price.** Edit the amount in `tools/stripe-plans.json` and run the setup script again.
 Prices are immutable in Stripe, so it creates a new one, moves the `lookup_key` onto it with
 `transfer_lookup_key` and deactivates the old — everybody already subscribed keeps the price they
 bought. No code knows a price id.
 
 **The founding offer** is a Stripe coupon with a fixed id, `SPOTTER_FOUNDING_YEAR`: $10 off, once,
-200 redemptions, scoped to the Plus product. The setup script creates it; the function looks it up
-by that id on the same five-minute cache as the prices and, while Stripe reports it valid, applies
-it to every yearly checkout automatically. Nobody types a code. Stripe's own `max_redemptions`
-counter is what closes the offer, so there is no number on our side to drift — `GET
-/api/billing/prices` reports `founding: {first_year_amount, remaining}`, or `null` once it is gone.
-**To end the offer, delete the coupon** in Products → Coupons; the paywall stops advertising it
-within five minutes and checkout goes to full price. Coupons are immutable, so changing the
+200 redemptions, scoped to the Plus product. **Two switches have to agree, and both are off by
+default.** The function reads the `app_config` row `billing.founding` on the same five-minute cache
+as the prices, and unless it holds the string `true` the offer is null everywhere — the paywall
+shows the standing price and checkout sends no discount. Nothing seeds that row. When it is `true`
+and Stripe still reports the coupon valid, it is applied to every yearly checkout automatically;
+nobody types a code. Stripe's own `max_redemptions` counter is what closes the offer, so there is
+no number on our side to drift — `GET /api/billing/prices` reports
+`founding: {first_year_amount, remaining}`, or `null` once either switch is off.
+**To end the offer, leave `billing.founding` absent and delete the coupon** in Products → Coupons;
+the paywall stops advertising it within five minutes and checkout goes to full price. Coupons are immutable, so changing the
 amount means deleting and re-creating. One consequence worth knowing: a Checkout Session may
 carry a coupon *or* a promo-code box, never both, so while the offer runs the yearly checkout has
 no "enter a code" field. Monthly keeps one. If Stripe refuses the coupon at session creation —
@@ -1019,6 +1123,97 @@ after in History. `capacity`, `disconnected` and `rate_limited` each get their o
      **Required characters** to `Lowercase, uppercase letters and digits` or stronger → Save.
 
    Both are visible afterwards in Advisors → Security, which is where they were flagged.
+
+8. **The signup boundary.** Signup is open and email confirmation is off, which means an
+   account costs nothing to make and every per-account cap can be multiplied by making more
+   of them. Two things close that, and both need an account only the owner can create. The
+   page is already written for both: `PUBLIC_CAPTCHA` in `supabase/functions/spotter/app.ts`
+   is empty, and while it is empty the auth calls are byte-for-byte the calls that shipped
+   before. `supabase/config.toml` carries the matching blocks, commented, in the order they
+   have to be switched on.
+
+   **Cloudflare Turnstile** (free, no card):
+
+   1. dash.cloudflare.com → Turnstile → **Add widget**. Name it `spotter`.
+   2. Hostnames: `simeonrinkenberger.github.io`, `quarterdeckcollective.com`. Add
+      `localhost` only if you want to test against the live project from a local build —
+      Cloudflare's own advice is not to leave a local hostname on a production widget.
+   3. Widget mode **Managed**. The page renders it `interaction-only`, so a visitor
+      Cloudflare can vouch for never sees anything; only a suspect one gets a checkbox.
+   4. Copy the **site key** into `PUBLIC_CAPTCHA.turnstile_site_key` in `app.ts`, run
+      `npm install && node build.mjs`, commit and ship the page. Do this first: the server
+      switch below rejects every browser still holding a page without the key.
+   5. Copy the **secret key**, `export SUPABASE_AUTH_CAPTCHA_SECRET=...`, uncomment
+      `[auth.captcha]` in `supabase/config.toml`, and `supabase config push`.
+
+   **Resend + confirmations** (the built-in sender is 2-4 mails an hour and is not a
+   launch sender):
+
+   1. resend.com → Domains → add `quarterdeckcollective.com`, publish the DKIM, SPF and
+      DMARC records it prints at the registrar, wait for **Verified**. Unverified mail
+      still sends and lands in spam, which is indistinguishable from mail never sent.
+   2. Resend → API Keys → create one with **Sending access**. That key is the SMTP
+      password; the SMTP username is the literal string `resend`.
+   3. `export SUPABASE_AUTH_SMTP_PASS=...`, uncomment `[auth.email.smtp]`,
+      `supabase config push`, then send yourself one **Forgot your password?** from the
+      live page and confirm it arrives from `Spotter <no-reply@quarterdeckcollective.com>`.
+   4. Dashboard → Authentication → **Email Templates**. In **Confirm signup** and in
+      **Reset password**, put the code above the link:
+
+      ```html
+      <p>Your code: <strong>{{ .Token }}</strong></p>
+      ```
+
+      This is not optional. The confirmation link signs a person in **wherever it
+      opens**, which on a phone is the browser and not the app — the native shells have
+      no universal link back. The six-digit code is how the account lands in the app the
+      person is actually standing in; the link stays for anyone reading the mail on a
+      desktop. Without `{{ .Token }}` in the template the code field on the card has
+      nothing to receive.
+   5. Raise `[auth.rate_limit].email_sent` above its **2/hour project-wide** default in
+      the same push. Two an hour was sized for the built-in sender and will stall every
+      signup the moment confirmations are on; the commented block suggests 30 against
+      Resend's free 100/day.
+   6. Only then set `enable_confirmations = true` and push again. From that moment a
+      signup returns no session and the card shows **Check your email** with the code
+      field, which the page already handles — no redeploy.
+   7. Dashboard → Authentication → **URL Configuration** → Redirect URLs must list
+      `https://simeonrinkenberger.github.io/spotter/`, or the link in the mail bounces to
+      the Site URL. It is the same list the reset link needs.
+
+   **AI consent.** App Store 5.1.2(i) needs an explicit agreement before a person's
+   content goes to a third-party model. The sign-up face of the card carries that
+   sentence above the button, with links to the Terms and the privacy policy, and the
+   moment of agreement is recorded as `ai_consent_at` (ISO string) in
+   `profiles.settings` — a user-writable column, so there is no migration and nothing
+   for the owner to run. An account made before this existed is asked once, at the top
+   of Settings; dismissing that line is the agreement and records the same field.
+   Nothing here needs a dashboard change.
+
+   **Rate limits.** `[auth.rate_limit]` in `config.toml` is the third block, and the only
+   one that depends on nothing external — per-IP caps gotrue applies before anything else.
+   It can be pushed on its own, today, ahead of both accounts above.
+
+   **Not yet known: the native shells.** Turnstile needs a browser, and Cloudflare supports
+   it inside a WebView, but nobody has yet run it from `capacitor://localhost` (iOS) or
+   `http://localhost` (Android) on a device. If it cannot get a token there, `[auth.captcha]`
+   locks native signups out the moment it is pushed. Check that on a device before step 5 of
+   the Turnstile list; if it fails, the fallback is `[auth.rate_limit]` plus App Attest /
+   Play Integrity on the native ingest path, and captcha stays a web-only defence.
+
+   **Test script**, on the live page, after each push:
+
+   | Step | Expect |
+   | --- | --- |
+   | Sign up with a fresh address | "Check your email", the address echoed back, a six-digit code field, Resend counting down from 60 |
+   | Type the code from the mail | Signs in on this device, in this app, without touching the link |
+   | Type a wrong code | "That code is wrong or has expired. Ask for a new one." and the field reselected |
+   | Open the link in the mail | Lands signed in, library empty, no error box |
+   | Open the same link a second time | "That link has expired or was already used." — a sentence, not a dump |
+   | Sign in with the unconfirmed account | The same "Check your email" card, with a working Resend |
+   | Forgot your password? | The same card, "recovery" wording; the code or the link both open "Choose a new password" |
+   | Tap Create account 20 times in a minute | "Too many tries. Give it a minute." and no stuck button |
+   | Sign up in the native shell | A token, or a captcha error — this is the unknown above |
 
 ### Sign in with Google / Apple
 

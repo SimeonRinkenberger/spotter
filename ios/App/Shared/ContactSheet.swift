@@ -4,7 +4,7 @@ import UIKit
 /**
  * The phone cuts the frames.
  *
- * Up to three JPEG grids of timestamped stills are what the reader (Luna) gets
+ * Up to three JPEG grids of timestamped stills are what the visual reader gets
  * instead of a video, and cutting them here costs nothing: AVAssetImageGenerator
  * on a local file runs at roughly 12-64 ms a frame, so thirty-six frames are
  * about a second of the phone's own time and zero cents of anybody's API budget.
@@ -15,8 +15,8 @@ import UIKit
  * straight down to cell size — a full 1080x1920 frame is never held — and a sheet
  * is drawn and encoded the moment its twelve cells are full, which means peak
  * memory is twelve frames and one canvas (about 12 MB) rather than all
- * thirty-six. Everything gives up politely at the deadline rather than trying
- * harder, and whatever sheets are already finished go with the save.
+ * thirty-six. Interrupted sampling falls back to the server video route; a finished
+ * prefix must never be represented as an overview of the complete video.
  *
  * Shared verbatim by the extension and by the in-app plugin; `SheetSpec` holds
  * every number and is mirrored on Android.
@@ -52,7 +52,8 @@ enum ContactSheetBuilder {
     static func build(mp4: URL, duration hinted: Double, deadline: Date) async throws -> ContactSheetResult {
         let asset = AVURLAsset(url: mp4, options: [AVURLAssetPreferPreciseDurationAndTimingKey: false])
         let (display, measured) = try await describe(asset)
-        let duration = hinted > 0 ? hinted : measured
+        // Decoder-measured duration is authoritative; page metadata can be stale.
+        let duration = measured.isFinite && measured > 0 ? measured : hinted
         let cell = SheetSpec.cell(videoWidth: display.width, videoHeight: display.height)
         let wanted = SheetSpec.times(duration: duration)
 
@@ -70,6 +71,7 @@ enum ContactSheetBuilder {
         var chunk: [(time: Double, image: CGImage)] = []
         var last = -Double.greatestFiniteMagnitude
         var kept = 0
+        var decoded = 0
 
         // Twelve cells make a sheet; the sheet is drawn and the frames released
         // before the next twelve are asked for.
@@ -79,6 +81,8 @@ enum ContactSheetBuilder {
             chunk = []
         }
         func take(_ time: Double, _ image: CGImage) throws -> Bool {
+            guard time.isFinite, time >= 0, time <= duration else { return true }
+            decoded += 1
             guard SheetSpec.accepts(time, after: last) else { return true }
             chunk.append((time, image)); last = time; kept += 1
             if chunk.count == SheetSpec.cellsPerSheet { try flush() }
@@ -103,7 +107,8 @@ enum ContactSheetBuilder {
         }
         try flush()
 
-        guard kept >= minUsableFrames, !pages.isEmpty else { throw ContactSheetError.noFrames }
+        // Never publish a timed-out prefix as an overview of the whole clip.
+        guard decoded == wanted.count, kept >= minUsableFrames, !pages.isEmpty else { throw ContactSheetError.noFrames }
         return ContactSheetResult(pages: pages, cellW: cell.w, cellH: cell.h,
                                   requested: wanted.count, duration: duration)
     }
@@ -168,7 +173,7 @@ enum ContactSheetBuilder {
         if data.count > SheetSpec.jpegMaxBytes {
             data = renderer.jpegData(withCompressionQuality: SheetSpec.jpegFallbackQuality, actions: draw)
         }
-        guard !data.isEmpty else { throw ContactSheetError.encodeFailed }
+        guard !data.isEmpty, data.count <= SheetSpec.jpegMaxBytes else { throw ContactSheetError.encodeFailed }
         return SheetPage(jpeg: data, times: frames.map(\.time),
                          cols: min(SheetSpec.cols, frames.count),
                          rows: SheetSpec.rows(count: frames.count))

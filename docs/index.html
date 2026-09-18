@@ -446,6 +446,91 @@ button {
 .autherr.show {
   display: block;
 }
+.consent {
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--ink-2);
+  margin: 0 0 14px;
+}
+.consent a {
+  color: var(--ink-2);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.consentrow {
+  border: 1px solid var(--line-2);
+  border-radius: 16px;
+  padding: 14px 14px 12px;
+  margin-bottom: 20px;
+}
+.consentrow .consent {
+  margin-bottom: 12px;
+}
+.consentrow .btn {
+  padding: 11px;
+  font-size: 14.5px;
+}
+.capgate:not(:empty) {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 12px;
+}
+.authcard.sent > :not(#mailsent):not(#capgate) {
+  display: none;
+}
+.authcard.sent > #capgate {
+  margin: 0;
+}
+.mailsent {
+  animation: cardin var(--t-3) var(--e-out);
+  outline: none;
+}
+.mailsent h2 {
+  font-family: var(--display);
+  font-size: 19px;
+  margin: 14px 0 8px;
+  font-weight: 700;
+  letter-spacing: -.012em;
+}
+.mailsent p {
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--ink-2);
+  margin: 0 0 18px;
+}
+.mailsent .field input {
+  text-align: center;
+  letter-spacing: .28em;
+  text-indent: .28em;
+  font-weight: 600;
+}
+.mailsent .btn.ghost {
+  margin-top: 12px;
+}
+.mailsent b {
+  color: var(--ink);
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+.mailmark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  background: var(--ember-soft);
+  color: var(--ember-ink);
+}
+.mailmark .ic {
+  width: 21px;
+  height: 21px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mailsent {
+    animation: none;
+  }
+}
 .oauth {
   margin-top: 18px;
 }
@@ -5882,6 +5967,21 @@ html.native body.kb .tabbar {
   line-height: 1.5;
   padding: 6px 4px 0;
 }
+.setnote .usel {
+  padding: 1px 0;
+}
+.setnote .usel b {
+  color: var(--ink-2);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.setnote .usel.out,
+.setnote .usel.out b {
+  color: var(--ember-ink);
+}
+.setnote .usel .nobr {
+  white-space: nowrap;
+}
 .setnote.foot {
   text-align: center;
   margin-top: 18px;
@@ -7128,6 +7228,7 @@ details.details-moving > :not(summary) {
 <symbol id="i-volume-x" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="m22 9-6 6"/><path d="m16 9 6 6"/></symbol>
 <symbol id="i-youtube" viewBox="0 0 24 24"><rect width="20" height="14" x="2" y="5" rx="4.5"/><path d="m10.2 9 4.6 3-4.6 3z"/></symbol>
 <symbol id="i-thumb-up" viewBox="0 0 24 24"><path d="M7 20v-9l4-8a2.5 2.5 0 0 1 2 3.5L12 11h6a2 2 0 0 1 2 2.5l-1.5 6a2 2 0 0 1-2 .5z"/><rect width="5" height="10" x="2" y="10" rx="1.5"/></symbol>
+<symbol id="i-mail" viewBox="0 0 24 24"><rect width="20" height="16" x="2" y="4" rx="3.5"/><path d="m3.2 7.4 7.4 5.1a2.5 2.5 0 0 0 2.8 0l7.4-5.1"/></symbol>
 </svg>
 
 <div id="landing">
@@ -7143,7 +7244,7 @@ details.details-moving > :not(summary) {
       <li><span class="num">3</span><div><b>Train and log it</b> — full-screen, one move at a time, tracking weight and reps as you go.</div></li>
     </ol>
 
-    <div class="authcard">
+    <div class="authcard" id="authcard">
       <h2 id="authtitle">Create your account</h2>
       <div class="field">
         <label for="email">Email</label>
@@ -7156,6 +7257,8 @@ details.details-moving > :not(summary) {
           <button type="button" class="pweye" aria-label="Show password" aria-pressed="false"><svg class="ic"><use href="#i-eye"></use></svg></button>
         </div>
       </div>
+      <p class="consent hide" id="consent"></p>
+      <div class="capgate" id="capgate"></div>
       <button class="btn" id="authgo">Create account</button>
       <div class="autherr" id="autherr"></div>
       <div class="authswap hide" id="forgotwrap"><button id="forgotpw" type="button">Forgot your password?</button></div>
@@ -7173,6 +7276,19 @@ details.details-moving > :not(summary) {
         </div>
       </div>
       <div class="authswap" id="authswap">Already have an account? <button id="authtoggle">Sign in</button></div>
+      <div class="mailsent hide" id="mailsent" tabindex="-1">
+        <span class="mailmark" aria-hidden="true"><svg class="ic"><use href="#i-mail"></use></svg></span>
+        <h2>Check your email</h2>
+        <p id="mailbody"></p>
+        <div class="field">
+          <label for="otp">Six-digit code</label>
+          <input id="otp" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="123456" autocapitalize="off" spellcheck="false">
+        </div>
+        <button class="btn" id="otpgo">Confirm</button>
+        <div class="autherr" id="otperr"></div>
+        <button class="btn ghost" id="mailresend">Resend the email</button>
+        <div class="authswap"><button id="mailback">Use a different email</button></div>
+      </div>
     </div>
     <div class="landfoot">Spotter by Quarterdeck Collective · Free to start ·
       <a href="https://quarterdeckcollective.com/spotter/whats-new/">What&rsquo;s new</a> · <a href="https://quarterdeckcollective.com/spotter/terms/">Terms</a> ·
@@ -7570,13 +7686,17 @@ details.details-moving > :not(summary) {
   <button class="iconbtn sheetx" id="setclose" aria-label="Close settings"><svg class="ic"><use href="#i-x"></use></svg></button>
   <h2>Settings</h2>
 
+  <div class="consentrow hide" id="consentrow">
+    <p class="consent" id="consentset"></p>
+    <button class="btn ghost" id="consentok">Got it</button>
+  </div>
+
   <h3 class="seth">Account</h3>
   <div class="setgroup">
     <button class="kv row" id="setmailrow"><span class="k">Email</span><span class="v" id="setemail">&mdash;</span><svg class="ic chev"><use href="#i-chev"></use></svg></button>
     <div class="kv hide" id="setprovrow"><span class="k">Sign-in method</span><span class="v" id="setprov">&mdash;</span></div>
     <button class="kv row" id="setnamerow"><span class="k">Name</span><span class="v" id="setname">&mdash;</span><svg class="ic chev"><use href="#i-chev"></use></svg></button>
     <button class="kv row hide" id="setpwrow"><span class="k">Password</span><span class="v">Change</span><svg class="ic chev"><use href="#i-chev"></use></svg></button>
-    <div class="kv"><span class="k">Saved today</span><span class="v" id="setsaves">&mdash;</span></div>
   </div>
   <div class="setnote hide" id="setpumpy"></div>
   <button class="btn ghost setout" id="signout">Sign out</button>
@@ -7731,7 +7851,7 @@ details.details-moving > :not(summary) {
 <script>
 (function() {
   "use strict";
-  var native = window.SpotterNative || null, AUTH_RETURN = native ? "https://simeonrinkenberger.github.io/spotter/" : location.origin + location.pathname, SB_URL = "https://mtzevoxxpsktmrbbuxva.supabase.co", SB_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10emV2b3h4cHNrdG1yYmJ1eHZhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgyMjM5ODgsImV4cCI6MjEwMzc5OTk4OH0._vpNhLJtv2bVGgXXClva9O5cX8Y5eJdTgbgAO81NnmU", API = SB_URL + "/functions/v1/spotter/api/", PUBLIC_AUTH = { google_client_id: "48831784248-dh1o2fhiem9kqgs6ambnnvaba8vojrf2.apps.googleusercontent.com", apple_services_id: "" }, sb = window.supabase.createClient(SB_URL, SB_ANON, {
+  var native = window.SpotterNative || null, AUTH_RETURN = native ? "https://simeonrinkenberger.github.io/spotter/" : location.origin + location.pathname, SB_URL = "https://mtzevoxxpsktmrbbuxva.supabase.co", SB_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10emV2b3h4cHNrdG1yYmJ1eHZhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgyMjM5ODgsImV4cCI6MjEwMzc5OTk4OH0._vpNhLJtv2bVGgXXClva9O5cX8Y5eJdTgbgAO81NnmU", API = SB_URL + "/functions/v1/spotter/api/", PUBLIC_AUTH = { google_client_id: "48831784248-dh1o2fhiem9kqgs6ambnnvaba8vojrf2.apps.googleusercontent.com", apple_services_id: "" }, PUBLIC_CAPTCHA = { turnstile_site_key: "" }, sb = window.supabase.createClient(SB_URL, SB_ANON, {
     auth: { persistSession: !0, autoRefreshToken: !0, detectSessionInUrl: !native, flowType: native ? "pkce" : "implicit", storage: native ? native.authStorage : void 0 },
     global: { fetch: function(url, opts) {
       return String(url).indexOf("/auth/v1/") >= 0 ? deadline(function(signal) {
@@ -8046,7 +8166,7 @@ details.details-moving > :not(summary) {
     var b = el("button", null, isUp ? "Sign in" : "Create an account");
     b.onclick = function() {
       setAuthMode(isUp ? "signin" : "signup");
-    }, $("authswap").appendChild(b), $("forgotwrap").classList.toggle("hide", isUp);
+    }, $("authswap").appendChild(b), $("forgotwrap").classList.toggle("hide", isUp), $("consent").classList.toggle("hide", !isUp);
   }
   function authError(msg) {
     var e = $("autherr");
@@ -8061,7 +8181,68 @@ details.details-moving > :not(summary) {
     e.textContent = msg, e.classList.add("show"), e.classList.add("ok");
   }
   function authMessage(m) {
-    return m = String(m || ""), /already regist/i.test(m) ? "That email already has an account \u2014 sign in instead." : /invalid login|invalid.*credential/i.test(m) ? "Wrong email or password." : /rate limit|too many|for security purposes/i.test(m) ? "Too many tries. Give it a minute." : /confirm/i.test(m) ? "Check your email to confirm your account, then sign in." : /network|fetch|failed to fetch/i.test(m) ? "Could not reach Spotter \u2014 check your connection." : /password/i.test(m) && /weak|short|least|6 char/i.test(m) ? "Use at least 8 characters." : /email/i.test(m) && /invalid|valid/i.test(m) ? "That email address does not look right." : authMode === "signup" ? "Could not create your account. Try again in a moment." : "Could not sign you in. Try again in a moment.";
+    return m = String(m || ""), /captcha/i.test(m) ? "The security check did not finish. Try that once more." : /token|otp/i.test(m) ? "That code is wrong or has expired. Ask for a new one." : /already regist/i.test(m) ? "That email already has an account \u2014 sign in instead." : /invalid login|invalid.*credential/i.test(m) ? "Wrong email or password." : /rate limit|too many|for security purposes/i.test(m) ? "Too many tries. Give it a minute." : /confirm/i.test(m) ? "Check your email to confirm your account, then sign in." : /network|fetch|failed to fetch/i.test(m) ? "Could not reach Spotter \u2014 check your connection." : /password/i.test(m) && /weak|short|least|6 char/i.test(m) ? "Use at least 8 characters." : /email/i.test(m) && /invalid|valid/i.test(m) ? "That email address does not look right." : authMode === "signup" ? "Could not create your account. Try again in a moment." : "Could not sign you in. Try again in a moment.";
+  }
+  var consentGiven = !1;
+  function consentLink(href, text) {
+    var a = el("a", null, text);
+    return a.href = href, a;
+  }
+  function consentFill(node, opening) {
+    node.innerHTML = "", node.appendChild(document.createTextNode(opening)), node.appendChild(consentLink("https://quarterdeckcollective.com/spotter/terms/", "Terms")), node.appendChild(document.createTextNode(" and to Spotter sending the videos and captions you save to AI providers (OpenAI, Google) to build your workout cards. ")), node.appendChild(consentLink("https://quarterdeckcollective.com/spotter/privacy/", "Privacy policy")), node.appendChild(document.createTextNode("."));
+  }
+  function consentAt() {
+    var s = state.profile && state.profile.settings;
+    return s ? s.ai_consent_at : null;
+  }
+  function noteConsent() {
+    !state.profile || consentAt() || (state.profile.settings = state.profile.settings || {}, state.profile.settings.ai_consent_at = (/* @__PURE__ */ new Date()).toISOString(), saveSettings());
+  }
+  var TURNSTILE_SRC = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit", capRendered = null, capPending = null, capTimer = null;
+  function capOn() {
+    return !!PUBLIC_CAPTCHA.turnstile_site_key;
+  }
+  function capSettle(token) {
+    clearTimeout(capTimer);
+    var p = capPending;
+    capPending = null, p && p(token || null);
+  }
+  function capRender() {
+    return capRendered || (capRendered = loadScript(TURNSTILE_SRC).then(function() {
+      if (!window.turnstile || !window.turnstile.render) throw new Error("captcha unavailable");
+      var none = function() {
+        capSettle(null);
+      }, id = window.turnstile.render($("capgate"), {
+        sitekey: PUBLIC_CAPTCHA.turnstile_site_key,
+        execution: "execute",
+        appearance: "interaction-only",
+        theme: "auto",
+        callback: capSettle,
+        "error-callback": none,
+        "expired-callback": none,
+        "timeout-callback": none
+      });
+      return id;
+    }), capRendered.catch(function() {
+      capRendered = null;
+    }), capRendered);
+  }
+  function capToken() {
+    return capOn() ? capRender().then(function(id) {
+      return new Promise(function(resolve) {
+        capSettle(null), capPending = resolve, capTimer = setTimeout(capSettle, 9e4);
+        try {
+          window.turnstile.reset(id), window.turnstile.execute(id);
+        } catch (e) {
+          capSettle(null);
+        }
+      });
+    }).catch(function() {
+      return null;
+    }) : Promise.resolve(null);
+  }
+  function withCap(opts, tok) {
+    return tok && (opts.captchaToken = tok), opts;
   }
   function doAuth() {
     var email = $("email").value.trim(), pw = $("pw").value;
@@ -8073,18 +8254,121 @@ details.details-moving > :not(summary) {
       authError("Use at least 8 characters.");
       return;
     }
-    var btn = $("authgo");
-    btn.disabled = !0, btn.textContent = authMode === "signup" ? "Creating\u2026" : "Signing in\u2026";
-    var p = authMode === "signup" ? sb.auth.signUp({ email: email, password: pw, options: { emailRedirectTo: AUTH_RETURN } }) : sb.auth.signInWithPassword({ email: email, password: pw });
-    p.then(function(r) {
-      if (btn.disabled = !1, setAuthMode(authMode), r.error) {
+    var btn = $("authgo"), mode = authMode;
+    btn.disabled = !0, btn.textContent = mode === "signup" ? "Creating\u2026" : "Signing in\u2026";
+    function idle2() {
+      btn.disabled = !1, setAuthMode(authMode);
+    }
+    capToken().then(function(tok) {
+      if (mode === "signup")
+        return sb.auth.signUp({
+          email: email,
+          password: pw,
+          options: withCap({ emailRedirectTo: AUTH_RETURN }, tok)
+        });
+      var args = { email: email, password: pw };
+      return tok && (args.options = { captchaToken: tok }), sb.auth.signInWithPassword(args);
+    }).then(function(r) {
+      if (idle2(), r.error) {
+        if (/not confirmed/i.test(r.error.message)) {
+          mailSent(email);
+          return;
+        }
         authError(authMessage(r.error.message));
         return;
       }
-      r.data.session || authError("Check your email to confirm your account, then sign in.");
+      mode === "signup" && (consentGiven = !0), r.data.session || mailSent(email);
     }).catch(function(e) {
-      btn.disabled = !1, setAuthMode(authMode), authError(authMessage(e && e.message ? e.message : e));
+      idle2(), authError(authMessage(e && e.message ? e.message : e));
     });
+  }
+  var mailAddr = null, mailType = "signup", mailLeft = 0, mailTick = null;
+  function mailLabel() {
+    var b = $("mailresend");
+    b.disabled = mailLeft > 0, b.textContent = mailLeft > 0 ? "Resend in " + mailLeft + "s" : "Resend the email";
+  }
+  function mailCount(secs) {
+    clearInterval(mailTick), mailLeft = secs, mailLabel(), secs && (mailTick = setInterval(function() {
+      mailLeft--, mailLabel(), mailLeft <= 0 && clearInterval(mailTick);
+    }, 1e3));
+  }
+  function mailSent(email, type) {
+    mailAddr = email, mailType = type === "recovery" ? "recovery" : "signup";
+    var p = $("mailbody");
+    p.innerHTML = "", p.appendChild(document.createTextNode(mailType === "recovery" ? "If that address has an account, a reset link and a six-digit code are on their way to " : "We sent a confirmation link and a six-digit code to ")), p.appendChild(el("b", null, email)), p.appendChild(document.createTextNode(". Tap the link, or type the code in below. It can take a minute, and it is worth a look in spam.")), $("otp").value = "", otpError(""), $("mailsent").classList.remove("hide"), $("authcard").classList.add("sent"), mailCount(60), $("mailsent").focus();
+  }
+  function otpError(msg) {
+    var e = $("otperr");
+    e.textContent = msg || "", e.classList.toggle("show", !!msg);
+  }
+  function otpGo() {
+    var b = $("otpgo");
+    if (b.disabled) return;
+    var code = $("otp").value.replace(/[^0-9]/g, "");
+    if (code.length < 6) {
+      otpError("Type the six digits from the email.");
+      return;
+    }
+    b.disabled = !0, b.textContent = "Checking\u2026", otpError("");
+    function idle2() {
+      b.disabled = !1, b.textContent = "Confirm";
+    }
+    capToken().then(function(tok) {
+      var args = { email: mailAddr, token: code, type: mailType };
+      return tok && (args.options = { captchaToken: tok }), sb.auth.verifyOtp(args);
+    }).then(function(r) {
+      if (idle2(), r.error) {
+        otpError(authMessage(r.error.message)), $("otp").select();
+        return;
+      }
+    }).catch(function(e) {
+      idle2(), otpError(authMessage(e && e.message ? e.message : e));
+    });
+  }
+  function mailClose() {
+    clearInterval(mailTick), mailAddr = null, $("otp").value = "", otpError(""), $("mailsent").classList.add("hide"), $("authcard").classList.remove("sent");
+  }
+  function mailBack() {
+    mailClose(), authError(""), setAuthMode("signup"), $("email").value = "", $("email").focus();
+  }
+  function mailResend() {
+    if (!(!mailAddr || mailLeft > 0)) {
+      var b = $("mailresend");
+      b.disabled = !0, b.textContent = "Sending\u2026", capToken().then(function(tok) {
+        return mailType === "recovery" ? sb.auth.resetPasswordForEmail(mailAddr, withCap({ redirectTo: AUTH_RETURN }, tok)) : sb.auth.resend({
+          type: "signup",
+          email: mailAddr,
+          options: withCap({ emailRedirectTo: AUTH_RETURN }, tok)
+        });
+      }).then(function(r) {
+        if (mailCount(60), r && r.error) {
+          toast(authMessage(r.error.message));
+          return;
+        }
+        toast("Sent again. Give it a minute.");
+      }).catch(function(e) {
+        mailCount(60), toast(authMessage(e && e.message ? e.message : e));
+      });
+    }
+  }
+  function linkProblem() {
+    var q = location.hash.indexOf("error") > 0 ? location.hash.slice(1) : location.search.slice(1);
+    if (!(q.indexOf("error") < 0)) {
+      var p;
+      try {
+        p = new URLSearchParams(q);
+      } catch (e) {
+        return;
+      }
+      var code = p.get("error_code") || p.get("error") || "";
+      if (code) {
+        try {
+          history.replaceState(null, "", location.pathname);
+        } catch (e) {
+        }
+        state.user || authError((/expired|invalid|denied/i.test(code) ? "That link has expired or was already used." : "That link could not be opened.") + " Sign in below, or ask for a new one.");
+      }
+    }
   }
   var GIS_SRC = "https://accounts.google.com/gsi/client", APPLEID_SRC = "https://appleid.cdn-apple.com/appleauth/static/jsapi/appleid/1/en_US/appleid.auth.js", SCRIPT_WAIT = 8e3, authProviders = null, oauthBusy = !1, oaLabels = {}, scriptOnce = {}, oauthWatchdog = null;
   function loadScript(src) {
@@ -8338,7 +8622,8 @@ details.details-moving > :not(summary) {
     return p === "google" ? "Google" : p === "apple" ? "Apple" : p === "email" ? "Email and password" : p ? String(p) : null;
   }
   function showLanding() {
-    native && ($("pumpyinput").value = ""), document.body.classList.remove("app"), $("landing").classList.add("open"), $("app").classList.add("hide");
+    native && ($("pumpyinput").value = ""), mailClose(), document.body.classList.remove("app"), $("landing").classList.add("open"), $("app").classList.add("hide"), capOn() && capRender().catch(function() {
+    });
   }
   function showApp() {
     var wasHidden = $("app").classList.contains("hide");
@@ -8364,7 +8649,7 @@ details.details-moving > :not(summary) {
       };
     }
     native && native.purchases && native.purchases.clear().catch(function() {
-    }), billing && (billing.prices = null, billing.sub = null, billing.subAsked = !1, billing.limits = null, billing.said = null, billing.ctx = null), ["grid", "chips", "colbar", "libcount", "empty", "dinner", "pumpylog", "pumpyannounce", "pumpyctx", "pumpythreads", "trainview", "today", "recapopts"].forEach(function(id) {
+    }), billing && (billing.prices = null, billing.waiting = null, billing.busy = !1, billing.sub = null, billing.subAsked = !1, billing.limits = null, billing.said = null, billing.ctx = null), ["grid", "chips", "colbar", "libcount", "empty", "dinner", "pumpylog", "pumpyannounce", "pumpyctx", "pumpythreads", "trainview", "today", "recapopts"].forEach(function(id) {
       var n = $(id);
       n && (n.innerHTML = "");
     }), $("count0").textContent = "Reading your library", clearTimeout(toastTimer), $("toast").classList.remove("show"), $("toast").textContent = "", Array.prototype.forEach.call(document.querySelectorAll(".sheet.open, #detail.open, #workout.open"), function(n) {
@@ -8394,7 +8679,7 @@ details.details-moving > :not(summary) {
     }).then(function() {
       return profileReady;
     }).then(function() {
-      accountNow(epoch, uid) && void 0;
+      accountNow(epoch, uid) && (consentGiven && noteConsent(), void 0);
     }), booting;
   }
   var drawn = { train: !1, pumpy: !1 };
@@ -9417,7 +9702,7 @@ details.details-moving > :not(summary) {
     if (w.platform !== "pumpy" && w.read_quality !== "premium") {
       var quality = el("div", "reader-offer");
       if (quality.appendChild(el("b", null, "Basic read")), quality.appendChild(el("p", null, "Plus reads the video\u2019s movements, spoken cues and on-screen details to build a more complete workout.")), w.platform === "tiktok" && w.kind !== "photo") {
-        var trial = el("button", "btn ghost", isFree() ? "Try a Plus read \xB7 4 per month" : "Read with Plus");
+        var pv = billing.limits && billing.limits.video_previews, trial = el("button", "btn ghost", isFree() ? pv ? "Try a Plus read \xB7 " + Math.max(0, pv.cap - pv.used) + " left this month" : "Try a Plus read" : "Read with Plus");
         trial.onclick = function() {
           readVideo(w, trial, isFree());
         }, quality.appendChild(trial), isFree() && api("limits").then(function(r) {
@@ -9590,33 +9875,49 @@ details.details-moving > :not(summary) {
     b.classList.toggle("on", !!w.favorite), b.setAttribute("aria-pressed", w.favorite ? "true" : "false");
   }
   function retryWorkout(w, btn) {
-    btn && (btn.disabled = !0, btn.textContent = "Queued\u2026"), api("workouts/" + w.id + "/reprocess", { method: "POST", body: "{}" }).then(function(r) {
-      if (btn && (btn.disabled = !1, btn.textContent = "Try reading it again"), r.status !== "processing" && r.status !== "ok") {
-        limitHit(r, "Could not start reading that \u2014 try again in a minute.");
-        return;
-      }
-      w.ingest_status = "processing", w.ingest_error = null, current && current.id === w.id && openDetail(w, !0), render(), watchPending(), toast("Reading it again\u2026");
-    }).catch(function() {
-      btn && (btn.disabled = !1, btn.textContent = "Try reading it again"), toast("Could not start reading that \u2014 try again in a minute.");
-    });
+    if (state.user) {
+      var epoch = accountEpoch, uid = state.user.id;
+      btn && (btn.disabled = !0, btn.textContent = "Queued\u2026"), api("workouts/" + w.id + "/reprocess", { method: "POST", body: "{}" }).then(function(r) {
+        if (accountNow(epoch, uid)) {
+          if (w = state.workouts.filter(function(x) {
+            return x.id === w.id;
+          })[0] || w, btn && (btn.disabled = !1, btn.textContent = "Try reading it again"), r.status !== "processing" && r.status !== "ok") {
+            limitHit(r, "Could not start reading that \u2014 try again in a minute.");
+            return;
+          }
+          w.ingest_status = "processing", w.ingest_error = null, current && current.id === w.id && openDetail(w, !0), render(), watchPending(), toast(w.user_workout_override ? "Refreshing the source; your personal exercise list will be kept." : "Reading it again\u2026");
+        }
+      }).catch(function() {
+        accountNow(epoch, uid) && (btn && (btn.disabled = !1, btn.textContent = "Try reading it again"), toast("Could not start reading that \u2014 try again in a minute."));
+      });
+    }
   }
   function readVideo(w, btn, preview) {
-    btn && (btn.disabled = !0, btn.textContent = "Queued\u2026"), deviceFrames({ url: w.url, preview: !!preview, reread: !0 }).then(function(frames) {
-      var payload = { preview: !!preview };
-      return frames && (payload.frames = frames), api("workouts/" + w.id + "/media", { method: "POST", body: JSON.stringify(payload) });
-    }).then(function(r) {
-      if (btn && (btn.disabled = !1, btn.textContent = "Read the video"), r.status === "ok" && r.workout) {
-        absorbWorkout(r.workout), current && current.id === w.id && openDetail(r.workout, !0), render(), toast("Your Plus preview is ready.");
-        return;
-      }
-      if (r.status !== "processing") {
-        limitHit(r, "Could not start reading that \u2014 try again in a minute.");
-        return;
-      }
-      w.ingest_status = "processing", w.ingest_error = null, w.media_stage = "listening", current && current.id === w.id && openDetail(w, !0), render(), watchPending(), toast("Listening to the video\u2026");
-    }).catch(function() {
-      btn && (btn.disabled = !1, btn.textContent = "Read the video"), toast("Could not start reading that \u2014 try again in a minute.");
-    });
+    if (state.user) {
+      var epoch = accountEpoch, uid = state.user.id;
+      btn && (btn.disabled = !0, btn.textContent = "Queued\u2026"), deviceFrames({ url: w.url, preview: !!preview, reread: !0 }).then(function(frames) {
+        if (!accountNow(epoch, uid)) return null;
+        var payload = { preview: !!preview };
+        return frames && (payload.frames = frames), api("workouts/" + w.id + "/media", { method: "POST", body: JSON.stringify(payload) });
+      }).then(function(r) {
+        if (accountNow(epoch, uid)) {
+          if (w = state.workouts.filter(function(x) {
+            return x.id === w.id;
+          })[0] || w, btn && (btn.disabled = !1, btn.textContent = "Read the video"), r.status === "ok" && r.workout) {
+            var delivered = Number(w.user_edit_revision || 0) > Number(r.workout.user_edit_revision || 0) ? w : r.workout;
+            absorbWorkout(delivered), current && current.id === w.id && openDetail(delivered, !0), render(), toast(delivered.user_workout_override ? "Source refreshed; your personal exercise list was kept." : "Your Plus preview is ready.");
+            return;
+          }
+          if (r.status !== "processing") {
+            limitHit(r, "Could not start reading that \u2014 try again in a minute.");
+            return;
+          }
+          w.ingest_status = "processing", w.ingest_error = null, w.media_stage = "listening", current && current.id === w.id && openDetail(w, !0), render(), watchPending(), toast(w.user_workout_override ? "Refreshing the source; your personal exercise list will be kept." : "Listening to the video\u2026");
+        }
+      }).catch(function() {
+        accountNow(epoch, uid) && (btn && (btn.disabled = !1, btn.textContent = "Read the video"), toast("Could not start reading that \u2014 try again in a minute."));
+      });
+    }
   }
   var capFor = null;
   function openCaption(w) {
@@ -13950,11 +14251,8 @@ details.details-moving > :not(summary) {
     return " \xB7 label " + Math.round(r.top - b.top) + "+" + Math.round(r.height) + " of " + Math.round(b.height) + " bottom " + Math.round(window.innerHeight - r.bottom) + " \xB7 " + cs.color + " " + cs.visibility + " op " + cs.opacity + " \xB7 " + cs.fontSize + "/" + cs.fontWeight + " " + (cs.fontFamily || "").split(",")[0] + " loaded " + fontOk + " \xB7 tab op " + p.opacity + " \xB7 barpad " + getComputedStyle(tabbar).paddingBottom + " \xB7 dpr " + window.devicePixelRatio;
   }
   function renderSettingsMeter() {
-    var d = $("setdiag");
-    if (d) {
-      var staff = state.profile && state.profile.plan === "staff" || pumpy.meter && pumpy.meter.plan === "staff";
-      d.textContent = staff ? layoutLine() : "", d.classList.toggle("hide", !staff);
-    }
+    var staff = state.profile && state.profile.plan === "staff" || pumpy.meter && pumpy.meter.plan === "staff", d = $("setdiag");
+    d && (d.textContent = staff ? layoutLine() : "", d.classList.toggle("hide", !staff));
     var n = $("setpumpy");
     if (n) {
       var p = pumpy.meter, day = p && bucket(p.day), month = p && bucket(p.month);
@@ -13962,8 +14260,12 @@ details.details-moving > :not(summary) {
         n.textContent = "", n.classList.add("hide");
         return;
       }
+      if (!staff) {
+        n.textContent = "", n.classList.add("hide");
+        return;
+      }
       var bits = ["Pumpy"];
-      typeof p.plan == "string" && p.plan && bits.push(p.plan.charAt(0).toUpperCase() + p.plan.slice(1) + " plan"), day && bits.push(countText(day, "credits today")), month && bits.push(countText(month, "this month")), n.textContent = bits.join(" \xB7 "), n.classList.remove("hide");
+      typeof p.plan == "string" && p.plan && bits.push(p.plan.charAt(0).toUpperCase() + p.plan.slice(1) + " plan"), month && bits.push(countText(month, "this month")), n.textContent = bits.join(" \xB7 "), n.classList.remove("hide");
     }
   }
   function renderPumpyCredits() {
@@ -14280,7 +14582,7 @@ details.details-moving > :not(summary) {
     return p !== "plus" && p !== "pro" && p !== "staff";
   }
   function planWord(p) {
-    return p = String(p || "free"), p === "free" ? "free" : p.charAt(0).toUpperCase() + p.slice(1);
+    return p = String(p || "free"), p === "free" ? "Basic" : p.charAt(0).toUpperCase() + p.slice(1);
   }
   function money(cents, cur) {
     var v = (cents || 0) / 100, frac = v % 1 ? 2 : 0;
@@ -14301,14 +14603,15 @@ details.details-moving > :not(summary) {
     return isNaN(d.getTime()) ? "" : d.toLocaleDateString(void 0, { day: "numeric", month: long ? "long" : "short" });
   }
   function loadPrices() {
-    return native && native.purchases ? native.purchases.prices(state.user && state.user.id).then(function(r) {
-      return billing.prices = r, r;
+    var epoch = accountEpoch, uid = state.user && state.user.id;
+    return native && native.purchases ? native.purchases.prices(uid).then(function(r) {
+      return accountNow(epoch, uid) ? (billing.prices = r, r) : null;
     }).catch(function() {
-      return billing.prices = { configured: !1, nativeStore: !0 }, billing.prices;
+      return accountNow(epoch, uid) ? (billing.prices = { configured: !1, nativeStore: !0 }, billing.prices) : null;
     }) : billing.prices ? Promise.resolve(billing.prices) : (billing.waiting || (billing.waiting = api("billing/prices", { method: "GET" }).then(function(r) {
-      return billing.waiting = null, billing.prices = r && r.status === "ok" && r.configured ? r : { configured: !1 }, billing.prices;
+      return accountNow(epoch, uid) ? (billing.waiting = null, billing.prices = r && r.status === "ok" && r.configured ? r : { configured: !1 }, billing.prices) : null;
     }).catch(function() {
-      return billing.waiting = null, billing.prices = { configured: !1 }, billing.prices;
+      return accountNow(epoch, uid) ? (billing.waiting = null, billing.prices = { configured: !1 }, billing.prices) : null;
     })), billing.waiting);
   }
   function loadSub() {
@@ -14339,15 +14642,15 @@ details.details-moving > :not(summary) {
   function planBenefits(caps) {
     var f = caps && caps.free, p = caps && caps.plus;
     if (!f || !p) return [];
-    var out = [], lib = capNum(p.library);
-    return out.push(lib === null ? "Keep every workout you save \u2014 the free plan holds " + f.library + "." : "Hold " + capMany(lib) + " saved workouts, instead of " + f.library + "."), out.push("Read " + capMany(capNum(p.extract)) + " new videos a day, instead of " + f.extract + "."), out.push("Watch " + capMany(capNum(p.media)) + " silent clips a day, instead of " + f.media + " \u2014 the ones with no caption to read."), out.push("Send " + capMany(capNum(p.uploads)) + " of your own videos a day, instead of " + f.uploads + "."), num(p.pumpy_month) && num(f.pumpy_month) && out.push("About " + msgCount(p.pumpy_month) + " coach messages a month, instead of " + msgCount(f.pumpy_month) + "."), out.push("Stop whenever you like. Everything you saved stays yours, and stays readable."), out;
+    var out = [], lib = capNum(p.library), reads2 = capNum(p.month_reads);
+    return out.push(lib === null ? "Keep every workout you save \u2014 Basic holds " + f.library + "." : "Hold " + capMany(lib) + " saved workouts, instead of " + f.library + "."), reads2 === null ? (out.push("Read the movements, the spoken cues and the text on screen in supported videos."), out.push("Video reading and coaching have monthly allowances; Settings shows what is left.")) : (out.push("Read " + reads2 + " videos a month in full \u2014 the movements, the spoken cues and the text on screen. Basic reads " + capMany(capNum(f.month_reads)) + "."), out.push(capMany(capNum(p.month_answers)) + " coaching answers a month from Pumpy, and " + capMany(capNum(p.month_helpers)) + " explanations and swaps.")), out.push("Saving from a caption, logging, your plan and your progress are free and are never metered."), out.push("Stop whenever you like \u2014 everything you saved stays yours, and stays readable."), out;
   }
   var CAP_WORDS = {
-    extract: ["new videos read today", "reads", " a day"],
-    media: ["silent clips watched today", "watches", " a day"],
-    uploads: ["uploads today", "takes", " a day"],
-    saves: ["saves today", "saves", " a day"],
-    helper: ["explanations and swaps today", "allows", ""]
+    extract: ["new videos read", "reads"],
+    media: ["video reads", "reads"],
+    uploads: ["uploads", "takes"],
+    saves: ["saves", "saves"],
+    helper: ["explanations and swaps", "allows"]
   }, MULT = ["", "", "twice", "three times", "four times", "five times", "six times"];
   function pumpyRoom(up) {
     var caps = billing.prices && billing.prices.caps, f = caps && caps.free && num(caps.free.pumpy_month), p = caps && caps.plus && num(caps.plus.pumpy_month), mult = f && p ? Math.round(p / f) : 0;
@@ -14357,15 +14660,13 @@ details.details-moving > :not(summary) {
     if (!c || !c.kind) return "";
     var cap = num(c.cap), next = capNum(c.next_cap), mine = "the " + planWord(c.plan) + " plan", up = planWord(c.next_plan || "plus");
     if (c.kind === "library")
-      return "That is " + cap + " saved workouts, which is " + mine + "'s shelf. " + up + " takes the lid off, and nothing you have saved is going anywhere in the meantime.";
-    if (c.kind === "pumpy") {
-      var m = c.pumpy && bucket(c.pumpy.month);
-      return (m && m.cap !== null && m.left <= 0 ? "That is this month's coaching used up \u2014 my credits come back on the 1st. " : "That is my coaching done for today \u2014 my credits come back at midnight UTC. ") + pumpyRoom(up);
-    }
+      return "That is " + cap + " saved workouts, which is " + mine + "\u2019s shelf. " + up + " takes the lid off, and nothing you have saved is going anywhere in the meantime.";
+    if (c.kind === "pumpy")
+      return "That is this month\u2019s coaching used up \u2014 my credits come back on the 1st. " + pumpyRoom(up);
     var w = CAP_WORDS[c.kind];
     if (!w || cap === null) return "";
-    var noun = c.kind === "uploads" && cap === 1 ? "upload today" : w[0];
-    return "That is " + cap + " " + noun + ", " + mine + "'s daily limit. It resets at midnight UTC. " + (next === null ? up + " has no daily limit." : up + " " + w[1] + " " + next + w[2] + ".");
+    var month = c.scope === "month", noun = c.kind === "uploads" && cap === 1 ? "upload" : w[0];
+    return "That is " + cap + " " + noun + (month ? " this month, " : " today, ") + mine + "\u2019s " + (month ? "whole allowance. It comes back on the 1st. " : "burst limit. It resets at midnight UTC. ") + (next === null ? up + " has no limit here." : up + " " + w[1] + " " + next + (month ? " a month." : " a day."));
   }
   function skelRow(cls) {
     return el("div", "skel " + cls);
@@ -14427,7 +14728,9 @@ details.details-moving > :not(summary) {
         cards[i].classList.toggle("on", on), cards[i].setAttribute("aria-checked", on ? "true" : "false");
       }
       var full = plus[iv].amount, pay = yearly && p.founding ? p.founding.first_year_amount : full, days = num(p.trial_days) || 0, trial = $("plantrial");
-      yearly && days > 0 ? (trial.textContent = "Free for " + days + " days. We will not charge you before " + new Date(Date.now() + days * 864e5).toLocaleDateString(void 0, { day: "numeric", month: "long" }) + ", and you can cancel before then.", trial.classList.remove("hide")) : (trial.textContent = "", trial.classList.add("hide")), setBuyLabel(yearly && days > 0 ? "Start " + days + " free days" : "Subscribe for " + (p.nativeStore ? plus[iv].localized : money(pay, cur)) + (yearly ? " a year" : " a month")), $("planfine").textContent = finePrint(p, plus, iv, pay, full, days) + " AI reading and coaching have daily and monthly usage limits. During beta, new AI work can also pause when the shared allowance is reached; saved workouts remain available.";
+      yearly && days > 0 ? (trial.textContent = "Free for " + days + " days. We will not charge you before " + new Date(Date.now() + days * 864e5).toLocaleDateString(void 0, { day: "numeric", month: "long" }) + ", and you can cancel before then.", trial.classList.remove("hide")) : (trial.textContent = "", trial.classList.add("hide")), setBuyLabel(yearly && days > 0 ? "Start " + days + " free days" : "Subscribe for " + (p.nativeStore ? plus[iv].localized : money(pay, cur)) + (yearly ? " a year" : " a month"));
+      var fr = p.caps && p.caps.free, basic = capNum(fr && fr.month_reads);
+      $("planfine").textContent = finePrint(p, plus, iv, pay, full, days) + (basic === null ? "" : " Basic reads " + basic + " videos a month in full, and everything you have already saved stays readable for ever.") + " Allowances reset on the 1st, 00:00 UTC. During beta, new AI work can also pause when Spotter\u2019s shared allowance is reached; saved workouts remain available.";
     }
   }
   function pickInterval(iv) {
@@ -14444,15 +14747,16 @@ details.details-moving > :not(summary) {
       $("plantrial").classList.add("hide"), $("planfine").textContent = "";
       return;
     }
-    cards.appendChild(priceCard("year", plus, p)), cards.appendChild(priceCard("month", plus, p)), $("planbuy").disabled = !1, paintChoice();
+    cards.appendChild(priceCard("year", plus, p)), cards.appendChild(priceCard("month", plus, p)), $("planbuy").disabled = billing.busy, paintChoice();
   }
   function paintCtx() {
     var n = $("planctx"), line = planCtxLine(billing.ctx);
     n.textContent = line, n.classList.toggle("hide", !line);
   }
   function openPlans(ctx) {
-    billing.ctx = ctx && ctx.kind ? ctx : null, billing.interval = "year", billing.busy = !1, paintCtx(), billing.prices || paintSkeleton(), openSheet("plansheet"), loadPrices().then(function() {
-      $("plansheet").classList.contains("open") && paintPlans();
+    var epoch = accountEpoch, uid = state.user && state.user.id;
+    billing.ctx = ctx && ctx.kind ? ctx : null, billing.interval = "year", paintCtx(), billing.prices || paintSkeleton(), openSheet("plansheet"), loadPrices().then(function() {
+      accountNow(epoch, uid) && $("plansheet").classList.contains("open") && paintPlans();
     });
   }
   var BILL_FLAG = "spotter.billing.pending", BILL_TTL = 12 * 3600 * 1e3, BILL_KEY = "spotter_billing_return", billRound = !1, billBusy = !1;
@@ -14473,23 +14777,29 @@ details.details-moving > :not(summary) {
     var bits = String(v).split("|"), at = parseInt(bits[1], 10);
     return at && Date.now() - at > BILL_TTL ? (setPending(null), null) : bits[0] || null;
   }
-  function syncNativePurchase() {
-    return sb.functions.invoke("spotter-purchases", { body: {} }).then(function(r) {
+  function syncNativePurchase(epoch, uid) {
+    return sb.auth.getSession().then(function(auth) {
+      var session = auth && auth.data && auth.data.session;
+      return !accountNow(epoch, uid) || !session || session.user.id !== uid ? null : sb.functions.invoke("spotter-purchases", { body: {}, headers: { Authorization: "Bearer " + session.access_token } });
+    }).then(function(r) {
+      if (!accountNow(epoch, uid) || !r) return null;
       if (r.error || !r.data || r.data.status !== "ok") throw new Error("Your purchase is saved. Tap Restore purchase when your connection returns.");
       return r.data;
     });
   }
   function nativePurchase(restore, btn) {
     if (!(!state.user || billing.busy)) {
-      var uid = state.user.id;
+      var uid = state.user.id, epoch = accountEpoch;
       billing.busy = !0, btn && (btn.disabled = !0);
       var work = restore ? native.purchases.restore(uid) : native.purchases.purchase(uid, billing.interval);
-      work.then(syncNativePurchase).then(function(r) {
-        !state.user || state.user.id !== uid || (absorbPlan(r, !restore), toast(r.plan === "free" ? "No active subscription was found for this account." : "Your " + planWord(r.plan) + " access is up to date."));
+      work.then(function() {
+        return accountNow(epoch, uid) ? syncNativePurchase(epoch, uid) : null;
+      }).then(function(r) {
+        !accountNow(epoch, uid) || !r || (absorbPlan(r, !restore), toast(r.plan === "free" ? "No active subscription was found for this account." : "Your " + planWord(r.plan) + " access is up to date."));
       }).catch(function(e) {
-        !e.userCancelled && String(e.code) !== "1" && toast(e.message || "Could not complete the purchase. Please try again.");
+        accountNow(epoch, uid) && !e.userCancelled && String(e.code) !== "1" && toast(e.message || "Could not complete the purchase. Please try again.");
       }).then(function() {
-        billing.busy = !1, btn && (btn.disabled = !1);
+        accountNow(epoch, uid) && (billing.busy = !1, btn && (btn.disabled = !1));
       });
     }
   }
@@ -14641,7 +14951,7 @@ details.details-moving > :not(summary) {
   function paintPlanGroup() {
     var row = $("setplan");
     if (row) {
-      var configured = billOn(), plan = myPlan(), s = billing.sub, staff = plan === "staff", paid = plan === "plus" || plan === "pro", word = planWord(plan), text = staff ? "Staff" : paid ? word : "Free", failed = !1;
+      var configured = billOn(), plan = myPlan(), s = billing.sub, staff = plan === "staff", paid = plan === "plus" || plan === "pro", word = planWord(plan), text = staff ? "Staff" : paid ? word : "Basic", failed = !1;
       if (paid && s) {
         var ends = dayMonth(s.current_period_end), trial = dayMonth(s.trial_end || s.current_period_end);
         s.payment_failed_at ? (text = word + " \xB7 payment failed", failed = !0) : s.status === "trialing" && trial ? text = word + " \xB7 free trial, ends " + trial : (s.cancel_at_period_end || s.cancel_at) && ends ? text = word + " \xB7 ends " + ends : ends && (text = word + " \xB7 renews " + ends);
@@ -14656,13 +14966,42 @@ details.details-moving > :not(summary) {
   function adoptPlan(plan) {
     plan && (billing.said = plan, !(!state.profile || state.profile.plan === plan) && (state.profile.plan = plan, renderLibCount(), paintPlanGroup()));
   }
-  function capLine(used, cap, word) {
-    var c = capNum(cap);
-    return (c === null ? used : used + " of " + c) + " " + word;
+  var ALLOW_ROWS = [
+    ["reads", "Video reads"],
+    ["answers", "Coaching answers"],
+    ["helpers", "Explanations and swaps"],
+    ["uploads", "Uploads"]
+  ];
+  function resetDay(iso) {
+    var d = iso ? new Date(iso) : null;
+    return !d || isNaN(d.getTime()) ? "" : d.toLocaleDateString(void 0, { day: "numeric", month: "short", timeZone: "UTC" });
+  }
+  function useRow(label, value, tail, back, out) {
+    var row = el("div", out ? "usel out" : "usel");
+    return row.appendChild(document.createTextNode(label + " ")), row.appendChild(el("b", null, value)), tail && row.appendChild(document.createTextNode(tail)), back && row.appendChild(el("span", "nobr", " \xB7 resets " + back)), row;
   }
   function paintPlanUse(r) {
-    var n = $("setplanuse"), lim = r && r.limits, bits = [];
-    lim && (capNum(lim.library) !== null && num(r.library_count) !== null && bits.push(capLine(r.library_count, lim.library, "workouts saved")), num(r.extracts_today) !== null && bits.push(capLine(r.extracts_today, lim.extract, "read today"))), n.textContent = bits.join(" \xB7 "), n.classList.toggle("hide", !bits.length);
+    var n = $("setplanuse"), lim = r && r.limits, m = r && r.month, hidden = n.classList.contains("hide");
+    if (n.innerHTML = "", lim && capNum(lim.library) !== null && num(r.library_count) !== null && n.appendChild(useRow(
+      "Library",
+      r.library_count + " of " + capNum(lim.library),
+      " saved",
+      null,
+      r.library_count >= capNum(lim.library)
+    )), m) {
+      var back = resetDay(m.resets_at);
+      ALLOW_ROWS.forEach(function(a) {
+        var cap = capNum(m[a[0] + "_cap"]), used = num(m[a[0]]);
+        used === null || cap === null || n.appendChild(useRow(a[1], used + " of " + cap, " this month", back, used >= cap));
+      });
+    }
+    r && r.paid_enabled === !1 && n.appendChild(el(
+      "div",
+      "usel out",
+      "Spotter's shared AI budget is spent for today \u2014 new video reads start again tomorrow. Everything you have saved stays readable."
+    ));
+    var empty = !n.childNodes.length;
+    n.classList.toggle("hide", empty), hidden && !empty && n.classList.add("viewin");
   }
   function shelf(extra) {
     if (!billOn() || !isFree()) return null;
@@ -15104,17 +15443,22 @@ details.details-moving > :not(summary) {
   }
   function deviceFrames(opts) {
     if (!native || !native.contactSheet || isFree() && !opts.preview) return Promise.resolve(null);
-    var prepare = opts.url ? api("ingest/prepare", { method: "POST", body: JSON.stringify({ url: opts.url, preview: !!opts.preview, reread: !!opts.reread }) }) : Promise.resolve({ needs_frames: !0 });
+    var epoch = accountEpoch, uid = state.user && state.user.id, prepare = opts.url ? api("ingest/prepare", { method: "POST", body: JSON.stringify({ url: opts.url, preview: !!opts.preview, reread: !!opts.reread }) }) : Promise.resolve({ needs_frames: !0 });
     return prepare.catch(function() {
+      if (!accountNow(epoch, uid)) throw new Error("Account changed");
       return { needs_frames: !0 };
     }).then(function(hint) {
+      if (!accountNow(epoch, uid)) throw new Error("Account changed");
       return hint.needs_frames === !1 ? null : sb.auth.getSession().then(function(r) {
         var s = r.data.session;
-        return s ? (opts.token = s.access_token, native.contactSheet(opts)) : null;
+        if (!accountNow(epoch, uid) || !s || !s.user || s.user.id !== uid) throw new Error("Account changed");
+        return opts.token = s.access_token, native.contactSheet(opts);
       });
     }).then(function(out) {
+      if (!accountNow(epoch, uid)) throw new Error("Account changed");
       return out && out.ok ? out.frames : null;
-    }).catch(function() {
+    }).catch(function(error) {
+      if (!accountNow(epoch, uid) || error && error.message === "Account changed") throw error;
       return null;
     });
   }
@@ -15479,19 +15823,14 @@ details.details-moving > :not(summary) {
     guideUser(), guidePaintSettings(), $("setver").textContent = "v" + VERSION, $("setemail").textContent = state.user ? state.user.email : "\u2014";
     var how = signInMethod();
     $("setprov").textContent = how || "\u2014", $("setprovrow").classList.toggle("hide", !how);
+    var owed = !!state.profile && !consentAt();
+    $("consentrow").classList.toggle("hide", !owed), owed && consentFill($("consentset"), "Using Spotter means you agree to the ");
     var mine = isEmailAccount();
     $("setpwrow").classList.toggle("hide", !mine), $("setmailrow").disabled = !mine, $("setname").textContent = displayName() || "Not set", $("unittoggle").textContent = state.unit, paintGoal(), $("haptictoggle").textContent = state.haptics ? "On" : "Off", $("sethapticrow").classList.toggle("hide", !native && !navigator.vibrate), paintSounds(), loadRemind(), $("shortcutsetup").classList.toggle("hide", !!native), $("nativesharehelp").classList.toggle("hide", !native), native && native.platform === "android" && ($("nativesharehelp").textContent = "In TikTok, YouTube, Instagram or another app, share the post\u2019s link and choose Spotter from the Android share sheet.");
     var key = state.profile ? state.profile.ingest_key : null;
-    $("setkey").textContent = key ? API + "ingest?key=" + key : "Loading\u2026", $("setsaves").textContent = "\u2026", renderSettingsMeter(), paintPlanGroup(), paintPlanUse(billing.limits), Promise.all([loadPrices(), loadSub()]).then(paintPlanGroup), paintStrava(), askStrava(), api("limits", { method: "GET" }).then(function(r) {
-      if (pumpy.meterAsked = !0, absorbMeter(r && r.pumpy), r.status === "ok") {
-        billing.limits = r, adoptPlan(r.plan), paintPlanUse(r);
-        var line = r.limits ? capLine(r.saves_today, r.limits.saves, "saves") + " \xB7 " + capLine(r.extracts_today, r.limits.extract, "read") : r.saves_today + " of " + r.limit_saves + " (" + r.extracts_today + "/" + r.limit_extract + " extractions, " + r.helpers_today + "/" + r.limit_helper + " coaching" + // The credits line below is the real Pumpy meter; the turn count is only
-        // shown while the server does not send one.
-        (r.pumpy ? ")" : ", " + (r.chats_today || 0) + "/" + (r.limit_chat || "\u2014") + " Pumpy)");
-        r.paid_enabled === !1 && (line += " \xB7 budget reached, using the free reader"), $("setsaves").textContent = line;
-      }
+    $("setkey").textContent = key ? API + "ingest?key=" + key : "Loading\u2026", renderSettingsMeter(), paintPlanGroup(), paintPlanUse(billing.limits), Promise.all([loadPrices(), loadSub()]).then(paintPlanGroup), paintStrava(), askStrava(), api("limits", { method: "GET" }).then(function(r) {
+      pumpy.meterAsked = !0, absorbMeter(r && r.pumpy), r.status === "ok" && (billing.limits = r, adoptPlan(r.plan), paintPlanUse(r));
     }).catch(function() {
-      $("setsaves").textContent = "\u2014";
     }), openSheet("settingssheet");
   }
   function rotateKey() {
@@ -15843,12 +16182,14 @@ details.details-moving > :not(summary) {
       return;
     }
     var b = $("forgotpw");
-    b.disabled = !0, sb.auth.resetPasswordForEmail(email, { redirectTo: AUTH_RETURN }).then(function(r) {
+    b.disabled = !0, capToken().then(function(tok) {
+      return sb.auth.resetPasswordForEmail(email, withCap({ redirectTo: AUTH_RETURN }, tok));
+    }).then(function(r) {
       if (b.disabled = !1, r.error) {
         authError(authMessage(r.error.message));
         return;
       }
-      authOK("If that address has an account, a reset link is on its way. If it does not arrive in a few minutes, try again later.");
+      mailSent(email, "recovery");
     }, function() {
       b.disabled = !1, authError("Could not ask for a link. Check your connection.");
     });
@@ -16333,7 +16674,14 @@ details.details-moving > :not(summary) {
       }
     }
   }
-  if ($("authgo").onclick = doAuth, $("forgotpw").onclick = forgotPassword, $("oagoogle").onclick = googleSignIn, $("oaapple").onclick = appleSignIn, oaLabelOf("oagoogle"), oaLabelOf("oaapple"), loadAuthProviders(), $("pw").addEventListener("keydown", function(e) {
+  if ($("authgo").onclick = doAuth, $("forgotpw").onclick = forgotPassword, consentFill($("consent"), "By creating an account you agree to the "), $("consentok").onclick = function() {
+    noteConsent(), $("consentrow").classList.add("hide");
+  }, $("otpgo").onclick = otpGo, $("otp").addEventListener("input", function() {
+    var v = this.value.replace(/[^0-9]/g, "").slice(0, 6);
+    v !== this.value && (this.value = v), v.length === 6 && otpGo();
+  }), $("otp").addEventListener("keydown", function(e) {
+    e.key === "Enter" && otpGo();
+  }), $("mailresend").onclick = mailResend, $("mailback").onclick = mailBack, $("oagoogle").onclick = googleSignIn, $("oaapple").onclick = appleSignIn, oaLabelOf("oagoogle"), oaLabelOf("oaapple"), loadAuthProviders(), $("pw").addEventListener("keydown", function(e) {
     e.key === "Enter" && doAuth();
   }), $("addbtn").onclick = function() {
     $("addurl").value = "", resetUpload(), openSheet("addsheet");
@@ -16462,37 +16810,43 @@ details.details-moving > :not(summary) {
   };
   var rereading = {};
   function syncRereadButton(w) {
-    var b = $("dreproc"), busy = !!(w && rereading[w.id]);
+    var b = $("dreproc"), busy = !!(w && rereading[w.id] && rereading[w.id].epoch === accountEpoch);
     b.disabled = busy || !!(w && isPending(w)), b.textContent = busy ? "Reading\u2026" : "Read it again", b.setAttribute("aria-busy", busy ? "true" : "false");
   }
   $("dreproc").onclick = function() {
-    if (!current || rereading[current.id]) return;
+    if (!state.user || !current || rereading[current.id] && rereading[current.id].epoch === accountEpoch) return;
     if (isPending(current) || isFailed(current)) {
       retryWorkout(current, null);
       return;
     }
-    var w = current;
-    rereading[w.id] = !0, syncRereadButton(current);
+    var w = current, epoch = accountEpoch, uid = state.user.id, ticket = { epoch: epoch };
+    rereading[w.id] = ticket, syncRereadButton(current);
     function finishRead() {
-      delete rereading[w.id], syncRereadButton(current);
+      rereading[w.id] === ticket && delete rereading[w.id], accountNow(epoch, uid) && syncRereadButton(current);
     }
     api("workouts/" + w.id + "/reprocess", { method: "POST", body: "{}" }).then(function(r) {
-      if (finishRead(), r.status === "processing") {
-        w.ingest_status = "processing", w.ingest_error = null, current && current.id === w.id && openDetail(w, !0), render(), watchPending(), toast("Reading it again\u2026");
-        return;
+      if (finishRead(), !!accountNow(epoch, uid)) {
+        if (w = state.workouts.filter(function(x) {
+          return x.id === w.id;
+        })[0] || w, r.status === "processing") {
+          w.ingest_status = "processing", w.ingest_error = null, current && current.id === w.id && openDetail(w, !0), render(), watchPending(), toast(w.user_workout_override ? "Refreshing the source; your personal exercise list will be kept." : "Reading it again\u2026");
+          return;
+        }
+        if (r.status !== "ok") {
+          limitHit(r, "Could not read that video again \u2014 try again in a minute.");
+          return;
+        }
+        return load().then(function() {
+          if (accountNow(epoch, uid)) {
+            var fresh = state.workouts.filter(function(x) {
+              return x.id === r.workout.id;
+            })[0];
+            fresh && current && current.id === w.id && openDetail(fresh), toast((fresh || w).user_workout_override ? "Source refreshed; your personal exercise list was kept." : "Re-read the workout.");
+          }
+        });
       }
-      if (r.status !== "ok") {
-        limitHit(r, "Could not read that video again \u2014 try again in a minute.");
-        return;
-      }
-      return load().then(function() {
-        var fresh = state.workouts.filter(function(x) {
-          return x.id === r.workout.id;
-        })[0];
-        fresh && current && current.id === w.id && openDetail(fresh), toast("Re-read the workout.");
-      });
     }).catch(function() {
-      finishRead(), toast("Could not read that workout again \u2014 try again in a minute.");
+      finishRead(), accountNow(epoch, uid) && toast("Could not read that workout again \u2014 try again in a minute.");
     });
   }, $("wclose").onclick = function() {
     history.back();
@@ -16589,7 +16943,7 @@ details.details-moving > :not(summary) {
       }
       watchBilling(), overlayShowing() || load();
     }
-  }), window.addEventListener("pageshow", watchBilling), window.addEventListener("focus", watchBilling), setAuthMode("signup"), captureShare(), captureBilling(), captureStrava(), sb.auth.getSession().then(function(r) {
+  }), window.addEventListener("pageshow", watchBilling), window.addEventListener("focus", watchBilling), setAuthMode("signup"), captureShare(), captureBilling(), captureStrava(), linkProblem(), sb.auth.getSession().then(function(r) {
     r.data.session && r.data.session.user ? (state.user = r.data.session.user, showApp(), boot().then(offerResume)) : (showLanding(), sharePending() && toast("Sign in to save the link you shared."));
   }), !native && "serviceWorker" in navigator && window.addEventListener("load", function() {
     navigator.serviceWorker.register("sw.js").catch(function() {

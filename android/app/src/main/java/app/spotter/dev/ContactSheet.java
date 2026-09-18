@@ -90,7 +90,7 @@ public final class ContactSheet {
             int[] cell = SheetSpec.cell(width, height);
             double[] wanted = SheetSpec.times(duration);
             Bitmap previous = null;
-            int kept = 0;
+            int kept = 0, decoded = 0;
 
             // Twelve cells make a sheet, and the sheet is drawn and its frames
             // released before the next twelve are asked for: peak memory is one
@@ -99,6 +99,7 @@ public final class ContactSheet {
                 if (System.currentTimeMillis() >= deadline || pages.size() >= SheetSpec.MAX_SHEETS) break;
                 Bitmap frame = frameAt(retriever, (long) (t * 1_000_000L), cell[0], cell[1]);
                 if (frame == null) continue;
+                decoded++;
                 if (previous != null && frame.sameAs(previous)) { frame.recycle(); continue; }
                 chunk.add(frame);
                 chunkTimes.add(t);
@@ -115,7 +116,8 @@ public final class ContactSheet {
                 pages.add(flush(chunk, chunkTimes, cell));
                 previous = null;
             }
-            if (kept < MIN_USABLE_FRAMES || pages.isEmpty()) throw new IllegalStateException("too few frames");
+            // An incomplete decode is not a complete overview; use the existing fallback.
+            if (decoded != wanted.length || kept < MIN_USABLE_FRAMES || pages.isEmpty()) throw new IllegalStateException("too few frames");
             return new Result(pages, cell[0], cell[1], wanted.length, duration);
         } finally {
             for (Bitmap b : chunk) if (!b.isRecycled()) b.recycle();
@@ -167,7 +169,8 @@ public final class ContactSheet {
                 canvas.drawBitmap(frame, new Rect(0, 0, frame.getWidth(), frame.getHeight()),
                         new RectF(left, top, left + w, top + h), image);
 
-                String label = SheetSpec.label(times[i]);
+                // The decoder cannot report actual PTS; visibly mark this as approximate.
+                String label = "~" + SheetSpec.label(times[i]);
                 float pillW = text.measureText(label) + (float) SheetSpec.LABEL_PAD_X * 2;
                 float pillH = lineHeight + (float) SheetSpec.LABEL_PAD_Y * 2;
                 float pillX = slot[0] + (float) SheetSpec.LABEL_INSET;
@@ -186,6 +189,8 @@ public final class ContactSheet {
                 out = new ByteArrayOutputStream();
                 sheet.compress(Bitmap.CompressFormat.JPEG, SheetSpec.JPEG_FALLBACK_QUALITY, out);
             }
+            if (out.size() == 0 || out.size() > SheetSpec.JPEG_MAX_BYTES)
+                throw new IllegalStateException("sheet exceeds upload limit");
             return out.toByteArray();
         } finally {
             sheet.recycle();

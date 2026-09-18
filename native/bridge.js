@@ -4,6 +4,7 @@ import { signInWithGoogle } from './google-auth.js';
 import { shareAccess } from './share-access.js';
 import { Capacitor, CapacitorHttp, registerPlugin } from '@capacitor/core';
 import { streamFetch } from './stream.js';
+import { createSecureSession } from './secure-session.js';
 import { App } from '@capacitor/app';
 import { Haptics, ImpactStyle, NotificationType } from '@capacitor/haptics';
 import { Browser } from '@capacitor/browser';
@@ -71,12 +72,9 @@ async function contactSheet({ file, ...options }) {
     if (spilled) Filesystem.deleteFile({ path: spilled.path, directory: Directory.Cache }).catch(ignore);
   }
 }
-function authPreference(work) {
-  let timer;
-  return Promise.race([Promise.resolve().then(work), new Promise((_, reject) => {
-    timer = setTimeout(() => reject(new Error('Secure sign-in storage is not responding. Restart Spotter and try again.')), 10000);
-  })]).finally(() => clearTimeout(timer));
-}
+// Tokens live in the Keychain on iOS and under an Android Keystore key on
+// Android; only the non-secret draft stays in Preferences below.
+const session = createSecureSession(registerPlugin('SecureSession'), Preferences);
 window.SpotterNative = {
   platform: Capacitor.getPlatform(),
   purchases: createPurchases(Capacitor.getPlatform()),
@@ -84,11 +82,7 @@ window.SpotterNative = {
   contactSheet,
   signInWithApple: sb => signInWithApple(sb, registerPlugin('AppleAuth')),
   signInWithGoogle: sb => signInWithGoogle(sb, registerPlugin('GoogleAuth')),
-  authStorage: {
-    getItem: async key => (await authPreference(() => Preferences.get({ key }))).value,
-    setItem: (key, value) => authPreference(() => Preferences.set({ key, value })),
-    removeItem: key => authPreference(() => Preferences.remove({ key }))
-  },
+  authStorage: session.storage,
   saveDraft(value) {
     draftWrites = draftWrites.then(() => value === null
       ? Preferences.remove({ key: 'spotter_draft' })
@@ -163,6 +157,10 @@ async function boot() {
   Object.defineProperty(navigator, 'canShare', { configurable: true, value: data => !data.files || data.files.every(f => f instanceof File && f.size <= 25 * 1024 * 1024) });
   // Clear any Keychain item surviving uninstall before restoring this account.
   await configureSharing(null).catch(ignore);
+  // Before app.js exists, so the Supabase client it builds reads the session
+  // from its new home: moves a pre-upgrade session out of Preferences, or
+  // clears one that outlived the install that owned it.
+  await session.prepare();
   const saved = await Preferences.get({ key: 'spotter_draft' });
   if (saved.value) localStorage.setItem('spotter_draft', saved.value);
   const appearance = matchMedia('(prefers-color-scheme: dark)');

@@ -107,7 +107,7 @@ function lift(name: string): string {
 const STUBS = "import { applyCatalog as _ac, catalogById } from '" +
   new URL("supabase/functions/spotter/catalog.ts", ROOT).href + "';\n" +
   "import { normText } from '" + new URL("supabase/functions/spotter/evidence.ts", ROOT).href + "';\n" +
-  "import { bestSeenFact, packInTimeOrder, sharesHeadNoun, secondsToMmss, PACK_V } from '" +
+  "import { bestSeenFact, packInTimeOrder, sharesHeadNoun, secondsToMmss, MIN_USABLE_PACK_V, PACK_V } from '" +
   new URL("supabase/functions/spotter/pack.ts", ROOT).href + "';\n" +
   "import { CATALOG } from '" + new URL("supabase/functions/spotter/catalog.ts", ROOT).href + "';\n" +
   "type Pack = Record<string, any>;\n" +
@@ -134,7 +134,7 @@ const NAMES = [
   "runPumpyTool",
   "pumpyExName", "pumpyFindInWorkout", "pumpyKeepsExercise", "pumpyFromHandle",
   "pumpyCitedInList", "pumpyAttachSources",
-  "pumpyRefBlock", "pumpySystem",
+  "pumpyAttachmentError", "pumpyRefBlock", "pumpySystem",
 ];
 
 // dbSelect's two collaborators, and the four sibling tools runPumpyTool can
@@ -360,9 +360,9 @@ const H_STAMPED = M.handleOf(W_STAMPED);
 
 // ---------- 1. what a card costs the coach now ----------
 //
-// The brief's ceiling: the cue and the delta together may add under 120 tokens to
-// a six-exercise get_workout. The measurement is the real tool result against the
-// same result with the two new keys removed, so it cannot drift from what ships.
+// Preserve complete coaching/variation context. Keep this six-exercise fixture
+// below 600 estimated tokens total; report growth separately instead of rewarding
+// truncation. Token counts here use a character heuristic, not provider billing.
 
 const full = await M.toolGetWorkout(UID, H_PACK);
 
@@ -380,13 +380,13 @@ const grew = afterTok - beforeTok;
 console.log("get_workout on a 6-exercise card: " + beforeTok + " → " + afterTok +
   " tokens (+" + grew + ")");
 
-check("a 6-exercise get_workout grows by under 120 tokens", grew < 120, "grew by " + grew);
+check("a complete 6-exercise get_workout stays below 600 estimated tokens", afterTok < 600, "estimated tokens " + afterTok);
 eq("the card really is six exercises", full.blocks[0].exercises.length, 6);
 
 {
   const exs = full.blocks[0].exercises;
-  eq("the first exercise carries the creator's coaching point, one sentence of it",
-    exs[0].cue, "Slow and controlled for time under tension, core tight.");
+  eq("the first exercise retains the full coaching point and contact detail",
+    exs[0].cue, FX.card_expectations.cues[0]);
   // The pack read the hands off the frames; the card's own cue says it too, but
   // the delta is the part that says "this is not the movement in the book".
   eq("nothing on the card carries a null cue key",
@@ -396,10 +396,9 @@ eq("the card really is six exercises", full.blocks[0].exercises.length, 6);
     exs.filter((e: any) => e.delta).length);
   eq("a two-sentence cue that already fits is left whole",
     exs[5].cue, "Squeeze the glutes and do not let the hips sag. Elbows under the shoulders.");
-  // The second exercise's cue has no sentence end inside the budget, so it is cut
-  // at the semicolon's clause instead of mid-word.
-  eq("a cue with no sentence end inside the budget is cut at a clause",
-    exs[1].cue, "Take your time so the legs do not add momentum");
+  // The final sentence includes equipment and movement detail; retain it.
+  eq("the complete second cue survives including the final setup detail",
+    exs[1].cue, FX.card_expectations.cues[1]);
   check("no cue on the card is cut mid-word",
     exs.every((e: any) => !e.cue || FX.card_expectations.cues.concat([sixth().cue])
       .some((c) => c.startsWith(e.cue))),
@@ -428,7 +427,7 @@ check("the slice stays inside its character cap",
   JSON.stringify(detail).length <= M.PUMPY_DETAIL_CHARS, JSON.stringify(detail).length + " chars");
 
 eq("the slice names the movement", detail.name, "Close Grip Push Ups");
-eq("the slice carries the catalog key", detail.canonical_id, "diamond-push-up");
+eq("the slice carries the supported family catalog key", detail.canonical_id, "push-up");
 eq("the slice names the creator", detail.author, "thewodfather");
 eq("the slice names the card", detail.title, "Complex Fives");
 eq("the slice names the platform", detail.source_platform, "tiktok");

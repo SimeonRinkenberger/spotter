@@ -52,8 +52,13 @@ export const PRICE_LOOKUP_KEYS = [
  * anybody types — it is applied to every yearly checkout automatically for as
  * long as the coupon exists and Stripe still calls it valid. Stripe's own
  * `max_redemptions` counter is what closes the offer, so there is no "how many
- * are left" number kept on our side to drift out of step. The owner switches the
- * offer off by deleting the coupon in the Dashboard; nothing here needs a deploy.
+ * are left" number kept on our side to drift out of step.
+ *
+ * Two switches have to agree for it to apply, and both are off by default: the
+ * app_config row `billing.founding` must be the string `true` (see
+ * `foundingEnabled`), and Stripe must still call the coupon valid. The owner
+ * closes the offer by leaving that row absent AND deleting the coupon in the
+ * Dashboard; neither needs a deploy.
  */
 export const FOUNDING_COUPON_ID = "SPOTTER_FOUNDING_YEAR";
 
@@ -292,24 +297,62 @@ async function loadFounding(): Promise<Stripe.Coupon | null> {
 }
 
 /**
+ * Whether the founding offer is switched ON, from app_config `billing.founding`.
+ *
+ * ABSENT IS OFF, and that is the point. The coupon living in Stripe used to be
+ * the only switch, so `founding.enabled: false` in tools/stripe-plans.json — which
+ * only the setup script reads, and which explicitly does not delete anything —
+ * left $10 coming off every yearly checkout. The owner re-prices the annual plan
+ * to $50 and new subscribers quietly pay $40. This is the switch the repo can
+ * actually hold: the offer is on only when somebody wrote the string `true` into
+ * `billing.founding`, and nothing seeds that row.
+ *
+ * Deleting the coupon in the Stripe Dashboard is still the right second step —
+ * it is what stops an old checkout session or a direct API call from redeeming
+ * it — but it is no longer the only thing standing between a price change and a
+ * $10 discount.
+ */
+async function foundingEnabled(): Promise<boolean> {
+  try {
+    const rows = await bSelect("app_config", "key=eq.billing.founding&select=value");
+    return String(rows[0]?.value ?? "").trim().toLowerCase() === "true";
+  } catch (e) {
+    // Same rule as every other dial here: unreadable is the conservative answer,
+    // and for a discount the conservative answer is full price.
+    console.error("billing: founding switch unreadable, treating the offer as closed —", e);
+    return false;
+  }
+}
+
+/**
  * The prices and the founding coupon, fetched together and cached together.
  *
  * They are one thing as far as the paywall is concerned — a yearly card either
- * shows $39.99 or $29.99-then-$39.99 — so caching them separately would let the
+ * shows the regular annual price or the discounted first year and renewal price — so caching them separately would let the
  * sheet show an offer that checkout no longer applies, for up to five minutes.
  * One round trip pair, one expiry.
+ *
+ * The `billing.founding` switch rides in the same trip and the same expiry, so
+ * the paywall block and checkout below cannot disagree about whether the offer is
+ * on: both read `founding` from here, and it is null unless the switch says true
+ * AND Stripe still calls the coupon valid.
  */
 async function loadCatalog(): Promise<Catalog> {
   if (priceCache && Date.now() - priceCache.at < PRICE_TTL_MS) return priceCache.catalog;
-  const [res, founding] = await Promise.all([
+  const [res, founding, enabled] = await Promise.all([
     stripeClient().prices.list({
       lookup_keys: PRICE_LOOKUP_KEYS, active: true, expand: ["data.product"],
     }),
     loadFounding(),
+    foundingEnabled(),
   ]);
   const byKey: Record<string, Stripe.Price> = {};
   for (const p of res.data) if (p.lookup_key) byKey[p.lookup_key] = p;
-  const catalog = { byKey, founding };
+  if (founding && !enabled) {
+    console.log("billing: founding coupon", FOUNDING_COUPON_ID,
+      "still exists in Stripe but billing.founding is not true — selling at full price");
+  }
+  const catalog = { byKey, founding: enabled ? founding : null };
   priceCache = { at: Date.now(), catalog };
   return catalog;
 }

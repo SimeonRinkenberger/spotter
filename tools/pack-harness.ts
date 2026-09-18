@@ -115,7 +115,7 @@ function lift(name: string): string {
 // mentions half the file otherwise.
 const STUBS = "import { normText } from '" +
   new URL("supabase/functions/spotter/evidence.ts", ROOT).href + "';\n" +
-  "import { assemblePack, bestSeenFact, packInTimeOrder, packReader, repairPack, secondsToMmss, sharesHeadNoun, parseFrames, readObservation, sheetPathFor, sheetsPrompt, validatePack, SHEET_MAX, SHEET_MAX_BYTES, PACK_V } from '" +
+  "import { assemblePack, bestSeenFact, packInTimeOrder, packReader, repairPack, secondsToMmss, sharesHeadNoun, parseFrames, readObservation, sheetPathFor, sheetsPrompt, validatePack, SHEET_MAX, SHEET_MAX_BYTES, MIN_USABLE_PACK_V, PACK_V } from '" +
   new URL("supabase/functions/spotter/pack.ts", ROOT).href + "';\n" +
   "import { tokenCost, tokenPrice } from '" +
   new URL("supabase/functions/spotter/ai-guard.ts", ROOT).href + "';\n" +
@@ -145,13 +145,18 @@ const STUBS = "import { normText } from '" +
   "function providerFor(name: string) { return { media: name === 'tiktok' ? (() => null) : undefined, cacheable: true }; }\n" +
   "async function deleteSheets(f: any) { spy.deleted += f?.sheets?.length ?? 0; }\n" +
   "async function countsFor() { return { extracts: 0, saves: 0, helpers: 0 }; }\n" +
-  "async function capsFor() { return { caps: { extract: 50, media: 20, library: 200 } }; }\n" +
+  "async function capsFor() { return { plan: 'plus', caps: { extract: 50, media: 20, library: 200 } }; }\n" +
   "async function libraryCount() { return 1; }\n" +
   "function overCap(used: number, cap: number | null) { return cap !== null && used >= cap; }\n" +
   "async function capLimit(kind: string) { return json({ status: 'limit', kind }, 429); }\n" +
   "async function extractLimitResponse() { return json({ status: 'limit', kind: 'extract' }, 429); }\n" +
   "async function mediaCapReached() { return null; }\n" +
+  // The monthly allowance is exercised by tools/allowance-harness.mjs; here it is
+  // a fixture account with room left, so the pipeline under test is the pipeline.
+  "async function monthReadsReached() { return null; }\n" +
+  "async function allowanceLimit(kind: string) { return json({ status: 'limit', kind, scope: 'month' }, 429); }\n" +
   "async function paidAllowed() { return true; }\n" +
+  "async function premiumAccess() { return true; }\n" +
   "async function rpc(name: string, args: any) { spy.rpc.push([name, args]); return DB.rpc(name, args); }\n" +
   "async function jobStep(_id: string, step: string, patch: any) { spy.seeded = { step, ...patch }; }\n" +
   "async function signUploadTarget(path: string) { spy.signed.push(path); return { upload_url: 'https://sb/storage/v1/object/upload/sign/uploads/' + path + '?token=tok-' + path.slice(-6), token: 'tok-' + path.slice(-6) }; }\n" +
@@ -173,7 +178,7 @@ const STUBS = "import { normText } from '" +
   "function videoTierEnabled() { return DB.videoTier !== false; }\n" +
   "function packMaxRequeries() { return 2; }\n" +
   "async function recordCost(provider: string, model: string, _c: any, u: any, ok: boolean) { spy.cost.push({ provider, model, ...u, ok }); }\n" +
-  "const aiActor = { getStore: () => spy.store, run: (a: any, fn: any) => { spy.store = a; return fn(); } };\n" +
+  "const aiActor = { getStore: () => spy.store, run: async (a: any, fn: any) => { const old = spy.store; spy.store = a; try { return await fn(); } finally { spy.store = old; } } };\n" +
   "async function aiFetch(url: string, init: any) { spy.calls.push({ url, body: JSON.parse(init.body), purpose: spy.store?.purpose }); return DB.reply(url); }\n" +
   "type Pack = Record<string, any>;\n" +
   "type Card = { blocks: { exercises: any[] }[] };\n" +
@@ -190,13 +195,14 @@ const NAMES = [
   "countExercises", "matchPackExercise", "packEvidence", "applyPack",
   // The two routes the native share extension and the "Re-read this video" action
   // call. Their collaborators are stubbed above; the judgement is the real code.
-  "CARD_V", "UPLOAD_SIGN_SECONDS", "usablePack", "mediaSeed", "authorizeSheets", "handleReadVideo",
-  "scopeFor", "isPackAuthorize",
+  "CARD_V", "MIN_USABLE_CARD_V", "UPLOAD_SIGN_SECONDS", "usablePack", "cacheStale", "markCache",
+  "mediaSeed", "authorizeSheets", "handleReadVideo",
+  "scopeFor", "isPackAuthorize", "plusPlan", "visuallyRead",
   // The tier that spends the money, and the two things that happen to a job when
   // the reading it paid for cannot be trusted.
   "SoftFailure", "buildVideoPack", "runPackTier", "failJob",
   // The A/B bench for the sheets reader.
-  "readSheetImages", "handleEvalSheets",
+  "aiFetchFor", "readSheetImages", "handleEvalSheets",
   "userFromIngestKey",
 ];
 
@@ -895,7 +901,7 @@ refused("no sheets at all is refused", (f) => { f.sheets = []; }, /non-empty arr
   check("and says the cells are labelled with their timestamps",
     /labelled with its timestamp in the bottom-left corner/.test(prompt));
   check("and lists the cell times, so a build with no burned-in labels still has the clock",
-    prompt.includes("0:00, 0:04, 0:08"));
+    prompt.includes("0s, 4s, 8s"));
   check("and carries the transcript on the same clock",
     prompt.includes("0:15 I want you to take these slow"));
   check("and tells the model the frames win when the channels disagree",
@@ -994,6 +1000,15 @@ refused("no sheets at all is refused", (f) => { f.sheets = []; }, /non-empty arr
   M.applyPack(card, pack);
 
   const ex0 = card.blocks[0].exercises[0];
+  eq("unsupported diamond ID becomes a supported push-up family", ex0.canonical_id, "push-up");
+  eq("creator rep dose is attributed to its verified source", (ex0 as any).dose_evidence?.reps?.[0]?.source, "said");
+  eq("prescribed reps remain five while observed reps are unknown", [ex0.reps, pack.exercises[0].reps_seen], ["5", null]);
+  const scoped = { blocks: [{ exercises: [M.normalizeExercise({ name: "Close Grip Push Ups", reps: "10" })] }] };
+  M.applyPack(scoped, pack);
+  eq("a universal default does not overwrite a different scoped dose", scoped.blocks[0].exercises[0].reps, "10");
+  const edited = { blocks: [{ exercises: [{...M.normalizeExercise({ name: "Close Grip Push Ups", reps: "7" }), edited_by_user: true}] }] };
+  M.applyPack(edited, pack);
+  eq("user-edited dose survives source overlay", edited.blocks[0].exercises[0].reps, "7");
   eq("the push-up carries what the video actually did",
     (ex0.as_performed as Record<string, unknown>).equipment, ["kettlebell"]);
   check("and how that differs from the standard version",
@@ -1260,7 +1275,7 @@ check("and the schema is untouched",
 // must reach that only accepted a bearer was a route it could not reach.
 
 check("the router resolves the ingest key for the authorize route as well as ingest",
-  /path === "\/api\/ingest" \|\| path === "\/api\/uploads\/authorize"/.test(SRC));
+  /path === "\/api\/ingest" \|\| path === "\/api\/ingest\/prepare" \|\| path === "\/api\/uploads\/authorize"/.test(SRC));
 check("and the authorize route dispatches kind:\"pack\" to the sheets branch",
   /body\.kind === "pack"/.test(SRC));
 
@@ -1426,10 +1441,10 @@ check("and the authorize route dispatches kind:\"pack\" to the sheets branch",
   };
   const alreadyRead = { v: M.CARD_V, card: { blocks: [] }, media_tried: true, pack: { ...pack }, pack_v: PACK_V };
 
-  // Without frames, nothing changes: the reading that exists is the answer.
+  // Explicit paid reread queues the existing media seed; it does not invent new frames.
   const plain = await readVideo(alreadyRead, {});
-  eq("a re-read with no frames still says it has already read this one", plain.status, 200);
-  check("and queues nothing", M.spy.seeded === null);
+  eq("an explicit paid re-read without frames queues the cached media seed", plain.status, 202);
+  check("and carries no invented sheets", !M.spy.seeded?.meta?.frames);
 
   // With frames, the same card is read again — that is the whole action.
   const again = await readVideo(alreadyRead, framesBody);
@@ -1535,7 +1550,7 @@ function evalReply(url: string) {
 // The guard's exception, against the real guard.
 {
   const reserved: string[] = [];
-  const rpcSpy = (name: string) => { reserved.push(name); return Promise.resolve("ok"); };
+  const rpcSpy = (name: string) => { reserved.push(name); return Promise.resolve(name === "ai_reserve" ? "ok" : true); };
   const guarded = createGuardedFetch(rpcSpy as any, ((u: any, init: any) => {
     // countTokens preflight, then the call itself.
     if (String(u).includes(":countTokens")) {
@@ -1624,7 +1639,7 @@ function evalReply(url: string) {
 // actor that lost track of who it was working for.
 {
   const seen: { name: string; args: any }[] = [];
-  const rpcSpy = (name: string, args: any) => { seen.push({ name, args }); return Promise.resolve("ok"); };
+  const rpcSpy = (name: string, args: any) => { seen.push({ name, args }); return Promise.resolve(name === "ai_reserve" ? "ok" : true); };
   const guarded = createGuardedFetch(rpcSpy as any, (() =>
     Promise.resolve(new Response(JSON.stringify({
       choices: [{ message: { content: "{}" }, finish_reason: "stop" }],
@@ -1643,14 +1658,14 @@ function evalReply(url: string) {
     }));
 
   eq("the bench reserves and settles, in that order",
-    seen.map((c) => c.name), ["ai_reserve", "ai_settle"]);
+    seen.map((c) => c.name), ["ai_reserve", "ai_record_attempt", "ai_record_attempt"]);
   eq("against no user at all", seen[0].args.p_user, null);
   check("under a work key that says it is system work",
     /^sys:/.test(seen[0].args.p_work), seen[0].args.p_work);
   check("with the model in it, so each model gets its own daily work budget",
     seen[0].args.p_work.endsWith("gpt-5.6-luna"));
   check("and a real cost is settled rather than left unknown",
-    typeof seen[1].args.p_usd === "number" && seen[1].args.p_usd > 0, JSON.stringify(seen[1].args));
+    typeof seen[2].args.p_usd === "number" && seen[2].args.p_usd > 0, JSON.stringify(seen[2].args));
   check("no admission call is made — that gate is for user routes",
     !seen.some((c) => c.name === "ai_admit"));
 
@@ -1783,49 +1798,40 @@ function evalReply(url: string) {
   eq("and hands back the card it was given", first.card, card);
   eq("and the step was still charged for, because it still ran", M.spy.mediaSteps, 1);
 
-  // What the user actually sees. A "failed" card renders the apology INSTEAD of
-  // the workout, so this failure comes back ready with the reason on it.
-  M.spy.patchedMany = [];
-  await M.failJob(job, threw);
-  const rows = M.spy.patchedMany.filter((x: any) => x.t === "workouts");
-  const jobs = M.spy.patchedMany.filter((x: any) => x.t === "ingest_jobs");
-  eq("the job is dead on the first attempt rather than retried three times",
-    jobs[0]?.patch?.status, "dead");
-  eq("the card comes back ready, not failed", rows[0]?.patch?.ingest_status, "ready");
-  check("carrying the reason where a card says what it is missing",
-    String(rows[0]?.patch?.ingest_error).includes(refused), JSON.stringify(rows[0]?.patch));
-  eq("and nothing is left watching a video that finished", rows[0]?.patch?.media_stage, null);
+  // Lifecycle writes are now atomic SQL RPCs. This harness tests the dispatch
+  // contract; reader-completion-db-check exercises actual persistence and races.
+  M.spy.patchedMany = []; M.spy.rpc = [];
+  await M.failJob({...job, user_id: UID, claim_generation: 7}, threw);
+  const terminal = M.spy.rpc.find((x: any) => x[0] === "fail_ingest_job")?.[1];
+  eq("refused reread requests terminal failure", terminal?.p_dead, true);
+  eq("refused reread preserves the existing card", terminal?.p_keep, true);
+  eq("failure is fenced to this user and claim", [terminal?.p_user, terminal?.p_generation], [UID, 7]);
+  check("failure carries the verifier reason", String(terminal?.p_user_message).includes(refused));
+  eq("failure makes no separate unfenced writes", M.spy.patchedMany.length, 0);
 
-  // Every other soft failure keeps the ladder it had: retried to the cap, and
-  // then a failed card with its own sentence on it.
-  M.spy.patchedMany = [];
-  await M.failJob({ ...job, attempts: 3 },
-    new M.SoftFailure("Some images could not be read. Try again shortly."));
-  const ordinary = M.spy.patchedMany.filter((x: any) => x.t === "workouts")[0];
-  eq("an ordinary soft failure at the cap still fails the card",
-    ordinary?.patch?.ingest_status, "failed");
-  eq("and still says what it knew", ordinary?.patch?.ingest_error,
-    "Some images could not be read. Try again shortly.");
+  M.spy.rpc = [];
+  await M.failJob({ ...job, attempts: 3 }, new M.SoftFailure("Some images could not be read. Try again shortly."));
+  const ordinary = M.spy.rpc.find((x: any) => x[0] === "fail_ingest_job")?.[1];
+  eq("ordinary failure at cap is terminal", ordinary?.p_dead, true);
+  eq("ordinary failure does not claim a previous card", ordinary?.p_keep, false);
+  eq("ordinary failure retains actionable message", ordinary?.p_user_message, "Some images could not be read. Try again shortly.");
+  M.spy.rpc = [];
+  await M.failJob({ ...job, attempts: 0 }, new M.SoftFailure("Some images could not be read. Try again shortly."));
+  const retry = M.spy.rpc.find((x: any) => x[0] === "fail_ingest_job")?.[1];
+  eq("failure below cap requests retry", retry?.p_dead, false);
+  check("retry is scheduled in future", Date.parse(retry?.p_run_after) > Date.now());
 
-  M.spy.patchedMany = [];
-  await M.failJob({ ...job, attempts: 0 },
-    new M.SoftFailure("Some images could not be read. Try again shortly."));
-  eq("and below the cap it is queued again rather than given up on",
-    M.spy.patchedMany.filter((x: any) => x.t === "ingest_jobs")[0]?.patch?.status, "queued");
-  check("with the card left alone while it waits",
-    !M.spy.patchedMany.some((x: any) => x.t === "workouts"), JSON.stringify(M.spy.patchedMany));
 }
 
 // ---------- 18. the card version ----------
 //
 // The cue and the delta both changed shape under the same prompt, so a card
 // cached before them reads correctly and says it worse. Bumped, they rebuild on
-// the next save; the PACK version is untouched, because the reading itself is
-// still right and cost real money.
+// the next save. PACK_V also changes because repetition provenance is repaired.
 
-eq("cards cached before the cue and delta fixes are a miss now", M.CARD_V, 9);
+eq("cards cached before source fidelity fixes are a miss now", M.CARD_V, 11);
 eq("but the reading they were built from is still the shape this build stores",
-  PACK_V, 1);
+  PACK_V, 2);
 
 // With the transcript out, the prompt says nothing about what the creator called
 // the movement — which is how to find out whether "push ups" was anchoring the

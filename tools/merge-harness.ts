@@ -185,6 +185,7 @@ type Ex = {
   equipment: string | null;
   notes: string | null;
   evidence?: { source: string } | null;
+  edited_by_user?: boolean;
 };
 type Blk = {
   title: string | null; type: string;
@@ -690,6 +691,16 @@ const LIVE_OLD = [
   const prior = stored([block([ex("Kettlebell swing to clean and press", {sets:3,reps:"8"})])]);
   const fresh = card([block([ex("Swing + clean + press", {sets:3,reps:"8"})])]);
   eq("compound wording does not duplicate the same video movement", M.mergeNoDowngrade(prior,fresh,META,"tiktok").blocks[0].exercises.length,1);
+}
+
+// Explicit human changes win over even non-empty new model values.
+{
+  const prior = stored([block([ex("Squat", {sets:2,reps:"7",rest_seconds:null,edited_by_user:true})])]);
+  const fresh = card([block([ex("Squat", {sets:3,reps:"12",rest_seconds:60})])]);
+  const out = M.mergeNoDowngrade(prior,fresh,META,"tiktok").blocks[0].exercises[0];
+  eq("edited sets beat fresh model sets",out.sets,2);
+  eq("edited reps beat fresh model reps",out.reps,"7");
+  eq("intentional empty rest survives reread",out.rest_seconds,null);
 }
 
 // ---------- done ----------

@@ -158,7 +158,7 @@ public final class SheetSpec {
 
     /** M:SS of the frame's own time, which is what the server prompt reads. */
     public static String label(double seconds) {
-        long whole = Math.max(0, Math.round(Double.isFinite(seconds) ? seconds : 0));
-        return whole / 60 + String.format(Locale.US, ":%02d", whole % 60);
+        long tenths = Math.max(0, Math.round((Double.isFinite(seconds) ? seconds : 0) * 10));
+        return tenths / 600 + String.format(Locale.US, ":%02d.%d", (tenths / 10) % 60, tenths % 10);
     }
 }

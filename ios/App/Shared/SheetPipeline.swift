@@ -52,6 +52,10 @@ struct SheetOutcome {
     /// Exactly the `frames` object POST /api/ingest takes.
     var frames: [String: Any] {
         ["source": "device", "duration_s": durationS,
+         "evidence": ["version": 3, "sampling": "sparse_uniform",
+                      "timestamp_basis": "actual_pts", "timing_uncertainty_s": 0,
+                      "requested_frames": framesRequested, "captured_frames": framesKept,
+                      "uploaded_frames": framesKept, "sampling_complete": true],
          "sheets": sheets.map { sheet in
              ["path": sheet.path, "cols": sheet.cols, "rows": sheet.rows,
               "cell_w": sheet.cellW, "cell_h": sheet.cellH, "times": sheet.times]
@@ -142,11 +146,8 @@ enum SheetPipeline {
             built = try await ContactSheetBuilder.build(mp4: mp4, duration: duration, deadline: deadline)
         } catch { return nil }
 
-        // One authorize for the whole save, then the bytes. Uploaded in order and
-        // counted as they land: past the deadline, or after a PUT that would not
-        // go, whatever is already up is what goes with the save — the sheets are
-        // in time order, so a short set is the first part of the video rather
-        // than a hole in the middle of it.
+        // One authorization, then all pages. An interrupted upload uses the
+        // existing fallback instead of publishing only the beginning of the clip.
         let slots = await authorize(shortcode: shortcode, sizes: built.pages.map { $0.jpeg.count },
                                     auth: auth, session: session)
         var uploaded: [UploadedSheet] = []
@@ -157,7 +158,8 @@ enum SheetPipeline {
                                           times: page.times, bytes: page.jpeg.count))
             if Date() >= deadline { break }
         }
-        guard !uploaded.isEmpty else { return nil }
+        // A failed upload must not silently turn the overview into a video prefix.
+        guard !uploaded.isEmpty, uploaded.count == built.pages.count else { return nil }
 
         // A local file's duration is whatever AVFoundation measured, and the last
         // frame's own time plus the half-second inset is that number back again —

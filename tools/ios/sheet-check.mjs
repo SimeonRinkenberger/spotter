@@ -114,7 +114,7 @@ for (const n of FRAME_TOTALS) {
 }
 assert.deepEqual(actual.sheetCounts, [1, 1, 1, 2, 2, 3, 3, 3]);
 assert.deepEqual(actual.lastSheetCells, [1, 8, 12, 1, 12, 1, 11, 12]);
-assert.deepEqual(actual.labels, ['0:00', '0:00', '0:04', '0:10', '1:00', '1:24', '2:05', '9:59']);
+assert.deepEqual(actual.labels, ['0:00.0', '0:00.4', '0:04.0', '0:09.5', '0:59.6', '1:23.8', '2:05.0', '9:59.0']);
 
 // A duplicate sync sample, a NaN and a negative from a generator that gave up on
 // one time must all leave the kept frames strictly ascending — the server rejects

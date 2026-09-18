@@ -1,0 +1,299 @@
+{
+  "$comment": "GROUND-TRUTH TEMPLATE for the $5 screen, NOT ground truth. Shape: tools/fixtures/golden-tt-7679960172495785246.json and the tools/pack-eval/score.ts Fixture type, extended with the source-claim contract from PROMPTS-AND-CONTRACTS.md (prescribed vs demonstrated, provenance said/seen/written). Everything filled in here came from text this repo actually fetched — the platform caption and, where the platform publishes one, the free ASR WebVTT. NOBODY HAS WATCHED THIS VIDEO. No frame was extracted, no AI call was made, nothing was saved in the app. Every TODO_REVIEW is a decision for the human reviewer, and a visible count is never one of the things text alone can decide.",
+  "truth_v": 1,
+  "status": "TEMPLATE_UNREVIEWED",
+  "reviewed_by": "TODO_REVIEW",
+  "adjudicated_by": "TODO_REVIEW",
+  "shortcode": "tt-7389428760753327403",
+  "platform": "tiktok",
+  "url": "https://www.tiktok.com/@tylerpath/video/7389428760753327403",
+  "kind": "video",
+  "category": "subtle_grip_equipment",
+  "selection": "primary",
+  "duration_s": 88,
+  "visual": "read",
+  "$visual": "score.ts reads this: 'unavailable' means nobody looked and the card must carry no visual claim (score.ts:459-470). A carousel has no video, so the video path is unavailable even though slides exist.",
+  "source": {
+    "platform": "tiktok",
+    "url": "https://www.tiktok.com/@tylerpath/video/7389428760753327403",
+    "author": "Tyler",
+    "handle": "@tylerpath",
+    "profile_url": "https://www.tiktok.com/@tylerpath",
+    "duration_s": 88,
+    "consent": "Public post, referenced by URL only. No media is redistributed in this repo. Credit line: Tyler — https://www.tiktok.com/@tylerpath/video/7389428760753327403. Handle recorded so credit and consent can be handled before any published result names this creator.",
+    "paid_program_flag": "none seen in the caption or on the watch page; re-check before publishing any result that names the creator",
+    "verified_at": "2026-09-17T21:59:59Z",
+    "verification": "curl GET of the platform oEmbed endpoint; the title and author below are the bytes it returned, not a search-result summary",
+    "oembed_http": "200",
+    "oembed_title": "Which muscles do you train when you do pull ups and how does a different grip change the “focus” of the exercise? Here I break that down. #fyp #fitness #gym #bodybuilding #calisthenics "
+  },
+  "evidence_this_template_read": {
+    "caption": "fetched",
+    "asr_vtt": "yes — ASR/eng-US",
+    "asr_vtt_local_copy": "/private/tmp/claude-501/-Users-simeon-Desktop-CLAUDE-COWORK/f83e3c45-9ece-4ff1-96cf-c461f42dfdcd/scratchpad/vtt/tt-7389428760753327403.vtt",
+    "frames": "NONE EXTRACTED",
+    "$frames": "frame_source for a real run is tiktok-mp4 (see SET.json)."
+  },
+  "session": {
+    "format": "demonstration",
+    "scheme": "no prescribed dose — this is an explainer, not a workout",
+    "equipment_seen": [
+      "pull-up bar"
+    ],
+    "equipment_count": "TODO_REVIEW",
+    "load_seen": null,
+    "setting": "TODO_REVIEW",
+    "creator_goal": "how grip changes which part of the lats a pull-up trains",
+    "said_at": {}
+  },
+  "transcript_source": "tiktok_vtt",
+  "transcript": [
+    {
+      "t0": 20.92,
+      "t1": 25.3,
+      "text": "So starting out with the regular pronated grip pull up."
+    },
+    {
+      "t0": 29.16,
+      "t1": 32.2,
+      "text": "because we're pulling with a wider than the shoulder width grip"
+    },
+    {
+      "t0": 46.88,
+      "t1": 50.28,
+      "text": "At the top of us transitions is closer neutral grip up here."
+    },
+    {
+      "t0": 67.44,
+      "t1": 69.54,
+      "text": "Lastly, let's transition to a supinate grip."
+    },
+    {
+      "t0": 70.04,
+      "t1": 73.28,
+      "text": "they tend to stay relatively close to around shoulder width."
+    }
+  ],
+  "$transcript": "Only the dose-bearing and structure-bearing cues are reproduced, with their real VTT times, so the reviewer can check a claim without this repo carrying a full transcript of somebody else's video. The complete fetched track is at the path in evidence_this_template_read.asr_vtt_local_copy.",
+  "on_screen": "TODO_REVIEW",
+  "source_claims": [
+    {
+      "claim_id": "c1",
+      "field": "coaching",
+      "value": {
+        "text": "choose the grip where your forearms are parallel to gravity",
+        "minimum": null,
+        "maximum": null,
+        "unit": "text",
+        "per_side": false,
+        "to_failure": false,
+        "provenance": [
+          "said"
+        ],
+        "quote_said": "I think choose the grip with where your forms are gonna be pretty much parallel to gravity.",
+        "t_said": 44.4,
+        "quote_written": null,
+        "conflict": null
+      },
+      "scope": "session",
+      "source_kind": [
+        "spoken_transcript"
+      ],
+      "ambiguous": false,
+      "$note": "COACHING, not a dose. There is no prescribed rep, set or round anywhere in this video. A card that shows sets or reps has invented them."
+    }
+  ],
+  "$source_claims": "reader-v2 claim shape: field, value, scope, source_kind, quote. A claim here is the CREATOR'S instruction, never an observation and never a recommendation.",
+  "exercises": [
+    {
+      "i": 0,
+      "name_said": "regular pronated grip pull up",
+      "name_shown": "TODO_REVIEW",
+      "canonical_id": "pull-up",
+      "canonical_id_status": "proposed from text alone — nobody has watched the video; confirm or replace",
+      "acceptable_canonical_ids": [
+        "pull-up"
+      ],
+      "$acceptable_canonical_ids": "the brief's acceptable_alternatives, written under the name tools/pack-eval/score.ts:53 and :296 already read, so a reviewer's decision here actually changes a score",
+      "prescribed": {
+        "text": "none given",
+        "minimum": null,
+        "maximum": null,
+        "unit": "text",
+        "per_side": false,
+        "to_failure": false,
+        "provenance": [
+          "TODO_REVIEW"
+        ],
+        "quote_said": null,
+        "t_said": null,
+        "quote_written": null,
+        "conflict": null
+      },
+      "demonstrated": {
+        "count": "unknown",
+        "method": "unknown",
+        "$why": "The creator hangs and demonstrates rather than performing a set; a count is almost certainly not supportable."
+      },
+      "equipment": {
+        "value": [
+          "pull-up bar"
+        ],
+        "status": "inferred from caption/transcript text only",
+        "alternatives": []
+      },
+      "variation_notes": "Wider than shoulder width, overhand. Grip width is the ONLY thing separating this occurrence from the next two.",
+      "t0": "TODO_REVIEW",
+      "t1": "TODO_REVIEW",
+      "uncertainty_s": "TODO_REVIEW",
+      "$t": "Record an ACCEPTED INTERVAL, not a point: t0/t1 are the reviewer's best boundary and uncertainty_s is half the interval they would accept. score.ts today reads t0/t1 as scalars against a single global 1.5 s slack (score.ts:194, 559-568) and ignores uncertainty_s — see the scorer gap list.",
+      "reps_seen": null,
+      "$reps_seen": "Null means nobody counted. score.ts:577 skips a null; it does NOT currently fail a pack that asserts a count where the truth says unknown.",
+      "provenance": {
+        "name": "TODO_REVIEW",
+        "reps": "TODO_REVIEW",
+        "variant": "TODO_REVIEW",
+        "cues": "TODO_REVIEW"
+      },
+      "reviewer_notes": "TODO_REVIEW"
+    },
+    {
+      "i": 1,
+      "name_said": "closer neutral grip",
+      "name_shown": "TODO_REVIEW",
+      "canonical_id": "pull-up",
+      "canonical_id_status": "proposed from text alone — nobody has watched the video; confirm or replace",
+      "acceptable_canonical_ids": [
+        "pull-up",
+        "chin-up"
+      ],
+      "$acceptable_canonical_ids": "the brief's acceptable_alternatives, written under the name tools/pack-eval/score.ts:53 and :296 already read, so a reviewer's decision here actually changes a score",
+      "prescribed": {
+        "text": "none given",
+        "minimum": null,
+        "maximum": null,
+        "unit": "text",
+        "per_side": false,
+        "to_failure": false,
+        "provenance": [
+          "TODO_REVIEW"
+        ],
+        "quote_said": null,
+        "t_said": null,
+        "quote_written": null,
+        "conflict": null
+      },
+      "demonstrated": {
+        "count": "unknown",
+        "method": "unknown",
+        "$why": "No frames were extracted for this template. A creator saying N reps does not make N cycles visible; set a number only if continuous evidence shows every counted cycle."
+      },
+      "equipment": {
+        "value": [
+          "pull-up bar"
+        ],
+        "status": "inferred from caption/transcript text only",
+        "alternatives": []
+      },
+      "variation_notes": "Neutral (palms facing each other) requires parallel handles or a neutral attachment. Record what the bar actually is — a neutral grip on a straight bar is not possible, so the equipment claim matters.",
+      "t0": "TODO_REVIEW",
+      "t1": "TODO_REVIEW",
+      "uncertainty_s": "TODO_REVIEW",
+      "$t": "Record an ACCEPTED INTERVAL, not a point: t0/t1 are the reviewer's best boundary and uncertainty_s is half the interval they would accept. score.ts today reads t0/t1 as scalars against a single global 1.5 s slack (score.ts:194, 559-568) and ignores uncertainty_s — see the scorer gap list.",
+      "reps_seen": null,
+      "$reps_seen": "Null means nobody counted. score.ts:577 skips a null; it does NOT currently fail a pack that asserts a count where the truth says unknown.",
+      "provenance": {
+        "name": "TODO_REVIEW",
+        "reps": "TODO_REVIEW",
+        "variant": "TODO_REVIEW",
+        "cues": "TODO_REVIEW"
+      },
+      "reviewer_notes": "TODO_REVIEW"
+    },
+    {
+      "i": 2,
+      "name_said": "supinate grip",
+      "name_shown": "TODO_REVIEW",
+      "canonical_id": "chin-up",
+      "canonical_id_status": "proposed from text alone — nobody has watched the video; confirm or replace",
+      "acceptable_canonical_ids": [
+        "chin-up",
+        "pull-up"
+      ],
+      "$acceptable_canonical_ids": "the brief's acceptable_alternatives, written under the name tools/pack-eval/score.ts:53 and :296 already read, so a reviewer's decision here actually changes a score",
+      "prescribed": {
+        "text": "none given",
+        "minimum": null,
+        "maximum": null,
+        "unit": "text",
+        "per_side": false,
+        "to_failure": false,
+        "provenance": [
+          "TODO_REVIEW"
+        ],
+        "quote_said": null,
+        "t_said": null,
+        "quote_written": null,
+        "conflict": null
+      },
+      "demonstrated": {
+        "count": "unknown",
+        "method": "unknown",
+        "$why": "No frames were extracted for this template. A creator saying N reps does not make N cycles visible; set a number only if continuous evidence shows every counted cycle."
+      },
+      "equipment": {
+        "value": [
+          "pull-up bar"
+        ],
+        "status": "inferred from caption/transcript text only",
+        "alternatives": []
+      },
+      "variation_notes": "Underhand at about shoulder width. catalog.ts has chin-up as its own entry with pull-up as its base — this is precisely the 'do not require the exact subtype for a close variant' case from EXPERIMENT-5-DOLLAR.md.",
+      "t0": "TODO_REVIEW",
+      "t1": "TODO_REVIEW",
+      "uncertainty_s": "TODO_REVIEW",
+      "$t": "Record an ACCEPTED INTERVAL, not a point: t0/t1 are the reviewer's best boundary and uncertainty_s is half the interval they would accept. score.ts today reads t0/t1 as scalars against a single global 1.5 s slack (score.ts:194, 559-568) and ignores uncertainty_s — see the scorer gap list.",
+      "reps_seen": null,
+      "$reps_seen": "Null means nobody counted. score.ts:577 skips a null; it does NOT currently fail a pack that asserts a count where the truth says unknown.",
+      "provenance": {
+        "name": "TODO_REVIEW",
+        "reps": "TODO_REVIEW",
+        "variant": "TODO_REVIEW",
+        "cues": "TODO_REVIEW"
+      },
+      "reviewer_notes": "TODO_REVIEW"
+    }
+  ],
+  "card_expectations": {
+    "$comment": "What a correct card must and must not contain. Fill after review; score.ts reads title/block/stamped/cues/canonical_ids/acceptable_canonical_ids/deltas/must_not.",
+    "title": "TODO_REVIEW",
+    "block": "TODO_REVIEW",
+    "stamped": "TODO_REVIEW",
+    "cues": "TODO_REVIEW",
+    "canonical_ids": "TODO_REVIEW",
+    "acceptable_canonical_ids": "TODO_REVIEW",
+    "deltas": "TODO_REVIEW",
+    "must_not": [
+      {
+        "never": "TODO_REVIEW",
+        "why": "a conflation this video makes tempting"
+      },
+      {
+        "field": "weight",
+        "why": "no load may appear unless the creator gave one"
+      }
+    ]
+  },
+  "reviewer_checklist": [
+    "Watch the whole video once before writing anything down.",
+    "Enumerate occurrences in chronological order, including repeats and both sides; repeats are separate occurrences even when the name matches.",
+    "For every occurrence set demonstrated.count to a number ONLY if continuous evidence shows every counted cycle. Otherwise leave 'unknown'.",
+    "Write acceptable_canonical_ids before you see any model output.",
+    "Record t0/t1 as the boundary you would accept plus uncertainty_s, not a point you had to guess.",
+    "Mark any claim you cannot resolve from the source as unresolvable rather than choosing the likely answer.",
+    "No dose exists. Confirm the expectation is zero prescribed values and zero invented sets.",
+    "Three occurrences share one catalog family. Decide which id conflations are acceptable and which are not, and write both lists.",
+    "The creator also says 'a little bit of pecs'. That is an anatomy claim, not an exercise; it must not become an occurrence."
+  ],
+  "reviewer_notes": "TODO_REVIEW"
+}

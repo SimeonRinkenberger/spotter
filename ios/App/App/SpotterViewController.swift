@@ -18,6 +18,7 @@ class SpotterViewController: CAPBridgeViewController {
         bridge?.registerPluginInstance(ShareAccessPlugin())
         bridge?.registerPluginInstance(GoogleAuthPlugin())
         bridge?.registerPluginInstance(AppleAuthPlugin())
+        bridge?.registerPluginInstance(SecureSessionPlugin())
     }
 
     override func viewDidLoad() {

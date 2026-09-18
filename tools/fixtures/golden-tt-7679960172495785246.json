@@ -1,6 +1,7 @@
 {
+  "$audit_2026_09_17": "Rep counts were not independently counted: visible count unknown; five reps apiece is the creator prescription. Narrow kettlebell support is not evidence of diamond hand shape. Handle/body contact requires fresh human review before using this fixture to rank vision models.",
   "$comment": "GOLDEN FIXTURE, hand-authored 2026-09-15 by the senior session from the TikTok ASR WebVTT (84 s) and 1 fps frame strips of tt-7679960172495785246 (@thewodfather, 'Complex Fives'). This is the TARGET a Video Context Pack read should produce for this video. Not model output. Used by the design doc and by tools/pack-eval as expected values.",
-  "pack_v": 1,
+  "pack_v": 2,
   "shortcode": "tt-7679960172495785246",
   "platform": "tiktok",
   "duration_s": 84.3,
@@ -35,9 +36,10 @@
       "i": 0,
       "name_said": "close grip push ups",
       "name_shown": "Close-Grip Push-Up on Kettlebell",
-      "canonical_id": "diamond-push-up",
+      "canonical_id": "push-up",
       "t0": 10.5, "t1": 25.0,
-      "reps_seen": 5,
+      "reps_seen": null,
+      "reps_prescribed": 5,
       "variant": {
         "equipment": ["kettlebell"],
         "hand_placement": "both hands stacked on the kettlebell handle, thumbs touching",
@@ -60,7 +62,7 @@
         "both hands are on the kettlebell handle, not the floor",
         "feet together on the mat, body in a straight line"
       ],
-      "provenance": { "name": "said", "reps": "said", "variant": "seen", "cues": "said" },
+      "provenance": { "name": "said", "reps": "none", "variant": "seen", "cues": "said" },
       "confidence": 0.9
     },
     {
@@ -69,7 +71,8 @@
       "name_shown": "Kettlebell Sumo Deadlift High Pull",
       "canonical_id": "sumo-deadlift-high-pull",
       "t0": 25.5, "t1": 40.5,
-      "reps_seen": 5,
+      "reps_seen": null,
+      "reps_prescribed": 5,
       "variant": {
         "equipment": ["kettlebell"],
         "hand_placement": "both hands on the handle, bell between the feet",
@@ -93,7 +96,7 @@
         "the bell returns to the floor between reps",
         "elbows finish above the hands at the top"
       ],
-      "provenance": { "name": "said", "reps": "said", "variant": "seen", "cues": "said" },
+      "provenance": { "name": "said", "reps": "none", "variant": "seen", "cues": "said" },
       "confidence": 0.85
     },
     {
@@ -102,7 +105,8 @@
       "name_shown": "Kettlebell Swing",
       "canonical_id": "kettlebell-swing",
       "t0": 41.0, "t1": 54.0,
-      "reps_seen": 5,
+      "reps_seen": null,
+      "reps_prescribed": 5,
       "variant": {
         "equipment": ["kettlebell"],
         "hand_placement": "two hands on the handle",
@@ -123,7 +127,7 @@
       "seen_not_said": [
         "bell peaks at chest height, not overhead"
       ],
-      "provenance": { "name": "said", "reps": "said", "variant": "seen", "cues": "said" },
+      "provenance": { "name": "said", "reps": "none", "variant": "seen", "cues": "said" },
       "confidence": 0.95
     },
     {
@@ -132,7 +136,8 @@
       "name_shown": "Goblet Squat",
       "canonical_id": "goblet-squat",
       "t0": 54.5, "t1": 64.0,
-      "reps_seen": 5,
+      "reps_seen": null,
+      "reps_prescribed": 5,
       "variant": {
         "equipment": ["kettlebell"],
         "hand_placement": "bell held by the horns at the chest",
@@ -153,7 +158,7 @@
       "seen_not_said": [
         "depth is clearly below parallel on every rep"
       ],
-      "provenance": { "name": "said", "reps": "said", "variant": "seen", "cues": "said" },
+      "provenance": { "name": "said", "reps": "none", "variant": "seen", "cues": "said" },
       "confidence": 0.95
     },
     {
@@ -162,7 +167,8 @@
       "name_shown": "Two-Hand Kettlebell Push Press",
       "canonical_id": "push-press",
       "t0": 64.6, "t1": 72.5,
-      "reps_seen": 5,
+      "reps_seen": null,
+      "reps_prescribed": 5,
       "variant": {
         "equipment": ["kettlebell"],
         "hand_placement": "both hands on the horns, bell upside down",
@@ -183,7 +189,7 @@
         "the bell is pressed with both hands from the goblet position",
         "full lockout overhead"
       ],
-      "provenance": { "name": "said", "reps": "said", "variant": "seen", "cues": "none" },
+      "provenance": { "name": "said", "reps": "none", "variant": "seen", "cues": "none" },
       "confidence": 0.85
     }
   ],

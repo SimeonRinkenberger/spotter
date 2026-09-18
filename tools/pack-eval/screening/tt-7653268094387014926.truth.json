@@ -1,0 +1,564 @@
+{
+  "$comment": "GROUND-TRUTH TEMPLATE for the $5 screen, NOT ground truth. Shape: tools/fixtures/golden-tt-7679960172495785246.json and the tools/pack-eval/score.ts Fixture type, extended with the source-claim contract from PROMPTS-AND-CONTRACTS.md (prescribed vs demonstrated, provenance said/seen/written). Everything filled in here came from text this repo actually fetched — the platform caption and, where the platform publishes one, the free ASR WebVTT. NOBODY HAS WATCHED THIS VIDEO. No frame was extracted, no AI call was made, nothing was saved in the app. Every TODO_REVIEW is a decision for the human reviewer, and a visible count is never one of the things text alone can decide.",
+  "truth_v": 1,
+  "status": "TEMPLATE_UNREVIEWED",
+  "reviewed_by": "TODO_REVIEW",
+  "adjudicated_by": "TODO_REVIEW",
+  "shortcode": "tt-7653268094387014926",
+  "platform": "tiktok",
+  "url": "https://www.tiktok.com/@austinhaslam/video/7653268094387014926",
+  "kind": "video",
+  "category": "spoken_multi_exercise",
+  "selection": "primary",
+  "duration_s": 127,
+  "visual": "read",
+  "$visual": "score.ts reads this: 'unavailable' means nobody looked and the card must carry no visual claim (score.ts:459-470). A carousel has no video, so the video path is unavailable even though slides exist.",
+  "source": {
+    "platform": "tiktok",
+    "url": "https://www.tiktok.com/@austinhaslam/video/7653268094387014926",
+    "author": "FitDad",
+    "handle": "@austinhaslam",
+    "profile_url": "https://www.tiktok.com/@austinhaslam",
+    "duration_s": 127,
+    "consent": "Public post, referenced by URL only. No media is redistributed in this repo. Credit line: FitDad — https://www.tiktok.com/@austinhaslam/video/7653268094387014926. Handle recorded so credit and consent can be handled before any published result names this creator.",
+    "paid_program_flag": "none seen in the caption or on the watch page; re-check before publishing any result that names the creator",
+    "verified_at": "2026-09-17T21:59:55Z",
+    "verification": "curl GET of the platform oEmbed endpoint; the title and author below are the bytes it returned, not a search-result summary",
+    "oembed_http": "200",
+    "oembed_title": "One kettlebell. 6 movements. 5 rounds.  To get in the best shape of your life.  This one will humble you 🔥 If you’re a busy parent trying to get lean, strong, and athletic without living in the gym — this is the complex you should be saving.  I’m using a 20 KG bell. Full complex: 🔸 10 Swings — hinge, not a squat. Snap your hips, squeeze your glutes, let the bell float to shoulder height. This is your engine for the round. 🔸 10 Goblet Squats — catch the bell to your chest, elbows inside the knees, chest tall. Breathe through every rep and keep that grip locked in. 🔸 10 Overhead March (each side) — press it overhead, lock the arm out, ribs down, brace hard. The slow march is what makes you shake — your core’s fighting to keep you stacked. 🔸 10 Rotational Thrusters — drive up through the legs, rotate through the hips, finish with a full lockout. Moving through multiple planes is what will humble and bulletproof you. 🔸 :30 Hollow Hold + Flutter Kicks — low back glued to the floor, lock the hollow, feet never touch down. This is where the wheels fall off for me every round. 🔸 5 KB Offset Push-ups (each side) — one hand stacked on the bell, one on the floor. Chest to the deck, every rep counts. This is the one that separates the rounds you finish from the ones you quit. Rest 2 min between rounds · 5 rounds total Choose a weight that is challenging but does not prevent you from completing a full round all the way through.  Save and try ✅ Drop in the comments which round your wheels started to fall off 😅🥵  Follow for more highly effective workouts in 45 min or less. 💪 @Rachel Van Beuren  #fullbodyworkout #functionalfitness #fitdads #kettlebelltraining #kettlebellworkout"
+  },
+  "evidence_this_template_read": {
+    "caption": "fetched",
+    "asr_vtt": "yes — ASR/eng-US",
+    "asr_vtt_local_copy": "/private/tmp/claude-501/-Users-simeon-Desktop-CLAUDE-COWORK/f83e3c45-9ece-4ff1-96cf-c461f42dfdcd/scratchpad/vtt/tt-7653268094387014926.vtt",
+    "frames": "NONE EXTRACTED",
+    "$frames": "frame_source for a real run is tiktok-mp4 (see SET.json)."
+  },
+  "session": {
+    "format": "complex",
+    "scheme": "6 movements x 5 rounds, 2 min rest between rounds",
+    "scheme_provenance": [
+      "said",
+      "written"
+    ],
+    "equipment_seen": [
+      "kettlebell"
+    ],
+    "equipment_count": {
+      "kettlebell": 1
+    },
+    "load_seen": {
+      "text": "20 kg",
+      "provenance": [
+        "written"
+      ],
+      "quote": "I'm using a 20 KG bell."
+    },
+    "setting": "TODO_REVIEW",
+    "creator_goal": "one kettlebell, six movements, five rounds, for busy parents",
+    "said_at": {
+      "scheme": 2.46,
+      "rest_and_rounds": 121.4
+    }
+  },
+  "transcript_source": "tiktok_vtt",
+  "transcript": [
+    {
+      "t0": 2.462,
+      "t1": 4.301,
+      "text": "six movements, and five rounds."
+    },
+    {
+      "t0": 15.062,
+      "t1": 16.621,
+      "text": "Start each round with 10 swings."
+    },
+    {
+      "t0": 20.942,
+      "t1": 22.541,
+      "text": "Next we have 10 goblet squats."
+    },
+    {
+      "t0": 39.222,
+      "t1": 42.141,
+      "text": "And we're heading into 10 overhead marches on each side."
+    },
+    {
+      "t0": 57.062,
+      "t1": 59.741,
+      "text": "We're headed into a 10 rotational thrusters."
+    },
+    {
+      "t0": 83.942,
+      "t1": 87.101,
+      "text": "which is 1/32 hollow hold and flutter kicks."
+    },
+    {
+      "t0": 99.462,
+      "t1": 103.461,
+      "text": "and stability with five kettlebell offset push UPS for each side."
+    },
+    {
+      "t0": 118.542,
+      "t1": 121.421,
+      "text": "You completed one round. Complete five rounds total."
+    }
+  ],
+  "$transcript": "Only the dose-bearing and structure-bearing cues are reproduced, with their real VTT times, so the reviewer can check a claim without this repo carrying a full transcript of somebody else's video. The complete fetched track is at the path in evidence_this_template_read.asr_vtt_local_copy.",
+  "on_screen": "TODO_REVIEW",
+  "source_claims": [
+    {
+      "claim_id": "c1",
+      "field": "rounds",
+      "value": {
+        "text": "5 rounds",
+        "minimum": 5,
+        "maximum": 5,
+        "unit": "rounds",
+        "per_side": false,
+        "to_failure": false,
+        "provenance": [
+          "said",
+          "written"
+        ],
+        "quote_said": "six movements, and five rounds.",
+        "t_said": 2.46,
+        "quote_written": "One kettlebell. 6 movements. 5 rounds.",
+        "conflict": null
+      },
+      "scope": "session",
+      "source_kind": [
+        "spoken_transcript",
+        "creator_caption"
+      ],
+      "ambiguous": false
+    },
+    {
+      "claim_id": "c2",
+      "field": "rest_seconds",
+      "value": {
+        "text": "2 min between rounds",
+        "minimum": 120,
+        "maximum": 120,
+        "unit": "seconds",
+        "per_side": false,
+        "to_failure": false,
+        "provenance": [
+          "written"
+        ],
+        "quote_said": null,
+        "t_said": null,
+        "quote_written": "Rest 2 min between rounds · 5 rounds total",
+        "conflict": null
+      },
+      "scope": "session",
+      "source_kind": [
+        "creator_caption"
+      ],
+      "ambiguous": false
+    },
+    {
+      "claim_id": "c3",
+      "field": "load",
+      "value": {
+        "text": "20 kg",
+        "minimum": 20,
+        "maximum": 20,
+        "unit": "kg",
+        "per_side": false,
+        "to_failure": false,
+        "provenance": [
+          "written"
+        ],
+        "quote_said": null,
+        "t_said": null,
+        "quote_written": "I’m using a 20 KG bell.",
+        "conflict": null
+      },
+      "scope": "session",
+      "source_kind": [
+        "creator_caption"
+      ],
+      "ambiguous": false
+    },
+    {
+      "claim_id": "c4",
+      "field": "duration_seconds",
+      "value": {
+        "text": ":30 hollow hold + flutter kicks",
+        "minimum": 30,
+        "maximum": 30,
+        "unit": "seconds",
+        "per_side": false,
+        "to_failure": false,
+        "provenance": [
+          "said",
+          "written"
+        ],
+        "quote_said": "which is 1/32 hollow hold and flutter kicks.",
+        "t_said": 83.94,
+        "quote_written": "🔸 :30 Hollow Hold + Flutter Kicks",
+        "conflict": "The ASR heard ':30' as '1/32'. The written caption is the resolvable source; the spoken claim must be marked ambiguous rather than repaired into a number that seems plausible."
+      },
+      "scope": "event_set",
+      "source_kind": [
+        "creator_caption",
+        "spoken_transcript"
+      ],
+      "ambiguous": true
+    }
+  ],
+  "$source_claims": "reader-v2 claim shape: field, value, scope, source_kind, quote. A claim here is the CREATOR'S instruction, never an observation and never a recommendation.",
+  "exercises": [
+    {
+      "i": 0,
+      "name_said": "10 swings",
+      "name_shown": "TODO_REVIEW",
+      "canonical_id": "kettlebell-swing",
+      "canonical_id_status": "proposed from text alone — nobody has watched the video; confirm or replace",
+      "acceptable_canonical_ids": [
+        "kettlebell-swing"
+      ],
+      "$acceptable_canonical_ids": "the brief's acceptable_alternatives, written under the name tools/pack-eval/score.ts:53 and :296 already read, so a reviewer's decision here actually changes a score",
+      "prescribed": {
+        "text": "10",
+        "minimum": 10,
+        "maximum": 10,
+        "unit": "reps",
+        "per_side": false,
+        "to_failure": false,
+        "provenance": [
+          "said",
+          "written"
+        ],
+        "quote_said": "Start each round with 10 swings.",
+        "t_said": 15.06,
+        "quote_written": "🔸 10 Swings — hinge, not a squat.",
+        "conflict": null
+      },
+      "demonstrated": {
+        "count": "unknown",
+        "method": "unknown",
+        "$why": "No frames were extracted for this template. A creator saying N reps does not make N cycles visible; set a number only if continuous evidence shows every counted cycle."
+      },
+      "equipment": {
+        "value": [
+          "kettlebell"
+        ],
+        "status": "inferred from caption/transcript text only",
+        "alternatives": []
+      },
+      "variation_notes": "Caption says 'hinge, not a squat' and 'let the bell float to shoulder height' — i.e. a Russian swing, not American. Confirm the bell does not go overhead. NOTE for the scorer: 'not a squat' is a NEGATED word and must not become an equipment or exercise claim (score.ts:436-448).",
+      "t0": "TODO_REVIEW",
+      "t1": "TODO_REVIEW",
+      "uncertainty_s": "TODO_REVIEW",
+      "$t": "Record an ACCEPTED INTERVAL, not a point: t0/t1 are the reviewer's best boundary and uncertainty_s is half the interval they would accept. score.ts today reads t0/t1 as scalars against a single global 1.5 s slack (score.ts:194, 559-568) and ignores uncertainty_s — see the scorer gap list.",
+      "reps_seen": null,
+      "$reps_seen": "Null means nobody counted. score.ts:577 skips a null; it does NOT currently fail a pack that asserts a count where the truth says unknown.",
+      "provenance": {
+        "name": "TODO_REVIEW",
+        "reps": "TODO_REVIEW",
+        "variant": "TODO_REVIEW",
+        "cues": "TODO_REVIEW"
+      },
+      "reviewer_notes": "TODO_REVIEW"
+    },
+    {
+      "i": 1,
+      "name_said": "10 goblet squats",
+      "name_shown": "TODO_REVIEW",
+      "canonical_id": "goblet-squat",
+      "canonical_id_status": "proposed from text alone — nobody has watched the video; confirm or replace",
+      "acceptable_canonical_ids": [
+        "goblet-squat"
+      ],
+      "$acceptable_canonical_ids": "the brief's acceptable_alternatives, written under the name tools/pack-eval/score.ts:53 and :296 already read, so a reviewer's decision here actually changes a score",
+      "prescribed": {
+        "text": "10",
+        "minimum": 10,
+        "maximum": 10,
+        "unit": "reps",
+        "per_side": false,
+        "to_failure": false,
+        "provenance": [
+          "said",
+          "written"
+        ],
+        "quote_said": "Next we have 10 goblet squats.",
+        "t_said": 20.94,
+        "quote_written": "🔸 10 Goblet Squats",
+        "conflict": null
+      },
+      "demonstrated": {
+        "count": "unknown",
+        "method": "unknown",
+        "$why": "No frames were extracted for this template. A creator saying N reps does not make N cycles visible; set a number only if continuous evidence shows every counted cycle."
+      },
+      "equipment": {
+        "value": [
+          "kettlebell"
+        ],
+        "status": "inferred from caption/transcript text only",
+        "alternatives": []
+      },
+      "variation_notes": "Caption: 'elbows inside the knees, chest tall'. Confirm depth claim before recording range_of_motion.",
+      "t0": "TODO_REVIEW",
+      "t1": "TODO_REVIEW",
+      "uncertainty_s": "TODO_REVIEW",
+      "$t": "Record an ACCEPTED INTERVAL, not a point: t0/t1 are the reviewer's best boundary and uncertainty_s is half the interval they would accept. score.ts today reads t0/t1 as scalars against a single global 1.5 s slack (score.ts:194, 559-568) and ignores uncertainty_s — see the scorer gap list.",
+      "reps_seen": null,
+      "$reps_seen": "Null means nobody counted. score.ts:577 skips a null; it does NOT currently fail a pack that asserts a count where the truth says unknown.",
+      "provenance": {
+        "name": "TODO_REVIEW",
+        "reps": "TODO_REVIEW",
+        "variant": "TODO_REVIEW",
+        "cues": "TODO_REVIEW"
+      },
+      "reviewer_notes": "TODO_REVIEW"
+    },
+    {
+      "i": 2,
+      "name_said": "10 overhead marches on each side",
+      "name_shown": "TODO_REVIEW",
+      "canonical_id": "TODO_REVIEW: overhead-carry is the closest catalog entry but it is a carry, not a march in place",
+      "canonical_id_status": "proposed from text alone — nobody has watched the video; confirm or replace",
+      "acceptable_canonical_ids": [
+        "overhead-carry",
+        "high-knees"
+      ],
+      "$acceptable_canonical_ids": "the brief's acceptable_alternatives, written under the name tools/pack-eval/score.ts:53 and :296 already read, so a reviewer's decision here actually changes a score",
+      "prescribed": {
+        "text": "10 each side",
+        "minimum": 10,
+        "maximum": 10,
+        "unit": "reps",
+        "per_side": true,
+        "to_failure": false,
+        "provenance": [
+          "said",
+          "written"
+        ],
+        "quote_said": "And we're heading into 10 overhead marches on each side.",
+        "t_said": 39.22,
+        "quote_written": "🔸 10 Overhead March (each side)",
+        "conflict": null
+      },
+      "demonstrated": {
+        "count": "unknown",
+        "method": "unknown",
+        "$why": "No frames were extracted for this template. A creator saying N reps does not make N cycles visible; set a number only if continuous evidence shows every counted cycle."
+      },
+      "equipment": {
+        "value": [
+          "kettlebell"
+        ],
+        "status": "inferred from caption/transcript text only",
+        "alternatives": []
+      },
+      "variation_notes": "Per-side. If no catalog id fits, canonical_id must be null rather than forced — catalog.ts maps an unmatched name to null on purpose, and a wrong id silently merges two lifts' personal records.",
+      "t0": "TODO_REVIEW",
+      "t1": "TODO_REVIEW",
+      "uncertainty_s": "TODO_REVIEW",
+      "$t": "Record an ACCEPTED INTERVAL, not a point: t0/t1 are the reviewer's best boundary and uncertainty_s is half the interval they would accept. score.ts today reads t0/t1 as scalars against a single global 1.5 s slack (score.ts:194, 559-568) and ignores uncertainty_s — see the scorer gap list.",
+      "reps_seen": null,
+      "$reps_seen": "Null means nobody counted. score.ts:577 skips a null; it does NOT currently fail a pack that asserts a count where the truth says unknown.",
+      "provenance": {
+        "name": "TODO_REVIEW",
+        "reps": "TODO_REVIEW",
+        "variant": "TODO_REVIEW",
+        "cues": "TODO_REVIEW"
+      },
+      "reviewer_notes": "TODO_REVIEW"
+    },
+    {
+      "i": 3,
+      "name_said": "10 rotational thrusters",
+      "name_shown": "TODO_REVIEW",
+      "canonical_id": "thruster",
+      "canonical_id_status": "proposed from text alone — nobody has watched the video; confirm or replace",
+      "acceptable_canonical_ids": [
+        "thruster",
+        "woodchop"
+      ],
+      "$acceptable_canonical_ids": "the brief's acceptable_alternatives, written under the name tools/pack-eval/score.ts:53 and :296 already read, so a reviewer's decision here actually changes a score",
+      "prescribed": {
+        "text": "10",
+        "minimum": 10,
+        "maximum": 10,
+        "unit": "reps",
+        "per_side": false,
+        "to_failure": false,
+        "provenance": [
+          "said",
+          "written"
+        ],
+        "quote_said": "We're headed into a 10 rotational thrusters.",
+        "t_said": 57.06,
+        "quote_written": "🔸 10 Rotational Thrusters",
+        "conflict": null
+      },
+      "demonstrated": {
+        "count": "unknown",
+        "method": "unknown",
+        "$why": "No frames were extracted for this template. A creator saying N reps does not make N cycles visible; set a number only if continuous evidence shows every counted cycle."
+      },
+      "equipment": {
+        "value": [
+          "kettlebell"
+        ],
+        "status": "inferred from caption/transcript text only",
+        "alternatives": []
+      },
+      "variation_notes": "A thruster with hip rotation. Decide whether the rotation is a variation of thruster or a different movement, and record the decision as an acceptable alternative either way.",
+      "t0": "TODO_REVIEW",
+      "t1": "TODO_REVIEW",
+      "uncertainty_s": "TODO_REVIEW",
+      "$t": "Record an ACCEPTED INTERVAL, not a point: t0/t1 are the reviewer's best boundary and uncertainty_s is half the interval they would accept. score.ts today reads t0/t1 as scalars against a single global 1.5 s slack (score.ts:194, 559-568) and ignores uncertainty_s — see the scorer gap list.",
+      "reps_seen": null,
+      "$reps_seen": "Null means nobody counted. score.ts:577 skips a null; it does NOT currently fail a pack that asserts a count where the truth says unknown.",
+      "provenance": {
+        "name": "TODO_REVIEW",
+        "reps": "TODO_REVIEW",
+        "variant": "TODO_REVIEW",
+        "cues": "TODO_REVIEW"
+      },
+      "reviewer_notes": "TODO_REVIEW"
+    },
+    {
+      "i": 4,
+      "name_said": ":30 hollow hold + flutter kicks",
+      "name_shown": "TODO_REVIEW",
+      "canonical_id": "hollow-hold",
+      "canonical_id_status": "proposed from text alone — nobody has watched the video; confirm or replace",
+      "acceptable_canonical_ids": [
+        "hollow-hold"
+      ],
+      "$acceptable_canonical_ids": "the brief's acceptable_alternatives, written under the name tools/pack-eval/score.ts:53 and :296 already read, so a reviewer's decision here actually changes a score",
+      "prescribed": {
+        "text": ":30",
+        "minimum": 30,
+        "maximum": 30,
+        "unit": "seconds",
+        "per_side": false,
+        "to_failure": false,
+        "provenance": [
+          "said",
+          "written"
+        ],
+        "quote_said": "which is 1/32 hollow hold and flutter kicks.",
+        "t_said": 83.94,
+        "quote_written": "🔸 :30 Hollow Hold + Flutter Kicks",
+        "conflict": "see claim c4 — ASR mis-heard ':30'"
+      },
+      "demonstrated": {
+        "count": "unknown",
+        "method": "unknown",
+        "$why": "No frames were extracted for this template. A creator saying N reps does not make N cycles visible; set a number only if continuous evidence shows every counted cycle."
+      },
+      "equipment": {
+        "value": [],
+        "status": "inferred from caption/transcript text only",
+        "alternatives": []
+      },
+      "variation_notes": "The caption names TWO movements in one line. Decide whether this is one occurrence or two (hollow-hold + flutter-kick) and record it; if two, split this entry and renumber.",
+      "t0": "TODO_REVIEW",
+      "t1": "TODO_REVIEW",
+      "uncertainty_s": "TODO_REVIEW",
+      "$t": "Record an ACCEPTED INTERVAL, not a point: t0/t1 are the reviewer's best boundary and uncertainty_s is half the interval they would accept. score.ts today reads t0/t1 as scalars against a single global 1.5 s slack (score.ts:194, 559-568) and ignores uncertainty_s — see the scorer gap list.",
+      "reps_seen": null,
+      "$reps_seen": "Null means nobody counted. score.ts:577 skips a null; it does NOT currently fail a pack that asserts a count where the truth says unknown.",
+      "provenance": {
+        "name": "TODO_REVIEW",
+        "reps": "TODO_REVIEW",
+        "variant": "TODO_REVIEW",
+        "cues": "TODO_REVIEW"
+      },
+      "reviewer_notes": "TODO_REVIEW"
+    },
+    {
+      "i": 5,
+      "name_said": "five kettlebell offset push ups for each side",
+      "name_shown": "TODO_REVIEW",
+      "canonical_id": "push-up",
+      "canonical_id_status": "proposed from text alone — nobody has watched the video; confirm or replace",
+      "acceptable_canonical_ids": [
+        "push-up",
+        "archer-push-up"
+      ],
+      "$acceptable_canonical_ids": "the brief's acceptable_alternatives, written under the name tools/pack-eval/score.ts:53 and :296 already read, so a reviewer's decision here actually changes a score",
+      "prescribed": {
+        "text": "5 each side",
+        "minimum": 5,
+        "maximum": 5,
+        "unit": "reps",
+        "per_side": true,
+        "to_failure": false,
+        "provenance": [
+          "said",
+          "written"
+        ],
+        "quote_said": "Complete all five reps on each side.",
+        "t_said": 112.4,
+        "quote_written": "🔸 5 KB Offset Push-ups (each side)",
+        "conflict": null
+      },
+      "demonstrated": {
+        "count": "unknown",
+        "method": "unknown",
+        "$why": "No frames were extracted for this template. A creator saying N reps does not make N cycles visible; set a number only if continuous evidence shows every counted cycle."
+      },
+      "equipment": {
+        "value": [
+          "kettlebell"
+        ],
+        "status": "inferred from caption/transcript text only",
+        "alternatives": []
+      },
+      "variation_notes": "'One hand stacked on the bell, one on the floor.' This is the same class of failure as the golden fixture's diamond dispute: an offset hand on a bell is NOT a diamond push-up and NOT a close-grip bench press. The creator also offers substitutions ('normal push UPS or kneeling push UPS') — those are the creator's alternatives, not additional occurrences.",
+      "t0": "TODO_REVIEW",
+      "t1": "TODO_REVIEW",
+      "uncertainty_s": "TODO_REVIEW",
+      "$t": "Record an ACCEPTED INTERVAL, not a point: t0/t1 are the reviewer's best boundary and uncertainty_s is half the interval they would accept. score.ts today reads t0/t1 as scalars against a single global 1.5 s slack (score.ts:194, 559-568) and ignores uncertainty_s — see the scorer gap list.",
+      "reps_seen": null,
+      "$reps_seen": "Null means nobody counted. score.ts:577 skips a null; it does NOT currently fail a pack that asserts a count where the truth says unknown.",
+      "provenance": {
+        "name": "TODO_REVIEW",
+        "reps": "TODO_REVIEW",
+        "variant": "TODO_REVIEW",
+        "cues": "TODO_REVIEW"
+      },
+      "reviewer_notes": "TODO_REVIEW"
+    }
+  ],
+  "card_expectations": {
+    "$comment": "What a correct card must and must not contain. Fill after review; score.ts reads title/block/stamped/cues/canonical_ids/acceptable_canonical_ids/deltas/must_not.",
+    "title": "TODO_REVIEW",
+    "block": "TODO_REVIEW",
+    "stamped": "TODO_REVIEW",
+    "cues": "TODO_REVIEW",
+    "canonical_ids": "TODO_REVIEW",
+    "acceptable_canonical_ids": "TODO_REVIEW",
+    "deltas": "TODO_REVIEW",
+    "must_not": [
+      {
+        "never": "TODO_REVIEW",
+        "why": "a conflation this video makes tempting"
+      },
+      {
+        "field": "weight",
+        "why": "no load may appear unless the creator gave one"
+      }
+    ]
+  },
+  "reviewer_checklist": [
+    "Watch the whole video once before writing anything down.",
+    "Enumerate occurrences in chronological order, including repeats and both sides; repeats are separate occurrences even when the name matches.",
+    "For every occurrence set demonstrated.count to a number ONLY if continuous evidence shows every counted cycle. Otherwise leave 'unknown'.",
+    "Write acceptable_canonical_ids before you see any model output.",
+    "Record t0/t1 as the boundary you would accept plus uncertainty_s, not a point you had to guess.",
+    "Mark any claim you cannot resolve from the source as unresolvable rather than choosing the likely answer.",
+    "Adjudicate the ':30' vs '1/32' conflict explicitly: which source wins, and is the spoken claim recorded as ambiguous?",
+    "The substitutions offered at the end must not appear as demonstrated occurrences."
+  ],
+  "reviewer_notes": "TODO_REVIEW"
+}

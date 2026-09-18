@@ -6,9 +6,9 @@
   "_trial_note": "Applied to the ANNUAL price only, with a card taken up front — the free tier is the monthly plan's trial. The function reads app_config.billing.trial_days, not this; keep the two equal.",
   "trial_days": 7,
 
-  "_founding_note": "The launch offer: $10 off the first year for the first 200 accounts, so $29.99 then $39.99. A fixed-id coupon rather than a promotion code, because nobody types it — the function applies it to every yearly checkout for as long as Stripe says the coupon is valid, and Stripe's own max_redemptions closes the offer. Amounts are immutable once a coupon exists: to change the offer, delete the coupon in the Dashboard and run this script again. To END the offer, just delete it — the paywall stops showing it within five minutes and checkout goes to full price. Note that a coupon and Checkout's promo-code box are mutually exclusive, so while this exists the yearly checkout has no 'enter a code' field; monthly keeps one.",
+  "_founding_note": "Disabled for new launch purchases by the GTM plan. Historical offer: $10 off the first year for the first 200 accounts. Honor existing purchases and explicit promises before changing the live coupon. This source setting does not disable a live coupon; the function's own switch is the app_config row billing.founding, which must be the string true for the coupon to be shown or applied at all, and which nothing seeds. Leave that row absent AND delete the coupon in the Dashboard to close the offer. A fixed-id coupon rather than a promotion code, because nobody types it — the function applies it to every yearly checkout for as long as Stripe says the coupon is valid, and Stripe's own max_redemptions closes the offer. Amounts are immutable once a coupon exists: to change the offer, delete the coupon in the Dashboard and run this script again. To END the offer, just delete it — the paywall stops showing it within five minutes and checkout goes to full price. Note that a coupon and Checkout's promo-code box are mutually exclusive, so while this exists the yearly checkout has no 'enter a code' field; monthly keeps one.",
   "founding": {
-    "enabled": true,
+    "enabled": false,
     "id": "SPOTTER_FOUNDING_YEAR",
     "name": "Founding year",
     "product": "plus",
@@ -26,10 +26,11 @@
       "enabled": true,
       "name": "Spotter Plus",
       "tax_code": "txcd_10103000",
-      "description": "An unlimited library, and more of everything that costs money to make: 200 saves, 60 extractions, 15 video reads, 10 uploads and 60 coaching answers a day.",
+      "_description_note": "Pushed to the live Stripe product by ensureProduct on every run and shown on the Checkout page the customer buys from, so it is customer-facing copy and follows the same rule as the paywall: no unlimited AI and no numeric allowance the cost controls cannot deliver. Numbers of record: design/gtm/ALLOWANCES.md section 3.",
+      "description": "An unlimited library and 20 full video reads a month, with 300 coaching answers from Pumpy, 100 explanations and swaps and 10 uploads. Saving from a caption, logging, your plan and your progress are always free.",
       "prices": [
         { "lookup_key": "spotter_plus_month", "interval": "month", "unit_amount": 699 },
-        { "lookup_key": "spotter_plus_year", "interval": "year", "unit_amount": 3999 }
+        { "lookup_key": "spotter_plus_year", "interval": "year", "unit_amount": 5000 }
       ]
     },
     {
