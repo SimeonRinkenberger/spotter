@@ -215,8 +215,10 @@ async function ensureFounding(spec, productId) {
   if (!spec || spec.enabled === false) {
     console.log("  – no founding offer configured (\"enabled\": false in stripe-plans.json)");
     followUps.push(
-      "If a founding coupon still exists from an earlier run, the function will keep applying " +
-      `it to yearly checkouts. Delete ${spec?.id ?? "the coupon"} in Products > Coupons to end the offer.`,
+      "The function shows and applies the founding discount only when the app_config row " +
+      "billing.founding is the string 'true', and nothing seeds that row — so an absent row is " +
+      `already full price. Delete ${spec?.id ?? "the coupon"} in Products > Coupons as well, so an ` +
+      "old checkout session or a direct API call cannot redeem it either.",
     );
     return;
   }

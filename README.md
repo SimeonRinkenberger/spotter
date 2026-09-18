@@ -759,6 +759,13 @@ each create their own. Nothing else differs.
 >    tax cloud-only SaaS and every economic-nexus threshold is many times away, so calculation
 >    would collect nothing and add a renewal-time failure mode. Monitoring is free at zero
 >    registrations and is what will tell you when that stops being true.
+> 7. Products → Coupons → **delete `SPOTTER_FOUNDING_YEAR`**, in the same session as any price
+>    change. `"founding": {"enabled": false}` in `tools/stripe-plans.json` is read only by this
+>    script and deletes nothing. The function's own switch is the `app_config` row
+>    `billing.founding`, which must hold the string `true` for the discount to be shown on the
+>    paywall or applied at Checkout — nothing seeds that row, so an absent row is already full
+>    price. Deleting the coupon is the second half: it is what stops an old Checkout Session or a
+>    direct API call from redeeming it. Skip both and a $50 annual plan sells for $40.
 
 Testing without the Stripe CLI: card `4242 4242 4242 4242` for the happy path,
 `4000 0000 0000 0341` to make a *renewal* fail (it attaches fine and declines when charged),
@@ -821,13 +828,16 @@ Prices are immutable in Stripe, so it creates a new one, moves the `lookup_key` 
 bought. No code knows a price id.
 
 **The founding offer** is a Stripe coupon with a fixed id, `SPOTTER_FOUNDING_YEAR`: $10 off, once,
-200 redemptions, scoped to the Plus product. The setup script creates it; the function looks it up
-by that id on the same five-minute cache as the prices and, while Stripe reports it valid, applies
-it to every yearly checkout automatically. Nobody types a code. Stripe's own `max_redemptions`
-counter is what closes the offer, so there is no number on our side to drift — `GET
-/api/billing/prices` reports `founding: {first_year_amount, remaining}`, or `null` once it is gone.
-**To end the offer, delete the coupon** in Products → Coupons; the paywall stops advertising it
-within five minutes and checkout goes to full price. Coupons are immutable, so changing the
+200 redemptions, scoped to the Plus product. **Two switches have to agree, and both are off by
+default.** The function reads the `app_config` row `billing.founding` on the same five-minute cache
+as the prices, and unless it holds the string `true` the offer is null everywhere — the paywall
+shows the standing price and checkout sends no discount. Nothing seeds that row. When it is `true`
+and Stripe still reports the coupon valid, it is applied to every yearly checkout automatically;
+nobody types a code. Stripe's own `max_redemptions` counter is what closes the offer, so there is
+no number on our side to drift — `GET /api/billing/prices` reports
+`founding: {first_year_amount, remaining}`, or `null` once either switch is off.
+**To end the offer, leave `billing.founding` absent and delete the coupon** in Products → Coupons;
+the paywall stops advertising it within five minutes and checkout goes to full price. Coupons are immutable, so changing the
 amount means deleting and re-creating. One consequence worth knowing: a Checkout Session may
 carry a coupon *or* a promo-code box, never both, so while the offer runs the yearly checkout has
 no "enter a code" field. Monthly keeps one. If Stripe refuses the coupon at session creation —
