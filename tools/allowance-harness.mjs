@@ -196,7 +196,7 @@ check('a monthly refusal speaks in months, and a burst stop still speaks in days
     upgrade: true, next_plan: 'plus', next_cap: 20,
   }) + ')');
   assert.equal(month,
-    'That is 4 video reads this month, the free plan’s allowance for it. It comes back on the 1st. Plus reads 20 a month.');
+    'That is 4 video reads this month, the free plan’s whole allowance. It comes back on the 1st. Plus reads 20 a month.');
   const day = run('planCtxLine(' + JSON.stringify({
     kind: 'saves', plan: 'free', cap: 30, used: 30, upgrade: true, next_plan: 'plus', next_cap: 200,
   }) + ')');
@@ -223,7 +223,11 @@ check('the paywall rows quote the allowances, from the same table the server ref
   assert.ok(rows[2].startsWith('300 coaching answers a month'), rows[2]);
   assert.ok(rows[2].includes('100 explanations and swaps'), rows[2]);
   assert.ok(rows[3].includes('never metered'), rows[3]);
-  assert.ok(rows[4].includes('reset on the 1st'), rows[4]);
+  assert.ok(rows[0].includes('Basic holds 20'), rows[0]);
+  assert.ok(rows[4].includes('stays readable'), rows[4]);
+  // The reset date is said once, in the fine print, with the hour. A benefit row
+  // that repeats it is the paywall telling you the same thing twice.
+  assert.equal(rows.filter(function (r) { return /reset/.test(r); }).length, 0, rows.join(' | '));
   for (const row of rows) assert.ok(!/ a day\b/.test(row), 'a daily number survived on the paywall: ' + row);
 });
 

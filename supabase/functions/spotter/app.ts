@@ -10999,10 +10999,10 @@ export const APP = String.raw`
   }
 
   function renderSettingsMeter() {
+    var staff = (state.profile && state.profile.plan === "staff") ||
+      (pumpy.meter && pumpy.meter.plan === "staff");
     var d = $("setdiag");
     if (d) {
-      var staff = (state.profile && state.profile.plan === "staff") ||
-        (pumpy.meter && pumpy.meter.plan === "staff");
       d.textContent = staff ? layoutLine() : "";
       d.classList.toggle("hide", !staff);
     }
@@ -11012,6 +11012,11 @@ export const APP = String.raw`
     var day = p && bucket(p.day);
     var month = p && bucket(p.month);
     if (!p || (!day && !month)) { n.textContent = ""; n.classList.add("hide"); return; }
+    // Credits are the accounting unit and nobody buys one. Settings > Plan now
+    // says "Coaching answers 41 of 300 this month", which is the number that was
+    // sold; printing 5,000 credits beside it is the same two-numbers-for-one-
+    // question problem the daily counts were. Staff keep it as a diagnostic.
+    if (!staff) { n.textContent = ""; n.classList.add("hide"); return; }
     var bits = ["Pumpy"];
     if (typeof p.plan === "string" && p.plan) {
       bits.push(p.plan.charAt(0).toUpperCase() + p.plan.slice(1) + " plan");
@@ -11636,7 +11641,7 @@ export const APP = String.raw`
     if (!f || !p) return [];
     var out = [], lib = capNum(p.library), reads = capNum(p.month_reads);
     out.push(lib === null
-      ? "Keep every workout you save — the free plan holds " + f.library + "."
+      ? "Keep every workout you save — Basic holds " + f.library + "."
       : "Hold " + capMany(lib) + " saved workouts, instead of " + f.library + ".");
     if (reads === null) {
       // An older function that does not send the allowances yet. Say the shape
@@ -11650,7 +11655,7 @@ export const APP = String.raw`
         capMany(capNum(p.month_helpers)) + " explanations and swaps.");
     }
     out.push("Saving from a caption, logging, your plan and your progress are free and are never metered.");
-    out.push("Allowances reset on the 1st. Stop whenever you like — everything you saved stays yours, and stays readable.");
+    out.push("Stop whenever you like — everything you saved stays yours, and stays readable.");
     return out;
   }
 
@@ -11696,7 +11701,7 @@ export const APP = String.raw`
     var month = c.scope === "month";
     var noun = c.kind === "uploads" && cap === 1 ? "upload" : w[0];
     return "That is " + cap + " " + noun + (month ? " this month, " : " today, ") + mine + "’s " +
-      (month ? "allowance for it. It comes back on the 1st. " : "burst limit. It resets at midnight UTC. ") +
+      (month ? "whole allowance. It comes back on the 1st. " : "burst limit. It resets at midnight UTC. ") +
       (next === null ? up + " has no limit here."
         : up + " " + w[1] + " " + next + (month ? " a month." : " a day."));
   }
@@ -12174,11 +12179,15 @@ export const APP = String.raw`
     return d.toLocaleDateString(undefined, { day: "numeric", month: "short", timeZone: "UTC" });
   }
 
-  function useRow(label, value, tail, out) {
+  // The reset clause is passed separately and kept whole: at 375px the longest of these lines
+  // wraps, and it must not wrap between "resets" and the date — a line ending on
+  // "resets" reads for a beat as though nothing is coming back.
+  function useRow(label, value, tail, back, out) {
     var row = el("div", out ? "usel out" : "usel");
     row.appendChild(document.createTextNode(label + " "));
     row.appendChild(el("b", null, value));
     if (tail) row.appendChild(document.createTextNode(tail));
+    if (back) row.appendChild(el("span", "nobr", " · resets " + back));
     return row;
   }
 
@@ -12189,7 +12198,7 @@ export const APP = String.raw`
     // The shelf is a stock, not a month, so it never says "this month" and never
     // carries a reset date. A plan with no ceiling has nothing to count.
     if (lim && capNum(lim.library) !== null && num(r.library_count) !== null) {
-      n.appendChild(useRow("Library", r.library_count + " of " + capNum(lim.library), " saved",
+      n.appendChild(useRow("Library", r.library_count + " of " + capNum(lim.library), " saved", null,
         r.library_count >= capNum(lim.library)));
     }
     if (m) {
@@ -12199,8 +12208,7 @@ export const APP = String.raw`
         // A null cap is uncapped: there is no allowance to count towards, so the
         // line would be a number with nothing to mean.
         if (used === null || cap === null) return;
-        n.appendChild(useRow(a[1], used + " of " + cap,
-          " this month" + (back ? " · resets " + back : ""), used >= cap));
+        n.appendChild(useRow(a[1], used + " of " + cap, " this month", back, used >= cap));
       });
     }
     // The one thing here that is not an allowance: Spotter's own shared budget.

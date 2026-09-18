@@ -2264,6 +2264,7 @@ export const STYLE = String.raw`<style>
   .setnote .usel { padding: 1px 0; }
   .setnote .usel b { color: var(--ink-2); font-weight: 600; font-variant-numeric: tabular-nums; }
   .setnote .usel.out, .setnote .usel.out b { color: var(--ember-ink); }
+  .setnote .usel .nobr { white-space: nowrap; }
   /* The colophon. Quiet on purpose — it is the last thing in the sheet, not an
      invitation to leave. */
   .setnote.foot { text-align: center; margin-top: 18px; }
