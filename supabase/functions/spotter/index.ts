@@ -13111,7 +13111,13 @@ Deno.serve(async (req: Request) => {
         ai_allowance: await rpc("ai_budget_user_status", { p_user: userId }),
         paid_enabled: await paidAllowed(),
         cache_pct_today: cachePct,
-        video_previews: { cap: PREVIEW_CAP, used: mc.previews, resets_at: utcNextMonth() },
+        // The card's "N left this month" button reads this; Settings reads
+        // `month` above. They have to be the same number, so for a Basic
+        // account they come from the same allowance row.
+        video_previews: {
+          cap: plusPlan(uc.plan) ? PREVIEW_CAP : (allowance.reads ?? PREVIEW_CAP),
+          used: mc.previews, resets_at: utcNextMonth(),
+        },
         pumpy: pumpyBlock(meter),
       }, 200, cors);
     }

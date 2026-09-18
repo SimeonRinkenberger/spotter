@@ -2507,7 +2507,13 @@ export const APP = String.raw`
       quality.appendChild(el("b", null, "Basic read"));
       quality.appendChild(el("p", null, "Plus reads the video’s movements, spoken cues and on-screen details to build a more complete workout."));
       if (w.platform === "tiktok" && w.kind !== "photo") {
-        var trial = el("button", "btn ghost", isFree() ? "Try a Plus read · 4 per month" : "Read with Plus");
+        // No number until one is known. The count used to be hard-coded here as
+        // four, which is right today and would go quietly wrong the moment the
+        // allowance moved in config; the read below fills it in a moment later.
+        var pv = billing.limits && billing.limits.video_previews;
+        var trial = el("button", "btn ghost", !isFree() ? "Read with Plus"
+          : pv ? "Try a Plus read · " + Math.max(0, pv.cap - pv.used) + " left this month"
+          : "Try a Plus read");
         trial.onclick = function () { readVideo(w, trial, isFree()); };
         quality.appendChild(trial);
         if (isFree()) api("limits").then(function (r) {

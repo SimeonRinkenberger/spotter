@@ -9428,7 +9428,7 @@ details.details-moving > :not(summary) {
     if (w.platform !== "pumpy" && w.read_quality !== "premium") {
       var quality = el("div", "reader-offer");
       if (quality.appendChild(el("b", null, "Basic read")), quality.appendChild(el("p", null, "Plus reads the video\u2019s movements, spoken cues and on-screen details to build a more complete workout.")), w.platform === "tiktok" && w.kind !== "photo") {
-        var trial = el("button", "btn ghost", isFree() ? "Try a Plus read \xB7 4 per month" : "Read with Plus");
+        var pv = billing.limits && billing.limits.video_previews, trial = el("button", "btn ghost", isFree() ? pv ? "Try a Plus read \xB7 " + Math.max(0, pv.cap - pv.used) + " left this month" : "Try a Plus read" : "Read with Plus");
         trial.onclick = function() {
           readVideo(w, trial, isFree());
         }, quality.appendChild(trial), isFree() && api("limits").then(function(r) {
