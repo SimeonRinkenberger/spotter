@@ -40,6 +40,10 @@ begin
   end if;
   return new;
 end $$;
+-- Dropped first because the rest of this file is `create or replace` /
+-- `add column if not exists`: a re-push after a partly applied migration must
+-- die on the real problem, not on a trigger that already exists.
+drop trigger if exists preserve_workout_corrections on public.workouts;
 create trigger preserve_workout_corrections before update on public.workouts
 for each row execute function public.preserve_workout_corrections();
 
@@ -55,6 +59,7 @@ begin
   end if;
   return new;
 end $$;
+drop trigger if exists bump_ingest_claim_generation on public.ingest_jobs;
 create trigger bump_ingest_claim_generation before update on public.ingest_jobs
 for each row execute function public.bump_ingest_claim_generation();
 
@@ -82,8 +87,16 @@ begin
   select plan into current_plan from profiles where id=p_user;
   preview_month := date_trunc('month',j.created_at at time zone 'UTC')::date;
   perform pg_advisory_xact_lock(hashtextextended(p_user::text,917));
+  -- The month match is the whole rule: a September job must not charge an October
+  -- reservation. `created_at<=j.created_at` was ALSO here, and it is wrong — the
+  -- reservation is written at index.ts:9107 and requeue_ingest may then hand back
+  -- a job row that ALREADY existed, so the job is older than the reservation it is
+  -- doing the work for. preview_ok came out false, a premium payload returned
+  -- access_changed, failJob requeued, and the refund in fail_ingest_job carried the
+  -- same predicate — so the preview was consumed, the read was paid for on every
+  -- attempt, and the card ended failed. Same shape across a UTC month boundary.
   select exists(select 1 from video_previews where user_id=p_user
-    and shortcode=j.shortcode and month=preview_month and created_at<=j.created_at)
+    and shortcode=j.shortcode and month=preview_month)
     into preview_ok;
   if p_payload->>'read_quality'='premium'
     and not(coalesce(current_plan in ('plus','pro','staff'),false) or preview_ok) then
@@ -102,10 +115,10 @@ begin
   if preview_ok then
     if n>0 and v.read_quality='premium' then
       update video_previews set completed=true where user_id=p_user
-        and shortcode=j.shortcode and month=preview_month and created_at<=j.created_at;
+        and shortcode=j.shortcode and month=preview_month;
     else
       delete from video_previews where user_id=p_user and shortcode=j.shortcode
-        and month=preview_month and created_at<=j.created_at and not completed;
+        and month=preview_month and not completed;
     end if;
   end if;
   update ingest_jobs set status='done',step='done',finished_at=now(),updated_at=now(),
@@ -133,8 +146,11 @@ begin
   where ingest_job_id=p_job and user_id=p_user and ingest_status='processing';
   if p_dead then
     perform pg_advisory_xact_lock(hashtextextended(p_user::text,917));
+    -- Month only, for the same reason finish_ingest_job drops it: a refund that
+    -- skips the reservation it was queued for leaves the user charged a preview
+    -- for a card that ended failed.
     delete from video_previews where user_id=p_user and shortcode=j.shortcode and not completed
-      and month=date_trunc('month',j.created_at at time zone 'UTC')::date and created_at<=j.created_at;
+      and month=date_trunc('month',j.created_at at time zone 'UTC')::date;
   end if;
   update ingest_jobs set status=case when p_dead then 'dead' else 'queued' end,
     run_after=p_run_after,attempts=case when p_budget then greatest(0,attempts-1) else attempts end,
