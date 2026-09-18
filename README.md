@@ -1023,6 +1023,109 @@ Spotter account gets a `Your creator code` group under Plan: the code, `Share yo
 own money format, and `Paid by Simeon by hand. 20% of every payment for 12 months.` from the
 code's own rate and window. Settings reads it when it opens and `Refresh` reads it again.
 
+## Creator codes
+
+A creator code is a short word, `MARIA`, that the owner mints for a video creator. The creator
+puts it under their videos. A person who uses it is counted as sent by that creator, is told to
+redeem the matching store code for a discount, and the creator earns a cut of what that person
+pays for a while. Codes, referrals, the ledger and the payouts are four tables in
+`supabase/migrations/20260918150000_creator_codes.sql`: `creator_codes`, `creator_referrals`,
+`creator_earnings`, `creator_payouts`. Nothing about them touches a price. **The app never
+discounts anything itself.** The stores do, through an offer code the owner creates by hand with
+the same spelling, and the app only opens the store's redemption sheet and prints what the offer
+is.
+
+**Minting a code.** Two ways, one row. Signed in as staff:
+
+```
+POST /api/creator/codes
+{"code":"MARIA","creator_name":"Maria","contact":"paypal: maria@example.com",
+ "creator_email":"maria@example.com"}
+```
+
+`creator_name` is what the referred person sees ("Maria's code applied"). `contact` is how the
+creator gets paid and never leaves the owner's side. `creator_email` links the code to the
+creator's own Spotter account so Settings can show them their numbers; it is optional, and
+`creator_user_id` does the same with an id. Optional `commission_bps`, `commission_months`,
+`max_redemptions`, `expires_at` and `note` override the defaults. The answer is `201` with the
+code and its numbers; `409 code_taken` if the word is already minted, `400 bad_code` if it is not
+3 to 20 letters and digits, `404 no_such_user` if the email has no account. `PATCH
+/api/creator/codes/MARIA` changes `active`, `creator_name`, `contact`, `creator_user_id`, `note`,
+`max_redemptions` or `expires_at`, and `GET /api/creator/codes` lists every code with its numbers.
+Anyone who is not staff gets a `404` from all of these, the same way the scorecard answers.
+The other way is `tools/ops/creator-mint.sql`: fill in the commented insert and run
+`supabase db query --linked --file tools/ops/creator-mint.sql`. Codes are stored upper-case
+whatever was typed, and a code minted without a rate takes the dials below.
+
+**Then the part the API cannot do.** Create the store codes by hand, spelled exactly like the
+creator code: in App Store Connect, the Plus subscription, Offer Codes, a custom code `MARIA`;
+in the Play Console, Monetize, Promotions, a promo code `MARIA` on the same subscription. Give
+each the discount `creator.discount` promises (10% off for 12 months at launch). The app tells
+the person to redeem the code in the App Store or on Google Play and opens the store's own
+sheet; the store matches the spelling. A code the app knows and the store does not is a code
+that applies and discounts nothing, so make the store codes first, or in the same sitting.
+
+**Attribution.** Two ways in, one row out. In the app, the code typed at sign-up, on the paywall,
+in Settings, or carried by a `?code=MARIA` link goes to `POST /api/creator/redeem {code, source}`
+and lands in `creator_referrals` through `redeem_creator_code`. In the store, when somebody only
+typed the code at the App Store, RevenueCat reports the purchase with an `offer_code`, and the
+webhook in `supabase/functions/spotter-purchases` redeems it with source `store`. One code per
+account, first wins; a second is `409 already_redeemed`, and the answer names the code on file. A
+code is refused when it does not exist (`404 unknown_code`), when it is inactive, expired or has
+no redemptions left (`410 code_closed`), when it is the creator's own (`400 own_code`), and when
+the account already has a subscription or a store entitlement (`409 already_subscribed`), because
+there is no new subscriber to attribute. The store path skips that last check, since its event
+arrives after the purchase it describes.
+
+**The ledger.** Every `INITIAL_PURCHASE`, `RENEWAL` or `NON_RENEWING_PURCHASE` RevenueCat sends
+with a price above zero, in production, from the App Store or Play, calls
+`record_creator_earning(uid, source, 'rc:<transaction_id>', purchased_at, price in cents)`. If
+the account was sent by a creator, one `creator_earnings` row is written with the code's cut,
+`round(gross × bps / 10000)`. The first paid transaction sets `first_paid_at` on the referral
+and opens the window; a payment on or after `first_paid_at + commission_months` is
+`outside_window` and writes nothing. A `CANCELLATION` with `cancel_reason = CUSTOMER_SUPPORT` is
+a refund: if the ledger holds that transaction, a mirror row `rc:refund:<id>` is written with the
+negative gross and the negative cut, whenever it lands. Redelivered events are duplicates and
+write nothing. Sandbox events are ignored unless `REVENUECAT_ALLOW_SANDBOX` is set, the same rule
+`entitlement.ts` applies. A ledger failure is a log line and never fails the webhook: the
+entitlement sync it follows already succeeded, and a 503 would make RevenueCat resend it.
+
+**The rate.** 20% of every payment for 12 months is two `app_config` rows,
+`creator.commission_bps` (`2000`) and `creator.commission_months` (`12`), copied onto the code
+when it is minted. Changing a dial changes codes minted after the change; a promise already made
+to a creator stays what it was, and `PATCH` cannot move it either. The offer the app prints is a
+third row, `creator.discount`, `{"percent_off":10,"months":12}`. Delete it or set it to `null`
+and the app promises no discount anywhere: the toast, the paywall line and the creator's share
+text all drop the clause. The store codes keep discounting whatever they were set to, so change
+both.
+
+**Paying a creator.** Payouts are by hand. `tools/ops/creator-codes.sql` prints every code with
+signups, subscribers, earned, paid and owed, most owed first. Pay the creator the way `contact`
+says, then record it:
+
+```
+POST /api/creator/codes/MARIA/payouts
+{"amount_cents":2820,"note":"PayPal, 30 Sep 2026"}
+```
+
+or fill in `tools/ops/creator-payout.sql`. Owed is earned minus paid and is computed, never
+stored. Payouts are append-only: a mistake is a second row with a note, not an edit, because the
+table has to add up to what left the bank. The weekly scorecard carries `ops_creator_week`, one
+row per week with redemptions, store redemptions, first payments, gross, commission and refunds,
+last week's numbers beside them, and `owed_now_usd`, the amount to settle.
+
+**What the creator sees.** A creator whose code is linked to their account gets a `creator`
+object from `GET /api/creator/me`: the code, whether it is open, signups, subscribers on a paid
+plan right now, earned, paid and owed in cents, the code's own rate and window, a share text
+("Use my code MARIA for 10% off Spotter Plus", without the discount clause when there is none)
+and a share link, `https://simeonrinkenberger.github.io/spotter/?code=MARIA`. Settings paints
+that as its own group with a share row. A referred person gets `referral` from the same route:
+the code, the creator's name and when it was applied. Neither ever sees `contact` or the owner's
+note; the column grant on `creator_codes` leaves them out, and the ledger and payouts have no
+policy at all. `node tools/creator-db-check.mjs` proves every status, the window, the refunds,
+the arithmetic and the grants against the real migration; `node tools/creator-purchases-check.mjs`
+drives the webhook with fake events and asserts which functions it calls.
+
 ## Strava
 
 A finished session can be pushed to Strava as a **manual `WeightTraining` activity** — its name,

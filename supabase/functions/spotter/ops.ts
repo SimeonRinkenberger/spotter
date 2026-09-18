@@ -274,7 +274,8 @@ export async function runOpsAlert(
 
 /**
  * Every scorecard view, in the order a weekly review reads them: who is paying,
- * who showed up, whether the product worked, what it cost, and what broke.
+ * who showed up, whether the product worked, what it cost, what broke, and who
+ * sent the subscribers and what they are owed for it.
  */
 export const SCORECARD_VIEWS = [
   "ops_revenue_week",
@@ -286,18 +287,19 @@ export const SCORECARD_VIEWS = [
   "ops_cost_week",
   "ops_subsidy_week",
   "ops_latency_week",
+  "ops_creator_week",
 ] as const;
 
 /**
  * One week of every view, plus whatever is currently unacknowledged.
  *
- * The views are read in parallel because they are nine independent aggregates
- * over small tables and the alternative is nine sequential round trips for a
+ * The views are read in parallel because they are ten independent aggregates
+ * over small tables and the alternative is ten sequential round trips for a
  * page one person looks at once a week.
  *
  * A view that errors returns its error inside the payload instead of failing the
  * whole request. The commonest cause is PostgREST's schema cache not yet knowing
- * about a newly applied migration, and a scorecard that shows eight sections and
+ * about a newly applied migration, and a scorecard that shows nine sections and
  * one honest error is more useful than a 500 that says nothing about which.
  */
 export async function opsScorecard(nowMs = Date.now(), week?: string): Promise<Record<string, unknown>> {
