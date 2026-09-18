@@ -2835,7 +2835,13 @@ export const APP = String.raw`
       quality.appendChild(el("b", null, "Basic read"));
       quality.appendChild(el("p", null, "Plus reads the video’s movements, spoken cues and on-screen details to build a more complete workout."));
       if (w.platform === "tiktok" && w.kind !== "photo") {
-        var trial = el("button", "btn ghost", isFree() ? "Try a Plus read · 4 per month" : "Read with Plus");
+        // No number until one is known. The count used to be hard-coded here as
+        // four, which is right today and would go quietly wrong the moment the
+        // allowance moved in config; the read below fills it in a moment later.
+        var pv = billing.limits && billing.limits.video_previews;
+        var trial = el("button", "btn ghost", !isFree() ? "Read with Plus"
+          : pv ? "Try a Plus read · " + Math.max(0, pv.cap - pv.used) + " left this month"
+          : "Try a Plus read");
         trial.onclick = function () { readVideo(w, trial, isFree()); };
         quality.appendChild(trial);
         if (isFree()) api("limits").then(function (r) {
@@ -10993,10 +10999,10 @@ export const APP = String.raw`
   }
 
   function renderSettingsMeter() {
+    var staff = (state.profile && state.profile.plan === "staff") ||
+      (pumpy.meter && pumpy.meter.plan === "staff");
     var d = $("setdiag");
     if (d) {
-      var staff = (state.profile && state.profile.plan === "staff") ||
-        (pumpy.meter && pumpy.meter.plan === "staff");
       d.textContent = staff ? layoutLine() : "";
       d.classList.toggle("hide", !staff);
     }
@@ -11006,11 +11012,19 @@ export const APP = String.raw`
     var day = p && bucket(p.day);
     var month = p && bucket(p.month);
     if (!p || (!day && !month)) { n.textContent = ""; n.classList.add("hide"); return; }
+    // Credits are the accounting unit and nobody buys one. Settings > Plan now
+    // says "Coaching answers 41 of 300 this month", which is the number that was
+    // sold; printing 5,000 credits beside it is the same two-numbers-for-one-
+    // question problem the daily counts were. Staff keep it as a diagnostic.
+    if (!staff) { n.textContent = ""; n.classList.add("hide"); return; }
     var bits = ["Pumpy"];
     if (typeof p.plan === "string" && p.plan) {
       bits.push(p.plan.charAt(0).toUpperCase() + p.plan.slice(1) + " plan");
     }
-    if (day) bits.push(countText(day, "credits today"));
+    // The month only. The day's credits are a burst stop, and printing both here
+    // — beside "Coaching answers 12 of 300 this month" under Plan — is three
+    // numbers for one question. The low-fuel warning in the coach still names
+    // the day when the day is genuinely what is about to stop you.
     if (month) bits.push(countText(month, "this month"));
     n.textContent = bits.join(" · ");
     n.classList.remove("hide");
@@ -11617,29 +11631,45 @@ export const APP = String.raw`
     return (n >= 100 ? Math.round(n / 50) * 50 : Math.round(n / 10) * 10).toLocaleString();
   }
 
+  // The sell is the allowance, so the allowance is what the rows say. Every
+  // number here is the same number the server counts a refusal against — it
+  // comes down in the caps payload — because a benefit row that quotes a figure nothing
+  // enforces is how the old "15 video reads a day" got onto a price page while
+  // the money funded fewer than one.
   function planBenefits(caps) {
     var f = caps && caps.free, p = caps && caps.plus;
     if (!f || !p) return [];
-    var out = [], lib = capNum(p.library);
+    var out = [], lib = capNum(p.library), reads = capNum(p.month_reads);
     out.push(lib === null
-      ? "Keep every workout you save — the free plan holds " + f.library + "."
+      ? "Keep every workout you save — Basic holds " + f.library + "."
       : "Hold " + capMany(lib) + " saved workouts, instead of " + f.library + ".");
-    out.push("Read visible movements and on-screen instructions in supported videos.");
-    out.push("Use Pumpy to adapt saved workouts and suggest exercise alternatives.");
-    out.push("Video reading and coaching have usage limits; they are not unlimited.");
-    out.push("Stop whenever you like. Everything you saved stays yours, and stays readable.");
+    if (reads === null) {
+      // An older function that does not send the allowances yet. Say the shape
+      // of the thing rather than a number this page cannot stand behind.
+      out.push("Read the movements, the spoken cues and the text on screen in supported videos.");
+      out.push("Video reading and coaching have monthly allowances; Settings shows what is left.");
+    } else {
+      out.push("Read " + reads + " videos a month in full — the movements, the spoken cues and the " +
+        "text on screen. Basic reads " + capMany(capNum(f.month_reads)) + ".");
+      out.push(capMany(capNum(p.month_answers)) + " coaching answers a month from Pumpy, and " +
+        capMany(capNum(p.month_helpers)) + " explanations and swaps.");
+    }
+    out.push("Saving from a caption, logging, your plan and your progress are free and are never metered.");
+    out.push("Stop whenever you like — everything you saved stays yours, and stays readable.");
     return out;
   }
 
   // A limit line has to carry three things — what you hit, when it comes back,
   // what the paid plan does about it — and every number for all three is off the
-  // 429. Each cap gets the verb it actually earns.
+  // 429. Each cap gets the verb it actually earns; which clock it is on comes
+  // from the refusal's own scope field, because three of these are the allowance a
+  // person bought and two are only burst stops that still reset at midnight.
   var CAP_WORDS = {
-    extract: ["new videos read today", "reads", " a day"],
-    media: ["silent clips watched today", "watches", " a day"],
-    uploads: ["uploads today", "takes", " a day"],
-    saves: ["saves today", "saves", " a day"],
-    helper: ["explanations and swaps today", "allows", ""]
+    extract: ["new videos read", "reads"],
+    media: ["video reads", "reads"],
+    uploads: ["uploads", "takes"],
+    saves: ["saves", "saves"],
+    helper: ["explanations and swaps", "allows"]
   };
   var MULT = ["", "", "twice", "three times", "four times", "five times", "six times"];
 
@@ -11657,21 +11687,23 @@ export const APP = String.raw`
     var cap = num(c.cap), next = capNum(c.next_cap);
     var mine = "the " + planWord(c.plan) + " plan", up = planWord(c.next_plan || "plus");
     if (c.kind === "library") {
-      return "That is " + cap + " saved workouts, which is " + mine + "'s shelf. " + up +
+      return "That is " + cap + " saved workouts, which is " + mine + "’s shelf. " + up +
         " takes the lid off, and nothing you have saved is going anywhere in the meantime.";
     }
-    // Pumpy's two stay in his own first person, wherever they are read.
+    // Pumpy stays in his own first person, wherever this is read. There used to
+    // be a second, daily branch here saying his credits came back at midnight;
+    // they never did — the ladder has always been monthly — so it is gone.
     if (c.kind === "pumpy") {
-      var m = c.pumpy && bucket(c.pumpy.month);
-      return (m && m.cap !== null && m.left <= 0
-        ? "That is this month's coaching used up — my credits come back on the 1st. "
-        : "That is my coaching done for today — my credits come back at midnight UTC. ") + pumpyRoom(up);
+      return "That is this month’s coaching used up — my credits come back on the 1st. " + pumpyRoom(up);
     }
     var w = CAP_WORDS[c.kind];
     if (!w || cap === null) return "";
-    var noun = c.kind === "uploads" && cap === 1 ? "upload today" : w[0];
-    return "That is " + cap + " " + noun + ", " + mine + "'s daily limit. It resets at midnight UTC. " +
-      (next === null ? up + " has no daily limit." : up + " " + w[1] + " " + next + w[2] + ".");
+    var month = c.scope === "month";
+    var noun = c.kind === "uploads" && cap === 1 ? "upload" : w[0];
+    return "That is " + cap + " " + noun + (month ? " this month, " : " today, ") + mine + "’s " +
+      (month ? "whole allowance. It comes back on the 1st. " : "burst limit. It resets at midnight UTC. ") +
+      (next === null ? up + " has no limit here."
+        : up + " " + w[1] + " " + next + (month ? " a month." : " a day."));
   }
 
   // ---------- the sheet ----------
@@ -11781,7 +11813,12 @@ export const APP = String.raw`
     } else { trial.textContent = ""; trial.classList.add("hide"); }
     setBuyLabel(yearly && days > 0 ? "Start " + days + " free days"
       : "Subscribe for " + (p.nativeStore ? plus[iv].localized : money(pay, cur)) + (yearly ? " a year" : " a month"));
-    $("planfine").textContent = finePrint(p, plus, iv, pay, full, days) + " AI reading and coaching have daily and monthly usage limits. During beta, new AI work can also pause when the shared allowance is reached; saved workouts remain available.";
+    // What Basic keeps, said on the paid screen rather than only on the free
+    // one: nobody should have to buy Plus to find out what they already had.
+    var fr = p.caps && p.caps.free, basic = capNum(fr && fr.month_reads);
+    $("planfine").textContent = finePrint(p, plus, iv, pay, full, days) +
+      (basic === null ? "" : " Basic reads " + basic + " videos a month in full, and everything you have already saved stays readable for ever.") +
+      " Allowances reset on the 1st, 00:00 UTC. During beta, new AI work can also pause when Spotter’s shared allowance is reached; saved workouts remain available.";
   }
 
   function pickInterval(iv) {
@@ -12120,21 +12157,70 @@ export const APP = String.raw`
     paintPlanGroup();
   }
 
-  function capLine(used, cap, word) {
-    var c = capNum(cap);
-    return (c === null ? used : used + " of " + c) + " " + word;
+  // The four allowances, in the order they cost money, each on its own line. The
+  // shape is the one the card's preview counter already uses and the one iOS
+  // Settings uses for iCloud storage: what you have used, what you have, and the
+  // date it comes back. Nothing else — a progress bar here would be decoration
+  // over four small integers, and the date is spelled out because "resets
+  // monthly" reads to most people as "some time, maybe".
+  var ALLOW_ROWS = [
+    ["reads", "Video reads"],
+    ["answers", "Coaching answers"],
+    ["helpers", "Explanations and swaps"],
+    ["uploads", "Uploads"]
+  ];
+
+  // In UTC, always. The allowances come back at 00:00 UTC on the 1st, and west
+  // of Greenwich a local rendering of that instant says the 30th — a reset date
+  // a day early is exactly the kind of small lie this whole change is undoing.
+  function resetDay(iso) {
+    var d = iso ? new Date(iso) : null;
+    if (!d || isNaN(d.getTime())) return "";
+    return d.toLocaleDateString(undefined, { day: "numeric", month: "short", timeZone: "UTC" });
+  }
+
+  // The reset clause is passed separately and kept whole: at 375px the longest of these lines
+  // wraps, and it must not wrap between "resets" and the date — a line ending on
+  // "resets" reads for a beat as though nothing is coming back.
+  function useRow(label, value, tail, back, out) {
+    var row = el("div", out ? "usel out" : "usel");
+    row.appendChild(document.createTextNode(label + " "));
+    row.appendChild(el("b", null, value));
+    if (tail) row.appendChild(document.createTextNode(tail));
+    if (back) row.appendChild(el("span", "nobr", " · resets " + back));
+    return row;
   }
 
   function paintPlanUse(r) {
-    var n = $("setplanuse"), lim = r && r.limits, bits = [];
-    if (lim) {
-      if (capNum(lim.library) !== null && num(r.library_count) !== null) {
-        bits.push(capLine(r.library_count, lim.library, "workouts saved"));
-      }
-      if (num(r.extracts_today) !== null) bits.push(capLine(r.extracts_today, lim.extract, "read today"));
+    var n = $("setplanuse"), lim = r && r.limits, m = r && r.month;
+    var hidden = n.classList.contains("hide");
+    n.innerHTML = "";
+    // The shelf is a stock, not a month, so it never says "this month" and never
+    // carries a reset date. A plan with no ceiling has nothing to count.
+    if (lim && capNum(lim.library) !== null && num(r.library_count) !== null) {
+      n.appendChild(useRow("Library", r.library_count + " of " + capNum(lim.library), " saved", null,
+        r.library_count >= capNum(lim.library)));
     }
-    n.textContent = bits.join(" · ");
-    n.classList.toggle("hide", !bits.length);
+    if (m) {
+      var back = resetDay(m.resets_at);
+      ALLOW_ROWS.forEach(function (a) {
+        var cap = capNum(m[a[0] + "_cap"]), used = num(m[a[0]]);
+        // A null cap is uncapped: there is no allowance to count towards, so the
+        // line would be a number with nothing to mean.
+        if (used === null || cap === null) return;
+        n.appendChild(useRow(a[1], used + " of " + cap, " this month", back, used >= cap));
+      });
+    }
+    // The one thing here that is not an allowance: Spotter's own shared budget.
+    // A person whose cards have gone thin deserves the reason, and the reason is
+    // not anything they did.
+    if (r && r.paid_enabled === false) {
+      n.appendChild(el("div", "usel out",
+        "Spotter's shared AI budget is spent for today — new video reads start again tomorrow. Everything you have saved stays readable."));
+    }
+    var empty = !n.childNodes.length;
+    n.classList.toggle("hide", empty);
+    if (hidden && !empty) n.classList.add("viewin");
   }
 
   // ---------- how full the free shelf is ----------
@@ -13390,7 +13476,6 @@ export const APP = String.raw`
     if (native && native.platform === "android") $("nativesharehelp").textContent = "In TikTok, YouTube, Instagram or another app, share the post’s link and choose Spotter from the Android share sheet.";
     var key = state.profile ? state.profile.ingest_key : null;
     $("setkey").textContent = key ? API + "ingest?key=" + key : "Loading…";
-    $("setsaves").textContent = "…";
     renderSettingsMeter();
     // Drawn at once from whatever is already known so the group never opens
     // blank, then again when the two reads behind it land. Both of them shrug
@@ -13410,24 +13495,13 @@ export const APP = String.raw`
       if (r.status === "ok") {
         billing.limits = r;
         adoptPlan(r.plan);
+        // The day's counts used to be printed under Account. They are burst
+        // stops — sized above every allowance, nobody is sold one, and showing
+        // one invites the question "so which number is mine?". Settings now
+        // shows the month, under Plan, where what you bought is.
         paintPlanUse(r);
-        // Plan-aware once the server sends caps per plan, and today's sentence
-        // until it does — which is the page as it stands while billing is off.
-        var line = r.limits
-          ? capLine(r.saves_today, r.limits.saves, "saves") + " · " +
-            capLine(r.extracts_today, r.limits.extract, "read")
-          : r.saves_today + " of " + r.limit_saves +
-            " (" + r.extracts_today + "/" + r.limit_extract + " extractions, " +
-            r.helpers_today + "/" + r.limit_helper + " coaching" +
-            // The credits line below is the real Pumpy meter; the turn count is only
-            // shown while the server does not send one.
-            (r.pumpy ? ")" : ", " + (r.chats_today || 0) + "/" + (r.limit_chat || "—") + " Pumpy)");
-        // Say so plainly when the day's spend ceiling has switched the paid
-        // extractors off — cards get thinner and the user should know why.
-        if (r.paid_enabled === false) line += " · budget reached, using the free reader";
-        $("setsaves").textContent = line;
       }
-    }).catch(function () { $("setsaves").textContent = "—"; });
+    }).catch(function () {});
     openSheet("settingssheet");
   }
 

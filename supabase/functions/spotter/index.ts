@@ -256,7 +256,7 @@ function models(): ModelCfg {
           // read on the same hot paths and go stale at the same rate.
           const rows = await dbSelect(
             "app_config",
-            "or=(key.like.model.*,key.like.vision.*,key.like.media.*,key.like.pack.*,key.like.pumpy.*,key.like.limits.*)&select=key,value",
+            "or=(key.like.model.*,key.like.vision.*,key.like.media.*,key.like.pack.*,key.like.pumpy.*,key.like.limits.*,key.like.allowances.*)&select=key,value",
           );
           const map: Record<string, string> = {};
           for (const r of rows) map[r.key] = String(r.value ?? "");
@@ -264,6 +264,7 @@ function models(): ModelCfg {
           modelCache = { at: Date.now(), cfg: buildModelCfg(map) };
           pumpyCache = buildPumpyCfg(map);
           limitsCache = buildLimitsCfg(map);
+          allowanceCache = buildAllowanceCfg(map);
         } catch (e) {
           console.error("model config: falling back to env/defaults —", e);
           // Stamp the cache anyway so a database outage does not turn into a
@@ -449,6 +450,100 @@ let limitsCache: Record<string, LimitCaps> = LIMITS_FLOOR;
 function limitsConfig(): Record<string, LimitCaps> {
   models();
   return limitsCache;
+}
+
+// ---------- the monthly allowances ----------
+//
+// The caps above are burst stops. They reset at midnight, they exist to stop a
+// script, and nobody has ever been sold one. What a person actually buys is a
+// MONTH of work — four video reads on Basic, twenty on Plus — and until now the
+// app sold a daily count while the dollar guard bit monthly and silently, so the
+// number on the paywall and the number the money funded were never the same
+// number. These are the numbers of record: design/gtm/ALLOWANCES.md section 3.
+// They are what Settings shows, what the paywall promises, and what a 429 names.
+//
+// Reset is the 1st at 00:00 UTC — the instant every dollar guard, `video_previews`
+// and Pumpy's credits already come back on — so "what do I have left" has one
+// answer and one date instead of four.
+//
+// `answers` is Pumpy. Its credits are the enforcing gate and they are sized so
+// that this many answers can never be refused (ALLOWANCES.md section 5); the
+// number here is the floor that is promised, which is why nothing enforces it.
+
+type AllowanceKind = "reads" | "answers" | "helpers" | "uploads";
+type Allowance = Record<AllowanceKind, number | null>;
+
+const ALLOWANCE_KINDS: AllowanceKind[] = ["reads", "answers", "helpers", "uploads"];
+
+// Which `saves_log.kind` each allowance is counted from. One table so the number
+// Settings prints and the number a refusal counts can never drift apart.
+const ALLOWANCE_LOG_KIND: Record<AllowanceKind, string> = {
+  reads: "media", answers: "chat", helpers: "helper", uploads: "upload",
+};
+
+const ALLOWANCE_DEFAULTS: Record<string, Allowance> = {
+  free: { reads: 4, answers: 100, helpers: 20, uploads: 1 },
+  plus: { reads: 20, answers: 300, helpers: 100, uploads: 10 },
+  pro: { reads: 60, answers: 900, helpers: 300, uploads: 25 },
+  staff: { reads: null, answers: null, helpers: null, uploads: null },
+};
+
+// What `reserve_video_preview` will actually hand a Basic account, written into
+// SQL and not reachable from here. A config row may lower the number Basic is
+// shown; it may never raise it past what the database will admit, because a
+// promise the function then refuses is worse than a smaller promise kept.
+const PREVIEW_CAP = 4;
+
+/**
+ * `allowances.monthly` out of app_config, on the same rules as `limits.plans`:
+ * `null` is deliberate and means uncapped, anything unparseable is a typo that
+ * falls back to the compiled table, and a seed that names only two plans is
+ * merged over the defaults rather than replacing them.
+ */
+function buildAllowanceCfg(rows: Record<string, string>): Record<string, Allowance> {
+  const raw = (rows["allowances.monthly"] ?? "").trim();
+  if (!raw) return ALLOWANCE_DEFAULTS;
+  try {
+    const parsed = JSON.parse(raw);
+    const out: Record<string, Allowance> = {};
+    for (const [name, v] of Object.entries(parsed as Record<string, any>)) {
+      const floor = ALLOWANCE_DEFAULTS[name] ?? ALLOWANCE_DEFAULTS.free;
+      const a = {} as Allowance;
+      for (const kind of ALLOWANCE_KINDS) a[kind] = limitCap(v?.[kind], floor[kind]);
+      out[name] = a;
+    }
+    if (!Object.keys(out).length) {
+      console.error("allowances.monthly: empty object, using the compiled table");
+      return ALLOWANCE_DEFAULTS;
+    }
+    return { ...ALLOWANCE_DEFAULTS, ...out };
+  } catch (e) {
+    console.error("allowances.monthly: unparseable, using the compiled table —", e);
+    return ALLOWANCE_DEFAULTS;
+  }
+}
+
+let allowanceCache: Record<string, Allowance> = ALLOWANCE_DEFAULTS;
+
+/** The allowance table, on the models' cache and TTL. Synchronous, same reason. */
+function allowancesConfig(): Record<string, Allowance> {
+  models();
+  return allowanceCache;
+}
+
+/**
+ * One account's monthly allowance. An unknown plan reads as free, exactly as the
+ * daily caps do — a bad string in one column must never mean "no ceiling".
+ *
+ * Basic's read allowance is clamped to what `reserve_video_preview` will admit.
+ */
+function allowanceFor(plan: string): Allowance {
+  const table = allowancesConfig();
+  const a = { ...(table[plan] ?? table.free ?? ALLOWANCE_DEFAULTS.free) };
+  if (!plusPlan(plan)) {
+    a.reads = a.reads === null ? PREVIEW_CAP : Math.min(a.reads, PREVIEW_CAP);
+  }
+  return a;
 }
 
 type UserCaps = { plan: string; caps: LimitCaps };
@@ -2638,9 +2733,10 @@ function uploadRoute(
  * a count of zero, and the cost of being wrong here is one file heard rather than
  * watched, which is what every upload used to get.
  */
-async function overMediaCapToday(userId: string): Promise<boolean> {
+async function overMediaCapToday(userId: string, shortcode: string): Promise<boolean> {
   try {
     const [u, uc] = await settledAll<unknown>([mediaCountToday(userId), capsFor(userId)]);
+    if (await monthReadsReached(userId, (uc as UserCaps).plan, shortcode) !== null) return true;
     return overCap(u as number, (uc as UserCaps).caps.media);
   } catch (e) {
     console.error("upload: cannot read today's media count for", userId, "— not watching", e);
@@ -2680,7 +2776,7 @@ async function uploadMeta(p: Parsed, job?: Job): Promise<Meta> {
       ext: ref.ext,
       videoTier: videoTierEnabled(),
       paid: true,   // asked above, and a refusal there never reaches this line
-      overCap: job?.user_id ? await overMediaCapToday(job.user_id) : false,
+      overCap: job?.user_id ? await overMediaCapToday(job.user_id, p.shortcode) : false,
     });
     if (route.why) console.log("upload: listening to", p.shortcode, "rather than watching —", route.why);
     if (route.first === "video" && job) {
@@ -7224,6 +7320,22 @@ function utcMidnight(): string {
   return `${d.toISOString().slice(0, 10)}T00:00:00Z`;
 }
 
+/** The instant this UTC month began — what every monthly allowance counts from. */
+function utcMonthStart(): string {
+  return `${new Date().toISOString().slice(0, 7)}-01T00:00:00Z`;
+}
+
+/** The month a person is in, for a sentence that has to name it. */
+function utcMonthName(): string {
+  return new Date().toLocaleString("en-GB", { month: "long", timeZone: "UTC" });
+}
+
+/** The day the allowances come back, said the way a person would say it. */
+function utcResetDay(): string {
+  const d = new Date(utcNextMonth());
+  return `1 ${d.toLocaleString("en-GB", { month: "long", timeZone: "UTC" })}`;
+}
+
 /** When the day's credits come back, as an instant the client can render locally. */
 function utcNextMidnight(): string {
   const d = new Date();
@@ -7258,6 +7370,169 @@ async function countsFor(userId: string): Promise<Counts> {
     dbCount("saves_log", `${base}&kind=eq.chat`),
   ]);
   return { saves, extracts, helpers, chats };
+}
+
+/**
+ * One monthly counter, off the same ledger the daily ones read.
+ *
+ * `cached=is.false` is not decoration: a cache hit is the whole reason a viral
+ * clip is affordable, it costs nothing to serve, and it must never eat an
+ * allowance — the same rule `extract` has always had, applied to the rest.
+ */
+function monthCount(userId: string, kind: string): Promise<number> {
+  return dbCount(
+    "saves_log",
+    `user_id=eq.${userId}&created_at=gte.${utcMonthStart()}&cached=is.false&kind=eq.${kind}`,
+  );
+}
+
+/**
+ * The videos this account has had read this month, by shortcode.
+ *
+ * A read is one VIDEO, not one model call. An escalation that listens and then
+ * watches writes two `media` rows for the same clip, and a pack read writes a
+ * third; somebody sold twenty reads a month must get twenty videos out of it,
+ * not seven. So the count is of distinct shortcodes, which also makes re-reading
+ * a video already read this month free — the promise `video_previews` has always
+ * kept for Basic, where the row is keyed (user, month, shortcode), now kept for
+ * Plus as well.
+ *
+ * The row ceiling is a safety belt, not a limit anybody reaches: it is far above
+ * what thirty days of the daily burst stops can produce, and a month that
+ * somehow passed it is already over every allowance there is.
+ */
+async function monthReadSet(userId: string): Promise<Set<string>> {
+  const rows = await dbSelect(
+    "saves_log",
+    `user_id=eq.${userId}&created_at=gte.${utcMonthStart()}&cached=is.false` +
+      `&kind=eq.${ALLOWANCE_LOG_KIND.reads}&select=id,shortcode&limit=2000`,
+  );
+  const out = new Set<string>();
+  // A media row with no shortcode cannot be matched to a video, so it counts as
+  // its own read rather than silently merging with every other one.
+  for (const r of rows) out.add(String(r.shortcode ?? `#${r.id}`));
+  return out;
+}
+
+/** Basic's previews: the table is already keyed by month, so this is just a count. */
+function previewCount(userId: string): Promise<number> {
+  return dbCount(
+    "video_previews",
+    `user_id=eq.${userId}&month=eq.${new Date().toISOString().slice(0, 7)}-01`,
+    "shortcode",
+  );
+}
+
+type MonthCounts = { reads: number; answers: number; helpers: number; uploads: number; previews: number };
+
+/** Everything Settings shows on one line each, asked in one round trip. */
+async function monthCountsFor(userId: string): Promise<MonthCounts> {
+  const [reads, answers, helpers, uploads, previews] = await settledAll<any>([
+    monthReadSet(userId).then((s) => s.size),
+    monthCount(userId, "chat"),
+    monthCount(userId, "helper"),
+    monthCount(userId, "upload"),
+    previewCount(userId),
+  ]) as [number, number, number, number, number];
+  return { reads, answers, helpers, uploads, previews };
+}
+
+/**
+ * Is this account out of a monthly allowance? Returns how many it has used when
+ * it is, null when it is not — so the refusal can name the number.
+ *
+ * A count that cannot be read is NOT a count of zero: it answers "yes, at the
+ * cap", which costs one refused call and never an uncapped month. An uncapped
+ * plan has no number to exceed and is always let through.
+ */
+async function monthCapReached(
+  userId: string, kind: "helpers" | "uploads" | "answers", plan: string,
+): Promise<number | null> {
+  const cap = allowanceFor(plan)[kind];
+  if (cap === null) return null;
+  try {
+    const used = await monthCount(userId, ALLOWANCE_LOG_KIND[kind]);
+    return used >= cap ? used : null;
+  } catch (e) {
+    console.error("allowance: could not read this month's", kind, "for", userId, e);
+    return cap;
+  }
+}
+
+/**
+ * Is this account out of video reads for the month?
+ *
+ * Only ever asked of a paid plan. Basic's four are enforced once, in
+ * `reserve_video_preview`, and a second copy of that number here would be a
+ * second thing to keep in step and a second way to refuse a preview the database
+ * would have granted.
+ *
+ * `shortcode` is what keeps a re-read honest: a video already read this month is
+ * already inside the allowance and asking for it again adds nothing to the bill,
+ * so it is let through even at the ceiling.
+ */
+async function monthReadsReached(
+  userId: string | null, plan: string, shortcode: string | null,
+): Promise<number | null> {
+  if (!userId || !plusPlan(plan)) return null;
+  const cap = allowanceFor(plan).reads;
+  if (cap === null) return null;
+  try {
+    const seen = await monthReadSet(userId);
+    if (shortcode && seen.has(shortcode)) return null;
+    return seen.size >= cap ? seen.size : null;
+  } catch (e) {
+    console.error("allowance: could not read this month's video reads for", userId, e);
+    return cap;
+  }
+}
+
+/**
+ * What a person reads when a monthly allowance runs out.
+ *
+ * Names the allowance, the month it belongs to and the day it comes back —
+ * the three things the old daily copy could not say, because the number it
+ * quoted and the guard that actually bit were never the same one.
+ */
+function allowanceMessage(kind: AllowanceKind, plan: string, cap: number | null): string {
+  const n = cap ?? 0;
+  const p = planName(plan);
+  const many = (one: string, more: string) => `${n} ${n === 1 ? one : more}`;
+  const tail = `on the ${p} plan for ${utcMonthName()} — your allowance comes back on ${utcResetDay()}.`;
+  switch (kind) {
+    case "reads":
+      return `That is ${many("video read", "video reads")} ${tail}`;
+    case "uploads":
+      return `That is ${many("upload", "uploads")} ${tail} Links still work.`;
+    case "helpers":
+      return `That is ${many("explanation or swap", "explanations and swaps")} ${tail}`;
+    case "answers":
+      return `That is ${many("coaching answer", "coaching answers")} ${tail}`;
+  }
+}
+
+/**
+ * The monthly twin of `capLimit`: the identical 429 body, so the app renders it
+ * with the same code path, carrying the monthly cap and the first of next month
+ * instead of the daily one and midnight. `kind` stays the daily vocabulary the
+ * client already knows, because what ran out is the same allowance either way.
+ */
+async function allowanceLimit(
+  kind: LimitKind, akind: AllowanceKind, uc: UserCaps, used: number, cors: Cors,
+): Promise<Response> {
+  const table = allowancesConfig();
+  const cap = allowanceFor(uc.plan)[akind];
+  return json({
+    status: "limit",
+    kind,
+    plan: uc.plan,
+    cap,
+    used,
+    scope: "month",
+    ...upgradePath(uc.plan, cap, (p) => table[p]?.[akind], await sellablePlans()),
+    resets_at: utcNextMonth(),
+    message: allowanceMessage(akind, uc.plan, cap),
+  }, 429, cors);
 }
 
 function extractLimitResponse(cors: Cors, uc: UserCaps, used: number): Promise<Response> {
@@ -7354,6 +7629,10 @@ async function ingestUpload(
   // An upload always makes a new row, so the shelf is asked about first — and
   // before the file is transcribed, which is the expensive half.
   if (overCap(held, uc.caps.library)) return capLimit("library", uc, held, cors);
+  // The month before the day, for the same reason as the video reads: the
+  // monthly number is the one on the paywall, so it is the one that speaks.
+  const uploadsMonth = await monthCapReached(userId, "uploads", uc.plan);
+  if (uploadsMonth !== null) return await allowanceLimit("uploads", "uploads", uc, uploadsMonth, cors);
   if (overCap(uploadsToday, uc.caps.uploads)) return capLimit("uploads", uc, uploadsToday, cors);
   if (overCap(counts.saves, uc.caps.saves)) return capLimit("saves", uc, counts.saves, cors);
   if (overCap(counts.extracts, uc.caps.extract)) return extractLimitResponse(cors, uc, counts.extracts);
@@ -8110,6 +8389,10 @@ async function runPackTier(
   if (job.user_id) {
     try {
       const [u, uc] = await settledAll<any>([mediaCountToday(job.user_id), capsFor(job.user_id)]);
+      if (await monthReadsReached(job.user_id, (uc as UserCaps).plan, p.shortcode) !== null) {
+        console.log("pack: skipping", p.shortcode, "—", job.user_id, "has spent this month's video reads");
+        return { card, meta, ran: false };
+      }
       if (overCap(u as number, plusPlan((uc as UserCaps).plan) ? (uc as UserCaps).caps.media : 15)) {
         console.log("pack: skipping", p.shortcode, "—", job.user_id, "is over today's media cap");
         return { card, meta, ran: false };
@@ -8280,16 +8563,27 @@ async function escalateToMedia(
     if (job.user_id) {
       let used: number;
       let cap: number | null;
+      let plan: string;
       try {
         // The cap is the one on the job owner's plan, read here rather than
         // carried on the job: a plan bought while a job was queued should count.
         const [u, uc] = await settledAll<any>([mediaCountToday(job.user_id), capsFor(job.user_id)]);
         used = u as number;
-        cap = plusPlan((uc as UserCaps).plan) ? (uc as UserCaps).caps.media : 15;
+        plan = (uc as UserCaps).plan;
+        cap = plusPlan(plan) ? (uc as UserCaps).caps.media : 15;
       } catch (e) {
         // A count that could not be read is not a count of zero. Skipping costs one
         // thin card; guessing costs an uncapped bill.
         console.error("media: cannot read today's count for", job.user_id, "— skipping", e);
+        break;
+      }
+      // The month's allowance stops the second tier as well as the first: an
+      // escalation is the same money, and this video has already been counted
+      // once by the time a second tier asks, so it is never stopped mid-read.
+      const spent = await monthReadsReached(job.user_id, plan, p.shortcode);
+      if (spent !== null) {
+        console.log("media: skipping", tier, "for", p.shortcode, "—", job.user_id,
+          "has spent", spent, "video reads this month");
         break;
       }
       if (overCap(used, cap)) {
@@ -9223,6 +9517,12 @@ async function handleReadVideo(
     }
 
   }
+  // The month is asked before the day, because the month is the number this
+  // person was sold. The two are deliberately the same size (a burst stop is not
+  // allowed to be smaller than the allowance it guards), so at the ceiling both
+  // would fire — and the one that speaks should be the one on the paywall.
+  const monthOver = await monthReadsReached(userId, uc.plan, w.shortcode);
+  if (monthOver !== null) return await bail(await allowanceLimit("media", "reads", uc, monthOver, cors));
   const over = await mediaCapReached(userId, plusPlan(uc.plan) ? uc.caps.media : 15);
   if (over !== null) return await bail(await capLimit("media", uc, over, cors));
   if (!(await paidAllowed())) {
@@ -9304,6 +9604,7 @@ async function upgradeCachedCard(
 
   const [counts, uc] = await settledAll<any>([countsFor(userId), capsFor(userId)]);
   if (overCap((counts as Counts).extracts, (uc as UserCaps).caps.extract)) return null;
+  if (await monthReadsReached(userId, (uc as UserCaps).plan, p.shortcode) !== null) return null;
   if (await mediaCapReached(userId, (uc as UserCaps).caps.media) !== null) return null;
   if (!(await paidAllowed())) return null;
 
@@ -9843,6 +10144,8 @@ async function aiText(
   helpersToday: number, uc: UserCaps,
 ): Promise<Response> {
   if (!haveAI()) return json({ status: "error", message: "AI is not configured yet." }, 503, cors);
+  const hm = await monthCapReached(userId, "helpers", uc.plan);
+  if (hm !== null) return await allowanceLimit("helper", "helpers", uc, hm, cors);
   if (overCap(helpersToday, uc.caps.helper)) return capLimit("helper", uc, helpersToday, cors);
   const out = (await textGenerate(system, user, false, { purpose, userId })).text;
   if (!out) return json({ status: "error", message: "The AI is busy — try again in a minute." }, 503, cors);
@@ -9872,6 +10175,8 @@ async function aiTextStream(
   helpersToday: number, uc: UserCaps,
 ): Promise<Response> {
   if (!haveAI()) return json({ status: "error", message: "AI is not configured yet." }, 503, cors);
+  const hm = await monthCapReached(userId, "helpers", uc.plan);
+  if (hm !== null) return await allowanceLimit("helper", "helpers", uc, hm, cors);
   if (overCap(helpersToday, uc.caps.helper)) return capLimit("helper", uc, helpersToday, cors);
   return ndjsonResponse(cors, async (sink) => {
     const gen = await textStream(system, user, false, { purpose, userId }, (piece) => {
@@ -10185,6 +10490,7 @@ async function handleDemoVideo(req: Request, userId: string, cors: Cors): Promis
   // garnish on a sheet whose real content is the explanation, and a 429 here would
   // read to the user as the sheet being broken.
   if (overCap((counts as Counts).helpers, (uc as UserCaps).caps.helper)) return found(null);
+  if (await monthCapReached(userId, "helpers", (uc as UserCaps).plan) !== null) return found(null);
 
   const video = await ytSearchDemo(name);
   try {
@@ -10382,6 +10688,8 @@ async function handleSwap(req: Request, userId: string, cors: Cors): Promise<Res
   // Same ceiling as explain: one short completion, metered, never free-running.
   const [counts, uc] = await settledAll<any>([countsFor(userId), capsFor(userId)]);
   const helpers = (counts as Counts).helpers;
+  const swapMonth = await monthCapReached(userId, "helpers", (uc as UserCaps).plan);
+  if (swapMonth !== null) return await allowanceLimit("helper", "helpers", uc as UserCaps, swapMonth, cors);
   if (overCap(helpers, (uc as UserCaps).caps.helper)) {
     return capLimit("helper", uc as UserCaps, helpers, cors);
   }
@@ -12431,7 +12739,18 @@ function capsBlock(): Record<string, Record<string, number | null>> {
   const out: Record<string, Record<string, number | null>> = {};
   for (const plan of ["free", "plus"]) {
     const caps = table[plan] ?? LIMITS_FLOOR.free;
-    out[plan] = { ...caps, pumpy_month: pumpy[plan]?.month ?? null };
+    const a = allowanceFor(plan);
+    // The monthly allowances ride along under their own names so the paywall can
+    // print "20 videos a month" from the same table the 429 counts against,
+    // rather than from a sentence in the markup that nothing keeps honest. The
+    // daily caps stay in the payload because the library ceiling is among them
+    // and it is a shelf, not a month.
+    out[plan] = {
+      ...caps,
+      pumpy_month: pumpy[plan]?.month ?? null,
+      month_reads: a.reads, month_answers: a.answers,
+      month_helpers: a.helpers, month_uploads: a.uploads,
+    };
   }
   return out;
 }
@@ -12927,9 +13246,15 @@ Deno.serve(async (req: Request) => {
       // `library_count` rides along because the Library page's counter — "12 of
       // 20 saved" — is the paywall's quietest and most-seen surface, and it would
       // otherwise need a count of its own on every visit.
-      const [counts, spent, cachePct, meter, uc, held] = await settledAll<any>(
-        [countsFor(userId), spendToday(), cachePctToday(), pumpyMeter(userId), capsFor(userId), libraryCount(userId)],
-      ) as [Counts, number, number | null, PumpyMeter, UserCaps, number];
+      const [counts, spent, cachePct, meter, uc, held, mc] = await settledAll<any>(
+        [countsFor(userId), spendToday(), cachePctToday(), pumpyMeter(userId), capsFor(userId), libraryCount(userId),
+          monthCountsFor(userId)],
+      ) as [Counts, number, number | null, PumpyMeter, UserCaps, number, MonthCounts];
+      // The ceiling is the policy row's, not a constant: `spend_limit` used to be
+      // a hard-coded 0.50 that kept saying 0.50 after the owner moved the guard,
+      // which is the same class of lie the daily counts were telling.
+      const budget = await rpc("ai_budget_status", {}) as Record<string, unknown> | null;
+      const allowance = allowanceFor(uc.plan);
       return json({
         status: "ok",
         plan: uc.plan,
@@ -12940,12 +13265,33 @@ Deno.serve(async (req: Request) => {
         limit_saves: uc.caps.saves, limit_extract: uc.caps.extract, limit_helper: uc.caps.helper,
         limit_media: uc.caps.media, limit_uploads: uc.caps.uploads,
         limit_chat: LIMIT_CHAT,
-        spend_today: Number(spent.toFixed(4)), spend_limit: DAILY_SPEND_USD,
-        budget: await rpc("ai_budget_status", {}),
+        spend_today: Number(spent.toFixed(4)),
+        spend_limit: Number(budget?.daily_limit ?? DAILY_SPEND_USD),
+        budget,
+        // The numbers a person is actually sold, and the only ones Settings and
+        // the paywall are allowed to quote. Every `*_today` field above stays so
+        // an app that has not been reloaded since yesterday keeps working.
+        month: {
+          // Basic's reads ARE its previews: `reserve_video_preview` is the one
+          // thing that enforces them, so it has to be the one thing that counts
+          // them too. A second number here would be a second number to drift.
+          reads: plusPlan(uc.plan) ? mc.reads : mc.previews, reads_cap: allowance.reads,
+          answers: mc.answers, answers_cap: allowance.answers,
+          helpers: mc.helpers, helpers_cap: allowance.helpers,
+          uploads: mc.uploads, uploads_cap: allowance.uploads,
+          previews: mc.previews, previews_cap: plusPlan(uc.plan) ? null : allowance.reads,
+          resets_at: utcNextMonth(),
+        },
         ai_allowance: await rpc("ai_budget_user_status", { p_user: userId }),
         paid_enabled: await paidAllowed(),
         cache_pct_today: cachePct,
-        video_previews: { cap: 4, used: await dbCount("video_previews", `user_id=eq.${userId}&month=eq.${new Date().toISOString().slice(0, 7)}-01`, "shortcode"), resets_at: utcNextMonth() },
+        // The card's "N left this month" button reads this; Settings reads
+        // `month` above. They have to be the same number, so for a Basic
+        // account they come from the same allowance row.
+        video_previews: {
+          cap: plusPlan(uc.plan) ? PREVIEW_CAP : (allowance.reads ?? PREVIEW_CAP),
+          used: mc.previews, resets_at: utcNextMonth(),
+        },
         pumpy: pumpyBlock(meter),
       }, 200, cors);
     }

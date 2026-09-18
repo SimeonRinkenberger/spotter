@@ -667,7 +667,6 @@ export const MARKUP_BODY = String.raw`</head>
     <div class="kv hide" id="setprovrow"><span class="k">Sign-in method</span><span class="v" id="setprov">&mdash;</span></div>
     <button class="kv row" id="setnamerow"><span class="k">Name</span><span class="v" id="setname">&mdash;</span><svg class="ic chev"><use href="#i-chev"></use></svg></button>
     <button class="kv row hide" id="setpwrow"><span class="k">Password</span><span class="v">Change</span><svg class="ic chev"><use href="#i-chev"></use></svg></button>
-    <div class="kv"><span class="k">Saved today</span><span class="v" id="setsaves">&mdash;</span></div>
   </div>
   <div class="setnote hide" id="setpumpy"></div>
   <button class="btn ghost setout" id="signout">Sign out</button>

@@ -5967,6 +5967,21 @@ html.native body.kb .tabbar {
   line-height: 1.5;
   padding: 6px 4px 0;
 }
+.setnote .usel {
+  padding: 1px 0;
+}
+.setnote .usel b {
+  color: var(--ink-2);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.setnote .usel.out,
+.setnote .usel.out b {
+  color: var(--ember-ink);
+}
+.setnote .usel .nobr {
+  white-space: nowrap;
+}
 .setnote.foot {
   text-align: center;
   margin-top: 18px;
@@ -7682,7 +7697,6 @@ details.details-moving > :not(summary) {
     <div class="kv hide" id="setprovrow"><span class="k">Sign-in method</span><span class="v" id="setprov">&mdash;</span></div>
     <button class="kv row" id="setnamerow"><span class="k">Name</span><span class="v" id="setname">&mdash;</span><svg class="ic chev"><use href="#i-chev"></use></svg></button>
     <button class="kv row hide" id="setpwrow"><span class="k">Password</span><span class="v">Change</span><svg class="ic chev"><use href="#i-chev"></use></svg></button>
-    <div class="kv"><span class="k">Saved today</span><span class="v" id="setsaves">&mdash;</span></div>
   </div>
   <div class="setnote hide" id="setpumpy"></div>
   <button class="btn ghost setout" id="signout">Sign out</button>
@@ -9688,7 +9702,7 @@ details.details-moving > :not(summary) {
     if (w.platform !== "pumpy" && w.read_quality !== "premium") {
       var quality = el("div", "reader-offer");
       if (quality.appendChild(el("b", null, "Basic read")), quality.appendChild(el("p", null, "Plus reads the video\u2019s movements, spoken cues and on-screen details to build a more complete workout.")), w.platform === "tiktok" && w.kind !== "photo") {
-        var trial = el("button", "btn ghost", isFree() ? "Try a Plus read \xB7 4 per month" : "Read with Plus");
+        var pv = billing.limits && billing.limits.video_previews, trial = el("button", "btn ghost", isFree() ? pv ? "Try a Plus read \xB7 " + Math.max(0, pv.cap - pv.used) + " left this month" : "Try a Plus read" : "Read with Plus");
         trial.onclick = function() {
           readVideo(w, trial, isFree());
         }, quality.appendChild(trial), isFree() && api("limits").then(function(r) {
@@ -14237,11 +14251,8 @@ details.details-moving > :not(summary) {
     return " \xB7 label " + Math.round(r.top - b.top) + "+" + Math.round(r.height) + " of " + Math.round(b.height) + " bottom " + Math.round(window.innerHeight - r.bottom) + " \xB7 " + cs.color + " " + cs.visibility + " op " + cs.opacity + " \xB7 " + cs.fontSize + "/" + cs.fontWeight + " " + (cs.fontFamily || "").split(",")[0] + " loaded " + fontOk + " \xB7 tab op " + p.opacity + " \xB7 barpad " + getComputedStyle(tabbar).paddingBottom + " \xB7 dpr " + window.devicePixelRatio;
   }
   function renderSettingsMeter() {
-    var d = $("setdiag");
-    if (d) {
-      var staff = state.profile && state.profile.plan === "staff" || pumpy.meter && pumpy.meter.plan === "staff";
-      d.textContent = staff ? layoutLine() : "", d.classList.toggle("hide", !staff);
-    }
+    var staff = state.profile && state.profile.plan === "staff" || pumpy.meter && pumpy.meter.plan === "staff", d = $("setdiag");
+    d && (d.textContent = staff ? layoutLine() : "", d.classList.toggle("hide", !staff));
     var n = $("setpumpy");
     if (n) {
       var p = pumpy.meter, day = p && bucket(p.day), month = p && bucket(p.month);
@@ -14249,8 +14260,12 @@ details.details-moving > :not(summary) {
         n.textContent = "", n.classList.add("hide");
         return;
       }
+      if (!staff) {
+        n.textContent = "", n.classList.add("hide");
+        return;
+      }
       var bits = ["Pumpy"];
-      typeof p.plan == "string" && p.plan && bits.push(p.plan.charAt(0).toUpperCase() + p.plan.slice(1) + " plan"), day && bits.push(countText(day, "credits today")), month && bits.push(countText(month, "this month")), n.textContent = bits.join(" \xB7 "), n.classList.remove("hide");
+      typeof p.plan == "string" && p.plan && bits.push(p.plan.charAt(0).toUpperCase() + p.plan.slice(1) + " plan"), month && bits.push(countText(month, "this month")), n.textContent = bits.join(" \xB7 "), n.classList.remove("hide");
     }
   }
   function renderPumpyCredits() {
@@ -14627,15 +14642,15 @@ details.details-moving > :not(summary) {
   function planBenefits(caps) {
     var f = caps && caps.free, p = caps && caps.plus;
     if (!f || !p) return [];
-    var out = [], lib = capNum(p.library);
-    return out.push(lib === null ? "Keep every workout you save \u2014 the free plan holds " + f.library + "." : "Hold " + capMany(lib) + " saved workouts, instead of " + f.library + "."), out.push("Read visible movements and on-screen instructions in supported videos."), out.push("Use Pumpy to adapt saved workouts and suggest exercise alternatives."), out.push("Video reading and coaching have usage limits; they are not unlimited."), out.push("Stop whenever you like. Everything you saved stays yours, and stays readable."), out;
+    var out = [], lib = capNum(p.library), reads2 = capNum(p.month_reads);
+    return out.push(lib === null ? "Keep every workout you save \u2014 Basic holds " + f.library + "." : "Hold " + capMany(lib) + " saved workouts, instead of " + f.library + "."), reads2 === null ? (out.push("Read the movements, the spoken cues and the text on screen in supported videos."), out.push("Video reading and coaching have monthly allowances; Settings shows what is left.")) : (out.push("Read " + reads2 + " videos a month in full \u2014 the movements, the spoken cues and the text on screen. Basic reads " + capMany(capNum(f.month_reads)) + "."), out.push(capMany(capNum(p.month_answers)) + " coaching answers a month from Pumpy, and " + capMany(capNum(p.month_helpers)) + " explanations and swaps.")), out.push("Saving from a caption, logging, your plan and your progress are free and are never metered."), out.push("Stop whenever you like \u2014 everything you saved stays yours, and stays readable."), out;
   }
   var CAP_WORDS = {
-    extract: ["new videos read today", "reads", " a day"],
-    media: ["silent clips watched today", "watches", " a day"],
-    uploads: ["uploads today", "takes", " a day"],
-    saves: ["saves today", "saves", " a day"],
-    helper: ["explanations and swaps today", "allows", ""]
+    extract: ["new videos read", "reads"],
+    media: ["video reads", "reads"],
+    uploads: ["uploads", "takes"],
+    saves: ["saves", "saves"],
+    helper: ["explanations and swaps", "allows"]
   }, MULT = ["", "", "twice", "three times", "four times", "five times", "six times"];
   function pumpyRoom(up) {
     var caps = billing.prices && billing.prices.caps, f = caps && caps.free && num(caps.free.pumpy_month), p = caps && caps.plus && num(caps.plus.pumpy_month), mult = f && p ? Math.round(p / f) : 0;
@@ -14645,15 +14660,13 @@ details.details-moving > :not(summary) {
     if (!c || !c.kind) return "";
     var cap = num(c.cap), next = capNum(c.next_cap), mine = "the " + planWord(c.plan) + " plan", up = planWord(c.next_plan || "plus");
     if (c.kind === "library")
-      return "That is " + cap + " saved workouts, which is " + mine + "'s shelf. " + up + " takes the lid off, and nothing you have saved is going anywhere in the meantime.";
-    if (c.kind === "pumpy") {
-      var m = c.pumpy && bucket(c.pumpy.month);
-      return (m && m.cap !== null && m.left <= 0 ? "That is this month's coaching used up \u2014 my credits come back on the 1st. " : "That is my coaching done for today \u2014 my credits come back at midnight UTC. ") + pumpyRoom(up);
-    }
+      return "That is " + cap + " saved workouts, which is " + mine + "\u2019s shelf. " + up + " takes the lid off, and nothing you have saved is going anywhere in the meantime.";
+    if (c.kind === "pumpy")
+      return "That is this month\u2019s coaching used up \u2014 my credits come back on the 1st. " + pumpyRoom(up);
     var w = CAP_WORDS[c.kind];
     if (!w || cap === null) return "";
-    var noun = c.kind === "uploads" && cap === 1 ? "upload today" : w[0];
-    return "That is " + cap + " " + noun + ", " + mine + "'s daily limit. It resets at midnight UTC. " + (next === null ? up + " has no daily limit." : up + " " + w[1] + " " + next + w[2] + ".");
+    var month = c.scope === "month", noun = c.kind === "uploads" && cap === 1 ? "upload" : w[0];
+    return "That is " + cap + " " + noun + (month ? " this month, " : " today, ") + mine + "\u2019s " + (month ? "whole allowance. It comes back on the 1st. " : "burst limit. It resets at midnight UTC. ") + (next === null ? up + " has no limit here." : up + " " + w[1] + " " + next + (month ? " a month." : " a day."));
   }
   function skelRow(cls) {
     return el("div", "skel " + cls);
@@ -14715,7 +14728,9 @@ details.details-moving > :not(summary) {
         cards[i].classList.toggle("on", on), cards[i].setAttribute("aria-checked", on ? "true" : "false");
       }
       var full = plus[iv].amount, pay = yearly && p.founding ? p.founding.first_year_amount : full, days = num(p.trial_days) || 0, trial = $("plantrial");
-      yearly && days > 0 ? (trial.textContent = "Free for " + days + " days. We will not charge you before " + new Date(Date.now() + days * 864e5).toLocaleDateString(void 0, { day: "numeric", month: "long" }) + ", and you can cancel before then.", trial.classList.remove("hide")) : (trial.textContent = "", trial.classList.add("hide")), setBuyLabel(yearly && days > 0 ? "Start " + days + " free days" : "Subscribe for " + (p.nativeStore ? plus[iv].localized : money(pay, cur)) + (yearly ? " a year" : " a month")), $("planfine").textContent = finePrint(p, plus, iv, pay, full, days) + " AI reading and coaching have daily and monthly usage limits. During beta, new AI work can also pause when the shared allowance is reached; saved workouts remain available.";
+      yearly && days > 0 ? (trial.textContent = "Free for " + days + " days. We will not charge you before " + new Date(Date.now() + days * 864e5).toLocaleDateString(void 0, { day: "numeric", month: "long" }) + ", and you can cancel before then.", trial.classList.remove("hide")) : (trial.textContent = "", trial.classList.add("hide")), setBuyLabel(yearly && days > 0 ? "Start " + days + " free days" : "Subscribe for " + (p.nativeStore ? plus[iv].localized : money(pay, cur)) + (yearly ? " a year" : " a month"));
+      var fr = p.caps && p.caps.free, basic = capNum(fr && fr.month_reads);
+      $("planfine").textContent = finePrint(p, plus, iv, pay, full, days) + (basic === null ? "" : " Basic reads " + basic + " videos a month in full, and everything you have already saved stays readable for ever.") + " Allowances reset on the 1st, 00:00 UTC. During beta, new AI work can also pause when Spotter\u2019s shared allowance is reached; saved workouts remain available.";
     }
   }
   function pickInterval(iv) {
@@ -14951,13 +14966,42 @@ details.details-moving > :not(summary) {
   function adoptPlan(plan) {
     plan && (billing.said = plan, !(!state.profile || state.profile.plan === plan) && (state.profile.plan = plan, renderLibCount(), paintPlanGroup()));
   }
-  function capLine(used, cap, word) {
-    var c = capNum(cap);
-    return (c === null ? used : used + " of " + c) + " " + word;
+  var ALLOW_ROWS = [
+    ["reads", "Video reads"],
+    ["answers", "Coaching answers"],
+    ["helpers", "Explanations and swaps"],
+    ["uploads", "Uploads"]
+  ];
+  function resetDay(iso) {
+    var d = iso ? new Date(iso) : null;
+    return !d || isNaN(d.getTime()) ? "" : d.toLocaleDateString(void 0, { day: "numeric", month: "short", timeZone: "UTC" });
+  }
+  function useRow(label, value, tail, back, out) {
+    var row = el("div", out ? "usel out" : "usel");
+    return row.appendChild(document.createTextNode(label + " ")), row.appendChild(el("b", null, value)), tail && row.appendChild(document.createTextNode(tail)), back && row.appendChild(el("span", "nobr", " \xB7 resets " + back)), row;
   }
   function paintPlanUse(r) {
-    var n = $("setplanuse"), lim = r && r.limits, bits = [];
-    lim && (capNum(lim.library) !== null && num(r.library_count) !== null && bits.push(capLine(r.library_count, lim.library, "workouts saved")), num(r.extracts_today) !== null && bits.push(capLine(r.extracts_today, lim.extract, "read today"))), n.textContent = bits.join(" \xB7 "), n.classList.toggle("hide", !bits.length);
+    var n = $("setplanuse"), lim = r && r.limits, m = r && r.month, hidden = n.classList.contains("hide");
+    if (n.innerHTML = "", lim && capNum(lim.library) !== null && num(r.library_count) !== null && n.appendChild(useRow(
+      "Library",
+      r.library_count + " of " + capNum(lim.library),
+      " saved",
+      null,
+      r.library_count >= capNum(lim.library)
+    )), m) {
+      var back = resetDay(m.resets_at);
+      ALLOW_ROWS.forEach(function(a) {
+        var cap = capNum(m[a[0] + "_cap"]), used = num(m[a[0]]);
+        used === null || cap === null || n.appendChild(useRow(a[1], used + " of " + cap, " this month", back, used >= cap));
+      });
+    }
+    r && r.paid_enabled === !1 && n.appendChild(el(
+      "div",
+      "usel out",
+      "Spotter's shared AI budget is spent for today \u2014 new video reads start again tomorrow. Everything you have saved stays readable."
+    ));
+    var empty = !n.childNodes.length;
+    n.classList.toggle("hide", empty), hidden && !empty && n.classList.add("viewin");
   }
   function shelf(extra) {
     if (!billOn() || !isFree()) return null;
@@ -15784,16 +15828,9 @@ details.details-moving > :not(summary) {
     var mine = isEmailAccount();
     $("setpwrow").classList.toggle("hide", !mine), $("setmailrow").disabled = !mine, $("setname").textContent = displayName() || "Not set", $("unittoggle").textContent = state.unit, paintGoal(), $("haptictoggle").textContent = state.haptics ? "On" : "Off", $("sethapticrow").classList.toggle("hide", !native && !navigator.vibrate), paintSounds(), loadRemind(), $("shortcutsetup").classList.toggle("hide", !!native), $("nativesharehelp").classList.toggle("hide", !native), native && native.platform === "android" && ($("nativesharehelp").textContent = "In TikTok, YouTube, Instagram or another app, share the post\u2019s link and choose Spotter from the Android share sheet.");
     var key = state.profile ? state.profile.ingest_key : null;
-    $("setkey").textContent = key ? API + "ingest?key=" + key : "Loading\u2026", $("setsaves").textContent = "\u2026", renderSettingsMeter(), paintPlanGroup(), paintPlanUse(billing.limits), Promise.all([loadPrices(), loadSub()]).then(paintPlanGroup), paintStrava(), askStrava(), api("limits", { method: "GET" }).then(function(r) {
-      if (pumpy.meterAsked = !0, absorbMeter(r && r.pumpy), r.status === "ok") {
-        billing.limits = r, adoptPlan(r.plan), paintPlanUse(r);
-        var line = r.limits ? capLine(r.saves_today, r.limits.saves, "saves") + " \xB7 " + capLine(r.extracts_today, r.limits.extract, "read") : r.saves_today + " of " + r.limit_saves + " (" + r.extracts_today + "/" + r.limit_extract + " extractions, " + r.helpers_today + "/" + r.limit_helper + " coaching" + // The credits line below is the real Pumpy meter; the turn count is only
-        // shown while the server does not send one.
-        (r.pumpy ? ")" : ", " + (r.chats_today || 0) + "/" + (r.limit_chat || "\u2014") + " Pumpy)");
-        r.paid_enabled === !1 && (line += " \xB7 budget reached, using the free reader"), $("setsaves").textContent = line;
-      }
+    $("setkey").textContent = key ? API + "ingest?key=" + key : "Loading\u2026", renderSettingsMeter(), paintPlanGroup(), paintPlanUse(billing.limits), Promise.all([loadPrices(), loadSub()]).then(paintPlanGroup), paintStrava(), askStrava(), api("limits", { method: "GET" }).then(function(r) {
+      pumpy.meterAsked = !0, absorbMeter(r && r.pumpy), r.status === "ok" && (billing.limits = r, adoptPlan(r.plan), paintPlanUse(r));
     }).catch(function() {
-      $("setsaves").textContent = "\u2014";
     }), openSheet("settingssheet");
   }
   function rotateKey() {

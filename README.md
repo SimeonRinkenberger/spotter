@@ -240,9 +240,10 @@ bar, so the composer sits on the tab bar whether the thread is empty or endless;
 above it opens the chat list — every thread the caller owns, newest first, with the workout it
 was opened from and a two-tap delete that takes the messages with it — or starts a new one.
 When a response carries a `pumpy` credit meter (`plan`, `day`, `month`, each cap possibly
-null for unlimited), Settings shows the day and month counts and the composer adds a quiet
-line once either allowance falls under a fifth; every field is optional and nothing new
-appears while the server omits them.
+null for unlimited), Settings shows the month count — the day's credits are a burst stop and
+nobody is sold one — and the composer adds a quiet line once either allowance falls under a
+fifth, naming the day only when the day is genuinely what is about to stop you; every field is
+optional and nothing new appears while the server omits them.
 
 **A turn is one model call, not three.** Every turn opens with a *snapshot* — an index of
 the ready library (one line each: short id, title, category, minutes, equipment, ★,
@@ -414,9 +415,12 @@ Cache hits count only against `LIMIT_SAVES`, so saving videos other people alrea
 effectively free.
 
 **A ceiling on the day's bill.** Every model call records an estimated cost in
-`ai_cost_log` from the provider's own token counts. Once the day's total crosses
-`DAILY_SPEND_USD` (default `5`), providers that carry a price are switched off and
-extraction falls through to the free path — a thinner card, never a failed save. A provider
+`ai_cost_log` from the provider's own token counts. Once the day's total crosses the
+ceiling in `ai_guard_policy.daily_usd`, providers that carry a price are switched off and
+extraction falls through to the free path — a thinner card, never a failed save. The
+`DAILY_SPEND_USD` constant in `index.ts` is only the display fallback for a policy row that
+cannot be read; `spend_limit` reports the policy row, so moving the guard moves the number
+the app shows. A provider
 is "paid" iff a price is configured for it (`PRICE_OPENAI_IN` / `_OUT`, and the same for
 `ANTHROPIC`, `GEMINI`, `GROQ`), so putting a key on a paid plan is a config change, not a
 code change. `GET /api/limits` reports `spend_today`, `spend_limit` and `paid_enabled`.
@@ -694,8 +698,9 @@ Spotter worth using stays free for ever — logging, Workout Mode, the plan, pro
 map, collections and export are not metered and never will be.
 
 **The free gate is the shelf, not the day.** A free account holds **20 workouts**; Plus is
-unlimited. The five daily caps below exist to stop abuse and are set where an ordinary week never
-touches them, because a daily ceiling teaches people to save *less*, which is the opposite of
+unlimited. What is sold on top of that is a monthly allowance (see *Prices and caps are data*);
+the five daily caps below it are silent burst stops, set where an ordinary week never touches
+them, because a daily ceiling teaches people to save *less*, which is the opposite of
 what a library wants. The library cap is checked only where a new row would be created — a save,
 an upload, a workout Pumpy proposes — and never on reading, logging, editing, planning or
 deleting. Nothing already saved is ever taken away, including from an account that goes over the
@@ -826,14 +831,47 @@ to change:
 | What | Where | Notes |
 | --- | --- | --- |
 | Product names, amounts, intervals, trial length, the founding offer | `tools/stripe-plans.json` | The source of truth for what the setup script creates. Amounts in cents. |
-| The caps per plan | `app_config.limits.plans` | Read on the same 5-minute cache as the model ids. `null` = unlimited. |
+| The monthly allowances people are sold | `app_config.allowances.monthly` | What Settings and the paywall print and what a 429 counts against. Same 5-minute cache. `null` = uncapped. |
+| The daily burst stops | `app_config.limits.plans` | Abuse stops, never shown to users. Read on the same 5-minute cache as the model ids. `null` = unlimited. |
 | Trial length the function applies | `app_config.billing.trial_days` | Annual only. Keep it equal to `trial_days` in the JSON. `0` switches trials off. |
 | Stripe Tax | `app_config.billing.tax` | `false` at launch. The checkout code already reads it. |
 | One person's caps | `profiles.limits` | A JSON override, field by field, beating the plan. |
 
-Today's numbers:
+**What a person is sold is a month.** These are the numbers in Settings, on the paywall and in
+every 429, and the only ones anybody outside this file ever sees. They reset on the **1st at
+00:00 UTC** — the same instant the dollar guards, `video_previews` and Pumpy's credits already
+come back on. Source: `design/gtm/ALLOWANCES.md` section 3.
 
-| Cap | Free | Plus |
+| Monthly allowance | Basic | Plus |
+| --- | --- | --- |
+| `reads` video reads — movements, spoken cues, on-screen text | 4 | 20 |
+| `answers` Pumpy coaching answers | 100 | 300 |
+| `helpers` explanations and swaps | 20 | 100 |
+| `uploads` | 1 | 10 |
+| Library held (a shelf, not a month) | 20 | no ceiling |
+| Caption saves, logging, Workout Mode, plan, Progress, export | free, unmetered | free, unmetered |
+
+`GET /api/limits` carries them as a `month` object — `reads`, `answers`, `helpers`, `uploads`,
+`previews`, each with a `_cap`, plus `resets_at` — beside the older `*_today` fields, which stay
+so an app that has not reloaded since yesterday keeps working. A monthly refusal is the same 429
+shape as a daily one with `scope: "month"` and `resets_at` on the 1st, so the client renders both
+through one path. For a Basic account `month.reads` **is** its preview count, because
+`reserve_video_preview` is what enforces it.
+
+A **video read** is one video, counted by shortcode: an escalation that listens and then watches
+is one read, and re-reading a video this account already read this month costs nothing. A cache
+hit never consumes an allowance and is never refused. Basic's four are enforced in exactly one
+place, the `reserve_video_preview` function in SQL, and `allowances.monthly` can lower what Basic
+is *shown* but can never raise it past what that function will admit.
+
+`answers` is the number promised; the enforcing gate is Pumpy's credit ladder, sized so that many
+answers can never be refused. Nothing in the function counts it.
+
+**The daily caps are burst stops, not shown to users.** They exist to stop a script in one
+sitting, they are sized at or above the monthly allowance they guard, and the month is always
+checked first so the number that speaks is the number on the paywall.
+
+| Burst stop (per day, not shown to users) | Free | Plus |
 | --- | --- | --- |
 | `library` workouts held (**not** per day) | 20 | unlimited |
 | `saves` per day | 30 | 200 |
@@ -844,6 +882,37 @@ Today's numbers:
 
 Pumpy's credits are a separate dial (`app_config.pumpy.plans`, `profiles.pumpy_limits`) and are
 unchanged: free 150/day and 1,500/month, Plus 400/day and 5,000/month.
+
+**`LIMIT_*` secrets fill gaps; they never beat config.** `LIMIT_SAVES`, `LIMIT_EXTRACT`,
+`LIMIT_MEDIA`, `LIMIT_UPLOADS` and `LIMIT_HELPER` are set as function secrets. They predate plans,
+so each one is folded into the **free** row only, as its floor — and `limits.plans` is read over
+that floor field by field. So: where `limits.plans` names a number for a cap, config wins and the
+secret is irrelevant; where it does not (key absent, or a value that is neither `null` nor a
+non-negative number), the secret fills the gap; with no secret and no config row, the compiled
+default applies. `LIMIT_CHAT` (200/day) is plan-independent and is a backstop under Pumpy's
+credits, not a cap anybody is sold. None of them touches `allowances.monthly`.
+
+**Seeding the allowances.** The compiled defaults in `index.ts` are the table above, so the app is
+correct with no row at all. To move a number without a deploy:
+
+```sql
+insert into public.app_config (key, value) values ('allowances.monthly',
+  '{"free":{"reads":4,"answers":100,"helpers":20,"uploads":1},'
+  '"plus":{"reads":20,"answers":300,"helpers":100,"uploads":10},'
+  '"pro":{"reads":60,"answers":900,"helpers":300,"uploads":25},'
+  '"staff":{"reads":null,"answers":null,"helpers":null,"uploads":null}}')
+on conflict (key) do update set value = excluded.value, updated_at = now();
+```
+
+Raising an allowance without also raising the matching burst stop and the per-account dollar
+ceiling (`ai_guard_policy.user_monthly_usd`) sells something the guards will refuse —
+`design/gtm/ALLOWANCES.md` section 5 has the arithmetic and the SQL for all three.
+
+Two checks guard all of this. `deno run --allow-read tools/allowance-table-check.ts` proves the
+table, the config fallbacks and the refusal copy, and runs inside `npm run gtm:check`.
+`node tools/allowance-harness.mjs` additionally renders Settings › Plan for Basic and Plus at
+nothing, part and all used and asserts the line and the UTC reset date; it needs linkedom
+(`npm install --prefix /tmp/spotter-qa linkedom`), which is why it is not in the suite.
 
 **Changing a price.** Edit the amount in `tools/stripe-plans.json` and run the setup script again.
 Prices are immutable in Stripe, so it creates a new one, moves the `lookup_key` onto it with

@@ -20,6 +20,7 @@ const checks = [
   ['Extraction source and sampling fidelity', 'deno', ['run','--allow-read','tools/pack-eval/fidelity-test.ts']],
   ['Complete reader pipeline fixtures', 'deno', ['run','--allow-read','--allow-env','tools/pack-harness.ts']],
   ['Pumpy source context fixtures', 'deno', ['run','--allow-read','tools/pumpy-pack-harness.ts']],
+  ['Monthly allowance table and refusals', 'deno', ['run','--allow-read','tools/allowance-table-check.ts']],
 ];
 const failures=[];
 for(const [label,cmd,args] of checks) {

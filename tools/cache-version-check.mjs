@@ -110,6 +110,10 @@ c.premiumAccess = async () => false;
 c.mergeNoDowngrade = (_w, card) => structuredClone(card);
 c.overCap = () => false;
 c.mediaCapReached = async () => null;
+// The monthly allowance has its own check (tools/allowance-table-check.ts); here
+// the account has room left, so what is under test stays the cache cutover.
+c.monthReadsReached = async () => null;
+c.allowanceLimit = async () => ({ status: 'limit', scope: 'month' });
 c.paidAllowed = async () => true;
 c.extractLimitResponse = async () => ({ status: 'limit' });
 c.capLimit = async () => ({ status: 'limit' });
