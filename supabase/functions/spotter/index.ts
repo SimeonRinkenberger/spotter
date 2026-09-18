@@ -626,7 +626,7 @@ function upgradePath(
   return { upgrade: false };
 }
 
-const PLAN_NAMES: Record<string, string> = { free: "Free", plus: "Plus", pro: "Pro", staff: "Staff" };
+const PLAN_NAMES: Record<string, string> = { free: "Basic", plus: "Plus", pro: "Pro", staff: "Staff" };
 
 function planName(plan: string): string {
   return PLAN_NAMES[plan] ?? plan.charAt(0).toUpperCase() + plan.slice(1);

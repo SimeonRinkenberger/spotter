@@ -14582,7 +14582,7 @@ details.details-moving > :not(summary) {
     return p !== "plus" && p !== "pro" && p !== "staff";
   }
   function planWord(p) {
-    return p = String(p || "free"), p === "free" ? "free" : p.charAt(0).toUpperCase() + p.slice(1);
+    return p = String(p || "free"), p === "free" ? "Basic" : p.charAt(0).toUpperCase() + p.slice(1);
   }
   function money(cents, cur) {
     var v = (cents || 0) / 100, frac = v % 1 ? 2 : 0;
@@ -14951,7 +14951,7 @@ details.details-moving > :not(summary) {
   function paintPlanGroup() {
     var row = $("setplan");
     if (row) {
-      var configured = billOn(), plan = myPlan(), s = billing.sub, staff = plan === "staff", paid = plan === "plus" || plan === "pro", word = planWord(plan), text = staff ? "Staff" : paid ? word : "Free", failed = !1;
+      var configured = billOn(), plan = myPlan(), s = billing.sub, staff = plan === "staff", paid = plan === "plus" || plan === "pro", word = planWord(plan), text = staff ? "Staff" : paid ? word : "Basic", failed = !1;
       if (paid && s) {
         var ends = dayMonth(s.current_period_end), trial = dayMonth(s.trial_end || s.current_period_end);
         s.payment_failed_at ? (text = word + " \xB7 payment failed", failed = !0) : s.status === "trialing" && trial ? text = word + " \xB7 free trial, ends " + trial : (s.cancel_at_period_end || s.cancel_at) && ends ? text = word + " \xB7 ends " + ends : ends && (text = word + " \xB7 renews " + ends);

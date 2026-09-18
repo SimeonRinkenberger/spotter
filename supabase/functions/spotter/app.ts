@@ -11546,7 +11546,7 @@ export const APP = String.raw`
   // free stays lower case: it is a description, the paid ones are names.
   function planWord(p) {
     p = String(p || "free");
-    return p === "free" ? "free" : p.charAt(0).toUpperCase() + p.slice(1);
+    return p === "free" ? "Basic" : p.charAt(0).toUpperCase() + p.slice(1);
   }
 
   function money(cents, cur) {
@@ -12116,7 +12116,7 @@ export const APP = String.raw`
     if (!row) return;
     var configured = billOn(), plan = myPlan(), s = billing.sub;
     var staff = plan === "staff", paid = plan === "plus" || plan === "pro";
-    var word = planWord(plan), text = staff ? "Staff" : (paid ? word : "Free"), failed = false;
+    var word = planWord(plan), text = staff ? "Staff" : (paid ? word : "Basic"), failed = false;
     if (paid && s) {
       var ends = dayMonth(s.current_period_end), trial = dayMonth(s.trial_end || s.current_period_end);
       // A failed payment outranks everything: it is the one state with something
