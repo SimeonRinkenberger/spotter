@@ -1,9 +1,21 @@
 // Execute the real job coordinator against in-memory persistence and reader seams.
 const source = await Deno.readTextFile(new URL('../supabase/functions/spotter/index.ts', import.meta.url));
 const jobCode = source.slice(source.indexOf('async function runJob('), source.indexOf('async function handleWorkerTick('));
+// Read from the shipping source, never pinned here: what the reader WRITES and
+// what it still SERVES are two different numbers now, and a harness carrying its
+// own copy of either stops testing the gate the moment one of them moves.
+const num = (name: string) => Number(source.match(new RegExp('const ' + name + ' = (\\d+)'))![1]);
+// The real helper, not a stub, so the claim fence it passes on is still checked
+// by the rpc stub below.
+const publishCacheCode = (() => {
+  const i = source.indexOf('async function publishCache(');
+  if (i < 0) throw new Error('index.ts no longer declares publishCache');
+  return source.slice(i, source.indexOf('\n}', i) + 2);
+})();
 const stubs = `
 type Job=any; type Parsed=any; type AiCtx=any; type Meta=any; type Card=any; type MediaTier=any; type VisionProgress=any;
-const CARD_V=11;
+const CARD_V=${num('CARD_V')};
+const MIN_USABLE_CARD_V=${num('MIN_USABLE_CARD_V')};
 const WORKER_ID="worker";
 const aiActor={run:(_a:any,f:any)=>f(),getStore:()=>null};
 class GuardError extends Error {}
@@ -37,6 +49,7 @@ async function rpc(name:string,args:any){
  if(args.p_user!=='user'||args.p_job!=='job'||args.p_generation!==2) throw new Error('Missing cache claim fence');
  return true;
 }
+${publishCacheCode}
 `;
 const m=await import('data:application/typescript,'+encodeURIComponent(stubs+'\nexport '+jobCode));
 let checks=0;

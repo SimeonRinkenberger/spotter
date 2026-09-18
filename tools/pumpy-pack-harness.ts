@@ -107,7 +107,7 @@ function lift(name: string): string {
 const STUBS = "import { applyCatalog as _ac, catalogById } from '" +
   new URL("supabase/functions/spotter/catalog.ts", ROOT).href + "';\n" +
   "import { normText } from '" + new URL("supabase/functions/spotter/evidence.ts", ROOT).href + "';\n" +
-  "import { bestSeenFact, packInTimeOrder, sharesHeadNoun, secondsToMmss, PACK_V } from '" +
+  "import { bestSeenFact, packInTimeOrder, sharesHeadNoun, secondsToMmss, MIN_USABLE_PACK_V, PACK_V } from '" +
   new URL("supabase/functions/spotter/pack.ts", ROOT).href + "';\n" +
   "import { CATALOG } from '" + new URL("supabase/functions/spotter/catalog.ts", ROOT).href + "';\n" +
   "type Pack = Record<string, any>;\n" +

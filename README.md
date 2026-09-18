@@ -365,11 +365,26 @@ ask how the media was obtained. Adding a source is a new object in `PROVIDERS`.
 
 ```bash
 npm install                                                        # once, for esbuild
+npm run verify:local                                               # everything CI's verify job runs
 node build.mjs && git add -A && git commit -m "..." && git push   # frontend
 supabase functions deploy spotter --no-verify-jwt                  # backend
 supabase db push                                                   # schema
 node tools/test-normalize.mjs && node tools/test-confidence.mjs    # both batteries
 ```
+
+**`npm run verify:local`** runs every step of the `verify` job in
+`.github/workflows/release-checks.yml`, in the same order, and stops at the first failure — the
+PGlite database checks, `npm run gtm:check`, `deno check`, the Deno harnesses, both pack evals,
+`npm audit` and the `build.mjs` byte diff. It needs PGlite once:
+
+```bash
+npm install --prefix /tmp/spotter-reader-db --ignore-scripts --no-audit --no-fund @electric-sql/pglite@0.5.8
+```
+
+`gtm:check` alone is not enough and is not meant to be: it is the launch regression groups, and
+none of them is `reader-access-check`, `deno check` or the build diff. A green `gtm:check` sat
+next to a red PR for an afternoon for exactly that reason. The macos-14 `native-parity` job
+(`npm run parity:check`) needs Xcode and stays separate.
 
 Changing a model, or turning the vision size cap down, needs none of the above:
 
