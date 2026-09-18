@@ -16,6 +16,7 @@ await p.addScriptTag({content:`
 var wo=null,woTimer=null,woCloseTimer=null,restTimer=null,restUntil=0,restTotal=0,restHeld=0,restCued=0,restFace=null,restThen=null;
 var woPhase='idle',woSlide=0,justSet=-1,REST_FALLBACK=90,native=null,editing=null,hist={},setCtx={},state={user:{id:'fixture'},unit:'kg',sounds:true,workouts:[]};
 var closeTimers={},sheetNav=false,sheetBack=0;
+var woa=null,woaCat=[],woaCatLoad=null,WOA_CAP={1:6,2:8},WOA_WAIT='',WOA_NOSAVE='',WOA_EQUIP=[],MUSCLES=[],exEdit=null;
 function $(id){return document.getElementById(id)}
 function el(t,c,x){var n=document.createElement(t);if(c)n.className=c;if(x!==undefined)n.textContent=x;return n;}
 function toUnit(w,u){return w||0} function wtText(w){return String(w)} function exKey(e){return e.name}
@@ -23,13 +24,15 @@ function guideClear(){} function guideStill(){} function guideSheet(){} function
 function startClock(){} function lastWeights(){} function acquireWake(){} function viewIn(){} function haptic(){}
 function toast(t){window.lastToast=t} function tellSounds(){} function beep(){} function unlockAudio(){}
 function endEdit(){} function prCheck(){return false} function drawStepper(){}
+function capWord(s){return s} function clamp(v,lo,hi){return v<lo?lo:(v>hi?hi:v)} function absorbWorkout(){} function limitHit(){} function cxArm(){} function api(){return Promise.resolve({status:'ok'})}
 function icon(n,i,t){n.textContent=t||i;return n} function sourceOf(){return null}
 function lastLine(){return ''} function doseText(e){return (e.sets||1)+' sets · '+(e.reps||e.duration_seconds)+(e.duration_seconds?'s':' reps')}
 function disclosure(t,c){var n=el('details','disclosure '+(c||''));n.appendChild(el('summary',null,t));n.appendChild(el('div','disclosure-body'));return n;}
 function invalidateLogs(){} var today={};function renderToday(){} function renderSummary(p,l){window.savedSession=p;}
 var sb={from:function(){return {insert:function(p){window.insertedSession=p;return {select:function(){return {single:function(){return Promise.resolve({data:{id:'saved'}})}}}}}}}};
-`+['flatten','draftKey','saveDraft','clearDraft','startWorkout','appendSessionExercise','openWorkoutAdd','saveWorkoutAdd','renderWorkout','renderSetPills','setText','openSetSheet','saveSet','startRest','drawRest','tickRest','pauseRest','stopRest','addRest','doneRest','isTimed','isCircuit','roundsOf','roundOf','targetOf','atRoundEnd','restAfter','stopWork','logHold','finishWorkout','timedBody','paintPhase','ringTap','startWork','workDone','nextMove','woGo','openSheet','closeSheet'].map(fn).join('\n')+`
+`+['flatten','draftKey','saveDraft','clearDraft','startWorkout','appendSessionExercise','openWorkoutAdd','openPicker','saveWorkoutAdd','woaChips','woaPane','woaRender','woaRows','woaMake','woaHit','woaScore','woaRank','woaRow','woaPass','woaFilter','woaChoose','woaKeepPaint','woaCard','woaCardBlocks','woaCardHas','woaPlace','woaKeep','woaFields','woaEditBody','woaNum','woaCatalog','insertSessionExercise','replaceSessionExercise','entryAt','sessionReplace','postCorrection','endStop','isStop','complexOf','cxCap','cxDosed','renderWorkout','renderSetPills','setText','openSetSheet','saveSet','startRest','drawRest','tickRest','pauseRest','stopRest','addRest','doneRest','isTimed','isCircuit','roundsOf','roundOf','targetOf','atRoundEnd','restAfter','stopWork','logHold','finishWorkout','timedBody','paintPhase','ringTap','startWork','workDone','nextMove','woGo','openSheet','closeSheet'].map(fn).join('\n')+`
 $('waddexercise').onclick=openWorkoutAdd;$('woaddsave').onclick=saveWorkoutAdd;$('wfinish').onclick=finishWorkout;
+$('woaback').onclick=function(){woaPane(0)};$('woakeep').onclick=function(){woa.keep=!woa.keep;woaKeepPaint()};$('woaq').addEventListener('input',woaRender);
 $('restring').onclick=pauseRest;$('restplus').onclick=function(){addRest(15000)};$('restskip').onclick=function(){var t=restThen;stopRest();if(t)t()};
 $('setsave').onclick=saveSet;
 document.querySelectorAll('[data-close]').forEach(function(b){b.onclick=function(){closeSheet(b.getAttribute('data-close'))}});
@@ -43,7 +46,7 @@ try{
  assert.equal(await p.evaluate(()=>wo.entries[0].sets.length),1);
  await p.locator('#restring').click();assert.match(await p.locator('#restword').innerText(),/paused/);
  const held=await p.evaluate(()=>restHeld);await p.locator('#restplus').click();assert.equal(await p.evaluate(()=>restHeld),held+15000);
- await p.locator('#waddexercise').click();await p.locator('#woaddname').fill('Dumbbell row');await p.locator('#woaddsave').click();
+ await p.locator('#waddexercise').click();await p.locator('#woaq').fill('Dumbbell row');await p.locator('#woalist button').first().click();await p.locator('#woaddsave').click();
  assert.equal(await p.evaluate(()=>wo.screens.length),2);assert.equal(await p.evaluate(()=>fixture.blocks.length),1);
  assert.equal(await p.evaluate(()=>wo.entries[0].sets[0].weight),20);assert.equal(await p.evaluate(()=>wo.i),1);
  assert.equal(await p.evaluate(()=>restHeld),held+15000);
@@ -62,16 +65,15 @@ try{
   const ring=await p.locator('#restring').boundingBox();assert(ring.width>=88);
   await p.screenshot({path:'design/workout-edit-evidence/rest-'+scheme+'.png'});
  }
- await p.locator('#waddexercise').click();await p.locator('#woaddname').fill('Plank');await p.locator('#woaddsecs').fill('45');await p.locator('#woaddsave').click();
+ await p.locator('#waddexercise').click();await p.locator('#woaq').fill('Plank');await p.locator('#woalist button').first().click();await p.locator('#woaddsecs').fill('45');await p.locator('#woaddsave').click();
  assert.equal(await p.evaluate(()=>wo.screens[2].ex.duration_seconds),45);
  await p.getByRole('button',{name:'Log extra hold',exact:true}).click();assert.equal(await p.evaluate(()=>wo.entries[2].sets[0].seconds),45);
  await p.locator('#wfinish').click();assert.equal(await p.evaluate(()=>savedSession.entries.length),3);assert.equal(await p.evaluate(()=>localStorage.getItem(draftKey())),null);
  await p.evaluate(()=>startWorkout({id:'free',title:'Freestyle',blocks:[]}));
  await p.evaluate(()=>{wo.entries[0].sets=[{reps:5}];appendSessionExercise({name:'Push-up',sets:1,reps:'10'})});
  assert.equal(await p.evaluate(()=>wo.screens.length),2);assert.equal(await p.evaluate(()=>wo.entries[0].sets[0].reps),5);
- await p.locator('#waddexercise').click();await p.locator('#woaddname').fill('Invalid');await p.locator('#woaddsets').fill('-1');await p.locator('#woaddsave').click();assert.equal(await p.evaluate(()=>wo.screens.length),2);assert(await p.locator('#woadderror').innerText());
- await p.locator('[data-close=woaddsheet]').click();
+ await p.locator('#waddexercise').click();await p.locator('#woaq').fill('Clamped');await p.locator('#woalist button').first().click();await p.locator('#woaddsets').fill('-1');await p.locator('#woaddsave').click();assert.equal(await p.evaluate(()=>wo.screens.length),3);assert.equal(await p.evaluate(()=>wo.screens[2].ex.sets),1);
  await p.evaluate(()=>{startRest(30);restUntil=Date.now()-1;tickRest()});assert.equal(await p.evaluate(()=>restUntil),0);
  assert.deepEqual(errors,[]);
- console.log('PASS rest pause/extend/expiry, additions during rest, unchanged library, draft recovery, extra sets, timed additions, save payload, freestyle mapping, validation and 375px light/dark controls.');
+ console.log('PASS rest pause/extend/expiry, additions during rest, unchanged library, draft recovery, extra sets, timed additions, save payload, freestyle mapping, dose clamping and 375px light/dark controls.');
 }finally{await browser.close()}

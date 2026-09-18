@@ -52,7 +52,7 @@ export const APP = String.raw`
 
   // The one place the version is written down. It names the entry at the top of
   // docs/whats-new.html, and the settings sheet reads it from here.
-  var VERSION = "0.12";
+  var VERSION = "0.14";
 
   // What a rest is when the card says nothing. It was a Settings row until the
   // obvious objection landed: how long to rest belongs to the program or to the
@@ -434,6 +434,9 @@ export const APP = String.raw`
     // Same rule as Forgot your password, the other way round: the sentence is
     // about creating an account, so it belongs to the face that creates one.
     $("consent").classList.toggle("hide", !isUp);
+    // So does the creator code fold: a code is for an account being made.
+    $("authcodewrap").classList.toggle("hide", !isUp);
+    if (isUp) paintAuthCode();
   }
 
   function authError(msg) {
@@ -609,6 +612,11 @@ export const APP = String.raw`
     if (!email || !pw) { authError("Enter your email and a password."); return; }
     if (authMode === "signup" && pw.length < 8) {
       authError("Use at least 8 characters."); return;
+    }
+    // Optional, but never silently dropped: a code that is not a code is said
+    // so here, where the field can be emptied, rather than lost after sign-up.
+    if (authMode === "signup" && $("authcode").value.trim() && !creatorCode($("authcode").value)) {
+      authError(creatorSays("bad_code")); return;
     }
     var btn = $("authgo");
     var mode = authMode;
@@ -1223,7 +1231,7 @@ export const APP = String.raw`
         busy: false, live: null, stick: true, wired: wired, openSeq: seq };
     }
     if (native && native.purchases) native.purchases.clear().catch(function () {});
-    if (billing) { billing.prices = null; billing.waiting = null; billing.busy = false; billing.sub = null; billing.subAsked = false; billing.limits = null; billing.said = null; billing.ctx = null; }
+    if (billing) { billing.prices = null; billing.waiting = null; billing.busy = false; billing.sub = null; billing.subAsked = false; billing.limits = null; billing.said = null; billing.ctx = null; billing.cc = null; billing.ccWaiting = null; billing.redeeming = false; }
     ["grid", "chips", "colbar", "libcount", "empty", "dinner", "pumpylog", "pumpyannounce", "pumpyctx", "pumpythreads", "trainview", "today", "recapopts"].forEach(function (id) {
       var n = $(id); if (n) n.innerHTML = "";
     });
@@ -1285,6 +1293,7 @@ export const APP = String.raw`
     var epoch = accountEpoch, uid = state.user.id;
     booting = load().then(function () { if (accountNow(epoch, uid)) return consumeShare(); })
       .then(function () { if (accountNow(epoch, uid)) return consumeBilling(); })
+      .then(function () { if (accountNow(epoch, uid)) consumeCreator(); })
       .then(function () { if (accountNow(epoch, uid)) return warmPages(); })
       .then(function () { return profileReady; })
       .then(function () {
@@ -2958,7 +2967,7 @@ export const APP = String.raw`
         demo.onclick = function () { explain(ex, w); };
         options.lastChild.appendChild(demo);
         var swap = icon(el("button", "pickrow"), "swap", "Swap or modify");
-        swap.onclick = function () { openSwap(ex.name, w.title); };
+        swap.onclick = function () { openSwap(ex.name, w.title, { w: w, bi: bi, ei: ei, ex: ex }); };
         options.lastChild.appendChild(swap);
         acts.appendChild(options);
         row.appendChild(acts);
@@ -3643,7 +3652,7 @@ export const APP = String.raw`
   function fieldVal(v) { return v === null || v === undefined || v === "" ? "" : String(v); }
 
   function openExEdit(w, bi, ei, ex) {
-    exEdit = { w: w, block: bi, index: ei, name: ex.name, mode: "edit" };
+    exEdit = { w: w, block: bi, index: ei, name: ex.name, ex: ex, mode: "edit" };
     $("exedittitle").textContent = "Fix this exercise";
     $("exeditlede").textContent =
       "Spotter read this off the video. If it got it wrong, put it right — the change stays on your copy.";
@@ -3656,19 +3665,12 @@ export const APP = String.raw`
     openSheet("exeditsheet");
   }
 
+  // "+ Add an exercise" on a card is the picker now, the same one Workout Mode
+  // adds from: a list to choose off, then the dose, then the add op carrying the
+  // catalog id the row was picked with. A name the bank does not have is still
+  // one row of that list, so nothing that could be typed here was lost.
   function openExAdd(w, bi) {
-    exEdit = { w: w, block: bi, index: -1, name: null, mode: "add" };
-    $("exedittitle").textContent = "Add an exercise";
-    $("exeditlede").textContent =
-      "Something in the video Spotter did not pick up. Sets, reps and seconds are optional.";
-    $("exeditname").value = "";
-    $("exeditsets").value = "";
-    $("exeditreps").value = "";
-    $("exeditsecs").value = "";
-    $("exeditdelete").classList.add("hide");
-    $("exeditsave").textContent = "Add exercise";
-    openSheet("exeditsheet");
-    $("exeditname").focus();
+    openPicker("card-add", { w: w, bi: bi });
   }
 
   // Re-seat a workout row the server has just rewritten. Realtime will deliver the
@@ -3686,16 +3688,17 @@ export const APP = String.raw`
     render();
   }
 
-  function sendCorrection(payload, btn, okMsg) {
-    if (!exEdit) return;
-    var id = exEdit.w.id;
+  // One round trip for every card write a sheet makes: the editor's, and the
+  // picker's when it is adding to or replacing on a saved card. The sheet named
+  // is the one that closes on success; on failure it stays, with its button back.
+  function postCorrection(w, payload, btn, okMsg, sheet) {
     var label = btn ? btn.textContent : null;
     if (btn) { btn.disabled = true; btn.textContent = "Saving…"; }
-    api("workouts/" + id + "/exercises", { method: "POST", body: JSON.stringify(payload) })
+    api("workouts/" + w.id + "/exercises", { method: "POST", body: JSON.stringify(payload) })
       .then(function (r) {
         if (btn) { btn.disabled = false; btn.textContent = label; }
         if (r.status !== "ok") { limitHit(r, "That change did not save. Your copy is unchanged."); return; }
-        closeSheet("exeditsheet");
+        closeSheet(sheet);
         exEdit = null;
         absorbWorkout(r.workout);
         toast(r.corrections ? okMsg : "Nothing to change.");
@@ -3704,6 +3707,11 @@ export const APP = String.raw`
         if (btn) { btn.disabled = false; btn.textContent = label; }
         toast("Could not reach Spotter — check your connection.");
       });
+  }
+
+  function sendCorrection(payload, btn, okMsg) {
+    if (!exEdit) return;
+    postCorrection(exEdit.w, payload, btn, okMsg, "exeditsheet");
   }
 
   function saveExEdit() {
@@ -5253,7 +5261,7 @@ export const APP = String.raw`
     };
     // Open before close: the swap sheet takes over the sheet layer's one history
     // entry, and closing first would hand that entry back mid-handover.
-    $("swapgo").onclick = function () { openSwap(name, title); closeSheet("explainsheet"); };
+    $("swapgo").onclick = function () { openSwap(name, title, swapTarget(w, ex)); closeSheet("explainsheet"); };
     openSheet("explainsheet");
 
     // Collapsed and empty on every open: whatever the last exercise was shown is
@@ -5325,12 +5333,52 @@ export const APP = String.raw`
   var BODY_AREAS = ["shoulder", "elbow", "wrist", "neck", "upper back", "lower back", "hip", "knee", "ankle"];
   var swapCtx = null;
 
-  function openSwap(name, title) {
-    swapCtx = { name: name, title: title || "", reason: null, area: null, seq: 0 };
+  // Where a swap would write: the card's own exercise by identity, or the live
+  // session's when the sheet was reached from Workout Mode. Null when the object
+  // did not come out of this card, and then the bank is not offered.
+  function swapTarget(w, ex) {
+    var live = !!(wo && !wo.finished && w === wo.workout), at = null;
+    if (live) {
+      // By the screen, not by identity alone: flatten copies a movement that
+      // carries a recommendation, and a complex's focus is a row of its block.
+      wo.screens.some(function (s) {
+        var ei = s.ex === ex ? s.ei : (s.block.exercises || []).indexOf(ex);
+        if (ei >= 0) at = { bi: s.bi, ei: ei };
+        return ei >= 0;
+      });
+    } else {
+      at = exAt(w, ex);
+    }
+    return at ? { session: live ? 1 : 0, w: w, bi: at.bi, ei: at.ei, ex: ex } : null;
+  }
+
+  function openSwap(name, title, target) {
+    swapCtx = { name: name, title: title || "", target: target || null, reason: null, area: null, seq: 0 };
     $("swaptitle").textContent = "Instead of " + name;
     $("swapresult").innerHTML = "";
+    $("swapbank").classList.toggle("hide", !swapCtx.target);
     renderSwapChips();
     openSheet("swapsheet");
+  }
+
+  // The bank as the other path: the picker in replace mode on the exercise the
+  // sheet was opened for, its dose already filled in. With a suggestion in hand
+  // it opens straight on the dose pane, so "Use this" is that tap and one more.
+  // Opened before the swap sheet closes, for the sheet layer's one history entry.
+  // No model is asked on this path and nothing is metered.
+  function swapBank(pick) {
+    var t = swapCtx && swapCtx.target;
+    if (!t) return;
+    openPicker("replace", t);
+    if (pick) woaChoose(swapRow(pick));
+    closeSheet("swapsheet");
+  }
+
+  // A suggestion as a picker row: the name the model wrote and the id the server
+  // resolved under it, which is what makes "Use this" write the same thing the
+  // bank would have.
+  function swapRow(it) {
+    return woaMake(exKey(it), it.name, it.canonical_id || null, "", 3);
   }
 
   function renderSwapChips() {
@@ -5395,7 +5443,9 @@ export const APP = String.raw`
     });
   }
 
-  function swapItem(it, withTrade) {
+  // usable: an alternative the sheet can act on. What to build up over time is
+  // advice, not a movement to do instead, and gets no button.
+  function swapItem(it, withTrade, usable) {
     var d = el("div", "swapitem");
     var h = el("div");
     h.appendChild(el("b", null, it.name));
@@ -5403,6 +5453,11 @@ export const APP = String.raw`
     d.appendChild(h);
     if (it.why) d.appendChild(el("div", "why", it.why));
     if (withTrade && it.tradeoff) d.appendChild(el("div", "trade", "Trade-off: " + it.tradeoff));
+    if (usable && swapCtx && swapCtx.target) {
+      var use = el("button", "chip use", "Use this");
+      use.onclick = function () { swapBank(it); };
+      d.appendChild(use);
+    }
     return d;
   }
 
@@ -5434,7 +5489,7 @@ export const APP = String.raw`
     if ((r.alternatives || []).length) {
       var al = el("div", "swapsect");
       al.appendChild(el("h3", null, "Try instead"));
-      r.alternatives.forEach(function (a) { al.appendChild(swapItem(a, true)); });
+      r.alternatives.forEach(function (a) { al.appendChild(swapItem(a, true, true)); });
       box.appendChild(al);
     } else if (!r.summary) {
       box.appendChild(el("div", "aitext", r.text || "Nothing came back — try again in a minute."));
@@ -5595,6 +5650,33 @@ export const APP = String.raw`
     return at;
   }
 
+  // The index in wo.entries of the movement at a block and position, or -1.
+  function entryAt(bi, ei) {
+    for (var i = 0; i < wo.entries.length; i++) {
+      if (wo.entries[i].block === bi && wo.entries[i].exercise === ei) return i;
+    }
+    return -1;
+  }
+
+  /**
+   * Put ex where another movement is, and hand back the screen it became.
+   *
+   * A movement with nothing logged against it was a plan, and the plan changes
+   * in place: same slot, same screen, a fresh entry. One with sets already logged
+   * is a fact, and the log keeps it as one: it stays, name and sets intact, and
+   * the replacement takes the screen after it. Relabelling those sets would put
+   * one lift's reps against another in every record that reads the log back.
+   */
+  function replaceSessionExercise(bi, ei, ex) {
+    var blk = wo.workout.blocks[bi], at = entryAt(bi, ei), old = at < 0 ? null : wo.entries[at];
+    if (!blk || !old) return -1;
+    if (old.sets.filter(Boolean).length) return insertSessionExercise(bi, ei + 1, ex);
+    blk.exercises[ei] = ex;
+    wo.entries[at] = { name: ex.name, canonical_id: ex.canonical_id || null, block: bi, exercise: ei, sets: [] };
+    wo.screens = flatten(wo.workout);
+    return at;
+  }
+
   // ---------- adding a movement mid-workout ----------
   //
   // "Be able to add diff exercises mid workout". The old sheet was a text field
@@ -5616,6 +5698,11 @@ export const APP = String.raw`
   // The picker's own state: the query is read off the field, so only the choice,
   // the destination and the card toggle live here.
   var woa = null;
+
+  // The catalog's equipment vocabulary, with the one word for none of it first.
+  // MUSCLES, the library filter's list, is the same twelve groups the catalog uses.
+  var WOA_EQUIP = ["bodyweight", "dumbbells", "barbell", "kettlebell", "resistance bands", "pull-up bar",
+    "bench", "cables", "machine", "medicine ball", "jump rope", "box", "other"];
 
   // The catalog, read once per session and then searched in memory. One read of a
   // couple of hundred rows of reference data beats a round trip per keystroke on
@@ -5686,11 +5773,12 @@ export const APP = String.raw`
       });
     });
     (woaCat || []).forEach(function (c) {
-      var dup = seen["c:" + c.id];
-      if (dup) { dup.aliases = c.aliases || []; return; }
-      out.push(woaMake("c:" + c.id, c.display_name, c.id,
-        (c.muscle_groups || []).concat(c.equipment || []).join(" · "), 3,
-        { aliases: c.aliases || [], pattern: c.pattern }));
+      var dup = seen["c:" + c.id], mg = c.muscle_groups || [], eq = c.equipment || [];
+      // The muscles and equipment ride along with the aliases, so a kept row can
+      // be filtered by what the catalog knows about it.
+      if (dup) { dup.aliases = c.aliases || []; dup.muscle_groups = mg; dup.equipment = eq; return; }
+      out.push(woaMake("c:" + c.id, c.display_name, c.id, mg.concat(eq).join(" · "), 3,
+        { aliases: c.aliases || [], pattern: c.pattern, muscle_groups: mg, equipment: eq }));
     });
     return out;
   }
@@ -5740,6 +5828,46 @@ export const APP = String.raw`
     return out.map(function (x) { return x.r; });
   }
 
+  /**
+   * Whether a row is inside the filter. Muscle chips OR together, equipment chips
+   * OR together, and the two rows AND: quads or glutes, with a kettlebell or with
+   * nothing. Bodyweight is an empty equipment list, which is how the catalog
+   * spells it. A row carrying no data cannot be inside a filter, so a Recent or
+   * library movement the catalog does not know goes while one is on.
+   */
+  function woaPass(r, mus, eq) {
+    var rm = r.muscle_groups, re = r.equipment;
+    if (!mus.length && !eq.length) return true;
+    if (!rm || !re) return false;
+    if (mus.length && !mus.some(function (m) { return rm.indexOf(m) >= 0; })) return false;
+    return !eq.length || eq.some(function (e) { return e === "bodyweight" ? !re.length : re.indexOf(e) >= 0; });
+  }
+
+  function woaFilter(rows) {
+    return rows.filter(function (r) { return woaPass(r, woa.mus, woa.eq); });
+  }
+
+  // The two chip rows, painted whole on every toggle, and the disclosure's own
+  // word carrying the count so a filter left on is never a mystery.
+  function woaChips() {
+    [["woamus", MUSCLES, woa.mus], ["woaeq", WOA_EQUIP, woa.eq]].forEach(function (p) {
+      var row = $(p[0]);
+      row.innerHTML = "";
+      p[1].forEach(function (name) {
+        var b = el("button", "chip" + (p[2].indexOf(name) >= 0 ? " active" : ""), capWord(name));
+        b.onclick = function () {
+          var i = p[2].indexOf(name);
+          if (i < 0) p[2].push(name); else p[2].splice(i, 1);
+          woaChips();
+          woaRender();
+        };
+        row.appendChild(b);
+      });
+    });
+    var n = woa.mus.length + woa.eq.length;
+    $("woafiltsum").textContent = n ? "Filter · " + n : "Filter";
+  }
+
   function woaRow(list, r, label) {
     var b = el("button", "pickrow"), t = el("div", "pt");
     t.appendChild(el("b", null, label || r.name));
@@ -5757,7 +5885,7 @@ export const APP = String.raw`
 
   function woaRender() {
     var list = $("woalist"), raw = $("woaq").value.trim(), q = raw.toLowerCase();
-    var rows = woaRows(), head = null, n = {};
+    var all = woaRows(), rows = woaFilter(all), head = null, n = {}, rep = woa.mode === "replace";
     list.innerHTML = "";
     if (q) {
       // One ranked list while searching: sections would put the best answer third.
@@ -5766,15 +5894,17 @@ export const APP = String.raw`
       // Free text is never taken away — the catalog is a couple of hundred
       // movements and a gym has more in it than that, so a sled push stays one tap
       // from here. It borrows an identity only from an exact spelling, because a
-      // guessed one silently merges two different lifts' records.
-      if (!hits.length || String(hits[0].name).toLowerCase() !== q) {
-        rows.some(function (r) {
+      // guessed one silently merges two different lifts' records. A replacement
+      // is nearly always something the bank has, so there it is offered only
+      // once nothing else answers.
+      if (rep ? !hits.length : (!hits.length || String(hits[0].name).toLowerCase() !== q)) {
+        all.some(function (r) {
           if (String(r.name).toLowerCase() !== q && (r.aliases || []).indexOf(q) < 0) return false;
           known = r.canonical_id;
           return true;
         });
         woaRow(list, woaMake(known ? "c:" + known : "n:" + raw, raw, known,
-          "Add it exactly as you typed it", 4), "Add “" + raw + "”");
+          (rep ? "Use" : "Add") + " it exactly as you typed it", 4), (rep ? "Use “" : "Add “") + raw + "”");
       }
       if (!woaCat) list.appendChild(el("p", "lede", WOA_WAIT));
       return;
@@ -5790,6 +5920,7 @@ export const APP = String.raw`
       if (h !== head) { head = h; list.appendChild(el("div", "woahead", h)); }
       woaRow(list, r);
     });
+    if (!rows.length && woaCat) list.appendChild(el("p", "lede", "Nothing in the bank matches those filters."));
     if (!woaCat) list.appendChild(el("p", "lede", WOA_WAIT));
   }
 
@@ -5804,14 +5935,27 @@ export const APP = String.raw`
     viewIn($(dose ? "woadose" : "woapick"));
   }
 
-  // How many blocks the SAVED card has, or null when there is no card to keep
+  // The SAVED card behind the session, or null when there is no card to keep
   // anything on: the corrections endpoint refuses a row still being read, and a
   // session resumed from the draft of a deleted card has nothing to write to.
-  function woaCardBlocks() {
+  function woaCard() {
     var w = wo && wo.workout, card = null;
     if (!w || !w.id) return null;
     state.workouts.forEach(function (x) { if (x.id === w.id) card = x; });
-    return card && card.ingest_status === "ready" ? (card.blocks || []).length : null;
+    return card && card.ingest_status === "ready" ? card : null;
+  }
+
+  function woaCardBlocks() {
+    var card = woaCard();
+    return card ? (card.blocks || []).length : null;
+  }
+
+  // Whether the card still has the exercise a session swap would edit, where the
+  // session has it. One added this session is not on the card, and neither is
+  // one the card has since lost; the edit op would refuse either.
+  function woaCardHas(t) {
+    var card = woaCard(), b = card && (card.blocks || [])[t.bi], ex = b && (b.exercises || [])[t.ei];
+    return !!ex && ex.name === t.ex.name;
   }
 
   function woaKeepPaint() {
@@ -5823,30 +5967,39 @@ export const APP = String.raw`
   }
 
   function woaChoose(r) {
-    var s = wo.screens[wo.i], cx = s && s.cx && !s.ei ? s.cx : null;
-    var h = hist[r.key], m = String(r.reps || "").match(/\d+/), where = $("woawhere");
+    var t = woa.target, old = woa.mode === "replace" ? t.ex : null;
+    var live = woa.mode === "add" || !!(old && t.session), s = live ? wo.screens[wo.i] : null;
+    var cx = s && s.cx && !s.ei ? s.cx : null;
+    var h = old ? null : hist[r.key], m = String((old ? old.reps : r.reps) || "").match(/\d+/), where = $("woawhere");
     woa.pick = r;
     woa.keep = false;
     woa.where = cx ? "complex" : s && wo.i < endStop() ? "after" : "end";
+    // A complex's movements carry a dose and no set count — five reps, not three
+    // sets of five — and so may the movement being replaced; the field that would
+    // ask for one is not offered either way.
+    woa.nosets = !!cx || !!(old && old.sets == null);
     haptic("tap");
     $("woaddtitle").textContent = r.name;
     // Hevy carries the last session's numbers into a movement you add back; so
     // does this, and the line under the name says where the numbers came from.
-    $("woalast").textContent = lastLine(r);
-    $("woaddsets").value = String((h && h.sets) || r.sets || 3);
+    // A replacement takes the dose of the one it replaces instead, and the line
+    // says which that was.
+    $("woalast").textContent = old ? "Instead of " + old.name + "." : lastLine(r);
+    $("woaddsets").value = String((h && h.sets) || (old ? old.sets : r.sets) || 3);
     $("woaddreps").value = String((h && h.reps) || (m ? m[0] : 10));
-    $("woaddsecs").value = r.secs ? String(r.secs) : "";
+    $("woaddsecs").value = old ? (old.duration_seconds ? String(old.duration_seconds) : "")
+      : (r.secs ? String(r.secs) : "");
     // Where it lands. Inside a complex there is nothing to choose — a movement
     // added to an AMRAP is part of the AMRAP — and on the last exercise the two
-    // answers are the same one, so neither gets chips it cannot use.
+    // answers are the same one, so neither gets chips it cannot use. A replacement
+    // lands where the movement it replaces is, and a card add at the block's end.
     where.innerHTML = "";
-    // A complex's movements carry a dose and no set count — five reps, not three
-    // sets of five — so the field that would ask for one is not offered.
-    $("woaddsets").parentNode.classList.toggle("hide", !!cx);
+    $("woaddsets").parentNode.classList.toggle("hide", woa.nosets);
     if (cx) {
-      where.appendChild(el("div", "wnote",
-        "Joins the round list — part of this complex from the next round on."));
-    } else if (woa.where === "after") {
+      where.appendChild(el("div", "wnote", old
+        ? "Joins the round list."
+        : "Joins the round list — part of this complex from the next round on."));
+    } else if (!old && woa.where === "after") {
       ["After this one", "At the end"].forEach(function (t, k) {
         var b = el("button", "chip" + (k ? "" : " active"), t);
         b.onclick = function () {
@@ -5858,17 +6011,30 @@ export const APP = String.raw`
         where.appendChild(b);
       });
     }
-    $("woakeep").classList.toggle("hide", woaCardBlocks() === null);
+    // The card toggle: for a session add, when there is a card; for a session
+    // swap, when the card still has what is being swapped out. A write from a
+    // card needs no toggle, the save is the write.
+    $("woakeep").classList.toggle("hide", old ? !(t.session && woaCardHas(t)) : !live || woaCardBlocks() === null);
     woaKeepPaint();
     woaPane(1);
   }
 
-  function openWorkoutAdd() {
-    if (!wo || wo.finished) return;
+  /**
+   * The picker, in one of three jobs: adding to the live session (the original),
+   * adding to a saved card, or replacing an exercise on either. mode says which
+   * and target says where: {w, bi} for a card add; {w, bi, ei, ex, session} for
+   * a replacement, session set when the exercise is the live one, which is what
+   * decides whether the save writes the session or the card. The filter starts
+   * clear every time, so a chip left on cannot hide the list next time.
+   */
+  function openPicker(mode, target) {
     haptic("tap");
-    woa = { pick: null, where: "after", keep: false };
-    $("woaddtitle").textContent = "Add an exercise";
+    woa = { pick: null, where: "after", keep: false, nosets: false, mode: mode, target: target || null, mus: [], eq: [] };
+    $("woaddtitle").textContent = mode === "replace" ? "Instead of " + target.ex.name : "Add an exercise";
+    $("woaddsave").textContent = mode === "replace" ? "Replace it" : "Add exercise";
     $("woaq").value = "";
+    $("woafilt").open = false;
+    woaChips();
     woaPane(0);
     woaRender();
     $("woaddsheet")._returnFocus = document.activeElement;
@@ -5881,6 +6047,11 @@ export const APP = String.raw`
         if ($("woaddsheet").classList.contains("open")) woaRender();
       });
     }
+  }
+
+  function openWorkoutAdd() {
+    if (!wo || wo.finished) return;
+    openPicker("add", null);
   }
 
   // Where the movement goes in the session. Three answers, and the complex is the
@@ -5911,7 +6082,8 @@ export const APP = String.raw`
   /**
    * "Keep on this workout" — the same corrections endpoint the exercise editor
    * uses, so the movement is recorded as a user correction and is on the card the
-   * next time it is opened.
+   * next time it is opened. body is the op itself: an add for a movement that
+   * joined the session, an edit for one that replaced another.
    *
    * The server appends to the block it is handed and has no index to insert at, so
    * on the CARD the movement sits at the end of that block rather than beside the
@@ -5919,17 +6091,44 @@ export const APP = String.raw`
    * A block the card does not have is clamped by the server to one fresh block at
    * the end, which is what asking for blocks.length means here.
    */
-  function woaKeep(ex, bi) {
-    var w = wo.workout, n = woaCardBlocks();
-    if (n === null) return;
-    api("workouts/" + w.id + "/exercises", { method: "POST", body: JSON.stringify({
-      op: "add", block: bi < n ? bi : n,
-      fields: { name: ex.name, sets: ex.sets, reps: ex.reps, duration_seconds: ex.duration_seconds }
-    }) }).then(function (r) {
+  function woaKeep(body, msg) {
+    var w = wo.workout;
+    api("workouts/" + w.id + "/exercises", { method: "POST", body: JSON.stringify(body) }).then(function (r) {
       if (!r || r.status !== "ok") { limitHit(r, WOA_NOSAVE); return; }
       absorbWorkout(r.workout);
-      toast("Kept on " + (w.title || "the workout") + " for next time.");
+      toast(msg);
     }).catch(function () { toast(WOA_NOSAVE); });
+  }
+
+  // The fields a card write carries and nothing else: the server's vocabulary for
+  // an add or an edit, with the catalog id the row was picked by. The server
+  // takes a valid id over what it would resolve from the name, and resolves the
+  // name as before when there is none.
+  function woaFields(ex) {
+    return { name: ex.name, canonical_id: ex.canonical_id || null, sets: ex.sets, reps: ex.reps,
+      duration_seconds: ex.duration_seconds };
+  }
+
+  // The edit op that puts ex where t's exercise is. expect_name is the guard: the
+  // server refuses when the card no longer says what the sheet was opened on.
+  function woaEditBody(t, ex) {
+    return { op: "edit", block: t.bi, index: t.ei, expect_name: t.ex.name, fields: woaFields(ex) };
+  }
+
+  // A replacement in the live session. Inside a complex it arrives dosed and
+  // carrying the round it joined at, as an addition does; on the pager it becomes
+  // the screen in front of the lifter, unless the screen is the complex itself.
+  function sessionReplace(t, ex) {
+    var s = wo.screens[wo.i], cx = s && s.bi === t.bi && s.cx ? s.cx : null, at;
+    if (cx) { ex.sets = null; ex.from_round = (wo.amrap[t.bi] || {}).rounds || 0; }
+    stopWork();
+    restThen = null;
+    at = replaceSessionExercise(t.bi, t.ei, ex);
+    if (at < 0) return false;
+    if (!cx) wo.i = at;
+    saveDraft();
+    renderWorkout();
+    return true;
   }
 
   // A dose field, clamped to what the server and a barbell both accept, and
@@ -5943,14 +6142,34 @@ export const APP = String.raw`
   }
 
   function saveWorkoutAdd() {
-    if (!wo || wo.finished || !woa || !woa.pick) return;
+    if (!woa || !woa.pick) return;
     var name = String(woa.pick.name || "").trim().slice(0, 100);
     var secs = $("woaddsecs").value.trim() ? woaNum("woaddsecs", 30, 3600) : 0;
     if (!name) return;
     var ex = { name: name, canonical_id: woa.pick.canonical_id || null,
-      sets: woaNum("woaddsets", 3, 99), reps: secs ? null : String(woaNum("woaddreps", 10, 999)),
+      sets: woa.nosets ? null : woaNum("woaddsets", 3, 99), reps: secs ? null : String(woaNum("woaddreps", 10, 999)),
       duration_seconds: secs || null, rest_seconds: REST_FALLBACK };
-    var s = wo.screens[wo.i], keep = woa.keep;
+    var t = woa.target, keep = woa.keep, mode = woa.mode;
+    // On a saved card the picker is the editor, and the card write is the save.
+    if (mode === "card-add") {
+      postCorrection(t.w, { op: "add", block: t.bi, fields: woaFields(ex) }, $("woaddsave"), "Added it", "woaddsheet");
+      return;
+    }
+    if (mode === "replace" && !t.session) {
+      postCorrection(t.w, woaEditBody(t, ex), $("woaddsave"), "Swapped it", "woaddsheet");
+      return;
+    }
+    if (!wo || wo.finished) return;
+    if (mode === "replace") {
+      var i0 = entryAt(t.bi, t.ei), had = i0 >= 0 && wo.entries[i0].sets.filter(Boolean).length;
+      if (!sessionReplace(t, ex)) return;
+      closeSheet("woaddsheet");
+      haptic("success");
+      toast("Swapped in " + name + "." + (had ? " Your " + t.ex.name + " sets stay in the log." : ""));
+      if (keep) woaKeep(woaEditBody(t, ex), "Kept the swap on " + (wo.workout.title || "the workout") + " for next time.");
+      return;
+    }
+    var s = wo.screens[wo.i];
     var bi = s && woa.where !== "end" ? s.bi : woaCardBlocks() || 0;
     if (!woaPlace(ex)) return;
     closeSheet("woaddsheet");
@@ -5958,7 +6177,9 @@ export const APP = String.raw`
     toast("Added " + name + " to this session.");
     // After the session has it: the card write is a round trip with its own
     // sentence, and it must never be what stands between a lifter and the set.
-    if (keep) woaKeep(ex, bi);
+    var n = keep ? woaCardBlocks() : null;
+    if (n !== null) woaKeep({ op: "add", block: bi < n ? bi : n, fields: woaFields(ex) },
+      "Kept on " + (wo.workout.title || "the workout") + " for next time.");
   }
 
   // The grouping key for "the same movement". The catalog id when the name mapped,
@@ -6173,7 +6394,7 @@ export const APP = String.raw`
     help.onclick = function () { explain(focus, wo.workout); };
     extra.lastChild.appendChild(help);
     var swapChip = icon(el("button", "pickrow"), "swap", "Swap or modify");
-    swapChip.onclick = function () { openSwap(focus.name, wo.workout.title); };
+    swapChip.onclick = function () { openSwap(focus.name, wo.workout.title, swapTarget(wo.workout, focus)); };
     extra.lastChild.appendChild(swapChip);
     // Swapping one movement for another and adding one that was never on the card
     // are the same thought arriving from two directions, so they sit together.
@@ -11536,7 +11757,10 @@ export const APP = String.raw`
     limits: null,      // last /api/limits, for the Settings usage line
     said: null,        // the plan the server last reported, which outranks the row
     ctx: null,         // the 429 the sheet was opened by, or null from Settings
-    interval: "year", busy: false
+    interval: "year", busy: false,
+    cc: null,          // last /api/creator/me: {referral, creator, discount}
+    ccWaiting: null, ccRev: 0,
+    redeeming: false   // the App Store's code sheet is up; restore when it comes down
   };
 
   function billOn() { return !!(billing.prices && billing.prices.configured); }
@@ -11832,6 +12056,7 @@ export const APP = String.raw`
     var p = billing.prices || { configured: false };
     var good = $("plangood"), cards = $("plancards");
     good.innerHTML = ""; cards.innerHTML = "";
+    paintPlanCode();
     planBenefits(p.caps).forEach(function (t) {
       var row = el("div", "pgood");
       row.appendChild(ic("check"));
@@ -11871,10 +12096,18 @@ export const APP = String.raw`
     billing.interval = "year";
     paintCtx();
     if (!billing.prices) paintSkeleton();
+    // The fold closes with the sheet; a code half-typed last time is not a code.
+    $("plancodeform").classList.add("hide");
+    $("plancodein").value = "";
+    paintPlanCode();
     openSheet("plansheet");
     loadPrices().then(function () {
       if (!accountNow(epoch, uid)) return;
       if ($("plansheet").classList.contains("open")) paintPlans();
+    });
+    loadCreator().then(function () {
+      if (!accountNow(epoch, uid)) return;
+      if ($("plansheet").classList.contains("open")) paintPlanCode();
     });
   }
 
@@ -12043,6 +12276,13 @@ export const APP = String.raw`
   // of three calls is not politeness.
   function watchBilling() {
     unbusy();
+    // Back from the App Store's offer-code sheet: the existing restore reads
+    // what the store now says, through the server, the way Restore purchase does.
+    if (billing.redeeming && state.user && native && native.purchases) {
+      billing.redeeming = false;
+      nativePurchase(true, null);
+      return;
+    }
     if (billRound || !state.user || !pending()) return;
     billRound = true;
     askBilling(null, 3);
@@ -12089,6 +12329,7 @@ export const APP = String.raw`
   }
 
   function refreshBilling(btn) {
+    loadCreator(true).then(paintCreator);
     if (native && native.purchases) { nativePurchase(true, btn); return; }
     var was = btn.textContent;
     btn.disabled = true;
@@ -12107,6 +12348,305 @@ export const APP = String.raw`
       btn.textContent = was;
       toast("Could not reach Spotter — check your connection.");
     });
+  }
+
+  // ---------- creator codes ----------
+  //
+  // A code is a person's name in capitals, and it can arrive at four doors: the
+  // address bar (?code=MARIA), the sign-up card, the paywall and Settings. The
+  // first two can be ahead of any account to put it on, so both write one stash
+  // and boot redeems whatever is in it once a session exists. One code per
+  // account, first wins, and the server is the one that says so. Nothing here
+  // prices the discount: the store does, when the code is redeemed there, so the
+  // price cards stay the store's own numbers whatever is on the account.
+
+  var CREATOR_KEY = "spotter.creator.code";
+
+  // Capitals and digits, three to twenty, the shape the owner mints. Anything
+  // else is not a code, which is also what keeps an OAuth ?code= (a UUID with
+  // dashes) from ever being taken for one.
+  function creatorCode(s) {
+    var c = String(s || "").replace(/\s+/g, "").toUpperCase();
+    return /^[A-Z0-9]{3,20}$/.test(c) ? c : "";
+  }
+
+  // The stash: the code and the door it came in by, the shape BILL_FLAG uses.
+  function stashCreator(code, source) {
+    try {
+      if (code) localStorage.setItem(CREATOR_KEY, code + "|" + source);
+      else localStorage.removeItem(CREATOR_KEY);
+    } catch (e) { /* private mode; the code can be typed again in Settings */ }
+  }
+
+  function creatorStash() {
+    var v = null;
+    try { v = localStorage.getItem(CREATOR_KEY); } catch (e) { return null; }
+    if (!v) return null;
+    var bits = String(v).split("|"), code = creatorCode(bits[0]);
+    return code ? { code: code, source: bits[1] || "link" } : null;
+  }
+
+  // Before anything else reads the address bar, and only the one parameter
+  // comes off it: the other captures strip the whole query, and a code can share
+  // a link with any of them.
+  function captureCreator() {
+    var q;
+    try { q = new URLSearchParams(location.search); } catch (e) { return; }
+    var code = creatorCode(q.get("code"));
+    if (!code) return;
+    stashCreator(code, "link");
+    q.delete("code");
+    var rest = q.toString();
+    try { history.replaceState(null, "", location.pathname + (rest ? "?" + rest : "") + location.hash); } catch (e) { /* ignore */ }
+  }
+
+  // ---------- the words ----------
+  //
+  // Built here and painted by thin callers, so every sentence a code puts on the
+  // screen can be read by a harness with no screen. The discount is the server's
+  // creator.discount row and nothing else: null is a promise the app does not make.
+
+  function monthsWord(n) { return n + (n === 1 ? " month" : " months"); }
+
+  function offerWords(d, thing) {
+    var pct = d ? num(d.percent_off) : null, m = d ? num(d.months) : null;
+    if (!pct) return "";
+    return pct + "% off" + (thing ? " " + thing : "") + (m ? " for " + monthsWord(m) : "");
+  }
+
+  function creatorOffer(d) { return offerWords(d, ""); }
+
+  // "Maria’s code applied. 10% off Plus for 12 months."
+  function creatorToast(ref, d) {
+    var offer = offerWords(d, "Plus");
+    return ref.creator_name + "’s code applied." + (offer ? " " + offer + "." : "");
+  }
+
+  // The line under the price cards. store is "the App Store" or "Google Play" in
+  // a shell, and empty on the web, where there is no store to redeem in.
+  function paywallLine(ref, d, store) {
+    var offer = creatorOffer(d);
+    var head = ref.creator_name + "’s code" + (offer ? ": " + offer + "." : " is saved to your account.");
+    if (!store) return head + (offer ? " It is saved to your account, and the discount is redeemed in the Spotter app on your phone." : "");
+    return head + " Redeem it in " + store + (offer ? " to get the price." : ".");
+  }
+
+  function storeName() { return native && native.platform === "android" ? "Google Play" : "the App Store"; }
+
+  // Settings › Plan › Creator code: "MARIA · 10% off for 12 months".
+  function creatorRowText(ref, d) {
+    var offer = creatorOffer(d);
+    return ref.code + (offer ? " · " + offer : "");
+  }
+
+  // The creator's own three lines, money in the formatter the price cards use.
+  function creatorLines(c) {
+    var cur = c.currency || "usd";
+    return [
+      (num(c.signups) || 0) + " signed up · " + (num(c.subscribers) || 0) + " subscribed",
+      money(c.earned_cents, cur) + " earned · " + money(c.paid_cents, cur) + " paid · " + money(c.owed_cents, cur) + " owed",
+      "Paid by Simeon by hand. " + ((num(c.commission_bps) || 0) / 100) + "% of every payment for " + monthsWord(num(c.commission_months) || 0) + "."
+    ];
+  }
+
+  var CREATOR_SAYS = {
+    bad_code: "That does not look like a creator code.",
+    unknown_code: "No creator code by that name.",
+    code_closed: "That code is no longer open.",
+    own_code: "That is your own code.",
+    already_redeemed: "A code is already on this account.",
+    already_subscribed: "Creator codes are for accounts that have not subscribed yet."
+  };
+
+  function creatorSays(code) { return CREATOR_SAYS[code] || "Could not apply the code just now."; }
+
+  // ---------- the wire ----------
+
+  // GET /api/creator/me, cached on the billing object for the session. force
+  // starts a fresh read even over one in flight, and the older answer is then
+  // dropped: a redemption that just landed must not be painted over by a read
+  // that was sent before it.
+  function loadCreator(force) {
+    var epoch = accountEpoch, uid = state.user && state.user.id;
+    if (!uid) return Promise.resolve(null);
+    if (!force) {
+      if (billing.cc) return Promise.resolve(billing.cc);
+      if (billing.ccWaiting) return billing.ccWaiting;
+    } else billing.ccRev++;
+    var rev = billing.ccRev;
+    var p = api("creator/me", { method: "GET" }).then(function (r) {
+      if (!accountNow(epoch, uid) || rev !== billing.ccRev) return billing.cc;
+      billing.ccWaiting = null;
+      if (r && r.status === "ok") billing.cc = { referral: r.referral || null, creator: r.creator || null, discount: r.discount || null };
+      return billing.cc;
+    }).catch(function () {
+      if (accountNow(epoch, uid) && rev === billing.ccRev) billing.ccWaiting = null;
+      return billing.cc;
+    });
+    billing.ccWaiting = p;
+    return p;
+  }
+
+  // One writer for a redemption, whichever door it came through. Resolves with
+  // {ok, code, referral, discount}; rejects only when the wire did.
+  function redeemCreator(code, source) {
+    var epoch = accountEpoch, uid = state.user && state.user.id;
+    return api("creator/redeem", { method: "POST", body: JSON.stringify({ code: code, source: source }) }).then(function (r) {
+      if (!accountNow(epoch, uid)) throw new Error("Account changed");
+      var ok = !!(r && r.status === "ok");
+      var out = { ok: ok, code: ok ? null : ((r && r.code) || "error"), referral: (r && r.referral) || null, discount: null };
+      if (!ok && out.code !== "already_redeemed") return out;
+      // A code on the account, just landed or already there, is what Settings
+      // and the paywall paint from: read it back rather than patch the cache.
+      return loadCreator(true).then(function (cc) { out.discount = cc ? cc.discount : null; return out; });
+    });
+  }
+
+  // From boot, on both sign-in paths. The stash comes out only once the server
+  // has answered: a connection that dropped is not an answer, and the code waits
+  // for the next boot rather than being lost in a tunnel.
+  function consumeCreator() {
+    var s = creatorStash();
+    if (!s || !state.user) return;
+    var epoch = accountEpoch, uid = state.user.id;
+    redeemCreator(s.code, s.source).then(function (r) {
+      if (!accountNow(epoch, uid)) return;
+      stashCreator(null);
+      if (r.ok) { toast(creatorToast(r.referral, r.discount), 4200); haptic("success"); }
+      else if (r.code !== "already_redeemed") toast(creatorSays(r.code), 4200);
+      paintCreator(); paintPlanCode();
+    }).catch(function () { /* said nothing; the stash waits for a connection */ });
+  }
+
+  // ---------- the auth card ----------
+  //
+  // Sign-up face only, folded until asked for: an optional field most people
+  // have nothing to put in is a field most people should not see. A code that
+  // came in on the link opens it already filled, so the person can see it took.
+  function authCodeShow(on, quiet) {
+    $("authcodefield").classList.toggle("hide", !on);
+    $("authcodeask").classList.toggle("hide", on);
+    if (on && !quiet) $("authcode").focus();
+  }
+
+  function paintAuthCode() {
+    var s = creatorStash();
+    if (s) { $("authcode").value = s.code; authCodeShow(true, true); }
+  }
+
+  // Stashed as it is typed, so the code survives whichever door the account
+  // comes in by, Google and Apple included. Emptying the field takes back only
+  // what typing put in, never a code that arrived on the link.
+  function authCodeChange() {
+    var raw = $("authcode").value, code = creatorCode(raw), s = creatorStash();
+    if (code) stashCreator(code, "signup");
+    else if (!raw.trim() && s && s.source === "signup") stashCreator(null);
+  }
+
+  // ---------- the paywall ----------
+
+  function paintPlanCode() {
+    var cc = billing.cc, ref = cc && cc.referral, store = native && native.purchases ? storeName() : "";
+    var n = $("plancodeline");
+    if (!n) return;
+    $("plancodeask").classList.toggle("hide", !!ref);
+    if (ref) $("plancodeform").classList.add("hide");
+    n.textContent = ref ? paywallLine(ref, cc.discount, store) : "";
+    n.classList.toggle("hide", !ref);
+    $("planredeem").textContent = "Redeem in " + store;
+    $("planredeem").classList.toggle("hide", !(ref && store));
+  }
+
+  function askPlanCode() {
+    $("plancodeask").classList.add("hide");
+    $("plancodeform").classList.remove("hide");
+    $("plancodein").focus();
+  }
+
+  // Both typed doors end here, the paywall's Apply and the Settings sheet. done
+  // gets the sentence to show, or null when the code took. Painted either way:
+  // "already on this account" is a code the row and the line can now show, and
+  // the paywall stays open, which is the point of typing it there.
+  function applyCode(code, done) {
+    var epoch = accountEpoch, uid = state.user.id;
+    redeemCreator(code, "app").then(function (r) {
+      if (!accountNow(epoch, uid)) return;
+      paintPlanCode(); paintCreator();
+      if (!r.ok) { done(creatorSays(r.code)); return; }
+      toast(creatorToast(r.referral, r.discount), 4200);
+      haptic("success");
+      done(null);
+    }).catch(function () { if (accountNow(epoch, uid)) done("Could not reach Spotter. Check your connection."); });
+  }
+
+  function applyPlanCode(btn) {
+    var code = creatorCode($("plancodein").value);
+    if (!code) { toast(creatorSays("bad_code")); return; }
+    if (!state.user || btn.disabled) return;
+    btn.disabled = true;
+    applyCode(code, function (err) { btn.disabled = false; if (err) toast(err, 4200); });
+  }
+
+  // iOS presents the system redemption sheet and answers as soon as it is up,
+  // not when the person is done with it, so the restore that reads the result
+  // waits for the app to come back to the front (watchBilling). Android has no
+  // sheet: Play's own page takes the code in the address.
+  function redeemInStore(btn) {
+    var cc = billing.cc, ref = cc && cc.referral;
+    if (!ref || !state.user || !(native && native.purchases)) return;
+    if (native.platform === "android") { native.open("https://play.google.com/redeem?code=" + ref.code); return; }
+    var epoch = accountEpoch, uid = state.user.id;
+    btn.disabled = true;
+    native.purchases.redeemOfferCode(uid).then(function () {
+      if (accountNow(epoch, uid)) billing.redeeming = true;
+    }).catch(function (e) {
+      if (accountNow(epoch, uid)) toast(e && e.message ? e.message : "Could not open the App Store just now.");
+    }).then(function () { btn.disabled = false; });
+  }
+
+  // ---------- Settings ----------
+
+  function paintCreator() {
+    var cc = billing.cc, ref = cc && cc.referral, c = cc && cc.creator, row = $("setcoderow");
+    if (!row) return;
+    $("setcode").textContent = ref ? creatorRowText(ref, cc.discount) : "Enter a code";
+    // Never editable once one is on: one per account, and the row says which.
+    row.disabled = !!ref;
+    // A subscriber with no code would only be told no, so the row waits for one.
+    row.classList.toggle("hide", !ref && !isFree());
+    $("setcreator").classList.toggle("hide", !c);
+    if (!c) return;
+    $("setcreatorcode").textContent = c.code + (c.active ? "" : " · closed");
+    var n = $("setcreatoruse");
+    n.innerHTML = "";
+    creatorLines(c).forEach(function (t) { n.appendChild(el("div", "usel", t)); });
+  }
+
+  function openCode() {
+    if (billing.cc && billing.cc.referral) return;
+    accSheet({
+      title: "Creator code", lede: "From a creator you follow. One per account, and it stays.",
+      fields: [{ name: "code", label: "Code", placeholder: "MARIA" }],
+      go: "Apply", busy: "Applying…",
+      run: function (done) {
+        var code = creatorCode(accVal("code"));
+        if (code) applyCode(code, done); else done(creatorSays("bad_code"));
+      }
+    });
+    $("acc_code").setAttribute("autocapitalize", "characters");
+  }
+
+  // The same three doors as tellFriend, with the creator's own sentence and link.
+  function shareCreator() {
+    var c = billing.cc && billing.cc.creator;
+    if (!c) return;
+    if (navigator.share) {
+      navigator.share({ title: "Spotter", text: c.share_text, url: c.share_url }).catch(function () { });
+      return;
+    }
+    var text = c.share_text + " " + c.share_url;
+    if (navigator.clipboard) { navigator.clipboard.writeText(text); toast("Copied."); return; }
+    toast(text, 5000);
   }
 
   // ---------- Settings, the Plan group ----------
@@ -13484,6 +14024,9 @@ export const APP = String.raw`
     paintPlanGroup();
     paintPlanUse(billing.limits);
     Promise.all([loadPrices(), loadSub()]).then(paintPlanGroup);
+    // The same shape for the creator code: what is cached paints now, the read repaints.
+    paintCreator();
+    loadCreator().then(paintCreator);
     // Beside the limits read rather than after it: the Connections group is hidden
     // until this answers, and a round trip that lands with the others is the
     // difference between Settings opening finished and Settings filling itself in.
@@ -14930,6 +15473,15 @@ export const APP = String.raw`
   $("exeditsave").onclick = saveExEdit;
   $("exeditdelete").onclick = deleteExEdit;
   $("exeditcancel").onclick = function () { closeSheet("exeditsheet"); exEdit = null; };
+  // "Change" on the name: the bank, in replace mode, on the exercise this sheet
+  // holds. Opened before the editor closes, for the sheet layer's history entry.
+  $("exeditpick").onclick = function () {
+    if (!exEdit || exEdit.mode !== "edit") return;
+    var t = swapTarget(exEdit.w, exEdit.ex) || { w: exEdit.w, bi: exEdit.block, ei: exEdit.index, ex: exEdit.ex };
+    openPicker("replace", t);
+    closeSheet("exeditsheet");
+    exEdit = null;
+  };
   $("exeditname").addEventListener("keydown", function (e) { if (e.key === "Enter") saveExEdit(); });
 
   $("pumpytab").innerHTML = PUMPY_MARK;
@@ -14956,6 +15508,7 @@ export const APP = String.raw`
     chatResize.observe($("pumpycomposer"));
   }
   $("swaphavego").onclick = function () { runSwap(); };
+  $("swapbankgo").onclick = function () { swapBank(null); };
   $("swaphaveinput").addEventListener("keydown", function (e) { if (e.key === "Enter") runSwap(); });
 
   $("colcreate").onclick = createCollection;
@@ -15009,6 +15562,14 @@ export const APP = String.raw`
   $("plannot").onclick = function () { closeSheet("plansheet"); };
   $("planbuy").onclick = startCheckout;
   $("planrestore").onclick = function () { refreshBilling(this); };
+  $("setcoderow").onclick = openCode;
+  $("setcreatorshare").onclick = shareCreator;
+  $("plancodeask").onclick = askPlanCode;
+  $("plancodego").onclick = function () { applyPlanCode(this); };
+  $("plancodein").addEventListener("keydown", function (e) { if (e.key === "Enter") applyPlanCode($("plancodego")); });
+  $("planredeem").onclick = function () { redeemInStore(this); };
+  $("authcodeask").onclick = function () { authCodeShow(true); };
+  $("authcode").addEventListener("input", authCodeChange);
   $("libcount").onclick = function () { openPlans(null); };
   $("acccancel").onclick = closeAcc;
   $("accgo").onclick = accGo;
@@ -15257,6 +15818,10 @@ export const APP = String.raw`
   window.addEventListener("pageshow", watchBilling);
   window.addEventListener("focus", watchBilling);
 
+  // First, and before the card is drawn: a code on the link opens the sign-up
+  // face with it already in the field, and the other captures would otherwise
+  // strip it with the rest of the query.
+  captureCreator();
   setAuthMode("signup");
 
   // Before either sign-in path resolves — both of them end in consumeShare — and

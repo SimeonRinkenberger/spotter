@@ -40,6 +40,15 @@ export function createPurchases(platform) {
       await Purchases.purchasePackage({ aPackage: item });
     }),
     restore: userId => operation(async version => { await identify(userId); guard(version); await Purchases.restorePurchases(); }),
+    // Apple's own offer-code sheet (iOS 14+). Resolves once the sheet is up, not when the
+    // person is done with it; app.ts restores on the way back to the front. Play has no
+    // sheet, so on Android the client opens Play's redeem page instead.
+    redeemOfferCode: userId => operation(async version => {
+      if (platform === 'android') throw new Error('Offer codes are redeemed in Google Play on Android.');
+      await identify(userId);
+      guard(version);
+      await Purchases.presentCodeRedemptionSheet();
+    }),
     clear: () => {
       // Invalidate queued operations immediately, before the SDK logout can run.
       generation++;
