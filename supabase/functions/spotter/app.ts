@@ -52,7 +52,7 @@ export const APP = String.raw`
 
   // The one place the version is written down. It names the entry at the top of
   // docs/whats-new.html, and the settings sheet reads it from here.
-  var VERSION = "0.12";
+  var VERSION = "0.14";
 
   // What a rest is when the card says nothing. It was a Settings row until the
   // obvious objection landed: how long to rest belongs to the program or to the
