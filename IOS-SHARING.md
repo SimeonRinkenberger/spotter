@@ -19,7 +19,9 @@ the system sheet. App Store publication is not required for development testing.
 - `ShareAccess.swift`, `native/share-access.js` and the profile lifecycle synchronize
   the key after profile load/rotation and clear it at sign-out/account change and
   native boot (including a Keychain item surviving uninstall). Writes are serialized.
-  Existing auth sessions remain in the app's Preferences storage as before.
+  The auth session is a separate Keychain item under service `app.spotter.session`,
+  in no access group and never read by the extension, which has only ever needed the
+  ingest key.
 - The extension saves directly through `POST /api/ingest`. The backend owns URL
   safety, redirect checks, deduplication, account limits and durable processing.
   Only `saved`, `processing`, or `exists`, a successful HTTP response and a library
