@@ -129,7 +129,7 @@ check("a refusal names the allowance, the month, and the day it comes back", () 
   ok(!msg.includes("midnight"), "a monthly refusal must not say midnight: " + msg);
   ok(msg.includes(M.utcMonthName()), "the refusal should name this month: " + msg);
   // Singular where the number is one, which is Basic's whole upload allowance.
-  ok(M.allowanceMessage("uploads", "free", 1).startsWith("That is 1 upload on the Free plan"),
+  ok(M.allowanceMessage("uploads", "free", 1).startsWith("That is 1 upload on the Basic plan"),
     M.allowanceMessage("uploads", "free", 1));
   ok(M.allowanceMessage("helpers", "plus", 100).includes("explanations and swaps"),
     M.allowanceMessage("helpers", "plus", 100));
