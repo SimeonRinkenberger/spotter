@@ -90,6 +90,7 @@ export const MARKUP_BODY = String.raw`</head>
 <symbol id="i-volume-x" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="m22 9-6 6"/><path d="m16 9 6 6"/></symbol>
 <symbol id="i-youtube" viewBox="0 0 24 24"><rect width="20" height="14" x="2" y="5" rx="4.5"/><path d="m10.2 9 4.6 3-4.6 3z"/></symbol>
 <symbol id="i-thumb-up" viewBox="0 0 24 24"><path d="M7 20v-9l4-8a2.5 2.5 0 0 1 2 3.5L12 11h6a2 2 0 0 1 2 2.5l-1.5 6a2 2 0 0 1-2 .5z"/><rect width="5" height="10" x="2" y="10" rx="1.5"/></symbol>
+<symbol id="i-mail" viewBox="0 0 24 24"><rect width="20" height="16" x="2" y="4" rx="3.5"/><path d="m3.2 7.4 7.4 5.1a2.5 2.5 0 0 0 2.8 0l7.4-5.1"/></symbol>
 </svg>
 
 <!-- ---------- signed out ---------- -->
@@ -106,7 +107,7 @@ export const MARKUP_BODY = String.raw`</head>
       <li><span class="num">3</span><div><b>Train and log it</b> — full-screen, one move at a time, tracking weight and reps as you go.</div></li>
     </ol>
 
-    <div class="authcard">
+    <div class="authcard" id="authcard">
       <h2 id="authtitle">Create your account</h2>
       <div class="field">
         <label for="email">Email</label>
@@ -119,6 +120,20 @@ export const MARKUP_BODY = String.raw`</head>
           <button type="button" class="pweye" aria-label="Show password" aria-pressed="false"><svg class="ic"><use href="#i-eye"></use></svg></button>
         </div>
       </div>
+      <!-- App Store 5.1.2(i): nobody's content reaches a third-party model
+           without them having read, in so many words, that it will. The sentence
+           is on the sign-up face only, and it sits directly above the button,
+           because pressing that button IS the agreement. Filled from
+           consentFill() in app.ts so this sentence and the one Settings shows an
+           older account cannot drift apart. -->
+      <p class="consent hide" id="consent"></p>
+      <!-- Cloudflare Turnstile mounts here, and only once PUBLIC_CAPTCHA in
+           app.ts carries a site key: with none it is display:none and empty, so
+           the card is byte-for-byte the card that shipped before. The widget is
+           rendered interaction-only, which means a visitor Cloudflare can vouch
+           for never sees anything at all and a suspected bot gets a checkbox
+           here, above the button it is standing in the way of. -->
+      <div class="capgate" id="capgate"></div>
       <button class="btn" id="authgo">Create account</button>
       <div class="autherr" id="autherr"></div>
       <!-- Only on the sign-in face. Offering it while somebody is creating an
@@ -144,6 +159,36 @@ export const MARKUP_BODY = String.raw`</head>
         </div>
       </div>
       <div class="authswap" id="authswap">Already have an account? <button id="authtoggle">Sign in</button></div>
+      <!-- Confirmation-on state. With enable_confirmations true a signup is a
+           mail send and nothing else — no session comes back — and a form left
+           sitting there reads as a signup that failed. Apple's own account
+           sheets answer three questions at this moment and so does this: what
+           was sent, which address it went to, and what to do when it does not
+           arrive. While it is up nothing else on the card is shown, because
+           nothing else on the card is a choice anybody has. -->
+      <div class="mailsent hide" id="mailsent" tabindex="-1">
+        <span class="mailmark" aria-hidden="true"><svg class="ic"><use href="#i-mail"></use></svg></span>
+        <h2>Check your email</h2>
+        <p id="mailbody"></p>
+        <!-- One field, not six boxes. WebKit's own guidance for
+             autocomplete="one-time-code" is a single input: iOS offers the code
+             out of the message above the keyboard and fills it in one go, and a
+             row of one-character boxes is exactly where that autofill stops
+             working. Instagram's confirmation screen is a single field too. The
+             link in the mail still works for anyone reading it on a desktop.
+             No maxlength: it counts characters, not digits, so a code pasted as
+             "123 456" arrived truncated to "123 45" and stripped down to five,
+             which is a Confirm button that will not go for no reason a person
+             can see. The input handler slices to six DIGITS instead. -->
+        <div class="field">
+          <label for="otp">Six-digit code</label>
+          <input id="otp" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="123456" autocapitalize="off" spellcheck="false">
+        </div>
+        <button class="btn" id="otpgo">Confirm</button>
+        <div class="autherr" id="otperr"></div>
+        <button class="btn ghost" id="mailresend">Resend the email</button>
+        <div class="authswap"><button id="mailback">Use a different email</button></div>
+      </div>
     </div>
     <!-- Somebody made this. Software with no maker, no version and no way to say
          something is wrong reads as unowned however good it is, and that absence
@@ -605,6 +650,16 @@ export const MARKUP_BODY = String.raw`</head>
   <div class="grabber"></div>
   <button class="iconbtn sheetx" id="setclose" aria-label="Close settings"><svg class="ic"><use href="#i-x"></use></svg></button>
   <h2>Settings</h2>
+
+  <!-- The same sentence, once, for an account that was made before there was one
+       to read — consentFill() gives it an opening clause that fits an account
+       that already exists, and the body is the body shown at sign-up. Dismissing
+       it is the agreement; it is recorded and never asked again. First thing in
+       the sheet because it is the one thing here that is not a preference. -->
+  <div class="consentrow hide" id="consentrow">
+    <p class="consent" id="consentset"></p>
+    <button class="btn ghost" id="consentok">Got it</button>
+  </div>
 
   <h3 class="seth">Account</h3>
   <div class="setgroup">

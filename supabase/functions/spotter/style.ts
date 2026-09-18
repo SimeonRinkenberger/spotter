@@ -168,6 +168,47 @@ export const STYLE = String.raw`<style>
     background: var(--ember-soft); padding: 10px 12px; border-radius: 11px; display: none; }
   .autherr.show { display: block; }
 
+  /* ---------- the signup abuse boundary ----------
+     An empty box is a box with no site key behind it: no rule fires, so the card
+     keeps its old spacing to the pixel. Centred once the widget is in, because an
+     interactive challenge is a fixed 300px block that would otherwise hang off
+     the leading edge at 375. */
+  /* The consent sentence: small, quiet, and never below the fold of the card —
+     it has to be read before the button under it is pressed. --ink-2 rather than
+     --muted because this is the one line on the page a person is being asked to
+     agree to, and --muted is only just AA at this size. */
+  .consent { font-size: 12.5px; line-height: 1.55; color: var(--ink-2); margin: 0 0 14px; }
+  .consent a { color: var(--ink-2); text-decoration: underline; text-underline-offset: 2px; }
+  .consentrow { border: 1px solid var(--line-2); border-radius: 16px;
+    padding: 14px 14px 12px; margin-bottom: 20px; }
+  .consentrow .consent { margin-bottom: 12px; }
+  .consentrow .btn { padding: 11px; font-size: 14.5px; }
+  .capgate:not(:empty) { display: flex; justify-content: center; margin-bottom: 12px; }
+  /* One face at a time. Everything the card was offering is a dead end until the
+     link in the inbox is followed, so it goes away rather than greying out — but
+     NOT the captcha box, because Resend needs a token too and a challenge nobody
+     can see is a challenge nobody can answer. */
+  .authcard.sent > :not(#mailsent):not(#capgate) { display: none; }
+  .authcard.sent > #capgate { margin: 0; }
+  .mailsent { animation: cardin var(--t-3) var(--e-out); outline: none; }
+  .mailsent h2 { font-family: var(--display); font-size: 19px; margin: 14px 0 8px;
+    font-weight: 700; letter-spacing: -.012em; }
+  .mailsent p { font-size: 14px; line-height: 1.55; color: var(--ink-2); margin: 0 0 18px; }
+  /* A code is read digit by digit, so it is set that way. The indent pays back
+     the trailing letter-space, which would otherwise sit the digits left of the
+     centre by about half a character. */
+  .mailsent .field input { text-align: center; letter-spacing: .28em; text-indent: .28em;
+    font-weight: 600; }
+  .mailsent .btn.ghost { margin-top: 12px; }
+  /* An address is the one string on this card that has no natural break, and a
+     long one must wrap rather than widen the card past the viewport. */
+  .mailsent b { color: var(--ink); font-weight: 650; overflow-wrap: anywhere; }
+  .mailmark { display: flex; align-items: center; justify-content: center;
+    width: 44px; height: 44px; border-radius: 999px;
+    background: var(--ember-soft); color: var(--ember-ink); }
+  .mailmark .ic { width: 21px; height: 21px; }
+  @media (prefers-reduced-motion: reduce) { .mailsent { animation: none; } }
+
   /* ---------- provider sign-in (Google / Apple) ----------
      Both marks sit on the same neutral button so the row reads as one control
      type. --card is the only surface token that satisfies both brand rules at
