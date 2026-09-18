@@ -10,8 +10,13 @@ function fn(name) {
  const end = src.indexOf('\n}',m.index)+2;
  return src.slice(m.index,end).replace(/^export /,'');
 }
-const c = vm.createContext({console, CARD_V:Number(src.match(/const CARD_V = (\d+)/)[1]), PACK_V:1, Date, Set, Map, JSON, Number, String});
-const functions=['usablePack','visuallyRead','cacheForAccess','basicMeta','readQuality','labelRecommendations','plusPlan'];
+// Read from source, never guessed: what we write and what we still serve are two
+// different numbers now, and a harness that pins the wrong one stops testing the gate.
+const packSrc = fs.readFileSync('supabase/functions/spotter/pack.ts','utf8');
+const constant=(text,name)=>Number(text.match(new RegExp('(?:export )?const '+name+' = (\\d+)'))[1]);
+const c = vm.createContext({console, CARD_V:constant(src,'CARD_V'), MIN_USABLE_CARD_V:constant(src,'MIN_USABLE_CARD_V'),
+ PACK_V:constant(packSrc,'PACK_V'), MIN_USABLE_PACK_V:constant(packSrc,'MIN_USABLE_PACK_V'), Date, Set, Map, JSON, Number, String});
+const functions=['usablePack','visuallyRead','cacheStale','markCache','cacheForAccess','basicMeta','readQuality','labelRecommendations','plusPlan'];
 vm.runInContext(transformSync(functions.map(fn).join('\n'),{loader:'ts',format:'cjs'}).code,c);
 const pack={pack_v:1,reader:'sheets:gemini',exercises:[{name_shown:'Squat'}]};
 const basic={title:'Basic',blocks:[]}, premium={title:'Plus',blocks:[{exercises:[{name:'Squat'}]}]};
@@ -21,7 +26,10 @@ assert.equal(vm.runInContext('cacheForAccess(row,true).card.title',c),'Plus');
 c.row.basic_card=basic;c.row.basic_v=c.CARD_V;
 const visible=vm.runInContext('cacheForAccess(row,false)',c);
 assert.equal(visible.card.title,'Basic');assert.equal(visible.pack,null);assert.equal(visible.media_text,null);assert.equal(visible.media_source,null);
-c.row.basic_v=8;assert.equal(vm.runInContext('cacheForAccess(row,false)',c),null,'outdated Basic is rebuilt');
+c.row.basic_v=c.MIN_USABLE_CARD_V-1;assert.equal(vm.runInContext('cacheForAccess(row,false)',c),null,'a Basic card below the readable minimum is rebuilt');
+c.row.basic_v=c.MIN_USABLE_CARD_V;const stale=vm.runInContext('cacheForAccess(row,false)',c);
+assert.equal(stale.card.title,'Basic','the shape we still read is served rather than paid for again');
+assert.equal(stale.stale,c.MIN_USABLE_CARD_V<c.CARD_V,'and says whether it is behind what we write');
 c.row={card:basic,v:9,read_quality:'basic'};
 assert.equal(vm.runInContext('cacheForAccess(row,false).card.title',c),'Basic');
 c.row={card:premium,v:9,media_source:'video:gemini',read_quality:'basic'};

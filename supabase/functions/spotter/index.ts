@@ -66,7 +66,7 @@ import {
   type SourceKind, type SourcePart, videoEvidence,
 } from "./evidence.ts";
 import {
-  assemblePack, type Frames, type Observation, OBSERVE_PROMPT, type Pack, PACK_V,
+  assemblePack, type Frames, MIN_USABLE_PACK_V, type Observation, OBSERVE_PROMPT, type Pack, PACK_V,
   packBlock, type PackExercise, type PackEye, packReader, type PackReader, parseFrames,
   parseStampedTranscript,
   packInTimeOrder, parseVtt, readObservation, repairPack, secondsToMmss,
@@ -705,6 +705,38 @@ const WORKER_ID = crypto.randomUUID().slice(0, 8);
 //    they are rebuilt the next time anybody saves the video.
 // 11: separate creator prescriptions from observed counts; retain pack v2 variants.
 const CARD_V = 11;
+
+/**
+ * The oldest card shape this build still SERVES out of the shared cache.
+ *
+ * CARD_V and PACK_V are what we WRITE. These two minimums are what we are willing
+ * to READ, and splitting them apart is the difference between a version bump that
+ * improves the next reading and one that empties the cache at cutover: with a
+ * single number, the minute v11 deploys no row written by v180 matches any gate,
+ * every save and every preview of an already-read video becomes a fresh paid
+ * extraction, and the $0.50/day global guard is gone in tens of saves.
+ *
+ * The rule, in both directions:
+ *
+ *  - A row at or above the minimum is SERVED as it stands: no model call, no
+ *    queue, no preview consumed. It comes back carrying `stale: true` when it is
+ *    below what we write today, so a log line can say which hits were old without
+ *    anything changing its behaviour.
+ *  - A stale row is upgraded only by a paid read path that exists for its own
+ *    reasons — an explicit re-read, or a Plus save that finds a thin card.
+ *    `mediaSeed` and `handleReprocess` deliberately still ask for `>= CARD_V`,
+ *    which is what makes those paths rebuild the card rather than re-stamp an old
+ *    one as new. Nothing schedules a mass re-read; that is the expensive mistake
+ *    this constant exists to avoid.
+ *  - Consumers must read a below-current shape as FIELDS ABSENT, never as zero. A
+ *    v1 pack has no `reps_prescribed`, `rep_prescriptions` or `caption`; every
+ *    reader of those guards with `?? []` or `!= null`, and `applyPack` only fills
+ *    a dose it actually finds.
+ *
+ * Raise a minimum only when an older shape is genuinely unreadable — never to
+ * force a refresh, because forcing a refresh is what costs money.
+ */
+const MIN_USABLE_CARD_V = 10;
 
 const ALLOWED_ORIGINS = (Deno.env.get("ALLOWED_ORIGINS") ??
   "https://simeonrinkenberger.github.io,http://localhost:8000,http://127.0.0.1:8000")
@@ -7471,7 +7503,7 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
   const [dupeR, countsR, cachedR, capsR, libR] = await Promise.allSettled([
     dbSelect("workouts", `user_id=eq.${userId}&shortcode=eq.${sc}&select=id,title,ingest_status`),
     countsFor(userId),
-    dbSelect("video_cache", `shortcode=eq.${sc}&v=gte.${CARD_V}&select=*`),
+    dbSelect("video_cache", `shortcode=eq.${sc}&v=gte.${MIN_USABLE_CARD_V}&select=*`),
     capsFor(userId),
     libraryCount(userId),
   ]);
@@ -7551,7 +7583,11 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
       return await bail(json({ status: "exists", id: again[0]?.id, title: again[0]?.title, message: "Already in your library." }, 200, cors));
     }
     await logSave(userId, p, meta, card, c.thumb_url, true, false, "save", null);
-    console.log("cache hit", p.platform, p.shortcode, "served in", Date.now() - t0, "ms");
+    // `stale` is the cutover signal: a hit on a shape older than this build still
+    // costs nothing and is still correct, and counting them is how the owner sees
+    // the old cache draining instead of guessing at it.
+    console.log("cache hit", p.platform, p.shortcode, c.stale ? "(stale v" + c.v + ")" : "(current)",
+      "served in", Date.now() - t0, "ms");
     // The row is theirs either way — this only decides whether Spotter stops here
     // or goes and reads the video the cached card could not.
     const upgraded = await upgradeCachedCard(userId, p, c, row.id, cors);
@@ -7924,13 +7960,34 @@ async function cachedPack(shortcode: string): Promise<Pack | undefined> {
   }
 }
 
+/**
+ * Whether a served row is older than the shape this build writes.
+ *
+ * A marker, never a gate: the row is served either way (MIN_USABLE_CARD_V says
+ * why). It exists so a log line can tell "cache hit" from "cache hit on last
+ * version's shape" through a cutover, and so nothing downstream has to work it
+ * out again. `stale` is a field on an in-memory copy and is never written back —
+ * every write to video_cache names its columns explicitly.
+ */
+function cacheStale(row: any): boolean {
+  if (!row) return false;
+  if (Number(row.v) < CARD_V) return true;
+  return !!row.pack && Number(row.pack_v ?? row.pack?.pack_v) < PACK_V;
+}
+
+/** The row as it will be served, carrying that marker. */
+function markCache(row: any): any {
+  return row ? { ...row, stale: cacheStale(row) } : row;
+}
+
 /** Select an entitled result before copying any data into a user's RLS-visible row. */
 function cacheForAccess(row: any, premium: boolean): any | null {
   if (!row) return null;
-  if (premium) return row;
-  if (row.read_quality === "basic" && !visuallyRead(row) && !row.media_source) return row;
-  if (!row.basic_card || Number(row.basic_v) < CARD_V) return null;
-  return { ...row, card: row.basic_card, v: row.basic_v, read_quality: "basic", read_plan: "free",
+  if (premium) return markCache(row);
+  if (row.read_quality === "basic" && !visuallyRead(row) && !row.media_source) return markCache(row);
+  if (!row.basic_card || Number(row.basic_v) < MIN_USABLE_CARD_V) return null;
+  return { ...row, stale: Number(row.basic_v) < CARD_V,
+    card: row.basic_card, v: row.basic_v, read_quality: "basic", read_plan: "free",
     pack: null, pack_v: null, media_text: null, media_source: null, media_tried: false };
 }
 function basicMeta(meta: Meta): Meta {
@@ -8270,7 +8327,7 @@ async function runJobGuarded(job: Job): Promise<void> {
   // cards are not shareable — an upload key is unique to one file, so the lookup
   // could only ever miss.
   const cacheRows = cacheable && !mediaJob && !job.meta?.supplied
-    ? await dbSelect("video_cache", `shortcode=eq.${sc}&v=gte.${CARD_V}&select=*`)
+    ? await dbSelect("video_cache", `shortcode=eq.${sc}&v=gte.${MIN_USABLE_CARD_V}&select=*`)
     : [];
   const accessible = cacheForAccess(cacheRows[0], await premiumAccess(job.user_id, p.shortcode));
   const cached = accessible ? [accessible] : [];
@@ -8934,13 +8991,17 @@ async function handleWorkerProbe(req: Request): Promise<Response> {
  *
  * Version-gated on its OWN number rather than on the card's, because a pack
  * outlives several card versions: bumping CARD_V to change a prompt must not throw
- * away a reading that cost real money and is still correct. A pack from a future
- * shape is ignored rather than half-read.
+ * away a reading that cost real money and is still correct. The same argument
+ * applies to a pack version bump, so the window is a RANGE — anything from
+ * MIN_USABLE_PACK_V up to what we write. A pack from a future shape is still
+ * ignored rather than half-read; an older one is read with its newer fields
+ * simply absent.
  */
 function usablePack(row: any): Pack | undefined {
   const pack = row?.pack;
   if (!pack || typeof pack !== "object") return undefined;
-  if (Number(row?.pack_v ?? pack.pack_v) !== PACK_V) return undefined;
+  const v = Number(row?.pack_v ?? pack.pack_v);
+  if (!(v >= MIN_USABLE_PACK_V && v <= PACK_V)) return undefined;
   return pack as Pack;
 }
 
@@ -8972,6 +9033,11 @@ function mediaSeed(cached: any, w: any): { step: string; meta: Meta; card: Card 
     // everybody who ever saves it.
     pack: usablePack(cached),
   };
+  // CARD_V and not MIN_USABLE_CARD_V, deliberately. This is a paid read that is
+  // already happening, so it is the natural moment to rebuild an older card:
+  // seeding from one would stamp last version's shape as current and nothing
+  // would ever rebuild it. A stale row still hands over its caption, thumbnail,
+  // transcript and pack below — none of that is re-read.
   const usable = cached && Number(cached.v) >= CARD_V && cached.card;
   return usable
     ? { step: "media", meta, card: cached.card as Card }
@@ -9052,12 +9118,12 @@ async function handleReadVideo(
   const sc = encodeURIComponent(w.shortcode);
   const [countsR, cachedR, capsR] = await Promise.allSettled([
     countsFor(userId),
-    dbSelect("video_cache", `shortcode=eq.${sc}&v=gte.${CARD_V}&select=*`),
+    dbSelect("video_cache", `shortcode=eq.${sc}&v=gte.${MIN_USABLE_CARD_V}&select=*`),
     capsFor(userId),
   ]);
   for (const r of [countsR, cachedR, capsR]) if (r.status === "rejected") throw r.reason;
   const counts = (countsR as PromiseFulfilledResult<Counts>).value;
-  const cached = (cachedR as PromiseFulfilledResult<any[]>).value[0] ?? null;
+  const cached = markCache((cachedR as PromiseFulfilledResult<any[]>).value[0] ?? null);
   const uc = (capsR as PromiseFulfilledResult<UserCaps>).value;
 
   // A first preview of a verified current card needs no model, decoding or queue.
@@ -10575,11 +10641,12 @@ async function pumpyPack(shortcode: unknown): Promise<Pack | null> {
   const sc = String(shortcode ?? "").trim();
   if (!sc) return null;
   try {
-    // `eq` and not `gte`: PACK_V is bumped when the SHAPE changes, so a pack
-    // written by a newer shape is one this code cannot read rather than one it
-    // should try to.
+    // A range and not `eq`: a pack written by a NEWER shape is one this code
+    // cannot read rather than one it should try to, but an older one is readable
+    // with its newer fields absent — and refusing it would leave the coach
+    // answering from the card about a video somebody already paid to watch.
     const rows = await dbSelect("video_cache",
-      `shortcode=eq.${encodeURIComponent(sc)}&pack_v=eq.${PACK_V}&select=pack`);
+      `shortcode=eq.${encodeURIComponent(sc)}&pack_v=gte.${MIN_USABLE_PACK_V}&pack_v=lte.${PACK_V}&select=pack`);
     const pack = rows[0]?.pack ?? null;
     return pack && Array.isArray(pack.exercises) ? pack as Pack : null;
   } catch (e) {

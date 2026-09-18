@@ -8,6 +8,7 @@ const checks = [
   ['Complete combine route', 'node', ['tools/pumpy-combine-route-check.mjs']],
   ['Billing account races', 'node', ['tools/billing-account-check.mjs']],
   ['Reader account races', 'node', ['tools/reader-account-check.mjs']],
+  ['Cache version cutover', 'node', ['tools/cache-version-check.mjs']],
   ['Reread interactions', 'node', ['tools/reread-harness.mjs']],
   ['Purchase SDK races', 'node', ['tools/ios/purchases-check.mjs']],
   ['Reader transactional completion', 'node', ['tools/reader-completion-db-check.mjs']],

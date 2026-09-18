@@ -46,6 +46,18 @@ import { canonicalize, standardOf } from "./catalog.ts";
 /** Bumped when the SHAPE of a pack changes, so a stored pack can be told apart. */
 export const PACK_V = 2;
 
+/**
+ * The oldest pack shape this build still SERVES. See MIN_USABLE_CARD_V in
+ * index.ts for the whole rule: PACK_V is what we write, this is what we read.
+ *
+ * A v1 pack carries no `reps_prescribed`, no `rep_prescriptions` and no
+ * `caption`. Every consumer treats those as fields that are ABSENT — `?? []`,
+ * `!= null` — never as zero, so an old reading degrades gracefully instead of
+ * being thrown away and paid for again. Raise this only when an old shape is
+ * genuinely unreadable.
+ */
+export const MIN_USABLE_PACK_V = 1;
+
 // ---------- shapes ----------
 
 /** One span of speech: when it starts, when it ends, and what was said in it. */
