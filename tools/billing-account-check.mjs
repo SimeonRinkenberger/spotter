@@ -24,7 +24,7 @@ function setup() {
 }
 {
  const t=setup();
- Object.assign(t.ctx,{paintCtx(){},paintSkeleton(){},openSheet(){},paintPlans(){},$:()=>({classList:{contains:()=>false}})});
+ Object.assign(t.ctx,{paintCtx(){},paintSkeleton(){},openSheet(){},paintPlans(){},paintPlanCode(){},loadCreator:()=>Promise.resolve(null),$:()=>({value:'',classList:{contains:()=>false,add(){},remove(){},toggle(){}}})});
  vm.runInContext(lift('openPlans'),t.ctx);
  t.ctx.nativePurchase(false,{});t.ctx.openPlans(null);t.ctx.nativePurchase(false,{});
  assert.equal(t.storeCalls.length,1,'Reopening paywall must not reset the in-flight purchase lock');

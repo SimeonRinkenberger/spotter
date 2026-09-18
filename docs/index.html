@@ -330,6 +330,19 @@ button {
   color: var(--muted);
   margin-bottom: 6px;
 }
+.fieldhead {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.fieldlink {
+  background: none;
+  border: none;
+  padding: 0 0 6px;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--ember-ink);
+}
 .field input {
   width: 100%;
   border: 1px solid var(--line);
@@ -2367,6 +2380,43 @@ h1 {
   color: var(--muted);
   margin-top: 8px;
 }
+.codeask {
+  display: block;
+  background: none;
+  border: none;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ember-ink);
+  padding: 2px 0 10px;
+}
+.codeform {
+  display: flex;
+  gap: 9px;
+  align-items: stretch;
+}
+.codeform .field {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+.codeform .btn {
+  flex: 0 0 auto;
+  width: auto;
+  padding: 12px 18px;
+}
+.plancode {
+  margin: 6px 0 4px;
+}
+.plancodeline {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink-2);
+  margin: 2px 0 12px;
+}
+.planredeem {
+  margin-top: 9px;
+}
 .planlegal {
   display: flex;
   flex-wrap: wrap;
@@ -3000,6 +3050,18 @@ h1 {
   margin: 14px 0 4px;
   padding-top: 10px;
   border-top: 1px solid var(--line);
+}
+.swapbank {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 0 0 14px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.swapitem .use {
+  margin-top: 8px;
 }
 .picklist {
   display: flex;
@@ -4850,6 +4912,19 @@ body:not(.app) #toast.show {
 .woakeep.on {
   border-color: var(--ember);
   background: var(--ember-soft);
+}
+.woafilt {
+  margin: 0 0 8px;
+}
+.woafilt > summary {
+  padding: 10px 14px;
+  min-height: 40px;
+}
+.woafilt .woahead {
+  padding: 6px 2px 4px;
+}
+.woafilt .pillrow {
+  margin-bottom: 4px;
 }
 .waddcard {
   margin-top: 14px;
@@ -7257,6 +7332,13 @@ details.details-moving > :not(summary) {
           <button type="button" class="pweye" aria-label="Show password" aria-pressed="false"><svg class="ic"><use href="#i-eye"></use></svg></button>
         </div>
       </div>
+      <div id="authcodewrap">
+        <button type="button" class="codeask" id="authcodeask">Have a creator code?</button>
+        <div class="field hide" id="authcodefield">
+          <label for="authcode">Creator code</label>
+          <input id="authcode" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="Optional" maxlength="20">
+        </div>
+      </div>
       <p class="consent hide" id="consent"></p>
       <div class="capgate" id="capgate"></div>
       <button class="btn" id="authgo">Create account</button>
@@ -7476,6 +7558,15 @@ details.details-moving > :not(summary) {
   <div id="woapick">
     <label class="woasearch"><span class="searchico"><svg class="ic"><use href="#i-search"></use></svg></span>
       <input class="search" id="woaq" type="search" enterkeyhint="done" placeholder="Search exercises" autocapitalize="off" autocomplete="off" spellcheck="false" aria-label="Search exercises"></label>
+    <details class="disclosure woafilt" id="woafilt" data-noswipe>
+      <summary id="woafiltsum">Filter</summary>
+      <div class="disclosure-body">
+        <div class="woahead">Muscle</div>
+        <div class="pillrow" id="woamus"></div>
+        <div class="woahead">Equipment</div>
+        <div class="pillrow" id="woaeq"></div>
+      </div>
+    </details>
     <div class="picklist" id="woalist"></div>
   </div>
   <div id="woadose" class="hide">
@@ -7516,7 +7607,7 @@ details.details-moving > :not(summary) {
   <h2 id="exedittitle">Fix this exercise</h2>
   <p class="lede" id="exeditlede">Spotter read this off the video. If it got it wrong, put it right — your change stays on your copy.</p>
   <div class="field">
-    <label for="exeditname">Exercise</label>
+    <div class="fieldhead"><label for="exeditname">Exercise</label><button type="button" class="fieldlink" id="exeditpick">Change</button></div>
     <input id="exeditname" type="text" placeholder="Goblet squat" autocapitalize="words" autocomplete="off" spellcheck="false">
   </div>
   <div class="fieldrow">
@@ -7566,6 +7657,7 @@ details.details-moving > :not(summary) {
     <input class="nm" id="swaphaveinput" type="text" placeholder="Have anything? e.g. dumbbells, bands" autocomplete="off" autocapitalize="off" aria-label="Available equipment">
     <button class="btn" id="swaphavego">Find swaps</button>
   </div>
+  <div class="swapbank" id="swapbank"><span>Or pick one yourself</span><button class="chip" id="swapbankgo"><svg class="ic"><use href="#i-search"></use></svg>Choose from the exercise bank</button></div>
   <div id="swapresult"></div>
 </div></div>
 
@@ -7704,6 +7796,7 @@ details.details-moving > :not(summary) {
   <h3 class="seth">Plan</h3>
   <div class="setgroup">
     <div class="kv" id="setplanrow"><span class="k">Plan</span><span class="v" id="setplan">Free</span></div>
+    <button class="kv row" id="setcoderow"><span class="k">Creator code</span><span class="v" id="setcode">Enter a code</span><svg class="ic chev"><use href="#i-chev"></use></svg></button>
   </div>
   <div class="setnote hide" id="setplanuse"></div>
   <div class="setnote warn hide" id="setplanwarn"></div>
@@ -7713,6 +7806,15 @@ details.details-moving > :not(summary) {
     <button class="btn hide" id="setupgrade">Upgrade to Plus</button>
   </div>
   <button class="setlink hide" id="setrefresh">Refresh</button>
+
+  <div class="hide" id="setcreator">
+    <h3 class="seth">Your creator code</h3>
+    <div class="setgroup">
+      <div class="kv"><span class="k">Code</span><span class="v" id="setcreatorcode">&mdash;</span></div>
+      <button class="kv row" id="setcreatorshare"><span class="k">Share your code</span><svg class="ic chev"><use href="#i-chev"></use></svg></button>
+    </div>
+    <div class="setnote" id="setcreatoruse"></div>
+  </div>
 
   <div class="hide" id="setconn">
     <h3 class="seth">Connections</h3>
@@ -7801,7 +7903,16 @@ details.details-moving > :not(summary) {
   <div class="plancards" id="plancards" role="radiogroup" aria-label="Billing period"></div>
   <div class="plantrial hide" id="plantrial"></div>
   <div class="plansoon hide" id="plansoon">Plans are coming soon.</div>
+  <div class="plancode">
+    <button type="button" class="codeask" id="plancodeask">Have a creator code?</button>
+    <div class="codeform hide" id="plancodeform">
+      <div class="field"><input id="plancodein" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="Code" aria-label="Creator code" maxlength="20"></div>
+      <button class="btn" id="plancodego">Apply</button>
+    </div>
+    <div class="plancodeline hide" id="plancodeline"></div>
+  </div>
   <button class="btn planbuy hide" id="planbuy"><b></b></button>
+  <button class="btn ghost planredeem hide" id="planredeem">Redeem in the App Store</button>
   <button class="plannot" id="plannot">Not now</button>
   <div class="planfine" id="planfine"></div>
   <div class="planlegal">
@@ -7864,7 +7975,7 @@ details.details-moving > :not(summary) {
         });
       }, 15e3);
     } }
-  }), VERSION = "0.12", REST_FALLBACK = 90, CATEGORIES = [
+  }), VERSION = "0.14", REST_FALLBACK = 90, CATEGORIES = [
     "Push",
     "Pull",
     "Legs",
@@ -8166,7 +8277,7 @@ details.details-moving > :not(summary) {
     var b = el("button", null, isUp ? "Sign in" : "Create an account");
     b.onclick = function() {
       setAuthMode(isUp ? "signin" : "signup");
-    }, $("authswap").appendChild(b), $("forgotwrap").classList.toggle("hide", isUp), $("consent").classList.toggle("hide", !isUp);
+    }, $("authswap").appendChild(b), $("forgotwrap").classList.toggle("hide", isUp), $("consent").classList.toggle("hide", !isUp), $("authcodewrap").classList.toggle("hide", !isUp), isUp && paintAuthCode();
   }
   function authError(msg) {
     var e = $("autherr");
@@ -8252,6 +8363,10 @@ details.details-moving > :not(summary) {
     }
     if (authMode === "signup" && pw.length < 8) {
       authError("Use at least 8 characters.");
+      return;
+    }
+    if (authMode === "signup" && $("authcode").value.trim() && !creatorCode($("authcode").value)) {
+      authError(creatorSays("bad_code"));
       return;
     }
     var btn = $("authgo"), mode = authMode;
@@ -8649,7 +8764,7 @@ details.details-moving > :not(summary) {
       };
     }
     native && native.purchases && native.purchases.clear().catch(function() {
-    }), billing && (billing.prices = null, billing.waiting = null, billing.busy = !1, billing.sub = null, billing.subAsked = !1, billing.limits = null, billing.said = null, billing.ctx = null), ["grid", "chips", "colbar", "libcount", "empty", "dinner", "pumpylog", "pumpyannounce", "pumpyctx", "pumpythreads", "trainview", "today", "recapopts"].forEach(function(id) {
+    }), billing && (billing.prices = null, billing.waiting = null, billing.busy = !1, billing.sub = null, billing.subAsked = !1, billing.limits = null, billing.said = null, billing.ctx = null, billing.cc = null, billing.ccWaiting = null, billing.redeeming = !1), ["grid", "chips", "colbar", "libcount", "empty", "dinner", "pumpylog", "pumpyannounce", "pumpyctx", "pumpythreads", "trainview", "today", "recapopts"].forEach(function(id) {
       var n = $(id);
       n && (n.innerHTML = "");
     }), $("count0").textContent = "Reading your library", clearTimeout(toastTimer), $("toast").classList.remove("show"), $("toast").textContent = "", Array.prototype.forEach.call(document.querySelectorAll(".sheet.open, #detail.open, #workout.open"), function(n) {
@@ -8674,6 +8789,8 @@ details.details-moving > :not(summary) {
       if (accountNow(epoch, uid)) return consumeShare();
     }).then(function() {
       if (accountNow(epoch, uid)) return consumeBilling();
+    }).then(function() {
+      accountNow(epoch, uid) && consumeCreator();
     }).then(function() {
       if (accountNow(epoch, uid)) return warmPages();
     }).then(function() {
@@ -9793,7 +9910,7 @@ details.details-moving > :not(summary) {
         }, options.lastChild.appendChild(demo);
         var swap = icon(el("button", "pickrow"), "swap", "Swap or modify");
         swap.onclick = function() {
-          openSwap(ex.name, w.title);
+          openSwap(ex.name, w.title, { w: w, bi: bi, ei: ei, ex: ex });
         }, options.lastChild.appendChild(swap), acts.appendChild(options), row.appendChild(acts);
         var swipe = el("div", "exrow delete-swipe"), front = el("div", "exmain");
         front.appendChild(row);
@@ -10168,10 +10285,10 @@ details.details-moving > :not(summary) {
     return v == null || v === "" ? "" : String(v);
   }
   function openExEdit(w, bi, ei, ex) {
-    exEdit = { w: w, block: bi, index: ei, name: ex.name, mode: "edit" }, $("exedittitle").textContent = "Fix this exercise", $("exeditlede").textContent = "Spotter read this off the video. If it got it wrong, put it right \u2014 the change stays on your copy.", $("exeditname").value = ex.name || "", $("exeditsets").value = fieldVal(ex.sets), $("exeditreps").value = fieldVal(ex.reps), $("exeditsecs").value = fieldVal(ex.duration_seconds), $("exeditdelete").classList.remove("hide"), $("exeditsave").textContent = "Save change", openSheet("exeditsheet");
+    exEdit = { w: w, block: bi, index: ei, name: ex.name, ex: ex, mode: "edit" }, $("exedittitle").textContent = "Fix this exercise", $("exeditlede").textContent = "Spotter read this off the video. If it got it wrong, put it right \u2014 the change stays on your copy.", $("exeditname").value = ex.name || "", $("exeditsets").value = fieldVal(ex.sets), $("exeditreps").value = fieldVal(ex.reps), $("exeditsecs").value = fieldVal(ex.duration_seconds), $("exeditdelete").classList.remove("hide"), $("exeditsave").textContent = "Save change", openSheet("exeditsheet");
   }
   function openExAdd(w, bi) {
-    exEdit = { w: w, block: bi, index: -1, name: null, mode: "add" }, $("exedittitle").textContent = "Add an exercise", $("exeditlede").textContent = "Something in the video Spotter did not pick up. Sets, reps and seconds are optional.", $("exeditname").value = "", $("exeditsets").value = "", $("exeditreps").value = "", $("exeditsecs").value = "", $("exeditdelete").classList.add("hide"), $("exeditsave").textContent = "Add exercise", openSheet("exeditsheet"), $("exeditname").focus();
+    openPicker("card-add", { w: w, bi: bi });
   }
   function absorbWorkout(row) {
     if (!(!row || !row.id)) {
@@ -10183,19 +10300,20 @@ details.details-moving > :not(summary) {
       current && current.id === row.id && (current = row, $("detail").classList.contains("open") && openDetail(row, !0)), render();
     }
   }
+  function postCorrection(w, payload, btn, okMsg, sheet) {
+    var label = btn ? btn.textContent : null;
+    btn && (btn.disabled = !0, btn.textContent = "Saving\u2026"), api("workouts/" + w.id + "/exercises", { method: "POST", body: JSON.stringify(payload) }).then(function(r) {
+      if (btn && (btn.disabled = !1, btn.textContent = label), r.status !== "ok") {
+        limitHit(r, "That change did not save. Your copy is unchanged.");
+        return;
+      }
+      closeSheet(sheet), exEdit = null, absorbWorkout(r.workout), toast(r.corrections ? okMsg : "Nothing to change.");
+    }).catch(function() {
+      btn && (btn.disabled = !1, btn.textContent = label), toast("Could not reach Spotter \u2014 check your connection.");
+    });
+  }
   function sendCorrection(payload, btn, okMsg) {
-    if (exEdit) {
-      var id = exEdit.w.id, label = btn ? btn.textContent : null;
-      btn && (btn.disabled = !0, btn.textContent = "Saving\u2026"), api("workouts/" + id + "/exercises", { method: "POST", body: JSON.stringify(payload) }).then(function(r) {
-        if (btn && (btn.disabled = !1, btn.textContent = label), r.status !== "ok") {
-          limitHit(r, "That change did not save. Your copy is unchanged.");
-          return;
-        }
-        closeSheet("exeditsheet"), exEdit = null, absorbWorkout(r.workout), toast(r.corrections ? okMsg : "Nothing to change.");
-      }).catch(function() {
-        btn && (btn.disabled = !1, btn.textContent = label), toast("Could not reach Spotter \u2014 check your connection.");
-      });
-    }
+    exEdit && postCorrection(exEdit.w, payload, btn, okMsg, "exeditsheet");
   }
   function saveExEdit() {
     if (exEdit) {
@@ -10916,7 +11034,7 @@ details.details-moving > :not(summary) {
     $("explainfix").classList.toggle("hide", !at), $("explainfix").onclick = function() {
       at && (openExEdit(w, at.bi, at.ei, ex), closeSheet("explainsheet"));
     }, $("swapgo").onclick = function() {
-      openSwap(name, title), closeSheet("explainsheet");
+      openSwap(name, title, swapTarget(w, ex)), closeSheet("explainsheet");
     }, openSheet("explainsheet"), $("explainvid").classList.remove("on"), $("explainvidin").innerHTML = "";
     var vk = vidKey(ex), who = authorOf(ex, w);
     vidCache[vk] ? vidFill(vidCache[vk], who) : api("demo-video", {
@@ -10964,8 +11082,22 @@ details.details-moving > :not(summary) {
     };
   }
   var SWAP_REASONS = [["no_equipment", "No equipment"], ["station_busy", "Station busy"], ["pain", "It hurts"]], BODY_AREAS = ["shoulder", "elbow", "wrist", "neck", "upper back", "lower back", "hip", "knee", "ankle"], swapCtx = null;
-  function openSwap(name, title) {
-    swapCtx = { name: name, title: title || "", reason: null, area: null, seq: 0 }, $("swaptitle").textContent = "Instead of " + name, $("swapresult").innerHTML = "", renderSwapChips(), openSheet("swapsheet");
+  function swapTarget(w, ex) {
+    var live = !!(wo && !wo.finished && w === wo.workout), at = null;
+    return live ? wo.screens.some(function(s) {
+      var ei = s.ex === ex ? s.ei : (s.block.exercises || []).indexOf(ex);
+      return ei >= 0 && (at = { bi: s.bi, ei: ei }), ei >= 0;
+    }) : at = exAt(w, ex), at ? { session: live ? 1 : 0, w: w, bi: at.bi, ei: at.ei, ex: ex } : null;
+  }
+  function openSwap(name, title, target) {
+    swapCtx = { name: name, title: title || "", target: target || null, reason: null, area: null, seq: 0 }, $("swaptitle").textContent = "Instead of " + name, $("swapresult").innerHTML = "", $("swapbank").classList.toggle("hide", !swapCtx.target), renderSwapChips(), openSheet("swapsheet");
+  }
+  function swapBank(pick) {
+    var t = swapCtx && swapCtx.target;
+    t && (openPicker("replace", t), pick && woaChoose(swapRow(pick)), closeSheet("swapsheet"));
+  }
+  function swapRow(it) {
+    return woaMake(exKey(it), it.name, it.canonical_id || null, "", 3);
   }
   function renderSwapChips() {
     var rs = $("swapreasons");
@@ -11012,9 +11144,15 @@ details.details-moving > :not(summary) {
       });
     }
   }
-  function swapItem(it, withTrade) {
+  function swapItem(it, withTrade, usable) {
     var d = el("div", "swapitem"), h = el("div");
-    return h.appendChild(el("b", null, it.name)), it.in_catalog && h.appendChild(el("span", "tag", "in catalog")), d.appendChild(h), it.why && d.appendChild(el("div", "why", it.why)), withTrade && it.tradeoff && d.appendChild(el("div", "trade", "Trade-off: " + it.tradeoff)), d;
+    if (h.appendChild(el("b", null, it.name)), it.in_catalog && h.appendChild(el("span", "tag", "in catalog")), d.appendChild(h), it.why && d.appendChild(el("div", "why", it.why)), withTrade && it.tradeoff && d.appendChild(el("div", "trade", "Trade-off: " + it.tradeoff)), usable && swapCtx && swapCtx.target) {
+      var use = el("button", "chip use", "Use this");
+      use.onclick = function() {
+        swapBank(it);
+      }, d.appendChild(use);
+    }
+    return d;
   }
   function renderSwapResult(box, r) {
     if (r.summary && box.appendChild(el("div", "swapsummary", r.summary)), r.reason === "pain") {
@@ -11037,7 +11175,7 @@ details.details-moving > :not(summary) {
     if ((r.alternatives || []).length) {
       var al = el("div", "swapsect");
       al.appendChild(el("h3", null, "Try instead")), r.alternatives.forEach(function(a) {
-        al.appendChild(swapItem(a, !0));
+        al.appendChild(swapItem(a, !0, !0));
       }), box.appendChild(al);
     } else r.summary || box.appendChild(el("div", "aitext", r.text || "Nothing came back \u2014 try again in a minute."));
   }
@@ -11131,7 +11269,30 @@ details.details-moving > :not(summary) {
       sets: []
     }), wo.screens = flatten(wo.workout), at;
   }
-  var woa = null, woaCat = null, woaCatLoad = null;
+  function entryAt(bi, ei) {
+    for (var i = 0; i < wo.entries.length; i++)
+      if (wo.entries[i].block === bi && wo.entries[i].exercise === ei) return i;
+    return -1;
+  }
+  function replaceSessionExercise(bi, ei, ex) {
+    var blk = wo.workout.blocks[bi], at = entryAt(bi, ei), old = at < 0 ? null : wo.entries[at];
+    return !blk || !old ? -1 : old.sets.filter(Boolean).length ? insertSessionExercise(bi, ei + 1, ex) : (blk.exercises[ei] = ex, wo.entries[at] = { name: ex.name, canonical_id: ex.canonical_id || null, block: bi, exercise: ei, sets: [] }, wo.screens = flatten(wo.workout), at);
+  }
+  var woa = null, WOA_EQUIP = [
+    "bodyweight",
+    "dumbbells",
+    "barbell",
+    "kettlebell",
+    "resistance bands",
+    "pull-up bar",
+    "bench",
+    "cables",
+    "machine",
+    "medicine ball",
+    "jump rope",
+    "box",
+    "other"
+  ], woaCat = null, woaCatLoad = null;
   function woaCatalog() {
     return woaCat ? Promise.resolve(woaCat) : woaCatLoad || (woaCatLoad = sb.from("exercise_catalog").select("id,display_name,aliases,muscle_groups,equipment,pattern").order("pattern").order("display_name").limit(1e3).then(function(r) {
       return woaCatLoad = null, !r.error && r.data && (woaCat = r.data), woaCat || [];
@@ -11177,18 +11338,18 @@ details.details-moving > :not(summary) {
         });
       });
     }), (woaCat || []).forEach(function(c) {
-      var dup = seen["c:" + c.id];
+      var dup = seen["c:" + c.id], mg = c.muscle_groups || [], eq = c.equipment || [];
       if (dup) {
-        dup.aliases = c.aliases || [];
+        dup.aliases = c.aliases || [], dup.muscle_groups = mg, dup.equipment = eq;
         return;
       }
       out.push(woaMake(
         "c:" + c.id,
         c.display_name,
         c.id,
-        (c.muscle_groups || []).concat(c.equipment || []).join(" \xB7 "),
+        mg.concat(eq).join(" \xB7 "),
         3,
-        { aliases: c.aliases || [], pattern: c.pattern }
+        { aliases: c.aliases || [], pattern: c.pattern, muscle_groups: mg, equipment: eq }
       ));
     }), out;
   }
@@ -11216,6 +11377,33 @@ details.details-moving > :not(summary) {
       return x.r;
     });
   }
+  function woaPass(r, mus, eq) {
+    var rm = r.muscle_groups, re = r.equipment;
+    return !mus.length && !eq.length ? !0 : !rm || !re || mus.length && !mus.some(function(m) {
+      return rm.indexOf(m) >= 0;
+    }) ? !1 : !eq.length || eq.some(function(e) {
+      return e === "bodyweight" ? !re.length : re.indexOf(e) >= 0;
+    });
+  }
+  function woaFilter(rows) {
+    return rows.filter(function(r) {
+      return woaPass(r, woa.mus, woa.eq);
+    });
+  }
+  function woaChips() {
+    [["woamus", MUSCLES, woa.mus], ["woaeq", WOA_EQUIP, woa.eq]].forEach(function(p) {
+      var row = $(p[0]);
+      row.innerHTML = "", p[1].forEach(function(name) {
+        var b = el("button", "chip" + (p[2].indexOf(name) >= 0 ? " active" : ""), capWord(name));
+        b.onclick = function() {
+          var i = p[2].indexOf(name);
+          i < 0 ? p[2].push(name) : p[2].splice(i, 1), woaChips(), woaRender();
+        }, row.appendChild(b);
+      });
+    });
+    var n = woa.mus.length + woa.eq.length;
+    $("woafiltsum").textContent = n ? "Filter \xB7 " + n : "Filter";
+  }
   function woaRow(list, r, label) {
     var b = el("button", "pickrow"), t = el("div", "pt");
     t.appendChild(el("b", null, label || r.name)), r.sub && t.appendChild(el("span", null, r.sub)), b.appendChild(t), b.onclick = function() {
@@ -11224,96 +11412,134 @@ details.details-moving > :not(summary) {
   }
   var WOA_CAP = { 1: 6, 2: 8 }, WOA_WAIT = "Still reading the exercise catalog\u2026", WOA_NOSAVE = "Added for today \u2014 it did not save to the card.";
   function woaRender() {
-    var list = $("woalist"), raw = $("woaq").value.trim(), q = raw.toLowerCase(), rows = woaRows(), head = null, n = {};
+    var list = $("woalist"), raw = $("woaq").value.trim(), q = raw.toLowerCase(), all = woaRows(), rows = woaFilter(all), head = null, n = {}, rep = woa.mode === "replace";
     if (list.innerHTML = "", q) {
       var hits = woaRank(q, rows).slice(0, 20), known = null;
       hits.forEach(function(r) {
         woaRow(list, r);
-      }), (!hits.length || String(hits[0].name).toLowerCase() !== q) && (rows.some(function(r) {
+      }), (rep ? !hits.length : !hits.length || String(hits[0].name).toLowerCase() !== q) && (all.some(function(r) {
         return String(r.name).toLowerCase() !== q && (r.aliases || []).indexOf(q) < 0 ? !1 : (known = r.canonical_id, !0);
       }), woaRow(list, woaMake(
         known ? "c:" + known : "n:" + raw,
         raw,
         known,
-        "Add it exactly as you typed it",
+        (rep ? "Use" : "Add") + " it exactly as you typed it",
         4
-      ), "Add \u201C" + raw + "\u201D")), woaCat || list.appendChild(el("p", "lede", WOA_WAIT));
+      ), (rep ? "Use \u201C" : "Add \u201C") + raw + "\u201D")), woaCat || list.appendChild(el("p", "lede", WOA_WAIT));
       return;
     }
     rows.forEach(function(r) {
       var cap = WOA_CAP[r.src], h;
       n[r.src] = (n[r.src] || 0) + 1, !(cap && n[r.src] > cap) && (h = r.src === 1 ? "Recent" : r.src === 2 ? "In your library" : capWord(r.pattern || "other"), h !== head && (head = h, list.appendChild(el("div", "woahead", h))), woaRow(list, r));
-    }), woaCat || list.appendChild(el("p", "lede", WOA_WAIT));
+    }), !rows.length && woaCat && list.appendChild(el("p", "lede", "Nothing in the bank matches those filters.")), woaCat || list.appendChild(el("p", "lede", WOA_WAIT));
   }
   function woaPane(dose) {
     $("woapick").classList.toggle("hide", !!dose), $("woadose").classList.toggle("hide", !dose), $("woaback").classList.toggle("hide", !dose), viewIn($(dose ? "woadose" : "woapick"));
   }
-  function woaCardBlocks() {
+  function woaCard() {
     var w = wo && wo.workout, card = null;
     return !w || !w.id ? null : (state.workouts.forEach(function(x) {
       x.id === w.id && (card = x);
-    }), card && card.ingest_status === "ready" ? (card.blocks || []).length : null);
+    }), card && card.ingest_status === "ready" ? card : null);
+  }
+  function woaCardBlocks() {
+    var card = woaCard();
+    return card ? (card.blocks || []).length : null;
+  }
+  function woaCardHas(t) {
+    var card = woaCard(), b = card && (card.blocks || [])[t.bi], ex = b && (b.exercises || [])[t.ei];
+    return !!ex && ex.name === t.ex.name;
   }
   function woaKeepPaint() {
     $("woakeep").classList.toggle("on", !!woa.keep), $("woakeep").setAttribute("aria-pressed", woa.keep ? "true" : "false"), $("woakeepnote").textContent = woa.keep ? "It will be on the card the next time you open it." : "Off \u2014 today\u2019s session only.";
   }
   function woaChoose(r) {
-    var s = wo.screens[wo.i], cx = s && s.cx && !s.ei ? s.cx : null, h = hist[r.key], m = String(r.reps || "").match(/\d+/), where = $("woawhere");
-    woa.pick = r, woa.keep = !1, woa.where = cx ? "complex" : s && wo.i < endStop() ? "after" : "end", haptic("tap"), $("woaddtitle").textContent = r.name, $("woalast").textContent = lastLine(r), $("woaddsets").value = String(h && h.sets || r.sets || 3), $("woaddreps").value = String(h && h.reps || (m ? m[0] : 10)), $("woaddsecs").value = r.secs ? String(r.secs) : "", where.innerHTML = "", $("woaddsets").parentNode.classList.toggle("hide", !!cx), cx ? where.appendChild(el(
-      "div",
-      "wnote",
-      "Joins the round list \u2014 part of this complex from the next round on."
-    )) : woa.where === "after" && ["After this one", "At the end"].forEach(function(t, k) {
-      var b = el("button", "chip" + (k ? "" : " active"), t);
+    var t = woa.target, old = woa.mode === "replace" ? t.ex : null, live = woa.mode === "add" || !!(old && t.session), s = live ? wo.screens[wo.i] : null, cx = s && s.cx && !s.ei ? s.cx : null, h = old ? null : hist[r.key], m = String((old ? old.reps : r.reps) || "").match(/\d+/), where = $("woawhere");
+    woa.pick = r, woa.keep = !1, woa.where = cx ? "complex" : s && wo.i < endStop() ? "after" : "end", woa.nosets = !!cx || !!(old && old.sets == null), haptic("tap"), $("woaddtitle").textContent = r.name, $("woalast").textContent = old ? "Instead of " + old.name + "." : lastLine(r), $("woaddsets").value = String(h && h.sets || (old ? old.sets : r.sets) || 3), $("woaddreps").value = String(h && h.reps || (m ? m[0] : 10)), $("woaddsecs").value = old ? old.duration_seconds ? String(old.duration_seconds) : "" : r.secs ? String(r.secs) : "", where.innerHTML = "", $("woaddsets").parentNode.classList.toggle("hide", woa.nosets), cx ? where.appendChild(el("div", "wnote", old ? "Joins the round list." : "Joins the round list \u2014 part of this complex from the next round on.")) : !old && woa.where === "after" && ["After this one", "At the end"].forEach(function(t2, k) {
+      var b = el("button", "chip" + (k ? "" : " active"), t2);
       b.onclick = function() {
         woa.where = k ? "end" : "after", Array.prototype.forEach.call(where.children, function(c) {
           c.classList.toggle("active", c === b);
         });
       }, where.appendChild(b);
-    }), $("woakeep").classList.toggle("hide", woaCardBlocks() === null), woaKeepPaint(), woaPane(1);
+    }), $("woakeep").classList.toggle("hide", old ? !(t.session && woaCardHas(t)) : !live || woaCardBlocks() === null), woaKeepPaint(), woaPane(1);
   }
   function openWorkoutAdd() {
-    !wo || wo.finished || (haptic("tap"), woa = { pick: null, where: "after", keep: !1 }, $("woaddtitle").textContent = "Add an exercise", $("woaq").value = "", woaPane(0), woaRender(), $("woaddsheet")._returnFocus = document.activeElement, openSheet("woaddsheet"), woaCat || woaCatalog().then(function() {
-      $("woaddsheet").classList.contains("open") && woaRender();
-    }));
+    !wo || wo.finished || openPicker("add", null);
   }
   function woaPlace(ex) {
     var s = wo.screens[wo.i], cx = s && s.cx && !s.ei ? s.cx : null;
     return !s || woa.where === "end" ? appendSessionExercise(ex) : (stopWork(), restThen = null, cx ? (ex.sets = null, ex.from_round = (wo.amrap[s.bi] || {}).rounds || 0, insertSessionExercise(s.bi, s.block.exercises.length, ex)) : wo.i = insertSessionExercise(s.bi, s.ei + 1, ex), saveDraft(), renderWorkout(), !0);
   }
-  function woaKeep(ex, bi) {
-    var w = wo.workout, n = woaCardBlocks();
-    n !== null && api("workouts/" + w.id + "/exercises", { method: "POST", body: JSON.stringify({
-      op: "add",
-      block: bi < n ? bi : n,
-      fields: { name: ex.name, sets: ex.sets, reps: ex.reps, duration_seconds: ex.duration_seconds }
-    }) }).then(function(r) {
+  function woaKeep(body, msg) {
+    var w = wo.workout;
+    api("workouts/" + w.id + "/exercises", { method: "POST", body: JSON.stringify(body) }).then(function(r) {
       if (!r || r.status !== "ok") {
         limitHit(r, WOA_NOSAVE);
         return;
       }
-      absorbWorkout(r.workout), toast("Kept on " + (w.title || "the workout") + " for next time.");
+      absorbWorkout(r.workout), toast(msg);
     }).catch(function() {
       toast(WOA_NOSAVE);
     });
+  }
+  function woaFields(ex) {
+    return {
+      name: ex.name,
+      canonical_id: ex.canonical_id || null,
+      sets: ex.sets,
+      reps: ex.reps,
+      duration_seconds: ex.duration_seconds
+    };
+  }
+  function woaEditBody(t, ex) {
+    return { op: "edit", block: t.bi, index: t.ei, expect_name: t.ex.name, fields: woaFields(ex) };
+  }
+  function sessionReplace(t, ex) {
+    var s = wo.screens[wo.i], cx = s && s.bi === t.bi && s.cx ? s.cx : null, at;
+    return cx && (ex.sets = null, ex.from_round = (wo.amrap[t.bi] || {}).rounds || 0), stopWork(), restThen = null, at = replaceSessionExercise(t.bi, t.ei, ex), at < 0 ? !1 : (cx || (wo.i = at), saveDraft(), renderWorkout(), !0);
   }
   function woaNum(id, dflt, hi) {
     var n = clamp(Math.round(Number($(id).value) || dflt), 1, hi);
     return $(id).value = String(n), n;
   }
   function saveWorkoutAdd() {
-    if (!(!wo || wo.finished || !woa || !woa.pick)) {
+    if (!(!woa || !woa.pick)) {
       var name = String(woa.pick.name || "").trim().slice(0, 100), secs = $("woaddsecs").value.trim() ? woaNum("woaddsecs", 30, 3600) : 0;
       if (name) {
         var ex = {
           name: name,
           canonical_id: woa.pick.canonical_id || null,
-          sets: woaNum("woaddsets", 3, 99),
+          sets: woa.nosets ? null : woaNum("woaddsets", 3, 99),
           reps: secs ? null : String(woaNum("woaddreps", 10, 999)),
           duration_seconds: secs || null,
           rest_seconds: REST_FALLBACK
-        }, s = wo.screens[wo.i], keep = woa.keep, bi = s && woa.where !== "end" ? s.bi : woaCardBlocks() || 0;
-        woaPlace(ex) && (closeSheet("woaddsheet"), haptic("success"), toast("Added " + name + " to this session."), keep && woaKeep(ex, bi));
+        }, t = woa.target, keep = woa.keep, mode = woa.mode;
+        if (mode === "card-add") {
+          postCorrection(t.w, { op: "add", block: t.bi, fields: woaFields(ex) }, $("woaddsave"), "Added it", "woaddsheet");
+          return;
+        }
+        if (mode === "replace" && !t.session) {
+          postCorrection(t.w, woaEditBody(t, ex), $("woaddsave"), "Swapped it", "woaddsheet");
+          return;
+        }
+        if (!(!wo || wo.finished)) {
+          if (mode === "replace") {
+            var i0 = entryAt(t.bi, t.ei), had = i0 >= 0 && wo.entries[i0].sets.filter(Boolean).length;
+            if (!sessionReplace(t, ex)) return;
+            closeSheet("woaddsheet"), haptic("success"), toast("Swapped in " + name + "." + (had ? " Your " + t.ex.name + " sets stay in the log." : "")), keep && woaKeep(woaEditBody(t, ex), "Kept the swap on " + (wo.workout.title || "the workout") + " for next time.");
+            return;
+          }
+          var s = wo.screens[wo.i], bi = s && woa.where !== "end" ? s.bi : woaCardBlocks() || 0;
+          if (woaPlace(ex)) {
+            closeSheet("woaddsheet"), haptic("success"), toast("Added " + name + " to this session.");
+            var n = keep ? woaCardBlocks() : null;
+            n !== null && woaKeep(
+              { op: "add", block: bi < n ? bi : n, fields: woaFields(ex) },
+              "Kept on " + (wo.workout.title || "the workout") + " for next time."
+            );
+          }
+        }
       }
     }
   }
@@ -11458,7 +11684,7 @@ details.details-moving > :not(summary) {
       }, extra.lastChild.appendChild(help);
       var swapChip = icon(el("button", "pickrow"), "swap", "Swap or modify");
       swapChip.onclick = function() {
-        openSwap(focus.name, wo.workout.title);
+        openSwap(focus.name, wo.workout.title, swapTarget(wo.workout, focus));
       }, extra.lastChild.appendChild(swapChip);
       var addChip = icon(el("button", "pickrow"), "plus", "Add an exercise");
       if (addChip.onclick = openWorkoutAdd, extra.lastChild.appendChild(addChip), acts.appendChild(extra), main.appendChild(acts), wo.i >= endStop()) {
@@ -14569,7 +14795,13 @@ details.details-moving > :not(summary) {
     ctx: null,
     // the 429 the sheet was opened by, or null from Settings
     interval: "year",
-    busy: !1
+    busy: !1,
+    cc: null,
+    // last /api/creator/me: {referral, creator, discount}
+    ccWaiting: null,
+    ccRev: 0,
+    redeeming: !1
+    // the App Store's code sheet is up; restore when it comes down
   };
   function billOn() {
     return !!(billing.prices && billing.prices.configured);
@@ -14738,7 +14970,7 @@ details.details-moving > :not(summary) {
   }
   function paintPlans() {
     var p = billing.prices || { configured: !1 }, good = $("plangood"), cards = $("plancards");
-    good.innerHTML = "", cards.innerHTML = "", planBenefits(p.caps).forEach(function(t) {
+    good.innerHTML = "", cards.innerHTML = "", paintPlanCode(), planBenefits(p.caps).forEach(function(t) {
       var row = el("div", "pgood");
       row.appendChild(ic("check")), row.appendChild(el("span", null, t)), good.appendChild(row);
     });
@@ -14755,8 +14987,10 @@ details.details-moving > :not(summary) {
   }
   function openPlans(ctx) {
     var epoch = accountEpoch, uid = state.user && state.user.id;
-    billing.ctx = ctx && ctx.kind ? ctx : null, billing.interval = "year", paintCtx(), billing.prices || paintSkeleton(), openSheet("plansheet"), loadPrices().then(function() {
+    billing.ctx = ctx && ctx.kind ? ctx : null, billing.interval = "year", paintCtx(), billing.prices || paintSkeleton(), $("plancodeform").classList.add("hide"), $("plancodein").value = "", paintPlanCode(), openSheet("plansheet"), loadPrices().then(function() {
       accountNow(epoch, uid) && $("plansheet").classList.contains("open") && paintPlans();
+    }), loadCreator().then(function() {
+      accountNow(epoch, uid) && $("plansheet").classList.contains("open") && paintPlanCode();
     });
   }
   var BILL_FLAG = "spotter.billing.pending", BILL_TTL = 12 * 3600 * 1e3, BILL_KEY = "spotter_billing_return", billRound = !1, billBusy = !1;
@@ -14880,7 +15114,11 @@ details.details-moving > :not(summary) {
     }));
   }
   function watchBilling() {
-    unbusy(), !(billRound || !state.user || !pending()) && (billRound = !0, askBilling(null, 3));
+    if (unbusy(), billing.redeeming && state.user && native && native.purchases) {
+      billing.redeeming = !1, nativePurchase(!0, null);
+      return;
+    }
+    billRound || !state.user || !pending() || (billRound = !0, askBilling(null, 3));
   }
   function unbusy() {
     if (billing.busy) {
@@ -14932,7 +15170,7 @@ details.details-moving > :not(summary) {
     billRound = !0, askBilling(o.session_id, 3);
   }
   function refreshBilling(btn) {
-    if (native && native.purchases) {
+    if (loadCreator(!0).then(paintCreator), native && native.purchases) {
       nativePurchase(!0, btn);
       return;
     }
@@ -14947,6 +15185,223 @@ details.details-moving > :not(summary) {
     }).catch(function() {
       btn.disabled = !1, btn.textContent = was, toast("Could not reach Spotter \u2014 check your connection.");
     });
+  }
+  var CREATOR_KEY = "spotter.creator.code";
+  function creatorCode(s) {
+    var c = String(s || "").replace(/\s+/g, "").toUpperCase();
+    return /^[A-Z0-9]{3,20}$/.test(c) ? c : "";
+  }
+  function stashCreator(code, source) {
+    try {
+      code ? localStorage.setItem(CREATOR_KEY, code + "|" + source) : localStorage.removeItem(CREATOR_KEY);
+    } catch (e) {
+    }
+  }
+  function creatorStash() {
+    var v = null;
+    try {
+      v = localStorage.getItem(CREATOR_KEY);
+    } catch (e) {
+      return null;
+    }
+    if (!v) return null;
+    var bits = String(v).split("|"), code = creatorCode(bits[0]);
+    return code ? { code: code, source: bits[1] || "link" } : null;
+  }
+  function captureCreator() {
+    var q;
+    try {
+      q = new URLSearchParams(location.search);
+    } catch (e) {
+      return;
+    }
+    var code = creatorCode(q.get("code"));
+    if (code) {
+      stashCreator(code, "link"), q.delete("code");
+      var rest = q.toString();
+      try {
+        history.replaceState(null, "", location.pathname + (rest ? "?" + rest : "") + location.hash);
+      } catch (e) {
+      }
+    }
+  }
+  function monthsWord(n) {
+    return n + (n === 1 ? " month" : " months");
+  }
+  function offerWords(d, thing) {
+    var pct = d ? num(d.percent_off) : null, m = d ? num(d.months) : null;
+    return pct ? pct + "% off" + (thing ? " " + thing : "") + (m ? " for " + monthsWord(m) : "") : "";
+  }
+  function creatorOffer(d) {
+    return offerWords(d, "");
+  }
+  function creatorToast(ref, d) {
+    var offer = offerWords(d, "Plus");
+    return ref.creator_name + "\u2019s code applied." + (offer ? " " + offer + "." : "");
+  }
+  function paywallLine(ref, d, store) {
+    var offer = creatorOffer(d), head = ref.creator_name + "\u2019s code" + (offer ? ": " + offer + "." : " is saved to your account.");
+    return store ? head + " Redeem it in " + store + (offer ? " to get the price." : ".") : head + (offer ? " It is saved to your account, and the discount is redeemed in the Spotter app on your phone." : "");
+  }
+  function storeName() {
+    return native && native.platform === "android" ? "Google Play" : "the App Store";
+  }
+  function creatorRowText(ref, d) {
+    var offer = creatorOffer(d);
+    return ref.code + (offer ? " \xB7 " + offer : "");
+  }
+  function creatorLines(c) {
+    var cur = c.currency || "usd";
+    return [
+      (num(c.signups) || 0) + " signed up \xB7 " + (num(c.subscribers) || 0) + " subscribed",
+      money(c.earned_cents, cur) + " earned \xB7 " + money(c.paid_cents, cur) + " paid \xB7 " + money(c.owed_cents, cur) + " owed",
+      "Paid by Simeon by hand. " + (num(c.commission_bps) || 0) / 100 + "% of every payment for " + monthsWord(num(c.commission_months) || 0) + "."
+    ];
+  }
+  var CREATOR_SAYS = {
+    bad_code: "That does not look like a creator code.",
+    unknown_code: "No creator code by that name.",
+    code_closed: "That code is no longer open.",
+    own_code: "That is your own code.",
+    already_redeemed: "A code is already on this account.",
+    already_subscribed: "Creator codes are for accounts that have not subscribed yet."
+  };
+  function creatorSays(code) {
+    return CREATOR_SAYS[code] || "Could not apply the code just now.";
+  }
+  function loadCreator(force) {
+    var epoch = accountEpoch, uid = state.user && state.user.id;
+    if (!uid) return Promise.resolve(null);
+    if (force)
+      billing.ccRev++;
+    else {
+      if (billing.cc) return Promise.resolve(billing.cc);
+      if (billing.ccWaiting) return billing.ccWaiting;
+    }
+    var rev = billing.ccRev, p = api("creator/me", { method: "GET" }).then(function(r) {
+      return !accountNow(epoch, uid) || rev !== billing.ccRev || (billing.ccWaiting = null, r && r.status === "ok" && (billing.cc = { referral: r.referral || null, creator: r.creator || null, discount: r.discount || null })), billing.cc;
+    }).catch(function() {
+      return accountNow(epoch, uid) && rev === billing.ccRev && (billing.ccWaiting = null), billing.cc;
+    });
+    return billing.ccWaiting = p, p;
+  }
+  function redeemCreator(code, source) {
+    var epoch = accountEpoch, uid = state.user && state.user.id;
+    return api("creator/redeem", { method: "POST", body: JSON.stringify({ code: code, source: source }) }).then(function(r) {
+      if (!accountNow(epoch, uid)) throw new Error("Account changed");
+      var ok = !!(r && r.status === "ok"), out = { ok: ok, code: ok ? null : r && r.code || "error", referral: r && r.referral || null, discount: null };
+      return !ok && out.code !== "already_redeemed" ? out : loadCreator(!0).then(function(cc) {
+        return out.discount = cc ? cc.discount : null, out;
+      });
+    });
+  }
+  function consumeCreator() {
+    var s = creatorStash();
+    if (!(!s || !state.user)) {
+      var epoch = accountEpoch, uid = state.user.id;
+      redeemCreator(s.code, s.source).then(function(r) {
+        accountNow(epoch, uid) && (stashCreator(null), r.ok ? (toast(creatorToast(r.referral, r.discount), 4200), haptic("success")) : r.code !== "already_redeemed" && toast(creatorSays(r.code), 4200), paintCreator(), paintPlanCode());
+      }).catch(function() {
+      });
+    }
+  }
+  function authCodeShow(on, quiet2) {
+    $("authcodefield").classList.toggle("hide", !on), $("authcodeask").classList.toggle("hide", on), on && !quiet2 && $("authcode").focus();
+  }
+  function paintAuthCode() {
+    var s = creatorStash();
+    s && ($("authcode").value = s.code, authCodeShow(!0, !0));
+  }
+  function authCodeChange() {
+    var raw = $("authcode").value, code = creatorCode(raw), s = creatorStash();
+    code ? stashCreator(code, "signup") : !raw.trim() && s && s.source === "signup" && stashCreator(null);
+  }
+  function paintPlanCode() {
+    var cc = billing.cc, ref = cc && cc.referral, store = native && native.purchases ? storeName() : "", n = $("plancodeline");
+    n && ($("plancodeask").classList.toggle("hide", !!ref), ref && $("plancodeform").classList.add("hide"), n.textContent = ref ? paywallLine(ref, cc.discount, store) : "", n.classList.toggle("hide", !ref), $("planredeem").textContent = "Redeem in " + store, $("planredeem").classList.toggle("hide", !(ref && store)));
+  }
+  function askPlanCode() {
+    $("plancodeask").classList.add("hide"), $("plancodeform").classList.remove("hide"), $("plancodein").focus();
+  }
+  function applyCode(code, done) {
+    var epoch = accountEpoch, uid = state.user.id;
+    redeemCreator(code, "app").then(function(r) {
+      if (accountNow(epoch, uid)) {
+        if (paintPlanCode(), paintCreator(), !r.ok) {
+          done(creatorSays(r.code));
+          return;
+        }
+        toast(creatorToast(r.referral, r.discount), 4200), haptic("success"), done(null);
+      }
+    }).catch(function() {
+      accountNow(epoch, uid) && done("Could not reach Spotter. Check your connection.");
+    });
+  }
+  function applyPlanCode(btn) {
+    var code = creatorCode($("plancodein").value);
+    if (!code) {
+      toast(creatorSays("bad_code"));
+      return;
+    }
+    !state.user || btn.disabled || (btn.disabled = !0, applyCode(code, function(err) {
+      btn.disabled = !1, err && toast(err, 4200);
+    }));
+  }
+  function redeemInStore(btn) {
+    var cc = billing.cc, ref = cc && cc.referral;
+    if (!(!ref || !state.user || !(native && native.purchases))) {
+      if (native.platform === "android") {
+        native.open("https://play.google.com/redeem?code=" + ref.code);
+        return;
+      }
+      var epoch = accountEpoch, uid = state.user.id;
+      btn.disabled = !0, native.purchases.redeemOfferCode(uid).then(function() {
+        accountNow(epoch, uid) && (billing.redeeming = !0);
+      }).catch(function(e) {
+        accountNow(epoch, uid) && toast(e && e.message ? e.message : "Could not open the App Store just now.");
+      }).then(function() {
+        btn.disabled = !1;
+      });
+    }
+  }
+  function paintCreator() {
+    var cc = billing.cc, ref = cc && cc.referral, c = cc && cc.creator, row = $("setcoderow");
+    if (row && ($("setcode").textContent = ref ? creatorRowText(ref, cc.discount) : "Enter a code", row.disabled = !!ref, row.classList.toggle("hide", !ref && !isFree()), $("setcreator").classList.toggle("hide", !c), !!c)) {
+      $("setcreatorcode").textContent = c.code + (c.active ? "" : " \xB7 closed");
+      var n = $("setcreatoruse");
+      n.innerHTML = "", creatorLines(c).forEach(function(t) {
+        n.appendChild(el("div", "usel", t));
+      });
+    }
+  }
+  function openCode() {
+    billing.cc && billing.cc.referral || (accSheet({
+      title: "Creator code",
+      lede: "From a creator you follow. One per account, and it stays.",
+      fields: [{ name: "code", label: "Code", placeholder: "MARIA" }],
+      go: "Apply",
+      busy: "Applying\u2026",
+      run: function(done) {
+        var code = creatorCode(accVal("code"));
+        code ? applyCode(code, done) : done(creatorSays("bad_code"));
+      }
+    }), $("acc_code").setAttribute("autocapitalize", "characters"));
+  }
+  function shareCreator() {
+    var c = billing.cc && billing.cc.creator;
+    if (c) {
+      if (navigator.share) {
+        navigator.share({ title: "Spotter", text: c.share_text, url: c.share_url }).catch(function() {
+        });
+        return;
+      }
+      var text = c.share_text + " " + c.share_url;
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(text), toast("Copied.");
+        return;
+      }
+      toast(text, 5e3);
+    }
   }
   function paintPlanGroup() {
     var row = $("setplan");
@@ -15828,7 +16283,7 @@ details.details-moving > :not(summary) {
     var mine = isEmailAccount();
     $("setpwrow").classList.toggle("hide", !mine), $("setmailrow").disabled = !mine, $("setname").textContent = displayName() || "Not set", $("unittoggle").textContent = state.unit, paintGoal(), $("haptictoggle").textContent = state.haptics ? "On" : "Off", $("sethapticrow").classList.toggle("hide", !native && !navigator.vibrate), paintSounds(), loadRemind(), $("shortcutsetup").classList.toggle("hide", !!native), $("nativesharehelp").classList.toggle("hide", !native), native && native.platform === "android" && ($("nativesharehelp").textContent = "In TikTok, YouTube, Instagram or another app, share the post\u2019s link and choose Spotter from the Android share sheet.");
     var key = state.profile ? state.profile.ingest_key : null;
-    $("setkey").textContent = key ? API + "ingest?key=" + key : "Loading\u2026", renderSettingsMeter(), paintPlanGroup(), paintPlanUse(billing.limits), Promise.all([loadPrices(), loadSub()]).then(paintPlanGroup), paintStrava(), askStrava(), api("limits", { method: "GET" }).then(function(r) {
+    $("setkey").textContent = key ? API + "ingest?key=" + key : "Loading\u2026", renderSettingsMeter(), paintPlanGroup(), paintPlanUse(billing.limits), Promise.all([loadPrices(), loadSub()]).then(paintPlanGroup), paintCreator(), loadCreator().then(paintCreator), paintStrava(), askStrava(), api("limits", { method: "GET" }).then(function(r) {
       pumpy.meterAsked = !0, absorbMeter(r && r.pumpy), r.status === "ok" && (billing.limits = r, adoptPlan(r.plan), paintPlanUse(r));
     }).catch(function() {
     }), openSheet("settingssheet");
@@ -16696,6 +17151,11 @@ details.details-moving > :not(summary) {
     f && doUpload(f);
   }, $("exeditsave").onclick = saveExEdit, $("exeditdelete").onclick = deleteExEdit, $("exeditcancel").onclick = function() {
     closeSheet("exeditsheet"), exEdit = null;
+  }, $("exeditpick").onclick = function() {
+    if (!(!exEdit || exEdit.mode !== "edit")) {
+      var t = swapTarget(exEdit.w, exEdit.ex) || { w: exEdit.w, bi: exEdit.block, ei: exEdit.index, ex: exEdit.ex };
+      openPicker("replace", t), closeSheet("exeditsheet"), exEdit = null;
+    }
   }, $("exeditname").addEventListener("keydown", function(e) {
     e.key === "Enter" && saveExEdit();
   }), $("pumpytab").innerHTML = PUMPY_MARK, $("pumpysend").onclick = function() {
@@ -16714,6 +17174,8 @@ details.details-moving > :not(summary) {
   }
   $("swaphavego").onclick = function() {
     runSwap();
+  }, $("swapbankgo").onclick = function() {
+    swapBank(null);
   }, $("swaphaveinput").addEventListener("keydown", function(e) {
     e.key === "Enter" && runSwap();
   }), $("colcreate").onclick = createCollection, $("colname").addEventListener("keydown", function(e) {
@@ -16762,7 +17224,15 @@ details.details-moving > :not(summary) {
     closeSheet("plansheet");
   }, $("planbuy").onclick = startCheckout, $("planrestore").onclick = function() {
     refreshBilling(this);
-  }, $("libcount").onclick = function() {
+  }, $("setcoderow").onclick = openCode, $("setcreatorshare").onclick = shareCreator, $("plancodeask").onclick = askPlanCode, $("plancodego").onclick = function() {
+    applyPlanCode(this);
+  }, $("plancodein").addEventListener("keydown", function(e) {
+    e.key === "Enter" && applyPlanCode($("plancodego"));
+  }), $("planredeem").onclick = function() {
+    redeemInStore(this);
+  }, $("authcodeask").onclick = function() {
+    authCodeShow(!0);
+  }, $("authcode").addEventListener("input", authCodeChange), $("libcount").onclick = function() {
     openPlans(null);
   }, $("acccancel").onclick = closeAcc, $("accgo").onclick = accGo, wireSheet("accountsheet"), location.hash.indexOf("type=recovery") > 0 && setTimeout(openRecovery, 700), $("wsound").onclick = toggleWorkoutSounds, $("signout").onclick = function() {
     closeSheet("settingssheet"), sb.auth.signOut();
@@ -16943,7 +17413,7 @@ details.details-moving > :not(summary) {
       }
       watchBilling(), overlayShowing() || load();
     }
-  }), window.addEventListener("pageshow", watchBilling), window.addEventListener("focus", watchBilling), setAuthMode("signup"), captureShare(), captureBilling(), captureStrava(), linkProblem(), sb.auth.getSession().then(function(r) {
+  }), window.addEventListener("pageshow", watchBilling), window.addEventListener("focus", watchBilling), captureCreator(), setAuthMode("signup"), captureShare(), captureBilling(), captureStrava(), linkProblem(), sb.auth.getSession().then(function(r) {
     r.data.session && r.data.session.user ? (state.user = r.data.session.user, showApp(), boot().then(offerResume)) : (showLanding(), sharePending() && toast("Sign in to save the link you shared."));
   }), !native && "serviceWorker" in navigator && window.addEventListener("load", function() {
     navigator.serviceWorker.register("sw.js").catch(function() {

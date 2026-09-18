@@ -29,6 +29,12 @@
 //   POST /api/billing/portal        { return_url } — a Customer Portal URL
 //   POST /api/billing/sync          { session_id? } — re-read Stripe and rewrite the row
 //   POST /api/billing/webhook       Stripe's events (signature-verified, no user token)
+//   POST /api/creator/redeem        { code, source? } — attribute this account to a creator code
+//   GET  /api/creator/me            the code on this account, the caller's own creator numbers, the offer
+//   GET  /api/creator/codes         every creator code with its numbers (staff only)
+//   POST /api/creator/codes         mint a creator code (staff only)
+//   PATCH /api/creator/codes/:code  change one (staff only)
+//   POST /api/creator/codes/:code/payouts  record a payout made by hand (staff only)
 //   GET  /api/strava/status         { configured, connected, athlete_id }
 //   GET  /api/strava/connect        { url } — the signed "Connect with Strava" consent link
 //   GET  /api/strava/callback       Strava's redirect back (signed state, no user token)
@@ -9838,8 +9844,8 @@ async function handleReprocess(id: string, userId: string, req: Request, cors: C
 
 class BadEdit extends Error {}
 
-type EditField = "name" | "sets" | "reps" | "duration_seconds";
-const EDIT_FIELDS: EditField[] = ["name", "sets", "reps", "duration_seconds"];
+type EditField = "name" | "sets" | "reps" | "duration_seconds" | "canonical_id";
+const EDIT_FIELDS: EditField[] = ["name", "sets", "reps", "duration_seconds", "canonical_id"];
 
 /**
  * Validate one submitted field. Deliberately throws rather than coercing: quietly
@@ -9851,6 +9857,15 @@ function cleanEditField(field: EditField, v: unknown): string | number | null {
     const s = String(v ?? "").replace(/\s+/g, " ").trim();
     if (!s) throw new BadEdit("An exercise needs a name.");
     return s.slice(0, 120);
+  }
+  if (field === "canonical_id") {
+    // Only an identity the catalog has. The picker sends the id it read off the
+    // catalog row; anything else is a guess, and a guessed id silently merges
+    // two different lifts' records. Nothing supplied means resolve from the name.
+    if (v === null || v === undefined || v === "") return null;
+    const s = String(v).trim();
+    if (!catalogById(s)) throw new BadEdit("That exercise id is not in the catalog.");
+    return s;
   }
   if (field === "reps") {
     if (v === null || v === undefined) return null;
@@ -9960,9 +9975,12 @@ async function handleCorrection(id: string, userId: string, req: Request, cors: 
       if (!Array.isArray(blk.exercises)) blk.exercises = [];
       if (blk.exercises.length >= 60) throw new BadEdit("That block is full.");
       const name = cleanEditField("name", fields.name) as string;
+      // A catalog id the client picked the movement by outranks a guess from the
+      // name; without one, the name is resolved the way it always was.
+      const canon = (cleanEditField("canonical_id", fields.canonical_id) as string | null) ?? canonId(name);
       const ex = {
         name,
-        canonical_id: canonId(name),
+        canonical_id: canon,
         sets: cleanEditField("sets", fields.sets),
         reps: cleanEditField("reps", fields.reps),
         duration_seconds: cleanEditField("duration_seconds", fields.duration_seconds),
@@ -10006,25 +10024,37 @@ async function handleCorrection(id: string, userId: string, req: Request, cors: 
         });
       } else {
         const before = deepCopy(ex);
+        // The name and the identity under it move together. A catalog id the
+        // client supplied outranks what the name alone resolves to; without one
+        // a changed name is resolved as it always was and an unchanged one keeps
+        // its id. One ledger row either way: corrections has no canonical_id
+        // field, it records the old and new id on the name change.
+        const nameWas = String(ex.name ?? "");
+        const nameNext = "name" in fields ? cleanEditField("name", fields.name) as string : nameWas;
+        const canonWas = (ex.canonical_id ?? null) as string | null;
+        const canonGiven = "canonical_id" in fields
+          ? cleanEditField("canonical_id", fields.canonical_id) as string | null
+          : null;
+        const canonNext = canonGiven ?? (nameNext !== nameWas ? canonId(nameNext) : canonWas);
+        if (nameNext !== nameWas || canonNext !== canonWas) {
+          ex.name = nameNext;
+          ex.canonical_id = canonNext;
+          changes.push({
+            field: "name", old: before.name ?? null, new: nameNext, oldCanon: canonWas, newCanon: canonNext,
+            oldEx: null, newEx: null,
+          });
+        }
         for (const f of EDIT_FIELDS) {
-          if (!(f in fields)) continue;
+          if (f === "name" || f === "canonical_id" || !(f in fields)) continue;
           const next = cleanEditField(f, fields[f]);
           const prev = (ex[f] ?? null) as string | number | null;
           // An untouched field is not a correction. Writing one would put noise
           // into the only dataset that can answer where extraction actually fails.
           if (String(prev ?? "") === String(next ?? "")) continue;
-          const change: Change = {
+          ex[f] = next;
+          changes.push({
             field: f, old: prev, new: next, oldCanon: null, newCanon: null, oldEx: null, newEx: null,
-          };
-          if (f === "name") {
-            change.oldCanon = ex.canonical_id ?? null;
-            ex.name = next as string;
-            ex.canonical_id = canonId(next as string);
-            change.newCanon = ex.canonical_id;
-          } else {
-            ex[f] = next;
-          }
-          changes.push(change);
+          });
         }
         if (!changes.length) {
           return json({ status: "ok", workout: w, corrections: 0 }, 200, cors);
@@ -13039,6 +13069,320 @@ async function authorizeUpload(req: Request, userId: string, cors: Cors): Promis
   return json({ status: "ok", path: body.path }, 200, cors);
 }
 
+// ---------- creator codes ----------
+//
+// A creator code is a word the owner mints for a video creator (`MARIA`). A
+// person redeems it in the app, arrives on a `?code=` link, or types the
+// matching offer code in the store; either way the account is attributed once,
+// and every paid store transaction inside the code's window writes the creator
+// a cut. The deciding lives in SQL (`redeem_creator_code`, `record_creator_earning`,
+// `creator_stats`, migration 20260918150000); these routes validate, call, and
+// turn a status word into an HTTP answer. No model is called and no allowance is
+// spent on any of them, so none of them is in guardedUserRequest's AI list.
+//
+//   POST  /api/creator/redeem                { code, source? }         → the referral
+//   GET   /api/creator/me                    referral, creator numbers, the discount
+//   GET   /api/creator/codes                 staff: every code with its numbers
+//   POST  /api/creator/codes                 staff: mint one
+//   PATCH /api/creator/codes/:code           staff: change one
+//   POST  /api/creator/codes/:code/payouts   staff: record money sent by hand
+//
+// The staff routes answer 404 for anybody else, for the reason the scorecard
+// does: an admin surface that admits it exists is a target.
+
+const CREATOR_CODE_RE = /^[A-Za-z0-9]{3,20}$/;
+const CREATOR_APP_SOURCES = new Set(["app", "link", "signup"]);
+const CREATOR_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const CREATOR_CFG_TTL_MS = 5 * 60 * 1000;
+
+type CreatorDiscount = { percent_off: number; months: number };
+let creatorDiscountCache: { at: number; discount: CreatorDiscount | null } | null = null;
+
+/**
+ * `creator.discount` out of app_config: `{"percent_off":10,"months":12}`, or
+ * null. Absent, `null`, or unreadable all mean the app promises nothing, which
+ * is the safe direction: a discount the store does not actually honour is the
+ * one thing this feature must never print.
+ */
+function parseCreatorDiscount(raw: unknown): CreatorDiscount | null {
+  if (typeof raw !== "string") return null;
+  try {
+    const v = JSON.parse(raw);
+    if (!v || typeof v !== "object") return null;
+    const pct = Number(v.percent_off), months = Number(v.months);
+    if (!Number.isFinite(pct) || pct <= 0 || pct > 100) return null;
+    if (!Number.isInteger(months) || months < 1) return null;
+    return { percent_off: pct, months };
+  } catch {
+    return null;
+  }
+}
+
+/** The discount, on the same five-minute cache the other dials use. */
+async function creatorDiscount(): Promise<CreatorDiscount | null> {
+  if (creatorDiscountCache && Date.now() - creatorDiscountCache.at < CREATOR_CFG_TTL_MS) return creatorDiscountCache.discount;
+  try {
+    const rows = await dbSelect("app_config", "key=eq.creator.discount&select=value");
+    creatorDiscountCache = { at: Date.now(), discount: parseCreatorDiscount(rows[0]?.value) };
+  } catch (e) {
+    console.error("creator: could not read the discount", e);
+    return creatorDiscountCache?.discount ?? null;
+  }
+  return creatorDiscountCache.discount;
+}
+
+/** What a creator pastes under a video, and where it points. */
+function creatorShare(code: string, discount: CreatorDiscount | null): { share_text: string; share_url: string } {
+  return {
+    share_text: discount
+      ? `Use my code ${code} for ${discount.percent_off}% off Spotter Plus`
+      : `Use my code ${code} on Spotter`,
+    // The app's own address, the one Checkout and the Portal were sent back to.
+    share_url: `${returnBaseFrom(null)}?code=${encodeURIComponent(code)}`,
+  };
+}
+
+function creatorError(code: string, status: number, message: string, cors: Cors, extra: Record<string, unknown> = {}): Response {
+  return json({ status: "error", code, message, ...extra }, status, cors);
+}
+
+/** The HTTP answer for each word `redeem_creator_code` can say. */
+const REDEEM_ANSWERS: Record<string, [number, string]> = {
+  bad_code: [400, "A code is 3 to 20 letters and numbers."],
+  own_code: [400, "That is your own code."],
+  unknown_code: [404, "That code does not exist."],
+  code_closed: [410, "That code is no longer open."],
+  already_redeemed: [409, "This account already has a code."],
+  already_subscribed: [409, "Codes are for new subscribers, and this account already has a plan."],
+};
+
+type CreatorReferral = { code: string; creator_name: string; redeemed_at: string };
+function creatorReferralOf(row: any): CreatorReferral | null {
+  return row && typeof row.code === "string"
+    ? { code: row.code, creator_name: String(row.creator_name ?? ""), redeemed_at: String(row.redeemed_at ?? "") }
+    : null;
+}
+
+/** The same gate the scorecard uses: `profiles.plan` is `staff`, and nothing else counts. */
+async function isStaff(userId: string): Promise<boolean> {
+  try {
+    return String((await dbSelect("profiles", `id=eq.${userId}&select=plan`))[0]?.plan ?? "free") === "staff";
+  } catch (e) {
+    console.error("creator: could not read the plan for a staff request", e);
+    return false;
+  }
+}
+
+/** One code as the owner sees it: its columns plus its numbers, from creator_code_stats. */
+async function creatorCodeRow(code: string): Promise<any | null> {
+  return (await dbSelect("creator_code_stats", `code=eq.${encodeURIComponent(code)}&select=*`))[0] ?? null;
+}
+
+class CreatorBadField extends Error {
+  field: string;
+  constructor(field: string, message: string) { super(message); this.field = field; }
+}
+
+/**
+ * The columns a staff request may set, each checked the way the table checks
+ * it, so a bad value is a 400 naming the field rather than a 500 quoting a
+ * constraint. Only the keys that were present come back; a null clears where
+ * the column allows it.
+ */
+function cleanCreatorFields(body: Record<string, unknown>, allowed: string[]): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  const text = (key: string, max: number, required = false) => {
+    if (!(key in body)) return;
+    const v = body[key];
+    if (v === null || v === undefined) {
+      if (required) throw new CreatorBadField(key, `${key} is required.`);
+      out[key] = null;
+      return;
+    }
+    if (typeof v !== "string") throw new CreatorBadField(key, `${key} must be text.`);
+    const t = v.trim();
+    if (required && !t) throw new CreatorBadField(key, `${key} is required.`);
+    if (t.length > max) throw new CreatorBadField(key, `${key} is at most ${max} characters.`);
+    out[key] = t || null;
+  };
+  const int = (key: string, min: number, max: number, nullable: boolean) => {
+    if (!(key in body)) return;
+    const v = body[key];
+    if (v === null || v === undefined) {
+      if (!nullable) throw new CreatorBadField(key, `${key} is required.`);
+      out[key] = null;
+      return;
+    }
+    if (typeof v !== "number" || !Number.isInteger(v) || v < min || v > max) {
+      throw new CreatorBadField(key, `${key} must be a whole number from ${min} to ${max}.`);
+    }
+    out[key] = v;
+  };
+  for (const key of allowed) {
+    switch (key) {
+      case "creator_name": text(key, 80, true); break;
+      case "contact": text(key, 200); break;
+      case "note": text(key, 500); break;
+      case "commission_bps": int(key, 0, 10000, false); break;
+      case "commission_months": int(key, 1, 120, false); break;
+      case "max_redemptions": int(key, 1, 1_000_000, true); break;
+      case "active":
+        if (!(key in body)) break;
+        if (typeof body.active !== "boolean") throw new CreatorBadField(key, "active must be true or false.");
+        out.active = body.active;
+        break;
+      case "creator_user_id":
+        if (!(key in body)) break;
+        if (body.creator_user_id === null) { out.creator_user_id = null; break; }
+        if (typeof body.creator_user_id !== "string" || !CREATOR_UUID_RE.test(body.creator_user_id)) {
+          throw new CreatorBadField(key, "creator_user_id must be an account id.");
+        }
+        out.creator_user_id = body.creator_user_id;
+        break;
+      case "expires_at": {
+        if (!(key in body)) break;
+        if (body.expires_at === null) { out.expires_at = null; break; }
+        const ms = typeof body.expires_at === "string" ? Date.parse(body.expires_at) : NaN;
+        if (!Number.isFinite(ms)) throw new CreatorBadField(key, "expires_at must be an ISO date.");
+        out.expires_at = new Date(ms).toISOString();
+        break;
+      }
+    }
+  }
+  return out;
+}
+
+async function handleCreator(path: string, req: Request, userId: string, cors: Cors): Promise<Response> {
+  const notFound = () => json({ status: "error", message: "Not found" }, 404, cors);
+
+  if (path === "/api/creator/redeem") {
+    if (req.method !== "POST") return notFound();
+    const body = await req.json().catch(() => ({})) as Record<string, unknown>;
+    const code = typeof body.code === "string" ? body.code.trim() : "";
+    if (!CREATOR_CODE_RE.test(code)) return creatorError("bad_code", ...REDEEM_ANSWERS.bad_code, cors);
+    const source = body.source === undefined ? "app" : String(body.source);
+    if (!CREATOR_APP_SOURCES.has(source)) return creatorError("bad_source", 400, "source must be app, link or signup.", cors);
+    const rows = await rpc("redeem_creator_code", { uid: userId, p_code: code.toUpperCase(), p_source: source });
+    const row = Array.isArray(rows) ? rows[0] : rows;
+    const status = String(row?.status ?? "");
+    if (status === "ok") return json({ status: "ok", referral: creatorReferralOf(row) }, 200, cors);
+    const answer = REDEEM_ANSWERS[status];
+    if (!answer) throw new Error(`redeem_creator_code answered ${status || "nothing"}`);
+    // already_redeemed carries the code on file, so the app can show it rather
+    // than ask again; the other refusals carry nothing a client could act on.
+    return creatorError(status, answer[0], answer[1], cors,
+      status === "already_redeemed" ? { referral: creatorReferralOf(row) } : {});
+  }
+
+  if (path === "/api/creator/me") {
+    if (req.method !== "GET") return notFound();
+    const [refRows, discount] = await Promise.all([
+      dbSelect("creator_referrals", `user_id=eq.${userId}&select=redeemed_at,creator_codes(code,creator_name)`),
+      creatorDiscount(),
+    ]);
+    // The creator's numbers are the one part Settings can live without for a
+    // minute; a stats read that fails must not take the referral down with it.
+    let stats: any = null;
+    try {
+      const rows = await rpc("creator_stats", { uid: userId });
+      stats = Array.isArray(rows) ? rows[0] ?? null : null;
+    } catch (e) {
+      console.error("creator: stats unavailable", userId, e);
+    }
+    const ref = refRows[0];
+    const referral = ref?.creator_codes ? creatorReferralOf({ ...ref.creator_codes, redeemed_at: ref.redeemed_at }) : null;
+    const creator = stats ? {
+      code: String(stats.code),
+      active: !!stats.active,
+      signups: Number(stats.signups ?? 0),
+      subscribers: Number(stats.subscribers ?? 0),
+      earned_cents: Number(stats.earned_cents ?? 0),
+      paid_cents: Number(stats.paid_cents ?? 0),
+      owed_cents: Number(stats.owed_cents ?? 0),
+      currency: "usd",
+      commission_bps: Number(stats.commission_bps ?? 0),
+      commission_months: Number(stats.commission_months ?? 0),
+      ...creatorShare(String(stats.code), discount),
+    } : null;
+    return json({ status: "ok", referral, creator, discount }, 200, cors);
+  }
+
+  // Staff from here on. A non-staff caller learns nothing, not even the shape.
+  if (path !== "/api/creator/codes" && !path.startsWith("/api/creator/codes/")) return notFound();
+  if (!(await isStaff(userId))) return notFound();
+
+  if (path === "/api/creator/codes" && req.method === "GET") {
+    const codes = await dbSelect("creator_code_stats", "select=*&order=created_at.desc&limit=500");
+    return json({ status: "ok", codes }, 200, cors);
+  }
+
+  if (path === "/api/creator/codes" && req.method === "POST") {
+    const body = await req.json().catch(() => ({})) as Record<string, unknown>;
+    const code = typeof body.code === "string" ? body.code.trim().toUpperCase() : "";
+    if (!CREATOR_CODE_RE.test(code)) return creatorError("bad_code", ...REDEEM_ANSWERS.bad_code, cors);
+    let row: Record<string, unknown>;
+    try {
+      row = cleanCreatorFields(body, ["creator_name", "contact", "creator_user_id", "commission_bps", "commission_months",
+        "max_redemptions", "expires_at", "note"]);
+    } catch (e) {
+      if (e instanceof CreatorBadField) return creatorError("bad_field", 400, e.message, cors, { field: e.field });
+      throw e;
+    }
+    if (!("creator_name" in row)) return creatorError("bad_field", 400, "creator_name is required.", cors, { field: "creator_name" });
+    // An email is how the owner knows a creator; the id is what the table wants.
+    // An explicit creator_user_id wins over the email when both are sent.
+    if (row.creator_user_id == null && typeof body.creator_email === "string" && body.creator_email.trim()) {
+      const found = await rpc("creator_user_for_email", { p_email: body.creator_email.trim() });
+      if (typeof found !== "string") return creatorError("no_such_user", 404, "No account has that email.", cors);
+      row.creator_user_id = found;
+    }
+    const r = await fetch(rest("creator_codes"), {
+      method: "POST",
+      headers: { ...dbHeaders, prefer: "return=minimal" },
+      body: JSON.stringify({ ...row, code }),
+    });
+    if (r.status === 409) { await r.body?.cancel(); return creatorError("code_taken", 409, "That code is already minted.", cors); }
+    if (!r.ok) throw new Error(`db insert creator_codes ${r.status}: ${await r.text()}`);
+    await r.body?.cancel();
+    return json({ status: "ok", code: await creatorCodeRow(code) }, 201, cors);
+  }
+
+  const m = path.match(/^\/api\/creator\/codes\/([^/]+)(\/payouts)?$/);
+  if (!m) return notFound();
+  const code = decodeURIComponent(m[1]).trim().toUpperCase();
+  if (!CREATOR_CODE_RE.test(code)) return creatorError("bad_code", ...REDEEM_ANSWERS.bad_code, cors);
+
+  if (!m[2] && req.method === "PATCH") {
+    const body = await req.json().catch(() => ({})) as Record<string, unknown>;
+    let patch: Record<string, unknown>;
+    try {
+      patch = cleanCreatorFields(body, ["active", "creator_name", "contact", "creator_user_id", "note", "max_redemptions", "expires_at"]);
+    } catch (e) {
+      if (e instanceof CreatorBadField) return creatorError("bad_field", 400, e.message, cors, { field: e.field });
+      throw e;
+    }
+    if (!Object.keys(patch).length) return creatorError("no_fields", 400, "Nothing to change.", cors);
+    const rows = await dbPatchMany("creator_codes", `code=eq.${encodeURIComponent(code)}`, patch);
+    if (!rows.length) return creatorError("unknown_code", 404, "That code does not exist.", cors);
+    return json({ status: "ok", code: await creatorCodeRow(code) }, 200, cors);
+  }
+
+  if (m[2] && req.method === "POST") {
+    const body = await req.json().catch(() => ({})) as Record<string, unknown>;
+    const amount = body.amount_cents;
+    if (typeof amount !== "number" || !Number.isInteger(amount) || amount <= 0 || amount > 100_000_000) {
+      return creatorError("bad_amount", 400, "amount_cents must be a positive whole number of cents.", cors);
+    }
+    const note = typeof body.note === "string" ? body.note.trim().slice(0, 500) || null : null;
+    const existing = await dbSelect("creator_codes", `code=eq.${encodeURIComponent(code)}&select=id`);
+    if (!existing.length) return creatorError("unknown_code", 404, "That code does not exist.", cors);
+    const payout = await dbInsert("creator_payouts", { code_id: existing[0].id, amount_cents: amount, note });
+    return json({ status: "ok", payout, code: await creatorCodeRow(code) }, 201, cors);
+  }
+
+  return notFound();
+}
+
 // ---------- router ----------
 
 Deno.serve(async (req: Request) => {
@@ -13155,7 +13499,7 @@ Deno.serve(async (req: Request) => {
 
     // The weekly scorecard, for staff and nobody else. Matched here, above the
     // metered user routes, because it spends no allowance and calls no model —
-    // it is nine aggregate reads of service-role-only views.
+    // it is ten aggregate reads of service-role-only views.
     //
     // 404 rather than 403 for a non-staff account: the existence of an admin
     // surface is itself information, and a signed-in stranger learning that
@@ -13209,6 +13553,7 @@ Deno.serve(async (req: Request) => {
     }
 
     if (path.startsWith("/api/billing/")) return await handleBilling(path, req, userId, cors);
+    if (path.startsWith("/api/creator/")) return await handleCreator(path, req, userId, cors);
     if (path.startsWith("/api/strava/")) return await handleStrava(path, req, userId, cors);
 
     // The one thing a browser needs before it can subscribe: the VAPID public
