@@ -500,9 +500,14 @@ export const APP = String.raw`
   // deliberately not the docs/ copies: tools/ios/build.mjs packs only index.html,
   // assets and the icon into native-dist, so a relative terms.html is a dead link
   // inside both shells — which is the one place a reviewer reading 5.1.2(i) taps.
-  function consentFill(node) {
+  // Only the opening clause differs between the two places this is shown: an
+  // account made last month was not created by the button being pressed now, and
+  // a sentence that says it was is a sentence a person reads past. The part that
+  // is actually being agreed to — what leaves the phone and who receives it — is
+  // written once and cannot drift.
+  function consentFill(node, opening) {
     node.innerHTML = "";
-    node.appendChild(document.createTextNode("By creating an account you agree to the "));
+    node.appendChild(document.createTextNode(opening));
     node.appendChild(consentLink("https://quarterdeckcollective.com/spotter/terms/", "Terms"));
     node.appendChild(document.createTextNode(" and to Spotter sending the videos and captions you save to AI providers (OpenAI, Google) to build your workout cards. "));
     node.appendChild(consentLink("https://quarterdeckcollective.com/spotter/privacy/", "Privacy policy"));
@@ -13369,7 +13374,7 @@ export const APP = String.raw`
     // Asked once, and only of an account that predates the sign-up sentence.
     var owed = !!state.profile && !consentAt();
     $("consentrow").classList.toggle("hide", !owed);
-    if (owed) consentFill($("consentset"));
+    if (owed) consentFill($("consentset"), "Using Spotter means you agree to the ");
     var mine = isEmailAccount();
     $("setpwrow").classList.toggle("hide", !mine);
     $("setmailrow").disabled = !mine;
@@ -14809,7 +14814,7 @@ export const APP = String.raw`
 
   $("authgo").onclick = doAuth;
   $("forgotpw").onclick = forgotPassword;
-  consentFill($("consent"));
+  consentFill($("consent"), "By creating an account you agree to the ");
   $("consentok").onclick = function () {
     noteConsent();
     $("consentrow").classList.add("hide");

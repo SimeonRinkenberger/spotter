@@ -652,9 +652,10 @@ export const MARKUP_BODY = String.raw`</head>
   <h2>Settings</h2>
 
   <!-- The same sentence, once, for an account that was made before there was one
-       to read. Dismissing it is the agreement; it is recorded and never asked
-       again. First thing in the sheet because it is the one thing here that is
-       not a preference. -->
+       to read — consentFill() gives it an opening clause that fits an account
+       that already exists, and the body is the body shown at sign-up. Dismissing
+       it is the agreement; it is recorded and never asked again. First thing in
+       the sheet because it is the one thing here that is not a preference. -->
   <div class="consentrow hide" id="consentrow">
     <p class="consent" id="consentset"></p>
     <button class="btn ghost" id="consentok">Got it</button>

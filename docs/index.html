@@ -8174,8 +8174,8 @@ details.details-moving > :not(summary) {
     var a = el("a", null, text);
     return a.href = href, a;
   }
-  function consentFill(node) {
-    node.innerHTML = "", node.appendChild(document.createTextNode("By creating an account you agree to the ")), node.appendChild(consentLink("https://quarterdeckcollective.com/spotter/terms/", "Terms")), node.appendChild(document.createTextNode(" and to Spotter sending the videos and captions you save to AI providers (OpenAI, Google) to build your workout cards. ")), node.appendChild(consentLink("https://quarterdeckcollective.com/spotter/privacy/", "Privacy policy")), node.appendChild(document.createTextNode("."));
+  function consentFill(node, opening) {
+    node.innerHTML = "", node.appendChild(document.createTextNode(opening)), node.appendChild(consentLink("https://quarterdeckcollective.com/spotter/terms/", "Terms")), node.appendChild(document.createTextNode(" and to Spotter sending the videos and captions you save to AI providers (OpenAI, Google) to build your workout cards. ")), node.appendChild(consentLink("https://quarterdeckcollective.com/spotter/privacy/", "Privacy policy")), node.appendChild(document.createTextNode("."));
   }
   function consentAt() {
     var s = state.profile && state.profile.settings;
@@ -15780,7 +15780,7 @@ details.details-moving > :not(summary) {
     var how = signInMethod();
     $("setprov").textContent = how || "\u2014", $("setprovrow").classList.toggle("hide", !how);
     var owed = !!state.profile && !consentAt();
-    $("consentrow").classList.toggle("hide", !owed), owed && consentFill($("consentset"));
+    $("consentrow").classList.toggle("hide", !owed), owed && consentFill($("consentset"), "Using Spotter means you agree to the ");
     var mine = isEmailAccount();
     $("setpwrow").classList.toggle("hide", !mine), $("setmailrow").disabled = !mine, $("setname").textContent = displayName() || "Not set", $("unittoggle").textContent = state.unit, paintGoal(), $("haptictoggle").textContent = state.haptics ? "On" : "Off", $("sethapticrow").classList.toggle("hide", !native && !navigator.vibrate), paintSounds(), loadRemind(), $("shortcutsetup").classList.toggle("hide", !!native), $("nativesharehelp").classList.toggle("hide", !native), native && native.platform === "android" && ($("nativesharehelp").textContent = "In TikTok, YouTube, Instagram or another app, share the post\u2019s link and choose Spotter from the Android share sheet.");
     var key = state.profile ? state.profile.ingest_key : null;
@@ -16637,7 +16637,7 @@ details.details-moving > :not(summary) {
       }
     }
   }
-  if ($("authgo").onclick = doAuth, $("forgotpw").onclick = forgotPassword, consentFill($("consent")), $("consentok").onclick = function() {
+  if ($("authgo").onclick = doAuth, $("forgotpw").onclick = forgotPassword, consentFill($("consent"), "By creating an account you agree to the "), $("consentok").onclick = function() {
     noteConsent(), $("consentrow").classList.add("hide");
   }, $("otpgo").onclick = otpGo, $("otp").addEventListener("input", function() {
     var v = this.value.replace(/[^0-9]/g, "").slice(0, 6);
