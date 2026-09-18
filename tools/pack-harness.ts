@@ -151,6 +151,10 @@ const STUBS = "import { normText } from '" +
   "async function capLimit(kind: string) { return json({ status: 'limit', kind }, 429); }\n" +
   "async function extractLimitResponse() { return json({ status: 'limit', kind: 'extract' }, 429); }\n" +
   "async function mediaCapReached() { return null; }\n" +
+  // The monthly allowance is exercised by tools/allowance-harness.mjs; here it is
+  // a fixture account with room left, so the pipeline under test is the pipeline.
+  "async function monthReadsReached() { return null; }\n" +
+  "async function allowanceLimit(kind: string) { return json({ status: 'limit', kind, scope: 'month' }, 429); }\n" +
   "async function paidAllowed() { return true; }\n" +
   "async function premiumAccess() { return true; }\n" +
   "async function rpc(name: string, args: any) { spy.rpc.push([name, args]); return DB.rpc(name, args); }\n" +

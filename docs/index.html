@@ -14385,13 +14385,13 @@ details.details-moving > :not(summary) {
     if (!c || !c.kind) return "";
     var cap = num(c.cap), next = capNum(c.next_cap), mine = "the " + planWord(c.plan) + " plan", up = planWord(c.next_plan || "plus");
     if (c.kind === "library")
-      return "That is " + cap + " saved workouts, which is " + mine + "'s shelf. " + up + " takes the lid off, and nothing you have saved is going anywhere in the meantime.";
+      return "That is " + cap + " saved workouts, which is " + mine + "\u2019s shelf. " + up + " takes the lid off, and nothing you have saved is going anywhere in the meantime.";
     if (c.kind === "pumpy")
-      return "That is this month's coaching used up \u2014 my credits come back on the 1st. " + pumpyRoom(up);
+      return "That is this month\u2019s coaching used up \u2014 my credits come back on the 1st. " + pumpyRoom(up);
     var w = CAP_WORDS[c.kind];
     if (!w || cap === null) return "";
     var month = c.scope === "month", noun = c.kind === "uploads" && cap === 1 ? "upload" : w[0];
-    return "That is " + cap + " " + noun + (month ? " this month, " : " today, ") + mine + "'s " + (month ? "allowance for it. It comes back on the 1st. " : "burst limit. It resets at midnight UTC. ") + (next === null ? up + " has no limit here." : up + " " + w[1] + " " + next + (month ? " a month." : " a day."));
+    return "That is " + cap + " " + noun + (month ? " this month, " : " today, ") + mine + "\u2019s " + (month ? "allowance for it. It comes back on the 1st. " : "burst limit. It resets at midnight UTC. ") + (next === null ? up + " has no limit here." : up + " " + w[1] + " " + next + (month ? " a month." : " a day."));
   }
   function skelRow(cls) {
     return el("div", "skel " + cls);

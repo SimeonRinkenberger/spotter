@@ -11348,20 +11348,20 @@ export const APP = String.raw`
     var cap = num(c.cap), next = capNum(c.next_cap);
     var mine = "the " + planWord(c.plan) + " plan", up = planWord(c.next_plan || "plus");
     if (c.kind === "library") {
-      return "That is " + cap + " saved workouts, which is " + mine + "'s shelf. " + up +
+      return "That is " + cap + " saved workouts, which is " + mine + "’s shelf. " + up +
         " takes the lid off, and nothing you have saved is going anywhere in the meantime.";
     }
     // Pumpy stays in his own first person, wherever this is read. There used to
     // be a second, daily branch here saying his credits came back at midnight;
     // they never did — the ladder has always been monthly — so it is gone.
     if (c.kind === "pumpy") {
-      return "That is this month's coaching used up — my credits come back on the 1st. " + pumpyRoom(up);
+      return "That is this month’s coaching used up — my credits come back on the 1st. " + pumpyRoom(up);
     }
     var w = CAP_WORDS[c.kind];
     if (!w || cap === null) return "";
     var month = c.scope === "month";
     var noun = c.kind === "uploads" && cap === 1 ? "upload" : w[0];
-    return "That is " + cap + " " + noun + (month ? " this month, " : " today, ") + mine + "'s " +
+    return "That is " + cap + " " + noun + (month ? " this month, " : " today, ") + mine + "’s " +
       (month ? "allowance for it. It comes back on the 1st. " : "burst limit. It resets at midnight UTC. ") +
       (next === null ? up + " has no limit here."
         : up + " " + w[1] + " " + next + (month ? " a month." : " a day."));
