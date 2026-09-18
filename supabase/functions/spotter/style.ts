@@ -133,6 +133,10 @@ export const STYLE = String.raw`<style>
      colour, one size up so the hierarchy survives losing the spacing. */
   .field label { display: block; font-size: 11px; font-weight: 600;
     color: var(--muted); margin-bottom: 6px; }
+  /* A label with a way out beside it: Change on the exercise name opens the bank. */
+  .fieldhead { display: flex; justify-content: space-between; align-items: baseline; }
+  .fieldlink { background: none; border: none; padding: 0 0 6px; font-size: 12px; font-weight: 650;
+    color: var(--ember-ink); }
   .field input { width: 100%; border: 1px solid var(--line); border-radius: 13px; padding: 12px 14px;
     font-size: 16px; background: var(--sand); color: var(--ink); outline: none;
     transition: border-color var(--t-2), background-color var(--t-2); }
@@ -1141,6 +1145,11 @@ export const STYLE = String.raw`<style>
   .swapitem .trade { font-size: 12.5px; color: var(--muted); line-height: 1.5; margin-top: 3px; }
   .swapnote { font-size: 12px; color: var(--muted); line-height: 1.5; margin: 14px 0 4px; padding-top: 10px;
     border-top: 1px solid var(--line); }
+  /* The way round the model: a row under the reasons into the bank, and a chip on
+     each alternative that does the same with the suggestion already picked. */
+  .swapbank { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 14px;
+    font-size: 13px; color: var(--muted); }
+  .swapitem .use { margin-top: 8px; }
 
   /* ---------- picker list ---------- */
   .picklist { display: flex; flex-direction: column; gap: 2px; }
@@ -1807,6 +1816,11 @@ export const STYLE = String.raw`<style>
     border: 1px solid var(--line-2); border-radius: 15px; background: var(--card);
     transition: border-color var(--t-2) var(--e-out), background-color var(--t-2) var(--e-out); }
   .woakeep.on { border-color: var(--ember); background: var(--ember-soft); }
+  /* The filter, folded: one word above the list until it is wanted. */
+  .woafilt { margin: 0 0 8px; }
+  .woafilt > summary { padding: 10px 14px; min-height: 40px; }
+  .woafilt .woahead { padding: 6px 2px 4px; }
+  .woafilt .pillrow { margin-bottom: 4px; }
   /* The foot of the list, where Fitbod keeps the same action. Dashed, because it
      is an invitation and not one of the card's own exercises. */
   .waddcard { margin-top: 14px; padding: 13px; border: 1px dashed var(--line-2);

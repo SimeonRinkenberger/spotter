@@ -9838,8 +9838,8 @@ async function handleReprocess(id: string, userId: string, req: Request, cors: C
 
 class BadEdit extends Error {}
 
-type EditField = "name" | "sets" | "reps" | "duration_seconds";
-const EDIT_FIELDS: EditField[] = ["name", "sets", "reps", "duration_seconds"];
+type EditField = "name" | "sets" | "reps" | "duration_seconds" | "canonical_id";
+const EDIT_FIELDS: EditField[] = ["name", "sets", "reps", "duration_seconds", "canonical_id"];
 
 /**
  * Validate one submitted field. Deliberately throws rather than coercing: quietly
@@ -9851,6 +9851,15 @@ function cleanEditField(field: EditField, v: unknown): string | number | null {
     const s = String(v ?? "").replace(/\s+/g, " ").trim();
     if (!s) throw new BadEdit("An exercise needs a name.");
     return s.slice(0, 120);
+  }
+  if (field === "canonical_id") {
+    // Only an identity the catalog has. The picker sends the id it read off the
+    // catalog row; anything else is a guess, and a guessed id silently merges
+    // two different lifts' records. Nothing supplied means resolve from the name.
+    if (v === null || v === undefined || v === "") return null;
+    const s = String(v).trim();
+    if (!catalogById(s)) throw new BadEdit("That exercise id is not in the catalog.");
+    return s;
   }
   if (field === "reps") {
     if (v === null || v === undefined) return null;
@@ -9960,9 +9969,12 @@ async function handleCorrection(id: string, userId: string, req: Request, cors: 
       if (!Array.isArray(blk.exercises)) blk.exercises = [];
       if (blk.exercises.length >= 60) throw new BadEdit("That block is full.");
       const name = cleanEditField("name", fields.name) as string;
+      // A catalog id the client picked the movement by outranks a guess from the
+      // name; without one, the name is resolved the way it always was.
+      const canon = (cleanEditField("canonical_id", fields.canonical_id) as string | null) ?? canonId(name);
       const ex = {
         name,
-        canonical_id: canonId(name),
+        canonical_id: canon,
         sets: cleanEditField("sets", fields.sets),
         reps: cleanEditField("reps", fields.reps),
         duration_seconds: cleanEditField("duration_seconds", fields.duration_seconds),
@@ -10006,25 +10018,37 @@ async function handleCorrection(id: string, userId: string, req: Request, cors: 
         });
       } else {
         const before = deepCopy(ex);
+        // The name and the identity under it move together. A catalog id the
+        // client supplied outranks what the name alone resolves to; without one
+        // a changed name is resolved as it always was and an unchanged one keeps
+        // its id. One ledger row either way: corrections has no canonical_id
+        // field, it records the old and new id on the name change.
+        const nameWas = String(ex.name ?? "");
+        const nameNext = "name" in fields ? cleanEditField("name", fields.name) as string : nameWas;
+        const canonWas = (ex.canonical_id ?? null) as string | null;
+        const canonGiven = "canonical_id" in fields
+          ? cleanEditField("canonical_id", fields.canonical_id) as string | null
+          : null;
+        const canonNext = canonGiven ?? (nameNext !== nameWas ? canonId(nameNext) : canonWas);
+        if (nameNext !== nameWas || canonNext !== canonWas) {
+          ex.name = nameNext;
+          ex.canonical_id = canonNext;
+          changes.push({
+            field: "name", old: before.name ?? null, new: nameNext, oldCanon: canonWas, newCanon: canonNext,
+            oldEx: null, newEx: null,
+          });
+        }
         for (const f of EDIT_FIELDS) {
-          if (!(f in fields)) continue;
+          if (f === "name" || f === "canonical_id" || !(f in fields)) continue;
           const next = cleanEditField(f, fields[f]);
           const prev = (ex[f] ?? null) as string | number | null;
           // An untouched field is not a correction. Writing one would put noise
           // into the only dataset that can answer where extraction actually fails.
           if (String(prev ?? "") === String(next ?? "")) continue;
-          const change: Change = {
+          ex[f] = next;
+          changes.push({
             field: f, old: prev, new: next, oldCanon: null, newCanon: null, oldEx: null, newEx: null,
-          };
-          if (f === "name") {
-            change.oldCanon = ex.canonical_id ?? null;
-            ex.name = next as string;
-            ex.canonical_id = canonId(next as string);
-            change.newCanon = ex.canonical_id;
-          } else {
-            ex[f] = next;
-          }
-          changes.push(change);
+          });
         }
         if (!changes.length) {
           return json({ status: "ok", workout: w, corrections: 0 }, 200, cors);

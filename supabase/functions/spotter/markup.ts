@@ -413,6 +413,18 @@ export const MARKUP_BODY = String.raw`</head>
   <div id="woapick">
     <label class="woasearch"><span class="searchico"><svg class="ic"><use href="#i-search"></use></svg></span>
       <input class="search" id="woaq" type="search" enterkeyhint="done" placeholder="Search exercises" autocapitalize="off" autocomplete="off" spellcheck="false" aria-label="Search exercises"></label>
+    <!-- Two chip rows behind one word. Muscle chips OR together, equipment chips OR
+         together, the rows AND; Bodyweight is an empty equipment list. woaChips
+         paints them and the state lives on woa, so it goes when the picker does. -->
+    <details class="disclosure woafilt" id="woafilt" data-noswipe>
+      <summary id="woafiltsum">Filter</summary>
+      <div class="disclosure-body">
+        <div class="woahead">Muscle</div>
+        <div class="pillrow" id="woamus"></div>
+        <div class="woahead">Equipment</div>
+        <div class="pillrow" id="woaeq"></div>
+      </div>
+    </details>
     <div class="picklist" id="woalist"></div>
   </div>
   <div id="woadose" class="hide">
@@ -453,7 +465,7 @@ export const MARKUP_BODY = String.raw`</head>
   <h2 id="exedittitle">Fix this exercise</h2>
   <p class="lede" id="exeditlede">Spotter read this off the video. If it got it wrong, put it right — your change stays on your copy.</p>
   <div class="field">
-    <label for="exeditname">Exercise</label>
+    <div class="fieldhead"><label for="exeditname">Exercise</label><button type="button" class="fieldlink" id="exeditpick">Change</button></div>
     <input id="exeditname" type="text" placeholder="Goblet squat" autocapitalize="words" autocomplete="off" spellcheck="false">
   </div>
   <div class="fieldrow">
@@ -516,6 +528,9 @@ export const MARKUP_BODY = String.raw`</head>
     <input class="nm" id="swaphaveinput" type="text" placeholder="Have anything? e.g. dumbbells, bands" autocomplete="off" autocapitalize="off" aria-label="Available equipment">
     <button class="btn" id="swaphavego">Find swaps</button>
   </div>
+  <!-- The way round the model: the picker in replace mode, on the exercise this
+       sheet was opened for. Hidden when the sheet has nowhere to write. -->
+  <div class="swapbank" id="swapbank"><span>Or pick one yourself</span><button class="chip" id="swapbankgo"><svg class="ic"><use href="#i-search"></use></svg>Choose from the exercise bank</button></div>
   <div id="swapresult"></div>
 </div></div>
 

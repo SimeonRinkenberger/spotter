@@ -1,21 +1,27 @@
-// Offline checks for the mid-workout add, run against the real source.
+// Offline checks for the mid-workout add, and for the exercise bank the same
+// picker became: the filter, the replace mode, and the swap sheet's way into it.
+// Run against the real source.
 //
 // The functions are lifted out of app.ts the way tools/complex-harness.mjs lifts
 // its own — no playwright, which is not a dependency of this repo. Everything
 // checked here is pure: how a query is scored against a name and its aliases, how
-// the three shelves are deduplicated into one list, where an inserted movement
-// lands in wo.entries/wo.screens, and what a complex writes into workout_logs once
-// a sixth movement has joined it mid-session.
+// the three shelves are deduplicated into one list, whether a row is inside a
+// filter, where an inserted or a replacing movement lands in wo.entries/wo.screens,
+// and what a complex writes into workout_logs once a sixth movement has joined it
+// mid-session.
 //
 // The one thing a harness cannot reach is the card write, which is an edge
 // function call and fails CORS from a local page. Its payload SHAPE is asserted
-// here against what handleCorrection in index.ts reads, and the round trip itself
-// was run against the deployed function with tools/throwaway.py.
+// here against what handleCorrection in index.ts reads, and the server's
+// validation of the one field the bank added, canonical_id, is lifted out of
+// index.ts (through esbuild, which build.mjs already depends on) and run against
+// the real catalog.
 //
 //   node tools/midadd-harness.mjs
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
+import { transformSync } from 'esbuild';
 
 const src = fs.readFileSync('supabase/functions/spotter/app.ts', 'utf8');
 
@@ -27,15 +33,18 @@ function fn(name) {
   return src.slice(a, b + 4);
 }
 
-const LIFTED = ['woaMake', 'woaRows', 'woaHit', 'woaScore', 'woaRank', 'insertSessionExercise',
+const LIFTED = ['woaMake', 'woaRows', 'woaHit', 'woaScore', 'woaRank', 'woaPass', 'woaFilter',
+  'woaFields', 'woaEditBody', 'swapRow', 'entryAt', 'insertSessionExercise', 'replaceSessionExercise',
   'flatten', 'complexOf', 'cxCap', 'cxDosed', 'isTimed', 'cxEntry', 'cxSet', 'cxSync',
   'cxScoreOf', 'cxScore', 'doseText'];
 
 // What the lifted code reaches for that is not in this file's scope. lastLine is
 // stubbed to the one thing the picker uses it for — a subtitle — because the real
-// one only formats what hist already holds.
+// one only formats what hist already holds. woa is the picker's state; the filter
+// reads its two chip lists off it.
 const STUBS = [
   'var state = { unit: "lb", workouts: [] }, hist = {}, wo = null, woaCat = null;',
+  'var woa = { mode: "add", target: null, mus: [], eq: [] };',
   'function exKey(e) { return e && e.canonical_id ? "c:" + e.canonical_id : "n:" + ((e && e.name) || ""); }',
   'function toUnit(w, u) { return Number(w) || 0; }',
   'function lastLine(e) { var h = hist[exKey(e)]; return h && h.date ? "last time" : ""; }'
@@ -193,6 +202,91 @@ ok('an empty query is the shelf order itself', () => {
   assert.deepEqual(r, r.slice().sort((a, b) => a - b), 'shelves are out of order');
 });
 
+// ---------- the filter ----------
+//
+// Two chip rows over one list. Muscle chips OR together, equipment chips OR
+// together, the rows AND; Bodyweight is the catalog's empty equipment list. A row
+// with no data cannot be inside a filter, so it goes while one is on.
+
+console.log('the filter');
+
+const pass = (row, mus, eq) =>
+  run('woaPass(' + JSON.stringify(row) + ', ' + JSON.stringify(mus) + ', ' + JSON.stringify(eq) + ')');
+
+ok('the shelf merge carries muscles and equipment onto a kept row, so Recent can be filtered', () => {
+  const goblet = run('woaRows()').filter((r) => r.key === 'c:goblet-squat')[0];
+  assert.equal(goblet.src, 1, 'the fixture stopped being a Recent row');
+  assert.deepEqual(goblet.muscle_groups, ['quads', 'glutes']);
+  assert.deepEqual(goblet.equipment, ['kettlebell']);
+});
+
+ok('no chips: every row passes, with data or without', () => {
+  assert.equal(pass({ name: 'Sandbag Carry' }, [], []), true);
+  assert.equal(pass({ muscle_groups: ['chest'], equipment: [] }, [], []), true);
+});
+
+ok('muscle chips OR together', () => {
+  const row = { muscle_groups: ['quads'], equipment: ['barbell'] };
+  assert.equal(pass(row, ['chest', 'quads'], []), true);
+  assert.equal(pass(row, ['chest'], []), false);
+});
+
+ok('equipment chips OR together, and Bodyweight means an empty list', () => {
+  const pushUp = { muscle_groups: ['chest'], equipment: [] };
+  const split = { muscle_groups: ['quads'], equipment: ['dumbbells'] };
+  assert.equal(pass(pushUp, [], ['bodyweight']), true);
+  assert.equal(pass(pushUp, [], ['dumbbells']), false);
+  assert.equal(pass(pushUp, [], ['dumbbells', 'bodyweight']), true);
+  assert.equal(pass(split, [], ['bodyweight']), false);
+  assert.equal(pass(split, [], ['dumbbells', 'bodyweight']), true);
+});
+
+ok('the two rows AND', () => {
+  const goblet = { muscle_groups: ['quads', 'glutes'], equipment: ['kettlebell'] };
+  assert.equal(pass(goblet, ['quads'], ['kettlebell']), true);
+  assert.equal(pass(goblet, ['quads'], ['barbell']), false);
+  assert.equal(pass(goblet, ['chest'], ['kettlebell']), false);
+});
+
+ok('a row without data is hidden while any chip is on', () => {
+  assert.equal(pass({ name: 'Sandbag Carry' }, ['core'], []), false);
+  assert.equal(pass({ name: 'Sandbag Carry' }, [], ['other']), false);
+  assert.equal(pass({ name: 'Half data', muscle_groups: ['core'] }, ['core'], []), false);
+});
+
+ok('the filtered list keeps the Recent and library rows the catalog knows and drops the strangers', () => {
+  set('woa', { mode: 'add', target: null, mus: ['quads'], eq: [] });
+  const names = run('woaFilter(woaRows()).map(function (r) { return r.name; })');
+  assert.deepEqual(names, ['Goblet Squats', 'Back Squat', 'Bulgarian Split Squat']);
+  set('woa', { mode: 'add', target: null, mus: [], eq: ['bodyweight'] });
+  assert.deepEqual(run('woaFilter(woaRows()).map(function (r) { return r.name; })'), ['Push Up']);
+  set('woa', { mode: 'add', target: null, mus: [], eq: [] });
+  assert.equal(run('woaFilter(woaRows()).length'), run('woaRows().length'));
+});
+
+ok('the chip rows are the twelve muscles and Bodyweight plus the twelve kinds of equipment', () => {
+  const m = /var MUSCLES = \[([^\]]*)\]/.exec(src), e = /var WOA_EQUIP = \[([^\]]*)\]/.exec(src);
+  assert(m && e, 'the vocabularies moved');
+  assert.equal(JSON.parse('[' + m[1] + ']').length, 12);
+  const eq = JSON.parse('[' + e[1] + ']');
+  assert.equal(eq.length, 13);
+  assert.equal(eq[0], 'bodyweight');
+  assert(fn('woaChips').includes('[["woamus", MUSCLES, woa.mus], ["woaeq", WOA_EQUIP, woa.eq]]'));
+});
+
+ok('the filter starts clear every time the picker opens', () => {
+  const open = fn('openPicker');
+  assert(open.includes('mus: [], eq: []'));
+  assert(open.includes('$("woafilt").open = false;'));
+});
+
+ok('free text is always on offer in add mode and only when nothing answers in replace mode', () => {
+  const render = fn('woaRender');
+  assert(render.includes('rows = woaFilter(all)'), 'the list is not the filtered one');
+  assert(render.includes('if (rep ? !hits.length : (!hits.length || String(hits[0].name).toLowerCase() !== q)) {'));
+  assert(render.includes('(rep ? "Use “" : "Add “") + raw + "”"'));
+});
+
 // ---------- where it lands ----------
 
 console.log('placement');
@@ -242,6 +336,56 @@ ok('a movement added to the second block lands after that block, not before it',
   assert.equal(at, 3);
   assert.deepEqual(run('wo.screens.map(function (s) { return s.ex.name; })'),
     ['Squat', 'Row', 'Curl', 'Raise']);
+});
+
+// ---------- replacing one ----------
+//
+// The bank's replace mode in the live session. Nothing logged: the plan changes in
+// place. Sets logged: the log keeps them under the name they were done as, and the
+// replacement follows.
+
+console.log('replacing in the session');
+
+const HAMMER = '{ name: "Hammer Curl", canonical_id: "hammer-curl", sets: 3, reps: "12", duration_seconds: null }';
+
+ok('a replacement with nothing logged takes the slot, the screen and a fresh entry', () => {
+  session(TWO_BLOCKS);
+  const at = run('replaceSessionExercise(1, 0, ' + HAMMER + ')');
+  assert.equal(at, 2);
+  assert.deepEqual(run('wo.screens.map(function (s) { return s.ex.name; })'), ['Squat', 'Row', 'Hammer Curl']);
+  assert.deepEqual(run('wo.entries.map(function (e) { return e.name; })'), ['Squat', 'Row', 'Hammer Curl']);
+  assert.deepEqual(run('wo.entries[2]'), { name: 'Hammer Curl', canonical_id: 'hammer-curl', block: 1, exercise: 0, sets: [] });
+  assert.equal(run('wo.workout.blocks[1].exercises[0].name'), 'Hammer Curl');
+});
+
+ok('a replacement with sets logged follows the movement it replaces, and the log keeps both', () => {
+  session(TWO_BLOCKS);
+  vm.runInContext('wo.entries[0].sets = [{ reps: 5 }]; wo.entries[1].sets = [{ reps: 8, done: true }, null];', ctx);
+  const at = run('replaceSessionExercise(0, 1, ' + HAMMER + ')');
+  assert.equal(at, 2, 'the replacement did not take the next screen');
+  assert.deepEqual(run('wo.screens.map(function (s) { return s.ex.name; })'), ['Squat', 'Row', 'Hammer Curl', 'Curl']);
+  const rows = run('wo.entries.map(function (e) { return [e.name, e.sets.filter(Boolean).length]; })');
+  assert.deepEqual(rows, [['Squat', 1], ['Row', 1], ['Hammer Curl', 0], ['Curl', 0]],
+    'a logged set moved off the movement it was done as');
+  assert.deepEqual(run('wo.entries.map(function (e) { return e.block + ":" + e.exercise; })'),
+    ['0:0', '0:1', '0:2', '1:0']);
+});
+
+ok('a slot the session does not have is refused rather than invented', () => {
+  session(TWO_BLOCKS);
+  assert.equal(run('replaceSessionExercise(0, 9, ' + HAMMER + ')'), -1);
+  assert.equal(run('replaceSessionExercise(5, 0, ' + HAMMER + ')'), -1);
+  assert.equal(run('wo.screens.length'), 3, 'a refused replacement changed the session');
+});
+
+ok('entryAt finds a movement by where it is, not by where it started', () => {
+  session(TWO_BLOCKS);
+  run('insertSessionExercise(0, 0, { name: "Warm", sets: 1, reps: "10" })');
+  assert.equal(run('entryAt(0, 0)'), 0);
+  assert.equal(run('entryAt(0, 2)'), 2);
+  assert.equal(run('wo.entries[entryAt(0, 2)].name'), 'Row');
+  assert.equal(run('entryAt(1, 0)'), 3);
+  assert.equal(run('entryAt(3, 3)'), -1);
 });
 
 // ---------- inside a complex ----------
@@ -319,6 +463,34 @@ ok('a movement the card came with is unaffected — from_round is absent and mea
   assert.deepEqual(run('wo.entries.map(function (e) { return e.sets.length; })'), [5, 5, 5]);
 });
 
+ok('a replacement inside a complex with no rounds credited keeps the complex whole', () => {
+  session(AMRAP);
+  const at = run('replaceSessionExercise(0, 1, { name: "Push Press", canonical_id: null, reps: "5", sets: null, from_round: 0 })');
+  assert.equal(at, 1);
+  assert.equal(run('complexOf(wo.workout.blocks[0], wo.workout).n'), 3, 'the complex grew or broke');
+  assert.deepEqual(run('wo.entries.map(function (e) { return e.name; })'),
+    ['Close Grip Push Ups', 'Push Press', 'Goblet Squats']);
+  assert.deepEqual(run('wo.screens.map(function (s) { return s.ei; })'), [0, 1, 2]);
+});
+
+ok('a replacement inside a complex with rounds credited leaves the old movement its rounds', () => {
+  session(AMRAP);
+  vm.runInContext('wo.amrap[0] = { cap: 900, until: 0, held: 0, cued: 4, over: 0, rounds: 2, marks: [] };', ctx);
+  run('cxSync(0)');
+  const at = run('replaceSessionExercise(0, 1, { name: "Push Press", canonical_id: null, reps: "5", sets: null, from_round: wo.amrap[0].rounds })');
+  assert.equal(at, 2, 'the replacement did not follow the movement it replaces');
+  assert.deepEqual(run('wo.entries.map(function (e) { return [e.name, e.sets.length]; })'),
+    [['Close Grip Push Ups', 2], ['Kettlebell Swings', 2], ['Push Press', 0], ['Goblet Squats', 2]]);
+  vm.runInContext('wo.amrap[0].rounds = 3;', ctx);
+  run('cxSync(0)');
+  assert.deepEqual(run('wo.entries.map(function (e) { return e.sets.length; })'), [3, 3, 1, 3]);
+  // sessionReplace is what doses it and stamps the round; assert the source, the
+  // DOM half of it cannot run here.
+  const sr = fn('sessionReplace');
+  assert(sr.includes('if (cx) { ex.sets = null; ex.from_round = (wo.amrap[t.bi] || {}).rounds || 0; }'));
+  assert(sr.includes('if (!cx) wo.i = at;'));
+});
+
 // ---------- the card write ----------
 //
 // Shape only: the call itself is an edge function round trip. These assert that
@@ -327,24 +499,28 @@ ok('a movement the card came with is unaffected — from_round is absent and mea
 console.log('the keep-on-card payload');
 
 const idx = fs.readFileSync('supabase/functions/spotter/index.ts', 'utf8');
+const EDIT_FIELDS = JSON.parse('[' + /const EDIT_FIELDS: EditField\[\] = \[([^\]]*)\]/.exec(idx)[1] + ']');
 
 ok('the endpoint the picker posts to is the one the corrections handler serves', () => {
   assert(src.includes('api("workouts/" + w.id + "/exercises"'), 'woaKeep posts somewhere else');
-  assert(idx.includes('if (op !== "edit" && op !== "add" && op !== "delete")'));
+  assert(idx.includes('if (op !== "edit" && op !== "add" && op !== "delete" && op !== "delete_block")'));
 });
 
 ok('every field sent is one the server reads, and none it would throw on', () => {
-  const body = src.slice(src.indexOf('function woaKeep('), src.indexOf('function woaNum('));
-  assert(/op: "add"/.test(body));
-  assert(/fields: \{ name: ex\.name, sets: ex\.sets, reps: ex\.reps, duration_seconds: ex\.duration_seconds \}/.test(body));
-  // EDIT_FIELDS is the server's whole vocabulary for an add.
-  assert(idx.includes('const EDIT_FIELDS: EditField[] = ["name", "sets", "reps", "duration_seconds"];'));
+  const fields = run('woaFields({ name: "Dip", canonical_id: "dip", sets: 3, reps: "10", duration_seconds: null, rest_seconds: 90 })');
+  assert.deepEqual(fields, { name: 'Dip', canonical_id: 'dip', sets: 3, reps: '10', duration_seconds: null });
+  Object.keys(fields).forEach((f) => assert(EDIT_FIELDS.includes(f), 'the server does not read ' + f));
+  // EDIT_FIELDS is the server's whole vocabulary for an add or an edit.
+  assert.deepEqual(EDIT_FIELDS, ['name', 'sets', 'reps', 'duration_seconds', 'canonical_id']);
+  // A free-text pick has no identity; it sends null, not undefined, and the
+  // server resolves the name as it always did.
+  assert.equal(run('woaFields({ name: "Sled Push" }).canonical_id'), null);
 });
 
 ok('the block asked for can only be one the card has, or exactly one past it', () => {
   // The client clamps to blocks.length and the server clamps again; either alone
   // is enough to stop an add punching empty blocks into the row.
-  assert(src.includes('op: "add", block: bi < n ? bi : n,'));
+  assert(src.includes('op: "add", block: bi < n ? bi : n, fields: woaFields(ex) }'));
   assert(idx.includes('const bi = op === "add" ? Math.max(0, Math.min(asked, blocks.length)) : asked;'));
 });
 
@@ -356,6 +532,166 @@ ok('the dose the picker sends is inside what cleanEditField accepts', () => {
   assert(src.includes('woaNum("woaddsecs", 30, 3600)'));
   assert(idx.includes('if (n < 1 || n > 99) throw new BadEdit("Sets has to be between 1 and 99.");'));
   assert(idx.includes('if (n < 1 || n > 3600) throw new BadEdit('));
+});
+
+// ---------- the replace payloads ----------
+
+console.log('the replace payloads');
+
+ok('a card replacement is one edit op, guarded by the name the sheet was opened on', () => {
+  const body = run('woaEditBody({ w: { id: "w1" }, bi: 1, ei: 0, ex: { name: "Curl", sets: 3, reps: "12" } }, ' + HAMMER + ')');
+  assert.deepEqual(body, {
+    op: 'edit', block: 1, index: 0, expect_name: 'Curl',
+    fields: { name: 'Hammer Curl', canonical_id: 'hammer-curl', sets: 3, reps: '12', duration_seconds: null }
+  });
+  Object.keys(body.fields).forEach((f) => assert(EDIT_FIELDS.includes(f), f));
+  // The server reads exactly these three names off an edit.
+  ['?.block', '?.index', '?.expect_name'].forEach((k) => assert(idx.includes('(body as any)' + k), k));
+});
+
+ok('the save branches on the picker mode: card add, card replace, session replace, session add', () => {
+  const save = fn('saveWorkoutAdd');
+  assert(save.includes('if (mode === "card-add") {'));
+  assert(save.includes('postCorrection(t.w, { op: "add", block: t.bi, fields: woaFields(ex) }, $("woaddsave"), "Added it", "woaddsheet");'));
+  assert(save.includes('if (mode === "replace" && !t.session) {'));
+  assert(save.includes('postCorrection(t.w, woaEditBody(t, ex), $("woaddsave"), "Swapped it", "woaddsheet");'));
+  assert(save.includes('if (!sessionReplace(t, ex)) return;'));
+  // The session swap persists through the same edit op, behind the same toggle.
+  assert(save.includes('if (keep) woaKeep(woaEditBody(t, ex),'));
+  // The card branches come before the session guard: a card write needs no session.
+  assert(save.indexOf('mode === "card-add"') < save.indexOf('if (!wo || wo.finished) return;'));
+});
+
+ok('the session toggle is offered only when the card still has what is being swapped out', () => {
+  const choose = fn('woaChoose');
+  assert(choose.includes('old ? !(t.session && woaCardHas(t)) : !live || woaCardBlocks() === null'));
+  assert(fn('woaCardHas').includes('return !!ex && ex.name === t.ex.name;'));
+});
+
+ok('a replacement is dosed from the movement it replaces', () => {
+  const choose = fn('woaChoose');
+  assert(choose.includes('(old ? old.sets : r.sets) || 3'));
+  assert(choose.includes('String((old ? old.reps : r.reps) || "").match(/\\d+/)'));
+  assert(choose.includes('old ? (old.duration_seconds ? String(old.duration_seconds) : "")'));
+  assert(choose.includes('woa.nosets = !!cx || !!(old && old.sets == null);'));
+});
+
+ok('every way in passes a target, and the editor falls back to its own slot', () => {
+  assert(src.includes('openSwap(ex.name, w.title, { w: w, bi: bi, ei: ei, ex: ex })'), 'the library card');
+  assert(src.includes('openSwap(name, title, swapTarget(w, ex))'), 'the explain sheet');
+  assert(src.includes('openSwap(focus.name, wo.workout.title, swapTarget(wo.workout, focus))'), 'workout mode');
+  assert(src.includes('openPicker("card-add", { w: w, bi: bi })'), 'the card add');
+  assert(src.includes('swapTarget(exEdit.w, exEdit.ex) || { w: exEdit.w, bi: exEdit.block, ei: exEdit.index, ex: exEdit.ex }'), 'the editor');
+});
+
+// ---------- the swap sheet's way in ----------
+
+console.log('the swap sheet');
+
+ok('a suggestion becomes a picker row with the name the model wrote and the id the server resolved', () => {
+  const r = run('swapRow({ name: "Trap Bar Deadlift", canonical_id: "trap-bar-deadlift", why: "Same hinge, less spinal load", in_catalog: true })');
+  assert.equal(r.key, 'c:trap-bar-deadlift');
+  assert.equal(r.name, 'Trap Bar Deadlift');
+  assert.equal(r.canonical_id, 'trap-bar-deadlift');
+  assert.equal(r.src, 3);
+  const f = run('swapRow({ name: "Sled Push", canonical_id: null, in_catalog: false })');
+  assert.equal(f.key, 'n:Sled Push');
+  assert.equal(f.canonical_id, null);
+});
+
+ok('"Use this" is on the alternatives and not on what to build up', () => {
+  const render = fn('renderSwapResult');
+  assert(render.includes('swapItem(a, true, true)'));
+  assert(render.includes('swapItem(s, false)'));
+  const item = fn('swapItem');
+  assert(item.includes('if (usable && swapCtx && swapCtx.target) {'));
+  assert(item.includes('use.onclick = function () { swapBank(it); };'));
+});
+
+ok('the bank row is offered only when the sheet has somewhere to write', () => {
+  assert(fn('openSwap').includes('$("swapbank").classList.toggle("hide", !swapCtx.target);'));
+  assert(fn('swapBank').includes('if (!t) return;'));
+  assert(fn('swapTarget').includes('return at ? { session: live ? 1 : 0, w: w, bi: at.bi, ei: at.ei, ex: ex } : null;'));
+});
+
+ok('the bank path asks no model and posts only to the corrections endpoint', () => {
+  const bank = ['swapBank', 'swapRow', 'swapTarget', 'openPicker', 'woaChoose', 'woaRender', 'woaChips',
+    'saveWorkoutAdd', 'sessionReplace', 'replaceSessionExercise', 'woaKeep', 'postCorrection']
+    .map(fn).join('\n');
+  assert(!/api\("swap"|api\("explain"|apiStream\(|api\("pumpy|api\("demo-video"/.test(bank), 'a model was asked');
+  assert(bank.includes('openPicker("replace", t);'));
+  assert(bank.includes('if (pick) woaChoose(swapRow(pick));'));
+  (bank.match(/api\("[^"]*"/g) || []).forEach((call) => assert(call.startsWith('api("workouts/'), call));
+  // And the sheet's own model path is the one it always was.
+  const swap = fn('runSwap');
+  assert(swap.includes('api("swap", { method: "POST", body: JSON.stringify({'));
+  assert(swap.includes('exercise: ctx.name, reason: ctx.reason, body_area: ctx.area || "", title: ctx.title, equipment_have: have'));
+});
+
+// ---------- canonical_id on the server ----------
+//
+// The one field the bank added to the corrections handler, lifted out of index.ts
+// and run against the real catalog: null or an id the catalog knows, else BadEdit.
+
+console.log('canonical_id on the server');
+
+function tsFn(name) {
+  const a = idx.indexOf('function ' + name + '(');
+  assert(a >= 0, 'not found in index.ts: ' + name);
+  const b = idx.indexOf('\n}', a);
+  return idx.slice(a, b + 2);
+}
+
+const catalog = vm.createContext({ module: { exports: {} }, exports: {} });
+vm.runInContext(transformSync(fs.readFileSync('supabase/functions/spotter/catalog.ts', 'utf8'),
+  { loader: 'ts', format: 'cjs' }).code, catalog);
+const { catalogById, CATALOG: REAL } = vm.runInContext('module.exports', catalog);
+assert(REAL.length > 200 && catalogById('goblet-squat'), 'the catalog did not lift');
+
+const srv = vm.createContext({ catalogById });
+vm.runInContext(transformSync('class BadEdit extends Error {}\n' + tsFn('cleanEditField'),
+  { loader: 'ts' }).code, srv);
+const clean = (v) => vm.runInContext('cleanEditField("canonical_id", ' + JSON.stringify(v === undefined ? null : v) + ')', srv);
+
+ok('null, empty and absent all mean "resolve it from the name"', () => {
+  assert.equal(clean(null), null);
+  assert.equal(clean(''), null);
+  assert.equal(vm.runInContext('cleanEditField("canonical_id", undefined)', srv), null);
+});
+
+ok('an id the catalog knows comes back as itself', () => {
+  assert.equal(clean('goblet-squat'), 'goblet-squat');
+  assert.equal(clean(' hammer-curl '), 'hammer-curl');
+});
+
+ok('anything else is a BadEdit, not a silent null', () => {
+  assert.throws(() => clean('sled-push-9000'), /not in the catalog/);
+  assert.throws(() => clean('Goblet Squat'), /not in the catalog/);
+  assert.throws(() => clean(42), /not in the catalog/);
+  assert.throws(() => clean({ id: 'goblet-squat' }), /not in the catalog/);
+});
+
+ok('the other fields are untouched by the new one', () => {
+  assert.equal(vm.runInContext('cleanEditField("name", "  Goblet   Squat ")', srv), 'Goblet Squat');
+  assert.equal(vm.runInContext('cleanEditField("sets", "3")', srv), 3);
+  assert.throws(() => vm.runInContext('cleanEditField("sets", 150)', srv), /between 1 and 99/);
+});
+
+ok('a supplied valid id wins over the name on add and on edit; none means the old behaviour', () => {
+  assert(idx.includes('const canon = (cleanEditField("canonical_id", fields.canonical_id) as string | null) ?? canonId(name);'));
+  assert(idx.includes('canonical_id: canon,'));
+  assert(idx.includes('const canonNext = canonGiven ?? (nameNext !== nameWas ? canonId(nameNext) : canonWas);'));
+  assert(idx.includes('if (nameNext !== nameWas || canonNext !== canonWas) {'));
+});
+
+ok('the ledger never learns a field the table would refuse', () => {
+  // corrections.field is check-constrained; canonical_id rides on the name row,
+  // as old_canonical_id / new_canonical_id, and is skipped in the field loop.
+  const mig = fs.readFileSync('supabase/migrations/20260901240000_user_corrections.sql', 'utf8');
+  assert(mig.includes("check (field in ('name', 'sets', 'reps', 'duration_seconds', 'exercise'))"));
+  assert(idx.includes('if (f === "name" || f === "canonical_id" || !(f in fields)) continue;'));
+  assert(!/field: "canonical_id"/.test(idx));
+  assert(idx.includes('field: "name", old: before.name ?? null, new: nameNext, oldCanon: canonWas, newCanon: canonNext,'));
 });
 
 console.log('\n' + checks + ' checks passed.');

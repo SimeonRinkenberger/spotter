@@ -204,6 +204,22 @@ answers are modifications plus what to strengthen; the prompt forbids a diagnosi
 drops any line that names one anyway, and the not-medical-advice line is written by the
 server rather than left to the model.
 
+**The exercise bank is the other half of a swap.** Under the reason chips the swap sheet
+offers "Or pick one yourself": the same picker Workout Mode adds from, opened in replace mode
+on the exercise the sheet was opened for, with its sets, reps and seconds already filled in
+from the one it replaces. Each of Pumpy's alternatives carries a "Use this" button that opens
+the same pane with the suggestion picked; what to build up after a pain answer is advice, not
+a movement to do instead, and has no button. Above the picker's list a folded Filter holds
+two chip rows, Muscle (the twelve groups) and Equipment (Bodyweight plus the twelve kinds):
+chips in a row OR together, the two rows AND, and a Recent or library row the catalog cannot
+describe is hidden while a filter is on. On a saved card "+ Add an exercise" opens the same
+picker, and the editor's name field has a "Change" link into it. Every card write from the
+picker carries the row's `canonical_id`, which the corrections endpoint accepts as an edit
+field: `null` or an id the catalog knows, anything else is refused, and a valid id wins over
+what the name alone would resolve to. In Workout Mode a replacement takes the screen of the
+movement it replaces; if that movement already has sets logged, it stays in the log under its
+own name and the replacement follows it. None of this asks a model or spends an allowance.
+
 **Pumpy runs server-side, over the user's own rows, and never writes without a confirm.**
 The coach goes through the same `textGenerate()` front door as extraction, so it uses Luna
 when the key exists and the free chain otherwise, under the same spend ceiling. Tool calling
