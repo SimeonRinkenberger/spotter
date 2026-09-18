@@ -1,3 +1,5 @@
+-- NOTE: `supabase db query --linked --file` prints only the LAST statement's rows. Run this file with psql to see
+-- every section, or run one section at a time.
 -- Spotter — what is currently wrong, and what has been wrong lately.
 --
 --   supabase db query --linked --file tools/ops/alerts.sql
@@ -13,8 +15,8 @@
 -- To acknowledge one, after actually looking at it:
 --   update public.ops_alerts set acked_at = now() where key = '…' and day = current_date;
 
-\echo
-\echo ================ open, worst first ================
+--
+-- ================ open, worst first ================
 select key, day, level, detail,
        created_at,
        case when detail->>'notified' is null then 'not sent' else 'pushed' end as notification,
@@ -24,11 +26,11 @@ where acked_at is null
 order by case level when 'critical' then 3 when 'warn' then 2 else 1 end desc,
          created_at desc;
 
-\echo
-\echo ================ the last fourteen days ================
-\echo A key that appears every single day is either a real standing problem or a
-\echo threshold that is set wrong. Both are worth ten minutes; neither is worth
-\echo learning to ignore the notification.
+--
+-- ================ the last fourteen days ================
+-- A key that appears every single day is either a real standing problem or a
+-- threshold that is set wrong. Both are worth ten minutes; neither is worth
+-- learning to ignore the notification.
 select key, level, count(*) as days_fired, min(day) as first_day, max(day) as last_day,
        count(*) filter (where acked_at is not null) as acknowledged
 from public.ops_alerts
@@ -36,12 +38,12 @@ where day >= current_date - 14
 group by key, level
 order by days_fired desc, key;
 
-\echo
-\echo ================ is the pager itself alive ================
-\echo `spotter-ops-tick` should have run within the last fifteen minutes. If the
-\echo cron row is missing, the migration was applied without the cron extension.
-\echo If the last run is old or failed, nothing below is being evaluated at all
-\echo and an empty alert list means nothing.
+--
+-- ================ is the pager itself alive ================
+-- `spotter-ops-tick` should have run within the last fifteen minutes. If the
+-- cron row is missing, the migration was applied without the cron extension.
+-- If the last run is old or failed, nothing below is being evaluated at all
+-- and an empty alert list means nothing.
 select j.jobname, j.schedule, j.active,
        r.status, r.start_time, r.end_time,
        left(coalesce(r.return_message, ''), 200) as last_message
@@ -57,11 +59,11 @@ where j.jobname in ('spotter-ops-tick','spotter-worker-tick','spotter-push-tick'
                     'spotter-unstick-jobs','spotter-store-expiry')
 order by j.jobname;
 
-\echo
-\echo ================ who would hear about it ================
-\echo Zero staff devices means the alerts are being recorded and told to nobody.
-\echo The fix is one toggle: sign in as the staff account on the phone and turn
-\echo reminders on, which is what creates the push_subscriptions row.
+--
+-- ================ who would hear about it ================
+-- Zero staff devices means the alerts are being recorded and told to nobody.
+-- The fix is one toggle: sign in as the staff account on the phone and turn
+-- reminders on, which is what creates the push_subscriptions row.
 select count(*) as staff_devices
 from public.push_subscriptions s
 join public.profiles p on p.id = s.user_id
