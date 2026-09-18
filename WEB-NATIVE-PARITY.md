@@ -12,6 +12,7 @@ Run `npm run parity:check` before publishing either build. CI runs this too.
 | Train tab: week strip, today card, calendar, progress, muscle map, records, achievements | Shared application | Shared application; selection haptics through the shell |
 | Pumpy chat, streaming, workout tools, exercise helpers | Browser streaming | Native streaming adapter |
 | Google / Apple sign-in | Web provider flow, subject to provider configuration | System authentication adapters, subject to signing/provider configuration |
+| Where the signed-in session is kept | Browser `localStorage`, under the browser's own protection | Keychain on iOS (`AfterFirstUnlockThisDeviceOnly`, no iCloud, no backup), AES-256-GCM under an Android Keystore key on Android; a pre-17-September session is migrated out of Preferences on first launch and sign-out clears both |
 | Account, export, deletion, plan access, Strava | Shared application | Shared application; system browser for external flows |
 | Incoming social sharing on iPhone | Paste link or optional Shortcut from Settings | Spotter Share Extension |
 | Outgoing workout images and exports | Browser share where available; download fallback | System share sheet |

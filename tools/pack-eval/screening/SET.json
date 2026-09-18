@@ -1,0 +1,662 @@
+{
+  "$comment": "SCREENING SET for the $5 paid screen (EXPERIMENT-5-DOLLAR.md). 16 candidates so the owner can drop four and still have the twelve categories covered: entries marked selection 'primary' are the proposed twelve, 'alternate' are the spares. Every id here was confirmed to exist by a curl GET against the platform's own oEmbed endpoint on the date in verification.verified_at, and the title/author recorded are the bytes that endpoint returned. No id in this file came from a search-result summary. NOTHING HERE HAS BEEN SAVED IN THE APP AND NO AI CALL WAS MADE.",
+  "set_v": 1,
+  "built_at": "2026-09-17",
+  "built_by": "BRIEF-GTM-L, branch gtm-benchmark",
+  "distinct_sources": 16,
+  "category_quota": {
+    "spoken_multi_exercise": 2,
+    "silent_overlay": 2,
+    "circuit_repeated_movements": 2,
+    "subtle_grip_equipment": 2,
+    "conflicting_dose": 1,
+    "long_sparse": 1,
+    "non_english": 1,
+    "fast_cut_occluded": 1
+  },
+  "verification_method": {
+    "tiktok": "GET https://www.tiktok.com/oembed?url=<url> — 200 + a title is the proof of existence. NOTE: the endpoint answers 400 for /photo/ carousel URLs; the same id under /video/ answers 200 and returns the carousel's caption and author, which is how the carousel entry was verified.",
+    "youtube": "GET https://www.youtube.com/oembed?url=<watch url>&format=json — 200 + a title is the proof of existence. Duration, storyboard spec, caption-track list and playability came from a second GET of the watch page.",
+    "rejected_examples": "see design/gtm/BENCHMARK-SCREENING-SET.md — candidates that passed oEmbed but failed a second check are listed there rather than dropped silently."
+  },
+  "not_verified": [
+    "has_speech is a LABELLED BEST GUESS from whether the platform published an ASR caption track. Nobody has watched any of these videos.",
+    "Whether on-screen overlay text exists, and what it says, is unknown for every entry: no frames were extracted.",
+    "Exercise content, order and counts are unknown. The caption and transcript text quoted in the truth templates is the only read evidence.",
+    "paid_program_flag is based on caption text and the absence of a YouTube paid-promotion overlay only."
+  ],
+  "entries": [
+    {
+      "id": "tt-7653268094387014926",
+      "url": "https://www.tiktok.com/@austinhaslam/video/7653268094387014926",
+      "platform": "tiktok",
+      "kind": "video",
+      "category": "spoken_multi_exercise",
+      "selection": "primary",
+      "duration_s": 127,
+      "creator": {
+        "handle": "@austinhaslam",
+        "display_name": "FitDad",
+        "profile_url": "https://www.tiktok.com/@austinhaslam"
+      },
+      "verification": {
+        "verified_at": "2026-09-17T21:59:55Z",
+        "oembed_endpoint": "https://www.tiktok.com/oembed?url=https://www.tiktok.com/@austinhaslam/video/7653268094387014926",
+        "oembed_http": "200",
+        "oembed_title": "One kettlebell. 6 movements. 5 rounds.  To get in the best shape of your life.  This one will humble you 🔥 If you’re a busy parent trying to get lean, strong, and athletic without living in the gym — this is the complex you should be saving.  I’m using a 20 KG bell. Full complex: 🔸 10 Swings — hinge, not a squat. Snap your hips, squeeze your glutes, let the bell float to shoulder height. This is your engine for the round. 🔸 10 Goblet Squats — catch the bell to your chest, elbows inside the knees, chest tall. Breathe through every rep and keep that grip locked in. 🔸 10 Overhead March (each side) — press it overhead, lock the arm out, ribs down, brace hard. The slow march is what makes you shake — your core’s fighting to keep you stacked. 🔸 10 Rotational Thrusters — drive up through the legs, rotate through the hips, finish with a full lockout. Moving through multiple planes is what will humble and bulletproof you. 🔸 :30 Hollow Hold + Flutter Kicks — low back glued to the floor, lock the hollow, feet never touch down. This is where the wheels fall off for me every round. 🔸 5 KB Offset Push-ups (each side) — one hand stacked on the bell, one on the floor. Chest to the deck, every rep counts. This is the one that separates the rounds you finish from the ones you quit. Rest 2 min between rounds · 5 rounds total Choose a weight that is challenging but does not prevent you from completing a full round all the way through.  Save and try ✅ Drop in the comments which round your wheels started to fall off 😅🥵  Follow for more highly effective workouts in 45 min or less. 💪 @Rachel Van Beuren  #fullbodyworkout #functionalfitness #fitdads #kettlebelltraining #kettlebellworkout",
+        "oembed_author_name": "FitDad",
+        "method": "curl GET of the platform oEmbed endpoint; the title and author below are the bytes it returned, not a search-result summary"
+      },
+      "why_it_fits": "127 s single-kettlebell complex: the creator names six movements and their doses out loud AND repeats them in the caption, so prescribed-vs-demonstrated and said-vs-written provenance can both be scored on one video. Free TikTok ASR WebVTT fetched; the last movement (offset push-up, one hand on the bell) is also a grip case.",
+      "review_focus": "Does the reader keep 'each side' on the overhead march and the offset push-up, and keep the :30 hollow hold as seconds rather than reps?",
+      "frame_source": "tiktok-mp4",
+      "has_speech": "yes_confirmed_asr_track",
+      "language": "en",
+      "evidence_available": {
+        "caption": "yes",
+        "asr_vtt": "yes — ASR/eng-US",
+        "asr_vtt_fetched_to": "/private/tmp/claude-501/-Users-simeon-Desktop-CLAUDE-COWORK/f83e3c45-9ece-4ff1-96cf-c461f42dfdcd/scratchpad/vtt/tt-7653268094387014926.vtt",
+        "frames": "tiktok playAddr MP4 (the path pack.ts already uses)"
+      },
+      "consent_and_credit": {
+        "post_visibility": "public",
+        "credit_line": "FitDad — https://www.tiktok.com/@austinhaslam/video/7653268094387014926",
+        "paid_program_flag": "none seen in the caption or on the watch page; re-check before publishing any result that names the creator"
+      },
+      "caption": "One kettlebell. 6 movements. 5 rounds.  To get in the best shape of your life.  This one will humble you 🔥 If you’re a busy parent trying to get lean, strong, and athletic without living in the gym — this is the complex you should be saving.  I’m using a 20 KG bell. Full complex: 🔸 10 Swings — hinge, not a squat. Snap your hips, squeeze your glutes, let the bell float to shoulder height. This is your engine for the round. 🔸 10 Goblet Squats — catch the bell to your chest, elbows inside the knees, chest tall. Breathe through every rep and keep that grip locked in. 🔸 10 Overhead March (each side) — press it overhead, lock the arm out, ribs down, brace hard. The slow march is what makes you shake — your core’s fighting to keep you stacked. 🔸 10 Rotational Thrusters — drive up through the legs, rotate through the hips, finish with a full lockout. Moving through multiple planes is what will humble and bulletproof you. 🔸 :30 Hollow Hold + Flutter Kicks — low back glued to the floor, lock the hollow, feet never touch down. This is where the wheels fall off for me every round. 🔸 5 KB Offset Push-ups (each side) — one hand stacked on the bell, one on the floor. Chest to the deck, every rep counts. This is the one that separates the rounds you finish from the ones you quit. Rest 2 min between rounds · 5 rounds total Choose a weight that is challenging but does not prevent you from completing a full round all the way through.  Save and try ✅ Drop in the comments which round your wheels started to fall off 😅🥵  Follow for more highly effective workouts in 45 min or less. 💪 @Rachel Van Beuren  #fullbodyworkout #functionalfitness #fitdads #kettlebelltraining #kettlebellworkout"
+    },
+    {
+      "id": "yt-vei81-bZhG4",
+      "url": "https://www.youtube.com/watch?v=vei81-bZhG4",
+      "platform": "youtube",
+      "kind": "video",
+      "category": "spoken_multi_exercise",
+      "selection": "primary",
+      "duration_s": 828,
+      "creator": {
+        "handle": "@OFFICIALTHENXSTUDIOS",
+        "display_name": "THENX",
+        "profile_url": "https://www.youtube.com/@OFFICIALTHENXSTUDIOS"
+      },
+      "verification": {
+        "verified_at": "2026-09-17T22:00:04Z",
+        "oembed_endpoint": "https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=vei81-bZhG4&format=json",
+        "oembed_http": "200",
+        "oembed_title": "Complete 10 Min Full Body Workout | Dumbbells Only",
+        "oembed_author_name": "THENX",
+        "method": "curl GET of the platform oEmbed endpoint; the title and author below are the bytes it returned, not a search-result summary"
+      },
+      "why_it_fits": "828 s dumbbell full-body session narrated throughout, with a creator-authored English caption track as well as ASR, so a transcript disagreement between the two is observable. Storyboard level 3 is 320x180 every 5 s (167 frames) — a free frame source dense enough to bracket boundaries.",
+      "review_focus": "Are the round/set counts spoken once at the top bound to the whole session rather than to the first exercise?",
+      "frame_source": "youtube-storyboard",
+      "has_speech": "yes_confirmed_asr_and_manual_tracks",
+      "language": "en",
+      "evidence_available": {
+        "caption": "yes (YouTube description)",
+        "asr_vtt": "track listed (en/asr,en/manual,de/manual,ru/manual,es/manual) but NOT fetchable from a server: timedtext returned 0 bytes",
+        "frames": "youtube storyboard sheets — highest level spec 320#180#167#3#3#5000#M$M#rs$AOn4CLBufWSD60BCq8O7wczLzxHZrMXuXg",
+        "storyboard_note": "spec fields are width#height#frames#cols#rows#interval_ms; one L3 sheet was downloaded as a 31 KB image/webp to prove the path works",
+        "playability_from_this_host": "OK"
+      },
+      "consent_and_credit": {
+        "post_visibility": "public",
+        "credit_line": "THENX — https://www.youtube.com/watch?v=vei81-bZhG4",
+        "paid_program_flag": "none seen in the caption or on the watch page; re-check before publishing any result that names the creator"
+      },
+      "description": "Follow along with Chris Heria as he shows you a Complete 10 Min Full Body Workout. Get a super effect full body workout that hits every muscle in your body using different exercises incorporating Dumbbells to build strength and burn fat in just 10 minutes.\n\nGET THIS WORKOUT ON YOUR PHONE: https://share.thenx.com/share/efZgCLU8vX9MpvyT6\n\nGet the Music in the video made by Chris Heria:\n https://soundcloud.com/chrisheria\n\nFOLLOW CHRIS HERIA\nIG: @chrisheria  https://www.instagram.com/chrisheria/\nVLOG YT CHANNEL: https://youtube.com/CHRISHERIA\n\nTake your training to the next level with a Heria weig",
+      "channel_id": "UCqjwF8rxRsotnojGl4gM0Zw"
+    },
+    {
+      "id": "tt-7069099722740485381",
+      "url": "https://www.tiktok.com/@stephaniebesna/video/7069099722740485381",
+      "platform": "tiktok",
+      "kind": "video",
+      "category": "silent_overlay",
+      "selection": "primary",
+      "duration_s": 23,
+      "creator": {
+        "handle": "@stephaniebesna",
+        "display_name": "steph | fitness & wellness",
+        "profile_url": "https://www.tiktok.com/@stephaniebesna"
+      },
+      "verification": {
+        "verified_at": "2026-09-17T21:59:56Z",
+        "oembed_endpoint": "https://www.tiktok.com/oembed?url=https://www.tiktok.com/@stephaniebesna/video/7069099722740485381",
+        "oembed_http": "200",
+        "oembed_title": "Full body burn 🔥 #fullbodyworkout #fullbodyathome #dumbbellworkouts #gymtokgirls #workoutsforwomen #fullbodytraining",
+        "oembed_author_name": "steph | fitness & wellness",
+        "method": "curl GET of the platform oEmbed endpoint; the title and author below are the bytes it returned, not a search-result summary"
+      },
+      "why_it_fits": "23 s dumbbell full-body with NO TikTok ASR track published and a caption that is hashtags only. Everything a reader can know has to come from the pixels and any burned-in overlay, which is the pure silent/overlay case.",
+      "review_focus": "With no dose anywhere, does the plan return recommendations with origin ai_recommendation instead of inventing creator reps?",
+      "frame_source": "tiktok-mp4",
+      "has_speech": "no_no_asr_track_published",
+      "language": "en",
+      "evidence_available": {
+        "caption": "yes",
+        "asr_vtt": "no track published",
+        "frames": "tiktok playAddr MP4 (the path pack.ts already uses)"
+      },
+      "consent_and_credit": {
+        "post_visibility": "public",
+        "credit_line": "steph | fitness & wellness — https://www.tiktok.com/@stephaniebesna/video/7069099722740485381",
+        "paid_program_flag": "none seen in the caption or on the watch page; re-check before publishing any result that names the creator"
+      },
+      "caption": "Full body burn 🔥 #fullbodyworkout #fullbodyathome #dumbbellworkouts #gymtokgirls #workoutsforwomen #fullbodytraining"
+    },
+    {
+      "id": "tt-7640241369507728661",
+      "url": "https://www.tiktok.com/@greek.bro/photo/7640241369507728661",
+      "platform": "tiktok",
+      "kind": "photo",
+      "category": "silent_overlay",
+      "selection": "primary",
+      "duration_s": null,
+      "creator": {
+        "handle": "@greek.bro",
+        "display_name": "greek bro",
+        "profile_url": "https://www.tiktok.com/@greek.bro"
+      },
+      "verification": {
+        "verified_at": "2026-09-17T21:59:57Z",
+        "oembed_endpoint": "https://www.tiktok.com/oembed?url=https://www.tiktok.com/@greek.bro/photo/7640241369507728661",
+        "oembed_http": "400",
+        "oembed_title": "This 6-move leg session targets your quads, hamstrings, glutes & calves to build thicker legs, explosive strength, and the kind of lower-body size that stands out from every angle. #musclegrowth #gym #gymtips #legday #fyp ",
+        "oembed_author_name": "greek bro",
+        "method": "curl GET of the platform oEmbed endpoint; the title and author below are the bytes it returned, not a search-result summary",
+        "oembed_note": "TikTok oEmbed answers 400 for /photo/ URLs; verified through the /video/ alias of the same id",
+        "oembed_endpoint_alias": "https://www.tiktok.com/oembed?url=https://www.tiktok.com/@greek.bro/video/7640241369507728661",
+        "oembed_alias_http": "200"
+      },
+      "why_it_fits": "TikTok photo carousel (/photo/), the vision path, and already a documented production failure: design/extraction-evidence/2026-09-08/incident.md records this exact post returning zero exercises twice before a third read produced seven entries from four of six slides. Caption describes a six-move leg session but lists no exercises or doses, so every claim must come from slide OCR.",
+      "review_focus": "Slides 5 and 6 were abandoned on time budget in production. Does the arm report a coverage_caveat instead of a confident six-move card?",
+      "frame_source": "carousel",
+      "has_speech": "not_applicable_photo_carousel",
+      "language": "en",
+      "evidence_available": {
+        "caption": "unreadable_from_this_host",
+        "asr_vtt": "unknown",
+        "frames": "carousel slide images (vision path, no MP4)"
+      },
+      "consent_and_credit": {
+        "post_visibility": "public",
+        "credit_line": "greek bro — https://www.tiktok.com/@greek.bro/photo/7640241369507728661",
+        "paid_program_flag": "none seen in the caption or on the watch page; re-check before publishing any result that names the creator"
+      }
+    },
+    {
+      "id": "tt-7190755101852650798",
+      "url": "https://www.tiktok.com/@tkoprogramming/video/7190755101852650798",
+      "platform": "tiktok",
+      "kind": "video",
+      "category": "circuit_repeated_movements",
+      "selection": "primary",
+      "duration_s": 15,
+      "creator": {
+        "handle": "@tkoprogramming",
+        "display_name": "Tyler Kidd",
+        "profile_url": "https://www.tiktok.com/@tkoprogramming"
+      },
+      "verification": {
+        "verified_at": "2026-09-17T21:59:58Z",
+        "oembed_endpoint": "https://www.tiktok.com/oembed?url=https://www.tiktok.com/@tkoprogramming/video/7190755101852650798",
+        "oembed_http": "200",
+        "oembed_title": "Friday CrossFit Workout! AMRAP 20 - 5 Cleans (135lb/95lb) - 10 Bar Facing Burpees - 15 Air Squats #amrap #powerclean #cleans #powercleans #barfacingburpees #burpees #airsquats #crossfit #crossfitworkout ",
+        "oembed_author_name": "Tyler Kidd",
+        "method": "curl GET of the platform oEmbed endpoint; the title and author below are the bytes it returned, not a search-result summary"
+      },
+      "why_it_fits": "15 s clip of an AMRAP 20 whose caption gives the whole round (5 cleans / 10 bar-facing burpees / 15 air squats). The three movements recur every round, so occurrence alignment and 'rounds are not per-exercise sets' are both under test in a very short clip.",
+      "review_focus": "Does the reader emit one occurrence per demonstrated cycle and bind AMRAP 20 to the session, not to each exercise?",
+      "frame_source": "tiktok-mp4",
+      "has_speech": "no_no_asr_track_published",
+      "language": "en",
+      "evidence_available": {
+        "caption": "yes",
+        "asr_vtt": "no track published",
+        "frames": "tiktok playAddr MP4 (the path pack.ts already uses)"
+      },
+      "consent_and_credit": {
+        "post_visibility": "public",
+        "credit_line": "Tyler Kidd — https://www.tiktok.com/@tkoprogramming/video/7190755101852650798",
+        "paid_program_flag": "none seen in the caption or on the watch page; re-check before publishing any result that names the creator"
+      },
+      "caption": "Friday CrossFit Workout! AMRAP 20 - 5 Cleans (135lb/95lb) - 10 Bar Facing Burpees - 15 Air Squats #amrap #powerclean #cleans #powercleans #barfacingburpees #burpees #airsquats #crossfit #crossfitworkout "
+    },
+    {
+      "id": "tt-7616358140472478979",
+      "url": "https://www.tiktok.com/@albariciosa/video/7616358140472478979",
+      "platform": "tiktok",
+      "kind": "video",
+      "category": "circuit_repeated_movements",
+      "selection": "primary",
+      "duration_s": 44,
+      "creator": {
+        "handle": "@albariciosa",
+        "display_name": "Alba Moreno",
+        "profile_url": "https://www.tiktok.com/@albariciosa"
+      },
+      "verification": {
+        "verified_at": "2026-09-17T21:59:59Z",
+        "oembed_endpoint": "https://www.tiktok.com/oembed?url=https://www.tiktok.com/@albariciosa/video/7616358140472478979",
+        "oembed_http": "200",
+        "oembed_title": "Amrap 12’  Deadlift (100/70) T2b Lateral burpees 4-8-12-16-20… #crossfitgirl #crossfit #crossfitspain #crossfitgames  ",
+        "oembed_author_name": "Alba Moreno",
+        "method": "curl GET of the platform oEmbed endpoint; the title and author below are the bytes it returned, not a search-result summary"
+      },
+      "why_it_fits": "44 s CrossFit AMRAP 12' with a 4-8-12-16-20 ladder across deadlift / toes-to-bar / lateral burpees: the same three movements repeat with a DIFFERENT prescribed rep count each round, which is the hardest version of repeated-movement dose attribution. Caption is Spanish; loads are given as (100/70).",
+      "review_focus": "Does the ladder survive as a per-round scheme, and is (100/70) read as the Rx male/female load rather than a rep count?",
+      "frame_source": "tiktok-mp4",
+      "has_speech": "no_no_asr_track_published",
+      "language": "es",
+      "evidence_available": {
+        "caption": "yes",
+        "asr_vtt": "no track published",
+        "frames": "tiktok playAddr MP4 (the path pack.ts already uses)"
+      },
+      "consent_and_credit": {
+        "post_visibility": "public",
+        "credit_line": "Alba Moreno — https://www.tiktok.com/@albariciosa/video/7616358140472478979",
+        "paid_program_flag": "none seen in the caption or on the watch page; re-check before publishing any result that names the creator"
+      },
+      "caption": "Amrap 12’  Deadlift (100/70) T2b Lateral burpees 4-8-12-16-20… #crossfitgirl #crossfit #crossfitspain #crossfitgames  "
+    },
+    {
+      "id": "tt-7389428760753327403",
+      "url": "https://www.tiktok.com/@tylerpath/video/7389428760753327403",
+      "platform": "tiktok",
+      "kind": "video",
+      "category": "subtle_grip_equipment",
+      "selection": "primary",
+      "duration_s": 88,
+      "creator": {
+        "handle": "@tylerpath",
+        "display_name": "Tyler",
+        "profile_url": "https://www.tiktok.com/@tylerpath"
+      },
+      "verification": {
+        "verified_at": "2026-09-17T21:59:59Z",
+        "oembed_endpoint": "https://www.tiktok.com/oembed?url=https://www.tiktok.com/@tylerpath/video/7389428760753327403",
+        "oembed_http": "200",
+        "oembed_title": "Which muscles do you train when you do pull ups and how does a different grip change the “focus” of the exercise? Here I break that down. #fyp #fitness #gym #bodybuilding #calisthenics ",
+        "oembed_author_name": "Tyler",
+        "method": "curl GET of the platform oEmbed endpoint; the title and author below are the bytes it returned, not a search-result summary"
+      },
+      "why_it_fits": "88 s breakdown of pronated wide / neutral / supinated pull-ups on the same bar. Same catalog family, same equipment, and the only thing that separates the occurrences is grip and hand spacing — the exact failure class the kettlebell fixture's diamond/handle dispute belongs to. Free ASR VTT fetched.",
+      "review_focus": "Is pull-up vs chin-up decided by the visible grip, and does the pack keep grip_width instead of collapsing three occurrences into one?",
+      "frame_source": "tiktok-mp4",
+      "has_speech": "yes_confirmed_asr_track",
+      "language": "en",
+      "evidence_available": {
+        "caption": "yes",
+        "asr_vtt": "yes — ASR/eng-US",
+        "asr_vtt_fetched_to": "/private/tmp/claude-501/-Users-simeon-Desktop-CLAUDE-COWORK/f83e3c45-9ece-4ff1-96cf-c461f42dfdcd/scratchpad/vtt/tt-7389428760753327403.vtt",
+        "frames": "tiktok playAddr MP4 (the path pack.ts already uses)"
+      },
+      "consent_and_credit": {
+        "post_visibility": "public",
+        "credit_line": "Tyler — https://www.tiktok.com/@tylerpath/video/7389428760753327403",
+        "paid_program_flag": "none seen in the caption or on the watch page; re-check before publishing any result that names the creator"
+      },
+      "caption": "Which muscles do you train when you do pull ups and how does a different grip change the “focus” of the exercise? Here I break that down. #fyp #fitness #gym #bodybuilding #calisthenics "
+    },
+    {
+      "id": "tt-7280848752666004769",
+      "url": "https://www.tiktok.com/@anakaticfitness/video/7280848752666004769",
+      "platform": "tiktok",
+      "kind": "video",
+      "category": "subtle_grip_equipment",
+      "selection": "primary",
+      "duration_s": 16,
+      "creator": {
+        "handle": "@anakaticfitness",
+        "display_name": "Ana Katic",
+        "profile_url": "https://www.tiktok.com/@anakaticfitness"
+      },
+      "verification": {
+        "verified_at": "2026-09-17T22:00:00Z",
+        "oembed_endpoint": "https://www.tiktok.com/oembed?url=https://www.tiktok.com/@anakaticfitness/video/7280848752666004769",
+        "oembed_http": "200",
+        "oembed_title": "Different grip variations! Neutral vs supinated vs pronated grip. Neutral grip is the close grip. It will mostly bias your lats. ( single arm db row with a neutral grip, neutral grip lat pull down, neutral grip kneeling iliac pull down, neutral grip hammer rope curls, neutral grip db biceps curls, etc. ) Supinated grip is an under hand grip. The palms face you. ( supinated grip pull ups, supinated grip seated row, supinated grip biceps curls, etc. ) Pronated grip is an over hand grip. The palms face away from the body. ( chest supported row with a pronated grip, pronated grip pull ups, pronated grip barbell bent over row, etc. ) This is what a lot of you guys get confused with so I thought I’d make it short and sweet and hopefully help you with understanding the difference between each grip :) Need help with your training?! Sign up for my app ❤️  #anakaticfitness #fitness #upperbody ",
+        "oembed_author_name": "Ana Katic",
+        "method": "curl GET of the platform oEmbed endpoint; the title and author below are the bytes it returned, not a search-result summary"
+      },
+      "why_it_fits": "16 s with no ASR track: neutral vs supinated vs pronated demonstrated across row, pulldown and curl, with the definitions only in the caption. Tests whether a written definition list is turned into demonstrated occurrences that were never performed.",
+      "review_focus": "The caption lists example exercises the creator does not perform. Do any of them appear as occurrences?",
+      "frame_source": "tiktok-mp4",
+      "has_speech": "no_no_asr_track_published",
+      "language": "en",
+      "evidence_available": {
+        "caption": "yes",
+        "asr_vtt": "no track published",
+        "frames": "tiktok playAddr MP4 (the path pack.ts already uses)"
+      },
+      "consent_and_credit": {
+        "post_visibility": "public",
+        "credit_line": "Ana Katic — https://www.tiktok.com/@anakaticfitness/video/7280848752666004769",
+        "paid_program_flag": "none seen in the caption or on the watch page; re-check before publishing any result that names the creator"
+      },
+      "caption": "Different grip variations! Neutral vs supinated vs pronated grip. Neutral grip is the close grip. It will mostly bias your lats. ( single arm db row with a neutral grip, neutral grip lat pull down, neutral grip kneeling iliac pull down, neutral grip hammer rope curls, neutral grip db biceps curls, etc. ) Supinated grip is an under hand grip. The palms face you. ( supinated grip pull ups, supinated grip seated row, supinated grip biceps curls, etc. ) Pronated grip is an over hand grip. The palms face away from the body. ( chest supported row with a pronated grip, pronated grip pull ups, pronated grip barbell bent over row, etc. ) This is what a lot of you guys get confused with so I thought I’d make it short and sweet and hopefully help you with understanding the difference between each grip :) Need help with your training?! Sign up for my app ❤️  #anakaticfitness #fitness #upperbody "
+    },
+    {
+      "id": "tt-7269956760260103470",
+      "url": "https://www.tiktok.com/@asgooch/video/7269956760260103470",
+      "platform": "tiktok",
+      "kind": "video",
+      "category": "conflicting_dose",
+      "selection": "primary",
+      "duration_s": 34,
+      "creator": {
+        "handle": "@asgooch",
+        "display_name": "Adam Gooch",
+        "profile_url": "https://www.tiktok.com/@asgooch"
+      },
+      "verification": {
+        "verified_at": "2026-09-17T22:00:01Z",
+        "oembed_endpoint": "https://www.tiktok.com/oembed?url=https://www.tiktok.com/@asgooch/video/7269956760260103470",
+        "oembed_http": "200",
+        "oembed_title": "Single Kettlebell Upper Body Complex: 5 rounds x 5 reps (3 rows, 1 clean, 1 press) Grab a friend, hit your obligatory start dance and get after it. ✔️  #kettlebell #workout #kettlebells #kettlebellworkout #kettlebelleorkouts #kettlebellcomplex #kettlebelltraining #upperbody #workout ",
+        "oembed_author_name": "Adam Gooch",
+        "method": "curl GET of the platform oEmbed endpoint; the title and author below are the bytes it returned, not a search-result summary"
+      },
+      "why_it_fits": "34 s upper-body complex whose caption says '5 rounds x 5 reps (3 rows, 1 clean, 1 press)' — the 5 does not distribute over the three movements, it decomposes into 3+1+1. The fetched ASR track is the creator counting reps aloud ('Clean. Jerk. Down.'), which is a live temptation to turn audible counting into a visible-rep claim.",
+      "review_focus": "Is the '5 reps' claim kept as a conflicted/ambiguous session claim, and is observed_repetitions left unknown despite the audible count?",
+      "frame_source": "tiktok-mp4",
+      "has_speech": "yes_confirmed_asr_track",
+      "language": "en",
+      "evidence_available": {
+        "caption": "yes",
+        "asr_vtt": "yes — ASR/eng-US",
+        "asr_vtt_fetched_to": "/private/tmp/claude-501/-Users-simeon-Desktop-CLAUDE-COWORK/f83e3c45-9ece-4ff1-96cf-c461f42dfdcd/scratchpad/vtt/tt-7269956760260103470.vtt",
+        "frames": "tiktok playAddr MP4 (the path pack.ts already uses)"
+      },
+      "consent_and_credit": {
+        "post_visibility": "public",
+        "credit_line": "Adam Gooch — https://www.tiktok.com/@asgooch/video/7269956760260103470",
+        "paid_program_flag": "none seen in the caption or on the watch page; re-check before publishing any result that names the creator"
+      },
+      "caption": "Single Kettlebell Upper Body Complex: 5 rounds x 5 reps (3 rows, 1 clean, 1 press) Grab a friend, hit your obligatory start dance and get after it. ✔️  #kettlebell #workout #kettlebells #kettlebellworkout #kettlebelleorkouts #kettlebellcomplex #kettlebelltraining #upperbody #workout "
+    },
+    {
+      "id": "yt-dYfpbRGVARM",
+      "url": "https://www.youtube.com/watch?v=dYfpbRGVARM",
+      "platform": "youtube",
+      "kind": "video",
+      "category": "long_sparse",
+      "selection": "primary",
+      "duration_s": 1847,
+      "creator": {
+        "handle": "@bigsisWorkout",
+        "display_name": "BIGSIS Workout",
+        "profile_url": "https://www.youtube.com/@bigsisWorkout"
+      },
+      "verification": {
+        "verified_at": "2026-09-17T22:00:05Z",
+        "oembed_endpoint": "https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=dYfpbRGVARM&format=json",
+        "oembed_http": "200",
+        "oembed_title": "30 Min HIIT Workout at Home / No Repeats No Jumping No Talking",
+        "oembed_author_name": "BIGSIS Workout",
+        "method": "curl GET of the platform oEmbed endpoint; the title and author below are the bytes it returned, not a search-result summary"
+      },
+      "why_it_fits": "1847 s no-talking, no-repeats HIIT: roughly 30 distinct movements, each shown once, with the only textual evidence an on-screen timer and an ASR track over music. Its storyboard tops out at 160x90 every 10 s (186 frames), so the evidence really is sparse — the case where a bounded interval or unknown must be returned instead of a fabricated boundary.",
+      "review_focus": "At 10 s frame spacing, are boundaries returned as intervals with uncertainty rather than exact seconds?",
+      "frame_source": "youtube-storyboard",
+      "has_speech": "no_no_talking_asr_track_is_music_only",
+      "language": "en",
+      "evidence_available": {
+        "caption": "yes (YouTube description)",
+        "asr_vtt": "track listed (en/asr) but NOT fetchable from a server: timedtext returned 0 bytes",
+        "frames": "youtube storyboard sheets — highest level spec 160#90#186#5#5#10000#M$M#rs$AOn4CLC_PltcEF5iyEw2pd-LqR6vFuoDSg",
+        "storyboard_note": "spec fields are width#height#frames#cols#rows#interval_ms; one L3 sheet was downloaded as a 31 KB image/webp to prove the path works",
+        "playability_from_this_host": "OK"
+      },
+      "consent_and_credit": {
+        "post_visibility": "public",
+        "credit_line": "BIGSIS Workout — https://www.youtube.com/watch?v=dYfpbRGVARM",
+        "paid_program_flag": "none seen in the caption or on the watch page; re-check before publishing any result that names the creator"
+      },
+      "description": "30 Min HIIT Workout at Home / No Repeats No Jumping No Talking\nTone your body and lose weight at the same time! \nThis no jumping, no repeats, full body workout will help you burn calories and tone your entire body. Don’t forget to focus your attention on the muscles that you are targetting throughout your exercise! I hope you enjoy this no repeats no jumping full body workout ❤️\n\n#FullBodyWorkout #HomeWorkout #Bigsis #BigsisWorkout\n\nDisclaimer\nTo reduce and avoid injury, you will want to check with your doctor before beginning any Bigsis workout routines. By performing any Bigsis workout routi",
+      "channel_id": "UCdxQB1h01zTyTHPxIbaScrQ"
+    },
+    {
+      "id": "yt-oMCGYCvoEx4",
+      "url": "https://www.youtube.com/watch?v=oMCGYCvoEx4",
+      "platform": "youtube",
+      "kind": "video",
+      "category": "non_english",
+      "selection": "primary",
+      "duration_s": 564,
+      "creator": {
+        "handle": "@gauravjhafitness",
+        "display_name": "Gaurav Jha Fitness",
+        "profile_url": "https://www.youtube.com/@gauravjhafitness"
+      },
+      "verification": {
+        "verified_at": "2026-09-17T22:00:06Z",
+        "oembed_endpoint": "https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=oMCGYCvoEx4&format=json",
+        "oembed_http": "200",
+        "oembed_title": "10 Min में कैसे Full  BODY Workout होता है \\\\Only Dumbbells (Home\\Gym)",
+        "oembed_author_name": "Gaurav Jha Fitness",
+        "method": "curl GET of the platform oEmbed endpoint; the title and author below are the bytes it returned, not a search-result summary"
+      },
+      "why_it_fits": "564 s Hindi-language dumbbell full-body with a Hindi ASR track and an English description — the mixed-language case where the source quote must stay in Hindi while only labels are translated. Storyboard level 3 is 320x180 every 5 s (114 frames).",
+      "review_focus": "Are source_claim quotes kept in Devanagari, and is the English description scored as creator_description rather than as speech?",
+      "frame_source": "youtube-storyboard",
+      "has_speech": "yes_confirmed_hi_asr_track",
+      "language": "hi",
+      "evidence_available": {
+        "caption": "yes (YouTube description)",
+        "asr_vtt": "track listed (hi/asr) but NOT fetchable from a server: timedtext returned 0 bytes",
+        "frames": "youtube storyboard sheets — highest level spec 320#180#114#3#3#5000#M$M#rs$AOn4CLC3tyFsJJ-gWGV_4LmNfNCDBMOtfg",
+        "storyboard_note": "spec fields are width#height#frames#cols#rows#interval_ms; one L3 sheet was downloaded as a 31 KB image/webp to prove the path works",
+        "playability_from_this_host": "OK"
+      },
+      "consent_and_credit": {
+        "post_visibility": "public",
+        "credit_line": "Gaurav Jha Fitness — https://www.youtube.com/watch?v=oMCGYCvoEx4",
+        "paid_program_flag": "none seen in the caption or on the watch page; re-check before publishing any result that names the creator"
+      },
+      "description": "Build muscle and burn calories with this 10 Min Full Body Dumbbell Workout that you can do at Home or Gym. This beginner-friendly dumbbell workout targets your chest, shoulders, arms, back, legs, and core using only dumbbells. Perfect for beginners who want a quick and effective full body training session without complicated exercises.\n\nfull body workout,\n10 min full body workout,\ndumbbell workout,\nfull body dumbbell workout,\nhome workout,\ngym workout,\nbeginner workout,\ndumbbell only workout,\n10 minute workout,\nfull body workout at home,\nmuscle building workout,\nbeginner dumbbell workout,\nfull",
+      "channel_id": "UCSiZoFK15X9FuaDHc0BT0ow"
+    },
+    {
+      "id": "tt-7622396641227656462",
+      "url": "https://www.tiktok.com/@matttralli5/video/7622396641227656462",
+      "platform": "tiktok",
+      "kind": "video",
+      "category": "fast_cut_occluded",
+      "selection": "primary",
+      "duration_s": 35,
+      "creator": {
+        "handle": "@matttralli5",
+        "display_name": "matttralli5",
+        "profile_url": "https://www.tiktok.com/@matttralli5"
+      },
+      "verification": {
+        "verified_at": "2026-09-17T22:00:02Z",
+        "oembed_endpoint": "https://www.tiktok.com/oembed?url=https://www.tiktok.com/@matttralli5/video/7622396641227656462",
+        "oembed_http": "200",
+        "oembed_title": "THE JOE ROGAN KETTLEBELL WORKOUT 💪 Tried this viral kettlebell workout by Joe Rogan… and it is not as easy as it looks. This one hits your entire body—strength, stability, and conditioning—all in a simple, no-BS format. Efficient, effective, and straight to the point. Warm-Up (3 Sets): • 20 Bodyweight Squats • 20 Push-Ups Main Workout: • 3 Sets – 10 Kettlebell Swings (each side) • 3 Sets – 10 Single-Arm Press (each side) • 3 Sets – 10 Windmills (each side) • 3 Sets – 10 Renegade Rows (each side) Weight Used: 32kg / 70 lbs #kettlebellworkout #kettlebell #joerogan ",
+        "oembed_author_name": "matttralli5",
+        "method": "curl GET of the platform oEmbed endpoint; the title and author below are the bytes it returned, not a search-result summary"
+      },
+      "why_it_fits": "35 s that compresses a twelve-set session (3x20 bodyweight squats, 3x20 push-ups, then 3x10 each-arm swings, presses, windmills and renegade rows at 70 lb) into a montage — roughly three seconds per movement, with the bell frequently occluding the working hand. Both the caption and the fetched ASR track carry the full prescription, so dose can be scored even where the pixels cannot.",
+      "review_focus": "Does the reader resist deriving visible rep counts from a montage, and does it keep 'each arm' on all four main movements?",
+      "frame_source": "tiktok-mp4",
+      "has_speech": "yes_confirmed_asr_track",
+      "language": "en",
+      "evidence_available": {
+        "caption": "yes",
+        "asr_vtt": "yes — ASR/eng-US",
+        "asr_vtt_fetched_to": "/private/tmp/claude-501/-Users-simeon-Desktop-CLAUDE-COWORK/f83e3c45-9ece-4ff1-96cf-c461f42dfdcd/scratchpad/vtt/tt-7622396641227656462.vtt",
+        "frames": "tiktok playAddr MP4 (the path pack.ts already uses)"
+      },
+      "consent_and_credit": {
+        "post_visibility": "public",
+        "credit_line": "matttralli5 — https://www.tiktok.com/@matttralli5/video/7622396641227656462",
+        "paid_program_flag": "none seen in the caption or on the watch page; re-check before publishing any result that names the creator"
+      },
+      "caption": "THE JOE ROGAN KETTLEBELL WORKOUT 💪 Tried this viral kettlebell workout by Joe Rogan… and it is not as easy as it looks. This one hits your entire body—strength, stability, and conditioning—all in a simple, no-BS format. Efficient, effective, and straight to the point. Warm-Up (3 Sets): • 20 Bodyweight Squats • 20 Push-Ups Main Workout: • 3 Sets – 10 Kettlebell Swings (each side) • 3 Sets – 10 Single-Arm Press (each side) • 3 Sets – 10 Windmills (each side) • 3 Sets – 10 Renegade Rows (each side) Weight Used: 32kg / 70 lbs #kettlebellworkout #kettlebell #joerogan "
+    },
+    {
+      "id": "tt-7473139273915501866",
+      "url": "https://www.tiktok.com/@omar.fit_/video/7473139273915501866",
+      "platform": "tiktok",
+      "kind": "video",
+      "category": "silent_overlay",
+      "selection": "alternate",
+      "duration_s": 17,
+      "creator": {
+        "handle": "@omar.fit_",
+        "display_name": "omar.fit_",
+        "profile_url": "https://www.tiktok.com/@omar.fit_"
+      },
+      "verification": {
+        "verified_at": "2026-09-17T22:00:03Z",
+        "oembed_endpoint": "https://www.tiktok.com/oembed?url=https://www.tiktok.com/@omar.fit_/video/7473139273915501866",
+        "oembed_http": "200",
+        "oembed_title": "Full Body Kettlebell Workout Complete 5 Rounds  #kettlebellworkout #workoutroutine #homeworkout #hiit",
+        "oembed_author_name": "omar.fit_",
+        "method": "curl GET of the platform oEmbed endpoint; the title and author below are the bytes it returned, not a search-result summary"
+      },
+      "why_it_fits": "17 s, no ASR track, and a caption that says only 'Full Body Kettlebell Workout Complete 5 Rounds' — rounds given, per-exercise dose missing entirely. Drop-in replacement for either silent/overlay slot and a cleaner missing-dose case than tt-7069099722740485381.",
+      "review_focus": "Rounds exist but reps do not. Is the missing dose reported as not_found_in_available_evidence?",
+      "frame_source": "tiktok-mp4",
+      "has_speech": "no_no_asr_track_published",
+      "language": "en",
+      "evidence_available": {
+        "caption": "yes",
+        "asr_vtt": "no track published",
+        "frames": "tiktok playAddr MP4 (the path pack.ts already uses)"
+      },
+      "consent_and_credit": {
+        "post_visibility": "public",
+        "credit_line": "omar.fit_ — https://www.tiktok.com/@omar.fit_/video/7473139273915501866",
+        "paid_program_flag": "none seen in the caption or on the watch page; re-check before publishing any result that names the creator"
+      },
+      "caption": "Full Body Kettlebell Workout Complete 5 Rounds  #kettlebellworkout #workoutroutine #homeworkout #hiit"
+    },
+    {
+      "id": "yt-GjH9z0gK77k",
+      "url": "https://www.youtube.com/watch?v=GjH9z0gK77k",
+      "platform": "youtube",
+      "kind": "video",
+      "category": "non_english",
+      "selection": "alternate",
+      "duration_s": 752,
+      "creator": {
+        "handle": "@gymvirtual",
+        "display_name": "gymvirtual",
+        "profile_url": "https://www.youtube.com/@gymvirtual"
+      },
+      "verification": {
+        "verified_at": "2026-09-17T22:00:08Z",
+        "oembed_endpoint": "https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=GjH9z0gK77k&format=json",
+        "oembed_http": "200",
+        "oembed_title": "¡PIERNAS TORNEADAS Y GLÚTEOS FIRMES! 🔥 Rutina 12 Minutos (Elimina Celulitis)",
+        "oembed_author_name": "gymvirtual",
+        "method": "curl GET of the platform oEmbed endpoint; the title and author below are the bytes it returned, not a search-result summary"
+      },
+      "why_it_fits": "752 s Spanish-language 12-minute leg and glute routine with an es ASR track and storyboard at 320x180 every 5 s (152 frames). Second language family for the non-English slot if Hindi proves too hard to adjudicate.",
+      "review_focus": "Same as the Hindi case: Spanish quotes must stay Spanish.",
+      "frame_source": "youtube-storyboard",
+      "has_speech": "yes_confirmed_es_asr_track",
+      "language": "es",
+      "evidence_available": {
+        "caption": "yes (YouTube description)",
+        "asr_vtt": "track listed (es/asr) but NOT fetchable from a server: timedtext returned 0 bytes",
+        "frames": "youtube storyboard sheets — highest level spec 320#180#152#3#3#5000#M$M#rs$AOn4CLA91i-AlXnVxCDHYUs3sbFKHGiQIA",
+        "storyboard_note": "spec fields are width#height#frames#cols#rows#interval_ms; one L3 sheet was downloaded as a 31 KB image/webp to prove the path works",
+        "playability_from_this_host": "OK"
+      },
+      "consent_and_credit": {
+        "post_visibility": "public",
+        "credit_line": "gymvirtual — https://www.youtube.com/watch?v=GjH9z0gK77k",
+        "paid_program_flag": "none seen in the caption or on the watch page; re-check before publishing any result that names the creator"
+      },
+      "description": "¡Consigue unas piernas fuertes, bonitas y torneadas con esta rutina rápida de 12 minutos! 🔥 En el entrenamiento de hoy, trabajaremos intensamente cuádriceps, glúteos y parte interna del muslo para tonificar y definir todo el tren inferior desde casa.\n\nPuedes realizar esta rutina con mancuernas para mayor intensidad o simplemente con tu propio peso corporal si estás empezando. ¡No hay excusas!\n\n👇 En este video encontrarás:\nEjercicios efectivos para eliminar celulitis y flacidez.\nVariantes de sentadillas y zancadas para glúteos firmes.\nTrabajo específico para la cara interna de la pierna.\nSin sa",
+      "channel_id": "UCfwP2H1CDJvssk6g2pm8EgA"
+    },
+    {
+      "id": "yt-OwfPwsgHZ9U",
+      "url": "https://www.youtube.com/watch?v=OwfPwsgHZ9U",
+      "platform": "youtube",
+      "kind": "video",
+      "category": "spoken_multi_exercise",
+      "selection": "alternate",
+      "duration_s": 707,
+      "creator": {
+        "handle": "@Jessicasvalant",
+        "display_name": "Jessica Valant",
+        "profile_url": "https://www.youtube.com/@Jessicasvalant"
+      },
+      "verification": {
+        "verified_at": "2026-09-17T22:00:08Z",
+        "oembed_endpoint": "https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=OwfPwsgHZ9U&format=json",
+        "oembed_http": "200",
+        "oembed_title": "10 Minute Full Body Dumbbell Workout!",
+        "oembed_author_name": "Jessica Valant",
+        "method": "curl GET of the platform oEmbed endpoint; the title and author below are the bytes it returned, not a search-result summary"
+      },
+      "why_it_fits": "707 s single-dumbbell full-body narrated by a physical therapist, storyboard 320x180 every 5 s (143 frames). Slower and clearer than the THENX video, so it is the safer spoken slot if the THENX cuts prove too fast for a reviewer to adjudicate.",
+      "review_focus": "One dumbbell used for every movement — does equipment stay singular and correct?",
+      "frame_source": "youtube-storyboard",
+      "has_speech": "yes_confirmed_asr_track",
+      "language": "en",
+      "evidence_available": {
+        "caption": "yes (YouTube description)",
+        "asr_vtt": "track listed (en/asr) but NOT fetchable from a server: timedtext returned 0 bytes",
+        "frames": "youtube storyboard sheets — highest level spec 320#180#143#3#3#5000#M$M#rs$AOn4CLCbGd_znHG0FF40k90qx0qF48gIGw",
+        "storyboard_note": "spec fields are width#height#frames#cols#rows#interval_ms; one L3 sheet was downloaded as a 31 KB image/webp to prove the path works",
+        "playability_from_this_host": "OK"
+      },
+      "consent_and_credit": {
+        "post_visibility": "public",
+        "credit_line": "Jessica Valant — https://www.youtube.com/watch?v=OwfPwsgHZ9U",
+        "paid_program_flag": "none seen in the caption or on the watch page; re-check before publishing any result that names the creator"
+      },
+      "description": "This 10 Minute Full Body Dumbbell Workout uses only one dumbbell for a great routine that will strengthen and tone your muscles! Strength training at home with dumbbells is one of the best ways to achieve strong muscles and bones and improve your posture and balance!\n\n🔥 Use my 10 Minute Warm Up video to get ready for any of my other workouts: https://youtu.be/oGt6idqFekE\n\n⚡️ Subscribe to my YouTube channel: http://bit.ly/2E3rNbs\n\n💪🏽 Want my full length workouts, daily routines, women's health info and more? Get a full home workout library, monthly fitness plans, recipes, free app and more  htt",
+      "channel_id": "UCjP1qqdUt2rRUM3r_4-4MMg"
+    },
+    {
+      "id": "yt-6zIaiaeWRWQ",
+      "url": "https://www.youtube.com/watch?v=6zIaiaeWRWQ",
+      "platform": "youtube",
+      "kind": "video",
+      "category": "long_sparse",
+      "selection": "alternate",
+      "duration_s": 2178,
+      "creator": {
+        "handle": "@MadFit",
+        "display_name": "MadFit",
+        "profile_url": "https://www.youtube.com/@MadFit"
+      },
+      "verification": {
+        "verified_at": "2026-09-17T22:00:10Z",
+        "oembed_endpoint": "https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=6zIaiaeWRWQ&format=json",
+        "oembed_http": "200",
+        "oembed_title": "30 MIN FULL BODY WORKOUT - Small Space Friendly (No Repeats, No Equipment, No Jumping)",
+        "oembed_author_name": "MadFit",
+        "method": "curl GET of the platform oEmbed endpoint; the title and author below are the bytes it returned, not a search-result summary"
+      },
+      "why_it_fits": "2178 s no-repeat full-body with an intro that is spoken and a body that is not, storyboard 320x180 every 10 s (219 frames). Replacement long/sparse case, and the one where a session-level spoken claim has to reach movements that are never named aloud.",
+      "review_focus": "Does an instruction spoken only in the intro get scoped to the whole session correctly?",
+      "frame_source": "youtube-storyboard",
+      "has_speech": "yes_intro_speech_then_music",
+      "language": "en",
+      "evidence_available": {
+        "caption": "yes (YouTube description)",
+        "asr_vtt": "track listed (en/asr) but NOT fetchable from a server: timedtext returned 0 bytes",
+        "frames": "youtube storyboard sheets — highest level spec 320#180#219#3#3#10000#M$M#rs$AOn4CLDLfoJoEZW3_kRqfDbLaitCkjRuGw",
+        "storyboard_note": "spec fields are width#height#frames#cols#rows#interval_ms; one L3 sheet was downloaded as a 31 KB image/webp to prove the path works",
+        "playability_from_this_host": "OK"
+      },
+      "consent_and_credit": {
+        "post_visibility": "public",
+        "credit_line": "MadFit — https://www.youtube.com/watch?v=6zIaiaeWRWQ",
+        "paid_program_flag": "none seen in the caption or on the watch page; re-check before publishing any result that names the creator"
+      },
+      "description": "If you live in an apartment or feel limited working out at home, this workout is for you. This 30 min NO REPEAT full body workout can be done in a small space, with NO EQUIPMENT! There is no jumping/no noise involved and there is a WARM UP & COOL DOWN included!\n\n📷 *Follow me on Instagram:* [madfit.ig](https://www.instagram.com/madfit.ig)  \n📱 *Download the MadFit App:* https://madfit.app.link/e/store\n🎶 *MadFit Official Workout Playlist:* https://topsify.lnk.to/MadFit\n\n\n*✨ Madore Athletics* \n👚 Shop Madore Activewear/My Outfits: https://madoreathletics.com/\n📸 Madore Athletics Instagram: https://w",
+      "channel_id": "UCpQ34afVgk8cRQBjSJ1xuJQ"
+    }
+  ]
+}

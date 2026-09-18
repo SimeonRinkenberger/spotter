@@ -23,6 +23,14 @@ export const APP = String.raw`
   // and a blank id simply sends that button down the redirect fallback.
   var PUBLIC_AUTH = { google_client_id: "48831784248-dh1o2fhiem9kqgs6ambnnvaba8vojrf2.apps.googleusercontent.com", apple_services_id: "" };
 
+  // The other half of the signup boundary, and public for the same reason: a
+  // Turnstile SITE key is meant to be read off the page. Its secret twin lives in
+  // Supabase ([auth.captcha] in config.toml) and nothing in this file can verify
+  // anything — the server is the only place a token means something. Empty is
+  // today's behaviour exactly: no script, no widget, no token on any auth call.
+  // Fill it in and the same four calls start carrying one. README, "Self-hosting".
+  var PUBLIC_CAPTCHA = { turnstile_site_key: "" };
+
   var sb = window.supabase.createClient(SB_URL, SB_ANON, {
     auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: !native, flowType: native ? "pkce" : "implicit", storage: native ? native.authStorage : undefined },
     global: { fetch: function (url, opts) {
@@ -423,6 +431,9 @@ export const APP = String.raw`
     b.onclick = function () { setAuthMode(isUp ? "signin" : "signup"); };
     $("authswap").appendChild(b);
     $("forgotwrap").classList.toggle("hide", isUp);
+    // Same rule as Forgot your password, the other way round: the sentence is
+    // about creating an account, so it belongs to the face that creates one.
+    $("consent").classList.toggle("hide", !isUp);
   }
 
   function authError(msg) {
@@ -447,6 +458,12 @@ export const APP = String.raw`
   // gets the honest generic, never the class name of an exception.
   function authMessage(m) {
     m = String(m || "");
+    // Before the rate-limit line, because gotrue's captcha refusal is a 400 whose
+    // text reads "captcha protection: request disallowed".
+    if (/captcha/i.test(m)) return "The security check did not finish. Try that once more.";
+    // A six-digit code that is wrong and one that has been used read the same to
+    // gotrue ("Token has expired or is invalid"), and they read the same here.
+    if (/token|otp/i.test(m)) return "That code is wrong or has expired. Ask for a new one.";
     if (/already regist/i.test(m)) return "That email already has an account — sign in instead.";
     if (/invalid login|invalid.*credential/i.test(m)) return "Wrong email or password.";
     if (/rate limit|too many|for security purposes/i.test(m)) return "Too many tries. Give it a minute.";
@@ -459,6 +476,132 @@ export const APP = String.raw`
       : "Could not sign you in. Try again in a moment.";
   }
 
+  // ---------- AI consent (App Store 5.1.2(i)) ----------
+  //
+  // A saved video and its caption go to OpenAI and to Google to become a workout
+  // card. 5.1.2(i) says the person has to have agreed to that in so many words
+  // first, and the sign-up form had nothing of the kind. The sentence is built
+  // here rather than written twice in markup: it is shown above Create account,
+  // and once at the top of Settings for an account made before it existed, and
+  // two copies of a consent sentence are two sentences that will drift.
+  //
+  // What is stored is the moment, not the fact — profiles.settings.ai_consent_at,
+  // an ISO string, written through saveSettings() like every other preference.
+  // settings is user-writable, so no migration and no new column.
+  var consentGiven = false;
+
+  function consentLink(href, text) {
+    var a = el("a", null, text);
+    a.href = href;
+    return a;
+  }
+
+  // Both links are the hosted pages the rest of the app already points at, and
+  // deliberately not the docs/ copies: tools/ios/build.mjs packs only index.html,
+  // assets and the icon into native-dist, so a relative terms.html is a dead link
+  // inside both shells — which is the one place a reviewer reading 5.1.2(i) taps.
+  // Only the opening clause differs between the two places this is shown: an
+  // account made last month was not created by the button being pressed now, and
+  // a sentence that says it was is a sentence a person reads past. The part that
+  // is actually being agreed to — what leaves the phone and who receives it — is
+  // written once and cannot drift.
+  function consentFill(node, opening) {
+    node.innerHTML = "";
+    node.appendChild(document.createTextNode(opening));
+    node.appendChild(consentLink("https://quarterdeckcollective.com/spotter/terms/", "Terms"));
+    node.appendChild(document.createTextNode(" and to Spotter sending the videos and captions you save to AI providers (OpenAI, Google) to build your workout cards. "));
+    node.appendChild(consentLink("https://quarterdeckcollective.com/spotter/privacy/", "Privacy policy"));
+    node.appendChild(document.createTextNode("."));
+  }
+
+  function consentAt() {
+    var s = state.profile && state.profile.settings;
+    return s ? s.ai_consent_at : null;
+  }
+
+  // Idempotent on purpose: the sign-up path and the Settings line both call it,
+  // and an account that has already agreed is never asked or written again.
+  function noteConsent() {
+    if (!state.profile || consentAt()) return;
+    state.profile.settings = state.profile.settings || {};
+    state.profile.settings.ai_consent_at = new Date().toISOString();
+    saveSettings();
+  }
+
+  // ---------- Cloudflare Turnstile ----------
+  //
+  // Per-account caps are only a cap if an account costs something to make. A
+  // captcha is what that costs, and it is deliberately the cheapest possible one
+  // for a real person: rendered interaction-only, so Cloudflare shows a checkbox
+  // to a visitor it cannot vouch for and shows nobody else anything. execution
+  // "execute" means the challenge does not even start until a form is submitted,
+  // which keeps an idle landing page free of third-party work.
+  //
+  // Tokens are single-use and expire after five minutes, so each attempt resets
+  // the widget and asks for a fresh one instead of holding one from page load.
+  var TURNSTILE_SRC = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+
+  var capRendered = null;  // one promise, so a double tap shares one widget
+  var capPending = null;   // the attempt currently waiting on a token
+  var capTimer = null;
+
+  function capOn() { return !!PUBLIC_CAPTCHA.turnstile_site_key; }
+
+  function capSettle(token) {
+    clearTimeout(capTimer);
+    var p = capPending;
+    capPending = null;
+    if (p) p(token || null);
+  }
+
+  function capRender() {
+    if (capRendered) return capRendered;
+    capRendered = loadScript(TURNSTILE_SRC).then(function () {
+      if (!window.turnstile || !window.turnstile.render) throw new Error("captcha unavailable");
+      // Every way this widget can end without a token — a Cloudflare error, a
+      // token that went stale in the box, an untouched challenge — is the same
+      // answer to the attempt waiting on it.
+      var none = function () { capSettle(null); };
+      var id = window.turnstile.render($("capgate"), {
+        sitekey: PUBLIC_CAPTCHA.turnstile_site_key,
+        execution: "execute", appearance: "interaction-only", theme: "auto",
+        callback: capSettle, "error-callback": none, "expired-callback": none,
+        "timeout-callback": none
+      });
+      return id;
+    });
+    // A blocked script on a flaky connection is not a permanent verdict.
+    capRendered.catch(function () { capRendered = null; });
+    return capRendered;
+  }
+
+  // Resolves with a token, or with null — never rejects. Null is the honest
+  // answer in every environment where Turnstile cannot run at all: an ad blocker,
+  // no network, a WebView Cloudflare does not serve. The request goes out without
+  // one and the SERVER decides, which is the only place that decision is worth
+  // anything; refusing here would only invent a dead end on the client.
+  function capToken() {
+    if (!capOn()) return Promise.resolve(null);
+    return capRender().then(function (id) {
+      return new Promise(function (resolve) {
+        capSettle(null);
+        capPending = resolve;
+        capTimer = setTimeout(capSettle, 90000);
+        try {
+          window.turnstile.reset(id);
+          window.turnstile.execute(id);
+        } catch (e) { capSettle(null); }
+      });
+    }).catch(function () { return null; });
+  }
+
+  // Carries the token only when there is one, so a page with no site key sends
+  // the request it has always sent, byte for byte.
+  function withCap(opts, tok) {
+    if (tok) opts.captchaToken = tok;
+    return opts;
+  }
+
   function doAuth() {
     var email = $("email").value.trim();
     var pw = $("pw").value;
@@ -468,21 +611,197 @@ export const APP = String.raw`
       authError("Use at least 8 characters."); return;
     }
     var btn = $("authgo");
+    var mode = authMode;
     btn.disabled = true;
-    btn.textContent = authMode === "signup" ? "Creating…" : "Signing in…";
-    var p = authMode === "signup"
-      ? sb.auth.signUp({ email: email, password: pw, options: { emailRedirectTo: AUTH_RETURN } })
-      : sb.auth.signInWithPassword({ email: email, password: pw });
-    p.then(function (r) {
-      btn.disabled = false;
-      setAuthMode(authMode);
-      if (r.error) { authError(authMessage(r.error.message)); return; }
-      if (!r.data.session) { authError("Check your email to confirm your account, then sign in."); }
+    btn.textContent = mode === "signup" ? "Creating…" : "Signing in…";
+    function idle() { btn.disabled = false; setAuthMode(authMode); }
+    capToken().then(function (tok) {
+      if (mode === "signup") {
+        return sb.auth.signUp({ email: email, password: pw,
+          options: withCap({ emailRedirectTo: AUTH_RETURN }, tok) });
+      }
+      var args = { email: email, password: pw };
+      if (tok) args.options = { captchaToken: tok };
+      return sb.auth.signInWithPassword(args);
+    }).then(function (r) {
+      idle();
+      if (r.error) {
+        // An account that exists but was never confirmed is not a wrong password,
+        // and the one thing it needs is the resend button, not a red box.
+        if (/not confirmed/i.test(r.error.message)) { mailSent(email); return; }
+        authError(authMessage(r.error.message));
+        return;
+      }
+      // The button that was just pressed carried the sentence above it, so this
+      // is the agreement. It is written once there is a profile row to write it
+      // on, which is after boot.
+      if (mode === "signup") consentGiven = true;
+      // Confirmations on: signUp answers with a user and no session. gotrue
+      // answers exactly the same way for an address that already has an account,
+      // and that is right — this form must not be a way to ask which addresses
+      // are registered.
+      if (!r.data.session) mailSent(email);
     }).catch(function (e) {
-      btn.disabled = false;
-      setAuthMode(authMode);
+      idle();
       authError(authMessage(e && e.message ? e.message : e));
     });
+  }
+
+  // ---------- check your email ----------
+  //
+  // Apple's own account sheets answer three things at this moment and so does
+  // this one: what was sent, which address it went to, and what to do when it
+  // does not arrive. The resend sits behind a countdown because gotrue's
+  // max_frequency refuses a second send inside a minute anyway, and a button that
+  // fails for a reason nobody explained is worse than a button that says wait.
+  var mailAddr = null;
+  var mailType = "signup";
+  var mailLeft = 0;
+  var mailTick = null;
+
+  function mailLabel() {
+    var b = $("mailresend");
+    b.disabled = mailLeft > 0;
+    b.textContent = mailLeft > 0 ? "Resend in " + mailLeft + "s" : "Resend the email";
+  }
+
+  function mailCount(secs) {
+    clearInterval(mailTick);
+    mailLeft = secs;
+    mailLabel();
+    if (!secs) return;
+    mailTick = setInterval(function () {
+      mailLeft--;
+      mailLabel();
+      if (mailLeft <= 0) clearInterval(mailTick);
+    }, 1000);
+  }
+
+  function mailSent(email, type) {
+    mailAddr = email;
+    mailType = type === "recovery" ? "recovery" : "signup";
+    var p = $("mailbody");
+    p.innerHTML = "";
+    // Recovery keeps the sentence that promises nothing: whether that address has
+    // an account is not a question this form is allowed to answer.
+    p.appendChild(document.createTextNode(mailType === "recovery"
+      ? "If that address has an account, a reset link and a six-digit code are on their way to "
+      : "We sent a confirmation link and a six-digit code to "));
+    p.appendChild(el("b", null, email));
+    p.appendChild(document.createTextNode(". Tap the link, or type the code in below. It can " +
+      "take a minute, and it is worth a look in spam."));
+    $("otp").value = "";
+    otpError("");
+    $("mailsent").classList.remove("hide");
+    $("authcard").classList.add("sent");
+    mailCount(60);
+    // The card's heading changed under a screen reader that was reading a form.
+    $("mailsent").focus();
+  }
+
+  // ---------- the six-digit code ----------
+  //
+  // The confirmation link signs a person in wherever it opens, which on a phone
+  // is the browser and not this app. A code is the way out of that: it is typed
+  // into the session that asked for it, so the account lands where the person is
+  // standing. The link still works untouched for anyone reading the mail on a
+  // desktop. gotrue puts the code in the template as {{ .Token }} — README,
+  // "Self-hosting", item 8.
+  function otpError(msg) {
+    var e = $("otperr");
+    e.textContent = msg || "";
+    e.classList.toggle("show", !!msg);
+  }
+
+  function otpGo() {
+    var b = $("otpgo");
+    // A code is single-use, so a second send of the same one comes back invalid
+    // and would put "that code is wrong" under a code that was right. The button
+    // is already disabled while a check is in flight; this is the same fence for
+    // the two doors that do not go through it, autofill and Enter.
+    if (b.disabled) return;
+    var code = $("otp").value.replace(/[^0-9]/g, "");
+    if (code.length < 6) { otpError("Type the six digits from the email."); return; }
+    b.disabled = true;
+    b.textContent = "Checking…";
+    otpError("");
+    function idle() { b.disabled = false; b.textContent = "Confirm"; }
+    capToken().then(function (tok) {
+      var args = { email: mailAddr, token: code, type: mailType };
+      if (tok) args.options = { captchaToken: tok };
+      return sb.auth.verifyOtp(args);
+    }).then(function (r) {
+      idle();
+      if (r.error) {
+        otpError(authMessage(r.error.message));
+        $("otp").select();
+        return;
+      }
+      // A session came back. onAuthStateChange has already swapped the view, and
+      // for a recovery code it has already opened "Choose a new password".
+    }).catch(function (e) {
+      idle();
+      otpError(authMessage(e && e.message ? e.message : e));
+    });
+  }
+
+  function mailClose() {
+    clearInterval(mailTick);
+    mailAddr = null;
+    // A code left in a field is a code the next person at this browser can read.
+    $("otp").value = "";
+    otpError("");
+    $("mailsent").classList.add("hide");
+    $("authcard").classList.remove("sent");
+  }
+
+  function mailBack() {
+    mailClose();
+    authError("");
+    setAuthMode("signup");
+    $("email").value = "";
+    $("email").focus();
+  }
+
+  function mailResend() {
+    if (!mailAddr || mailLeft > 0) return;
+    var b = $("mailresend");
+    b.disabled = true;
+    b.textContent = "Sending…";
+    capToken().then(function (tok) {
+      // Two different endpoints send the two mails, and resend only knows about
+      // the confirmation one; asking for a reset again is asking for a reset.
+      return mailType === "recovery"
+        ? sb.auth.resetPasswordForEmail(mailAddr, withCap({ redirectTo: AUTH_RETURN }, tok))
+        : sb.auth.resend({ type: "signup", email: mailAddr,
+            options: withCap({ emailRedirectTo: AUTH_RETURN }, tok) });
+    }).then(function (r) {
+      mailCount(60);
+      if (r && r.error) { toast(authMessage(r.error.message)); return; }
+      toast("Sent again. Give it a minute.");
+    }).catch(function (e) {
+      mailCount(60);
+      toast(authMessage(e && e.message ? e.message : e));
+    });
+  }
+
+  // Coming back on a link that is spent. gotrue answers an expired link and an
+  // already-used one identically — the token is consumed either way — so one
+  // sentence covers both, and it is a sentence rather than the error_description
+  // gotrue wrote for a log. Only the error case is touched: a good link still
+  // carries its session past here untouched.
+  function linkProblem() {
+    var q = location.hash.indexOf("error") > 0 ? location.hash.slice(1) : location.search.slice(1);
+    if (q.indexOf("error") < 0) return;
+    var p;
+    try { p = new URLSearchParams(q); } catch (e) { return; }
+    var code = p.get("error_code") || p.get("error") || "";
+    if (!code) return;
+    try { history.replaceState(null, "", location.pathname); } catch (e) { /* ignore */ }
+    if (state.user) return;
+    authError((/expired|invalid|denied/i.test(code)
+      ? "That link has expired or was already used."
+      : "That link could not be opened.") + " Sign in below, or ask for a new one.");
   }
 
   // ---------- provider sign-in (Google / Apple) ----------
@@ -848,9 +1167,14 @@ export const APP = String.raw`
 
   function showLanding() {
     if (native) $("pumpyinput").value = "";
+    // Whoever signs in next is not the person who was told to check an inbox.
+    mailClose();
     document.body.classList.remove("app");
     $("landing").classList.add("open");
     $("app").classList.add("hide");
+    // The Turnstile script is fetched when this card appears rather than at boot:
+    // a signed-in person who never sees it never pays for it.
+    if (capOn()) capRender().catch(function () {});
   }
 
   function showApp() {
@@ -963,7 +1287,11 @@ export const APP = String.raw`
       .then(function () { if (accountNow(epoch, uid)) return consumeBilling(); })
       .then(function () { if (accountNow(epoch, uid)) return warmPages(); })
       .then(function () { return profileReady; })
-      .then(function () { if (accountNow(epoch, uid)) welcomeMaybe(); });
+      .then(function () {
+        if (!accountNow(epoch, uid)) return;
+        if (consentGiven) noteConsent();
+        welcomeMaybe();
+      });
     return booting;
   }
 
@@ -13121,6 +13449,10 @@ export const APP = String.raw`
     // Only an email account owns its own password and address; Google and Apple
     // own theirs, and offering to change them here would send somebody round a
     // loop that ends at a provider screen we do not control.
+    // Asked once, and only of an account that predates the sign-up sentence.
+    var owed = !!state.profile && !consentAt();
+    $("consentrow").classList.toggle("hide", !owed);
+    if (owed) consentFill($("consentset"), "Using Spotter means you agree to the ");
     var mine = isEmailAccount();
     $("setpwrow").classList.toggle("hide", !mine);
     $("setmailrow").disabled = !mine;
@@ -13665,16 +13997,16 @@ export const APP = String.raw`
     if (!email) { authError("Type your email above first, then tap this."); return; }
     var b = $("forgotpw");
     b.disabled = true;
-    sb.auth.resetPasswordForEmail(email, { redirectTo: AUTH_RETURN })
-      .then(function (r) {
-        b.disabled = false;
-        if (r.error) { authError(authMessage(r.error.message)); return; }
-        authOK("If that address has an account, a reset link is on its way. If it does not " +
-          "arrive in a few minutes, try again later.");
-      }, function () {
-        b.disabled = false;
-        authError("Could not ask for a link. Check your connection.");
-      });
+    capToken().then(function (tok) {
+      return sb.auth.resetPasswordForEmail(email, withCap({ redirectTo: AUTH_RETURN }, tok));
+    }).then(function (r) {
+      b.disabled = false;
+      if (r.error) { authError(authMessage(r.error.message)); return; }
+      mailSent(email, "recovery");
+    }, function () {
+      b.disabled = false;
+      authError("Could not ask for a link. Check your connection.");
+    });
   }
 
   // Following the link lands back here with a recovery session already built from
@@ -14548,6 +14880,25 @@ export const APP = String.raw`
 
   $("authgo").onclick = doAuth;
   $("forgotpw").onclick = forgotPassword;
+  consentFill($("consent"), "By creating an account you agree to the ");
+  $("consentok").onclick = function () {
+    noteConsent();
+    $("consentrow").classList.add("hide");
+  };
+  $("otpgo").onclick = otpGo;
+  // Six digits is the whole answer, so there is nothing left to press. Both
+  // Apple's and Instagram's code screens go on their own the moment the last
+  // digit lands, and waiting for a tap after that reads as a screen that did not
+  // notice. Non-digits are stripped as they arrive, which is also what a pasted
+  // "123 456" needs.
+  $("otp").addEventListener("input", function () {
+    var v = this.value.replace(/[^0-9]/g, "").slice(0, 6);
+    if (v !== this.value) this.value = v;
+    if (v.length === 6) otpGo();
+  });
+  $("otp").addEventListener("keydown", function (e) { if (e.key === "Enter") otpGo(); });
+  $("mailresend").onclick = mailResend;
+  $("mailback").onclick = mailBack;
   $("oagoogle").onclick = googleSignIn;
   $("oaapple").onclick = appleSignIn;
   oaLabelOf("oagoogle");
@@ -14906,6 +15257,8 @@ export const APP = String.raw`
   captureShare();
   captureBilling();
   captureStrava();
+  // After the three captures, because it strips the query it reads from.
+  linkProblem();
 
   // A session restored from storage does not always fire onAuthStateChange in time.
   sb.auth.getSession().then(function (r) {

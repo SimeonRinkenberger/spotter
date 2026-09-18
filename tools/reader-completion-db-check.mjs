@@ -29,7 +29,14 @@ await db.exec(`alter table ingest_jobs alter column id set default gen_random_uu
 // Use the actual production reservation function, not a mocked quota check.
 const previewSQL=readFileSync('supabase/migrations/20260917120000_reader_quality_previews.sql','utf8');
 await db.exec(previewSQL.slice(previewSQL.indexOf('create or replace function public.reserve_video_preview'),previewSQL.indexOf('-- Retire unused provider')));
-await db.exec(readFileSync('supabase/migrations/20260917130000_reader_completion_fence.sql','utf8'));
+const fenceSQL=readFileSync('supabase/migrations/20260917130000_reader_completion_fence.sql','utf8');
+await db.exec(fenceSQL);
+// Re-runnable, and proven by running it. Everything else in the file is
+// `create or replace` / `add column if not exists`; the two triggers used to be
+// bare `create trigger`, so a re-push after a half-applied migration died on
+// "trigger already exists" instead of on the real problem. The runbook tells the
+// owner to fix the file and re-push, which only works if this passes.
+await db.exec(fenceSQL);
 const u=crypto.randomUUID(), other=crypto.randomUUID(), j=crypto.randomUUID(), w=crypto.randomUUID();
 const blocks=[{exercises:[{name:'Squat',sets:3,reps:'12'}]}];
 const edited=[{exercises:[{name:'My squat',sets:2,reps:'7',edited_by_user:true}]}];
@@ -131,5 +138,52 @@ assert.notEqual(requeued.job_id,first.job_id);assert.equal(requeued.job_created,
 const again=(await db.query('select * from requeue_ingest($1,$2)',[other,first.workout_id])).rows[0];
 assert.equal(again.job_id,requeued.job_id);assert.equal(again.job_created,false);
 assert.equal((await db.query("select count(*)::int as n from saves_log where shortcode='duplicate'")).rows[0].n,2,'duplicate retry does not reserve a second quota row');
+
+// ---- a reservation written AFTER its job row is still the reservation for it ----
+//
+// `requeue_ingest` finds-or-creates, so the job handed back at index.ts:9116 may
+// be one that ALREADY existed when the preview was reserved at index.ts:9107.
+// The grant and the refund both used to carry `created_at<=j.created_at`, which
+// is false in exactly that case: preview_ok came out false, a premium payload
+// returned access_changed, failJob requeued, and after max_attempts the refund
+// skipped the row too. One of four monthly previews spent, the read paid for on
+// every attempt, the card left failed. The month match is the rule that was
+// actually wanted and it is the one that stayed.
+const third=crypto.randomUUID();
+await db.query("insert into profiles values($1,'free')",[third]);
+const scenario=async(shortcode,jobCreated,reservationMonth,reservationAt)=>{
+  const job=crypto.randomUUID(), workout=crypto.randomUUID();
+  await db.query(`insert into ingest_jobs(id,user_id,shortcode,status,locked_by,attempts,claim_generation,created_at)
+    values($1,$2,$3,'running','worker',0,1,${jobCreated})`,[job,third,shortcode]);
+  await db.query("insert into workouts(id,user_id,shortcode,ingest_job_id,ingest_status,blocks,title) values($1,$2,$3,$4,'processing','[]','Queued')",[workout,third,shortcode,job]);
+  await db.query(`insert into video_previews(user_id,shortcode,month,created_at) values($1,$2,${reservationMonth},${reservationAt})`,[third,shortcode]);
+  return {job,workout,
+    finish:async()=>(await db.query('select finish_ingest_job($1,$2,$3,1,$4) as result',[job,third,'worker',payload])).rows[0].result,
+    kill:async()=>(await db.query('select fail_ingest_job($1,$2,$3,1,true,false,false,$4,$5,now()) as ok',[job,third,'worker','out of attempts','Try again'])).rows[0].ok,
+    previews:async()=>(await db.query('select completed from video_previews where user_id=$1 and shortcode=$2',[third,shortcode])).rows};
+};
+
+const prior=await scenario('older-job',"now()-interval '3 minutes'","date_trunc('month',now())","now()");
+const granted=await prior.finish();
+assert.equal(granted.status,'done','a free account’s preview pays for a job that existed before it was reserved');
+assert.equal(granted.filled,1);
+assert.deepEqual((await prior.previews()).map(x=>x.completed),[true],'and is spent exactly once');
+
+const doomed=await scenario('dead-job',"now()-interval '3 minutes'","date_trunc('month',now())","now()");
+assert.equal(await doomed.kill(),true);
+assert.deepEqual(await doomed.previews(),[],'a dead job gives that same reservation back instead of keeping it charged');
+
+// The month match still fences, which is the whole reason it is the predicate
+// that stayed: a reservation from last month cannot pay for this month's job,
+// and a dead job this month cannot refund last month's reservation. A
+// reservation made a tenth of a second before midnight on the last of the month
+// is therefore still stranded; that window is microseconds wide per month and is
+// the deliberate cost of not comparing timestamps.
+const lastMonth=await scenario('month-edge',"date_trunc('month',now())",
+  "(date_trunc('month',now())-interval '1 month')::date","date_trunc('month',now())-interval '0.1 second'");
+assert.equal((await lastMonth.finish()).status,'access_changed','last month’s reservation does not entitle this month’s read');
+assert.equal(await lastMonth.kill(),true);
+assert.deepEqual((await lastMonth.previews()).map(x=>x.completed),[false],'and this month’s failure does not delete it either');
+
 await db.close();
-console.log('PASS reader completion SQL: generations including budget retry, account isolation, duplicate completion, edit/delete preservation, concurrent edit rejection, entitlement change, month boundary, superseded jobs, cache and stage fencing, failure cleanup, atomic cached preview/rollback and RPC permissions.');
+console.log('PASS reader completion SQL: re-runnable migration, generations including budget retry, account isolation, duplicate completion, edit/delete preservation, concurrent edit rejection, entitlement change, pre-existing jobs, month boundary in both directions, superseded jobs, cache and stage fencing, failure cleanup and refund, atomic cached preview/rollback and RPC permissions.');

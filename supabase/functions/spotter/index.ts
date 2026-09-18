@@ -39,6 +39,8 @@
 //   POST /api/worker/tick           drain the ingest queue (shared secret, not a user)
 //   POST /api/worker/media          one tier of reading the video, in its own isolate
 //   POST /api/worker/probe          one-off measurement behind the same secret
+//   POST /api/worker/ops-alert      push what ops_alert_check() fired to staff devices
+//   GET  /api/ops/scorecard         this week's operating review as JSON (staff only)
 //
 // Ingest is asynchronous: it enqueues and returns in ~200ms, and the worker fills
 // the row in afterwards. The browser watches its own workouts row over Realtime.
@@ -56,7 +58,8 @@ import {
   handleWebhook, pricesBlock, returnBaseFrom, sellablePlans, syncFromSession, syncUser,
 } from "./billing.ts";
 import { forgetStravaQuietly, handleCallback, handleStrava } from "./strava.ts";
-import { pushConfig, runPushTick } from "./push.ts";
+import { pushConfig, runPushTick, sendPush } from "./push.ts";
+import { opsScorecard, runOpsAlert } from "./ops.ts";
 import { CATALOG, type CatalogEntry, canonicalize, catalogById, standardOf } from "./catalog.ts";
 import { assertPublicUrl, checkUrl, dnsAvailable, safeFetch } from "./net.ts";
 import {
@@ -66,7 +69,7 @@ import {
   type SourceKind, type SourcePart, videoEvidence,
 } from "./evidence.ts";
 import {
-  assemblePack, type Frames, type Observation, OBSERVE_PROMPT, type Pack, PACK_V,
+  assemblePack, type Frames, MIN_USABLE_PACK_V, type Observation, OBSERVE_PROMPT, type Pack, PACK_V,
   packBlock, type PackExercise, type PackEye, packReader, type PackReader, parseFrames,
   parseStampedTranscript,
   packInTimeOrder, parseVtt, readObservation, repairPack, secondsToMmss,
@@ -800,6 +803,38 @@ const WORKER_ID = crypto.randomUUID().slice(0, 8);
 //    they are rebuilt the next time anybody saves the video.
 // 11: separate creator prescriptions from observed counts; retain pack v2 variants.
 const CARD_V = 11;
+
+/**
+ * The oldest card shape this build still SERVES out of the shared cache.
+ *
+ * CARD_V and PACK_V are what we WRITE. These two minimums are what we are willing
+ * to READ, and splitting them apart is the difference between a version bump that
+ * improves the next reading and one that empties the cache at cutover: with a
+ * single number, the minute v11 deploys no row written by v180 matches any gate,
+ * every save and every preview of an already-read video becomes a fresh paid
+ * extraction, and the $0.50/day global guard is gone in tens of saves.
+ *
+ * The rule, in both directions:
+ *
+ *  - A row at or above the minimum is SERVED as it stands: no model call, no
+ *    queue, no preview consumed. It comes back carrying `stale: true` when it is
+ *    below what we write today, so a log line can say which hits were old without
+ *    anything changing its behaviour.
+ *  - A stale row is upgraded only by a paid read path that exists for its own
+ *    reasons — an explicit re-read, or a Plus save that finds a thin card.
+ *    `mediaSeed` and `handleReprocess` deliberately still ask for `>= CARD_V`,
+ *    which is what makes those paths rebuild the card rather than re-stamp an old
+ *    one as new. Nothing schedules a mass re-read; that is the expensive mistake
+ *    this constant exists to avoid.
+ *  - Consumers must read a below-current shape as FIELDS ABSENT, never as zero. A
+ *    v1 pack has no `reps_prescribed`, `rep_prescriptions` or `caption`; every
+ *    reader of those guards with `?? []` or `!= null`, and `applyPack` only fills
+ *    a dose it actually finds.
+ *
+ * Raise a minimum only when an older shape is genuinely unreadable — never to
+ * force a refresh, because forcing a refresh is what costs money.
+ */
+const MIN_USABLE_CARD_V = 10;
 
 const ALLOWED_ORIGINS = (Deno.env.get("ALLOWED_ORIGINS") ??
   "https://simeonrinkenberger.github.io,http://localhost:8000,http://127.0.0.1:8000")
@@ -7178,6 +7213,44 @@ async function userFromIngestKey(req: Request, url: URL): Promise<string | null>
  * must never happen, and "try again in a minute" is a far better answer than a
  * subscription nobody is left to cancel.
  */
+/**
+ * Forget the RevenueCat subscriber, if there is one and if we hold a key.
+ *
+ * The native shells identify RevenueCat with the Supabase user id and nothing
+ * else (`native/purchases.js` passes it as `appUserID` to `configure` and to
+ * `logIn`), so the subscriber id is the user id we are about to erase. Without
+ * this the auth row goes and the subscriber stays: purchase history, aliases and
+ * the email RevenueCat may hold outlive the erasure, and a reused id would
+ * inherit somebody else's entitlements.
+ *
+ * Best effort, in the same direction as Strava and for the same reason: the
+ * store, not RevenueCat, is what is actually charging the card, `cancelAndDelete
+ * Customer` has already run, and an erasure must not be blocked by a third
+ * party's outage. A 404 is the ordinary answer for anyone who never opened the
+ * native app.
+ *
+ * Silent when `REVENUECAT_API_KEY` is unset, which is every web-only deploy and
+ * every fork. Note that deleting a subscriber needs a SECRET RevenueCat key; the
+ * public SDK key the purchases function reads customer info with is refused here,
+ * which shows up as the logged 401 rather than as a failed deletion.
+ */
+async function forgetRevenueCatQuietly(userId: string): Promise<void> {
+  const key = Deno.env.get("REVENUECAT_API_KEY");
+  if (!key) return;
+  try {
+    const r = await fetch(
+      `https://api.revenuecat.com/v1/subscribers/${encodeURIComponent(userId)}`,
+      { method: "DELETE", headers: { authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(15_000) },
+    );
+    const body = await r.text();
+    if (!r.ok && r.status !== 404) {
+      console.error("account delete: revenuecat subscriber not deleted for", userId, r.status, body.slice(0, 200));
+    }
+  } catch (e) {
+    console.error("account delete: revenuecat delete failed for", userId, e);
+  }
+}
+
 async function handleAccountDelete(userId: string, cors: Cors): Promise<Response> {
   if (!UUID_RE.test(userId)) return json({ status: "error", message: "Bad account." }, 400, cors);
   const filter = `user_id=eq.${userId}`;
@@ -7201,6 +7274,7 @@ async function handleAccountDelete(userId: string, cors: Cors): Promise<Response
   // not hold up an erasure, because a stale grant costs the person nothing and
   // they can revoke it on strava.com themselves.
   await forgetStravaQuietly(userId);
+  await forgetRevenueCatQuietly(userId);
 
   try {
     await dbDelete("saves_log", filter);
@@ -7750,7 +7824,7 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
   const [dupeR, countsR, cachedR, capsR, libR] = await Promise.allSettled([
     dbSelect("workouts", `user_id=eq.${userId}&shortcode=eq.${sc}&select=id,title,ingest_status`),
     countsFor(userId),
-    dbSelect("video_cache", `shortcode=eq.${sc}&v=gte.${CARD_V}&select=*`),
+    dbSelect("video_cache", `shortcode=eq.${sc}&v=gte.${MIN_USABLE_CARD_V}&select=*`),
     capsFor(userId),
     libraryCount(userId),
   ]);
@@ -7830,7 +7904,11 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
       return await bail(json({ status: "exists", id: again[0]?.id, title: again[0]?.title, message: "Already in your library." }, 200, cors));
     }
     await logSave(userId, p, meta, card, c.thumb_url, true, false, "save", null);
-    console.log("cache hit", p.platform, p.shortcode, "served in", Date.now() - t0, "ms");
+    // `stale` is the cutover signal: a hit on a shape older than this build still
+    // costs nothing and is still correct, and counting them is how the owner sees
+    // the old cache draining instead of guessing at it.
+    console.log("cache hit", p.platform, p.shortcode, c.stale ? "(stale v" + c.v + ")" : "(current)",
+      "served in", Date.now() - t0, "ms");
     // The row is theirs either way — this only decides whether Spotter stops here
     // or goes and reads the video the cached card could not.
     const upgraded = await upgradeCachedCard(userId, p, c, row.id, cors);
@@ -8020,6 +8098,29 @@ async function jobStep(id: string, step: string, extra: Record<string, unknown>,
 }
 
 /**
+ * Publish to the shared cache, and say so when the fence refuses.
+ *
+ * `publish_ingest_cache` returns false — it does not raise — when this worker has
+ * been reclaimed, which is the one condition the fence was added to surface. Both
+ * call sites used to discard that boolean, so a fenced-out worker carried on into
+ * `finish_ingest_job` as though the cache had been written. The write correctly
+ * did not happen either way; what was lost was the signal
+ * design/reader-fixes/RELIABILITY-GTM.md step 5 asks the owner to watch.
+ *
+ * A warning and nothing else, deliberately: the job is already doomed at the next
+ * fenced RPC, and the ops-alerts work reads stale commits out of SQL rather than
+ * from a counter this function would have to keep.
+ */
+async function publishCache(job: Job, cache: Record<string, unknown>, patch = false): Promise<boolean> {
+  const ok = await rpc("publish_ingest_cache", {
+    p_job: job.id, p_user: job.user_id, p_worker: WORKER_ID,
+    p_generation: job.claim_generation, p_cache: cache, p_patch: patch,
+  });
+  if (ok !== true) console.warn("stale cache publication rejected", job.id, cache.shortcode ?? "-");
+  return ok === true;
+}
+
+/**
  * Write the finished card onto every workouts row waiting for this video, not
  * just the one that triggered the job. This is why the job is keyed on the
  * shortcode: two users saving the same reel at the same moment share one
@@ -8043,8 +8144,7 @@ async function finishJob(
         () => buildCard(bm, p, { purpose: "extract", userId: basicOwner.user_id }));
       labelRecommendations(basic, bm);
       if (providerFor(p.platform).cacheable && await captionMayOverwriteCache(p.shortcode, bm))
-        await rpc("publish_ingest_cache", { p_job: job.id, p_user: job.user_id, p_worker: WORKER_ID,
-          p_generation: job.claim_generation, p_cache: { shortcode: p.shortcode, basic_card: basic, basic_v: CARD_V }, p_patch: true });
+        await publishCache(job, { shortcode: p.shortcode, basic_card: basic, basic_v: CARD_V }, true);
     }
   }
   // The database owns the final authorization and claim check. Nothing visible
@@ -8203,13 +8303,34 @@ async function cachedPack(shortcode: string): Promise<Pack | undefined> {
   }
 }
 
+/**
+ * Whether a served row is older than the shape this build writes.
+ *
+ * A marker, never a gate: the row is served either way (MIN_USABLE_CARD_V says
+ * why). It exists so a log line can tell "cache hit" from "cache hit on last
+ * version's shape" through a cutover, and so nothing downstream has to work it
+ * out again. `stale` is a field on an in-memory copy and is never written back —
+ * every write to video_cache names its columns explicitly.
+ */
+function cacheStale(row: any): boolean {
+  if (!row) return false;
+  if (Number(row.v) < CARD_V) return true;
+  return !!row.pack && Number(row.pack_v ?? row.pack?.pack_v) < PACK_V;
+}
+
+/** The row as it will be served, carrying that marker. */
+function markCache(row: any): any {
+  return row ? { ...row, stale: cacheStale(row) } : row;
+}
+
 /** Select an entitled result before copying any data into a user's RLS-visible row. */
 function cacheForAccess(row: any, premium: boolean): any | null {
   if (!row) return null;
-  if (premium) return row;
-  if (row.read_quality === "basic" && !visuallyRead(row) && !row.media_source) return row;
-  if (!row.basic_card || Number(row.basic_v) < CARD_V) return null;
-  return { ...row, card: row.basic_card, v: row.basic_v, read_quality: "basic", read_plan: "free",
+  if (premium) return markCache(row);
+  if (row.read_quality === "basic" && !visuallyRead(row) && !row.media_source) return markCache(row);
+  if (!row.basic_card || Number(row.basic_v) < MIN_USABLE_CARD_V) return null;
+  return { ...row, stale: Number(row.basic_v) < CARD_V,
+    card: row.basic_card, v: row.basic_v, read_quality: "basic", read_plan: "free",
     pack: null, pack_v: null, media_text: null, media_source: null, media_tried: false };
 }
 function basicMeta(meta: Meta): Meta {
@@ -8564,7 +8685,7 @@ async function runJobGuarded(job: Job): Promise<void> {
   // cards are not shareable — an upload key is unique to one file, so the lookup
   // could only ever miss.
   const cacheRows = cacheable && !mediaJob && !job.meta?.supplied
-    ? await dbSelect("video_cache", `shortcode=eq.${sc}&v=gte.${CARD_V}&select=*`)
+    ? await dbSelect("video_cache", `shortcode=eq.${sc}&v=gte.${MIN_USABLE_CARD_V}&select=*`)
     : [];
   const accessible = cacheForAccess(cacheRows[0], await premiumAccess(job.user_id, p.shortcode));
   const cached = accessible ? [accessible] : [];
@@ -8745,8 +8866,7 @@ async function runJobGuarded(job: Job): Promise<void> {
       row.pack_v = PACK_V;
     }
     if (readQuality(meta) === "basic") { row.basic_card = card; row.basic_v = CARD_V; }
-    await rpc("publish_ingest_cache", { p_job: job.id, p_user: job.user_id, p_worker: WORKER_ID,
-      p_generation: job.claim_generation, p_cache: row });
+    await publishCache(job, row);
   }
 
   labelRecommendations(card, meta);
@@ -9228,13 +9348,17 @@ async function handleWorkerProbe(req: Request): Promise<Response> {
  *
  * Version-gated on its OWN number rather than on the card's, because a pack
  * outlives several card versions: bumping CARD_V to change a prompt must not throw
- * away a reading that cost real money and is still correct. A pack from a future
- * shape is ignored rather than half-read.
+ * away a reading that cost real money and is still correct. The same argument
+ * applies to a pack version bump, so the window is a RANGE — anything from
+ * MIN_USABLE_PACK_V up to what we write. A pack from a future shape is still
+ * ignored rather than half-read; an older one is read with its newer fields
+ * simply absent.
  */
 function usablePack(row: any): Pack | undefined {
   const pack = row?.pack;
   if (!pack || typeof pack !== "object") return undefined;
-  if (Number(row?.pack_v ?? pack.pack_v) !== PACK_V) return undefined;
+  const v = Number(row?.pack_v ?? pack.pack_v);
+  if (!(v >= MIN_USABLE_PACK_V && v <= PACK_V)) return undefined;
   return pack as Pack;
 }
 
@@ -9266,6 +9390,11 @@ function mediaSeed(cached: any, w: any): { step: string; meta: Meta; card: Card 
     // everybody who ever saves it.
     pack: usablePack(cached),
   };
+  // CARD_V and not MIN_USABLE_CARD_V, deliberately. This is a paid read that is
+  // already happening, so it is the natural moment to rebuild an older card:
+  // seeding from one would stamp last version's shape as current and nothing
+  // would ever rebuild it. A stale row still hands over its caption, thumbnail,
+  // transcript and pack below — none of that is re-read.
   const usable = cached && Number(cached.v) >= CARD_V && cached.card;
   return usable
     ? { step: "media", meta, card: cached.card as Card }
@@ -9346,12 +9475,12 @@ async function handleReadVideo(
   const sc = encodeURIComponent(w.shortcode);
   const [countsR, cachedR, capsR] = await Promise.allSettled([
     countsFor(userId),
-    dbSelect("video_cache", `shortcode=eq.${sc}&v=gte.${CARD_V}&select=*`),
+    dbSelect("video_cache", `shortcode=eq.${sc}&v=gte.${MIN_USABLE_CARD_V}&select=*`),
     capsFor(userId),
   ]);
   for (const r of [countsR, cachedR, capsR]) if (r.status === "rejected") throw r.reason;
   const counts = (countsR as PromiseFulfilledResult<Counts>).value;
-  const cached = (cachedR as PromiseFulfilledResult<any[]>).value[0] ?? null;
+  const cached = markCache((cachedR as PromiseFulfilledResult<any[]>).value[0] ?? null);
   const uc = (capsR as PromiseFulfilledResult<UserCaps>).value;
 
   // A first preview of a verified current card needs no model, decoding or queue.
@@ -10883,11 +11012,12 @@ async function pumpyPack(shortcode: unknown): Promise<Pack | null> {
   const sc = String(shortcode ?? "").trim();
   if (!sc) return null;
   try {
-    // `eq` and not `gte`: PACK_V is bumped when the SHAPE changes, so a pack
-    // written by a newer shape is one this code cannot read rather than one it
-    // should try to.
+    // A range and not `eq`: a pack written by a NEWER shape is one this code
+    // cannot read rather than one it should try to, but an older one is readable
+    // with its newer fields absent — and refusing it would leave the coach
+    // answering from the card about a video somebody already paid to watch.
     const rows = await dbSelect("video_cache",
-      `shortcode=eq.${encodeURIComponent(sc)}&pack_v=eq.${PACK_V}&select=pack`);
+      `shortcode=eq.${encodeURIComponent(sc)}&pack_v=gte.${MIN_USABLE_PACK_V}&pack_v=lte.${PACK_V}&select=pack`);
     const pack = rows[0]?.pack ?? null;
     return pack && Array.isArray(pack.exercises) ? pack as Pack : null;
   } catch (e) {
@@ -12545,8 +12675,22 @@ async function handlePumpyConfirm(req: Request, userId: string, cors: Cors): Pro
   const rows = await dbSelect("pumpy_messages", `id=eq.${mid}&user_id=eq.${userId}&role=eq.assistant&select=*`);
   const m = rows[0];
   if (!m?.meta?.proposal) return json({ status: "error", message: "Not found." }, 404, cors);
-  // A lost HTTP response is safe to retry, including after an entitlement change.
-  if (m.meta.confirm_response) return json(m.meta.confirm_response, 200, cors);
+  // A lost HTTP response is safe to retry, including after an entitlement change —
+  // but only for the SAME decision. Accepting after declining used to land here
+  // and get 200 with the decline receipt ("No problem — nothing was changed.")
+  // because the idempotency key was the message and not the decision. It is a
+  // conflict, and the receipt rides along so the client still has the message the
+  // thread already holds. `confirm_pumpy_proposal` makes the same distinction, so
+  // a racing second request gets the same answer from the database.
+  if (m.meta.confirm_response) {
+    const decided = m.meta.confirm_accept ?? (m.meta.status === "done");
+    if (decided !== body.accept) {
+      return json({ ...m.meta.confirm_response, status: "conflict",
+        message: m.meta.status === "declined" ? "That one was already declined." : "That one was already accepted." },
+        409, cors);
+    }
+    return json(m.meta.confirm_response, 200, cors);
+  }
   if (m.meta.status !== "pending") return json({ status: "error", message: "That proposal was already resolved." }, 409, cors);
   try {
     const prepared = body.accept ? await execProposal(userId, m.meta.proposal as PumpyProposal, m.meta.model ?? null) : {};
@@ -12969,6 +13113,21 @@ Deno.serve(async (req: Request) => {
       return json({ status: "ok", ...out });
     }
 
+    // The operational pager, every fifteen minutes from pg_cron. Same shared
+    // secret and the same reason as the routes above: nobody is signed in, and
+    // the whole point of this one is that it works while the owner is asleep.
+    //
+    // `?dry=1` reports the notification it would have sent without sending it,
+    // which is how you find out why a phone stayed quiet without breaking
+    // something at 3 am to make it ring.
+    if (req.method === "POST" && path === "/api/worker/ops-alert") {
+      if (!secretEquals(req.headers.get("x-worker-secret") ?? "", WORKER_SECRET)) {
+        return json({ status: "error", message: "Not found" }, 404);
+      }
+      const out = await runOpsAlert(sendPush, Date.now(), url.searchParams.get("dry") === "1");
+      return json({ status: "ok", ...out });
+    }
+
     // Stripe holds no Supabase token and never will, so its events are matched
     // here, above the gate, for the same reason the worker's routes are. The
     // request is authenticated instead by the signature over its raw body.
@@ -12993,6 +13152,21 @@ Deno.serve(async (req: Request) => {
       userId = await userFromIngestKey(req, url);
     }
     if (!userId) return json({ status: "error", message: "Sign in to use Spotter." }, 401, cors);
+
+    // The weekly scorecard, for staff and nobody else. Matched here, above the
+    // metered user routes, because it spends no allowance and calls no model —
+    // it is nine aggregate reads of service-role-only views.
+    //
+    // 404 rather than 403 for a non-staff account: the existence of an admin
+    // surface is itself information, and a signed-in stranger learning that
+    // Spotter has one is the first step of looking for a hole in it.
+    if (req.method === "GET" && path === "/api/ops/scorecard") {
+      let plan = "free";
+      try { plan = String((await dbSelect("profiles", `id=eq.${userId}&select=plan`))[0]?.plan ?? "free"); }
+      catch (e) { console.error("ops: could not read the plan for the scorecard request", e); }
+      if (plan !== "staff") return json({ status: "error", message: "Not found" }, 404, cors);
+      return json(await opsScorecard(Date.now(), url.searchParams.get("week") ?? undefined), 200, cors);
+    }
 
     if (req.method === "POST") req = await boundedRequest(req);
     return await guardedUserRequest(req, path, userId, cors, async () => {

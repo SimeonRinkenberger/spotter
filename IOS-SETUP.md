@@ -16,12 +16,26 @@ From this directory:
 npm ci
 npm run ios:sync     # build web, package assets, sync plugins and native project
 npm run ios:check    # haptics/timer/packaging checks
-npm run ios:build    # unsigned iPhone simulator Debug build
+npm run ios:build    # iPhone simulator Debug build, signed if a certificate exists
 npm run ios:open     # open ios/App/App.xcodeproj in Xcode
 ```
 
 Select scheme **App**, an iPhone simulator, then **Product → Run** (⌘R).
-The command-line build is `.native-build/Build/Products/Debug-iphonesimulator/App.app`.
+`ios:build` prints the path of the app it produced. That is
+`.native-build/Build/Products/Debug-iphonesimulator/App.app` for a checkout on an
+ordinary volume, and `~/Library/Developer/Xcode/DerivedData/spotter-<checkout>/…`
+for one inside iCloud-synced Desktop or Documents: the file provider stamps
+`com.apple.FinderInfo` on every `.app` and `.appex` within seconds of it being
+written, and codesign refuses to sign a bundle carrying it. Set
+`SPOTTER_DERIVED_DATA` to choose the location yourself.
+
+The build signs with a local Apple Development certificate when the login keychain
+has one; set `SPOTTER_TEAM_ID` to pick a team. The Simulator signature is still
+ad-hoc — what the team buys is the simulated entitlement set beside it, without
+which every Keychain call from the app fails with `errSecMissingEntitlement`
+(-34018). With no certificate the build falls back to `CODE_SIGNING_ALLOWED=NO`,
+which compiles but produces an app that cannot get past launch.
+
 `ios:build` uses installed Xcode explicitly if DEVELOPER_DIR is unset. The system
 selection should also be `/Applications/Xcode.app/Contents/Developer`.
 
@@ -79,11 +93,11 @@ Nothing in this setup uploads, publishes, enrolls, or purchases anything.
 
 | Area | Current behavior |
 | --- | --- |
-| Authentication | Email/password uses existing Supabase auth. Sessions persist with native Preferences; refresh stops in background and starts on return. This is app-sandbox UserDefaults, **not Keychain encryption**. Consider Keychain-backed storage before distribution. |
+| Authentication | Email/password uses existing Supabase auth. The session — access token, refresh token and PKCE verifier — lives in the **Keychain**, in a generic-password item under service `app.spotter.session`, written `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` so it survives a background refresh but is never carried to another device by iCloud Keychain or an encrypted backup. Refresh stops in background and starts on return. A session left in Preferences by a build older than 17 September 2026 is moved into the Keychain on first launch and deleted from Preferences; sign-out clears both. On a fresh install — Preferences gone, Keychain item possibly not — any surviving session is cleared rather than trusted, the same rule the share credential already followed. |
 | Email links | Confirmation/reset completes at the existing HTTPS web app; return and sign in with the resulting password. Google uses the system authentication sheet and a PKCE code exchange back into the app; see [Google setup](GOOGLE-AUTH.md). Native Apple sign-in code is prepared; activation awaits Developer Program approval ([setup](APPLE-AUTH.md)). |
 | Networking | This app's HTTPS Edge Function requests use native transport: Pumpy chat uses PumpyStream, other requests use CapacitorHttp. The deployed browser-origin allowlist remains intact. Auth, database, WebSocket Realtime, uploads and media retain browser networking. ATS stays enabled. |
 | Streaming | PumpyStream forwards URLSession bytes incrementally into the existing NDJSON reader. Both scene and storyboard entry points register the plugin. Abort/reader cancellation cancels the native task; this does not undo server writes or refund AI work. No backend deployment is required. |
-| Persistence | Native session and workout draft use Preferences; existing library cache/UI preferences retain localStorage and account-backed settings. Cache is not an offline database. Offline writes are not queued. No secrets are bundled from .env.local. |
+| Persistence | The session is in the Keychain (above). The workout draft and the `spotter_install` marker stay in Preferences because neither is a credential; existing library cache/UI preferences retain localStorage and account-backed settings. Cache is not an offline database. Offline writes are not queued. No secrets are bundled from .env.local. |
 | Haptics | Existing haptic(kind) maps tap/success to impact and PR/done to notification feedback. Pumpy text deltas trigger light impacts at most once every 90ms while the chat is visible with no overlay. Existing Vibration preference controls every call; failures are nonfatal. Simulator cannot verify Taptic Engine output. |
 | Lifecycle/timers | Session clock uses startedAt, rest uses absolute deadlines. Foreground reconciles elapsed time, never assumes background ticks. Drafts preserve sets and ordinary rest deadlines, including paused rest. Timed exercise/circuit callbacks restart idle after process death; unseen sets are not automatically logged. No background execution entitlement or lock-screen cue is promised. |
 | Links and sharing out | HTTPS links open in a dismissible native browser, including help/billing/Strava handoffs. Existing share/export flows use native Share with temporary cache files (25 MB cap), cleaned after completion. Saving exported files/sharing to third-party apps needs device verification. |

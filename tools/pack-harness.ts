@@ -115,7 +115,7 @@ function lift(name: string): string {
 // mentions half the file otherwise.
 const STUBS = "import { normText } from '" +
   new URL("supabase/functions/spotter/evidence.ts", ROOT).href + "';\n" +
-  "import { assemblePack, bestSeenFact, packInTimeOrder, packReader, repairPack, secondsToMmss, sharesHeadNoun, parseFrames, readObservation, sheetPathFor, sheetsPrompt, validatePack, SHEET_MAX, SHEET_MAX_BYTES, PACK_V } from '" +
+  "import { assemblePack, bestSeenFact, packInTimeOrder, packReader, repairPack, secondsToMmss, sharesHeadNoun, parseFrames, readObservation, sheetPathFor, sheetsPrompt, validatePack, SHEET_MAX, SHEET_MAX_BYTES, MIN_USABLE_PACK_V, PACK_V } from '" +
   new URL("supabase/functions/spotter/pack.ts", ROOT).href + "';\n" +
   "import { tokenCost, tokenPrice } from '" +
   new URL("supabase/functions/spotter/ai-guard.ts", ROOT).href + "';\n" +
@@ -195,7 +195,8 @@ const NAMES = [
   "countExercises", "matchPackExercise", "packEvidence", "applyPack",
   // The two routes the native share extension and the "Re-read this video" action
   // call. Their collaborators are stubbed above; the judgement is the real code.
-  "CARD_V", "UPLOAD_SIGN_SECONDS", "usablePack", "mediaSeed", "authorizeSheets", "handleReadVideo",
+  "CARD_V", "MIN_USABLE_CARD_V", "UPLOAD_SIGN_SECONDS", "usablePack", "cacheStale", "markCache",
+  "mediaSeed", "authorizeSheets", "handleReadVideo",
   "scopeFor", "isPackAuthorize", "plusPlan", "visuallyRead",
   // The tier that spends the money, and the two things that happen to a job when
   // the reading it paid for cannot be trusted.

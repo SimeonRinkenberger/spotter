@@ -58,11 +58,23 @@ const [first,second]=await Promise.all([confirm(mid),confirm(mid)]);
 assert.equal(first.workout.id,second.workout.id,'same proposal returns same created row');
 assert.equal(await count('workouts'),1,'duplicate accepts do not duplicate workouts');
 assert.equal(await count('pumpy_messages'),3,'one tool receipt and one assistant receipt');
-assert.deepEqual(await confirm(mid,false),first,'late decline cannot claim nothing changed');
+// The idempotency key is the message AND the decision. Repeating the same
+// decision is a lost response being retried and returns the stored receipt;
+// changing the decision on a resolved proposal is a conflict that still carries
+// the receipt, so the client has the message the thread already holds.
+const lateDecline=await confirm(mid,false);
+assert.equal(lateDecline.status,'conflict','late decline cannot claim nothing changed');
+assert.equal(lateDecline.message,'That one was already accepted.');
+assert.deepEqual(lateDecline.messages,first.messages,'and hands back the receipt it already wrote');
 assert.equal((await confirm(mid,true,{},other)).status,'not_found','cross-account confirmation fails closed');
 mid=await proposal();const declined=await confirm(mid,false);
-assert.deepEqual(await confirm(mid),declined,'accept after decline does not execute');
-assert.equal(await count('workouts'),1);
+assert.equal(declined.status,'ok');
+assert.deepEqual(await confirm(mid,false),declined,'a repeated decline is a retried response, not a new decision');
+const lateAccept=await confirm(mid);
+assert.equal(lateAccept.status,'conflict','accept after decline is 409, not 200 with the decline receipt');
+assert.equal(lateAccept.message,'That one was already declined.');
+assert.deepEqual(lateAccept.messages,declined.messages);
+assert.equal(await count('workouts'),1,'and it executes nothing');
 const id=first.workout.id;
 const append={kind:'append_exercises',workout_id:id,workout_title:'Training',block_title:'Added',exercises:[{name:'Lunge',canonical_id:'lunge'}],summary:'Add lunge'};
 mid=await proposal(append);
@@ -117,5 +129,42 @@ mid=await proposal({...create,blocks:[{...block,title:'x'.repeat(60001)}]},'dete
 await assert.rejects(()=>confirm(mid),'deterministic output remains bounded');
 assert.equal((await db.query("select has_function_privilege('authenticated','confirm_pumpy_proposal(uuid,bigint,boolean,jsonb)','execute') ok")).rows[0].ok,false);
 assert.equal((await db.query("select has_function_privilege('anon','confirm_pumpy_proposal(uuid,bigint,boolean,jsonb)','execute') ok")).rows[0].ok,false);
-console.log('PASS atomic Pumpy confirmation: duplicate accepts, accept/decline order, account scope, append CAS/override, entitlement, plan rollback/deduplication, injected receipt failure rollback, library cap, RPC grants');
+
+// ---- the route's own short-circuit agrees with the database ----
+//
+// handlePumpyConfirm answers a stored receipt without calling the RPC at all, so
+// the decision check has to exist in both places or the 409 depends on which
+// request happens to arrive first. Run the real handler over the receipts the
+// database just wrote.
+const vm=await import('node:vm');
+const {transformSync}=await import('esbuild');
+const routeSrc=readFileSync('supabase/functions/spotter/index.ts','utf8');
+const lift=(name)=>{const m=routeSrc.match(new RegExp('^(?:export )?(?:async )?function '+name+'\\(','m'));assert(m,name);return routeSrc.slice(m.index,routeSrc.indexOf('\n}',m.index)+2).replace(/^export /,'');};
+let rpcCalls=0;
+const stored=(await db.query('select id,meta from pumpy_messages where meta->>$1 is not null order by id',['confirm_accept'])).rows;
+const acceptedMsg=stored.find(r=>r.meta.confirm_accept===true), declinedMsg=stored.find(r=>r.meta.confirm_accept===false);
+assert(acceptedMsg&&declinedMsg,'the decision is stored next to the receipt');
+const routeCtx=vm.createContext({console,Request,Response,assert,
+  json:(v,status=200)=>Response.json(v,{status}),
+  dbSelect:async(_t,q)=>{const id=Number(q.match(/id=eq\.(\d+)/)[1]);const row=stored.find(r=>Number(r.id)===id);return row?[{id:row.id,meta:row.meta}]:[];},
+  rpc:async()=>{rpcCalls++;return {status:'ok'};},
+  execProposal:async()=>({}),
+});
+vm.runInContext(transformSync(lift('handlePumpyConfirm'),{loader:'ts',format:'cjs'}).code,routeCtx);
+const route=async(id,accept)=>{const r=await routeCtx.handlePumpyConfirm(
+  new Request('https://fixture.invalid',{method:'POST',body:JSON.stringify({message_id:Number(id),accept})}),'u',{});
+  return {status:r.status,body:await r.json()};};
+const replay=await route(acceptedMsg.id,true);
+assert.equal(replay.status,200,'the same decision replays the receipt');
+assert.equal(rpcCalls,0,'without touching the database');
+const flipped=await route(acceptedMsg.id,false);
+assert.equal(flipped.status,409,'declining an accepted proposal is a conflict at the route too');
+assert.equal(flipped.body.message,'That one was already accepted.');
+const lateYes=await route(declinedMsg.id,true);
+assert.equal(lateYes.status,409,'and accepting a declined one no longer returns 200 with the decline receipt');
+assert.equal(lateYes.body.message,'That one was already declined.');
+assert(Array.isArray(lateYes.body.messages)&&lateYes.body.messages.length,'the receipt rides along with the 409');
+assert.equal(rpcCalls,0,'no short-circuit path executes anything');
+
+console.log('PASS atomic Pumpy confirmation: duplicate accepts, accept/decline order in SQL and on the route, account scope, append CAS/override, entitlement, plan rollback/deduplication, injected receipt failure rollback, library cap, RPC grants');
 await db.close();

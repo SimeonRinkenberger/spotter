@@ -10,7 +10,7 @@
     "ios:sync": "npm run ios:assets && cap sync ios",
     "ios:open": "cap open ios",
     "ios:build": "node tools/ios/build-simulator.mjs",
-    "ios:check": "node tools/ios/check.mjs && node tools/ios/keyboard-check.mjs && node tools/ios/stream-check.mjs && node tools/ios/share-check.mjs && node tools/ios/sheet-check.mjs && node tools/ios/google-auth-check.mjs && node tools/ios/apple-auth-check.mjs",
+    "ios:check": "node tools/ios/check.mjs && node tools/ios/keyboard-check.mjs && node tools/ios/stream-check.mjs && node tools/ios/share-check.mjs && node tools/ios/sheet-check.mjs && node tools/ios/google-auth-check.mjs && node tools/ios/apple-auth-check.mjs && node tools/ios/session-storage-check.mjs",
     "parity:check": "npm run ios:assets && node tools/parity-check.mjs && npm run ios:check",
     "android:sync": "npm run ios:assets && cap sync android",
     "android:open": "cap open android",
@@ -18,6 +18,7 @@
     "android:build": "node tools/android/build.mjs",
     "eval:offline": "deno run --allow-read tools/pack-eval/offline.ts",
     "gtm:check": "node tools/gtm-check.mjs",
+    "verify:local": "node tools/verify-local.mjs",
     "eval:test": "deno run --allow-read tools/pack-eval/score-test.ts",
     "eval:live": "deno run --allow-read --allow-net --allow-env tools/pack-eval/live.ts"
   },
@@ -40,6 +41,7 @@
   "devDependencies": {
     "@capacitor/cli": "8.5.1",
     "esbuild": "0.28.2",
+    "pg": "^8.23.0",
     "web-push": "^3.6.7"
   },
   "overrides": {

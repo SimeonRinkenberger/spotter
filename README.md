@@ -366,11 +366,26 @@ ask how the media was obtained. Adding a source is a new object in `PROVIDERS`.
 
 ```bash
 npm install                                                        # once, for esbuild
+npm run verify:local                                               # everything CI's verify job runs
 node build.mjs && git add -A && git commit -m "..." && git push   # frontend
 supabase functions deploy spotter --no-verify-jwt                  # backend
 supabase db push                                                   # schema
 node tools/test-normalize.mjs && node tools/test-confidence.mjs    # both batteries
 ```
+
+**`npm run verify:local`** runs every step of the `verify` job in
+`.github/workflows/release-checks.yml`, in the same order, and stops at the first failure — the
+PGlite database checks, `npm run gtm:check`, `deno check`, the Deno harnesses, both pack evals,
+`npm audit` and the `build.mjs` byte diff. It needs PGlite once:
+
+```bash
+npm install --prefix /tmp/spotter-reader-db --ignore-scripts --no-audit --no-fund @electric-sql/pglite@0.5.8
+```
+
+`gtm:check` alone is not enough and is not meant to be: it is the launch regression groups, and
+none of them is `reader-access-check`, `deno check` or the build diff. A green `gtm:check` sat
+next to a red PR for an afternoon for exactly that reason. The macos-14 `native-parity` job
+(`npm run parity:check`) needs Xcode and stays separate.
 
 Changing a model, or turning the vision size cap down, needs none of the above:
 
@@ -664,6 +679,14 @@ before a single row goes. If Stripe cannot be reached the whole deletion stops w
 nothing is deleted, because an account that is gone but still charging a card every month is the
 one outcome that must never happen.
 
+Strava and RevenueCat are then told, in that order and best effort — an outage at either must not
+hold up an erasure, and neither is what charges the card. The RevenueCat subscriber id **is** the
+Supabase user id (`native/purchases.js` passes it as `appUserID`), so the delete is
+`DELETE https://api.revenuecat.com/v1/subscribers/<user id>`, and it runs only when the `spotter`
+function has a `REVENUECAT_API_KEY` secret — a web-only deploy makes no call. Deleting a
+subscriber needs a **secret** RevenueCat key; the public SDK key `spotter-purchases` reads
+customer info with is refused, which shows up as a logged 401 rather than as a failed erasure.
+
 ## Plans and billing
 
 The configured target prices are **Plus, $6.99 a month or $50 a year**, with a 7-day trial on the
@@ -764,6 +787,13 @@ each create their own. Nothing else differs.
 >    tax cloud-only SaaS and every economic-nexus threshold is many times away, so calculation
 >    would collect nothing and add a renewal-time failure mode. Monitoring is free at zero
 >    registrations and is what will tell you when that stops being true.
+> 7. Products → Coupons → **delete `SPOTTER_FOUNDING_YEAR`**, in the same session as any price
+>    change. `"founding": {"enabled": false}` in `tools/stripe-plans.json` is read only by this
+>    script and deletes nothing. The function's own switch is the `app_config` row
+>    `billing.founding`, which must hold the string `true` for the discount to be shown on the
+>    paywall or applied at Checkout — nothing seeds that row, so an absent row is already full
+>    price. Deleting the coupon is the second half: it is what stops an old Checkout Session or a
+>    direct API call from redeeming it. Skip both and a $50 annual plan sells for $40.
 
 Testing without the Stripe CLI: card `4242 4242 4242 4242` for the happy path,
 `4000 0000 0000 0341` to make a *renewal* fail (it attaches fine and declines when charged),
@@ -890,13 +920,16 @@ Prices are immutable in Stripe, so it creates a new one, moves the `lookup_key` 
 bought. No code knows a price id.
 
 **The founding offer** is a Stripe coupon with a fixed id, `SPOTTER_FOUNDING_YEAR`: $10 off, once,
-200 redemptions, scoped to the Plus product. The setup script creates it; the function looks it up
-by that id on the same five-minute cache as the prices and, while Stripe reports it valid, applies
-it to every yearly checkout automatically. Nobody types a code. Stripe's own `max_redemptions`
-counter is what closes the offer, so there is no number on our side to drift — `GET
-/api/billing/prices` reports `founding: {first_year_amount, remaining}`, or `null` once it is gone.
-**To end the offer, delete the coupon** in Products → Coupons; the paywall stops advertising it
-within five minutes and checkout goes to full price. Coupons are immutable, so changing the
+200 redemptions, scoped to the Plus product. **Two switches have to agree, and both are off by
+default.** The function reads the `app_config` row `billing.founding` on the same five-minute cache
+as the prices, and unless it holds the string `true` the offer is null everywhere — the paywall
+shows the standing price and checkout sends no discount. Nothing seeds that row. When it is `true`
+and Stripe still reports the coupon valid, it is applied to every yearly checkout automatically;
+nobody types a code. Stripe's own `max_redemptions` counter is what closes the offer, so there is
+no number on our side to drift — `GET /api/billing/prices` reports
+`founding: {first_year_amount, remaining}`, or `null` once either switch is off.
+**To end the offer, leave `billing.founding` absent and delete the coupon** in Products → Coupons;
+the paywall stops advertising it within five minutes and checkout goes to full price. Coupons are immutable, so changing the
 amount means deleting and re-creating. One consequence worth knowing: a Checkout Session may
 carry a coupon *or* a promo-code box, never both, so while the offer runs the yearly checkout has
 no "enter a code" field. Monthly keeps one. If Stripe refuses the coupon at session creation —
@@ -1090,6 +1123,97 @@ after in History. `capacity`, `disconnected` and `rate_limited` each get their o
      **Required characters** to `Lowercase, uppercase letters and digits` or stronger → Save.
 
    Both are visible afterwards in Advisors → Security, which is where they were flagged.
+
+8. **The signup boundary.** Signup is open and email confirmation is off, which means an
+   account costs nothing to make and every per-account cap can be multiplied by making more
+   of them. Two things close that, and both need an account only the owner can create. The
+   page is already written for both: `PUBLIC_CAPTCHA` in `supabase/functions/spotter/app.ts`
+   is empty, and while it is empty the auth calls are byte-for-byte the calls that shipped
+   before. `supabase/config.toml` carries the matching blocks, commented, in the order they
+   have to be switched on.
+
+   **Cloudflare Turnstile** (free, no card):
+
+   1. dash.cloudflare.com → Turnstile → **Add widget**. Name it `spotter`.
+   2. Hostnames: `simeonrinkenberger.github.io`, `quarterdeckcollective.com`. Add
+      `localhost` only if you want to test against the live project from a local build —
+      Cloudflare's own advice is not to leave a local hostname on a production widget.
+   3. Widget mode **Managed**. The page renders it `interaction-only`, so a visitor
+      Cloudflare can vouch for never sees anything; only a suspect one gets a checkbox.
+   4. Copy the **site key** into `PUBLIC_CAPTCHA.turnstile_site_key` in `app.ts`, run
+      `npm install && node build.mjs`, commit and ship the page. Do this first: the server
+      switch below rejects every browser still holding a page without the key.
+   5. Copy the **secret key**, `export SUPABASE_AUTH_CAPTCHA_SECRET=...`, uncomment
+      `[auth.captcha]` in `supabase/config.toml`, and `supabase config push`.
+
+   **Resend + confirmations** (the built-in sender is 2-4 mails an hour and is not a
+   launch sender):
+
+   1. resend.com → Domains → add `quarterdeckcollective.com`, publish the DKIM, SPF and
+      DMARC records it prints at the registrar, wait for **Verified**. Unverified mail
+      still sends and lands in spam, which is indistinguishable from mail never sent.
+   2. Resend → API Keys → create one with **Sending access**. That key is the SMTP
+      password; the SMTP username is the literal string `resend`.
+   3. `export SUPABASE_AUTH_SMTP_PASS=...`, uncomment `[auth.email.smtp]`,
+      `supabase config push`, then send yourself one **Forgot your password?** from the
+      live page and confirm it arrives from `Spotter <no-reply@quarterdeckcollective.com>`.
+   4. Dashboard → Authentication → **Email Templates**. In **Confirm signup** and in
+      **Reset password**, put the code above the link:
+
+      ```html
+      <p>Your code: <strong>{{ .Token }}</strong></p>
+      ```
+
+      This is not optional. The confirmation link signs a person in **wherever it
+      opens**, which on a phone is the browser and not the app — the native shells have
+      no universal link back. The six-digit code is how the account lands in the app the
+      person is actually standing in; the link stays for anyone reading the mail on a
+      desktop. Without `{{ .Token }}` in the template the code field on the card has
+      nothing to receive.
+   5. Raise `[auth.rate_limit].email_sent` above its **2/hour project-wide** default in
+      the same push. Two an hour was sized for the built-in sender and will stall every
+      signup the moment confirmations are on; the commented block suggests 30 against
+      Resend's free 100/day.
+   6. Only then set `enable_confirmations = true` and push again. From that moment a
+      signup returns no session and the card shows **Check your email** with the code
+      field, which the page already handles — no redeploy.
+   7. Dashboard → Authentication → **URL Configuration** → Redirect URLs must list
+      `https://simeonrinkenberger.github.io/spotter/`, or the link in the mail bounces to
+      the Site URL. It is the same list the reset link needs.
+
+   **AI consent.** App Store 5.1.2(i) needs an explicit agreement before a person's
+   content goes to a third-party model. The sign-up face of the card carries that
+   sentence above the button, with links to the Terms and the privacy policy, and the
+   moment of agreement is recorded as `ai_consent_at` (ISO string) in
+   `profiles.settings` — a user-writable column, so there is no migration and nothing
+   for the owner to run. An account made before this existed is asked once, at the top
+   of Settings; dismissing that line is the agreement and records the same field.
+   Nothing here needs a dashboard change.
+
+   **Rate limits.** `[auth.rate_limit]` in `config.toml` is the third block, and the only
+   one that depends on nothing external — per-IP caps gotrue applies before anything else.
+   It can be pushed on its own, today, ahead of both accounts above.
+
+   **Not yet known: the native shells.** Turnstile needs a browser, and Cloudflare supports
+   it inside a WebView, but nobody has yet run it from `capacitor://localhost` (iOS) or
+   `http://localhost` (Android) on a device. If it cannot get a token there, `[auth.captcha]`
+   locks native signups out the moment it is pushed. Check that on a device before step 5 of
+   the Turnstile list; if it fails, the fallback is `[auth.rate_limit]` plus App Attest /
+   Play Integrity on the native ingest path, and captcha stays a web-only defence.
+
+   **Test script**, on the live page, after each push:
+
+   | Step | Expect |
+   | --- | --- |
+   | Sign up with a fresh address | "Check your email", the address echoed back, a six-digit code field, Resend counting down from 60 |
+   | Type the code from the mail | Signs in on this device, in this app, without touching the link |
+   | Type a wrong code | "That code is wrong or has expired. Ask for a new one." and the field reselected |
+   | Open the link in the mail | Lands signed in, library empty, no error box |
+   | Open the same link a second time | "That link has expired or was already used." — a sentence, not a dump |
+   | Sign in with the unconfirmed account | The same "Check your email" card, with a working Resend |
+   | Forgot your password? | The same card, "recovery" wording; the code or the link both open "Choose a new password" |
+   | Tap Create account 20 times in a minute | "Too many tries. Give it a minute." and no stuck button |
+   | Sign up in the native shell | A token, or a captcha error — this is the unknown above |
 
 ### Sign in with Google / Apple
 

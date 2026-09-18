@@ -1,0 +1,542 @@
+{
+  "$comment": "GROUND-TRUTH TEMPLATE for the $5 screen, NOT ground truth. Shape: tools/fixtures/golden-tt-7679960172495785246.json and the tools/pack-eval/score.ts Fixture type, extended with the source-claim contract from PROMPTS-AND-CONTRACTS.md (prescribed vs demonstrated, provenance said/seen/written). Everything filled in here came from text this repo actually fetched — the platform caption and, where the platform publishes one, the free ASR WebVTT. NOBODY HAS WATCHED THIS VIDEO. No frame was extracted, no AI call was made, nothing was saved in the app. Every TODO_REVIEW is a decision for the human reviewer, and a visible count is never one of the things text alone can decide.",
+  "truth_v": 1,
+  "status": "TEMPLATE_UNREVIEWED",
+  "reviewed_by": "TODO_REVIEW",
+  "adjudicated_by": "TODO_REVIEW",
+  "shortcode": "tt-7622396641227656462",
+  "platform": "tiktok",
+  "url": "https://www.tiktok.com/@matttralli5/video/7622396641227656462",
+  "kind": "video",
+  "category": "fast_cut_occluded",
+  "selection": "primary",
+  "duration_s": 35,
+  "visual": "read",
+  "$visual": "score.ts reads this: 'unavailable' means nobody looked and the card must carry no visual claim (score.ts:459-470). A carousel has no video, so the video path is unavailable even though slides exist.",
+  "source": {
+    "platform": "tiktok",
+    "url": "https://www.tiktok.com/@matttralli5/video/7622396641227656462",
+    "author": "matttralli5",
+    "handle": "@matttralli5",
+    "profile_url": "https://www.tiktok.com/@matttralli5",
+    "duration_s": 35,
+    "consent": "Public post, referenced by URL only. No media is redistributed in this repo. Credit line: matttralli5 — https://www.tiktok.com/@matttralli5/video/7622396641227656462. Handle recorded so credit and consent can be handled before any published result names this creator.",
+    "paid_program_flag": "none seen in the caption or on the watch page; re-check before publishing any result that names the creator",
+    "verified_at": "2026-09-17T22:00:02Z",
+    "verification": "curl GET of the platform oEmbed endpoint; the title and author below are the bytes it returned, not a search-result summary",
+    "oembed_http": "200",
+    "oembed_title": "THE JOE ROGAN KETTLEBELL WORKOUT 💪 Tried this viral kettlebell workout by Joe Rogan… and it is not as easy as it looks. This one hits your entire body—strength, stability, and conditioning—all in a simple, no-BS format. Efficient, effective, and straight to the point. Warm-Up (3 Sets): • 20 Bodyweight Squats • 20 Push-Ups Main Workout: • 3 Sets – 10 Kettlebell Swings (each side) • 3 Sets – 10 Single-Arm Press (each side) • 3 Sets – 10 Windmills (each side) • 3 Sets – 10 Renegade Rows (each side) Weight Used: 32kg / 70 lbs #kettlebellworkout #kettlebell #joerogan "
+  },
+  "evidence_this_template_read": {
+    "caption": "fetched",
+    "asr_vtt": "yes — ASR/eng-US",
+    "asr_vtt_local_copy": "/private/tmp/claude-501/-Users-simeon-Desktop-CLAUDE-COWORK/f83e3c45-9ece-4ff1-96cf-c461f42dfdcd/scratchpad/vtt/tt-7622396641227656462.vtt",
+    "frames": "NONE EXTRACTED",
+    "$frames": "frame_source for a real run is tiktok-mp4 (see SET.json)."
+  },
+  "session": {
+    "format": "straight_sets",
+    "scheme": "warm-up 3 sets (20 bodyweight squats, 20 push-ups), then 4 movements x 3 sets x 10 reps each arm",
+    "scheme_provenance": [
+      "said",
+      "written"
+    ],
+    "equipment_seen": [
+      "kettlebell"
+    ],
+    "equipment_count": {
+      "kettlebell": 1
+    },
+    "load_seen": {
+      "text": "32 kg / 70 lb",
+      "provenance": [
+        "said",
+        "written"
+      ],
+      "quote_written": "Weight Used: 32kg / 70 lbs",
+      "quote_said": "All I do is kettlebells. The heaviest weight I do is 70 pounds."
+    },
+    "setting": "TODO_REVIEW",
+    "creator_goal": "a viral kettlebell workout attributed to Joe Rogan",
+    "said_at": {
+      "load": 9.22
+    }
+  },
+  "transcript_source": "tiktok_vtt",
+  "transcript": [
+    {
+      "t0": 4.1,
+      "t1": 5.7,
+      "text": "20 bodyweight squats, 20 push UPS."
+    },
+    {
+      "t0": 5.7,
+      "t1": 7.18,
+      "text": "20 bodyweight squats, 20 push UPS."
+    },
+    {
+      "t0": 7.18,
+      "t1": 8.44,
+      "text": "So you get warm up."
+    },
+    {
+      "t0": 9.22,
+      "t1": 12.06,
+      "text": "All I do is kettlebells. The heaviest weight I do is 70 pounds."
+    },
+    {
+      "t0": 12.06,
+      "t1": 15.32,
+      "text": "70 pounds, 10 swings, each arm, three sets."
+    },
+    {
+      "t0": 16.34,
+      "t1": 18.76,
+      "text": "10 presses, each arm, three sets."
+    },
+    {
+      "t0": 22.34,
+      "t1": 24.96,
+      "text": "10 windmills, each arm, three sets."
+    },
+    {
+      "t0": 27.46,
+      "t1": 30.48,
+      "text": "And renegade rows, each arm, three sets."
+    }
+  ],
+  "$transcript": "Only the dose-bearing and structure-bearing cues are reproduced, with their real VTT times, so the reviewer can check a claim without this repo carrying a full transcript of somebody else's video. The complete fetched track is at the path in evidence_this_template_read.asr_vtt_local_copy.",
+  "on_screen": "TODO_REVIEW",
+  "source_claims": [
+    {
+      "claim_id": "c1",
+      "field": "load",
+      "value": {
+        "text": "70 lb / 32 kg",
+        "minimum": 70,
+        "maximum": 70,
+        "unit": "lb",
+        "per_side": false,
+        "to_failure": false,
+        "provenance": [
+          "said",
+          "written"
+        ],
+        "quote_said": "The heaviest weight I do is 70 pounds.",
+        "t_said": 9.22,
+        "quote_written": "Weight Used: 32kg / 70 lbs",
+        "conflict": null
+      },
+      "scope": "session",
+      "source_kind": [
+        "spoken_transcript",
+        "creator_caption"
+      ],
+      "ambiguous": false,
+      "$note": "Said and written agree. Note the spoken form is a personal maximum ('the heaviest weight I do'), which is weaker than the written 'Weight Used' — record which one the card should carry."
+    },
+    {
+      "claim_id": "c2",
+      "field": "sets",
+      "value": {
+        "text": "3 sets warm-up",
+        "minimum": 3,
+        "maximum": 3,
+        "unit": "sets",
+        "per_side": false,
+        "to_failure": false,
+        "provenance": [
+          "said",
+          "written"
+        ],
+        "quote_said": "20 bodyweight squats, 20 push UPS. 20 bodyweight squats, 20 push UPS.",
+        "t_said": 4.1,
+        "quote_written": "Warm-Up (3 Sets):",
+        "conflict": "The caption says the warm-up is 3 sets. The speech states the pair twice and then says 'So you get warm up'. Two statements is not three sets; the written claim is the one that says three. Record the spoken evidence as insufficient rather than conflicting, unless the video shows otherwise."
+      },
+      "scope": "event_set",
+      "source_kind": [
+        "creator_caption",
+        "spoken_transcript"
+      ],
+      "ambiguous": true
+    },
+    {
+      "claim_id": "c3",
+      "field": "reps",
+      "value": {
+        "text": "renegade rows: caption says 10 each side, speech omits the number",
+        "minimum": 10,
+        "maximum": 10,
+        "unit": "reps",
+        "per_side": true,
+        "to_failure": false,
+        "provenance": [
+          "said",
+          "written"
+        ],
+        "quote_said": "And renegade rows, each arm, three sets.",
+        "t_said": 27.46,
+        "quote_written": "3 Sets – 10 Renegade Rows (each side)",
+        "conflict": null
+      },
+      "scope": "event_set",
+      "source_kind": [
+        "creator_caption",
+        "spoken_transcript"
+      ],
+      "ambiguous": false,
+      "$note": "The spoken line drops the rep count for this movement only. The written claim supplies it. A reader must not report the rep count as spoken."
+    }
+  ],
+  "$source_claims": "reader-v2 claim shape: field, value, scope, source_kind, quote. A claim here is the CREATOR'S instruction, never an observation and never a recommendation.",
+  "exercises": [
+    {
+      "i": 0,
+      "name_said": "20 bodyweight squats",
+      "name_shown": "TODO_REVIEW",
+      "canonical_id": "bodyweight-squat",
+      "canonical_id_status": "proposed from text alone — nobody has watched the video; confirm or replace",
+      "acceptable_canonical_ids": [
+        "bodyweight-squat"
+      ],
+      "$acceptable_canonical_ids": "the brief's acceptable_alternatives, written under the name tools/pack-eval/score.ts:53 and :296 already read, so a reviewer's decision here actually changes a score",
+      "prescribed": {
+        "text": "20",
+        "minimum": 20,
+        "maximum": 20,
+        "unit": "reps",
+        "per_side": false,
+        "to_failure": false,
+        "provenance": [
+          "said",
+          "written"
+        ],
+        "quote_said": "20 bodyweight squats, 20 push UPS.",
+        "t_said": 4.1,
+        "quote_written": "• 20 Bodyweight Squats",
+        "conflict": null
+      },
+      "demonstrated": {
+        "count": "unknown",
+        "method": "unknown",
+        "$why": "No frames were extracted for this template. A creator saying N reps does not make N cycles visible; set a number only if continuous evidence shows every counted cycle."
+      },
+      "equipment": {
+        "value": [],
+        "status": "inferred from caption/transcript text only",
+        "alternatives": []
+      },
+      "variation_notes": "Warm-up. Whether these are shown at all in a 35 s montage is a coverage question.",
+      "t0": "TODO_REVIEW",
+      "t1": "TODO_REVIEW",
+      "uncertainty_s": "TODO_REVIEW",
+      "$t": "Record an ACCEPTED INTERVAL, not a point: t0/t1 are the reviewer's best boundary and uncertainty_s is half the interval they would accept. score.ts today reads t0/t1 as scalars against a single global 1.5 s slack (score.ts:194, 559-568) and ignores uncertainty_s — see the scorer gap list.",
+      "reps_seen": null,
+      "$reps_seen": "Null means nobody counted. score.ts:577 skips a null; it does NOT currently fail a pack that asserts a count where the truth says unknown.",
+      "provenance": {
+        "name": "TODO_REVIEW",
+        "reps": "TODO_REVIEW",
+        "variant": "TODO_REVIEW",
+        "cues": "TODO_REVIEW"
+      },
+      "reviewer_notes": "TODO_REVIEW"
+    },
+    {
+      "i": 1,
+      "name_said": "20 push ups",
+      "name_shown": "TODO_REVIEW",
+      "canonical_id": "push-up",
+      "canonical_id_status": "proposed from text alone — nobody has watched the video; confirm or replace",
+      "acceptable_canonical_ids": [
+        "push-up"
+      ],
+      "$acceptable_canonical_ids": "the brief's acceptable_alternatives, written under the name tools/pack-eval/score.ts:53 and :296 already read, so a reviewer's decision here actually changes a score",
+      "prescribed": {
+        "text": "20",
+        "minimum": 20,
+        "maximum": 20,
+        "unit": "reps",
+        "per_side": false,
+        "to_failure": false,
+        "provenance": [
+          "said",
+          "written"
+        ],
+        "quote_said": "20 bodyweight squats, 20 push UPS.",
+        "t_said": 4.1,
+        "quote_written": "• 20 Push-Ups",
+        "conflict": null
+      },
+      "demonstrated": {
+        "count": "unknown",
+        "method": "unknown",
+        "$why": "No frames were extracted for this template. A creator saying N reps does not make N cycles visible; set a number only if continuous evidence shows every counted cycle."
+      },
+      "equipment": {
+        "value": [],
+        "status": "inferred from caption/transcript text only",
+        "alternatives": []
+      },
+      "variation_notes": "Warm-up.",
+      "t0": "TODO_REVIEW",
+      "t1": "TODO_REVIEW",
+      "uncertainty_s": "TODO_REVIEW",
+      "$t": "Record an ACCEPTED INTERVAL, not a point: t0/t1 are the reviewer's best boundary and uncertainty_s is half the interval they would accept. score.ts today reads t0/t1 as scalars against a single global 1.5 s slack (score.ts:194, 559-568) and ignores uncertainty_s — see the scorer gap list.",
+      "reps_seen": null,
+      "$reps_seen": "Null means nobody counted. score.ts:577 skips a null; it does NOT currently fail a pack that asserts a count where the truth says unknown.",
+      "provenance": {
+        "name": "TODO_REVIEW",
+        "reps": "TODO_REVIEW",
+        "variant": "TODO_REVIEW",
+        "cues": "TODO_REVIEW"
+      },
+      "reviewer_notes": "TODO_REVIEW"
+    },
+    {
+      "i": 2,
+      "name_said": "10 swings, each arm, three sets",
+      "name_shown": "TODO_REVIEW",
+      "canonical_id": "kettlebell-swing",
+      "canonical_id_status": "proposed from text alone — nobody has watched the video; confirm or replace",
+      "acceptable_canonical_ids": [
+        "kettlebell-swing"
+      ],
+      "$acceptable_canonical_ids": "the brief's acceptable_alternatives, written under the name tools/pack-eval/score.ts:53 and :296 already read, so a reviewer's decision here actually changes a score",
+      "prescribed": {
+        "text": "3 x 10 each arm",
+        "minimum": 10,
+        "maximum": 10,
+        "unit": "reps",
+        "per_side": true,
+        "to_failure": false,
+        "provenance": [
+          "said",
+          "written"
+        ],
+        "quote_said": "70 pounds, 10 swings, each arm, three sets.",
+        "t_said": 12.06,
+        "quote_written": "• 3 Sets – 10 Kettlebell Swings (each side)",
+        "conflict": null
+      },
+      "demonstrated": {
+        "count": "unknown",
+        "method": "unknown",
+        "$why": "No frames were extracted for this template. A creator saying N reps does not make N cycles visible; set a number only if continuous evidence shows every counted cycle."
+      },
+      "equipment": {
+        "value": [
+          "kettlebell"
+        ],
+        "status": "inferred from caption/transcript text only",
+        "alternatives": []
+      },
+      "variation_notes": "SINGLE-ARM swings — 'each arm'. A two-hand swing would be the wrong variation. The bell occludes the working hand through most of the arc, which is why this video is in the fast-cut/occluded slot.",
+      "t0": "TODO_REVIEW",
+      "t1": "TODO_REVIEW",
+      "uncertainty_s": "TODO_REVIEW",
+      "$t": "Record an ACCEPTED INTERVAL, not a point: t0/t1 are the reviewer's best boundary and uncertainty_s is half the interval they would accept. score.ts today reads t0/t1 as scalars against a single global 1.5 s slack (score.ts:194, 559-568) and ignores uncertainty_s — see the scorer gap list.",
+      "reps_seen": null,
+      "$reps_seen": "Null means nobody counted. score.ts:577 skips a null; it does NOT currently fail a pack that asserts a count where the truth says unknown.",
+      "provenance": {
+        "name": "TODO_REVIEW",
+        "reps": "TODO_REVIEW",
+        "variant": "TODO_REVIEW",
+        "cues": "TODO_REVIEW"
+      },
+      "reviewer_notes": "TODO_REVIEW"
+    },
+    {
+      "i": 3,
+      "name_said": "10 presses, each arm, three sets",
+      "name_shown": "TODO_REVIEW",
+      "canonical_id": "overhead-press",
+      "canonical_id_status": "proposed from text alone — nobody has watched the video; confirm or replace",
+      "acceptable_canonical_ids": [
+        "overhead-press",
+        "push-press"
+      ],
+      "$acceptable_canonical_ids": "the brief's acceptable_alternatives, written under the name tools/pack-eval/score.ts:53 and :296 already read, so a reviewer's decision here actually changes a score",
+      "prescribed": {
+        "text": "3 x 10 each arm",
+        "minimum": 10,
+        "maximum": 10,
+        "unit": "reps",
+        "per_side": true,
+        "to_failure": false,
+        "provenance": [
+          "said",
+          "written"
+        ],
+        "quote_said": "10 presses, each arm, three sets.",
+        "t_said": 16.34,
+        "quote_written": "• 3 Sets – 10 Single-Arm Press (each side)",
+        "conflict": null
+      },
+      "demonstrated": {
+        "count": "unknown",
+        "method": "unknown",
+        "$why": "No frames were extracted for this template. A creator saying N reps does not make N cycles visible; set a number only if continuous evidence shows every counted cycle."
+      },
+      "equipment": {
+        "value": [
+          "kettlebell"
+        ],
+        "status": "inferred from caption/transcript text only",
+        "alternatives": []
+      },
+      "variation_notes": "Strict press vs push press is exactly the motion-phase distinction the experiment plan calls out. A single overhead position cannot establish whether there was a leg drive.",
+      "t0": "TODO_REVIEW",
+      "t1": "TODO_REVIEW",
+      "uncertainty_s": "TODO_REVIEW",
+      "$t": "Record an ACCEPTED INTERVAL, not a point: t0/t1 are the reviewer's best boundary and uncertainty_s is half the interval they would accept. score.ts today reads t0/t1 as scalars against a single global 1.5 s slack (score.ts:194, 559-568) and ignores uncertainty_s — see the scorer gap list.",
+      "reps_seen": null,
+      "$reps_seen": "Null means nobody counted. score.ts:577 skips a null; it does NOT currently fail a pack that asserts a count where the truth says unknown.",
+      "provenance": {
+        "name": "TODO_REVIEW",
+        "reps": "TODO_REVIEW",
+        "variant": "TODO_REVIEW",
+        "cues": "TODO_REVIEW"
+      },
+      "reviewer_notes": "TODO_REVIEW"
+    },
+    {
+      "i": 4,
+      "name_said": "10 windmills, each arm, three sets",
+      "name_shown": "TODO_REVIEW",
+      "canonical_id": "kettlebell-windmill",
+      "canonical_id_status": "proposed from text alone — nobody has watched the video; confirm or replace",
+      "acceptable_canonical_ids": [
+        "kettlebell-windmill"
+      ],
+      "$acceptable_canonical_ids": "the brief's acceptable_alternatives, written under the name tools/pack-eval/score.ts:53 and :296 already read, so a reviewer's decision here actually changes a score",
+      "prescribed": {
+        "text": "3 x 10 each arm",
+        "minimum": 10,
+        "maximum": 10,
+        "unit": "reps",
+        "per_side": true,
+        "to_failure": false,
+        "provenance": [
+          "said",
+          "written"
+        ],
+        "quote_said": "10 windmills, each arm, three sets.",
+        "t_said": 22.34,
+        "quote_written": "• 3 Sets – 10 Windmills (each side)",
+        "conflict": null
+      },
+      "demonstrated": {
+        "count": "unknown",
+        "method": "unknown",
+        "$why": "No frames were extracted for this template. A creator saying N reps does not make N cycles visible; set a number only if continuous evidence shows every counted cycle."
+      },
+      "equipment": {
+        "value": [
+          "kettlebell"
+        ],
+        "status": "inferred from caption/transcript text only",
+        "alternatives": []
+      },
+      "variation_notes": "catalog.ts has kettlebell-windmill.",
+      "t0": "TODO_REVIEW",
+      "t1": "TODO_REVIEW",
+      "uncertainty_s": "TODO_REVIEW",
+      "$t": "Record an ACCEPTED INTERVAL, not a point: t0/t1 are the reviewer's best boundary and uncertainty_s is half the interval they would accept. score.ts today reads t0/t1 as scalars against a single global 1.5 s slack (score.ts:194, 559-568) and ignores uncertainty_s — see the scorer gap list.",
+      "reps_seen": null,
+      "$reps_seen": "Null means nobody counted. score.ts:577 skips a null; it does NOT currently fail a pack that asserts a count where the truth says unknown.",
+      "provenance": {
+        "name": "TODO_REVIEW",
+        "reps": "TODO_REVIEW",
+        "variant": "TODO_REVIEW",
+        "cues": "TODO_REVIEW"
+      },
+      "reviewer_notes": "TODO_REVIEW"
+    },
+    {
+      "i": 5,
+      "name_said": "renegade rows, each arm, three sets",
+      "name_shown": "TODO_REVIEW",
+      "canonical_id": "renegade-row",
+      "canonical_id_status": "proposed from text alone — nobody has watched the video; confirm or replace",
+      "acceptable_canonical_ids": [
+        "renegade-row"
+      ],
+      "$acceptable_canonical_ids": "the brief's acceptable_alternatives, written under the name tools/pack-eval/score.ts:53 and :296 already read, so a reviewer's decision here actually changes a score",
+      "prescribed": {
+        "text": "3 x 10 each arm",
+        "minimum": 10,
+        "maximum": 10,
+        "unit": "reps",
+        "per_side": true,
+        "to_failure": false,
+        "provenance": [
+          "said",
+          "written"
+        ],
+        "quote_said": "And renegade rows, each arm, three sets.",
+        "t_said": 27.46,
+        "quote_written": "• 3 Sets – 10 Renegade Rows (each side)",
+        "conflict": null
+      },
+      "demonstrated": {
+        "count": "unknown",
+        "method": "unknown",
+        "$why": "No frames were extracted for this template. A creator saying N reps does not make N cycles visible; set a number only if continuous evidence shows every counted cycle."
+      },
+      "equipment": {
+        "value": [
+          "kettlebell"
+        ],
+        "status": "inferred from caption/transcript text only",
+        "alternatives": []
+      },
+      "variation_notes": "The spoken claim omits the rep count for this movement; only the caption has it. See claim c3.",
+      "t0": "TODO_REVIEW",
+      "t1": "TODO_REVIEW",
+      "uncertainty_s": "TODO_REVIEW",
+      "$t": "Record an ACCEPTED INTERVAL, not a point: t0/t1 are the reviewer's best boundary and uncertainty_s is half the interval they would accept. score.ts today reads t0/t1 as scalars against a single global 1.5 s slack (score.ts:194, 559-568) and ignores uncertainty_s — see the scorer gap list.",
+      "reps_seen": null,
+      "$reps_seen": "Null means nobody counted. score.ts:577 skips a null; it does NOT currently fail a pack that asserts a count where the truth says unknown.",
+      "provenance": {
+        "name": "TODO_REVIEW",
+        "reps": "TODO_REVIEW",
+        "variant": "TODO_REVIEW",
+        "cues": "TODO_REVIEW"
+      },
+      "reviewer_notes": "TODO_REVIEW"
+    }
+  ],
+  "card_expectations": {
+    "$comment": "What a correct card must and must not contain. Fill after review; score.ts reads title/block/stamped/cues/canonical_ids/acceptable_canonical_ids/deltas/must_not.",
+    "title": "TODO_REVIEW",
+    "block": "TODO_REVIEW",
+    "stamped": "TODO_REVIEW",
+    "cues": "TODO_REVIEW",
+    "canonical_ids": "TODO_REVIEW",
+    "acceptable_canonical_ids": "TODO_REVIEW",
+    "deltas": "TODO_REVIEW",
+    "must_not": [
+      {
+        "never": "TODO_REVIEW",
+        "why": "a conflation this video makes tempting"
+      },
+      {
+        "field": "weight",
+        "why": "no load may appear unless the creator gave one"
+      }
+    ]
+  },
+  "reviewer_checklist": [
+    "Watch the whole video once before writing anything down.",
+    "Enumerate occurrences in chronological order, including repeats and both sides; repeats are separate occurrences even when the name matches.",
+    "For every occurrence set demonstrated.count to a number ONLY if continuous evidence shows every counted cycle. Otherwise leave 'unknown'.",
+    "Write acceptable_canonical_ids before you see any model output.",
+    "Record t0/t1 as the boundary you would accept plus uncertainty_s, not a point you had to guess.",
+    "Mark any claim you cannot resolve from the source as unresolvable rather than choosing the likely answer.",
+    "Twelve working sets plus a warm-up are compressed into 35 s. Record, per movement, how many seconds of footage actually exist — that is the evidence-conditioned denominator.",
+    "'Joe Rogan' is an attribution the creator makes about the workout's origin. It is not an exercise, an equipment item, or a source of dose.",
+    "The bell occludes the hand on the swings and rows. Where contact cannot be seen, the answer is unresolvable, not the likely one."
+  ],
+  "reviewer_notes": "TODO_REVIEW"
+}
