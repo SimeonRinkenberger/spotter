@@ -660,6 +660,14 @@ before a single row goes. If Stripe cannot be reached the whole deletion stops w
 nothing is deleted, because an account that is gone but still charging a card every month is the
 one outcome that must never happen.
 
+Strava and RevenueCat are then told, in that order and best effort — an outage at either must not
+hold up an erasure, and neither is what charges the card. The RevenueCat subscriber id **is** the
+Supabase user id (`native/purchases.js` passes it as `appUserID`), so the delete is
+`DELETE https://api.revenuecat.com/v1/subscribers/<user id>`, and it runs only when the `spotter`
+function has a `REVENUECAT_API_KEY` secret — a web-only deploy makes no call. Deleting a
+subscriber needs a **secret** RevenueCat key; the public SDK key `spotter-purchases` reads
+customer info with is refused, which shows up as a logged 401 rather than as a failed erasure.
+
 ## Plans and billing
 
 The configured target prices are **Plus, $6.99 a month or $50 a year**, with a 7-day trial on the

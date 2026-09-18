@@ -8,6 +8,7 @@ const checks = [
   ['Complete combine route', 'node', ['tools/pumpy-combine-route-check.mjs']],
   ['Billing account races', 'node', ['tools/billing-account-check.mjs']],
   ['Founding offer switch', 'node', ['tools/billing-founding-check.mjs']],
+  ['Account erasure reaches every third party', 'node', ['tools/account-delete-check.mjs']],
   ['Reader account races', 'node', ['tools/reader-account-check.mjs']],
   ['Cache version cutover', 'node', ['tools/cache-version-check.mjs']],
   ['Reread interactions', 'node', ['tools/reread-harness.mjs']],

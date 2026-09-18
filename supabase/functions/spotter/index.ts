@@ -7114,6 +7114,44 @@ async function userFromIngestKey(req: Request, url: URL): Promise<string | null>
  * must never happen, and "try again in a minute" is a far better answer than a
  * subscription nobody is left to cancel.
  */
+/**
+ * Forget the RevenueCat subscriber, if there is one and if we hold a key.
+ *
+ * The native shells identify RevenueCat with the Supabase user id and nothing
+ * else (`native/purchases.js` passes it as `appUserID` to `configure` and to
+ * `logIn`), so the subscriber id is the user id we are about to erase. Without
+ * this the auth row goes and the subscriber stays: purchase history, aliases and
+ * the email RevenueCat may hold outlive the erasure, and a reused id would
+ * inherit somebody else's entitlements.
+ *
+ * Best effort, in the same direction as Strava and for the same reason: the
+ * store, not RevenueCat, is what is actually charging the card, `cancelAndDelete
+ * Customer` has already run, and an erasure must not be blocked by a third
+ * party's outage. A 404 is the ordinary answer for anyone who never opened the
+ * native app.
+ *
+ * Silent when `REVENUECAT_API_KEY` is unset, which is every web-only deploy and
+ * every fork. Note that deleting a subscriber needs a SECRET RevenueCat key; the
+ * public SDK key the purchases function reads customer info with is refused here,
+ * which shows up as the logged 401 rather than as a failed deletion.
+ */
+async function forgetRevenueCatQuietly(userId: string): Promise<void> {
+  const key = Deno.env.get("REVENUECAT_API_KEY");
+  if (!key) return;
+  try {
+    const r = await fetch(
+      `https://api.revenuecat.com/v1/subscribers/${encodeURIComponent(userId)}`,
+      { method: "DELETE", headers: { authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(15_000) },
+    );
+    const body = await r.text();
+    if (!r.ok && r.status !== 404) {
+      console.error("account delete: revenuecat subscriber not deleted for", userId, r.status, body.slice(0, 200));
+    }
+  } catch (e) {
+    console.error("account delete: revenuecat delete failed for", userId, e);
+  }
+}
+
 async function handleAccountDelete(userId: string, cors: Cors): Promise<Response> {
   if (!UUID_RE.test(userId)) return json({ status: "error", message: "Bad account." }, 400, cors);
   const filter = `user_id=eq.${userId}`;
@@ -7137,6 +7175,7 @@ async function handleAccountDelete(userId: string, cors: Cors): Promise<Response
   // not hold up an erasure, because a stale grant costs the person nothing and
   // they can revoke it on strava.com themselves.
   await forgetStravaQuietly(userId);
+  await forgetRevenueCatQuietly(userId);
 
   try {
     await dbDelete("saves_log", filter);
