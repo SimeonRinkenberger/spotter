@@ -7267,7 +7267,7 @@ details.details-moving > :not(summary) {
         <p id="mailbody"></p>
         <div class="field">
           <label for="otp">Six-digit code</label>
-          <input id="otp" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456" autocapitalize="off" spellcheck="false">
+          <input id="otp" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="123456" autocapitalize="off" spellcheck="false">
         </div>
         <button class="btn" id="otpgo">Confirm</button>
         <div class="autherr" id="otperr"></div>
@@ -8175,7 +8175,7 @@ details.details-moving > :not(summary) {
     return a.href = href, a;
   }
   function consentFill(node) {
-    node.innerHTML = "", node.appendChild(document.createTextNode("By creating an account you agree to the ")), node.appendChild(consentLink("terms.html", "Terms")), node.appendChild(document.createTextNode(" and to Spotter sending the videos and captions you save to AI providers (OpenAI, Google) to build your workout cards. ")), node.appendChild(consentLink("https://quarterdeckcollective.com/spotter/privacy/", "Privacy policy")), node.appendChild(document.createTextNode("."));
+    node.innerHTML = "", node.appendChild(document.createTextNode("By creating an account you agree to the ")), node.appendChild(consentLink("https://quarterdeckcollective.com/spotter/terms/", "Terms")), node.appendChild(document.createTextNode(" and to Spotter sending the videos and captions you save to AI providers (OpenAI, Google) to build your workout cards. ")), node.appendChild(consentLink("https://quarterdeckcollective.com/spotter/privacy/", "Privacy policy")), node.appendChild(document.createTextNode("."));
   }
   function consentAt() {
     var s = state.profile && state.profile.settings;
@@ -8288,12 +8288,13 @@ details.details-moving > :not(summary) {
     e.textContent = msg || "", e.classList.toggle("show", !!msg);
   }
   function otpGo() {
+    var b = $("otpgo");
+    if (b.disabled) return;
     var code = $("otp").value.replace(/[^0-9]/g, "");
     if (code.length < 6) {
       otpError("Type the six digits from the email.");
       return;
     }
-    var b = $("otpgo");
     b.disabled = !0, b.textContent = "Checking\u2026", otpError("");
     function idle2() {
       b.disabled = !1, b.textContent = "Confirm";

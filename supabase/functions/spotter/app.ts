@@ -496,10 +496,14 @@ export const APP = String.raw`
     return a;
   }
 
+  // Both links are the hosted pages the rest of the app already points at, and
+  // deliberately not the docs/ copies: tools/ios/build.mjs packs only index.html,
+  // assets and the icon into native-dist, so a relative terms.html is a dead link
+  // inside both shells — which is the one place a reviewer reading 5.1.2(i) taps.
   function consentFill(node) {
     node.innerHTML = "";
     node.appendChild(document.createTextNode("By creating an account you agree to the "));
-    node.appendChild(consentLink("terms.html", "Terms"));
+    node.appendChild(consentLink("https://quarterdeckcollective.com/spotter/terms/", "Terms"));
     node.appendChild(document.createTextNode(" and to Spotter sending the videos and captions you save to AI providers (OpenAI, Google) to build your workout cards. "));
     node.appendChild(consentLink("https://quarterdeckcollective.com/spotter/privacy/", "Privacy policy"));
     node.appendChild(document.createTextNode("."));
@@ -705,9 +709,14 @@ export const APP = String.raw`
   }
 
   function otpGo() {
+    var b = $("otpgo");
+    // A code is single-use, so a second send of the same one comes back invalid
+    // and would put "that code is wrong" under a code that was right. The button
+    // is already disabled while a check is in flight; this is the same fence for
+    // the two doors that do not go through it, autofill and Enter.
+    if (b.disabled) return;
     var code = $("otp").value.replace(/[^0-9]/g, "");
     if (code.length < 6) { otpError("Type the six digits from the email."); return; }
-    var b = $("otpgo");
     b.disabled = true;
     b.textContent = "Checking…";
     otpError("");

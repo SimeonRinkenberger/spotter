@@ -175,10 +175,14 @@ export const MARKUP_BODY = String.raw`</head>
              out of the message above the keyboard and fills it in one go, and a
              row of one-character boxes is exactly where that autofill stops
              working. Instagram's confirmation screen is a single field too. The
-             link in the mail still works for anyone reading it on a desktop. -->
+             link in the mail still works for anyone reading it on a desktop.
+             No maxlength: it counts characters, not digits, so a code pasted as
+             "123 456" arrived truncated to "123 45" and stripped down to five,
+             which is a Confirm button that will not go for no reason a person
+             can see. The input handler slices to six DIGITS instead. -->
         <div class="field">
           <label for="otp">Six-digit code</label>
-          <input id="otp" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456" autocapitalize="off" spellcheck="false">
+          <input id="otp" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="123456" autocapitalize="off" spellcheck="false">
         </div>
         <button class="btn" id="otpgo">Confirm</button>
         <div class="autherr" id="otperr"></div>
