@@ -25,7 +25,21 @@ begin
   if not found or m.meta->'proposal' is null then
     return jsonb_build_object('status','not_found','message','Proposal not found.');
   end if;
-  if m.meta->'confirm_response' is not null then return m.meta->'confirm_response'; end if;
+  -- The idempotency key is the message AND the decision, not the message alone.
+  -- A repeat of the same decision is a lost HTTP response being retried, and the
+  -- stored receipt is the right answer. Accept after decline is a SECOND decision
+  -- on a resolved proposal: returning the decline receipt with 200 told the user
+  -- "No problem — nothing was changed." when they had just asked to change it.
+  -- That one is a conflict, and it carries the receipt so the client still has
+  -- the message the thread already holds.
+  if m.meta->'confirm_response' is not null then
+    if coalesce((m.meta->>'confirm_accept')::boolean, m.meta->>'status'='done') is distinct from p_accept then
+      return m.meta->'confirm_response'||jsonb_build_object('status','conflict','message',
+        case when m.meta->>'status'='declined' then 'That one was already declined.'
+        else 'That one was already accepted.' end);
+    end if;
+    return m.meta->'confirm_response';
+  end if;
   if m.meta->>'status' is distinct from 'pending' then
     return jsonb_build_object('status','conflict','message','That proposal was already resolved.');
   end if;
@@ -131,7 +145,11 @@ begin
   end if;
   insert into pumpy_messages(thread_id,user_id,role,content) values(m.thread_id,p_user,'assistant',message) returning * into receipt;
   answer := answer||jsonb_build_object('messages',jsonb_build_array(to_jsonb(receipt)));
-  update pumpy_messages set meta=m.meta||jsonb_build_object('status',decision,'result',summary,'confirm_response',answer) where id=m.id;
+  -- `confirm_accept` is the decision stored next to its receipt: `status` already
+  -- implies it, but the repeat check above should not have to infer the question
+  -- from the answer.
+  update pumpy_messages set meta=m.meta||jsonb_build_object('status',decision,'result',summary,
+    'confirm_response',answer,'confirm_accept',p_accept) where id=m.id;
   update pumpy_threads set updated_at=now() where id=m.thread_id and user_id=p_user;
   return answer;
 end $$;
