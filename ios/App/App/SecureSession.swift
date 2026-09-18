@@ -9,13 +9,11 @@ import Security
 /// access group, this one is the user's refresh token and belongs to the app
 /// alone. The extension has never needed a session and still does not.
 ///
-/// No `kSecAttrAccessGroup` is set. Naming a group requires the matching
-/// entitlement at runtime, and the simulator builds the verification harness
-/// uses are built with `CODE_SIGNING_ALLOWED=NO` and therefore carry no
-/// entitlements at all — asking for a group there fails with
-/// errSecMissingEntitlement. Left unset, the item lands in the app's default
-/// group on device and in the simulator's keychain in the harness, which is the
-/// behaviour we want in both places.
+/// No `kSecAttrAccessGroup` is set. Naming a group buys nothing here — only the
+/// app reads this item — and it costs a runtime dependency on the entitlement
+/// matching the group, which is exactly the thing that breaks first when the
+/// signing setup changes. Left unset, the item lands in the app's own default
+/// group, on device and in the Simulator alike.
 enum SessionKeychain {
     static let service = "app.spotter.session"
 

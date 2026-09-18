@@ -177,3 +177,44 @@ Keyboard regression checks pass for transient bar heights, refocus, final
 safe-area reconciliation and the existing input/accessory behavior. Native assets
 were rebuilt. Visual smoothness on the physical iPhone remains unverified until
 the signing/install blocker recorded above is resolved.
+
+## Keychain session storage — September 17, 2026
+
+The Supabase session left `@capacitor/preferences` for the Keychain (iOS) and an
+Android Keystore key (Android). See IOS-SETUP.md §Authentication and
+ANDROID-SETUP.md §Session storage for what is stored where.
+
+Verified on a booted iPhone 16e / iOS 26.2 simulator with a signed Debug build
+and the throwaway account `spotter-tw-gtmn@example.com`, in this order:
+
+1. **Upgrade.** A real session was seeded into the app container's
+   `Library/Preferences/app.spotter.dev.plist` under the `CapacitorStorage.`
+   keys a pre-upgrade build would have written, alongside a code verifier. First
+   launch came up signed in as that account, and the plist afterwards held only
+   `CapacitorStorage.spotter_install` — both credential keys were gone, not
+   copied.
+2. **Cold start.** Terminate and relaunch: still signed in, Settings showing the
+   throwaway's email, with no session key anywhere in Preferences. The session
+   can only have come from the Keychain.
+3. **Sign out.** Settings → Sign out returned the landing page; relaunch stayed
+   signed out.
+4. **Fresh sign-in.** Signing in through the form left `grep -rl refresh_token`
+   and `grep -rl sb-mtzevoxxpsktmrbbuxva-auth-token` over the entire data
+   container with no match, and a further terminate/relaunch stayed signed in.
+5. **Reinstall.** `simctl uninstall` then install and launch: the app came up
+   signed out, so the Keychain item that outlived the install was cleared rather
+   than inherited — the same rule the share credential already follows.
+
+A real session blob measured 2,000 bytes, far below any Keychain size concern, so
+the adapter stores it whole rather than chunking; the harness covers a 64 KB
+value as well.
+
+`npm run ios:check` passes, including the new
+`tools/ios/session-storage-check.mjs` (set/get/remove, upgrade migration,
+interrupted migration resumed, sign-out clearing both copies, reinstall clearing
+a surviving item, oversize value, unresponsive plugin, and that the shipped
+bundle is actually wired to the adapter).
+
+Not verified: Android runtime (compile, lint and unit tests only — `adb` is not
+on PATH), physical-device Keychain behaviour, and a device restore or iCloud
+Keychain interaction.

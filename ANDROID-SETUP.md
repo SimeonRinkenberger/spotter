@@ -20,6 +20,14 @@
 - Real-time notifications connected through projects/gen-lang-client-0228763801/topics/spotter-revenuecat. Official Google Play notification identity has topic-only Pub/Sub Publisher access. Play notifications enabled for subscriptions/voided purchases. Test sent successfully and RevenueCat confirmed receipt at 2026-09-13 14:14 UTC.
 - Authenticated RevenueCat webhook and Supabase purchase verification deployed. Active Stripe Pro/manual access is preserved. Account switching serialized; server verification controls access. Production rejects sandbox purchases by default.
 
+## Session storage
+
+- The signed-in Supabase session — access token, refresh token and PKCE verifier — is encrypted with AES-256-GCM under a key held in the Android Keystore (alias `app.spotter.session`, randomised IV per write, no user-authentication requirement so a background refresh still works). The ciphertext sits in the private SharedPreferences file `spotter_secure_session`; the key never leaves the Keystore, is not in any backup, and goes with the app on uninstall.
+- Not EncryptedSharedPreferences: Jetpack Security's crypto library is deprecated at 1.1.0 with no further releases, and Google's guidance is a Keystore key plus storage of your choosing. Every class used is in the platform, so the app gains no Gradle dependency.
+- A session left in `@capacitor/preferences` by a build older than 17 September 2026 is moved into the encrypted store on first launch and deleted from the plain preferences file. Sign-out clears both. A value that no longer decrypts — wiped keystore, restore, half-written blob — is dropped and reported as absent, so the user sees the sign-in screen rather than an error.
+- The workout draft and the `spotter_install` marker stay in ordinary Preferences; neither is a credential.
+- Verified by compilation and the shared adapter harness only. **No Android runtime verification**: `adb` is not on PATH and no emulator was started for this change.
+
 ## Remaining requirements
 
 1. Content rating: separate IARC Terms of Use approval requested, not received. Questionnaire open in dedicated Chrome tab. Accept only after owner reply, then complete accurate fitness-app questionnaire and save rating.
