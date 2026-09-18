@@ -434,6 +434,9 @@ export const APP = String.raw`
     // Same rule as Forgot your password, the other way round: the sentence is
     // about creating an account, so it belongs to the face that creates one.
     $("consent").classList.toggle("hide", !isUp);
+    // So does the creator code fold: a code is for an account being made.
+    $("authcodewrap").classList.toggle("hide", !isUp);
+    if (isUp) paintAuthCode();
   }
 
   function authError(msg) {
@@ -609,6 +612,11 @@ export const APP = String.raw`
     if (!email || !pw) { authError("Enter your email and a password."); return; }
     if (authMode === "signup" && pw.length < 8) {
       authError("Use at least 8 characters."); return;
+    }
+    // Optional, but never silently dropped: a code that is not a code is said
+    // so here, where the field can be emptied, rather than lost after sign-up.
+    if (authMode === "signup" && $("authcode").value.trim() && !creatorCode($("authcode").value)) {
+      authError(creatorSays("bad_code")); return;
     }
     var btn = $("authgo");
     var mode = authMode;
@@ -1223,7 +1231,7 @@ export const APP = String.raw`
         busy: false, live: null, stick: true, wired: wired, openSeq: seq };
     }
     if (native && native.purchases) native.purchases.clear().catch(function () {});
-    if (billing) { billing.prices = null; billing.waiting = null; billing.busy = false; billing.sub = null; billing.subAsked = false; billing.limits = null; billing.said = null; billing.ctx = null; }
+    if (billing) { billing.prices = null; billing.waiting = null; billing.busy = false; billing.sub = null; billing.subAsked = false; billing.limits = null; billing.said = null; billing.ctx = null; billing.cc = null; billing.ccWaiting = null; billing.redeeming = false; }
     ["grid", "chips", "colbar", "libcount", "empty", "dinner", "pumpylog", "pumpyannounce", "pumpyctx", "pumpythreads", "trainview", "today", "recapopts"].forEach(function (id) {
       var n = $(id); if (n) n.innerHTML = "";
     });
@@ -1285,6 +1293,7 @@ export const APP = String.raw`
     var epoch = accountEpoch, uid = state.user.id;
     booting = load().then(function () { if (accountNow(epoch, uid)) return consumeShare(); })
       .then(function () { if (accountNow(epoch, uid)) return consumeBilling(); })
+      .then(function () { if (accountNow(epoch, uid)) consumeCreator(); })
       .then(function () { if (accountNow(epoch, uid)) return warmPages(); })
       .then(function () { return profileReady; })
       .then(function () {
@@ -11536,7 +11545,10 @@ export const APP = String.raw`
     limits: null,      // last /api/limits, for the Settings usage line
     said: null,        // the plan the server last reported, which outranks the row
     ctx: null,         // the 429 the sheet was opened by, or null from Settings
-    interval: "year", busy: false
+    interval: "year", busy: false,
+    cc: null,          // last /api/creator/me: {referral, creator, discount}
+    ccWaiting: null, ccRev: 0,
+    redeeming: false   // the App Store's code sheet is up; restore when it comes down
   };
 
   function billOn() { return !!(billing.prices && billing.prices.configured); }
@@ -11832,6 +11844,7 @@ export const APP = String.raw`
     var p = billing.prices || { configured: false };
     var good = $("plangood"), cards = $("plancards");
     good.innerHTML = ""; cards.innerHTML = "";
+    paintPlanCode();
     planBenefits(p.caps).forEach(function (t) {
       var row = el("div", "pgood");
       row.appendChild(ic("check"));
@@ -11871,10 +11884,18 @@ export const APP = String.raw`
     billing.interval = "year";
     paintCtx();
     if (!billing.prices) paintSkeleton();
+    // The fold closes with the sheet; a code half-typed last time is not a code.
+    $("plancodeform").classList.add("hide");
+    $("plancodein").value = "";
+    paintPlanCode();
     openSheet("plansheet");
     loadPrices().then(function () {
       if (!accountNow(epoch, uid)) return;
       if ($("plansheet").classList.contains("open")) paintPlans();
+    });
+    loadCreator().then(function () {
+      if (!accountNow(epoch, uid)) return;
+      if ($("plansheet").classList.contains("open")) paintPlanCode();
     });
   }
 
@@ -12043,6 +12064,13 @@ export const APP = String.raw`
   // of three calls is not politeness.
   function watchBilling() {
     unbusy();
+    // Back from the App Store's offer-code sheet: the existing restore reads
+    // what the store now says, through the server, the way Restore purchase does.
+    if (billing.redeeming && state.user && native && native.purchases) {
+      billing.redeeming = false;
+      nativePurchase(true, null);
+      return;
+    }
     if (billRound || !state.user || !pending()) return;
     billRound = true;
     askBilling(null, 3);
@@ -12089,6 +12117,7 @@ export const APP = String.raw`
   }
 
   function refreshBilling(btn) {
+    loadCreator(true).then(paintCreator);
     if (native && native.purchases) { nativePurchase(true, btn); return; }
     var was = btn.textContent;
     btn.disabled = true;
@@ -12107,6 +12136,305 @@ export const APP = String.raw`
       btn.textContent = was;
       toast("Could not reach Spotter — check your connection.");
     });
+  }
+
+  // ---------- creator codes ----------
+  //
+  // A code is a person's name in capitals, and it can arrive at four doors: the
+  // address bar (?code=MARIA), the sign-up card, the paywall and Settings. The
+  // first two can be ahead of any account to put it on, so both write one stash
+  // and boot redeems whatever is in it once a session exists. One code per
+  // account, first wins, and the server is the one that says so. Nothing here
+  // prices the discount: the store does, when the code is redeemed there, so the
+  // price cards stay the store's own numbers whatever is on the account.
+
+  var CREATOR_KEY = "spotter.creator.code";
+
+  // Capitals and digits, three to twenty, the shape the owner mints. Anything
+  // else is not a code, which is also what keeps an OAuth ?code= (a UUID with
+  // dashes) from ever being taken for one.
+  function creatorCode(s) {
+    var c = String(s || "").replace(/\s+/g, "").toUpperCase();
+    return /^[A-Z0-9]{3,20}$/.test(c) ? c : "";
+  }
+
+  // The stash: the code and the door it came in by, the shape BILL_FLAG uses.
+  function stashCreator(code, source) {
+    try {
+      if (code) localStorage.setItem(CREATOR_KEY, code + "|" + source);
+      else localStorage.removeItem(CREATOR_KEY);
+    } catch (e) { /* private mode; the code can be typed again in Settings */ }
+  }
+
+  function creatorStash() {
+    var v = null;
+    try { v = localStorage.getItem(CREATOR_KEY); } catch (e) { return null; }
+    if (!v) return null;
+    var bits = String(v).split("|"), code = creatorCode(bits[0]);
+    return code ? { code: code, source: bits[1] || "link" } : null;
+  }
+
+  // Before anything else reads the address bar, and only the one parameter
+  // comes off it: the other captures strip the whole query, and a code can share
+  // a link with any of them.
+  function captureCreator() {
+    var q;
+    try { q = new URLSearchParams(location.search); } catch (e) { return; }
+    var code = creatorCode(q.get("code"));
+    if (!code) return;
+    stashCreator(code, "link");
+    q.delete("code");
+    var rest = q.toString();
+    try { history.replaceState(null, "", location.pathname + (rest ? "?" + rest : "") + location.hash); } catch (e) { /* ignore */ }
+  }
+
+  // ---------- the words ----------
+  //
+  // Built here and painted by thin callers, so every sentence a code puts on the
+  // screen can be read by a harness with no screen. The discount is the server's
+  // creator.discount row and nothing else: null is a promise the app does not make.
+
+  function monthsWord(n) { return n + (n === 1 ? " month" : " months"); }
+
+  function offerWords(d, thing) {
+    var pct = d ? num(d.percent_off) : null, m = d ? num(d.months) : null;
+    if (!pct) return "";
+    return pct + "% off" + (thing ? " " + thing : "") + (m ? " for " + monthsWord(m) : "");
+  }
+
+  function creatorOffer(d) { return offerWords(d, ""); }
+
+  // "Maria’s code applied. 10% off Plus for 12 months."
+  function creatorToast(ref, d) {
+    var offer = offerWords(d, "Plus");
+    return ref.creator_name + "’s code applied." + (offer ? " " + offer + "." : "");
+  }
+
+  // The line under the price cards. store is "the App Store" or "Google Play" in
+  // a shell, and empty on the web, where there is no store to redeem in.
+  function paywallLine(ref, d, store) {
+    var offer = creatorOffer(d);
+    var head = ref.creator_name + "’s code" + (offer ? ": " + offer + "." : " is saved to your account.");
+    if (!store) return head + (offer ? " It is saved to your account, and the discount is redeemed in the Spotter app on your phone." : "");
+    return head + " Redeem it in " + store + (offer ? " to get the price." : ".");
+  }
+
+  function storeName() { return native && native.platform === "android" ? "Google Play" : "the App Store"; }
+
+  // Settings › Plan › Creator code: "MARIA · 10% off for 12 months".
+  function creatorRowText(ref, d) {
+    var offer = creatorOffer(d);
+    return ref.code + (offer ? " · " + offer : "");
+  }
+
+  // The creator's own three lines, money in the formatter the price cards use.
+  function creatorLines(c) {
+    var cur = c.currency || "usd";
+    return [
+      (num(c.signups) || 0) + " signed up · " + (num(c.subscribers) || 0) + " subscribed",
+      money(c.earned_cents, cur) + " earned · " + money(c.paid_cents, cur) + " paid · " + money(c.owed_cents, cur) + " owed",
+      "Paid by Simeon by hand. " + ((num(c.commission_bps) || 0) / 100) + "% of every payment for " + monthsWord(num(c.commission_months) || 0) + "."
+    ];
+  }
+
+  var CREATOR_SAYS = {
+    bad_code: "That does not look like a creator code.",
+    unknown_code: "No creator code by that name.",
+    code_closed: "That code is no longer open.",
+    own_code: "That is your own code.",
+    already_redeemed: "A code is already on this account.",
+    already_subscribed: "Creator codes are for accounts that have not subscribed yet."
+  };
+
+  function creatorSays(code) { return CREATOR_SAYS[code] || "Could not apply the code just now."; }
+
+  // ---------- the wire ----------
+
+  // GET /api/creator/me, cached on the billing object for the session. force
+  // starts a fresh read even over one in flight, and the older answer is then
+  // dropped: a redemption that just landed must not be painted over by a read
+  // that was sent before it.
+  function loadCreator(force) {
+    var epoch = accountEpoch, uid = state.user && state.user.id;
+    if (!uid) return Promise.resolve(null);
+    if (!force) {
+      if (billing.cc) return Promise.resolve(billing.cc);
+      if (billing.ccWaiting) return billing.ccWaiting;
+    } else billing.ccRev++;
+    var rev = billing.ccRev;
+    var p = api("creator/me", { method: "GET" }).then(function (r) {
+      if (!accountNow(epoch, uid) || rev !== billing.ccRev) return billing.cc;
+      billing.ccWaiting = null;
+      if (r && r.status === "ok") billing.cc = { referral: r.referral || null, creator: r.creator || null, discount: r.discount || null };
+      return billing.cc;
+    }).catch(function () {
+      if (accountNow(epoch, uid) && rev === billing.ccRev) billing.ccWaiting = null;
+      return billing.cc;
+    });
+    billing.ccWaiting = p;
+    return p;
+  }
+
+  // One writer for a redemption, whichever door it came through. Resolves with
+  // {ok, code, referral, discount}; rejects only when the wire did.
+  function redeemCreator(code, source) {
+    var epoch = accountEpoch, uid = state.user && state.user.id;
+    return api("creator/redeem", { method: "POST", body: JSON.stringify({ code: code, source: source }) }).then(function (r) {
+      if (!accountNow(epoch, uid)) throw new Error("Account changed");
+      var ok = !!(r && r.status === "ok");
+      var out = { ok: ok, code: ok ? null : ((r && r.code) || "error"), referral: (r && r.referral) || null, discount: null };
+      if (!ok && out.code !== "already_redeemed") return out;
+      // A code on the account, just landed or already there, is what Settings
+      // and the paywall paint from: read it back rather than patch the cache.
+      return loadCreator(true).then(function (cc) { out.discount = cc ? cc.discount : null; return out; });
+    });
+  }
+
+  // From boot, on both sign-in paths. The stash comes out only once the server
+  // has answered: a connection that dropped is not an answer, and the code waits
+  // for the next boot rather than being lost in a tunnel.
+  function consumeCreator() {
+    var s = creatorStash();
+    if (!s || !state.user) return;
+    var epoch = accountEpoch, uid = state.user.id;
+    redeemCreator(s.code, s.source).then(function (r) {
+      if (!accountNow(epoch, uid)) return;
+      stashCreator(null);
+      if (r.ok) { toast(creatorToast(r.referral, r.discount), 4200); haptic("success"); }
+      else if (r.code !== "already_redeemed") toast(creatorSays(r.code), 4200);
+      paintCreator(); paintPlanCode();
+    }).catch(function () { /* said nothing; the stash waits for a connection */ });
+  }
+
+  // ---------- the auth card ----------
+  //
+  // Sign-up face only, folded until asked for: an optional field most people
+  // have nothing to put in is a field most people should not see. A code that
+  // came in on the link opens it already filled, so the person can see it took.
+  function authCodeShow(on, quiet) {
+    $("authcodefield").classList.toggle("hide", !on);
+    $("authcodeask").classList.toggle("hide", on);
+    if (on && !quiet) $("authcode").focus();
+  }
+
+  function paintAuthCode() {
+    var s = creatorStash();
+    if (s) { $("authcode").value = s.code; authCodeShow(true, true); }
+  }
+
+  // Stashed as it is typed, so the code survives whichever door the account
+  // comes in by, Google and Apple included. Emptying the field takes back only
+  // what typing put in, never a code that arrived on the link.
+  function authCodeChange() {
+    var raw = $("authcode").value, code = creatorCode(raw), s = creatorStash();
+    if (code) stashCreator(code, "signup");
+    else if (!raw.trim() && s && s.source === "signup") stashCreator(null);
+  }
+
+  // ---------- the paywall ----------
+
+  function paintPlanCode() {
+    var cc = billing.cc, ref = cc && cc.referral, store = native && native.purchases ? storeName() : "";
+    var n = $("plancodeline");
+    if (!n) return;
+    $("plancodeask").classList.toggle("hide", !!ref);
+    if (ref) $("plancodeform").classList.add("hide");
+    n.textContent = ref ? paywallLine(ref, cc.discount, store) : "";
+    n.classList.toggle("hide", !ref);
+    $("planredeem").textContent = "Redeem in " + store;
+    $("planredeem").classList.toggle("hide", !(ref && store));
+  }
+
+  function askPlanCode() {
+    $("plancodeask").classList.add("hide");
+    $("plancodeform").classList.remove("hide");
+    $("plancodein").focus();
+  }
+
+  // Both typed doors end here, the paywall's Apply and the Settings sheet. done
+  // gets the sentence to show, or null when the code took. Painted either way:
+  // "already on this account" is a code the row and the line can now show, and
+  // the paywall stays open, which is the point of typing it there.
+  function applyCode(code, done) {
+    var epoch = accountEpoch, uid = state.user.id;
+    redeemCreator(code, "app").then(function (r) {
+      if (!accountNow(epoch, uid)) return;
+      paintPlanCode(); paintCreator();
+      if (!r.ok) { done(creatorSays(r.code)); return; }
+      toast(creatorToast(r.referral, r.discount), 4200);
+      haptic("success");
+      done(null);
+    }).catch(function () { if (accountNow(epoch, uid)) done("Could not reach Spotter. Check your connection."); });
+  }
+
+  function applyPlanCode(btn) {
+    var code = creatorCode($("plancodein").value);
+    if (!code) { toast(creatorSays("bad_code")); return; }
+    if (!state.user || btn.disabled) return;
+    btn.disabled = true;
+    applyCode(code, function (err) { btn.disabled = false; if (err) toast(err, 4200); });
+  }
+
+  // iOS presents the system redemption sheet and answers as soon as it is up,
+  // not when the person is done with it, so the restore that reads the result
+  // waits for the app to come back to the front (watchBilling). Android has no
+  // sheet: Play's own page takes the code in the address.
+  function redeemInStore(btn) {
+    var cc = billing.cc, ref = cc && cc.referral;
+    if (!ref || !state.user || !(native && native.purchases)) return;
+    if (native.platform === "android") { native.open("https://play.google.com/redeem?code=" + ref.code); return; }
+    var epoch = accountEpoch, uid = state.user.id;
+    btn.disabled = true;
+    native.purchases.redeemOfferCode(uid).then(function () {
+      if (accountNow(epoch, uid)) billing.redeeming = true;
+    }).catch(function (e) {
+      if (accountNow(epoch, uid)) toast(e && e.message ? e.message : "Could not open the App Store just now.");
+    }).then(function () { btn.disabled = false; });
+  }
+
+  // ---------- Settings ----------
+
+  function paintCreator() {
+    var cc = billing.cc, ref = cc && cc.referral, c = cc && cc.creator, row = $("setcoderow");
+    if (!row) return;
+    $("setcode").textContent = ref ? creatorRowText(ref, cc.discount) : "Enter a code";
+    // Never editable once one is on: one per account, and the row says which.
+    row.disabled = !!ref;
+    // A subscriber with no code would only be told no, so the row waits for one.
+    row.classList.toggle("hide", !ref && !isFree());
+    $("setcreator").classList.toggle("hide", !c);
+    if (!c) return;
+    $("setcreatorcode").textContent = c.code + (c.active ? "" : " · closed");
+    var n = $("setcreatoruse");
+    n.innerHTML = "";
+    creatorLines(c).forEach(function (t) { n.appendChild(el("div", "usel", t)); });
+  }
+
+  function openCode() {
+    if (billing.cc && billing.cc.referral) return;
+    accSheet({
+      title: "Creator code", lede: "From a creator you follow. One per account, and it stays.",
+      fields: [{ name: "code", label: "Code", placeholder: "MARIA" }],
+      go: "Apply", busy: "Applying…",
+      run: function (done) {
+        var code = creatorCode(accVal("code"));
+        if (code) applyCode(code, done); else done(creatorSays("bad_code"));
+      }
+    });
+    $("acc_code").setAttribute("autocapitalize", "characters");
+  }
+
+  // The same three doors as tellFriend, with the creator's own sentence and link.
+  function shareCreator() {
+    var c = billing.cc && billing.cc.creator;
+    if (!c) return;
+    if (navigator.share) {
+      navigator.share({ title: "Spotter", text: c.share_text, url: c.share_url }).catch(function () { });
+      return;
+    }
+    var text = c.share_text + " " + c.share_url;
+    if (navigator.clipboard) { navigator.clipboard.writeText(text); toast("Copied."); return; }
+    toast(text, 5000);
   }
 
   // ---------- Settings, the Plan group ----------
@@ -13484,6 +13812,9 @@ export const APP = String.raw`
     paintPlanGroup();
     paintPlanUse(billing.limits);
     Promise.all([loadPrices(), loadSub()]).then(paintPlanGroup);
+    // The same shape for the creator code: what is cached paints now, the read repaints.
+    paintCreator();
+    loadCreator().then(paintCreator);
     // Beside the limits read rather than after it: the Connections group is hidden
     // until this answers, and a round trip that lands with the others is the
     // difference between Settings opening finished and Settings filling itself in.
@@ -15009,6 +15340,14 @@ export const APP = String.raw`
   $("plannot").onclick = function () { closeSheet("plansheet"); };
   $("planbuy").onclick = startCheckout;
   $("planrestore").onclick = function () { refreshBilling(this); };
+  $("setcoderow").onclick = openCode;
+  $("setcreatorshare").onclick = shareCreator;
+  $("plancodeask").onclick = askPlanCode;
+  $("plancodego").onclick = function () { applyPlanCode(this); };
+  $("plancodein").addEventListener("keydown", function (e) { if (e.key === "Enter") applyPlanCode($("plancodego")); });
+  $("planredeem").onclick = function () { redeemInStore(this); };
+  $("authcodeask").onclick = function () { authCodeShow(true); };
+  $("authcode").addEventListener("input", authCodeChange);
   $("libcount").onclick = function () { openPlans(null); };
   $("acccancel").onclick = closeAcc;
   $("accgo").onclick = accGo;
@@ -15257,6 +15596,10 @@ export const APP = String.raw`
   window.addEventListener("pageshow", watchBilling);
   window.addEventListener("focus", watchBilling);
 
+  // First, and before the card is drawn: a code on the link opens the sign-up
+  // face with it already in the field, and the other captures would otherwise
+  // strip it with the rest of the query.
+  captureCreator();
   setAuthMode("signup");
 
   // Before either sign-in path resolves — both of them end in consumeShare — and
