@@ -879,6 +879,17 @@ export const STYLE = String.raw`<style>
   .plannot { display: block; width: 100%; background: none; border: none; font: inherit;
     font-size: 13.5px; font-weight: 600; color: var(--muted); padding: 14px; margin-top: 2px; }
   .planfine { font-size: 11.5px; line-height: 1.5; color: var(--muted); margin-top: 8px; }
+  /* ---------- creator codes ----------
+     One small link where a field would be noise, on the sign-up card and the
+     paywall both; the field it unfolds is the app's own. */
+  .codeask { display: block; background: none; border: none; font: inherit; font-size: 13px;
+    font-weight: 600; color: var(--ember-ink); padding: 2px 0 10px; }
+  .codeform { display: flex; gap: 9px; align-items: stretch; }
+  .codeform .field { flex: 1; min-width: 0; margin: 0; }
+  .codeform .btn { flex: 0 0 auto; width: auto; padding: 12px 18px; }
+  .plancode { margin: 6px 0 4px; }
+  .plancodeline { font-size: 13px; line-height: 1.5; color: var(--ink-2); margin: 2px 0 12px; }
+  .planredeem { margin-top: 9px; }
   /* Apple's 3.1.2 asks for working Terms and Privacy on the screen that sells,
      and 3.1.1 for a restore. On the web the restore is a re-read from Stripe. */
   .planlegal { display: flex; flex-wrap: wrap; align-items: center; justify-content: center;

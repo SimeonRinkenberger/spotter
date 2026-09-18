@@ -1001,6 +1001,28 @@ buttons under it at all, and the library page is the page it is today. The Terms
 (`docs/terms.html`) and the Payments section of the privacy policy were written in plain
 language and have not been reviewed by a lawyer — do that before charging real money.
 
+**Creator codes.** A person meets a code at one of four doors: a link (`?code=MARIA` on the
+app's address, taken off the address bar and stashed in `localStorage` under
+`spotter.creator.code` before there is any account to put it on), the `Have a creator code?`
+fold on the sign-up card, the same fold on the plan sheet between the price cards and Buy, and
+Settings › Plan › `Creator code`, which opens the one-field account sheet. Whichever door, the
+app posts `/api/creator/redeem` once there is a session and says `Maria’s code applied. 10% off
+Plus for 12 months.`; the discount sentence is the `creator.discount` config row and is dropped
+when that row is null. One code per account and the first one wins, so the Settings row then
+reads `MARIA · 10% off for 12 months` and cannot be opened again; a code that was already on
+the account clears the stash without a word, any other refusal is said once. The plan sheet
+shows one line under the cards, `Maria’s code: 10% off for 12 months. Redeem it in the App
+Store to get the price.` (`Google Play` on Android), and a `Redeem in the App Store` button
+that presents Apple's own offer-code sheet and restores on the way back, or `Redeem in Google
+Play`, which opens Play's redeem page with the code filled in. The app never re-prices the
+cards: the store shows the offer price at checkout. On the web the line says the code is saved
+to the account and the discount is redeemed in the Spotter app on a phone. A creator with a
+Spotter account gets a `Your creator code` group under Plan: the code, `Share your code`
+(the system share of the code's sentence and link, clipboard when there is none), then
+`12 signed up · 5 subscribed`, `$48.20 earned · $20 paid · $28.20 owed` in the price cards'
+own money format, and `Paid by Simeon by hand. 20% of every payment for 12 months.` from the
+code's own rate and window. Settings reads it when it opens and `Refresh` reads it again.
+
 ## Strava
 
 A finished session can be pushed to Strava as a **manual `WeightTraining` activity** — its name,
