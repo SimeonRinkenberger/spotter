@@ -2215,6 +2215,14 @@ export const STYLE = String.raw`<style>
   .threadrow .tdel[data-armed="1"] { color: var(--ember-ink); }
   .threadnone { font-size: 13.5px; color: var(--muted); padding: 10px 0 4px; line-height: 1.6; }
   .setnote { font-size: 12.5px; color: var(--muted); line-height: 1.5; padding: 6px 4px 0; }
+  /* One allowance per line under Plan. The label stays quiet and the count is the
+     only thing with weight, so the four rows read as a column of numbers rather
+     than four sentences. An exhausted one turns ember — the same colour every
+     other "you have reached something" in the app uses — and only the number
+     turns, because the label is still true. */
+  .setnote .usel { padding: 1px 0; }
+  .setnote .usel b { color: var(--ink-2); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .setnote .usel.out, .setnote .usel.out b { color: var(--ember-ink); }
   /* The colophon. Quiet on purpose — it is the last thing in the sheet, not an
      invitation to leave. */
   .setnote.foot { text-align: center; margin-top: 18px; }
