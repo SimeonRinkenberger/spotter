@@ -144,6 +144,32 @@ await vm.runInContext('handleReadVideo("w1","u1",req,{})', c);
 assert(calls.includes('reserve_video_preview'), 'an unreadable row costs a preview, which is the cost being avoided');
 console.log('PASS a legacy card and pack answer a free preview with no reservation and no paid work.');
 
+// ---------- and the save path does no paid upgrade on one ----------
+//
+// handleIngest's cache hit calls upgradeCachedCard, which is where a Plus save
+// decides whether to pay to read the video after all. A legacy row that was
+// visually read must come out of that as "nothing to do": the reading exists, it
+// is one shape old, and paying to redo it is the whole cost this change avoids.
+calls.length = 0;
+c.requeue = null;
+c.rpc = async (name) => { calls.push(name); return [c.requeue]; };
+c.settledAll = (all) => Promise.all(all);
+c.setMediaStage = async () => {};
+c.upgradeSpy = () => calls;
+vm.runInContext(transformSync(fn(src, 'upgradeCachedCard'), { loader: 'ts', format: 'cjs' }).code, c);
+c.legacy = legacyRow;
+assert.equal(await vm.runInContext('upgradeCachedCard("u1", { platform: "tiktok", shortcode: "legacy-1" }, legacy, "w1", {})', c), null,
+  'a Plus save of a legacy row that was already watched queues no paid read');
+assert.deepEqual(calls, [], 'and reserves nothing');
+// The discrimination case again: a row nobody ever watched still upgrades.
+c.premiumAccess = async () => true;
+c.requeue = { job_id: 'j1', job_created: true };
+c.thin = { ...legacyRow, pack: null, pack_v: null, media_source: null, media_tried: false };
+const queued = await vm.runInContext('upgradeCachedCard("u1", { platform: "tiktok", shortcode: "legacy-1" }, thin, "w1", {})', c);
+assert(queued, 'a thin card is still upgraded, so the assertion above is about the pack and not about a dead path');
+assert(calls.includes('requeue_ingest'));
+console.log('PASS a legacy row is a save-path cache hit with no paid upgrade; a thin one still upgrades.');
+
 // ---------- consumers of a legacy pack degrade to "field absent" ----------
 c.normText = (s) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 c.packInTimeOrder = () => true;
