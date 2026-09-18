@@ -141,7 +141,8 @@ Compiler/test logs are retained locally under `.native-build/verification/` (ign
 - Email confirmation/password-reset round trips, social login, purchases, Strava
   authorization, media uploads, offline network failures, third-party video embeds,
   real device sharing and account export delivery were not exercised end-to-end.
-- Native session storage is UserDefaults, not encrypted Keychain storage. Existing
+- Native session storage moved to the Keychain on 17 September 2026 (see the
+  Keychain session storage section below); it is no longer UserDefaults. Existing
   offline library cache is not an offline write queue. Cold restart restores regular
   rest deadlines; timed exercise/circuit callback state restarts idle.
 - Share-in extension, HealthKit, Live Activities, notifications, native Apple/Google
