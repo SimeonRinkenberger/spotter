@@ -52,7 +52,6 @@
 		A9F100000000000000000205 /* WidgetTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9F100000000000000000505 /* WidgetTheme.swift */; };
 		A9F100000000000000000206 /* SpotterWidgetsBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9F10000000000000000050B /* SpotterWidgetsBundle.swift */; };
 		A9F100000000000000000207 /* WorkoutLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9F10000000000000000050C /* WorkoutLiveActivity.swift */; };
-		A9F100000000000000000208 /* SpotterWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9F10000000000000000050D /* SpotterWidgets.swift */; };
 		A9F100000000000000000209 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A9F10000000000000000050E /* SpotterWidgets/Assets.xcassets */; };
 		A9F100000000000000000301 /* LiveState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9F100000000000000000501 /* LiveState.swift */; };
 		A9F100000000000000000302 /* WidgetTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9F100000000000000000505 /* WidgetTheme.swift */; };
@@ -62,6 +61,7 @@
 		A9F100000000000000000306 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A9F100000000000000000513 /* SpotterWatch/Assets.xcassets */; };
 		A9F100000000000000000401 /* SpotterWidgets.appex in Copy Files */ = {isa = PBXBuildFile; fileRef = A9F100000000000000000515 /* SpotterWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		A9F100000000000000000402 /* SpotterWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = A9F100000000000000000516 /* SpotterWatch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		2B84CC4962EFE87E552A6E32 /* SpotterWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74F4F673DB470E9A6B97CDA6 /* SpotterWidgets.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -103,7 +103,6 @@
 		A9F10000000000000000050A /* SpotterPushPlugin.swift */ = {isa = PBXFileReference; name = "SpotterPushPlugin.swift"; path = "App/SpotterPushPlugin.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; };
 		A9F10000000000000000050B /* SpotterWidgetsBundle.swift */ = {isa = PBXFileReference; name = "SpotterWidgetsBundle.swift"; path = "SpotterWidgets/SpotterWidgetsBundle.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; };
 		A9F10000000000000000050C /* WorkoutLiveActivity.swift */ = {isa = PBXFileReference; name = "WorkoutLiveActivity.swift"; path = "SpotterWidgets/WorkoutLiveActivity.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; };
-		A9F10000000000000000050D /* SpotterWidgets.swift */ = {isa = PBXFileReference; name = "SpotterWidgets.swift"; path = "SpotterWidgets/SpotterWidgets.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; };
 		A9F10000000000000000050E /* SpotterWidgets/Assets.xcassets */ = {isa = PBXFileReference; name = "Assets.xcassets"; path = "SpotterWidgets/Assets.xcassets"; sourceTree = "<group>"; lastKnownFileType = folder.assetcatalog; };
 		A9F10000000000000000050F /* SpotterWidgets/Info.plist */ = {isa = PBXFileReference; name = "Info.plist"; path = "SpotterWidgets/Info.plist"; sourceTree = "<group>"; lastKnownFileType = text.plist.xml; };
 		A9F100000000000000000510 /* SpotterWatchApp.swift */ = {isa = PBXFileReference; name = "SpotterWatchApp.swift"; path = "SpotterWatch/SpotterWatchApp.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; };
@@ -113,6 +112,7 @@
 		A9F100000000000000000514 /* Widgets.entitlements */ = {isa = PBXFileReference; name = "Widgets.entitlements"; path = "App/Widgets.entitlements"; sourceTree = "<group>"; lastKnownFileType = text.plist.entitlements; };
 		A9F100000000000000000515 /* SpotterWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = SpotterWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		A9F100000000000000000516 /* SpotterWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SpotterWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		74F4F673DB470E9A6B97CDA6 /* SpotterWidgets.swift */ = {isa = PBXFileReference; name = "SpotterWidgets.swift"; path = "SpotterWidgets/SpotterWidgets.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -240,9 +240,9 @@
 		A9F100000000000000000602 /* SpotterWidgets */ = {
 			isa = PBXGroup;
 			children = (
+				74F4F673DB470E9A6B97CDA6 /* SpotterWidgets.swift */,
 				A9F10000000000000000050B /* SpotterWidgetsBundle.swift */,
 				A9F10000000000000000050C /* WorkoutLiveActivity.swift */,
-				A9F10000000000000000050D /* SpotterWidgets.swift */,
 				A9F10000000000000000050E /* SpotterWidgets/Assets.xcassets */,
 				A9F10000000000000000050F /* SpotterWidgets/Info.plist */,
 			);
@@ -501,7 +501,7 @@
 				A9F100000000000000000205 /* WidgetTheme.swift in Sources */,
 				A9F100000000000000000206 /* SpotterWidgetsBundle.swift in Sources */,
 				A9F100000000000000000207 /* WorkoutLiveActivity.swift in Sources */,
-				A9F100000000000000000208 /* SpotterWidgets.swift in Sources */,
+				2B84CC4962EFE87E552A6E32 /* SpotterWidgets.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
