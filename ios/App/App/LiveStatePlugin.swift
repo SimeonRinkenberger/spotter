@@ -77,6 +77,27 @@ public class LiveStatePlugin: CAPPlugin, CAPBridgedPlugin {
         for action in queued { LiveStatePlugin.deliver(action) }
     }
 
+    /// The stored session was never claimed by the engine: the app was killed
+    /// mid-workout and nobody took the "Tap to resume" offer. Say so once, to
+    /// every surface, and forget it — otherwise the wrist keeps a spent rest on
+    /// screen for as long as the watch app is open, which is what the 16e and
+    /// its paired watch did before this. `completed: false` is honest: this
+    /// session was abandoned, not finished.
+    static func abandon() {
+        let stored = latest ?? SharedStore.readJSON(LiveState.self, key: SharedStore.Key.liveState)
+        latest = nil
+        SharedStore.remove(key: SharedStore.Key.liveState)
+        guard let state = stored else { return }
+        let summary = LiveSummary(v: 1,
+                                  title: state.title,
+                                  startedAt: state.startedAt,
+                                  endedAt: SpotterISO8601.string(Date()),
+                                  sets: state.progress.done,
+                                  prs: 0,
+                                  completed: false)
+        fanout { $0.end(summary) }
+    }
+
     /// Registered once at launch from SpotterViewController. Registering the
     /// same object twice is a no-op, so a web view reload cannot double-fan.
     static func register(sink: LiveStateSink) {

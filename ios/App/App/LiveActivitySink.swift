@@ -304,11 +304,16 @@ final class LiveActivitySink: LiveStateSink {
 
     private func dropUnclaimed() {
         unclaimed = nil
-        guard let activity = activity else { return }
-        self.activity = nil
+        // The card goes first and without a closing frame: nothing here is worth
+        // a glance, it is a workout nobody is doing.
+        let ghost = activity
+        activity = nil
         current = nil
         cancelNudge()
-        Task { await activity.end(nil, dismissalPolicy: .immediate) }
+        if let ghost = ghost { Task { await ghost.end(nil, dismissalPolicy: .immediate) } }
+        // And the Lock Screen is not the only mirror. The wrist holds the same
+        // session until something tells it otherwise, so the verdict is shared.
+        LiveStatePlugin.abandon()
     }
 
     // MARK: - The rest-end nudge
