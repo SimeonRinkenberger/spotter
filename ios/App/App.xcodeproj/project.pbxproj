@@ -62,6 +62,10 @@
 		A9F100000000000000000401 /* SpotterWidgets.appex in Copy Files */ = {isa = PBXBuildFile; fileRef = A9F100000000000000000515 /* SpotterWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		A9F100000000000000000402 /* SpotterWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = A9F100000000000000000516 /* SpotterWatch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		2B84CC4962EFE87E552A6E32 /* SpotterWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74F4F673DB470E9A6B97CDA6 /* SpotterWidgets.swift */; };
+		38700A00DA47158819FB91DE /* WidgetPieces.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46DA920744C2E7CA8A0E37DD /* WidgetPieces.swift */; };
+		1441C12DC8BA0B9320AAE942 /* WeekWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8CF40ACA6353739F66F26EA /* WeekWidget.swift */; };
+		BB24CD8780658D16B52BDC84 /* TodayWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8262C0CDC66022D44DE4A080 /* TodayWidget.swift */; };
+		93DD08A724CD2F2BF271B0AB /* LockWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA944E0F8B691AD8517D44B7 /* LockWidget.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -113,6 +117,10 @@
 		A9F100000000000000000515 /* SpotterWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = SpotterWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		A9F100000000000000000516 /* SpotterWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SpotterWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		74F4F673DB470E9A6B97CDA6 /* SpotterWidgets.swift */ = {isa = PBXFileReference; name = "SpotterWidgets.swift"; path = "SpotterWidgets/SpotterWidgets.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; };
+		46DA920744C2E7CA8A0E37DD /* WidgetPieces.swift */ = {isa = PBXFileReference; name = "WidgetPieces.swift"; path = "SpotterWidgets/Widgets/WidgetPieces.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; };
+		D8CF40ACA6353739F66F26EA /* WeekWidget.swift */ = {isa = PBXFileReference; name = "WeekWidget.swift"; path = "SpotterWidgets/Widgets/WeekWidget.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; };
+		8262C0CDC66022D44DE4A080 /* TodayWidget.swift */ = {isa = PBXFileReference; name = "TodayWidget.swift"; path = "SpotterWidgets/Widgets/TodayWidget.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; };
+		BA944E0F8B691AD8517D44B7 /* LockWidget.swift */ = {isa = PBXFileReference; name = "LockWidget.swift"; path = "SpotterWidgets/Widgets/LockWidget.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -240,6 +248,10 @@
 		A9F100000000000000000602 /* SpotterWidgets */ = {
 			isa = PBXGroup;
 			children = (
+				BA944E0F8B691AD8517D44B7 /* LockWidget.swift */,
+				8262C0CDC66022D44DE4A080 /* TodayWidget.swift */,
+				D8CF40ACA6353739F66F26EA /* WeekWidget.swift */,
+				46DA920744C2E7CA8A0E37DD /* WidgetPieces.swift */,
 				74F4F673DB470E9A6B97CDA6 /* SpotterWidgets.swift */,
 				A9F10000000000000000050B /* SpotterWidgetsBundle.swift */,
 				A9F10000000000000000050C /* WorkoutLiveActivity.swift */,
@@ -502,6 +514,10 @@
 				A9F100000000000000000206 /* SpotterWidgetsBundle.swift in Sources */,
 				A9F100000000000000000207 /* WorkoutLiveActivity.swift in Sources */,
 				2B84CC4962EFE87E552A6E32 /* SpotterWidgets.swift in Sources */,
+				38700A00DA47158819FB91DE /* WidgetPieces.swift in Sources */,
+				1441C12DC8BA0B9320AAE942 /* WeekWidget.swift in Sources */,
+				BB24CD8780658D16B52BDC84 /* TodayWidget.swift in Sources */,
+				93DD08A724CD2F2BF271B0AB /* LockWidget.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

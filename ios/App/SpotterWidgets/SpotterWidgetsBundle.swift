@@ -11,6 +11,8 @@ import WidgetKit
 struct SpotterWidgetsBundle: WidgetBundle {
     var body: some Widget {
         WorkoutLiveActivity()
-        SpotterWidgets()
+        WeekWidget()
+        TodayWidget()
+        LockWidget()
     }
 }

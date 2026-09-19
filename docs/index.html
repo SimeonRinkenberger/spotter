@@ -13879,6 +13879,8 @@ details.details-moving > :not(summary) {
       rows.length || (rows = today.rows || []);
       var now2 = null, soon = null, last = null, days = wk.dots.map(function(d) {
         return d === "on";
+      }), planned = wk.dots.map(function(d) {
+        return d === "plan";
       });
       for (i = 0; i < rows.length && !now2; i++)
         w = planWorkout(rows[i].workout_id), w && (now2 = { id: w.id, title: w.title || "Workout", minutes: w.duration_minutes || null });
@@ -13892,7 +13894,14 @@ details.details-moving > :not(summary) {
       }), pubOut = !1, native.live.publish({
         v: 1,
         updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
-        week: { key: wk.weekKey, done: wk.done, goal: wk.goal, days: days, atRisk: wk.atRisk },
+        week: {
+          key: wk.weekKey,
+          done: wk.done,
+          goal: wk.goal,
+          days: days,
+          planned: planned,
+          atRisk: wk.atRisk
+        },
         streak: wk.streakWeeks,
         today: now2,
         next: soon,

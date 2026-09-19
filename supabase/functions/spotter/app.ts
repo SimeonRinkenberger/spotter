@@ -10252,7 +10252,11 @@ export const APP = String.raw`
     var key = ymd(new Date()), rows = rowsFor(key), i, w;
     if (!rows.length) rows = today.rows || [];
     var now = null, soon = null, last = null;
+    // Two passes over the SAME dot row the week strip draws, so a Home Screen
+    // widget and the Progress tab cannot disagree about a Thursday: filled is a
+    // session, a ring is a day still to come that the plan asks for.
     var days = wk.dots.map(function (d) { return d === "on"; });
+    var planned = wk.dots.map(function (d) { return d === "plan"; });
     for (i = 0; i < rows.length && !now; i++) {
       w = planWorkout(rows[i].workout_id);
       if (w) now = { id: w.id, title: w.title || "Workout", minutes: w.duration_minutes || null };
@@ -10271,7 +10275,8 @@ export const APP = String.raw`
     pubOut = false;
     native.live.publish({
       v: 1, updatedAt: new Date().toISOString(),
-      week: { key: wk.weekKey, done: wk.done, goal: wk.goal, days: days, atRisk: wk.atRisk },
+      week: { key: wk.weekKey, done: wk.done, goal: wk.goal, days: days,
+        planned: planned, atRisk: wk.atRisk },
       streak: wk.streakWeeks, today: now, next: soon, last: last,
       active: !!(wo && !wo.finished)
     });

@@ -37,14 +37,26 @@ struct WidgetSummary: Codable, Hashable {
         var key: String
         var done: Int
         var goal: Int
-        /// Monday through Sunday. Shorter or longer arrays are tolerated on read.
+        /// Days a session was logged, Monday through Sunday. Shorter or longer
+        /// arrays are tolerated on read.
         var days: [Bool]?
+        /// Days the plan still asks for, Monday through Sunday — today and
+        /// ahead only, which is the app's own dot language: a planned day that
+        /// went by unanswered is a free day, not a failure.
+        var planned: [Bool]?
         /// The week is behind the pace that would still meet the goal.
         var atRisk: Bool?
 
         /// Exactly seven flags, Monday first, whatever arrived.
-        var dayFlags: [Bool] {
-            var flags = days ?? []
+        var dayFlags: [Bool] { Week.seven(days) }
+
+        /// The same, for the planned ring. Absent in a payload written before
+        /// the widgets shipped, which reads as a week with nothing planned
+        /// rather than as a decode failure.
+        var plannedFlags: [Bool] { Week.seven(planned) }
+
+        private static func seven(_ raw: [Bool]?) -> [Bool] {
+            var flags = raw ?? []
             if flags.count > 7 { flags = Array(flags.prefix(7)) }
             while flags.count < 7 { flags.append(false) }
             return flags
@@ -70,7 +82,8 @@ struct WidgetSummary: Codable, Hashable {
     struct NextDay: Codable, Hashable {
         var id: String
         var title: String
-        /// Human day label the plan already uses, e.g. "Thu".
+        /// The plan row's own day, YYYY-MM-DD. Formatted into a weekday on the
+        /// Swift side so it follows the reader's locale rather than the page's.
         var day: String
     }
 

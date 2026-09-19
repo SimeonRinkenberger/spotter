@@ -232,7 +232,9 @@ assert.deepEqual(Object.keys(g).sort(), WIDGET_KEYS.slice().sort(),
   'WidgetSummary key set drifted: ' + Object.keys(g).join(','));
 assert.equal(g.v, 1);
 assert(!isNaN(Date.parse(g.updatedAt)));
-assert.deepEqual(Object.keys(g.week).sort(), ['atRisk', 'days', 'done', 'goal', 'key'].sort());
+// `planned` joined the week on the widgets branch: the small widget draws a ring
+// on days the plan still asks for, and `days` only says which ones were answered.
+assert.deepEqual(Object.keys(g.week).sort(), ['atRisk', 'days', 'planned', 'done', 'goal', 'key'].sort());
 assert.match(g.week.key, /^\d{4}-\d{2}-\d{2}$/);
 assert.equal(g.week.days.length, 7);
 assert(g.week.days.every(d => typeof d === 'boolean'), 'week.days is Mon..Sun booleans');
