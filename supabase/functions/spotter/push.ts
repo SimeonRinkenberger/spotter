@@ -286,9 +286,9 @@ export async function vapidAuth(endpoint: string, nowMs = Date.now()): Promise<s
 // notification requests to APNs" (both read 18 Sept 2026) — see
 // design/native/push.md for the full list and what each one settled.
 
-const APNS_HOSTS = {
-  sandbox: "api.sandbox.push.apple.com",
-  production: "api.push.apple.com",
+const APNS_ORIGINS = {
+  sandbox: "https://api.sandbox.push.apple.com",
+  production: "https://api.push.apple.com",
 } as const;
 
 let apnsJwt = "";
@@ -371,10 +371,9 @@ export type ApnsResult = { status: number; reason: string; gone: boolean };
 export async function sendApns(
   device: { token: string; bundle: string | null; env: string },
   kind: "plan" | "risk", title: string, body: string | undefined,
-  cfg: Apns, nowMs = Date.now(), hostFor = apnsHost,
+  cfg: Apns, nowMs = Date.now(), originFor = apnsOrigin,
 ): Promise<ApnsResult> {
-  const host = hostFor(device.env);
-  const r = await fetch(`https://${host}/3/device/${device.token}`, {
+  const r = await fetch(`${originFor(device.env)}/3/device/${device.token}`, {
     method: "POST",
     headers: {
       authorization: `bearer ${await apnsAuth(cfg, nowMs)}`,
@@ -407,8 +406,13 @@ export async function sendApns(
   return { status: r.status, reason, gone: apnsGone(r.status, reason) };
 }
 
-export function apnsHost(env: string): string {
-  return env === "production" ? APNS_HOSTS.production : APNS_HOSTS.sandbox;
+/**
+ * Which of Apple's two servers will accept this token. Passed into `sendApns`
+ * rather than read inside it so the harness can stand a local server in Apple's
+ * place and assert the exact bytes that would have gone to Cupertino.
+ */
+export function apnsOrigin(env: string): string {
+  return env === "production" ? APNS_ORIGINS.production : APNS_ORIGINS.sandbox;
 }
 
 /**

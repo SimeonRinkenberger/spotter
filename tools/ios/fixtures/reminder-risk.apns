@@ -1,0 +1,12 @@
+{
+  "Simulator Target Bundle": "app.spotter.dev",
+  "aps": {
+    "alert": {
+      "title": "One session left this week.",
+      "body": "Your streak is at 6."
+    },
+    "sound": "default",
+    "thread-id": "reminders"
+  },
+  "url": "spotter://tab/progress"
+}
