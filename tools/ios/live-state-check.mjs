@@ -441,6 +441,17 @@ assert(openListener.slice(0, 400).includes('openDeepLink(u)'), 'the open-url lis
 assert(openListener.slice(0, 400).includes('OPEN_KEY'), 'a URL arriving signed-out is no longer parked');
 assert(src.includes('consumeOpen()'), 'boot never spends a parked launch URL');
 
+// stopRest() saves the draft and a draft save syncs the mirrors, so a teardown
+// that seals the activity before it revives the activity one line later. This is
+// invisible at runtime on a machine with no simulator, so it is pinned here.
+[['exitWorkout', 'liveEnd(false)'], ['clearAccount', 'liveEnd(false)'], ['finishWorkout', 'liveEnd(true)']]
+  .forEach(([name, seal]) => {
+    const body = fn(name);
+    assert(body.includes(seal), name + ' no longer ends the Live Activity');
+    assert(body.indexOf('stopRest()') < body.indexOf(seal),
+      name + ' seals the activity before its last saveDraft — stopRest would revive it');
+  });
+
 console.log('PASS the packaged bridge registers both plugins and both events, and saveDraft still drives the sync.');
 
 // ---------- the Swift half, once it is merged ----------

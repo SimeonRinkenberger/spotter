@@ -8748,7 +8748,7 @@ details.details-moving > :not(summary) {
   }
   function clearAccount() {
     if (native && native.configureSharing(null).catch(function() {
-    }), cancelPumpyReset(), pendingMotion && pendingMotion.disconnect(), $("app").classList.add("hide"), accountEpoch++, reads = {}, inFlight = {}, libraryRev++, logsRev++, planRev++, clearTimeout(undoTimer), undoTimer = null, undoFn = null, clearTimeout(detailCloseTimer), clearTimeout(woCloseTimer), clearTimeout(pendTimer), pendTimer = null, pendPolls = 0, pendBusy = !1, wkChannel && (sb.removeChannel(wkChannel), wkChannel = null), booting = null, state.profile = null, state.workouts = [], state.logs = null, state.plan = null, state.awards = null, state.goal = null, heroPct = 0, trainSeg = null, state.unit = "lb", state.sounds = !0, state.haptics = !0, state.collections = [], state.colItems = [], seenCards = {}, gridCards = {}, expCache = {}, expWaiting = {}, vidCache = {}, expKey = "", today.rows = [], today.at = 0, today.day = null, today.busy = !1, today.shown = !1, current = null, sc && scForget(), wo && (saveDraft(), liveEnd(!1)), clearInterval(woTimer), stopRest(), releaseWake(), wo = null, hist = {}, histReady = !1, strava && (strava = { asked: !1, configured: !1, connected: !1, athlete: null, busy: !1 }), pumpy) {
+    }), cancelPumpyReset(), pendingMotion && pendingMotion.disconnect(), $("app").classList.add("hide"), accountEpoch++, reads = {}, inFlight = {}, libraryRev++, logsRev++, planRev++, clearTimeout(undoTimer), undoTimer = null, undoFn = null, clearTimeout(detailCloseTimer), clearTimeout(woCloseTimer), clearTimeout(pendTimer), pendTimer = null, pendPolls = 0, pendBusy = !1, wkChannel && (sb.removeChannel(wkChannel), wkChannel = null), booting = null, state.profile = null, state.workouts = [], state.logs = null, state.plan = null, state.awards = null, state.goal = null, heroPct = 0, trainSeg = null, state.unit = "lb", state.sounds = !0, state.haptics = !0, state.collections = [], state.colItems = [], seenCards = {}, gridCards = {}, expCache = {}, expWaiting = {}, vidCache = {}, expKey = "", today.rows = [], today.at = 0, today.day = null, today.busy = !1, today.shown = !1, current = null, sc && scForget(), wo && saveDraft(), clearInterval(woTimer), stopRest(), liveEnd(!1), releaseWake(), wo = null, hist = {}, histReady = !1, strava && (strava = { asked: !1, configured: !1, connected: !1, athlete: null, busy: !1 }), pumpy) {
       var seq = (pumpy.openSeq || 0) + 1, wired = pumpy.wired;
       pumpy = {
         thread: null,
@@ -12324,7 +12324,7 @@ details.details-moving > :not(summary) {
           toast("Could not save that session \u2014 check your connection.");
           return;
         }
-        payload.id = r.data && r.data.id, wo && (wo.logId = payload.id), invalidateLogs(), today.at = 0, renderToday(), loadLogs().then(function() {
+        payload.id = r.data && r.data.id, wo && (wo.logId = payload.id), invalidateLogs(), today.at = 0, renderToday(), native && native.live && loadLogs().then(function() {
           publishSummary();
         });
       }), clearInterval(woTimer), cxOff(), stopRest(), clearDraft(), liveEnd(!0), wo.finished = !0, haptic("done"), renderSummary(payload, logged);
@@ -12458,7 +12458,7 @@ details.details-moving > :not(summary) {
   }
   var woCloseTimer = null;
   function exitWorkout() {
-    wo && (liveEnd(!1), clearInterval(woTimer), cxOff(), stopRest(), releaseWake(), clearDraft(), publishSummary()), closeSheet("watchsheet"), wo = null, recapLog = null;
+    wo && (clearInterval(woTimer), cxOff(), stopRest(), releaseWake(), clearDraft(), liveEnd(!1), publishSummary()), closeSheet("watchsheet"), wo = null, recapLog = null;
     var n = $("workout");
     n.classList.contains("open") && (n.classList.remove("open"), n.classList.remove("summary"), n.classList.remove("past"), n.classList.add("closing"), recapFocus && recapFocus.isConnected && recapFocus.focus({ preventScroll: !0 }), recapFocus = null, clearTimeout(woCloseTimer), woCloseTimer = setTimeout(function() {
       n.classList.remove("closing"), guideWake();

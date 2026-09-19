@@ -1222,8 +1222,8 @@ export const APP = String.raw`
     today.rows = []; today.at = 0; today.day = null; today.busy = false; today.shown = false;
     current = null;
     if (sc) scForget();
-    if (wo) { saveDraft(); liveEnd(false); }
-    clearInterval(woTimer); stopRest(); releaseWake(); wo = null; hist = {}; histReady = false;
+    if (wo) saveDraft();
+    clearInterval(woTimer); stopRest(); liveEnd(false); releaseWake(); wo = null; hist = {}; histReady = false;
     if (strava) strava = { asked: false, configured: false, connected: false, athlete: null, busy: false };
     if (pumpy) {
       var seq = (pumpy.openSeq || 0) + 1, wired = pumpy.wired;
@@ -7572,7 +7572,7 @@ export const APP = String.raw`
       today.at = 0;
       renderToday();
       // The week just changed and the widget is the one reader that cannot ask.
-      loadLogs().then(function () { publishSummary(); });
+      if (native && native.live) loadLogs().then(function () { publishSummary(); });
     });
     clearInterval(woTimer);
     cxOff();
@@ -7843,12 +7843,15 @@ export const APP = String.raw`
     // must not end a rest or throw away the draft of a workout somebody paused
     // this morning — which is what the old history sheet was kept separate for.
     if (wo) {
-      liveEnd(false);
       clearInterval(woTimer);
       cxOff();
       stopRest();
       releaseWake();
       clearDraft();
+      // After stopRest, never before it: stopRest saves the draft, a draft save
+      // syncs the mirrors, and an update landing after the end puts the activity
+      // straight back on the Lock Screen.
+      liveEnd(false);
       publishSummary();
     }
     // The clip sheet can outlive the overlay it was opened from.
