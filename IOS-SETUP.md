@@ -3,12 +3,45 @@
 This is a local development app, not an App Store submission. It packages the same
 frontend built by `build.mjs`; the web deployment and backend are unchanged.
 
+## Targets
+
+Four targets, one scheme (**App**). Building the App scheme builds and embeds all four.
+
+| Target | Product | Bundle ID | Floor | Shares |
+| --- | --- | --- | --- | --- |
+| App | `App.app` | `$(SPOTTER_BUNDLE_ID)` | iOS 17.0 | the web bundle, the Keychain group, every Swift plugin |
+| ShareExtension | `PlugIns/ShareExtension.appex` | `$(SPOTTER_BUNDLE_ID).share` | iOS 17.0 | `Shared/ShareCredential.swift` + the contact-sheet pipeline |
+| SpotterWidgets | `PlugIns/SpotterWidgets.appex` | `$(SPOTTER_BUNDLE_ID).widgets` | iOS 17.0 | `Shared/LiveState.swift`, `WidgetSummary.swift`, `WorkoutActivityAttributes.swift`, `SharedStore.swift`, `WidgetTheme.swift` |
+| SpotterWatch | `Watch/SpotterWatch.app` | `$(SPOTTER_BUNDLE_ID).watchkitapp` | watchOS 10.0 | `Shared/LiveState.swift`, `WidgetTheme.swift` |
+
+The floor is iOS 17 because Live Activities need 16.1, Lock Screen widgets 16.0 and
+interactive buttons in either one need 17.0. `CapApp-SPM/Package.swift` is regenerated
+by `cap sync` from that floor — it is Capacitor's file, not one to edit by hand.
+
+SpotterWidgets is a single WidgetKit extension holding both the Live Activity and the
+Home/Lock Screen widgets, which is Apple's recommended shape and keeps one asset
+catalog and one copy of the theme. It signs with `App/Widgets.entitlements`, a copy of
+`Share.entitlements`: the keychain access group is how the extension reads what the app
+publishes, because a Personal Team is issued no App Groups. `SharedStore.swift` already
+has the App Group path behind the Info.plist key `SpotterAppGroup`, empty today — fill
+it in on both Info.plists when the paid account exists and no code changes.
+
+SpotterWatch is a single-target watchOS app (Xcode 14 style, no separate WatchKit
+extension), embedded through an "Embed Watch Content" copy-files phase. It has no
+entitlements file: it needs no keychain group, and not asking for one keeps it signable.
+
+`node tools/ios/add-file.mjs <Target> <path/relative/to/ios/App> [<Target2> ...]` adds an
+existing file to a target's build phase idempotently. Use it instead of hand-editing
+`project.pbxproj`; ids are derived from the path and target so the same addition on two
+branches produces the same bytes. Keep `objectVersion = 60` and classic groups — the
+Capacitor CLI and CI both parse this file.
+
 ## Build and run
 
 Requirements: Xcode 26+ (this Mac: 26.2, iOS SDK/simulator 26.2), Node 22+ (this Mac:
 26.7), npm. Capacitor core/CLI/iOS are pinned to 8.5.1; official plugins and Supabase
 are pinned in package-lock.json. Swift Package Manager resolves native dependencies;
-CocoaPods is unnecessary. Minimum iOS is 15; verification is on 26.2 only.
+CocoaPods is unnecessary. Minimum iOS is 17 (watchOS 10); verification is on 26.2 only.
 
 From this directory:
 
@@ -103,7 +136,7 @@ Nothing in this setup uploads, publishes, enrolls, or purchases anything.
 | Links and sharing out | HTTPS links open in a dismissible native browser, including help/billing/Strava handoffs. Existing share/export flows use native Share with temporary cache files (25 MB cap), cleaned after completion. Saving exported files/sharing to third-party apps needs device verification. |
 | Layout | SpotterViewController hosts the original web interface above UIKit's keyboardLayoutGuide. Capacitor Keyboard resize is none: do not re-enable its delayed frame writes alongside Auto Layout. The guide handles docked keyboards and rotation; floating iPad keyboards do not collapse the app. iOS 15/16 compensate for the guide's resting safe area, iOS 17+ use usesBottomSafeArea=false. Pumpy hides form-navigation accessories; other forms retain Done/Next. The web app's Inter/Cabinet typography, Pumpy layout, navigation and set sheet are retained. Status text follows color scheme. Home Screen install prompt is suppressed. |
 | Service worker | Never registered in native build; normal web service worker remains intact. Native notifications are explicitly unavailable, not a web push setup prompt. |
-| Permissions | No camera, microphone, photos, HealthKit, notifications, tracking, background-mode or associated-domain permissions requested. System file/share pickers do not imply broad library access. Required-reason manifest declares app-owned UserDefaults/file timestamps. |
+| Permissions | No camera, microphone, photos, HealthKit, tracking, background-mode or associated-domain permissions requested. **Notifications** are requested at runtime by `NotificationsHost`, from inside Workout Mode after the app has said what the notification is for — never at launch, and never from `AppDelegate`, which only claims the delegate so a tap on a notification can be routed. A notification arriving while the app is active presents nothing: Workout Mode already announces a rest ending on screen. **Live Activities** are declared (`NSSupportsLiveActivities`, frequent updates off) and start only from a running session. Remote push is declared nowhere and cannot work: a Personal Team is issued no `aps-environment` entitlement, so `SpotterPush` answers `configured: false` to everything. The `spotter://` URL scheme is registered for widget, activity and notification taps. System file/share pickers do not imply broad library access. Required-reason manifest declares app-owned UserDefaults/file timestamps. |
 
 ## Native incoming sharing
 

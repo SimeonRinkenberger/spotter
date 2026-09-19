@@ -132,8 +132,29 @@ enum SharedStore {
     /// Returns nil both when nothing is stored and when what is stored no longer
     /// decodes. A widget's answer to "the app wrote a shape I do not understand"
     /// is its empty state, not a crash in the extension process.
+    ///
+    /// The three nil paths log differently on purpose. A widget showing its empty
+    /// state is either working (nothing published yet) or entitled wrongly (the
+    /// keychain group refused the read), and from the outside those look
+    /// identical — which is exactly the bug that takes a day to find. `log stream
+    /// --predicate 'process == "SpotterWidgets"'` tells them apart.
     static func readJSON<T: Decodable>(_ type: T.Type, key: String) -> T? {
-        guard let data = try? read(key: key) else { return nil }
-        return try? JSONDecoder().decode(type, from: data)
+        let data: Data?
+        do {
+            data = try read(key: key)
+        } catch {
+            NSLog("SharedStore: could not read %@ — %@", key, String(describing: error))
+            return nil
+        }
+        guard let data = data else {
+            NSLog("SharedStore: nothing stored for %@ (store reachable)", key)
+            return nil
+        }
+        do {
+            return try JSONDecoder().decode(type, from: data)
+        } catch {
+            NSLog("SharedStore: stored %@ does not decode — %@", key, String(describing: error))
+            return nil
+        }
     }
 }
