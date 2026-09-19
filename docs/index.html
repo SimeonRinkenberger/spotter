@@ -17599,7 +17599,7 @@ details.details-moving > :not(summary) {
   }
   function liveAction(a) {
     var k = a.kind, live = wo && !wo.finished, s = live ? wo.screens[wo.i] : null, pre;
-    if (k === "notification" && typeof a.id == "string" && a.id.indexOf("spotter://") === 0) openDeepLink(a.id);
+    if (k === "notification" && typeof a.id == "string" && a.id.indexOf("spotter://") === 0) openLink(a.id);
     else if (k === "open" || k === "notification")
       (k === "open" || !wo || restUntil) && woForward();
     else if (live) k === "set" ? !s || s.cx && !s.ei || isTimed(s.ex) ? toast("Log this one on the phone.") : (pre = setPrefill(wo.entries[wo.i].sets.length), setCtx.idx = pre.idx, setReps(typeof a.reps == "number" && isFinite(a.reps) ? a.reps : pre.reps), setWeight(typeof a.weight == "number" && isFinite(a.weight) ? a.weight : pre.weight), saveSet()) : k === "skipRest" ? restUntil && doneRest() : k === "toggleRest" ? pauseRest() : k === "finish" && finishWorkout();
@@ -17622,6 +17622,16 @@ details.details-moving > :not(summary) {
       else return;
     }
   }
+  function openLink(u) {
+    if (state.user) {
+      openDeepLink(u);
+      return;
+    }
+    try {
+      sessionStorage.setItem(OPEN_KEY, u);
+    } catch (e) {
+    }
+  }
   function consumeOpen() {
     var u = null;
     try {
@@ -17635,16 +17645,7 @@ details.details-moving > :not(summary) {
     liveAction(e.detail || {});
   }), window.addEventListener("spotter:open-url", function(e) {
     var u = e.detail && e.detail.url;
-    if (u) {
-      if (state.user) {
-        openDeepLink(u);
-        return;
-      }
-      try {
-        sessionStorage.setItem(OPEN_KEY, u);
-      } catch (err) {
-      }
-    }
+    u && openLink(u);
   }), window.addEventListener("popstate", function() {
     if (sheetBack) {
       sheetBack--;

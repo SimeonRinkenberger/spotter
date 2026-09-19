@@ -16138,7 +16138,7 @@ export const APP = String.raw`
     var k = a.kind, live = wo && !wo.finished, s = live ? wo.screens[wo.i] : null, pre;
     // A remote reminder carries its destination as the action id. A rest-end one
     // whose rest is already over has nothing left to say.
-    if (k === "notification" && typeof a.id === "string" && a.id.indexOf("spotter://") === 0) openDeepLink(a.id);
+    if (k === "notification" && typeof a.id === "string" && a.id.indexOf("spotter://") === 0) openLink(a.id);
     else if (k === "open" || k === "notification") { if (k === "open" || !wo || restUntil) woForward(); }
     else if (!live) return;
     else if (k === "set") {
@@ -16192,6 +16192,17 @@ export const APP = String.raw`
     else { openDetail(w); startWorkout(w); }
   }
 
+  // A link can only open something once there is a library to open it in.
+  // openDeepLink answers a page whose session has not resolved yet with silence,
+  // and the web view is reloaded whenever iOS reclaims its content process — so
+  // a reminder tapped after the phone sat in a pocket landed on the Library
+  // instead of Progress (iPhone 16e). Park it exactly as a cold launch parks its
+  // own URL and let consumeOpen() spend it when boot finishes.
+  function openLink(u) {
+    if (state.user) { openDeepLink(u); return; }
+    try { sessionStorage.setItem(OPEN_KEY, u); } catch (e) { /* ignore */ }
+  }
+
   // A cold launch parks its URL in the shell before any listener could exist.
   // Taken out before it is acted on: one launch is exactly one open.
   function consumeOpen() {
@@ -16206,9 +16217,7 @@ export const APP = String.raw`
   window.addEventListener("spotter:live-action", function (e) { liveAction(e.detail || {}); });
   window.addEventListener("spotter:open-url", function (e) {
     var u = e.detail && e.detail.url;
-    if (!u) return;
-    if (state.user) { openDeepLink(u); return; }
-    try { sessionStorage.setItem(OPEN_KEY, u); } catch (err) { /* ignore */ }
+    if (u) openLink(u);
   });
 
   // one history entry per overlay, so the phone back gesture closes it
