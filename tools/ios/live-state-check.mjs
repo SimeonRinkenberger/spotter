@@ -273,14 +273,27 @@ console.log('PASS WidgetSummary key set, Mon..Sun week, today/next/last shapes, 
 
 // ---------- deep links ----------
 
-function overlay(calls) {
-  return { classList: { remove: () => {}, add: c => { if (c === 'open') calls.forward++; } } };
+function overlay(calls, id, open) {
+  return {
+    classList: {
+      remove: () => {},
+      add: c => { if (c === 'open') calls.forward++; },
+      // An overlay covers the tabs, so a tab link has to get past it. The page
+      // asks each one whether it is open by name.
+      contains: c => c === 'open' && !!open[id]
+    }
+  };
 }
 
-function linkContext() {
-  const calls = { detail: [], start: [], view: [], toast: [], forward: 0 };
+function linkContext(open) {
+  open = open || {};
+  const calls = { detail: [], start: [], view: [], toast: [], forward: 0, back: 0, closed: [] };
+  const sheets = (open.sheets || []).map(id => ({ id }));
   const ctx = vm.createContext({
-    wo: null, $: () => overlay(calls),
+    wo: null, $: id => overlay(calls, id, open),
+    document: { querySelectorAll: sel => (sel === '.sheet.open' ? sheets : []) },
+    history: { back: () => calls.back++ },
+    closeSheet: id => calls.closed.push(id),
     state: { user: { id: 'u1' }, workouts: [{ id: 'w1', title: 'Push day' }] },
     planWorkout: id => ctx.state.workouts.filter(w => w.id === id)[0],
     openDetail: w => calls.detail.push(w.id),
@@ -295,7 +308,7 @@ function linkContext() {
 
 let link = linkContext();
 vm.runInContext('openDeepLink("spotter://open")', link.ctx);
-assert.deepEqual(link.calls, { detail: [], start: [], view: [], toast: [], forward: 0 },
+assert.deepEqual(link.calls, { detail: [], start: [], view: [], toast: [], forward: 0, back: 0, closed: [] },
   'spotter://open does nothing on its own — the shell already brought the app up');
 
 link = linkContext();
@@ -327,6 +340,26 @@ assert.equal(link.calls.toast.length, 1);
 link = linkContext();
 ['library', 'plan', 'progress', 'pumpy'].forEach(t => vm.runInContext('openDeepLink("spotter://tab/' + t + '")', link.ctx));
 assert.deepEqual(link.calls.view, ['library', 'plan', 'progress', 'pumpy']);
+assert.equal(link.calls.back, 0, 'nothing is over the tabs, so nothing is closed');
+
+// A tab switched underneath an overlay is a tab nobody can see change.
+link = linkContext({ detail: true });
+vm.runInContext('openDeepLink("spotter://tab/plan")', link.ctx);
+assert.deepEqual(link.calls.view, ['plan']);
+assert.equal(link.calls.back, 1, 'a card over the tabs is closed the way its own control closes it');
+
+link = linkContext({ sheets: ['settingsheet'] });
+vm.runInContext('openDeepLink("spotter://tab/progress")', link.ctx);
+assert.deepEqual(link.calls.view, ['progress']);
+assert.deepEqual(link.calls.closed, ['settingsheet']);
+assert.equal(link.calls.back, 0, 'closeSheet spends the sheet entry itself');
+
+// Workout Mode is the exception: closing it would end a session nobody ended.
+link = linkContext({ detail: true, workout: true });
+vm.runInContext('openDeepLink("spotter://tab/plan")', link.ctx);
+assert.deepEqual(link.calls.view, ['plan']);
+assert.equal(link.calls.back, 0);
+assert.deepEqual(link.calls.closed, []);
 
 link = linkContext();
 ['', 'spotter://', 'spotter://tab/settings', 'spotter://nonsense/1', 'https://example.com/x',
@@ -354,11 +387,14 @@ console.log('PASS five deep-link routes, the already-running guard, a deleted ca
 // ---------- actions arriving from outside the page ----------
 
 function actionContext() {
-  const calls = { reps: [], weight: [], save: 0, done: 0, pause: 0, finish: 0, deep: [], toast: [], forward: 0 };
+  const calls = { reps: [], weight: [], save: 0, done: 0, pause: 0, finish: 0, deep: [], toast: [], forward: 0,
+    parked: [], unparked: 0 };
   const ctx = vm.createContext({
     wo: fixture(), restUntil: 1, setCtx: { idx: 0, reps: 0, weight: 0 },
-    $: () => overlay(calls),
-    state: { unit: 'kg' }, hist: {}, LB_PER_KG: 2.2046226,
+    $: id => overlay(calls, id, {}),
+    OPEN_KEY: 'spotter_open_pending',
+    sessionStorage: { setItem: (k, v) => calls.parked.push(v), removeItem: () => { calls.unparked++; } },
+    state: { unit: 'kg', user: { id: 'u1' } }, hist: {}, LB_PER_KG: 2.2046226,
     setReps: n => calls.reps.push(n),
     setWeight: n => calls.weight.push(n),
     saveSet: () => { calls.save++; },
@@ -369,7 +405,7 @@ function actionContext() {
     toast: t => calls.toast.push(t),
     Math, Object, String, Number, isFinite, parseInt
   });
-  vm.runInContext(pull(['isTimed', 'exKey', 'toUnit', 'setPrefill', 'woForward', 'liveAction']), ctx);
+  vm.runInContext(pull(['isTimed', 'exKey', 'toUnit', 'setPrefill', 'woForward', 'openLink', 'liveAction']), ctx);
   return { ctx, calls };
 }
 
@@ -405,6 +441,14 @@ act = actionContext();
 vm.runInContext('liveAction({ kind: "notification", source: "notification", id: "spotter://tab/plan" })', act.ctx);
 assert.deepEqual(act.calls.deep, ['spotter://tab/plan'], 'a reminder carries its destination as the id');
 assert.equal(act.calls.forward, 0);
+assert.equal(act.calls.unparked, 1, 'the copy the shell parked for a cold launch is spent, not left to replay');
+
+// The shell hands the link over before the page has an account to open it in:
+// a cold launch from a notification must park it rather than drop it.
+act = actionContext();
+vm.runInContext('state.user = null; liveAction({ kind: "notification", id: "spotter://tab/progress" })', act.ctx);
+assert.deepEqual(act.calls.deep, [], 'a signed-out page opens nothing');
+assert.deepEqual(act.calls.parked, ['spotter://tab/progress'], 'it waits for boot instead');
 
 act = actionContext();
 vm.runInContext('restUntil = 0; liveAction({ kind: "notification", id: "rest-end" })', act.ctx);
@@ -439,8 +483,12 @@ assert(src.includes('if (native && native.live) liveSync();'), 'saveDraft no lon
 assert(/addEventListener\("spotter:live-action", function \(e\) \{ liveAction\(/.test(src),
   'the live-action listener no longer calls liveAction');
 const openListener = src.slice(src.indexOf('addEventListener("spotter:open-url"'));
-assert(openListener.slice(0, 400).includes('openDeepLink(u)'), 'the open-url listener no longer routes');
-assert(openListener.slice(0, 400).includes('OPEN_KEY'), 'a URL arriving signed-out is no longer parked');
+assert(openListener.slice(0, 400).includes('openLink(u)'), 'the open-url listener no longer routes');
+// Both link doors — a URL open and a tapped notification — go through openLink,
+// which is what parks one that arrives before there is an account to open it in.
+assert(fn('openLink').includes('OPEN_KEY'), 'a link arriving signed-out is no longer parked');
+assert(/liveAction[\s\S]{0,900}openLink\(a\.id\)/.test(src),
+  'a notification no longer routes through the parking door');
 assert(src.includes('consumeOpen()'), 'boot never spends a parked launch URL');
 
 // stopRest() saves the draft and a draft save syncs the mirrors, so a teardown

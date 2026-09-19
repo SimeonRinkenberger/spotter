@@ -16199,8 +16199,16 @@ export const APP = String.raw`
   // instead of Progress (iPhone 16e). Park it exactly as a cold launch parks its
   // own URL and let consumeOpen() spend it when boot finishes.
   function openLink(u) {
-    if (state.user) { openDeepLink(u); return; }
-    try { sessionStorage.setItem(OPEN_KEY, u); } catch (e) { /* ignore */ }
+    if (!state.user) {
+      try { sessionStorage.setItem(OPEN_KEY, u); } catch (e) { /* ignore */ }
+      return;
+    }
+    // The shell parks a link-shaped action before it fires the event, because a
+    // cold launch delivers one before this page can listen. Handling it here is
+    // the same open, so the parked copy goes — otherwise the next launch would
+    // replay a link the reader already followed.
+    try { sessionStorage.removeItem(OPEN_KEY); } catch (e) { /* ignore */ }
+    openDeepLink(u);
   }
 
   // A cold launch parks its URL in the shell before any listener could exist.

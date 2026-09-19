@@ -30,6 +30,16 @@ export function createLiveState(plugin) {
   // Lock Screen the instant the app is resumed, before any page code has asked
   // for it, and the window event is what app.ts is listening for either way.
   plugin.addListener('action', a => {
+    // A retained action is handed over the moment this listener attaches, which
+    // on a cold launch from a notification is before app.js has even parsed —
+    // and a CustomEvent nobody is listening for is simply gone. That is why a
+    // tapped reminder opened the Library instead of Progress. A link-shaped one
+    // is parked under the same key a launch URL uses, so the page spends it once
+    // its library is up; app.ts clears the key when it handles the event itself,
+    // so the link is opened exactly once either way.
+    if (a && typeof a.id === 'string' && a.id.startsWith('spotter://')) {
+      try { sessionStorage.setItem('spotter_open_pending', a.id); } catch (e) { /* ignore */ }
+    }
     window.dispatchEvent(new CustomEvent('spotter:live-action', { detail: a }));
   });
 

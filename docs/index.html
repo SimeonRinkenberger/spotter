@@ -17623,14 +17623,18 @@ details.details-moving > :not(summary) {
     }
   }
   function openLink(u) {
-    if (state.user) {
-      openDeepLink(u);
+    if (!state.user) {
+      try {
+        sessionStorage.setItem(OPEN_KEY, u);
+      } catch (e) {
+      }
       return;
     }
     try {
-      sessionStorage.setItem(OPEN_KEY, u);
+      sessionStorage.removeItem(OPEN_KEY);
     } catch (e) {
     }
+    openDeepLink(u);
   }
   function consumeOpen() {
     var u = null;
