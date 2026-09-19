@@ -118,9 +118,12 @@ struct LockWidgetView: View {
         }
     }
 
-    /// "Push day · 42 min", or "Workout running", or the rest-day copy.
+    /// "Push day · 42 min", or "Workout running", or "Push day · done", or the
+    /// rest-day copy. The length stops being the useful half of the line once
+    /// the session it described has been logged.
     private var headline: String {
         if let running = glance.runningTitle { return running }
+        if glance.trainedToday, glance.today != nil { return glance.todayTitle + " · done" }
         guard let length = glance.todayLength else { return glance.todayTitle }
         return glance.todayTitle + " · " + length
     }
@@ -148,6 +151,8 @@ struct LockWidgetView: View {
             Text("Open Spotter")
         } else if let running = glance.runningTitle {
             Text(running + " · " + glance.slashText + " this week")
+        } else if glance.trainedToday {
+            Text("Done today · " + glance.slashText + " this week")
         } else {
             Text(glance.todayTitle + " today · " + glance.slashText + " this week")
         }

@@ -21,10 +21,10 @@ that happens on the way to the gym.
 | Family | Widget kind | Gallery name | Content | Tap |
 | --- | --- | --- | --- | --- |
 | `systemSmall` | `SpotterWeek` | **This week** | Seven day dots Mon..Sun (done = ember filled, planned-and-still-ahead = ember ring, otherwise a `line` track); "3 of 4" in rounded numerals over "this week"; footer "6-week streak" / "New streak". `atRisk` → numeral in ember-ink and the eyebrow reads "1 to go". | `spotter://tab/progress` |
-| `systemMedium` | `SpotterToday` | **Today** | **Left:** today's title (2 lines), "42 min", and a **Start** pill. Running → "Workout running" + **Resume**. Nothing today → "Rest day" (the plan has other days this week) or "Nothing planned" (it does not) + **Pick a workout**, with "Next · Push day · Thu" underneath when there is a next day. **Right:** the same dot column + "3 of 4" compact, separated by a hairline. | Pill: `spotter://start/<id>`, `spotter://resume` or `spotter://tab/library`. Background: `spotter://tab/plan` |
+| `systemMedium` | `SpotterToday` | **Today** | **Left:** eyebrow, today's title (2 lines), "42 min", and a **Start** pill. Running → "NOW" + "Workout running" + **Resume**. Already trained today → "DONE TODAY" in `good` + **Log another**. Nothing today → "Rest day" (the plan has other days this week) or "Nothing planned" (it does not) + **Pick a workout**, with "Next · Push day · Thu" underneath when there is a next day. **Right:** the same dot column + "3 of 4" compact, separated by a hairline. | Pill: `spotter://start/<id>`, `spotter://resume` or `spotter://tab/library`. Background: `spotter://tab/plan` |
 | `accessoryCircular` | `SpotterLock` | **Spotter** | `Gauge(.accessoryCircularCapacity)` filled done/goal with the **done count** in the middle and the goal under it. | `spotter://tab/progress` |
-| `accessoryRectangular` | `SpotterLock` | **Spotter** | Line 1 "Push day · 42 min" (or "Rest day" / "Nothing planned"); line 2 "3 of 4 this week · streak 6". | `spotter://tab/plan` |
-| `accessoryInline` | `SpotterLock` | **Spotter** | "Push day today · 3/4 this week" (one string; inline has exactly one tap target and no layout). | `spotter://tab/plan` |
+| `accessoryRectangular` | `SpotterLock` | **Spotter** | Line 1 "Push day · 42 min" (or "Push day · done", "Workout running", "Rest day", "Nothing planned"); line 2 "3 of 4 this week · streak 6", which becomes "3 of 4 · 1 to go" when the week is at risk and "… · as of Tue" when the summary is stale. | `spotter://tab/plan` |
+| `accessoryInline` | `SpotterLock` | **Spotter** | "Push day today · 3/4 this week", or "Done today · 4/4 this week" (one string; inline has exactly one tap target and no layout). | `spotter://tab/plan` |
 
 Three widget kinds rather than two: a kind that declares an accessory family appears in the
 Lock Screen gallery under its own `configurationDisplayName`, so folding the accessories into
@@ -124,9 +124,38 @@ state in an accessory family is distinguished by colour alone — "1 to go" is w
   points at. Taken: the gauge-says-one-thing rule above, and the decision *not* to ship
   buttons this wave.
 
+### Two fields the widgets read that the payload does not name
+
+- **`week.planned`** was added to `WidgetSummary` (Swift and `publishSummary()` together) so the
+  strip can draw the app's three dot states. It is `wk.dots.map(d => d === "plan")` — the very
+  row the Progress tab draws — so the widget and the tab cannot disagree about a Thursday.
+- **"trained today"** was *not* added. The dot row already answers it: Monday-first flags,
+  indexed by the entry's weekday. A field for something the payload already carries is a field
+  that can contradict itself.
+
+## How this was verified, and what was not
+
+The machine running this work cannot deliver a touch to the simulator (no accessibility grant
+for AppleScript, no simulator-panel permission, and `simctl openurl` raises iOS's own
+"Open in Spotter?" confirmation, which also needs a tap). So:
+
+**Verified.** The views themselves, by compiling the real `SpotterWidgets/**` sources into a
+side-loaded snapshot app on the iPhone 17 simulator and rendering every family at its real
+content size — small, medium, circular, rectangular, inline × light and dark × live,
+at-risk, running, done-today, stale, signed-out, empty, placeholder, and Dynamic Type XL and
+XXL. The payload rendered is not a hand fixture: a node script runs `app.ts`'s own
+`sendSummary()` over the test account's real rows. Separately, the app's write into
+`SharedStore` was watched in the simulator keychain — the `widget-summary` item's modification
+time moves when the app republishes and the session item's does not.
+
+**Not verified.** Anything that is WidgetKit's rather than the views': the gallery entries and
+their placement, the system's own content margins and `containerBackground`, the Lock Screen's
+vibrant rendering mode, the Home Screen tinted appearance, and a real tap routing through
+`widgetURL`/`Link` into `openDeepLink`. Those need one human action — granting the simulator
+panel access — and are listed in the agent report.
+
 ## Screenshots
 
-Captured on iPhone 17 (simulator 05366E18-C9F6-4B88-A674-B939DDFB9B81), listed in the agent
-report with absolute paths: Home Screen small + medium in light and dark, the Lock Screen
-circular / rectangular / inline trio, each tap target's landing screen, the post-session
-update, and the signed-out state.
+Rendered on iPhone 17 (simulator 05366E18-C9F6-4B88-A674-B939DDFB9B81); absolute paths are in
+the agent report. Contact sheets: Home Screen families and states, the Lock Screen trio, the
+Dynamic Type pass, the week completing after a session is logged.

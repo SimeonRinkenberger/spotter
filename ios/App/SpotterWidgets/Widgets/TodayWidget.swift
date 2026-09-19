@@ -54,11 +54,14 @@ struct TodayWidgetView: View {
 
     private var plan: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(glance.isActive ? "NOW" : "TODAY")
+            Text(glance.todayLabel)
                 .font(WidgetTheme.label(10))
                 .tracking(0.7)
-                .foregroundStyle(WidgetTheme.muted)
+                // The one place --good is spent: a day already answered. The
+                // app's Today card marks it with the same colour and word.
+                .foregroundStyle(glance.trainedToday && !glance.isActive ? WidgetTheme.good : WidgetTheme.muted)
                 .lineLimit(1)
+                .minimumScaleFactor(0.8)
             Spacer(minLength: 4)
             Text(glance.runningTitle ?? glance.todayTitle)
                 .font(WidgetTheme.display(19))

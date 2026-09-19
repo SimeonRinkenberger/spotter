@@ -247,12 +247,16 @@ struct Glance {
 
     enum Action {
         case start(String)
+        /// Today is already answered. Same route — the app's own Today card
+        /// keeps its start button too — with the app's own word on it.
+        case again(String)
         case resume
         case browse
 
         var title: String {
             switch self {
             case .start: return "Start"
+            case .again: return "Log another"
             case .resume: return "Resume"
             case .browse: return "Pick a workout"
             }
@@ -260,7 +264,7 @@ struct Glance {
 
         var url: URL? {
             switch self {
-            case .start(let id):
+            case .start(let id), .again(let id):
                 return URL(string: "spotter://start/" + (id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id))
             case .resume:
                 return URL(string: "spotter://resume")
@@ -274,8 +278,26 @@ struct Glance {
     /// plan says: starting a second one is the one thing the app will refuse.
     var action: Action {
         if isActive { return .resume }
-        if let today = today { return .start(today.id) }
+        if let today = today { return trainedToday ? .again(today.id) : .start(today.id) }
         return .browse
+    }
+
+    /// Was a session logged today? The dot row already knows — Monday first,
+    /// so the weekday maps straight onto it — and a field for something the
+    /// payload already carries is a field that can disagree with itself.
+    ///
+    /// False the moment the day has turned under the summary: those dots belong
+    /// to the day the app last looked, not to this one.
+    var trainedToday: Bool {
+        guard !dayTurned, let week = week else { return false }
+        let weekday = Calendar.current.component(.weekday, from: date)   // 1 = Sunday
+        return week.dayFlags[(weekday + 5) % 7]
+    }
+
+    /// The eyebrow over the today slot: what state today is in, in one word.
+    var todayLabel: String {
+        if isActive { return "NOW" }
+        return trainedToday ? "DONE TODAY" : "TODAY"
     }
 
     /// The line above the pill when a session is running. It replaces the plan
