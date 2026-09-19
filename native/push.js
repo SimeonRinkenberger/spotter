@@ -11,10 +11,9 @@
 // status() is the one call the page makes unprompted, so it is the one call that
 // must never reject. A shell built before the plugin existed has no `status` to
 // call and rejects; that is the same answer as a shell that has one and cannot
-// use it, and both arrive here as `available: false`.
+// use it, and both arrive here as `permission: 'unsupported'`.
 
 const UNAVAILABLE = {
-  available: false,
   permission: 'unsupported',
   environment: null,
   bundle: '',

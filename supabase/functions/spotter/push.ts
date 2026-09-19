@@ -790,11 +790,12 @@ type Live = { via: "web"; row: Sub } | { via: "apns"; row: Device };
  * the decisions without sending, which is what makes this safe to poke at.
  *
  * A user with a browser subscription AND the app installed gets one reminder on
- * each, because the caps are per row and a row is per grant of permission. That
- * is the same answer a phone and a laptop have always had; it is also why the
- * app's own reminders screen turns the browser's off when it enrols — see the
- * client. Folding the caps up to the user would silence whichever device the
- * tick happened to reach second, which is worse than a duplicate.
+ * each, because the caps are per row and a row is per grant of permission —
+ * exactly the answer a phone and a laptop have always had. Folding the caps up
+ * to the user would silence whichever device the tick happened to reach second,
+ * which is a reminder that stopped working; a duplicate is a reminder that
+ * arrived twice, and only one of those two is a bug the user cannot fix from the
+ * switches in front of them.
  */
 export async function runPushTick(nowMs = Date.now(), dry = false): Promise<{
   looked: number; sent: number; dropped: number; decisions: { user: string; kind: string; why: string }[];

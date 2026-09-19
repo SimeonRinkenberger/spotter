@@ -108,10 +108,10 @@ public class SpotterPushPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func status(_ call: CAPPluginCall) {
         NotificationsHost.shared.status { permission in
             call.resolve([
-                // The one thing an older shell cannot answer. `push.js` turns a
-                // rejection into `available: false`, so the page has a single
-                // question to ask whichever build it is running in.
-                "available": true,
+                // `permission` is also the availability signal: a shell built
+                // before this plugin existed rejects the call, and `push.js`
+                // turns that into "unsupported", so the page has one field to
+                // read whichever build it is running in.
                 "permission": permission.rawValue,
                 "environment": SpotterPushPlugin.environment,
                 "bundle": Bundle.main.bundleIdentifier ?? "",

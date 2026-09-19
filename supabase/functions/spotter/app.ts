@@ -14318,14 +14318,56 @@ export const APP = String.raw`
   // iOS only has Notification and PushManager AT ALL inside an installed web app
   // (16.4+, WebKit's Web Push for Home Screen web apps). In Safari proper the
   // switches would be a lie, so they dim and the note says what to do instead.
+  //
+  // The native shell has neither, and does not need them: it registers with APNs
+  // and writes a push_devices row instead of a push_subscriptions one. Same two
+  // reminders, same caps, same sender — a different address on the envelope. So
+  // every function below forks once, at the top, on the native flag, and the
+  // policy itself is never written twice.
 
-  var remind = { plan: false, risk: false, at: 1050, sub: null, key: null, busy: false };
+  var remind = { plan: false, risk: false, at: 1050, sub: null, key: null, busy: false,
+    cfg: null, apns: false, perm: "unsupported", env: "sandbox", bundle: "", tok: null };
 
-  function pushable() {
-    return !native && !!(navigator.serviceWorker && window.PushManager && window.Notification);
+  // The device token is the row's identity, and iOS reissues it — a restore from
+  // backup, a long enough gap between launches. So the enrolment is remembered
+  // here and re-checked at boot: a token that changed carries the preferences to
+  // a new row and drops the old one, which is the only way a reminder survives a
+  // rotation instead of going quiet for good.
+  // localStorage throws rather than returning null in private mode, and this is
+  // a convenience anyway — the row is the truth. Read with no argument, write a
+  // token, clear with null.
+  var TOKKEY = "spotter_push_token";
+
+  function enrolled(v) {
+    try {
+      if (v === undefined) return localStorage.getItem(TOKKEY);
+      if (v) localStorage.setItem(TOKKEY, v); else localStorage.removeItem(TOKKEY);
+    } catch (e) { /* private mode */ }
+    return null;
   }
 
-  function denied() { return pushable() && window.Notification.permission === "denied"; }
+  // Whatever the shell just told us about this phone. Both the boot check and
+  // the tap learn the same three facts, and a token can arrive with either.
+  function fromPlugin(s) {
+    if (!s) return null;
+    remind.perm = s.permission || remind.perm;
+    remind.env = s.environment || remind.env;
+    remind.bundle = s.bundle || remind.bundle;
+    return s;
+  }
+
+  function pushable() {
+    // Native: the shell has to be able to register (the plugin is there, the
+    // phone answered) AND the deployment has to hold an APNs signing key. Either
+    // half missing is the same honest note rather than a switch that does nothing.
+    if (native) return remind.perm !== "unsupported" && remind.apns;
+    return !!(navigator.serviceWorker && window.PushManager && window.Notification);
+  }
+
+  function denied() {
+    if (native) return remind.perm === "denied";
+    return pushable() && window.Notification.permission === "denied";
+  }
 
   function tzName() {
     try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; }
@@ -14339,16 +14381,32 @@ export const APP = String.raw`
   // One sentence saying what arrives and when, or the reason no switch here can
   // work. Never a second prompt: a refused permission is undoable only in the OS,
   // so this says where rather than offering a button that would be ignored.
+  var REMIND_OFF = "Reminders are off in your phone's Settings.";
+  var REMIND_WHAT = "Two at most and never more than one a day: today's plan at the hour nearest the " +
+    "time you pick, and one on the last day the week's goal is still reachable.";
+
   function remindNote() {
-    if (native) return "Native reminders are not configured in this development build.";
+    if (native) {
+      // No APNs key on the deployment is the same sentence it has always been:
+      // the switches are not a promise we can keep yet, and saying so is cheaper
+      // than a toggle that flips back.
+      if (!remind.apns) return "Native reminders are not configured in this development build.";
+      if (denied()) return REMIND_OFF;
+      // Once permission is held, the only thing left to say is where it is
+      // undone \u2014 which is the OS, not here. iOS Settings owns that switch and
+      // pointing at it is what every system app does.
+      if (remind.perm === "granted" || remind.perm === "provisional") {
+        return "Reminders arrive as notifications. You can change this in Settings \u203a Notifications.";
+      }
+      return REMIND_WHAT;
+    }
     if (!pushable()) {
       // The same two steps the install hint gives, because it is the same ask.
       return standalone() ? "This browser cannot show reminders."
         : "Install Spotter to your Home Screen to get reminders \u2014 tap Share, then Add to Home Screen.";
     }
-    if (denied()) return "Reminders are off in your phone's Settings.";
-    return "Two at most and never more than one a day: today's plan at the hour nearest the " +
-      "time you pick, and one on the last day the week's goal is still reachable.";
+    if (denied()) return REMIND_OFF;
+    return REMIND_WHAT;
   }
 
   function paintRemind() {
@@ -14368,34 +14426,75 @@ export const APP = String.raw`
   // What this browser is actually subscribed to, which is the only thing the
   // sender reads. Drawn first from the profile so the group never opens blank,
   // then corrected when the row lands.
+  // The preferences, wherever this install's row lives. Two tables and two
+  // identity columns, one set of three answers — writing the read twice is how
+  // the browser and the app would end up disagreeing about what "on" means.
+  function readRemind(table, col, value) {
+    return sb.from(table).select("remind_plan,remind_risk,remind_at")
+      .eq(col, value).maybeSingle().then(function (r) {
+        var w = r.data || {};
+        remind.plan = !!w.remind_plan;
+        remind.risk = !!w.remind_risk;
+        if (typeof w.remind_at === "number") remind.at = w.remind_at;
+        paintRemind();
+      });
+  }
+
   function loadRemind() {
     paintRemind();
+    if (native) { loadNative(); return; }
     if (!pushable()) return;
     navigator.serviceWorker.ready.then(function (reg) {
       return reg.pushManager.getSubscription();
     }).then(function (sub) {
       remind.sub = sub || null;
       if (!sub) { remind.plan = false; remind.risk = false; paintRemind(); return; }
-      return sb.from("push_subscriptions").select("remind_plan,remind_risk,remind_at")
-        .eq("endpoint", sub.endpoint).maybeSingle().then(function (r) {
-          var w = r.data || {};
-          remind.plan = !!w.remind_plan;
-          remind.risk = !!w.remind_risk;
-          if (typeof w.remind_at === "number") remind.at = w.remind_at;
-          paintRemind();
-        });
+      return readRemind("push_subscriptions", "endpoint", sub.endpoint);
     }).catch(paintRemind);
   }
 
-  // The public half of the VAPID pair, asked for once and kept. It comes from the
-  // function rather than the page so that rotating the pair is a secret change
-  // and a reload, not a deploy of the app.
+  // What the app was built against, and what the deployment can actually do: the
+  // public half of the VAPID pair for a browser, and whether there is an APNs
+  // signing key for a native install. One round trip answers both, from the
+  // function rather than the page, so that rotating either is a secret change
+  // and a reload rather than a deploy of the app. The PROMISE is cached, not the
+  // value, so two taps in a row cannot race two requests.
   function pushKey() {
-    if (remind.key) return Promise.resolve(remind.key);
-    return api("push/config", { method: "GET" }).then(function (r) {
-      remind.key = (r && r.status === "ok" && r.configured && r.key) || null;
-      return remind.key;
-    }, function () { return null; });
+    if (!remind.cfg) {
+      remind.cfg = api("push/config", { method: "GET" }).then(function (r) {
+        var ok = r && r.status === "ok";
+        remind.key = (ok && r.configured && r.key) || null;
+        remind.apns = !!(ok && r.apns);
+      }, function () { /* offline: leave the switches exactly as they were */ });
+    }
+    return remind.cfg.then(function () { return remind.key; });
+  }
+
+  // What this install is enrolled as. Asked at boot because a device token can
+  // change while the app was not running, and nothing announces that but a fresh
+  // registration.
+  function loadNative() {
+    var was = enrolled();
+    Promise.all([pushKey(), native.push.status()]).then(function (both) {
+      fromPlugin(both[1]);
+      paintRemind();
+      // Registering without an existing enrolment would ask the phone for a
+      // token nobody wants, and on an undetermined permission it would put the
+      // system sheet on screen at launch — the one thing this must never do.
+      if (!was || !pushable() || denied()) return null;
+      return native.push.register().catch(function () { return null; });
+    }).then(function (g) {
+      if (!g || !g.token) return null;
+      remind.tok = g.token;
+      return readRemind("push_devices", "token", was).then(function () {
+        // Rotated. The preferences go under the new address BEFORE the old row
+        // goes, so a failure between the two leaves a reminder that still
+        // arrives rather than one that has quietly stopped.
+        if (g.token === was) return;
+        if (remind.plan || remind.risk) saveRemind();
+        sb.from("push_devices").delete().eq("token", was);
+      });
+    }).catch(paintRemind);
   }
 
   function keyBytes(k) {
@@ -14414,6 +14513,16 @@ export const APP = String.raw`
   }
 
   function subscribeRemind() {
+    // Native: the permission sheet is raised by the plugin, from inside the same
+    // tap, for the same reason — iOS gives an app one chance to ask and a sheet
+    // nobody asked for is how that chance gets spent on a "Don't Allow".
+    if (native) {
+      return native.push.register().then(function (g) {
+        if (!fromPlugin(g) || !g.granted || !g.token) return null;
+        remind.tok = g.token;
+        return g;
+      });
+    }
     return askPermission().then(function (p) {
       return p === "granted" ? pushKey() : null;
     }).then(function (key) {
@@ -14434,21 +14543,48 @@ export const APP = String.raw`
   // user's own row and holds no secret. The ledger columns the sender keeps
   // (last_sent_at, the weekly count) are not grantable to a browser and are not
   // sent from here.
+  function remindSaved(r) {
+    if (r.error) toast("That reminder did not save. Try again in a moment.");
+  }
+
   function saveRemind() {
+    if (native) {
+      if (!remind.tok) return;
+      enrolled(remind.tok);
+      // The same grant as the browser's row, one column wider: the bundle and
+      // the environment travel with the token because APNs binds a token to
+      // both, and a row that does not remember them is a 400 an hour later that
+      // nobody can explain.
+      sb.from("push_devices").upsert({
+        user_id: state.user.id, token: remind.tok, bundle: remind.bundle,
+        env: remind.env, tz: tzName(), remind_plan: remind.plan, remind_risk: remind.risk,
+        remind_at: remind.at, app_version: VERSION, updated_at: new Date().toISOString()
+      }, { onConflict: "token" }).then(remindSaved);
+      return;
+    }
     var sub = remind.sub, k = sub ? sub.toJSON().keys : null;
     if (!k) return;
     sb.from("push_subscriptions").upsert({
       user_id: state.user.id, endpoint: sub.endpoint, p256dh: k.p256dh, auth: k.auth,
       tz: tzName(), remind_plan: remind.plan, remind_risk: remind.risk, remind_at: remind.at
-    }, { onConflict: "endpoint" }).then(function (r) {
-      if (r.error) toast("That reminder did not save. Try again in a moment.");
-    });
+    }, { onConflict: "endpoint" }).then(remindSaved);
   }
 
   // Off costs nothing and leaves nothing behind: the row goes, and so does the
   // browser's subscription, so the push service stops holding an endpoint for
   // somebody who said no.
   function offRemind() {
+    if (native) {
+      var tok = remind.tok;
+      remind.tok = null;
+      remind.sub = null;
+      enrolled(null);
+      // Tell iOS to stop minting tokens for this install as well as dropping the
+      // row: Off should leave nothing behind on either side of the wire.
+      native.push.unregister();
+      if (tok) sb.from("push_devices").delete().eq("token", tok);
+      return;
+    }
     var sub = remind.sub;
     remind.sub = null;
     if (!sub) return;
@@ -14496,7 +14632,7 @@ export const APP = String.raw`
     if (!v) { paintRemind(); return; }
     remind.at = Math.max(0, Math.min(1439, Number(v[1]) * 60 + Number(v[2])));
     saveSettings();
-    if (remind.sub) saveRemind();
+    if (remind.sub || remind.tok) saveRemind();
   }
 
   // ---------- the account ----------
