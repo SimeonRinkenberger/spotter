@@ -133,7 +133,7 @@ function context(over) {
 
 const NOT_CONFIGURED = 'Native reminders are not configured in this development build.';
 const SETTINGS = 'Reminders arrive as notifications. You can change this in Settings › Notifications.';
-const OFF = 'Reminders are off in your phone’s Settings.'.replace('’', "'");
+const OFF = "Reminders are off in your phone's Settings.";
 
 // ---------- the gate and the three sentences ----------
 
@@ -174,6 +174,31 @@ const OFF = 'Reminders are off in your phone’s Settings.'.replace('’', "'");
   assert.equal(vm.runInContext('pushable()', ctx), false);
 }
 
+// ---------- the browser path is untouched ----------
+
+// The whole native branch hangs off one `native` flag, so the one thing that
+// must be proved about the web app is that nothing moved: with no shell, the
+// gate is still the three WebKit objects and the copy is still the install hint.
+{
+  const { ctx } = context({});
+  vm.runInContext('native = null;', ctx);
+  assert.equal(vm.runInContext('pushable()', ctx), false,
+    'a browser with no PushManager must not offer the switches');
+  assert.match(vm.runInContext('remindNote()', ctx), /^This browser cannot show reminders/);
+  vm.runInContext('navigator.serviceWorker = {}; window.PushManager = {}; window.Notification = { permission: "default" };', ctx);
+  assert.equal(vm.runInContext('pushable()', ctx), true,
+    'an installed web app must still be offered the switches');
+  assert.equal(vm.runInContext('denied()', ctx), false);
+  assert.match(vm.runInContext('remindNote()', ctx), /Two at most and never more than one a day/);
+  vm.runInContext('window.Notification.permission = "denied";', ctx);
+  assert.equal(vm.runInContext('denied()', ctx), true);
+  assert.equal(vm.runInContext('remindNote()', ctx), OFF);
+  // The APNs flag is a native concept and must not be able to reach a browser.
+  vm.runInContext('remind.apns = false;', ctx);
+  assert.equal(vm.runInContext('pushable()', ctx), true,
+    'an unkeyed APNs deployment must not switch off Web Push');
+}
+
 // ---------- the row the page writes ----------
 
 const DEVICE_COLUMNS = ['app_version', 'bundle', 'env', 'remind_at', 'remind_plan',
@@ -192,7 +217,7 @@ const DEVICE_COLUMNS = ['app_version', 'bundle', 'env', 'remind_at', 'remind_pla
   assert.deepEqual(Object.keys(write.row).sort(), DEVICE_COLUMNS,
     'the upsert payload drifted from the grant in the migration');
   assert.equal(write.row.remind_plan, true);
-  assert.equal(write.row.tz, 'Europe/Zurich', 'the row carries the phone’s own zone'.replace('’', "'"));
+  assert.equal(write.row.tz, 'Europe/Zurich', "the row carries the phone's own zone");
   assert.equal(store.spotter_push_token, 'abc123', 'the enrolment is remembered so a boot can re-check it');
 
   // Every column the page sends must be one the migration grants, or the write
@@ -253,7 +278,7 @@ const DEVICE_COLUMNS = ['app_version', 'bundle', 'env', 'remind_at', 'remind_pla
   const read = log.findIndex(e => e.op === 'select');
   const wrote = log.findIndex(e => e.op === 'upsert');
   const deleted = log.findIndex(e => e.op === 'delete');
-  assert(read >= 0 && log[read].value === 'OLD', 'the preferences are read from the OLD token’s row'.replace('’', "'"));
+  assert(read >= 0 && log[read].value === 'OLD', "the preferences are read from the OLD token's row");
   assert(wrote >= 0, 'a rotated token did not write the preferences to the new row');
   assert.equal(log[wrote].row.token, 'NEW');
   assert(deleted > wrote,
@@ -292,8 +317,7 @@ assert(!/func load\(\)/.test(swift), 'nothing in this plugin may run at launch')
 assert(swift.includes('String(format: "%02x"'),
   'the device token must be lowercase hex, which is what APNs wants back in the path');
 assert(!swift.includes('"configured"'),
-  'configured is the deployment’s answer, not the phone’s — it comes from /api/push/config'
-    .replace(/’/g, "'"));
+  "configured is the deployment's answer, not the phone's - it comes from /api/push/config");
 assert(bridge.includes("permission: 'unsupported'"),
   'push.js must turn a missing plugin into the same shape app.ts reads');
 
@@ -353,6 +377,7 @@ for (const name of ['reminder-plan', 'reminder-risk']) {
   assert.equal(f.aps.url, undefined, 'a custom key inside aps is dropped by APNs');
 }
 
-console.log('PASS native reminders: the three-state gate and its copy, the push_devices payload against the ' +
-  'migration’s grant, Off, a cold boot that asks nothing, token rotation ordering, the Swift permission ' +
-  'gate, the cron guard over both tables, the entitlement switch and the simctl fixtures.'.replace(/’/g, "'"));
+console.log("PASS native reminders: the three-state gate and its copy, the untouched browser path, the " +
+  "push_devices payload against the migration's grant, Off, a cold boot that asks the phone for nothing, " +
+  "token rotation ordering, the Swift permission gate, the cron guard over both tables, the entitlement " +
+  "switch and the simctl fixtures.");

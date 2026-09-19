@@ -92,7 +92,13 @@ public class SpotterPushPlugin: CAPPlugin, CAPBridgedPlugin {
         // Lowercase hex, which is the form APNs itself wants back in the request
         // path. `data.description` used to be the shortcut for this and has
         // printed "{length = 32, bytes = 0x...}" since iOS 13.
-        settle(data.map { String(format: "%02x", $0) }.joined(), nil)
+        let hex = data.map { String(format: "%02x", $0) }.joined()
+        // The length and nothing else. "Did a token arrive at all" is the first
+        // question of every push investigation and the only one this side can
+        // answer; the token itself is an address for somebody's phone and does
+        // not belong in a log anyone can read over a shoulder.
+        NSLog("Spotter push: APNs issued a %d-character device token", hex.count)
+        settle(hex, nil)
     }
 
     /// Called by AppDelegate when registration fails — which is every build
