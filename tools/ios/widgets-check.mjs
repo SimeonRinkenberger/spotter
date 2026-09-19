@@ -129,9 +129,12 @@ for (const raw of urls) {
 
 // One widgetURL per view hierarchy: Apple documents more than one as undefined
 // behaviour, and the failure is a tap that goes somewhere at random.
+// A Live Activity is the exception: its Lock Screen view and its DynamicIsland
+// builder are two presentations, and Apple's own sample sets a widgetURL on each.
 for (const [file, src] of Object.entries(sources)) {
   const count = (src.match(/\.widgetURL\(/g) || []).length;
-  assert(count <= 1, file + ' sets widgetURL ' + count + ' times; the behaviour of more than one is undefined');
+  const limit = /ActivityConfiguration\(/.test(src) ? 2 : 1;
+  assert(count <= limit, file + ' sets widgetURL ' + count + ' times; the behaviour of more than one per presentation is undefined');
 }
 // Every widget kind has a background destination.
 for (const file of declared.keys()) {
