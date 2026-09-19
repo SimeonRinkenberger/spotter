@@ -227,6 +227,11 @@ private struct IslandClock: View {
 /// it is driven by the deadline, so like every other clock here it advances
 /// without an update; the rest of the time it is the share of planned sets that
 /// are logged.
+///
+/// Only the countdown is a ProgressView. Every fixed-value bar is two capsules,
+/// drawn by hand — a linear ProgressView squeezed into a 5 pt frame ignored its
+/// tint and came out system yellow in every render, and a bar that is not ember
+/// is not Spotter's. Two capsules cannot drift.
 private struct PhaseBar: View {
     let state: WorkoutActivityAttributes.ContentState
 
@@ -234,7 +239,7 @@ private struct PhaseBar: View {
         let look = PhaseLook(state: state)
         Group {
             if look.done {
-                Capsule().fill(WidgetTheme.good).frame(height: 5)
+                Bar(fraction: 1, tint: WidgetTheme.good)
             } else if let rest = state.rest, look.counting, let span = span(rest) {
                 ProgressView(timerInterval: span, countsDown: true) {
                     EmptyView()
@@ -244,13 +249,9 @@ private struct PhaseBar: View {
                 .progressViewStyle(.linear)
                 .tint(WidgetTheme.ember)
             } else if let rest = state.rest, look.paused {
-                ProgressView(value: min(1, max(0, rest.remaining() / max(rest.totalInterval, 1))))
-                    .progressViewStyle(.linear)
-                    .tint(WidgetTheme.muted)
+                Bar(fraction: rest.remaining() / max(rest.totalInterval, 1), tint: WidgetTheme.muted)
             } else {
-                ProgressView(value: state.progress.fraction)
-                    .progressViewStyle(.linear)
-                    .tint(WidgetTheme.ember)
+                Bar(fraction: state.progress.fraction, tint: WidgetTheme.ember)
             }
         }
         .frame(height: 5)
@@ -263,6 +264,22 @@ private struct PhaseBar: View {
         let start = end.addingTimeInterval(-max(rest.totalInterval, 1))
         guard start < end else { return nil }
         return start...end
+    }
+}
+
+/// A track and a fill, both capsules, with the fill clamped into the track.
+private struct Bar: View {
+    let fraction: Double
+    let tint: Color
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule().fill(WidgetTheme.sand)
+                Capsule().fill(tint)
+                    .frame(width: geo.size.width * min(1, max(0, fraction)))
+            }
+        }
     }
 }
 
@@ -290,7 +307,7 @@ private struct ActionButton: View {
         }
         .foregroundStyle(WidgetTheme.onEmber)
         .frame(maxWidth: .infinity)
-        .frame(height: 32)
+        .frame(height: 30)
         .background(WidgetTheme.ember, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 }
@@ -350,7 +367,9 @@ private struct MinimalDial: View {
 
 // MARK: - Lock Screen
 
-private struct LockScreenWorkout: View {
+// Internal rather than private: the App target compiles this file too, so a
+// DEBUG-only harness can render this exact card to a PNG. See LiveActivityShots.
+struct LockScreenWorkout: View {
     let attributes: WorkoutActivityAttributes
     let state: WorkoutActivityAttributes.ContentState
 
@@ -358,13 +377,24 @@ private struct LockScreenWorkout: View {
     // surfaces identical — but a fixed point size ignores Dynamic Type
     // completely. Scaling them by the body metric restores it, and clamping the
     // factor at 1.25 keeps the card inside the 160 pt the system truncates at.
-    @ScaledMetric(relativeTo: .body) private var typeScale: CGFloat = 1
+    // Scaled from 100, not from 1: UIFontMetrics rounds, and asking it to scale
+    // a unit returns 1.0 at every Dynamic Type size — which looked like working
+    // Dynamic Type support right up until two renders at different sizes came
+    // out byte-identical.
+    @ScaledMetric(relativeTo: .body) private var typeScale: CGFloat = 100
 
-    private var scale: CGFloat { min(max(typeScale, 1), 1.25) }
+    private var scale: CGFloat { min(max(typeScale / 100, 1), 1.25) }
+
+    /// Two lines for a long movement name is worth the height at ordinary type
+    /// sizes and is not at large ones: "Bulgarian Split Squat (Rear Foot
+    /// Elevated)" wrapped at 1.25x measured 166 pt, past the 160 the system
+    /// truncates at — and what the system truncates is the bottom of the card,
+    /// which is the button. One shrunk line keeps the whole card.
+    private var heroLines: Int { scale > 1.12 ? 1 : 2 }
 
     var body: some View {
         let look = PhaseLook(state: state)
-        VStack(alignment: .leading, spacing: 9) {
+        VStack(alignment: .leading, spacing: 7) {
             HStack(alignment: .firstTextBaseline) {
                 Text(attributes.title.uppercased())
                     .font(WidgetTheme.label(10.5 * scale))
@@ -383,7 +413,7 @@ private struct LockScreenWorkout: View {
                     Text(look.primary)
                         .font(WidgetTheme.display(19 * scale))
                         .foregroundStyle(WidgetTheme.ink)
-                        .lineLimit(2)
+                        .lineLimit(heroLines)
                         .minimumScaleFactor(0.65)
                     if let detail = look.detail {
                         Text(detail)
@@ -403,7 +433,10 @@ private struct LockScreenWorkout: View {
             if let action = look.action { ActionButton(action: action) }
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 14)
+        // 11 rather than the 14 this started at: a two-line movement name at
+        // Dynamic Type XL is the tallest this card can get, and it has to clear
+        // the 160 pt the system truncates at with room to spare.
+        .padding(.vertical, 11)
         // Tapping the card resumes the session rather than dropping the user on
         // whichever tab the app was last left on.
         .widgetURL(URL(string: "spotter://resume"))

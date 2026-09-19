@@ -48,6 +48,10 @@ final class LiveActivitySink: LiveStateSink {
         // is pending belongs to a session this object knows nothing about.
         NotificationsHost.shared.cancel(id: Self.nudgeID)
         reconcile()
+        #if DEBUG
+        runFixtureIfAsked()
+        LiveActivityShots.runIfAsked()
+        #endif
     }
 
     // MARK: - Buttons
@@ -286,8 +290,14 @@ final class LiveActivitySink: LiveStateSink {
         let deadline = rest.deadline
         // Never asks. Permission is the web app's to request, from a tap, in
         // the one moment the nudge is about.
+        //
+        // `.provisional` counts. Spotter never requests a provisional
+        // authorization today, so in production this reads as "granted only" —
+        // but if one ever arrives, a rest that lands quietly in Notification
+        // Centre is strictly better than a rest that says nothing, and a
+        // predicate that silently dropped it would be a bug nobody could see.
         NotificationsHost.shared.status { status in
-            guard status == .granted else { return }
+            guard status == .granted || status == .provisional else { return }
             NotificationsHost.shared.schedule(id: Self.nudgeID,
                                               title: "Rest over",
                                               body: body,
@@ -313,3 +323,122 @@ final class LiveActivitySink: LiveStateSink {
         return parts.joined(separator: ", ")
     }
 }
+
+#if DEBUG
+import UserNotifications
+
+// A way to see the Lock Screen card without an account.
+//
+// This exists because the Live Activity is only reachable through the web
+// engine, the web engine is only reachable behind a sign-in, and the machine
+// this was built on could not send a tap or a keystroke to the Simulator — no
+// accessibility permission for osascript, no simulator-control permission for
+// the agent. Every visual state in design/native/live-activity.md was verified
+// through this door instead.
+//
+// It is not a back door into production behaviour. It is compiled out of
+// Release entirely, it starts nothing unless an environment variable names a
+// state, and it drives the SAME `update(_:)` / `end(_:)` the bridge calls — so
+// what it renders is the real sink, the real coalescer and the real widget, not
+// a preview of them.
+//
+//   SIMCTL_CHILD_SPOTTER_LIVE_FIXTURE=rest xcrun simctl launch <udid> <bundle id>
+//
+// States: work · rest · paused · timed · complex · done · ghost
+// `ghost` starts a card and then wipes the stored state, which is the shape the
+// app is in after being killed mid-session; relaunching with no variable set
+// must end that card rather than adopt it.
+extension LiveActivitySink {
+    func runFixtureIfAsked() {
+        let env = ProcessInfo.processInfo.environment
+        guard let name = env["SPOTTER_LIVE_FIXTURE"], !name.isEmpty else { return }
+
+        // A provisional authorization is the only one obtainable without a tap.
+        // It delivers quietly to Notification Centre, which is enough to prove
+        // the nudge is scheduled against the right deadline with the right copy.
+        if env["SPOTTER_LIVE_FIXTURE_NOTIFY"] != nil {
+            UNUserNotificationCenter.current()
+                .requestAuthorization(options: [.alert, .sound, .provisional]) { granted, _ in
+                    NSLog("Spotter fixture: provisional notifications granted=%@", String(granted))
+                }
+        }
+
+        // Activity.request is only legal from the foreground, and the scene is
+        // still connecting when the view controller is built.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            guard let self = self else { return }
+            guard name != "done" else {
+                self.drive(Self.fixture("work"))
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                    self.end(LiveSummary(v: 1, title: "Lock Screen Test",
+                                         startedAt: SpotterISO8601.string(Date().addingTimeInterval(-2530)),
+                                         endedAt: SpotterISO8601.string(Date()),
+                                         sets: 18, prs: 2, completed: true))
+                }
+                return
+            }
+            let state = Self.fixture(name == "ghost" ? "rest" : name)
+            self.drive(state)
+            if name == "ghost" {
+                // The card stays; the engine's record of it does not.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                    SharedStore.remove(key: SharedStore.Key.liveState)
+                    NSLog("Spotter fixture: stored live-state wiped, card orphaned")
+                }
+            }
+        }
+    }
+
+    /// Mirror what LiveStatePlugin.update does on the way past — persist, then
+    /// fan out — so launch reconciliation sees what it would really see.
+    private func drive(_ state: LiveState) {
+        try? SharedStore.writeJSON(state, key: SharedStore.Key.liveState)
+        update(state)
+    }
+
+    private static func fixture(_ name: String) -> LiveState {
+        let started = Date().addingTimeInterval(-1090)
+        let rest = LiveState.RestState(until: Date().addingTimeInterval(60).timeIntervalSince1970 * 1000,
+                                       total: 60_000, held: 0)
+        var state = LiveState(v: 1,
+                              title: "Lock Screen Test",
+                              startedAt: SpotterISO8601.string(started),
+                              phase: .work,
+                              exercise: "Goblet Squat",
+                              block: "Main",
+                              set: LiveState.SetPosition(index: 2, total: 3),
+                              target: "10 reps",
+                              weight: "24 kg",
+                              rest: nil,
+                              next: "Bench Press",
+                              progress: LiveState.Progress(done: 4, total: 10))
+        switch name {
+        case "rest":
+            state.phase = .rest
+            state.set = LiveState.SetPosition(index: 3, total: 3)
+            state.rest = rest
+        case "paused":
+            state.phase = .rest
+            state.set = LiveState.SetPosition(index: 3, total: 3)
+            state.rest = LiveState.RestState(until: rest.until, total: 60_000, held: 23_000)
+        case "timed":
+            state.phase = .timed
+            state.exercise = "Plank"
+            state.set = nil
+            state.target = "40 s"
+            state.weight = nil
+            state.rest = LiveState.RestState(until: Date().addingTimeInterval(40).timeIntervalSince1970 * 1000,
+                                             total: 40_000, held: 0)
+        case "complex":
+            state.phase = .complex
+            state.exercise = "Kettlebell Swing"
+            state.block = "Round 2"
+            state.set = nil
+            state.target = "12 reps"
+        default:
+            break
+        }
+        return state
+    }
+}
+#endif
