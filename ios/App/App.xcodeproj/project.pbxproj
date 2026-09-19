@@ -62,6 +62,8 @@
 		A9F100000000000000000401 /* SpotterWidgets.appex in Copy Files */ = {isa = PBXBuildFile; fileRef = A9F100000000000000000515 /* SpotterWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		A9F100000000000000000402 /* SpotterWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = A9F100000000000000000516 /* SpotterWatch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		2B84CC4962EFE87E552A6E32 /* SpotterWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74F4F673DB470E9A6B97CDA6 /* SpotterWidgets.swift */; };
+		64F23E3BEDF7EDA9CEF0D829 /* LiveActivityIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 944E10BCF99404B5D85EFE62 /* LiveActivityIntents.swift */; };
+		279C89F0A4F7503E164C4A08 /* LiveActivityIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 944E10BCF99404B5D85EFE62 /* LiveActivityIntents.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -113,6 +115,7 @@
 		A9F100000000000000000515 /* SpotterWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = SpotterWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		A9F100000000000000000516 /* SpotterWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SpotterWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		74F4F673DB470E9A6B97CDA6 /* SpotterWidgets.swift */ = {isa = PBXFileReference; name = "SpotterWidgets.swift"; path = "SpotterWidgets/SpotterWidgets.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; };
+		944E10BCF99404B5D85EFE62 /* LiveActivityIntents.swift */ = {isa = PBXFileReference; name = "LiveActivityIntents.swift"; path = "Shared/LiveActivityIntents.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -221,6 +224,7 @@
 		A9F100000000000000000601 /* Live Session */ = {
 			isa = PBXGroup;
 			children = (
+				944E10BCF99404B5D85EFE62 /* LiveActivityIntents.swift */,
 				A9F100000000000000000501 /* LiveState.swift */,
 				A9F100000000000000000502 /* WidgetSummary.swift */,
 				A9F100000000000000000503 /* WorkoutActivityAttributes.swift */,
@@ -473,6 +477,7 @@
 				A9F100000000000000000107 /* WatchLinkSink.swift in Sources */,
 				A9F100000000000000000108 /* NotificationsHost.swift in Sources */,
 				A9F100000000000000000109 /* SpotterPushPlugin.swift in Sources */,
+				64F23E3BEDF7EDA9CEF0D829 /* LiveActivityIntents.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -502,6 +507,7 @@
 				A9F100000000000000000206 /* SpotterWidgetsBundle.swift in Sources */,
 				A9F100000000000000000207 /* WorkoutLiveActivity.swift in Sources */,
 				2B84CC4962EFE87E552A6E32 /* SpotterWidgets.swift in Sources */,
+				279C89F0A4F7503E164C4A08 /* LiveActivityIntents.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
