@@ -29,6 +29,9 @@ class SpotterViewController: CAPBridgeViewController {
         bridge?.registerPluginInstance(SpotterPushPlugin())
         LiveStatePlugin.register(sink: liveActivitySink)
         LiveStatePlugin.register(sink: watchLinkSink)
+        // The bridge has just taken the notification delegate for its own router.
+        // Take it back — see NotificationsHost.install().
+        NotificationsHost.shared.install()
     }
 
     override func viewDidLoad() {

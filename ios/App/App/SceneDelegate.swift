@@ -1,5 +1,6 @@
 import UIKit
 import Capacitor
+import UserNotifications
 
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     var window: UIWindow?
@@ -12,6 +13,15 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         window?.makeKeyAndVisible()
 
         SceneDelegateProxy.shared.scene(scene, willConnectTo: session, options: connectionOptions)
+
+        // A tap that launches the app resolves its notification here, not through
+        // any delegate: UNUserNotificationCenter hands a launch response to the
+        // scene, and by the time one of ours could answer, Capacitor's router has
+        // the delegate anyway. This is the only door that a cold launch from a
+        // reminder comes through.
+        if let response = connectionOptions.notificationResponse {
+            NotificationsHost.shared.handle(response)
+        }
     }
 
     func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {

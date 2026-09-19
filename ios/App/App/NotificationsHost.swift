@@ -37,9 +37,30 @@ final class NotificationsHost: NSObject, UNUserNotificationCenterDelegate {
 
     private var center: UNUserNotificationCenter { UNUserNotificationCenter.current() }
 
-    /// Called from AppDelegate.didFinishLaunching. Delegate only — no request.
+    /// Claim the notification delegate. Called from AppDelegate.didFinishLaunching
+    /// — early enough for a launch response — and AGAIN from
+    /// SpotterViewController.capacitorDidLoad.
+    ///
+    /// The second call is not belt and braces. Capacitor installs its own
+    /// `CAPNotificationRouter` as the delegate when the bridge loads, which
+    /// silently replaces this one: measured on the iPhone 16e, six seconds after
+    /// launch the delegate read back as `CAPNotificationRouter`, and every tap on
+    /// a Spotter notification went nowhere — no route to the Plan tab, no route
+    /// out of a rest-end nudge. Taking it back is safe precisely because that
+    /// router exists to feed notification-handling plugins and this build has
+    /// none: no local-notifications plugin, no push-notifications plugin. If one
+    /// is ever added, it and this have to be reconciled rather than race.
+    ///
+    /// Delegate only — no permission is requested here. That is asked for in
+    /// Workout Mode, in context, from a tap.
     func install() {
         center.delegate = self
+    }
+
+    /// The response that launched the app, handed over by the scene: a cold
+    /// launch resolves it before any delegate of ours can be asked.
+    func handle(_ response: UNNotificationResponse) {
+        route(response)
     }
 
     // MARK: - Permission
@@ -132,9 +153,13 @@ final class NotificationsHost: NSObject, UNUserNotificationCenterDelegate {
         // spotter:// link; a local one has only its own identifier. The web app
         // can tell the two apart by shape, and routing a link is strictly more
         // useful than routing the string "rest-end".
+        route(response)
+        completionHandler()
+    }
+
+    private func route(_ response: UNNotificationResponse) {
         let link = response.notification.request.content.userInfo["url"] as? String
         let id = (link?.isEmpty == false) ? link : response.notification.request.identifier
         LiveStatePlugin.deliver(LiveAction(kind: .notification, source: .notification, id: id))
-        completionHandler()
     }
 }
