@@ -7,7 +7,11 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Override point for customization after application launch.
+        // Claim the notification delegate before the first notification can be
+        // delivered, which is the only way a tap on one is ever routed back into
+        // the app. This asks for nothing and shows nothing: permission is
+        // requested from inside Workout Mode, in context, never at launch.
+        NotificationsHost.shared.install()
         return true
     }
 
@@ -31,6 +35,21 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     func applicationWillTerminate(_ application: UIApplication) {
         // Called when the application is about to terminate. Save data if appropriate. See also applicationDidEnterBackground:.
+    }
+
+    // APNs, for when there is an APNs. Nothing in this build calls
+    // registerForRemoteNotifications — a Personal Team is not issued the
+    // aps-environment entitlement — so on today's signing the failure callback
+    // is the only one that can fire, and it stays quiet. Both are wired now so
+    // the push work is a plugin change rather than an app-lifecycle change.
+    func application(_ application: UIApplication,
+                     didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        SpotterPushPlugin.tokenReceived(deviceToken)
+    }
+
+    func application(_ application: UIApplication,
+                     didFailToRegisterForRemoteNotificationsWithError error: Error) {
+        SpotterPushPlugin.tokenFailed(error)
     }
 
     func application(_ application: UIApplication,

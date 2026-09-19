@@ -64,5 +64,34 @@
 	<true/>
 	<key>SpotterKeychainGroup</key>
 	<string>$(AppIdentifierPrefix)$(SPOTTER_BUNDLE_ID)</string>
+	<!-- The App Group switch, off. A Personal Team is issued no App Groups, so
+	     the app and its extensions share the keychain group above instead. Fill
+	     this in on both Info.plists once the paid account exists and SharedStore
+	     moves to UserDefaults with no code change. -->
+	<key>SpotterAppGroup</key>
+	<string></string>
+	<!-- Live Activities are declared, not started at launch: ActivityKit refuses
+	     to run without this key, and the frequent-updates key stays false
+	     because the session pushes an update per engine change, not per second. -->
+	<key>NSSupportsLiveActivities</key>
+	<true/>
+	<key>NSSupportsLiveActivitiesFrequentUpdates</key>
+	<false/>
+	<!-- spotter:// is how a widget, a Live Activity button or a notification
+	     names a destination inside the app. Capacitor's scene proxy already
+	     forwards the open to the web layer; this only claims the scheme. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>app.spotter</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>spotter</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

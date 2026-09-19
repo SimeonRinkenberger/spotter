@@ -36,6 +36,32 @@
 		A91D72E3076443E9A17A80D0 /* SharedLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 888CA8D430694205B0923980 /* SharedLink.swift */; };
 		6BDD45E8985D41DDA9F16612 /* ShareCredential.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AB54298CCDB4359AF92B825 /* ShareCredential.swift */; };
 		C5C7A98AF2AD468F9429D2AC /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4075202865E412782C634D9 /* ShareViewController.swift */; };
+		A9F100000000000000000101 /* LiveState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9F100000000000000000501 /* LiveState.swift */; };
+		A9F100000000000000000102 /* WidgetSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9F100000000000000000502 /* WidgetSummary.swift */; };
+		A9F100000000000000000103 /* WorkoutActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9F100000000000000000503 /* WorkoutActivityAttributes.swift */; };
+		A9F100000000000000000104 /* SharedStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9F100000000000000000504 /* SharedStore.swift */; };
+		A9F100000000000000000105 /* LiveStatePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9F100000000000000000506 /* LiveStatePlugin.swift */; };
+		A9F100000000000000000106 /* LiveActivitySink.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9F100000000000000000507 /* LiveActivitySink.swift */; };
+		A9F100000000000000000107 /* WatchLinkSink.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9F100000000000000000508 /* WatchLinkSink.swift */; };
+		A9F100000000000000000108 /* NotificationsHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9F100000000000000000509 /* NotificationsHost.swift */; };
+		A9F100000000000000000109 /* SpotterPushPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9F10000000000000000050A /* SpotterPushPlugin.swift */; };
+		A9F100000000000000000201 /* LiveState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9F100000000000000000501 /* LiveState.swift */; };
+		A9F100000000000000000202 /* WidgetSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9F100000000000000000502 /* WidgetSummary.swift */; };
+		A9F100000000000000000203 /* WorkoutActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9F100000000000000000503 /* WorkoutActivityAttributes.swift */; };
+		A9F100000000000000000204 /* SharedStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9F100000000000000000504 /* SharedStore.swift */; };
+		A9F100000000000000000205 /* WidgetTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9F100000000000000000505 /* WidgetTheme.swift */; };
+		A9F100000000000000000206 /* SpotterWidgetsBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9F10000000000000000050B /* SpotterWidgetsBundle.swift */; };
+		A9F100000000000000000207 /* WorkoutLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9F10000000000000000050C /* WorkoutLiveActivity.swift */; };
+		A9F100000000000000000208 /* SpotterWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9F10000000000000000050D /* SpotterWidgets.swift */; };
+		A9F100000000000000000209 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A9F10000000000000000050E /* SpotterWidgets/Assets.xcassets */; };
+		A9F100000000000000000301 /* LiveState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9F100000000000000000501 /* LiveState.swift */; };
+		A9F100000000000000000302 /* WidgetTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9F100000000000000000505 /* WidgetTheme.swift */; };
+		A9F100000000000000000303 /* SpotterWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9F100000000000000000510 /* SpotterWatchApp.swift */; };
+		A9F100000000000000000304 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9F100000000000000000511 /* ContentView.swift */; };
+		A9F100000000000000000305 /* WatchLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9F100000000000000000512 /* WatchLink.swift */; };
+		A9F100000000000000000306 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A9F100000000000000000513 /* SpotterWatch/Assets.xcassets */; };
+		A9F100000000000000000401 /* SpotterWidgets.appex in Copy Files */ = {isa = PBXBuildFile; fileRef = A9F100000000000000000515 /* SpotterWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		A9F100000000000000000402 /* SpotterWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = A9F100000000000000000516 /* SpotterWatch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -65,6 +91,28 @@
 		3AB54298CCDB4359AF92B825 /* ShareCredential.swift */ = {isa = PBXFileReference; name = "ShareCredential.swift"; path = "Shared/ShareCredential.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; explicitFileType = undefined; includeInIndex = 0; };
 		888CA8D430694205B0923980 /* SharedLink.swift */ = {isa = PBXFileReference; name = "SharedLink.swift"; path = "Shared/SharedLink.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; explicitFileType = undefined; includeInIndex = 0; };
 		C4075202865E412782C634D9 /* ShareViewController.swift */ = {isa = PBXFileReference; name = "ShareViewController.swift"; path = "ShareExtension/ShareViewController.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; explicitFileType = undefined; includeInIndex = 0; };
+		A9F100000000000000000501 /* LiveState.swift */ = {isa = PBXFileReference; name = "LiveState.swift"; path = "Shared/LiveState.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; };
+		A9F100000000000000000502 /* WidgetSummary.swift */ = {isa = PBXFileReference; name = "WidgetSummary.swift"; path = "Shared/WidgetSummary.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; };
+		A9F100000000000000000503 /* WorkoutActivityAttributes.swift */ = {isa = PBXFileReference; name = "WorkoutActivityAttributes.swift"; path = "Shared/WorkoutActivityAttributes.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; };
+		A9F100000000000000000504 /* SharedStore.swift */ = {isa = PBXFileReference; name = "SharedStore.swift"; path = "Shared/SharedStore.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; };
+		A9F100000000000000000505 /* WidgetTheme.swift */ = {isa = PBXFileReference; name = "WidgetTheme.swift"; path = "Shared/WidgetTheme.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; };
+		A9F100000000000000000506 /* LiveStatePlugin.swift */ = {isa = PBXFileReference; name = "LiveStatePlugin.swift"; path = "App/LiveStatePlugin.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; };
+		A9F100000000000000000507 /* LiveActivitySink.swift */ = {isa = PBXFileReference; name = "LiveActivitySink.swift"; path = "App/LiveActivitySink.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; };
+		A9F100000000000000000508 /* WatchLinkSink.swift */ = {isa = PBXFileReference; name = "WatchLinkSink.swift"; path = "App/WatchLinkSink.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; };
+		A9F100000000000000000509 /* NotificationsHost.swift */ = {isa = PBXFileReference; name = "NotificationsHost.swift"; path = "App/NotificationsHost.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; };
+		A9F10000000000000000050A /* SpotterPushPlugin.swift */ = {isa = PBXFileReference; name = "SpotterPushPlugin.swift"; path = "App/SpotterPushPlugin.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; };
+		A9F10000000000000000050B /* SpotterWidgetsBundle.swift */ = {isa = PBXFileReference; name = "SpotterWidgetsBundle.swift"; path = "SpotterWidgets/SpotterWidgetsBundle.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; };
+		A9F10000000000000000050C /* WorkoutLiveActivity.swift */ = {isa = PBXFileReference; name = "WorkoutLiveActivity.swift"; path = "SpotterWidgets/WorkoutLiveActivity.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; };
+		A9F10000000000000000050D /* SpotterWidgets.swift */ = {isa = PBXFileReference; name = "SpotterWidgets.swift"; path = "SpotterWidgets/SpotterWidgets.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; };
+		A9F10000000000000000050E /* SpotterWidgets/Assets.xcassets */ = {isa = PBXFileReference; name = "Assets.xcassets"; path = "SpotterWidgets/Assets.xcassets"; sourceTree = "<group>"; lastKnownFileType = folder.assetcatalog; };
+		A9F10000000000000000050F /* SpotterWidgets/Info.plist */ = {isa = PBXFileReference; name = "Info.plist"; path = "SpotterWidgets/Info.plist"; sourceTree = "<group>"; lastKnownFileType = text.plist.xml; };
+		A9F100000000000000000510 /* SpotterWatchApp.swift */ = {isa = PBXFileReference; name = "SpotterWatchApp.swift"; path = "SpotterWatch/SpotterWatchApp.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; };
+		A9F100000000000000000511 /* ContentView.swift */ = {isa = PBXFileReference; name = "ContentView.swift"; path = "SpotterWatch/ContentView.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; };
+		A9F100000000000000000512 /* WatchLink.swift */ = {isa = PBXFileReference; name = "WatchLink.swift"; path = "SpotterWatch/WatchLink.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; };
+		A9F100000000000000000513 /* SpotterWatch/Assets.xcassets */ = {isa = PBXFileReference; name = "Assets.xcassets"; path = "SpotterWatch/Assets.xcassets"; sourceTree = "<group>"; lastKnownFileType = folder.assetcatalog; };
+		A9F100000000000000000514 /* Widgets.entitlements */ = {isa = PBXFileReference; name = "Widgets.entitlements"; path = "App/Widgets.entitlements"; sourceTree = "<group>"; lastKnownFileType = text.plist.entitlements; };
+		A9F100000000000000000515 /* SpotterWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = SpotterWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		A9F100000000000000000516 /* SpotterWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SpotterWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -83,6 +131,20 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A9F100000000000000000702 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A9F100000000000000000705 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -94,6 +156,9 @@
 				504EC3051FED79650016851F /* Products */,
 				DB5CEB06304F0C5300DD6D86 /* Recovered References */,
 				9D5D658682B7497C855D41F4 /* Native Sharing */,
+				A9F100000000000000000601 /* Live Session */,
+				A9F100000000000000000602 /* SpotterWidgets */,
+				A9F100000000000000000603 /* SpotterWatch */,
 			);
 			sourceTree = "<group>";
 		};
@@ -102,6 +167,8 @@
 			children = (
 				504EC3041FED79650016851F /* App.app */,
 				E24E7C16EE9D471BB63EFB5E /* ShareExtension.appex */,
+				A9F100000000000000000515 /* SpotterWidgets.appex */,
+				A9F100000000000000000516 /* SpotterWatch.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -151,6 +218,50 @@
 			path = "";
 			sourceTree = "<group>";
 		};
+		A9F100000000000000000601 /* Live Session */ = {
+			isa = PBXGroup;
+			children = (
+				A9F100000000000000000501 /* LiveState.swift */,
+				A9F100000000000000000502 /* WidgetSummary.swift */,
+				A9F100000000000000000503 /* WorkoutActivityAttributes.swift */,
+				A9F100000000000000000504 /* SharedStore.swift */,
+				A9F100000000000000000505 /* WidgetTheme.swift */,
+				A9F100000000000000000506 /* LiveStatePlugin.swift */,
+				A9F100000000000000000507 /* LiveActivitySink.swift */,
+				A9F100000000000000000508 /* WatchLinkSink.swift */,
+				A9F100000000000000000509 /* NotificationsHost.swift */,
+				A9F10000000000000000050A /* SpotterPushPlugin.swift */,
+				A9F100000000000000000514 /* Widgets.entitlements */,
+			);
+			name = "Live Session";
+			path = "";
+			sourceTree = "<group>";
+		};
+		A9F100000000000000000602 /* SpotterWidgets */ = {
+			isa = PBXGroup;
+			children = (
+				A9F10000000000000000050B /* SpotterWidgetsBundle.swift */,
+				A9F10000000000000000050C /* WorkoutLiveActivity.swift */,
+				A9F10000000000000000050D /* SpotterWidgets.swift */,
+				A9F10000000000000000050E /* SpotterWidgets/Assets.xcassets */,
+				A9F10000000000000000050F /* SpotterWidgets/Info.plist */,
+			);
+			name = SpotterWidgets;
+			path = "";
+			sourceTree = "<group>";
+		};
+		A9F100000000000000000603 /* SpotterWatch */ = {
+			isa = PBXGroup;
+			children = (
+				A9F100000000000000000510 /* SpotterWatchApp.swift */,
+				A9F100000000000000000511 /* ContentView.swift */,
+				A9F100000000000000000512 /* WatchLink.swift */,
+				A9F100000000000000000513 /* SpotterWatch/Assets.xcassets */,
+			);
+			name = SpotterWatch;
+			path = "";
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -162,10 +273,13 @@
 				504EC3011FED79650016851F /* Frameworks */,
 				504EC3021FED79650016851F /* Resources */,
 				4630BEAB5D1B48A4AE5EDE41 /* Copy Files */,
+				A9F100000000000000000707 /* Embed Watch Content */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				A9F100000000000000000B01 /* PBXTargetDependency */,
+				A9F100000000000000000B02 /* PBXTargetDependency */,
 			);
 			name = App;
 			packageProductDependencies = (
@@ -191,6 +305,40 @@
 			);
 			dependencies = (
 			);
+		};
+		A9F100000000000000000801 /* SpotterWidgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A9F100000000000000000901 /* Build configuration list for PBXNativeTarget "SpotterWidgets" */;
+			buildPhases = (
+				A9F100000000000000000701 /* Sources */,
+				A9F100000000000000000702 /* Frameworks */,
+				A9F100000000000000000703 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = SpotterWidgets;
+			productName = SpotterWidgets;
+			productReference = A9F100000000000000000515 /* SpotterWidgets.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		A9F100000000000000000802 /* SpotterWatch */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A9F100000000000000000902 /* Build configuration list for PBXNativeTarget "SpotterWatch" */;
+			buildPhases = (
+				A9F100000000000000000704 /* Sources */,
+				A9F100000000000000000705 /* Frameworks */,
+				A9F100000000000000000706 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = SpotterWatch;
+			productName = SpotterWatch;
+			productReference = A9F100000000000000000516 /* SpotterWatch.app */;
+			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
 
@@ -219,6 +367,19 @@
 							};
 						};
 					};
+					A9F100000000000000000801 = {
+						CreatedOnToolsVersion = 26.2;
+						ProvisioningStyle = Automatic;
+						SystemCapabilities = {
+							com.apple.Keychain = {
+								enabled = 1;
+							};
+						};
+					};
+					A9F100000000000000000802 = {
+						CreatedOnToolsVersion = 26.2;
+						ProvisioningStyle = Automatic;
+					};
 				};
 			};
 			buildConfigurationList = 504EC2FF1FED79650016851F /* Build configuration list for PBXProject "App" */;
@@ -239,6 +400,8 @@
 			targets = (
 				504EC3031FED79650016851F /* App */,
 				AB8191ED27684247B61F6D73 /* "ShareExtension" */,
+				A9F100000000000000000801 /* SpotterWidgets */,
+				A9F100000000000000000802 /* SpotterWatch */,
 			);
 		};
 /* End PBXProject section */
@@ -265,6 +428,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A9F100000000000000000703 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A9F100000000000000000209 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A9F100000000000000000706 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A9F100000000000000000306 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -285,6 +464,15 @@
 				A9CE70000000000000000201 /* ContactSheet.swift in Sources */,
 				A9CE70000000000000000202 /* TikTokMedia.swift in Sources */,
 				A9CE70000000000000000203 /* SheetPipeline.swift in Sources */,
+				A9F100000000000000000101 /* LiveState.swift in Sources */,
+				A9F100000000000000000102 /* WidgetSummary.swift in Sources */,
+				A9F100000000000000000103 /* WorkoutActivityAttributes.swift in Sources */,
+				A9F100000000000000000104 /* SharedStore.swift in Sources */,
+				A9F100000000000000000105 /* LiveStatePlugin.swift in Sources */,
+				A9F100000000000000000106 /* LiveActivitySink.swift in Sources */,
+				A9F100000000000000000107 /* WatchLinkSink.swift in Sources */,
+				A9F100000000000000000108 /* NotificationsHost.swift in Sources */,
+				A9F100000000000000000109 /* SpotterPushPlugin.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -299,6 +487,33 @@
 				A9CE70000000000000000303 /* SheetPipeline.swift in Sources */,
 				A91D72E3076443E9A17A80D0 /* SharedLink.swift in Sources */,
 				C5C7A98AF2AD468F9429D2AC /* ShareViewController.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A9F100000000000000000701 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A9F100000000000000000201 /* LiveState.swift in Sources */,
+				A9F100000000000000000202 /* WidgetSummary.swift in Sources */,
+				A9F100000000000000000203 /* WorkoutActivityAttributes.swift in Sources */,
+				A9F100000000000000000204 /* SharedStore.swift in Sources */,
+				A9F100000000000000000205 /* WidgetTheme.swift in Sources */,
+				A9F100000000000000000206 /* SpotterWidgetsBundle.swift in Sources */,
+				A9F100000000000000000207 /* WorkoutLiveActivity.swift in Sources */,
+				A9F100000000000000000208 /* SpotterWidgets.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A9F100000000000000000704 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A9F100000000000000000301 /* LiveState.swift in Sources */,
+				A9F100000000000000000302 /* WidgetTheme.swift in Sources */,
+				A9F100000000000000000303 /* SpotterWatchApp.swift in Sources */,
+				A9F100000000000000000304 /* ContentView.swift in Sources */,
+				A9F100000000000000000305 /* WatchLink.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -373,7 +588,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MTL_ENABLE_DEBUG_INFO = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
@@ -424,7 +639,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				SDKROOT = iphoneos;
 				SWIFT_COMPILATION_MODE = wholemodule;
@@ -441,7 +656,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				INFOPLIST_FILE = App/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -465,7 +680,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				INFOPLIST_FILE = App/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -496,7 +711,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = "$(SPOTTER_BUNDLE_ID).share";
 				CODE_SIGN_ENTITLEMENTS = App/Share.entitlements;
 				SWIFT_VERSION = 5.0;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_STYLE = Automatic;
@@ -517,13 +732,115 @@
 				PRODUCT_BUNDLE_IDENTIFIER = "$(SPOTTER_BUNDLE_ID).share";
 				CODE_SIGN_ENTITLEMENTS = App/Share.entitlements;
 				SWIFT_VERSION = 5.0;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				MARKETING_VERSION = 1.0;
 				GENERATE_INFOPLIST_FILE = NO;
+				SPOTTER_BUNDLE_ID = app.spotter.dev;
+			};
+		};
+		A9F100000000000000000A01 /* Debug */ = {
+			name = Debug;
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 958DCC722DB07C7200EA8C5F;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = App/Widgets.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = SpotterWidgets/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(SPOTTER_BUNDLE_ID).widgets";
+				PRODUCT_NAME = "SpotterWidgets";
+				SKIP_INSTALL = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+		};
+		A9F100000000000000000A02 /* Release */ = {
+			name = Release;
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = App/Widgets.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = SpotterWidgets/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(SPOTTER_BUNDLE_ID).widgets";
+				PRODUCT_NAME = "SpotterWidgets";
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				SPOTTER_BUNDLE_ID = app.spotter.dev;
+			};
+		};
+		A9F100000000000000000A03 /* Debug */ = {
+			name = Debug;
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 958DCC722DB07C7200EA8C5F;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Spotter;
+				INFOPLIST_KEY_WKApplication = YES;
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = "$(SPOTTER_BUNDLE_ID)";
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(SPOTTER_BUNDLE_ID).watchkitapp";
+				PRODUCT_NAME = "SpotterWatch";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+		};
+		A9F100000000000000000A04 /* Release */ = {
+			name = Release;
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Spotter;
+				INFOPLIST_KEY_WKApplication = YES;
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = "$(SPOTTER_BUNDLE_ID)";
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(SPOTTER_BUNDLE_ID).watchkitapp";
+				PRODUCT_NAME = "SpotterWatch";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
 				SPOTTER_BUNDLE_ID = app.spotter.dev;
 			};
 		};
@@ -557,6 +874,24 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		A9F100000000000000000901 /* Build configuration list for PBXNativeTarget "SpotterWidgets" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A9F100000000000000000A01 /* Debug */,
+				A9F100000000000000000A02 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A9F100000000000000000902 /* Build configuration list for PBXNativeTarget "SpotterWatch" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A9F100000000000000000A03 /* Debug */,
+				A9F100000000000000000A04 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
@@ -580,13 +915,55 @@
 			buildActionMask = 2147483647;
 			files = (
 				D533B178E91C4F7DAADBE6FE /* ShareExtension.appex in Copy Files */,
+				A9F100000000000000000401 /* SpotterWidgets.appex in Copy Files */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			name = "Copy Files";
 			dstPath = "";
 			dstSubfolderSpec = 13;
 		};
+		A9F100000000000000000707 /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A9F100000000000000000402 /* SpotterWatch.app in Embed Watch Content */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			name = "Embed Watch Content";
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+		};
 /* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		A9F100000000000000000B01 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A9F100000000000000000801 /* SpotterWidgets */;
+			targetProxy = A9F100000000000000000B03 /* PBXContainerItemProxy */;
+		};
+		A9F100000000000000000B02 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A9F100000000000000000802 /* SpotterWatch */;
+			targetProxy = A9F100000000000000000B04 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin PBXContainerItemProxy section */
+		A9F100000000000000000B03 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A9F100000000000000000801;
+			remoteInfo = SpotterWidgets;
+		};
+		A9F100000000000000000B04 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A9F100000000000000000802;
+			remoteInfo = SpotterWatch;
+		};
+/* End PBXContainerItemProxy section */
 	};
 	rootObject = 504EC2FC1FED79650016851F /* Project object */;
 }
