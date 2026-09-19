@@ -16171,14 +16171,17 @@ export const APP = String.raw`
     if (head === "resume") woForward();
     else if (head === "tab") {
       if (!/^(library|plan|progress|pumpy)$/.test(arg)) return;
-      // A card overlay covers the tabs, so switching one underneath it changes
-      // nothing the reader can see: on the 16e, tapping the Today widget with a
-      // workout card open looked like a dead link. Spend the card's own history
-      // entry first, exactly as its close button does. A sheet or Workout Mode
-      // over the top is left alone — closing Workout Mode would end a session
-      // nobody asked to end, and that is worse than a link that waits.
-      if ($("detail").classList.contains("open") && !$("workout").classList.contains("open")
-        && !document.querySelector(".sheet.open")) history.back();
+      // An overlay covers the tabs, so switching one underneath it changes
+      // nothing the reader can see: on the 16e, a Today-widget tap with a
+      // workout card open and a reminder tap with Settings open both looked
+      // like dead links. Spend the topmost overlay the way its own close
+      // control does. Workout Mode is the exception — closing that would end a
+      // session nobody asked to end, which is worse than a link that waits.
+      var over = document.querySelectorAll(".sheet.open"), oi;
+      if (!$("workout").classList.contains("open")) {
+        if (over.length) { for (oi = over.length - 1; oi >= 0; oi--) closeSheet(over[oi].id); }
+        else if ($("detail").classList.contains("open")) history.back();
+      }
       setView(arg);
     }
     else if (!card) return;

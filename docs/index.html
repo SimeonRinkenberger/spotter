@@ -17612,7 +17612,12 @@ details.details-moving > :not(summary) {
       if (head === "resume") woForward();
       else if (head === "tab") {
         if (!/^(library|plan|progress|pumpy)$/.test(arg)) return;
-        $("detail").classList.contains("open") && !$("workout").classList.contains("open") && !document.querySelector(".sheet.open") && history.back(), setView(arg);
+        var over = document.querySelectorAll(".sheet.open"), oi;
+        if (!$("workout").classList.contains("open"))
+          if (over.length)
+            for (oi = over.length - 1; oi >= 0; oi--) closeSheet(over[oi].id);
+          else $("detail").classList.contains("open") && history.back();
+        setView(arg);
       } else if (card) w ? head === "workout" ? openDetail(w) : wo && !wo.finished ? (woForward(), toast("A workout is already running.")) : (openDetail(w), startWorkout(w)) : toast("That workout is not in your library any more.");
       else return;
     }
