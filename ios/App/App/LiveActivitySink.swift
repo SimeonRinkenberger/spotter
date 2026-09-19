@@ -36,6 +36,10 @@ final class LiveActivitySink: LiveStateSink {
     private var flushItem: DispatchWorkItem?
     private var lastPush = Date.distantPast
 
+    /// Armed when launch adopts a card the engine has not spoken for yet, and
+    /// cancelled by the first state that arrives. See `armUnclaimed`.
+    private var unclaimed: DispatchWorkItem?
+
     /// `rest.until` of the rest the nudge is currently scheduled for. Zero means
     /// nothing is scheduled. Comparing deadlines rather than a Bool is what
     /// makes "+15 s" reschedule and a pause-then-resume not stack two alerts.
@@ -111,6 +115,11 @@ final class LiveActivitySink: LiveStateSink {
     // MARK: - LiveStateSink
 
     func update(_ state: LiveState) {
+        // A state from the engine is the engine claiming the card it was handed
+        // at launch. See `armUnclaimed`.
+        unclaimed?.cancel()
+        unclaimed = nil
+
         // The nudge is scheduled from every state, coalesced or not: it costs a
         // comparison when nothing changed, and a dropped reschedule would leave
         // an alert pointing at a deadline that has moved.
@@ -132,6 +141,8 @@ final class LiveActivitySink: LiveStateSink {
     }
 
     func end(_ summary: LiveSummary) {
+        unclaimed?.cancel()
+        unclaimed = nil
         pending = nil
         flushItem?.cancel()
         flushItem = nil
@@ -265,6 +276,39 @@ final class LiveActivitySink: LiveStateSink {
         lastPush = Date()
         push(stored)
         syncNudge(stored)
+        armUnclaimed()
+    }
+
+    /// The adoption above is provisional, and this is what makes it so.
+    ///
+    /// A stored state says a session was in progress when the process died. It
+    /// does not say one is in progress now: the web app boots, offers "Tap to
+    /// resume", and only a tap actually restores it. Nobody taps, and the card
+    /// keeps a workout on the Lock Screen for the eight hours ActivityKit
+    /// allows — counting a rest that ended, offering a button for a session
+    /// that does not exist. Found on the 16e: relaunch after a kill mid-rest
+    /// left exactly that card up with the app sitting in the library.
+    ///
+    /// So the card is on loan until the engine speaks. `update(_:)` cancels
+    /// this the moment any real state arrives — including the one a resumed
+    /// draft sends — and a resume after the deadline simply requests a new
+    /// card, which is legal because a tap is a foreground event. The window is
+    /// longer than the 30 s the resume toast stays up, so it can only fire once
+    /// the offer itself has gone unanswered.
+    private func armUnclaimed() {
+        unclaimed?.cancel()
+        let item = DispatchWorkItem { [weak self] in self?.dropUnclaimed() }
+        unclaimed = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + 45, execute: item)
+    }
+
+    private func dropUnclaimed() {
+        unclaimed = nil
+        guard let activity = activity else { return }
+        self.activity = nil
+        current = nil
+        cancelNudge()
+        Task { await activity.end(nil, dismissalPolicy: .immediate) }
     }
 
     // MARK: - The rest-end nudge

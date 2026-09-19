@@ -5578,6 +5578,11 @@ export const APP = String.raw`
     var j = wo.i + 1;
     while (j < wo.screens.length && !isStop(j)) j++;
     var cx = !!(s && s.cx), pre = s ? setPrefill(entry.sets.length) : null;
+    // The set about to be done. Past the plan it is an extra, and the phone says
+    // so ("Goal reached · Extras welcome") — but a Lock Screen card reading
+    // "Set 3 of 2" just looks broken, so the total grows with the index the way
+    // progress.total already does below.
+    var setNo = entry.sets.filter(Boolean).length + 1;
     // A complex is scored in rounds off one screen, so it has no "set 2 of 4".
     return {
       v: 1,
@@ -5587,7 +5592,7 @@ export const APP = String.raw`
         : restFace ? "timed" : cx ? "complex" : "work",
       exercise: s ? s.ex.name : (entry.name || "Freestyle"),
       block: s && (wo.workout.blocks || []).length > 1 ? blockName(s) : null,
-      set: s && !cx ? { index: entry.sets.filter(Boolean).length + 1, total: targetOf(s) } : null,
+      set: s && !cx ? { index: setNo, total: Math.max(targetOf(s), setNo) } : null,
       target: s ? askText(s.ex) : null,
       weight: pre && pre.weight ? pre.weight.toLocaleString() + " " + state.unit : null,
       rest: restUntil ? { until: restUntil, total: restTotal, held: restHeld } : null,
