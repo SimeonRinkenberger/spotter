@@ -1222,7 +1222,7 @@ export const APP = String.raw`
     today.rows = []; today.at = 0; today.day = null; today.busy = false; today.shown = false;
     current = null;
     if (sc) scForget();
-    if (wo) saveDraft();
+    if (wo) { saveDraft(); liveEnd(false); }
     clearInterval(woTimer); stopRest(); releaseWake(); wo = null; hist = {}; histReady = false;
     if (strava) strava = { asked: false, configured: false, connected: false, athlete: null, busy: false };
     if (pumpy) {
@@ -1258,6 +1258,7 @@ export const APP = String.raw`
       if (first) setTimeout(boot, 0);
     } else {
       clearAccount();
+      publishSignedOut();
       state.user = null;
       guideUser();
       state.workouts = []; state.logs = null; state.plan = null; state.awards = null;
@@ -1292,6 +1293,7 @@ export const APP = String.raw`
     // creates lands in a rendered grid rather than into an empty one.
     var epoch = accountEpoch, uid = state.user.id;
     booting = load().then(function () { if (accountNow(epoch, uid)) return consumeShare(); })
+      .then(function () { if (accountNow(epoch, uid)) consumeOpen(); })
       .then(function () { if (accountNow(epoch, uid)) return consumeBilling(); })
       .then(function () { if (accountNow(epoch, uid)) consumeCreator(); })
       .then(function () { if (accountNow(epoch, uid)) return warmPages(); })
@@ -2501,6 +2503,16 @@ export const APP = String.raw`
         : ex.duration_seconds + "s");
     }
     return bits.join(" · ");
+  }
+
+  // What ONE set asks for, in the words the set pill already uses: a rep count
+  // or a range exactly as the card wrote it, or a held duration. The Lock Screen
+  // and the watch have to ask for the same thing the pill asks for, so there is
+  // one sentence and not three that drift.
+  function askText(ex) {
+    if (!ex) return null;
+    if (ex.duration_seconds > 0) return ex.duration_seconds + " s";
+    return ex.reps ? ex.reps + " reps" : null;
   }
 
   function blockMetaText(b) {
@@ -5536,11 +5548,69 @@ export const APP = String.raw`
       }));
       if (native) native.saveDraft(localStorage.getItem(draftKey()));
     } catch (e) { /* private mode */ }
+    // Outside the try, and last: a Lock Screen that cannot be reached must not
+    // cost the draft that is what makes the session recoverable at all.
+    if (native && native.live) liveSync();
   }
 
   function clearDraft() {
     if (native) native.saveDraft(null);
     try { localStorage.removeItem(draftKey()); } catch (e) { /* ignore */ }
+  }
+
+  // ---------- the session, on the Lock Screen and the wrist ----------
+  //
+  // The Live Activity, the widgets and the watch all read ONE description of the
+  // running session rather than each reaching into the engine, so a movement
+  // renamed here cannot mean two things in two places. Nothing on the other side
+  // counts ticks: every clock is handed the absolute deadline the rest engine
+  // already works in, because a locked screen redraws on its own schedule and a
+  // phone in a pocket redraws not at all.
+
+  function liveState() {
+    var s = wo.screens[wo.i], entry = wo.entries[wo.i], i, logged = 0, planned = 0;
+    for (i = 0; i < wo.entries.length; i++) {
+      logged += wo.entries[i].sets.filter(Boolean).length;
+      planned += wo.screens[i] ? targetOf(wo.screens[i]) : 1;
+    }
+    // The movement after this one is the one the pager would land on, which in a
+    // complex is the far side of the block rather than its second station.
+    var j = wo.i + 1;
+    while (j < wo.screens.length && !isStop(j)) j++;
+    var cx = !!(s && s.cx), pre = s ? setPrefill(entry.sets.length) : null;
+    // A complex is scored in rounds off one screen, so it has no "set 2 of 4".
+    return {
+      v: 1,
+      title: wo.workout.title || "Workout",
+      startedAt: wo.startedAt,
+      phase: wo.finished ? "done" : restUntil && !restFace ? "rest"
+        : restFace ? "timed" : cx ? "complex" : "work",
+      exercise: s ? s.ex.name : (entry.name || "Freestyle"),
+      block: s && (wo.workout.blocks || []).length > 1 ? blockName(s) : null,
+      set: s && !cx ? { index: entry.sets.filter(Boolean).length + 1, total: targetOf(s) } : null,
+      target: s ? askText(s.ex) : null,
+      weight: pre && pre.weight ? pre.weight.toLocaleString() + " " + state.unit : null,
+      rest: restUntil ? { until: restUntil, total: restTotal, held: restHeld } : null,
+      next: j < wo.screens.length ? wo.screens[j].ex.name : null,
+      progress: { done: logged, total: Math.max(planned, logged) }
+    };
+  }
+
+  function liveSync() {
+    // A mirror is never fatal: the plugin swallows its own rejection, and a shell
+    // built before the Swift half existed throws here instead.
+    if (wo) try { native.live.update(liveState()); } catch (e) { /* ignore */ }
+  }
+
+  // Finished, or walked away from. Either way the Lock Screen has to stop showing
+  // a workout nobody is doing, and it is the only thing that can say so.
+  function liveEnd(completed) {
+    if (!wo || wo.finished || !native || !native.live) return;
+    var st = liveState();
+    native.live.end({
+      v: 1, title: st.title, startedAt: st.startedAt, endedAt: new Date().toISOString(),
+      sets: st.progress.done, prs: Object.keys(wo.prs).length, completed: !!completed
+    });
   }
 
   function startWorkout(w, resume) {
@@ -5597,6 +5667,7 @@ export const APP = String.raw`
       if (restHeld) { clearInterval(restTimer); drawRest(restHeld); } else tickRest();
     }
     saveDraft();
+    publishSummary();
     history.pushState({ workout: 1 }, "");
     lastWeights();
   }
@@ -6284,6 +6355,13 @@ export const APP = String.raw`
     if (wo && wo.wake) { try { wo.wake.release(); } catch (e) { /* ignore */ } wo.wake = null; }
   }
 
+  // What the eyebrow over the movement says, wherever it is read: the block's own
+  // title, else the shape it is, else its place on the card.
+  function blockName(s) {
+    return s.block.title ||
+      (s.block.type && s.block.type !== "straight" ? s.block.type : "Block " + (s.bi + 1));
+  }
+
   // hush: no entrance; a logged round changed a number.
   function renderWorkout(hush) {
     if (!wo) return;
@@ -6331,7 +6409,7 @@ export const APP = String.raw`
     if (cx) {
       focus = cxBody(main, s, cx);
     } else {
-      var blockLabel = s.block.title || (s.block.type && s.block.type !== "straight" ? s.block.type : "Block " + (s.bi + 1));
+      var blockLabel = blockName(s);
       if (s.block.rounds) blockLabel += " · " + s.block.rounds + " rounds";
       main.appendChild(el("div", "wblock", blockLabel));
       main.appendChild(el("h2", "wname", s.ex.name));
@@ -6455,7 +6533,7 @@ export const APP = String.raw`
         p.appendChild(document.createTextNode(done
           ? (done.seconds ? "held" : done.weight ? state.unit : "reps")
           : timed ? "hold " + (idx + 1)
-          : (ex && ex.reps ? ex.reps + " reps" : "tap to log")));
+          : (askText(ex) || "tap to log")));
         // A hold has one number, so its pill toggles: for one done off the clock.
         p.onclick = timed
           ? function () { logHold(idx, ex.duration_seconds, 1); justSet = idx; renderWorkout(); }
@@ -6468,26 +6546,47 @@ export const APP = String.raw`
 
   var setCtx = { idx: 0, reps: 10, weight: 0 };
 
-  function openSetSheet(idx) {
-    if (!wo) return;
-    // Editing a set must not save it against a different circuit station when rest ends.
-    if (!restFace) restThen = null;
-    var s = wo.screens[wo.i];
-    var entry = wo.entries[wo.i];
-    var existing = entry.sets[idx];
+  /**
+   * The dose the sheet would put in front of the lifter for a given set: what is
+   * already logged there, else the card's target reps and the weight carried over
+   * from the last time this movement came up.
+   *
+   * Split out of openSetSheet because a set saved from the Lock Screen or from
+   * the wrist never opens the sheet, and it has to arrive with the SAME numbers —
+   * one prefill read twice, rather than two that agree until one of them changes.
+   * It answers with an object instead of writing setCtx: the mirrors read it on
+   * every engine change, and a read must not overwrite a sheet somebody is
+   * standing in front of.
+   */
+  function setPrefill(idx) {
+    var s = wo.screens[wo.i], entry = wo.entries[wo.i], existing = entry.sets[idx];
     var targetReps = 10;
     if (s && s.ex && s.ex.reps) {
       var m = String(s.ex.reps).match(/\d+/);
       if (m) targetReps = parseInt(m[0], 10);
     }
     var h = hist[exKey(entry)];
+    return {
+      idx: idx,
+      reps: existing ? existing.reps : targetReps,
+      weight: existing ? toUnit(existing.weight, existing.unit) : (h ? toUnit(h.weight, h.unit) : 0)
+    };
+  }
+
+  function openSetSheet(idx) {
+    if (!wo) return;
+    // Editing a set must not save it against a different circuit station when rest ends.
+    if (!restFace) restThen = null;
+    var s = wo.screens[wo.i];
+    var entry = wo.entries[wo.i];
+    var pre = setPrefill(idx);
     // A figure half-typed for another set is dropped, not committed sideways.
     editing = null;
     $("repsbox").classList.remove("editing");
     $("wtbox").classList.remove("editing");
-    setCtx.idx = idx;
-    setCtx.reps = existing ? existing.reps : targetReps;
-    setCtx.weight = existing ? toUnit(existing.weight, existing.unit) : (h ? toUnit(h.weight, h.unit) : 0);
+    setCtx.idx = pre.idx;
+    setCtx.reps = pre.reps;
+    setCtx.weight = pre.weight;
     $("settitle").textContent = (s && s.ex ? s.ex.name : "Set") + " · set " + (idx + 1);
     // The number worth beating stays up while the stepper argues with it.
     $("setlast").textContent = lastLine(entry);
@@ -7472,11 +7571,14 @@ export const APP = String.raw`
       // and redraw at once if the library is the page underneath.
       today.at = 0;
       renderToday();
+      // The week just changed and the widget is the one reader that cannot ask.
+      loadLogs().then(function () { publishSummary(); });
     });
     clearInterval(woTimer);
     cxOff();
     stopRest();
     clearDraft();
+    liveEnd(true);
     wo.finished = true;
     haptic("done");
     renderSummary(payload, logged);
@@ -7741,11 +7843,13 @@ export const APP = String.raw`
     // must not end a rest or throw away the draft of a workout somebody paused
     // this morning — which is what the old history sheet was kept separate for.
     if (wo) {
+      liveEnd(false);
       clearInterval(woTimer);
       cxOff();
       stopRest();
       releaseWake();
       clearDraft();
+      publishSummary();
     }
     // The clip sheet can outlive the overlay it was opened from.
     closeSheet("watchsheet");
@@ -8910,6 +9014,7 @@ export const APP = String.raw`
         if (r0.error) throw new Error("Plan unavailable");
         state.plan = r0.data || [];
         today.at = 0;
+        publishSummary();
         var shape = planShape();
         if (silent && shape === planSig) return;
         planSig = shape; renderTrain();
@@ -8923,6 +9028,7 @@ export const APP = String.raw`
   function repaintPlan() {
     planRev++;
     today.at = 0;
+    publishSummary();
     planSig = planShape();
     renderTrain();
   }
@@ -9989,6 +10095,7 @@ export const APP = String.raw`
           if (rev !== logsRev) return loadLogs();
           if (r.error) throw r.error;
           state.logs = r.data || [];
+          publishSummary();
           if (today.shown) renderToday();
           return state.logs;
         }).catch(function () {
@@ -10119,6 +10226,61 @@ export const APP = String.raw`
     if (!state.logs) return null;
     var logs = extra ? state.logs.concat([extra]) : state.logs;
     return weekStats(logs, state.plan, goalSetting(), new Date());
+  }
+
+  // ---------- what the Home Screen knows ----------
+  //
+  // The widgets show the week, the streak and what is planned next, and they read
+  // the very numbers the ring and the Today card read: a widget that disagrees
+  // with the app beside it is worse than no widget. Debounced, because one load()
+  // settles in three or four repaints and only the last of them is true.
+
+  var pubTimer = null, pubOut = false;
+
+  function publishSummary() {
+    if (!native || !native.live || !state.user) return;
+    clearTimeout(pubTimer);
+    pubTimer = setTimeout(sendSummary, 500);
+  }
+
+  function sendSummary() {
+    var wk = state.user ? thisWeek() : null;
+    if (!wk) return;
+    var key = ymd(new Date()), rows = rowsFor(key), i, w;
+    if (!rows.length) rows = today.rows || [];
+    var now = null, soon = null, last = null;
+    var days = wk.dots.map(function (d) { return d === "on"; });
+    for (i = 0; i < rows.length && !now; i++) {
+      w = planWorkout(rows[i].workout_id);
+      if (w) now = { id: w.id, title: w.title || "Workout", minutes: w.duration_minutes || null };
+    }
+    // Only the range the Plan tab is holding, so this is null once a reader pages
+    // away from now — a widget saying nothing beats one inventing a Thursday.
+    (state.plan || []).forEach(function (r) {
+      if (!r.day || r.day <= key || (soon && r.day > soon.day)) return;
+      var m = planWorkout(r.workout_id);
+      if (m) soon = { id: m.id, title: m.title || "Workout", day: r.day };
+    });
+    (state.logs || []).forEach(function (l) {
+      if (last || !isSession(l)) return;
+      last = { title: l.workout_title || "Workout", at: l.completed_at || l.started_at };
+    });
+    pubOut = false;
+    native.live.publish({
+      v: 1, updatedAt: new Date().toISOString(),
+      week: { key: wk.weekKey, done: wk.done, goal: wk.goal, days: days, atRisk: wk.atRisk },
+      streak: wk.streakWeeks, today: now, next: soon, last: last,
+      active: !!(wo && !wo.finished)
+    });
+  }
+
+  // A widget outlives the account that filled it. One publish on the way out, so
+  // the next person to hold the phone is not shown last week's ring.
+  function publishSignedOut() {
+    if (!native || !native.live || pubOut) return;
+    clearTimeout(pubTimer);
+    pubOut = true;
+    native.live.publish({ v: 1, updatedAt: new Date().toISOString(), signedOut: true });
   }
 
   // ---------- the ring ----------
@@ -15757,6 +15919,86 @@ export const APP = String.raw`
     try { localStorage.setItem("spotter_hint_done", "1"); } catch (e) { /* ignore */ }
   };
 
+  // ---------- arriving from outside the page ----------
+  //
+  // A button on the Live Activity, a tap on the watch, a notification action and
+  // a widget all land here, and every one of them is turned into the SAME call
+  // the on-screen control makes — so a set logged from the wrist buzzes, checks
+  // for a best and starts the rest exactly as a thumb does. Nothing gets a
+  // shortcut; two paths to one outcome drift apart within a wave.
+
+  var OPEN_KEY = "spotter_open_pending";
+
+  // A session is always open when it exists, but a notification can arrive into
+  // the frame where the overlay is fading out.
+  function woForward() {
+    if (!wo || wo.finished) return;
+    var n = $("workout");
+    n.classList.remove("closing");
+    n.classList.add("open");
+  }
+
+  function liveAction(a) {
+    var k = a.kind, live = wo && !wo.finished, s = live ? wo.screens[wo.i] : null, pre;
+    // A remote reminder carries its destination as the action id. A rest-end one
+    // whose rest is already over has nothing left to say.
+    if (k === "notification" && typeof a.id === "string" && a.id.indexOf("spotter://") === 0) openDeepLink(a.id);
+    else if (k === "open" || k === "notification") { if (k === "open" || !wo || !restUntil) woForward(); }
+    else if (!live) return;
+    else if (k === "set") {
+      // A hold and a complex are not logged with reps and a weight, so a remote
+      // Save has nothing to send: those two are answered on the screen.
+      if (!s || (s.cx && !s.ei) || isTimed(s.ex)) toast("Log this one on the phone.");
+      else {
+        // The wrist can turn the dial before it saves, and through the stepper’s
+        // own setters a figure from off the phone meets the clamp a thumb does.
+        pre = setPrefill(wo.entries[wo.i].sets.length);
+        setCtx.idx = pre.idx;
+        setReps(typeof a.reps === "number" && isFinite(a.reps) ? a.reps : pre.reps);
+        setWeight(typeof a.weight === "number" && isFinite(a.weight) ? a.weight : pre.weight);
+        saveSet();
+      }
+    } else if (k === "skipRest") { if (restUntil) doneRest(); }
+    else if (k === "toggleRest") pauseRest();
+    else if (k === "finish") finishWorkout();
+  }
+
+  // Every route ends in a call the UI itself makes, so a link can only do what a
+  // tap could do; one naming anything else does nothing rather than guessing.
+  function openDeepLink(url) {
+    var m = state.user && String(url).match(/^spotter:\/\/([a-z]+)\/?([^?#]*)/);
+    if (!m) return;
+    var head = m[1], card = head === "workout" || head === "start";
+    var arg = decodeURIComponent(m[2].replace(/\/+$/, "")), w = card ? planWorkout(arg) : null;
+    if (head === "resume") woForward();
+    else if (head === "tab") { if (/^(library|plan|progress|pumpy)$/.test(arg)) setView(arg); }
+    else if (!card) return;
+    else if (!w) toast("That workout is not in your library any more.");
+    else if (head === "workout") openDetail(w);
+    else if (wo && !wo.finished) { woForward(); toast("A workout is already running."); }
+    // The card first, so finishing lands back where a Library tap would have.
+    else { openDetail(w); startWorkout(w); }
+  }
+
+  // A cold launch parks its URL in the shell before any listener could exist.
+  // Taken out before it is acted on: one launch is exactly one open.
+  function consumeOpen() {
+    var u = null;
+    try {
+      u = sessionStorage.getItem(OPEN_KEY);
+      if (u) sessionStorage.removeItem(OPEN_KEY);
+    } catch (e) { return; }
+    if (u) openDeepLink(u);
+  }
+
+  window.addEventListener("spotter:live-action", function (e) { liveAction(e.detail || {}); });
+  window.addEventListener("spotter:open-url", function (e) {
+    var u = e.detail && e.detail.url;
+    if (!u) return;
+    if (state.user) { openDeepLink(u); return; }
+    try { sessionStorage.setItem(OPEN_KEY, u); } catch (err) { /* ignore */ }
+  });
+
   // one history entry per overlay, so the phone back gesture closes it
   window.addEventListener("popstate", function () {
     // Our own pop, from a sheet the UI has already closed; reading it as a gesture
@@ -15793,6 +16035,7 @@ export const APP = String.raw`
     if (restUntil) tickRest();
     if (wo && !wo.finished) { startClock(); acquireWake(); }
     watchBilling(); stravaBack();
+    publishSummary();
     if (state.user && !wo && !overlayShowing()) load();
   });
 
