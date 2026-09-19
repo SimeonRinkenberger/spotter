@@ -40,7 +40,8 @@
 //   GET  /api/strava/callback       Strava's redirect back (signed state, no user token)
 //   POST /api/strava/push           { log_id, start_local } — one session as a manual activity
 //   POST /api/strava/disconnect     deauthorize and forget the tokens
-//   GET  /api/push/config           { configured, key } — the VAPID public key to subscribe with
+//   GET  /api/push/config           { configured, key, apns } — the VAPID public key to subscribe
+//                                   with, and whether APNs is keyed up for the native shells
 //   POST /api/push/tick             the hourly reminder pass (shared secret, not a user)
 //   POST /api/worker/tick           drain the ingest queue (shared secret, not a user)
 //   POST /api/worker/media          one tier of reading the video, in its own isolate

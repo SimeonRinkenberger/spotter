@@ -66,6 +66,20 @@ function appUrl(): string {
 
 type Vapid = { publicKey: string; privateKey: string; subject: string };
 
+/** The three secrets an APNs push needs, or nothing if any one of them is unset. */
+export type Apns = { keyId: string; teamId: string; p8: string };
+
+function apnsCfg(): Apns | null {
+  const keyId = (Deno.env.get("APNS_KEY_ID") ?? "").trim();
+  const teamId = (Deno.env.get("APNS_TEAM_ID") ?? "").trim();
+  const p8 = (Deno.env.get("APNS_KEY_P8") ?? "").trim();
+  // All three or none. Two of three is a deployment that would sign a token
+  // Apple rejects with InvalidProviderToken once an hour, for ever, and look
+  // configured the whole time.
+  if (!keyId || !teamId || !p8) return null;
+  return { keyId, teamId, p8 };
+}
+
 function vapidCfg(): Vapid | null {
   const publicKey = (Deno.env.get("VAPID_PUBLIC_KEY") ?? "").trim();
   const privateKey = (Deno.env.get("VAPID_PRIVATE_KEY") ?? "").trim();
@@ -80,9 +94,15 @@ function vapidCfg(): Vapid | null {
  * baked into the page so that rotating the pair is a secret change and a reload,
  * not a deploy of the app.
  */
-export function pushConfig(): { configured: boolean; key?: string } {
+export function pushConfig(): { configured: boolean; key?: string; apns: boolean } {
   const cfg = vapidCfg();
-  return cfg ? { configured: true, key: cfg.publicKey } : { configured: false };
+  // Two transports, two independent answers. A browser asks whether it may
+  // subscribe; a native install asks whether there is an APNs key to push it
+  // with. Neither should be able to switch the other's rows on: a deployment
+  // with VAPID set and no APNs key must keep showing the native app the same
+  // honest "not configured" line it shows today.
+  const both = cfg ? { configured: true, key: cfg.publicKey } : { configured: false };
+  return { ...both, apns: apnsCfg() !== null };
 }
 
 // ---------- bytes ----------
@@ -246,6 +266,164 @@ export async function vapidAuth(endpoint: string, nowMs = Date.now()): Promise<s
   return `vapid t=${head}.${body}.${b64u(sig)}, k=${cfg.publicKey}`;
 }
 
+// ---------- APNs: say who is asking, again, in Apple's dialect ----------
+//
+// Same idea as VAPID and a different spelling of it. Apple's provider token is
+// an ES256 JWT over a two-field header and a two-field claim set and nothing
+// else: `{alg:"ES256", kid:<10-char Key ID>}` . `{iss:<10-char Team ID>, iat:
+// <seconds>}`, signed with the `.p8` key the developer account issues. There is
+// no `aud`, no `exp` and no `sub` — Apple dates the token from `iat` alone and
+// rejects anything more than an hour old with ExpiredProviderToken (403).
+//
+// Which is why the token is cached rather than minted per message. Apple's two
+// rules point in opposite directions: refresh at LEAST every 60 minutes, and no
+// MORE often than every 20, or the connection starts answering
+// TooManyProviderTokenUpdates (429). Fifty minutes sits in the middle of that
+// window with ten minutes of slack for a slow tick, and the cache is per isolate
+// because that is the only lifetime an edge function can promise.
+//
+// Sources: Apple, "Establishing a token-based connection to APNs" and "Sending
+// notification requests to APNs" (both read 18 Sept 2026) — see
+// design/native/push.md for the full list and what each one settled.
+
+const APNS_HOSTS = {
+  sandbox: "api.sandbox.push.apple.com",
+  production: "api.push.apple.com",
+} as const;
+
+let apnsJwt = "";
+let apnsJwtFor = "";
+let apnsJwtAt = 0;
+
+/** Import the PEM the owner pastes into `supabase secrets set`. */
+async function apnsKey(cfg: Apns): Promise<CryptoKey> {
+  // A .p8 from Apple is a PKCS#8 PEM. The header/footer and every newline go,
+  // and what is left is ordinary base64 — which b64uBytes already accepts,
+  // because it normalises the URL-safe alphabet before decoding rather than
+  // after. Pasting the file through a shell tends to mangle the line breaks and
+  // nothing else, so the stripping is deliberately indiscriminate.
+  const raw = b64uBytes(cfg.p8.replace(/-----[^-]+-----/g, "").replace(/\s+/g, ""));
+  return await crypto.subtle.importKey(
+    "pkcs8", raw, { name: "ECDSA", namedCurve: "P-256" }, false, ["sign"],
+  );
+}
+
+/**
+ * The `authorization` header value, cached. Exported because the harness signs
+ * one with a throwaway key and verifies it with the public half — the only way
+ * to find out that a JWT is malformed without a developer account, since Apple's
+ * answer to a bad one is a 403 that looks exactly like a wrong Team ID.
+ */
+export async function apnsAuth(cfg: Apns, nowMs = Date.now()): Promise<string> {
+  const stamp = `${cfg.keyId}:${cfg.teamId}:${cfg.p8.length}`;
+  if (apnsJwt && apnsJwtFor === stamp && nowMs - apnsJwtAt < 50 * 60_000) return apnsJwt;
+  const head = b64u(utf8.encode(JSON.stringify({ alg: "ES256", kid: cfg.keyId })));
+  const body = b64u(utf8.encode(JSON.stringify({ iss: cfg.teamId, iat: Math.floor(nowMs / 1000) })));
+  const sig = new Uint8Array(await crypto.subtle.sign(
+    { name: "ECDSA", hash: "SHA-256" }, await apnsKey(cfg), utf8.encode(`${head}.${body}`),
+  ));
+  // Web Crypto's ECDSA signature is already the raw r||s pair JWS wants (IEEE
+  // P1363), not the DER sequence OpenSSL prints. No unwrapping, deliberately.
+  apnsJwt = `${head}.${body}.${b64u(sig)}`;
+  apnsJwtFor = stamp;
+  apnsJwtAt = nowMs;
+  return apnsJwt;
+}
+
+/** Where a tapped reminder goes in the native app. Two links, same two reminders. */
+export function apnsLink(kind: "plan" | "risk"): string {
+  return kind === "risk" ? "spotter://tab/progress" : "spotter://tab/plan";
+}
+
+/** The exact JSON body APNs carries. Kept in one place so the simulator fixtures
+ *  in `tools/ios/fixtures/*.apns` and the live sender cannot drift apart. */
+export function apnsPayload(
+  kind: "plan" | "risk", title: string, body?: string,
+): Record<string, unknown> {
+  return {
+    aps: {
+      alert: body ? { title, body } : { title },
+      sound: "default",
+      // One thread for both reminders: iOS groups them under a single stack in
+      // Notification Centre, which is the right shape for a thing that arrives
+      // at most once a day and never wants its own section.
+      "thread-id": "reminders",
+    },
+    // A peer of `aps`, never inside it — APNs drops custom keys in that
+    // dictionary. NotificationsHost reads this on the tap and hands it to the
+    // web app as the action id, which routes it through openDeepLink.
+    url: apnsLink(kind),
+  };
+}
+
+/** What Apple said, and whether the device row survived it. */
+export type ApnsResult = { status: number; reason: string; gone: boolean };
+
+/**
+ * One notification to one device.
+ *
+ * Deno's `fetch` is the whole HTTP/2 story here: it negotiates h2 over ALPN for
+ * any https origin, and APNs speaks nothing else, so a request that came back at
+ * all came back over HTTP/2. There is no h2 client to hand-roll and no socket to
+ * keep — which also means no connection reuse across isolates, and therefore no
+ * benefit in batching. The hourly tick sends a handful of messages at most.
+ */
+export async function sendApns(
+  device: { token: string; bundle: string | null; env: string },
+  kind: "plan" | "risk", title: string, body: string | undefined,
+  cfg: Apns, nowMs = Date.now(), hostFor = apnsHost,
+): Promise<ApnsResult> {
+  const host = hostFor(device.env);
+  const r = await fetch(`https://${host}/3/device/${device.token}`, {
+    method: "POST",
+    headers: {
+      authorization: `bearer ${await apnsAuth(cfg, nowMs)}`,
+      // The topic is the bundle id and Apple binds the token to it: a token
+      // minted against the dev bundle answers BadDeviceToken on any other one,
+      // so the row's own bundle is used rather than a constant.
+      "apns-topic": device.bundle || "",
+      "apns-push-type": "alert",
+      // 10 = now. A reminder that arrives when the phone next feels like it is
+      // not a reminder; this is the one class of push that has a time in it.
+      "apns-priority": "10",
+      // One hour, the same TTL the web sender uses and for the same reason: a
+      // reminder for 17:00 is worthless at 22:00, and Apple would otherwise
+      // store it for up to 30 days and deliver it whenever the phone reappears.
+      "apns-expiration": String(Math.floor(nowMs / 1000) + 3600),
+      // The web sender's `tag` by another name: a second copy of the same
+      // reminder replaces the first on the Lock Screen rather than stacking.
+      "apns-collapse-id": kind === "risk" ? "spotter-risk" : "spotter-plan",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify(apnsPayload(kind, title, body)),
+    signal: AbortSignal.timeout(10_000),
+  });
+  // Apple answers an empty body on 200 and `{"reason":"..."}` on everything
+  // else. The reason is the only part worth logging: the status alone cannot
+  // tell a wrong Team ID from a wrong bundle id, and both are 403/400.
+  let reason = "";
+  const text = await r.text().catch(() => "");
+  if (text) { try { reason = String(JSON.parse(text).reason ?? ""); } catch { reason = text.slice(0, 120); } }
+  return { status: r.status, reason, gone: apnsGone(r.status, reason) };
+}
+
+export function apnsHost(env: string): string {
+  return env === "production" ? APNS_HOSTS.production : APNS_HOSTS.sandbox;
+}
+
+/**
+ * Whether to forget this token. 410 is Apple saying the app is gone, and the
+ * four 400 reasons below say the token can never work for this topic — Apple's
+ * own guidance is not to retry any of them. Everything else (429, 5xx, a
+ * network error) is this minute's problem and keeps the row.
+ */
+export function apnsGone(status: number, reason: string): boolean {
+  if (status === 410) return true;
+  return status === 400 &&
+    (reason === "BadDeviceToken" || reason === "Unregistered" ||
+     reason === "ExpiredToken" || reason === "DeviceTokenNotForTopic");
+}
+
 // ---------- the clock, in the user's own zone ----------
 
 export type Local = { ymd: string; hour: number; minute: number };
@@ -374,13 +552,19 @@ export function weekState(
 
 // ---------- the decision ----------
 
-/** The row, as the sender needs it. */
-export type Sub = {
+/**
+ * Everything the decision reads, and nothing about how the message travels.
+ *
+ * Both tables carry exactly these columns because `decide()` is the policy and
+ * there is only one policy. A browser row adds its endpoint and the subscriber's
+ * keys; a device row adds a token, a bundle and an environment. Splitting the
+ * type this way is what makes it impossible to write a rule that applies to one
+ * transport and not the other, which is the bug this feature was most likely to
+ * ship: two senders, two caps, a phone that buzzes twice.
+ */
+export type Reminder = {
   id: string;
   user_id: string;
-  endpoint: string;
-  p256dh: string;
-  auth: string;
   tz: string;
   remind_plan: boolean;
   remind_risk: boolean;
@@ -389,6 +573,20 @@ export type Sub = {
   sent_week: number;
   week_key: string | null;
   risk_week: string | null;
+};
+
+/** A browser, addressed by the endpoint its push service issued. */
+export type Sub = Reminder & {
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+};
+
+/** A native install, addressed by the device token Apple issued. */
+export type Device = Reminder & {
+  token: string;
+  bundle: string | null;
+  env: string;
 };
 
 /** Everything about the user this decision needs, read once per user per tick. */
@@ -414,7 +612,7 @@ export type Decision =
  * reminders. At-risk wins a tie because the plan-day reminder comes round again
  * tomorrow and the week does not.
  */
-export function decide(sub: Sub, ctx: Ctx, nowMs: number): Decision {
+export function decide(sub: Reminder, ctx: Ctx, nowMs: number): Decision {
   if (!sub.remind_plan && !sub.remind_risk) return { send: false, why: "off" };
 
   const now = localAt(nowMs, sub.tz);
@@ -495,10 +693,8 @@ async function writeRow(table: string, query: string, body: Record<string, unkno
   else await r.body?.cancel();
 }
 
-async function dropRow(endpoint: string): Promise<void> {
-  const r = await fetch(`${rest("push_subscriptions")}?endpoint=eq.${encodeURIComponent(endpoint)}`, {
-    method: "DELETE", headers: dbHeaders,
-  });
+async function dropRow(table: string, query: string): Promise<void> {
+  const r = await fetch(`${rest(table)}?${query}`, { method: "DELETE", headers: dbHeaders });
   await r.body?.cancel();
 }
 
@@ -581,19 +777,42 @@ async function contextFor(userId: string, tz: string, todayYmd: string): Promise
   };
 }
 
+/** One live row and the transport that will carry it. */
+type Live = { via: "web"; row: Sub } | { via: "apns"; row: Device };
+
 /**
- * One pass over every live subscription. Called on the hour by pg_cron, and by
- * hand with the worker secret when somebody wants to see it work.
+ * One pass over every live reminder — browsers and native installs in the same
+ * loop, against the same `decide()`. Called on the hour by pg_cron, and by hand
+ * with the worker secret when somebody wants to see it work.
  *
  * The hour gate is applied before anything is read, so a tick at 03:00 with two
- * hundred subscribers on 17:30 costs one query and nothing else. `dry` returns
+ * hundred subscribers on 17:30 costs two queries and nothing else. `dry` returns
  * the decisions without sending, which is what makes this safe to poke at.
+ *
+ * A user with a browser subscription AND the app installed gets one reminder on
+ * each, because the caps are per row and a row is per grant of permission. That
+ * is the same answer a phone and a laptop have always had; it is also why the
+ * app's own reminders screen turns the browser's off when it enrols — see the
+ * client. Folding the caps up to the user would silence whichever device the
+ * tick happened to reach second, which is worse than a duplicate.
  */
 export async function runPushTick(nowMs = Date.now(), dry = false): Promise<{
   looked: number; sent: number; dropped: number; decisions: { user: string; kind: string; why: string }[];
 }> {
-  const rows = await readRows("push_subscriptions",
-    "or=(remind_plan.eq.true,remind_risk.eq.true)&select=*&limit=2000") as unknown as Sub[];
+  const apns = apnsCfg();
+  const live = "or=(remind_plan.eq.true,remind_risk.eq.true)&select=*&limit=2000";
+  const [subs, devices] = await Promise.all([
+    readRows("push_subscriptions", live) as unknown as Promise<Sub[]>,
+    // A deployment with no APNs key is not read at all. Those rows are somebody
+    // switching a reminder on and waiting for a signing key, not an error worth
+    // a log line an hour.
+    (apns ? readRows("push_devices", live) : Promise.resolve([])) as unknown as Promise<Device[]>,
+  ]);
+
+  const rows: Live[] = [
+    ...subs.map((row) => ({ via: "web", row } as Live)),
+    ...devices.map((row) => ({ via: "apns", row } as Live)),
+  ];
 
   const decisions: { user: string; kind: string; why: string }[] = [];
   let sent = 0, dropped = 0;
@@ -601,7 +820,8 @@ export async function runPushTick(nowMs = Date.now(), dry = false): Promise<{
   // Sequential on purpose. The hour gate has already cut this to the handful of
   // rows whose local time it is, and a burst of parallel requests to Apple and
   // Google from one isolate buys nothing but a rate limit.
-  for (const sub of rows) {
+  for (const entry of rows) {
+    const sub = entry.row;
     const now = localAt(nowMs, sub.tz);
     const planHour = hourFor(sub.remind_at);
     if (now.hour !== planHour && now.hour !== Math.min(planHour, 20)) continue;
@@ -621,46 +841,63 @@ export async function runPushTick(nowMs = Date.now(), dry = false): Promise<{
       continue;
     }
     if (dry) {
-      console.log(`push: user ${sub.user_id} ${d.kind} would send`);
+      console.log(`push: user ${sub.user_id} ${d.kind} would send via ${entry.via}`);
       decisions.push({ user: sub.user_id, kind: d.kind, why: "dry run" });
       continue;
     }
 
-    let result: SendResult;
+    // The same message down two wires. The web payload carries the app's own
+    // https address because a service worker opens a window; the APNs one
+    // carries a spotter:// link because the shell routes it through
+    // openDeepLink, and neither of them is the other's business.
+    let gone = false, status = 0, note = "";
     try {
-      result = await sendPush(sub.endpoint, sub.p256dh, sub.auth, {
-        title: d.title, body: d.body, tag: d.tag, url: d.url,
-      });
+      if (entry.via === "web") {
+        const w = entry.row;
+        const r = await sendPush(w.endpoint, w.p256dh, w.auth, {
+          title: d.title, body: d.body, tag: d.tag, url: d.url,
+        });
+        gone = r.gone;
+        status = r.status;
+      } else {
+        const r = await sendApns(entry.row, d.kind, d.title, d.body, apns!, nowMs);
+        gone = r.gone;
+        status = r.status;
+        note = r.reason;
+      }
     } catch (e) {
       console.error(`push: user ${sub.user_id} ${d.kind} failed`, e);
       decisions.push({ user: sub.user_id, kind: d.kind, why: "send failed" });
       continue;
     }
 
-    if (result.gone) {
-      await dropRow(sub.endpoint);
+    const table = entry.via === "web" ? "push_subscriptions" : "push_devices";
+    if (gone) {
+      await dropRow(table, entry.via === "web"
+        ? `endpoint=eq.${encodeURIComponent(entry.row.endpoint)}`
+        : `token=eq.${encodeURIComponent((entry.row as Device).token)}`);
       dropped++;
-      console.log(`push: user ${sub.user_id} ${d.kind} dropped(${result.status}, endpoint gone)`);
-      decisions.push({ user: sub.user_id, kind: d.kind, why: `gone ${result.status}` });
+      console.log(`push: user ${sub.user_id} ${d.kind} dropped(${status}${note ? " " + note : ""}, device gone)`);
+      decisions.push({ user: sub.user_id, kind: d.kind, why: `gone ${status}` });
       continue;
     }
-    if (result.status >= 300) {
-      console.error(`push: user ${sub.user_id} ${d.kind} refused ${result.status}`);
-      decisions.push({ user: sub.user_id, kind: d.kind, why: `refused ${result.status}` });
+    if (status >= 300) {
+      console.error(`push: user ${sub.user_id} ${d.kind} refused ${status}${note ? " " + note : ""}`);
+      decisions.push({ user: sub.user_id, kind: d.kind, why: `refused ${status}` });
       continue;
     }
 
     // The caps are written after the send, not before it: a message the push
     // service never accepted must not spend the day's one slot.
     const used = sub.week_key === d.week ? (sub.sent_week || 0) : 0;
-    await writeRow("push_subscriptions", `id=eq.${sub.id}`, {
+    await writeRow(table, `id=eq.${sub.id}`, {
       last_sent_at: new Date(nowMs).toISOString(),
       week_key: d.week,
       sent_week: used + 1,
       risk_week: d.kind === "risk" ? d.week : sub.risk_week,
     });
     sent++;
-    console.log(`push: user ${sub.user_id} ${d.kind === "plan" ? "plan-day" : "week-at-risk"} sent`);
+    console.log(`push: user ${sub.user_id} ${d.kind === "plan" ? "plan-day" : "week-at-risk"} sent via ${entry.via}`);
     decisions.push({ user: sub.user_id, kind: d.kind, why: "sent" });
   }
 
