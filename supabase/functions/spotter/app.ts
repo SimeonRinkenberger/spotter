@@ -16169,7 +16169,18 @@ export const APP = String.raw`
     // card that has been deleted, and a malformed link says nothing at all.
     var card = !!arg && (head === "workout" || head === "start"), w = card ? planWorkout(arg) : null;
     if (head === "resume") woForward();
-    else if (head === "tab") { if (/^(library|plan|progress|pumpy)$/.test(arg)) setView(arg); }
+    else if (head === "tab") {
+      if (!/^(library|plan|progress|pumpy)$/.test(arg)) return;
+      // A card overlay covers the tabs, so switching one underneath it changes
+      // nothing the reader can see: on the 16e, tapping the Today widget with a
+      // workout card open looked like a dead link. Spend the card's own history
+      // entry first, exactly as its close button does. A sheet or Workout Mode
+      // over the top is left alone — closing Workout Mode would end a session
+      // nobody asked to end, and that is worse than a link that waits.
+      if ($("detail").classList.contains("open") && !$("workout").classList.contains("open")
+        && !document.querySelector(".sheet.open")) history.back();
+      setView(arg);
+    }
     else if (!card) return;
     else if (!w) toast("That workout is not in your library any more.");
     else if (head === "workout") openDetail(w);

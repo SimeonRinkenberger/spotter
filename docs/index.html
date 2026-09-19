@@ -17610,9 +17610,10 @@ details.details-moving > :not(summary) {
     if (m) {
       var head = m[1], arg = decodeURIComponent(m[2].replace(/\/+$/, "")), card = !!arg && (head === "workout" || head === "start"), w = card ? planWorkout(arg) : null;
       if (head === "resume") woForward();
-      else if (head === "tab")
-        /^(library|plan|progress|pumpy)$/.test(arg) && setView(arg);
-      else if (card) w ? head === "workout" ? openDetail(w) : wo && !wo.finished ? (woForward(), toast("A workout is already running.")) : (openDetail(w), startWorkout(w)) : toast("That workout is not in your library any more.");
+      else if (head === "tab") {
+        if (!/^(library|plan|progress|pumpy)$/.test(arg)) return;
+        $("detail").classList.contains("open") && !$("workout").classList.contains("open") && !document.querySelector(".sheet.open") && history.back(), setView(arg);
+      } else if (card) w ? head === "workout" ? openDetail(w) : wo && !wo.finished ? (woForward(), toast("A workout is already running.")) : (openDetail(w), startWorkout(w)) : toast("That workout is not in your library any more.");
       else return;
     }
   }
