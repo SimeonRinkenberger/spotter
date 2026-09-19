@@ -52,29 +52,35 @@ struct RestView: View {
                 .frame(maxHeight: .infinity)
                 .padding(.horizontal, 6)
 
-                Text(nextLine)
-                    .font(WidgetTheme.display(12, weight: .medium))
-                    .foregroundStyle(WidgetTheme.ink2)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.7)
-
-                if link.stalled {
-                    WaitingNote()
-                } else {
-                    Button {
-                        link.send(.skipRest)
-                    } label: {
-                        Text("Skip")
-                            .font(WidgetTheme.display(14, weight: .semibold))
-                            .foregroundStyle(WidgetTheme.ink)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 6)
+                // One line above the button, whichever is true: what this rest
+                // is for, or that the phone has not answered. Skip stays on
+                // screen either way — a tap that went unacknowledged is exactly
+                // when someone wants to press it again.
+                Group {
+                    if link.stalled {
+                        WaitingNote()
+                    } else {
+                        Text(nextLine)
+                            .font(WidgetTheme.display(12, weight: .medium))
+                            .foregroundStyle(WidgetTheme.ink2)
+                            .multilineTextAlignment(.center)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.7)
                     }
-                    .buttonStyle(.plain)
-                    .background(WidgetTheme.sand, in: Capsule())
-                    .disabled(link.pending != nil)
                 }
+
+                Button {
+                    link.send(.skipRest)
+                } label: {
+                    Text("Skip")
+                        .font(WidgetTheme.display(14, weight: .semibold))
+                        .foregroundStyle(WidgetTheme.ink)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
+                }
+                .buttonStyle(.plain)
+                .background(WidgetTheme.sand, in: Capsule())
+                .disabled(link.pending != nil)
             }
             .padding(.horizontal, 2)
             .padding(.bottom, 2)

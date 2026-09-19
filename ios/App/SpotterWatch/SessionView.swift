@@ -95,11 +95,15 @@ struct MetricsPage: View {
                     .minimumScaleFactor(0.6)
                     .fixedSize(horizontal: false, vertical: true)
 
-                Text(subtitle)
-                    .font(WidgetTheme.display(12, weight: .medium))
-                    .foregroundStyle(WidgetTheme.ink2)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.7)
+                // An AMRAP round has no set position, no target and nothing
+                // after it, and an empty Text still takes a line's height.
+                if !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(WidgetTheme.display(12, weight: .medium))
+                        .foregroundStyle(WidgetTheme.ink2)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.7)
+                }
 
                 if let dose = dose, dose.loggable {
                     dials(dose)
@@ -112,8 +116,6 @@ struct MetricsPage: View {
                         .minimumScaleFactor(0.7)
                         .padding(.top, 2)
                 }
-
-                if link.stalled { WaitingNote() }
             }
             .padding(.horizontal, 2)
             .padding(.bottom, 2)
@@ -146,7 +148,12 @@ struct MetricsPage: View {
 
             Spacer(minLength: 0)
 
-            if let block = state.block {
+            // The block name is decoration and the silence is not, so they share
+            // a slot: a footnote under a button the page has scrolled past is a
+            // message nobody reads.
+            if link.stalled {
+                WaitingNote()
+            } else if let block = state.block {
                 Text(block)
                     .font(WidgetTheme.label(10))
                     .foregroundStyle(WidgetTheme.muted)
