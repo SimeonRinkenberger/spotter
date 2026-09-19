@@ -33,13 +33,21 @@ the process is suspended and while the phone is locked.
 
 | phase | Lock Screen primary / secondary | Clock | Bar | Button | Compact leading / trailing | Minimal |
 | --- | --- | --- | --- | --- | --- | --- |
-| `work` | movement · `Set 2 of 4 · 10 reps · 24 kg` | elapsed, ink-2 | session progress (done/total), ember | **Log set** | dumbbell / `2/4` | dumbbell |
-| `rest` | movement · `Up next · Set 3 of 4` | countdown, **ember, larger** | rest countdown, ember | **Skip rest** | hourglass / countdown | countdown ring |
-| `rest` paused | movement · `Up next · Set 3 of 4` | frozen `1:23`, muted | frozen fraction, muted | **Skip rest** | hourglass / `1:23` muted | muted ring |
+| `work` | movement · `Set 2 of 3 · 10 reps · 24 kg` | elapsed, ink-2 | session progress (done/total), ember | **Log set** | dumbbell / elapsed | dumbbell |
+| `rest` | movement · `Up next · Set 3 of 3` | countdown, **ember, larger** | rest countdown, ember | **Skip rest** | hourglass / countdown | countdown ring |
+| `rest` paused | movement · `Up next · Set 3 of 3` | frozen `0:23`, muted | frozen fraction, muted | **Skip rest** | hourglass / frozen, muted | muted glyph |
 | `timed` | movement · target | countdown, ember | countdown, ember | — | timer / countdown | countdown ring |
-| `complex` | movement · block · target | elapsed, ink-2 | session progress | — | dumbbell / elapsed | dumbbell |
-| `done` | `Workout saved` / `Session ended` · `42:10 · 18 sets · 2 PRs` | check, good | — | — | check / elapsed | check |
+| `complex` | movement · block · target · weight | elapsed, ink-2 | session progress, ember | — | dumbbell / elapsed | dumbbell |
+| `done` | `Workout saved` / `Session ended` · `42:10 · 18 sets · 2 PRs` | check, good | full, good | — | check / elapsed | check |
 | `unknown` | falls through to the `work` treatment with no button | elapsed | session progress | — | dumbbell / elapsed | dumbbell |
+
+The compact trailing element is one view (`IslandClock`) in every phase: it shows the countdown while
+one is running and the elapsed session time otherwise. A set fraction was considered there and
+dropped — at compact width it competes with the countdown for the same few points, and "how long
+until I lift again" beats "which set is this" on a glance from across the gym.
+
+The expanded presentation carries no captions over its two numbers. See *What rendering the card
+caught*.
 
 Deliberate departures from a literal reading of the brief, both in service of the HIG:
 
@@ -53,7 +61,7 @@ Deliberate departures from a literal reading of the brief, both in service of th
    `timed` and `complex` get none, because `liveAction()` in app.ts answers both with
    "Log this one on the phone." — a button that only ever produces a toast is worse than no button.
 
-## The button round trip — what was measured
+## The button round trip — what was and was not measured
 
 `SkipRestIntent` and `LogSetIntent` are `LiveActivityIntent`s in `Shared/LiveActivityIntents.swift`,
 compiled into **both** the App target (where `perform()` runs) and the SpotterWidgets target (which
@@ -62,21 +70,59 @@ by `LiveActivitySink` at launch and does two things in order: apply an **optimis
 to the activity, then `LiveStatePlugin.deliver(...)` the action to JavaScript with
 `retainUntilConsumed: true`.
 
-The optimistic update is not a nicety. Findings, measured on iPhone 17 Pro (see the report):
+**The round trip was NOT measured.** Driving it needs a signed-in session in Workout Mode, and the
+machine this was built on could send the Simulator neither a tap nor a keystroke — no accessibility
+permission for `osascript`, no device permission for the simulator-control tool. There was no way to
+type an email address, let alone press a Lock Screen button. What follows is therefore one verified
+fact, one documented fact, and one piece of reasoning, labelled as such.
 
-- **Locked device: the button does nothing at all** until the user authenticates. This is Apple's
-  documented behaviour, quoted above — not a Spotter bug, and not fixable. The Lock Screen button is
-  therefore a *post-unlock* affordance; the thing that works on a locked screen is the countdown,
-  which is why the countdown is the hero and the button is the smallest element on the card.
-- **Unlocked, app backgrounded:** the intent runs in the app process promptly, but the WKWebView's
-  content process is suspended, so the JavaScript listener does not run until the app is
-  foregrounded. Without the optimistic update the card would sit on a rest the engine has already
-  been told to end. With it, the card corrects within ~1 frame and `retainUntilConsumed: true`
-  guarantees the engine applies the same action for real the moment the web view wakes — the two can
-  disagree only about *when*, never about *what*.
+- **Verified.** The button renders, is reachable, and is the only interactive element, in both
+  appearances (`70-expanded-light.png`, `71-expanded-dark.png`).
+- **Documented, not measured.** WidgetKit: "On a locked device, buttons and toggles are inactive and
+  the system doesn't perform actions unless a person authenticates and unlocks their device." So the
+  Lock Screen button is a *post-unlock* affordance on every iPhone, in every app. That is not a
+  Spotter bug and cannot be worked around. It is also why the countdown, not the button, is the
+  hero: the countdown is the part that works while the phone is locked, and that part **is**
+  verified — the card counted 0:56 → 0:54 → 0:47 across an app kill and relaunch
+  (`reconcile-strip.png`), which is the same mechanism.
+- **Reasoned, not measured.** With the app merely backgrounded, `perform()` runs in the app process
+  (the system wakes the app for a `LiveActivityIntent`), but the WKWebView content process is
+  suspended, so the JavaScript listener is unlikely to run until the app is foregrounded. The
+  optimistic update exists for exactly that window, and `retainUntilConsumed: true` means the engine
+  applies the same action for real when the web view wakes — so the two can disagree about *when*,
+  never about *what*. **This is the one claim in this document that a person with a signed-in phone
+  should check first.** The check is one line: start a workout, log a set, press Home, tap
+  "Skip rest" in the Dynamic Island, and see whether the card leaves rest within ~2 s and whether
+  the rest is also over when you reopen the app.
 
 Every action still goes through `liveAction()` in app.ts, which calls `doneRest()` / `saveSet()` —
 the same functions a thumb calls. No shortcut path, per the contract in NATIVE-SHARED.
+
+## What rendering the card caught
+
+The Lock Screen presentation is only composited by the system on a locked device, which this machine
+could not produce. A DEBUG-only `ImageRenderer` harness (`ios/App/App/LiveActivityShots.swift`) draws
+the real `LockScreenWorkout` instead. It found three defects that reading the code had not:
+
+1. **Dynamic Type support was inert.** `@ScaledMetric(relativeTo: .body) var typeScale: CGFloat = 1`
+   returns 1.0 at every type size, because `UIFontMetrics` rounds. Two renders at different sizes
+   came out byte-identical. Scaling from a base of 100 and dividing fixes it.
+2. **The progress bars ignored their tint.** A linear `ProgressView` forced into a 5 pt frame drew
+   system yellow. Every fixed-value bar is now two hand-drawn capsules. (The remaining
+   `ProgressView(timerInterval:)` — the only bar that can animate without an update — was later
+   confirmed to tint ember correctly on the device itself, in `70-expanded-light.png`; the yellow in
+   the rendered PNGs is an ImageRenderer artifact.)
+3. **The card could exceed the 160 pt truncation limit.** "Bulgarian Split Squat (Rear Foot
+   Elevated)" wrapped to two lines at 1.25x measured **166 pt**, and what the system truncates is the
+   bottom — the button. The hero now drops to one shrunk line above 1.12x. Measured heights, every
+   phase, after the fix: 94–151 pt, worst case 128 pt.
+
+Capturing the expanded Dynamic Island (by sending one alerting update from the fixture, the only way
+to open it without a long press) caught a fourth: the leading and trailing captions were **clipped by
+the island's own corner radius** — "TIME" lost its T, "REST" lost its T. Shortening the words and
+adding `minimumScaleFactor` did not help because the clipping is geometric. Both captions are gone;
+the two numbers are inset 6 pt so they clear the curve. This is the HIG's "elements poking into the
+rounded shape of the Live Activity and creating visual tension", found the hard way.
 
 ## The rest-end nudge
 
@@ -102,9 +148,20 @@ Fontshare): `.rounded` monospaced digits for every number so a ticking timer doe
 row, semibold display sizes for the movement. Sizes scale with Dynamic Type through `@ScaledMetric`
 clamped to 1.0–1.25 ×, which keeps the card inside the 160 pt truncation limit at XL and above.
 
-## Screenshots (evidence)
+## Evidence
 
-Under the session scratchpad, `…/scratchpad/a/`:
-`lock-rest-t0.png`, `lock-rest-t10.png` (the same rest, ten seconds later, counted while locked),
-`island-compact.png`, `island-expanded.png`, `nudge-banner.png`, `lock-rest-dark.png`,
-`island-compact-dark.png`, `done.png`, `relaunch-reconciled.png`, `nudge-ask.png`.
+All under the session scratchpad `…/scratchpad/a/`:
+
+| File | Shows |
+| --- | --- |
+| `cards-light.png`, `cards-dark.png` | the Lock Screen card in all six phases plus two layout stress cases, both appearances, heights labelled |
+| `20-island-compact.png` | compact Dynamic Island, light — ember hourglass and an ember countdown |
+| `70-expanded-light.png`, `71-expanded-dark.png` | expanded Dynamic Island, both appearances, after the caption fix |
+| `reconcile-strip.png` | 0:56 → 0:54 → 0:47 across an app kill and relaunch: the clock is deadline-driven, and relaunch adopts one card rather than duplicating it |
+| `ghost-strip.png` | an orphaned card (stored state wiped) ended on the next launch |
+| `nudge-log.txt` | `id=rest-end title=Rest over body=Goblet Squat, set 3 of 3 fires=57s away`, then `pending=0` once the state is no longer that rest |
+| `done-strip.png` | the ended activity leaves the Dynamic Island immediately, which is ActivityKit's documented behaviour for an ended activity (it persists only on the Lock Screen) |
+
+Not captured, and why: the composited **Lock Screen** itself, the **minimal** presentation (needs a
+second concurrent Live Activity), the **nudge banner**, and the **in-app permission line** — all four
+need either a device lock or a tap, and this machine could send neither.

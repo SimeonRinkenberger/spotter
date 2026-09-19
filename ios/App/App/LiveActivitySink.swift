@@ -387,12 +387,37 @@ extension LiveActivitySink {
             if ProcessInfo.processInfo.environment["SPOTTER_LIVE_FIXTURE_ALERT"] != nil {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 3) { self.alertForShot(state) }
             }
+            // Prove the nudge: dump what is actually pending, then drive a
+            // state that is not that rest and dump again. Scheduling and
+            // cancelling are the two halves that go wrong silently.
+            if env["SPOTTER_LIVE_FIXTURE_NOTIFY"] != nil {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) { Self.dumpPending("after rest") }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+                    self.drive(Self.fixture("work"))
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { Self.dumpPending("after work") }
+                }
+            }
             if name == "ghost" {
                 // The card stays; the engine's record of it does not.
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
                     SharedStore.remove(key: SharedStore.Key.liveState)
                     NSLog("Spotter fixture: stored live-state wiped, card orphaned")
                 }
+            }
+        }
+    }
+
+    private static func dumpPending(_ when: String) {
+        UNUserNotificationCenter.current().getPendingNotificationRequests { reqs in
+            if reqs.isEmpty {
+                NSLog("SPOTTERNUDGE %@: pending=0", when)
+                return
+            }
+            for r in reqs {
+                let fire = (r.trigger as? UNCalendarNotificationTrigger)?.nextTriggerDate()
+                NSLog("SPOTTERNUDGE %@: id=%@ title=%@ body=%@ fires=%@",
+                      when, r.identifier, r.content.title, r.content.body,
+                      fire.map { String(format: "%.0fs away", $0.timeIntervalSinceNow) } ?? "no date")
             }
         }
     }
