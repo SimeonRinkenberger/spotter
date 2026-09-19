@@ -89,22 +89,16 @@ enum ContactSheetBuilder {
             return pages.count < SheetSpec.maxSheets
         }
 
-        if #available(iOS 16.0, *) {
-            let times = wanted.map { CMTime(seconds: $0, preferredTimescale: 600) }
-            for await result in generator.images(for: times) {
-                if case let .success(_, image, actual) = result {
-                    if try !take(actual.seconds, image) { break }
-                }
-                // The budget is the user's patience, not a correctness property:
-                // whatever has arrived by now is the sheet, and the rest is dropped.
-                if Date() >= deadline { break }
+        let times = wanted.map { CMTime(seconds: $0, preferredTimescale: 600) }
+        for await result in generator.images(for: times) {
+            if case let .success(_, image, actual) = result {
+                if try !take(actual.seconds, image) { break }
             }
-            generator.cancelAllCGImageGeneration()
-        } else {
-            for frame in await legacyImages(generator: generator, times: wanted, deadline: deadline) {
-                if try !take(frame.time, frame.image) { break }
-            }
+            // The budget is the user's patience, not a correctness property:
+            // whatever has arrived by now is the sheet, and the rest is dropped.
+            if Date() >= deadline { break }
         }
+        generator.cancelAllCGImageGeneration()
         try flush()
 
         // Never publish a timed-out prefix as an overview of the whole clip.
@@ -183,48 +177,14 @@ enum ContactSheetBuilder {
 
     /// Display size after the track's rotation, and the duration, on both OS eras.
     private static func describe(_ asset: AVURLAsset) async throws -> (CGSize, Double) {
-        if #available(iOS 16.0, *) {
-            guard let track = try await asset.loadTracks(withMediaType: .video).first else {
-                throw ContactSheetError.noVideoTrack
-            }
-            let (natural, transform) = try await track.load(.naturalSize, .preferredTransform)
-            let duration = try await asset.load(.duration)
-            return (natural.applying(transform).absolute, duration.seconds)
-        }
-        guard let track = asset.tracks(withMediaType: .video).first else {
+        guard let track = try await asset.loadTracks(withMediaType: .video).first else {
             throw ContactSheetError.noVideoTrack
         }
-        return (track.naturalSize.applying(track.preferredTransform).absolute, asset.duration.seconds)
+        let (natural, transform) = try await track.load(.naturalSize, .preferredTransform)
+        let duration = try await asset.load(.duration)
+        return (natural.applying(transform).absolute, duration.seconds)
     }
 
-    /**
-     * iOS 15 has no `images(for:)`; the callback form does the same job, at the
-     * cost of holding every frame at once — which is why it is the fallback and
-     * not the path. iOS 16 shipped in 2022; almost nobody arrives here.
-     */
-    private static func legacyImages(generator: AVAssetImageGenerator, times: [Double],
-                                     deadline: Date) async -> [(time: Double, image: CGImage)] {
-        let values = times.map { NSValue(time: CMTime(seconds: $0, preferredTimescale: 600)) }
-        return await withCheckedContinuation { continuation in
-            var collected: [(time: Double, image: CGImage)] = []
-            var remaining = values.count
-            var resumed = false
-            let lock = NSLock()
-            generator.generateCGImagesAsynchronously(forTimes: values) { _, image, actual, _, _ in
-                lock.lock()
-                if let image = image { collected.append((actual.seconds, image)) }
-                remaining -= 1
-                let finish = (remaining <= 0 || Date() >= deadline) && !resumed
-                if finish { resumed = true }
-                let out = collected.sorted { $0.time < $1.time }
-                lock.unlock()
-                if finish {
-                    generator.cancelAllCGImageGeneration()
-                    continuation.resume(returning: out)
-                }
-            }
-        }
-    }
 }
 
 private extension CGSize {

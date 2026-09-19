@@ -8748,7 +8748,7 @@ details.details-moving > :not(summary) {
   }
   function clearAccount() {
     if (native && native.configureSharing(null).catch(function() {
-    }), cancelPumpyReset(), pendingMotion && pendingMotion.disconnect(), $("app").classList.add("hide"), accountEpoch++, reads = {}, inFlight = {}, libraryRev++, logsRev++, planRev++, clearTimeout(undoTimer), undoTimer = null, undoFn = null, clearTimeout(detailCloseTimer), clearTimeout(woCloseTimer), clearTimeout(pendTimer), pendTimer = null, pendPolls = 0, pendBusy = !1, wkChannel && (sb.removeChannel(wkChannel), wkChannel = null), booting = null, state.profile = null, state.workouts = [], state.logs = null, state.plan = null, state.awards = null, state.goal = null, heroPct = 0, trainSeg = null, state.unit = "lb", state.sounds = !0, state.haptics = !0, state.collections = [], state.colItems = [], seenCards = {}, gridCards = {}, expCache = {}, expWaiting = {}, vidCache = {}, expKey = "", today.rows = [], today.at = 0, today.day = null, today.busy = !1, today.shown = !1, current = null, sc && scForget(), wo && saveDraft(), clearInterval(woTimer), stopRest(), releaseWake(), wo = null, hist = {}, histReady = !1, strava && (strava = { asked: !1, configured: !1, connected: !1, athlete: null, busy: !1 }), pumpy) {
+    }), cancelPumpyReset(), pendingMotion && pendingMotion.disconnect(), $("app").classList.add("hide"), accountEpoch++, reads = {}, inFlight = {}, libraryRev++, logsRev++, planRev++, clearTimeout(undoTimer), undoTimer = null, undoFn = null, clearTimeout(detailCloseTimer), clearTimeout(woCloseTimer), clearTimeout(pendTimer), pendTimer = null, pendPolls = 0, pendBusy = !1, wkChannel && (sb.removeChannel(wkChannel), wkChannel = null), booting = null, state.profile = null, state.workouts = [], state.logs = null, state.plan = null, state.awards = null, state.goal = null, heroPct = 0, trainSeg = null, state.unit = "lb", state.sounds = !0, state.haptics = !0, state.collections = [], state.colItems = [], seenCards = {}, gridCards = {}, expCache = {}, expWaiting = {}, vidCache = {}, expKey = "", today.rows = [], today.at = 0, today.day = null, today.busy = !1, today.shown = !1, current = null, sc && scForget(), wo && saveDraft(), clearInterval(woTimer), stopRest(), liveEnd(!1), releaseWake(), wo = null, hist = {}, histReady = !1, strava && (strava = { asked: !1, configured: !1, connected: !1, athlete: null, busy: !1 }), pumpy) {
       var seq = (pumpy.openSeq || 0) + 1, wired = pumpy.wired;
       pumpy = {
         thread: null,
@@ -8776,7 +8776,7 @@ details.details-moving > :not(summary) {
       var first = !state.user || state.user.id !== session.user.id;
       first && state.user && clearAccount(), state.user = session.user, showApp(), first && setTimeout(boot, 0);
     } else
-      clearAccount(), state.user = null, guideUser(), state.workouts = [], state.logs = null, state.plan = null, state.awards = null, state.filter = "All", state.q = "", $("search").value = "", dropCache(), booting = null, showLanding();
+      clearAccount(), publishSignedOut(), state.user = null, guideUser(), state.workouts = [], state.logs = null, state.plan = null, state.awards = null, state.filter = "All", state.q = "", $("search").value = "", dropCache(), booting = null, showLanding();
   });
   var booting = null;
   function boot() {
@@ -8787,6 +8787,8 @@ details.details-moving > :not(summary) {
     var epoch = accountEpoch, uid = state.user.id;
     return booting = load().then(function() {
       if (accountNow(epoch, uid)) return consumeShare();
+    }).then(function() {
+      accountNow(epoch, uid) && consumeOpen();
     }).then(function() {
       if (accountNow(epoch, uid)) return consumeBilling();
     }).then(function() {
@@ -9650,6 +9652,9 @@ details.details-moving > :not(summary) {
   function doseText(ex) {
     var bits = [];
     return ex.sets && ex.reps ? bits.push(ex.sets + " \xD7 " + ex.reps) : ex.sets ? bits.push(ex.sets + " sets") : ex.reps && bits.push(ex.reps + " reps"), ex.duration_seconds && bits.push(ex.duration_seconds >= 60 ? Math.round(ex.duration_seconds / 60) + " min" : ex.duration_seconds + "s"), bits.join(" \xB7 ");
+  }
+  function askText(ex) {
+    return ex ? ex.duration_seconds > 0 ? ex.duration_seconds + " s" : ex.reps ? ex.reps + " reps" : null : null;
   }
   function blockMetaText(b) {
     var bits = [];
@@ -11195,7 +11200,7 @@ details.details-moving > :not(summary) {
     return "spotter_draft";
   }
   function saveDraft() {
-    if (!(!wo || wo.finished))
+    if (!(!wo || wo.finished)) {
       try {
         localStorage.setItem(draftKey(), JSON.stringify({
           workoutId: wo.workout.id,
@@ -11210,12 +11215,68 @@ details.details-moving > :not(summary) {
         })), native && native.saveDraft(localStorage.getItem(draftKey()));
       } catch (e) {
       }
+      native && native.live && liveSync();
+    }
   }
   function clearDraft() {
     native && native.saveDraft(null);
     try {
       localStorage.removeItem(draftKey());
     } catch (e) {
+    }
+  }
+  function liveState() {
+    var s = wo.screens[wo.i], entry = wo.entries[wo.i], i, logged = 0, planned = 0;
+    for (i = 0; i < wo.entries.length; i++)
+      logged += wo.entries[i].sets.filter(Boolean).length, planned += wo.screens[i] ? targetOf(wo.screens[i]) : 1;
+    for (var j = wo.i + 1; j < wo.screens.length && !isStop(j); ) j++;
+    var cx = !!(s && s.cx), pre = s ? setPrefill(entry.sets.length) : null, setNo = entry.sets.filter(Boolean).length + 1;
+    return {
+      v: 1,
+      title: wo.workout.title || "Workout",
+      startedAt: wo.startedAt,
+      phase: wo.finished ? "done" : restUntil && !restFace ? "rest" : restFace ? "timed" : cx ? "complex" : "work",
+      exercise: s ? s.ex.name : entry.name || "Freestyle",
+      block: s && (wo.workout.blocks || []).length > 1 ? blockName(s) : null,
+      set: s && !cx ? { index: setNo, total: Math.max(targetOf(s), setNo) } : null,
+      target: s ? askText(s.ex) : null,
+      weight: pre && pre.weight ? pre.weight.toLocaleString() + " " + state.unit : null,
+      rest: restUntil ? { until: restUntil, total: restTotal, held: restHeld } : null,
+      next: j < wo.screens.length ? wo.screens[j].ex.name : null,
+      progress: { done: logged, total: Math.max(planned, logged) },
+      // The wrist has a stepper, and it cannot build one out of "8-12 reps" and
+      // "1,200 lb" — those are sentences for a reader. So the same prefill goes
+      // over as numbers, with the plate this account steps by. loggable is the
+      // refusal liveAction would make anyway, answered before the button is
+      // drawn rather than after it is pressed: a hold and an unresolved complex
+      // are logged on the phone.
+      dose: {
+        reps: pre ? pre.reps : null,
+        weight: pre && pre.weight ? pre.weight : null,
+        unit: state.unit,
+        step: plate(),
+        loggable: !!(s && !(s.cx && !s.ei) && !isTimed(s.ex))
+      }
+    };
+  }
+  function liveSync() {
+    if (wo) try {
+      native.live.update(liveState());
+    } catch (e) {
+    }
+  }
+  function liveEnd(completed) {
+    if (!(!wo || wo.finished || !native || !native.live)) {
+      var st = liveState();
+      native.live.end({
+        v: 1,
+        title: st.title,
+        startedAt: st.startedAt,
+        endedAt: (/* @__PURE__ */ new Date()).toISOString(),
+        sets: st.progress.done,
+        prs: Object.keys(wo.prs).length,
+        completed: !!completed
+      });
     }
   }
   function startWorkout(w, resume) {
@@ -11246,7 +11307,7 @@ details.details-moving > :not(summary) {
     Object.keys(wo.amrap).forEach(function(k) {
       var a = wo.amrap[k];
       a.until && a.until <= Date.now() && (a.until = 0, a.over = 1);
-    }), cxArm(), wo.entries.length || (wo.entries = [{ name: "Freestyle", canonical_id: null, block: 0, exercise: 0, sets: [] }]), clearTimeout(woCloseTimer), $("workout").classList.remove("closing"), $("workout").classList.remove("summary", "past"), $("wclose").setAttribute("aria-label", "Exit workout"), $("workout").classList.add("open"), stopRest(), acquireWake(), renderWorkout(), startClock(), resume && resume.rest && resume.rest.total > 0 && (resume.rest.held || resume.rest.until > Date.now()) && (startRest(resume.rest.total / 1e3), restUntil = resume.rest.until, restHeld = resume.rest.held || 0, restHeld ? (clearInterval(restTimer), drawRest(restHeld)) : tickRest()), saveDraft(), history.pushState({ workout: 1 }, ""), lastWeights();
+    }), cxArm(), wo.entries.length || (wo.entries = [{ name: "Freestyle", canonical_id: null, block: 0, exercise: 0, sets: [] }]), clearTimeout(woCloseTimer), $("workout").classList.remove("closing"), $("workout").classList.remove("summary", "past"), $("wclose").setAttribute("aria-label", "Exit workout"), $("workout").classList.add("open"), stopRest(), acquireWake(), renderWorkout(), startClock(), resume && resume.rest && resume.rest.total > 0 && (resume.rest.held || resume.rest.until > Date.now()) && (startRest(resume.rest.total / 1e3), restUntil = resume.rest.until, restHeld = resume.rest.held || 0, restHeld ? (clearInterval(restTimer), drawRest(restHeld)) : tickRest()), saveDraft(), publishSummary(), history.pushState({ workout: 1 }, ""), lastWeights();
   }
   function appendSessionExercise(ex) {
     if (!wo || wo.finished) return !1;
@@ -11614,6 +11675,9 @@ details.details-moving > :not(summary) {
       wo.wake = null;
     }
   }
+  function blockName(s) {
+    return s.block.title || (s.block.type && s.block.type !== "straight" ? s.block.type : "Block " + (s.bi + 1));
+  }
   function renderWorkout(hush) {
     if (wo) {
       var main = $("wmain"), dots = $("wdots");
@@ -11642,7 +11706,7 @@ details.details-moving > :not(summary) {
       if (cx)
         focus = cxBody(main, s, cx);
       else {
-        var blockLabel = s.block.title || (s.block.type && s.block.type !== "straight" ? s.block.type : "Block " + (s.bi + 1));
+        var blockLabel = blockName(s);
         s.block.rounds && (blockLabel += " \xB7 " + s.block.rounds + " rounds"), main.appendChild(el("div", "wblock", blockLabel)), main.appendChild(el("h2", "wname", s.ex.name));
         var dose = doseText(s.ex);
         if (isCircuit(s.block) && (dose = "Round " + roundOf(s.bi) + " of " + roundsOf(s.block) + (dose ? " \xB7 " + dose : "")), dose && main.appendChild(el("div", "wdose", dose)), s.ex.recommendation && main.appendChild(el("div", "wnote", s.ex.recommendation.note)), isTimed(s.ex))
@@ -11705,7 +11769,7 @@ details.details-moving > :not(summary) {
     for (var i = 0; i < count; i++)
       (function(idx2) {
         var done = entry.sets[idx2], p = el("button", "setpill" + (done ? " done" : "") + (idx2 === just ? " just" : "") + (done && done.pr ? " pr" : "")), b = el("b", null, done ? setText(done) : timed ? ex.duration_seconds + "s" : "Set " + (idx2 + 1));
-        p.appendChild(b), p.appendChild(document.createTextNode(done ? done.seconds ? "held" : done.weight ? state.unit : "reps" : timed ? "hold " + (idx2 + 1) : ex && ex.reps ? ex.reps + " reps" : "tap to log")), p.onclick = timed ? function() {
+        p.appendChild(b), p.appendChild(document.createTextNode(done ? done.seconds ? "held" : done.weight ? state.unit : "reps" : timed ? "hold " + (idx2 + 1) : askText(ex) || "tap to log")), p.onclick = timed ? function() {
           logHold(idx2, ex.duration_seconds, 1), justSet = idx2, renderWorkout();
         } : function() {
           openSetSheet(idx2);
@@ -11714,16 +11778,24 @@ details.details-moving > :not(summary) {
     main.appendChild(pills);
   }
   var setCtx = { idx: 0, reps: 10, weight: 0 };
+  function setPrefill(idx2) {
+    var s = wo.screens[wo.i], entry = wo.entries[wo.i], existing = entry.sets[idx2], targetReps = 10;
+    if (s && s.ex && s.ex.reps) {
+      var m = String(s.ex.reps).match(/\d+/);
+      m && (targetReps = parseInt(m[0], 10));
+    }
+    var h = hist[exKey(entry)];
+    return {
+      idx: idx2,
+      reps: existing ? existing.reps : targetReps,
+      weight: existing ? toUnit(existing.weight, existing.unit) : h ? toUnit(h.weight, h.unit) : 0
+    };
+  }
   function openSetSheet(idx2) {
     if (wo) {
       restFace || (restThen = null);
-      var s = wo.screens[wo.i], entry = wo.entries[wo.i], existing = entry.sets[idx2], targetReps = 10;
-      if (s && s.ex && s.ex.reps) {
-        var m = String(s.ex.reps).match(/\d+/);
-        m && (targetReps = parseInt(m[0], 10));
-      }
-      var h = hist[exKey(entry)];
-      editing = null, $("repsbox").classList.remove("editing"), $("wtbox").classList.remove("editing"), setCtx.idx = idx2, setCtx.reps = existing ? existing.reps : targetReps, setCtx.weight = existing ? toUnit(existing.weight, existing.unit) : h ? toUnit(h.weight, h.unit) : 0, $("settitle").textContent = (s && s.ex ? s.ex.name : "Set") + " \xB7 set " + (idx2 + 1), $("setlast").textContent = lastLine(entry), $("wtunit").textContent = state.unit, drawStepper(), openSheet("setsheet");
+      var s = wo.screens[wo.i], entry = wo.entries[wo.i], pre = setPrefill(idx2);
+      editing = null, $("repsbox").classList.remove("editing"), $("wtbox").classList.remove("editing"), setCtx.idx = pre.idx, setCtx.reps = pre.reps, setCtx.weight = pre.weight, $("settitle").textContent = (s && s.ex ? s.ex.name : "Set") + " \xB7 set " + (idx2 + 1), $("setlast").textContent = lastLine(entry), $("wtunit").textContent = state.unit, drawStepper(), openSheet("setsheet");
     }
   }
   function drawStepper(animate) {
@@ -11815,7 +11887,7 @@ details.details-moving > :not(summary) {
   }
   var restUntil = 0, restTotal = 0, restHeld = 0, restCued = 0, restFace = null, restThen = null;
   function startRest(seconds, face, then) {
-    face && !restFace && stopRest(), clearInterval(restTimer), restTotal = seconds * 1e3, restUntil = Date.now() + restTotal, restHeld = 0, restCued = 4, restFace = face || null, restThen = then || null, tellSounds(), restFace || ($("reststrip").className = "reststrip on" + (state.sounds ? "" : " muted"), $("restword").textContent = "Rest period"), drawRest(restTotal), restTimer = setInterval(tickRest, 200), saveDraft();
+    face && !restFace && stopRest(), clearInterval(restTimer), restTotal = seconds * 1e3, restUntil = Date.now() + restTotal, restHeld = 0, restCued = 4, restFace = face || null, restThen = then || null, tellSounds(), restFace || ($("reststrip").className = "reststrip on" + (state.sounds ? "" : " muted"), $("restword").textContent = "Rest period"), drawRest(restTotal), restTimer = setInterval(tickRest, 200), saveDraft(), nudgeAsk();
   }
   function tickRest() {
     if (!(!restUntil || restHeld)) {
@@ -11880,6 +11952,35 @@ details.details-moving > :not(summary) {
         o.frequency.value = freq, o.connect(g), g.connect(actx.destination), g.gain.setValueAtTime(1e-4, t), g.gain.exponentialRampToValueAtTime(0.2, t + 0.012), g.gain.exponentialRampToValueAtTime(1e-4, t + len), o.start(t), o.stop(t + len + 0.03);
       } catch (e) {
       }
+  }
+  var nudgeAsked = !1;
+  function nudgeAsk() {
+    if (!(nudgeAsked || restFace || !native || !native.live)) {
+      nudgeAsked = !0;
+      try {
+        if (localStorage.getItem("spotter_nudge_asked")) return;
+      } catch (e) {
+        return;
+      }
+      native.live.notifications.status().then(function(r) {
+        if (!(!r || r.status !== "undetermined" || !restUntil)) {
+          var row = document.createElement("div"), ask = document.createElement("div");
+          row.className = "restcontrols", ask.className = "resthint", ask.textContent = "Nudge when rest ends?", ask.style.margin = "10px 0 6px", ["Turn on", "Not now"].forEach(function(word, i) {
+            var b = document.createElement("button");
+            b.className = "chip", b.textContent = word, b.onclick = function() {
+              try {
+                localStorage.setItem("spotter_nudge_asked", "1");
+              } catch (e) {
+              }
+              i || native.live.notifications.request(), ask.remove(), row.remove();
+            }, row.appendChild(b);
+          });
+          var info = $("reststrip").querySelector(".restinfo");
+          info.appendChild(ask), info.appendChild(row);
+        }
+      }, function() {
+      });
+    }
   }
   var woPhase = "idle";
   function isTimed(ex) {
@@ -12265,8 +12366,10 @@ details.details-moving > :not(summary) {
           toast("Could not save that session \u2014 check your connection.");
           return;
         }
-        payload.id = r.data && r.data.id, wo && (wo.logId = payload.id), invalidateLogs(), today.at = 0, renderToday();
-      }), clearInterval(woTimer), cxOff(), stopRest(), clearDraft(), wo.finished = !0, haptic("done"), renderSummary(payload, logged);
+        payload.id = r.data && r.data.id, wo && (wo.logId = payload.id), invalidateLogs(), today.at = 0, renderToday(), native && native.live && loadLogs().then(function() {
+          publishSummary();
+        });
+      }), clearInterval(woTimer), cxOff(), stopRest(), clearDraft(), liveEnd(!0), wo.finished = !0, haptic("done"), renderSummary(payload, logged);
     }
   }
   function leaveWorkout() {
@@ -12397,7 +12500,7 @@ details.details-moving > :not(summary) {
   }
   var woCloseTimer = null;
   function exitWorkout() {
-    wo && (clearInterval(woTimer), cxOff(), stopRest(), releaseWake(), clearDraft()), closeSheet("watchsheet"), wo = null, recapLog = null;
+    wo && (clearInterval(woTimer), cxOff(), stopRest(), releaseWake(), clearDraft(), liveEnd(!1), publishSummary()), closeSheet("watchsheet"), wo = null, recapLog = null;
     var n = $("workout");
     n.classList.contains("open") && (n.classList.remove("open"), n.classList.remove("summary"), n.classList.remove("past"), n.classList.add("closing"), recapFocus && recapFocus.isConnected && recapFocus.focus({ preventScroll: !0 }), recapFocus = null, clearTimeout(woCloseTimer), woCloseTimer = setTimeout(function() {
       n.classList.remove("closing"), guideWake();
@@ -13099,7 +13202,7 @@ details.details-moving > :not(summary) {
           var nowRange = planRange();
           if (!(from !== ymd(nowRange.from) || to !== ymd(nowRange.to))) {
             if (r0.error) throw new Error("Plan unavailable");
-            state.plan = r0.data || [], today.at = 0;
+            state.plan = r0.data || [], today.at = 0, publishSummary();
             var shape = planShape();
             silent && shape === planSig || (planSig = shape, renderTrain());
           }
@@ -13110,7 +13213,7 @@ details.details-moving > :not(summary) {
     });
   }
   function repaintPlan() {
-    planRev++, today.at = 0, planSig = planShape(), renderTrain();
+    planRev++, today.at = 0, publishSummary(), planSig = planShape(), renderTrain();
   }
   function rowsFor(key) {
     return (state.plan || []).filter(function(p) {
@@ -13722,7 +13825,7 @@ details.details-moving > :not(summary) {
         if (!accountNow(epoch, uid)) return [];
         if (rev !== logsRev) return loadLogs();
         if (r.error) throw r.error;
-        return state.logs = r.data || [], today.shown && renderToday(), state.logs;
+        return state.logs = r.data || [], publishSummary(), today.shown && renderToday(), state.logs;
       }).catch(function() {
         return accountNow(epoch, uid) && toast("Could not load your history. Open Train to try again."), [];
       });
@@ -13806,6 +13909,51 @@ details.details-moving > :not(summary) {
     if (!state.logs) return null;
     var logs = extra ? state.logs.concat([extra]) : state.logs;
     return weekStats(logs, state.plan, goalSetting(), /* @__PURE__ */ new Date());
+  }
+  var pubTimer = null, pubOut = !1;
+  function publishSummary() {
+    !native || !native.live || !state.user || (clearTimeout(pubTimer), pubTimer = setTimeout(sendSummary, 500));
+  }
+  function sendSummary() {
+    var wk = state.user ? thisWeek() : null;
+    if (wk) {
+      var key = ymd(/* @__PURE__ */ new Date()), rows = rowsFor(key), i, w;
+      rows.length || (rows = today.rows || []);
+      var now2 = null, soon = null, last = null, days = wk.dots.map(function(d) {
+        return d === "on";
+      }), planned = wk.dots.map(function(d) {
+        return d === "plan";
+      });
+      for (i = 0; i < rows.length && !now2; i++)
+        w = planWorkout(rows[i].workout_id), w && (now2 = { id: w.id, title: w.title || "Workout", minutes: w.duration_minutes || null });
+      (state.plan || []).forEach(function(r) {
+        if (!(!r.day || r.day <= key || soon && r.day > soon.day)) {
+          var m = planWorkout(r.workout_id);
+          m && (soon = { id: m.id, title: m.title || "Workout", day: r.day });
+        }
+      }), (state.logs || []).forEach(function(l) {
+        last || !isSession(l) || (last = { title: l.workout_title || "Workout", at: l.completed_at || l.started_at });
+      }), pubOut = !1, native.live.publish({
+        v: 1,
+        updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+        week: {
+          key: wk.weekKey,
+          done: wk.done,
+          goal: wk.goal,
+          days: days,
+          planned: planned,
+          atRisk: wk.atRisk
+        },
+        streak: wk.streakWeeks,
+        today: now2,
+        next: soon,
+        last: last,
+        active: !!(wo && !wo.finished)
+      });
+    }
+  }
+  function publishSignedOut() {
+    !native || !native.live || pubOut || (clearTimeout(pubTimer), pubOut = !0, native.live.publish({ v: 1, updatedAt: (/* @__PURE__ */ new Date()).toISOString(), signedOut: !0 }));
   }
   var RING_R = 44, RING_C = 2 * Math.PI * RING_R;
   function svgNode(name, cls) {
@@ -16333,12 +16481,36 @@ details.details-moving > :not(summary) {
   function toggleWorkoutSounds() {
     setSounds(!state.sounds), toast(state.sounds ? "Timer sounds on." : "Timer sounds off.", 1800);
   }
-  var remind = { plan: !1, risk: !1, at: 1050, sub: null, key: null, busy: !1 };
+  var remind = {
+    plan: !1,
+    risk: !1,
+    at: 1050,
+    sub: null,
+    key: null,
+    busy: !1,
+    cfg: null,
+    apns: !1,
+    perm: "unsupported",
+    env: "sandbox",
+    bundle: "",
+    tok: null
+  }, TOKKEY = "spotter_push_token";
+  function enrolled(v) {
+    try {
+      if (v === void 0) return localStorage.getItem(TOKKEY);
+      v ? localStorage.setItem(TOKKEY, v) : localStorage.removeItem(TOKKEY);
+    } catch (e) {
+    }
+    return null;
+  }
+  function fromPlugin(s) {
+    return s ? (remind.perm = s.permission || remind.perm, remind.env = s.environment || remind.env, remind.bundle = s.bundle || remind.bundle, s) : null;
+  }
   function pushable() {
-    return !native && !!(navigator.serviceWorker && window.PushManager && window.Notification);
+    return native ? remind.perm !== "unsupported" && remind.apns : !!(navigator.serviceWorker && window.PushManager && window.Notification);
   }
   function denied() {
-    return pushable() && window.Notification.permission === "denied";
+    return native ? remind.perm === "denied" : pushable() && window.Notification.permission === "denied";
   }
   function tzName() {
     try {
@@ -16350,8 +16522,9 @@ details.details-moving > :not(summary) {
   function hhmm(m) {
     return ("0" + Math.floor(m / 60)).slice(-2) + ":" + ("0" + m % 60).slice(-2);
   }
+  var REMIND_OFF = "Reminders are off in your phone's Settings.", REMIND_WHAT = "Two at most and never more than one a day: today's plan at the hour nearest the time you pick, and one on the last day the week's goal is still reachable.";
   function remindNote() {
-    return native ? "Native reminders are not configured in this development build." : pushable() ? denied() ? "Reminders are off in your phone's Settings." : "Two at most and never more than one a day: today's plan at the hour nearest the time you pick, and one on the last day the week's goal is still reachable." : standalone() ? "This browser cannot show reminders." : "Install Spotter to your Home Screen to get reminders \u2014 tap Share, then Add to Home Screen.";
+    return native ? remind.apns ? denied() ? REMIND_OFF : remind.perm === "granted" || remind.perm === "provisional" ? "Reminders arrive as notifications. You can change this in Settings \u203A Notifications." : REMIND_WHAT : "Native reminders are not configured in this development build." : pushable() ? denied() ? REMIND_OFF : REMIND_WHAT : standalone() ? "This browser cannot show reminders." : "Install Spotter to your Home Screen to get reminders \u2014 tap Share, then Add to Home Screen.";
   }
   function paintRemind() {
     var can = pushable() && !denied() && !remind.busy, t = $("remtime");
@@ -16360,26 +16533,47 @@ details.details-moving > :not(summary) {
       b.textContent = remind[k] ? "On" : "Off", b.classList.toggle("active", remind[k]), b.disabled = !can;
     }), t.disabled = !can || !remind.plan, t.value = hhmm(remind.at), $("setremnote").textContent = remindNote();
   }
+  function readRemind(table, col, value) {
+    return sb.from(table).select("remind_plan,remind_risk,remind_at").eq(col, value).maybeSingle().then(function(r) {
+      var w = r.data || {};
+      remind.plan = !!w.remind_plan, remind.risk = !!w.remind_risk, typeof w.remind_at == "number" && (remind.at = w.remind_at), paintRemind();
+    });
+  }
   function loadRemind() {
-    paintRemind(), pushable() && navigator.serviceWorker.ready.then(function(reg) {
+    if (paintRemind(), native) {
+      loadNative();
+      return;
+    }
+    pushable() && navigator.serviceWorker.ready.then(function(reg) {
       return reg.pushManager.getSubscription();
     }).then(function(sub) {
       if (remind.sub = sub || null, !sub) {
         remind.plan = !1, remind.risk = !1, paintRemind();
         return;
       }
-      return sb.from("push_subscriptions").select("remind_plan,remind_risk,remind_at").eq("endpoint", sub.endpoint).maybeSingle().then(function(r) {
-        var w = r.data || {};
-        remind.plan = !!w.remind_plan, remind.risk = !!w.remind_risk, typeof w.remind_at == "number" && (remind.at = w.remind_at), paintRemind();
-      });
+      return readRemind("push_subscriptions", "endpoint", sub.endpoint);
     }).catch(paintRemind);
   }
   function pushKey() {
-    return remind.key ? Promise.resolve(remind.key) : api("push/config", { method: "GET" }).then(function(r) {
-      return remind.key = r && r.status === "ok" && r.configured && r.key || null, remind.key;
+    return remind.cfg || (remind.cfg = api("push/config", { method: "GET" }).then(function(r) {
+      var ok = r && r.status === "ok";
+      remind.key = ok && r.configured && r.key || null, remind.apns = !!(ok && r.apns);
     }, function() {
-      return null;
+    })), remind.cfg.then(function() {
+      return remind.key;
     });
+  }
+  function loadNative() {
+    var was = enrolled();
+    Promise.all([pushKey(), native.push.status()]).then(function(both) {
+      return fromPlugin(both[1]), paintRemind(), !was || !pushable() || denied() ? null : native.push.register().catch(function() {
+        return null;
+      });
+    }).then(function(g) {
+      return !g || !g.token ? null : (remind.tok = g.token, readRemind("push_devices", "token", was).then(function() {
+        g.token !== was && ((remind.plan || remind.risk) && saveRemind(), sb.from("push_devices").delete().eq("token", was));
+      }));
+    }).catch(paintRemind);
   }
   function keyBytes(k) {
     var s = (k + "===".slice((k.length + 3) % 4)).replace(/-/g, "+").replace(/_/g, "/");
@@ -16394,7 +16588,9 @@ details.details-moving > :not(summary) {
     });
   }
   function subscribeRemind() {
-    return askPermission().then(function(p) {
+    return native ? native.push.register().then(function(g) {
+      return !fromPlugin(g) || !g.granted || !g.token ? null : (remind.tok = g.token, g);
+    }) : askPermission().then(function(p) {
       return p === "granted" ? pushKey() : null;
     }).then(function(key) {
       return key ? navigator.serviceWorker.ready.then(function(reg) {
@@ -16407,7 +16603,26 @@ details.details-moving > :not(summary) {
       }) : null;
     });
   }
+  function remindSaved(r) {
+    r.error && toast("That reminder did not save. Try again in a moment.");
+  }
   function saveRemind() {
+    if (native) {
+      if (!remind.tok) return;
+      enrolled(remind.tok), sb.from("push_devices").upsert({
+        user_id: state.user.id,
+        token: remind.tok,
+        bundle: remind.bundle,
+        env: remind.env,
+        tz: tzName(),
+        remind_plan: remind.plan,
+        remind_risk: remind.risk,
+        remind_at: remind.at,
+        app_version: VERSION,
+        updated_at: (/* @__PURE__ */ new Date()).toISOString()
+      }, { onConflict: "token" }).then(remindSaved);
+      return;
+    }
     var sub = remind.sub, k = sub ? sub.toJSON().keys : null;
     k && sb.from("push_subscriptions").upsert({
       user_id: state.user.id,
@@ -16418,11 +16633,14 @@ details.details-moving > :not(summary) {
       remind_plan: remind.plan,
       remind_risk: remind.risk,
       remind_at: remind.at
-    }, { onConflict: "endpoint" }).then(function(r) {
-      r.error && toast("That reminder did not save. Try again in a moment.");
-    });
+    }, { onConflict: "endpoint" }).then(remindSaved);
   }
   function offRemind() {
+    if (native) {
+      var tok = remind.tok;
+      remind.tok = null, remind.sub = null, enrolled(null), native.push.unregister(), tok && sb.from("push_devices").delete().eq("token", tok);
+      return;
+    }
     var sub = remind.sub;
     remind.sub = null, sub && sb.from("push_subscriptions").delete().eq("endpoint", sub.endpoint).then(function() {
       sub.unsubscribe();
@@ -16451,7 +16669,7 @@ details.details-moving > :not(summary) {
       paintRemind();
       return;
     }
-    remind.at = Math.max(0, Math.min(1439, Number(v[1]) * 60 + Number(v[2]))), saveSettings(), remind.sub && saveRemind();
+    remind.at = Math.max(0, Math.min(1439, Number(v[1]) * 60 + Number(v[2]))), saveSettings(), (remind.sub || remind.tok) && saveRemind();
   }
   function isEmailAccount() {
     var u = state.user;
@@ -17371,7 +17589,68 @@ details.details-moving > :not(summary) {
       localStorage.setItem("spotter_hint_done", "1");
     } catch (e) {
     }
-  }, window.addEventListener("popstate", function() {
+  };
+  var OPEN_KEY = "spotter_open_pending";
+  function woForward() {
+    if (!(!wo || wo.finished)) {
+      var n = $("workout");
+      n.classList.remove("closing"), n.classList.add("open");
+    }
+  }
+  function liveAction(a) {
+    var k = a.kind, live = wo && !wo.finished, s = live ? wo.screens[wo.i] : null, pre;
+    if (k === "notification" && typeof a.id == "string" && a.id.indexOf("spotter://") === 0) openLink(a.id);
+    else if (k === "open" || k === "notification")
+      (k === "open" || !wo || restUntil) && woForward();
+    else if (live) k === "set" ? !s || s.cx && !s.ei || isTimed(s.ex) ? toast("Log this one on the phone.") : (pre = setPrefill(wo.entries[wo.i].sets.length), setCtx.idx = pre.idx, setReps(typeof a.reps == "number" && isFinite(a.reps) ? a.reps : pre.reps), setWeight(typeof a.weight == "number" && isFinite(a.weight) ? a.weight : pre.weight), saveSet()) : k === "skipRest" ? restUntil && doneRest() : k === "toggleRest" ? pauseRest() : k === "finish" && finishWorkout();
+    else return;
+  }
+  function openDeepLink(url) {
+    var m = state.user && String(url).match(/^spotter:\/\/([a-z]+)\/?([^?#]*)/);
+    if (m) {
+      var head = m[1], arg = decodeURIComponent(m[2].replace(/\/+$/, "")), card = !!arg && (head === "workout" || head === "start"), w = card ? planWorkout(arg) : null;
+      if (head === "resume") woForward();
+      else if (head === "tab") {
+        if (!/^(library|plan|progress|pumpy)$/.test(arg)) return;
+        var over = document.querySelectorAll(".sheet.open"), oi;
+        if (!$("workout").classList.contains("open"))
+          if (over.length)
+            for (oi = over.length - 1; oi >= 0; oi--) closeSheet(over[oi].id);
+          else $("detail").classList.contains("open") && history.back();
+        setView(arg);
+      } else if (card) w ? head === "workout" ? openDetail(w) : wo && !wo.finished ? (woForward(), toast("A workout is already running.")) : (openDetail(w), startWorkout(w)) : toast("That workout is not in your library any more.");
+      else return;
+    }
+  }
+  function openLink(u) {
+    if (!state.user) {
+      try {
+        sessionStorage.setItem(OPEN_KEY, u);
+      } catch (e) {
+      }
+      return;
+    }
+    try {
+      sessionStorage.removeItem(OPEN_KEY);
+    } catch (e) {
+    }
+    openDeepLink(u);
+  }
+  function consumeOpen() {
+    var u = null;
+    try {
+      u = sessionStorage.getItem(OPEN_KEY), u && sessionStorage.removeItem(OPEN_KEY);
+    } catch (e) {
+      return;
+    }
+    u && openDeepLink(u);
+  }
+  window.addEventListener("spotter:live-action", function(e) {
+    liveAction(e.detail || {});
+  }), window.addEventListener("spotter:open-url", function(e) {
+    var u = e.detail && e.detail.url;
+    u && openLink(u);
+  }), window.addEventListener("popstate", function() {
     if (sheetBack) {
       sheetBack--;
       return;
@@ -17400,7 +17679,7 @@ details.details-moving > :not(summary) {
       saveDraft(), sb.auth.stopAutoRefresh();
       return;
     }
-    sb.auth.startAutoRefresh(), restUntil && tickRest(), wo && !wo.finished && (startClock(), acquireWake()), watchBilling(), stravaBack(), state.user && !wo && !overlayShowing() && load();
+    sb.auth.startAutoRefresh(), restUntil && tickRest(), wo && !wo.finished && (startClock(), acquireWake()), watchBilling(), stravaBack(), publishSummary(), state.user && !wo && !overlayShowing() && load();
   }), document.addEventListener("visibilitychange", function() {
     if (document.hidden && saveDraft(), document.body.classList.toggle("asleep", document.hidden), document.visibilityState !== "visible") {
       clearTimeout(pendTimer), pendTimer = null;

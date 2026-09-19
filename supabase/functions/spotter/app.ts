@@ -1223,7 +1223,7 @@ export const APP = String.raw`
     current = null;
     if (sc) scForget();
     if (wo) saveDraft();
-    clearInterval(woTimer); stopRest(); releaseWake(); wo = null; hist = {}; histReady = false;
+    clearInterval(woTimer); stopRest(); liveEnd(false); releaseWake(); wo = null; hist = {}; histReady = false;
     if (strava) strava = { asked: false, configured: false, connected: false, athlete: null, busy: false };
     if (pumpy) {
       var seq = (pumpy.openSeq || 0) + 1, wired = pumpy.wired;
@@ -1258,6 +1258,7 @@ export const APP = String.raw`
       if (first) setTimeout(boot, 0);
     } else {
       clearAccount();
+      publishSignedOut();
       state.user = null;
       guideUser();
       state.workouts = []; state.logs = null; state.plan = null; state.awards = null;
@@ -1292,6 +1293,7 @@ export const APP = String.raw`
     // creates lands in a rendered grid rather than into an empty one.
     var epoch = accountEpoch, uid = state.user.id;
     booting = load().then(function () { if (accountNow(epoch, uid)) return consumeShare(); })
+      .then(function () { if (accountNow(epoch, uid)) consumeOpen(); })
       .then(function () { if (accountNow(epoch, uid)) return consumeBilling(); })
       .then(function () { if (accountNow(epoch, uid)) consumeCreator(); })
       .then(function () { if (accountNow(epoch, uid)) return warmPages(); })
@@ -2501,6 +2503,16 @@ export const APP = String.raw`
         : ex.duration_seconds + "s");
     }
     return bits.join(" · ");
+  }
+
+  // What ONE set asks for, in the words the set pill already uses: a rep count
+  // or a range exactly as the card wrote it, or a held duration. The Lock Screen
+  // and the watch have to ask for the same thing the pill asks for, so there is
+  // one sentence and not three that drift.
+  function askText(ex) {
+    if (!ex) return null;
+    if (ex.duration_seconds > 0) return ex.duration_seconds + " s";
+    return ex.reps ? ex.reps + " reps" : null;
   }
 
   function blockMetaText(b) {
@@ -5536,11 +5548,87 @@ export const APP = String.raw`
       }));
       if (native) native.saveDraft(localStorage.getItem(draftKey()));
     } catch (e) { /* private mode */ }
+    // Outside the try, and last: a Lock Screen that cannot be reached must not
+    // cost the draft that is what makes the session recoverable at all.
+    if (native && native.live) liveSync();
   }
 
   function clearDraft() {
     if (native) native.saveDraft(null);
     try { localStorage.removeItem(draftKey()); } catch (e) { /* ignore */ }
+  }
+
+  // ---------- the session, on the Lock Screen and the wrist ----------
+  //
+  // The Live Activity, the widgets and the watch all read ONE description of the
+  // running session rather than each reaching into the engine, so a movement
+  // renamed here cannot mean two things in two places. Nothing on the other side
+  // counts ticks: every clock is handed the absolute deadline the rest engine
+  // already works in, because a locked screen redraws on its own schedule and a
+  // phone in a pocket redraws not at all.
+
+  function liveState() {
+    var s = wo.screens[wo.i], entry = wo.entries[wo.i], i, logged = 0, planned = 0;
+    for (i = 0; i < wo.entries.length; i++) {
+      logged += wo.entries[i].sets.filter(Boolean).length;
+      planned += wo.screens[i] ? targetOf(wo.screens[i]) : 1;
+    }
+    // The movement after this one is the one the pager would land on, which in a
+    // complex is the far side of the block rather than its second station.
+    var j = wo.i + 1;
+    while (j < wo.screens.length && !isStop(j)) j++;
+    var cx = !!(s && s.cx), pre = s ? setPrefill(entry.sets.length) : null;
+    // The set about to be done. Past the plan it is an extra, and the phone says
+    // so ("Goal reached · Extras welcome") — but a Lock Screen card reading
+    // "Set 3 of 2" just looks broken, so the total grows with the index the way
+    // progress.total already does below.
+    var setNo = entry.sets.filter(Boolean).length + 1;
+    // A complex is scored in rounds off one screen, so it has no "set 2 of 4".
+    return {
+      v: 1,
+      title: wo.workout.title || "Workout",
+      startedAt: wo.startedAt,
+      phase: wo.finished ? "done" : restUntil && !restFace ? "rest"
+        : restFace ? "timed" : cx ? "complex" : "work",
+      exercise: s ? s.ex.name : (entry.name || "Freestyle"),
+      block: s && (wo.workout.blocks || []).length > 1 ? blockName(s) : null,
+      set: s && !cx ? { index: setNo, total: Math.max(targetOf(s), setNo) } : null,
+      target: s ? askText(s.ex) : null,
+      weight: pre && pre.weight ? pre.weight.toLocaleString() + " " + state.unit : null,
+      rest: restUntil ? { until: restUntil, total: restTotal, held: restHeld } : null,
+      next: j < wo.screens.length ? wo.screens[j].ex.name : null,
+      progress: { done: logged, total: Math.max(planned, logged) },
+      // The wrist has a stepper, and it cannot build one out of "8-12 reps" and
+      // "1,200 lb" — those are sentences for a reader. So the same prefill goes
+      // over as numbers, with the plate this account steps by. loggable is the
+      // refusal liveAction would make anyway, answered before the button is
+      // drawn rather than after it is pressed: a hold and an unresolved complex
+      // are logged on the phone.
+      dose: {
+        reps: pre ? pre.reps : null,
+        weight: pre && pre.weight ? pre.weight : null,
+        unit: state.unit,
+        step: plate(),
+        loggable: !!(s && !(s.cx && !s.ei) && !isTimed(s.ex))
+      }
+    };
+  }
+
+  function liveSync() {
+    // A mirror is never fatal: the plugin swallows its own rejection, and a shell
+    // built before the Swift half existed throws here instead.
+    if (wo) try { native.live.update(liveState()); } catch (e) { /* ignore */ }
+  }
+
+  // Finished, or walked away from. Either way the Lock Screen has to stop showing
+  // a workout nobody is doing, and it is the only thing that can say so.
+  function liveEnd(completed) {
+    if (!wo || wo.finished || !native || !native.live) return;
+    var st = liveState();
+    native.live.end({
+      v: 1, title: st.title, startedAt: st.startedAt, endedAt: new Date().toISOString(),
+      sets: st.progress.done, prs: Object.keys(wo.prs).length, completed: !!completed
+    });
   }
 
   function startWorkout(w, resume) {
@@ -5597,6 +5685,7 @@ export const APP = String.raw`
       if (restHeld) { clearInterval(restTimer); drawRest(restHeld); } else tickRest();
     }
     saveDraft();
+    publishSummary();
     history.pushState({ workout: 1 }, "");
     lastWeights();
   }
@@ -6284,6 +6373,13 @@ export const APP = String.raw`
     if (wo && wo.wake) { try { wo.wake.release(); } catch (e) { /* ignore */ } wo.wake = null; }
   }
 
+  // What the eyebrow over the movement says, wherever it is read: the block's own
+  // title, else the shape it is, else its place on the card.
+  function blockName(s) {
+    return s.block.title ||
+      (s.block.type && s.block.type !== "straight" ? s.block.type : "Block " + (s.bi + 1));
+  }
+
   // hush: no entrance; a logged round changed a number.
   function renderWorkout(hush) {
     if (!wo) return;
@@ -6331,7 +6427,7 @@ export const APP = String.raw`
     if (cx) {
       focus = cxBody(main, s, cx);
     } else {
-      var blockLabel = s.block.title || (s.block.type && s.block.type !== "straight" ? s.block.type : "Block " + (s.bi + 1));
+      var blockLabel = blockName(s);
       if (s.block.rounds) blockLabel += " · " + s.block.rounds + " rounds";
       main.appendChild(el("div", "wblock", blockLabel));
       main.appendChild(el("h2", "wname", s.ex.name));
@@ -6455,7 +6551,7 @@ export const APP = String.raw`
         p.appendChild(document.createTextNode(done
           ? (done.seconds ? "held" : done.weight ? state.unit : "reps")
           : timed ? "hold " + (idx + 1)
-          : (ex && ex.reps ? ex.reps + " reps" : "tap to log")));
+          : (askText(ex) || "tap to log")));
         // A hold has one number, so its pill toggles: for one done off the clock.
         p.onclick = timed
           ? function () { logHold(idx, ex.duration_seconds, 1); justSet = idx; renderWorkout(); }
@@ -6468,26 +6564,47 @@ export const APP = String.raw`
 
   var setCtx = { idx: 0, reps: 10, weight: 0 };
 
-  function openSetSheet(idx) {
-    if (!wo) return;
-    // Editing a set must not save it against a different circuit station when rest ends.
-    if (!restFace) restThen = null;
-    var s = wo.screens[wo.i];
-    var entry = wo.entries[wo.i];
-    var existing = entry.sets[idx];
+  /**
+   * The dose the sheet would put in front of the lifter for a given set: what is
+   * already logged there, else the card's target reps and the weight carried over
+   * from the last time this movement came up.
+   *
+   * Split out of openSetSheet because a set saved from the Lock Screen or from
+   * the wrist never opens the sheet, and it has to arrive with the SAME numbers —
+   * one prefill read twice, rather than two that agree until one of them changes.
+   * It answers with an object instead of writing setCtx: the mirrors read it on
+   * every engine change, and a read must not overwrite a sheet somebody is
+   * standing in front of.
+   */
+  function setPrefill(idx) {
+    var s = wo.screens[wo.i], entry = wo.entries[wo.i], existing = entry.sets[idx];
     var targetReps = 10;
     if (s && s.ex && s.ex.reps) {
       var m = String(s.ex.reps).match(/\d+/);
       if (m) targetReps = parseInt(m[0], 10);
     }
     var h = hist[exKey(entry)];
+    return {
+      idx: idx,
+      reps: existing ? existing.reps : targetReps,
+      weight: existing ? toUnit(existing.weight, existing.unit) : (h ? toUnit(h.weight, h.unit) : 0)
+    };
+  }
+
+  function openSetSheet(idx) {
+    if (!wo) return;
+    // Editing a set must not save it against a different circuit station when rest ends.
+    if (!restFace) restThen = null;
+    var s = wo.screens[wo.i];
+    var entry = wo.entries[wo.i];
+    var pre = setPrefill(idx);
     // A figure half-typed for another set is dropped, not committed sideways.
     editing = null;
     $("repsbox").classList.remove("editing");
     $("wtbox").classList.remove("editing");
-    setCtx.idx = idx;
-    setCtx.reps = existing ? existing.reps : targetReps;
-    setCtx.weight = existing ? toUnit(existing.weight, existing.unit) : (h ? toUnit(h.weight, h.unit) : 0);
+    setCtx.idx = pre.idx;
+    setCtx.reps = pre.reps;
+    setCtx.weight = pre.weight;
     $("settitle").textContent = (s && s.ex ? s.ex.name : "Set") + " · set " + (idx + 1);
     // The number worth beating stays up while the stepper argues with it.
     $("setlast").textContent = lastLine(entry);
@@ -6675,6 +6792,7 @@ export const APP = String.raw`
     drawRest(restTotal);
     restTimer = setInterval(tickRest, 200);
     saveDraft();
+    nudgeAsk();
   }
 
   function tickRest() {
@@ -6784,6 +6902,39 @@ export const APP = String.raw`
       g.gain.exponentialRampToValueAtTime(.0001, t + len);
       o.start(t); o.stop(t + len + .03);
     } catch (e) { /* a silent cue is not a failure */ }
+  }
+
+  // iOS gives an app one chance at the permission sheet, so this asks from a tap
+  // inside the one moment the notification is about (HIG "Notifications": in
+  // context, once the value is obvious), the way Strong and Hevy wait for a
+  // first rest rather than asking at launch. Once per install, either answer.
+  var nudgeAsked = false;
+
+  function nudgeAsk() {
+    if (nudgeAsked || restFace || !native || !native.live) return;
+    nudgeAsked = true;
+    try { if (localStorage.getItem("spotter_nudge_asked")) return; } catch (e) { return; }
+    native.live.notifications.status().then(function (r) {
+      if (!r || r.status !== "undetermined" || !restUntil) return;
+      var row = document.createElement("div"), ask = document.createElement("div");
+      row.className = "restcontrols";
+      ask.className = "resthint";
+      ask.textContent = "Nudge when rest ends?";
+      ask.style.margin = "10px 0 6px";
+      ["Turn on", "Not now"].forEach(function (word, i) {
+        var b = document.createElement("button");
+        b.className = "chip";
+        b.textContent = word;
+        b.onclick = function () {
+          try { localStorage.setItem("spotter_nudge_asked", "1"); } catch (e) { /* private mode */ }
+          if (!i) native.live.notifications.request();
+          ask.remove(); row.remove();
+        };
+        row.appendChild(b);
+      });
+      var info = $("reststrip").querySelector(".restinfo");
+      info.appendChild(ask); info.appendChild(row);
+    }, function () { /* an older shell has no answer to give */ });
   }
 
   // ---------- timed moves and circuits ----------
@@ -7472,11 +7623,14 @@ export const APP = String.raw`
       // and redraw at once if the library is the page underneath.
       today.at = 0;
       renderToday();
+      // The week just changed and the widget is the one reader that cannot ask.
+      if (native && native.live) loadLogs().then(function () { publishSummary(); });
     });
     clearInterval(woTimer);
     cxOff();
     stopRest();
     clearDraft();
+    liveEnd(true);
     wo.finished = true;
     haptic("done");
     renderSummary(payload, logged);
@@ -7746,6 +7900,11 @@ export const APP = String.raw`
       stopRest();
       releaseWake();
       clearDraft();
+      // After stopRest, never before it: stopRest saves the draft, a draft save
+      // syncs the mirrors, and an update landing after the end puts the activity
+      // straight back on the Lock Screen.
+      liveEnd(false);
+      publishSummary();
     }
     // The clip sheet can outlive the overlay it was opened from.
     closeSheet("watchsheet");
@@ -8910,6 +9069,7 @@ export const APP = String.raw`
         if (r0.error) throw new Error("Plan unavailable");
         state.plan = r0.data || [];
         today.at = 0;
+        publishSummary();
         var shape = planShape();
         if (silent && shape === planSig) return;
         planSig = shape; renderTrain();
@@ -8923,6 +9083,7 @@ export const APP = String.raw`
   function repaintPlan() {
     planRev++;
     today.at = 0;
+    publishSummary();
     planSig = planShape();
     renderTrain();
   }
@@ -9989,6 +10150,7 @@ export const APP = String.raw`
           if (rev !== logsRev) return loadLogs();
           if (r.error) throw r.error;
           state.logs = r.data || [];
+          publishSummary();
           if (today.shown) renderToday();
           return state.logs;
         }).catch(function () {
@@ -10119,6 +10281,66 @@ export const APP = String.raw`
     if (!state.logs) return null;
     var logs = extra ? state.logs.concat([extra]) : state.logs;
     return weekStats(logs, state.plan, goalSetting(), new Date());
+  }
+
+  // ---------- what the Home Screen knows ----------
+  //
+  // The widgets show the week, the streak and what is planned next, and they read
+  // the very numbers the ring and the Today card read: a widget that disagrees
+  // with the app beside it is worse than no widget. Debounced, because one load()
+  // settles in three or four repaints and only the last of them is true.
+
+  var pubTimer = null, pubOut = false;
+
+  function publishSummary() {
+    if (!native || !native.live || !state.user) return;
+    clearTimeout(pubTimer);
+    pubTimer = setTimeout(sendSummary, 500);
+  }
+
+  function sendSummary() {
+    var wk = state.user ? thisWeek() : null;
+    if (!wk) return;
+    var key = ymd(new Date()), rows = rowsFor(key), i, w;
+    if (!rows.length) rows = today.rows || [];
+    var now = null, soon = null, last = null;
+    // Two passes over the SAME dot row the week strip draws, so a Home Screen
+    // widget and the Progress tab cannot disagree about a Thursday: filled is a
+    // session, a ring is a day still to come that the plan asks for.
+    var days = wk.dots.map(function (d) { return d === "on"; });
+    var planned = wk.dots.map(function (d) { return d === "plan"; });
+    for (i = 0; i < rows.length && !now; i++) {
+      w = planWorkout(rows[i].workout_id);
+      if (w) now = { id: w.id, title: w.title || "Workout", minutes: w.duration_minutes || null };
+    }
+    // Only the range the Plan tab is holding, so this is null once a reader pages
+    // away from now — a widget saying nothing beats one inventing a Thursday.
+    (state.plan || []).forEach(function (r) {
+      if (!r.day || r.day <= key || (soon && r.day > soon.day)) return;
+      var m = planWorkout(r.workout_id);
+      if (m) soon = { id: m.id, title: m.title || "Workout", day: r.day };
+    });
+    (state.logs || []).forEach(function (l) {
+      if (last || !isSession(l)) return;
+      last = { title: l.workout_title || "Workout", at: l.completed_at || l.started_at };
+    });
+    pubOut = false;
+    native.live.publish({
+      v: 1, updatedAt: new Date().toISOString(),
+      week: { key: wk.weekKey, done: wk.done, goal: wk.goal, days: days,
+        planned: planned, atRisk: wk.atRisk },
+      streak: wk.streakWeeks, today: now, next: soon, last: last,
+      active: !!(wo && !wo.finished)
+    });
+  }
+
+  // A widget outlives the account that filled it. One publish on the way out, so
+  // the next person to hold the phone is not shown last week's ring.
+  function publishSignedOut() {
+    if (!native || !native.live || pubOut) return;
+    clearTimeout(pubTimer);
+    pubOut = true;
+    native.live.publish({ v: 1, updatedAt: new Date().toISOString(), signedOut: true });
   }
 
   // ---------- the ring ----------
@@ -14153,14 +14375,56 @@ export const APP = String.raw`
   // iOS only has Notification and PushManager AT ALL inside an installed web app
   // (16.4+, WebKit's Web Push for Home Screen web apps). In Safari proper the
   // switches would be a lie, so they dim and the note says what to do instead.
+  //
+  // The native shell has neither, and does not need them: it registers with APNs
+  // and writes a push_devices row instead of a push_subscriptions one. Same two
+  // reminders, same caps, same sender — a different address on the envelope. So
+  // every function below forks once, at the top, on the native flag, and the
+  // policy itself is never written twice.
 
-  var remind = { plan: false, risk: false, at: 1050, sub: null, key: null, busy: false };
+  var remind = { plan: false, risk: false, at: 1050, sub: null, key: null, busy: false,
+    cfg: null, apns: false, perm: "unsupported", env: "sandbox", bundle: "", tok: null };
 
-  function pushable() {
-    return !native && !!(navigator.serviceWorker && window.PushManager && window.Notification);
+  // The device token is the row's identity, and iOS reissues it — a restore from
+  // backup, a long enough gap between launches. So the enrolment is remembered
+  // here and re-checked at boot: a token that changed carries the preferences to
+  // a new row and drops the old one, which is the only way a reminder survives a
+  // rotation instead of going quiet for good.
+  // localStorage throws rather than returning null in private mode, and this is
+  // a convenience anyway — the row is the truth. Read with no argument, write a
+  // token, clear with null.
+  var TOKKEY = "spotter_push_token";
+
+  function enrolled(v) {
+    try {
+      if (v === undefined) return localStorage.getItem(TOKKEY);
+      if (v) localStorage.setItem(TOKKEY, v); else localStorage.removeItem(TOKKEY);
+    } catch (e) { /* private mode */ }
+    return null;
   }
 
-  function denied() { return pushable() && window.Notification.permission === "denied"; }
+  // Whatever the shell just told us about this phone. Both the boot check and
+  // the tap learn the same three facts, and a token can arrive with either.
+  function fromPlugin(s) {
+    if (!s) return null;
+    remind.perm = s.permission || remind.perm;
+    remind.env = s.environment || remind.env;
+    remind.bundle = s.bundle || remind.bundle;
+    return s;
+  }
+
+  function pushable() {
+    // Native: the shell has to be able to register (the plugin is there, the
+    // phone answered) AND the deployment has to hold an APNs signing key. Either
+    // half missing is the same honest note rather than a switch that does nothing.
+    if (native) return remind.perm !== "unsupported" && remind.apns;
+    return !!(navigator.serviceWorker && window.PushManager && window.Notification);
+  }
+
+  function denied() {
+    if (native) return remind.perm === "denied";
+    return pushable() && window.Notification.permission === "denied";
+  }
 
   function tzName() {
     try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; }
@@ -14174,16 +14438,32 @@ export const APP = String.raw`
   // One sentence saying what arrives and when, or the reason no switch here can
   // work. Never a second prompt: a refused permission is undoable only in the OS,
   // so this says where rather than offering a button that would be ignored.
+  var REMIND_OFF = "Reminders are off in your phone's Settings.";
+  var REMIND_WHAT = "Two at most and never more than one a day: today's plan at the hour nearest the " +
+    "time you pick, and one on the last day the week's goal is still reachable.";
+
   function remindNote() {
-    if (native) return "Native reminders are not configured in this development build.";
+    if (native) {
+      // No APNs key on the deployment is the same sentence it has always been:
+      // the switches are not a promise we can keep yet, and saying so is cheaper
+      // than a toggle that flips back.
+      if (!remind.apns) return "Native reminders are not configured in this development build.";
+      if (denied()) return REMIND_OFF;
+      // Once permission is held, the only thing left to say is where it is
+      // undone \u2014 which is the OS, not here. iOS Settings owns that switch and
+      // pointing at it is what every system app does.
+      if (remind.perm === "granted" || remind.perm === "provisional") {
+        return "Reminders arrive as notifications. You can change this in Settings \u203a Notifications.";
+      }
+      return REMIND_WHAT;
+    }
     if (!pushable()) {
       // The same two steps the install hint gives, because it is the same ask.
       return standalone() ? "This browser cannot show reminders."
         : "Install Spotter to your Home Screen to get reminders \u2014 tap Share, then Add to Home Screen.";
     }
-    if (denied()) return "Reminders are off in your phone's Settings.";
-    return "Two at most and never more than one a day: today's plan at the hour nearest the " +
-      "time you pick, and one on the last day the week's goal is still reachable.";
+    if (denied()) return REMIND_OFF;
+    return REMIND_WHAT;
   }
 
   function paintRemind() {
@@ -14203,34 +14483,75 @@ export const APP = String.raw`
   // What this browser is actually subscribed to, which is the only thing the
   // sender reads. Drawn first from the profile so the group never opens blank,
   // then corrected when the row lands.
+  // The preferences, wherever this install's row lives. Two tables and two
+  // identity columns, one set of three answers — writing the read twice is how
+  // the browser and the app would end up disagreeing about what "on" means.
+  function readRemind(table, col, value) {
+    return sb.from(table).select("remind_plan,remind_risk,remind_at")
+      .eq(col, value).maybeSingle().then(function (r) {
+        var w = r.data || {};
+        remind.plan = !!w.remind_plan;
+        remind.risk = !!w.remind_risk;
+        if (typeof w.remind_at === "number") remind.at = w.remind_at;
+        paintRemind();
+      });
+  }
+
   function loadRemind() {
     paintRemind();
+    if (native) { loadNative(); return; }
     if (!pushable()) return;
     navigator.serviceWorker.ready.then(function (reg) {
       return reg.pushManager.getSubscription();
     }).then(function (sub) {
       remind.sub = sub || null;
       if (!sub) { remind.plan = false; remind.risk = false; paintRemind(); return; }
-      return sb.from("push_subscriptions").select("remind_plan,remind_risk,remind_at")
-        .eq("endpoint", sub.endpoint).maybeSingle().then(function (r) {
-          var w = r.data || {};
-          remind.plan = !!w.remind_plan;
-          remind.risk = !!w.remind_risk;
-          if (typeof w.remind_at === "number") remind.at = w.remind_at;
-          paintRemind();
-        });
+      return readRemind("push_subscriptions", "endpoint", sub.endpoint);
     }).catch(paintRemind);
   }
 
-  // The public half of the VAPID pair, asked for once and kept. It comes from the
-  // function rather than the page so that rotating the pair is a secret change
-  // and a reload, not a deploy of the app.
+  // What the app was built against, and what the deployment can actually do: the
+  // public half of the VAPID pair for a browser, and whether there is an APNs
+  // signing key for a native install. One round trip answers both, from the
+  // function rather than the page, so that rotating either is a secret change
+  // and a reload rather than a deploy of the app. The PROMISE is cached, not the
+  // value, so two taps in a row cannot race two requests.
   function pushKey() {
-    if (remind.key) return Promise.resolve(remind.key);
-    return api("push/config", { method: "GET" }).then(function (r) {
-      remind.key = (r && r.status === "ok" && r.configured && r.key) || null;
-      return remind.key;
-    }, function () { return null; });
+    if (!remind.cfg) {
+      remind.cfg = api("push/config", { method: "GET" }).then(function (r) {
+        var ok = r && r.status === "ok";
+        remind.key = (ok && r.configured && r.key) || null;
+        remind.apns = !!(ok && r.apns);
+      }, function () { /* offline: leave the switches exactly as they were */ });
+    }
+    return remind.cfg.then(function () { return remind.key; });
+  }
+
+  // What this install is enrolled as. Asked at boot because a device token can
+  // change while the app was not running, and nothing announces that but a fresh
+  // registration.
+  function loadNative() {
+    var was = enrolled();
+    Promise.all([pushKey(), native.push.status()]).then(function (both) {
+      fromPlugin(both[1]);
+      paintRemind();
+      // Registering without an existing enrolment would ask the phone for a
+      // token nobody wants, and on an undetermined permission it would put the
+      // system sheet on screen at launch — the one thing this must never do.
+      if (!was || !pushable() || denied()) return null;
+      return native.push.register().catch(function () { return null; });
+    }).then(function (g) {
+      if (!g || !g.token) return null;
+      remind.tok = g.token;
+      return readRemind("push_devices", "token", was).then(function () {
+        // Rotated. The preferences go under the new address BEFORE the old row
+        // goes, so a failure between the two leaves a reminder that still
+        // arrives rather than one that has quietly stopped.
+        if (g.token === was) return;
+        if (remind.plan || remind.risk) saveRemind();
+        sb.from("push_devices").delete().eq("token", was);
+      });
+    }).catch(paintRemind);
   }
 
   function keyBytes(k) {
@@ -14249,6 +14570,16 @@ export const APP = String.raw`
   }
 
   function subscribeRemind() {
+    // Native: the permission sheet is raised by the plugin, from inside the same
+    // tap, for the same reason — iOS gives an app one chance to ask and a sheet
+    // nobody asked for is how that chance gets spent on a "Don't Allow".
+    if (native) {
+      return native.push.register().then(function (g) {
+        if (!fromPlugin(g) || !g.granted || !g.token) return null;
+        remind.tok = g.token;
+        return g;
+      });
+    }
     return askPermission().then(function (p) {
       return p === "granted" ? pushKey() : null;
     }).then(function (key) {
@@ -14269,21 +14600,48 @@ export const APP = String.raw`
   // user's own row and holds no secret. The ledger columns the sender keeps
   // (last_sent_at, the weekly count) are not grantable to a browser and are not
   // sent from here.
+  function remindSaved(r) {
+    if (r.error) toast("That reminder did not save. Try again in a moment.");
+  }
+
   function saveRemind() {
+    if (native) {
+      if (!remind.tok) return;
+      enrolled(remind.tok);
+      // The same grant as the browser's row, one column wider: the bundle and
+      // the environment travel with the token because APNs binds a token to
+      // both, and a row that does not remember them is a 400 an hour later that
+      // nobody can explain.
+      sb.from("push_devices").upsert({
+        user_id: state.user.id, token: remind.tok, bundle: remind.bundle,
+        env: remind.env, tz: tzName(), remind_plan: remind.plan, remind_risk: remind.risk,
+        remind_at: remind.at, app_version: VERSION, updated_at: new Date().toISOString()
+      }, { onConflict: "token" }).then(remindSaved);
+      return;
+    }
     var sub = remind.sub, k = sub ? sub.toJSON().keys : null;
     if (!k) return;
     sb.from("push_subscriptions").upsert({
       user_id: state.user.id, endpoint: sub.endpoint, p256dh: k.p256dh, auth: k.auth,
       tz: tzName(), remind_plan: remind.plan, remind_risk: remind.risk, remind_at: remind.at
-    }, { onConflict: "endpoint" }).then(function (r) {
-      if (r.error) toast("That reminder did not save. Try again in a moment.");
-    });
+    }, { onConflict: "endpoint" }).then(remindSaved);
   }
 
   // Off costs nothing and leaves nothing behind: the row goes, and so does the
   // browser's subscription, so the push service stops holding an endpoint for
   // somebody who said no.
   function offRemind() {
+    if (native) {
+      var tok = remind.tok;
+      remind.tok = null;
+      remind.sub = null;
+      enrolled(null);
+      // Tell iOS to stop minting tokens for this install as well as dropping the
+      // row: Off should leave nothing behind on either side of the wire.
+      native.push.unregister();
+      if (tok) sb.from("push_devices").delete().eq("token", tok);
+      return;
+    }
     var sub = remind.sub;
     remind.sub = null;
     if (!sub) return;
@@ -14331,7 +14689,7 @@ export const APP = String.raw`
     if (!v) { paintRemind(); return; }
     remind.at = Math.max(0, Math.min(1439, Number(v[1]) * 60 + Number(v[2])));
     saveSettings();
-    if (remind.sub) saveRemind();
+    if (remind.sub || remind.tok) saveRemind();
   }
 
   // ---------- the account ----------
@@ -15757,6 +16115,119 @@ export const APP = String.raw`
     try { localStorage.setItem("spotter_hint_done", "1"); } catch (e) { /* ignore */ }
   };
 
+  // ---------- arriving from outside the page ----------
+  //
+  // A button on the Live Activity, a tap on the watch, a notification action and
+  // a widget all land here, and every one of them is turned into the SAME call
+  // the on-screen control makes — so a set logged from the wrist buzzes, checks
+  // for a best and starts the rest exactly as a thumb does. Nothing gets a
+  // shortcut; two paths to one outcome drift apart within a wave.
+
+  var OPEN_KEY = "spotter_open_pending";
+
+  // A session is always open when it exists, but a notification can arrive into
+  // the frame where the overlay is fading out.
+  function woForward() {
+    if (!wo || wo.finished) return;
+    var n = $("workout");
+    n.classList.remove("closing");
+    n.classList.add("open");
+  }
+
+  function liveAction(a) {
+    var k = a.kind, live = wo && !wo.finished, s = live ? wo.screens[wo.i] : null, pre;
+    // A remote reminder carries its destination as the action id. A rest-end one
+    // whose rest is already over has nothing left to say.
+    if (k === "notification" && typeof a.id === "string" && a.id.indexOf("spotter://") === 0) openLink(a.id);
+    else if (k === "open" || k === "notification") { if (k === "open" || !wo || restUntil) woForward(); }
+    else if (!live) return;
+    else if (k === "set") {
+      // A hold and a complex are not logged with reps and a weight, so a remote
+      // Save has nothing to send: those two are answered on the screen.
+      if (!s || (s.cx && !s.ei) || isTimed(s.ex)) toast("Log this one on the phone.");
+      else {
+        // The wrist can turn the dial before it saves, and through the stepper’s
+        // own setters a figure from off the phone meets the clamp a thumb does.
+        pre = setPrefill(wo.entries[wo.i].sets.length);
+        setCtx.idx = pre.idx;
+        setReps(typeof a.reps === "number" && isFinite(a.reps) ? a.reps : pre.reps);
+        setWeight(typeof a.weight === "number" && isFinite(a.weight) ? a.weight : pre.weight);
+        saveSet();
+      }
+    } else if (k === "skipRest") { if (restUntil) doneRest(); }
+    else if (k === "toggleRest") pauseRest();
+    else if (k === "finish") finishWorkout();
+  }
+
+  // Every route ends in a call the UI itself makes, so a link can only do what a
+  // tap could do; one naming anything else does nothing rather than guessing.
+  function openDeepLink(url) {
+    var m = state.user && String(url).match(/^spotter:\/\/([a-z]+)\/?([^?#]*)/);
+    if (!m) return;
+    var head = m[1], arg = decodeURIComponent(m[2].replace(/\/+$/, ""));
+    // "spotter://workout/" names nothing, which is a malformed link rather than a
+    // card that has been deleted, and a malformed link says nothing at all.
+    var card = !!arg && (head === "workout" || head === "start"), w = card ? planWorkout(arg) : null;
+    if (head === "resume") woForward();
+    else if (head === "tab") {
+      if (!/^(library|plan|progress|pumpy)$/.test(arg)) return;
+      // An overlay covers the tabs, so switching one underneath it changes
+      // nothing the reader can see: on the 16e, a Today-widget tap with a
+      // workout card open and a reminder tap with Settings open both looked
+      // like dead links. Spend the topmost overlay the way its own close
+      // control does. Workout Mode is the exception — closing that would end a
+      // session nobody asked to end, which is worse than a link that waits.
+      var over = document.querySelectorAll(".sheet.open"), oi;
+      if (!$("workout").classList.contains("open")) {
+        if (over.length) { for (oi = over.length - 1; oi >= 0; oi--) closeSheet(over[oi].id); }
+        else if ($("detail").classList.contains("open")) history.back();
+      }
+      setView(arg);
+    }
+    else if (!card) return;
+    else if (!w) toast("That workout is not in your library any more.");
+    else if (head === "workout") openDetail(w);
+    else if (wo && !wo.finished) { woForward(); toast("A workout is already running."); }
+    // The card first, so finishing lands back where a Library tap would have.
+    else { openDetail(w); startWorkout(w); }
+  }
+
+  // A link can only open something once there is a library to open it in.
+  // openDeepLink answers a page whose session has not resolved yet with silence,
+  // and the web view is reloaded whenever iOS reclaims its content process — so
+  // a reminder tapped after the phone sat in a pocket landed on the Library
+  // instead of Progress (iPhone 16e). Park it exactly as a cold launch parks its
+  // own URL and let consumeOpen() spend it when boot finishes.
+  function openLink(u) {
+    if (!state.user) {
+      try { sessionStorage.setItem(OPEN_KEY, u); } catch (e) { /* ignore */ }
+      return;
+    }
+    // The shell parks a link-shaped action before it fires the event, because a
+    // cold launch delivers one before this page can listen. Handling it here is
+    // the same open, so the parked copy goes — otherwise the next launch would
+    // replay a link the reader already followed.
+    try { sessionStorage.removeItem(OPEN_KEY); } catch (e) { /* ignore */ }
+    openDeepLink(u);
+  }
+
+  // A cold launch parks its URL in the shell before any listener could exist.
+  // Taken out before it is acted on: one launch is exactly one open.
+  function consumeOpen() {
+    var u = null;
+    try {
+      u = sessionStorage.getItem(OPEN_KEY);
+      if (u) sessionStorage.removeItem(OPEN_KEY);
+    } catch (e) { return; }
+    if (u) openDeepLink(u);
+  }
+
+  window.addEventListener("spotter:live-action", function (e) { liveAction(e.detail || {}); });
+  window.addEventListener("spotter:open-url", function (e) {
+    var u = e.detail && e.detail.url;
+    if (u) openLink(u);
+  });
+
   // one history entry per overlay, so the phone back gesture closes it
   window.addEventListener("popstate", function () {
     // Our own pop, from a sheet the UI has already closed; reading it as a gesture
@@ -15793,6 +16264,7 @@ export const APP = String.raw`
     if (restUntil) tickRest();
     if (wo && !wo.finished) { startClock(); acquireWake(); }
     watchBilling(); stravaBack();
+    publishSummary();
     if (state.user && !wo && !overlayShowing()) load();
   });
 

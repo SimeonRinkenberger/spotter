@@ -13,12 +13,25 @@ class SpotterViewController: CAPBridgeViewController {
             : UIColor(red: 245/255, green: 246/255, blue: 248/255, alpha: 1)
     }
 
+    // Sinks are held weakly by the registry, so the controller owns them. They
+    // outlive a web view reload on purpose: a Live Activity on the Lock Screen
+    // must not be orphaned because the page reloaded underneath it.
+    private let liveActivitySink = LiveActivitySink()
+    private let watchLinkSink = WatchLinkSink()
+
     override func capacitorDidLoad() {
         bridge?.registerPluginInstance(PumpyStreamPlugin())
         bridge?.registerPluginInstance(ShareAccessPlugin())
         bridge?.registerPluginInstance(GoogleAuthPlugin())
         bridge?.registerPluginInstance(AppleAuthPlugin())
         bridge?.registerPluginInstance(SecureSessionPlugin())
+        bridge?.registerPluginInstance(LiveStatePlugin())
+        bridge?.registerPluginInstance(SpotterPushPlugin())
+        LiveStatePlugin.register(sink: liveActivitySink)
+        LiveStatePlugin.register(sink: watchLinkSink)
+        // The bridge has just taken the notification delegate for its own router.
+        // Take it back — see NotificationsHost.install().
+        NotificationsHost.shared.install()
     }
 
     override func viewDidLoad() {

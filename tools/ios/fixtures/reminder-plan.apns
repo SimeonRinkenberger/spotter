@@ -1,0 +1,12 @@
+{
+  "Simulator Target Bundle": "app.spotter.dev",
+  "aps": {
+    "alert": {
+      "title": "Push day is on today's plan.",
+      "body": "42 minutes."
+    },
+    "sound": "default",
+    "thread-id": "reminders"
+  },
+  "url": "spotter://tab/plan"
+}
