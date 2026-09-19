@@ -43,6 +43,14 @@ struct LiveState: Codable, Hashable {
     /// The movement after this one; nil at the end of the session.
     var next: String?
     var progress: Progress
+    /// The same numbers the set sheet would open with, as numbers.
+    ///
+    /// Added for the wrist, which has a stepper of its own: `weight` above is a
+    /// rendered string ("1,200 lb", grouped for the reader's locale) and
+    /// `target` is prose ("8-12 reps"), so a surface that has to add 2.5 to one
+    /// of them would be parsing its own app's display text. Optional because a
+    /// shell built before this field existed still decodes.
+    var dose: Dose?
 
     enum Phase: String, Codable, Hashable {
         case work, rest, timed, complex, done
@@ -77,6 +85,38 @@ struct LiveState: Codable, Hashable {
         func remaining(at now: Date = Date()) -> TimeInterval {
             if isPaused { return max(0, held / 1000) }
             return max(0, deadline.timeIntervalSince(now))
+        }
+    }
+
+    /// What a remote Save would send, before anyone turns a dial.
+    ///
+    /// `loggable` is the phone's own answer to "can this set be saved from off
+    /// the phone at all" — a timed hold and an unresolved complex are answered
+    /// on the screen, and the wrist must not offer a button that will come back
+    /// as "Log this one on the phone."
+    struct Dose: Codable, Hashable {
+        /// Prefilled reps: the last logged value, else the movement's target.
+        var reps: Int?
+        /// Prefilled weight in `unit`; nil or zero for bodyweight.
+        var weight: Double?
+        /// "kg" or "lb", whichever the account is set to.
+        var unit: String
+        /// One press of the weight stepper: 2.5 kg or 5 lb, from the phone.
+        var step: Double
+        var loggable: Bool
+
+        /// One press of the stepper, against whatever is on screen now (which is
+        /// the prefill until someone moves it). Clamped and rounded exactly as
+        /// setNum() in app.ts does, so a figure sent from the wrist is one the
+        /// sheet would have accepted — 2.5 added to a converted seed is how you
+        /// get 45.599999999999994 into a saved set.
+        func stepping(_ current: Double?, by: Double) -> Double {
+            let next = (current ?? weight ?? 0) + by * step
+            return min(9999, max(0, (next * 10).rounded() / 10))
+        }
+
+        func stepping(reps current: Int?, by: Int) -> Int {
+            min(999, max(0, (current ?? reps ?? 0) + by))
         }
     }
 
@@ -125,6 +165,12 @@ struct LiveAction: Codable, Hashable {
     var source: Source
     /// Notification identifier, deep link, or whatever else names this action.
     var id: String?
+    /// A `.set` dialled on the wrist before it was sent. Nil means "whatever the
+    /// phone had prefilled", which is what every other surface sends: the Lock
+    /// Screen has no stepper and must not invent a number.
+    var reps: Int?
+    /// The same, in the account's unit. The engine clamps both on arrival.
+    var weight: Double?
 
     enum Kind: String, Codable, Hashable {
         /// Log the current set exactly as the sheet's Save button would.
@@ -155,13 +201,15 @@ struct LiveAction: Codable, Hashable {
         }
     }
 
-    init(kind: Kind, source: Source, id: String? = nil) {
+    init(kind: Kind, source: Source, id: String? = nil, reps: Int? = nil, weight: Double? = nil) {
         self.kind = kind
         self.source = source
         self.id = id
+        self.reps = reps
+        self.weight = weight
     }
 
-    enum CodingKeys: String, CodingKey { case kind, source, id }
+    enum CodingKeys: String, CodingKey { case kind, source, id, reps, weight }
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
@@ -172,6 +220,13 @@ struct LiveAction: Codable, Hashable {
         } else {
             try container.encodeNil(forKey: .id)
         }
+        // Omitted rather than sent as null: app.ts asks `typeof a.reps ===
+        // "number"` and falls back to its own prefill for anything else, so an
+        // absent key and a null key mean the same thing to it — but a key that
+        // is only ever present when a dial was actually turned is the honest
+        // wire record of what the wrist did.
+        if let reps = reps { try container.encode(reps, forKey: .reps) }
+        if let weight = weight { try container.encode(weight, forKey: .weight) }
     }
 }
 

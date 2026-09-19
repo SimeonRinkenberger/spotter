@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Not used by the committed project. CODE_SIGN_ENTITLEMENTS for the watch
+	     target is $(SPOTTER_WATCH_ENTITLEMENTS), which is empty until someone
+	     with a paid Apple Developer Program membership points it here; see
+	     Local.xcconfig.example and design/native/watch.md. A personal team
+	     cannot sign the HealthKit entitlement for a device. -->
+	<key>com.apple.developer.healthkit</key>
+	<true/>
+	<key>com.apple.developer.healthkit.access</key>
+	<array/>
+</dict>
+</plist>

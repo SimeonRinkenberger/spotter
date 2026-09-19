@@ -71,6 +71,11 @@
 		187B0FB1F735E5906C250F38 /* WorkoutLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9F10000000000000000050C /* WorkoutLiveActivity.swift */; };
 		24C14BA7520F586AEF4F379D /* LiveActivityShots.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F7E6758B36AF1A5FD115DBC /* LiveActivityShots.swift */; };
 		B9CBB104322AAAAC9E6FEF7D /* WidgetTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9F100000000000000000505 /* WidgetTheme.swift */; };
+		531ADB47651CE520F3867AC0 /* SessionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0D3B69634BB82044136F3E /* SessionView.swift */; };
+		683387C634912E710627B9D0 /* RestView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56926BFE232D0533396A8C3A /* RestView.swift */; };
+		1D09E6C58CCCEDE44F3B242C /* DoneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BAF40689F286D2EED50131A /* DoneView.swift */; };
+		168E51242276832E9FC819C4 /* WorkoutKeeper.swift in Sources */ = {isa = PBXBuildFile; fileRef = C26258810637ECCE7CECEDD8 /* WorkoutKeeper.swift */; };
+		0D6107320755BF0413D14D70 /* WidgetSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9F100000000000000000502 /* WidgetSummary.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -129,6 +134,11 @@
 		1A81527A467985591543F42D /* Push.entitlements */ = {isa = PBXFileReference; name = "Push.entitlements"; path = "App/Push.entitlements"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = text.plist.entitlements; };
 		944E10BCF99404B5D85EFE62 /* LiveActivityIntents.swift */ = {isa = PBXFileReference; name = "LiveActivityIntents.swift"; path = "Shared/LiveActivityIntents.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; };
 		9F7E6758B36AF1A5FD115DBC /* LiveActivityShots.swift */ = {isa = PBXFileReference; name = "LiveActivityShots.swift"; path = "App/LiveActivityShots.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; };
+		1B0D3B69634BB82044136F3E /* SessionView.swift */ = {isa = PBXFileReference; name = "SessionView.swift"; path = "SpotterWatch/SessionView.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; };
+		56926BFE232D0533396A8C3A /* RestView.swift */ = {isa = PBXFileReference; name = "RestView.swift"; path = "SpotterWatch/RestView.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; };
+		5BAF40689F286D2EED50131A /* DoneView.swift */ = {isa = PBXFileReference; name = "DoneView.swift"; path = "SpotterWatch/DoneView.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; };
+		C26258810637ECCE7CECEDD8 /* WorkoutKeeper.swift */ = {isa = PBXFileReference; name = "WorkoutKeeper.swift"; path = "SpotterWatch/WorkoutKeeper.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; };
+		4811ECABD3CA7B6D26F0A3AC /* SpotterWatch.entitlements */ = {isa = PBXFileReference; name = "SpotterWatch.entitlements"; path = "SpotterWatch/SpotterWatch.entitlements"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = text.plist.entitlements; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -276,6 +286,11 @@
 		A9F100000000000000000603 /* SpotterWatch */ = {
 			isa = PBXGroup;
 			children = (
+				4811ECABD3CA7B6D26F0A3AC /* SpotterWatch.entitlements */,
+				C26258810637ECCE7CECEDD8 /* WorkoutKeeper.swift */,
+				5BAF40689F286D2EED50131A /* DoneView.swift */,
+				56926BFE232D0533396A8C3A /* RestView.swift */,
+				1B0D3B69634BB82044136F3E /* SessionView.swift */,
 				A9F100000000000000000510 /* SpotterWatchApp.swift */,
 				A9F100000000000000000511 /* ContentView.swift */,
 				A9F100000000000000000512 /* WatchLink.swift */,
@@ -546,6 +561,11 @@
 				A9F100000000000000000303 /* SpotterWatchApp.swift in Sources */,
 				A9F100000000000000000304 /* ContentView.swift in Sources */,
 				A9F100000000000000000305 /* WatchLink.swift in Sources */,
+				531ADB47651CE520F3867AC0 /* SessionView.swift in Sources */,
+				683387C634912E710627B9D0 /* RestView.swift in Sources */,
+				1D09E6C58CCCEDE44F3B242C /* DoneView.swift in Sources */,
+				168E51242276832E9FC819C4 /* WorkoutKeeper.swift in Sources */,
+				0D6107320755BF0413D14D70 /* WidgetSummary.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -831,6 +851,7 @@
 			baseConfigurationReference = 958DCC722DB07C7200EA8C5F;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "$(SPOTTER_WATCH_ENTITLEMENTS)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				GCC_PREPROCESSOR_DEFINITIONS = (
@@ -839,6 +860,8 @@
 				);
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Spotter;
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Spotter shows your heart rate on your watch while a workout is running.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Spotter does not write anything to Health.";
 				INFOPLIST_KEY_WKApplication = YES;
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = "$(SPOTTER_BUNDLE_ID)";
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
@@ -848,7 +871,7 @@
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
 				SUPPORTED_PLATFORMS = "watchos watchsimulator";
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(SPOTTER_WATCH_FLAGS)";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 4;
 				WATCHOS_DEPLOYMENT_TARGET = 10.0;
@@ -859,10 +882,13 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "$(SPOTTER_WATCH_ENTITLEMENTS)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Spotter;
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Spotter shows your heart rate on your watch while a workout is running.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Spotter does not write anything to Health.";
 				INFOPLIST_KEY_WKApplication = YES;
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = "$(SPOTTER_BUNDLE_ID)";
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
@@ -872,6 +898,7 @@
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
 				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(SPOTTER_WATCH_FLAGS)";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 4;
 				WATCHOS_DEPLOYMENT_TARGET = 10.0;

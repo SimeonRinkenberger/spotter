@@ -11243,7 +11243,20 @@ details.details-moving > :not(summary) {
       weight: pre && pre.weight ? pre.weight.toLocaleString() + " " + state.unit : null,
       rest: restUntil ? { until: restUntil, total: restTotal, held: restHeld } : null,
       next: j < wo.screens.length ? wo.screens[j].ex.name : null,
-      progress: { done: logged, total: Math.max(planned, logged) }
+      progress: { done: logged, total: Math.max(planned, logged) },
+      // The wrist has a stepper, and it cannot build one out of "8-12 reps" and
+      // "1,200 lb" — those are sentences for a reader. So the same prefill goes
+      // over as numbers, with the plate this account steps by. loggable is the
+      // refusal liveAction would make anyway, answered before the button is
+      // drawn rather than after it is pressed: a hold and an unresolved complex
+      // are logged on the phone.
+      dose: {
+        reps: pre ? pre.reps : null,
+        weight: pre && pre.weight ? pre.weight : null,
+        unit: state.unit,
+        step: plate(),
+        loggable: !!(s && !(s.cx && !s.ei) && !isTimed(s.ex))
+      }
     };
   }
   function liveSync() {

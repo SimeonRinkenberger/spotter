@@ -86,7 +86,7 @@ function workoutContext() {
     Math, Date, Object, String, Number, Boolean, isFinite, parseInt, JSON
   });
   vm.runInContext(pull(['askText', 'blockName', 'isTimed', 'isCircuit', 'roundsOf',
-    'roundOf', 'targetOf', 'isStop', 'exKey', 'toUnit', 'setPrefill',
+    'roundOf', 'targetOf', 'isStop', 'exKey', 'toUnit', 'setPrefill', 'plate',
     'liveState', 'liveSync', 'liveEnd']), ctx);
   return { ctx, sent };
 }
@@ -94,7 +94,7 @@ function workoutContext() {
 // ---------- LiveState ----------
 
 const LIVE_KEYS = ['v', 'title', 'startedAt', 'phase', 'exercise', 'block', 'set',
-  'target', 'weight', 'rest', 'next', 'progress'];
+  'target', 'weight', 'rest', 'next', 'progress', 'dose'];
 
 const { ctx, sent } = workoutContext();
 const s = vm.runInContext('liveState()', ctx);
