@@ -11874,7 +11874,7 @@ details.details-moving > :not(summary) {
   }
   var restUntil = 0, restTotal = 0, restHeld = 0, restCued = 0, restFace = null, restThen = null;
   function startRest(seconds, face, then) {
-    face && !restFace && stopRest(), clearInterval(restTimer), restTotal = seconds * 1e3, restUntil = Date.now() + restTotal, restHeld = 0, restCued = 4, restFace = face || null, restThen = then || null, tellSounds(), restFace || ($("reststrip").className = "reststrip on" + (state.sounds ? "" : " muted"), $("restword").textContent = "Rest period"), drawRest(restTotal), restTimer = setInterval(tickRest, 200), saveDraft();
+    face && !restFace && stopRest(), clearInterval(restTimer), restTotal = seconds * 1e3, restUntil = Date.now() + restTotal, restHeld = 0, restCued = 4, restFace = face || null, restThen = then || null, tellSounds(), restFace || ($("reststrip").className = "reststrip on" + (state.sounds ? "" : " muted"), $("restword").textContent = "Rest period"), drawRest(restTotal), restTimer = setInterval(tickRest, 200), saveDraft(), nudgeAsk();
   }
   function tickRest() {
     if (!(!restUntil || restHeld)) {
@@ -11939,6 +11939,35 @@ details.details-moving > :not(summary) {
         o.frequency.value = freq, o.connect(g), g.connect(actx.destination), g.gain.setValueAtTime(1e-4, t), g.gain.exponentialRampToValueAtTime(0.2, t + 0.012), g.gain.exponentialRampToValueAtTime(1e-4, t + len), o.start(t), o.stop(t + len + 0.03);
       } catch (e) {
       }
+  }
+  var nudgeAsked = !1;
+  function nudgeAsk() {
+    if (!(nudgeAsked || restFace || !native || !native.live)) {
+      nudgeAsked = !0;
+      try {
+        if (localStorage.getItem("spotter_nudge_asked")) return;
+      } catch (e) {
+        return;
+      }
+      native.live.notifications.status().then(function(r) {
+        if (!(!r || r.status !== "undetermined" || !restUntil)) {
+          var row = document.createElement("div"), ask = document.createElement("div");
+          row.className = "restcontrols", ask.className = "resthint", ask.textContent = "Nudge when rest ends?", ask.style.margin = "10px 0 6px", ["Turn on", "Not now"].forEach(function(word, i) {
+            var b = document.createElement("button");
+            b.className = "chip", b.textContent = word, b.onclick = function() {
+              try {
+                localStorage.setItem("spotter_nudge_asked", "1");
+              } catch (e) {
+              }
+              i || native.live.notifications.request(), ask.remove(), row.remove();
+            }, row.appendChild(b);
+          });
+          var info = $("reststrip").querySelector(".restinfo");
+          info.appendChild(ask), info.appendChild(row);
+        }
+      }, function() {
+      });
+    }
   }
   var woPhase = "idle";
   function isTimed(ex) {

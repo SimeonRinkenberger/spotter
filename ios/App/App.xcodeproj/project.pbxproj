@@ -66,6 +66,11 @@
 		1441C12DC8BA0B9320AAE942 /* WeekWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8CF40ACA6353739F66F26EA /* WeekWidget.swift */; };
 		BB24CD8780658D16B52BDC84 /* TodayWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8262C0CDC66022D44DE4A080 /* TodayWidget.swift */; };
 		93DD08A724CD2F2BF271B0AB /* LockWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA944E0F8B691AD8517D44B7 /* LockWidget.swift */; };
+		64F23E3BEDF7EDA9CEF0D829 /* LiveActivityIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 944E10BCF99404B5D85EFE62 /* LiveActivityIntents.swift */; };
+		279C89F0A4F7503E164C4A08 /* LiveActivityIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 944E10BCF99404B5D85EFE62 /* LiveActivityIntents.swift */; };
+		187B0FB1F735E5906C250F38 /* WorkoutLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9F10000000000000000050C /* WorkoutLiveActivity.swift */; };
+		24C14BA7520F586AEF4F379D /* LiveActivityShots.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F7E6758B36AF1A5FD115DBC /* LiveActivityShots.swift */; };
+		B9CBB104322AAAAC9E6FEF7D /* WidgetTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9F100000000000000000505 /* WidgetTheme.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -122,6 +127,8 @@
 		8262C0CDC66022D44DE4A080 /* TodayWidget.swift */ = {isa = PBXFileReference; name = "TodayWidget.swift"; path = "SpotterWidgets/Widgets/TodayWidget.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; };
 		BA944E0F8B691AD8517D44B7 /* LockWidget.swift */ = {isa = PBXFileReference; name = "LockWidget.swift"; path = "SpotterWidgets/Widgets/LockWidget.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; };
 		1A81527A467985591543F42D /* Push.entitlements */ = {isa = PBXFileReference; name = "Push.entitlements"; path = "App/Push.entitlements"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = text.plist.entitlements; };
+		944E10BCF99404B5D85EFE62 /* LiveActivityIntents.swift */ = {isa = PBXFileReference; name = "LiveActivityIntents.swift"; path = "Shared/LiveActivityIntents.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; };
+		9F7E6758B36AF1A5FD115DBC /* LiveActivityShots.swift */ = {isa = PBXFileReference; name = "LiveActivityShots.swift"; path = "App/LiveActivityShots.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -231,6 +238,8 @@
 			isa = PBXGroup;
 			children = (
 				1A81527A467985591543F42D /* Push.entitlements */,
+				9F7E6758B36AF1A5FD115DBC /* LiveActivityShots.swift */,
+				944E10BCF99404B5D85EFE62 /* LiveActivityIntents.swift */,
 				A9F100000000000000000501 /* LiveState.swift */,
 				A9F100000000000000000502 /* WidgetSummary.swift */,
 				A9F100000000000000000503 /* WorkoutActivityAttributes.swift */,
@@ -487,6 +496,10 @@
 				A9F100000000000000000107 /* WatchLinkSink.swift in Sources */,
 				A9F100000000000000000108 /* NotificationsHost.swift in Sources */,
 				A9F100000000000000000109 /* SpotterPushPlugin.swift in Sources */,
+				64F23E3BEDF7EDA9CEF0D829 /* LiveActivityIntents.swift in Sources */,
+				187B0FB1F735E5906C250F38 /* WorkoutLiveActivity.swift in Sources */,
+				24C14BA7520F586AEF4F379D /* LiveActivityShots.swift in Sources */,
+				B9CBB104322AAAAC9E6FEF7D /* WidgetTheme.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -520,6 +533,7 @@
 				1441C12DC8BA0B9320AAE942 /* WeekWidget.swift in Sources */,
 				BB24CD8780658D16B52BDC84 /* TodayWidget.swift in Sources */,
 				93DD08A724CD2F2BF271B0AB /* LockWidget.swift in Sources */,
+				279C89F0A4F7503E164C4A08 /* LiveActivityIntents.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -6774,6 +6774,7 @@ export const APP = String.raw`
     drawRest(restTotal);
     restTimer = setInterval(tickRest, 200);
     saveDraft();
+    nudgeAsk();
   }
 
   function tickRest() {
@@ -6883,6 +6884,39 @@ export const APP = String.raw`
       g.gain.exponentialRampToValueAtTime(.0001, t + len);
       o.start(t); o.stop(t + len + .03);
     } catch (e) { /* a silent cue is not a failure */ }
+  }
+
+  // iOS gives an app one chance at the permission sheet, so this asks from a tap
+  // inside the one moment the notification is about (HIG "Notifications": in
+  // context, once the value is obvious), the way Strong and Hevy wait for a
+  // first rest rather than asking at launch. Once per install, either answer.
+  var nudgeAsked = false;
+
+  function nudgeAsk() {
+    if (nudgeAsked || restFace || !native || !native.live) return;
+    nudgeAsked = true;
+    try { if (localStorage.getItem("spotter_nudge_asked")) return; } catch (e) { return; }
+    native.live.notifications.status().then(function (r) {
+      if (!r || r.status !== "undetermined" || !restUntil) return;
+      var row = document.createElement("div"), ask = document.createElement("div");
+      row.className = "restcontrols";
+      ask.className = "resthint";
+      ask.textContent = "Nudge when rest ends?";
+      ask.style.margin = "10px 0 6px";
+      ["Turn on", "Not now"].forEach(function (word, i) {
+        var b = document.createElement("button");
+        b.className = "chip";
+        b.textContent = word;
+        b.onclick = function () {
+          try { localStorage.setItem("spotter_nudge_asked", "1"); } catch (e) { /* private mode */ }
+          if (!i) native.live.notifications.request();
+          ask.remove(); row.remove();
+        };
+        row.appendChild(b);
+      });
+      var info = $("reststrip").querySelector(".restinfo");
+      info.appendChild(ask); info.appendChild(row);
+    }, function () { /* an older shell has no answer to give */ });
   }
 
   // ---------- timed moves and circuits ----------
