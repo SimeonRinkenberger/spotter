@@ -17480,14 +17480,14 @@ details.details-moving > :not(summary) {
     var k = a.kind, live = wo && !wo.finished, s = live ? wo.screens[wo.i] : null, pre;
     if (k === "notification" && typeof a.id == "string" && a.id.indexOf("spotter://") === 0) openDeepLink(a.id);
     else if (k === "open" || k === "notification")
-      (k === "open" || !wo || !restUntil) && woForward();
+      (k === "open" || !wo || restUntil) && woForward();
     else if (live) k === "set" ? !s || s.cx && !s.ei || isTimed(s.ex) ? toast("Log this one on the phone.") : (pre = setPrefill(wo.entries[wo.i].sets.length), setCtx.idx = pre.idx, setReps(typeof a.reps == "number" && isFinite(a.reps) ? a.reps : pre.reps), setWeight(typeof a.weight == "number" && isFinite(a.weight) ? a.weight : pre.weight), saveSet()) : k === "skipRest" ? restUntil && doneRest() : k === "toggleRest" ? pauseRest() : k === "finish" && finishWorkout();
     else return;
   }
   function openDeepLink(url) {
     var m = state.user && String(url).match(/^spotter:\/\/([a-z]+)\/?([^?#]*)/);
     if (m) {
-      var head = m[1], card = head === "workout" || head === "start", arg = decodeURIComponent(m[2].replace(/\/+$/, "")), w = card ? planWorkout(arg) : null;
+      var head = m[1], arg = decodeURIComponent(m[2].replace(/\/+$/, "")), card = !!arg && (head === "workout" || head === "start"), w = card ? planWorkout(arg) : null;
       if (head === "resume") woForward();
       else if (head === "tab")
         /^(library|plan|progress|pumpy)$/.test(arg) && setView(arg);

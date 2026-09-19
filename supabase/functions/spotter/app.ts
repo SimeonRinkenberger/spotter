@@ -15943,7 +15943,7 @@ export const APP = String.raw`
     // A remote reminder carries its destination as the action id. A rest-end one
     // whose rest is already over has nothing left to say.
     if (k === "notification" && typeof a.id === "string" && a.id.indexOf("spotter://") === 0) openDeepLink(a.id);
-    else if (k === "open" || k === "notification") { if (k === "open" || !wo || !restUntil) woForward(); }
+    else if (k === "open" || k === "notification") { if (k === "open" || !wo || restUntil) woForward(); }
     else if (!live) return;
     else if (k === "set") {
       // A hold and a complex are not logged with reps and a weight, so a remote
@@ -15968,8 +15968,10 @@ export const APP = String.raw`
   function openDeepLink(url) {
     var m = state.user && String(url).match(/^spotter:\/\/([a-z]+)\/?([^?#]*)/);
     if (!m) return;
-    var head = m[1], card = head === "workout" || head === "start";
-    var arg = decodeURIComponent(m[2].replace(/\/+$/, "")), w = card ? planWorkout(arg) : null;
+    var head = m[1], arg = decodeURIComponent(m[2].replace(/\/+$/, ""));
+    // "spotter://workout/" names nothing, which is a malformed link rather than a
+    // card that has been deleted, and a malformed link says nothing at all.
+    var card = !!arg && (head === "workout" || head === "start"), w = card ? planWorkout(arg) : null;
     if (head === "resume") woForward();
     else if (head === "tab") { if (/^(library|plan|progress|pumpy)$/.test(arg)) setView(arg); }
     else if (!card) return;
