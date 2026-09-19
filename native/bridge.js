@@ -5,6 +5,8 @@ import { shareAccess } from './share-access.js';
 import { Capacitor, CapacitorHttp, registerPlugin } from '@capacitor/core';
 import { streamFetch } from './stream.js';
 import { createSecureSession } from './secure-session.js';
+import { createLiveState } from './live-state.js';
+import { createPush } from './push.js';
 import { App } from '@capacitor/app';
 import { Haptics, ImpactStyle, NotificationType } from '@capacitor/haptics';
 import { Browser } from '@capacitor/browser';
@@ -78,6 +80,12 @@ const session = createSecureSession(registerPlugin('SecureSession'), Preferences
 window.SpotterNative = {
   platform: Capacitor.getPlatform(),
   purchases: createPurchases(Capacitor.getPlatform()),
+  // The running session and the week summary, on the Lock Screen, the Home
+  // Screen and the wrist. Both plugins are registered unconditionally: a shell
+  // built before their Swift half exists simply rejects every call, which is
+  // what the modules behind these two already treat as "not available".
+  live: createLiveState(registerPlugin('LiveState')),
+  push: createPush(registerPlugin('SpotterPush')),
   configureSharing,
   contactSheet,
   signInWithApple: sb => signInWithApple(sb, registerPlugin('AppleAuth')),
@@ -173,6 +181,10 @@ async function boot() {
   // throw the generator away and put the warm-up cost back on the next tap.
   await Haptics.selectionStart().catch(ignore);
   await App.addListener('appStateChange', ({ isActive }) => window.dispatchEvent(new CustomEvent('spotter:native-state', { detail: { isActive } })));
+  // spotter:// arrives from a widget tap, a notification action or a Live
+  // Activity while the app is already up. The page decides what each route
+  // means; the shell only forwards what it was handed.
+  await App.addListener('appUrlOpen', ({ url }) => window.dispatchEvent(new CustomEvent('spotter:open-url', { detail: { url } })));
   await Browser.addListener('browserFinished', () => window.dispatchEvent(new Event('focus')));
   document.addEventListener('click', event => {
     const a = event.target.closest('a[href]');
@@ -199,6 +211,13 @@ async function boot() {
     await AndroidHost.addListener('sharedUrl', ({ url }) => window.dispatchEvent(new CustomEvent('spotter:shared-url', { detail: { url } })));
     const pending = await AndroidHost.takeShare();
     if (pending.url) sessionStorage.setItem('spotter_share_pending', pending.url);
+  }
+  // A cold launch from a widget or a notification has its URL waiting before any
+  // listener could exist, so it is parked the way an Android share is and spent
+  // by app.ts once there is a signed-in library to open something in.
+  const launch = await App.getLaunchUrl().catch(() => null);
+  if (launch && typeof launch.url === 'string' && launch.url.startsWith('spotter://')) {
+    sessionStorage.setItem('spotter_open_pending', launch.url);
   }
   const script = document.createElement('script'); script.src = 'app.js'; document.body.appendChild(script);
 }
