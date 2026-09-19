@@ -12,7 +12,8 @@
     "weight": "24 kg",
     "rest": null,
     "next": "Kettlebell Swing",
-    "progress": { "done": 6, "total": 12 }
+    "progress": { "done": 6, "total": 12 },
+    "dose": { "reps": 10, "weight": 24, "unit": "kg", "step": 2.5, "loggable": true }
   },
   "liveStateResting": {
     "v": 1,
@@ -26,7 +27,8 @@
     "weight": "24 kg",
     "rest": { "until": 1789751351482, "total": 90000, "held": 0 },
     "next": "Kettlebell Swing",
-    "progress": { "done": 7, "total": 12 }
+    "progress": { "done": 7, "total": 12 },
+    "dose": { "reps": 10, "weight": 24, "unit": "kg", "step": 2.5, "loggable": true }
   },
   "liveStateMinimal": {
     "_": "AMRAP round: no set position, no target, bodyweight, nothing after it.",
@@ -93,6 +95,14 @@
     "kind": "set",
     "source": "activity",
     "id": null
+  },
+  "liveActionWatch": {
+    "_": "A set logged from the wrist after the Crown moved: reps and weight are present ONLY when a dial was turned, and app.ts falls back to its own prefill otherwise.",
+    "kind": "set",
+    "source": "watch",
+    "id": null,
+    "reps": 12,
+    "weight": 26.5
   },
   "liveActionNotification": {
     "kind": "notification",

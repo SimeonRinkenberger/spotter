@@ -9,6 +9,15 @@ import WidgetKit
 protocol LiveStateSink: AnyObject {
     func update(_ state: LiveState)
     func end(_ summary: LiveSummary)
+    /// The week, the streak and today's plan — what a surface shows when no
+    /// session is running. Only the watch wants it (the widgets read the same
+    /// summary out of SharedStore for themselves), so it has a default that
+    /// does nothing and no other sink has to know it exists.
+    func publish(_ summary: WidgetSummary)
+}
+
+extension LiveStateSink {
+    func publish(_ summary: WidgetSummary) {}
 }
 
 // The single door between the workout engine and every native surface.
@@ -121,6 +130,7 @@ public class LiveStatePlugin: CAPPlugin, CAPBridgedPlugin {
         do {
             let summary = try decode(WidgetSummary.self, from: call)
             store(summary, key: SharedStore.Key.widgetSummary)
+            LiveStatePlugin.fanout { $0.publish(summary) }
             // Reload every family rather than a named kind: the widget target is
             // free to grow kinds without this file learning their names.
             WidgetCenter.shared.reloadAllTimelines()
