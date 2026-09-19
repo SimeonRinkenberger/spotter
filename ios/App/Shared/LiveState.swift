@@ -105,15 +105,18 @@ struct LiveState: Codable, Hashable {
         var step: Double
         var loggable: Bool
 
-        /// Never below zero and never past the engine's own clamp, so a wrist
-        /// cannot send a figure the sheet would have refused.
-        func steppedWeight(_ by: Double) -> Double {
-            let next = (weight ?? 0) + by * step
+        /// One press of the stepper, against whatever is on screen now (which is
+        /// the prefill until someone moves it). Clamped and rounded exactly as
+        /// setNum() in app.ts does, so a figure sent from the wrist is one the
+        /// sheet would have accepted — 2.5 added to a converted seed is how you
+        /// get 45.599999999999994 into a saved set.
+        func stepping(_ current: Double?, by: Double) -> Double {
+            let next = (current ?? weight ?? 0) + by * step
             return min(9999, max(0, (next * 10).rounded() / 10))
         }
 
-        func steppedReps(_ by: Int) -> Int {
-            min(999, max(0, (reps ?? 0) + by))
+        func stepping(reps current: Int?, by: Int) -> Int {
+            min(999, max(0, (current ?? reps ?? 0) + by))
         }
     }
 

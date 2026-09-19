@@ -62,6 +62,11 @@
 		A9F100000000000000000401 /* SpotterWidgets.appex in Copy Files */ = {isa = PBXBuildFile; fileRef = A9F100000000000000000515 /* SpotterWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		A9F100000000000000000402 /* SpotterWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = A9F100000000000000000516 /* SpotterWatch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		2B84CC4962EFE87E552A6E32 /* SpotterWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74F4F673DB470E9A6B97CDA6 /* SpotterWidgets.swift */; };
+		531ADB47651CE520F3867AC0 /* SessionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0D3B69634BB82044136F3E /* SessionView.swift */; };
+		683387C634912E710627B9D0 /* RestView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56926BFE232D0533396A8C3A /* RestView.swift */; };
+		1D09E6C58CCCEDE44F3B242C /* DoneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BAF40689F286D2EED50131A /* DoneView.swift */; };
+		168E51242276832E9FC819C4 /* WorkoutKeeper.swift in Sources */ = {isa = PBXBuildFile; fileRef = C26258810637ECCE7CECEDD8 /* WorkoutKeeper.swift */; };
+		0D6107320755BF0413D14D70 /* WidgetSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9F100000000000000000502 /* WidgetSummary.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -113,6 +118,10 @@
 		A9F100000000000000000515 /* SpotterWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = SpotterWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		A9F100000000000000000516 /* SpotterWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SpotterWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		74F4F673DB470E9A6B97CDA6 /* SpotterWidgets.swift */ = {isa = PBXFileReference; name = "SpotterWidgets.swift"; path = "SpotterWidgets/SpotterWidgets.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; };
+		1B0D3B69634BB82044136F3E /* SessionView.swift */ = {isa = PBXFileReference; name = "SessionView.swift"; path = "SpotterWatch/SessionView.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; };
+		56926BFE232D0533396A8C3A /* RestView.swift */ = {isa = PBXFileReference; name = "RestView.swift"; path = "SpotterWatch/RestView.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; };
+		5BAF40689F286D2EED50131A /* DoneView.swift */ = {isa = PBXFileReference; name = "DoneView.swift"; path = "SpotterWatch/DoneView.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; };
+		C26258810637ECCE7CECEDD8 /* WorkoutKeeper.swift */ = {isa = PBXFileReference; name = "WorkoutKeeper.swift"; path = "SpotterWatch/WorkoutKeeper.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -253,6 +262,10 @@
 		A9F100000000000000000603 /* SpotterWatch */ = {
 			isa = PBXGroup;
 			children = (
+				C26258810637ECCE7CECEDD8 /* WorkoutKeeper.swift */,
+				5BAF40689F286D2EED50131A /* DoneView.swift */,
+				56926BFE232D0533396A8C3A /* RestView.swift */,
+				1B0D3B69634BB82044136F3E /* SessionView.swift */,
 				A9F100000000000000000510 /* SpotterWatchApp.swift */,
 				A9F100000000000000000511 /* ContentView.swift */,
 				A9F100000000000000000512 /* WatchLink.swift */,
@@ -514,6 +527,11 @@
 				A9F100000000000000000303 /* SpotterWatchApp.swift in Sources */,
 				A9F100000000000000000304 /* ContentView.swift in Sources */,
 				A9F100000000000000000305 /* WatchLink.swift in Sources */,
+				531ADB47651CE520F3867AC0 /* SessionView.swift in Sources */,
+				683387C634912E710627B9D0 /* RestView.swift in Sources */,
+				1D09E6C58CCCEDE44F3B242C /* DoneView.swift in Sources */,
+				168E51242276832E9FC819C4 /* WorkoutKeeper.swift in Sources */,
+				0D6107320755BF0413D14D70 /* WidgetSummary.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
