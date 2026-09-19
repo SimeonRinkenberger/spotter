@@ -34,17 +34,28 @@ struct WorkoutLiveActivity: Widget {
         } dynamicIsland: { context in
             let look = PhaseLook(state: context.state)
             return DynamicIsland {
+                // No captions in these two regions. They sit directly under the
+                // island's top corners, and a caption there is clipped by the
+                // curve itself — "TIME" lost its T and "REST" its T, which is
+                // the HIG's "elements poking into the rounded shape" exactly.
+                // The numbers need no label: one counts up in ink, the other
+                // counts down in ember, and the centre region names both.
                 DynamicIslandExpandedRegion(.leading) {
-                    ExpandedCorner(title: "Elapsed", alignment: .leading) {
-                        Text(context.attributes.startedAt, style: .timer)
-                            .font(WidgetTheme.numeral(15))
-                            .foregroundStyle(WidgetTheme.ink2)
-                    }
+                    Text(context.attributes.startedAt, style: .timer)
+                        .font(WidgetTheme.numeral(15))
+                        .foregroundStyle(WidgetTheme.ink2)
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        // Concentric inset: without it the first digit sits on
+                        // the island's corner curve and loses its edge.
+                        .padding(.leading, 6)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    ExpandedCorner(title: look.clockLabel, alignment: .trailing) {
-                        IslandClock(attributes: context.attributes, state: context.state, size: 15)
-                    }
+                    IslandClock(attributes: context.attributes, state: context.state, size: 15)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                        .padding(.trailing, 6)
                 }
                 DynamicIslandExpandedRegion(.center) {
                     VStack(alignment: .leading, spacing: 2) {
@@ -309,31 +320,6 @@ private struct ActionButton: View {
         .frame(maxWidth: .infinity)
         .frame(height: 30)
         .background(WidgetTheme.ember, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-    }
-}
-
-/// A caption over a number, in the expanded island's narrow corners.
-private struct ExpandedCorner<Content: View>: View {
-    let title: String
-    let alignment: HorizontalAlignment
-    let content: Content
-
-    init(title: String, alignment: HorizontalAlignment, @ViewBuilder content: () -> Content) {
-        self.title = title
-        self.alignment = alignment
-        self.content = content()
-    }
-
-    var body: some View {
-        VStack(alignment: alignment, spacing: 1) {
-            Text(title.uppercased())
-                .font(WidgetTheme.label(9.5))
-                .tracking(0.5)
-                .foregroundStyle(WidgetTheme.muted)
-                .lineLimit(1)
-            content
-        }
-        .frame(maxWidth: .infinity, alignment: alignment == .leading ? .leading : .trailing)
     }
 }
 

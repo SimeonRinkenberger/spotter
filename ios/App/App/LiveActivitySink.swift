@@ -379,6 +379,14 @@ extension LiveActivitySink {
             }
             let state = Self.fixture(name == "ghost" ? "rest" : name)
             self.drive(state)
+            // An alerting update is the only way to make the system show the
+            // expanded presentation without a long press, which is the one
+            // gesture this machine cannot perform. Production never alerts:
+            // the rest-end nudge is a local notification precisely so the same
+            // event is not announced twice (HIG, "Starting, updating, ending").
+            if ProcessInfo.processInfo.environment["SPOTTER_LIVE_FIXTURE_ALERT"] != nil {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) { self.alertForShot(state) }
+            }
             if name == "ghost" {
                 // The card stays; the engine's record of it does not.
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
@@ -387,6 +395,17 @@ extension LiveActivitySink {
                 }
             }
         }
+    }
+
+    /// Force the expanded Dynamic Island open for a screenshot. Fixture only.
+    private func alertForShot(_ state: LiveState) {
+        guard let activity = activity else { return }
+        let content = ActivityContent(state: WorkoutActivityAttributes.content(state),
+                                      staleDate: nil, relevanceScore: 100)
+        let alert = AlertConfiguration(title: "Rest over",
+                                       body: "Goblet Squat, set 3 of 3",
+                                       sound: .default)
+        Task { await activity.update(content, alertConfiguration: alert) }
     }
 
     /// Mirror what LiveStatePlugin.update does on the way past — persist, then
