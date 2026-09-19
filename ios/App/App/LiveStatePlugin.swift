@@ -62,8 +62,19 @@ public class LiveStatePlugin: CAPPlugin, CAPBridgedPlugin {
     /// keep delivering actions into a dead web view.
     private static weak var current: LiveStatePlugin?
 
+    /// Taps that arrived before the bridge built this plugin. `retainUntilConsumed`
+    /// cannot help there: it retains an event on a plugin instance, and on a cold
+    /// launch from a notification the delegate answers before any instance exists,
+    /// so the tap was simply dropped (found on the iPhone 16e: a reminder tapped
+    /// from a terminated app opened the Library instead of Progress). Capped,
+    /// because a queue that only ever grows is a leak wearing a helpful hat.
+    private static var pending: [LiveAction] = []
+
     override public func load() {
         LiveStatePlugin.current = self
+        let queued = LiveStatePlugin.pending
+        LiveStatePlugin.pending = []
+        for action in queued { LiveStatePlugin.deliver(action) }
     }
 
     /// Registered once at launch from SpotterViewController. Registering the
@@ -96,7 +107,12 @@ public class LiveStatePlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         DispatchQueue.main.async {
-            current?.notifyListeners("action", data: payload, retainUntilConsumed: true)
+            guard let plugin = current else {
+                pending.append(action)
+                if pending.count > 8 { pending.removeFirst(pending.count - 8) }
+                return
+            }
+            plugin.notifyListeners("action", data: payload, retainUntilConsumed: true)
         }
     }
 
