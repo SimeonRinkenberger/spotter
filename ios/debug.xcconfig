@@ -1,4 +1,14 @@
 CAPACITOR_DEBUG = true
 
 SPOTTER_BUNDLE_ID = app.spotter.dev
+
+// Which entitlements file the App target signs with. The committed default is
+// the one this project can actually sign today: a keychain access group and
+// nothing else. `aps-environment` — the entitlement APNs needs — is only issued
+// to a paid Developer Program membership, so it lives in App/Push.entitlements
+// and is switched on by setting SPOTTER_ENTITLEMENTS in Local.xcconfig, which is
+// gitignored. That keeps `npm run ios:build` green on a Personal Team while the
+// push code sits in the repository, finished, waiting for an account.
+SPOTTER_ENTITLEMENTS = App/Share.entitlements
+
 #include? "App/Local.xcconfig"

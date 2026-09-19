@@ -113,6 +113,7 @@
 		A9F100000000000000000515 /* SpotterWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = SpotterWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		A9F100000000000000000516 /* SpotterWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SpotterWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		74F4F673DB470E9A6B97CDA6 /* SpotterWidgets.swift */ = {isa = PBXFileReference; name = "SpotterWidgets.swift"; path = "SpotterWidgets/SpotterWidgets.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; };
+		1A81527A467985591543F42D /* Push.entitlements */ = {isa = PBXFileReference; name = "Push.entitlements"; path = "App/Push.entitlements"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = text.plist.entitlements; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -221,6 +222,7 @@
 		A9F100000000000000000601 /* Live Session */ = {
 			isa = PBXGroup;
 			children = (
+				1A81527A467985591543F42D /* Push.entitlements */,
 				A9F100000000000000000501 /* LiveState.swift */,
 				A9F100000000000000000502 /* WidgetSummary.swift */,
 				A9F100000000000000000503 /* WorkoutActivityAttributes.swift */,
@@ -592,6 +594,7 @@
 				MTL_ENABLE_DEBUG_INFO = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
+				SPOTTER_ENTITLEMENTS = App/Share.entitlements;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
@@ -642,6 +645,7 @@
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				SDKROOT = iphoneos;
+				SPOTTER_ENTITLEMENTS = App/Share.entitlements;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				VALIDATE_PRODUCT = YES;
@@ -668,7 +672,7 @@
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				CODE_SIGN_ENTITLEMENTS = App/Share.entitlements;
+				CODE_SIGN_ENTITLEMENTS = "$(SPOTTER_ENTITLEMENTS)";
 				SPOTTER_BUNDLE_ID = "$(inherited)";
 			};
 			name = Debug;
@@ -691,7 +695,7 @@
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				CODE_SIGN_ENTITLEMENTS = App/Share.entitlements;
+				CODE_SIGN_ENTITLEMENTS = "$(SPOTTER_ENTITLEMENTS)";
 				SPOTTER_BUNDLE_ID = app.spotter.dev;
 			};
 			name = Release;
