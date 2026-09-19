@@ -136,3 +136,31 @@ With the flag off the watch app behaves exactly as it otherwise would, minus the
 foreground guarantee: the countdown is still correct whenever the app is on screen, because it is computed
 from the deadline rather than accumulated, but a lowered wrist suspends the app and the end-of-rest haptic
 does not reach it.
+
+## What this Mac could not verify, and why
+
+No process here can inject a touch into a simulator: `osascript` has no assistive access
+(`-1728`), and the simulator MCP tool's device grant was declined for both devices. So everything below
+was reached from launch alone, and three things were left for someone with a thumb.
+
+Verified end to end on the two simulators (iPhone 17 Pro Max + Spotter Watch):
+
+- The **publish path**, with a real signed-in account: the phone's `WidgetSummary` crosses and the idle
+  face draws it ("0 of 3 this week"). It was first noticed as a bug — a fixture plan line being *cleared*
+  the moment the phone app launched, which is the signed-out summary arriving.
+- The **action round trip**, including the background wake described above, and the reply that stops the
+  waiting footnote.
+- **Every watch screen**, driven by the real contract JSON in `tools/ios/contract-fixture.json` through the
+  same decode the phone's bytes take.
+
+Not verified, needing one tap each:
+
+- A **live session** mirrored from a real workout. `spotter://start/<id>` from `simctl` raises SpringBoard's
+  "Open in Spotter?" confirmation, and the in-app resume toast is a tap as well. The `live` key travels the
+  same mirror, the same context and the same decode as the `summary` key that is verified, but the engine's
+  own `liveState()` has not been seen arriving on a wrist.
+- **Logging a set from the watch into the engine** (the transport is verified; the engine's reaction is not).
+- **The end-of-rest haptic** and **Always On**, neither of which a simulator has.
+
+To finish these, grant the simulator panel access to iPhone 17 Pro Max and Spotter Watch, or run the
+sequence in `briefs/BRIEF-NATIVE-D.md` §Verify by hand.
