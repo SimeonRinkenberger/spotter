@@ -1,3 +1,14 @@
 // Copy to Local.xcconfig (gitignored), then fill in from Xcode.
 DEVELOPMENT_TEAM = YOUR_PERSONAL_TEAM_ID
 SPOTTER_BUNDLE_ID = app.spotter.yourname.dev
+
+// ---- Apple Watch, HealthKit (paid Apple Developer Program only) ----
+// An HKWorkoutSession is what keeps the watch app in the foreground and — per
+// Apple's WKInterfaceDevice.play(_:) documentation — the only way its haptics
+// reach the wrist in the background, so with these two lines the end-of-rest
+// buzz survives a lowered wrist and the metrics page shows a live heart rate.
+// Both are needed; leaving them commented builds the watch app with plain
+// foreground behaviour and no HealthKit code compiled in at all.
+// A Personal Team cannot sign com.apple.developer.healthkit for a device.
+// SPOTTER_WATCH_FLAGS = SPOTTER_HEALTHKIT
+// SPOTTER_WATCH_ENTITLEMENTS = SpotterWatch/SpotterWatch.entitlements

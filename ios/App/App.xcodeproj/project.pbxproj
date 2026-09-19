@@ -122,6 +122,7 @@
 		56926BFE232D0533396A8C3A /* RestView.swift */ = {isa = PBXFileReference; name = "RestView.swift"; path = "SpotterWatch/RestView.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; };
 		5BAF40689F286D2EED50131A /* DoneView.swift */ = {isa = PBXFileReference; name = "DoneView.swift"; path = "SpotterWatch/DoneView.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; };
 		C26258810637ECCE7CECEDD8 /* WorkoutKeeper.swift */ = {isa = PBXFileReference; name = "WorkoutKeeper.swift"; path = "SpotterWatch/WorkoutKeeper.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; };
+		4811ECABD3CA7B6D26F0A3AC /* SpotterWatch.entitlements */ = {isa = PBXFileReference; name = "SpotterWatch.entitlements"; path = "SpotterWatch/SpotterWatch.entitlements"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = text.plist.entitlements; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -262,6 +263,7 @@
 		A9F100000000000000000603 /* SpotterWatch */ = {
 			isa = PBXGroup;
 			children = (
+				4811ECABD3CA7B6D26F0A3AC /* SpotterWatch.entitlements */,
 				C26258810637ECCE7CECEDD8 /* WorkoutKeeper.swift */,
 				5BAF40689F286D2EED50131A /* DoneView.swift */,
 				56926BFE232D0533396A8C3A /* RestView.swift */,
@@ -815,6 +817,7 @@
 			baseConfigurationReference = 958DCC722DB07C7200EA8C5F;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "$(SPOTTER_WATCH_ENTITLEMENTS)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				GCC_PREPROCESSOR_DEFINITIONS = (
@@ -823,6 +826,8 @@
 				);
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Spotter;
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Spotter shows your heart rate on your watch while a workout is running.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Spotter does not write anything to Health.";
 				INFOPLIST_KEY_WKApplication = YES;
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = "$(SPOTTER_BUNDLE_ID)";
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
@@ -832,7 +837,7 @@
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
 				SUPPORTED_PLATFORMS = "watchos watchsimulator";
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(SPOTTER_WATCH_FLAGS)";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 4;
 				WATCHOS_DEPLOYMENT_TARGET = 10.0;
@@ -843,10 +848,13 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "$(SPOTTER_WATCH_ENTITLEMENTS)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Spotter;
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Spotter shows your heart rate on your watch while a workout is running.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Spotter does not write anything to Health.";
 				INFOPLIST_KEY_WKApplication = YES;
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = "$(SPOTTER_BUNDLE_ID)";
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
@@ -856,6 +864,7 @@
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
 				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(SPOTTER_WATCH_FLAGS)";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 4;
 				WATCHOS_DEPLOYMENT_TARGET = 10.0;

@@ -109,7 +109,13 @@ final class WatchLink: NSObject, ObservableObject, WCSessionDelegate {
         // asleep — WCSession is not activated here, so nothing is sent.
         if let pending = environment["SPOTTER_WATCH_PENDING"],
            let kind = LiveAction.Kind(rawValue: pending) {
-            send(kind)
+            // After activation, not during it: a send before the session is
+            // active returns early, and the interesting case is the one where
+            // the message really goes out and the phone's reply comes back.
+            Task { [weak self] in
+                try? await Task.sleep(for: .milliseconds(1500))
+                await MainActor.run { self?.send(kind) }
+            }
         }
     }
 #endif
@@ -166,16 +172,31 @@ final class WatchLink: NSObject, ObservableObject, WCSessionDelegate {
         guard session.activationState == .activated else { return }
         if session.isReachable {
             session.sendMessage([Key.action: data], replyHandler: { [weak self] _ in
-                Task { @MainActor in self?.stalled = false }
-            }, errorHandler: { [weak self] _ in
+                // The phone has it. That is a different fact from "the engine
+                // has caught up", and it is the one the footnote is about: an
+                // acknowledged action whose new state is a moment behind is not
+                // a watch that has lost its phone.
+                Task { @MainActor in self?.acknowledged() }
+            }, errorHandler: { [weak self] error in
+                NSLog("Spotter watch: message failed, queueing %@", String(describing: error))
                 // Reachability can lapse between the check and the send. The
                 // queued path still delivers, just not now.
                 session.transferUserInfo([Key.action: data])
                 Task { @MainActor in self?.armStall() }
             })
         } else {
+            // Out of range: it will arrive, possibly at the phone's next launch.
+            // The footnote stays armed, because from here nothing has answered.
             session.transferUserInfo([Key.action: data])
         }
+    }
+
+    /// The phone answered. Stop counting toward the footnote; the optimistic
+    /// state stands until the real one replaces it.
+    private func acknowledged() {
+        stalled = false
+        stallTask?.cancel()
+        stallTask = nil
     }
 
     /// Let the done card go and fall back to the idle face.
