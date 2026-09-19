@@ -53,7 +53,8 @@ struct WorkoutLiveActivity: Widget {
                         .padding(.leading, 6)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    IslandClock(attributes: context.attributes, state: context.state, size: 15)
+                    IslandClock(attributes: context.attributes, state: context.state, size: 15,
+                                elapsedFallback: false)
                         .frame(maxWidth: .infinity, alignment: .trailing)
                         .padding(.trailing, 6)
                 }
@@ -202,6 +203,13 @@ private struct IslandClock: View {
     let attributes: WorkoutActivityAttributes
     let state: WorkoutActivityAttributes.ContentState
     var size: CGFloat = 14
+    /// Whether to fall back to the elapsed session time when nothing is
+    /// counting down. Compact and minimal have one clock slot, so they want it.
+    /// The expanded presentation already prints elapsed in its leading region,
+    /// and printing it again in the trailing one put the same number on screen
+    /// twice for the whole of every work phase — so expanded passes false and
+    /// leaves the slot empty until a countdown has something to say.
+    var elapsedFallback: Bool = true
 
     var body: some View {
         let look = PhaseLook(state: state)
@@ -220,7 +228,7 @@ private struct IslandClock: View {
                 // rendering as 0:00 instead of crashing the widget process.
                 Text(timerInterval: Date()...max(rest.deadline, Date().addingTimeInterval(1)), countsDown: true)
                     .foregroundStyle(WidgetTheme.ember)
-            } else {
+            } else if elapsedFallback {
                 Text(attributes.startedAt, style: .timer)
                     .foregroundStyle(WidgetTheme.ink2)
             }
