@@ -21,7 +21,17 @@ struct SessionView: View {
     @ObservedObject var keeper: WorkoutKeeper
 
     enum Page: Hashable { case controls, metrics }
-    @State private var page: Page = .metrics
+    @State private var page: Page = SessionView.firstPage
+
+    /// Metrics, always — except under SPOTTER_WATCH_PAGE, which exists so a
+    /// screenshot can reach the controls page on a simulator that has no way to
+    /// swipe. DEBUG only, like the fixture loader it goes with.
+    static var firstPage: Page {
+#if DEBUG
+        if ProcessInfo.processInfo.environment["SPOTTER_WATCH_PAGE"] == "controls" { return .controls }
+#endif
+        return .metrics
+    }
 
     var body: some View {
         TabView(selection: $page) {
@@ -75,18 +85,18 @@ struct MetricsPage: View {
 
     private var work: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 5) {
                 header
 
                 Text(state.exercise)
-                    .font(WidgetTheme.display(19, weight: .semibold))
+                    .font(WidgetTheme.display(17, weight: .semibold))
                     .foregroundStyle(WidgetTheme.ink)
                     .lineLimit(2)
                     .minimumScaleFactor(0.6)
                     .fixedSize(horizontal: false, vertical: true)
 
                 Text(subtitle)
-                    .font(WidgetTheme.display(13, weight: .medium))
+                    .font(WidgetTheme.display(12, weight: .medium))
                     .foregroundStyle(WidgetTheme.ink2)
                     .lineLimit(2)
                     .minimumScaleFactor(0.7)
@@ -106,6 +116,7 @@ struct MetricsPage: View {
                 if link.stalled { WaitingNote() }
             }
             .padding(.horizontal, 2)
+            .padding(.bottom, 2)
         }
         .onChange(of: identity) { _, _ in
             reps = nil
@@ -154,7 +165,7 @@ struct MetricsPage: View {
     }
 
     private func dials(_ dose: LiveState.Dose) -> some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 4) {
             // The crown lives on reps: it is the number that changes most often
             // and the one a glove can turn without looking.
             StepperRow(label: "reps",
@@ -193,7 +204,7 @@ struct MetricsPage: View {
         .buttonStyle(.borderedProminent)
         .tint(dimmed ? WidgetTheme.emberSoft : WidgetTheme.ember)
         .disabled(link.pending != nil)
-        .padding(.top, 2)
+        .padding(.top, 1)
     }
 
     /// 60, not 60.0; 62.5 keeps its half. Matches the sheet's own stepper.
@@ -214,7 +225,7 @@ struct StepperRow: View {
             round("minus", action: down)
             VStack(spacing: -1) {
                 Text(value)
-                    .font(WidgetTheme.numeral(20, weight: .semibold))
+                    .font(WidgetTheme.numeral(19, weight: .semibold))
                     .foregroundStyle(WidgetTheme.ink)
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
@@ -226,7 +237,7 @@ struct StepperRow: View {
             .frame(maxWidth: .infinity)
             round("plus", action: up)
         }
-        .frame(height: 40)
+        .frame(height: 34)
     }
 
     private func round(_ symbol: String, action: @escaping () -> Void) -> some View {
@@ -234,7 +245,7 @@ struct StepperRow: View {
             Image(systemName: symbol)
                 .font(.system(size: 14, weight: .bold))
                 .foregroundStyle(WidgetTheme.ink)
-                .frame(width: 36, height: 36)
+                .frame(width: 32, height: 32)
                 .background(WidgetTheme.sand, in: Circle())
         }
         .buttonStyle(.plain)

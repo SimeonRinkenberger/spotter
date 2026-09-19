@@ -77,7 +77,42 @@ final class WatchLink: NSObject, ObservableObject, WCSessionDelegate {
         // A context the phone left waiting is already on this device — it is
         // not redelivered as a callback when the app launches into it.
         apply(session.receivedApplicationContext)
+#if DEBUG
+        loadFixture()
+#endif
     }
+
+#if DEBUG
+    /// A wire payload handed in at launch, for a watch with no phone to talk to.
+    ///
+    ///   xcrun simctl launch <watch udid> <bundle> \
+    ///     with SIMCTL_CHILD_SPOTTER_WATCH_FIXTURE='{"live":{…}}'
+    ///
+    /// It is deliberately the SAME envelope the phone sends and it goes through
+    /// the same `apply`, so what a screenshot shows is the real decode path fed
+    /// real contract JSON — not a hand-built Swift value that could disagree
+    /// with the wire and never be caught. DEBUG only; the shipped watch app has
+    /// no way in but the phone.
+    private func loadFixture() {
+        let environment = ProcessInfo.processInfo.environment
+        if let raw = environment["SPOTTER_WATCH_FIXTURE"],
+           let object = try? JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any] {
+            var payload: [String: Any] = [:]
+            for (key, value) in object {
+                if let data = try? JSONSerialization.data(withJSONObject: value) { payload[key] = data }
+            }
+            apply(payload)
+        }
+        // And the other half of what a screenshot cannot otherwise reach: a tap
+        // that has left the wrist. Leaves the optimistic state up and arms the
+        // five-second footnote, exactly as a real press would with the phone
+        // asleep — WCSession is not activated here, so nothing is sent.
+        if let pending = environment["SPOTTER_WATCH_PENDING"],
+           let kind = LiveAction.Kind(rawValue: pending) {
+            send(kind)
+        }
+    }
+#endif
 
     // MARK: - What the views draw
 
