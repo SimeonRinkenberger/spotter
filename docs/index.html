@@ -16439,12 +16439,36 @@ details.details-moving > :not(summary) {
   function toggleWorkoutSounds() {
     setSounds(!state.sounds), toast(state.sounds ? "Timer sounds on." : "Timer sounds off.", 1800);
   }
-  var remind = { plan: !1, risk: !1, at: 1050, sub: null, key: null, busy: !1 };
+  var remind = {
+    plan: !1,
+    risk: !1,
+    at: 1050,
+    sub: null,
+    key: null,
+    busy: !1,
+    cfg: null,
+    apns: !1,
+    perm: "unsupported",
+    env: "sandbox",
+    bundle: "",
+    tok: null
+  }, TOKKEY = "spotter_push_token";
+  function enrolled(v) {
+    try {
+      if (v === void 0) return localStorage.getItem(TOKKEY);
+      v ? localStorage.setItem(TOKKEY, v) : localStorage.removeItem(TOKKEY);
+    } catch (e) {
+    }
+    return null;
+  }
+  function fromPlugin(s) {
+    return s ? (remind.perm = s.permission || remind.perm, remind.env = s.environment || remind.env, remind.bundle = s.bundle || remind.bundle, s) : null;
+  }
   function pushable() {
-    return !native && !!(navigator.serviceWorker && window.PushManager && window.Notification);
+    return native ? remind.perm !== "unsupported" && remind.apns : !!(navigator.serviceWorker && window.PushManager && window.Notification);
   }
   function denied() {
-    return pushable() && window.Notification.permission === "denied";
+    return native ? remind.perm === "denied" : pushable() && window.Notification.permission === "denied";
   }
   function tzName() {
     try {
@@ -16456,8 +16480,9 @@ details.details-moving > :not(summary) {
   function hhmm(m) {
     return ("0" + Math.floor(m / 60)).slice(-2) + ":" + ("0" + m % 60).slice(-2);
   }
+  var REMIND_OFF = "Reminders are off in your phone's Settings.", REMIND_WHAT = "Two at most and never more than one a day: today's plan at the hour nearest the time you pick, and one on the last day the week's goal is still reachable.";
   function remindNote() {
-    return native ? "Native reminders are not configured in this development build." : pushable() ? denied() ? "Reminders are off in your phone's Settings." : "Two at most and never more than one a day: today's plan at the hour nearest the time you pick, and one on the last day the week's goal is still reachable." : standalone() ? "This browser cannot show reminders." : "Install Spotter to your Home Screen to get reminders \u2014 tap Share, then Add to Home Screen.";
+    return native ? remind.apns ? denied() ? REMIND_OFF : remind.perm === "granted" || remind.perm === "provisional" ? "Reminders arrive as notifications. You can change this in Settings \u203A Notifications." : REMIND_WHAT : "Native reminders are not configured in this development build." : pushable() ? denied() ? REMIND_OFF : REMIND_WHAT : standalone() ? "This browser cannot show reminders." : "Install Spotter to your Home Screen to get reminders \u2014 tap Share, then Add to Home Screen.";
   }
   function paintRemind() {
     var can = pushable() && !denied() && !remind.busy, t = $("remtime");
@@ -16466,26 +16491,47 @@ details.details-moving > :not(summary) {
       b.textContent = remind[k] ? "On" : "Off", b.classList.toggle("active", remind[k]), b.disabled = !can;
     }), t.disabled = !can || !remind.plan, t.value = hhmm(remind.at), $("setremnote").textContent = remindNote();
   }
+  function readRemind(table, col, value) {
+    return sb.from(table).select("remind_plan,remind_risk,remind_at").eq(col, value).maybeSingle().then(function(r) {
+      var w = r.data || {};
+      remind.plan = !!w.remind_plan, remind.risk = !!w.remind_risk, typeof w.remind_at == "number" && (remind.at = w.remind_at), paintRemind();
+    });
+  }
   function loadRemind() {
-    paintRemind(), pushable() && navigator.serviceWorker.ready.then(function(reg) {
+    if (paintRemind(), native) {
+      loadNative();
+      return;
+    }
+    pushable() && navigator.serviceWorker.ready.then(function(reg) {
       return reg.pushManager.getSubscription();
     }).then(function(sub) {
       if (remind.sub = sub || null, !sub) {
         remind.plan = !1, remind.risk = !1, paintRemind();
         return;
       }
-      return sb.from("push_subscriptions").select("remind_plan,remind_risk,remind_at").eq("endpoint", sub.endpoint).maybeSingle().then(function(r) {
-        var w = r.data || {};
-        remind.plan = !!w.remind_plan, remind.risk = !!w.remind_risk, typeof w.remind_at == "number" && (remind.at = w.remind_at), paintRemind();
-      });
+      return readRemind("push_subscriptions", "endpoint", sub.endpoint);
     }).catch(paintRemind);
   }
   function pushKey() {
-    return remind.key ? Promise.resolve(remind.key) : api("push/config", { method: "GET" }).then(function(r) {
-      return remind.key = r && r.status === "ok" && r.configured && r.key || null, remind.key;
+    return remind.cfg || (remind.cfg = api("push/config", { method: "GET" }).then(function(r) {
+      var ok = r && r.status === "ok";
+      remind.key = ok && r.configured && r.key || null, remind.apns = !!(ok && r.apns);
     }, function() {
-      return null;
+    })), remind.cfg.then(function() {
+      return remind.key;
     });
+  }
+  function loadNative() {
+    var was = enrolled();
+    Promise.all([pushKey(), native.push.status()]).then(function(both) {
+      return fromPlugin(both[1]), paintRemind(), !was || !pushable() || denied() ? null : native.push.register().catch(function() {
+        return null;
+      });
+    }).then(function(g) {
+      return !g || !g.token ? null : (remind.tok = g.token, readRemind("push_devices", "token", was).then(function() {
+        g.token !== was && ((remind.plan || remind.risk) && saveRemind(), sb.from("push_devices").delete().eq("token", was));
+      }));
+    }).catch(paintRemind);
   }
   function keyBytes(k) {
     var s = (k + "===".slice((k.length + 3) % 4)).replace(/-/g, "+").replace(/_/g, "/");
@@ -16500,7 +16546,9 @@ details.details-moving > :not(summary) {
     });
   }
   function subscribeRemind() {
-    return askPermission().then(function(p) {
+    return native ? native.push.register().then(function(g) {
+      return !fromPlugin(g) || !g.granted || !g.token ? null : (remind.tok = g.token, g);
+    }) : askPermission().then(function(p) {
       return p === "granted" ? pushKey() : null;
     }).then(function(key) {
       return key ? navigator.serviceWorker.ready.then(function(reg) {
@@ -16513,7 +16561,26 @@ details.details-moving > :not(summary) {
       }) : null;
     });
   }
+  function remindSaved(r) {
+    r.error && toast("That reminder did not save. Try again in a moment.");
+  }
   function saveRemind() {
+    if (native) {
+      if (!remind.tok) return;
+      enrolled(remind.tok), sb.from("push_devices").upsert({
+        user_id: state.user.id,
+        token: remind.tok,
+        bundle: remind.bundle,
+        env: remind.env,
+        tz: tzName(),
+        remind_plan: remind.plan,
+        remind_risk: remind.risk,
+        remind_at: remind.at,
+        app_version: VERSION,
+        updated_at: (/* @__PURE__ */ new Date()).toISOString()
+      }, { onConflict: "token" }).then(remindSaved);
+      return;
+    }
     var sub = remind.sub, k = sub ? sub.toJSON().keys : null;
     k && sb.from("push_subscriptions").upsert({
       user_id: state.user.id,
@@ -16524,11 +16591,14 @@ details.details-moving > :not(summary) {
       remind_plan: remind.plan,
       remind_risk: remind.risk,
       remind_at: remind.at
-    }, { onConflict: "endpoint" }).then(function(r) {
-      r.error && toast("That reminder did not save. Try again in a moment.");
-    });
+    }, { onConflict: "endpoint" }).then(remindSaved);
   }
   function offRemind() {
+    if (native) {
+      var tok = remind.tok;
+      remind.tok = null, remind.sub = null, enrolled(null), native.push.unregister(), tok && sb.from("push_devices").delete().eq("token", tok);
+      return;
+    }
     var sub = remind.sub;
     remind.sub = null, sub && sb.from("push_subscriptions").delete().eq("endpoint", sub.endpoint).then(function() {
       sub.unsubscribe();
@@ -16557,7 +16627,7 @@ details.details-moving > :not(summary) {
       paintRemind();
       return;
     }
-    remind.at = Math.max(0, Math.min(1439, Number(v[1]) * 60 + Number(v[2]))), saveSettings(), remind.sub && saveRemind();
+    remind.at = Math.max(0, Math.min(1439, Number(v[1]) * 60 + Number(v[2]))), saveSettings(), (remind.sub || remind.tok) && saveRemind();
   }
   function isEmailAccount() {
     var u = state.user;

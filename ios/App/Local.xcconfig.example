@@ -1,3 +1,12 @@
 // Copy to Local.xcconfig (gitignored), then fill in from Xcode.
 DEVELOPMENT_TEAM = YOUR_PERSONAL_TEAM_ID
 SPOTTER_BUNDLE_ID = app.spotter.yourname.dev
+
+// Uncomment once the paid Developer Program membership exists and the App ID has
+// the Push Notifications capability. It swaps in App/Push.entitlements, which is
+// the committed entitlements file plus `aps-environment = development`, and the
+// Debug build starts asking APNs for a real device token.
+// A Personal Team is NOT issued this entitlement: with the line on, signing
+// fails with "Provisioning profile ... doesn't include the aps-environment
+// entitlement" and the build stops. That is the expected answer, not a bug.
+// SPOTTER_ENTITLEMENTS = App/Push.entitlements
