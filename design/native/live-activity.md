@@ -36,6 +36,7 @@ the process is suspended and while the phone is locked.
 | `work` | movement · `Set 2 of 3 · 10 reps · 24 kg` | elapsed, ink-2 | session progress (done/total), ember | **Log set** | dumbbell / elapsed | dumbbell |
 | `rest` | movement · `Up next · Set 3 of 3` | countdown, **ember, larger** | rest countdown, ember | **Skip rest** | hourglass / countdown | countdown ring |
 | `rest` paused | movement · `Up next · Set 3 of 3` | frozen `0:23`, muted | frozen fraction, muted | **Skip rest** | hourglass / frozen, muted | muted glyph |
+| `rest` over (`isStale`) | movement · `Next · Set 3 of 3 · 10 reps` | empty, width held | session progress, ember | **Start set** | lifter, ember / `Go`, ember | lifter, ember |
 | `timed` | movement · target | countdown, ember | countdown, ember | — | timer / countdown | countdown ring |
 | `complex` | movement · block · target · weight | elapsed, ink-2 | session progress, ember | — | dumbbell / elapsed | dumbbell |
 | `done` | `Workout saved` / `Session ended` · `42:10 · 18 sets · 2 PRs` | check, good | full, good | — | check / elapsed | check |
@@ -124,6 +125,64 @@ adding `minimumScaleFactor` did not help because the clipping is geometric. Both
 the two numbers are inset 6 pt so they clear the curve. This is the HIG's "elements poking into the
 rounded shape of the Live Activity and creating visual tension", found the hard way.
 
+## The rest ending while the app is asleep (19 Sept)
+
+The defect V2 found on the 17 Pro: with the app backgrounded, the Island froze at `0:00` under the
+hourglass and stayed there until the app was opened. The countdown had been right all along — it is
+deadline-driven — but the card's *shape* is not, and nothing native runs at the instant a rest ends.
+The engine that would send the next state is a web view in a suspended process.
+
+ActivityKit gives an activity exactly one local wake-up, and it is the one this had been throwing
+away: `ActivityContent.staleDate`. When it passes, the system re-renders the activity's views with
+[`context.isStale`](https://developer.apple.com/documentation/activitykit/activityviewcontext/isstale)
+set. So a running rest's stale date is now **the deadline itself** (`LiveActivitySink.staleDate`),
+clamped one second into the future because an update can land after the deadline it describes and
+ActivityKit ignores a stale date already past. A timed hold keeps the old deadline + 5 min: its end
+is a set to log on the phone, not a cue to move, and nothing on the card would change at zero. Work
+keeps its 30 minutes. `relevanceScore` (100) and the `.after(15 min)` end policy are untouched.
+
+`PhaseLook.restOver` is the one place that reads `isStale && phase == .rest && !paused`, and it
+switches `counting` off — which is what turns the countdown back into an empty slot, the rest bar
+back into session progress and the hourglass back into the lifter, in every presentation, without a
+second branch per view.
+
+### Two things the device said and the code could not
+
+**The system does not honour a stale date sooner than two minutes.** Measured in `liveactivitiesd`'s
+own log (`stale-timing.txt`), twice, on the same launch: a 300 s rest scheduled
+`task "Marking activities stale"` for `+299.97 s` — exactly the deadline — and a 30 s rest scheduled
+it for `+119.99 s`. The rule is `max(staleDate, now + 120 s)`, and `now` is the update that set it.
+So a rest of two minutes or more flips **on** its deadline, and a shorter one flips at rest start
++ 120 s: a 90 s rest (Spotter's `REST_FALLBACK`) is 30 s late, a 30 s rest is 90 s late. That floor
+belongs to the system and there is no local way under it — the previous `deadline + 5 min` sat on
+top of it, so the same 90 s rest used to wait five and a half minutes. The thing that *is* exact at
+the deadline is the rest-end nudge below, which is why it stays.
+
+**A stale activity's live timers stop being driven.** The first build put the elapsed session time
+in the slot the countdown vacated. On the device it rendered as the words "26 minutes" — 
+`Text(_:style:.timer)` degrading to a static relative phrase, because the system will not run a
+timer for content it has marked out of date. The rest-over state therefore asks for no timer
+anywhere. The Lock Screen leaves the slot empty and keeps its width (the layout does not move, per
+the HIG note at the top of the file, and the "REST OVER" label is already saying it); the two
+Dynamic Island slots, which have no room for a label, get the word `Go` in ember instead.
+
+### The button says Start set, and sends `skipRest`
+
+The brief asked whether the engine's `set` action would log the next set from the rest-over card.
+For straight sets it would: during a rest `wo.i` has not advanced, so `setPrefill(sets.length)`
+resolves to the set the card is naming. For a **circuit** it would not. `saveSet()` starts that
+rest with `startRest(gap, null, nextMove)`, so the move to the next station is owed by `restThen` —
+and a `set` action runs `saveSet()` again, which calls `startRest(secs)` with no `then` and
+overwrites it. A Log set tapped during a circuit rest would log an extra set at the station just
+finished and silently swallow the advance. `LiveState` carries nothing that distinguishes the two
+rests, so the card cannot choose per-rest.
+
+`skipRest` is correct for both, and it is the only one safe to **retain**: the action is held until
+the web view wakes, and by then the engine may have ended the rest itself, in which case
+`liveAction`'s `if (restUntil) doneRest()` makes it a no-op — where a retained `set` would log a set
+nobody performed. So the intent is unchanged (`SkipRestIntent`) and only the word changes, because
+"Skip rest" over a rest that is already over reads as an offer to lose something.
+
 ## The rest-end nudge
 
 `NotificationsHost.schedule(id: "rest-end", …)` at the absolute rest deadline, scheduled on every
@@ -165,3 +224,22 @@ All under the session scratchpad `…/scratchpad/a/`:
 Not captured, and why: the composited **Lock Screen** itself, the **minimal** presentation (needs a
 second concurrent Live Activity), the **nudge banner**, and the **in-app permission line** — all four
 need either a device lock or a tap, and this machine could send neither.
+
+### 19 Sept — the rest-over flip, iPhone 17 Pro, iOS 26.2
+
+This machine could lock the phone and send taps, so the composited Lock Screen is captured at last.
+All under `…/scratchpad/a2/`. Rests of 130 s and 125 s, so the deadline is past the system's 120 s
+floor and governs on its own.
+
+| File | Shows |
+| --- | --- |
+| `M10-lock-10s-left-card.png` → `M20-lock-deadline-plus7-card.png` | the composited **Lock Screen**, phone locked, app suspended: `REST` / `0:12` / `Skip rest` becomes `REST OVER` / `Next · Set 3 of 3 · 10 reps` / `Start set` **7 s after the deadline**. Same card height, same hero and button positions — only meaning changes |
+| `D10-dark-rest-card.png`, `D20-dark-rest-over-card.png` | the same pair in the dark appearance, flipped 9 s after the deadline |
+| `f00-backgrounded.png`, `e2-deadline-plus5-island.png`, `e4-deadline-plus65-island.png` | compact Dynamic Island: ember hourglass + countdown, then the frozen `0:00` the floor keeps on screen, then the ember lifter + `Go` |
+| `N10c.png` | expanded Dynamic Island at rest over — elapsed, ember `Go`, the next set, session progress, one button |
+| `N20full.png` | the same card one tap later: **Start set** was pressed on the expanded island with the app backgrounded and the card became the work presentation (`Set 3 of 3 · 10 reps · 24 kg`, `Log set`). The optimistic half of the round trip, measured at last — the JavaScript half still needs a signed-in phone |
+| `stale-timing.txt`, `stale-timing-90.txt` | `liveactivitiesd` scheduling `task "Marking activities stale"`: `+299.97 s` for a 300 s rest, `+119.99 s` for a 90 s one and for a 30 s one. The `max(staleDate, now + 120 s)` rule, measured three times |
+
+Still not captured: the **minimal** presentation, the **nudge banner**, and anything that needs a
+signed-in session — this session could not type a password, so every state above came through the
+DEBUG fixture, which drives the same `update(_:)`, the same coalescer and the same widget.

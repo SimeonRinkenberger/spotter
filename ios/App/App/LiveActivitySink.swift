@@ -203,14 +203,31 @@ final class LiveActivitySink: LiveStateSink {
 
     /// When the card should admit it may be out of date.
     ///
-    /// A rest has a deadline, and five minutes past it means the phone never
-    /// came back — the engine would have sent something by then. Work has no
-    /// deadline, so half an hour stands in for "nobody is doing this any more",
-    /// which is long enough for a heavy single and short enough that a forgotten
-    /// card stops claiming to be live.
+    /// For a running rest this is the deadline itself, and that is not a
+    /// confession — it is the mechanism. Nothing native runs at the moment a
+    /// rest ends: the engine that would send the next state is a web view in a
+    /// suspended process, so with the app backgrounded the card sat on the rest
+    /// presentation with its countdown pinned at 0:00 and an hourglass, until
+    /// the app was opened (found on the 17 Pro, 19 Sept). ActivityKit re-renders
+    /// an activity when its stale date passes and hands the view
+    /// `context.isStale`, which is the one local wake-up an activity gets. So
+    /// the deadline is the stale date, and the widget's stale branch draws the
+    /// rest-over state. Five minutes past it — what this was — is five minutes
+    /// of a card lying about what the person should be doing.
+    ///
+    /// Clamped a second into the future because an update can land after the
+    /// deadline it describes (a `+15 s` undone, a resume), and ActivityKit
+    /// ignores a stale date that is already past instead of firing at once.
+    ///
+    /// A timed hold keeps the old +5 min: its end is a set to log on the phone,
+    /// not a cue to move, and nothing in the card would change at zero. Work has
+    /// no deadline, so half an hour stands in for "nobody is doing this any
+    /// more", which is long enough for a heavy single and short enough that a
+    /// forgotten card stops claiming to be live.
     private static func staleDate(for state: LiveState) -> Date {
         if let rest = state.rest, !rest.isPaused {
-            return rest.deadline.addingTimeInterval(5 * 60)
+            let deadline = state.phase == .rest ? rest.deadline : rest.deadline.addingTimeInterval(5 * 60)
+            return max(deadline, Date().addingTimeInterval(1))
         }
         return Date().addingTimeInterval(30 * 60)
     }
@@ -394,6 +411,11 @@ import UserNotifications
 //   SIMCTL_CHILD_SPOTTER_LIVE_FIXTURE=rest xcrun simctl launch <udid> <bundle id>
 //
 // States: work · rest · paused · timed · complex · done · ghost
+// SPOTTER_LIVE_FIXTURE_REST=<seconds> sets the rest's length, default 60. Added
+// to measure WHEN the rest-over flip lands: the system schedules the "mark
+// stale" wake no sooner than 120 s after the update that set the stale date, so
+// a 30 s rest and a 300 s rest answer that question differently and the answer
+// is the whole behaviour of this feature.
 // `ghost` starts a card and then wipes the stored state, which is the shape the
 // app is in after being killed mid-session; relaunching with no variable set
 // must end that card rather than adopt it.
@@ -491,8 +513,9 @@ extension LiveActivitySink {
 
     private static func fixture(_ name: String) -> LiveState {
         let started = Date().addingTimeInterval(-1090)
-        let rest = LiveState.RestState(until: Date().addingTimeInterval(60).timeIntervalSince1970 * 1000,
-                                       total: 60_000, held: 0)
+        let seconds = Double(ProcessInfo.processInfo.environment["SPOTTER_LIVE_FIXTURE_REST"] ?? "") ?? 60
+        let rest = LiveState.RestState(until: Date().addingTimeInterval(seconds).timeIntervalSince1970 * 1000,
+                                       total: seconds * 1000, held: 0)
         var state = LiveState(v: 1,
                               title: "Lock Screen Test",
                               startedAt: SpotterISO8601.string(started),
@@ -513,7 +536,7 @@ extension LiveActivitySink {
         case "paused":
             state.phase = .rest
             state.set = LiveState.SetPosition(index: 3, total: 3)
-            state.rest = LiveState.RestState(until: rest.until, total: 60_000, held: 23_000)
+            state.rest = LiveState.RestState(until: rest.until, total: rest.total, held: 23_000)
         case "timed":
             state.phase = .timed
             state.exercise = "Plank"

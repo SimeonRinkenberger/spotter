@@ -21,6 +21,11 @@ import WidgetKit
 //      help people avoid accidentally tapping the wrong control". Work offers
 //      Log set, rest offers Skip rest, and the phases whose action app.ts
 //      answers with "Log this one on the phone." offer nothing at all.
+//   4. `context.isStale` is not an error state here, it is the alarm clock. A
+//      rest's stale date IS its deadline (see LiveActivitySink.staleDate), so
+//      the one moment ActivityKit re-renders this card without the app running
+//      is the moment the rest ends — and every presentation has to have
+//      something to say then. See PhaseLook.restOver.
 //
 // Height budget: the system truncates a Lock Screen activity past 160 pt. The
 // card below is ~130 pt at the default type size and ~160 at the 1.25x ceiling
@@ -28,11 +33,12 @@ import WidgetKit
 struct WorkoutLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: WorkoutActivityAttributes.self) { context in
-            LockScreenWorkout(attributes: context.attributes, state: context.state)
+            LockScreenWorkout(attributes: context.attributes, state: context.state,
+                              isStale: context.isStale)
                 .activityBackgroundTint(WidgetTheme.card)
                 .activitySystemActionForegroundColor(WidgetTheme.emberInk)
         } dynamicIsland: { context in
-            let look = PhaseLook(state: context.state)
+            let look = PhaseLook(state: context.state, isStale: context.isStale)
             return DynamicIsland {
                 // No captions in these two regions. They sit directly under the
                 // island's top corners, and a caption there is clipped by the
@@ -53,7 +59,8 @@ struct WorkoutLiveActivity: Widget {
                         .padding(.leading, 6)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    IslandClock(attributes: context.attributes, state: context.state, size: 15)
+                    IslandClock(attributes: context.attributes, state: context.state, size: 15,
+                                isStale: context.isStale, elapsedFallback: false, restOverMark: true)
                         .frame(maxWidth: .infinity, alignment: .trailing)
                         .padding(.trailing, 6)
                 }
@@ -81,7 +88,7 @@ struct WorkoutLiveActivity: Widget {
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     VStack(spacing: 8) {
-                        PhaseBar(state: context.state)
+                        PhaseBar(state: context.state, isStale: context.isStale)
                         if let action = look.action { ActionButton(action: action) }
                     }
                 }
@@ -90,7 +97,8 @@ struct WorkoutLiveActivity: Widget {
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(look.glyphTint)
             } compactTrailing: {
-                IslandClock(attributes: context.attributes, state: context.state, size: 14)
+                IslandClock(attributes: context.attributes, state: context.state, size: 14,
+                            isStale: context.isStale, restOverMark: true)
             } minimal: {
                 MinimalDial(attributes: context.attributes, state: context.state, look: look)
             }
@@ -110,11 +118,32 @@ struct WorkoutLiveActivity: Widget {
 private struct PhaseLook {
     let state: WorkoutActivityAttributes.ContentState
 
+    /// ActivityKit's own word for "this content is past the date its author gave
+    /// it". For a running rest that date is the deadline, so this arrives as a
+    /// timer going off rather than as a warning. See `restOver`.
+    var isStale: Bool = false
+
+    /// The rest ended and nobody has said so yet — the app is asleep, the
+    /// engine's next state will not arrive until it wakes, and the system has
+    /// re-rendered this card because the stale date passed.
+    ///
+    /// This is the only state on the card the app did not send. It exists
+    /// because the alternative, seen on the 17 Pro, is an hourglass over a
+    /// frozen 0:00 for as long as the phone stays in a pocket — a card that has
+    /// the information and refuses to use it.
+    var restOver: Bool { isStale && state.phase == .rest && !paused }
+
     /// True while a rest or a timed hold is counting down and not paused. The
     /// two share a treatment on purpose: Nike Training Club shows a drill's
     /// remaining time the same way it shows a break, and inventing a second
     /// visual language for "the clock is going down" would only be a puzzle.
+    ///
+    /// A rest that is over is not counting, whatever its deadline says: that one
+    /// word is what turns the countdown back into elapsed time, the rest bar
+    /// back into session progress and the ember hero back to normal weight,
+    /// everywhere, without a second branch in each view.
     var counting: Bool {
+        guard !restOver else { return false }
         guard let rest = state.rest, state.phase == .rest || state.phase == .timed else { return false }
         return !rest.isPaused
     }
@@ -128,6 +157,10 @@ private struct PhaseLook {
 
     var glyph: String {
         if done { return "checkmark.circle.fill" }
+        // The hourglass is the symptom: it is what a frozen card shows. The
+        // moment the rest is over the glyph is the lifter again, because that is
+        // the whole message.
+        if restOver { return "figure.strengthtraining.traditional" }
         if state.phase == .rest { return "hourglass" }
         if state.phase == .timed { return "timer" }
         return "figure.strengthtraining.traditional"
@@ -137,10 +170,15 @@ private struct PhaseLook {
 
     var clockLabel: String {
         if done { return "Done" }
+        if restOver { return "Rest over" }
         if state.phase == .rest { return paused ? "Paused" : "Rest" }
         if state.phase == .timed { return paused ? "Paused" : "Hold" }
         return "Elapsed"
     }
+
+    /// The label is ember exactly when it is the thing to read: while a clock is
+    /// running down, and in the second it stops.
+    var labelTint: Color { (counting || restOver) ? WidgetTheme.emberInk : WidgetTheme.muted }
 
     /// The line that carries the card. On a finished session the sink has
     /// already put the closing headline in `exercise`, so this is one field in
@@ -153,6 +191,22 @@ private struct PhaseLook {
     var detail: String? {
         // Finished: the sink built "42:10 · 18 sets · 2 PRs" into `target`.
         if done { return state.target }
+
+        // Rest over: the same fields as a rest, plus what the set asks for. The
+        // countdown had the card's attention for the last minute and now has
+        // nothing to say, so the space goes to the thing that replaced it — and
+        // "Set 3 of 3 · 10 reps" is what someone standing over a bar needs
+        // without unlocking anything. "Next" rather than "Up next": the waiting
+        // is finished and the copy should stop implying it.
+        if restOver {
+            var parts: [String] = []
+            if let label = state.setLabel { parts.append(label) }
+            else if let next = state.next { parts.append(next) }
+            if let target = state.target { parts.append(target) }
+            if parts.isEmpty, let block = state.block { parts.append(block) }
+            guard !parts.isEmpty else { return nil }
+            return "Next  ·  " + parts.joined(separator: "  ·  ")
+        }
 
         // Resting: `set` still describes the set you are about to do, which is
         // what the engine leaves there while the clock runs — so it is labelled
@@ -180,17 +234,45 @@ private struct PhaseLook {
     /// "Log this one on the phone.", and a button that only ever produces a
     /// toast is worse than no button.
     var action: ActionKind? {
+        if restOver { return .startSet }
         if state.phase == .rest { return .skipRest }
         if state.phase == .work { return .logSet }
         return nil
     }
 }
 
+/// Start set and Skip rest send the SAME action — `skipRest` — because at the
+/// deadline they ask the engine for the same thing: end this rest and put me on
+/// the next set. Only the words differ, and they have to: "Skip rest" over a
+/// rest that is already over reads as an offer to lose something.
+///
+/// It is deliberately not `set`. The brief asked whether the engine's `set`
+/// would log the next set from here, and for straight sets it would — but a
+/// circuit's rest carries the owed advance to the next station in `restThen`,
+/// and `saveSet()` starts a fresh rest that overwrites it. So a Log set tapped
+/// during a circuit rest would log an extra set at the station just finished
+/// and silently swallow the move to the next one. `skipRest` is also the safe
+/// one to retain: the action is held until the web view wakes, and by then the
+/// engine may have ended the rest itself — `skipRest` then does nothing, where
+/// a retained `set` would log a set nobody performed.
 private enum ActionKind {
-    case skipRest, logSet
+    case skipRest, logSet, startSet
 
-    var title: String { self == .skipRest ? "Skip rest" : "Log set" }
-    var glyph: String { self == .skipRest ? "forward.fill" : "checkmark" }
+    var title: String {
+        switch self {
+        case .skipRest: return "Skip rest"
+        case .logSet: return "Log set"
+        case .startSet: return "Start set"
+        }
+    }
+
+    var glyph: String {
+        switch self {
+        case .skipRest: return "forward.fill"
+        case .logSet: return "checkmark"
+        case .startSet: return "arrow.right"
+        }
+    }
 }
 
 // MARK: - Pieces
@@ -202,14 +284,43 @@ private struct IslandClock: View {
     let attributes: WorkoutActivityAttributes
     let state: WorkoutActivityAttributes.ContentState
     var size: CGFloat = 14
+    var isStale: Bool = false
+    /// Whether to fall back to the elapsed session time when nothing is
+    /// counting down. Compact and minimal have one clock slot, so they want it.
+    /// The expanded presentation already prints elapsed in its leading region,
+    /// and printing it again in the trailing one put the same number on screen
+    /// twice for the whole of every work phase — so expanded passes false and
+    /// leaves the slot empty until a countdown has something to say.
+    var elapsedFallback: Bool = true
+    /// Whether this slot should say "Go" when the rest is over.
+    ///
+    /// Only the two Dynamic Island slots do. The island has no room for the
+    /// "REST OVER" label the Lock Screen card carries, so the word has to be in
+    /// the slot the countdown just vacated, where the eye already is. The Lock
+    /// Screen has the label, so its clock goes back to elapsed session time
+    /// rather than printing the same news twice.
+    var restOverMark: Bool = false
 
     var body: some View {
-        let look = PhaseLook(state: state)
+        let look = PhaseLook(state: state, isStale: isStale)
         Group {
             if look.done {
                 Image(systemName: "checkmark")
                     .font(.system(size: size, weight: .bold))
                     .foregroundStyle(WidgetTheme.good)
+            } else if look.restOver {
+                // Nothing here may be a live timer. Once the system marks an
+                // activity stale it stops driving them: on the 17 Pro the
+                // elapsed slot came back as the words "26 minutes" instead of
+                // 26:14, because Text(style: .timer) degrades to a static
+                // relative phrase rather than counting. So the Island gets a
+                // word the card chose, and the Lock Screen gets an empty slot
+                // it keeps the width of — the layout does not move, and the
+                // "REST OVER" label above it is already saying this.
+                if restOverMark {
+                    Text("Go")
+                        .foregroundStyle(WidgetTheme.ember)
+                }
             } else if let rest = state.rest, look.paused {
                 Text(Duration.seconds(rest.remaining()), format: .time(pattern: .minuteSecond))
                     .foregroundStyle(WidgetTheme.muted)
@@ -220,7 +331,7 @@ private struct IslandClock: View {
                 // rendering as 0:00 instead of crashing the widget process.
                 Text(timerInterval: Date()...max(rest.deadline, Date().addingTimeInterval(1)), countsDown: true)
                     .foregroundStyle(WidgetTheme.ember)
-            } else {
+            } else if elapsedFallback {
                 Text(attributes.startedAt, style: .timer)
                     .foregroundStyle(WidgetTheme.ink2)
             }
@@ -245,9 +356,10 @@ private struct IslandClock: View {
 /// is not Spotter's. Two capsules cannot drift.
 private struct PhaseBar: View {
     let state: WorkoutActivityAttributes.ContentState
+    var isStale: Bool = false
 
     var body: some View {
-        let look = PhaseLook(state: state)
+        let look = PhaseLook(state: state, isStale: isStale)
         Group {
             if look.done {
                 Bar(fraction: 1, tint: WidgetTheme.good)
@@ -304,7 +416,9 @@ private struct ActionButton: View {
     var body: some View {
         Group {
             switch action {
-            case .skipRest: Button(intent: SkipRestIntent()) { label }
+            // Start set is Skip rest wearing the right word for a rest that has
+            // already run out. See the note on ActionKind.
+            case .skipRest, .startSet: Button(intent: SkipRestIntent()) { label }
             case .logSet: Button(intent: LogSetIntent()) { label }
             }
         }
@@ -358,6 +472,11 @@ private struct MinimalDial: View {
 struct LockScreenWorkout: View {
     let attributes: WorkoutActivityAttributes
     let state: WorkoutActivityAttributes.ContentState
+    /// Passed straight through from `context.isStale`. Defaulted so the DEBUG
+    /// ImageRenderer harness can draw any phase without one, and so that adding
+    /// it could not change a single pixel of the states that were already signed
+    /// off in design/native/live-activity.md.
+    var isStale: Bool = false
 
     // WidgetTheme's sizes are fixed points, which is what keeps the wave's four
     // surfaces identical — but a fixed point size ignores Dynamic Type
@@ -379,7 +498,7 @@ struct LockScreenWorkout: View {
     private var heroLines: Int { scale > 1.12 ? 1 : 2 }
 
     var body: some View {
-        let look = PhaseLook(state: state)
+        let look = PhaseLook(state: state, isStale: isStale)
         VStack(alignment: .leading, spacing: 7) {
             HStack(alignment: .firstTextBaseline) {
                 Text(attributes.title.uppercased())
@@ -391,7 +510,7 @@ struct LockScreenWorkout: View {
                 Text(look.clockLabel.uppercased())
                     .font(WidgetTheme.label(10.5 * scale))
                     .tracking(0.6)
-                    .foregroundStyle(look.counting ? WidgetTheme.emberInk : WidgetTheme.muted)
+                    .foregroundStyle(look.labelTint)
                     .lineLimit(1)
             }
             HStack(alignment: .center, spacing: 12) {
@@ -413,9 +532,9 @@ struct LockScreenWorkout: View {
                 // The countdown becomes the hero by growing and turning ember,
                 // not by taking the movement's place. See the note at the top.
                 IslandClock(attributes: attributes, state: state,
-                            size: (look.counting ? 30 : 22) * scale)
+                            size: (look.counting ? 30 : 22) * scale, isStale: isStale)
             }
-            PhaseBar(state: state)
+            PhaseBar(state: state, isStale: isStale)
             if let action = look.action { ActionButton(action: action) }
         }
         .padding(.horizontal, 16)

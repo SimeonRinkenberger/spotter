@@ -99,6 +99,48 @@ assert(/func end\(_ summary: LiveSummary\)[\s\S]{0,400}cancelNudge\(\)/.test(sin
   'end(_:) must cancel the rest nudge, or a saved workout still announces a rest');
 console.log('PASS the "rest-end" nudge is scheduled, cancelled, and cancelled again on end().');
 
+// ---------- the rest ends on the card even when the app is asleep ----------
+//
+// Nothing native runs at the moment a rest ends. The one local wake-up an
+// activity gets is its stale date, so a running rest's stale date IS its
+// deadline and the widget's `isStale` branch is what draws the rest-over state.
+// Both halves fail silently and identically: the card freezes at 0:00 under an
+// hourglass until someone opens the app, which is the bug this replaced.
+
+const staleFn = /private static func staleDate\(for state: LiveState\) -> Date \{([\s\S]*?)\n    \}/.exec(sink);
+assert(staleFn, 'LiveActivitySink has no staleDate(for:) — the rest-over flip has no alarm clock');
+assert(/state\.phase == \.rest \? rest\.deadline\b/.test(staleFn[1]),
+  'a running rest\'s staleDate must be the deadline ITSELF: padding it is padding during which ' +
+  'the card shows an hourglass over a rest that is over');
+assert(/max\(deadline, Date\(\)\.addingTimeInterval\(1\)\)/.test(staleFn[1]),
+  'clamp the stale date into the future — ActivityKit ignores one that has already passed, ' +
+  'and an update can land after the deadline it describes');
+assert(/staleDate: Self\.staleDate\(for: state\)/.test(sink),
+  'push(_:) must hand ActivityContent the computed staleDate');
+console.log('PASS a running rest\'s staleDate is its own deadline, clamped into the future.');
+
+assert(/isStale: context\.isStale/.test(widget),
+  'the widget never reads context.isStale, so nothing happens when the stale date passes');
+assert(/var restOver: Bool \{ isStale && state\.phase == \.rest/.test(widget),
+  'PhaseLook must name the rest-over state off isStale + .rest');
+assert(/var counting: Bool \{\s*guard !restOver else \{ return false \}/.test(widget),
+  'restOver must switch `counting` off, or the card keeps drawing a countdown that finished');
+assert(/if restOver \{ return "Rest over" \}/.test(widget),
+  'the Lock Screen label must say "Rest over" when it is');
+assert(/if restOver \{ return \.startSet \}/.test(widget),
+  'the rest-over card must offer its own action, not the countdown\'s "Skip rest"');
+console.log('PASS the widget draws a rest-over state on isStale, in every presentation.');
+
+// The action behind that button. `set` was the tempting one and it is wrong: a
+// circuit's rest carries the owed move to the next station in restThen, and
+// saveSet() starts a fresh rest that overwrites it — so a Log set tapped from a
+// circuit rest logs an extra set AND loses the advance. skipRest is also the
+// only one safe to retain until the web view wakes.
+assert(/case \.skipRest, \.startSet: Button\(intent: SkipRestIntent\(\)\)/.test(widget),
+  'Start set must send skipRest: `set` from a circuit rest swallows the advance in restThen');
+assert(/restThen/.test(app), 'app.ts no longer has restThen — re-check which action the rest-over button should send');
+console.log('PASS the rest-over button sends skipRest, which cannot log a set nobody did.');
+
 // ---------- the activity is ended, reconciled, and never asks to exist twice ----------
 
 assert(/areActivitiesEnabled/.test(sink), 'LiveActivitySink must respect areActivitiesEnabled');
