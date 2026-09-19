@@ -27,7 +27,17 @@ struct LockWidget: Widget {
 
 struct LockWidgetView: View {
     let glance: Glance
-    @Environment(\.widgetFamily) private var family
+    /// Which of the three layouts to draw. Nil — the only value WidgetKit ever
+    /// passes — takes the family the widget host put in the environment.
+    ///
+    /// It is settable because `EnvironmentValues.widgetFamily` is not: anything
+    /// rendering these views outside a widget host (a snapshot, a preview grid)
+    /// cannot say which family it wants, and would silently get three copies of
+    /// the rectangular layout instead of the three families.
+    var only: WidgetFamily?
+    @Environment(\.widgetFamily) private var hosted
+
+    private var family: WidgetFamily { only ?? hosted }
 
     var body: some View {
         content
@@ -115,12 +125,16 @@ struct LockWidgetView: View {
         return glance.todayTitle + " · " + length
     }
 
-    /// "3 of 4 this week · streak 6". A stale summary spends the streak's half
-    /// of the line saying when it was last true instead — the streak is the
-    /// claim most worth not overstating.
+    /// "3 of 4 this week · streak 6". A week at risk spends the middle of the
+    /// line saying what is left, because the Lock Screen's vibrant rendering
+    /// mode desaturates everything and the small widget's ember numeral would
+    /// arrive here as plain white. A stale summary spends the streak's half
+    /// saying when it was last true instead — the streak is the claim most
+    /// worth not overstating.
     private var weekLine: String {
-        let week = glance.countText + " this week"
+        let week = glance.countText + (glance.isAtRisk ? "" : " this week")
         if glance.isStale { return week + " · " + glance.asOfText }
+        if glance.isAtRisk { return week + " · " + glance.countCaption }
         return glance.streak > 0 ? week + " · streak " + String(glance.streak) : week
     }
 
