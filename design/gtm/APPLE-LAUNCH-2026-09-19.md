@@ -21,7 +21,7 @@ As of 19 September 2026, America/Chicago. **Prepared in App Store Connect; not r
 | Privacy | 13 data types, purposes, account linkage and no-ad-tracking answers saved as draft; URLs saved; final accuracy declaration / Publish awaiting owner approval |
 | Sign in with Apple | Native capability enabled; dedicated sign-in key; Supabase provider enabled for `app.spotter.dev`; server token storage/revocation implemented and deployed |
 | Push / shared data | Dedicated production APNs key scoped to main app; main, Share and Widgets share `group.app.spotter.dev`; Watch HealthKit capability enabled |
-| Signing | Distribution certificate created in this Mac’s keychain; all four App Store profiles active in Apple Developer; local profile download/signing still blocked |
+| Signing | Distribution certificate and all four downloaded App Store profiles used to create a signed archive and verified Spotter 1.0 (1) package |
 
 The review password and private keys remain in ignored local storage / their approved services, not in this document or Git.
 
@@ -36,17 +36,17 @@ The review password and private keys remain in ignored local storage / their app
 ## Evidence and its limits
 
 - All 27 GTM check groups and iOS configuration checks passed; GitHub verification and native parity checks passed.
-- Release simulator build including Watch and an unsigned Release archive succeeded. These are build checks, not a signed distribution artifact or device acceptance test.
+- Release simulator build including Watch and a signed Release archive succeeded. The final exported package passes signature and required-capability checks for all four targets. These are packaging checks, not device acceptance tests.
 - Live synthetic-account checks passed: unauthenticated Apple grant rejected (401), non-Apple account rejected (403), signed-in clients denied access to the Apple token table (403), unconsented AI request rejected before inference (403).
 - The live web app contains the new permission UI. Browser testing verified enable, reopen, revoke and persisted off state using the synthetic account, without sending training content to AI providers.
 - Apple sign-in has **not** been verified end to end on a physical device. Hide My Email, cancellation, deletion/re-authorization, APNs delivery, native purchases, Watch/Health behavior and restore remain required checks.
-- No signed `.ipa` uploaded. No App Store or subscription screenshots uploaded. No external beta group/public link can be considered ready.
+- Signed `.ipa` prepared locally, not uploaded. No App Store or subscription screenshots uploaded. No external beta group/public link can be considered ready.
 
 ## What is still needed
 
 | Dependency | Next action | Why it remains |
 | --- | --- | --- |
-| Unlocked Mac | Owner unlocks; download the four manual profiles in Xcode, then sign/archive/export and upload the latest build | Native tools report Mac locked. Browser profile download did not yield a local file. Browser security policy rejected download-history inspection; no bypass attempted |
+| Upload access | Owner unlocks Mac and keeps it awake; use Xcode’s signed-in window to upload the verified archive | Profiles downloaded and signed package completed after the Mac became accessible. The Mac locked again, and background upload failed with “Failed to Use Accounts”; no upload completed |
 | Apple paid business setup | Owner accepts Paid Apps Agreement and completes tax/banking | Owner explicitly deferred this; needed for paid subscriptions |
 | RevenueCat Apple credentials | Approve pending Spotter RevenueCat In-App Purchase key; create/download and save to the existing RevenueCat Apple app; verify credentials | Persistent Apple credential requires confirmation; final Generate is prepared |
 | Store notifications | After credential approval, connect Apple’s production and sandbox notifications to the existing RevenueCat Apple endpoint and verify an event | Not yet saved/tested |
@@ -54,7 +54,7 @@ The review password and private keys remain in ignored local storage / their app
 | Third-party content rights | Owner confirms necessary rights/permissions for supported source content before completing Apple’s declaration | Public availability alone cannot establish those rights |
 | Current public pages | Sign in to WordPress; review and publish the prepared updates to the four existing page IDs | Live pages are older; drafts are prepared, not published |
 | Device QA and media | Complete the linked beta plan; capture actual native screenshots and subscription review images | Mac/device access and signed build still needed |
-| External beta review | Owner separately authorizes Beta App Review, then invitations after approval | Current instruction is do not submit; no invitations authorized |
+| External beta review | Owner separately authorizes Beta App Review, then invitations after approval | Three tester emails were supplied and saved in ignored private local storage. Owner requested an explanation before submission; this is not approval to submit or send invitations |
 
 RevenueCat also displays an unconfirmed account email notice. Owner should complete that email verification; no verification email was resent during this task.
 
@@ -97,7 +97,13 @@ See [Apple screenshot brief](APPLE-SCREENSHOT-BRIEF.md) for the capture order an
 | `app.spotter.dev.widgets` | Spotter Widgets App Store | `QS8P9XBJRP` |
 | `app.spotter.dev.watchkitapp` | Spotter Watch App Store | `2FHAFCGH9R` |
 
-Certificate: Apple Distribution: Quarterdeck Collective LLC (`5L638CAQW2`), portal `NLZPYBR44V`, expires 19 September 2027. Profiles must be downloaded and installed before manual signing. The existing unsigned archive is not the final deliverable; build again with the latest synchronized assets and correct profiles.
+Certificate: Apple Distribution: Quarterdeck Collective LLC (`5L638CAQW2`), portal `NLZPYBR44V`, expires 19 September 2027. All four profiles downloaded successfully using Xcode’s Download Manual Profiles button.
+
+The first unsigned-archive export produced a valid signature but omitted custom entitlements. It is not suitable for distribution. Release settings now support per-target manual profiles through the ignored `Distribution.local.xcconfig`; defaults remain automatic when no local override is supplied. The final archive was signed during the build, then exported and verified again.
+
+Final package: `releases/apple/Spotter-1.0-1.ipa` (ignored binary). Archive: `/private/tmp/spotter-testflight/Spotter-Signed.xcarchive`. Verified version/build `1.0 (1)`, company team, no debugging entitlement, Apple sign-in, production APNs, correct shared app/keychain groups on the app/Share/Widgets, and HealthKit on Watch. All iOS configuration checks passed after the signing setup change. Native runtime source is the previously deployed build; these changes affect signing configuration.
+
+Upload attempt did not complete: `xcodebuild` returned “Failed to Use Accounts”. Use Xcode’s signed-in Organizer with the Mac unlocked. Uploading alone does not submit Beta App Review or invite testers; do not add the build to an external group or click Submit Review until the owner approves.
 
 ## Primary references
 

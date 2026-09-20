@@ -4,4 +4,6 @@ SPOTTER_ENTITLEMENTS = App/Release.entitlements
 SPOTTER_APP_GROUP = group.app.spotter.dev
 SPOTTER_WATCH_FLAGS = SPOTTER_HEALTHKIT
 SPOTTER_WATCH_ENTITLEMENTS = SpotterWatch/SpotterWatch.entitlements
+SPOTTER_SIGNING_STYLE = Automatic
+SPOTTER_SIGNING_IDENTITY = Apple Development
 #include? "../Distribution.local.xcconfig"
