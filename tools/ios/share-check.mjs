@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { shareAccess } from '../../native/share-access.js';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -13,12 +13,21 @@ const configure = shareAccess({ configure: async ({key}) => {
 }});
 await Promise.allSettled([configure('account-a'), configure(null), configure('account-b'), configure('fail'), configure(null)]);
 assert.deepEqual(written, ['account-a', null, 'account-b', 'fail', null]);
+// iOS sharingd rejects aggregate literal expressions even though NSPredicate
+// evaluates them on macOS. This guard catches the exact hidden-extension regression;
+// a real iOS share-sheet pass is still required for changes to activation rules.
+for (const path of ['ShareExtension', 'ActionExtension']) {
+  const plist = readFileSync(`ios/App/${path}/Info.plist`, 'utf8');
+  assert(!plist.includes(' IN {'), `${path}: iOS rejects aggregate literals`);
+  assert(!plist.includes('TRUEPREDICATE'), `${path}: never activate for unsupported content`);
+}
 const dir = mkdtempSync(join(tmpdir(), 'spotter-share-test-'));
 writeFileSync(join(dir, 'main.swift'), `
 import Foundation
 import UniformTypeIdentifiers
 let _ = UTType.utf8PlainText
-let infoData = try Data(contentsOf: URL(fileURLWithPath: "ios/App/ShareExtension/Info.plist"))
+for extensionName in ["ShareExtension", "ActionExtension"] {
+let infoData = try Data(contentsOf: URL(fileURLWithPath: "ios/App/\\(extensionName)/Info.plist"))
 let info = try PropertyListSerialization.propertyList(from: infoData, format: nil) as! [String: Any]
 let ext = info["NSExtension"] as! [String: Any]
 let attributes = ext["NSExtensionAttributes"] as! [String: Any]
@@ -33,6 +42,7 @@ precondition(activates([["public.utf8-plain-text"], ["public.movie"]]))
 precondition(!activates([["public.jpeg"]]))
 precondition(!activates([["public.movie"]]))
 precondition(!activates([]))
+}
 let links = [
  "https://www.tiktok.com/@trainer/video/1234567890123456789",
  "https://vm.tiktok.com/ZExample/", "https://www.tiktok.com/t/ZExample/",
@@ -64,6 +74,10 @@ for state in ["error", "blocked", "limit", "ok", "unknown"] {
  precondition(SharedLink.savedMessage(status: 200, body: ["status":state,"id":"workout"]) == nil)
 }
 precondition(SharedLink.savedMessage(status: 200, body: ["status":"saved"]) == nil)
+precondition(SharedLink.failureMessage(status: 403, body: ["code":"ai_consent_required"]).contains("AI permission"))
+precondition(SharedLink.failureMessage(status: 401, body: [:]).contains("sign-in"))
+precondition(SharedLink.failureMessage(status: 403, body: ["message":"This account cannot save."]) == "This account cannot save.")
+precondition(SharedLink.failureMessage(status: 429, body: ["message":"Monthly allowance reached."]) == "Monthly allowance reached.")
 print("PASS native activation including mixed thumbnail/link payloads, 17 social/web URL formats, captions, invalid inputs, deduplication, multiple links, durable-save acknowledgement and error responses")
 `);
 const r = spawnSync('/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc', ['-sdk','/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk','-target',process.arch === 'arm64' ? 'arm64-apple-macosx14.0' : 'x86_64-apple-macosx14.0','-module-cache-path',join(dir,'cache'),'ios/App/Shared/SharedLink.swift',join(dir,'main.swift'),'-o',join(dir,'check')], { encoding:'utf8' });

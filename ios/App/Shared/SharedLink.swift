@@ -24,4 +24,15 @@ enum SharedLink {
         default: return nil
         }
     }
+    static func failureMessage(status: Int, body: [String: Any]) -> String {
+        if body["code"] as? String == "ai_consent_required" {
+            return "Open Spotter → Settings → Data & privacy and review AI permission, then share this post again."
+        }
+        if status == 401 { return "Open Spotter to refresh your sign-in, then share again." }
+        if let message = body["message"] as? String, !message.isEmpty {
+            return String(message.prefix(300))
+        }
+        return status == 403 ? "Spotter couldn’t authorize this save. Open Spotter to check your account, then share again."
+            : "Spotter couldn’t save this link. Please try again."
+    }
 }

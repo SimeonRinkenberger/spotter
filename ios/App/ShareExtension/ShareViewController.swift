@@ -159,10 +159,7 @@ final class ShareViewController: UIViewController {
                 UINotificationFeedbackGenerator().notificationOccurred(.success)
                 UIAccessibility.post(notification: .announcement, argument: message)
             } else {
-                statusLabel.text = http == 401 || http == 403
-                    ? "Open Spotter to refresh your sign-in, then share again."
-                    : (body["message"] as? String).map { String($0.prefix(300)) }
-                        ?? "Spotter couldn’t save this link. Please try again."
+                statusLabel.text = SharedLink.failureMessage(status: http, body: body)
                 saveButton.setTitle("Try again", for: .normal); saveButton.isHidden = false
             }
         } catch {
