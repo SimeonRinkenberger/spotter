@@ -810,6 +810,10 @@ export const MARKUP_BODY = String.raw`</head>
 
   <h3 class="seth">Data &amp; privacy</h3>
   <div class="setgroup">
+    <!-- The switch itself, where a privacy setting is looked for. The row at the
+         top of the sheet says the same thing in a sentence; this is the one the
+         share sheet and the server's refusal point at by name. -->
+    <button class="kv row" id="setairow"><span class="k">AI processing</span><span class="v" id="setai">&mdash;</span><svg class="ic chev"><use href="#i-chev"></use></svg></button>
     <button class="kv row" id="setexport"><span class="k">Export my data</span><span class="v" id="setexportv">JSON</span><svg class="ic chev"><use href="#i-chev"></use></svg></button>
     <a class="kv row" href="https://quarterdeckcollective.com/spotter/terms/"><span class="k">Terms of use</span><svg class="ic chev"><use href="#i-chev"></use></svg></a>
     <a class="kv row" href="https://quarterdeckcollective.com/spotter/privacy/"><span class="k">Privacy policy</span><svg class="ic chev"><use href="#i-chev"></use></svg></a>

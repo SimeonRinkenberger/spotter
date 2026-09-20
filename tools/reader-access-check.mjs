@@ -14,6 +14,7 @@ function fn(name) {
 // different numbers now, and a harness that pins the wrong one stops testing the gate.
 const packSrc = fs.readFileSync('supabase/functions/spotter/pack.ts','utf8');
 const constant=(text,name)=>Number(text.match(new RegExp('(?:export )?const '+name+' = (\\d+)'))[1]);
+const AI_CONSENT_VERSION=src.match(/const AI_CONSENT_VERSION = "([^"]+)"/)[1];
 const c = vm.createContext({console, CARD_V:constant(src,'CARD_V'), MIN_USABLE_CARD_V:constant(src,'MIN_USABLE_CARD_V'),
  PACK_V:constant(packSrc,'PACK_V'), MIN_USABLE_PACK_V:constant(packSrc,'MIN_USABLE_PACK_V'), Date, Set, Map, JSON, Number, String});
 const functions=['usablePack','visuallyRead','cacheStale','markCache','cacheForAccess','basicMeta','readQuality','labelRecommendations','plusPlan'];
@@ -82,10 +83,15 @@ console.log('PASS owner/job-scoped completion, isolated simultaneous saves and d
 // Preparing a native save must be read-only and never expose the cached card.
 c.BLOCKED=Symbol('blocked');c.resolveShare=async()=>({shortcode:'same',platform:'tiktok',kind:'video',clean:'https://www.tiktok.com/@fixture/video/1'});
 c.json=(body)=>body;let plan='plus',cached=true,owned=false;
-c.capsFor=async()=>({plan});c.dbSelect=async(table)=>table==='workouts'?(owned?[{id:'mine'}]:[]):cached?[{pack,pack_v:1}]:[];
-vm.runInContext(transformSync(fn('handleIngestPrepare'),{loader:'ts',format:'cjs'}).code,c);
+let consented=true;
+c.capsFor=async()=>({plan});c.dbSelect=async(table)=>table==='workouts'?(owned?[{id:'mine'}]:[]):table==='profiles'?[{settings:consented?{ai_consent_version:AI_CONSENT_VERSION,ai_consent_at:'2026-09-20T00:00:00Z'}:{}}]:cached?[{pack,pack_v:1}]:[];
+c.AI_CONSENT_VERSION=AI_CONSENT_VERSION;
+vm.runInContext(transformSync([fn('aiConsented'),fn('handleIngestPrepare')].join('\n'),{loader:'ts',format:'cjs'}).code,c);
 const prep=async(body)=>{c.req={json:async()=>body};return vm.runInContext('handleIngestPrepare(req,"fixture",{})',c);};
 assert.equal((await prep({url:'x'})).needs_frames,false);
+// The extension asks about AI permission before a download, from this answer.
+assert.equal((await prep({url:'x'})).ai_consent,true);
+consented=false;assert.equal((await prep({url:'x'})).ai_consent,false);consented=true;
 cached=false;assert.equal((await prep({url:'x'})).needs_frames,true);
 owned=true;assert.equal((await prep({url:'x'})).needs_frames,false);
 assert.equal((await prep({url:'x',reread:true})).needs_frames,true);

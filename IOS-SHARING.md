@@ -27,6 +27,23 @@ the system sheet. App Store publication is not required for development testing.
   Only `saved`, `processing`, or `exists`, a successful HTTP response and a library
   item ID produce success. Offline/timeouts offer retry, with no false completion.
   Closing cancels the request locally; a server save already accepted can persist.
+- **AI permission is asked for in the sheet** (added September 20, 2026). A save is
+  an AI request, and `/api/ingest` refuses one for an account that has not agreed to
+  AI processing (`403`, code `ai_consent_required`). The app asks in its own sheet
+  before its first AI request; the extension cannot show that sheet or open the app,
+  so on that refusal it shows the same words itself — *Allow AI processing?* with
+  **Allow AI processing** / **Not now** — records the answer with the save key
+  through `POST /api/ai-consent {enabled, version}`, and continues the save it
+  interrupted. The server merges the answer into `profiles.settings` as it is now
+  and refuses a `version` other than its own `AI_CONSENT_VERSION`, which
+  `SharedLink.consentVersion` and the app's `AI_CONSENT_VERSION` must equal (the
+  share check pins all three). Asked at most once per share; a refusal after the
+  agreement was recorded is reported and points at Settings → Data & privacy → AI
+  processing. `/api/ingest/prepare` also answers `ai_consent`, so the TikTok path
+  asks before it downloads a video rather than after cutting frames it could not
+  upload. The app re-reads its profile row on every return to the foreground so a
+  permission recorded here is what its next whole-column settings write starts
+  from, and so its own gate does not ask again.
 - The parent app's existing foreground refresh updates the library on return.
   The extension has no app-launch hacks, App Group or background entitlement.
 - Native Settings replaces the Shortcut disclosure with share-menu instructions.

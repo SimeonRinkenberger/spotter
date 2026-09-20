@@ -88,6 +88,9 @@ enum SheetPipeline {
 
         // The extension has no app profile/cache. Ask before downloading the MP4.
         // App callers already performed this check and may be explicit rereads.
+        // Without AI permission the upload would be refused and so would the save,
+        // so there is nothing to cut yet: the save's own refusal is what makes the
+        // extension ask, and it comes back in a moment rather than after a download.
         if case .ingestKey(let key) = auth {
             var check = URLRequest(url: URL(string: functionBase + "/api/ingest/prepare")!)
             check.httpMethod = "POST"
@@ -98,7 +101,7 @@ enum SheetPipeline {
             if let (data, response) = try? await session.data(for: check),
                (response as? HTTPURLResponse)?.statusCode == 200,
                let reply = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-               reply["needs_frames"] as? Bool == false { return nil }
+               reply["needs_frames"] as? Bool == false || reply["ai_consent"] as? Bool == false { return nil }
         }
 
         var page: (html: String, cookie: String, url: URL)

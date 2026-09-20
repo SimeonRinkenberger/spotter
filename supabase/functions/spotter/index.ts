@@ -7737,14 +7737,19 @@ async function handleIngestPrepare(req: Request, userId: string, cors: Cors): Pr
   if (!p || p === BLOCKED || p.platform !== "tiktok" || p.kind === "photo")
     return json({ status: "ok", needs_frames: false }, 200, cors);
   const sc = encodeURIComponent(p.shortcode);
-  const [owned, cached, uc] = await Promise.all([
+  const [owned, cached, uc, profile] = await Promise.all([
     dbSelect("workouts", `user_id=eq.${userId}&shortcode=eq.${sc}&select=id`),
     dbSelect("video_cache", `shortcode=eq.${sc}&select=pack,pack_v`), capsFor(userId),
+    dbSelect("profiles", `id=eq.${userId}&select=settings`),
   ]);
   const eligible = plusPlan(uc.plan) || body?.preview === true;
   const fresh = body?.reread === true && plusPlan(uc.plan);
+  // `ai_consent` is for the Share Extension, which has no profile of its own: a
+  // save without permission is refused at /api/ingest anyway, and knowing that
+  // now means it asks the person first instead of after cutting frames it
+  // could not have uploaded.
   return json({ status: "ok", needs_frames: eligible && (fresh || (!visuallyRead(cached[0]) && (!owned.length || body?.preview === true))),
-    url: p.clean }, 200, cors);
+    ai_consent: aiConsented(profile[0]?.settings), url: p.clean }, 200, cors);
 }
 
 async function handleIngest(req: Request, userId: string, cors: Cors): Promise<Response> {
@@ -12932,15 +12937,67 @@ function scopeFor(path: string, packAuthorize: boolean): string {
   return /\/(reprocess|media)$/.test(path) ? "extract" : "helper";
 }
 
+/**
+ * The wording the person agreed to, as a date. The app's sheet and the Share
+ * Extension's each carry the same string beside their copy of the text; a
+ * recorded agreement counts only while it names this version, so changing the
+ * words means changing the date here and in both of them, and every account is
+ * asked again.
+ */
+const AI_CONSENT_VERSION = "2026-09-19";
+
+/** Whether a settings row records agreement to the current AI wording. */
+function aiConsented(settings: unknown): boolean {
+  const s = settings as { ai_consent_version?: unknown; ai_consent_at?: unknown } | null;
+  return !!s && s.ai_consent_version === AI_CONSENT_VERSION && !!s.ai_consent_at;
+}
+
+/**
+ * AI permission, recorded from outside the app.
+ *
+ * App Store 5.1.2(i) wants the agreement before the first model call, and the web
+ * app asks in its own sheet before the first AI request it makes. A save from the
+ * share sheet is an AI request too, and the extension cannot show that sheet: it is
+ * a separate process with no WebView and no way to open the app. Sending someone to
+ * the app to find a button and then back to TikTok to share again is how the first
+ * share of a new account went on 20 Sept — twice, and it never saved. So the
+ * extension asks in its own words and records the answer here, with the one
+ * credential it holds.
+ *
+ * The write is a merge into the settings row as it is now, not the whole column:
+ * the app writes the column whole from its own copy, and this write happens while
+ * that copy sits in a backgrounded app. The version is required and must match, so
+ * an extension built against older wording cannot record agreement to words the
+ * person never saw.
+ */
+async function handleAiConsent(req: Request, userId: string, cors: Cors): Promise<Response> {
+  const body = await req.json().catch(() => ({}));
+  const enabled = body?.enabled !== false;
+  if (enabled && body?.version !== AI_CONSENT_VERSION) {
+    return json({ status: "error", code: "ai_consent_version",
+      message: "Update Spotter to allow AI processing." }, 409, cors);
+  }
+  const current = (await dbSelect("profiles", `id=eq.${userId}&select=settings`))[0];
+  if (!current) return json({ status: "error", message: "Sign in to use Spotter." }, 401, cors);
+  const settings = {
+    ...(current.settings && typeof current.settings === "object" ? current.settings : {}),
+    ai_consent_at: enabled ? new Date().toISOString() : null,
+    ai_consent_version: enabled ? AI_CONSENT_VERSION : null,
+  };
+  await dbPatch("profiles", `id=eq.${userId}`, { settings });
+  return json({ status: "ok", ai_consent_at: settings.ai_consent_at,
+    ai_consent_version: settings.ai_consent_version }, 200, cors);
+}
+
 async function guardedUserRequest(
   req: Request, path: string, userId: string, cors: Cors, handle: () => Promise<Response>,
 ): Promise<Response> {
   const aiRoute = req.method === "POST" && (/^\/api\/(ingest|explain|swap|demo-video|uploads\/authorize|pumpy\/chat)$/.test(path) || /\/(reprocess|media)$/.test(path));
   if (!aiRoute) return await aiActor.run({ userId, workKey: crypto.randomUUID() }, handle);
   const consentProfile = (await dbSelect("profiles", `id=eq.${userId}&select=settings`))[0];
-  if (consentProfile?.settings?.ai_consent_version !== "2026-09-19" || !consentProfile.settings.ai_consent_at) {
+  if (!aiConsented(consentProfile?.settings)) {
     return json({ status: "error", code: "ai_consent_required",
-      message: "Open the latest Spotter app or the Spotter web app and review AI permission in Settings before using AI features." }, 403, cors);
+      message: "Allow AI processing in Spotter → Settings → Data & privacy before using AI features." }, 403, cors);
   }
   await ensureConfig();
   const uc = await capsFor(userId);
@@ -13499,8 +13556,8 @@ Deno.serve(async (req: Request) => {
     // out, which names the user and expires ten minutes after it was made.
     if (req.method === "GET" && path === "/api/strava/callback") return await handleCallback(req);
 
-    // One auth resolution for every API route. Two of them also accept the
-    // long-lived per-user key, and they are the two an iOS Share Extension calls.
+    // One auth resolution for every API route. Four of them also accept the
+    // long-lived per-user key, and they are the four an iOS Share Extension calls.
     //
     // A share extension is a separate process with its own container. It holds the
     // ingest key — which is what it was made for — and it has no session bearer to
@@ -13508,7 +13565,8 @@ Deno.serve(async (req: Request) => {
     // a route it must reach that only accepted a bearer was a route it could not
     // reach at all, and handing the frames over is exactly such a route.
     let userId = await userFromBearer(req);
-    if (!userId && (path === "/api/ingest" || path === "/api/ingest/prepare" || path === "/api/uploads/authorize")) {
+    if (!userId && (path === "/api/ingest" || path === "/api/ingest/prepare" || path === "/api/uploads/authorize" ||
+        path === "/api/ai-consent")) {
       userId = await userFromIngestKey(req, url);
     }
     if (!userId) return json({ status: "error", message: "Sign in to use Spotter." }, 401, cors);
@@ -13580,6 +13638,8 @@ Deno.serve(async (req: Request) => {
     if (req.method === "POST" && path === "/api/account/delete") {
       return await handleAccountDelete(userId, cors);
     }
+
+    if (req.method === "POST" && path === "/api/ai-consent") return await handleAiConsent(req, userId, cors);
 
     if (path.startsWith("/api/billing/")) return await handleBilling(path, req, userId, cors);
     if (path.startsWith("/api/creator/")) return await handleCreator(path, req, userId, cors);
