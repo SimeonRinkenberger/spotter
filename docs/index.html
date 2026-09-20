@@ -7780,7 +7780,7 @@ details.details-moving > :not(summary) {
 
   <div class="consentrow hide" id="consentrow">
     <p class="consent" id="consentset"></p>
-    <button class="btn ghost" id="consentok">Got it</button>
+    <button class="btn ghost" id="consentok">Review AI permission</button>
   </div>
 
   <h3 class="seth">Account</h3>
@@ -7920,6 +7920,16 @@ details.details-moving > :not(summary) {
     <a href="https://quarterdeckcollective.com/spotter/privacy/">Privacy</a><span aria-hidden="true" id="plandot2">&middot;</span>
     <button id="planrestore">Restore purchase</button>
   </div>
+</div></div>
+
+<div class="sheet" id="aiconsentsheet" role="dialog" aria-modal="true" aria-labelledby="aiconsenttitle"><div class="sheetbody">
+  <div class="grabber"></div>
+  <h2 id="aiconsenttitle">Allow AI processing?</h2>
+  <p class="lede">To read workouts, Spotter sends the links, captions, images, text and audio or video you choose to OpenAI or Google. Pumpy also sends your messages and relevant workout, plan and training history to help answer your questions.</p>
+  <p>AI can make mistakes. Review exercises and instructions before training. You can choose Not now and continue logging workouts and planning manually.</p>
+  <p><a href="https://quarterdeckcollective.com/spotter/privacy/">Read the privacy policy</a></p>
+  <p id="aiconsenterror" role="alert"></p>
+  <div class="btnrow"><button class="btn ghost" id="aiconsentdecline">Not now</button><button class="btn" id="aiconsentallow">Allow AI processing</button></div>
 </div></div>
 
 <div class="sheet" id="accountsheet"><div class="sheetbody">
@@ -8187,7 +8197,12 @@ details.details-moving > :not(summary) {
   }
   function api(path, opts) {
     opts = opts || {};
-    var epoch = accountEpoch, uid = state.user && state.user.id, share = SHARED[path] ? epoch + ":" + uid + ":" + path + "\n" + (opts.body || "") : null;
+    var epoch = accountEpoch, uid = state.user && state.user.id;
+    if (needsAiConsent(path) && !consentAt()) return requireAiConsent().then(function() {
+      if (!accountNow(epoch, uid)) throw new Error("Account changed");
+      return api(path, opts);
+    });
+    var share = SHARED[path] ? epoch + ":" + uid + ":" + path + "\n" + (opts.body || "") : null;
     if (share && inFlight[share]) return inFlight[share];
     var p = deadline(function(signal) {
       return sb.auth.getSession().then(function(r) {
@@ -8216,6 +8231,11 @@ details.details-moving > :not(summary) {
     return p;
   }
   function apiStream(path, body, onEvent) {
+    var consentEpoch = accountEpoch, consentUid = state.user && state.user.id;
+    if (needsAiConsent(path) && !consentAt()) return requireAiConsent().then(function() {
+      if (!accountNow(consentEpoch, consentUid)) throw new Error("Account changed");
+      return apiStream(path, body, onEvent);
+    });
     body.stream = !0;
     var epoch = accountEpoch, uid = state.user && state.user.id;
     return deadline(function(signal) {
@@ -8294,20 +8314,56 @@ details.details-moving > :not(summary) {
   function authMessage(m) {
     return m = String(m || ""), /captcha/i.test(m) ? "The security check did not finish. Try that once more." : /token|otp/i.test(m) ? "That code is wrong or has expired. Ask for a new one." : /already regist/i.test(m) ? "That email already has an account \u2014 sign in instead." : /invalid login|invalid.*credential/i.test(m) ? "Wrong email or password." : /rate limit|too many|for security purposes/i.test(m) ? "Too many tries. Give it a minute." : /confirm/i.test(m) ? "Check your email to confirm your account, then sign in." : /network|fetch|failed to fetch/i.test(m) ? "Could not reach Spotter \u2014 check your connection." : /password/i.test(m) && /weak|short|least|6 char/i.test(m) ? "Use at least 8 characters." : /email/i.test(m) && /invalid|valid/i.test(m) ? "That email address does not look right." : authMode === "signup" ? "Could not create your account. Try again in a moment." : "Could not sign you in. Try again in a moment.";
   }
-  var consentGiven = !1;
+  var AI_CONSENT_VERSION = "2026-09-19", aiConsentPending = null;
+  function needsAiConsent(path) {
+    return /^(ingest|explain|swap|demo-video|uploads\/authorize|pumpy\/chat)$/.test(path) || /^workouts\/[^/]+\/(reprocess|media)$/.test(path);
+  }
   function consentLink(href, text) {
     var a = el("a", null, text);
     return a.href = href, a;
   }
   function consentFill(node, opening) {
-    node.innerHTML = "", node.appendChild(document.createTextNode(opening)), node.appendChild(consentLink("https://quarterdeckcollective.com/spotter/terms/", "Terms")), node.appendChild(document.createTextNode(" and to Spotter sending the videos and captions you save to AI providers (OpenAI, Google) to build your workout cards. ")), node.appendChild(consentLink("https://quarterdeckcollective.com/spotter/privacy/", "Privacy policy")), node.appendChild(document.createTextNode("."));
+    node.innerHTML = "", node.appendChild(document.createTextNode(opening)), node.appendChild(consentLink("https://quarterdeckcollective.com/spotter/terms/", "Terms")), node.appendChild(document.createTextNode(". AI processing is optional; Spotter asks for permission before using it. ")), node.appendChild(consentLink("https://quarterdeckcollective.com/spotter/privacy/", "Privacy policy")), node.appendChild(document.createTextNode("."));
   }
   function consentAt() {
     var s = state.profile && state.profile.settings;
-    return s ? s.ai_consent_at : null;
+    return s && s.ai_consent_version === AI_CONSENT_VERSION ? s.ai_consent_at : null;
+  }
+  function requireAiConsent() {
+    var epoch = accountEpoch, uid = state.user && state.user.id;
+    return uid ? (state.profile ? Promise.resolve() : loadProfile()).then(function() {
+      if (!accountNow(epoch, uid)) throw new Error("Account changed");
+      if (!state.profile) throw new Error("Could not load your account. Try again.");
+      if (!consentAt()) {
+        if (aiConsentPending) return aiConsentPending.promise;
+        var pending2 = { epoch: epoch, uid: uid, resolve: null, reject: null, promise: null };
+        return pending2.promise = new Promise(function(resolve, reject) {
+          pending2.resolve = resolve, pending2.reject = reject;
+        }), aiConsentPending = pending2, $("aiconsenterror").textContent = "", $("aiconsentallow").disabled = !1, openSheet("aiconsentsheet"), pending2.promise;
+      }
+    }) : Promise.reject(new Error("Sign in first."));
+  }
+  function dismissAiConsent() {
+    var pending2 = aiConsentPending;
+    aiConsentPending = null, pending2 && pending2.reject(new Error("AI processing was not enabled. You can still log and plan workouts manually."));
   }
   function noteConsent() {
-    !state.profile || consentAt() || (state.profile.settings = state.profile.settings || {}, state.profile.settings.ai_consent_at = (/* @__PURE__ */ new Date()).toISOString(), saveSettings());
+    var pending2 = aiConsentPending;
+    if (!(!pending2 || !accountNow(pending2.epoch, pending2.uid))) {
+      $("aiconsentallow").disabled = !0;
+      var settings = Object.assign({}, state.profile.settings || {}, {
+        ai_consent_at: (/* @__PURE__ */ new Date()).toISOString(),
+        ai_consent_version: AI_CONSENT_VERSION
+      });
+      sb.from("profiles").update({ settings: settings }).eq("id", pending2.uid).then(function(r) {
+        if (!(!accountNow(pending2.epoch, pending2.uid) || aiConsentPending !== pending2)) {
+          if (r.error) throw r.error;
+          state.profile.settings = settings, aiConsentPending = null, closeSheet("aiconsentsheet"), $("consentrow").classList.add("hide"), pending2.resolve();
+        }
+      }).catch(function() {
+        aiConsentPending === pending2 && ($("aiconsenterror").textContent = "Could not save your choice. Check your connection and try again.", $("aiconsentallow").disabled = !1);
+      });
+    }
   }
   var TURNSTILE_SRC = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit", capRendered = null, capPending = null, capTimer = null;
   function capOn() {
@@ -8392,7 +8448,7 @@ details.details-moving > :not(summary) {
         authError(authMessage(r.error.message));
         return;
       }
-      mode === "signup" && (consentGiven = !0), r.data.session || mailSent(email);
+      r.data.session || mailSent(email);
     }).catch(function(e) {
       idle2(), authError(authMessage(e && e.message ? e.message : e));
     });
@@ -8652,9 +8708,22 @@ details.details-moving > :not(summary) {
       });
     }
   }
+  function registerAppleGrant(code, session) {
+    return deadline(function(signal) {
+      return fetch(API + "auth/apple/grant", {
+        method: "POST",
+        signal: signal,
+        headers: { authorization: "Bearer " + session.access_token, "content-type": "application/json" },
+        body: JSON.stringify({ code: code })
+      }).then(function(response) {
+        if (!response.ok) throw new Error("Apple connection did not finish.");
+        return response.json();
+      });
+    }, 25e3);
+  }
   function nativeAppleSignIn() {
-    clearTimeout(oauthWatchdog), native.signInWithApple(sb).then(function(result) {
-      setOauthBusy(null), result.fullName && saveProviderName(result.user, result.fullName);
+    clearTimeout(oauthWatchdog), native.signInWithApple(sb, registerAppleGrant).then(function(result) {
+      setOauthBusy(null), result.fullName && saveProviderName(result.user, result.fullName), result.grantError && toast(result.grantError, 12e3);
     }).catch(function(e) {
       if (e && e.code === "AUTH_CANCELLED") {
         setOauthBusy(null);
@@ -8723,7 +8792,7 @@ details.details-moving > :not(summary) {
   function renderAuthProviders() {
     var wrap = $("oauthwrap");
     if (wrap) {
-      var hasGoogle = !!(authProviders && authProviders.google), hasApple = !!(authProviders && authProviders.apple) && !(native && native.platform === "android");
+      var hasGoogle = !!(authProviders && authProviders.google), hasApple = !!(authProviders && authProviders.apple) && (native ? native.platform === "ios" : !!PUBLIC_AUTH.apple_services_id);
       if ($("oagoogle").classList.toggle("hide", !hasGoogle), $("oaapple").classList.toggle("hide", !hasApple), wrap.classList.toggle("hide", !(hasGoogle || hasApple)), hasApple && isAppleDevice()) {
         var box = $("oauthbtns");
         box.insertBefore($("oaapple"), box.firstChild);
@@ -8747,7 +8816,7 @@ details.details-moving > :not(summary) {
     }));
   }
   function clearAccount() {
-    if (native && native.configureSharing(null).catch(function() {
+    if (dismissAiConsent(), native && native.configureSharing(null).catch(function() {
     }), cancelPumpyReset(), pendingMotion && pendingMotion.disconnect(), $("app").classList.add("hide"), accountEpoch++, reads = {}, inFlight = {}, libraryRev++, logsRev++, planRev++, clearTimeout(undoTimer), undoTimer = null, undoFn = null, clearTimeout(detailCloseTimer), clearTimeout(woCloseTimer), clearTimeout(pendTimer), pendTimer = null, pendPolls = 0, pendBusy = !1, wkChannel && (sb.removeChannel(wkChannel), wkChannel = null), booting = null, state.profile = null, state.workouts = [], state.logs = null, state.plan = null, state.awards = null, state.goal = null, heroPct = 0, trainSeg = null, state.unit = "lb", state.sounds = !0, state.haptics = !0, state.collections = [], state.colItems = [], seenCards = {}, gridCards = {}, expCache = {}, expWaiting = {}, vidCache = {}, expKey = "", today.rows = [], today.at = 0, today.day = null, today.busy = !1, today.shown = !1, current = null, sc && scForget(), wo && saveDraft(), clearInterval(woTimer), stopRest(), liveEnd(!1), releaseWake(), wo = null, hist = {}, histReady = !1, strava && (strava = { asked: !1, configured: !1, connected: !1, athlete: null, busy: !1 }), pumpy) {
       var seq = (pumpy.openSeq || 0) + 1, wired = pumpy.wired;
       pumpy = {
@@ -8798,7 +8867,7 @@ details.details-moving > :not(summary) {
     }).then(function() {
       return profileReady;
     }).then(function() {
-      accountNow(epoch, uid) && (consentGiven && noteConsent(), void 0);
+      accountNow(epoch, uid) && void 0;
     }), booting;
   }
   var drawn = { train: !1, pumpy: !1 };
@@ -15909,7 +15978,7 @@ details.details-moving > :not(summary) {
   function closeSheet(id, fromPop) {
     var n = $(id);
     if (n.classList.contains("open")) {
-      if (guideClear("hold"), id === "welcomesheet") {
+      if (id === "aiconsentsheet" && dismissAiConsent(), guideClear("hold"), id === "welcomesheet") {
         welcomeDone();
         var focus = welcomeReturn && welcomeReturn.isConnected && !welcomeReturn.closest("#landing, .sheet:not(.open)") ? welcomeReturn : $("addbtn");
         focus && focus.focus({ preventScroll: !0 });
@@ -16427,7 +16496,7 @@ details.details-moving > :not(summary) {
     var how = signInMethod();
     $("setprov").textContent = how || "\u2014", $("setprovrow").classList.toggle("hide", !how);
     var owed = !!state.profile && !consentAt();
-    $("consentrow").classList.toggle("hide", !owed), owed && consentFill($("consentset"), "Using Spotter means you agree to the ");
+    $("consentrow").classList.toggle("hide", !owed), owed && consentFill($("consentset"), "Your account uses the Spotter ");
     var mine = isEmailAccount();
     $("setpwrow").classList.toggle("hide", !mine), $("setmailrow").disabled = !mine, $("setname").textContent = displayName() || "Not set", $("unittoggle").textContent = state.unit, paintGoal(), $("haptictoggle").textContent = state.haptics ? "On" : "Off", $("sethapticrow").classList.toggle("hide", !native && !navigator.vibrate), paintSounds(), loadRemind(), $("shortcutsetup").classList.toggle("hide", !!native), $("nativesharehelp").classList.toggle("hide", !native), native && native.platform === "android" && ($("nativesharehelp").textContent = "In TikTok, YouTube, Instagram or another app, share the post\u2019s link and choose Spotter from the Android share sheet.");
     var key = state.profile ? state.profile.ingest_key : null;
@@ -16913,7 +16982,7 @@ details.details-moving > :not(summary) {
       run: function(done) {
         api("account/delete", { method: "POST", body: "{}" }).then(function(r) {
           if (!r || r.status !== "ok") {
-            done("Could not delete it. Try again in a moment.");
+            done(r && r.message || "Could not delete it. Try again in a moment.");
             return;
           }
           done(null), closeSheet("settingssheet"), sb.auth.signOut().then(function() {
@@ -17348,7 +17417,10 @@ details.details-moving > :not(summary) {
     }
   }
   if ($("authgo").onclick = doAuth, $("forgotpw").onclick = forgotPassword, consentFill($("consent"), "By creating an account you agree to the "), $("consentok").onclick = function() {
-    noteConsent(), $("consentrow").classList.add("hide");
+    requireAiConsent().catch(function() {
+    });
+  }, $("aiconsentallow").onclick = noteConsent, $("aiconsentdecline").onclick = function() {
+    closeSheet("aiconsentsheet");
   }, $("otpgo").onclick = otpGo, $("otp").addEventListener("input", function() {
     var v = this.value.replace(/[^0-9]/g, "").slice(0, 6);
     v !== this.value && (this.value = v), v.length === 6 && otpGo();

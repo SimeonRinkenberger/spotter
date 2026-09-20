@@ -88,7 +88,7 @@ window.SpotterNative = {
   push: createPush(registerPlugin('SpotterPush')),
   configureSharing,
   contactSheet,
-  signInWithApple: sb => signInWithApple(sb, registerPlugin('AppleAuth')),
+  signInWithApple: (sb, registerGrant) => signInWithApple(sb, registerPlugin('AppleAuth'), registerGrant),
   signInWithGoogle: sb => signInWithGoogle(sb, registerPlugin('GoogleAuth')),
   authStorage: session.storage,
   saveDraft(value) {

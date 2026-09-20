@@ -22,6 +22,8 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>
@@ -69,7 +71,7 @@
 	     this in on both Info.plists once the paid account exists and SharedStore
 	     moves to UserDefaults with no code change. -->
 	<key>SpotterAppGroup</key>
-	<string></string>
+	<string>$(SPOTTER_APP_GROUP)</string>
 	<!-- Live Activities are declared, not started at launch: ActivityKit refuses
 	     to run without this key, and the frequent-updates key stays false
 	     because the session pushes an update per engine change, not per second. -->

@@ -1,0 +1,7 @@
+// App Store and TestFlight configuration. Local account selection stays untracked.
+SPOTTER_BUNDLE_ID = app.spotter.dev
+SPOTTER_ENTITLEMENTS = App/Release.entitlements
+SPOTTER_APP_GROUP = group.app.spotter.dev
+SPOTTER_WATCH_FLAGS = SPOTTER_HEALTHKIT
+SPOTTER_WATCH_ENTITLEMENTS = SpotterWatch/SpotterWatch.entitlements
+#include? "../Distribution.local.xcconfig"

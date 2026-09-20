@@ -10,7 +10,7 @@ const sdk = {
   logOut: async () => { calls.push(['logout']); },
   getOfferings: async () => {
     if (waitOffering) await waitOffering;
-    return { current: { monthly: product(6.99), annual: product(50) } };
+    return { current: { monthly: product(6.99), annual: product(49.99) } };
   },
   purchasePackage: async () => { calls.push(['purchase']); if (cancelPurchase) throw { userCancelled: true }; },
   restorePurchases: async () => { calls.push(['restore']); }
@@ -19,7 +19,7 @@ const create = new Function('Purchases', 'config', source + '\nreturn createPurc
 const app = create('ios');
 await assert.rejects(app.prices(null), /Sign in/);
 const prices = await app.prices('a');
-assert.equal(prices.plans.plus.year.amount, 5000);
+assert.equal(prices.plans.plus.year.amount, 4999);
 await app.purchase('a', 'year');
 await assert.rejects(app.purchase('b', 'year'), /reopen subscriptions/);
 await app.prices('b');

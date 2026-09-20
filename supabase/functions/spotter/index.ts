@@ -64,6 +64,7 @@ import {
   BillingError, billingConfigured, cancelAndDeleteCustomer, createCheckout, createPortal,
   handleWebhook, pricesBlock, returnBaseFrom, sellablePlans, syncFromSession, syncUser,
 } from "./billing.ts";
+import { AppleGrantError, forgetAppleGrant, rememberAppleGrant } from "./apple-auth.ts";
 import { forgetStravaQuietly, handleCallback, handleStrava } from "./strava.ts";
 import { pushConfig, runPushTick, sendPush } from "./push.ts";
 import { opsScorecard, runOpsAlert } from "./ops.ts";
@@ -7274,6 +7275,15 @@ async function handleAccountDelete(userId: string, cors: Cors): Promise<Response
     }, 503, cors);
   }
 
+  try {
+    await forgetAppleGrant(userId);
+  } catch (e) {
+    const known = e instanceof AppleGrantError;
+    return json({ status: "error", code: known ? e.code : "apple_unavailable",
+      message: known ? e.message : "Could not disconnect Apple just now. Please try again in a moment." },
+      known ? e.status : 503, cors);
+  }
+
   // Strava, once Stripe has said the deletion may go ahead. `strava_tokens`
   // cascades with the auth row, but a row deleted without telling Strava leaves a
   // live grant on the athlete's account with nothing left here to revoke it. This
@@ -12927,6 +12937,11 @@ async function guardedUserRequest(
 ): Promise<Response> {
   const aiRoute = req.method === "POST" && (/^\/api\/(ingest|explain|swap|demo-video|uploads\/authorize|pumpy\/chat)$/.test(path) || /\/(reprocess|media)$/.test(path));
   if (!aiRoute) return await aiActor.run({ userId, workKey: crypto.randomUUID() }, handle);
+  const consentProfile = (await dbSelect("profiles", `id=eq.${userId}&select=settings`))[0];
+  if (consentProfile?.settings?.ai_consent_version !== "2026-09-19" || !consentProfile.settings.ai_consent_at) {
+    return json({ status: "error", code: "ai_consent_required",
+      message: "Open the latest Spotter app or the Spotter web app and review AI permission in Settings before using AI features." }, 403, cors);
+  }
   await ensureConfig();
   const uc = await capsFor(userId);
   const scope = scopeFor(path, path.endsWith("/authorize") && await isPackAuthorize(req));
@@ -13548,6 +13563,19 @@ Deno.serve(async (req: Request) => {
     if (req.method === "POST" && path === "/api/swap") return await handleSwap(req, userId, cors);
     if (req.method === "POST" && path === "/api/pumpy/chat") return await handlePumpyChat(req, userId, cors);
     if (req.method === "POST" && path === "/api/pumpy/confirm") return await handlePumpyConfirm(req, userId, cors);
+
+    if (req.method === "POST" && path === "/api/auth/apple/grant") {
+      const body = await req.json().catch(() => ({}));
+      try {
+        await rememberAppleGrant(userId, body.code);
+        return json({ status: "ok" }, 200, cors);
+      } catch (e) {
+        const known = e instanceof AppleGrantError;
+        return json({ status: "error", code: known ? e.code : "apple_unavailable",
+          message: known ? e.message : "Could not finish the Apple connection. Please try again." },
+          known ? e.status : 503, cors);
+      }
+    }
 
     if (req.method === "POST" && path === "/api/account/delete") {
       return await handleAccountDelete(userId, cors);

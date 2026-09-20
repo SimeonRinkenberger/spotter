@@ -4,7 +4,8 @@ const actorImport=new URL('../supabase/functions/spotter/ai-guard.ts',import.met
 const code=src.slice(src.indexOf('async function boundedRequest('),src.indexOf('async function authorizeUpload('));
 const prelude=`import {aiActor,GuardError} from ${JSON.stringify(actorImport)};
 type Cors=any;type LimitKind=string;
-export const state:any={active:false,finished:0,denied:false};
+export const state:any={active:false,finished:0,denied:false,consent:true};
+async function dbSelect(){return [{settings: state.consent ? {ai_consent_version:"2026-09-19",ai_consent_at:"2026-09-19T12:00:00Z"}: {}}];}
 function json(b:any,s=200,h={}){return Response.json(b,{status:s,headers:h});}
 async function ensureConfig(){}
 async function capsFor(){return {caps:{saves:30,uploads:1,extract:10,helper:25}};}
@@ -40,3 +41,10 @@ check(!m.state.active,'handler error releases admission');
 const bounded=await m.boundedRequest(req());check(await bounded.text()==='{}','bounded body preserves input');
 try{await m.boundedRequest(new Request('https://fixture.invalid',{method:'POST',body:'x'.repeat(8_100_001)}));throw new Error('accepted');}catch(e){check(String(e).includes('request_too_large'),'chunked/no length oversized body refused');}
 console.log(n+' admission and stream-lifetime checks passed.');
+
+m.state.consent=false;
+let invoked=false;
+const blocked=await run(async()=>{invoked=true;return Response.json({});});
+check(blocked.status===403&&!invoked,'AI processing blocked before admission without explicit saved consent');
+const manual=await run(async()=>Response.json({status:'ok'}),'/api/account/delete');
+check(manual.status===200,'non-AI account operations remain available after declining');

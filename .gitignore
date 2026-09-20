@@ -12,3 +12,9 @@ ios/App/App/capacitor.config.json
 ios/App/Local.xcconfig
 .native-build/
 releases/
+
+# Apple signing account configuration and private signing material
+ios/App/Distribution.local.xcconfig
+*.p8
+*.p12
+*.mobileprovision
