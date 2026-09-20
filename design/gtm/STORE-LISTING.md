@@ -1,5 +1,7 @@
 # Spotter — store listing pack (App Store + Google Play)
 
+> **Current Apple setup:** see [Apple launch readiness, 19 September 2026](APPLE-LAUNCH-2026-09-19.md). Apple Developer access now exists; the listing and subscription setup are saved in App Store Connect. Annual Plus is $49.99 and the age override is 13+. The material below records the earlier planning pass and must not be copied over the newer console answers.
+
 Prepared 17 September 2026 for the GTM wave. Nothing here was submitted, published or saved into
 any console. This is copy and answers for the owner to paste.
 

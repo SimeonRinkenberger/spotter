@@ -1,0 +1,10 @@
+// Copy to Distribution.local.xcconfig after downloading App Store profiles.
+// The local file is ignored. Debug / personal-team settings stay in Local.xcconfig.
+DEVELOPMENT_TEAM = YOUR_PAID_TEAM_ID
+SPOTTER_SIGNING_STYLE = Manual
+SPOTTER_SIGNING_IDENTITY = Apple Distribution
+SPOTTER_PROFILE_APP = Spotter App Store
+SPOTTER_PROFILE_SHARE = Spotter Share App Store
+SPOTTER_PROFILE_WIDGETS = Spotter Widgets App Store
+SPOTTER_PROFILE_WATCH = Spotter Watch App Store
+SPOTTER_PROFILE_ACTION = Spotter Action App Store
