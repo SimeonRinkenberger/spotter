@@ -1,56 +1,80 @@
 # Continue with Apple
 
-## Status — September 8, 2026
+## Current status — 20 September 2026
 
-The native implementation is prepared, but Apple Developer Program enrollment is
-still pending (confirmed by the owner). The current installed app uses a free
-Personal Team. Apple sign-in cannot be activated with that signing setup.
+Apple Developer Program enrollment is approved for **Quarterdeck Collective LLC**
+(`5L638CAQW2`). Native Apple login is configured for **`app.spotter.dev`** in Apple
+Developer and Supabase. Signed **Spotter 1.0 (1)** uploaded on 19 September,
+completed Apple processing, and is assigned to the internal TestFlight group.
+The uploaded package contains the required Sign in with Apple entitlement.
 
-The existing Apple button stays hidden while the Supabase Apple provider is
-inactive. No Apple credentials have been created, provider enabled, paid membership
-purchased, or app published. The Google-enabled physical iPhone build remains
-installed; this inactive Apple integration has not been installed on the phone.
+**A real device Apple sign-in has not yet been verified end to end.** Configured
+credentials, passing checks and successful upload are not a login acceptance pass.
+The old September 8 instructions saying enrollment/provider activation are pending
+are superseded. No public App Store or external Beta App Review submission occurred.
 
-## Implemented
+## Implemented and deployed
 
-- `AppleAuth.swift` presents Apple's native authorization controller for name and
-  email. It generates a cryptographically random nonce, sends its SHA-256 hash to
-  Apple, checks response state, and returns the identity token and original nonce
-  to the existing Supabase client. Supabase validates the token and nonce.
-- The bridge exchanges the token for a session using `signInWithIdToken`. It rejects
-  incomplete credentials, duplicate requests, and failed session exchanges.
-- The shared Apple button uses the native flow on iPhone and retains the existing
-  web flow in a browser. Cancellation restores the button without an error toast.
-- Apple's first-authorization name uses the existing profile update that preserves
-  names the user already customized. Returning sign-ins can omit the name.
-- `tools/ios/apple-auth-check.mjs` covers these JavaScript behaviors and is included
-  in `npm run ios:check`.
+- `ios/App/App/AppleAuth.swift` uses Apple's native authorization controller,
+  requests name/email, creates a secure nonce and verifies request state. It returns
+  the identity token, raw nonce, authorization code and first-authorization name.
+- `native/apple-auth.js` exchanges the token/nonce with Supabase using
+  `signInWithIdToken`, requires a valid session/user, and registers the one-time
+  authorization code with the authenticated backend. Duplicate/incomplete requests
+  fail; cancelling restores the sign-in UI. Existing customized names are preserved.
+- Authenticated `POST /api/auth/apple/grant` takes `{code}`. The backend exchanges
+  it with Apple, checks issuer/audience/expiry/subject against the Supabase-verified
+  Apple identity, and stores the refresh grant in service-only `apple_auth_tokens`.
+- `supabase/functions/spotter/apple-auth.ts` signs five-minute ES256 client-secret
+  JWTs server-side. Before account deletion it revokes all retained Apple grants;
+  failures are surfaced for retry. A legacy Apple account without a grant must
+  sign in with Apple again before deletion. Non-Apple accounts are unaffected.
+- If grant registration fails after login, the client explains that sign-in
+  succeeded but the Apple connection must be completed before account deletion.
+- Migration `20260919120000_apple_auth_tokens.sql` was applied. RLS denies client
+  access; grants are accessed with service privileges. Do not log authorization
+  codes, tokens, private keys, request bodies or Apple token responses.
+- Shipped in PRs 25/26; runtime baseline `3a6163a624700346d6103637b551bd7e9d1bbdb3`.
 
-## Activate after membership approval
+## Configuration and signing
 
-1. Use the approved development team and register the intended App ID with
-   **Sign in with Apple** enabled. Review the bundle identifier before changing
-   teams: a different identifier installs a separate app, and a team change can
-   affect signing and Keychain access.
-2. The prepared `ios/App/App/AppleSignIn.entitlements` includes Apple sign-in plus
-   the existing share Keychain group. Set **only the main App target's**
-   `CODE_SIGN_ENTITLEMENTS` to `App/AppleSignIn.entitlements` for the intended
-   build configurations. Keep the ShareExtension using `App/Share.entitlements`.
-   It is deliberately not selected while the free Personal Team is in use.
-3. Regenerate provisioning through Xcode's automatic signing with the approved
-   team. Add the native bundle identifier to the Supabase Apple provider's allowed
-   client IDs and enable the provider with nonce verification retained.
-4. For website support, also create a Services ID linked to the primary App ID,
-   configure the existing website and Supabase callback URLs, and generate the
-   required client-secret JWT from Apple's signing key. Keep all private signing
-   material out of the repository. Set the public Services ID in
-   `PUBLIC_AUTH.apple_services_id`. See README's Apple setup section for URLs.
-   Native-only token sign-in does not require the web secret rotation; Apple's
-   web OAuth secret needs renewal at least every six months.
-5. Build, sign and install the updated app. Verify a real Apple login with both
-   Share My Email and Hide My Email, cancellation, returning-user login, session
-   restoration, and first-login name persistence. A relay email can produce a
-   separate account from an existing account with a different email.
+- Supabase project `mtzevoxxpsktmrbbuxva`: Apple provider enabled, native client ID
+  `app.spotter.dev`, nonce verification retained.
+- Backend secret names: `APPLE_AUTH_KEY_ID`, `APPLE_AUTH_KEY_P8`, `APPLE_TEAM_ID`,
+  `APPLE_CLIENT_IDS`. Dedicated Apple sign-in key exists in the approved backend;
+  its private material is never part of the client or repository.
+- Release selects `App/Release.entitlements` through
+  `ios/App/App/Release.xcconfig`; Share/Widgets use `App/ReleaseShared.entitlements`.
+  Do not replace those full Release files with the older Apple-only entitlement
+  file: that would lose production push and/or shared-container capabilities.
+- The signed Release archive and export were verified for Apple sign-in,
+  production APNs, company team, shared app/keychain groups and Watch HealthKit.
+  The successful upload used the existing distribution certificate and all four
+  manual App Store profiles. See `design/gtm/APPLE-LAUNCH-2026-09-19.md` and the
+  current local `HANDOFF.md` for the repeatable upload path.
+- **Web Apple OAuth is not configured.** No Services ID or web client secret was
+  created; the web Apple button stays hidden. Native ID-token login does not
+  require a website Services ID. Any future web setup is separate work.
 
-References: [Supabase Apple authentication](https://supabase.com/docs/guides/auth/social-login/auth-apple),
-[Apple supported capabilities](https://developer.apple.com/help/account/reference/supported-capabilities-ios/).
+## Verified evidence
+
+The iOS Apple-auth checks and release checks passed. Live checks confirmed 401 for
+an unauthenticated grant request, 403 for a non-Apple user's grant request and 403
+for client access to the Apple token table. None of those checks authenticates a
+real Apple account on a device.
+
+## Next device acceptance checks
+
+1. Install the internal TestFlight build on a physical iPhone and test first login
+   with Share My Email, then relaunch and return through Apple sign-in.
+2. Test Hide My Email with a suitable test identity, verify first-login name and
+   repeat-login behavior, and check that an unrelated existing email account is
+   not incorrectly merged. A relay address may legitimately create another account.
+3. Cancel Apple login and confirm the screen stays usable without false success.
+4. Verify grant registration succeeds without a connection-incomplete warning.
+5. Use a disposable account to test export, approved account deletion, grant
+   revocation and fresh authorization afterward. Never delete or repurpose the
+   permanent synthetic Apple/Google reviewer.
+
+Record device, OS, build, result and reproduction steps in the beta test plan.
+See [Apple beta test plan](design/gtm/APPLE-BETA-TEST-PLAN.md).

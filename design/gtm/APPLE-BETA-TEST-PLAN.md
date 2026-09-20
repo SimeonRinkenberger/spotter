@@ -1,10 +1,12 @@
 # Spotter Apple beta test plan
 
-Prepared 19 September 2026. This is the plan for the first signed TestFlight build, not a record of completed device tests. No invitations have been sent.
+Prepared 19 September 2026. This is the plan for the first signed TestFlight build, not a record of completed device tests. The owner subsequently authorized internal team invitations for three named testers; all three App Store Connect invitations have been sent.
+
+20 September update: owner reports Apple sign-in works. Simulator share registration, real TikTok durable save and extraction, and caption/thumbnail duplicate handling passed for build 2. Physical TikTok/Instagram checks remain pending. See `APPLE-SHARE-FIX-2026-09-20.md` for the evidence and current launch handoff for tester delivery.
 
 ## Distribution boundary
 
-The owner requested preparation only. Do not submit the App Store version, submit Beta App Review, enable a public beta link, or invite testers without a new instruction. The internal group **Spotter Internal QA** exists with zero testers and zero builds. External testing cannot be made invite-ready until the first build is uploaded and Apple’s applicable Beta App Review is approved.
+The owner authorized adding the three supplied email addresses to the team and sending internal testing invitations. The internal group **Spotter Internal QA** has one accepted team member added; two team invitations remain pending acceptance. Version 1.0 (1) uploaded and processed successfully, is assigned to the group, and the accepted member’s TestFlight status is Invited. The build includes testing notes that clearly state Plus purchase testing is still being configured. Do not submit the App Store version, submit external Beta App Review, enable a public beta link, or invite additional people without a new instruction. External testing requires a separate authorization and Apple’s applicable Beta App Review.
 
 ## Internal checks before any external beta
 
