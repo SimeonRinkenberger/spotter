@@ -1329,7 +1329,11 @@ after in History. `capacity`, `disconnected` and `rate_limited` each get their o
    `profiles.settings` — a user-writable column, so there is no migration and nothing
    for the owner to run. An account made before this existed is asked once, at the top
    of Settings; dismissing that line is the agreement and records the same field.
-   Nothing here needs a dashboard change.
+   The switch itself is Settings → Data & privacy → **AI processing**. The iOS share
+   sheet asks in the same words when a save is refused for want of it and records the
+   answer through `POST /api/ai-consent` with the save key (see IOS-SHARING.md), so a
+   first share never has to detour through the app. Nothing here needs a dashboard
+   change.
 
    **Rate limits.** `[auth.rate_limit]` in `config.toml` is the third block, and the only
    one that depends on nothing external — per-IP caps gotrue applies before anything else.

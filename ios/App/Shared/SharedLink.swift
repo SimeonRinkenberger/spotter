@@ -24,9 +24,25 @@ enum SharedLink {
         default: return nil
         }
     }
+    // The AI-permission wording, as a date. Must equal the server's
+    // AI_CONSENT_VERSION and the app's: the server refuses to record agreement to
+    // any other, so an extension that has not been rebuilt for new wording asks
+    // for an update instead of recording agreement to words it never showed.
+    static let consentVersion = "2026-09-19"
+    static let consentTitle = "Allow AI processing?"
+    static let consentText = "To read workouts, Spotter sends the links, captions, images, text and audio or video you share to OpenAI or Google. AI can make mistakes; review exercises and instructions before training.\n\nYou can turn this off at any time in Spotter → Settings → Data & privacy. Privacy policy: quarterdeckcollective.com/spotter/privacy"
+    static let consentDeclinedMessage = "AI processing is off, so Spotter can’t read this workout. Share it again to allow AI processing, or turn it on in Spotter → Settings → Data & privacy."
+    static func needsConsent(status: Int, body: [String: Any]) -> Bool {
+        status == 403 && body["code"] as? String == "ai_consent_required"
+    }
+    static func consentFailureMessage(status: Int, body: [String: Any]) -> String {
+        if body["code"] as? String == "ai_consent_version" { return "Update Spotter to allow AI processing, then share again." }
+        if status == 401 { return "Open Spotter to refresh your sign-in, then share again." }
+        return "Couldn’t save your choice. Check your connection and try again."
+    }
     static func failureMessage(status: Int, body: [String: Any]) -> String {
         if body["code"] as? String == "ai_consent_required" {
-            return "Open Spotter → Settings → Data & privacy and review AI permission, then share this post again."
+            return "Allow AI processing in Spotter → Settings → Data & privacy, then share this post again."
         }
         if status == 401 { return "Open Spotter to refresh your sign-in, then share again." }
         if let message = body["message"] as? String, !message.isEmpty {

@@ -515,6 +515,12 @@ export const APP = String.raw`
     return s && s.ai_consent_version === AI_CONSENT_VERSION ? s.ai_consent_at : null;
   }
 
+  function paintConsent() {
+    var on = !!consentAt();
+    $("consentok").textContent = on ? "AI processing: On — manage permission" : "Review AI permission";
+    $("setai").textContent = on ? "On" : "Off";
+  }
+
   function requireAiConsent(review) {
     var epoch = accountEpoch, uid = state.user && state.user.id;
     if (!uid) return Promise.reject(new Error("Sign in first."));
@@ -559,7 +565,7 @@ export const APP = String.raw`
       state.profile.settings = settings;
       aiConsentPending = null;
       closeSheet("aiconsentsheet");
-      $("consentok").textContent = consentAt() ? "AI processing: On — manage permission" : "Review AI permission";
+      paintConsent();
       pending.resolve();
     }).catch(function () {
       if (aiConsentPending !== pending) return;
@@ -1509,6 +1515,7 @@ export const APP = String.raw`
       if (!accountNow(epoch, uid)) return;
       if (r.data) {
         state.profile = r.data;
+        paintConsent();
         if (native) native.configureSharing(r.data.ingest_key).catch(function () {});
         var s = r.data.settings || {};
         if (s.unit) state.unit = s.unit;
@@ -2725,6 +2732,17 @@ export const APP = String.raw`
     animateDisclosure(box, box._disclosureRun ? !box._disclosureRun.open : !box.open);
   });
   document.addEventListener("visibilitychange", function () { if (document.hidden) settleDisclosures(); });
+
+  // The profile row is read once at boot and every settings write sends the
+  // column back WHOLE from that copy. AI permission can be recorded while this
+  // page is in the background — by the Share Extension, with the save key, or
+  // from another device — and a unit toggle afterwards would quietly write the
+  // old copy over it, so the next share would be refused all over again. One
+  // read on the way back keeps the copy honest, and lets the in-app gate see an
+  // agreement it did not collect itself.
+  document.addEventListener("visibilitychange", function () {
+    if (!document.hidden && state.user && state.profile && !aiConsentPending) loadProfile();
+  });
   window.addEventListener("resize", settleDisclosures);
   var disclosureMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
   if (disclosureMotionQuery.addEventListener) disclosureMotionQuery.addEventListener("change", function (e) {
@@ -14275,7 +14293,7 @@ export const APP = String.raw`
     // AI consent applies to every account, including social sign-in.
     $("consentrow").classList.remove("hide");
     consentFill($("consentset"), "Your account uses the Spotter ");
-    $("consentok").textContent = consentAt() ? "AI processing: On — manage permission" : "Review AI permission";
+    paintConsent();
     var mine = isEmailAccount();
     $("setpwrow").classList.toggle("hide", !mine);
     $("setmailrow").disabled = !mine;
@@ -15844,6 +15862,7 @@ export const APP = String.raw`
   $("forgotpw").onclick = forgotPassword;
   consentFill($("consent"), "By creating an account you agree to the ");
   $("consentok").onclick = function () { requireAiConsent(true).catch(function () {}); };
+  $("setairow").onclick = function () { requireAiConsent(true).catch(function () {}); };
   $("aiconsentallow").onclick = function () { noteConsent(true); };
   $("aiconsentrevoke").onclick = function () { noteConsent(false); };
   $("aiconsentdecline").onclick = function () { closeSheet("aiconsentsheet"); };

@@ -25,7 +25,7 @@ function fixture(settings = {}) {
     deadline: work => work(new AbortController().signal),
     fetch: async (url, opts) => { requests.push({url,opts}); return {status:200,json:async()=>({status:'ok'})}; },
   });
-  vm.runInContext(['needsAiConsent','consentAt','requireAiConsent','dismissAiConsent','noteConsent','api','apiStream'].map(fn).join('\n'), c);
+  vm.runInContext(['needsAiConsent','consentAt','paintConsent','requireAiConsent','dismissAiConsent','noteConsent','api','apiStream'].map(fn).join('\n'), c);
   return {c, state, requests, writes, nodes, finish: value => finishWrite(value)};
 }
 for (const settings of [{}, {ai_consent_at:'2026-09-01'}]) {

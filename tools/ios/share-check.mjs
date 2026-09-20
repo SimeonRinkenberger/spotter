@@ -74,11 +74,25 @@ for state in ["error", "blocked", "limit", "ok", "unknown"] {
  precondition(SharedLink.savedMessage(status: 200, body: ["status":state,"id":"workout"]) == nil)
 }
 precondition(SharedLink.savedMessage(status: 200, body: ["status":"saved"]) == nil)
-precondition(SharedLink.failureMessage(status: 403, body: ["code":"ai_consent_required"]).contains("AI permission"))
+precondition(SharedLink.failureMessage(status: 403, body: ["code":"ai_consent_required"]).contains("Data & privacy"))
+// The extension asks for AI permission itself; the version it records must be
+// the one the server and the app carry, or the server refuses the agreement.
+precondition(SharedLink.needsConsent(status: 403, body: ["code":"ai_consent_required"]))
+precondition(!SharedLink.needsConsent(status: 403, body: ["message":"This account cannot save."]))
+precondition(!SharedLink.needsConsent(status: 200, body: ["code":"ai_consent_required"]))
+let versions = try String(contentsOfFile: "supabase/functions/spotter/index.ts", encoding: .utf8)
+precondition(versions.contains("const AI_CONSENT_VERSION = \\"\\(SharedLink.consentVersion)\\""), "extension and server agree on the AI wording version")
+let appVersions = try String(contentsOfFile: "supabase/functions/spotter/app.ts", encoding: .utf8)
+precondition(appVersions.contains("var AI_CONSENT_VERSION = \\"\\(SharedLink.consentVersion)\\""), "extension and app agree on the AI wording version")
+precondition(SharedLink.consentText.contains("OpenAI or Google") && SharedLink.consentText.contains("quarterdeckcollective.com/spotter/privacy"))
+precondition(SharedLink.consentDeclinedMessage.contains("Data & privacy"))
+precondition(SharedLink.consentFailureMessage(status: 409, body: ["code":"ai_consent_version"]).contains("Update Spotter"))
+precondition(SharedLink.consentFailureMessage(status: 401, body: [:]).contains("sign-in"))
+precondition(SharedLink.consentFailureMessage(status: 0, body: [:]).contains("connection"))
 precondition(SharedLink.failureMessage(status: 401, body: [:]).contains("sign-in"))
 precondition(SharedLink.failureMessage(status: 403, body: ["message":"This account cannot save."]) == "This account cannot save.")
 precondition(SharedLink.failureMessage(status: 429, body: ["message":"Monthly allowance reached."]) == "Monthly allowance reached.")
-print("PASS native activation including mixed thumbnail/link payloads, 17 social/web URL formats, captions, invalid inputs, deduplication, multiple links, durable-save acknowledgement and error responses")
+print("PASS native activation including mixed thumbnail/link payloads, 17 social/web URL formats, captions, invalid inputs, deduplication, multiple links, durable-save acknowledgement, error responses and the in-sheet AI permission")
 `);
 const r = spawnSync('/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc', ['-sdk','/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk','-target',process.arch === 'arm64' ? 'arm64-apple-macosx14.0' : 'x86_64-apple-macosx14.0','-module-cache-path',join(dir,'cache'),'ios/App/Shared/SharedLink.swift',join(dir,'main.swift'),'-o',join(dir,'check')], { encoding:'utf8' });
 assert.equal(r.status, 0, r.stderr);
