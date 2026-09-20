@@ -21,7 +21,7 @@
 	<key>SpotterKeychainGroup</key>
 	<string>$(AppIdentifierPrefix)$(SPOTTER_BUNDLE_ID)</string>
 	<key>SpotterAppGroup</key>
-	<string></string>
+	<string>$(SPOTTER_APP_GROUP)</string>
 	<key>NSExtension</key>
 	<dict>
 		<key>NSExtensionPointIdentifier</key>

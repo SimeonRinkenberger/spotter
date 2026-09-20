@@ -26,7 +26,7 @@ assert.match(shell, /Purchases\.configure\(\{ apiKey: config\[platform\], appUse
   'the native shell identifies RevenueCat with the Supabase user id');
 assert.match(shell, /Purchases\.logIn\(\{ appUserID: userId \}\)/, 'and re-identifies with it on account change');
 
-const run = ({ key, revenueCat = { ok: true, status: 200 }, stripe = null, auth = { ok: true, status: 200 } }) => {
+const run = ({ key, revenueCat = { ok: true, status: 200 }, stripe = null, apple = null, auth = { ok: true, status: 200 } }) => {
   const calls = [];
   const logs = [];
   const c = vm.createContext({
@@ -37,6 +37,8 @@ const run = ({ key, revenueCat = { ok: true, status: 200 }, stripe = null, auth 
     Deno: { env: { get: (name) => (name === 'REVENUECAT_API_KEY' ? key : undefined) } },
     json: (body, status) => ({ body, status }),
     cancelAndDeleteCustomer: async () => { calls.push('stripe'); if (stripe) throw stripe; },
+    AppleGrantError: class AppleGrantError extends Error {},
+    forgetAppleGrant: async () => { calls.push('apple'); if (apple) throw apple; },
     forgetStravaQuietly: async () => { calls.push('strava'); },
     dbDelete: async (table) => { calls.push('delete:' + table); },
     dbPatchMany: async (table) => { calls.push('patch:' + table); },
@@ -92,3 +94,9 @@ for (const revenueCat of [{ ok: false, status: 401 }, { ok: false, status: 500 }
 }
 
 console.log('PASS account deletion forgets the RevenueCat subscriber by account id, best effort, after Stripe and before the auth row.');
+
+{
+  const t = run({ key: 'sk_test', apple: new Error('Apple unavailable') });
+  assert.equal((await t.result).status, 503);
+  assert.deepEqual(t.calls, ['stripe', 'apple'], 'Apple failure preserves all account data for retry');
+}

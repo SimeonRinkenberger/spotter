@@ -7,11 +7,19 @@ const sb = { auth: { signInWithIdToken: async args => {
   sent.push(args);
   return { data: { user: { id: 'fixture' }, session: { access_token: 'fixture' } } };
 } } };
-const provider = (credential = { identityToken: 'apple-token', nonce: 'raw-nonce', fullName: 'Alex Example' }) => ({ start: async () => { opens++; return credential; } });
-let result = await signInWithApple(sb, provider());
+const provider = (credential = { identityToken: 'apple-token', nonce: 'raw-nonce', authorizationCode: 'code', fullName: 'Alex Example' }) => ({ start: async () => { opens++; return credential; } });
+let grants = [];
+const register = async (code, session) => { grants.push([code, session.access_token]); };
+let result = await signInWithApple(sb, provider(), register);
+assert.deepEqual(grants, [['code', 'fixture']]);
+assert.equal(result.grantError, null);
+const failedGrant = await signInWithApple(sb, provider(), async () => { throw new Error('network'); });
+assert.match(failedGrant.grantError, /signed in/);
+assert.equal(failedGrant.fullName, 'Alex Example');
+sent = [sent[0]];
 assert.equal(result.fullName, 'Alex Example');
 assert.deepEqual(sent, [{ provider: 'apple', token: 'apple-token', nonce: 'raw-nonce' }]);
-result = await signInWithApple(sb, provider({ identityToken: 'returning-token', nonce: 'another-nonce' }));
+result = await signInWithApple(sb, provider({ identityToken: 'returning-token', nonce: 'another-nonce', authorizationCode: 'code' }));
 assert.equal(result.fullName, null);
 for (const credential of [{}, { identityToken: 'token' }, { nonce: 'nonce' }]) {
   await assert.rejects(signInWithApple(sb, provider(credential)), /complete sign-in credential/);
@@ -21,7 +29,7 @@ await assert.rejects(signInWithApple(sb, { start: async () => { throw Object.ass
 let complete;
 const pending = signInWithApple(sb, { start: () => new Promise(resolve => { complete = resolve; }) });
 await assert.rejects(signInWithApple(sb, provider()), /already open/);
-complete({ identityToken: 'token', nonce: 'nonce' });
+complete({ identityToken: 'token', nonce: 'nonce', authorizationCode: 'code' });
 await pending;
 const good = sb.auth.signInWithIdToken;
 sb.auth.signInWithIdToken = async () => ({ error: new Error('nonce mismatch') });
@@ -39,7 +47,7 @@ const extract = name => {
 };
 let names = [], failures = [], busy = false, routes = [];
 const ctx = vm.createContext({
-  native: { signInWithApple: async () => ({ user: { id: 'fixture' }, fullName: 'Alex Example' }) }, sb: {},
+  native: { signInWithApple: async () => ({ user: { id: 'fixture' }, fullName: 'Alex Example' }) }, sb: {}, registerAppleGrant: () => {}, toast: () => {},
   oauthBusy: false, oauthWatchdog: null, clearTimeout: () => {},
   setOauthBusy: id => { busy = !!id; }, authError: () => {},
   saveProviderName: (user, name) => names.push([user.id, name]), oauthFailed: error => failures.push(error),

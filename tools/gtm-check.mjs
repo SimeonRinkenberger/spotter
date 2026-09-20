@@ -1,6 +1,9 @@
 // Launch-specific regressions. No external network, deployment, or paid inference.
 import { spawnSync } from 'node:child_process';
 const checks = [
+  ['Apple grant database permissions and erasure', 'node', ['tools/apple-grants-db-check.mjs']],
+  ['Explicit AI permission and account isolation', 'node', ['tools/ai-consent-check.mjs']],
+  ['Apple grant lifetime and account binding', 'deno', ['run','--allow-read','tools/apple-grants-check.ts']],
   ['AI attempt accounting metadata', 'node', ['tools/ai-attempt-db-check.mjs']],
   ['AI transport accounting', 'deno', ['run','--allow-read','tools/ai-guard-check.ts']],
   ['Pumpy complete context', 'node', ['tools/pumpy-context-check.mjs']],

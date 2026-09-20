@@ -30,7 +30,7 @@
       "description": "An unlimited library and 20 full video reads a month, with 300 coaching answers from Pumpy, 100 explanations and swaps and 10 uploads. Saving from a caption, logging, your plan and your progress are always free.",
       "prices": [
         { "lookup_key": "spotter_plus_month", "interval": "month", "unit_amount": 699 },
-        { "lookup_key": "spotter_plus_year", "interval": "year", "unit_amount": 5000 }
+        { "lookup_key": "spotter_plus_year", "interval": "year", "unit_amount": 4999 }
       ]
     },
     {

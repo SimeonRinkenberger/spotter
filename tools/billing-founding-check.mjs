@@ -3,8 +3,8 @@
 //
 // `"founding": {"enabled": false}` in tools/stripe-plans.json is read by the setup
 // script and by nothing else, and the script deliberately deletes nothing. So the
-// live coupon kept applying: the owner re-prices the annual plan to $50 and every
-// new yearly subscriber quietly pays $40. The switch the repo can actually hold is
+// live coupon kept applying: the owner re-prices the annual plan to $49.99 and every
+// new yearly subscriber quietly pays $39.99. The switch the repo can actually hold is
 // the app_config row `billing.founding`, and these assertions are what keep it
 // wired to BOTH surfaces — the paywall block and Checkout.
 import fs from 'node:fs';
@@ -33,7 +33,7 @@ let configRows = [];
 let configThrows = false;
 let couponValid = true;
 const coupon = { id: 'SPOTTER_FOUNDING_YEAR', valid: true, amount_off: 1000, max_redemptions: 200, times_redeemed: 7 };
-const price = { lookup_key: 'spotter_plus_year', unit_amount: 5000, currency: 'usd', product: { id: 'prod_plus', name: 'Spotter Plus' } };
+const price = { lookup_key: 'spotter_plus_year', unit_amount: 4999, currency: 'usd', product: { id: 'prod_plus', name: 'Spotter Plus' } };
 
 const logs = [];
 const quiet = { log: (...a) => logs.push(a.join(' ')), error: (...a) => logs.push(a.join(' ')), warn: (...a) => logs.push(a.join(' ')) };
@@ -64,11 +64,11 @@ const block = async () => await c.run(true);
 configRows = [];
 assert.equal((await block()).founding, null,
   'an absent billing.founding row sells at full price even though Stripe still has a valid coupon');
-assert.equal((await block()).plans.plus.year.amount, 5000, 'and the standing annual price is unchanged');
+assert.equal((await block()).plans.plus.year.amount, 4999, 'and the standing annual price is unchanged');
 
 configRows = [{ value: 'true' }];
 const on = await block();
-assert.equal(on.founding.first_year_amount, 4000,
+assert.equal(on.founding.first_year_amount, 3999,
   'the string true, and only the string true, switches the offer on');
 assert.equal(on.founding.remaining, 193, 'and the counter is Stripe’s own');
 
@@ -102,7 +102,7 @@ assert.equal((await block()).founding, null, 'and it expires as one');
 // ---------- the copy Stripe shows at Checkout ----------
 const plans = JSON.parse(fs.readFileSync('tools/stripe-plans.json', 'utf8'));
 const plus = plans.products.find((p) => p.key === 'plus');
-assert.equal(plus.prices.find((p) => p.interval === 'year').unit_amount, 5000);
+assert.equal(plus.prices.find((p) => p.interval === 'year').unit_amount, 4999);
 assert.equal(plans.founding.enabled, false);
 // ensureProduct sends `description` on every run, so this string is on the page the
 // customer buys from. It follows the paywall's rule: no unlimited AI, and no

@@ -360,8 +360,8 @@ assert.match(example, /SPOTTER_ENTITLEMENTS = App\/Push\.entitlements/,
   'Local.xcconfig.example must document the switch');
 assert.equal((pbx.match(/CODE_SIGN_ENTITLEMENTS = "\$\(SPOTTER_ENTITLEMENTS\)"/g) || []).length, 2,
   'both App configurations must read the variable');
-assert.equal((pbx.match(/SPOTTER_ENTITLEMENTS = App\/Share\.entitlements;/g) || []).length, 2,
-  'the project must carry the default for Debug and Release, since Release has no xcconfig');
+assert.equal((pbx.match(/SPOTTER_ENTITLEMENTS = App\/Share\.entitlements;/g) || []).length, 1,
+  'Debug retains the Personal Team default; Release uses its organization configuration');
 assert(!/CODE_SIGN_ENTITLEMENTS = App\/Push\.entitlements/.test(pbx),
   'the committed project must not require an entitlement this account cannot sign');
 

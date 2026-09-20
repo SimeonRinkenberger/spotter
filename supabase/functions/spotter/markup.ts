@@ -683,7 +683,7 @@ export const MARKUP_BODY = String.raw`</head>
        the sheet because it is the one thing here that is not a preference. -->
   <div class="consentrow hide" id="consentrow">
     <p class="consent" id="consentset"></p>
-    <button class="btn ghost" id="consentok">Got it</button>
+    <button class="btn ghost" id="consentok">Review AI permission</button>
   </div>
 
   <h3 class="seth">Account</h3>
@@ -871,6 +871,16 @@ export const MARKUP_BODY = String.raw`</head>
      confirm a deletion are the same object: a title, a sentence, some fields, one
      button that does the thing. Six sheets of markup would have been six copies of
      the same twenty lines and six more things to keep in step. -->
+<div class="sheet" id="aiconsentsheet" role="dialog" aria-modal="true" aria-labelledby="aiconsenttitle"><div class="sheetbody">
+  <div class="grabber"></div>
+  <h2 id="aiconsenttitle">Allow AI processing?</h2>
+  <p class="lede">To read workouts, Spotter sends the links, captions, images, text and audio or video you choose to OpenAI or Google. Pumpy also sends your messages and relevant workout, plan and training history to help answer your questions.</p>
+  <p>AI can make mistakes. Review exercises and instructions before training. You can choose Not now and continue logging workouts and planning manually.</p>
+  <p><a href="https://quarterdeckcollective.com/spotter/privacy/">Read the privacy policy</a></p>
+  <p id="aiconsenterror" role="alert"></p>
+  <div class="btnrow"><button class="btn ghost" id="aiconsentdecline">Not now</button><button class="btn" id="aiconsentallow">Allow AI processing</button></div>
+</div></div>
+
 <div class="sheet" id="accountsheet"><div class="sheetbody">
   <div class="grabber"></div>
   <h2 id="acctitle">Account</h2>

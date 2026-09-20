@@ -344,6 +344,10 @@ export const APP = String.raw`
   function api(path, opts) {
     opts = opts || {};
     var epoch = accountEpoch, uid = state.user && state.user.id;
+    if (needsAiConsent(path) && !consentAt()) return requireAiConsent().then(function () {
+      if (!accountNow(epoch, uid)) throw new Error("Account changed");
+      return api(path, opts);
+    });
     var share = SHARED[path] ? epoch + ":" + uid + ":" + path + "\n" + (opts.body || "") : null;
     if (share && inFlight[share]) return inFlight[share];
     var p = deadline(function (signal) { return sb.auth.getSession().then(function (r) {
@@ -377,6 +381,11 @@ export const APP = String.raw`
   // header would move the CORS preflight allowlist, and every page already in a
   // pocket would fail against the function until it caught up.
   function apiStream(path, body, onEvent) {
+    var consentEpoch = accountEpoch, consentUid = state.user && state.user.id;
+    if (needsAiConsent(path) && !consentAt()) return requireAiConsent().then(function () {
+      if (!accountNow(consentEpoch, consentUid)) throw new Error("Account changed");
+      return apiStream(path, body, onEvent);
+    });
     body.stream = true;
     var epoch = accountEpoch, uid = state.user && state.user.id;
     return deadline(function (signal) { return sb.auth.getSession().then(function (s) {
@@ -479,56 +488,77 @@ export const APP = String.raw`
       : "Could not sign you in. Try again in a moment.";
   }
 
-  // ---------- AI consent (App Store 5.1.2(i)) ----------
-  //
-  // A saved video and its caption go to OpenAI and to Google to become a workout
-  // card. 5.1.2(i) says the person has to have agreed to that in so many words
-  // first, and the sign-up form had nothing of the kind. The sentence is built
-  // here rather than written twice in markup: it is shown above Create account,
-  // and once at the top of Settings for an account made before it existed, and
-  // two copies of a consent sentence are two sentences that will drift.
-  //
-  // What is stored is the moment, not the fact — profiles.settings.ai_consent_at,
-  // an ISO string, written through saveSettings() like every other preference.
-  // settings is user-writable, so no migration and no new column.
-  var consentGiven = false;
+  // AI permission is separate from account creation and is checked before any
+  // AI request. Acknowledgement must be saved before an upload or model call.
+  var AI_CONSENT_VERSION = "2026-09-19", aiConsentPending = null;
 
-  function consentLink(href, text) {
-    var a = el("a", null, text);
-    a.href = href;
-    return a;
+  function needsAiConsent(path) {
+    return /^(ingest|explain|swap|demo-video|uploads\/authorize|pumpy\/chat)$/.test(path) ||
+      /^workouts\/[^/]+\/(reprocess|media)$/.test(path);
   }
 
-  // Both links are the hosted pages the rest of the app already points at, and
-  // deliberately not the docs/ copies: tools/ios/build.mjs packs only index.html,
-  // assets and the icon into native-dist, so a relative terms.html is a dead link
-  // inside both shells — which is the one place a reviewer reading 5.1.2(i) taps.
-  // Only the opening clause differs between the two places this is shown: an
-  // account made last month was not created by the button being pressed now, and
-  // a sentence that says it was is a sentence a person reads past. The part that
-  // is actually being agreed to — what leaves the phone and who receives it — is
-  // written once and cannot drift.
+  function consentLink(href, text) {
+    var a = el("a", null, text); a.href = href; return a;
+  }
+
   function consentFill(node, opening) {
     node.innerHTML = "";
     node.appendChild(document.createTextNode(opening));
     node.appendChild(consentLink("https://quarterdeckcollective.com/spotter/terms/", "Terms"));
-    node.appendChild(document.createTextNode(" and to Spotter sending the videos and captions you save to AI providers (OpenAI, Google) to build your workout cards. "));
+    node.appendChild(document.createTextNode(". AI processing is optional; Spotter asks for permission before using it. "));
     node.appendChild(consentLink("https://quarterdeckcollective.com/spotter/privacy/", "Privacy policy"));
     node.appendChild(document.createTextNode("."));
   }
 
   function consentAt() {
     var s = state.profile && state.profile.settings;
-    return s ? s.ai_consent_at : null;
+    return s && s.ai_consent_version === AI_CONSENT_VERSION ? s.ai_consent_at : null;
   }
 
-  // Idempotent on purpose: the sign-up path and the Settings line both call it,
-  // and an account that has already agreed is never asked or written again.
+  function requireAiConsent() {
+    var epoch = accountEpoch, uid = state.user && state.user.id;
+    if (!uid) return Promise.reject(new Error("Sign in first."));
+    return (state.profile ? Promise.resolve() : loadProfile()).then(function () {
+      if (!accountNow(epoch, uid)) throw new Error("Account changed");
+      if (!state.profile) throw new Error("Could not load your account. Try again.");
+      if (consentAt()) return;
+      if (aiConsentPending) return aiConsentPending.promise;
+      var pending = { epoch: epoch, uid: uid, resolve: null, reject: null, promise: null };
+      pending.promise = new Promise(function (resolve, reject) { pending.resolve = resolve; pending.reject = reject; });
+      aiConsentPending = pending;
+      $("aiconsenterror").textContent = "";
+      $("aiconsentallow").disabled = false;
+      openSheet("aiconsentsheet");
+      return pending.promise;
+    });
+  }
+
+  function dismissAiConsent() {
+    var pending = aiConsentPending;
+    aiConsentPending = null;
+    if (pending) pending.reject(new Error("AI processing was not enabled. You can still log and plan workouts manually."));
+  }
+
   function noteConsent() {
-    if (!state.profile || consentAt()) return;
-    state.profile.settings = state.profile.settings || {};
-    state.profile.settings.ai_consent_at = new Date().toISOString();
-    saveSettings();
+    var pending = aiConsentPending;
+    if (!pending || !accountNow(pending.epoch, pending.uid)) return;
+    $("aiconsentallow").disabled = true;
+    var settings = Object.assign({}, state.profile.settings || {}, {
+      ai_consent_at: new Date().toISOString(), ai_consent_version: AI_CONSENT_VERSION
+    });
+    sb.from("profiles").update({ settings: settings }).eq("id", pending.uid).then(function (r) {
+      if (!accountNow(pending.epoch, pending.uid) || aiConsentPending !== pending) return;
+      if (r.error) throw r.error;
+      state.profile.settings = settings;
+      aiConsentPending = null;
+      closeSheet("aiconsentsheet");
+      $("consentrow").classList.add("hide");
+      pending.resolve();
+    }).catch(function () {
+      if (aiConsentPending !== pending) return;
+      $("aiconsenterror").textContent = "Could not save your choice. Check your connection and try again.";
+      $("aiconsentallow").disabled = false;
+    });
   }
 
   // ---------- Cloudflare Turnstile ----------
@@ -643,7 +673,6 @@ export const APP = String.raw`
       // The button that was just pressed carried the sentence above it, so this
       // is the agreement. It is written once there is a profile row to write it
       // on, which is after boot.
-      if (mode === "signup") consentGiven = true;
       // Confirmations on: signUp answers with a user and no session. gotrue
       // answers exactly the same way for an address that already has an account,
       // and that is right — this form must not be a way to ask which addresses
@@ -1068,13 +1097,27 @@ export const APP = String.raw`
     });
   }
 
+  function registerAppleGrant(code, session) {
+    return deadline(function (signal) {
+      return fetch(API + "auth/apple/grant", {
+        method: "POST", signal: signal,
+        headers: { authorization: "Bearer " + session.access_token, "content-type": "application/json" },
+        body: JSON.stringify({ code: code })
+      }).then(function (response) {
+        if (!response.ok) throw new Error("Apple connection did not finish.");
+        return response.json();
+      });
+    }, 25000);
+  }
+
   function nativeAppleSignIn() {
     clearTimeout(oauthWatchdog);
-    native.signInWithApple(sb).then(function (result) {
+    native.signInWithApple(sb, registerAppleGrant).then(function (result) {
       setOauthBusy(null);
       // Apple provides the name only on first authorization; preserve it using
       // the same placeholder-only profile update as the existing web flow.
       if (result.fullName) saveProviderName(result.user, result.fullName);
+      if (result.grantError) toast(result.grantError, 12000);
     }).catch(function (e) {
       if (e && e.code === "AUTH_CANCELLED") { setOauthBusy(null); return; }
       oauthFailed(e);
@@ -1149,7 +1192,8 @@ export const APP = String.raw`
     var wrap = $("oauthwrap");
     if (!wrap) return;
     var hasGoogle = !!(authProviders && authProviders.google);
-    var hasApple = !!(authProviders && authProviders.apple) && !(native && native.platform === "android");
+    var hasApple = !!(authProviders && authProviders.apple) &&
+      (native ? native.platform === "ios" : !!PUBLIC_AUTH.apple_services_id);
     $("oagoogle").classList.toggle("hide", !hasGoogle);
     $("oaapple").classList.toggle("hide", !hasApple);
     wrap.classList.toggle("hide", !(hasGoogle || hasApple));
@@ -1203,6 +1247,7 @@ export const APP = String.raw`
   }
 
   function clearAccount() {
+    dismissAiConsent();
     if (native) native.configureSharing(null).catch(function () {});
     cancelPumpyReset();
     if (pendingMotion) pendingMotion.disconnect();
@@ -1300,7 +1345,6 @@ export const APP = String.raw`
       .then(function () { return profileReady; })
       .then(function () {
         if (!accountNow(epoch, uid)) return;
-        if (consentGiven) noteConsent();
         welcomeMaybe();
       });
     return booting;
@@ -13381,6 +13425,7 @@ export const APP = String.raw`
   function closeSheet(id, fromPop) {
     var n = $(id);
     if (!n.classList.contains("open")) return;
+    if (id === "aiconsentsheet") dismissAiConsent();
     guideClear("hold");
     if (id === "welcomesheet") {
       welcomeDone();
@@ -14219,10 +14264,10 @@ export const APP = String.raw`
     // Only an email account owns its own password and address; Google and Apple
     // own theirs, and offering to change them here would send somebody round a
     // loop that ends at a provider screen we do not control.
-    // Asked once, and only of an account that predates the sign-up sentence.
+    // AI consent applies to every account, including social sign-in.
     var owed = !!state.profile && !consentAt();
     $("consentrow").classList.toggle("hide", !owed);
-    if (owed) consentFill($("consentset"), "Using Spotter means you agree to the ");
+    if (owed) consentFill($("consentset"), "Your account uses the Spotter ");
     var mine = isEmailAccount();
     $("setpwrow").classList.toggle("hide", !mine);
     $("setmailrow").disabled = !mine;
@@ -14960,7 +15005,7 @@ export const APP = String.raw`
       arm: function () { return accVal("sure").trim().toUpperCase() === "DELETE"; },
       run: function (done) {
         api("account/delete", { method: "POST", body: "{}" }).then(function (r) {
-          if (!r || r.status !== "ok") { done("Could not delete it. Try again in a moment."); return; }
+          if (!r || r.status !== "ok") { done(r && r.message || "Could not delete it. Try again in a moment."); return; }
           done(null);
           // Both sheets go before the sign-out swaps the view, or the landing is
           // built underneath an open Settings.
@@ -15790,10 +15835,9 @@ export const APP = String.raw`
   $("authgo").onclick = doAuth;
   $("forgotpw").onclick = forgotPassword;
   consentFill($("consent"), "By creating an account you agree to the ");
-  $("consentok").onclick = function () {
-    noteConsent();
-    $("consentrow").classList.add("hide");
-  };
+  $("consentok").onclick = function () { requireAiConsent().catch(function () {}); };
+  $("aiconsentallow").onclick = noteConsent;
+  $("aiconsentdecline").onclick = function () { closeSheet("aiconsentsheet"); };
   $("otpgo").onclick = otpGo;
   // Six digits is the whole answer, so there is nothing left to press. Both
   // Apple's and Instagram's code screens go on their own the moment the last

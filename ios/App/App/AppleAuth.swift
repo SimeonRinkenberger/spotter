@@ -49,10 +49,12 @@ public class AppleAuthPlugin: CAPPlugin, CAPBridgedPlugin, ASAuthorizationContro
         guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
               credential.state == requestState, let nonce = rawNonce,
               let data = credential.identityToken,
-              let token = String(data: data, encoding: .utf8), !token.isEmpty else {
+              let token = String(data: data, encoding: .utf8), !token.isEmpty,
+              let codeData = credential.authorizationCode,
+              let code = String(data: codeData, encoding: .utf8), !code.isEmpty else {
             call.reject("Apple did not return a valid sign-in credential."); return
         }
-        var result: [String: Any] = ["identityToken": token, "nonce": nonce]
+        var result: [String: Any] = ["identityToken": token, "nonce": nonce, "authorizationCode": code]
         if let name = credential.fullName {
             let fullName = PersonNameComponentsFormatter().string(from: name).trimmingCharacters(in: .whitespacesAndNewlines)
             if !fullName.isEmpty { result["fullName"] = fullName }
