@@ -534,4 +534,32 @@ if (!fs.existsSync(fixtureJson)) {
   if (f.widgetSummary) assert.deepEqual(
     Object.keys(f.widgetSummary).filter(k => k !== 'signedOut').sort(), WIDGET_KEYS.slice().sort());
   console.log('PASS the shared fixture decodes to the same shape.');
+
+  // ---------- the paused session ----------
+  //
+  // Phase "paused" + pausedAt is the one addition to LiveState v1 (20 Sept):
+  // sent when the person pauses from the phone and at every boot that restores
+  // a paused draft. Both keys are optional on the wire so an older shell still
+  // decodes, which is why the key set here is LIVE_KEYS plus one, not a new
+  // contract. The engine side of this (liveState() emitting it) lands with the
+  // web work and is asserted there; this pins the shape both halves agreed to
+  // and the Swift decl that reads it.
+  const p = f.liveStatePaused;
+  assert(p, 'contract-fixture.json has no liveStatePaused case');
+  assert.deepEqual(Object.keys(p).filter(k => k !== '_').sort(), LIVE_KEYS.concat(['pausedAt']).sort(),
+    'liveStatePaused must be an ordinary LiveState plus pausedAt, nothing else');
+  assert.equal(p.phase, 'paused');
+  assert.equal(p.rest, null, 'no rest runs while the session is paused');
+  assert(!isNaN(Date.parse(p.pausedAt)) && /Z$/.test(p.pausedAt), 'pausedAt is an ISO 8601 instant');
+  assert(Date.parse(p.pausedAt) > Date.parse(p.startedAt), 'a pause begins after the session started');
+  assert(p.set && p.dose && p.progress, 'a paused state keeps describing where the session stopped');
+  const liveSwift = fs.readFileSync(swift, 'utf8');
+  assert(/\n\s*case paused\n/.test(liveSwift), swift + ' must declare Phase.paused');
+  assert(/var pausedAt: String\?/.test(liveSwift), swift + ' must carry pausedAt as an optional String');
+  // The dial's message is the watch's message: same kind, same source field,
+  // figures only when a dial was turned.
+  const d = f.liveActionDial;
+  assert(d && d.kind === 'set' && d.source === 'activity' && typeof d.reps === 'number' && typeof d.weight === 'number',
+    'liveActionDial must be a .set from source "activity" carrying reps and weight');
+  console.log('PASS the paused fixture is LiveState plus pausedAt with no rest, the Swift enum has the case, and the dial\'s set carries figures.');
 }

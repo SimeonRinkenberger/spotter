@@ -23,8 +23,11 @@ const appPlist = read('ios/App/App/Info.plist');
 const widget = read('ios/App/SpotterWidgets/WorkoutLiveActivity.swift');
 const sink = read('ios/App/App/LiveActivitySink.swift');
 const intents = read('ios/App/Shared/LiveActivityIntents.swift');
+const attributes = read('ios/App/Shared/WorkoutActivityAttributes.swift');
+const liveState = read('ios/App/Shared/LiveState.swift');
 const pbx = read('ios/App/App.xcodeproj/project.pbxproj');
 const app = read('supabase/functions/spotter/app.ts');
+const fixture = JSON.parse(read('tools/ios/contract-fixture.json'));
 
 // ---------- ActivityKit refuses to run without the declaration ----------
 
@@ -37,25 +40,149 @@ console.log('PASS NSSupportsLiveActivities is declared true.');
 // LiveState.Phase is the source of truth; the widget must have an opinion about
 // each case, or a workout that reaches it renders as whatever `else` happens to
 // be. `.unknown` is excluded: it exists precisely so an unrecognised phase
-// falls through to the default treatment.
+// falls through to the default treatment. `paused` is declared on its own line
+// (it carries a doc comment), so it is asserted by name rather than pattern.
 
-const phases = [...read('ios/App/Shared/LiveState.swift')
-  .matchAll(/case (work, rest, timed, complex, done)/g)]
+const phases = [...liveState.matchAll(/case (work, rest, timed, complex, done)/g)]
   .flatMap(m => m[1].split(',').map(s => s.trim()));
 assert(phases.length === 5, 'LiveState.Phase no longer lists the five phases this check knows');
+assert(/\n\s*case paused\n/.test(liveState), 'LiveState.Phase must declare `case paused` (the wire value "paused")');
+phases.push('paused');
 phases.forEach(p => assert(widget.includes('.' + p),
   'WorkoutLiveActivity.swift never mentions phase .' + p));
-console.log('PASS the widget references all five phases: ' + phases.join(', ') + '.');
+console.log('PASS the widget references all six phases: ' + phases.join(', ') + '.');
 
-// ---------- both buttons exist, and can actually run ----------
+// ---------- the paused card is stopped, not stale, not clickable ----------
+//
+// Everything a paused session must NOT do fails silently: a live timer keeps
+// counting a stopped session, a near stale date flips the card into "rest
+// over", a nudge fires for a rest that is not running, a button offers a set
+// nobody is about to do.
 
+assert(/var pausedAt: String\?/.test(liveState), 'LiveState must carry pausedAt (ISO 8601) beside phase "paused"');
+assert(/var pausedDate: Date\?/.test(liveState), 'LiveState needs the pausedDate helper, like startedDate');
+assert(/var pausedAt: Date\?/.test(attributes), 'ContentState must carry pausedAt: the frozen clock is drawn from it');
+assert(/var halted: Bool \{ state\.phase == \.paused \}/.test(widget),
+  'PhaseLook must name the paused session off phase .paused');
+assert(/if halted \{ return nil \}/.test(widget), 'a paused card must offer no button');
+assert(/if halted \{ return "pause\.fill" \}/.test(widget), 'the paused glyph is pause.fill');
+assert(/if halted \{ return "Paused" \}/.test(widget), 'the Lock Screen label must say "Paused"');
+// The frozen clock is a String rendered from pausedAt − startedAt, never a timer.
+const frozen = /if state\.phase == \.paused \{[\s\S]*?Text\(WorkoutActivityAttributes\.clock\(pausedAt\.timeIntervalSince\(attributes\.startedAt\)\)\)/;
+assert(frozen.test(widget), 'the paused elapsed must be a static string of pausedAt − startedAt, not a timer');
+const staleFn0 = /private static func staleDate\(for state: LiveState\) -> Date \{([\s\S]*?)\n    \}/.exec(sink);
+assert(staleFn0 && /if state\.phase == \.paused \{\s*return Date\(\)\.addingTimeInterval\(8 \* 60 \* 60\)/.test(staleFn0[1]),
+  'a paused state\'s staleDate must be the far end of the activity\'s life (8 h), or the card can flip to rest over');
+assert(/guard state\.phase == \.rest, let rest = state\.rest, !rest\.isPaused else \{\s*cancelNudge\(\)/.test(sink),
+  'syncNudge must cancel for anything that is not a running rest — a paused session included');
+// A resume shifts startedAt, which is an immutable attribute: the sink must
+// replace the activity, and request the new one BEFORE ending the old.
+const resume = /if Self\.differs\(activity\.attributes\.startedAt, state\.startedDate\) \{([\s\S]*?)\n            \}/.exec(sink);
+assert(resume, 'push(_:) must detect a shifted startedAt (a resume) against the running activity\'s attributes');
+assert(resume[1].indexOf('Activity.request(') >= 0 && resume[1].indexOf('activity.end(nil, dismissalPolicy: .immediate)') >= 0
+  && resume[1].indexOf('Activity.request(') < resume[1].indexOf('activity.end(nil, dismissalPolicy: .immediate)'),
+  'on a resume the new activity is requested first and the old one ended immediately with no closing frame');
+console.log('PASS paused: frozen string clock, no button, pause glyph, 8 h stale date, nudge cancelled, resume replaces the activity.');
+
+// ---------- three intents exist, and can actually run ----------
+
+['SkipRestIntent', 'LogSetIntent', 'AdjustSetIntent'].forEach(name => {
+  assert(new RegExp('struct ' + name + ':\\s*LiveActivityIntent').test(intents),
+    name + ' must adopt LiveActivityIntent so perform() runs in the app process');
+  assert(/static let isDiscoverable = false/.test(intents.slice(intents.indexOf('struct ' + name))),
+    name + ' must stay undiscoverable: it means nothing outside a running session');
+});
 ['SkipRestIntent', 'LogSetIntent'].forEach(name => {
   assert(widget.includes('Button(intent: ' + name + '())'),
     'WorkoutLiveActivity.swift has no Button(intent: ' + name + '())');
-  assert(new RegExp('struct ' + name + ':\\s*LiveActivityIntent').test(intents),
-    name + ' must adopt LiveActivityIntent so perform() runs in the app process');
 });
-console.log('PASS both Button(intent:)s are wired to LiveActivityIntents.');
+assert(/Button\(intent: AdjustSetIntent\(field: field, delta: delta\)\)/.test(widget),
+  'the dial\'s ± buttons must be Button(intent: AdjustSetIntent(field:delta:)) — one type, parameterised');
+assert(/@Parameter\(title: "Figure"\)\s*var field: DialField/.test(intents) && /@Parameter\(title: "Direction"\)\s*var delta: Int/.test(intents),
+  'AdjustSetIntent carries field and delta as @Parameters, which is how the values travel with the button');
+assert(/enum DialField: String, AppEnum/.test(intents), 'DialField must be an AppEnum so the parameter serialises');
+console.log('PASS the three LiveActivityIntents are wired: two buttons, and one parameterised dial intent behind four.');
+
+// ---------- the dial never crosses the bridge; Log set carries it ----------
+//
+// The contract: a press on ± is a native update only. Only the final `.set`
+// reaches JavaScript, with the dialled figures on it. Both halves are static
+// facts about which router closure each perform() calls.
+
+const performOf = name => {
+  const from = intents.indexOf('struct ' + name);
+  const body = /func perform\(\) async throws -> some IntentResult \{([\s\S]*?)\n    \}/.exec(intents.slice(from));
+  assert(body, name + ' has no perform()');
+  return body[1];
+};
+const adjustPerform = performOf('AdjustSetIntent');
+assert(/LiveActionRouter\.adjust\(field, by: delta\)/.test(adjustPerform), 'AdjustSetIntent.perform() must call LiveActionRouter.adjust');
+assert(!/LiveActionRouter\.send\(|LiveStatePlugin|deliver\(/.test(adjustPerform),
+  'AdjustSetIntent must never send an action or reach LiveStatePlugin.deliver: dial presses stay native');
+// Code only — the file's comments are allowed to explain why the plugin is
+// not named; the code is not allowed to name it.
+const intentsCode = intents.split('\n').filter(line => !/^\s*\/\//.test(line)).join('\n');
+assert(!/LiveStatePlugin/.test(intentsCode), 'LiveActivityIntents.swift must not name LiveStatePlugin in code (the widget target has no Capacitor)');
+const adjustFn = /static func adjust\(_ field: DialField, by delta: Int\) \{([\s\S]*?)\n    \}/.exec(intents);
+assert(adjustFn && /adjuster\?\(field, delta\)/.test(adjustFn[1]) && !/handler/.test(adjustFn[1]),
+  'LiveActionRouter.adjust must go through the adjuster closure, never the action handler');
+const sinkAdjust = /private func adjust\(_ field: DialField, by delta: Int\) \{([\s\S]*?)\n    \}/.exec(sink);
+assert(sinkAdjust, 'LiveActivitySink has no adjust(_:by:)');
+assert(!/LiveStatePlugin\.deliver|notifyListeners/.test(sinkAdjust[1]),
+  'LiveActivitySink.adjust must not deliver anything to JavaScript');
+assert(/dose\.stepping\(reps: self\.dial\.reps, by: delta\)/.test(sinkAdjust[1]) && /dose\.stepping\(self\.dial\.weight, by: Double\(delta\)\)/.test(sinkAdjust[1]),
+  'the dial must step through Dose.stepping, the one clamp app.ts and the wrist share');
+assert(/self\.push\(state\)/.test(sinkAdjust[1]), 'a dial press must push the card at once');
+const logPerform = performOf('LogSetIntent');
+assert(/LiveActionRouter\.dialled\?\(\)/.test(logPerform) && /LiveActionRouter\.send\(\.set, reps: dial\?\.reps, weight: dial\?\.weight\)/.test(logPerform),
+  'LogSetIntent.perform() must send .set WITH the dialled reps and weight');
+assert(/static func send\(_ kind: LiveAction\.Kind, reps: Int\? = nil, weight: Double\? = nil\)/.test(intents),
+  'LiveActionRouter.send must accept reps and weight');
+// The dial belongs to one set: it resets on a different set, movement or phase, and on end.
+assert(/if let previous = pending \?\? current, !Self\.sameSet\(previous, state\) \{\s*dial = \(nil, nil\)/.test(sink),
+  'update(_:) must reset the dial when the engine moves to a different set, movement or phase');
+assert(/func end\(_ summary: LiveSummary\)[\s\S]{0,300}dial = \(nil, nil\)/.test(sink), 'end(_:) must reset the dial');
+assert(/case \.set:[\s\S]{0,900}self\.dial = \(nil, nil\)/.test(sink), 'the optimistic .set must reset the dial for the next set');
+console.log('PASS dial presses never reach LiveStatePlugin.deliver; Log set carries the dialled figures; the dial resets per set.');
+
+// ---------- the dial is drawn where WidgetKit allows buttons, and only there ----------
+
+assert(/var hasDial: Bool \{ action == \.logSet && state\.dial != nil \}/.test(widget),
+  'the dial must only ever sit beside Log set, and only when the engine sent a dose');
+assert(/if state\.phase == \.work \{ return state\.loggable \? \.logSet : nil \}/.test(widget),
+  'an unloggable work set (the engine\'s own verdict) must show no button and no dial');
+const compact = /compactLeading: \{([\s\S]*?)\} compactTrailing: \{([\s\S]*?)\} minimal: \{([\s\S]*?)\}/.exec(widget);
+assert(compact, 'the DynamicIsland compact/minimal closures moved');
+assert(!/Button\(|DialRow|CardControl/.test(compact[1] + compact[2] + compact[3]),
+  'no button and no dial in the compact or minimal presentations — WidgetKit does not run them there');
+// The compact clock slot is a fixed frame, sized for m:ss, or the island stretches across the status bar.
+assert(/IslandClock\(attributes: context\.attributes, state: context\.state, size: 14,\s*isStale: context\.isStale, snug: true/.test(widget),
+  'the compact trailing IslandClock must be snug (fixed width): a timer Text otherwise asks for the whole status bar');
+assert(/\.frame\(width: snug \? \(size \* 3\)\.rounded\(\.up\) : nil, alignment: \.trailing\)/.test(widget),
+  'the snug frame is three digit-widths (m:ss measured at 41.5 pt for 14 pt), fixed, not a minimum');
+assert(/Text\(timerInterval: attributes\.startedAt\.\.\.attributes\.startedAt\.addingTimeInterval\(12 \* 60 \* 60\)/.test(widget),
+  'the elapsed clock must be Text(timerInterval:): the date-style .timer is not driven on the locked Lock Screen and prints words');
+console.log('PASS the dial lives in the expanded and Lock Screen presentations only; the compact clock is a fixed m:ss slot; elapsed is an interval timer.');
+
+// ---------- the 4 KB content budget ----------
+//
+// ActivityKit refuses an update whose static + dynamic content exceeds 4 KB —
+// silently, from the card's point of view. ContentState is a subset of
+// LiveState plus the dial and the pause instant; measured off the widest
+// fixture with every string padded to a length no workout card reaches.
+
+function contentState(live) {
+  return {
+    phase: live.phase, exercise: live.exercise, block: live.block, set: live.set, target: live.target,
+    weight: live.weight, rest: live.rest, next: live.next, progress: live.progress,
+    pausedAt: 780000000.123, dial: { reps: 999, weight: 9999.5, unit: 'kg' }, loggable: true
+  };
+}
+const widest = Object.values(fixture).filter(v => v && v.phase).map(contentState)
+  .map(c => ({ ...c, exercise: 'x'.repeat(120), block: 'x'.repeat(80), target: 'x'.repeat(60), weight: 'x'.repeat(30), next: 'x'.repeat(120) }))
+  .map(c => JSON.stringify(c).length + JSON.stringify({ title: 'x'.repeat(120), startedAt: 780000000.123 }).length);
+assert(Math.max(...widest) < 4096, 'a padded ContentState + attributes exceeds the 4 KB ActivityKit budget: ' + Math.max(...widest));
+console.log('PASS the widest padded ContentState + attributes is ' + Math.max(...widest) + ' bytes, under the 4 KB budget.');
 
 // The membership that makes perform() meaningful. A LiveActivityIntent runs in
 // the APP's process; compiled only into the widget extension it would build,

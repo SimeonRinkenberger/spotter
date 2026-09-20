@@ -111,7 +111,7 @@ struct WorkoutLiveActivity: Widget {
                     .foregroundStyle(look.glyphTint)
             } compactTrailing: {
                 IslandClock(attributes: context.attributes, state: context.state, size: 14,
-                            isStale: context.isStale, restOverMark: true)
+                            isStale: context.isStale, snug: true, restOverMark: true)
             } minimal: {
                 MinimalDial(attributes: context.attributes, state: context.state, look: look)
             }
@@ -338,6 +338,16 @@ private enum ActionKind {
 /// as a plain string in muted ink. One view, so the leading slot of the
 /// expanded island and the fallback of every other clock cannot disagree
 /// about whether a paused session's clock is running. (It is not.)
+///
+/// `Text(timerInterval:)`, not `Text(_:style: .timer)`. On the composited Lock
+/// Screen of a locked 17 Pro the date-style timer is not driven at all: it
+/// printed the words "18 minutes" where the card should have read 18:10, in
+/// a state that was nowhere near stale (the earlier "26 minutes" sighting was
+/// the same thing, blamed on staleness at the time). The interval form is the
+/// one ActivityKit documents for Live Activities and the one the countdowns
+/// already use, and it counted on the locked screen in every capture. The
+/// range runs to the twelve hours a Live Activity can exist on the Lock
+/// Screen; hours appear only once there is one.
 private struct ElapsedClock: View {
     let attributes: WorkoutActivityAttributes
     let state: WorkoutActivityAttributes.ContentState
@@ -354,7 +364,8 @@ private struct ElapsedClock: View {
                 // empty rather than showing a timer that counts a stopped
                 // session. The contract always sends one.
             } else {
-                Text(attributes.startedAt, style: .timer)
+                Text(timerInterval: attributes.startedAt...attributes.startedAt.addingTimeInterval(12 * 60 * 60),
+                     pauseTime: nil, countsDown: false, showsHours: true)
                     .foregroundStyle(WidgetTheme.ink2)
             }
         }
@@ -369,19 +380,28 @@ private struct ElapsedClock: View {
 /// rest is paused. All three are one view so the number never moves between
 /// phases — only its size and colour change.
 ///
-/// The frame is fixed, not a minimum. SwiftUI sizes a timer Text for the
+/// `snug` is the compact island's fix. SwiftUI sizes a timer Text for the
 /// widest string it might ever show, and a compact Dynamic Island slot is
-/// given whatever width it asks for: with `minWidth` here the island on the
-/// 17 Pro stretched to the status bar's edges, glyph far left, clock far right,
-/// black between. Three digit-widths and two colons is `m:ss` in this face
-/// (measured: 41.5 pt at 14 pt); the hour case scales down through
-/// `minimumScaleFactor` rather than widening the slot, because a session past
-/// an hour is rare and an island past its spec is not worth it.
+/// given whatever width it asks for: with only a `minWidth` here the island
+/// on the 17 Pro stretched to the status bar's edges, glyph far left, clock
+/// far right, black between. Snug means a fixed frame of three digit-widths
+/// and a colon — `m:ss` in this face, measured at 41.5 pt for 14 pt — and the
+/// hour case scales down inside it through `minimumScaleFactor` rather than
+/// widening the slot. Verified on the 17 Pro at 0:18, 12:34, 1:02:34 and a
+/// 2:09 countdown.
+///
+/// Only the compact slot is snug. The same fixed frame on the Lock Screen
+/// made the system's live timer give up on digits and print "18 min…" — a
+/// timer Text that cannot have the width it reserves switches format before
+/// it scales — so the card keeps the minimum-width frame it always had, where
+/// a Spacer absorbs whatever the timer asks for and nothing else moves.
 private struct IslandClock: View {
     let attributes: WorkoutActivityAttributes
     let state: WorkoutActivityAttributes.ContentState
     var size: CGFloat = 14
     var isStale: Bool = false
+    /// Fixed-width slot (the compact island) rather than minimum-width.
+    var snug: Bool = false
     /// Whether to fall back to the elapsed session time when nothing is
     /// counting down. Compact and minimal have one clock slot, so they want it.
     /// The expanded presentation already prints elapsed in its leading region,
@@ -406,9 +426,20 @@ private struct IslandClock: View {
                     .font(.system(size: size, weight: .bold))
                     .foregroundStyle(WidgetTheme.good)
             } else if look.halted {
-                // Frozen at the pause, in every presentation that shows a
-                // clock. ElapsedClock owns the arithmetic.
-                ElapsedClock(attributes: attributes, state: state, size: size)
+                // Frozen at the pause, in every slot that shows elapsed time.
+                // ElapsedClock owns the arithmetic. The expanded island's
+                // trailing slot (elapsedFallback false) gets the pause glyph
+                // instead: its leading region already prints the frozen
+                // clock, and a static text there vanished on the 17 Pro
+                // whenever this slot was left empty — a timer text did not —
+                // so the slot is not left empty.
+                if elapsedFallback {
+                    ElapsedClock(attributes: attributes, state: state, size: size)
+                } else {
+                    Image(systemName: "pause.fill")
+                        .font(.system(size: size, weight: .semibold))
+                        .foregroundStyle(WidgetTheme.muted)
+                }
             } else if look.restOver {
                 // Nothing here may be a live timer. Once the system marks an
                 // activity stale it stops driving them: on the 17 Pro the
@@ -440,7 +471,8 @@ private struct IslandClock: View {
         .monospacedDigit()
         .lineLimit(1)
         .minimumScaleFactor(0.7)
-        .frame(width: (size * 3).rounded(.up), alignment: .trailing)
+        .frame(minWidth: snug ? nil : size * 3.1)
+        .frame(width: snug ? (size * 3).rounded(.up) : nil, alignment: .trailing)
         .multilineTextAlignment(.trailing)
     }
 }

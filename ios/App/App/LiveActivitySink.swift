@@ -550,6 +550,9 @@ import UserNotifications
 // is the whole behaviour of this feature.
 // SPOTTER_LIVE_FIXTURE_ELAPSED=<seconds> sets how long ago the session started,
 // default 1090, so the compact island can be photographed at 0:18 and at 12:34.
+// (The minimal presentation cannot be reached from here: it needs a second
+// app's Live Activity, and a second one of Spotter's does not count — the
+// island shows one activity per app. Tried on the 17 Pro, 20 Sept.)
 // `ghost` starts a card and then wipes the stored state, which is the shape the
 // app is in after being killed mid-session; relaunching with no variable set
 // must end that card rather than adopt it.
