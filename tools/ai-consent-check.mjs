@@ -15,7 +15,7 @@ function fixture(settings = {}) {
   const c = vm.createContext({
     state, AI_CONSENT_VERSION: '2026-09-19', aiConsentPending: null, accountEpoch: 1,
     Promise, Object, Error, Date, AbortController, JSON,
-    $: id => { if (!nodes.has(id)) nodes.set(id, { textContent: '', disabled: false, classList: { add() {} } }); return nodes.get(id); },
+    $: id => { if (!nodes.has(id)) nodes.set(id, { textContent: '', disabled: false, classList: { add() {}, toggle() {}, remove() {} } }); return nodes.get(id); },
     accountNow: (epoch, uid) => epoch === c.accountEpoch && state.user?.id === uid,
     loadProfile: () => Promise.resolve(), openSheet: id => { c.open = id; },
     closeSheet: () => { vm.runInContext('dismissAiConsent()', c); },
@@ -68,4 +68,19 @@ for (const settings of [{}, {ai_consent_at:'2026-09-01'}]) {
   vm.runInContext('dismissAiConsent()',t.c); await checked;
 }
 assert(!src.includes('consentGiven'), 'account creation is never AI permission');
+{
+  const t=fixture({ai_consent_at:'2026-09-19',ai_consent_version:'2026-09-19',unit:'kg'});
+  const review=vm.runInContext('requireAiConsent(true)',t.c); await turn();
+  assert.equal(t.c.open,'aiconsentsheet','permission remains reviewable after acceptance');
+  vm.runInContext('noteConsent(false)',t.c); await turn();
+  assert.equal(t.state.profile.settings.ai_consent_version,'2026-09-19','revocation waits for storage');
+  t.finish({error:null}); await review;
+  assert.equal(t.state.profile.settings.ai_consent_at,null);
+  assert.equal(t.state.profile.settings.ai_consent_version,null);
+  assert.equal(t.state.profile.settings.unit,'kg','other settings preserved');
+  const request=vm.runInContext('api("ingest",{method:"POST"})',t.c);
+  const checked=assert.rejects(request,/not enabled/); await turn();
+  assert.equal(t.requests.length,0,'next AI request requires fresh permission');
+  vm.runInContext('dismissAiConsent()',t.c); await checked;
+}
 console.log('PASS explicit AI consent before normal and streamed requests, legacy accounts, declined choice, durable acknowledgement, save failure, account switching, and manual account operations.');

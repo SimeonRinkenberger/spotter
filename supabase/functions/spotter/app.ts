@@ -515,19 +515,24 @@ export const APP = String.raw`
     return s && s.ai_consent_version === AI_CONSENT_VERSION ? s.ai_consent_at : null;
   }
 
-  function requireAiConsent() {
+  function requireAiConsent(review) {
     var epoch = accountEpoch, uid = state.user && state.user.id;
     if (!uid) return Promise.reject(new Error("Sign in first."));
     return (state.profile ? Promise.resolve() : loadProfile()).then(function () {
       if (!accountNow(epoch, uid)) throw new Error("Account changed");
       if (!state.profile) throw new Error("Could not load your account. Try again.");
-      if (consentAt()) return;
+      if (consentAt() && !review) return;
       if (aiConsentPending) return aiConsentPending.promise;
       var pending = { epoch: epoch, uid: uid, resolve: null, reject: null, promise: null };
       pending.promise = new Promise(function (resolve, reject) { pending.resolve = resolve; pending.reject = reject; });
       aiConsentPending = pending;
       $("aiconsenterror").textContent = "";
       $("aiconsentallow").disabled = false;
+      $("aiconsentrevoke").disabled = false;
+      $("aiconsentrevoke").classList.toggle("hide", !consentAt());
+      $("aiconsenttitle").textContent = consentAt() ? "AI processing is enabled" : "Allow AI processing?";
+      $("aiconsentallow").textContent = consentAt() ? "Keep AI enabled" : "Allow AI processing";
+      $("aiconsentdecline").textContent = consentAt() ? "Close" : "Not now";
       openSheet("aiconsentsheet");
       return pending.promise;
     });
@@ -539,12 +544,14 @@ export const APP = String.raw`
     if (pending) pending.reject(new Error("AI processing was not enabled. You can still log and plan workouts manually."));
   }
 
-  function noteConsent() {
+  function noteConsent(enabled) {
     var pending = aiConsentPending;
     if (!pending || !accountNow(pending.epoch, pending.uid)) return;
     $("aiconsentallow").disabled = true;
+    $("aiconsentrevoke").disabled = true;
     var settings = Object.assign({}, state.profile.settings || {}, {
-      ai_consent_at: new Date().toISOString(), ai_consent_version: AI_CONSENT_VERSION
+      ai_consent_at: enabled === false ? null : new Date().toISOString(),
+      ai_consent_version: enabled === false ? null : AI_CONSENT_VERSION
     });
     sb.from("profiles").update({ settings: settings }).eq("id", pending.uid).then(function (r) {
       if (!accountNow(pending.epoch, pending.uid) || aiConsentPending !== pending) return;
@@ -552,12 +559,13 @@ export const APP = String.raw`
       state.profile.settings = settings;
       aiConsentPending = null;
       closeSheet("aiconsentsheet");
-      $("consentrow").classList.add("hide");
+      $("consentok").textContent = consentAt() ? "AI processing: On — manage permission" : "Review AI permission";
       pending.resolve();
     }).catch(function () {
       if (aiConsentPending !== pending) return;
       $("aiconsenterror").textContent = "Could not save your choice. Check your connection and try again.";
       $("aiconsentallow").disabled = false;
+      $("aiconsentrevoke").disabled = false;
     });
   }
 
@@ -14265,9 +14273,9 @@ export const APP = String.raw`
     // own theirs, and offering to change them here would send somebody round a
     // loop that ends at a provider screen we do not control.
     // AI consent applies to every account, including social sign-in.
-    var owed = !!state.profile && !consentAt();
-    $("consentrow").classList.toggle("hide", !owed);
-    if (owed) consentFill($("consentset"), "Your account uses the Spotter ");
+    $("consentrow").classList.remove("hide");
+    consentFill($("consentset"), "Your account uses the Spotter ");
+    $("consentok").textContent = consentAt() ? "AI processing: On — manage permission" : "Review AI permission";
     var mine = isEmailAccount();
     $("setpwrow").classList.toggle("hide", !mine);
     $("setmailrow").disabled = !mine;
@@ -15835,8 +15843,9 @@ export const APP = String.raw`
   $("authgo").onclick = doAuth;
   $("forgotpw").onclick = forgotPassword;
   consentFill($("consent"), "By creating an account you agree to the ");
-  $("consentok").onclick = function () { requireAiConsent().catch(function () {}); };
-  $("aiconsentallow").onclick = noteConsent;
+  $("consentok").onclick = function () { requireAiConsent(true).catch(function () {}); };
+  $("aiconsentallow").onclick = function () { noteConsent(true); };
+  $("aiconsentrevoke").onclick = function () { noteConsent(false); };
   $("aiconsentdecline").onclick = function () { closeSheet("aiconsentsheet"); };
   $("otpgo").onclick = otpGo;
   // Six digits is the whole answer, so there is nothing left to press. Both

@@ -7927,9 +7927,11 @@ details.details-moving > :not(summary) {
   <h2 id="aiconsenttitle">Allow AI processing?</h2>
   <p class="lede">To read workouts, Spotter sends the links, captions, images, text and audio or video you choose to OpenAI or Google. Pumpy also sends your messages and relevant workout, plan and training history to help answer your questions.</p>
   <p>AI can make mistakes. Review exercises and instructions before training. You can choose Not now and continue logging workouts and planning manually.</p>
+  <p>You can turn AI processing off here at any time. This stops future AI requests after your choice is saved; it does not recall requests already sent or delete existing workouts and conversations.</p>
   <p><a href="https://quarterdeckcollective.com/spotter/privacy/">Read the privacy policy</a></p>
   <p id="aiconsenterror" role="alert"></p>
   <div class="btnrow"><button class="btn ghost" id="aiconsentdecline">Not now</button><button class="btn" id="aiconsentallow">Allow AI processing</button></div>
+  <button class="btn ghost hide" id="aiconsentrevoke">Turn off AI processing</button>
 </div></div>
 
 <div class="sheet" id="accountsheet"><div class="sheetbody">
@@ -8329,17 +8331,17 @@ details.details-moving > :not(summary) {
     var s = state.profile && state.profile.settings;
     return s && s.ai_consent_version === AI_CONSENT_VERSION ? s.ai_consent_at : null;
   }
-  function requireAiConsent() {
+  function requireAiConsent(review) {
     var epoch = accountEpoch, uid = state.user && state.user.id;
     return uid ? (state.profile ? Promise.resolve() : loadProfile()).then(function() {
       if (!accountNow(epoch, uid)) throw new Error("Account changed");
       if (!state.profile) throw new Error("Could not load your account. Try again.");
-      if (!consentAt()) {
+      if (!(consentAt() && !review)) {
         if (aiConsentPending) return aiConsentPending.promise;
         var pending2 = { epoch: epoch, uid: uid, resolve: null, reject: null, promise: null };
         return pending2.promise = new Promise(function(resolve, reject) {
           pending2.resolve = resolve, pending2.reject = reject;
-        }), aiConsentPending = pending2, $("aiconsenterror").textContent = "", $("aiconsentallow").disabled = !1, openSheet("aiconsentsheet"), pending2.promise;
+        }), aiConsentPending = pending2, $("aiconsenterror").textContent = "", $("aiconsentallow").disabled = !1, $("aiconsentrevoke").disabled = !1, $("aiconsentrevoke").classList.toggle("hide", !consentAt()), $("aiconsenttitle").textContent = consentAt() ? "AI processing is enabled" : "Allow AI processing?", $("aiconsentallow").textContent = consentAt() ? "Keep AI enabled" : "Allow AI processing", $("aiconsentdecline").textContent = consentAt() ? "Close" : "Not now", openSheet("aiconsentsheet"), pending2.promise;
       }
     }) : Promise.reject(new Error("Sign in first."));
   }
@@ -8347,21 +8349,21 @@ details.details-moving > :not(summary) {
     var pending2 = aiConsentPending;
     aiConsentPending = null, pending2 && pending2.reject(new Error("AI processing was not enabled. You can still log and plan workouts manually."));
   }
-  function noteConsent() {
+  function noteConsent(enabled) {
     var pending2 = aiConsentPending;
     if (!(!pending2 || !accountNow(pending2.epoch, pending2.uid))) {
-      $("aiconsentallow").disabled = !0;
+      $("aiconsentallow").disabled = !0, $("aiconsentrevoke").disabled = !0;
       var settings = Object.assign({}, state.profile.settings || {}, {
-        ai_consent_at: (/* @__PURE__ */ new Date()).toISOString(),
-        ai_consent_version: AI_CONSENT_VERSION
+        ai_consent_at: enabled === !1 ? null : (/* @__PURE__ */ new Date()).toISOString(),
+        ai_consent_version: enabled === !1 ? null : AI_CONSENT_VERSION
       });
       sb.from("profiles").update({ settings: settings }).eq("id", pending2.uid).then(function(r) {
         if (!(!accountNow(pending2.epoch, pending2.uid) || aiConsentPending !== pending2)) {
           if (r.error) throw r.error;
-          state.profile.settings = settings, aiConsentPending = null, closeSheet("aiconsentsheet"), $("consentrow").classList.add("hide"), pending2.resolve();
+          state.profile.settings = settings, aiConsentPending = null, closeSheet("aiconsentsheet"), $("consentok").textContent = consentAt() ? "AI processing: On \u2014 manage permission" : "Review AI permission", pending2.resolve();
         }
       }).catch(function() {
-        aiConsentPending === pending2 && ($("aiconsenterror").textContent = "Could not save your choice. Check your connection and try again.", $("aiconsentallow").disabled = !1);
+        aiConsentPending === pending2 && ($("aiconsenterror").textContent = "Could not save your choice. Check your connection and try again.", $("aiconsentallow").disabled = !1, $("aiconsentrevoke").disabled = !1);
       });
     }
   }
@@ -16494,9 +16496,7 @@ details.details-moving > :not(summary) {
   function openSettings() {
     guideUser(), guidePaintSettings(), $("setver").textContent = "v" + VERSION, $("setemail").textContent = state.user ? state.user.email : "\u2014";
     var how = signInMethod();
-    $("setprov").textContent = how || "\u2014", $("setprovrow").classList.toggle("hide", !how);
-    var owed = !!state.profile && !consentAt();
-    $("consentrow").classList.toggle("hide", !owed), owed && consentFill($("consentset"), "Your account uses the Spotter ");
+    $("setprov").textContent = how || "\u2014", $("setprovrow").classList.toggle("hide", !how), $("consentrow").classList.remove("hide"), consentFill($("consentset"), "Your account uses the Spotter "), $("consentok").textContent = consentAt() ? "AI processing: On \u2014 manage permission" : "Review AI permission";
     var mine = isEmailAccount();
     $("setpwrow").classList.toggle("hide", !mine), $("setmailrow").disabled = !mine, $("setname").textContent = displayName() || "Not set", $("unittoggle").textContent = state.unit, paintGoal(), $("haptictoggle").textContent = state.haptics ? "On" : "Off", $("sethapticrow").classList.toggle("hide", !native && !navigator.vibrate), paintSounds(), loadRemind(), $("shortcutsetup").classList.toggle("hide", !!native), $("nativesharehelp").classList.toggle("hide", !native), native && native.platform === "android" && ($("nativesharehelp").textContent = "In TikTok, YouTube, Instagram or another app, share the post\u2019s link and choose Spotter from the Android share sheet.");
     var key = state.profile ? state.profile.ingest_key : null;
@@ -17417,9 +17417,13 @@ details.details-moving > :not(summary) {
     }
   }
   if ($("authgo").onclick = doAuth, $("forgotpw").onclick = forgotPassword, consentFill($("consent"), "By creating an account you agree to the "), $("consentok").onclick = function() {
-    requireAiConsent().catch(function() {
+    requireAiConsent(!0).catch(function() {
     });
-  }, $("aiconsentallow").onclick = noteConsent, $("aiconsentdecline").onclick = function() {
+  }, $("aiconsentallow").onclick = function() {
+    noteConsent(!0);
+  }, $("aiconsentrevoke").onclick = function() {
+    noteConsent(!1);
+  }, $("aiconsentdecline").onclick = function() {
     closeSheet("aiconsentsheet");
   }, $("otpgo").onclick = otpGo, $("otp").addEventListener("input", function() {
     var v = this.value.replace(/[^0-9]/g, "").slice(0, 6);
