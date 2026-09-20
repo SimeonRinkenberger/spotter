@@ -15,6 +15,11 @@ import Foundation
 // here means the widget process never parses at render time, and a malformed
 // string fails at the boundary instead of drawing a timer that starts at zero.
 //
+// One consequence of `startedAt` being an attribute: a resume shifts it (the
+// engine moves the start forward by the length of the pause so the elapsed
+// clock skips time nobody trained), and attributes cannot change — so a resume
+// is a new activity, not an update. LiveActivitySink.push handles the swap.
+//
 // Availability: ActivityKit needs iOS 16.1 and this project's floor is 17.0, so
 // nothing in this file needs an availability guard. If that floor ever drops,
 // every declaration here needs @available(iOS 16.1, *) and the callers change too.
@@ -29,6 +34,33 @@ struct WorkoutActivityAttributes: ActivityAttributes {
         var rest: LiveState.RestState?
         var next: String?
         var progress: LiveState.Progress
+        /// The instant the session was paused; nil in every other phase. The
+        /// card renders `pausedAt − startedAt` as a static string, because a
+        /// live timer would go on counting a session that is stopped.
+        var pausedAt: Date?
+        /// What the Log set button would save, as the dial currently reads:
+        /// the engine's prefill until a ± button is pressed, the dialled
+        /// figure after. Nil when this set cannot be logged from the card (a
+        /// timed hold, an unresolved complex) or when an older engine sent no
+        /// dose at all — in which case `loggable` says whether the plain
+        /// button still applies.
+        var dial: Dial?
+        /// Whether a remote Log set is worth offering. The engine's own answer
+        /// (`dose.loggable`); true when the engine predates the dose, which is
+        /// the behaviour the card had before the dial existed.
+        var loggable: Bool
+
+        /// The two figures a thumb can turn on the card, plus the unit they are
+        /// in. Kept small on purpose: ActivityKit budgets static + dynamic
+        /// content at 4 KB, and a name for every field is a name the widget
+        /// draws, not one it stores.
+        struct Dial: Codable, Hashable {
+            var reps: Int
+            /// Nil for bodyweight: the card then shows the reps dial alone.
+            var weight: Double?
+            /// "kg" or "lb", straight from the account setting.
+            var unit: String
+        }
 
         /// True while a rest is counting down and has not been paused.
         var isResting: Bool {
@@ -58,16 +90,42 @@ struct WorkoutActivityAttributes: ActivityAttributes {
     }
 
     /// The changing half on its own, for updating an activity that already runs.
-    static func content(_ state: LiveState) -> ContentState {
-        ContentState(phase: state.phase,
-                     exercise: state.exercise,
-                     block: state.block,
-                     set: state.set,
-                     target: state.target,
-                     weight: state.weight,
-                     rest: state.rest,
-                     next: state.next,
-                     progress: state.progress)
+    ///
+    /// `dialReps` / `dialWeight` are what the card's ± buttons have turned the
+    /// set to, nil until touched; the engine's prefill fills whichever is nil.
+    /// They come from the sink, not the engine, because the dial never crosses
+    /// the bridge until Log set is pressed.
+    static func content(_ state: LiveState, dialReps: Int? = nil, dialWeight: Double? = nil) -> ContentState {
+        var dial: ContentState.Dial?
+        if let dose = state.dose, dose.loggable {
+            dial = ContentState.Dial(reps: dialReps ?? dose.reps ?? 0,
+                                     weight: dose.weight == nil ? nil : (dialWeight ?? dose.weight),
+                                     unit: dose.unit)
+        }
+        return ContentState(phase: state.phase,
+                            exercise: state.exercise,
+                            block: state.block,
+                            set: state.set,
+                            target: state.target,
+                            weight: state.weight,
+                            rest: state.rest,
+                            next: state.next,
+                            progress: state.progress,
+                            pausedAt: state.pausedDate,
+                            dial: dial,
+                            loggable: state.dose?.loggable ?? true)
+    }
+
+    /// m:ss, or h:mm:ss past an hour, for the two clocks that must not tick: the
+    /// closing frame's duration and a paused session's frozen elapsed time.
+    /// Hand-rolled because DateComponentsFormatter would localise "42:10" into
+    /// "42 minutes, 10 seconds" at some locales and both have to fit on one
+    /// line beside a glyph.
+    static func clock(_ interval: TimeInterval) -> String {
+        let total = Int(max(0, interval.rounded()))
+        let h = total / 3600, m = (total % 3600) / 60, s = total % 60
+        let mm = String(format: "%02d", m), ss = String(format: "%02d", s)
+        return h > 0 ? String(h) + ":" + mm + ":" + ss : String(m) + ":" + ss
     }
 
     /// A real-looking session for previews and for the redacted placeholder, so
@@ -83,7 +141,10 @@ struct WorkoutActivityAttributes: ActivityAttributes {
                                             weight: "24 kg",
                                             rest: nil,
                                             next: "Kettlebell Swing",
-                                            progress: LiveState.Progress(done: 6, total: 12))
+                                            progress: LiveState.Progress(done: 6, total: 12),
+                                            pausedAt: nil,
+                                            dial: ContentState.Dial(reps: 10, weight: 24, unit: "kg"),
+                                            loggable: true)
 
     static let sampleResting = ContentState(phase: .rest,
                                             exercise: "Goblet Squat",
@@ -95,5 +156,8 @@ struct WorkoutActivityAttributes: ActivityAttributes {
                                                                       total: 90_000,
                                                                       held: 0),
                                             next: "Kettlebell Swing",
-                                            progress: LiveState.Progress(done: 7, total: 12))
+                                            progress: LiveState.Progress(done: 7, total: 12),
+                                            pausedAt: nil,
+                                            dial: ContentState.Dial(reps: 10, weight: 24, unit: "kg"),
+                                            loggable: true)
 }

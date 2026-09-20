@@ -4,10 +4,11 @@ import Foundation
 // The Live Activity's ear on the workout engine.
 //
 // Registered at launch by SpotterViewController, so ActivityKit work has
-// somewhere to live from the first state the engine sends. Four jobs:
+// somewhere to live from the first state the engine sends. Five jobs:
 //
 //   1. Own the activity's lifecycle — request one on the first real state,
-//      update it, end it, and never let two exist at once.
+//      update it, end it, and never let two exist at once (a resume is the one
+//      deliberate hand-over, see `push`).
 //   2. Coalesce. The engine calls saveDraft() on every change and one tap makes
 //      three of them; JS collapses a burst inside one turn of the event loop,
 //      and this collapses what is left to at most one ActivityKit update a
@@ -17,6 +18,9 @@ import Foundation
 //      deadline the activity draws from, so the nudge and the countdown cannot
 //      disagree.
 //   4. Answer the Lock Screen's buttons optimistically. See `install()`.
+//   5. Hold the card's dial — the reps and weight a thumb has turned the next
+//      set to. Those figures live here and nowhere else until Log set sends
+//      them; a press on ± is a native update, not a bridge call.
 //
 // Everything it needs is in the state it is handed; it never reaches back into
 // the bridge for more.
@@ -35,6 +39,13 @@ final class LiveActivitySink: LiveStateSink {
     private var pending: LiveState?
     private var flushItem: DispatchWorkItem?
     private var lastPush = Date.distantPast
+
+    /// What the card's ± buttons have turned the next set to. Nil until
+    /// touched, and nil again the moment the engine moves to a different set,
+    /// movement or phase — a 12 left over from the last movement is how a card
+    /// logs a lie. Applied on top of `dose` (the engine's prefill) at push
+    /// time; never sent anywhere but inside the final `.set`.
+    private var dial: (reps: Int?, weight: Double?) = (nil, nil)
 
     /// Armed when launch adopts a card the engine has not spoken for yet, and
     /// cancelled by the first state that arrives. See `armUnclaimed`.
@@ -73,10 +84,27 @@ final class LiveActivitySink: LiveStateSink {
     ///
     /// Order matters: the optimistic frame goes out first so the card changes
     /// under the thumb that tapped it.
+    ///
+    /// The dial is the exception to "every tap reaches the engine": a press on
+    /// ± only changes what the card shows and what the eventual Log set will
+    /// carry. `adjuster` applies it and pushes; `dialled` is how LogSetIntent
+    /// reads the figures back when the set is finally sent.
     private func install() {
         LiveActionRouter.handler = { [weak self] action in
+            #if DEBUG
+            NSLog("Spotter Live Activity: action %@ reps=%@ weight=%@",
+                  action.kind.rawValue,
+                  action.reps.map(String.init) ?? "nil",
+                  action.weight.map { String($0) } ?? "nil")
+            #endif
             self?.optimistic(action)
             LiveStatePlugin.deliver(action)
+        }
+        LiveActionRouter.adjuster = { [weak self] field, delta in
+            self?.adjust(field, by: delta)
+        }
+        LiveActionRouter.dialled = { [weak self] in
+            self?.dial ?? (nil, nil)
         }
     }
 
@@ -100,9 +128,50 @@ final class LiveActivitySink: LiveStateSink {
                     set.index += 1
                     state.set = set
                 }
+                // The figures just went out inside the action; the next set
+                // starts from the phone's prefill, not from this one's dial.
+                self.dial = (nil, nil)
             default:
                 return
             }
+            self.current = state
+            self.lastPush = Date()
+            self.pending = nil
+            self.flushItem?.cancel()
+            self.flushItem = nil
+            self.push(state)
+        }
+    }
+
+    /// One press of a ± button. Steps the figure the card is showing — the
+    /// dial if it has been touched, the prefill if not — with the same clamp
+    /// and rounding app.ts applies, and pushes at once: no coalescing, because
+    /// the number has to change under the thumb that pressed it.
+    ///
+    /// Only during `work` and only for a loggable dose; a stray press from a
+    /// card the system has not yet redrawn for the new phase is dropped rather
+    /// than applied to a rest. The weight dial is refused for a bodyweight
+    /// movement (the card does not draw one), so a press there cannot invent
+    /// a load the engine never offered.
+    private func adjust(_ field: DialField, by delta: Int) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self,
+                  let state = self.current ?? LiveStatePlugin.latest,
+                  state.phase == .work,
+                  let dose = state.dose, dose.loggable else { return }
+            switch field {
+            case .reps:
+                self.dial.reps = dose.stepping(reps: self.dial.reps, by: delta)
+            case .weight:
+                guard dose.weight != nil else { return }
+                self.dial.weight = dose.stepping(self.dial.weight, by: Double(delta))
+            }
+            #if DEBUG
+            NSLog("Spotter Live Activity: dial %@ %+d -> reps=%@ weight=%@ (never sent)",
+                  field.rawValue, delta,
+                  self.dial.reps.map(String.init) ?? "nil",
+                  self.dial.weight.map { String($0) } ?? "nil")
+            #endif
             self.current = state
             self.lastPush = Date()
             self.pending = nil
@@ -120,9 +189,18 @@ final class LiveActivitySink: LiveStateSink {
         unclaimed?.cancel()
         unclaimed = nil
 
+        // The dial belongs to one set of one movement in one phase. Compared
+        // against the latest state received, not the latest pushed, because a
+        // coalesced burst can move the set twice before anything is pushed.
+        if let previous = pending ?? current, !Self.sameSet(previous, state) {
+            dial = (nil, nil)
+        }
+
         // The nudge is scheduled from every state, coalesced or not: it costs a
         // comparison when nothing changed, and a dropped reschedule would leave
-        // an alert pointing at a deadline that has moved.
+        // an alert pointing at a deadline that has moved. A `paused` state has
+        // no rest, so it lands in the cancel branch — no rest is running, and
+        // an alert for one would be a lie with a sound.
         syncNudge(state)
 
         let phaseChanged = current?.phase != state.phase
@@ -147,6 +225,7 @@ final class LiveActivitySink: LiveStateSink {
         flushItem?.cancel()
         flushItem = nil
         current = nil
+        dial = (nil, nil)
         cancelNudge()
 
         guard let activity = activity else { return }
@@ -160,6 +239,15 @@ final class LiveActivitySink: LiveStateSink {
             : .after(Date().addingTimeInterval(15 * 60))
         let content = ActivityContent(state: Self.doneContent(summary), staleDate: nil)
         Task { await activity.end(content, dismissalPolicy: policy) }
+    }
+
+    /// Whether two states describe the same set of the same movement in the
+    /// same phase — the identity the dial is allowed to survive. `progress.done`
+    /// is in it because a set logged on the phone advances the position even
+    /// when the index cannot (the extras past a plan keep the same total).
+    private static func sameSet(_ a: LiveState, _ b: LiveState) -> Bool {
+        a.phase == b.phase && a.exercise == b.exercise && a.set == b.set
+            && a.progress.done == b.progress.done
     }
 
     // MARK: - The activity
@@ -179,11 +267,34 @@ final class LiveActivitySink: LiveStateSink {
         // above still fires.
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
 
-        let content = ActivityContent(state: WorkoutActivityAttributes.content(state),
+        let content = ActivityContent(state: WorkoutActivityAttributes.content(state,
+                                                                              dialReps: dial.reps,
+                                                                              dialWeight: dial.weight),
                                       staleDate: Self.staleDate(for: state),
                                       relevanceScore: 100)
 
         if let activity = activity, activity.activityState == .active || activity.activityState == .stale {
+            // A resume. The engine moves `startedAt` forward by the length of
+            // the pause so the elapsed clock skips it — and `startedAt` is an
+            // attribute, immutable for the life of the activity, because the
+            // widget's timer is drawn straight from it. So the running card
+            // cannot be updated into the resumed session; it is replaced. The
+            // new one is requested first and the old one ended only once that
+            // succeeded, with no closing frame: if the request is refused
+            // (the app is not in front — a resume is a tap, so it should be,
+            // but a boot-time reconcile can land here too), the old card
+            // keeps being updated at its old elapsed rather than vanishing.
+            if Self.differs(activity.attributes.startedAt, state.startedDate) {
+                let (attributes, _) = WorkoutActivityAttributes.from(state)
+                do {
+                    self.activity = try Activity.request(attributes: attributes, content: content, pushType: nil)
+                    Task { await activity.end(nil, dismissalPolicy: .immediate) }
+                } catch {
+                    NSLog("Spotter Live Activity: could not replace on resume — %@", String(describing: error))
+                    Task { await activity.update(content) }
+                }
+                return
+            }
             Task { await activity.update(content) }
             return
         }
@@ -199,6 +310,13 @@ final class LiveActivitySink: LiveStateSink {
         } catch {
             NSLog("Spotter Live Activity: could not start — %@", String(describing: error))
         }
+    }
+
+    /// Two start instants that are not the same session start. Half a second
+    /// of tolerance: the ISO string carries milliseconds and both sides parse
+    /// the same string, so anything past rounding noise is a shifted start.
+    private static func differs(_ a: Date, _ b: Date) -> Bool {
+        abs(a.timeIntervalSince(b)) > 0.5
     }
 
     /// When the card should admit it may be out of date.
@@ -224,7 +342,15 @@ final class LiveActivitySink: LiveStateSink {
     /// no deadline, so half an hour stands in for "nobody is doing this any
     /// more", which is long enough for a heavy single and short enough that a
     /// forgotten card stops claiming to be live.
+    ///
+    /// A paused session gets the far end of the activity's own life. Nothing
+    /// on a paused card can go out of date — its clock is frozen by design —
+    /// and the only thing a nearer stale date could do is what it must never
+    /// do: flip a paused card into "rest over".
     private static func staleDate(for state: LiveState) -> Date {
+        if state.phase == .paused {
+            return Date().addingTimeInterval(8 * 60 * 60)
+        }
         if let rest = state.rest, !rest.isPaused {
             let deadline = state.phase == .rest ? rest.deadline : rest.deadline.addingTimeInterval(5 * 60)
             return max(deadline, Date().addingTimeInterval(1))
@@ -236,7 +362,7 @@ final class LiveActivitySink: LiveStateSink {
     /// figures, which is the same shape every other phase uses, so the widget
     /// needs no special case beyond the colour.
     private static func doneContent(_ summary: LiveSummary) -> WorkoutActivityAttributes.ContentState {
-        var parts = [clock(summary.duration)]
+        var parts = [WorkoutActivityAttributes.clock(summary.duration)]
         parts.append(String(summary.sets) + (summary.sets == 1 ? " set" : " sets"))
         if summary.prs > 0 { parts.append(String(summary.prs) + (summary.prs == 1 ? " PR" : " PRs")) }
         return WorkoutActivityAttributes.ContentState(
@@ -248,17 +374,10 @@ final class LiveActivitySink: LiveStateSink {
             weight: nil,
             rest: nil,
             next: nil,
-            progress: LiveState.Progress(done: summary.sets, total: max(summary.sets, 1)))
-    }
-
-    /// mm:ss, or h:mm:ss past an hour. Hand-rolled because DateComponentsFormatter
-    /// would localise "42:10" into "42 minutes, 10 seconds" at some locales and
-    /// this has to fit on one line beside a checkmark.
-    private static func clock(_ interval: TimeInterval) -> String {
-        let total = Int(max(0, interval.rounded()))
-        let h = total / 3600, m = (total % 3600) / 60, s = total % 60
-        let mm = String(format: "%02d", m), ss = String(format: "%02d", s)
-        return h > 0 ? String(h) + ":" + mm + ":" + ss : String(m) + ":" + ss
+            progress: LiveState.Progress(done: summary.sets, total: max(summary.sets, 1)),
+            pausedAt: nil,
+            dial: nil,
+            loggable: false)
     }
 
     // MARK: - Launch reconciliation
@@ -288,7 +407,9 @@ final class LiveActivitySink: LiveStateSink {
         }
         // The stored state is as old as the kill. Pushing it refreshes the
         // staleDate immediately rather than waiting for the web app to boot,
-        // resume the draft and send its own.
+        // resume the draft and send its own. A stored `paused` state is the
+        // common shape here — a session the process died in comes back as
+        // paused — and it claims the card like any other state would.
         current = stored
         lastPush = Date()
         push(stored)
@@ -326,6 +447,7 @@ final class LiveActivitySink: LiveStateSink {
         let ghost = activity
         activity = nil
         current = nil
+        dial = (nil, nil)
         cancelNudge()
         if let ghost = ghost { Task { await ghost.end(nil, dismissalPolicy: .immediate) } }
         // And the Lock Screen is not the only mirror. The wrist holds the same
@@ -410,12 +532,24 @@ import UserNotifications
 //
 //   SIMCTL_CHILD_SPOTTER_LIVE_FIXTURE=rest xcrun simctl launch <udid> <bundle id>
 //
-// States: work · rest · paused · timed · complex · done · ghost
+// States: work · bodyweight · rest · held · paused · resume · timed · complex ·
+// done · ghost
+//   work        a loggable set with a weight: both dials and Log set
+//   bodyweight  the same set with no weight: the reps dial alone
+//   rest        a rest counting down
+//   held        a rest paused with 23 s left (the rest's own pause, not the
+//               session's)
+//   paused      the SESSION paused 40 s ago: frozen elapsed, no button
+//   resume      paused, then three seconds later the resumed state with
+//               `startedAt` shifted forward by the pause — exercises the
+//               request-then-end hand-over in `push`
 // SPOTTER_LIVE_FIXTURE_REST=<seconds> sets the rest's length, default 60. Added
 // to measure WHEN the rest-over flip lands: the system schedules the "mark
 // stale" wake no sooner than 120 s after the update that set the stale date, so
 // a 30 s rest and a 300 s rest answer that question differently and the answer
 // is the whole behaviour of this feature.
+// SPOTTER_LIVE_FIXTURE_ELAPSED=<seconds> sets how long ago the session started,
+// default 1090, so the compact island can be photographed at 0:18 and at 12:34.
 // `ghost` starts a card and then wipes the stored state, which is the shape the
 // app is in after being killed mid-session; relaunching with no variable set
 // must end that card rather than adopt it.
@@ -448,7 +582,7 @@ extension LiveActivitySink {
                 }
                 return
             }
-            let state = Self.fixture(name == "ghost" ? "rest" : name)
+            let state = Self.fixture(name == "ghost" ? "rest" : name == "resume" ? "paused" : name)
             self.drive(state)
             // An alerting update is the only way to make the system show the
             // expanded presentation without a long press, which is the one
@@ -475,6 +609,25 @@ extension LiveActivitySink {
                     NSLog("Spotter fixture: stored live-state wiped, card orphaned")
                 }
             }
+            if name == "resume" {
+                // What the engine sends when the person resumes: an ordinary
+                // work state whose start has moved forward by the length of
+                // the pause, so the elapsed clock does not count the gap.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                    var resumed = Self.fixture("work")
+                    let paused = state.pausedDate ?? Date()
+                    let gap = Date().timeIntervalSince(paused)
+                    resumed.startedAt = SpotterISO8601.string(state.startedDate.addingTimeInterval(gap))
+                    NSLog("Spotter fixture: resume after %.0f s, startedAt %@ -> %@",
+                          gap, state.startedAt, resumed.startedAt)
+                    self.drive(resumed)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                        let ids = Activity<WorkoutActivityAttributes>.activities
+                            .map { $0.id + ":" + String(describing: $0.activityState) }
+                        NSLog("Spotter fixture: activities after resume = %@", ids.joined(separator: ", "))
+                    }
+                }
+            }
         }
     }
 
@@ -496,7 +649,9 @@ extension LiveActivitySink {
     /// Force the expanded Dynamic Island open for a screenshot. Fixture only.
     private func alertForShot(_ state: LiveState) {
         guard let activity = activity else { return }
-        let content = ActivityContent(state: WorkoutActivityAttributes.content(state),
+        let content = ActivityContent(state: WorkoutActivityAttributes.content(state,
+                                                                              dialReps: dial.reps,
+                                                                              dialWeight: dial.weight),
                                       staleDate: nil, relevanceScore: 100)
         let alert = AlertConfiguration(title: "Rest over",
                                        body: "Goblet Squat, set 3 of 3",
@@ -512,8 +667,10 @@ extension LiveActivitySink {
     }
 
     private static func fixture(_ name: String) -> LiveState {
-        let started = Date().addingTimeInterval(-1090)
-        let seconds = Double(ProcessInfo.processInfo.environment["SPOTTER_LIVE_FIXTURE_REST"] ?? "") ?? 60
+        let env = ProcessInfo.processInfo.environment
+        let elapsed = Double(env["SPOTTER_LIVE_FIXTURE_ELAPSED"] ?? "") ?? 1090
+        let started = Date().addingTimeInterval(-elapsed)
+        let seconds = Double(env["SPOTTER_LIVE_FIXTURE_REST"] ?? "") ?? 60
         let rest = LiveState.RestState(until: Date().addingTimeInterval(seconds).timeIntervalSince1970 * 1000,
                                        total: seconds * 1000, held: 0)
         var state = LiveState(v: 1,
@@ -527,16 +684,25 @@ extension LiveActivitySink {
                               weight: "24 kg",
                               rest: nil,
                               next: "Bench Press",
-                              progress: LiveState.Progress(done: 4, total: 10))
+                              progress: LiveState.Progress(done: 4, total: 10),
+                              dose: LiveState.Dose(reps: 10, weight: 24, unit: "kg", step: 2.5, loggable: true),
+                              pausedAt: nil)
         switch name {
+        case "bodyweight":
+            state.exercise = "Push-up"
+            state.weight = nil
+            state.dose = LiveState.Dose(reps: 12, weight: nil, unit: "kg", step: 2.5, loggable: true)
         case "rest":
             state.phase = .rest
             state.set = LiveState.SetPosition(index: 3, total: 3)
             state.rest = rest
-        case "paused":
+        case "held":
             state.phase = .rest
             state.set = LiveState.SetPosition(index: 3, total: 3)
             state.rest = LiveState.RestState(until: rest.until, total: rest.total, held: 23_000)
+        case "paused":
+            state.phase = .paused
+            state.pausedAt = SpotterISO8601.string(Date().addingTimeInterval(-40))
         case "timed":
             state.phase = .timed
             state.exercise = "Plank"
@@ -545,12 +711,14 @@ extension LiveActivitySink {
             state.weight = nil
             state.rest = LiveState.RestState(until: Date().addingTimeInterval(40).timeIntervalSince1970 * 1000,
                                              total: 40_000, held: 0)
+            state.dose = LiveState.Dose(reps: nil, weight: nil, unit: "kg", step: 2.5, loggable: false)
         case "complex":
             state.phase = .complex
             state.exercise = "Kettlebell Swing"
             state.block = "Round 2"
             state.set = nil
             state.target = "12 reps"
+            state.dose = LiveState.Dose(reps: 12, weight: 24, unit: "kg", step: 2.5, loggable: false)
         default:
             break
         }

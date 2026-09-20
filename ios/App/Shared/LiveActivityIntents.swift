@@ -1,7 +1,7 @@
 import AppIntents
 import Foundation
 
-// The two taps a Live Activity is allowed to send back into the session.
+// The taps a Live Activity is allowed to send back into the session.
 //
 // Why this file is shared rather than living in the App target alone: a
 // `Button(intent:)` in the widget extension needs the intent's *type* to
@@ -16,9 +16,9 @@ import Foundation
 // The router is the seam that keeps this file free of everything else. The
 // widget extension has no Capacitor, no LiveStatePlugin and no web view, so an
 // intent that named any of them could not be built into the extension at all.
-// It names a closure instead; LiveActivitySink installs the real one at launch,
-// and in the extension's copy it is simply never set and the tap is a no-op —
-// which is correct, because a tap handled in the extension would have nowhere
+// It names closures instead; LiveActivitySink installs the real ones at launch,
+// and in the extension's copy they are simply never set and the tap is a no-op
+// — which is correct, because a tap handled in the extension would have nowhere
 // to send it.
 enum LiveActionRouter {
     /// Installed once by `LiveActivitySink` in the app process. Nil in the
@@ -26,15 +26,40 @@ enum LiveActionRouter {
     /// controller exists — both of which mean "drop it", not "crash".
     static var handler: ((LiveAction) -> Void)?
 
-    static func send(_ kind: LiveAction.Kind) {
-        handler?(LiveAction(kind: kind, source: .activity, id: nil))
+    /// One press of a ± button on the card's dial. Installed beside `handler`
+    /// by the sink, which owns the figures; a press never reaches JavaScript.
+    static var adjuster: ((DialField, Int) -> Void)?
+
+    /// What the dial currently reads — nil for a figure nobody has touched, so
+    /// an untouched Log set sends exactly what the phone prefilled.
+    static var dialled: (() -> (reps: Int?, weight: Double?))?
+
+    static func send(_ kind: LiveAction.Kind, reps: Int? = nil, weight: Double? = nil) {
+        handler?(LiveAction(kind: kind, source: .activity, id: nil, reps: reps, weight: weight))
+    }
+
+    static func adjust(_ field: DialField, by delta: Int) {
+        adjuster?(field, delta)
     }
 }
 
-// Both intents are marked `isDiscoverable = false`. They are meaningless
+/// Which of the two figures a ± button turns. An `AppEnum` rather than a
+/// string so the parameter can only ever be one of the two the sink knows how
+/// to step, and so `Button(intent:)` serialises it without a custom entity.
+enum DialField: String, AppEnum {
+    case reps, weight
+
+    static let typeDisplayRepresentation = TypeDisplayRepresentation(name: "Set figure")
+    static let caseDisplayRepresentations: [DialField: DisplayRepresentation] = [
+        .reps: "Reps",
+        .weight: "Weight"
+    ]
+}
+
+// Every intent here is marked `isDiscoverable = false`. They are meaningless
 // outside a running session — "Skip rest" offered in Shortcuts or to Siri with
 // no workout on is a promise the app cannot keep — and the Live Activity's
-// button does not need discoverability to work.
+// buttons do not need discoverability to work.
 
 struct SkipRestIntent: LiveActivityIntent {
     static let title: LocalizedStringResource = "Skip rest"
@@ -53,7 +78,47 @@ struct LogSetIntent: LiveActivityIntent {
     static let isDiscoverable = false
 
     func perform() async throws -> some IntentResult {
-        LiveActionRouter.send(.set)
+        // The dial's figures ride on the one action that does cross the
+        // bridge. Nil for anything untouched: app.ts falls back to its own
+        // prefill, which is the same number the card was showing.
+        let dial = LiveActionRouter.dialled?()
+        LiveActionRouter.send(.set, reps: dial?.reps, weight: dial?.weight)
+        return .result()
+    }
+}
+
+/// One type serves all four ± buttons. The parameters travel with the button:
+/// WidgetKit archives the intent instance the view was built with, and the
+/// system hands the app a copy with `field` and `delta` already assigned, so
+/// `perform()` needs no resolution step — which is as well, because widgets
+/// never resolve parameters (WidgetKit, "Adding interactivity to widgets and
+/// Live Activities").
+struct AdjustSetIntent: LiveActivityIntent {
+    static let title: LocalizedStringResource = "Adjust set"
+    static let description = IntentDescription("Turn the reps or the weight of the set about to be logged by one step.")
+    static let isDiscoverable = false
+
+    @Parameter(title: "Figure")
+    var field: DialField
+
+    /// +1 or −1: one press of the stepper. The size of a weight step is the
+    /// phone's (`dose.step`), not the button's, so a press is worth 2.5 kg on
+    /// one account and 5 lb on another without the card knowing which.
+    @Parameter(title: "Direction")
+    var delta: Int
+
+    init() {
+        field = .reps
+        delta = 1
+    }
+
+    init(field: DialField, delta: Int) {
+        self.field = field
+        self.delta = delta
+    }
+
+    func perform() async throws -> some IntentResult {
+        LiveActionRouter.adjust(field, by: delta)
         return .result()
     }
 }

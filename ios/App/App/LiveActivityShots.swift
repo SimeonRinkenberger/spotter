@@ -19,6 +19,9 @@ import UIKit
 // and the live tick of Text(timerInterval:). Those are stated as unverified in
 // the report rather than implied by these images.
 //
+// It is also the ruler. Every PNG is 3x, so its pixel height / 3 is the card's
+// height in points, and 160 is the line none of them may cross.
+//
 // DEBUG only, and inert unless asked:
 //
 //   SIMCTL_CHILD_SPOTTER_LIVE_SHOTS=1 xcrun simctl launch <udid> <bundle id>
@@ -29,8 +32,8 @@ enum LiveActivityShots {
         DispatchQueue.main.async { MainActor.assumeIsolated { render() } }
     }
 
-    /// One PNG per phase per appearance, plus the two that break layouts: a long
-    /// movement name and a large Dynamic Type setting.
+    /// One PNG per phase per appearance, plus the ones that break layouts: a
+    /// long movement name, a large Dynamic Type setting, and the dial.
     @MainActor private static func render() {
         let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("live-shots")
@@ -42,15 +45,18 @@ enum LiveActivityShots {
         for (name, state) in cases() {
             shots.append((name, state, .large))
         }
-        // The two layout stress cases, at the size the card is designed up to.
+        // The layout stress cases, at the size the card is designed up to.
         shots.append(("xl-work", state(.work), .xLarge))
+        shots.append(("xl-dial", state(.dial), .xLarge))
         shots.append(("xl-rest", state(.rest), .xLarge))
-        shots.append(("long-name", longName(), .large))
+        shots.append(("long-name", longName(dial: false), .large))
+        shots.append(("long-name-dial", longName(dial: true), .large))
         // The tallest this card can be: two wrapped lines at the top of the
         // Dynamic Type range it is designed for. Must stay under 160 pt.
         // The clamp in the card tops out at 1.25x, which an accessibility size
         // reaches and XL does not — so THIS is the tallest the card can ever be.
-        shots.append(("worst-case", longName(), .accessibility3))
+        shots.append(("worst-case", longName(dial: false), .accessibility3))
+        shots.append(("worst-case-dial", longName(dial: true), .accessibility3))
 
         for scheme in [ColorScheme.light, .dark] {
             for (name, content, size) in shots {
@@ -86,14 +92,20 @@ enum LiveActivityShots {
 
     private static func cases() -> [(String, WorkoutActivityAttributes.ContentState)] {
         [("work", state(.work)),
+         ("dial", state(.dial)),
+         ("dial-bodyweight", state(.dialBodyweight)),
          ("rest", state(.rest)),
+         ("held", state(.held)),
          ("paused", state(.paused)),
          ("timed", state(.timed)),
          ("complex", state(.complex)),
          ("done", state(.done))]
     }
 
-    private enum Case { case work, rest, paused, timed, complex, done }
+    /// `work` is what an engine older than the dose sends: a plain Log set.
+    /// `dial` is the same set from the current engine. `held` is a rest paused
+    /// with time left; `paused` is the whole session stopped.
+    private enum Case { case work, dial, dialBodyweight, rest, held, paused, timed, complex, done }
 
     private static func state(_ kind: Case) -> WorkoutActivityAttributes.ContentState {
         let until = Date().addingTimeInterval(47).timeIntervalSince1970 * 1000
@@ -101,39 +113,64 @@ enum LiveActivityShots {
         case .work:
             return .init(phase: .work, exercise: "Goblet Squat", block: "Main",
                          set: .init(index: 2, total: 3), target: "10 reps", weight: "24 kg",
-                         rest: nil, next: "Bench Press", progress: .init(done: 4, total: 10))
+                         rest: nil, next: "Bench Press", progress: .init(done: 4, total: 10),
+                         pausedAt: nil, dial: nil, loggable: true)
+        case .dial:
+            return .init(phase: .work, exercise: "Goblet Squat", block: "Main",
+                         set: .init(index: 2, total: 3), target: "10 reps", weight: "24 kg",
+                         rest: nil, next: "Bench Press", progress: .init(done: 4, total: 10),
+                         pausedAt: nil, dial: .init(reps: 10, weight: 24, unit: "kg"), loggable: true)
+        case .dialBodyweight:
+            return .init(phase: .work, exercise: "Push-up", block: "Main",
+                         set: .init(index: 2, total: 3), target: "12 reps", weight: nil,
+                         rest: nil, next: "Bench Press", progress: .init(done: 4, total: 10),
+                         pausedAt: nil, dial: .init(reps: 12, weight: nil, unit: "kg"), loggable: true)
         case .rest:
             return .init(phase: .rest, exercise: "Goblet Squat", block: "Main",
                          set: .init(index: 3, total: 3), target: "10 reps", weight: "24 kg",
                          rest: .init(until: until, total: 60_000, held: 0),
-                         next: "Bench Press", progress: .init(done: 5, total: 10))
-        case .paused:
+                         next: "Bench Press", progress: .init(done: 5, total: 10),
+                         pausedAt: nil, dial: .init(reps: 10, weight: 24, unit: "kg"), loggable: true)
+        case .held:
             return .init(phase: .rest, exercise: "Goblet Squat", block: "Main",
                          set: .init(index: 3, total: 3), target: "10 reps", weight: "24 kg",
                          rest: .init(until: until, total: 60_000, held: 23_000),
-                         next: "Bench Press", progress: .init(done: 5, total: 10))
+                         next: "Bench Press", progress: .init(done: 5, total: 10),
+                         pausedAt: nil, dial: .init(reps: 10, weight: 24, unit: "kg"), loggable: true)
+        case .paused:
+            return .init(phase: .paused, exercise: "Goblet Squat", block: "Main",
+                         set: .init(index: 2, total: 3), target: "10 reps", weight: "24 kg",
+                         rest: nil, next: "Bench Press", progress: .init(done: 4, total: 10),
+                         pausedAt: Date().addingTimeInterval(-40),
+                         dial: .init(reps: 10, weight: 24, unit: "kg"), loggable: true)
         case .timed:
             return .init(phase: .timed, exercise: "Plank", block: "Finisher",
                          set: nil, target: "40 s", weight: nil,
                          rest: .init(until: until, total: 40_000, held: 0),
-                         next: "Barbell Row", progress: .init(done: 8, total: 10))
+                         next: "Barbell Row", progress: .init(done: 8, total: 10),
+                         pausedAt: nil, dial: nil, loggable: false)
         case .complex:
             return .init(phase: .complex, exercise: "Kettlebell Swing", block: "Round 2",
                          set: nil, target: "12 reps", weight: "24 kg",
-                         rest: nil, next: "Goblet Squat", progress: .init(done: 6, total: 12))
+                         rest: nil, next: "Goblet Squat", progress: .init(done: 6, total: 12),
+                         pausedAt: nil, dial: nil, loggable: false)
         case .done:
             return .init(phase: .done, exercise: "Workout saved", block: nil, set: nil,
                          target: "42:10  ·  18 sets  ·  2 PRs", weight: nil, rest: nil,
-                         next: nil, progress: .init(done: 18, total: 18))
+                         next: nil, progress: .init(done: 18, total: 18),
+                         pausedAt: nil, dial: nil, loggable: false)
         }
     }
 
-    /// The layout's worst realistic input: a movement name nobody abbreviates.
-    private static func longName() -> WorkoutActivityAttributes.ContentState {
+    /// The layout's worst realistic input: a movement name nobody abbreviates,
+    /// with the widest figures the dial can show.
+    private static func longName(dial: Bool) -> WorkoutActivityAttributes.ContentState {
         .init(phase: .work, exercise: "Bulgarian Split Squat (Rear Foot Elevated)",
               block: "Accessory", set: .init(index: 12, total: 12),
               target: "8-12 reps each side", weight: "142.5 kg", rest: nil,
-              next: "Romanian Deadlift", progress: .init(done: 11, total: 12))
+              next: "Romanian Deadlift", progress: .init(done: 11, total: 12),
+              pausedAt: nil,
+              dial: dial ? .init(reps: 12, weight: 142.5, unit: "kg") : nil, loggable: true)
     }
 }
 #endif
