@@ -876,9 +876,11 @@ export const MARKUP_BODY = String.raw`</head>
   <h2 id="aiconsenttitle">Allow AI processing?</h2>
   <p class="lede">To read workouts, Spotter sends the links, captions, images, text and audio or video you choose to OpenAI or Google. Pumpy also sends your messages and relevant workout, plan and training history to help answer your questions.</p>
   <p>AI can make mistakes. Review exercises and instructions before training. You can choose Not now and continue logging workouts and planning manually.</p>
+  <p>You can turn AI processing off here at any time. This stops future AI requests after your choice is saved; it does not recall requests already sent or delete existing workouts and conversations.</p>
   <p><a href="https://quarterdeckcollective.com/spotter/privacy/">Read the privacy policy</a></p>
   <p id="aiconsenterror" role="alert"></p>
   <div class="btnrow"><button class="btn ghost" id="aiconsentdecline">Not now</button><button class="btn" id="aiconsentallow">Allow AI processing</button></div>
+  <button class="btn ghost hide" id="aiconsentrevoke">Turn off AI processing</button>
 </div></div>
 
 <div class="sheet" id="accountsheet"><div class="sheetbody">
