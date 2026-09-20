@@ -287,13 +287,16 @@ function overlay(calls, id, open) {
 
 function linkContext(open) {
   open = open || {};
-  const calls = { detail: [], start: [], view: [], toast: [], forward: 0, back: 0, closed: [] };
+  const calls = { detail: [], start: [], view: [], toast: [], forward: 0, back: 0, closed: [], resumed: 0 };
   const sheets = (open.sheets || []).map(id => ({ id }));
   const ctx = vm.createContext({
     wo: null, $: id => overlay(calls, id, open),
     document: { querySelectorAll: sel => (sel === '.sheet.open' ? sheets : []) },
     history: { back: () => calls.back++ },
     closeSheet: id => calls.closed.push(id),
+    // A paused session is a draft on disk and no wo; the card's tap resumes it.
+    pausedDraft: () => open.paused || null,
+    resumeWorkout: () => { calls.resumed++; },
     state: { user: { id: 'u1' }, workouts: [{ id: 'w1', title: 'Push day' }] },
     planWorkout: id => ctx.state.workouts.filter(w => w.id === id)[0],
     openDetail: w => calls.detail.push(w.id),
@@ -308,7 +311,7 @@ function linkContext(open) {
 
 let link = linkContext();
 vm.runInContext('openDeepLink("spotter://open")', link.ctx);
-assert.deepEqual(link.calls, { detail: [], start: [], view: [], toast: [], forward: 0, back: 0, closed: [] },
+assert.deepEqual(link.calls, { detail: [], start: [], view: [], toast: [], forward: 0, back: 0, closed: [], resumed: 0 },
   'spotter://open does nothing on its own — the shell already brought the app up');
 
 link = linkContext();
@@ -319,6 +322,12 @@ assert.equal(link.calls.forward, 1);
 link = linkContext();
 vm.runInContext('openDeepLink("spotter://resume")', link.ctx);
 assert.equal(link.calls.forward, 0);
+assert.equal(link.calls.resumed, 0);
+// A paused session is the one thing the card's tap can bring back without an
+// engine running: no wo, a paused draft, and the tap resumes it.
+link = linkContext({ paused: { workoutId: 'w1', paused: true } });
+vm.runInContext('openDeepLink("spotter://resume")', link.ctx);
+assert.equal(link.calls.resumed, 1, 'a paused draft is not resumed by the card that promises to');
 
 link = linkContext();
 vm.runInContext('openDeepLink("spotter://workout/w1")', link.ctx);
@@ -397,6 +406,8 @@ function actionContext() {
     state: { unit: 'kg', user: { id: 'u1' } }, hist: {}, LB_PER_KG: 2.2046226,
     setReps: n => calls.reps.push(n),
     setWeight: n => calls.weight.push(n),
+    pausedDraft: () => null,
+    resumeWorkout: () => {},
     saveSet: () => { calls.save++; },
     doneRest: () => { calls.done++; },
     pauseRest: () => { calls.pause++; },
