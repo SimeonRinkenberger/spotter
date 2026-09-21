@@ -1907,7 +1907,24 @@ export const STYLE = String.raw`<style>
     transition: background-color var(--t-2) var(--e-out), transform var(--t-1) var(--e-out); }
   .waddcard:active { transform: scale(.985); }
   .waddcard .ic { flex: 0 0 auto; color: var(--ember); }
+  /* ---------- reps or time ----------
+     The segment sits over the dose fields of both sheets. The fields under it
+     trade places with a crossfade and nothing more — the tap did not say which
+     way anything moved — and the row keeps its width, so nothing under the
+     thumb jumps. */
+  .doseseg { margin-bottom: 12px; }
+  .dosefields.swap .field { animation: fadein var(--t-2) var(--e-out); }
+  /* ---------- choosing a rest ----------
+     One grid, three homes. In its own sheet it is a wrapping .pillrow; under a
+     dose it is the Library's own .chips strip, bled by its end chips' 18px inset
+     so the first chip lines up with the label (the .chips rule says why the
+     inset is there). The custom pair opens under it as a field row, the button
+     its third column. */
+  .restpick .chip { min-height: 36px; }
+  .restpick .chips { margin: 0 -18px; padding-top: 2px; }
+  .restcustom { align-items: flex-end; margin-top: 12px; }
   @media (prefers-reduced-motion: reduce) {
+    .dosefields.swap .field { animation: none; }
     .woakeep, .waddcard { transition: none; }
     .waddcard:active { transform: none; }
   }
@@ -2450,11 +2467,11 @@ export const STYLE = String.raw`<style>
      Insets come off the padding box: a bordered control needs a pixel more. */
   .iconbtn, .addbtn, .exhelp, .planx, .planadd, .mbtn, .addex, .danger, .libcount,
   .planlegal a, .planlegal button, .segbtn, .planbtn, .linkbtn,
-  .chips .chip, .said .chip, .votes .chip, .pumpyctx button, .threadrow .tdel, .ttitle { position: relative; }
+  .chips .chip, .said .chip, .votes .chip, .restchips .chip, .pumpyctx button, .threadrow .tdel, .ttitle { position: relative; }
   .iconbtn::after, .addbtn::after, .exhelp::after, .planx::after, .planadd::after,
   .segbtn::after, .planbtn::after, .linkbtn::after,
   .mbtn::after, .addex::after, .danger::after, .chips .chip::after, .said .chip::after,
-  .votes .chip::after,
+  .votes .chip::after, .restchips .chip::after,
   .pumpyctx button::after, .threadrow .tdel::after, .ttitle::after,
   .libcount::after, .planlegal a::after, .planlegal button::after { content: ""; position: absolute; }
   .libcount::after { inset: -9px; }
@@ -2472,6 +2489,7 @@ export const STYLE = String.raw`<style>
   .mbtn::after { inset: -6px 0; }
   .danger::after, .threadrow .tdel::after { inset: -3px 0; }
   .chips .chip::after, .said .chip::after, .votes .chip::after { inset: -6px 0; }
+  .restchips .chip::after { inset: -4px 0; }
   /* A square control needs the inset on all four sides: 36 + 4 + 4 is 44 across as
      well as down, and -6px 0 would have left the thumbs 36 wide and 28 tall. */
   .votes .vote::after { inset: -4px; }
@@ -2639,7 +2657,21 @@ export const STYLE = String.raw`<style>
   .exercise-main .exdose { flex: 0 0 auto; max-width: 42%; white-space: normal; text-align: right; }
   /* A stable full-width drawer keeps secondary actions quiet, without a flex
      row renegotiating its width when the hidden labels become visible. */
-  .exercise-actions { display: block; width: 100%; min-width: 0; padding: 0; }
+  .exercise-actions { display: block; width: 100%; min-width: 0; padding: 0; position: relative; }
+  /* ---------- the rest on the row ----------
+     The empty half of the options line, where the owner pointed. Laid over the
+     summary's left end, which is only air (its word sits at the right), so the
+     drawer under it keeps its full width when it opens; drawn small and reached
+     at 44px, like the chips. A rest the card stated is solid; the default is
+     outlined and says so — the same number is a different fact. --muted is
+     4.89 on card, which is what the outlined one sits on. The .pill shape, on a
+     button; no overflow clip, which would take the reach with it — the longest
+     word fits a 375px row. */
+  .restpill { position: absolute; left: 0; top: 8px; border: 1px solid transparent;
+    white-space: nowrap; transition: transform var(--t-1) var(--e-out); }
+  .restpill.dflt { background: none; border-color: var(--line-2); color: var(--muted); }
+  .restpill:active { transform: scale(.95); }
+  .restpill::after { content: ""; position: absolute; inset: -9px 0; }
   .exercise-options { border: 0; margin: 0; border-radius: 0; background: none; min-width: 0; }
   .exercise-actions > .exercise-options { width: 100%; }
   .exercise-options > summary { width: 100%; font-size: 12px; min-height: 44px; padding: 10px 6px;
@@ -2665,7 +2697,11 @@ export const STYLE = String.raw`<style>
   #workoptions .pickrow, #recapopts .pickrow { min-height: 48px; }
   /* Destructive, so it takes the one red the system has - the same red Settings
      gives its delete - rather than the muted grey that reads as unavailable. */
-  #recapopts .danger { color: var(--ember-ink); font-size: 15px; font-weight: 650; }
+  /* "Choose the first exercise" is a sentence, and half a row at 375px wraps
+     it: Cancel takes only its own width there, the way a secondary action does. */
+  #sectionsheet .btnrow .ghost { flex: 0 0 auto; width: auto; padding: 14px 20px; }
+  /* The section sheet's Remove is its last word and its one red one: this one. */
+  #recapopts .danger, #sectionremove { color: var(--ember-ink); font-size: 15px; font-weight: 650; }
   #dmore { min-height: 44px; }
   /* The library row wraps rather than scrolls, and a wrapped row cannot carry its
      side inset on its end chips: the second line's first chip is not :first-child,
@@ -2731,7 +2767,7 @@ export const STYLE = String.raw`<style>
   .disclosure.details-closing > summary::after, .guide-topic.details-closing > summary::after { transform: rotate(-45deg); }
   @media (prefers-reduced-motion: reduce) {
     .disclosure > summary::after, .guide-topic > summary::after, .history-card > summary::before,
-    .exercise-options .pickrow { transition: none; }
+    .exercise-options .pickrow, .restpill { transition: none; }
   }
   .reader-offer { background: var(--ember-soft); border: 1px solid var(--line); border-radius: 18px; padding: 16px; margin: 16px 0; }
   .reader-offer p { color: var(--ink-2); font-size: 14px; line-height: 1.5; margin: 8px 0 12px; }
