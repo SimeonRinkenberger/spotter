@@ -300,11 +300,21 @@ assert(/CODE_SIGN_ENTITLEMENTS = "\$\(SPOTTER_ENTITLEMENTS\)";/.test(pbx), 'the 
 assert(/^SPOTTER_ENTITLEMENTS = App\/Share\.entitlements$/m.test(read('ios/debug.xcconfig')));
 assert(/^SPOTTER_ENTITLEMENTS = App\/Release\.entitlements$/m.test(read('ios/App/App/Release.xcconfig')));
 assert(/SPOTTER_ENTITLEMENTS = App\/Push\.entitlements/.test(read('ios/App/Local.xcconfig.example')));
-['Share', 'Push', 'Release'].forEach(name => {
-  assert(/<key>com\.apple\.developer\.usernotifications\.time-sensitive<\/key>\s*<true\/>/.test(read('ios/App/App/' + name + '.entitlements')),
-    name + '.entitlements is one the App target signs with and lacks com.apple.developer.usernotifications.time-sensitive');
-});
-console.log('PASS the rest-end nudge is Time Sensitive, the only one that is, and all three App entitlements variants carry the capability.');
+// The entitlement itself is held back until the owner adds Time Sensitive
+// Notifications to the App ID and regenerates the manual App Store profiles
+// (Distribution.local.xcconfig signs with named profiles; the installed
+// "Spotter App Store" carries applesignin and the team id only, and an archive
+// signed against it with this key in the entitlements fails). Without the
+// entitlement iOS delivers the nudge at the active level — the same as before
+// this wave, not worse. When the profiles carry it, the three variants must all
+// declare it or must all leave it out: a Debug build must not have a capability
+// the shipped one lacks.
+const carrying = ['Share', 'Push', 'Release'].filter(name =>
+  /<key>com\.apple\.developer\.usernotifications\.time-sensitive<\/key>\s*<true\/>/.test(read('ios/App/App/' + name + '.entitlements')));
+assert(carrying.length === 0 || carrying.length === 3,
+  'the time-sensitive entitlement must be in all three App entitlements variants or none: ' + carrying.join(', '));
+console.log('PASS the rest-end nudge is Time Sensitive, the only one that is; the entitlement is ' +
+  (carrying.length ? 'declared in all three App entitlements variants.' : 'held back until the App Store profiles carry it.'));
 
 // ---------- the 4 KB content budget ----------
 //
