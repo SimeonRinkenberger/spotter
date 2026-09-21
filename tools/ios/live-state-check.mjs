@@ -87,14 +87,14 @@ function workoutContext() {
   });
   vm.runInContext(pull(['askText', 'blockName', 'isTimed', 'isCircuit', 'roundsOf',
     'roundOf', 'targetOf', 'isStop', 'exKey', 'toUnit', 'setPrefill', 'plate',
-    'liveState', 'liveSync', 'liveEnd']), ctx);
+    'cxOf', 'cxCurrent', 'cxMarks', 'cxLive', 'liveState', 'liveSync', 'liveEnd']), ctx);
   return { ctx, sent };
 }
 
 // ---------- LiveState ----------
 
 const LIVE_KEYS = ['v', 'title', 'startedAt', 'phase', 'exercise', 'block', 'set',
-  'target', 'weight', 'rest', 'next', 'progress', 'dose'];
+  'target', 'weight', 'rest', 'next', 'progress', 'complex', 'dose'];
 
 const { ctx, sent } = workoutContext();
 const s = vm.runInContext('liveState()', ctx);
@@ -132,9 +132,21 @@ assert.equal(vm.runInContext('liveState().phase', phases.ctx), 'timed');
 vm.runInContext('restFace = null; restUntil = 0;', phases.ctx);
 assert.equal(vm.runInContext('liveState().phase', phases.ctx), 'work');
 assert.equal(vm.runInContext('liveState().rest', phases.ctx), null);
-vm.runInContext('wo.screens[wo.i].cx = { cap: 900, n: 2 };', phases.ctx);
+assert.equal(vm.runInContext('liveState().complex', phases.ctx), null, 'a set-counted movement is not a complex');
+vm.runInContext('wo.screens[wo.i].cx = { cap: 900, n: 2 }; wo.amrap = {};', phases.ctx);
 assert.equal(vm.runInContext('liveState().phase', phases.ctx), 'complex');
 assert.equal(vm.runInContext('liveState().set', phases.ctx), null, 'a complex has no set counter');
+// The complex's own counter and clock, as the screen draws them: rounds done,
+// movements ticked this round out of how many a round takes, the movement the
+// round is up to, and the cap in the rest engine's units (ms; until is an epoch
+// deadline, 0 until the clock is started).
+same(vm.runInContext('liveState().complex', phases.ctx),
+  { rounds: 0, marked: 0, moves: 2, move: 'Bench Press', cap: 900000, until: 0, held: 0, over: false },
+  'a fresh complex sends its counter and its clock');
+assert.equal(vm.runInContext('liveState().exercise', phases.ctx), 'Bench Press', 'the movement the round is up to');
+vm.runInContext('var a = cxOf(wo.screens[wo.i].bi, wo.screens[wo.i].cx); a.rounds = 3; a.marks = [1]; a.until = ' + (NOW + 300000) + ';', phases.ctx);
+same(vm.runInContext('(function () { var c = liveState().complex; return [c.rounds, c.marked, c.move, c.until]; })()', phases.ctx),
+  [3, 1, 'Barbell Row', NOW + 300000], 'a round in progress names the next movement and the running cap');
 vm.runInContext('wo.finished = true;', phases.ctx);
 assert.equal(vm.runInContext('liveState().phase', phases.ctx), 'done');
 
@@ -478,6 +490,44 @@ assert.equal(act.calls.save + act.calls.done + act.calls.pause + act.calls.finis
 
 console.log('PASS remote set with and without an adjusted dose, rest and finish actions, a deep-linked notification, and every branch guarding wo.');
 
+// The complex's two actions from the card land on the screen's own two
+// functions, with the movement the round is up to resolved on the phone (the
+// card does not pick the index; it cannot see the list). Off a complex both
+// are nothing, not a set.
+function complexActionContext() {
+  const calls = { round: [], mark: [], save: 0, toast: [] };
+  const ctx = vm.createContext({
+    wo: fixture(), restUntil: 0, setCtx: { idx: 0, reps: 0, weight: 0 },
+    $: id => overlay(calls, id, {}), OPEN_KEY: 'spotter_open_pending',
+    sessionStorage: { setItem: () => {}, removeItem: () => {} },
+    state: { unit: 'kg', user: { id: 'u1' } }, hist: {}, LB_PER_KG: 2.2046226,
+    setReps: () => {}, setWeight: () => {}, pausedDraft: () => null, resumeWorkout: () => {},
+    saveSet: () => { calls.save++; }, doneRest: () => {}, pauseRest: () => {}, finishWorkout: () => {},
+    openDeepLink: () => {}, toast: t => calls.toast.push(t),
+    cxOf: () => ({ marks: [1, 0] }),
+    cxCurrent: (a, cx) => { for (let k = 0; k < cx.n; k++) if (!a.marks[k]) return k; return 0; },
+    cxRound: (bi, cx) => calls.round.push([bi, cx.n]),
+    cxMark: (bi, cx, j) => calls.mark.push([bi, j]),
+    Math, Object, String, Number, isFinite, parseInt
+  });
+  vm.runInContext(pull(['isTimed', 'exKey', 'toUnit', 'setPrefill', 'woForward', 'openLink', 'liveAction']), ctx);
+  return { ctx, calls };
+}
+
+let cxAct = complexActionContext();
+vm.runInContext('wo.screens[wo.i].cx = { cap: 900, n: 2 };', cxAct.ctx);
+vm.runInContext('liveAction({ kind: "round", source: "activity", id: null })', cxAct.ctx);
+assert.deepEqual(cxAct.calls.round, [[1, 2]], 'round counts the complex on screen through cxRound');
+vm.runInContext('liveAction({ kind: "mark", source: "activity", id: null })', cxAct.ctx);
+assert.deepEqual(cxAct.calls.mark, [[1, 1]], 'mark ticks the movement the round is up to — the first unmarked one');
+assert.equal(cxAct.calls.save, 0, 'neither counts as a set');
+cxAct = complexActionContext();
+vm.runInContext('liveAction({ kind: "round" }); liveAction({ kind: "mark" });', cxAct.ctx);
+assert.deepEqual(cxAct.calls.round.concat(cxAct.calls.mark), [], 'off a complex a round or a mark is nothing');
+assert.equal(cxAct.calls.toast.length, 0, 'and says nothing: a card drawn before the screen moved on is not an error');
+
+console.log('PASS round and mark from the card reach cxRound / cxMark on the complex on screen, and do nothing off one.');
+
 // ---------- the bundle the shell actually loads ----------
 
 const bundle = fs.readFileSync('native-dist/native.js', 'utf8');
@@ -573,4 +623,41 @@ if (!fs.existsSync(fixtureJson)) {
   assert(d && d.kind === 'set' && d.source === 'activity' && typeof d.reps === 'number' && typeof d.weight === 'number',
     'liveActionDial must be a .set from source "activity" carrying reps and weight');
   console.log('PASS the paused fixture is LiveState plus pausedAt with no rest, the Swift enum has the case, and the dial\'s set carries figures.');
+
+  // ---------- the complex ----------
+  //
+  // `complex` is the second addition to LiveState v1 (21 Sept): the round
+  // counter and the cap the phone's own screen draws, null on every phase but
+  // "complex". Two actions come back for it, round and mark. The engine side
+  // (cxLive() emitting it, liveAction() counting them) is asserted above; this
+  // pins the shape both halves agreed to and the Swift that reads it.
+  const COMPLEX_KEYS = ['rounds', 'marked', 'moves', 'move', 'cap', 'until', 'held', 'over'];
+  const c = f.liveStateComplex;
+  assert(c, 'contract-fixture.json has no liveStateComplex case');
+  assert.deepEqual(Object.keys(c).filter(k => k !== '_').sort(), LIVE_KEYS.slice().sort(),
+    'liveStateComplex must be an ordinary LiveState — complex is one of its keys, not an extra');
+  assert.equal(c.phase, 'complex');
+  assert.equal(c.set, null, 'a complex has no set counter');
+  assert.deepEqual(Object.keys(c.complex).sort(), COMPLEX_KEYS.slice().sort(),
+    'liveStateComplex.complex drifted: ' + Object.keys(c.complex).join(','));
+  assert.equal(c.complex.move, c.exercise, 'exercise names the movement the round is up to, and so does complex.move');
+  assert(c.complex.marked < c.complex.moves, 'a round in progress has fewer movements ticked than it takes');
+  assert(c.complex.cap > 0 && c.complex.until > 1e12 && c.complex.held === 0 && c.complex.over === false,
+    'the fixture complex has a running cap: ms cap, epoch-ms deadline, nothing held, not over');
+  assert.equal(c.dose.loggable, false, 'a complex is not logged as a set from off the phone');
+  ['liveState', 'liveStateResting', 'liveStatePaused'].forEach(k =>
+    assert.equal(f[k].complex === undefined ? null : f[k].complex, null, k + ' must carry complex: null or omit it'));
+  const complexSwift = /struct Complex: Codable, Hashable \{([\s\S]*?)\n    \}/.exec(liveSwift);
+  assert(complexSwift, swift + ' must declare Complex');
+  COMPLEX_KEYS.forEach(k => assert(new RegExp('var ' + k + ':').test(complexSwift[1]), swift + ' Complex has no ' + k));
+  assert(/var complex: Complex\?/.test(liveSwift), swift + ' must carry complex as an optional');
+  [['liveActionRound', 'round'], ['liveActionMark', 'mark']].forEach(([name, kind]) => {
+    const a = f[name];
+    assert(a && a.kind === kind && a.source === 'activity' && a.id === null,
+      name + ' must be kind "' + kind + '" from source "activity" with a null id');
+    assert.deepEqual(Object.keys(a).filter(k => k !== '_').sort(), ['id', 'kind', 'source'],
+      name + ' carries no figures: a round is counted, not dosed');
+    assert(new RegExp('\\n\\s*case ' + kind + '\\n').test(liveSwift), swift + ' LiveAction.Kind must declare .' + kind);
+  });
+  console.log('PASS the complex fixture is LiveState with the counter and a running cap, the Swift struct has every field, and round/mark decode.');
 }

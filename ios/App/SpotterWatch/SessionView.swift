@@ -116,6 +116,13 @@ struct MetricsPage: View {
                         .lineLimit(2)
                         .minimumScaleFactor(0.7)
                         .padding(.top, 2)
+                } else if state.phase == .complex, let complex = state.complex {
+                    // The complex's two taps, the phone's own: Next move
+                    // ticks the movement the round is up to, Round done
+                    // counts the round. Both go out as the same LiveAction
+                    // the Lock Screen sends; WatchLink.display draws the
+                    // count under the thumb until the phone answers.
+                    rounds(complex)
                 } else if let dose = dose, dose.loggable {
                     dials(dose)
                     logButton
@@ -157,6 +164,15 @@ struct MetricsPage: View {
                     .font(WidgetTheme.label(10))
                     .foregroundStyle(WidgetTheme.muted)
                     .lineLimit(1)
+            } else if let complex = state.complex, state.phase == .complex, complex.isRunning {
+                // The cap, counting down from its deadline in ember: on a
+                // complex it is the clock the wearer is working against, and
+                // the elapsed session time is the phone's to show.
+                Text(timerInterval: Date()...max(complex.deadline, Date().addingTimeInterval(1)),
+                     countsDown: true)
+                    .font(WidgetTheme.numeral(13, weight: .medium))
+                    .foregroundStyle(dimmed ? WidgetTheme.muted : WidgetTheme.emberInk)
+                    .lineLimit(1)
             } else {
                 Text(timerInterval: state.startedDate...state.startedDate.addingTimeInterval(86_400),
                      pauseTime: nil, countsDown: false, showsHours: false)
@@ -191,11 +207,49 @@ struct MetricsPage: View {
     }
 
     private var subtitle: String {
+        // A complex is scored, not counted in sets: the phone's own score
+        // line, and the cap where the phone prints it — "Time" once it is
+        // out, the frozen remainder while it is paused. A running cap counts
+        // in the header instead, where the clock is.
+        if state.phase == .complex, let complex = state.complex {
+            var parts = [complex.score]
+            if complex.over { parts.append("Time") }
+            else if complex.isHeld { parts.append("Cap paused") }
+            return parts.joined(separator: " · ")
+        }
         var parts: [String] = []
         if let set = state.set { parts.append("Set " + String(set.index) + " of " + String(set.total)) }
         if let target = state.target { parts.append(target) }
         if parts.isEmpty, let next = state.next { parts.append("Next: " + next) }
         return parts.joined(separator: " · ")
+    }
+
+    /// `[Next move]` over `[Round 3 done]`, the phone's two buttons on the
+    /// wrist, disabled together while a tap is out — a second count before
+    /// the first has landed is the double-tap the phone's Undo exists for.
+    private func rounds(_ complex: LiveState.Complex) -> some View {
+        VStack(spacing: 5) {
+            Button { link.send(.mark) } label: {
+                Text("Next move")
+                    .font(WidgetTheme.display(14, weight: .semibold))
+                    .foregroundStyle(WidgetTheme.ink)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6)
+            }
+            .buttonStyle(.plain)
+            .background(WidgetTheme.sand, in: Capsule())
+            Button { link.send(.round) } label: {
+                Text("Round " + String(complex.rounds + 1) + " done")
+                    .font(WidgetTheme.display(15, weight: .semibold))
+                    .foregroundStyle(WidgetTheme.onEmber)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 2)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(dimmed ? WidgetTheme.emberSoft : WidgetTheme.ember)
+        }
+        .disabled(link.pending != nil)
+        .padding(.top, 3)
     }
 
     private func dials(_ dose: LiveState.Dose) -> some View {

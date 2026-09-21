@@ -3857,7 +3857,7 @@ export const APP = String.raw`
   // catalog id the row was picked with. A name the bank does not have is still
   // one row of that list, so nothing that could be typed here was lost.
   function openExAdd(w, bi) {
-    openPicker("card-add", { w: w, bi: bi });
+    openBank("card-add", { w: w, bi: bi });
   }
 
   // Re-seat a workout row the server has just rewritten. Realtime will deliver the
@@ -5651,7 +5651,7 @@ export const APP = String.raw`
   function swapBank(pick) {
     var t = swapCtx && swapCtx.target;
     if (!t) return;
-    openPicker("replace", t);
+    openBank("replace", t);
     if (pick) woaChoose(swapRow(pick));
     closeSheet("swapsheet");
   }
@@ -5903,7 +5903,7 @@ export const APP = String.raw`
     // complex is the far side of the block rather than its second station.
     var j = wo.i + 1;
     while (j < wo.screens.length && !isStop(j)) j++;
-    var cx = !!(s && s.cx), pre = s ? setPrefill(entry.sets.length) : null;
+    var cx = !!(s && s.cx), pre = s ? setPrefill(entry.sets.length) : null, round = cx ? cxLive(s) : null;
     // The set about to be done. Past the plan it is an extra, and the phone says
     // so ("Goal reached · Extras welcome") — but a Lock Screen card reading
     // "Set 3 of 2" just looks broken, so the total grows with the index the way
@@ -5916,7 +5916,9 @@ export const APP = String.raw`
       startedAt: wo.startedAt,
       phase: wo.finished ? "done" : restUntil && !restFace ? "rest"
         : restFace ? "timed" : cx ? "complex" : "work",
-      exercise: s ? s.ex.name : (entry.name || "Freestyle"),
+      // On a complex, the movement the round is up to rather than the first one
+      // of the block, which is the screen's own anchor and no help mid-round.
+      exercise: round ? round.move : s ? s.ex.name : (entry.name || "Freestyle"),
       block: s && (wo.workout.blocks || []).length > 1 ? blockName(s) : null,
       set: s && !cx ? { index: setNo, total: Math.max(targetOf(s), setNo) } : null,
       target: s ? askText(s.ex) : null,
@@ -5924,6 +5926,11 @@ export const APP = String.raw`
       rest: restUntil ? { until: restUntil, total: restTotal, held: restHeld } : null,
       next: j < wo.screens.length ? wo.screens[j].ex.name : null,
       progress: { done: logged, total: Math.max(planned, logged) },
+      // A complex is scored in rounds against a cap, and neither can be read off
+      // a set counter: this is the phone's round counter and clock, as its own
+      // screen draws them, so the card can count a round and run the cap down.
+      // Null on every other phase; a shell built before it existed still decodes.
+      complex: round,
       // The wrist has a stepper, and it cannot build one out of "8-12 reps" and
       // "1,200 lb" — those are sentences for a reader. So the same prefill goes
       // over as numbers, with the plate this account steps by. loggable is the
@@ -5932,11 +5939,27 @@ export const APP = String.raw`
       // are logged on the phone.
       dose: {
         reps: pre ? pre.reps : null,
-        weight: pre && pre.weight ? pre.weight : null,
+        // Zero, not null, for a movement with no weight yet: the phone's sheet
+        // opens a weight stepper on zero for every set, and a card that hid the
+        // dial until something had been logged had no way to log the first one.
+        weight: pre ? pre.weight : null,
         unit: state.unit,
         step: plate(),
         loggable: !!(s && !(s.cx && !s.ei) && !isTimed(s.ex))
       }
+    };
+  }
+
+  // The complex screen, as numbers. cap and held are milliseconds like rest.total
+  // and rest.held; until is the epoch deadline the phone's own ring counts from,
+  // 0 while the clock has not been started. moves is how many a round takes and
+  // marked how many of this round are ticked, so "3 rounds + 2 movements" can be
+  // written the way the screen writes it.
+  function cxLive(s) {
+    var cx = s.cx, a = cxOf(s.bi, cx), cur = cxCurrent(a, cx), ex = (s.block.exercises || [])[cur];
+    return {
+      rounds: a.rounds, marked: cxMarks(a, cx), moves: cx.n, move: ex ? ex.name : s.ex.name,
+      cap: (cx.cap || 0) * 1000, until: a.until || 0, held: a.held || 0, over: !!a.over
     };
   }
 
@@ -6171,10 +6194,18 @@ export const APP = String.raw`
   }
 
   function woaRows() {
-    var out = [], seen = {};
+    var out = [], seen = {}, skip = {}, tw = typeof woa !== "undefined" && woa && woa.target ? woa.target.w : null;
+    // What is already on the card is not an answer to "what did Spotter miss":
+    // a card add leaves the card's own movements off every shelf, a replacement
+    // leaves off the one being replaced. The live session's list stays whole — a
+    // second round of a movement is a real thing to add to a session.
+    if (tw && woa.mode === "card-add") (tw.blocks || []).forEach(function (b) {
+      (b.exercises || []).forEach(function (ex) { if (ex && ex.name) skip[exKey(ex)] = 1; });
+    });
+    if (tw && woa.mode === "replace" && woa.target.ex && woa.target.ex.name) skip[exKey(woa.target.ex)] = 1;
     Object.keys(hist).forEach(function (k) {
       var h = hist[k];
-      if (!h.date || !h.name) return;
+      if (!h.date || !h.name || skip[k]) return;
       var r = woaMake(k, h.name, k.indexOf("c:") === 0 ? k.slice(2) : null, "", 1,
         { sets: h.sets, reps: h.reps, at: h.date });
       r.sub = lastLine(r);
@@ -6186,7 +6217,7 @@ export const APP = String.raw`
       (w.blocks || []).forEach(function (b) {
         (b.exercises || []).forEach(function (ex) {
           var k = ex && ex.name ? exKey(ex) : null;
-          if (!k || seen[k]) return;
+          if (!k || seen[k] || skip[k]) return;
           seen[k] = woaMake(k, ex.name, ex.canonical_id || null,
             [doseText(ex), w.title].filter(Boolean).join(" · "), 2,
             { sets: ex.sets, reps: ex.reps, secs: ex.duration_seconds });
@@ -6196,6 +6227,7 @@ export const APP = String.raw`
     });
     (woaCat || []).forEach(function (c) {
       var dup = seen["c:" + c.id], mg = c.muscle_groups || [], eq = c.equipment || [];
+      if (skip["c:" + c.id]) return;
       // The muscles and equipment ride along with the aliases, so a kept row can
       // be filtered by what the catalog knows about it.
       if (dup) { dup.aliases = c.aliases || []; dup.muscle_groups = mg; dup.equipment = eq; return; }
@@ -6448,8 +6480,16 @@ export const APP = String.raw`
    * a replacement, session set when the exercise is the live one, which is what
    * decides whether the save writes the session or the card. The filter starts
    * clear every time, so a chip left on cannot hide the list next time.
+   *
+   * openBank, not openPicker: the plan has an openPicker of its own ("Add to
+   * Thursday"), declared later in this file, and a second declaration of a
+   * name is not an error in JavaScript — the last one wins, silently. For a
+   * fortnight every door into the bank opened the plan's picker with a workout
+   * object for a label ("Add to [object Object]"), and the harness never saw
+   * it because it pulls a function out by its first declaration. Names in this
+   * file are unique now, and tools/unique-decls.mjs keeps them so.
    */
-  function openPicker(mode, target) {
+  function openBank(mode, target) {
     haptic("tap");
     woa = { pick: null, where: "after", keep: false, nosets: false, mode: mode, target: target || null, mus: [], eq: [] };
     $("woaddtitle").textContent = mode === "replace" ? "Instead of " + target.ex.name : "Add an exercise";
@@ -6473,7 +6513,7 @@ export const APP = String.raw`
 
   function openWorkoutAdd() {
     if (!wo || wo.finished) return;
-    openPicker("add", null);
+    openBank("add", null);
   }
 
   // Where the movement goes in the session. Three answers, and the complex is the
@@ -7080,6 +7120,13 @@ export const APP = String.raw`
     }
     var secs = (s && s.ex && s.ex.rest_seconds) || REST_FALLBACK;
     if (secs > 0) startRest(secs);
+    // The card's own set count reached — the last planned set, not an edit of
+    // an earlier one — moves the session on to the next movement, the rest
+    // still running under it: a rest belongs to the lifter, not to the screen.
+    // "if i completed the proper amount that the video shows i want it to just
+    // move on" (owner, 20 Sept). Extras are still a swipe back away.
+    if (s && !s.cx && setCtx.idx >= targetOf(s) - 1 && entry.sets.filter(Boolean).length >= targetOf(s)
+      && wo.i < endStop()) nextMove();
   }
 
   // A best only means something measured against a real one, so h.best carries the
@@ -16260,7 +16307,7 @@ export const APP = String.raw`
   $("exeditpick").onclick = function () {
     if (!exEdit || exEdit.mode !== "edit") return;
     var t = swapTarget(exEdit.w, exEdit.ex) || { w: exEdit.w, bi: exEdit.block, ei: exEdit.index, ex: exEdit.ex };
-    openPicker("replace", t);
+    openBank("replace", t);
     closeSheet("exeditsheet");
     exEdit = null;
   };
@@ -16597,9 +16644,36 @@ export const APP = String.raw`
         setWeight(typeof a.weight === "number" && isFinite(a.weight) ? a.weight : pre.weight);
         saveSet();
       }
+    } else if (k === "round" || k === "mark") {
+      // The complex screen's two taps. "round" is Round N done; "mark" ticks the
+      // movement the round is up to, and the fifth tick of five is a round, as it
+      // is on the screen. Both start the cap the way the buttons do. Nothing to
+      // do off a complex: a card drawn before the screen moved on is not a set.
+      if (!s || !s.cx) return;
+      if (k === "round") cxRound(s.bi, s.cx);
+      else cxMark(s.bi, s.cx, cxCurrent(cxOf(s.bi, s.cx), s.cx));
     } else if (k === "skipRest") { if (restUntil) doneRest(); }
     else if (k === "toggleRest") pauseRest();
     else if (k === "finish") finishWorkout();
+  }
+
+  // spotter://set/weight?reps=12&weight=55 — the figures on the Lock Screen
+  // card are links, because a card can turn a number but not take one typed.
+  // The tap brings the session forward with the set sheet open, the dial's
+  // figures already in it, and the field named already under the keyboard:
+  // the sheet's own tap-to-type, made for it. A paused session is resumed
+  // first; a set that cannot be logged from off the phone (a hold, a complex)
+  // gets the screen and nothing else.
+  function openSetLink(field, url) {
+    var q = url.split("?")[1] || "", reps = q.match(/(?:^|&)reps=([\d.]+)/), weight = q.match(/(?:^|&)weight=([\d.]+)/);
+    if (!wo || wo.finished) { if (pausedDraft()) resumeWorkout(); else return; }
+    woForward();
+    var s = wo.screens[wo.i];
+    if (!s || (s.cx && !s.ei) || isTimed(s.ex)) return;
+    openSetSheet(wo.entries[wo.i].sets.length);
+    if (reps) setReps(parseFloat(reps[1]));
+    if (weight) setWeight(parseFloat(weight[1]));
+    if (field === "weight" || field === "reps") $(field === "weight" ? "wtval" : "repsval").click();
   }
 
   // Every route ends in a call the UI itself makes, so a link can only do what a
@@ -16608,6 +16682,7 @@ export const APP = String.raw`
     var m = state.user && String(url).match(/^spotter:\/\/([a-z]+)\/?([^?#]*)/);
     if (!m) return;
     var head = m[1], arg = decodeURIComponent(m[2].replace(/\/+$/, ""));
+    if (head === "set") { openSetLink(arg, String(url)); return; }
     // "spotter://workout/" names nothing, which is a malformed link rather than a
     // card that has been deleted, and a malformed link says nothing at all.
     var card = !!arg && (head === "workout" || head === "start"), w = card ? planWorkout(arg) : null;

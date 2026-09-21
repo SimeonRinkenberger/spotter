@@ -22,6 +22,7 @@ const read = p => {
 const appPlist = read('ios/App/App/Info.plist');
 const widget = read('ios/App/SpotterWidgets/WorkoutLiveActivity.swift');
 const sink = read('ios/App/App/LiveActivitySink.swift');
+const host = read('ios/App/App/NotificationsHost.swift');
 const intents = read('ios/App/Shared/LiveActivityIntents.swift');
 const attributes = read('ios/App/Shared/WorkoutActivityAttributes.swift');
 const liveState = read('ios/App/Shared/LiveState.swift');
@@ -84,15 +85,15 @@ assert(resume[1].indexOf('Activity.request(') >= 0 && resume[1].indexOf('activit
   'on a resume the new activity is requested first and the old one ended immediately with no closing frame');
 console.log('PASS paused: frozen string clock, no button, pause glyph, 8 h stale date, nudge cancelled, resume replaces the activity.');
 
-// ---------- three intents exist, and can actually run ----------
+// ---------- six intents exist, and can actually run ----------
 
-['SkipRestIntent', 'LogSetIntent', 'AdjustSetIntent'].forEach(name => {
+['SkipRestIntent', 'LogSetIntent', 'AdjustSetIntent', 'MarkMoveIntent', 'RoundDoneIntent', 'TypeFigureIntent'].forEach(name => {
   assert(new RegExp('struct ' + name + ':\\s*LiveActivityIntent').test(intents),
     name + ' must adopt LiveActivityIntent so perform() runs in the app process');
   assert(/static let isDiscoverable = false/.test(intents.slice(intents.indexOf('struct ' + name))),
     name + ' must stay undiscoverable: it means nothing outside a running session');
 });
-['SkipRestIntent', 'LogSetIntent'].forEach(name => {
+['SkipRestIntent', 'LogSetIntent', 'MarkMoveIntent', 'RoundDoneIntent'].forEach(name => {
   assert(widget.includes('Button(intent: ' + name + '())'),
     'WorkoutLiveActivity.swift has no Button(intent: ' + name + '())');
 });
@@ -101,7 +102,7 @@ assert(/Button\(intent: AdjustSetIntent\(field: field, delta: delta\)\)/.test(wi
 assert(/@Parameter\(title: "Figure"\)\s*var field: DialField/.test(intents) && /@Parameter\(title: "Direction"\)\s*var delta: Int/.test(intents),
   'AdjustSetIntent carries field and delta as @Parameters, which is how the values travel with the button');
 assert(/enum DialField: String, AppEnum/.test(intents), 'DialField must be an AppEnum so the parameter serialises');
-console.log('PASS the three LiveActivityIntents are wired: two buttons, and one parameterised dial intent behind four.');
+console.log('PASS the six LiveActivityIntents are wired: four action buttons, the parameterised dial intent behind four ± buttons, and the figure intent behind two.');
 
 // ---------- the dial never crosses the bridge; Log set carries it ----------
 //
@@ -153,8 +154,9 @@ assert(/if state\.phase == \.work \{ return state\.loggable \? \.logSet : nil \}
   'an unloggable work set (the engine\'s own verdict) must show no button and no dial');
 const compact = /compactLeading: \{([\s\S]*?)\} compactTrailing: \{([\s\S]*?)\} minimal: \{([\s\S]*?)\}/.exec(widget);
 assert(compact, 'the DynamicIsland compact/minimal closures moved');
-assert(!/Button\(|DialRow|CardControl/.test(compact[1] + compact[2] + compact[3]),
-  'no button and no dial in the compact or minimal presentations — WidgetKit does not run them there');
+assert(!/Button\(|Link\(|DialRow|ComplexRow|CardControl/.test(compact[1] + compact[2] + compact[3]),
+  'no button, link or dial in the compact or minimal presentations — WidgetKit runs buttons only in the expanded ' +
+  'and Lock Screen presentations, and documents Link for the expanded one');
 // The compact clock slot is a fixed frame, sized for m:ss, or the island stretches across the status bar.
 assert(/IslandClock\(attributes: context\.attributes, state: context\.state, size: 14,\s*isStale: context\.isStale, snug: true/.test(widget),
   'the compact trailing IslandClock must be snug (fixed width): a timer Text otherwise asks for the whole status bar');
@@ -163,6 +165,146 @@ assert(/\.frame\(width: snug \? \(size \* 3\)\.rounded\(\.up\) : nil, alignment:
 assert(/Text\(timerInterval: attributes\.startedAt\.\.\.attributes\.startedAt\.addingTimeInterval\(12 \* 60 \* 60\)/.test(widget),
   'the elapsed clock must be Text(timerInterval:): the date-style .timer is not driven on the locked Lock Screen and prints words');
 console.log('PASS the dial lives in the expanded and Lock Screen presentations only; the compact clock is a fixed m:ss slot; elapsed is an interval timer.');
+
+// ---------- the complex: two taps, a counter, and a cap that flips to "Time" ----------
+//
+// Everything here fails the way the owner found it: a complex whose card names
+// the movement and offers nothing ("i cant advance rounds or anything"). The
+// counter and the cap ride on LiveState.complex; the two taps are the phone's
+// own two buttons; the cap's stale date is its deadline like a rest's; and the
+// rest-end nudge is never scheduled for a cap.
+
+const complexStruct = /struct Complex: Codable, Hashable \{([\s\S]*?)\n    \}/.exec(liveState);
+assert(complexStruct, 'LiveState.swift has no Complex struct');
+['rounds', 'marked', 'moves', 'move', 'cap', 'until', 'held', 'over'].forEach(field =>
+  assert(new RegExp('var ' + field + ':').test(complexStruct[1]), 'LiveState.Complex has no ' + field));
+assert(/var complex: Complex\?/.test(liveState), 'LiveState must carry complex as an optional: older engines send none');
+assert(/var complex: LiveState\.Complex\? = nil/.test(attributes),
+  'ContentState must carry complex, defaulted so the states that predate it are built as before');
+assert(/case round\n/.test(liveState) && /case mark\n/.test(liveState), 'LiveAction.Kind needs .round and .mark');
+assert(/LiveActionRouter\.send\(\.mark\)/.test(performOf('MarkMoveIntent')) && /LiveActionRouter\.send\(\.round\)/.test(performOf('RoundDoneIntent')),
+  'MarkMoveIntent sends .mark and RoundDoneIntent sends .round, through the same handler as Log set');
+// The optimistic frame steps the counter the phone's way, through one helper
+// both the sink and the wrist use, so the two mirrors cannot count differently.
+assert(/mutating func count\(_ kind: LiveAction\.Kind/.test(complexStruct[1]),
+  'LiveState.Complex must own the count(_:) arithmetic (a mark completing the round is the round; either starts the cap)');
+assert(/case \.mark, \.round:[\s\S]{0,900}complex\.count\(action\.kind\)/.test(sink),
+  'the optimistic .mark/.round frame must step the counter through Complex.count');
+assert(/complex\.count\(pending\.kind\)/.test(read('ios/App/SpotterWatch/WatchLink.swift')),
+  'the wrist\'s optimistic display must use the same Complex.count');
+// The score is the phone's own line, "3 rounds + 2 movements".
+assert(/var score: String/.test(complexStruct[1]) && /" movement" : " movements"/.test(complexStruct[1]),
+  'Complex.score must write the score the way cxScore() does');
+assert(/if let complex = complex \{ return complex\.score \}/.test(widget), 'the complex secondary line must be the score');
+assert(/function cxScore\(r, x, bare\)/.test(app) && /" movement" : " movements"/.test(app),
+  'app.ts cxScore changed shape — re-check Complex.score against it');
+// Two buttons, in every presentation that runs buttons, and nowhere else.
+assert(/private struct ComplexRow: View/.test(widget) && /if let complex = look\.complex \{\s*ComplexRow\(complex: complex\)/.test(widget),
+  'CardControl must draw ComplexRow for a complex with a counter');
+assert(/var complexControl: Bool \{ complex != nil \}/.test(widget),
+  'the two buttons must only exist when the engine sent a counter — an older engine\'s complex keeps no control');
+assert(/if complexControl \{ return "repeat" \}/.test(widget), 'the complex glyph is repeat (the round is "again")');
+// The cap counts down like a rest, freezes like a held rest, and flips to "Time" on its deadline.
+assert(/var capOver: Bool \{[\s\S]*?complex\.over \|\| \(isStale && complex\.isRunning\)/.test(widget),
+  'capOver must read isStale for a running cap: the cap\'s stale date is its deadline');
+assert(/if capRunning \{ return true \}/.test(widget), 'a running cap must count (ember hero, draining bar, ring)');
+assert(/if capOver \{ return "Time" \}/.test(widget) && /Text\("Time"\)/.test(widget),
+  '"Time" — the phone\'s word for a cap at zero — must be the label on the Lock Screen and the word in the island slots');
+assert(/if state\.phase == \.complex, let complex = state\.complex, complex\.isRunning \{\s*return max\(complex\.deadline, Date\(\)\.addingTimeInterval\(1\)\)/.test(staleFn0[1]),
+  'a running cap\'s staleDate must be its deadline, clamped into the future, as a rest\'s is');
+// And never a nudge: syncNudge's guard is phase == .rest, so a complex lands
+// in the cancel branch. Pinned by name so nobody "helpfully" adds one.
+const nudgeFn = /private func syncNudge\(_ state: LiveState\) \{([\s\S]*?)\n    \}/.exec(sink);
+assert(nudgeFn && !/complex|Complex|cap\b/.test(nudgeFn[1]),
+  'syncNudge must know nothing about the cap: the phone\'s own tone (cxTick) is the cap\'s, and a cap ending is not a rest ending');
+console.log('PASS the complex: counter + cap on the wire, Next move / Round done wired, the phone\'s score line, "Time" on the deadline, no nudge for a cap.');
+
+// ---------- the figures open the sheet to type; the weight half exists at zero ----------
+//
+// A tap on a figure is a Button(intent: TypeFigureIntent) that opens the app
+// (openAppWhenRun) and hands the sink the field; the sink delivers the
+// spotter://set/<field>?reps=..&weight=.. link the engine answers with the
+// sheet open on that field. NOT a Link: on the 17 Pro a Link on the figure
+// answered every tap with the card's widgetURL (spotter://resume), and so did
+// a Button wrapped in invalidatableContent — see the widget's comments.
+
+assert(/struct TypeFigureIntent: LiveActivityIntent/.test(intents) && /static let openAppWhenRun = true/.test(intents.slice(intents.indexOf('struct TypeFigureIntent'))),
+  'TypeFigureIntent must be a LiveActivityIntent that opens the app: the sheet is on the phone');
+assert(/LiveActionRouter\.type\(field\)/.test(performOf('TypeFigureIntent')) && !/LiveActionRouter\.send\(|deliver\(/.test(performOf('TypeFigureIntent')),
+  'TypeFigureIntent.perform() hands the sink the field and sends no action of its own');
+assert(/Button\(intent: TypeFigureIntent\(field: field\)\) \{ figure \}/.test(widget), 'the dial figures must be TypeFigureIntent buttons');
+assert(!/Link\(/.test(widget), 'no Link anywhere on the card: a Link on the figure answered with the widgetURL');
+const figure = /private var figure: some View \{([\s\S]*?)\n    \}/.exec(widget);
+// Code only: the comment beside the figure is allowed to say why the modifier is gone.
+const figureCode = figure && figure[1].split('\n').filter(line => !/^\s*\/\//.test(line)).join('\n');
+assert(figure && !/invalidatableContent/.test(figureCode),
+  'the figure must not be invalidatableContent: WidgetKit treats that wrapper as display-only and swallows the tap');
+const typeFn = /private func type\(_ field: DialField\) \{([\s\S]*?)\n    \}/.exec(sink);
+assert(typeFn, 'LiveActivitySink has no type(_:)');
+assert(/"spotter:\/\/set\/" \+ field\.rawValue \+ "\?" \+ query/.test(typeFn[1]) && /"reps=" \+ String\(self\.dial\.reps \?\? dose\?\.reps \?\? 0\)/.test(typeFn[1]),
+  'the figure link must be spotter://set/<reps|weight>?reps=..&weight=.. carrying the dial\'s figures (the prefill\'s if untouched)');
+assert(/LiveStatePlugin\.deliver\(LiveAction\(kind: \.notification, source: \.activity, id: url\)\)/.test(typeFn[1]),
+  'the link must go through the routed-link door (kind .notification with the url as id), which openLink() parks until the page can open it');
+assert(/function openSetLink\(field, url\)/.test(app) && /if \(head === "set"\) \{ openSetLink\(arg, String\(url\)\); return; \}/.test(app),
+  'app.ts must route spotter://set/<field> to openSetLink');
+assert(/\.frame\(minWidth: 44\)[\s\S]{0,400}\.frame\(height: 44\)/.test(widget),
+  'the figure column must be a 44 pt target between the two 44 pt circles');
+assert(/weight: dose\.weight == nil \? nil : \(dialWeight \?\? dose\.weight\)/.test(attributes),
+  'ContentState.content must treat a weight of 0 as a weight: only nil means bodyweight');
+assert(/value == value\.rounded\(\) \? String\(Int\(value\)\)/.test(widget), 'the dial must render 0 as "0", not "—"');
+assert(/weight: pre \? pre\.weight : null/.test(app), 'app.ts liveState().dose.weight must be 0, not null, for a movement never loaded');
+console.log('PASS the reps and weight figures open the phone on the set sheet with the dial\'s figures (TypeFigureIntent → spotter://set); 0 is a weight.');
+
+// ---------- the round trip fits inside the tap ----------
+//
+// Measured on the 17 Pro, 21 Sept: the app is woken for a Lock Screen tap and
+// suspended ~100 ms after perform() returns; the engine answers inside that
+// window, but a coalesced push lands after it and goes out on the next tap.
+// So every action intent awaits the sink's settle (the engine's state pushed,
+// or 1.5 s), and the sink never coalesces while the app is not in front.
+
+['SkipRestIntent', 'LogSetIntent', 'MarkMoveIntent', 'RoundDoneIntent'].forEach(name =>
+  assert(/await LiveActionRouter\.settle\(\)/.test(performOf(name)), name + '.perform() must await LiveActionRouter.settle()'));
+assert(!/settle\(/.test(performOf('AdjustSetIntent')) && !/settle\(/.test(performOf('TypeFigureIntent')),
+  'a dial press and a figure tap have nothing to wait for: neither sends the engine anything');
+assert(/static var settler: \(\(TimeInterval\) async -> Void\)\?/.test(intents), 'LiveActionRouter needs the settler closure');
+assert(/LiveActionRouter\.settler = \{ \[weak self\] seconds in\s*await self\?\.settle\(within: seconds\)/.test(sink), 'the sink must install the settler');
+assert(/push\(state\) \{ \[weak self\] in self\?\.settled\(\) \}/.test(sink),
+  'flush() — and only flush(), the engine\'s own states — must release the waiting intents once the frame is pushed');
+const optimisticFn = /private func optimistic\(_ action: LiveAction\) \{([\s\S]*?)\n    \}/.exec(sink);
+assert(optimisticFn && !/settled\(\)/.test(optimisticFn[1]), 'the optimistic frame must never release an intent: it is not the engine\'s answer');
+assert(/let awake = UIApplication\.shared\.applicationState == \.active/.test(sink) && /if phaseChanged \|\| since >= 1 \|\| !awake \{/.test(sink),
+  'update(_:) must flush at once while the app is not in front: a coalescing timer fires on the next wake, which is the next tap');
+console.log('PASS the four action intents hold perform() open for the engine\'s pushed state (1.5 s cap), and the background never coalesces.');
+
+// ---------- the rest-end nudge breaks through a Focus ----------
+//
+// The gym is where a Fitness / Do Not Disturb Focus is on, and a rest ending
+// under one was delivered silently. Time Sensitive is the level that breaks
+// through, and it needs an entitlement in every entitlements file the App
+// target can sign with — which are the three named here, read off
+// project.pbxproj (CODE_SIGN_ENTITLEMENTS = $(SPOTTER_ENTITLEMENTS)),
+// ios/debug.xcconfig (Share), Local.xcconfig.example (Push) and
+// App/Release.xcconfig (Release). ReleaseShared and Widgets belong to the
+// extensions and are not the App target's.
+
+assert(/if timeSensitive \{ content\.interruptionLevel = \.timeSensitive \}/.test(host),
+  'NotificationsHost.schedule must set .timeSensitive when asked');
+assert(/timeSensitive: Bool = false/.test(host), 'time sensitivity must be opt-in per notification, off by default');
+assert(nudgeFn && /timeSensitive: true/.test(nudgeFn[1]), 'the rest-end nudge must be scheduled time sensitive');
+assert((host.match(/timeSensitive: true/g) || []).length === 0 && (sink.match(/timeSensitive: true/g) || []).length === 1,
+  'exactly one caller may be time sensitive: the rest-end nudge');
+const appTarget = /\/\* App \*\/ = \{\s*isa = PBXNativeTarget;[\s\S]*?buildConfigurationList = ([0-9A-F]{24})/.exec(pbx);
+assert(appTarget, 'no App native target');
+assert(/CODE_SIGN_ENTITLEMENTS = "\$\(SPOTTER_ENTITLEMENTS\)";/.test(pbx), 'the App target must sign with $(SPOTTER_ENTITLEMENTS)');
+assert(/^SPOTTER_ENTITLEMENTS = App\/Share\.entitlements$/m.test(read('ios/debug.xcconfig')));
+assert(/^SPOTTER_ENTITLEMENTS = App\/Release\.entitlements$/m.test(read('ios/App/App/Release.xcconfig')));
+assert(/SPOTTER_ENTITLEMENTS = App\/Push\.entitlements/.test(read('ios/App/Local.xcconfig.example')));
+['Share', 'Push', 'Release'].forEach(name => {
+  assert(/<key>com\.apple\.developer\.usernotifications\.time-sensitive<\/key>\s*<true\/>/.test(read('ios/App/App/' + name + '.entitlements')),
+    name + '.entitlements is one the App target signs with and lacks com.apple.developer.usernotifications.time-sensitive');
+});
+console.log('PASS the rest-end nudge is Time Sensitive, the only one that is, and all three App entitlements variants carry the capability.');
 
 // ---------- the 4 KB content budget ----------
 //
@@ -175,7 +317,11 @@ function contentState(live) {
   return {
     phase: live.phase, exercise: live.exercise, block: live.block, set: live.set, target: live.target,
     weight: live.weight, rest: live.rest, next: live.next, progress: live.progress,
-    pausedAt: 780000000.123, dial: { reps: 999, weight: 9999.5, unit: 'kg' }, loggable: true
+    pausedAt: 780000000.123, dial: { reps: 999, weight: 9999.5, unit: 'kg' }, loggable: true,
+    // The complex rides along on every phase here: the measurement is the
+    // widest content, not the likeliest.
+    complex: { rounds: 999, marked: 99, moves: 99, move: 'x'.repeat(120), cap: 3600000,
+      until: 1789751351482.5, held: 3600000, over: false }
   };
 }
 const widest = Object.values(fixture).filter(v => v && v.phase).map(contentState)

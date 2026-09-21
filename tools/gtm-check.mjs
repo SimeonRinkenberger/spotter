@@ -25,6 +25,7 @@ const checks = [
   ['Pumpy source context fixtures', 'deno', ['run','--allow-read','tools/pumpy-pack-harness.ts']],
   ['Monthly allowance table and refusals', 'deno', ['run','--allow-read','tools/allowance-table-check.ts']],
   ['Exercise bank picker, swap and corrections', 'node', ['tools/midadd-harness.mjs']],
+  ['One declaration per name in app.ts', 'node', ['tools/unique-decls.mjs']],
   ['Creator codes on the client', 'node', ['tools/creator-client-harness.mjs']],
   ['Creator codes SQL', 'node', ['tools/creator-db-check.mjs']],
   ['Creator ledger in the store webhook', 'node', ['tools/creator-purchases-check.mjs']],

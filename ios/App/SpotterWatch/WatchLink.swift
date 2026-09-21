@@ -136,6 +136,13 @@ final class WatchLink: NSObject, ObservableObject, WCSessionDelegate {
             }
         case .skipRest:
             shown.rest = nil
+        case .mark, .round:
+            // The complex's counter, stepped the way the phone steps it; the
+            // same arithmetic the Lock Screen's optimistic frame uses.
+            if var complex = shown.complex, shown.phase == .complex {
+                complex.count(pending.kind)
+                shown.complex = complex
+            }
         case .toggleRest:
             if var rest = shown.rest {
                 if rest.isPaused {
