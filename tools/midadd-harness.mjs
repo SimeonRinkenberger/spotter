@@ -36,14 +36,18 @@ function fn(name) {
 const LIFTED = ['woaMake', 'woaRows', 'woaHit', 'woaScore', 'woaRank', 'woaPass', 'woaFilter',
   'woaFields', 'woaEditBody', 'swapRow', 'entryAt', 'insertSessionExercise', 'replaceSessionExercise',
   'flatten', 'complexOf', 'cxCap', 'cxDosed', 'isTimed', 'cxEntry', 'cxSet', 'cxSync',
-  'cxScoreOf', 'cxScore', 'doseText'];
+  'cxScoreOf', 'cxScore', 'doseText', 'timeText', 'clock', 'restOf', 'restWord', 'isCircuit', 'blockMetaText',
+  'kindName', 'timedByNature', 'kindOf', 'restVal'];
 
 // What the lifted code reaches for that is not in this file's scope. lastLine is
 // stubbed to the one thing the picker uses it for — a subtitle — because the real
 // one only formats what hist already holds. woa is the picker's state; the filter
 // reads its two chip lists off it.
 const STUBS = [
-  'var state = { unit: "lb", workouts: [] }, hist = {}, wo = null, woaCat = null;',
+  'var state = { unit: "lb", workouts: [] }, hist = {}, wo = null, woaCat = null, REST_FALLBACK = 90;',
+  'var SECTION_KINDS = ' + /var SECTION_KINDS = (\[[\s\S]*?\n  \]);/.exec(src)[1] + ';',
+  'var STEADY = ' + /var STEADY = (\[[\s\S]*?\]);/.exec(src)[1] + ';',
+  'function capWord(s) { return s.charAt(0).toUpperCase() + s.slice(1); }',
   'var woa = { mode: "add", target: null, mus: [], eq: [] };',
   'function exKey(e) { return e && e.canonical_id ? "c:" + e.canonical_id : "n:" + ((e && e.name) || ""); }',
   'function toUnit(w, u) { return Number(w) || 0; }',
@@ -125,6 +129,86 @@ ok('a card movement the catalog does not know is still on the list', () => {
   assert.equal(cop.src, 2);
   assert.equal(cop.canonical_id, null);
   assert.equal(cop.secs, 30);
+});
+
+// ---------- the dose and the rest, in words ----------
+//
+// doseText is what every row prints; the cardio wave taught it minutes. restOf
+// is the one sentence Workout Mode and the card both run for a rest, so its
+// three answers are pinned here: the exercise's own, the block's at a lap end,
+// and the default — with zero as a real answer and null as silence.
+
+console.log('the dose and the rest, in words');
+
+ok('a timed movement reads as a clock, never as a count of seconds', () => {
+  assert.equal(run('doseText({ sets: 1, duration_seconds: 1200 })'), '20 min');
+  assert.equal(run('doseText({ duration_seconds: 45 })'), '0:45');
+  assert.equal(run('doseText({ sets: 3, duration_seconds: 45 })'), '3 × 0:45');
+  assert.equal(run('doseText({ sets: 2, duration_seconds: 300 })'), '2 × 5 min');
+  assert.equal(run('doseText({ sets: 3, duration_seconds: 90 })'), '3 × 1:30');
+  // The shapes that were already right are unchanged.
+  assert.equal(run('doseText({ sets: 3, reps: "8-10" })'), '3 × 8-10');
+  assert.equal(run('doseText({ sets: 3 })'), '3 sets');
+  assert.equal(run('doseText({ reps: "15" })'), '15 reps');
+  assert.equal(run('doseText({ sets: 3, reps: "10", duration_seconds: 30 })'), '3 × 10 · 0:30');
+  assert.equal(run('timeText(59)'), '0:59');
+  assert.equal(run('timeText(60)'), '1 min');
+  assert.equal(run('timeText(150)'), '2:30');
+});
+
+ok('restOf: the exercise, then the block at a lap end, then the default; zero is an answer', () => {
+  const straight = { type: 'straight', rounds: null, rest_seconds: null };
+  const circuit = { type: 'circuit', rounds: 3, rest_seconds: 60, exercises: [{ name: 'a' }, { name: 'b' }] };
+  const r = (ex, b, end) => run('restOf(' + JSON.stringify(ex) + ', ' + JSON.stringify(b) + ', ' + !!end + ')');
+  assert.deepEqual(r({ rest_seconds: 120 }, straight), { secs: 120, source: 'exercise' });
+  assert.deepEqual(r({ rest_seconds: null }, straight), { secs: 90, source: 'default' });
+  assert.deepEqual(r({}, straight), { secs: 90, source: 'default' });
+  assert.deepEqual(r({ rest_seconds: 0 }, straight), { secs: 0, source: 'exercise' });
+  // Between stations the exercise's own rest; a timed station walks on by default.
+  assert.deepEqual(r({ rest_seconds: 20, duration_seconds: 40 }, circuit), { secs: 20, source: 'exercise' });
+  assert.deepEqual(r({ duration_seconds: 40 }, circuit), { secs: 0, source: 'default' });
+  assert.deepEqual(r({ reps: '15' }, circuit), { secs: 90, source: 'default' });
+  // At the end of a lap the block's rest, and the default when it said nothing.
+  assert.deepEqual(r({ rest_seconds: 20 }, circuit, true), { secs: 60, source: 'block' });
+  assert.deepEqual(r({ rest_seconds: 20 }, { ...circuit, rest_seconds: null }, true), { secs: 90, source: 'default' });
+  assert.deepEqual(r({ rest_seconds: 20 }, { ...circuit, rest_seconds: 0 }, true), { secs: 0, source: 'block' });
+  // The three Workout Mode places and the card all go through it.
+  assert(fn('restAfter').includes('return restOf(s.ex, s.block, atRoundEnd()).secs;'));
+  assert(fn('saveSet').includes('var secs = s ? restOf(s.ex, s.block, false).secs : REST_FALLBACK;'));
+  assert(fn('workDone').includes('var r = restOf(s.ex, s.block, false);'));
+  assert(src.includes('var rest = restOf(ex, b, false), dflt = rest.source === "default";'), 'the card row');
+});
+
+ok('a block reads as a sentence, and the rest only where a lap ends', () => {
+  assert.equal(run('blockMetaText({ type: "circuit", rounds: 3, rest_seconds: 60 })'), 'Circuit · 3 rounds · Rest 1:00 between rounds');
+  assert.equal(run('blockMetaText({ type: "amrap", rounds: null, rest_seconds: null, duration_seconds: 600 })'), 'AMRAP · 10:00 cap');
+  assert.equal(run('blockMetaText({ type: "circuit", rounds: 3, rest_seconds: 0 })'), 'Circuit · 3 rounds · No rest between rounds');
+  assert.equal(run('blockMetaText({ type: "straight", rounds: null, rest_seconds: 60 })'), '');
+  assert.equal(run('blockMetaText({ type: "warmup", rounds: null, rest_seconds: null })'), 'Warm-up');
+  assert.equal(run('kindName("emom")'), 'EMOM');
+});
+
+ok('timedByNature: steady-state ids, cardio machines, holds, and what was last held', () => {
+  assert.equal(run('timedByNature({ canonical_id: "assault-bike", name: "Assault Bike", pattern: "cardio", equipment: ["machine"] })'), 'cardio');
+  assert.equal(run('timedByNature({ canonical_id: "battle-ropes", name: "Battle Ropes", pattern: "cardio", equipment: ["other"] })'), '');
+  assert.equal(run('timedByNature({ canonical_id: "double-under", name: "Double Under", pattern: "cardio", equipment: ["jump rope"] })'), 'cardio');
+  assert.equal(run('timedByNature({ canonical_id: "plank", name: "Plank", pattern: "core", equipment: [] })'), 'hold');
+  assert.equal(run('timedByNature({ canonical_id: null, name: "Couch Stretch" })'), 'hold');
+  assert.equal(run('timedByNature({ canonical_id: "dead-hang", name: "Dead Hang", aliases: ["bar hang"] })'), 'hold');
+  assert.equal(run('timedByNature({ canonical_id: "goblet-squat", name: "Goblet Squat", pattern: "squat", equipment: ["kettlebell"] })'), '');
+  assert.equal(run('timedByNature({ name: "Push Up", secs: 30 })'), 'logged');
+  // "Plank" inside a longer name is not a plank: the word has to stand alone.
+  assert.equal(run('timedByNature({ name: "Planks" })'), '');
+});
+
+ok('a stored block lights the preset it is, and the title breaks the tie', () => {
+  assert.equal(run('kindOf({ type: "circuit", title: "Finisher" }).title'), 'Finisher');
+  assert.equal(run('kindOf({ type: "circuit", title: "Legs" }).title'), 'Circuit');
+  assert.equal(run('kindOf({ type: "straight", title: null }).title'), '');
+  assert.equal(run('kindOf({ type: "straight", title: "Cardio" }).title'), 'Cardio');
+  assert.equal(run('kindOf({ type: "emom", title: "Every minute" })'), null);
+  // EMOM is not offered: Workout Mode has no clock for it.
+  assert(!run('SECTION_KINDS.some(function (k) { return k.type === "emom"; })'));
 });
 
 // ---------- ranking ----------
@@ -508,7 +592,11 @@ ok('the endpoint the picker posts to is the one the corrections handler serves',
 
 ok('every field sent is one the server reads, and none it would throw on', () => {
   const fields = run('woaFields({ name: "Dip", canonical_id: "dip", sets: 3, reps: "10", duration_seconds: null, rest_seconds: 90 })');
-  assert.deepEqual(fields, { name: 'Dip', canonical_id: 'dip', sets: 3, reps: '10', duration_seconds: null });
+  assert.deepEqual(fields, { name: 'Dip', canonical_id: 'dip', sets: 3, reps: '10', duration_seconds: null, rest_seconds: 90 });
+  // The rest goes to the card in the server's three shapes: a number, zero for
+  // "no rest", and "" for the default — never undefined, which JSON would drop.
+  assert.equal(run('woaFields({ name: "Dip", rest_seconds: 0 }).rest_seconds'), 0);
+  assert.equal(run('woaFields({ name: "Dip", rest_seconds: null }).rest_seconds'), '');
   Object.keys(fields).forEach((f) => assert(EDIT_FIELDS.includes(f), 'the server does not read ' + f));
   // EDIT_FIELDS is the server's whole vocabulary for an add or an edit.
   assert.deepEqual(EDIT_FIELDS, ['name', 'sets', 'reps', 'duration_seconds', 'rest_seconds', 'canonical_id']);
@@ -528,8 +616,10 @@ ok('the dose the picker sends is inside what cleanEditField accepts', () => {
   // woaNum clamps to 1..99 sets and 1..999 reps / 1..3600 seconds; the server
   // throws outside 1..99 and 1..3600. The two have to agree or a kept movement
   // fails on the server after the session already has it.
-  assert(src.includes('woaNum("woaddsets", 3, 99)'));
-  assert(src.includes('woaNum("woaddsecs", 30, 3600)'));
+  assert(src.includes('woaNum("woaddsets", timed ? 1 : 3, 99)'));
+  // Minutes and seconds are one value: doseSecs reads the pair and clamps the total.
+  assert(src.includes('doseSecs("woaddmin", "woaddsecs")'));
+  assert(fn('doseSecs').includes('clamp(Math.round((Number(m) || 0) * 60 + (Number(s) || 0)), 1, 3600)'));
   assert(idx.includes('if (n < 1 || n > 99) throw new BadEdit("Sets has to be between 1 and 99.");'));
   assert(idx.includes('if (n < 1 || n > 3600) throw new BadEdit('));
 });
@@ -542,7 +632,7 @@ ok('a card replacement is one edit op, guarded by the name the sheet was opened 
   const body = run('woaEditBody({ w: { id: "w1" }, bi: 1, ei: 0, ex: { name: "Curl", sets: 3, reps: "12" } }, ' + HAMMER + ')');
   assert.deepEqual(body, {
     op: 'edit', block: 1, index: 0, expect_name: 'Curl',
-    fields: { name: 'Hammer Curl', canonical_id: 'hammer-curl', sets: 3, reps: '12', duration_seconds: null }
+    fields: { name: 'Hammer Curl', canonical_id: 'hammer-curl', sets: 3, reps: '12', duration_seconds: null, rest_seconds: '' }
   });
   Object.keys(body.fields).forEach((f) => assert(EDIT_FIELDS.includes(f), f));
   // The server reads exactly these three names off an edit.
@@ -552,7 +642,12 @@ ok('a card replacement is one edit op, guarded by the name the sheet was opened 
 ok('the save branches on the picker mode: card add, card replace, session replace, session add', () => {
   const save = fn('saveWorkoutAdd');
   assert(save.includes('if (mode === "card-add") {'));
-  assert(save.includes('postCorrection(t.w, { op: "add", block: t.bi, fields: woaFields(ex) }, $("woaddsave"), "Added it", "woaddsheet");'));
+  assert(save.includes('var body = { op: "add", block: t.bi, fields: woaFields(ex) };'));
+  // A section being built rides along as new_block, which the server honours
+  // only at blocks.length — the bi the section sheet hands over.
+  assert(save.includes('if (t.block) body.new_block = t.block;'));
+  assert(save.includes('postCorrection(t.w, body, $("woaddsave"), "Added it", "woaddsheet");'));
+  assert(fn('saveSection').includes('openBank("card-add", { w: sec.w, bi: sec.bi, block: f, timed: !!(sec.kind && sec.kind.timed) });'));
   assert(save.includes('if (mode === "replace" && !t.session) {'));
   assert(save.includes('postCorrection(t.w, woaEditBody(t, ex), $("woaddsave"), "Swapped it", "woaddsheet");'));
   assert(save.includes('if (!sessionReplace(t, ex)) return;'));
@@ -570,9 +665,11 @@ ok('the session toggle is offered only when the card still has what is being swa
 
 ok('a replacement is dosed from the movement it replaces', () => {
   const choose = fn('woaChoose');
-  assert(choose.includes('(old ? old.sets : r.sets) || 3'));
+  assert(choose.includes('(old ? old.sets : r.sets) || (woa.timed ? 1 : 3)'));
   assert(choose.includes('String((old ? old.reps : r.reps) || "").match(/\\d+/)'));
-  assert(choose.includes('old ? (old.duration_seconds ? String(old.duration_seconds) : "")'));
+  assert(choose.includes('secs = old ? old.duration_seconds : (r.secs || (h && h.secs))'));
+  // Reps or Time follows the movement being replaced, not what the bank knows.
+  assert(choose.includes('woa.timed = old ? !!(old.duration_seconds && !old.reps) : !!(kind || (t && t.timed));'));
   assert(choose.includes('woa.nosets = !!cx || !!(old && old.sets == null);'));
 });
 
