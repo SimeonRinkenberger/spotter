@@ -2620,11 +2620,13 @@ export const APP = String.raw`
   }
 
   // Said the way a lifter would: "Circuit · 3 rounds · Rest 1:00 between rounds",
-  // "AMRAP · 10:00 cap". The rest is only printed where Workout Mode will run it,
-  // at the end of a lap, so a straight block's stray rest_seconds says nothing.
+  // "AMRAP · 10:00 cap". The kind is left out under a heading that already says
+  // it ("Cool-down" under COOL-DOWN), and the rest is only printed where Workout
+  // Mode will run it, at the end of a lap, so a straight block's stray
+  // rest_seconds says nothing.
   function blockMetaText(b) {
-    var bits = [];
-    if (b.type && b.type !== "straight") bits.push(kindName(b.type));
+    var bits = [], kind = b.type && b.type !== "straight" ? kindName(b.type) : "";
+    if (kind && kind.toLowerCase() !== String(b.title || "").toLowerCase()) bits.push(kind);
     if (b.rounds) bits.push(b.rounds + " rounds");
     if (b.rounds > 1 && typeof b.rest_seconds === "number") bits.push(restWord(b.rest_seconds) + " between rounds");
     if (b.duration_seconds) bits.push(clock(b.duration_seconds) + " cap");
@@ -2682,11 +2684,14 @@ export const APP = String.raw`
     custom.appendChild(el("div", "field")).appendChild(go);
     box.appendChild(row);
     box.appendChild(custom);
-    // A strip brings the lit chip into view: the answer sitting past the edge of
-    // the strip is the one thing this row exists to show. After the pane it sits
-    // in has been shown, since a hidden row has no width to scroll; on the
-    // wrapping grid there is nothing to scroll and the line does nothing.
-    setTimeout(function () { if (lit) row.scrollLeft = Math.max(0, lit.offsetLeft - 18); }, 0);
+    // A strip brings the lit chip to its middle: the answer sitting past the
+    // edge of the strip is the one thing this row exists to show, and centred it
+    // reads as a strip with more either side. After the pane it sits in has been
+    // shown, since a hidden row has no width; the wrapping grid has nothing to
+    // scroll and the line does nothing there.
+    setTimeout(function () {
+      if (lit) row.scrollLeft = Math.max(0, lit.offsetLeft - row.offsetLeft - (row.clientWidth - lit.offsetWidth) / 2);
+    }, 0);
   }
 
   // ---------- borrowed from a saved video ----------
@@ -4022,11 +4027,14 @@ export const APP = String.raw`
       seg.appendChild(b);
     });
     row.parentNode.insertBefore(seg, row);
+    // Label beside input, as the markup's fields are: doseMode hides the field
+    // through the input's parent, so the parent has to be the field.
     [["min", "Minutes"], ["secs", "Seconds"]].forEach(function (f) {
-      var l = el("label", null, f[1]), i = el("input");
-      i.id = p + f[0];
-      l.appendChild(Object.assign(i, { type: "number", inputMode: "numeric", placeholder: "0" }));
-      row.appendChild(el("div", "field hide")).appendChild(l);
+      var box = el("div", "field hide"), l = el("label", null, f[1]), i = el("input");
+      i.id = l.htmlFor = p + f[0];
+      box.appendChild(l);
+      box.appendChild(Object.assign(i, { type: "number", inputMode: "numeric", placeholder: "0" }));
+      row.appendChild(box);
     });
   }
 

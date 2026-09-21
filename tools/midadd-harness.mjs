@@ -185,6 +185,9 @@ ok('a block reads as a sentence, and the rest only where a lap ends', () => {
   assert.equal(run('blockMetaText({ type: "circuit", rounds: 3, rest_seconds: 0 })'), 'Circuit · 3 rounds · No rest between rounds');
   assert.equal(run('blockMetaText({ type: "straight", rounds: null, rest_seconds: 60 })'), '');
   assert.equal(run('blockMetaText({ type: "warmup", rounds: null, rest_seconds: null })'), 'Warm-up');
+  // Under a heading that already says it, the kind is not said twice.
+  assert.equal(run('blockMetaText({ type: "cooldown", title: "Cool-down" })'), '');
+  assert.equal(run('blockMetaText({ type: "circuit", title: "Finisher", rounds: 3, rest_seconds: 60 })'), 'Circuit · 3 rounds · Rest 1:00 between rounds');
   assert.equal(run('kindName("emom")'), 'EMOM');
 });
 

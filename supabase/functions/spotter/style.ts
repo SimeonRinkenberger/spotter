@@ -2686,6 +2686,9 @@ export const STYLE = String.raw`<style>
   #workoptions .pickrow, #recapopts .pickrow { min-height: 48px; }
   /* Destructive, so it takes the one red the system has - the same red Settings
      gives its delete - rather than the muted grey that reads as unavailable. */
+  /* "Choose the first exercise" is a sentence, and half a row at 375px wraps
+     it: Cancel takes only its own width there, the way a secondary action does. */
+  #sectionsheet .btnrow .ghost { flex: 0 0 auto; padding: 14px 20px; }
   /* The section sheet's Remove is its last word and its one red one: this one. */
   #recapopts .danger, .sectionremove { color: var(--ember-ink); font-size: 15px; font-weight: 650; }
   #dmore { min-height: 44px; }
