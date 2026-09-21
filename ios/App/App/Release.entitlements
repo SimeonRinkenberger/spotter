@@ -14,7 +14,5 @@
     <string>production</string>
     <key>com.apple.security.application-groups</key>
     <array><string>$(SPOTTER_APP_GROUP)</string></array>
-    <key>com.apple.developer.usernotifications.time-sensitive</key>
-    <true/>
 </dict>
 </plist>

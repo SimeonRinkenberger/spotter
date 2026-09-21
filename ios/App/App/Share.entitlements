@@ -6,7 +6,5 @@
 	<array>
 		<string>$(AppIdentifierPrefix)$(SPOTTER_BUNDLE_ID)</string>
 	</array>
-	<key>com.apple.developer.usernotifications.time-sensitive</key>
-	<true/>
 </dict>
 </plist>

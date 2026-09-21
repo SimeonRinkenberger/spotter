@@ -73,7 +73,12 @@ for (const [u,plan,mail] of [[payerM,'plus',email(payerM)],[payerY,'plus',email(
 // the week boundary itself is checked directly instead of by side effect.
 const only=(rows)=>{assert.equal(rows.length,1,'expected exactly one row, got '+rows.length);return rows[0];};
 const view=async(name,extra='')=>(await db.query(`select * from public.${name} ${extra}`)).rows;
-const total=(rows,col,filter=()=>true)=>rows.filter(filter).reduce((n,r)=>n+Number(r[col]??0),0);
+// Rounded to a millionth: the views sum in numeric and hand back exact dollars,
+// but when the fixture's rows straddle an ISO week — the first hours of a Monday
+// in UTC, when `now() - interval '6 hours'` is still Sunday — there are two rows
+// per purpose and the sum happens here, in doubles, where 0.048 + 0.004 is
+// 0.052000000000000005 and a strict equality on money fails once a week.
+const total=(rows,col,filter=()=>true)=>+rows.filter(filter).reduce((n,r)=>n+Number(r[col]??0),0).toFixed(6);
 assert.equal((await db.query("select public.ops_week('2026-09-17T04:00:00Z'::timestamptz) as w")).rows[0].w
   .toISOString().slice(0,10),'2026-09-14','the week starts Monday, in UTC');
 assert.equal((await db.query("select public.ops_week('2026-09-14T00:00:00Z'::timestamptz) as w")).rows[0].w
