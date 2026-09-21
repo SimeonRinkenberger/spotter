@@ -1,5 +1,6 @@
 import ActivityKit
 import Foundation
+import UIKit
 
 // The Live Activity's ear on the workout engine.
 //
@@ -56,6 +57,11 @@ final class LiveActivitySink: LiveStateSink {
     /// makes "+15 s" reschedule and a pause-then-resume not stack two alerts.
     private var nudgeDeadline: Double = 0
 
+    /// Intents holding their `perform()` open for the engine's answer, by
+    /// their own timeout ticket. Resolved in `flush()` when a state from the
+    /// engine goes out, or by the ticket when it does not. Main thread only.
+    private var settling: [UUID: CheckedContinuation<Void, Never>] = [:]
+
     init() {
         install()
         // A nudge can outlive the process that scheduled it — the app was
@@ -75,12 +81,16 @@ final class LiveActivitySink: LiveStateSink {
     /// that does not wait for it.
     ///
     /// A `LiveActivityIntent` runs in the app's process, so the app is woken (or
-    /// already awake) when the tap arrives — but its WKWebView content process
-    /// is not, and JavaScript does not run until the app is foregrounded. The
-    /// action is still delivered with `retainUntilConsumed: true`, so the engine
-    /// applies it for real the moment the web view wakes; the two can only
-    /// disagree about *when*, never about *what*. Until then the card would sit
-    /// on a rest it has already been told to end, so it is corrected here.
+    /// already awake) when the tap arrives, and — measured on the 17 Pro, 21
+    /// Sept — so is its WKWebView: the engine answered a Next move 50 ms after
+    /// the tap, inside the ~100 ms the system keeps the process up for the
+    /// intent. That window is why `perform()` waits on `settle` and why
+    /// `update(_:)` never coalesces in the background. The action is still
+    /// delivered with `retainUntilConsumed: true`, so an engine that was not
+    /// there to hear it (a web view mid-reload, a boot) applies it for real
+    /// when it wakes; the two can only disagree about *when*, never about
+    /// *what*. Until then the card would sit on a rest it has already been
+    /// told to end, so it is corrected here.
     ///
     /// Order matters: the optimistic frame goes out first so the card changes
     /// under the thumb that tapped it.
@@ -106,6 +116,80 @@ final class LiveActivitySink: LiveStateSink {
         LiveActionRouter.dialled = { [weak self] in
             self?.dial ?? (nil, nil)
         }
+        LiveActionRouter.settler = { [weak self] seconds in
+            await self?.settle(within: seconds)
+        }
+        LiveActionRouter.typist = { [weak self] field in
+            self?.type(field)
+        }
+    }
+
+    /// A tap on a dial figure: the phone opens (the intent's `openAppWhenRun`)
+    /// and this hands the engine the link that opens the set sheet on that
+    /// field with the dial's figures in it — `spotter://set/weight?reps=6&
+    /// weight=55`. Delivered as a routed link, exactly as a tapped reminder's
+    /// `url` is, so it goes through `openLink()` → `openDeepLink()` →
+    /// `openSetLink()` in app.ts and is retained until the web view is
+    /// listening. The figures are the dial's if it was turned, the prefill's
+    /// otherwise: whatever the card was showing. Only digits and a dot ever
+    /// go in the query.
+    private func type(_ field: DialField) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self,
+                  let state = self.current ?? LiveStatePlugin.latest else { return }
+            let dose = state.dose
+            var query = "reps=" + String(self.dial.reps ?? dose?.reps ?? 0)
+            if let weight = self.dial.weight ?? dose?.weight {
+                query += "&weight=" + (weight == weight.rounded() ? String(Int(weight)) : String(format: "%.1f", weight))
+            }
+            let url = "spotter://set/" + field.rawValue + "?" + query
+            #if DEBUG
+            NSLog("Spotter Live Activity: type %@ -> %@", field.rawValue, url)
+            #endif
+            LiveStatePlugin.deliver(LiveAction(kind: .notification, source: .activity, id: url))
+        }
+    }
+
+    /// Hold an intent's `perform()` open until the engine's answer has been
+    /// pushed to the card, or `seconds` have passed — whichever is first.
+    ///
+    /// The system wakes the app for a Lock Screen tap and suspends it again
+    /// about 100 ms after `perform()` returns (measured, 21 Sept). The web
+    /// engine answers inside that window, but its state arrived at the sink
+    /// after the optimistic push and was coalesced a second into a future the
+    /// process did not have; it went out on the NEXT tap. Waiting here is
+    /// what buys the round trip its second: the intent is still running, so
+    /// the process is still awake, until `flush()` resolves the ticket. The
+    /// timeout is the bound for an engine that never answers — a session
+    /// nobody is signed into, an action the phone drops as off-screen.
+    private func settle(within seconds: TimeInterval) async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            // Work items rather than closures: a closure handed to
+            // DispatchQueue from an async context is @Sendable, and this
+            // class is not.
+            let file = DispatchWorkItem { [weak self] in
+                guard let self = self else { continuation.resume(); return }
+                self.hold(continuation, for: seconds)
+            }
+            DispatchQueue.main.async(execute: file)
+        }
+    }
+
+    /// Main thread: file the continuation under a ticket that expires.
+    private func hold(_ continuation: CheckedContinuation<Void, Never>, for seconds: TimeInterval) {
+        let ticket = UUID()
+        settling[ticket] = continuation
+        let expire = DispatchWorkItem { [weak self] in
+            self?.settling.removeValue(forKey: ticket)?.resume()
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: expire)
+    }
+
+    /// The engine has spoken and the card has it: let every waiting intent go.
+    private func settled() {
+        let waiting = settling
+        settling = [:]
+        for continuation in waiting.values { continuation.resume() }
     }
 
     private func optimistic(_ action: LiveAction) {
@@ -221,8 +305,17 @@ final class LiveActivitySink: LiveStateSink {
         flushItem?.cancel()
         flushItem = nil
 
+        // The coalescer is for the foreground, where one thumb makes three
+        // states a second and ActivityKit charges for each. In the background
+        // there is no burst — a state arriving there is the engine answering
+        // a Lock Screen or wrist tap inside the ~100 ms the system keeps the
+        // process awake for it — and a timer set for a second from now fires
+        // on the next wake, which is the next tap (measured, 21 Sept: a Next
+        // move's own state reached the card only when Round done was pressed).
+        // So while the app is not in front, every state goes out at once.
+        let awake = UIApplication.shared.applicationState == .active
         let since = Date().timeIntervalSince(lastPush)
-        if phaseChanged || since >= 1 {
+        if phaseChanged || since >= 1 || !awake {
             flush()
             return
         }
@@ -271,14 +364,21 @@ final class LiveActivitySink: LiveStateSink {
         pending = nil
         lastPush = Date()
         current = state
-        push(state)
+        // A state from the engine: once the card has it, the intents waiting
+        // for it can return and the process can sleep. Only here — an
+        // optimistic push must not release an intent that is waiting for the
+        // engine to answer that very tap.
+        push(state) { [weak self] in self?.settled() }
     }
 
-    private func push(_ state: LiveState) {
+    /// `done` runs on the main thread once ActivityKit has been handed the
+    /// frame (or refused it), whichever branch the state took.
+    private func push(_ state: LiveState, done: (() -> Void)? = nil) {
+        let finished = { if let done = done { DispatchQueue.main.async(execute: done) } }
         // A phone with Live Activities switched off in Settings is a supported
         // configuration, not an error: the rest of the app works, and the nudge
         // above still fires.
-        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else { finished(); return }
 
         let content = ActivityContent(state: WorkoutActivityAttributes.content(state,
                                                                               dialReps: dial.reps,
@@ -301,14 +401,14 @@ final class LiveActivitySink: LiveStateSink {
                 let (attributes, _) = WorkoutActivityAttributes.from(state)
                 do {
                     self.activity = try Activity.request(attributes: attributes, content: content, pushType: nil)
-                    Task { await activity.end(nil, dismissalPolicy: .immediate) }
+                    Task { await activity.end(nil, dismissalPolicy: .immediate); finished() }
                 } catch {
                     NSLog("Spotter Live Activity: could not replace on resume — %@", String(describing: error))
-                    Task { await activity.update(content) }
+                    Task { await activity.update(content); finished() }
                 }
                 return
             }
-            Task { await activity.update(content) }
+            Task { await activity.update(content); finished() }
             return
         }
 
@@ -316,13 +416,14 @@ final class LiveActivitySink: LiveStateSink {
         // ever see end, and `request` is only legal from the foreground — which
         // is the only place this is ever called from, because the only caller is
         // a JavaScript bridge call.
-        guard state.phase != .done else { return }
+        guard state.phase != .done else { finished(); return }
         let (attributes, _) = WorkoutActivityAttributes.from(state)
         do {
             activity = try Activity.request(attributes: attributes, content: content, pushType: nil)
         } catch {
             NSLog("Spotter Live Activity: could not start — %@", String(describing: error))
         }
+        finished()
     }
 
     /// Two start instants that are not the same session start. Half a second

@@ -85,9 +85,9 @@ assert(resume[1].indexOf('Activity.request(') >= 0 && resume[1].indexOf('activit
   'on a resume the new activity is requested first and the old one ended immediately with no closing frame');
 console.log('PASS paused: frozen string clock, no button, pause glyph, 8 h stale date, nudge cancelled, resume replaces the activity.');
 
-// ---------- five intents exist, and can actually run ----------
+// ---------- six intents exist, and can actually run ----------
 
-['SkipRestIntent', 'LogSetIntent', 'AdjustSetIntent', 'MarkMoveIntent', 'RoundDoneIntent'].forEach(name => {
+['SkipRestIntent', 'LogSetIntent', 'AdjustSetIntent', 'MarkMoveIntent', 'RoundDoneIntent', 'TypeFigureIntent'].forEach(name => {
   assert(new RegExp('struct ' + name + ':\\s*LiveActivityIntent').test(intents),
     name + ' must adopt LiveActivityIntent so perform() runs in the app process');
   assert(/static let isDiscoverable = false/.test(intents.slice(intents.indexOf('struct ' + name))),
@@ -102,7 +102,7 @@ assert(/Button\(intent: AdjustSetIntent\(field: field, delta: delta\)\)/.test(wi
 assert(/@Parameter\(title: "Figure"\)\s*var field: DialField/.test(intents) && /@Parameter\(title: "Direction"\)\s*var delta: Int/.test(intents),
   'AdjustSetIntent carries field and delta as @Parameters, which is how the values travel with the button');
 assert(/enum DialField: String, AppEnum/.test(intents), 'DialField must be an AppEnum so the parameter serialises');
-console.log('PASS the five LiveActivityIntents are wired: four buttons, and one parameterised dial intent behind four more.');
+console.log('PASS the six LiveActivityIntents are wired: four action buttons, the parameterised dial intent behind four ± buttons, and the figure intent behind two.');
 
 // ---------- the dial never crosses the bridge; Log set carries it ----------
 //
@@ -219,11 +219,32 @@ assert(nudgeFn && !/complex|Complex|cap\b/.test(nudgeFn[1]),
   'syncNudge must know nothing about the cap: the phone\'s own tone (cxTick) is the cap\'s, and a cap ending is not a rest ending');
 console.log('PASS the complex: counter + cap on the wire, Next move / Round done wired, the phone\'s score line, "Time" on the deadline, no nudge for a cap.');
 
-// ---------- the figures are links; the weight half exists at zero ----------
+// ---------- the figures open the sheet to type; the weight half exists at zero ----------
+//
+// A tap on a figure is a Button(intent: TypeFigureIntent) that opens the app
+// (openAppWhenRun) and hands the sink the field; the sink delivers the
+// spotter://set/<field>?reps=..&weight=.. link the engine answers with the
+// sheet open on that field. NOT a Link: on the 17 Pro a Link on the figure
+// answered every tap with the card's widgetURL (spotter://resume), and so did
+// a Button wrapped in invalidatableContent — see the widget's comments.
 
-assert(/Link\(destination: link\) \{ figure \}/.test(widget), 'the dial figures must be Links, not buttons');
-assert(/URL\(string: "spotter:\/\/set\/" \+ field\.rawValue \+ "\?" \+ query\)/.test(widget),
-  'the figure link must be spotter://set/<reps|weight>?reps=..&weight=.. — the route openSetLink() answers');
+assert(/struct TypeFigureIntent: LiveActivityIntent/.test(intents) && /static let openAppWhenRun = true/.test(intents.slice(intents.indexOf('struct TypeFigureIntent'))),
+  'TypeFigureIntent must be a LiveActivityIntent that opens the app: the sheet is on the phone');
+assert(/LiveActionRouter\.type\(field\)/.test(performOf('TypeFigureIntent')) && !/LiveActionRouter\.send\(|deliver\(/.test(performOf('TypeFigureIntent')),
+  'TypeFigureIntent.perform() hands the sink the field and sends no action of its own');
+assert(/Button\(intent: TypeFigureIntent\(field: field\)\) \{ figure \}/.test(widget), 'the dial figures must be TypeFigureIntent buttons');
+assert(!/Link\(/.test(widget), 'no Link anywhere on the card: a Link on the figure answered with the widgetURL');
+const figure = /private var figure: some View \{([\s\S]*?)\n    \}/.exec(widget);
+// Code only: the comment beside the figure is allowed to say why the modifier is gone.
+const figureCode = figure && figure[1].split('\n').filter(line => !/^\s*\/\//.test(line)).join('\n');
+assert(figure && !/invalidatableContent/.test(figureCode),
+  'the figure must not be invalidatableContent: WidgetKit treats that wrapper as display-only and swallows the tap');
+const typeFn = /private func type\(_ field: DialField\) \{([\s\S]*?)\n    \}/.exec(sink);
+assert(typeFn, 'LiveActivitySink has no type(_:)');
+assert(/"spotter:\/\/set\/" \+ field\.rawValue \+ "\?" \+ query/.test(typeFn[1]) && /"reps=" \+ String\(self\.dial\.reps \?\? dose\?\.reps \?\? 0\)/.test(typeFn[1]),
+  'the figure link must be spotter://set/<reps|weight>?reps=..&weight=.. carrying the dial\'s figures (the prefill\'s if untouched)');
+assert(/LiveStatePlugin\.deliver\(LiveAction\(kind: \.notification, source: \.activity, id: url\)\)/.test(typeFn[1]),
+  'the link must go through the routed-link door (kind .notification with the url as id), which openLink() parks until the page can open it');
 assert(/function openSetLink\(field, url\)/.test(app) && /if \(head === "set"\) \{ openSetLink\(arg, String\(url\)\); return; \}/.test(app),
   'app.ts must route spotter://set/<field> to openSetLink');
 assert(/\.frame\(minWidth: 44\)[\s\S]{0,400}\.frame\(height: 44\)/.test(widget),
@@ -232,7 +253,29 @@ assert(/weight: dose\.weight == nil \? nil : \(dialWeight \?\? dose\.weight\)/.t
   'ContentState.content must treat a weight of 0 as a weight: only nil means bodyweight');
 assert(/value == value\.rounded\(\) \? String\(Int\(value\)\)/.test(widget), 'the dial must render 0 as "0", not "—"');
 assert(/weight: pre \? pre\.weight : null/.test(app), 'app.ts liveState().dose.weight must be 0, not null, for a movement never loaded');
-console.log('PASS the reps and weight figures are spotter://set links with the dial\'s figures; 0 is a weight.');
+console.log('PASS the reps and weight figures open the phone on the set sheet with the dial\'s figures (TypeFigureIntent → spotter://set); 0 is a weight.');
+
+// ---------- the round trip fits inside the tap ----------
+//
+// Measured on the 17 Pro, 21 Sept: the app is woken for a Lock Screen tap and
+// suspended ~100 ms after perform() returns; the engine answers inside that
+// window, but a coalesced push lands after it and goes out on the next tap.
+// So every action intent awaits the sink's settle (the engine's state pushed,
+// or 1.5 s), and the sink never coalesces while the app is not in front.
+
+['SkipRestIntent', 'LogSetIntent', 'MarkMoveIntent', 'RoundDoneIntent'].forEach(name =>
+  assert(/await LiveActionRouter\.settle\(\)/.test(performOf(name)), name + '.perform() must await LiveActionRouter.settle()'));
+assert(!/settle\(/.test(performOf('AdjustSetIntent')) && !/settle\(/.test(performOf('TypeFigureIntent')),
+  'a dial press and a figure tap have nothing to wait for: neither sends the engine anything');
+assert(/static var settler: \(\(TimeInterval\) async -> Void\)\?/.test(intents), 'LiveActionRouter needs the settler closure');
+assert(/LiveActionRouter\.settler = \{ \[weak self\] seconds in\s*await self\?\.settle\(within: seconds\)/.test(sink), 'the sink must install the settler');
+assert(/push\(state\) \{ \[weak self\] in self\?\.settled\(\) \}/.test(sink),
+  'flush() — and only flush(), the engine\'s own states — must release the waiting intents once the frame is pushed');
+const optimisticFn = /private func optimistic\(_ action: LiveAction\) \{([\s\S]*?)\n    \}/.exec(sink);
+assert(optimisticFn && !/settled\(\)/.test(optimisticFn[1]), 'the optimistic frame must never release an intent: it is not the engine\'s answer');
+assert(/let awake = UIApplication\.shared\.applicationState == \.active/.test(sink) && /if phaseChanged \|\| since >= 1 \|\| !awake \{/.test(sink),
+  'update(_:) must flush at once while the app is not in front: a coalescing timer fires on the next wake, which is the next tap');
+console.log('PASS the four action intents hold perform() open for the engine\'s pushed state (1.5 s cap), and the background never coalesces.');
 
 // ---------- the rest-end nudge breaks through a Focus ----------
 //

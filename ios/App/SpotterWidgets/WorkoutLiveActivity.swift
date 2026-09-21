@@ -777,11 +777,13 @@ private struct ActionButton: View {
 /// The row is 44 pt tall so every target is 44 pt (HIG minimum), while the
 /// visible circles and pill are 32 and 34: the hit area extends into the
 /// row's gutter, not the neighbour's. The value between the two circles is a
-/// control too, since 21 Sept — a `Link`, not a button: a tap on the number
-/// opens the phone's set sheet with these figures in it and that field under
-/// the keyboard, which is the one thing a card cannot do for itself ("i will
-/// want to be able to type it in"). Its target is the 44 pt column between
-/// the two circles, so the three targets in a group abut and never overlap.
+/// control too, since 21 Sept: a tap on the number opens the phone's set
+/// sheet with these figures in it and that field under the keyboard, which
+/// is the one thing a card cannot do for itself ("i will want to be able to
+/// type it in"). It is a `Button(intent: TypeFigureIntent)` whose intent
+/// opens the app, not a `Link` — see the intent for what a `Link` did here.
+/// Its target is the 44 pt column between the two circles, so the three
+/// targets in a group abut and never overlap.
 ///
 /// The weight half exists whenever the engine sent a weight, and 0 is a
 /// weight: the phone's sheet opens on 0 for every set, and a card that hid
@@ -791,9 +793,9 @@ private struct DialRow: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            DialGroup(field: .reps, value: String(dial.reps), unit: "reps", link: link(.reps))
+            DialGroup(field: .reps, value: String(dial.reps), unit: "reps")
             if let weight = dial.weight {
-                DialGroup(field: .weight, value: Self.format(weight), unit: dial.unit, link: link(.weight))
+                DialGroup(field: .weight, value: Self.format(weight), unit: dial.unit)
             }
             Button(intent: LogSetIntent()) {
                 // No checkmark here, unlike the lone Log set button: the two
@@ -825,17 +827,6 @@ private struct DialRow: View {
     static func format(_ value: Double) -> String {
         value == value.rounded() ? String(Int(value)) : String(format: "%.1f", value)
     }
-
-    /// `spotter://set/weight?reps=12&weight=55` — the deep link the engine
-    /// answers by opening the set sheet with both figures in it and the named
-    /// field under the keyboard (`openSetLink()` in app.ts). The figures are
-    /// the dial's, so a number turned on the card is the number typed over.
-    /// Nothing but digits and a dot ever goes in the query.
-    private func link(_ field: DialField) -> URL? {
-        var query = "reps=" + String(dial.reps)
-        if let weight = dial.weight { query += "&weight=" + Self.format(weight) }
-        return URL(string: "spotter://set/" + field.rawValue + "?" + query)
-    }
 }
 
 /// One figure between its two buttons.
@@ -843,19 +834,15 @@ private struct DialGroup: View {
     let field: DialField
     let value: String
     let unit: String
-    /// Where a tap on the figure takes the phone; nil draws a plain figure.
-    var link: URL? = nil
 
     var body: some View {
         HStack(spacing: 0) {
             StepButton(field: field, delta: -1)
-            if let link = link {
-                // A Link, not a Button(intent:): the figure's tap is the one
-                // that has to leave the card, because typing is the phone's.
-                Link(destination: link) { figure }
-            } else {
-                figure
-            }
+            // The figure's tap is the one that has to leave the card, because
+            // typing is the phone's: the intent opens the app and the sink
+            // hands the engine the spotter://set link with the dial's figures.
+            Button(intent: TypeFigureIntent(field: field)) { figure }
+                .buttonStyle(.plain)
             StepButton(field: field, delta: 1)
         }
     }
@@ -883,13 +870,16 @@ private struct DialGroup: View {
         .fixedSize(horizontal: true, vertical: false)
         .frame(height: 44)
         .contentShape(Rectangle())
-        // The system's own "waiting for the intent" treatment: the figure
-        // dims from the press until the app's update lands, which is the
-        // honest state of a number that is being changed in another
-        // process. Judiciously, per WidgetKit: on the figure only.
-        .invalidatableContent()
-        .accessibilityElement(children: .combine)
-        .accessibilityHint(link == nil ? "" : "Opens the set sheet on the phone to type it")
+        // No `invalidatableContent()` here any more. It gave the figure the
+        // system's dimmed "waiting for the intent" look between a ± press
+        // and the app's update — and it swallowed every tap on the figure:
+        // with it, a `Link` and then a `Button(intent:)` around this label
+        // both answered a tap with the card's `widgetURL` (17 Pro, 21 Sept).
+        // WidgetKit's invalidatable wrapper is display-only content, and a
+        // control inside it is not a control. The optimistic push already
+        // changes the number under the thumb, so the dim was never load-
+        // bearing; the tap is.
+        .accessibilityHint("Opens the set sheet on the phone to type it")
     }
 }
 
