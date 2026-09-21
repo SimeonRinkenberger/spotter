@@ -275,7 +275,7 @@ ok('the chip rows are the twelve muscles and Bodyweight plus the twelve kinds of
 });
 
 ok('the filter starts clear every time the picker opens', () => {
-  const open = fn('openPicker');
+  const open = fn('openBank');
   assert(open.includes('mus: [], eq: []'));
   assert(open.includes('$("woafilt").open = false;'));
 });
@@ -580,7 +580,7 @@ ok('every way in passes a target, and the editor falls back to its own slot', ()
   assert(src.includes('openSwap(ex.name, w.title, { w: w, bi: bi, ei: ei, ex: ex })'), 'the library card');
   assert(src.includes('openSwap(name, title, swapTarget(w, ex))'), 'the explain sheet');
   assert(src.includes('openSwap(focus.name, wo.workout.title, swapTarget(wo.workout, focus))'), 'workout mode');
-  assert(src.includes('openPicker("card-add", { w: w, bi: bi })'), 'the card add');
+  assert(src.includes('openBank("card-add", { w: w, bi: bi })'), 'the card add');
   assert(src.includes('swapTarget(exEdit.w, exEdit.ex) || { w: exEdit.w, bi: exEdit.block, ei: exEdit.index, ex: exEdit.ex }'), 'the editor');
 });
 
@@ -615,11 +615,11 @@ ok('the bank row is offered only when the sheet has somewhere to write', () => {
 });
 
 ok('the bank path asks no model and posts only to the corrections endpoint', () => {
-  const bank = ['swapBank', 'swapRow', 'swapTarget', 'openPicker', 'woaChoose', 'woaRender', 'woaChips',
+  const bank = ['swapBank', 'swapRow', 'swapTarget', 'openBank', 'woaChoose', 'woaRender', 'woaChips',
     'saveWorkoutAdd', 'sessionReplace', 'replaceSessionExercise', 'woaKeep', 'postCorrection']
     .map(fn).join('\n');
   assert(!/api\("swap"|api\("explain"|apiStream\(|api\("pumpy|api\("demo-video"/.test(bank), 'a model was asked');
-  assert(bank.includes('openPicker("replace", t);'));
+  assert(bank.includes('openBank("replace", t);'));
   assert(bank.includes('if (pick) woaChoose(swapRow(pick));'));
   (bank.match(/api\("[^"]*"/g) || []).forEach((call) => assert(call.startsWith('api("workouts/'), call));
   // And the sheet's own model path is the one it always was.

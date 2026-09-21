@@ -3857,7 +3857,7 @@ export const APP = String.raw`
   // catalog id the row was picked with. A name the bank does not have is still
   // one row of that list, so nothing that could be typed here was lost.
   function openExAdd(w, bi) {
-    openPicker("card-add", { w: w, bi: bi });
+    openBank("card-add", { w: w, bi: bi });
   }
 
   // Re-seat a workout row the server has just rewritten. Realtime will deliver the
@@ -5651,7 +5651,7 @@ export const APP = String.raw`
   function swapBank(pick) {
     var t = swapCtx && swapCtx.target;
     if (!t) return;
-    openPicker("replace", t);
+    openBank("replace", t);
     if (pick) woaChoose(swapRow(pick));
     closeSheet("swapsheet");
   }
@@ -6471,8 +6471,16 @@ export const APP = String.raw`
    * a replacement, session set when the exercise is the live one, which is what
    * decides whether the save writes the session or the card. The filter starts
    * clear every time, so a chip left on cannot hide the list next time.
+   *
+   * openBank, not openPicker: the plan has an openPicker of its own ("Add to
+   * Thursday"), declared later in this file, and a second declaration of a
+   * name is not an error in JavaScript — the last one wins, silently. For a
+   * fortnight every door into the bank opened the plan's picker with a workout
+   * object for a label ("Add to [object Object]"), and the harness never saw
+   * it because it pulls a function out by its first declaration. Names in this
+   * file are unique now, and tools/unique-decls.mjs keeps them so.
    */
-  function openPicker(mode, target) {
+  function openBank(mode, target) {
     haptic("tap");
     woa = { pick: null, where: "after", keep: false, nosets: false, mode: mode, target: target || null, mus: [], eq: [] };
     $("woaddtitle").textContent = mode === "replace" ? "Instead of " + target.ex.name : "Add an exercise";
@@ -6496,7 +6504,7 @@ export const APP = String.raw`
 
   function openWorkoutAdd() {
     if (!wo || wo.finished) return;
-    openPicker("add", null);
+    openBank("add", null);
   }
 
   // Where the movement goes in the session. Three answers, and the complex is the
@@ -16290,7 +16298,7 @@ export const APP = String.raw`
   $("exeditpick").onclick = function () {
     if (!exEdit || exEdit.mode !== "edit") return;
     var t = swapTarget(exEdit.w, exEdit.ex) || { w: exEdit.w, bi: exEdit.block, ei: exEdit.index, ex: exEdit.ex };
-    openPicker("replace", t);
+    openBank("replace", t);
     closeSheet("exeditsheet");
     exEdit = null;
   };

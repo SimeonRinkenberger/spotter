@@ -10570,7 +10570,7 @@ details.details-moving > :not(summary) {
     exEdit = { w: w, block: bi, index: ei, name: ex.name, ex: ex, mode: "edit" }, $("exedittitle").textContent = "Fix this exercise", $("exeditlede").textContent = "Spotter read this off the video. If it got it wrong, put it right \u2014 the change stays on your copy.", $("exeditname").value = ex.name || "", $("exeditsets").value = fieldVal(ex.sets), $("exeditreps").value = fieldVal(ex.reps), $("exeditsecs").value = fieldVal(ex.duration_seconds), $("exeditdelete").classList.remove("hide"), $("exeditsave").textContent = "Save change", openSheet("exeditsheet");
   }
   function openExAdd(w, bi) {
-    openPicker("card-add", { w: w, bi: bi });
+    openBank("card-add", { w: w, bi: bi });
   }
   function absorbWorkout(row) {
     if (!(!row || !row.id)) {
@@ -11452,7 +11452,7 @@ details.details-moving > :not(summary) {
   }
   function swapBank(pick) {
     var t = swapCtx && swapCtx.target;
-    t && (openPicker("replace", t), pick && woaChoose(swapRow(pick)), closeSheet("swapsheet"));
+    t && (openBank("replace", t), pick && woaChoose(swapRow(pick)), closeSheet("swapsheet"));
   }
   function swapRow(it) {
     return woaMake(exKey(it), it.name, it.canonical_id || null, "", 3);
@@ -11971,8 +11971,13 @@ details.details-moving > :not(summary) {
       }, where.appendChild(b);
     }), $("woakeep").classList.toggle("hide", old ? !(t.session && woaCardHas(t)) : !live || woaCardBlocks() === null), woaKeepPaint(), woaPane(1);
   }
+  function openBank(mode, target) {
+    haptic("tap"), woa = { pick: null, where: "after", keep: !1, nosets: !1, mode: mode, target: target || null, mus: [], eq: [] }, $("woaddtitle").textContent = mode === "replace" ? "Instead of " + target.ex.name : "Add an exercise", $("woaddsave").textContent = mode === "replace" ? "Replace it" : "Add exercise", $("woaq").value = "", $("woafilt").open = !1, woaChips(), woaPane(0), woaRender(), $("woaddsheet")._returnFocus = document.activeElement, openSheet("woaddsheet"), woaCat || woaCatalog().then(function() {
+      $("woaddsheet").classList.contains("open") && woaRender();
+    });
+  }
   function openWorkoutAdd() {
-    !wo || wo.finished || openPicker("add", null);
+    !wo || wo.finished || openBank("add", null);
   }
   function woaPlace(ex) {
     var s = wo.screens[wo.i], cx = s && s.cx && !s.ei ? s.cx : null;
@@ -17866,7 +17871,7 @@ details.details-moving > :not(summary) {
   }, $("exeditpick").onclick = function() {
     if (!(!exEdit || exEdit.mode !== "edit")) {
       var t = swapTarget(exEdit.w, exEdit.ex) || { w: exEdit.w, bi: exEdit.block, ei: exEdit.index, ex: exEdit.ex };
-      openPicker("replace", t), closeSheet("exeditsheet"), exEdit = null;
+      openBank("replace", t), closeSheet("exeditsheet"), exEdit = null;
     }
   }, $("exeditname").addEventListener("keydown", function(e) {
     e.key === "Enter" && saveExEdit();
