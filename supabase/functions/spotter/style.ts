@@ -2656,7 +2656,15 @@ export const STYLE = String.raw`<style>
      gives its delete - rather than the muted grey that reads as unavailable. */
   #recapopts .danger { color: var(--ember-ink); font-size: 15px; font-weight: 650; }
   #dmore { min-height: 44px; }
-  #chips { flex-wrap: wrap; }
+  /* The library row wraps rather than scrolls, and a wrapped row cannot carry its
+     side inset on its end chips: the second line's first chip is not :first-child,
+     so "Clear filter" sat flush against the screen edge under a row inset 18px.
+     A wrapping row has no scrollport for the two engines to disagree about, so the
+     inset moves back onto the box, and the scroll fade goes with the scrolling. */
+  #chips { flex-wrap: wrap; overflow: visible; padding-left: 18px; padding-right: 18px;
+    -webkit-mask-image: none; mask-image: none; }
+  #chips > :first-child { margin-left: 0; }
+  #chips > :last-child { margin-right: 0; }
   /* iOS date inputs can add padding outside their declared width. Let a normal
      box own the inset and border; the native picker remains an unpadded input. */
   .schedule-date-control { display: flex; min-width: 0; padding: 0 14px; border: 1px solid var(--line);

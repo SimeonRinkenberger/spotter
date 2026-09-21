@@ -4791,6 +4791,13 @@ type Block = {
   type: string;
   rounds: number | null;
   rest_seconds: number | null;
+  /**
+   * How long the block runs, for the ones a clock defines: an AMRAP's cap, a
+   * circuit "for 12 minutes". The extractor never writes it — the client's cxCap
+   * reads the cap off the card's other fields — so it is only ever present when
+   * a user set it on a section they built or edited themselves.
+   */
+  duration_seconds?: number | null;
   exercises: Exercise[];
 };
 
@@ -6670,6 +6677,9 @@ function storedBlocks(old: any): Block[] {
     type: typeof b?.type === "string" && b.type ? b.type : "straight",
     rounds: typeof b?.rounds === "number" ? b.rounds : null,
     rest_seconds: typeof b?.rest_seconds === "number" ? b.rest_seconds : null,
+    // Only when a person set one: a key the extractor never writes must not
+    // appear on every merged block, or every merge would look like an edit.
+    ...(typeof b?.duration_seconds === "number" ? { duration_seconds: b.duration_seconds } : {}),
     exercises: (Array.isArray(b?.exercises) ? b.exercises : [])
       .filter((e: any) => e && typeof e.name === "string" && e.name.trim())
       .map(storedExercise),
@@ -9860,8 +9870,8 @@ async function handleReprocess(id: string, userId: string, req: Request, cors: C
 
 class BadEdit extends Error {}
 
-type EditField = "name" | "sets" | "reps" | "duration_seconds" | "canonical_id";
-const EDIT_FIELDS: EditField[] = ["name", "sets", "reps", "duration_seconds", "canonical_id"];
+type EditField = "name" | "sets" | "reps" | "duration_seconds" | "rest_seconds" | "canonical_id";
+const EDIT_FIELDS: EditField[] = ["name", "sets", "reps", "duration_seconds", "rest_seconds", "canonical_id"];
 
 /**
  * Validate one submitted field. Deliberately throws rather than coercing: quietly
@@ -9897,12 +9907,76 @@ function cleanEditField(field: EditField, v: unknown): string | number | null {
     if (n < 1 || n > 99) throw new BadEdit("Sets has to be between 1 and 99.");
     return n;
   }
+  if (field === "rest_seconds") {
+    // Zero is an answer here and nowhere else: "no rest" is a thing a person
+    // says about a superset, while a zero-second set is a field left empty.
+    // The extractor never stores a zero (intOrNull drops it), so a stored zero
+    // is always somebody's decision and Workout Mode honours it as one; null
+    // still means "the card does not say" and takes the default.
+    if (n < 0 || n > 3600) throw new BadEdit("Rest has to be between 0 seconds and an hour.");
+    return n;
+  }
   if (n < 1 || n > 3600) throw new BadEdit("A duration has to be between 1 second and an hour.");
   return n;
 }
 
+/**
+ * The furniture of a block — everything on it that is not an exercise — checked
+ * the way cleanEditField checks a field: a refusal, never a quiet coercion. The
+ * type is one the extractor could have written, so Workout Mode meets nothing
+ * new; the cap is at least a minute, because under that it is a number in the
+ * wrong field, which is exactly the mistake cxCap guards against on read.
+ */
+type BlockFurniture = { title: string | null; type: string; rounds: number | null;
+  rest_seconds: number | null; duration_seconds: number | null };
+
+function cleanBlockFields(fields: Record<string, unknown>, base: Partial<BlockFurniture>): BlockFurniture {
+  const out: BlockFurniture = {
+    title: base.title ?? null, type: base.type || "straight", rounds: base.rounds ?? null,
+    rest_seconds: base.rest_seconds ?? null, duration_seconds: base.duration_seconds ?? null,
+  };
+  if ("title" in fields) {
+    const t = String(fields.title ?? "").replace(/\s+/g, " ").trim();
+    if (t.length > 60) throw new BadEdit("That section name is too long.");
+    out.title = t || null;
+  }
+  if ("type" in fields) {
+    const t = String(fields.type ?? "").toLowerCase().trim();
+    if (!BLOCK_TYPES.includes(t)) throw new BadEdit("That is not a kind of section Spotter knows.");
+    out.type = t;
+  }
+  if ("rounds" in fields) {
+    const v = fields.rounds;
+    if (v === null || v === undefined || v === "") out.rounds = null;
+    else {
+      const n = Math.round(Number(v));
+      if (!Number.isFinite(n) || n < 1 || n > 50) throw new BadEdit("Rounds has to be between 1 and 50.");
+      out.rounds = n;
+    }
+  }
+  if ("rest_seconds" in fields) out.rest_seconds = cleanEditField("rest_seconds", fields.rest_seconds) as number | null;
+  if ("duration_seconds" in fields) {
+    const v = fields.duration_seconds;
+    if (v === null || v === undefined || v === "") out.duration_seconds = null;
+    else {
+      const n = Math.round(Number(v));
+      if (!Number.isFinite(n) || n < 60 || n > 3600) throw new BadEdit("A time cap has to be between a minute and an hour.");
+      out.duration_seconds = n;
+    }
+  }
+  return out;
+}
+
+/** The furniture as the ledger writes it: one comparable string, keys in one order. */
+function blockFurnitureText(b: any): string {
+  return JSON.stringify({
+    title: b?.title ?? null, type: b?.type ?? "straight", rounds: b?.rounds ?? null,
+    rest_seconds: b?.rest_seconds ?? null, duration_seconds: b?.duration_seconds ?? null,
+  });
+}
+
 type Change = {
-  field: "name" | "sets" | "reps" | "duration_seconds" | "exercise";
+  field: "name" | "sets" | "reps" | "duration_seconds" | "rest_seconds" | "exercise" | "block";
   old: string | number | null;
   new: string | number | null;
   oldCanon: string | null;
@@ -9924,7 +9998,7 @@ function deepCopy<T>(v: T): T {
 async function handleCorrection(id: string, userId: string, req: Request, cors: Cors): Promise<Response> {
   const body = await req.json().catch(() => ({} as Record<string, unknown>));
   const op = String((body as any)?.op ?? "");
-  if (op !== "edit" && op !== "add" && op !== "delete" && op !== "delete_block") {
+  if (op !== "edit" && op !== "add" && op !== "delete" && op !== "delete_block" && op !== "edit_block") {
     return json({ status: "error", message: "Unknown edit." }, 400, cors);
   }
 
@@ -9981,11 +10055,43 @@ async function handleCorrection(id: string, userId: string, req: Request, cors: 
         oldCanon: ex.canonical_id ?? null, newCanon: null, oldEx: deepCopy(ex), newEx: null });
       subject = { name: block.title || "Workout block" };
       blocks.splice(bi, 1);
+    } else if (op === "edit_block") {
+      // The section's own furniture — its name, what kind of section it is, how
+      // many rounds, the rest between them, the clock it runs against. The
+      // exercises in it are untouched; they have their own ops. Guarded the way
+      // delete_block is: the block the client edited has to be the block stored.
+      const block = blocks[bi];
+      if (!block || JSON.stringify(block) !== JSON.stringify((body as any).expect_block))
+        return json({ status: "stale", message: "This block changed — reopen the workout and try again." }, 409, cors);
+      const was = blockFurnitureText(block);
+      const next = cleanBlockFields(fields, block);
+      block.title = next.title;
+      block.type = next.type;
+      block.rounds = next.rounds;
+      block.rest_seconds = next.rest_seconds;
+      if (next.duration_seconds === null) delete block.duration_seconds;
+      else block.duration_seconds = next.duration_seconds;
+      const now = blockFurnitureText(block);
+      if (was === now) return json({ status: "ok", workout: w, corrections: 0 }, 200, cors);
+      subject = { name: block.title || "Workout block" };
+      changes.push({ field: "block", old: was, new: now, oldCanon: null, newCanon: null, oldEx: null, newEx: null });
     } else if (op === "add") {
       // A card with nothing in it is the common case for "the extractor missed
       // everything", so the first block is created rather than demanded.
+      //
+      // A section the user is building arrives as new_block: its furniture and
+      // the first exercise in one write, because a block with nothing in it is
+      // not a block (the filter below would drop it on the way out). Only ever
+      // one, and only at the end — the clamp on bi already says so.
+      const fresh = (body as any)?.new_block && typeof (body as any).new_block === "object"
+        ? cleanBlockFields((body as any).new_block as Record<string, unknown>, {}) : null;
       while (blocks.length <= bi) {
-        blocks.push({ title: null, type: "straight", rounds: null, rest_seconds: null, exercises: [] });
+        const b: Block = { title: null, type: "straight", rounds: null, rest_seconds: null, exercises: [] };
+        if (fresh && blocks.length === bi) {
+          b.title = fresh.title; b.type = fresh.type; b.rounds = fresh.rounds; b.rest_seconds = fresh.rest_seconds;
+          if (fresh.duration_seconds !== null) b.duration_seconds = fresh.duration_seconds;
+        }
+        blocks.push(b);
       }
       const blk = blocks[bi];
       if (!Array.isArray(blk.exercises)) blk.exercises = [];
@@ -10000,7 +10106,8 @@ async function handleCorrection(id: string, userId: string, req: Request, cors: 
         sets: cleanEditField("sets", fields.sets),
         reps: cleanEditField("reps", fields.reps),
         duration_seconds: cleanEditField("duration_seconds", fields.duration_seconds),
-        rest_seconds: null, weight: null, equipment: null, notes: null,
+        rest_seconds: cleanEditField("rest_seconds", fields.rest_seconds) as number | null,
+        weight: null, equipment: null, notes: null,
         // The source of an exercise a person typed is that person. Left explicitly
         // unevidenced rather than dressed up as a located quote: the confidence
         // score measures the extractor, and crediting it for a human's work would
@@ -10135,7 +10242,7 @@ async function handleCorrection(id: string, userId: string, req: Request, cors: 
     workout_id: id,
     shortcode: w.shortcode,
     platform: w.platform,
-    kind: op === "delete_block" ? "delete" : op,
+    kind: op === "delete_block" ? "delete" : op === "edit_block" ? "edit" : op,
     field: c.field,
     old_value: c.old === null || c.old === undefined ? null : String(c.old),
     new_value: c.new === null || c.new === undefined ? null : String(c.new),

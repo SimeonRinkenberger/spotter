@@ -503,7 +503,7 @@ const EDIT_FIELDS = JSON.parse('[' + /const EDIT_FIELDS: EditField\[\] = \[([^\]
 
 ok('the endpoint the picker posts to is the one the corrections handler serves', () => {
   assert(src.includes('api("workouts/" + w.id + "/exercises"'), 'woaKeep posts somewhere else');
-  assert(idx.includes('if (op !== "edit" && op !== "add" && op !== "delete" && op !== "delete_block")'));
+  assert(idx.includes('if (op !== "edit" && op !== "add" && op !== "delete" && op !== "delete_block" && op !== "edit_block")'));
 });
 
 ok('every field sent is one the server reads, and none it would throw on', () => {
@@ -511,7 +511,7 @@ ok('every field sent is one the server reads, and none it would throw on', () =>
   assert.deepEqual(fields, { name: 'Dip', canonical_id: 'dip', sets: 3, reps: '10', duration_seconds: null });
   Object.keys(fields).forEach((f) => assert(EDIT_FIELDS.includes(f), 'the server does not read ' + f));
   // EDIT_FIELDS is the server's whole vocabulary for an add or an edit.
-  assert.deepEqual(EDIT_FIELDS, ['name', 'sets', 'reps', 'duration_seconds', 'canonical_id']);
+  assert.deepEqual(EDIT_FIELDS, ['name', 'sets', 'reps', 'duration_seconds', 'rest_seconds', 'canonical_id']);
   // A free-text pick has no identity; it sends null, not undefined, and the
   // server resolves the name as it always did.
   assert.equal(run('woaFields({ name: "Sled Push" }).canonical_id'), null);
@@ -677,6 +677,80 @@ ok('the other fields are untouched by the new one', () => {
   assert.throws(() => vm.runInContext('cleanEditField("sets", 150)', srv), /between 1 and 99/);
 });
 
+// ---------- rest and sections on the server ----------
+//
+// What the card editor sends for a rest and for a section's furniture, run
+// through the same lifted validators. Zero is the one number rest accepts that
+// nothing else does, and a section's cap starts at a minute.
+
+console.log('rest and sections on the server');
+
+vm.runInContext(transformSync(
+  'const BLOCK_TYPES = ' + /const BLOCK_TYPES = (\[[^\]]*\]);/.exec(idx)[1] + ';\n' +
+  'type BlockFurniture = any;\n' + tsFn('cleanBlockFields') + '\n' + tsFn('blockFurnitureText'),
+  { loader: 'ts' }).code, srv);
+const rest = (v) => vm.runInContext('cleanEditField("rest_seconds", ' + JSON.stringify(v === undefined ? null : v) + ')', srv);
+const furn = (fields, base) => JSON.parse(JSON.stringify(vm.runInContext(
+  'cleanBlockFields(' + JSON.stringify(fields) + ', ' + JSON.stringify(base || {}) + ')', srv)));
+
+ok('rest: zero is "no rest", empty is "not said", and an hour is the ceiling', () => {
+  assert.equal(rest(0), 0);
+  assert.equal(rest('0'), 0);
+  assert.equal(rest(''), null);
+  assert.equal(rest(null), null);
+  assert.equal(rest(90), 90);
+  assert.equal(rest('3600'), 3600);
+  assert.throws(() => rest(-5), /between 0 seconds and an hour/);
+  assert.throws(() => rest(3601), /between 0 seconds and an hour/);
+  assert.throws(() => rest('soon'), /needs to be a number/);
+  // The other timed field still refuses a zero: a zero-second set is an empty field.
+  assert.throws(() => vm.runInContext('cleanEditField("duration_seconds", 0)', srv), /between 1 second and an hour/);
+});
+
+ok('a section keeps what it is not asked to change', () => {
+  const base = { title: 'Finisher', type: 'circuit', rounds: 3, rest_seconds: 60, duration_seconds: null };
+  assert.deepEqual(furn({}, base), base);
+  assert.deepEqual(furn({ rounds: 4 }, base), { ...base, rounds: 4 });
+  assert.deepEqual(furn({ title: '' }, base), { ...base, title: null });
+  assert.deepEqual(furn({ rest_seconds: 0 }, base), { ...base, rest_seconds: 0 });
+  assert.deepEqual(furn({ rounds: '' }, base), { ...base, rounds: null });
+});
+
+ok('a section built from nothing is a straight block until told otherwise', () => {
+  assert.deepEqual(furn({}), { title: null, type: 'straight', rounds: null, rest_seconds: null, duration_seconds: null });
+  assert.deepEqual(furn({ title: '  Cool-down  stretch ', type: 'COOLDOWN' }),
+    { title: 'Cool-down stretch', type: 'cooldown', rounds: null, rest_seconds: null, duration_seconds: null });
+  assert.deepEqual(furn({ type: 'amrap', duration_seconds: 900 }),
+    { title: null, type: 'amrap', rounds: null, rest_seconds: null, duration_seconds: 900 });
+});
+
+ok('a section refuses what Workout Mode could not run', () => {
+  assert.throws(() => furn({ type: 'cardio' }), /not a kind of section/);
+  assert.throws(() => furn({ rounds: 0 }), /between 1 and 50/);
+  assert.throws(() => furn({ rounds: 51 }), /between 1 and 50/);
+  assert.throws(() => furn({ duration_seconds: 30 }), /between a minute and an hour/);
+  assert.throws(() => furn({ duration_seconds: 3601 }), /between a minute and an hour/);
+  assert.throws(() => furn({ title: 'x'.repeat(61) }), /too long/);
+  assert.throws(() => furn({ rest_seconds: -1 }), /between 0 seconds/);
+});
+
+ok('the ledger text for a section is one string with the keys in one order', () => {
+  const a = vm.runInContext('blockFurnitureText({ exercises: [1, 2], rounds: 3, title: "A", type: "circuit" })', srv);
+  const b = vm.runInContext('blockFurnitureText({ title: "A", type: "circuit", rounds: 3, rest_seconds: null })', srv);
+  assert.equal(a, b);
+  assert.equal(a, '{"title":"A","type":"circuit","rounds":3,"rest_seconds":null,"duration_seconds":null}');
+});
+
+ok('edit_block and new_block are guarded and clamped the way delete_block and add are', () => {
+  assert(idx.includes('} else if (op === "edit_block") {'));
+  assert(idx.includes('const next = cleanBlockFields(fields, block);'));
+  assert(idx.includes('if (was === now) return json({ status: "ok", workout: w, corrections: 0 }, 200, cors);'));
+  assert(idx.includes('? cleanBlockFields((body as any).new_block as Record<string, unknown>, {}) : null;'));
+  assert(idx.includes('if (fresh && blocks.length === bi) {'));
+  assert(idx.includes('rest_seconds: cleanEditField("rest_seconds", fields.rest_seconds) as number | null,'));
+  assert(idx.includes('kind: op === "delete_block" ? "delete" : op === "edit_block" ? "edit" : op,'));
+});
+
 ok('a supplied valid id wins over the name on add and on edit; none means the old behaviour', () => {
   assert(idx.includes('const canon = (cleanEditField("canonical_id", fields.canonical_id) as string | null) ?? canonId(name);'));
   assert(idx.includes('canonical_id: canon,'));
@@ -689,6 +763,17 @@ ok('the ledger never learns a field the table would refuse', () => {
   // as old_canonical_id / new_canonical_id, and is skipped in the field loop.
   const mig = fs.readFileSync('supabase/migrations/20260901240000_user_corrections.sql', 'utf8');
   assert(mig.includes("check (field in ('name', 'sets', 'reps', 'duration_seconds', 'exercise'))"));
+  // The constraint has been widened twice since; the newest text is what the
+  // table enforces, and every field the ledger can write has to be in it.
+  const now = fs.readFileSync('supabase/migrations/20260921120000_corrections_rest_block.sql', 'utf8');
+  const allowed = now.match(/check \(field in \(([^)]*)\)\)/)[1];
+  for (const f of ['name', 'sets', 'reps', 'duration_seconds', 'rest_seconds', 'exercise', 'title', 'block']) {
+    assert(allowed.includes("'" + f + "'"), 'ledger field not in the check constraint: ' + f);
+  }
+  const union = idx.match(/type Change = \{\s*field: ([^;]*);/)[1];
+  for (const f of union.split('|').map((x) => x.trim().replace(/"/g, ''))) {
+    assert(allowed.includes("'" + f + "'"), 'Change.field the table would refuse: ' + f);
+  }
   assert(idx.includes('if (f === "name" || f === "canonical_id" || !(f in fields)) continue;'));
   assert(!/field: "canonical_id"/.test(idx));
   assert(idx.includes('field: "name", old: before.name ?? null, new: nameNext, oldCanon: canonWas, newCanon: canonNext,'));

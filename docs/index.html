@@ -7034,6 +7034,17 @@ select:focus-visible {
 }
 #chips {
   flex-wrap: wrap;
+  overflow: visible;
+  padding-left: 18px;
+  padding-right: 18px;
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+#chips > :first-child {
+  margin-left: 0;
+}
+#chips > :last-child {
+  margin-right: 0;
 }
 .schedule-date-control {
   display: flex;
