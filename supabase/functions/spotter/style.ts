@@ -2503,7 +2503,10 @@ export const STYLE = String.raw`<style>
     display: none; align-items: flex-start; gap: 11px; box-shadow: var(--sh-sm); }
   #hint.show { display: flex; }
   #hint b { color: var(--ink); }
-  #hint button { background: none; border: none; color: var(--muted); font-size: 17px; padding: 0 2px;
+  /* The dismiss cross only. "Phone save options" is a button in the same box,
+     appended after this rule was written, and #hint button was dressing it as a
+     17px glyph with no padding, jammed against the sentence above it. */
+  #hintx { background: none; border: none; color: var(--muted); font-size: 17px; padding: 0 2px;
     line-height: 1; flex: 0 0 auto; }
 
   /* ---------- reduced motion, in one place ----------
