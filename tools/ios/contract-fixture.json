@@ -30,6 +30,23 @@
     "progress": { "done": 7, "total": 12 },
     "dose": { "reps": 10, "weight": 24, "unit": "kg", "step": 2.5, "loggable": true }
   },
+  "liveStatePaused": {
+    "_": "The session paused from the phone, or restored at boot from a draft the process died in. Sent with phase 'paused' and pausedAt (ISO 8601, when the pause began); rest is null; everything else keeps describing where it stopped. On resume the engine shifts startedAt forward by the length of the pause and sends an ordinary work/rest state. Both additions are optional so an older shell still decodes.",
+    "v": 1,
+    "title": "Kettlebell Circuit",
+    "startedAt": "2026-09-18T17:04:11.482Z",
+    "phase": "paused",
+    "exercise": "Goblet Squat",
+    "block": "Round 2",
+    "set": { "index": 2, "total": 4 },
+    "target": "10 reps",
+    "weight": "24 kg",
+    "rest": null,
+    "next": "Kettlebell Swing",
+    "progress": { "done": 6, "total": 12 },
+    "dose": { "reps": 10, "weight": 24, "unit": "kg", "step": 2.5, "loggable": true },
+    "pausedAt": "2026-09-18T17:22:40.917Z"
+  },
   "liveStateMinimal": {
     "_": "AMRAP round: no set position, no target, bodyweight, nothing after it.",
     "v": 1,
@@ -103,6 +120,14 @@
     "id": null,
     "reps": 12,
     "weight": 26.5
+  },
+  "liveActionDial": {
+    "_": "The same from the Live Activity's own dial (expanded island / Lock Screen). The ± presses themselves never cross the bridge; this is the one message the dial produces, and only Log set sends it.",
+    "kind": "set",
+    "source": "activity",
+    "id": null,
+    "reps": 12,
+    "weight": 21.5
   },
   "liveActionNotification": {
     "kind": "notification",

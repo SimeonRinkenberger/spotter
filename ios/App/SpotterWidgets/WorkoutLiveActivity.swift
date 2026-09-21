@@ -6,30 +6,46 @@ import WidgetKit
 // The running workout on the Lock Screen and in the Dynamic Island.
 //
 // Design notes and the research behind them are in design/native/live-activity.md.
-// The three that constrain every edit to this file:
+// The five that constrain every edit to this file:
 //
 //   1. Nothing here ticks. Every clock is handed an instant — a start date or a
 //      deadline — and rendered with Text(timerInterval:) or .timer style, so it
 //      keeps counting while the app process is suspended and while the phone is
 //      locked. A number that had to be pushed would freeze the moment the phone
-//      went in a pocket, which is the entire feature.
+//      went in a pocket, which is the entire feature. The one clock that is
+//      rendered from a number is the paused session's, and it is frozen on
+//      purpose: a `.timer` text keeps counting while the process is suspended,
+//      and a paused session must not.
 //   2. The layout does not change shape between phases. Apple's guidance is to
 //      animate existing elements to new positions rather than remove and
 //      re-add them; a rest starting therefore grows and re-colours the clock
 //      rather than swapping the card for a different card.
-//   3. One button, never two. HIG: "prefer limiting it to a single element to
-//      help people avoid accidentally tapping the wrong control". Work offers
-//      Log set, rest offers Skip rest, and the phases whose action app.ts
-//      answers with "Log this one on the phone." offer nothing at all.
+//   3. One action. HIG: "prefer limiting it to a single element to help people
+//      avoid accidentally tapping the wrong control". Rest offers Skip rest and
+//      nothing else; work offers Log set — and, since 20 Sept, the dial beside
+//      it, which is the one conscious trade against that rule: the owner asked
+//      to "put in the sets and reps" from the island, and a Log set that can
+//      only save the prefill is a button that logs the wrong number. The dial
+//      is confined to the presentations WidgetKit allows buttons in (expanded
+//      and Lock Screen), the ± targets are 44 pt so a miss is a near miss, and
+//      the figures never leave the card until Log set carries them. Phases
+//      whose action app.ts answers with "Log this one on the phone." offer
+//      nothing at all.
 //   4. `context.isStale` is not an error state here, it is the alarm clock. A
 //      rest's stale date IS its deadline (see LiveActivitySink.staleDate), so
 //      the one moment ActivityKit re-renders this card without the app running
 //      is the moment the rest ends — and every presentation has to have
 //      something to say then. See PhaseLook.restOver.
+//   5. The compact slots are fixed-width. A timer Text asks the layout for the
+//      widest string it could ever show, and ActivityKit gives a compact slot
+//      whatever it asks for — which on the 17 Pro stretched the island across
+//      the whole status bar with black between the glyph and the clock (owner,
+//      20 Sept: "way too wide"). See IslandClock.
 //
 // Height budget: the system truncates a Lock Screen activity past 160 pt. The
-// card below is ~130 pt at the default type size and ~160 at the 1.25x ceiling
-// the scale is clamped to, which is why that clamp exists.
+// card below is ~145 pt at the default type size with the dial and ~150 at the
+// 1.25x ceiling the scale is clamped to, which is why that clamp exists and why
+// the movement name drops to one line whenever the dial is on the card.
 struct WorkoutLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: WorkoutActivityAttributes.self) { context in
@@ -47,12 +63,7 @@ struct WorkoutLiveActivity: Widget {
                 // The numbers need no label: one counts up in ink, the other
                 // counts down in ember, and the centre region names both.
                 DynamicIslandExpandedRegion(.leading) {
-                    Text(context.attributes.startedAt, style: .timer)
-                        .font(WidgetTheme.numeral(15))
-                        .foregroundStyle(WidgetTheme.ink2)
-                        .monospacedDigit()
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
+                    ElapsedClock(attributes: context.attributes, state: context.state, size: 15)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         // Concentric inset: without it the first digit sits on
                         // the island's corner curve and loses its edge.
@@ -65,18 +76,20 @@ struct WorkoutLiveActivity: Widget {
                         .padding(.trailing, 6)
                 }
                 DynamicIslandExpandedRegion(.center) {
+                    // No workout title here, unlike the Lock Screen card. The
+                    // expanded island is capped at 160 pt and with the dial
+                    // row the card wanted ~168: the system clamped it and
+                    // squeezed the centre to fit (measured on the 17 Pro).
+                    // The title is the line worth least mid-workout — the
+                    // person is in it — and dropping it lands the island at
+                    // ~153 pt with nothing compressed.
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(context.attributes.title.uppercased())
-                            .font(WidgetTheme.label())
-                            .tracking(0.6)
-                            .foregroundStyle(WidgetTheme.muted)
-                            .lineLimit(1)
                         Text(look.primary)
                             .font(WidgetTheme.display(17))
                             .foregroundStyle(WidgetTheme.ink)
                             .lineLimit(1)
                             .minimumScaleFactor(0.7)
-                        if let detail = look.detail {
+                        if let detail = look.detail(labelled: false) {
                             Text(detail)
                                 .font(.system(size: 12))
                                 .foregroundStyle(WidgetTheme.ink2)
@@ -89,7 +102,7 @@ struct WorkoutLiveActivity: Widget {
                 DynamicIslandExpandedRegion(.bottom) {
                     VStack(spacing: 8) {
                         PhaseBar(state: context.state, isStale: context.isStale)
-                        if let action = look.action { ActionButton(action: action) }
+                        CardControl(state: context.state, isStale: context.isStale)
                     }
                 }
             } compactLeading: {
@@ -98,13 +111,15 @@ struct WorkoutLiveActivity: Widget {
                     .foregroundStyle(look.glyphTint)
             } compactTrailing: {
                 IslandClock(attributes: context.attributes, state: context.state, size: 14,
-                            isStale: context.isStale, restOverMark: true)
+                            isStale: context.isStale, snug: true, restOverMark: true)
             } minimal: {
                 MinimalDial(attributes: context.attributes, state: context.state, look: look)
             }
             .keylineTint(WidgetTheme.ember)
-            // Tapping anywhere that is not the button brings the session
-            // forward rather than dropping the user on the last tab they used.
+            // Tapping anywhere that is not a button brings the session forward
+            // rather than dropping the user on the last tab they used. For a
+            // paused session that tap is the whole affordance: the card offers
+            // no button, and the app's own resume bar is what resumes.
             .widgetURL(URL(string: "spotter://resume"))
         }
     }
@@ -148,15 +163,24 @@ private struct PhaseLook {
         return !rest.isPaused
     }
 
+    /// A rest that has been paused with time left on it. Not the session
+    /// pausing — that is `halted`, and it is a different card.
     var paused: Bool {
         guard let rest = state.rest, state.phase == .rest || state.phase == .timed else { return false }
         return rest.isPaused
     }
 
+    /// The whole session is stopped: paused from the phone, or restored at
+    /// boot from a draft the process died in the middle of. Everything on the
+    /// card is muted, the clock is frozen, and there is no button — resuming
+    /// is a tap on the card, which opens the app on its resume bar.
+    var halted: Bool { state.phase == .paused }
+
     var done: Bool { state.phase == .done }
 
     var glyph: String {
         if done { return "checkmark.circle.fill" }
+        if halted { return "pause.fill" }
         // The hourglass is the symptom: it is what a frozen card shows. The
         // moment the rest is over the glyph is the lifter again, because that is
         // the whole message.
@@ -166,10 +190,15 @@ private struct PhaseLook {
         return "figure.strengthtraining.traditional"
     }
 
-    var glyphTint: Color { done ? WidgetTheme.good : WidgetTheme.ember }
+    var glyphTint: Color {
+        if done { return WidgetTheme.good }
+        if halted { return WidgetTheme.muted }
+        return WidgetTheme.ember
+    }
 
     var clockLabel: String {
         if done { return "Done" }
+        if halted { return "Paused" }
         if restOver { return "Rest over" }
         if state.phase == .rest { return paused ? "Paused" : "Rest" }
         if state.phase == .timed { return paused ? "Paused" : "Hold" }
@@ -188,9 +217,26 @@ private struct PhaseLook {
     /// The set line: position, then what the set asks for, then the weight —
     /// joined only from the parts that exist, so a bodyweight AMRAP round reads
     /// as a short line rather than a line full of separators.
-    var detail: String? {
+    ///
+    /// `labelled` is whether the presentation already carries the phase in a
+    /// label of its own. The Lock Screen does ("PAUSED" over the clock), so its
+    /// paused line does not say the word again; the island's centre region has
+    /// no label, so its line leads with it.
+    func detail(labelled: Bool) -> String? {
         // Finished: the sink built "42:10 · 18 sets · 2 PRs" into `target`.
         if done { return state.target }
+
+        // Paused: where it stopped, and how much of it is banked. Not what the
+        // set asks for — nobody is about to do it — and not the weight.
+        if halted {
+            var parts: [String] = []
+            if !labelled { parts.append("Paused") }
+            if let label = state.setLabel { parts.append(label) }
+            else if let block = state.block { parts.append(block) }
+            let done = state.progress.done
+            parts.append(String(done) + (done == 1 ? " set logged" : " sets logged"))
+            return parts.joined(separator: "  ·  ")
+        }
 
         // Rest over: the same fields as a rest, plus what the set asks for. The
         // countdown had the card's attention for the last minute and now has
@@ -224,21 +270,31 @@ private struct PhaseLook {
         if state.phase == .complex, let block = state.block { parts.append(block) }
         if let label = state.setLabel { parts.append(label) }
         if let target = state.target { parts.append(target) }
-        if let weight = state.weight { parts.append(weight) }
+        // With the dial on the card the weight is already on it, as a number a
+        // thumb can turn; printing "24 kg" a second time in the line above it
+        // would be the card contradicting itself the moment the dial moves.
+        if state.dial?.weight == nil, let weight = state.weight { parts.append(weight) }
         if parts.isEmpty, let block = state.block { parts.append(block) }
         return parts.isEmpty ? nil : parts.joined(separator: "  ·  ")
     }
 
-    /// The single interactive element, or none. `timed` and `complex` are
-    /// deliberately absent: app.ts answers a remote Save for either with
-    /// "Log this one on the phone.", and a button that only ever produces a
-    /// toast is worse than no button.
+    /// The single action, or none. `timed` and `complex` are deliberately
+    /// absent: app.ts answers a remote Save for either with "Log this one on
+    /// the phone.", and a button that only ever produces a toast is worse than
+    /// no button. `work` on a set the engine itself calls unloggable (a timed
+    /// movement before its hold starts) is absent for the same reason, and a
+    /// paused session offers nothing but the card itself to tap.
     var action: ActionKind? {
+        if halted { return nil }
         if restOver { return .startSet }
         if state.phase == .rest { return .skipRest }
-        if state.phase == .work { return .logSet }
+        if state.phase == .work { return state.loggable ? .logSet : nil }
         return nil
     }
+
+    /// Whether the dial sits beside the button: only Log set carries figures,
+    /// and only when the engine sent a dose to build them from.
+    var hasDial: Bool { action == .logSet && state.dial != nil }
 }
 
 /// Start set and Skip rest send the SAME action — `skipRest` — because at the
@@ -277,14 +333,75 @@ private enum ActionKind {
 
 // MARK: - Pieces
 
+/// Elapsed session time: a live timer from the start instant, or — while the
+/// session is paused — the frozen distance between the start and the pause,
+/// as a plain string in muted ink. One view, so the leading slot of the
+/// expanded island and the fallback of every other clock cannot disagree
+/// about whether a paused session's clock is running. (It is not.)
+///
+/// `Text(timerInterval:)`, not `Text(_:style: .timer)`. On the composited Lock
+/// Screen of a locked 17 Pro the date-style timer is not driven at all: it
+/// printed the words "18 minutes" where the card should have read 18:10, in
+/// a state that was nowhere near stale (the earlier "26 minutes" sighting was
+/// the same thing, blamed on staleness at the time). The interval form is the
+/// one ActivityKit documents for Live Activities and the one the countdowns
+/// already use, and it counted on the locked screen in every capture. The
+/// range runs to the twelve hours a Live Activity can exist on the Lock
+/// Screen; hours appear only once there is one.
+private struct ElapsedClock: View {
+    let attributes: WorkoutActivityAttributes
+    let state: WorkoutActivityAttributes.ContentState
+    var size: CGFloat = 14
+
+    var body: some View {
+        Group {
+            if state.phase == .paused {
+                if let pausedAt = state.pausedAt {
+                    Text(WorkoutActivityAttributes.clock(pausedAt.timeIntervalSince(attributes.startedAt)))
+                        .foregroundStyle(WidgetTheme.muted)
+                }
+                // A pause with no instant has no honest number: the slot stays
+                // empty rather than showing a timer that counts a stopped
+                // session. The contract always sends one.
+            } else {
+                Text(timerInterval: attributes.startedAt...attributes.startedAt.addingTimeInterval(12 * 60 * 60),
+                     pauseTime: nil, countsDown: false, showsHours: true)
+                    .foregroundStyle(WidgetTheme.ink2)
+            }
+        }
+        .font(WidgetTheme.numeral(size))
+        .monospacedDigit()
+        .lineLimit(1)
+        .minimumScaleFactor(0.7)
+    }
+}
+
 /// Elapsed session time, the rest countdown, or a frozen remainder when the
 /// rest is paused. All three are one view so the number never moves between
 /// phases — only its size and colour change.
+///
+/// `snug` is the compact island's fix. SwiftUI sizes a timer Text for the
+/// widest string it might ever show, and a compact Dynamic Island slot is
+/// given whatever width it asks for: with only a `minWidth` here the island
+/// on the 17 Pro stretched to the status bar's edges, glyph far left, clock
+/// far right, black between. Snug means a fixed frame of three digit-widths
+/// and a colon — `m:ss` in this face, measured at 41.5 pt for 14 pt — and the
+/// hour case scales down inside it through `minimumScaleFactor` rather than
+/// widening the slot. Verified on the 17 Pro at 0:18, 12:34, 1:02:34 and a
+/// 2:09 countdown.
+///
+/// Only the compact slot is snug. The same fixed frame on the Lock Screen
+/// made the system's live timer give up on digits and print "18 min…" — a
+/// timer Text that cannot have the width it reserves switches format before
+/// it scales — so the card keeps the minimum-width frame it always had, where
+/// a Spacer absorbs whatever the timer asks for and nothing else moves.
 private struct IslandClock: View {
     let attributes: WorkoutActivityAttributes
     let state: WorkoutActivityAttributes.ContentState
     var size: CGFloat = 14
     var isStale: Bool = false
+    /// Fixed-width slot (the compact island) rather than minimum-width.
+    var snug: Bool = false
     /// Whether to fall back to the elapsed session time when nothing is
     /// counting down. Compact and minimal have one clock slot, so they want it.
     /// The expanded presentation already prints elapsed in its leading region,
@@ -308,6 +425,21 @@ private struct IslandClock: View {
                 Image(systemName: "checkmark")
                     .font(.system(size: size, weight: .bold))
                     .foregroundStyle(WidgetTheme.good)
+            } else if look.halted {
+                // Frozen at the pause, in every slot that shows elapsed time.
+                // ElapsedClock owns the arithmetic. The expanded island's
+                // trailing slot (elapsedFallback false) gets the pause glyph
+                // instead: its leading region already prints the frozen
+                // clock, and a static text there vanished on the 17 Pro
+                // whenever this slot was left empty — a timer text did not —
+                // so the slot is not left empty.
+                if elapsedFallback {
+                    ElapsedClock(attributes: attributes, state: state, size: size)
+                } else {
+                    Image(systemName: "pause.fill")
+                        .font(.system(size: size, weight: .semibold))
+                        .foregroundStyle(WidgetTheme.muted)
+                }
             } else if look.restOver {
                 // Nothing here may be a live timer. Once the system marks an
                 // activity stale it stops driving them: on the 17 Pro the
@@ -332,15 +464,15 @@ private struct IslandClock: View {
                 Text(timerInterval: Date()...max(rest.deadline, Date().addingTimeInterval(1)), countsDown: true)
                     .foregroundStyle(WidgetTheme.ember)
             } else if elapsedFallback {
-                Text(attributes.startedAt, style: .timer)
-                    .foregroundStyle(WidgetTheme.ink2)
+                ElapsedClock(attributes: attributes, state: state, size: size)
             }
         }
         .font(WidgetTheme.numeral(size))
         .monospacedDigit()
         .lineLimit(1)
         .minimumScaleFactor(0.7)
-        .frame(minWidth: size * 3.1)
+        .frame(minWidth: snug ? nil : size * 3.1)
+        .frame(width: snug ? (size * 3).rounded(.up) : nil, alignment: .trailing)
         .multilineTextAlignment(.trailing)
     }
 }
@@ -363,6 +495,10 @@ private struct PhaseBar: View {
         Group {
             if look.done {
                 Bar(fraction: 1, tint: WidgetTheme.good)
+            } else if look.halted {
+                // Session progress, like work — but muted, like everything
+                // else on a card nobody is training against.
+                Bar(fraction: state.progress.fraction, tint: WidgetTheme.muted)
             } else if let rest = state.rest, look.counting, let span = span(rest) {
                 ProgressView(timerInterval: span, countsDown: true) {
                     EmptyView()
@@ -406,6 +542,23 @@ private struct Bar: View {
     }
 }
 
+/// The interactive strip under the bar, or nothing. The one place that decides
+/// between the dial row and a lone button, so the expanded island and the Lock
+/// Screen card cannot make that choice differently.
+private struct CardControl: View {
+    let state: WorkoutActivityAttributes.ContentState
+    var isStale: Bool = false
+
+    var body: some View {
+        let look = PhaseLook(state: state, isStale: isStale)
+        if look.hasDial, let dial = state.dial {
+            DialRow(dial: dial)
+        } else if let action = look.action {
+            ActionButton(action: action)
+        }
+    }
+}
+
 /// The one interactive element. `LiveActivityIntent` is what makes this legal:
 /// the system runs `perform()` in the app's process, waking the app in the
 /// background if it has to, which is the only way a Lock Screen tap can reach
@@ -434,6 +587,124 @@ private struct ActionButton: View {
         .frame(maxWidth: .infinity)
         .frame(height: 30)
         .background(WidgetTheme.ember, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+}
+
+/// The dial: `[−] 10 reps [+]   [−] 24 kg [+]   [Log set]`, on one 44 pt row.
+///
+/// Built from Buttons because those and Toggles are the only controls
+/// WidgetKit runs in a Live Activity — there is no Stepper here — and every
+/// press is its own `AdjustSetIntent`, run in the app, which steps the figure
+/// with the phone's own clamp and pushes the card again at once. None of it
+/// reaches JavaScript; only Log set does, carrying the figures. A bodyweight
+/// movement has no weight to turn and shows the reps dial alone.
+///
+/// The row is 44 pt tall so every target is 44 pt (HIG minimum), while the
+/// visible circles and pill are 32 and 34: the hit area extends into the
+/// row's gutter, not the neighbour's, because the value between the two
+/// circles is not a control.
+private struct DialRow: View {
+    let dial: WorkoutActivityAttributes.ContentState.Dial
+
+    var body: some View {
+        HStack(spacing: 6) {
+            DialGroup(field: .reps, value: String(dial.reps), unit: "reps")
+            if let weight = dial.weight {
+                DialGroup(field: .weight, value: Self.format(weight), unit: dial.unit)
+            }
+            Button(intent: LogSetIntent()) {
+                HStack(spacing: 5) {
+                    Image(systemName: "checkmark").font(.system(size: 11, weight: .bold))
+                    Text("Log set").font(.system(size: 14, weight: .semibold))
+                }
+                .foregroundStyle(WidgetTheme.onEmber)
+                .lineLimit(1)
+                // Down to 0.6: beside a five-character weight ("142.5") the
+                // pill has ~68 pt, and at 0.7 the word truncated to "Log…".
+                .minimumScaleFactor(0.6)
+                .padding(.horizontal, 6)
+                .frame(maxWidth: .infinity)
+                .frame(height: 34)
+                .background(WidgetTheme.ember, in: Capsule())
+                // The pill is 34 pt; the tappable label is 44.
+                .padding(.vertical, 5)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(height: 44)
+    }
+
+    /// 60, not 60.0; 62.5 keeps its half. Matches the sheet's own stepper and
+    /// the wrist.
+    static func format(_ value: Double) -> String {
+        value == value.rounded() ? String(Int(value)) : String(format: "%.1f", value)
+    }
+}
+
+/// One figure between its two buttons.
+private struct DialGroup: View {
+    let field: DialField
+    let value: String
+    let unit: String
+
+    var body: some View {
+        HStack(spacing: 0) {
+            StepButton(field: field, delta: -1)
+            VStack(spacing: -1) {
+                Text(value)
+                    .font(WidgetTheme.numeral(17))
+                    .foregroundStyle(WidgetTheme.ink)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                Text(unit.uppercased())
+                    .font(WidgetTheme.label(9))
+                    .tracking(0.4)
+                    .foregroundStyle(WidgetTheme.muted)
+                    .lineLimit(1)
+            }
+            .frame(minWidth: 34)
+            // The figure keeps its own width and the Log set pill gives way:
+            // the pill is the flexible element in the row, and without this
+            // it squeezed "142.5" into "14…" while keeping its own slack.
+            .fixedSize(horizontal: true, vertical: false)
+            // The system's own "waiting for the intent" treatment: the figure
+            // dims from the press until the app's update lands, which is the
+            // honest state of a number that is being changed in another
+            // process. Judiciously, per WidgetKit: on the figure only.
+            .invalidatableContent()
+            StepButton(field: field, delta: 1)
+        }
+    }
+}
+
+/// A ± button. 32 pt circle, 44 pt target, glyph in bold — the HIG's "medium
+/// weight or higher" for anything read at a glance.
+private struct StepButton: View {
+    let field: DialField
+    let delta: Int
+
+    var body: some View {
+        Button(intent: AdjustSetIntent(field: field, delta: delta)) {
+            Image(systemName: delta < 0 ? "minus" : "plus")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(WidgetTheme.ink)
+                .frame(width: 32, height: 32)
+                .background(WidgetTheme.sand, in: Circle())
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+    }
+
+    private var label: String {
+        switch (field, delta < 0) {
+        case (.reps, true): return "Fewer reps"
+        case (.reps, false): return "More reps"
+        case (.weight, true): return "Less weight"
+        case (.weight, false): return "More weight"
+        }
     }
 }
 
@@ -494,8 +765,13 @@ struct LockScreenWorkout: View {
     /// sizes and is not at large ones: "Bulgarian Split Squat (Rear Foot
     /// Elevated)" wrapped at 1.25x measured 166 pt, past the 160 the system
     /// truncates at — and what the system truncates is the bottom of the card,
-    /// which is the button. One shrunk line keeps the whole card.
-    private var heroLines: Int { scale > 1.12 ? 1 : 2 }
+    /// which is the button. One shrunk line keeps the whole card. The dial row
+    /// is 14 pt taller than the button it replaces, so with the dial on the
+    /// card the same name is one line at every size: two lines plus the dial
+    /// would measure ~166 pt at the default size alone.
+    private func heroLines(_ look: PhaseLook) -> Int {
+        (scale > 1.12 || look.hasDial) ? 1 : 2
+    }
 
     var body: some View {
         let look = PhaseLook(state: state, isStale: isStale)
@@ -518,9 +794,9 @@ struct LockScreenWorkout: View {
                     Text(look.primary)
                         .font(WidgetTheme.display(19 * scale))
                         .foregroundStyle(WidgetTheme.ink)
-                        .lineLimit(heroLines)
+                        .lineLimit(heroLines(look))
                         .minimumScaleFactor(0.65)
-                    if let detail = look.detail {
+                    if let detail = look.detail(labelled: true) {
                         Text(detail)
                             .font(.system(size: 13 * scale))
                             .foregroundStyle(WidgetTheme.ink2)
@@ -535,7 +811,7 @@ struct LockScreenWorkout: View {
                             size: (look.counting ? 30 : 22) * scale, isStale: isStale)
             }
             PhaseBar(state: state, isStale: isStale)
-            if let action = look.action { ActionButton(action: action) }
+            CardControl(state: state, isStale: isStale)
         }
         .padding(.horizontal, 16)
         // 11 rather than the 14 this started at: a two-line movement name at
