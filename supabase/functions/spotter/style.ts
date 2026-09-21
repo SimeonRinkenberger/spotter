@@ -1378,22 +1378,33 @@ export const STYLE = String.raw`<style>
   .wday.today .wdn { color: var(--ink); }
 
   /* ---------- train / the dot language ----------
-     Five states and one shape, spoken by the strip, the month grid and the key
-     under it: filled is done, filled with a ring is done exactly as planned,
-     hollow ember is planned, hollow amber is planned and missed, sand is a free
-     day. The ring is drawn in --card so it reads on a card and in a cell. */
+     Five states, spoken by the strip, the month grid and the key under it:
+     filled is done, filled with a ring is done exactly as planned, hollow ember
+     is planned, a grey cross is planned and missed, sand is a free day. The ring
+     is drawn in --card so it reads on a card and in a cell.
+
+     Missed used to be a hollow amber ring — the same shape as planned in a hue a
+     shade off ember, which at 8px the owner could not tell apart ("too close in
+     color and the same symbol", 21 Sept). It is now the one mark that is not a
+     circle, and not ember: the cross every habit tracker and training calendar
+     (Streaks, Runna, TrainingPeaks) uses for a day that did not happen, in the
+     grey of the small print rather than an alarm red — Spotter does not punish a
+     missed day, it just says so. Shape and hue both differ, so it holds without
+     colour vision. --muted is 4.5:1 on paper and 4.9 on a card; the ember family
+     stays for the three days that were trained or are still to come. */
   .dmark { width: 8px; height: 8px; border-radius: 999px; background: var(--sand);
-    display: block; flex: 0 0 auto; }
+    display: block; flex: 0 0 auto; position: relative; }
   .dmark.on { background: var(--ember); }
   .dmark.as { background: var(--ember);
     box-shadow: 0 0 0 2px var(--dbg, var(--paper)), 0 0 0 3.5px var(--ember); }
   .mcell, .wday.today { --dbg: var(--card); }
   .mcell.out { --dbg: var(--paper); }
   .dmark.plan { background: none; box-shadow: inset 0 0 0 1.6px var(--ember); }
-  /* The missed ring is the only consumer of --warn, and at #C98A00 it measured 2.73
-     on paper — under the 3:1 a graphical object has to make. Darkened to 3.67 on
-     paper and 3.96 on a card; the dark scheme's amber was already 9.0 and stays. */
-  .dmark.miss { background: none; box-shadow: inset 0 0 0 1.6px var(--warn); }
+  .dmark.miss { background: none; }
+  .dmark.miss::before, .dmark.miss::after { content: ""; position: absolute; left: 50%; top: 50%;
+    width: 10px; height: 1.8px; border-radius: 1px; background: var(--muted);
+    transform: translate(-50%, -50%) rotate(45deg); }
+  .dmark.miss::after { transform: translate(-50%, -50%) rotate(-45deg); }
   .dlegend { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; margin: 9px 2px 0;
     font-size: 11.5px; font-weight: 600; color: var(--muted); }
   .dlegend .lg { display: flex; align-items: center; gap: 6px; }
