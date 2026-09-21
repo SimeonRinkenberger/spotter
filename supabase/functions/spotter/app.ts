@@ -2623,12 +2623,17 @@ export const APP = String.raw`
   // "AMRAP · 10:00 cap". The kind is left out under a heading that already says
   // it ("Cool-down" under COOL-DOWN), and the rest is only printed where Workout
   // Mode will run it, at the end of a lap, so a straight block's stray
-  // rest_seconds says nothing.
+  // rest_seconds says nothing. Where it runs, it is printed even when nobody
+  // chose it — that is the rest the lifter will get, and the pill on the rows
+  // marks a default the same way.
   function blockMetaText(b) {
-    var bits = [], kind = b.type && b.type !== "straight" ? kindName(b.type) : "";
+    var bits = [], kind = b.type && b.type !== "straight" ? kindName(b.type) : "", r;
     if (kind && kind.toLowerCase() !== String(b.title || "").toLowerCase()) bits.push(kind);
     if (b.rounds) bits.push(b.rounds + " rounds");
-    if (b.rounds > 1 && typeof b.rest_seconds === "number") bits.push(restWord(b.rest_seconds) + " between rounds");
+    if (b.rounds > 1) {
+      r = restOf(null, b, true);
+      bits.push(restWord(r.secs) + " between rounds" + (r.source === "default" ? " · default" : ""));
+    }
     if (b.duration_seconds) bits.push(clock(b.duration_seconds) + " cap");
     return bits.join(" · ");
   }

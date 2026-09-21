@@ -9995,8 +9995,8 @@ details.details-moving > :not(summary) {
     return { warmup: "Warm-up", cooldown: "Cool-down", amrap: "AMRAP", emom: "EMOM" }[type] || capWord(type);
   }
   function blockMetaText(b) {
-    var bits = [], kind = b.type && b.type !== "straight" ? kindName(b.type) : "";
-    return kind && kind.toLowerCase() !== String(b.title || "").toLowerCase() && bits.push(kind), b.rounds && bits.push(b.rounds + " rounds"), b.rounds > 1 && typeof b.rest_seconds == "number" && bits.push(restWord(b.rest_seconds) + " between rounds"), b.duration_seconds && bits.push(clock(b.duration_seconds) + " cap"), bits.join(" \xB7 ");
+    var bits = [], kind = b.type && b.type !== "straight" ? kindName(b.type) : "", r;
+    return kind && kind.toLowerCase() !== String(b.title || "").toLowerCase() && bits.push(kind), b.rounds && bits.push(b.rounds + " rounds"), b.rounds > 1 && (r = restOf(null, b, !0), bits.push(restWord(r.secs) + " between rounds" + (r.source === "default" ? " \xB7 default" : ""))), b.duration_seconds && bits.push(clock(b.duration_seconds) + " cap"), bits.join(" \xB7 ");
   }
   var REST_STEPS = [15, 30, 45, 60, 75, 90, 120, 150, 180, 240, 300], HOW_LONG = "How long? Minutes or seconds.";
   function restChips(box, value, onPick) {
