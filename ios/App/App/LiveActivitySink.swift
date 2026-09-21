@@ -131,6 +131,19 @@ final class LiveActivitySink: LiveStateSink {
                 // The figures just went out inside the action; the next set
                 // starts from the phone's prefill, not from this one's dial.
                 self.dial = (nil, nil)
+            case .mark, .round:
+                // The complex's counter, stepped the way the phone steps it
+                // (`Complex.count`): a mark that completes the round is the
+                // round, and either starts the cap under the thumb the way
+                // `cxGo()` starts it on the phone. Applied to `current`, so a
+                // second tap before the engine answers stacks on the first
+                // rather than repeating it. The engine's own state lands a
+                // moment later and wins, as with `.set` — and it is the only
+                // thing that can name the next movement, which a card that
+                // knows one name cannot.
+                guard state.phase == .complex, var complex = state.complex else { return }
+                complex.count(action.kind)
+                state.complex = complex
             default:
                 return
             }
@@ -347,9 +360,22 @@ final class LiveActivitySink: LiveStateSink {
     /// on a paused card can go out of date — its clock is frozen by design —
     /// and the only thing a nearer stale date could do is what it must never
     /// do: flip a paused card into "rest over".
+    ///
+    /// A complex's cap, while it runs, is a rest's deadline all over again:
+    /// nothing native runs at the instant it reaches zero, so the deadline is
+    /// the stale date and the widget's stale branch draws "Time" — the same
+    /// flip, the same 120 s system floor, the same reasoning. What a cap does
+    /// NOT get is the rest-end nudge (`syncNudge` only ever schedules for
+    /// `phase == .rest`): the phone's own tone at zero is `cxTick()`'s job,
+    /// a cap ending is not a cue to lift again, and the one notification this
+    /// app posts is named "Rest over" with the next set in its body — sharing
+    /// it with a cap would be a banner that said the wrong thing loudly.
     private static func staleDate(for state: LiveState) -> Date {
         if state.phase == .paused {
             return Date().addingTimeInterval(8 * 60 * 60)
+        }
+        if state.phase == .complex, let complex = state.complex, complex.isRunning {
+            return max(complex.deadline, Date().addingTimeInterval(1))
         }
         if let rest = state.rest, !rest.isPaused {
             let deadline = state.phase == .rest ? rest.deadline : rest.deadline.addingTimeInterval(5 * 60)
@@ -486,10 +512,17 @@ final class LiveActivitySink: LiveStateSink {
         // predicate that silently dropped it would be a bug nobody could see.
         NotificationsHost.shared.status { status in
             guard status == .granted || status == .provisional else { return }
+            // Time Sensitive, and this is the only notification in the app
+            // that is: the gym is exactly where a Fitness or Do Not Disturb
+            // Focus is on, and a rest ending under a Focus was delivered
+            // silently — "it should vibrate the phone and buzz the watch
+            // when the rest is up" (owner, 20 Sept). The reminders stay at
+            // the ordinary level; nothing about "plan day" is urgent.
             NotificationsHost.shared.schedule(id: Self.nudgeID,
                                               title: "Rest over",
                                               body: body,
-                                              at: deadline)
+                                              at: deadline,
+                                              timeSensitive: true)
         }
     }
 
@@ -532,10 +565,12 @@ import UserNotifications
 //
 //   SIMCTL_CHILD_SPOTTER_LIVE_FIXTURE=rest xcrun simctl launch <udid> <bundle id>
 //
-// States: work · bodyweight · rest · held · paused · resume · timed · complex ·
-// done · ghost
+// States: work · bodyweight · zero · rest · held · paused · resume · timed ·
+// complex · complexIdle · complexHeld · complexOver · complexCounted · done · ghost
 //   work        a loggable set with a weight: both dials and Log set
 //   bodyweight  the same set with no weight: the reps dial alone
+//   zero        the same set from the current engine, never loaded: the
+//               weight dial on 0, as the phone's sheet opens it
 //   rest        a rest counting down
 //   held        a rest paused with 23 s left (the rest's own pause, not the
 //               session's)
@@ -543,6 +578,14 @@ import UserNotifications
 //   resume      paused, then three seconds later the resumed state with
 //               `startedAt` shifted forward by the pause — exercises the
 //               request-then-end hand-over in `push`
+//   complex     a complex mid-round — 2 rounds + 1 movement — with the cap
+//               running (SPOTTER_LIVE_FIXTURE_REST is the seconds left, so
+//               the "Time" flip can be measured like the rest-over one)
+//   complexIdle the same complex before the clock was started: 0 rounds,
+//               the full cap static, Next move / Round 1 done
+//   complexHeld the cap paused with 4:10 left
+//   complexOver the cap ran out: 3 rounds + 2 movements, "Time"
+//   complexCounted  a complex with no clock at all: elapsed instead
 // SPOTTER_LIVE_FIXTURE_REST=<seconds> sets the rest's length, default 60. Added
 // to measure WHEN the rest-over flip lands: the system schedules the "mark
 // stale" wake no sooner than 120 s after the update that set the stale date, so
@@ -695,6 +738,11 @@ extension LiveActivitySink {
             state.exercise = "Push-up"
             state.weight = nil
             state.dose = LiveState.Dose(reps: 12, weight: nil, unit: "kg", step: 2.5, loggable: true)
+        case "zero":
+            // What the engine sends since 21 Sept for a movement never loaded:
+            // no display weight, and a dose whose weight is 0 rather than null.
+            state.weight = nil
+            state.dose = LiveState.Dose(reps: 10, weight: 0, unit: "kg", step: 2.5, loggable: true)
         case "rest":
             state.phase = .rest
             state.set = LiveState.SetPosition(index: 3, total: 3)
@@ -715,13 +763,44 @@ extension LiveActivitySink {
             state.rest = LiveState.RestState(until: Date().addingTimeInterval(40).timeIntervalSince1970 * 1000,
                                              total: 40_000, held: 0)
             state.dose = LiveState.Dose(reps: nil, weight: nil, unit: "kg", step: 2.5, loggable: false)
-        case "complex":
+        case "complex", "complexIdle", "complexHeld", "complexOver", "complexCounted":
+            // Complex Fives, as the engine describes it: five movements, a
+            // fifteen-minute cap, the round up to its second movement. The
+            // block is nil because the card has one block, as the real one
+            // does; `target` and `weight` are the block's first movement's,
+            // which is the engine's shape and why the card does not print
+            // them on a complex.
+            state.title = "Complex Fives"
             state.phase = .complex
             state.exercise = "Kettlebell Swing"
-            state.block = "Round 2"
+            state.block = nil
             state.set = nil
-            state.target = "12 reps"
-            state.dose = LiveState.Dose(reps: 12, weight: 24, unit: "kg", step: 2.5, loggable: false)
+            state.target = "5 reps"
+            state.next = nil
+            state.progress = LiveState.Progress(done: 11, total: 15)
+            state.dose = LiveState.Dose(reps: 5, weight: 24, unit: "kg", step: 2.5, loggable: false)
+            var complex = LiveState.Complex(rounds: 2, marked: 1, moves: 5, move: "Kettlebell Swing",
+                                            cap: 15 * 60 * 1000, until: 0, held: 0, over: false)
+            switch name {
+            case "complexIdle":
+                complex.rounds = 0
+                complex.marked = 0
+                complex.move = "Deadlift"
+                state.exercise = "Deadlift"
+                state.progress = LiveState.Progress(done: 0, total: 15)
+            case "complexHeld":
+                complex.held = 250_000
+            case "complexOver":
+                complex.rounds = 3
+                complex.marked = 2
+                complex.over = true
+                state.progress = LiveState.Progress(done: 17, total: 17)
+            case "complexCounted":
+                complex.cap = 0
+            default:
+                complex.until = rest.until
+            }
+            state.complex = complex
         default:
             break
         }

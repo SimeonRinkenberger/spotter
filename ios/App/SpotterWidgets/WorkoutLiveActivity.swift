@@ -30,12 +30,16 @@ import WidgetKit
 //      and Lock Screen), the ± targets are 44 pt so a miss is a near miss, and
 //      the figures never leave the card until Log set carries them. Phases
 //      whose action app.ts answers with "Log this one on the phone." offer
-//      nothing at all.
+//      nothing at all. A complex (since 21 Sept) is the second trade: its two
+//      taps — Next move and Round done — are the phone's own two buttons, and
+//      a card that showed a fifteen-minute cap counting down with no way to
+//      count a round was the owner's first complaint from the gym.
 //   4. `context.isStale` is not an error state here, it is the alarm clock. A
 //      rest's stale date IS its deadline (see LiveActivitySink.staleDate), so
 //      the one moment ActivityKit re-renders this card without the app running
 //      is the moment the rest ends — and every presentation has to have
-//      something to say then. See PhaseLook.restOver.
+//      something to say then. See PhaseLook.restOver. A complex's cap is the
+//      same mechanism with a different word at zero: "Time", the phone's.
 //   5. The compact slots are fixed-width. A timer Text asks the layout for the
 //      widest string it could ever show, and ActivityKit gives a compact slot
 //      whatever it asks for — which on the 17 Pro stretched the island across
@@ -148,10 +152,55 @@ private struct PhaseLook {
     /// the information and refuses to use it.
     var restOver: Bool { isStale && state.phase == .rest && !paused }
 
-    /// True while a rest or a timed hold is counting down and not paused. The
-    /// two share a treatment on purpose: Nike Training Club shows a drill's
-    /// remaining time the same way it shows a break, and inventing a second
-    /// visual language for "the clock is going down" would only be a puzzle.
+    // MARK: The complex
+
+    /// The round counter and the cap, on a complex from an engine that sends
+    /// them. Nil on every other phase, and nil on a complex from an older
+    /// engine — which then gets the flat treatment it always had.
+    var complex: LiveState.Complex? { state.phase == .complex ? state.complex : nil }
+
+    /// The cap ran out: the engine said so, or its deadline passed while the
+    /// app was asleep. A running cap's stale date is its deadline, exactly as
+    /// a rest's is (LiveActivitySink.staleDate), so this is the same alarm
+    /// clock as `restOver` with the phone's own word at zero: "Time".
+    var capOver: Bool {
+        guard let complex = complex else { return false }
+        return complex.over || (isStale && complex.isRunning)
+    }
+
+    /// The cap is counting down. Ember, a hero-sized countdown, a bar that
+    /// drains — the rest's treatment, because it is the same thing: a clock
+    /// somebody is working against.
+    var capRunning: Bool {
+        guard let complex = complex, !capOver else { return false }
+        return complex.isRunning
+    }
+
+    /// The cap was started and paused on the phone: a frozen remainder in
+    /// muted ink, as a paused rest shows.
+    var capHeld: Bool {
+        guard let complex = complex, !capOver else { return false }
+        return complex.isHeld
+    }
+
+    /// A cap nobody has started. The card prints the whole cap, static and
+    /// quiet, so the number reads as "this is the clock" rather than as a
+    /// countdown that has stopped; the first Next move or Round done starts it.
+    var capIdle: Bool {
+        guard let complex = complex, !capOver else { return false }
+        return complex.isIdle
+    }
+
+    /// Whether the two complex buttons sit under the bar. Only where the
+    /// counter is known: a complex from an older engine has no counter to
+    /// change, so it keeps the empty control it had.
+    var complexControl: Bool { complex != nil }
+
+    /// True while a rest, a timed hold or a complex's cap is counting down and
+    /// not paused. They share a treatment on purpose: Nike Training Club shows
+    /// a drill's remaining time the same way it shows a break, and inventing a
+    /// second visual language for "the clock is going down" would only be a
+    /// puzzle.
     ///
     /// A rest that is over is not counting, whatever its deadline says: that one
     /// word is what turns the countdown back into elapsed time, the rest bar
@@ -159,8 +208,38 @@ private struct PhaseLook {
     /// everywhere, without a second branch in each view.
     var counting: Bool {
         guard !restOver else { return false }
+        if capRunning { return true }
         guard let rest = state.rest, state.phase == .rest || state.phase == .timed else { return false }
         return !rest.isPaused
+    }
+
+    /// The instant the running countdown reaches zero — the rest's deadline
+    /// or the cap's — and nil when nothing is counting. Every clock, bar and
+    /// ring below reads this rather than `state.rest`, so a cap and a rest
+    /// cannot be drawn by two different opinions of what "counting" means.
+    var deadline: Date? {
+        guard counting else { return nil }
+        if capRunning { return complex?.deadline }
+        return state.rest?.deadline
+    }
+
+    /// The whole length of what is counting, for the bar's denominator.
+    var countdownTotal: TimeInterval? {
+        guard counting else { return nil }
+        if capRunning { return complex?.capInterval }
+        return state.rest?.totalInterval
+    }
+
+    /// A countdown stopped with time left on it: the seconds left and the
+    /// share of the whole they are, for the frozen clock and the muted bar.
+    var held: (remaining: TimeInterval, fraction: Double)? {
+        if capHeld, let complex = complex {
+            return (complex.remaining(), complex.remaining() / max(complex.capInterval, 1))
+        }
+        if paused, let rest = state.rest {
+            return (rest.remaining(), rest.remaining() / max(rest.totalInterval, 1))
+        }
+        return nil
     }
 
     /// A rest that has been paused with time left on it. Not the session
@@ -187,6 +266,12 @@ private struct PhaseLook {
         if restOver { return "figure.strengthtraining.traditional" }
         if state.phase == .rest { return "hourglass" }
         if state.phase == .timed { return "timer" }
+        // `repeat`, the loop: a complex is one thing done five ways and then
+        // done again, and the round is the unit — the glyph is "again". It
+        // stays through idle, running, held and over, because the trailing
+        // slot is where the cap speaks and a glyph that changed under it
+        // would be two things saying one thing.
+        if complexControl { return "repeat" }
         return "figure.strengthtraining.traditional"
     }
 
@@ -202,12 +287,19 @@ private struct PhaseLook {
         if restOver { return "Rest over" }
         if state.phase == .rest { return paused ? "Paused" : "Rest" }
         if state.phase == .timed { return paused ? "Paused" : "Hold" }
+        // The cap's label carries its news the way "Rest over" carries a
+        // rest's: "Time" is the phone's word at zero (cxBody), and the slot
+        // under it goes empty as the rest-over slot does. A counted complex
+        // has no cap, and its clock is the session's elapsed time.
+        if capOver { return "Time" }
+        if capHeld { return "Paused" }
+        if capRunning || capIdle { return "Time cap" }
         return "Elapsed"
     }
 
     /// The label is ember exactly when it is the thing to read: while a clock is
     /// running down, and in the second it stops.
-    var labelTint: Color { (counting || restOver) ? WidgetTheme.emberInk : WidgetTheme.muted }
+    var labelTint: Color { (counting || restOver || capOver) ? WidgetTheme.emberInk : WidgetTheme.muted }
 
     /// The line that carries the card. On a finished session the sink has
     /// already put the closing headline in `exercise`, so this is one field in
@@ -264,8 +356,16 @@ private struct PhaseLook {
             return state.block
         }
 
-        // A complex is scored in rounds off one screen and so has no set
-        // position; the block is the only thing that locates you inside it.
+        // A complex with its counter: the score, written the way the phone's
+        // own screen writes it — "3 rounds + 2 movements", rounds done plus
+        // what was done of the next one. Not the target and not the weight:
+        // on a complex those describe the block's first movement, and the
+        // primary line above already names the one the round is up to.
+        if let complex = complex { return complex.score }
+
+        // A complex from an older engine is scored in rounds off one screen
+        // the card cannot see into, so it has no set position; the block is
+        // the only thing that locates you inside it.
         var parts: [String] = []
         if state.phase == .complex, let block = state.block { parts.append(block) }
         if let label = state.setLabel { parts.append(label) }
@@ -278,12 +378,14 @@ private struct PhaseLook {
         return parts.isEmpty ? nil : parts.joined(separator: "  ·  ")
     }
 
-    /// The single action, or none. `timed` and `complex` are deliberately
-    /// absent: app.ts answers a remote Save for either with "Log this one on
-    /// the phone.", and a button that only ever produces a toast is worse than
-    /// no button. `work` on a set the engine itself calls unloggable (a timed
-    /// movement before its hold starts) is absent for the same reason, and a
-    /// paused session offers nothing but the card itself to tap.
+    /// The single action, or none. `timed` is deliberately absent: app.ts
+    /// answers a remote Save for it with "Log this one on the phone.", and a
+    /// button that only ever produces a toast is worse than no button. `work`
+    /// on a set the engine itself calls unloggable (a timed movement before
+    /// its hold starts) is absent for the same reason, and a paused session
+    /// offers nothing but the card itself to tap. A complex is not here at
+    /// all: it has two taps, not one (`complexControl`), and a complex from
+    /// an engine that sends no counter has none.
     var action: ActionKind? {
         if halted { return nil }
         if restOver { return .startSet }
@@ -453,16 +555,35 @@ private struct IslandClock: View {
                     Text("Go")
                         .foregroundStyle(WidgetTheme.ember)
                 }
-            } else if let rest = state.rest, look.paused {
-                Text(Duration.seconds(rest.remaining()), format: .time(pattern: .minuteSecond))
+            } else if look.capOver {
+                // The cap's "Go": the phone's word for a cap at zero, in the
+                // two island slots that have no label to say it. The Lock
+                // Screen's label says TIME and its slot goes empty, width
+                // held, exactly as it does for a rest that is over.
+                if restOverMark {
+                    Text("Time")
+                        .foregroundStyle(WidgetTheme.ember)
+                }
+            } else if let held = look.held {
+                // A rest or a cap paused with time left: the remainder,
+                // frozen, in muted ink.
+                Text(Duration.seconds(held.remaining), format: .time(pattern: .minuteSecond))
                     .foregroundStyle(WidgetTheme.muted)
-            } else if let rest = state.rest, look.counting {
+            } else if let deadline = look.deadline {
                 // A ClosedRange traps when its upper bound is below its lower
                 // one, and an activity that lingers a second past its deadline
                 // would do exactly that. The floor keeps a finished rest
                 // rendering as 0:00 instead of crashing the widget process.
-                Text(timerInterval: Date()...max(rest.deadline, Date().addingTimeInterval(1)), countsDown: true)
+                Text(timerInterval: Date()...max(deadline, Date().addingTimeInterval(1)), countsDown: true)
                     .foregroundStyle(WidgetTheme.ember)
+            } else if look.capIdle, !snug, let complex = look.complex {
+                // The whole cap, static and in the elapsed clock's ink, so it
+                // reads as the length of the clock and not as a countdown that
+                // has stopped. The compact slot keeps elapsed time instead: a
+                // 15:00 that never moves beside the status bar's own clock
+                // looks like a broken timer.
+                Text(WorkoutActivityAttributes.clock(complex.capInterval))
+                    .foregroundStyle(WidgetTheme.ink2)
             } else if elapsedFallback {
                 ElapsedClock(attributes: attributes, state: state, size: size)
             }
@@ -499,7 +620,10 @@ private struct PhaseBar: View {
                 // Session progress, like work — but muted, like everything
                 // else on a card nobody is training against.
                 Bar(fraction: state.progress.fraction, tint: WidgetTheme.muted)
-            } else if let rest = state.rest, look.counting, let span = span(rest) {
+            } else if let deadline = look.deadline, let total = look.countdownTotal,
+                      let span = span(to: deadline, over: total) {
+                // A rest or a cap draining: the one bar that animates without
+                // an update.
                 ProgressView(timerInterval: span, countsDown: true) {
                     EmptyView()
                 } currentValueLabel: {
@@ -507,8 +631,8 @@ private struct PhaseBar: View {
                 }
                 .progressViewStyle(.linear)
                 .tint(WidgetTheme.ember)
-            } else if let rest = state.rest, look.paused {
-                Bar(fraction: rest.remaining() / max(rest.totalInterval, 1), tint: WidgetTheme.muted)
+            } else if let held = look.held {
+                Bar(fraction: held.fraction, tint: WidgetTheme.muted)
             } else {
                 Bar(fraction: state.progress.fraction, tint: WidgetTheme.ember)
             }
@@ -516,11 +640,11 @@ private struct PhaseBar: View {
         .frame(height: 5)
     }
 
-    /// The whole rest as a range, clamped so the upper bound is always above the
-    /// lower one even a second after the deadline passes.
-    private func span(_ rest: LiveState.RestState) -> ClosedRange<Date>? {
-        let end = max(rest.deadline, Date().addingTimeInterval(1))
-        let start = end.addingTimeInterval(-max(rest.totalInterval, 1))
+    /// The whole countdown as a range, clamped so the upper bound is always
+    /// above the lower one even a second after the deadline passes.
+    private func span(to deadline: Date, over total: TimeInterval) -> ClosedRange<Date>? {
+        let end = max(deadline, Date().addingTimeInterval(1))
+        let start = end.addingTimeInterval(-max(total, 1))
         guard start < end else { return nil }
         return start...end
     }
@@ -551,11 +675,62 @@ private struct CardControl: View {
 
     var body: some View {
         let look = PhaseLook(state: state, isStale: isStale)
-        if look.hasDial, let dial = state.dial {
+        if let complex = look.complex {
+            ComplexRow(complex: complex)
+        } else if look.hasDial, let dial = state.dial {
             DialRow(dial: dial)
         } else if let action = look.action {
             ActionButton(action: action)
         }
+    }
+}
+
+/// The complex's two taps: `[Next move]  [Round 3 done]`, the phone's own
+/// two buttons on one 44 pt row. Round done is the primary (ember) because it
+/// is the one that scores; Next move ticks the movement the round is up to and
+/// its fifth tick is the round, so the two never disagree. Both run in the
+/// app (`LiveActivityIntent`), draw an optimistic frame from the counter, and
+/// reach `cxMark()` / `cxRound()` through the same door as Log set.
+///
+/// Two controls, against the HIG's "prefer limiting it to a single element":
+/// the second conscious trade on this card, argued in
+/// design/native/live-activity.md. The pills are 34 pt inside 44 pt targets
+/// with an 8 pt gutter, and a miss lands on the other count — which the
+/// phone's Undo takes back — never on Log set or Skip rest, which are not on
+/// this row.
+private struct ComplexRow: View {
+    let complex: LiveState.Complex
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Button(intent: MarkMoveIntent()) {
+                pill("Next move", glyph: "checkmark", fill: WidgetTheme.sand, ink: WidgetTheme.ink)
+            }
+            .buttonStyle(.plain)
+            Button(intent: RoundDoneIntent()) {
+                pill("Round " + String(complex.rounds + 1) + " done", glyph: "repeat",
+                     fill: WidgetTheme.ember, ink: WidgetTheme.onEmber)
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(height: 44)
+    }
+
+    private func pill(_ title: String, glyph: String, fill: Color, ink: Color) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: glyph).font(.system(size: 11, weight: .bold))
+            Text(title).font(.system(size: 14, weight: .semibold))
+        }
+        .foregroundStyle(ink)
+        .lineLimit(1)
+        .minimumScaleFactor(0.7)
+        .padding(.horizontal, 6)
+        .frame(maxWidth: .infinity)
+        .frame(height: 34)
+        .background(fill, in: Capsule())
+        // The pill is 34 pt; the tappable label is 44.
+        .padding(.vertical, 5)
+        .contentShape(Rectangle())
     }
 }
 
@@ -601,26 +776,36 @@ private struct ActionButton: View {
 ///
 /// The row is 44 pt tall so every target is 44 pt (HIG minimum), while the
 /// visible circles and pill are 32 and 34: the hit area extends into the
-/// row's gutter, not the neighbour's, because the value between the two
-/// circles is not a control.
+/// row's gutter, not the neighbour's. The value between the two circles is a
+/// control too, since 21 Sept — a `Link`, not a button: a tap on the number
+/// opens the phone's set sheet with these figures in it and that field under
+/// the keyboard, which is the one thing a card cannot do for itself ("i will
+/// want to be able to type it in"). Its target is the 44 pt column between
+/// the two circles, so the three targets in a group abut and never overlap.
+///
+/// The weight half exists whenever the engine sent a weight, and 0 is a
+/// weight: the phone's sheet opens on 0 for every set, and a card that hid
+/// the dial until something had been logged had no way to log the first one.
 private struct DialRow: View {
     let dial: WorkoutActivityAttributes.ContentState.Dial
 
     var body: some View {
         HStack(spacing: 6) {
-            DialGroup(field: .reps, value: String(dial.reps), unit: "reps")
+            DialGroup(field: .reps, value: String(dial.reps), unit: "reps", link: link(.reps))
             if let weight = dial.weight {
-                DialGroup(field: .weight, value: Self.format(weight), unit: dial.unit)
+                DialGroup(field: .weight, value: Self.format(weight), unit: dial.unit, link: link(.weight))
             }
             Button(intent: LogSetIntent()) {
-                HStack(spacing: 5) {
-                    Image(systemName: "checkmark").font(.system(size: 11, weight: .bold))
-                    Text("Log set").font(.system(size: 14, weight: .semibold))
-                }
+                // No checkmark here, unlike the lone Log set button: the two
+                // figure columns are 44 pt targets since 21 Sept and the pill
+                // is what gives way, down to ~58 pt beside "142.5" — the
+                // glyph's 16 pt was the difference between "Log set" and
+                // "Log…" (measured in LiveActivityShots' worst-case-dial).
+                Text("Log set").font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(WidgetTheme.onEmber)
                 .lineLimit(1)
                 // Down to 0.6: beside a five-character weight ("142.5") the
-                // pill has ~68 pt, and at 0.7 the word truncated to "Log…".
+                // pill has ~58 pt, and the word needs 0.9 of its size to fit.
                 .minimumScaleFactor(0.6)
                 .padding(.horizontal, 6)
                 .frame(maxWidth: .infinity)
@@ -640,6 +825,17 @@ private struct DialRow: View {
     static func format(_ value: Double) -> String {
         value == value.rounded() ? String(Int(value)) : String(format: "%.1f", value)
     }
+
+    /// `spotter://set/weight?reps=12&weight=55` — the deep link the engine
+    /// answers by opening the set sheet with both figures in it and the named
+    /// field under the keyboard (`openSetLink()` in app.ts). The figures are
+    /// the dial's, so a number turned on the card is the number typed over.
+    /// Nothing but digits and a dot ever goes in the query.
+    private func link(_ field: DialField) -> URL? {
+        var query = "reps=" + String(dial.reps)
+        if let weight = dial.weight { query += "&weight=" + Self.format(weight) }
+        return URL(string: "spotter://set/" + field.rawValue + "?" + query)
+    }
 }
 
 /// One figure between its two buttons.
@@ -647,34 +843,53 @@ private struct DialGroup: View {
     let field: DialField
     let value: String
     let unit: String
+    /// Where a tap on the figure takes the phone; nil draws a plain figure.
+    var link: URL? = nil
 
     var body: some View {
         HStack(spacing: 0) {
             StepButton(field: field, delta: -1)
-            VStack(spacing: -1) {
-                Text(value)
-                    .font(WidgetTheme.numeral(17))
-                    .foregroundStyle(WidgetTheme.ink)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-                Text(unit.uppercased())
-                    .font(WidgetTheme.label(9))
-                    .tracking(0.4)
-                    .foregroundStyle(WidgetTheme.muted)
-                    .lineLimit(1)
+            if let link = link {
+                // A Link, not a Button(intent:): the figure's tap is the one
+                // that has to leave the card, because typing is the phone's.
+                Link(destination: link) { figure }
+            } else {
+                figure
             }
-            .frame(minWidth: 34)
-            // The figure keeps its own width and the Log set pill gives way:
-            // the pill is the flexible element in the row, and without this
-            // it squeezed "142.5" into "14…" while keeping its own slack.
-            .fixedSize(horizontal: true, vertical: false)
-            // The system's own "waiting for the intent" treatment: the figure
-            // dims from the press until the app's update lands, which is the
-            // honest state of a number that is being changed in another
-            // process. Judiciously, per WidgetKit: on the figure only.
-            .invalidatableContent()
             StepButton(field: field, delta: 1)
         }
+    }
+
+    private var figure: some View {
+        VStack(spacing: -1) {
+            Text(value)
+                .font(WidgetTheme.numeral(17))
+                .foregroundStyle(WidgetTheme.ink)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            Text(unit.uppercased())
+                .font(WidgetTheme.label(9))
+                .tracking(0.4)
+                .foregroundStyle(WidgetTheme.muted)
+                .lineLimit(1)
+        }
+        // 44 wide, not 34: the column is a target now, the same size as the
+        // circles either side of it. Beside the widest weight ("142.5") the
+        // Log set pill gives way, as it always did.
+        .frame(minWidth: 44)
+        // The figure keeps its own width and the Log set pill gives way:
+        // the pill is the flexible element in the row, and without this
+        // it squeezed "142.5" into "14…" while keeping its own slack.
+        .fixedSize(horizontal: true, vertical: false)
+        .frame(height: 44)
+        .contentShape(Rectangle())
+        // The system's own "waiting for the intent" treatment: the figure
+        // dims from the press until the app's update lands, which is the
+        // honest state of a number that is being changed in another
+        // process. Judiciously, per WidgetKit: on the figure only.
+        .invalidatableContent()
+        .accessibilityElement(children: .combine)
+        .accessibilityHint(link == nil ? "" : "Opens the set sheet on the phone to type it")
     }
 }
 
@@ -718,8 +933,8 @@ private struct MinimalDial: View {
 
     var body: some View {
         Group {
-            if let rest = state.rest, look.counting {
-                ProgressView(timerInterval: Date()...max(rest.deadline, Date().addingTimeInterval(1)),
+            if let deadline = look.deadline {
+                ProgressView(timerInterval: Date()...max(deadline, Date().addingTimeInterval(1)),
                              countsDown: true) {
                     EmptyView()
                 } currentValueLabel: {
@@ -768,9 +983,10 @@ struct LockScreenWorkout: View {
     /// which is the button. One shrunk line keeps the whole card. The dial row
     /// is 14 pt taller than the button it replaces, so with the dial on the
     /// card the same name is one line at every size: two lines plus the dial
-    /// would measure ~166 pt at the default size alone.
+    /// would measure ~166 pt at the default size alone. The complex's row is
+    /// the dial row's height, and gets the same rule.
     private func heroLines(_ look: PhaseLook) -> Int {
-        (scale > 1.12 || look.hasDial) ? 1 : 2
+        (scale > 1.12 || look.hasDial || look.complexControl) ? 1 : 2
     }
 
     var body: some View {

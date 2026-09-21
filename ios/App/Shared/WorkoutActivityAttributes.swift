@@ -49,6 +49,12 @@ struct WorkoutActivityAttributes: ActivityAttributes {
         /// (`dose.loggable`); true when the engine predates the dose, which is
         /// the behaviour the card had before the dial existed.
         var loggable: Bool
+        /// The complex's round counter and cap, straight off `LiveState`, on
+        /// `phase == .complex` from an engine that sends it; nil otherwise.
+        /// The card counts a round from it, runs the cap down from its
+        /// deadline and writes the score the phone writes. Defaulted so the
+        /// states that predate it are built exactly as before.
+        var complex: LiveState.Complex? = nil
 
         /// The two figures a thumb can turn on the card, plus the unit they are
         /// in. Kept small on purpose: ActivityKit budgets static + dynamic
@@ -113,7 +119,11 @@ struct WorkoutActivityAttributes: ActivityAttributes {
                             progress: state.progress,
                             pausedAt: state.pausedDate,
                             dial: dial,
-                            loggable: state.dose?.loggable ?? true)
+                            loggable: state.dose?.loggable ?? true,
+                            // Only on a complex: an engine that sent one on
+                            // another phase would be describing a screen the
+                            // person is not on.
+                            complex: state.phase == .complex ? state.complex : nil)
     }
 
     /// m:ss, or h:mm:ss past an hour, for the two clocks that must not tick: the

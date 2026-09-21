@@ -57,6 +57,10 @@ enum LiveActivityShots {
         // reaches and XL does not — so THIS is the tallest the card can ever be.
         shots.append(("worst-case", longName(dial: false), .accessibility3))
         shots.append(("worst-case-dial", longName(dial: true), .accessibility3))
+        // The complex row is the dial row's height under a hero that must
+        // stay one line; same ceiling, same proof.
+        shots.append(("worst-case-complex", longComplex(), .accessibility3))
+        shots.append(("xl-complex", state(.complexRunning), .xLarge))
 
         for scheme in [ColorScheme.light, .dark] {
             for (name, content, size) in shots {
@@ -94,18 +98,38 @@ enum LiveActivityShots {
         [("work", state(.work)),
          ("dial", state(.dial)),
          ("dial-bodyweight", state(.dialBodyweight)),
+         ("dial-zero", state(.dialZero)),
          ("rest", state(.rest)),
          ("held", state(.held)),
          ("paused", state(.paused)),
          ("timed", state(.timed)),
          ("complex", state(.complex)),
+         ("complex-running", state(.complexRunning)),
+         ("complex-idle", state(.complexIdle)),
+         ("complex-held", state(.complexHeld)),
+         ("complex-over", state(.complexOver)),
+         ("complex-counted", state(.complexCounted)),
          ("done", state(.done))]
     }
 
     /// `work` is what an engine older than the dose sends: a plain Log set.
-    /// `dial` is the same set from the current engine. `held` is a rest paused
-    /// with time left; `paused` is the whole session stopped.
-    private enum Case { case work, dial, dialBodyweight, rest, held, paused, timed, complex, done }
+    /// `dial` is the same set from the current engine; `dialZero` the same
+    /// set never loaded (weight 0, not nil). `held` is a rest paused with time
+    /// left; `paused` is the whole session stopped. `complex` is a complex
+    /// from an engine older than the counter; the four after it are the
+    /// counter's states, and `complexCounted` a complex with no cap at all.
+    private enum Case {
+        case work, dial, dialBodyweight, dialZero, rest, held, paused, timed
+        case complex, complexRunning, complexIdle, complexHeld, complexOver, complexCounted, done
+    }
+
+    /// Complex Fives, mid-round, as the engine sends it. `until` is the cap's
+    /// deadline; the running case sets it, the others leave it 0.
+    private static func complex(rounds: Int, marked: Int, until: Double = 0, held: Double = 0,
+                                over: Bool = false, cap: Double = 15 * 60 * 1000) -> LiveState.Complex {
+        LiveState.Complex(rounds: rounds, marked: marked, moves: 5, move: "Kettlebell Swing",
+                          cap: cap, until: until, held: held, over: over)
+    }
 
     private static func state(_ kind: Case) -> WorkoutActivityAttributes.ContentState {
         let until = Date().addingTimeInterval(47).timeIntervalSince1970 * 1000
@@ -125,6 +149,11 @@ enum LiveActivityShots {
                          set: .init(index: 2, total: 3), target: "12 reps", weight: nil,
                          rest: nil, next: "Bench Press", progress: .init(done: 4, total: 10),
                          pausedAt: nil, dial: .init(reps: 12, weight: nil, unit: "kg"), loggable: true)
+        case .dialZero:
+            return .init(phase: .work, exercise: "Goblet Squat", block: "Main",
+                         set: .init(index: 1, total: 3), target: "10 reps", weight: nil,
+                         rest: nil, next: "Bench Press", progress: .init(done: 0, total: 10),
+                         pausedAt: nil, dial: .init(reps: 10, weight: 0, unit: "kg"), loggable: true)
         case .rest:
             return .init(phase: .rest, exercise: "Goblet Squat", block: "Main",
                          set: .init(index: 3, total: 3), target: "10 reps", weight: "24 kg",
@@ -154,6 +183,36 @@ enum LiveActivityShots {
                          set: nil, target: "12 reps", weight: "24 kg",
                          rest: nil, next: "Goblet Squat", progress: .init(done: 6, total: 12),
                          pausedAt: nil, dial: nil, loggable: false)
+        case .complexRunning:
+            return .init(phase: .complex, exercise: "Kettlebell Swing", block: nil,
+                         set: nil, target: "5 reps", weight: "24 kg",
+                         rest: nil, next: nil, progress: .init(done: 11, total: 15),
+                         pausedAt: nil, dial: nil, loggable: false,
+                         complex: complex(rounds: 2, marked: 1, until: until + 700_000))
+        case .complexIdle:
+            return .init(phase: .complex, exercise: "Deadlift", block: nil,
+                         set: nil, target: "5 reps", weight: "24 kg",
+                         rest: nil, next: nil, progress: .init(done: 0, total: 15),
+                         pausedAt: nil, dial: nil, loggable: false,
+                         complex: complex(rounds: 0, marked: 0))
+        case .complexHeld:
+            return .init(phase: .complex, exercise: "Kettlebell Swing", block: nil,
+                         set: nil, target: "5 reps", weight: "24 kg",
+                         rest: nil, next: nil, progress: .init(done: 11, total: 15),
+                         pausedAt: nil, dial: nil, loggable: false,
+                         complex: complex(rounds: 2, marked: 1, held: 250_000))
+        case .complexOver:
+            return .init(phase: .complex, exercise: "Kettlebell Swing", block: nil,
+                         set: nil, target: "5 reps", weight: "24 kg",
+                         rest: nil, next: nil, progress: .init(done: 17, total: 17),
+                         pausedAt: nil, dial: nil, loggable: false,
+                         complex: complex(rounds: 3, marked: 2, over: true))
+        case .complexCounted:
+            return .init(phase: .complex, exercise: "Kettlebell Swing", block: nil,
+                         set: nil, target: "5 reps", weight: "24 kg",
+                         rest: nil, next: nil, progress: .init(done: 11, total: 15),
+                         pausedAt: nil, dial: nil, loggable: false,
+                         complex: complex(rounds: 2, marked: 1, cap: 0))
         case .done:
             return .init(phase: .done, exercise: "Workout saved", block: nil, set: nil,
                          target: "42:10  ·  18 sets  ·  2 PRs", weight: nil, rest: nil,
@@ -171,6 +230,18 @@ enum LiveActivityShots {
               next: "Romanian Deadlift", progress: .init(done: 11, total: 12),
               pausedAt: nil,
               dial: dial ? .init(reps: 12, weight: 142.5, unit: "kg") : nil, loggable: true)
+    }
+
+    /// The same name on a complex with the cap running and the widest round
+    /// count the button can carry.
+    private static func longComplex() -> WorkoutActivityAttributes.ContentState {
+        .init(phase: .complex, exercise: "Bulgarian Split Squat (Rear Foot Elevated)",
+              block: nil, set: nil, target: "8 reps each side", weight: "142.5 kg", rest: nil,
+              next: nil, progress: .init(done: 58, total: 60), pausedAt: nil, dial: nil, loggable: false,
+              complex: .init(rounds: 11, marked: 4, moves: 5, move: "Bulgarian Split Squat (Rear Foot Elevated)",
+                             cap: 20 * 60 * 1000,
+                             until: Date().addingTimeInterval(47).timeIntervalSince1970 * 1000,
+                             held: 0, over: false))
     }
 }
 #endif

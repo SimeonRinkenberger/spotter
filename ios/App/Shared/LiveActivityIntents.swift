@@ -87,6 +87,35 @@ struct LogSetIntent: LiveActivityIntent {
     }
 }
 
+/// The complex's two taps, from the card. `mark` ticks the movement the round
+/// is up to and `round` counts the whole round; both go through the same
+/// handler as Log set and land in `liveAction()` on the phone, where
+/// `cxMark()` / `cxRound()` — the functions the screen's own buttons call —
+/// count them, start the cap if it is not running, and rebuild the log.
+/// Nothing is counted natively except the optimistic frame the sink draws
+/// while the engine catches up.
+struct MarkMoveIntent: LiveActivityIntent {
+    static let title: LocalizedStringResource = "Next move"
+    static let description = IntentDescription("Tick the movement the round of the complex is up to.")
+    static let isDiscoverable = false
+
+    func perform() async throws -> some IntentResult {
+        LiveActionRouter.send(.mark)
+        return .result()
+    }
+}
+
+struct RoundDoneIntent: LiveActivityIntent {
+    static let title: LocalizedStringResource = "Round done"
+    static let description = IntentDescription("Count a round of the complex on screen.")
+    static let isDiscoverable = false
+
+    func perform() async throws -> some IntentResult {
+        LiveActionRouter.send(.round)
+        return .result()
+    }
+}
+
 /// One type serves all four ± buttons. The parameters travel with the button:
 /// WidgetKit archives the intent instance the view was built with, and the
 /// system hands the app a copy with `field` and `delta` already assigned, so
