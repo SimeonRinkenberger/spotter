@@ -993,9 +993,11 @@ export const STYLE = String.raw`<style>
      duration, and set in tabular digits so a column of them lines up. */
   .t { flex: 0 0 auto; margin-left: auto; font-size: 11px; font-weight: 650;
     color: var(--muted); font-variant-numeric: tabular-nums; }
-  /* "Watch this bit" sat on the chip above it with no gap at all; a button
-     needs the same air a paragraph gets. */
-  .exname > .chip { margin-top: 9px; }
+  /* "Watch this bit" sat on the chip above it with no gap at all, and on a row
+     with no cue it ran on inline after the name ("Lat pulldown [Watch this
+     bit]"), pushing the name off the dose's baseline. A line of its own, as
+     wide as its words, with the air a paragraph gets. */
+  .exname > .chip { display: flex; width: fit-content; margin-top: 9px; }
   /* ---------- the demonstration clip ----------
      One 16:9 slot, a byline, the other creators who filmed it, a way out — the shape
      Hevy, Fitbod and Nike Training Club all settled on for the demo inside an exercise
@@ -1209,8 +1211,10 @@ export const STYLE = String.raw`<style>
 
   /* ---------- picker list ---------- */
   .picklist { display: flex; flex-direction: column; gap: 2px; }
+  /* color: inherit, because WebKit paints a bare <button> system blue — the leave
+     sheet's two rows came up as links on the 17 Pro while every other row was ink. */
   .pickrow { display: flex; align-items: center; gap: 12px; padding: 11px 6px; border: none;
-    background: none; text-align: left; border-radius: 13px; width: 100%; }
+    background: none; text-align: left; border-radius: 13px; width: 100%; color: inherit; }
   .pickrow:active { background: var(--sand); }
   .pickrow img { width: 46px; height: 46px; border-radius: 11px; object-fit: cover; background: var(--sand);
     flex: 0 0 auto; }
