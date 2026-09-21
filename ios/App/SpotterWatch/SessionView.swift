@@ -105,7 +105,18 @@ struct MetricsPage: View {
                         .minimumScaleFactor(0.7)
                 }
 
-                if let dose = dose, dose.loggable {
+                if state.phase == .paused {
+                    // The session is stopped from the phone (or came back
+                    // paused after the app died). No dial and no Log set:
+                    // a set logged into a paused session is a set nobody
+                    // did, and the phone's resume bar is what resumes.
+                    Text("Paused on your iPhone.")
+                        .font(WidgetTheme.display(12, weight: .medium))
+                        .foregroundStyle(WidgetTheme.muted)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.7)
+                        .padding(.top, 2)
+                } else if let dose = dose, dose.loggable {
                     dials(dose)
                     logButton
                 } else {
@@ -132,11 +143,27 @@ struct MetricsPage: View {
     /// the movement name is what this page is for.
     private var header: some View {
         HStack(spacing: 6) {
-            Text(timerInterval: state.startedDate...state.startedDate.addingTimeInterval(86_400),
-                 pauseTime: nil, countsDown: false, showsHours: false)
-                .font(WidgetTheme.numeral(13, weight: .medium))
-                .foregroundStyle(WidgetTheme.ink2)
-                .lineLimit(1)
+            if let pausedAt = state.pausedDate {
+                // Frozen where the pause began, never a running timer: the
+                // phone shifts startedAt on resume so the gap is not counted,
+                // and the wrist must not count it either. Minutes past an
+                // hour, like the running clock below (showsHours: false).
+                Text(Duration.seconds(max(0, pausedAt.timeIntervalSince(state.startedDate))),
+                     format: .time(pattern: .minuteSecond))
+                    .font(WidgetTheme.numeral(13, weight: .medium))
+                    .foregroundStyle(WidgetTheme.muted)
+                    .lineLimit(1)
+                Text("Paused")
+                    .font(WidgetTheme.label(10))
+                    .foregroundStyle(WidgetTheme.muted)
+                    .lineLimit(1)
+            } else {
+                Text(timerInterval: state.startedDate...state.startedDate.addingTimeInterval(86_400),
+                     pauseTime: nil, countsDown: false, showsHours: false)
+                    .font(WidgetTheme.numeral(13, weight: .medium))
+                    .foregroundStyle(WidgetTheme.ink2)
+                    .lineLimit(1)
+            }
 
             if let rate = keeper.heartRate {
                 Label(String(Int(rate.rounded())), systemImage: "heart.fill")

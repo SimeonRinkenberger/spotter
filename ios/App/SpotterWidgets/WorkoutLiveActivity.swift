@@ -619,8 +619,10 @@ private struct DialRow: View {
                 }
                 .foregroundStyle(WidgetTheme.onEmber)
                 .lineLimit(1)
-                .minimumScaleFactor(0.7)
-                .padding(.horizontal, 8)
+                // Down to 0.6: beside a five-character weight ("142.5") the
+                // pill has ~68 pt, and at 0.7 the word truncated to "Log…".
+                .minimumScaleFactor(0.6)
+                .padding(.horizontal, 6)
                 .frame(maxWidth: .infinity)
                 .frame(height: 34)
                 .background(WidgetTheme.ember, in: Capsule())
