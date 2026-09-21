@@ -6194,10 +6194,18 @@ export const APP = String.raw`
   }
 
   function woaRows() {
-    var out = [], seen = {};
+    var out = [], seen = {}, skip = {}, tw = typeof woa !== "undefined" && woa && woa.target ? woa.target.w : null;
+    // What is already on the card is not an answer to "what did Spotter miss":
+    // a card add leaves the card's own movements off every shelf, a replacement
+    // leaves off the one being replaced. The live session's list stays whole — a
+    // second round of a movement is a real thing to add to a session.
+    if (tw && woa.mode === "card-add") (tw.blocks || []).forEach(function (b) {
+      (b.exercises || []).forEach(function (ex) { if (ex && ex.name) skip[exKey(ex)] = 1; });
+    });
+    if (tw && woa.mode === "replace" && woa.target.ex && woa.target.ex.name) skip[exKey(woa.target.ex)] = 1;
     Object.keys(hist).forEach(function (k) {
       var h = hist[k];
-      if (!h.date || !h.name) return;
+      if (!h.date || !h.name || skip[k]) return;
       var r = woaMake(k, h.name, k.indexOf("c:") === 0 ? k.slice(2) : null, "", 1,
         { sets: h.sets, reps: h.reps, at: h.date });
       r.sub = lastLine(r);
@@ -6209,7 +6217,7 @@ export const APP = String.raw`
       (w.blocks || []).forEach(function (b) {
         (b.exercises || []).forEach(function (ex) {
           var k = ex && ex.name ? exKey(ex) : null;
-          if (!k || seen[k]) return;
+          if (!k || seen[k] || skip[k]) return;
           seen[k] = woaMake(k, ex.name, ex.canonical_id || null,
             [doseText(ex), w.title].filter(Boolean).join(" · "), 2,
             { sets: ex.sets, reps: ex.reps, secs: ex.duration_seconds });
@@ -6219,6 +6227,7 @@ export const APP = String.raw`
     });
     (woaCat || []).forEach(function (c) {
       var dup = seen["c:" + c.id], mg = c.muscle_groups || [], eq = c.equipment || [];
+      if (skip["c:" + c.id]) return;
       // The muscles and equipment ride along with the aliases, so a kept row can
       // be filtered by what the catalog knows about it.
       if (dup) { dup.aliases = c.aliases || []; dup.muscle_groups = mg; dup.equipment = eq; return; }

@@ -11812,10 +11812,14 @@ details.details-moving > :not(summary) {
     return r.key = key, r.name = name, r.canonical_id = id, r.sub = sub, r.src = src, r;
   }
   function woaRows() {
-    var out = [], seen = {};
-    return Object.keys(hist).forEach(function(k) {
+    var out = [], seen = {}, skip = {}, tw = typeof woa != "undefined" && woa && woa.target ? woa.target.w : null;
+    return tw && woa.mode === "card-add" && (tw.blocks || []).forEach(function(b) {
+      (b.exercises || []).forEach(function(ex) {
+        ex && ex.name && (skip[exKey(ex)] = 1);
+      });
+    }), tw && woa.mode === "replace" && woa.target.ex && woa.target.ex.name && (skip[exKey(woa.target.ex)] = 1), Object.keys(hist).forEach(function(k) {
       var h = hist[k];
-      if (!(!h.date || !h.name)) {
+      if (!(!h.date || !h.name || skip[k])) {
         var r = woaMake(
           k,
           h.name,
@@ -11834,7 +11838,7 @@ details.details-moving > :not(summary) {
       (w.blocks || []).forEach(function(b) {
         (b.exercises || []).forEach(function(ex) {
           var k = ex && ex.name ? exKey(ex) : null;
-          !k || seen[k] || (seen[k] = woaMake(
+          !k || seen[k] || skip[k] || (seen[k] = woaMake(
             k,
             ex.name,
             ex.canonical_id || null,
@@ -11846,18 +11850,20 @@ details.details-moving > :not(summary) {
       });
     }), (woaCat || []).forEach(function(c) {
       var dup = seen["c:" + c.id], mg = c.muscle_groups || [], eq = c.equipment || [];
-      if (dup) {
-        dup.aliases = c.aliases || [], dup.muscle_groups = mg, dup.equipment = eq;
-        return;
+      if (!skip["c:" + c.id]) {
+        if (dup) {
+          dup.aliases = c.aliases || [], dup.muscle_groups = mg, dup.equipment = eq;
+          return;
+        }
+        out.push(woaMake(
+          "c:" + c.id,
+          c.display_name,
+          c.id,
+          mg.concat(eq).join(" \xB7 "),
+          3,
+          { aliases: c.aliases || [], pattern: c.pattern, muscle_groups: mg, equipment: eq }
+        ));
       }
-      out.push(woaMake(
-        "c:" + c.id,
-        c.display_name,
-        c.id,
-        mg.concat(eq).join(" \xB7 "),
-        3,
-        { aliases: c.aliases || [], pattern: c.pattern, muscle_groups: mg, equipment: eq }
-      ));
     }), out;
   }
   function woaHit(t, q) {
