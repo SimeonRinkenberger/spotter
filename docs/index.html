@@ -5043,7 +5043,7 @@ body:not(.app) #toast.show {
 }
 .restpick .chips {
   margin: 0 -18px;
-  padding: 2px 0 6px;
+  padding-top: 2px;
 }
 .restcustom {
   align-items: flex-end;
@@ -6972,7 +6972,6 @@ select:focus-visible {
   top: 8px;
   border: 1px solid transparent;
   white-space: nowrap;
-  font-variant-numeric: tabular-nums;
   transition: transform var(--t-1) var(--e-out);
 }
 .restpill.dflt {
@@ -7074,10 +7073,11 @@ select:focus-visible {
 }
 #sectionsheet .btnrow .ghost {
   flex: 0 0 auto;
+  width: auto;
   padding: 14px 20px;
 }
 #recapopts .danger,
-.sectionremove {
+#sectionremove {
   color: var(--ember-ink);
   font-size: 15px;
   font-weight: 650;
@@ -7325,9 +7325,6 @@ details.details-moving > :not(summary) {
   .exercise-options .pickrow,
   .restpill {
     transition: none;
-  }
-  .restpill:active {
-    transform: none;
   }
 }
 .reader-offer {
@@ -7847,7 +7844,7 @@ details.details-moving > :not(summary) {
   <div class="pillrow" id="sectionkinds"></div>
   <div class="field"><label for="sectionname">Name</label><input id="sectionname" type="text" placeholder="Finisher" maxlength="60" autocapitalize="words" autocomplete="off" spellcheck="false"></div>
   <div class="hide" id="sectionroundsf">
-    <div class="field"><label for="sectionrounds">Rounds</label><input id="sectionrounds" type="number" inputmode="numeric" min="1" max="50" placeholder="3"></div>
+    <div class="field"><label for="sectionrounds">Rounds</label><input id="sectionrounds" type="number" inputmode="numeric" min="1" max="50"></div>
     <div class="field"><label>Rest between rounds</label><div class="restpick strip" id="sectionrest"></div></div>
   </div>
   <div class="fieldrow hide" id="sectioncapf">
@@ -7855,7 +7852,7 @@ details.details-moving > :not(summary) {
     <div class="field"><label for="sectioncapsecs">Seconds</label><input id="sectioncapsecs" type="number" inputmode="numeric" placeholder="0"></div>
   </div>
   <div class="btnrow"><button class="btn ghost" data-close="sectionsheet">Cancel</button><button class="btn" id="sectionsave">Choose the first exercise</button></div>
-  <button class="danger sectionremove hide" id="sectionremove">Remove section</button>
+  <button class="danger hide" id="sectionremove">Remove section</button>
 </div></div>
 
 <div class="sheet" id="explainsheet"><div class="sheetbody">
@@ -12259,8 +12256,8 @@ details.details-moving > :not(summary) {
     return r.secs ? "logged" : STEADY.indexOf(r.canonical_id) >= 0 || r.pattern === "cardio" && (eq.indexOf("machine") >= 0 || eq.indexOf("jump rope") >= 0) ? "cardio" : /\b(plank|hold|stretch|pose|hang|wall sit)\b/.test(words) ? "hold" : "";
   }
   function woaChoose(r) {
-    var t = woa.target, old = woa.mode === "replace" ? t.ex : null, live = woa.mode === "add" || !!(old && t.session), s = live ? wo.screens[wo.i] : null, cx = s && s.cx && !s.ei ? s.cx : null, h = old ? null : hist[r.key], m = String((old ? old.reps : r.reps) || "").match(/\d+/), where = $("woawhere"), kind = old ? "" : timedByNature(r), secs = old ? old.duration_seconds : r.secs || h && h.secs, cardio = kind === "cardio" || !!(t && t.timed && t.block.type !== "cooldown");
-    woa.pick = r, woa.keep = !1, woa.where = cx ? "complex" : s && wo.i < endStop() ? "after" : "end", woa.nosets = !!cx || !!(old && old.sets == null), woa.timed = old ? !!(old.duration_seconds && !old.reps) : !!(kind || t && t.timed), woa.rest = restVal(old && old.rest_seconds), haptic("tap"), $("woaddtitle").textContent = r.name, $("woalast").textContent = old ? "Instead of " + old.name + "." : lastLine(r), $("woaddsets").value = String(h && h.sets || (old ? old.sets : r.sets) || (woa.timed ? 1 : 3)), $("woaddreps").value = String(h && h.reps || (m ? m[0] : 10)), fillDose("woadd", secs || (cardio ? 600 : 30)), doseMode("woadd", woa.timed), restChips($("woarest"), woa.rest, function(v) {
+    var t = woa.target, old = woa.mode === "replace" ? t.ex : null, live = woa.mode === "add" || !!(old && t.session), s = live ? wo.screens[wo.i] : null, cx = s && s.cx && !s.ei ? s.cx : null, h = old ? null : hist[r.key], m = String((old ? old.reps : r.reps) || "").match(/\d+/), where = $("woawhere"), kind = old ? "" : timedByNature(r), secs = old ? old.duration_seconds : r.secs || h && h.secs;
+    woa.pick = r, woa.keep = !1, woa.where = cx ? "complex" : s && wo.i < endStop() ? "after" : "end", woa.nosets = !!cx || !!(old && old.sets == null), woa.timed = old ? !!(old.duration_seconds && !old.reps) : !!(kind || t && t.timed), woa.rest = restVal(old && old.rest_seconds), haptic("tap"), $("woaddtitle").textContent = r.name, $("woalast").textContent = old ? "Instead of " + old.name + "." : lastLine(r), $("woaddsets").value = String(h && h.sets || (old ? old.sets : r.sets) || (woa.timed ? 1 : 3)), $("woaddreps").value = String(h && h.reps || (m ? m[0] : 10)), fillDose("woadd", secs || (kind === "cardio" || t && t.timed && t.block.type !== "cooldown" ? 600 : 30)), doseMode("woadd", woa.timed), restChips($("woarest"), woa.rest, function(v) {
       woa && (woa.rest = v);
     }), where.innerHTML = "", $("woaddsets").parentNode.classList.toggle("hide", woa.nosets), cx ? where.appendChild(el("div", "wnote", old ? "Joins the round list." : "Joins the round list \u2014 part of this complex from the next round on.")) : !old && woa.where === "after" && ["After this one", "At the end"].forEach(function(t2, k) {
       var b = el("button", "chip" + (k ? "" : " active"), t2);

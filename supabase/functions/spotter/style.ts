@@ -1910,7 +1910,7 @@ export const STYLE = String.raw`<style>
      inset is there). The custom pair opens under it as a field row, the button
      its third column. */
   .restpick .chip { min-height: 36px; }
-  .restpick .chips { margin: 0 -18px; padding: 2px 0 6px; }
+  .restpick .chips { margin: 0 -18px; padding-top: 2px; }
   .restcustom { align-items: flex-end; margin-top: 12px; }
   @media (prefers-reduced-motion: reduce) {
     .dosefields.swap .field { animation: none; }
@@ -2657,7 +2657,7 @@ export const STYLE = String.raw`<style>
      button; no overflow clip, which would take the reach with it — the longest
      word fits a 375px row. */
   .restpill { position: absolute; left: 0; top: 8px; border: 1px solid transparent;
-    white-space: nowrap; font-variant-numeric: tabular-nums; transition: transform var(--t-1) var(--e-out); }
+    white-space: nowrap; transition: transform var(--t-1) var(--e-out); }
   .restpill.dflt { background: none; border-color: var(--line-2); color: var(--muted); }
   .restpill:active { transform: scale(.95); }
   .restpill::after { content: ""; position: absolute; inset: -9px 0; }
@@ -2688,9 +2688,9 @@ export const STYLE = String.raw`<style>
      gives its delete - rather than the muted grey that reads as unavailable. */
   /* "Choose the first exercise" is a sentence, and half a row at 375px wraps
      it: Cancel takes only its own width there, the way a secondary action does. */
-  #sectionsheet .btnrow .ghost { flex: 0 0 auto; padding: 14px 20px; }
+  #sectionsheet .btnrow .ghost { flex: 0 0 auto; width: auto; padding: 14px 20px; }
   /* The section sheet's Remove is its last word and its one red one: this one. */
-  #recapopts .danger, .sectionremove { color: var(--ember-ink); font-size: 15px; font-weight: 650; }
+  #recapopts .danger, #sectionremove { color: var(--ember-ink); font-size: 15px; font-weight: 650; }
   #dmore { min-height: 44px; }
   /* The library row wraps rather than scrolls, and a wrapped row cannot carry its
      side inset on its end chips: the second line's first chip is not :first-child,
@@ -2757,7 +2757,6 @@ export const STYLE = String.raw`<style>
   @media (prefers-reduced-motion: reduce) {
     .disclosure > summary::after, .guide-topic > summary::after, .history-card > summary::before,
     .exercise-options .pickrow, .restpill { transition: none; }
-    .restpill:active { transform: none; }
   }
   .reader-offer { background: var(--ember-soft); border: 1px solid var(--line); border-radius: 18px; padding: 16px; margin: 16px 0; }
   .reader-offer p { color: var(--ink-2); font-size: 14px; line-height: 1.5; margin: 8px 0 12px; }

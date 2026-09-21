@@ -530,7 +530,7 @@ export const MARKUP_BODY = String.raw`</head>
   <div class="pillrow" id="sectionkinds"></div>
   <div class="field"><label for="sectionname">Name</label><input id="sectionname" type="text" placeholder="Finisher" maxlength="60" autocapitalize="words" autocomplete="off" spellcheck="false"></div>
   <div class="hide" id="sectionroundsf">
-    <div class="field"><label for="sectionrounds">Rounds</label><input id="sectionrounds" type="number" inputmode="numeric" min="1" max="50" placeholder="3"></div>
+    <div class="field"><label for="sectionrounds">Rounds</label><input id="sectionrounds" type="number" inputmode="numeric" min="1" max="50"></div>
     <div class="field"><label>Rest between rounds</label><div class="restpick strip" id="sectionrest"></div></div>
   </div>
   <div class="fieldrow hide" id="sectioncapf">
@@ -538,7 +538,7 @@ export const MARKUP_BODY = String.raw`</head>
     <div class="field"><label for="sectioncapsecs">Seconds</label><input id="sectioncapsecs" type="number" inputmode="numeric" placeholder="0"></div>
   </div>
   <div class="btnrow"><button class="btn ghost" data-close="sectionsheet">Cancel</button><button class="btn" id="sectionsave">Choose the first exercise</button></div>
-  <button class="danger sectionremove hide" id="sectionremove">Remove section</button>
+  <button class="danger hide" id="sectionremove">Remove section</button>
 </div></div>
 
 <!-- Three answers, in the order they earn: what the creator said, somebody filming

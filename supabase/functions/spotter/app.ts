@@ -6786,7 +6786,6 @@ export const APP = String.raw`
     // the shape of the one it replaces. A Cardio or Cool-down section asks for
     // time whatever is added to it; the segment is always there to flip.
     var kind = old ? "" : timedByNature(r), secs = old ? old.duration_seconds : (r.secs || (h && h.secs));
-    var cardio = kind === "cardio" || !!(t && t.timed && t.block.type !== "cooldown");
     woa.pick = r;
     woa.keep = false;
     woa.where = cx ? "complex" : s && wo.i < endStop() ? "after" : "end";
@@ -6805,7 +6804,7 @@ export const APP = String.raw`
     $("woalast").textContent = old ? "Instead of " + old.name + "." : lastLine(r);
     $("woaddsets").value = String((h && h.sets) || (old ? old.sets : r.sets) || (woa.timed ? 1 : 3));
     $("woaddreps").value = String((h && h.reps) || (m ? m[0] : 10));
-    fillDose("woadd", secs || (cardio ? 600 : 30));
+    fillDose("woadd", secs || (kind === "cardio" || t && t.timed && t.block.type !== "cooldown" ? 600 : 30));
     doseMode("woadd", woa.timed);
     restChips($("woarest"), woa.rest, function (v) { if (woa) woa.rest = v; });
     // Where it lands. Inside a complex there is nothing to choose — a movement
