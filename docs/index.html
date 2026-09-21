@@ -3522,6 +3522,7 @@ body:not(.app) #toast.show {
   background: var(--sand);
   display: block;
   flex: 0 0 auto;
+  position: relative;
 }
 .dmark.on {
   background: var(--ember);
@@ -3543,7 +3544,21 @@ body:not(.app) #toast.show {
 }
 .dmark.miss {
   background: none;
-  box-shadow: inset 0 0 0 1.6px var(--warn);
+}
+.dmark.miss::before,
+.dmark.miss::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 10px;
+  height: 1.8px;
+  border-radius: 1px;
+  background: var(--muted);
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+.dmark.miss::after {
+  transform: translate(-50%, -50%) rotate(-45deg);
 }
 .dlegend {
   display: flex;
@@ -5032,7 +5047,27 @@ body:not(.app) #toast.show {
   flex: 0 0 auto;
   color: var(--ember);
 }
+.doseseg {
+  margin-bottom: 12px;
+}
+.dosefields.swap .field {
+  animation: fadein var(--t-2) var(--e-out);
+}
+.restpick .chip {
+  min-height: 36px;
+}
+.restpick .chips {
+  margin: 0 -18px;
+  padding-top: 2px;
+}
+.restcustom {
+  align-items: flex-end;
+  margin-top: 12px;
+}
 @media (prefers-reduced-motion: reduce) {
+  .dosefields.swap .field {
+    animation: none;
+  }
   .woakeep,
   .waddcard {
     transition: none;
@@ -6317,6 +6352,7 @@ select:focus-visible {
 .chips .chip,
 .said .chip,
 .votes .chip,
+.restchips .chip,
 .pumpyctx button,
 .threadrow .tdel,
 .ttitle {
@@ -6336,6 +6372,7 @@ select:focus-visible {
 .chips .chip::after,
 .said .chip::after,
 .votes .chip::after,
+.restchips .chip::after,
 .pumpyctx button::after,
 .threadrow .tdel::after,
 .ttitle::after,
@@ -6387,6 +6424,9 @@ select:focus-visible {
 .votes .chip::after {
   inset: -6px 0;
 }
+.restchips .chip::after {
+  inset: -4px 0;
+}
 .votes .vote::after {
   inset: -4px;
 }
@@ -6416,7 +6456,7 @@ select:focus-visible {
 #hint b {
   color: var(--ink);
 }
-#hint button {
+#hintx {
   background: none;
   border: none;
   color: var(--muted);
@@ -6939,6 +6979,28 @@ select:focus-visible {
   width: 100%;
   min-width: 0;
   padding: 0;
+  position: relative;
+}
+.restpill {
+  position: absolute;
+  left: 0;
+  top: 8px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+  transition: transform var(--t-1) var(--e-out);
+}
+.restpill.dflt {
+  background: none;
+  border-color: var(--line-2);
+  color: var(--muted);
+}
+.restpill:active {
+  transform: scale(.95);
+}
+.restpill::after {
+  content: "";
+  position: absolute;
+  inset: -9px 0;
 }
 .exercise-options {
   border: 0;
@@ -7024,7 +7086,13 @@ select:focus-visible {
 #recapopts .pickrow {
   min-height: 48px;
 }
-#recapopts .danger {
+#sectionsheet .btnrow .ghost {
+  flex: 0 0 auto;
+  width: auto;
+  padding: 14px 20px;
+}
+#recapopts .danger,
+#sectionremove {
   color: var(--ember-ink);
   font-size: 15px;
   font-weight: 650;
@@ -7034,6 +7102,17 @@ select:focus-visible {
 }
 #chips {
   flex-wrap: wrap;
+  overflow: visible;
+  padding-left: 18px;
+  padding-right: 18px;
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+#chips > :first-child {
+  margin-left: 0;
+}
+#chips > :last-child {
+  margin-right: 0;
 }
 .schedule-date-control {
   display: flex;
@@ -7258,7 +7337,8 @@ details.details-moving > :not(summary) {
   .disclosure > summary::after,
   .guide-topic > summary::after,
   .history-card > summary::before,
-  .exercise-options .pickrow {
+  .exercise-options .pickrow,
+  .restpill {
     transition: none;
   }
 }
@@ -7715,11 +7795,11 @@ details.details-moving > :not(summary) {
   </div>
   <div id="woadose" class="hide">
     <div class="wnote" id="woalast"></div>
-    <div class="fieldrow">
+    <div class="fieldrow dosefields" id="woaddfields">
       <div class="field"><label for="woaddsets">Sets</label><input id="woaddsets" type="number" inputmode="numeric" min="1" max="99" value="3"></div>
       <div class="field"><label for="woaddreps">Reps</label><input id="woaddreps" type="number" inputmode="numeric" min="1" max="999" value="10"></div>
-      <div class="field"><label for="woaddsecs">Seconds</label><input id="woaddsecs" type="number" inputmode="numeric" min="1" max="3600" placeholder="—"></div>
     </div>
+    <div class="field"><label>Rest after each set</label><div class="restpick strip" id="woarest"></div></div>
     <div class="pillrow" id="woawhere"></div>
     <button class="pickrow woakeep hide" id="woakeep" aria-pressed="false"><div class="pt"><b>Keep on this workout</b><span id="woakeepnote">Off — today’s session only.</span></div><span class="ck"><svg class="ic"><use href="#i-check"></use></svg></span></button>
     <div class="btnrow"><button class="btn ghost" data-close="woaddsheet">Cancel</button><button class="btn" id="woaddsave">Add exercise</button></div>
@@ -7748,31 +7828,46 @@ details.details-moving > :not(summary) {
 
 <div class="sheet" id="exeditsheet"><div class="sheetbody">
   <div class="grabber"></div>
-  <h2 id="exedittitle">Fix this exercise</h2>
-  <p class="lede" id="exeditlede">Spotter read this off the video. If it got it wrong, put it right — your change stays on your copy.</p>
+  <h2>Fix this exercise</h2>
+  <p class="lede">Spotter read this off the video. If it got it wrong, put it right — the change stays on your copy.</p>
   <div class="field">
     <div class="fieldhead"><label for="exeditname">Exercise</label><button type="button" class="fieldlink" id="exeditpick">Change</button></div>
     <input id="exeditname" type="text" placeholder="Goblet squat" autocapitalize="words" autocomplete="off" spellcheck="false">
   </div>
-  <div class="fieldrow">
-    <div class="field">
-      <label for="exeditsets">Sets</label>
-      <input id="exeditsets" type="number" inputmode="numeric" min="1" max="99" placeholder="—">
-    </div>
-    <div class="field">
-      <label for="exeditreps">Reps</label>
-      <input id="exeditreps" type="text" inputmode="numeric" placeholder="—" autocomplete="off">
-    </div>
-    <div class="field">
-      <label for="exeditsecs">Seconds</label>
-      <input id="exeditsecs" type="number" inputmode="numeric" min="1" max="3600" placeholder="—">
-    </div>
+  <div class="fieldrow dosefields" id="exeditfields">
+    <div class="field"><label for="exeditsets">Sets</label><input id="exeditsets" type="number" inputmode="numeric" min="1" max="99" placeholder="—"></div>
+    <div class="field"><label for="exeditreps">Reps</label><input id="exeditreps" type="text" inputmode="numeric" placeholder="—" autocomplete="off"></div>
   </div>
+  <div class="field"><label>Rest after each set</label><div class="restpick strip" id="exeditrest"></div></div>
   <div class="btnrow">
     <button class="btn ghost" id="exeditcancel">Cancel</button>
     <button class="btn" id="exeditsave">Save change</button>
   </div>
   <button class="danger" id="exeditdelete">Not a real exercise — remove it</button>
+</div></div>
+
+<div class="sheet" id="restsheet" role="dialog" aria-modal="true" aria-labelledby="resttitle"><div class="sheetbody">
+  <div class="grabber"></div>
+  <h2 id="resttitle"></h2>
+  <p class="lede">Workout Mode starts this timer after each set.</p>
+  <div class="restpick" id="restchips"></div>
+</div></div>
+
+<div class="sheet" id="sectionsheet" role="dialog" aria-modal="true" aria-labelledby="sectiontitle"><div class="sheetbody">
+  <div class="grabber"></div>
+  <h2 id="sectiontitle">Add a section</h2>
+  <div class="pillrow" id="sectionkinds"></div>
+  <div class="field"><label for="sectionname">Name</label><input id="sectionname" type="text" placeholder="Finisher" maxlength="60" autocapitalize="words" autocomplete="off" spellcheck="false"></div>
+  <div class="hide" id="sectionroundsf">
+    <div class="field"><label for="sectionrounds">Rounds</label><input id="sectionrounds" type="number" inputmode="numeric" min="1" max="50"></div>
+    <div class="field"><label>Rest between rounds</label><div class="restpick strip" id="sectionrest"></div></div>
+  </div>
+  <div class="fieldrow hide" id="sectioncapf">
+    <div class="field"><label for="sectioncapmin">Time cap · minutes</label><input id="sectioncapmin" type="number" inputmode="numeric" placeholder="10"></div>
+    <div class="field"><label for="sectioncapsecs">Seconds</label><input id="sectioncapsecs" type="number" inputmode="numeric" placeholder="0"></div>
+  </div>
+  <div class="btnrow"><button class="btn ghost" data-close="sectionsheet">Cancel</button><button class="btn" id="sectionsave">Choose the first exercise</button></div>
+  <button class="danger hide" id="sectionremove">Remove section</button>
 </div></div>
 
 <div class="sheet" id="explainsheet"><div class="sheetbody">
@@ -9567,8 +9662,8 @@ details.details-moving > :not(summary) {
       }, jl.appendChild(r);
     }), chose && (wrap.classList.remove("in"), wrap.style.setProperty("--jh", wrap.offsetHeight + "px"), wrap.classList.add("in"));
   }
-  function jumpTo(sec) {
-    var pg = $("libpage"), top = pg.scrollTop + sec.getBoundingClientRect().top - pg.getBoundingClientRect().top - secTop();
+  function jumpTo(sec2) {
+    var pg = $("libpage"), top = pg.scrollTop + sec2.getBoundingClientRect().top - pg.getBoundingClientRect().top - secTop();
     top < 0 && (top = 0), lessMotion() || !pg.scrollTo ? pg.scrollTop = top : pg.scrollTo({ top: top, behavior: "smooth" });
   }
   var today = { day: null, rows: [], done: !1, at: 0, busy: !1, shown: !1 }, todayBox = el("div", "todaywrap hide");
@@ -9734,8 +9829,8 @@ details.details-moving > :not(summary) {
         })), groups.push(kept);
         return;
       }
-      var sec = el("section", "gsec");
-      sec.sectionKey = g.key;
+      var sec2 = el("section", "gsec");
+      sec2.sectionKey = g.key;
       var head = el("div", "ghead"), name = el("button", "gname");
       name.appendChild(el("b", null, g.label)), name.appendChild(el("span", "gn", String(g.items.length))), name.appendChild(ic("chev")), name.onclick = function() {
         state.filter = g.key, render(), viewIn($("grid")), libTop();
@@ -9743,11 +9838,11 @@ details.details-moving > :not(summary) {
       var jb = el("button", "gjump");
       jb.setAttribute("aria-label", "Jump to a section"), jb.appendChild(ic("list")), jb.onclick = function() {
         openSort();
-      }, head.appendChild(jb), sec.appendChild(head);
+      }, head.appendChild(jb), sec2.appendChild(head);
       var box = el("div", "grid");
       g.items.forEach(function(w) {
         box.appendChild(card(w, n++, g.key));
-      }), sec.appendChild(box), groups.push(sec);
+      }), sec2.appendChild(box), groups.push(sec2);
     }), reconcile(grid, groups), gridCards = next;
   }
   function cardNode(w, i) {
@@ -9869,16 +9964,73 @@ details.details-moving > :not(summary) {
       }
     }
   });
+  function timeText(secs) {
+    return secs >= 60 && !(secs % 60) ? Math.round(secs / 60) + " min" : clock(secs);
+  }
   function doseText(ex) {
-    var bits = [];
-    return ex.sets && ex.reps ? bits.push(ex.sets + " \xD7 " + ex.reps) : ex.sets ? bits.push(ex.sets + " sets") : ex.reps && bits.push(ex.reps + " reps"), ex.duration_seconds && bits.push(ex.duration_seconds >= 60 ? Math.round(ex.duration_seconds / 60) + " min" : ex.duration_seconds + "s"), bits.join(" \xB7 ");
+    var bits = [], t = ex.duration_seconds;
+    return ex.sets && ex.reps ? bits.push(ex.sets + " \xD7 " + ex.reps) : ex.sets && !t ? bits.push(ex.sets + " sets") : ex.reps && bits.push(ex.reps + " reps"), t && bits.push((ex.sets > 1 && !ex.reps ? ex.sets + " \xD7 " : "") + timeText(t)), bits.join(" \xB7 ");
+  }
+  function restOf(ex, block, atLapEnd) {
+    var own = atLapEnd ? block.rest_seconds : ex && ex.rest_seconds;
+    return typeof own == "number" ? { secs: own, source: atLapEnd ? "block" : "exercise" } : { secs: !atLapEnd && isCircuit(block) && isTimed(ex) ? 0 : REST_FALLBACK, source: "default" };
+  }
+  function restWord(secs) {
+    return secs ? "Rest " + clock(secs) : "No rest";
   }
   function askText(ex) {
     return ex ? ex.duration_seconds > 0 ? ex.duration_seconds + " s" : ex.reps ? ex.reps + " reps" : null : null;
   }
+  var SECTION_KINDS = [
+    { title: "Warm-up", type: "warmup" },
+    { title: "", type: "straight" },
+    { title: "Superset", type: "superset", rounds: 3, rest: 60 },
+    { title: "Circuit", type: "circuit", rounds: 3, rest: 60 },
+    { title: "AMRAP", type: "amrap", cap: 600 },
+    { title: "Cardio", type: "straight", timed: 1 },
+    { title: "Finisher", type: "circuit", rounds: 3, rest: 30 },
+    { title: "Cool-down", type: "cooldown", timed: 1 }
+  ];
+  function kindName(type) {
+    return { warmup: "Warm-up", cooldown: "Cool-down", amrap: "AMRAP", emom: "EMOM" }[type] || capWord(type);
+  }
   function blockMetaText(b) {
-    var bits = [];
-    return b.type && b.type !== "straight" && bits.push(b.type), b.rounds && bits.push(b.rounds + " rounds"), b.rest_seconds && bits.push(b.rest_seconds + "s rest"), bits.join(" \xB7 ");
+    var bits = [], kind = b.type && b.type !== "straight" ? kindName(b.type) : "", r;
+    return kind && kind.toLowerCase() !== String(b.title || "").toLowerCase() && bits.push(kind), b.rounds && bits.push(b.rounds + " rounds"), b.rounds > 1 && (r = restOf(null, b, !0), bits.push(restWord(r.secs) + " between rounds" + (r.source === "default" ? " \xB7 default" : ""))), b.duration_seconds && bits.push(clock(b.duration_seconds) + " cap"), bits.join(" \xB7 ");
+  }
+  var REST_STEPS = [15, 30, 45, 60, 75, 90, 120, 150, 180, 240, 300], HOW_LONG = "How long? Minutes or seconds.";
+  function restChips(box, value, onPick) {
+    var steps = REST_STEPS.slice(), row = el("div", box.classList.contains("strip") ? "chips" : "pillrow restchips"), custom = el("div", "fieldrow restcustom hide"), mins = el("input"), secs = el("input"), go = el("button", "btn", "Set rest"), lit = null;
+    typeof value == "number" && value > 0 && steps.indexOf(value) < 0 && steps.push(value), steps.sort(function(a, b) {
+      return a - b;
+    }), box.innerHTML = "";
+    function chip(v, label, more) {
+      var on = v === value || v === "" && typeof value != "number", c = el("button", "chip" + (on ? " active" : ""), label);
+      c.onclick = function() {
+        if (haptic("tap"), Array.prototype.forEach.call(row.children, function(x) {
+          x.classList.toggle("active", x === c);
+        }), custom.classList.toggle("hide", !more), !more) {
+          onPick(v);
+          return;
+        }
+        viewIn(custom), mins.focus();
+      }, row.appendChild(c), on && (lit = c);
+    }
+    chip("", "Default (" + clock(REST_FALLBACK) + ")"), chip(0, "No rest"), steps.forEach(function(s) {
+      chip(s, clock(s));
+    }), chip(null, "Custom\u2026", 1), [[mins, "Minutes"], [secs, "Seconds"]].forEach(function(p) {
+      var l = el("label", null, p[1]);
+      l.appendChild(Object.assign(p[0], { type: "number", inputMode: "numeric", placeholder: "0" })), custom.appendChild(el("div", "field")).appendChild(l);
+    }), go.onclick = function() {
+      var m = mins.value.trim(), s = secs.value.trim(), t;
+      if (!m && !s) {
+        toast(HOW_LONG);
+        return;
+      }
+      t = clamp(Math.round((Number(m) || 0) * 60 + (Number(s) || 0)), 0, 3600), haptic("tap"), restChips(box, t, onPick), onPick(t);
+    }, custom.appendChild(el("div", "field")).appendChild(go), box.appendChild(row), box.appendChild(custom), setTimeout(function() {
+      lit && (row.scrollLeft = Math.max(0, lit.offsetLeft - row.offsetLeft - (row.clientWidth - lit.offsetWidth) / 2));
+    }, 0);
   }
   function srcById(id) {
     return state.workouts.filter(function(x) {
@@ -10099,9 +10251,9 @@ details.details-moving > :not(summary) {
     if ((w.blocks || []).forEach(function(b, bi) {
       var sect = el("div", "sect workout-block"), blockRow = el("div", "exrow delete-swipe block-swipe"), blockFront = el("div", "exmain");
       blockFront.appendChild(el("h3", null, b.title || (w.blocks.length === 1 ? "Exercises" : "Block " + (bi + 1))));
-      var blockMore = el("button", "linkbtn", "Remove block");
-      blockMore.setAttribute("aria-label", "Remove " + (b.title || "block " + (bi + 1))), blockMore.onclick = function() {
-        deleteBlock(w, bi);
+      var blockMore = el("button", "linkbtn", "Edit");
+      blockMore.setAttribute("aria-label", "Edit " + (b.title || "block " + (bi + 1))), blockMore.onclick = function() {
+        openSection(w, bi);
       }, blockFront.appendChild(blockMore);
       var blockActions = el("div", "exacts"), blockDelete = icon(el("button", "exact danger"), "trash", "Delete");
       blockDelete.setAttribute("aria-label", "Delete " + (b.title || "block " + (bi + 1))), blockDelete.onclick = function() {
@@ -10121,7 +10273,11 @@ details.details-moving > :not(summary) {
         fl && name.appendChild(fl), main.appendChild(name);
         var dose = doseText(ex);
         dose && main.appendChild(el("div", "exdose", dose)), row.appendChild(main);
-        var acts = el("div", "exercise-actions"), options = disclosure("Options", "exercise-options");
+        var acts = el("div", "exercise-actions"), rest = restOf(ex, b, !1), dflt = rest.source === "default", pill = el("button", "pill restpill" + (dflt ? " dflt" : ""), restWord(rest.secs) + (dflt ? " \xB7 default" : ""));
+        pill.onclick = function() {
+          openRest(w, bi, ei, ex);
+        }, acts.appendChild(pill);
+        var options = disclosure("Options", "exercise-options");
         options.firstChild.setAttribute("aria-label", "Options for " + ex.name);
         var edit = icon(el("button", "pickrow"), "pencil", "Review / Edit");
         edit.onclick = function() {
@@ -10139,7 +10295,7 @@ details.details-moving > :not(summary) {
         front.appendChild(row);
         var drawer = el("div", "exacts"), del = icon(el("button", "exact danger"), "trash", "Delete");
         del.setAttribute("aria-label", "Remove " + ex.name), del.onclick = function() {
-          exEdit = { w: w, block: bi, index: ei, name: ex.name, mode: "edit" }, deleteExEdit();
+          exEdit = { w: w, block: bi, index: ei, name: ex.name }, deleteExEdit();
         }, drawer.appendChild(del), swipe.appendChild(front), swipe.appendChild(drawer), sect.appendChild(swipe);
         var remove = icon(el("button", "pickrow"), "trash", "Remove exercise");
         remove.onclick = del.onclick, options.lastChild.appendChild(remove);
@@ -10163,7 +10319,10 @@ details.details-moving > :not(summary) {
         openExAdd(w, 0);
       }, none.appendChild(addfirst), d.appendChild(none);
     }
-    if (exN) {
+    var addsec = el("button", "addex", "+ Add a section");
+    if (addsec.onclick = function() {
+      openSection(w, null);
+    }, d.appendChild(addsec), exN) {
       var hitDetails = disclosure("Muscles worked"), hits = hitDetails.lastChild, slot = el("div");
       hits.appendChild(slot), hits.appendChild(el("div", null, " ")), d.appendChild(hitDetails), loadCatalog().then(function() {
         if (!(!current || current.id !== w.id)) {
@@ -10566,8 +10725,50 @@ details.details-moving > :not(summary) {
   function fieldVal(v) {
     return v == null || v === "" ? "" : String(v);
   }
+  function doseMode(p, timed) {
+    var seg = $(p + "seg"), row = $(p + "fields");
+    seg.style.setProperty("--s", timed ? "1" : "0"), seg.querySelectorAll(".segbtn").forEach(function(b, i) {
+      b.setAttribute("aria-selected", String(i === 1 == !!timed));
+    }), ["reps", "min", "secs"].forEach(function(f, i) {
+      $(p + f).parentNode.classList.toggle("hide", !!timed == !i);
+    }), row.classList.remove("swap"), row.offsetWidth, row.classList.add("swap");
+  }
+  function fillDose(p, secs) {
+    $(p + "min").value = secs ? String(Math.floor(secs / 60)) : "", $(p + "secs").value = secs ? String(secs % 60) : "";
+  }
+  function doseSecs(minId, secId) {
+    var m = $(minId).value.trim(), s = $(secId).value.trim(), t;
+    return !m && !s ? 0 : (t = clamp(Math.round((Number(m) || 0) * 60 + (Number(s) || 0)), 1, 3600), $(minId).value = String(Math.floor(t / 60)), $(secId).value = String(t % 60), t);
+  }
+  function doseFurnish(p, set) {
+    var row = $(p + "fields"), seg = el("div", "seg doseseg");
+    seg.id = p + "seg", seg.setAttribute("role", "tablist"), seg.appendChild(el("div", "segpill")), ["Reps", "Time"].forEach(function(w, i) {
+      var b = el("button", "segbtn", w);
+      b.setAttribute("role", "tab"), b.onclick = function() {
+        haptic("select"), set(!!i), i && !$(p + "min").value && !$(p + "secs").value && fillDose(p, 30), doseMode(p, !!i);
+      }, seg.appendChild(b);
+    }), row.parentNode.insertBefore(seg, row), [["min", "Minutes"], ["secs", "Seconds"]].forEach(function(f) {
+      var box = el("div", "field hide"), l = el("label", null, f[1]), i = el("input");
+      i.id = l.htmlFor = p + f[0], box.appendChild(l), box.appendChild(Object.assign(i, { type: "number", inputMode: "numeric", placeholder: "0" })), row.appendChild(box);
+    });
+  }
+  function restVal(x) {
+    return typeof x == "number" ? x : "";
+  }
   function openExEdit(w, bi, ei, ex) {
-    exEdit = { w: w, block: bi, index: ei, name: ex.name, ex: ex, mode: "edit" }, $("exedittitle").textContent = "Fix this exercise", $("exeditlede").textContent = "Spotter read this off the video. If it got it wrong, put it right \u2014 the change stays on your copy.", $("exeditname").value = ex.name || "", $("exeditsets").value = fieldVal(ex.sets), $("exeditreps").value = fieldVal(ex.reps), $("exeditsecs").value = fieldVal(ex.duration_seconds), $("exeditdelete").classList.remove("hide"), $("exeditsave").textContent = "Save change", openSheet("exeditsheet");
+    var timed = !!(ex.duration_seconds && !ex.reps);
+    exEdit = {
+      w: w,
+      block: bi,
+      index: ei,
+      name: ex.name,
+      ex: ex,
+      timed: timed,
+      timed0: timed,
+      rest: restVal(ex.rest_seconds)
+    }, $("exeditname").value = ex.name || "", $("exeditsets").value = fieldVal(ex.sets), $("exeditreps").value = fieldVal(ex.reps), fillDose("exedit", ex.duration_seconds), doseMode("exedit", timed), restChips($("exeditrest"), exEdit.rest, function(v) {
+      exEdit && (exEdit.rest = v);
+    }), openSheet("exeditsheet");
   }
   function openExAdd(w, bi) {
     openBank("card-add", { w: w, bi: bi });
@@ -10584,7 +10785,7 @@ details.details-moving > :not(summary) {
   }
   function postCorrection(w, payload, btn, okMsg, sheet) {
     var label = btn ? btn.textContent : null;
-    btn && (btn.disabled = !0, btn.textContent = "Saving\u2026"), api("workouts/" + w.id + "/exercises", { method: "POST", body: JSON.stringify(payload) }).then(function(r) {
+    return btn && (btn.disabled = !0, btn.textContent = "Saving\u2026"), api("workouts/" + w.id + "/exercises", { method: "POST", body: JSON.stringify(payload) }).then(function(r) {
       if (btn && (btn.disabled = !1, btn.textContent = label), r.status !== "ok") {
         limitHit(r, "That change did not save. Your copy is unchanged.");
         return;
@@ -10599,18 +10800,104 @@ details.details-moving > :not(summary) {
   }
   function saveExEdit() {
     if (exEdit) {
-      var fields = {
-        name: $("exeditname").value,
-        sets: $("exeditsets").value,
-        reps: $("exeditreps").value,
-        duration_seconds: $("exeditsecs").value
-      };
+      var timed = exEdit.timed, secs = timed ? doseSecs("exeditmin", "exeditsecs") : 0, fields = { name: $("exeditname").value, sets: $("exeditsets").value, rest_seconds: exEdit.rest };
       if (!String(fields.name).trim()) {
         toast("Give it a name first.");
         return;
       }
-      var body = exEdit.mode === "add" ? { op: "add", block: exEdit.block, fields: fields } : { op: "edit", block: exEdit.block, index: exEdit.index, expect_name: exEdit.name, fields: fields };
-      sendCorrection(body, $("exeditsave"), exEdit.mode === "add" ? "Added it" : "Fixed \u2014 thanks");
+      if (timed && !secs) {
+        toast(HOW_LONG);
+        return;
+      }
+      timed ? (fields.duration_seconds = secs, exEdit.timed0 || (fields.reps = "")) : (fields.reps = $("exeditreps").value, exEdit.timed0 && (fields.duration_seconds = "")), sendCorrection(
+        { op: "edit", block: exEdit.block, index: exEdit.index, expect_name: exEdit.name, fields: fields },
+        $("exeditsave"),
+        "Fixed \u2014 thanks"
+      );
+    }
+  }
+  function openRest(w, bi, ei, ex) {
+    var busy = !1;
+    $("resttitle").textContent = "Rest after " + ex.name, restChips($("restchips"), restVal(ex.rest_seconds), function(v) {
+      busy || (busy = !0, postCorrection(
+        w,
+        { op: "edit", block: bi, index: ei, expect_name: ex.name, fields: { rest_seconds: v } },
+        null,
+        v === "" ? "Back to the default rest" : v === 0 ? "No rest after " + ex.name : "Rest set to " + clock(v),
+        "restsheet"
+      ).then(function() {
+        busy = !1;
+      }));
+    }), openSheet("restsheet");
+  }
+  var sec = null;
+  function kindOf(b) {
+    var out = null;
+    return SECTION_KINDS.forEach(function(k) {
+      k.type === b.type && (!out || k.title === (b.title || "")) && (out = k);
+    }), out;
+  }
+  function openSection(w, bi) {
+    var b = bi === null ? null : (w.blocks || [])[bi];
+    sec = {
+      w: w,
+      bi: b ? bi : (w.blocks || []).length,
+      b: b,
+      kind: b ? kindOf(b) : null,
+      rest: restVal(b && b.rest_seconds)
+    }, $("sectiontitle").textContent = b ? "Edit section" : "Add a section", $("sectionsave").textContent = b ? "Save section" : "Choose the first exercise", $("sectionremove").classList.toggle("hide", !b), $("sectionname").value = b && b.title || "", $("sectionrounds").value = String(b && b.rounds || ""), fillDose("sectioncap", b ? cxCap(b, w) : 0), restChips($("sectionrest"), sec.rest, function(v) {
+      sec && (sec.rest = v);
+    }), paintKinds(), openSheet("sectionsheet");
+  }
+  function sectionUses() {
+    var k = sec.kind, b = sec.b;
+    return { rounds: !!(k ? k.rounds : b && b.rounds), cap: !!(k ? k.cap : b && b.duration_seconds) };
+  }
+  function paintKinds() {
+    var row = $("sectionkinds"), k = sec.kind, u = sectionUses();
+    row.innerHTML = "", SECTION_KINDS.forEach(function(kd) {
+      var c = el("button", "chip" + (kd === k ? " active" : ""), kd.title || "Exercises");
+      c.onclick = function() {
+        pickKind(kd);
+      }, row.appendChild(c);
+    }), [["sectionroundsf", u.rounds], ["sectioncapf", u.cap]].forEach(function(p) {
+      var f = $(p[0]);
+      p[1] && f.classList.contains("hide") && viewIn(f), f.classList.toggle("hide", !p[1]);
+    });
+  }
+  function pickKind(kd) {
+    var was = sec.kind, name = $("sectionname"), t = name.value.trim();
+    haptic("tap"), sec.kind = kd, (!t || was && t === was.title) && (name.value = kd.title), kd.rounds && ($("sectionrounds").value = String(kd.rounds), sec.rest = kd.rest, restChips($("sectionrest"), sec.rest, function(v) {
+      sec && (sec.rest = v);
+    })), kd.cap && fillDose("sectioncap", kd.cap), paintKinds();
+  }
+  function sectionFields() {
+    var k = sec.kind, u = sectionUses(), f = {
+      title: $("sectionname").value.trim(),
+      rounds: u.rounds ? $("sectionrounds").value : "",
+      rest_seconds: u.rounds ? sec.rest : "",
+      duration_seconds: u.cap && doseSecs("sectioncapmin", "sectioncapsecs") || ""
+    };
+    return k && (f.type = k.type), f;
+  }
+  function saveSection() {
+    if (sec) {
+      var f = sectionFields();
+      if (f.duration_seconds && f.duration_seconds < 60) {
+        toast("A time cap starts at a minute.");
+        return;
+      }
+      if (sec.b) {
+        postCorrection(
+          sec.w,
+          { op: "edit_block", block: sec.bi, expect_block: sec.b, fields: f },
+          $("sectionsave"),
+          "Section saved",
+          "sectionsheet"
+        );
+        return;
+      }
+      openBank("card-add", { w: sec.w, bi: sec.bi, block: f, timed: !!(sec.kind && sec.kind.timed) }), closeSheet("sectionsheet");
     }
   }
   var rowLeaving = null;
@@ -10710,7 +10997,7 @@ details.details-moving > :not(summary) {
     });
   }
   function deleteExEdit() {
-    if (!exEdit || exEdit.mode !== "edit") return;
+    if (!exEdit) return;
     var ctx = exEdit, w = ctx.w, before = JSON.parse(JSON.stringify(w.blocks || []));
     exEdit = null, closeSheet("exeditsheet");
     function redraw() {
@@ -11091,7 +11378,7 @@ details.details-moving > :not(summary) {
     };
   }
   function weekHits(entries) {
-    var prim = {}, sec = {}, mapped = 0, total = 0, fullBody = [];
+    var prim = {}, sec2 = {}, mapped = 0, total = 0, fullBody = [];
     entries.forEach(function(e) {
       var n = (e.sets || []).length;
       if (n) {
@@ -11103,16 +11390,16 @@ details.details-moving > :not(summary) {
           c.primary.indexOf("full body") >= 0 && fullBody.indexOf(nm) < 0 && fullBody.push(nm), c.primary.forEach(function(m) {
             m !== "full body" && (prim[m] = (prim[m] || 0) + n);
           }), c.secondary.forEach(function(m) {
-            m !== "full body" && (sec[m] = (sec[m] || 0) + n);
+            m !== "full body" && (sec2[m] = (sec2[m] || 0) + n);
           });
         }
       }
     });
     var levels = {};
-    return Object.keys(prim).concat(Object.keys(sec)).forEach(function(m) {
-      var score = (prim[m] || 0) + (sec[m] || 0) * 0.5;
+    return Object.keys(prim).concat(Object.keys(sec2)).forEach(function(m) {
+      var score = (prim[m] || 0) + (sec2[m] || 0) * 0.5;
       levels[m] = score >= 14 ? 4 : score >= 8 ? 3 : score >= 4 ? 2 : score > 0 ? 1 : 0;
-    }), { levels: levels, prim: prim, sec: sec, mapped: mapped, total: total, fullBody: fullBody };
+    }), { levels: levels, prim: prim, sec: sec2, mapped: mapped, total: total, fullBody: fullBody };
   }
   function weekCaption(r) {
     return function(m) {
@@ -11826,7 +12113,7 @@ details.details-moving > :not(summary) {
           k.indexOf("c:") === 0 ? k.slice(2) : null,
           "",
           1,
-          { sets: h.sets, reps: h.reps, at: h.date }
+          { sets: h.sets, reps: h.reps, secs: h.secs, at: h.date }
         );
         r.sub = lastLine(r), out.push(r);
       }
@@ -11947,7 +12234,7 @@ details.details-moving > :not(summary) {
     }), !rows.length && woaCat && list.appendChild(el("p", "lede", "Nothing in the bank matches those filters.")), woaCat || list.appendChild(el("p", "lede", WOA_WAIT));
   }
   function woaPane(dose) {
-    $("woapick").classList.toggle("hide", !!dose), $("woadose").classList.toggle("hide", !dose), $("woaback").classList.toggle("hide", !dose), viewIn($(dose ? "woadose" : "woapick"));
+    $("woapick").classList.toggle("hide", !!dose), $("woadose").classList.toggle("hide", !dose), $("woaback").classList.toggle("hide", !dose && !(woa.target && woa.target.block)), $("woaback").lastChild.textContent = dose ? "All exercises" : "Back to the section", viewIn($(dose ? "woadose" : "woapick"));
   }
   function woaCard() {
     var w = wo && wo.workout, card = null;
@@ -11966,9 +12253,28 @@ details.details-moving > :not(summary) {
   function woaKeepPaint() {
     $("woakeep").classList.toggle("on", !!woa.keep), $("woakeep").setAttribute("aria-pressed", woa.keep ? "true" : "false"), $("woakeepnote").textContent = woa.keep ? "It will be on the card the next time you open it." : "Off \u2014 today\u2019s session only.";
   }
+  var STEADY = [
+    "running",
+    "sprint",
+    "treadmill-run",
+    "cycling",
+    "assault-bike",
+    "rowing-machine",
+    "ski-erg",
+    "stair-climber",
+    "elliptical",
+    "jump-rope",
+    "jumping-jack"
+  ];
+  function timedByNature(r) {
+    var eq = r.equipment || [], words = [r.name || ""].concat(r.aliases || []).join(" ").toLowerCase();
+    return r.secs ? "logged" : STEADY.indexOf(r.canonical_id) >= 0 || r.pattern === "cardio" && (eq.indexOf("machine") >= 0 || eq.indexOf("jump rope") >= 0) ? "cardio" : /\b(plank|hold|stretch|pose|hang|wall sit)\b/.test(words) ? "hold" : "";
+  }
   function woaChoose(r) {
-    var t = woa.target, old = woa.mode === "replace" ? t.ex : null, live = woa.mode === "add" || !!(old && t.session), s = live ? wo.screens[wo.i] : null, cx = s && s.cx && !s.ei ? s.cx : null, h = old ? null : hist[r.key], m = String((old ? old.reps : r.reps) || "").match(/\d+/), where = $("woawhere");
-    woa.pick = r, woa.keep = !1, woa.where = cx ? "complex" : s && wo.i < endStop() ? "after" : "end", woa.nosets = !!cx || !!(old && old.sets == null), haptic("tap"), $("woaddtitle").textContent = r.name, $("woalast").textContent = old ? "Instead of " + old.name + "." : lastLine(r), $("woaddsets").value = String(h && h.sets || (old ? old.sets : r.sets) || 3), $("woaddreps").value = String(h && h.reps || (m ? m[0] : 10)), $("woaddsecs").value = old ? old.duration_seconds ? String(old.duration_seconds) : "" : r.secs ? String(r.secs) : "", where.innerHTML = "", $("woaddsets").parentNode.classList.toggle("hide", woa.nosets), cx ? where.appendChild(el("div", "wnote", old ? "Joins the round list." : "Joins the round list \u2014 part of this complex from the next round on.")) : !old && woa.where === "after" && ["After this one", "At the end"].forEach(function(t2, k) {
+    var t = woa.target, old = woa.mode === "replace" ? t.ex : null, live = woa.mode === "add" || !!(old && t.session), s = live ? wo.screens[wo.i] : null, cx = s && s.cx && !s.ei ? s.cx : null, h = old ? null : hist[r.key], m = String((old ? old.reps : r.reps) || "").match(/\d+/), where = $("woawhere"), kind = old ? "" : timedByNature(r), secs = old ? old.duration_seconds : r.secs || h && h.secs;
+    woa.pick = r, woa.keep = !1, woa.where = cx ? "complex" : s && wo.i < endStop() ? "after" : "end", woa.nosets = !!cx || !!(old && old.sets == null), woa.timed = old ? !!(old.duration_seconds && !old.reps) : !!(kind || t && t.timed), woa.rest = restVal(old && old.rest_seconds), haptic("tap"), $("woaddtitle").textContent = r.name, $("woalast").textContent = old ? "Instead of " + old.name + "." : lastLine(r), $("woaddsets").value = String(h && h.sets || (old ? old.sets : r.sets) || (woa.timed ? 1 : 3)), $("woaddreps").value = String(h && h.reps || (m ? m[0] : 10)), fillDose("woadd", secs || (kind === "cardio" || t && t.timed && t.block.type !== "cooldown" ? 600 : 30)), doseMode("woadd", woa.timed), restChips($("woarest"), woa.rest, function(v) {
+      woa && (woa.rest = v);
+    }), where.innerHTML = "", $("woaddsets").parentNode.classList.toggle("hide", woa.nosets), cx ? where.appendChild(el("div", "wnote", old ? "Joins the round list." : "Joins the round list \u2014 part of this complex from the next round on.")) : !old && woa.where === "after" && ["After this one", "At the end"].forEach(function(t2, k) {
       var b = el("button", "chip" + (k ? "" : " active"), t2);
       b.onclick = function() {
         woa.where = k ? "end" : "after", Array.prototype.forEach.call(where.children, function(c) {
@@ -12007,7 +12313,8 @@ details.details-moving > :not(summary) {
       canonical_id: ex.canonical_id || null,
       sets: ex.sets,
       reps: ex.reps,
-      duration_seconds: ex.duration_seconds
+      duration_seconds: ex.duration_seconds,
+      rest_seconds: restVal(ex.rest_seconds)
     };
   }
   function woaEditBody(t, ex) {
@@ -12023,18 +12330,23 @@ details.details-moving > :not(summary) {
   }
   function saveWorkoutAdd() {
     if (!(!woa || !woa.pick)) {
-      var name = String(woa.pick.name || "").trim().slice(0, 100), secs = $("woaddsecs").value.trim() ? woaNum("woaddsecs", 30, 3600) : 0;
+      var name = String(woa.pick.name || "").trim().slice(0, 100), timed = woa.timed, secs = timed ? doseSecs("woaddmin", "woaddsecs") : 0;
       if (name) {
+        if (timed && !secs) {
+          toast(HOW_LONG);
+          return;
+        }
         var ex = {
           name: name,
           canonical_id: woa.pick.canonical_id || null,
-          sets: woa.nosets ? null : woaNum("woaddsets", 3, 99),
-          reps: secs ? null : String(woaNum("woaddreps", 10, 999)),
+          sets: woa.nosets ? null : woaNum("woaddsets", timed ? 1 : 3, 99),
+          reps: timed ? null : String(woaNum("woaddreps", 10, 999)),
           duration_seconds: secs || null,
-          rest_seconds: REST_FALLBACK
+          rest_seconds: woa.rest === "" ? null : woa.rest
         }, t = woa.target, keep = woa.keep, mode = woa.mode;
         if (mode === "card-add") {
-          postCorrection(t.w, { op: "add", block: t.bi, fields: woaFields(ex) }, $("woaddsave"), "Added it", "woaddsheet");
+          var body = { op: "add", block: t.bi, fields: woaFields(ex) };
+          t.block && (body.new_block = t.block), postCorrection(t.w, body, $("woaddsave"), "Added it", "woaddsheet");
           return;
         }
         if (mode === "replace" && !t.session) {
@@ -12075,16 +12387,18 @@ details.details-moving > :not(summary) {
             if (e.name) {
               var sets = (e.sets || []).filter(function(s) {
                 return s && s.reps;
+              }), held = sets.length ? [] : (e.sets || []).filter(function(s) {
+                return s && s.seconds;
               });
-              if (sets.length) {
+              if (!(!sets.length && !held.length)) {
                 var k = exKey(e), h = hist[k] || (hist[k] = { best: 0 });
                 if (sets.forEach(function(s) {
                   s.weight && (h.best = Math.max(h.best, toUnit(s.weight, s.unit) * (1 + s.reps / 30)));
                 }), !h.date) {
                   var top = sets.filter(function(s) {
                     return s.weight;
-                  }).pop() || sets[sets.length - 1];
-                  h.name = e.name, h.date = log.started_at, h.sets = sets.length, h.reps = top.reps, h.weight = top.weight || 0, h.unit = top.unit || state.unit;
+                  }).pop() || sets[sets.length - 1] || {};
+                  h.name = e.name, h.date = log.started_at, h.sets = sets.length || held.length, h.reps = top.reps, held.length && (h.secs = held[held.length - 1].seconds), h.weight = top.weight || 0, h.unit = top.unit || state.unit;
                 }
               }
             }
@@ -12105,7 +12419,7 @@ details.details-moving > :not(summary) {
   function lastLine(entry) {
     if (!histReady || !entry) return "";
     var h = hist[exKey(entry)];
-    return !h || !h.date ? "first time logging this." : "last time \xB7 " + h.sets + " \xD7 " + h.reps + (h.weight ? " at " + wtText(h.weight, h.unit) + " " + state.unit : "") + " \xB7 " + agoText(h.date);
+    return !h || !h.date ? "first time logging this." : "last time \xB7 " + h.sets + " \xD7 " + (h.reps || timeText(h.secs)) + (h.weight ? " at " + wtText(h.weight, h.unit) + " " + state.unit : "") + " \xB7 " + agoText(h.date);
   }
   function startClock() {
     clearInterval(woTimer);
@@ -12327,11 +12641,11 @@ details.details-moving > :not(summary) {
       prCheck(entry, set, k) && (set.pr = !0, told || toast("New best \u2014 " + (entry.name || "that lift"))), haptic(set.pr ? "pr" : "success"), entry.sets[setCtx.idx] = set, saveDraft(), closeSheet("setsheet"), justSet = setCtx.idx, renderWorkout();
       var s = wo.screens[wo.i];
       if (s && isCircuit(s.block)) {
-        var gap = restAfter(s, REST_FALLBACK);
+        var gap = restAfter(s);
         gap > 0 ? startRest(gap, null, nextMove) : nextMove();
         return;
       }
-      var secs = s && s.ex && s.ex.rest_seconds || REST_FALLBACK;
+      var secs = s ? restOf(s.ex, s.block, !1).secs : REST_FALLBACK;
       secs > 0 && startRest(secs), s && !s.cx && setCtx.idx >= targetOf(s) - 1 && entry.sets.filter(Boolean).length >= targetOf(s) && wo.i < endStop() && nextMove();
     }
   }
@@ -12460,11 +12774,11 @@ details.details-moving > :not(summary) {
     var s = wo && wo.screens[wo.i];
     return !!(s && isCircuit(s.block) && s.ei === s.block.exercises.length - 1 && roundOf(s.bi) < roundsOf(s.block));
   }
-  function restAfter(s, fallback) {
-    return atRoundEnd() ? s.block.rest_seconds || REST_FALLBACK : s.ex.rest_seconds || fallback || 0;
+  function restAfter(s) {
+    return restOf(s.ex, s.block, atRoundEnd()).secs;
   }
   function timedBody(main, s, entry) {
-    var t = el("div", "wtimer"), ring = el("button", "ring"), go = el("button", "btn wstart"), num2 = el("span", null, String(s.ex.duration_seconds)), word = el("div", "wblock wphase");
+    var t = el("div", "wtimer"), ring = el("button", "ring"), go = el("button", "btn wstart"), num2 = el("span", null, s.ex.duration_seconds >= 60 ? clock(s.ex.duration_seconds) : String(s.ex.duration_seconds)), word = el("div", "wblock wphase");
     t.id = "wtimer", ring.id = "wring", num2.id = "wnum", word.id = "wphase", go.id = "wgobtn", ring.setAttribute("aria-label", "Start or pause the countdown"), ring.onclick = go.onclick = ringTap, ring.appendChild(num2), t.appendChild(ring), t.appendChild(word), main.appendChild(t);
     var nx = wo.screens[atRoundEnd() ? wo.i - s.ei : wo.i + 1];
     nx && main.appendChild(el("div", "wnote wup", "Next: " + nx.ex.name)), !isCircuit(s.block) && targetOf(s) > 1 && renderSetPills(main, entry, s.ex, targetOf(s)), main.appendChild(go), paintPhase();
@@ -12498,9 +12812,11 @@ details.details-moving > :not(summary) {
         s.ex.duration_seconds
       ), woPhase = "idle", !isCircuit(s.block)) {
         renderWorkout(1);
+        var r = restOf(s.ex, s.block, !1);
+        wo.entries[wo.i].sets.filter(Boolean).length < targetOf(s) && r.secs > 0 && startRest(r.secs);
         return;
       }
-      var gap = restAfter(s, 0);
+      var gap = restAfter(s);
       if (gap <= 0) {
         nextMove();
         return;
@@ -16510,7 +16826,9 @@ details.details-moving > :not(summary) {
     "recapsheet",
     "woaddsheet",
     "aiconsentsheet",
-    "wleavesheet"
+    "wleavesheet",
+    "restsheet",
+    "sectionsheet"
   ].forEach(wireSheet);
   function overlayShowing() {
     if ($("detail").classList.contains("open") || $("workout").classList.contains("open")) return !0;
@@ -17875,13 +18193,20 @@ details.details-moving > :not(summary) {
   }, $("exeditsave").onclick = saveExEdit, $("exeditdelete").onclick = deleteExEdit, $("exeditcancel").onclick = function() {
     closeSheet("exeditsheet"), exEdit = null;
   }, $("exeditpick").onclick = function() {
-    if (!(!exEdit || exEdit.mode !== "edit")) {
+    if (exEdit) {
       var t = swapTarget(exEdit.w, exEdit.ex) || { w: exEdit.w, bi: exEdit.block, ei: exEdit.index, ex: exEdit.ex };
       openBank("replace", t), closeSheet("exeditsheet"), exEdit = null;
     }
   }, $("exeditname").addEventListener("keydown", function(e) {
     e.key === "Enter" && saveExEdit();
-  }), $("pumpytab").innerHTML = PUMPY_MARK, $("pumpysend").onclick = function() {
+  }), doseFurnish("exedit", function(t) {
+    exEdit && (exEdit.timed = t);
+  }), doseFurnish("woadd", function(t) {
+    woa && (woa.timed = t);
+  }), $("sectionsave").onclick = saveSection, $("sectionremove").onclick = function() {
+    var s = sec;
+    closeSheet("sectionsheet"), s && s.b && deleteBlock(s.w, s.bi);
+  }, $("pumpytab").innerHTML = PUMPY_MARK, $("pumpysend").onclick = function() {
     sendPumpy();
   }, $("pumpychats").onclick = openPumpyThreads, $("pumpynew").onclick = newPumpyThread, $("pumpyplus").onclick = openRefSheet, $("refdone").onclick = function() {
     closeSheet("refsheet");
@@ -17979,7 +18304,17 @@ details.details-moving > :not(summary) {
     b.onclick = function() {
       closeSheet(b.getAttribute("data-close"));
     };
-  }), ["workoptions", "filtersheet", "schedulesheet", "recapsheet", "woaddsheet", "aiconsentsheet", "wleavesheet"].forEach(function(id) {
+  }), [
+    "workoptions",
+    "filtersheet",
+    "schedulesheet",
+    "recapsheet",
+    "woaddsheet",
+    "aiconsentsheet",
+    "wleavesheet",
+    "restsheet",
+    "sectionsheet"
+  ].forEach(function(id) {
     $(id).addEventListener("keydown", function(e) {
       if (e.key === "Escape" && (e.preventDefault(), closeSheet(id)), e.key === "Tab") {
         var nodes = Array.from(this.querySelectorAll("button, input")).filter(function(n) {
@@ -18056,6 +18391,10 @@ details.details-moving > :not(summary) {
   }, $("wmore").onclick = openRecapOptions, wireProof(), wireWmain($("wmain")), $("wprev").onclick = function() {
     woGo(-1);
   }, $("wnext").onclick = skipMove, $("wfinish").onclick = finishWorkout, $("waddexercise").onclick = openWorkoutAdd, $("woaddsave").onclick = saveWorkoutAdd, $("woaback").onclick = function() {
+    if ($("woadose").classList.contains("hide") && woa && woa.target && woa.target.block) {
+      openSheet("sectionsheet"), closeSheet("woaddsheet");
+      return;
+    }
     woaPane(0);
   }, $("woakeep").onclick = function() {
     woa.keep = !woa.keep, haptic("tap"), woaKeepPaint();

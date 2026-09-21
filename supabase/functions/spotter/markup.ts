@@ -452,11 +452,15 @@ export const MARKUP_BODY = String.raw`</head>
   </div>
   <div id="woadose" class="hide">
     <div class="wnote" id="woalast"></div>
-    <div class="fieldrow">
+    <!-- Reps or Time, the way Hevy and Strong type an exercise. Time is minutes
+         and seconds, one value in two fields, never "1200 seconds". doseFurnish
+         in app.ts puts the segment above this row and the pair inside it, and
+         doseMode swaps the fields under the segment. Same shape as #exeditsheet. -->
+    <div class="fieldrow dosefields" id="woaddfields">
       <div class="field"><label for="woaddsets">Sets</label><input id="woaddsets" type="number" inputmode="numeric" min="1" max="99" value="3"></div>
       <div class="field"><label for="woaddreps">Reps</label><input id="woaddreps" type="number" inputmode="numeric" min="1" max="999" value="10"></div>
-      <div class="field"><label for="woaddsecs">Seconds</label><input id="woaddsecs" type="number" inputmode="numeric" min="1" max="3600" placeholder="—"></div>
     </div>
+    <div class="field"><label>Rest after each set</label><div class="restpick strip" id="woarest"></div></div>
     <div class="pillrow" id="woawhere"></div>
     <button class="pickrow woakeep hide" id="woakeep" aria-pressed="false"><div class="pt"><b>Keep on this workout</b><span id="woakeepnote">Off — today’s session only.</span></div><span class="ck"><svg class="ic"><use href="#i-check"></use></svg></span></button>
     <div class="btnrow"><button class="btn ghost" data-close="woaddsheet">Cancel</button><button class="btn" id="woaddsave">Add exercise</button></div>
@@ -485,31 +489,56 @@ export const MARKUP_BODY = String.raw`</head>
 
 <div class="sheet" id="exeditsheet"><div class="sheetbody">
   <div class="grabber"></div>
-  <h2 id="exedittitle">Fix this exercise</h2>
-  <p class="lede" id="exeditlede">Spotter read this off the video. If it got it wrong, put it right — your change stays on your copy.</p>
+  <h2>Fix this exercise</h2>
+  <p class="lede">Spotter read this off the video. If it got it wrong, put it right — the change stays on your copy.</p>
   <div class="field">
     <div class="fieldhead"><label for="exeditname">Exercise</label><button type="button" class="fieldlink" id="exeditpick">Change</button></div>
     <input id="exeditname" type="text" placeholder="Goblet squat" autocapitalize="words" autocomplete="off" spellcheck="false">
   </div>
-  <div class="fieldrow">
-    <div class="field">
-      <label for="exeditsets">Sets</label>
-      <input id="exeditsets" type="number" inputmode="numeric" min="1" max="99" placeholder="—">
-    </div>
-    <div class="field">
-      <label for="exeditreps">Reps</label>
-      <input id="exeditreps" type="text" inputmode="numeric" placeholder="—" autocomplete="off">
-    </div>
-    <div class="field">
-      <label for="exeditsecs">Seconds</label>
-      <input id="exeditsecs" type="number" inputmode="numeric" min="1" max="3600" placeholder="—">
-    </div>
+  <!-- Sets and Reps; doseFurnish adds the Reps | Time segment and the minutes/seconds pair. -->
+  <div class="fieldrow dosefields" id="exeditfields">
+    <div class="field"><label for="exeditsets">Sets</label><input id="exeditsets" type="number" inputmode="numeric" min="1" max="99" placeholder="—"></div>
+    <div class="field"><label for="exeditreps">Reps</label><input id="exeditreps" type="text" inputmode="numeric" placeholder="—" autocomplete="off"></div>
   </div>
+  <div class="field"><label>Rest after each set</label><div class="restpick strip" id="exeditrest"></div></div>
   <div class="btnrow">
     <button class="btn ghost" id="exeditcancel">Cancel</button>
     <button class="btn" id="exeditsave">Save change</button>
   </div>
   <button class="danger" id="exeditdelete">Not a real exercise — remove it</button>
+</div></div>
+
+<!-- The rest, from the card. One job: the number Workout Mode will run after a
+     set of this exercise. A preset saves on the tap, so there is no Save button;
+     Custom… opens a minutes and seconds pair with one. restChips in app.ts
+     builds the grid, the same grid the dose panes and the section sheet use. -->
+<div class="sheet" id="restsheet" role="dialog" aria-modal="true" aria-labelledby="resttitle"><div class="sheetbody">
+  <div class="grabber"></div>
+  <h2 id="resttitle"></h2>
+  <p class="lede">Workout Mode starts this timer after each set.</p>
+  <div class="restpick" id="restchips"></div>
+</div></div>
+
+<!-- A section of the workout — a warm-up, a circuit, ten minutes of cardio, a
+     cool-down — added or edited whole. The kind chips fill the fields with a
+     preset; only the fields that kind uses are shown. Adding goes on to the
+     exercise bank (a section is stored with its first exercise, never empty);
+     editing saves through edit_block. Remove is last and red, per the HIG. -->
+<div class="sheet" id="sectionsheet" role="dialog" aria-modal="true" aria-labelledby="sectiontitle"><div class="sheetbody">
+  <div class="grabber"></div>
+  <h2 id="sectiontitle">Add a section</h2>
+  <div class="pillrow" id="sectionkinds"></div>
+  <div class="field"><label for="sectionname">Name</label><input id="sectionname" type="text" placeholder="Finisher" maxlength="60" autocapitalize="words" autocomplete="off" spellcheck="false"></div>
+  <div class="hide" id="sectionroundsf">
+    <div class="field"><label for="sectionrounds">Rounds</label><input id="sectionrounds" type="number" inputmode="numeric" min="1" max="50"></div>
+    <div class="field"><label>Rest between rounds</label><div class="restpick strip" id="sectionrest"></div></div>
+  </div>
+  <div class="fieldrow hide" id="sectioncapf">
+    <div class="field"><label for="sectioncapmin">Time cap · minutes</label><input id="sectioncapmin" type="number" inputmode="numeric" placeholder="10"></div>
+    <div class="field"><label for="sectioncapsecs">Seconds</label><input id="sectioncapsecs" type="number" inputmode="numeric" placeholder="0"></div>
+  </div>
+  <div class="btnrow"><button class="btn ghost" data-close="sectionsheet">Cancel</button><button class="btn" id="sectionsave">Choose the first exercise</button></div>
+  <button class="danger hide" id="sectionremove">Remove section</button>
 </div></div>
 
 <!-- Three answers, in the order they earn: what the creator said, somebody filming

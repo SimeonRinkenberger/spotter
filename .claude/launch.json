@@ -6,6 +6,13 @@
       "runtimeExecutable": "python3",
       "runtimeArgs": ["-m", "http.server", "8052", "--directory", "docs"],
       "port": 8052
+    },
+    {
+      "name": "spotter-docs-8000",
+      "//": "Port 8000 is the one localhost origin on the edge function's CORS allow-list; API calls (corrections, limits) only succeed from here.",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "8000", "--directory", "docs"],
+      "port": 8000
     }
   ]
 }

@@ -1378,22 +1378,33 @@ export const STYLE = String.raw`<style>
   .wday.today .wdn { color: var(--ink); }
 
   /* ---------- train / the dot language ----------
-     Five states and one shape, spoken by the strip, the month grid and the key
-     under it: filled is done, filled with a ring is done exactly as planned,
-     hollow ember is planned, hollow amber is planned and missed, sand is a free
-     day. The ring is drawn in --card so it reads on a card and in a cell. */
+     Five states, spoken by the strip, the month grid and the key under it:
+     filled is done, filled with a ring is done exactly as planned, hollow ember
+     is planned, a grey cross is planned and missed, sand is a free day. The ring
+     is drawn in --card so it reads on a card and in a cell.
+
+     Missed used to be a hollow amber ring — the same shape as planned in a hue a
+     shade off ember, which at 8px the owner could not tell apart ("too close in
+     color and the same symbol", 21 Sept). It is now the one mark that is not a
+     circle, and not ember: the cross every habit tracker and training calendar
+     (Streaks, Runna, TrainingPeaks) uses for a day that did not happen, in the
+     grey of the small print rather than an alarm red — Spotter does not punish a
+     missed day, it just says so. Shape and hue both differ, so it holds without
+     colour vision. --muted is 4.5:1 on paper and 4.9 on a card; the ember family
+     stays for the three days that were trained or are still to come. */
   .dmark { width: 8px; height: 8px; border-radius: 999px; background: var(--sand);
-    display: block; flex: 0 0 auto; }
+    display: block; flex: 0 0 auto; position: relative; }
   .dmark.on { background: var(--ember); }
   .dmark.as { background: var(--ember);
     box-shadow: 0 0 0 2px var(--dbg, var(--paper)), 0 0 0 3.5px var(--ember); }
   .mcell, .wday.today { --dbg: var(--card); }
   .mcell.out { --dbg: var(--paper); }
   .dmark.plan { background: none; box-shadow: inset 0 0 0 1.6px var(--ember); }
-  /* The missed ring is the only consumer of --warn, and at #C98A00 it measured 2.73
-     on paper — under the 3:1 a graphical object has to make. Darkened to 3.67 on
-     paper and 3.96 on a card; the dark scheme's amber was already 9.0 and stays. */
-  .dmark.miss { background: none; box-shadow: inset 0 0 0 1.6px var(--warn); }
+  .dmark.miss { background: none; }
+  .dmark.miss::before, .dmark.miss::after { content: ""; position: absolute; left: 50%; top: 50%;
+    width: 10px; height: 1.8px; border-radius: 1px; background: var(--muted);
+    transform: translate(-50%, -50%) rotate(45deg); }
+  .dmark.miss::after { transform: translate(-50%, -50%) rotate(-45deg); }
   .dlegend { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; margin: 9px 2px 0;
     font-size: 11.5px; font-weight: 600; color: var(--muted); }
   .dlegend .lg { display: flex; align-items: center; gap: 6px; }
@@ -1896,7 +1907,24 @@ export const STYLE = String.raw`<style>
     transition: background-color var(--t-2) var(--e-out), transform var(--t-1) var(--e-out); }
   .waddcard:active { transform: scale(.985); }
   .waddcard .ic { flex: 0 0 auto; color: var(--ember); }
+  /* ---------- reps or time ----------
+     The segment sits over the dose fields of both sheets. The fields under it
+     trade places with a crossfade and nothing more — the tap did not say which
+     way anything moved — and the row keeps its width, so nothing under the
+     thumb jumps. */
+  .doseseg { margin-bottom: 12px; }
+  .dosefields.swap .field { animation: fadein var(--t-2) var(--e-out); }
+  /* ---------- choosing a rest ----------
+     One grid, three homes. In its own sheet it is a wrapping .pillrow; under a
+     dose it is the Library's own .chips strip, bled by its end chips' 18px inset
+     so the first chip lines up with the label (the .chips rule says why the
+     inset is there). The custom pair opens under it as a field row, the button
+     its third column. */
+  .restpick .chip { min-height: 36px; }
+  .restpick .chips { margin: 0 -18px; padding-top: 2px; }
+  .restcustom { align-items: flex-end; margin-top: 12px; }
   @media (prefers-reduced-motion: reduce) {
+    .dosefields.swap .field { animation: none; }
     .woakeep, .waddcard { transition: none; }
     .waddcard:active { transform: none; }
   }
@@ -2439,11 +2467,11 @@ export const STYLE = String.raw`<style>
      Insets come off the padding box: a bordered control needs a pixel more. */
   .iconbtn, .addbtn, .exhelp, .planx, .planadd, .mbtn, .addex, .danger, .libcount,
   .planlegal a, .planlegal button, .segbtn, .planbtn, .linkbtn,
-  .chips .chip, .said .chip, .votes .chip, .pumpyctx button, .threadrow .tdel, .ttitle { position: relative; }
+  .chips .chip, .said .chip, .votes .chip, .restchips .chip, .pumpyctx button, .threadrow .tdel, .ttitle { position: relative; }
   .iconbtn::after, .addbtn::after, .exhelp::after, .planx::after, .planadd::after,
   .segbtn::after, .planbtn::after, .linkbtn::after,
   .mbtn::after, .addex::after, .danger::after, .chips .chip::after, .said .chip::after,
-  .votes .chip::after,
+  .votes .chip::after, .restchips .chip::after,
   .pumpyctx button::after, .threadrow .tdel::after, .ttitle::after,
   .libcount::after, .planlegal a::after, .planlegal button::after { content: ""; position: absolute; }
   .libcount::after { inset: -9px; }
@@ -2461,6 +2489,7 @@ export const STYLE = String.raw`<style>
   .mbtn::after { inset: -6px 0; }
   .danger::after, .threadrow .tdel::after { inset: -3px 0; }
   .chips .chip::after, .said .chip::after, .votes .chip::after { inset: -6px 0; }
+  .restchips .chip::after { inset: -4px 0; }
   /* A square control needs the inset on all four sides: 36 + 4 + 4 is 44 across as
      well as down, and -6px 0 would have left the thumbs 36 wide and 28 tall. */
   .votes .vote::after { inset: -4px; }
@@ -2474,7 +2503,10 @@ export const STYLE = String.raw`<style>
     display: none; align-items: flex-start; gap: 11px; box-shadow: var(--sh-sm); }
   #hint.show { display: flex; }
   #hint b { color: var(--ink); }
-  #hint button { background: none; border: none; color: var(--muted); font-size: 17px; padding: 0 2px;
+  /* The dismiss cross only. "Phone save options" is a button in the same box,
+     appended after this rule was written, and #hint button was dressing it as a
+     17px glyph with no padding, jammed against the sentence above it. */
+  #hintx { background: none; border: none; color: var(--muted); font-size: 17px; padding: 0 2px;
     line-height: 1; flex: 0 0 auto; }
 
   /* ---------- reduced motion, in one place ----------
@@ -2628,7 +2660,21 @@ export const STYLE = String.raw`<style>
   .exercise-main .exdose { flex: 0 0 auto; max-width: 42%; white-space: normal; text-align: right; }
   /* A stable full-width drawer keeps secondary actions quiet, without a flex
      row renegotiating its width when the hidden labels become visible. */
-  .exercise-actions { display: block; width: 100%; min-width: 0; padding: 0; }
+  .exercise-actions { display: block; width: 100%; min-width: 0; padding: 0; position: relative; }
+  /* ---------- the rest on the row ----------
+     The empty half of the options line, where the owner pointed. Laid over the
+     summary's left end, which is only air (its word sits at the right), so the
+     drawer under it keeps its full width when it opens; drawn small and reached
+     at 44px, like the chips. A rest the card stated is solid; the default is
+     outlined and says so — the same number is a different fact. --muted is
+     4.89 on card, which is what the outlined one sits on. The .pill shape, on a
+     button; no overflow clip, which would take the reach with it — the longest
+     word fits a 375px row. */
+  .restpill { position: absolute; left: 0; top: 8px; border: 1px solid transparent;
+    white-space: nowrap; transition: transform var(--t-1) var(--e-out); }
+  .restpill.dflt { background: none; border-color: var(--line-2); color: var(--muted); }
+  .restpill:active { transform: scale(.95); }
+  .restpill::after { content: ""; position: absolute; inset: -9px 0; }
   .exercise-options { border: 0; margin: 0; border-radius: 0; background: none; min-width: 0; }
   .exercise-actions > .exercise-options { width: 100%; }
   .exercise-options > summary { width: 100%; font-size: 12px; min-height: 44px; padding: 10px 6px;
@@ -2654,9 +2700,21 @@ export const STYLE = String.raw`<style>
   #workoptions .pickrow, #recapopts .pickrow { min-height: 48px; }
   /* Destructive, so it takes the one red the system has - the same red Settings
      gives its delete - rather than the muted grey that reads as unavailable. */
-  #recapopts .danger { color: var(--ember-ink); font-size: 15px; font-weight: 650; }
+  /* "Choose the first exercise" is a sentence, and half a row at 375px wraps
+     it: Cancel takes only its own width there, the way a secondary action does. */
+  #sectionsheet .btnrow .ghost { flex: 0 0 auto; width: auto; padding: 14px 20px; }
+  /* The section sheet's Remove is its last word and its one red one: this one. */
+  #recapopts .danger, #sectionremove { color: var(--ember-ink); font-size: 15px; font-weight: 650; }
   #dmore { min-height: 44px; }
-  #chips { flex-wrap: wrap; }
+  /* The library row wraps rather than scrolls, and a wrapped row cannot carry its
+     side inset on its end chips: the second line's first chip is not :first-child,
+     so "Clear filter" sat flush against the screen edge under a row inset 18px.
+     A wrapping row has no scrollport for the two engines to disagree about, so the
+     inset moves back onto the box, and the scroll fade goes with the scrolling. */
+  #chips { flex-wrap: wrap; overflow: visible; padding-left: 18px; padding-right: 18px;
+    -webkit-mask-image: none; mask-image: none; }
+  #chips > :first-child { margin-left: 0; }
+  #chips > :last-child { margin-right: 0; }
   /* iOS date inputs can add padding outside their declared width. Let a normal
      box own the inset and border; the native picker remains an unpadded input. */
   .schedule-date-control { display: flex; min-width: 0; padding: 0 14px; border: 1px solid var(--line);
@@ -2712,7 +2770,7 @@ export const STYLE = String.raw`<style>
   .disclosure.details-closing > summary::after, .guide-topic.details-closing > summary::after { transform: rotate(-45deg); }
   @media (prefers-reduced-motion: reduce) {
     .disclosure > summary::after, .guide-topic > summary::after, .history-card > summary::before,
-    .exercise-options .pickrow { transition: none; }
+    .exercise-options .pickrow, .restpill { transition: none; }
   }
   .reader-offer { background: var(--ember-soft); border: 1px solid var(--line); border-radius: 18px; padding: 16px; margin: 16px 0; }
   .reader-offer p { color: var(--ink-2); font-size: 14px; line-height: 1.5; margin: 8px 0 12px; }

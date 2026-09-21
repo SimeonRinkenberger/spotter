@@ -2552,18 +2552,40 @@ export const APP = String.raw`
     }
   });
 
+  // A length of time the way a lifter says it: "0:45", "5 min", "1:30". A twenty
+  // minute bike used to print as 1200s, which is a number for a stopwatch, not a
+  // person. Under a minute it keeps the clock shape rather than "45s", so the dose
+  // and the rest pill on the same row read in one notation.
+  function timeText(secs) {
+    return secs >= 60 && !(secs % 60) ? Math.round(secs / 60) + " min" : clock(secs);
+  }
+
   function doseText(ex) {
-    var bits = [];
+    var bits = [], t = ex.duration_seconds;
     if (ex.sets && ex.reps) bits.push(ex.sets + " × " + ex.reps);
-    else if (ex.sets) bits.push(ex.sets + " sets");
+    else if (ex.sets && !t) bits.push(ex.sets + " sets");
     else if (ex.reps) bits.push(ex.reps + " reps");
-    if (ex.duration_seconds) {
-      bits.push(ex.duration_seconds >= 60
-        ? Math.round(ex.duration_seconds / 60) + " min"
-        : ex.duration_seconds + "s");
-    }
+    // A timed movement reads like a reps one — the sets in front, the dose after
+    // — "3 × 0:45", and a single bout is just its length.
+    if (t) bits.push((ex.sets > 1 && !ex.reps ? ex.sets + " × " : "") + timeText(t));
     return bits.join(" · ");
   }
+
+  // The rest Workout Mode will run, and whose word that is. One sentence rather
+  // than the four that used to drift apart: after a set the exercise's own rest
+  // wins, then the default; at the end of a lap it is the block's. Zero is a
+  // person's answer — "no rest", something the extractor never writes, since
+  // intOrNull drops it — so the test is "is a number", not truth. The default is
+  // the walk to the next station after a timed move in a circuit, which is no
+  // rest at all, and REST_FALLBACK everywhere else.
+  function restOf(ex, block, atLapEnd) {
+    var own = atLapEnd ? block.rest_seconds : ex && ex.rest_seconds;
+    if (typeof own === "number") return { secs: own, source: atLapEnd ? "block" : "exercise" };
+    return { secs: !atLapEnd && isCircuit(block) && isTimed(ex) ? 0 : REST_FALLBACK, source: "default" };
+  }
+
+  // The words the card's pill and the sheets' toasts use for one: 1:30, or none.
+  function restWord(secs) { return secs ? "Rest " + clock(secs) : "No rest"; }
 
   // What ONE set asks for, in the words the set pill already uses: a rep count
   // or a range exactly as the card wrote it, or a held duration. The Lock Screen
@@ -2575,12 +2597,106 @@ export const APP = String.raw`
     return ex.reps ? ex.reps + " reps" : null;
   }
 
+  // The kinds of section a person can add, and what each one starts as. The
+  // owner's word for it was "circuits, cardio, finishers, stretches"; the type
+  // underneath is one the extractor already writes, so Workout Mode meets nothing
+  // new. Cardio and Cool-down are ordinary blocks whose exercises are timed by
+  // nature, which is why they open the picker in Time. EMOM is left out on
+  // purpose: Workout Mode has no clock for it yet (see complexOf).
+  var SECTION_KINDS = [
+    { title: "Warm-up", type: "warmup" },
+    { title: "", type: "straight" },
+    { title: "Superset", type: "superset", rounds: 3, rest: 60 },
+    { title: "Circuit", type: "circuit", rounds: 3, rest: 60 },
+    { title: "AMRAP", type: "amrap", cap: 600 },
+    { title: "Cardio", type: "straight", timed: 1 },
+    { title: "Finisher", type: "circuit", rounds: 3, rest: 30 },
+    { title: "Cool-down", type: "cooldown", timed: 1 }
+  ];
+
+  // What a block's type is called on the card: "Warm-up", not "warmup".
+  function kindName(type) {
+    return { warmup: "Warm-up", cooldown: "Cool-down", amrap: "AMRAP", emom: "EMOM" }[type] || capWord(type);
+  }
+
+  // Said the way a lifter would: "Circuit · 3 rounds · Rest 1:00 between rounds",
+  // "AMRAP · 10:00 cap". The kind is left out under a heading that already says
+  // it ("Cool-down" under COOL-DOWN), and the rest is only printed where Workout
+  // Mode will run it, at the end of a lap, so a straight block's stray
+  // rest_seconds says nothing. Where it runs, it is printed even when nobody
+  // chose it — that is the rest the lifter will get, and the pill on the rows
+  // marks a default the same way.
   function blockMetaText(b) {
-    var bits = [];
-    if (b.type && b.type !== "straight") bits.push(b.type);
+    var bits = [], kind = b.type && b.type !== "straight" ? kindName(b.type) : "", r;
+    if (kind && kind.toLowerCase() !== String(b.title || "").toLowerCase()) bits.push(kind);
     if (b.rounds) bits.push(b.rounds + " rounds");
-    if (b.rest_seconds) bits.push(b.rest_seconds + "s rest");
+    if (b.rounds > 1) {
+      r = restOf(null, b, true);
+      bits.push(restWord(r.secs) + " between rounds" + (r.source === "default" ? " · default" : ""));
+    }
+    if (b.duration_seconds) bits.push(clock(b.duration_seconds) + " cap");
     return bits.join(" · ");
+  }
+
+  // ---------- choosing a rest ----------
+  //
+  // The one grid every rest is chosen from: the pill's sheet, both dose panes and
+  // the section sheet. value is the stored shape — "" for the default, 0 for no
+  // rest, a number of seconds — and a number the grid does not offer (100 s off a
+  // video) gets a lit chip of its own rather than lighting nothing. Custom… opens
+  // a minutes and seconds pair under the chips. onPick gets the same three shapes
+  // back; whether that is a save or a value held until the sheet's own button is
+  // the caller's business.
+  var REST_STEPS = [15, 30, 45, 60, 75, 90, 120, 150, 180, 240, 300], HOW_LONG = "How long? Minutes or seconds.";
+
+  function restChips(box, value, onPick) {
+    var steps = REST_STEPS.slice(), row = el("div", box.classList.contains("strip") ? "chips" : "pillrow restchips");
+    var custom = el("div", "fieldrow restcustom hide"), mins = el("input"), secs = el("input"), go = el("button", "btn", "Set rest"), lit = null;
+    if (typeof value === "number" && value > 0 && steps.indexOf(value) < 0) steps.push(value);
+    steps.sort(function (a, b) { return a - b; });
+    box.innerHTML = "";
+    function chip(v, label, more) {
+      var on = v === value || (v === "" && typeof value !== "number");
+      var c = el("button", "chip" + (on ? " active" : ""), label);
+      c.onclick = function () {
+        haptic("tap");
+        Array.prototype.forEach.call(row.children, function (x) { x.classList.toggle("active", x === c); });
+        custom.classList.toggle("hide", !more);
+        if (!more) { onPick(v); return; }
+        viewIn(custom);
+        mins.focus();
+      };
+      row.appendChild(c);
+      if (on) lit = c;
+    }
+    chip("", "Default (" + clock(REST_FALLBACK) + ")");
+    chip(0, "No rest");
+    steps.forEach(function (s) { chip(s, clock(s)); });
+    chip(null, "Custom…", 1);
+    [[mins, "Minutes"], [secs, "Seconds"]].forEach(function (p) {
+      var l = el("label", null, p[1]);
+      l.appendChild(Object.assign(p[0], { type: "number", inputMode: "numeric", placeholder: "0" }));
+      custom.appendChild(el("div", "field")).appendChild(l);
+    });
+    go.onclick = function () {
+      var m = mins.value.trim(), s = secs.value.trim(), t;
+      if (!m && !s) { toast(HOW_LONG); return; }
+      t = clamp(Math.round((Number(m) || 0) * 60 + (Number(s) || 0)), 0, 3600);
+      haptic("tap");
+      restChips(box, t, onPick);
+      onPick(t);
+    };
+    custom.appendChild(el("div", "field")).appendChild(go);
+    box.appendChild(row);
+    box.appendChild(custom);
+    // A strip brings the lit chip to its middle: the answer sitting past the
+    // edge of the strip is the one thing this row exists to show, and centred it
+    // reads as a strip with more either side. After the pane it sits in has been
+    // shown, since a hidden row has no width; the wrapping grid has nothing to
+    // scroll and the line does nothing there.
+    setTimeout(function () {
+      if (lit) row.scrollLeft = Math.max(0, lit.offsetLeft - row.offsetLeft - (row.clientWidth - lit.offsetWidth) / 2);
+    }, 0);
   }
 
   // ---------- borrowed from a saved video ----------
@@ -3003,9 +3119,12 @@ export const APP = String.raw`
       var blockRow = el("div", "exrow delete-swipe block-swipe");
       var blockFront = el("div", "exmain");
       blockFront.appendChild(el("h3", null, b.title || (w.blocks.length === 1 ? "Exercises" : "Block " + (bi + 1))));
-      var blockMore = el("button", "linkbtn", "Remove block");
-      blockMore.setAttribute("aria-label", "Remove " + (b.title || "block " + (bi + 1)));
-      blockMore.onclick = function () { deleteBlock(w, bi); };
+      // Its one quiet action opens the section sheet, which is where the name,
+      // the kind, the rounds and the rest live now; removing is in there and in
+      // the swipe.
+      var blockMore = el("button", "linkbtn", "Edit");
+      blockMore.setAttribute("aria-label", "Edit " + (b.title || "block " + (bi + 1)));
+      blockMore.onclick = function () { openSection(w, bi); };
       blockFront.appendChild(blockMore);
       var blockActions = el("div", "exacts");
       var blockDelete = icon(el("button", "exact danger"), "trash", "Delete");
@@ -3044,6 +3163,14 @@ export const APP = String.raw`
         if (dose) main.appendChild(el("div", "exdose", dose));
         row.appendChild(main);
         var acts = el("div", "exercise-actions");
+        // The rest, where the owner pointed: the empty half of the options line.
+        // It is the rest Workout Mode will actually run, so a default is marked
+        // as one — dimmer, outlined, and saying so — because "1:30" the card
+        // stated and "1:30" nobody chose are different facts about the video.
+        var rest = restOf(ex, b, false), dflt = rest.source === "default";
+        var pill = el("button", "pill restpill" + (dflt ? " dflt" : ""), restWord(rest.secs) + (dflt ? " · default" : ""));
+        pill.onclick = function () { openRest(w, bi, ei, ex); };
+        acts.appendChild(pill);
         var options = disclosure("Options", "exercise-options");
         options.firstChild.setAttribute("aria-label", "Options for " + ex.name);
         var edit = icon(el("button", "pickrow"), "pencil", "Review / Edit");
@@ -3064,7 +3191,7 @@ export const APP = String.raw`
         var del = icon(el("button", "exact danger"), "trash", "Delete");
         del.setAttribute("aria-label", "Remove " + ex.name);
         del.onclick = function () {
-          exEdit = { w: w, block: bi, index: ei, name: ex.name, mode: "edit" };
+          exEdit = { w: w, block: bi, index: ei, name: ex.name };
           deleteExEdit();
         };
         drawer.appendChild(del);
@@ -3109,6 +3236,13 @@ export const APP = String.raw`
       none.appendChild(addfirst);
       d.appendChild(none);
     }
+
+    // After the last block, a whole section: a circuit, a finisher, ten minutes
+    // on the bike, a stretch. The per-block add above stays for a single missed
+    // movement; this is for "the video had a finisher and the card does not".
+    var addsec = el("button", "addex", "+ Add a section");
+    addsec.onclick = function () { openSection(w, null); };
+    d.appendChild(addsec);
 
     // What this hits: catalog muscles through canonical_id, nothing else. Filled
     // in once the catalog map is here, which after the first card is immediate.
@@ -3838,17 +3972,92 @@ export const APP = String.raw`
 
   function fieldVal(v) { return v === null || v === undefined || v === "" ? "" : String(v); }
 
+  // ---------- reps or time ----------
+  //
+  // "The app is not cardio friendly": Sets · Reps · Seconds asked an air bike the
+  // wrong question. Both dose sheets — the editor's and the picker's — now carry
+  // a Reps | Time segment, the way Hevy and Strong type an exercise. Reps shows
+  // Sets · Reps; Time shows Sets · Minutes · Seconds, entered as a clock is read,
+  // never as 1200 seconds. p is the id prefix the two sheets share the shape
+  // under: <p>seg, <p>reps, <p>min, <p>secs, <p>fields.
+
+  function doseMode(p, timed) {
+    var seg = $(p + "seg"), row = $(p + "fields");
+    seg.style.setProperty("--s", timed ? "1" : "0");
+    seg.querySelectorAll(".segbtn").forEach(function (b, i) { b.setAttribute("aria-selected", String((i === 1) === !!timed)); });
+    ["reps", "min", "secs"].forEach(function (f, i) { $(p + f).parentNode.classList.toggle("hide", !!timed === !i); });
+    // The fields trade places under a crossfade. On a sheet just opening it runs
+    // under the sheet's own entrance, where it is not a second move.
+    row.classList.remove("swap");
+    void row.offsetWidth;
+    row.classList.add("swap");
+  }
+
+  function fillDose(p, secs) {
+    $(p + "min").value = secs ? String(Math.floor(secs / 60)) : "";
+    $(p + "secs").value = secs ? String(secs % 60) : "";
+  }
+
+  // The minutes and seconds fields are one number. Read together, clamped to what
+  // the server accepts, and written back normalised so 0:90 becomes 1:30 on the
+  // screen as well as on the card. Both empty is 0: nothing was said.
+  function doseSecs(minId, secId) {
+    var m = $(minId).value.trim(), s = $(secId).value.trim(), t;
+    if (!m && !s) return 0;
+    t = clamp(Math.round((Number(m) || 0) * 60 + (Number(s) || 0)), 1, 3600);
+    $(minId).value = String(Math.floor(t / 60));
+    $(secId).value = String(t % 60);
+    return t;
+  }
+
+  // The segment and the minutes/seconds pair, furnished once per dose sheet
+  // rather than written twice in the markup, which keeps Sets and Reps. set
+  // records the choice on whichever sheet's state owns it. Flipping to Time on
+  // empty fields opens on half a minute, so the pair never sits at 0:00 asking
+  // to be filled in from nothing.
+  function doseFurnish(p, set) {
+    var row = $(p + "fields"), seg = el("div", "seg doseseg");
+    seg.id = p + "seg";
+    seg.setAttribute("role", "tablist");
+    seg.appendChild(el("div", "segpill"));
+    ["Reps", "Time"].forEach(function (w, i) {
+      var b = el("button", "segbtn", w);
+      b.setAttribute("role", "tab");
+      b.onclick = function () {
+        haptic("select");
+        set(!!i);
+        if (i && !$(p + "min").value && !$(p + "secs").value) fillDose(p, 30);
+        doseMode(p, !!i);
+      };
+      seg.appendChild(b);
+    });
+    row.parentNode.insertBefore(seg, row);
+    // Label beside input, as the markup's fields are: doseMode hides the field
+    // through the input's parent, so the parent has to be the field.
+    [["min", "Minutes"], ["secs", "Seconds"]].forEach(function (f) {
+      var box = el("div", "field hide"), l = el("label", null, f[1]), i = el("input");
+      i.id = l.htmlFor = p + f[0];
+      box.appendChild(l);
+      box.appendChild(Object.assign(i, { type: "number", inputMode: "numeric", placeholder: "0" }));
+      row.appendChild(box);
+    });
+  }
+
+  // The stored shape of a rest as a chip value: a number, or "" for "not said".
+  function restVal(x) { return typeof x === "number" ? x : ""; }
+
+  // The sheet's title, lede and buttons are what the markup says: its add mode
+  // went when "+ Add an exercise" became the bank, and with it the resetting.
   function openExEdit(w, bi, ei, ex) {
-    exEdit = { w: w, block: bi, index: ei, name: ex.name, ex: ex, mode: "edit" };
-    $("exedittitle").textContent = "Fix this exercise";
-    $("exeditlede").textContent =
-      "Spotter read this off the video. If it got it wrong, put it right — the change stays on your copy.";
+    var timed = !!(ex.duration_seconds && !ex.reps);
+    exEdit = { w: w, block: bi, index: ei, name: ex.name, ex: ex, timed: timed, timed0: timed,
+      rest: restVal(ex.rest_seconds) };
     $("exeditname").value = ex.name || "";
     $("exeditsets").value = fieldVal(ex.sets);
     $("exeditreps").value = fieldVal(ex.reps);
-    $("exeditsecs").value = fieldVal(ex.duration_seconds);
-    $("exeditdelete").classList.remove("hide");
-    $("exeditsave").textContent = "Save change";
+    fillDose("exedit", ex.duration_seconds);
+    doseMode("exedit", timed);
+    restChips($("exeditrest"), exEdit.rest, function (v) { if (exEdit) exEdit.rest = v; });
     openSheet("exeditsheet");
   }
 
@@ -3884,7 +4093,9 @@ export const APP = String.raw`
   function postCorrection(w, payload, btn, okMsg, sheet) {
     var label = btn ? btn.textContent : null;
     if (btn) { btn.disabled = true; btn.textContent = "Saving…"; }
-    api("workouts/" + w.id + "/exercises", { method: "POST", body: JSON.stringify(payload) })
+    // Returned, so a caller with no button to disable can still know when the
+    // round trip is over — the rest chips guard against a second tap that way.
+    return api("workouts/" + w.id + "/exercises", { method: "POST", body: JSON.stringify(payload) })
       .then(function (r) {
         if (btn) { btn.disabled = false; btn.textContent = label; }
         if (r.status !== "ok") { limitHit(r, "That change did not save. Your copy is unchanged."); return; }
@@ -3906,17 +4117,149 @@ export const APP = String.raw`
 
   function saveExEdit() {
     if (!exEdit) return;
-    var fields = {
-      name: $("exeditname").value,
-      sets: $("exeditsets").value,
-      reps: $("exeditreps").value,
-      duration_seconds: $("exeditsecs").value
-    };
+    var timed = exEdit.timed, secs = timed ? doseSecs("exeditmin", "exeditsecs") : 0;
+    var fields = { name: $("exeditname").value, sets: $("exeditsets").value, rest_seconds: exEdit.rest };
     if (!String(fields.name).trim()) { toast("Give it a name first."); return; }
-    var body = exEdit.mode === "add"
-      ? { op: "add", block: exEdit.block, fields: fields }
-      : { op: "edit", block: exEdit.block, index: exEdit.index, expect_name: exEdit.name, fields: fields };
-    sendCorrection(body, $("exeditsave"), exEdit.mode === "add" ? "Added it" : "Fixed — thanks");
+    if (timed && !secs) { toast(HOW_LONG); return; }
+    // Only the side of the segment that is showing is sent; the other is cleared
+    // only when the segment was flipped. An exercise the video gave both a rep
+    // count and a hold keeps whichever the sheet was not asked about.
+    if (timed) { fields.duration_seconds = secs; if (!exEdit.timed0) fields.reps = ""; }
+    else { fields.reps = $("exeditreps").value; if (exEdit.timed0) fields.duration_seconds = ""; }
+    // Only an edit: "+ Add an exercise" is the bank now, and the bank posts its own add.
+    sendCorrection({ op: "edit", block: exEdit.block, index: exEdit.index, expect_name: exEdit.name, fields: fields },
+      $("exeditsave"), "Fixed — thanks");
+  }
+
+  // ---------- the rest, from the card ----------
+  //
+  // "I want to see what the rest period will be." The pill on the row opens this:
+  // a grid of the rests people actually take, the current one lit, and a preset
+  // saves on the tap — a sheet whose one job is one number should not also ask
+  // for a Save. busy is the guard a chip cannot be, since none is disabled.
+
+  function openRest(w, bi, ei, ex) {
+    var busy = false;
+    $("resttitle").textContent = "Rest after " + ex.name;
+    restChips($("restchips"), restVal(ex.rest_seconds), function (v) {
+      if (busy) return;
+      busy = true;
+      postCorrection(w, { op: "edit", block: bi, index: ei, expect_name: ex.name, fields: { rest_seconds: v } }, null,
+        v === "" ? "Back to the default rest" : v === 0 ? "No rest after " + ex.name : "Rest set to " + clock(v), "restsheet")
+        .then(function () { busy = false; });
+    });
+    openSheet("restsheet");
+  }
+
+  // ---------- a section: circuits, cardio, finishers, stretches ----------
+  //
+  // The other half of "not cardio friendly": a workout is sections — Ladder,
+  // Centr and Nike Training Club all build one as warm-up, strength, finisher,
+  // cool-down, each with its own rounds and rest — and the extractor already
+  // writes cards that way. This sheet lets a person write one the same way. Two
+  // jobs, one sheet: adding, where the button goes on to the exercise bank and
+  // the section is written with its first exercise in one op (an empty block is
+  // never stored); editing, where the same fields go back through edit_block.
+
+  var sec = null;
+
+  // Which preset a stored block is, for the chip to light: the type decides, and
+  // among two presets of one type the title breaks the tie (Circuit / Finisher,
+  // Exercises / Cardio). Null for a kind the sheet does not offer, like EMOM.
+  function kindOf(b) {
+    var out = null;
+    SECTION_KINDS.forEach(function (k) { if (k.type === b.type && (!out || k.title === (b.title || ""))) out = k; });
+    return out;
+  }
+
+  function openSection(w, bi) {
+    var b = bi === null ? null : (w.blocks || [])[bi];
+    sec = { w: w, bi: b ? bi : (w.blocks || []).length, b: b, kind: b ? kindOf(b) : null,
+      rest: restVal(b && b.rest_seconds) };
+    $("sectiontitle").textContent = b ? "Edit section" : "Add a section";
+    $("sectionsave").textContent = b ? "Save section" : "Choose the first exercise";
+    $("sectionremove").classList.toggle("hide", !b);
+    $("sectionname").value = b && b.title || "";
+    $("sectionrounds").value = String(b && b.rounds || "");
+    // The cap as Workout Mode reads it (cxCap), not only the field: an AMRAP off
+    // a video often carries its clock in rest_seconds, and saving from here
+    // writes it where it belongs.
+    fillDose("sectioncap", b ? cxCap(b, w) : 0);
+    restChips($("sectionrest"), sec.rest, function (v) { if (sec) sec.rest = v; });
+    paintKinds();
+    openSheet("sectionsheet");
+  }
+
+  // Which fields the section has: the kind's own, or — for a kind the sheet does
+  // not offer, an EMOM off a video — whatever the block already carries, so a
+  // save from here never quietly empties them.
+  function sectionUses() {
+    var k = sec.kind, b = sec.b;
+    return { rounds: !!(k ? k.rounds : b && b.rounds), cap: !!(k ? k.cap : b && b.duration_seconds) };
+  }
+
+  // The chips, and under them only the fields this kind uses — hidden, not
+  // disabled, so a warm-up is never asked how many rounds it has.
+  function paintKinds() {
+    var row = $("sectionkinds"), k = sec.kind, u = sectionUses();
+    row.innerHTML = "";
+    SECTION_KINDS.forEach(function (kd) {
+      var c = el("button", "chip" + (kd === k ? " active" : ""), kd.title || "Exercises");
+      c.onclick = function () { pickKind(kd); };
+      row.appendChild(c);
+    });
+    [["sectionroundsf", u.rounds], ["sectioncapf", u.cap]].forEach(function (p) {
+      var f = $(p[0]);
+      if (p[1] && f.classList.contains("hide")) viewIn(f);
+      f.classList.toggle("hide", !p[1]);
+    });
+  }
+
+  // A kind brings its defaults with it — three rounds and a minute for a circuit,
+  // a ten minute cap for an AMRAP — and takes the name too, unless the name is
+  // one a person typed: anything that is not the previous kind's own title.
+  function pickKind(kd) {
+    var was = sec.kind, name = $("sectionname"), t = name.value.trim();
+    haptic("tap");
+    sec.kind = kd;
+    if (!t || (was && t === was.title)) name.value = kd.title;
+    if (kd.rounds) {
+      $("sectionrounds").value = String(kd.rounds);
+      sec.rest = kd.rest;
+      restChips($("sectionrest"), sec.rest, function (v) { if (sec) sec.rest = v; });
+    }
+    if (kd.cap) fillDose("sectioncap", kd.cap);
+    paintKinds();
+  }
+
+  // What the sheet says the section is: the whole furniture, every time. A field
+  // the kind does not use goes back empty, which is how a circuit stops being one
+  // — and how an AMRAP's misfiled rest becomes its cap. The server answers an
+  // unchanged furniture with corrections: 0, so nothing is recorded for a save
+  // that changed nothing.
+  function sectionFields() {
+    var k = sec.kind, u = sectionUses();
+    var f = { title: $("sectionname").value.trim(), rounds: u.rounds ? $("sectionrounds").value : "",
+      rest_seconds: u.rounds ? sec.rest : "", duration_seconds: u.cap ? doseSecs("sectioncapmin", "sectioncapsecs") || "" : "" };
+    if (k) f.type = k.type;
+    return f;
+  }
+
+  function saveSection() {
+    if (!sec) return;
+    var f = sectionFields();
+    if (f.duration_seconds && f.duration_seconds < 60) { toast("A time cap starts at a minute."); return; }
+    if (sec.b) {
+      postCorrection(sec.w, { op: "edit_block", block: sec.bi, expect_block: sec.b, fields: f },
+        $("sectionsave"), "Section saved", "sectionsheet");
+      return;
+    }
+    // Handed over rather than stacked, the way dayadd hands over to the picker:
+    // the bank opens first and this sheet closes behind it, so the sheet layer's
+    // one history entry passes across instead of falling to the floor. The
+    // furniture rides on the picker's target and comes back here on woaback.
+    openBank("card-add", { w: sec.w, bi: sec.bi, block: f, timed: !!(sec.kind && sec.kind.timed) });
+    closeSheet("sectionsheet");
   }
 
   // ---------- a row leaving, and coming back ----------
@@ -4026,7 +4369,7 @@ export const APP = String.raw`
   }
 
   function deleteExEdit() {
-    if (!exEdit || exEdit.mode !== "edit") return;
+    if (!exEdit) return;
     var ctx = exEdit;
     var w = ctx.w;
     var before = JSON.parse(JSON.stringify(w.blocks || []));
@@ -6207,7 +6550,7 @@ export const APP = String.raw`
       var h = hist[k];
       if (!h.date || !h.name || skip[k]) return;
       var r = woaMake(k, h.name, k.indexOf("c:") === 0 ? k.slice(2) : null, "", 1,
-        { sets: h.sets, reps: h.reps, at: h.date });
+        { sets: h.sets, reps: h.reps, secs: h.secs, at: h.date });
       r.sub = lastLine(r);
       out.push(r);
     });
@@ -6384,8 +6727,10 @@ export const APP = String.raw`
     $("woapick").classList.toggle("hide", !!dose);
     $("woadose").classList.toggle("hide", !dose);
     // The way back out sits above the title, where a back control belongs, which
-    // is why it is not inside either pane.
-    $("woaback").classList.toggle("hide", !dose);
+    // is why it is not inside either pane. On the list it is only there when a
+    // section sheet handed over to the bank, and then it goes back to that.
+    $("woaback").classList.toggle("hide", !dose && !(woa.target && woa.target.block));
+    $("woaback").lastChild.textContent = dose ? "All exercises" : "Back to the section";
     viewIn($(dose ? "woadose" : "woapick"));
   }
 
@@ -6420,11 +6765,32 @@ export const APP = String.raw`
       : "Off — today’s session only.";
   }
 
+  // Movements done for time rather than reps, decided from what a picker row
+  // carries: a short list of steady-state ids, the catalog's cardio pattern on a
+  // machine or a rope, a hold's name, or the last time it was logged with
+  // seconds. The word says which, because the defaults differ — ten minutes on
+  // the bike, half a minute in a plank.
+  var STEADY = ["running", "sprint", "treadmill-run", "cycling", "assault-bike", "rowing-machine",
+    "ski-erg", "stair-climber", "elliptical", "jump-rope", "jumping-jack"];
+
+  function timedByNature(r) {
+    var eq = r.equipment || [], words = [r.name || ""].concat(r.aliases || []).join(" ").toLowerCase();
+    if (r.secs) return "logged";
+    if (STEADY.indexOf(r.canonical_id) >= 0) return "cardio";
+    if (r.pattern === "cardio" && (eq.indexOf("machine") >= 0 || eq.indexOf("jump rope") >= 0)) return "cardio";
+    if (/\b(plank|hold|stretch|pose|hang|wall sit)\b/.test(words)) return "hold";
+    return "";
+  }
+
   function woaChoose(r) {
     var t = woa.target, old = woa.mode === "replace" ? t.ex : null;
     var live = woa.mode === "add" || !!(old && t.session), s = live ? wo.screens[wo.i] : null;
     var cx = s && s.cx && !s.ei ? s.cx : null;
     var h = old ? null : hist[r.key], m = String((old ? old.reps : r.reps) || "").match(/\d+/), where = $("woawhere");
+    // Time or reps: what the movement is, unless it is a replacement, which takes
+    // the shape of the one it replaces. A Cardio or Cool-down section asks for
+    // time whatever is added to it; the segment is always there to flip.
+    var kind = old ? "" : timedByNature(r), secs = old ? old.duration_seconds : (r.secs || (h && h.secs));
     woa.pick = r;
     woa.keep = false;
     woa.where = cx ? "complex" : s && wo.i < endStop() ? "after" : "end";
@@ -6432,6 +6798,8 @@ export const APP = String.raw`
     // sets of five — and so may the movement being replaced; the field that would
     // ask for one is not offered either way.
     woa.nosets = !!cx || !!(old && old.sets == null);
+    woa.timed = old ? !!(old.duration_seconds && !old.reps) : !!(kind || (t && t.timed));
+    woa.rest = restVal(old && old.rest_seconds);
     haptic("tap");
     $("woaddtitle").textContent = r.name;
     // Hevy carries the last session's numbers into a movement you add back; so
@@ -6439,10 +6807,11 @@ export const APP = String.raw`
     // A replacement takes the dose of the one it replaces instead, and the line
     // says which that was.
     $("woalast").textContent = old ? "Instead of " + old.name + "." : lastLine(r);
-    $("woaddsets").value = String((h && h.sets) || (old ? old.sets : r.sets) || 3);
+    $("woaddsets").value = String((h && h.sets) || (old ? old.sets : r.sets) || (woa.timed ? 1 : 3));
     $("woaddreps").value = String((h && h.reps) || (m ? m[0] : 10));
-    $("woaddsecs").value = old ? (old.duration_seconds ? String(old.duration_seconds) : "")
-      : (r.secs ? String(r.secs) : "");
+    fillDose("woadd", secs || (kind === "cardio" || t && t.timed && t.block.type !== "cooldown" ? 600 : 30));
+    doseMode("woadd", woa.timed);
+    restChips($("woarest"), woa.rest, function (v) { if (woa) woa.rest = v; });
     // Where it lands. Inside a complex there is nothing to choose — a movement
     // added to an AMRAP is part of the AMRAP — and on the last exercise the two
     // answers are the same one, so neither gets chips it cannot use. A replacement
@@ -6568,7 +6937,7 @@ export const APP = String.raw`
   // name as before when there is none.
   function woaFields(ex) {
     return { name: ex.name, canonical_id: ex.canonical_id || null, sets: ex.sets, reps: ex.reps,
-      duration_seconds: ex.duration_seconds };
+      duration_seconds: ex.duration_seconds, rest_seconds: restVal(ex.rest_seconds) };
   }
 
   // The edit op that puts ex where t's exercise is. expect_name is the guard: the
@@ -6605,16 +6974,25 @@ export const APP = String.raw`
 
   function saveWorkoutAdd() {
     if (!woa || !woa.pick) return;
-    var name = String(woa.pick.name || "").trim().slice(0, 100);
-    var secs = $("woaddsecs").value.trim() ? woaNum("woaddsecs", 30, 3600) : 0;
+    var name = String(woa.pick.name || "").trim().slice(0, 100), timed = woa.timed;
+    var secs = timed ? doseSecs("woaddmin", "woaddsecs") : 0;
     if (!name) return;
+    if (timed && !secs) { toast(HOW_LONG); return; }
+    // The rest chosen goes to both places: the session entry as the number
+    // Workout Mode reads (null is the default, 0 is none), and the card as the
+    // same value through woaFields. It used to be hard-coded to the default here
+    // and dropped from the card write.
     var ex = { name: name, canonical_id: woa.pick.canonical_id || null,
-      sets: woa.nosets ? null : woaNum("woaddsets", 3, 99), reps: secs ? null : String(woaNum("woaddreps", 10, 999)),
-      duration_seconds: secs || null, rest_seconds: REST_FALLBACK };
+      sets: woa.nosets ? null : woaNum("woaddsets", timed ? 1 : 3, 99), reps: timed ? null : String(woaNum("woaddreps", 10, 999)),
+      duration_seconds: secs || null, rest_seconds: woa.rest === "" ? null : woa.rest };
     var t = woa.target, keep = woa.keep, mode = woa.mode;
     // On a saved card the picker is the editor, and the card write is the save.
+    // A section being built rides along as new_block: it and its first exercise
+    // land in one write, since a block with nothing in it is never stored.
     if (mode === "card-add") {
-      postCorrection(t.w, { op: "add", block: t.bi, fields: woaFields(ex) }, $("woaddsave"), "Added it", "woaddsheet");
+      var body = { op: "add", block: t.bi, fields: woaFields(ex) };
+      if (t.block) body.new_block = t.block;
+      postCorrection(t.w, body, $("woaddsave"), "Added it", "woaddsheet");
       return;
     }
     if (mode === "replace" && !t.session) {
@@ -6671,7 +7049,10 @@ export const APP = String.raw`
           (log.entries || []).forEach(function (e) {
             if (!e.name) return;
             var sets = (e.sets || []).filter(function (s) { return s && s.reps; });
-            if (!sets.length) return;
+            // A hold has no reps to remember, only how long and how many: enough
+            // for the picker to open a plank on the seconds it was last held for.
+            var held = sets.length ? [] : (e.sets || []).filter(function (s) { return s && s.seconds; });
+            if (!sets.length && !held.length) return;
             var k = exKey(e);
             var h = hist[k] || (hist[k] = { best: 0 });
             sets.forEach(function (s) {
@@ -6681,14 +7062,15 @@ export const APP = String.raw`
             });
             // Newest first: the first session carrying this movement IS last time.
             if (h.date) return;
-            var top = sets.filter(function (s) { return s.weight; }).pop() || sets[sets.length - 1];
+            var top = sets.filter(function (s) { return s.weight; }).pop() || sets[sets.length - 1] || {};
             // The name as the newest session spelled it, which is what the add
             // picker's Recent shelf has to show: hist is keyed by identity, and an
             // id is not a thing to put on a row.
             h.name = e.name;
             h.date = log.started_at;
-            h.sets = sets.length;
+            h.sets = sets.length || held.length;
             h.reps = top.reps;
+            if (held.length) h.secs = held[held.length - 1].seconds;
             h.weight = top.weight || 0;
             h.unit = top.unit || state.unit;
           });
@@ -6719,7 +7101,7 @@ export const APP = String.raw`
     if (!histReady || !entry) return "";
     var h = hist[exKey(entry)];
     if (!h || !h.date) return "first time logging this.";
-    return "last time · " + h.sets + " × " + h.reps +
+    return "last time · " + h.sets + " × " + (h.reps || timeText(h.secs)) +
       (h.weight ? " at " + wtText(h.weight, h.unit) + " " + state.unit : "") + " · " + agoText(h.date);
   }
 
@@ -7114,11 +7496,11 @@ export const APP = String.raw`
     // In a circuit the rest is the walk to the next station, so it ends by
     // arriving. Elsewhere the card's rest wins, the default covers silence.
     if (s && isCircuit(s.block)) {
-      var gap = restAfter(s, REST_FALLBACK);
+      var gap = restAfter(s);
       if (gap > 0) startRest(gap, null, nextMove); else nextMove();
       return;
     }
-    var secs = (s && s.ex && s.ex.rest_seconds) || REST_FALLBACK;
+    var secs = s ? restOf(s.ex, s.block, false).secs : REST_FALLBACK;
     if (secs > 0) startRest(secs);
     // The card's own set count reached — the last planned set, not an edit of
     // an earlier one — moves the session on to the next movement, the rest
@@ -7346,14 +7728,14 @@ export const APP = String.raw`
   }
 
   // At the end of a lap the gap is the block's rest, not the move's: one pause.
-  function restAfter(s, fallback) {
-    return atRoundEnd() ? (s.block.rest_seconds || REST_FALLBACK)
-      : (s.ex.rest_seconds || fallback || 0);
-  }
+  function restAfter(s) { return restOf(s.ex, s.block, atRoundEnd()).secs; }
 
   function timedBody(main, s, entry) {
+    // The idle number is the clock the countdown will show: a twenty minute bike
+    // opens on 20:00, not on 1200.
     var t = el("div", "wtimer"), ring = el("button", "ring"), go = el("button", "btn wstart"),
-      num = el("span", null, String(s.ex.duration_seconds)), word = el("div", "wblock wphase");
+      num = el("span", null, s.ex.duration_seconds >= 60 ? clock(s.ex.duration_seconds) : String(s.ex.duration_seconds)),
+      word = el("div", "wblock wphase");
     t.id = "wtimer"; ring.id = "wring"; num.id = "wnum"; word.id = "wphase"; go.id = "wgobtn";
     ring.setAttribute("aria-label", "Start or pause the countdown");
     ring.onclick = go.onclick = ringTap;
@@ -7413,8 +7795,16 @@ export const APP = String.raw`
       s.ex.duration_seconds);
     woPhase = "idle";
     // A lone timed move counts down and waits; only a circuit moves the screen.
-    if (!isCircuit(s.block)) { renderWorkout(1); return; }
-    var gap = restAfter(s, 0);
+    // With holds still to do it rests the way a logged set does — the strip, no
+    // face — for whatever the card's pill says; after the last one there is
+    // nothing to rest for.
+    if (!isCircuit(s.block)) {
+      renderWorkout(1);
+      var r = restOf(s.ex, s.block, false);
+      if (wo.entries[wo.i].sets.filter(Boolean).length < targetOf(s) && r.secs > 0) startRest(r.secs);
+      return;
+    }
+    var gap = restAfter(s);
     if (gap <= 0) { nextMove(); return; }
     woPhase = "rest";
     renderWorkout(1);
@@ -13983,7 +14373,8 @@ export const APP = String.raw`
   ["addsheet", "setsheet", "watchsheet", "exsheet", "exeditsheet", "explainsheet", "picksheet",
    "settingssheet", "colsheet", "renamesheet", "swapsheet", "pumpysheet", "capsheet", "plansheet",
    "daysheet", "copysheet", "sortsheet", "refsheet", "countsheet", "guidesheet", "welcomesheet",
-   "workoptions", "filtersheet", "schedulesheet", "recapsheet", "woaddsheet", "aiconsentsheet", "wleavesheet"]
+   "workoptions", "filtersheet", "schedulesheet", "recapsheet", "woaddsheet", "aiconsentsheet", "wleavesheet",
+   "restsheet", "sectionsheet"]
     .forEach(wireSheet);
 
   function overlayShowing() {
@@ -16305,13 +16696,23 @@ export const APP = String.raw`
   // "Change" on the name: the bank, in replace mode, on the exercise this sheet
   // holds. Opened before the editor closes, for the sheet layer's history entry.
   $("exeditpick").onclick = function () {
-    if (!exEdit || exEdit.mode !== "edit") return;
+    if (!exEdit) return;
     var t = swapTarget(exEdit.w, exEdit.ex) || { w: exEdit.w, bi: exEdit.block, ei: exEdit.index, ex: exEdit.ex };
     openBank("replace", t);
     closeSheet("exeditsheet");
     exEdit = null;
   };
   $("exeditname").addEventListener("keydown", function (e) { if (e.key === "Enter") saveExEdit(); });
+  doseFurnish("exedit", function (t) { if (exEdit) exEdit.timed = t; });
+  doseFurnish("woadd", function (t) { if (woa) woa.timed = t; });
+  $("sectionsave").onclick = saveSection;
+  // Removal is the last thing on the sheet and red, and it leaves the sheet
+  // first: the row's slide and the undo toast belong to the card, not to a sheet.
+  $("sectionremove").onclick = function () {
+    var s = sec;
+    closeSheet("sectionsheet");
+    if (s && s.b) deleteBlock(s.w, s.bi);
+  };
 
   $("pumpytab").innerHTML = PUMPY_MARK;
   $("pumpysend").onclick = function () { sendPumpy(); };
@@ -16439,7 +16840,8 @@ export const APP = String.raw`
   document.querySelectorAll("[data-close]").forEach(function (b) {
     b.onclick = function () { closeSheet(b.getAttribute("data-close")); };
   });
-  ["workoptions", "filtersheet", "schedulesheet", "recapsheet", "woaddsheet", "aiconsentsheet", "wleavesheet"].forEach(function (id) {
+  ["workoptions", "filtersheet", "schedulesheet", "recapsheet", "woaddsheet", "aiconsentsheet", "wleavesheet",
+   "restsheet", "sectionsheet"].forEach(function (id) {
     $(id).addEventListener("keydown", function (e) {
       if (e.key === "Escape") { e.preventDefault(); closeSheet(id); }
       if (e.key !== "Tab") return;
@@ -16534,7 +16936,17 @@ export const APP = String.raw`
   $("wfinish").onclick = finishWorkout;
   $("waddexercise").onclick = openWorkoutAdd;
   $("woaddsave").onclick = saveWorkoutAdd;
-  $("woaback").onclick = function () { woaPane(0); };
+  // From the dose back to the list; from the list, when a section sheet handed
+  // over, back to that sheet with its fields as they were left — handed over
+  // again, so the history entry crosses back with it.
+  $("woaback").onclick = function () {
+    if ($("woadose").classList.contains("hide") && woa && woa.target && woa.target.block) {
+      openSheet("sectionsheet");
+      closeSheet("woaddsheet");
+      return;
+    }
+    woaPane(0);
+  };
   $("woakeep").onclick = function () { woa.keep = !woa.keep; haptic("tap"); woaKeepPaint(); };
   // Filtering starts on the first keystroke, as Apple's search fields do. No
   // debounce: the catalog is already in memory, so the delay would be the only
