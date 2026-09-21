@@ -18,9 +18,12 @@ workout and ended by the tap that saves it.
 | [Hevy — Live Activity](https://www.hevyapp.com/features/live-activity/), [Hevy help centre](https://help.hevyapp.com/hc/en-us/sections/35649822080791-Live-Activity) | The category's reference implementation: next movement, sets done on the current movement, prescribed weight and reps, how long you have been training, mark a set complete without unlocking, and ±15 s / skip on the rest timer. Spotter takes the field list almost verbatim and **drops** ±15 s — because of the HIG single-element rule above, ±15 s stays on the phone. |
 | Apple Fitness / Workouts, Nike Training Club, Strava | Elapsed time is the constant; everything else is the current interval. NTC shows "how much time or reps remain on the current drill" — which is why `phase == "timed"` gets the same countdown treatment as a rest rather than a second visual language. Strava users asked for exactly this in 2022 ([idea thread](https://communityhub.strava.com/t5/ideas/apples-live-activities-workout-data-on-lock-screen-ios-16-1/idi-p/2982)). |
 | HIG, *Offering interactivity* — re-read 20 Sept for the dial | The page has nothing on steppers. Its whole guidance on controls is the paragraph already cited: "Focus on simple, direct actions. Buttons or toggles take up space that might otherwise display useful information. Only include interactive elements for essential functionality that's directly related to your Live Activity and that people activate once or temporarily pause and resume, like music playback, workouts… If you offer interactivity, prefer limiting it to a single element to help people avoid accidentally tapping the wrong control." And, one line later, the door it leaves open: "If an update to your Live Activity is something that a person could respond to, consider offering a button or toggle to let people take action." The trade-off the dial makes against the single-element line is written out below the table. |
-| [WidgetKit, Adding interactivity](https://developer.apple.com/documentation/widgetkit/adding-interactivity-to-widgets-and-live-activities), re-read 20 Sept | Only `Button` and `Toggle` are interactive in a Live Activity — there is no Stepper — so a dial is four buttons. Parameters travel with the button: "Define input parameters that your action needs using the `@Parameter` property wrapper… Make sure input parameters have assigned values because, unlike app intents you define for system functionality like Siri, widgets don't resolve parameters for app intents." Hence one `AdjustSetIntent(field:delta:)` behind all four ± buttons. And `invalidatableContent(_:)`, "judiciously", on the figure that a press is about to change. |
+| [WidgetKit, Adding interactivity](https://developer.apple.com/documentation/widgetkit/adding-interactivity-to-widgets-and-live-activities), re-read 20 Sept | Only `Button` and `Toggle` are interactive in a Live Activity — there is no Stepper — so a dial is four buttons. Parameters travel with the button: "Define input parameters that your action needs using the `@Parameter` property wrapper… Make sure input parameters have assigned values because, unlike app intents you define for system functionality like Siri, widgets don't resolve parameters for app intents." Hence one `AdjustSetIntent(field:delta:)` behind all four ± buttons. `invalidatableContent(_:)` sat on the figure from 20 Sept until 21 Sept, when the figure became a control and the modifier turned out to swallow its tap (see *21 Sept — Typing a figure*). |
 | HIG, *Compact presentation* + *Specifications* — for the width | "Keep content as narrow as possible and ensure it's snug against the TrueDepth camera… Maintain a balanced layout with similarly sized views for both leading and trailing elements; for example, use shortened units or less precise data to maintain appropriate width and balance." The specification table gives the compact leading and trailing views **52.33 × 36.67 pt** each on a 393-pt-wide phone and the compact island **230 pt** wide on the iPhone 17 Pro. The island this replaced measured ~330 pt across (owner: "way too wide"); the fixed one measures ~212. |
 | HIG, *Best practices* — for the ± glyphs | "Use large, heavier-weight text — a medium weight or higher." The dial's figures are the numeral face at 17 pt semibold, the ± glyphs 13 pt bold. |
+| [ActivityKit, Launching your app from a Live Activity](https://developer.apple.com/documentation/activitykit/launching-your-app-from-a-live-activity) — read 21 Sept for the typed figures | "To create a deep link into your app from the Lock Screen, compact leading, compact trailing, and minimal presentations, use `widgetURL(_:)`… To create a deep link into your app from the extended presentation, use `widgetURL(_:)` or SwiftUI's `Link`." So a `Link` on the figures is documented for the expanded island and *not* for the Lock Screen card — where the card already carries `widgetURL(spotter://resume)`. Both were tried on the 17 Pro (see *21 Sept*), because the doc says what is supported, not what is refused. |
+| [UNNotificationInterruptionLevel.timeSensitive](https://developer.apple.com/documentation/usernotifications/unnotificationinterruptionlevel/timesensitive), WWDC21 [Send communication and Time Sensitive notifications](https://developer.apple.com/videos/play/wwdc2021/10091/) | "The system presents the notification immediately, lights up the screen, can play a sound, and breaks through system notification controls. Time Sensitive notifications… can break through system controls such as Notification Summary and Focus. The user can turn off the ability for time sensitive notification interruptions." The session: "enable the associated capability via Xcode… For a local notification, the Time Sensitive interruption level is set on the content object", and "Do not overuse their interruptive nature" — which is why only the rest-end nudge carries it and the reminders stay ordinary. The capability's entitlement key is `com.apple.developer.usernotifications.time-sensitive` (Boolean); Apple's [Supported capabilities (iOS)](https://developer.apple.com/help/account/reference/supported-capabilities-ios) table marks Time Sensitive Notifications available to every membership including the free "Apple Developer" account, so the committed project still signs with the Personal Team. |
+| [watchOS, Enabling and receiving notifications](https://developer.apple.com/documentation/watchos-apps/enabling-and-receiving-notifications) | "Schedule local or send remote notifications to the iOS companion app (if one exists), and let the system forward the notifications to the user's Apple Watch… the system ensures that the user only receives one notification at the best destination." So when the watch app is not open, the rest-end nudge reaches the wrist as the *phone's* forwarded notification, and there is no second mechanism to build (see *21 Sept — the wrist*). |
 
 **One correction to the older guidance.** Search results still surface the iOS 16-era line
 "Live Activities on the Lock Screen and in the Dynamic Island don't support interactive buttons…
@@ -80,7 +83,12 @@ the compact and minimal presentations never carry one.
 | `rest` over (`isStale`) | movement · `Next · Set 3 of 3 · 10 reps` | empty, width held | session progress, ember | **Start set** | lifter, ember / `Go`, ember | lifter, ember |
 | `paused` (the session) | movement · `Set 2 of 3 · 4 sets logged` (island: `Paused · Set 2 of 3 · 4 sets logged`) | frozen `17:30`, muted, static | session progress, **muted** | — (the card itself is the affordance: `spotter://resume`) | `pause.fill`, muted / frozen `17:30`, muted | `pause.fill`, muted |
 | `timed` | movement · target | countdown, ember | countdown, ember | — | timer / countdown | countdown ring |
-| `complex` | movement · block · target · weight | elapsed, ink-2 | session progress, ember | — | dumbbell / elapsed | dumbbell |
+| `complex`, cap running | the movement the round is up to · `2 rounds + 1 movement` (label `TIME CAP`) | cap countdown from `until`, **ember, larger** | cap fraction, ember | **Next move** + **Round 3 done** | repeat / cap countdown | countdown ring |
+| `complex`, cap held | same (label `PAUSED`) | frozen remainder `4:10`, muted | frozen fraction, muted | same two | repeat / frozen, muted | repeat |
+| `complex`, cap idle (`until == 0`) | same, `0 rounds` (label `TIME CAP`) | the whole cap `15:00`, static, ink-2 | session progress, ember | same two (the first tap starts the cap) | repeat / elapsed | repeat |
+| `complex`, cap over (`over`, or `isStale` while running) | same (label `TIME`, ember) | empty, width held; island slots say `Time` in ember | session progress, ember | same two | repeat / `Time`, ember | repeat |
+| `complex`, counted (`cap == 0`) | same (label `ELAPSED`) | elapsed, ink-2 | session progress, ember | same two | repeat / elapsed | repeat |
+| `complex`, engine older than the counter | movement · block · target · weight | elapsed, ink-2 | session progress, ember | — | dumbbell / elapsed | dumbbell |
 | `done` | `Workout saved` / `Session ended` · `42:10 · 18 sets · 2 PRs` | check, good | full, good | — | check / elapsed | check |
 | `unknown` | falls through to the `work` treatment | elapsed | session progress | Log set if the engine says loggable | dumbbell / elapsed | dumbbell |
 
@@ -108,11 +116,12 @@ Deliberate departures from a literal reading of the brief, both in service of th
    phase and the countdown becomes the hero by growing (22 → 30 pt), turning ember, and taking the
    progress bar with it. Nothing jumps; the eye still lands on the number.
 2. **One action, never two.** See the HIG interactivity rule. `work` → Log set, `rest` → Skip rest.
-   `timed` and `complex` get none, because `liveAction()` in app.ts answers both with
+   `timed` gets none, because `liveAction()` in app.ts answers a remote Save for it with
    "Log this one on the phone." — a button that only ever produces a toast is worse than no button.
    Since 20 Sept the `work` action has the dial beside it — four ± buttons that commit nothing —
    which is the one trade against the single-element rule, argued under the research table. It
-   remains one *action*: only Log set sends anything.
+   remains one *action*: only Log set sends anything. Since 21 Sept a complex is the second trade:
+   two actions, Next move and Round done, argued under *21 Sept* below.
 
 ## The button round trip — what was and was not measured
 
@@ -323,8 +332,9 @@ number has to move under the thumb. `LogSetIntent` sends the ordinary `.set` wit
 `reps`/`weight` on it, which app.ts already honours. The dial resets when the engine moves to a
 different set, movement or phase, on the optimistic `.set`, and on `end`. A bodyweight movement
 shows the reps dial alone; a set the engine calls unloggable shows nothing; an engine older than
-`dose` gets the lone Log set it always had. The figure carries `invalidatableContent()` so it dims
-between the press and the app's update, which is the system's own way of saying "being changed".
+`dose` gets the lone Log set it always had. The figure carried `invalidatableContent()` so it dimmed
+between the press and the app's update, which is the system's own way of saying "being changed" —
+until 21 Sept, when the figure became a tap target and the modifier had to go (see *Typing a figure*).
 
 ### The width
 
@@ -399,3 +409,206 @@ All under `…/ea52f5b1-f596-4620-a895-cc706c85be89/scratchpad/d/`.
 | `52-resume-foreground-after-crop.png`, `resume-log-fg.txt` | resume with the app **in front**: one activity left, a new id, elapsed `17:33` — the pause skipped |
 | `53-54-paused-kill-relaunch-strip.png` | a paused card survives an app kill and is adopted on relaunch |
 | `70-rest-over-compact-crop.png`, `71-rest-over-expanded-crop.png`, `72-after-start-set-crop.png` | the 19 Sept flip still works in the snug slot; the expanded rest-over card counts elapsed (`20:37`) and keeps its single Start set; one tap later it is the dial |
+
+## 21 Sept — the whole workout from the Lock Screen (iPhone 17 Pro, iOS 26.2)
+
+Four owner asks from TestFlight builds 4 and 5, in his words: "the persistent notification does
+not work super well for complexes. i cant advance rounds or anything"; "it would be nice to be
+able to log weight too. and i will want to be able to type it in"; "when i log the set in the
+persistent notification if i completed the proper amount that the video shows i want it to just
+move on to the next exercise"; "it should vibrate the phone and buzz the watch when the rest is up".
+The engine's half landed in `d627c41` (the `complex` field, the `round` / `mark` actions, weight 0
+rather than null, the `spotter://set/<field>` route, moving on after the last planned set); this is
+the card's half of all four.
+
+### The complex
+
+`LiveState.complex` is the phone's own round counter and clock as numbers — rounds done, movements
+ticked this round out of how many a round takes, the movement the round is up to, and the cap in the
+rest engine's units. The card draws it in the same voice as the phone's screen: the movement the
+round is up to as the primary line, the score under it written the way `cxScore()` writes it
+(`2 rounds + 1 movement` — rounds plus what was done of the next one, in movements not reps), the cap
+counting down from its deadline in ember exactly as a rest does, and two buttons on one 44 pt row:
+**Next move** (`mark`, the phone's tick on the movement's row) and **Round N done** (`round`, the
+phone's own button, with the phone's own label). Round done is the primary because it is the one
+that scores; Next move's fifth tick *is* the round, on the card as on the phone, so the two cannot
+disagree.
+
+This is the second conscious trade against the HIG's single-element rule (the dial was the first),
+and it is weighed the same way. One control — Round done alone — would have been the smaller
+departure, but the owner's complaint was the whole complex: five movements in a round, and a card
+that can only count the round leaves the person counting the movements in their head with a
+kettlebell in their hands. The two targets are 44 pt with an 8 pt gutter; a miss lands on the
+other count, which the phone's own Undo takes back — never on Log set or Skip rest, which are not
+on this row.
+
+The cap is a rest with a different word at zero. Its stale date is its deadline
+(`LiveActivitySink.staleDate`), so the card flips to **Time** — the phone's word, `cxBody`'s —
+without the app running, subject to the same 120 s system floor as a rest. The Lock Screen's label
+says TIME and its clock slot goes empty, width held, exactly as it does for a rest that is over;
+the two island slots, which have no label, say `Time` in ember where the countdown was, as they say
+`Go` for a rest. A held cap freezes the remainder in muted ink and mutes the bar, as a paused rest
+does. An idle cap prints the whole cap, static, in the *elapsed* clock's ink — `15:00` reads as
+"this is the clock", not as a countdown that has stopped — and the compact slot keeps elapsed time
+there instead, because a `15:00` that never moves beside the status bar's own clock looks broken.
+The first Next move or Round done starts it under the thumb (`Complex.count`, which is `cxGo()`'s
+arithmetic). A counted complex (no cap) shows elapsed time.
+
+**No nudge for a cap.** `syncNudge` schedules only for `phase == .rest`, and the check pins that it
+knows nothing about the cap. Three reasons, in order: the phone's own tone at zero is `cxTick()`'s
+job, and while the app is asleep nothing plays — which is the honest state of a cap ending, because
+a cap ending is not a cue to lift again, it is a cue to stop; the one notification this app posts is
+named "Rest over" with the next set in its body, and a cap sharing its id and its words would be a
+banner saying the wrong thing loudly; and the owner's ask was specifically the rest ("when the rest
+is up"). The card's flip to Time is the cap's whole announcement.
+
+The compact glyph is `repeat`: a complex is one thing done five ways and then done again, and the
+round is the unit — the glyph is "again". It stays through idle, running, held and over, because
+the trailing slot is where the cap speaks and a glyph that changed under it would be two things
+saying one thing.
+
+### The round trip, measured — and what it needed
+
+The question every earlier section of this file left open ("the JavaScript half still needs a
+signed-in phone") is answered. With the app backgrounded and the permanent test account signed in,
+a Next move on the expanded island was traced through `runningboardd`, the app and the widget:
+
+- The system wakes the app for the intent (`running-active`), `perform()` returns, and the
+  process is suspended again **~100 ms later** (`running-suspended` at +100 ms in
+  `webcontent-state-log.txt`).
+- The web engine **runs inside that window**: `WebPage::runJavaScriptInFrameInScriptWorld`
+  succeeded 50 ms after the tap, and the engine's own state — the next movement's name — reached
+  the sink. But the sink's coalescer had just pushed the optimistic frame, so it queued the
+  engine's state for a second later, and the process was asleep by then. The frame went out on
+  the **next** tap: the card showed `Close Grip Push Up · 0 rounds + 1 movement` for a full minute,
+  then jumped to `Kettlebell Sumo Deadlift High Pull · 1 round` the moment Round done was pressed
+  (`63-real-after-next-move-1s-crop.png` … `66-real-after-round-done-crop.png`).
+
+Two changes, both in the sink, close it:
+
+1. **The four action intents hold `perform()` open** until the engine's state has been pushed to
+   ActivityKit, or 1.5 s has passed (`LiveActionRouter.settle`, `LiveActivitySink.settle`). The
+   intent still running is what keeps the process awake; the engine's answer releases it. Only
+   `flush()` — the engine's own states — resolves the wait; the optimistic frame never does.
+2. **No coalescing in the background.** The 1 s coalescer exists for the foreground, where one
+   thumb makes three states a second; a state arriving while the app is not in front is the engine
+   answering a tap inside the wake window, and a timer set for later fires on the next wake.
+
+After that, the same tap: `Close Grip Push Up · 1 round` → **1.2 s** → `Kettlebell Sumo Deadlift
+High Pull · 1 round + 1 movement`, the engine's own frame, app still in the background
+(`68-real-expanded-before-next-move-crop.png` → `69-real-after-next-move-settled-crop.png`,
+`settle-timing-log.txt`: action at +0.000 s, JavaScript at +0.110 s, second ActivityKit update at
++0.116 s, suspension at +0.258 s). Round 2 done the same way (`70-real-after-round-2-done-crop.png`),
+and the phone, opened afterwards, agrees: `2 rounds`, `6:01` on the ring, Round 3 done
+(`71-real-phone-agrees-2-rounds.png`). The optimistic frame is still drawn first — the counter
+changes under the thumb — and is still the whole story for an engine that is not there (nobody
+signed in, a web view mid-reload), where `retainUntilConsumed` holds the action as before.
+
+### Typing a figure
+
+A tap on the dial's reps or weight figure opens the phone on the set sheet with the dial's figures
+in it and that field under the keyboard: `spotter://set/weight?reps=6&weight=15`, which
+`openSetLink()` in app.ts answers with the sheet's own tap-to-type. The keypad comes up from a
+programmatic focus because Capacitor's `CAPBridgeViewController` calls
+`setKeyboardShouldRequireUserInteraction(false)` on the web view (its `_elementDidFocus` swizzle
+passes `userIsInteracting = true`); nothing had to be set in `SpotterViewController`
+(`90-real-figure-tap-sheet-keypad.png`: the sheet open on `15` with the field selected and the
+keypad in the log — `_inputViewsForResponder … useKeyboard 1`, keyboard frame `402 × 233`).
+
+What it took to make the figure a control at all:
+
+- Apple documents `Link` for the expanded presentation. On the 17 Pro a `Link` on the figure
+  answered the tap with the card's own `widgetURL` — `spotter://resume` — in the expanded island
+  **and** on the Lock Screen (`83-real-weight-link-sheet.png`, `85-real-lockscreen-figure-tap.png`;
+  SpringBoard logged `UIOpenURLAction url = spotter://resume` both times).
+- A `Button(intent: TypeFigureIntent)` with `openAppWhenRun` did the same — until
+  `.invalidatableContent()` came off the figure. WidgetKit treats that wrapper as display-only
+  content, and a control inside it is not a control. The dim it gave the figure between a ± press
+  and the app's update was never load-bearing (the optimistic push already changes the number
+  under the thumb); the tap is.
+
+So the figure is a button whose intent opens the app, and `LiveActivitySink.type` hands the engine
+the link through the routed-link door a tapped notification's `url` uses (`openLink()` parks it if
+the page cannot open it yet). The figures in the link are read at tap time — the dial's if it was
+turned, the prefill's otherwise — so the number typed over is the number the card was showing.
+
+### Weight from zero
+
+The engine sends `dose.weight: 0` rather than null for a movement never loaded, and the card's
+weight dial now exists at 0 and reads `0 LB`: on the real engine, Lat pulldown ("first time logging
+this") opened with `0`, one `+` made it `5` (this account's plate), and eleven presses made it `55`
+(`80-real-dial-weight-0-crop.png`, `81-real-dial-weight-5-crop.png`, `82-real-dial-weight-55-crop.png`,
+`84-real-lockscreen-dial-55-crop.png` on the composited Lock Screen). `−` at 0 is `Dose.stepping`'s
+no-op. The Log set pill lost its checkmark glyph so it still reads `Log set` beside `142.5` now that
+the figure columns are 44 pt targets (`cards/worst-case-dial-light.png`).
+
+### Moving on
+
+After the last planned set, the engine's next state is a rest under the *next* movement with
+`set 1 of N`. Read in every presentation, it already says what it is: the Lock Screen and the
+expanded island print the new movement as the primary line with `Up next · Set 1 of 2` under it
+and the rest counting (`95-real-moving-on-expanded-crop.png`: `Close grip row / Up next · Set 1
+of 2 / 0:47`); the rest-over card prints `Next · Set 1 of 2 · 6-8 reps` with Start set; the nudge
+says `Rest over — Close grip row, set 1 of 2`; the watch's rest page says `Next: Close grip row ·
+set 1`. No copy changed. The phone agrees (`94-real-phone-moved-on.png`).
+
+One thing the copy cannot fix: after the last set of the *last* movement the engine has nowhere to
+move on to, and the card prints `Set 3 of 3` → `Set 4 of 4` for that rest ("Extras welcome" on the
+phone). Pre-existing, noted, not touched.
+
+### The rest, felt
+
+The rest-end nudge is scheduled at `.timeSensitive` — the only notification in the app that is —
+and `com.apple.developer.usernotifications.time-sensitive` is in the three entitlements files the
+App target signs with (`Share` for Debug, `Push` for the paid-account Debug switch, `Release`),
+read off `project.pbxproj`, `ios/debug.xcconfig`, `Local.xcconfig.example` and `App/Release.xcconfig`.
+`ReleaseShared` and `Widgets` are the extensions' and are untouched; `Share.entitlements` is also
+the ShareExtension's Debug and the ActionExtension's file, so those two carry the key too, which
+is harmless (the capability is available to every account type and neither extension posts a
+notification) and noted in the report.
+
+Verified on the simulator with the app backgrounded: the banner arrives at the deadline labelled
+**TIME SENSITIVE** (`96-nudge-banner-time-sensitive.png`), SpringBoard posts it at
+`interruption-level: time-sensitive` and plays its sound (`nudge-sound-log.txt`: `Play sound for
+notification`, `SBSoundController: played sound`), and Settings › Spotter › Notifications shows
+the **Time Sensitive Notifications** switch the entitlement unlocks
+(`93-settings-time-sensitive-recognised.png`). The vibration is the system's, per Sounds & Haptics,
+and the simulator cannot show it; a Focus was not simulated either. Both are unverified on device.
+
+The wrist: `WatchLink.scheduleRestAlarm` is called on every live state the phone sends, and a rest
+started from the card is one — `.set` from the island → engine → `liveSync()` → `WatchLinkSink`
+→ application context → `apply` → the haptic is armed from `rest.until`. A rest ended by
+`.skipRest` arrives as a state with `rest: nil`, and `scheduleRestAlarm`'s first guard cancels the
+alarm. The haptic only reaches the wrist while the watch app is frontmost (or a workout session
+runs, behind the HealthKit switch); when it is not, the phone's rest-end notification is forwarded
+to the watch by the system — watchOS documentation: "let the system forward the notifications to
+the user's Apple Watch… the user only receives one notification at the best destination" — so
+there is no second mechanism to build. Not run on a watch simulator this session (the paired watch
+belongs to another session's phone).
+
+### The wrist's complex
+
+`SessionView` offers Next move and Round N done on a complex through the same two actions (61
+lines), the score line in the subtitle with `Time` / `Cap paused` beside it, and the cap counting
+down in the header where the elapsed clock was, in ember. `WatchLink.display` steps the counter
+with the same `Complex.count` the phone's card uses. Not run on a watch simulator this session.
+
+### Evidence
+
+All under `…/ea52f5b1-f596-4620-a895-cc706c85be89/scratchpad/e/`.
+
+| File | Shows |
+| --- | --- |
+| `cards/` | the ImageRenderer sheet, both appearances: every state that existed is byte-for-byte its old height; `complex-running/idle/held/over/counted` 145.3 pt, `worst-case-complex` 152.7, `xl-complex` 149.7, `dial-zero` 145.3 |
+| `11-complex-running-compact-crop.png`, `12-complex-running-expanded-crop.png`, `15-complex-running-lockscreen-crop.png` | the fixture complex, cap running: `repeat` + `12:08` compact; elapsed / cap / score / two buttons expanded; the composited Lock Screen with `TIME CAP` and the dimmed `10:––` |
+| `13-after-next-move-crop.png`, `14-after-round-done-crop.png`, `fixture-taps-log.txt` | Next move and Round 3 done from the background: `2 rounds + 1 movement` → `+ 2 movements` → `3 rounds`, `Round 4 done` |
+| `20-…-idle-*`, `30-…-held-*`, `40-…-over-*` (compact, expanded, lockscreen) | idle (`15:00` static, `0 rounds`, `Round 1 done`), held (`4:10` muted, `PAUSED`), over (`Time` in the slots, `TIME` label, `3 rounds + 2 movements`) |
+| `22-complex-idle-after-next-move-crop.png` | the first tap starts the cap under the thumb: `15:00` static → `14:53` ember, bar full |
+| `50-cap-flip-before-crop.png`, `51-cap-flip-after-crop.png` | a 125 s cap, app backgrounded: `0:22` → `Time` on its deadline, nobody running |
+| `60-…67-real-*`, `webcontent-state-log.txt` | the real engine, before the fix: the engine ran 50 ms after the tap, the process slept at +100 ms, the frame arrived on the next tap; the phone agreed when opened |
+| `68-…71-real-*`, `settle-timing-log.txt` | after the fix: the engine's frame on the card 1.2 s after the tap, app in the background; the phone agreeing at 2 rounds |
+| `80-…82-real-dial-weight-*`, `84-real-lockscreen-dial-55-crop.png` | the weight dial at 0, one plate, 55; on the Lock Screen |
+| `83-real-weight-link-sheet.png`, `85-real-lockscreen-figure-tap.png`, `88-real-figure-tap-sheet.png` | the two dead ends: a `Link`, then an invalidatable button, both opening `spotter://resume` |
+| `89-real-dial-15-before-type-crop.png`, `90-real-figure-tap-sheet-keypad.png`, `keyboard-log.txt` | the figure tap: the sheet open on `15` with the weight field selected, the keyboard raised by the programmatic focus |
+| `94-real-phone-moved-on.png`, `95-real-moving-on-expanded-crop.png` | the last set logged: `Close grip row · Up next · Set 1 of 2` with the rest under it, phone and card |
+| `93-settings-time-sensitive-recognised.png`, `96-nudge-banner-time-sensitive.png`, `nudge-delivery-log.txt`, `nudge-sound-log.txt` | the Time Sensitive switch in Settings; the banner at the deadline, app backgrounded, `interruption-level: time-sensitive`, sound played |

@@ -61,6 +61,13 @@ struct LiveState: Codable, Hashable {
     /// and sends an ordinary state, so the elapsed clock skips the gap.
     /// Optional for the same reason as `dose`.
     var pausedAt: String?
+    /// The complex's round counter and its cap, as the phone's own screen draws
+    /// them. Present only on `phase == .complex`, and only from an engine that
+    /// sends it (21 Sept): a complex is scored in rounds against a clock, and
+    /// neither can be read off a set counter, so without this the card could
+    /// name the movement and do nothing about it — "i cant advance rounds or
+    /// anything" (owner, 20 Sept). Optional for the same reason as `dose`.
+    var complex: Complex?
 
     enum Phase: String, Codable, Hashable {
         case work, rest, timed, complex, done
@@ -136,6 +143,90 @@ struct LiveState: Codable, Hashable {
         }
     }
 
+    /// A complex, as numbers: what `cxLive()` in app.ts sends.
+    ///
+    /// `rounds` is rounds done; `marked` is how many movements of the round in
+    /// progress are ticked, out of the `moves` a round takes; `move` names the
+    /// movement the round is up to (and `exercise` names it too). `cap`, `until`
+    /// and `held` are the rest engine's units exactly — milliseconds, an epoch
+    /// deadline, a frozen remainder — so a cap counts down on the card the way a
+    /// rest does. `until` is 0 until the clock has been started; `cap` is 0 for
+    /// a counted complex, one with no clock at all; `over` means it ran out.
+    struct Complex: Codable, Hashable {
+        var rounds: Int
+        var marked: Int
+        var moves: Int
+        var move: String
+        var cap: Double
+        var until: Double
+        var held: Double
+        var over: Bool
+
+        /// A counted complex has no clock; every cap question below is "no".
+        var hasCap: Bool { cap > 0 }
+        /// The cap is counting down right now.
+        var isRunning: Bool { hasCap && until > 0 && held == 0 && !over }
+        /// The cap was started and then paused, with `held` left on it.
+        var isHeld: Bool { hasCap && held > 0 && !over }
+        /// The cap exists and nobody has started it yet.
+        var isIdle: Bool { hasCap && until == 0 && held == 0 && !over }
+
+        var deadline: Date { Date(timeIntervalSince1970: until / 1000) }
+        var capInterval: TimeInterval { cap / 1000 }
+
+        /// Seconds left on the cap: the frozen remainder while held, the
+        /// distance to the deadline while running, the whole cap while idle,
+        /// nothing once it is over. Never negative, like a rest's.
+        func remaining(at now: Date = Date()) -> TimeInterval {
+            if over { return 0 }
+            if isHeld { return held / 1000 }
+            if until > 0 { return max(0, deadline.timeIntervalSince(now)) }
+            return capInterval
+        }
+
+        /// "3 rounds + 2 movements" — written exactly as `cxScore()` in app.ts
+        /// writes the phone's own score line: rounds done, plus what was done
+        /// of the next one, counted in movements rather than reps because a
+        /// movement on this card is already a dose.
+        var score: String {
+            var line = String(rounds) + (rounds == 1 ? " round" : " rounds")
+            if marked > 0 {
+                line += " + " + String(marked) + (marked == 1 ? " movement" : " movements")
+            }
+            return line
+        }
+
+        /// One tap, applied the way `cxMark()` / `cxRound()` apply it on the
+        /// phone: a mark ticks the movement the round is up to, and the last
+        /// tick of a round is the round; a round is the whole complex once,
+        /// so the marks start over. Either starts the cap if it exists and is
+        /// not running, out of whatever is left of it — `cxGo()`'s move.
+        ///
+        /// This is the optimistic frame the card and the wrist draw between
+        /// the tap and the engine's own state, which lands a moment later and
+        /// wins. It cannot advance `move`: the card knows the movement the
+        /// round is up to and nothing about the ones after it.
+        mutating func count(_ kind: LiveAction.Kind, at now: Date = Date()) {
+            switch kind {
+            case .mark:
+                marked += 1
+                if marked >= moves {
+                    rounds += 1
+                    marked = 0
+                }
+            case .round:
+                rounds += 1
+                marked = 0
+            default:
+                return
+            }
+            if hasCap, until == 0, !over {
+                until = now.timeIntervalSince1970 * 1000 + (held > 0 ? held : cap)
+                held = 0
+            }
+        }
+    }
+
     struct Progress: Codable, Hashable {
         /// Sets logged this session.
         var done: Int
@@ -203,6 +294,12 @@ struct LiveAction: Codable, Hashable {
         case skipRest
         /// Pause or resume the running rest.
         case toggleRest
+        /// Round N of the complex on screen is done — `cxRound()`. Starts the
+        /// cap if it is not running, as the phone's button does.
+        case round
+        /// Tick the movement the round is up to — `cxMark()`. The last tick
+        /// of a round counts the round, exactly as on the phone.
+        case mark
         case finish
         /// Bring the session forward on the phone.
         case open

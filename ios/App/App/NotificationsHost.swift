@@ -108,12 +108,25 @@ final class NotificationsHost: NSObject, UNUserNotificationCenterDelegate {
     /// mid-rest. Re-scheduling the same id replaces the pending copy, so a
     /// paused-and-resumed rest cannot queue two alerts.
     /// A date in the past is dropped rather than fired immediately.
-    func schedule(id: String, title: String, body: String, at date: Date, category: String? = nil) {
+    ///
+    /// `timeSensitive` raises the interruption level to `.timeSensitive`, which
+    /// "presents the notification immediately, lights up the screen, can play a
+    /// sound, and breaks through system controls such as Notification Summary
+    /// and Focus" (UNNotificationInterruptionLevel.timeSensitive). It needs the
+    /// `com.apple.developer.usernotifications.time-sensitive` entitlement,
+    /// which the App target's entitlements files carry; without it the system
+    /// quietly delivers the notification at the active level instead. Off by
+    /// default: the person can switch Time Sensitive alerts off per app in
+    /// Settings, and an app that marked every reminder urgent would earn
+    /// exactly that. The rest-end nudge is the one caller that passes true.
+    func schedule(id: String, title: String, body: String, at date: Date, category: String? = nil,
+                  timeSensitive: Bool = false) {
         guard date.timeIntervalSinceNow > 0.5 else { return }
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
         content.sound = .default
+        if timeSensitive { content.interruptionLevel = .timeSensitive }
         if let category = category { content.categoryIdentifier = category }
         let parts = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute, .second], from: date)
         let trigger = UNCalendarNotificationTrigger(dateMatching: parts, repeats: false)
