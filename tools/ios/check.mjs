@@ -26,12 +26,18 @@ assert(html.includes('src="native.js"'));
 assert(fs.existsSync('native-dist/assets/pumpy'));
 assert(src.includes('if (!native && "serviceWorker" in navigator)'));
 console.log('PASS native/web haptics preference gate, missing hardware fallback, rest deadline after suspension, exactly-once completion, paused rest, packaged shell, no remote runtime scripts, native SW guard.');
-let draftWrites = 0;
-const draft = vm.createContext({ wo: { finished: true, workout: {id:'fixture',title:'fixture'}, entries: [], startedAt: '2026-09-07', i: 0, rounds: {} }, restUntil: 0, native: null, localStorage: { setItem: () => { draftWrites++; } } });
+let draftWrites = 0, lastDraft = null;
+const draft = vm.createContext({ wo: { finished: true, workout: {id:'fixture',title:'fixture'}, entries: [], startedAt: '2026-09-07', i: 0, rounds: {} }, restUntil: 0, native: null, localStorage: { setItem: (k, v) => { draftWrites++; lastDraft = JSON.parse(v); } } });
 draft.draftKey = () => 'draft';
-vm.runInContext(fn('saveDraft') + '; saveDraft();', draft);
+// saveDraft is a writer over two helpers now: draftOf builds the record, writeDraft
+// stores it. All three load, because the pinned behaviour is the whole path.
+vm.runInContext(fn('draftOf') + fn('writeDraft') + fn('saveDraft') + '; saveDraft();', draft);
 assert.equal(draftWrites, 0);
 draft.wo.finished = false;
 vm.runInContext('saveDraft()', draft);
 assert.equal(draftWrites, 1);
-console.log('PASS completed workouts cannot be resurrected by background draft saves.');
+// A running session's draft says so: the boot reads a draft still marked running
+// as a session the process died on, and brings it back paused as of savedAt.
+assert.equal(lastDraft.paused, false, 'a live draft must not be written as paused');
+assert(lastDraft.savedAt && !Number.isNaN(Date.parse(lastDraft.savedAt)), 'the draft carries no savedAt for the boot to pause it at');
+console.log('PASS completed workouts cannot be resurrected by background draft saves, and a live draft is stamped for the boot that may inherit it.');

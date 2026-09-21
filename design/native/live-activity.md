@@ -17,38 +17,87 @@ workout and ended by the tap that saves it.
 | [WidgetKit, Adding interactivity](https://developer.apple.com/documentation/widgetkit/adding-interactivity-to-widgets-and-live-activities) | `LiveActivityIntent` runs `perform()` **in the app's process** — that is the whole mechanism that lets a Lock Screen button reach `LiveStatePlugin.deliver`. Buttons are allowed in the **expanded and Lock Screen** presentations only (not compact, not minimal). And the line that decided the verification plan: **"On a locked device, buttons and toggles are inactive and the system doesn't perform actions unless a person authenticates and unlocks their device."** |
 | [Hevy — Live Activity](https://www.hevyapp.com/features/live-activity/), [Hevy help centre](https://help.hevyapp.com/hc/en-us/sections/35649822080791-Live-Activity) | The category's reference implementation: next movement, sets done on the current movement, prescribed weight and reps, how long you have been training, mark a set complete without unlocking, and ±15 s / skip on the rest timer. Spotter takes the field list almost verbatim and **drops** ±15 s — because of the HIG single-element rule above, ±15 s stays on the phone. |
 | Apple Fitness / Workouts, Nike Training Club, Strava | Elapsed time is the constant; everything else is the current interval. NTC shows "how much time or reps remain on the current drill" — which is why `phase == "timed"` gets the same countdown treatment as a rest rather than a second visual language. Strava users asked for exactly this in 2022 ([idea thread](https://communityhub.strava.com/t5/ideas/apples-live-activities-workout-data-on-lock-screen-ios-16-1/idi-p/2982)). |
+| HIG, *Offering interactivity* — re-read 20 Sept for the dial | The page has nothing on steppers. Its whole guidance on controls is the paragraph already cited: "Focus on simple, direct actions. Buttons or toggles take up space that might otherwise display useful information. Only include interactive elements for essential functionality that's directly related to your Live Activity and that people activate once or temporarily pause and resume, like music playback, workouts… If you offer interactivity, prefer limiting it to a single element to help people avoid accidentally tapping the wrong control." And, one line later, the door it leaves open: "If an update to your Live Activity is something that a person could respond to, consider offering a button or toggle to let people take action." The trade-off the dial makes against the single-element line is written out below the table. |
+| [WidgetKit, Adding interactivity](https://developer.apple.com/documentation/widgetkit/adding-interactivity-to-widgets-and-live-activities), re-read 20 Sept | Only `Button` and `Toggle` are interactive in a Live Activity — there is no Stepper — so a dial is four buttons. Parameters travel with the button: "Define input parameters that your action needs using the `@Parameter` property wrapper… Make sure input parameters have assigned values because, unlike app intents you define for system functionality like Siri, widgets don't resolve parameters for app intents." Hence one `AdjustSetIntent(field:delta:)` behind all four ± buttons. And `invalidatableContent(_:)`, "judiciously", on the figure that a press is about to change. |
+| HIG, *Compact presentation* + *Specifications* — for the width | "Keep content as narrow as possible and ensure it's snug against the TrueDepth camera… Maintain a balanced layout with similarly sized views for both leading and trailing elements; for example, use shortened units or less precise data to maintain appropriate width and balance." The specification table gives the compact leading and trailing views **52.33 × 36.67 pt** each on a 393-pt-wide phone and the compact island **230 pt** wide on the iPhone 17 Pro. The island this replaced measured ~330 pt across (owner: "way too wide"); the fixed one measures ~212. |
+| HIG, *Best practices* — for the ± glyphs | "Use large, heavier-weight text — a medium weight or higher." The dial's figures are the numeral face at 17 pt semibold, the ± glyphs 13 pt bold. |
 
 **One correction to the older guidance.** Search results still surface the iOS 16-era line
 "Live Activities on the Lock Screen and in the Dynamic Island don't support interactive buttons…
 avoid displaying anything in your UI that resembles a button." That was superseded in iOS 17; the
 current WidgetKit page above documents buttons in the Lock Screen and expanded presentations. The
-project floor is iOS 17.0, so the buttons are legitimate — but the old rule is why they are limited
+project floor is iOS 17.0, so the buttons are legitimate — but the old rule is why they were limited
 to one and why the rest of the surface is deliberately flat.
+
+### The single-element rule, traded for a dial (20 Sept)
+
+The owner, from TestFlight build 4 on a 17 Pro: "when i press and hold the log set i want it to show
+a thing where i can put in the sets and reps." Press-and-hold is how iOS opens the expanded
+presentation, so what he is describing is a way to set the figures *there*, and then log.
+
+The HIG's "prefer limiting it to a single element" was the rule this surface was built on, and it is
+being consciously set aside for one case. The reasoning, in the order it was weighed:
+
+1. **A Log set that can only save the prefill is a button that logs the wrong number.** Every set
+   that is not exactly the last one — an extra rep, a plate added — meant unlocking, opening the app,
+   editing the sheet. The button's whole value is not unlocking. So the choice was not "one control
+   or five" but "a control that is right most of the time, or one that is right when it matters".
+2. **The rule's stated reason is accidental taps, and that is answerable.** The four ± buttons are
+   44 pt targets in a 44 pt row with the value between them; a miss lands on a number, not on a
+   different action. Only one control in the row *commits* anything — Log set. A wrong ± press costs
+   a second press the other way, and nothing has left the phone.
+3. **The dial never crosses the bridge.** A press is a native update from the app process (the
+   intent runs there), stepped with `Dose.stepping`, the same clamp app.ts applies. The engine hears
+   one thing, the same `.set` it always heard, now carrying the figures — which app.ts already
+   accepted from the wrist. Nothing about the contract changed to make room for it.
+4. **It is confined to where WidgetKit runs buttons at all** — the expanded island and the Lock
+   Screen — and to the one phase where a set is about to be logged. Rest keeps Skip rest alone, the
+   rest-over card keeps Start set alone, a hold and an unresolved complex keep nothing, and a paused
+   session has no control at all.
+
+What it cost, measured: the expanded island grew from ~154 to 156 pt against a 160 pt cap, and only
+after the island's copy of the workout title was dropped (with it the card wanted ~168 and the
+system compressed the centre to fit); the Lock Screen card at `work` grew from 131 to 145 pt, 150 at
+the 1.25x type clamp, and a long movement name is now one shrunk line whenever the dial is on the
+card because two lines plus the row would have measured ~166.
 
 ## The presentation matrix
 
-`phase` comes straight off `LiveState`. "Clock" is always rendered from an instant
-(`Text(timerInterval:)` / `Text(_:style:.timer)`), never from a number, so it keeps counting while
-the process is suspended and while the phone is locked.
+`phase` comes straight off `LiveState`. "Clock" is rendered from an instant
+(`Text(timerInterval:)`), never from a number, so it keeps counting while the process is suspended
+and while the phone is locked — with one deliberate exception: a **paused** session's clock is a
+static string, `pausedAt − startedAt`, because a timer would keep counting a session that is
+stopped. "Control" is what sits under the bar in the expanded island and on the Lock Screen card;
+the compact and minimal presentations never carry one.
 
-| phase | Lock Screen primary / secondary | Clock | Bar | Button | Compact leading / trailing | Minimal |
+| phase | Lock Screen primary / secondary | Clock | Bar | Control | Compact leading / trailing | Minimal |
 | --- | --- | --- | --- | --- | --- | --- |
-| `work` | movement · `Set 2 of 3 · 10 reps · 24 kg` | elapsed, ink-2 | session progress (done/total), ember | **Log set** | dumbbell / elapsed | dumbbell |
+| `work`, loggable | movement · `Set 2 of 3 · 10 reps` (the weight is on the dial, not repeated) | elapsed, ink-2 | session progress (done/total), ember | **dial** `[−] 10 reps [+] [−] 24 kg [+]` + **Log set**; reps only for bodyweight | dumbbell / elapsed | dumbbell |
+| `work`, not loggable (a timed movement before its hold) | movement · `Set 2 of 3 · 40 s` | elapsed, ink-2 | session progress, ember | — | dumbbell / elapsed | dumbbell |
+| `work`, engine older than `dose` | movement · `Set 2 of 3 · 10 reps · 24 kg` | elapsed, ink-2 | session progress, ember | **Log set** alone | dumbbell / elapsed | dumbbell |
 | `rest` | movement · `Up next · Set 3 of 3` | countdown, **ember, larger** | rest countdown, ember | **Skip rest** | hourglass / countdown | countdown ring |
-| `rest` paused | movement · `Up next · Set 3 of 3` | frozen `0:23`, muted | frozen fraction, muted | **Skip rest** | hourglass / frozen, muted | muted glyph |
+| `rest`, rest paused | movement · `Up next · Set 3 of 3` | frozen `0:23`, muted | frozen fraction, muted | **Skip rest** | hourglass / frozen, muted | muted glyph |
 | `rest` over (`isStale`) | movement · `Next · Set 3 of 3 · 10 reps` | empty, width held | session progress, ember | **Start set** | lifter, ember / `Go`, ember | lifter, ember |
+| `paused` (the session) | movement · `Set 2 of 3 · 4 sets logged` (island: `Paused · Set 2 of 3 · 4 sets logged`) | frozen `17:30`, muted, static | session progress, **muted** | — (the card itself is the affordance: `spotter://resume`) | `pause.fill`, muted / frozen `17:30`, muted | `pause.fill`, muted |
 | `timed` | movement · target | countdown, ember | countdown, ember | — | timer / countdown | countdown ring |
 | `complex` | movement · block · target · weight | elapsed, ink-2 | session progress, ember | — | dumbbell / elapsed | dumbbell |
 | `done` | `Workout saved` / `Session ended` · `42:10 · 18 sets · 2 PRs` | check, good | full, good | — | check / elapsed | check |
-| `unknown` | falls through to the `work` treatment with no button | elapsed | session progress | — | dumbbell / elapsed | dumbbell |
+| `unknown` | falls through to the `work` treatment | elapsed | session progress | Log set if the engine says loggable | dumbbell / elapsed | dumbbell |
 
 The compact trailing element is one view (`IslandClock`) in every phase: it shows the countdown while
 one is running and the elapsed session time otherwise. A set fraction was considered there and
 dropped — at compact width it competes with the countdown for the same few points, and "how long
-until I lift again" beats "which set is this" on a glance from across the gym.
+until I lift again" beats "which set is this" on a glance from across the gym. Since 20 Sept the
+slot is a **fixed** 42 pt frame (three digit-widths and a colon — `m:ss` measured at 41.5 pt in the
+14 pt numeral face), because a timer Text asks for the widest string it could ever show and
+ActivityKit gives a compact slot whatever it asks for: the island stretched to ~330 pt across the
+status bar. Past an hour the clock scales down inside the same slot. The Lock Screen and expanded
+slots keep their minimum-width frame; a fixed one there is what made the elapsed clock give up on
+digits (see *20 Sept*).
 
-The expanded presentation carries no captions over its two numbers. See *What rendering the card
-caught*.
+The expanded presentation carries no captions over its two numbers, and — since the dial — no
+workout title either; the Lock Screen keeps both label and title. See *What rendering the card
+caught* and *20 Sept*.
 
 Deliberate departures from a literal reading of the brief, both in service of the HIG:
 
@@ -58,9 +107,12 @@ Deliberate departures from a literal reading of the brief, both in service of th
    positions rather than removing and animating them back in". So the layout is stable across every
    phase and the countdown becomes the hero by growing (22 → 30 pt), turning ember, and taking the
    progress bar with it. Nothing jumps; the eye still lands on the number.
-2. **One button, never two.** See the HIG interactivity rule. `work` → Log set, `rest` → Skip rest.
+2. **One action, never two.** See the HIG interactivity rule. `work` → Log set, `rest` → Skip rest.
    `timed` and `complex` get none, because `liveAction()` in app.ts answers both with
    "Log this one on the phone." — a button that only ever produces a toast is worse than no button.
+   Since 20 Sept the `work` action has the dial beside it — four ± buttons that commit nothing —
+   which is the one trade against the single-element rule, argued under the research table. It
+   remains one *action*: only Log set sends anything.
 
 ## The button round trip — what was and was not measured
 
@@ -166,6 +218,14 @@ anywhere. The Lock Screen leaves the slot empty and keeps its width (the layout 
 the HIG note at the top of the file, and the "REST OVER" label is already saying it); the two
 Dynamic Island slots, which have no room for a label, get the word `Go` in ember instead.
 
+*Corrected 20 Sept:* the words were not staleness. `Text(_:style: .timer)` — the date-style timer —
+is not driven on the composited Lock Screen of a locked 17 Pro at all: a `work` card two seconds
+after locking, nowhere near stale, read "18 minutes" in the elapsed slot. `Text(timerInterval:)`,
+the form ActivityKit documents for Live Activities and the one every countdown here already used,
+counted on the same locked screen ("0:41") and kept counting in the expanded island of a stale
+rest-over card ("20:37"). The elapsed clock is now the interval form everywhere; the rest-over
+layout above stands as it was, because it was right for the wrong reason.
+
 ### The button says Start set, and sends `skipRest`
 
 The brief asked whether the engine's `set` action would log the next set from the rest-over card.
@@ -243,3 +303,99 @@ floor and governs on its own.
 Still not captured: the **minimal** presentation, the **nudge banner**, and anything that needs a
 signed-in session — this session could not type a password, so every state above came through the
 DEBUG fixture, which drives the same `update(_:)`, the same coalescer and the same widget.
+
+## 20 Sept — the dial, the narrower island, the paused session (iPhone 17 Pro, iOS 26.2)
+
+Three owner asks from TestFlight build 4, in his words: "when i press and hold the log set i want
+it to show a thing where i can put in the sets and reps"; "the dynamic island thing is way too wide";
+"if i pause it i can go back in and resume it and it saves my progress. and if it like stops
+unexpectedly i want it to pause it not exit." The third is mostly the web engine's (the pause/end
+prompt, the draft that comes back paused); this is the card's half of all three.
+
+### The dial
+
+`[−] 10 reps [+]   [−] 24 kg [+]   [Log set]` on one 44 pt row, under the bar, in the expanded
+island and on the Lock Screen card — the two presentations WidgetKit runs buttons in. Four
+`Button(intent: AdjustSetIntent(field:delta:))`, one type; a press runs in the app process,
+`LiveActivitySink.adjust` steps the figure with `Dose.stepping` (the clamp app.ts and the wrist
+share) against the dial-or-prefill, and pushes a content update **at once** — no coalescing, the
+number has to move under the thumb. `LogSetIntent` sends the ordinary `.set` with the dialled
+`reps`/`weight` on it, which app.ts already honours. The dial resets when the engine moves to a
+different set, movement or phase, on the optimistic `.set`, and on `end`. A bodyweight movement
+shows the reps dial alone; a set the engine calls unloggable shows nothing; an engine older than
+`dose` gets the lone Log set it always had. The figure carries `invalidatableContent()` so it dims
+between the press and the app's update, which is the system's own way of saying "being changed".
+
+### The width
+
+The compact trailing slot was `IslandClock` with `.frame(minWidth: 43.4)`, and a timer Text asks
+for the widest string it could ever show; ActivityKit gave the slot what it asked for and the island
+ran from the lifter at the far left to the clock at the far right, ~330 pt across, hiding the status
+bar's own clock and battery. Now a fixed 42 pt frame (`size × 3`, `m:ss` measured at 41.5 pt in the
+14 pt numeral face on this machine's SF Rounded), `.monospacedDigit()` kept, `minimumScaleFactor`
+0.7 for the hour case. The island measures ~212 pt with the status bar visible either side (the HIG
+gives 230 for a compact island on a 17 Pro). The leading slot is an `Image` and was never the
+problem; the minimal presentation is a glyph or a circular `ProgressView` and cannot stretch.
+
+### Paused
+
+`phase == "paused"` + `pausedAt`. Every presentation: the movement, `Paused · Set 2 of 3 · 4 sets
+logged` (the Lock Screen's label already says PAUSED, so its line drops the word), a **frozen**
+elapsed `pausedAt − startedAt` rendered as a plain string in muted ink — never a live timer, the
+process may be suspended for hours — a muted session-progress bar, **no control**, `pause.fill`
+muted in the compact leading and minimal slots, and the frozen clock in the compact trailing. The
+whole card keeps `spotter://resume`; the app's own resume bar is what resumes. Stale date: the
+activity's own 8 h life, so a paused card cannot flip into rest over. The nudge lands in the cancel
+branch (no rest). A resume arrives as an ordinary `work`/`rest` state with `startedAt` shifted
+forward by the pause; `startedAt` is an immutable attribute the widget's elapsed timer is drawn
+from, so `LiveActivitySink.push` **requests a new activity and then ends the old one** with no
+closing frame — request first, so a refused request (the app not in front) keeps the old card
+updated rather than losing it. Measured both ways below.
+
+### What the device said
+
+- **The expanded island is capped at 160 pt and the system squeezes to fit.** With the dial row the
+  island measured exactly 160.0 pt and the centre region had been compressed ~8 pt; it wanted ~168.
+  Dropping the island's copy of the workout title (the Lock Screen keeps it) lands it at **156 pt**
+  with nothing compressed. The Lock Screen card at `work` with the dial renders at **145.3 pt** at the
+  default type size, **149.7 pt** at XL and **145.7 pt** at the 1.25x clamp with the longest name,
+  because the movement name is one line whenever the dial is on the card (two lines plus the row
+  would have been ~166). Every state without the dial is byte-for-byte the height it was.
+- **The date-style timer is not driven on the locked Lock Screen.** See the correction under *The
+  rest ending while the app is asleep*. The elapsed clock is `Text(timerInterval:)` everywhere now.
+  Once the locked screen dims, every interval timer — countdown and elapsed alike — renders as
+  `m:––` (seconds hidden, minutes advancing), the reduced-luminance treatment the simulator
+  applies after a few seconds; the first frame after locking counts normally.
+- **An empty trailing slot can hide the leading one.** In the paused expanded island, with the
+  trailing region empty, the leading region's static frozen clock did not render at all, while a
+  timer text in the same place (the `work` island) did. A pause glyph in the trailing slot brings
+  the leading clock back; the mechanism is the system's and was not chased further.
+- **Two activities from one app do not make a minimal pair.** A twin activity was requested to
+  photograph the minimal presentation; the island kept showing one compact card. The minimal
+  presentation needs another app's Live Activity, and this simulator has no Clock app. Still
+  uncaptured, as in the two sessions before.
+- **Not verified on a real device:** the island's true compact width against the hardware bezel,
+  the dial's haptics (a `Button(intent:)` press has none of its own), and the JavaScript half of the
+  round trip — every state here came through the DEBUG fixture and the actions stop at
+  `LiveStatePlugin.deliver` with nobody signed in. `retainUntilConsumed` holds them.
+
+### Evidence
+
+All under `…/ea52f5b1-f596-4620-a895-cc706c85be89/scratchpad/d/`.
+
+| File | Shows |
+| --- | --- |
+| `00-before-compact-island.png` / `10-after-compact-0-18-crop.png` / `11-after-compact-12-34-crop.png` | the compact island before (lifter far left, `18:20` far right, ~330 pt) and after at `0:18` and `12:34` (~212 pt, status bar visible) |
+| `12-13-compact-hour-and-rest-crop.png` | the same slot past an hour (`1:02:34`, scaled) and during a rest (`2:09`, ember) |
+| `20-expanded-dial-crop.png` | the expanded island at `work` with the dial, 156 pt, opened by the fixture's alert |
+| `30-dial-before-tap-crop.png` → `31-dial-after-plus-reps-crop.png` → `32-dial-after-plus-weight-crop.png` → `33-dial-12-reps-21-5-kg-crop.png` → `34-after-log-set-crop.png` | the island opened by a real long press with Settings in front: `10 reps 24 kg` → `+` → `11` → `+` on weight → `26.5`; then a fresh run to `12 reps 21.5 kg` and **Log set**: the card advances to `Set 3 of 3`, the bar to 5/10, the dial back to the prefill |
+| `dial-log.txt`, `dial-log-2.txt` | the app's log for those presses: `dial reps +1 -> reps=11 weight=nil (never sent)` ×2, `dial weight -1 -> … weight=21.5 (never sent)`, then the one bridge-bound line `action set reps=12 weight=21.5` |
+| `cards-light.png`, `cards-dark.png`, `cards/` | the ImageRenderer sheet, both appearances, heights labelled: `work` (old engine), `dial`, `dial-bodyweight`, `rest`, `held`, `paused`, `timed`, `complex`, `done`, `long-name-dial`, `xl-dial`, `worst-case-dial` |
+| `60-work-dial-lockscreen-card.png`, `60-62-work-lockscreen-counting-strip.png` | the composited Lock Screen at `work` with the dial, phone locked: `0:41` counting, then the dimmed `1:––` |
+| `40-paused-compact-crop.png`, `41-paused-compact-frozen-strip.png` | compact paused: muted `pause.fill` / `17:30`, identical 12 s later |
+| `42-paused-expanded-crop.png` | expanded paused: frozen `17:30`, pause glyph, `Paused · Set 2 of 3 · 4 sets logged`, muted bar, no control, 104 pt |
+| `44-paused-lockscreen-card.png` | the composited Lock Screen paused card: `PAUSED`, `17:30`, `Set 2 of 3 · 4 sets logged`, muted bar, no button, 94 pt |
+| `50-51-resume-strip.png`, `resume-log.txt` | resume with the app **backgrounded**: `could not replace on resume — visibility`, the old card updated (elapsed `18:15`, the 43 s gap counted) |
+| `52-resume-foreground-after-crop.png`, `resume-log-fg.txt` | resume with the app **in front**: one activity left, a new id, elapsed `17:33` — the pause skipped |
+| `53-54-paused-kill-relaunch-strip.png` | a paused card survives an app kill and is adopted on relaunch |
+| `70-rest-over-compact-crop.png`, `71-rest-over-expanded-crop.png`, `72-after-start-set-crop.png` | the 19 Sept flip still works in the snug slot; the expanded rest-over card counts elapsed (`20:37`) and keeps its single Start set; one tap later it is the dial |

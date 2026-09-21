@@ -1291,7 +1291,7 @@ export const APP = String.raw`
     }
     if (native && native.purchases) native.purchases.clear().catch(function () {});
     if (billing) { billing.prices = null; billing.waiting = null; billing.busy = false; billing.sub = null; billing.subAsked = false; billing.limits = null; billing.said = null; billing.ctx = null; billing.cc = null; billing.ccWaiting = null; billing.redeeming = false; }
-    ["grid", "chips", "colbar", "libcount", "empty", "dinner", "pumpylog", "pumpyannounce", "pumpyctx", "pumpythreads", "trainview", "today", "recapopts"].forEach(function (id) {
+    ["grid", "chips", "colbar", "libcount", "empty", "dinner", "pumpylog", "pumpyannounce", "pumpyctx", "pumpythreads", "trainview", "today", "resume", "recapopts"].forEach(function (id) {
       var n = $(id); if (n) n.innerHTML = "";
     });
     $("count0").textContent = "Reading your library";
@@ -2417,6 +2417,7 @@ export const APP = String.raw`
   function render() {
     renderChips();
     renderColBar();
+    renderResume();
     renderToday();
     renderGrid();
     renderLibCount();
@@ -2764,7 +2765,7 @@ export const APP = String.raw`
     current = w;
     // Reopened mid-close: cancel it and the teardown behind it.
     clearTimeout(detailCloseTimer);
-    $("detail").classList.remove("closing");
+    $("detail").classList.remove("closing", "edgeout");
     var d = $("dinner");
     d.innerHTML = "";
     // Whatever the last swipe left on it: a lean the finger did not carry out, or
@@ -2876,31 +2877,33 @@ export const APP = String.raw`
     var conf = typeof w.confidence === "number" ? w.confidence : null;
     var from = readFrom(w);
     if (w.has_full_workout && conf !== null && conf < 0.7) {
-      var warn = el("div", "unverified");
-      warn.appendChild(ic(from.video || from.speech ? "eye" : (conf < 0.45 ? "alert" : "eye")));
-      var wt = el("div");
       // A card read out of the video is not a card whose caption came up short —
       // there was no caption to come up short. Saying "not in the caption" about
       // exercises nobody ever wrote down would send the user looking for text that
       // does not exist, so each source gets the sentence that is true of it.
+      var head, why;
       if (from.video) {
-        wt.appendChild(el("b", null, "Spotter read this off the screen."));
-        wt.appendChild(document.createTextNode(
-          " The caption named no exercises, so these came from what is written and shown in the video " +
-          "itself. There is no text to check them against — watch it once before you train it."));
+        head = "Spotter read this off the screen.";
+        why = "The caption named no exercises, so these came from what is written and shown in the video " +
+          "itself. There is no text to check them against — watch it once before you train it.";
       } else if (from.speech) {
-        wt.appendChild(el("b", null, "Spotter heard this in the video."));
-        wt.appendChild(document.createTextNode(
-          " These exercises come from what the creator says out loud rather than from the caption, " +
-          "so a name can be misheard. Worth a listen before you train it."));
+        head = "Spotter heard this in the video.";
+        why = "These exercises come from what the creator says out loud rather than from the caption, " +
+          "so a name can be misheard. Worth a listen before you train it.";
       } else {
-        wt.appendChild(el("b", null, conf < 0.45
-          ? "Spotter could not check most of this."
-          : "Some of this is not in the caption."));
-        wt.appendChild(document.createTextNode(conf < 0.45
-          ? " The exercises below were not traceable to anything written on the post. Watch the original before you train it."
-          : " A few sets or reps were not written down anywhere Spotter could find. Worth a glance at the original."));
+        head = conf < 0.45 ? "Spotter could not check most of this." : "Some of this is not in the caption.";
+        why = conf < 0.45
+          ? "The exercises below were not traceable to anything written on the post. Watch the original before you train it."
+          : "A few sets or reps were not written down anywhere Spotter could find. Worth a glance at the original.";
       }
+      // One line, folded like the rows around it: the headline is the whole caveat
+      // for most readers, and the sentence behind it opens on the same chevron
+      // "Watch original" and "Options" use, so the card has one way of hiding
+      // things rather than two.
+      var warn = disclosure(null, "unverified"), wt = warn.lastChild;
+      warn.firstChild.appendChild(ic(from.video || from.speech ? "eye" : (conf < 0.45 ? "alert" : "eye")));
+      warn.firstChild.appendChild(el("b", null, head));
+      wt.appendChild(document.createTextNode(why));
       // Only on the low band. On the middle one the card is mostly traceable and
       // asking the user to retype a caption would be asking for work worth little.
       if (conf < 0.45) {
@@ -2917,7 +2920,6 @@ export const APP = String.raw`
           wt.appendChild(rv);
         }
       }
-      warn.appendChild(wt);
       d.appendChild(warn);
     }
 
@@ -2949,7 +2951,9 @@ export const APP = String.raw`
       }
       d.appendChild(quality);
     }
-    var start = el("button", "startbtn", w.has_full_workout ? "Start workout" : "Start & log freestyle");
+    var waiting = pausedDraft();
+    var start = el("button", "startbtn", waiting && waiting.workoutId === w.id ? "Resume workout"
+      : w.has_full_workout ? "Start workout" : "Start & log freestyle");
     start.onclick = function () { startWorkout(w); };
     d.appendChild(start);
 
@@ -3365,7 +3369,7 @@ export const APP = String.raw`
     clearTimeout(detailCloseTimer);
     // Torn out at the end: emptying first animates a blank page out.
     detailCloseTimer = setTimeout(function () {
-      d.classList.remove("closing");
+      d.classList.remove("closing", "edgeout");
       if (!d.classList.contains("open")) $("dinner").innerHTML = "";
       guideWake();
     }, 240);
@@ -3389,15 +3393,21 @@ export const APP = String.raw`
   // row is locked — without which WebKit reads a diagonal drag as a scroll and
   // pointercancels us mid-gesture.
   //
-  // No full swipe, though UIKit defaults to one: what it fires there is Delete, and
-  // gone is easy to undo. Ours opens a sheet, and a sheet that springs open because
-  // a thumb carried too far is a papercut. And a gesture cannot be the only door
-  // (HIG Accessibility, WCAG 2.5.7), so a mouse gets the drawer on hover, a keyboard
-  // on focus, a held press opens it with no travel, and a tap still explains.
+  // The full swipe UIKit defaults to fires Delete, and for the rows whose only
+  // action IS Delete (the .delete-swipe ones on a card, undo on a toast) it is
+  // back: past the button the drawer follows the finger to the far edge, a tick
+  // says the point of no return has been crossed, and letting go there does what
+  // the button would. The three-button drawers keep the rubber band — a sheet that
+  // springs open because a thumb carried too far is a papercut. And a gesture
+  // cannot be the only door (HIG Accessibility, WCAG 2.5.7), so a mouse gets the
+  // drawer on hover, a keyboard on focus, a held press opens it with no travel,
+  // and a tap still explains.
 
   var EX_FLING = 300;     // px/s of leftward throw that opens whatever the distance
   var EX_BAND = 0.55;     // the constant iOS resists its own overscroll with
   var EX_HOLD = 480;      // ms of stillness that is a press rather than a tap
+  var EX_FULL = 0.58;     // share of the row a full swipe must cross to delete
+  var EX_INSET = 8;       // the air between a delete button and the row's edge
   var exOv = $("detail");
   var openEx = null;      // the one row anywhere with its drawer showing
   var exDrag = null;
@@ -3415,6 +3425,10 @@ export const APP = String.raw`
     var a = row.children[1], n = a.children.length, w = exWidth(row), i, u = d < w ? d : w;
     row.children[0].style.transform = d === null ? "" : "translateX(" + (-d) + "px)";
     a.style.transform = d === null ? "" : "translateX(" + Math.max(0, w - d) + "px)";
+    // Past its own width a delete drawer stretches rather than stops: its right
+    // edge stays put and its left one keeps to the row's, so the red is exactly
+    // the space the row has vacated.
+    a.style.width = d !== null && d > w && row.classList.contains("delete-swipe") ? (d - EX_INSET) + "px" : "";
     for (i = 0; i < n; i++) {
       a.children[i].style.transform = d === null ? "" : "translateX(" + (i * (u - w) / n) + "px)";
     }
@@ -3422,7 +3436,7 @@ export const APP = String.raw`
 
   function closeExRow(row) {
     if (!row) return;
-    row.classList.remove("drag", "open");
+    row.classList.remove("drag", "open", "armed");
     exPaint(row, null);
     if (openEx === row) openEx = null;
   }
@@ -3430,7 +3444,7 @@ export const APP = String.raw`
   function openExRow(row, quiet) {
     var was = openEx === row;
     if (openEx && !was) closeExRow(openEx);
-    row.classList.remove("drag");
+    row.classList.remove("drag", "armed");
     exPaint(row, null);
     row.classList.add("open");
     openEx = row;
@@ -3464,7 +3478,7 @@ export const APP = String.raw`
 
   exOv.addEventListener("pointermove", function (e) {
     if (!exDrag || e.pointerId !== exDrag.id || exDrag.held) return;
-    var dx = e.clientX - exDrag.x, dy = e.clientY - exDrag.y, w, d, o;
+    var dx = e.clientX - exDrag.x, dy = e.clientY - exDrag.y, w, d, o, past;
     if (!exDrag.lock) {
       // Nothing is decided until the finger has gone somewhere, in any direction.
       if (dx * dx + dy * dy < SLOP * SLOP) return;
@@ -3477,6 +3491,10 @@ export const APP = String.raw`
       // Re-datum on the lock point so the row does not jump the slop distance.
       exDrag.x = e.clientX; dx = 0;
       exDrag.row.classList.add("drag");
+      // Read once, here: the full swipe is measured against the row, and
+      // offsetWidth on every move would be a layout per frame.
+      exDrag.full = exDrag.row.classList.contains("delete-swipe");
+      exDrag.W = exDrag.row.offsetWidth;
       try { exOv.setPointerCapture(exDrag.id); } catch (err) { /* not fatal */ }
       // One drawer at a time, decided the moment this one is real.
       if (openEx && openEx !== exDrag.row) closeExRow(openEx);
@@ -3484,7 +3502,15 @@ export const APP = String.raw`
     w = exWidth(exDrag.row);
     d = exDrag.base - dx;
     if (d < 0) d = 0;
-    else if (d > w) {
+    else if (d > w && exDrag.full) {
+      // The red follows the finger all the way; the far edge is the only stop.
+      d = Math.min(d, exDrag.W);
+      past = d > exDrag.W * EX_FULL;
+      if (past !== exDrag.row.classList.contains("armed")) {
+        exDrag.row.classList.toggle("armed", past);
+        haptic("tap");
+      }
+    } else if (d > w) {
       // Apple's own rubber band, not a flat fraction: it eases to a stop.
       o = d - w;
       d = w + o * w * EX_BAND / (w + EX_BAND * o);
@@ -3515,10 +3541,25 @@ export const APP = String.raw`
     var s = r.s, a = s[0], b = s[s.length - 1], dt = (b.t - a.t) / 1000;
     var v = dt > 0.004 ? (b.x - a.x) / dt : 0;
     var w = exWidth(r.row), open = r.d > w / 2;
+    // Past the mark, letting go is the button. The row keeps the distance it was
+    // released at and slides the rest of the way from there.
+    if (r.full && !cancelled && r.d > r.W * EX_FULL) { commitRow(r.row, r.d); return; }
     // A throw beats the distance either way: where the finger was going when it
     // left is what was meant.
     if (!cancelled && Math.abs(v) > EX_FLING) open = v < 0;
     if (open) openExRow(r.row); else closeExRow(r.row);
+  }
+
+  // The full swipe's landing: the drawer's own button, pressed for it, with the
+  // release point remembered so the slide-off starts where the finger let go
+  // rather than snapping back to the button first.
+  function commitRow(row, d) {
+    var btn = row.children[1].querySelector(".exact.danger");
+    if (!btn || typeof btn.onclick !== "function") { closeExRow(row); return; }
+    if (openEx === row) openEx = null;
+    rowLeaving = { row: row, d: d };
+    btn.onclick({ stopPropagation: function () {} });
+    rowLeaving = null;
   }
 
   exOv.addEventListener("pointerup", function (e) { endEx(e, false); });
@@ -3580,6 +3621,70 @@ export const APP = String.raw`
   var dNav = null;        // { ids: the shelf in view order, i: where this card sits }
   var navFrom = false;    // the open being built came off a card in the grid
   var dDrag = null, dNavBox = null, dPrev = null, dNext = null;
+
+  // ---------- the edge swipe home ----------
+  //
+  // iOS keeps "back" under the left edge of the screen: an edge pan slides the
+  // top screen away to the right and the one under it comes forward, and every
+  // navigation stack on the phone answers it. In a tab Safari owns that strip and
+  // the card-to-card swipe already keeps out of it; installed, nobody owned it,
+  // and a swipe from the edge flicked to the previous card instead — the one
+  // place a thumb expects to leave the screen did something else. So the strip
+  // is the system's here too: the first 24px, the width Apple's own recogniser
+  // uses. The card follows the finger one to one, lets go past a third of the
+  // width or on a throw, and the leave is the same history.back() the arrow
+  // makes, so the stack stays honest. Anything short of that springs home.
+  var D_EDGE = 24, D_HOME = 0.34;
+  var dBack = null;
+
+  exOv.addEventListener("pointerdown", function (e) {
+    if (e.pointerType !== "touch" && e.pointerType !== "pen") return;
+    if (dBack || dDrag || !e.isPrimary || !standalone() || e.clientX > D_EDGE) return;
+    if (anySheet() || noDragIn(e.target)) return;
+    dBack = { id: e.pointerId, x: e.clientX, y: e.clientY, dx: 0, lock: false,
+      calm: lessMotion(), s: [{ t: now(), x: e.clientX }] };
+  });
+
+  exOv.addEventListener("pointermove", function (e) {
+    if (!dBack || e.pointerId !== dBack.id) return;
+    var dx = e.clientX - dBack.x, dy = e.clientY - dBack.y;
+    if (!dBack.lock) {
+      if (dx * dx + dy * dy < SLOP * SLOP) return;
+      // A finger going up the edge is scrolling; going left off the edge is nothing.
+      if (Math.abs(dy) > Math.abs(dx) || dx < 0) { dBack = null; return; }
+      dBack.lock = true;
+      dBack.x = e.clientX; dx = 0;
+      exOv.classList.add("edging");
+      try { exOv.setPointerCapture(dBack.id); } catch (err) { /* not fatal */ }
+    }
+    dBack.dx = dx;
+    dBack.s.push({ t: now(), x: e.clientX });
+    while (dBack.s.length > 2 && dBack.s[dBack.s.length - 1].t - dBack.s[0].t > VWIN) dBack.s.shift();
+    if (!dBack.calm) exOv.style.transform = "translateX(" + Math.max(0, dx) + "px)";
+  });
+
+  function endEdgeDrag(e, cancelled) {
+    if (!dBack || (e && e.pointerId !== dBack.id)) return;
+    var d = dBack, s = d.s, a = s[0], b = s[s.length - 1], dt = (b.t - a.t) / 1000, v;
+    dBack = null;
+    if (!d.lock) return;
+    try { exOv.releasePointerCapture(d.id); } catch (err) { /* already gone */ }
+    swallowClick();
+    v = dt > 0.004 ? (b.x - a.x) / dt : 0;
+    exOv.classList.remove("edging");
+    // Cleared in the same style change as the class swap: the inline transform
+    // outranks the stylesheet, so the slide-off (or the spring home) carries on
+    // from wherever the finger left the card.
+    exOv.style.transform = "";
+    if (!cancelled && (v > FLING || d.dx > exOv.offsetWidth * D_HOME)) {
+      exOv.classList.add("edgeout");
+      haptic("tap");
+      history.back();
+    }
+  }
+
+  exOv.addEventListener("pointerup", function (e) { endEdgeDrag(e, false); });
+  exOv.addEventListener("pointercancel", function (e) { endEdgeDrag(e, true); });
 
   function anySheet() { return !!document.querySelector(".sheet.open"); }
 
@@ -3644,7 +3749,7 @@ export const APP = String.raw`
 
   exOv.addEventListener("pointerdown", function (e) {
     if (e.pointerType !== "touch" && e.pointerType !== "pen") return;
-    if (dDrag || !e.isPrimary || !dNav || anySheet() || noDragIn(e.target)) return;
+    if (dDrag || dBack || !e.isPrimary || !dNav || anySheet() || noDragIn(e.target)) return;
     // In a tab the left edge is Safari's back gesture and the right its forward one.
     if (!standalone() && (e.clientX < 24 || e.clientX > window.innerWidth - 24)) return;
     dDrag = { id: e.pointerId, x: e.clientX, y: e.clientY, dx: 0, lock: false,
@@ -3688,7 +3793,7 @@ export const APP = String.raw`
   // WebKit settles the scroll on the touch, not on the pointer event before it, so
   // cancelling the touch while we hold the axis is what keeps the card still.
   exOv.addEventListener("touchmove", function (e) {
-    if (dDrag && dDrag.lock && e.cancelable) e.preventDefault();
+    if ((dDrag && dDrag.lock || dBack && dBack.lock) && e.cancelable) e.preventDefault();
   }, { passive: false });
 
   function endDetailDrag(e, cancelled) {
@@ -3764,8 +3869,11 @@ export const APP = String.raw`
       if (state.workouts[i].id === row.id) { state.workouts[i] = row; break; }
     }
     if (current && current.id === row.id) {
+      // In place, not from scratch: the answer to a delete is the same card the
+      // reader already has, and a rebuild would fold every drawer they opened
+      // while the undo toast was up.
+      if ($("detail").classList.contains("open")) refreshDetail(row);
       current = row;
-      if ($("detail").classList.contains("open")) openDetail(row, true);
     }
     render();
   }
@@ -3811,16 +3919,105 @@ export const APP = String.raw`
     sendCorrection(body, $("exeditsave"), exEdit.mode === "add" ? "Added it" : "Fixed — thanks");
   }
 
+  // ---------- a row leaving, and coming back ----------
+  //
+  // UITableView's deleteRows(with:): a swiped cell keeps going the way the finger
+  // sent it while the cells beneath close over the space in the same movement,
+  // so what is left is the list the reader expected rather than a list that
+  // blinked. Two moves on the element about to be rebuilt: the row (or, for a
+  // block, its heading) slides out to the left behind its red button, and then
+  // its box folds to nothing with everything below riding up on it. The redraw
+  // — the splice has already happened — lands once the space is gone, so the
+  // rebuilt card is not visibly different from the frame before it. A row taken
+  // away from a menu rather than a swipe fades instead of sliding: nothing pushed
+  // it, so nothing should look as though it did. Reduced motion, a hidden tab and
+  // a browser without animate() all get the instant version, which is what every
+  // delete was until now.
+
+  var rowLeaving = null;   // { row, d }: the full swipe committing, for the slide to start from
+
+  // The element on the open card for block bi, or for exercise ei inside it.
+  function rowOf(w, bi, ei) {
+    if (!current || current.id !== w.id || !$("detail").classList.contains("open")) return null;
+    var sect = $("dinner").querySelectorAll(".workout-block")[bi];
+    if (!sect) return null;
+    if (ei === undefined) return sect;
+    return sect.querySelectorAll(":scope > .exrow:not(.block-swipe)")[ei] || null;
+  }
+
+  function motionMs(cs, name, fallback) { return parseFloat(cs.getPropertyValue(name)) || fallback; }
+  function motionEase(cs, name, fallback) { return cs.getPropertyValue(name).trim() || fallback; }
+
+  // from: { row, d } — the swiped row and how far it stands open — or null to fade.
+  function rowAway(box, from, done) {
+    if (!box || !box.isConnected || !box.animate || lessMotion() || document.hidden) { done(); return; }
+    var cs = getComputedStyle(box), h = box.getBoundingClientRect().height, settled = false, timer, lead, fold;
+    var t2 = motionMs(cs, "--t-2", 220), t3 = motionMs(cs, "--t-3", 320);
+    var soft = motionEase(cs, "--e-soft", "cubic-bezier(.4,0,.2,1)");
+    var leave = motionEase(cs, "--e-in", "cubic-bezier(.3,0,.8,.15)");
+    function finish() { if (settled) return; settled = true; clearTimeout(timer); done(); }
+    box.classList.add("leaving");
+    box.style.overflow = "hidden";
+    try {
+      if (from && from.row && from.row.isConnected) {
+        var row = from.row, W = row.offsetWidth;
+        // The finger is gone; the classes' own transitions must not argue with this.
+        row.classList.remove("drag", "armed");
+        if (openEx === row) openEx = null;
+        row.children[0].animate(
+          [{ transform: "translateX(" + (-from.d) + "px)" }, { transform: "translateX(" + (-W) + "px)" }],
+          { duration: t2, easing: leave, fill: "forwards" });
+        row.children[1].animate(
+          [{ transform: "none", width: Math.max(exWidth(row) - EX_INSET, from.d - EX_INSET) + "px" },
+           { transform: "none", width: (W - EX_INSET) + "px" }],
+          { duration: t2, easing: leave, fill: "forwards" });
+        lead = Math.round(t2 * 0.6);
+      } else {
+        box.animate([{ opacity: 1 }, { opacity: 0 }], { duration: t2, easing: soft, fill: "forwards" });
+        lead = Math.round(t2 * 0.4);
+      }
+      fold = box.animate([
+        { height: h + "px", marginBottom: cs.marginBottom, paddingTop: cs.paddingTop, paddingBottom: cs.paddingBottom,
+          borderTopWidth: cs.borderTopWidth, borderBottomWidth: cs.borderBottomWidth },
+        { height: "0px", marginBottom: "0px", paddingTop: "0px", paddingBottom: "0px",
+          borderTopWidth: "0px", borderBottomWidth: "0px" }
+      ], { duration: t3, delay: lead, easing: soft, fill: "forwards" });
+      fold.onfinish = finish;
+      fold.oncancel = finish;
+      timer = setTimeout(finish, lead + t3 + 150);
+    } catch (e) { finish(); }
+  }
+
+  // Undo's other half: the rebuilt row grows back into its place instead of
+  // appearing, the way insertRows(with: .automatic) brings one in.
+  function rowBack(box) {
+    if (!box || !box.isConnected || !box.animate || lessMotion() || document.hidden) return;
+    var cs = getComputedStyle(box), h = box.getBoundingClientRect().height;
+    var t3 = motionMs(cs, "--t-3", 320), soft = motionEase(cs, "--e-soft", "cubic-bezier(.4,0,.2,1)");
+    var was = box.style.overflow;
+    box.style.overflow = "hidden";
+    try {
+      var grow = box.animate([
+        { height: "0px", marginBottom: "0px", paddingTop: "0px", paddingBottom: "0px", opacity: 0 },
+        { height: h + "px", marginBottom: cs.marginBottom, paddingTop: cs.paddingTop, paddingBottom: cs.paddingBottom, opacity: 1 }
+      ], { duration: t3, easing: soft });
+      grow.onfinish = grow.oncancel = function () { box.style.overflow = was; };
+    } catch (e) { box.style.overflow = was; }
+  }
+
   // The one correction that takes something away, so the only one with an undo.
   // The card loses the row now, the server when the toast goes — which also means
   // the server's expect_name guard still sees the exercise it is asked to delete.
   function deleteBlock(w, bi) {
     var before = JSON.parse(JSON.stringify(w.blocks || []));
     if (!before[bi]) return;
-    var expected = before[bi];
-    function redraw() { if (current && current.id === w.id) openDetail(w, true); render(); }
-    function restore(msg) { w.blocks = before; redraw(); if (msg) toast(msg); }
-    w.blocks.splice(bi, 1); redraw();
+    var expected = before[bi], leaving = rowLeaving, box = rowOf(w, bi), band = box && box.firstElementChild;
+    var from = leaving && box && box.contains(leaving.row) ? leaving
+      : band && band.classList.contains("open") ? { row: band, d: exWidth(band) } : null;
+    function redraw() { if (current && current.id === w.id && $("detail").classList.contains("open")) openDetail(w, true); }
+    function restore(msg) { w.blocks = before; redraw(); render(); rowBack(rowOf(w, bi)); if (msg) toast(msg); }
+    w.blocks.splice(bi, 1); render();
+    rowAway(box, from, redraw);
     offerUndo("Removed " + (expected.title || "block"), function () {
       api("workouts/" + w.id + "/exercises", { method: "POST", body: JSON.stringify({ op: "delete_block", block: bi, expect_block: expected }) })
         .then(function (r) { if (r.status === "ok") absorbWorkout(r.workout); else restore(r.message || "Could not remove that block."); })
@@ -3838,13 +4035,16 @@ export const APP = String.raw`
 
     function redraw() {
       if (current && current.id === w.id && $("detail").classList.contains("open")) openDetail(w, true);
-      render();
     }
+    var leaving = rowLeaving, box = rowOf(w, ctx.block, ctx.index);
+    var from = leaving && leaving.row === box ? leaving
+      : box && box.classList.contains("open") ? { row: box, d: exWidth(box) } : null;
     var blk = (w.blocks || [])[ctx.block];
     if (blk && blk.exercises) blk.exercises.splice(ctx.index, 1);
-    redraw();
+    render();
+    rowAway(box, from, redraw);
 
-    function putBack(msg) { w.blocks = before; redraw(); if (msg) toast(msg); }
+    function putBack(msg) { w.blocks = before; redraw(); render(); rowBack(rowOf(w, ctx.block, ctx.index)); if (msg) toast(msg); }
 
     offerUndo("Removed " + ctx.name, function () {
       api("workouts/" + w.id + "/exercises", {
@@ -5607,25 +5807,81 @@ export const APP = String.raw`
 
   function draftKey() { return "spotter_draft"; }
 
+  // Everything the session is, as JSON. Written on every engine change while a
+  // workout runs, rewritten once more as paused when the person walks away from
+  // it, and read back by restoreSession() when the app next opens. savedAt is
+  // the clock the boot reads a kill by: a draft that was never marked paused
+  // ended with the process, and that moment is when its pause began.
+  function draftOf() {
+    return {
+      workoutId: wo.workout.id, title: wo.workout.title,
+      entries: wo.entries, blocks: wo.workout.blocks, startedAt: wo.startedAt, i: wo.i, rounds: wo.rounds,
+      amrap: wo.amrap,
+      rest: restUntil && !restFace ? { until: restUntil, total: restTotal, held: restHeld } : null,
+      paused: false, pausedAt: null, savedAt: new Date().toISOString()
+    };
+  }
+
+  function writeDraft(d) {
+    var json = JSON.stringify(d);
+    try { localStorage.setItem(draftKey(), json); } catch (e) { /* private mode */ }
+    if (native) native.saveDraft(json);
+  }
+
   function saveDraft() {
     if (!wo || wo.finished) return;
-    try {
-      localStorage.setItem(draftKey(), JSON.stringify({
-        workoutId: wo.workout.id, title: wo.workout.title,
-        entries: wo.entries, blocks: wo.workout.blocks, startedAt: wo.startedAt, i: wo.i, rounds: wo.rounds,
-        amrap: wo.amrap,
-        rest: restUntil && !restFace ? { until: restUntil, total: restTotal, held: restHeld } : null
-      }));
-      if (native) native.saveDraft(localStorage.getItem(draftKey()));
-    } catch (e) { /* private mode */ }
-    // Outside the try, and last: a Lock Screen that cannot be reached must not
-    // cost the draft that is what makes the session recoverable at all.
+    writeDraft(draftOf());
+    // Last: a Lock Screen that cannot be reached must not cost the draft that is
+    // what makes the session recoverable at all.
     if (native && native.live) liveSync();
   }
 
   function clearDraft() {
     if (native) native.saveDraft(null);
     try { localStorage.removeItem(draftKey()); } catch (e) { /* ignore */ }
+  }
+
+  // The draft on disk, or null. A day is the shelf life: a session paused
+  // yesterday morning is one nobody is finishing, and it goes without a word
+  // rather than sitting at the top of the Library until somebody ends it.
+  var DRAFT_TTL = 24 * 3600 * 1000;
+
+  function readDraft() {
+    var raw = null, d;
+    try { raw = localStorage.getItem(draftKey()); } catch (e) { return null; }
+    if (!raw) return null;
+    try { d = JSON.parse(raw); } catch (e) { clearDraft(); return null; }
+    if (!d || !d.workoutId || !d.startedAt) { clearDraft(); return null; }
+    var at = new Date(d.pausedAt || d.savedAt || d.startedAt).getTime();
+    if (!(at > Date.now() - DRAFT_TTL)) { clearDraft(); return null; }
+    return d;
+  }
+
+  function pausedDraft() {
+    var d = readDraft();
+    return d && d.paused ? d : null;
+  }
+
+  function draftSets(d) {
+    var n = 0;
+    (d.entries || []).forEach(function (e) { n += (e.sets || []).filter(Boolean).length; });
+    return n;
+  }
+
+  // The Lock Screen's description of a paused session, built off the draft
+  // because there is no engine to ask: the movement it stopped on, how far it
+  // got, and when it stopped. phase "paused" and pausedAt are the shell's cue
+  // to freeze the clock and offer nothing but the way back in.
+  function pausedState(d, w) {
+    var entry = (d.entries || [])[d.i || 0], done = draftSets(d), planned = 0;
+    try {
+      flatten(Object.assign({}, w, { blocks: d.blocks || w.blocks || [] })).forEach(function (s) { planned += targetOf(s); });
+    } catch (e) { /* a plan that cannot be read still has its sets */ }
+    return {
+      v: 1, title: d.title || w.title || "Workout", startedAt: d.startedAt, phase: "paused", pausedAt: d.pausedAt,
+      exercise: entry ? entry.name : "Workout", block: null, set: null, target: null, weight: null,
+      rest: null, next: null, progress: { done: done, total: Math.max(planned, done, 1) }, dose: null
+    };
   }
 
   // ---------- the session, on the Lock Screen and the wrist ----------
@@ -5702,6 +5958,13 @@ export const APP = String.raw`
   }
 
   function startWorkout(w, resume) {
+    // Start on a card whose session is waiting is Resume: nobody starting the
+    // workout they paused an hour ago wants a second copy of it.
+    if (!resume) {
+      var waiting = pausedDraft();
+      if (waiting && waiting.workoutId === w.id) { resumeWorkout(); return; }
+      if (waiting) toast("Ended the paused " + (waiting.title || "workout") + ".");
+    }
     guideClear(); guideStill();
     // The session owns its exercise list, including additions recovered from a draft.
     w = Object.assign({}, w, { blocks: JSON.parse(JSON.stringify((resume && resume.blocks) || w.blocks || [])) });
@@ -7707,11 +7970,112 @@ export const APP = String.raw`
   }
 
   // Both history entries if the workout was opened from a card, one from the plan.
-  // Sheets give their entry back as they close, so these two are all that is left.
-  function leaveWorkout() {
+  // Sheets give their entry back as they close — except the leave sheet, whose
+  // entry is spent here in the same go() so two navigations are never in flight
+  // at once (Chrome resolves each against the entry current when it is called,
+  // and two back-to-back land on the same one). extra is that entry, or nothing.
+  function leaveWorkout(extra, pause) {
     var openedFromDetail = $("detail").classList.contains("open");
-    exitWorkout();
-    history.go(openedFromDetail ? -2 : -1);
+    exitWorkout(pause);
+    history.go(-((extra || 0) + (openedFromDetail ? 2 : 1)));
+    renderResume();
+  }
+
+  // ---------- pausing, and coming back ----------
+  //
+  // Apple's Workout app never loses a session: End saves it, Pause keeps it, and
+  // a phone that dies mid-set comes back to a paused workout rather than to
+  // nothing. So here. The X asks which of the two, a back gesture takes the safe
+  // one, and a draft the process was killed on comes back paused. A paused session
+  // is a draft on disk and nothing in memory — wo is null — so the rest of the
+  // engine keeps its one rule, "wo means a session is running", and the Library
+  // leads with a card that says what is waiting.
+
+  function loggedSets() {
+    var n = 0;
+    if (wo) wo.entries.forEach(function (e) { n += (e.sets || []).filter(Boolean).length; });
+    return n;
+  }
+
+  function openLeave() {
+    var n = loggedSets();
+    $("wendsub").textContent = n
+      ? "Saves " + n + (n === 1 ? " set" : " sets") + " to your history."
+      : "Nothing logged yet — closes without saving.";
+    openSheet("wleavesheet");
+  }
+
+  // The session comes back with its clock skipping the pause: the start moves
+  // forward by exactly the time nobody was training, which is what the elapsed
+  // figure, the saved duration and the Lock Screen's timer all count from.
+  function resumeWorkout() {
+    var d = pausedDraft(), w = d && srcById(d.workoutId), gap;
+    if (!d) return;
+    if (!w) { if (state.workouts.length) clearDraft(); renderResume(); return; }
+    if (d.pausedAt) {
+      gap = Date.now() - new Date(d.pausedAt).getTime();
+      if (gap > 0) d.startedAt = new Date(new Date(d.startedAt).getTime() + gap).toISOString();
+    }
+    d.paused = false; d.pausedAt = null; d.rest = null;
+    startWorkout(w, d);
+    renderResume();
+  }
+
+  // After boot. A draft still marked running belongs to a process that ended
+  // with the session on screen — a kill, a crash, a reload — and it comes back
+  // paused as of the last save, with the Lock Screen told so it stops counting.
+  function restoreSession() {
+    if (wo) return;
+    var d = readDraft(), w = d && srcById(d.workoutId);
+    if (!d) return;
+    if (!w) { if (state.workouts.length) clearDraft(); return; }
+    if (!d.paused) {
+      d.paused = true; d.pausedAt = d.savedAt || new Date().toISOString(); d.rest = null;
+      writeDraft(d);
+    }
+    if (native && native.live) try { native.live.update(pausedState(d, w)); } catch (e) { /* ignore */ }
+    renderResume();
+  }
+
+  // Minutes for the first hour, hours for the first day: what "how long ago" means
+  // to somebody deciding whether to go back to a workout.
+  function pausedAgo(iso) {
+    var m = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+    if (m < 1) return "just now";
+    if (m < 60) return m + " min ago";
+    var h = Math.round(m / 60);
+    return h + (h === 1 ? " hour ago" : " hours ago");
+  }
+
+  var resumeBox = el("div", "resumewrap hide"), resumeShown = false;
+  resumeBox.id = "resume";
+  $("chips").parentNode.insertBefore(resumeBox, $("chips"));
+
+  function renderResume() {
+    var d = pausedDraft(), w = d && srcById(d.workoutId);
+    resumeBox.innerHTML = "";
+    if (!d || !w || wo) { resumeBox.classList.add("hide"); resumeShown = false; return; }
+    var card = el("div", "daycard"), head = el("div", "dayhead"), n = draftSets(d);
+    var secs = Math.max(0, Math.floor((new Date(d.pausedAt || d.savedAt).getTime() - new Date(d.startedAt).getTime()) / 1000));
+    head.appendChild(el("div", "dayname", "Paused"));
+    head.appendChild(el("div", "tclock", clock(secs)));
+    card.appendChild(head);
+    var t = el("button", "ttitle", d.title || w.title || "Workout");
+    t.onclick = function () { openDetail(w); };
+    card.appendChild(t);
+    card.appendChild(el("div", "tdose", (n ? n + (n === 1 ? " set logged" : " sets logged") : "No sets logged yet")
+      + " · paused " + pausedAgo(d.pausedAt || d.savedAt)));
+    var btns = el("div", "tbtns"), go = icon(el("button", "btn tstart"), "play", "Resume");
+    go.onclick = resumeWorkout;
+    // End from here saves what was logged, exactly as End inside the session
+    // does: the session comes back for the moment it takes to be written down.
+    var end = el("button", "btn ghost tend", "End");
+    end.onclick = function () { resumeWorkout(); finishWorkout(); };
+    btns.appendChild(go); btns.appendChild(end);
+    card.appendChild(btns);
+    resumeBox.appendChild(card);
+    resumeBox.classList.remove("hide");
+    if (!resumeShown) { resumeShown = true; viewIn(resumeBox); }
   }
 
   // ---------- the session summary ----------
@@ -7959,21 +8323,33 @@ export const APP = String.raw`
 
   var woCloseTimer = null;
 
-  function exitWorkout() {
+  // pause: keep the session. The draft is rewritten as paused once the rest
+  // engine has had its last word, and the Lock Screen is told the same, so the
+  // card freezes where it is instead of ending. Without it, both go — which is
+  // what the X used to do to a session with an hour of sets in it, unasked.
+  function exitWorkout(pause) {
     // Only a live session owns the clock, the wake lock and the draft. A past one
     // borrows this overlay to be read in and owns none of it, so closing a recap
     // must not end a rest or throw away the draft of a workout somebody paused
     // this morning — which is what the old history sheet was kept separate for.
     if (wo) {
+      var keep = pause && !wo.finished, at = new Date().toISOString(), w = wo.workout;
       clearInterval(woTimer);
       cxOff();
       stopRest();
       releaseWake();
-      clearDraft();
       // After stopRest, never before it: stopRest saves the draft, a draft save
       // syncs the mirrors, and an update landing after the end puts the activity
       // straight back on the Lock Screen.
-      liveEnd(false);
+      if (keep) {
+        var d = draftOf();
+        d.paused = true; d.pausedAt = at; d.rest = null;
+        writeDraft(d);
+        if (native && native.live) try { native.live.update(pausedState(d, w)); } catch (e) { /* ignore */ }
+      } else {
+        clearDraft();
+        liveEnd(false);
+      }
       publishSummary();
     }
     // The clip sheet can outlive the overlay it was opened from.
@@ -7991,30 +8367,6 @@ export const APP = String.raw`
     recapFocus = null;
     clearTimeout(woCloseTimer);
     woCloseTimer = setTimeout(function () { n.classList.remove("closing"); guideWake(); }, 260);
-  }
-
-  function offerResume() {
-    // A link that just arrived from the share sheet owns the toast and the moment.
-    if (sharing) return;
-    var raw = null;
-    try { raw = localStorage.getItem(draftKey()); } catch (e) { return; }
-    if (!raw) return;
-    var d;
-    try { d = JSON.parse(raw); } catch (e) { clearDraft(); return; }
-    var w = state.workouts.filter(function (x) { return x.id === d.workoutId; })[0];
-    if (!w) { clearDraft(); return; }
-    var any = (d.entries || []).some(function (e) { return e.sets && e.sets.length; });
-    if (!any) { clearDraft(); return; }
-    toast("Tap to resume " + (d.title || "your workout"), native ? 30000 : undefined);
-    // #toast is pointer-events: none, so this said "tap to resume" untappably.
-    var t = $("toast");
-    t.classList.add("tappable");
-    t.onclick = function () {
-      t.onclick = null;
-      t.classList.remove("tappable");
-      t.classList.remove("show");
-      startWorkout(w, d);
-    };
   }
 
   // ---------- share card ----------
@@ -13584,7 +13936,7 @@ export const APP = String.raw`
   ["addsheet", "setsheet", "watchsheet", "exsheet", "exeditsheet", "explainsheet", "picksheet",
    "settingssheet", "colsheet", "renamesheet", "swapsheet", "pumpysheet", "capsheet", "plansheet",
    "daysheet", "copysheet", "sortsheet", "refsheet", "countsheet", "guidesheet", "welcomesheet",
-   "workoptions", "filtersheet", "schedulesheet", "recapsheet", "woaddsheet"]
+   "workoptions", "filtersheet", "schedulesheet", "recapsheet", "woaddsheet", "aiconsentsheet", "wleavesheet"]
     .forEach(wireSheet);
 
   function overlayShowing() {
@@ -16040,7 +16392,7 @@ export const APP = String.raw`
   document.querySelectorAll("[data-close]").forEach(function (b) {
     b.onclick = function () { closeSheet(b.getAttribute("data-close")); };
   });
-  ["workoptions", "filtersheet", "schedulesheet", "recapsheet", "woaddsheet"].forEach(function (id) {
+  ["workoptions", "filtersheet", "schedulesheet", "recapsheet", "woaddsheet", "aiconsentsheet", "wleavesheet"].forEach(function (id) {
     $(id).addEventListener("keydown", function (e) {
       if (e.key === "Escape") { e.preventDefault(); closeSheet(id); }
       if (e.key !== "Tab") return;
@@ -16109,7 +16461,24 @@ export const APP = String.raw`
       }).catch(function () { finishRead(); if (!accountNow(epoch, uid)) return; toast("Could not read that workout again — try again in a minute."); });
   };
 
-  $("wclose").onclick = function () { history.back(); };
+  $("wclose").onclick = function () {
+    if (wo && !wo.finished) openLeave(); else history.back();
+  };
+  $("wpause").onclick = function () {
+    var extra = sheetNav ? 1 : 0;
+    closeSheet("wleavesheet", true);
+    leaveWorkout(extra, true);
+    haptic("select");
+  };
+  $("wend").onclick = function () {
+    var extra = sheetNav ? 1 : 0, n = loggedSets();
+    closeSheet("wleavesheet", true);
+    if (!n) { leaveWorkout(extra, false); toast("Workout closed — nothing logged."); return; }
+    // The summary takes the session's place in the overlay, so only the sheet's
+    // entry is spent — our own pop, which the handler must not read as a gesture.
+    if (extra) { sheetBack++; history.back(); }
+    finishWorkout();
+  };
   $("wmore").onclick = openRecapOptions;
   wireProof();
   wireWmain($("wmain"));
@@ -16200,7 +16569,9 @@ export const APP = String.raw`
   // A session is always open when it exists, but a notification can arrive into
   // the frame where the overlay is fading out.
   function woForward() {
-    if (!wo || wo.finished) return;
+    // Nothing running but a session waiting: the tap that brought the app
+    // forward was the tap on its card, and the card promised the way back in.
+    if (!wo || wo.finished) { if (pausedDraft()) resumeWorkout(); return; }
     var n = $("workout");
     n.classList.remove("closing");
     n.classList.add("open");
@@ -16315,7 +16686,9 @@ export const APP = String.raw`
       for (var i = 0; i < open.length; i++) closeSheet(open[i].id, true);
       return;
     }
-    if ($("workout").classList.contains("open")) { exitWorkout(); return; }
+    // A back gesture on a live session pauses it: the safe door, and the one
+    // Android's back button opens without a chance to ask.
+    if ($("workout").classList.contains("open")) { exitWorkout(!!(wo && !wo.finished)); renderResume(); return; }
     if ($("detail").classList.contains("open")) closeDetail();
   });
 
@@ -16382,7 +16755,7 @@ export const APP = String.raw`
     if (r.data.session && r.data.session.user) {
       state.user = r.data.session.user;
       showApp();
-      boot().then(offerResume);
+      boot().then(restoreSession);
     } else {
       showLanding();
       // A share that landed on a signed-out app. Say the link is safe rather than

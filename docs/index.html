@@ -910,6 +910,35 @@ h1 {
 .chips.hide + .todaywrap {
   display: none;
 }
+.resumewrap {
+  padding: 12px 18px 0;
+}
+.resumewrap .daycard {
+  margin-bottom: 0;
+  border-color: var(--ember);
+}
+.resumewrap .dayname {
+  color: var(--ember-ink);
+}
+.resumewrap .tclock {
+  font-family: var(--display);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.resumewrap .tbtns {
+  margin-top: 12px;
+}
+.resumewrap .tend {
+  flex: 0 0 auto;
+  width: auto;
+  padding: 12px 16px;
+  font-size: 14px;
+}
+.resumewrap .tstart {
+  flex: 1;
+}
 .todaywrap .daycard {
   margin-bottom: 0;
 }
@@ -1504,6 +1533,18 @@ h1 {
 .overlay.closing {
   visibility: visible;
 }
+.overlay.edging {
+  transition: none;
+}
+.overlay.edging,
+.overlay.edgeout {
+  box-shadow: var(--sh-lg);
+}
+.overlay.edgeout {
+  transform: translateX(100%);
+  opacity: 1;
+  transition: transform var(--t-2) var(--e-out);
+}
 .dtop {
   position: sticky;
   top: 0;
@@ -2043,28 +2084,32 @@ h1 {
   content-visibility: auto;
   contain-intrinsic-size: auto 400px;
 }
-.unverified {
-  display: flex;
-  gap: 9px;
-  align-items: flex-start;
-  font-size: 12.5px;
-  line-height: 1.5;
-  color: var(--ink-2);
-  background: var(--sand);
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 10px 12px;
-  margin-bottom: 14px;
+.disclosure.unverified {
+  margin: 0 0 14px;
 }
-.unverified b {
+.disclosure.unverified > summary {
+  gap: 9px;
   color: var(--ink);
   font-weight: 650;
 }
+.disclosure.unverified > summary b {
+  font-weight: inherit;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .unverified .ic {
+  flex: 0 0 auto;
   width: 17px;
   height: 17px;
-  margin-top: 1px;
   color: var(--ember-ink);
+}
+.disclosure.unverified .disclosure-body {
+  padding: 0 16px 14px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--ink-2);
 }
 .unverified .fixlink {
   display: inline;
@@ -2565,7 +2610,8 @@ h1 {
 .dchip {
   min-width: 0;
   border-radius: 999px;
-  padding: 3px 9px;
+  padding: 5px 10px;
+  line-height: 1.2;
   background: var(--ember-soft);
   color: var(--ember-ink);
   font-size: 11px;
@@ -2581,6 +2627,11 @@ h1 {
   font-weight: 650;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
+}
+.exname > .chip {
+  display: flex;
+  width: fit-content;
+  margin-top: 9px;
 }
 .vslot {
   display: grid;
@@ -2890,6 +2941,24 @@ h1 {
 .btnrow .btn {
   flex: 1;
 }
+.btnrow + .revoke {
+  margin-top: 8px;
+  color: var(--ink-2);
+  font-weight: 650;
+}
+#aiconsentsheet p {
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--ink-2);
+  margin: 0 0 14px;
+}
+#aiconsentsheet p a {
+  color: var(--ember-ink);
+  font-weight: 650;
+}
+#aiconsentsheet p:empty {
+  display: none;
+}
 .upblock {
   margin-top: 18px;
   padding-top: 16px;
@@ -3078,6 +3147,7 @@ h1 {
   text-align: left;
   border-radius: 13px;
   width: 100%;
+  color: inherit;
 }
 .pickrow:active {
   background: var(--sand);
@@ -3106,6 +3176,27 @@ h1 {
 .pickrow .pt span {
   font-size: 11.5px;
   color: var(--muted);
+}
+.leaverow {
+  min-height: 60px;
+  padding: 8px 6px;
+}
+.leaverow .ic {
+  width: 42px;
+  height: 42px;
+  padding: 11px;
+  border-radius: 12px;
+  background: var(--sand);
+  color: var(--ember-ink);
+}
+.leaverow .pt b {
+  font-size: 15px;
+  white-space: normal;
+}
+.leaverow .pt span {
+  display: block;
+  margin-top: 1px;
+  line-height: 1.4;
 }
 .sortrow {
   min-height: 44px;
@@ -6370,6 +6461,11 @@ select:focus-visible {
     transform: none;
     transition-duration: var(--t-2);
   }
+  .overlay.edgeout {
+    transform: none;
+    opacity: 0;
+    transition: opacity var(--t-2) var(--e-soft);
+  }
   .sheetbody,
   .sheet.open .sheetbody {
     transform: none;
@@ -7209,12 +7305,11 @@ details.details-moving > :not(summary) {
   }
 }
 .delete-swipe {
-  margin: 0;
-  border-radius: 12px;
+  border-radius: 0;
 }
 .delete-swipe > .exmain {
   display: block;
-  padding: 0;
+  padding: 0 16px;
   background: var(--card);
 }
 .delete-swipe .exercise-card {
@@ -7227,6 +7322,44 @@ details.details-moving > :not(summary) {
 .exact.danger {
   background: #bb3030;
   color: #fff;
+}
+.delete-swipe > .exacts {
+  top: 0;
+  bottom: 0;
+  right: 8px;
+  width: 56px;
+  align-items: center;
+  transform: translateX(calc(100% + 8px));
+  transition: transform var(--t-3) var(--e-spring), width var(--t-3) var(--e-spring);
+}
+.delete-swipe .exact.danger {
+  width: 100%;
+  height: calc(100% - 16px);
+  max-height: 84px;
+  min-height: 44px;
+  border-radius: 14px;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  font-size: 10.5px;
+}
+.delete-swipe .exact.danger .ic {
+  transition: transform var(--t-2) var(--e-spring);
+}
+.delete-swipe.armed .exact.danger .ic {
+  transform: scale(1.22);
+}
+.exrow.leaving,
+.workout-block.leaving {
+  pointer-events: none;
+}
+.exrow.leaving::before {
+  display: none;
 }
 .segment-label {
   padding: 12px 16px;
@@ -7243,13 +7376,14 @@ details.details-moving > :not(summary) {
 }
 .block-swipe {
   margin-bottom: 8px;
+  border-radius: 12px;
 }
 .block-swipe .exmain {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 8px 0;
+  padding: 8px 16px;
   background: var(--paper);
 }
 .block-swipe h3 {
@@ -7292,6 +7426,8 @@ details.details-moving > :not(summary) {
 <symbol id="i-trend" viewBox="0 0 24 24"><path d="M22 7 13.5 15.5 8.5 10.5 2 17"/><path d="M16 7h6v6"/></symbol>
 <symbol id="i-train" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="3"/><path d="M3 10h18"/><path d="M8 2v4"/><path d="M16 2v4"/><path d="M8 15l2.5 2.5L16 13"/></symbol>
 <symbol id="i-play" viewBox="0 0 24 24"><path d="M6 3.5 20 12 6 20.5z"/></symbol>
+<symbol id="i-pause" viewBox="0 0 24 24"><path d="M8 4v16"/><path d="M16 4v16"/></symbol>
+<symbol id="i-flag" viewBox="0 0 24 24"><path d="M5 21V4"/><path d="M5 4h12l-2.5 4.5L17 13H5"/></symbol>
 <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12"/><circle cx="12" cy="12" r="3"/></symbol>
 <symbol id="i-eye-off" viewBox="0 0 24 24"><path d="M10.7 5.1a10.7 10.7 0 0 1 11.2 6.6 1 1 0 0 1 0 .7 10.7 10.7 0 0 1-1.4 2.5"/><path d="M14.1 14.2a3 3 0 0 1-4.2-4.2"/><path d="M17.5 17.5a10.7 10.7 0 0 1-15.4-5.2 1 1 0 0 1 0-.7 10.7 10.7 0 0 1 4.4-5.1"/><path d="m2 2 20 20"/></symbol>
 <symbol id="i-ear" viewBox="0 0 24 24"><path d="M3 15h2.5a1.5 1.5 0 0 1 1.5 1.5v3A1.5 1.5 0 0 1 5.5 21H4a1 1 0 0 1-1-1v-8a9 9 0 0 1 18 0v8a1 1 0 0 1-1 1h-1.5a1.5 1.5 0 0 1-1.5-1.5v-3a1.5 1.5 0 0 1 1.5-1.5H21"/></symbol>
@@ -7463,6 +7599,14 @@ details.details-moving > :not(summary) {
   <button class="pickrow" id="dshare">Share workout</button>
   <button class="pickrow" id="dreproc">Read it again</button>
   <button class="btn ghost" data-close="workoptions">Done</button>
+</div></div>
+<div class="sheet" id="wleavesheet" role="dialog" aria-modal="true" aria-labelledby="wleavetitle"><div class="sheetbody">
+  <div class="grabber"></div>
+  <h2 id="wleavetitle">Leave this workout?</h2>
+  <p class="lede" id="wleavelede">Nothing is lost either way.</p>
+  <button class="pickrow leaverow" id="wpause"><svg class="ic"><use href="#i-pause"></use></svg><span class="pt"><b>Pause workout</b><span>Pick it up later from the Library. The clock stops.</span></span></button>
+  <button class="pickrow leaverow" id="wend"><svg class="ic"><use href="#i-flag"></use></svg><span class="pt"><b>End workout</b><span id="wendsub">Saves what you logged.</span></span></button>
+  <button class="btn ghost" data-close="wleavesheet">Keep going</button>
 </div></div>
 <div class="sheet" id="filtersheet" role="dialog" aria-modal="true" aria-labelledby="filtertitle"><div class="sheetbody">
   <div class="grabber"></div><h2 id="filtertitle">Filters</h2>
@@ -7932,7 +8076,7 @@ details.details-moving > :not(summary) {
   <p><a href="https://quarterdeckcollective.com/spotter/privacy/">Read the privacy policy</a></p>
   <p id="aiconsenterror" role="alert"></p>
   <div class="btnrow"><button class="btn ghost" id="aiconsentdecline">Not now</button><button class="btn" id="aiconsentallow">Allow AI processing</button></div>
-  <button class="btn ghost hide" id="aiconsentrevoke">Turn off AI processing</button>
+  <button class="setlink revoke hide" id="aiconsentrevoke">Turn off AI processing</button>
 </div></div>
 
 <div class="sheet" id="accountsheet"><div class="sheetbody">
@@ -8840,7 +8984,7 @@ details.details-moving > :not(summary) {
       };
     }
     native && native.purchases && native.purchases.clear().catch(function() {
-    }), billing && (billing.prices = null, billing.waiting = null, billing.busy = !1, billing.sub = null, billing.subAsked = !1, billing.limits = null, billing.said = null, billing.ctx = null, billing.cc = null, billing.ccWaiting = null, billing.redeeming = !1), ["grid", "chips", "colbar", "libcount", "empty", "dinner", "pumpylog", "pumpyannounce", "pumpyctx", "pumpythreads", "trainview", "today", "recapopts"].forEach(function(id) {
+    }), billing && (billing.prices = null, billing.waiting = null, billing.busy = !1, billing.sub = null, billing.subAsked = !1, billing.limits = null, billing.said = null, billing.ctx = null, billing.cc = null, billing.ccWaiting = null, billing.redeeming = !1), ["grid", "chips", "colbar", "libcount", "empty", "dinner", "pumpylog", "pumpyannounce", "pumpyctx", "pumpythreads", "trainview", "today", "resume", "recapopts"].forEach(function(id) {
       var n = $(id);
       n && (n.innerHTML = "");
     }), $("count0").textContent = "Reading your library", clearTimeout(toastTimer), $("toast").classList.remove("show"), $("toast").textContent = "", Array.prototype.forEach.call(document.querySelectorAll(".sheet.open, #detail.open, #workout.open"), function(n) {
@@ -9649,7 +9793,7 @@ details.details-moving > :not(summary) {
     }, card;
   }
   function render() {
-    renderChips(), renderColBar(), renderToday(), renderGrid(), renderLibCount();
+    renderChips(), renderColBar(), renderResume(), renderToday(), renderGrid(), renderLibCount();
     var n = state.workouts.length;
     $("searchwrap").classList.toggle("hide", !n), maybeInstallHint(), $("count0").textContent = n ? n + (n === 1 ? " workout" : " workouts") : "No workouts yet";
   }
@@ -9834,7 +9978,7 @@ details.details-moving > :not(summary) {
     return box.setAttribute("data-noswipe", ""), box.appendChild(el("summary", null, title)), box.appendChild(el("div", "disclosure-body")), box;
   }
   function openDetail(w, keepHistory) {
-    keepHistory || (guideClear(), guideStill()), current = w, clearTimeout(detailCloseTimer), $("detail").classList.remove("closing");
+    keepHistory || (guideClear(), guideStill()), current = w, clearTimeout(detailCloseTimer), $("detail").classList.remove("closing", "edgeout");
     var d = $("dinner");
     d.innerHTML = "", d.classList.remove("din", "dmove"), d.style.transform = "", d.style.opacity = "", navFrom ? (dNav = gridNav(w.id), navFrom = !1) : dNav && dNav.ids[dNav.i] !== w.id && (dNav = null), $("workmanage").innerHTML = "", $("workmanage").appendChild(manageRow(w)), syncRereadButton(w), $("dreproc").hidden = isUpload(w) || w.platform === "pumpy", d.appendChild(el("div", "dkick", isPending(w) ? stageOf(w).kick : isFailed(w) ? "Needs another try" : w.category || "Other"));
     var titleEl = el("h2", "dtitle", w.title || "Untitled workout");
@@ -9877,14 +10021,10 @@ details.details-moving > :not(summary) {
     }).join(" \xB7 ")));
     var conf = typeof w.confidence == "number" ? w.confidence : null, from = readFrom(w);
     if (w.has_full_workout && conf !== null && conf < 0.7) {
-      var warn = el("div", "unverified");
-      warn.appendChild(ic(from.video || from.speech ? "eye" : conf < 0.45 ? "alert" : "eye"));
-      var wt = el("div");
-      if (from.video ? (wt.appendChild(el("b", null, "Spotter read this off the screen.")), wt.appendChild(document.createTextNode(
-        " The caption named no exercises, so these came from what is written and shown in the video itself. There is no text to check them against \u2014 watch it once before you train it."
-      ))) : from.speech ? (wt.appendChild(el("b", null, "Spotter heard this in the video.")), wt.appendChild(document.createTextNode(
-        " These exercises come from what the creator says out loud rather than from the caption, so a name can be misheard. Worth a listen before you train it."
-      ))) : (wt.appendChild(el("b", null, conf < 0.45 ? "Spotter could not check most of this." : "Some of this is not in the caption.")), wt.appendChild(document.createTextNode(conf < 0.45 ? " The exercises below were not traceable to anything written on the post. Watch the original before you train it." : " A few sets or reps were not written down anywhere Spotter could find. Worth a glance at the original."))), conf < 0.45) {
+      var head, why;
+      from.video ? (head = "Spotter read this off the screen.", why = "The caption named no exercises, so these came from what is written and shown in the video itself. There is no text to check them against \u2014 watch it once before you train it.") : from.speech ? (head = "Spotter heard this in the video.", why = "These exercises come from what the creator says out loud rather than from the caption, so a name can be misheard. Worth a listen before you train it.") : (head = conf < 0.45 ? "Spotter could not check most of this." : "Some of this is not in the caption.", why = conf < 0.45 ? "The exercises below were not traceable to anything written on the post. Watch the original before you train it." : "A few sets or reps were not written down anywhere Spotter could find. Worth a glance at the original.");
+      var warn = disclosure(null, "unverified"), wt = warn.lastChild;
+      if (warn.firstChild.appendChild(ic(from.video || from.speech ? "eye" : conf < 0.45 ? "alert" : "eye")), warn.firstChild.appendChild(el("b", null, head)), wt.appendChild(document.createTextNode(why)), conf < 0.45) {
         wt.appendChild(document.createTextNode(" "));
         var fix = el("button", "fixlink", "Paste the caption to improve it");
         if (fix.onclick = function() {
@@ -9897,7 +10037,7 @@ details.details-moving > :not(summary) {
           }, wt.appendChild(rv);
         }
       }
-      warn.appendChild(wt), d.appendChild(warn);
+      d.appendChild(warn);
     }
     if (w.platform !== "pumpy" && w.read_quality !== "premium") {
       var quality = el("div", "reader-offer");
@@ -9923,7 +10063,7 @@ details.details-moving > :not(summary) {
       }
       d.appendChild(quality);
     }
-    var start = el("button", "startbtn", w.has_full_workout ? "Start workout" : "Start & log freestyle");
+    var waiting = pausedDraft(), start = el("button", "startbtn", waiting && waiting.workoutId === w.id ? "Resume workout" : w.has_full_workout ? "Start workout" : "Start & log freestyle");
     start.onclick = function() {
       startWorkout(w);
     }, d.appendChild(start);
@@ -10160,7 +10300,7 @@ details.details-moving > :not(summary) {
   function closeDetail() {
     var d = $("detail");
     d.classList.contains("open") && (d.classList.remove("open"), d.classList.add("closing"), current = null, dNav = null, clearTimeout(detailCloseTimer), detailCloseTimer = setTimeout(function() {
-      d.classList.remove("closing"), d.classList.contains("open") || ($("dinner").innerHTML = ""), guideWake();
+      d.classList.remove("closing", "edgeout"), d.classList.contains("open") || ($("dinner").innerHTML = ""), guideWake();
     }, 240));
   }
   function patchWorkout(w, fields) {
@@ -10168,21 +10308,21 @@ details.details-moving > :not(summary) {
       return libraryRev++, r.error && toast("That change did not save. Your copy is unchanged."), !r.error;
     });
   }
-  var EX_FLING = 300, EX_BAND = 0.55, EX_HOLD = 480, exOv = $("detail"), openEx = null, exDrag = null, exQuiet = 0, exW = 0;
+  var EX_FLING = 300, EX_BAND = 0.55, EX_HOLD = 480, EX_FULL = 0.58, EX_INSET = 8, exOv = $("detail"), openEx = null, exDrag = null, exQuiet = 0, exW = 0;
   function exWidth(row) {
     return row.classList.contains("delete-swipe") ? 64 : exW || (exW = row.children[1].offsetWidth || 192);
   }
   function exPaint(row, d) {
     var a = row.children[1], n = a.children.length, w = exWidth(row), i, u = d < w ? d : w;
-    for (row.children[0].style.transform = d === null ? "" : "translateX(" + -d + "px)", a.style.transform = d === null ? "" : "translateX(" + Math.max(0, w - d) + "px)", i = 0; i < n; i++)
+    for (row.children[0].style.transform = d === null ? "" : "translateX(" + -d + "px)", a.style.transform = d === null ? "" : "translateX(" + Math.max(0, w - d) + "px)", a.style.width = d !== null && d > w && row.classList.contains("delete-swipe") ? d - EX_INSET + "px" : "", i = 0; i < n; i++)
       a.children[i].style.transform = d === null ? "" : "translateX(" + i * (u - w) / n + "px)";
   }
   function closeExRow(row) {
-    row && (row.classList.remove("drag", "open"), exPaint(row, null), openEx === row && (openEx = null));
+    row && (row.classList.remove("drag", "open", "armed"), exPaint(row, null), openEx === row && (openEx = null));
   }
   function openExRow(row, quiet2) {
     var was = openEx === row;
-    openEx && !was && closeExRow(openEx), row.classList.remove("drag"), exPaint(row, null), row.classList.add("open"), openEx = row, exQuiet = now() + 450, !quiet2 && !was && haptic("tap");
+    openEx && !was && closeExRow(openEx), row.classList.remove("drag", "armed"), exPaint(row, null), row.classList.add("open"), openEx = row, exQuiet = now() + 450, !quiet2 && !was && haptic("tap");
   }
   exOv.addEventListener("pointerdown", function(e) {
     if (!(e.pointerType !== "touch" && e.pointerType !== "pen") && !(exDrag || !e.isPrimary)) {
@@ -10203,7 +10343,7 @@ details.details-moving > :not(summary) {
     }
   }), exOv.addEventListener("pointermove", function(e) {
     if (!(!exDrag || e.pointerId !== exDrag.id || exDrag.held)) {
-      var dx = e.clientX - exDrag.x, dy = e.clientY - exDrag.y, w, d, o;
+      var dx = e.clientX - exDrag.x, dy = e.clientY - exDrag.y, w, d, o, past;
       if (!exDrag.lock) {
         if (dx * dx + dy * dy < SLOP * SLOP) return;
         if (clearTimeout(exDrag.hold), Math.abs(dy) > Math.abs(dx)) {
@@ -10214,14 +10354,14 @@ details.details-moving > :not(summary) {
           exDrag = null;
           return;
         }
-        exDrag.lock = !0, exDrag.x = e.clientX, dx = 0, exDrag.row.classList.add("drag");
+        exDrag.lock = !0, exDrag.x = e.clientX, dx = 0, exDrag.row.classList.add("drag"), exDrag.full = exDrag.row.classList.contains("delete-swipe"), exDrag.W = exDrag.row.offsetWidth;
         try {
           exOv.setPointerCapture(exDrag.id);
         } catch (err) {
         }
         openEx && openEx !== exDrag.row && closeExRow(openEx);
       }
-      for (w = exWidth(exDrag.row), d = exDrag.base - dx, d < 0 ? d = 0 : d > w && (o = d - w, d = w + o * w * EX_BAND / (w + EX_BAND * o)), exDrag.d = d, exDrag.s.push({ t: now(), x: e.clientX }); exDrag.s.length > 2 && exDrag.s[exDrag.s.length - 1].t - exDrag.s[0].t > VWIN; ) exDrag.s.shift();
+      for (w = exWidth(exDrag.row), d = exDrag.base - dx, d < 0 ? d = 0 : d > w && exDrag.full ? (d = Math.min(d, exDrag.W), past = d > exDrag.W * EX_FULL, past !== exDrag.row.classList.contains("armed") && (exDrag.row.classList.toggle("armed", past), haptic("tap"))) : d > w && (o = d - w, d = w + o * w * EX_BAND / (w + EX_BAND * o)), exDrag.d = d, exDrag.s.push({ t: now(), x: e.clientX }); exDrag.s.length > 2 && exDrag.s[exDrag.s.length - 1].t - exDrag.s[0].t > VWIN; ) exDrag.s.shift();
       exPaint(exDrag.row, d);
     }
   }), exOv.addEventListener("touchmove", function(e) {
@@ -10241,9 +10381,22 @@ details.details-moving > :not(summary) {
         }
         swallowClick();
         var s = r.s, a = s[0], b = s[s.length - 1], dt = (b.t - a.t) / 1e3, v = dt > 4e-3 ? (b.x - a.x) / dt : 0, w = exWidth(r.row), open = r.d > w / 2;
+        if (r.full && !cancelled && r.d > r.W * EX_FULL) {
+          commitRow(r.row, r.d);
+          return;
+        }
         !cancelled && Math.abs(v) > EX_FLING && (open = v < 0), open ? openExRow(r.row) : closeExRow(r.row);
       }
     }
+  }
+  function commitRow(row, d) {
+    var btn = row.children[1].querySelector(".exact.danger");
+    if (!btn || typeof btn.onclick != "function") {
+      closeExRow(row);
+      return;
+    }
+    openEx === row && (openEx = null), rowLeaving = { row: row, d: d }, btn.onclick({ stopPropagation: function() {
+    } }), rowLeaving = null;
   }
   exOv.addEventListener("pointerup", function(e) {
     endEx(e, !1);
@@ -10263,7 +10416,53 @@ details.details-moving > :not(summary) {
       e.stopPropagation(), closeExRow(row), fn();
     }, b;
   }
-  var D_LEAD = 72, dNav = null, navFrom = !1, dDrag = null, dNavBox = null, dPrev = null, dNext = null;
+  var D_LEAD = 72, dNav = null, navFrom = !1, dDrag = null, dNavBox = null, dPrev = null, dNext = null, D_EDGE = 24, D_HOME = 0.34, dBack = null;
+  exOv.addEventListener("pointerdown", function(e) {
+    e.pointerType !== "touch" && e.pointerType !== "pen" || dBack || dDrag || !e.isPrimary || !standalone() || e.clientX > D_EDGE || anySheet() || noDragIn(e.target) || (dBack = {
+      id: e.pointerId,
+      x: e.clientX,
+      y: e.clientY,
+      dx: 0,
+      lock: !1,
+      calm: lessMotion(),
+      s: [{ t: now(), x: e.clientX }]
+    });
+  }), exOv.addEventListener("pointermove", function(e) {
+    if (!(!dBack || e.pointerId !== dBack.id)) {
+      var dx = e.clientX - dBack.x, dy = e.clientY - dBack.y;
+      if (!dBack.lock) {
+        if (dx * dx + dy * dy < SLOP * SLOP) return;
+        if (Math.abs(dy) > Math.abs(dx) || dx < 0) {
+          dBack = null;
+          return;
+        }
+        dBack.lock = !0, dBack.x = e.clientX, dx = 0, exOv.classList.add("edging");
+        try {
+          exOv.setPointerCapture(dBack.id);
+        } catch (err) {
+        }
+      }
+      for (dBack.dx = dx, dBack.s.push({ t: now(), x: e.clientX }); dBack.s.length > 2 && dBack.s[dBack.s.length - 1].t - dBack.s[0].t > VWIN; ) dBack.s.shift();
+      dBack.calm || (exOv.style.transform = "translateX(" + Math.max(0, dx) + "px)");
+    }
+  });
+  function endEdgeDrag(e, cancelled) {
+    if (!(!dBack || e && e.pointerId !== dBack.id)) {
+      var d = dBack, s = d.s, a = s[0], b = s[s.length - 1], dt = (b.t - a.t) / 1e3, v;
+      if (dBack = null, !!d.lock) {
+        try {
+          exOv.releasePointerCapture(d.id);
+        } catch (err) {
+        }
+        swallowClick(), v = dt > 4e-3 ? (b.x - a.x) / dt : 0, exOv.classList.remove("edging"), exOv.style.transform = "", !cancelled && (v > FLING || d.dx > exOv.offsetWidth * D_HOME) && (exOv.classList.add("edgeout"), haptic("tap"), history.back());
+      }
+    }
+  }
+  exOv.addEventListener("pointerup", function(e) {
+    endEdgeDrag(e, !1);
+  }), exOv.addEventListener("pointercancel", function(e) {
+    endEdgeDrag(e, !0);
+  });
   function anySheet() {
     return !!document.querySelector(".sheet.open");
   }
@@ -10302,7 +10501,7 @@ details.details-moving > :not(summary) {
     }
   }
   exOv.addEventListener("pointerdown", function(e) {
-    e.pointerType !== "touch" && e.pointerType !== "pen" || dDrag || !e.isPrimary || !dNav || anySheet() || noDragIn(e.target) || !standalone() && (e.clientX < 24 || e.clientX > window.innerWidth - 24) || (dDrag = {
+    e.pointerType !== "touch" && e.pointerType !== "pen" || dDrag || dBack || !e.isPrimary || !dNav || anySheet() || noDragIn(e.target) || !standalone() && (e.clientX < 24 || e.clientX > window.innerWidth - 24) || (dDrag = {
       id: e.pointerId,
       x: e.clientX,
       y: e.clientY,
@@ -10340,7 +10539,7 @@ details.details-moving > :not(summary) {
       dDrag.calm || (lim = canStep(dx < 0 ? 1 : -1) ? D_LEAD : D_LEAD / 3, dx = clamp(dx / 2, -lim, lim), d = $("dinner"), d.style.transform = "translateX(" + dx + "px)", d.style.opacity = String(1 - Math.abs(dx) / 260));
     }
   }), exOv.addEventListener("touchmove", function(e) {
-    dDrag && dDrag.lock && e.cancelable && e.preventDefault();
+    (dDrag && dDrag.lock || dBack && dBack.lock) && e.cancelable && e.preventDefault();
   }, { passive: !1 });
   function endDetailDrag(e, cancelled) {
     if (!(!dDrag || e && e.pointerId !== dDrag.id)) {
@@ -10380,7 +10579,7 @@ details.details-moving > :not(summary) {
           state.workouts[i] = row;
           break;
         }
-      current && current.id === row.id && (current = row, $("detail").classList.contains("open") && openDetail(row, !0)), render();
+      current && current.id === row.id && ($("detail").classList.contains("open") && refreshDetail(row), current = row), render();
     }
   }
   function postCorrection(w, payload, btn, okMsg, sheet) {
@@ -10414,17 +10613,93 @@ details.details-moving > :not(summary) {
       sendCorrection(body, $("exeditsave"), exEdit.mode === "add" ? "Added it" : "Fixed \u2014 thanks");
     }
   }
+  var rowLeaving = null;
+  function rowOf(w, bi, ei) {
+    if (!current || current.id !== w.id || !$("detail").classList.contains("open")) return null;
+    var sect = $("dinner").querySelectorAll(".workout-block")[bi];
+    return sect ? ei === void 0 ? sect : sect.querySelectorAll(":scope > .exrow:not(.block-swipe)")[ei] || null : null;
+  }
+  function motionMs(cs, name, fallback) {
+    return parseFloat(cs.getPropertyValue(name)) || fallback;
+  }
+  function motionEase(cs, name, fallback) {
+    return cs.getPropertyValue(name).trim() || fallback;
+  }
+  function rowAway(box, from, done) {
+    if (!box || !box.isConnected || !box.animate || lessMotion() || document.hidden) {
+      done();
+      return;
+    }
+    var cs = getComputedStyle(box), h = box.getBoundingClientRect().height, settled2 = !1, timer, lead, fold, t2 = motionMs(cs, "--t-2", 220), t3 = motionMs(cs, "--t-3", 320), soft = motionEase(cs, "--e-soft", "cubic-bezier(.4,0,.2,1)"), leave = motionEase(cs, "--e-in", "cubic-bezier(.3,0,.8,.15)");
+    function finish() {
+      settled2 || (settled2 = !0, clearTimeout(timer), done());
+    }
+    box.classList.add("leaving"), box.style.overflow = "hidden";
+    try {
+      if (from && from.row && from.row.isConnected) {
+        var row = from.row, W = row.offsetWidth;
+        row.classList.remove("drag", "armed"), openEx === row && (openEx = null), row.children[0].animate(
+          [{ transform: "translateX(" + -from.d + "px)" }, { transform: "translateX(" + -W + "px)" }],
+          { duration: t2, easing: leave, fill: "forwards" }
+        ), row.children[1].animate(
+          [
+            { transform: "none", width: Math.max(exWidth(row) - EX_INSET, from.d - EX_INSET) + "px" },
+            { transform: "none", width: W - EX_INSET + "px" }
+          ],
+          { duration: t2, easing: leave, fill: "forwards" }
+        ), lead = Math.round(t2 * 0.6);
+      } else
+        box.animate([{ opacity: 1 }, { opacity: 0 }], { duration: t2, easing: soft, fill: "forwards" }), lead = Math.round(t2 * 0.4);
+      fold = box.animate([
+        {
+          height: h + "px",
+          marginBottom: cs.marginBottom,
+          paddingTop: cs.paddingTop,
+          paddingBottom: cs.paddingBottom,
+          borderTopWidth: cs.borderTopWidth,
+          borderBottomWidth: cs.borderBottomWidth
+        },
+        {
+          height: "0px",
+          marginBottom: "0px",
+          paddingTop: "0px",
+          paddingBottom: "0px",
+          borderTopWidth: "0px",
+          borderBottomWidth: "0px"
+        }
+      ], { duration: t3, delay: lead, easing: soft, fill: "forwards" }), fold.onfinish = finish, fold.oncancel = finish, timer = setTimeout(finish, lead + t3 + 150);
+    } catch (e) {
+      finish();
+    }
+  }
+  function rowBack(box) {
+    if (!(!box || !box.isConnected || !box.animate || lessMotion() || document.hidden)) {
+      var cs = getComputedStyle(box), h = box.getBoundingClientRect().height, t3 = motionMs(cs, "--t-3", 320), soft = motionEase(cs, "--e-soft", "cubic-bezier(.4,0,.2,1)"), was = box.style.overflow;
+      box.style.overflow = "hidden";
+      try {
+        var grow = box.animate([
+          { height: "0px", marginBottom: "0px", paddingTop: "0px", paddingBottom: "0px", opacity: 0 },
+          { height: h + "px", marginBottom: cs.marginBottom, paddingTop: cs.paddingTop, paddingBottom: cs.paddingBottom, opacity: 1 }
+        ], { duration: t3, easing: soft });
+        grow.onfinish = grow.oncancel = function() {
+          box.style.overflow = was;
+        };
+      } catch (e) {
+        box.style.overflow = was;
+      }
+    }
+  }
   function deleteBlock(w, bi) {
     var before = JSON.parse(JSON.stringify(w.blocks || []));
     if (!before[bi]) return;
-    var expected = before[bi];
+    var expected = before[bi], leaving = rowLeaving, box = rowOf(w, bi), band = box && box.firstElementChild, from = leaving && box && box.contains(leaving.row) ? leaving : band && band.classList.contains("open") ? { row: band, d: exWidth(band) } : null;
     function redraw() {
-      current && current.id === w.id && openDetail(w, !0), render();
+      current && current.id === w.id && $("detail").classList.contains("open") && openDetail(w, !0);
     }
     function restore(msg) {
-      w.blocks = before, redraw(), msg && toast(msg);
+      w.blocks = before, redraw(), render(), rowBack(rowOf(w, bi)), msg && toast(msg);
     }
-    w.blocks.splice(bi, 1), redraw(), offerUndo("Removed " + (expected.title || "block"), function() {
+    w.blocks.splice(bi, 1), render(), rowAway(box, from, redraw), offerUndo("Removed " + (expected.title || "block"), function() {
       api("workouts/" + w.id + "/exercises", { method: "POST", body: JSON.stringify({ op: "delete_block", block: bi, expect_block: expected }) }).then(function(r) {
         r.status === "ok" ? absorbWorkout(r.workout) : restore(r.message || "Could not remove that block.");
       }).catch(function() {
@@ -10439,12 +10714,12 @@ details.details-moving > :not(summary) {
     var ctx = exEdit, w = ctx.w, before = JSON.parse(JSON.stringify(w.blocks || []));
     exEdit = null, closeSheet("exeditsheet");
     function redraw() {
-      current && current.id === w.id && $("detail").classList.contains("open") && openDetail(w, !0), render();
+      current && current.id === w.id && $("detail").classList.contains("open") && openDetail(w, !0);
     }
-    var blk = (w.blocks || [])[ctx.block];
-    blk && blk.exercises && blk.exercises.splice(ctx.index, 1), redraw();
+    var leaving = rowLeaving, box = rowOf(w, ctx.block, ctx.index), from = leaving && leaving.row === box ? leaving : box && box.classList.contains("open") ? { row: box, d: exWidth(box) } : null, blk = (w.blocks || [])[ctx.block];
+    blk && blk.exercises && blk.exercises.splice(ctx.index, 1), render(), rowAway(box, from, redraw);
     function putBack(msg) {
-      w.blocks = before, redraw(), msg && toast(msg);
+      w.blocks = before, redraw(), render(), rowBack(rowOf(w, ctx.block, ctx.index)), msg && toast(msg);
     }
     offerUndo("Removed " + ctx.name, function() {
       api("workouts/" + w.id + "/exercises", {
@@ -11277,24 +11552,32 @@ details.details-moving > :not(summary) {
   function draftKey() {
     return "spotter_draft";
   }
-  function saveDraft() {
-    if (!(!wo || wo.finished)) {
-      try {
-        localStorage.setItem(draftKey(), JSON.stringify({
-          workoutId: wo.workout.id,
-          title: wo.workout.title,
-          entries: wo.entries,
-          blocks: wo.workout.blocks,
-          startedAt: wo.startedAt,
-          i: wo.i,
-          rounds: wo.rounds,
-          amrap: wo.amrap,
-          rest: restUntil && !restFace ? { until: restUntil, total: restTotal, held: restHeld } : null
-        })), native && native.saveDraft(localStorage.getItem(draftKey()));
-      } catch (e) {
-      }
-      native && native.live && liveSync();
+  function draftOf() {
+    return {
+      workoutId: wo.workout.id,
+      title: wo.workout.title,
+      entries: wo.entries,
+      blocks: wo.workout.blocks,
+      startedAt: wo.startedAt,
+      i: wo.i,
+      rounds: wo.rounds,
+      amrap: wo.amrap,
+      rest: restUntil && !restFace ? { until: restUntil, total: restTotal, held: restHeld } : null,
+      paused: !1,
+      pausedAt: null,
+      savedAt: (/* @__PURE__ */ new Date()).toISOString()
+    };
+  }
+  function writeDraft(d) {
+    var json = JSON.stringify(d);
+    try {
+      localStorage.setItem(draftKey(), json);
+    } catch (e) {
     }
+    native && native.saveDraft(json);
+  }
+  function saveDraft() {
+    !wo || wo.finished || (writeDraft(draftOf()), native && native.live && liveSync());
   }
   function clearDraft() {
     native && native.saveDraft(null);
@@ -11302,6 +11585,60 @@ details.details-moving > :not(summary) {
       localStorage.removeItem(draftKey());
     } catch (e) {
     }
+  }
+  var DRAFT_TTL = 24 * 3600 * 1e3;
+  function readDraft() {
+    var raw = null, d;
+    try {
+      raw = localStorage.getItem(draftKey());
+    } catch (e) {
+      return null;
+    }
+    if (!raw) return null;
+    try {
+      d = JSON.parse(raw);
+    } catch (e) {
+      return clearDraft(), null;
+    }
+    if (!d || !d.workoutId || !d.startedAt)
+      return clearDraft(), null;
+    var at = new Date(d.pausedAt || d.savedAt || d.startedAt).getTime();
+    return at > Date.now() - DRAFT_TTL ? d : (clearDraft(), null);
+  }
+  function pausedDraft() {
+    var d = readDraft();
+    return d && d.paused ? d : null;
+  }
+  function draftSets(d) {
+    var n = 0;
+    return (d.entries || []).forEach(function(e) {
+      n += (e.sets || []).filter(Boolean).length;
+    }), n;
+  }
+  function pausedState(d, w) {
+    var entry = (d.entries || [])[d.i || 0], done = draftSets(d), planned = 0;
+    try {
+      flatten(Object.assign({}, w, { blocks: d.blocks || w.blocks || [] })).forEach(function(s) {
+        planned += targetOf(s);
+      });
+    } catch (e) {
+    }
+    return {
+      v: 1,
+      title: d.title || w.title || "Workout",
+      startedAt: d.startedAt,
+      phase: "paused",
+      pausedAt: d.pausedAt,
+      exercise: entry ? entry.name : "Workout",
+      block: null,
+      set: null,
+      target: null,
+      weight: null,
+      rest: null,
+      next: null,
+      progress: { done: done, total: Math.max(planned, done, 1) },
+      dose: null
+    };
   }
   function liveState() {
     var s = wo.screens[wo.i], entry = wo.entries[wo.i], i, logged = 0, planned = 0;
@@ -11358,6 +11695,14 @@ details.details-moving > :not(summary) {
     }
   }
   function startWorkout(w, resume) {
+    if (!resume) {
+      var waiting = pausedDraft();
+      if (waiting && waiting.workoutId === w.id) {
+        resumeWorkout();
+        return;
+      }
+      waiting && toast("Ended the paused " + (waiting.title || "workout") + ".");
+    }
     guideClear(), guideStill(), w = Object.assign({}, w, { blocks: JSON.parse(JSON.stringify(resume && resume.blocks || w.blocks || [])) });
     var screens = flatten(w);
     for (wo = {
@@ -12450,9 +12795,73 @@ details.details-moving > :not(summary) {
       }), clearInterval(woTimer), cxOff(), stopRest(), clearDraft(), liveEnd(!0), wo.finished = !0, haptic("done"), renderSummary(payload, logged);
     }
   }
-  function leaveWorkout() {
+  function leaveWorkout(extra, pause) {
     var openedFromDetail = $("detail").classList.contains("open");
-    exitWorkout(), history.go(openedFromDetail ? -2 : -1);
+    exitWorkout(pause), history.go(-((extra || 0) + (openedFromDetail ? 2 : 1))), renderResume();
+  }
+  function loggedSets() {
+    var n = 0;
+    return wo && wo.entries.forEach(function(e) {
+      n += (e.sets || []).filter(Boolean).length;
+    }), n;
+  }
+  function openLeave() {
+    var n = loggedSets();
+    $("wendsub").textContent = n ? "Saves " + n + (n === 1 ? " set" : " sets") + " to your history." : "Nothing logged yet \u2014 closes without saving.", openSheet("wleavesheet");
+  }
+  function resumeWorkout() {
+    var d = pausedDraft(), w = d && srcById(d.workoutId), gap;
+    if (d) {
+      if (!w) {
+        state.workouts.length && clearDraft(), renderResume();
+        return;
+      }
+      d.pausedAt && (gap = Date.now() - new Date(d.pausedAt).getTime(), gap > 0 && (d.startedAt = new Date(new Date(d.startedAt).getTime() + gap).toISOString())), d.paused = !1, d.pausedAt = null, d.rest = null, startWorkout(w, d), renderResume();
+    }
+  }
+  function restoreSession() {
+    if (!wo) {
+      var d = readDraft(), w = d && srcById(d.workoutId);
+      if (d) {
+        if (!w) {
+          state.workouts.length && clearDraft();
+          return;
+        }
+        if (d.paused || (d.paused = !0, d.pausedAt = d.savedAt || (/* @__PURE__ */ new Date()).toISOString(), d.rest = null, writeDraft(d)), native && native.live) try {
+          native.live.update(pausedState(d, w));
+        } catch (e) {
+        }
+        renderResume();
+      }
+    }
+  }
+  function pausedAgo(iso) {
+    var m = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 6e4));
+    if (m < 1) return "just now";
+    if (m < 60) return m + " min ago";
+    var h = Math.round(m / 60);
+    return h + (h === 1 ? " hour ago" : " hours ago");
+  }
+  var resumeBox = el("div", "resumewrap hide"), resumeShown = !1;
+  resumeBox.id = "resume", $("chips").parentNode.insertBefore(resumeBox, $("chips"));
+  function renderResume() {
+    var d = pausedDraft(), w = d && srcById(d.workoutId);
+    if (resumeBox.innerHTML = "", !d || !w || wo) {
+      resumeBox.classList.add("hide"), resumeShown = !1;
+      return;
+    }
+    var card = el("div", "daycard"), head = el("div", "dayhead"), n = draftSets(d), secs = Math.max(0, Math.floor((new Date(d.pausedAt || d.savedAt).getTime() - new Date(d.startedAt).getTime()) / 1e3));
+    head.appendChild(el("div", "dayname", "Paused")), head.appendChild(el("div", "tclock", clock(secs))), card.appendChild(head);
+    var t = el("button", "ttitle", d.title || w.title || "Workout");
+    t.onclick = function() {
+      openDetail(w);
+    }, card.appendChild(t), card.appendChild(el("div", "tdose", (n ? n + (n === 1 ? " set logged" : " sets logged") : "No sets logged yet") + " \xB7 paused " + pausedAgo(d.pausedAt || d.savedAt)));
+    var btns = el("div", "tbtns"), go = icon(el("button", "btn tstart"), "play", "Resume");
+    go.onclick = resumeWorkout;
+    var end = el("button", "btn ghost tend", "End");
+    end.onclick = function() {
+      resumeWorkout(), finishWorkout();
+    }, btns.appendChild(go), btns.appendChild(end), card.appendChild(btns), resumeBox.appendChild(card), resumeBox.classList.remove("hide"), resumeShown || (resumeShown = !0, viewIn(resumeBox));
   }
   function renderSummary(payload, logged, past) {
     var main = $("wmain"), w = past ? logWorkout(payload) : wo && wo.workout || {}, prs = past ? prsOfLog(logged) : wo && wo.prs || {};
@@ -12577,50 +12986,24 @@ details.details-moving > :not(summary) {
     }
   }
   var woCloseTimer = null;
-  function exitWorkout() {
-    wo && (clearInterval(woTimer), cxOff(), stopRest(), releaseWake(), clearDraft(), liveEnd(!1), publishSummary()), closeSheet("watchsheet"), wo = null, recapLog = null;
+  function exitWorkout(pause) {
+    if (wo) {
+      var keep = pause && !wo.finished, at = (/* @__PURE__ */ new Date()).toISOString(), w = wo.workout;
+      if (clearInterval(woTimer), cxOff(), stopRest(), releaseWake(), keep) {
+        var d = draftOf();
+        if (d.paused = !0, d.pausedAt = at, d.rest = null, writeDraft(d), native && native.live) try {
+          native.live.update(pausedState(d, w));
+        } catch (e) {
+        }
+      } else
+        clearDraft(), liveEnd(!1);
+      publishSummary();
+    }
+    closeSheet("watchsheet"), wo = null, recapLog = null;
     var n = $("workout");
     n.classList.contains("open") && (n.classList.remove("open"), n.classList.remove("summary"), n.classList.remove("past"), n.classList.add("closing"), recapFocus && recapFocus.isConnected && recapFocus.focus({ preventScroll: !0 }), recapFocus = null, clearTimeout(woCloseTimer), woCloseTimer = setTimeout(function() {
       n.classList.remove("closing"), guideWake();
     }, 260));
-  }
-  function offerResume() {
-    if (!sharing) {
-      var raw = null;
-      try {
-        raw = localStorage.getItem(draftKey());
-      } catch (e) {
-        return;
-      }
-      if (raw) {
-        var d;
-        try {
-          d = JSON.parse(raw);
-        } catch (e) {
-          clearDraft();
-          return;
-        }
-        var w = state.workouts.filter(function(x) {
-          return x.id === d.workoutId;
-        })[0];
-        if (!w) {
-          clearDraft();
-          return;
-        }
-        var any = (d.entries || []).some(function(e) {
-          return e.sets && e.sets.length;
-        });
-        if (!any) {
-          clearDraft();
-          return;
-        }
-        toast("Tap to resume " + (d.title || "your workout"), native ? 3e4 : void 0);
-        var t = $("toast");
-        t.classList.add("tappable"), t.onclick = function() {
-          t.onclick = null, t.classList.remove("tappable"), t.classList.remove("show"), startWorkout(w, d);
-        };
-      }
-    }
   }
   var SC_W = 1080, SC_H = 1920, SC_CH = 1200, SC_PAD = 88, SC_TOP = 262, SC_BASE = 1580, SC_SANS = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', SC_WHERE = { tiktok: "TikTok", instagram: "Instagram", youtube: "YouTube" }, sc = {
     bg: "dark",
@@ -16091,7 +16474,9 @@ details.details-moving > :not(summary) {
     "filtersheet",
     "schedulesheet",
     "recapsheet",
-    "woaddsheet"
+    "woaddsheet",
+    "aiconsentsheet",
+    "wleavesheet"
   ].forEach(wireSheet);
   function overlayShowing() {
     if ($("detail").classList.contains("open") || $("workout").classList.contains("open")) return !0;
@@ -17560,7 +17945,7 @@ details.details-moving > :not(summary) {
     b.onclick = function() {
       closeSheet(b.getAttribute("data-close"));
     };
-  }), ["workoptions", "filtersheet", "schedulesheet", "recapsheet", "woaddsheet"].forEach(function(id) {
+  }), ["workoptions", "filtersheet", "schedulesheet", "recapsheet", "woaddsheet", "aiconsentsheet", "wleavesheet"].forEach(function(id) {
     $(id).addEventListener("keydown", function(e) {
       if (e.key === "Escape" && (e.preventDefault(), closeSheet(id)), e.key === "Tab") {
         var nodes = Array.from(this.querySelectorAll("button, input")).filter(function(n) {
@@ -17623,7 +18008,17 @@ details.details-moving > :not(summary) {
       finishRead(), accountNow(epoch, uid) && toast("Could not read that workout again \u2014 try again in a minute.");
     });
   }, $("wclose").onclick = function() {
-    history.back();
+    wo && !wo.finished ? openLeave() : history.back();
+  }, $("wpause").onclick = function() {
+    var extra = sheetNav ? 1 : 0;
+    closeSheet("wleavesheet", !0), leaveWorkout(extra, !0), haptic("select");
+  }, $("wend").onclick = function() {
+    var extra = sheetNav ? 1 : 0, n = loggedSets();
+    if (closeSheet("wleavesheet", !0), !n) {
+      leaveWorkout(extra, !1), toast("Workout closed \u2014 nothing logged.");
+      return;
+    }
+    extra && (sheetBack++, history.back()), finishWorkout();
   }, $("wmore").onclick = openRecapOptions, wireProof(), wireWmain($("wmain")), $("wprev").onclick = function() {
     woGo(-1);
   }, $("wnext").onclick = skipMove, $("wfinish").onclick = finishWorkout, $("waddexercise").onclick = openWorkoutAdd, $("woaddsave").onclick = saveWorkoutAdd, $("woaback").onclick = function() {
@@ -17678,10 +18073,12 @@ details.details-moving > :not(summary) {
   };
   var OPEN_KEY = "spotter_open_pending";
   function woForward() {
-    if (!(!wo || wo.finished)) {
-      var n = $("workout");
-      n.classList.remove("closing"), n.classList.add("open");
+    if (!wo || wo.finished) {
+      pausedDraft() && resumeWorkout();
+      return;
     }
+    var n = $("workout");
+    n.classList.remove("closing"), n.classList.add("open");
   }
   function liveAction(a) {
     var k = a.kind, live = wo && !wo.finished, s = live ? wo.screens[wo.i] : null, pre;
@@ -17751,7 +18148,7 @@ details.details-moving > :not(summary) {
       return;
     }
     if ($("workout").classList.contains("open")) {
-      exitWorkout();
+      exitWorkout(!!(wo && !wo.finished)), renderResume();
       return;
     }
     $("detail").classList.contains("open") && closeDetail();
@@ -17779,7 +18176,7 @@ details.details-moving > :not(summary) {
       watchBilling(), overlayShowing() || load();
     }
   }), window.addEventListener("pageshow", watchBilling), window.addEventListener("focus", watchBilling), captureCreator(), setAuthMode("signup"), captureShare(), captureBilling(), captureStrava(), linkProblem(), sb.auth.getSession().then(function(r) {
-    r.data.session && r.data.session.user ? (state.user = r.data.session.user, showApp(), boot().then(offerResume)) : (showLanding(), sharePending() && toast("Sign in to save the link you shared."));
+    r.data.session && r.data.session.user ? (state.user = r.data.session.user, showApp(), boot().then(restoreSession)) : (showLanding(), sharePending() && toast("Sign in to save the link you shared."));
   }), !native && "serviceWorker" in navigator && window.addEventListener("load", function() {
     navigator.serviceWorker.register("sw.js").catch(function() {
     });

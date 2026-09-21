@@ -380,6 +380,21 @@ export const STYLE = String.raw`<style>
      nothing left to do here today. */
   .todaywrap { padding: 12px 18px 0; }
   .chips.hide + .todaywrap { display: none; }
+  /* ---------- a paused session ----------
+     The card the Library leads with while a workout is waiting: what was paused,
+     how far it got, one button that picks it up. It used to be a toast for
+     thirty seconds and then nothing — a session the reader had every intention
+     of finishing, gone from sight behind a grid of other cards. Same card as
+     Today, ember all round so it reads as the thing to do, and it stays until
+     the session is resumed or ended. */
+  .resumewrap { padding: 12px 18px 0; }
+  .resumewrap .daycard { margin-bottom: 0; border-color: var(--ember); }
+  .resumewrap .dayname { color: var(--ember-ink); }
+  .resumewrap .tclock { font-family: var(--display); font-size: 13px; font-weight: 700; color: var(--muted);
+    font-variant-numeric: tabular-nums; }
+  .resumewrap .tbtns { margin-top: 12px; }
+  .resumewrap .tend { flex: 0 0 auto; width: auto; padding: 12px 16px; font-size: 14px; }
+  .resumewrap .tstart { flex: 1; }
   .todaywrap .daycard { margin-bottom: 0; }
   .todaywrap .daycard.done { border-color: var(--line); }
   .todaywrap .daycard.done .dayname { color: var(--muted); }
@@ -559,6 +574,16 @@ export const STYLE = String.raw`<style>
   .overlay.open { visibility: visible; pointer-events: auto; opacity: 1; transform: none;
     transition: opacity var(--t-3) var(--e-out), transform var(--t-3) var(--e-out); }
   .overlay.closing { visibility: visible; }
+  /* The edge swipe home (app.ts, "the edge swipe home"). Under a finger the card
+     is being moved, not animating; let go past the point of no return it keeps
+     going off the right edge, whole and opaque, the way a navigation stack pops
+     — and outranks the fade-and-drop a button close gets, because that is a
+     different exit. The shadow is what says the library is underneath rather
+     than beside. */
+  .overlay.edging { transition: none; }
+  .overlay.edging, .overlay.edgeout { box-shadow: var(--sh-lg); }
+  .overlay.edgeout { transform: translateX(100%); opacity: 1;
+    transition: transform var(--t-2) var(--e-out); }
   .dtop { position: sticky; top: 0; z-index: 5; display: flex; align-items: center;
     justify-content: space-between; gap: 8px;
     padding: calc(10px + env(safe-area-inset-top)) 14px 10px;
@@ -756,12 +781,18 @@ export const STYLE = String.raw`<style>
   .capbox { font-size: 13.5px; line-height: 1.62; color: var(--ink-2); white-space: pre-wrap;
     word-break: break-word; content-visibility: auto; contain-intrinsic-size: auto 400px; }
   /* Shown only when the extraction could not be traced back to the source text.
-     Deliberately quiet: it is a caveat on a card that still works, not an error. */
-  .unverified { display: flex; gap: 9px; align-items: flex-start; font-size: 12.5px;
-    line-height: 1.5; color: var(--ink-2); background: var(--sand); border: 1px solid var(--line);
-    border-radius: 12px; padding: 10px 12px; margin-bottom: 14px; }
-  .unverified b { color: var(--ink); font-weight: 650; }
-  .unverified .ic { width: 17px; height: 17px; margin-top: 1px; color: var(--ember-ink); }
+     Deliberately quiet: it is a caveat on a card that still works, not an error.
+     A disclosure like the rows around it: the headline is the whole caveat for
+     most people, and four lines of sand box above the Start button read as a
+     problem on every card that has one. The eye stays; the chevron says there
+     is more. */
+  .disclosure.unverified { margin: 0 0 14px; }
+  .disclosure.unverified > summary { gap: 9px; color: var(--ink); font-weight: 650; }
+  .disclosure.unverified > summary b { font-weight: inherit; min-width: 0; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; }
+  .unverified .ic { flex: 0 0 auto; width: 17px; height: 17px; color: var(--ember-ink); }
+  .disclosure.unverified .disclosure-body { padding: 0 16px 14px; font-size: 12.5px;
+    line-height: 1.55; color: var(--ink-2); }
   .unverified .fixlink { display: inline; background: none; border: 0; padding: 0; margin: 0;
     font: inherit; color: var(--ember-ink); font-weight: 650; text-decoration: underline;
     text-underline-offset: 2px; cursor: pointer; }
@@ -955,13 +986,18 @@ export const STYLE = String.raw`<style>
   .exmarks { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
   /* One line, truncated: the sheet says the delta in full, and a row whose height
      depends on how long a delta turned out to be makes the list breathe unevenly. */
-  .dchip { min-width: 0; border-radius: 999px; padding: 3px 9px;
+  .dchip { min-width: 0; border-radius: 999px; padding: 5px 10px; line-height: 1.2;
     background: var(--ember-soft); color: var(--ember-ink); font-size: 11px; font-weight: 650;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   /* The second is pushed to the end, where a reader's eye already goes for a
      duration, and set in tabular digits so a column of them lines up. */
   .t { flex: 0 0 auto; margin-left: auto; font-size: 11px; font-weight: 650;
     color: var(--muted); font-variant-numeric: tabular-nums; }
+  /* "Watch this bit" sat on the chip above it with no gap at all, and on a row
+     with no cue it ran on inline after the name ("Lat pulldown [Watch this
+     bit]"), pushing the name off the dose's baseline. A line of its own, as
+     wide as its words, with the air a paragraph gets. */
+  .exname > .chip { display: flex; width: fit-content; margin-top: 9px; }
   /* ---------- the demonstration clip ----------
      One 16:9 slot, a byline, the other creators who filmed it, a way out — the shape
      Hevy, Fitbod and Nike Training Club all settled on for the demo inside an exercise
@@ -1098,6 +1134,17 @@ export const STYLE = String.raw`<style>
     color: var(--ink-2); margin: 8px 0 12px; line-height: 1.5; }
   .btnrow { display: flex; gap: 9px; margin-top: 10px; }
   .btnrow .btn { flex: 1; }
+  /* The third choice on the AI sheet. As a pill it sat flush under the pair
+     above, sand on sand, and the three read as one lumpy shape; a text action
+     with its own air is how a sheet offers the thing most people will not
+     take. Ink rather than ember: turning AI off is a setting, not a link out. */
+  .btnrow + .revoke { margin-top: 8px; color: var(--ink-2); font-weight: 650; }
+  /* The AI sheet's three paragraphs are one piece of writing: the lede's size
+     and colour for all of it, rather than a small grey opening under a large
+     white middle. */
+  #aiconsentsheet p { font-size: 13.5px; line-height: 1.6; color: var(--ink-2); margin: 0 0 14px; }
+  #aiconsentsheet p a { color: var(--ember-ink); font-weight: 650; }
+  #aiconsentsheet p:empty { display: none; }
 
   /* ---------- upload a video you saved ----------
      A tertiary control under the primary one, never a second primary: the URL
@@ -1164,8 +1211,10 @@ export const STYLE = String.raw`<style>
 
   /* ---------- picker list ---------- */
   .picklist { display: flex; flex-direction: column; gap: 2px; }
+  /* color: inherit, because WebKit paints a bare <button> system blue — the leave
+     sheet's two rows came up as links on the 17 Pro while every other row was ink. */
   .pickrow { display: flex; align-items: center; gap: 12px; padding: 11px 6px; border: none;
-    background: none; text-align: left; border-radius: 13px; width: 100%; }
+    background: none; text-align: left; border-radius: 13px; width: 100%; color: inherit; }
   .pickrow:active { background: var(--sand); }
   .pickrow img { width: 46px; height: 46px; border-radius: 11px; object-fit: cover; background: var(--sand);
     flex: 0 0 auto; }
@@ -1173,6 +1222,14 @@ export const STYLE = String.raw`<style>
   .pickrow .pt b { display: block; font-size: 14px; font-weight: 600; line-height: 1.3;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pickrow .pt span { font-size: 11.5px; color: var(--muted); }
+  /* The leave sheet's two doors: an icon in a sand tile, a title, a line saying
+     what each one keeps. The same row Options uses, with a tile so the two read
+     as choices rather than as a list. */
+  .leaverow { min-height: 60px; padding: 8px 6px; }
+  .leaverow .ic { width: 42px; height: 42px; padding: 11px; border-radius: 12px; background: var(--sand);
+    color: var(--ember-ink); }
+  .leaverow .pt b { font-size: 15px; white-space: normal; }
+  .leaverow .pt span { display: block; margin-top: 1px; line-height: 1.4; }
 
   /* ---------- sort and jump ----------
      A mark against the one in force, which is what Apple says people scan a list of
@@ -2437,6 +2494,8 @@ export const STYLE = String.raw`<style>
     /* Fade kept, travel gone; the compounds repeat or the rules above outrank. */
     .overlay, .overlay.open, .overlay.closing { transform: none;
       transition-duration: var(--t-2); }
+    /* The edge swipe still leaves; it fades out where it stands. */
+    .overlay.edgeout { transform: none; opacity: 0; transition: opacity var(--t-2) var(--e-soft); }
     .sheetbody, .sheet.open .sheetbody { transform: none; transition: none; }
     /* The press still answers, it just answers at once. */
     .stepper button { transition: none; }
@@ -2661,17 +2720,55 @@ export const STYLE = String.raw`<style>
   .set-goal { color: #bd3434; border: 1px solid currentColor; border-radius: 12px; padding: 12px; margin: 16px 0; font-size: 14px; font-weight: 650; text-align: center; }
   .set-goal.reached { color: var(--good); }
   @media (prefers-color-scheme: dark) { .set-goal:not(.reached) { color: #ff9292; } }
-  .delete-swipe { margin: 0; border-radius: 12px; }
-  .delete-swipe > .exmain { display: block; padding: 0; background: var(--card); }
+  /* ---------- the rows that can be swiped away ----------
+     A card's exercise rows and its block heading each hide one action, Delete,
+     behind a leftward swipe. They bleed to the card's inner edge like every
+     .exrow does (the base rule's -16px), because that edge is where a row's
+     words should disappear under as they slide: clipped at the text's own
+     left edge, "Incline Bench" became "ench" floating a finger's width from the
+     border, which read as broken rather than as moved. The words keep their
+     16px by padding. */
+  .delete-swipe { border-radius: 0; }
+  .delete-swipe > .exmain { display: block; padding: 0 16px; background: var(--card); }
   .delete-swipe .exercise-card { width: 100%; box-sizing: border-box; }
   .delete-swipe.open > .exmain { transform: translateX(-64px); }
   .exact.danger { background: #bb3030; color: #fff; }
+  /* The drawer is a rounded red button standing off the row's edge, not a slab
+     the row's full height — a three-line exercise row swiped open showed a
+     150px red column with "Delete" lost in the middle of it. The container is
+     the 64px the row moves by (56px of button, 8px of air) and is transparent;
+     the button is capped and centred in it. Past the button's width a full
+     swipe stretches the container under the row (app.ts sets its width while
+     the finger is down) and the button, being 100% of it, grows with the
+     finger and keeps its corners — iOS 26's action buttons stretch the same
+     way. Crossing the point where letting go deletes is marked twice, a tick
+     in the hand and the mark growing, so nobody learns where it is by losing
+     a row. */
+  .delete-swipe > .exacts { top: 0; bottom: 0; right: 8px; width: 56px; align-items: center;
+    transform: translateX(calc(100% + 8px));
+    transition: transform var(--t-3) var(--e-spring), width var(--t-3) var(--e-spring); }
+  /* Re-stated over the generic .danger text link, which is declared later than
+     .exact and had been quietly turning this button into a block with a text
+     link's padding: the mark over the word, centred. */
+  .delete-swipe .exact.danger { width: 100%; height: calc(100% - 16px); max-height: 84px;
+    min-height: 44px; border-radius: 14px; flex: 0 0 auto; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 3px; margin: 0; padding: 0; font-size: 10.5px; }
+  .delete-swipe .exact.danger .ic { transition: transform var(--t-2) var(--e-spring); }
+  .delete-swipe.armed .exact.danger .ic { transform: scale(1.22); }
+  /* A row on its way out: nothing under a finger, nothing under the hairline. */
+  .exrow.leaving, .workout-block.leaving { pointer-events: none; }
+  .exrow.leaving::before { display: none; }
   .segment-label { padding: 12px 16px; background: var(--ember-soft); color: var(--ink); font-weight: 650; }
   .recommendation { color: var(--ember-ink); }
   .thumbwrap img.pumpy-cover { object-fit: contain; background: #f8efdf; }
-.block-swipe { margin-bottom: 8px; }
-.block-swipe .exmain { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:8px 0; background:var(--paper); }
-.block-swipe h3 { margin:0; }
-.block-swipe .linkbtn { font-size:12px; min-height:44px; color:var(--muted); }
+  /* The block's own row: its name and its one quiet action on a band of paper,
+     swipeable like the exercises under it. The band spans the card like the
+     rows do and pads by the same 16px, so the name lines up with the exercise
+     names below instead of sitting flush against a box of its own. */
+  .block-swipe { margin-bottom: 8px; border-radius: 12px; }
+  .block-swipe .exmain { display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; padding: 8px 16px; background: var(--paper); }
+  .block-swipe h3 { margin: 0; }
+  .block-swipe .linkbtn { font-size: 12px; min-height: 44px; color: var(--muted); }
 </style>
 `;

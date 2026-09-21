@@ -38,7 +38,7 @@ struct LiveState: Codable, Hashable {
     var target: String?
     /// Prefilled or last-used weight with its unit; nil when bodyweight.
     var weight: String?
-    /// Present only while resting.
+    /// Present only while resting. Null while the session is paused.
     var rest: RestState?
     /// The movement after this one; nil at the end of the session.
     var next: String?
@@ -49,11 +49,27 @@ struct LiveState: Codable, Hashable {
     /// rendered string ("1,200 lb", grouped for the reader's locale) and
     /// `target` is prose ("8-12 reps"), so a surface that has to add 2.5 to one
     /// of them would be parsing its own app's display text. Optional because a
-    /// shell built before this field existed still decodes.
+    /// shell built before this field existed still decodes. The Live Activity's
+    /// dial is built from it too — `stepping(_:by:)` below is the one clamp
+    /// every off-phone stepper shares.
     var dose: Dose?
+    /// When the session was paused, ISO 8601; present only with `phase ==
+    /// .paused`. The frozen elapsed a paused card shows is `pausedAt −
+    /// startedAt`, never a running timer: the process may be suspended for
+    /// hours, and a `.timer` text would keep counting time nobody trained. On
+    /// resume the engine shifts `startedAt` forward by the length of the pause
+    /// and sends an ordinary state, so the elapsed clock skips the gap.
+    /// Optional for the same reason as `dose`.
+    var pausedAt: String?
 
     enum Phase: String, Codable, Hashable {
         case work, rest, timed, complex, done
+        /// The session is stopped, not over: the person paused it from the
+        /// phone, or the process was killed mid-workout and the draft came back
+        /// at boot as paused rather than gone. `exercise`, `set`, `target`,
+        /// `weight`, `next`, `progress` and `dose` keep describing where it
+        /// stopped; `rest` is null; `pausedAt` says when.
+        case paused
         /// A phase this build does not know about. See note 1 above.
         case unknown
 
@@ -136,6 +152,13 @@ struct LiveState: Codable, Hashable {
 
     var startedDate: Date { SpotterISO8601.date(startedAt) ?? Date() }
     var restDeadline: Date? { rest?.deadline }
+    /// The instant the pause began, or nil when the session is not paused (or
+    /// the engine sent a pause without saying when — then the card has no
+    /// honest number to freeze, and shows none).
+    var pausedDate: Date? {
+        guard phase == .paused, let pausedAt = pausedAt else { return nil }
+        return SpotterISO8601.date(pausedAt)
+    }
 }
 
 // Sent once when the session ends, by finishing or by walking away from it.
@@ -165,9 +188,10 @@ struct LiveAction: Codable, Hashable {
     var source: Source
     /// Notification identifier, deep link, or whatever else names this action.
     var id: String?
-    /// A `.set` dialled on the wrist before it was sent. Nil means "whatever the
-    /// phone had prefilled", which is what every other surface sends: the Lock
-    /// Screen has no stepper and must not invent a number.
+    /// A `.set` dialled before it was sent — on the wrist, or on the Live
+    /// Activity's own dial. Nil means "whatever the phone had prefilled", which
+    /// is what an untouched dial sends: no surface invents a number, and the
+    /// dial's individual presses never cross this bridge, only the final set.
     var reps: Int?
     /// The same, in the account's unit. The engine clamps both on arrival.
     var weight: Double?

@@ -79,6 +79,8 @@ export const MARKUP_BODY = String.raw`</head>
 <symbol id="i-trend" viewBox="0 0 24 24"><path d="M22 7 13.5 15.5 8.5 10.5 2 17"/><path d="M16 7h6v6"/></symbol>
 <symbol id="i-train" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="3"/><path d="M3 10h18"/><path d="M8 2v4"/><path d="M16 2v4"/><path d="M8 15l2.5 2.5L16 13"/></symbol>
 <symbol id="i-play" viewBox="0 0 24 24"><path d="M6 3.5 20 12 6 20.5z"/></symbol>
+<symbol id="i-pause" viewBox="0 0 24 24"><path d="M8 4v16"/><path d="M16 4v16"/></symbol>
+<symbol id="i-flag" viewBox="0 0 24 24"><path d="M5 21V4"/><path d="M5 4h12l-2.5 4.5L17 13H5"/></symbol>
 <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12"/><circle cx="12" cy="12" r="3"/></symbol>
 <symbol id="i-eye-off" viewBox="0 0 24 24"><path d="M10.7 5.1a10.7 10.7 0 0 1 11.2 6.6 1 1 0 0 1 0 .7 10.7 10.7 0 0 1-1.4 2.5"/><path d="M14.1 14.2a3 3 0 0 1-4.2-4.2"/><path d="M17.5 17.5a10.7 10.7 0 0 1-15.4-5.2 1 1 0 0 1 0-.7 10.7 10.7 0 0 1 4.4-5.1"/><path d="m2 2 20 20"/></symbol>
 <symbol id="i-ear" viewBox="0 0 24 24"><path d="M3 15h2.5a1.5 1.5 0 0 1 1.5 1.5v3A1.5 1.5 0 0 1 5.5 21H4a1 1 0 0 1-1-1v-8a9 9 0 0 1 18 0v8a1 1 0 0 1-1 1h-1.5a1.5 1.5 0 0 1-1.5-1.5v-3a1.5 1.5 0 0 1 1.5-1.5H21"/></symbol>
@@ -304,6 +306,17 @@ export const MARKUP_BODY = String.raw`</head>
   <button class="pickrow" id="dshare">Share workout</button>
   <button class="pickrow" id="dreproc">Read it again</button>
   <button class="btn ghost" data-close="workoptions">Done</button>
+</div></div>
+<!-- The way out of a live session. Two doors, neither of which loses a set: pause
+     keeps the session for later (the Library offers it back), end saves what was
+     logged. The X used to throw the session away without a word. -->
+<div class="sheet" id="wleavesheet" role="dialog" aria-modal="true" aria-labelledby="wleavetitle"><div class="sheetbody">
+  <div class="grabber"></div>
+  <h2 id="wleavetitle">Leave this workout?</h2>
+  <p class="lede" id="wleavelede">Nothing is lost either way.</p>
+  <button class="pickrow leaverow" id="wpause"><svg class="ic"><use href="#i-pause"></use></svg><span class="pt"><b>Pause workout</b><span>Pick it up later from the Library. The clock stops.</span></span></button>
+  <button class="pickrow leaverow" id="wend"><svg class="ic"><use href="#i-flag"></use></svg><span class="pt"><b>End workout</b><span id="wendsub">Saves what you logged.</span></span></button>
+  <button class="btn ghost" data-close="wleavesheet">Keep going</button>
 </div></div>
 <div class="sheet" id="filtersheet" role="dialog" aria-modal="true" aria-labelledby="filtertitle"><div class="sheetbody">
   <div class="grabber"></div><h2 id="filtertitle">Filters</h2>
@@ -884,7 +897,7 @@ export const MARKUP_BODY = String.raw`</head>
   <p><a href="https://quarterdeckcollective.com/spotter/privacy/">Read the privacy policy</a></p>
   <p id="aiconsenterror" role="alert"></p>
   <div class="btnrow"><button class="btn ghost" id="aiconsentdecline">Not now</button><button class="btn" id="aiconsentallow">Allow AI processing</button></div>
-  <button class="btn ghost hide" id="aiconsentrevoke">Turn off AI processing</button>
+  <button class="setlink revoke hide" id="aiconsentrevoke">Turn off AI processing</button>
 </div></div>
 
 <div class="sheet" id="accountsheet"><div class="sheetbody">

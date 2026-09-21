@@ -287,13 +287,16 @@ function overlay(calls, id, open) {
 
 function linkContext(open) {
   open = open || {};
-  const calls = { detail: [], start: [], view: [], toast: [], forward: 0, back: 0, closed: [] };
+  const calls = { detail: [], start: [], view: [], toast: [], forward: 0, back: 0, closed: [], resumed: 0 };
   const sheets = (open.sheets || []).map(id => ({ id }));
   const ctx = vm.createContext({
     wo: null, $: id => overlay(calls, id, open),
     document: { querySelectorAll: sel => (sel === '.sheet.open' ? sheets : []) },
     history: { back: () => calls.back++ },
     closeSheet: id => calls.closed.push(id),
+    // A paused session is a draft on disk and no wo; the card's tap resumes it.
+    pausedDraft: () => open.paused || null,
+    resumeWorkout: () => { calls.resumed++; },
     state: { user: { id: 'u1' }, workouts: [{ id: 'w1', title: 'Push day' }] },
     planWorkout: id => ctx.state.workouts.filter(w => w.id === id)[0],
     openDetail: w => calls.detail.push(w.id),
@@ -308,7 +311,7 @@ function linkContext(open) {
 
 let link = linkContext();
 vm.runInContext('openDeepLink("spotter://open")', link.ctx);
-assert.deepEqual(link.calls, { detail: [], start: [], view: [], toast: [], forward: 0, back: 0, closed: [] },
+assert.deepEqual(link.calls, { detail: [], start: [], view: [], toast: [], forward: 0, back: 0, closed: [], resumed: 0 },
   'spotter://open does nothing on its own — the shell already brought the app up');
 
 link = linkContext();
@@ -319,6 +322,12 @@ assert.equal(link.calls.forward, 1);
 link = linkContext();
 vm.runInContext('openDeepLink("spotter://resume")', link.ctx);
 assert.equal(link.calls.forward, 0);
+assert.equal(link.calls.resumed, 0);
+// A paused session is the one thing the card's tap can bring back without an
+// engine running: no wo, a paused draft, and the tap resumes it.
+link = linkContext({ paused: { workoutId: 'w1', paused: true } });
+vm.runInContext('openDeepLink("spotter://resume")', link.ctx);
+assert.equal(link.calls.resumed, 1, 'a paused draft is not resumed by the card that promises to');
 
 link = linkContext();
 vm.runInContext('openDeepLink("spotter://workout/w1")', link.ctx);
@@ -397,6 +406,8 @@ function actionContext() {
     state: { unit: 'kg', user: { id: 'u1' } }, hist: {}, LB_PER_KG: 2.2046226,
     setReps: n => calls.reps.push(n),
     setWeight: n => calls.weight.push(n),
+    pausedDraft: () => null,
+    resumeWorkout: () => {},
     saveSet: () => { calls.save++; },
     doneRest: () => { calls.done++; },
     pauseRest: () => { calls.pause++; },
@@ -534,4 +545,32 @@ if (!fs.existsSync(fixtureJson)) {
   if (f.widgetSummary) assert.deepEqual(
     Object.keys(f.widgetSummary).filter(k => k !== 'signedOut').sort(), WIDGET_KEYS.slice().sort());
   console.log('PASS the shared fixture decodes to the same shape.');
+
+  // ---------- the paused session ----------
+  //
+  // Phase "paused" + pausedAt is the one addition to LiveState v1 (20 Sept):
+  // sent when the person pauses from the phone and at every boot that restores
+  // a paused draft. Both keys are optional on the wire so an older shell still
+  // decodes, which is why the key set here is LIVE_KEYS plus one, not a new
+  // contract. The engine side of this (liveState() emitting it) lands with the
+  // web work and is asserted there; this pins the shape both halves agreed to
+  // and the Swift decl that reads it.
+  const p = f.liveStatePaused;
+  assert(p, 'contract-fixture.json has no liveStatePaused case');
+  assert.deepEqual(Object.keys(p).filter(k => k !== '_').sort(), LIVE_KEYS.concat(['pausedAt']).sort(),
+    'liveStatePaused must be an ordinary LiveState plus pausedAt, nothing else');
+  assert.equal(p.phase, 'paused');
+  assert.equal(p.rest, null, 'no rest runs while the session is paused');
+  assert(!isNaN(Date.parse(p.pausedAt)) && /Z$/.test(p.pausedAt), 'pausedAt is an ISO 8601 instant');
+  assert(Date.parse(p.pausedAt) > Date.parse(p.startedAt), 'a pause begins after the session started');
+  assert(p.set && p.dose && p.progress, 'a paused state keeps describing where the session stopped');
+  const liveSwift = fs.readFileSync(swift, 'utf8');
+  assert(/\n\s*case paused\n/.test(liveSwift), swift + ' must declare Phase.paused');
+  assert(/var pausedAt: String\?/.test(liveSwift), swift + ' must carry pausedAt as an optional String');
+  // The dial's message is the watch's message: same kind, same source field,
+  // figures only when a dial was turned.
+  const d = f.liveActionDial;
+  assert(d && d.kind === 'set' && d.source === 'activity' && typeof d.reps === 'number' && typeof d.weight === 'number',
+    'liveActionDial must be a .set from source "activity" carrying reps and weight');
+  console.log('PASS the paused fixture is LiveState plus pausedAt with no rest, the Swift enum has the case, and the dial\'s set carries figures.');
 }
