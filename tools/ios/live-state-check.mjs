@@ -87,14 +87,14 @@ function workoutContext() {
   });
   vm.runInContext(pull(['askText', 'blockName', 'isTimed', 'isCircuit', 'roundsOf',
     'roundOf', 'targetOf', 'isStop', 'exKey', 'toUnit', 'setPrefill', 'plate',
-    'liveState', 'liveSync', 'liveEnd']), ctx);
+    'cxOf', 'cxCurrent', 'cxMarks', 'cxLive', 'liveState', 'liveSync', 'liveEnd']), ctx);
   return { ctx, sent };
 }
 
 // ---------- LiveState ----------
 
 const LIVE_KEYS = ['v', 'title', 'startedAt', 'phase', 'exercise', 'block', 'set',
-  'target', 'weight', 'rest', 'next', 'progress', 'dose'];
+  'target', 'weight', 'rest', 'next', 'progress', 'complex', 'dose'];
 
 const { ctx, sent } = workoutContext();
 const s = vm.runInContext('liveState()', ctx);
@@ -132,9 +132,21 @@ assert.equal(vm.runInContext('liveState().phase', phases.ctx), 'timed');
 vm.runInContext('restFace = null; restUntil = 0;', phases.ctx);
 assert.equal(vm.runInContext('liveState().phase', phases.ctx), 'work');
 assert.equal(vm.runInContext('liveState().rest', phases.ctx), null);
-vm.runInContext('wo.screens[wo.i].cx = { cap: 900, n: 2 };', phases.ctx);
+assert.equal(vm.runInContext('liveState().complex', phases.ctx), null, 'a set-counted movement is not a complex');
+vm.runInContext('wo.screens[wo.i].cx = { cap: 900, n: 2 }; wo.amrap = {};', phases.ctx);
 assert.equal(vm.runInContext('liveState().phase', phases.ctx), 'complex');
 assert.equal(vm.runInContext('liveState().set', phases.ctx), null, 'a complex has no set counter');
+// The complex's own counter and clock, as the screen draws them: rounds done,
+// movements ticked this round out of how many a round takes, the movement the
+// round is up to, and the cap in the rest engine's units (ms; until is an epoch
+// deadline, 0 until the clock is started).
+same(vm.runInContext('liveState().complex', phases.ctx),
+  { rounds: 0, marked: 0, moves: 2, move: 'Bench Press', cap: 900000, until: 0, held: 0, over: false },
+  'a fresh complex sends its counter and its clock');
+assert.equal(vm.runInContext('liveState().exercise', phases.ctx), 'Bench Press', 'the movement the round is up to');
+vm.runInContext('var a = cxOf(wo.screens[wo.i].bi, wo.screens[wo.i].cx); a.rounds = 3; a.marks = [1]; a.until = ' + (NOW + 300000) + ';', phases.ctx);
+same(vm.runInContext('(function () { var c = liveState().complex; return [c.rounds, c.marked, c.move, c.until]; })()', phases.ctx),
+  [3, 1, 'Barbell Row', NOW + 300000], 'a round in progress names the next movement and the running cap');
 vm.runInContext('wo.finished = true;', phases.ctx);
 assert.equal(vm.runInContext('liveState().phase', phases.ctx), 'done');
 

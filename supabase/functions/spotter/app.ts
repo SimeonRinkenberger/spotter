@@ -5903,7 +5903,7 @@ export const APP = String.raw`
     // complex is the far side of the block rather than its second station.
     var j = wo.i + 1;
     while (j < wo.screens.length && !isStop(j)) j++;
-    var cx = !!(s && s.cx), pre = s ? setPrefill(entry.sets.length) : null;
+    var cx = !!(s && s.cx), pre = s ? setPrefill(entry.sets.length) : null, round = cx ? cxLive(s) : null;
     // The set about to be done. Past the plan it is an extra, and the phone says
     // so ("Goal reached · Extras welcome") — but a Lock Screen card reading
     // "Set 3 of 2" just looks broken, so the total grows with the index the way
@@ -5916,7 +5916,9 @@ export const APP = String.raw`
       startedAt: wo.startedAt,
       phase: wo.finished ? "done" : restUntil && !restFace ? "rest"
         : restFace ? "timed" : cx ? "complex" : "work",
-      exercise: s ? s.ex.name : (entry.name || "Freestyle"),
+      // On a complex, the movement the round is up to rather than the first one
+      // of the block, which is the screen's own anchor and no help mid-round.
+      exercise: round ? round.move : s ? s.ex.name : (entry.name || "Freestyle"),
       block: s && (wo.workout.blocks || []).length > 1 ? blockName(s) : null,
       set: s && !cx ? { index: setNo, total: Math.max(targetOf(s), setNo) } : null,
       target: s ? askText(s.ex) : null,
@@ -5924,6 +5926,11 @@ export const APP = String.raw`
       rest: restUntil ? { until: restUntil, total: restTotal, held: restHeld } : null,
       next: j < wo.screens.length ? wo.screens[j].ex.name : null,
       progress: { done: logged, total: Math.max(planned, logged) },
+      // A complex is scored in rounds against a cap, and neither can be read off
+      // a set counter: this is the phone's round counter and clock, as its own
+      // screen draws them, so the card can count a round and run the cap down.
+      // Null on every other phase; a shell built before it existed still decodes.
+      complex: round,
       // The wrist has a stepper, and it cannot build one out of "8-12 reps" and
       // "1,200 lb" — those are sentences for a reader. So the same prefill goes
       // over as numbers, with the plate this account steps by. loggable is the
@@ -5932,11 +5939,27 @@ export const APP = String.raw`
       // are logged on the phone.
       dose: {
         reps: pre ? pre.reps : null,
-        weight: pre && pre.weight ? pre.weight : null,
+        // Zero, not null, for a movement with no weight yet: the phone's sheet
+        // opens a weight stepper on zero for every set, and a card that hid the
+        // dial until something had been logged had no way to log the first one.
+        weight: pre ? pre.weight : null,
         unit: state.unit,
         step: plate(),
         loggable: !!(s && !(s.cx && !s.ei) && !isTimed(s.ex))
       }
+    };
+  }
+
+  // The complex screen, as numbers. cap and held are milliseconds like rest.total
+  // and rest.held; until is the epoch deadline the phone's own ring counts from,
+  // 0 while the clock has not been started. moves is how many a round takes and
+  // marked how many of this round are ticked, so "3 rounds + 2 movements" can be
+  // written the way the screen writes it.
+  function cxLive(s) {
+    var cx = s.cx, a = cxOf(s.bi, cx), cur = cxCurrent(a, cx), ex = (s.block.exercises || [])[cur];
+    return {
+      rounds: a.rounds, marked: cxMarks(a, cx), moves: cx.n, move: ex ? ex.name : s.ex.name,
+      cap: (cx.cap || 0) * 1000, until: a.until || 0, held: a.held || 0, over: !!a.over
     };
   }
 
@@ -7080,6 +7103,13 @@ export const APP = String.raw`
     }
     var secs = (s && s.ex && s.ex.rest_seconds) || REST_FALLBACK;
     if (secs > 0) startRest(secs);
+    // The card's own set count reached — the last planned set, not an edit of
+    // an earlier one — moves the session on to the next movement, the rest
+    // still running under it: a rest belongs to the lifter, not to the screen.
+    // "if i completed the proper amount that the video shows i want it to just
+    // move on" (owner, 20 Sept). Extras are still a swipe back away.
+    if (s && !s.cx && setCtx.idx >= targetOf(s) - 1 && entry.sets.filter(Boolean).length >= targetOf(s)
+      && wo.i < endStop()) nextMove();
   }
 
   // A best only means something measured against a real one, so h.best carries the
@@ -16597,9 +16627,36 @@ export const APP = String.raw`
         setWeight(typeof a.weight === "number" && isFinite(a.weight) ? a.weight : pre.weight);
         saveSet();
       }
+    } else if (k === "round" || k === "mark") {
+      // The complex screen's two taps. "round" is Round N done; "mark" ticks the
+      // movement the round is up to, and the fifth tick of five is a round, as it
+      // is on the screen. Both start the cap the way the buttons do. Nothing to
+      // do off a complex: a card drawn before the screen moved on is not a set.
+      if (!s || !s.cx) return;
+      if (k === "round") cxRound(s.bi, s.cx);
+      else cxMark(s.bi, s.cx, cxCurrent(cxOf(s.bi, s.cx), s.cx));
     } else if (k === "skipRest") { if (restUntil) doneRest(); }
     else if (k === "toggleRest") pauseRest();
     else if (k === "finish") finishWorkout();
+  }
+
+  // spotter://set/weight?reps=12&weight=55 — the figures on the Lock Screen
+  // card are links, because a card can turn a number but not take one typed.
+  // The tap brings the session forward with the set sheet open, the dial's
+  // figures already in it, and the field named already under the keyboard:
+  // the sheet's own tap-to-type, made for it. A paused session is resumed
+  // first; a set that cannot be logged from off the phone (a hold, a complex)
+  // gets the screen and nothing else.
+  function openSetLink(field, url) {
+    var q = url.split("?")[1] || "", reps = q.match(/(?:^|&)reps=([\d.]+)/), weight = q.match(/(?:^|&)weight=([\d.]+)/);
+    if (!wo || wo.finished) { if (pausedDraft()) resumeWorkout(); else return; }
+    woForward();
+    var s = wo.screens[wo.i];
+    if (!s || (s.cx && !s.ei) || isTimed(s.ex)) return;
+    openSetSheet(wo.entries[wo.i].sets.length);
+    if (reps) setReps(parseFloat(reps[1]));
+    if (weight) setWeight(parseFloat(weight[1]));
+    if (field === "weight" || field === "reps") $(field === "weight" ? "wtval" : "repsval").click();
   }
 
   // Every route ends in a call the UI itself makes, so a link can only do what a
@@ -16608,6 +16665,7 @@ export const APP = String.raw`
     var m = state.user && String(url).match(/^spotter:\/\/([a-z]+)\/?([^?#]*)/);
     if (!m) return;
     var head = m[1], arg = decodeURIComponent(m[2].replace(/\/+$/, ""));
+    if (head === "set") { openSetLink(arg, String(url)); return; }
     // "spotter://workout/" names nothing, which is a malformed link rather than a
     // card that has been deleted, and a malformed link says nothing at all.
     var card = !!arg && (head === "workout" || head === "start"), w = card ? planWorkout(arg) : null;

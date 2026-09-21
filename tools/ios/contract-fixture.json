@@ -7,13 +7,26 @@
     "phase": "work",
     "exercise": "Goblet Squat",
     "block": "Round 2",
-    "set": { "index": 2, "total": 4 },
+    "set": {
+      "index": 2,
+      "total": 4
+    },
     "target": "10 reps",
     "weight": "24 kg",
     "rest": null,
     "next": "Kettlebell Swing",
-    "progress": { "done": 6, "total": 12 },
-    "dose": { "reps": 10, "weight": 24, "unit": "kg", "step": 2.5, "loggable": true }
+    "progress": {
+      "done": 6,
+      "total": 12
+    },
+    "complex": null,
+    "dose": {
+      "reps": 10,
+      "weight": 24,
+      "unit": "kg",
+      "step": 2.5,
+      "loggable": true
+    }
   },
   "liveStateResting": {
     "v": 1,
@@ -22,13 +35,29 @@
     "phase": "rest",
     "exercise": "Goblet Squat",
     "block": "Round 2",
-    "set": { "index": 2, "total": 4 },
+    "set": {
+      "index": 2,
+      "total": 4
+    },
     "target": "10 reps",
     "weight": "24 kg",
-    "rest": { "until": 1789751351482, "total": 90000, "held": 0 },
+    "rest": {
+      "until": 1789751351482,
+      "total": 90000,
+      "held": 0
+    },
     "next": "Kettlebell Swing",
-    "progress": { "done": 7, "total": 12 },
-    "dose": { "reps": 10, "weight": 24, "unit": "kg", "step": 2.5, "loggable": true }
+    "progress": {
+      "done": 7,
+      "total": 12
+    },
+    "dose": {
+      "reps": 10,
+      "weight": 24,
+      "unit": "kg",
+      "step": 2.5,
+      "loggable": true
+    }
   },
   "liveStatePaused": {
     "_": "The session paused from the phone, or restored at boot from a draft the process died in. Sent with phase 'paused' and pausedAt (ISO 8601, when the pause began); rest is null; everything else keeps describing where it stopped. On resume the engine shifts startedAt forward by the length of the pause and sends an ordinary work/rest state. Both additions are optional so an older shell still decodes.",
@@ -38,13 +67,26 @@
     "phase": "paused",
     "exercise": "Goblet Squat",
     "block": "Round 2",
-    "set": { "index": 2, "total": 4 },
+    "set": {
+      "index": 2,
+      "total": 4
+    },
     "target": "10 reps",
     "weight": "24 kg",
     "rest": null,
     "next": "Kettlebell Swing",
-    "progress": { "done": 6, "total": 12 },
-    "dose": { "reps": 10, "weight": 24, "unit": "kg", "step": 2.5, "loggable": true },
+    "progress": {
+      "done": 6,
+      "total": 12
+    },
+    "complex": null,
+    "dose": {
+      "reps": 10,
+      "weight": 24,
+      "unit": "kg",
+      "step": 2.5,
+      "loggable": true
+    },
     "pausedAt": "2026-09-18T17:22:40.917Z"
   },
   "liveStateMinimal": {
@@ -60,7 +102,10 @@
     "weight": null,
     "rest": null,
     "next": null,
-    "progress": { "done": 0, "total": 0 }
+    "progress": {
+      "done": 0,
+      "total": 0
+    }
   },
   "liveStateUnknownPhase": {
     "_": "A phase this build of the shell has never heard of. Must decode, not throw: the web app ships independently of the native shell.",
@@ -75,7 +120,10 @@
     "weight": null,
     "rest": null,
     "next": null,
-    "progress": { "done": 12, "total": 12 }
+    "progress": {
+      "done": 12,
+      "total": 12
+    }
   },
   "liveSummary": {
     "v": 1,
@@ -93,13 +141,32 @@
       "key": "2026-09-14",
       "done": 3,
       "goal": 4,
-      "days": [true, false, true, false, true, false, false],
+      "days": [
+        true,
+        false,
+        true,
+        false,
+        true,
+        false,
+        false
+      ],
       "atRisk": false
     },
     "streak": 5,
-    "today": { "id": "pl-812", "title": "Kettlebell Circuit", "minutes": 35 },
-    "next": { "id": "pl-813", "title": "Upper Push", "day": "Thu" },
-    "last": { "title": "Ten Minute Core", "at": "2026-09-16T18:22:03.000Z" },
+    "today": {
+      "id": "pl-812",
+      "title": "Kettlebell Circuit",
+      "minutes": 35
+    },
+    "next": {
+      "id": "pl-813",
+      "title": "Upper Push",
+      "day": "Thu"
+    },
+    "last": {
+      "title": "Ten Minute Core",
+      "at": "2026-09-16T18:22:03.000Z"
+    },
     "active": false
   },
   "widgetSummarySignedOut": {
@@ -133,5 +200,52 @@
     "kind": "notification",
     "source": "notification",
     "id": "spotter://resume"
+  },
+  "liveStateComplex": {
+    "_": "A complex mid-round: the counter and the cap the phone's own screen draws. cap/held are ms like rest.total/rest.held; until is the epoch deadline the cap counts down to, 0 until the clock is started; move is the movement the round is up to and is also `exercise`.",
+    "v": 1,
+    "title": "Kettlebell Complex",
+    "startedAt": "2026-09-18T17:04:11.482Z",
+    "phase": "complex",
+    "exercise": "Kettlebell Swing",
+    "block": null,
+    "set": null,
+    "target": "10 reps",
+    "weight": "24 kg",
+    "rest": null,
+    "next": "Push-up Finisher",
+    "progress": {
+      "done": 7,
+      "total": 15
+    },
+    "complex": {
+      "rounds": 2,
+      "marked": 1,
+      "moves": 3,
+      "move": "Kettlebell Swing",
+      "cap": 900000,
+      "until": 1758216551482,
+      "held": 0,
+      "over": false
+    },
+    "dose": {
+      "reps": 10,
+      "weight": 24,
+      "unit": "kg",
+      "step": 2.5,
+      "loggable": false
+    }
+  },
+  "liveActionRound": {
+    "_": "Round N done, from the card. The engine counts a round of the complex on screen and starts the cap if it is not running.",
+    "kind": "round",
+    "source": "activity",
+    "id": null
+  },
+  "liveActionMark": {
+    "_": "The movement the round is up to, ticked from the card. The last tick of a round counts the round, as on the phone.",
+    "kind": "mark",
+    "source": "activity",
+    "id": null
   }
 }

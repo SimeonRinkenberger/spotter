@@ -11645,13 +11645,15 @@ details.details-moving > :not(summary) {
     for (i = 0; i < wo.entries.length; i++)
       logged += wo.entries[i].sets.filter(Boolean).length, planned += wo.screens[i] ? targetOf(wo.screens[i]) : 1;
     for (var j = wo.i + 1; j < wo.screens.length && !isStop(j); ) j++;
-    var cx = !!(s && s.cx), pre = s ? setPrefill(entry.sets.length) : null, setNo = entry.sets.filter(Boolean).length + 1;
+    var cx = !!(s && s.cx), pre = s ? setPrefill(entry.sets.length) : null, round = cx ? cxLive(s) : null, setNo = entry.sets.filter(Boolean).length + 1;
     return {
       v: 1,
       title: wo.workout.title || "Workout",
       startedAt: wo.startedAt,
       phase: wo.finished ? "done" : restUntil && !restFace ? "rest" : restFace ? "timed" : cx ? "complex" : "work",
-      exercise: s ? s.ex.name : entry.name || "Freestyle",
+      // On a complex, the movement the round is up to rather than the first one
+      // of the block, which is the screen's own anchor and no help mid-round.
+      exercise: round ? round.move : s ? s.ex.name : entry.name || "Freestyle",
       block: s && (wo.workout.blocks || []).length > 1 ? blockName(s) : null,
       set: s && !cx ? { index: setNo, total: Math.max(targetOf(s), setNo) } : null,
       target: s ? askText(s.ex) : null,
@@ -11659,6 +11661,11 @@ details.details-moving > :not(summary) {
       rest: restUntil ? { until: restUntil, total: restTotal, held: restHeld } : null,
       next: j < wo.screens.length ? wo.screens[j].ex.name : null,
       progress: { done: logged, total: Math.max(planned, logged) },
+      // A complex is scored in rounds against a cap, and neither can be read off
+      // a set counter: this is the phone's round counter and clock, as its own
+      // screen draws them, so the card can count a round and run the cap down.
+      // Null on every other phase; a shell built before it existed still decodes.
+      complex: round,
       // The wrist has a stepper, and it cannot build one out of "8-12 reps" and
       // "1,200 lb" — those are sentences for a reader. So the same prefill goes
       // over as numbers, with the plate this account steps by. loggable is the
@@ -11667,11 +11674,27 @@ details.details-moving > :not(summary) {
       // are logged on the phone.
       dose: {
         reps: pre ? pre.reps : null,
-        weight: pre && pre.weight ? pre.weight : null,
+        // Zero, not null, for a movement with no weight yet: the phone's sheet
+        // opens a weight stepper on zero for every set, and a card that hid the
+        // dial until something had been logged had no way to log the first one.
+        weight: pre ? pre.weight : null,
         unit: state.unit,
         step: plate(),
         loggable: !!(s && !(s.cx && !s.ei) && !isTimed(s.ex))
       }
+    };
+  }
+  function cxLive(s) {
+    var cx = s.cx, a = cxOf(s.bi, cx), cur = cxCurrent(a, cx), ex = (s.block.exercises || [])[cur];
+    return {
+      rounds: a.rounds,
+      marked: cxMarks(a, cx),
+      moves: cx.n,
+      move: ex ? ex.name : s.ex.name,
+      cap: (cx.cap || 0) * 1e3,
+      until: a.until || 0,
+      held: a.held || 0,
+      over: !!a.over
     };
   }
   function liveSync() {
@@ -12298,7 +12321,7 @@ details.details-moving > :not(summary) {
         return;
       }
       var secs = s && s.ex && s.ex.rest_seconds || REST_FALLBACK;
-      secs > 0 && startRest(secs);
+      secs > 0 && startRest(secs), s && !s.cx && setCtx.idx >= targetOf(s) - 1 && entry.sets.filter(Boolean).length >= targetOf(s) && wo.i < endStop() && nextMove();
     }
   }
   function prCheck(entry, set, k) {
@@ -18085,13 +18108,32 @@ details.details-moving > :not(summary) {
     if (k === "notification" && typeof a.id == "string" && a.id.indexOf("spotter://") === 0) openLink(a.id);
     else if (k === "open" || k === "notification")
       (k === "open" || !wo || restUntil) && woForward();
-    else if (live) k === "set" ? !s || s.cx && !s.ei || isTimed(s.ex) ? toast("Log this one on the phone.") : (pre = setPrefill(wo.entries[wo.i].sets.length), setCtx.idx = pre.idx, setReps(typeof a.reps == "number" && isFinite(a.reps) ? a.reps : pre.reps), setWeight(typeof a.weight == "number" && isFinite(a.weight) ? a.weight : pre.weight), saveSet()) : k === "skipRest" ? restUntil && doneRest() : k === "toggleRest" ? pauseRest() : k === "finish" && finishWorkout();
+    else if (live) if (k === "set")
+      !s || s.cx && !s.ei || isTimed(s.ex) ? toast("Log this one on the phone.") : (pre = setPrefill(wo.entries[wo.i].sets.length), setCtx.idx = pre.idx, setReps(typeof a.reps == "number" && isFinite(a.reps) ? a.reps : pre.reps), setWeight(typeof a.weight == "number" && isFinite(a.weight) ? a.weight : pre.weight), saveSet());
+    else if (k === "round" || k === "mark") {
+      if (!s || !s.cx) return;
+      k === "round" ? cxRound(s.bi, s.cx) : cxMark(s.bi, s.cx, cxCurrent(cxOf(s.bi, s.cx), s.cx));
+    } else k === "skipRest" ? restUntil && doneRest() : k === "toggleRest" ? pauseRest() : k === "finish" && finishWorkout();
     else return;
+  }
+  function openSetLink(field, url) {
+    var q = url.split("?")[1] || "", reps = q.match(/(?:^|&)reps=([\d.]+)/), weight = q.match(/(?:^|&)weight=([\d.]+)/);
+    if (!wo || wo.finished)
+      if (pausedDraft()) resumeWorkout();
+      else return;
+    woForward();
+    var s = wo.screens[wo.i];
+    !s || s.cx && !s.ei || isTimed(s.ex) || (openSetSheet(wo.entries[wo.i].sets.length), reps && setReps(parseFloat(reps[1])), weight && setWeight(parseFloat(weight[1])), (field === "weight" || field === "reps") && $(field === "weight" ? "wtval" : "repsval").click());
   }
   function openDeepLink(url) {
     var m = state.user && String(url).match(/^spotter:\/\/([a-z]+)\/?([^?#]*)/);
     if (m) {
-      var head = m[1], arg = decodeURIComponent(m[2].replace(/\/+$/, "")), card = !!arg && (head === "workout" || head === "start"), w = card ? planWorkout(arg) : null;
+      var head = m[1], arg = decodeURIComponent(m[2].replace(/\/+$/, ""));
+      if (head === "set") {
+        openSetLink(arg, String(url));
+        return;
+      }
+      var card = !!arg && (head === "workout" || head === "start"), w = card ? planWorkout(arg) : null;
       if (head === "resume") woForward();
       else if (head === "tab") {
         if (!/^(library|plan|progress|pumpy)$/.test(arg)) return;
