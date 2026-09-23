@@ -85,7 +85,7 @@ function workoutContext() {
     },
     Math, Date, Object, String, Number, Boolean, isFinite, parseInt, JSON
   });
-  vm.runInContext(pull(['askText', 'blockName', 'isTimed', 'isCircuit', 'roundsOf',
+  vm.runInContext(pull(['askText', 'blockName', 'isTimed', 'cxDosed', 'cxCap', 'complexOf', 'supersetOf', 'isCircuit', 'roundsOf',
     'roundOf', 'targetOf', 'isStop', 'exKey', 'toUnit', 'setPrefill', 'plate',
     'cxOf', 'cxCurrent', 'cxMarks', 'cxLive', 'liveState', 'liveSync', 'liveEnd']), ctx);
   return { ctx, sent };
