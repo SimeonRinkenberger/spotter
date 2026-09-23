@@ -5308,6 +5308,136 @@ body:not(.app) #toast.show {
 .session-set b.was {
   color: var(--ember-ink);
 }
+.sumprs:empty {
+  display: none;
+}
+.sumprs.still .setpill {
+  animation: none;
+}
+.sumlog .session-set {
+  width: calc(100% + 16px);
+  min-height: 44px;
+  margin: 0 -8px;
+  padding: 0 8px;
+  gap: 10px;
+  align-items: center;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--ink);
+  font-size: 13px;
+}
+.sumlog .session-set:active {
+  background: var(--sand);
+}
+.sumlog .session-set:focus-visible {
+  outline: 2px solid var(--ember-ink);
+  outline-offset: -2px;
+}
+.sumlog .session-set b {
+  margin-left: auto;
+}
+.sumlog .session-set .ic {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: var(--muted);
+}
+.sumlog .session-set.fixed {
+  animation: setfix var(--t-4) var(--e-soft);
+}
+@keyframes setfix {
+  from {
+    background: var(--ember-soft);
+  }
+}
+.sedit {
+  padding: 6px 0 12px;
+  animation: fadeonly var(--t-2) var(--e-out);
+}
+.sedrow,
+.sedacts {
+  display: flex;
+  gap: 8px;
+}
+.sedrow > span,
+.sedx {
+  flex: 1;
+  padding-top: 13px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.sedx {
+  flex: none;
+  font-style: normal;
+}
+.sedf {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.sedf input {
+  width: 60px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid var(--line-2);
+  border-radius: 12px;
+  background: var(--paper);
+  color: var(--ink);
+  font: 700 18px var(--display);
+  text-align: center;
+  outline: none;
+  appearance: none;
+}
+.sedf:last-child input {
+  width: 76px;
+}
+.sedf input:focus {
+  border-color: var(--ember);
+  box-shadow: 0 0 0 3px var(--pill);
+}
+.sedacts {
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+.sedacts .btn {
+  width: auto;
+  min-height: 44px;
+  padding: 0 18px;
+  font-size: 14.5px;
+  box-shadow: none;
+}
+.sedel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  margin-right: auto;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: var(--ember-ink);
+  font-size: 14px;
+  font-weight: 650;
+}
+.sedel .ic {
+  width: 16px;
+  height: 16px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .eachtag {
+    transition: none;
+  }
+  .eachtag.flip,
+  .sumlog .session-set.fixed {
+    animation: none;
+  }
+}
 .sharewrap {
   margin-top: 22px;
   animation: viewin var(--t-2) var(--e-out) 250ms both;
@@ -5550,6 +5680,43 @@ body:not(.app) #toast.show {
   font-weight: 600;
   color: var(--muted);
   margin-top: 4px;
+}
+.eachtag,
+.stepper .val .eachtag {
+  position: relative;
+  display: inline-block;
+  width: auto;
+  height: auto;
+  margin: -3px 0 -3px 5px;
+  padding: 3px 7px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--ember-soft);
+  color: var(--ember-ink);
+  font: 700 10.5px/1 var(--sans);
+  transition: background-color var(--t-2), color var(--t-2);
+}
+.eachtag::after {
+  content: "";
+  position: absolute;
+  inset: -13px -6px;
+}
+.stepper .val .eachtag[hidden] {
+  display: none;
+}
+.eachtag.one,
+.stepper .val .eachtag.one {
+  background: var(--sand);
+  color: var(--ink-2);
+}
+.eachtag.flip {
+  animation: eachflip var(--t-3) var(--e-spring);
+}
+@keyframes eachflip {
+  from {
+    opacity: .4;
+    transform: scale(.8);
+  }
 }
 .tab .ti svg {
   width: 21px;
@@ -7766,7 +7933,7 @@ details.details-moving > :not(summary) {
   </div>
   <div class="stepper" data-noswipe>
     <button id="wtdown" aria-label="Less weight"><svg class="ic"><use href="#i-minus"></use></svg></button>
-    <div class="val" id="wtbox"><button class="num" id="wtval" aria-label="Weight — tap to type a number">0</button><input class="numin" id="wtin" type="text" inputmode="decimal" enterkeyhint="done" autocomplete="off" aria-label="Weight"><small id="wtunit">lb</small></div>
+    <div class="val" id="wtbox"><button class="num" id="wtval" aria-label="Weight — tap to type a number">0</button><input class="numin" id="wtin" type="text" inputmode="decimal" enterkeyhint="done" autocomplete="off" aria-label="Weight"><small><span id="wtunit">lb</span><button class="eachtag" id="wteach" type="button" hidden>each</button></small></div>
     <button id="wtup" aria-label="More weight"><svg class="ic"><use href="#i-plus"></use></svg></button>
   </div>
   <div class="btnrow">
@@ -12394,15 +12561,17 @@ details.details-moving > :not(summary) {
                 var k = exKey(e), h = hist[k] || (hist[k] = { best: 0 });
                 if (sets.forEach(function(s) {
                   s.weight && (h.best = Math.max(h.best, toUnit(s.weight, s.unit) * (1 + s.reps / 30)));
-                }), !h.date) {
+                }), h.each === void 0 && typeof e.each == "boolean" && (h.each = e.each), !h.date) {
                   var top = sets.filter(function(s) {
                     return s.weight;
                   }).pop() || sets[sets.length - 1] || {};
-                  h.name = e.name, h.date = log.started_at, h.sets = sets.length || held.length, h.reps = top.reps, held.length && (h.secs = held[held.length - 1].seconds), h.weight = top.weight || 0, h.unit = top.unit || state.unit;
+                  h.name = e.name, h.date = log.started_at, h.sets = sets.length || held.length, h.reps = top.reps, held.length && (h.secs = held[held.length - 1].seconds), h.weight = top.weight || 0, h.unit = top.unit || state.unit, h.pair = !!top.each;
                 }
               }
             }
           });
+        }), Object.keys(hist).forEach(function(k) {
+          hist[k].was = hist[k].best;
         }), histReady = !0;
         var line = $("wlast");
         line && wo && !wo.finished && (line.textContent = lastLine(wo.entries[wo.i]));
@@ -12416,10 +12585,41 @@ details.details-moving > :not(summary) {
   function wtText(w, unit) {
     return toUnit(w, unit).toLocaleString();
   }
+  var DB_PAIR = " arnold-press chest-fly chest-supported-row devils-press dumbbell-bench-press dumbbell-curl dumbbell-floor-press dumbbell-shoulder-press farmers-carry front-raise hammer-curl incline-dumbbell-curl incline-dumbbell-fly incline-dumbbell-press lateral-raise man-maker rear-delt-fly renegade-row spider-curl tricep-kickback zottman-curl ", DB_ONE = " concentration-curl dumbbell-row goblet-squat overhead-carry overhead-tricep-extension pull-over side-bend single-leg-deadlift sumo-squat ", DB_WORD = /\b(dumbbells?|dbs?)\b/, DB_1 = /\b(one|single|1)[ -]?(dumbbell|db)\b/, DB_TWO = /\b(two|2|pair of|double)[ -]?(dumbbells?|dbs?)\b/, DB_SOLO = /\b(one|single|1)[ -]?(arm|hand)|\b(goblet|suitcase)\b/, DB_NOT = /\b(barbell|bb|cable|machine|bands?|kettlebells?|kbs?|plate|smith|ez)\b/;
+  function dbRule(x, w) {
+    var ap = x && x.as_performed, id = " " + (x && x.canonical_id || "~") + " ", t = ((x && x.name || "") + " " + (ap ? [].concat(ap.equipment).join(" ") : "")).toLowerCase(), said = DB_WORD.test(t), n;
+    return !said && DB_NOT.test(t) ? 0 : (n = said || DB_PAIR.indexOf(id) >= 0 ? 2 : DB_ONE.indexOf(id) >= 0 ? 1 : 0, !n || w && DB_1.test(((w.title || "") + " " + (w.equipment || []).join(" ")).toLowerCase()) ? n && 1 : DB_TWO.test(t) ? 2 : DB_1.test(t) || DB_SOLO.test(t) || DB_ONE.indexOf(id) >= 0 ? 1 : 2);
+  }
+  function dbOf(ex, entry, w) {
+    var h = entry && hist[exKey(entry)], c = entry && typeof entry.each == "boolean" ? entry.each : h && typeof h.each == "boolean" ? h.each : null;
+    return c !== null ? c ? 2 : 1 : dbRule(ex || entry, w === void 0 ? wo && wo.workout : w);
+  }
+  function eachOf(ex, entry) {
+    return dbOf(ex, entry) === 2;
+  }
+  function wtUnit(ex, entry) {
+    return !entry && wo && wo.screens.forEach(function(s, i) {
+      s.ex === ex && (entry = wo.entries[i]);
+    }), state.unit + (eachOf(ex, entry) ? " each" : "");
+  }
+  function setUnit(s) {
+    return state.unit + (s && s.each ? " each" : "");
+  }
+  function setLoad(s, lb) {
+    return !s || !s.reps || !s.weight ? 0 : s.reps * (s.each ? 2 : 1) * (lb ? s.unit === "kg" ? s.weight * LB_PER_KG : Number(s.weight) : toUnit(s.weight, s.unit));
+  }
+  function tally(entries) {
+    var t = { sets: 0, vol: 0 };
+    return (entries || []).forEach(function(e) {
+      (e.sets || []).forEach(function(s) {
+        s && (t.sets++, t.vol += setLoad(s));
+      });
+    }), t;
+  }
   function lastLine(entry) {
     if (!histReady || !entry) return "";
     var h = hist[exKey(entry)];
-    return !h || !h.date ? "first time logging this." : "last time \xB7 " + h.sets + " \xD7 " + (h.reps || timeText(h.secs)) + (h.weight ? " at " + wtText(h.weight, h.unit) + " " + state.unit : "") + " \xB7 " + agoText(h.date);
+    return !h || !h.date ? "first time logging this." : "last time \xB7 " + h.sets + " \xD7 " + (h.reps || timeText(h.secs)) + (h.weight ? " at " + wtText(h.weight, h.unit) + " " + state.unit + (h.pair ? " each" : "") : "") + " \xB7 " + agoText(h.date);
   }
   function startClock() {
     clearInterval(woTimer);
@@ -12540,7 +12740,7 @@ details.details-moving > :not(summary) {
     for (var i = 0; i < count; i++)
       (function(idx2) {
         var done = entry.sets[idx2], p = el("button", "setpill" + (done ? " done" : "") + (idx2 === just ? " just" : "") + (done && done.pr ? " pr" : "")), b = el("b", null, done ? setText(done) : timed ? ex.duration_seconds + "s" : "Set " + (idx2 + 1));
-        p.appendChild(b), p.appendChild(document.createTextNode(done ? done.seconds ? "held" : done.weight ? state.unit : "reps" : timed ? "hold " + (idx2 + 1) : askText(ex) || "tap to log")), p.onclick = timed ? function() {
+        p.appendChild(b), p.appendChild(document.createTextNode(done ? done.seconds ? "held" : done.weight ? setUnit(done) : "reps" : timed ? "hold " + (idx2 + 1) : askText(ex) || "tap to log")), p.onclick = timed ? function() {
           logHold(idx2, ex.duration_seconds, 1), justSet = idx2, renderWorkout();
         } : function() {
           openSetSheet(idx2);
@@ -12566,7 +12766,23 @@ details.details-moving > :not(summary) {
     if (wo) {
       restFace || (restThen = null);
       var s = wo.screens[wo.i], entry = wo.entries[wo.i], pre = setPrefill(idx2);
-      editing = null, $("repsbox").classList.remove("editing"), $("wtbox").classList.remove("editing"), setCtx.idx = pre.idx, setCtx.reps = pre.reps, setCtx.weight = pre.weight, $("settitle").textContent = (s && s.ex ? s.ex.name : "Set") + " \xB7 set " + (idx2 + 1), $("setlast").textContent = lastLine(entry), $("wtunit").textContent = state.unit, drawStepper(), openSheet("setsheet");
+      editing = null, $("repsbox").classList.remove("editing"), $("wtbox").classList.remove("editing"), setCtx.idx = pre.idx, setCtx.reps = pre.reps, setCtx.weight = pre.weight, $("settitle").textContent = (s && s.ex ? s.ex.name : "Set") + " \xB7 set " + (idx2 + 1), $("setlast").textContent = lastLine(entry), $("wtunit").textContent = state.unit, eachAt = wo.i, paintEach(), drawStepper(), openSheet("setsheet");
+    }
+  }
+  var eachAt = 0;
+  function paintEach(flip) {
+    var s = wo && wo.screens[eachAt];
+    tagPaint($("wteach"), wo ? dbOf(s && s.ex, wo.entries[eachAt]) : 0, flip);
+  }
+  function tagPaint(b, n, flip) {
+    b.hidden = !n, b.classList.toggle("one", n === 1), b.textContent = n === 1 ? "1 dumbbell" : "each", b.setAttribute("aria-label", (n === 1 ? "One dumbbell" : "Weight of each dumbbell") + ", tap to switch"), flip && !lessMotion() && (b.classList.remove("flip"), b.offsetWidth, b.classList.add("flip"));
+  }
+  function flipEach() {
+    if (!(!wo || wo.finished)) {
+      var s = wo.screens[eachAt], entry = wo.entries[eachAt], pair = dbOf(s && s.ex, entry) !== 2, h = hist[exKey(entry)];
+      entry.each = pair, h && (h.each = pair), entry.sets.forEach(function(x) {
+        x && !x.seconds && (pair ? x.each = !0 : delete x.each);
+      }), haptic("tap"), paintEach(!0), saveDraft(), renderWorkout(1);
     }
   }
   function drawStepper(animate) {
@@ -12637,7 +12853,9 @@ details.details-moving > :not(summary) {
         weight: setCtx.weight || null,
         unit: state.unit,
         done: !0
-      }, k = exKey(entry), told = !!wo.prs[k];
+      }, at = wo.entries.indexOf(entry);
+      eachOf(wo.screens[at] && wo.screens[at].ex, entry) && (set.each = !0);
+      var k = exKey(entry), told = !!wo.prs[k];
       prCheck(entry, set, k) && (set.pr = !0, told || toast("New best \u2014 " + (entry.name || "that lift"))), haptic(set.pr ? "pr" : "success"), entry.sets[setCtx.idx] = set, saveDraft(), closeSheet("setsheet"), justSet = setCtx.idx, renderWorkout();
       var s = wo.screens[wo.i];
       if (s && isCircuit(s.block)) {
@@ -12654,7 +12872,7 @@ details.details-moving > :not(summary) {
     var h = hist[k];
     if (!h || !h.best) return !1;
     var est = set.weight * (1 + set.reps / 30);
-    return est <= h.best ? !1 : (h.best = est, wo.prs[k] = { name: entry.name || "Exercise", reps: set.reps, weight: set.weight, unit: set.unit }, !0);
+    return est <= h.best ? !1 : (h.best = est, wo.prs[k] = { name: entry.name || "Exercise", reps: set.reps, weight: set.weight, unit: set.unit, each: set.each }, !0);
   }
   var restUntil = 0, restTotal = 0, restHeld = 0, restCued = 0, restFace = null, restThen = null;
   function startRest(seconds, face, then) {
@@ -12916,7 +13134,12 @@ details.details-moving > :not(summary) {
     a.until || a.over || !a.cap || (a.until = Date.now() + (a.held || a.cap * 1e3), a.held || (a.cued = 4), a.held = 0, tellSounds(), cxArm());
   }
   function cxAfter(bi, buzz) {
-    haptic(buzz), cxSync(bi), saveDraft(), renderWorkout(1);
+    haptic(buzz), cxSync(bi), ((wo.workout.blocks[bi] || {}).exercises || []).forEach(function(ex, j) {
+      var e = cxEntry(bi, j);
+      e && eachOf(ex, e) && e.sets.forEach(function(x) {
+        x && x.weight && (x.each = !0);
+      });
+    }), saveDraft(), renderWorkout(1);
   }
   function cxTap(bi, cx) {
     unlockAudio();
@@ -13003,7 +13226,7 @@ details.details-moving > :not(summary) {
     var list = el("div", "cxlist");
     (s.block.exercises || []).forEach(function(ex, j) {
       var did = !!a.marks[j], e = cxEntry(s.bi, j), set = e ? cxSet(ex, e) : null, row = el("button", "pickrow cxmove" + (did ? " on" : j === cur ? " cur" : "")), tx = el("div", "pt"), bits = [doseText(ex) || "\u2014"], d = cxDelta(ex);
-      row.setAttribute("aria-pressed", did ? "true" : "false"), set && set.weight && bits.push(wtText(set.weight, set.unit) + " " + state.unit), d && bits.push(d), tx.appendChild(el("b", null, ex.name)), tx.appendChild(el("span", null, bits.join(" \xB7 "))), row.appendChild(tx), row.appendChild(icon(el("span", "ck"), "check")), row.onclick = function() {
+      row.setAttribute("aria-pressed", did ? "true" : "false"), set && set.weight && bits.push(wtText(set.weight, set.unit) + " " + wtUnit(ex, e)), d && bits.push(d), tx.appendChild(el("b", null, ex.name)), tx.appendChild(el("span", null, bits.join(" \xB7 "))), row.appendChild(tx), row.appendChild(icon(el("span", "ck"), "check")), row.onclick = function() {
         cxMark(s.bi, cx, j);
       }, list.appendChild(row);
     }), main.appendChild(list);
@@ -13139,7 +13362,7 @@ details.details-moving > :not(summary) {
           toast("Could not save that session \u2014 check your connection.");
           return;
         }
-        payload.id = r.data && r.data.id, wo && (wo.logId = payload.id), invalidateLogs(), today.at = 0, renderToday(), native && native.live && loadLogs().then(function() {
+        payload.id = r.data && r.data.id, wo && (wo.logId = payload.id), sumLanded(payload), invalidateLogs(), today.at = 0, renderToday(), native && native.live && loadLogs().then(function() {
           publishSummary();
         });
       }), clearInterval(woTimer), cxOff(), stopRest(), clearDraft(), liveEnd(!0), wo.finished = !0, haptic("done"), renderSummary(payload, logged);
@@ -13218,25 +13441,26 @@ details.details-moving > :not(summary) {
     main.innerHTML = "", main.scrollTop = 0, $("workout").classList.add("summary"), $("workout").classList.toggle("past", !!past), $("wclose").setAttribute("aria-label", past ? "Back to Train" : "Exit workout");
     var mins = Math.max(1, Math.round((payload.duration_seconds || 60) / 60));
     $("wclock").textContent = mins + " min";
-    var sets = 0, vol = 0;
-    logged.forEach(function(e) {
-      e.sets.forEach(function(s) {
-        s && (sets++, s.reps && s.weight && (vol += s.reps * toUnit(s.weight, s.unit)));
-      });
-    }), main.appendChild(pumpyArt("proud", !0)), main.appendChild(el("div", "wblock", past ? new Date(payload.started_at).toLocaleDateString(
+    var t = tally(logged), sets = t.sets, vol = t.vol;
+    sum = {
+      payload: payload,
+      logged: logged,
+      past: past,
+      w: w,
+      figs: [],
+      good: JSON.stringify(logged.filter(function(e) {
+        return e.sets.length;
+      }))
+    }, main.appendChild(pumpyArt("proud", !0)), main.appendChild(el("div", "wblock", past ? new Date(payload.started_at).toLocaleDateString(
       void 0,
       { weekday: "long", month: "long", day: "numeric" }
     ) : "Session complete")), main.appendChild(el("h2", "wname", payload.workout_title || "Workout"));
     var cs = cxScoreOf(w, logged);
-    cs && main.appendChild(el("div", "wdose", cs.text + (cs.cap ? " in " + clock(cs.cap) : "") + (cs.reps ? " \xB7 " + cs.reps + " reps" : "")));
+    cs && main.appendChild(sum.dose = el("div", "wdose", cxLine(cs)));
     var figs = el("div", "setpills sumfigs");
-    [
-      [String(mins), "min"],
-      cs ? [String(cs.rounds), cs.rounds === 1 ? "round" : "rounds"] : [String(sets), sets === 1 ? "set" : "sets"],
-      [vol ? Math.round(vol).toLocaleString() : "\u2014", vol ? state.unit : "bodyweight"]
-    ].forEach(function(f) {
+    figsOf(mins, sets, vol, cs).forEach(function(f) {
       var box = el("div", "setpill");
-      box.appendChild(el("b", null, f[0])), box.appendChild(document.createTextNode(f[1])), figs.appendChild(box);
+      box.appendChild(el("b", null, f[0])), box.appendChild(document.createTextNode(f[1])), figs.appendChild(box), sum.figs.push(box);
     }), main.appendChild(el("div", "sumawards")), main.appendChild(figs);
     var wk = past ? null : thisWeek(payload);
     if (wk) {
@@ -13244,23 +13468,31 @@ details.details-moving > :not(summary) {
       wk.done === wk.goal && wl.appendChild(ringSvg(1, "small", (wk.goal - 1) / wk.goal)), wl.appendChild(el("span", null, weekLine(wk))), main.appendChild(wl);
     }
     var mg = w.muscle_groups || [];
-    mg.length && main.appendChild(el("div", "wnote", mg.slice(0, 6).join(" \xB7 ")));
-    var beaten = Object.keys(prs);
-    if (beaten.length) {
-      var pills = el("div", "setpills sumprs");
-      beaten.forEach(function(k) {
-        var row = el("div", "setpill pr");
-        row.appendChild(el("b", null, past ? "Best at the time" : "New best")), row.appendChild(document.createTextNode(prText(prs[k]))), pills.appendChild(row);
-      }), main.appendChild(pills);
-    }
-    main.appendChild(shareRow(payload, logged, past)), logged.length && main.appendChild(sumLog(logged));
+    mg.length && main.appendChild(el("div", "wnote", mg.slice(0, 6).join(" \xB7 "))), main.appendChild(sum.prs = el("div", "setpills sumprs")), sumBests(prs), main.appendChild(shareRow(payload, logged, past)), logged.length && main.appendChild(sumLog(logged));
     var done = el("button", "btn sumdone", past ? "Back" : "Done");
     done.onclick = past ? function() {
       history.back();
     } : leaveWorkout, main.appendChild(done), viewIn(main), past ? pastSeals(payload, main) : sealAwards(payload, main);
   }
+  function figsOf(mins, sets, vol, cs) {
+    return [
+      [String(mins), "min"],
+      cs ? [String(cs.rounds), cs.rounds === 1 ? "round" : "rounds"] : [String(sets), sets === 1 ? "set" : "sets"],
+      [vol ? Math.round(vol).toLocaleString() : "\u2014", vol ? state.unit : "bodyweight"]
+    ];
+  }
+  function cxLine(cs) {
+    return cs.text + (cs.cap ? " in " + clock(cs.cap) : "") + (cs.reps ? " \xB7 " + cs.reps + " reps" : "");
+  }
+  function sumBests(prs) {
+    var pills = sum.prs;
+    pills.innerHTML = "", Object.keys(prs).forEach(function(k) {
+      var row = el("div", "setpill pr");
+      row.appendChild(el("b", null, sum.past ? "Best at the time" : "New best")), row.appendChild(document.createTextNode(prText(prs[k]))), pills.appendChild(row);
+    });
+  }
   function prText(p) {
-    return p.name + " \xB7 " + wtText(p.weight, p.unit) + " " + state.unit + " \xD7 " + p.reps;
+    return p.name + " \xB7 " + wtText(p.weight, p.unit) + " " + setUnit(p) + " \xD7 " + p.reps;
   }
   function logWorkout(l) {
     var w = null;
@@ -13279,6 +13511,7 @@ details.details-moving > :not(summary) {
             reps: s.reps,
             weight: s.weight,
             unit: s.unit,
+            each: s.each,
             est: est
           });
         }
@@ -13286,16 +13519,132 @@ details.details-moving > :not(summary) {
     }), out;
   }
   function sumLog(logged) {
-    var box = disclosure("What you logged", "sumlog"), body = box.lastChild;
-    return logged.forEach(function(e) {
-      var row = el("div", "session-exercise");
-      row.appendChild(el("h4", null, e.name || "Exercise")), e.sets.forEach(function(s, i) {
-        var line = el("div", "session-set");
-        line.appendChild(el("span", null, "Set " + (i + 1)));
-        var b = el("b", null, setText(s) + (s.weight && !s.seconds ? " " + state.unit : ""));
-        s.pr && b.classList.add("was"), line.appendChild(b), row.appendChild(line);
-      }), body.appendChild(row);
-    }), box;
+    var box = disclosure("What you logged", "sumlog");
+    return sum.box = box.lastChild, sumRows(), box;
+  }
+  var sum = null, sumQueue = [];
+  function sumRows() {
+    var body = sum.box, total = tally(sum.logged).sets;
+    body.innerHTML = "", sum.open = null, sum.logged.forEach(function(e, ei) {
+      if (e.sets.length) {
+        var row = el("div", "session-exercise");
+        row.appendChild(el("h4", null, e.name || "Exercise")), e.sets.forEach(function(s, si) {
+          var line = el("button", "session-set"), b = el("b", null, setText(s) + (s.weight && !s.seconds ? " " + setUnit(s) : ""));
+          line.setAttribute("data-k", ei + ":" + si), line.setAttribute("aria-label", "Correct set " + (si + 1) + ": " + b.textContent), line.appendChild(el("span", null, "Set " + (si + 1))), s.pr && b.classList.add("was"), line.appendChild(b), line.appendChild(ic("pencil")), line.onclick = function() {
+            sumEdit(line, ei, si, total);
+          }, row.appendChild(line);
+        }), body.appendChild(row);
+      }
+    });
+  }
+  function sumEdit(line, ei, si, total) {
+    if (sum.open && (sumShut(), line = sum.box.querySelector('[data-k="' + ei + ":" + si + '"]')), !line) return;
+    var c = sum, e = c.logged[ei], s = e.sets[si], hold = !!s.seconds && !s.reps, h0 = line.offsetHeight, ed = el("div", "sedit"), row = el("div", "sedrow"), acts = el("div", "sedacts"), f = [], was = s.weight ? toUnit(s.weight, s.unit) : 0, pair = !!s.each, cap, tag, del;
+    row.appendChild(el("span", null, "Set " + (si + 1)));
+    function field(v, dec, unit) {
+      var box = el("div", "sedf"), inp = el("input"), small = el("small", null, unit);
+      return inp.inputMode = dec ? "decimal" : "numeric", inp.enterKeyHint = "done", inp.placeholder = "0", inp.value = v ? String(v) : "", inp.setAttribute("aria-label", unit), inp.onkeydown = function(ev) {
+        if (ev.key === "Enter") save();
+        else if (ev.key === "Escape") sumShut();
+        else return;
+        ev.preventDefault();
+      }, box.appendChild(inp), box.appendChild(small), row.appendChild(box), f.push(inp), small;
+    }
+    hold ? field(s.seconds, 0, "sec") : (field(s.reps, 0, "reps"), row.appendChild(el("i", "sedx", "\xD7")), cap = field(was, 1, state.unit), (pair || typeof e.each == "boolean" || dbRule(e, c.w)) && (tag = cap.appendChild(el("button", "eachtag")), tag.onclick = function() {
+      pair = !pair, haptic("tap"), tagPaint(tag, pair ? 2 : 1, 1);
+    }, tagPaint(tag, pair ? 2 : 1))), total > 1 && (del = acts.appendChild(icon(el("button", "sedel"), "trash", "Delete")), del.onclick = function() {
+      var gone = e.sets.splice(si, 1)[0];
+      c.open = null, haptic("tap"), sumMorph(ed, ed.offsetHeight, function() {
+        sumPaint(c);
+      }), offerUndo("Set deleted", function() {
+        sumWrite(c);
+      }, function() {
+        e.sets.splice(Math.min(si, e.sets.length), 0, gone), sumPaint(c), sumWrite(c);
+      });
+    }), acts.appendChild(el("button", "btn ghost", "Cancel")).onclick = sumShut, acts.appendChild(el("button", "btn", "Save")).onclick = save, ed.appendChild(row), ed.appendChild(acts), line.parentNode.replaceChild(ed, line), c.open = { ed: ed, k: ei + ":" + si }, sumMorph(ed, h0), f[0].focus(), f[0].select();
+    function save() {
+      var a = parseFloat(f[0].value), b = f[1] ? parseFloat(f[1].value) : NaN, ns = Object.assign({}, s), flip = pair !== !!s.each;
+      hold ? a > 0 && (ns.seconds = clamp(Math.round(a), 1, 5999)) : (a > 0 && (ns.reps = clamp(Math.round(a), 1, 999)), b = isNaN(b) ? was : clamp(Math.round(b * 10) / 10, 0, 9999), b !== was && (ns.weight = b || null, ns.unit = state.unit));
+      var moved = ns.reps !== s.reps || ns.weight !== s.weight || ns.seconds !== s.seconds, h = ed.offsetHeight, fixed;
+      if (!moved && !flip) {
+        sumShut();
+        return;
+      }
+      ns.pr && moved && !sumStill(c, e, ns) && delete ns.pr, e.sets[si] = ns, flip && (e.each = pair, e.sets = e.sets.map(function(x) {
+        return x.seconds && !x.reps || (x = Object.assign({}, x), pair ? x.each = !0 : delete x.each), x;
+      })), haptic("success"), sumPaint(c), fixed = c.box.querySelector('[data-k="' + ei + ":" + si + '"]'), fixed && (sumMorph(fixed, h), fixed.classList.add("fixed"), fixed.focus({ preventScroll: !0 })), sumWrite(c), toast("Set updated" + (c.payload.strava_activity_id ? " \xB7 Strava keeps its copy" : ""));
+    }
+  }
+  function sumShut() {
+    var o = sum && sum.open, h, line;
+    !o || !o.ed.isConnected || (h = o.ed.offsetHeight, sumRows(), line = sum.box.querySelector('[data-k="' + o.k + '"]'), line && (sumMorph(line, h), line.focus({ preventScroll: !0 })));
+  }
+  function sumMorph(node, h0, gone) {
+    var h1 = gone ? 0 : node.offsetHeight;
+    if (lessMotion() || !node.animate || h0 === h1) {
+      gone && gone();
+      return;
+    }
+    node.style.overflow = "hidden", node.animate([{ height: h0 + "px" }, { height: h1 + "px", opacity: gone ? 0 : 1 }], {
+      duration: 220,
+      easing: gone ? "cubic-bezier(.3,0,.8,.15)" : "cubic-bezier(.22,.9,.3,1)",
+      fill: gone ? "forwards" : "none"
+    }).onfinish = gone || function() {
+      node.style.overflow = "";
+    };
+  }
+  function sumPaint(c) {
+    if (!(sum !== c || !c.box || !c.box.isConnected)) {
+      var t = tally(c.logged), cs = cxScoreOf(c.w, c.logged), prs = prsOfLog(c.logged), k, fresh;
+      if (wo && !c.past && (wo.prs = prs), cs && c.dose && (c.dose.textContent = cxLine(cs)), figsOf(0, t.sets, t.vol, cs).forEach(function(x, i) {
+        i && (c.figs[i].firstChild.textContent = x[0], c.figs[i].lastChild.textContent = x[1]);
+      }), c.prs.classList.add("still"), sumBests(prs), sc.card) {
+        fresh = c.past ? scFromLog(Object.assign({}, c.payload, { entries: c.logged })) : scFromSession(c.payload, c.logged);
+        for (k in fresh) k !== "bg" && (sc.card[k] = fresh[k]);
+        scPaint();
+      }
+      sumRows();
+    }
+  }
+  function sumStill(c, e, s) {
+    var k = exKey(e), at = new Date(c.payload.started_at).getTime(), was = 0;
+    return state.logs ? state.logs.forEach(function(l) {
+      l.id === c.payload.id || !(new Date(l.started_at).getTime() < at) || (l.entries || []).forEach(function(x) {
+        x && exKey(x) === k && (x.sets || []).forEach(function(y) {
+          y && y.reps && y.weight && (was = Math.max(was, toUnit(y.weight, y.unit) * (1 + y.reps / 30)));
+        });
+      });
+    }) : !c.past && histReady && hist[k] && (was = hist[k].was || 0), was > 0 && toUnit(s.weight, s.unit) * (1 + s.reps / 30) > was;
+  }
+  function sumWrite(c) {
+    if (!c.payload.id) {
+      sumQueue.indexOf(c) < 0 && sumQueue.push(c);
+      return;
+    }
+    if (c.busy) {
+      c.again = !0;
+      return;
+    }
+    var entries = c.logged.filter(function(e) {
+      return e.sets.length;
+    }), body = JSON.stringify(entries);
+    if (body === c.good) return;
+    c.busy = !0;
+    function fail() {
+      c.busy = c.again = !1, c.logged.length = 0, JSON.parse(c.good).forEach(function(e) {
+        c.logged.push(e);
+      }), sumPaint(c), toast("That change did not save. The set is back as it was.");
+    }
+    sb.from("workout_logs").update({ entries: entries }).eq("id", c.payload.id).select("id").then(function(r) {
+      if (r.error || !r.data || !r.data.length) return fail();
+      c.busy = !1, c.good = body, c.past ? (c.payload.entries = JSON.parse(body), renderTrain()) : invalidateLogs(), native && native.live && loadLogs().then(publishSummary), c.again && (c.again = !1, sumWrite(c));
+    }, fail);
+  }
+  function sumLanded(payload) {
+    sumQueue = sumQueue.filter(function(c) {
+      if (c.payload !== payload) return !0;
+      sumWrite(c);
+    });
   }
   function pastSeals(l, main) {
     if (!(!state.awards || !l.completed_at)) {
@@ -13599,12 +13948,12 @@ details.details-moving > :not(summary) {
   function scSets(e) {
     var st = (e.sets || []).filter(Boolean), n = st.length;
     if (!n) return "";
-    var reps = st[0].reps, same = !0, top = 0, secs = 0;
+    var reps = st[0].reps, same = !0, top = 0, secs = 0, per = null;
     if (st.forEach(function(s) {
-      s.reps !== reps && (same = !1), s.seconds && (secs = Math.max(secs, s.seconds)), s.weight && (top = Math.max(top, toUnit(s.weight, s.unit)));
+      s.reps !== reps && (same = !1), s.seconds && (secs = Math.max(secs, s.seconds)), s.weight && toUnit(s.weight, s.unit) > top && (top = toUnit(s.weight, s.unit), per = s);
     }), secs && !reps) return n + " \xD7 " + secs + "s";
     var t = same && reps ? n + " \xD7 " + reps : n + (n === 1 ? " set" : " sets");
-    return top ? t + " \xB7 " + top.toLocaleString() + " " + state.unit : t;
+    return top ? t + " \xB7 " + top.toLocaleString() + " " + setUnit(per) : t;
   }
   function scCard(w, title, when, mins, sets, vol, prs, entries) {
     var ex = [];
@@ -13622,28 +13971,20 @@ details.details-moving > :not(summary) {
       exercises: ex,
       credit: credit,
       date: new Date(when).toLocaleDateString(void 0, { weekday: "long", month: "long", day: "numeric" }),
-      figs: [
-        [String(mins), "min"],
-        cs ? [String(cs.rounds), cs.rounds === 1 ? "round" : "rounds"] : [String(sets), sets === 1 ? "set" : "sets"],
-        [vol ? Math.round(vol).toLocaleString() : "\u2014", vol ? state.unit : "bodyweight"]
-      ],
+      figs: figsOf(mins, sets, vol, cs),
       label: lab,
       coach: w.platform === "pumpy"
     };
   }
   function scFromSession(payload, logged) {
-    var w = wo && wo.workout || {}, sets = 0, vol = 0;
-    return logged.forEach(function(e) {
-      e.sets.forEach(function(s) {
-        s && (sets++, s.reps && s.weight && (vol += s.reps * toUnit(s.weight, s.unit)));
-      });
-    }), scCard(
+    var w = wo && wo.workout || {}, t = tally(logged);
+    return scCard(
       w,
       payload.workout_title,
       payload.started_at,
       Math.max(1, Math.round(payload.duration_seconds / 60)),
-      sets,
-      vol,
+      t.sets,
+      t.vol,
       prNames(wo && wo.prs),
       logged
     );
@@ -14461,8 +14802,8 @@ details.details-moving > :not(summary) {
         copySrc = w, copyDest = addDays(w, 7), paintCopy();
       }, copyWkChips.push({ w: w, node: c }), wks.appendChild(c);
     }), head.appendChild(wks);
-    var sum = el("div", "copysum");
-    copySumWk = el("b"), copySumN = document.createTextNode(""), sum.appendChild(copySumWk), sum.appendChild(copySumN), head.appendChild(sum);
+    var sum2 = el("div", "copysum");
+    copySumWk = el("b"), copySumN = document.createTextNode(""), sum2.appendChild(copySumWk), sum2.appendChild(copySumN), head.appendChild(sum2);
     var list = $("copyweeks");
     list.innerHTML = "", copyRowEls = [];
     for (var i = 1; i <= COPY_WEEKS; i++)
@@ -14643,12 +14984,7 @@ details.details-moving > :not(summary) {
     });
   }
   function volumeOf(log) {
-    var v = 0;
-    return (log.entries || []).forEach(function(e) {
-      (e.sets || []).forEach(function(s) {
-        s && s.reps && s.weight && (v += s.reps * toUnit(s.weight, s.unit));
-      });
-    }), v;
+    return tally(log.entries).vol;
   }
   function weekKey(iso) {
     return ymd(mondayOf(new Date(iso)));
@@ -14809,7 +15145,7 @@ details.details-moving > :not(summary) {
     var v = 0;
     return (log.entries || []).forEach(function(e) {
       (e.sets || []).forEach(function(s) {
-        s && s.reps && s.weight && (v += s.reps * (s.unit === "kg" ? s.weight * LB_PER_KG : s.weight));
+        v += setLoad(s, 1);
       });
     }), v;
   }
@@ -15096,7 +15432,7 @@ details.details-moving > :not(summary) {
         (e.sets || []).forEach(function(s) {
           if (s && !(!s.reps || !s.weight)) {
             var wt = toUnit(s.weight, s.unit), est = wt * (1 + s.reps / 30);
-            prs[k] || (prs[k] = { est: 0, label: e.name || "Exercise" }), est > prs[k].est && (prs[k].est = est, prs[k].weight = wt, prs[k].reps = s.reps, prs[k].date = l.started_at);
+            prs[k] || (prs[k] = { est: 0, label: e.name || "Exercise" }), est > prs[k].est && (prs[k].est = est, prs[k].weight = wt, prs[k].each = s.each, prs[k].reps = s.reps, prs[k].date = l.started_at);
           }
         });
       });
@@ -15111,7 +15447,7 @@ details.details-moving > :not(summary) {
         nm.appendChild(document.createTextNode(p.label)), nm.appendChild(el(
           "span",
           null,
-          wtText(p.weight) + " " + state.unit + " \xD7 " + p.reps + " \xB7 " + new Date(p.date).toLocaleDateString(void 0, { month: "short", day: "numeric" })
+          wtText(p.weight) + " " + setUnit(p) + " \xD7 " + p.reps + " \xB7 " + new Date(p.date).toLocaleDateString(void 0, { month: "short", day: "numeric" })
         )), r.appendChild(nm), r.appendChild(el("div", "v", Math.round(p.est) + " " + state.unit)), pc.appendChild(r);
       }), v.appendChild(pc);
     }
@@ -18435,7 +18771,7 @@ details.details-moving > :not(summary) {
     return setWeight(setCtx.weight + plate());
   }), wireStep("wtdown", function() {
     return setWeight(setCtx.weight - plate());
-  }), wireNum($("repsbox"), $("repsval"), $("repsin"), setReps), wireNum($("wtbox"), $("wtval"), $("wtin"), setWeight), $("setsave").onclick = saveSet, $("setclear").onclick = function() {
+  }), wireNum($("repsbox"), $("repsval"), $("repsin"), setReps), wireNum($("wtbox"), $("wtval"), $("wtin"), setWeight), $("setsave").onclick = saveSet, $("wteach").onclick = flipEach, $("setclear").onclick = function() {
     wo && (wo.entries[wo.i].sets.splice(setCtx.idx, 1), saveDraft(), closeSheet("setsheet"), renderWorkout());
   }, $("hintx").onclick = function() {
     $("hint").classList.remove("show");

@@ -2037,6 +2037,40 @@ export const STYLE = String.raw`<style>
   .sumlog .session-exercise:last-child { border-bottom: 0; padding-bottom: 0; }
   /* The one line in it that was a record on the day, marked as the pill above is. */
   .session-set b.was { color: var(--ember-ink); }
+  .sumprs:empty { display: none; }
+  /* Redrawn by a correction: the same bests, not a new arrival. */
+  .sumprs.still .setpill { animation: none; }
+  /* Every set is a tap to correct it: a 44px row, pressed like a list cell. */
+  .sumlog .session-set { width: calc(100% + 16px); min-height: 44px; margin: 0 -8px; padding: 0 8px; gap: 10px;
+    align-items: center; border: 0; border-radius: 10px; background: none; color: var(--ink); font-size: 13px; }
+  .sumlog .session-set:active { background: var(--sand); }
+  .sumlog .session-set:focus-visible { outline: 2px solid var(--ember-ink); outline-offset: -2px; }
+  .sumlog .session-set b { margin-left: auto; }
+  .sumlog .session-set .ic { width: 14px; height: 14px; flex: none; color: var(--muted); }
+  .sumlog .session-set.fixed { animation: setfix var(--t-4) var(--e-soft); }
+  @keyframes setfix { from { background: var(--ember-soft); } }
+  /* The open row: the set sheet's shape in a line, figure over unit. 18px type,
+     because iOS zooms the page into any field set under 16. */
+  .sedit { padding: 6px 0 12px; animation: fadeonly var(--t-2) var(--e-out); }
+  .sedrow, .sedacts { display: flex; gap: 8px; }
+  .sedrow > span, .sedx { flex: 1; padding-top: 13px; font-size: 13px; color: var(--ink-2); }
+  .sedx { flex: none; font-style: normal; }
+  .sedf { display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 11px; font-weight: 600;
+    color: var(--muted); white-space: nowrap; }
+  .sedf input { width: 60px; height: 44px; padding: 0; border: 1px solid var(--line-2); border-radius: 12px;
+    background: var(--paper); color: var(--ink); font: 700 18px var(--display); text-align: center; outline: none;
+    appearance: none; }
+  .sedf:last-child input { width: 76px; }
+  .sedf input:focus { border-color: var(--ember); box-shadow: 0 0 0 3px var(--pill); }
+  .sedacts { justify-content: flex-end; margin-top: 12px; }
+  .sedacts .btn { width: auto; min-height: 44px; padding: 0 18px; font-size: 14.5px; box-shadow: none; }
+  .sedel { display: flex; align-items: center; gap: 6px; min-height: 44px; margin-right: auto; padding: 0 4px; border: 0;
+    background: none; color: var(--ember-ink); font-size: 14px; font-weight: 650; }
+  .sedel .ic { width: 16px; height: 16px; }
+  @media (prefers-reduced-motion: reduce) {
+    .eachtag { transition: none; }
+    .eachtag.flip, .sumlog .session-set.fixed { animation: none; }
+  }
   /* The card's own row: a preview at the size of a thumbnail, the two themes
      beside it, and the buttons under both. The buttons are only added once the
      File exists, so one that says Share is one that can. */
@@ -2146,6 +2180,18 @@ export const STYLE = String.raw`<style>
   .stepper .val.editing .numin { display: block; }
   .stepper .val small { display: block; font-size: 11px; font-weight: 600;
     color: var(--muted); margin-top: 4px; }
+  /* "each": a tag on the unit rather than a longer unit, and the switch for it.
+     Drawn 17px, answering 44 through ::after; the negative margins keep the line
+     box, so the stepper does not move between a curl and a squat. Re-stated over
+     .stepper button, which would make it a 46px circle. */
+  .eachtag, .stepper .val .eachtag { position: relative; display: inline-block; width: auto; height: auto;
+    margin: -3px 0 -3px 5px; padding: 3px 7px; border: 0; border-radius: 9px; background: var(--ember-soft);
+    color: var(--ember-ink); font: 700 10.5px/1 var(--sans); transition: background-color var(--t-2), color var(--t-2); }
+  .eachtag::after { content: ""; position: absolute; inset: -13px -6px; }
+  .stepper .val .eachtag[hidden] { display: none; }
+  .eachtag.one, .stepper .val .eachtag.one { background: var(--sand); color: var(--ink-2); }
+  .eachtag.flip { animation: eachflip var(--t-3) var(--e-spring); }
+  @keyframes eachflip { from { opacity: .4; transform: scale(.8); } }
 
   /* ---------- Pumpy ----------
      The coach's mark is currentColor everywhere it appears, so it takes the tab's

@@ -11643,7 +11643,8 @@ async function toolLogsSummary(userId: string, days: number) {
     for (const e of l.entries ?? []) {
       const c = catalogById(e?.canonical_id ?? null);
       if (c) for (const m of c.muscles) muscles[m] = (muscles[m] ?? 0) + 1;
-      for (const s of e?.sets ?? []) { sets++; if (s?.reps && s?.weight) volume += Number(s.reps) * Number(s.weight); }
+      // each: the weight is one dumbbell of a pair, so the pair moved twice it.
+      for (const s of e?.sets ?? []) { sets++; if (s?.reps && s?.weight) volume += Number(s.reps) * Number(s.weight) * (s.each ? 2 : 1); }
     }
   }
   return {

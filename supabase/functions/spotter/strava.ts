@@ -493,7 +493,7 @@ function tidy(n: number): string {
   return Number(n.toFixed(1)).toLocaleString("en-US");
 }
 
-type LoggedSet = { reps?: number; weight?: number | null; unit?: string; seconds?: number; pr?: boolean };
+type LoggedSet = { reps?: number; weight?: number | null; unit?: string; seconds?: number; pr?: boolean; each?: boolean };
 type LoggedEntry = { name?: string; sets?: LoggedSet[] };
 
 /**
@@ -564,7 +564,8 @@ export function activityBody(log: PushLog, opts: PushOpts): Record<string, strin
   let volume = 0;
   for (const e of entries) {
     for (const s of e.sets ?? []) {
-      if (s && s.reps && s.weight) volume += num(s.reps) * inUnit(num(s.weight), String(s.unit ?? unit), unit);
+      // each: one dumbbell of a pair was typed, and the pair is what moved.
+      if (s && s.reps && s.weight) volume += num(s.reps) * inUnit(num(s.weight), String(s.unit ?? unit), unit) * (s.each ? 2 : 1);
     }
   }
   if (volume > 0) lines.push("", `Volume ${Math.round(volume).toLocaleString("en-US")} ${unit}`);
