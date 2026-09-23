@@ -112,13 +112,6 @@ export const STYLE = String.raw`<style>
     letter-spacing: -.02em; margin: 0 0 16px; }
   .hero em { font-style: normal; color: var(--ember); }
   .sub { font-size: 15.5px; line-height: 1.6; color: var(--ink-2); margin: 0 0 34px; }
-  .steps { display: flex; flex-direction: column; gap: 14px; margin: 0 0 36px; padding: 0; list-style: none; }
-  .steps li { display: flex; gap: 13px; align-items: flex-start; font-size: 14px; line-height: 1.5;
-    color: var(--ink-2); }
-  .steps .num { flex: 0 0 auto; width: 25px; height: 25px; border-radius: 999px; background: var(--ember-soft);
-    color: var(--ember-ink); font-size: 12px; font-weight: 700; display: flex; align-items: center;
-    justify-content: center; margin-top: 1px; }
-  .steps b { color: var(--ink); font-weight: 650; }
   .authcard { background: var(--card); border: 1px solid var(--line); border-radius: 20px;
     padding: 22px 20px; box-shadow: var(--sh-md); }
   .authcard h2 { font-family: var(--display); font-size: 19px; margin: 0 0 16px; font-weight: 700;

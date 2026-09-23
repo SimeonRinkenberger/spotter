@@ -103,11 +103,6 @@ export const MARKUP_BODY = String.raw`</head>
     <p class="sub">You save fitness reels you never come back to. Spotter reads the exercises,
       sets and reps out of the video, then walks you through them one at a time and remembers
       what you lifted.</p>
-    <ol class="steps">
-      <li><span class="num">1</span><div><b>Paste a link</b> from TikTok, Instagram or YouTube — or share straight from your phone.</div></li>
-      <li><span class="num">2</span><div><b>Get a real workout card</b> — every exercise with its sets, reps and rest, not a wall of caption text.</div></li>
-      <li><span class="num">3</span><div><b>Train and log it</b> — full-screen, one move at a time, tracking weight and reps as you go.</div></li>
-    </ol>
 
     <div class="authcard" id="authcard">
       <h2 id="authtitle">Create your account</h2>
