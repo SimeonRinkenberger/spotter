@@ -16759,8 +16759,15 @@ export const APP = String.raw`
   function kbApply(d) {
     if (!kbOver()) return;
     var K = d.visible ? d.height : 0, f = K ? kbFocus() : null, o = null, n;
-    // Paper under the glass keys, on their timeline (style.ts, .kbback).
-    if (!kbBack) { kbBack = el("div", "kbback"); kbBack.setAttribute("aria-hidden", "true"); document.body.appendChild(kbBack); }
+    // Paper under the glass keys, on their timeline (style.ts, .kbback). Styled
+    // once at rest before its first lift: a node born lifted has nothing to
+    // transition from and would stand at the top of the keys before they arrive.
+    if (!kbBack) {
+      kbBack = el("div", "kbback");
+      kbBack.setAttribute("aria-hidden", "true");
+      document.body.appendChild(kbBack);
+      void getComputedStyle(kbBack).translate;
+    }
     kbLift(kbBack, K, d);
     // Under a finger the owner cannot change; only its lift follows.
     if (d.instant) { if (kbOwner) kbPlace(kbOwner, K, null, d); return; }

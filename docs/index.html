@@ -18293,7 +18293,7 @@ details.details-moving > :not(summary) {
   function kbApply(d) {
     if (kbOver()) {
       var K = d.visible ? d.height : 0, f = K ? kbFocus() : null, o = null, n;
-      if (kbBack || (kbBack = el("div", "kbback"), kbBack.setAttribute("aria-hidden", "true"), document.body.appendChild(kbBack)), kbLift(kbBack, K, d), d.instant) {
+      if (kbBack || (kbBack = el("div", "kbback"), kbBack.setAttribute("aria-hidden", "true"), document.body.appendChild(kbBack), getComputedStyle(kbBack).translate), kbLift(kbBack, K, d), d.instant) {
         kbOwner && kbPlace(kbOwner, K, null, d);
         return;
       }

@@ -29,6 +29,7 @@ class SpotterViewController: CAPBridgeViewController {
     private var pendingTransition: [String: Any]?
     private var pendingDuration: Double = 0
     private var pendingSince: CFTimeInterval = 0
+    private var targetHeight: CGFloat = 0
     // Match --paper in the shared stylesheet, including appearance changes.
     private let paper = UIColor { traits in
         traits.userInterfaceStyle == .dark
@@ -102,6 +103,14 @@ class SpotterViewController: CAPBridgeViewController {
             let height = self.overlap(of: self.view.convert(screenFrame, from: nil))
             let duration = info[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double ?? 0.25
             let curve = info[UIResponder.keyboardAnimationCurveUserInfoKey] as? Int ?? 7
+            // Hiding a number pad with its form accessory posts twice: the real,
+            // animated move, then the same end frame again with no duration. Taken
+            // as news, the second cancelled the page's animation and dropped the
+            // sheet in one frame. The same destination is not news.
+            let now = CACurrentMediaTime()
+            if duration == 0, abs(height - self.targetHeight) < 0.5,
+               self.pendingTransition != nil || now < self.animatingUntil { return }
+            self.targetHeight = height
             self.sentHeight = height
             self.keyboardShown = height > 0
             // UIKit posts this before the keys' animation exists: it is committed
@@ -172,14 +181,22 @@ class SpotterViewController: CAPBridgeViewController {
             // timeline. An animation that began before the notification is the
             // last one still settling, not this one. A keyboard UIKit moves some
             // other way (or not at all) gets one frame's grace, then goes as is.
-            let found = keyboardAnimationBegin()
-            let begin = (found ?? 0) >= pendingSince - 0.001 ? found ?? 0 : 0
+            let animation = keyboardAnimation()
+            let fresh = animation.map { $0.begin == 0 || $0.begin >= pendingSince - 0.001 } ?? false
             let waited = now - pendingSince
-            if pendingDuration > 0 && begin == 0 && waited < (found == nil ? 0.02 : 0.3) { return }
-            let elapsed = begin > 0 ? max(0, min(pendingDuration, now - begin)) : 0
+            if !fresh && waited < 0.02 { return }
+            let begin = fresh ? animation!.begin : 0
+            if fresh && begin == 0 && waited < 0.3 { return }
+            // A number pad with its form accessory is dismissed with a notification
+            // that says 0s while the keys still take 0.383s to leave: the page
+            // dropped its sheet in one frame. The animation itself knows better.
+            var duration = pendingDuration
+            if duration == 0, fresh, animation!.duration > 0 { duration = animation!.duration }
+            let elapsed = begin > 0 ? max(0, min(duration, now - begin)) : 0
+            pending["duration"] = duration
             pending["elapsed"] = elapsed
             pendingTransition = nil
-            animatingUntil = now - elapsed + pendingDuration
+            animatingUntil = now - elapsed + duration
             send("spotter:keyboard-transition", pending)
             return
         }
@@ -198,25 +215,26 @@ class SpotterViewController: CAPBridgeViewController {
         send("spotter:keyboard-track", ["height": Double(height)])
     }
 
-    // The begin time of the keys' own position animation: UIKit moves the
-    // keyboard's container in the text-effects window with an additive
-    // CASpringAnimation, whose beginTime is 0 until the transaction carrying it
-    // commits. nil when there is no such animation to be found.
-    private func keyboardAnimationBegin() -> CFTimeInterval? {
+    // The keys' own position animation: UIKit moves the keyboard's container in
+    // the text-effects window with an additive CASpringAnimation, whose beginTime
+    // is 0 until the transaction carrying it commits. nil when there is none.
+    private func keyboardAnimation() -> (begin: CFTimeInterval, duration: CFTimeInterval)? {
         for scene in UIApplication.shared.connectedScenes {
             guard let windows = (scene as? UIWindowScene)?.windows else { continue }
             for window in windows where window !== view.window {
-                if let begin = positionAnimationBegin(in: window, depth: 0) { return begin }
+                if let found = positionAnimation(in: window, depth: 0) {
+                    return (found.beginTime, found.duration)
+                }
             }
         }
         return nil
     }
 
-    private func positionAnimationBegin(in view: UIView, depth: Int) -> CFTimeInterval? {
-        if let animation = view.layer.animation(forKey: "position") { return animation.beginTime }
+    private func positionAnimation(in view: UIView, depth: Int) -> CAAnimation? {
+        if let animation = view.layer.animation(forKey: "position") { return animation }
         guard depth < 4 else { return nil }
         for sub in view.subviews {
-            if let begin = positionAnimationBegin(in: sub, depth: depth + 1) { return begin }
+            if let found = positionAnimation(in: sub, depth: depth + 1) { return found }
         }
         return nil
     }
