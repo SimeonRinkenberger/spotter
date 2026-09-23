@@ -19,25 +19,36 @@ visible again without an alternate native presentation.
 
 ## Retained native support
 
-`SpotterViewController` still hosts WKWebView against UIKit's keyboard layout
-guide, with Capacitor's delayed resizing disabled. Keyboard notifications control
-visibility; the app avoids a second resize and repeated focus-scroll resets.
+`SpotterViewController` hosts WKWebView at full height and never resizes it for
+the keyboard (September 2026: resizing it inside UIKit's animation made WebKit
+redraw the page at its final size at once, so the page dropped and the set sheet
+jumped). The keys slide over a still frame; the shell reports their height,
+duration and how far their own spring animation has already run, and the page
+lifts the surface that owns the field (native/keyboard.js, the "keyboard over a
+still frame" section of app.ts, `html.kb-over` in style.ts). Capacitor's delayed
+resizing stays disabled, and its Keyboard plugin detaches WebKit's own keyboard
+observers, so the page reveals covered fields itself.
 The web composer retains focus when Send is tapped, follows keyboard/multiline
 size changes when the reader is at the bottom, and suppresses the web-form
 accessory bar for ordinary text, search, email, URL, password and chat inputs.
 Number/date fields and multiline forms retain Done/Next. Small focused text is
 raised to 16px to avoid iOS focus zoom; larger input typography is preserved.
 
-Keyboard-frame notifications now supply duration and curve to the internal
-composer/form clearance transitions. They also supersede late Capacitor show/hide
-callbacks during rapid refocus. The keyboard layout guide remains the only owner
-of outer resizing. Native viewports use 100% of that frame, and tab clearance is
-held stable while the keyboard is open. Hidden tabs are inert. Reduced-motion
-preferences disable the added web transitions. The window, host, WKWebView,
-scroll view and under-page backgrounds match the shared light/dark paper colors.
+Curve 7 is UIKit's keyboard spring (critically damped, stiffness 555), run by the
+page as the closest cubic-bezier so Core Animation composites it. Sheets rise
+whole while they fit under the status bar and otherwise as far as they can, the
+rest scrolling; the Pumpy composer rises from the tab bar and the thread moves
+with it; other fields get room at the end of their scroller. A paper backdrop
+rides under the translucent iOS 26 keys. Every scroller present when the keyboard
+rises is given interactive dismissal, and the keyboard layout guide is sampled per
+frame so the lift follows a finger dragging the keys down. Late Capacitor
+show/hide callbacks are still superseded during rapid refocus. Hidden tabs are
+inert. Reduced-motion preferences make every lift instant. The window, host,
+WKWebView, scroll view and under-page backgrounds match the shared light/dark
+paper colors.
 
-This follows Apple's [keyboard layout guide](https://developer.apple.com/documentation/uikit/uiview/keyboardlayoutguide)
-for frame ownership; the internal spacing synchronization is our integration
+This uses Apple's [keyboard layout guide](https://developer.apple.com/documentation/uikit/uiview/keyboardlayoutguide)
+to follow interactive dismissal; the surface lifts are our integration
 with the existing web design, not a replacement keyboard or native UI redesign.
 
 Pumpy still receives incremental URLSession bytes through `PumpyStream`, instead

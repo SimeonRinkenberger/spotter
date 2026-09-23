@@ -112,13 +112,6 @@ export const STYLE = String.raw`<style>
     letter-spacing: -.02em; margin: 0 0 16px; }
   .hero em { font-style: normal; color: var(--ember); }
   .sub { font-size: 15.5px; line-height: 1.6; color: var(--ink-2); margin: 0 0 34px; }
-  .steps { display: flex; flex-direction: column; gap: 14px; margin: 0 0 36px; padding: 0; list-style: none; }
-  .steps li { display: flex; gap: 13px; align-items: flex-start; font-size: 14px; line-height: 1.5;
-    color: var(--ink-2); }
-  .steps .num { flex: 0 0 auto; width: 25px; height: 25px; border-radius: 999px; background: var(--ember-soft);
-    color: var(--ember-ink); font-size: 12px; font-weight: 700; display: flex; align-items: center;
-    justify-content: center; margin-top: 1px; }
-  .steps b { color: var(--ink); font-weight: 650; }
   .authcard { background: var(--card); border: 1px solid var(--line); border-radius: 20px;
     padding: 22px 20px; box-shadow: var(--sh-md); }
   .authcard h2 { font-family: var(--display); font-size: 19px; margin: 0 0 16px; font-weight: 700;
@@ -348,6 +341,29 @@ export const STYLE = String.raw`<style>
     outline: none; transition: border-color var(--t-2), background-color var(--t-2); }
   .search:focus { border-color: var(--ember); background: var(--card); }
   .search::placeholder { color: var(--muted); }
+  /* The way out of typing, beside the field for exactly as long as the field has
+     the keyboard: the trailing slot UISearchBar gives its Cancel. It closes the
+     keyboard and keeps the query, because the results are what the reader wanted
+     room to see; clearing stays with the field's own clear button. The field
+     gives it room the way UIKit's does, by getting narrower. */
+  #searchwrap { display: flex; align-items: center; }
+  #searchwrap .search { flex: 1 1 auto; width: auto; min-width: 0; }
+  .searchx { flex: 0 0 auto; width: 0; height: 44px; margin-left: 0; padding: 0; border: none;
+    border-radius: 999px; background: var(--sand); color: var(--ink-2); overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    opacity: 0; transform: scale(.6); pointer-events: none;
+    transition: width var(--t-2) var(--e-in), margin-left var(--t-2) var(--e-in),
+      opacity var(--t-1) var(--e-in), transform var(--t-2) var(--e-in); }
+  #searchwrap:focus-within .searchx { width: 44px; margin-left: 8px; opacity: 1; transform: none;
+    pointer-events: auto;
+    transition: width var(--t-2) var(--e-out), margin-left var(--t-2) var(--e-out),
+      opacity var(--t-2) var(--e-out), transform var(--t-2) var(--e-out); }
+  #searchwrap:focus-within .searchx:active { transform: scale(.92); transition-duration: var(--t-1); }
+  .searchx .ic { width: 18px; height: 18px; }
+  @media (prefers-reduced-motion: reduce) {
+    .searchx, #searchwrap:focus-within .searchx { transform: none;
+      transition: opacity var(--t-1) var(--e-soft); }
+  }
 
   /* ---------- filter chips ---------- */
   /* This row used to ask for horizontal pans back, because the pager was taking
@@ -1993,6 +2009,51 @@ export const STYLE = String.raw`<style>
   .cxdone { min-height: 64px; margin-top: 14px; font-size: 17px; }
   .cxundo { min-height: 44px; margin-top: 8px; padding: 10px; font-size: 14px; }
 
+  /* ---------- a superset, one screen ----------
+     Every member on one screen and one of them open — the owner's accordion. A
+     shut panel is Material's expansion-panel header, one line that summarises;
+     the chevron is Apple's disclosure, sideways shut and down open, like every
+     other disclosure here. The members are joined by a thin ember line down
+     their letters — Strong's line down a superset's left — which the opaque
+     cards cover, so it reads as a link in each gap between them. The fold is the
+     0fr to 1fr grid row the demo slot already uses, the content fading inside. */
+  .ssstack { position: relative; display: flex; flex-direction: column; gap: 10px;
+    margin: 2px -10px 0; text-align: left; }
+  .ssstack::before { content: ""; position: absolute; left: 27px; top: 28px; bottom: 28px;
+    width: 2px; background: var(--ember); }
+  .sspanel { position: relative; background: var(--card); border: 1px solid var(--line);
+    border-radius: 18px; transition: border-color var(--t-2) var(--e-out); }
+  .sspanel.open { border-color: var(--ember); }
+  .sshead { min-height: 56px; padding: 8px 18px 8px 13px; border-radius: 17px; }
+  .open > .sshead:active { background: none; }
+  .ssletter, .sshead::after { flex: none; transition: all var(--t-2) var(--e-out); }
+  .ssletter { width: 28px; height: 28px; border-radius: 99px; display: grid; place-items: center;
+    font: 800 14px var(--display); background: var(--sand); color: var(--ink-2); }
+  .sspanel.open .ssletter { background: var(--ember); color: var(--on-ember); }
+  .sshead .pt span { display: block; font-size: 12px; white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis; }
+  .sscount { font-size: 13px; font-weight: 650; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .sspanel.done .sscount { color: var(--good); }
+  .sshead::after { content: ""; width: 6px; height: 6px; border: solid var(--muted);
+    border-width: 0 1.5px 1.5px 0; transform: rotate(-45deg); }
+  .sspanel.open .sshead::after { transform: rotate(45deg); }
+  .sswrap { display: grid; grid-template-rows: 0fr; transition: grid-template-rows var(--t-3) var(--e-out); }
+  .sspanel.open .sswrap { grid-template-rows: 1fr; }
+  .ssbody { overflow: hidden; min-height: 0; }
+  .ssin { padding: 0 14px 14px; text-align: center; opacity: 0; transform: translateY(-6px);
+    transition: opacity var(--t-2) var(--e-out), transform var(--t-3) var(--e-out); }
+  .sspanel.open .ssin { opacity: 1; transform: none; }
+  .ssstack.hand .sswrap, .ssstack.hand .ssin { transition-delay: 90ms; }
+  .ssin .setpills { margin: 12px 0 2px; }
+  .ssin .stepper { margin: 8px 0; }
+  .sslog { min-height: 54px; margin-top: 8px; }
+  .ssin .wtimer .ring { width: 124px; height: 124px; }
+  .ssin .wup { display: none; }
+  .ssin .wstart { margin: 14px auto 0; }
+  @media (prefers-reduced-motion: reduce) {
+    .sspanel, .ssletter, .sshead::after, .sswrap, .ssin { transition: none; }
+  }
+
   /* ---------- the session summary ----------
      Finishing used to be a toast, gone before the phone was back in the pocket.
      It is the one moment in the loop that is pure payoff, so it takes the screen
@@ -2037,6 +2098,40 @@ export const STYLE = String.raw`<style>
   .sumlog .session-exercise:last-child { border-bottom: 0; padding-bottom: 0; }
   /* The one line in it that was a record on the day, marked as the pill above is. */
   .session-set b.was { color: var(--ember-ink); }
+  .sumprs:empty { display: none; }
+  /* Redrawn by a correction: the same bests, not a new arrival. */
+  .sumprs.still .setpill { animation: none; }
+  /* Every set is a tap to correct it: a 44px row, pressed like a list cell. */
+  .sumlog .session-set { width: calc(100% + 16px); min-height: 44px; margin: 0 -8px; padding: 0 8px; gap: 10px;
+    align-items: center; border: 0; border-radius: 10px; background: none; color: var(--ink); font-size: 13px; }
+  .sumlog .session-set:active { background: var(--sand); }
+  .sumlog .session-set:focus-visible { outline: 2px solid var(--ember-ink); outline-offset: -2px; }
+  .sumlog .session-set b { margin-left: auto; }
+  .sumlog .session-set .ic { width: 14px; height: 14px; flex: none; color: var(--muted); }
+  .sumlog .session-set.fixed { animation: setfix var(--t-4) var(--e-soft); }
+  @keyframes setfix { from { background: var(--ember-soft); } }
+  /* The open row: the set sheet's shape in a line, figure over unit. 18px type,
+     because iOS zooms the page into any field set under 16. */
+  .sedit { padding: 6px 0 12px; animation: fadeonly var(--t-2) var(--e-out); }
+  .sedrow, .sedacts { display: flex; gap: 8px; }
+  .sedrow > span, .sedx { flex: 1; padding-top: 13px; font-size: 13px; color: var(--ink-2); }
+  .sedx { flex: none; font-style: normal; }
+  .sedf { display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 11px; font-weight: 600;
+    color: var(--muted); white-space: nowrap; }
+  .sedf input { width: 60px; height: 44px; padding: 0; border: 1px solid var(--line-2); border-radius: 12px;
+    background: var(--paper); color: var(--ink); font: 700 18px var(--display); text-align: center; outline: none;
+    appearance: none; }
+  .sedf:last-child input { width: 76px; }
+  .sedf input:focus { border-color: var(--ember); box-shadow: 0 0 0 3px var(--pill); }
+  .sedacts { justify-content: flex-end; margin-top: 12px; }
+  .sedacts .btn { width: auto; min-height: 44px; padding: 0 18px; font-size: 14.5px; box-shadow: none; }
+  .sedel { display: flex; align-items: center; gap: 6px; min-height: 44px; margin-right: auto; padding: 0 4px; border: 0;
+    background: none; color: var(--ember-ink); font-size: 14px; font-weight: 650; }
+  .sedel .ic { width: 16px; height: 16px; }
+  @media (prefers-reduced-motion: reduce) {
+    .eachtag { transition: none; }
+    .eachtag.flip, .sumlog .session-set.fixed { animation: none; }
+  }
   /* The card's own row: a preview at the size of a thumbnail, the two themes
      beside it, and the buttons under both. The buttons are only added once the
      File exists, so one that says Share is one that can. */
@@ -2146,6 +2241,18 @@ export const STYLE = String.raw`<style>
   .stepper .val.editing .numin { display: block; }
   .stepper .val small { display: block; font-size: 11px; font-weight: 600;
     color: var(--muted); margin-top: 4px; }
+  /* "each": a tag on the unit rather than a longer unit, and the switch for it.
+     Drawn 17px, answering 44 through ::after; the negative margins keep the line
+     box, so the stepper does not move between a curl and a squat. Re-stated over
+     .stepper button, which would make it a 46px circle. */
+  .eachtag, .stepper .val .eachtag { position: relative; display: inline-block; width: auto; height: auto;
+    margin: -3px 0 -3px 5px; padding: 3px 7px; border: 0; border-radius: 9px; background: var(--ember-soft);
+    color: var(--ember-ink); font: 700 10.5px/1 var(--sans); transition: background-color var(--t-2), color var(--t-2); }
+  .eachtag::after { content: ""; position: absolute; inset: -13px -6px; }
+  .stepper .val .eachtag[hidden] { display: none; }
+  .eachtag.one, .stepper .val .eachtag.one { background: var(--sand); color: var(--ink-2); }
+  .eachtag.flip { animation: eachflip var(--t-3) var(--e-spring); }
+  @keyframes eachflip { from { opacity: .4; transform: scale(.8); } }
 
   /* ---------- Pumpy ----------
      The coach's mark is currentColor everywhere it appears, so it takes the tab's
@@ -2264,35 +2371,70 @@ export const STYLE = String.raw`<style>
   /* Keyboard up: #app follows the visual viewport but .tabbar, fixed to the layout
      one, is behind the keys — so the composer's clearance for the bar is a margin
      below nothing. Sit it on the app's own bottom edge and take the bar out of the
-     way, as a native chat app does. */
-  body.kb .composer { bottom: 0; margin-bottom: 0; }
-  body.kb .page { padding-bottom: 24px; }
+     way, as a native chat app does. The browser and the Android shell, whose frame
+     really does end at the keyboard; the iOS shell's does not (kb-over, below). */
+  html:not(.kb-over) body.kb .composer { bottom: 0; margin-bottom: 0; }
+  html:not(.kb-over) body.kb .page { padding-bottom: 24px; }
   body.kb .tabbar { visibility: hidden; }
-  /* The native webview ends at the keyboard; there is no home indicator there.
+  /* The Android webview ends at the keyboard; there is no home indicator there.
      Restore the real device inset automatically when the keyboard closes. */
   html.native { --vvh: 100%; --sab: env(safe-area-inset-bottom); }
-  html.native:has(body.kb) { --sab: 0px; }
+  html.native:not(.kb-over):has(body.kb) { --sab: 0px; }
   html.native input, html.native textarea { scroll-margin-block: 16px; }
-  /* UIKit resizes the outer frame. Animate only the web content's keyboard
+  /* Android resizes the outer frame. Animate only the web content's keyboard
      clearance, so the composer and form padding do not snap ahead of it. */
-  html.native.keyboard-moving .composer {
+  html.native.keyboard-moving:not(.kb-over) .composer {
     transition: bottom var(--keyboard-duration) var(--keyboard-curve),
       margin-bottom var(--keyboard-duration) var(--keyboard-curve); }
-  html.native.keyboard-moving .page {
+  html.native.keyboard-moving:not(.kb-over) .page {
     transition: padding-bottom var(--keyboard-duration) var(--keyboard-curve); }
-  html.native.keyboard-moving .sheetbody {
+  html.native.keyboard-moving:not(.kb-over) .sheetbody {
     transition: padding-bottom var(--keyboard-duration) var(--keyboard-curve),
       transform var(--t-2) var(--e-in); }
-  html.native.keyboard-moving .sheet.open .sheetbody {
+  html.native.keyboard-moving:not(.kb-over) .sheet.open .sheetbody {
     transition: padding-bottom var(--keyboard-duration) var(--keyboard-curve),
       transform .38s var(--e-spring); }
   html.native .tabbar { visibility: visible; opacity: 1;
     transition: opacity var(--keyboard-duration, .25s) var(--keyboard-curve, ease-in-out); }
   html.native body.kb .tabbar { visibility: visible; opacity: 0; pointer-events: none; }
+  /* ---------- the keyboard over a still frame (the iOS shell) ----------
+     The web view keeps its full height and the keys slide over it, so nothing
+     re-lays out while they move. The surface that owns the field rides up on a
+     translate — its own property, so it composes with the transform the sheets
+     open, close and drag on — for app.ts's --lift, over UIKit's own duration and
+     curve (keyboard.js), on the keys' own timeline: --kd is how long they had
+     been moving when the page heard, so the lift starts that far in. All three
+     live on the moving element, never the root. Individual transform
+     properties are composited in WebKit, so a busy main thread cannot stall them
+     (checked in the Simulator with a 500ms busy loop mid-lift). */
+  html.kb-over .sheetbody { translate: 0 calc(-1 * var(--lift, 0px));
+    transition: transform var(--t-2) var(--e-in),
+      translate var(--kt, 0s) var(--ke, ease) var(--kd, 0s); }
+  html.kb-over .sheet.open .sheetbody {
+    transition: transform .38s var(--e-spring),
+      translate var(--kt, 0s) var(--ke, ease) var(--kd, 0s); }
+  html.kb-over .sheet.open .sheetbody.dragging {
+    transition: translate var(--kt, 0s) var(--ke, ease) var(--kd, 0s); }
+  html.kb-over .composer { translate: 0 calc(-1 * var(--lift, 0px));
+    transition: translate var(--kt, 0s) var(--ke, ease) var(--kd, 0s); }
+  /* The iOS 26 keyboard is glass, and with the frame no longer ending at the keys
+     whatever the page draws under them shows through: the dimmed workout, Save
+     workout's orange smeared across the number pad. A sheet of paper rides up
+     under the keys on their own curve instead — what the shell's own paper showed
+     there when the frame stopped at the keyboard — above every sheet and below
+     the toast. At rest it waits below the screen, a layer already, so the first
+     frame of a keyboard does not have to build one. */
+  .kbback { display: none; }
+  html.kb-over .kbback { display: block; position: fixed; left: 0; right: 0; top: 100%;
+    height: 100%; z-index: 89; background: var(--paper); pointer-events: none;
+    will-change: translate; translate: 0 calc(-1 * var(--lift, 0px));
+    transition: translate var(--kt, 0s) var(--ke, ease) var(--kd, 0s); }
   @media (prefers-reduced-motion: reduce) {
     html.native.keyboard-moving .composer, html.native.keyboard-moving .page,
     html.native.keyboard-moving .sheetbody, html.native.keyboard-moving .sheet.open .sheetbody,
-    html.native .tabbar { transition: none; }
+    html.native .tabbar, html.kb-over .sheetbody, html.kb-over .sheet.open .sheetbody,
+    html.kb-over .sheet.open .sheetbody.dragging, html.kb-over .composer,
+    html.kb-over .kbback { transition: none; }
   }
   .composerrow { display: flex; gap: 8px; align-items: flex-end; }
   .composer textarea { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 16px; padding: 12px 14px;

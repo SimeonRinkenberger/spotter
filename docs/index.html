@@ -272,40 +272,6 @@ button {
   color: var(--ink-2);
   margin: 0 0 34px;
 }
-.steps {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  margin: 0 0 36px;
-  padding: 0;
-  list-style: none;
-}
-.steps li {
-  display: flex;
-  gap: 13px;
-  align-items: flex-start;
-  font-size: 14px;
-  line-height: 1.5;
-  color: var(--ink-2);
-}
-.steps .num {
-  flex: 0 0 auto;
-  width: 25px;
-  height: 25px;
-  border-radius: 999px;
-  background: var(--ember-soft);
-  color: var(--ember-ink);
-  font-size: 12px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-top: 1px;
-}
-.steps b {
-  color: var(--ink);
-  font-weight: 650;
-}
 .authcard {
   background: var(--card);
   border: 1px solid var(--line);
@@ -837,6 +803,65 @@ h1 {
 }
 .search::placeholder {
   color: var(--muted);
+}
+#searchwrap {
+  display: flex;
+  align-items: center;
+}
+#searchwrap .search {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+}
+.searchx {
+  flex: 0 0 auto;
+  width: 0;
+  height: 44px;
+  margin-left: 0;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: var(--sand);
+  color: var(--ink-2);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transform: scale(.6);
+  pointer-events: none;
+  transition:
+    width var(--t-2) var(--e-in),
+    margin-left var(--t-2) var(--e-in),
+    opacity var(--t-1) var(--e-in),
+    transform var(--t-2) var(--e-in);
+}
+#searchwrap:focus-within .searchx {
+  width: 44px;
+  margin-left: 8px;
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+  transition:
+    width var(--t-2) var(--e-out),
+    margin-left var(--t-2) var(--e-out),
+    opacity var(--t-2) var(--e-out),
+    transform var(--t-2) var(--e-out);
+}
+#searchwrap:focus-within .searchx:active {
+  transform: scale(.92);
+  transition-duration: var(--t-1);
+}
+.searchx .ic {
+  width: 18px;
+  height: 18px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .searchx,
+  #searchwrap:focus-within .searchx {
+    transform: none;
+    transition: opacity var(--t-1) var(--e-soft);
+  }
 }
 .chips {
   display: flex;
@@ -5234,6 +5259,143 @@ body:not(.app) #toast.show {
   padding: 10px;
   font-size: 14px;
 }
+.ssstack {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 2px -10px 0;
+  text-align: left;
+}
+.ssstack::before {
+  content: "";
+  position: absolute;
+  left: 27px;
+  top: 28px;
+  bottom: 28px;
+  width: 2px;
+  background: var(--ember);
+}
+.sspanel {
+  position: relative;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  transition: border-color var(--t-2) var(--e-out);
+}
+.sspanel.open {
+  border-color: var(--ember);
+}
+.sshead {
+  min-height: 56px;
+  padding: 8px 18px 8px 13px;
+  border-radius: 17px;
+}
+.open > .sshead:active {
+  background: none;
+}
+.ssletter,
+.sshead::after {
+  flex: none;
+  transition: all var(--t-2) var(--e-out);
+}
+.ssletter {
+  width: 28px;
+  height: 28px;
+  border-radius: 99px;
+  display: grid;
+  place-items: center;
+  font: 800 14px var(--display);
+  background: var(--sand);
+  color: var(--ink-2);
+}
+.sspanel.open .ssletter {
+  background: var(--ember);
+  color: var(--on-ember);
+}
+.sshead .pt span {
+  display: block;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sscount {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.sspanel.done .sscount {
+  color: var(--good);
+}
+.sshead::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border: solid var(--muted);
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(-45deg);
+}
+.sspanel.open .sshead::after {
+  transform: rotate(45deg);
+}
+.sswrap {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--t-3) var(--e-out);
+}
+.sspanel.open .sswrap {
+  grid-template-rows: 1fr;
+}
+.ssbody {
+  overflow: hidden;
+  min-height: 0;
+}
+.ssin {
+  padding: 0 14px 14px;
+  text-align: center;
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: opacity var(--t-2) var(--e-out), transform var(--t-3) var(--e-out);
+}
+.sspanel.open .ssin {
+  opacity: 1;
+  transform: none;
+}
+.ssstack.hand .sswrap,
+.ssstack.hand .ssin {
+  transition-delay: 90ms;
+}
+.ssin .setpills {
+  margin: 12px 0 2px;
+}
+.ssin .stepper {
+  margin: 8px 0;
+}
+.sslog {
+  min-height: 54px;
+  margin-top: 8px;
+}
+.ssin .wtimer .ring {
+  width: 124px;
+  height: 124px;
+}
+.ssin .wup {
+  display: none;
+}
+.ssin .wstart {
+  margin: 14px auto 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sspanel,
+  .ssletter,
+  .sshead::after,
+  .sswrap,
+  .ssin {
+    transition: none;
+  }
+}
 #workout.summary .wdots,
 #workout.summary .wbottom,
 #workout.summary .reststrip {
@@ -5307,6 +5469,136 @@ body:not(.app) #toast.show {
 }
 .session-set b.was {
   color: var(--ember-ink);
+}
+.sumprs:empty {
+  display: none;
+}
+.sumprs.still .setpill {
+  animation: none;
+}
+.sumlog .session-set {
+  width: calc(100% + 16px);
+  min-height: 44px;
+  margin: 0 -8px;
+  padding: 0 8px;
+  gap: 10px;
+  align-items: center;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--ink);
+  font-size: 13px;
+}
+.sumlog .session-set:active {
+  background: var(--sand);
+}
+.sumlog .session-set:focus-visible {
+  outline: 2px solid var(--ember-ink);
+  outline-offset: -2px;
+}
+.sumlog .session-set b {
+  margin-left: auto;
+}
+.sumlog .session-set .ic {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: var(--muted);
+}
+.sumlog .session-set.fixed {
+  animation: setfix var(--t-4) var(--e-soft);
+}
+@keyframes setfix {
+  from {
+    background: var(--ember-soft);
+  }
+}
+.sedit {
+  padding: 6px 0 12px;
+  animation: fadeonly var(--t-2) var(--e-out);
+}
+.sedrow,
+.sedacts {
+  display: flex;
+  gap: 8px;
+}
+.sedrow > span,
+.sedx {
+  flex: 1;
+  padding-top: 13px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.sedx {
+  flex: none;
+  font-style: normal;
+}
+.sedf {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.sedf input {
+  width: 60px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid var(--line-2);
+  border-radius: 12px;
+  background: var(--paper);
+  color: var(--ink);
+  font: 700 18px var(--display);
+  text-align: center;
+  outline: none;
+  appearance: none;
+}
+.sedf:last-child input {
+  width: 76px;
+}
+.sedf input:focus {
+  border-color: var(--ember);
+  box-shadow: 0 0 0 3px var(--pill);
+}
+.sedacts {
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+.sedacts .btn {
+  width: auto;
+  min-height: 44px;
+  padding: 0 18px;
+  font-size: 14.5px;
+  box-shadow: none;
+}
+.sedel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  margin-right: auto;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: var(--ember-ink);
+  font-size: 14px;
+  font-weight: 650;
+}
+.sedel .ic {
+  width: 16px;
+  height: 16px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .eachtag {
+    transition: none;
+  }
+  .eachtag.flip,
+  .sumlog .session-set.fixed {
+    animation: none;
+  }
 }
 .sharewrap {
   margin-top: 22px;
@@ -5550,6 +5842,43 @@ body:not(.app) #toast.show {
   font-weight: 600;
   color: var(--muted);
   margin-top: 4px;
+}
+.eachtag,
+.stepper .val .eachtag {
+  position: relative;
+  display: inline-block;
+  width: auto;
+  height: auto;
+  margin: -3px 0 -3px 5px;
+  padding: 3px 7px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--ember-soft);
+  color: var(--ember-ink);
+  font: 700 10.5px/1 var(--sans);
+  transition: background-color var(--t-2), color var(--t-2);
+}
+.eachtag::after {
+  content: "";
+  position: absolute;
+  inset: -13px -6px;
+}
+.stepper .val .eachtag[hidden] {
+  display: none;
+}
+.eachtag.one,
+.stepper .val .eachtag.one {
+  background: var(--sand);
+  color: var(--ink-2);
+}
+.eachtag.flip {
+  animation: eachflip var(--t-3) var(--e-spring);
+}
+@keyframes eachflip {
+  from {
+    opacity: .4;
+    transform: scale(.8);
+  }
 }
 .tab .ti svg {
   width: 21px;
@@ -5885,11 +6214,11 @@ body:not(.app) #toast.show {
   -webkit-backdrop-filter: blur(14px);
   backdrop-filter: blur(14px);
 }
-body.kb .composer {
+html:not(.kb-over) body.kb .composer {
   bottom: 0;
   margin-bottom: 0;
 }
-body.kb .page {
+html:not(.kb-over) body.kb .page {
   padding-bottom: 24px;
 }
 body.kb .tabbar {
@@ -5899,23 +6228,23 @@ html.native {
   --vvh: 100%;
   --sab: env(safe-area-inset-bottom);
 }
-html.native:has(body.kb) {
+html.native:not(.kb-over):has(body.kb) {
   --sab: 0px;
 }
 html.native input,
 html.native textarea {
   scroll-margin-block: 16px;
 }
-html.native.keyboard-moving .composer {
+html.native.keyboard-moving:not(.kb-over) .composer {
   transition: bottom var(--keyboard-duration) var(--keyboard-curve), margin-bottom var(--keyboard-duration) var(--keyboard-curve);
 }
-html.native.keyboard-moving .page {
+html.native.keyboard-moving:not(.kb-over) .page {
   transition: padding-bottom var(--keyboard-duration) var(--keyboard-curve);
 }
-html.native.keyboard-moving .sheetbody {
+html.native.keyboard-moving:not(.kb-over) .sheetbody {
   transition: padding-bottom var(--keyboard-duration) var(--keyboard-curve), transform var(--t-2) var(--e-in);
 }
-html.native.keyboard-moving .sheet.open .sheetbody {
+html.native.keyboard-moving:not(.kb-over) .sheet.open .sheetbody {
   transition: padding-bottom var(--keyboard-duration) var(--keyboard-curve), transform .38s var(--e-spring);
 }
 html.native .tabbar {
@@ -5928,12 +6257,48 @@ html.native body.kb .tabbar {
   opacity: 0;
   pointer-events: none;
 }
+html.kb-over .sheetbody {
+  translate: 0 calc(-1 * var(--lift, 0px));
+  transition: transform var(--t-2) var(--e-in), translate var(--kt, 0s) var(--ke, ease) var(--kd, 0s);
+}
+html.kb-over .sheet.open .sheetbody {
+  transition: transform .38s var(--e-spring), translate var(--kt, 0s) var(--ke, ease) var(--kd, 0s);
+}
+html.kb-over .sheet.open .sheetbody.dragging {
+  transition: translate var(--kt, 0s) var(--ke, ease) var(--kd, 0s);
+}
+html.kb-over .composer {
+  translate: 0 calc(-1 * var(--lift, 0px));
+  transition: translate var(--kt, 0s) var(--ke, ease) var(--kd, 0s);
+}
+.kbback {
+  display: none;
+}
+html.kb-over .kbback {
+  display: block;
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 100%;
+  height: 100%;
+  z-index: 89;
+  background: var(--paper);
+  pointer-events: none;
+  will-change: translate;
+  translate: 0 calc(-1 * var(--lift, 0px));
+  transition: translate var(--kt, 0s) var(--ke, ease) var(--kd, 0s);
+}
 @media (prefers-reduced-motion: reduce) {
   html.native.keyboard-moving .composer,
   html.native.keyboard-moving .page,
   html.native.keyboard-moving .sheetbody,
   html.native.keyboard-moving .sheet.open .sheetbody,
-  html.native .tabbar {
+  html.native .tabbar,
+  html.kb-over .sheetbody,
+  html.kb-over .sheet.open .sheetbody,
+  html.kb-over .sheet.open .sheetbody.dragging,
+  html.kb-over .composer,
+  html.kb-over .kbback {
     transition: none;
   }
 }
@@ -7529,11 +7894,6 @@ details.details-moving > :not(summary) {
     <p class="sub">You save fitness reels you never come back to. Spotter reads the exercises,
       sets and reps out of the video, then walks you through them one at a time and remembers
       what you lifted.</p>
-    <ol class="steps">
-      <li><span class="num">1</span><div><b>Paste a link</b> from TikTok, Instagram or YouTube — or share straight from your phone.</div></li>
-      <li><span class="num">2</span><div><b>Get a real workout card</b> — every exercise with its sets, reps and rest, not a wall of caption text.</div></li>
-      <li><span class="num">3</span><div><b>Train and log it</b> — full-screen, one move at a time, tracking weight and reps as you go.</div></li>
-    </ol>
 
     <div class="authcard" id="authcard">
       <h2 id="authtitle">Create your account</h2>
@@ -7616,6 +7976,7 @@ details.details-moving > :not(summary) {
         <label class="searchwrap" id="searchwrap">
           <span class="searchico"><svg class="ic"><use href="#i-search"></use></svg></span>
           <input class="search" id="search" type="search" placeholder="Search workouts, exercises, muscles" autocapitalize="off" autocomplete="off">
+          <button class="searchx" id="searchx" type="button" aria-label="Hide keyboard"><svg class="ic"><use href="#i-x"></use></svg></button>
         </label>
 
         <div id="hint">
@@ -7766,7 +8127,7 @@ details.details-moving > :not(summary) {
   </div>
   <div class="stepper" data-noswipe>
     <button id="wtdown" aria-label="Less weight"><svg class="ic"><use href="#i-minus"></use></svg></button>
-    <div class="val" id="wtbox"><button class="num" id="wtval" aria-label="Weight — tap to type a number">0</button><input class="numin" id="wtin" type="text" inputmode="decimal" enterkeyhint="done" autocomplete="off" aria-label="Weight"><small id="wtunit">lb</small></div>
+    <div class="val" id="wtbox"><button class="num" id="wtval" aria-label="Weight — tap to type a number">0</button><input class="numin" id="wtin" type="text" inputmode="decimal" enterkeyhint="done" autocomplete="off" aria-label="Weight"><small><span id="wtunit">lb</span><button class="eachtag" id="wteach" type="button" hidden>each</button></small></div>
     <button id="wtup" aria-label="More weight"><svg class="ic"><use href="#i-plus"></use></svg></button>
   </div>
   <div class="btnrow">
@@ -9973,7 +10334,7 @@ details.details-moving > :not(summary) {
   }
   function restOf(ex, block, atLapEnd) {
     var own = atLapEnd ? block.rest_seconds : ex && ex.rest_seconds;
-    return typeof own == "number" ? { secs: own, source: atLapEnd ? "block" : "exercise" } : { secs: !atLapEnd && isCircuit(block) && isTimed(ex) ? 0 : REST_FALLBACK, source: "default" };
+    return typeof own == "number" ? { secs: own, source: atLapEnd ? "block" : "exercise" } : { secs: !atLapEnd && (supersetOf(block) || isCircuit(block) && isTimed(ex)) ? 0 : REST_FALLBACK, source: "default" };
   }
   function restWord(secs) {
     return secs ? "Rest " + clock(secs) : "No rest";
@@ -9996,7 +10357,7 @@ details.details-moving > :not(summary) {
   }
   function blockMetaText(b) {
     var bits = [], kind = b.type && b.type !== "straight" ? kindName(b.type) : "", r;
-    return kind && kind.toLowerCase() !== String(b.title || "").toLowerCase() && bits.push(kind), b.rounds && bits.push(b.rounds + " rounds"), b.rounds > 1 && (r = restOf(null, b, !0), bits.push(restWord(r.secs) + " between rounds" + (r.source === "default" ? " \xB7 default" : ""))), b.duration_seconds && bits.push(clock(b.duration_seconds) + " cap"), bits.join(" \xB7 ");
+    return kind && kind.toLowerCase() !== String(b.title || "").toLowerCase() && bits.push(kind), b.rounds && bits.push(b.rounds + " rounds"), (b.rounds > 1 || supersetOf(b)) && (r = restOf(null, b, !0), bits.push(restWord(r.secs) + " between rounds" + (r.source === "default" ? " \xB7 default" : ""))), b.duration_seconds && bits.push(clock(b.duration_seconds) + " cap"), bits.join(" \xB7 ");
   }
   var REST_STEPS = [15, 30, 45, 60, 75, 90, 120, 150, 180, 240, 300], HOW_LONG = "How long? Minutes or seconds.";
   function restChips(box, value, onPick) {
@@ -11828,11 +12189,11 @@ details.details-moving > :not(summary) {
   function flatten(w) {
     var screens = [];
     return (w.blocks || []).forEach(function(b, bi) {
-      var cx = complexOf(b, w);
+      var cx = complexOf(b, w), ss = cx ? null : supersetOf(b, w);
       (b.exercises || []).forEach(function(ex, ei) {
         ex.recommendation && (ex = Object.assign({}, ex), ["sets", "reps", "duration_seconds", "rest_seconds"].forEach(function(key) {
           ex[key] == null && ex.recommendation[key] != null && (ex[key] = ex.recommendation[key]);
-        })), screens.push({ block: b, bi: bi, ex: ex, ei: ei, cx: cx });
+        })), screens.push({ block: b, bi: bi, ex: ex, ei: ei, cx: cx, ss: ss });
       });
     }), screens;
   }
@@ -11932,6 +12293,8 @@ details.details-moving > :not(summary) {
     for (i = 0; i < wo.entries.length; i++)
       logged += wo.entries[i].sets.filter(Boolean).length, planned += wo.screens[i] ? targetOf(wo.screens[i]) : 1;
     for (var j = wo.i + 1; j < wo.screens.length && !isStop(j); ) j++;
+    var hand = s && s.ss ? ssTurn(wo.i, 1).next : -1;
+    hand >= 0 && (j = hand);
     var cx = !!(s && s.cx), pre = s ? setPrefill(entry.sets.length) : null, round = cx ? cxLive(s) : null, setNo = entry.sets.filter(Boolean).length + 1;
     return {
       v: 1,
@@ -12036,7 +12399,7 @@ details.details-moving > :not(summary) {
       rounds: resume && resume.rounds || {},
       amrap: resume && resume.amrap || {},
       finished: !1
-    }, woPhase = "idle"; wo.i > 0 && !isStop(wo.i); ) wo.i--;
+    }, woPhase = "idle"; wo.i > 0 && !isStop(wo.i) && !wo.screens[wo.i].ss; ) wo.i--;
     Object.keys(wo.amrap).forEach(function(k) {
       var a = wo.amrap[k];
       a.until && a.until <= Date.now() && (a.until = 0, a.over = 1);
@@ -12394,18 +12757,20 @@ details.details-moving > :not(summary) {
                 var k = exKey(e), h = hist[k] || (hist[k] = { best: 0 });
                 if (sets.forEach(function(s) {
                   s.weight && (h.best = Math.max(h.best, toUnit(s.weight, s.unit) * (1 + s.reps / 30)));
-                }), !h.date) {
+                }), h.each === void 0 && typeof e.each == "boolean" && (h.each = e.each), !h.date) {
                   var top = sets.filter(function(s) {
                     return s.weight;
                   }).pop() || sets[sets.length - 1] || {};
-                  h.name = e.name, h.date = log.started_at, h.sets = sets.length || held.length, h.reps = top.reps, held.length && (h.secs = held[held.length - 1].seconds), h.weight = top.weight || 0, h.unit = top.unit || state.unit;
+                  h.name = e.name, h.date = log.started_at, h.sets = sets.length || held.length, h.reps = top.reps, held.length && (h.secs = held[held.length - 1].seconds), h.weight = top.weight || 0, h.unit = top.unit || state.unit, h.pair = !!top.each;
                 }
               }
             }
           });
+        }), Object.keys(hist).forEach(function(k) {
+          hist[k].was = hist[k].best;
         }), histReady = !0;
         var line = $("wlast");
-        line && wo && !wo.finished && (line.textContent = lastLine(wo.entries[wo.i]));
+        line && wo && !wo.finished && (line.textContent = lastLine(wo.entries[wo.i])), ssPrime();
       }
     });
   }
@@ -12416,10 +12781,41 @@ details.details-moving > :not(summary) {
   function wtText(w, unit) {
     return toUnit(w, unit).toLocaleString();
   }
+  var DB_PAIR = " arnold-press chest-fly chest-supported-row devils-press dumbbell-bench-press dumbbell-curl dumbbell-floor-press dumbbell-shoulder-press farmers-carry front-raise hammer-curl incline-dumbbell-curl incline-dumbbell-fly incline-dumbbell-press lateral-raise man-maker rear-delt-fly renegade-row spider-curl tricep-kickback zottman-curl ", DB_ONE = " concentration-curl dumbbell-row goblet-squat overhead-carry overhead-tricep-extension pull-over side-bend single-leg-deadlift sumo-squat ", DB_WORD = /\b(dumbbells?|dbs?)\b/, DB_1 = /\b(one|single|1)[ -]?(dumbbell|db)\b/, DB_TWO = /\b(two|2|pair of|double)[ -]?(dumbbells?|dbs?)\b/, DB_SOLO = /\b(one|single|1)[ -]?(arm|hand)|\b(goblet|suitcase)\b/, DB_NOT = /\b(barbell|bb|cable|machine|bands?|kettlebells?|kbs?|plate|smith|ez)\b/;
+  function dbRule(x, w) {
+    var ap = x && x.as_performed, id = " " + (x && x.canonical_id || "~") + " ", t = ((x && x.name || "") + " " + (ap ? [].concat(ap.equipment).join(" ") : "")).toLowerCase(), said = DB_WORD.test(t), n;
+    return !said && DB_NOT.test(t) ? 0 : (n = said || DB_PAIR.indexOf(id) >= 0 ? 2 : DB_ONE.indexOf(id) >= 0 ? 1 : 0, !n || w && DB_1.test(((w.title || "") + " " + (w.equipment || []).join(" ")).toLowerCase()) ? n && 1 : DB_TWO.test(t) ? 2 : DB_1.test(t) || DB_SOLO.test(t) || DB_ONE.indexOf(id) >= 0 ? 1 : 2);
+  }
+  function dbOf(ex, entry, w) {
+    var h = entry && hist[exKey(entry)], c = entry && typeof entry.each == "boolean" ? entry.each : h && typeof h.each == "boolean" ? h.each : null;
+    return c !== null ? c ? 2 : 1 : dbRule(ex || entry, w === void 0 ? wo && wo.workout : w);
+  }
+  function eachOf(ex, entry) {
+    return dbOf(ex, entry) === 2;
+  }
+  function wtUnit(ex, entry) {
+    return !entry && wo && wo.screens.forEach(function(s, i) {
+      s.ex === ex && (entry = wo.entries[i]);
+    }), state.unit + (eachOf(ex, entry) ? " each" : "");
+  }
+  function setUnit(s) {
+    return state.unit + (s && s.each ? " each" : "");
+  }
+  function setLoad(s, lb) {
+    return !s || !s.reps || !s.weight ? 0 : s.reps * (s.each ? 2 : 1) * (lb ? s.unit === "kg" ? s.weight * LB_PER_KG : Number(s.weight) : toUnit(s.weight, s.unit));
+  }
+  function tally(entries) {
+    var t = { sets: 0, vol: 0 };
+    return (entries || []).forEach(function(e) {
+      (e.sets || []).forEach(function(s) {
+        s && (t.sets++, t.vol += setLoad(s));
+      });
+    }), t;
+  }
   function lastLine(entry) {
     if (!histReady || !entry) return "";
     var h = hist[exKey(entry)];
-    return !h || !h.date ? "first time logging this." : "last time \xB7 " + h.sets + " \xD7 " + (h.reps || timeText(h.secs)) + (h.weight ? " at " + wtText(h.weight, h.unit) + " " + state.unit : "") + " \xB7 " + agoText(h.date);
+    return !h || !h.date ? "first time logging this." : "last time \xB7 " + h.sets + " \xD7 " + (h.reps || timeText(h.secs)) + (h.weight ? " at " + wtText(h.weight, h.unit) + " " + state.unit + (h.pair ? " each" : "") : "") + " \xB7 " + agoText(h.date);
   }
   function startClock() {
     clearInterval(woTimer);
@@ -12451,13 +12847,13 @@ details.details-moving > :not(summary) {
   }
   function renderWorkout(hush) {
     if (wo) {
-      var main = $("wmain"), dots = $("wdots");
-      main.innerHTML = "", dots.innerHTML = "";
+      var main = $("wmain"), dots = $("wdots"), kept = ssKeep(main);
+      kept || (main.innerHTML = ""), dots.innerHTML = "";
       var slide = woSlide;
       woSlide = 0, main.classList.remove("wmease", "wmin"), main.style.transform = "", main.style.opacity = "";
       for (var n = Math.max(wo.screens.length, 1), k = 0; k < n; k++)
         if (!(wo.screens.length && !isStop(k))) {
-          var dot = el("div", "wdot" + (k === wo.i ? " on" : ""));
+          var dot = el("div", "wdot" + (k === stopOf(wo.i) ? " on" : ""));
           stopDone(k) && dot.classList.add("done"), dots.appendChild(dot);
         }
       var s = wo.screens[wo.i], entry = wo.entries[wo.i];
@@ -12476,6 +12872,8 @@ details.details-moving > :not(summary) {
       var cx = s.cx && !s.ei ? s.cx : null, focus = s.ex;
       if (cx)
         focus = cxBody(main, s, cx);
+      else if (s.ss)
+        focus = ssBody(main, s, kept);
       else {
         var blockLabel = blockName(s);
         s.block.rounds && (blockLabel += " \xB7 " + s.block.rounds + " rounds"), main.appendChild(el("div", "wblock", blockLabel)), main.appendChild(el("h2", "wname", s.ex.name));
@@ -12489,7 +12887,7 @@ details.details-moving > :not(summary) {
           wcue && main.appendChild(el("div", "wnote", wcue)), renderSetPills(main, entry, s.ex, targetOf(s));
         }
       }
-      if (!cx) {
+      if (!cx && !s.ss) {
         var intended = targetOf(s), completed = entry.sets.filter(Boolean).length, reached = completed >= intended, goal = el(
           "div",
           "set-goal" + (reached ? " reached" : ""),
@@ -12498,7 +12896,7 @@ details.details-moving > :not(summary) {
         goal.setAttribute("role", "status"), main.appendChild(goal);
       }
       var acts = el("div", "wactions exercise-actions");
-      if (!cx) {
+      if (!cx && !s.ss) {
         var add = el("button", "btn ghost wo-extra-set", isTimed(s.ex) ? "Log extra hold" : "+ Add set");
         add.onclick = function() {
           isTimed(s.ex) ? (logHold(entry.sets.length, s.ex.duration_seconds), renderWorkout()) : openSetSheet(entry.sets.length);
@@ -12526,7 +12924,7 @@ details.details-moving > :not(summary) {
         var tile = icon(el("button", "pickrow waddcard"), "plus"), tt = el("div", "pt");
         tt.appendChild(el("b", null, "Add an exercise")), tt.appendChild(el("span", null, "Something this card did not say.")), tile.appendChild(tt), tile.onclick = openWorkoutAdd, main.appendChild(tile);
       }
-      slide ? (main.style.setProperty("--wmx", (slide > 0 ? 30 : -30) + "px"), main.offsetWidth, main.classList.add("wmin")) : hush || viewIn(main);
+      slide ? (main.style.setProperty("--wmx", (slide > 0 ? 30 : -30) + "px"), main.offsetWidth, main.classList.add("wmin")) : !hush && !kept && viewIn(main);
     }
   }
   var justSet = -1;
@@ -12540,7 +12938,7 @@ details.details-moving > :not(summary) {
     for (var i = 0; i < count; i++)
       (function(idx2) {
         var done = entry.sets[idx2], p = el("button", "setpill" + (done ? " done" : "") + (idx2 === just ? " just" : "") + (done && done.pr ? " pr" : "")), b = el("b", null, done ? setText(done) : timed ? ex.duration_seconds + "s" : "Set " + (idx2 + 1));
-        p.appendChild(b), p.appendChild(document.createTextNode(done ? done.seconds ? "held" : done.weight ? state.unit : "reps" : timed ? "hold " + (idx2 + 1) : askText(ex) || "tap to log")), p.onclick = timed ? function() {
+        p.appendChild(b), p.appendChild(document.createTextNode(done ? done.seconds ? "held" : done.weight ? setUnit(done) : "reps" : timed ? "hold " + (idx2 + 1) : askText(ex) || "tap to log")), p.onclick = timed ? function() {
           logHold(idx2, ex.duration_seconds, 1), justSet = idx2, renderWorkout();
         } : function() {
           openSetSheet(idx2);
@@ -12555,18 +12953,35 @@ details.details-moving > :not(summary) {
       var m = String(s.ex.reps).match(/\d+/);
       m && (targetReps = parseInt(m[0], 10));
     }
-    var h = hist[exKey(entry)];
+    var h = hist[exKey(entry)], prev = null, k;
+    for (k = idx2 - 1; k >= 0 && !prev; k--) entry.sets[k] && entry.sets[k].weight && (prev = entry.sets[k]);
     return {
       idx: idx2,
       reps: existing ? existing.reps : targetReps,
-      weight: existing ? toUnit(existing.weight, existing.unit) : h ? toUnit(h.weight, h.unit) : 0
+      weight: existing ? toUnit(existing.weight, existing.unit) : prev ? toUnit(prev.weight, prev.unit) : h ? toUnit(h.weight, h.unit) : 0
     };
   }
   function openSetSheet(idx2) {
     if (wo) {
-      restFace || (restThen = null);
+      stepHome(), restFace || (restThen = null);
       var s = wo.screens[wo.i], entry = wo.entries[wo.i], pre = setPrefill(idx2);
-      editing = null, $("repsbox").classList.remove("editing"), $("wtbox").classList.remove("editing"), setCtx.idx = pre.idx, setCtx.reps = pre.reps, setCtx.weight = pre.weight, $("settitle").textContent = (s && s.ex ? s.ex.name : "Set") + " \xB7 set " + (idx2 + 1), $("setlast").textContent = lastLine(entry), $("wtunit").textContent = state.unit, drawStepper(), openSheet("setsheet");
+      editing = null, $("repsbox").classList.remove("editing"), $("wtbox").classList.remove("editing"), setCtx.idx = pre.idx, setCtx.reps = pre.reps, setCtx.weight = pre.weight, $("settitle").textContent = (s && s.ex ? s.ex.name : "Set") + " \xB7 set " + (idx2 + 1), $("setlast").textContent = lastLine(entry), $("wtunit").textContent = state.unit, eachAt = wo.i, paintEach(), drawStepper(), openSheet("setsheet");
+    }
+  }
+  var eachAt = 0;
+  function paintEach(flip) {
+    var s = wo && wo.screens[eachAt];
+    tagPaint($("wteach"), wo ? dbOf(s && s.ex, wo.entries[eachAt]) : 0, flip);
+  }
+  function tagPaint(b, n, flip) {
+    b.hidden = !n, b.classList.toggle("one", n === 1), b.textContent = n === 1 ? "1 dumbbell" : "each", b.setAttribute("aria-label", (n === 1 ? "One dumbbell" : "Weight of each dumbbell") + ", tap to switch"), flip && !lessMotion() && (b.classList.remove("flip"), b.offsetWidth, b.classList.add("flip"));
+  }
+  function flipEach() {
+    if (!(!wo || wo.finished)) {
+      var s = wo.screens[eachAt], entry = wo.entries[eachAt], pair = dbOf(s && s.ex, entry) !== 2, h = hist[exKey(entry)];
+      entry.each = pair, h && (h.each = pair), entry.sets.forEach(function(x) {
+        x && !x.seconds && (pair ? x.each = !0 : delete x.each);
+      }), haptic("tap"), paintEach(!0), saveDraft(), renderWorkout(1);
     }
   }
   function drawStepper(animate) {
@@ -12637,16 +13052,22 @@ details.details-moving > :not(summary) {
         weight: setCtx.weight || null,
         unit: state.unit,
         done: !0
-      }, k = exKey(entry), told = !!wo.prs[k];
-      prCheck(entry, set, k) && (set.pr = !0, told || toast("New best \u2014 " + (entry.name || "that lift"))), haptic(set.pr ? "pr" : "success"), entry.sets[setCtx.idx] = set, saveDraft(), closeSheet("setsheet"), justSet = setCtx.idx, renderWorkout();
-      var s = wo.screens[wo.i];
-      if (s && isCircuit(s.block)) {
-        var gap = restAfter(s);
-        gap > 0 ? startRest(gap, null, nextMove) : nextMove();
-        return;
+      }, at = wo.entries.indexOf(entry);
+      eachOf(wo.screens[at] && wo.screens[at].ex, entry) && (set.each = !0);
+      var k = exKey(entry), told = !!wo.prs[k];
+      prCheck(entry, set, k) && (set.pr = !0, told || toast("New best \u2014 " + (entry.name || "that lift"))), haptic(set.pr ? "pr" : "success");
+      var fresh = !entry.sets[setCtx.idx];
+      if (entry.sets[setCtx.idx] = set, saveDraft(), !ssLogged(fresh, setCtx.idx)) {
+        closeSheet("setsheet"), justSet = setCtx.idx, renderWorkout();
+        var s = wo.screens[wo.i];
+        if (s && isCircuit(s.block)) {
+          var gap = restAfter(s);
+          gap > 0 ? startRest(gap, null, nextMove) : nextMove();
+          return;
+        }
+        var secs = s ? restOf(s.ex, s.block, !1).secs : REST_FALLBACK;
+        secs > 0 && startRest(secs), s && !s.cx && setCtx.idx >= targetOf(s) - 1 && entry.sets.filter(Boolean).length >= targetOf(s) && wo.i < endStop() && nextMove();
       }
-      var secs = s ? restOf(s.ex, s.block, !1).secs : REST_FALLBACK;
-      secs > 0 && startRest(secs), s && !s.cx && setCtx.idx >= targetOf(s) - 1 && entry.sets.filter(Boolean).length >= targetOf(s) && wo.i < endStop() && nextMove();
     }
   }
   function prCheck(entry, set, k) {
@@ -12654,7 +13075,7 @@ details.details-moving > :not(summary) {
     var h = hist[k];
     if (!h || !h.best) return !1;
     var est = set.weight * (1 + set.reps / 30);
-    return est <= h.best ? !1 : (h.best = est, wo.prs[k] = { name: entry.name || "Exercise", reps: set.reps, weight: set.weight, unit: set.unit }, !0);
+    return est <= h.best ? !1 : (h.best = est, wo.prs[k] = { name: entry.name || "Exercise", reps: set.reps, weight: set.weight, unit: set.unit, each: set.each }, !0);
   }
   var restUntil = 0, restTotal = 0, restHeld = 0, restCued = 0, restFace = null, restThen = null;
   function startRest(seconds, face, then) {
@@ -12757,9 +13178,13 @@ details.details-moving > :not(summary) {
   function isTimed(ex) {
     return !!(ex && ex.duration_seconds > 0);
   }
+  function supersetOf(b, w) {
+    var ex = b && b.exercises || [];
+    return ex.length < 2 || b.type === "emom" || ex.every(isTimed) || complexOf(b, w) || b.type !== "superset" && !/\b(super|tri|giant)[\s-]?sets?\b/i.test(b.title || "") ? null : { n: ex.length };
+  }
   function isCircuit(b) {
     var ex = b && b.exercises || [];
-    return !!b && ((b.rounds || 0) > 1 || ex.length > 1 && ex.every(isTimed));
+    return !!b && !supersetOf(b) && ((b.rounds || 0) > 1 || ex.length > 1 && ex.every(isTimed));
   }
   function roundsOf(b) {
     return isCircuit(b) ? Math.max(b.rounds || 1, 1) : 1;
@@ -12768,7 +13193,7 @@ details.details-moving > :not(summary) {
     return wo && wo.rounds[bi] || 1;
   }
   function targetOf(s) {
-    return isCircuit(s.block) ? roundsOf(s.block) : Math.max(s.ex.sets || 1, 1);
+    return s.ss ? Math.max(s.ex.sets || s.block.rounds || 3, 1) : isCircuit(s.block) ? roundsOf(s.block) : Math.max(s.ex.sets || 1, 1);
   }
   function atRoundEnd() {
     var s = wo && wo.screens[wo.i];
@@ -12806,11 +13231,11 @@ details.details-moving > :not(summary) {
   }
   function workDone() {
     var s = wo && wo.screens[wo.i];
-    if (s) {
-      if (logHold(
-        isCircuit(s.block) ? roundOf(s.bi) - 1 : wo.entries[wo.i].sets.length,
-        s.ex.duration_seconds
-      ), woPhase = "idle", !isCircuit(s.block)) {
+    if (s && (logHold(
+      isCircuit(s.block) ? roundOf(s.bi) - 1 : wo.entries[wo.i].sets.length,
+      s.ex.duration_seconds
+    ), woPhase = "idle", !ssLogged(!0, wo.entries[wo.i].sets.length - 1))) {
+      if (!isCircuit(s.block)) {
         renderWorkout(1);
         var r = restOf(s.ex, s.block, !1);
         wo.entries[wo.i].sets.filter(Boolean).length < targetOf(s) && r.secs > 0 && startRest(r.secs);
@@ -12868,7 +13293,7 @@ details.details-moving > :not(summary) {
   }
   function isStop(i) {
     var s = wo && wo.screens[i];
-    return !!s && (!s.cx || !s.ei);
+    return !!s && (!(s.cx || s.ss) || !s.ei);
   }
   function endStop() {
     for (var i = Math.max(wo ? wo.screens.length : 0, 1) - 1; i > 0 && !isStop(i); ) i--;
@@ -12877,7 +13302,7 @@ details.details-moving > :not(summary) {
   function stopDone(i) {
     var s = wo.screens[i];
     return wo.entries.some(function(e, j) {
-      return e.sets.length && (s && s.cx ? e.block === s.bi : j === i);
+      return e.sets.length && (s && (s.cx || s.ss) ? e.block === s.bi : j === i);
     });
   }
   function cxOf(bi, cx) {
@@ -12916,7 +13341,12 @@ details.details-moving > :not(summary) {
     a.until || a.over || !a.cap || (a.until = Date.now() + (a.held || a.cap * 1e3), a.held || (a.cued = 4), a.held = 0, tellSounds(), cxArm());
   }
   function cxAfter(bi, buzz) {
-    haptic(buzz), cxSync(bi), saveDraft(), renderWorkout(1);
+    haptic(buzz), cxSync(bi), ((wo.workout.blocks[bi] || {}).exercises || []).forEach(function(ex, j) {
+      var e = cxEntry(bi, j);
+      e && eachOf(ex, e) && e.sets.forEach(function(x) {
+        x && x.weight && (x.each = !0);
+      });
+    }), saveDraft(), renderWorkout(1);
   }
   function cxTap(bi, cx) {
     unlockAudio();
@@ -13003,7 +13433,7 @@ details.details-moving > :not(summary) {
     var list = el("div", "cxlist");
     (s.block.exercises || []).forEach(function(ex, j) {
       var did = !!a.marks[j], e = cxEntry(s.bi, j), set = e ? cxSet(ex, e) : null, row = el("button", "pickrow cxmove" + (did ? " on" : j === cur ? " cur" : "")), tx = el("div", "pt"), bits = [doseText(ex) || "\u2014"], d = cxDelta(ex);
-      row.setAttribute("aria-pressed", did ? "true" : "false"), set && set.weight && bits.push(wtText(set.weight, set.unit) + " " + state.unit), d && bits.push(d), tx.appendChild(el("b", null, ex.name)), tx.appendChild(el("span", null, bits.join(" \xB7 "))), row.appendChild(tx), row.appendChild(icon(el("span", "ck"), "check")), row.onclick = function() {
+      row.setAttribute("aria-pressed", did ? "true" : "false"), set && set.weight && bits.push(wtText(set.weight, set.unit) + " " + wtUnit(ex, e)), d && bits.push(d), tx.appendChild(el("b", null, ex.name)), tx.appendChild(el("span", null, bits.join(" \xB7 "))), row.appendChild(tx), row.appendChild(icon(el("span", "ck"), "check")), row.onclick = function() {
         cxMark(s.bi, cx, j);
       }, list.appendChild(row);
     }), main.appendChild(list);
@@ -13037,6 +13467,137 @@ details.details-moving > :not(summary) {
       }
     }), out;
   }
+  function ssMembers(i) {
+    var s = wo.screens[i], out = [], k;
+    if (!s || !s.ss) return out;
+    for (k = i - s.ei; k < wo.screens.length && wo.screens[k].bi === s.bi; k++) out.push(k);
+    return out;
+  }
+  function ssDone(k) {
+    return wo.entries[k].sets.filter(Boolean).length;
+  }
+  function ssTurn(i, plus) {
+    var ms = ssMembers(i), n = ms.length, p = ms.indexOf(i), low = 1 / 0, top = 1, owed = [], t, d, j;
+    for (ms.forEach(function(k, j2) {
+      var due = targetOf(wo.screens[k]), got = ssDone(k) + (k === i && plus || 0);
+      top = Math.max(top, due), owed[j2] = got < due ? got : 1 / 0, low = Math.min(low, owed[j2]);
+    }), t = { round: low < 1 / 0 ? low + 1 : top, rounds: top, done: low === 1 / 0, up: ms[owed.indexOf(low)], next: -1, lap: !0 }, d = 1; d <= n && !t.done; d++)
+      if (j = (p + d) % n, owed[j] === low) {
+        t.next = ms[j], t.lap = j <= p;
+        break;
+      }
+    return t;
+  }
+  function stopOf(i) {
+    var s = wo && wo.screens[i];
+    return s && (s.cx || s.ss) ? i - s.ei : i;
+  }
+  function ssName(s) {
+    var n = (s.block.exercises || []).length;
+    return s.block.title || (n === 3 ? "Tri-set" : n > 3 ? "Giant set" : "Superset");
+  }
+  function ssIdx(e) {
+    for (var n = 0; e.sets[n]; ) n++;
+    return n;
+  }
+  function ssSum(k, round) {
+    var s = wo.screens[k], e = wo.entries[k], got = ssDone(k), last = e.sets[ssIdx(e) - 1], ask = askText(s.ex);
+    return last && (got >= round || got >= targetOf(s)) ? setText(last) + (last.seconds ? "" : last.weight ? " " + setUnit(last) : " reps") : "Set " + (ssIdx(e) + 1) + (ask ? " \xB7 " + ask : "");
+  }
+  var stepRows = null, ssHeld = null, ssView = null, ssHand = !1;
+  function stepTo(host, before) {
+    var rows = stepRows || (stepRows = [$("repsbox").parentNode, $("wtbox").parentNode]), from = rows[0].parentNode;
+    from !== host && (endEdit(), from && (from._key && from.isConnected && (ssHeld = { wo: from._wo, key: from._key, reps: setCtx.reps, weight: setCtx.weight }), rows.forEach(function(r) {
+      var g = r.cloneNode(!0);
+      g.classList.add("ghost"), g.inert = !0, noIds(g), from.insertBefore(g, r);
+    })), Array.prototype.forEach.call(host.querySelectorAll(".stepper.ghost"), function(g) {
+      g.parentNode.removeChild(g);
+    }), rows.forEach(function(r) {
+      host.insertBefore(r, before || null);
+    }));
+  }
+  function noIds(n) {
+    Array.prototype.forEach.call(n.querySelectorAll("[id]"), function(x) {
+      x.removeAttribute("id");
+    });
+  }
+  function stepHome() {
+    var body = $("setsheet").querySelector(".sheetbody");
+    stepTo(body, body.querySelector(".btnrow"));
+  }
+  function stepDock(dock) {
+    var pre;
+    stepRows && stepRows[0].parentNode === dock || (stepTo(dock), ssHeld && ssHeld.wo === wo && ssHeld.key === dock._key ? (setCtx.reps = ssHeld.reps, setCtx.weight = ssHeld.weight) : (pre = setPrefill(dock._idx), setCtx.reps = pre.reps, setCtx.weight = pre.weight), ssHeld = null, setCtx.idx = dock._idx, $("wtunit").textContent = state.unit, eachAt = dock._k, paintEach(), drawStepper());
+  }
+  function ssDock() {
+    var v = ssView, d = v && v.wo === wo && v.stack.isConnected ? v.stack.querySelector(".sspanel.open .ssdock") : null;
+    d && stepDock(d);
+  }
+  function ssPrime() {
+    var d = stepRows && stepRows[0].parentNode, pre;
+    !wo || wo.finished || !d || !d._key || d._wo !== wo || d._k !== wo.i || setCtx.weight || (pre = setPrefill(d._idx), pre.weight && setWeight(pre.weight));
+  }
+  function ssKeep(main) {
+    var v = ssView, s = wo.screens[wo.i];
+    return stepHome(), !v || v.wo !== wo || !s || !s.ss || v.at !== stopOf(wo.i) || v.n !== s.block.exercises.length || v.stack.parentNode !== main ? (ssView = null, null) : (Array.prototype.slice.call(main.childNodes).forEach(function(x) {
+      x !== v.stack && main.removeChild(x);
+    }), v);
+  }
+  function ssBody(main, s, v) {
+    var t = ssTurn(wo.i, 0), ms = ssMembers(wo.i), was = v ? v.open : -1, hand = ssHand, p, focused = !!v && v.stack.contains(document.activeElement);
+    return ssHand = !1, main.insertBefore(el("div", "wblock", ssName(s) + " \xB7 " + (t.done ? "All " + t.rounds + " rounds done" : "Round " + t.round + " of " + t.rounds)), v ? v.stack : null), v || (v = ssView = { wo: wo, at: stopOf(wo.i), n: ms.length, open: -1, stack: el("div", "ssstack"), panels: {} }, ms.forEach(function(k, n) {
+      v.stack.appendChild(v.panels[k] = ssPanel(k, n));
+    }), main.appendChild(v.stack)), ms.forEach(function(k) {
+      ssHead(v.panels[k], k, t.round);
+    }), p = v.panels[wo.i], ssLive(p, wo.i), v.stack.classList.toggle("hand", hand), was !== wo.i && was >= 0 && (focused && p.firstChild.focus({ preventScroll: !0 }), setTimeout(function() {
+      ssReveal(p);
+    }, lessMotion() ? 0 : 400)), v.open = wo.i, s.ex;
+  }
+  function ssPanel(k, n) {
+    var p = el("section", "sspanel"), head = el("button", "pickrow sshead"), t = el("span", "pt"), wrap = el("div", "sswrap"), body = el("div", "ssbody");
+    return head.appendChild(el("span", "ssletter", String.fromCharCode(65 + n))), p._name = t.appendChild(el("b")), p._sum = t.appendChild(el("span")), head.appendChild(t), p._count = head.appendChild(el("span", "sscount")), head.onclick = function() {
+      ssOpen(k);
+    }, p._in = body.appendChild(el("div", "ssin")), wrap.appendChild(body), p.appendChild(head), p.appendChild(wrap), p;
+  }
+  function ssHead(p, k, round) {
+    var s = wo.screens[k], got = ssDone(k), due = targetOf(s), open = k === wo.i;
+    !open && p.classList.contains("open") && ssGhost(p, k), p.classList.toggle("open", open), p.classList.toggle("done", got >= due), p.firstChild.setAttribute("aria-expanded", open), p._in.inert = !open, p._name.textContent = s.ex.name, p._sum.textContent = open ? doseText(Object.assign({}, s.ex, { sets: due })) : ssSum(k, round), p._count.textContent = got + "/" + due;
+  }
+  function ssLive(p, k) {
+    var box = p._in, s = wo.screens[k], e = wo.entries[k], ex = s.ex, idx2 = ssIdx(e), due = targetOf(s), cue = cueOf(ex), last, dock, go;
+    if (box.innerHTML = "", ex.recommendation && box.appendChild(el("div", "wnote", ex.recommendation.note)), isTimed(ex)) {
+      timedBody(box, s, e);
+      return;
+    }
+    last = el("div", "wnote wlast", lastLine(e)), last.id = "wlast", box.appendChild(last), ex.weight && box.appendChild(el("div", "wnote", "Suggested load: " + ex.weight)), cue && cue.length <= 90 && box.appendChild(el("div", "wnote", cue)), renderSetPills(box, e, ex, due), dock = box.appendChild(el("div", "ssdock")), dock._wo = wo, dock._k = k, dock._idx = idx2, dock._key = k + ":" + idx2, $("setsheet").classList.contains("open") || stepDock(dock), go = el("button", "btn sslog", idx2 < due ? "Log set " + (idx2 + 1) : "Log extra set"), go.onclick = saveSet, box.appendChild(go);
+  }
+  function ssGhost(p, k) {
+    var box = p._in, pills = box.querySelector(".setpills"), tmp = el("div"), s = wo.screens[k];
+    pills && (renderSetPills(tmp, wo.entries[k], s.ex, targetOf(s)), box.replaceChild(tmp.firstChild, pills)), noIds(box), setTimeout(function() {
+      p.classList.contains("open") || (box.innerHTML = "");
+    }, 560);
+  }
+  function ssOpen(k) {
+    !wo || wo.finished || wo.i === k || (stopWork(), wo.i = k, haptic("tap"), saveDraft(), renderWorkout(1));
+  }
+  function ssReveal(p) {
+    var m = $("wmain"), a = p.getBoundingClientRect(), b = m.getBoundingClientRect(), d = Math.min(Math.max(a.bottom - b.bottom + 8, 0), a.top - b.top - 8);
+    d && p.isConnected && !p.closest(".sspanel:not(.open)") && m.scrollBy({ top: d, behavior: lessMotion() ? "auto" : "smooth" });
+  }
+  $("wmain").addEventListener("focusin", function(e) {
+    if (!document.documentElement.classList.contains("kb-over")) {
+      var box = e.target.classList.contains("numin") ? e.target.parentNode : null;
+      box && setTimeout(function() {
+        ssReveal(box);
+      }, 450);
+    }
+  });
+  function ssLogged(fresh, idx2) {
+    var i = wo.i, s = wo.screens[i], t, secs, moved;
+    return !s || !s.ss ? !1 : (justSet = idx2, closeSheet("setsheet"), fresh ? (t = ssTurn(i, 0), secs = restOf(s.ex, s.block, t.lap).secs, secs > 0 ? startRest(secs) : restUntil && !restFace && stopRest(), t.done ? (wo.i < endStop() ? (justSet = -1, nextMove()) : renderWorkout(1), !0) : (moved = t.next !== i, wo.i = t.next, ssHand = moved, saveDraft(), renderWorkout(1), moved && setTimeout(function() {
+      haptic("tap");
+    }, 180), !0)) : (renderWorkout(1), !0));
+  }
   function openWatch(w, ex) {
     if (wo) {
       w = w || wo.workout;
@@ -13051,8 +13612,8 @@ details.details-moving > :not(summary) {
   }
   function woGo(delta) {
     if (wo) {
-      for (var next = wo.i + delta; next > 0 && next < wo.screens.length && !isStop(next); ) next += delta;
-      next < 0 || next >= Math.max(wo.screens.length, 1) || (stopWork(), wo.i = next, saveDraft(), renderWorkout());
+      for (var next = stopOf(wo.i) + delta; next > 0 && next < wo.screens.length && !isStop(next); ) next += delta;
+      next < 0 || next >= Math.max(wo.screens.length, 1) || (wo.screens[next] && wo.screens[next].ss && (next = ssTurn(next, 0).up), stopWork(), wo.i = next, saveDraft(), renderWorkout());
     }
   }
   var WM_LEAD = 72, WM_BAND = 26, woSlide = 0;
@@ -13060,7 +13621,7 @@ details.details-moving > :not(summary) {
     var md = null;
     function paint2(dx) {
       if (!md.calm) {
-        var end = dx < 0 ? wo.i >= endStop() : wo.i <= 0, lead = end ? clamp(dx / 5, -WM_BAND, WM_BAND) : clamp(dx / 2, -WM_LEAD, WM_LEAD);
+        var end = dx < 0 ? wo.i >= endStop() : stopOf(wo.i) <= 0, lead = end ? clamp(dx / 5, -WM_BAND, WM_BAND) : clamp(dx / 2, -WM_LEAD, WM_LEAD);
         main.style.transform = "translateX(" + lead + "px)", main.style.opacity = String(1 - Math.abs(lead) / 320);
       }
     }
@@ -13074,7 +13635,7 @@ details.details-moving > :not(summary) {
           }
           swallowClick();
           var s = d.s, a = s[0], b = s[s.length - 1], dt = (b.t - a.t) / 1e3, v = dt > 4e-3 ? (b.x - a.x) / dt : 0, far = Math.abs(d.dx) > main.offsetWidth * 0.4, n = cancelled || !wo ? 0 : v < -FLING || far && d.dx < 0 ? 1 : v > FLING || far && d.dx > 0 ? -1 : 0;
-          n > 0 && wo.i >= endStop() && (n = 0), n < 0 && wo.i <= 0 && (n = 0), main.classList.add("wmease"), main.style.transform = "", main.style.opacity = "", n && (woSlide = n, woGo(n), haptic("tap"));
+          n > 0 && wo.i >= endStop() && (n = 0), n < 0 && stopOf(wo.i) <= 0 && (n = 0), main.classList.add("wmease"), main.style.transform = "", main.style.opacity = "", n && (woSlide = n, woGo(n), haptic("tap"));
         }
       }
     }
@@ -13139,7 +13700,7 @@ details.details-moving > :not(summary) {
           toast("Could not save that session \u2014 check your connection.");
           return;
         }
-        payload.id = r.data && r.data.id, wo && (wo.logId = payload.id), invalidateLogs(), today.at = 0, renderToday(), native && native.live && loadLogs().then(function() {
+        payload.id = r.data && r.data.id, wo && (wo.logId = payload.id), sumLanded(payload), invalidateLogs(), today.at = 0, renderToday(), native && native.live && loadLogs().then(function() {
           publishSummary();
         });
       }), clearInterval(woTimer), cxOff(), stopRest(), clearDraft(), liveEnd(!0), wo.finished = !0, haptic("done"), renderSummary(payload, logged);
@@ -13218,25 +13779,26 @@ details.details-moving > :not(summary) {
     main.innerHTML = "", main.scrollTop = 0, $("workout").classList.add("summary"), $("workout").classList.toggle("past", !!past), $("wclose").setAttribute("aria-label", past ? "Back to Train" : "Exit workout");
     var mins = Math.max(1, Math.round((payload.duration_seconds || 60) / 60));
     $("wclock").textContent = mins + " min";
-    var sets = 0, vol = 0;
-    logged.forEach(function(e) {
-      e.sets.forEach(function(s) {
-        s && (sets++, s.reps && s.weight && (vol += s.reps * toUnit(s.weight, s.unit)));
-      });
-    }), main.appendChild(pumpyArt("proud", !0)), main.appendChild(el("div", "wblock", past ? new Date(payload.started_at).toLocaleDateString(
+    var t = tally(logged), sets = t.sets, vol = t.vol;
+    sum = {
+      payload: payload,
+      logged: logged,
+      past: past,
+      w: w,
+      figs: [],
+      good: JSON.stringify(logged.filter(function(e) {
+        return e.sets.length;
+      }))
+    }, main.appendChild(pumpyArt("proud", !0)), main.appendChild(el("div", "wblock", past ? new Date(payload.started_at).toLocaleDateString(
       void 0,
       { weekday: "long", month: "long", day: "numeric" }
     ) : "Session complete")), main.appendChild(el("h2", "wname", payload.workout_title || "Workout"));
     var cs = cxScoreOf(w, logged);
-    cs && main.appendChild(el("div", "wdose", cs.text + (cs.cap ? " in " + clock(cs.cap) : "") + (cs.reps ? " \xB7 " + cs.reps + " reps" : "")));
+    cs && main.appendChild(sum.dose = el("div", "wdose", cxLine(cs)));
     var figs = el("div", "setpills sumfigs");
-    [
-      [String(mins), "min"],
-      cs ? [String(cs.rounds), cs.rounds === 1 ? "round" : "rounds"] : [String(sets), sets === 1 ? "set" : "sets"],
-      [vol ? Math.round(vol).toLocaleString() : "\u2014", vol ? state.unit : "bodyweight"]
-    ].forEach(function(f) {
+    figsOf(mins, sets, vol, cs).forEach(function(f) {
       var box = el("div", "setpill");
-      box.appendChild(el("b", null, f[0])), box.appendChild(document.createTextNode(f[1])), figs.appendChild(box);
+      box.appendChild(el("b", null, f[0])), box.appendChild(document.createTextNode(f[1])), figs.appendChild(box), sum.figs.push(box);
     }), main.appendChild(el("div", "sumawards")), main.appendChild(figs);
     var wk = past ? null : thisWeek(payload);
     if (wk) {
@@ -13244,23 +13806,31 @@ details.details-moving > :not(summary) {
       wk.done === wk.goal && wl.appendChild(ringSvg(1, "small", (wk.goal - 1) / wk.goal)), wl.appendChild(el("span", null, weekLine(wk))), main.appendChild(wl);
     }
     var mg = w.muscle_groups || [];
-    mg.length && main.appendChild(el("div", "wnote", mg.slice(0, 6).join(" \xB7 ")));
-    var beaten = Object.keys(prs);
-    if (beaten.length) {
-      var pills = el("div", "setpills sumprs");
-      beaten.forEach(function(k) {
-        var row = el("div", "setpill pr");
-        row.appendChild(el("b", null, past ? "Best at the time" : "New best")), row.appendChild(document.createTextNode(prText(prs[k]))), pills.appendChild(row);
-      }), main.appendChild(pills);
-    }
-    main.appendChild(shareRow(payload, logged, past)), logged.length && main.appendChild(sumLog(logged));
+    mg.length && main.appendChild(el("div", "wnote", mg.slice(0, 6).join(" \xB7 "))), main.appendChild(sum.prs = el("div", "setpills sumprs")), sumBests(prs), main.appendChild(shareRow(payload, logged, past)), logged.length && main.appendChild(sumLog(logged));
     var done = el("button", "btn sumdone", past ? "Back" : "Done");
     done.onclick = past ? function() {
       history.back();
     } : leaveWorkout, main.appendChild(done), viewIn(main), past ? pastSeals(payload, main) : sealAwards(payload, main);
   }
+  function figsOf(mins, sets, vol, cs) {
+    return [
+      [String(mins), "min"],
+      cs ? [String(cs.rounds), cs.rounds === 1 ? "round" : "rounds"] : [String(sets), sets === 1 ? "set" : "sets"],
+      [vol ? Math.round(vol).toLocaleString() : "\u2014", vol ? state.unit : "bodyweight"]
+    ];
+  }
+  function cxLine(cs) {
+    return cs.text + (cs.cap ? " in " + clock(cs.cap) : "") + (cs.reps ? " \xB7 " + cs.reps + " reps" : "");
+  }
+  function sumBests(prs) {
+    var pills = sum.prs;
+    pills.innerHTML = "", Object.keys(prs).forEach(function(k) {
+      var row = el("div", "setpill pr");
+      row.appendChild(el("b", null, sum.past ? "Best at the time" : "New best")), row.appendChild(document.createTextNode(prText(prs[k]))), pills.appendChild(row);
+    });
+  }
   function prText(p) {
-    return p.name + " \xB7 " + wtText(p.weight, p.unit) + " " + state.unit + " \xD7 " + p.reps;
+    return p.name + " \xB7 " + wtText(p.weight, p.unit) + " " + setUnit(p) + " \xD7 " + p.reps;
   }
   function logWorkout(l) {
     var w = null;
@@ -13279,6 +13849,7 @@ details.details-moving > :not(summary) {
             reps: s.reps,
             weight: s.weight,
             unit: s.unit,
+            each: s.each,
             est: est
           });
         }
@@ -13286,16 +13857,132 @@ details.details-moving > :not(summary) {
     }), out;
   }
   function sumLog(logged) {
-    var box = disclosure("What you logged", "sumlog"), body = box.lastChild;
-    return logged.forEach(function(e) {
-      var row = el("div", "session-exercise");
-      row.appendChild(el("h4", null, e.name || "Exercise")), e.sets.forEach(function(s, i) {
-        var line = el("div", "session-set");
-        line.appendChild(el("span", null, "Set " + (i + 1)));
-        var b = el("b", null, setText(s) + (s.weight && !s.seconds ? " " + state.unit : ""));
-        s.pr && b.classList.add("was"), line.appendChild(b), row.appendChild(line);
-      }), body.appendChild(row);
-    }), box;
+    var box = disclosure("What you logged", "sumlog");
+    return sum.box = box.lastChild, sumRows(), box;
+  }
+  var sum = null, sumQueue = [];
+  function sumRows() {
+    var body = sum.box, total = tally(sum.logged).sets;
+    body.innerHTML = "", sum.open = null, sum.logged.forEach(function(e, ei) {
+      if (e.sets.length) {
+        var row = el("div", "session-exercise");
+        row.appendChild(el("h4", null, e.name || "Exercise")), e.sets.forEach(function(s, si) {
+          var line = el("button", "session-set"), b = el("b", null, setText(s) + (s.weight && !s.seconds ? " " + setUnit(s) : ""));
+          line.setAttribute("data-k", ei + ":" + si), line.setAttribute("aria-label", "Correct set " + (si + 1) + ": " + b.textContent), line.appendChild(el("span", null, "Set " + (si + 1))), s.pr && b.classList.add("was"), line.appendChild(b), line.appendChild(ic("pencil")), line.onclick = function() {
+            sumEdit(line, ei, si, total);
+          }, row.appendChild(line);
+        }), body.appendChild(row);
+      }
+    });
+  }
+  function sumEdit(line, ei, si, total) {
+    if (sum.open && (sumShut(), line = sum.box.querySelector('[data-k="' + ei + ":" + si + '"]')), !line) return;
+    var c = sum, e = c.logged[ei], s = e.sets[si], hold = !!s.seconds && !s.reps, h0 = line.offsetHeight, ed = el("div", "sedit"), row = el("div", "sedrow"), acts = el("div", "sedacts"), f = [], was = s.weight ? toUnit(s.weight, s.unit) : 0, pair = !!s.each, cap, tag, del;
+    row.appendChild(el("span", null, "Set " + (si + 1)));
+    function field(v, dec, unit) {
+      var box = el("div", "sedf"), inp = el("input"), small = el("small", null, unit);
+      return inp.inputMode = dec ? "decimal" : "numeric", inp.enterKeyHint = "done", inp.placeholder = "0", inp.value = v ? String(v) : "", inp.setAttribute("aria-label", unit), inp.onkeydown = function(ev) {
+        if (ev.key === "Enter") save();
+        else if (ev.key === "Escape") sumShut();
+        else return;
+        ev.preventDefault();
+      }, box.appendChild(inp), box.appendChild(small), row.appendChild(box), f.push(inp), small;
+    }
+    hold ? field(s.seconds, 0, "sec") : (field(s.reps, 0, "reps"), row.appendChild(el("i", "sedx", "\xD7")), cap = field(was, 1, state.unit), (pair || typeof e.each == "boolean" || dbRule(e, c.w)) && (tag = cap.appendChild(el("button", "eachtag")), tag.onclick = function() {
+      pair = !pair, haptic("tap"), tagPaint(tag, pair ? 2 : 1, 1);
+    }, tagPaint(tag, pair ? 2 : 1))), total > 1 && (del = acts.appendChild(icon(el("button", "sedel"), "trash", "Delete")), del.onclick = function() {
+      var gone = e.sets.splice(si, 1)[0];
+      c.open = null, haptic("tap"), sumMorph(ed, ed.offsetHeight, function() {
+        sumPaint(c);
+      }), offerUndo("Set deleted", function() {
+        sumWrite(c);
+      }, function() {
+        e.sets.splice(Math.min(si, e.sets.length), 0, gone), sumPaint(c), sumWrite(c);
+      });
+    }), acts.appendChild(el("button", "btn ghost", "Cancel")).onclick = sumShut, acts.appendChild(el("button", "btn", "Save")).onclick = save, ed.appendChild(row), ed.appendChild(acts), line.parentNode.replaceChild(ed, line), c.open = { ed: ed, k: ei + ":" + si }, sumMorph(ed, h0), f[0].focus(), f[0].select();
+    function save() {
+      var a = parseFloat(f[0].value), b = f[1] ? parseFloat(f[1].value) : NaN, ns = Object.assign({}, s), flip = pair !== !!s.each;
+      hold ? a > 0 && (ns.seconds = clamp(Math.round(a), 1, 5999)) : (a > 0 && (ns.reps = clamp(Math.round(a), 1, 999)), b = isNaN(b) ? was : clamp(Math.round(b * 10) / 10, 0, 9999), b !== was && (ns.weight = b || null, ns.unit = state.unit));
+      var moved = ns.reps !== s.reps || ns.weight !== s.weight || ns.seconds !== s.seconds, h = ed.offsetHeight, fixed;
+      if (!moved && !flip) {
+        sumShut();
+        return;
+      }
+      ns.pr && moved && !sumStill(c, e, ns) && delete ns.pr, e.sets[si] = ns, flip && (e.each = pair, e.sets = e.sets.map(function(x) {
+        return x.seconds && !x.reps || (x = Object.assign({}, x), pair ? x.each = !0 : delete x.each), x;
+      })), haptic("success"), sumPaint(c), fixed = c.box.querySelector('[data-k="' + ei + ":" + si + '"]'), fixed && (sumMorph(fixed, h), fixed.classList.add("fixed"), fixed.focus({ preventScroll: !0 })), sumWrite(c), toast("Set updated" + (c.payload.strava_activity_id ? " \xB7 Strava keeps its copy" : ""));
+    }
+  }
+  function sumShut() {
+    var o = sum && sum.open, h, line;
+    !o || !o.ed.isConnected || (h = o.ed.offsetHeight, sumRows(), line = sum.box.querySelector('[data-k="' + o.k + '"]'), line && (sumMorph(line, h), line.focus({ preventScroll: !0 })));
+  }
+  function sumMorph(node, h0, gone) {
+    var h1 = gone ? 0 : node.offsetHeight;
+    if (lessMotion() || !node.animate || h0 === h1) {
+      gone && gone();
+      return;
+    }
+    node.style.overflow = "hidden", node.animate([{ height: h0 + "px" }, { height: h1 + "px", opacity: gone ? 0 : 1 }], {
+      duration: 220,
+      easing: gone ? "cubic-bezier(.3,0,.8,.15)" : "cubic-bezier(.22,.9,.3,1)",
+      fill: gone ? "forwards" : "none"
+    }).onfinish = gone || function() {
+      node.style.overflow = "";
+    };
+  }
+  function sumPaint(c) {
+    if (!(sum !== c || !c.box || !c.box.isConnected)) {
+      var t = tally(c.logged), cs = cxScoreOf(c.w, c.logged), prs = prsOfLog(c.logged), k, fresh;
+      if (wo && !c.past && (wo.prs = prs), cs && c.dose && (c.dose.textContent = cxLine(cs)), figsOf(0, t.sets, t.vol, cs).forEach(function(x, i) {
+        i && (c.figs[i].firstChild.textContent = x[0], c.figs[i].lastChild.textContent = x[1]);
+      }), c.prs.classList.add("still"), sumBests(prs), sc.card) {
+        fresh = c.past ? scFromLog(Object.assign({}, c.payload, { entries: c.logged })) : scFromSession(c.payload, c.logged);
+        for (k in fresh) k !== "bg" && (sc.card[k] = fresh[k]);
+        scPaint();
+      }
+      sumRows();
+    }
+  }
+  function sumStill(c, e, s) {
+    var k = exKey(e), at = new Date(c.payload.started_at).getTime(), was = 0;
+    return state.logs ? state.logs.forEach(function(l) {
+      l.id === c.payload.id || !(new Date(l.started_at).getTime() < at) || (l.entries || []).forEach(function(x) {
+        x && exKey(x) === k && (x.sets || []).forEach(function(y) {
+          y && y.reps && y.weight && (was = Math.max(was, toUnit(y.weight, y.unit) * (1 + y.reps / 30)));
+        });
+      });
+    }) : !c.past && histReady && hist[k] && (was = hist[k].was || 0), was > 0 && toUnit(s.weight, s.unit) * (1 + s.reps / 30) > was;
+  }
+  function sumWrite(c) {
+    if (!c.payload.id) {
+      sumQueue.indexOf(c) < 0 && sumQueue.push(c);
+      return;
+    }
+    if (c.busy) {
+      c.again = !0;
+      return;
+    }
+    var entries = c.logged.filter(function(e) {
+      return e.sets.length;
+    }), body = JSON.stringify(entries);
+    if (body === c.good) return;
+    c.busy = !0;
+    function fail() {
+      c.busy = c.again = !1, c.logged.length = 0, JSON.parse(c.good).forEach(function(e) {
+        c.logged.push(e);
+      }), sumPaint(c), toast("That change did not save. The set is back as it was.");
+    }
+    sb.from("workout_logs").update({ entries: entries }).eq("id", c.payload.id).select("id").then(function(r) {
+      if (r.error || !r.data || !r.data.length) return fail();
+      c.busy = !1, c.good = body, c.past ? (c.payload.entries = JSON.parse(body), renderTrain()) : invalidateLogs(), native && native.live && loadLogs().then(publishSummary), c.again && (c.again = !1, sumWrite(c));
+    }, fail);
+  }
+  function sumLanded(payload) {
+    sumQueue = sumQueue.filter(function(c) {
+      if (c.payload !== payload) return !0;
+      sumWrite(c);
+    });
   }
   function pastSeals(l, main) {
     if (!(!state.awards || !l.completed_at)) {
@@ -13599,12 +14286,12 @@ details.details-moving > :not(summary) {
   function scSets(e) {
     var st = (e.sets || []).filter(Boolean), n = st.length;
     if (!n) return "";
-    var reps = st[0].reps, same = !0, top = 0, secs = 0;
+    var reps = st[0].reps, same = !0, top = 0, secs = 0, per = null;
     if (st.forEach(function(s) {
-      s.reps !== reps && (same = !1), s.seconds && (secs = Math.max(secs, s.seconds)), s.weight && (top = Math.max(top, toUnit(s.weight, s.unit)));
+      s.reps !== reps && (same = !1), s.seconds && (secs = Math.max(secs, s.seconds)), s.weight && toUnit(s.weight, s.unit) > top && (top = toUnit(s.weight, s.unit), per = s);
     }), secs && !reps) return n + " \xD7 " + secs + "s";
     var t = same && reps ? n + " \xD7 " + reps : n + (n === 1 ? " set" : " sets");
-    return top ? t + " \xB7 " + top.toLocaleString() + " " + state.unit : t;
+    return top ? t + " \xB7 " + top.toLocaleString() + " " + setUnit(per) : t;
   }
   function scCard(w, title, when, mins, sets, vol, prs, entries) {
     var ex = [];
@@ -13622,28 +14309,20 @@ details.details-moving > :not(summary) {
       exercises: ex,
       credit: credit,
       date: new Date(when).toLocaleDateString(void 0, { weekday: "long", month: "long", day: "numeric" }),
-      figs: [
-        [String(mins), "min"],
-        cs ? [String(cs.rounds), cs.rounds === 1 ? "round" : "rounds"] : [String(sets), sets === 1 ? "set" : "sets"],
-        [vol ? Math.round(vol).toLocaleString() : "\u2014", vol ? state.unit : "bodyweight"]
-      ],
+      figs: figsOf(mins, sets, vol, cs),
       label: lab,
       coach: w.platform === "pumpy"
     };
   }
   function scFromSession(payload, logged) {
-    var w = wo && wo.workout || {}, sets = 0, vol = 0;
-    return logged.forEach(function(e) {
-      e.sets.forEach(function(s) {
-        s && (sets++, s.reps && s.weight && (vol += s.reps * toUnit(s.weight, s.unit)));
-      });
-    }), scCard(
+    var w = wo && wo.workout || {}, t = tally(logged);
+    return scCard(
       w,
       payload.workout_title,
       payload.started_at,
       Math.max(1, Math.round(payload.duration_seconds / 60)),
-      sets,
-      vol,
+      t.sets,
+      t.vol,
       prNames(wo && wo.prs),
       logged
     );
@@ -14461,8 +15140,8 @@ details.details-moving > :not(summary) {
         copySrc = w, copyDest = addDays(w, 7), paintCopy();
       }, copyWkChips.push({ w: w, node: c }), wks.appendChild(c);
     }), head.appendChild(wks);
-    var sum = el("div", "copysum");
-    copySumWk = el("b"), copySumN = document.createTextNode(""), sum.appendChild(copySumWk), sum.appendChild(copySumN), head.appendChild(sum);
+    var sum2 = el("div", "copysum");
+    copySumWk = el("b"), copySumN = document.createTextNode(""), sum2.appendChild(copySumWk), sum2.appendChild(copySumN), head.appendChild(sum2);
     var list = $("copyweeks");
     list.innerHTML = "", copyRowEls = [];
     for (var i = 1; i <= COPY_WEEKS; i++)
@@ -14643,12 +15322,7 @@ details.details-moving > :not(summary) {
     });
   }
   function volumeOf(log) {
-    var v = 0;
-    return (log.entries || []).forEach(function(e) {
-      (e.sets || []).forEach(function(s) {
-        s && s.reps && s.weight && (v += s.reps * toUnit(s.weight, s.unit));
-      });
-    }), v;
+    return tally(log.entries).vol;
   }
   function weekKey(iso) {
     return ymd(mondayOf(new Date(iso)));
@@ -14809,7 +15483,7 @@ details.details-moving > :not(summary) {
     var v = 0;
     return (log.entries || []).forEach(function(e) {
       (e.sets || []).forEach(function(s) {
-        s && s.reps && s.weight && (v += s.reps * (s.unit === "kg" ? s.weight * LB_PER_KG : s.weight));
+        v += setLoad(s, 1);
       });
     }), v;
   }
@@ -15096,7 +15770,7 @@ details.details-moving > :not(summary) {
         (e.sets || []).forEach(function(s) {
           if (s && !(!s.reps || !s.weight)) {
             var wt = toUnit(s.weight, s.unit), est = wt * (1 + s.reps / 30);
-            prs[k] || (prs[k] = { est: 0, label: e.name || "Exercise" }), est > prs[k].est && (prs[k].est = est, prs[k].weight = wt, prs[k].reps = s.reps, prs[k].date = l.started_at);
+            prs[k] || (prs[k] = { est: 0, label: e.name || "Exercise" }), est > prs[k].est && (prs[k].est = est, prs[k].weight = wt, prs[k].each = s.each, prs[k].reps = s.reps, prs[k].date = l.started_at);
           }
         });
       });
@@ -15111,7 +15785,7 @@ details.details-moving > :not(summary) {
         nm.appendChild(document.createTextNode(p.label)), nm.appendChild(el(
           "span",
           null,
-          wtText(p.weight) + " " + state.unit + " \xD7 " + p.reps + " \xB7 " + new Date(p.date).toLocaleDateString(void 0, { month: "short", day: "numeric" })
+          wtText(p.weight) + " " + setUnit(p) + " \xD7 " + p.reps + " \xB7 " + new Date(p.date).toLocaleDateString(void 0, { month: "short", day: "numeric" })
         )), r.appendChild(nm), r.appendChild(el("div", "v", Math.round(p.est) + " " + state.unit)), pc.appendChild(r);
       }), v.appendChild(pc);
     }
@@ -16720,7 +17394,7 @@ details.details-moving > :not(summary) {
   function closeSheet(id, fromPop) {
     var n = $(id);
     if (n.classList.contains("open")) {
-      if (id === "aiconsentsheet" && dismissAiConsent(), guideClear("hold"), id === "welcomesheet") {
+      if (id === "aiconsentsheet" && dismissAiConsent(), id === "setsheet" && ssDock(), guideClear("hold"), id === "welcomesheet") {
         welcomeDone();
         var focus = welcomeReturn && welcomeReturn.isConnected && !welcomeReturn.closest("#landing, .sheet:not(.open)") ? welcomeReturn : $("addbtn");
         focus && focus.focus({ preventScroll: !0 });
@@ -18096,6 +18770,128 @@ details.details-moving > :not(summary) {
       for (var i = 0, ms = [0, 60, 150, 300, 600]; i < ms.length; i++) setTimeout(fitViewport, ms[i]);
     }
   });
+  var kbOwner = null, kbProbe = null, kbBack = null, kbPlainBox = null;
+  function kbOver() {
+    return !!(native && native.keyboard && document.documentElement.classList.contains("kb-over"));
+  }
+  function kbSafe() {
+    kbProbe || (kbProbe = el("div"), kbProbe.setAttribute("aria-hidden", "true"), kbProbe.style.cssText = "position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;pointer-events:none;padding-top:env(safe-area-inset-top);padding-bottom:var(--sab)", document.body.appendChild(kbProbe));
+    var cs = getComputedStyle(kbProbe);
+    return { top: parseFloat(cs.paddingTop) || 0, bottom: parseFloat(cs.paddingBottom) || 0 };
+  }
+  function kbFocus() {
+    var f = document.activeElement;
+    return !f || f === document.body ? null : f.tagName === "INPUT" || f.tagName === "TEXTAREA" || f.isContentEditable ? f : null;
+  }
+  function kbScroller(n) {
+    for (n = n && n.parentElement; n && n !== document.body; n = n.parentElement) {
+      var o = getComputedStyle(n).overflowY;
+      if (o === "auto" || o === "scroll") return n;
+    }
+    return null;
+  }
+  function kbFlow(box) {
+    for (var out = [], kids = box.children, i = 0; i < kids.length; i++) {
+      var p = getComputedStyle(kids[i]).position;
+      (p === "static" || p === "relative") && out.push(kids[i]);
+    }
+    return out;
+  }
+  function kbShift(nodes, anchor, change, d) {
+    var before = anchor ? anchor.getBoundingClientRect().top : 0, i;
+    for (i = 0; i < nodes.length; i++)
+      nodes[i]._kbGlide && (nodes[i]._kbGlide.cancel(), nodes[i]._kbGlide = null);
+    if (change(), !!anchor) {
+      var dy = before - anchor.getBoundingClientRect().top;
+      if (!(Math.abs(dy) < 0.5 || !d.duration || lessMotion()))
+        for (i = 0; i < nodes.length; i++)
+          nodes[i].animate && (nodes[i]._kbGlide = nodes[i].animate(
+            [{ translate: "0 " + dy + "px" }, { translate: "0 0" }],
+            { duration: d.duration * 1e3, delay: -(d.elapsed || 0) * 1e3, easing: d.easing }
+          ));
+    }
+  }
+  function kbPad(box, px) {
+    px > 0 ? (box._kbRest == null && (box._kbRest = box.style.paddingBottom, box._kbBase = parseFloat(getComputedStyle(box).paddingBottom) || 0), box.style.paddingBottom = box._kbBase + px + "px") : box._kbRest != null && (box.style.paddingBottom = box._kbRest, box._kbRest = null);
+  }
+  function kbPadOf(box) {
+    return box._kbRest == null ? 0 : (parseFloat(box.style.paddingBottom) || 0) - box._kbBase;
+  }
+  function kbReveal(sc2, bottom, K) {
+    var over = bottom - (window.innerHeight - K - 16);
+    if (!(over <= 0)) {
+      var s = sc2 || document.scrollingElement;
+      s.scrollTop = s.scrollTop + over;
+    }
+  }
+  function kbLift(node, px, d) {
+    var st = node.style;
+    st.setProperty("--kt", (lessMotion() ? 0 : d.duration || 0) + "s"), st.setProperty("--ke", d.easing || "ease"), st.setProperty("--kd", -(d.elapsed || 0) + "s"), px > 0 ? st.setProperty("--lift", px + "px") : st.removeProperty("--lift");
+  }
+  function kbSheet(b, K, f, d) {
+    var safe = kbSafe(), want = K ? Math.max(0, K - safe.bottom) : 0, lift = Math.min(want, Math.max(0, b.offsetTop - safe.top - 8)), under = want - lift;
+    if (kbLift(b, lift, d), !d.instant) {
+      under > 0 && b._kbHeight == null && (b._kbHeight = b.style.maxHeight, b.style.maxHeight = b.offsetHeight + "px");
+      var kids = kbFlow(b);
+      kbShift(kids, kids[0], function() {
+        if (kbPad(b, under), !under && b._kbHeight != null && (b.style.maxHeight = b._kbHeight, b._kbHeight = null), under && f) {
+          var r = f.getBoundingClientRect(), br = b.getBoundingClientRect();
+          kbReveal(b, b.offsetTop - lift + (r.bottom - br.top), K);
+        }
+      }, d);
+    }
+  }
+  function kbComposer(c, K, d) {
+    var p = $("pumpyview"), log = $("pumpylog"), rest = parseFloat(getComputedStyle(c).bottom) || 0, lift = K ? Math.max(0, K - rest) : 0;
+    if (kbLift(c, lift, d), !d.instant) {
+      var was = kbPadOf(log), s0 = p.scrollTop;
+      lift !== was && kbShift([log], log.firstElementChild || log, function() {
+        kbPad(log, lift), p.scrollTop = s0 + lift - was;
+      }, d);
+    }
+  }
+  function kbPlain(f, sc2, K, d) {
+    if (!d.instant) {
+      var box = sc2 || kbPlainBox || f && f.closest("body > *") || document.body;
+      sc2 || (kbPlainBox = K ? box : null);
+      var extra = 0;
+      if (K) {
+        var bottom = sc2 ? sc2.getBoundingClientRect().bottom : window.innerHeight, covered = K - (window.innerHeight - bottom), base = box._kbRest == null ? parseFloat(getComputedStyle(box).paddingBottom) || 0 : box._kbBase;
+        extra = Math.max(0, covered + 16 - base);
+      }
+      if (!(extra === kbPadOf(box) && !f)) {
+        var kids = kbFlow(box);
+        kbShift(kids, kids[0], function() {
+          kbPad(box, extra), f && kbReveal(sc2, f.getBoundingClientRect().bottom, K);
+        }, d);
+      }
+    }
+  }
+  function kbPlace(o, K, f, d) {
+    o.kind === "sheet" ? kbSheet(o.node, K, f, d) : o.kind === "composer" ? kbComposer(o.node, K, d) : kbPlain(f, o.node, K, d);
+  }
+  function kbApply(d) {
+    if (kbOver()) {
+      var K = d.visible ? d.height : 0, f = K ? kbFocus() : null, o = null, n;
+      if (kbBack || (kbBack = el("div", "kbback"), kbBack.setAttribute("aria-hidden", "true"), document.body.appendChild(kbBack), getComputedStyle(kbBack).translate), kbLift(kbBack, K, d), d.instant) {
+        kbOwner && kbPlace(kbOwner, K, null, d);
+        return;
+      }
+      f && (n = f.closest(".sheet.open .sheetbody")) ? o = { kind: "sheet", node: n } : f && (n = f.closest(".composer")) ? o = { kind: "composer", node: n } : f && (o = { kind: "plain", node: kbScroller(f) }), kbOwner && (!o || !K || o.kind !== kbOwner.kind || o.node !== kbOwner.node) && (kbPlace(kbOwner, 0, null, d), kbOwner = null), o && K && (kbOwner = o, kbPlace(o, K, f, d));
+    }
+  }
+  window.addEventListener("spotter:keyboard", function(e) {
+    kbApply(e.detail || {});
+  }), document.addEventListener("focusin", function() {
+    var k = native && native.keyboard;
+    !k || !k.visible || !kbOver() || kbApply({ visible: !0, height: k.height, duration: k.duration || 0.25, easing: k.easing });
+  }), $("searchx").addEventListener("pointerdown", function(e) {
+    e.preventDefault();
+  }), $("searchx").onclick = function() {
+    $("search").blur(), this.blur();
+  }, $("search").addEventListener("keydown", function(e) {
+    e.key === "Enter" && this.blur();
+  });
   var ptrStart = 0, ptrPulling = !1;
   function refreshActive() {
     return invalidateLogs(), load();
@@ -18409,13 +19205,15 @@ details.details-moving > :not(summary) {
       var list = $("exlist");
       list.innerHTML = "", wo.screens.forEach(function(s, i) {
         if (isStop(i)) {
-          var cxh = s.cx && !s.ei ? s.cx : null, row = el("button", "pickrow"), t = el("div", "pt");
-          if (t.appendChild(el("b", null, cxh ? s.block.title || "Complex" : s.ex.name)), t.appendChild(el("span", null, cxh ? cxh.n + " movements" + (cxh.cap ? " \xB7 " + Math.round(cxh.cap / 60) + " min" : "") : doseText(s.ex) || "\u2014")), row.appendChild(t), stopDone(i)) {
+          var cxh = s.cx && !s.ei ? s.cx : null, ssh = !!s.ss, row = el("button", "pickrow"), t = el("div", "pt");
+          if (t.appendChild(el("b", null, cxh ? s.block.title || "Complex" : ssh ? ssName(s) : s.ex.name)), t.appendChild(el("span", null, cxh ? cxh.n + " movements" + (cxh.cap ? " \xB7 " + Math.round(cxh.cap / 60) + " min" : "") : ssh ? ssMembers(i).map(function(k) {
+            return wo.screens[k].ex.name;
+          }).join(" \xB7 ") : doseText(s.ex) || "\u2014")), row.appendChild(t), stopDone(i)) {
             var tick = icon(el("span", "daydone"), "check");
             tick.setAttribute("role", "img"), tick.setAttribute("aria-label", "Logged"), row.appendChild(tick);
           }
           row.onclick = function() {
-            stopWork(), wo.i = i, closeSheet("exsheet"), renderWorkout();
+            stopWork(), wo.i = ssh ? ssTurn(i, 0).up : i, closeSheet("exsheet"), renderWorkout();
           }, list.appendChild(row);
         }
       }), openSheet("exsheet");
@@ -18435,7 +19233,7 @@ details.details-moving > :not(summary) {
     return setWeight(setCtx.weight + plate());
   }), wireStep("wtdown", function() {
     return setWeight(setCtx.weight - plate());
-  }), wireNum($("repsbox"), $("repsval"), $("repsin"), setReps), wireNum($("wtbox"), $("wtval"), $("wtin"), setWeight), $("setsave").onclick = saveSet, $("setclear").onclick = function() {
+  }), wireNum($("repsbox"), $("repsval"), $("repsin"), setReps), wireNum($("wtbox"), $("wtval"), $("wtin"), setWeight), $("setsave").onclick = saveSet, $("wteach").onclick = flipEach, $("setclear").onclick = function() {
     wo && (wo.entries[wo.i].sets.splice(setCtx.idx, 1), saveDraft(), closeSheet("setsheet"), renderWorkout());
   }, $("hintx").onclick = function() {
     $("hint").classList.remove("show");

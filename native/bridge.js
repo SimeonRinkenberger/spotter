@@ -174,7 +174,7 @@ async function boot() {
   const appearance = matchMedia('(prefers-color-scheme: dark)');
   const style = () => StatusBar.setStyle({ style: appearance.matches ? Style.Dark : Style.Light }).catch(ignore);
   style(); appearance.addEventListener('change', style);
-  await installKeyboard(Keyboard);
+  await installKeyboard(Keyboard, window, document, { stillFrame: !android });
   // Once, at boot: on iOS this keeps a prepared UISelectionFeedbackGenerator so
   // the first segment tap of a session ticks as fast as the tenth, and on Android
   // it arms the selection waveform. selectionEnd is never called — ending it would

@@ -103,11 +103,6 @@ export const MARKUP_BODY = String.raw`</head>
     <p class="sub">You save fitness reels you never come back to. Spotter reads the exercises,
       sets and reps out of the video, then walks you through them one at a time and remembers
       what you lifted.</p>
-    <ol class="steps">
-      <li><span class="num">1</span><div><b>Paste a link</b> from TikTok, Instagram or YouTube — or share straight from your phone.</div></li>
-      <li><span class="num">2</span><div><b>Get a real workout card</b> — every exercise with its sets, reps and rest, not a wall of caption text.</div></li>
-      <li><span class="num">3</span><div><b>Train and log it</b> — full-screen, one move at a time, tracking weight and reps as you go.</div></li>
-    </ol>
 
     <div class="authcard" id="authcard">
       <h2 id="authtitle">Create your account</h2>
@@ -239,6 +234,7 @@ export const MARKUP_BODY = String.raw`</head>
         <label class="searchwrap" id="searchwrap">
           <span class="searchico"><svg class="ic"><use href="#i-search"></use></svg></span>
           <input class="search" id="search" type="search" placeholder="Search workouts, exercises, muscles" autocapitalize="off" autocomplete="off">
+          <button class="searchx" id="searchx" type="button" aria-label="Hide keyboard"><svg class="ic"><use href="#i-x"></use></svg></button>
         </label>
 
         <div id="hint">
@@ -412,7 +408,7 @@ export const MARKUP_BODY = String.raw`</head>
   </div>
   <div class="stepper" data-noswipe>
     <button id="wtdown" aria-label="Less weight"><svg class="ic"><use href="#i-minus"></use></svg></button>
-    <div class="val" id="wtbox"><button class="num" id="wtval" aria-label="Weight — tap to type a number">0</button><input class="numin" id="wtin" type="text" inputmode="decimal" enterkeyhint="done" autocomplete="off" aria-label="Weight"><small id="wtunit">lb</small></div>
+    <div class="val" id="wtbox"><button class="num" id="wtval" aria-label="Weight — tap to type a number">0</button><input class="numin" id="wtin" type="text" inputmode="decimal" enterkeyhint="done" autocomplete="off" aria-label="Weight"><small><span id="wtunit">lb</span><button class="eachtag" id="wteach" type="button" hidden>each</button></small></div>
     <button id="wtup" aria-label="More weight"><svg class="ic"><use href="#i-plus"></use></svg></button>
   </div>
   <div class="btnrow">

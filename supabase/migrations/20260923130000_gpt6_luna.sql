@@ -1,0 +1,17 @@
+-- 2026-09-23: text AI moves from gpt-5.6-luna to gpt-6-luna (released 2026-09-22).
+--
+-- Prices read from https://developers.openai.com/api/docs/models/gpt-6-luna on 2026-09-23:
+-- $0.10/M input, $0.01/M cached input, $0.50/M output — against 5.6 Luna's $0.20 / $0.02 /
+-- $1.20. Same Chat Completions surface and the same reasoning_effort dial, 1.05M context,
+-- 128k max output. Extraction, Pumpy and the helpers all read `model.openai`; the card
+-- cache is not keyed on the model and CARD_V does not move, so nothing in video_cache is
+-- invalidated — new cards simply record `openai:gpt-6-luna` in extracted_by.
+--
+-- ORDER MATTERS: apply this only AFTER the edge function that prices gpt-6-luna in
+-- ai-guard.ts is deployed. An older function reading this row would refuse every text
+-- call with `unknown_price`. Rolling back is the same statement with the values swapped;
+-- ai-guard keeps the 5.6 price for exactly that.
+--
+-- Guarded on the old value so a hand-set model (a test, a rollback in progress) is left
+-- alone. This is the only Luna row live: `pack.sheets_model` is Gemini since 20260915170000.
+update public.app_config set value = 'gpt-6-luna' where key = 'model.openai' and value = 'gpt-5.6-luna';
