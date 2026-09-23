@@ -2966,8 +2966,11 @@ export const STYLE = String.raw`<style>
      rows do and pads by the same 16px, so the name lines up with the exercise
      names below instead of sitting flush against a box of its own. */
   .block-swipe { margin-bottom: 8px; border-radius: 12px; }
+  /* The band carries the row's corners itself, not only the window it slides in:
+     swiped open, its right edge stands beside the rounded Delete, and with the
+     radius left on .block-swipe alone that edge was square (owner, 23 Sept). */
   .block-swipe .exmain { display: flex; align-items: center; justify-content: space-between;
-    gap: 12px; padding: 8px 16px; background: var(--paper); }
+    gap: 12px; padding: 8px 16px; background: var(--paper); border-radius: 12px; }
   .block-swipe h3 { margin: 0; }
   .block-swipe .linkbtn { font-size: 12px; min-height: 44px; color: var(--muted); }
 </style>
