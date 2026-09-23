@@ -5266,7 +5266,7 @@ body:not(.app) #toast.show {
   padding: 8px 18px 8px 13px;
   border-radius: 17px;
 }
-.sspanel.open .sshead:active {
+.open > .sshead:active {
   background: none;
 }
 .ssletter,
@@ -13231,7 +13231,7 @@ details.details-moving > :not(summary) {
     var rows = stepRows || (stepRows = [$("repsbox").parentNode, $("wtbox").parentNode]), from = rows[0].parentNode;
     from !== host && (endEdit(), from && (from._key && from.isConnected && (ssHeld = { wo: from._wo, key: from._key, reps: setCtx.reps, weight: setCtx.weight }), rows.forEach(function(r) {
       var g = r.cloneNode(!0);
-      g.classList.add("ghost"), g.setAttribute("aria-hidden", "true"), g.inert = !0, noIds(g), from.insertBefore(g, r);
+      g.classList.add("ghost"), g.inert = !0, noIds(g), from.insertBefore(g, r);
     })), Array.prototype.forEach.call(host.querySelectorAll(".stepper.ghost"), function(g) {
       g.parentNode.removeChild(g);
     }), rows.forEach(function(r) {
@@ -13277,7 +13277,7 @@ details.details-moving > :not(summary) {
   }
   function ssPanel(k, n) {
     var p = el("section", "sspanel"), head = el("button", "pickrow sshead"), t = el("span", "pt"), wrap = el("div", "sswrap"), body = el("div", "ssbody");
-    return head.appendChild(el("span", "ssletter", n < 26 ? String.fromCharCode(65 + n) : String(n + 1))), p._name = t.appendChild(el("b")), p._sum = t.appendChild(el("span")), head.appendChild(t), p._count = head.appendChild(el("span", "sscount")), head.onclick = function() {
+    return head.appendChild(el("span", "ssletter", String.fromCharCode(65 + n))), p._name = t.appendChild(el("b")), p._sum = t.appendChild(el("span")), head.appendChild(t), p._count = head.appendChild(el("span", "sscount")), head.onclick = function() {
       ssOpen(k);
     }, p._in = body.appendChild(el("div", "ssin")), wrap.appendChild(body), p.appendChild(head), p.appendChild(wrap), p;
   }

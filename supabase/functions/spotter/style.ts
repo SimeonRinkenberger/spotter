@@ -2009,7 +2009,7 @@ export const STYLE = String.raw`<style>
     border-radius: 18px; transition: border-color var(--t-2) var(--e-out); }
   .sspanel.open { border-color: var(--ember); }
   .sshead { min-height: 56px; padding: 8px 18px 8px 13px; border-radius: 17px; }
-  .sspanel.open .sshead:active { background: none; }
+  .open > .sshead:active { background: none; }
   .ssletter, .sshead::after { flex: none; transition: all var(--t-2) var(--e-out); }
   .ssletter { width: 28px; height: 28px; border-radius: 99px; display: grid; place-items: center;
     font: 800 14px var(--display); background: var(--sand); color: var(--ink-2); }

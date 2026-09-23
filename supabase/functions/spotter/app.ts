@@ -8396,7 +8396,6 @@ export const APP = String.raw`
       rows.forEach(function (r) {
         var g = r.cloneNode(true);
         g.classList.add("ghost");
-        g.setAttribute("aria-hidden", "true");
         g.inert = true;
         noIds(g);
         from.insertBefore(g, r);
@@ -8493,7 +8492,7 @@ export const APP = String.raw`
   function ssPanel(k, n) {
     var p = el("section", "sspanel"), head = el("button", "pickrow sshead"), t = el("span", "pt");
     var wrap = el("div", "sswrap"), body = el("div", "ssbody");
-    head.appendChild(el("span", "ssletter", n < 26 ? String.fromCharCode(65 + n) : String(n + 1)));
+    head.appendChild(el("span", "ssletter", String.fromCharCode(65 + n)));
     p._name = t.appendChild(el("b"));
     p._sum = t.appendChild(el("span"));
     head.appendChild(t);
