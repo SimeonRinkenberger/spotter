@@ -1,0 +1,12 @@
+-- A finished session can be corrected: the "What you logged" list on the summary
+-- (the moment a workout ends, and the same session read back from Train) lets a
+-- person fix a mistyped rep count or weight. Owner ask, 2026-09-23: "i want to be
+-- able to edit that there in case someone misinputted a number".
+--
+-- 20260905000000_strava.sql took UPDATE away from the browser whole, because the
+-- app had never edited a log and strava_activity_id must stay the function's to
+-- write. It left `own logs update` in place for exactly this: a one-column grant
+-- now works on its own, the way `profiles` does it. Only `entries` — the sets.
+-- The session's times, its workout link and its Strava id stay insert-once, and
+-- the owner-only policy still scopes every UPDATE to the caller's own rows.
+grant update (entries) on public.workout_logs to authenticated;
