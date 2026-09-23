@@ -5330,6 +5330,10 @@ body:not(.app) #toast.show {
 .sumlog .session-set:active {
   background: var(--sand);
 }
+.sumlog .session-set:focus-visible {
+  outline: 2px solid var(--ember-ink);
+  outline-offset: -2px;
+}
 .sumlog .session-set b {
   margin-left: auto;
 }
@@ -13568,12 +13572,12 @@ details.details-moving > :not(summary) {
       }
       ns.pr && moved && !sumStill(c, e, ns) && delete ns.pr, e.sets[si] = ns, flip && (e.each = pair, e.sets = e.sets.map(function(x) {
         return x.seconds && !x.reps || (x = Object.assign({}, x), pair ? x.each = !0 : delete x.each), x;
-      })), haptic("success"), sumPaint(c), fixed = c.box.querySelector('[data-k="' + ei + ":" + si + '"]'), fixed && (sumMorph(fixed, h), fixed.classList.add("fixed")), sumWrite(c), toast("Set updated" + (c.payload.strava_activity_id ? " \xB7 Strava keeps its copy" : ""));
+      })), haptic("success"), sumPaint(c), fixed = c.box.querySelector('[data-k="' + ei + ":" + si + '"]'), fixed && (sumMorph(fixed, h), fixed.classList.add("fixed"), fixed.focus({ preventScroll: !0 })), sumWrite(c), toast("Set updated" + (c.payload.strava_activity_id ? " \xB7 Strava keeps its copy" : ""));
     }
   }
   function sumShut() {
     var o = sum && sum.open, h, line;
-    !o || !o.ed.isConnected || (h = o.ed.offsetHeight, sumRows(), line = sum.box.querySelector('[data-k="' + o.k + '"]'), line && sumMorph(line, h));
+    !o || !o.ed.isConnected || (h = o.ed.offsetHeight, sumRows(), line = sum.box.querySelector('[data-k="' + o.k + '"]'), line && (sumMorph(line, h), line.focus({ preventScroll: !0 })));
   }
   function sumMorph(node, h0, gone) {
     var h1 = gone ? 0 : node.offsetHeight;

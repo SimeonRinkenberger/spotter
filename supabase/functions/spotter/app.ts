@@ -8957,7 +8957,7 @@ export const APP = String.raw`
       haptic("success");
       sumPaint(c);
       fixed = c.box.querySelector('[data-k="' + ei + ":" + si + '"]');
-      if (fixed) { sumMorph(fixed, h); fixed.classList.add("fixed"); }
+      if (fixed) { sumMorph(fixed, h); fixed.classList.add("fixed"); fixed.focus({ preventScroll: true }); }
       sumWrite(c);
       // Strava was sent the session as it was, and a correction does not follow it.
       toast("Set updated" + (c.payload.strava_activity_id ? " · Strava keeps its copy" : ""));
@@ -8972,7 +8972,8 @@ export const APP = String.raw`
     h = o.ed.offsetHeight;
     sumRows();
     line = sum.box.querySelector('[data-k="' + o.k + '"]');
-    if (line) sumMorph(line, h);
+    // Focus goes back to the line it came from, not to the top of the page.
+    if (line) { sumMorph(line, h); line.focus({ preventScroll: true }); }
   }
 
   // A row grows into its editor and back, or folds away, rather than jumping the

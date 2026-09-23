@@ -2044,6 +2044,7 @@ export const STYLE = String.raw`<style>
   .sumlog .session-set { width: calc(100% + 16px); min-height: 44px; margin: 0 -8px; padding: 0 8px; gap: 10px;
     align-items: center; border: 0; border-radius: 10px; background: none; color: var(--ink); font-size: 13px; }
   .sumlog .session-set:active { background: var(--sand); }
+  .sumlog .session-set:focus-visible { outline: 2px solid var(--ember-ink); outline-offset: -2px; }
   .sumlog .session-set b { margin-left: auto; }
   .sumlog .session-set .ic { width: 14px; height: 14px; flex: none; color: var(--muted); }
   .sumlog .session-set.fixed { animation: setfix var(--t-4) var(--e-soft); }
