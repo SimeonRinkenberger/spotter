@@ -7129,7 +7129,12 @@ async function rpc(name: string, args: Record<string, unknown>): Promise<any> {
     body: JSON.stringify(args),
   });
   if (!r.ok) throw new Error(`rpc ${name} ${r.status}: ${await r.text()}`);
-  return await r.json();
+  // A function that returns void answers with an empty body, and r.json() on
+  // nothing throws. ai_finish_action is one: from 2026-09-07 every Pumpy turn
+  // threw here, and the pumpy_usage row written after it never landed — two
+  // weeks of turns unmetered. Nothing to parse is null, not an error.
+  const text = await r.text();
+  return text ? JSON.parse(text) : null;
 }
 
 /**
@@ -12569,9 +12574,14 @@ async function pumpyRecordUsage(
   userId: string, threadId: string | null,
   u: { calls: number; inTok: number; outTok: number; credits: number; cost: number; model: string | null; shortCircuit: boolean },
 ): Promise<void> {
+  // Two writes, two failures: the ledger row is what the caps count, so a hiccup
+  // closing the admission action must never cost it.
+  const action = aiActor.getStore()?.actionId;
+  if (action) {
+    try { await rpc("ai_finish_action", { p_id: action, p_credits: u.credits, p_finish: false }); }
+    catch (e) { console.error("pumpy: ai_finish_action failed", userId, threadId, e); }
+  }
   try {
-    const action = aiActor.getStore()?.actionId;
-    if (action) await rpc("ai_finish_action", { p_id: action, p_credits: u.credits, p_finish: false });
     await dbInsert("pumpy_usage", {
       user_id: userId, thread_id: threadId,
       calls: u.calls, input_tokens: u.inTok, output_tokens: u.outTok,
