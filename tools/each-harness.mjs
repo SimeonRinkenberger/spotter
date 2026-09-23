@@ -39,6 +39,8 @@ const STUBS = [
   'var LB_PER_KG = 2.2046226;',
   'var LOGS = [];',
   'function accountNow() { return true; }',
+  // The superset panel's late weight fill; supersets are superset-harness's to check.
+  'function ssPrime() {}',
   'function $() { return null; }',
   'function timeText(s) { return s + "s"; }',
   'function agoText() { return "2 days ago"; }',

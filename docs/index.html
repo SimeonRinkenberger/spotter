@@ -5200,6 +5200,143 @@ body:not(.app) #toast.show {
   padding: 10px;
   font-size: 14px;
 }
+.ssstack {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 2px -10px 0;
+  text-align: left;
+}
+.ssstack::before {
+  content: "";
+  position: absolute;
+  left: 27px;
+  top: 28px;
+  bottom: 28px;
+  width: 2px;
+  background: var(--ember);
+}
+.sspanel {
+  position: relative;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  transition: border-color var(--t-2) var(--e-out);
+}
+.sspanel.open {
+  border-color: var(--ember);
+}
+.sshead {
+  min-height: 56px;
+  padding: 8px 18px 8px 13px;
+  border-radius: 17px;
+}
+.open > .sshead:active {
+  background: none;
+}
+.ssletter,
+.sshead::after {
+  flex: none;
+  transition: all var(--t-2) var(--e-out);
+}
+.ssletter {
+  width: 28px;
+  height: 28px;
+  border-radius: 99px;
+  display: grid;
+  place-items: center;
+  font: 800 14px var(--display);
+  background: var(--sand);
+  color: var(--ink-2);
+}
+.sspanel.open .ssletter {
+  background: var(--ember);
+  color: var(--on-ember);
+}
+.sshead .pt span {
+  display: block;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sscount {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.sspanel.done .sscount {
+  color: var(--good);
+}
+.sshead::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border: solid var(--muted);
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(-45deg);
+}
+.sspanel.open .sshead::after {
+  transform: rotate(45deg);
+}
+.sswrap {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--t-3) var(--e-out);
+}
+.sspanel.open .sswrap {
+  grid-template-rows: 1fr;
+}
+.ssbody {
+  overflow: hidden;
+  min-height: 0;
+}
+.ssin {
+  padding: 0 14px 14px;
+  text-align: center;
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: opacity var(--t-2) var(--e-out), transform var(--t-3) var(--e-out);
+}
+.sspanel.open .ssin {
+  opacity: 1;
+  transform: none;
+}
+.ssstack.hand .sswrap,
+.ssstack.hand .ssin {
+  transition-delay: 90ms;
+}
+.ssin .setpills {
+  margin: 12px 0 2px;
+}
+.ssin .stepper {
+  margin: 8px 0;
+}
+.sslog {
+  min-height: 54px;
+  margin-top: 8px;
+}
+.ssin .wtimer .ring {
+  width: 124px;
+  height: 124px;
+}
+.ssin .wup {
+  display: none;
+}
+.ssin .wstart {
+  margin: 14px auto 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sspanel,
+  .ssletter,
+  .sshead::after,
+  .sswrap,
+  .ssin {
+    transition: none;
+  }
+}
 #workout.summary .wdots,
 #workout.summary .wbottom,
 #workout.summary .reststrip {
@@ -10101,7 +10238,7 @@ details.details-moving > :not(summary) {
   }
   function restOf(ex, block, atLapEnd) {
     var own = atLapEnd ? block.rest_seconds : ex && ex.rest_seconds;
-    return typeof own == "number" ? { secs: own, source: atLapEnd ? "block" : "exercise" } : { secs: !atLapEnd && isCircuit(block) && isTimed(ex) ? 0 : REST_FALLBACK, source: "default" };
+    return typeof own == "number" ? { secs: own, source: atLapEnd ? "block" : "exercise" } : { secs: !atLapEnd && (supersetOf(block) || isCircuit(block) && isTimed(ex)) ? 0 : REST_FALLBACK, source: "default" };
   }
   function restWord(secs) {
     return secs ? "Rest " + clock(secs) : "No rest";
@@ -10124,7 +10261,7 @@ details.details-moving > :not(summary) {
   }
   function blockMetaText(b) {
     var bits = [], kind = b.type && b.type !== "straight" ? kindName(b.type) : "", r;
-    return kind && kind.toLowerCase() !== String(b.title || "").toLowerCase() && bits.push(kind), b.rounds && bits.push(b.rounds + " rounds"), b.rounds > 1 && (r = restOf(null, b, !0), bits.push(restWord(r.secs) + " between rounds" + (r.source === "default" ? " \xB7 default" : ""))), b.duration_seconds && bits.push(clock(b.duration_seconds) + " cap"), bits.join(" \xB7 ");
+    return kind && kind.toLowerCase() !== String(b.title || "").toLowerCase() && bits.push(kind), b.rounds && bits.push(b.rounds + " rounds"), (b.rounds > 1 || supersetOf(b)) && (r = restOf(null, b, !0), bits.push(restWord(r.secs) + " between rounds" + (r.source === "default" ? " \xB7 default" : ""))), b.duration_seconds && bits.push(clock(b.duration_seconds) + " cap"), bits.join(" \xB7 ");
   }
   var REST_STEPS = [15, 30, 45, 60, 75, 90, 120, 150, 180, 240, 300], HOW_LONG = "How long? Minutes or seconds.";
   function restChips(box, value, onPick) {
@@ -11956,11 +12093,11 @@ details.details-moving > :not(summary) {
   function flatten(w) {
     var screens = [];
     return (w.blocks || []).forEach(function(b, bi) {
-      var cx = complexOf(b, w);
+      var cx = complexOf(b, w), ss = cx ? null : supersetOf(b, w);
       (b.exercises || []).forEach(function(ex, ei) {
         ex.recommendation && (ex = Object.assign({}, ex), ["sets", "reps", "duration_seconds", "rest_seconds"].forEach(function(key) {
           ex[key] == null && ex.recommendation[key] != null && (ex[key] = ex.recommendation[key]);
-        })), screens.push({ block: b, bi: bi, ex: ex, ei: ei, cx: cx });
+        })), screens.push({ block: b, bi: bi, ex: ex, ei: ei, cx: cx, ss: ss });
       });
     }), screens;
   }
@@ -12060,6 +12197,8 @@ details.details-moving > :not(summary) {
     for (i = 0; i < wo.entries.length; i++)
       logged += wo.entries[i].sets.filter(Boolean).length, planned += wo.screens[i] ? targetOf(wo.screens[i]) : 1;
     for (var j = wo.i + 1; j < wo.screens.length && !isStop(j); ) j++;
+    var hand = s && s.ss ? ssTurn(wo.i, 1).next : -1;
+    hand >= 0 && (j = hand);
     var cx = !!(s && s.cx), pre = s ? setPrefill(entry.sets.length) : null, round = cx ? cxLive(s) : null, setNo = entry.sets.filter(Boolean).length + 1;
     return {
       v: 1,
@@ -12164,7 +12303,7 @@ details.details-moving > :not(summary) {
       rounds: resume && resume.rounds || {},
       amrap: resume && resume.amrap || {},
       finished: !1
-    }, woPhase = "idle"; wo.i > 0 && !isStop(wo.i); ) wo.i--;
+    }, woPhase = "idle"; wo.i > 0 && !isStop(wo.i) && !wo.screens[wo.i].ss; ) wo.i--;
     Object.keys(wo.amrap).forEach(function(k) {
       var a = wo.amrap[k];
       a.until && a.until <= Date.now() && (a.until = 0, a.over = 1);
@@ -12535,7 +12674,7 @@ details.details-moving > :not(summary) {
           hist[k].was = hist[k].best;
         }), histReady = !0;
         var line = $("wlast");
-        line && wo && !wo.finished && (line.textContent = lastLine(wo.entries[wo.i]));
+        line && wo && !wo.finished && (line.textContent = lastLine(wo.entries[wo.i])), ssPrime();
       }
     });
   }
@@ -12612,13 +12751,13 @@ details.details-moving > :not(summary) {
   }
   function renderWorkout(hush) {
     if (wo) {
-      var main = $("wmain"), dots = $("wdots");
-      main.innerHTML = "", dots.innerHTML = "";
+      var main = $("wmain"), dots = $("wdots"), kept = ssKeep(main);
+      kept || (main.innerHTML = ""), dots.innerHTML = "";
       var slide = woSlide;
       woSlide = 0, main.classList.remove("wmease", "wmin"), main.style.transform = "", main.style.opacity = "";
       for (var n = Math.max(wo.screens.length, 1), k = 0; k < n; k++)
         if (!(wo.screens.length && !isStop(k))) {
-          var dot = el("div", "wdot" + (k === wo.i ? " on" : ""));
+          var dot = el("div", "wdot" + (k === stopOf(wo.i) ? " on" : ""));
           stopDone(k) && dot.classList.add("done"), dots.appendChild(dot);
         }
       var s = wo.screens[wo.i], entry = wo.entries[wo.i];
@@ -12637,6 +12776,8 @@ details.details-moving > :not(summary) {
       var cx = s.cx && !s.ei ? s.cx : null, focus = s.ex;
       if (cx)
         focus = cxBody(main, s, cx);
+      else if (s.ss)
+        focus = ssBody(main, s, kept);
       else {
         var blockLabel = blockName(s);
         s.block.rounds && (blockLabel += " \xB7 " + s.block.rounds + " rounds"), main.appendChild(el("div", "wblock", blockLabel)), main.appendChild(el("h2", "wname", s.ex.name));
@@ -12650,7 +12791,7 @@ details.details-moving > :not(summary) {
           wcue && main.appendChild(el("div", "wnote", wcue)), renderSetPills(main, entry, s.ex, targetOf(s));
         }
       }
-      if (!cx) {
+      if (!cx && !s.ss) {
         var intended = targetOf(s), completed = entry.sets.filter(Boolean).length, reached = completed >= intended, goal = el(
           "div",
           "set-goal" + (reached ? " reached" : ""),
@@ -12659,7 +12800,7 @@ details.details-moving > :not(summary) {
         goal.setAttribute("role", "status"), main.appendChild(goal);
       }
       var acts = el("div", "wactions exercise-actions");
-      if (!cx) {
+      if (!cx && !s.ss) {
         var add = el("button", "btn ghost wo-extra-set", isTimed(s.ex) ? "Log extra hold" : "+ Add set");
         add.onclick = function() {
           isTimed(s.ex) ? (logHold(entry.sets.length, s.ex.duration_seconds), renderWorkout()) : openSetSheet(entry.sets.length);
@@ -12687,7 +12828,7 @@ details.details-moving > :not(summary) {
         var tile = icon(el("button", "pickrow waddcard"), "plus"), tt = el("div", "pt");
         tt.appendChild(el("b", null, "Add an exercise")), tt.appendChild(el("span", null, "Something this card did not say.")), tile.appendChild(tt), tile.onclick = openWorkoutAdd, main.appendChild(tile);
       }
-      slide ? (main.style.setProperty("--wmx", (slide > 0 ? 30 : -30) + "px"), main.offsetWidth, main.classList.add("wmin")) : hush || viewIn(main);
+      slide ? (main.style.setProperty("--wmx", (slide > 0 ? 30 : -30) + "px"), main.offsetWidth, main.classList.add("wmin")) : !hush && !kept && viewIn(main);
     }
   }
   var justSet = -1;
@@ -12725,7 +12866,7 @@ details.details-moving > :not(summary) {
   }
   function openSetSheet(idx2) {
     if (wo) {
-      restFace || (restThen = null);
+      stepHome(), restFace || (restThen = null);
       var s = wo.screens[wo.i], entry = wo.entries[wo.i], pre = setPrefill(idx2);
       editing = null, $("repsbox").classList.remove("editing"), $("wtbox").classList.remove("editing"), setCtx.idx = pre.idx, setCtx.reps = pre.reps, setCtx.weight = pre.weight, $("settitle").textContent = (s && s.ex ? s.ex.name : "Set") + " \xB7 set " + (idx2 + 1), $("setlast").textContent = lastLine(entry), $("wtunit").textContent = state.unit, eachAt = wo.i, paintEach(), drawStepper(), openSheet("setsheet");
     }
@@ -12817,15 +12958,19 @@ details.details-moving > :not(summary) {
       }, at = wo.entries.indexOf(entry);
       eachOf(wo.screens[at] && wo.screens[at].ex, entry) && (set.each = !0);
       var k = exKey(entry), told = !!wo.prs[k];
-      prCheck(entry, set, k) && (set.pr = !0, told || toast("New best \u2014 " + (entry.name || "that lift"))), haptic(set.pr ? "pr" : "success"), entry.sets[setCtx.idx] = set, saveDraft(), closeSheet("setsheet"), justSet = setCtx.idx, renderWorkout();
-      var s = wo.screens[wo.i];
-      if (s && isCircuit(s.block)) {
-        var gap = restAfter(s);
-        gap > 0 ? startRest(gap, null, nextMove) : nextMove();
-        return;
+      prCheck(entry, set, k) && (set.pr = !0, told || toast("New best \u2014 " + (entry.name || "that lift"))), haptic(set.pr ? "pr" : "success");
+      var fresh = !entry.sets[setCtx.idx];
+      if (entry.sets[setCtx.idx] = set, saveDraft(), !ssLogged(fresh, setCtx.idx)) {
+        closeSheet("setsheet"), justSet = setCtx.idx, renderWorkout();
+        var s = wo.screens[wo.i];
+        if (s && isCircuit(s.block)) {
+          var gap = restAfter(s);
+          gap > 0 ? startRest(gap, null, nextMove) : nextMove();
+          return;
+        }
+        var secs = s ? restOf(s.ex, s.block, !1).secs : REST_FALLBACK;
+        secs > 0 && startRest(secs), s && !s.cx && setCtx.idx >= targetOf(s) - 1 && entry.sets.filter(Boolean).length >= targetOf(s) && wo.i < endStop() && nextMove();
       }
-      var secs = s ? restOf(s.ex, s.block, !1).secs : REST_FALLBACK;
-      secs > 0 && startRest(secs), s && !s.cx && setCtx.idx >= targetOf(s) - 1 && entry.sets.filter(Boolean).length >= targetOf(s) && wo.i < endStop() && nextMove();
     }
   }
   function prCheck(entry, set, k) {
@@ -12936,9 +13081,13 @@ details.details-moving > :not(summary) {
   function isTimed(ex) {
     return !!(ex && ex.duration_seconds > 0);
   }
+  function supersetOf(b, w) {
+    var ex = b && b.exercises || [];
+    return ex.length < 2 || b.type === "emom" || ex.every(isTimed) || complexOf(b, w) || b.type !== "superset" && !/\b(super|tri|giant)[\s-]?sets?\b/i.test(b.title || "") ? null : { n: ex.length };
+  }
   function isCircuit(b) {
     var ex = b && b.exercises || [];
-    return !!b && ((b.rounds || 0) > 1 || ex.length > 1 && ex.every(isTimed));
+    return !!b && !supersetOf(b) && ((b.rounds || 0) > 1 || ex.length > 1 && ex.every(isTimed));
   }
   function roundsOf(b) {
     return isCircuit(b) ? Math.max(b.rounds || 1, 1) : 1;
@@ -12947,7 +13096,7 @@ details.details-moving > :not(summary) {
     return wo && wo.rounds[bi] || 1;
   }
   function targetOf(s) {
-    return isCircuit(s.block) ? roundsOf(s.block) : Math.max(s.ex.sets || 1, 1);
+    return s.ss ? Math.max(s.ex.sets || s.block.rounds || 3, 1) : isCircuit(s.block) ? roundsOf(s.block) : Math.max(s.ex.sets || 1, 1);
   }
   function atRoundEnd() {
     var s = wo && wo.screens[wo.i];
@@ -12985,11 +13134,11 @@ details.details-moving > :not(summary) {
   }
   function workDone() {
     var s = wo && wo.screens[wo.i];
-    if (s) {
-      if (logHold(
-        isCircuit(s.block) ? roundOf(s.bi) - 1 : wo.entries[wo.i].sets.length,
-        s.ex.duration_seconds
-      ), woPhase = "idle", !isCircuit(s.block)) {
+    if (s && (logHold(
+      isCircuit(s.block) ? roundOf(s.bi) - 1 : wo.entries[wo.i].sets.length,
+      s.ex.duration_seconds
+    ), woPhase = "idle", !ssLogged(!0, wo.entries[wo.i].sets.length - 1))) {
+      if (!isCircuit(s.block)) {
         renderWorkout(1);
         var r = restOf(s.ex, s.block, !1);
         wo.entries[wo.i].sets.filter(Boolean).length < targetOf(s) && r.secs > 0 && startRest(r.secs);
@@ -13047,7 +13196,7 @@ details.details-moving > :not(summary) {
   }
   function isStop(i) {
     var s = wo && wo.screens[i];
-    return !!s && (!s.cx || !s.ei);
+    return !!s && (!(s.cx || s.ss) || !s.ei);
   }
   function endStop() {
     for (var i = Math.max(wo ? wo.screens.length : 0, 1) - 1; i > 0 && !isStop(i); ) i--;
@@ -13056,7 +13205,7 @@ details.details-moving > :not(summary) {
   function stopDone(i) {
     var s = wo.screens[i];
     return wo.entries.some(function(e, j) {
-      return e.sets.length && (s && s.cx ? e.block === s.bi : j === i);
+      return e.sets.length && (s && (s.cx || s.ss) ? e.block === s.bi : j === i);
     });
   }
   function cxOf(bi, cx) {
@@ -13221,6 +13370,135 @@ details.details-moving > :not(summary) {
       }
     }), out;
   }
+  function ssMembers(i) {
+    var s = wo.screens[i], out = [], k;
+    if (!s || !s.ss) return out;
+    for (k = i - s.ei; k < wo.screens.length && wo.screens[k].bi === s.bi; k++) out.push(k);
+    return out;
+  }
+  function ssDone(k) {
+    return wo.entries[k].sets.filter(Boolean).length;
+  }
+  function ssTurn(i, plus) {
+    var ms = ssMembers(i), n = ms.length, p = ms.indexOf(i), low = 1 / 0, top = 1, owed = [], t, d, j;
+    for (ms.forEach(function(k, j2) {
+      var due = targetOf(wo.screens[k]), got = ssDone(k) + (k === i && plus || 0);
+      top = Math.max(top, due), owed[j2] = got < due ? got : 1 / 0, low = Math.min(low, owed[j2]);
+    }), t = { round: low < 1 / 0 ? low + 1 : top, rounds: top, done: low === 1 / 0, up: ms[owed.indexOf(low)], next: -1, lap: !0 }, d = 1; d <= n && !t.done; d++)
+      if (j = (p + d) % n, owed[j] === low) {
+        t.next = ms[j], t.lap = j <= p;
+        break;
+      }
+    return t;
+  }
+  function stopOf(i) {
+    var s = wo && wo.screens[i];
+    return s && (s.cx || s.ss) ? i - s.ei : i;
+  }
+  function ssName(s) {
+    var n = (s.block.exercises || []).length;
+    return s.block.title || (n === 3 ? "Tri-set" : n > 3 ? "Giant set" : "Superset");
+  }
+  function ssIdx(e) {
+    for (var n = 0; e.sets[n]; ) n++;
+    return n;
+  }
+  function ssSum(k, round) {
+    var s = wo.screens[k], e = wo.entries[k], got = ssDone(k), last = e.sets[ssIdx(e) - 1], ask = askText(s.ex);
+    return last && (got >= round || got >= targetOf(s)) ? setText(last) + (last.seconds ? "" : last.weight ? " " + setUnit(last) : " reps") : "Set " + (ssIdx(e) + 1) + (ask ? " \xB7 " + ask : "");
+  }
+  var stepRows = null, ssHeld = null, ssView = null, ssHand = !1;
+  function stepTo(host, before) {
+    var rows = stepRows || (stepRows = [$("repsbox").parentNode, $("wtbox").parentNode]), from = rows[0].parentNode;
+    from !== host && (endEdit(), from && (from._key && from.isConnected && (ssHeld = { wo: from._wo, key: from._key, reps: setCtx.reps, weight: setCtx.weight }), rows.forEach(function(r) {
+      var g = r.cloneNode(!0);
+      g.classList.add("ghost"), g.inert = !0, noIds(g), from.insertBefore(g, r);
+    })), Array.prototype.forEach.call(host.querySelectorAll(".stepper.ghost"), function(g) {
+      g.parentNode.removeChild(g);
+    }), rows.forEach(function(r) {
+      host.insertBefore(r, before || null);
+    }));
+  }
+  function noIds(n) {
+    Array.prototype.forEach.call(n.querySelectorAll("[id]"), function(x) {
+      x.removeAttribute("id");
+    });
+  }
+  function stepHome() {
+    var body = $("setsheet").querySelector(".sheetbody");
+    stepTo(body, body.querySelector(".btnrow"));
+  }
+  function stepDock(dock) {
+    var pre;
+    stepRows && stepRows[0].parentNode === dock || (stepTo(dock), ssHeld && ssHeld.wo === wo && ssHeld.key === dock._key ? (setCtx.reps = ssHeld.reps, setCtx.weight = ssHeld.weight) : (pre = setPrefill(dock._idx), setCtx.reps = pre.reps, setCtx.weight = pre.weight), ssHeld = null, setCtx.idx = dock._idx, $("wtunit").textContent = state.unit, eachAt = dock._k, paintEach(), drawStepper());
+  }
+  function ssDock() {
+    var v = ssView, d = v && v.wo === wo && v.stack.isConnected ? v.stack.querySelector(".sspanel.open .ssdock") : null;
+    d && stepDock(d);
+  }
+  function ssPrime() {
+    var d = stepRows && stepRows[0].parentNode, pre;
+    !wo || wo.finished || !d || !d._key || d._wo !== wo || d._k !== wo.i || setCtx.weight || (pre = setPrefill(d._idx), pre.weight && setWeight(pre.weight));
+  }
+  function ssKeep(main) {
+    var v = ssView, s = wo.screens[wo.i];
+    return stepHome(), !v || v.wo !== wo || !s || !s.ss || v.at !== stopOf(wo.i) || v.n !== s.block.exercises.length || v.stack.parentNode !== main ? (ssView = null, null) : (Array.prototype.slice.call(main.childNodes).forEach(function(x) {
+      x !== v.stack && main.removeChild(x);
+    }), v);
+  }
+  function ssBody(main, s, v) {
+    var t = ssTurn(wo.i, 0), ms = ssMembers(wo.i), was = v ? v.open : -1, hand = ssHand, p, focused = !!v && v.stack.contains(document.activeElement);
+    return ssHand = !1, main.insertBefore(el("div", "wblock", ssName(s) + " \xB7 " + (t.done ? "All " + t.rounds + " rounds done" : "Round " + t.round + " of " + t.rounds)), v ? v.stack : null), v || (v = ssView = { wo: wo, at: stopOf(wo.i), n: ms.length, open: -1, stack: el("div", "ssstack"), panels: {} }, ms.forEach(function(k, n) {
+      v.stack.appendChild(v.panels[k] = ssPanel(k, n));
+    }), main.appendChild(v.stack)), ms.forEach(function(k) {
+      ssHead(v.panels[k], k, t.round);
+    }), p = v.panels[wo.i], ssLive(p, wo.i), v.stack.classList.toggle("hand", hand), was !== wo.i && was >= 0 && (focused && p.firstChild.focus({ preventScroll: !0 }), setTimeout(function() {
+      ssReveal(p);
+    }, lessMotion() ? 0 : 400)), v.open = wo.i, s.ex;
+  }
+  function ssPanel(k, n) {
+    var p = el("section", "sspanel"), head = el("button", "pickrow sshead"), t = el("span", "pt"), wrap = el("div", "sswrap"), body = el("div", "ssbody");
+    return head.appendChild(el("span", "ssletter", String.fromCharCode(65 + n))), p._name = t.appendChild(el("b")), p._sum = t.appendChild(el("span")), head.appendChild(t), p._count = head.appendChild(el("span", "sscount")), head.onclick = function() {
+      ssOpen(k);
+    }, p._in = body.appendChild(el("div", "ssin")), wrap.appendChild(body), p.appendChild(head), p.appendChild(wrap), p;
+  }
+  function ssHead(p, k, round) {
+    var s = wo.screens[k], got = ssDone(k), due = targetOf(s), open = k === wo.i;
+    !open && p.classList.contains("open") && ssGhost(p, k), p.classList.toggle("open", open), p.classList.toggle("done", got >= due), p.firstChild.setAttribute("aria-expanded", open), p._in.inert = !open, p._name.textContent = s.ex.name, p._sum.textContent = open ? doseText(Object.assign({}, s.ex, { sets: due })) : ssSum(k, round), p._count.textContent = got + "/" + due;
+  }
+  function ssLive(p, k) {
+    var box = p._in, s = wo.screens[k], e = wo.entries[k], ex = s.ex, idx2 = ssIdx(e), due = targetOf(s), cue = cueOf(ex), last, dock, go;
+    if (box.innerHTML = "", ex.recommendation && box.appendChild(el("div", "wnote", ex.recommendation.note)), isTimed(ex)) {
+      timedBody(box, s, e);
+      return;
+    }
+    last = el("div", "wnote wlast", lastLine(e)), last.id = "wlast", box.appendChild(last), ex.weight && box.appendChild(el("div", "wnote", "Suggested load: " + ex.weight)), cue && cue.length <= 90 && box.appendChild(el("div", "wnote", cue)), renderSetPills(box, e, ex, due), dock = box.appendChild(el("div", "ssdock")), dock._wo = wo, dock._k = k, dock._idx = idx2, dock._key = k + ":" + idx2, $("setsheet").classList.contains("open") || stepDock(dock), go = el("button", "btn sslog", idx2 < due ? "Log set " + (idx2 + 1) : "Log extra set"), go.onclick = saveSet, box.appendChild(go);
+  }
+  function ssGhost(p, k) {
+    var box = p._in, pills = box.querySelector(".setpills"), tmp = el("div"), s = wo.screens[k];
+    pills && (renderSetPills(tmp, wo.entries[k], s.ex, targetOf(s)), box.replaceChild(tmp.firstChild, pills)), noIds(box), setTimeout(function() {
+      p.classList.contains("open") || (box.innerHTML = "");
+    }, 560);
+  }
+  function ssOpen(k) {
+    !wo || wo.finished || wo.i === k || (stopWork(), wo.i = k, haptic("tap"), saveDraft(), renderWorkout(1));
+  }
+  function ssReveal(p) {
+    var m = $("wmain"), a = p.getBoundingClientRect(), b = m.getBoundingClientRect(), d = Math.min(Math.max(a.bottom - b.bottom + 8, 0), a.top - b.top - 8);
+    d && p.isConnected && !p.closest(".sspanel:not(.open)") && m.scrollBy({ top: d, behavior: lessMotion() ? "auto" : "smooth" });
+  }
+  $("wmain").addEventListener("focusin", function(e) {
+    var box = e.target.classList.contains("numin") ? e.target.parentNode : null;
+    box && setTimeout(function() {
+      ssReveal(box);
+    }, 450);
+  });
+  function ssLogged(fresh, idx2) {
+    var i = wo.i, s = wo.screens[i], t, secs, moved;
+    return !s || !s.ss ? !1 : (justSet = idx2, closeSheet("setsheet"), fresh ? (t = ssTurn(i, 0), secs = restOf(s.ex, s.block, t.lap).secs, secs > 0 ? startRest(secs) : restUntil && !restFace && stopRest(), t.done ? (wo.i < endStop() ? (justSet = -1, nextMove()) : renderWorkout(1), !0) : (moved = t.next !== i, wo.i = t.next, ssHand = moved, saveDraft(), renderWorkout(1), moved && setTimeout(function() {
+      haptic("tap");
+    }, 180), !0)) : (renderWorkout(1), !0));
+  }
   function openWatch(w, ex) {
     if (wo) {
       w = w || wo.workout;
@@ -13235,8 +13513,8 @@ details.details-moving > :not(summary) {
   }
   function woGo(delta) {
     if (wo) {
-      for (var next = wo.i + delta; next > 0 && next < wo.screens.length && !isStop(next); ) next += delta;
-      next < 0 || next >= Math.max(wo.screens.length, 1) || (stopWork(), wo.i = next, saveDraft(), renderWorkout());
+      for (var next = stopOf(wo.i) + delta; next > 0 && next < wo.screens.length && !isStop(next); ) next += delta;
+      next < 0 || next >= Math.max(wo.screens.length, 1) || (wo.screens[next] && wo.screens[next].ss && (next = ssTurn(next, 0).up), stopWork(), wo.i = next, saveDraft(), renderWorkout());
     }
   }
   var WM_LEAD = 72, WM_BAND = 26, woSlide = 0;
@@ -13244,7 +13522,7 @@ details.details-moving > :not(summary) {
     var md = null;
     function paint2(dx) {
       if (!md.calm) {
-        var end = dx < 0 ? wo.i >= endStop() : wo.i <= 0, lead = end ? clamp(dx / 5, -WM_BAND, WM_BAND) : clamp(dx / 2, -WM_LEAD, WM_LEAD);
+        var end = dx < 0 ? wo.i >= endStop() : stopOf(wo.i) <= 0, lead = end ? clamp(dx / 5, -WM_BAND, WM_BAND) : clamp(dx / 2, -WM_LEAD, WM_LEAD);
         main.style.transform = "translateX(" + lead + "px)", main.style.opacity = String(1 - Math.abs(lead) / 320);
       }
     }
@@ -13258,7 +13536,7 @@ details.details-moving > :not(summary) {
           }
           swallowClick();
           var s = d.s, a = s[0], b = s[s.length - 1], dt = (b.t - a.t) / 1e3, v = dt > 4e-3 ? (b.x - a.x) / dt : 0, far = Math.abs(d.dx) > main.offsetWidth * 0.4, n = cancelled || !wo ? 0 : v < -FLING || far && d.dx < 0 ? 1 : v > FLING || far && d.dx > 0 ? -1 : 0;
-          n > 0 && wo.i >= endStop() && (n = 0), n < 0 && wo.i <= 0 && (n = 0), main.classList.add("wmease"), main.style.transform = "", main.style.opacity = "", n && (woSlide = n, woGo(n), haptic("tap"));
+          n > 0 && wo.i >= endStop() && (n = 0), n < 0 && stopOf(wo.i) <= 0 && (n = 0), main.classList.add("wmease"), main.style.transform = "", main.style.opacity = "", n && (woSlide = n, woGo(n), haptic("tap"));
         }
       }
     }
@@ -17017,7 +17295,7 @@ details.details-moving > :not(summary) {
   function closeSheet(id, fromPop) {
     var n = $(id);
     if (n.classList.contains("open")) {
-      if (id === "aiconsentsheet" && dismissAiConsent(), guideClear("hold"), id === "welcomesheet") {
+      if (id === "aiconsentsheet" && dismissAiConsent(), id === "setsheet" && ssDock(), guideClear("hold"), id === "welcomesheet") {
         welcomeDone();
         var focus = welcomeReturn && welcomeReturn.isConnected && !welcomeReturn.closest("#landing, .sheet:not(.open)") ? welcomeReturn : $("addbtn");
         focus && focus.focus({ preventScroll: !0 });
@@ -18706,13 +18984,15 @@ details.details-moving > :not(summary) {
       var list = $("exlist");
       list.innerHTML = "", wo.screens.forEach(function(s, i) {
         if (isStop(i)) {
-          var cxh = s.cx && !s.ei ? s.cx : null, row = el("button", "pickrow"), t = el("div", "pt");
-          if (t.appendChild(el("b", null, cxh ? s.block.title || "Complex" : s.ex.name)), t.appendChild(el("span", null, cxh ? cxh.n + " movements" + (cxh.cap ? " \xB7 " + Math.round(cxh.cap / 60) + " min" : "") : doseText(s.ex) || "\u2014")), row.appendChild(t), stopDone(i)) {
+          var cxh = s.cx && !s.ei ? s.cx : null, ssh = !!s.ss, row = el("button", "pickrow"), t = el("div", "pt");
+          if (t.appendChild(el("b", null, cxh ? s.block.title || "Complex" : ssh ? ssName(s) : s.ex.name)), t.appendChild(el("span", null, cxh ? cxh.n + " movements" + (cxh.cap ? " \xB7 " + Math.round(cxh.cap / 60) + " min" : "") : ssh ? ssMembers(i).map(function(k) {
+            return wo.screens[k].ex.name;
+          }).join(" \xB7 ") : doseText(s.ex) || "\u2014")), row.appendChild(t), stopDone(i)) {
             var tick = icon(el("span", "daydone"), "check");
             tick.setAttribute("role", "img"), tick.setAttribute("aria-label", "Logged"), row.appendChild(tick);
           }
           row.onclick = function() {
-            stopWork(), wo.i = i, closeSheet("exsheet"), renderWorkout();
+            stopWork(), wo.i = ssh ? ssTurn(i, 0).up : i, closeSheet("exsheet"), renderWorkout();
           }, list.appendChild(row);
         }
       }), openSheet("exsheet");
