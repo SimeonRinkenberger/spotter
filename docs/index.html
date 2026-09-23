@@ -804,6 +804,65 @@ h1 {
 .search::placeholder {
   color: var(--muted);
 }
+#searchwrap {
+  display: flex;
+  align-items: center;
+}
+#searchwrap .search {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+}
+.searchx {
+  flex: 0 0 auto;
+  width: 0;
+  height: 44px;
+  margin-left: 0;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: var(--sand);
+  color: var(--ink-2);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transform: scale(.6);
+  pointer-events: none;
+  transition:
+    width var(--t-2) var(--e-in),
+    margin-left var(--t-2) var(--e-in),
+    opacity var(--t-1) var(--e-in),
+    transform var(--t-2) var(--e-in);
+}
+#searchwrap:focus-within .searchx {
+  width: 44px;
+  margin-left: 8px;
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+  transition:
+    width var(--t-2) var(--e-out),
+    margin-left var(--t-2) var(--e-out),
+    opacity var(--t-2) var(--e-out),
+    transform var(--t-2) var(--e-out);
+}
+#searchwrap:focus-within .searchx:active {
+  transform: scale(.92);
+  transition-duration: var(--t-1);
+}
+.searchx .ic {
+  width: 18px;
+  height: 18px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .searchx,
+  #searchwrap:focus-within .searchx {
+    transform: none;
+    transition: opacity var(--t-1) var(--e-soft);
+  }
+}
 .chips {
   display: flex;
   gap: 7px;
@@ -6155,11 +6214,11 @@ body:not(.app) #toast.show {
   -webkit-backdrop-filter: blur(14px);
   backdrop-filter: blur(14px);
 }
-body.kb .composer {
+html:not(.kb-over) body.kb .composer {
   bottom: 0;
   margin-bottom: 0;
 }
-body.kb .page {
+html:not(.kb-over) body.kb .page {
   padding-bottom: 24px;
 }
 body.kb .tabbar {
@@ -6169,23 +6228,23 @@ html.native {
   --vvh: 100%;
   --sab: env(safe-area-inset-bottom);
 }
-html.native:has(body.kb) {
+html.native:not(.kb-over):has(body.kb) {
   --sab: 0px;
 }
 html.native input,
 html.native textarea {
   scroll-margin-block: 16px;
 }
-html.native.keyboard-moving .composer {
+html.native.keyboard-moving:not(.kb-over) .composer {
   transition: bottom var(--keyboard-duration) var(--keyboard-curve), margin-bottom var(--keyboard-duration) var(--keyboard-curve);
 }
-html.native.keyboard-moving .page {
+html.native.keyboard-moving:not(.kb-over) .page {
   transition: padding-bottom var(--keyboard-duration) var(--keyboard-curve);
 }
-html.native.keyboard-moving .sheetbody {
+html.native.keyboard-moving:not(.kb-over) .sheetbody {
   transition: padding-bottom var(--keyboard-duration) var(--keyboard-curve), transform var(--t-2) var(--e-in);
 }
-html.native.keyboard-moving .sheet.open .sheetbody {
+html.native.keyboard-moving:not(.kb-over) .sheet.open .sheetbody {
   transition: padding-bottom var(--keyboard-duration) var(--keyboard-curve), transform .38s var(--e-spring);
 }
 html.native .tabbar {
@@ -6198,12 +6257,48 @@ html.native body.kb .tabbar {
   opacity: 0;
   pointer-events: none;
 }
+html.kb-over .sheetbody {
+  translate: 0 calc(-1 * var(--lift, 0px));
+  transition: transform var(--t-2) var(--e-in), translate var(--kt, 0s) var(--ke, ease) var(--kd, 0s);
+}
+html.kb-over .sheet.open .sheetbody {
+  transition: transform .38s var(--e-spring), translate var(--kt, 0s) var(--ke, ease) var(--kd, 0s);
+}
+html.kb-over .sheet.open .sheetbody.dragging {
+  transition: translate var(--kt, 0s) var(--ke, ease) var(--kd, 0s);
+}
+html.kb-over .composer {
+  translate: 0 calc(-1 * var(--lift, 0px));
+  transition: translate var(--kt, 0s) var(--ke, ease) var(--kd, 0s);
+}
+.kbback {
+  display: none;
+}
+html.kb-over .kbback {
+  display: block;
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 100%;
+  height: 100%;
+  z-index: 89;
+  background: var(--paper);
+  pointer-events: none;
+  will-change: translate;
+  translate: 0 calc(-1 * var(--lift, 0px));
+  transition: translate var(--kt, 0s) var(--ke, ease) var(--kd, 0s);
+}
 @media (prefers-reduced-motion: reduce) {
   html.native.keyboard-moving .composer,
   html.native.keyboard-moving .page,
   html.native.keyboard-moving .sheetbody,
   html.native.keyboard-moving .sheet.open .sheetbody,
-  html.native .tabbar {
+  html.native .tabbar,
+  html.kb-over .sheetbody,
+  html.kb-over .sheet.open .sheetbody,
+  html.kb-over .sheet.open .sheetbody.dragging,
+  html.kb-over .composer,
+  html.kb-over .kbback {
     transition: none;
   }
 }
@@ -7881,6 +7976,7 @@ details.details-moving > :not(summary) {
         <label class="searchwrap" id="searchwrap">
           <span class="searchico"><svg class="ic"><use href="#i-search"></use></svg></span>
           <input class="search" id="search" type="search" placeholder="Search workouts, exercises, muscles" autocapitalize="off" autocomplete="off">
+          <button class="searchx" id="searchx" type="button" aria-label="Hide keyboard"><svg class="ic"><use href="#i-x"></use></svg></button>
         </label>
 
         <div id="hint">
@@ -13489,10 +13585,12 @@ details.details-moving > :not(summary) {
     d && p.isConnected && !p.closest(".sspanel:not(.open)") && m.scrollBy({ top: d, behavior: lessMotion() ? "auto" : "smooth" });
   }
   $("wmain").addEventListener("focusin", function(e) {
-    var box = e.target.classList.contains("numin") ? e.target.parentNode : null;
-    box && setTimeout(function() {
-      ssReveal(box);
-    }, 450);
+    if (!document.documentElement.classList.contains("kb-over")) {
+      var box = e.target.classList.contains("numin") ? e.target.parentNode : null;
+      box && setTimeout(function() {
+        ssReveal(box);
+      }, 450);
+    }
   });
   function ssLogged(fresh, idx2) {
     var i = wo.i, s = wo.screens[i], t, secs, moved;
@@ -18671,6 +18769,128 @@ details.details-moving > :not(summary) {
       kbOn = !1, kbSettle = !0;
       for (var i = 0, ms = [0, 60, 150, 300, 600]; i < ms.length; i++) setTimeout(fitViewport, ms[i]);
     }
+  });
+  var kbOwner = null, kbProbe = null, kbBack = null, kbPlainBox = null;
+  function kbOver() {
+    return !!(native && native.keyboard && document.documentElement.classList.contains("kb-over"));
+  }
+  function kbSafe() {
+    kbProbe || (kbProbe = el("div"), kbProbe.setAttribute("aria-hidden", "true"), kbProbe.style.cssText = "position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;pointer-events:none;padding-top:env(safe-area-inset-top);padding-bottom:var(--sab)", document.body.appendChild(kbProbe));
+    var cs = getComputedStyle(kbProbe);
+    return { top: parseFloat(cs.paddingTop) || 0, bottom: parseFloat(cs.paddingBottom) || 0 };
+  }
+  function kbFocus() {
+    var f = document.activeElement;
+    return !f || f === document.body ? null : f.tagName === "INPUT" || f.tagName === "TEXTAREA" || f.isContentEditable ? f : null;
+  }
+  function kbScroller(n) {
+    for (n = n && n.parentElement; n && n !== document.body; n = n.parentElement) {
+      var o = getComputedStyle(n).overflowY;
+      if (o === "auto" || o === "scroll") return n;
+    }
+    return null;
+  }
+  function kbFlow(box) {
+    for (var out = [], kids = box.children, i = 0; i < kids.length; i++) {
+      var p = getComputedStyle(kids[i]).position;
+      (p === "static" || p === "relative") && out.push(kids[i]);
+    }
+    return out;
+  }
+  function kbShift(nodes, anchor, change, d) {
+    var before = anchor ? anchor.getBoundingClientRect().top : 0, i;
+    for (i = 0; i < nodes.length; i++)
+      nodes[i]._kbGlide && (nodes[i]._kbGlide.cancel(), nodes[i]._kbGlide = null);
+    if (change(), !!anchor) {
+      var dy = before - anchor.getBoundingClientRect().top;
+      if (!(Math.abs(dy) < 0.5 || !d.duration || lessMotion()))
+        for (i = 0; i < nodes.length; i++)
+          nodes[i].animate && (nodes[i]._kbGlide = nodes[i].animate(
+            [{ translate: "0 " + dy + "px" }, { translate: "0 0" }],
+            { duration: d.duration * 1e3, delay: -(d.elapsed || 0) * 1e3, easing: d.easing }
+          ));
+    }
+  }
+  function kbPad(box, px) {
+    px > 0 ? (box._kbRest == null && (box._kbRest = box.style.paddingBottom, box._kbBase = parseFloat(getComputedStyle(box).paddingBottom) || 0), box.style.paddingBottom = box._kbBase + px + "px") : box._kbRest != null && (box.style.paddingBottom = box._kbRest, box._kbRest = null);
+  }
+  function kbPadOf(box) {
+    return box._kbRest == null ? 0 : (parseFloat(box.style.paddingBottom) || 0) - box._kbBase;
+  }
+  function kbReveal(sc2, bottom, K) {
+    var over = bottom - (window.innerHeight - K - 16);
+    if (!(over <= 0)) {
+      var s = sc2 || document.scrollingElement;
+      s.scrollTop = s.scrollTop + over;
+    }
+  }
+  function kbLift(node, px, d) {
+    var st = node.style;
+    st.setProperty("--kt", (lessMotion() ? 0 : d.duration || 0) + "s"), st.setProperty("--ke", d.easing || "ease"), st.setProperty("--kd", -(d.elapsed || 0) + "s"), px > 0 ? st.setProperty("--lift", px + "px") : st.removeProperty("--lift");
+  }
+  function kbSheet(b, K, f, d) {
+    var safe = kbSafe(), want = K ? Math.max(0, K - safe.bottom) : 0, lift = Math.min(want, Math.max(0, b.offsetTop - safe.top - 8)), under = want - lift;
+    if (kbLift(b, lift, d), !d.instant) {
+      under > 0 && b._kbHeight == null && (b._kbHeight = b.style.maxHeight, b.style.maxHeight = b.offsetHeight + "px");
+      var kids = kbFlow(b);
+      kbShift(kids, kids[0], function() {
+        if (kbPad(b, under), !under && b._kbHeight != null && (b.style.maxHeight = b._kbHeight, b._kbHeight = null), under && f) {
+          var r = f.getBoundingClientRect(), br = b.getBoundingClientRect();
+          kbReveal(b, b.offsetTop - lift + (r.bottom - br.top), K);
+        }
+      }, d);
+    }
+  }
+  function kbComposer(c, K, d) {
+    var p = $("pumpyview"), log = $("pumpylog"), rest = parseFloat(getComputedStyle(c).bottom) || 0, lift = K ? Math.max(0, K - rest) : 0;
+    if (kbLift(c, lift, d), !d.instant) {
+      var was = kbPadOf(log), s0 = p.scrollTop;
+      lift !== was && kbShift([log], log.firstElementChild || log, function() {
+        kbPad(log, lift), p.scrollTop = s0 + lift - was;
+      }, d);
+    }
+  }
+  function kbPlain(f, sc2, K, d) {
+    if (!d.instant) {
+      var box = sc2 || kbPlainBox || f && f.closest("body > *") || document.body;
+      sc2 || (kbPlainBox = K ? box : null);
+      var extra = 0;
+      if (K) {
+        var bottom = sc2 ? sc2.getBoundingClientRect().bottom : window.innerHeight, covered = K - (window.innerHeight - bottom), base = box._kbRest == null ? parseFloat(getComputedStyle(box).paddingBottom) || 0 : box._kbBase;
+        extra = Math.max(0, covered + 16 - base);
+      }
+      if (!(extra === kbPadOf(box) && !f)) {
+        var kids = kbFlow(box);
+        kbShift(kids, kids[0], function() {
+          kbPad(box, extra), f && kbReveal(sc2, f.getBoundingClientRect().bottom, K);
+        }, d);
+      }
+    }
+  }
+  function kbPlace(o, K, f, d) {
+    o.kind === "sheet" ? kbSheet(o.node, K, f, d) : o.kind === "composer" ? kbComposer(o.node, K, d) : kbPlain(f, o.node, K, d);
+  }
+  function kbApply(d) {
+    if (kbOver()) {
+      var K = d.visible ? d.height : 0, f = K ? kbFocus() : null, o = null, n;
+      if (kbBack || (kbBack = el("div", "kbback"), kbBack.setAttribute("aria-hidden", "true"), document.body.appendChild(kbBack), getComputedStyle(kbBack).translate), kbLift(kbBack, K, d), d.instant) {
+        kbOwner && kbPlace(kbOwner, K, null, d);
+        return;
+      }
+      f && (n = f.closest(".sheet.open .sheetbody")) ? o = { kind: "sheet", node: n } : f && (n = f.closest(".composer")) ? o = { kind: "composer", node: n } : f && (o = { kind: "plain", node: kbScroller(f) }), kbOwner && (!o || !K || o.kind !== kbOwner.kind || o.node !== kbOwner.node) && (kbPlace(kbOwner, 0, null, d), kbOwner = null), o && K && (kbOwner = o, kbPlace(o, K, f, d));
+    }
+  }
+  window.addEventListener("spotter:keyboard", function(e) {
+    kbApply(e.detail || {});
+  }), document.addEventListener("focusin", function() {
+    var k = native && native.keyboard;
+    !k || !k.visible || !kbOver() || kbApply({ visible: !0, height: k.height, duration: k.duration || 0.25, easing: k.easing });
+  }), $("searchx").addEventListener("pointerdown", function(e) {
+    e.preventDefault();
+  }), $("searchx").onclick = function() {
+    $("search").blur(), this.blur();
+  }, $("search").addEventListener("keydown", function(e) {
+    e.key === "Enter" && this.blur();
   });
   var ptrStart = 0, ptrPulling = !1;
   function refreshActive() {

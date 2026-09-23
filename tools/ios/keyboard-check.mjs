@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
-import { installKeyboard } from '../../native/keyboard.js';
+import { installKeyboard, keyboardEasing, KEYBOARD_EASE } from '../../native/keyboard.js';
 
 const listeners = {}, domListeners = {}, nativeListeners = {}, classes = new Set(), properties = new Map(), timers = new Map();
 let timerID = 0;
@@ -15,7 +15,8 @@ const win = { SpotterNative: {}, visualViewport: { height: 500 }, innerHeight: 5
 const removed = [];
 const doc = {
   documentElement: { classList: { add: name => classes.add(name), remove: name => classes.delete(name) },
-    style: { setProperty: (name, value) => properties.set(name, value), removeProperty: name => removed.push(name) } },
+    style: { setProperty: (name, value) => properties.set(name, value), removeProperty: name => removed.push(name),
+      getPropertyValue: name => properties.get(name) ?? '' } },
   body: { classList: { toggle: (name, on) => on ? classes.add(name) : classes.delete(name) } },
   querySelector: () => tabs,
   addEventListener: (name, fn) => { domListeners[name] = fn; }, activeElement: null
@@ -27,6 +28,7 @@ await installKeyboard({
 }, win, doc);
 assert.equal(accessory, false);
 assert(classes.has('native'));
+assert(!classes.has('kb-over'), 'a resizing host (Android) keeps the resize-following CSS');
 const field = (id, tagName = 'INPUT', type = 'text', inputMode = '') => ({ id, tagName, type, inputMode, style: {} });
 const chat = field('pumpyinput', 'TEXTAREA');
 const weight = field('wtin', 'INPUT', 'text', 'decimal');
@@ -119,3 +121,43 @@ nativeListeners['spotter:keyboard-transition']({ visible: false, duration: 0.25 
 barHeight = 116; measure(); assert.equal(properties.get('--ptab'), '112px');
 finish(); assert.equal(properties.get('--ptab'), '116px', 'resting layout is measured once dismissal settles');
 console.log('PASS stable composer clearance during keyboard dismissal, rapid refocus and final safe-area reconciliation.');
+
+// The iOS shell: the frame stays still and the page lifts surfaces itself.
+{
+  const cls = new Set(), props = new Map(), nl = {}, events = [], t = new Map();
+  let id = 0;
+  const w = { SpotterNative: {}, setTimeout: fn => { t.set(++id, fn); return id; }, clearTimeout: i => t.delete(i),
+    addEventListener: (name, fn) => { nl[name] = fn; },
+    dispatchEvent: event => { events.push(event); nl[event.type]?.(event); },
+    getComputedStyle: () => ({ fontSize: '16px' }) };
+  const bar = { inert: false };
+  const d = {
+    documentElement: { classList: { add: n => cls.add(n), remove: n => cls.delete(n) },
+      style: { setProperty: (n, v) => props.set(n, v), getPropertyValue: n => props.get(n) ?? '', removeProperty() {} } },
+    body: { classList: { toggle: (n, on) => on ? cls.add(n) : cls.delete(n) } },
+    querySelector: () => bar, addEventListener() {}, activeElement: null };
+  await installKeyboard({ addListener: async () => {}, setAccessoryBarVisible: async () => {} }, w, d, { stillFrame: true });
+  assert(cls.has('kb-over'), 'the iOS shell marks the still frame');
+  assert.equal(keyboardEasing(7), KEYBOARD_EASE, 'curve 7 is the keyboard spring, not ease-in-out');
+  assert.match(KEYBOARD_EASE, /^cubic-bezier\(/, 'a cubic, which WebKit composites');
+  assert.equal(keyboardEasing(3), 'linear');
+  nl['spotter:keyboard-transition']({ visible: true, height: 305.6, duration: 0.3833, curve: 7, elapsed: 0.02 });
+  const lift = events.filter(e => e.type === 'spotter:keyboard').pop().detail;
+  assert.deepEqual([lift.visible, lift.height, lift.duration, lift.elapsed, lift.instant],
+    [true, 306, 0.3833, 0.02, false], 'height, timing and how far in the keys already are');
+  assert.equal(props.get('--keyboard-curve'), KEYBOARD_EASE);
+  assert(!props.has('--kb'), 'nothing per-keyboard is set on the root, which would restyle the page');
+  assert(cls.has('kb') && bar.inert, 'navigation hidden under the keys');
+  nl['spotter:keyboard-track']({ height: 200 });
+  const drag = events.filter(e => e.type === 'spotter:keyboard').pop().detail;
+  assert.deepEqual([drag.visible, drag.height, drag.duration, drag.instant], [true, 200, 0, true],
+    'a finger-dragged keyboard is followed without animation');
+  nl['spotter:keyboard-transition']({ visible: false, height: 0, duration: 0.3833, curve: 7, elapsed: 0.5 });
+  const down = events.filter(e => e.type === 'spotter:keyboard').pop().detail;
+  assert.deepEqual([down.visible, down.height, down.elapsed], [false, 0, 0.3833], 'elapsed never exceeds the duration');
+  assert(!cls.has('kb') && !bar.inert);
+  nl['spotter:keyboard-track']({ height: 120 });
+  assert.equal(events.filter(e => e.type === 'spotter:keyboard').pop().detail.visible, false,
+    'a late sample cannot reopen a keyboard that has gone');
+  console.log('PASS still-frame keyboard: curve 7 spring cubic, height and timeline hand-off, finger tracking, no root restyle.');
+}

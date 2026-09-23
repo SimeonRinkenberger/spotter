@@ -341,6 +341,29 @@ export const STYLE = String.raw`<style>
     outline: none; transition: border-color var(--t-2), background-color var(--t-2); }
   .search:focus { border-color: var(--ember); background: var(--card); }
   .search::placeholder { color: var(--muted); }
+  /* The way out of typing, beside the field for exactly as long as the field has
+     the keyboard: the trailing slot UISearchBar gives its Cancel. It closes the
+     keyboard and keeps the query, because the results are what the reader wanted
+     room to see; clearing stays with the field's own clear button. The field
+     gives it room the way UIKit's does, by getting narrower. */
+  #searchwrap { display: flex; align-items: center; }
+  #searchwrap .search { flex: 1 1 auto; width: auto; min-width: 0; }
+  .searchx { flex: 0 0 auto; width: 0; height: 44px; margin-left: 0; padding: 0; border: none;
+    border-radius: 999px; background: var(--sand); color: var(--ink-2); overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    opacity: 0; transform: scale(.6); pointer-events: none;
+    transition: width var(--t-2) var(--e-in), margin-left var(--t-2) var(--e-in),
+      opacity var(--t-1) var(--e-in), transform var(--t-2) var(--e-in); }
+  #searchwrap:focus-within .searchx { width: 44px; margin-left: 8px; opacity: 1; transform: none;
+    pointer-events: auto;
+    transition: width var(--t-2) var(--e-out), margin-left var(--t-2) var(--e-out),
+      opacity var(--t-2) var(--e-out), transform var(--t-2) var(--e-out); }
+  #searchwrap:focus-within .searchx:active { transform: scale(.92); transition-duration: var(--t-1); }
+  .searchx .ic { width: 18px; height: 18px; }
+  @media (prefers-reduced-motion: reduce) {
+    .searchx, #searchwrap:focus-within .searchx { transform: none;
+      transition: opacity var(--t-1) var(--e-soft); }
+  }
 
   /* ---------- filter chips ---------- */
   /* This row used to ask for horizontal pans back, because the pager was taking
@@ -2348,35 +2371,70 @@ export const STYLE = String.raw`<style>
   /* Keyboard up: #app follows the visual viewport but .tabbar, fixed to the layout
      one, is behind the keys — so the composer's clearance for the bar is a margin
      below nothing. Sit it on the app's own bottom edge and take the bar out of the
-     way, as a native chat app does. */
-  body.kb .composer { bottom: 0; margin-bottom: 0; }
-  body.kb .page { padding-bottom: 24px; }
+     way, as a native chat app does. The browser and the Android shell, whose frame
+     really does end at the keyboard; the iOS shell's does not (kb-over, below). */
+  html:not(.kb-over) body.kb .composer { bottom: 0; margin-bottom: 0; }
+  html:not(.kb-over) body.kb .page { padding-bottom: 24px; }
   body.kb .tabbar { visibility: hidden; }
-  /* The native webview ends at the keyboard; there is no home indicator there.
+  /* The Android webview ends at the keyboard; there is no home indicator there.
      Restore the real device inset automatically when the keyboard closes. */
   html.native { --vvh: 100%; --sab: env(safe-area-inset-bottom); }
-  html.native:has(body.kb) { --sab: 0px; }
+  html.native:not(.kb-over):has(body.kb) { --sab: 0px; }
   html.native input, html.native textarea { scroll-margin-block: 16px; }
-  /* UIKit resizes the outer frame. Animate only the web content's keyboard
+  /* Android resizes the outer frame. Animate only the web content's keyboard
      clearance, so the composer and form padding do not snap ahead of it. */
-  html.native.keyboard-moving .composer {
+  html.native.keyboard-moving:not(.kb-over) .composer {
     transition: bottom var(--keyboard-duration) var(--keyboard-curve),
       margin-bottom var(--keyboard-duration) var(--keyboard-curve); }
-  html.native.keyboard-moving .page {
+  html.native.keyboard-moving:not(.kb-over) .page {
     transition: padding-bottom var(--keyboard-duration) var(--keyboard-curve); }
-  html.native.keyboard-moving .sheetbody {
+  html.native.keyboard-moving:not(.kb-over) .sheetbody {
     transition: padding-bottom var(--keyboard-duration) var(--keyboard-curve),
       transform var(--t-2) var(--e-in); }
-  html.native.keyboard-moving .sheet.open .sheetbody {
+  html.native.keyboard-moving:not(.kb-over) .sheet.open .sheetbody {
     transition: padding-bottom var(--keyboard-duration) var(--keyboard-curve),
       transform .38s var(--e-spring); }
   html.native .tabbar { visibility: visible; opacity: 1;
     transition: opacity var(--keyboard-duration, .25s) var(--keyboard-curve, ease-in-out); }
   html.native body.kb .tabbar { visibility: visible; opacity: 0; pointer-events: none; }
+  /* ---------- the keyboard over a still frame (the iOS shell) ----------
+     The web view keeps its full height and the keys slide over it, so nothing
+     re-lays out while they move. The surface that owns the field rides up on a
+     translate — its own property, so it composes with the transform the sheets
+     open, close and drag on — for app.ts's --lift, over UIKit's own duration and
+     curve (keyboard.js), on the keys' own timeline: --kd is how long they had
+     been moving when the page heard, so the lift starts that far in. All three
+     live on the moving element, never the root. Individual transform
+     properties are composited in WebKit, so a busy main thread cannot stall them
+     (checked in the Simulator with a 500ms busy loop mid-lift). */
+  html.kb-over .sheetbody { translate: 0 calc(-1 * var(--lift, 0px));
+    transition: transform var(--t-2) var(--e-in),
+      translate var(--kt, 0s) var(--ke, ease) var(--kd, 0s); }
+  html.kb-over .sheet.open .sheetbody {
+    transition: transform .38s var(--e-spring),
+      translate var(--kt, 0s) var(--ke, ease) var(--kd, 0s); }
+  html.kb-over .sheet.open .sheetbody.dragging {
+    transition: translate var(--kt, 0s) var(--ke, ease) var(--kd, 0s); }
+  html.kb-over .composer { translate: 0 calc(-1 * var(--lift, 0px));
+    transition: translate var(--kt, 0s) var(--ke, ease) var(--kd, 0s); }
+  /* The iOS 26 keyboard is glass, and with the frame no longer ending at the keys
+     whatever the page draws under them shows through: the dimmed workout, Save
+     workout's orange smeared across the number pad. A sheet of paper rides up
+     under the keys on their own curve instead — what the shell's own paper showed
+     there when the frame stopped at the keyboard — above every sheet and below
+     the toast. At rest it waits below the screen, a layer already, so the first
+     frame of a keyboard does not have to build one. */
+  .kbback { display: none; }
+  html.kb-over .kbback { display: block; position: fixed; left: 0; right: 0; top: 100%;
+    height: 100%; z-index: 89; background: var(--paper); pointer-events: none;
+    will-change: translate; translate: 0 calc(-1 * var(--lift, 0px));
+    transition: translate var(--kt, 0s) var(--ke, ease) var(--kd, 0s); }
   @media (prefers-reduced-motion: reduce) {
     html.native.keyboard-moving .composer, html.native.keyboard-moving .page,
     html.native.keyboard-moving .sheetbody, html.native.keyboard-moving .sheet.open .sheetbody,
-    html.native .tabbar { transition: none; }
+    html.native .tabbar, html.kb-over .sheetbody, html.kb-over .sheet.open .sheetbody,
+    html.kb-over .sheet.open .sheetbody.dragging, html.kb-over .composer,
+    html.kb-over .kbback { transition: none; }
   }
   .composerrow { display: flex; gap: 8px; align-items: flex-end; }
   .composer textarea { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 16px; padding: 12px 14px;
