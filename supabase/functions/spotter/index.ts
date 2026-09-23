@@ -175,14 +175,15 @@ const PUMPY_REASONING = ["none", "low", "medium", "high", "xhigh", "max"];
 // of 81 coach calls in three weeks ended at exactly the old 1,500 cap, every one
 // of them a workout-building turn whose proposal was lost:
 //   * measured with tools/pumpy-truncation-harness.ts, a 60-minute combine of
-//     four videos (4 blocks × 5–6 exercises) is ~1,000–1,150 answer tokens when
-//     the model follows the proposal rules, and ~1,650–1,950 when it copies every
+//     four videos (4 blocks × 5–6 exercises) is ~970–1,110 answer tokens when
+//     the model follows the proposal rules, and ~1,650–1,910 when it copies every
 //     creator cue into notes — the second alone is past 1,500 before any thinking;
 //   * reasoning was unset, so it ran at the model default, medium, and reasoning
 //     tokens count against the same cap. Coaching does not need medium: "low".
-// 6,000 is 2× the worst of those (≈1,950 answer + ≈1,000 low reasoning) and a
-// quarter below the guard's ceiling, which is what the one retry uses. On GPT-6
-// Luna a 6,000 cap reserves no more per call than 5.6 did at 1,500 (ai-guard-check).
+// 6,000 is 2× the worst of those (≈1,910 answer + ≈1,000 budgeted for low
+// reasoning) and a quarter below the guard's ceiling, which is what the one retry
+// uses. On GPT-6 Luna a 6,000 cap reserves no more per call than 5.6 did at 1,500
+// for any prompt over 12 KB, and Pumpy's static half alone is 13 KB (ai-guard-check).
 const PUMPY_DEFAULTS: PumpyCfg = {
   plans: {
     free: { day: 150, month: 1500 },
@@ -12122,7 +12123,7 @@ const PUMPY_STATIC = [
   '- {"kind":"plan_days","days":[{"day":"YYYY-MM-DD","workout_id":string}],"summary":one sentence}',
   // Measured 2026-09-23 (tools/pumpy-truncation-harness.ts): a four-video combine
   // written with every null spelled out and each creator's cue copied into notes
-  // is ~1,650–1,950 tokens; the same workout written to this rule is ~1,000–1,150.
+  // is ~1,650–1,910 tokens; the same workout written to this rule is ~970–1,110.
   // Nothing here drops a field the confirm path reads: an absent key normalises
   // to null exactly as a written null does, and `from` is still asked for — it is
   // what carries the cue, variation and video moment across (pumpyAttachSources).
