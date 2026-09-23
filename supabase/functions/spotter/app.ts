@@ -2644,63 +2644,156 @@ export const APP = String.raw`
 
   // ---------- choosing a rest ----------
   //
-  // The one grid every rest is chosen from: the pill's sheet, both dose panes and
-  // the section sheet. value is the stored shape — "" for the default, 0 for no
-  // rest, a number of seconds — and a number the grid does not offer (100 s off a
-  // video) gets a lit chip of its own rather than lighting nothing. Custom… opens
-  // a minutes and seconds pair under the chips. onPick gets the same three shapes
-  // back; whether that is a save or a value held until the sheet's own button is
-  // the caller's business.
-  var REST_STEPS = [15, 30, 45, 60, 75, 90, 120, 150, 180, 240, 300], HOW_LONG = "How long? Minutes or seconds.";
+  // One wheel, four homes: the pill's sheet, both dose panes and the section
+  // sheet. It replaced fifteen chips and a Custom… pair because the owner asked
+  // for "a swipable thing like the apple alarm so there's not like a million
+  // buttons" — and a wheel that reaches every value IS the custom option. The
+  // shape is Clock's timer, UIDatePicker's countdown mode: minutes 0–10 and
+  // seconds in fives, each unit fixed beside its column in one rounded band.
+  //
+  // The columns are plain scrollers with scroll-snap, which is where Ionic's
+  // picker ended up: the momentum and the landing are WebKit's own, at the
+  // screen's rate, and nothing here runs per frame. The drum — rows tilting and
+  // fading away from the band — is a scroll-driven animation in the stylesheet
+  // (Safari 26; off the main thread from 26.4); without one the rows stay flat
+  // under a fade, and reduced motion keeps the fade and drops the tilt.
+  //
+  // value and onPick keep the chip grid's three shapes: "" for the default, 0
+  // for no rest, a number of seconds. onPick hears of a new notch once the wheel
+  // settles, and of "Use default" at once; saving is the caller's business —
+  // the rest sheet has a Save, the panes and the section sheet their own
+  // buttons. A value off the grid (97 s from a video) shows its nearest notch
+  // and stays 97 until someone moves the wheel.
+  var WHEEL_MAX = 655;
 
-  function restChips(box, value, onPick) {
-    var steps = REST_STEPS.slice(), row = el("div", box.classList.contains("strip") ? "chips" : "pillrow restchips");
-    var custom = el("div", "fieldrow restcustom hide"), mins = el("input"), secs = el("input"), go = el("button", "btn", "Set rest"), lit = null;
-    if (typeof value === "number" && value > 0 && steps.indexOf(value) < 0) steps.push(value);
-    steps.sort(function (a, b) { return a - b; });
+  function restDetent(t) { return clamp(Math.round(t / 5) * 5, 0, WHEEL_MAX); }
+
+  // What VoiceOver says for either column: the whole rest, never half of it.
+  function restSpoken(t) {
+    var m = Math.floor(t / 60), s = t % 60, out = [];
+    if (m) out.push(m + (m > 1 ? " minutes" : " minute"));
+    if (s) out.push(s + (s > 1 ? " seconds" : " second"));
+    return out.join(" ") || "No rest";
+  }
+
+  function restWheel(box, value, onPick) {
+    var cur = typeof value === "number" ? value : "", shown = restDetent(cur === "" ? REST_FALLBACK : cur);
+    var wheel = el("div", "wheel"), foot = el("div", "wfoot"), say = el("span", "wsay");
+    var use = el("button", "linkbtn wdef", "Use default (" + clock(REST_FALLBACK) + ")");
+    var settleT = null, tickAt = 0, hush = 0, cols;
+    if (box._ro) box._ro.disconnect();
     box.innerHTML = "";
-    function chip(v, label, more) {
-      var on = v === value || (v === "" && typeof value !== "number");
-      var c = el("button", "chip" + (on ? " active" : ""), label);
-      c.onclick = function () {
-        haptic("tap");
-        Array.prototype.forEach.call(row.children, function (x) { x.classList.toggle("active", x === c); });
-        custom.classList.toggle("hide", !more);
-        if (!more) { onPick(v); return; }
-        viewIn(custom);
-        mins.focus();
-      };
-      row.appendChild(c);
-      if (on) lit = c;
+    // Every vertical drag that starts on the wheel is the wheel's: wireSheet
+    // reads this and leaves the sheet where it is.
+    box.setAttribute("data-noswipe", "");
+    wheel.appendChild(el("div", "wband"));
+
+    function rowH(c) { return c.sc.firstChild.offsetHeight || 44; }
+
+    // The wheel moving itself, from a tap on a row or an arrow key: smoothly,
+    // unless motion is to be kept down. c.to is where it is headed, so a second
+    // key pressed mid-glide steps on from there rather than from the notch
+    // passing under the band.
+    function spin(c, k) {
+      c.to = k;
+      c.sc.scrollTo({ top: k * rowH(c), behavior: lessMotion() ? "auto" : "smooth" });
     }
-    chip("", "Default (" + clock(REST_FALLBACK) + ")");
-    chip(0, "No rest");
-    steps.forEach(function (s) { chip(s, clock(s)); });
-    chip(null, "Custom…", 1);
-    [[mins, "Minutes"], [secs, "Seconds"]].forEach(function (p) {
-      var l = el("label", null, p[1]);
-      l.appendChild(Object.assign(p[0], { type: "number", inputMode: "numeric", placeholder: "0" }));
-      custom.appendChild(el("div", "field")).appendChild(l);
-    });
-    go.onclick = function () {
-      var m = mins.value.trim(), s = secs.value.trim(), t;
-      if (!m && !s) { toast(HOW_LONG); return; }
-      t = clamp(Math.round((Number(m) || 0) * 60 + (Number(s) || 0)), 0, 3600);
-      haptic("tap");
-      restChips(box, t, onPick);
+
+    function column(n, step, unit, name) {
+      var w = el("div", "wcol"), sc = el("div", "wsc"), c = { sc: sc, i: 0, to: -1, step: step };
+      sc.tabIndex = 0;
+      sc.setAttribute("role", "spinbutton");
+      sc.setAttribute("aria-label", name);
+      sc.setAttribute("aria-valuemin", "0");
+      sc.setAttribute("aria-valuemax", String((n - 1) * step));
+      // The row is what snaps and the span inside it what tilts: a snap area is
+      // the TRANSFORMED box, so a row tilting itself moves the notch it is
+      // snapping to, and the wheel came to rest between rows.
+      for (var k = 0; k < n; k++) {
+        sc.appendChild(el("div", "wit")).appendChild(el("span", null, step > 1 ? String(k * step).padStart(2, "0") : String(k)));
+      }
+      // A row tapped comes to the band, as it does on UIPickerView.
+      sc.onclick = function (e) {
+        var k = Array.prototype.indexOf.call(sc.children, e.target.closest(".wit"));
+        if (k >= 0) spin(c, k);
+      };
+      sc.addEventListener("scroll", function () {
+        var k = clamp(Math.round(sc.scrollTop / rowH(c)), 0, n - 1), t;
+        if (k !== c.i) {
+          c.i = k;
+          // A tick per notch, the Taptic Engine's selection click — but at most
+          // one per 45ms, so a fling across eleven notches is a flutter and not
+          // a buzz, and none while "Use default" is doing the moving.
+          t = now();
+          if (t > hush && t - tickAt > 45) { tickAt = t; haptic("select"); }
+        }
+        clearTimeout(settleT);
+        settleT = setTimeout(settle, 120);
+      }, { passive: true });
+      // Up is more, as for any spinbutton; VoiceOver's swipe up arrives as one.
+      sc.addEventListener("keydown", function (e) {
+        var d = e.key === "ArrowUp" || e.key === "ArrowRight" ? 1 : e.key === "ArrowDown" || e.key === "ArrowLeft" ? -1 : 0;
+        if (!d) return;
+        e.preventDefault();
+        spin(c, clamp((c.to < 0 ? c.i : c.to) + d, 0, n - 1));
+      });
+      w.appendChild(sc);
+      w.appendChild(el("span", "wunit", unit)).setAttribute("aria-hidden", "true");
+      wheel.appendChild(w);
+      return c;
+    }
+
+    // Where the wheel came to rest. Only a new notch is news: a wheel nudged and
+    // let go where it was leaves 97 at 97 and the default the default.
+    function settle() {
+      var t = cols[0].i * 60 + cols[1].i * 5;
+      cols.forEach(function (c) { c.to = -1; });
+      if (t === shown) return;
+      shown = cur = t;
+      paint();
       onPick(t);
+    }
+
+    function paint() {
+      var t = cur === "" ? REST_FALLBACK : cur, spoken = (cur === "" ? "Default, " : "") + restSpoken(t);
+      say.textContent = cur === "" ? "Default · " + clock(t) : restWord(t);
+      use.disabled = cur === "";
+      cols.forEach(function (c) {
+        c.sc.setAttribute("aria-valuenow", String(c.i * c.step));
+        c.sc.setAttribute("aria-valuetext", spoken);
+      });
+    }
+
+    // Home without a tick: c.i is already the notch, so the scroll this causes
+    // is not news. Run again whenever a column gains a size, since a pane shown
+    // from display:none has forgotten its scroll position.
+    function place(c) { if (c.sc.clientHeight) c.sc.scrollTop = c.i * rowH(c); }
+
+    use.onclick = function () {
+      haptic("tap");
+      cur = "";
+      shown = restDetent(REST_FALLBACK);
+      hush = now() + 600;
+      spin(cols[0], Math.floor(shown / 60));
+      spin(cols[1], shown % 60 / 5);
+      paint();
+      onPick("");
     };
-    custom.appendChild(el("div", "field")).appendChild(go);
-    box.appendChild(row);
-    box.appendChild(custom);
-    // A strip brings the lit chip to its middle: the answer sitting past the
-    // edge of the strip is the one thing this row exists to show, and centred it
-    // reads as a strip with more either side. After the pane it sits in has been
-    // shown, since a hidden row has no width; the wrapping grid has nothing to
-    // scroll and the line does nothing there.
-    setTimeout(function () {
-      if (lit) row.scrollLeft = Math.max(0, lit.offsetLeft - row.offsetLeft - (row.clientWidth - lit.offsetWidth) / 2);
-    }, 0);
+
+    cols = [column(11, 1, "min", "Minutes"), column(12, 5, "sec", "Seconds")];
+    cols[0].i = Math.floor(shown / 60);
+    cols[1].i = shown % 60 / 5;
+    say.setAttribute("aria-live", "polite");
+    foot.appendChild(say);
+    foot.appendChild(use);
+    box.appendChild(wheel);
+    box.appendChild(foot);
+    paint();
+    cols.forEach(place);
+    if (window.ResizeObserver) {
+      box._ro = new ResizeObserver(function () { cols.forEach(place); });
+      cols.forEach(function (c) { box._ro.observe(c.sc); });
+    }
   }
 
   // ---------- borrowed from a saved video ----------
@@ -4004,7 +4097,10 @@ export const APP = String.raw`
 
   // The minutes and seconds fields are one number. Read together, clamped to what
   // the server accepts, and written back normalised so 0:90 becomes 1:30 on the
-  // screen as well as on the card. Both empty is 0: nothing was said.
+  // screen as well as on the card. Both empty is 0: nothing was said, which a
+  // timed dose cannot save with.
+  var HOW_LONG = "How long? Minutes or seconds.";
+
   function doseSecs(minId, secId) {
     var m = $(minId).value.trim(), s = $(secId).value.trim(), t;
     if (!m && !s) return 0;
@@ -4047,7 +4143,7 @@ export const APP = String.raw`
     });
   }
 
-  // The stored shape of a rest as a chip value: a number, or "" for "not said".
+  // The stored shape of a rest as the wheel takes it: a number, or "" for "not said".
   function restVal(x) { return typeof x === "number" ? x : ""; }
 
   // The sheet's title, lede and buttons are what the markup says: its add mode
@@ -4061,7 +4157,7 @@ export const APP = String.raw`
     $("exeditreps").value = fieldVal(ex.reps);
     fillDose("exedit", ex.duration_seconds);
     doseMode("exedit", timed);
-    restChips($("exeditrest"), exEdit.rest, function (v) { if (exEdit) exEdit.rest = v; });
+    restWheel($("exeditrest"), exEdit.rest, function (v) { if (exEdit) exEdit.rest = v; });
     openSheet("exeditsheet");
   }
 
@@ -4098,7 +4194,7 @@ export const APP = String.raw`
     var label = btn ? btn.textContent : null;
     if (btn) { btn.disabled = true; btn.textContent = "Saving…"; }
     // Returned, so a caller with no button to disable can still know when the
-    // round trip is over — the rest chips guard against a second tap that way.
+    // round trip is over.
     return api("workouts/" + w.id + "/exercises", { method: "POST", body: JSON.stringify(payload) })
       .then(function (r) {
         if (btn) { btn.disabled = false; btn.textContent = label; }
@@ -4138,20 +4234,20 @@ export const APP = String.raw`
   // ---------- the rest, from the card ----------
   //
   // "I want to see what the rest period will be." The pill on the row opens this:
-  // a grid of the rests people actually take, the current one lit, and a preset
-  // saves on the tap — a sheet whose one job is one number should not also ask
-  // for a Save. busy is the guard a chip cannot be, since none is disabled.
+  // the wheel on the current rest, and a Save. A chip could save on its tap; a
+  // wheel cannot, since every notch it passes on the way would be a correction
+  // posted, so the sheet asks once, as Clock's alarm editor does. Unmoved, Save
+  // only closes. postCorrection holds the button while the write is out.
 
   function openRest(w, bi, ei, ex) {
-    var busy = false;
+    var was = restVal(ex.rest_seconds), pick = was;
     $("resttitle").textContent = "Rest after " + ex.name;
-    restChips($("restchips"), restVal(ex.rest_seconds), function (v) {
-      if (busy) return;
-      busy = true;
-      postCorrection(w, { op: "edit", block: bi, index: ei, expect_name: ex.name, fields: { rest_seconds: v } }, null,
-        v === "" ? "Back to the default rest" : v === 0 ? "No rest after " + ex.name : "Rest set to " + clock(v), "restsheet")
-        .then(function () { busy = false; });
-    });
+    restWheel($("restwheel"), was, function (v) { pick = v; });
+    $("restsave").onclick = function () {
+      if (pick === was) { closeSheet("restsheet"); return; }
+      postCorrection(w, { op: "edit", block: bi, index: ei, expect_name: ex.name, fields: { rest_seconds: pick } }, $("restsave"),
+        pick === "" ? "Back to the default rest" : pick === 0 ? "No rest after " + ex.name : "Rest set to " + clock(pick), "restsheet");
+    };
     openSheet("restsheet");
   }
 
@@ -4189,7 +4285,7 @@ export const APP = String.raw`
     // a video often carries its clock in rest_seconds, and saving from here
     // writes it where it belongs.
     fillDose("sectioncap", b ? cxCap(b, w) : 0);
-    restChips($("sectionrest"), sec.rest, function (v) { if (sec) sec.rest = v; });
+    restWheel($("sectionrest"), sec.rest, function (v) { if (sec) sec.rest = v; });
     paintKinds();
     openSheet("sectionsheet");
   }
@@ -4230,7 +4326,7 @@ export const APP = String.raw`
     if (kd.rounds) {
       $("sectionrounds").value = String(kd.rounds);
       sec.rest = kd.rest;
-      restChips($("sectionrest"), sec.rest, function (v) { if (sec) sec.rest = v; });
+      restWheel($("sectionrest"), sec.rest, function (v) { if (sec) sec.rest = v; });
     }
     if (kd.cap) fillDose("sectioncap", kd.cap);
     paintKinds();
@@ -6821,7 +6917,7 @@ export const APP = String.raw`
     $("woaddreps").value = String((h && h.reps) || (m ? m[0] : 10));
     fillDose("woadd", secs || (kind === "cardio" || t && t.timed && t.block.type !== "cooldown" ? 600 : 30));
     doseMode("woadd", woa.timed);
-    restChips($("woarest"), woa.rest, function (v) { if (woa) woa.rest = v; });
+    restWheel($("woarest"), woa.rest, function (v) { if (woa) woa.rest = v; });
     // Where it lands. Inside a complex there is nothing to choose — a movement
     // added to an AMRAP is part of the AMRAP — and on the last exercise the two
     // answers are the same one, so neither gets chips it cannot use. A replacement

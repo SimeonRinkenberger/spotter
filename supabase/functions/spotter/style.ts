@@ -1931,16 +1931,64 @@ export const STYLE = String.raw`<style>
   .doseseg { margin-bottom: 12px; }
   .dosefields.swap .field { animation: fadein var(--t-2) var(--e-out); }
   /* ---------- choosing a rest ----------
-     One grid, three homes. In its own sheet it is a wrapping .pillrow; under a
-     dose it is the Library's own .chips strip, bled by its end chips' 18px inset
-     so the first chip lines up with the label (the .chips rule says why the
-     inset is there). The custom pair opens under it as a field row, the button
-     its third column. */
-  .restpick .chip { min-height: 36px; }
-  .restpick .chips { margin: 0 -18px; padding-top: 2px; }
-  .restcustom { align-items: flex-end; margin-top: 12px; }
+     Clock's timer wheel: two scroll-snapped columns over one rounded band, each
+     unit fixed beside its column inside the band. Rows are 44px, not
+     UIPickerView's 32pt, because a row is also a target (a tap brings it to the
+     band). Five show in the rest sheet; three in the panes and the section
+     sheet, where the wheel is one field among several. The spacers let the
+     first and last rows reach the band. */
+  .restpick { --wrow: 44px; --rows: 5; --wpad: calc(var(--wrow) * (var(--rows) - 1) / 2); }
+  .restpick.short { --rows: 3; }
+  .wheel { position: relative; display: flex; max-width: 300px; margin: 0 auto;
+    -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+  .wband { position: absolute; left: 0; right: 0; top: var(--wpad); height: var(--wrow);
+    border-radius: 12px; background: var(--sand); }
+  .wcol { position: relative; flex: 1; min-width: 0; }
+  .wsc { position: relative; height: calc(var(--wrow) * var(--rows)); overflow-y: scroll;
+    scroll-snap-type: y mandatory; overscroll-behavior: contain; touch-action: pan-y;
+    scrollbar-width: none; outline: none; border-radius: 12px; }
+  .wsc::-webkit-scrollbar { display: none; }
+  .wsc::before, .wsc::after { content: ""; display: block; height: var(--wpad); }
+  .wsc:focus-visible { box-shadow: inset 0 0 0 2px var(--ember); }
+  .wit { height: var(--wrow); line-height: var(--wrow); padding-right: 54%; text-align: right;
+    scroll-snap-align: center; font-size: 22px; font-variant-numeric: tabular-nums; color: var(--ink); }
+  .wit span { display: block; }
+  .wunit { position: absolute; left: 50%; top: var(--wpad); line-height: var(--wrow); padding-left: 4%;
+    font-size: 15px; font-weight: 650; color: var(--ink); pointer-events: none; }
+  /* The fade into the sheet where the drum cannot be drawn. */
+  .wheel::before, .wheel::after { content: ""; position: absolute; left: 0; right: 0; z-index: 1;
+    height: var(--wpad); pointer-events: none; }
+  .wheel::before { top: 0; background: linear-gradient(var(--paper), transparent); }
+  .wheel::after { bottom: 0; background: linear-gradient(transparent, var(--paper)); }
+  .wfoot { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    max-width: 300px; min-height: 44px; margin: 4px auto 0; }
+  .wsay { font-size: 14px; font-weight: 650; color: var(--ink-2); }
+  .wdef { transition: opacity var(--t-2) var(--e-out), visibility var(--t-2); }
+  .wdef:disabled { opacity: 0; visibility: hidden; }
+  /* The drum: each row's own trip through the column is its timeline, so its
+     text tilts, closes up on the band and fades on WebKit's scroll, not on
+     script. The row stays square and only its span moves, since a snap area is
+     the transformed box. The keyframes are a cylinder sampled at whole rows of
+     the five-row wheel; the three-row one reads the same curve as a smaller drum. */
+  @supports (animation-timeline: view()) {
+    .wheel::before, .wheel::after { content: none; }
+    .wit { view-timeline: --wit; }
+    .wit span { animation: wdrum linear both; animation-timeline: --wit; }
+  }
+  @keyframes wdrum {
+    0% { transform: translateY(-77%) perspective(300px) rotateX(-75deg); opacity: .15; }
+    16.7% { transform: translateY(-24%) perspective(300px) rotateX(-50deg); opacity: .4; }
+    33.3% { transform: translateY(-3%) perspective(300px) rotateX(-25deg); opacity: .7; }
+    50% { transform: translateY(0) perspective(300px) rotateX(0deg); opacity: 1; }
+    66.7% { transform: translateY(3%) perspective(300px) rotateX(25deg); opacity: .7; }
+    83.3% { transform: translateY(24%) perspective(300px) rotateX(50deg); opacity: .4; }
+    100% { transform: translateY(77%) perspective(300px) rotateX(75deg); opacity: .15; }
+  }
+  @keyframes wfade { 0%, 100% { opacity: .15; } 33.3%, 66.7% { opacity: .7; } 50% { opacity: 1; } }
   @media (prefers-reduced-motion: reduce) {
     .dosefields.swap .field { animation: none; }
+    .wit span { animation-name: wfade; }
+    .wdef { transition: none; }
     .woakeep, .waddcard { transition: none; }
     .waddcard:active { transform: none; }
   }
@@ -2609,11 +2657,11 @@ export const STYLE = String.raw`<style>
      Insets come off the padding box: a bordered control needs a pixel more. */
   .iconbtn, .addbtn, .exhelp, .planx, .planadd, .mbtn, .addex, .danger, .libcount,
   .planlegal a, .planlegal button, .segbtn, .planbtn, .linkbtn,
-  .chips .chip, .said .chip, .votes .chip, .restchips .chip, .pumpyctx button, .threadrow .tdel, .ttitle { position: relative; }
+  .chips .chip, .said .chip, .votes .chip, .pumpyctx button, .threadrow .tdel, .ttitle { position: relative; }
   .iconbtn::after, .addbtn::after, .exhelp::after, .planx::after, .planadd::after,
   .segbtn::after, .planbtn::after, .linkbtn::after,
   .mbtn::after, .addex::after, .danger::after, .chips .chip::after, .said .chip::after,
-  .votes .chip::after, .restchips .chip::after,
+  .votes .chip::after,
   .pumpyctx button::after, .threadrow .tdel::after, .ttitle::after,
   .libcount::after, .planlegal a::after, .planlegal button::after { content: ""; position: absolute; }
   .libcount::after { inset: -9px; }
@@ -2631,7 +2679,6 @@ export const STYLE = String.raw`<style>
   .mbtn::after { inset: -6px 0; }
   .danger::after, .threadrow .tdel::after { inset: -3px 0; }
   .chips .chip::after, .said .chip::after, .votes .chip::after { inset: -6px 0; }
-  .restchips .chip::after { inset: -4px 0; }
   /* A square control needs the inset on all four sides: 36 + 4 + 4 is 44 across as
      well as down, and -6px 0 would have left the thumbs 36 wide and 28 tall. */
   .votes .vote::after { inset: -4px; }

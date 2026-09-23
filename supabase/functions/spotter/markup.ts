@@ -456,7 +456,7 @@ export const MARKUP_BODY = String.raw`</head>
       <div class="field"><label for="woaddsets">Sets</label><input id="woaddsets" type="number" inputmode="numeric" min="1" max="99" value="3"></div>
       <div class="field"><label for="woaddreps">Reps</label><input id="woaddreps" type="number" inputmode="numeric" min="1" max="999" value="10"></div>
     </div>
-    <div class="field"><label>Rest after each set</label><div class="restpick strip" id="woarest"></div></div>
+    <div class="field"><label>Rest after each set</label><div class="restpick short" id="woarest"></div></div>
     <div class="pillrow" id="woawhere"></div>
     <button class="pickrow woakeep hide" id="woakeep" aria-pressed="false"><div class="pt"><b>Keep on this workout</b><span id="woakeepnote">Off — today’s session only.</span></div><span class="ck"><svg class="ic"><use href="#i-check"></use></svg></span></button>
     <div class="btnrow"><button class="btn ghost" data-close="woaddsheet">Cancel</button><button class="btn" id="woaddsave">Add exercise</button></div>
@@ -496,7 +496,7 @@ export const MARKUP_BODY = String.raw`</head>
     <div class="field"><label for="exeditsets">Sets</label><input id="exeditsets" type="number" inputmode="numeric" min="1" max="99" placeholder="—"></div>
     <div class="field"><label for="exeditreps">Reps</label><input id="exeditreps" type="text" inputmode="numeric" placeholder="—" autocomplete="off"></div>
   </div>
-  <div class="field"><label>Rest after each set</label><div class="restpick strip" id="exeditrest"></div></div>
+  <div class="field"><label>Rest after each set</label><div class="restpick short" id="exeditrest"></div></div>
   <div class="btnrow">
     <button class="btn ghost" id="exeditcancel">Cancel</button>
     <button class="btn" id="exeditsave">Save change</button>
@@ -505,14 +505,16 @@ export const MARKUP_BODY = String.raw`</head>
 </div></div>
 
 <!-- The rest, from the card. One job: the number Workout Mode will run after a
-     set of this exercise. A preset saves on the tap, so there is no Save button;
-     Custom… opens a minutes and seconds pair with one. restChips in app.ts
-     builds the grid, the same grid the dose panes and the section sheet use. -->
+     set of this exercise, on the minutes and seconds wheel restWheel in app.ts
+     builds — the same wheel the dose panes and the section sheet use, three rows
+     tall there and five here. Save commits, since a wheel passes a dozen values
+     on its way to one. -->
 <div class="sheet" id="restsheet" role="dialog" aria-modal="true" aria-labelledby="resttitle"><div class="sheetbody">
   <div class="grabber"></div>
   <h2 id="resttitle"></h2>
   <p class="lede">Workout Mode starts this timer after each set.</p>
-  <div class="restpick" id="restchips"></div>
+  <div class="restpick" id="restwheel"></div>
+  <div class="btnrow"><button class="btn ghost" data-close="restsheet">Cancel</button><button class="btn" id="restsave">Save</button></div>
 </div></div>
 
 <!-- A section of the workout — a warm-up, a circuit, ten minutes of cardio, a
@@ -527,7 +529,7 @@ export const MARKUP_BODY = String.raw`</head>
   <div class="field"><label for="sectionname">Name</label><input id="sectionname" type="text" placeholder="Finisher" maxlength="60" autocapitalize="words" autocomplete="off" spellcheck="false"></div>
   <div class="hide" id="sectionroundsf">
     <div class="field"><label for="sectionrounds">Rounds</label><input id="sectionrounds" type="number" inputmode="numeric" min="1" max="50"></div>
-    <div class="field"><label>Rest between rounds</label><div class="restpick strip" id="sectionrest"></div></div>
+    <div class="field"><label>Rest between rounds</label><div class="restpick short" id="sectionrest"></div></div>
   </div>
   <div class="fieldrow hide" id="sectioncapf">
     <div class="field"><label for="sectioncapmin">Time cap · minutes</label><input id="sectioncapmin" type="number" inputmode="numeric" placeholder="10"></div>

@@ -5078,20 +5078,186 @@ body:not(.app) #toast.show {
 .dosefields.swap .field {
   animation: fadein var(--t-2) var(--e-out);
 }
-.restpick .chip {
-  min-height: 36px;
+.restpick {
+  --wrow: 44px;
+  --rows: 5;
+  --wpad: calc(var(--wrow) * (var(--rows) - 1) / 2);
 }
-.restpick .chips {
-  margin: 0 -18px;
-  padding-top: 2px;
+.restpick.short {
+  --rows: 3;
 }
-.restcustom {
-  align-items: flex-end;
-  margin-top: 12px;
+.wheel {
+  position: relative;
+  display: flex;
+  max-width: 300px;
+  margin: 0 auto;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.wband {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: var(--wpad);
+  height: var(--wrow);
+  border-radius: 12px;
+  background: var(--sand);
+}
+.wcol {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+.wsc {
+  position: relative;
+  height: calc(var(--wrow) * var(--rows));
+  overflow-y: scroll;
+  scroll-snap-type: y mandatory;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  scrollbar-width: none;
+  outline: none;
+  border-radius: 12px;
+}
+.wsc::-webkit-scrollbar {
+  display: none;
+}
+.wsc::before,
+.wsc::after {
+  content: "";
+  display: block;
+  height: var(--wpad);
+}
+.wsc:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--ember);
+}
+.wit {
+  height: var(--wrow);
+  line-height: var(--wrow);
+  padding-right: 54%;
+  text-align: right;
+  scroll-snap-align: center;
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+.wit span {
+  display: block;
+}
+.wunit {
+  position: absolute;
+  left: 50%;
+  top: var(--wpad);
+  line-height: var(--wrow);
+  padding-left: 4%;
+  font-size: 15px;
+  font-weight: 650;
+  color: var(--ink);
+  pointer-events: none;
+}
+.wheel::before,
+.wheel::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 1;
+  height: var(--wpad);
+  pointer-events: none;
+}
+.wheel::before {
+  top: 0;
+  background: linear-gradient(var(--paper), transparent);
+}
+.wheel::after {
+  bottom: 0;
+  background: linear-gradient(transparent, var(--paper));
+}
+.wfoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  max-width: 300px;
+  min-height: 44px;
+  margin: 4px auto 0;
+}
+.wsay {
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--ink-2);
+}
+.wdef {
+  transition: opacity var(--t-2) var(--e-out), visibility var(--t-2);
+}
+.wdef:disabled {
+  opacity: 0;
+  visibility: hidden;
+}
+@supports (animation-timeline: view()) {
+  .wheel::before,
+  .wheel::after {
+    content: none;
+  }
+  .wit {
+    view-timeline: --wit;
+  }
+  .wit span {
+    animation: wdrum linear both;
+    animation-timeline: --wit;
+  }
+}
+@keyframes wdrum {
+  0% {
+    transform: translateY(-77%) perspective(300px) rotateX(-75deg);
+    opacity: .15;
+  }
+  16.7% {
+    transform: translateY(-24%) perspective(300px) rotateX(-50deg);
+    opacity: .4;
+  }
+  33.3% {
+    transform: translateY(-3%) perspective(300px) rotateX(-25deg);
+    opacity: .7;
+  }
+  50% {
+    transform: translateY(0) perspective(300px) rotateX(0deg);
+    opacity: 1;
+  }
+  66.7% {
+    transform: translateY(3%) perspective(300px) rotateX(25deg);
+    opacity: .7;
+  }
+  83.3% {
+    transform: translateY(24%) perspective(300px) rotateX(50deg);
+    opacity: .4;
+  }
+  100% {
+    transform: translateY(77%) perspective(300px) rotateX(75deg);
+    opacity: .15;
+  }
+}
+@keyframes wfade {
+  0%, 100% {
+    opacity: .15;
+  }
+  33.3%, 66.7% {
+    opacity: .7;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .dosefields.swap .field {
     animation: none;
+  }
+  .wit span {
+    animation-name: wfade;
+  }
+  .wdef {
+    transition: none;
   }
   .woakeep,
   .waddcard {
@@ -6717,7 +6883,6 @@ select:focus-visible {
 .chips .chip,
 .said .chip,
 .votes .chip,
-.restchips .chip,
 .pumpyctx button,
 .threadrow .tdel,
 .ttitle {
@@ -6737,7 +6902,6 @@ select:focus-visible {
 .chips .chip::after,
 .said .chip::after,
 .votes .chip::after,
-.restchips .chip::after,
 .pumpyctx button::after,
 .threadrow .tdel::after,
 .ttitle::after,
@@ -6788,9 +6952,6 @@ select:focus-visible {
 .said .chip::after,
 .votes .chip::after {
   inset: -6px 0;
-}
-.restchips .chip::after {
-  inset: -4px 0;
 }
 .votes .vote::after {
   inset: -4px;
@@ -8160,7 +8321,7 @@ details.details-moving > :not(summary) {
       <div class="field"><label for="woaddsets">Sets</label><input id="woaddsets" type="number" inputmode="numeric" min="1" max="99" value="3"></div>
       <div class="field"><label for="woaddreps">Reps</label><input id="woaddreps" type="number" inputmode="numeric" min="1" max="999" value="10"></div>
     </div>
-    <div class="field"><label>Rest after each set</label><div class="restpick strip" id="woarest"></div></div>
+    <div class="field"><label>Rest after each set</label><div class="restpick short" id="woarest"></div></div>
     <div class="pillrow" id="woawhere"></div>
     <button class="pickrow woakeep hide" id="woakeep" aria-pressed="false"><div class="pt"><b>Keep on this workout</b><span id="woakeepnote">Off — today’s session only.</span></div><span class="ck"><svg class="ic"><use href="#i-check"></use></svg></span></button>
     <div class="btnrow"><button class="btn ghost" data-close="woaddsheet">Cancel</button><button class="btn" id="woaddsave">Add exercise</button></div>
@@ -8199,7 +8360,7 @@ details.details-moving > :not(summary) {
     <div class="field"><label for="exeditsets">Sets</label><input id="exeditsets" type="number" inputmode="numeric" min="1" max="99" placeholder="—"></div>
     <div class="field"><label for="exeditreps">Reps</label><input id="exeditreps" type="text" inputmode="numeric" placeholder="—" autocomplete="off"></div>
   </div>
-  <div class="field"><label>Rest after each set</label><div class="restpick strip" id="exeditrest"></div></div>
+  <div class="field"><label>Rest after each set</label><div class="restpick short" id="exeditrest"></div></div>
   <div class="btnrow">
     <button class="btn ghost" id="exeditcancel">Cancel</button>
     <button class="btn" id="exeditsave">Save change</button>
@@ -8211,7 +8372,8 @@ details.details-moving > :not(summary) {
   <div class="grabber"></div>
   <h2 id="resttitle"></h2>
   <p class="lede">Workout Mode starts this timer after each set.</p>
-  <div class="restpick" id="restchips"></div>
+  <div class="restpick" id="restwheel"></div>
+  <div class="btnrow"><button class="btn ghost" data-close="restsheet">Cancel</button><button class="btn" id="restsave">Save</button></div>
 </div></div>
 
 <div class="sheet" id="sectionsheet" role="dialog" aria-modal="true" aria-labelledby="sectiontitle"><div class="sheetbody">
@@ -8221,7 +8383,7 @@ details.details-moving > :not(summary) {
   <div class="field"><label for="sectionname">Name</label><input id="sectionname" type="text" placeholder="Finisher" maxlength="60" autocapitalize="words" autocomplete="off" spellcheck="false"></div>
   <div class="hide" id="sectionroundsf">
     <div class="field"><label for="sectionrounds">Rounds</label><input id="sectionrounds" type="number" inputmode="numeric" min="1" max="50"></div>
-    <div class="field"><label>Rest between rounds</label><div class="restpick strip" id="sectionrest"></div></div>
+    <div class="field"><label>Rest between rounds</label><div class="restpick short" id="sectionrest"></div></div>
   </div>
   <div class="fieldrow hide" id="sectioncapf">
     <div class="field"><label for="sectioncapmin">Time cap · minutes</label><input id="sectioncapmin" type="number" inputmode="numeric" placeholder="10"></div>
@@ -10359,39 +10521,61 @@ details.details-moving > :not(summary) {
     var bits = [], kind = b.type && b.type !== "straight" ? kindName(b.type) : "", r;
     return kind && kind.toLowerCase() !== String(b.title || "").toLowerCase() && bits.push(kind), b.rounds && bits.push(b.rounds + " rounds"), (b.rounds > 1 || supersetOf(b)) && (r = restOf(null, b, !0), bits.push(restWord(r.secs) + " between rounds" + (r.source === "default" ? " \xB7 default" : ""))), b.duration_seconds && bits.push(clock(b.duration_seconds) + " cap"), bits.join(" \xB7 ");
   }
-  var REST_STEPS = [15, 30, 45, 60, 75, 90, 120, 150, 180, 240, 300], HOW_LONG = "How long? Minutes or seconds.";
-  function restChips(box, value, onPick) {
-    var steps = REST_STEPS.slice(), row = el("div", box.classList.contains("strip") ? "chips" : "pillrow restchips"), custom = el("div", "fieldrow restcustom hide"), mins = el("input"), secs = el("input"), go = el("button", "btn", "Set rest"), lit = null;
-    typeof value == "number" && value > 0 && steps.indexOf(value) < 0 && steps.push(value), steps.sort(function(a, b) {
-      return a - b;
-    }), box.innerHTML = "";
-    function chip(v, label, more) {
-      var on = v === value || v === "" && typeof value != "number", c = el("button", "chip" + (on ? " active" : ""), label);
-      c.onclick = function() {
-        if (haptic("tap"), Array.prototype.forEach.call(row.children, function(x) {
-          x.classList.toggle("active", x === c);
-        }), custom.classList.toggle("hide", !more), !more) {
-          onPick(v);
-          return;
-        }
-        viewIn(custom), mins.focus();
-      }, row.appendChild(c), on && (lit = c);
+  var WHEEL_MAX = 655;
+  function restDetent(t) {
+    return clamp(Math.round(t / 5) * 5, 0, WHEEL_MAX);
+  }
+  function restSpoken(t) {
+    var m = Math.floor(t / 60), s = t % 60, out = [];
+    return m && out.push(m + (m > 1 ? " minutes" : " minute")), s && out.push(s + (s > 1 ? " seconds" : " second")), out.join(" ") || "No rest";
+  }
+  function restWheel(box, value, onPick) {
+    var cur = typeof value == "number" ? value : "", shown = restDetent(cur === "" ? REST_FALLBACK : cur), wheel = el("div", "wheel"), foot = el("div", "wfoot"), say = el("span", "wsay"), use = el("button", "linkbtn wdef", "Use default (" + clock(REST_FALLBACK) + ")"), settleT = null, tickAt = 0, hush = 0, cols;
+    box._ro && box._ro.disconnect(), box.innerHTML = "", box.setAttribute("data-noswipe", ""), wheel.appendChild(el("div", "wband"));
+    function rowH(c) {
+      return c.sc.firstChild.offsetHeight || 44;
     }
-    chip("", "Default (" + clock(REST_FALLBACK) + ")"), chip(0, "No rest"), steps.forEach(function(s) {
-      chip(s, clock(s));
-    }), chip(null, "Custom\u2026", 1), [[mins, "Minutes"], [secs, "Seconds"]].forEach(function(p) {
-      var l = el("label", null, p[1]);
-      l.appendChild(Object.assign(p[0], { type: "number", inputMode: "numeric", placeholder: "0" })), custom.appendChild(el("div", "field")).appendChild(l);
-    }), go.onclick = function() {
-      var m = mins.value.trim(), s = secs.value.trim(), t;
-      if (!m && !s) {
-        toast(HOW_LONG);
-        return;
-      }
-      t = clamp(Math.round((Number(m) || 0) * 60 + (Number(s) || 0)), 0, 3600), haptic("tap"), restChips(box, t, onPick), onPick(t);
-    }, custom.appendChild(el("div", "field")).appendChild(go), box.appendChild(row), box.appendChild(custom), setTimeout(function() {
-      lit && (row.scrollLeft = Math.max(0, lit.offsetLeft - row.offsetLeft - (row.clientWidth - lit.offsetWidth) / 2));
-    }, 0);
+    function spin(c, k) {
+      c.to = k, c.sc.scrollTo({ top: k * rowH(c), behavior: lessMotion() ? "auto" : "smooth" });
+    }
+    function column(n, step2, unit, name) {
+      var w = el("div", "wcol"), sc2 = el("div", "wsc"), c = { sc: sc2, i: 0, to: -1, step: step2 };
+      sc2.tabIndex = 0, sc2.setAttribute("role", "spinbutton"), sc2.setAttribute("aria-label", name), sc2.setAttribute("aria-valuemin", "0"), sc2.setAttribute("aria-valuemax", String((n - 1) * step2));
+      for (var k = 0; k < n; k++)
+        sc2.appendChild(el("div", "wit")).appendChild(el("span", null, step2 > 1 ? String(k * step2).padStart(2, "0") : String(k)));
+      return sc2.onclick = function(e) {
+        var k2 = Array.prototype.indexOf.call(sc2.children, e.target.closest(".wit"));
+        k2 >= 0 && spin(c, k2);
+      }, sc2.addEventListener("scroll", function() {
+        var k2 = clamp(Math.round(sc2.scrollTop / rowH(c)), 0, n - 1), t;
+        k2 !== c.i && (c.i = k2, t = now(), t > hush && t - tickAt > 45 && (tickAt = t, haptic("select"))), clearTimeout(settleT), settleT = setTimeout(settle, 120);
+      }, { passive: !0 }), sc2.addEventListener("keydown", function(e) {
+        var d = e.key === "ArrowUp" || e.key === "ArrowRight" ? 1 : e.key === "ArrowDown" || e.key === "ArrowLeft" ? -1 : 0;
+        d && (e.preventDefault(), spin(c, clamp((c.to < 0 ? c.i : c.to) + d, 0, n - 1)));
+      }), w.appendChild(sc2), w.appendChild(el("span", "wunit", unit)).setAttribute("aria-hidden", "true"), wheel.appendChild(w), c;
+    }
+    function settle() {
+      var t = cols[0].i * 60 + cols[1].i * 5;
+      cols.forEach(function(c) {
+        c.to = -1;
+      }), t !== shown && (shown = cur = t, paint2(), onPick(t));
+    }
+    function paint2() {
+      var t = cur === "" ? REST_FALLBACK : cur, spoken = (cur === "" ? "Default, " : "") + restSpoken(t);
+      say.textContent = cur === "" ? "Default \xB7 " + clock(t) : restWord(t), use.disabled = cur === "", cols.forEach(function(c) {
+        c.sc.setAttribute("aria-valuenow", String(c.i * c.step)), c.sc.setAttribute("aria-valuetext", spoken);
+      });
+    }
+    function place(c) {
+      c.sc.clientHeight && (c.sc.scrollTop = c.i * rowH(c));
+    }
+    use.onclick = function() {
+      haptic("tap"), cur = "", shown = restDetent(REST_FALLBACK), hush = now() + 600, spin(cols[0], Math.floor(shown / 60)), spin(cols[1], shown % 60 / 5), paint2(), onPick("");
+    }, cols = [column(11, 1, "min", "Minutes"), column(12, 5, "sec", "Seconds")], cols[0].i = Math.floor(shown / 60), cols[1].i = shown % 60 / 5, say.setAttribute("aria-live", "polite"), foot.appendChild(say), foot.appendChild(use), box.appendChild(wheel), box.appendChild(foot), paint2(), cols.forEach(place), window.ResizeObserver && (box._ro = new ResizeObserver(function() {
+      cols.forEach(place);
+    }), cols.forEach(function(c) {
+      box._ro.observe(c.sc);
+    }));
   }
   function srcById(id) {
     return state.workouts.filter(function(x) {
@@ -11097,6 +11281,7 @@ details.details-moving > :not(summary) {
   function fillDose(p, secs) {
     $(p + "min").value = secs ? String(Math.floor(secs / 60)) : "", $(p + "secs").value = secs ? String(secs % 60) : "";
   }
+  var HOW_LONG = "How long? Minutes or seconds.";
   function doseSecs(minId, secId) {
     var m = $(minId).value.trim(), s = $(secId).value.trim(), t;
     return !m && !s ? 0 : (t = clamp(Math.round((Number(m) || 0) * 60 + (Number(s) || 0)), 1, 3600), $(minId).value = String(Math.floor(t / 60)), $(secId).value = String(t % 60), t);
@@ -11127,7 +11312,7 @@ details.details-moving > :not(summary) {
       timed: timed,
       timed0: timed,
       rest: restVal(ex.rest_seconds)
-    }, $("exeditname").value = ex.name || "", $("exeditsets").value = fieldVal(ex.sets), $("exeditreps").value = fieldVal(ex.reps), fillDose("exedit", ex.duration_seconds), doseMode("exedit", timed), restChips($("exeditrest"), exEdit.rest, function(v) {
+    }, $("exeditname").value = ex.name || "", $("exeditsets").value = fieldVal(ex.sets), $("exeditreps").value = fieldVal(ex.reps), fillDose("exedit", ex.duration_seconds), doseMode("exedit", timed), restWheel($("exeditrest"), exEdit.rest, function(v) {
       exEdit && (exEdit.rest = v);
     }), openSheet("exeditsheet");
   }
@@ -11178,18 +11363,22 @@ details.details-moving > :not(summary) {
     }
   }
   function openRest(w, bi, ei, ex) {
-    var busy = !1;
-    $("resttitle").textContent = "Rest after " + ex.name, restChips($("restchips"), restVal(ex.rest_seconds), function(v) {
-      busy || (busy = !0, postCorrection(
+    var was = restVal(ex.rest_seconds), pick = was;
+    $("resttitle").textContent = "Rest after " + ex.name, restWheel($("restwheel"), was, function(v) {
+      pick = v;
+    }), $("restsave").onclick = function() {
+      if (pick === was) {
+        closeSheet("restsheet");
+        return;
+      }
+      postCorrection(
         w,
-        { op: "edit", block: bi, index: ei, expect_name: ex.name, fields: { rest_seconds: v } },
-        null,
-        v === "" ? "Back to the default rest" : v === 0 ? "No rest after " + ex.name : "Rest set to " + clock(v),
+        { op: "edit", block: bi, index: ei, expect_name: ex.name, fields: { rest_seconds: pick } },
+        $("restsave"),
+        pick === "" ? "Back to the default rest" : pick === 0 ? "No rest after " + ex.name : "Rest set to " + clock(pick),
         "restsheet"
-      ).then(function() {
-        busy = !1;
-      }));
-    }), openSheet("restsheet");
+      );
+    }, openSheet("restsheet");
   }
   var sec = null;
   function kindOf(b) {
@@ -11206,7 +11395,7 @@ details.details-moving > :not(summary) {
       b: b,
       kind: b ? kindOf(b) : null,
       rest: restVal(b && b.rest_seconds)
-    }, $("sectiontitle").textContent = b ? "Edit section" : "Add a section", $("sectionsave").textContent = b ? "Save section" : "Choose the first exercise", $("sectionremove").classList.toggle("hide", !b), $("sectionname").value = b && b.title || "", $("sectionrounds").value = String(b && b.rounds || ""), fillDose("sectioncap", b ? cxCap(b, w) : 0), restChips($("sectionrest"), sec.rest, function(v) {
+    }, $("sectiontitle").textContent = b ? "Edit section" : "Add a section", $("sectionsave").textContent = b ? "Save section" : "Choose the first exercise", $("sectionremove").classList.toggle("hide", !b), $("sectionname").value = b && b.title || "", $("sectionrounds").value = String(b && b.rounds || ""), fillDose("sectioncap", b ? cxCap(b, w) : 0), restWheel($("sectionrest"), sec.rest, function(v) {
       sec && (sec.rest = v);
     }), paintKinds(), openSheet("sectionsheet");
   }
@@ -11228,7 +11417,7 @@ details.details-moving > :not(summary) {
   }
   function pickKind(kd) {
     var was = sec.kind, name = $("sectionname"), t = name.value.trim();
-    haptic("tap"), sec.kind = kd, (!t || was && t === was.title) && (name.value = kd.title), kd.rounds && ($("sectionrounds").value = String(kd.rounds), sec.rest = kd.rest, restChips($("sectionrest"), sec.rest, function(v) {
+    haptic("tap"), sec.kind = kd, (!t || was && t === was.title) && (name.value = kd.title), kd.rounds && ($("sectionrounds").value = String(kd.rounds), sec.rest = kd.rest, restWheel($("sectionrest"), sec.rest, function(v) {
       sec && (sec.rest = v);
     })), kd.cap && fillDose("sectioncap", kd.cap), paintKinds();
   }
@@ -12635,7 +12824,7 @@ details.details-moving > :not(summary) {
   }
   function woaChoose(r) {
     var t = woa.target, old = woa.mode === "replace" ? t.ex : null, live = woa.mode === "add" || !!(old && t.session), s = live ? wo.screens[wo.i] : null, cx = s && s.cx && !s.ei ? s.cx : null, h = old ? null : hist[r.key], m = String((old ? old.reps : r.reps) || "").match(/\d+/), where = $("woawhere"), kind = old ? "" : timedByNature(r), secs = old ? old.duration_seconds : r.secs || h && h.secs;
-    woa.pick = r, woa.keep = !1, woa.where = cx ? "complex" : s && wo.i < endStop() ? "after" : "end", woa.nosets = !!cx || !!(old && old.sets == null), woa.timed = old ? !!(old.duration_seconds && !old.reps) : !!(kind || t && t.timed), woa.rest = restVal(old && old.rest_seconds), haptic("tap"), $("woaddtitle").textContent = r.name, $("woalast").textContent = old ? "Instead of " + old.name + "." : lastLine(r), $("woaddsets").value = String(h && h.sets || (old ? old.sets : r.sets) || (woa.timed ? 1 : 3)), $("woaddreps").value = String(h && h.reps || (m ? m[0] : 10)), fillDose("woadd", secs || (kind === "cardio" || t && t.timed && t.block.type !== "cooldown" ? 600 : 30)), doseMode("woadd", woa.timed), restChips($("woarest"), woa.rest, function(v) {
+    woa.pick = r, woa.keep = !1, woa.where = cx ? "complex" : s && wo.i < endStop() ? "after" : "end", woa.nosets = !!cx || !!(old && old.sets == null), woa.timed = old ? !!(old.duration_seconds && !old.reps) : !!(kind || t && t.timed), woa.rest = restVal(old && old.rest_seconds), haptic("tap"), $("woaddtitle").textContent = r.name, $("woalast").textContent = old ? "Instead of " + old.name + "." : lastLine(r), $("woaddsets").value = String(h && h.sets || (old ? old.sets : r.sets) || (woa.timed ? 1 : 3)), $("woaddreps").value = String(h && h.reps || (m ? m[0] : 10)), fillDose("woadd", secs || (kind === "cardio" || t && t.timed && t.block.type !== "cooldown" ? 600 : 30)), doseMode("woadd", woa.timed), restWheel($("woarest"), woa.rest, function(v) {
       woa && (woa.rest = v);
     }), where.innerHTML = "", $("woaddsets").parentNode.classList.toggle("hide", woa.nosets), cx ? where.appendChild(el("div", "wnote", old ? "Joins the round list." : "Joins the round list \u2014 part of this complex from the next round on.")) : !old && woa.where === "after" && ["After this one", "At the end"].forEach(function(t2, k) {
       var b = el("button", "chip" + (k ? "" : " active"), t2);
