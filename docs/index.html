@@ -18192,7 +18192,7 @@ details.details-moving > :not(summary) {
       for (var i = 0, ms = [0, 60, 150, 300, 600]; i < ms.length; i++) setTimeout(fitViewport, ms[i]);
     }
   });
-  var kbOwner = null, kbProbe = null, kbBack = null;
+  var kbOwner = null, kbProbe = null, kbBack = null, kbPlainBox = null;
   function kbOver() {
     return !!(native && native.keyboard && document.documentElement.classList.contains("kb-over"));
   }
@@ -18234,10 +18234,10 @@ details.details-moving > :not(summary) {
     }
   }
   function kbPad(box, px) {
-    box || (box = document.body), px > 0 ? (box._kbRest == null && (box._kbRest = box.style.paddingBottom, box._kbBase = parseFloat(getComputedStyle(box).paddingBottom) || 0), box.style.paddingBottom = box._kbBase + px + "px") : box._kbRest != null && (box.style.paddingBottom = box._kbRest, box._kbRest = null);
+    px > 0 ? (box._kbRest == null && (box._kbRest = box.style.paddingBottom, box._kbBase = parseFloat(getComputedStyle(box).paddingBottom) || 0), box.style.paddingBottom = box._kbBase + px + "px") : box._kbRest != null && (box.style.paddingBottom = box._kbRest, box._kbRest = null);
   }
   function kbPadOf(box) {
-    return box || (box = document.body), box._kbRest == null ? 0 : (parseFloat(box.style.paddingBottom) || 0) - box._kbBase;
+    return box._kbRest == null ? 0 : (parseFloat(box.style.paddingBottom) || 0) - box._kbBase;
   }
   function kbReveal(sc2, bottom, K) {
     var over = bottom - (window.innerHeight - K - 16);
@@ -18274,7 +18274,9 @@ details.details-moving > :not(summary) {
   }
   function kbPlain(f, sc2, K, d) {
     if (!d.instant) {
-      var box = sc2 || document.body, extra = 0;
+      var box = sc2 || kbPlainBox || f && f.closest("body > *") || document.body;
+      sc2 || (kbPlainBox = K ? box : null);
+      var extra = 0;
       if (K) {
         var bottom = sc2 ? sc2.getBoundingClientRect().bottom : window.innerHeight, covered = K - (window.innerHeight - bottom), base = box._kbRest == null ? parseFloat(getComputedStyle(box).paddingBottom) || 0 : box._kbBase;
         extra = Math.max(0, covered + 16 - base);

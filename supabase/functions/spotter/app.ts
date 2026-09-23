@@ -16584,7 +16584,7 @@ export const APP = String.raw`
   // keyboard down moves only the lift, frame by frame; the rest waits for the
   // release, which UIKit animates like any other. The browser and the Android
   // shell never get here: their frame does follow the keyboard (fitViewport()).
-  var kbOwner = null, kbProbe = null, kbBack = null;
+  var kbOwner = null, kbProbe = null, kbBack = null, kbPlainBox = null;
 
   function kbOver() {
     return !!(native && native.keyboard && document.documentElement.classList.contains("kb-over"));
@@ -16649,10 +16649,8 @@ export const APP = String.raw`
     }
   }
 
-  // Room at the end of a scroller for the rows the keys cover. The document's
-  // room goes on the body.
+  // Room at the end of a scroller for the rows the keys cover.
   function kbPad(box, px) {
-    if (!box) box = document.body;
     if (px > 0) {
       if (box._kbRest == null) {
         box._kbRest = box.style.paddingBottom;
@@ -16666,7 +16664,6 @@ export const APP = String.raw`
   }
 
   function kbPadOf(box) {
-    if (!box) box = document.body;
     return box._kbRest == null ? 0 : (parseFloat(box.style.paddingBottom) || 0) - box._kbBase;
   }
 
@@ -16734,7 +16731,11 @@ export const APP = String.raw`
   // below what it already keeps clear, and the field comes into view if hidden.
   function kbPlain(f, sc, K, d) {
     if (d.instant) return;
-    var box = sc || document.body;
+    // The document scrolls the landing page, and the body is a viewport tall:
+    // the room goes on the body's child that holds the field, where it adds to
+    // what the document can scroll.
+    var box = sc || kbPlainBox || (f && f.closest("body > *")) || document.body;
+    if (!sc) kbPlainBox = K ? box : null;
     var extra = 0;
     if (K) {
       var bottom = sc ? sc.getBoundingClientRect().bottom : window.innerHeight;
