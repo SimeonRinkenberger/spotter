@@ -8571,13 +8571,21 @@ export const APP = String.raw`
     renderWorkout(1);
   }
 
-  // Down far enough to show the whole panel, never so far its header goes; up to
-  // its header when that is above the fold.
+  // Down far enough to show the whole of p, never so far its top goes; up to its
+  // top when that is above the fold. Nothing inside a panel that has since shut.
   function ssReveal(p) {
     var m = $("wmain"), a = p.getBoundingClientRect(), b = m.getBoundingClientRect();
     var d = Math.min(Math.max(a.bottom - b.bottom + 8, 0), a.top - b.top - 8);
-    if (d && p.isConnected && p.classList.contains("open")) m.scrollBy({ top: d, behavior: lessMotion() ? "auto" : "smooth" });
+    if (d && p.isConnected && !p.closest(".sspanel:not(.open)")) m.scrollBy({ top: d, behavior: lessMotion() ? "auto" : "smooth" });
   }
+
+  // Tap-to-type inside a panel: the keyboard takes the bottom of the screen and
+  // fitViewport shrinks Workout Mode to what is left, which can leave the figure
+  // being typed below the fold. Once the keyboard has settled, it is brought back.
+  $("wmain").addEventListener("focusin", function (e) {
+    var box = e.target.classList.contains("numin") ? e.target.parentNode : null;
+    if (box) setTimeout(function () { ssReveal(box); }, 450);
+  });
 
   /**
    * The ping-pong. saveSet and workDone call it after a set is in the log — the

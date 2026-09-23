@@ -13304,8 +13304,14 @@ details.details-moving > :not(summary) {
   }
   function ssReveal(p) {
     var m = $("wmain"), a = p.getBoundingClientRect(), b = m.getBoundingClientRect(), d = Math.min(Math.max(a.bottom - b.bottom + 8, 0), a.top - b.top - 8);
-    d && p.isConnected && p.classList.contains("open") && m.scrollBy({ top: d, behavior: lessMotion() ? "auto" : "smooth" });
+    d && p.isConnected && !p.closest(".sspanel:not(.open)") && m.scrollBy({ top: d, behavior: lessMotion() ? "auto" : "smooth" });
   }
+  $("wmain").addEventListener("focusin", function(e) {
+    var box = e.target.classList.contains("numin") ? e.target.parentNode : null;
+    box && setTimeout(function() {
+      ssReveal(box);
+    }, 450);
+  });
   function ssLogged(fresh, idx2) {
     var i = wo.i, s = wo.screens[i], t, secs, moved;
     return !s || !s.ss ? !1 : (justSet = idx2, closeSheet("setsheet"), fresh ? (t = ssTurn(i, 0), secs = restOf(s.ex, s.block, t.lap).secs, secs > 0 ? startRest(secs) : restUntil && !restFace && stopRest(), t.done ? (wo.i < endStop() ? (justSet = -1, nextMove()) : renderWorkout(1), !0) : (moved = t.next !== i, wo.i = t.next, ssHand = moved, saveDraft(), renderWorkout(1), moved && setTimeout(function() {
