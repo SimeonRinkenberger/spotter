@@ -12777,7 +12777,7 @@ details.details-moving > :not(summary) {
       var s = wo.screens[wo.i], entry = wo.entries[wo.i], pair = dbOf(s && s.ex, entry) !== 2, h = hist[exKey(entry)];
       entry.each = pair, h && (h.each = pair), entry.sets.forEach(function(x) {
         x && !x.seconds && (pair ? x.each = !0 : delete x.each);
-      }), haptic("tap"), paintEach(!0), toast(pair ? "2 dumbbells \xB7 volume counts both" : "1 dumbbell \xB7 counted once"), saveDraft(), renderWorkout(1);
+      }), haptic("tap"), paintEach(!0), saveDraft(), renderWorkout(1);
     }
   }
   function drawStepper(animate) {
@@ -13567,7 +13567,7 @@ details.details-moving > :not(summary) {
       }
       ns.pr && moved && !sumStill(c, e, ns) && delete ns.pr, e.sets[si] = ns, flip && (e.each = pair, e.sets = e.sets.map(function(x) {
         return x.seconds && !x.reps || (x = Object.assign({}, x), pair ? x.each = !0 : delete x.each), x;
-      })), haptic("success"), sumPaint(c), fixed = c.box.querySelector('[data-k="' + ei + ":" + si + '"]'), fixed && (sumMorph(fixed, h), fixed.classList.add("fixed")), sumWrite(c), toast("Set updated" + (c.payload.strava_activity_id ? " \xB7 Strava keeps the version it was sent" : ""));
+      })), haptic("success"), sumPaint(c), fixed = c.box.querySelector('[data-k="' + ei + ":" + si + '"]'), fixed && (sumMorph(fixed, h), fixed.classList.add("fixed")), sumWrite(c), toast("Set updated" + (c.payload.strava_activity_id ? " \xB7 Strava keeps its copy" : ""));
     }
   }
   function sumShut() {

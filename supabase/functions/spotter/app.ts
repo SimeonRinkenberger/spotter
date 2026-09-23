@@ -7488,9 +7488,9 @@ export const APP = String.raw`
     entry.each = pair;
     if (h) h.each = pair;
     entry.sets.forEach(function (x) { if (x && !x.seconds) { if (pair) x.each = true; else delete x.each; } });
+    // The tag's own change is the answer: a toast here would sit on the reps.
     haptic("tap");
     paintEach(true);
-    toast(pair ? "2 dumbbells · volume counts both" : "1 dumbbell · counted once");
     saveDraft();
     renderWorkout(1);
   }
@@ -8953,7 +8953,8 @@ export const APP = String.raw`
       fixed = c.box.querySelector('[data-k="' + ei + ":" + si + '"]');
       if (fixed) { sumMorph(fixed, h); fixed.classList.add("fixed"); }
       sumWrite(c);
-      toast("Set updated" + (c.payload.strava_activity_id ? " · Strava keeps the version it was sent" : ""));
+      // Strava was sent the session as it was, and a correction does not follow it.
+      toast("Set updated" + (c.payload.strava_activity_id ? " · Strava keeps its copy" : ""));
     }
   }
 
