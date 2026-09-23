@@ -12857,11 +12857,12 @@ details.details-moving > :not(summary) {
       var m = String(s.ex.reps).match(/\d+/);
       m && (targetReps = parseInt(m[0], 10));
     }
-    var h = hist[exKey(entry)];
+    var h = hist[exKey(entry)], prev = null, k;
+    for (k = idx2 - 1; k >= 0 && !prev; k--) entry.sets[k] && entry.sets[k].weight && (prev = entry.sets[k]);
     return {
       idx: idx2,
       reps: existing ? existing.reps : targetReps,
-      weight: existing ? toUnit(existing.weight, existing.unit) : h ? toUnit(h.weight, h.unit) : 0
+      weight: existing ? toUnit(existing.weight, existing.unit) : prev ? toUnit(prev.weight, prev.unit) : h ? toUnit(h.weight, h.unit) : 0
     };
   }
   function openSetSheet(idx2) {

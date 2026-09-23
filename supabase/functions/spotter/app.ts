@@ -7445,11 +7445,17 @@ export const APP = String.raw`
       var m = String(s.ex.reps).match(/\d+/);
       if (m) targetReps = parseInt(m[0], 10);
     }
-    var h = hist[exKey(entry)];
+    var h = hist[exKey(entry)], prev = null, k;
+    // The weight just lifted outranks last session's: set 2 opens on set 1's
+    // load, the way Strong and Hevy carry it down the table. Found in the
+    // superset panels, where the steppers never close and a load dialled for
+    // set 1 went back to zero for set 2 — the sheet had always done the same.
+    for (k = idx - 1; k >= 0 && !prev; k--) if (entry.sets[k] && entry.sets[k].weight) prev = entry.sets[k];
     return {
       idx: idx,
       reps: existing ? existing.reps : targetReps,
-      weight: existing ? toUnit(existing.weight, existing.unit) : (h ? toUnit(h.weight, h.unit) : 0)
+      weight: existing ? toUnit(existing.weight, existing.unit)
+        : prev ? toUnit(prev.weight, prev.unit) : (h ? toUnit(h.weight, h.unit) : 0)
     };
   }
 
