@@ -18309,8 +18309,6 @@ details.details-moving > :not(summary) {
     !k || !k.visible || !kbOver() || kbApply({ visible: !0, height: k.height, duration: k.duration || 0.25, easing: k.easing });
   }), $("searchx").addEventListener("pointerdown", function(e) {
     e.preventDefault();
-  }), $("searchx").addEventListener("mousedown", function(e) {
-    e.preventDefault();
   }), $("searchx").onclick = function() {
     $("search").blur(), this.blur();
   }, $("search").addEventListener("keydown", function(e) {

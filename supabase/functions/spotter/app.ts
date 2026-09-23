@@ -16793,9 +16793,9 @@ export const APP = String.raw`
   });
 
   // The search's own way out of typing (style.ts, .searchx). Held on the press so
-  // the field keeps the keyboard, and the button its place, until the tap lands.
+  // the field keeps the keyboard, and the button its place, until the tap lands;
+  // a cancelled pointerdown cancels the mouse events that would move focus too.
   $("searchx").addEventListener("pointerdown", function (e) { e.preventDefault(); });
-  $("searchx").addEventListener("mousedown", function (e) { e.preventDefault(); });
   $("searchx").onclick = function () { $("search").blur(); this.blur(); };
   // Search on the keyboard means the same thing: done typing, show me.
   $("search").addEventListener("keydown", function (e) { if (e.key === "Enter") this.blur(); });
