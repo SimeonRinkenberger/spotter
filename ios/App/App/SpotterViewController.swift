@@ -10,9 +10,9 @@ import UIKit
 // climbed back, the set sheet waited and then jumped, and the Pumpy composer
 // vanished for a few frames on every dismissal (before/after recordings, BRIEF
 // 0923-KB). So the frame no longer moves at all. The keyboard is reported to the
-// page as a height with its duration and curve, and the page lifts the one surface
-// that owns the field — a sheet, the composer — with a composited transform that
-// starts on the same frame and follows the same curve. Capacitor's Keyboard plugin
+// page as a height with its duration, curve and how far the keys' own animation has
+// already run, and the page lifts the one surface that owns the field — a sheet,
+// the composer — with a composited transform on the keys' timeline and curve. Capacitor's Keyboard plugin
 // already detaches WebKit's own keyboard observers (resize: none), so WebKit neither
 // shrinks the visual viewport nor scrolls the document to reveal the field; the page
 // owns all of it.
@@ -103,10 +103,9 @@ class SpotterViewController: CAPBridgeViewController {
             let height = self.overlap(of: self.view.convert(screenFrame, from: nil))
             let duration = info[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double ?? 0.25
             let curve = info[UIResponder.keyboardAnimationCurveUserInfoKey] as? Int ?? 7
-            // Hiding a number pad with its form accessory posts twice: the real,
-            // animated move, then the same end frame again with no duration. Taken
-            // as news, the second cancelled the page's animation and dropped the
-            // sheet in one frame. The same destination is not news.
+            // The frame the keys are already travelling to, reported again with no
+            // duration, is not news: taken as news it would cut the page's
+            // animation short and drop the sheet in one frame.
             let now = CACurrentMediaTime()
             if duration == 0, abs(height - self.targetHeight) < 0.5,
                self.pendingTransition != nil || now < self.animatingUntil { return }
