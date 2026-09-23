@@ -1931,16 +1931,56 @@ export const STYLE = String.raw`<style>
   .doseseg { margin-bottom: 12px; }
   .dosefields.swap .field { animation: fadein var(--t-2) var(--e-out); }
   /* ---------- choosing a rest ----------
-     One grid, three homes. In its own sheet it is a wrapping .pillrow; under a
-     dose it is the Library's own .chips strip, bled by its end chips' 18px inset
-     so the first chip lines up with the label (the .chips rule says why the
-     inset is there). The custom pair opens under it as a field row, the button
-     its third column. */
-  .restpick .chip { min-height: 36px; }
-  .restpick .chips { margin: 0 -18px; padding-top: 2px; }
-  .restcustom { align-items: flex-end; margin-top: 12px; }
+     Clock's timer wheel: two scroll-snapped columns over one rounded band, each
+     unit fixed beside its column inside the band. Rows are 44px, not
+     UIPickerView's 32pt, because a row is also a target (a tap brings it to the
+     band). Five show in the rest sheet; three in the panes and the section
+     sheet, where the wheel is one field among several. The spacers let the
+     first and last rows reach the band. */
+  .restpick { --wrow: 44px; --rows: 5; --wpad: calc(var(--wrow) * (var(--rows) - 1) / 2);
+    max-width: 300px; margin: 0 auto; }
+  .restpick.short { --rows: 3; }
+  .wheel { position: relative; display: flex; -webkit-user-select: none; }
+  .wband { position: absolute; inset: var(--wpad) 0 auto; height: var(--wrow);
+    border-radius: 12px; background: var(--sand); }
+  .wcol { position: relative; flex: 1; }
+  .wsc { height: calc(var(--wrow) * var(--rows)); overflow-y: scroll; scroll-snap-type: y mandatory;
+    overscroll-behavior: contain; touch-action: pan-y; scrollbar-width: none; border-radius: 12px; }
+  .wsc::-webkit-scrollbar { display: none; }
+  .wsc::before, .wsc::after { content: ""; display: block; height: var(--wpad); }
+  .wit { height: var(--wrow); line-height: var(--wrow); padding-right: 54%; text-align: right;
+    scroll-snap-align: center; font-size: 22px; font-variant-numeric: tabular-nums; perspective: 300px; }
+  .wit span { display: block; opacity: .35; transition: opacity var(--t-1) var(--e-out); }
+  .wit.on span { opacity: 1; }
+  .wunit { position: absolute; left: 54%; top: var(--wpad); line-height: var(--wrow);
+    font-size: 15px; font-weight: 650; pointer-events: none; }
+  .wfoot { display: flex; align-items: center; justify-content: space-between; min-height: 48px; }
+  .wsay { font-size: 14px; font-weight: 650; color: var(--ink-2); }
+  .wdef { transition: opacity var(--t-2) var(--e-out), visibility var(--t-2); }
+  .wdef:disabled { opacity: 0; visibility: hidden; }
+  /* The drum: each row's own trip through the column is its timeline, so its
+     text tilts, closes up on the band and fades on WebKit's scroll, not on
+     script. The row stays square and only its span moves, since a snap area is
+     the transformed box. The keyframes are a cylinder sampled every row and a
+     half of the five-row wheel; the three-row one reads the same curve as a
+     smaller drum. Without it, and under reduced motion, the rows stay flat and
+     only the one in the band is lit. */
+  @media (prefers-reduced-motion: no-preference) {
+    @supports (animation-timeline: view()) {
+      .wit { view-timeline: --wit; }
+      .wit span { animation: wdrum linear both; animation-timeline: --wit; }
+    }
+  }
+  @keyframes wdrum {
+    0% { transform: translateY(-77%) rotateX(-75deg); opacity: 0; }
+    25% { transform: translateY(-10%) rotateX(-37deg); opacity: .45; }
+    50% { transform: none; opacity: 1; }
+    75% { transform: translateY(10%) rotateX(37deg); opacity: .45; }
+    100% { transform: translateY(77%) rotateX(75deg); opacity: 0; }
+  }
   @media (prefers-reduced-motion: reduce) {
     .dosefields.swap .field { animation: none; }
+    .wdef, .wit span { transition: none; }
     .woakeep, .waddcard { transition: none; }
     .waddcard:active { transform: none; }
   }
@@ -2597,7 +2637,7 @@ export const STYLE = String.raw`<style>
      Three controls in the whole app showed one. :focus-visible, so a thumb never
      sees it and a Tab key always does; the outline follows each control's own
      border-radius, so it fits a pill as well as it fits a square. */
-  button:focus-visible, a:focus-visible, [role="button"]:focus-visible, select:focus-visible {
+  button:focus-visible, a:focus-visible, [role="button"]:focus-visible, select:focus-visible, .wsc:focus-visible {
     outline: 2px solid var(--ember); outline-offset: 2px; }
   /* The body map draws its own: an outline round a muscle's bounding box would be
      a rectangle over the figure. */
@@ -2609,11 +2649,11 @@ export const STYLE = String.raw`<style>
      Insets come off the padding box: a bordered control needs a pixel more. */
   .iconbtn, .addbtn, .exhelp, .planx, .planadd, .mbtn, .addex, .danger, .libcount,
   .planlegal a, .planlegal button, .segbtn, .planbtn, .linkbtn,
-  .chips .chip, .said .chip, .votes .chip, .restchips .chip, .pumpyctx button, .threadrow .tdel, .ttitle { position: relative; }
+  .chips .chip, .said .chip, .votes .chip, .pumpyctx button, .threadrow .tdel, .ttitle { position: relative; }
   .iconbtn::after, .addbtn::after, .exhelp::after, .planx::after, .planadd::after,
   .segbtn::after, .planbtn::after, .linkbtn::after,
   .mbtn::after, .addex::after, .danger::after, .chips .chip::after, .said .chip::after,
-  .votes .chip::after, .restchips .chip::after,
+  .votes .chip::after,
   .pumpyctx button::after, .threadrow .tdel::after, .ttitle::after,
   .libcount::after, .planlegal a::after, .planlegal button::after { content: ""; position: absolute; }
   .libcount::after { inset: -9px; }
@@ -2631,7 +2671,6 @@ export const STYLE = String.raw`<style>
   .mbtn::after { inset: -6px 0; }
   .danger::after, .threadrow .tdel::after { inset: -3px 0; }
   .chips .chip::after, .said .chip::after, .votes .chip::after { inset: -6px 0; }
-  .restchips .chip::after { inset: -4px 0; }
   /* A square control needs the inset on all four sides: 36 + 4 + 4 is 44 across as
      well as down, and -6px 0 would have left the thumbs 36 wide and 28 tall. */
   .votes .vote::after { inset: -4px; }
