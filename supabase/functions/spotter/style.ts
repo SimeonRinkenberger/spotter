@@ -1937,58 +1937,50 @@ export const STYLE = String.raw`<style>
      band). Five show in the rest sheet; three in the panes and the section
      sheet, where the wheel is one field among several. The spacers let the
      first and last rows reach the band. */
-  .restpick { --wrow: 44px; --rows: 5; --wpad: calc(var(--wrow) * (var(--rows) - 1) / 2); }
+  .restpick { --wrow: 44px; --rows: 5; --wpad: calc(var(--wrow) * (var(--rows) - 1) / 2);
+    max-width: 300px; margin: 0 auto; }
   .restpick.short { --rows: 3; }
-  .wheel { position: relative; display: flex; max-width: 300px; margin: 0 auto;
-    -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
-  .wband { position: absolute; left: 0; right: 0; top: var(--wpad); height: var(--wrow);
+  .wheel { position: relative; display: flex; -webkit-user-select: none; }
+  .wband { position: absolute; inset: var(--wpad) 0 auto; height: var(--wrow);
     border-radius: 12px; background: var(--sand); }
-  .wcol { position: relative; flex: 1; min-width: 0; }
-  .wsc { position: relative; height: calc(var(--wrow) * var(--rows)); overflow-y: scroll;
-    scroll-snap-type: y mandatory; overscroll-behavior: contain; touch-action: pan-y;
-    scrollbar-width: none; outline: none; border-radius: 12px; }
+  .wcol { position: relative; flex: 1; }
+  .wsc { height: calc(var(--wrow) * var(--rows)); overflow-y: scroll; scroll-snap-type: y mandatory;
+    overscroll-behavior: contain; touch-action: pan-y; scrollbar-width: none; border-radius: 12px; }
   .wsc::-webkit-scrollbar { display: none; }
   .wsc::before, .wsc::after { content: ""; display: block; height: var(--wpad); }
-  .wsc:focus-visible { box-shadow: inset 0 0 0 2px var(--ember); }
   .wit { height: var(--wrow); line-height: var(--wrow); padding-right: 54%; text-align: right;
-    scroll-snap-align: center; font-size: 22px; font-variant-numeric: tabular-nums; color: var(--ink); }
-  .wit span { display: block; }
-  .wunit { position: absolute; left: 50%; top: var(--wpad); line-height: var(--wrow); padding-left: 4%;
-    font-size: 15px; font-weight: 650; color: var(--ink); pointer-events: none; }
-  /* The fade into the sheet where the drum cannot be drawn. */
-  .wheel::before, .wheel::after { content: ""; position: absolute; left: 0; right: 0; z-index: 1;
-    height: var(--wpad); pointer-events: none; }
-  .wheel::before { top: 0; background: linear-gradient(var(--paper), transparent); }
-  .wheel::after { bottom: 0; background: linear-gradient(transparent, var(--paper)); }
-  .wfoot { display: flex; align-items: center; justify-content: space-between; gap: 12px;
-    max-width: 300px; min-height: 44px; margin: 4px auto 0; }
+    scroll-snap-align: center; font-size: 22px; font-variant-numeric: tabular-nums; perspective: 300px; }
+  .wit span { display: block; opacity: .35; transition: opacity var(--t-1) var(--e-out); }
+  .wit.on span { opacity: 1; }
+  .wunit { position: absolute; left: 54%; top: var(--wpad); line-height: var(--wrow);
+    font-size: 15px; font-weight: 650; pointer-events: none; }
+  .wfoot { display: flex; align-items: center; justify-content: space-between; min-height: 48px; }
   .wsay { font-size: 14px; font-weight: 650; color: var(--ink-2); }
   .wdef { transition: opacity var(--t-2) var(--e-out), visibility var(--t-2); }
   .wdef:disabled { opacity: 0; visibility: hidden; }
   /* The drum: each row's own trip through the column is its timeline, so its
      text tilts, closes up on the band and fades on WebKit's scroll, not on
      script. The row stays square and only its span moves, since a snap area is
-     the transformed box. The keyframes are a cylinder sampled at whole rows of
-     the five-row wheel; the three-row one reads the same curve as a smaller drum. */
-  @supports (animation-timeline: view()) {
-    .wheel::before, .wheel::after { content: none; }
-    .wit { view-timeline: --wit; }
-    .wit span { animation: wdrum linear both; animation-timeline: --wit; }
+     the transformed box. The keyframes are a cylinder sampled every row and a
+     half of the five-row wheel; the three-row one reads the same curve as a
+     smaller drum. Without it, and under reduced motion, the rows stay flat and
+     only the one in the band is lit. */
+  @media (prefers-reduced-motion: no-preference) {
+    @supports (animation-timeline: view()) {
+      .wit { view-timeline: --wit; }
+      .wit span { animation: wdrum linear both; animation-timeline: --wit; }
+    }
   }
   @keyframes wdrum {
-    0% { transform: translateY(-77%) perspective(300px) rotateX(-75deg); opacity: .15; }
-    16.7% { transform: translateY(-24%) perspective(300px) rotateX(-50deg); opacity: .4; }
-    33.3% { transform: translateY(-3%) perspective(300px) rotateX(-25deg); opacity: .7; }
-    50% { transform: translateY(0) perspective(300px) rotateX(0deg); opacity: 1; }
-    66.7% { transform: translateY(3%) perspective(300px) rotateX(25deg); opacity: .7; }
-    83.3% { transform: translateY(24%) perspective(300px) rotateX(50deg); opacity: .4; }
-    100% { transform: translateY(77%) perspective(300px) rotateX(75deg); opacity: .15; }
+    0% { transform: translateY(-77%) rotateX(-75deg); opacity: 0; }
+    25% { transform: translateY(-10%) rotateX(-37deg); opacity: .45; }
+    50% { transform: none; opacity: 1; }
+    75% { transform: translateY(10%) rotateX(37deg); opacity: .45; }
+    100% { transform: translateY(77%) rotateX(75deg); opacity: 0; }
   }
-  @keyframes wfade { 0%, 100% { opacity: .15; } 33.3%, 66.7% { opacity: .7; } 50% { opacity: 1; } }
   @media (prefers-reduced-motion: reduce) {
     .dosefields.swap .field { animation: none; }
-    .wit span { animation-name: wfade; }
-    .wdef { transition: none; }
+    .wdef, .wit span { transition: none; }
     .woakeep, .waddcard { transition: none; }
     .waddcard:active { transform: none; }
   }
@@ -2645,7 +2637,7 @@ export const STYLE = String.raw`<style>
      Three controls in the whole app showed one. :focus-visible, so a thumb never
      sees it and a Tab key always does; the outline follows each control's own
      border-radius, so it fits a pill as well as it fits a square. */
-  button:focus-visible, a:focus-visible, [role="button"]:focus-visible, select:focus-visible {
+  button:focus-visible, a:focus-visible, [role="button"]:focus-visible, select:focus-visible, .wsc:focus-visible {
     outline: 2px solid var(--ember); outline-offset: 2px; }
   /* The body map draws its own: an outline round a muscle's bounding box would be
      a rectangle over the figure. */

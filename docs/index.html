@@ -5082,6 +5082,8 @@ body:not(.app) #toast.show {
   --wrow: 44px;
   --rows: 5;
   --wpad: calc(var(--wrow) * (var(--rows) - 1) / 2);
+  max-width: 300px;
+  margin: 0 auto;
 }
 .restpick.short {
   --rows: 3;
@@ -5089,17 +5091,11 @@ body:not(.app) #toast.show {
 .wheel {
   position: relative;
   display: flex;
-  max-width: 300px;
-  margin: 0 auto;
   -webkit-user-select: none;
-  user-select: none;
-  -webkit-tap-highlight-color: transparent;
 }
 .wband {
   position: absolute;
-  left: 0;
-  right: 0;
-  top: var(--wpad);
+  inset: var(--wpad) 0 auto;
   height: var(--wrow);
   border-radius: 12px;
   background: var(--sand);
@@ -5107,17 +5103,14 @@ body:not(.app) #toast.show {
 .wcol {
   position: relative;
   flex: 1;
-  min-width: 0;
 }
 .wsc {
-  position: relative;
   height: calc(var(--wrow) * var(--rows));
   overflow-y: scroll;
   scroll-snap-type: y mandatory;
   overscroll-behavior: contain;
   touch-action: pan-y;
   scrollbar-width: none;
-  outline: none;
   border-radius: 12px;
 }
 .wsc::-webkit-scrollbar {
@@ -5129,9 +5122,6 @@ body:not(.app) #toast.show {
   display: block;
   height: var(--wpad);
 }
-.wsc:focus-visible {
-  box-shadow: inset 0 0 0 2px var(--ember);
-}
 .wit {
   height: var(--wrow);
   line-height: var(--wrow);
@@ -5140,48 +5130,30 @@ body:not(.app) #toast.show {
   scroll-snap-align: center;
   font-size: 22px;
   font-variant-numeric: tabular-nums;
-  color: var(--ink);
+  perspective: 300px;
 }
 .wit span {
   display: block;
+  opacity: .35;
+  transition: opacity var(--t-1) var(--e-out);
+}
+.wit.on span {
+  opacity: 1;
 }
 .wunit {
   position: absolute;
-  left: 50%;
+  left: 54%;
   top: var(--wpad);
   line-height: var(--wrow);
-  padding-left: 4%;
   font-size: 15px;
   font-weight: 650;
-  color: var(--ink);
   pointer-events: none;
-}
-.wheel::before,
-.wheel::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  z-index: 1;
-  height: var(--wpad);
-  pointer-events: none;
-}
-.wheel::before {
-  top: 0;
-  background: linear-gradient(var(--paper), transparent);
-}
-.wheel::after {
-  bottom: 0;
-  background: linear-gradient(transparent, var(--paper));
 }
 .wfoot {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  max-width: 300px;
-  min-height: 44px;
-  margin: 4px auto 0;
+  min-height: 48px;
 }
 .wsay {
   font-size: 14px;
@@ -5195,68 +5167,45 @@ body:not(.app) #toast.show {
   opacity: 0;
   visibility: hidden;
 }
-@supports (animation-timeline: view()) {
-  .wheel::before,
-  .wheel::after {
-    content: none;
-  }
-  .wit {
-    view-timeline: --wit;
-  }
-  .wit span {
-    animation: wdrum linear both;
-    animation-timeline: --wit;
+@media (prefers-reduced-motion: no-preference) {
+  @supports (animation-timeline: view()) {
+    .wit {
+      view-timeline: --wit;
+    }
+    .wit span {
+      animation: wdrum linear both;
+      animation-timeline: --wit;
+    }
   }
 }
 @keyframes wdrum {
   0% {
-    transform: translateY(-77%) perspective(300px) rotateX(-75deg);
-    opacity: .15;
+    transform: translateY(-77%) rotateX(-75deg);
+    opacity: 0;
   }
-  16.7% {
-    transform: translateY(-24%) perspective(300px) rotateX(-50deg);
-    opacity: .4;
-  }
-  33.3% {
-    transform: translateY(-3%) perspective(300px) rotateX(-25deg);
-    opacity: .7;
+  25% {
+    transform: translateY(-10%) rotateX(-37deg);
+    opacity: .45;
   }
   50% {
-    transform: translateY(0) perspective(300px) rotateX(0deg);
+    transform: none;
     opacity: 1;
   }
-  66.7% {
-    transform: translateY(3%) perspective(300px) rotateX(25deg);
-    opacity: .7;
-  }
-  83.3% {
-    transform: translateY(24%) perspective(300px) rotateX(50deg);
-    opacity: .4;
+  75% {
+    transform: translateY(10%) rotateX(37deg);
+    opacity: .45;
   }
   100% {
-    transform: translateY(77%) perspective(300px) rotateX(75deg);
-    opacity: .15;
-  }
-}
-@keyframes wfade {
-  0%, 100% {
-    opacity: .15;
-  }
-  33.3%, 66.7% {
-    opacity: .7;
-  }
-  50% {
-    opacity: 1;
+    transform: translateY(77%) rotateX(75deg);
+    opacity: 0;
   }
 }
 @media (prefers-reduced-motion: reduce) {
   .dosefields.swap .field {
     animation: none;
   }
+  .wdef,
   .wit span {
-    animation-name: wfade;
-  }
-  .wdef {
     transition: none;
   }
   .woakeep,
@@ -6859,7 +6808,8 @@ button.kv.row:not([disabled]):active {
 button:focus-visible,
 a:focus-visible,
 [role=button]:focus-visible,
-select:focus-visible {
+select:focus-visible,
+.wsc:focus-visible {
   outline: 2px solid var(--ember);
   outline-offset: 2px;
 }
@@ -10521,19 +10471,21 @@ details.details-moving > :not(summary) {
     var bits = [], kind = b.type && b.type !== "straight" ? kindName(b.type) : "", r;
     return kind && kind.toLowerCase() !== String(b.title || "").toLowerCase() && bits.push(kind), b.rounds && bits.push(b.rounds + " rounds"), (b.rounds > 1 || supersetOf(b)) && (r = restOf(null, b, !0), bits.push(restWord(r.secs) + " between rounds" + (r.source === "default" ? " \xB7 default" : ""))), b.duration_seconds && bits.push(clock(b.duration_seconds) + " cap"), bits.join(" \xB7 ");
   }
-  var WHEEL_MAX = 655;
   function restDetent(t) {
-    return clamp(Math.round(t / 5) * 5, 0, WHEEL_MAX);
+    return clamp(Math.round(t / 5) * 5, 0, 655);
   }
   function restSpoken(t) {
     var m = Math.floor(t / 60), s = t % 60, out = [];
     return m && out.push(m + (m > 1 ? " minutes" : " minute")), s && out.push(s + (s > 1 ? " seconds" : " second")), out.join(" ") || "No rest";
   }
   function restWheel(box, value, onPick) {
-    var cur = typeof value == "number" ? value : "", shown = restDetent(cur === "" ? REST_FALLBACK : cur), wheel = el("div", "wheel"), foot = el("div", "wfoot"), say = el("span", "wsay"), use = el("button", "linkbtn wdef", "Use default (" + clock(REST_FALLBACK) + ")"), settleT = null, tickAt = 0, hush = 0, cols;
+    var cur = typeof value == "number" ? value : "", shown = restDetent(cur === "" ? REST_FALLBACK : cur), wheel = el("div", "wheel"), foot = el("div", "wfoot"), say = el("span", "wsay"), use = el("button", "linkbtn wdef", "Use default (" + clock(REST_FALLBACK) + ")"), settleT, tickAt = 0, hush = 0, cols;
     box._ro && box._ro.disconnect(), box.innerHTML = "", box.setAttribute("data-noswipe", ""), wheel.appendChild(el("div", "wband"));
     function rowH(c) {
       return c.sc.firstChild.offsetHeight || 44;
+    }
+    function mark(c, k) {
+      c.sc.children[c.i].classList.remove("on"), c.sc.children[c.i = k].classList.add("on");
     }
     function spin(c, k) {
       c.to = k, c.sc.scrollTo({ top: k * rowH(c), behavior: lessMotion() ? "auto" : "smooth" });
@@ -10548,7 +10500,7 @@ details.details-moving > :not(summary) {
         k2 >= 0 && spin(c, k2);
       }, sc2.addEventListener("scroll", function() {
         var k2 = clamp(Math.round(sc2.scrollTop / rowH(c)), 0, n - 1), t;
-        k2 !== c.i && (c.i = k2, t = now(), t > hush && t - tickAt > 45 && (tickAt = t, haptic("select"))), clearTimeout(settleT), settleT = setTimeout(settle, 120);
+        k2 !== c.i && (mark(c, k2), t = now(), t > hush && t - tickAt > 45 && (tickAt = t, haptic("select"))), clearTimeout(settleT), settleT = setTimeout(settle, 120);
       }, { passive: !0 }), sc2.addEventListener("keydown", function(e) {
         var d = e.key === "ArrowUp" || e.key === "ArrowRight" ? 1 : e.key === "ArrowDown" || e.key === "ArrowLeft" ? -1 : 0;
         d && (e.preventDefault(), spin(c, clamp((c.to < 0 ? c.i : c.to) + d, 0, n - 1)));
@@ -10570,8 +10522,8 @@ details.details-moving > :not(summary) {
       c.sc.clientHeight && (c.sc.scrollTop = c.i * rowH(c));
     }
     use.onclick = function() {
-      haptic("tap"), cur = "", shown = restDetent(REST_FALLBACK), hush = now() + 600, spin(cols[0], Math.floor(shown / 60)), spin(cols[1], shown % 60 / 5), paint2(), onPick("");
-    }, cols = [column(11, 1, "min", "Minutes"), column(12, 5, "sec", "Seconds")], cols[0].i = Math.floor(shown / 60), cols[1].i = shown % 60 / 5, say.setAttribute("aria-live", "polite"), foot.appendChild(say), foot.appendChild(use), box.appendChild(wheel), box.appendChild(foot), paint2(), cols.forEach(place), window.ResizeObserver && (box._ro = new ResizeObserver(function() {
+      haptic("tap"), cur = "", shown = REST_FALLBACK, hush = now() + 600, spin(cols[0], Math.floor(shown / 60)), spin(cols[1], shown % 60 / 5), paint2(), onPick("");
+    }, cols = [column(11, 1, "min", "Minutes"), column(12, 5, "sec", "Seconds")], mark(cols[0], Math.floor(shown / 60)), mark(cols[1], shown % 60 / 5), say.setAttribute("aria-live", "polite"), foot.appendChild(say), foot.appendChild(use), box.appendChild(wheel), box.appendChild(foot), paint2(), cols.forEach(place), window.ResizeObserver && (box._ro = new ResizeObserver(function() {
       cols.forEach(place);
     }), cols.forEach(function(c) {
       box._ro.observe(c.sc);

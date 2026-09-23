@@ -2664,9 +2664,7 @@ export const APP = String.raw`
   // the rest sheet has a Save, the panes and the section sheet their own
   // buttons. A value off the grid (97 s from a video) shows its nearest notch
   // and stays 97 until someone moves the wheel.
-  var WHEEL_MAX = 655;
-
-  function restDetent(t) { return clamp(Math.round(t / 5) * 5, 0, WHEEL_MAX); }
+  function restDetent(t) { return clamp(Math.round(t / 5) * 5, 0, 655); }
 
   // What VoiceOver says for either column: the whole rest, never half of it.
   function restSpoken(t) {
@@ -2680,7 +2678,7 @@ export const APP = String.raw`
     var cur = typeof value === "number" ? value : "", shown = restDetent(cur === "" ? REST_FALLBACK : cur);
     var wheel = el("div", "wheel"), foot = el("div", "wfoot"), say = el("span", "wsay");
     var use = el("button", "linkbtn wdef", "Use default (" + clock(REST_FALLBACK) + ")");
-    var settleT = null, tickAt = 0, hush = 0, cols;
+    var settleT, tickAt = 0, hush = 0, cols;
     if (box._ro) box._ro.disconnect();
     box.innerHTML = "";
     // Every vertical drag that starts on the wheel is the wheel's: wireSheet
@@ -2689,6 +2687,13 @@ export const APP = String.raw`
     wheel.appendChild(el("div", "wband"));
 
     function rowH(c) { return c.sc.firstChild.offsetHeight || 44; }
+
+    // The row in the band is lit; the stylesheet dims the rest, which is the
+    // whole look where the drum is not drawn.
+    function mark(c, k) {
+      c.sc.children[c.i].classList.remove("on");
+      c.sc.children[c.i = k].classList.add("on");
+    }
 
     // The wheel moving itself, from a tap on a row or an arrow key: smoothly,
     // unless motion is to be kept down. c.to is where it is headed, so a second
@@ -2720,7 +2725,7 @@ export const APP = String.raw`
       sc.addEventListener("scroll", function () {
         var k = clamp(Math.round(sc.scrollTop / rowH(c)), 0, n - 1), t;
         if (k !== c.i) {
-          c.i = k;
+          mark(c, k);
           // A tick per notch, the Taptic Engine's selection click — but at most
           // one per 45ms, so a fling across eleven notches is a flutter and not
           // a buzz, and none while "Use default" is doing the moving.
@@ -2772,7 +2777,7 @@ export const APP = String.raw`
     use.onclick = function () {
       haptic("tap");
       cur = "";
-      shown = restDetent(REST_FALLBACK);
+      shown = REST_FALLBACK;
       hush = now() + 600;
       spin(cols[0], Math.floor(shown / 60));
       spin(cols[1], shown % 60 / 5);
@@ -2781,8 +2786,8 @@ export const APP = String.raw`
     };
 
     cols = [column(11, 1, "min", "Minutes"), column(12, 5, "sec", "Seconds")];
-    cols[0].i = Math.floor(shown / 60);
-    cols[1].i = shown % 60 / 5;
+    mark(cols[0], Math.floor(shown / 60));
+    mark(cols[1], shown % 60 / 5);
     say.setAttribute("aria-live", "polite");
     foot.appendChild(say);
     foot.appendChild(use);
