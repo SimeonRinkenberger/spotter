@@ -11,6 +11,15 @@ function fixture(reply:()=>Promise<Response>,admission='ok') {
 }
 const response=()=>Promise.resolve(Response.json({choices:[],usage:{prompt_tokens:100,completion_tokens:30}}));
 ok(tokenCost('gpt-5.6-luna',5000,1000)===.0022,'Luna pricing');
+// GPT-6 Luna, read 2026-09-23: $0.10 in, $0.50 out, $0.01 cached, per million.
+ok(tokenCost('gpt-6-luna',5000,1000)===.001,'GPT-6 Luna pricing');
+ok(Math.abs(tokenCost('gpt-6-luna',5000,1000,4000)-.00064)<1e-12,'GPT-6 Luna cached input at a tenth');
+ok(tokenCost('gpt-6-luna',1e6,0)===.10&&tokenCost('gpt-6-luna',0,1e6)===.50,'GPT-6 Luna per-million rates');
+// Pumpy's cap went from 1,500 to 6,000 in the same change. The reservation is
+// input bound + cap, so on GPT-6 it must not exceed what 5.6 reserved at 1,500
+// for any prompt the size of Pumpy's static half (measured > 12 KB) or larger.
+for (const bytes of [12_000,20_000,60_000,200_000])
+ ok(tokenCost('gpt-6-luna',bytes,6000)<=tokenCost('gpt-5.6-luna',bytes,1500),'GPT-6 at 6,000 reserves no more than 5.6 at 1,500 for '+bytes+' bytes');
 ok(tokenCost('gemini-3.6-flash',1000,1000)>0,'Gemini is priced');
 const img=openaiInputBound({messages:[{content:[{type:'image_url',image_url:{url:'data:image/png;base64,'+'x'.repeat(900000),detail:'high'}}]}]});
 ok(img<6000&&img>4096,'base64 is not mistaken for text tokens');
@@ -21,6 +30,24 @@ f=fixture(response);
 await aiActor.run(actor(),()=>f.fetcher(url,request));
 ok(f.calls[0].name==='ai_reserve'&&f.calls[1].name==='ai_record_attempt'&&f.calls[2].args.p_final===true,'reserve before generation then settle');
 ok(f.calls[2].args.p_usd===tokenCost('gpt-5.6-luna',100,30),'settles reported usage');
+{
+ // The same path on GPT-6: reserved at its own price for input bound + cap, and
+ // settled on what the provider reports.
+ const g6=fixture(()=>Promise.resolve(Response.json({model:'gpt-6-luna',choices:[],usage:{prompt_tokens:100,completion_tokens:30}})));
+ const body={...JSON.parse(request.body),model:'gpt-6-luna',max_completion_tokens:6000,reasoning_effort:'low'};
+ await aiActor.run(actor(),()=>g6.fetcher(url,{...request,body:JSON.stringify(body)}));
+ const want=Math.ceil(tokenCost('gpt-6-luna',openaiInputBound(body),6000)*1e6)/1e6;
+ ok(g6.calls[0].name==='ai_reserve'&&g6.calls[0].args.p_model==='gpt-6-luna'&&g6.calls[0].args.p_usd===want,'GPT-6 reserves input bound + 6,000 at its own price');
+ ok(g6.calls[1].args.p_meta.price_version.endsWith('gpt-6-luna:0.1/0.5/0.01'),'GPT-6 attempt records its unit prices');
+ ok(g6.calls[2].args.p_usd===tokenCost('gpt-6-luna',100,30),'GPT-6 settles reported usage');
+ // The guard's own ceiling: the bigger Pumpy cap and its one retry stay inside it.
+ const over=fixture(response);
+ await aiActor.run(actor(),async()=>{try{await over.fetcher(url,{...request,body:JSON.stringify({...body,max_completion_tokens:8001})});throw new Error('allowed');}catch(e){ok(e instanceof GuardError&&e.reason==='invalid_output_bound','a cap above 8,000 is refused before reserving');}});
+ ok(over.network===0&&over.calls.length===0,'refused cap spends nothing');
+ const top=fixture(response);
+ await aiActor.run(actor(),()=>top.fetcher(url,{...request,body:JSON.stringify({...body,max_completion_tokens:8000})}));
+ ok(top.network===1,'the 8,000 retry cap is admitted');
+}
 f=fixture(async()=>{throw new Error('timeout');});
 await aiActor.run(actor(),async()=>{try{await f.fetcher(url,request);}catch{}});
 ok(f.calls[2].args.p_usd===null,'network uncertainty retains dollars');

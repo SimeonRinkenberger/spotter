@@ -122,7 +122,12 @@ type ModelCfg = {
 };
 
 const MODEL_DEFAULTS: ModelCfg = {
-  openai: "gpt-5.6-luna",
+  // GPT-6 Luna from 2026-09-23: same surface as 5.6 Luna at about half the price
+  // (ai-guard.ts has both). The live answer is app_config `model.openai`, which
+  // migration 20260923130000 moves — this is only the floor under it. The model
+  // is not part of any cache key and CARD_V does not move with it, so a switch
+  // costs nothing in video_cache; new cards just say `openai:gpt-6-luna`.
+  openai: "gpt-6-luna",
   anthropic: "claude-haiku-4-5-20251001",
   gemini: "gemini-3.6-flash",
   // Measured 2026-09-01: gemini-3.6-flash-lite, gemini-3-flash-lite and
@@ -4823,7 +4828,7 @@ type Card = {
   // values are not all numbers.
   confidence_parts?: Record<string, number | boolean>;
   confidence_notes?: string[];
-  // "openai:gpt-5.6-luna", "vision:gemini-3.6-flash", "heuristic". What to look at
+  // "openai:gpt-6-luna", "vision:gemini-3.6-flash", "heuristic". What to look at
   // when deciding which cached cards are worth re-running.
   extracted_by?: string | null;
   vision?: { total: number; completed: number[]; missing: number[] };
@@ -5807,7 +5812,7 @@ async function visionCard(dataB64: string, mime: string, fallback: Card, ctx: Ai
   const paid = await paidAllowed();
   const read = await readVisionImage(dataB64, mime, prompt, {
     openaiKey: OPENAI_API_KEY, geminiKey: "", // Luna supports images; no cross-provider retry.
-    openaiModel: runtimeCfg["model.openai_vision"] || "gpt-5.6-luna",
+    openaiModel: runtimeCfg["model.openai_vision"] || "gpt-6-luna",
     geminiModel: models().geminiVision,
     timeoutMs: Math.max(100, visionLimit("timeout_ms", 35_000) - 4_000),
     allowed: async (provider) => paid,

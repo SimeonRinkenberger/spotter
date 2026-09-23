@@ -12,6 +12,13 @@ export class GuardError extends Error {
 // https://developers.openai.com/api/docs/models/gpt-5.6-luna
 // https://ai.google.dev/gemini-api/docs/pricing (2026 promotional period)
 export function tokenPrice(model: string, now = new Date()): [number, number, number] | null {
+  // The text default from 2026-09-23. Read from
+  // https://developers.openai.com/api/docs/models/gpt-6-luna on 2026-09-23:
+  // $0.10/M in, $0.50/M out, $0.01/M cached — half 5.6's input and well under
+  // half its output, on the same Chat Completions surface and reasoning dial.
+  if (model === 'gpt-6-luna') return [.10, .50, .01];
+  // Kept after the move: ai_reservations and ai_cost_log rows name it, and a
+  // rollback is an app_config update that must not land on `unknown_price`.
   if (model === 'gpt-5.6-luna') return [.20, 1.20, .02];
   if (model === 'gemini-3.6-flash') return now < new Date('2027-01-01T00:00:00Z') ? [.75,3.75,.075] : [1.50,7.50,.15];
   // Flash-Lite does video, at a third of Flash's input price and no promotional
