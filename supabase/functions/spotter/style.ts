@@ -1993,6 +1993,50 @@ export const STYLE = String.raw`<style>
   .cxdone { min-height: 64px; margin-top: 14px; font-size: 17px; }
   .cxundo { min-height: 44px; margin-top: 8px; padding: 10px; font-size: 14px; }
 
+  /* ---------- a superset, one screen ----------
+     Every member on one screen and one of them open — the owner's accordion. A
+     shut panel is Material's expansion-panel header, one line that summarises;
+     the chevron is Apple's disclosure, sideways shut and down open, like every
+     other disclosure here. The members are joined by a thin ember line down
+     their letters — Strong's line down a superset's left — which the opaque
+     cards cover, so it reads as a link in each gap between them. The fold is the
+     0fr to 1fr grid row the demo slot already uses, the content fading inside. */
+  .ssstack { position: relative; display: flex; flex-direction: column; gap: 10px;
+    margin: 2px -10px 0; text-align: left; }
+  .ssstack::before { content: ""; position: absolute; left: 27px; top: 28px; bottom: 28px;
+    width: 2px; background: var(--ember); }
+  .sspanel { position: relative; background: var(--card); border: 1px solid var(--line);
+    border-radius: 18px; transition: border-color var(--t-2) var(--e-out); }
+  .sspanel.open { border-color: var(--ember); }
+  .sshead { min-height: 56px; padding: 8px 18px 8px 13px; border-radius: 17px; }
+  .sspanel.open .sshead:active { background: none; }
+  .ssletter, .sshead::after { flex: none; transition: all var(--t-2) var(--e-out); }
+  .ssletter { width: 28px; height: 28px; border-radius: 99px; display: grid; place-items: center;
+    font: 800 14px var(--display); background: var(--sand); color: var(--ink-2); }
+  .sspanel.open .ssletter { background: var(--ember); color: var(--on-ember); }
+  .sshead .pt span { display: block; font-size: 12px; white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis; }
+  .sscount { font-size: 13px; font-weight: 650; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .sspanel.done .sscount { color: var(--good); }
+  .sshead::after { content: ""; width: 6px; height: 6px; border: solid var(--muted);
+    border-width: 0 1.5px 1.5px 0; transform: rotate(-45deg); }
+  .sspanel.open .sshead::after { transform: rotate(45deg); }
+  .sswrap { display: grid; grid-template-rows: 0fr; transition: grid-template-rows var(--t-3) var(--e-out); }
+  .sspanel.open .sswrap { grid-template-rows: 1fr; }
+  .ssbody { overflow: hidden; min-height: 0; }
+  .ssin { padding: 0 14px 14px; text-align: center; opacity: 0; transform: translateY(-6px);
+    transition: opacity var(--t-2) var(--e-out), transform var(--t-3) var(--e-out); }
+  .sspanel.open .ssin { opacity: 1; transform: none; }
+  .ssstack.hand .sswrap, .ssstack.hand .ssin { transition-delay: 90ms; }
+  .ssin .setpills { margin: 12px 0 2px; }
+  .ssin .stepper { margin: 8px 0; }
+  .sslog { min-height: 54px; margin-top: 8px; }
+  .ssin .wtimer .ring { width: 124px; height: 124px; }
+  .ssin .wup { display: none; }
+  @media (prefers-reduced-motion: reduce) {
+    .sspanel, .ssletter, .sshead::after, .sswrap, .ssin { transition: none; }
+  }
+
   /* ---------- the session summary ----------
      Finishing used to be a toast, gone before the phone was back in the pocket.
      It is the one moment in the loop that is pure payoff, so it takes the screen
