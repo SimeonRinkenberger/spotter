@@ -9,6 +9,7 @@ const checks = [
   ['Pumpy complete context', 'node', ['tools/pumpy-context-check.mjs']],
   ['Deterministic complete combines', 'deno', ['run','--allow-read','tools/pumpy-combine-test.ts']],
   ['Complete combine route', 'node', ['tools/pumpy-combine-route-check.mjs']],
+  ['Pumpy never ships a claim without the workout', 'deno', ['run','--allow-env','--allow-read','tools/pumpy-truncation-harness.ts']],
   ['Billing account races', 'node', ['tools/billing-account-check.mjs']],
   ['Founding offer switch', 'node', ['tools/billing-founding-check.mjs']],
   ['Account erasure reaches every third party', 'node', ['tools/account-delete-check.mjs']],

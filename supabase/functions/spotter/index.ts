@@ -155,10 +155,34 @@ type PumpyCfg = {
   turnMaxCredits: number;
   historyTurns: number;
   snapshotMaxWorkouts: number;
+  /** max_completion_tokens for one coach call — reasoning and answer together. */
+  maxOut: number;
+  /** reasoning_effort for the coach's calls. */
+  reasoning: string;
 };
+
+// ai-guard refuses any OpenAI call whose max_completion_tokens is above 8,000
+// (`invalid_output_bound`), so no dial may ask for more than that — a typo of
+// 80000 in app_config would otherwise switch the coach off entirely.
+const PUMPY_OUT_CEILING = 8000;
+const PUMPY_REASONING = ["none", "low", "medium", "high", "xhigh", "max"];
 
 // The floor for a database that cannot answer — the same numbers the migration
 // seeded, so a config outage does not silently change anybody's allowance.
+//
+// `maxOut` and `reasoning` have no app_config rows; these ARE the values until
+// somebody adds `pumpy.max_out` / `pumpy.reasoning`. Sized on 2026-09-23 after 8
+// of 81 coach calls in three weeks ended at exactly the old 1,500 cap, every one
+// of them a workout-building turn whose proposal was lost:
+//   * measured with tools/pumpy-truncation-harness.ts, a 60-minute combine of
+//     four videos (4 blocks × 5–6 exercises) is ~1,000–1,150 answer tokens when
+//     the model follows the proposal rules, and ~1,650–1,950 when it copies every
+//     creator cue into notes — the second alone is past 1,500 before any thinking;
+//   * reasoning was unset, so it ran at the model default, medium, and reasoning
+//     tokens count against the same cap. Coaching does not need medium: "low".
+// 6,000 is 2× the worst of those (≈1,950 answer + ≈1,000 low reasoning) and a
+// quarter below the guard's ceiling, which is what the one retry uses. On GPT-6
+// Luna a 6,000 cap reserves no more per call than 5.6 did at 1,500 (ai-guard-check).
 const PUMPY_DEFAULTS: PumpyCfg = {
   plans: {
     free: { day: 150, month: 1500 },
@@ -170,6 +194,8 @@ const PUMPY_DEFAULTS: PumpyCfg = {
   turnMaxCredits: 40,
   historyTurns: 10,
   snapshotMaxWorkouts: 60,
+  maxOut: 6000,
+  reasoning: "low",
 };
 
 const MODEL_TTL_MS = 5 * 60_000;
@@ -222,7 +248,7 @@ function pumpyCap(v: unknown, floor: number | null): number | null {
   return floor;
 }
 
-function buildPumpyCfg(rows: Record<string, string>): PumpyCfg {
+export function buildPumpyCfg(rows: Record<string, string>): PumpyCfg {
   const num = (key: string, dflt: number) => {
     const n = Number((rows[key] ?? "").trim());
     return Number.isFinite(n) && n > 0 ? Math.floor(n) : dflt;
@@ -243,12 +269,22 @@ function buildPumpyCfg(rows: Record<string, string>): PumpyCfg {
       console.error("pumpy.plans: unparseable, using compiled-in caps —", e);
     }
   }
+  // A cap below 1,000 cannot hold one proposal at all, and above the guard's
+  // ceiling every call is refused; either way the dial is clamped rather than
+  // obeyed. An effort the API does not know falls back rather than 400ing.
+  const maxOut = Math.min(PUMPY_OUT_CEILING, Math.max(1000, num("pumpy.max_out", PUMPY_DEFAULTS.maxOut)));
+  const effort = (rows["pumpy.reasoning"] ?? "").trim().toLowerCase();
+  if (effort && !PUMPY_REASONING.includes(effort)) {
+    console.error("pumpy.reasoning: unknown effort", JSON.stringify(effort), "— using", PUMPY_DEFAULTS.reasoning);
+  }
   return {
     plans,
     perMinute: num("pumpy.per_minute", PUMPY_DEFAULTS.perMinute),
     turnMaxCredits: num("pumpy.turn_max_credits", PUMPY_DEFAULTS.turnMaxCredits),
     historyTurns: num("pumpy.history_turns", PUMPY_DEFAULTS.historyTurns),
     snapshotMaxWorkouts: num("pumpy.snapshot_max_workouts", PUMPY_DEFAULTS.snapshotMaxWorkouts),
+    maxOut,
+    reasoning: PUMPY_REASONING.includes(effort) ? effort : PUMPY_DEFAULTS.reasoning,
   };
 }
 
@@ -1054,10 +1090,21 @@ function secretEquals(a: string, b: string): boolean {
 // Which unit of work a model call belongs to, and who to charge it to. Passed
 // explicitly rather than held in a module variable: one isolate serves many
 // concurrent requests, and a shared "current user" would bill the wrong person.
-// `maxOut` caps the completion for callers that know their answer is short. Pumpy
-// sets it: a coach's turn is a JSON object with two sentences in it, and the
-// default 8,000-token ceiling only ever pays for a model that runs away.
-type AiCtx = { purpose: string; userId: string | null; maxOut?: number };
+// `maxOut` caps the completion for callers that know how long their answer can
+// be. Pumpy sets it from `pumpy.max_out`: a coach's turn is usually two sentences,
+// but a turn that carries a whole combined workout is a thousand tokens and more,
+// and a cap sized for the sentences cut those off mid-proposal (2026-09-23).
+// `reasoning` is an explicit reasoning_effort for OpenAI. Unset keeps each
+// purpose's old behaviour — "none" for extraction, the model's default (medium)
+// otherwise. Reasoning tokens are billed as output and count against `maxOut`,
+// which is why a caller that caps its output should also say how hard to think.
+type AiCtx = { purpose: string; userId: string | null; maxOut?: number; reasoning?: string };
+
+/** The reasoning_effort field an OpenAI call sends, or nothing for the model default. */
+function reasoningField(ctx: AiCtx): Record<string, string> {
+  if (ctx.reasoning) return { reasoning_effort: ctx.reasoning };
+  return ["extract", "reprocess"].includes(ctx.purpose) ? { reasoning_effort: "none" } : {};
+}
 
 // `cachedTok` is the part of `inTok` the provider says it served from its prompt
 // cache. A SUBSET of inTok, never an addition to it — every adapter normalises to
@@ -1391,8 +1438,14 @@ let geminiGoodModel: string | null = null;
  * out so a caller that makes several calls in one unit of work can charge for the
  * whole unit. ai_cost_log answers "what did the project spend"; this answers "what
  * did this turn cost", which is a different question and needs the totals in hand.
+ *
+ * `truncated` is true when the provider stopped because the output cap ran out —
+ * OpenAI's finish_reason "length", Gemini's finishReason "MAX_TOKENS" — and absent
+ * otherwise. A cut answer is not a short answer: for Pumpy it meant a sentence
+ * saying the workout was built, and the workout itself lost past the cap. Callers
+ * that ignore the flag see exactly what they saw before.
  */
-type Generated = { text: string | null; by: string | null; usage?: Usage };
+type Generated = { text: string | null; by: string | null; usage?: Usage; truncated?: boolean };
 
 const NOTHING: Generated = { text: null, by: null };
 
@@ -1407,7 +1460,7 @@ function withoutThinkingConfig(body: Record<string, unknown>): Record<string, un
   return { ...body, generationConfig: gc };
 }
 
-async function geminiGenerate(
+export async function geminiGenerate(
   body: Record<string, unknown>, ctx: AiCtx, prefer?: string,
 ): Promise<Generated> {
   if (!GEMINI_API_KEY) return NOTHING;
@@ -1462,7 +1515,7 @@ async function geminiGenerate(
       }
       await recordCost("gemini", model, ctx, usage, true);
       geminiGoodModel = model;
-      return { text, by: "gemini:" + model, usage };
+      return { text, by: "gemini:" + model, usage, ...(cand?.finishReason === "MAX_TOKENS" ? { truncated: true } : {}) };
     }
   }
   console.error("gemini: all models exhausted");
@@ -1493,8 +1546,8 @@ async function geminiGenerate(
 type OnDelta = (text: string) => void;
 
 /** True when a stream produced words before it broke — see rule 2 above. */
-function partial(text: string, by: string, usage: Usage): Generated {
-  return { text: text || null, by: text ? by : null, usage };
+function partial(text: string, by: string, usage: Usage, truncated = false): Generated {
+  return { text: text || null, by: text ? by : null, usage, ...(truncated ? { truncated: true } : {}) };
 }
 
 /** Fill in whatever the provider did not tell us, so `usage` is never half-empty. */
@@ -1520,6 +1573,7 @@ export async function geminiStream(
     for (let attempt = 0; attempt < 1; attempt++) {
       let text = "";
       let usage: Usage = { inTok: 0, outTok: 0 };
+      let cut = false;
       try {
         const r = await aiFetchFor(ctx,
           `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse`,
@@ -1551,6 +1605,8 @@ export async function geminiStream(
               if (piece) { text += piece; onDelta(piece); }
             }
           }
+          // The finish reason rides the last candidate chunk, beside the usage.
+          if (d?.candidates?.[0]?.finishReason === "MAX_TOKENS") cut = true;
           const um = d?.usageMetadata;
           if (um) {
             usage = {
@@ -1571,7 +1627,7 @@ export async function geminiStream(
         break;
       }
       geminiGoodModel = model;
-      return partial(text, "gemini:" + model, u);
+      return partial(text, "gemini:" + model, u, cut);
     }
   }
   console.error("gemini stream: all models exhausted");
@@ -1579,7 +1635,7 @@ export async function geminiStream(
 }
 
 // Groq free tier is 14,400 requests/day, no card. OpenAI-compatible API.
-async function openaiGenerate(system: string, user: string, wantJson: boolean, ctx: AiCtx): Promise<Generated> {
+export async function openaiGenerate(system: string, user: string, wantJson: boolean, ctx: AiCtx): Promise<Generated> {
   if (!OPENAI_API_KEY) return NOTHING;
   const model = models().openai;
   try {
@@ -1590,7 +1646,7 @@ async function openaiGenerate(system: string, user: string, wantJson: boolean, c
         model,
         messages: [{ role: "system", content: system }, { role: "user", content: user }],
         max_completion_tokens: outCap(ctx, wantJson ? 4000 : 3000),
-        ...(["extract", "reprocess"].includes(ctx.purpose) ? { reasoning_effort: "none" } : {}),
+        ...reasoningField(ctx),
         // json_object mode requires the word "json" somewhere in the messages,
         // which buildPrompt and the helper prompts all satisfy.
         ...(wantJson ? { response_format: { type: "json_object" } } : {}),
@@ -1612,7 +1668,10 @@ async function openaiGenerate(system: string, user: string, wantJson: boolean, c
       cachedTok: Number(data?.usage?.prompt_tokens_details?.cached_tokens) || 0,
     };
     await recordCost("openai", model, ctx, usage, !!out);
-    return { text: out, by: out ? "openai:" + model : null, usage };
+    // "length" is the cap running out — including a cap spent entirely on
+    // reasoning, which comes back as empty content and is still a cut, not a refusal.
+    const cut = data.choices?.[0]?.finish_reason === "length";
+    return { text: out, by: out ? "openai:" + model : null, usage, ...(cut ? { truncated: true } : {}) };
   } catch (e) {
     console.error("openai failed", e);
     return NOTHING;
@@ -1632,6 +1691,7 @@ export async function openaiStream(
   const model = models().openai;
   let text = "";
   let usage: Usage = { inTok: 0, outTok: 0, cachedTok: 0 };
+  let cut = false;
   try {
     const r = await aiFetchFor(ctx, "https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -1640,7 +1700,7 @@ export async function openaiStream(
         model,
         messages: [{ role: "system", content: system }, { role: "user", content: user }],
         max_completion_tokens: outCap(ctx, wantJson ? 4000 : 3000),
-        ...(["extract", "reprocess"].includes(ctx.purpose) ? { reasoning_effort: "none" } : {}),
+        ...reasoningField(ctx),
         stream: true,
         stream_options: { include_usage: true },
         ...(wantJson ? { response_format: { type: "json_object" } } : {}),
@@ -1654,6 +1714,9 @@ export async function openaiStream(
       if (d?.error) { console.error("openai stream", model, "mid-stream error", d.error); break; }
       const piece = d?.choices?.[0]?.delta?.content;
       if (typeof piece === "string" && piece) { text += piece; onDelta(piece); }
+      // The chunk that closes the choice carries its finish_reason; the usage
+      // chunk after it has no choices at all.
+      if (d?.choices?.[0]?.finish_reason === "length") cut = true;
       if (d?.usage) {
         usage = {
           inTok: Number(d.usage.prompt_tokens) || 0,
@@ -1668,7 +1731,7 @@ export async function openaiStream(
   }
   const u = usageOr(usage, system, user, text);
   await recordCost("openai", model, ctx, u, !!text);
-  return partial(text, "openai:" + model, u);
+  return partial(text, "openai:" + model, u, cut);
 }
 
 // Luna only for text. Raw audio/video uses a separate Gemini reader that independently
@@ -11878,7 +11941,7 @@ async function pumpyAttachSources(userId: string, blocks: Block[], cited: Map<st
   console.log("pumpy cite:", kept, "attached,", dropped, "dropped, across", uuids.length, "workout(s)");
 }
 
-async function validateProposal(userId: string, p: any): Promise<PumpyProposal | { error: string }> {
+export async function validateProposal(userId: string, p: any): Promise<PumpyProposal | { error: string }> {
   const kind = String(p?.kind ?? "");
   const summary = swapStr(p?.summary, 400);
   const sizeError = pumpyProposalSizeError(p);
@@ -12057,6 +12120,16 @@ const PUMPY_STATIC = [
   '"reps":string|null,"duration_seconds":int|null,"rest_seconds":int|null,"notes":string|null,"from":workout id|null}]}],"summary":one sentence}',
   '- {"kind":"append_exercises","workout_id":string,"block_title":string|null,"exercises":[same exercise shape, "from" included],"summary":one sentence}',
   '- {"kind":"plan_days","days":[{"day":"YYYY-MM-DD","workout_id":string}],"summary":one sentence}',
+  // Measured 2026-09-23 (tools/pumpy-truncation-harness.ts): a four-video combine
+  // written with every null spelled out and each creator's cue copied into notes
+  // is ~1,650–1,950 tokens; the same workout written to this rule is ~1,000–1,150.
+  // Nothing here drops a field the confirm path reads: an absent key normalises
+  // to null exactly as a written null does, and `from` is still asked for — it is
+  // what carries the cue, variation and video moment across (pumpyAttachSources).
+  "Keep every proposal compact — it is data for the app, not prose. Leave out any field that would be null " +
+  "(absent means unknown). Write notes only for what the user must know and the source does not already say, " +
+  "in 12 words or fewer. Never copy cues, evidence, as_performed, timestamps or indices into a proposal: an " +
+  "exercise's from brings its creator's cue, variation and video moment with it.",
   "A program is several weeks and one proposal: put every day of it in a single plan_days, up to 42 days. " +
   "Before planning beyond this week call get_plan ONCE with week_start = next Monday and weeks = how many weeks " +
   "you are planning, so you add to what is already there instead of over it — never one call per week. " +
@@ -12142,8 +12215,14 @@ export function pumpyAttachmentError(refs: any[]): string | null {
   return null;
 }
 
+// A turn that was cut off replays as what it was, not as what it said. Before the
+// flag existed, the next turn read "I combined all three workouts…" in the history
+// and insisted it had already delivered — which is why asking again failed the
+// same way and the owner had to start a new chat. Threads poisoned before the flag
+// have nothing to mark them; with the cap no longer biting, that is acceptable.
 export function pumpyHistoryContext(messages: any[]): string[] {
   return messages.map((m: any) =>
+    m.role !== "user" && m.meta?.truncated ? "Pumpy: [that answer was cut off — no workout was delivered]" :
     (m.role === "user" ? "User: " : "Pumpy: ") + String(m.content ?? "") +
     (m.meta?.proposal ? ` [proposed ${m.meta.proposal.kind}; the user ${m.meta.status === "done" ? "confirmed it" : m.meta.status === "declined" ? "declined it" : "has not answered yet"}]` : ""));
 }
@@ -12360,6 +12439,28 @@ const PUMPY_LAST_STEP_NOTE =
   "[no tool calls left — answer the user now in one or two sentences, or make your proposal]";
 const PUMPY_NO_ANSWER =
   "I could not put that together — try asking for a specific workout, like 'build me a 20-minute dumbbell push day'.";
+
+// -- a reply the cap cut off --
+//
+// Found 2026-09-23: 8 of 81 coach calls in three weeks ended at exactly the 1,500
+// output tokens the turn allowed, and every one was a workout being built. The
+// model had written "I combined all three workouts into one legs-and-core
+// session…", run out of room halfway through the proposal, and the turn kept the
+// sentence and lost the workout — a claim with nothing behind it. The cap is
+// larger now, but a cap is still a cap: when a reply is cut, its sentence is
+// taken back off the screen, the model is told why, and it gets ONE more try at a
+// larger cap. If that is cut too, the user hears the truth, not the claim.
+
+const PUMPY_CUT_NOTE =
+  "[your last reply was cut off before it finished — answer again: one short sentence in say, then the complete " +
+  "proposal if you are making one; leave out null fields and keep notes brief]";
+const PUMPY_CUT_WORKOUT =
+  "That workout came out too long for me to finish in one go. Ask again with fewer exercises, or in two parts.";
+const PUMPY_CUT_ANSWER =
+  "That answer came out too long for me to finish in one go. Ask again with a narrower question.";
+const PUMPY_CUT_STATUS = "Writing that out in full…";
+/** Raw model text that had started a proposal: `"proposal":` then an object, or the end of the text. */
+const PUMPY_PROPOSAL_OPEN = /"proposal"\s*:\s*(?:\{|$)/;
 
 /** Exercise names a tool result taught this turn: catalog rows, or a workout's blocks. */
 function pumpyNamesFrom(result: unknown): string[] {
@@ -12641,7 +12742,7 @@ type PumpyTurn = {
   meter: PumpyMeter; cfg: ReturnType<typeof pumpyConfig>;
 };
 
-async function pumpyRun(a: PumpyTurn, sink: StreamSink | null): Promise<Record<string, unknown>> {
+export async function pumpyRun(a: PumpyTurn, sink: StreamSink | null): Promise<Record<string, unknown>> {
   const { userId, thread, userMsg, message, refs, meter, cfg } = a;
   // The last few visible turns, compactly. Tool results from earlier turns are
   // not replayed — they can be thousands of tokens — only what each side said.
@@ -12654,9 +12755,19 @@ async function pumpyRun(a: PumpyTurn, sink: StreamSink | null): Promise<Record<s
   transcript.push(pumpyCurrentTurn(message, refs));
 
   const system = pumpySystem(new Date(), refs, snapshot as string);
-  // A coach's turn is two sentences and maybe a proposal. Nothing here needs the
-  // 8,000-token default, and output is the expensive half.
-  const ctx: AiCtx = { purpose: "chat", userId, maxOut: 1500 };
+  // A coach's turn is two sentences and maybe a proposal — and a proposal can be
+  // a whole combined workout. Both dials are app_config's `pumpy.max_out` and
+  // `pumpy.reasoning`, read through pumpyConfig() onto PUMPY_DEFAULTS (which says
+  // how they were sized). The effort is sent explicitly: left
+  // unset it was the model's default, medium, and its hidden reasoning spent the
+  // same budget the proposal needed.
+  const ctx: AiCtx = { purpose: "chat", userId, maxOut: cfg.maxOut, reasoning: cfg.reasoning };
+  // The one retry after a cut: a third more room, never past the guard's ceiling.
+  const retryCtx: AiCtx = { ...ctx, maxOut: Math.min(PUMPY_OUT_CEILING, Math.ceil(cfg.maxOut * 4 / 3)) };
+  let cutRetried = false;    // this turn has spent its one retry
+  let retrying = false;      // the next call IS that retry
+  let sawProposal = false;   // a cut reply had started writing a proposal
+  let lastNoted = false;
   const out: any[] = [];
   let pending: any = null;
   let by: string | null = null;
@@ -12684,8 +12795,12 @@ async function pumpyRun(a: PumpyTurn, sink: StreamSink | null): Promise<Record<s
   for (let step = 0; step < PUMPY_MAX_STEPS; step++) {
     // The last call cannot buy another tool result — the branch below ignores its
     // tool — so it is told that before it spends the call rather than after. The
-    // budget cut says the same thing in its own words; do not say it twice.
-    if (step === PUMPY_MAX_STEPS - 1 && !budgetHit) transcript.push(PUMPY_LAST_STEP_NOTE);
+    // budget cut says the same thing in its own words; do not say it twice. A
+    // retry after a cut re-runs this same step, so the note is added only once.
+    if (step === PUMPY_MAX_STEPS - 1 && !budgetHit && !lastNoted) {
+      transcript.push(PUMPY_LAST_STEP_NOTE);
+      lastNoted = true;
+    }
     const prompt = "Conversation so far:\n" + transcript.join("\n") + "\n\nReply as Pumpy, as JSON.";
     if (system.length + prompt.length > 100000) {
       undoStreamed();
@@ -12697,22 +12812,63 @@ async function pumpyRun(a: PumpyTurn, sink: StreamSink | null): Promise<Record<s
     const scanner = makeSayScanner();
     const gate = makeSayGate(PUMPY_SAY_CHARS);
     sayStreamed = "";
+    const callCtx = retrying ? retryCtx : ctx;
+    retrying = false;
     const gen = sink
-      ? await textStream(system, prompt, true, ctx, (raw) => {
+      ? await textStream(system, prompt, true, callCtx, (raw) => {
         const piece = scanner.push(raw);
         if (!piece) return;
         sayStreamed += piece;
         for (const ev of gate.push(piece)) sink.send(ev);
         onScreen = gate.shown();
       })
-      : await textGenerate(system, prompt, true, ctx);
+      : await textGenerate(system, prompt, true, callCtx);
     if (gen.usage) {
       calls++;
       inTok += gen.usage.inTok;
       outTok += gen.usage.outTok;
-      cost += estimateCost(String(gen.by ?? "").split(":")[0], gen.usage, String(gen.by ?? "").split(":").slice(1).join(":"));
+      // A reply with no text names no model (`by` is null), but it was billed —
+      // and a cap spent entirely on reasoning is exactly that reply. Pricing it
+      // as "" threw unknown_price and took the whole turn down. The coach's text
+      // ladder is Luna-only, so an unnamed call was models().openai.
+      const billed = gen.by ?? "openai:" + models().openai;
+      cost += estimateCost(billed.split(":")[0], gen.usage, billed.split(":").slice(1).join(":"));
     }
     by = gen.by ?? by;
+
+    // Cut off: the provider says the cap ran out, or — for a stream that broke
+    // without saying why — the JSON will not parse and a proposal had begun. The
+    // sentence already on screen is a claim about a workout that is not there, so
+    // it comes back off before anything else happens, and it is not kept.
+    let r: any = null;
+    let parsed = false;
+    if (gen.text) { try { r = parseJsonLoose(gen.text); parsed = true; } catch { /* handled below */ } }
+    const opened = !!gen.text && PUMPY_PROPOSAL_OPEN.test(gen.text);
+    if (gen.truncated || (!parsed && opened)) {
+      undoStreamed();
+      sawProposal = sawProposal || opened;
+      if (!cutRetried) {
+        cutRetried = true;
+        retrying = true;
+        console.warn("pumpy: reply cut off at", callCtx.maxOut, "tokens on thread", thread.id, "at step", step,
+          "— retrying once at", retryCtx.maxOut);
+        transcript.push(PUMPY_CUT_NOTE);
+        sink?.send({ t: "status", text: PUMPY_CUT_STATUS });
+        // The retry is not a step. A cut on the last step still gets it, and it
+        // still cannot buy a tool, because it runs as that same last step.
+        step--;
+        continue;
+      }
+      console.warn("pumpy: reply cut off again at", callCtx.maxOut, "tokens on thread", thread.id,
+        "— no proposal delivered, told the user so");
+      out.push(await dbInsert("pumpy_messages", {
+        thread_id: thread.id, user_id: userId, role: "assistant",
+        content: sawProposal ? PUMPY_CUT_WORKOUT : PUMPY_CUT_ANSWER,
+        meta: { model: by, truncated: true },
+      }));
+      break;
+    }
+
     if (!gen.text) {
       // Every provider declined — quota, outage, or the day's spend ceiling with no
       // free rung left. Pumpy says so; it does not throw.
@@ -12724,12 +12880,12 @@ async function pumpyRun(a: PumpyTurn, sink: StreamSink | null): Promise<Record<s
       out.push(m);
       break;
     }
-    let r: any;
     // A stream that broke mid-object leaves unparseable JSON, and the raw braces
     // are the last thing to show anyone. The scanner already read `say` out of it
-    // character by character, so that is what the turn keeps. Off the stream
-    // sayStreamed is empty and this is today's line exactly.
-    try { r = parseJsonLoose(gen.text); } catch { r = { say: sayStreamed || gen.text.trim() }; }
+    // character by character, so that is what the turn keeps — safe now, because a
+    // broken object that had started a proposal was handled as a cut above. Off
+    // the stream sayStreamed is empty and this is today's line exactly.
+    if (!parsed) r = { say: sayStreamed || gen.text.trim() };
     const say = say_of(r);
     const tool = r?.tool && typeof r.tool === "object" && r.tool.name ? r.tool : null;
 
@@ -12815,7 +12971,8 @@ async function pumpyRun(a: PumpyTurn, sink: StreamSink | null): Promise<Record<s
   console.log("pumpy turn", thread.id, "calls=" + calls, "tools=" + toolCalls, "in=" + inTok, "out=" + outTok,
     "credits=" + credits, "snapshot_chars=" + String(snapshot).length, "by=" + (by ?? "-"),
     sink ? "streamed=" + onScreen : "whole",
-    pending ? "proposal=" + pending.meta.proposal.kind : "");
+    pending ? "proposal=" + pending.meta.proposal.kind : "",
+    cutRetried ? "cut=retried" : "");
   return {
     status: "ok", thread_id: thread.id, user_message: userMsg, messages: out,
     pending: pending ? pending.id : null, model: by,
