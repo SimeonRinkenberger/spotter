@@ -7060,6 +7060,8 @@ export const APP = String.raw`
               // In today's unit, so a session logged in the other one still counts.
               if (s.weight) h.best = Math.max(h.best, toUnit(s.weight, s.unit) * (1 + s.reps / 30));
             });
+            // The newest tap on the each tag for this movement, however far back.
+            if (h.each === undefined && typeof e.each === "boolean") h.each = e.each;
             // Newest first: the first session carrying this movement IS last time.
             if (h.date) return;
             var top = sets.filter(function (s) { return s.weight; }).pop() || sets[sets.length - 1] || {};
@@ -7073,8 +7075,13 @@ export const APP = String.raw`
             if (held.length) h.secs = held[held.length - 1].seconds;
             h.weight = top.weight || 0;
             h.unit = top.unit || state.unit;
+            h.pair = !!top.each;
           });
         });
+        // What each movement had to beat BEFORE today. prCheck raises best as the
+        // session sets records; a set corrected on the summary is judged against
+        // this one, not against itself.
+        Object.keys(hist).forEach(function (k) { hist[k].was = hist[k].best; });
         histReady = true;
         // Lands after the first exercise is drawn, so refill the line in place
         // rather than redraw a screen under someone's thumb.
@@ -7096,13 +7103,99 @@ export const APP = String.raw`
 
   function wtText(w, unit) { return toUnit(w, unit).toLocaleString(); }
 
+  // ---------- a pair of dumbbells ----------
+  //
+  // "put a little each when logging so they know to log it by putting the per
+  // dumbbell weight and the system can automatically multiply it by 2" (owner,
+  // 23 Sept). Fitbod and Strong settled it the same way: the number typed is ONE
+  // dumbbell, the number printed on it and the one to beat next week, and the
+  // pair is counted twice only where weight is added up. Strong hides the
+  // doubling in a global setting; here it is a tag on the unit, per movement,
+  // because a curl and a goblet squat share a session and not a rule.
+  //
+  // The catalog's dumbbell movements by what is in the hands. The ones that also
+  // list a barbell (an RDL, a thruster, a shrug) are in neither: those count only
+  // when the name says dumbbell.
+  var DB_PAIR = " arnold-press chest-fly chest-supported-row devils-press dumbbell-bench-press dumbbell-curl" +
+    " dumbbell-floor-press dumbbell-shoulder-press farmers-carry front-raise hammer-curl incline-dumbbell-curl" +
+    " incline-dumbbell-fly incline-dumbbell-press lateral-raise man-maker rear-delt-fly renegade-row spider-curl" +
+    " tricep-kickback zottman-curl ";
+  var DB_ONE = " concentration-curl dumbbell-row goblet-squat overhead-carry overhead-tricep-extension pull-over" +
+    " side-bend single-leg-deadlift sumo-squat ";
+  var DB_WORD = /\b(dumbbells?|dbs?)\b/, DB_1 = /\b(one|single|1)[ -]?(dumbbell|db)\b/,
+    DB_TWO = /\b(two|2|pair of|double)[ -]?(dumbbells?|dbs?)\b/,
+    DB_SOLO = /\b(one|single|1)[ -]?(arm|hand)|\b(goblet|suitcase)\b/,
+    DB_NOT = /\b(barbell|bb|cable|machine|bands?|kettlebells?|kbs?|plate|smith|ez)\b/;
+
+  /**
+   * 2 for a pair of dumbbells, 1 for one, 0 for anything else.
+   *
+   * x is a card exercise or a logged entry — a name and a catalog id either way,
+   * plus what the video showed in the hands when the pack read one. A name that
+   * names another implement ("cable lateral raise") is not a dumbbell whatever
+   * id it mapped to, and a workout filmed with one dumbbell is one dumbbell all
+   * the way down.
+   */
+  function dbRule(x, w) {
+    var ap = x && x.as_performed, id = " " + ((x && x.canonical_id) || "~") + " ",
+      t = (((x && x.name) || "") + " " + (ap ? [].concat(ap.equipment).join(" ") : "")).toLowerCase(),
+      said = DB_WORD.test(t), n;
+    if (!said && DB_NOT.test(t)) return 0;
+    n = said || DB_PAIR.indexOf(id) >= 0 ? 2 : DB_ONE.indexOf(id) >= 0 ? 1 : 0;
+    if (!n || (w && DB_1.test(((w.title || "") + " " + (w.equipment || []).join(" ")).toLowerCase()))) return n && 1;
+    if (DB_TWO.test(t)) return 2;
+    return DB_1.test(t) || DB_SOLO.test(t) || DB_ONE.indexOf(id) >= 0 ? 1 : 2;
+  }
+
+  // The person's word outranks the rule: this session's tap on the tag, else the
+  // last one on record for the movement (hist reads it off the logs, so the memory
+  // is the history itself). w defaults to the session's workout.
+  function dbOf(ex, entry, w) {
+    var h = entry && hist[exKey(entry)];
+    var c = entry && typeof entry.each === "boolean" ? entry.each : h && typeof h.each === "boolean" ? h.each : null;
+    if (c !== null) return c ? 2 : 1;
+    return dbRule(ex || entry, w === undefined ? wo && wo.workout : w);
+  }
+
+  function eachOf(ex, entry) { return dbOf(ex, entry) === 2; }
+
+  // The unit a weight is typed in for a movement: "lb each" on a pair. Without an
+  // entry, the one the running session holds for that card exercise.
+  function wtUnit(ex, entry) {
+    if (!entry && wo) wo.screens.forEach(function (s, i) { if (s.ex === ex) entry = wo.entries[i]; });
+    return state.unit + (eachOf(ex, entry) ? " each" : "");
+  }
+
+  // A logged set's own word, whatever the rule says today.
+  function setUnit(s) { return state.unit + (s && s.each ? " each" : ""); }
+
+  // What a set moved, for EVERY total in the app: reps × weight, twice for a pair.
+  // In today's unit, or in pounds for the award milestones, which are banked in
+  // pounds. A best never comes through here — a best is the number on one
+  // dumbbell, the one typed and the one to beat.
+  function setLoad(s, lb) {
+    if (!s || !s.reps || !s.weight) return 0;
+    return s.reps * (s.each ? 2 : 1) *
+      (lb ? (s.unit === "kg" ? s.weight * LB_PER_KG : Number(s.weight)) : toUnit(s.weight, s.unit));
+  }
+
+  // Sets and volume of a session's entries, holes and all.
+  function tally(entries) {
+    var t = { sets: 0, vol: 0 };
+    (entries || []).forEach(function (e) {
+      (e.sets || []).forEach(function (s) { if (s) { t.sets++; t.vol += setLoad(s); } });
+    });
+    return t;
+  }
+
   // Blank until the history is in, so it never claims a first time it cannot know.
   function lastLine(entry) {
     if (!histReady || !entry) return "";
     var h = hist[exKey(entry)];
     if (!h || !h.date) return "first time logging this.";
     return "last time · " + h.sets + " × " + (h.reps || timeText(h.secs)) +
-      (h.weight ? " at " + wtText(h.weight, h.unit) + " " + state.unit : "") + " · " + agoText(h.date);
+      (h.weight ? " at " + wtText(h.weight, h.unit) + " " + state.unit + (h.pair ? " each" : "") : "") +
+      " · " + agoText(h.date);
   }
 
   function startClock() {
@@ -7304,7 +7397,7 @@ export const APP = String.raw`
           : timed ? ex.duration_seconds + "s" : "Set " + (idx + 1));
         p.appendChild(b);
         p.appendChild(document.createTextNode(done
-          ? (done.seconds ? "held" : done.weight ? state.unit : "reps")
+          ? (done.seconds ? "held" : done.weight ? setUnit(done) : "reps")
           : timed ? "hold " + (idx + 1)
           : (askText(ex) || "tap to log")));
         // A hold has one number, so its pill toggles: for one done off the clock.
@@ -7364,8 +7457,42 @@ export const APP = String.raw`
     // The number worth beating stays up while the stepper argues with it.
     $("setlast").textContent = lastLine(entry);
     $("wtunit").textContent = state.unit;
+    paintEach();
     drawStepper();
     openSheet("setsheet");
+  }
+
+  // The tag beside the unit: "each" on a pair, "1 dumbbell" on one, absent on
+  // anything that is not a dumbbell. It is also the switch, because the place a
+  // wrong guess is noticed is the number it is wrong about.
+  function paintEach(flip) {
+    var s = wo && wo.screens[wo.i];
+    tagPaint($("wteach"), wo ? dbOf(s && s.ex, wo.entries[wo.i]) : 0, flip);
+  }
+
+  // The same tag wherever a weight is typed: here and in a corrected set.
+  function tagPaint(b, n, flip) {
+    b.hidden = !n;
+    b.classList.toggle("one", n === 1);
+    b.textContent = n === 1 ? "1 dumbbell" : "each";
+    b.setAttribute("aria-label", (n === 1 ? "One dumbbell" : "Weight of each dumbbell") + ", tap to switch");
+    if (flip && !lessMotion()) { b.classList.remove("flip"); void b.offsetWidth; b.classList.add("flip"); }
+  }
+
+  // The whole movement flips, the sets already logged with it included: they were
+  // lifted with the same hands. Recorded on the entry, so the log remembers it and
+  // the next session opens on the same answer.
+  function flipEach() {
+    if (!wo || wo.finished) return;
+    var s = wo.screens[wo.i], entry = wo.entries[wo.i], pair = dbOf(s && s.ex, entry) !== 2, h = hist[exKey(entry)];
+    entry.each = pair;
+    if (h) h.each = pair;
+    entry.sets.forEach(function (x) { if (x && !x.seconds) { if (pair) x.each = true; else delete x.each; } });
+    haptic("tap");
+    paintEach(true);
+    toast(pair ? "2 dumbbells · volume counts both" : "1 dumbbell · counted once");
+    saveDraft();
+    renderWorkout(1);
   }
 
   function drawStepper(animate) {
@@ -7476,6 +7603,8 @@ export const APP = String.raw`
     var set = {
       reps: setCtx.reps, weight: setCtx.weight || null, unit: state.unit, done: true
     };
+    // Per dumbbell as typed; the flag is what doubles it wherever load is summed.
+    if (eachOf(wo.screens[wo.i] && wo.screens[wo.i].ex, entry)) set.each = true;
     var k = exKey(entry), told = !!wo.prs[k];
     if (prCheck(entry, set, k)) {
       set.pr = true;
@@ -7523,7 +7652,7 @@ export const APP = String.raw`
     h.best = est;
     // Keyed, so the summary gets one line per movement: the best of the day
     // rather than every step up to it.
-    wo.prs[k] = { name: entry.name || "Exercise", reps: set.reps, weight: set.weight, unit: set.unit };
+    wo.prs[k] = { name: entry.name || "Exercise", reps: set.reps, weight: set.weight, unit: set.unit, each: set.each };
     return true;
   }
 
@@ -8022,6 +8151,11 @@ export const APP = String.raw`
   function cxAfter(bi, buzz) {
     haptic(buzz);
     cxSync(bi);
+    // A round of dumbbell work is per dumbbell like any other set.
+    ((wo.workout.blocks[bi] || {}).exercises || []).forEach(function (ex, j) {
+      var e = cxEntry(bi, j);
+      if (e && eachOf(ex, e)) e.sets.forEach(function (x) { if (x && x.weight) x.each = true; });
+    });
     saveDraft();
     renderWorkout(1);
   }
@@ -8183,7 +8317,7 @@ export const APP = String.raw`
       var row = el("button", "pickrow cxmove" + (did ? " on" : j === cur ? " cur" : ""));
       var tx = el("div", "pt"), bits = [doseText(ex) || "—"], d = cxDelta(ex);
       row.setAttribute("aria-pressed", did ? "true" : "false");
-      if (set && set.weight) bits.push(wtText(set.weight, set.unit) + " " + state.unit);
+      if (set && set.weight) bits.push(wtText(set.weight, set.unit) + " " + wtUnit(ex, e));
       if (d) bits.push(d);
       tx.appendChild(el("b", null, ex.name));
       tx.appendChild(el("span", null, bits.join(" · ")));
@@ -8388,6 +8522,7 @@ export const APP = String.raw`
       // this very object, so writing it here is what wakes that button up.
       payload.id = r.data && r.data.id;
       if (wo) wo.logId = payload.id;
+      sumLanded(payload);
       invalidateLogs();
       // The today card was drawn before this session existed. Retire it now,
       // and redraw at once if the library is the page underneath.
@@ -8541,14 +8676,11 @@ export const APP = String.raw`
 
     var mins = Math.max(1, Math.round((payload.duration_seconds || 60) / 60));
     $("wclock").textContent = mins + " min";
-    var sets = 0, vol = 0;
-    logged.forEach(function (e) {
-      e.sets.forEach(function (s) {
-        if (!s) return;
-        sets++;
-        if (s.reps && s.weight) vol += s.reps * toUnit(s.weight, s.unit);
-      });
-    });
+    var t = tally(logged), sets = t.sets, vol = t.vol;
+    // What a correction in "What you logged" needs to redraw the figures above it
+    // without drawing the screen again: the awards are granted by that drawing.
+    sum = { payload: payload, logged: logged, past: past, w: w, figs: [],
+      good: JSON.stringify(logged.filter(function (e) { return e.sets.length; })) };
 
     main.appendChild(pumpyArt("proud", true));
     // The eyebrow says what the screen is: the moment, live — the day, in
@@ -8566,20 +8698,16 @@ export const APP = String.raw`
     // cxScoreOf reads it back off the entries, so the sentence a session ended on
     // is the sentence it is still wearing when it is opened again.
     var cs = cxScoreOf(w, logged);
-    if (cs) main.appendChild(el("div", "wdose", cs.text + (cs.cap ? " in " + clock(cs.cap) : "") +
-      (cs.reps ? " · " + cs.reps + " reps" : "")));
+    if (cs) main.appendChild(sum.dose = el("div", "wdose", cxLine(cs)));
 
     var figs = el("div", "setpills sumfigs");
-    [[String(mins), "min"],
-     cs ? [String(cs.rounds), cs.rounds === 1 ? "round" : "rounds"]
-       : [String(sets), sets === 1 ? "set" : "sets"],
-     [vol ? Math.round(vol).toLocaleString() : "—", vol ? state.unit : "bodyweight"]]
-      .forEach(function (f) {
-        var box = el("div", "setpill");
-        box.appendChild(el("b", null, f[0]));
-        box.appendChild(document.createTextNode(f[1]));
-        figs.appendChild(box);
-      });
+    figsOf(mins, sets, vol, cs).forEach(function (f) {
+      var box = el("div", "setpill");
+      box.appendChild(el("b", null, f[0]));
+      box.appendChild(document.createTextNode(f[1]));
+      figs.appendChild(box);
+      sum.figs.push(box);
+    });
     main.appendChild(el("div", "sumawards"));
     main.appendChild(figs);
 
@@ -8600,20 +8728,8 @@ export const APP = String.raw`
     var mg = w.muscle_groups || [];
     if (mg.length) main.appendChild(el("div", "wnote", mg.slice(0, 6).join(" · ")));
 
-    var beaten = Object.keys(prs);
-    if (beaten.length) {
-      var pills = el("div", "setpills sumprs");
-      beaten.forEach(function (k) {
-        var row = el("div", "setpill pr");
-        // Read back, the claim has to be the one that was true on the day. It was
-        // settled then, against the history that existed then, and the pill says so
-        // rather than quietly letting a two-year-old lift read as today's best.
-        row.appendChild(el("b", null, past ? "Best at the time" : "New best"));
-        row.appendChild(document.createTextNode(prText(prs[k])));
-        pills.appendChild(row);
-      });
-      main.appendChild(pills);
-    }
+    main.appendChild(sum.prs = el("div", "setpills sumprs"));
+    sumBests(prs);
 
     // The card, and every way off this phone with it.
     main.appendChild(shareRow(payload, logged, past));
@@ -8631,10 +8747,35 @@ export const APP = String.raw`
     if (past) pastSeals(payload, main); else sealAwards(payload, main);
   }
 
+  // The three figures a session is summed up in, on the screen and on the card.
+  function figsOf(mins, sets, vol, cs) {
+    return [[String(mins), "min"],
+      cs ? [String(cs.rounds), cs.rounds === 1 ? "round" : "rounds"] : [String(sets), sets === 1 ? "set" : "sets"],
+      [vol ? Math.round(vol).toLocaleString() : "—", vol ? state.unit : "bodyweight"]];
+  }
+
+  function cxLine(cs) {
+    return cs.text + (cs.cap ? " in " + clock(cs.cap) : "") + (cs.reps ? " · " + cs.reps + " reps" : "");
+  }
+
+  function sumBests(prs) {
+    var pills = sum.prs;
+    pills.innerHTML = "";
+    Object.keys(prs).forEach(function (k) {
+      var row = el("div", "setpill pr");
+      // Read back, the claim has to be the one that was true on the day. It was
+      // settled then, against the history that existed then, and the pill says so
+      // rather than quietly letting a two-year-old lift read as today's best.
+      row.appendChild(el("b", null, sum.past ? "Best at the time" : "New best"));
+      row.appendChild(document.createTextNode(prText(prs[k])));
+      pills.appendChild(row);
+    });
+  }
+
   // One phrase for a best, in the one place it is written: the summary pill, the
   // share card and the caption all said it, and all three said it differently.
   function prText(p) {
-    return p.name + " · " + wtText(p.weight, p.unit) + " " + state.unit + " × " + p.reps;
+    return p.name + " · " + wtText(p.weight, p.unit) + " " + setUnit(p) + " × " + p.reps;
   }
 
   // The card a session was run from, or an empty one: a log outlives the workout
@@ -8664,7 +8805,7 @@ export const APP = String.raw`
         var k = exKey(e), est = toUnit(s.weight, s.unit) * (1 + (s.reps || 0) / 30);
         if (out[k] && out[k].est >= est) return;
         out[k] = { name: e.name || "Exercise", reps: s.reps, weight: s.weight,
-          unit: s.unit, est: est };
+          unit: s.unit, each: s.each, est: est };
       });
     });
     return out;
@@ -8673,22 +8814,249 @@ export const APP = String.raw`
   // Set by set, in a disclosure: it is long, it is not the headline, and a
   // summary that opens on a wall of numbers has buried the ones that matter.
   function sumLog(logged) {
-    var box = disclosure("What you logged", "sumlog"), body = box.lastChild;
-    logged.forEach(function (e) {
+    var box = disclosure("What you logged", "sumlog");
+    sum.box = box.lastChild;
+    sumRows();
+    return box;
+  }
+
+  // ---------- correcting the receipt ----------
+  //
+  // "in case someone misinputted a number" (owner, 23 Sept). Hevy and Strong open
+  // a finished workout back up as the whole editor, add-an-exercise and all. This
+  // is a correction, not an editor, so it happens where the wrong number is read:
+  // tap the set, fix the figure or take the set out. One row open at a time, the
+  // way a cell edits in an iOS list, and the screen above it (the figures, the
+  // bests, the card) agrees without being drawn again. The same renderer serves
+  // the live finish and a session opened from Train, so both have it.
+  var sum = null, sumQueue = [];
+
+  function sumRows() {
+    var body = sum.box, total = tally(sum.logged).sets;
+    body.innerHTML = "";
+    sum.open = null;
+    sum.logged.forEach(function (e, ei) {
+      if (!e.sets.length) return;
       var row = el("div", "session-exercise");
       row.appendChild(el("h4", null, e.name || "Exercise"));
-      e.sets.forEach(function (s, i) {
-        var line = el("div", "session-set");
-        line.appendChild(el("span", null, "Set " + (i + 1)));
-        var b = el("b", null, setText(s) + (s.weight && !s.seconds ? " " + state.unit : ""));
+      e.sets.forEach(function (s, si) {
+        var line = el("button", "session-set"), b = el("b", null, setText(s) + (s.weight && !s.seconds ? " " + setUnit(s) : ""));
+        line.setAttribute("data-k", ei + ":" + si);
+        line.setAttribute("aria-label", "Correct set " + (si + 1) + ": " + b.textContent);
+        line.appendChild(el("span", null, "Set " + (si + 1)));
         if (s.pr) b.classList.add("was");
         line.appendChild(b);
+        line.appendChild(ic("pencil"));
+        line.onclick = function () { sumEdit(line, ei, si, total); };
         row.appendChild(line);
       });
       body.appendChild(row);
     });
-    return box;
   }
+
+  // The line becomes the numbers it is made of, in the set sheet's own shape: the
+  // figure over its unit, and the each tag on the unit wherever there is a pair.
+  function sumEdit(line, ei, si, total) {
+    // Another row open: it closes, and the redraw that closes it replaced this line.
+    if (sum.open) { sumShut(); line = sum.box.querySelector('[data-k="' + ei + ":" + si + '"]'); }
+    if (!line) return;
+    var c = sum, e = c.logged[ei], s = e.sets[si], hold = !!s.seconds && !s.reps, h0 = line.offsetHeight;
+    var ed = el("div", "sedit"), row = el("div", "sedrow"), acts = el("div", "sedacts"), f = [];
+    var was = s.weight ? toUnit(s.weight, s.unit) : 0, pair = !!s.each, cap, tag, del;
+    row.appendChild(el("span", null, "Set " + (si + 1)));
+    function field(v, dec, unit) {
+      var box = el("div", "sedf"), inp = el("input"), small = el("small", null, unit);
+      inp.inputMode = dec ? "decimal" : "numeric";
+      inp.enterKeyHint = "done";
+      inp.placeholder = "0";
+      inp.value = v ? String(v) : "";
+      inp.setAttribute("aria-label", unit);
+      inp.onkeydown = function (ev) {
+        if (ev.key === "Enter") save(); else if (ev.key === "Escape") sumShut(); else return;
+        ev.preventDefault();
+      };
+      box.appendChild(inp);
+      box.appendChild(small);
+      row.appendChild(box);
+      f.push(inp);
+      return small;
+    }
+    if (hold) field(s.seconds, 0, "sec");
+    else {
+      field(s.reps, 0, "reps");
+      row.appendChild(el("i", "sedx", "×"));
+      cap = field(was, 1, state.unit);
+      if (pair || typeof e.each === "boolean" || dbRule(e, c.w)) {
+        tag = cap.appendChild(el("button", "eachtag"));
+        tag.onclick = function () { pair = !pair; haptic("tap"); tagPaint(tag, pair ? 2 : 1, 1); };
+        tagPaint(tag, pair ? 2 : 1);
+      }
+    }
+    // The last set of a session is not deleted from here: that is the session,
+    // and Delete session is where that lives.
+    if (total > 1) {
+      del = acts.appendChild(icon(el("button", "sedel"), "trash", "Delete"));
+      del.onclick = function () {
+        var gone = e.sets.splice(si, 1)[0];
+        c.open = null;
+        haptic("tap");
+        sumMorph(ed, ed.offsetHeight, function () { sumPaint(c); });
+        // Undoable the way a deleted session is: the row goes on the tap, the write
+        // that carries it waits for the toast to go, and any write between carries it.
+        offerUndo("Set deleted", function () { sumWrite(c); }, function () {
+          e.sets.splice(Math.min(si, e.sets.length), 0, gone);
+          sumPaint(c);
+          sumWrite(c);
+        });
+      };
+    }
+    acts.appendChild(el("button", "btn ghost", "Cancel")).onclick = sumShut;
+    acts.appendChild(el("button", "btn", "Save")).onclick = save;
+    ed.appendChild(row);
+    ed.appendChild(acts);
+    line.parentNode.replaceChild(ed, line);
+    c.open = { ed: ed, k: ei + ":" + si };
+    sumMorph(ed, h0);
+    // Inside the tap that asked: the only focus iOS answers with a keyboard.
+    f[0].focus();
+    f[0].select();
+
+    // An empty field or a typo leaves that number as it was, the way the set
+    // sheet's own field does; a weight of 0 is how one is taken off.
+    function save() {
+      var a = parseFloat(f[0].value), b = f[1] ? parseFloat(f[1].value) : NaN, ns = Object.assign({}, s), flip = pair !== !!s.each;
+      if (hold) { if (a > 0) ns.seconds = clamp(Math.round(a), 1, 5999); }
+      else {
+        if (a > 0) ns.reps = clamp(Math.round(a), 1, 999);
+        b = isNaN(b) ? was : clamp(Math.round(b * 10) / 10, 0, 9999);
+        // A figure left alone keeps the unit it was logged in: reading a kg set in
+        // pounds must not rewrite it in pounds.
+        if (b !== was) { ns.weight = b || null; ns.unit = state.unit; }
+      }
+      var moved = ns.reps !== s.reps || ns.weight !== s.weight || ns.seconds !== s.seconds, h = ed.offsetHeight, fixed;
+      if (!moved && !flip) { sumShut(); return; }
+      if (ns.pr && moved && !sumStill(c, e, ns)) delete ns.pr;
+      e.sets[si] = ns;
+      // The tag is the movement's, as in the set sheet: every set of it flips, and
+      // the choice is kept on the entry for next time.
+      if (flip) {
+        e.each = pair;
+        e.sets = e.sets.map(function (x) {
+          if (x.seconds && !x.reps) return x;
+          x = Object.assign({}, x);
+          if (pair) x.each = true; else delete x.each;
+          return x;
+        });
+      }
+      haptic("success");
+      sumPaint(c);
+      fixed = c.box.querySelector('[data-k="' + ei + ":" + si + '"]');
+      if (fixed) { sumMorph(fixed, h); fixed.classList.add("fixed"); }
+      sumWrite(c);
+      toast("Set updated" + (c.payload.strava_activity_id ? " · Strava keeps the version it was sent" : ""));
+    }
+  }
+
+  // Closed without saving: the rows are redrawn from the list, and the one that
+  // was open shrinks back into its line.
+  function sumShut() {
+    var o = sum && sum.open, h, line;
+    if (!o || !o.ed.isConnected) return;
+    h = o.ed.offsetHeight;
+    sumRows();
+    line = sum.box.querySelector('[data-k="' + o.k + '"]');
+    if (line) sumMorph(line, h);
+  }
+
+  // A row grows into its editor and back, or folds away, rather than jumping the
+  // rows under it. The tokens' own values (--t-2, --e-out and --e-in): WAAPI
+  // cannot read a var().
+  function sumMorph(node, h0, gone) {
+    var h1 = gone ? 0 : node.offsetHeight;
+    if (lessMotion() || !node.animate || h0 === h1) { if (gone) gone(); return; }
+    node.style.overflow = "hidden";
+    node.animate([{ height: h0 + "px" }, { height: h1 + "px", opacity: gone ? 0 : 1 }], { duration: 220,
+      easing: gone ? "cubic-bezier(.3,0,.8,.15)" : "cubic-bezier(.22,.9,.3,1)", fill: gone ? "forwards" : "none" })
+      .onfinish = gone || function () { node.style.overflow = ""; };
+  }
+
+  // Everything the summary says about its sets, said again from the corrected list:
+  // the figures in place, the bests, the card and its clip. No entrance replays,
+  // and no award is granted twice, because renderSummary is not called again.
+  function sumPaint(c) {
+    if (sum !== c || !c.box || !c.box.isConnected) return;
+    var t = tally(c.logged), cs = cxScoreOf(c.w, c.logged), prs = prsOfLog(c.logged), k, fresh;
+    if (wo && !c.past) wo.prs = prs;
+    if (cs && c.dose) c.dose.textContent = cxLine(cs);
+    figsOf(0, t.sets, t.vol, cs).forEach(function (x, i) {
+      if (i) { c.figs[i].firstChild.textContent = x[0]; c.figs[i].lastChild.textContent = x[1]; }
+    });
+    c.prs.classList.add("still");
+    sumBests(prs);
+    if (sc.card) {
+      fresh = c.past ? scFromLog(Object.assign({}, c.payload, { entries: c.logged })) : scFromSession(c.payload, c.logged);
+      for (k in fresh) if (k !== "bg") sc.card[k] = fresh[k];
+      scPaint();
+    }
+    sumRows();
+  }
+
+  // A corrected set keeps its best only if it still beats everything the movement
+  // did BEFORE this session. When that cannot be known it loses the claim rather
+  // than keep one it may not have earned.
+  function sumStill(c, e, s) {
+    var k = exKey(e), at = new Date(c.payload.started_at).getTime(), was = 0;
+    if (state.logs) {
+      state.logs.forEach(function (l) {
+        if (l.id === c.payload.id || !(new Date(l.started_at).getTime() < at)) return;
+        (l.entries || []).forEach(function (x) {
+          if (x && exKey(x) === k) (x.sets || []).forEach(function (y) {
+            if (y && y.reps && y.weight) was = Math.max(was, toUnit(y.weight, y.unit) * (1 + y.reps / 30));
+          });
+        });
+      });
+    } else if (!c.past && histReady && hist[k]) was = hist[k].was || 0;
+    return was > 0 && toUnit(s.weight, s.unit) * (1 + s.reps / 30) > was;
+  }
+
+  // Every write carries the whole corrected list, so the last one to land is the
+  // truth whatever order the taps came in. One at a time, and never before the
+  // row exists: in the live moment the insert may still be in the air.
+  function sumWrite(c) {
+    if (!c.payload.id) { if (sumQueue.indexOf(c) < 0) sumQueue.push(c); return; }
+    if (c.busy) { c.again = true; return; }
+    var entries = c.logged.filter(function (e) { return e.sets.length; }), body = JSON.stringify(entries);
+    if (body === c.good) return;
+    c.busy = true;
+    function fail() {
+      c.busy = c.again = false;
+      c.logged.length = 0;
+      JSON.parse(c.good).forEach(function (e) { c.logged.push(e); });
+      sumPaint(c);
+      toast("That change did not save. The set is back as it was.");
+    }
+    sb.from("workout_logs").update({ entries: entries }).eq("id", c.payload.id).select("id").then(function (r) {
+      if (r.error || !r.data || !r.data.length) return fail();
+      c.busy = false;
+      c.good = body;
+      // A session read from Train is a row of state.logs, corrected in place for
+      // the journal and Progress to draw. A live one's row was never read, so the
+      // logs are read again.
+      if (c.past) { c.payload.entries = JSON.parse(body); renderTrain(); } else invalidateLogs();
+      if (native && native.live) loadLogs().then(publishSummary);
+      if (c.again) { c.again = false; sumWrite(c); }
+    }, fail);
+  }
+
+  // finishWorkout's insert has landed: a correction made before it did goes now.
+  function sumLanded(payload) {
+    sumQueue = sumQueue.filter(function (c) {
+      if (c.payload !== payload) return true;
+      sumWrite(c);
+    });
+  }
+
+
 
   // The badges that session earned, read off the case rather than worked out
   // again. An award carries the moment it was granted and the grant happens as
@@ -9230,15 +9598,15 @@ export const APP = String.raw`
   function scSets(e) {
     var st = (e.sets || []).filter(Boolean), n = st.length;
     if (!n) return "";
-    var reps = st[0].reps, same = true, top = 0, secs = 0;
+    var reps = st[0].reps, same = true, top = 0, secs = 0, per = null;
     st.forEach(function (s) {
       if (s.reps !== reps) same = false;
       if (s.seconds) secs = Math.max(secs, s.seconds);
-      if (s.weight) top = Math.max(top, toUnit(s.weight, s.unit));
+      if (s.weight && toUnit(s.weight, s.unit) > top) { top = toUnit(s.weight, s.unit); per = s; }
     });
     if (secs && !reps) return n + " × " + secs + "s";
     var t = same && reps ? n + " × " + reps : n + (n === 1 ? " set" : " sets");
-    return top ? t + " · " + top.toLocaleString() + " " + state.unit : t;
+    return top ? t + " · " + top.toLocaleString() + " " + setUnit(per) : t;
   }
 
   function scCard(w, title, when, mins, sets, vol, prs, entries) {
@@ -9259,26 +9627,16 @@ export const APP = String.raw`
     return {
       bg: sc.bg, title: title || "Workout", prs: prs, exercises: ex, credit: credit,
       date: new Date(when).toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" }),
-      figs: [[String(mins), "min"],
-        cs ? [String(cs.rounds), cs.rounds === 1 ? "round" : "rounds"]
-          : [String(sets), sets === 1 ? "set" : "sets"],
-        [vol ? Math.round(vol).toLocaleString() : "—", vol ? state.unit : "bodyweight"]],
+      figs: figsOf(mins, sets, vol, cs),
       label: lab,
       coach: w.platform === "pumpy"
     };
   }
 
   function scFromSession(payload, logged) {
-    var w = (wo && wo.workout) || {}, sets = 0, vol = 0;
-    logged.forEach(function (e) {
-      e.sets.forEach(function (s) {
-        if (!s) return;
-        sets++;
-        if (s.reps && s.weight) vol += s.reps * toUnit(s.weight, s.unit);
-      });
-    });
+    var w = (wo && wo.workout) || {}, t = tally(logged);
     return scCard(w, payload.workout_title, payload.started_at,
-      Math.max(1, Math.round(payload.duration_seconds / 60)), sets, vol, prNames(wo && wo.prs), logged);
+      Math.max(1, Math.round(payload.duration_seconds / 60)), t.sets, t.vol, prNames(wo && wo.prs), logged);
   }
 
   function prNames(prs) {
@@ -11019,16 +11377,7 @@ export const APP = String.raw`
     });
   }
 
-  function volumeOf(log) {
-    var v = 0;
-    (log.entries || []).forEach(function (e) {
-      (e.sets || []).forEach(function (s) {
-        if (!s) return;
-        if (s.reps && s.weight) v += s.reps * toUnit(s.weight, s.unit);
-      });
-    });
-    return v;
-  }
+  function volumeOf(log) { return tally(log.entries).vol; }
 
   function weekKey(iso) {
     return ymd(mondayOf(new Date(iso)));
@@ -11286,9 +11635,7 @@ export const APP = String.raw`
   function volLb(log) {
     var v = 0;
     (log.entries || []).forEach(function (e) {
-      (e.sets || []).forEach(function (s) {
-        if (s && s.reps && s.weight) v += s.reps * (s.unit === "kg" ? s.weight * LB_PER_KG : s.weight);
-      });
+      (e.sets || []).forEach(function (s) { v += setLoad(s, 1); });
     });
     return v;
   }
@@ -11742,6 +12089,7 @@ export const APP = String.raw`
           if (est > prs[k].est) {
             prs[k].est = est;
             prs[k].weight = wt;
+            prs[k].each = s.each;
             prs[k].reps = s.reps;
             prs[k].date = l.started_at;
           }
@@ -11758,7 +12106,7 @@ export const APP = String.raw`
         var nm = el("div", "n");
         nm.appendChild(document.createTextNode(p.label));
         nm.appendChild(el("span", null,
-          wtText(p.weight) + " " + state.unit + " × " + p.reps + " · " +
+          wtText(p.weight) + " " + setUnit(p) + " × " + p.reps + " · " +
           new Date(p.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })));
         r.appendChild(nm);
         r.appendChild(el("div", "v", Math.round(p.est) + " " + state.unit));
@@ -17002,6 +17350,7 @@ export const APP = String.raw`
   wireNum($("repsbox"), $("repsval"), $("repsin"), setReps);
   wireNum($("wtbox"), $("wtval"), $("wtin"), setWeight);
   $("setsave").onclick = saveSet;
+  $("wteach").onclick = flipEach;
   $("setclear").onclick = function () {
     if (!wo) return;
     wo.entries[wo.i].sets.splice(setCtx.idx, 1);
