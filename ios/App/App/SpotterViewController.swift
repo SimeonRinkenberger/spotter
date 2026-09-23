@@ -26,6 +26,9 @@ class SpotterViewController: CAPBridgeViewController {
     private var sentHeight: CGFloat = 0
     private var keyboardShown = false
     private var animatingUntil: CFTimeInterval = 0
+    private var pendingTransition: [String: Any]?
+    private var pendingDuration: Double = 0
+    private var pendingSince: CFTimeInterval = 0
     // Match --paper in the shared stylesheet, including appearance changes.
     private let paper = UIColor { traits in
         traits.userInterfaceStyle == .dark
@@ -100,23 +103,21 @@ class SpotterViewController: CAPBridgeViewController {
             let duration = info[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double ?? 0.25
             let curve = info[UIResponder.keyboardAnimationCurveUserInfoKey] as? Int ?? 7
             self.sentHeight = height
-            self.animatingUntil = CACurrentMediaTime() + duration
-            self.send("spotter:keyboard-transition", [
+            self.keyboardShown = height > 0
+            // UIKit posts this before the keys' animation exists: it is committed
+            // at the end of this run-loop turn, or later while a keyboard is still
+            // being built (a first number pad: 60ms in the Simulator). Told now,
+            // the page started its clock that much ahead of the keys and its first
+            // visible frame was two-thirds of the way up. The page is told on the
+            // first frame the keys' animation has a begin time (followKeyboard).
+            self.pendingSince = CACurrentMediaTime()
+            self.pendingTransition = [
                 "visible": height > 0, "height": Double(height), "duration": duration, "curve": curve
-            ])
-            if height > 0 {
-                self.keyboardShown = true
-                self.armInteractiveDismissal(in: webView.scrollView)
-                self.startFollowing()
-            } else {
-                self.keyboardShown = false
-                // Outlast the closing animation, then stop sampling.
-                DispatchQueue.main.asyncAfter(deadline: .now() + duration + 0.1) { [weak self] in
-                    guard let self = self, !self.keyboardShown else { return }
-                    self.keyboardLink?.invalidate()
-                    self.keyboardLink = nil
-                }
-            }
+            ]
+            self.pendingDuration = duration
+            self.animatingUntil = .infinity
+            if height > 0 { self.armInteractiveDismissal(in: webView.scrollView) }
+            self.startFollowing()
         }
     }
 
@@ -150,11 +151,12 @@ class SpotterViewController: CAPBridgeViewController {
         }
     }
 
-    // Sample the layout guide once a frame while the keyboard is up. Animated
-    // moves need nothing from here — the notification above already started the
-    // page's matching animation, and the guide's model value jumps straight to
-    // the value that was sent. Only a finger moves the guide without a
-    // notification, and then the page follows it frame by frame.
+    // Once a frame while the keyboard is on screen or moving: hand the page a
+    // pending transition on the first free frame (above), then sample the layout
+    // guide. Animated moves need nothing more — the page is already animating to
+    // the value the guide jumps to. Only a finger moves the guide without a
+    // notification (interactive dismissal), and then the page follows it frame by
+    // frame.
     private func startFollowing() {
         guard keyboardLink == nil else { return }
         let link = CADisplayLink(target: self, selector: #selector(followKeyboard))
@@ -163,16 +165,60 @@ class SpotterViewController: CAPBridgeViewController {
     }
 
     @objc private func followKeyboard() {
-        guard keyboardShown else { return }
+        let now = CACurrentMediaTime()
+        if var pending = pendingTransition {
+            // How long the keys have already been moving when the page hears of
+            // it; the page starts its clock that far in, so both run on one
+            // timeline. An animation that began before the notification is the
+            // last one still settling, not this one. A keyboard UIKit moves some
+            // other way (or not at all) gets one frame's grace, then goes as is.
+            let found = keyboardAnimationBegin()
+            let begin = (found ?? 0) >= pendingSince - 0.001 ? found ?? 0 : 0
+            let waited = now - pendingSince
+            if pendingDuration > 0 && begin == 0 && waited < (found == nil ? 0.02 : 0.3) { return }
+            let elapsed = begin > 0 ? max(0, min(pendingDuration, now - begin)) : 0
+            pending["elapsed"] = elapsed
+            pendingTransition = nil
+            animatingUntil = now - elapsed + pendingDuration
+            send("spotter:keyboard-transition", pending)
+            return
+        }
+        guard keyboardShown else {
+            if now > animatingUntil + 0.1 { keyboardLink?.invalidate(); keyboardLink = nil }
+            return
+        }
         view.layoutIfNeeded()
         let top = keyboardProbe.frame.maxY
         let height = top >= view.bounds.height - view.safeAreaInsets.bottom - 1 ? 0 : max(0, view.bounds.height - top)
         // While UIKit animates, the guide is already at its end value and the page
         // is already animating there; take it as the baseline and send nothing.
-        if CACurrentMediaTime() < animatingUntil { sentHeight = height; return }
+        if now < animatingUntil { sentHeight = height; return }
         if abs(height - sentHeight) < 0.5 { return }
         sentHeight = height
         send("spotter:keyboard-track", ["height": Double(height)])
+    }
+
+    // The begin time of the keys' own position animation: UIKit moves the
+    // keyboard's container in the text-effects window with an additive
+    // CASpringAnimation, whose beginTime is 0 until the transaction carrying it
+    // commits. nil when there is no such animation to be found.
+    private func keyboardAnimationBegin() -> CFTimeInterval? {
+        for scene in UIApplication.shared.connectedScenes {
+            guard let windows = (scene as? UIWindowScene)?.windows else { continue }
+            for window in windows where window !== view.window {
+                if let begin = positionAnimationBegin(in: window, depth: 0) { return begin }
+            }
+        }
+        return nil
+    }
+
+    private func positionAnimationBegin(in view: UIView, depth: Int) -> CFTimeInterval? {
+        if let animation = view.layer.animation(forKey: "position") { return animation.beginTime }
+        guard depth < 4 else { return nil }
+        for sub in view.subviews {
+            if let begin = positionAnimationBegin(in: sub, depth: depth + 1) { return begin }
+        }
+        return nil
     }
 
     deinit {

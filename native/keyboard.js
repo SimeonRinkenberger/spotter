@@ -5,13 +5,14 @@
 
 // UIKeyboardAnimationCurveUserInfoKey is 7 for the keyboard: UIKit's private
 // curve, which no named CSS easing resembles and the old ['ease-in-out', …][curve]
-// lookup silently turned into ease-in-out. Tracked frame by frame in an iPhone 16e
-// (iOS 26) Simulator recording, the keys follow a critically damped spring,
-// 1 - (1 + wt)e^-wt with w = 24/s, settled within the 0.383s UIKit reports. This
-// cubic is the closest one to that spring (1% of travel), and a cubic is what Core
-// Animation can run off the main thread; it is the widely quoted
-// (0.38, 0.7, 0.125, 1) refined against the recording. 0-3 keep their UIKit meaning.
-export const KEYBOARD_EASE = 'cubic-bezier(0.33, 0.7, 0.12, 1)';
+// lookup silently turned into ease-in-out. Read off the live animation in the iOS 26
+// Simulator, it is a critically damped spring (mass 1, stiffness 555, damping 47.1:
+// 1 - (1 + wt)e^-wt, w = 23.6/s) cut at the 0.383s UIKit reports. This cubic is the
+// closest one to it (1% of travel on average, 3.4% at worst; the widely quoted
+// (0.38, 0.7, 0.125, 1) is 2.5% and 7%), and a cubic is what WebKit can hand to Core
+// Animation: a linear() spring ran on the main thread in the same test. 0-3 keep
+// their UIKit meaning.
+export const KEYBOARD_EASE = 'cubic-bezier(0.325, 0.661, 0.115, 1)';
 const CURVES = ['ease-in-out', 'ease-in', 'ease-out', 'linear'];
 
 export function keyboardEasing(curve) {
@@ -27,14 +28,21 @@ export async function installKeyboard(Keyboard, win = window, doc = document, { 
   if (stillFrame) root.classList.add('kb-over');
   let settling, hasNativeTiming = false;
   const kb = win.SpotterNative.keyboard = { visible: false, height: 0, duration: 0, easing: KEYBOARD_EASE };
-  const update = (visible, height, duration = 0.25, curve = 7, instant = false) => {
+  // elapsed: how long the keys have already been moving (the shell reports it),
+  // so every animation here starts that far in and shares the keys' timeline.
+  const update = (visible, height, duration = 0.25, curve = 7, instant = false, elapsed = 0) => {
     duration = instant ? 0 : Number.isFinite(duration) ? Math.max(0, Math.min(1, duration)) : 0.25;
+    elapsed = Number.isFinite(elapsed) ? Math.max(0, Math.min(duration, elapsed)) : 0;
     height = visible && Number.isFinite(height) ? Math.max(0, Math.round(height)) : 0;
     const easing = keyboardEasing(curve);
     Object.assign(kb, { visible, height, duration, easing });
-    root.style.setProperty('--keyboard-duration', duration + 's');
-    root.style.setProperty('--keyboard-curve', easing);
-    root.style.setProperty('--kb', height + 'px');
+    // Inherited from the root, a changed value restyles all 1,300 elements of
+    // the page (6ms in the Simulator) in the very task that starts the motion.
+    // The lifted surfaces carry their own timing (app.ts); these two serve the
+    // tab bar's fade and Android, and rarely change at all.
+    const put = (name, value) => { if (root.style.getPropertyValue(name) !== value) root.style.setProperty(name, value); };
+    put('--keyboard-duration', duration + 's');
+    put('--keyboard-curve', easing);
     win.clearTimeout(settling);
     root.classList.add('keyboard-moving');
     win.SpotterNative.keyboardMoving = true;
@@ -45,17 +53,17 @@ export async function installKeyboard(Keyboard, win = window, doc = document, { 
     if (tabs) tabs.inert = visible;
     // The page moves its surfaces from here, in the same task, so the first
     // frame of their animation is the first frame of the keyboard's.
-    win.dispatchEvent(new CustomEvent('spotter:keyboard', { detail: { visible, height, duration, easing, instant } }));
+    win.dispatchEvent(new CustomEvent('spotter:keyboard', { detail: { visible, height, duration, easing, instant, elapsed } }));
     settling = win.setTimeout(() => {
       root.classList.remove('keyboard-moving');
       win.SpotterNative.keyboardMoving = false;
       win.dispatchEvent(new Event('spotter:keyboard-settled'));
-    }, duration * 1000 + 50);
+    }, (duration - elapsed) * 1000 + 50);
   };
   win.addEventListener('spotter:keyboard-transition', event => {
     hasNativeTiming = true;
     const info = event.detail || event;
-    update(!!info.visible, info.height, info.duration, info.curve);
+    update(!!info.visible, info.height, info.duration, info.curve, false, info.elapsed);
   });
   // A finger dragging the keyboard down (interactive dismissal): no animation,
   // the surfaces take each sampled height as it comes.

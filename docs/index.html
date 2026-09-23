@@ -5989,18 +5989,34 @@ html.native body.kb .tabbar {
 }
 html.kb-over .sheetbody {
   translate: 0 calc(-1 * var(--lift, 0px));
-  box-shadow: var(--sh-up), 0 96px 0 0 var(--paper);
-  transition: transform var(--t-2) var(--e-in), translate var(--keyboard-duration, 0s) var(--keyboard-curve, ease);
+  transition: transform var(--t-2) var(--e-in), translate var(--kt, 0s) var(--ke, ease) var(--kd, 0s);
 }
 html.kb-over .sheet.open .sheetbody {
-  transition: transform .38s var(--e-spring), translate var(--keyboard-duration, 0s) var(--keyboard-curve, ease);
+  transition: transform .38s var(--e-spring), translate var(--kt, 0s) var(--ke, ease) var(--kd, 0s);
 }
 html.kb-over .sheet.open .sheetbody.dragging {
-  transition: translate var(--keyboard-duration, 0s) var(--keyboard-curve, ease);
+  transition: translate var(--kt, 0s) var(--ke, ease) var(--kd, 0s);
 }
 html.kb-over .composer {
   translate: 0 calc(-1 * var(--lift, 0px));
-  transition: translate var(--keyboard-duration, 0s) var(--keyboard-curve, ease);
+  transition: translate var(--kt, 0s) var(--ke, ease) var(--kd, 0s);
+}
+.kbback {
+  display: none;
+}
+html.kb-over .kbback {
+  display: block;
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 100%;
+  height: 100%;
+  z-index: 89;
+  background: var(--paper);
+  pointer-events: none;
+  will-change: translate;
+  translate: 0 calc(-1 * var(--lift, 0px));
+  transition: translate var(--kt, 0s) var(--ke, ease) var(--kd, 0s);
 }
 @media (prefers-reduced-motion: reduce) {
   html.native.keyboard-moving .composer,
@@ -6011,7 +6027,8 @@ html.kb-over .composer {
   html.kb-over .sheetbody,
   html.kb-over .sheet.open .sheetbody,
   html.kb-over .sheet.open .sheetbody.dragging,
-  html.kb-over .composer {
+  html.kb-over .composer,
+  html.kb-over .kbback {
     transition: none;
   }
 }
@@ -18175,7 +18192,7 @@ details.details-moving > :not(summary) {
       for (var i = 0, ms = [0, 60, 150, 300, 600]; i < ms.length; i++) setTimeout(fitViewport, ms[i]);
     }
   });
-  var kbOwner = null, kbProbe = null;
+  var kbOwner = null, kbProbe = null, kbBack = null;
   function kbOver() {
     return !!(native && native.keyboard && document.documentElement.classList.contains("kb-over"));
   }
@@ -18212,7 +18229,7 @@ details.details-moving > :not(summary) {
         for (i = 0; i < nodes.length; i++)
           nodes[i].animate && (nodes[i]._kbGlide = nodes[i].animate(
             [{ translate: "0 " + dy + "px" }, { translate: "0 0" }],
-            { duration: d.duration * 1e3, easing: d.easing }
+            { duration: d.duration * 1e3, delay: -(d.elapsed || 0) * 1e3, easing: d.easing }
           ));
     }
   }
@@ -18229,12 +18246,13 @@ details.details-moving > :not(summary) {
       s.scrollTop = s.scrollTop + over;
     }
   }
-  function kbLift(node, px) {
-    px > 0 ? node.style.setProperty("--lift", px + "px") : node.style.removeProperty("--lift");
+  function kbLift(node, px, d) {
+    var st = node.style;
+    st.setProperty("--kt", (lessMotion() ? 0 : d.duration || 0) + "s"), st.setProperty("--ke", d.easing || "ease"), st.setProperty("--kd", -(d.elapsed || 0) + "s"), px > 0 ? st.setProperty("--lift", px + "px") : st.removeProperty("--lift");
   }
   function kbSheet(b, K, f, d) {
     var safe = kbSafe(), want = K ? Math.max(0, K - safe.bottom) : 0, lift = Math.min(want, Math.max(0, b.offsetTop - safe.top - 8)), under = want - lift;
-    if (kbLift(b, lift), !d.instant) {
+    if (kbLift(b, lift, d), !d.instant) {
       under > 0 && b._kbHeight == null && (b._kbHeight = b.style.maxHeight, b.style.maxHeight = b.offsetHeight + "px");
       var kids = kbFlow(b);
       kbShift(kids, kids[0], function() {
@@ -18247,7 +18265,7 @@ details.details-moving > :not(summary) {
   }
   function kbComposer(c, K, d) {
     var p = $("pumpyview"), log = $("pumpylog"), rest = parseFloat(getComputedStyle(c).bottom) || 0, lift = K ? Math.max(0, K - rest) : 0;
-    if (kbLift(c, lift), !d.instant) {
+    if (kbLift(c, lift, d), !d.instant) {
       var was = kbPadOf(log), s0 = p.scrollTop;
       lift !== was && kbShift([log], log.firstElementChild || log, function() {
         kbPad(log, lift), p.scrollTop = s0 + lift - was;
@@ -18275,7 +18293,7 @@ details.details-moving > :not(summary) {
   function kbApply(d) {
     if (kbOver()) {
       var K = d.visible ? d.height : 0, f = K ? kbFocus() : null, o = null, n;
-      if (d.instant) {
+      if (kbBack || (kbBack = el("div", "kbback"), kbBack.setAttribute("aria-hidden", "true"), document.body.appendChild(kbBack)), kbLift(kbBack, K, d), d.instant) {
         kbOwner && kbPlace(kbOwner, K, null, d);
         return;
       }

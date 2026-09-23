@@ -2318,28 +2318,39 @@ export const STYLE = String.raw`<style>
      re-lays out while they move. The surface that owns the field rides up on a
      translate — its own property, so it composes with the transform the sheets
      open, close and drag on — for app.ts's --lift, over UIKit's own duration and
-     curve (keyboard.js), from the frame the keys start on. Individual transform
-     properties are composited in WebKit, so the page's main thread does no work
-     per frame. The paper shadow is the sheet reaching down behind the keys: the
-     accessory capsule and the keyboard's rounded corners stand on sheet, not on
-     the dimmed page, as a UIKit form sheet does. It sits below the screen edge
-     whenever the sheet is not lifted. */
+     curve (keyboard.js), on the keys' own timeline: --kd is how long they had
+     been moving when the page heard, so the lift starts that far in. All three
+     live on the moving element, never the root. Individual transform
+     properties are composited in WebKit, so a busy main thread cannot stall them
+     (checked in the Simulator with a 500ms busy loop mid-lift). */
   html.kb-over .sheetbody { translate: 0 calc(-1 * var(--lift, 0px));
-    box-shadow: var(--sh-up), 0 96px 0 0 var(--paper);
     transition: transform var(--t-2) var(--e-in),
-      translate var(--keyboard-duration, 0s) var(--keyboard-curve, ease); }
+      translate var(--kt, 0s) var(--ke, ease) var(--kd, 0s); }
   html.kb-over .sheet.open .sheetbody {
     transition: transform .38s var(--e-spring),
-      translate var(--keyboard-duration, 0s) var(--keyboard-curve, ease); }
+      translate var(--kt, 0s) var(--ke, ease) var(--kd, 0s); }
   html.kb-over .sheet.open .sheetbody.dragging {
-    transition: translate var(--keyboard-duration, 0s) var(--keyboard-curve, ease); }
+    transition: translate var(--kt, 0s) var(--ke, ease) var(--kd, 0s); }
   html.kb-over .composer { translate: 0 calc(-1 * var(--lift, 0px));
-    transition: translate var(--keyboard-duration, 0s) var(--keyboard-curve, ease); }
+    transition: translate var(--kt, 0s) var(--ke, ease) var(--kd, 0s); }
+  /* The iOS 26 keyboard is glass, and with the frame no longer ending at the keys
+     whatever the page draws under them shows through: the dimmed workout, Save
+     workout's orange smeared across the number pad. A sheet of paper rides up
+     under the keys on their own curve instead — what the shell's own paper showed
+     there when the frame stopped at the keyboard — above every sheet and below
+     the toast. At rest it waits below the screen, a layer already, so the first
+     frame of a keyboard does not have to build one. */
+  .kbback { display: none; }
+  html.kb-over .kbback { display: block; position: fixed; left: 0; right: 0; top: 100%;
+    height: 100%; z-index: 89; background: var(--paper); pointer-events: none;
+    will-change: translate; translate: 0 calc(-1 * var(--lift, 0px));
+    transition: translate var(--kt, 0s) var(--ke, ease) var(--kd, 0s); }
   @media (prefers-reduced-motion: reduce) {
     html.native.keyboard-moving .composer, html.native.keyboard-moving .page,
     html.native.keyboard-moving .sheetbody, html.native.keyboard-moving .sheet.open .sheetbody,
     html.native .tabbar, html.kb-over .sheetbody, html.kb-over .sheet.open .sheetbody,
-    html.kb-over .sheet.open .sheetbody.dragging, html.kb-over .composer { transition: none; }
+    html.kb-over .sheet.open .sheetbody.dragging, html.kb-over .composer,
+    html.kb-over .kbback { transition: none; }
   }
   .composerrow { display: flex; gap: 8px; align-items: flex-end; }
   .composer textarea { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 16px; padding: 12px 14px;

@@ -16584,7 +16584,7 @@ export const APP = String.raw`
   // keyboard down moves only the lift, frame by frame; the rest waits for the
   // release, which UIKit animates like any other. The browser and the Android
   // shell never get here: their frame does follow the keyboard (fitViewport()).
-  var kbOwner = null, kbProbe = null;
+  var kbOwner = null, kbProbe = null, kbBack = null;
 
   function kbOver() {
     return !!(native && native.keyboard && document.documentElement.classList.contains("kb-over"));
@@ -16645,7 +16645,7 @@ export const APP = String.raw`
     for (i = 0; i < nodes.length; i++) {
       if (!nodes[i].animate) continue;
       nodes[i]._kbGlide = nodes[i].animate([{ translate: "0 " + dy + "px" }, { translate: "0 0" }],
-        { duration: d.duration * 1000, easing: d.easing });
+        { duration: d.duration * 1000, delay: -(d.elapsed || 0) * 1000, easing: d.easing });
     }
   }
 
@@ -16679,9 +16679,14 @@ export const APP = String.raw`
     s.scrollTop = s.scrollTop + over;
   }
 
-  function kbLift(node, px) {
-    if (px > 0) node.style.setProperty("--lift", px + "px");
-    else node.style.removeProperty("--lift");
+  // The lift and its timing ride on the element itself (style.ts, kb-over).
+  function kbLift(node, px, d) {
+    var st = node.style;
+    st.setProperty("--kt", (lessMotion() ? 0 : d.duration || 0) + "s");
+    st.setProperty("--ke", d.easing || "ease");
+    st.setProperty("--kd", -(d.elapsed || 0) + "s");
+    if (px > 0) st.setProperty("--lift", px + "px");
+    else st.removeProperty("--lift");
   }
 
   // A sheet: whole while it fits under the status bar, otherwise as far as it can
@@ -16691,7 +16696,7 @@ export const APP = String.raw`
     var safe = kbSafe();
     var want = K ? Math.max(0, K - safe.bottom) : 0;
     var lift = Math.min(want, Math.max(0, b.offsetTop - safe.top - 8)), under = want - lift;
-    kbLift(b, lift);
+    kbLift(b, lift, d);
     if (d.instant) return;
     if (under > 0 && b._kbHeight == null) {
       // Taller content now scrolls instead of pushing the sheet's top up.
@@ -16715,7 +16720,7 @@ export const APP = String.raw`
     var p = $("pumpyview"), log = $("pumpylog");
     var rest = parseFloat(getComputedStyle(c).bottom) || 0;
     var lift = K ? Math.max(0, K - rest) : 0;
-    kbLift(c, lift);
+    kbLift(c, lift, d);
     if (d.instant) return;
     var was = kbPadOf(log), s0 = p.scrollTop;
     if (lift === was) return;
@@ -16754,6 +16759,9 @@ export const APP = String.raw`
   function kbApply(d) {
     if (!kbOver()) return;
     var K = d.visible ? d.height : 0, f = K ? kbFocus() : null, o = null, n;
+    // Paper under the glass keys, on their timeline (style.ts, .kbback).
+    if (!kbBack) { kbBack = el("div", "kbback"); kbBack.setAttribute("aria-hidden", "true"); document.body.appendChild(kbBack); }
+    kbLift(kbBack, K, d);
     // Under a finger the owner cannot change; only its lift follows.
     if (d.instant) { if (kbOwner) kbPlace(kbOwner, K, null, d); return; }
     if (f && (n = f.closest(".sheet.open .sheetbody"))) o = { kind: "sheet", node: n };
