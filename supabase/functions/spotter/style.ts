@@ -2033,6 +2033,7 @@ export const STYLE = String.raw`<style>
   .sslog { min-height: 54px; margin-top: 8px; }
   .ssin .wtimer .ring { width: 124px; height: 124px; }
   .ssin .wup { display: none; }
+  .ssin .wstart { margin: 14px auto 0; }
   @media (prefers-reduced-motion: reduce) {
     .sspanel, .ssletter, .sshead::after, .sswrap, .ssin { transition: none; }
   }

@@ -5359,6 +5359,9 @@ body:not(.app) #toast.show {
 .ssin .wup {
   display: none;
 }
+.ssin .wstart {
+  margin: 14px auto 0;
+}
 @media (prefers-reduced-motion: reduce) {
   .sspanel,
   .ssletter,
@@ -13221,7 +13224,7 @@ details.details-moving > :not(summary) {
   }
   function ssSum(k, round) {
     var s = wo.screens[k], e = wo.entries[k], got = ssDone(k), last = e.sets[ssIdx(e) - 1], ask = askText(s.ex);
-    return last && (got >= round || got >= targetOf(s)) ? setText(last) + (last.weight && !last.seconds ? " " + wtUnitOf(s.ex) : "") : "Set " + (ssIdx(e) + 1) + (ask ? " \xB7 " + ask : "");
+    return last && (got >= round || got >= targetOf(s)) ? setText(last) + (last.seconds ? "" : last.weight ? " " + wtUnitOf(s.ex) : " reps") : "Set " + (ssIdx(e) + 1) + (ask ? " \xB7 " + ask : "");
   }
   var stepRows = null, ssHeld = null, ssView = null, ssHand = !1;
   function stepTo(host, before) {

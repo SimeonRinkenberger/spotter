@@ -8369,7 +8369,7 @@ export const APP = String.raw`
   function ssSum(k, round) {
     var s = wo.screens[k], e = wo.entries[k], got = ssDone(k), last = e.sets[ssIdx(e) - 1], ask = askText(s.ex);
     if (last && (got >= round || got >= targetOf(s))) {
-      return setText(last) + (last.weight && !last.seconds ? " " + wtUnitOf(s.ex) : "");
+      return setText(last) + (last.seconds ? "" : last.weight ? " " + wtUnitOf(s.ex) : " reps");
     }
     return "Set " + (ssIdx(e) + 1) + (ask ? " · " + ask : "");
   }
