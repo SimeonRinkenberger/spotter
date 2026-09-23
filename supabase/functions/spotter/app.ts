@@ -16558,6 +16558,232 @@ export const APP = String.raw`
     for (var i = 0, ms = [0, 60, 150, 300, 600]; i < ms.length; i++) setTimeout(fitViewport, ms[i]);
   });
 
+  // ---------- the keyboard over a still frame ----------
+  //
+  // The iOS shell used to shrink its web view onto the keyboard inside UIKit's own
+  // animation. WebKit does not lay a page out once per frame of that: it drew the
+  // page at its final size at once while the view's edge was still moving, so on
+  // every keyboard the whole screen dropped and climbed back, the set sheet waited
+  // and then jumped, and Pumpy's composer vanished for a few frames on the way
+  // down — the jerk the owner felt. Now the frame keeps still (html.kb-over, set by
+  // keyboard.js in the iOS shell only) and keyboard.js reports what the keys cover,
+  // how long they take and on what curve. From that, in the same task, the surface
+  // that owns the focused field rides up on a composited translate (style.ts):
+  //
+  //   a sheet        lifted whole while it fits between the keys and the status
+  //                  bar — the set sheet always does; a taller one rises until its
+  //                  top meets that limit and the rest of it scrolls above the keys.
+  //   the composer   rises from the tab bar onto the keys, and the thread moves
+  //                  with it by the same amount, as a conversation does in Messages.
+  //   anything else  keeps still; its scroller gains the covered height so its last
+  //                  row can be reached, and a covered field is brought into view.
+  //
+  // Whatever a change of inset or scroll would snap — a list clamped at its end, a
+  // centred block re-centring — is measured before and after and eased away on the
+  // keyboard's own clock (FLIP), so nothing jumps either way. A finger dragging the
+  // keyboard down moves only the lift, frame by frame; the rest waits for the
+  // release, which UIKit animates like any other. The browser and the Android
+  // shell never get here: their frame does follow the keyboard (fitViewport()).
+  var kbOwner = null, kbProbe = null;
+
+  function kbOver() {
+    return !!(native && native.keyboard && document.documentElement.classList.contains("kb-over"));
+  }
+
+  // env() is only readable through a box that uses it.
+  function kbSafe() {
+    if (!kbProbe) {
+      kbProbe = el("div");
+      kbProbe.setAttribute("aria-hidden", "true");
+      kbProbe.style.cssText = "position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;" +
+        "pointer-events:none;padding-top:env(safe-area-inset-top);padding-bottom:var(--sab)";
+      document.body.appendChild(kbProbe);
+    }
+    var cs = getComputedStyle(kbProbe);
+    return { top: parseFloat(cs.paddingTop) || 0, bottom: parseFloat(cs.paddingBottom) || 0 };
+  }
+
+  function kbFocus() {
+    var f = document.activeElement;
+    if (!f || f === document.body) return null;
+    return f.tagName === "INPUT" || f.tagName === "TEXTAREA" || f.isContentEditable ? f : null;
+  }
+
+  // The nearest box that scrolls, or null for the document (the landing page).
+  function kbScroller(n) {
+    for (n = n && n.parentElement; n && n !== document.body; n = n.parentElement) {
+      var o = getComputedStyle(n).overflowY;
+      if (o === "auto" || o === "scroll") return n;
+    }
+    return null;
+  }
+
+  // What scrolls with a scroller's content: its in-flow children. Sticky and
+  // fixed ones keep their own place and are left alone.
+  function kbFlow(box) {
+    var out = [], kids = box.children;
+    for (var i = 0; i < kids.length; i++) {
+      var p = getComputedStyle(kids[i]).position;
+      if (p === "static" || p === "relative") out.push(kids[i]);
+    }
+    return out;
+  }
+
+  // Make a layout change, and draw the nodes where they were before it and glide
+  // them to where it put them. The anchor's top stands for all of them; its
+  // position is read with any glide still running, so a keyboard that changes
+  // its mind mid-flight carries on from where things are.
+  function kbShift(nodes, anchor, change, d) {
+    var before = anchor ? anchor.getBoundingClientRect().top : 0, i;
+    for (i = 0; i < nodes.length; i++) {
+      if (nodes[i]._kbGlide) { nodes[i]._kbGlide.cancel(); nodes[i]._kbGlide = null; }
+    }
+    change();
+    if (!anchor) return;
+    var dy = before - anchor.getBoundingClientRect().top;
+    if (Math.abs(dy) < 0.5 || !d.duration || lessMotion()) return;
+    for (i = 0; i < nodes.length; i++) {
+      if (!nodes[i].animate) continue;
+      nodes[i]._kbGlide = nodes[i].animate([{ translate: "0 " + dy + "px" }, { translate: "0 0" }],
+        { duration: d.duration * 1000, easing: d.easing });
+    }
+  }
+
+  // Room at the end of a scroller for the rows the keys cover. The document's
+  // room goes on the body.
+  function kbPad(box, px) {
+    if (!box) box = document.body;
+    if (px > 0) {
+      if (box._kbRest == null) {
+        box._kbRest = box.style.paddingBottom;
+        box._kbBase = parseFloat(getComputedStyle(box).paddingBottom) || 0;
+      }
+      box.style.paddingBottom = (box._kbBase + px) + "px";
+    } else if (box._kbRest != null) {
+      box.style.paddingBottom = box._kbRest;
+      box._kbRest = null;
+    }
+  }
+
+  function kbPadOf(box) {
+    if (!box) box = document.body;
+    return box._kbRest == null ? 0 : (parseFloat(box.style.paddingBottom) || 0) - box._kbBase;
+  }
+
+  // Bring a covered field above the keys, with room for its label. bottom is
+  // where the field's lower edge will be once the lift has finished.
+  function kbReveal(sc, bottom, K) {
+    var over = bottom - (window.innerHeight - K - 16);
+    if (over <= 0) return;
+    var s = sc || document.scrollingElement;
+    s.scrollTop = s.scrollTop + over;
+  }
+
+  function kbLift(node, px) {
+    if (px > 0) node.style.setProperty("--lift", px + "px");
+    else node.style.removeProperty("--lift");
+  }
+
+  // A sheet: whole while it fits under the status bar, otherwise as far as it can
+  // go, the part still under the keys reachable by scrolling. offsetTop is where it
+  // rests at the foot of its full-frame box, whatever it is doing on screen.
+  function kbSheet(b, K, f, d) {
+    var safe = kbSafe();
+    var want = K ? Math.max(0, K - safe.bottom) : 0;
+    var lift = Math.min(want, Math.max(0, b.offsetTop - safe.top - 8)), under = want - lift;
+    kbLift(b, lift);
+    if (d.instant) return;
+    if (under > 0 && b._kbHeight == null) {
+      // Taller content now scrolls instead of pushing the sheet's top up.
+      b._kbHeight = b.style.maxHeight;
+      b.style.maxHeight = b.offsetHeight + "px";
+    }
+    var kids = kbFlow(b);
+    kbShift(kids, kids[0], function () {
+      kbPad(b, under);
+      if (!under && b._kbHeight != null) { b.style.maxHeight = b._kbHeight; b._kbHeight = null; }
+      if (under && f) {
+        var r = f.getBoundingClientRect(), br = b.getBoundingClientRect();
+        kbReveal(b, b.offsetTop - lift + (r.bottom - br.top), K);
+      }
+    }, d);
+  }
+
+  // The composer rests on the tab bar and rises onto the keys; the thread keeps
+  // the same distance from it both ways, clamped at either end of the history.
+  function kbComposer(c, K, d) {
+    var p = $("pumpyview"), log = $("pumpylog");
+    var rest = parseFloat(getComputedStyle(c).bottom) || 0;
+    var lift = K ? Math.max(0, K - rest) : 0;
+    kbLift(c, lift);
+    if (d.instant) return;
+    var was = kbPadOf(log), s0 = p.scrollTop;
+    if (lift === was) return;
+    kbShift([log], log.firstElementChild || log, function () {
+      kbPad(log, lift);
+      p.scrollTop = s0 + lift - was;
+    }, d);
+  }
+
+  // Any other field: nothing lifts. Its scroller gains the height the keys cover
+  // below what it already keeps clear, and the field comes into view if hidden.
+  function kbPlain(f, sc, K, d) {
+    if (d.instant) return;
+    var box = sc || document.body;
+    var extra = 0;
+    if (K) {
+      var bottom = sc ? sc.getBoundingClientRect().bottom : window.innerHeight;
+      var covered = K - (window.innerHeight - bottom);
+      var base = box._kbRest == null ? parseFloat(getComputedStyle(box).paddingBottom) || 0 : box._kbBase;
+      extra = Math.max(0, covered + 16 - base);
+    }
+    if (extra === kbPadOf(box) && !f) return;
+    var kids = kbFlow(box);
+    kbShift(kids, kids[0], function () {
+      kbPad(box, extra);
+      if (f) kbReveal(sc, f.getBoundingClientRect().bottom, K);
+    }, d);
+  }
+
+  function kbPlace(o, K, f, d) {
+    if (o.kind === "sheet") kbSheet(o.node, K, f, d);
+    else if (o.kind === "composer") kbComposer(o.node, K, d);
+    else kbPlain(f, o.node, K, d);
+  }
+
+  function kbApply(d) {
+    if (!kbOver()) return;
+    var K = d.visible ? d.height : 0, f = K ? kbFocus() : null, o = null, n;
+    // Under a finger the owner cannot change; only its lift follows.
+    if (d.instant) { if (kbOwner) kbPlace(kbOwner, K, null, d); return; }
+    if (f && (n = f.closest(".sheet.open .sheetbody"))) o = { kind: "sheet", node: n };
+    else if (f && (n = f.closest(".composer"))) o = { kind: "composer", node: n };
+    else if (f) o = { kind: "plain", node: kbScroller(f) };
+    // The last owner goes back down first, in the same frame the new one rises.
+    if (kbOwner && (!o || !K || o.kind !== kbOwner.kind || o.node !== kbOwner.node)) {
+      kbPlace(kbOwner, 0, null, d);
+      kbOwner = null;
+    }
+    if (o && K) { kbOwner = o; kbPlace(o, K, f, d); }
+  }
+
+  window.addEventListener("spotter:keyboard", function (e) { kbApply(e.detail || {}); });
+  // Focus moving to another field under keys that stay put: same keyboard, maybe
+  // a new owner, maybe a field further down that needs bringing into view.
+  document.addEventListener("focusin", function () {
+    var k = native && native.keyboard;
+    if (!k || !k.visible || !kbOver()) return;
+    kbApply({ visible: true, height: k.height, duration: k.duration || 0.25, easing: k.easing });
+  });
+
+  // The search's own way out of typing (style.ts, .searchx). Held on the press so
+  // the field keeps the keyboard, and the button its place, until the tap lands.
+  $("searchx").addEventListener("pointerdown", function (e) { e.preventDefault(); });
+  $("searchx").addEventListener("mousedown", function (e) { e.preventDefault(); });
+  $("searchx").onclick = function () { $("search").blur(); this.blur(); };
+  // Search on the keyboard means the same thing: done typing, show me.
+  $("search").addEventListener("keydown", function (e) { if (e.key === "Enter") this.blur(); });
+
   // ---------- pull to refresh ----------
   //
   // Per page rather than per document: eligible only when the page you are

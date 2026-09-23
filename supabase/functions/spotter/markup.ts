@@ -239,6 +239,7 @@ export const MARKUP_BODY = String.raw`</head>
         <label class="searchwrap" id="searchwrap">
           <span class="searchico"><svg class="ic"><use href="#i-search"></use></svg></span>
           <input class="search" id="search" type="search" placeholder="Search workouts, exercises, muscles" autocapitalize="off" autocomplete="off">
+          <button class="searchx" id="searchx" type="button" aria-label="Hide keyboard"><svg class="ic"><use href="#i-x"></use></svg></button>
         </label>
 
         <div id="hint">

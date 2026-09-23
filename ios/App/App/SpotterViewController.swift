@@ -1,11 +1,31 @@
 import Capacitor
 import UIKit
 
-// Keep the web app's complete visual design. UIKit owns only the keyboard frame,
-// avoiding the delayed, competing viewport resize that made typing feel jumpy.
+// Keep the web app's complete visual design, and keep its frame still.
+//
+// The web view used to end on UIKit's keyboard layout guide, so UIKit resized it
+// inside the keyboard's own animation. WebKit does not lay a page out once per
+// animation frame: it re-laid the page at the final size at once while the view's
+// edge was still travelling, so the whole page dropped a quarter of the screen and
+// climbed back, the set sheet waited and then jumped, and the Pumpy composer
+// vanished for a few frames on every dismissal (before/after recordings, BRIEF
+// 0923-KB). So the frame no longer moves at all. The keyboard is reported to the
+// page as a height with its duration and curve, and the page lifts the one surface
+// that owns the field — a sheet, the composer — with a composited transform that
+// starts on the same frame and follows the same curve. Capacitor's Keyboard plugin
+// already detaches WebKit's own keyboard observers (resize: none), so WebKit neither
+// shrinks the visual viewport nor scrolls the document to reveal the field; the page
+// owns all of it.
 class SpotterViewController: CAPBridgeViewController {
-    private var webBottom: NSLayoutConstraint?
     private var keyboardObserver: NSObjectProtocol?
+    // A 1pt view hung from the keyboard layout guide: the only public, per-frame
+    // account of where the keyboard is while a finger drags it down (interactive
+    // dismissal posts no notification until the finger lets go).
+    private let keyboardProbe = UIView()
+    private var keyboardLink: CADisplayLink?
+    private var sentHeight: CGFloat = 0
+    private var keyboardShown = false
+    private var animatingUntil: CFTimeInterval = 0
     // Match --paper in the shared stylesheet, including appearance changes.
     private let paper = UIColor { traits in
         traits.userInterfaceStyle == .dark
@@ -42,18 +62,25 @@ class SpotterViewController: CAPBridgeViewController {
         view = host
         host.addSubview(webView)
         webView.translatesAutoresizingMaskIntoConstraints = false
-        let keyboard = host.keyboardLayoutGuide
-        keyboard.followsUndockedKeyboard = false
-        if #available(iOS 17.0, *) {
-            keyboard.usesBottomSafeArea = false
-            keyboard.keyboardDismissPadding = 24
-        }
-        webBottom = webView.bottomAnchor.constraint(equalTo: keyboard.topAnchor)
         NSLayoutConstraint.activate([
             webView.topAnchor.constraint(equalTo: host.topAnchor),
             webView.leadingAnchor.constraint(equalTo: host.leadingAnchor),
             webView.trailingAnchor.constraint(equalTo: host.trailingAnchor),
-            webBottom!
+            webView.bottomAnchor.constraint(equalTo: host.bottomAnchor)
+        ])
+        let keyboard = host.keyboardLayoutGuide
+        keyboard.followsUndockedKeyboard = false
+        keyboard.usesBottomSafeArea = false
+        keyboard.keyboardDismissPadding = 24
+        keyboardProbe.isHidden = true
+        keyboardProbe.isUserInteractionEnabled = false
+        keyboardProbe.translatesAutoresizingMaskIntoConstraints = false
+        host.addSubview(keyboardProbe)
+        NSLayoutConstraint.activate([
+            keyboardProbe.leadingAnchor.constraint(equalTo: host.leadingAnchor),
+            keyboardProbe.widthAnchor.constraint(equalToConstant: 1),
+            keyboardProbe.heightAnchor.constraint(equalToConstant: 1),
+            keyboardProbe.bottomAnchor.constraint(equalTo: keyboard.topAnchor)
         ])
         webView.scrollView.keyboardDismissMode = .interactive
         webView.scrollView.contentInsetAdjustmentBehavior = .never
@@ -69,37 +96,92 @@ class SpotterViewController: CAPBridgeViewController {
                   let info = notification.userInfo,
                   let screenFrame = info[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
             if let local = info[UIResponder.keyboardIsLocalUserInfoKey] as? Bool, !local { return }
-            let frame = self.view.convert(screenFrame, from: nil)
-            let overlap = self.view.bounds.intersection(frame)
-            let visible = !overlap.isNull && overlap.height > self.view.safeAreaInsets.bottom + 1
-                && frame.width >= self.view.bounds.width * 0.8
-            let timing: [String: Any] = [
-                "visible": visible,
-                "duration": info[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double ?? 0.25,
-                "curve": info[UIResponder.keyboardAnimationCurveUserInfoKey] as? Int ?? 0
-            ]
-            guard let data = try? JSONSerialization.data(withJSONObject: timing),
-                  let json = String(data: data, encoding: .utf8) else { return }
-            // Geometry stays with the guide. Only the web page's internal
-            // clearance animates using this timing, rather than snapping first.
-            self.bridge?.triggerWindowJSEvent(eventName: "spotter:keyboard-transition", data: json)
+            let height = self.overlap(of: self.view.convert(screenFrame, from: nil))
+            let duration = info[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double ?? 0.25
+            let curve = info[UIResponder.keyboardAnimationCurveUserInfoKey] as? Int ?? 7
+            self.sentHeight = height
+            self.animatingUntil = CACurrentMediaTime() + duration
+            self.send("spotter:keyboard-transition", [
+                "visible": height > 0, "height": Double(height), "duration": duration, "curve": curve
+            ])
+            if height > 0 {
+                self.keyboardShown = true
+                self.armInteractiveDismissal(in: webView.scrollView)
+                self.startFollowing()
+            } else {
+                self.keyboardShown = false
+                // Outlast the closing animation, then stop sampling.
+                DispatchQueue.main.asyncAfter(deadline: .now() + duration + 0.1) { [weak self] in
+                    guard let self = self, !self.keyboardShown else { return }
+                    self.keyboardLink?.invalidate()
+                    self.keyboardLink = nil
+                }
+            }
         }
     }
 
-    deinit { if let keyboardObserver = keyboardObserver { NotificationCenter.default.removeObserver(keyboardObserver) } }
+    // The part of the keyboard that covers the page, in points. A floating or
+    // split keyboard, or a hardware keyboard's thin bar at the safe-area edge,
+    // covers nothing the page has to move for.
+    private func overlap(of frame: CGRect) -> CGFloat {
+        let covered = view.bounds.intersection(frame)
+        guard !covered.isNull, frame.width >= view.bounds.width * 0.8,
+              covered.height > view.safeAreaInsets.bottom + 1 else { return 0 }
+        return covered.height
+    }
+
+    private func send(_ event: String, _ data: [String: Any]) {
+        guard let json = try? JSONSerialization.data(withJSONObject: data),
+              let text = String(data: json, encoding: .utf8) else { return }
+        bridge?.triggerWindowJSEvent(eventName: event, data: text)
+    }
+
+    // WebKit makes a UIScrollView for every overflowing scroller in the page and
+    // gives none of them the web view's own dismiss mode, so dragging the Pumpy
+    // thread or a list of results never took the keyboard with it. Every scroller
+    // present when the keyboard rises gets the Messages behaviour: the keyboard
+    // follows a finger that drags down into it.
+    private func armInteractiveDismissal(in root: UIView) {
+        for sub in root.subviews {
+            if let scroller = sub as? UIScrollView, scroller.keyboardDismissMode != .interactive {
+                scroller.keyboardDismissMode = .interactive
+            }
+            armInteractiveDismissal(in: sub)
+        }
+    }
+
+    // Sample the layout guide once a frame while the keyboard is up. Animated
+    // moves need nothing from here — the notification above already started the
+    // page's matching animation, and the guide's model value jumps straight to
+    // the value that was sent. Only a finger moves the guide without a
+    // notification, and then the page follows it frame by frame.
+    private func startFollowing() {
+        guard keyboardLink == nil else { return }
+        let link = CADisplayLink(target: self, selector: #selector(followKeyboard))
+        link.add(to: .main, forMode: .common)
+        keyboardLink = link
+    }
+
+    @objc private func followKeyboard() {
+        guard keyboardShown else { return }
+        view.layoutIfNeeded()
+        let top = keyboardProbe.frame.maxY
+        let height = top >= view.bounds.height - view.safeAreaInsets.bottom - 1 ? 0 : max(0, view.bounds.height - top)
+        // While UIKit animates, the guide is already at its end value and the page
+        // is already animating there; take it as the baseline and send nothing.
+        if CACurrentMediaTime() < animatingUntil { sentHeight = height; return }
+        if abs(height - sentHeight) < 0.5 { return }
+        sentHeight = height
+        send("spotter:keyboard-track", ["height": Double(height)])
+    }
+
+    deinit {
+        keyboardLink?.invalidate()
+        if let keyboardObserver = keyboardObserver { NotificationCenter.default.removeObserver(keyboardObserver) }
+    }
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         view.window?.backgroundColor = paper
-    }
-
-    override func viewDidLayoutSubviews() {
-        super.viewDidLayoutSubviews()
-        // Older layout guides rest at the safe-area edge. The page already owns
-        // its home-indicator padding, so include that area once when at rest.
-        if #available(iOS 17.0, *) { return }
-        let inset = view.keyboardLayoutGuide.layoutFrame.height <= view.safeAreaInsets.bottom + 1
-            ? view.safeAreaInsets.bottom : 0
-        if webBottom?.constant != inset { webBottom?.constant = inset }
     }
 }
