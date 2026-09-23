@@ -12762,19 +12762,20 @@ details.details-moving > :not(summary) {
     if (wo) {
       restFace || (restThen = null);
       var s = wo.screens[wo.i], entry = wo.entries[wo.i], pre = setPrefill(idx2);
-      editing = null, $("repsbox").classList.remove("editing"), $("wtbox").classList.remove("editing"), setCtx.idx = pre.idx, setCtx.reps = pre.reps, setCtx.weight = pre.weight, $("settitle").textContent = (s && s.ex ? s.ex.name : "Set") + " \xB7 set " + (idx2 + 1), $("setlast").textContent = lastLine(entry), $("wtunit").textContent = state.unit, paintEach(), drawStepper(), openSheet("setsheet");
+      editing = null, $("repsbox").classList.remove("editing"), $("wtbox").classList.remove("editing"), setCtx.idx = pre.idx, setCtx.reps = pre.reps, setCtx.weight = pre.weight, $("settitle").textContent = (s && s.ex ? s.ex.name : "Set") + " \xB7 set " + (idx2 + 1), $("setlast").textContent = lastLine(entry), $("wtunit").textContent = state.unit, eachAt = wo.i, paintEach(), drawStepper(), openSheet("setsheet");
     }
   }
+  var eachAt = 0;
   function paintEach(flip) {
-    var s = wo && wo.screens[wo.i];
-    tagPaint($("wteach"), wo ? dbOf(s && s.ex, wo.entries[wo.i]) : 0, flip);
+    var s = wo && wo.screens[eachAt];
+    tagPaint($("wteach"), wo ? dbOf(s && s.ex, wo.entries[eachAt]) : 0, flip);
   }
   function tagPaint(b, n, flip) {
     b.hidden = !n, b.classList.toggle("one", n === 1), b.textContent = n === 1 ? "1 dumbbell" : "each", b.setAttribute("aria-label", (n === 1 ? "One dumbbell" : "Weight of each dumbbell") + ", tap to switch"), flip && !lessMotion() && (b.classList.remove("flip"), b.offsetWidth, b.classList.add("flip"));
   }
   function flipEach() {
     if (!(!wo || wo.finished)) {
-      var s = wo.screens[wo.i], entry = wo.entries[wo.i], pair = dbOf(s && s.ex, entry) !== 2, h = hist[exKey(entry)];
+      var s = wo.screens[eachAt], entry = wo.entries[eachAt], pair = dbOf(s && s.ex, entry) !== 2, h = hist[exKey(entry)];
       entry.each = pair, h && (h.each = pair), entry.sets.forEach(function(x) {
         x && !x.seconds && (pair ? x.each = !0 : delete x.each);
       }), haptic("tap"), paintEach(!0), saveDraft(), renderWorkout(1);
@@ -12848,8 +12849,8 @@ details.details-moving > :not(summary) {
         weight: setCtx.weight || null,
         unit: state.unit,
         done: !0
-      };
-      eachOf(wo.screens[wo.i] && wo.screens[wo.i].ex, entry) && (set.each = !0);
+      }, at = wo.entries.indexOf(entry);
+      eachOf(wo.screens[at] && wo.screens[at].ex, entry) && (set.each = !0);
       var k = exKey(entry), told = !!wo.prs[k];
       prCheck(entry, set, k) && (set.pr = !0, told || toast("New best \u2014 " + (entry.name || "that lift"))), haptic(set.pr ? "pr" : "success"), entry.sets[setCtx.idx] = set, saveDraft(), closeSheet("setsheet"), justSet = setCtx.idx, renderWorkout();
       var s = wo.screens[wo.i];

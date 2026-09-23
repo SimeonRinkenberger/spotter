@@ -7457,6 +7457,7 @@ export const APP = String.raw`
     // The number worth beating stays up while the stepper argues with it.
     $("setlast").textContent = lastLine(entry);
     $("wtunit").textContent = state.unit;
+    eachAt = wo.i;
     paintEach();
     drawStepper();
     openSheet("setsheet");
@@ -7465,9 +7466,12 @@ export const APP = String.raw`
   // The tag beside the unit: "each" on a pair, "1 dumbbell" on one, absent on
   // anything that is not a dumbbell. It is also the switch, because the place a
   // wrong guess is noticed is the number it is wrong about.
+  // eachAt: the movement the sheet was opened for, which the tag speaks about.
+  var eachAt = 0;
+
   function paintEach(flip) {
-    var s = wo && wo.screens[wo.i];
-    tagPaint($("wteach"), wo ? dbOf(s && s.ex, wo.entries[wo.i]) : 0, flip);
+    var s = wo && wo.screens[eachAt];
+    tagPaint($("wteach"), wo ? dbOf(s && s.ex, wo.entries[eachAt]) : 0, flip);
   }
 
   // The same tag wherever a weight is typed: here and in a corrected set.
@@ -7484,7 +7488,7 @@ export const APP = String.raw`
   // the next session opens on the same answer.
   function flipEach() {
     if (!wo || wo.finished) return;
-    var s = wo.screens[wo.i], entry = wo.entries[wo.i], pair = dbOf(s && s.ex, entry) !== 2, h = hist[exKey(entry)];
+    var s = wo.screens[eachAt], entry = wo.entries[eachAt], pair = dbOf(s && s.ex, entry) !== 2, h = hist[exKey(entry)];
     entry.each = pair;
     if (h) h.each = pair;
     entry.sets.forEach(function (x) { if (x && !x.seconds) { if (pair) x.each = true; else delete x.each; } });
@@ -7604,7 +7608,9 @@ export const APP = String.raw`
       reps: setCtx.reps, weight: setCtx.weight || null, unit: state.unit, done: true
     };
     // Per dumbbell as typed; the flag is what doubles it wherever load is summed.
-    if (eachOf(wo.screens[wo.i] && wo.screens[wo.i].ex, entry)) set.each = true;
+    // The screen is found from the entry, whichever way the entry was found.
+    var at = wo.entries.indexOf(entry);
+    if (eachOf(wo.screens[at] && wo.screens[at].ex, entry)) set.each = true;
     var k = exKey(entry), told = !!wo.prs[k];
     if (prCheck(entry, set, k)) {
       set.pr = true;
