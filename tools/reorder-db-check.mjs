@@ -22,12 +22,14 @@ import { replaySchema } from './schema-replay.mjs';
 
 const idx = fs.readFileSync('supabase/functions/spotter/index.ts', 'utf8');
 function tsFn(name) {
-  const a = idx.indexOf('\nfunction ' + name + '(');
+  let a = idx.indexOf('\nfunction ' + name + '(');
+  if (a < 0) a = idx.indexOf('\nexport function ' + name + '(');
   assert(a >= 0, 'not found in index.ts: ' + name);
-  return idx.slice(a + 1, idx.indexOf('\n}\n', a) + 3);
+  return idx.slice(a + 1, idx.indexOf('\n}\n', a) + 3).replace(/^export /, '');
 }
 const srv = vm.createContext({});
-vm.runInContext(transformSync('class BadEdit extends Error {}\n' + tsFn('applyReorder') + '\n' + tsFn('reorderGuard') +
+vm.runInContext(transformSync('class BadEdit extends Error {}\n' + ['guardNum', 'blockGuardForm', 'sameBlock'].map(tsFn).join('\n') +
+  '\n' + tsFn('applyReorder') + '\n' + tsFn('reorderGuard') +
   '\n' + tsFn('layoutText'), { loader: 'ts' }).code, srv);
 const call = (expr) => JSON.parse(JSON.stringify(vm.runInContext(expr, srv)));
 

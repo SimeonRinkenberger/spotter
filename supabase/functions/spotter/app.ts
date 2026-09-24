@@ -3185,7 +3185,7 @@ export const APP = String.raw`
     var schedule = el("button", "chip", "Schedule");
     schedule.onclick = function () { scheduleWorkout(w); };
     actions.appendChild(schedule);
-    var ask = el("button", "chip", "Ask coach");
+    var ask = el("button", "chip", "Ask Pumpy");
     ask.onclick = function () { history.back(); openPumpy(w); };
     actions.appendChild(ask);
     d.appendChild(actions);
@@ -4172,6 +4172,26 @@ export const APP = String.raw`
   // The stored shape of a rest as the wheel takes it: a number, or "" for "not said".
   function restVal(x) { return typeof x === "number" ? x : ""; }
 
+  // A block as the database writes it, for the guard on edit_block and
+  // delete_block. In the iOS shell every answer from the function crosses
+  // CapacitorHttp, which parses it into a Swift dictionary with no key order and
+  // hands the page doubles, so the card an edit hands back is the stored card
+  // with its keys shuffled — and a server that compares the two as strings calls
+  // that a different block. jsonb keeps an object's keys shortest first, then in
+  // byte order, so putting them back that way (and a double back to the number
+  // it was) is the stored text again. Today's function compares a canonical form
+  // and does not need this; an older deployment does.
+  function asStored(v) {
+    if (Array.isArray(v)) return v.map(asStored);
+    if (v && typeof v === "object") {
+      var out = {};
+      Object.keys(v).sort(function (a, b) { return a.length - b.length || (a < b ? -1 : a > b ? 1 : 0); })
+        .forEach(function (k) { out[k] = asStored(v[k]); });
+      return out;
+    }
+    return typeof v === "number" && isFinite(v) && v % 1 ? Number(v.toPrecision(15)) : v;
+  }
+
   // The sheet's title, lede and buttons are what the markup says: its add mode
   // went when "+ Add an exercise" became the bank, and with it the resetting.
   function openExEdit(w, bi, ei, ex) {
@@ -4376,7 +4396,7 @@ export const APP = String.raw`
     var f = sectionFields();
     if (f.duration_seconds && f.duration_seconds < 60) { toast("A time cap starts at a minute."); return; }
     if (sec.b) {
-      postCorrection(sec.w, { op: "edit_block", block: sec.bi, expect_block: sec.b, fields: f },
+      postCorrection(sec.w, { op: "edit_block", block: sec.bi, expect_block: asStored(sec.b), fields: f },
         $("sectionsave"), "Section saved", "sectionsheet");
       return;
     }
@@ -4488,7 +4508,7 @@ export const APP = String.raw`
     w.blocks.splice(bi, 1); render();
     rowAway(box, from, redraw);
     offerUndo("Removed " + (expected.title || "block"), function () {
-      cardWrite(w.id, { op: "delete_block", block: bi, expect_block: expected })
+      cardWrite(w.id, { op: "delete_block", block: bi, expect_block: asStored(expected) })
         .then(function (r) { if (r.status === "ok") absorbWorkout(r.workout); else restore(r.message || "Could not remove that block."); })
         .catch(function () { restore("Could not reach Spotter — the block is back."); });
     }, function () { restore(null); });
@@ -9380,6 +9400,14 @@ export const APP = String.raw`
   // In the iOS shell the frame no longer shrinks (html.kb-over): the keyboard
   // section below owns bringing a covered field into view there, and a second
   // scroll 450 ms after its own would be a second motion.
+  // The dots' scroll edge (style.ts, .wdots): on while anything of the screen is
+  // under the band. Toggled on the crossing, not on every scroll event.
+  var woEdge = false;
+  $("wmain").addEventListener("scroll", function () {
+    var on = this.scrollTop > 1;
+    if (on !== woEdge) { woEdge = on; $("workout").classList.toggle("wedge", on); }
+  }, { passive: true });
+
   $("wmain").addEventListener("focusin", function (e) {
     if (document.documentElement.classList.contains("kb-over")) return;
     var box = e.target.classList.contains("numin") ? e.target.parentNode : null;
@@ -18377,11 +18405,39 @@ export const APP = String.raw`
     kbApply({ visible: true, height: k.height, duration: k.duration || 0.25, easing: k.easing });
   });
 
-  // The search's own way out of typing (style.ts, .searchx). Held on the press so
-  // the field keeps the keyboard, and the button its place, until the tap lands;
-  // a cancelled pointerdown cancels the mouse events that would move focus too.
+  // The search's own way out of typing (style.ts, .searchx), and UISearchBar's
+  // Cancel in what it does: the query goes, the keyboard goes, the library is
+  // whole again. Held on the press so the field keeps the keyboard, and the
+  // button its place, until the tap lands.
+  //
+  // Acted on where the finger lifts, not on the click after it. On the owner's
+  // phone the X left the keyboard up. The click a finger makes is WebKit's, aimed
+  // at the best tappable thing under the whole contact patch, and beside this
+  // button that used to be the label wrapped round the field and the X, whose
+  // click puts the focus straight back in the field; in the simulator a tap two
+  // points left of the circle did exactly that. The label is gone (markup.ts),
+  // the button covers the gap, and a handled touchend cancels that click outright.
+  var searchXAt = 0;
+  function searchDone() {
+    var f = $("search");
+    if (f.value || state.q) { f.value = ""; state.q = ""; renderGrid(); }
+    f.blur();
+  }
   $("searchx").addEventListener("pointerdown", function (e) { e.preventDefault(); });
-  $("searchx").onclick = function () { $("search").blur(); this.blur(); };
+  $("searchx").addEventListener("touchend", function (e) {
+    var t = e.changedTouches && e.changedTouches[0], r = this.getBoundingClientRect();
+    // A finger that slid off the button before lifting changed its mind.
+    if (!t || t.clientX < r.left - 10 || t.clientX > r.right + 10 || t.clientY < r.top - 10 || t.clientY > r.bottom + 10) return;
+    e.preventDefault();
+    searchXAt = Date.now();
+    searchDone();
+  }, { passive: false });
+  // A mouse, a hardware keyboard and VoiceOver arrive here instead.
+  $("searchx").onclick = function (e) {
+    e.preventDefault();
+    this.blur();
+    if (Date.now() - searchXAt > 700) searchDone();
+  };
   // Search on the keyboard means the same thing: done typing, show me.
   $("search").addEventListener("keydown", function (e) { if (e.key === "Enter") this.blur(); });
 

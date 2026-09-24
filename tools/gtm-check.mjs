@@ -33,6 +33,7 @@ const checks = [
   ['Rest wheel: notches, settle vs Save, spinbutton, no chips left', 'node', ['tools/rest-wheel-harness.mjs']],
   ['Reorder: slot math, auto-scroll, arrows, exact permutation, stale guard', 'node', ['tools/reorder-harness.mjs']],
   ['Reorder SQL: the override holds the order, one ledger row per reorder', 'node', ['tools/reorder-db-check.mjs']],
+  ['Section edits through the iOS bridge: the block guard compares what the owner sees', 'node', ['tools/block-guard-harness.mjs']],
   ['One declaration per name in app.ts', 'node', ['tools/unique-decls.mjs']],
   ['Creator codes on the client', 'node', ['tools/creator-client-harness.mjs']],
   ['Creator codes SQL', 'node', ['tools/creator-db-check.mjs']],

@@ -10119,6 +10119,47 @@ function blockFurnitureText(b: any): string {
   });
 }
 
+/**
+ * The block guard: is the block the client edited still the block stored?
+ *
+ * It used to be JSON.stringify of both, which is only a comparison when both
+ * copies are the same bytes, and on a phone they are not. The iOS shell sends
+ * every edge-function request through CapacitorHttp, whose Swift side parses an
+ * application/json answer with JSONSerialization into a dictionary with no key
+ * order and hands that to the page, so a card the app received from a write
+ * (every edit answers with the workout) comes back with its keys in a different
+ * order from the jsonb the server reads — and every Edit section or Remove
+ * section after it was refused as stale until something reloaded the library.
+ * Numbers crossed the bridge as doubles too, so 12.3 could come back 12.3000…01.
+ *
+ * So the comparison is of what the guard is for: what the owner sees and edits
+ * in that block. The furniture, and each exercise's name and dose, in order —
+ * an edit, an add, a remove or a move on another device changes one of those and
+ * is still refused. Key order, a null against an absent field, float noise and
+ * the fields a person never sees (evidence, cues, catalog ids, the pack's
+ * timestamps) do not make a stale block. Builds 5 to 7 send the block exactly as
+ * before and are read with the same rule.
+ */
+function guardNum(v: unknown): unknown {
+  if (typeof v === "number") return Number.isFinite(v) ? Number(v.toPrecision(12)) : null;
+  return v ?? null;
+}
+
+function blockGuardForm(b: any): string {
+  const exercises = Array.isArray(b?.exercises) ? b.exercises : [];
+  return JSON.stringify([
+    b?.title ?? null, b?.type ?? "straight", guardNum(b?.rounds), guardNum(b?.rest_seconds),
+    guardNum(b?.duration_seconds),
+    exercises.map((e: any) => [e?.name ?? null, guardNum(e?.sets), guardNum(e?.reps),
+      guardNum(e?.duration_seconds), guardNum(e?.rest_seconds), guardNum(e?.weight)]),
+  ]);
+}
+
+export function sameBlock(stored: unknown, sent: unknown): boolean {
+  if (!stored || typeof stored !== "object" || !sent || typeof sent !== "object") return false;
+  return blockGuardForm(stored) === blockGuardForm(sent);
+}
+
 // ---------- reorder ----------
 //
 // "I want a way to reorder blocks and exercises" (owner, 24 Sept). The client
@@ -10179,20 +10220,13 @@ function applyReorder(blocks: any[], order: unknown): any[] {
 
 /**
  * The stale guard for a reorder: the card the client rearranged is the card
- * stored — the same sections, holding the same movements, by name, in the same
- * places. Deliberately not a comparison of whole blocks. Positions are what the
- * permutation is written in, so positions and the names at them are what have to
- * agree; a rest changed on another device is not a reason to refuse, because the
- * rest travels with its exercise either way.
+ * stored, block by block, by the same rule edit_block and delete_block use
+ * (sameBlock: what the owner sees, not the bytes, so key order and float noise
+ * from the iOS bridge never refuse a legitimate order). Positions are what the
+ * permutation is written in, so a card changed anywhere since is refused whole.
  */
 function reorderGuard(stored: any[], seen: unknown): boolean {
-  if (!Array.isArray(seen) || seen.length !== stored.length) return false;
-  return stored.every((b, i) => {
-    const have = Array.isArray(b?.exercises) ? b.exercises : [];
-    const saw = Array.isArray((seen[i] as any)?.exercises) ? (seen[i] as any).exercises : null;
-    return !!saw && saw.length === have.length &&
-      have.every((x: any, j: number) => String(x?.name ?? "") === String(saw[j]?.name ?? ""));
-  });
+  return Array.isArray(seen) && seen.length === stored.length && stored.every((b, i) => sameBlock(b, seen[i]));
 }
 
 /** The card's shape as the ledger writes it: section titles and exercise names, in order. */
@@ -10291,7 +10325,7 @@ async function handleCorrection(id: string, userId: string, req: Request, cors: 
       changes.push({ field: "order", old: was, new: layoutText(blocks), oldCanon: null, newCanon: null, oldEx: null, newEx: null });
     } else if (op === "delete_block") {
       const block = blocks[bi];
-      if (!block || JSON.stringify(block) !== JSON.stringify((body as any).expect_block))
+      if (!block || !sameBlock(block, (body as any).expect_block))
         return json({ status: "stale", message: "This block changed — reopen the workout and try again." }, 409, cors);
       for (const ex of block.exercises ?? []) changes.push({ field: "exercise", old: String(ex.name), new: null,
         oldCanon: ex.canonical_id ?? null, newCanon: null, oldEx: deepCopy(ex), newEx: null });
@@ -10303,7 +10337,7 @@ async function handleCorrection(id: string, userId: string, req: Request, cors: 
       // exercises in it are untouched; they have their own ops. Guarded the way
       // delete_block is: the block the client edited has to be the block stored.
       const block = blocks[bi];
-      if (!block || JSON.stringify(block) !== JSON.stringify((body as any).expect_block))
+      if (!block || !sameBlock(block, (body as any).expect_block))
         return json({ status: "stale", message: "This block changed — reopen the workout and try again." }, 409, cors);
       const was = blockFurnitureText(block);
       const next = cleanBlockFields(fields, block);

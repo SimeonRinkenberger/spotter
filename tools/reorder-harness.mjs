@@ -35,10 +35,11 @@ function fn(name) {
   return src.slice(a + 1, b + 4);
 }
 function tsFn(name) {
-  const a = idx.indexOf('\nfunction ' + name + '(');
+  let a = idx.indexOf('\nfunction ' + name + '(');
+  if (a < 0) a = idx.indexOf('\nexport function ' + name + '(');
   assert(a >= 0, 'not found in index.ts: ' + name);
   const b = idx.indexOf('\n}\n', a);
-  return idx.slice(a + 1, b + 3);
+  return idx.slice(a + 1, b + 3).replace(/^export /, '');
 }
 
 let checks = 0;
@@ -240,7 +241,8 @@ ok('arrow keys and Escape work the selection, and Escape puts it down before the
 console.log('the order sent, and the server that applies it');
 
 const srv = vm.createContext({});
-vm.runInContext(transformSync('class BadEdit extends Error {}\n' + tsFn('applyReorder') + '\n' + tsFn('reorderGuard') +
+vm.runInContext(transformSync('class BadEdit extends Error {}\n' + ['guardNum', 'blockGuardForm', 'sameBlock'].map(tsFn).join('\n') +
+  '\n' + tsFn('applyReorder') + '\n' + tsFn('reorderGuard') +
   '\n' + tsFn('layoutText'), { loader: 'ts' }).code, srv);
 vm.runInContext('var CARD = ' + JSON.stringify(CARD) + ';', srv);
 const apply = (order, blocks = CARD) => JSON.parse(JSON.stringify(vm.runInContext(
@@ -286,30 +288,39 @@ ok('the server refuses anything that is not an exact permutation, in a sentence'
     JSON.stringify([{ block: 0, exercises: Array.from({ length: 61 }, (_, i) => i) }]) + ')', srv), /at most 60/);
 });
 
-ok('the stale guard: positions and the names at them, nothing else', () => {
+ok('the stale guard is the section guard, block by block: what the owner sees, not the bytes', () => {
   assert.equal(guard(CARD), true);
-  const restChanged = JSON.parse(JSON.stringify(CARD));
-  restChanged[1].exercises[0].rest_seconds = 30;
-  restChanged[2].title = 'Burner';
-  assert.equal(guard(restChanged), true, 'a rest or a title edited elsewhere travels with its item');
-  // What the client may hold that the store does not (the owner-ux 409): names
-  // alone are compared, so extra client fields never refuse a legitimate order.
+  // What the iOS bridge does to a card on its way to the page: keys in another
+  // order, numbers as doubles, a null that arrives absent. None of it is stale.
+  const bridged = JSON.parse(JSON.stringify(CARD), (k, v) => (v && typeof v === 'object' && !Array.isArray(v)
+    ? Object.fromEntries(Object.entries(v).reverse().filter(([, x]) => x !== null)) : v));
+  bridged[1].exercises[0].sets = 4.000000000000001;
+  assert.equal(guard(bridged), true, 'key order, float noise, null against absent');
   const extra = JSON.parse(JSON.stringify(CARD));
-  extra[0].exercises[0].client_only = true;
-  delete extra[1].rest_seconds;
-  assert.equal(guard(extra), true);
-  const renamed = JSON.parse(JSON.stringify(CARD));
-  renamed[1].exercises[1].name = 'Seal Row';
-  assert.equal(guard(renamed), false, 'renamed elsewhere');
-  const added = JSON.parse(JSON.stringify(CARD));
-  added[0].exercises.push({ name: 'Arm Circles' });
-  assert.equal(guard(added), false, 'added elsewhere');
-  const moved = JSON.parse(JSON.stringify(CARD));
-  moved[1].exercises.reverse();
-  assert.equal(guard(moved), false, 'reordered elsewhere');
-  assert.equal(guard(CARD.slice(0, 2)), false, 'a section removed elsewhere');
+  extra[0].exercises[0].evidence = { source: 'speech' };
+  extra[0].exercises[0].canonical_id = 'something-else';
+  assert.equal(guard(extra), true, 'fields nobody sees on the card do not make it stale');
+  // Anything the owner would see changed elsewhere refuses the whole order.
+  const edits = [
+    (c) => { c[1].exercises[1].name = 'Seal Row'; },
+    (c) => { c[1].exercises[0].rest_seconds = 30; },
+    (c) => { c[1].exercises[0].sets = 5; },
+    (c) => { c[2].title = 'Burner'; },
+    (c) => { c[2].rounds = 4; },
+    (c) => { c[0].exercises.push({ name: 'Arm Circles' }); },
+    (c) => { c[1].exercises.reverse(); },
+    (c) => { c.pop(); },
+    (c) => { c.reverse(); },
+  ];
+  for (const edit of edits) {
+    const c = JSON.parse(JSON.stringify(CARD));
+    edit(c);
+    assert.equal(guard(c), false, edit.toString());
+  }
   assert.equal(guard(undefined), false, 'no guard sent is no write');
   assert.equal(guard({}), false);
+  assert.equal(guard([null, null, null]), false);
+  assert(idx.includes('stored.every((b, i) => sameBlock(b, seen[i]))'), 'the reorder guard is the shared one');
 });
 
 ok('the ledger reads the layout either side as titles and names', () => {
@@ -399,7 +410,7 @@ ok('a pending delete is not flushed by another write (only a reorder is)', () =>
 ok('every card write goes through cardWrite', () => {
   assert.equal((src.match(/api\("workouts\/" \+ [a-z.]+ \+ "\/exercises"/g) || []).length, 1);
   assert(fn('postCorrection').includes('return cardWrite(w.id, payload)'));
-  assert(fn('deleteBlock').includes('cardWrite(w.id, { op: "delete_block", block: bi, expect_block: expected })'));
+  assert(fn('deleteBlock').includes('cardWrite(w.id, { op: "delete_block", block: bi, expect_block: asStored(expected) })'));
   assert(fn('deleteExEdit').includes('cardWrite(w.id, { op: "delete", block: ctx.block, index: ctx.index, expect_name: ctx.name })'));
 });
 
