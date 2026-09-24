@@ -1359,9 +1359,11 @@ function noPostAnswer(shared: string): { status: string; code?: string; message:
 }
 
 async function resolveShare(raw: string): Promise<WebParse> {
-  const urlMatch = raw.match(/https?:\/\/[^\s"'<>]+/);
-  if (!urlMatch) return null;
-  let target = urlMatch[0];
+  // The first link, unless a later one is a post a provider recognises: a caption
+  // pasted with its bio link first is a share of the post, not of the bio.
+  const links = raw.match(/https?:\/\/[^\s"'<>]+/g);
+  if (!links) return null;
+  let target = links.find((l) => matchUrl(l)) ?? links[0];
 
   // Guard what the user actually posted before anything else looks at it, so a
   // private address cannot reach a platform matcher and be laundered into `clean`.
@@ -7838,6 +7840,11 @@ async function seedJobMeta(jobId: string | null | undefined, meta: Meta): Promis
 }
 
 /** What the Shortcut's Show Result shows, so the phone can see which path ran. */
+/** A carousel or a photo post has pictures to read, not a video (S16). */
+function readingLine(p: Parsed): string {
+  return p.kind === "photo" || p.kind === "p" ? "Reading the post…" : "Reading the video…";
+}
+
 function suppliedMessage(meta: Meta, seeded: boolean): string {
   if (!seeded) return "Reading the video…";
   if (captionIsUserTyped(meta)) return "Reading your caption…";
@@ -8310,7 +8317,7 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
     id: q.workout_id,
     job_id: q.job_id,
     title: provisional,
-    message: supplied ? suppliedMessage(supplied, seeded) : "Reading the video…",
+    message: supplied ? suppliedMessage(supplied, seeded) : readingLine(p),
   }, 202, cors);
 }
 
@@ -8563,7 +8570,7 @@ async function failJob(job: Job, err: unknown): Promise<void> {
       ? new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth()+1, 1)).getTime()
       : budget ? new Date(utcNextMidnight()).getTime() : Date.now()+60_000
     : Date.now() + backoffMs(job.attempts);
-  const noun = job.kind === "photo" ? "photo post" : "video";
+  const noun = job.kind === "photo" ? "photo post" : job.kind === "p" ? "post" : "video";
   const message = guarded ? "Reading is paused for now. Spotter will try again later."
     : err instanceof SoftFailure ? err.userMessage
     : `Spotter could not read this ${noun}. Tap ↻ to try again.`;

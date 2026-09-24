@@ -351,5 +351,22 @@
   "expect": {
    "platform": null
   }
+ },
+ {
+  "id": "bio-link-before-reel",
+  "input": "Full plan at https://linktr.ee/coachjaeo and the reel https://www.instagram.com/reel/DBGi0r0pHZ4/?igsh=abc",
+  "expect": {
+   "platform": "instagram",
+   "shortcode": "DBGi0r0pHZ4"
+  },
+  "note": "a later post link wins over an earlier non-post link"
+ },
+ {
+  "id": "ig-post-kind-line",
+  "input": "https://www.instagram.com/p/DTasqBeFMdq/",
+  "expect": {
+   "platform": "instagram",
+   "kind": "p"
+  }
  }
 ]
