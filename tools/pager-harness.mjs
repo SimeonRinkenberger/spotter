@@ -10,12 +10,16 @@
 // the clock, the animation frames and the timers driven by hand, so "the spring
 // settled on Train" is a step in a test and not a sleep.
 //
+// A drag that never hears its end used to switch the pager off until the app
+// was killed, so every way the phone can take a touch away (a render, the app
+// sent away, a system sheet, a cancel, plain silence) is a case below that has
+// to let go of the drag and leave the next swipe working.
+//
 // What no harness can reach is WebKit's side of the gesture: whether a page's
 // own UIScrollView begins a pan (and cancels our pointer) before the drag has
-// locked. On the phone that decided everything — overscroll-behavior: contain on
-// .page became transfersHorizontalScrollingToParent = NO and no page tall enough
-// to scroll would turn — so the CSS that keeps it from happening is asserted
-// here as text, in the source and in the built page, where it cannot quietly go.
+// locked. On the iPhone 16e simulator it did not, but the CSS that keeps a page
+// from ever scrolling sideways is asserted here as text, in the source and in
+// the built page, where it cannot quietly go.
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
@@ -144,10 +148,12 @@ function world(opts = {}) {
     removeEventListener: (t, f) => { docListeners[t] = (docListeners[t] || []).filter((x) => x !== f); },
     documentElement: mk('html')
   };
+  const winListeners = {};
   const window = {
     performance: { now: () => T },
     matchMedia: () => ({ matches: false, addEventListener() {} }),
-    addEventListener() {}, navigator: { standalone: false }, innerWidth: 390
+    addEventListener: (t, f) => { (winListeners[t] = winListeners[t] || []).push(f); },
+    navigator: { standalone: false }, innerWidth: 390
   };
   const sandbox = {
     Math, String, Number, JSON, Object, Array, Date, console,
@@ -214,11 +220,23 @@ function world(opts = {}) {
   }
   const page = () => h.idx();
   const tab = () => d.tabs.findIndex((t) => t.cls.has('active'));
-  return { d, h, run, drag, fire, page, tab };
+  // An event on the window or the document, the way the phone raises them when
+  // something takes the screen away from the page.
+  function emit(where, type, e = {}) {
+    const ev = Object.assign({ type, detail: {} }, e);
+    ((where === 'document' ? docListeners : winListeners)[type] || []).forEach((f) => f(ev));
+  }
+  // Time passing with no frames or timers run: what a throttled or suspended
+  // page does to setTimeout.
+  function idle(ms) { T += ms; }
+  return { d, h, run, drag, fire, page, tab, emit, idle };
 }
 
-let checks = 0;
-function ok(what, f) { f(); checks++; console.log('  ok  ' + what); }
+let checks = 0, failed = 0;
+function ok(what, f) {
+  try { f(); checks++; console.log('  ok  ' + what); }
+  catch (err) { failed++; console.log('  FAIL ' + what + '\n       ' + String(err.message).split('\n')[0]); }
+}
 
 for (const mode of ['native shell', 'browser tab']) {
   const native = mode === 'native shell';
@@ -338,6 +356,69 @@ for (const mode of ['native shell', 'browser tab']) {
     w.fire(w.d.cardArt, 'pointerdown', { pointerType: 'touch', pointerId: 500, isPrimary: false, clientX: 200, clientY: 300 });
     assert.equal(w.h.held(), held);
   });
+
+  // Each way the phone can take a touch away without its end reaching .pages.
+  // A drag left 38% across the track, its lift lost: the trigger alone has to
+  // let go of it and settle the track, before any new touch lands — and the
+  // swipe after it has to page.
+  const away = [
+    ['the app sent to the background (visibilitychange)', (w) => w.emit('document', 'visibilitychange')],
+    ['the app coming back (visibilitychange)', (w) => w.emit('document', 'visibilitychange')],
+    ['Notification Centre, Control Centre or an alert over it (window blur)', (w) => w.emit('window', 'blur')],
+    ['the shell going inactive (spotter:native-state)', (w) => w.emit('window', 'spotter:native-state', { detail: { isActive: false } })],
+    ['a page restored from the back-forward cache (pageshow)', (w) => w.emit('window', 'pageshow')],
+    ['a touchcancel whose pointercancel never reached .pages', (w) => w.emit('window', 'touchcancel')]
+  ];
+  for (const [what, trigger] of away) {
+    ok(what + ': the held drag is let go, the track settles, the next swipe pages', () => {
+      const w = world({ native });
+      w.drag(w.d.cardArt, -150, 0, { lose: true, ms: 300 });
+      assert(w.h.held() && w.h.held().lock, 'set-up: a locked drag whose end was lost');
+      trigger(w);
+      assert.equal(w.h.held(), null, 'still held after the trigger');
+      w.run();
+      // Settled on a page. A cancel ends a drag on a lift's terms, so this one,
+      // still moving when it was cut off, may carry on to Train; the rest land
+      // on the page nearest the track.
+      const at = w.page();
+      assert.equal(w.h.pos(), at * 390, 'the track is not left between pages');
+      if (!/touchcancel/.test(what)) assert.equal(at, 0, 'settled back on Workouts, 38% across');
+      w.drag(at === 0 ? w.d.cardArt : w.d.planrow, -260, 0);
+      assert.equal(w.page(), at + 1, 'the next swipe pages');
+    });
+  }
+
+  ok('two seconds with no word from the pointer: the drag is let go on its own', () => {
+    let w = world({ native });
+    w.drag(w.d.cardArt, -4, 0, { lose: true });     // a touch that never locked
+    w.run(1900);
+    assert(w.h.held(), 'still held at 1.9 s: a resting finger is a finger');
+    w.run(300);
+    assert.equal(w.h.held(), null, 'let go by 2.2 s');
+    w = world({ native });
+    w.drag(w.d.cardArt, -150, 0, { lose: true, ms: 300 });
+    w.run(2100);
+    assert.equal(w.h.held(), null);
+    w.run();
+    assert.equal(w.page(), 0); assert.equal(w.h.pos(), 0, 'and a locked one settles');
+    w.drag(w.d.cardArt, -260, 0);
+    assert.equal(w.page(), 1);
+  });
+
+  ok('a slow drag that keeps moving is never cut off by the two seconds', () => {
+    const w = world({ native });
+    const r = w.drag(w.d.cardArt, -180, 0, { ms: 3200 });
+    assert(r.prevented > 150, 'held for the whole drag');
+    assert.equal(w.page(), 1);
+  });
+
+  ok('an engine that still counts the lost touch as down: a later finger, even a non-primary one, pages', () => {
+    const w = world({ native });
+    w.drag(w.d.cardArt, -4, 0, { lose: true });
+    w.idle(2100);                                   // timers throttled: the watchdog has not run
+    w.drag(w.d.cardArt, -260, 0, { primary: false });
+    assert.equal(w.page(), 1);
+  });
 }
 
 console.log('the CSS that keeps WebKit from taking the drag');
@@ -370,4 +451,5 @@ ok('app.ts: the touchmove that holds a locked drag is non-passive', () => {
   assert.match(PAGER, /pagesEl\.addEventListener\("touchmove", function \(e\) \{\s*if \(drag && drag\.lock && e\.cancelable\) e\.preventDefault\(\);\s*\}, \{ passive: false \}\);/);
 });
 
-console.log('\n' + checks + ' pager checks passed.');
+console.log('\n' + checks + ' pager checks passed' + (failed ? ', ' + failed + ' FAILED.' : '.'));
+if (failed) process.exitCode = 1;

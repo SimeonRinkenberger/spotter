@@ -307,8 +307,9 @@ export const STYLE = String.raw`<style>
      (app.ts, "the drag"). Hence the page's two horizontal words. overflow-x:
      hidden, so no stray overflow can make it scroll sideways. And overscroll
      containment on the vertical axis only: contain on x is what WebKit turns
-     into UIScrollView's transfersHorizontalScrollingToParent = NO, a page that
-     keeps every sideways drag for itself, cancels our pointer and never turns. */
+     into UIScrollView's transfersHorizontalScrollingToParent = NO, which asks
+     the page to keep sideways drags for itself. The iPhone 16e simulator turned
+     pages either way; these say what a page is for, so it never has to. */
   .pages { position: absolute; inset: 0; overflow: hidden; }
   .track { display: flex; height: 100%; }
   .track.dragging { will-change: transform; }
