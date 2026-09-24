@@ -3184,7 +3184,7 @@ export const APP = String.raw`
     var schedule = el("button", "chip", "Schedule");
     schedule.onclick = function () { scheduleWorkout(w); };
     actions.appendChild(schedule);
-    var ask = el("button", "chip", "Ask coach");
+    var ask = el("button", "chip", "Ask Pumpy");
     ask.onclick = function () { history.back(); openPumpy(w); };
     actions.appendChild(ask);
     d.appendChild(actions);
