@@ -26,7 +26,7 @@
 // hashes each object again immediately before acting and skips it if it changed.
 //
 //   deno run --allow-read --allow-env --allow-net tools/thumbs-repair.ts \
-//     [--apply] [--env path/to/.env.local] [--rows rows.json] [--objects names.json] [--refs refs.json]
+//     [--apply [--skip-clear]] [--env path/to/.env.local] [--rows rows.json] [--objects names.json] [--refs refs.json]
 //
 //   --rows     video_cache rows as JSON [{shortcode, platform, kind, url, thumb_url}]
 //   --objects  object names in the thumbs bucket as JSON ["a.jpg", …]
@@ -321,7 +321,11 @@ async function main(): Promise<void> {
     ["replace", "clear", "delete"].map((k) => actions.filter((a) => a.kind === k).length + " " + k).join(", ") +
     (missing.length ? `. ${missing.length} named but missing: ${missing.join(", ")}` : "") + ".");
   if (!APPLY) { console.log("DRY RUN: nothing was written. Add --apply to make these changes."); return; }
-  for (const line of await apply(deps, actions)) console.log(line);
+  // --skip-clear leaves every CLEAR alone: those write person-owned workouts rows,
+  // which only an owner-approved run (or one scoped to a throwaway's own id) may touch.
+  const todo = Deno.args.includes("--skip-clear") ? actions.filter((a) => a.kind !== "clear") : actions;
+  if (todo.length !== actions.length) console.log(`--skip-clear: ${actions.length - todo.length} CLEAR action(s) left for the owner.`);
+  for (const line of await apply(deps, todo)) console.log(line);
 }
 
 if (import.meta.main) await main();
