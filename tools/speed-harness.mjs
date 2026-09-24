@@ -446,7 +446,9 @@ for (const [label, mutate] of [['removed', (c) => { delete c.store[SESSION]; }],
       function el(t, c) { if (c && c.indexOf("daycard") === 0) ticks.push(c.indexOf("done") > 0); return node(); }
       function icon(n) { return n; } function todayDose() { return ""; } function thisWeek() { return null; } function viewIn() {}
       function fmtDur() { return null; } function weekLine() { return ""; } function openDetail() {} function startWorkout() {}
-      function render() { renderToday(); } function refreshDetail() {} function watchPending() {} function writeCache() {}
+      // A paint costs time on a phone: slow = ms the clock moves per render.
+      var slow = 0;
+      function render() { renderToday(); clock += slow; } function refreshDetail() {} function watchPending() {} function writeCache() {}
       function idle(f) { timers.push(f); } function toast() {}
       var $ = function () { return { classList: { contains: function () { return false; } } }; };
       function guideUser() {} function loadProfile() { return Promise.resolve(); } function maybeInstallHint() {} function watchWorkouts() {}
@@ -458,8 +460,12 @@ for (const [label, mutate] of [['removed', (c) => { delete c.store[SESSION]; }],
   const count = (c, t) => run(c, 'asked').filter((x) => x === t).length;
   const settle = async (c) => { for (let i = 0; i < 6; i++) { run(c, 'answer(); flushTimers()'); await tick(); } };
 
-  for (const variant of ['cached', 'early', 'nocache']) {
+  for (const variant of ['cached', 'cached, 8 ms paint', 'early', 'nocache']) {
     const c = world();
+    // The native lab caught this one: 20 cards take a few ms to paint, and the
+    // library read's clock was taken after the paint, so the today read the
+    // paint had just sent looked older than the library read and was sent again.
+    if (variant === 'cached, 8 ms paint') run(c, 'slow = 8');
     if (variant !== 'nocache') run(c, 'store[CACHE_KEY] = JSON.stringify({ v: 1, uid: "u1", workouts: [{ id: "w1" }], collections: [], colItems: [] })');
     // Painted before the SDK answered: state.user is still empty then (C2).
     if (variant === 'early') run(c, 'var who = state.user; state.user = null; earlyUid = "u1"; paintRows(JSON.parse(store[CACHE_KEY])); state.user = who');

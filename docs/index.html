@@ -9832,9 +9832,9 @@ details.details-moving > :not(summary) {
   }, !0);
   function load(retry) {
     if (!state.user) return Promise.resolve();
-    var uid = state.user.id, epoch = accountEpoch, rev = libraryRev;
+    var uid = state.user.id, epoch = accountEpoch, rev = libraryRev, begun = Date.now();
     return readOnce("library:" + rev + ":" + !!retry, function() {
-      var begun = Date.now(), rows = sb.from("workouts").select(CARD_COLS).eq("user_id", uid).order("created_at", { ascending: !1 }).limit(200).then(function(r) {
+      var rows = sb.from("workouts").select(CARD_COLS).eq("user_id", uid).order("created_at", { ascending: !1 }).limit(200).then(function(r) {
         if (accountNow(epoch, uid)) {
           if (r.error) throw r.error;
           if (rev === libraryRev) {

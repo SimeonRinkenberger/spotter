@@ -1752,9 +1752,11 @@ export const APP = String.raw`
 
   function load(retry) {
     if (!state.user) return Promise.resolve();
-    var uid = state.user.id, epoch = accountEpoch, rev = libraryRev;
+    // When the call was made, not when readOnce's microtask runs: boot's cached
+    // paint (and its today read) happens in between, and on a phone that paint
+    // takes long enough that a later clock made the today read look older.
+    var uid = state.user.id, epoch = accountEpoch, rev = libraryRev, begun = Date.now();
     return readOnce("library:" + rev + ":" + !!retry, function () {
-      var begun = Date.now();
       var rows = sb.from("workouts").select(CARD_COLS).eq("user_id", uid)
         .order("created_at", { ascending: false }).limit(200).then(function (r) {
           if (!accountNow(epoch, uid)) return;
