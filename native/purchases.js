@@ -2,6 +2,32 @@ import { Purchases } from '@revenuecat/purchases-capacitor';
 import config from './purchases-config.json';
 
 // Store keys are public SDK identifiers. Secret RevenueCat keys stay server-side.
+
+// A free trial the store will actually give this person, in days, or 0. The sheet
+// only ever states a trial from here: Apple's introPrice exists whether or not
+// this Apple ID already used it, so it counts only when the store says the
+// account is eligible; Google Play's default option is already the offer this
+// account may take (Play leaves out the ones it may not), so its free phase is
+// the answer. A month or a year is counted in calendar days from today.
+const DAY = 86400000;
+function periodDays(unit, count) {
+  const n = Number(count) || 0, u = String(unit || '').toUpperCase();
+  if (!(n > 0)) return 0;
+  if (u === 'DAY') return n;
+  if (u === 'WEEK') return 7 * n;
+  if (u !== 'MONTH' && u !== 'YEAR') return 0;
+  const from = new Date(), to = new Date(from);
+  if (u === 'MONTH') to.setMonth(to.getMonth() + n); else to.setFullYear(to.getFullYear() + n);
+  return Math.round((to - from) / DAY);
+}
+function freeTrialDays(product, eligible) {
+  const phase = product?.defaultOption?.freePhase;
+  if (phase) return periodDays(phase.billingPeriod?.unit, (phase.billingPeriod?.value || 0) * (phase.billingCycleCount || 1));
+  const intro = product?.introPrice;
+  if (!intro || intro.price !== 0 || !eligible) return 0;
+  return periodDays(intro.periodUnit, (intro.periodNumberOfUnits || 0) * (intro.cycles || 1));
+}
+
 export function createPurchases(platform) {
   let configured = false, currentUser = null, queue = Promise.resolve(), packages = {}, generation = 0;
   const serial = work => { const next = queue.catch(() => {}).then(work); queue = next; return next; };
@@ -28,9 +54,27 @@ export function createPurchases(platform) {
       const current = offerings.current;
       if (current?.monthly) packages.month = current.monthly;
       if (current?.annual) packages.year = current.annual;
-      if (!packages.month || !packages.year) throw new Error('Subscriptions are temporarily unavailable. Please try again later.');
-      const price = item => ({ amount: Math.round(item.product.price * 100), localized: item.product.priceString });
-      return { configured: true, nativeStore: true, currency: packages.month.product.currencyCode.toLowerCase(), plans: { plus: { month: price(packages.month), year: price(packages.year) } }, trial_days: 0 };
+      // One period on sale is still a page with a price on it; the sheet shows
+      // the other one as unavailable. Neither is the unavailable state.
+      const items = Object.keys(packages);
+      if (!items.length) throw new Error('Subscriptions are temporarily unavailable. Please try again later.');
+      // Apple only: whether this Apple ID may still take each introductory offer.
+      // Unknown or unanswered is not eligible, so no trial is promised on a guess.
+      let eligible = {};
+      const asks = items.map(iv => packages[iv].product).filter(p => p.introPrice && p.introPrice.price === 0 && !p.defaultOption);
+      if (asks.length && Purchases.checkTrialOrIntroductoryPriceEligibility) {
+        try { eligible = await Purchases.checkTrialOrIntroductoryPriceEligibility({ productIdentifiers: asks.map(p => p.identifier) }); }
+        catch (_) { eligible = {}; }
+        guard(version);
+      }
+      const plus = {};
+      for (const iv of items) {
+        const product = packages[iv].product;
+        plus[iv] = { amount: Math.round(product.price * 100), localized: product.priceString,
+          trial_days: freeTrialDays(product, eligible?.[product.identifier]?.status === 2) };
+      }
+      const first = packages[items[0]].product;
+      return { configured: true, nativeStore: true, currency: first.currencyCode.toLowerCase(), plans: { plus }, trial_days: plus.year?.trial_days || 0 };
     }),
     purchase: (userId, interval) => operation(async version => {
       await identify(userId);
