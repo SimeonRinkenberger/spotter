@@ -234,7 +234,9 @@ ok(/return doAdd\(true\)\.then\(function \(saved\) \{[\s\S]{0,200}if \(saved\) t
   const c2 = vm.createContext({ console, Date, Math, String, Number, JSON, Object, Array, isFinite, Promise, Error });
   vm.runInContext(STUBS.replace(/var saveOk = true; function handleSharedUrl[^\n]*\n/, ''), c2);
   c2.DOM = { ...dom, addgo: node('Save workout'), addurl: node() };
-  vm.runInContext([fn('cuttingFrames'), fn('doAdd'), fn('handleSharedUrl'),
+  // aiDeclined is a one-liner: the "Not now" test doAdd's catch asks first (OU-6).
+  const declined = APP.slice(APP.indexOf('  function aiDeclined('), APP.indexOf('\n', APP.indexOf('  function aiDeclined(')));
+  vm.runInContext([declined, fn('cuttingFrames'), fn('doAdd'), fn('handleSharedUrl'),
     block('  var PARKED_MAX_MS = ', '  // ---------- upload a video from your phone ----------'),
     'function resetUpload() {} function addMode() {} function load() { return Promise.resolve(); }'].join('\n'), c2);
   const r2 = (code) => vm.runInContext(code, c2);
