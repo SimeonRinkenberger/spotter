@@ -9586,7 +9586,7 @@ details.details-moving > :not(summary) {
     return booting = load().then(function() {
       if (accountNow(epoch, uid)) return consumeShare();
     }).then(function() {
-      if (accountNow(epoch, uid)) return takeParkedShare();
+      accountNow(epoch, uid) && takeParkedShare();
     }).then(function() {
       accountNow(epoch, uid) && consumeOpen();
     }).then(function() {
@@ -9698,7 +9698,7 @@ details.details-moving > :not(summary) {
     var uid = state.user.id, epoch = accountEpoch;
     return sb.from("profiles").select("*").eq("id", uid).maybeSingle().then(function(r) {
       if (accountNow(epoch, uid) && r.data) {
-        state.profile = r.data, paintConsent(), native && native.configureSharing(r.data.ingest_key, r.data.plan).catch(function() {
+        state.profile = r.data, paintConsent(), native && native.configureSharing(r.data.ingest_key, { plan: r.data.plan }).catch(function() {
         });
         var s = r.data.settings || {};
         s.unit && (state.unit = s.unit), typeof s.sounds == "boolean" && (state.sounds = s.sounds), typeof s.haptics == "boolean" && (state.haptics = s.haptics), s.remind && (remind.plan = !!s.remind.plan, remind.risk = !!s.remind.risk), typeof s.remindAt == "number" && (remind.at = s.remindAt), paintSounds(), billing.said && (state.profile.plan = billing.said), renderLibCount();
@@ -17248,7 +17248,8 @@ details.details-moving > :not(summary) {
     }
   }
   function adoptPlan(plan) {
-    plan && (billing.said = plan, !(!state.profile || state.profile.plan === plan) && (state.profile.plan = plan, renderLibCount(), paintPlanGroup()));
+    plan && (billing.said = plan, !(!state.profile || state.profile.plan === plan) && (state.profile.plan = plan, native && state.profile.ingest_key && native.configureSharing(state.profile.ingest_key, { plan: plan }).catch(function() {
+    }), renderLibCount(), paintPlanGroup()));
   }
   var ALLOW_ROWS = [
     ["reads", "Video reads"],
@@ -17755,38 +17756,25 @@ details.details-moving > :not(summary) {
   }
   function doAdd(fromShare) {
     var url = $("addurl").value.trim();
-    if (!url) {
-      toast("Paste a link first.");
-      return;
-    }
+    if (!url)
+      return toast("Paste a link first."), Promise.resolve(!1);
     var btn = $("addgo");
     btn.disabled = !0, btn.textContent = cuttingFrames(url) ? "Reading\u2026" : "Saving\u2026";
     function recover() {
       fromShare && (resetUpload(), addMode(null), openSheet("addsheet"));
     }
-    deviceFrames({ url: url }).then(function(frames) {
+    return deviceFrames({ url: url }).then(function(frames) {
       var body = { url: url };
       return frames && (body.frames = frames), btn.textContent = "Saving\u2026", api("ingest", { method: "POST", body: JSON.stringify(body) });
     }).then(function(r) {
-      if (btn.disabled = !1, btn.textContent = "Save workout", fromShare && (sharing = !1), r.status === "processing") {
-        $("addurl").value = "", closeSheet("addsheet"), placePending(r, url, null), toast(withShelf(isFree() ? "Saved \u2014 building a Basic read from available text\u2026" : fromShare ? "Saved from the share sheet \u2014 reading it\u2026" : /\/(p|photo)\//.test(url) ? "Saved \u2014 reading the post\u2026" : "Saved \u2014 reading the video\u2026"), 3400);
-        return;
-      }
-      if (r.status === "saved")
-        $("addurl").value = "", closeSheet("addsheet"), r.cached ? toast(withShelf(fromShare ? "Saved from the share sheet \u2014 someone had already read this one, so it is ready" : "Saved \u2014 someone had already read this one, so it is ready", 1), 3400) : toast(withShelf(fromShare ? "Saved from the share sheet \u2014 read and ready" : "Saved \u2014 read and ready", 1), 3400), load().then(function() {
-          var w = state.workouts.filter(function(x) {
-            return x.id === r.id;
-          })[0];
-          w && openDetail(w);
-        });
-      else if (r.status === "exists")
-        closeSheet("addsheet"), toast("Already in your library."), load();
-      else {
-        if (limitHit(r, null)) return;
-        toast(r.message || "Could not save that link \u2014 check it and try again."), recover();
-      }
+      return btn.disabled = !1, btn.textContent = "Save workout", fromShare && (sharing = !1), r.status === "processing" ? ($("addurl").value = "", closeSheet("addsheet"), placePending(r, url, null), toast(withShelf(isFree() ? "Saved \u2014 building a Basic read from available text\u2026" : fromShare ? "Saved from the share sheet \u2014 reading it\u2026" : /\/(p|photo)\//.test(url) ? "Saved \u2014 reading the post\u2026" : "Saved \u2014 reading the video\u2026"), 3400), !0) : r.status === "saved" ? ($("addurl").value = "", closeSheet("addsheet"), r.cached ? toast(withShelf(fromShare ? "Saved from the share sheet \u2014 someone had already read this one, so it is ready" : "Saved \u2014 someone had already read this one, so it is ready", 1), 3400) : toast(withShelf(fromShare ? "Saved from the share sheet \u2014 read and ready" : "Saved \u2014 read and ready", 1), 3400), load().then(function() {
+        var w = state.workouts.filter(function(x) {
+          return x.id === r.id;
+        })[0];
+        w && openDetail(w);
+      }), !0) : r.status === "exists" ? (closeSheet("addsheet"), toast("Already in your library."), load(), !0) : (limitHit(r, null) || (toast(r.message || "Could not save that link \u2014 check it and try again."), recover()), !1);
     }).catch(function() {
-      btn.disabled = !1, btn.textContent = "Save workout", fromShare && (sharing = !1), toast("Could not reach Spotter \u2014 check your connection."), recover();
+      return btn.disabled = !1, btn.textContent = "Save workout", fromShare && (sharing = !1), toast("Could not reach Spotter \u2014 check your connection."), recover(), !1;
     });
   }
   var SHARE_KEY = "spotter_share_pending", sharing = !1;
@@ -17832,28 +17820,31 @@ details.details-moving > :not(summary) {
     u && handleSharedUrl(u);
   }
   function handleSharedUrl(u) {
-    !u || sharing || (sharing = !0, $("addurl").value = u, doAdd(!0));
+    return !u || sharing ? Promise.resolve(!1) : (sharing = !0, $("addurl").value = u, doAdd(!0).then(function(saved) {
+      return saved && takeParkedShare(), saved;
+    }));
   }
+  var PARKED_MAX_MS = 168 * 3600 * 1e3, PARKED_PER_PASS = 10, parkedBusy = !1;
   function takeParkedShare() {
-    if (!native || !native.takeParkedShare || !state.user || sharing) return Promise.resolve();
-    var epoch = accountEpoch, uid = state.user.id;
-    return native.takeParkedShare().then(function(parked) {
-      if (!(!parked || !parked.url || !accountNow(epoch, uid))) {
-        var at = typeof parked.at == "number" ? parked.at < 1e12 ? parked.at * 1e3 : parked.at : Date.parse(parked.at || "");
-        if (!(isFinite(at) && Date.now() - at > 24 * 3600 * 1e3)) {
-          var u = firstUrlIn(parked.url);
-          if (u) {
-            try {
-              sessionStorage.setItem(SHARE_KEY, u);
-            } catch (e) {
-              handleSharedUrl(u);
-              return;
-            }
-            consumeShare();
+    if (parkedBusy || !native || !native.takeParkedShare || !state.user || sharing) return Promise.resolve();
+    parkedBusy = !0;
+    var epoch = accountEpoch, uid = state.user.id, taken = 0;
+    function next() {
+      if (!(taken >= PARKED_PER_PASS || sharing || !accountNow(epoch, uid)))
+        return taken++, Promise.resolve().then(function() {
+          return native.takeParkedShare();
+        }).then(function(parked) {
+          if (!(!parked || !parked.url || !accountNow(epoch, uid))) {
+            var at = Number(parked.at), u = firstUrlIn(parked.url);
+            return !u || at > 0 && Date.now() - at > PARKED_MAX_MS ? next() : handleSharedUrl(u).then(function(saved) {
+              if (saved) return next();
+            });
           }
-        }
-      }
-    }).catch(function() {
+        });
+    }
+    return Promise.resolve().then(next).catch(function() {
+    }).then(function() {
+      parkedBusy = !1;
     });
   }
   var UPLOAD_MAX = 25 * 1024 * 1024, UPLOAD_TYPES = {
@@ -18180,7 +18171,7 @@ details.details-moving > :not(summary) {
           toast("Could not make a new key \u2014 try again in a moment.");
           return;
         }
-        state.profile && (state.profile.ingest_key = r.ingest_key), $("setkey").textContent = API + "ingest?key=" + r.ingest_key, native && native.configureSharing(r.ingest_key, state.profile && state.profile.plan).catch(function() {
+        state.profile && (state.profile.ingest_key = r.ingest_key), $("setkey").textContent = API + "ingest?key=" + r.ingest_key, native && native.configureSharing(r.ingest_key, { plan: myPlan() }).catch(function() {
         }), toast(native ? "Sharing key refreshed." : "New key made \u2014 update your Shortcut.");
       }
     });

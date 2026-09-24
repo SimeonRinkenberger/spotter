@@ -70,7 +70,7 @@ function load() {}
 var consumed = []; var SHARE_KEY = "k"; var sharing = false;
 var sessionStorage = { v: {}, setItem: function (k, v) { this.v[k] = v; }, getItem: function (k) { return this.v[k] || null; }, removeItem: function (k) { delete this.v[k]; } };
 function consumeShare() { var u = sessionStorage.getItem(SHARE_KEY); sessionStorage.removeItem(SHARE_KEY); if (u) consumed.push(u); }
-function handleSharedUrl(u) { consumed.push(u); }
+var saveOk = true; function handleSharedUrl(u) { consumed.push(u); return Promise.resolve(saveOk); }
 function firstUrlIn(s) { var m = String(s || "").match(/https?:\\/\\/[^\\s"'<>]+/); return m ? m[0] : ""; }
 var UPLOAD_MAX = 25 * 1024 * 1024;
 var UPLOAD_TYPES = { mp4: "video/mp4", mov: "video/quicktime", m4a: "audio/mp4" };
@@ -87,7 +87,7 @@ vm.runInContext([
   block('  function canAddVideo(w) {', '  // ---------- collections: lookups ----------'),
   fn('cardMeta').replace('function cardMeta', 'function cardMeta'),
   fn('upError'), fn('upProgress'), fn('addMode'), fn('openAddVideo'), fn('attached'), fn('resetUpload'), fn('doUpload'),
-  fn('takeParkedShare'),
+  block('  var PARKED_MAX_MS = ', '  // ---------- upload a video from your phone ----------'),
 ].join('\n'), ctx);
 // cardMeta reaches for fmtDur and citedSources only on a ready card; the checks
 // below ask it about pending and failed ones.
@@ -162,20 +162,120 @@ await settle(); await settle();
 ok(ctx.plans.length === 1 && !JSON.parse(JSON.stringify(ctx.calls)).some((c) => c[0] === 'put'),
   'out of video reads: the Plus answer, and nothing uploaded');
 
-// ---- S14: a link parked while signed out ----
-ctx.native = { takeParkedShare: () => Promise.resolve({ url: 'https://www.tiktok.com/@a/video/1', at: Date.now() - 60_000 }) };
+// ---- S14 / CR-4: links parked while signed out, in SHARE-IOS's shape ----
+// The native side (gtm-share-ios native/share-access.js takeParked) hands over
+// one {url, at} per call, at in ms, removing it, and null when none is left.
+const parked = (items) => {
+  const q = items.slice();
+  return { takeParkedShare: () => Promise.resolve(q.length ? q.shift() : null), left: q };
+};
+const now = Date.now();
+ctx.native = parked([
+  { url: 'https://www.tiktok.com/@a/video/1', at: now - 60_000 },
+  { url: 'https://www.instagram.com/reel/DcHDuEFzBSf/', at: now - 3 * 86400_000 },
+  { url: 'https://www.tiktok.com/@a/video/3', at: 0 },
+]);
+run('consumed = []; saveOk = true'); await run('takeParkedShare()');
+ok(JSON.stringify(ctx.consumed) === JSON.stringify(['https://www.tiktok.com/@a/video/1',
+  'https://www.instagram.com/reel/DcHDuEFzBSf/', 'https://www.tiktok.com/@a/video/3']) && !ctx.native.left.length,
+  'every parked link is saved once, oldest first, one after another (three days old is inside the week; at 0 is unknown, kept)');
+ctx.native = parked([
+  { url: 'https://www.tiktok.com/@a/video/old', at: now - 8 * 86400_000 },
+  { url: 'https://www.tiktok.com/@a/video/new', at: now - 1000 },
+]);
 run('consumed = []'); await run('takeParkedShare()');
-ok(JSON.stringify(ctx.consumed) === '["https://www.tiktok.com/@a/video/1"]', 'a parked link is saved once after sign-in');
-ctx.native = { takeParkedShare: () => Promise.resolve({ url: 'https://www.tiktok.com/@a/video/1', at: new Date(Date.now() - 3 * 86400_000).toISOString() }) };
+ok(JSON.stringify(ctx.consumed) === '["https://www.tiktok.com/@a/video/new"]', 'a link parked over a week ago is dropped and the next one still saved');
+ctx.native = parked([{ url: 'https://www.tiktok.com/@a/video/1', at: now }, { url: 'https://www.tiktok.com/@a/video/2', at: now }]);
+run('consumed = []; saveOk = false'); await run('takeParkedShare()');
+ok(ctx.consumed.length === 1 && ctx.native.left.length === 1,
+  'a save that fails stops the queue: that link stays in the add sheet, the rest stay parked for the next resume');
+run('saveOk = true');
+ctx.native = parked([{ url: 'https://www.tiktok.com/@a/video/1', at: now }, { url: 'https://www.tiktok.com/@a/video/2', at: now }]);
+run('consumed = []'); await Promise.all([run('takeParkedShare()'), run('takeParkedShare()')]);
+ok(JSON.stringify(ctx.consumed) === '["https://www.tiktok.com/@a/video/1","https://www.tiktok.com/@a/video/2"]',
+  'two callers at once (sign-in and resume) take each link once, in order');
+ctx.native = { takeParkedShare: () => Promise.resolve({ url: 'https://www.tiktok.com/@a/video/1', at: now }) };
 run('consumed = []'); await run('takeParkedShare()');
-ok(!ctx.consumed.length, 'a link parked three days ago is dropped, not saved out of the blue');
-ctx.native = { takeParkedShare: () => Promise.resolve({}) };
+ok(ctx.consumed.length === 10, 'a shell that never empties is asked at most ten times a pass');
+ctx.native = parked([]);
 run('consumed = []'); await run('takeParkedShare()');
 ok(!ctx.consumed.length, 'nothing parked, nothing saved');
+ctx.native = { takeParkedShare: () => Promise.resolve({}) };
+run('consumed = []'); await run('takeParkedShare()');
+ok(!ctx.consumed.length, 'an empty answer is nothing parked');
+ctx.native = { takeParkedShare: () => { throw new Error('no such method'); } };
+ok(await run('takeParkedShare()') === undefined, 'a shell whose method throws is a no-op, never a rejected boot');
 ctx.native = {};
-ok(await run('takeParkedShare()') === undefined, 'a shell without the method is a no-op');
-ok(/load\(\)\.then\(function \(\) \{ if \(accountNow\(epoch, uid\)\) return consumeShare\(\); \}\)\s*\n\s*\.then\(function \(\) \{ if \(accountNow\(epoch, uid\)\) return takeParkedShare\(\); \}\)/.test(APP),
-  'boot takes a parked link right after the pending share');
+ok(await run('takeParkedShare()') === undefined, 'a shell without the method (Android, builds 5–7) is a no-op');
+ctx.native = null;
+ok(/load\(\)\.then\(function \(\) \{ if \(accountNow\(epoch, uid\)\) return consumeShare\(\); \}\)[\s\S]{0,200}\.then\(function \(\) \{ if \(accountNow\(epoch, uid\)\) takeParkedShare\(\); \}\)/.test(APP),
+  'boot takes parked links right after the pending share, without holding the rest of the start');
+ok(/return doAdd\(true\)\.then\(function \(saved\) \{[\s\S]{0,200}if \(saved\) takeParkedShare\(\);/.test(APP),
+  'a link share that lands while links are parked is followed by them');
+
+// doAdd resolves whether the link is on the shelf; the queue waits on it.
+{
+  const c2 = vm.createContext({ console, Date, Math, String, Number, JSON, Object, Array, isFinite, Promise, Error });
+  vm.runInContext(STUBS.replace(/var saveOk = true; function handleSharedUrl[^\n]*\n/, ''), c2);
+  c2.DOM = { ...dom, addgo: node('Save workout'), addurl: node() };
+  vm.runInContext([fn('cuttingFrames'), fn('doAdd'), fn('handleSharedUrl'),
+    block('  var PARKED_MAX_MS = ', '  // ---------- upload a video from your phone ----------'),
+    'function resetUpload() {} function addMode() {} function load() { return Promise.resolve(); }'].join('\n'), c2);
+  const r2 = (code) => vm.runInContext(code, c2);
+  for (const [answer, want, label] of [
+    [{ status: 'processing', id: 'w1' }, true, 'a queued save'],
+    [{ status: 'saved', id: 'w1', cached: true }, true, 'a cache hit'],
+    [{ status: 'exists', id: 'w1' }, true, 'a card already there'],
+    [{ status: 'error', message: 'nope' }, false, 'a refused link'],
+    [undefined, false, 'no answer at all'],
+  ]) {
+    c2.API = { ingest: answer };
+    r2('sharing = false; DOM.addurl.value = "https://www.tiktok.com/@a/video/9"');
+    ok(await r2('doAdd(true)') === want && r2('sharing') === false, 'doAdd resolves ' + want + ' for ' + label + ', and the share flag is down');
+  }
+  c2.API = { ingest: { status: 'processing', id: 'w1' } };
+  c2.native = parked([{ url: 'https://www.tiktok.com/@a/video/parked', at: now }]);
+  r2('calls = []; sharing = false');
+  await r2('handleSharedUrl("https://www.tiktok.com/@a/video/shared")');
+  await settle(); await settle(); await settle(); await settle();
+  const saves = JSON.parse(JSON.stringify(c2.calls)).filter((x) => x[0] === 'ingest').map((x) => x[1].url);
+  ok(JSON.stringify(saves) === '["https://www.tiktok.com/@a/video/shared","https://www.tiktok.com/@a/video/parked"]',
+    'through the real share path: the shared link, then the parked one, each saved once');
+}
+
+// ---- CR-3: the plan rides beside the key in SHARE-IOS's shape ----
+ok(APP.includes('native.configureSharing(r.data.ingest_key, { plan: r.data.plan })'), 'profile load (and so sign-in) hands the plan over');
+ok(APP.includes('native.configureSharing(r.ingest_key, { plan: myPlan() })'), 'a new sharing key keeps the plan beside it');
+ok(!/configureSharing\([^)]*,\s*(r\.data\.plan|state\.profile && state\.profile\.plan)\)/.test(APP) && !/planHint/.test(APP),
+  'no call passes the plan bare (the old shape SHARE-IOS does not read)');
+{
+  const c3 = vm.createContext({ console, Object, Promise });
+  vm.runInContext('var billing = {}; var state = { profile: { plan: "free", ingest_key: "k" } }; var hints = [];' +
+    'var native = { configureSharing: function (k, h) { hints.push([k, h]); return Promise.resolve(); } };' +
+    'function renderLibCount() {} function paintPlanGroup() {}\n' + fn('adoptPlan'), c3);
+  vm.runInContext('adoptPlan("plus"); adoptPlan("plus"); adoptPlan("free")', c3);
+  ok(JSON.stringify(c3.hints) === '[["k",{"plan":"plus"}],["k",{"plan":"free"}]]',
+    'a plan change tells the extension at once, only when it changes');
+  vm.runInContext('native = null; adoptPlan("plus")', c3);
+  ok(c3.state.profile.plan === 'plus', 'the web app (no native) is unaffected');
+}
+// When SHARE-IOS's native module is present (the integration branch), the calls
+// above are run through it: the plan must reach the plugin as `plan`.
+{
+  const mod = await import('../native/share-access.js');
+  if (typeof mod.takeParked === 'function') {
+    const seen = [];
+    const configure = mod.shareAccess({ configure: (o) => { seen.push(o); return Promise.resolve(); } });
+    await configure('k'.repeat(32), { plan: 'plus' });
+    await configure(null);
+    ok(seen[0].plan === 'plus' && seen[1].key === null && !('plan' in seen[1]), 'SHARE-IOS shareAccess receives the plan as the app sends it');
+    const take = mod.takeParked({ takeParked: () => Promise.resolve({ url: 'https://x.test/1', at: 5 }) });
+    const got = await take();
+    ok(got.url === 'https://x.test/1' && got.at === 5, 'SHARE-IOS takeParked answers the {url, at} the app reads');
+  } else {
+    console.log('note: native/share-access.js has no takeParked here (SHARE-IOS not merged); its shape is checked on the integration branch');
+  }
+}
 
 // ---- S15 and the share flag ----
 ok(/if \(state\.user && !wo\) \{ pendPolls = 0; watchPending\(\); load\(\); takeParkedShare\(\); \}/.test(APP),

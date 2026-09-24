@@ -1352,7 +1352,9 @@ export const APP = String.raw`
     // creates lands in a rendered grid rather than into an empty one.
     var epoch = accountEpoch, uid = state.user.id;
     booting = load().then(function () { if (accountNow(epoch, uid)) return consumeShare(); })
-      .then(function () { if (accountNow(epoch, uid)) return takeParkedShare(); })
+      // Not waited for, as a share is not: a queue of parked links saves one by
+      // one in the background while the rest of the start carries on.
+      .then(function () { if (accountNow(epoch, uid)) takeParkedShare(); })
       .then(function () { if (accountNow(epoch, uid)) consumeOpen(); })
       .then(function () { if (accountNow(epoch, uid)) return consumeBilling(); })
       .then(function () { if (accountNow(epoch, uid)) consumeCreator(); })
@@ -1521,7 +1523,7 @@ export const APP = String.raw`
       if (r.data) {
         state.profile = r.data;
         paintConsent();
-        if (native) native.configureSharing(r.data.ingest_key, r.data.plan).catch(function () {});
+        if (native) native.configureSharing(r.data.ingest_key, { plan: r.data.plan }).catch(function () {});
         var s = r.data.settings || {};
         if (s.unit) state.unit = s.unit;
         // false is a real answer, so these test presence, not truth. An older
@@ -14701,6 +14703,9 @@ export const APP = String.raw`
     billing.said = plan;
     if (!state.profile || state.profile.plan === plan) return;
     state.profile.plan = plan;
+    // The Share Extension's copy of the plan, so a share right after a purchase
+    // (or a lapse) asks for frames the way this plan should.
+    if (native && state.profile.ingest_key) native.configureSharing(state.profile.ingest_key, { plan: plan }).catch(function () {});
     renderLibCount();
     paintPlanGroup();
   }
@@ -15395,7 +15400,7 @@ export const APP = String.raw`
    */
   function doAdd(fromShare) {
     var url = $("addurl").value.trim();
-    if (!url) { toast("Paste a link first."); return; }
+    if (!url) { toast("Paste a link first."); return Promise.resolve(false); }
     var btn = $("addgo");
     btn.disabled = true;
     // Two different waits deserve two different words. The phone reading the
@@ -15409,7 +15414,9 @@ export const APP = String.raw`
       openSheet("addsheet");
     }
 
-    deviceFrames({ url: url }).then(function (frames) {
+    // Resolves true when the link is on the shelf (new, reading or already
+    // there), so the parked-share queue can take the next only after this one.
+    return deviceFrames({ url: url }).then(function (frames) {
       var body = { url: url };
       if (frames) body.frames = frames;
       btn.textContent = "Saving…";
@@ -15431,7 +15438,7 @@ export const APP = String.raw`
           placePending(r, url, null);
           toast(withShelf(isFree() ? "Saved — building a Basic read from available text…" : (fromShare ? "Saved from the share sheet — reading it…"
             : /\/(p|photo)\//.test(url) ? "Saved — reading the post…" : "Saved — reading the video…")), 3400);
-          return;
+          return true;
         }
 
         if (r.status === "saved") {
@@ -15450,16 +15457,19 @@ export const APP = String.raw`
             var w = state.workouts.filter(function (x) { return x.id === r.id; })[0];
             if (w) openDetail(w);
           });
+          return true;
         } else if (r.status === "exists") {
           closeSheet("addsheet");
           toast("Already in your library.");
           load();
+          return true;
         } else {
           // A cap is not a broken link: the sheet answers it, and the link stays
           // in the box so a plan change lands the person back on the save.
-          if (limitHit(r, null)) return;
+          if (limitHit(r, null)) return false;
           toast(r.message || "Could not save that link — check it and try again.");
           recover();
+          return false;
         }
       }).catch(function () {
         btn.disabled = false;
@@ -15467,6 +15477,7 @@ export const APP = String.raw`
         if (fromShare) sharing = false;
         toast("Could not reach Spotter — check your connection.");
         recover();
+        return false;
       });
   }
 
@@ -15531,32 +15542,53 @@ export const APP = String.raw`
   }
 
   function handleSharedUrl(u) {
-    if (!u || sharing) return;
+    if (!u || sharing) return Promise.resolve(false);
     sharing = true;
     // Through the add sheet's own field, so a failure can simply show that sheet
     // with the link already in it.
     $("addurl").value = u;
-    doAdd(true);
+    return doAdd(true).then(function (saved) {
+      // A share that arrived by link while links were parked went first; the
+      // parked ones follow it rather than waiting for the next resume.
+      if (saved) takeParkedShare();
+      return saved;
+    });
   }
 
-  // A link shared while nobody was signed in. The Share Extension cannot save for
-  // nobody, so it parks the link where the app can reach it and says "Sign in to
-  // Spotter and it will be saved"; this is the other half. The plugin TAKES it —
-  // reads and removes — so one parked share is one save, and a link parked more
-  // than a day ago is dropped rather than saved out of the blue.
+  // Links shared while nobody was signed in. The Share Extension cannot save for
+  // nobody, so it parks each link where the app can reach it and says "Sign in
+  // to Spotter and it will be saved"; this is the other half. The native side
+  // hands them over one at a time, oldest first, each removed as it is taken
+  // (native.takeParkedShare → {url, at} with at in ms, or null when none is left
+  // or the shell has no such method), so one parked share is one save. They are
+  // saved one after another through the ordinary share path; a failure leaves
+  // that link in the add sheet and the rest parked for the next resume, rather
+  // than overwriting the box with the next one. The extension already drops
+  // links older than a week; the same bound here covers any other shell.
+  var PARKED_MAX_MS = 7 * 24 * 3600 * 1000;
+  var PARKED_PER_PASS = 10;
+  // One taker at a time: two would each take a link, and the second would find
+  // a save in flight and drop what it had already taken.
+  var parkedBusy = false;
+
   function takeParkedShare() {
-    if (!native || !native.takeParkedShare || !state.user || sharing) return Promise.resolve();
-    var epoch = accountEpoch, uid = state.user.id;
-    return native.takeParkedShare().then(function (parked) {
-      if (!parked || !parked.url || !accountNow(epoch, uid)) return;
-      var at = typeof parked.at === "number" ? (parked.at < 1e12 ? parked.at * 1000 : parked.at)
-        : Date.parse(parked.at || "");
-      if (isFinite(at) && Date.now() - at > 24 * 3600 * 1000) return;
-      var u = firstUrlIn(parked.url);
-      if (!u) return;
-      try { sessionStorage.setItem(SHARE_KEY, u); } catch (e) { handleSharedUrl(u); return; }
-      consumeShare();
-    }).catch(function () { /* nothing parked, or a shell without the method */ });
+    if (parkedBusy || !native || !native.takeParkedShare || !state.user || sharing) return Promise.resolve();
+    parkedBusy = true;
+    var epoch = accountEpoch, uid = state.user.id, taken = 0;
+    function next() {
+      if (taken >= PARKED_PER_PASS || sharing || !accountNow(epoch, uid)) return;
+      taken++;
+      return Promise.resolve().then(function () { return native.takeParkedShare(); }).then(function (parked) {
+        if (!parked || !parked.url || !accountNow(epoch, uid)) return;
+        var at = Number(parked.at);
+        var u = firstUrlIn(parked.url);
+        if (!u || (at > 0 && Date.now() - at > PARKED_MAX_MS)) return next();
+        return handleSharedUrl(u).then(function (saved) { if (saved) return next(); });
+      });
+    }
+    return Promise.resolve().then(next)
+      .catch(function () { /* a shell without the method, or a save that threw */ })
+      .then(function () { parkedBusy = false; });
   }
 
   // ---------- upload a video from your phone ----------
@@ -16156,7 +16188,7 @@ export const APP = String.raw`
       if (r.status !== "ok") { toast("Could not make a new key — try again in a moment."); return; }
       if (state.profile) state.profile.ingest_key = r.ingest_key;
       $("setkey").textContent = API + "ingest?key=" + r.ingest_key;
-      if (native) native.configureSharing(r.ingest_key, state.profile && state.profile.plan).catch(function () {});
+      if (native) native.configureSharing(r.ingest_key, { plan: myPlan() }).catch(function () {});
       toast(native ? "Sharing key refreshed." : "New key made — update your Shortcut.");
     });
   }
