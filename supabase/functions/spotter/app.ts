@@ -13845,7 +13845,9 @@ export const APP = String.raw`
     var lib = capNum(f.library);
     return [
       ["Saved workouts", shelfN(f.library), shelfN(p.library), mine && lib ? [held + " saved", held >= lib] : null],
-      ["Full video reads", month(f.month_reads), month(p.month_reads), used("reads")],
+      // Named for what Plus can actually read: TikTok video (the save-flow audit's
+      // S2; Instagram and YouTube give no video to read, so no row promises it).
+      ["Full TikTok video reads", month(f.month_reads), month(p.month_reads), used("reads")],
       ["Pumpy coach", has("pumpy", "free") ? "Included" : "—", has("pumpy", "plus") ? "Included" : "—", null],
       ["Explanations and swaps", month(f.month_helpers), month(p.month_helpers), used("helpers")],
       ["Uploads", month(f.month_uploads), month(p.month_uploads), used("uploads")],

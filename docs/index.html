@@ -8753,7 +8753,7 @@ details.details-moving > :not(summary) {
   <div class="grabber"></div>
   <div class="planctx hide" id="planctx"></div>
   <h2>Spotter Plus</h2>
-  <p class="lede">Keep every workout you save, read videos in full, and train with Pumpy, your coach.</p>
+  <p class="lede">Keep every workout you save, read TikTok videos in full, and train with Pumpy, your coach.</p>
   <div class="plangood" id="plangood"></div>
   <div id="planbox">
     <div class="plancards" id="plancards" role="radiogroup" aria-label="Billing period"></div>
@@ -16854,7 +16854,9 @@ details.details-moving > :not(summary) {
     var lib = capNum(f.library);
     return [
       ["Saved workouts", shelfN(f.library), shelfN(p.library), mine && lib ? [held + " saved", held >= lib] : null],
-      ["Full video reads", month(f.month_reads), month(p.month_reads), used("reads")],
+      // Named for what Plus can actually read: TikTok video (the save-flow audit's
+      // S2; Instagram and YouTube give no video to read, so no row promises it).
+      ["Full TikTok video reads", month(f.month_reads), month(p.month_reads), used("reads")],
       ["Pumpy coach", has("pumpy", "free") ? "Included" : "\u2014", has("pumpy", "plus") ? "Included" : "\u2014", null],
       ["Explanations and swaps", month(f.month_helpers), month(p.month_helpers), used("helpers")],
       ["Uploads", month(f.month_uploads), month(p.month_uploads), used("uploads")],

@@ -210,8 +210,8 @@ function assertTable(mine) {
   const month = (n) => n === null ? 'No limit' : n === 0 ? '—' : n.toLocaleString() + ' a month';
   assert.equal(by['Saved workouts'].basic, String(CAPS.free.library));
   assert.equal(by['Saved workouts'].plus, 'No limit');
-  assert.equal(by['Full video reads'].basic, month(CAPS.free.month_reads));
-  assert.equal(by['Full video reads'].plus, month(CAPS.plus.month_reads));
+  assert.equal(by['Full TikTok video reads'].basic, month(CAPS.free.month_reads));
+  assert.equal(by['Full TikTok video reads'].plus, month(CAPS.plus.month_reads));
   assert.equal(by['Explanations and swaps'].basic, month(CAPS.free.month_helpers));
   assert.equal(by['Explanations and swaps'].plus, month(CAPS.plus.month_helpers));
   assert.equal(by['Uploads'].basic, month(CAPS.free.month_uploads));
@@ -223,7 +223,7 @@ function assertTable(mine) {
   assert(rows.every((r) => r.hdr === 'row'), 'every label is a row header');
   if (mine) {
     assert.equal(by['Saved workouts'].used, '5 saved');
-    assert.equal(by['Full video reads'].used, '2 of 3 used');
+    assert.equal(by['Full TikTok video reads'].used, '2 of 3 used');
     assert.equal(by['Explanations and swaps'].used, '19 of 19 used');
     assert.equal(by['Uploads'].used, '0 of 2 used');
   } else assert(rows.every((r) => !r.used), 'no Basic usage on a Plus account');

@@ -883,7 +883,7 @@ export const MARKUP_BODY = String.raw`</head>
   <div class="grabber"></div>
   <div class="planctx hide" id="planctx"></div>
   <h2>Spotter Plus</h2>
-  <p class="lede">Keep every workout you save, read videos in full, and train with Pumpy, your coach.</p>
+  <p class="lede">Keep every workout you save, read TikTok videos in full, and train with Pumpy, your coach.</p>
   <div class="plangood" id="plangood"></div>
   <div id="planbox">
     <div class="plancards" id="plancards" role="radiogroup" aria-label="Billing period"></div>
