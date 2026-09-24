@@ -18394,12 +18394,20 @@ export const APP = String.raw`
   // a ruler-straight swipe ever got through, which is exactly what the owner
   // reported about Plan.
   //
-  // So .pages declares no touch-action, which makes WebKit wait for a verdict on
-  // every touchmove, and the non-passive listener below gives it one: while we
-  // hold a horizontal lock the touch is cancelled, the scroller never sees the
-  // gesture, and there is no pointercancel left to lose. Pointer events are
-  // dispatched before the touch that caused them, so the axis chosen in
-  // pointermove is already known to the touchmove that follows it.
+  // So .pages declares no touch-action and the non-passive listener below holds
+  // the touch once we have locked horizontal. Pointer events are dispatched
+  // before the touch that caused them, so the axis chosen in pointermove is
+  // already known to the touchmove that follows it.
+  //
+  // What that listener cannot do on iOS is win a race. WebKit keeps UIKit's pans
+  // waiting for the FIRST touchmove of a touch only (WebPageProxy.cpp,
+  // m_touchMovePreventionState); the lock comes eight pixels later, and a
+  // scroll view that began a pan in between would cancel our pointer on the
+  // spot (WKWebViewIOS.mm, axesToPreventScrollingForPanGestureInScrollView). A
+  // page only scrolls vertically, and on the iPhone 16e simulator its scroll
+  // view never took a sideways drag; .page in style.ts spells that out (no
+  // sideways overflow, sideways overscroll left to the parent) so that no stray
+  // overflow or overscroll setting can ever hand it one.
   //
   // The verdict is taken once, at the moment the finger clears the slop, and it
   // is deliberately generous: 45 degrees normally, up to 65 when whatever is
@@ -18414,7 +18422,8 @@ export const APP = String.raw`
   var PART = 0.4;         // of a page dragged, past which a slow release commits
   var LEAN = 2.14;        // tan 65deg: the most a drag may lean and still be sideways
   var LEAN_Y = 1.43;      // tan 55deg: the lean allowed over content that could scroll
-  var drag = null;
+  var STALE = 2000;       // ms a held drag may go without a pointer event before it is let go
+  var drag = null, dragDog = 0;
 
   // Fields, and anything that says so: places where a sideways drag already
   // means something else. The chip rows used to be listed here and so did the
@@ -18484,16 +18493,64 @@ export const APP = String.raw`
     t = setTimeout(off, 350);
   }
 
+  // A drag ends only when its pointerup or pointercancel reaches .pages, and
+  // while one was held every new touch used to be refused. So a drag whose end
+  // never arrived turned the pager off until the app was killed, which fits the
+  // owner's report that swiping came back only after he reset the app. Nothing
+  // guarantees that end: a render can take the node the finger went down on out
+  // of the page (WebKit still sent the pointerup on; the touchend it lost), and
+  // an interruption, whether the app sent away, Notification Centre or a call,
+  // can end a touch the page never hears about. The iPhone 16e simulator
+  // delivered the end in every case we could drive, so the rule is not to
+  // depend on it: a held drag is let go of as soon as anything says its finger
+  // has gone, which is a new first finger, the page hidden or shown, the window
+  // losing focus, the shell going inactive, a touchcancel, or two seconds
+  // without a word from the pointer. It settles on the nearest page if it had
+  // moved the track.
+  function dropStaleDrag() {
+    var d = drag;
+    if (!d) return;
+    drag = null;
+    clearTimeout(dragDog);
+    if (d.raf) cancelAnimationFrame(d.raf);
+    if (!d.lock) return;
+    try { pagesEl.releasePointerCapture(d.id); } catch (err) { /* already gone */ }
+    var near = clamp(Math.round(pos / pageW), 0, LAST);
+    commit(near);
+    springTo(near * pageW, 0);
+  }
+
+  // The two seconds, and only before the drag has chosen sideways. A finger
+  // resting there sends nothing, so an unlocked drag that goes quiet is most
+  // likely one whose lift was lost, and two still seconds are not a swipe. Once
+  // it has locked, a still finger is somebody holding a page half-turned on
+  // purpose, as they always could: that drag is let go only by the lift or by
+  // the proofs above that the finger is gone (a new first finger, the page
+  // hidden, the window blurred, a cancel), never by the clock.
+  function watchDrag() {
+    clearTimeout(dragDog);
+    if (!drag || drag.lock) return;
+    dragDog = setTimeout(function () {
+      if (drag && now() - drag.seen >= STALE) dropStaleDrag(); else watchDrag();
+    }, Math.max(16, STALE - (now() - drag.seen)));
+  }
+
   pagesEl.addEventListener("pointerdown", function (e) {
     if (e.pointerType !== "touch" && e.pointerType !== "pen") return;
-    if (drag || overlayShowing()) return;
+    // A second finger joining a live drag is not a new drag. A first finger is
+    // proof that the old one lifted, and so is any finger once the old drag has
+    // gone quiet: an engine that lost the lift may still count that touch as down.
+    if (drag && !e.isPrimary && now() - drag.seen < STALE) return;
+    dropStaleDrag();
+    if (overlayShowing()) return;
     if (noDragIn(e.target)) return;
     // Safari's back gesture starts at the very edge. Taking it over inside a
     // browser tab would trap the user on the page; installed to the home screen
     // there is no such gesture and the whole width is ours.
     if (!standalone() && e.clientX < 24) return;
-    drag = { id: e.pointerId, x: e.clientX, y: e.clientY, from: idx, lock: false,
+    drag = { id: e.pointerId, x: e.clientX, y: e.clientY, from: idx, lock: false, seen: now(),
       dx: 0, pos0: pos, raf: 0, lockT: 0, on: e.target, s: [{ t: now(), x: e.clientX }] };
+    watchDrag();
   });
 
   function dragFrame() {
@@ -18505,6 +18562,7 @@ export const APP = String.raw`
 
   pagesEl.addEventListener("pointermove", function (e) {
     if (!drag || e.pointerId !== drag.id) return;
+    drag.seen = now();
     var dx = e.clientX - drag.x, dy = e.clientY - drag.y;
     if (!drag.lock) {
       var ax = Math.abs(dx), ay = Math.abs(dy);
@@ -18546,11 +18604,11 @@ export const APP = String.raw`
     if (!drag.raf) drag.raf = requestAnimationFrame(dragFrame);
   });
 
-  // The whole reason .pages can drop touch-action. WebKit holds the scroll until
-  // this has run, and the pointermove above has already chosen the axis by the
-  // time it does, so a locked drag simply takes the touch off the scroller. The
-  // pull to refresh keeps its own passive listeners on this same element: they
-  // read the gesture, this one is the only one that answers for it.
+  // The whole reason .pages can drop touch-action: once the drag has locked,
+  // every touchmove says so, which WebKit takes as the page claiming the touch
+  // (WKContentViewInteraction.mm, _touchEvent:preventsNativeGestures:). The pull
+  // to refresh keeps its own passive listeners on this same element: they read
+  // the gesture, this one is the only one that answers for it.
   pagesEl.addEventListener("touchmove", function (e) {
     if (drag && drag.lock && e.cancelable) e.preventDefault();
   }, { passive: false });
@@ -18559,6 +18617,7 @@ export const APP = String.raw`
     if (!drag || (e && e.pointerId !== drag.id)) return;
     var d = drag;
     drag = null;
+    clearTimeout(dragDog);
     if (d.raf) cancelAnimationFrame(d.raf);
     if (!d.lock) return;
     try { pagesEl.releasePointerCapture(d.id); } catch (err) { /* already gone */ }
@@ -18620,6 +18679,16 @@ export const APP = String.raw`
 
   pagesEl.addEventListener("pointerup", function (e) { endDrag(e, false); });
   pagesEl.addEventListener("pointercancel", function (e) { endDrag(e, true); });
+
+  // The rest of "its finger has gone" (dropStaleDrag). A touchcancel is a
+  // cancel even when the pointercancel that should have come with it did not
+  // reach .pages, so it ends the drag on a cancel's terms. The others mean the
+  // page stopped being the thing under the finger.
+  window.addEventListener("touchcancel", function () { if (drag) endDrag(null, true); }, true);
+  document.addEventListener("visibilitychange", dropStaleDrag);
+  window.addEventListener("pageshow", dropStaleDrag);
+  window.addEventListener("blur", dropStaleDrag);
+  window.addEventListener("spotter:native-state", dropStaleDrag);
 
   // ---------- the tab bar ----------
   //

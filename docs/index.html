@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-wXIWwHGmsLQVCBEEISEw2CUQCTuhO7SEddN4zawDlpE=' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/ https://challenges.cloudflare.com https://accounts.google.com/gsi/client https://appleid.cdn-apple.com/appleauth/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://api.fontshare.com https://accounts.google.com/gsi/style; font-src 'self' data: https://fonts.gstatic.com https://cdn.fontshare.com; img-src 'self' data: blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://i.ytimg.com https://simeonrinkenberger.github.io; media-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://simeonrinkenberger.github.io; connect-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co wss://mtzevoxxpsktmrbbuxva.supabase.co https://accounts.google.com/gsi/; frame-src https://www.tiktok.com https://www.instagram.com https://www.youtube.com https://www.youtube-nocookie.com https://challenges.cloudflare.com https://accounts.google.com/gsi/ https://appleid.apple.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-Ubx4FT7mI2A+BLO+icALMaeQQoOPefvCnF1k/QpS+CY=' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/ https://challenges.cloudflare.com https://accounts.google.com/gsi/client https://appleid.cdn-apple.com/appleauth/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://api.fontshare.com https://accounts.google.com/gsi/style; font-src 'self' data: https://fonts.gstatic.com https://cdn.fontshare.com; img-src 'self' data: blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://i.ytimg.com https://simeonrinkenberger.github.io; media-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://simeonrinkenberger.github.io; connect-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co wss://mtzevoxxpsktmrbbuxva.supabase.co https://accounts.google.com/gsi/; frame-src https://www.tiktok.com https://www.instagram.com https://www.youtube.com https://www.youtube-nocookie.com https://challenges.cloudflare.com https://accounts.google.com/gsi/ https://appleid.apple.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="google-site-verification" content="unLzcq6TBz9Bm6q4KHpbTmZ88dQ_tTnViacVX5BLzS0">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <title>Spotter by Quarterdeck Collective — save any workout video</title>
@@ -131,7 +131,7 @@ body {
   background-color: var(--paper);
   color: var(--ink);
   font-family: var(--sans);
-  overscroll-behavior-y: none;
+  overscroll-behavior: none;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -713,8 +713,10 @@ h1 {
 .page {
   flex: 0 0 100%;
   height: 100%;
+  overflow-x: hidden;
   overflow-y: auto;
-  overscroll-behavior: contain;
+  overscroll-behavior-x: auto;
+  overscroll-behavior-y: contain;
   -webkit-overflow-scrolling: touch;
   padding-bottom: calc(var(--ptab, 78px) + 24px);
 }
@@ -20238,7 +20240,7 @@ details.details-moving > :not(summary) {
     chromeRO.observe(hdrEl, border), chromeRO.observe(tabbar, border), chromeRO.observe(pagesEl, border);
   }
   window.addEventListener("resize", measureChrome), window.addEventListener("orientationchange", measureChrome), window.addEventListener("pageshow", measureChrome), window.visualViewport && window.visualViewport.addEventListener("resize", measureChrome);
-  var FLING = 350, SLOP = 8, VWIN = 100, QUICK = 300, QUICKPX = 30, PART = 0.4, LEAN = 2.14, LEAN_Y = 1.43, drag = null;
+  var FLING = 350, SLOP = 8, VWIN = 100, QUICK = 300, QUICKPX = 30, PART = 0.4, LEAN = 2.14, LEAN_Y = 1.43, STALE = 2e3, drag = null, dragDog = 0;
   function noDragIn(node) {
     return !!(node && node.closest && node.closest(
       "input, textarea, select, [contenteditable], [data-noswipe]"
@@ -20277,26 +20279,44 @@ details.details-moving > :not(summary) {
     }
     document.addEventListener("click", eat, !0), t = setTimeout(off, 350);
   }
+  function dropStaleDrag() {
+    var d = drag;
+    if (d && (drag = null, clearTimeout(dragDog), d.raf && cancelAnimationFrame(d.raf), !!d.lock)) {
+      try {
+        pagesEl.releasePointerCapture(d.id);
+      } catch (err) {
+      }
+      var near = clamp(Math.round(pos / pageW), 0, LAST);
+      commit(near), springTo(near * pageW, 0);
+    }
+  }
+  function watchDrag() {
+    clearTimeout(dragDog), !(!drag || drag.lock) && (dragDog = setTimeout(function() {
+      drag && now() - drag.seen >= STALE ? dropStaleDrag() : watchDrag();
+    }, Math.max(16, STALE - (now() - drag.seen))));
+  }
   pagesEl.addEventListener("pointerdown", function(e) {
-    e.pointerType !== "touch" && e.pointerType !== "pen" || drag || overlayShowing() || noDragIn(e.target) || !standalone() && e.clientX < 24 || (drag = {
+    e.pointerType !== "touch" && e.pointerType !== "pen" || drag && !e.isPrimary && now() - drag.seen < STALE || (dropStaleDrag(), !overlayShowing() && (noDragIn(e.target) || !standalone() && e.clientX < 24 || (drag = {
       id: e.pointerId,
       x: e.clientX,
       y: e.clientY,
       from: idx,
       lock: !1,
+      seen: now(),
       dx: 0,
       pos0: pos,
       raf: 0,
       lockT: 0,
       on: e.target,
       s: [{ t: now(), x: e.clientX }]
-    });
+    }, watchDrag())));
   });
   function dragFrame() {
     drag && (drag.raf = 0, pos = bandPos(drag.pos0 - drag.dx), paint());
   }
   pagesEl.addEventListener("pointermove", function(e) {
     if (!(!drag || e.pointerId !== drag.id)) {
+      drag.seen = now();
       var dx = e.clientX - drag.x, dy = e.clientY - drag.y;
       if (!drag.lock) {
         var ax = Math.abs(dx), ay = Math.abs(dy);
@@ -20327,7 +20347,7 @@ details.details-moving > :not(summary) {
   function endDrag(e, cancelled) {
     if (!(!drag || e && e.pointerId !== drag.id)) {
       var d = drag;
-      if (drag = null, d.raf && cancelAnimationFrame(d.raf), !!d.lock) {
+      if (drag = null, clearTimeout(dragDog), d.raf && cancelAnimationFrame(d.raf), !!d.lock) {
         try {
           pagesEl.releasePointerCapture(d.id);
         } catch (err) {
@@ -20351,7 +20371,9 @@ details.details-moving > :not(summary) {
     endDrag(e, !1);
   }), pagesEl.addEventListener("pointercancel", function(e) {
     endDrag(e, !0);
-  });
+  }), window.addEventListener("touchcancel", function() {
+    drag && endDrag(null, !0);
+  }, !0), document.addEventListener("visibilitychange", dropStaleDrag), window.addEventListener("pageshow", dropStaleDrag), window.addEventListener("blur", dropStaleDrag), window.addEventListener("spotter:native-state", dropStaleDrag);
   var tabTouched = 0;
   function tabTap(i) {
     if (i === idx) {
