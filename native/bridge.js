@@ -163,29 +163,9 @@ async function boot() {
   if (!Capacitor.isNativePlatform()) throw new Error('Native bundle requires Capacitor');
   Object.defineProperty(navigator, 'share', { configurable: true, value: share });
   Object.defineProperty(navigator, 'canShare', { configurable: true, value: data => !data.files || data.files.every(f => f instanceof File && f.size <= 25 * 1024 * 1024) });
-  // Clear any Keychain item surviving uninstall before restoring this account.
-  await configureSharing(null).catch(ignore);
-  // Before app.js exists, so the Supabase client it builds reads the session
-  // from its new home: moves a pre-upgrade session out of Preferences, or
-  // clears one that outlived the install that owned it.
-  await session.prepare();
-  const saved = await Preferences.get({ key: 'spotter_draft' });
-  if (saved.value) localStorage.setItem('spotter_draft', saved.value);
   const appearance = matchMedia('(prefers-color-scheme: dark)');
   const style = () => StatusBar.setStyle({ style: appearance.matches ? Style.Dark : Style.Light }).catch(ignore);
   style(); appearance.addEventListener('change', style);
-  await installKeyboard(Keyboard, window, document, { stillFrame: !android });
-  // Once, at boot: on iOS this keeps a prepared UISelectionFeedbackGenerator so
-  // the first segment tap of a session ticks as fast as the tenth, and on Android
-  // it arms the selection waveform. selectionEnd is never called — ending it would
-  // throw the generator away and put the warm-up cost back on the next tap.
-  await Haptics.selectionStart().catch(ignore);
-  await App.addListener('appStateChange', ({ isActive }) => window.dispatchEvent(new CustomEvent('spotter:native-state', { detail: { isActive } })));
-  // spotter:// arrives from a widget tap, a notification action or a Live
-  // Activity while the app is already up. The page decides what each route
-  // means; the shell only forwards what it was handed.
-  await App.addListener('appUrlOpen', ({ url }) => window.dispatchEvent(new CustomEvent('spotter:open-url', { detail: { url } })));
-  await Browser.addListener('browserFinished', () => window.dispatchEvent(new Event('focus')));
   document.addEventListener('click', event => {
     const a = event.target.closest('a[href]');
     if (!a || a.download) return;
@@ -195,30 +175,61 @@ async function boot() {
       event.preventDefault(); window.SpotterNative.open('https://simeonrinkenberger.github.io/spotter/' + url.pathname.split('/').pop());
     }
   }, true);
-  if (android) {
-    document.documentElement.classList.add('android');
-    await App.addListener('backButton', () => {
-      const field = document.activeElement;
-      if (window.SpotterNative.keyboardVisible && field?.matches('input, textarea, [contenteditable="true"]') && field.getClientRects().length) {
-        field.blur();
-        window.SpotterNative.keyboardVisible = false;
-        Keyboard.hide().catch(ignore);
-        return;
+  if (android) document.documentElement.classList.add('android');
+  // Every call below is its own round trip across the bridge and none of them
+  // needs another's answer, so they go out together: one after another they
+  // were 40-43 ms of every cold launch before app.js was even appended
+  // (AUDIT-SPEED C8, simulator). What app.js needs is that all of them have
+  // landed before it runs, and they have: it is appended after the whole set.
+  await Promise.all([
+    // Clear any Keychain item surviving uninstall before restoring this account.
+    configureSharing(null).catch(ignore),
+    // Before app.js exists, so the Supabase client it builds reads the session
+    // from its new home: moves a pre-upgrade session out of Preferences, or
+    // clears one that outlived the install that owned it.
+    session.prepare(),
+    Preferences.get({ key: 'spotter_draft' }).then(saved => { if (saved.value) localStorage.setItem('spotter_draft', saved.value); }),
+    installKeyboard(Keyboard, window, document, { stillFrame: !android }),
+    // Once, at boot: on iOS this keeps a prepared UISelectionFeedbackGenerator so
+    // the first segment tap of a session ticks as fast as the tenth, and on Android
+    // it arms the selection waveform. selectionEnd is never called — ending it would
+    // throw the generator away and put the warm-up cost back on the next tap.
+    Haptics.selectionStart().catch(ignore),
+    App.addListener('appStateChange', ({ isActive }) => window.dispatchEvent(new CustomEvent('spotter:native-state', { detail: { isActive } }))),
+    // spotter:// arrives from a widget tap, a notification action or a Live
+    // Activity while the app is already up. The page decides what each route
+    // means; the shell only forwards what it was handed.
+    App.addListener('appUrlOpen', ({ url }) => window.dispatchEvent(new CustomEvent('spotter:open-url', { detail: { url } }))),
+    Browser.addListener('browserFinished', () => window.dispatchEvent(new Event('focus'))),
+    android ? androidShell() : null,
+    // A cold launch from a widget or a notification has its URL waiting before any
+    // listener could exist, so it is parked the way an Android share is and spent
+    // by app.ts once there is a signed-in library to open something in.
+    App.getLaunchUrl().catch(() => null).then(launch => {
+      if (launch && typeof launch.url === 'string' && launch.url.startsWith('spotter://')) {
+        sessionStorage.setItem('spotter_open_pending', launch.url);
       }
-      if (document.querySelector('.sheet.open, #detail.open, #workout.open')) history.back();
-      else AndroidHost.background().catch(ignore);
-    });
-    await AndroidHost.addListener('sharedUrl', ({ url }) => window.dispatchEvent(new CustomEvent('spotter:shared-url', { detail: { url } })));
-    const pending = await AndroidHost.takeShare();
-    if (pending.url) sessionStorage.setItem('spotter_share_pending', pending.url);
-  }
-  // A cold launch from a widget or a notification has its URL waiting before any
-  // listener could exist, so it is parked the way an Android share is and spent
-  // by app.ts once there is a signed-in library to open something in.
-  const launch = await App.getLaunchUrl().catch(() => null);
-  if (launch && typeof launch.url === 'string' && launch.url.startsWith('spotter://')) {
-    sessionStorage.setItem('spotter_open_pending', launch.url);
-  }
+    }),
+  ]);
   const script = document.createElement('script'); script.src = 'app.js'; document.body.appendChild(script);
+}
+
+// Android's own half of the boot, in its own order: the share listener exists
+// before the share waiting from a cold launch is taken.
+async function androidShell() {
+  await App.addListener('backButton', () => {
+    const field = document.activeElement;
+    if (window.SpotterNative.keyboardVisible && field?.matches('input, textarea, [contenteditable="true"]') && field.getClientRects().length) {
+      field.blur();
+      window.SpotterNative.keyboardVisible = false;
+      Keyboard.hide().catch(ignore);
+      return;
+    }
+    if (document.querySelector('.sheet.open, #detail.open, #workout.open')) history.back();
+    else AndroidHost.background().catch(ignore);
+  });
+  await AndroidHost.addListener('sharedUrl', ({ url }) => window.dispatchEvent(new CustomEvent('spotter:shared-url', { detail: { url } })));
+  const pending = await AndroidHost.takeShare();
+  if (pending.url) sessionStorage.setItem('spotter_share_pending', pending.url);
 }
 boot().catch(() => { document.body.textContent = 'Spotter could not open local storage. Close and reopen the app.'; });
