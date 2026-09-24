@@ -236,11 +236,13 @@ enum SharedLink {
         if let said = said {
             // A refusal about the link itself (400, 413, blocked) or a daily or
             // monthly allowance (a limit that names its kind) says the same thing
-            // on a second tap. The request-level refusal (kind "request": busy,
-            // the burst) and a busy upload permit (no kind) clear in moments.
+            // on a second tap. Of the request-level refusals (kind "request") only
+            // busy and the per-minute burst clear in moments — "daily" and the
+            // credit caps do not — and a busy upload permit (no kind) clears too.
             let kind = body["kind"] as? String
+            let passing = kind == "request" ? (code == "busy" || code == "minute") : kind == nil
             let final = status == 400 || status == 413 || body["status"] as? String == "blocked"
-                || (body["status"] as? String == "limit" && kind != nil && kind != "request")
+                || (body["status"] as? String == "limit" && !passing)
             return Failure(message: said, retry: !final)
         }
         return status == 403

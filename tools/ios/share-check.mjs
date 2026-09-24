@@ -244,6 +244,8 @@ precondition(SharedLink.failure(status: 429, body: ["status":"limit","kind":"req
 precondition(!SharedLink.failure(status: 429, body: ["status":"limit","kind":"library","message":"Your library is full."]).retry)
 precondition(!SharedLink.failure(status: 429, body: ["status":"limit","kind":"saves","message":"That is today's 30."]).retry)
 precondition(SharedLink.failure(status: 429, body: ["status":"limit","message":"Uploads are busy right now. Please try again later."]).retry, "a busy upload permit clears")
+precondition(!SharedLink.failure(status: 429, body: ["status":"limit","kind":"request","code":"daily","message":"You have reached the limit for now. Please try again later."]).retry, "a daily admission cap does not clear in seconds")
+precondition(!SharedLink.failure(status: 429, body: ["status":"limit","kind":"request","code":"credits_month","message":"x"]).retry)
 precondition(!SharedLink.failure(status: 400, body: ["status":"error","message":"No workout link found in what was shared."]).retry)
 precondition(!SharedLink.failure(status: 400, body: ["status":"blocked","message":"private address"]).retry)
 precondition(SharedLink.failure(status: 500, body: ["status":"error","message":"Something broke."]).retry)

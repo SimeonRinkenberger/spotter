@@ -161,7 +161,7 @@ final class ShareViewController: UIViewController {
             // A link always wins over a file in the same share, as it did before
             // files were accepted: it is free to read, and it is the post.
             target = .video(movie)
-            linkLabel.text = movie.suggestedName
+            linkLabel.text = movie.suggestedName ?? "A video from your library"
         } else {
             spinner.stopAnimating()
             stop(found.movies.isEmpty ? SharedLink.noLinkMessage : SharedLink.oneVideoMessage)
