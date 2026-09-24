@@ -7861,10 +7861,16 @@ async function userEmailFromBearer(req: Request): Promise<string> {
 
 // The long-lived per-user key used by the iOS Shortcut. Hex-validated before it
 // ever reaches a PostgREST filter.
-async function userFromIngestKey(req: Request, url: URL): Promise<string | null> {
+//
+// The row it finds is the person's profile, so it brings back the three columns
+// every metered route reads next (profileRow) and hands them over in `seen`: the
+// Share Extension's save used to read the same row twice, one hop after the
+// other, and on a fresh isolate that second hop sat in front of the config read.
+async function userFromIngestKey(req: Request, url: URL, seen?: { profile?: unknown }): Promise<string | null> {
   const key = (req.headers.get("x-ingest-key") ?? url.searchParams.get("key") ?? "").trim();
   if (!/^[0-9a-f]{32}$/.test(key)) return null;
-  const rows = await dbSelect("profiles", `ingest_key=eq.${key}&select=id`);
+  const rows = await dbSelect("profiles", `ingest_key=eq.${key}&select=id,plan,limits,settings`);
+  if (seen && rows[0]) seen.profile = rows[0];
   return rows[0]?.id ?? null;
 }
 
@@ -14765,16 +14771,21 @@ function profileRow(userId: string): Promise<any> {
 
 async function guardedUserRequest(
   req: Request, path: string, userId: string, cors: Cors, handle: () => Promise<Response>,
+  profile?: unknown,
 ): Promise<Response> {
   const aiRoute = req.method === "POST" && (/^\/api\/(ingest|explain|swap|demo-video|uploads\/authorize|pumpy\/chat)$/.test(path) || /\/(reprocess|media)$/.test(path));
   if (!aiRoute) return await aiActor.run({ userId, workKey: crypto.randomUUID() }, handle);
-  return await profileMemo.run({ userId }, async () => {
-  const consentProfile = await profileRow(userId);
+  // `profile` is the row the ingest key's lookup already read in this request
+  // (userFromIngestKey), so the memo starts with it rather than reading it again.
+  return await profileMemo.run({ userId, row: profile ? Promise.resolve(profile) : undefined }, async () => {
+  // The consent read and the config wait are independent, so they overlap: on a
+  // fresh isolate the config read used to start only once the profile was back.
+  // ensureConfig never throws, so a refusal below leaves nothing unobserved.
+  const [consentProfile] = await Promise.all([profileRow(userId), ensureConfig()]);
   if (!aiConsented(consentProfile?.settings)) {
     return json({ status: "error", code: "ai_consent_required",
       message: "Allow AI processing in Spotter → Settings → Data & privacy before using AI features." }, 403, cors);
   }
-  await ensureConfig();
   const uc = await capsFor(userId);
   const scope = scopeFor(path, path.endsWith("/authorize") && await isSaveAuthorize(req));
   const meter = scope === "chat" ? await pumpyMeter(userId) : null;
@@ -15474,11 +15485,18 @@ Deno.serve(async (req: Request) => {
     // `/media` takes the key too, narrowly: only the Share Extension's frames for
     // a save it held, and "Add the video" for a card the person owns. Every other
     // use of that route still needs the bearer (handleReadVideo, `viaKey`).
+    // A save on a fresh isolate reads app_config before it can do anything else
+    // (ensureConfig, in the guard). Started here it runs beside auth instead of
+    // after the profile read: every share from the phone lands minutes apart, so
+    // almost every one is the first request of its isolate. Not awaited; the
+    // guard waits for this same refresh, and models() never throws.
+    if (req.method === "POST" && FREE_THROTTLED.has(path)) models();
     let userId = await userFromBearer(req);
     let viaKey = false;
+    const keyed: { profile?: unknown } = {};
     if (!userId && (path === "/api/ingest" || path === "/api/ingest/prepare" || path === "/api/uploads/authorize" ||
         path === "/api/ai-consent" || (req.method === "POST" && MEDIA_PATH_RE.test(path)))) {
-      userId = await userFromIngestKey(req, url);
+      userId = await userFromIngestKey(req, url, keyed);
       viaKey = !!userId;
     }
     if (!userId) return json({ status: "error", message: "Sign in to use Spotter." }, 401, cors);
@@ -15650,7 +15668,7 @@ Deno.serve(async (req: Request) => {
     }
 
     return json({ status: "error", message: "Not found" }, 404, cors);
-    });
+    }, keyed.profile);
   } catch (e) {
     if (e instanceof GuardError) return json({ status: "limit", code: e.reason, message: e.reason === "request_too_large" ? "That request is too large." : e.reason === "user_monthly_budget" ? "Your monthly AI allowance is used up. It resets on the first of next month. Your saved workouts are still available." : "AI reading is paused for now. Your saved workouts are still available." }, e.reason === "request_too_large" ? 413 : 429, cors);
     console.error("unhandled", e);

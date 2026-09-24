@@ -793,7 +793,7 @@ function check(ok: unknown, what: string): void {
   check(k.S.reached && r.status === 400, "CR-2: with the bearer, every other body still reaches the old path");
   check(k.MEDIA_PATH_RE.test("/api/workouts/" + ID + "/media") && !k.MEDIA_PATH_RE.test("/api/workouts/" + ID + "/reprocess"),
     "CR-2: the key's /media match is that route only");
-  check(/path === "\/api\/ai-consent" \|\| \(req\.method === "POST" && MEDIA_PATH_RE\.test\(path\)\)\)\) \{\s*\n\s*userId = await userFromIngestKey\(req, url\);\s*\n\s*viaKey = !!userId;/.test(SRC) &&
+  check(/path === "\/api\/ai-consent" \|\| \(req\.method === "POST" && MEDIA_PATH_RE\.test\(path\)\)\)\) \{\s*\n\s*userId = await userFromIngestKey\(req, url, keyed\);\s*\n\s*viaKey = !!userId;/.test(SRC) &&
     /handleReadVideo\(readvid\[1\], userId, req, cors, viaKey\)/.test(SRC),
     "CR-2: the router lets the key reach /media only as viaKey (a bearer never sets it)");
 }
