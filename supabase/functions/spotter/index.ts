@@ -5651,14 +5651,22 @@ function normalizeCard(raw: any, fallback: Card): Card {
 //     a medicine ball, because that is what rows, chest presses and Russian twists
 //     usually use. The video's own statement is the better evidence, so the catalog
 //     only fills the field when the model produced nothing at all.
-function applyCatalog(card: Card): Card {
+//   * `keepIds` is for a card a person already owns (the corrections route). There an
+//     id can be one they picked in the exercise bank, or one Pumpy carried over, for
+//     a movement whose name alone resolves elsewhere or nowhere — "Row" picked as a
+//     dumbbell row. Re-deriving it would silently move that movement's history on
+//     every later edit to anything on the card. So an id the catalog knows is kept
+//     and the muscles come from it; only an exercise with no usable id is resolved
+//     from its name. The route itself sets the id of an exercise it adds or renames.
+function applyCatalog(card: Card, keepIds = false): Card {
   const muscles: string[] = [];
   const equip: string[] = [];
   let matched = 0;
 
   for (const b of card.blocks) {
     for (const ex of b.exercises) {
-      const m = canonicalize(ex.name);
+      const held = keepIds ? catalogById(ex.canonical_id) : null;
+      const m = held ? { id: held.id, entry: held } : canonicalize(ex.name);
       ex.canonical_id = m ? m.id : null;
       if (!m) continue;
       matched++;
@@ -11529,11 +11537,12 @@ async function handleCorrection(id: string, userId: string, req: Request, cors: 
     equipment: Array.isArray(w.equipment) ? w.equipment.slice() : [],
     blocks: kept,
   } as unknown as Card;
-  // Not for a reorder. applyCatalog re-resolves every exercise's canonical_id
-  // from its name, and a reorder changed no exercise: an id a person picked in
-  // the bank, or one Pumpy carried over, has to travel with its movement as it
-  // is, and the muscles and equipment the card hits are the same in any order.
-  if (op !== "reorder") applyCatalog(shim);
+  // Not for a reorder: it changed no exercise, and the muscles and equipment the
+  // card hits are the same in any order. For every other op the ids are kept
+  // (keepIds): the op above already set the id of the one exercise it added or
+  // renamed, and an id a person picked in the bank, or one Pumpy carried over,
+  // has to survive an edit to something else on the card.
+  if (op !== "reorder") applyCatalog(shim, true);
 
   // workouts only. Not video_cache — see the note at the top of this section.
   // confidence and extracted_by are also left exactly as they were: they measure
