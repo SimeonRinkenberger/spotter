@@ -161,6 +161,12 @@ const STUBS = "import { normText } from '" +
   "async function jobStep(_id: string, step: string, patch: any) { spy.seeded = { step, ...patch }; }\n" +
   "async function signUploadTarget(path: string) { spy.signed.push(path); return { upload_url: 'https://sb/storage/v1/object/upload/sign/uploads/' + path + '?token=tok-' + path.slice(-6), token: 'tok-' + path.slice(-6) }; }\n" +
   "function kickWorker() {}\n" +
+  // Admission is asked late now (tools/ai-admission-check.ts drives it); a fixture
+  // account is always admitted, and the held-save and Add-the-video branches have
+  // their own harness (tools/share-harness.ts).
+  "async function admitNow() { return null; }\n" +
+  "async function releaseHeldJob() { return null; }\n" +
+  "async function attachUpload() { throw new Error('attachUpload is not under test here'); }\n" +
   "const OPENAI_API_KEY = 'sk-test'; const GEMINI_API_KEY = 'g-test';\n" +
   "const PACK_EVAL_KEY = 'e'.repeat(32);\n" +
   "function secretEquals(a: string, b: string) { return !!a && !!b && a === b; }\n" +

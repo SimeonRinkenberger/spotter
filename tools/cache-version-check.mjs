@@ -117,6 +117,8 @@ c.mediaCapReached = async () => null;
 c.monthReadsReached = async () => null;
 c.allowanceLimit = async () => ({ status: 'limit', scope: 'month' });
 c.paidAllowed = async () => true;
+// Admission is asked late now and is driven by tools/ai-admission-check.ts.
+c.admitNow = async () => null;
 c.extractLimitResponse = async () => ({ status: 'limit' });
 c.capLimit = async () => ({ status: 'limit' });
 c.dbDelete = async () => { calls.push('dbDelete'); };

@@ -54,6 +54,7 @@
 // Everything else (listing, editing, logs, plan) goes straight to PostgREST from
 // the browser under RLS — this function only holds what needs secrets.
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import { aiActor, createGuardedFetch, GuardError, tokenCost, tokenPrice } from "./ai-guard.ts";
 import { deterministicCombine } from "./pumpy-combine.ts";
 
@@ -628,7 +629,7 @@ function capsFrom(profile: { plan?: unknown; limits?: unknown } | null): UserCap
 async function capsFor(userId: string): Promise<UserCaps> {
   let profile: { plan?: unknown; limits?: unknown } | null = null;
   try {
-    profile = (await dbSelect("profiles", `id=eq.${userId}&select=plan,limits`))[0] ?? null;
+    profile = await profileRow(userId);
   } catch (e) {
     console.error("caps: could not read the plan for", userId, "— using free —", e);
   }
@@ -1265,9 +1266,14 @@ type Parsed = {
   clean: string;       // canonical link, or spotter://upload/<uuid> for an upload
 };
 
+// instagr.am is Instagram's own short host and serves the same paths. `share/` is
+// never a username: /share/reel/<token> names a share token, not a post, and
+// reading the token as a shortcode fetched a post that does not exist (yt-dlp
+// excludes it for the same reason). /reels/audio/<id> is a sound's page.
 function matchInstagram(u: string): Parsed | null {
-  const m = u.match(/instagram\.com\/(?:[A-Za-z0-9_.]+\/)?(reel|reels|p|tv)\/([A-Za-z0-9_-]+)/);
+  const m = u.match(/(?:instagram\.com|instagr\.am)\/(?:(?!share\/)[A-Za-z0-9_.]+\/)?(reel|reels|p|tv)\/([A-Za-z0-9_-]+)/);
   if (!m) return null;
+  if (m[1] === "reels" && m[2] === "audio") return null;
   const kind = m[1] === "reels" ? "reel" : m[1];
   return { platform: "instagram", shortcode: m[2], kind, clean: `https://www.instagram.com/${kind}/${m[2]}/` };
 }
@@ -1277,14 +1283,20 @@ function matchInstagram(u: string): Parsed | null {
 // refuses tiktok.com hostnames, so resolveShare answered null and ingest replied
 // "No workout link found in what was shared." That sentence is the error the owner
 // reported, and this regex is most of the fix.
+//
+// The embed, player and tiktokv.com share shapes name the same id and nothing
+// else, so their canonical link is the watch page with an empty handle: oEmbed
+// and the crawler both answer it (measured 24 Sept), and it matches here again,
+// which the media isolate checks before it will read anything.
 function matchTikTok(u: string): Parsed | null {
-  const m = u.match(/tiktok\.com\/(?:@[^/]+\/(video|photo)|v)\/(\d+)/);
+  const m = u.match(/(?:tiktok\.com\/(?:@[^/]*\/(video|photo)|v|embed(?:\/v2)?|player\/v1)|tiktokv\.com\/share\/video)\/(\d+)/);
   if (!m) return null;
+  const bare = !m[1] && !/tiktok\.com\/v\//.test(u);
   return {
     platform: "tiktok",
     shortcode: `tt-${m[2]}`,
     kind: m[1] === "photo" ? "photo" : "video",
-    clean: u.split("?")[0],
+    clean: bare ? `https://www.tiktok.com/@/video/${m[2]}` : u.split("?")[0],
   };
 }
 
@@ -1327,6 +1339,25 @@ async function webParsed(target: string): Promise<WebParse> {
   return { platform: "web", shortcode: `web-${hex.slice(0, 16)}`, kind: "page", clean };
 }
 
+/**
+ * What to say when a share names no post. A link WAS found in most of these, so
+ * "no workout link found" was the wrong sentence: an expired short link lands on
+ * the platform's home page (vm./vt./t/ all 302 to tiktok.com/?_r=1 once the post
+ * is gone), and an Instagram sound page is a real page that is not a post.
+ */
+function noPostAnswer(shared: string): { status: string; code?: string; message: string } {
+  const link = shared.match(/https?:\/\/[^\s"'<>]+/)?.[0] ?? "";
+  if (/(?:instagram\.com|instagr\.am)\/reels?\/audio\//i.test(link)) {
+    return { status: "error", code: "not_a_post",
+      message: "That is an Instagram sound page, not a post. Open the reel itself and share that." };
+  }
+  if (/^https?:\/\/(?:(?:vm|vt)\.tiktok\.com\/|(?:www\.)?tiktok\.com\/t\/|(?:www\.)?instagram\.com\/share\/)/i.test(link)) {
+    return { status: "error", code: "link_expired",
+      message: "That link no longer opens a post — it may have been deleted. Open the post and share it again." };
+  }
+  return { status: "error", message: "No workout link found in what was shared." };
+}
+
 async function resolveShare(raw: string): Promise<WebParse> {
   const urlMatch = raw.match(/https?:\/\/[^\s"'<>]+/);
   if (!urlMatch) return null;
@@ -1350,12 +1381,24 @@ async function resolveShare(raw: string): Promise<WebParse> {
 
     let loc: string | null = null;
     try {
+      // Instagram answers its share links to a link-preview crawler rather than
+      // to a desktop browser, which gets a script page with no redirect.
+      const insta = /(^|\.)(instagram\.com|instagr\.am)$/i.test(guard.url.hostname);
       const r = await fetch(guard.url.toString(), {
         redirect: "manual",
-        headers: { "User-Agent": DESKTOP_UA, "Accept-Language": "en-US" },
+        headers: { "User-Agent": insta ? CRAWLER_UA : DESKTOP_UA, "Accept-Language": "en-US" },
       });
       loc = r.headers.get("location");
-      await r.body?.cancel();
+      // No redirect, but a page: an Instagram share link names its post in the
+      // page's own og:url (or canonical), which is the only other place it says.
+      if (!loc && insta && r.ok && /^\/share\//.test(guard.url.pathname)) {
+        const html = (await r.text()).slice(0, 400_000);
+        const named = metaTag(html, "og:url") ?? html.match(/<link[^>]+rel="canonical"[^>]+href="([^"]+)"/i)?.[1] ?? null;
+        const hit = named ? matchInstagram(decodeEntities(named)) : null;
+        if (hit) return hit;
+      } else {
+        await r.body?.cancel();
+      }
     } catch (_) { break; }
     if (!loc) break;
     try { target = new URL(loc, guard.url).toString(); } catch { return BLOCKED; }
@@ -1427,6 +1470,12 @@ type Meta = {
   // seeded from the cache has no ORIGINAL url to re-fetch, and storeThumb answers
   // null for that — which would strip the picture off a card that has one.
   thumb_stored?: string | null;
+  // A save made with `frames_pending`: the job is held until the phone's frames
+  // arrive at /media or the hold runs out. Carries no text, so runJob scrapes.
+  hold_frames?: boolean;
+  // "Add the video": this job reads the file at `upload_path` INTO an existing
+  // card rather than making one, and never touches the shared cache.
+  attach?: boolean;
   // The platform answered and says there is no such post — deleted, private, or a
   // code that never existed. Set by a provider only on that positive answer, never
   // on a timeout or a login wall, because it makes the job final at attempt one.
@@ -2133,8 +2182,18 @@ function ttFromUniversalData(html: string): TtRaw | null {
  */
 const TT_OG_NOT_A_HANDLE = /^(make your day|watch|discover|explore|trending|log in|sign up)\b/i;
 
+/**
+ * TikTok's own poster, which the crawler view names as og:image for a video that
+ * is gone. Stored, it became the thumbnail of a "TikTok video" card with nothing
+ * in it — a logo in the public bucket, and a card that looked saved.
+ */
+function ttGenericImage(u: string | null): boolean {
+  return !!u && /\/tiktok-logo\/|\/tiktok-web-common[^/]*\/.*\/static\/images\//i.test(u);
+}
+
 function ttFromOg(html: string): TtRaw | null {
-  const thumb = metaTag(html, "og:image");
+  const og = metaTag(html, "og:image");
+  const thumb = ttGenericImage(og) ? null : og;
   const title = metaTag(html, "og:title");
 
   // "TikTok · handle" is the only author shape observed. The separator match must
@@ -2239,6 +2298,7 @@ async function ttMeta(p: Parsed): Promise<Meta> {
   const used: string[] = [];
   const photo = p.kind === "photo";
   let images: string[] = [];
+  const status: Record<string, number> = {};
 
   for (const s of TT_SOURCES) {
     if (photo && s.videoOnly) continue;
@@ -2246,6 +2306,7 @@ async function ttMeta(p: Parsed): Promise<Meta> {
     // carousel is usually a hashtag line, and the workout is on the pictures.
     if (out.caption && out.thumb && out.author && (!photo || images.length)) break;
     const got = await ttFetchSource(s, id, p.clean);
+    status[s.name] = got.status;
     if (!got.raw) {
       if (got.status && got.status !== 200) console.error("tiktok", s.name, "http", got.status);
       else if (got.error) console.error("tiktok", s.name, got.error);
@@ -2276,6 +2337,13 @@ async function ttMeta(p: Parsed): Promise<Meta> {
   if (images.length) out.images = images;
 
   out.source = used.join(",") || "none";
+  // TikTok answered, and there is no post: oEmbed or the embed refuses the id
+  // outright (400/404, not a timeout or a 403/429 wall) while the watch page
+  // serves only its generic poster. Measured 24 Sept on a nonexistent id: oEmbed
+  // 400, embed/v2 400, crawler page 200 with the TikTok logo and nothing else.
+  const refused = [status.oembed, status["embed-v2"]].some((c) => c === 400 || c === 404);
+  if (refused && status["page-crawler"] === 200 &&
+      !out.caption && !out.thumb && !out.author && !images.length) out.absent = true;
   console.log("tiktok meta", id, photo ? "(photo)" : "", "sources:", out.source,
     "caption:", out.caption?.length ?? 0, "thumb:", !!out.thumb, "author:", out.author ?? "-",
     "slides:", images.length);
@@ -7821,6 +7889,20 @@ async function ingestUpload(
   }
   const filename = typeof body.filename === "string" ? body.filename.slice(0, 160).trim() : "";
 
+  // The Share Extension's second door for a post Spotter cannot watch: a video
+  // file shared from Photos or from Instagram's own Download, with the link it
+  // came from when the host app gave one. A link naming a post this person
+  // already has a card for makes this "Add the video" into THAT card — a read,
+  // not an upload. Anything else is an upload card, exactly as before.
+  if (typeof body.source_url === "string" && body.source_url.trim()) {
+    const src = await resolveShare(body.source_url.slice(0, 4096)).catch(() => null);
+    if (src && src !== BLOCKED) {
+      const w = (await dbSelect("workouts",
+        `user_id=eq.${userId}&shortcode=eq.${encodeURIComponent(src.shortcode)}&select=*`))[0];
+      if (w && attachable(w)) return await attachUpload(w, ref, filename, userId, cors);
+    }
+  }
+
   const [countsR, uploadsR, capsR, libR] = await Promise.allSettled([
     countsFor(userId),
     dbCount("saves_log", `user_id=eq.${userId}&created_at=gte.${utcMidnight()}&kind=eq.upload`),
@@ -7852,6 +7934,10 @@ async function ingestUpload(
       message: "Spotter cannot find that file — the upload did not finish. Try picking it again.",
     }, 404, cors);
   }
+
+  // Admitted here, after every free answer and before the job that reads it.
+  const refused = await admitNow();
+  if (refused) { await deleteUpload(ref.path); return refused; }
 
   const p: Parsed = {
     platform: "upload",
@@ -7923,23 +8009,35 @@ async function ingestUpload(
  * This returns no cached content and never grants premium access. */
 async function handleIngestPrepare(req: Request, userId: string, cors: Cors): Promise<Response> {
   const body = await req.json().catch(() => ({}));
+  // The person's own row does not depend on the link, so it is read while the
+  // link resolves: plan, overrides and consent in one request. Settled into a
+  // value so an early answer below never leaves a rejection unobserved.
+  const profileP = dbSelect("profiles", `id=eq.${userId}&select=plan,limits,settings`)
+    .then((r) => ({ ok: true as const, row: r[0] ?? null }), (e) => ({ ok: false as const, e }));
   const p = await resolveShare(String(body?.url ?? "").slice(0, 4096));
   if (!p || p === BLOCKED || p.platform !== "tiktok" || p.kind === "photo")
     return json({ status: "ok", needs_frames: false }, 200, cors);
   const sc = encodeURIComponent(p.shortcode);
-  const [owned, cached, uc, profile] = await Promise.all([
+  const [owned, cached, heldRows, got] = await Promise.all([
     dbSelect("workouts", `user_id=eq.${userId}&shortcode=eq.${sc}&select=id`),
-    dbSelect("video_cache", `shortcode=eq.${sc}&select=pack,pack_v`), capsFor(userId),
-    dbSelect("profiles", `id=eq.${userId}&select=settings`),
+    dbSelect("video_cache", `shortcode=eq.${sc}&select=pack,pack_v`),
+    // A save made with `frames_pending` is already on the shelf when the
+    // extension asks this, and is waiting for exactly the frames asked about.
+    dbSelect("ingest_jobs", `user_id=eq.${userId}&shortcode=eq.${sc}&status=eq.queued&select=id,hold:meta->hold_frames`),
+    profileP,
   ]);
+  if (!got.ok) throw got.e;
+  const uc = capsFrom(got.row);
+  const held = heldRows.some((r: any) => r.hold === true);
   const eligible = plusPlan(uc.plan) || body?.preview === true;
   const fresh = body?.reread === true && plusPlan(uc.plan);
   // `ai_consent` is for the Share Extension, which has no profile of its own: a
   // save without permission is refused at /api/ingest anyway, and knowing that
   // now means it asks the person first instead of after cutting frames it
   // could not have uploaded.
-  return json({ status: "ok", needs_frames: eligible && (fresh || (!visuallyRead(cached[0]) && (!owned.length || body?.preview === true))),
-    ai_consent: aiConsented(profile[0]?.settings), url: p.clean }, 200, cors);
+  return json({ status: "ok",
+    needs_frames: eligible && (fresh || held || (!visuallyRead(cached[0]) && (!owned.length || body?.preview === true))),
+    ai_consent: aiConsented(got.row?.settings), url: p.clean }, 200, cors);
 }
 
 async function handleIngest(req: Request, userId: string, cors: Cors): Promise<Response> {
@@ -7952,6 +8050,8 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
   // it is checked against the caller's own uid and the shortcode below, after the
   // link has been resolved and there is a shortcode to check it against.
   let rawFrames: unknown = undefined;
+  // The Share Extension saved first and will send frames within FRAMES_HOLD_MS.
+  let framesPending = false;
   const ct = req.headers.get("content-type") ?? "";
   if (ct.includes("json")) {
     let body: Record<string, unknown> | null = null;
@@ -7976,6 +8076,7 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
     const rawCap = typeof body?.caption === "string" ? body.caption : "";
     if (rawCap.trim()) caption = rawCap.slice(0, SUPPLIED_CAPTION_MAX).trim();
     if (body?.frames !== undefined && body?.frames !== null) rawFrames = body.frames;
+    framesPending = body?.frames_pending === true;
   } else {
     shared = (await req.text()).trim();
   }
@@ -7988,7 +8089,7 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
       message: "That link points to a private or internal address, so Spotter will not fetch it.",
     }, 400, cors);
   }
-  if (!p) return json({ status: "error", message: "No workout link found in what was shared." }, 400, cors);
+  if (!p) return json(noPostAnswer(shared), 400, cors);
 
   // The frames block, validated or refused by name.
   //
@@ -8033,23 +8134,28 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
   // cap, is your library full, has anyone extracted this video — asked at once.
   // Sequentially they were round trips on the critical path of a request whose
   // whole purpose is now to return quickly.
-  const [dupeR, countsR, cachedR, capsR, libR] = await Promise.allSettled([
+  //
+  // The preview row is the sixth: premiumAccess asked it one hop later, and asked
+  // for the plan a second time on the way.
+  const [dupeR, countsR, cachedR, capsR, libR, previewR] = await Promise.allSettled([
     dbSelect("workouts", `user_id=eq.${userId}&shortcode=eq.${sc}&select=id,title,ingest_status`),
     countsFor(userId),
     dbSelect("video_cache", `shortcode=eq.${sc}&v=gte.${MIN_USABLE_CARD_V}&select=*`),
     capsFor(userId),
     libraryCount(userId),
+    dbSelect("video_previews", `user_id=eq.${userId}&shortcode=eq.${sc}&month=eq.${new Date().toISOString().slice(0, 7)}-01&select=shortcode`),
   ]);
-  for (const r of [dupeR, countsR, cachedR, capsR, libR]) {
+  for (const r of [dupeR, countsR, cachedR, capsR, libR, previewR]) {
     if (r.status === "rejected") throw r.reason;
   }
   const dupe = (dupeR as PromiseFulfilledResult<any[]>).value;
   const counts = (countsR as PromiseFulfilledResult<Counts>).value;
   const cacheRows = (cachedR as PromiseFulfilledResult<any[]>).value;
-  const visibleCache = cacheForAccess(cacheRows[0], await premiumAccess(userId, p.shortcode));
-  const cached = visibleCache ? [visibleCache] : [];
   const uc = (capsR as PromiseFulfilledResult<UserCaps>).value;
   const held = (libR as PromiseFulfilledResult<number>).value;
+  const premium = plusPlan(uc.plan) || (previewR as PromiseFulfilledResult<any[]>).value.length > 0;
+  const visibleCache = cacheForAccess(cacheRows[0], premium);
+  const cached = visibleCache ? [visibleCache] : [];
 
   // Idempotency, cheap layer. The authoritative one is the unique (user_id,
   // shortcode) constraint inside enqueue_ingest — this only saves a round trip on
@@ -8058,6 +8164,8 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
   if (dupe.length) {
     if (supplied && dupe[0].ingest_status === "failed") {
       if (overCap(counts.extracts, uc.caps.extract)) return extractLimitResponse(cors, uc, counts.extracts);
+      const refused = await admitNow();
+      if (refused) return refused;
       return await requeueWithMeta(dupe[0].id, userId, supplied, cors);
     }
     const processing = dupe[0].ingest_status === "processing";
@@ -8106,7 +8214,7 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
         confidence: typeof card.confidence === "number" ? card.confidence : (c.confidence ?? null),
         extracted_by: card.extracted_by ?? c.extracted_by ?? null,
         read_quality: visuallyRead(c) ? "premium" : "basic", read_plan: c.read_plan ?? "unknown",
-        ingest_status: "ready", ingest_error: visionWarning(card),
+        ingest_status: "ready", ingest_error: visionWarning(card) ?? plusReadHint(p, card, cacheRows[0], premium),
       });
     } catch (e) {
       // Two simultaneous saves of the same cached video by the same user: the
@@ -8115,7 +8223,10 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
       const again = await dbSelect("workouts", `user_id=eq.${userId}&shortcode=eq.${sc}&select=id,title`);
       return await bail(json({ status: "exists", id: again[0]?.id, title: again[0]?.title, message: "Already in your library." }, 200, cors));
     }
-    await logSave(userId, p, meta, card, c.thumb_url, true, false, "save", null);
+    // The ledger row is written after the answer, not before it: the card is
+    // already the person's, and the row is metrics plus the daily save count,
+    // which the insert trigger enforces whenever it lands.
+    background(logSave(userId, p, meta, card, c.thumb_url, true, false, "save", null));
     // `stale` is the cutover signal: a hit on a shape older than this build still
     // costs nothing and is still correct, and counting them is how the owner sees
     // the old cache draining instead of guessing at it.
@@ -8123,7 +8234,7 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
       "served in", Date.now() - t0, "ms");
     // The row is theirs either way — this only decides whether Spotter stops here
     // or goes and reads the video the cached card could not.
-    const upgraded = await upgradeCachedCard(userId, p, c, row.id, cors);
+    const upgraded = await upgradeCachedCard(userId, p, c, row.id, cors, premium, uc);
     if (upgraded) return await bail(upgraded);
     return await bail(json({
       status: "saved", cached: true, id: row.id, title: row.title,
@@ -8132,6 +8243,11 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
   }
 
   if (overCap(counts.extracts, uc.caps.extract)) return await bail(await extractLimitResponse(cors, uc, counts.extracts));
+
+  // Everything above answered without spending; this is where a read is queued,
+  // so this is where the save is admitted.
+  const refused = await admitNow();
+  if (refused) return await bail(refused);
 
   // Cache miss. Everything past here used to happen inline: scrape, model call,
   // thumbnail upload, 5-15 seconds with the user's request held open. Now it is a
@@ -8177,13 +8293,17 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
   const seedMeta: Meta | null = supplied
     ? (frames ? { ...supplied, frames } : supplied)
     : (frames ? { caption: null, thumb: null, author: null, frames } : null);
-  const seeded = seedMeta && q.job_created ? await seedJobMeta(q.job_id, seedMeta) : false;
+  // Saved first, frames after: a new job with no frames yet is held for them.
+  const holding = framesPending && !frames && q.job_created ? await holdForFrames(q.job_id, supplied) : false;
+  const seeded = holding ? !!supplied
+    : seedMeta && q.job_created ? await seedJobMeta(q.job_id, seedMeta) : false;
   if (seedMeta && !q.job_created) {
     // Another save of the same video is already in flight and owns the reading.
     console.log("joined an existing job for", p.shortcode, "— supplied meta not applied");
     if (frames) await deleteSheets(frames);
   }
-  kickWorker();
+  if (holding) console.log("holding", p.shortcode, "job", q.job_id, "for frames,", FRAMES_HOLD_MS, "ms");
+  else kickWorker();
 
   return json({
     status: "processing",
@@ -8192,6 +8312,23 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
     title: provisional,
     message: supplied ? suppliedMessage(supplied, seeded) : "Reading the video…",
   }, 202, cors);
+}
+
+/**
+ * S9: a Basic save of a video whose caption names nothing, when somebody's Plus
+ * read of the same video found the workout. The empty card used to arrive with no
+ * word of that; now it says so, on the card, where "Try a Plus read" already sits.
+ * Only for a TikTok video, the one place a preview can deliver. Null otherwise.
+ */
+const PLUS_READ_HINT = "The caption lists no exercises.";
+
+function plusReadHint(p: Parsed, served: Card, row: any, premium: boolean): string | null {
+  if (premium || p.platform !== "tiktok" || p.kind === "photo") return null;
+  if (countExercises(served) > 0 || !visuallyRead(row) || !row?.card) return null;
+  const n = countExercises(row.card as Card);
+  if (!n) return null;
+  return PLUS_READ_HINT + " A Plus read of the video found " + n + (n === 1 ? " exercise" : " exercises") +
+    " — use one of your free Plus reads to see " + (n === 1 ? "it." : "them.");
 }
 
 /**
@@ -8376,7 +8513,8 @@ async function finishJob(
       source_url: delivered.source_url ?? null,
       confidence: typeof delivered.confidence === "number" ? delivered.confidence : null,
       extracted_by: delivered.extracted_by ?? null,
-      ingest_error: visionWarning(delivered),
+      ingest_error: visionWarning(delivered) ?? (!recipient?.premium && delivered !== card
+        ? plusReadHint(p, delivered, { card, pack: meta.pack, pack_v: PACK_V }, false) : null),
     },
   }) as { status: string; filled: number };
   if (committed.status === "access_changed") throw new Error("Reading access changed before completion; retry with current access");
@@ -8880,6 +9018,83 @@ async function escalateToMedia(
   return { card, meta, ran };
 }
 
+/**
+ * The worker's half of "Add the video".
+ *
+ * The file is read by the upload reader — pack, then the video tier, then
+ * listening — exactly as an uploaded video is, then the card is rebuilt from the
+ * post's own caption plus what the file showed and said, and merged into the
+ * person's card under the never-downgrade rule. The card's title stays theirs.
+ *
+ * Every failure is final and keeps the card: the file is deleted whatever
+ * happens (uploadMeta's finally), so there is nothing a second attempt could
+ * read, and the card is exactly as good as it was before the person tried.
+ * Nothing here reaches video_cache: the meta is marked supplied, which is what
+ * finishJob's shared-basic write and every publish ask.
+ */
+async function runAttachedUpload(job: Job, p: Parsed): Promise<void> {
+  const seed = job.meta!;
+  const keep = (sentence: string, detail: string) =>
+    new SoftFailure(sentence + " This card is unchanged.", detail, { final: true, keepCard: true });
+  const ref = parseUploadPath(seed.upload_path, job.user_id);
+  if (!ref) throw keep("Spotter could not find that video any more — add it again.", "attach: no upload path");
+  const up = uploadParsed("up-" + ref.id);
+  const old = (await dbSelect("workouts",
+    `ingest_job_id=eq.${job.id}&user_id=eq.${job.user_id}&select=id,title,caption,author,thumb_url,blocks,category,muscle_groups,equipment,difficulty,duration_minutes,calories,tags,has_full_workout,extracted_by`))[0] ??
+    { blocks: [] };
+  // The reader sees an upload job: same id and claim, so its stage and its
+  // checkpoint land on this job, and its read is logged under the file's own key.
+  const reader: Job = { ...job, platform: "upload", shortcode: up.shortcode, kind: "upload", url: up.clean,
+    step: "meta", card: null,
+    meta: { caption: null, thumb: null, author: null, upload_path: ref.path, filename: seed.filename } };
+  let read: Meta;
+  try {
+    read = await uploadMeta(up, reader);
+  } catch (e) {
+    if (e instanceof SoftFailure) throw keep(e.userMessage.replace(/\s*Paste the workout text instead\.$/, ""), e.message);
+    if (e instanceof GuardError) throw keep("Spotter's daily budget is spent — add the video again tomorrow.", String(e));
+    throw keep("Spotter could not read that video — add it again in a minute.", String(e).slice(0, 300));
+  }
+  if (aiActor.getStore()?.blocked) {
+    throw keep("Spotter's daily budget is spent — add the video again tomorrow.", "attach: " + aiActor.getStore()!.blocked);
+  }
+
+  const meta: Meta = {
+    caption: old.caption ?? seed.caption ?? null,
+    thumb: null,
+    thumb_stored: old.thumb_url ?? seed.thumb_stored ?? null,
+    author: old.author ?? seed.author ?? null,
+    source: "personal-fallback,upload",
+    supplied: true,
+    topped_up: true,
+    transcript: read.transcript ?? (read.source === "transcript" ? read.caption ?? undefined : undefined),
+    media_source: read.media_source,
+    pack: read.pack,
+    seconds: read.seconds,
+    read_plan: (await capsFor(job.user_id)).plan,
+  };
+  let next: Card;
+  if (reader.card) {
+    // The video tier answered with a finished card; the post's caption still
+    // names the workout better than a model's title for a clip.
+    next = reader.card as Card;
+  } else {
+    next = await buildCard(meta, p, { purpose: "extract", userId: job.user_id });
+  }
+  if (aiActor.getStore()?.blocked) {
+    throw keep("Spotter's daily budget is spent — add the video again tomorrow.", "attach: " + aiActor.getStore()!.blocked);
+  }
+  if (!countExercises(next)) {
+    throw keep("Spotter watched your video and could not make out a workout in it.", "attach: no exercises");
+  }
+  const card = mergeNoDowngrade(old, next, meta, p.platform);
+  if (old.title) card.title = old.title;
+  labelRecommendations(card, meta);
+  console.log("add the video:", p.shortcode, countExercises(old as Card), "->", countExercises(card),
+    "exercise(s), read by", meta.media_source ?? "-", meta.pack ? "(pack)" : "");
+  await finishJob(job, p, meta, card, meta.thumb_stored ?? null, false);
+}
+
 async function runJob(job: Job): Promise<void> {
   return await aiActor.run({ userId: job.user_id, jobId: job.id, workKey: job.shortcode, deadline: Date.now() + 120_000 }, () => runJobGuarded(job));
 }
@@ -8894,6 +9109,11 @@ async function runJobGuarded(job: Job): Promise<void> {
   const ctx: AiCtx = { purpose: "extract", userId: job.user_id };
   const sc = encodeURIComponent(p.shortcode);
   const cacheable = providerFor(p.platform).cacheable;
+
+  // "Add the video": a person's file read into a card they already have. Its own
+  // path from here, because nothing below — the shared cache, the scrape, the
+  // publish — may touch it.
+  if (job.meta?.attach && job.meta?.upload_path) return await runAttachedUpload(job, p);
 
   // A job whose whole purpose is to improve the cached card must not be answered
   // by the cached card. Without this the media job seeded from a cache row would
@@ -8932,7 +9152,15 @@ async function runJobGuarded(job: Job): Promise<void> {
   // happened, it is what the provider needs in order to do its own. Reading it as
   // a finished scrape would give the user a card built from an empty caption and
   // never listen to their video at all.
-  const addressOnly = !!job.meta?.upload_path && !job.meta?.caption;
+  //
+  // The same is true of a meta that holds only the phone's frames — sent with the
+  // save, or promised by `frames_pending` and held for. A contact sheet says
+  // nothing about the caption, the handle or the thumbnail, and reading it as a
+  // finished scrape is how frame saves reached the library with none of the three
+  // (saves_log: meta_source null, caption/thumb/author all false). They are
+  // scraped like any other save and the frames ride along.
+  const framesOnly = !job.meta?.caption && !job.meta?.supplied && !!(job.meta?.frames || job.meta?.hold_frames);
+  const addressOnly = (!!job.meta?.upload_path && !job.meta?.caption) || framesOnly;
   let meta: Meta;
   if (job.meta && !addressOnly) {
     meta = job.meta;
@@ -8948,6 +9176,14 @@ async function runJobGuarded(job: Job): Promise<void> {
     }
   } else {
     meta = await fetchMeta(p, job);     // throws: worth a retry, that is a network fault
+    if (job.meta?.frames && p.platform !== "upload" && !meta.frames) meta.frames = job.meta.frames;
+    // The platform answered that there is no such post. Asking again cannot
+    // change that, and a card that spins for six minutes to say "tap to retry"
+    // is the one outcome worse than saying so now.
+    if (meta.absent) {
+      if (meta.frames) await deleteSheets(meta.frames);
+      throw new SoftFailure(UNAVAILABLE_SENTENCE, "platform says the post is absent", { final: true });
+    }
     await jobStep(job.id, "card", { meta }, job);
   }
 
@@ -9094,6 +9330,25 @@ async function runJobGuarded(job: Job): Promise<void> {
   await finishJob(job, p, meta, card, thumbUrl, degraded);
 }
 
+/**
+ * One running job per person is the rule (claim_ingest_jobs), and nothing woke
+ * the worker when that job ended: two shares two seconds apart took 10 s and
+ * 66 s, the second waiting for pg_cron's next minute. So the end of a job looks
+ * for that person's next one that is due, and wakes the worker if there is one.
+ */
+async function kickIfQueued(userId: string): Promise<void> {
+  try {
+    const next = await dbSelect("ingest_jobs",
+      `user_id=eq.${userId}&status=eq.queued&run_after=lte.${encodeURIComponent(new Date().toISOString())}&select=id&limit=1`);
+    if (next.length) {
+      console.log("job ended with another queued for", userId, "— waking the worker");
+      kickWorker();
+    }
+  } catch (e) {
+    console.error("could not look for the next queued job of", userId, e);
+  }
+}
+
 async function handleWorkerTick(req: Request): Promise<Response> {
   // Not 401: an unauthenticated caller should not learn this route exists.
   if (!secretEquals(req.headers.get("x-worker-secret") ?? "", WORKER_SECRET)) {
@@ -9115,7 +9370,8 @@ async function handleWorkerTick(req: Request): Promise<Response> {
   if (!jobs.length) return json({ status: "ok", claimed: 0 });
 
   console.log("claimed", jobs.length, "job(s):", jobs.map((j) => j.shortcode).join(","));
-  const work = Promise.all(jobs.map((j) => runJob(j).catch((e) => failJob(j, e))));
+  const work = Promise.all(jobs.map((j) =>
+    runJob(j).catch((e) => failJob(j, e)).then(() => kickIfQueued(j.user_id))));
 
   // Return before the work finishes — otherwise the tick is just the old
   // synchronous ingest wearing a different hat. The claim is already committed, so
@@ -9639,6 +9895,187 @@ async function mediaCapReached(userId: string, cap: number | null): Promise<numb
   }
 }
 
+// ---------- "Add the video" ----------
+//
+// Instagram does not let anybody watch a reel from outside it, logged out, and
+// Spotter will not log in or lift a file out of the embed. What Instagram does
+// allow is its own Download on the share sheet, so the person brings the file and
+// Spotter reads it into the card they already have for that post: the same
+// upload reader an uploaded video gets, merged under the never-downgrade rule,
+// counted as one of the month's video reads (Basic's four, Plus's twenty) and
+// never as an upload, and never written to the shared cache — a person's copy of
+// a post is not the post.
+
+/** A card a file can be read into: one that came from a link. */
+function attachable(w: any): boolean {
+  return !!w && w.platform !== "upload" && w.platform !== "pumpy";
+}
+
+/**
+ * Whether this person may spend a video read on this card right now. Null means
+ * yes. `reserve` is false at authorize, where a Basic preview is only counted,
+ * and true at /media, where it is taken — refunded by the job if the read ends
+ * up only heard, or fails.
+ */
+async function attachRefusal(
+  userId: string, shortcode: string, reserve: boolean, cors: Cors,
+): Promise<Response | null> {
+  const [counts, uc] = await settledAll<any>([countsFor(userId), capsFor(userId)]) as [Counts, UserCaps];
+  if (overCap(counts.extracts, uc.caps.extract)) return await extractLimitResponse(cors, uc, counts.extracts);
+  const monthOver = await monthReadsReached(userId, uc.plan, shortcode);
+  if (monthOver !== null) return await allowanceLimit("media", "reads", uc, monthOver, cors);
+  if (!(await paidAllowed())) {
+    return json({ status: "limit",
+      message: "Spotter's daily budget is spent — add the video again tomorrow." }, 429, cors);
+  }
+  // /media is admitted late: every answer above was free, and what follows
+  // reserves a read and queues one.
+  if (reserve) {
+    const refused = await admitNow();
+    if (refused) return refused;
+  }
+  if (plusPlan(uc.plan)) return null;
+  const previewsOut = json({ status: "limit", kind: "media", upgrade: true, plan: uc.plan,
+    message: "You have used all four Plus video reads this month. They reset on the first, or continue with Spotter Plus." }, 429, cors);
+  if (reserve) {
+    return await rpc("reserve_video_preview", { p_user: userId, p_shortcode: shortcode }) === true ? null : previewsOut;
+  }
+  const sc = encodeURIComponent(shortcode);
+  const [used, mine] = await Promise.all([
+    previewCount(userId),
+    dbSelect("video_previews", `user_id=eq.${userId}&shortcode=eq.${sc}&month=eq.${new Date().toISOString().slice(0, 7)}-01&select=shortcode`),
+  ]);
+  return mine.length || used < PREVIEW_CAP ? null : previewsOut;
+}
+
+/**
+ * The file, read into card `w`. Every refusal deletes the object first: the
+ * person's permit is one of two they may hold, and a file nobody will read is
+ * not worth keeping for the two-hour sweep.
+ */
+async function attachUpload(
+  w: any, ref: UploadRef, filename: string, userId: string, cors: Cors,
+): Promise<Response> {
+  const refuse = async (r: Response): Promise<Response> => { await deleteUpload(ref.path); return r; };
+  if (!attachable(w)) {
+    return await refuse(json({ status: "error",
+      message: "That card is already your own video. Upload it as a new one instead." }, 400, cors));
+  }
+  if (w.ingest_status === "processing") {
+    return await refuse(json({ status: "processing", id: w.id, message: "Already reading that one." }, 200, cors));
+  }
+  if (!(await uploadExists(ref))) {
+    return json({ status: "error",
+      message: "Spotter cannot find that file — the upload did not finish. Try picking it again." }, 404, cors);
+  }
+  const refused = await attachRefusal(userId, w.shortcode, true, cors);
+  if (refused) return await refuse(refused);
+  const refund = () => dbDelete("video_previews",
+    `user_id=eq.${userId}&shortcode=eq.${encodeURIComponent(w.shortcode)}&completed=eq.false`).catch(() => {});
+  const q = (await rpc("requeue_ingest", { p_user: userId, p_workout: w.id }))[0];
+  if (!q || !q.job_created) {
+    // Another job already owns this card, and it knows nothing about this file.
+    if (!q) await refund();
+    return await refuse(json(q ? { status: "processing", id: w.id, message: "Already reading that one." }
+      : { status: "error", message: "Not found." }, q ? 200 : 404, cors));
+  }
+  // One pass, because the file is deleted whatever happens to it — the same reason
+  // an upload's job gets one attempt. The seed says what the card already had, so
+  // the worker merges into it rather than starting over.
+  try {
+    await dbPatch("ingest_jobs", `id=eq.${q.job_id}&status=eq.queued`, {
+      max_attempts: 1, step: "card",
+      meta: {
+        caption: w.caption ?? null, thumb: null, author: w.author ?? null, thumb_stored: w.thumb_url ?? null,
+        upload_path: ref.path, filename: filename || null, attach: true,
+        source: "personal-fallback", supplied: true, topped_up: true,
+      },
+      updated_at: new Date().toISOString(),
+    });
+  } catch (e) {
+    console.error("could not seed the attached video onto job", q.job_id, e);
+    await refund();
+    // Without the address the job would re-read the caption and stop; the card
+    // is left processing only for as long as that takes.
+    return await refuse(json({ status: "error",
+      message: "Spotter could not start reading that video. Try again in a moment." }, 500, cors));
+  }
+  try { await dbPatch("workouts", `id=eq.${w.id}`, { media_stage: "watching" }); }
+  catch (e) { console.error("could not set the media stage on", w.id, e); }
+  console.log("add the video: queued", w.platform, w.shortcode, "job", q.job_id, "from", ref.path.split("/")[1]);
+  kickWorker();
+  return json({ status: "processing", id: w.id, job_id: q.job_id, title: w.title,
+    message: "Watching your video…" }, 202, cors);
+}
+
+// ---------- saved first, frames after ----------
+//
+// The Share Extension used to cut frames BEFORE it saved, so a dismissed sheet in
+// that window lost the link, and a Plus share sat on up to eight seconds of work
+// before the person saw "Saved". Now it saves first with `frames_pending`, and
+// the job is held (queued, due in FRAMES_HOLD_MS) so no paid read starts without
+// the frames. The frames arrive at /media and release the SAME job; if they never
+// come, the hold simply runs out and the save proceeds as one without frames.
+
+const FRAMES_HOLD_MS = 20_000;
+
+/** The one sentence for a post the platform says is not there. Contract code `unavailable`. */
+const UNAVAILABLE_SENTENCE = "This post is private, deleted or unavailable to Spotter.";
+
+/** Hold a job this save just created until its frames arrive, or the hold ends. */
+async function holdForFrames(jobId: string, seed: Meta | null): Promise<boolean> {
+  try {
+    const held = await dbPatchMany("ingest_jobs", `id=eq.${jobId}&status=eq.queued`, {
+      step: seed ? "card" : "meta",
+      meta: { ...(seed ?? { caption: null, thumb: null, author: null }), hold_frames: true },
+      run_after: new Date(Date.now() + FRAMES_HOLD_MS).toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+    if (!held.length) return false;
+    // Nothing else wakes the worker when a hold simply runs out: pg_cron's next
+    // minute would, forty seconds late. The isolate is kept alive for the wait.
+    background(new Promise((r) => setTimeout(r, FRAMES_HOLD_MS + 500)).then(() => kickWorker()));
+    return true;
+  } catch (e) {
+    // A hold that did not land is a save that proceeds now, without frames.
+    console.error("could not hold job", jobId, "for frames —", e);
+    return false;
+  }
+}
+
+/**
+ * Frames for a held save. Null when this card's job is not held — the ordinary
+ * re-read path then answers, exactly as it did before `frames_pending` existed.
+ * Fenced on the job still being queued, so frames never land on a job a worker
+ * has already claimed (they are deleted, and the save goes on without them).
+ */
+async function releaseHeldJob(w: any, rawFrames: unknown, userId: string, cors: Cors): Promise<Response | null> {
+  if (!w.ingest_job_id) return null;
+  const job = (await dbSelect("ingest_jobs",
+    `id=eq.${w.ingest_job_id}&user_id=eq.${userId}&status=eq.queued&select=id,meta`))[0];
+  if (!job?.meta?.hold_frames) return null;
+  const parsed = parseFrames(rawFrames, userId, w.shortcode);
+  if ("error" in parsed) {
+    console.log("held save: frames refused for", w.shortcode, "—", parsed.error);
+    return json({ status: "error", message: parsed.error }, 400, cors);
+  }
+  const { hold_frames: _held, ...kept } = job.meta;
+  const moved = await dbPatchMany("ingest_jobs", `id=eq.${job.id}&status=eq.queued`, {
+    meta: { ...kept, frames: parsed.frames },
+    run_after: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  });
+  if (!moved.length) {
+    await deleteSheets(parsed.frames);
+    return json({ status: "processing", id: w.id, message: "Already reading that one." }, 200, cors);
+  }
+  try { await dbPatch("workouts", `id=eq.${w.id}&ingest_status=eq.processing`, { media_stage: "watching" }); }
+  catch (e) { console.error("could not set the media stage on", w.id, e); }
+  console.log("held save released with", parsed.frames.sheets.length, "sheet(s):", w.shortcode, "job", job.id);
+  kickWorker();
+  return json({ status: "processing", id: w.id, job_id: job.id, message: "Reading the frames…" }, 202, cors);
+}
+
 /**
  * "Read the video" — the manual trigger, for a card that came out thin and a user
  * who would rather Spotter listened than retyped the caption themselves.
@@ -9665,6 +10102,26 @@ async function handleReadVideo(
   // no-op. Without frames the route behaves exactly as it did: the cached reading
   // wins and nobody pays for a second one.
   const body = await req.json().catch(() => null) as Record<string, unknown> | null;
+
+  // "Add the video": a file the person downloaded from the post, read into this
+  // card. Validated exactly as an upload save validates its path.
+  if (typeof body?.upload_path === "string") {
+    const ref = parseUploadPath(body.upload_path, userId);
+    if (!ref) {
+      return json({ status: "error", message: "That upload could not be read. Pick the file again." }, 400, cors);
+    }
+    const filename = typeof body.filename === "string" ? body.filename.slice(0, 160).trim() : "";
+    return await attachUpload(w, ref, filename, userId, cors);
+  }
+
+  // The frames a Share Extension promised with `frames_pending`, for a save whose
+  // job is being held for them. They release the held job — the same job, so no
+  // second read and nothing counted twice.
+  if (body?.frames !== undefined && body?.frames !== null && w.ingest_status === "processing") {
+    const released = await releaseHeldJob(w, body.frames, userId, cors);
+    if (released) return released;
+  }
+
   let frames: Frames | null = null;
   if (body?.frames !== undefined && body?.frames !== null) {
     const parsed = parseFrames(body.frames, userId, w.shortcode);
@@ -9752,6 +10209,9 @@ async function handleReadVideo(
       message: "Spotter's daily budget is spent — try reading this one again tomorrow.",
     }, 429, cors));
   }
+  // Everything above was a free answer; a read is reserved and queued below.
+  const refused = await admitNow();
+  if (refused) return await bail(refused);
 
   if (!plusPlan(uc.plan)) {
     if (body?.preview === true) {
@@ -9816,18 +10276,24 @@ async function handleReadVideo(
  */
 async function upgradeCachedCard(
   userId: string, p: Parsed, cached: any, workoutId: string, cors: Cors,
+  premium?: boolean, known?: UserCaps,
 ): Promise<Response | null> {
   if (visuallyRead(cached)) return null;
-  if (!(await premiumAccess(userId, p.shortcode))) return null;
+  // The save already knows both of these; asking again was two more hops on
+  // every cache hit's response path.
+  if (!(premium ?? await premiumAccess(userId, p.shortcode))) return null;
   if (!providerFor(p.platform).media) return null;
   const card = cached.card as Card;
   if (!card) return null;
 
-  const [counts, uc] = await settledAll<any>([countsFor(userId), capsFor(userId)]);
+  const [counts, uc] = await settledAll<any>([countsFor(userId), known ? Promise.resolve(known) : capsFor(userId)]);
   if (overCap((counts as Counts).extracts, (uc as UserCaps).caps.extract)) return null;
   if (await monthReadsReached(userId, (uc as UserCaps).plan, p.shortcode) !== null) return null;
   if (await mediaCapReached(userId, (uc as UserCaps).caps.media) !== null) return null;
   if (!(await paidAllowed())) return null;
+  // A paid read is about to be queued: the one point this save is admitted. A
+  // refusal leaves the ordinary cache hit standing.
+  if (await admitNow()) return null;
 
   const q = (await rpc("requeue_ingest", { p_user: userId, p_workout: workoutId }))[0];
   if (!q) return null;
@@ -13315,6 +13781,21 @@ async function isPackAuthorize(req: Request): Promise<boolean> {
 }
 
 /**
+ * An authorize that is the first half of something charged elsewhere: a pack's
+ * sheets (a save) or "Add the video" (`attach`, a read into a card the person
+ * already has). Neither may spend the one-a-day upload ceiling, which exists for
+ * a file that becomes a NEW card — Basic's single monthly upload would otherwise
+ * go on the first Instagram reel somebody tried to complete.
+ */
+async function isSaveAuthorize(req: Request): Promise<boolean> {
+  if (await isPackAuthorize(req)) return true;
+  try {
+    const body = await req.clone().json();
+    return typeof body?.attach === "string" && UUID_RE.test(body.attach);
+  } catch { return false; }
+}
+
+/**
  * Which daily cap a route is charged against.
  *
  * The one that is not obvious from the path is the pack authorize, and it cost a
@@ -13387,49 +13868,122 @@ async function handleAiConsent(req: Request, userId: string, cors: Cors): Promis
     ai_consent_version: settings.ai_consent_version }, 200, cors);
 }
 
+/**
+ * The two routes that ask for admission themselves, and only when they are about
+ * to start paid work. A save's first answers — a link that is not a post, a card
+ * the person already has, a card another person already paid to read — cost
+ * nothing, and charging them to the one-minute burst and the busy lease is how a
+ * seventh share in a minute (four of them bad links) was refused on 24 Sept, and
+ * a share landing during a Pumpy turn was told to wait.
+ */
+function admitsLate(req: Request, path: string): boolean {
+  return req.method === "POST" &&
+    (path === "/api/ingest" || /^\/api\/workouts\/[0-9a-f-]{36}\/media$/.test(path));
+}
+
+/** What a late-admitting handler calls, once, before it spends anything. */
+const admission = new AsyncLocalStorage<{ admit: () => Promise<Response | null> }>();
+
+/** Admission for the request in hand. Null means go ahead — also when nothing guards this call. */
+async function admitNow(): Promise<Response | null> {
+  const a = admission.getStore();
+  return a ? await a.admit() : null;
+}
+
+/**
+ * The sentence for a refused admission. `busy` and `minute` are not a limit
+ * anybody bought and they pass in seconds, so they say that, in the words of the
+ * thing being done; a share is the case people meet.
+ */
+function admissionRefusal(code: string, path: string, cors: Cors): Response {
+  const saving = path === "/api/ingest";
+  const message = code === "busy"
+    ? (saving ? "Still saving your last share — try again in a few seconds."
+      : "Your previous request is still being processed. Please wait a moment.")
+    : code === "minute"
+    ? (saving ? "That is a lot of saves in one minute — wait a few seconds and share it again."
+      : "That is a lot at once — wait a few seconds and try again.")
+    : "You have reached the limit for now. Please try again later.";
+  return json({ status: "limit", kind: "request", code, message }, 429, cors);
+}
+
+/**
+ * One profile read per request for every metered route: consent, plan and
+ * overrides come from the same row, and capsFor asks this before the database.
+ * Scoped to one request, so a plan bought a second ago still bites on the next.
+ */
+const profileMemo = new AsyncLocalStorage<{ userId: string; row?: Promise<any> }>();
+
+function profileRow(userId: string): Promise<any> {
+  const memo = profileMemo.getStore();
+  const read = () => dbSelect("profiles", `id=eq.${userId}&select=plan,limits,settings`).then((r) => r[0] ?? null);
+  if (!memo || memo.userId !== userId) return read();
+  memo.row ??= read();
+  return memo.row;
+}
+
 async function guardedUserRequest(
   req: Request, path: string, userId: string, cors: Cors, handle: () => Promise<Response>,
 ): Promise<Response> {
   const aiRoute = req.method === "POST" && (/^\/api\/(ingest|explain|swap|demo-video|uploads\/authorize|pumpy\/chat)$/.test(path) || /\/(reprocess|media)$/.test(path));
   if (!aiRoute) return await aiActor.run({ userId, workKey: crypto.randomUUID() }, handle);
-  const consentProfile = (await dbSelect("profiles", `id=eq.${userId}&select=settings`))[0];
+  return await profileMemo.run({ userId }, async () => {
+  const consentProfile = await profileRow(userId);
   if (!aiConsented(consentProfile?.settings)) {
     return json({ status: "error", code: "ai_consent_required",
       message: "Allow AI processing in Spotter → Settings → Data & privacy before using AI features." }, 403, cors);
   }
   await ensureConfig();
   const uc = await capsFor(userId);
-  const scope = scopeFor(path, path.endsWith("/authorize") && await isPackAuthorize(req));
+  const scope = scopeFor(path, path.endsWith("/authorize") && await isSaveAuthorize(req));
   const meter = scope === "chat" ? await pumpyMeter(userId) : null;
-  const id = crypto.randomUUID();
-  const admitted = await rpc("ai_admit", { p_id: id, p_user: userId, p_scope: scope,
-    p_cap: scope === "chat" ? LIMIT_CHAT : uc.caps[scope as LimitKind],
-    p_credits: meter ? pumpyConfig().turnMaxCredits : 0,
-    p_day_credits: meter?.day ?? null, p_month_credits: meter?.month ?? null });
-  if (admitted !== "ok") return json({ status: "limit", kind: "request", code: admitted,
-    message: admitted === "busy" ? "Your previous request is still being processed. Please wait a moment." :
-      "You have reached the limit for now. Please try again later." }, 429, cors);
-  const actor = { userId, workKey: path.includes("/workouts/") ? path.split("/")[3] : id, actionId: id, deadline: Date.now() + 120_000 };
+  const actor: { userId: string; workKey: string; actionId?: string; deadline: number } = {
+    userId, workKey: path.includes("/workouts/") ? path.split("/")[3] : crypto.randomUUID(),
+    deadline: Date.now() + 120_000,
+  };
+  const admit = async (): Promise<Response | null> => {
+    if (actor.actionId) return null;
+    const id = crypto.randomUUID();
+    const admitted = await rpc("ai_admit", { p_id: id, p_user: userId, p_scope: scope,
+      p_cap: scope === "chat" ? LIMIT_CHAT : uc.caps[scope as LimitKind],
+      p_credits: meter ? pumpyConfig().turnMaxCredits : 0,
+      p_day_credits: meter?.day ?? null, p_month_credits: meter?.month ?? null });
+    if (admitted !== "ok") return admissionRefusal(String(admitted), path, cors);
+    actor.actionId = id;
+    return null;
+  };
+  if (!admitsLate(req, path)) {
+    const refused = await admit();
+    if (refused) return refused;
+  }
   const finish = async () => {
+    const id = actor.actionId;
+    if (!id) return;
     try { await rpc("ai_finish_action", { p_id: id }); }
     catch { console.error("Request lease will expire", id); }
   };
-  return await aiActor.run(actor, async () => {
+  return await aiActor.run(actor, () => admission.run({ admit }, async () => {
     try {
       const response = await handle();
       if (/text\/event-stream|application\/x-ndjson/.test(response.headers.get("content-type") ?? "") && response.body) {
         const reader = response.body.getReader();
-        let disconnected = false;
+        let done = false;
+        const once = async () => { if (done) return; done = true; await finish(); };
         return new Response(new ReadableStream({
           async pull(c) {
-            try { const r = await reader.read(); if (r.done) { if (!disconnected) await finish(); c.close(); } else c.enqueue(r.value); }
-            catch(e) { if (!disconnected) await finish(); c.error(e); }
+            try { const r = await reader.read(); if (r.done) { await once(); c.close(); } else c.enqueue(r.value); }
+            catch(e) { await once(); c.error(e); }
           },
-          async cancel(reason) { disconnected = true; await reader.cancel(reason).catch(() => {}); /* The producer may still run: let the lease expire. */ },
+          // The person has gone, so the lease goes with them. The producer may
+          // still be finishing its writes, and it still settles its own credits
+          // on this action; what it no longer does is refuse their next share
+          // for up to three minutes.
+          async cancel(reason) { await reader.cancel(reason).catch(() => {}); await once(); },
         }), { status: response.status, headers: response.headers });
       }
       await finish(); return response;
     } catch(e) { await finish(); throw e; }
+  }));
   });
 }
 
@@ -13475,11 +14029,18 @@ async function authorizeSheets(
     sizes.push(n);
   }
 
-  const uc = await capsFor(userId);
-  if (overCap(await libraryCount(userId), uc.caps.library)) {
+  // Four independent reads at once, then the refusals in their old order. The
+  // fourth is new: a Share Extension that saved first sends its frames for a
+  // card already on the shelf, and that card must not count against the room
+  // for itself — the twentieth Basic save would otherwise lose its frames.
+  const [uc, held, paid, owned] = await settledAll<any>([
+    capsFor(userId), libraryCount(userId), paidAllowed(),
+    dbSelect("workouts", `user_id=eq.${userId}&shortcode=eq.${encodeURIComponent(shortcode)}&select=id`),
+  ]) as [UserCaps, number, boolean, any[]];
+  if (!owned.length && overCap(held, uc.caps.library)) {
     return await capLimit("library", uc, uc.caps.library ?? 0, cors);
   }
-  if (!(await paidAllowed())) throw new GuardError("budget");
+  if (!paid) throw new GuardError("budget");
 
   const paths = sizes.map((_n, i) => sheetPathFor(userId, shortcode, i + 1));
   // The permits still go out, and they are still what ties a path to this person
@@ -13532,9 +14093,24 @@ async function authorizeUpload(req: Request, userId: string, cors: Cors): Promis
   if (!ref || !Number.isInteger(bytes) || bytes < 1 || bytes > 25 * 1024 * 1024) {
     return json({ status: "error", message: "Choose a supported file under 25 MB." }, 400, cors);
   }
-  const uc = await capsFor(userId);
-  if (overCap(await libraryCount(userId), uc.caps.library)) return capLimit("library", uc, uc.caps.library ?? 0, cors);
-  if (!(await paidAllowed())) throw new GuardError("budget");
+  if (typeof body?.attach === "string") {
+    // "Add the video": this file is read into a card the person already has, so
+    // the shelf is not asked — nothing is added to it — and the allowance asked is
+    // reads, not uploads. Asked here as well as at /media so a refusal comes
+    // before 25 MB crosses a phone connection rather than after.
+    const w = UUID_RE.test(body.attach)
+      ? (await dbSelect("workouts", `id=eq.${body.attach}&user_id=eq.${userId}&select=id,shortcode,platform`))[0]
+      : null;
+    if (!w || !attachable(w)) {
+      return json({ status: "error", message: "That card is not there any more. Reload Spotter and try again." }, 404, cors);
+    }
+    const refused = await attachRefusal(userId, w.shortcode, false, cors);
+    if (refused) return refused;
+  } else {
+    const uc = await capsFor(userId);
+    if (overCap(await libraryCount(userId), uc.caps.library)) return capLimit("library", uc, uc.caps.library ?? 0, cors);
+    if (!(await paidAllowed())) throw new GuardError("budget");
+  }
   const issued = await rpc("issue_upload_permit", { p_user: userId, p_path: body.path, p_bytes: bytes });
   if (issued !== "ok") return json({ status: "limit", message: "Uploads are busy right now. Please try again later." }, 429, cors);
   return json({ status: "ok", path: body.path }, 200, cors);

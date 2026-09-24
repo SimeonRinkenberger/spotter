@@ -86,7 +86,7 @@ console.log('PASS owner/job-scoped completion, isolated simultaneous saves and d
 c.BLOCKED=Symbol('blocked');c.resolveShare=async()=>({shortcode:'same',platform:'tiktok',kind:'video',clean:'https://www.tiktok.com/@fixture/video/1'});
 c.json=(body)=>body;let plan='plus',cached=true,owned=false;
 let consented=true;
-c.capsFor=async()=>({plan});c.dbSelect=async(table)=>table==='workouts'?(owned?[{id:'mine'}]:[]):table==='profiles'?[{settings:consented?{ai_consent_version:AI_CONSENT_VERSION,ai_consent_at:'2026-09-20T00:00:00Z'}:{}}]:cached?[{pack,pack_v:1}]:[];
+c.capsFor=async()=>({plan});c.capsFrom=()=>({plan});let heldSave=false;c.dbSelect=async(table)=>table==='workouts'?(owned?[{id:'mine'}]:[]):table==='ingest_jobs'?(heldSave?[{id:'j',hold:true}]:[]):table==='profiles'?[{settings:consented?{ai_consent_version:AI_CONSENT_VERSION,ai_consent_at:'2026-09-20T00:00:00Z'}:{}}]:cached?[{pack,pack_v:1}]:[];
 c.AI_CONSENT_VERSION=AI_CONSENT_VERSION;
 vm.runInContext(transformSync([fn('aiConsented'),fn('handleIngestPrepare')].join('\n'),{loader:'ts',format:'cjs'}).code,c);
 const prep=async(body)=>{c.req={json:async()=>body};return vm.runInContext('handleIngestPrepare(req,"fixture",{})',c);};
@@ -96,6 +96,9 @@ assert.equal((await prep({url:'x'})).ai_consent,true);
 consented=false;assert.equal((await prep({url:'x'})).ai_consent,false);consented=true;
 cached=false;assert.equal((await prep({url:'x'})).needs_frames,true);
 owned=true;assert.equal((await prep({url:'x'})).needs_frames,false);
+// Saved first with frames_pending: the card is already owned and its job is held
+// for exactly these frames, so the extension's after-the-save question says yes.
+heldSave=true;assert.equal((await prep({url:'x'})).needs_frames,true);heldSave=false;
 assert.equal((await prep({url:'x',reread:true})).needs_frames,true);
 plan='free';owned=false;assert.equal((await prep({url:'x'})).needs_frames,false);
 assert.equal((await prep({url:'x',preview:true})).needs_frames,true);
