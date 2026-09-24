@@ -8907,7 +8907,18 @@ async function finishJob(
   const sc = encodeURIComponent(p.shortcode);
   const waiting = await dbSelect("workouts", `ingest_job_id=eq.${job.id}&user_id=eq.${job.user_id}&ingest_status=eq.processing&select=id,user_id`);
   const access = await Promise.all(waiting.map(async (w: any) => ({ ...w, premium: await premiumAccess(w.user_id, p.shortcode, job.created_at) })));
-  let basic: Card | null = readQuality(meta) === "basic" ? card : null;
+  // The person's own file is theirs to have read, whatever the plan. It was paid
+  // for by the uploads allowance (Basic's one a month) when it was admitted, it
+  // is keyed by an id nobody else can produce, and it never reaches the shared
+  // cache — so there is no Plus reading of somebody else's to withhold. Before
+  // this, a Basic upload was watched and then delivered as the caption-only card
+  // of a file that has no caption: empty, with the read already spent. The
+  // quality stays "basic" for a Basic account because finish_ingest_job refuses
+  // a premium card without a preview row, and reserving one would charge the same
+  // file to the month's four reads as well. "Add the video" is not this: its
+  // platform is the post's, and it reserves its own read (attachRefusal).
+  const own = p.platform === "upload";
+  let basic: Card | null = readQuality(meta) === "basic" || own ? card : null;
   const basicOwner = access.find((w: any) => !w.premium);
   if (!basic && basicOwner) {
     const shared = (await dbSelect("video_cache", `shortcode=eq.${sc}&select=*`))[0];
@@ -8924,7 +8935,7 @@ async function finishJob(
   // The database owns the final authorization and claim check. Nothing visible
   // is written before that check; the workout, preview, and job commit together.
   const recipient = access[0];
-  const delivered = recipient?.premium ? card : (basic ?? card);
+  const delivered = recipient?.premium || own ? card : (basic ?? card);
   const quality = recipient?.premium ? readQuality(meta) : "basic";
   const committed = await rpc("finish_ingest_job", {
     p_job: job.id, p_user: job.user_id, p_worker: WORKER_ID, p_generation: job.claim_generation,

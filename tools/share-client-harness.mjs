@@ -111,10 +111,11 @@ ok(!run('canAddVideo(W)') && run('canReadVideo(W)'), 'a TikTok video keeps "read
 ctx.W = { ...ig, platform: 'tiktok', kind: 'photo' };
 ok(!run('canAddVideo(W)'), 'a TikTok photo post is offered neither');
 // The offer box's own rule, read off the source: the Plus line is drawn only where
-// Plus can deliver.
-ok(/var plusCan = \(w\.platform === "tiktok" && w\.kind !== "photo"\) \|\| isUpload\(w\);/.test(APP) &&
+// Plus reads more. A person's own file is read the same on either plan (V-1), so
+// a Basic upload card is not told Plus would have watched it.
+ok(/var plusCan = w\.platform === "tiktok" && w\.kind !== "photo";/.test(APP) &&
   /read_quality !== "premium" && plusCan\) \{\s*\n\s*var quality = el\("div", "reader-offer"\);/.test(APP),
-  '"Plus reads the video" is drawn only for a TikTok video or an upload');
+  '"Plus reads the video" is drawn only for a TikTok video, not under an upload Spotter already watched');
 
 // ---- S16: what a pending card says ----
 ctx.W = { ...ig, platform: 'instagram', kind: 'p', ingest_status: 'processing' };

@@ -3432,11 +3432,13 @@ export const APP = String.raw`
       d.appendChild(warn);
     }
 
-    // "Plus reads the video" only where Plus can: a TikTok video, or a file of the
-    // person's own. An Instagram card whose caption left it thin is offered the
-    // one thing that works for a reel instead; the empty-card box above already
-    // does that for a card with nothing in it.
-    var plusCan = (w.platform === "tiktok" && w.kind !== "photo") || isUpload(w);
+    // "Plus reads the video" only where Plus reads more: a TikTok video. A file of
+    // the person's own is read the same way on either plan (the uploads allowance
+    // pays for it), so a Basic upload card is not told Plus would have watched
+    // what Spotter just watched. An Instagram card whose caption left it thin is
+    // offered the one thing that works for a reel instead; the empty-card box
+    // above already does that for a card with nothing in it.
+    var plusCan = w.platform === "tiktok" && w.kind !== "photo";
     var addHere = canAddVideo(w) && (w.blocks || []).length > 0;
     if (w.platform !== "pumpy" && w.read_quality !== "premium" && addHere) {
       var addBox = el("div", "reader-offer");
