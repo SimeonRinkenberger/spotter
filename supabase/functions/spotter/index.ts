@@ -802,6 +802,11 @@ const UPLOAD_MAX_BYTES = Number(Deno.env.get("UPLOAD_MAX_BYTES") ?? String(25 * 
 const UPLOAD_EXTS = ["mp4", "mov", "webm", "m4v", "mp3", "m4a", "wav", "weba"];
 // Signed media links expire after fifteen minutes.
 const UPLOAD_SIGN_SECONDS = 900;
+// A signed UPLOAD address is another clock. Storage fixes its lifetime in its own
+// configuration — two hours, whatever the request asks for (storage-js
+// createSignedUploadUrl: "valid for 2 hours"; measured: the token's exp-iat is
+// 7200) — so this is the fallback when a token cannot be read, not a setting.
+const SIGNED_UPLOAD_SECONDS = 7200;
 // Below this many characters, a transcript cannot be describing a workout. This is
 // the load-bearing half of the silence test: measured 2026-09-02, one second of
 // silence comes back from whisper-large-v3-turbo as HTTP 200 with the text
@@ -2880,23 +2885,24 @@ async function deleteUpload(path: string): Promise<void> {
  *
  * Storage returns the path-and-token half; the token is pulled out separately
  * because the client sends it as a query parameter and reading it out of a URL on
- * the phone is a parsing job nobody should have to do twice.
+ * the phone is a parsing job nobody should have to do twice. `expires_in` is the
+ * token's own lifetime, read out of it: storage decides that, not this request.
+ *
+ * `upsert` travels as the `x-upsert` header, the one place storage reads it
+ * (a body flag is ignored, and the token then says upsert:false). Contact sheets
+ * ask for it: their paths are fixed per video, and issue_sheet_permits lets a
+ * phone that lost the network re-authorize the same set, whose re-PUT of a sheet
+ * that already landed would otherwise be a 409. A whole video never does: it is
+ * handed to a model under a signed read url, so its address writes a new object
+ * or nothing, and the Share Extension asks for a new address on a retry.
  */
 async function signUploadTarget(
-  path: string, upsert = true,
-): Promise<{ upload_url: string; token: string }> {
+  path: string, upsert = false,
+): Promise<{ upload_url: string; token: string; expires_in: number }> {
   const r = await fetch(`${SUPABASE_URL}/storage/v1/object/upload/sign/uploads/${path}`, {
     method: "POST",
-    headers: dbHeaders,
-    // `upsert` so a phone that lost the network halfway through a sheet can send
-    // it again. The bucket's no-overwrite rule exists to stop bytes being swapped
-    // under a signed READ url already handed to somebody else; a pack sheet has no
-    // such reader — the only thing that ever fetches one is our own isolate, from
-    // a url minted seconds earlier, and the object is deleted immediately after.
-    // A whole video is handed to a model under a signed read url, so its address
-    // keeps the rule (upsert false); the Share Extension asks for a new address
-    // on a retry rather than writing twice to one.
-    body: JSON.stringify({ expiresIn: UPLOAD_SIGN_SECONDS, upsert }),
+    headers: upsert ? { ...dbHeaders, "x-upsert": "true" } : dbHeaders,
+    body: "{}",
     signal: AbortSignal.timeout(10_000),
   });
   if (!r.ok) throw new Error(`sign upload ${r.status}: ${(await r.text()).slice(0, 200)}`);
@@ -2907,7 +2913,22 @@ async function signUploadTarget(
   let token = "";
   try { token = new URL(full).searchParams.get("token") ?? ""; } catch { /* keep empty */ }
   if (!token) throw new Error("sign upload returned no token");
-  return { upload_url: full, token };
+  return { upload_url: full, token, expires_in: tokenLifetime(token) };
+}
+
+/**
+ * How long a storage token lets its address write: its own exp minus iat. The
+ * payload is read, not verified — storage verifies it when the PUT arrives; this
+ * only has to say truthfully how long that will keep working.
+ */
+function tokenLifetime(token: string): number {
+  try {
+    const part = token.split(".")[1] ?? "";
+    const claims = JSON.parse(atob(part.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(part.length / 4) * 4, "=")));
+    const life = Number(claims?.exp) - Number(claims?.iat);
+    if (Number.isFinite(life) && life > 0) return Math.round(life);
+  } catch { /* fall through */ }
+  return SIGNED_UPLOAD_SECONDS;
 }
 
 /** A temporary signed URL for the media reader. */
@@ -14292,7 +14313,8 @@ async function authorizeSheets(
 
   let targets: { upload_url: string; token: string }[];
   try {
-    targets = await Promise.all(paths.map((path) => signUploadTarget(path)));
+    targets = (await Promise.all(paths.map((path) => signUploadTarget(path, true))))
+      .map(({ upload_url, token }) => ({ upload_url, token }));
   } catch (e) {
     console.error("sheets: could not sign the upload targets for", shortcode, e);
     return json({
@@ -14363,17 +14385,55 @@ async function authorizeUpload(req: Request, userId: string, cors: Cors): Promis
   // Basic's one upload of the day (CR-1b).
   const refused = await admitNow();
   if (refused) return refused;
-  const issued = await rpc("issue_upload_permit", { p_user: userId, p_path: minted ? ref.path : body.path, p_bytes: bytes });
+  const issued = minted
+    ? await issueAddressPermit(userId, ref.path, bytes)
+    : await rpc("issue_upload_permit", { p_user: userId, p_path: body.path, p_bytes: bytes });
   if (issued !== "ok") return json({ status: "limit", message: "Uploads are busy right now. Please try again later." }, 429, cors);
   if (!minted) return json({ status: "ok", path: body.path }, 200, cors);
-  let target: { upload_url: string; token: string };
+  let target: { upload_url: string; token: string; expires_in: number };
   try {
     target = await signUploadTarget(ref.path, false);
   } catch (e) {
     console.error("video door: could not sign the upload target for", ref.path, e);
+    // No address exists, so nothing can write there: the slot goes back.
+    const gone = { released: true, expires_at: new Date().toISOString() };
+    const permit = `path=eq.${encodeURIComponent(ref.path)}`;
+    await dbPatchMany("upload_permits", permit, { ...gone, address_until: null })
+      .catch(() => dbPatchMany("upload_permits", permit, gone)).catch(() => {});
     return json({ status: "error", message: "Spotter could not open a place to put that video. Try again in a moment." }, 502, cors);
   }
-  return json({ status: "ok", path: ref.path, ...target, expires_in: UPLOAD_SIGN_SECONDS }, 200, cors);
+  if (target.expires_in > SIGNED_UPLOAD_SECONDS) {
+    // Storage's lifetime changed under us: the permit holds until the real one ends.
+    await dbPatchMany("upload_permits", `path=eq.${encodeURIComponent(ref.path)}`,
+      { address_until: new Date(Date.now() + (target.expires_in + ADDRESS_HOLD_MARGIN_S) * 1000).toISOString() })
+      .catch((e) => console.error("video door: could not extend the permit for", ref.path, e));
+  }
+  return json({ status: "ok", path: ref.path, ...target }, 200, cors);
+}
+
+// The permit is issued a moment before its address is signed, so its hold runs a
+// minute past the address's two hours rather than a few hundred ms short of them.
+const ADDRESS_HOLD_MARGIN_S = 60;
+
+/**
+ * The permit for a path the server signs an upload address for. It counts
+ * against the person's two and the product's ceiling until that address can no
+ * longer write (`address_until`), not only until the server deletes the object:
+ * storage lets a live address write again once the path is empty.
+ *
+ * Needs migration 20260924140000. Until it is applied the old three-argument
+ * permit answers, exactly as before this change.
+ */
+async function issueAddressPermit(userId: string, path: string, bytes: number): Promise<string> {
+  try {
+    return await rpc("issue_upload_permit", { p_user: userId, p_path: path, p_bytes: bytes,
+      p_address_seconds: SIGNED_UPLOAD_SECONDS + ADDRESS_HOLD_MARGIN_S });
+  } catch (e) {
+    // PostgREST's "no function with these arguments": the migration is not in yet.
+    if (!/PGRST202/.test(String(e))) throw e;
+    console.error("video door: the address-aware permit is not deployed yet; issuing the old one");
+    return await rpc("issue_upload_permit", { p_user: userId, p_path: path, p_bytes: bytes });
+  }
 }
 
 /**

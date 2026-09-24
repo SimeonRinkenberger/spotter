@@ -573,7 +573,7 @@ function check(ok: unknown, what: string): void {
   const mod = [
     "type Cors = any; type UploadRef = any;",
     "export const S: any = {};",
-    "export function reset(o: any = {}) { Object.assign(S, { admitted: 0, admit: null, permits: [], permit: 'ok', signed: [], signFail: false, full: false, paid: true, sheets: 0 }, o); }",
+    "export function reset(o: any = {}) { Object.assign(S, { admitted: 0, admit: null, permits: [], permitArgs: [], permit: 'ok', signed: [], signFail: false, full: false, paid: true, sheets: 0, patched: [], noFourArg: false }, o); }",
     "function json(body: any, status = 200) { return { status, body }; }",
     "class GuardError extends Error {}",
     "const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;",
@@ -590,8 +590,13 @@ function check(ok: unknown, what: string): void {
     "async function dbSelect() { return [{ id: 'w1', shortcode: 'DcHDuEFzBSf', platform: 'instagram' }]; }",
     "function attachable() { return true; }",
     "async function admitNow() { S.admitted++; return S.admit; }",
-    "async function rpc(name: string, args: any) { S.permits.push(args.p_path); return S.permit; }",
-    "async function signUploadTarget(path: string, upsert = true) { if (S.signFail) throw new Error('503'); S.signed.push({ path, upsert }); return { upload_url: 'https://x.supabase.co/storage/v1/object/upload/sign/uploads/' + path + '?token=t0k', token: 't0k' }; }",
+    "async function rpc(name: string, args: any) { if (S.noFourArg && 'p_address_seconds' in args) throw new Error('rpc issue_upload_permit 404: {\"code\":\"PGRST202\"}'); S.permits.push(args.p_path); S.permitArgs.push(args); return S.permit; }",
+    "async function dbPatchMany(t: string, q: string, b: any) { S.patched.push({ t, q, b }); return []; }",
+    // The storage token's own lifetime is two hours (measured: exp-iat = 7200).
+    "async function signUploadTarget(path: string, upsert = false) { if (S.signFail) throw new Error('503'); S.signed.push({ path, upsert }); return { upload_url: 'https://x.supabase.co/storage/v1/object/upload/sign/uploads/' + path + '?token=t0k', token: 't0k', expires_in: 7200 }; }",
+    "const SIGNED_UPLOAD_SECONDS = 7200;",
+    fnOr("async function issueAddressPermit(", "async function issueAddressPermit() { throw new Error('no address-aware permit in this tree'); }"),
+    SRC.includes("const ADDRESS_HOLD_MARGIN_S") ? span("const ADDRESS_HOLD_MARGIN_S", ";") + ";" : "",
     fn("async function authorizeUpload("),
     span("const SHARED_VIDEO_TYPES", "\n};\n") + "\n};",
     "export { authorizeUpload, SHARED_VIDEO_TYPES };",
@@ -605,8 +610,10 @@ function check(ok: unknown, what: string): void {
   let r = await ask({ kind: "video", bytes: 8_000_000, ext: "mp4" });
   check(r.status === 200 && r.body.status === "ok" && pathRe.test(r.body.path) && r.body.path.endsWith(".mp4"),
     "CR-1: {kind:video, bytes, ext} with no path → 200 and a path minted as <uid>/<uuid>.mp4");
-  check(r.body.upload_url.includes(r.body.path) && r.body.token === "t0k" && r.body.expires_in === 900,
-    "CR-1: the answer carries the signed upload address, its token and expires_in");
+  check(r.body.upload_url.includes(r.body.path) && r.body.token === "t0k" && r.body.expires_in === 7200,
+    "CR-1/R-2: the answer carries the signed upload address, its token, and the token's real lifetime (" + r.body.expires_in + ")");
+  check(u.S.permitArgs[0]?.p_address_seconds >= 7200,
+    "R-2: the video door's permit is held for the address's lifetime (p_address_seconds " + u.S.permitArgs[0]?.p_address_seconds + ")");
   check(u.S.permits[0] === r.body.path && u.S.signed[0].path === r.body.path && u.S.signed[0].upsert === false && u.S.admitted === 1,
     "CR-1: the permit is for that path, the address writes once (no upsert), admitted once");
   const again = await ask({ kind: "video", bytes: 8_000_000, ext: "mp4" });
@@ -643,6 +650,8 @@ function check(ok: unknown, what: string): void {
   check(r.status === 200 && JSON.stringify(r.body) === JSON.stringify({ status: "ok", path: own }) &&
     u.S.permits[0] === own && !u.S.signed.length && u.S.admitted === 1,
     "CR-1: a caller-named path answers {status, path} as today, no address signed");
+  check(Object.keys(u.S.permitArgs[0] ?? {}).sort().join() === "p_bytes,p_path,p_user",
+    "R-2: the app's own permit is asked with the same three arguments as before");
   u.reset();
   r = await ask({ kind: "video", path: own, bytes: 1000 });
   check(r.status === 200 && !("upload_url" in r.body), "CR-1: a named path wins over kind (old shape unchanged)");
@@ -662,6 +671,12 @@ function check(ok: unknown, what: string): void {
   u.reset({ signFail: true });
   r = await ask({ kind: "video", bytes: 1000, ext: "mp4" });
   check(r.status === 502 && r.body.status === "error", "CR-1: storage would not sign → 502 with a sentence");
+  check(u.S.patched.some((x: any) => x.t === "upload_permits" && x.b.released === true && x.b.address_until === null),
+    "R-2: no address was made, so the permit is given back at once");
+  u.reset({ noFourArg: true });
+  r = await ask({ kind: "video", bytes: 1000, ext: "mp4" });
+  check(r.status === 200 && u.S.permitArgs.length === 1 && !("p_address_seconds" in u.S.permitArgs[0]),
+    "R-2: before its migration is applied, the door falls back to the old permit (deploy order safe)");
   u.reset();
   r = await ask({ kind: "pack", shortcode: "tt-1", sheets: [{ bytes: 1 }] });
   check(u.S.sheets === 1 && u.S.admitted === 0, "the pack authorize is still its own branch");
@@ -669,6 +684,40 @@ function check(ok: unknown, what: string): void {
     "CR-1b: the pack authorize admits after its free refusals, before its permits");
   check(/path === "\/api\/ingest" \|\| path === "\/api\/uploads\/authorize" \|\|/.test(SRC),
     "CR-1b: /api/uploads/authorize is a late-admitting route");
+}
+
+// ---- R-2: what storage is actually asked for, and what the token says ----
+{
+  const b64 = (o: unknown) => btoa(JSON.stringify(o)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const jwt = (claims: unknown) => b64({ alg: "HS256", typ: "JWT" }) + "." + b64(claims) + ".sig";
+  const mod = [
+    "export const S: any = { calls: [], token: '' };",
+    "const SUPABASE_URL = 'https://proj.supabase.co';",
+    "const dbHeaders = { apikey: 'k', 'content-type': 'application/json' };",
+    "const UPLOAD_SIGN_SECONDS = 900;",
+    "const SIGNED_UPLOAD_SECONDS = 7200;",
+    "async function fetch(url: string, init: any) { S.calls.push({ url, headers: init.headers, body: init.body }); return new Response(JSON.stringify({ url: '/object/upload/sign/uploads/p?token=' + S.token }), { status: 200 }); }",
+    fn("async function signUploadTarget("),
+    fnOr("function tokenLifetime(", ""),
+    "export { signUploadTarget };",
+  ].join("\n");
+  const g = await import("data:application/typescript," + encodeURIComponent(mod));
+  g.S.token = jwt({ url: "uploads/p", upsert: false, scope: "upload", iat: 1790266216, exp: 1790273416 });
+  const video = await g.signUploadTarget("u/v.mp4", false);
+  check(video.expires_in === 7200, "R-2: the address's lifetime is read from its token (exp-iat = 7200), not assumed (" + video.expires_in + ")");
+  const vh = g.S.calls[0].headers ?? {};
+  check(!("x-upsert" in vh) && !/upsert/.test(String(g.S.calls[0].body ?? "")),
+    "R-2: a video's address is asked without upsert, in the only form storage reads (no x-upsert header, no ignored body flag)");
+  g.S.calls = [];
+  g.S.token = jwt({ url: "uploads/p", upsert: true, scope: "upload", iat: 100, exp: 3700 });
+  const sheet = await g.signUploadTarget("u/pack/tt-1/sheet-1.jpg", true);
+  check(g.S.calls[0].headers?.["x-upsert"] === "true", "R-2: a sheet's address asks for upsert with the x-upsert header storage honours");
+  check(sheet.expires_in === 3600, "R-2: a different storage lifetime is reported as it is (" + sheet.expires_in + ")");
+  g.S.calls = []; g.S.token = "not-a-jwt";
+  const odd = await g.signUploadTarget("u/v.mp4", false);
+  check(odd.expires_in === 7200, "R-2: an unreadable token is reported at storage's documented two hours");
+  check(/signUploadTarget\(path, true\)/.test(SRC) && /signUploadTarget\(ref\.path, false\)/.test(SRC),
+    "R-2: sheets sign with upsert, the video door without");
 }
 
 // ---- CR-2: the save key on /media, narrowly ----

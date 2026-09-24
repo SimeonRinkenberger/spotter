@@ -1,7 +1,7 @@
 // The upload permit after 20260924130000: two outstanding per person, sixteen
 // for the product, sheets still on their own ceiling. Runs the shipping SQL in
 // PGlite over the minimal schema tools/ai-guard-db-check.mjs builds; no network.
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import assert from 'node:assert/strict';
 
@@ -29,6 +29,12 @@ await db.exec(readFileSync('supabase/migrations/20260908150000_cost_and_abuse_gu
 await db.exec("alter table public.upload_permits add column if not exists kind text not null default 'media';");
 const migration = readFileSync('supabase/migrations/20260924130000_upload_permits_per_user.sql', 'utf8');
 await db.exec(migration);
+// The later permit migrations of this cycle (address-aware permits, per-plan
+// headroom), whichever exist: over an older tree none do, and the checks that
+// need them fail by name rather than crash.
+const later = readdirSync('supabase/migrations').filter((f) => /^202609241[4-9]\d{4}_.*permit.*\.sql$/.test(f)).sort();
+for (const f of later) await db.exec(readFileSync('supabase/migrations/' + f, 'utf8'));
+const fourArg = later.length > 0;
 
 const q = async (sql, args = []) => (await db.query(sql, args)).rows;
 const user = (i) => '00000000-0000-4000-8000-' + String(i).padStart(12, '0');
@@ -68,9 +74,57 @@ await q("delete from storage.objects where name=$1", [user(80) + '/f0.mp4']);
 await q("insert into storage.objects values('uploads',$1)", [user(80) + '/pack/tt-1/sheet-1.jpg']);
 ok(await permit(user(71), file(user(71), 1)) === 'ok', 'a pack sheet in the bucket is not counted against videos');
 
-const grants = await q("select has_function_privilege('authenticated','issue_upload_permit(uuid,text,bigint)','EXECUTE') as a, has_function_privilege('service_role','issue_upload_permit(uuid,text,bigint)','EXECUTE') as s");
+const sig = fourArg ? 'issue_upload_permit(uuid,text,bigint,integer)' : 'issue_upload_permit(uuid,text,bigint)';
+const grants = await q(`select has_function_privilege('authenticated','${sig}','EXECUTE') as a, has_function_privilege('service_role','${sig}','EXECUTE') as s`);
 ok(!grants[0].a && grants[0].s, 'only the service role may issue permits');
 ok(!/insert into|update |delete from/i.test(migration.replace(/insert into upload_permits/i, '')),
   'the migration replaces one function and writes no row');
 
-console.log('PASS ' + checks + ' upload permit checks (two per person, sixteen for the product).');
+// ---- R-2: a permit holds while its signed address can write; own objects count ----
+const failed = [];
+const soft = (condition, label) => { checks++; if (!condition) failed.push(label); };
+const permit4 = async (u, path, secs) => {
+  try { return (await q('select issue_upload_permit($1,$2,1000,$3) as r', [u, path, secs]))[0].r; }
+  catch (e) { return 'error: ' + e.message.split('\n')[0]; }
+};
+await q('delete from upload_permits'); await q('delete from storage.objects');
+const d = user(90);
+// Two objects in the person's folder, both permits already released by the
+// server's delete (the server deleted nothing yet here: the objects are what count).
+ok(await permit(d, file(d, 1)) === 'ok' && await permit(d, file(d, 2)) === 'ok', 'R-2 setup: two permits');
+await q('update upload_permits set released=true where user_id=$1', [d]);
+await q("insert into storage.objects values('uploads',$1),('uploads',$2)", [file(d, 1), file(d, 2)]);
+soft(await permit(d, file(d, 3)) === 'pending', 'R-2: a third permit is refused while two of the person\'s objects are in the bucket, even with both permits released');
+await q("insert into storage.objects values('uploads',$1)", [d + '/pack/tt-1/sheet-1.jpg']);
+await q('delete from storage.objects where name=$1', [file(d, 2)]);
+soft(await permit(d, file(d, 4)) === 'ok', 'R-2: one object and a pack sheet leave room for a permit (sheets are not counted)');
+
+const e = user(91);
+soft(await permit4(e, file(e, 1), 7260) === 'ok', 'R-2: an address-aware permit is issued (fourth argument = the address lifetime)');
+const until = await q('select extract(epoch from address_until - now())::int s from upload_permits where path=$1', [file(e, 1)])
+  .then((r) => r[0]?.s, () => null);
+soft(until > 7200 && until <= 7260, 'R-2: it records when its address stops writing (' + until + 's)');
+await q('update upload_permits set released=true, expires_at=now() where path=$1', [file(e, 1)]);
+soft(await permit4(e, file(e, 2), 7260) === 'ok', 'R-2: second permit while the first is released but live');
+soft(await permit4(e, file(e, 3), 7260) === 'pending', 'R-2: a released permit whose address can still write keeps the slot (third refused)');
+await q("update upload_permits set address_until=now()-interval '1 second', created_at=now()-interval '3 hours' where path=$1", [file(e, 1)]).catch(() => {});
+soft(await permit4(e, file(e, 3), 7260) === 'ok', 'R-2: once that address has expired the slot comes back');
+soft(await permit4(e, file(e, 4), 0) === 'invalid' && await permit4(e, file(e, 5), 90000) === 'invalid', 'R-2: an address lifetime outside 1 s … 1 day is invalid');
+
+// The product ceiling counts live addresses too: 16 released-but-live permits fill it.
+await q('delete from upload_permits'); await q('delete from storage.objects');
+for (let i = 100; i < 108; i++) for (let k = 1; k <= 2; k++) await permit4(user(i), file(user(i), k), 7260);
+await q('update upload_permits set released=true');
+soft(await permit4(user(120), file(user(120), 1), 7260) === 'busy', 'R-2: sixteen live addresses fill the product ceiling even once released');
+// The app's own session permits (no address) are unchanged: released frees the slot.
+await q('delete from upload_permits');
+const f = user(92);
+soft(await permit(f, file(f, 1)) === 'ok' && await permit(f, file(f, 2)) === 'ok', 'R-2: the app\'s own permits (three arguments) still issue');
+await q('update upload_permits set released=true where user_id=$1', [f]);
+soft(await permit(f, file(f, 3)) === 'ok', 'R-2: and a released session permit still frees its slot at once');
+
+if (failed.length) {
+  console.error('FAIL ' + failed.length + ' of ' + checks + ' upload permit checks:\n  ' + failed.join('\n  '));
+  process.exit(1);
+}
+console.log('PASS ' + checks + ' upload permit checks (two per person, sixteen for the product, held while an address can write, own objects counted).');
