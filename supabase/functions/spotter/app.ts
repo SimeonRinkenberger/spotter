@@ -1281,7 +1281,7 @@ export const APP = String.raw`
     state.plan = null; state.awards = null; state.goal = null; heroPct = 0; trainSeg = null;
     state.unit = "lb"; state.sounds = true; state.haptics = true;
     state.collections = []; state.colItems = []; seenCards = {}; gridCards = {};
-    expCache = {}; expWaiting = {}; vidCache = {}; expKey = "";
+    expCache = {}; expWaiting = {}; vidCache = {}; expKey = ""; capWaiting = {};
     today.rows = []; today.at = 0; today.day = null; today.busy = false; today.shown = false; today.asked = 0;
     current = null;
     if (sc) scForget();
@@ -1459,7 +1459,7 @@ export const APP = String.raw`
     if (!row || !row.id) return;
     if (!state.user || (row.user_id && row.user_id !== state.user.id)) return;
     if (payload.eventType !== "DELETE" && state.workouts.some(function (w) {
-      return w.id === row.id && JSON.stringify(w) === JSON.stringify(row);
+      return w.id === row.id && sameRow(w, row);
     })) return;
     libraryRev++;
 
@@ -1510,7 +1510,7 @@ export const APP = String.raw`
     if (!ids.length) return Promise.resolve();
     var epoch = accountEpoch, uid = state.user.id, rev = libraryRev;
     pendBusy = true; pendPolls++;
-    return sb.from("workouts").select("*").eq("user_id", uid).in("id", ids).then(function (r) {
+    return sb.from("workouts").select(CARD_COLS).eq("user_id", uid).in("id", ids).then(function (r) {
       if (!accountNow(epoch, uid) || r.error || rev !== libraryRev) return;
       var found = {};
       (r.data || []).forEach(function (w) { found[w.id] = true; onWorkoutChange({eventType:"UPDATE",new:w}); });
@@ -1550,6 +1550,31 @@ export const APP = String.raw`
         renderLibCount();
       }
     });
+  }
+
+  // ---------- the columns a card is read with ----------
+  //
+  // What app.ts reads off a workouts row, and nothing else. caption is read only
+  // by the detail's source disclosure, which asks for it when it is opened
+  // (askCaption); ingest_job_id, extracted_by, read_plan, rating, calories,
+  // user_title_override and user_category_override are read nowhere. Builds 5-7
+  // keep their own select=*, which PostgREST serves as before. The data export
+  // keeps select=* too: that one is meant to be everything.
+  var CARD_COLS = "id,user_id,created_at,url,shortcode,platform,kind,author,title,thumb_url,category," +
+    "muscle_groups,equipment,difficulty,duration_minutes,blocks,tags,has_full_workout,favorite,notes," +
+    "source_url,ingest_status,ingest_error,confidence,media_stage,read_quality,user_workout_override,user_edit_revision";
+  var CARD_KEYS = CARD_COLS.split(",");
+
+  // Two rows are the same card when those columns agree, and the caption too when
+  // both sides carry it. A socket event carries every column; comparing all of
+  // them against a row read with fewer would re-render on every event.
+  function cardSig(w) {
+    var o = {};
+    for (var i = 0; i < CARD_KEYS.length; i++) o[CARD_KEYS[i]] = w[CARD_KEYS[i]] === undefined ? null : w[CARD_KEYS[i]];
+    return JSON.stringify(o);
+  }
+  function sameRow(a, b) {
+    return cardSig(a) === cardSig(b) && (a.caption === undefined || b.caption === undefined || a.caption === b.caption);
   }
 
   // ---------- cache ----------
@@ -1671,7 +1696,7 @@ export const APP = String.raw`
     var uid = state.user.id, epoch = accountEpoch, rev = libraryRev;
     return readOnce("library:" + rev + ":" + !!retry, function () {
       var begun = Date.now();
-      var rows = sb.from("workouts").select("*").eq("user_id", uid)
+      var rows = sb.from("workouts").select(CARD_COLS).eq("user_id", uid)
         .order("created_at", { ascending: false }).limit(200).then(function (r) {
           if (!accountNow(epoch, uid)) return;
           if (r.error) throw r.error;
@@ -1721,7 +1746,9 @@ export const APP = String.raw`
   // expanded rows, focus and playing media) when its source has not changed.
   function refreshDetail(w) {
     if (!current || current.id !== w.id) return;
-    if (JSON.stringify(current) === JSON.stringify(w)) return;
+    // A row from load() carries no caption; the one this detail already asked for stays.
+    if (w.caption === undefined && current.caption !== undefined) w.caption = current.caption;
+    if (sameRow(current, w)) return;
     var old = current, d = $("dinner"), scroll = $("detail").scrollTop;
     if (!$("detail").classList.contains("open")) { current = w; return; }
     var source = d.querySelector(".source-disclosure");
@@ -1740,6 +1767,45 @@ export const APP = String.raw`
       if (replacement) replacement.replaceWith(source);
     }
     $("detail").scrollTop = scroll;
+  }
+
+  // ---------- the caption, on demand ----------
+  //
+  // load() leaves caption on the server (CARD_COLS). The disclosure asks for it
+  // when it opens; the answer is kept on the row, so a second open asks nothing.
+  // Closed, it is simply there next time. Opened already, it slides in under the
+  // link once the disclosure has finished opening, rather than jumping the page.
+  var capWaiting = {};
+
+  function askCaption(w, box, body) {
+    if (w.caption !== undefined || isUpload(w) || !state.user) return;
+    var epoch = accountEpoch, uid = state.user.id, id = w.id;
+    var p = capWaiting[id];
+    if (!p) {
+      p = capWaiting[id] = sb.from("workouts").select("caption").eq("id", id).maybeSingle().then(function (r) {
+        if (r.error) throw r.error;
+        return r.data ? r.data.caption : null;
+      });
+      var done = function () { if (capWaiting[id] === p) delete capWaiting[id]; };
+      p.then(done, done);
+    }
+    p.then(function (cap) {
+      if (!accountNow(epoch, uid)) return;
+      if (w.caption === undefined) w.caption = cap;
+      if (current && current.id === id && current.caption === undefined) current.caption = cap;
+      showCaption(box, body, cap);
+    }, function () { /* the link is still there; the next open asks again */ });
+  }
+
+  function showCaption(box, body, text) {
+    if (!text || !body.isConnected || body.querySelector(".capbox")) return;
+    if (box._disclosureRun) { setTimeout(function () { showCaption(box, body, text); }, 90); return; }
+    var cap = el("div", "capbox", text);
+    body.appendChild(cap);
+    if (!box.open || lessMotion() || !cap.animate) return;
+    var css = getComputedStyle(cap), h = cap.getBoundingClientRect().height;
+    cap.animate([{ height: "0px", opacity: 0, overflow: "hidden" }, { height: h + "px", opacity: 1, overflow: "hidden" }],
+      { duration: parseFloat(css.getPropertyValue("--t-3")) || 320, easing: css.getPropertyValue("--e-out").trim() || "ease-out" });
   }
 
   function isPending(w) { return w.ingest_status === "processing"; }
@@ -3247,12 +3313,16 @@ export const APP = String.raw`
     var sourceBody = original.lastChild;
     if (!isUpload(w) && w.url) sourceBody.appendChild(originalLink(w));
     if (w.caption) sourceBody.appendChild(el("div", "capbox", w.caption));
+    // Asked for on the press that opens it, a beat before the tap lands, and on the
+    // open itself for a keyboard.
+    original.firstChild.addEventListener("pointerdown", function () { askCaption(w, original, sourceBody); });
     original._prepareDisclosure = function () {
       if (!original.open) {
         var old = sourceBody.querySelector(".embedwrap, .dphoto");
         if (old) old.remove();
         return;
       }
+      askCaption(w, original, sourceBody);
       if (sourceBody.querySelector(".embedwrap, .dphoto")) return;
       var em = embedNode(w);
       if (em) { sourceBody.insertBefore(em, sourceBody.firstChild); fitEmbed(em, w.platform); }

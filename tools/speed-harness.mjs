@@ -16,6 +16,9 @@
 //   C6  a launch reads plan and workout_logs for the today card once, not twice;
 //       the card still ticks when a session is logged, moves when the day
 //       changes, and a pull to refresh still re-reads it.
+//   C7  load() reads the columns the app reads; a socket event carrying every
+//       column does not re-render an unchanged card; the caption is asked for
+//       once, when the source disclosure opens, and kept.
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
@@ -42,6 +45,12 @@ function stmt(head, tail) {
   assert(b > a, 'unterminated in app.ts: ' + head);
   return APP.slice(a, b + tail.length + 2);
 }
+
+// The CARD_COLS / CARD_KEYS declarations, as written.
+const CARD_DECL = (() => {
+  const a = APP.indexOf('  var CARD_COLS = '); assert(a >= 0, 'CARD_COLS');
+  const b = APP.indexOf('  var CARD_KEYS = ', a); return APP.slice(a, APP.indexOf('\n', b));
+})();
 
 // ---------- the fake page ----------
 class El {
@@ -275,7 +284,7 @@ for (const [hash, search] of [['#access_token=t&refresh_token=r&type=magiclink',
   // The real load(), loadToday(), renderToday() and boot() over a PostgREST that
   // answers when the test says so. Requests are counted per table.
   const REAL = ['readOnce', 'load', 'loadToday', 'renderToday', 'ymd', 'boot', 'paintCache', 'paintRows', 'readCache'].map(fn).join('\n');
-  const TODAY_DECL = (() => { const a = APP.indexOf('  var today = {'); return APP.slice(a, APP.indexOf('\n', a)); })();
+  const TODAY_DECL = (() => { const a = APP.indexOf('  var today = {'); return APP.slice(a, APP.indexOf('\n', a)); })() + '\n' + CARD_DECL;
   function world() {
     const ctx = vm.createContext({ El, Promise, JSON, Object, Array, String, Number, Math, console });
     vm.runInContext(`
@@ -365,6 +374,86 @@ for (const [hash, search] of [['#access_token=t&refresh_token=r&type=magiclink',
     assert.equal(count(c, 'plan'), again, 'a plain repaint inside half a minute asks nothing');
     ok('C6 today card: ticks on a log, moves with the day, refresh still re-reads');
   }
+}
+
+// ---------- C7 ----------
+{
+  // Every column of public.workouts (information_schema, production, 24 Sept).
+  const TABLE = ['id', 'user_id', 'created_at', 'url', 'shortcode', 'platform', 'kind', 'author', 'title', 'caption', 'thumb_url',
+    'category', 'muscle_groups', 'equipment', 'difficulty', 'duration_minutes', 'calories', 'blocks', 'tags', 'has_full_workout',
+    'favorite', 'rating', 'notes', 'source_url', 'ingest_status', 'ingest_error', 'ingest_job_id', 'confidence', 'extracted_by',
+    'media_stage', 'read_quality', 'read_plan', 'user_workout_override', 'user_title_override', 'user_category_override', 'user_edit_revision'];
+  const ctx = vm.createContext({ JSON, Object, Array, String, Number });
+  vm.runInContext(CARD_DECL, ctx);
+  const keys = JSON.parse(vm.runInContext('JSON.stringify(CARD_KEYS)', ctx));
+  const left = TABLE.filter((c) => !keys.includes(c));
+  assert.deepEqual(keys.filter((k) => !TABLE.includes(k)), [], 'every selected column exists');
+  assert.deepEqual(left.sort(), ['calories', 'caption', 'extracted_by', 'ingest_job_id', 'rating', 'read_plan', 'user_category_override', 'user_title_override'],
+    'caption and the seven unread columns stay on the server');
+  for (const c of left.filter((c) => c !== 'caption')) assert(!new RegExp('\\.' + c + '\\b').test(APP), c + ' is read somewhere in app.ts');
+  // caption is read only by the detail's source disclosure, refreshDetail and the helpers that fetch it.
+  const capReaders = new Set();
+  for (const m of APP.matchAll(/\.caption\b/g)) {
+    const before = APP.lastIndexOf('\n  function ', m.index);
+    capReaders.add(APP.slice(before + 12, APP.indexOf('(', before + 12)));
+  }
+  assert.deepEqual([...capReaders].sort(), ['askCaption', 'openDetail', 'refreshDetail', 'sameRow'], 'caption readers: ' + [...capReaders]);
+  const selects = [...APP.matchAll(/from\("workouts"\)\.select\(([^)]*)\)/g)].map((m) => m[1]);
+  assert.deepEqual(selects, ['CARD_COLS', 'CARD_COLS', '"caption"', '"*"'], 'pollPending and load select CARD_COLS; the export keeps *: ' + selects);
+  ok('C7 columns: the ones app.ts reads, caption on demand, the export still whole');
+}
+{
+  const LIFT7 = ['cardSig', 'sameRow', 'onWorkoutChange', 'refreshDetail', 'askCaption', 'showCaption', 'isUpload', 'accountNow'].map(fn).join('\n');
+  const ctx = vm.createContext({ JSON, Object, Array, String, Number, Promise, Math });
+  vm.runInContext(CARD_DECL + `
+    var state = { user: { id: "u1" }, workouts: [] }, libraryRev = 0, accountEpoch = 0, current = null, renders = 0, opens = 0, asked = [], timers = [];
+    var capWaiting = {};
+    function render() { renders++; } function toast() {} function watchPending() {}
+    function openDetail(w) { opens++; current = w; }
+    function setTimeout(f) { timers.push(f); }
+    function lessMotion() { return true; }
+    function el(t, c, text) { return { cls: c, textContent: text }; }
+    var detailOpen = true;
+    function $(id) { return { classList: { contains: function () { return detailOpen; } }, querySelector: function () { return null; }, querySelectorAll: function () { return []; }, scrollTop: 0 }; }
+    var sb = { from: function (t) { var q = { select: function (c) { asked.push(t + ":" + c); return q; }, eq: function () { return q; },
+      maybeSingle: function () { return Promise.resolve({ data: { caption: "Five moves, five reps." }, error: null }); } }; return q; } };
+  ` + LIFT7, ctx);
+  const run = (js) => vm.runInContext(js, ctx);
+  // A row as load() reads it, and the same card as a socket event carries it: every column.
+  run(`var picked = { id: "w1", user_id: "u1", title: "A", blocks: [{ exercises: [{ name: "Squat" }] }], ingest_status: "ready", favorite: false };
+       var full = Object.assign({}, picked, { caption: "Five moves, five reps.", calories: 120, rating: null, extracted_by: "gpt", read_plan: "free", ingest_job_id: "j1" });
+       state.workouts = [picked];`);
+  run('onWorkoutChange({ eventType: "UPDATE", new: full })');
+  assert.equal(run('renders'), 0, 'an event for an unchanged card does not re-render');
+  assert.equal(run('libraryRev'), 0);
+  run('onWorkoutChange({ eventType: "UPDATE", new: Object.assign({}, full, { calories: 300 }) })');
+  assert.equal(run('renders'), 0, 'a change to a column the app never reads does not re-render');
+  run('onWorkoutChange({ eventType: "UPDATE", new: Object.assign({}, full, { favorite: true }) })');
+  assert.equal(run('renders'), 1, 'a change to a read column still renders');
+  ok('C7 realtime: an event carrying every column re-renders only when a read column changed');
+
+  // The detail asked for its caption; load()'s row, without one, does not rebuild it.
+  run('current = Object.assign({}, picked, { caption: "Five moves, five reps." }); opens = 0; var fresh = Object.assign({}, picked); refreshDetail(fresh)');
+  assert.equal(run('opens'), 0, 'load()\'s caption-less row does not rebuild an open detail');
+  assert.equal(run('fresh.caption'), 'Five moves, five reps.', 'and keeps the caption the detail fetched');
+  run('refreshDetail(Object.assign({}, picked, { title: "B" }))');
+  assert.equal(run('opens'), 1, 'a real change still rebuilds it');
+
+  // The disclosure asks once, even pressed twice, and the answer stays on the row.
+  run('current = Object.assign({}, picked); var box = { open: false }, body = { isConnected: true, kids: [], querySelector: function () { return this.kids.length ? this.kids[0] : null; }, appendChild: function (n) { this.kids.push(n); } };');
+  run('askCaption(current, box, body); askCaption(current, box, body)');
+  await tick(); await tick();
+  assert.equal(run('asked.join()'), 'workouts:caption', 'one read for two presses');
+  assert.equal(run('current.caption'), 'Five moves, five reps.');
+  assert.equal(run('body.kids.length'), 1, 'the caption box is in the disclosure');
+  run('askCaption(current, box, body)'); await tick();
+  assert.equal(run('asked.join()'), 'workouts:caption', 'a second open asks nothing');
+  // Arriving mid-open, it waits for the disclosure to finish rather than jump it.
+  run('var box2 = { open: true, _disclosureRun: {} }, body2 = { isConnected: true, kids: [], querySelector: function () { return this.kids.length ? this.kids[0] : null; }, appendChild: function (n) { this.kids.push(n); } }; showCaption(box2, body2, "x")');
+  assert.equal(run('body2.kids.length'), 0, 'not while the disclosure is still opening');
+  run('box2._disclosureRun = null; timers.splice(0).forEach(function (f) { f(); })');
+  assert.equal(run('body2.kids.length'), 1, 'then it arrives');
+  ok('C7 caption: asked once when the disclosure opens, kept on the row, never jumps an opening disclosure');
 }
 
 console.log('All ' + n + ' speed checks passed.');

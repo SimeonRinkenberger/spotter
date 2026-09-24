@@ -9538,7 +9538,7 @@ details.details-moving > :not(summary) {
   }
   function clearAccount() {
     if (dismissAiConsent(), native && native.configureSharing(null).catch(function() {
-    }), cancelPumpyReset(), pendingMotion && pendingMotion.disconnect(), $("app").classList.add("hide"), accountEpoch++, reads = {}, inFlight = {}, libraryRev++, logsRev++, planRev++, clearTimeout(undoTimer), undoTimer = null, undoFn = null, clearTimeout(detailCloseTimer), clearTimeout(woCloseTimer), clearTimeout(pendTimer), pendTimer = null, pendPolls = 0, pendBusy = !1, wkChannel && (sb.removeChannel(wkChannel), wkChannel = null), booting = null, earlyUid = null, state.profile = null, state.workouts = [], state.logs = null, state.plan = null, state.awards = null, state.goal = null, heroPct = 0, trainSeg = null, state.unit = "lb", state.sounds = !0, state.haptics = !0, state.collections = [], state.colItems = [], seenCards = {}, gridCards = {}, expCache = {}, expWaiting = {}, vidCache = {}, expKey = "", today.rows = [], today.at = 0, today.day = null, today.busy = !1, today.shown = !1, today.asked = 0, current = null, sc && scForget(), wo && saveDraft(), clearInterval(woTimer), stopRest(), liveEnd(!1), releaseWake(), wo = null, hist = {}, histReady = !1, strava && (strava = { asked: !1, configured: !1, connected: !1, athlete: null, busy: !1 }), pumpy) {
+    }), cancelPumpyReset(), pendingMotion && pendingMotion.disconnect(), $("app").classList.add("hide"), accountEpoch++, reads = {}, inFlight = {}, libraryRev++, logsRev++, planRev++, clearTimeout(undoTimer), undoTimer = null, undoFn = null, clearTimeout(detailCloseTimer), clearTimeout(woCloseTimer), clearTimeout(pendTimer), pendTimer = null, pendPolls = 0, pendBusy = !1, wkChannel && (sb.removeChannel(wkChannel), wkChannel = null), booting = null, earlyUid = null, state.profile = null, state.workouts = [], state.logs = null, state.plan = null, state.awards = null, state.goal = null, heroPct = 0, trainSeg = null, state.unit = "lb", state.sounds = !0, state.haptics = !0, state.collections = [], state.colItems = [], seenCards = {}, gridCards = {}, expCache = {}, expWaiting = {}, vidCache = {}, expKey = "", capWaiting = {}, today.rows = [], today.at = 0, today.day = null, today.busy = !1, today.shown = !1, today.asked = 0, current = null, sc && scForget(), wo && saveDraft(), clearInterval(woTimer), stopRest(), liveEnd(!1), releaseWake(), wo = null, hist = {}, histReady = !1, strava && (strava = { asked: !1, configured: !1, connected: !1, athlete: null, busy: !1 }), pumpy) {
       var seq = (pumpy.openSeq || 0) + 1, wired = pumpy.wired;
       pumpy = {
         thread: null,
@@ -9634,7 +9634,7 @@ details.details-moving > :not(summary) {
   function onWorkoutChange(payload) {
     var row = payload.eventType === "DELETE" ? payload.old : payload.new;
     if (!(!row || !row.id) && !(!state.user || row.user_id && row.user_id !== state.user.id) && !(payload.eventType !== "DELETE" && state.workouts.some(function(w) {
-      return w.id === row.id && JSON.stringify(w) === JSON.stringify(row);
+      return w.id === row.id && sameRow(w, row);
     }))) {
       if (libraryRev++, payload.eventType === "DELETE") {
         state.workouts = state.workouts.filter(function(w) {
@@ -9672,7 +9672,7 @@ details.details-moving > :not(summary) {
     });
     if (!ids.length) return Promise.resolve();
     var epoch = accountEpoch, uid = state.user.id, rev = libraryRev;
-    return pendBusy = !0, pendPolls++, sb.from("workouts").select("*").eq("user_id", uid).in("id", ids).then(function(r) {
+    return pendBusy = !0, pendPolls++, sb.from("workouts").select(CARD_COLS).eq("user_id", uid).in("id", ids).then(function(r) {
       if (!(!accountNow(epoch, uid) || r.error || rev !== libraryRev)) {
         var found = {};
         (r.data || []).forEach(function(w) {
@@ -9696,6 +9696,14 @@ details.details-moving > :not(summary) {
         s.unit && (state.unit = s.unit), typeof s.sounds == "boolean" && (state.sounds = s.sounds), typeof s.haptics == "boolean" && (state.haptics = s.haptics), s.remind && (remind.plan = !!s.remind.plan, remind.risk = !!s.remind.risk), typeof s.remindAt == "number" && (remind.at = s.remindAt), paintSounds(), billing.said && (state.profile.plan = billing.said), renderLibCount();
       }
     });
+  }
+  var CARD_COLS = "id,user_id,created_at,url,shortcode,platform,kind,author,title,thumb_url,category,muscle_groups,equipment,difficulty,duration_minutes,blocks,tags,has_full_workout,favorite,notes,source_url,ingest_status,ingest_error,confidence,media_stage,read_quality,user_workout_override,user_edit_revision", CARD_KEYS = CARD_COLS.split(",");
+  function cardSig(w) {
+    for (var o = {}, i = 0; i < CARD_KEYS.length; i++) o[CARD_KEYS[i]] = w[CARD_KEYS[i]] === void 0 ? null : w[CARD_KEYS[i]];
+    return JSON.stringify(o);
+  }
+  function sameRow(a, b) {
+    return cardSig(a) === cardSig(b) && (a.caption === void 0 || b.caption === void 0 || a.caption === b.caption);
   }
   var CACHE_KEY = "spotter-lib-v1", CACHE_MAX = 15e5;
   function thinRow(w) {
@@ -9784,7 +9792,7 @@ details.details-moving > :not(summary) {
     if (!state.user) return Promise.resolve();
     var uid = state.user.id, epoch = accountEpoch, rev = libraryRev;
     return readOnce("library:" + rev + ":" + !!retry, function() {
-      var begun = Date.now(), rows = sb.from("workouts").select("*").eq("user_id", uid).order("created_at", { ascending: !1 }).limit(200).then(function(r) {
+      var begun = Date.now(), rows = sb.from("workouts").select(CARD_COLS).eq("user_id", uid).order("created_at", { ascending: !1 }).limit(200).then(function(r) {
         if (accountNow(epoch, uid)) {
           if (r.error) throw r.error;
           if (rev === libraryRev) {
@@ -9827,7 +9835,7 @@ details.details-moving > :not(summary) {
     });
   }
   function refreshDetail(w) {
-    if (!(!current || current.id !== w.id) && JSON.stringify(current) !== JSON.stringify(w)) {
+    if (!(!current || current.id !== w.id) && (w.caption === void 0 && current.caption !== void 0 && (w.caption = current.caption), !sameRow(current, w))) {
       var old = current, d = $("dinner"), scroll = $("detail").scrollTop;
       if (!$("detail").classList.contains("open")) {
         current = w;
@@ -9843,6 +9851,44 @@ details.details-moving > :not(summary) {
         replacement && replacement.replaceWith(source);
       }
       $("detail").scrollTop = scroll;
+    }
+  }
+  var capWaiting = {};
+  function askCaption(w, box, body) {
+    if (!(w.caption !== void 0 || isUpload(w) || !state.user)) {
+      var epoch = accountEpoch, uid = state.user.id, id = w.id, p = capWaiting[id];
+      if (!p) {
+        p = capWaiting[id] = sb.from("workouts").select("caption").eq("id", id).maybeSingle().then(function(r) {
+          if (r.error) throw r.error;
+          return r.data ? r.data.caption : null;
+        });
+        var done = function() {
+          capWaiting[id] === p && delete capWaiting[id];
+        };
+        p.then(done, done);
+      }
+      p.then(function(cap) {
+        accountNow(epoch, uid) && (w.caption === void 0 && (w.caption = cap), current && current.id === id && current.caption === void 0 && (current.caption = cap), showCaption(box, body, cap));
+      }, function() {
+      });
+    }
+  }
+  function showCaption(box, body, text) {
+    if (!(!text || !body.isConnected || body.querySelector(".capbox"))) {
+      if (box._disclosureRun) {
+        setTimeout(function() {
+          showCaption(box, body, text);
+        }, 90);
+        return;
+      }
+      var cap = el("div", "capbox", text);
+      if (body.appendChild(cap), !(!box.open || lessMotion() || !cap.animate)) {
+        var css = getComputedStyle(cap), h = cap.getBoundingClientRect().height;
+        cap.animate(
+          [{ height: "0px", opacity: 0, overflow: "hidden" }, { height: h + "px", opacity: 1, overflow: "hidden" }],
+          { duration: parseFloat(css.getPropertyValue("--t-3")) || 320, easing: css.getPropertyValue("--e-out").trim() || "ease-out" }
+        );
+      }
     }
   }
   function isPending(w) {
@@ -10758,13 +10804,15 @@ details.details-moving > :not(summary) {
       history.back(), openPumpy(w);
     }, actions.appendChild(ask), d.appendChild(actions);
     var original = disclosure("Watch original / source", "source-disclosure"), sourceBody = original.lastChild;
-    !isUpload(w) && w.url && sourceBody.appendChild(originalLink(w)), w.caption && sourceBody.appendChild(el("div", "capbox", w.caption)), original._prepareDisclosure = function() {
+    !isUpload(w) && w.url && sourceBody.appendChild(originalLink(w)), w.caption && sourceBody.appendChild(el("div", "capbox", w.caption)), original.firstChild.addEventListener("pointerdown", function() {
+      askCaption(w, original, sourceBody);
+    }), original._prepareDisclosure = function() {
       if (!original.open) {
         var old = sourceBody.querySelector(".embedwrap, .dphoto");
         old && old.remove();
         return;
       }
-      if (!sourceBody.querySelector(".embedwrap, .dphoto")) {
+      if (askCaption(w, original, sourceBody), !sourceBody.querySelector(".embedwrap, .dphoto")) {
         var em = embedNode(w);
         em && (sourceBody.insertBefore(em, sourceBody.firstChild), fitEmbed(em, w.platform));
       }
