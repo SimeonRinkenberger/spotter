@@ -2857,7 +2857,7 @@ async function deleteUpload(path: string): Promise<void> {
  * the phone is a parsing job nobody should have to do twice.
  */
 async function signUploadTarget(
-  path: string,
+  path: string, upsert = true,
 ): Promise<{ upload_url: string; token: string }> {
   const r = await fetch(`${SUPABASE_URL}/storage/v1/object/upload/sign/uploads/${path}`, {
     method: "POST",
@@ -2867,7 +2867,10 @@ async function signUploadTarget(
     // under a signed READ url already handed to somebody else; a pack sheet has no
     // such reader — the only thing that ever fetches one is our own isolate, from
     // a url minted seconds earlier, and the object is deleted immediately after.
-    body: JSON.stringify({ expiresIn: UPLOAD_SIGN_SECONDS, upsert: true }),
+    // A whole video is handed to a model under a signed read url, so its address
+    // keeps the rule (upsert false); the Share Extension asks for a new address
+    // on a retry rather than writing twice to one.
+    body: JSON.stringify({ expiresIn: UPLOAD_SIGN_SECONDS, upsert }),
     signal: AbortSignal.timeout(10_000),
   });
   if (!r.ok) throw new Error(`sign upload ${r.status}: ${(await r.text()).slice(0, 200)}`);
@@ -8306,8 +8309,12 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
   const seedMeta: Meta | null = supplied
     ? (frames ? { ...supplied, frames } : supplied)
     : (frames ? { caption: null, thumb: null, author: null, frames } : null);
-  // Saved first, frames after: a new job with no frames yet is held for them.
-  const holding = framesPending && !frames && q.job_created ? await holdForFrames(q.job_id, supplied) : false;
+  // Saved first, frames after: a new job with no frames yet is held for them —
+  // only when stills could change the read (CR-6). The plan is the server's, not
+  // the hint the extension decided with, which can be a plan ago; a joined job
+  // belongs to the save that started it.
+  const holding = framesPending && !frames && q.job_created && framesCouldHelp(p, uc.plan, cached[0])
+    ? await holdForFrames(q.job_id, supplied) : false;
   const seeded = holding ? !!supplied
     : seedMeta && q.job_created ? await seedJobMeta(q.job_id, seedMeta) : false;
   if (seedMeta && !q.job_created) {
@@ -8324,7 +8331,20 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
     job_id: q.job_id,
     title: provisional,
     message: supplied ? suppliedMessage(supplied, seeded) : readingLine(p),
+    // The answer to `frames_pending` (CR-5): false tells the Share Extension not
+    // to cut stills nobody will wait for. Absent for a save that did not ask.
+    ...(framesPending ? { frames_wanted: holding } : {}),
   }, 202, cors);
+}
+
+/**
+ * Whether a held save's stills could change what is read: a Plus account (a
+ * preview goes through the app, never the share sheet), a TikTok video (the
+ * only thing the phone cuts stills from; /ingest/prepare says the same), and a
+ * video nobody has read visually yet.
+ */
+function framesCouldHelp(p: Parsed, plan: string, cached: any): boolean {
+  return plusPlan(plan) && p.platform === "tiktok" && p.kind !== "photo" && !visuallyRead(cached);
 }
 
 /**
@@ -10089,6 +10109,26 @@ async function releaseHeldJob(w: any, rawFrames: unknown, userId: string, cors: 
   return json({ status: "processing", id: w.id, job_id: job.id, message: "Reading the frames…" }, 202, cors);
 }
 
+/** POST /api/workouts/:id/media, the one route with a card id in its path. */
+const MEDIA_PATH_RE = /^\/api\/workouts\/([0-9a-f-]{36})\/media$/;
+
+/**
+ * The two /media bodies the save key may send (CR-2): `{frames}` alone — the
+ * Share Extension's stills for the save it just held — and `{upload_path,
+ * filename?}`, "Add the video" into a card the person owns. The card is still
+ * looked up by owner, so a key reaches only its own account's cards.
+ */
+function keyMediaBody(body: Record<string, unknown> | null): boolean {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return false;
+  const keys = Object.keys(body);
+  if (keys.length === 1 && keys[0] === "frames") return body.frames !== null && body.frames !== undefined;
+  return typeof body.upload_path === "string" && keys.every((k) => k === "upload_path" || k === "filename");
+}
+
+function keyMediaRefusal(cors: Cors): Response {
+  return json({ status: "error", message: "Open Spotter to do that." }, 403, cors);
+}
+
 /**
  * "Read the video" — the manual trigger, for a card that came out thin and a user
  * who would rather Spotter listened than retyped the caption themselves.
@@ -10099,12 +10139,8 @@ async function releaseHeldJob(w: any, rawFrames: unknown, userId: string, cors: 
  * the backoff, the one-job-per-video guarantee and the dead-letter cutoff.
  */
 async function handleReadVideo(
-  id: string, userId: string, req: Request, cors: Cors,
+  id: string, userId: string, req: Request, cors: Cors, viaKey = false,
 ): Promise<Response> {
-  const rows = await dbSelect("workouts", `id=eq.${id}&user_id=eq.${userId}&select=*`);
-  if (!rows.length) return json({ status: "error", message: "Not found." }, 404, cors);
-  const w = rows[0];
-
   // "Re-read this video", from the native app, with frames it has just cut.
   //
   // This is the one route that is ALLOWED to pay twice for the same video, and it
@@ -10115,6 +10151,14 @@ async function handleReadVideo(
   // no-op. Without frames the route behaves exactly as it did: the cached reading
   // wins and nobody pays for a second one.
   const body = await req.json().catch(() => null) as Record<string, unknown> | null;
+  // The save key reaches this route for two bodies only; anything else it asks
+  // for — a re-read, a preview, a read with no frames — is the app's to ask, and
+  // is refused before a row is read.
+  if (viaKey && !keyMediaBody(body)) return keyMediaRefusal(cors);
+
+  const rows = await dbSelect("workouts", `id=eq.${id}&user_id=eq.${userId}&select=*`);
+  if (!rows.length) return json({ status: "error", message: "Not found." }, 404, cors);
+  const w = rows[0];
 
   // "Add the video": a file the person downloaded from the post, read into this
   // card. Validated exactly as an upload save validates its path.
@@ -10133,6 +10177,17 @@ async function handleReadVideo(
   if (body?.frames !== undefined && body?.frames !== null && w.ingest_status === "processing") {
     const released = await releaseHeldJob(w, body.frames, userId, cors);
     if (released) return released;
+  }
+  // Frames with the key that released nothing: the hold ran out and the save is
+  // being read without them (said as today, sheets deleted), or there is no save
+  // in flight at all, which makes this a re-read — the app's to ask for.
+  if (viaKey) {
+    const parsed = parseFrames(body?.frames, userId, w.shortcode);
+    if (!("error" in parsed)) await deleteSheets(parsed.frames);
+    if (w.ingest_status === "processing") {
+      return json({ status: "processing", id, message: "Already reading that one." }, 200, cors);
+    }
+    return keyMediaRefusal(cors);
   }
 
   let frames: Frames | null = null;
@@ -10326,6 +10381,8 @@ async function upgradeCachedCard(
   return json({
     status: "processing", id: workoutId, job_id: q.job_id, title: card.title,
     message: "Listening to the video…",
+    // A cache upgrade never waits for a phone's stills (CR-5).
+    frames_wanted: false,
   }, 202, cors);
 }
 
@@ -13882,16 +13939,22 @@ async function handleAiConsent(req: Request, userId: string, cors: Cors): Promis
 }
 
 /**
- * The two routes that ask for admission themselves, and only when they are about
+ * The routes that ask for admission themselves, and only when they are about
  * to start paid work. A save's first answers — a link that is not a post, a card
  * the person already has, a card another person already paid to read — cost
  * nothing, and charging them to the one-minute burst and the busy lease is how a
  * seventh share in a minute (four of them bad links) was refused on 24 Sept, and
  * a share landing during a Pumpy turn was told to wait.
+ *
+ * Upload authorize is the third: admitted just before a permit is issued, so a
+ * refused one (a file type or size the route will not take, a full library)
+ * does not use Basic's one upload of the day — the Share Extension's first
+ * video share was spending it on a 400.
  */
 function admitsLate(req: Request, path: string): boolean {
   return req.method === "POST" &&
-    (path === "/api/ingest" || /^\/api\/workouts\/[0-9a-f-]{36}\/media$/.test(path));
+    (path === "/api/ingest" || path === "/api/uploads/authorize" ||
+      /^\/api\/workouts\/[0-9a-f-]{36}\/media$/.test(path));
 }
 
 /** What a late-admitting handler calls, once, before it spends anything. */
@@ -14054,6 +14117,10 @@ async function authorizeSheets(
     return await capLimit("library", uc, uc.caps.library ?? 0, cors);
   }
   if (!paid) throw new GuardError("budget");
+  // The route admits late (admitsLate): every answer above was free, and a
+  // request refused for its shape never spends the day's admission.
+  const refused = await admitNow();
+  if (refused) return refused;
 
   const paths = sizes.map((_n, i) => sheetPathFor(userId, shortcode, i + 1));
   // The permits still go out, and they are still what ties a path to this person
@@ -14101,7 +14168,22 @@ async function authorizeUpload(req: Request, userId: string, cors: Cors): Promis
   if (body && (body.kind === "pack" || (typeof body.shortcode === "string" && Array.isArray(body.sheets)))) {
     return await authorizeSheets(body as Record<string, unknown>, userId, cors);
   }
-  const ref = parseUploadPath(body?.path, userId);
+  // The Share Extension's video door: `{kind: "video", bytes, ext}` and no path.
+  // The extension holds the save key, not the account, so it cannot know the uid
+  // a path must start with; the path is minted here, and because it has no
+  // session to write to storage with, the answer carries a one-object signed
+  // address for exactly that path. A request that names its own path is the
+  // app's, and is answered exactly as it always was.
+  const minted = body?.kind === "video" && body?.path === undefined;
+  let path: unknown = body?.path;
+  if (minted) {
+    const ext = typeof body.ext === "string" ? body.ext.trim().toLowerCase().replace(/^\./, "") : "";
+    if (!Object.hasOwn(SHARED_VIDEO_TYPES, ext)) {
+      return json({ status: "error", message: "Choose an MP4, MOV or M4V video under 25 MB." }, 400, cors);
+    }
+    path = `${userId}/${crypto.randomUUID()}.${ext}`;
+  }
+  const ref = parseUploadPath(path, userId);
   const bytes = Number(body?.bytes);
   if (!ref || !Number.isInteger(bytes) || bytes < 1 || bytes > 25 * 1024 * 1024) {
     return json({ status: "error", message: "Choose a supported file under 25 MB." }, 400, cors);
@@ -14124,10 +14206,32 @@ async function authorizeUpload(req: Request, userId: string, cors: Cors): Promis
     if (overCap(await libraryCount(userId), uc.caps.library)) return capLimit("library", uc, uc.caps.library ?? 0, cors);
     if (!(await paidAllowed())) throw new GuardError("budget");
   }
-  const issued = await rpc("issue_upload_permit", { p_user: userId, p_path: body.path, p_bytes: bytes });
+  // Admitted here, after every free refusal: a request that was only ever going
+  // to be told "choose a supported file" or "your library is full" must not use
+  // Basic's one upload of the day (CR-1b).
+  const refused = await admitNow();
+  if (refused) return refused;
+  const issued = await rpc("issue_upload_permit", { p_user: userId, p_path: minted ? ref.path : body.path, p_bytes: bytes });
   if (issued !== "ok") return json({ status: "limit", message: "Uploads are busy right now. Please try again later." }, 429, cors);
-  return json({ status: "ok", path: body.path }, 200, cors);
+  if (!minted) return json({ status: "ok", path: body.path }, 200, cors);
+  let target: { upload_url: string; token: string };
+  try {
+    target = await signUploadTarget(ref.path, false);
+  } catch (e) {
+    console.error("video door: could not sign the upload target for", ref.path, e);
+    return json({ status: "error", message: "Spotter could not open a place to put that video. Try again in a moment." }, 502, cors);
+  }
+  return json({ status: "ok", path: ref.path, ...target, expires_in: UPLOAD_SIGN_SECONDS }, 200, cors);
 }
+
+/**
+ * What the video door takes, by extension: the three a phone's camera roll and
+ * Instagram's Download produce. Each is also in UPLOAD_EXTS and the bucket's
+ * allowed_mime_types; the Share Extension sends the matching Content-Type.
+ */
+const SHARED_VIDEO_TYPES: Record<string, string> = {
+  mp4: "video/mp4", mov: "video/quicktime", m4v: "video/x-m4v",
+};
 
 // ---------- creator codes ----------
 //
@@ -14551,10 +14655,16 @@ Deno.serve(async (req: Request) => {
     // hold, because the account it would come from lives in the containing app. So
     // a route it must reach that only accepted a bearer was a route it could not
     // reach at all, and handing the frames over is exactly such a route.
+    //
+    // `/media` takes the key too, narrowly: only the Share Extension's frames for
+    // a save it held, and "Add the video" for a card the person owns. Every other
+    // use of that route still needs the bearer (handleReadVideo, `viaKey`).
     let userId = await userFromBearer(req);
+    let viaKey = false;
     if (!userId && (path === "/api/ingest" || path === "/api/ingest/prepare" || path === "/api/uploads/authorize" ||
-        path === "/api/ai-consent")) {
+        path === "/api/ai-consent" || (req.method === "POST" && MEDIA_PATH_RE.test(path)))) {
       userId = await userFromIngestKey(req, url);
+      viaKey = !!userId;
     }
     if (!userId) return json({ status: "error", message: "Sign in to use Spotter." }, 401, cors);
 
@@ -14582,8 +14692,8 @@ Deno.serve(async (req: Request) => {
     const reproc = path.match(/^\/api\/workouts\/([0-9a-f-]{36})\/reprocess$/);
     if (req.method === "POST" && reproc) return await handleReprocess(reproc[1], userId, req, cors);
 
-    const readvid = path.match(/^\/api\/workouts\/([0-9a-f-]{36})\/media$/);
-    if (req.method === "POST" && readvid) return await handleReadVideo(readvid[1], userId, req, cors);
+    const readvid = path.match(MEDIA_PATH_RE);
+    if (req.method === "POST" && readvid) return await handleReadVideo(readvid[1], userId, req, cors, viaKey);
 
     const fix = path.match(/^\/api\/workouts\/([0-9a-f-]{36})\/exercises$/);
     if (req.method === "POST" && fix) return await handleCorrection(fix[1], userId, req, cors);

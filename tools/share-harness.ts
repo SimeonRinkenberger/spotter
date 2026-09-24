@@ -314,8 +314,8 @@ function check(ok: unknown, what: string): void {
 
   // The route wiring, read off the source: the hold is only for a job this save
   // created, and /media asks for the release before anything is charged.
-  check(/framesPending && !frames && q\.job_created \? await holdForFrames\(q\.job_id, supplied\)/.test(SRC),
-    "hold only for a new job with no frames yet");
+  check(/framesPending && !frames && q\.job_created && framesCouldHelp\(p, uc\.plan, cached\[0\]\)\s*\n\s*\? await holdForFrames\(q\.job_id, supplied\)/.test(SRC),
+    "hold only for a new job with no frames yet, where frames could help");
   check(SRC.indexOf("releaseHeldJob(w, body.frames") < SRC.indexOf("const [countsR, cachedR, capsR] = await Promise.allSettled(["),
     "release is asked before /media counts or charges anything");
 }
@@ -430,6 +430,259 @@ function check(ok: unknown, what: string): void {
   failed = null;
   try { await r.runAttachedUpload(job, p); } catch (e) { failed = e; }
   check(failed?.final && failed.keepCard && !/Paste the workout text/.test(failed.userMessage), "worker: the reader's own sentence, final, card kept");
+}
+
+// ---- CR-5 / CR-6: which saves are held, and the 202 says so ----
+{
+  const mod = [
+    "type Meta = any; type Cors = any; type Frames = any; type Counts = any; type UserCaps = any; type Card = any; type Parsed = any;",
+    "export const S: any = {};",
+    "export function reset(o: any = {}) { Object.assign(S, { plan: 'plus', p: { platform: 'tiktok', shortcode: 'tt-1', kind: 'video', clean: 'https://www.tiktok.com/@/video/1' }, cache: [], q: { workout_id: 'w1', job_id: 'j1', job_created: true, already: false }, held: 0, kicks: 0 }, o); }",
+    "function json(body: any, status = 200) { return { status, body }; }",
+    "const BLOCKED = Symbol('blocked');",
+    "const SUPPLIED_HTML_MAX = 2_000_000; const SUPPLIED_CAPTION_MAX = 6_000; const FRAMES_HOLD_MS = 20_000;",
+    "async function resolveShare() { return S.p; }",
+    "function noPostAnswer() { return { status: 'error' }; }",
+    "async function dbSelect(t: string) { return t === 'video_cache' ? S.cache : []; }",
+    "async function countsFor() { return { saves: 0, extracts: 0 }; }",
+    "async function capsFor() { return { plan: S.plan, caps: { library: null, saves: null, extract: null } }; }",
+    "async function libraryCount() { return 0; }",
+    "function overCap(u: number, c: number | null) { return c !== null && u >= c; }",
+    "function cacheForAccess(row: any) { return row ?? null; }",
+    "function visuallyRead(r: any) { return !!r?.read; }",
+    SRC.match(/^function plusPlan\(.*$/m)![0],
+    "const MIN_USABLE_CARD_V = 10;",
+    "async function admitNow() { return null; }",
+    "function cleanTitle(t: string) { return t; } function fallbackTitle() { return 'Saved workout'; }",
+    "async function rpc() { return [S.q]; }",
+    "async function holdForFrames() { S.held++; return true; }",
+    "async function seedJobMeta() { return true; }",
+    "function kickWorker() { S.kicks++; }",
+    "function readingLine() { return 'Reading the video…'; }",
+    "async function deleteSheets() {}",
+    "async function upgradeCachedCard() { return null; }",
+    "async function dbInsert(_t: string, row: any) { return { id: 'w1', ...row }; }",
+    "function background() {} async function logSave() {} function visionWarning() { return null; } function plusReadHint() { return null; }",
+    fn("async function handleIngest("),
+    fn("function framesCouldHelp("),
+    "export { handleIngest, framesCouldHelp };",
+  ].join("\n");
+  const g = await import("data:application/typescript," + encodeURIComponent(mod));
+  const save = (body: unknown) => g.handleIngest(new Request("https://fixture.invalid/api/ingest", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }), "u1", {});
+  const link = "https://www.tiktok.com/@a/video/1";
+
+  g.reset();
+  let r = await save({ url: link, frames_pending: true });
+  check(r.status === 202 && r.body.frames_wanted === true && g.S.held === 1 && g.S.kicks === 0,
+    "CR-5: a Plus TikTok video save is held and the 202 says frames_wanted: true");
+  g.reset({ plan: "free" });
+  r = await save({ url: link, frames_pending: true });
+  check(r.status === 202 && r.body.frames_wanted === false && g.S.held === 0 && g.S.kicks === 1,
+    "CR-6: a stale Plus hint on a Basic account is ignored — not held, read now, frames_wanted: false");
+  g.reset({ p: { platform: "tiktok", shortcode: "tt-2", kind: "photo", clean: "https://www.tiktok.com/@/photo/2" } });
+  r = await save({ url: link, frames_pending: true });
+  check(r.body.frames_wanted === false && g.S.held === 0, "CR-6: a TikTok photo post is not held");
+  g.reset({ p: { platform: "instagram", shortcode: "DcHDuEFzBSf", kind: "reel", clean: "https://www.instagram.com/reel/DcHDuEFzBSf/" } });
+  r = await save({ url: link, frames_pending: true });
+  check(r.body.frames_wanted === false && g.S.held === 0, "CR-6: nor anything the phone does not cut stills from");
+  g.reset({ q: { workout_id: "w1", job_id: "j0", job_created: false, already: false } });
+  r = await save({ url: link, frames_pending: true });
+  check(r.body.frames_wanted === false && g.S.held === 0, "CR-6: a joined job is not held (its own save owns it)");
+  g.reset({ cache: [{ read: true, card: { blocks: [] }, vision: null }] });
+  g.S.cache[0].card.vision = { missing: ["x"] };
+  r = await save({ url: link, frames_pending: true });
+  check(r.status === 202 && r.body.frames_wanted === false && g.S.held === 0, "CR-5: a video already read visually is not held");
+  g.reset();
+  r = await save({ url: link });
+  check(r.status === 202 && !("frames_wanted" in r.body) && g.S.held === 0, "a save that did not ask gets no frames_wanted (old clients, the app)");
+
+  check(g.framesCouldHelp({ platform: "tiktok", kind: "video" }, "staff", null) &&
+    !g.framesCouldHelp({ platform: "tiktok", kind: "video" }, "free", null) &&
+    !g.framesCouldHelp({ platform: "tiktok", kind: "video" }, "plus", { read: true }),
+    "framesCouldHelp: Plus-family, unread TikTok video only");
+  // The cache upgrade's 202 never waits either.
+  check(/message: "Listening to the video…",\s*\n\s*\/\/ A cache upgrade never waits[^\n]*\n\s*frames_wanted: false,/.test(SRC),
+    "CR-5: a cache hit that goes on to read says frames_wanted: false");
+}
+
+// ---- CR-1: the video door mints its own path ----
+{
+  const UID = "aaaaaaaa-0000-4000-8000-000000000001";
+  const mod = [
+    "type Cors = any; type UploadRef = any;",
+    "export const S: any = {};",
+    "export function reset(o: any = {}) { Object.assign(S, { admitted: 0, admit: null, permits: [], permit: 'ok', signed: [], signFail: false, full: false, paid: true, sheets: 0 }, o); }",
+    "function json(body: any, status = 200) { return { status, body }; }",
+    "class GuardError extends Error {}",
+    "const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;",
+    span("const UPLOAD_EXTS = ", "// Signed media links expire"),
+    "const UPLOAD_SIGN_SECONDS = 900;",
+    fn("function parseUploadPath("),
+    "async function authorizeSheets() { S.sheets++; return json({ status: 'ok', sheets: [] }); }",
+    "async function capsFor() { return { caps: { library: 20 } }; }",
+    "async function libraryCount() { return S.full ? 20 : 3; }",
+    "function overCap(u: number, c: number | null) { return c !== null && u >= c; }",
+    "async function capLimit() { return json({ status: 'limit', kind: 'library' }, 429); }",
+    "async function paidAllowed() { return S.paid; }",
+    "async function attachRefusal() { return null; }",
+    "async function dbSelect() { return [{ id: 'w1', shortcode: 'DcHDuEFzBSf', platform: 'instagram' }]; }",
+    "function attachable() { return true; }",
+    "async function admitNow() { S.admitted++; return S.admit; }",
+    "async function rpc(name: string, args: any) { S.permits.push(args.p_path); return S.permit; }",
+    "async function signUploadTarget(path: string, upsert = true) { if (S.signFail) throw new Error('503'); S.signed.push({ path, upsert }); return { upload_url: 'https://x.supabase.co/storage/v1/object/upload/sign/uploads/' + path + '?token=t0k', token: 't0k' }; }",
+    fn("async function authorizeUpload("),
+    span("const SHARED_VIDEO_TYPES", "\n};\n") + "\n};",
+    "export { authorizeUpload, SHARED_VIDEO_TYPES };",
+  ].join("\n");
+  const u = await import("data:application/typescript," + encodeURIComponent(mod));
+  const ask = (body: unknown) => u.authorizeUpload(new Request("https://fixture.invalid/api/uploads/authorize",
+    { method: "POST", body: JSON.stringify(body) }), UID, {});
+  const pathRe = new RegExp("^" + UID + "/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\\.(mp4|mov|m4v)$");
+
+  u.reset();
+  let r = await ask({ kind: "video", bytes: 8_000_000, ext: "mp4" });
+  check(r.status === 200 && r.body.status === "ok" && pathRe.test(r.body.path) && r.body.path.endsWith(".mp4"),
+    "CR-1: {kind:video, bytes, ext} with no path → 200 and a path minted as <uid>/<uuid>.mp4");
+  check(r.body.upload_url.includes(r.body.path) && r.body.token === "t0k" && r.body.expires_in === 900,
+    "CR-1: the answer carries the signed upload address, its token and expires_in");
+  check(u.S.permits[0] === r.body.path && u.S.signed[0].path === r.body.path && u.S.signed[0].upsert === false && u.S.admitted === 1,
+    "CR-1: the permit is for that path, the address writes once (no upsert), admitted once");
+  const again = await ask({ kind: "video", bytes: 8_000_000, ext: "mp4" });
+  check(again.body.path !== r.body.path, "CR-1: every authorize mints a new path (a retry never writes over the last)");
+  u.reset();
+  r = await ask({ kind: "video", bytes: 1000, ext: "MOV" });
+  const r2 = await ask({ kind: "video", bytes: 1000, ext: ".m4v" });
+  check(r.status === 200 && r.body.path.endsWith(".mov") && r2.status === 200 && r2.body.path.endsWith(".m4v"),
+    "CR-1: MOV and M4V too, case and a leading dot forgiven");
+  check(Object.keys(u.SHARED_VIDEO_TYPES).join() === "mp4,mov,m4v" &&
+    Object.values(u.SHARED_VIDEO_TYPES).join() === "video/mp4,video/quicktime,video/x-m4v",
+    "CR-1: exactly the three content types the brief names");
+  for (const [body, why] of [
+    [{ kind: "video", bytes: 1000, ext: "webm" }, "WebM (not one of the three)"],
+    [{ kind: "video", bytes: 1000, ext: "constructor" }, "a prototype key as the ext"],
+    [{ kind: "video", bytes: 1000 }, "no ext"],
+    [{ kind: "video", bytes: 25 * 1024 * 1024 + 1, ext: "mp4" }, "one byte over the upload cap"],
+    [{ kind: "video", bytes: 0, ext: "mp4" }, "zero bytes"],
+    [{ kind: "video", bytes: 1.5, ext: "mp4" }, "fractional bytes"],
+  ] as [unknown, string][]) {
+    u.reset();
+    const x = await ask(body);
+    check(x.status === 400 && u.S.admitted === 0 && !u.S.permits.length && !u.S.signed.length,
+      "CR-1/1b: " + why + " → 400, no admission, no permit");
+  }
+  u.reset();
+  r = await ask({ kind: "video", bytes: 25 * 1024 * 1024, ext: "mp4" });
+  check(r.status === 200, "CR-1: exactly the upload cap is taken");
+
+  // The app's shape, byte for byte as before.
+  u.reset();
+  const own = UID + "/11111111-2222-4333-8444-555555555555.mov";
+  r = await ask({ path: own, bytes: 1000 });
+  check(r.status === 200 && JSON.stringify(r.body) === JSON.stringify({ status: "ok", path: own }) &&
+    u.S.permits[0] === own && !u.S.signed.length && u.S.admitted === 1,
+    "CR-1: a caller-named path answers {status, path} as today, no address signed");
+  u.reset();
+  r = await ask({ kind: "video", path: own, bytes: 1000 });
+  check(r.status === 200 && !("upload_url" in r.body), "CR-1: a named path wins over kind (old shape unchanged)");
+  u.reset();
+  r = await ask({ path: "bbbbbbbb-0000-4000-8000-000000000002/11111111-2222-4333-8444-555555555555.mp4", bytes: 1000 });
+  check(r.status === 400 && u.S.admitted === 0, "CR-1b: somebody else's path → 400 with no admission");
+  u.reset({ full: true });
+  r = await ask({ kind: "video", bytes: 1000, ext: "mp4" });
+  check(r.status === 429 && r.body.kind === "library" && u.S.admitted === 0 && !u.S.permits.length,
+    "CR-1b: a full library is answered before admission (free answers spend nothing)");
+  u.reset({ admit: { status: 429, body: { code: "daily" } } });
+  r = await ask({ kind: "video", bytes: 1000, ext: "mp4" });
+  check(r.status === 429 && r.body.code === "daily" && !u.S.permits.length, "CR-1b: a refused admission issues no permit");
+  u.reset({ permit: "busy" });
+  r = await ask({ kind: "video", bytes: 1000, ext: "mp4" });
+  check(r.status === 429 && !u.S.signed.length, "CR-1: permits busy → 429, no address signed");
+  u.reset({ signFail: true });
+  r = await ask({ kind: "video", bytes: 1000, ext: "mp4" });
+  check(r.status === 502 && r.body.status === "error", "CR-1: storage would not sign → 502 with a sentence");
+  u.reset();
+  r = await ask({ kind: "pack", shortcode: "tt-1", sheets: [{ bytes: 1 }] });
+  check(u.S.sheets === 1 && u.S.admitted === 0, "the pack authorize is still its own branch");
+  check(/if \(!paid\) throw new GuardError\("budget"\);\s*\n[^\n]*\n[^\n]*\n\s*const refused = await admitNow\(\);\s*\n\s*if \(refused\) return refused;\s*\n\s*\n\s*const paths = sizes\.map/.test(SRC),
+    "CR-1b: the pack authorize admits after its free refusals, before its permits");
+  check(/path === "\/api\/ingest" \|\| path === "\/api\/uploads\/authorize" \|\|/.test(SRC),
+    "CR-1b: /api/uploads/authorize is a late-admitting route");
+}
+
+// ---- CR-2: the save key on /media, narrowly ----
+{
+  const UID = "aaaaaaaa-0000-4000-8000-000000000001";
+  const mod = [
+    "type Cors = any; type Frames = any; type Counts = any; type UserCaps = any; type Meta = any; type Card = any;",
+    "export const S: any = {};",
+    "export function reset(o: any = {}) { Object.assign(S, { rows: [], reads: 0, released: null, attached: 0, deleted: 0, reached: false }, o); }",
+    "function json(body: any, status = 200) { return { status, body }; }",
+    "async function dbSelect(_t: string, q: string) { S.reads++; S.q = q; return S.rows; }",
+    "const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;",
+    "const UPLOAD_EXTS = ['mp4', 'mov', 'm4v'];",
+    fn("function parseUploadPath("),
+    "async function attachUpload(w: any) { S.attached++; return json({ status: 'processing', id: w.id, message: 'Watching your video…' }, 202); }",
+    "async function releaseHeldJob() { return S.released; }",
+    "function parseFrames(raw: any, uid: string, sc: string) { return raw?.bad ? { error: 'frames refused' } : { frames: { sheets: [{ path: uid + '/pack/' + sc + '/sheet-1.jpg' }] } }; }",
+    "async function deleteSheets(f: any) { S.deleted += f?.sheets?.length ?? 0; }",
+    "function providerFor() { S.reached = true; return { media: false }; }",
+    span("/** POST /api/workouts/:id/media, the one route", "/**\n * \"Read the video\" — the manual trigger"),
+    fn("async function handleReadVideo("),
+    "export { handleReadVideo, keyMediaBody, MEDIA_PATH_RE };",
+  ].join("\n");
+  const k = await import("data:application/typescript," + encodeURIComponent(mod));
+  const ID = "cccccccc-0000-4000-8000-000000000003";
+  const media = (body: unknown, viaKey = true) => k.handleReadVideo(ID, UID,
+    new Request("https://fixture.invalid/api/workouts/" + ID + "/media", { method: "POST", body: JSON.stringify(body) }), {}, viaKey);
+  const card = (o: any = {}) => ({ id: ID, user_id: UID, shortcode: "tt-1", platform: "tiktok", ingest_status: "processing", ingest_job_id: "j1", ...o });
+  const frames = { sheets: [{ path: UID + "/pack/tt-1/sheet-1.jpg" }] };
+
+  // Refused before a row is read.
+  for (const [body, why] of [
+    [{}, "an empty body (a server-side re-read)"],
+    [{ preview: true }, "a preview"],
+    [{ frames, preview: true }, "frames with a preview"],
+    [{ frames, reread: true }, "frames plus anything else"],
+    [{ frames: null }, "null frames"],
+    [{ upload_path: UID + "/11111111-2222-4333-8444-555555555555.mp4", frames }, "an upload with frames"],
+    [{ upload_path: 7 }, "an upload_path that is not a string"],
+    [null, "no JSON at all"],
+  ] as [unknown, string][]) {
+    k.reset({ rows: [card()] });
+    const r = await media(body);
+    check(r.status === 403 && k.S.reads === 0 && !k.S.attached, "CR-2: the key with " + why + " → 403, no row read");
+  }
+  // Somebody else's card (or none): the owner filter answers 404.
+  k.reset({ rows: [] });
+  let r = await media({ frames });
+  check(r.status === 404 && k.S.q.includes("user_id=eq." + UID), "CR-2: frames for a card the key's account does not own → 404");
+  k.reset({ rows: [] });
+  r = await media({ upload_path: UID + "/11111111-2222-4333-8444-555555555555.mp4" });
+  check(r.status === 404 && !k.S.attached, "CR-2: Add the video into a foreign card → 404");
+  // The two bodies it may send.
+  k.reset({ rows: [card()], released: { status: 202, body: { status: "processing", job_id: "j1" } } });
+  r = await media({ frames });
+  check(r.status === 202 && r.body.job_id === "j1", "CR-2: frames that release the key's own held save → 202 for that job");
+  k.reset({ rows: [card()], released: null });
+  r = await media({ frames });
+  check(r.status === 200 && r.body.message === "Already reading that one." && k.S.deleted === 1 && !k.S.reached,
+    "CR-2: frames after the hold ran out → 'Already reading', sheets deleted, nothing charged");
+  k.reset({ rows: [card({ ingest_status: "ready" })] });
+  r = await media({ frames });
+  check(r.status === 403 && k.S.deleted === 1 && !k.S.reached, "CR-2: frames for a card not being read (a re-read) → 403, sheets deleted");
+  k.reset({ rows: [card({ ingest_status: "ready", platform: "instagram" })] });
+  r = await media({ upload_path: UID + "/11111111-2222-4333-8444-555555555555.mp4", filename: "reel.mp4" });
+  check(r.status === 202 && k.S.attached === 1, "CR-2: Add the video into the key's own card → attach (202)");
+  // The bearer is unchanged: the same empty body goes on past the gate.
+  k.reset({ rows: [card({ ingest_status: "ready" })] });
+  r = await media({}, false);
+  check(k.S.reached && r.status === 400, "CR-2: with the bearer, every other body still reaches the old path");
+  check(k.MEDIA_PATH_RE.test("/api/workouts/" + ID + "/media") && !k.MEDIA_PATH_RE.test("/api/workouts/" + ID + "/reprocess"),
+    "CR-2: the key's /media match is that route only");
+  check(/path === "\/api\/ai-consent" \|\| \(req\.method === "POST" && MEDIA_PATH_RE\.test\(path\)\)\)\) \{\s*\n\s*userId = await userFromIngestKey\(req, url\);\s*\n\s*viaKey = !!userId;/.test(SRC) &&
+    /handleReadVideo\(readvid\[1\], userId, req, cors, viaKey\)/.test(SRC),
+    "CR-2: the router lets the key reach /media only as viaKey (a bearer never sets it)");
 }
 
 // ---- S10: the end of a job wakes the worker for that person's next one ----

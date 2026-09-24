@@ -15,7 +15,7 @@ async function pumpyMeter(){return {day:150,month:1500};}
 function pumpyConfig(){return {turnMaxCredits:40};}
 const LIMIT_CHAT=200;
 async function rpc(name:string,args:any){
- if(name==='ai_admit'){state.admits++;if(state.refuse)return state.refuse;if(state.active)return 'busy';state.active=true;return 'ok';}
+ if(name==='ai_admit'){state.admits++;state.scope=args.p_scope;if(state.refuse)return state.refuse;if(state.active)return 'busy';state.active=true;return 'ok';}
  if(name==='ai_finish_action'){state.active=false;state.finished++;}
 }
 `;
@@ -67,6 +67,12 @@ check(other.code==='minute'&&!/share/.test(other.message),'and a non-save route 
 m.state.refuse=null;
 const readVideo=await run(async()=>Response.json({status:'ok'}),'/api/workouts/00000000-0000-4000-8000-000000000001/media');
 check(readVideo.status===200&&!m.state.active,'/media admits late too: a held save\'s frames or a cached preview spend no admission');
+// ---- CR-1b: upload authorize admits late, so a refused one spends nothing ----
+m.state.admits=0;
+const refusedAuth=await run(async()=>Response.json({status:'error'},{status:400}),'/api/uploads/authorize');
+check(refusedAuth.status===400&&m.state.admits===0&&!m.state.active,'a 400 authorize uses no admission: Basic keeps its one upload of the day');
+const issuedAuth=await run(async()=>(await m.admitNow())??Response.json({status:'ok'}),'/api/uploads/authorize');
+check(issuedAuth.status===200&&m.state.admits===1&&m.state.scope==='uploads'&&!m.state.active,'an authorize that issues a permit is admitted once, against uploads, and its lease released');
 console.log(n+' admission and stream-lifetime checks passed.');
 
 m.state.consent=false;
