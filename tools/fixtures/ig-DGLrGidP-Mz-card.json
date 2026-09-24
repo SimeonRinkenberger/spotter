@@ -1,0 +1,301 @@
+{
+ "_about": "video_cache row for instagram.com/p/DGLrGidP-Mz (verified in briefs IG-SET), v11, as the cold read on 24 Sept 2026 wrote it: 3 slides read by vision, 8 exercises with reps and no sets under a caption that says 3 sets. Read-only select; used by tools/verify-findings-harness.ts (V-6).",
+ "shortcode": "DGLrGidP-Mz",
+ "platform": "instagram",
+ "kind": "p",
+ "author": "elisesbodyshop",
+ "caption": "DUMBBELL WORKOUT🔥\nSharing a sample workout right from my program! Link in bio! \n\n📌Save this workout! \n✅3 sets \n\nIf you are looking for dumbbell workouts that you can do from the gym or right from home, you will love my program! Video demos, fully guided, in ear coaching, group chat and the ability to play your own music right in app.✅\n\n#workoutroutine #workoutprogram\".",
+ "card": {
+  "tags": [],
+  "title": "Dumbbell Workout",
+  "blocks": [
+   {
+    "type": "straight",
+    "title": null,
+    "rounds": null,
+    "exercises": [
+     {
+      "t0": null,
+      "t1": null,
+      "cue": null,
+      "name": "Dumbbell Row",
+      "reps": "12",
+      "sets": null,
+      "delta": null,
+      "notes": null,
+      "weight": null,
+      "evidence": {
+       "t": null,
+       "line": null,
+       "quote": "Dumbbell Row",
+       "slide": 1,
+       "offset": null,
+       "source": "carousel",
+       "verified": false
+      },
+      "equipment": "dumbbells",
+      "as_performed": null,
+      "canonical_id": "dumbbell-row",
+      "rest_seconds": null,
+      "recommendation": null,
+      "duration_seconds": null
+     },
+     {
+      "t0": null,
+      "t1": null,
+      "cue": null,
+      "name": "Overhead Press",
+      "reps": "10",
+      "sets": null,
+      "delta": null,
+      "notes": null,
+      "weight": null,
+      "evidence": {
+       "t": null,
+       "line": null,
+       "quote": "Overhead Press",
+       "slide": 1,
+       "offset": null,
+       "source": "carousel",
+       "verified": false
+      },
+      "equipment": "dumbbells",
+      "as_performed": null,
+      "canonical_id": "overhead-press",
+      "rest_seconds": null,
+      "recommendation": null,
+      "duration_seconds": null
+     },
+     {
+      "t0": null,
+      "t1": null,
+      "cue": null,
+      "name": "Hammer Curls",
+      "reps": "12",
+      "sets": null,
+      "delta": null,
+      "notes": null,
+      "weight": null,
+      "evidence": {
+       "t": null,
+       "line": null,
+       "quote": "Hammer Curls",
+       "slide": 1,
+       "offset": null,
+       "source": "carousel",
+       "verified": false
+      },
+      "equipment": "dumbbells",
+      "as_performed": null,
+      "canonical_id": "hammer-curl",
+      "rest_seconds": null,
+      "recommendation": null,
+      "duration_seconds": null
+     },
+     {
+      "t0": null,
+      "t1": null,
+      "cue": null,
+      "name": "Pushups",
+      "reps": "8",
+      "sets": null,
+      "delta": null,
+      "notes": null,
+      "weight": null,
+      "evidence": {
+       "t": null,
+       "line": null,
+       "quote": "Pushups",
+       "slide": 1,
+       "offset": null,
+       "source": "carousel",
+       "verified": false
+      },
+      "equipment": null,
+      "as_performed": null,
+      "canonical_id": "push-up",
+      "rest_seconds": null,
+      "recommendation": null,
+      "duration_seconds": null
+     }
+    ],
+    "rest_seconds": null
+   },
+   {
+    "type": "straight",
+    "title": null,
+    "rounds": null,
+    "exercises": [
+     {
+      "t0": null,
+      "t1": null,
+      "cue": null,
+      "name": "Deadlifts",
+      "reps": "12",
+      "sets": null,
+      "delta": null,
+      "notes": null,
+      "weight": null,
+      "evidence": {
+       "t": null,
+       "line": null,
+       "quote": "Deadlifts",
+       "slide": 2,
+       "offset": null,
+       "source": "carousel",
+       "verified": false
+      },
+      "equipment": "dumbbells",
+      "as_performed": null,
+      "canonical_id": "deadlift",
+      "rest_seconds": null,
+      "recommendation": null,
+      "duration_seconds": null
+     }
+    ],
+    "rest_seconds": null
+   },
+   {
+    "type": "straight",
+    "title": null,
+    "rounds": null,
+    "exercises": [
+     {
+      "t0": null,
+      "t1": null,
+      "cue": null,
+      "name": "Front Squats",
+      "reps": "10",
+      "sets": null,
+      "delta": null,
+      "notes": null,
+      "weight": null,
+      "evidence": {
+       "t": null,
+       "line": null,
+       "quote": "Front Squats",
+       "slide": 2,
+       "offset": null,
+       "source": "carousel",
+       "verified": false
+      },
+      "equipment": "dumbbells",
+      "as_performed": null,
+      "canonical_id": "front-squat",
+      "rest_seconds": null,
+      "recommendation": null,
+      "duration_seconds": null
+     }
+    ],
+    "rest_seconds": null
+   },
+   {
+    "type": "straight",
+    "title": null,
+    "rounds": null,
+    "exercises": [
+     {
+      "t0": null,
+      "t1": null,
+      "cue": "8 left/right",
+      "name": "Lunges L/R",
+      "reps": "8",
+      "sets": null,
+      "delta": null,
+      "notes": "8 left/right",
+      "weight": null,
+      "evidence": {
+       "t": null,
+       "line": null,
+       "quote": "Lunges L/R",
+       "slide": 2,
+       "offset": null,
+       "source": "carousel",
+       "verified": false
+      },
+      "equipment": "dumbbells",
+      "as_performed": null,
+      "canonical_id": null,
+      "rest_seconds": null,
+      "recommendation": null,
+      "duration_seconds": null
+     }
+    ],
+    "rest_seconds": null
+   },
+   {
+    "type": "straight",
+    "title": null,
+    "rounds": null,
+    "exercises": [
+     {
+      "t0": null,
+      "t1": null,
+      "cue": null,
+      "name": "Leg Raises",
+      "reps": "20",
+      "sets": null,
+      "delta": null,
+      "notes": null,
+      "weight": null,
+      "evidence": {
+       "t": null,
+       "line": null,
+       "quote": "Leg Raises",
+       "slide": 2,
+       "offset": null,
+       "source": "carousel",
+       "verified": false
+      },
+      "equipment": null,
+      "as_performed": null,
+      "canonical_id": "leg-raise",
+      "rest_seconds": null,
+      "recommendation": null,
+      "duration_seconds": null
+     }
+    ],
+    "rest_seconds": null
+   }
+  ],
+  "vision": {
+   "total": 3,
+   "missing": [],
+   "completed": [
+    0,
+    1,
+    2
+   ]
+  },
+  "calories": null,
+  "category": "Full Body",
+  "equipment": [
+   "dumbbells"
+  ],
+  "confidence": 0.445,
+  "difficulty": null,
+  "extracted_by": "openai:gpt-6-luna + vision:openai:gpt-6-luna",
+  "muscle_groups": [
+   "back",
+   "biceps",
+   "shoulders",
+   "triceps",
+   "core",
+   "forearms",
+   "chest",
+   "glutes"
+  ],
+  "confidence_notes": [
+   "read off carousel slides — no text to check it against"
+  ],
+  "confidence_parts": {
+   "catalog": 0.88,
+   "numbers": 0,
+   "duration": 0.5,
+   "evidence": 0.4,
+   "agreement": 0.5
+  },
+  "duration_minutes": null,
+  "has_full_workout": true
+ }
+}

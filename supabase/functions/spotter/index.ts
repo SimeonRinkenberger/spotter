@@ -6742,6 +6742,52 @@ function mergeSlideCard(card: Card, slide: Card): SlideMerge {
   return { filled, added: extras.length, matched, capped };
 }
 
+/**
+ * A set count the caption gives the whole post: "✅3 sets" on a line of its own,
+ * or "3 Sets x 15 Reps each Exercise". A line made only of dose words (the
+ * isDoseWordName rule, so no movement is on it) that names one number of sets.
+ * Null when there is none, when two such lines disagree, or when it is a range.
+ * Pure.
+ */
+function captionWideSets(caption: string | null | undefined): number | null {
+  if (!caption) return null;
+  let found: number | null = null;
+  for (const raw of caption.split("\n")) {
+    const line = raw.trim();
+    if (!line || line.length > 60 || !isDoseWordName(line)) continue;
+    if (/\d\s*[-–]\s*\d+\s*sets?\b/i.test(line)) return null;
+    const m = line.match(/(\d{1,2})\s*sets?\b/i) ?? line.match(/^\W*sets?\s*[:=]\s*(\d{1,2})\W*$/i);
+    if (!m) continue;
+    const n = Number(m[1]);
+    if (n < 1 || n > 10) continue;
+    if (found !== null && found !== n) return null;
+    found = n;
+  }
+  return found;
+}
+
+/**
+ * Give that count to the exercises read off the slides that have none of their
+ * own. The slides of a carousel print the movements and the reps; the set count
+ * is often written once, in the caption, for all of them — DGLrGidP-Mz's eight
+ * slide exercises arrived with reps and no sets under a caption that says
+ * "✅3 sets". Only a straight block without rounds takes it: a circuit's rounds
+ * already are its set count, and an exercise with its own sets keeps them.
+ * Mutates `card`; returns how many exercises took it.
+ */
+function applyCaptionSets(card: Card, sets: number): number {
+  let n = 0;
+  for (const b of card.blocks) {
+    if (b.type !== "straight" || b.rounds !== null) continue;
+    for (const ex of b.exercises) {
+      if (ex.sets !== null || ex.evidence?.source !== "carousel") continue;
+      ex.sets = sets;
+      n++;
+    }
+  }
+  return n;
+}
+
 /** Progress hook so a job can persist how far through a carousel it got. */
 type VisionProgress = (slide: number, card: Card) => Promise<void>;
 
@@ -6953,6 +6999,9 @@ async function buildCard(
 
     stampVision();
     console.log("vision: coverage", p.shortcode, card.vision);
+    const wide = captionWideSets(meta.caption);
+    const widened = wide ? applyCaptionSets(card, wide) : 0;
+    if (widened) console.log("vision:", widened, "slide exercise(s) take the caption's", wide, "sets");
     console.log("vision: merged → exercises " + before.total + "/" + countExercises(card) +
       ", doses filled " + filled + ", matched " + matched +
       " — " + readOk + " read, " + timedOut + " timed out, " + retried + " retried, " +
