@@ -452,6 +452,19 @@ for (const [where, src] of [['style.ts', STYLE], ['docs/index.html', PAGE]]) {
   });
 }
 
+// Found along the way on the simulator: a held thumbnail opened iOS's image menu
+// (Share / Save to Photos / Copy) over the Library. Card art is not for saving.
+for (const [where, src] of [['style.ts', STYLE], ['docs/index.html', PAGE]]) {
+  ok(where + ': card art (grid, Train rows and pickers, the detail\'s source chips) has no image menu or drag', () => {
+    const art = rule(src, '.thumbwrap img, .tthumb, .planitem img, .pickrow img, .fromthumb img');
+    assert.match(art, /-webkit-touch-callout: ?none/);
+    assert.match(art, /-webkit-user-drag: ?none/);
+    assert.match(art, /(^|[^-])user-select: ?none/);
+    // The source photo and the share card are pictures; keeping one stays possible.
+    for (const keep of ['.dphoto', '.scprev img', '#proof img']) assert.doesNotMatch(rule(src, keep), /touch-callout/);
+  });
+}
+
 ok('app.ts: the touchmove that holds a locked drag is non-passive', () => {
   assert.match(PAGER, /pagesEl\.addEventListener\("touchmove", function \(e\) \{\s*if \(drag && drag\.lock && e\.cancelable\) e\.preventDefault\(\);\s*\}, \{ passive: false \}\);/);
 });

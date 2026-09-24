@@ -517,6 +517,13 @@ export const STYLE = String.raw`<style>
     opacity: 0; transform: scale(1.05);
     transition: opacity 400ms var(--e-soft), transform 700ms var(--e-out); }
   .thumbwrap.loaded img { opacity: 1; transform: none; }
+  /* Card art is the face of a card, not a photo to keep: held, it opened iOS's image
+     menu (Share / Save to Photos / Copy) over the Library, on top of the press the card
+     answers itself. Library grid, Train's rows and pickers, and the detail's source chips.
+     The source photo (.dphoto) and the share card (.scprev, #proof) keep the menu:
+     those are pictures, and keeping one is a fair thing to want. */
+  .thumbwrap img, .tthumb, .planitem img, .pickrow img, .fromthumb img {
+    -webkit-touch-callout: none; -webkit-user-drag: none; -webkit-user-select: none; user-select: none; }
   /* Finite sweep on purpose: lazy images far below the fold stay pending indefinitely,
      and an infinite animation per card would keep the compositor busy all session. */
   .thumbwrap.loading::after { content: ""; position: absolute; inset: 0; pointer-events: none;
