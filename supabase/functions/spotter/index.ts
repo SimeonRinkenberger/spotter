@@ -519,6 +519,9 @@ function limitsConfig(): Record<string, LimitCaps> {
 // `answers` is Pumpy. Its credits are the enforcing gate and they are sized so
 // that this many answers can never be refused (ALLOWANCES.md section 5); the
 // number here is the floor that is promised, which is why nothing enforces it.
+// Basic's is 0, because Pumpy is a Plus feature: the chat route answers a Basic
+// account with a 403 before any credit is counted, so any other number here was
+// Settings promising "0 of 100" coaching nobody on Basic could have.
 
 type AllowanceKind = "reads" | "answers" | "helpers" | "uploads";
 type Allowance = Record<AllowanceKind, number | null>;
@@ -532,7 +535,7 @@ const ALLOWANCE_LOG_KIND: Record<AllowanceKind, string> = {
 };
 
 const ALLOWANCE_DEFAULTS: Record<string, Allowance> = {
-  free: { reads: 4, answers: 100, helpers: 20, uploads: 1 },
+  free: { reads: 4, answers: 0, helpers: 20, uploads: 1 },
   plus: { reads: 20, answers: 300, helpers: 100, uploads: 10 },
   pro: { reads: 60, answers: 900, helpers: 300, uploads: 25 },
   staff: { reads: null, answers: null, helpers: null, uploads: null },
@@ -585,13 +588,16 @@ function allowancesConfig(): Record<string, Allowance> {
  * One account's monthly allowance. An unknown plan reads as free, exactly as the
  * daily caps do — a bad string in one column must never mean "no ceiling".
  *
- * Basic's read allowance is clamped to what `reserve_video_preview` will admit.
+ * Basic's read allowance is clamped to what `reserve_video_preview` will admit,
+ * and its coaching to what the chat route admits, which is none: a config row
+ * written when Basic had a coach must not put the promise back.
  */
 function allowanceFor(plan: string): Allowance {
   const table = allowancesConfig();
   const a = { ...(table[plan] ?? table.free ?? ALLOWANCE_DEFAULTS.free) };
   if (!plusPlan(plan)) {
     a.reads = a.reads === null ? PREVIEW_CAP : Math.min(a.reads, PREVIEW_CAP);
+    a.answers = 0;
   }
   return a;
 }
@@ -733,15 +739,21 @@ async function capLimit(
 ): Promise<Response> {
   const cap = uc.caps[kind];
   const table = limitsConfig();
+  const up = upgradePath(uc.plan, cap, (p) => table[p]?.[kind], await sellablePlans());
+  // The shelf is the one refusal the Share Extension shows as text, with no way
+  // into the app from there. So when a bigger shelf is on sale the sentence says
+  // where it is; the app itself opens the Plus page and never shows this line.
+  const shelfUp = kind === "library" && up.upgrade && up.next_cap === null && up.next_plan
+    ? ` Spotter ${planName(up.next_plan)} keeps every workout — open Spotter to see it.` : "";
   return json({
     status: "limit",
     kind,
     plan: uc.plan,
     cap,
     used,
-    ...upgradePath(uc.plan, cap, (p) => table[p]?.[kind], await sellablePlans()),
+    ...up,
     resets_at: isDailyKind(kind) ? utcNextMidnight() : null,
-    message: message ?? capMessage(kind, uc.plan, cap),
+    message: message ?? capMessage(kind, uc.plan, cap) + shelfUp,
   }, 429, cors);
 }
 
@@ -7636,6 +7648,21 @@ async function allowanceLimit(
   }, 429, cors);
 }
 
+/**
+ * A Basic account out of Plus previews. The allowanceLimit shape, so the Plus
+ * page's context line can say what ran out, when it comes back and what Plus
+ * reads instead: these two refusals used to carry only a sentence, which the
+ * app drops when it opens the page. `used` is the cap, because the database
+ * refuses a preview only at the cap; `upgrade` stays true, as it always was.
+ */
+function previewLimit(uc: UserCaps, message: string, cors: Cors): Response {
+  const cap = allowanceFor(uc.plan).reads;
+  return json({
+    status: "limit", kind: "media", upgrade: true, plan: uc.plan, cap, used: cap, scope: "month",
+    next_plan: "plus", next_cap: allowanceFor("plus").reads, resets_at: utcNextMonth(), message,
+  }, 429, cors);
+}
+
 function extractLimitResponse(cors: Cors, uc: UserCaps, used: number): Promise<Response> {
   return capLimit("extract", uc, used, cors);
 }
@@ -8499,7 +8526,7 @@ async function runPackTier(
         console.log("pack: skipping", p.shortcode, "—", job.user_id, "has spent this month's video reads");
         return { card, meta, ran: false };
       }
-      if (overCap(u as number, plusPlan((uc as UserCaps).plan) ? (uc as UserCaps).caps.media : 15)) {
+      if (overCap(u as number, mediaBurst(uc as UserCaps))) {
         console.log("pack: skipping", p.shortcode, "—", job.user_id, "is over today's media cap");
         return { card, meta, ran: false };
       }
@@ -8676,7 +8703,7 @@ async function escalateToMedia(
         const [u, uc] = await settledAll<any>([mediaCountToday(job.user_id), capsFor(job.user_id)]);
         used = u as number;
         plan = (uc as UserCaps).plan;
-        cap = plusPlan(plan) ? (uc as UserCaps).caps.media : 15;
+        cap = mediaBurst(uc as UserCaps);
       } catch (e) {
         // A count that could not be read is not a count of zero. Skipping costs one
         // thin card; guessing costs an uncapped bill.
@@ -9507,6 +9534,16 @@ function mediaSeed(cached: any, w: any): { step: string; meta: Meta; card: Card 
     : { step: "card", meta, card: null };
 }
 
+// Basic's daily ceiling on media steps, which is not the plan table's `media`.
+// A Basic read is a Plus preview, four a month, so this stop is never the one a
+// Basic account meets on the read route, the pack tier or the media step; it
+// is only the burst guard behind the previews, the same size as Plus's. One
+// number, so /api/limits reports the ceiling those three enforce.
+const BASIC_MEDIA_BURST = 15;
+function mediaBurst(uc: UserCaps): number | null {
+  return plusPlan(uc.plan) ? uc.caps.media : BASIC_MEDIA_BURST;
+}
+
 /**
  * The daily ceiling on media steps, asked before anything is charged for one.
  * Returns how many have been used when the plan's cap is reached, null when it
@@ -9604,8 +9641,8 @@ async function handleReadVideo(
       confidence: card.confidence, extracted_by: card.extracted_by, read_quality: "premium",
       read_plan: cached.read_plan ?? "plus", ingest_status: "ready", ingest_error: null, media_stage: null,
     } });
-    if (result.status === "limit") return await bail(json({ status: "limit", kind: "media", upgrade: true,
-      message: "You have used all four Plus video previews this month." }, 429, cors));
+    if (result.status === "limit") return await bail(previewLimit(uc,
+      "You have used all four Plus video previews this month.", cors));
     if (result.status === "processing") return await bail(json({ status: "processing", id, message: "Already reading that one." }, 200, cors));
     if (result.status !== "ok") return await bail(json({ status: "error", message: "Preview access changed. Reload this workout and try again." }, 409, cors));
     return await bail(json({ status: "ok", workout: result.workout, cached: true }, 200, cors));
@@ -9629,8 +9666,10 @@ async function handleReadVideo(
   // would fire — and the one that speaks should be the one on the paywall.
   const monthOver = await monthReadsReached(userId, uc.plan, w.shortcode);
   if (monthOver !== null) return await bail(await allowanceLimit("media", "reads", uc, monthOver, cors));
-  const over = await mediaCapReached(userId, plusPlan(uc.plan) ? uc.caps.media : 15);
-  if (over !== null) return await bail(await capLimit("media", uc, over, cors));
+  const over = await mediaCapReached(userId, mediaBurst(uc));
+  if (over !== null) {
+    return await bail(await capLimit("media", { plan: uc.plan, caps: { ...uc.caps, media: mediaBurst(uc) } }, over, cors));
+  }
   if (!(await paidAllowed())) {
     return await bail(json({
       status: "limit",
@@ -9641,8 +9680,8 @@ async function handleReadVideo(
   if (!plusPlan(uc.plan)) {
     if (body?.preview === true) {
       const admitted = await rpc("reserve_video_preview", { p_user: userId, p_shortcode: w.shortcode });
-      if (admitted !== true) return await bail(json({ status: "limit", kind: "media", upgrade: true, plan: uc.plan,
-        message: "You have used all four Plus video previews this month. They reset on the first, or continue with Spotter Plus." }, 429, cors));
+      if (admitted !== true) return await bail(previewLimit(uc,
+        "You have used all four Plus video previews this month. They reset on the first, or continue with Spotter Plus.", cors));
     }
   }
   // A preview can use an existing full read; paying to repeat identical evidence
@@ -13060,12 +13099,20 @@ function notConfigured(cors: Cors): Response {
  * from their own dial (`pumpy.plans`) and are folded in here, because to the
  * person reading the sheet they are simply another line in the same list.
  */
+// What is a Plus feature rather than a bigger number: the plans that have it.
+// Pumpy is refused to Basic by the chat route (a 403, not a cap), and Basic's
+// awards page keeps its latest few; neither has an allowance to quote, so the
+// Plus page reads them from here instead of from a sentence in the markup.
+const PLAN_FEATURES = { pumpy: ["plus"], awards_all: ["plus"] };
+
 function capsBlock(): Record<string, Record<string, number | null>> {
   const table = limitsConfig();
   const pumpy = pumpyConfig().plans;
   const out: Record<string, Record<string, number | null>> = {};
   for (const plan of ["free", "plus"]) {
-    const caps = table[plan] ?? LIMITS_FLOOR.free;
+    const caps = { ...(table[plan] ?? LIMITS_FLOOR.free) };
+    // The ceiling the read route enforces, as /api/limits reports it.
+    caps.media = mediaBurst({ plan, caps });
     const a = allowanceFor(plan);
     // The monthly allowances ride along under their own names so the paywall can
     // print "20 videos a month" from the same table the 429 counts against,
@@ -13104,20 +13151,25 @@ async function handleBilling(path: string, req: Request, userId: string, cors: C
   const route = path.slice("/api/billing/".length);
 
   if (req.method === "GET" && route === "prices") {
-    if (!billingConfigured()) return json({ status: "ok", configured: false }, 200, cors);
+    // The caps come from this file rather than from billing.ts on purpose:
+    // billing.ts deliberately knows nothing about the cap table, and the
+    // paywall wants both halves in one answer. They ride on EVERY answer, not
+    // only a Stripe one: the Plus page is a comparison of what each plan gets,
+    // and that is true whether or not anybody is selling it on the web. The
+    // App Store app asks this route for exactly this and takes its prices from
+    // the store; builds that predate it never call it at all.
+    await ensureConfig();
+    const plan = { caps: capsBlock(), features: PLAN_FEATURES };
+    if (!billingConfigured()) return json({ status: "ok", configured: false, ...plan }, 200, cors);
     try {
-      // The caps come from this file rather than from billing.ts on purpose:
-      // billing.ts deliberately knows nothing about the cap table, and the
-      // paywall wants both halves in one answer.
-      await ensureConfig();
-      return json({ status: "ok", ...(await pricesBlock()), caps: capsBlock() }, 200, cors);
+      return json({ status: "ok", ...(await pricesBlock()), ...plan }, 200, cors);
     } catch (e) {
       // A Stripe outage is not "coming soon" — say so, so the sheet can offer a
       // retry rather than telling everyone the product does not exist yet.
       console.error("billing prices failed", e);
       return json({
         status: "error", code: "billing_failed",
-        message: "Could not reach Stripe just now — try again in a minute.",
+        message: "Could not reach Stripe just now — try again in a minute.", ...plan,
       }, 502, cors);
     }
   }
@@ -13973,12 +14025,12 @@ Deno.serve(async (req: Request) => {
       return json({
         status: "ok",
         plan: uc.plan,
-        limits: uc.caps,
+        limits: { ...uc.caps, media: mediaBurst(uc) },
         library_count: held,
         saves_today: counts.saves, extracts_today: counts.extracts, helpers_today: counts.helpers,
         chats_today: counts.chats,
         limit_saves: uc.caps.saves, limit_extract: uc.caps.extract, limit_helper: uc.caps.helper,
-        limit_media: uc.caps.media, limit_uploads: uc.caps.uploads,
+        limit_media: mediaBurst(uc), limit_uploads: uc.caps.uploads,
         limit_chat: LIMIT_CHAT,
         spend_today: Number(spent.toFixed(4)),
         spend_limit: Number(budget?.daily_limit ?? DAILY_SPEND_USD),
