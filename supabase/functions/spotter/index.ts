@@ -13302,7 +13302,9 @@ async function execProposal(userId: string, p: PumpyProposal, model: string | nu
     blocks.push({ title: p.block_title ?? "Added by Pumpy", type: "straight", rounds: null, rest_seconds: null, exercises: exs });
     const shim = { muscle_groups: Array.isArray(w.muscle_groups) ? w.muscle_groups.slice() : [],
       equipment: Array.isArray(w.equipment) ? w.equipment.slice() : [], blocks } as unknown as Card;
-    applyCatalog(shim);
+    // Keep every id the card already holds (an exercise-bank pick, an earlier
+    // Pumpy match); only an exercise with no usable id is matched by name.
+    applyCatalog(shim, true);
     return { expected_revision: w.user_edit_revision ?? 0, base_blocks: w.blocks ?? null, blocks,
       muscle_groups: shim.muscle_groups, equipment: shim.equipment };
   }
