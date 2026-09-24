@@ -10448,7 +10448,11 @@ async function handleCorrection(id: string, userId: string, req: Request, cors: 
     equipment: Array.isArray(w.equipment) ? w.equipment.slice() : [],
     blocks: kept,
   } as unknown as Card;
-  applyCatalog(shim);
+  // Not for a reorder. applyCatalog re-resolves every exercise's canonical_id
+  // from its name, and a reorder changed no exercise: an id a person picked in
+  // the bank, or one Pumpy carried over, has to travel with its movement as it
+  // is, and the muscles and equipment the card hits are the same in any order.
+  if (op !== "reorder") applyCatalog(shim);
 
   // workouts only. Not video_cache — see the note at the top of this section.
   // confidence and extracted_by are also left exactly as they were: they measure
