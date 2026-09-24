@@ -13984,6 +13984,28 @@ function admissionRefusal(code: string, path: string, cors: Cors): Response {
 }
 
 /**
+ * The per-minute bound on the save routes' FREE answers (request_tick,
+ * 20260924130100). Late admission took the invalid link, the duplicate and the
+ * cache hit off ai_admit's one-minute burst, which left nothing bounding them —
+ * and an invalid link is resolved first, up to four outbound fetches to a host
+ * the caller names. Thirty a minute per person per route is far past anybody
+ * sharing by hand. Not an admission: no lease, no burst, no daily cap, so late
+ * admission stands. It fails OPEN: a throttle, not a guard of money.
+ */
+const FREE_PER_MINUTE = 30;
+const FREE_THROTTLED = new Set(["/api/ingest", "/api/ingest/prepare", "/api/uploads/authorize"]);
+
+async function freePathThrottle(userId: string, path: string, cors: Cors): Promise<Response | null> {
+  try {
+    const within = await rpc("request_tick", { p_user: userId, p_route: path, p_limit: FREE_PER_MINUTE });
+    if (within === false) return admissionRefusal("minute", path, cors);
+  } catch (e) {
+    console.error("request_tick failed; the free path stays open", e);
+  }
+  return null;
+}
+
+/**
  * One profile read per request for every metered route: consent, plan and
  * overrides come from the same row, and capsFor asks this before the database.
  * Scoped to one request, so a plan bought a second ago still bites on the next.
@@ -14683,11 +14705,15 @@ Deno.serve(async (req: Request) => {
       return json(await opsScorecard(Date.now(), url.searchParams.get("week") ?? undefined), 200, cors);
     }
 
+    // The free path's per-minute tick is started here and awaited first thing in
+    // the three routes it bounds, before a link is resolved: its round trip runs
+    // beside reading the body and the consent read, so a save pays no extra hop.
+    const freeTick = req.method === "POST" && FREE_THROTTLED.has(path) ? freePathThrottle(userId, path, cors) : null;
     if (req.method === "POST") req = await boundedRequest(req);
     return await guardedUserRequest(req, path, userId, cors, async () => {
-    if (req.method === "POST" && path === "/api/uploads/authorize") return await authorizeUpload(req, userId!, cors);
-    if (req.method === "POST" && path === "/api/ingest/prepare") return await handleIngestPrepare(req, userId, cors);
-    if (req.method === "POST" && path === "/api/ingest") return await handleIngest(req, userId, cors);
+    if (req.method === "POST" && path === "/api/uploads/authorize") return (await freeTick) ?? await authorizeUpload(req, userId!, cors);
+    if (req.method === "POST" && path === "/api/ingest/prepare") return (await freeTick) ?? await handleIngestPrepare(req, userId, cors);
+    if (req.method === "POST" && path === "/api/ingest") return (await freeTick) ?? await handleIngest(req, userId, cors);
 
     const reproc = path.match(/^\/api\/workouts\/([0-9a-f-]{36})\/reprocess$/);
     if (req.method === "POST" && reproc) return await handleReprocess(reproc[1], userId, req, cors);

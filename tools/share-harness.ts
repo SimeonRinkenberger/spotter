@@ -685,6 +685,52 @@ function check(ok: unknown, what: string): void {
     "CR-2: the router lets the key reach /media only as viaKey (a bearer never sets it)");
 }
 
+// ---- the free path's per-minute throttle (request_tick) ----
+{
+  const mod = [
+    "type Cors = any;",
+    "export const S: any = { ticks: 0, calls: [] as string[], fail: false };",
+    "function json(body: any, status = 200) { return { status, body }; }",
+    // The SQL's own rule (proved in tools/request-tick-db-check.mjs), per route.
+    "const seen: Record<string, number> = {};",
+    "async function rpc(name: string, a: any) { S.calls.push(name); if (S.fail) throw new Error('rpc request_tick 503'); if (name !== 'request_tick') return 'ok'; const k = a.p_user + a.p_route; if ((seen[k] ?? 0) >= a.p_limit) return false; seen[k] = (seen[k] ?? 0) + 1; return true; }",
+    fn("function admissionRefusal("),
+    span("const FREE_PER_MINUTE = ", "/**\n * One profile read per request"),
+    "export { freePathThrottle, FREE_PER_MINUTE, FREE_THROTTLED };",
+  ].join("\n");
+  const t = await import("data:application/typescript," + encodeURIComponent(mod));
+  const answers = [];
+  for (let i = 0; i < 31; i++) answers.push(await t.freePathThrottle("u1", "/api/ingest", {}));
+  check(t.FREE_PER_MINUTE === 30 && answers.slice(0, 30).every((r: any) => r === null), "throttle: 30 free requests in a minute go through");
+  const r31 = answers[30];
+  check(r31?.status === 429 && r31.body.code === "minute" && r31.body.kind === "request" &&
+    r31.body.message === "That is a lot of saves in one minute — wait a few seconds and share it again.",
+    "throttle: the 31st is 429 with the existing minute sentence and code");
+  check(t.S.calls.every((c: string) => c === "request_tick"), "throttle: paid admission is not asked (no ai_admit call)");
+  check(await t.freePathThrottle("u1", "/api/ingest/prepare", {}) === null && await t.freePathThrottle("u2", "/api/ingest", {}) === null,
+    "throttle: per route and per person");
+  const other = await t.freePathThrottle("u3", "/api/uploads/authorize", {}).then(async () => {
+    for (let i = 0; i < 30; i++) await t.freePathThrottle("u3", "/api/uploads/authorize", {});
+    return t.freePathThrottle("u3", "/api/uploads/authorize", {});
+  });
+  check(other?.status === 429 && !/share/.test(other.body.message), "throttle: authorize is refused in route-neutral words");
+  t.S.fail = true;
+  check(await t.freePathThrottle("u9", "/api/ingest", {}) === null, "throttle: a failed tick fails open");
+  check([...t.FREE_THROTTLED].sort().join() === "/api/ingest,/api/ingest/prepare,/api/uploads/authorize",
+    "throttle: exactly the three free-path routes");
+  // Wiring: started after auth, before the body is read, and awaited before each
+  // of the three handlers — so before resolveShare, and not inside ai_admit.
+  const router = SRC.slice(SRC.indexOf("let userId = await userFromBearer(req);"));
+  check(router.indexOf("const freeTick = req.method === \"POST\" && FREE_THROTTLED.has(path) ? freePathThrottle(userId, path, cors) : null;") <
+      router.indexOf("if (req.method === \"POST\") req = await boundedRequest(req);") &&
+    router.indexOf("if (!userId) return json(") < router.indexOf("const freeTick"),
+    "throttle: started once the caller is known, before the body is read");
+  for (const h of ["authorizeUpload(req, userId!, cors)", "handleIngestPrepare(req, userId, cors)", "handleIngest(req, userId, cors)"]) {
+    check(router.includes("return (await freeTick) ?? await " + h + ";"), "throttle: awaited before " + h.split("(")[0]);
+  }
+  check(!/request_tick/.test(fn("async function guardedUserRequest(")), "throttle: not part of admission");
+}
+
 // ---- S10: the end of a job wakes the worker for that person's next one ----
 {
   const mod = [
