@@ -42,6 +42,8 @@
 // session left" to somebody who finished an hour ago is worse than no
 // notification at all.
 
+import { assertPublicUrl, checkUrl } from "./net.ts";
+
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
@@ -251,12 +253,47 @@ async function vapidKey(cfg: Vapid): Promise<CryptoKey> {
   return key;
 }
 
+// ---------- where a web push may go ----------
+//
+// A subscription's endpoint is a column the browser writes, so it is held to the
+// same outbound rules as every other address this function sends a request to
+// (net.ts), plus one of its own: every web push service there is — FCM, Mozilla
+// autopush, web.push.apple.com, WNS — lives at an https URL on port 443, so
+// nothing else is a push endpoint. The error names the rule and never the URL:
+// an endpoint is a bearer capability for somebody's device and does not belong
+// in a log line.
+
+export class PushEndpointError extends Error {
+  constructor(readonly reason: string) {
+    super("push endpoint refused: " + reason);
+    this.name = "PushEndpointError";
+  }
+}
+
+function pushEndpointShape(endpoint: string): URL {
+  const c = checkUrl(endpoint);
+  if (!c.ok) throw new PushEndpointError(c.reason);
+  if (c.url.protocol !== "https:" || (c.url.port !== "" && c.url.port !== "443")) {
+    throw new PushEndpointError("not https on port 443");
+  }
+  return c.url;
+}
+
+/** The endpoint as the URL to POST to, or a PushEndpointError saying which rule it broke. */
+export async function pushEndpoint(endpoint: string): Promise<URL> {
+  pushEndpointShape(endpoint);
+  const g = await assertPublicUrl(endpoint);
+  if (!g.ok) throw new PushEndpointError(g.reason);
+  return g.url;
+}
+
 export async function vapidAuth(endpoint: string, nowMs = Date.now()): Promise<string> {
   const cfg = vapidCfg();
   if (!cfg) throw new Error("push: VAPID keys are not set");
+  const aud = pushEndpointShape(endpoint).origin;
   const head = b64u(utf8.encode(JSON.stringify({ typ: "JWT", alg: "ES256" })));
   const body = b64u(utf8.encode(JSON.stringify({
-    aud: new URL(endpoint).origin,
+    aud,
     exp: Math.floor(nowMs / 1000) + 12 * 3600,
     sub: cfg.subject,
   })));
@@ -710,9 +747,13 @@ export type SendResult = { status: number; gone: boolean };
 export async function sendPush(
   endpoint: string, p256dh: string, auth: string, payload: unknown,
 ): Promise<SendResult> {
+  const target = await pushEndpoint(endpoint);
   const body = await encryptPayload(p256dh, auth, utf8.encode(JSON.stringify(payload)));
-  const r = await fetch(endpoint, {
+  const r = await fetch(target.toString(), {
     method: "POST",
+    // A push service answers 201; it has no reason to redirect, and a redirect
+    // is not followed. It comes back as a 3xx and is logged as refused below.
+    redirect: "manual",
     headers: {
       authorization: await vapidAuth(endpoint),
       "content-encoding": "aes128gcm",
@@ -871,6 +912,12 @@ export async function runPushTick(nowMs = Date.now(), dry = false): Promise<{
         note = r.reason;
       }
     } catch (e) {
+      if (e instanceof PushEndpointError) {
+        // Skipped, and named by row id: the endpoint itself is never logged.
+        console.error(`push: row ${sub.id} endpoint refused (${e.reason}), skipped`);
+        decisions.push({ user: sub.user_id, kind: d.kind, why: "endpoint refused" });
+        continue;
+      }
       console.error(`push: user ${sub.user_id} ${d.kind} failed`, e);
       decisions.push({ user: sub.user_id, kind: d.kind, why: "send failed" });
       continue;

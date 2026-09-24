@@ -37,6 +37,7 @@ jobs:
       - run: deno run --allow-read --allow-env tools/ai-admission-check.ts
       - run: deno run --allow-read tools/source-trust-check.ts
       - run: deno run --allow-read tools/ssrf-policy-check.ts
+      - run: deno run --allow-env --allow-read tools/push-ssrf-check.ts
       - run: deno run --allow-read tools/merge-harness.ts
       - run: deno run --allow-read --allow-env tools/ingest-coverage-harness.ts
       - run: deno run --allow-read tools/pack-eval/offline.ts

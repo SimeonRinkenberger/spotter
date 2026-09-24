@@ -235,7 +235,12 @@ export async function runOpsAlert(
           url: `${ALLOWED_ORIGINS[0]}/spotter/`,
         });
       } catch (e) {
-        console.error("ops: push failed", e);
+        // A refused endpoint is named by its row, never by the endpoint itself.
+        if ((e as Error)?.name === "PushEndpointError") {
+          console.error("ops: push endpoint refused for subscription", sub.id, (e as { reason?: string }).reason ?? "");
+        } else {
+          console.error("ops: push failed", e);
+        }
         continue;
       }
       if (result.gone) {
