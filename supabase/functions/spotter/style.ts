@@ -342,27 +342,32 @@ export const STYLE = String.raw`<style>
   .search:focus { border-color: var(--ember); background: var(--card); }
   .search::placeholder { color: var(--muted); }
   /* The way out of typing, beside the field for exactly as long as the field has
-     the keyboard: the trailing slot UISearchBar gives its Cancel. It closes the
-     keyboard and keeps the query, because the results are what the reader wanted
-     room to see; clearing stays with the field's own clear button. The field
-     gives it room the way UIKit's does, by getting narrower. */
+     the keyboard: the trailing slot UISearchBar gives its Cancel, and it does what
+     Cancel does — the query goes, the keyboard goes, the whole library comes back.
+     The field gives it room the way UIKit's does, by getting narrower. The button
+     is the whole strip from the field's edge to the circle, top to bottom of the
+     bar, so a thumb that lands beside the circle still lands on the button; the
+     circle is its child. */
   #searchwrap { display: flex; align-items: center; }
   #searchwrap .search { flex: 1 1 auto; width: auto; min-width: 0; }
-  .searchx { flex: 0 0 auto; width: 0; height: 44px; margin-left: 0; padding: 0; border: none;
-    border-radius: 999px; background: var(--sand); color: var(--ink-2); overflow: hidden;
+  .searchx { flex: 0 0 auto; box-sizing: border-box; width: 0; height: 64px; margin: -8px 0 -12px; padding: 0;
+    border: none; border-radius: 0; background: none; color: var(--ink-2); overflow: hidden;
+    display: flex; align-items: center; justify-content: flex-end;
+    opacity: 0; pointer-events: none; -webkit-tap-highlight-color: transparent;
+    transition: width var(--t-2) var(--e-in), opacity var(--t-1) var(--e-in); }
+  .searchx > span { flex: 0 0 44px; height: 44px; border-radius: 999px; background: var(--sand);
     display: flex; align-items: center; justify-content: center;
-    opacity: 0; transform: scale(.6); pointer-events: none;
-    transition: width var(--t-2) var(--e-in), margin-left var(--t-2) var(--e-in),
-      opacity var(--t-1) var(--e-in), transform var(--t-2) var(--e-in); }
-  #searchwrap:focus-within .searchx { width: 44px; margin-left: 8px; opacity: 1; transform: none;
-    pointer-events: auto;
-    transition: width var(--t-2) var(--e-out), margin-left var(--t-2) var(--e-out),
-      opacity var(--t-2) var(--e-out), transform var(--t-2) var(--e-out); }
-  #searchwrap:focus-within .searchx:active { transform: scale(.92); transition-duration: var(--t-1); }
+    transform: scale(.6); transition: transform var(--t-2) var(--e-in); }
+  #searchwrap:focus-within .searchx { width: 52px; opacity: 1; pointer-events: auto;
+    transition: width var(--t-2) var(--e-out), opacity var(--t-2) var(--e-out); }
+  #searchwrap:focus-within .searchx > span { transform: none; transition: transform var(--t-2) var(--e-out); }
+  #searchwrap:focus-within .searchx:active > span { transform: scale(.92); transition-duration: var(--t-1); }
   .searchx .ic { width: 18px; height: 18px; }
+  /* One X: Chromium's own clear button inside a search field would be a second. */
+  #search::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; display: none; }
   @media (prefers-reduced-motion: reduce) {
-    .searchx, #searchwrap:focus-within .searchx { transform: none;
-      transition: opacity var(--t-1) var(--e-soft); }
+    .searchx, #searchwrap:focus-within .searchx { transition: opacity var(--t-1) var(--e-soft); }
+    .searchx > span, #searchwrap:focus-within .searchx > span { transform: none; transition: none; }
   }
 
   /* ---------- filter chips ---------- */

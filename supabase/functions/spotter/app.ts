@@ -17852,11 +17852,39 @@ export const APP = String.raw`
     kbApply({ visible: true, height: k.height, duration: k.duration || 0.25, easing: k.easing });
   });
 
-  // The search's own way out of typing (style.ts, .searchx). Held on the press so
-  // the field keeps the keyboard, and the button its place, until the tap lands;
-  // a cancelled pointerdown cancels the mouse events that would move focus too.
+  // The search's own way out of typing (style.ts, .searchx), and UISearchBar's
+  // Cancel in what it does: the query goes, the keyboard goes, the library is
+  // whole again. Held on the press so the field keeps the keyboard, and the
+  // button its place, until the tap lands.
+  //
+  // Acted on where the finger lifts, not on the click after it. On the owner's
+  // phone the X left the keyboard up. The click a finger makes is WebKit's, aimed
+  // at the best tappable thing under the whole contact patch, and beside this
+  // button that used to be the label wrapped round the field and the X, whose
+  // click puts the focus straight back in the field; in the simulator a tap two
+  // points left of the circle did exactly that. The label is gone (markup.ts),
+  // the button covers the gap, and a handled touchend cancels that click outright.
+  var searchXAt = 0;
+  function searchDone() {
+    var f = $("search");
+    if (f.value || state.q) { f.value = ""; state.q = ""; renderGrid(); }
+    f.blur();
+  }
   $("searchx").addEventListener("pointerdown", function (e) { e.preventDefault(); });
-  $("searchx").onclick = function () { $("search").blur(); this.blur(); };
+  $("searchx").addEventListener("touchend", function (e) {
+    var t = e.changedTouches && e.changedTouches[0], r = this.getBoundingClientRect();
+    // A finger that slid off the button before lifting changed its mind.
+    if (!t || t.clientX < r.left - 10 || t.clientX > r.right + 10 || t.clientY < r.top - 10 || t.clientY > r.bottom + 10) return;
+    e.preventDefault();
+    searchXAt = Date.now();
+    searchDone();
+  }, { passive: false });
+  // A mouse, a hardware keyboard and VoiceOver arrive here instead.
+  $("searchx").onclick = function (e) {
+    e.preventDefault();
+    this.blur();
+    if (Date.now() - searchXAt > 700) searchDone();
+  };
   // Search on the keyboard means the same thing: done typing, show me.
   $("search").addEventListener("keydown", function (e) { if (e.key === "Enter") this.blur(); });
 

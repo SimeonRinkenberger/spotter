@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-cbGUZJpQULwBYptRlZXqaUjYG0H4+MdgaERPQB/3/vk=' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/ https://challenges.cloudflare.com https://accounts.google.com/gsi/client https://appleid.cdn-apple.com/appleauth/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://api.fontshare.com https://accounts.google.com/gsi/style; font-src 'self' data: https://fonts.gstatic.com https://cdn.fontshare.com; img-src 'self' data: blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://i.ytimg.com https://simeonrinkenberger.github.io; media-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://simeonrinkenberger.github.io; connect-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co wss://mtzevoxxpsktmrbbuxva.supabase.co https://accounts.google.com/gsi/; frame-src https://www.tiktok.com https://www.instagram.com https://www.youtube.com https://www.youtube-nocookie.com https://challenges.cloudflare.com https://accounts.google.com/gsi/ https://appleid.apple.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-F7kdjWoarC3LkdQiUcJDswazDaj8wtQNiHio/Z7zYco=' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/ https://challenges.cloudflare.com https://accounts.google.com/gsi/client https://appleid.cdn-apple.com/appleauth/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://api.fontshare.com https://accounts.google.com/gsi/style; font-src 'self' data: https://fonts.gstatic.com https://cdn.fontshare.com; img-src 'self' data: blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://i.ytimg.com https://simeonrinkenberger.github.io; media-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://simeonrinkenberger.github.io; connect-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co wss://mtzevoxxpsktmrbbuxva.supabase.co https://accounts.google.com/gsi/; frame-src https://www.tiktok.com https://www.instagram.com https://www.youtube.com https://www.youtube-nocookie.com https://challenges.cloudflare.com https://accounts.google.com/gsi/ https://appleid.apple.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="google-site-verification" content="unLzcq6TBz9Bm6q4KHpbTmZ88dQ_tTnViacVX5BLzS0">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <title>Spotter by Quarterdeck Collective — save any workout video</title>
@@ -816,40 +816,46 @@ h1 {
 }
 .searchx {
   flex: 0 0 auto;
+  box-sizing: border-box;
   width: 0;
-  height: 44px;
-  margin-left: 0;
+  height: 64px;
+  margin: -8px 0 -12px;
   padding: 0;
   border: none;
-  border-radius: 999px;
-  background: var(--sand);
+  border-radius: 0;
+  background: none;
   color: var(--ink-2);
   overflow: hidden;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-end;
   opacity: 0;
-  transform: scale(.6);
   pointer-events: none;
-  transition:
-    width var(--t-2) var(--e-in),
-    margin-left var(--t-2) var(--e-in),
-    opacity var(--t-1) var(--e-in),
-    transform var(--t-2) var(--e-in);
+  -webkit-tap-highlight-color: transparent;
+  transition: width var(--t-2) var(--e-in), opacity var(--t-1) var(--e-in);
+}
+.searchx > span {
+  flex: 0 0 44px;
+  height: 44px;
+  border-radius: 999px;
+  background: var(--sand);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform: scale(.6);
+  transition: transform var(--t-2) var(--e-in);
 }
 #searchwrap:focus-within .searchx {
-  width: 44px;
-  margin-left: 8px;
+  width: 52px;
   opacity: 1;
-  transform: none;
   pointer-events: auto;
-  transition:
-    width var(--t-2) var(--e-out),
-    margin-left var(--t-2) var(--e-out),
-    opacity var(--t-2) var(--e-out),
-    transform var(--t-2) var(--e-out);
+  transition: width var(--t-2) var(--e-out), opacity var(--t-2) var(--e-out);
 }
-#searchwrap:focus-within .searchx:active {
+#searchwrap:focus-within .searchx > span {
+  transform: none;
+  transition: transform var(--t-2) var(--e-out);
+}
+#searchwrap:focus-within .searchx:active > span {
   transform: scale(.92);
   transition-duration: var(--t-1);
 }
@@ -857,11 +863,20 @@ h1 {
   width: 18px;
   height: 18px;
 }
+#search::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+  display: none;
+}
 @media (prefers-reduced-motion: reduce) {
   .searchx,
   #searchwrap:focus-within .searchx {
-    transform: none;
     transition: opacity var(--t-1) var(--e-soft);
+  }
+  .searchx > span,
+  #searchwrap:focus-within .searchx > span {
+    transform: none;
+    transition: none;
   }
 }
 .chips {
@@ -8226,11 +8241,11 @@ details.details-moving > :not(summary) {
   <div class="pages" id="pages">
     <div class="track" id="track">
       <div class="page" id="libpage" role="tabpanel" aria-labelledby="tab0">
-        <label class="searchwrap" id="searchwrap">
+        <div class="searchwrap" id="searchwrap" role="search">
           <span class="searchico"><svg class="ic"><use href="#i-search"></use></svg></span>
           <input class="search" id="search" type="search" placeholder="Search workouts, exercises, muscles" autocapitalize="off" autocomplete="off">
-          <button class="searchx" id="searchx" type="button" aria-label="Hide keyboard"><svg class="ic"><use href="#i-x"></use></svg></button>
-        </label>
+          <button class="searchx" id="searchx" type="button" aria-label="Clear search"><span><svg class="ic"><use href="#i-x"></use></svg></span></button>
+        </div>
 
         <div id="hint">
           <div id="hinttext">Spotter works better installed — full screen, and it opens like an app.
@@ -19316,10 +19331,19 @@ details.details-moving > :not(summary) {
   }), document.addEventListener("focusin", function() {
     var k = native && native.keyboard;
     !k || !k.visible || !kbOver() || kbApply({ visible: !0, height: k.height, duration: k.duration || 0.25, easing: k.easing });
-  }), $("searchx").addEventListener("pointerdown", function(e) {
+  });
+  var searchXAt = 0;
+  function searchDone() {
+    var f = $("search");
+    (f.value || state.q) && (f.value = "", state.q = "", renderGrid()), f.blur();
+  }
+  $("searchx").addEventListener("pointerdown", function(e) {
     e.preventDefault();
-  }), $("searchx").onclick = function() {
-    $("search").blur(), this.blur();
+  }), $("searchx").addEventListener("touchend", function(e) {
+    var t = e.changedTouches && e.changedTouches[0], r = this.getBoundingClientRect();
+    !t || t.clientX < r.left - 10 || t.clientX > r.right + 10 || t.clientY < r.top - 10 || t.clientY > r.bottom + 10 || (e.preventDefault(), searchXAt = Date.now(), searchDone());
+  }, { passive: !1 }), $("searchx").onclick = function(e) {
+    e.preventDefault(), this.blur(), Date.now() - searchXAt > 700 && searchDone();
   }, $("search").addEventListener("keydown", function(e) {
     e.key === "Enter" && this.blur();
   });
