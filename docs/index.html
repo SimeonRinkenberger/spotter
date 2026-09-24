@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-pFyJetwtkQ08B2YaPUK+P7XQAdg1FWXgYkmeDyze/6c=' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/ https://challenges.cloudflare.com https://accounts.google.com/gsi/client https://appleid.cdn-apple.com/appleauth/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://api.fontshare.com https://accounts.google.com/gsi/style; font-src 'self' data: https://fonts.gstatic.com https://cdn.fontshare.com; img-src 'self' data: blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://i.ytimg.com https://simeonrinkenberger.github.io; media-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://simeonrinkenberger.github.io; connect-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co wss://mtzevoxxpsktmrbbuxva.supabase.co https://accounts.google.com/gsi/; frame-src https://www.tiktok.com https://www.instagram.com https://www.youtube.com https://www.youtube-nocookie.com https://challenges.cloudflare.com https://accounts.google.com/gsi/ https://appleid.apple.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-wXIWwHGmsLQVCBEEISEw2CUQCTuhO7SEddN4zawDlpE=' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/ https://challenges.cloudflare.com https://accounts.google.com/gsi/client https://appleid.cdn-apple.com/appleauth/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://api.fontshare.com https://accounts.google.com/gsi/style; font-src 'self' data: https://fonts.gstatic.com https://cdn.fontshare.com; img-src 'self' data: blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://i.ytimg.com https://simeonrinkenberger.github.io; media-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://simeonrinkenberger.github.io; connect-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co wss://mtzevoxxpsktmrbbuxva.supabase.co https://accounts.google.com/gsi/; frame-src https://www.tiktok.com https://www.instagram.com https://www.youtube.com https://www.youtube-nocookie.com https://challenges.cloudflare.com https://accounts.google.com/gsi/ https://appleid.apple.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="google-site-verification" content="unLzcq6TBz9Bm6q4KHpbTmZ88dQ_tTnViacVX5BLzS0">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <title>Spotter by Quarterdeck Collective — save any workout video</title>
@@ -9613,6 +9613,7 @@ details.details-moving > :not(summary) {
     });
     var share = SHARED[path] ? epoch + ":" + uid + ":" + path + "\n" + (opts.body || "") : null;
     if (share && inFlight[share]) return inFlight[share];
+    opts.method && opts.method !== "GET" && retireLimits();
     var p = deadline(function(signal) {
       return sb.auth.getSession().then(function(r) {
         if (!accountNow(epoch, uid)) throw new Error("Account changed");
@@ -9637,7 +9638,7 @@ details.details-moving > :not(summary) {
       };
       p.then(forget, forget);
     }
-    return p;
+    return opts.method && opts.method !== "GET" && p.then(retireLimits, retireLimits), p;
   }
   function apiStream(path, body, onEvent) {
     var consentEpoch = accountEpoch, consentUid = state.user && state.user.id;
@@ -10230,7 +10231,7 @@ details.details-moving > :not(summary) {
   }
   function clearAccount() {
     if (dismissAiConsent(), native && native.configureSharing(null).catch(function() {
-    }), cancelPumpyReset(), pendingMotion && pendingMotion.disconnect(), $("app").classList.add("hide"), accountEpoch++, reads = {}, inFlight = {}, libraryRev++, logsRev++, planRev++, clearTimeout(undoTimer), undoTimer = null, undoFn = null, clearTimeout(detailCloseTimer), clearTimeout(woCloseTimer), clearTimeout(pendTimer), pendTimer = null, pendPolls = 0, pendBusy = !1, wkChannel && (sb.removeChannel(wkChannel), wkChannel = null), booting = null, state.profile = null, state.workouts = [], state.logs = null, state.plan = null, state.awards = null, state.goal = null, heroPct = 0, trainSeg = null, state.unit = "lb", state.sounds = !0, state.haptics = !0, state.collections = [], state.colItems = [], seenCards = {}, gridCards = {}, expCache = {}, expWaiting = {}, vidCache = {}, expKey = "", today.rows = [], today.at = 0, today.day = null, today.busy = !1, today.shown = !1, current = null, sc && scForget(), wo && saveDraft(), clearInterval(woTimer), stopRest(), liveEnd(!1), releaseWake(), wo = null, hist = {}, histReady = !1, strava && (strava = { asked: !1, configured: !1, connected: !1, athlete: null, busy: !1 }), clearTimeout(pumpyIdleTimer), pumpy) {
+    }), cancelPumpyReset(), pendingMotion && pendingMotion.disconnect(), $("app").classList.add("hide"), accountEpoch++, reads = {}, inFlight = {}, libraryRev++, logsRev++, planRev++, clearTimeout(undoTimer), undoTimer = null, undoFn = null, clearTimeout(detailCloseTimer), clearTimeout(woCloseTimer), clearTimeout(pendTimer), pendTimer = null, pendPolls = 0, pendBusy = !1, wkChannel && (sb.removeChannel(wkChannel), wkChannel = null), booting = null, earlyUid = null, reconnecting = !1, state.profile = null, state.workouts = [], state.logs = null, state.plan = null, state.awards = null, state.goal = null, heroPct = 0, trainSeg = null, state.unit = "lb", state.sounds = !0, state.haptics = !0, state.collections = [], state.colItems = [], seenCards = {}, gridCards = {}, expCache = {}, expWaiting = {}, vidCache = {}, expKey = "", capWaiting = {}, today.rows = [], today.at = 0, today.day = null, today.busy = !1, today.shown = !1, today.asked = 0, current = null, sc && scForget(), wo && saveDraft(), clearInterval(woTimer), stopRest(), liveEnd(!1), releaseWake(), wo = null, hist = {}, histReady = !1, strava && (strava = { asked: !1, configured: !1, connected: !1, athlete: null, busy: !1 }), clearTimeout(pumpyIdleTimer), pumpy) {
       var seq = (pumpy.openSeq || 0) + 1, wired = pumpy.wired;
       pumpy = {
         thread: null,
@@ -10246,7 +10247,7 @@ details.details-moving > :not(summary) {
       };
     }
     native && native.purchases && native.purchases.clear().catch(function() {
-    }), billing && (billing.prices = null, billing.caps = null, billing.capsWaiting = null, billing.asking = !1, billing.fails = 0, billing.busy = !1, billing.sub = null, billing.subAsked = !1, billing.limits = null, billing.said = null, billing.ctx = null, billing.cc = null, billing.ccWaiting = null, billing.redeeming = !1), ["grid", "chips", "colbar", "libcount", "empty", "dinner", "pumpylog", "pumpyannounce", "pumpyctx", "pumpythreads", "trainview", "today", "resume", "recapopts"].forEach(function(id) {
+    }), billing && (billing.prices = null, billing.caps = null, billing.capsWaiting = null, billing.asking = !1, billing.fails = 0, billing.busy = !1, billing.sub = null, billing.subAsked = !1, billing.limits = null, billing.limitsAt = 0, billing.limitsWaiting = null, billing.said = null, billing.ctx = null, billing.cc = null, billing.ccWaiting = null, billing.redeeming = !1), ["grid", "chips", "colbar", "libcount", "empty", "dinner", "pumpylog", "pumpyannounce", "pumpyctx", "pumpythreads", "trainview", "today", "resume", "recapopts"].forEach(function(id) {
       var n = $(id);
       n && (n.innerHTML = "");
     }), $("count0").textContent = "Reading your library", clearTimeout(toastTimer), $("toast").classList.remove("show"), $("toast").textContent = "", Array.prototype.forEach.call(document.querySelectorAll(".sheet.open, #detail.open, #workout.open"), function(n) {
@@ -10256,18 +10257,21 @@ details.details-moving > :not(summary) {
   sb.auth.onAuthStateChange(function(event, session) {
     if (event === "PASSWORD_RECOVERY" && setTimeout(openRecovery, 0), session && session.user) {
       var first = !state.user || state.user.id !== session.user.id;
-      first && state.user && clearAccount(), state.user = session.user, showApp(), first && setTimeout(boot, 0);
-    } else
-      clearAccount(), publishSignedOut(), state.user = null, guideUser(), state.workouts = [], state.logs = null, state.plan = null, state.awards = null, state.filter = "All", state.q = "", $("search").value = "", dropCache(), booting = null, showLanding();
+      first && state.user ? clearAccount() : first && settleEarly(session.user.id), state.user = session.user, showApp(), first && setTimeout(boot, 0);
+    } else earlyUid && !state.user && event !== "SIGNED_OUT" ? answeredNobody(signedOut) : signedOut();
   });
+  function signedOut() {
+    clearAccount(), publishSignedOut(), state.user = null, guideUser(), state.workouts = [], state.logs = null, state.plan = null, state.awards = null, state.filter = "All", state.q = "", $("search").value = "", dropCache(), booting = null, showLanding();
+  }
   var booting = null;
   function boot() {
     if (guideUser(), booting) return booting;
-    paintCache();
+    var library = load();
+    earlyUid !== state.user.id ? paintCache() : renderToday(), earlyUid = null;
     var profileReady = loadProfile();
     maybeInstallHint(), watchWorkouts();
     var epoch = accountEpoch, uid = state.user.id;
-    return booting = load().then(function() {
+    return booting = library.then(function() {
       if (accountNow(epoch, uid)) return consumeShare();
     }).then(function() {
       accountNow(epoch, uid) && takeParkedShare();
@@ -10300,7 +10304,8 @@ details.details-moving > :not(summary) {
     }, 200), idle(function() {
       accountNow(epoch, uid) && (pumpy.loaded || renderPumpy(), loadPumpy(!0));
     }, 450), idle(function() {
-      accountNow(epoch, uid) && isFree() && (loadCaps().then(renderLibCount), native && native.purchases && loadPrices());
+      accountNow(epoch, uid) && isFree() && (loadCaps().then(renderLibCount), native && native.purchases && loadPrices(), readLimits().catch(function() {
+      }));
     }, 700);
   }
   var wkChannel = null;
@@ -10326,7 +10331,7 @@ details.details-moving > :not(summary) {
   function onWorkoutChange(payload) {
     var row = payload.eventType === "DELETE" ? payload.old : payload.new;
     if (!(!row || !row.id) && !(!state.user || row.user_id && row.user_id !== state.user.id) && !(payload.eventType !== "DELETE" && state.workouts.some(function(w) {
-      return w.id === row.id && JSON.stringify(w) === JSON.stringify(row);
+      return w.id === row.id && sameRow(w, row);
     }))) {
       if (libraryRev++, payload.eventType === "DELETE") {
         state.workouts = state.workouts.filter(function(w) {
@@ -10364,7 +10369,7 @@ details.details-moving > :not(summary) {
     });
     if (!ids.length) return Promise.resolve();
     var epoch = accountEpoch, uid = state.user.id, rev = libraryRev;
-    return pendBusy = !0, pendPolls++, sb.from("workouts").select("*").eq("user_id", uid).in("id", ids).then(function(r) {
+    return pendBusy = !0, pendPolls++, sb.from("workouts").select(CARD_COLS).eq("user_id", uid).in("id", ids).then(function(r) {
       if (!(!accountNow(epoch, uid) || r.error || rev !== libraryRev)) {
         var found = {};
         (r.data || []).forEach(function(w) {
@@ -10392,6 +10397,14 @@ details.details-moving > :not(summary) {
     }, function() {
     }), loaded;
   }
+  var CARD_COLS = "id,user_id,created_at,url,shortcode,platform,kind,author,title,thumb_url,category,muscle_groups,equipment,difficulty,duration_minutes,blocks,tags,has_full_workout,favorite,notes,source_url,ingest_status,ingest_error,confidence,media_stage,read_quality,user_workout_override,user_edit_revision", CARD_KEYS = CARD_COLS.split(",");
+  function cardSig(w) {
+    for (var o = {}, i = 0; i < CARD_KEYS.length; i++) o[CARD_KEYS[i]] = w[CARD_KEYS[i]] === void 0 ? null : w[CARD_KEYS[i]];
+    return JSON.stringify(o);
+  }
+  function sameRow(a, b) {
+    return cardSig(a) === cardSig(b) && (a.caption === void 0 || b.caption === void 0 || a.caption === b.caption);
+  }
   var CACHE_KEY = "spotter-lib-v1", CACHE_MAX = 15e5;
   function thinRow(w) {
     var out = {}, k;
@@ -10399,12 +10412,12 @@ details.details-moving > :not(summary) {
       Object.prototype.hasOwnProperty.call(w, k) && k !== "caption" && (out[k] = w[k]);
     return out;
   }
-  function readCache() {
+  function readCache(uid) {
     try {
       var raw = localStorage.getItem(CACHE_KEY);
       if (!raw) return null;
       var c = JSON.parse(raw);
-      return !c || c.v !== 1 || !state.user || c.uid !== state.user.id || !c.workouts || !c.workouts.length ? null : c;
+      return !c || c.v !== 1 || !uid || c.uid !== uid || !c.workouts || !c.workouts.length ? null : c;
     } catch (e) {
       return null;
     }
@@ -10439,22 +10452,91 @@ details.details-moving > :not(summary) {
     }
   }
   function paintCache() {
-    var c = readCache();
-    if (c) {
-      state.workouts = c.workouts, state.collections = c.collections || [], state.colItems = c.colItems || [];
-      for (var i = 0; i < state.workouts.length; i++) seenCards[state.workouts[i].id] = 1;
-      render();
+    var c = readCache(state.user && state.user.id);
+    c && paintRows(c);
+  }
+  function paintRows(c) {
+    state.workouts = c.workouts, state.collections = c.collections || [], state.colItems = c.colItems || [];
+    for (var i = 0; i < state.workouts.length; i++) seenCards[state.workouts[i].id] = 1;
+    render();
+  }
+  var SESSION_KEY = "sb-mtzevoxxpsktmrbbuxva-auth-token", earlyUid = null;
+  function paintBeforeAuth() {
+    if (!native && /(^|[#?&])(access_token|refresh_token|code|error)=/.test(location.hash + "&" + location.search.slice(1))) return;
+    function take(raw) {
+      if (!(state.user || earlyUid || !raw)) {
+        var s = null;
+        try {
+          s = JSON.parse(raw);
+        } catch (e) {
+          return;
+        }
+        var uid = s && s.user && s.user.id, c = typeof uid == "string" ? readCache(uid) : null;
+        c && (earlyUid = uid, showApp(), paintRows(c));
+      }
+    }
+    if (native) {
+      native.authStorage.getItem(SESSION_KEY).then(take, function() {
+      });
+      return;
+    }
+    try {
+      take(localStorage.getItem(SESSION_KEY));
+    } catch (e) {
     }
   }
+  function settleEarly(uid) {
+    earlyUid && earlyUid !== uid && clearAccount();
+  }
+  var reconnecting = !1;
+  function answeredNobody(leave) {
+    var uid = earlyUid;
+    function decide(raw2) {
+      if (!(state.user || earlyUid !== uid)) {
+        var s = null;
+        try {
+          s = JSON.parse(raw2);
+        } catch (e) {
+        }
+        if (!(s && s.user && s.user.id === uid && s.refresh_token)) {
+          leave();
+          return;
+        }
+        reconnecting || (reconnecting = !0, toast(WAITING), window.addEventListener("online", function() {
+          !state.user && earlyUid === uid && sb.auth.getSession().catch(function() {
+          });
+        }));
+      }
+    }
+    if (native) {
+      native.authStorage.getItem(SESSION_KEY).then(decide, function() {
+        leave();
+      });
+      return;
+    }
+    var raw = null;
+    try {
+      raw = localStorage.getItem(SESSION_KEY);
+    } catch (e) {
+    }
+    decide(raw);
+  }
+  var WAITING = "Reconnecting\u2026 Your library and workouts still work offline.";
+  function accountFree(t) {
+    return !t || !t.closest ? !1 : t.closest("[data-close], #dclose, #grid, #chips, #searchwrap, #hint, #filtersheet, #sortsheet, #tab0, #resume, #toast, #dinner .startbtn, #dinner .source-disclosure, #workout") ? !0 : !!(wo && !wo.finished && t.closest(".sheet"));
+  }
+  document.addEventListener("click", function(e) {
+    state.user || !earlyUid || accountFree(e.target) || (e.preventDefault(), e.stopPropagation(), toast(WAITING));
+  }, !0);
   function load(retry) {
     if (!state.user) return Promise.resolve();
-    var uid = state.user.id, epoch = accountEpoch, rev = libraryRev;
+    var uid = state.user.id, epoch = accountEpoch, rev = libraryRev, begun = Date.now();
     return readOnce("library:" + rev + ":" + !!retry, function() {
-      var rows = sb.from("workouts").select("*").eq("user_id", uid).order("created_at", { ascending: !1 }).limit(200).then(function(r) {
+      var rows = sb.from("workouts").select(CARD_COLS).eq("user_id", uid).order("created_at", { ascending: !1 }).limit(200).then(function(r) {
         if (accountNow(epoch, uid)) {
           if (r.error) throw r.error;
           if (rev === libraryRev) {
-            if (state.workouts = r.data || [], today.at = 0, render(), current && $("detail").classList.contains("open")) {
+            if (state.workouts = r.data || [], today.asked < begun && (today.at = 0), render(), current && $("detail").classList.contains("open")) {
               var fresh = state.workouts.filter(function(w) {
                 return w.id === current.id;
               })[0];
@@ -10493,7 +10575,7 @@ details.details-moving > :not(summary) {
     });
   }
   function refreshDetail(w, force) {
-    if (!(!current || current.id !== w.id) && !(!force && JSON.stringify(current) === JSON.stringify(w))) {
+    if (!(!current || current.id !== w.id) && (w.caption === void 0 && current.caption !== void 0 && (w.caption = current.caption), !(!force && sameRow(current, w)))) {
       var old = current, d = $("dinner"), scroll = $("detail").scrollTop;
       if (!$("detail").classList.contains("open")) {
         current = w;
@@ -10509,6 +10591,44 @@ details.details-moving > :not(summary) {
         replacement && replacement.replaceWith(source);
       }
       $("detail").scrollTop = scroll;
+    }
+  }
+  var capWaiting = {};
+  function askCaption(w, box, body) {
+    if (!(w.caption !== void 0 || isUpload(w) || !state.user)) {
+      var epoch = accountEpoch, uid = state.user.id, id = w.id, p = capWaiting[id];
+      if (!p) {
+        p = capWaiting[id] = sb.from("workouts").select("caption").eq("id", id).maybeSingle().then(function(r) {
+          if (r.error) throw r.error;
+          return r.data ? r.data.caption : null;
+        });
+        var done = function() {
+          capWaiting[id] === p && delete capWaiting[id];
+        };
+        p.then(done, done);
+      }
+      p.then(function(cap) {
+        accountNow(epoch, uid) && (w.caption === void 0 && (w.caption = cap), current && current.id === id && current.caption === void 0 && (current.caption = cap), showCaption(box, body, cap));
+      }, function() {
+      });
+    }
+  }
+  function showCaption(box, body, text) {
+    if (!(!text || !body.isConnected || body.querySelector(".capbox"))) {
+      if (box._disclosureRun) {
+        setTimeout(function() {
+          showCaption(box, body, text);
+        }, 90);
+        return;
+      }
+      var cap = el("div", "capbox", text);
+      if (body.appendChild(cap), !(!box.open || lessMotion() || !cap.animate)) {
+        var css = getComputedStyle(cap), h = cap.getBoundingClientRect().height;
+        cap.animate(
+          [{ height: "0px", opacity: 0, overflow: "hidden" }, { height: h + "px", opacity: 1, overflow: "hidden" }],
+          { duration: parseFloat(css.getPropertyValue("--t-3")) || 320, easing: css.getPropertyValue("--e-out").trim() || "ease-out" }
+        );
+      }
     }
   }
   function isPending(w) {
@@ -10867,12 +10987,12 @@ details.details-moving > :not(summary) {
     var pg = $("libpage"), top = pg.scrollTop + sec2.getBoundingClientRect().top - pg.getBoundingClientRect().top - secTop();
     top < 0 && (top = 0), lessMotion() || !pg.scrollTo ? pg.scrollTop = top : pg.scrollTo({ top: top, behavior: "smooth" });
   }
-  var today = { day: null, rows: [], done: !1, at: 0, busy: !1, shown: !1 }, todayBox = el("div", "todaywrap hide");
+  var today = { day: null, rows: [], done: !1, at: 0, busy: !1, shown: !1, asked: 0 }, todayBox = el("div", "todaywrap hide");
   todayBox.id = "today", $("chips").parentNode.insertBefore(todayBox, $("chips").nextSibling);
   function loadToday() {
     if (!(today.busy || !state.user)) {
       var key = ymd(/* @__PURE__ */ new Date()), epoch = accountEpoch, uid = state.user.id;
-      today.busy = !0, Promise.all([
+      today.busy = !0, today.asked = Date.now(), Promise.all([
         sb.from("plan").select("workout_id").eq("day", key),
         // Pulled back a day: no time zone can then leave this morning's session
         // outside the window, and the local date below is what decides.
@@ -11434,7 +11554,7 @@ details.details-moving > :not(summary) {
         var pv = billing.limits && billing.limits.video_previews, trial = el("button", "btn ghost", isFree() ? pv ? "Try a Plus read \xB7 " + Math.max(0, pv.cap - pv.used) + " left this month" : "Try a Plus read" : "Read with Plus");
         trial.onclick = function() {
           readVideo(w, trial, isFree());
-        }, quality.appendChild(trial), isFree() && api("limits").then(function(r) {
+        }, quality.appendChild(trial), isFree() && recentLimits().then(function(r) {
           if (!(!trial.isConnected || !r.video_previews)) {
             var left = Math.max(0, r.video_previews.cap - r.video_previews.used);
             trial.textContent = left ? "Try a Plus read \xB7 " + left + " left this month" : "Explore Spotter Plus", left || (trial.onclick = function() {
@@ -11474,13 +11594,15 @@ details.details-moving > :not(summary) {
       history.back(), openPumpy(w);
     }, actions.appendChild(ask), d.appendChild(actions);
     var original = disclosure("Watch original / source", "source-disclosure"), sourceBody = original.lastChild;
-    !isUpload(w) && w.url && sourceBody.appendChild(originalLink(w)), w.caption && sourceBody.appendChild(el("div", "capbox", w.caption)), original._prepareDisclosure = function() {
+    !isUpload(w) && w.url && sourceBody.appendChild(originalLink(w)), w.caption && sourceBody.appendChild(el("div", "capbox", w.caption)), original.firstChild.addEventListener("pointerdown", function() {
+      askCaption(w, original, sourceBody);
+    }), original._prepareDisclosure = function() {
       if (!original.open) {
         var old = sourceBody.querySelector(".embedwrap, .dphoto");
         old && old.remove();
         return;
       }
-      if (!sourceBody.querySelector(".embedwrap, .dphoto")) {
+      if (askCaption(w, original, sourceBody), !sourceBody.querySelector(".embedwrap, .dphoto")) {
         var em = embedNode(w);
         em && (sourceBody.insertBefore(em, sourceBody.firstChild), fitEmbed(em, w.platform));
       }
@@ -14940,6 +15062,10 @@ details.details-moving > :not(summary) {
         leaveWorkout(), toast("Workout closed \u2014 nothing logged.");
         return;
       }
+      if (!state.user) {
+        saveDraft(), toast("Reconnecting\u2026 This workout is kept on this phone. Save it once you're back online.");
+        return;
+      }
       var payload = {
         user_id: state.user.id,
         workout_id: wo.workout.id,
@@ -17715,6 +17841,9 @@ details.details-moving > :not(summary) {
     subAsked: !1,
     limits: null,
     // last /api/limits, for the Settings usage line
+    limitsAt: 0,
+    // when it was read; 0 once a write may have spent from it
+    limitsWaiting: null,
     said: null,
     // the plan the server last reported, which outranks the row
     ctx: null,
@@ -17739,6 +17868,23 @@ details.details-moving > :not(summary) {
   };
   function billOn() {
     return !!(billing.prices && billing.prices.configured);
+  }
+  var LIMITS_FRESH = 6e4, limitsRev = 0;
+  function readLimits() {
+    if (billing.limitsWaiting) return billing.limitsWaiting;
+    var epoch = accountEpoch, uid = state.user && state.user.id, rev = limitsRev, p = billing.limitsWaiting = api("limits", { method: "GET" }).then(function(r) {
+      return !r || r.status !== "ok" || !accountNow(epoch, uid) || (billing.limits = r, billing.limitsAt = rev === limitsRev ? Date.now() : 0), r;
+    });
+    function done() {
+      billing.limitsWaiting === p && (billing.limitsWaiting = null);
+    }
+    return p.then(done, done), p;
+  }
+  function recentLimits() {
+    return billing.limits && Date.now() - billing.limitsAt < LIMITS_FRESH ? Promise.resolve(billing.limits) : readLimits();
+  }
+  function retireLimits() {
+    billing.limitsAt = 0, limitsRev++;
   }
   function myPlan() {
     return state.profile && state.profile.plan || "free";
@@ -19406,8 +19552,8 @@ details.details-moving > :not(summary) {
     var mine = isEmailAccount();
     $("setpwrow").classList.toggle("hide", !mine), $("setmailrow").disabled = !mine, $("setname").textContent = displayName() || "Not set", $("unittoggle").textContent = state.unit, paintGoal(), $("haptictoggle").textContent = state.haptics ? "On" : "Off", $("sethapticrow").classList.toggle("hide", !native && !navigator.vibrate), paintSounds(), loadRemind();
     var key = state.profile ? state.profile.ingest_key : null;
-    $("setkey").textContent = key ? API + "ingest?key=" + key : "Loading\u2026", renderSettingsMeter(), paintPlanGroup(), paintPlanUse(billing.limits), Promise.all([loadPrices(), loadSub()]).then(paintPlanGroup), paintCreator(), loadCreator().then(paintCreator), paintStrava(), askStrava(), api("limits", { method: "GET" }).then(function(r) {
-      pumpy.meterAsked = !0, absorbMeter(r && r.pumpy), r.status === "ok" && (billing.limits = r, adoptPlan(r.plan), paintPlanUse(r));
+    $("setkey").textContent = key ? API + "ingest?key=" + key : "Loading\u2026", renderSettingsMeter(), paintPlanGroup(), paintPlanUse(billing.limits), Promise.all([loadPrices(), loadSub()]).then(paintPlanGroup), paintCreator(), loadCreator().then(paintCreator), paintStrava(), askStrava(), readLimits().then(function(r) {
+      pumpy.meterAsked = !0, absorbMeter(r && r.pumpy), r.status === "ok" && (adoptPlan(r.plan), paintPlanUse(r));
     }).catch(function() {
     }), openSheet("settingssheet");
   }
@@ -20415,6 +20561,10 @@ details.details-moving > :not(summary) {
       ptrPulling = !1;
       var p = $("ptr"), d = parseFloat(p.style.opacity || "0");
       if (p.classList.add("back"), p.style.opacity = 0, p.style.transform = "", !(d < 1)) {
+        if (!state.user) {
+          toast(WAITING);
+          return;
+        }
         var before = state.workouts.length, job = refreshActive();
         if (!job || !job.then) {
           toast("Up to date");
@@ -20869,8 +21019,15 @@ details.details-moving > :not(summary) {
       }
       watchBilling(), load();
     }
-  }), window.addEventListener("pageshow", watchBilling), window.addEventListener("focus", watchBilling), captureCreator(), setAuthMode("signup"), captureShare(), captureBilling(), captureStrava(), linkProblem(), sb.auth.getSession().then(function(r) {
-    r.data.session && r.data.session.user ? (state.user = r.data.session.user, showApp(), boot().then(restoreSession)) : (showLanding(), sharePending() && toast("Sign in to save the link you shared."));
+  }), window.addEventListener("pageshow", watchBilling), window.addEventListener("focus", watchBilling), captureCreator(), setAuthMode("signup"), captureShare(), captureBilling(), captureStrava(), linkProblem(), paintBeforeAuth(), sb.auth.getSession().then(function(r) {
+    if (r.data.session && r.data.session.user)
+      state.user || settleEarly(r.data.session.user.id), state.user = r.data.session.user, showApp(), boot().then(restoreSession);
+    else {
+      var land2 = function() {
+        earlyUid && clearAccount(), showLanding(), sharePending() && toast("Sign in to save the link you shared.");
+      };
+      earlyUid && !state.user ? answeredNobody(land2) : land2();
+    }
   }), !native && "serviceWorker" in navigator && window.addEventListener("load", function() {
     navigator.serviceWorker.register("sw.js").catch(function() {
     });

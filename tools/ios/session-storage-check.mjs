@@ -115,7 +115,13 @@ const store = (initial = {}) => {
 {
   const bridge = fs.readFileSync('native/bridge.js', 'utf8');
   assert(bridge.includes('authStorage: session.storage'), 'supabase-js must be given the secure adapter');
-  assert(bridge.includes('await session.prepare()'), 'the migration must run before app.js builds the client');
+  // The boot's bridge calls go out together (AUDIT-SPEED C8); the migration is one
+  // of the set that is awaited whole, and app.js is appended only after it.
+  const boot = bridge.slice(bridge.indexOf('async function boot()'), bridge.indexOf('\n}\n', bridge.indexOf('async function boot()')));
+  const group = boot.indexOf('await Promise.all(['), groupEnd = boot.indexOf('\n  ]);', group);
+  assert(group > 0 && groupEnd > group, 'boot awaits its bridge calls as one set');
+  assert(boot.slice(group, groupEnd).includes('session.prepare()'), 'the migration must run before app.js builds the client');
+  assert(boot.indexOf("script.src = 'app.js'") > groupEnd, 'app.js is appended only after the set, migration included, has landed');
   assert(!/authStorage[\s\S]{0,200}Preferences\.get/.test(bridge), 'no Preferences path may remain under authStorage');
   assert(bridge.includes("Preferences.set({ key: 'spotter_draft'"), 'the draft stays in Preferences');
   const bundle = fs.readFileSync('native-dist/native.js', 'utf8');

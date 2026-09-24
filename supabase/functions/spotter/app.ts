@@ -359,6 +359,9 @@ export const APP = String.raw`
     });
     var share = SHARED[path] ? epoch + ":" + uid + ":" + path + "\n" + (opts.body || "") : null;
     if (share && inFlight[share]) return inFlight[share];
+    // Anything that is not a read may have spent an allowance, so the minute-old
+    // copy of /api/limits is retired when it starts and again when it lands.
+    if (opts.method && opts.method !== "GET") retireLimits();
     var p = deadline(function (signal) { return sb.auth.getSession().then(function (r) {
       if (!accountNow(epoch, uid)) throw new Error("Account changed");
       var token = r.data.session ? r.data.session.access_token : "";
@@ -379,6 +382,7 @@ export const APP = String.raw`
       var forget = function () { delete inFlight[share]; };
       p.then(forget, forget);
     }
+    if (opts.method && opts.method !== "GET") p.then(retireLimits, retireLimits);
     return p;
   }
 
@@ -1282,12 +1286,12 @@ export const APP = String.raw`
     clearTimeout(detailCloseTimer); clearTimeout(woCloseTimer);
     clearTimeout(pendTimer); pendTimer = null; pendPolls = 0; pendBusy = false;
     if (wkChannel) { sb.removeChannel(wkChannel); wkChannel = null; }
-    booting = null; state.profile = null; state.workouts = []; state.logs = null;
+    booting = null; earlyUid = null; reconnecting = false; state.profile = null; state.workouts = []; state.logs = null;
     state.plan = null; state.awards = null; state.goal = null; heroPct = 0; trainSeg = null;
     state.unit = "lb"; state.sounds = true; state.haptics = true;
     state.collections = []; state.colItems = []; seenCards = {}; gridCards = {};
-    expCache = {}; expWaiting = {}; vidCache = {}; expKey = "";
-    today.rows = []; today.at = 0; today.day = null; today.busy = false; today.shown = false;
+    expCache = {}; expWaiting = {}; vidCache = {}; expKey = ""; capWaiting = {};
+    today.rows = []; today.at = 0; today.day = null; today.busy = false; today.shown = false; today.asked = 0;
     current = null;
     if (sc) scForget();
     if (wo) saveDraft();
@@ -1300,7 +1304,7 @@ export const APP = String.raw`
         busy: false, live: null, stick: true, wired: wired, openSeq: seq };
     }
     if (native && native.purchases) native.purchases.clear().catch(function () {});
-    if (billing) { billing.prices = null; billing.caps = null; billing.capsWaiting = null; billing.asking = false; billing.fails = 0; billing.busy = false; billing.sub = null; billing.subAsked = false; billing.limits = null; billing.said = null; billing.ctx = null; billing.cc = null; billing.ccWaiting = null; billing.redeeming = false; }
+    if (billing) { billing.prices = null; billing.caps = null; billing.capsWaiting = null; billing.asking = false; billing.fails = 0; billing.busy = false; billing.sub = null; billing.subAsked = false; billing.limits = null; billing.limitsAt = 0; billing.limitsWaiting = null; billing.said = null; billing.ctx = null; billing.cc = null; billing.ccWaiting = null; billing.redeeming = false; }
     ["grid", "chips", "colbar", "libcount", "empty", "dinner", "pumpylog", "pumpyannounce", "pumpyctx", "pumpythreads", "trainview", "today", "resume", "recapopts"].forEach(function (id) {
       var n = $(id); if (n) n.innerHTML = "";
     });
@@ -1320,27 +1324,35 @@ export const APP = String.raw`
     if (session && session.user) {
       var first = !state.user || state.user.id !== session.user.id;
       if (first && state.user) clearAccount();
+      else if (first) settleEarly(session.user.id);
       state.user = session.user;
       showApp();
       // supabase-js holds the auth lock for the duration of this callback, so any
       // query started here deadlocks. Hand the work to the next tick instead.
       if (first) setTimeout(boot, 0);
+    } else if (earlyUid && !state.user && event !== "SIGNED_OUT") {
+      // Painted before the token came back, and the answer is nobody: offline, or gone?
+      answeredNobody(signedOut);
     } else {
-      clearAccount();
-      publishSignedOut();
-      state.user = null;
-      guideUser();
-      state.workouts = []; state.logs = null; state.plan = null; state.awards = null;
-      // What the last person was looking for is not what the next one is. The
-      // library came back narrowed to a search and a creator nobody had typed.
-      state.filter = "All"; state.q = ""; $("search").value = "";
-      // Somebody else's library must never paint on this phone, and the next
-      // sign-in on this page has to be a real boot rather than a no-op.
-      dropCache();
-      booting = null;
-      showLanding();
+      signedOut();
     }
   });
+
+  function signedOut() {
+    clearAccount();
+    publishSignedOut();
+    state.user = null;
+    guideUser();
+    state.workouts = []; state.logs = null; state.plan = null; state.awards = null;
+    // What the last person was looking for is not what the next one is. The
+    // library came back narrowed to a search and a creator nobody had typed.
+    state.filter = "All"; state.q = ""; $("search").value = "";
+    // Somebody else's library must never paint on this phone, and the next
+    // sign-in on this page has to be a real boot rather than a no-op.
+    dropCache();
+    booting = null;
+    showLanding();
+  }
 
   // Two doors lead here — onAuthStateChange's first session, and the getSession at
   // the foot of this file for a session restored before the listener existed — and
@@ -1352,16 +1364,21 @@ export const APP = String.raw`
   function boot() {
     guideUser();
     if (booting) return booting;
-    // Before the network is asked anything: the library someone is looking at is
-    // almost always the one they left.
-    paintCache();
+    // The library's read goes out first, so the today read the paint below starts
+    // is the younger of the two and load() does not ask for today again.
+    var library = load();
+    // Before the network answers anything: the library someone is looking at is
+    // almost always the one they left. Already up if it was painted before the
+    // token came back, when only the today card is still to ask.
+    if (earlyUid !== state.user.id) paintCache(); else renderToday();
+    earlyUid = null;
     var profileReady = loadProfile();
     maybeInstallHint();
     watchWorkouts();
     // A shared link is saved only once the library is in hand, so the card it
     // creates lands in a rendered grid rather than into an empty one.
     var epoch = accountEpoch, uid = state.user.id;
-    booting = load().then(function () { if (accountNow(epoch, uid)) return consumeShare(); })
+    booting = library.then(function () { if (accountNow(epoch, uid)) return consumeShare(); })
       // Not waited for, as a share is not: a queue of parked links saves one by
       // one in the background while the rest of the start carries on.
       .then(function () { if (accountNow(epoch, uid)) takeParkedShare(); })
@@ -1414,6 +1431,8 @@ export const APP = String.raw`
       if (!isFree()) return;
       loadCaps().then(renderLibCount);
       if (native && native.purchases) loadPrices();
+      // Once per session, so a Basic card's preview count is on its first paint.
+      readLimits().catch(function () {});
     }, 700);
   }
 
@@ -1460,7 +1479,7 @@ export const APP = String.raw`
     if (!row || !row.id) return;
     if (!state.user || (row.user_id && row.user_id !== state.user.id)) return;
     if (payload.eventType !== "DELETE" && state.workouts.some(function (w) {
-      return w.id === row.id && JSON.stringify(w) === JSON.stringify(row);
+      return w.id === row.id && sameRow(w, row);
     })) return;
     libraryRev++;
 
@@ -1515,7 +1534,7 @@ export const APP = String.raw`
     if (!ids.length) return Promise.resolve();
     var epoch = accountEpoch, uid = state.user.id, rev = libraryRev;
     pendBusy = true; pendPolls++;
-    return sb.from("workouts").select("*").eq("user_id", uid).in("id", ids).then(function (r) {
+    return sb.from("workouts").select(CARD_COLS).eq("user_id", uid).in("id", ids).then(function (r) {
       if (!accountNow(epoch, uid) || r.error || rev !== libraryRev) return;
       var found = {};
       (r.data || []).forEach(function (w) { found[w.id] = true; onWorkoutChange({eventType:"UPDATE",new:w}); });
@@ -1561,6 +1580,31 @@ export const APP = String.raw`
     return loaded;
   }
 
+  // ---------- the columns a card is read with ----------
+  //
+  // What app.ts reads off a workouts row, and nothing else. caption is read only
+  // by the detail's source disclosure, which asks for it when it is opened
+  // (askCaption); ingest_job_id, extracted_by, read_plan, rating, calories,
+  // user_title_override and user_category_override are read nowhere. Builds 5-7
+  // keep their own select=*, which PostgREST serves as before. The data export
+  // keeps select=* too: that one is meant to be everything.
+  var CARD_COLS = "id,user_id,created_at,url,shortcode,platform,kind,author,title,thumb_url,category," +
+    "muscle_groups,equipment,difficulty,duration_minutes,blocks,tags,has_full_workout,favorite,notes," +
+    "source_url,ingest_status,ingest_error,confidence,media_stage,read_quality,user_workout_override,user_edit_revision";
+  var CARD_KEYS = CARD_COLS.split(",");
+
+  // Two rows are the same card when those columns agree, and the caption too when
+  // both sides carry it. A socket event carries every column; comparing all of
+  // them against a row read with fewer would re-render on every event.
+  function cardSig(w) {
+    var o = {};
+    for (var i = 0; i < CARD_KEYS.length; i++) o[CARD_KEYS[i]] = w[CARD_KEYS[i]] === undefined ? null : w[CARD_KEYS[i]];
+    return JSON.stringify(o);
+  }
+  function sameRow(a, b) {
+    return cardSig(a) === cardSig(b) && (a.caption === undefined || b.caption === undefined || a.caption === b.caption);
+  }
+
   // ---------- cache ----------
   //
   // Measured live with twenty cards: the document is interactive at 77ms and the
@@ -1582,14 +1626,14 @@ export const APP = String.raw`
     return out;
   }
 
-  function readCache() {
+  function readCache(uid) {
     try {
       var raw = localStorage.getItem(CACHE_KEY);
       if (!raw) return null;
       var c = JSON.parse(raw);
       // Keyed by user and checked rather than trusted: a shared phone must never
       // show one person the other's workouts, not even for a third of a second.
-      if (!c || c.v !== 1 || !state.user || c.uid !== state.user.id) return null;
+      if (!c || c.v !== 1 || !uid || c.uid !== uid) return null;
       if (!c.workouts || !c.workouts.length) return null;
       return c;
     } catch (e) { return null; }
@@ -1618,8 +1662,11 @@ export const APP = String.raw`
   }
 
   function paintCache() {
-    var c = readCache();
-    if (!c) return;
+    var c = readCache(state.user && state.user.id);
+    if (c) paintRows(c);
+  }
+
+  function paintRows(c) {
     state.workouts = c.workouts;
     state.collections = c.collections || [];
     state.colItems = c.colItems || [];
@@ -1630,20 +1677,118 @@ export const APP = String.raw`
     render();
   }
 
+  // ---------- the cache before the token ----------
+  //
+  // supabase-js names the signed-in person only once it holds a live token, and
+  // after an hour away it holds none: it refreshes first, and the library the
+  // person left waited behind that round trip (150-460ms on the simulator's fast
+  // network, more on a phone's). The stored session names its user whether or not
+  // its token has expired, and reading it costs no network: localStorage here, one
+  // Keychain read on a phone. When that user is the one the cache was written for,
+  // the cache is painted now instead of after the refresh.
+  //
+  // Nothing is trusted beyond the paint. state.user stays empty until the SDK
+  // answers, so no read or write goes out on the stored name. An answer for
+  // somebody else, or for nobody (a revoked or deleted account), goes through
+  // clearAccount like any sign-out and takes the grid and the cache with it. A
+  // link that is itself a sign-in may be another account, so it paints nothing.
+  var SESSION_KEY = "sb-mtzevoxxpsktmrbbuxva-auth-token";
+  var earlyUid = null;
+
+  function paintBeforeAuth() {
+    if (!native && /(^|[#?&])(access_token|refresh_token|code|error)=/.test(location.hash + "&" + location.search.slice(1))) return;
+    function take(raw) {
+      if (state.user || earlyUid || !raw) return;
+      var s = null;
+      try { s = JSON.parse(raw); } catch (e) { return; }
+      var uid = s && s.user && s.user.id, c = typeof uid === "string" ? readCache(uid) : null;
+      if (!c) return;
+      earlyUid = uid;
+      showApp();
+      paintRows(c);
+    }
+    if (native) { native.authStorage.getItem(SESSION_KEY).then(take, function () {}); return; }
+    try { take(localStorage.getItem(SESSION_KEY)); } catch (e) { }
+  }
+
+  // The answer arrived. Painted for this same person: keep it (boot skips the
+  // second paint). Painted for anyone else: take it down before theirs goes up.
+  function settleEarly(uid) {
+    if (earlyUid && earlyUid !== uid) clearAccount();
+  }
+
+  // The SDK answered nobody while that library is up. supabase-js drops the stored
+  // session when the server refused it (revoked, deleted, signed out elsewhere)
+  // and keeps it when the server could not be reached, retrying on its own every
+  // 30 s. So the stored session decides. Still there and still theirs: the phone
+  // is offline with an hour-old token, and the library stays up until a refresh
+  // gets through, when onAuthStateChange boots as it always does. Gone, or
+  // someone else's: a sign-out like any other.
+  var reconnecting = false;
+
+  function answeredNobody(leave) {
+    var uid = earlyUid;
+    function decide(raw) {
+      if (state.user || earlyUid !== uid) return;
+      var s = null;
+      try { s = JSON.parse(raw); } catch (e) { }
+      if (!(s && s.user && s.user.id === uid && s.refresh_token)) { leave(); return; }
+      if (reconnecting) return;
+      reconnecting = true;
+      toast(WAITING);
+      // A phone that says it is back is worth a try before the SDK's next tick.
+      window.addEventListener("online", function () {
+        if (!state.user && earlyUid === uid) sb.auth.getSession().catch(function () {});
+      });
+    }
+    if (native) { native.authStorage.getItem(SESSION_KEY).then(decide, function () { leave(); }); return; }
+    var raw = null;
+    try { raw = localStorage.getItem(SESSION_KEY); } catch (e) { }
+    decide(raw);
+  }
+
+  // Until the account is confirmed the page shows a library with nobody signed
+  // in, and anything that reads or writes as the account has nobody to act as.
+  // Online that is a fraction of a second; offline it lasts until the phone is
+  // back. What needs no account stays usable: the Library, a card, and training
+  // from it (Save waits for the account, see finishWorkout). Every other tap says
+  // so instead of acting as nobody.
+  var WAITING = "Reconnecting… Your library and workouts still work offline.";
+
+  function accountFree(t) {
+    if (!t || !t.closest) return false;
+    if (t.closest("[data-close], #dclose, #grid, #chips, #searchwrap, #hint, #filtersheet, #sortsheet, #tab0, #resume, #toast, " +
+      "#dinner .startbtn, #dinner .source-disclosure, #workout")) return true;
+    // Workout Mode's own sheets: a set, the rest, leaving, adding a movement.
+    return !!(wo && !wo.finished && t.closest(".sheet"));
+  }
+
+  document.addEventListener("click", function (e) {
+    if (state.user || !earlyUid || accountFree(e.target)) return;
+    e.preventDefault(); e.stopPropagation();
+    toast(WAITING);
+  }, true);
+
   // ---------- library ----------
 
   function load(retry) {
     if (!state.user) return Promise.resolve();
-    var uid = state.user.id, epoch = accountEpoch, rev = libraryRev;
+    // When the call was made, not when readOnce's microtask runs: boot's cached
+    // paint (and its today read) happens in between, and on a phone that paint
+    // takes long enough that a later clock made the today read look older.
+    var uid = state.user.id, epoch = accountEpoch, rev = libraryRev, begun = Date.now();
     return readOnce("library:" + rev + ":" + !!retry, function () {
-      var rows = sb.from("workouts").select("*").eq("user_id", uid)
+      var rows = sb.from("workouts").select(CARD_COLS).eq("user_id", uid)
         .order("created_at", { ascending: false }).limit(200).then(function (r) {
           if (!accountNow(epoch, uid)) return;
           if (r.error) throw r.error;
           // A socket event or local edit after the read started is newer evidence.
           if (rev !== libraryRev) return;
           state.workouts = r.data || [];
-          today.at = 0;
+          // Refresh means refresh, for the today card too, unless the today read
+          // went out after this one did: at boot the cached paint has just asked,
+          // and asking again here read plan and workout_logs twice per launch.
+          if (today.asked < begun) today.at = 0;
           render();
           if (current && $("detail").classList.contains("open")) {
             var fresh = state.workouts.filter(function (w) { return w.id === current.id; })[0];
@@ -1683,7 +1828,9 @@ export const APP = String.raw`
   // expanded rows, focus and playing media) when its source has not changed.
   function refreshDetail(w, force) {
     if (!current || current.id !== w.id) return;
-    if (!force && JSON.stringify(current) === JSON.stringify(w)) return;
+    // A row from load() carries no caption; the one this detail already asked for stays.
+    if (w.caption === undefined && current.caption !== undefined) w.caption = current.caption;
+    if (!force && sameRow(current, w)) return;
     var old = current, d = $("dinner"), scroll = $("detail").scrollTop;
     if (!$("detail").classList.contains("open")) { current = w; return; }
     var source = d.querySelector(".source-disclosure");
@@ -1702,6 +1849,45 @@ export const APP = String.raw`
       if (replacement) replacement.replaceWith(source);
     }
     $("detail").scrollTop = scroll;
+  }
+
+  // ---------- the caption, on demand ----------
+  //
+  // load() leaves caption on the server (CARD_COLS). The disclosure asks for it
+  // when it opens; the answer is kept on the row, so a second open asks nothing.
+  // Closed, it is simply there next time. Opened already, it slides in under the
+  // link once the disclosure has finished opening, rather than jumping the page.
+  var capWaiting = {};
+
+  function askCaption(w, box, body) {
+    if (w.caption !== undefined || isUpload(w) || !state.user) return;
+    var epoch = accountEpoch, uid = state.user.id, id = w.id;
+    var p = capWaiting[id];
+    if (!p) {
+      p = capWaiting[id] = sb.from("workouts").select("caption").eq("id", id).maybeSingle().then(function (r) {
+        if (r.error) throw r.error;
+        return r.data ? r.data.caption : null;
+      });
+      var done = function () { if (capWaiting[id] === p) delete capWaiting[id]; };
+      p.then(done, done);
+    }
+    p.then(function (cap) {
+      if (!accountNow(epoch, uid)) return;
+      if (w.caption === undefined) w.caption = cap;
+      if (current && current.id === id && current.caption === undefined) current.caption = cap;
+      showCaption(box, body, cap);
+    }, function () { /* the link is still there; the next open asks again */ });
+  }
+
+  function showCaption(box, body, text) {
+    if (!text || !body.isConnected || body.querySelector(".capbox")) return;
+    if (box._disclosureRun) { setTimeout(function () { showCaption(box, body, text); }, 90); return; }
+    var cap = el("div", "capbox", text);
+    body.appendChild(cap);
+    if (!box.open || lessMotion() || !cap.animate) return;
+    var css = getComputedStyle(cap), h = cap.getBoundingClientRect().height;
+    cap.animate([{ height: "0px", opacity: 0, overflow: "hidden" }, { height: h + "px", opacity: 1, overflow: "hidden" }],
+      { duration: parseFloat(css.getPropertyValue("--t-3")) || 320, easing: css.getPropertyValue("--e-out").trim() || "ease-out" });
   }
 
   function isPending(w) { return w.ingest_status === "processing"; }
@@ -2130,7 +2316,7 @@ export const APP = String.raw`
   // only thing that reads plan rows and most sessions never open it, so this does
   // its own read of today's plan and today's logs: two small selects.
 
-  var today = { day: null, rows: [], done: false, at: 0, busy: false, shown: false };
+  var today = { day: null, rows: [], done: false, at: 0, busy: false, shown: false, asked: 0 };
 
   // Anchored to the chip row instead of declared in markup.ts: setView hides that
   // row exactly when the Library is off screen, and one CSS adjacency rule lets
@@ -2142,7 +2328,7 @@ export const APP = String.raw`
   function loadToday() {
     if (today.busy || !state.user) return;
     var key = ymd(new Date()), epoch = accountEpoch, uid = state.user.id;
-    today.busy = true;
+    today.busy = true; today.asked = Date.now();
     Promise.all([
       sb.from("plan").select("workout_id").eq("day", key),
       // Pulled back a day: no time zone can then leave this morning's session
@@ -3238,7 +3424,7 @@ export const APP = String.raw`
           : "Try a Plus read");
         trial.onclick = function () { readVideo(w, trial, isFree()); };
         quality.appendChild(trial);
-        if (isFree()) api("limits").then(function (r) {
+        if (isFree()) recentLimits().then(function (r) {
           if (!trial.isConnected || !r.video_previews) return;
           var left = Math.max(0, r.video_previews.cap - r.video_previews.used);
           trial.textContent = left ? "Try a Plus read · " + left + " left this month" : "Explore Spotter Plus";
@@ -3276,12 +3462,16 @@ export const APP = String.raw`
     var sourceBody = original.lastChild;
     if (!isUpload(w) && w.url) sourceBody.appendChild(originalLink(w));
     if (w.caption) sourceBody.appendChild(el("div", "capbox", w.caption));
+    // Asked for on the press that opens it, a beat before the tap lands, and on the
+    // open itself for a keyboard.
+    original.firstChild.addEventListener("pointerdown", function () { askCaption(w, original, sourceBody); });
     original._prepareDisclosure = function () {
       if (!original.open) {
         var old = sourceBody.querySelector(".embedwrap, .dphoto");
         if (old) old.remove();
         return;
       }
+      askCaption(w, original, sourceBody);
       if (sourceBody.querySelector(".embedwrap, .dphoto")) return;
       var em = embedNode(w);
       if (em) { sourceBody.insertBefore(em, sourceBody.firstChild); fitEmbed(em, w.platform); }
@@ -9680,6 +9870,13 @@ export const APP = String.raw`
       return Object.assign({}, e, { sets: (e.sets || []).filter(Boolean) });
     }).filter(function (e) { return e.sets.length; });
     if (!logged.length) { leaveWorkout(); toast("Workout closed — nothing logged."); return; }
+    // Painted before the account came back (offline with an hour-old token): the
+    // session stays open and on disk, and Save works once the account is back.
+    if (!state.user) {
+      saveDraft();
+      toast("Reconnecting… This workout is kept on this phone. Save it once you're back online.");
+      return;
+    }
     var payload = {
       user_id: state.user.id,
       workout_id: wo.workout.id,
@@ -14439,6 +14636,8 @@ export const APP = String.raw`
     waiting: null,     // that fetch in flight, so two callers make one call
     sub: null, subAsked: false,
     limits: null,      // last /api/limits, for the Settings usage line
+    limitsAt: 0,       // when it was read; 0 once a write may have spent from it
+    limitsWaiting: null,
     said: null,        // the plan the server last reported, which outranks the row
     ctx: null,         // the 429 the sheet was opened by, or null from Settings
     caps: null,        // what each plan gets, from the server: {free, plus, features}
@@ -14453,6 +14652,35 @@ export const APP = String.raw`
   };
 
   function billOn() { return !!(billing.prices && billing.prices.configured); }
+
+  // /api/limits is an edge call with eighteen reads behind it, and every Basic
+  // card's "N left this month" used to ask it again on every open. An answer
+  // under a minute old is the answer; anything that is not a read retires it
+  // (api() does, since a save, a read or a reread may have spent an allowance),
+  // and two asks at once share one call.
+  var LIMITS_FRESH = 60000, limitsRev = 0;
+
+  function readLimits() {
+    if (billing.limitsWaiting) return billing.limitsWaiting;
+    var epoch = accountEpoch, uid = state.user && state.user.id, rev = limitsRev;
+    var p = billing.limitsWaiting = api("limits", { method: "GET" }).then(function (r) {
+      if (!r || r.status !== "ok" || !accountNow(epoch, uid)) return r;
+      billing.limits = r;
+      // Kept for drawing either way; only called fresh if nothing was spent meanwhile.
+      billing.limitsAt = rev === limitsRev ? Date.now() : 0;
+      return r;
+    });
+    function done() { if (billing.limitsWaiting === p) billing.limitsWaiting = null; }
+    p.then(done, done);
+    return p;
+  }
+
+  function recentLimits() {
+    if (billing.limits && Date.now() - billing.limitsAt < LIMITS_FRESH) return Promise.resolve(billing.limits);
+    return readLimits();
+  }
+
+  function retireLimits() { billing.limitsAt = 0; limitsRev++; }
   function myPlan() { return (state.profile && state.profile.plan) || "free"; }
   function isFree() { var p = myPlan(); return p !== "plus" && p !== "pro" && p !== "staff"; }
 
@@ -17078,11 +17306,10 @@ export const APP = String.raw`
     // difference between Settings opening finished and Settings filling itself in.
     paintStrava();
     askStrava();
-    api("limits", { method: "GET" }).then(function (r) {
+    readLimits().then(function (r) {
       pumpy.meterAsked = true;
       absorbMeter(r && r.pumpy);
       if (r.status === "ok") {
-        billing.limits = r;
         adoptPlan(r.plan);
         // The day's counts used to be printed under Account. They are burst
         // stops — sized above every allowance, nobody is sold one, and showing
@@ -18841,6 +19068,7 @@ export const APP = String.raw`
     p.style.opacity = 0;
     p.style.transform = "";
     if (d < 1) return;
+    if (!state.user) { toast(WAITING); return; }
     // "Refreshed" is a receipt with nothing on it. Wait for the read and answer
     // the question the pull was actually asking.
     var before = state.workouts.length;
@@ -19493,17 +19721,25 @@ export const APP = String.raw`
   // After the three captures, because it strips the query it reads from.
   linkProblem();
 
+  // The library the person left, while the SDK is still deciding who they are.
+  paintBeforeAuth();
+
   // A session restored from storage does not always fire onAuthStateChange in time.
   sb.auth.getSession().then(function (r) {
     if (r.data.session && r.data.session.user) {
+      if (!state.user) settleEarly(r.data.session.user.id);
       state.user = r.data.session.user;
       showApp();
       boot().then(restoreSession);
     } else {
-      showLanding();
-      // A share that landed on a signed-out app. Say the link is safe rather than
-      // showing a sign-in screen that looks like the share went nowhere.
-      if (sharePending()) toast("Sign in to save the link you shared.");
+      var land = function () {
+        if (earlyUid) clearAccount();
+        showLanding();
+        // A share that landed on a signed-out app. Say the link is safe rather than
+        // showing a sign-in screen that looks like the share went nowhere.
+        if (sharePending()) toast("Sign in to save the link you shared.");
+      };
+      if (earlyUid && !state.user) answeredNobody(land); else land();
     }
   });
 

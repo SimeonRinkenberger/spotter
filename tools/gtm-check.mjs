@@ -36,6 +36,8 @@ const checks = [
   ['Section edits through the iOS bridge: the block guard compares what the owner sees', 'node', ['tools/block-guard-harness.mjs']],
   ['Pumpy new chat after five minutes away; labels fold on the first message', 'node', ['tools/pumpy-fresh-harness.mjs']],
   ['Library search X: clears and puts the keyboard away on a finger\'s lift', 'node', ['tools/search-x-harness.mjs']],
+  ['Speed: cache before the token, one today read, library columns', 'node', ['tools/speed-harness.mjs']],
+  ['Card-size covers: fit, header walk, re-encode, upload order', 'deno', ['run','--allow-read','--allow-env','tools/cover-check.ts']],
   ['One declaration per name in app.ts', 'node', ['tools/unique-decls.mjs']],
   ['Creator codes on the client', 'node', ['tools/creator-client-harness.mjs']],
   ['Creator codes SQL', 'node', ['tools/creator-db-check.mjs']],

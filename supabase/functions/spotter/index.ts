@@ -47,6 +47,7 @@
 //   POST /api/worker/media          one tier of reading the video, in its own isolate
 //   POST /api/worker/probe          one-off measurement behind the same secret
 //   POST /api/worker/ops-alert      push what ops_alert_check() fired to staff devices
+//   POST /api/worker/cover          one stored cover re-encoded at card size (shared secret)
 //   GET  /api/ops/scorecard         this week's operating review as JSON (staff only)
 //
 // Ingest is asynchronous: it enqueues and returns in ~200ms, and the worker fills
@@ -57,6 +58,8 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { aiActor, createGuardedFetch, GuardError, tokenCost, tokenPrice } from "./ai-guard.ts";
 import { deterministicCombine } from "./pumpy-combine.ts";
+// Card-size covers (storeThumb): a plain-JS JPEG codec, so nothing but the function ships.
+import jpeg from "npm:jpeg-js@0.4.4";
 
 import { PAGE_HTML } from "./page.ts";
 import { ICON_B64 } from "./icon.ts";
@@ -945,6 +948,8 @@ function corsFor(req: Request): Cors {
     "Access-Control-Allow-Origin": allow,
     "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-ingest-key",
     "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
+    // A browser asks again after 5 s by default; WebKit honours up to 600.
+    "Access-Control-Max-Age": "600",
     "Vary": "Origin",
   };
 }
@@ -1170,8 +1175,10 @@ function cachedPart(u: Usage): number {
 }
 
 // Outstanding reservations count toward spend even when their outcome is unknown.
-async function spendToday(): Promise<number> {
-  const status = await rpc("ai_budget_status", {});
+// Handed the status read rather than making it, so /api/limits asks once for the
+// spend, the ceiling and whether paid reads are on.
+async function spendFrom(pending: Promise<Record<string, unknown> | null>): Promise<number> {
+  const status = await pending;
   if (!status || !Number.isFinite(Number(status.daily_used))) throw new GuardError("accounting_unavailable");
   return Number(status.daily_used);
 }
@@ -1206,9 +1213,13 @@ async function cachePctToday(): Promise<number | null> {
 /** False once the day's estimated spend has crossed the ceiling. */
 async function paidAllowed(): Promise<boolean> {
   try {
-    const s = await rpc("ai_budget_status", {});
-    return !!s && Number(s.daily_used) < Number(s.daily_limit) && Number(s.monthly_used) < Number(s.monthly_limit);
+    return paidFrom(await rpc("ai_budget_status", {}));
   } catch { return false; }
+}
+
+/** paidAllowed's rule on a status already read. */
+function paidFrom(s: Record<string, unknown> | null): boolean {
+  return !!s && Number(s.daily_used) < Number(s.daily_limit) && Number(s.monthly_used) < Number(s.monthly_limit);
 }
 
 // Said once per isolate, not once per call: a missing column is a deploy-ordering
@@ -7265,23 +7276,263 @@ const authHeaders: Record<string, string> = KEY_IS_JWT
   : { apikey: SERVICE_KEY };
 const dbHeaders = { ...authHeaders, "content-type": "application/json" };
 
-async function storeThumb(shortcode: string, src: string | null): Promise<string | null> {
+// ---------- covers at the size they are shown ----------
+//
+// TikTok hands over its origin cover, 1440x2560 and up to 2160x3840, 300-650 KB,
+// for a Library tile at most ~590 device px wide (a 440pt phone, two columns, 3x)
+// and a Train row a quarter of that. Stored with no cache header, every one was
+// fetched whole and then revalidated on every relaunch.
+//
+// So a video platform's cover is re-encoded to fill a 4:5 tile COVER_W wide and
+// stored under the same name with a week's max-age: old builds load the same
+// thumb_url and get the small file. Storage's image transforms would do this but
+// are a paid feature and the org is on Free, so the decode, the resample and the
+// encode are ours (jpeg-js, plain JS: nothing to bundle beside the function), and
+// off the response path and out of the saving isolate: the original goes up first,
+// exactly as before but for its header, and /api/worker/cover makes the small copy
+// in a request of its own and puts it over the original. Anything unusual
+// keeps the original: not a baseline or progressive JPEG, an Exif or ICC segment
+// whose meaning a re-encode would drop, over COVER_MAX_PX, or a saving under a
+// fifth. A web page's picture is left whole, because the detail shows that one
+// full width (app.ts embedNode's .dphoto).
+const COVER_W = 640;
+const COVER_Q = 80;
+const COVER_MAX_PX = 12_000_000;
+const COVER_CACHE = "max-age=604800";
+const COVER_PLATFORMS = new Set(["tiktok", "instagram", "youtube"]);
+// The one shape storeThumb names an object in `thumbs`: a shortcode (the charset
+// every parser mints, authorizeSheets' rule) and the extension. No slash, and no
+// dot but the extension's, so no name can reach outside the bucket's top level.
+const THUMB_NAME = /^[A-Za-z0-9_-]{1,64}\.jpg$/;
+// A web page's picture (web-*) and an upload's frame (up-*) are shown full width.
+const THUMB_FULL_WIDTH = /^(web|up)-/;
+// Twice the largest cover seen (650 KB) many times over; a bigger object is kept as it is.
+const COVER_READ_MAX = 16 * 1024 * 1024;
+
+/** The size that still fills a 4:5 tile COVER_W wide, or null when the cover is within a fifth of it already. */
+export function coverFit(w: number, h: number): { w: number; h: number } | null {
+  if (!(w > 0 && h > 0) || w * h > COVER_MAX_PX) return null;
+  const s = Math.max(COVER_W / w, (COVER_W * 5 / 4) / h);
+  if (s > 0.8) return null;
+  return { w: Math.round(w * s), h: Math.round(h * s) };
+}
+
+/**
+ * The Exif orientation in an APP1 segment's data (1 when the tag is absent), or 0
+ * for an APP1 that is not Exif (XMP) or cannot be read.
+ */
+function exifOrientation(b: Uint8Array, at: number, end: number): number {
+  if (end - at < 14 || b[at] !== 0x45 || b[at + 1] !== 0x78 || b[at + 2] !== 0x69 || b[at + 3] !== 0x66) return 0;
+  const t = at + 6, le = b[t] === 0x49;
+  const u16 = (o: number) => le ? b[o] | (b[o + 1] << 8) : (b[o] << 8) | b[o + 1];
+  const ifd = t + (le ? u16(t + 4) | (u16(t + 6) << 16) : (u16(t + 4) << 16) | u16(t + 6));
+  if (ifd < t + 8 || ifd + 2 > end) return 0;
+  for (let k = 0, n = u16(ifd); k < n; k++) {
+    const e = ifd + 2 + k * 12;
+    if (e + 12 > end) return 0;
+    if (u16(e) === 0x0112) return u16(e + 8);
+  }
+  return 1;
+}
+
+/**
+ * A JPEG's pixel size, read off its frame header without decoding it, or null when
+ * it is not a plain one: not a JPEG, arithmetic-coded, turned by its Exif
+ * orientation, carrying XMP, or carrying an ICC colour profile, all of which a
+ * re-encode would drop the meaning of.
+ */
+export function plainJpegSize(b: Uint8Array): { w: number; h: number } | null {
+  if (b.length < 4 || b[0] !== 0xFF || b[1] !== 0xD8) return null;
+  let i = 2;
+  while (i + 9 < b.length && b[i] === 0xFF) {
+    const m = b[i + 1];
+    if (m === 0xFF) { i++; continue; }
+    const len = (b[i + 2] << 8) | b[i + 3];
+    if (m === 0xE1 && exifOrientation(b, i + 4, Math.min(b.length, i + 2 + len)) !== 1) return null;
+    if (m === 0xE2) return null;
+    if (m === 0xC0 || m === 0xC1 || m === 0xC2) return { w: (b[i + 7] << 8) | b[i + 8], h: (b[i + 5] << 8) | b[i + 6] };
+    if ((m >= 0xC3 && m <= 0xCF && m !== 0xC4 && m !== 0xC8 && m !== 0xCC) || m === 0xDA) return null;
+    i += 2 + len;
+  }
+  return null;
+}
+
+/**
+ * Area-average resample, RGBA in, RGBA out. Every source pixel lands in the output
+ * pixels it overlaps in proportion to the overlap, which is what a downscale by
+ * 2-3.4x needs to stay free of the shimmer a point sampler leaves. Rows are
+ * resampled across and accumulated down one output row at a time, so the extra
+ * memory is two rows, not a second image.
+ */
+function resampleArea(src: Uint8Array, sw: number, sh: number, tw: number, th: number): Uint8ClampedArray {
+  const sx = sw / tw, sy = sh / th;
+  const x0 = new Int32Array(tw), wx: Float32Array[] = [];
+  for (let x = 0; x < tw; x++) {
+    const a = x * sx, b = a + sx, i0 = Math.floor(a), i1 = Math.min(sw, Math.ceil(b));
+    const w = new Float32Array(i1 - i0);
+    for (let i = i0; i < i1; i++) w[i - i0] = (Math.min(b, i + 1) - Math.max(a, i)) / sx;
+    x0[x] = i0; wx.push(w);
+  }
+  const row = new Float32Array(tw * 3), acc = new Float32Array(tw * 3), out = new Uint8ClampedArray(tw * th * 4);
+  for (let y = 0; y < th; y++) {
+    const a = y * sy, b = a + sy, j0 = Math.floor(a), j1 = Math.min(sh, Math.ceil(b));
+    acc.fill(0);
+    for (let j = j0; j < j1; j++) {
+      const fy = (Math.min(b, j + 1) - Math.max(a, j)) / sy, base = j * sw * 4;
+      for (let x = 0; x < tw; x++) {
+        const w = wx[x];
+        let p = base + x0[x] * 4, r = 0, g = 0, bl = 0;
+        for (let k = 0; k < w.length; k++, p += 4) { const f = w[k]; r += src[p] * f; g += src[p + 1] * f; bl += src[p + 2] * f; }
+        row[x * 3] = r; row[x * 3 + 1] = g; row[x * 3 + 2] = bl;
+      }
+      for (let k = 0; k < acc.length; k++) acc[k] += row[k] * fy;
+    }
+    for (let x = 0, o = y * tw * 4; x < tw; x++, o += 4) {
+      out[o] = acc[x * 3]; out[o + 1] = acc[x * 3 + 1]; out[o + 2] = acc[x * 3 + 2]; out[o + 3] = 255;
+    }
+  }
+  return out;
+}
+
+/** The card-size re-encode of a cover, or null to keep the original. */
+export function shrinkCover(buf: Uint8Array): Uint8Array<ArrayBuffer> | null {
+  const size = plainJpegSize(buf);
+  const fit = size && coverFit(size.w, size.h);
+  if (!fit) return null;
+  const img = jpeg.decode(buf, { useTArray: true, formatAsRGBA: true, maxResolutionInMP: COVER_MAX_PX / 1e6, maxMemoryUsageInMB: 160 });
+  if (img.width !== size!.w || img.height !== size!.h) return null;
+  const px = resampleArea(img.data, img.width, img.height, fit.w, fit.h);
+  const out = new Uint8Array(jpeg.encode({ data: px, width: fit.w, height: fit.h }, COVER_Q).data);
+  return out.byteLength <= buf.byteLength * 0.8 ? out : null;
+}
+
+async function putThumb(name: string, body: BodyInit, type: string, cache: string): Promise<Response> {
+  return await fetch(`${SUPABASE_URL}/storage/v1/object/thumbs/${name}`, {
+    method: "POST",
+    headers: { ...authHeaders, "content-type": type, "cache-control": cache, "x-upsert": "true" },
+    body,
+  });
+}
+
+/** Where shrinkStoredCover reads a stored cover and writes it back; the backfill passes its own. */
+export type CoverStore = {
+  read(name: string): Promise<{ bytes: Uint8Array; type: string; cache: string | null } | null>;
+  write(name: string, bytes: Uint8Array<ArrayBuffer>, type: string, cache: string): Promise<boolean>;
+};
+
+export type CoverOutcome = {
+  name: string; action: "shrunk" | "kept" | "missing" | "refused" | "failed";
+  size: string | null; before: number; after: number; cpu_ms: number; recached: boolean; cache_was: string | null;
+};
+
+/** Our own `thumbs` bucket, read and written with the service key. Never a platform, never a caller's URL. */
+const storageCovers: CoverStore = {
+  async read(name) {
+    const r = await fetch(`${SUPABASE_URL}/storage/v1/object/thumbs/${name}`, { headers: authHeaders, signal: AbortSignal.timeout(15_000) });
+    if (!r.ok) { await r.body?.cancel(); return null; }
+    if (Number(r.headers.get("content-length") ?? 0) > COVER_READ_MAX) { await r.body?.cancel(); return null; }
+    const bytes = new Uint8Array(await r.arrayBuffer());
+    if (bytes.byteLength > COVER_READ_MAX) return null;
+    return { bytes, type: r.headers.get("content-type") ?? "image/jpeg", cache: r.headers.get("cache-control") };
+  },
+  async write(name, bytes, type, cache) {
+    const up = await putThumb(name, bytes, type, cache);
+    if (!up.ok) console.error("cover upload", name, up.status, (await up.text()).slice(0, 200));
+    else await up.body?.cancel();
+    return up.ok;
+  },
+};
+
+/**
+ * One stored cover, put back at the size it is shown: the small copy over the
+ * original of the same name with a week's max-age, or, when there is no small
+ * copy worth having, the original itself with that header if it went up without
+ * it. The CPU the decode, resample and encode took is logged per cover. A failure
+ * leaves the original where it was, which is what every build already shows.
+ *
+ * The /api/worker/cover route and tools/thumbs-backfill.ts both run this, so the
+ * backfill makes exactly what a new save makes.
+ */
+export async function shrinkStoredCover(name: string, store: CoverStore = storageCovers): Promise<CoverOutcome> {
+  const out: CoverOutcome = { name, action: "refused", size: null, before: 0, after: 0, cpu_ms: 0, recached: false, cache_was: null };
+  if (!THUMB_NAME.test(name)) return out;
+  const held = await store.read(name);
+  if (!held) { out.action = "missing"; return out; }
+  const buf = held.bytes;
+  const size = plainJpegSize(buf);
+  out.size = size ? `${size.w}x${size.h}` : null;
+  out.before = out.after = buf.byteLength;
+  out.cache_was = held.cache;
+  let small: Uint8Array<ArrayBuffer> | null = null;
+  if (!THUMB_FULL_WIDTH.test(name)) {
+    const t0 = performance.now();
+    try { small = shrinkCover(buf); } catch (e) { console.error("cover decode", name, String(e).slice(0, 200)); }
+    out.cpu_ms = Math.round(performance.now() - t0);
+  }
+  if (small) {
+    if (!await store.write(name, small, "image/jpeg", COVER_CACHE)) { out.action = "failed"; return out; }
+    out.action = "shrunk"; out.after = small.byteLength;
+  } else {
+    out.action = "kept";
+    if (held.cache !== COVER_CACHE) out.recached = await store.write(name, buf as Uint8Array<ArrayBuffer>, held.type, COVER_CACHE);
+  }
+  console.log("cover", name, out.action, out.size, out.before, "->", out.after, "bytes,", out.cpu_ms, "ms CPU", out.recached ? "(now cacheable)" : "");
+  return out;
+}
+
+/**
+ * The cover isolate. Same shared secret as /api/worker/tick and a 404 without it.
+ * A request of its own for the same reason as /api/worker/vision: decoding and
+ * re-encoding a 2160x3840 cover is 250-400 ms of CPU on a laptop and more on the
+ * edge, and inside the job's (or a reprocess's) invocation that would count
+ * against the same CPU limit as the job; a kill would take the job with it. Here
+ * a kill costs only the small copy: the original is already stored and shown.
+ *
+ * It takes a name and nothing else, checked against the one shape storeThumb
+ * writes, and reads the bytes back from our own bucket.
+ */
+async function handleCoverTick(req: Request): Promise<Response> {
+  if (!secretEquals(req.headers.get("x-worker-secret") ?? "", WORKER_SECRET)) {
+    return json({ status: "error", message: "Not found" }, 404);
+  }
+  const body = await req.json().catch(() => null) as { name?: unknown } | null;
+  const name = typeof body?.name === "string" ? body.name : "";
+  if (!THUMB_NAME.test(name)) return json({ status: "error", message: "name must be a stored cover's name" }, 400);
+  const out = await shrinkStoredCover(name);
+  return json({ status: out.action === "failed" ? "error" : "ok", ...out }, out.action === "failed" ? 502 : 200);
+}
+
+/** Fire and forget, the kickWorker way: the saving isolate never waits on the shrink. */
+function kickCover(name: string): void {
+  if (!WORKER_SECRET) { console.error("cover shrink skipped: WORKER_SECRET is not set"); return; }
+  background(
+    fetch(`${SELF_URL}/api/worker/cover`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-worker-secret": WORKER_SECRET },
+      body: JSON.stringify({ name }),
+      signal: AbortSignal.timeout(15_000),
+    }).then(async (r) => {
+      const body = await r.text();
+      if (!r.ok) console.error("cover kick", r.status, body.slice(0, 200));
+    }),
+  );
+}
+
+export async function storeThumb(shortcode: string, src: string | null, platform = ""): Promise<string | null> {
   if (!src) return null;
   try {
     const r = await safeFetch(src, { headers: { "User-Agent": DESKTOP_UA } });
     if (!r.ok) return null;
-    const buf = await r.arrayBuffer();
+    const buf = new Uint8Array(await r.arrayBuffer());
     if (buf.byteLength < 500) return null;
-    const up = await fetch(`${SUPABASE_URL}/storage/v1/object/thumbs/${shortcode}.jpg`, {
-      method: "POST",
-      headers: {
-        ...authHeaders,
-        "content-type": r.headers.get("content-type") ?? "image/jpeg",
-        "x-upsert": "true",
-      },
-      body: buf,
-    });
+    // A cover about to be replaced by its small copy goes up uncached, so nothing
+    // holds the big one for a week; everything else is cacheable from the start.
+    const size = COVER_PLATFORMS.has(platform) ? plainJpegSize(buf) : null;
+    const shrink = !!(size && coverFit(size.w, size.h));
+    const up = await putThumb(`${shortcode}.jpg`, buf, r.headers.get("content-type") ?? "image/jpeg",
+      shrink ? "no-cache" : COVER_CACHE);
     if (!up.ok) { console.error("thumb upload", up.status, await up.text()); return null; }
+    if (shrink) kickCover(`${shortcode}.jpg`);
     return `${SUPABASE_URL}/storage/v1/object/public/thumbs/${shortcode}.jpg`;
   } catch (e) {
     console.error("storeThumb failed", e);
@@ -9438,7 +9689,7 @@ async function runJobGuarded(job: Job): Promise<void> {
 
   let thumbUrl: string | null = null;
   try {
-    thumbUrl = await captionMayOverwriteCache(p.shortcode, meta) ? await storeThumb(p.shortcode, meta.thumb) : null;
+    thumbUrl = await captionMayOverwriteCache(p.shortcode, meta) ? await storeThumb(p.shortcode, meta.thumb, p.platform) : null;
   } catch (e) {
     console.error("job storeThumb failed", job.id, e);
   }
@@ -10723,7 +10974,7 @@ async function handleReprocess(id: string, userId: string, req: Request, cors: C
 
   let thumbUrl: string | null = old.thumb_url;
   try {
-    thumbUrl = (await captionMayOverwriteCache(p.shortcode, meta) ? await storeThumb(p.shortcode, meta.thumb) : null) ?? old.thumb_url;
+    thumbUrl = (await captionMayOverwriteCache(p.shortcode, meta) ? await storeThumb(p.shortcode, meta.thumb, p.platform) : null) ?? old.thumb_url;
   } catch (e) {
     console.error("reprocess storeThumb failed", p.shortcode, e);
   }
@@ -15034,6 +15285,9 @@ Deno.serve(async (req: Request) => {
     // The sheets A/B bench, behind its own secret. Matched here, above the user
     // gate, so it can never be reached with a user bearer.
     if (req.method === "POST" && path === "/api/worker/eval-sheets") return await handleEvalSheets(req);
+    // One stored cover re-encoded at the size it is shown, in its own isolate and
+    // behind the worker secret; storeThumb kicks it after a save.
+    if (req.method === "POST" && path === "/api/worker/cover") return await handleCoverTick(req);
 
     // The reminders pass, on the hour from pg_cron. Same shared secret and the
     // same reason as the worker's routes: nobody is signed in. `?dry=1` reports
@@ -15215,14 +15469,17 @@ Deno.serve(async (req: Request) => {
       // `library_count` rides along because the Library page's counter — "12 of
       // 20 saved" — is the paywall's quietest and most-seen surface, and it would
       // otherwise need a count of its own on every visit.
-      const [counts, spent, cachePct, meter, uc, held, mc] = await settledAll<any>(
-        [countsFor(userId), spendToday(), cachePctToday(), pumpyMeter(userId), capsFor(userId), libraryCount(userId),
-          monthCountsFor(userId)],
-      ) as [Counts, number, number | null, PumpyMeter, UserCaps, number, MonthCounts];
       // The ceiling is the policy row's, not a constant: `spend_limit` used to be
       // a hard-coded 0.50 that kept saying 0.50 after the owner moved the guard,
-      // which is the same class of lie the daily counts were telling.
-      const budget = await rpc("ai_budget_status", {}) as Record<string, unknown> | null;
+      // which is the same class of lie the daily counts were telling. One status
+      // read answers the spend, the ceiling and whether paid reads are on: it was
+      // asked three times, two of them one after another after the batch, and
+      // the answer waited for all three round trips.
+      const status = rpc("ai_budget_status", {}) as Promise<Record<string, unknown> | null>;
+      const [counts, spent, cachePct, meter, uc, held, mc, budget, aiAllowance] = await settledAll<any>(
+        [countsFor(userId), spendFrom(status), cachePctToday(), pumpyMeter(userId), capsFor(userId), libraryCount(userId),
+          monthCountsFor(userId), status, rpc("ai_budget_user_status", { p_user: userId })],
+      ) as [Counts, number, number | null, PumpyMeter, UserCaps, number, MonthCounts, Record<string, unknown> | null, unknown];
       const allowance = allowanceFor(uc.plan);
       return json({
         status: "ok",
@@ -15251,8 +15508,8 @@ Deno.serve(async (req: Request) => {
           previews: mc.previews, previews_cap: plusPlan(uc.plan) ? null : allowance.reads,
           resets_at: utcNextMonth(),
         },
-        ai_allowance: await rpc("ai_budget_user_status", { p_user: userId }),
-        paid_enabled: await paidAllowed(),
+        ai_allowance: aiAllowance,
+        paid_enabled: paidFrom(budget),
         cache_pct_today: cachePct,
         // The card's "N left this month" button reads this; Settings reads
         // `month` above. They have to be the same number, so for a Basic
