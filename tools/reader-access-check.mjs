@@ -69,7 +69,10 @@ c.rpc=async(name,args)=>{
 };
 c.dbPatchMany=async(table,query,body)=>{updates.push({table,query,body});return [{id:'owned'}];};
 c.dbDelete=async()=>{};
-vm.runInContext(transformSync(fn('finishJob'),{loader:'ts',format:'cjs'}).code,c);
+// S9: the sentence a Basic card gets when its caption named nothing and a Plus
+// read of the same video found the workout — lifted as written.
+const hintConst=src.match(/const PLUS_READ_HINT = "[^"]+";/)[0];
+vm.runInContext(transformSync(hintConst+'\n'+fn('countExercises')+'\n'+fn('plusReadHint')+'\n'+fn('finishJob'),{loader:'ts',format:'cjs'}).code,c);
 c.job={id:'job',user_id:'plus'};c.p={shortcode:'same-video',platform:'tiktok',clean:'https://example.test/video',kind:'video'};
 c.meta={pack,caption:'public caption',read_plan:'plus'};c.card=structuredClone(premium);
 await vm.runInContext('finishJob(job,p,meta,card,null,false)',c);
@@ -81,6 +84,9 @@ c.aiActor={run:async(_,f)=>f(),getStore:()=>undefined};c.providerFor=()=>({cache
 await vm.runInContext('finishJob(job,p,meta,card,null,false)',c);
 assert.equal(updates.find(x=>x.table==='workouts').body.title,'Basic');
 assert.equal(updates.find(x=>x.table==='workouts').body.read_quality,'basic');
+assert.equal(updates.find(x=>x.table==='workouts').body.ingest_error,
+  'The caption lists no exercises. A Plus read of the video found 1 exercise — use one of your free Plus reads to see it.',
+  'S9: an empty Basic card says a Plus read found the workout');
 console.log('PASS owner/job-scoped completion, isolated simultaneous saves and downgrade during visual reading.');
 // Preparing a native save must be read-only and never expose the cached card.
 c.BLOCKED=Symbol('blocked');c.resolveShare=async()=>({shortcode:'same',platform:'tiktok',kind:'video',clean:'https://www.tiktok.com/@fixture/video/1'});
