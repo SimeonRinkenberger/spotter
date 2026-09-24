@@ -22,6 +22,10 @@ function fn(head: string): string {
   const j = SRC.indexOf("\n}\n", i);
   return SRC.slice(i, j + 2);
 }
+/** A declaration this cycle added, or a stand-in when running over an older index.ts (fail-before runs). */
+function fnOr(head: string, fallback: string): string {
+  return SRC.includes(head) ? fn(head) : fallback;
+}
 /** Everything between two markers, the first included. */
 function span(from: string, to: string): string {
   const i = SRC.indexOf(from);
@@ -325,7 +329,9 @@ function check(ok: unknown, what: string): void {
   const route = [
     "type Meta = any; type Cors = any; type Counts = any; type UserCaps = any; type UploadRef = any;",
     "export const S: any = {};",
-    "function reset() { S.deleted = []; S.rpc = []; S.patches = []; S.kicks = 0; S.admitted = 0; S.plan = 'free'; S.previewOk = true; S.exists = true; S.reads = null; S.extracts = 0; S.paid = true; S.admit = null; S.job = { job_id: 'j9', job_created: true }; }",
+    // The preview table with reserve_video_preview's real semantics (idempotent per
+    // key, four a month), and the month's read set keyed as the worker logs it.
+    "function reset() { S.deleted = []; S.rpc = []; S.reserved = []; S.patches = []; S.kicks = 0; S.admitted = 0; S.plan = 'free'; S.previews = new Set(); S.readSet = new Set(); S.readKeys = []; S.mediaOver = null; S.dbDeleted = []; S.exists = true; S.extracts = 0; S.paid = true; S.admit = null; S.job = { job_id: 'j9', job_created: true }; }",
     "export { reset };",
     "function json(body: any, status = 200) { return { status, body }; }",
     "async function deleteUpload(p: string) { S.deleted.push(p); }",
@@ -335,7 +341,10 @@ function check(ok: unknown, what: string): void {
     "async function capsFor() { return { plan: S.plan, caps: { extract: 10 } }; }",
     "function overCap(u: number, c: number | null) { return c !== null && u >= c; }",
     "async function extractLimitResponse() { return json({ status: 'limit', kind: 'extract' }, 429); }",
-    "async function monthReadsReached() { return S.reads; }",
+    "async function monthReadsReached(_u: string, plan: string, key: string) { S.readKeys.push(key); if (plan !== 'plus') return null; if (key && S.readSet.has(key)) return null; return S.readSet.size >= 20 ? S.readSet.size : null; }",
+    "function mediaBurst() { return 15; }",
+    "async function mediaCapReached() { return S.mediaOver; }",
+    "async function capLimit(kind: string, _uc: any, used: number) { return json({ status: 'limit', kind, scope: 'day', used }, 429); }",
     "async function allowanceLimit() { return json({ status: 'limit', scope: 'month' }, 429); }",
     "async function paidAllowed() { return S.paid; }",
     "function plusPlan(p: string) { return p === 'plus'; }",
@@ -343,12 +352,14 @@ function check(ok: unknown, what: string): void {
     "const PREVIEW_CAP = 4;",
     "function allowanceFor(plan: string) { return { reads: plan === 'plus' ? 20 : 4 }; } function utcNextMonth() { return '2026-10-01T00:00:00.000Z'; }",
     fn("function previewLimit("),
-    "async function previewCount() { return 4; }",
-    "async function dbSelect() { return []; }",
-    "async function dbDelete() {}",
-    "async function rpc(name: string, args: any) { S.rpc.push(name); if (name === 'reserve_video_preview') return S.previewOk; if (name === 'requeue_ingest') return [S.job]; }",
+    "async function previewCount() { return S.previews.size; }",
+    "async function dbSelect(t: string, q: string) { if (t !== 'video_previews') return []; const sc = decodeURIComponent((q.match(/shortcode=eq\\.([^&]+)/) ?? [])[1] ?? ''); return S.previews.has(sc) ? [{ shortcode: sc }] : []; }",
+    "async function dbDelete(t: string, q: string) { S.dbDeleted.push(t + '?' + q); }",
+    "async function rpc(name: string, args: any) { S.rpc.push(name); if (name === 'reserve_video_preview') { S.reserved.push(args.p_shortcode); if (S.previews.has(args.p_shortcode)) return true; if (S.previews.size >= 4) return false; S.previews.add(args.p_shortcode); return true; } if (name === 'requeue_ingest') return [S.job]; }",
     "async function dbPatch(t: string, q: string, body: any) { S.patches.push({ t, q, body }); return body; }",
     "function kickWorker() { S.kicks++; }",
+    fnOr("function attachReadKey(", "function attachReadKey(ref: any) { return 'up-' + ref.id; }"),
+    fnOr("async function refundAttachRead(", "async function refundAttachRead() {}"),
     fn("function attachable("), fn("async function attachRefusal("), fn("async function attachUpload("),
     "export { attachUpload, attachRefusal };",
   ].join("\n");
@@ -366,12 +377,12 @@ function check(ok: unknown, what: string): void {
     "attach: the card says watching and the worker is woken");
   check(a.S.deleted.length === 0 && a.S.admitted === 1, "attach: the file is kept for the reader, and the save was admitted once");
 
-  a.reset(); a.S.previewOk = false;
+  a.reset(); a.S.previews = new Set(["a", "b", "c", "d"]);
   const out = await a.attachUpload(ig, ref, "", "u1", {});
   check(out.status === 429 && out.body.upgrade === true && out.body.scope === "month" && out.body.cap === 4 &&
     out.body.next_plan === "plus" && a.S.deleted[0] === ref.path,
     "attach: no reads left → the Plus answer (previewLimit's shape), and the file is deleted");
-  a.reset(); a.S.plan = "plus"; a.S.reads = 20;
+  a.reset(); a.S.plan = "plus"; a.S.readSet = new Set(Array.from({ length: 20 }, (_, i) => "tt-" + i));
   const month = await a.attachUpload(ig, ref, "", "u1", {});
   check(month.status === 429 && month.body.scope === "month" && !a.S.rpc.length, "attach: Plus at twenty reads is refused before any reservation");
   a.reset(); a.S.admit = { status: 429, body: { code: "busy" } };
@@ -387,14 +398,52 @@ function check(ok: unknown, what: string): void {
   a.reset(); a.S.exists = false;
   const gone = await a.attachUpload(ig, ref, "", "u1", {});
   check(gone.status === 404, "attach: a file that never landed is a 404 with a next step");
+  a.reset(); a.S.previews = new Set(["a", "b", "c", "d"]);
+  check(await a.attachRefusal("u1", "DcHDuEFzBSf", "up-" + ref.id, false, {}) !== null, "authorize: Basic with four previews used is refused up front");
+
+  // ---- R-1: a read is one FILE, not one card ----
+  const ref2 = { path: "u1/22222222-2222-4333-8444-555555555555.mp4", id: "22222222-2222-4333-8444-555555555555", ext: "mp4" };
+  a.reset(); a.S.previews = new Set(["DcHDuEFzBSf", "a", "b", "c"]);
+  const again = await a.attachUpload(ig, ref2, "", "u1", {});
+  check(again.status === 429 && again.body.upgrade === true && again.body.scope === "month" && again.body.cap === 4 &&
+    !a.S.rpc.includes("requeue_ingest") && a.S.deleted[0] === ref2.path,
+    "R-1: Basic, four previews used and one on this card: a second file into the same card is refused (previewLimit shape), no job queued, file deleted");
+  a.reset(); a.S.previews = new Set(["DcHDuEFzBSf", "a", "b", "c"]);
+  check(await a.attachRefusal("u1", "DcHDuEFzBSf", "up-" + ref2.id, false, {}) !== null,
+    "R-1: authorize refuses that second file up front too");
+  a.reset(); a.S.previews = new Set(["DcHDuEFzBSf"]);
+  const second = await a.attachUpload(ig, ref2, "", "u1", {});
+  check(second.status === 202 && a.S.reserved.join() === "up-" + ref2.id && a.S.previews.size === 2,
+    "R-1: Basic, the card already read once: the next file spends a preview of its own (up-<id>)");
   a.reset();
-  check(await a.attachRefusal("u1", "DcHDuEFzBSf", false, {}) !== null, "authorize: Basic with four previews used is refused up front");
+  const first = await a.attachUpload(ig, ref, "", "u1", {});
+  check(first.status === 202 && a.S.reserved.join() === "DcHDuEFzBSf" && a.S.previews.size === 1,
+    "R-1: Basic, the card's first read is reserved on the card (the row the completion fence reads)");
+  a.reset(); a.S.previews = new Set(["DcHDuEFzBSf"]); a.S.job = { job_id: "j8", job_created: false };
+  await a.attachUpload(ig, ref2, "", "u1", {});
+  check(a.S.dbDeleted.some((q: string) => q.includes("shortcode=eq.up-" + ref2.id)) &&
+    !a.S.dbDeleted.some((q: string) => q.includes("shortcode=eq.DcHDuEFzBSf")),
+    "R-1: a file that joined another job's read gives its own preview back, never the card's");
+  a.reset(); a.S.plan = "plus"; a.S.readSet = new Set(["DcHDuEFzBSf", ...Array.from({ length: 19 }, (_, i) => "tt-" + i)]);
+  const plus20 = await a.attachUpload(ig, ref2, "", "u1", {});
+  check(plus20.status === 429 && plus20.body.scope === "month" && !a.S.rpc.includes("requeue_ingest") &&
+    a.S.readKeys.every((k: string) => k === "up-" + ref2.id),
+    "R-1: Plus at twenty reads with this card among them: a new file is refused (the month is asked with the file's key)");
+  a.reset(); a.S.plan = "plus"; a.S.readSet = new Set(["DcHDuEFzBSf", ...Array.from({ length: 18 }, (_, i) => "tt-" + i)]);
+  const plus19 = await a.attachUpload(ig, ref2, "", "u1", {});
+  check(plus19.status === 202 && !a.S.rpc.includes("reserve_video_preview"), "R-1: Plus under twenty: the file is read, no preview row");
+  a.reset(); a.S.mediaOver = 15;
+  const burst = await a.attachUpload(ig, ref2, "", "u1", {});
+  check(burst.status === 429 && burst.body.kind === "media" && !a.S.rpc.length && a.S.deleted[0] === ref2.path,
+    "R-1: the daily media ceiling is asked, as Read the video asks it — refused before any reservation, file deleted");
 
   // The worker: a person's file, read into their card, and never into the cache.
   const worker = [
     "type Job = any; type Parsed = any; type Meta = any; type Card = any;",
     "export const S: any = {};",
-    "export function reset(r: any) { S.read = r; S.finished = null; S.published = 0; S.built = null; }",
+    "export function reset(r: any) { S.read = r; S.finished = null; S.published = 0; S.built = null; S.dbDeleted = []; }",
+    "async function dbDelete(t: string, q: string) { S.dbDeleted.push(t + '?' + q); }",
+    fn("function readQuality("),
     fn("class SoftFailure extends Error {").replace(/^class/, "class"),
     "class GuardError extends Error {}",
     "const aiActor = { getStore: () => null };",
@@ -411,6 +460,8 @@ function check(ok: unknown, what: string): void {
     "function labelRecommendations() {}",
     "async function publishCache() { S.published++; }",
     "async function finishJob(_j: any, _p: any, meta: any, card: any, thumb: any) { S.finished = { meta, card, thumb }; }",
+    fnOr("function attachReadKey(", "function attachReadKey(ref: any) { return 'up-' + ref.id; }"),
+    fnOr("async function refundAttachRead(", "async function refundAttachRead() {}"),
     fn("async function runAttachedUpload("),
     "export { runAttachedUpload, SoftFailure };",
   ].join("\n");
@@ -424,11 +475,18 @@ function check(ok: unknown, what: string): void {
   check(r.S.built.caption === "IG caption" && r.S.built.transcript === "00:01 squats" && r.S.built.supplied === true,
     "worker: rebuilt from the post's caption plus what the file said, marked supplied");
   check(r.S.finished.thumb === "thumbs/x.jpg" && r.S.published === 0, "worker: keeps the card's picture and never publishes to the cache");
+  check(!r.S.dbDeleted.length, "R-1 worker: a read that watched the file keeps its preview");
+  const refunded = () => r.S.dbDeleted.some((q: string) => q.startsWith("video_previews?") &&
+    q.includes("shortcode=eq.up-11111111-2222-4333-8444-555555555555") && q.includes("completed=eq.false"));
+  r.reset({ meta: { caption: null, transcript: "00:01 squats", media_source: "transcript", source: "transcript" } });
+  await r.runAttachedUpload(job, p);
+  check(r.S.finished && refunded(), "R-1 worker: a file that was only heard gives its own preview back");
   r.reset({ meta: { caption: "only music", source: "transcript" } });
   let failed: any = null;
   try { await r.runAttachedUpload(job, p); } catch (e) { failed = e; }
   check(failed?.final && failed?.keepCard && /This card is unchanged\.$/.test(failed.userMessage),
     "worker: a file with no workout fails final and keeps the card, with a sentence");
+  check(refunded(), "R-1 worker: a failed read gives the file's preview back");
   r.reset(new r.SoftFailure("Spotter watched this one and listened to it, and found no exercises either way. Paste the workout text instead.", "empty"));
   failed = null;
   try { await r.runAttachedUpload(job, p); } catch (e) { failed = e; }

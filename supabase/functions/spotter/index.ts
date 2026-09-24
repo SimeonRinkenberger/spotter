@@ -9129,61 +9129,70 @@ async function runAttachedUpload(job: Job, p: Parsed): Promise<void> {
     new SoftFailure(sentence + " This card is unchanged.", detail, { final: true, keepCard: true });
   const ref = parseUploadPath(seed.upload_path, job.user_id);
   if (!ref) throw keep("Spotter could not find that video any more — add it again.", "attach: no upload path");
-  const up = uploadParsed("up-" + ref.id);
-  const old = (await dbSelect("workouts",
-    `ingest_job_id=eq.${job.id}&user_id=eq.${job.user_id}&select=id,title,caption,author,thumb_url,blocks,category,muscle_groups,equipment,difficulty,duration_minutes,calories,tags,has_full_workout,extracted_by`))[0] ??
-    { blocks: [] };
-  // The reader sees an upload job: same id and claim, so its stage and its
-  // checkpoint land on this job, and its read is logged under the file's own key.
-  const reader: Job = { ...job, platform: "upload", shortcode: up.shortcode, kind: "upload", url: up.clean,
-    step: "meta", card: null,
-    meta: { caption: null, thumb: null, author: null, upload_path: ref.path, filename: seed.filename } };
-  let read: Meta;
+  // A Basic read reserved under this file's own key (attachRefusal) is given back
+  // when the read fails or is only heard, as fail_ingest_job and
+  // finish_ingest_job give back the card's own row. A no-op for Plus.
+  let kept = false;
   try {
-    read = await uploadMeta(up, reader);
-  } catch (e) {
-    if (e instanceof SoftFailure) throw keep(e.userMessage.replace(/\s*Paste the workout text instead\.$/, ""), e.message);
-    if (e instanceof GuardError) throw keep("Spotter's daily budget is spent — add the video again tomorrow.", String(e));
-    throw keep("Spotter could not read that video — add it again in a minute.", String(e).slice(0, 300));
-  }
-  if (aiActor.getStore()?.blocked) {
-    throw keep("Spotter's daily budget is spent — add the video again tomorrow.", "attach: " + aiActor.getStore()!.blocked);
-  }
+    const up = uploadParsed("up-" + ref.id);
+    const old = (await dbSelect("workouts",
+      `ingest_job_id=eq.${job.id}&user_id=eq.${job.user_id}&select=id,title,caption,author,thumb_url,blocks,category,muscle_groups,equipment,difficulty,duration_minutes,calories,tags,has_full_workout,extracted_by`))[0] ??
+      { blocks: [] };
+    // The reader sees an upload job: same id and claim, so its stage and its
+    // checkpoint land on this job, and its read is logged under the file's own key.
+    const reader: Job = { ...job, platform: "upload", shortcode: up.shortcode, kind: "upload", url: up.clean,
+      step: "meta", card: null,
+      meta: { caption: null, thumb: null, author: null, upload_path: ref.path, filename: seed.filename } };
+    let read: Meta;
+    try {
+      read = await uploadMeta(up, reader);
+    } catch (e) {
+      if (e instanceof SoftFailure) throw keep(e.userMessage.replace(/\s*Paste the workout text instead\.$/, ""), e.message);
+      if (e instanceof GuardError) throw keep("Spotter's daily budget is spent — add the video again tomorrow.", String(e));
+      throw keep("Spotter could not read that video — add it again in a minute.", String(e).slice(0, 300));
+    }
+    if (aiActor.getStore()?.blocked) {
+      throw keep("Spotter's daily budget is spent — add the video again tomorrow.", "attach: " + aiActor.getStore()!.blocked);
+    }
 
-  const meta: Meta = {
-    caption: old.caption ?? seed.caption ?? null,
-    thumb: null,
-    thumb_stored: old.thumb_url ?? seed.thumb_stored ?? null,
-    author: old.author ?? seed.author ?? null,
-    source: "personal-fallback,upload",
-    supplied: true,
-    topped_up: true,
-    transcript: read.transcript ?? (read.source === "transcript" ? read.caption ?? undefined : undefined),
-    media_source: read.media_source,
-    pack: read.pack,
-    seconds: read.seconds,
-    read_plan: (await capsFor(job.user_id)).plan,
-  };
-  let next: Card;
-  if (reader.card) {
-    // The video tier answered with a finished card; the post's caption still
-    // names the workout better than a model's title for a clip.
-    next = reader.card as Card;
-  } else {
-    next = await buildCard(meta, p, { purpose: "extract", userId: job.user_id });
+    const meta: Meta = {
+      caption: old.caption ?? seed.caption ?? null,
+      thumb: null,
+      thumb_stored: old.thumb_url ?? seed.thumb_stored ?? null,
+      author: old.author ?? seed.author ?? null,
+      source: "personal-fallback,upload",
+      supplied: true,
+      topped_up: true,
+      transcript: read.transcript ?? (read.source === "transcript" ? read.caption ?? undefined : undefined),
+      media_source: read.media_source,
+      pack: read.pack,
+      seconds: read.seconds,
+      read_plan: (await capsFor(job.user_id)).plan,
+    };
+    let next: Card;
+    if (reader.card) {
+      // The video tier answered with a finished card; the post's caption still
+      // names the workout better than a model's title for a clip.
+      next = reader.card as Card;
+    } else {
+      next = await buildCard(meta, p, { purpose: "extract", userId: job.user_id });
+    }
+    if (aiActor.getStore()?.blocked) {
+      throw keep("Spotter's daily budget is spent — add the video again tomorrow.", "attach: " + aiActor.getStore()!.blocked);
+    }
+    if (!countExercises(next)) {
+      throw keep("Spotter watched your video and could not make out a workout in it.", "attach: no exercises");
+    }
+    const card = mergeNoDowngrade(old, next, meta, p.platform);
+    if (old.title) card.title = old.title;
+    labelRecommendations(card, meta);
+    console.log("add the video:", p.shortcode, countExercises(old as Card), "->", countExercises(card),
+      "exercise(s), read by", meta.media_source ?? "-", meta.pack ? "(pack)" : "");
+    await finishJob(job, p, meta, card, meta.thumb_stored ?? null, false);
+    kept = readQuality(meta) === "premium";
+  } finally {
+    if (!kept) await refundAttachRead(job.user_id, attachReadKey(ref));
   }
-  if (aiActor.getStore()?.blocked) {
-    throw keep("Spotter's daily budget is spent — add the video again tomorrow.", "attach: " + aiActor.getStore()!.blocked);
-  }
-  if (!countExercises(next)) {
-    throw keep("Spotter watched your video and could not make out a workout in it.", "attach: no exercises");
-  }
-  const card = mergeNoDowngrade(old, next, meta, p.platform);
-  if (old.title) card.title = old.title;
-  labelRecommendations(card, meta);
-  console.log("add the video:", p.shortcode, countExercises(old as Card), "->", countExercises(card),
-    "exercise(s), read by", meta.media_source ?? "-", meta.pack ? "(pack)" : "");
-  await finishJob(job, p, meta, card, meta.thumb_stored ?? null, false);
 }
 
 async function runJob(job: Job): Promise<void> {
@@ -10012,19 +10021,34 @@ function attachable(w: any): boolean {
   return !!w && w.platform !== "upload" && w.platform !== "pumpy";
 }
 
+/** The key a file's read is counted under: the upload reader logs it as `up-<id>`. */
+function attachReadKey(ref: UploadRef): string {
+  return "up-" + ref.id;
+}
+
 /**
- * Whether this person may spend a video read on this card right now. Null means
- * yes. `reserve` is false at authorize, where a Basic preview is only counted,
- * and true at /media, where it is taken — refunded by the job if the read ends
- * up only heard, or fails.
+ * Whether this person may spend a video read on this file, for this card, right
+ * now. Null means yes. `reserve` is false at authorize, where a Basic preview is
+ * only counted, and true at /media, where it is taken — refunded by the job if
+ * the read ends up only heard, or fails.
+ *
+ * A read is one FILE. Each file is new evidence and a new model call, so a card
+ * that already had a read this month does not make the next file free: Plus's
+ * month is asked with the file's own key (the key the worker logs the read
+ * under), and Basic reserves a new preview for every file after the card's
+ * first. The daily media ceiling is asked as "Read the video" asks it.
  */
 async function attachRefusal(
-  userId: string, shortcode: string, reserve: boolean, cors: Cors,
+  userId: string, shortcode: string, fileKey: string, reserve: boolean, cors: Cors,
 ): Promise<Response | null> {
   const [counts, uc] = await settledAll<any>([countsFor(userId), capsFor(userId)]) as [Counts, UserCaps];
   if (overCap(counts.extracts, uc.caps.extract)) return await extractLimitResponse(cors, uc, counts.extracts);
-  const monthOver = await monthReadsReached(userId, uc.plan, shortcode);
+  const monthOver = await monthReadsReached(userId, uc.plan, fileKey);
   if (monthOver !== null) return await allowanceLimit("media", "reads", uc, monthOver, cors);
+  const over = await mediaCapReached(userId, mediaBurst(uc));
+  if (over !== null) {
+    return await capLimit("media", { plan: uc.plan, caps: { ...uc.caps, media: mediaBurst(uc) } }, over, cors);
+  }
   if (!(await paidAllowed())) {
     return json({ status: "limit",
       message: "Spotter's daily budget is spent — add the video again tomorrow." }, 429, cors);
@@ -10041,14 +10065,29 @@ async function attachRefusal(
   const previewsOut = previewLimit(uc,
     "You have used all four Plus video reads this month. They reset on the first, or continue with Spotter Plus.", cors);
   if (reserve) {
-    return await rpc("reserve_video_preview", { p_user: userId, p_shortcode: shortcode }) === true ? null : previewsOut;
+    // The card's own row when it has none this month: that row is also what the
+    // completion fence (finish_ingest_job, premiumAccess) reads to deliver the
+    // premium card, and what fail_ingest_job refunds. A card that already has
+    // one — an earlier file, or a preview — spends a new row under the file's
+    // key; runAttachedUpload gives that one back if the read fails.
+    const sc = encodeURIComponent(shortcode);
+    const month = `${new Date().toISOString().slice(0, 7)}-01`;
+    const mine = await dbSelect("video_previews", `user_id=eq.${userId}&shortcode=eq.${sc}&month=eq.${month}&select=shortcode`);
+    const key = mine.length ? fileKey : shortcode;
+    return await rpc("reserve_video_preview", { p_user: userId, p_shortcode: key }) === true ? null : previewsOut;
   }
-  const sc = encodeURIComponent(shortcode);
-  const [used, mine] = await Promise.all([
-    previewCount(userId),
-    dbSelect("video_previews", `user_id=eq.${userId}&shortcode=eq.${sc}&month=eq.${new Date().toISOString().slice(0, 7)}-01&select=shortcode`),
-  ]);
-  return mine.length || used < PREVIEW_CAP ? null : previewsOut;
+  // A new file always takes a preview of its own, so the count alone answers.
+  return (await previewCount(userId)) < PREVIEW_CAP ? null : previewsOut;
+}
+
+/** Give back a Basic read an attached file reserved under its own key. No-op for Plus. */
+async function refundAttachRead(userId: string, fileKey: string): Promise<void> {
+  try {
+    await dbDelete("video_previews",
+      `user_id=eq.${userId}&shortcode=eq.${encodeURIComponent(fileKey)}&completed=eq.false`);
+  } catch (e) {
+    console.error("add the video: could not refund the read", fileKey, "for", userId, e);
+  }
 }
 
 /**
@@ -10071,14 +10110,20 @@ async function attachUpload(
     return json({ status: "error",
       message: "Spotter cannot find that file — the upload did not finish. Try picking it again." }, 404, cors);
   }
-  const refused = await attachRefusal(userId, w.shortcode, true, cors);
+  const fileKey = attachReadKey(ref);
+  const refused = await attachRefusal(userId, w.shortcode, fileKey, true, cors);
   if (refused) return await refuse(refused);
-  const refund = () => dbDelete("video_previews",
-    `user_id=eq.${userId}&shortcode=eq.${encodeURIComponent(w.shortcode)}&completed=eq.false`).catch(() => {});
+  const refund = async () => {
+    await dbDelete("video_previews",
+      `user_id=eq.${userId}&shortcode=eq.${encodeURIComponent(w.shortcode)}&completed=eq.false`).catch(() => {});
+    await refundAttachRead(userId, fileKey);
+  };
   const q = (await rpc("requeue_ingest", { p_user: userId, p_workout: w.id }))[0];
   if (!q || !q.job_created) {
     // Another job already owns this card, and it knows nothing about this file.
+    // The file's own read goes back; the card's row may be that job's.
     if (!q) await refund();
+    else await refundAttachRead(userId, fileKey);
     return await refuse(json(q ? { status: "processing", id: w.id, message: "Already reading that one." }
       : { status: "error", message: "Not found." }, q ? 200 : 404, cors));
   }
@@ -14306,7 +14351,7 @@ async function authorizeUpload(req: Request, userId: string, cors: Cors): Promis
     if (!w || !attachable(w)) {
       return json({ status: "error", message: "That card is not there any more. Reload Spotter and try again." }, 404, cors);
     }
-    const refused = await attachRefusal(userId, w.shortcode, false, cors);
+    const refused = await attachRefusal(userId, w.shortcode, attachReadKey(ref), false, cors);
     if (refused) return refused;
   } else {
     const uc = await capsFor(userId);
