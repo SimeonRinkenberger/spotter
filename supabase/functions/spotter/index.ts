@@ -10119,8 +10119,92 @@ function blockFurnitureText(b: any): string {
   });
 }
 
+// ---------- reorder ----------
+//
+// "I want a way to reorder blocks and exercises" (owner, 24 Sept). The client
+// sends the whole new order as a permutation of the stored positions:
+//
+//   order: [{ block: <stored block index>, exercises: [<stored index> | [<stored block>, <stored index>], …] }, …]
+//
+// A bare number is an exercise that stays in its own section; a pair is one that
+// came from another, which is how an exercise joins a superset. Every section and
+// every exercise has to appear exactly once — the op can move things and nothing
+// else. Each item travels whole: the block's furniture and each exercise object
+// are the stored ones, untouched, so titles, rounds, rest, canonical ids,
+// evidence, each, cardio minutes and anything a later wave adds all go where the
+// item goes without this code having to know their names.
+
+/** The stored blocks in the order asked for, or a refusal naming what is wrong. */
+function applyReorder(blocks: any[], order: unknown): any[] {
+  const whole = "reopen the workout and try again.";
+  if (!Array.isArray(order) || order.length !== blocks.length) {
+    throw new BadEdit("That order does not list every section — " + whole);
+  }
+  let total = 0;
+  for (const b of blocks) total += Array.isArray(b?.exercises) ? b.exercises.length : 0;
+  const seenBlocks = new Set<number>(), seenEx = new Set<string>();
+  let placed = 0;
+  const out = order.map((entry: any) => {
+    const bi = entry?.block;
+    if (!Number.isInteger(bi) || bi < 0 || bi >= blocks.length) {
+      throw new BadEdit("That order names a section this workout does not have — " + whole);
+    }
+    if (seenBlocks.has(bi)) throw new BadEdit("That order lists a section twice — " + whole);
+    seenBlocks.add(bi);
+    if (!Array.isArray(entry.exercises)) throw new BadEdit("That order does not say what is in each section — " + whole);
+    // The same ceiling add holds a block to, so a reorder cannot build a section
+    // no other op could have.
+    if (entry.exercises.length > 60) throw new BadEdit("A section holds at most 60 exercises.");
+    const exercises = entry.exercises.map((ref: unknown) => {
+      const pair = Array.isArray(ref) && ref.length === 2;
+      const from = pair ? (ref as unknown[])[0] : bi, at = pair ? (ref as unknown[])[1] : ref;
+      const list = Number.isInteger(from) && (from as number) >= 0 && (from as number) < blocks.length &&
+        Array.isArray(blocks[from as number]?.exercises) ? blocks[from as number].exercises : null;
+      if (!list || !Number.isInteger(at) || (at as number) < 0 || (at as number) >= list.length) {
+        throw new BadEdit("That order names an exercise this workout does not have — " + whole);
+      }
+      const key = from + ":" + at;
+      if (seenEx.has(key)) throw new BadEdit("That order lists an exercise twice — " + whole);
+      seenEx.add(key);
+      placed++;
+      return list[at as number];
+    });
+    // Spread, so the block keeps its own keys in its own order and only the
+    // list inside it is replaced.
+    return { ...blocks[bi], exercises };
+  });
+  if (placed !== total) throw new BadEdit("That order leaves an exercise out — " + whole);
+  return out;
+}
+
+/**
+ * The stale guard for a reorder: the card the client rearranged is the card
+ * stored — the same sections, holding the same movements, by name, in the same
+ * places. Deliberately not a comparison of whole blocks. Positions are what the
+ * permutation is written in, so positions and the names at them are what have to
+ * agree; a rest changed on another device is not a reason to refuse, because the
+ * rest travels with its exercise either way.
+ */
+function reorderGuard(stored: any[], seen: unknown): boolean {
+  if (!Array.isArray(seen) || seen.length !== stored.length) return false;
+  return stored.every((b, i) => {
+    const have = Array.isArray(b?.exercises) ? b.exercises : [];
+    const saw = Array.isArray((seen[i] as any)?.exercises) ? (seen[i] as any).exercises : null;
+    return !!saw && saw.length === have.length &&
+      have.every((x: any, j: number) => String(x?.name ?? "") === String(saw[j]?.name ?? ""));
+  });
+}
+
+/** The card's shape as the ledger writes it: section titles and exercise names, in order. */
+function layoutText(blocks: any[]): string {
+  return JSON.stringify(blocks.map((b) => ({
+    title: b?.title ?? null,
+    exercises: (Array.isArray(b?.exercises) ? b.exercises : []).map((x: any) => String(x?.name ?? "")),
+  })));
+}
+
 type Change = {
-  field: "name" | "sets" | "reps" | "duration_seconds" | "rest_seconds" | "exercise" | "block";
+  field: "name" | "sets" | "reps" | "duration_seconds" | "rest_seconds" | "exercise" | "block" | "order";
   old: string | number | null;
   new: string | number | null;
   oldCanon: string | null;
@@ -10142,7 +10226,8 @@ function deepCopy<T>(v: T): T {
 async function handleCorrection(id: string, userId: string, req: Request, cors: Cors): Promise<Response> {
   const body = await req.json().catch(() => ({} as Record<string, unknown>));
   const op = String((body as any)?.op ?? "");
-  if (op !== "edit" && op !== "add" && op !== "delete" && op !== "delete_block" && op !== "edit_block") {
+  if (op !== "edit" && op !== "add" && op !== "delete" && op !== "delete_block" && op !== "edit_block" &&
+    op !== "reorder") {
     return json({ status: "error", message: "Unknown edit." }, 400, cors);
   }
 
@@ -10191,7 +10276,20 @@ async function handleCorrection(id: string, userId: string, req: Request, cors: 
   try {
     if (bi < 0 || bi > 40) throw new BadEdit("That block does not exist.");
 
-    if (op === "delete_block") {
+    if (op === "reorder") {
+      // The whole card at once, as one edit: the client sends the order only when
+      // the person taps Done, so one ledger row is one reorder and it counts once
+      // against the daily edit limit, however many things were moved.
+      if (!reorderGuard(blocks, (body as any).expect_blocks)) {
+        return json({ status: "stale", message: "This card changed since you opened it — reopen it and try again." }, 409, cors);
+      }
+      const next = applyReorder(blocks, (body as any).order);
+      if (JSON.stringify(next) === JSON.stringify(blocks)) return json({ status: "ok", workout: w, corrections: 0 }, 200, cors);
+      const was = layoutText(blocks);
+      blocks.splice(0, blocks.length, ...next);
+      exIndex = -1;
+      changes.push({ field: "order", old: was, new: layoutText(blocks), oldCanon: null, newCanon: null, oldEx: null, newEx: null });
+    } else if (op === "delete_block") {
       const block = blocks[bi];
       if (!block || JSON.stringify(block) !== JSON.stringify((body as any).expect_block))
         return json({ status: "stale", message: "This block changed — reopen the workout and try again." }, 409, cors);
@@ -10386,7 +10484,7 @@ async function handleCorrection(id: string, userId: string, req: Request, cors: 
     workout_id: id,
     shortcode: w.shortcode,
     platform: w.platform,
-    kind: op === "delete_block" ? "delete" : op === "edit_block" ? "edit" : op,
+    kind: op === "delete_block" ? "delete" : op === "edit_block" || op === "reorder" ? "edit" : op,
     field: c.field,
     old_value: c.old === null || c.old === undefined ? null : String(c.old),
     new_value: c.new === null || c.new === undefined ? null : String(c.new),
@@ -10394,8 +10492,9 @@ async function handleCorrection(id: string, userId: string, req: Request, cors: 
     new_canonical_id: c.newCanon,
     old_exercise: c.oldEx,
     new_exercise: c.newEx,
-    block_index: bi,
-    exercise_index: exIndex,
+    // A reorder is about the whole card, not one place in it.
+    block_index: op === "reorder" ? null : bi,
+    exercise_index: op === "reorder" ? null : exIndex,
     exercise_name: subject ? String(subject.name) : null,
     // The state of the extraction at the moment it was corrected. Reprocess
     // overwrites both of these in place, so they cannot be recovered afterwards.
