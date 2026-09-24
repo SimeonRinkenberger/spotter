@@ -50,6 +50,7 @@ const steps = [
   ['Pack eval scoring', 'deno', ['run', '--allow-read', 'tools/pack-eval/score-test.ts']],
   ['Built page matches its source', 'node', ['tools/verify-build-diff.mjs']],
   ['Content-Security-Policy and SRI cover the page', 'node', ['tools/csp-check.mjs']],
+  ['Tab pager: every page turns, rows/chips/week bar keep their drags', 'node', ['tools/pager-harness.mjs']],
 ];
 
 const env = { ...process.env, PGLITE_MODULE };
