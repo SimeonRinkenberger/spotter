@@ -1471,7 +1471,9 @@ export const APP = String.raw`
     }
     // Only announce a transition, so a favourite toggle or a note edit is silent.
     if (was && was.ingest_status === "processing" && row.ingest_status === "ready") {
-      toast("Ready: " + (row.title || "your workout"));
+      // A read that could not add anything leaves the card as it was and says
+      // why; "Ready" over an unchanged card would be the wrong news.
+      toast(UNCHANGED.test(row.ingest_error || "") ? row.ingest_error : "Ready: " + (row.title || "your workout"));
     } else if (was && was.ingest_status === "processing" && row.ingest_status === "failed") {
       toast(row.ingest_error === UNAVAILABLE ? "That post is private, deleted or unavailable."
         : row.kind === "photo" || row.kind === "p" ? "Could not read that post — open it to try again."
@@ -1803,6 +1805,8 @@ export const APP = String.raw`
   // The server's sentence for a post the platform says is gone. Nothing to retry.
   var UNAVAILABLE = "This post is private, deleted or unavailable to Spotter.";
   function isUnavailable(w) { return isFailed(w) && w.ingest_error === UNAVAILABLE; }
+  // How the server ends a read that kept the card as it was (Add the video, a re-read).
+  var UNCHANGED = /This card is unchanged\.$/;
 
   // ---------- collections: lookups ----------
 
@@ -3059,7 +3063,7 @@ export const APP = String.raw`
     if (!isPending(w) && !isFailed(w) && w.ingest_error &&
         !((w.blocks || []).length === 0 && String(w.ingest_error).indexOf(PLUS_READ_HINT) === 0)) {
       var incomplete = el("div", "sect");
-      incomplete.appendChild(el("h3", null, "Some details are missing"));
+      incomplete.appendChild(el("h3", null, UNCHANGED.test(w.ingest_error) ? "That read did not change this card" : "Some details are missing"));
       incomplete.appendChild(el("div", "capbox", w.ingest_error));
       d.appendChild(incomplete);
     }

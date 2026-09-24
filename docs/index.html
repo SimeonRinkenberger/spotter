@@ -9658,7 +9658,7 @@ details.details-moving > :not(summary) {
           break;
         }
       var was = at >= 0 ? state.workouts[at] : null;
-      at >= 0 ? state.workouts[at] = row : state.workouts.unshift(row), current && current.id === row.id && refreshDetail(row), was && was.ingest_status === "processing" && row.ingest_status === "ready" ? toast("Ready: " + (row.title || "your workout")) : was && was.ingest_status === "processing" && row.ingest_status === "failed" && toast(row.ingest_error === UNAVAILABLE ? "That post is private, deleted or unavailable." : row.kind === "photo" || row.kind === "p" ? "Could not read that post \u2014 open it to try again." : "Could not read that video \u2014 open it to try again."), render(), watchPending();
+      at >= 0 ? state.workouts[at] = row : state.workouts.unshift(row), current && current.id === row.id && refreshDetail(row), was && was.ingest_status === "processing" && row.ingest_status === "ready" ? toast(UNCHANGED.test(row.ingest_error || "") ? row.ingest_error : "Ready: " + (row.title || "your workout")) : was && was.ingest_status === "processing" && row.ingest_status === "failed" && toast(row.ingest_error === UNAVAILABLE ? "That post is private, deleted or unavailable." : row.kind === "photo" || row.kind === "p" ? "Could not read that post \u2014 open it to try again." : "Could not read that video \u2014 open it to try again."), render(), watchPending();
     }
   }
   var pendTimer = null, pendPolls = 0, pendBusy = !1;
@@ -9923,6 +9923,7 @@ details.details-moving > :not(summary) {
   function isUnavailable(w) {
     return isFailed(w) && w.ingest_error === UNAVAILABLE;
   }
+  var UNCHANGED = /This card is unchanged\.$/;
   function isColFilter(f) {
     return typeof f == "string" && f.indexOf("col:") === 0;
   }
@@ -10679,7 +10680,7 @@ details.details-moving > :not(summary) {
     }
     if (!isPending(w) && !isFailed(w) && w.ingest_error && !((w.blocks || []).length === 0 && String(w.ingest_error).indexOf(PLUS_READ_HINT) === 0)) {
       var incomplete = el("div", "sect");
-      incomplete.appendChild(el("h3", null, "Some details are missing")), incomplete.appendChild(el("div", "capbox", w.ingest_error)), d.appendChild(incomplete);
+      incomplete.appendChild(el("h3", null, UNCHANGED.test(w.ingest_error) ? "That read did not change this card" : "Some details are missing")), incomplete.appendChild(el("div", "capbox", w.ingest_error)), d.appendChild(incomplete);
     }
     if (isPending(w) || isFailed(w)) {
       var isUp = isUpload(w), stage = stageOf(w), note = el("div", "sect"), gone = isUnavailable(w);
