@@ -20,6 +20,8 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>SpotterKeychainGroup</key>
 	<string>$(AppIdentifierPrefix)$(SPOTTER_BUNDLE_ID)</string>
+	<key>SpotterAppGroup</key>
+	<string>$(SPOTTER_APP_GROUP)</string>
 	<key>CFBundleIcons</key>
 	<dict><key>CFBundlePrimaryIcon</key><dict><key>CFBundleSymbolName</key><string>dumbbell.fill</string></dict></dict>
 	<key>NSExtension</key>
@@ -31,7 +33,7 @@
 		<key>NSExtensionAttributes</key>
 		<dict>
 			<key>NSExtensionActivationRule</key>
-			<string>SUBQUERY(extensionItems, $item, SUBQUERY($item.attachments, $attachment, ANY $attachment.registeredTypeIdentifiers == "public.url" OR ANY $attachment.registeredTypeIdentifiers == "public.text" OR ANY $attachment.registeredTypeIdentifiers == "public.plain-text" OR ANY $attachment.registeredTypeIdentifiers == "public.utf8-plain-text" OR ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.url" OR ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.text").@count &gt; 0).@count &gt; 0</string>
+			<string>SUBQUERY(extensionItems, $item, SUBQUERY($item.attachments, $attachment, ANY $attachment.registeredTypeIdentifiers == "public.url" OR ANY $attachment.registeredTypeIdentifiers == "public.text" OR ANY $attachment.registeredTypeIdentifiers == "public.plain-text" OR ANY $attachment.registeredTypeIdentifiers == "public.utf8-plain-text" OR ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.url" OR ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.text").@count &gt; 0).@count &gt; 0 OR SUBQUERY(extensionItems, $item, SUBQUERY($item.attachments, $attachment, ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.movie").@count == 1).@count == 1</string>
 		</dict>
 	</dict>
 </dict>

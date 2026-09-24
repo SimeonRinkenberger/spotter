@@ -1,0 +1,448 @@
+{
+ "$comment": "Share payloads for tools/ios/share-check.mjs. From the save-flow audit's ios-cases (every URL shape the audit ran through the real Swift code) plus the shapes that dead-ended there. 'attachment' is a URL attachment when it is one bare URL, otherwise a text attachment; 'contentText' is the share's caption. expect: the link the extension must save and how many other posts it set aside; null = no link. Every case with a link must save exactly one.",
+ "cases": [
+  {
+   "id": "tt-canonical",
+   "attachment": "https://www.tiktok.com/@thewodfather/video/7679960172495785246",
+   "expect": {
+    "setAside": 0
+   }
+  },
+  {
+   "id": "tt-no-www",
+   "attachment": "https://tiktok.com/@thewodfather/video/7679960172495785246",
+   "expect": {
+    "setAside": 0
+   }
+  },
+  {
+   "id": "tt-trailing-slash",
+   "attachment": "https://www.tiktok.com/@thewodfather/video/7679960172495785246/",
+   "expect": {
+    "setAside": 0
+   }
+  },
+  {
+   "id": "tt-webapp-tracking",
+   "attachment": "https://www.tiktok.com/@thewodfather/video/7679960172495785246?is_from_webapp=1&sender_device=pc&web_id=7412345678901234567",
+   "expect": {
+    "setAside": 0
+   }
+  },
+  {
+   "id": "tt-app-share-params",
+   "attachment": "https://www.tiktok.com/@thewodfather/video/7679960172495785246?_r=1&_t=ZT-90abcDEF",
+   "expect": {
+    "setAside": 0
+   }
+  },
+  {
+   "id": "tt-lang-region",
+   "attachment": "https://www.tiktok.com/@thewodfather/video/7679960172495785246?lang=de-DE&is_copy_url=1",
+   "expect": {
+    "setAside": 0
+   }
+  },
+  {
+   "id": "tt-share-text",
+   "attachment": "Check out AJ's video! #TikTok https://www.tiktok.com/@thewodfather/video/7679960172495785246?_t=ZT-90&_r=1",
+   "expect": {
+    "setAside": 0
+   }
+  },
+  {
+   "id": "tt-mobile-host",
+   "attachment": "https://m.tiktok.com/@thewodfather/video/7679960172495785246",
+   "expect": {
+    "setAside": 0
+   }
+  },
+  {
+   "id": "tt-m-v-html",
+   "attachment": "https://m.tiktok.com/v/7679960172495785246.html",
+   "expect": {
+    "setAside": 0
+   }
+  },
+  {
+   "id": "tt-photo",
+   "attachment": "https://www.tiktok.com/@maxndah/photo/7686591894004026657",
+   "expect": {
+    "setAside": 0
+   }
+  },
+  {
+   "id": "tt-photo-under-video-alias",
+   "attachment": "https://www.tiktok.com/@maxndah/video/7686591894004026657",
+   "expect": {
+    "setAside": 0
+   }
+  },
+  {
+   "id": "tt-embed-v2",
+   "attachment": "https://www.tiktok.com/embed/v2/7679960172495785246",
+   "expect": {
+    "setAside": 0
+   }
+  },
+  {
+   "id": "tt-player-v1",
+   "attachment": "https://www.tiktok.com/player/v1/7679960172495785246",
+   "expect": {
+    "setAside": 0
+   }
+  },
+  {
+   "id": "tt-tiktokv-share",
+   "attachment": "https://www.tiktokv.com/share/video/7679960172495785246/",
+   "expect": {
+    "setAside": 0
+   }
+  },
+  {
+   "id": "tt-vm-expired",
+   "attachment": "https://vm.tiktok.com/ZTR45GpSF/",
+   "expect": {
+    "setAside": 0
+   }
+  },
+  {
+   "id": "tt-vt-expired",
+   "attachment": "https://vt.tiktok.com/ZSe4FqkKd",
+   "expect": {
+    "setAside": 0
+   }
+  },
+  {
+   "id": "tt-t-expired",
+   "attachment": "https://www.tiktok.com/t/ZTRC5xgJp",
+   "expect": {
+    "setAside": 0
+   }
+  },
+  {
+   "id": "tt-profile",
+   "attachment": "https://www.tiktok.com/@thewodfather",
+   "expect": {
+    "setAside": 0
+   }
+  },
+  {
+   "id": "ig-reel",
+   "attachment": "https://www.instagram.com/reel/DBGi0r0pHZ4/",
+   "expect": {
+    "setAside": 0
+   }
+  },
+  {
+   "id": "ig-reel-igsh",
+   "attachment": "https://www.instagram.com/reel/DBGi0r0pHZ4/?igsh=MTc4MmM1YmI2Ng==",
+   "expect": {
+    "setAside": 0
+   }
+  },
+  {
+   "id": "ig-reel-utm-igsh",
+   "attachment": "https://www.instagram.com/reel/DBGi0r0pHZ4/?utm_source=ig_web_copy_link&igsh=MzRlODBiNWFlZA==",
+   "expect": {
+    "setAside": 0
+   }
+  },
+  {
+   "id": "ig-reels-plural",
+   "attachment": "https://www.instagram.com/reels/DBGi0r0pHZ4/",
+   "expect": {
+    "setAside": 0
+   }
+  },
+  {
+   "id": "ig-no-www",
+   "attachment": "https://instagram.com/reel/DBGi0r0pHZ4",
+   "expect": {
+    "setAside": 0
+   }
+  },
+  {
+   "id": "ig-mobile-host",
+   "attachment": "https://m.instagram.com/reel/DBGi0r0pHZ4/",
+   "expect": {
+    "setAside": 0
+   }
+  },
+  {
+   "id": "ig-username-prefix",
+   "attachment": "https://www.instagram.com/coachjaeo/reel/DBGi0r0pHZ4/",
+   "expect": {
+    "setAside": 0
+   }
+  },
+  {
+   "id": "ig-post",
+   "attachment": "https://www.instagram.com/p/DTasqBeFMdq/",
+   "expect": {
+    "setAside": 0
+   }
+  },
+  {
+   "id": "ig-post-img-index",
+   "attachment": "https://www.instagram.com/p/DTasqBeFMdq/?img_index=3",
+   "expect": {
+    "setAside": 0
+   }
+  },
+  {
+   "id": "ig-tv",
+   "attachment": "https://www.instagram.com/tv/CLymnxZjlAw/",
+   "expect": {
+    "setAside": 0
+   }
+  },
+  {
+   "id": "ig-instagr-am-post",
+   "attachment": "https://instagr.am/p/DTasqBeFMdq/",
+   "expect": {
+    "setAside": 0
+   }
+  },
+  {
+   "id": "ig-instagr-am-reel",
+   "attachment": "https://instagr.am/reel/DBGi0r0pHZ4",
+   "expect": {
+    "setAside": 0
+   }
+  },
+  {
+   "id": "ig-share-reel-token",
+   "attachment": "https://www.instagram.com/share/reel/BAGabc123xy/",
+   "expect": {
+    "setAside": 0
+   }
+  },
+  {
+   "id": "ig-share-p-token",
+   "attachment": "https://www.instagram.com/share/p/BAGabc123xy/",
+   "expect": {
+    "setAside": 0
+   }
+  },
+  {
+   "id": "ig-share-bare-token",
+   "attachment": "https://www.instagram.com/share/BAGabc123xy",
+   "expect": {
+    "setAside": 0
+   }
+  },
+  {
+   "id": "ig-reels-audio-page",
+   "attachment": "https://www.instagram.com/reels/audio/1234567890123456/",
+   "expect": {
+    "setAside": 0
+   }
+  },
+  {
+   "id": "ig-story",
+   "attachment": "https://www.instagram.com/stories/coachjaeo/3570766765028588805/",
+   "expect": {
+    "setAside": 0
+   }
+  },
+  {
+   "id": "ig-profile",
+   "attachment": "https://www.instagram.com/coachjaeo/",
+   "expect": {
+    "setAside": 0
+   }
+  },
+  {
+   "id": "ig-caption-plus-bio-link",
+   "attachment": "Leg day 🔥 https://www.instagram.com/reel/DBGi0r0pHZ4/?igsh=abc full plan at https://linktr.ee/coachjaeo",
+   "expect": {
+    "link": "https://www.instagram.com/reel/DBGi0r0pHZ4/?igsh=abc",
+    "setAside": 0
+   }
+  },
+  {
+   "id": "yt-shorts-si",
+   "attachment": "https://youtube.com/shorts/X5W_jSPCV3g?si=AbCdEf123",
+   "expect": {
+    "setAside": 0
+   }
+  },
+  {
+   "id": "yt-short-link-si",
+   "attachment": "https://youtu.be/X5W_jSPCV3g?si=AbCdEf123",
+   "expect": {
+    "setAside": 0
+   }
+  },
+  {
+   "id": "yt-mobile-shorts",
+   "attachment": "https://m.youtube.com/shorts/X5W_jSPCV3g",
+   "expect": {
+    "setAside": 0
+   }
+  },
+  {
+   "id": "yt-watch-feature",
+   "attachment": "https://www.youtube.com/watch?feature=share&v=X5W_jSPCV3g",
+   "expect": {
+    "setAside": 0
+   }
+  },
+  {
+   "id": "private-address",
+   "attachment": "http://169.254.169.254/latest/meta-data/",
+   "expect": {
+    "setAside": 0
+   }
+  },
+  {
+   "id": "no-link",
+   "attachment": "Leg day was brutal today",
+   "expect": null
+  },
+  {
+   "id": "combo-tt-url+sharetext-same",
+   "attachment": "https://vt.tiktok.com/ZSe4FqkKd/",
+   "contentText": "Check out AJ's video! #TikTok https://vt.tiktok.com/ZSe4FqkKd/",
+   "expect": {
+    "link": "https://vt.tiktok.com/ZSe4FqkKd/",
+    "setAside": 0
+   }
+  },
+  {
+   "id": "combo-tt-url+sharetext-noslash",
+   "attachment": "https://vt.tiktok.com/ZSe4FqkKd/",
+   "contentText": "Check out AJ's video! #TikTok https://vt.tiktok.com/ZSe4FqkKd",
+   "expect": {
+    "link": "https://vt.tiktok.com/ZSe4FqkKd/",
+    "setAside": 0
+   }
+  },
+  {
+   "id": "combo-ig-url+caption-with-biolink",
+   "attachment": "https://www.instagram.com/reel/DBGi0r0pHZ4/?igsh=MTc4MmM1YmI2Ng==",
+   "contentText": "Leg day 🔥 full plan at https://linktr.ee/coachjaeo",
+   "expect": {
+    "link": "https://www.instagram.com/reel/DBGi0r0pHZ4/?igsh=MTc4MmM1YmI2Ng==",
+    "setAside": 0
+   }
+  },
+  {
+   "id": "combo-ig-url+same-url-text",
+   "attachment": "https://www.instagram.com/reel/DBGi0r0pHZ4/?igsh=MTc4MmM1YmI2Ng==",
+   "contentText": "https://www.instagram.com/reel/DBGi0r0pHZ4/?igsh=MTc4MmM1YmI2Ng==",
+   "expect": {
+    "link": "https://www.instagram.com/reel/DBGi0r0pHZ4/?igsh=MTc4MmM1YmI2Ng==",
+    "setAside": 0
+   }
+  },
+  {
+   "id": "combo-safari-url+title",
+   "attachment": "https://www.tiktok.com/@maxndah/photo/7686591894004026657",
+   "contentText": "TikTok · Max Ndah",
+   "expect": {
+    "link": "https://www.tiktok.com/@maxndah/photo/7686591894004026657",
+    "setAside": 0
+   }
+  },
+  {
+   "id": "text-trailing-period",
+   "attachment": "Try this: https://www.instagram.com/reel/DBGi0r0pHZ4/.",
+   "expect": {
+    "setAside": 0
+   }
+  },
+  {
+   "id": "text-in-parens",
+   "attachment": "(https://youtu.be/X5W_jSPCV3g)",
+   "expect": {
+    "setAside": 0
+   }
+  },
+  {
+   "id": "text-ellipsis",
+   "attachment": "workout https://www.tiktok.com/@thewodfather/video/7679960172495785246…",
+   "expect": {
+    "setAside": 0
+   }
+  },
+  {
+   "id": "text-bare-domain",
+   "attachment": "instagram.com/reel/DBGi0r0pHZ4",
+   "expect": {
+    "setAside": 0
+   }
+  },
+  {
+   "id": "text-two-posts",
+   "attachment": "https://www.instagram.com/reel/DBGi0r0pHZ4/ and https://www.instagram.com/reel/DQZfgfKkV6f/",
+   "expect": {
+    "link": "https://www.instagram.com/reel/DBGi0r0pHZ4/",
+    "setAside": 1
+   }
+  },
+  {
+   "id": "safari-ig-igsh-plus-canonical",
+   "attachment": "https://www.instagram.com/reel/DAoGD51oNXH/?igsh=MTc4MmM1YmI2Ng==",
+   "contentText": "https://www.instagram.com/reel/DAoGD51oNXH/",
+   "expect": {
+    "link": "https://www.instagram.com/reel/DAoGD51oNXH/?igsh=MTc4MmM1YmI2Ng==",
+    "setAside": 0
+   }
+  },
+  {
+   "id": "tt-attachment-plus-profile-text",
+   "attachment": "https://www.tiktok.com/@thewodfather/video/7679960172495785246",
+   "contentText": "More from me: https://www.tiktok.com/@thewodfather and https://linktr.ee/thewodfather",
+   "expect": {
+    "link": "https://www.tiktok.com/@thewodfather/video/7679960172495785246",
+    "setAside": 0
+   }
+  },
+  {
+   "id": "yt-watch-and-short-link-same-video",
+   "attachment": "https://www.youtube.com/watch?v=X5W_jSPCV3g&feature=share",
+   "contentText": "https://youtu.be/X5W_jSPCV3g?si=abc",
+   "expect": {
+    "link": "https://www.youtube.com/watch?v=X5W_jSPCV3g&feature=share",
+    "setAside": 0
+   }
+  },
+  {
+   "id": "tt-photo-and-video-alias-same-post",
+   "attachment": "https://www.tiktok.com/@maxndah/photo/7686591894004026657",
+   "contentText": "https://www.tiktok.com/@maxndah/video/7686591894004026657?_r=1",
+   "expect": {
+    "link": "https://www.tiktok.com/@maxndah/photo/7686591894004026657",
+    "setAside": 0
+   }
+  },
+  {
+   "id": "attachment-post-caption-other-post",
+   "attachment": "https://www.instagram.com/reel/DBGi0r0pHZ4/",
+   "contentText": "Part 2: https://www.tiktok.com/@thewodfather/video/7679960172495785246",
+   "expect": {
+    "link": "https://www.instagram.com/reel/DBGi0r0pHZ4/",
+    "setAside": 1
+   }
+  },
+  {
+   "id": "web-page-plus-bio-link",
+   "attachment": "https://example.com/leg-day-workout",
+   "contentText": "https://linktr.ee/coach",
+   "expect": {
+    "link": "https://example.com/leg-day-workout",
+    "setAside": 1
+   }
+  },
+  {
+   "id": "bio-link-before-post-in-text",
+   "attachment": "Plans at https://linktr.ee/coachjaeo — today's reel https://www.instagram.com/reel/DBGi0r0pHZ4/",
+   "expect": {
+    "link": "https://www.instagram.com/reel/DBGi0r0pHZ4/",
+    "setAside": 0
+   }
+  }
+ ]
+}
