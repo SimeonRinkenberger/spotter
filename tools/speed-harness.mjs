@@ -13,6 +13,9 @@
 //       left behind, and a switch of account paints nothing of the previous one.
 //   C3  /api/limits is asked once a minute, not once per Basic card opened; a write
 //       retires the copy; two asks at once are one call.
+//   C6  a launch reads plan and workout_logs for the today card once, not twice;
+//       the card still ticks when a session is logged, moves when the day
+//       changes, and a pull to refresh still re-reads it.
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
@@ -86,6 +89,7 @@ function resetPager() {} function measureChrome() {} function mailClose() {} fun
 function maybeInstallHint() {} function watchWorkouts() {} function welcomeMaybe() {} function restoreSession() {}
 function consumeShare() {} function consumeOpen() {} function consumeBilling() {} function consumeCreator() {}
 function warmPages() {} function sharePending() { return false; } function toast() {}
+function renderToday() { log.push("today"); }
 function accountNow(epoch, uid) { return epoch === accountEpoch && state.user && state.user.id === uid; }
 function loadProfile() { nets.push("profiles"); return Promise.resolve(); }
 function load() { nets.push("workouts"); return Promise.resolve(); }
@@ -264,6 +268,103 @@ for (const [hash, search] of [['#access_token=t&refresh_token=r&type=magiclink',
   const out = run('recentLimits()'); run('retireLimits()'); await out;
   assert.equal(run('billing.limitsAt'), 0, 'an answer that raced a write is not trusted for the minute');
   ok('C3 client: one /api/limits a minute, retired by writes, shared in flight');
+}
+
+// ---------- C6 ----------
+{
+  // The real load(), loadToday(), renderToday() and boot() over a PostgREST that
+  // answers when the test says so. Requests are counted per table.
+  const REAL = ['readOnce', 'load', 'loadToday', 'renderToday', 'ymd', 'boot', 'paintCache', 'paintRows', 'readCache'].map(fn).join('\n');
+  const TODAY_DECL = (() => { const a = APP.indexOf('  var today = {'); return APP.slice(a, APP.indexOf('\n', a)); })();
+  function world() {
+    const ctx = vm.createContext({ El, Promise, JSON, Object, Array, String, Number, Math, console });
+    vm.runInContext(`
+      var RealDate = Date, clock = RealDate.UTC(2026, 8, 24, 15, 0, 0);
+      Date = function (v) { return arguments.length ? new RealDate(v) : new RealDate(clock); };
+      Date.now = function () { return clock; }; Date.UTC = RealDate.UTC;
+      var timers = [], asked = [], waiting = [], rows = { workouts: [{ id: "w1", title: "A" }], plan: [], workout_logs: [], collections: [], collection_items: [] };
+      function setTimeout(f) { timers.push(f); return timers.length; } function clearTimeout() {}
+      function flushTimers() { while (timers.length) { var q = timers; timers = []; q.forEach(function (f) { f(); }); } }
+      // One PostgREST: every query is a thenable that answers when answer() is called.
+      function query(table) {
+        var q = { table: table, then: function (ok, bad) {
+          var p = new Promise(function (resolve) { var f = function () { resolve({ data: rows[table].slice(), error: null }); }; f.table = table; waiting.push(f); });
+          asked.push(table);
+          return p.then(ok, bad);
+        } };
+        ["select", "eq", "gte", "lte", "order", "limit", "in"].forEach(function (k) { q[k] = function () { return q; }; });
+        return q;
+      }
+      var sb = { from: query };
+      // answer(["plan"]) answers only those tables' reads; answer() answers all.
+      function answer(only) {
+        var w = waiting.filter(function (f) { return !only || only.indexOf(f.table) >= 0; });
+        waiting = waiting.filter(function (f) { return w.indexOf(f) < 0; });
+        w.forEach(function (f) { f(); });
+      }
+      var state = { user: { id: "u1" }, workouts: [], collections: [], colItems: [], view: "library", filter: "All", q: "" };
+      var accountEpoch = 0, reads = {}, libraryRev = 0, earlyUid = null, booting = null, current = null, seenCards = {};
+      function accountNow(e, u) { return e === accountEpoch && state.user && state.user.id === u; }
+      var CACHE_KEY = "spotter-lib-v1", store = {};
+      var localStorage = { getItem: function (k) { return k in store ? store[k] : null; }, setItem: function (k, v) { store[k] = v; }, removeItem: function (k) { delete store[k]; } };
+      function node() { return { classList: { add: function () {}, remove: function () {} }, appendChild: function () {}, set innerHTML(v) {} }; }
+      var todayBox = node(), ticks = [];
+      function el(t, c) { if (c && c.indexOf("daycard") === 0) ticks.push(c.indexOf("done") > 0); return node(); }
+      function icon(n) { return n; } function todayDose() { return ""; } function thisWeek() { return null; } function viewIn() {}
+      function fmtDur() { return null; } function weekLine() { return ""; } function openDetail() {} function startWorkout() {}
+      function render() { renderToday(); } function refreshDetail() {} function watchPending() {} function writeCache() {}
+      function idle(f) { timers.push(f); } function toast() {}
+      var $ = function () { return { classList: { contains: function () { return false; } } }; };
+      function guideUser() {} function loadProfile() { return Promise.resolve(); } function maybeInstallHint() {} function watchWorkouts() {}
+      function consumeShare() {} function consumeOpen() {} function consumeBilling() {} function consumeCreator() {} function warmPages() {} function welcomeMaybe() {}
+    ` + TODAY_DECL + '\n' + REAL, ctx);
+    return ctx;
+  }
+  const run = (c, js) => vm.runInContext(js, c);
+  const count = (c, t) => run(c, 'asked').filter((x) => x === t).length;
+  const settle = async (c) => { for (let i = 0; i < 6; i++) { run(c, 'answer(); flushTimers()'); await tick(); } };
+
+  for (const variant of ['cached', 'early', 'nocache']) {
+    const c = world();
+    if (variant !== 'nocache') run(c, 'store[CACHE_KEY] = JSON.stringify({ v: 1, uid: "u1", workouts: [{ id: "w1" }], collections: [], colItems: [] })');
+    // Painted before the SDK answered: state.user is still empty then (C2).
+    if (variant === 'early') run(c, 'var who = state.user; state.user = null; earlyUid = "u1"; paintRows(JSON.parse(store[CACHE_KEY])); state.user = who');
+    run(c, 'boot()'); await tick();
+    // The today reads are small and land before the library's rows, as on a phone
+    // (the audit's net list: the rows at +136 ms, plan and logs well before).
+    run(c, 'answer(["plan", "workout_logs"])'); await tick(); await tick();
+    await settle(c);
+    assert.equal(count(c, 'workouts'), 1, variant + ': one library read');
+    assert.equal(count(c, 'plan'), 1, variant + ': plan read once for the today card, not twice');
+    assert.equal(count(c, 'workout_logs'), 1, variant + ': workout_logs read once for the today card, not twice');
+    assert.equal(run(c, 'asked[0]'), 'workouts', variant + ': the library read goes out first: ' + run(c, 'asked.join()'));
+    ok('C6 boot (' + variant + '): plan and workout_logs read once, library first');
+  }
+  {
+    const c = world();
+    run(c, 'store[CACHE_KEY] = JSON.stringify({ v: 1, uid: "u1", workouts: [{ id: "w1" }], collections: [], colItems: [] }); rows.plan = [{ workout_id: "w1" }]');
+    run(c, 'boot()'); await settle(c);
+    assert.equal(run(c, 'today.done'), false);
+    // A session is logged: saveSet's insert handler retires the card and redraws it.
+    run(c, 'clock += 5000; rows.workout_logs = [{ started_at: new RealDate(clock).toISOString() }]; today.at = 0; renderToday()'); await settle(c);
+    assert.equal(run(c, 'today.done'), true, 'the card ticks once a session is logged');
+    assert.equal(run(c, 'ticks[ticks.length - 1]'), true, 'and draws the tick');
+    assert.equal(count(c, 'workout_logs'), 2);
+    // The day changes under a phone left open: the next paint asks about the new day.
+    run(c, 'clock += 86400000; rows.plan = []; renderToday()'); await settle(c);
+    assert.equal(run(c, 'today.day'), run(c, 'ymd(new Date())'), 'the card moves to the new day');
+    assert.equal(run(c, 'today.rows.length'), 0);
+    // Pull to refresh a moment later still re-reads today (Make Refresh refresh the today card too).
+    const before = count(c, 'plan');
+    run(c, 'clock += 3000; rows.plan = [{ workout_id: "w1" }]; libraryRev++; load(true)'); await settle(c);
+    assert.equal(count(c, 'plan'), before + 1, 'a refresh re-reads the today card');
+    assert.equal(run(c, 'today.rows.length'), 1);
+    // A render inside the thirty seconds without a refresh does not.
+    const again = count(c, 'plan');
+    run(c, 'clock += 2000; renderToday()'); await settle(c);
+    assert.equal(count(c, 'plan'), again, 'a plain repaint inside half a minute asks nothing');
+    ok('C6 today card: ticks on a log, moves with the day, refresh still re-reads');
+  }
 }
 
 console.log('All ' + n + ' speed checks passed.');

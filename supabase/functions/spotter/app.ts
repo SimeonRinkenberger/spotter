@@ -1282,7 +1282,7 @@ export const APP = String.raw`
     state.unit = "lb"; state.sounds = true; state.haptics = true;
     state.collections = []; state.colItems = []; seenCards = {}; gridCards = {};
     expCache = {}; expWaiting = {}; vidCache = {}; expKey = "";
-    today.rows = []; today.at = 0; today.day = null; today.busy = false; today.shown = false;
+    today.rows = []; today.at = 0; today.day = null; today.busy = false; today.shown = false; today.asked = 0;
     current = null;
     if (sc) scForget();
     if (wo) saveDraft();
@@ -1347,10 +1347,13 @@ export const APP = String.raw`
   function boot() {
     guideUser();
     if (booting) return booting;
-    // Before the network is asked anything: the library someone is looking at is
+    // The library's read goes out first, so the today read the paint below starts
+    // is the younger of the two and load() does not ask for today again.
+    var library = load();
+    // Before the network answers anything: the library someone is looking at is
     // almost always the one they left. Already up if it was painted before the
-    // token came back.
-    if (earlyUid !== state.user.id) paintCache();
+    // token came back, when only the today card is still to ask.
+    if (earlyUid !== state.user.id) paintCache(); else renderToday();
     earlyUid = null;
     var profileReady = loadProfile();
     maybeInstallHint();
@@ -1358,7 +1361,7 @@ export const APP = String.raw`
     // A shared link is saved only once the library is in hand, so the card it
     // creates lands in a rendered grid rather than into an empty one.
     var epoch = accountEpoch, uid = state.user.id;
-    booting = load().then(function () { if (accountNow(epoch, uid)) return consumeShare(); })
+    booting = library.then(function () { if (accountNow(epoch, uid)) return consumeShare(); })
       .then(function () { if (accountNow(epoch, uid)) consumeOpen(); })
       .then(function () { if (accountNow(epoch, uid)) return consumeBilling(); })
       .then(function () { if (accountNow(epoch, uid)) consumeCreator(); })
@@ -1667,6 +1670,7 @@ export const APP = String.raw`
     if (!state.user) return Promise.resolve();
     var uid = state.user.id, epoch = accountEpoch, rev = libraryRev;
     return readOnce("library:" + rev + ":" + !!retry, function () {
+      var begun = Date.now();
       var rows = sb.from("workouts").select("*").eq("user_id", uid)
         .order("created_at", { ascending: false }).limit(200).then(function (r) {
           if (!accountNow(epoch, uid)) return;
@@ -1674,7 +1678,10 @@ export const APP = String.raw`
           // A socket event or local edit after the read started is newer evidence.
           if (rev !== libraryRev) return;
           state.workouts = r.data || [];
-          today.at = 0;
+          // Refresh means refresh, for the today card too, unless the today read
+          // went out after this one did: at boot the cached paint has just asked,
+          // and asking again here read plan and workout_logs twice per launch.
+          if (today.asked < begun) today.at = 0;
           render();
           if (current && $("detail").classList.contains("open")) {
             var fresh = state.workouts.filter(function (w) { return w.id === current.id; })[0];
@@ -2126,7 +2133,7 @@ export const APP = String.raw`
   // only thing that reads plan rows and most sessions never open it, so this does
   // its own read of today's plan and today's logs: two small selects.
 
-  var today = { day: null, rows: [], done: false, at: 0, busy: false, shown: false };
+  var today = { day: null, rows: [], done: false, at: 0, busy: false, shown: false, asked: 0 };
 
   // Anchored to the chip row instead of declared in markup.ts: setView hides that
   // row exactly when the Library is off screen, and one CSS adjacency rule lets
@@ -2138,7 +2145,7 @@ export const APP = String.raw`
   function loadToday() {
     if (today.busy || !state.user) return;
     var key = ymd(new Date()), epoch = accountEpoch, uid = state.user.id;
-    today.busy = true;
+    today.busy = true; today.asked = Date.now();
     Promise.all([
       sb.from("plan").select("workout_id").eq("day", key),
       // Pulled back a day: no time zone can then leave this morning's session

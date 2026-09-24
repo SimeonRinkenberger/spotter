@@ -9538,7 +9538,7 @@ details.details-moving > :not(summary) {
   }
   function clearAccount() {
     if (dismissAiConsent(), native && native.configureSharing(null).catch(function() {
-    }), cancelPumpyReset(), pendingMotion && pendingMotion.disconnect(), $("app").classList.add("hide"), accountEpoch++, reads = {}, inFlight = {}, libraryRev++, logsRev++, planRev++, clearTimeout(undoTimer), undoTimer = null, undoFn = null, clearTimeout(detailCloseTimer), clearTimeout(woCloseTimer), clearTimeout(pendTimer), pendTimer = null, pendPolls = 0, pendBusy = !1, wkChannel && (sb.removeChannel(wkChannel), wkChannel = null), booting = null, earlyUid = null, state.profile = null, state.workouts = [], state.logs = null, state.plan = null, state.awards = null, state.goal = null, heroPct = 0, trainSeg = null, state.unit = "lb", state.sounds = !0, state.haptics = !0, state.collections = [], state.colItems = [], seenCards = {}, gridCards = {}, expCache = {}, expWaiting = {}, vidCache = {}, expKey = "", today.rows = [], today.at = 0, today.day = null, today.busy = !1, today.shown = !1, current = null, sc && scForget(), wo && saveDraft(), clearInterval(woTimer), stopRest(), liveEnd(!1), releaseWake(), wo = null, hist = {}, histReady = !1, strava && (strava = { asked: !1, configured: !1, connected: !1, athlete: null, busy: !1 }), pumpy) {
+    }), cancelPumpyReset(), pendingMotion && pendingMotion.disconnect(), $("app").classList.add("hide"), accountEpoch++, reads = {}, inFlight = {}, libraryRev++, logsRev++, planRev++, clearTimeout(undoTimer), undoTimer = null, undoFn = null, clearTimeout(detailCloseTimer), clearTimeout(woCloseTimer), clearTimeout(pendTimer), pendTimer = null, pendPolls = 0, pendBusy = !1, wkChannel && (sb.removeChannel(wkChannel), wkChannel = null), booting = null, earlyUid = null, state.profile = null, state.workouts = [], state.logs = null, state.plan = null, state.awards = null, state.goal = null, heroPct = 0, trainSeg = null, state.unit = "lb", state.sounds = !0, state.haptics = !0, state.collections = [], state.colItems = [], seenCards = {}, gridCards = {}, expCache = {}, expWaiting = {}, vidCache = {}, expKey = "", today.rows = [], today.at = 0, today.day = null, today.busy = !1, today.shown = !1, today.asked = 0, current = null, sc && scForget(), wo && saveDraft(), clearInterval(woTimer), stopRest(), liveEnd(!1), releaseWake(), wo = null, hist = {}, histReady = !1, strava && (strava = { asked: !1, configured: !1, connected: !1, athlete: null, busy: !1 }), pumpy) {
       var seq = (pumpy.openSeq || 0) + 1, wired = pumpy.wired;
       pumpy = {
         thread: null,
@@ -9571,11 +9571,12 @@ details.details-moving > :not(summary) {
   var booting = null;
   function boot() {
     if (guideUser(), booting) return booting;
-    earlyUid !== state.user.id && paintCache(), earlyUid = null;
+    var library = load();
+    earlyUid !== state.user.id ? paintCache() : renderToday(), earlyUid = null;
     var profileReady = loadProfile();
     maybeInstallHint(), watchWorkouts();
     var epoch = accountEpoch, uid = state.user.id;
-    return booting = load().then(function() {
+    return booting = library.then(function() {
       if (accountNow(epoch, uid)) return consumeShare();
     }).then(function() {
       accountNow(epoch, uid) && consumeOpen();
@@ -9783,11 +9784,11 @@ details.details-moving > :not(summary) {
     if (!state.user) return Promise.resolve();
     var uid = state.user.id, epoch = accountEpoch, rev = libraryRev;
     return readOnce("library:" + rev + ":" + !!retry, function() {
-      var rows = sb.from("workouts").select("*").eq("user_id", uid).order("created_at", { ascending: !1 }).limit(200).then(function(r) {
+      var begun = Date.now(), rows = sb.from("workouts").select("*").eq("user_id", uid).order("created_at", { ascending: !1 }).limit(200).then(function(r) {
         if (accountNow(epoch, uid)) {
           if (r.error) throw r.error;
           if (rev === libraryRev) {
-            if (state.workouts = r.data || [], today.at = 0, render(), current && $("detail").classList.contains("open")) {
+            if (state.workouts = r.data || [], today.asked < begun && (today.at = 0), render(), current && $("detail").classList.contains("open")) {
               var fresh = state.workouts.filter(function(w) {
                 return w.id === current.id;
               })[0];
@@ -10171,12 +10172,12 @@ details.details-moving > :not(summary) {
     var pg = $("libpage"), top = pg.scrollTop + sec2.getBoundingClientRect().top - pg.getBoundingClientRect().top - secTop();
     top < 0 && (top = 0), lessMotion() || !pg.scrollTo ? pg.scrollTop = top : pg.scrollTo({ top: top, behavior: "smooth" });
   }
-  var today = { day: null, rows: [], done: !1, at: 0, busy: !1, shown: !1 }, todayBox = el("div", "todaywrap hide");
+  var today = { day: null, rows: [], done: !1, at: 0, busy: !1, shown: !1, asked: 0 }, todayBox = el("div", "todaywrap hide");
   todayBox.id = "today", $("chips").parentNode.insertBefore(todayBox, $("chips").nextSibling);
   function loadToday() {
     if (!(today.busy || !state.user)) {
       var key = ymd(/* @__PURE__ */ new Date()), epoch = accountEpoch, uid = state.user.id;
-      today.busy = !0, Promise.all([
+      today.busy = !0, today.asked = Date.now(), Promise.all([
         sb.from("plan").select("workout_id").eq("day", key),
         // Pulled back a day: no time zone can then leave this morning's session
         // outside the window, and the local date below is what decides.
