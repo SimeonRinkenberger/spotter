@@ -28,7 +28,12 @@ function freeTrialDays(product, eligible) {
   return periodDays(intro.periodUnit, (intro.periodNumberOfUnits || 0) * (intro.cycles || 1));
 }
 
+// RevenueCat's Test Store key, compiled in by tools/ios/build.mjs only for a Debug
+// simulator bundle (SPOTTER_TEST_STORE=1); an empty string in every other build.
+const TEST_STORE = typeof __SPOTTER_TEST_STORE__ === 'string' && /^test_/.test(__SPOTTER_TEST_STORE__) ? __SPOTTER_TEST_STORE__ : '';
+
 export function createPurchases(platform) {
+  const apiKey = TEST_STORE || config[platform];
   let configured = false, currentUser = null, queue = Promise.resolve(), packages = {}, generation = 0;
   const serial = work => { const next = queue.catch(() => {}).then(work); queue = next; return next; };
   const guard = version => { if (version !== generation) throw new Error('The account changed. Please reopen subscriptions.'); };
@@ -37,14 +42,14 @@ export function createPurchases(platform) {
     return serial(async () => { guard(version); const result = await work(version); guard(version); return result; });
   };
   async function identify(userId) {
-    if (!config[platform]) throw new Error('Subscriptions are not available yet. Please try again later.');
+    if (!apiKey) throw new Error('Subscriptions are not available yet. Please try again later.');
     if (!userId) throw new Error('Sign in before opening subscriptions.');
-    if (!configured) { await Purchases.configure({ apiKey: config[platform], appUserID: userId }); configured = true; }
+    if (!configured) { await Purchases.configure({ apiKey, appUserID: userId }); configured = true; }
     else if (currentUser !== userId) { packages = {}; await Purchases.logIn({ appUserID: userId }); }
     currentUser = userId;
   }
   return {
-    configured: () => !!config[platform],
+    configured: () => !!apiKey,
     prices: userId => operation(async version => {
       await identify(userId);
       guard(version);

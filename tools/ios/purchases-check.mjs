@@ -82,6 +82,19 @@ assert.equal(calls.filter(c => c[0] === 'eligibility').length, before, 'Play is 
 offering = { monthly: product(6.99), annual: product(49.99, { defaultOption: { freePhase: null } }) };
 assert.equal((await play.prices('g')).plans.plus.year.trial_days, 0, 'no free phase, no trial');
 
+// ---------- the Test Store key exists only in a Debug simulator bundle ----------
+{
+  const keys = [];
+  const store = { ...sdk, configure: async ({ apiKey }) => { keys.push(apiKey); } };
+  const make = (testKey) => new Function('Purchases', 'config', '__SPOTTER_TEST_STORE__', source + '\nreturn createPurchases;')(store, { ios: 'appl_public', android: 'goog_public' }, testKey);
+  await make('')('ios').prices('k1');
+  await make(undefined)('android').prices('k2');
+  await make('test_FromTheIgnoredFile')('ios').prices('k3');
+  await make('sk_notATestKey')('ios').prices('k4');
+  assert.deepEqual(keys, ['appl_public', 'goog_public', 'test_FromTheIgnoredFile', 'appl_public'],
+    'the store key unless build.mjs compiled a test_ key in, and nothing else is ever taken for one');
+}
+
 // ---------- one period on sale is still a page with a price ----------
 offering = { monthly: null, annual: product(49.99) };
 p = await trialApp.prices('t');
@@ -91,4 +104,4 @@ await assert.rejects(trialApp.purchase('t', 'month'), /reopen subscriptions/, 't
 offering = { monthly: null, annual: null };
 await assert.rejects(trialApp.prices('t'), /temporarily unavailable/, 'nothing on sale is the unavailable state');
 offering = null;
-console.log('PASS native subscriptions: store prices, eligible trial days (Apple intro + eligibility, Play free phase), one period on sale, sign-in, package refresh on identity change, cancellation recovery, restore, sign-out invalidates in-flight prices and queued purchases/restores, next account recovery.');
+console.log('PASS native subscriptions: store prices, the Test Store key only from a Debug bundle, eligible trial days (Apple intro + eligibility, Play free phase), one period on sale, sign-in, package refresh on identity change, cancellation recovery, restore, sign-out invalidates in-flight prices and queued purchases/restores, next account recovery.');
