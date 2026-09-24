@@ -17526,9 +17526,28 @@ export const APP = String.raw`
     t = setTimeout(off, 350);
   }
 
+  // A touch's events are addressed to the node the finger went down on, and a
+  // render that replaces that node mid-touch can leave its pointerup with
+  // nowhere to bubble: the drag it should have ended stays held, and every
+  // swipe after it was refused for as long as the app stayed open. A new
+  // primary pointer proves the old finger has lifted, so a stale drag is let go
+  // of here, settled on the nearest page if it had moved the track.
+  function dropStaleDrag() {
+    var d = drag;
+    drag = null;
+    if (d.raf) cancelAnimationFrame(d.raf);
+    if (!d.lock) return;
+    try { pagesEl.releasePointerCapture(d.id); } catch (err) { /* already gone */ }
+    var near = clamp(Math.round(pos / pageW), 0, LAST);
+    commit(near);
+    springTo(near * pageW, 0);
+  }
+
   pagesEl.addEventListener("pointerdown", function (e) {
     if (e.pointerType !== "touch" && e.pointerType !== "pen") return;
-    if (drag || overlayShowing()) return;
+    if (drag && !e.isPrimary) return;   // a second finger joining the drag
+    if (drag) dropStaleDrag();
+    if (overlayShowing()) return;
     if (noDragIn(e.target)) return;
     // Safari's back gesture starts at the very edge. Taking it over inside a
     // browser tab would trap the user on the page; installed to the home screen
