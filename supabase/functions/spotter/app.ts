@@ -1290,7 +1290,7 @@ export const APP = String.raw`
         busy: false, live: null, stick: true, wired: wired, openSeq: seq };
     }
     if (native && native.purchases) native.purchases.clear().catch(function () {});
-    if (billing) { billing.prices = null; billing.waiting = null; billing.busy = false; billing.sub = null; billing.subAsked = false; billing.limits = null; billing.said = null; billing.ctx = null; billing.cc = null; billing.ccWaiting = null; billing.redeeming = false; }
+    if (billing) { billing.prices = null; billing.caps = null; billing.capsWaiting = null; billing.asking = false; billing.fails = 0; billing.busy = false; billing.sub = null; billing.subAsked = false; billing.limits = null; billing.said = null; billing.ctx = null; billing.cc = null; billing.ccWaiting = null; billing.redeeming = false; }
     ["grid", "chips", "colbar", "libcount", "empty", "dinner", "pumpylog", "pumpyannounce", "pumpyctx", "pumpythreads", "trainview", "today", "resume", "recapopts"].forEach(function (id) {
       var n = $(id); if (n) n.innerHTML = "";
     });
@@ -1396,11 +1396,11 @@ export const APP = String.raw`
     idle(function () {
       if (!accountNow(epoch, uid)) return;
       // One GET per session, and only for an account that has something to be
-      // told: a paid or staff account never asks about prices at all, and a
-      // project without a Stripe key answers "not configured" and is cached as
-      // such, so nothing about the page changes.
+      // told: a paid or staff account never asks. The store's prices are asked
+      // now too, so the Plus page opens on them.
       if (!isFree()) return;
-      loadPrices().then(renderLibCount);
+      loadCaps().then(renderLibCount);
+      if (native && native.purchases) loadPrices();
     }, 700);
   }
 
@@ -1660,9 +1660,9 @@ export const APP = String.raw`
 
   // A background refresh is not a new visit. Keep the mounted body (including
   // expanded rows, focus and playing media) when its source has not changed.
-  function refreshDetail(w) {
+  function refreshDetail(w, force) {
     if (!current || current.id !== w.id) return;
-    if (JSON.stringify(current) === JSON.stringify(w)) return;
+    if (!force && JSON.stringify(current) === JSON.stringify(w)) return;
     var old = current, d = $("dinner"), scroll = $("detail").scrollTop;
     if (!$("detail").classList.contains("open")) { current = w; return; }
     var source = d.querySelector(".source-disclosure");
@@ -3159,7 +3159,12 @@ export const APP = String.raw`
           if (!trial.isConnected || !r.video_previews) return;
           var left = Math.max(0, r.video_previews.cap - r.video_previews.used);
           trial.textContent = left ? "Try a Plus read · " + left + " left this month" : "Explore Spotter Plus";
-          if (!left) trial.onclick = function () { openPlans({ kind: "media" }); };
+          // Opens on what ran out, as a refused preview would.
+          if (!left) trial.onclick = function () {
+            var c = billing.caps;
+            openPlans({ kind: "media", plan: "free", scope: "month", cap: r.video_previews.cap, used: r.video_previews.used,
+              next_plan: "plus", next_cap: c ? capNum(c.plus.month_reads) : undefined });
+          };
         }).catch(function () {});
       }
       if (isFree()) {
@@ -12309,14 +12314,14 @@ export const APP = String.raw`
     var box = el("div", "chartcard");
     box.appendChild(el("h3", null, "Awards"));
     var grid = el("div", "tgrid");
-    var shown = isFree() ? have.slice(0, 12) : have;
+    var shown = isFree() ? have.slice(0, AWARDS_KEPT) : have;
     shown.forEach(function (a) { grid.appendChild(medallion(a)); });
     lockedAwards(st, logs).forEach(function (l) { grid.appendChild(medallion(l, true)); });
     box.appendChild(grid);
     // A count, not a paywall: nothing earned here is ever taken away.
-    if (isFree() && have.length > 12) {
+    if (isFree() && have.length > AWARDS_KEPT) {
       box.appendChild(el("div", "bodynote",
-        (have.length - 12) + " earlier awards are kept in Plus."));
+        (have.length - AWARDS_KEPT) + " earlier awards are kept in Plus."));
     }
     return box;
   }
@@ -13219,7 +13224,7 @@ export const APP = String.raw`
     if (isFree()) {
       var offer = el("div", "reader-offer");
       offer.appendChild(el("b", null, "Pumpy · Included with Spotter Plus"));
-      offer.appendChild(el("p", null, "Combine your saved workouts, build a routine for your goals, get coaching and find alternate exercises. Upgrade to let Pumpy work with your attachments."));
+      offer.appendChild(el("p", null, "Combine your saved workouts, build a routine for your goals, get coaching and find alternate exercises."));
       var upgrade = el("button", "btn", "Explore Spotter Plus");
       upgrade.onclick = function () { openPlans({ kind: "pumpy" }); };
       offer.appendChild(upgrade); frag.appendChild(offer);
@@ -13695,6 +13700,11 @@ export const APP = String.raw`
     limits: null,      // last /api/limits, for the Settings usage line
     said: null,        // the plan the server last reported, which outranks the row
     ctx: null,         // the 429 the sheet was opened by, or null from Settings
+    caps: null,        // what each plan gets, from the server: {free, plus, features}
+    capsWaiting: null,
+    asking: false,     // the store is being asked for prices right now
+    fails: 0,          // store answers that were not a price, this session
+    shown: null,       // which page the sheet last painted
     interval: "year", busy: false,
     cc: null,          // last /api/creator/me: {referral, creator, discount}
     ccWaiting: null, ccRev: 0,
@@ -13736,26 +13746,44 @@ export const APP = String.raw`
       return native.purchases.prices(uid).then(function (r) {
         if (!accountNow(epoch, uid)) return null;
         billing.prices = r; return r;
-      }).catch(function () {
+      }).catch(function (e) {
         if (!accountNow(epoch, uid)) return null;
+        // The reason is for a TestFlight console; the page only says the store did not answer.
+        console.warn("Spotter Plus: no store price", e && e.message);
         billing.prices = { configured: false, nativeStore: true }; return billing.prices;
       });
     }
-    if (billing.prices) return Promise.resolve(billing.prices);
-    if (billing.waiting) return billing.waiting;
-    billing.waiting = api("billing/prices", { method: "GET" }).then(function (r) {
+    return loadCaps().then(function () { return billing.prices; });
+  }
+
+  // What each plan gets comes from the server on every platform, because the
+  // server is what enforces it; a store only knows prices. The same answer is
+  // the web's own prices, which the web never sells from. Asked once per
+  // account, and again after a failure.
+  function loadCaps() {
+    if (billing.caps) return Promise.resolve(billing.caps);
+    if (billing.capsWaiting) return billing.capsWaiting;
+    var epoch = accountEpoch, uid = state.user && state.user.id;
+    billing.capsWaiting = api("billing/prices", { method: "GET" }).then(function (r) {
       if (!accountNow(epoch, uid)) return null;
-      billing.waiting = null;
-      billing.prices = (r && r.status === "ok" && r.configured) ? r : { configured: false };
-      return billing.prices;
-    }).catch(function () {
-      if (!accountNow(epoch, uid)) return null;
-      // A route that has not shipped, or a browser that would not make the call.
-      billing.waiting = null;
-      billing.prices = { configured: false };
-      return billing.prices;
+      billing.capsWaiting = null;
+      var c = r && r.caps;
+      if (c && c.free && c.plus) billing.caps = { free: c.free, plus: c.plus, features: r.features || null };
+      if (!native) billing.prices = r && r.status === "ok" && r.configured ? r : { configured: false };
+      return billing.caps;
+    }, function () {
+      if (accountNow(epoch, uid)) billing.capsWaiting = null;
+      return null;
     });
-    return billing.waiting;
+    return billing.capsWaiting;
+  }
+
+  // The usage under Basic's column: the /api/limits answer Settings reads, asked
+  // fresh because the page is where somebody decides on it.
+  function loadUse() {
+    return api("limits", { method: "GET" }).then(function (r) {
+      if (r && r.status === "ok") { billing.limits = r; adoptPlan(r.plan); }
+    }).catch(function () {});
   }
 
   // Straight from PostgREST under the owner's own RLS. Before the migration is
@@ -13765,14 +13793,16 @@ export const APP = String.raw`
     if (billing.subAsked) return Promise.resolve(billing.sub);
     billing.subAsked = true;
     var epoch = accountEpoch, uid = state.user && state.user.id;
+    // The store row on the web too: it is how the web knows which store to point to.
     var legacy = sb.from("subscriptions").select("*").maybeSingle();
-    var request = native && native.purchases ? Promise.all([legacy, sb.from("store_entitlements").select("*").maybeSingle()]).then(function (rows) {
+    var request = Promise.all([legacy, sb.from("store_entitlements").select("*").maybeSingle()]).then(function (rows) {
       var store = rows[1].data;
       if (store && store.active && (!store.expires_at || Date.parse(store.expires_at) > Date.now())) {
-        return { data: { source: store.source, plan: "plus", status: "active", current_period_end: store.expires_at } };
+        return { data: { source: store.source, plan: "plus", status: "active", current_period_end: store.expires_at,
+          cancel_at_period_end: store.will_renew === false } };
       }
       return rows[0];
-    }) : legacy;
+    });
     return request.then(function (r) {
       if (!accountNow(epoch, uid)) return null;
       if (r.error) throw r.error;
@@ -13793,32 +13823,89 @@ export const APP = String.raw`
     return (n >= 100 ? Math.round(n / 50) * 50 : Math.round(n / 10) * 10).toLocaleString();
   }
 
-  // The sell is the allowance, so the allowance is what the rows say. Every
-  // number here is the same number the server counts a refusal against — it
-  // comes down in the caps payload — because a benefit row that quotes a figure nothing
-  // enforces is how the old "15 video reads a day" got onto a price page while
-  // the money funded fewer than one.
-  function planBenefits(caps) {
-    var f = caps && caps.free, p = caps && caps.plus;
-    if (!f || !p) return [];
-    var out = [], lib = capNum(p.library), reads = capNum(p.month_reads);
-    out.push(lib === null
-      ? "Keep every workout you save — Basic holds " + f.library + "."
-      : "Hold " + capMany(lib) + " saved workouts, instead of " + f.library + ".");
-    if (reads === null) {
-      // An older function that does not send the allowances yet. Say the shape
-      // of the thing rather than a number this page cannot stand behind.
-      out.push("Read the movements, the spoken cues and the text on screen in supported videos.");
-      out.push("Video reading and coaching have monthly allowances; Settings shows what is left.");
-    } else {
-      out.push("Read " + reads + " videos a month in full — the movements, the spoken cues and the " +
-        "text on screen. Basic reads " + capMany(capNum(f.month_reads)) + ".");
-      out.push(capMany(capNum(p.month_answers)) + " coaching answers a month from Pumpy, and " +
-        capMany(capNum(p.month_helpers)) + " explanations and swaps.");
+  // Basic's awards page keeps its latest dozen (trophyCase); Plus keeps them all.
+  var AWARDS_KEPT = 12;
+
+  // The Basic | Plus rows: [label, Basic, Plus, what this Basic account has used
+  // and whether that is all of it]. Every figure is one the server counts a
+  // refusal against, from the caps it sends, because a row quoting a number
+  // nothing enforces is how "15 video reads a day" once reached a price page. A
+  // feature is a list of the plans that have it; an older server without the
+  // list gets today's truth, which is Plus has it and Basic does not.
+  function planRows(c, mine) {
+    var f = c.free, p = c.plus, m = mine && billing.limits && billing.limits.month, held = state.workouts.length;
+    function has(k, plan) { var l = c.features && c.features[k]; return l ? l.indexOf(plan) >= 0 : plan !== "free"; }
+    function month(n) { n = capNum(n); return n === null ? "No limit" : n ? n.toLocaleString() + " a month" : "—"; }
+    function shelfN(n) { n = capNum(n); return n === null ? "No limit" : n.toLocaleString(); }
+    function kept(plan) { return has("awards_all", plan) ? "All" : "Latest " + AWARDS_KEPT; }
+    function used(k) {
+      var u = m ? num(m[k]) : null, cap = m ? capNum(m[k + "_cap"]) : null;
+      return u === null || !cap ? null : [u + " of " + cap + " used", u >= cap];
     }
-    out.push("Saving from a caption, logging, your plan and your progress are free and are never metered.");
-    out.push("Stop whenever you like — everything you saved stays yours, and stays readable.");
-    return out;
+    var lib = capNum(f.library);
+    return [
+      ["Saved workouts", shelfN(f.library), shelfN(p.library), mine && lib ? [held + " saved", held >= lib] : null],
+      ["Full video reads", month(f.month_reads), month(p.month_reads), used("reads")],
+      ["Pumpy coach", has("pumpy", "free") ? "Included" : "—", has("pumpy", "plus") ? "Included" : "—", null],
+      ["Explanations and swaps", month(f.month_helpers), month(p.month_helpers), used("helpers")],
+      ["Uploads", month(f.month_uploads), month(p.month_uploads), used("uploads")],
+      ["Awards history", kept("free"), kept("plus"), null]
+    ];
+  }
+
+  // A real table, so a screen reader says "Uploads, Basic, 1 a month". The Plus
+  // column is one tinted band: the page's whole argument, read at a glance.
+  function paintTable() {
+    var box = $("plangood"), c = billing.caps;
+    box.innerHTML = "";
+    if (!c) {
+      if (billing.capsWaiting || !state.user) {
+        ["sline", "sline half", "sline", "sline half"].forEach(function (k) { box.appendChild(skelRow(k)); });
+        return;
+      }
+      var soft = el("p", "plansoft", "What each plan includes did not load. ");
+      var again = el("button", "fixlink", "Try again");
+      again.onclick = function () { retryPrices(again); };
+      soft.appendChild(again);
+      box.appendChild(soft);
+      return;
+    }
+    var t = el("table", "ptable"), head = el("tr"), body = el("tbody");
+    t.appendChild(el("caption", "sr-only", "What Basic and Plus include"));
+    head.appendChild(el("td"));
+    ["Basic", "Plus"].forEach(function (w, i) {
+      var th = el("th", i ? "pplus" : null, w);
+      th.setAttribute("scope", "col");
+      head.appendChild(th);
+    });
+    t.appendChild(el("thead")).appendChild(head);
+    planRows(c, isFree()).forEach(function (r) {
+      var tr = el("tr"), th = el("th", null, r[0]);
+      th.setAttribute("scope", "row");
+      tr.appendChild(th);
+      [r[1], r[2]].forEach(function (v, i) {
+        var td = el("td", i ? "pplus" : null);
+        td.setAttribute("data-l", i ? "Plus" : "Basic");
+        if (v === "—") {
+          td.appendChild(el("span", "pno", "—")).setAttribute("aria-hidden", "true");
+          td.appendChild(el("span", "sr-only", "Not included"));
+        } else {
+          if (v === "Included") td.appendChild(ic("check"));
+          td.appendChild(document.createTextNode(v));
+        }
+        if (!i && r[3]) td.appendChild(el("small", r[3][1] ? "out" : null, r[3][0]));
+        tr.appendChild(td);
+      });
+      body.appendChild(tr);
+    });
+    t.appendChild(body);
+    box.appendChild(t);
+    var free = el("div", "pfree"), line = el("span");
+    free.appendChild(ic("check"));
+    line.appendChild(el("b", null, "Always free: "));
+    line.appendChild(document.createTextNode("logging, Workout Mode, your plan, progress and export. What you save stays yours."));
+    free.appendChild(line);
+    box.appendChild(free);
   }
 
   // A limit line has to carry three things — what you hit, when it comes back,
@@ -13836,9 +13923,9 @@ export const APP = String.raw`
   var MULT = ["", "", "twice", "three times", "four times", "five times", "six times"];
 
   function pumpyRoom(up) {
-    var caps = billing.prices && billing.prices.caps;
-    var f = caps && caps.free && num(caps.free.pumpy_month);
-    var p = caps && caps.plus && num(caps.plus.pumpy_month);
+    var caps = billing.caps;
+    var f = caps && num(caps.free.pumpy_month);
+    var p = caps && num(caps.plus.pumpy_month);
     var mult = f && p ? Math.round(p / f) : 0;
     return "On " + up + " I have " +
       (mult >= 2 && mult < MULT.length ? "about " + MULT[mult] + " as much room" : "a lot more room") + ".";
@@ -13855,38 +13942,27 @@ export const APP = String.raw`
     // Pumpy stays in his own first person, wherever this is read. There used to
     // be a second, daily branch here saying his credits came back at midnight;
     // they never did — the ladder has always been monthly — so it is gone.
+    // Pumpy is Plus-only, so a Basic account opening this from him has used
+    // nothing: "used up" is said only with a cap and a count that say so.
     if (c.kind === "pumpy") {
-      return "That is this month’s coaching used up — my credits come back on the 1st. " + pumpyRoom(up);
+      return cap !== null && num(c.used) >= cap
+        ? "That is this month’s coaching used up — my credits come back on the 1st. " + pumpyRoom(up)
+        : "Pumpy is part of Spotter Plus.";
     }
     var w = CAP_WORDS[c.kind];
     if (!w || cap === null) return "";
     var month = c.scope === "month";
     var noun = c.kind === "uploads" && cap === 1 ? "upload" : w[0];
-    return "That is " + cap + " " + noun + (month ? " this month, " : " today, ") + mine + "’s " +
+    // A context that does not know the next plan's number says nothing about it.
+    return ("That is " + cap + " " + noun + (month ? " this month, " : " today, ") + mine + "’s " +
       (month ? "whole allowance. It comes back on the 1st. " : "burst limit. It resets at midnight UTC. ") +
-      (next === null ? up + " has no limit here."
-        : up + " " + w[1] + " " + next + (month ? " a month." : " a day."));
+      (c.next_cap === undefined ? "" : next === null ? up + " has no limit here."
+        : up + " " + w[1] + " " + next + (month ? " a month." : " a day."))).trim();
   }
 
   // ---------- the sheet ----------
 
   function skelRow(cls) { return el("div", "skel " + cls); }
-
-  // Never a blank rectangle waiting on Stripe, and never a price we do not have.
-  function paintSkeleton() {
-    var good = $("plangood"), cards = $("plancards");
-    good.innerHTML = ""; cards.innerHTML = "";
-    good.appendChild(skelRow("sline"));
-    good.appendChild(skelRow("sline half"));
-    good.appendChild(skelRow("sline"));
-    good.appendChild(skelRow("sline half"));
-    cards.appendChild(skelRow("scard"));
-    cards.appendChild(skelRow("scard"));
-    $("planbuy").classList.add("hide");
-    $("plantrial").classList.add("hide");
-    $("plansoon").classList.add("hide");
-    $("planfine").textContent = "";
-  }
 
   function priceCard(iv, plus, p) {
     var yearly = iv === "year", cur = p.currency;
@@ -13904,7 +13980,7 @@ export const APP = String.raw`
     amt.appendChild(document.createTextNode(p.nativeStore ? plus[iv].localized : money(pay, cur)));
     row.appendChild(amt);
     b.appendChild(row);
-    var monthlyYear = plus.month.amount * 12;
+    var monthlyYear = plus.month ? plus.month.amount * 12 : 0;
     if (yearly) {
       var intro = pay !== full, saved = monthlyYear - pay;
       if (monthlyYear > 0 && saved > 0) {
@@ -13924,6 +14000,19 @@ export const APP = String.raw`
     return b;
   }
 
+  // One period the store did not return: shown, named and not choosable, so
+  // the other one is still a page with a price on it.
+  function goneCard(iv) {
+    var b = el("button", "pcard off");
+    b.type = "button";
+    b.disabled = true;
+    b.setAttribute("role", "radio");
+    b.setAttribute("aria-checked", "false");
+    b.appendChild(el("div", "prow")).appendChild(el("span", "pname", iv === "year" ? "Yearly" : "Monthly"));
+    b.appendChild(el("div", "pmeta", "Not available right now"));
+    return b;
+  }
+
   // The button is the thing being watched while somebody decides, so its word
   // cross-fades rather than cutting under the thumb.
   function setBuyLabel(text) {
@@ -13934,9 +14023,13 @@ export const APP = String.raw`
     setTimeout(function () { s.textContent = text; s.classList.remove("fade"); }, 130);
   }
 
+  // Under every page: the table's figures are monthly, and none of them is a
+  // promise about Spotter's own shared daily AI budget.
+  var PLAN_RESET = "Monthly allowances come back on the 1st, 00:00 UTC. New AI work can pause when Spotter’s shared daily allowance is reached; saved workouts stay available.";
+
   function finePrint(p, plus, iv, pay, full, days) {
     var cur = p.currency, first;
-    if (p.nativeStore) return "Renews automatically at " + (plus[iv].localized || money(full, cur)) + (iv === "month" ? " per month" : " per year") + " until cancelled. Manage or cancel in your store subscription settings. Any eligible offer and its terms appear in the store confirmation.";
+    if (p.nativeStore) return (days > 0 ? "After the " + days + "-day free trial, it renews" : "Renews") + " automatically at " + (plus[iv].localized || money(full, cur)) + (iv === "month" ? " per month" : " per year") + " until cancelled. Manage or cancel in your store subscription settings. Any eligible offer and its terms appear in the store confirmation.";
     if (iv === "month") {
       first = money(pay, cur) + " a month until you cancel.";
     } else if (pay !== full) {
@@ -13964,23 +14057,20 @@ export const APP = String.raw`
       cards[i].setAttribute("aria-checked", on ? "true" : "false");
     }
     var full = plus[iv].amount, pay = yearly && p.founding ? p.founding.first_year_amount : full;
-    var days = num(p.trial_days) || 0, trial = $("plantrial");
-    // Yearly only, per the contract, and the date is computed so the sentence is
-    // still true on the day it is read.
-    if (yearly && days > 0) {
+    // The store's own eligible offer for this period (purchases.js), or the web
+    // contract's yearly trial. The date is computed so the sentence is still
+    // true on the day it is read.
+    var days = num(plus[iv].trial_days), trial = $("plantrial");
+    if (days === null) days = yearly ? num(p.trial_days) || 0 : 0;
+    if (days > 0) {
       trial.textContent = "Free for " + days + " days. We will not charge you before " +
         new Date(Date.now() + days * 86400000).toLocaleDateString(undefined, { day: "numeric", month: "long" }) +
         ", and you can cancel before then.";
       trial.classList.remove("hide");
     } else { trial.textContent = ""; trial.classList.add("hide"); }
-    setBuyLabel(yearly && days > 0 ? "Start " + days + " free days"
+    setBuyLabel(days > 0 ? "Start " + days + " free days"
       : "Subscribe for " + (p.nativeStore ? plus[iv].localized : money(pay, cur)) + (yearly ? " a year" : " a month"));
-    // What Basic keeps, said on the paid screen rather than only on the free
-    // one: nobody should have to buy Plus to find out what they already had.
-    var fr = p.caps && p.caps.free, basic = capNum(fr && fr.month_reads);
-    $("planfine").textContent = finePrint(p, plus, iv, pay, full, days) +
-      (basic === null ? "" : " Basic reads " + basic + " videos a month in full, and everything you have already saved stays readable for ever.") +
-      " Allowances reset on the 1st, 00:00 UTC. During beta, new AI work can also pause when Spotter’s shared allowance is reached; saved workouts remain available.";
+    $("planfine").textContent = finePrint(p, plus, iv, pay, full, days) + " " + PLAN_RESET;
   }
 
   function pickInterval(iv) {
@@ -13990,36 +14080,100 @@ export const APP = String.raw`
     paintChoice();
   }
 
+  // Which page this is. "plus" for an account that has it, which is never sold
+  // to; "web", because the web never sells; and in the app "buy" once the store
+  // gave a price, "wait" while it is asked, "down" when it did not answer.
+  function planState() {
+    if (!isFree()) return "plus";
+    if (!(native && native.purchases)) return "web";
+    var p = billing.prices, plus = p && p.configured && p.plans && p.plans.plus;
+    return plus && (plus.year || plus.month) ? "buy" : billing.asking || !p ? "wait" : "down";
+  }
+
+  // One sheet, four pages: the comparison is the same on all of them, and only
+  // what stands where the prices would changes. Painted from whatever is known,
+  // and again as each answer lands.
   function paintPlans() {
-    var p = billing.prices || { configured: false };
-    var good = $("plangood"), cards = $("plancards");
-    good.innerHTML = ""; cards.innerHTML = "";
+    var st = planState(), was = billing.shown, store = !!(native && native.purchases);
+    var p = billing.prices, plus = st === "buy" && p.plans.plus, cards = $("plancards");
+    billing.shown = st;
     paintPlanCode();
-    planBenefits(p.caps).forEach(function (t) {
-      var row = el("div", "pgood");
-      row.appendChild(ic("check"));
-      row.appendChild(el("span", null, t));
-      good.appendChild(row);
-    });
-    var plus = p.plans && p.plans.plus;
-    var ready = !!(p.configured && plus && plus.month && plus.year);
-    $("plansoon").classList.toggle("hide", ready);
-    $("planbuy").classList.toggle("hide", !ready);
-    $("plandot2").classList.toggle("hide", !ready);
-    $("planrestore").classList.toggle("hide", !ready && !(native && native.purchases));
-    if (p.nativeStore) $("plansoon").textContent = "Subscriptions are temporarily unavailable. Please try again later. Existing purchases can be restored below.";
-    if (!ready) {
-      $("plantrial").classList.add("hide");
-      $("planfine").textContent = "";
-      return;
+    paintTable();
+    cards.innerHTML = "";
+    if (st === "wait") { cards.appendChild(skelRow("scard")); cards.appendChild(skelRow("scard")); }
+    if (plus) {
+      if (!plus[billing.interval]) billing.interval = plus.year ? "year" : "month";
+      // Yearly first and pre-selected: annual keeps 44% of subscribers at twelve
+      // months against monthly's 17%, and pre-selecting it moved the mix 70% in
+      // Superwall's tests. Monthly is still one tap away.
+      ["year", "month"].forEach(function (iv) { cards.appendChild(plus[iv] ? priceCard(iv, plus, p) : goneCard(iv)); });
     }
-    // Yearly first and pre-selected: annual keeps 44% of subscribers at twelve
-    // months against monthly's 17%, and pre-selecting it moved the mix 70% in
-    // Superwall's tests. Monthly is still one tap away.
-    cards.appendChild(priceCard("year", plus, p));
-    cards.appendChild(priceCard("month", plus, p));
+    cards.classList.toggle("hide", !plus && st !== "wait");
+    $("planbuy").classList.toggle("hide", !plus);
     $("planbuy").disabled = billing.busy;
-    paintChoice();
+    paintSoon(st);
+    $("plannot").textContent = st === "plus" ? "Done" : "Not now";
+    ["planrestore", "planmanage", "plandot2", "plandot3"].forEach(function (id) { $(id).classList.toggle("hide", !store); });
+    if (plus) paintChoice();
+    else { $("plantrial").classList.add("hide"); $("planfine").textContent = PLAN_RESET; }
+    // A page that changes under the reader cross-fades in place: the store
+    // answering, Try again landing, a restore making this Plus.
+    if (was && was !== st && $("plansheet").classList.contains("open") && !lessMotion()) {
+      [$("planbox"), $("planbuy")].forEach(function (n) {
+        n.classList.remove("planswap"); void n.offsetWidth; n.classList.add("planswap");
+      });
+    }
+  }
+
+  // What stands where the prices would when there are none: why, and the one
+  // thing to do about it. Never a price we do not have.
+  function paintSoon(st) {
+    var n = $("plansoon"), s = billing.sub, src = s && s.source, name = storeName();
+    n.innerHTML = "";
+    n.classList.toggle("hide", st === "buy" || st === "wait");
+    if (st === "web") {
+      n.appendChild(el("b", null, "Spotter Plus is bought in the Spotter app."));
+      n.appendChild(el("p", null, "It belongs to your account, so Plus bought in the app works here too."));
+    } else if (st === "down") {
+      n.appendChild(el("b", null, name.charAt(0).toUpperCase() + name.slice(1) + " isn’t answering right now, so we can’t show a price."));
+      n.appendChild(el("p", null, "Nothing has been charged." +
+        (billing.fails >= 2 ? " If this keeps happening, update Spotter from " + name + "." : "")));
+      var retry = el("button", "btn");
+      retry.appendChild(ic("refresh"));
+      retry.appendChild(document.createTextNode("Try again"));
+      retry.onclick = function () { retryPrices(retry); };
+      n.appendChild(retry);
+    } else if (st === "plus") {
+      var end = s && dayMonth(s.current_period_end, true);
+      n.appendChild(el("b", null, myPlan() === "staff" ? "This account has everything in Plus." : "You have Spotter Plus."));
+      if (end) n.appendChild(el("p", null, (s.cancel_at_period_end || s.cancel_at ? "Ends " : "Renews ") + end + "."));
+      if (native && native.purchases) {
+        var manage = el("button", "btn ghost", "Manage subscription");
+        manage.onclick = function () { openPortal(manage); };
+        n.appendChild(manage);
+      } else if (src === "apple" || src === "google") {
+        n.appendChild(el("p", null, "Manage it in " + (src === "google" ? "Google Play on your phone." : "the App Store on your iPhone.")));
+      }
+    }
+  }
+
+  // Asks the store (and the server, if the table is missing) once more and
+  // paints the answer in place. The spinner stays half a second at least: a
+  // refusal faster than that reads as a button that did nothing.
+  function retryPrices(btn) {
+    if (billing.asking) return;
+    var epoch = accountEpoch, uid = state.user && state.user.id, at = Date.now();
+    billing.asking = true;
+    btn.disabled = true;
+    if (btn.firstChild && btn.firstChild.classList) btn.firstChild.classList.add("spin");
+    Promise.all([loadPrices(), loadCaps()]).then(function () {
+      setTimeout(function () {
+        if (!accountNow(epoch, uid)) return;
+        billing.asking = false;
+        if (planState() === "down") billing.fails++;
+        if ($("plansheet").classList.contains("open")) paintPlans();
+      }, Math.max(0, 500 - (Date.now() - at)));
+    });
   }
 
   function paintCtx() {
@@ -14030,17 +14184,25 @@ export const APP = String.raw`
 
   function openPlans(ctx) {
     var epoch = accountEpoch, uid = state.user && state.user.id;
+    var ask = !!(native && native.purchases) && isFree();
     billing.ctx = ctx && ctx.kind ? ctx : null;
     billing.interval = "year";
+    billing.shown = null;
+    // The store is asked on every open, so a page that said "not answering" last
+    // time waits for this answer instead of repeating the old one.
+    billing.asking = ask && planState() !== "buy";
+    // Asked before the first paint, so a table still on its way is drawn as one.
+    var asked = Promise.all([loadCaps(), ask ? loadPrices() : null, isFree() ? loadUse() : loadSub()]);
     paintCtx();
-    if (!billing.prices) paintSkeleton();
     // The fold closes with the sheet; a code half-typed last time is not a code.
     $("plancodeform").classList.add("hide");
     $("plancodein").value = "";
-    paintPlanCode();
+    paintPlans();
     openSheet("plansheet");
-    loadPrices().then(function () {
+    asked.then(function () {
       if (!accountNow(epoch, uid)) return;
+      billing.asking = false;
+      if (ask && planState() === "down") billing.fails++;
       if ($("plansheet").classList.contains("open")) paintPlans();
     });
     loadCreator().then(function () {
@@ -14094,7 +14256,7 @@ export const APP = String.raw`
 
   function nativePurchase(restore, btn) {
     if (!state.user || billing.busy) return;
-    var uid = state.user.id, epoch = accountEpoch;
+    var uid = state.user.id, epoch = accountEpoch, before = myPlan();
     billing.busy = true;
     if (btn) btn.disabled = true;
     var work = restore ? native.purchases.restore(uid) : native.purchases.purchase(uid, billing.interval);
@@ -14104,7 +14266,12 @@ export const APP = String.raw`
     }).then(function (r) {
       if (!accountNow(epoch, uid) || !r) return;
       absorbPlan(r, !restore);
-      toast(r.plan === "free" ? "No active subscription was found for this account." : "Your " + planWord(r.plan) + " access is up to date.");
+      // A purchase that changed the plan was welcomed by absorbPlan. A restore
+      // that did can have moved Plus from another Spotter account on the same
+      // store account, which that account then loses, so it says so.
+      if (r.plan === "free") toast("No active subscription was found for this account.");
+      else if (restore && before === "free") toast("Plus is on this account now. If it was bought on another Spotter account, that one is back on Basic.", 5200);
+      else if (restore || r.plan === before) toast("Your " + planWord(r.plan) + " access is up to date.");
     }).catch(function (e) {
       if (!accountNow(epoch, uid)) return;
       if (!e.userCancelled && String(e.code) !== "1") toast(e.message || "Could not complete the purchase. Please try again.");
@@ -14613,12 +14780,20 @@ export const APP = String.raw`
       : "";
     warn.classList.toggle("hide", !failed);
 
-    var canBuy = configured && !paid && !staff, canManage = configured && paid;
+    // Every Basic account can see Plus, whether or not a store answered, and a
+    // store subscriber can always manage it: neither waits on the product load.
+    // The web sells nothing and manages no store, so it says where to go.
+    var store = native && native.purchases, src = s && s.source, storePaid = paid && (src === "apple" || src === "google");
+    var canBuy = !paid && !staff, canManage = paid && (configured || (store && storePaid));
+    $("setupgrade").textContent = store ? "Upgrade to Plus" : "See Spotter Plus";
     $("setupgrade").classList.toggle("hide", !canBuy);
     $("setmanage").classList.toggle("hide", !canManage);
     $("setpay").classList.toggle("hide", !(canManage && failed));
     $("setplanbtns").classList.toggle("hide", !(canBuy || canManage));
-    $("setrefresh").classList.toggle("hide", !configured && !(native && native.purchases));
+    $("setrefresh").classList.toggle("hide", !configured && !store);
+    var how = $("setplanhow");
+    how.textContent = storePaid && !store ? "Manage it in " + (src === "google" ? "Google Play on your phone." : "the App Store on your iPhone.") : "";
+    how.classList.toggle("hide", !how.textContent);
   }
 
   // Two copies of "which plan is this": the profile row the webhook writes, and
@@ -14633,6 +14808,11 @@ export const APP = String.raw`
     state.profile.plan = plan;
     renderLibCount();
     paintPlanGroup();
+    // And everything else that reads it, without a relaunch: Pumpy's tab, the open
+    // card's Basic-read offer, and the Plus page if it is up.
+    renderPumpy();
+    if (current && $("detail").classList.contains("open")) refreshDetail(current, true);
+    if ($("plansheet").classList.contains("open")) paintPlans();
   }
 
   // The four allowances, in the order they cost money, each on its own line. The
@@ -14684,8 +14864,9 @@ export const APP = String.raw`
       ALLOW_ROWS.forEach(function (a) {
         var cap = capNum(m[a[0] + "_cap"]), used = num(m[a[0]]);
         // A null cap is uncapped: there is no allowance to count towards, so the
-        // line would be a number with nothing to mean.
-        if (used === null || cap === null) return;
+        // line would be a number with nothing to mean. A 0 is a feature the plan
+        // does not have (Basic's coaching), which the Plus page says instead.
+        if (used === null || cap === null || cap === 0) return;
         n.appendChild(useRow(a[1], used + " of " + cap, " this month", back, used >= cap));
       });
     }
@@ -14703,13 +14884,11 @@ export const APP = String.raw`
 
   // ---------- how full the free shelf is ----------
   //
-  // The one paywall here that is not a refusal. Null means say nothing, and a
-  // paid account, an account with billing off and a cap the server did not send
-  // all come back null — which is what makes all three look like today.
+  // The one paywall here that is not a refusal. Null means say nothing: a paid
+  // account, and a cap the server has not sent yet.
   function shelf(extra) {
-    if (!billOn() || !isFree()) return null;
-    var caps = billing.prices.caps;
-    var cap = caps && caps.free ? capNum(caps.free.library) : null;
+    if (!isFree() || !billing.caps) return null;
+    var cap = capNum(billing.caps.free.library);
     if (cap === null || cap <= 0) return null;
     return { used: state.workouts.length + (extra || 0), cap: cap, warn: Math.ceil(cap * 0.8) };
   }
@@ -17893,6 +18072,7 @@ export const APP = String.raw`
   $("plannot").onclick = function () { closeSheet("plansheet"); };
   $("planbuy").onclick = startCheckout;
   $("planrestore").onclick = function () { refreshBilling(this); };
+  $("planmanage").onclick = function () { openPortal(null); };
   $("setcoderow").onclick = openCode;
   $("setcreatorshare").onclick = shareCreator;
   $("plancodeask").onclick = askPlanCode;
