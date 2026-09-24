@@ -22,6 +22,8 @@ function fixture(settings = {}) {
     sb: { from: () => ({ update: body => ({ eq: (column, id) => { writes.push({body,id}); return new Promise(resolve => { finishWrite = resolve; }); } }) }),
       auth: { getSession: () => Promise.resolve({data:{session:{access_token:'fixture'}}}) } },
     SHARED: {}, inFlight: {}, API: 'https://api.invalid/', toast() {},
+    // api() retires the minute-old /api/limits copy on a write (the speed cycle's C3).
+    retireLimits() {},
     deadline: work => work(new AbortController().signal),
     fetch: async (url, opts) => { requests.push({url,opts}); return {status:200,json:async()=>({status:'ok'})}; },
   });
