@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-EtqA7Zp0XjATZfKqdxw6ScujxU+iJ2E5tfijRsKsEdc=' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/ https://challenges.cloudflare.com https://accounts.google.com/gsi/client https://appleid.cdn-apple.com/appleauth/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://api.fontshare.com https://accounts.google.com/gsi/style; font-src 'self' data: https://fonts.gstatic.com https://cdn.fontshare.com; img-src 'self' data: blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://i.ytimg.com https://simeonrinkenberger.github.io; media-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://simeonrinkenberger.github.io; connect-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co wss://mtzevoxxpsktmrbbuxva.supabase.co https://accounts.google.com/gsi/; frame-src https://www.tiktok.com https://www.instagram.com https://www.youtube.com https://www.youtube-nocookie.com https://challenges.cloudflare.com https://accounts.google.com/gsi/ https://appleid.apple.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-7CQFRig9gXwoaJlDXz3kvWn9m37dihAptvCNh48Ez0Y=' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/ https://challenges.cloudflare.com https://accounts.google.com/gsi/client https://appleid.cdn-apple.com/appleauth/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://api.fontshare.com https://accounts.google.com/gsi/style; font-src 'self' data: https://fonts.gstatic.com https://cdn.fontshare.com; img-src 'self' data: blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://i.ytimg.com https://simeonrinkenberger.github.io; media-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://simeonrinkenberger.github.io; connect-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co wss://mtzevoxxpsktmrbbuxva.supabase.co https://accounts.google.com/gsi/; frame-src https://www.tiktok.com https://www.instagram.com https://www.youtube.com https://www.youtube-nocookie.com https://challenges.cloudflare.com https://accounts.google.com/gsi/ https://appleid.apple.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="google-site-verification" content="unLzcq6TBz9Bm6q4KHpbTmZ88dQ_tTnViacVX5BLzS0">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <title>Spotter by Quarterdeck Collective — save any workout video</title>
@@ -19042,18 +19042,23 @@ details.details-moving > :not(summary) {
       }
     }
     body.addEventListener("pointerdown", function(e) {
-      if (!(e.pointerType !== "touch" && e.pointerType !== "pen") && !(sd || !e.isPrimary || noDragIn(e.target)) && !(body.scrollTop > 0 && e.clientY - body.getBoundingClientRect().top > 44)) {
-        var ctl = e.target.closest && e.target.closest("button, a, label, [role=button]");
-        sd = {
-          id: e.pointerId,
-          x: e.clientX,
-          y: e.clientY,
-          lock: !1,
-          dy: 0,
-          s: [],
-          slop: ctl ? SH_TAP : SLOP,
-          seen: now()
-        }, holdDrag(loose);
+      if (!(e.pointerType !== "touch" && e.pointerType !== "pen") && !(sd || !e.isPrimary || noDragIn(e.target))) {
+        var grab = e.clientY - body.getBoundingClientRect().top <= 44;
+        if (!(body.scrollTop > 0 && !grab)) {
+          var ctl = e.target.closest && e.target.closest("button, a, label, [role=button]");
+          sd = {
+            id: e.pointerId,
+            x: e.clientX,
+            y: e.clientY,
+            lock: !1,
+            dy: 0,
+            s: [],
+            slop: ctl ? SH_TAP : SLOP,
+            grab: grab,
+            seen: now(),
+            first: !1
+          }, holdDrag(loose);
+        }
       }
     }), body.addEventListener("pointermove", function(e) {
       if (!(!sd || e.pointerId !== sd.id)) {
@@ -19078,8 +19083,20 @@ details.details-moving > :not(summary) {
         for (sd.dy = dy, sd.s.push({ t: now(), y: e.clientY }); sd.s.length > 2 && sd.s[sd.s.length - 1].t - sd.s[0].t > VWIN; ) sd.s.shift();
         body.style.transform = "translateY(" + (dy > 0 ? dy : dy / 3) + "px)";
       }
-    }), body.addEventListener("touchmove", function(e) {
-      sd && sd.lock && e.cancelable && e.preventDefault();
+    });
+    function claims(e) {
+      if (sd.first) return !1;
+      sd.first = !0;
+      var t = e.touches && e.touches.length === 1 ? e.touches[0] : null;
+      if (!t || body.scrollHeight <= body.clientHeight + 1) return !1;
+      var dy = t.clientY - sd.y, dx = t.clientX - sd.x;
+      if (!(dy > 0 && dy >= Math.abs(dx))) return !1;
+      for (var n = e.target; n && n !== body; n = n.parentElement)
+        if (n.scrollTop > 0 && n.scrollHeight > n.clientHeight + 1) return !1;
+      return body.scrollTop <= 0 || sd.grab;
+    }
+    body.addEventListener("touchmove", function(e) {
+      !sd || !e.cancelable || (sd.lock || claims(e)) && e.preventDefault();
     }, { passive: !1 }), body.addEventListener("pointerup", function(e) {
       stop(e, !1);
     }), body.addEventListener("pointercancel", function(e) {

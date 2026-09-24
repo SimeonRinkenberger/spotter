@@ -608,6 +608,65 @@ for (const mode of ['native shell', 'browser tab']) {
   });
 }
 
+// ---------- a sheet taller than the phone ----------
+//
+// The Plus page did not close on a drag down from the grabber, on main too: its
+// body is taller than its frame, so it scrolls, and WebKit let that scroller take
+// the touch (sheetDrag models it) before the drag had locked. A short sheet has
+// no scroller and always closed.
+console.log('a sheet taller than the phone pushes away like a short one');
+{
+  const tall = (w, top = 0) => { w.d.sbody.scrollHeight = 1400; w.d.sbody.scrollTop = top; return w; };
+  const G = () => world({ native: true, gestures: true });
+
+  ok('a short sheet closes from the grabber and from its content, as it always did', () => {
+    let w = G();
+    w.sheetDrag(w.d.grabber, 300, { y: 20 }); assert.deepEqual(w.sb.closed, ['settingssheet']);
+    w = G();
+    w.sheetDrag(w.d.sline, 300); assert.deepEqual(w.sb.closed, ['settingssheet']);
+  });
+
+  ok('the tall sheet at its top: the first move down is claimed, the scroller never takes it, it closes', () => {
+    for (const [from, y] of [['grabber', 20], ['sline', 120], ['sbtn', 160]]) {
+      const w = tall(G());
+      const r = w.sheetDrag(w.d[from], 300, { y });
+      assert.equal(r.first, true, from + ': first touchmove cancelled');
+      assert.equal(r.taken, false, from + ': the scroller did not take the touch');
+      assert.deepEqual(w.sb.closed, ['settingssheet'], from + ': closed');
+    }
+  });
+
+  ok('the tall sheet scrolled down: its content scrolls; the grabber band still pulls it down', () => {
+    let w = tall(G(), 300);
+    let r = w.sheetDrag(w.d.sline, 300, { y: 120 });
+    assert.equal(r.first, false); assert.equal(w.sb.closed.length, 0, 'a drag in the content is the list scrolling');
+    w = tall(G(), 300);
+    r = w.sheetDrag(w.d.grabber, 300, { y: 20 });
+    assert.equal(r.first, true); assert.deepEqual(w.sb.closed, ['settingssheet']);
+  });
+
+  ok('what is not the sheet\'s is left to scroll: a finger heading up, a sideways first move, a list in it with room above', () => {
+    let w = tall(G());
+    let r = w.sheetDrag(w.d.sline, -300);
+    assert.equal(r.first, false, 'up at the top is the list coming up');
+    assert.equal(w.sb.closed.length, 0);
+    w = tall(G());
+    r = w.sheetDrag(w.d.sline, 30, { dx: 60 });
+    assert.equal(r.first, false, 'sideways first');
+    w = tall(G());
+    w.d.slist.scrollTop = 120;
+    r = w.sheetDrag(w.d.sitem, 300, { y: 300 });
+    assert.equal(r.first, false, 'the inner list scrolls back up');
+    assert.equal(w.sb.closed.length, 0);
+  });
+
+  ok('app.ts: the claim is made on the first touchmove only, and the lock still holds every one after', () => {
+    const wire = fn('wireSheet');
+    assert(wire.includes('if (sd.lock || claims(e)) e.preventDefault();'));
+    assert(wire.includes('if (sd.first) return false;'));
+  });
+}
+
 console.log('the CSS that keeps WebKit from taking the drag');
 
 function rule(src, sel) {

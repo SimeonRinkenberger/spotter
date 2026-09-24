@@ -16380,10 +16380,11 @@ export const APP = String.raw`
       // handle, and pulls the sheet down however far the list has been scrolled.
       // Asked of the finger's position rather than what it landed on, because the
       // gaps between rows are the sheet body itself and a drag there is a scroll.
-      if (body.scrollTop > 0 && e.clientY - body.getBoundingClientRect().top > 44) return;
+      var grab = e.clientY - body.getBoundingClientRect().top <= 44;
+      if (body.scrollTop > 0 && !grab) return;
       var ctl = e.target.closest && e.target.closest("button, a, label, [role=button]");
       sd = { id: e.pointerId, x: e.clientX, y: e.clientY, lock: false, dy: 0, s: [],
-        slop: ctl ? SH_TAP : SLOP, seen: now() };
+        slop: ctl ? SH_TAP : SLOP, grab: grab, seen: now(), first: false };
       holdDrag(loose);
     });
 
@@ -16415,11 +16416,33 @@ export const APP = String.raw`
       body.style.transform = "translateY(" + (dy > 0 ? dy : dy / 3) + "px)";
     });
 
+    // A sheet taller than its frame scrolls, and WebKit lets that scroller begin a
+    // pan unless the FIRST touchmove of the touch is cancelled; once it pans it
+    // takes the touch with a pointercancel, well before the lock above. That is
+    // why the Plus page, taller than the phone, could not be pushed away while a
+    // short sheet always could: a short sheet has no scroller to lose to. So the
+    // first move is claimed when it can only mean the sheet: heading down, more
+    // down than sideways, one finger, nothing under it that could scroll up
+    // instead, and the sheet at its top or the finger on the grabber band.
+    function claims(e) {
+      if (sd.first) return false;
+      sd.first = true;
+      var t = e.touches && e.touches.length === 1 ? e.touches[0] : null;
+      if (!t || body.scrollHeight <= body.clientHeight + 1) return false;
+      var dy = t.clientY - sd.y, dx = t.clientX - sd.x;
+      if (!(dy > 0 && dy >= Math.abs(dx))) return false;
+      for (var n = e.target; n && n !== body; n = n.parentElement) {
+        if (n.scrollTop > 0 && n.scrollHeight > n.clientHeight + 1) return false;
+      }
+      return body.scrollTop <= 0 || sd.grab;
+    }
+
     // Pointer events are dispatched before the touch that caused them, so the drag
     // has already decided by the time this runs. iOS needs the touch itself
     // cancelled or it takes the gesture for a scroll and pointercancels us mid-drag.
     body.addEventListener("touchmove", function (e) {
-      if (sd && sd.lock && e.cancelable) e.preventDefault();
+      if (!sd || !e.cancelable) return;
+      if (sd.lock || claims(e)) e.preventDefault();
     }, { passive: false });
 
     body.addEventListener("pointerup", function (e) { stop(e, false); });
