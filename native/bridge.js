@@ -1,7 +1,7 @@
 import { createPurchases } from './purchases.js';
 import { signInWithApple } from './apple-auth.js';
 import { signInWithGoogle } from './google-auth.js';
-import { shareAccess } from './share-access.js';
+import { shareAccess, takeParked } from './share-access.js';
 import { Capacitor, CapacitorHttp, registerPlugin } from '@capacitor/core';
 import { streamFetch } from './stream.js';
 import { createSecureSession } from './secure-session.js';
@@ -87,6 +87,8 @@ window.SpotterNative = {
   live: createLiveState(registerPlugin('LiveState')),
   push: createPush(registerPlugin('SpotterPush')),
   configureSharing,
+  // Links the Share Extension parked while signed out; see share-access.js.
+  takeParkedShare: android ? () => Promise.resolve(null) : takeParked(ShareAccessHost),
   contactSheet,
   signInWithApple: (sb, registerGrant) => signInWithApple(sb, registerPlugin('AppleAuth'), registerGrant),
   signInWithGoogle: sb => signInWithGoogle(sb, registerPlugin('GoogleAuth')),
