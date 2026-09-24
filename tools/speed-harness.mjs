@@ -94,7 +94,9 @@ var undoTimer = null, undoFn = null, detailCloseTimer = null, woCloseTimer = nul
 var wkChannel = null, heroPct = 0, trainSeg = null, seenCards = {}, gridCards = {}, expCache = {}, expWaiting = {}, vidCache = {}, expKey = "";
 var today = { day: null, rows: [], done: false, at: 0, busy: false, shown: false };
 var current = null, sc = null, wo = null, woTimer = null, hist = {}, histReady = false, strava = null, pumpy = null, billing = null;
-var toastTimer = null, pendingMotion = null;
+// pumpyIdleTimer and takeParkedShare arrive with the integration branch; stubbed so
+// the lifted clearAccount/boot run on either side of that merge.
+var toastTimer = null, pendingMotion = null, pumpyIdleTimer = null;
 var sb = { removeChannel: function () {} };
 var CACHE_KEY = "spotter-lib-v1";
 function dismissAiConsent() {} function cancelPumpyReset() {} function scForget() {} function saveDraft() {}
@@ -103,6 +105,7 @@ function guideUser() {} function publishSignedOut() { log.push("signed-out"); } 
 function resetPager() {} function measureChrome() {} function mailClose() {} function capOn() { return false; }
 function maybeInstallHint() {} function watchWorkouts() {} function welcomeMaybe() {} function restoreSession() {}
 function consumeShare() {} function consumeOpen() {} function consumeBilling() {} function consumeCreator() {}
+function takeParkedShare() {}
 function warmPages() {} function sharePending() { return false; } function toast(m) { toasts.push(m); }
 function renderToday() { log.push("today"); }
 function accountNow(epoch, uid) { return epoch === accountEpoch && state.user && state.user.id === uid; }
@@ -453,6 +456,7 @@ for (const [label, mutate] of [['removed', (c) => { delete c.store[SESSION]; }],
       var $ = function () { return { classList: { contains: function () { return false; } } }; };
       function guideUser() {} function loadProfile() { return Promise.resolve(); } function maybeInstallHint() {} function watchWorkouts() {}
       function consumeShare() {} function consumeOpen() {} function consumeBilling() {} function consumeCreator() {} function warmPages() {} function welcomeMaybe() {}
+      function takeParkedShare() {}
     ` + TODAY_DECL + '\n' + REAL, ctx);
     return ctx;
   }
