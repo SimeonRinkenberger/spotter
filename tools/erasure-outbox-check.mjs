@@ -51,7 +51,9 @@ async function asService(fn) {
 }
 async function rpc(name, args) {
   if (name === 'erasure_enqueue') {
-    const r = await asService(() => db.query('select public.erasure_enqueue($1, $2, $3::jsonb) as v', [args.p_provider, args.p_subject, JSON.stringify(args.p_detail ?? {})]));
+    const r = args.p_account
+      ? await asService(() => db.query('select public.erasure_enqueue($1, $2, $3::jsonb, $4::uuid) as v', [args.p_provider, args.p_subject, JSON.stringify(args.p_detail ?? {}), args.p_account]))
+      : await asService(() => db.query('select public.erasure_enqueue($1, $2, $3::jsonb) as v', [args.p_provider, args.p_subject, JSON.stringify(args.p_detail ?? {})]));
     return r.rows[0].v;
   }
   if (name === 'erasure_claim') {
@@ -78,11 +80,17 @@ async function fakeFetch(url, init = {}) {
   }
   if (url.startsWith('https://api.revenuecat.com/')) {
     world.rcCalls.push({ url, bearer: String(init.headers?.authorization ?? '').replace(/^Bearer /, '') });
+    world.order.push('revenuecat');
     const next = world.rc.length > 1 ? world.rc.shift() : world.rc[0];
     if (next === 'network') throw new TypeError('network down');
     return new Response(next === 401 ? '{"code":7225,"message":"Invalid API Key."}' : '{}', { status: next });
   }
-  if (url.includes('/auth/v1/admin/users/')) { world.authDeletes++; return new Response('{}', { status: 200 }); }
+  if (url.includes('/auth/v1/admin/users/')) {
+    world.authDeletes++; world.order.push('auth');
+    // As the admin API does: the row (and its cascade) goes only when it answers ok.
+    if (world.authStatus === 200) await db.query('delete from auth.users where id = $1', [url.split('/').pop()]);
+    return new Response('{}', { status: world.authStatus });
+  }
   throw new Error('unexpected fetch ' + url);
 }
 
@@ -139,6 +147,9 @@ check(handler && erasers, 'index.ts has handleAccountDelete and the ERASERS the 
 // The code before the outbox (main at 6074e07) had these instead; loaded when
 // present so the same scenarios run against it and show what it did.
 const legacy = slice(indexSrc, 'forgetRevenueCatQuietly');
+// Writes an erasure down against its account without attempting it (R-4); absent in older trees.
+const queue = slice(indexSrc, 'queueErasure');
+const folder = slice(indexSrc, 'deleteUserFolder');
 Object.assign(ctx, {
   UUID_RE: /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/,
   SUPABASE_URL: SUPA, SERVICE_KEY: 'service', authHeaders: { apikey: 'service' },
@@ -162,9 +173,11 @@ Object.assign(ctx, {
   deauthorizeStrava: async () => ({ done: false, error: 'strava deauthorize 503' }),
   dbDelete: async () => {}, dbPatchMany: async () => {},
   listUploads: async () => [], deleteUpload: async () => {},
+  // index.ts's own rpc helper, over the same PGlite outbox.
+  rpc: async (name, args) => { if (world.rpcDown) throw new Error('rpc ' + name + ' 503'); return await rpc(name, args); },
 });
 if (handler) {
-  vm.runInContext(transformSync([erasers ?? '', legacy ?? '', handler].join('\n'), { loader: 'ts', format: 'cjs' }).code
+  vm.runInContext(transformSync([erasers ?? '', legacy ?? '', queue ?? '', folder ?? '', handler].join('\n'), { loader: 'ts', format: 'cjs' }).code
     .replace(/^const ERASERS/m, 'var ERASERS'), ctx);
 }
 const canRun = !!handler;
@@ -180,7 +193,9 @@ const reset = async () => {
   if (hasOutbox) await db.exec(`delete from public.erasure_outbox;`);
   await db.exec(`delete from public.ops_alerts where key = 'erasure_stuck';`);
   world.env = {}; world.rc = [200]; world.rcCalls = []; world.rpcDown = false; world.authDeletes = 0; world.logs = [];
-  world.stravaGrant = null;
+  world.stravaGrant = null; world.authStatus = 200; world.order = [];
+  // The account exists until the auth delete removes it.
+  await db.query(`insert into auth.users(id, email) values ($1, 'erase@example.com') on conflict do nothing`, [UID]);
   Object.assign(stripe, { configured: false, customer: null, calls: 0, fail: null });
 };
 const del = () => vm.runInContext(`handleAccountDelete('${UID}', {})`, ctx);
@@ -294,6 +309,53 @@ if (canRun) {
   world.rc = [200];
   await makeDue(); await tick();
   check((await rows()).length === 0, 'the day the secret key is set, the next tick drains it');
+
+  // ---- R-4: nothing is erased while the account still exists ----
+  await reset();
+  world.env.REVENUECAT_API_KEY = 'k';
+  world.rc = [503];
+  world.stravaGrant = { subject: '98765', detail: { access_token: 'a', refresh_token: 'r', expires_at: '2020-01-01T00:00:00Z' } };
+  world.authStatus = 500;
+  out = await del();
+  check(out.status === 500 && world.rcCalls.length === 0, 'R-4: the auth delete fails: no provider was called before the account was gone (' + world.rcCalls.length + ' RevenueCat calls)');
+  r = await rows();
+  check(r.length >= 2 && r.every((x) => x.provider !== 'revenuecat' || x.attempts === 0), 'R-4: the requests are written down, unattempted');
+  await makeDue();
+  t = await tick();
+  check(t.due === 0 && world.rcCalls.length === 0, 'R-4: the next tick makes no provider call while the account exists (' + t.due + ' due)');
+  if (hasOutbox) await db.exec(`update public.erasure_outbox set created_at = now() - interval '2 days'`);
+  await makeDue();
+  t = await tick();
+  check(t.due === 0 && (await rows()).length === 0, 'R-4: a deletion that never finished is withdrawn after a day, unattempted');
+  // The person tries again and it goes through: now, and only now, the providers hear.
+  world.authStatus = 200; world.rc = [200]; world.order = [];
+  out = await del();
+  check(out.status === 200 && world.order.indexOf('auth') >= 0 && world.order.indexOf('revenuecat') > world.order.indexOf('auth'),
+    'R-4: a deletion that completes tells RevenueCat after the auth row is gone (' + world.order.join(' → ') + ')');
+  r = await rows();
+  check(r.length === 1 && r[0].provider === 'strava', 'R-4: and the Strava row (deauthorize failing) is left due for the tick');
+  await makeDue();
+  t = await tick();
+  check(t.due === 1, 'R-4: with the account gone, the tick claims it');
+
+  // ---- R-4: a new grant for the athlete withdraws a pending Strava erasure ----
+  await reset();
+  if (hasOutbox) {
+    await rpc('erasure_enqueue', { p_provider: 'strava', p_subject: '555', p_detail: { access_token: 'old' } });
+    await rpc('erasure_enqueue', { p_provider: 'strava', p_subject: '556', p_detail: { access_token: 'other' } });
+    const OTHER = '33333333-3333-4333-8333-333333333333';
+    await db.query(`insert into auth.users(id, email) values ($1, 'b@example.com') on conflict do nothing`, [OTHER]);
+    await asService(() => db.query(`insert into public.strava_tokens(user_id, athlete_id, access_token, refresh_token, expires_at)
+      values ($1, 555, 'new', 'new-r', now() + interval '6 hours')`, [OTHER]));
+    r = await rows();
+    check(!r.some((x) => x.subject === '555') && r.some((x) => x.subject === '556'),
+      'R-4: athlete 555 connects to another account: their pending Strava erasure is withdrawn (others untouched)');
+    await db.query(`delete from public.erasure_outbox where subject = '556'`);
+    await rpc('erasure_enqueue', { p_provider: 'strava', p_subject: '555', p_detail: { access_token: 'x' } });
+    await asService(() => db.query(`update public.strava_tokens set access_token = 'rotated' where user_id = $1`, [OTHER]));
+    check((await rows()).length === 0, 'R-4: and a token refresh for that athlete does the same');
+    await db.query(`delete from auth.users where id = $1`, [OTHER]);
+  } else check(false, 'R-4: the outbox exists');
 
   // ---- a deletion retried by the person refreshes the row, it does not add one ----
   await reset();

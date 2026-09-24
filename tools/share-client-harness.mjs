@@ -207,6 +207,22 @@ ctx.native = { takeParkedShare: () => { throw new Error('no such method'); } };
 ok(await run('takeParkedShare()') === undefined, 'a shell whose method throws is a no-op, never a rejected boot');
 ctx.native = {};
 ok(await run('takeParkedShare()') === undefined, 'a shell without the method (Android, builds 5–7) is a no-op');
+// R-5: the native store hands a link only to the account it was parked under,
+// so the page asks once the native side has been told who is signed in.
+{
+  let release;
+  ctx.native = parked([{ url: 'https://www.tiktok.com/@a/video/after-configure', at: now }]);
+  ctx.gate = new Promise((r) => { release = r; });
+  run('consumed = []; sharingSet = gate');
+  const taking = run('takeParkedShare()');
+  await settle(); await settle();
+  ok(!ctx.consumed.length, 'R-5: nothing is taken before the sharing key is configured');
+  release(); await taking;
+  ok(JSON.stringify(ctx.consumed) === '["https://www.tiktok.com/@a/video/after-configure"]', 'R-5: and it is taken once it is');
+  run('sharingSet = Promise.resolve()');
+}
+ok(/configured = native\.configureSharing\(r\.data\.ingest_key, \{ plan: r\.data\.plan \}\)[\s\S]{0,2500}sharingSet = loaded\.then\(function \(\) \{ return configured; \}, function \(\) \{\}\);\s*return loaded;/.test(APP),
+  'R-5: the profile load is what settles it: the configure call with this account\'s key');
 ctx.native = null;
 ok(/load\(\)\.then\(function \(\) \{ if \(accountNow\(epoch, uid\)\) return consumeShare\(\); \}\)[\s\S]{0,200}\.then\(function \(\) \{ if \(accountNow\(epoch, uid\)\) takeParkedShare\(\); \}\)/.test(APP),
   'boot takes parked links right after the pending share, without holding the rest of the start');

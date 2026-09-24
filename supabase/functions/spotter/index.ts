@@ -802,6 +802,11 @@ const UPLOAD_MAX_BYTES = Number(Deno.env.get("UPLOAD_MAX_BYTES") ?? String(25 * 
 const UPLOAD_EXTS = ["mp4", "mov", "webm", "m4v", "mp3", "m4a", "wav", "weba"];
 // Signed media links expire after fifteen minutes.
 const UPLOAD_SIGN_SECONDS = 900;
+// A signed UPLOAD address is another clock. Storage fixes its lifetime in its own
+// configuration — two hours, whatever the request asks for (storage-js
+// createSignedUploadUrl: "valid for 2 hours"; measured: the token's exp-iat is
+// 7200) — so this is the fallback when a token cannot be read, not a setting.
+const SIGNED_UPLOAD_SECONDS = 7200;
 // Below this many characters, a transcript cannot be describing a workout. This is
 // the load-bearing half of the silence test: measured 2026-09-02, one second of
 // silence comes back from whisper-large-v3-turbo as HTTP 200 with the text
@@ -2880,23 +2885,24 @@ async function deleteUpload(path: string): Promise<void> {
  *
  * Storage returns the path-and-token half; the token is pulled out separately
  * because the client sends it as a query parameter and reading it out of a URL on
- * the phone is a parsing job nobody should have to do twice.
+ * the phone is a parsing job nobody should have to do twice. `expires_in` is the
+ * token's own lifetime, read out of it: storage decides that, not this request.
+ *
+ * `upsert` travels as the `x-upsert` header, the one place storage reads it
+ * (a body flag is ignored, and the token then says upsert:false). Contact sheets
+ * ask for it: their paths are fixed per video, and issue_sheet_permits lets a
+ * phone that lost the network re-authorize the same set, whose re-PUT of a sheet
+ * that already landed would otherwise be a 409. A whole video never does: it is
+ * handed to a model under a signed read url, so its address writes a new object
+ * or nothing, and the Share Extension asks for a new address on a retry.
  */
 async function signUploadTarget(
-  path: string, upsert = true,
-): Promise<{ upload_url: string; token: string }> {
+  path: string, upsert = false,
+): Promise<{ upload_url: string; token: string; expires_in: number }> {
   const r = await fetch(`${SUPABASE_URL}/storage/v1/object/upload/sign/uploads/${path}`, {
     method: "POST",
-    headers: dbHeaders,
-    // `upsert` so a phone that lost the network halfway through a sheet can send
-    // it again. The bucket's no-overwrite rule exists to stop bytes being swapped
-    // under a signed READ url already handed to somebody else; a pack sheet has no
-    // such reader — the only thing that ever fetches one is our own isolate, from
-    // a url minted seconds earlier, and the object is deleted immediately after.
-    // A whole video is handed to a model under a signed read url, so its address
-    // keeps the rule (upsert false); the Share Extension asks for a new address
-    // on a retry rather than writing twice to one.
-    body: JSON.stringify({ expiresIn: UPLOAD_SIGN_SECONDS, upsert }),
+    headers: upsert ? { ...dbHeaders, "x-upsert": "true" } : dbHeaders,
+    body: "{}",
     signal: AbortSignal.timeout(10_000),
   });
   if (!r.ok) throw new Error(`sign upload ${r.status}: ${(await r.text()).slice(0, 200)}`);
@@ -2907,7 +2913,22 @@ async function signUploadTarget(
   let token = "";
   try { token = new URL(full).searchParams.get("token") ?? ""; } catch { /* keep empty */ }
   if (!token) throw new Error("sign upload returned no token");
-  return { upload_url: full, token };
+  return { upload_url: full, token, expires_in: tokenLifetime(token) };
+}
+
+/**
+ * How long a storage token lets its address write: its own exp minus iat. The
+ * payload is read, not verified — storage verifies it when the PUT arrives; this
+ * only has to say truthfully how long that will keep working.
+ */
+function tokenLifetime(token: string): number {
+  try {
+    const part = token.split(".")[1] ?? "";
+    const claims = JSON.parse(atob(part.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(part.length / 4) * 4, "=")));
+    const life = Number(claims?.exp) - Number(claims?.iat);
+    if (Number.isFinite(life) && life > 0) return Math.round(life);
+  } catch { /* fall through */ }
+  return SIGNED_UPLOAD_SECONDS;
 }
 
 /** A temporary signed URL for the media reader. */
@@ -7539,7 +7560,11 @@ const ERASERS: Record<ErasureProvider, Eraser> = {
  * The third parties that are best effort — Strava, RevenueCat, and Stripe
  * without a key — go through the erasure outbox (erasure.ts): the request is
  * written down before the call and retried by the hourly tick until the
- * provider says done, so a failure is no longer only a log line.
+ * provider says done, so a failure is no longer only a log line. Each is
+ * written down early, while the rows naming it still exist, against this
+ * account; it is attempted only once the auth row is gone, and the outbox does
+ * not claim it while the account still exists (20260924140200). A deletion
+ * that stops before the auth row goes reaches none of these three.
  */
 async function handleAccountDelete(userId: string, cors: Cors): Promise<Response> {
   if (!UUID_RE.test(userId)) return json({ status: "error", message: "Bad account." }, 400, cors);
@@ -7551,6 +7576,8 @@ async function handleAccountDelete(userId: string, cors: Cors): Promise<Response
     message: "Could not cancel your subscription just now — try again in a minute, " +
       "or cancel it from Manage subscription first.",
   }, 503, cors);
+  // A Stripe-era customer without a key to cancel it with: erased at the end.
+  let customer: string | null = null;
   if (billingConfigured()) {
     try {
       await cancelAndDeleteCustomer(userId);
@@ -7562,17 +7589,13 @@ async function handleAccountDelete(userId: string, cors: Cors): Promise<Response
     // No key: a leftover (test-mode) customer is written to the outbox, and the
     // deletion goes on. Only if that cannot even be written down does it stop —
     // the database is then what is failing, and nothing has been deleted yet.
-    let customer: string | null = null;
     try {
       customer = await billingCustomerFor(userId);
     } catch (e) {
       console.error("account delete: billing lookup failed, nothing deleted", userId, e);
       return billingUnreachable();
     }
-    if (customer) {
-      const out = await eraseAtProvider("stripe", customer, {}, (c) => eraseStripeCustomer(c));
-      if (!out.done && out.row === null) return billingUnreachable();
-    }
+    if (customer && !(await queueErasure("stripe", customer, {}, userId))) return billingUnreachable();
   }
 
   try {
@@ -7586,18 +7609,18 @@ async function handleAccountDelete(userId: string, cors: Cors): Promise<Response
 
   // Strava, once Stripe has said the deletion may go ahead. `strava_tokens`
   // cascades with the auth row, but a row deleted without telling Strava leaves a
-  // live grant on the athlete's account with nothing left here to revoke it. This
-  // one is best effort in the other direction from Stripe: a Strava outage must
-  // not hold up an erasure. It goes through the outbox, so it is retried.
+  // live grant on the athlete's account with nothing left here to revoke it, so
+  // the grant is read (and written down) now, and revoked at the end. Best effort
+  // in the other direction from Stripe: a Strava outage must not hold up an
+  // erasure. RevenueCat is keyed by the account id, which outlives the row.
+  let grant: { subject: string; detail: Record<string, unknown> } | null = null;
   try {
-    const grant = await stravaGrantFor(userId);
-    if (grant) await eraseAtProvider("strava", grant.subject, grant.detail, deauthorizeStrava);
+    grant = await stravaGrantFor(userId);
+    if (grant) await queueErasure("strava", grant.subject, grant.detail, userId);
   } catch (e) {
     console.error("account delete: strava lookup failed for", userId, e);
   }
-  // RevenueCat, by the account id, the same way. Neither of these can fail the
-  // deletion: eraseAtProvider never throws.
-  await eraseAtProvider("revenuecat", userId, {}, (id) => deleteRevenueCatSubscriber(id));
+  await queueErasure("revenuecat", userId, {}, userId);
 
   try {
     await dbDelete("saves_log", filter);
@@ -7611,14 +7634,9 @@ async function handleAccountDelete(userId: string, cors: Cors): Promise<Response
     return json({ status: "error", message: "Could not delete the account." }, 500, cors);
   }
 
-  // Best effort, and paged: a folder is not guaranteed to fit in one listing.
+  // Best effort: everything in the person's folder, the phone's contact sheets too.
   try {
-    for (let page = 0; page < 10; page++) {
-      const objects = await listUploads(`${userId}/`, 100);
-      if (!objects.length) break;
-      for (const o of objects) await deleteUpload(`${userId}/${o.name}`);
-      if (objects.length < 100) break;
-    }
+    await deleteUserFolder(userId);
   } catch (e) {
     console.error("account delete: uploads", userId, e);
   }
@@ -7635,7 +7653,64 @@ async function handleAccountDelete(userId: string, cors: Cors): Promise<Response
   }
   await r.body?.cancel();
   console.log("account deleted", userId);
+  // The account is gone, so the third parties may be told. None of these can
+  // fail the deletion: eraseAtProvider never throws, and a provider that does
+  // not answer is retried by the hourly tick from the rows written above.
+  if (customer) await eraseAtProvider("stripe", customer, {}, (c) => eraseStripeCustomer(c));
+  if (grant) await eraseAtProvider("strava", grant.subject, grant.detail, deauthorizeStrava);
+  await eraseAtProvider("revenuecat", userId, {}, (id) => deleteRevenueCatSubscriber(id));
   return json({ status: "ok" }, 200, cors);
+}
+
+/**
+ * Every object under a person's folder in the uploads bucket, including the
+ * contact sheets under `pack/<shortcode>/`. A listing names a folder with a null
+ * id (the one a person has is `pack`, and each video in it is a folder of
+ * sheets), so folders are descended into rather than handed to deleteUpload.
+ * Paged: a folder is not guaranteed to fit in one listing, and a deleted page
+ * makes room for the next at offset 0.
+ */
+async function deleteUserFolder(userId: string): Promise<void> {
+  const walk = async (prefix: string, depth: number): Promise<void> => {
+    for (let page = 0; page < 10; page++) {
+      const objects = await listUploads(prefix, 100);
+      if (!objects.length) return;
+      for (const o of objects) {
+        if (o.id === null) {
+          if (depth < 2) await walk(`${prefix}${o.name}/`, depth + 1);
+          continue;
+        }
+        await deleteUpload(`${prefix}${o.name}`);
+      }
+      if (objects.length < 100) return;
+    }
+  };
+  await walk(`${userId}/`, 0);
+}
+
+/**
+ * Write an erasure down against the account it belongs to, without attempting
+ * it: the outbox holds it until that account no longer exists. True when the
+ * row is written. Never throws.
+ */
+async function queueErasure(
+  provider: ErasureProvider, subject: string, detail: Record<string, unknown>, account: string,
+): Promise<boolean> {
+  const args = { p_provider: provider, p_subject: subject, p_detail: detail };
+  try {
+    try {
+      await rpc("erasure_enqueue", { ...args, p_account: account });
+    } catch (e) {
+      // Before migration 20260924140200 there is no account column: written down
+      // the old way, which the deletion's later attempt would do anyway.
+      if (!/PGRST202/.test(String(e))) throw e;
+      await rpc("erasure_enqueue", args);
+    }
+    return true;
+  } catch (e) {
+    console.error("account delete: could not write down the", provider, "erasure —", e);
+    return false;
+  }
 }
 
 function utcMidnight(): string {
@@ -9129,61 +9204,70 @@ async function runAttachedUpload(job: Job, p: Parsed): Promise<void> {
     new SoftFailure(sentence + " This card is unchanged.", detail, { final: true, keepCard: true });
   const ref = parseUploadPath(seed.upload_path, job.user_id);
   if (!ref) throw keep("Spotter could not find that video any more — add it again.", "attach: no upload path");
-  const up = uploadParsed("up-" + ref.id);
-  const old = (await dbSelect("workouts",
-    `ingest_job_id=eq.${job.id}&user_id=eq.${job.user_id}&select=id,title,caption,author,thumb_url,blocks,category,muscle_groups,equipment,difficulty,duration_minutes,calories,tags,has_full_workout,extracted_by`))[0] ??
-    { blocks: [] };
-  // The reader sees an upload job: same id and claim, so its stage and its
-  // checkpoint land on this job, and its read is logged under the file's own key.
-  const reader: Job = { ...job, platform: "upload", shortcode: up.shortcode, kind: "upload", url: up.clean,
-    step: "meta", card: null,
-    meta: { caption: null, thumb: null, author: null, upload_path: ref.path, filename: seed.filename } };
-  let read: Meta;
+  // A Basic read reserved under this file's own key (attachRefusal) is given back
+  // when the read fails or is only heard, as fail_ingest_job and
+  // finish_ingest_job give back the card's own row. A no-op for Plus.
+  let kept = false;
   try {
-    read = await uploadMeta(up, reader);
-  } catch (e) {
-    if (e instanceof SoftFailure) throw keep(e.userMessage.replace(/\s*Paste the workout text instead\.$/, ""), e.message);
-    if (e instanceof GuardError) throw keep("Spotter's daily budget is spent — add the video again tomorrow.", String(e));
-    throw keep("Spotter could not read that video — add it again in a minute.", String(e).slice(0, 300));
-  }
-  if (aiActor.getStore()?.blocked) {
-    throw keep("Spotter's daily budget is spent — add the video again tomorrow.", "attach: " + aiActor.getStore()!.blocked);
-  }
+    const up = uploadParsed("up-" + ref.id);
+    const old = (await dbSelect("workouts",
+      `ingest_job_id=eq.${job.id}&user_id=eq.${job.user_id}&select=id,title,caption,author,thumb_url,blocks,category,muscle_groups,equipment,difficulty,duration_minutes,calories,tags,has_full_workout,extracted_by`))[0] ??
+      { blocks: [] };
+    // The reader sees an upload job: same id and claim, so its stage and its
+    // checkpoint land on this job, and its read is logged under the file's own key.
+    const reader: Job = { ...job, platform: "upload", shortcode: up.shortcode, kind: "upload", url: up.clean,
+      step: "meta", card: null,
+      meta: { caption: null, thumb: null, author: null, upload_path: ref.path, filename: seed.filename } };
+    let read: Meta;
+    try {
+      read = await uploadMeta(up, reader);
+    } catch (e) {
+      if (e instanceof SoftFailure) throw keep(e.userMessage.replace(/\s*Paste the workout text instead\.$/, ""), e.message);
+      if (e instanceof GuardError) throw keep("Spotter's daily budget is spent — add the video again tomorrow.", String(e));
+      throw keep("Spotter could not read that video — add it again in a minute.", String(e).slice(0, 300));
+    }
+    if (aiActor.getStore()?.blocked) {
+      throw keep("Spotter's daily budget is spent — add the video again tomorrow.", "attach: " + aiActor.getStore()!.blocked);
+    }
 
-  const meta: Meta = {
-    caption: old.caption ?? seed.caption ?? null,
-    thumb: null,
-    thumb_stored: old.thumb_url ?? seed.thumb_stored ?? null,
-    author: old.author ?? seed.author ?? null,
-    source: "personal-fallback,upload",
-    supplied: true,
-    topped_up: true,
-    transcript: read.transcript ?? (read.source === "transcript" ? read.caption ?? undefined : undefined),
-    media_source: read.media_source,
-    pack: read.pack,
-    seconds: read.seconds,
-    read_plan: (await capsFor(job.user_id)).plan,
-  };
-  let next: Card;
-  if (reader.card) {
-    // The video tier answered with a finished card; the post's caption still
-    // names the workout better than a model's title for a clip.
-    next = reader.card as Card;
-  } else {
-    next = await buildCard(meta, p, { purpose: "extract", userId: job.user_id });
+    const meta: Meta = {
+      caption: old.caption ?? seed.caption ?? null,
+      thumb: null,
+      thumb_stored: old.thumb_url ?? seed.thumb_stored ?? null,
+      author: old.author ?? seed.author ?? null,
+      source: "personal-fallback,upload",
+      supplied: true,
+      topped_up: true,
+      transcript: read.transcript ?? (read.source === "transcript" ? read.caption ?? undefined : undefined),
+      media_source: read.media_source,
+      pack: read.pack,
+      seconds: read.seconds,
+      read_plan: (await capsFor(job.user_id)).plan,
+    };
+    let next: Card;
+    if (reader.card) {
+      // The video tier answered with a finished card; the post's caption still
+      // names the workout better than a model's title for a clip.
+      next = reader.card as Card;
+    } else {
+      next = await buildCard(meta, p, { purpose: "extract", userId: job.user_id });
+    }
+    if (aiActor.getStore()?.blocked) {
+      throw keep("Spotter's daily budget is spent — add the video again tomorrow.", "attach: " + aiActor.getStore()!.blocked);
+    }
+    if (!countExercises(next)) {
+      throw keep("Spotter watched your video and could not make out a workout in it.", "attach: no exercises");
+    }
+    const card = mergeNoDowngrade(old, next, meta, p.platform);
+    if (old.title) card.title = old.title;
+    labelRecommendations(card, meta);
+    console.log("add the video:", p.shortcode, countExercises(old as Card), "->", countExercises(card),
+      "exercise(s), read by", meta.media_source ?? "-", meta.pack ? "(pack)" : "");
+    await finishJob(job, p, meta, card, meta.thumb_stored ?? null, false);
+    kept = readQuality(meta) === "premium";
+  } finally {
+    if (!kept) await refundAttachRead(job.user_id, attachReadKey(ref));
   }
-  if (aiActor.getStore()?.blocked) {
-    throw keep("Spotter's daily budget is spent — add the video again tomorrow.", "attach: " + aiActor.getStore()!.blocked);
-  }
-  if (!countExercises(next)) {
-    throw keep("Spotter watched your video and could not make out a workout in it.", "attach: no exercises");
-  }
-  const card = mergeNoDowngrade(old, next, meta, p.platform);
-  if (old.title) card.title = old.title;
-  labelRecommendations(card, meta);
-  console.log("add the video:", p.shortcode, countExercises(old as Card), "->", countExercises(card),
-    "exercise(s), read by", meta.media_source ?? "-", meta.pack ? "(pack)" : "");
-  await finishJob(job, p, meta, card, meta.thumb_stored ?? null, false);
 }
 
 async function runJob(job: Job): Promise<void> {
@@ -10012,19 +10096,34 @@ function attachable(w: any): boolean {
   return !!w && w.platform !== "upload" && w.platform !== "pumpy";
 }
 
+/** The key a file's read is counted under: the upload reader logs it as `up-<id>`. */
+function attachReadKey(ref: UploadRef): string {
+  return "up-" + ref.id;
+}
+
 /**
- * Whether this person may spend a video read on this card right now. Null means
- * yes. `reserve` is false at authorize, where a Basic preview is only counted,
- * and true at /media, where it is taken — refunded by the job if the read ends
- * up only heard, or fails.
+ * Whether this person may spend a video read on this file, for this card, right
+ * now. Null means yes. `reserve` is false at authorize, where a Basic preview is
+ * only counted, and true at /media, where it is taken — refunded by the job if
+ * the read ends up only heard, or fails.
+ *
+ * A read is one FILE. Each file is new evidence and a new model call, so a card
+ * that already had a read this month does not make the next file free: Plus's
+ * month is asked with the file's own key (the key the worker logs the read
+ * under), and Basic reserves a new preview for every file after the card's
+ * first. The daily media ceiling is asked as "Read the video" asks it.
  */
 async function attachRefusal(
-  userId: string, shortcode: string, reserve: boolean, cors: Cors,
+  userId: string, shortcode: string, fileKey: string, reserve: boolean, cors: Cors,
 ): Promise<Response | null> {
   const [counts, uc] = await settledAll<any>([countsFor(userId), capsFor(userId)]) as [Counts, UserCaps];
   if (overCap(counts.extracts, uc.caps.extract)) return await extractLimitResponse(cors, uc, counts.extracts);
-  const monthOver = await monthReadsReached(userId, uc.plan, shortcode);
+  const monthOver = await monthReadsReached(userId, uc.plan, fileKey);
   if (monthOver !== null) return await allowanceLimit("media", "reads", uc, monthOver, cors);
+  const over = await mediaCapReached(userId, mediaBurst(uc));
+  if (over !== null) {
+    return await capLimit("media", { plan: uc.plan, caps: { ...uc.caps, media: mediaBurst(uc) } }, over, cors);
+  }
   if (!(await paidAllowed())) {
     return json({ status: "limit",
       message: "Spotter's daily budget is spent — add the video again tomorrow." }, 429, cors);
@@ -10041,14 +10140,29 @@ async function attachRefusal(
   const previewsOut = previewLimit(uc,
     "You have used all four Plus video reads this month. They reset on the first, or continue with Spotter Plus.", cors);
   if (reserve) {
-    return await rpc("reserve_video_preview", { p_user: userId, p_shortcode: shortcode }) === true ? null : previewsOut;
+    // The card's own row when it has none this month: that row is also what the
+    // completion fence (finish_ingest_job, premiumAccess) reads to deliver the
+    // premium card, and what fail_ingest_job refunds. A card that already has
+    // one — an earlier file, or a preview — spends a new row under the file's
+    // key; runAttachedUpload gives that one back if the read fails.
+    const sc = encodeURIComponent(shortcode);
+    const month = `${new Date().toISOString().slice(0, 7)}-01`;
+    const mine = await dbSelect("video_previews", `user_id=eq.${userId}&shortcode=eq.${sc}&month=eq.${month}&select=shortcode`);
+    const key = mine.length ? fileKey : shortcode;
+    return await rpc("reserve_video_preview", { p_user: userId, p_shortcode: key }) === true ? null : previewsOut;
   }
-  const sc = encodeURIComponent(shortcode);
-  const [used, mine] = await Promise.all([
-    previewCount(userId),
-    dbSelect("video_previews", `user_id=eq.${userId}&shortcode=eq.${sc}&month=eq.${new Date().toISOString().slice(0, 7)}-01&select=shortcode`),
-  ]);
-  return mine.length || used < PREVIEW_CAP ? null : previewsOut;
+  // A new file always takes a preview of its own, so the count alone answers.
+  return (await previewCount(userId)) < PREVIEW_CAP ? null : previewsOut;
+}
+
+/** Give back a Basic read an attached file reserved under its own key. No-op for Plus. */
+async function refundAttachRead(userId: string, fileKey: string): Promise<void> {
+  try {
+    await dbDelete("video_previews",
+      `user_id=eq.${userId}&shortcode=eq.${encodeURIComponent(fileKey)}&completed=eq.false`);
+  } catch (e) {
+    console.error("add the video: could not refund the read", fileKey, "for", userId, e);
+  }
 }
 
 /**
@@ -10071,14 +10185,20 @@ async function attachUpload(
     return json({ status: "error",
       message: "Spotter cannot find that file — the upload did not finish. Try picking it again." }, 404, cors);
   }
-  const refused = await attachRefusal(userId, w.shortcode, true, cors);
+  const fileKey = attachReadKey(ref);
+  const refused = await attachRefusal(userId, w.shortcode, fileKey, true, cors);
   if (refused) return await refuse(refused);
-  const refund = () => dbDelete("video_previews",
-    `user_id=eq.${userId}&shortcode=eq.${encodeURIComponent(w.shortcode)}&completed=eq.false`).catch(() => {});
+  const refund = async () => {
+    await dbDelete("video_previews",
+      `user_id=eq.${userId}&shortcode=eq.${encodeURIComponent(w.shortcode)}&completed=eq.false`).catch(() => {});
+    await refundAttachRead(userId, fileKey);
+  };
   const q = (await rpc("requeue_ingest", { p_user: userId, p_workout: w.id }))[0];
   if (!q || !q.job_created) {
     // Another job already owns this card, and it knows nothing about this file.
+    // The file's own read goes back; the card's row may be that job's.
     if (!q) await refund();
+    else await refundAttachRead(userId, fileKey);
     return await refuse(json(q ? { status: "processing", id: w.id, message: "Already reading that one." }
       : { status: "error", message: "Not found." }, q ? 200 : 404, cors));
   }
@@ -10169,7 +10289,7 @@ async function releaseHeldJob(w: any, rawFrames: unknown, userId: string, cors: 
     updated_at: new Date().toISOString(),
   });
   if (!moved.length) {
-    await deleteSheets(parsed.frames);
+    await deleteUnheldSheets(parsed.frames, w, userId);
     return json({ status: "processing", id: w.id, message: "Already reading that one." }, 200, cors);
   }
   try { await dbPatch("workouts", `id=eq.${w.id}&ingest_status=eq.processing`, { media_stage: "watching" }); }
@@ -10177,6 +10297,28 @@ async function releaseHeldJob(w: any, rawFrames: unknown, userId: string, cors: 
   console.log("held save released with", parsed.frames.sheets.length, "sheet(s):", w.shortcode, "job", job.id);
   kickWorker();
   return json({ status: "processing", id: w.id, job_id: job.id, message: "Reading the frames…" }, 202, cors);
+}
+
+/**
+ * Delete the sheets a request brought, except any this card's queued or running
+ * job holds. A sheet's path is fixed per video (sheetPathFor), so frames sent a
+ * second time for one save name the very objects the job the first request
+ * released is about to read. A lookup that fails keeps them: the orphan sweep
+ * removes them once they are two hours old.
+ */
+async function deleteUnheldSheets(frames: Frames, w: any, userId: string): Promise<void> {
+  let held: Set<string>;
+  try {
+    const jobs = await dbSelect("ingest_jobs",
+      `user_id=eq.${userId}&shortcode=eq.${encodeURIComponent(w.shortcode)}&status=in.(queued,running)&select=frames:meta->frames`);
+    held = new Set(jobs.flatMap((j: any) =>
+      Array.isArray(j?.frames?.sheets) ? j.frames.sheets.map((x: any) => String(x?.path ?? "")) : []));
+  } catch (e) {
+    console.error("frames: could not tell which sheets a job holds for", w.shortcode, "— keeping them", e);
+    return;
+  }
+  const loose = frames.sheets.filter((x) => !held.has(x.path));
+  if (loose.length) await deleteSheets({ ...frames, sheets: loose });
 }
 
 /** POST /api/workouts/:id/media, the one route with a card id in its path. */
@@ -10253,7 +10395,7 @@ async function handleReadVideo(
   // in flight at all, which makes this a re-read — the app's to ask for.
   if (viaKey) {
     const parsed = parseFrames(body?.frames, userId, w.shortcode);
-    if (!("error" in parsed)) await deleteSheets(parsed.frames);
+    if (!("error" in parsed)) await deleteUnheldSheets(parsed.frames, w, userId);
     if (w.ingest_status === "processing") {
       return json({ status: "processing", id, message: "Already reading that one." }, 200, cors);
     }
@@ -10285,7 +10427,8 @@ async function handleReadVideo(
     }, 400, cors);
   }
   if (w.ingest_status === "processing") {
-    return await bail(json({ status: "processing", id, message: "Already reading that one." }, 200, cors));
+    if (frames) await deleteUnheldSheets(frames, w, userId);
+    return json({ status: "processing", id, message: "Already reading that one." }, 200, cors);
   }
 
   const sc = encodeURIComponent(w.shortcode);
@@ -10389,8 +10532,8 @@ async function handleReadVideo(
       "from step", seed.step, frames ? "with " + frames.sheets.length + " fresh sheet(s)" : "");
   } else {
     console.log("read-the-video joined an existing job for", w.shortcode, "— not seeded");
-    // That job owns the reading and knows nothing about these sheets.
-    if (frames) await deleteSheets(frames);
+    // That job owns the reading; these sheets are deleted unless it holds them.
+    if (frames) await deleteUnheldSheets(frames, w, userId);
   }
   // The stage is set here rather than only by the worker: between this response
   // and the worker reaching the media step there are a few seconds in which the
@@ -14384,7 +14527,8 @@ async function authorizeSheets(
 
   let targets: { upload_url: string; token: string }[];
   try {
-    targets = await Promise.all(paths.map((path) => signUploadTarget(path)));
+    targets = (await Promise.all(paths.map((path) => signUploadTarget(path, true))))
+      .map(({ upload_url, token }) => ({ upload_url, token }));
   } catch (e) {
     console.error("sheets: could not sign the upload targets for", shortcode, e);
     return json({
@@ -14443,7 +14587,7 @@ async function authorizeUpload(req: Request, userId: string, cors: Cors): Promis
     if (!w || !attachable(w)) {
       return json({ status: "error", message: "That card is not there any more. Reload Spotter and try again." }, 404, cors);
     }
-    const refused = await attachRefusal(userId, w.shortcode, false, cors);
+    const refused = await attachRefusal(userId, w.shortcode, attachReadKey(ref), false, cors);
     if (refused) return refused;
   } else {
     const uc = await capsFor(userId);
@@ -14455,17 +14599,55 @@ async function authorizeUpload(req: Request, userId: string, cors: Cors): Promis
   // Basic's one upload of the day (CR-1b).
   const refused = await admitNow();
   if (refused) return refused;
-  const issued = await rpc("issue_upload_permit", { p_user: userId, p_path: minted ? ref.path : body.path, p_bytes: bytes });
+  const issued = minted
+    ? await issueAddressPermit(userId, ref.path, bytes)
+    : await rpc("issue_upload_permit", { p_user: userId, p_path: body.path, p_bytes: bytes });
   if (issued !== "ok") return json({ status: "limit", message: "Uploads are busy right now. Please try again later." }, 429, cors);
   if (!minted) return json({ status: "ok", path: body.path }, 200, cors);
-  let target: { upload_url: string; token: string };
+  let target: { upload_url: string; token: string; expires_in: number };
   try {
     target = await signUploadTarget(ref.path, false);
   } catch (e) {
     console.error("video door: could not sign the upload target for", ref.path, e);
+    // No address exists, so nothing can write there: the slot goes back.
+    const gone = { released: true, expires_at: new Date().toISOString() };
+    const permit = `path=eq.${encodeURIComponent(ref.path)}`;
+    await dbPatchMany("upload_permits", permit, { ...gone, address_until: null })
+      .catch(() => dbPatchMany("upload_permits", permit, gone)).catch(() => {});
     return json({ status: "error", message: "Spotter could not open a place to put that video. Try again in a moment." }, 502, cors);
   }
-  return json({ status: "ok", path: ref.path, ...target, expires_in: UPLOAD_SIGN_SECONDS }, 200, cors);
+  if (target.expires_in > SIGNED_UPLOAD_SECONDS) {
+    // Storage's lifetime changed under us: the permit holds until the real one ends.
+    await dbPatchMany("upload_permits", `path=eq.${encodeURIComponent(ref.path)}`,
+      { address_until: new Date(Date.now() + (target.expires_in + ADDRESS_HOLD_MARGIN_S) * 1000).toISOString() })
+      .catch((e) => console.error("video door: could not extend the permit for", ref.path, e));
+  }
+  return json({ status: "ok", path: ref.path, ...target }, 200, cors);
+}
+
+// The permit is issued a moment before its address is signed, so its hold runs a
+// minute past the address's two hours rather than a few hundred ms short of them.
+const ADDRESS_HOLD_MARGIN_S = 60;
+
+/**
+ * The permit for a path the server signs an upload address for. It counts
+ * against the person's two and the product's ceiling until that address can no
+ * longer write (`address_until`), not only until the server deletes the object:
+ * storage lets a live address write again once the path is empty.
+ *
+ * Needs migration 20260924140000. Until it is applied the old three-argument
+ * permit answers, exactly as before this change.
+ */
+async function issueAddressPermit(userId: string, path: string, bytes: number): Promise<string> {
+  try {
+    return await rpc("issue_upload_permit", { p_user: userId, p_path: path, p_bytes: bytes,
+      p_address_seconds: SIGNED_UPLOAD_SECONDS + ADDRESS_HOLD_MARGIN_S });
+  } catch (e) {
+    // PostgREST's "no function with these arguments": the migration is not in yet.
+    if (!/PGRST202/.test(String(e))) throw e;
+    console.error("video door: the address-aware permit is not deployed yet; issuing the old one");
+    return await rpc("issue_upload_permit", { p_user: userId, p_path: path, p_bytes: bytes });
+  }
 }
 
 /**

@@ -47,6 +47,7 @@ const checks = [
   ['Save flow client: honest offers, Add the video, parked links, resume', 'node', ['tools/share-client-harness.mjs']],
   ['Save sheet: share-first in the app, link-first on the web, paste and upload wired', 'node', ['tools/savesheet-harness.mjs']],
   ['Free-path throttle SQL: 30 a minute per person per route, admission untouched', 'node', ['tools/request-tick-db-check.mjs']],
+  ['The web page refuses to be framed; the native shell is untouched', 'node', ['tools/frame-guard-check.mjs']],
 ];
 const failures=[];
 for(const [label,cmd,args] of checks) {

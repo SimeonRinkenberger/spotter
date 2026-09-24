@@ -35,7 +35,7 @@ function check(ok, what) {
 const { db, files } = await replaySchema({ onError: (f, e) => check(false, 'migration applies: ' + f + ' — ' + e.message) });
 check(files.length >= 48, 'replayed ' + files.length + ' migrations');
 // Re-runnable: every migration of this cycle applied a second time is a no-op.
-for (const f of files.filter((x) => x >= '20260924100000' && x < '20260924110000')) {
+for (const f of files.filter((x) => (x >= '20260924100000' && x < '20260924110000') || (x >= '20260924140000' && x < '20260924150000'))) {
   try { await db.exec(readFileSync('supabase/migrations/' + f, 'utf8')); check(true, ''); }
   catch (e) { check(false, 're-runs cleanly: ' + f + ' — ' + e.message); await db.exec('rollback').catch(() => {}); }
 }
@@ -159,6 +159,56 @@ for (const t of SERVICE_ONLY) {
   }
 }
 
+// ---------- R-10: browser roles hold only the writes the app makes ----------
+{
+  // DELETE has no column form; the others are asked at table and column level.
+  const priv = async (role, table, what) => (await db.query(what === 'DELETE'
+    ? `select has_table_privilege($1, $2, $3) as ok`
+    : `select has_table_privilege($1, $2, $3) or has_any_column_privilege($1, $2, $3) as ok`, [role, 'public.' + table, what])).rows[0].ok;
+  for (const role of ['anon', 'authenticated']) {
+    check(!(await priv(role, 'profiles', 'INSERT')), 'R-10: ' + role + ' holds no INSERT on profiles (any column)');
+    check(!(await priv(role, 'profiles', 'DELETE')), 'R-10: ' + role + ' holds no DELETE on profiles');
+    for (const t of ['plan', 'collection_items', 'achievements']) {
+      check(!(await priv(role, t, 'UPDATE')), 'R-10: ' + role + ' holds no UPDATE on ' + t);
+    }
+  }
+  let e = await as('authenticated', B, `insert into public.profiles(id, plan, limits) values ('${B}', 'plus', '{"store_qa": true}'::jsonb)`);
+  check(refusedBy(e, DENIED), 'R-10: a client cannot insert its own profile row with a plan or QA flag, refused by grant (' + e + ')');
+  e = await as('authenticated', A, `delete from public.profiles where id = '${A}'`);
+  check(refusedBy(e, DENIED), 'R-10: nor delete its profile row (' + e + ')');
+  e = await as('authenticated', A, `insert into public.push_devices(user_id, token, env, last_sent_at, sent_week) values ('${A}', 'tok-caps', 'production', now(), 0)`);
+  check(refusedBy(e, DENIED), 'R-10: a push device row cannot be inserted with the sender\'s caps (' + e + ')');
+  // The exact upsert builds 5-7 send (saveRemind), as PostgREST runs it.
+  e = await as('authenticated', A, `insert into public.push_devices(user_id, token, bundle, env, tz, remind_plan, remind_risk, remind_at, app_version, updated_at)
+    values ('${A}', 'tok-b57', 'app.spotter', 'production', 'Europe/London', true, false, 1050, '0.14', now())
+    on conflict (token) do update set user_id = excluded.user_id, bundle = excluded.bundle, env = excluded.env, tz = excluded.tz,
+      remind_plan = excluded.remind_plan, remind_risk = excluded.remind_risk, remind_at = excluded.remind_at,
+      app_version = excluded.app_version, updated_at = excluded.updated_at`);
+  check(e === null, 'R-10: the builds 5-7 push_devices upsert still works, first time (' + e + ')');
+  e = await as('authenticated', A, `insert into public.push_devices(user_id, token, bundle, env, tz, remind_plan, remind_risk, remind_at, app_version, updated_at)
+    values ('${A}', 'tok-b57', 'app.spotter', 'production', 'Europe/London', false, true, 1080, '0.14', now())
+    on conflict (token) do update set user_id = excluded.user_id, bundle = excluded.bundle, env = excluded.env, tz = excluded.tz,
+      remind_plan = excluded.remind_plan, remind_risk = excluded.remind_risk, remind_at = excluded.remind_at,
+      app_version = excluded.app_version, updated_at = excluded.updated_at`);
+  check(e === null, 'R-10: and again (the conflict branch) (' + e + ')');
+  e = await as('authenticated', A, `insert into public.plan(user_id, day, workout_id) values ('${A}', '2026-11-02', '${WA}')`);
+  check(e === null, 'R-10: plan insert still works (' + e + ')');
+  e = await as('authenticated', A, `insert into public.achievements(user_id, key, kind) values ('${A}', 'streak-3', 'milestone') on conflict (user_id, key) do nothing`);
+  check(e === null, 'R-10: the achievements upsert (ignoreDuplicates) still works (' + e + ')');
+  // The signup trigger is a definer: a role that can only insert auth.users
+  // (standing in for the auth server) still gets a profile row.
+  const def = await db.query(`select prosecdef from pg_proc where oid = 'public.handle_new_user()'::regprocedure`);
+  check(def.rows[0]?.prosecdef === true, 'R-10: handle_new_user is security definer');
+  await db.exec(`do $$ begin if not exists (select 1 from pg_roles where rolname = 'auth_sim') then create role auth_sim nologin; end if; end $$;
+    grant usage on schema auth to auth_sim; grant insert on auth.users to auth_sim;`);
+  const C = '44444444-4444-4444-8444-444444444444';
+  let signup = null;
+  try { await db.exec(`set role auth_sim; insert into auth.users(id, email) values ('${C}', 'c@example.com'); reset role;`); }
+  catch (err) { signup = err.message; await db.exec('reset role'); }
+  const prof = await db.query(`select count(*)::int as n from public.profiles where id = '${C}'`);
+  check(signup === null && prof.rows[0].n === 1, 'R-10: signing up still creates the profile row (' + (signup ?? prof.rows[0].n + ' row') + ')');
+}
+
 // ---------- F-1: a push endpoint is https ----------
 {
   let e = await as('authenticated', A, `insert into public.push_subscriptions(user_id, endpoint, p256dh, auth)
@@ -200,4 +250,4 @@ if (failures.length) {
   console.error('\n' + failures.length + ' of ' + (failures.length + passed) + ' schema security checks FAILED');
   process.exit(1);
 }
-console.log('PASS ' + passed + ' schema security checks over ' + files.length + ' replayed migrations: own-card references, the session insert columns, service-only write grants, https push endpoints, ops_week search_path, every client write of builds 5-7 still allowed.');
+console.log('PASS ' + passed + ' schema security checks over ' + files.length + ' replayed migrations: own-card references, the session insert columns, service-only write grants, https push endpoints, ops_week search_path, every client write of builds 5-7 still allowed, and no browser-role write the app never makes.');

@@ -26,5 +26,15 @@ select jsonb_build_object(
    +(select count(*) from workout_logs x join workouts w on w.id=x.workout_id where w.user_id<>x.user_id),
  'push_endpoints_not_https',(select count(*) from push_subscriptions where endpoint not like 'https://%'),
  'push_endpoint_check_validated',(select coalesce(bool_and(convalidated),false) from pg_constraint where conname='push_subscriptions_endpoint_https'),
- 'erasure_outbox_present',to_regclass('public.erasure_outbox') is not null
+ 'erasure_outbox_present',to_regclass('public.erasure_outbox') is not null,
+ -- RTFIX (20260924140300): browser-role writes the app never makes. [] when applied.
+ 'client_writes_the_app_never_makes',(select coalesce(jsonb_agg(x order by x),'[]') from (
+   select t||':'||r||':'||p as x from (values ('profiles','INSERT'),('profiles','DELETE'),('plan','UPDATE'),
+     ('collection_items','UPDATE'),('achievements','UPDATE')) v(t,p), unnest(array['anon','authenticated']) r
+   where has_table_privilege(r,('public.'||t)::regclass,p)
+      or (p<>'DELETE' and has_any_column_privilege(r,('public.'||t)::regclass,p))
+   union all
+   select 'push_devices:'||r||':INSERT '||c from unnest(array['anon','authenticated']) r,
+     unnest(array['last_sent_at','sent_week','week_key','risk_week']) c
+   where has_column_privilege(r,'public.push_devices',c,'INSERT')) w)
 ) as audit;

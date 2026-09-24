@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-9VAKK5qQ5kVdQOeaZqYOKx3oElDO1cvncXOGz8hYJOU=' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/ https://challenges.cloudflare.com https://accounts.google.com/gsi/client https://appleid.cdn-apple.com/appleauth/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://api.fontshare.com https://accounts.google.com/gsi/style; font-src 'self' data: https://fonts.gstatic.com https://cdn.fontshare.com; img-src 'self' data: blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://i.ytimg.com https://simeonrinkenberger.github.io; media-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://simeonrinkenberger.github.io; connect-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co wss://mtzevoxxpsktmrbbuxva.supabase.co https://accounts.google.com/gsi/; frame-src https://www.tiktok.com https://www.instagram.com https://www.youtube.com https://www.youtube-nocookie.com https://challenges.cloudflare.com https://accounts.google.com/gsi/ https://appleid.apple.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-pFyJetwtkQ08B2YaPUK+P7XQAdg1FWXgYkmeDyze/6c=' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/ https://challenges.cloudflare.com https://accounts.google.com/gsi/client https://appleid.cdn-apple.com/appleauth/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://api.fontshare.com https://accounts.google.com/gsi/style; font-src 'self' data: https://fonts.gstatic.com https://cdn.fontshare.com; img-src 'self' data: blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://i.ytimg.com https://simeonrinkenberger.github.io; media-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://simeonrinkenberger.github.io; connect-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co wss://mtzevoxxpsktmrbbuxva.supabase.co https://accounts.google.com/gsi/; frame-src https://www.tiktok.com https://www.instagram.com https://www.youtube.com https://www.youtube-nocookie.com https://challenges.cloudflare.com https://accounts.google.com/gsi/ https://appleid.apple.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="google-site-verification" content="unLzcq6TBz9Bm6q4KHpbTmZ88dQ_tTnViacVX5BLzS0">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <title>Spotter by Quarterdeck Collective — save any workout video</title>
@@ -9372,7 +9372,16 @@ details.details-moving > :not(summary) {
 <script>
 (function() {
   "use strict";
-  var native = window.SpotterNative || null, AUTH_RETURN = native ? "https://simeonrinkenberger.github.io/spotter/" : location.origin + location.pathname, SB_URL = "https://mtzevoxxpsktmrbbuxva.supabase.co", SB_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10emV2b3h4cHNrdG1yYmJ1eHZhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgyMjM5ODgsImV4cCI6MjEwMzc5OTk4OH0._vpNhLJtv2bVGgXXClva9O5cX8Y5eJdTgbgAO81NnmU", API = SB_URL + "/functions/v1/spotter/api/", PUBLIC_AUTH = { google_client_id: "48831784248-dh1o2fhiem9kqgs6ambnnvaba8vojrf2.apps.googleusercontent.com", apple_services_id: "" }, PUBLIC_CAPTCHA = { turnstile_site_key: "" }, sb = window.supabase.createClient(SB_URL, SB_ANON, {
+  var native = window.SpotterNative || null;
+  if (!native && window.top !== window.self) {
+    try {
+      window.top.location.replace(location.href);
+    } catch (e) {
+    }
+    document.documentElement.style.display = "none";
+    return;
+  }
+  var AUTH_RETURN = native ? "https://simeonrinkenberger.github.io/spotter/" : location.origin + location.pathname, SB_URL = "https://mtzevoxxpsktmrbbuxva.supabase.co", SB_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10emV2b3h4cHNrdG1yYmJ1eHZhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgyMjM5ODgsImV4cCI6MjEwMzc5OTk4OH0._vpNhLJtv2bVGgXXClva9O5cX8Y5eJdTgbgAO81NnmU", API = SB_URL + "/functions/v1/spotter/api/", PUBLIC_AUTH = { google_client_id: "48831784248-dh1o2fhiem9kqgs6ambnnvaba8vojrf2.apps.googleusercontent.com", apple_services_id: "" }, PUBLIC_CAPTCHA = { turnstile_site_key: "" }, sb = window.supabase.createClient(SB_URL, SB_ANON, {
     auth: { persistSession: !0, autoRefreshToken: !0, detectSessionInUrl: !native, flowType: native ? "pkce" : "implicit", storage: native ? native.authStorage : void 0 },
     global: { fetch: function(url, opts) {
       return String(url).indexOf("/auth/v1/") >= 0 ? deadline(function(signal) {
@@ -10370,15 +10379,18 @@ details.details-moving > :not(summary) {
     });
   }
   function loadProfile() {
-    var uid = state.user.id, epoch = accountEpoch;
-    return sb.from("profiles").select("*").eq("id", uid).maybeSingle().then(function(r) {
+    var uid = state.user.id, epoch = accountEpoch, configured = null, loaded = sb.from("profiles").select("*").eq("id", uid).maybeSingle().then(function(r) {
       if (accountNow(epoch, uid) && r.data) {
-        state.profile = r.data, paintConsent(), native && native.configureSharing(r.data.ingest_key, { plan: r.data.plan }).catch(function() {
-        });
+        state.profile = r.data, paintConsent(), native && (configured = native.configureSharing(r.data.ingest_key, { plan: r.data.plan }).catch(function() {
+        }));
         var s = r.data.settings || {};
         s.unit && (state.unit = s.unit), typeof s.sounds == "boolean" && (state.sounds = s.sounds), typeof s.haptics == "boolean" && (state.haptics = s.haptics), s.remind && (remind.plan = !!s.remind.plan, remind.risk = !!s.remind.risk), typeof s.remindAt == "number" && (remind.at = s.remindAt), paintSounds(), billing.said && (state.profile.plan = billing.said), renderLibCount();
       }
     });
+    return sharingSet = loaded.then(function() {
+      return configured;
+    }, function() {
+    }), loaded;
   }
   var CACHE_KEY = "spotter-lib-v1", CACHE_MAX = 15e5;
   function thinRow(w) {
@@ -19033,7 +19045,7 @@ details.details-moving > :not(summary) {
       return saved && takeParkedShare(), saved;
     }));
   }
-  var PARKED_MAX_MS = 168 * 3600 * 1e3, PARKED_PER_PASS = 10, parkedBusy = !1;
+  var PARKED_MAX_MS = 168 * 3600 * 1e3, PARKED_PER_PASS = 10, parkedBusy = !1, sharingSet = Promise.resolve();
   function takeParkedShare() {
     if (parkedBusy || !native || !native.takeParkedShare || !state.user || sharing) return Promise.resolve();
     parkedBusy = !0;
@@ -19051,7 +19063,7 @@ details.details-moving > :not(summary) {
           }
         });
     }
-    return Promise.resolve().then(next).catch(function() {
+    return Promise.resolve(sharingSet).then(next).catch(function() {
     }).then(function() {
       parkedBusy = !1;
     });

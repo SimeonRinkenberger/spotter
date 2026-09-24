@@ -205,7 +205,7 @@ const NAMES = [
   // The two routes the native share extension and the "Re-read this video" action
   // call. Their collaborators are stubbed above; the judgement is the real code.
   "CARD_V", "MIN_USABLE_CARD_V", "UPLOAD_SIGN_SECONDS", "usablePack", "cacheStale", "markCache",
-  "mediaSeed", "authorizeSheets", "handleReadVideo",
+  "mediaSeed", "authorizeSheets", "handleReadVideo", "deleteUnheldSheets",
   "scopeFor", "isPackAuthorize", "plusPlan", "visuallyRead", "BASIC_MEDIA_BURST", "mediaBurst",
   // The tier that spends the money, and the two things that happen to a job when
   // the reading it paid for cannot be trusted.

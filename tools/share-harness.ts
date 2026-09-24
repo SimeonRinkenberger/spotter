@@ -22,6 +22,10 @@ function fn(head: string): string {
   const j = SRC.indexOf("\n}\n", i);
   return SRC.slice(i, j + 2);
 }
+/** A declaration this cycle added, or a stand-in when running over an older index.ts (fail-before runs). */
+function fnOr(head: string, fallback: string): string {
+  return SRC.includes(head) ? fn(head) : fallback;
+}
 /** Everything between two markers, the first included. */
 function span(from: string, to: string): string {
   const i = SRC.indexOf(from);
@@ -325,7 +329,9 @@ function check(ok: unknown, what: string): void {
   const route = [
     "type Meta = any; type Cors = any; type Counts = any; type UserCaps = any; type UploadRef = any;",
     "export const S: any = {};",
-    "function reset() { S.deleted = []; S.rpc = []; S.patches = []; S.kicks = 0; S.admitted = 0; S.plan = 'free'; S.previewOk = true; S.exists = true; S.reads = null; S.extracts = 0; S.paid = true; S.admit = null; S.job = { job_id: 'j9', job_created: true }; }",
+    // The preview table with reserve_video_preview's real semantics (idempotent per
+    // key, four a month), and the month's read set keyed as the worker logs it.
+    "function reset() { S.deleted = []; S.rpc = []; S.reserved = []; S.patches = []; S.kicks = 0; S.admitted = 0; S.plan = 'free'; S.previews = new Set(); S.readSet = new Set(); S.readKeys = []; S.mediaOver = null; S.dbDeleted = []; S.exists = true; S.extracts = 0; S.paid = true; S.admit = null; S.job = { job_id: 'j9', job_created: true }; }",
     "export { reset };",
     "function json(body: any, status = 200) { return { status, body }; }",
     "async function deleteUpload(p: string) { S.deleted.push(p); }",
@@ -335,7 +341,10 @@ function check(ok: unknown, what: string): void {
     "async function capsFor() { return { plan: S.plan, caps: { extract: 10 } }; }",
     "function overCap(u: number, c: number | null) { return c !== null && u >= c; }",
     "async function extractLimitResponse() { return json({ status: 'limit', kind: 'extract' }, 429); }",
-    "async function monthReadsReached() { return S.reads; }",
+    "async function monthReadsReached(_u: string, plan: string, key: string) { S.readKeys.push(key); if (plan !== 'plus') return null; if (key && S.readSet.has(key)) return null; return S.readSet.size >= 20 ? S.readSet.size : null; }",
+    "function mediaBurst() { return 15; }",
+    "async function mediaCapReached() { return S.mediaOver; }",
+    "async function capLimit(kind: string, _uc: any, used: number) { return json({ status: 'limit', kind, scope: 'day', used }, 429); }",
     "async function allowanceLimit() { return json({ status: 'limit', scope: 'month' }, 429); }",
     "async function paidAllowed() { return S.paid; }",
     "function plusPlan(p: string) { return p === 'plus'; }",
@@ -343,12 +352,14 @@ function check(ok: unknown, what: string): void {
     "const PREVIEW_CAP = 4;",
     "function allowanceFor(plan: string) { return { reads: plan === 'plus' ? 20 : 4 }; } function utcNextMonth() { return '2026-10-01T00:00:00.000Z'; }",
     fn("function previewLimit("),
-    "async function previewCount() { return 4; }",
-    "async function dbSelect() { return []; }",
-    "async function dbDelete() {}",
-    "async function rpc(name: string, args: any) { S.rpc.push(name); if (name === 'reserve_video_preview') return S.previewOk; if (name === 'requeue_ingest') return [S.job]; }",
+    "async function previewCount() { return S.previews.size; }",
+    "async function dbSelect(t: string, q: string) { if (t !== 'video_previews') return []; const sc = decodeURIComponent((q.match(/shortcode=eq\\.([^&]+)/) ?? [])[1] ?? ''); return S.previews.has(sc) ? [{ shortcode: sc }] : []; }",
+    "async function dbDelete(t: string, q: string) { S.dbDeleted.push(t + '?' + q); }",
+    "async function rpc(name: string, args: any) { S.rpc.push(name); if (name === 'reserve_video_preview') { S.reserved.push(args.p_shortcode); if (S.previews.has(args.p_shortcode)) return true; if (S.previews.size >= 4) return false; S.previews.add(args.p_shortcode); return true; } if (name === 'requeue_ingest') return [S.job]; }",
     "async function dbPatch(t: string, q: string, body: any) { S.patches.push({ t, q, body }); return body; }",
     "function kickWorker() { S.kicks++; }",
+    fnOr("function attachReadKey(", "function attachReadKey(ref: any) { return 'up-' + ref.id; }"),
+    fnOr("async function refundAttachRead(", "async function refundAttachRead() {}"),
     fn("function attachable("), fn("async function attachRefusal("), fn("async function attachUpload("),
     "export { attachUpload, attachRefusal };",
   ].join("\n");
@@ -366,12 +377,12 @@ function check(ok: unknown, what: string): void {
     "attach: the card says watching and the worker is woken");
   check(a.S.deleted.length === 0 && a.S.admitted === 1, "attach: the file is kept for the reader, and the save was admitted once");
 
-  a.reset(); a.S.previewOk = false;
+  a.reset(); a.S.previews = new Set(["a", "b", "c", "d"]);
   const out = await a.attachUpload(ig, ref, "", "u1", {});
   check(out.status === 429 && out.body.upgrade === true && out.body.scope === "month" && out.body.cap === 4 &&
     out.body.next_plan === "plus" && a.S.deleted[0] === ref.path,
     "attach: no reads left → the Plus answer (previewLimit's shape), and the file is deleted");
-  a.reset(); a.S.plan = "plus"; a.S.reads = 20;
+  a.reset(); a.S.plan = "plus"; a.S.readSet = new Set(Array.from({ length: 20 }, (_, i) => "tt-" + i));
   const month = await a.attachUpload(ig, ref, "", "u1", {});
   check(month.status === 429 && month.body.scope === "month" && !a.S.rpc.length, "attach: Plus at twenty reads is refused before any reservation");
   a.reset(); a.S.admit = { status: 429, body: { code: "busy" } };
@@ -387,14 +398,52 @@ function check(ok: unknown, what: string): void {
   a.reset(); a.S.exists = false;
   const gone = await a.attachUpload(ig, ref, "", "u1", {});
   check(gone.status === 404, "attach: a file that never landed is a 404 with a next step");
+  a.reset(); a.S.previews = new Set(["a", "b", "c", "d"]);
+  check(await a.attachRefusal("u1", "DcHDuEFzBSf", "up-" + ref.id, false, {}) !== null, "authorize: Basic with four previews used is refused up front");
+
+  // ---- R-1: a read is one FILE, not one card ----
+  const ref2 = { path: "u1/22222222-2222-4333-8444-555555555555.mp4", id: "22222222-2222-4333-8444-555555555555", ext: "mp4" };
+  a.reset(); a.S.previews = new Set(["DcHDuEFzBSf", "a", "b", "c"]);
+  const again = await a.attachUpload(ig, ref2, "", "u1", {});
+  check(again.status === 429 && again.body.upgrade === true && again.body.scope === "month" && again.body.cap === 4 &&
+    !a.S.rpc.includes("requeue_ingest") && a.S.deleted[0] === ref2.path,
+    "R-1: Basic, four previews used and one on this card: a second file into the same card is refused (previewLimit shape), no job queued, file deleted");
+  a.reset(); a.S.previews = new Set(["DcHDuEFzBSf", "a", "b", "c"]);
+  check(await a.attachRefusal("u1", "DcHDuEFzBSf", "up-" + ref2.id, false, {}) !== null,
+    "R-1: authorize refuses that second file up front too");
+  a.reset(); a.S.previews = new Set(["DcHDuEFzBSf"]);
+  const second = await a.attachUpload(ig, ref2, "", "u1", {});
+  check(second.status === 202 && a.S.reserved.join() === "up-" + ref2.id && a.S.previews.size === 2,
+    "R-1: Basic, the card already read once: the next file spends a preview of its own (up-<id>)");
   a.reset();
-  check(await a.attachRefusal("u1", "DcHDuEFzBSf", false, {}) !== null, "authorize: Basic with four previews used is refused up front");
+  const first = await a.attachUpload(ig, ref, "", "u1", {});
+  check(first.status === 202 && a.S.reserved.join() === "DcHDuEFzBSf" && a.S.previews.size === 1,
+    "R-1: Basic, the card's first read is reserved on the card (the row the completion fence reads)");
+  a.reset(); a.S.previews = new Set(["DcHDuEFzBSf"]); a.S.job = { job_id: "j8", job_created: false };
+  await a.attachUpload(ig, ref2, "", "u1", {});
+  check(a.S.dbDeleted.some((q: string) => q.includes("shortcode=eq.up-" + ref2.id)) &&
+    !a.S.dbDeleted.some((q: string) => q.includes("shortcode=eq.DcHDuEFzBSf")),
+    "R-1: a file that joined another job's read gives its own preview back, never the card's");
+  a.reset(); a.S.plan = "plus"; a.S.readSet = new Set(["DcHDuEFzBSf", ...Array.from({ length: 19 }, (_, i) => "tt-" + i)]);
+  const plus20 = await a.attachUpload(ig, ref2, "", "u1", {});
+  check(plus20.status === 429 && plus20.body.scope === "month" && !a.S.rpc.includes("requeue_ingest") &&
+    a.S.readKeys.every((k: string) => k === "up-" + ref2.id),
+    "R-1: Plus at twenty reads with this card among them: a new file is refused (the month is asked with the file's key)");
+  a.reset(); a.S.plan = "plus"; a.S.readSet = new Set(["DcHDuEFzBSf", ...Array.from({ length: 18 }, (_, i) => "tt-" + i)]);
+  const plus19 = await a.attachUpload(ig, ref2, "", "u1", {});
+  check(plus19.status === 202 && !a.S.rpc.includes("reserve_video_preview"), "R-1: Plus under twenty: the file is read, no preview row");
+  a.reset(); a.S.mediaOver = 15;
+  const burst = await a.attachUpload(ig, ref2, "", "u1", {});
+  check(burst.status === 429 && burst.body.kind === "media" && !a.S.rpc.length && a.S.deleted[0] === ref2.path,
+    "R-1: the daily media ceiling is asked, as Read the video asks it — refused before any reservation, file deleted");
 
   // The worker: a person's file, read into their card, and never into the cache.
   const worker = [
     "type Job = any; type Parsed = any; type Meta = any; type Card = any;",
     "export const S: any = {};",
-    "export function reset(r: any) { S.read = r; S.finished = null; S.published = 0; S.built = null; }",
+    "export function reset(r: any) { S.read = r; S.finished = null; S.published = 0; S.built = null; S.dbDeleted = []; }",
+    "async function dbDelete(t: string, q: string) { S.dbDeleted.push(t + '?' + q); }",
+    fn("function readQuality("),
     fn("class SoftFailure extends Error {").replace(/^class/, "class"),
     "class GuardError extends Error {}",
     "const aiActor = { getStore: () => null };",
@@ -411,6 +460,8 @@ function check(ok: unknown, what: string): void {
     "function labelRecommendations() {}",
     "async function publishCache() { S.published++; }",
     "async function finishJob(_j: any, _p: any, meta: any, card: any, thumb: any) { S.finished = { meta, card, thumb }; }",
+    fnOr("function attachReadKey(", "function attachReadKey(ref: any) { return 'up-' + ref.id; }"),
+    fnOr("async function refundAttachRead(", "async function refundAttachRead() {}"),
     fn("async function runAttachedUpload("),
     "export { runAttachedUpload, SoftFailure };",
   ].join("\n");
@@ -424,11 +475,18 @@ function check(ok: unknown, what: string): void {
   check(r.S.built.caption === "IG caption" && r.S.built.transcript === "00:01 squats" && r.S.built.supplied === true,
     "worker: rebuilt from the post's caption plus what the file said, marked supplied");
   check(r.S.finished.thumb === "thumbs/x.jpg" && r.S.published === 0, "worker: keeps the card's picture and never publishes to the cache");
+  check(!r.S.dbDeleted.length, "R-1 worker: a read that watched the file keeps its preview");
+  const refunded = () => r.S.dbDeleted.some((q: string) => q.startsWith("video_previews?") &&
+    q.includes("shortcode=eq.up-11111111-2222-4333-8444-555555555555") && q.includes("completed=eq.false"));
+  r.reset({ meta: { caption: null, transcript: "00:01 squats", media_source: "transcript", source: "transcript" } });
+  await r.runAttachedUpload(job, p);
+  check(r.S.finished && refunded(), "R-1 worker: a file that was only heard gives its own preview back");
   r.reset({ meta: { caption: "only music", source: "transcript" } });
   let failed: any = null;
   try { await r.runAttachedUpload(job, p); } catch (e) { failed = e; }
   check(failed?.final && failed?.keepCard && /This card is unchanged\.$/.test(failed.userMessage),
     "worker: a file with no workout fails final and keeps the card, with a sentence");
+  check(refunded(), "R-1 worker: a failed read gives the file's preview back");
   r.reset(new r.SoftFailure("Spotter watched this one and listened to it, and found no exercises either way. Paste the workout text instead.", "empty"));
   failed = null;
   try { await r.runAttachedUpload(job, p); } catch (e) { failed = e; }
@@ -515,7 +573,7 @@ function check(ok: unknown, what: string): void {
   const mod = [
     "type Cors = any; type UploadRef = any;",
     "export const S: any = {};",
-    "export function reset(o: any = {}) { Object.assign(S, { admitted: 0, admit: null, permits: [], permit: 'ok', signed: [], signFail: false, full: false, paid: true, sheets: 0 }, o); }",
+    "export function reset(o: any = {}) { Object.assign(S, { admitted: 0, admit: null, permits: [], permitArgs: [], permit: 'ok', signed: [], signFail: false, full: false, paid: true, sheets: 0, patched: [], noFourArg: false }, o); }",
     "function json(body: any, status = 200) { return { status, body }; }",
     "class GuardError extends Error {}",
     "const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;",
@@ -532,8 +590,13 @@ function check(ok: unknown, what: string): void {
     "async function dbSelect() { return [{ id: 'w1', shortcode: 'DcHDuEFzBSf', platform: 'instagram' }]; }",
     "function attachable() { return true; }",
     "async function admitNow() { S.admitted++; return S.admit; }",
-    "async function rpc(name: string, args: any) { S.permits.push(args.p_path); return S.permit; }",
-    "async function signUploadTarget(path: string, upsert = true) { if (S.signFail) throw new Error('503'); S.signed.push({ path, upsert }); return { upload_url: 'https://x.supabase.co/storage/v1/object/upload/sign/uploads/' + path + '?token=t0k', token: 't0k' }; }",
+    "async function rpc(name: string, args: any) { if (S.noFourArg && 'p_address_seconds' in args) throw new Error('rpc issue_upload_permit 404: {\"code\":\"PGRST202\"}'); S.permits.push(args.p_path); S.permitArgs.push(args); return S.permit; }",
+    "async function dbPatchMany(t: string, q: string, b: any) { S.patched.push({ t, q, b }); return []; }",
+    // The storage token's own lifetime is two hours (measured: exp-iat = 7200).
+    "async function signUploadTarget(path: string, upsert = false) { if (S.signFail) throw new Error('503'); S.signed.push({ path, upsert }); return { upload_url: 'https://x.supabase.co/storage/v1/object/upload/sign/uploads/' + path + '?token=t0k', token: 't0k', expires_in: 7200 }; }",
+    "const SIGNED_UPLOAD_SECONDS = 7200;",
+    fnOr("async function issueAddressPermit(", "async function issueAddressPermit() { throw new Error('no address-aware permit in this tree'); }"),
+    SRC.includes("const ADDRESS_HOLD_MARGIN_S") ? span("const ADDRESS_HOLD_MARGIN_S", ";") + ";" : "",
     fn("async function authorizeUpload("),
     span("const SHARED_VIDEO_TYPES", "\n};\n") + "\n};",
     "export { authorizeUpload, SHARED_VIDEO_TYPES };",
@@ -547,8 +610,10 @@ function check(ok: unknown, what: string): void {
   let r = await ask({ kind: "video", bytes: 8_000_000, ext: "mp4" });
   check(r.status === 200 && r.body.status === "ok" && pathRe.test(r.body.path) && r.body.path.endsWith(".mp4"),
     "CR-1: {kind:video, bytes, ext} with no path → 200 and a path minted as <uid>/<uuid>.mp4");
-  check(r.body.upload_url.includes(r.body.path) && r.body.token === "t0k" && r.body.expires_in === 900,
-    "CR-1: the answer carries the signed upload address, its token and expires_in");
+  check(r.body.upload_url.includes(r.body.path) && r.body.token === "t0k" && r.body.expires_in === 7200,
+    "CR-1/R-2: the answer carries the signed upload address, its token, and the token's real lifetime (" + r.body.expires_in + ")");
+  check(u.S.permitArgs[0]?.p_address_seconds >= 7200,
+    "R-2: the video door's permit is held for the address's lifetime (p_address_seconds " + u.S.permitArgs[0]?.p_address_seconds + ")");
   check(u.S.permits[0] === r.body.path && u.S.signed[0].path === r.body.path && u.S.signed[0].upsert === false && u.S.admitted === 1,
     "CR-1: the permit is for that path, the address writes once (no upsert), admitted once");
   const again = await ask({ kind: "video", bytes: 8_000_000, ext: "mp4" });
@@ -585,6 +650,8 @@ function check(ok: unknown, what: string): void {
   check(r.status === 200 && JSON.stringify(r.body) === JSON.stringify({ status: "ok", path: own }) &&
     u.S.permits[0] === own && !u.S.signed.length && u.S.admitted === 1,
     "CR-1: a caller-named path answers {status, path} as today, no address signed");
+  check(Object.keys(u.S.permitArgs[0] ?? {}).sort().join() === "p_bytes,p_path,p_user",
+    "R-2: the app's own permit is asked with the same three arguments as before");
   u.reset();
   r = await ask({ kind: "video", path: own, bytes: 1000 });
   check(r.status === 200 && !("upload_url" in r.body), "CR-1: a named path wins over kind (old shape unchanged)");
@@ -604,6 +671,12 @@ function check(ok: unknown, what: string): void {
   u.reset({ signFail: true });
   r = await ask({ kind: "video", bytes: 1000, ext: "mp4" });
   check(r.status === 502 && r.body.status === "error", "CR-1: storage would not sign → 502 with a sentence");
+  check(u.S.patched.some((x: any) => x.t === "upload_permits" && x.b.released === true && x.b.address_until === null),
+    "R-2: no address was made, so the permit is given back at once");
+  u.reset({ noFourArg: true });
+  r = await ask({ kind: "video", bytes: 1000, ext: "mp4" });
+  check(r.status === 200 && u.S.permitArgs.length === 1 && !("p_address_seconds" in u.S.permitArgs[0]),
+    "R-2: before its migration is applied, the door falls back to the old permit (deploy order safe)");
   u.reset();
   r = await ask({ kind: "pack", shortcode: "tt-1", sheets: [{ bytes: 1 }] });
   check(u.S.sheets === 1 && u.S.admitted === 0, "the pack authorize is still its own branch");
@@ -611,6 +684,40 @@ function check(ok: unknown, what: string): void {
     "CR-1b: the pack authorize admits after its free refusals, before its permits");
   check(/path === "\/api\/ingest" \|\| path === "\/api\/uploads\/authorize" \|\|/.test(SRC),
     "CR-1b: /api/uploads/authorize is a late-admitting route");
+}
+
+// ---- R-2: what storage is actually asked for, and what the token says ----
+{
+  const b64 = (o: unknown) => btoa(JSON.stringify(o)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const jwt = (claims: unknown) => b64({ alg: "HS256", typ: "JWT" }) + "." + b64(claims) + ".sig";
+  const mod = [
+    "export const S: any = { calls: [], token: '' };",
+    "const SUPABASE_URL = 'https://proj.supabase.co';",
+    "const dbHeaders = { apikey: 'k', 'content-type': 'application/json' };",
+    "const UPLOAD_SIGN_SECONDS = 900;",
+    "const SIGNED_UPLOAD_SECONDS = 7200;",
+    "async function fetch(url: string, init: any) { S.calls.push({ url, headers: init.headers, body: init.body }); return new Response(JSON.stringify({ url: '/object/upload/sign/uploads/p?token=' + S.token }), { status: 200 }); }",
+    fn("async function signUploadTarget("),
+    fnOr("function tokenLifetime(", ""),
+    "export { signUploadTarget };",
+  ].join("\n");
+  const g = await import("data:application/typescript," + encodeURIComponent(mod));
+  g.S.token = jwt({ url: "uploads/p", upsert: false, scope: "upload", iat: 1790266216, exp: 1790273416 });
+  const video = await g.signUploadTarget("u/v.mp4", false);
+  check(video.expires_in === 7200, "R-2: the address's lifetime is read from its token (exp-iat = 7200), not assumed (" + video.expires_in + ")");
+  const vh = g.S.calls[0].headers ?? {};
+  check(!("x-upsert" in vh) && !/upsert/.test(String(g.S.calls[0].body ?? "")),
+    "R-2: a video's address is asked without upsert, in the only form storage reads (no x-upsert header, no ignored body flag)");
+  g.S.calls = [];
+  g.S.token = jwt({ url: "uploads/p", upsert: true, scope: "upload", iat: 100, exp: 3700 });
+  const sheet = await g.signUploadTarget("u/pack/tt-1/sheet-1.jpg", true);
+  check(g.S.calls[0].headers?.["x-upsert"] === "true", "R-2: a sheet's address asks for upsert with the x-upsert header storage honours");
+  check(sheet.expires_in === 3600, "R-2: a different storage lifetime is reported as it is (" + sheet.expires_in + ")");
+  g.S.calls = []; g.S.token = "not-a-jwt";
+  const odd = await g.signUploadTarget("u/v.mp4", false);
+  check(odd.expires_in === 7200, "R-2: an unreadable token is reported at storage's documented two hours");
+  check(/signUploadTarget\(path, true\)/.test(SRC) && /signUploadTarget\(ref\.path, false\)/.test(SRC),
+    "R-2: sheets sign with upsert, the video door without");
 }
 
 // ---- CR-2: the save key on /media, narrowly ----
@@ -630,6 +737,7 @@ function check(ok: unknown, what: string): void {
     "function parseFrames(raw: any, uid: string, sc: string) { return raw?.bad ? { error: 'frames refused' } : { frames: { sheets: [{ path: uid + '/pack/' + sc + '/sheet-1.jpg' }] } }; }",
     "async function deleteSheets(f: any) { S.deleted += f?.sheets?.length ?? 0; }",
     "function providerFor() { S.reached = true; return { media: false }; }",
+    fnOr("async function deleteUnheldSheets(", ""),
     span("/** POST /api/workouts/:id/media, the one route", "/**\n * \"Read the video\" — the manual trigger"),
     fn("async function handleReadVideo("),
     "export { handleReadVideo, keyMediaBody, MEDIA_PATH_RE };",
@@ -686,6 +794,60 @@ function check(ok: unknown, what: string): void {
   check(/path === "\/api\/ai-consent" \|\| \(req\.method === "POST" && MEDIA_PATH_RE\.test\(path\)\)\)\) \{\s*\n\s*userId = await userFromIngestKey\(req, url\);\s*\n\s*viaKey = !!userId;/.test(SRC) &&
     /handleReadVideo\(readvid\[1\], userId, req, cors, viaKey\)/.test(SRC),
     "CR-2: the router lets the key reach /media only as viaKey (a bearer never sets it)");
+}
+
+// ---- R-6: frames sent twice never delete the sheets a live job holds ----
+{
+  const UID = "aaaaaaaa-0000-4000-8000-000000000001";
+  const mod = [
+    "type Meta = any; type Cors = any; type Frames = any; type Counts = any; type UserCaps = any; type Card = any;",
+    "export const S: any = {};",
+    "export function reset(card: any, job: any) { Object.assign(S, { card, job, deleted: [] as string[], kicks: 0 }); }",
+    "function json(body: any, status = 200) { return { status, body }; }",
+    // A small stateful ingest_jobs/workouts pair, answering the queries these routes make.
+    "async function dbSelect(t: string, q: string) {",
+    "  if (t === 'workouts') return S.card ? [S.card] : [];",
+    "  const j = S.job; if (!j) return [];",
+    "  if (q.includes('select=frames:meta->frames')) return ['queued', 'running'].includes(j.status) ? [{ frames: j.meta?.frames ?? null }] : [];",
+    "  if (q.includes('status=eq.queued')) return j.status === 'queued' ? [{ id: j.id, meta: j.meta }] : [];",
+    "  return [j];",
+    "}",
+    "async function dbPatchMany(t: string, q: string, body: any) { if (t === 'ingest_jobs' && S.job && S.job.status === 'queued') { Object.assign(S.job, body); return [S.job]; } return []; }",
+    "async function dbPatch() { return {}; }",
+    "function parseFrames(raw: any, uid: string, sc: string) { return { frames: { source: 'device', duration_s: 30, sheets: [{ path: uid + '/pack/' + sc + '/sheet-1.jpg' }, { path: uid + '/pack/' + sc + '/sheet-2.jpg' }] } }; }",
+    "async function deleteSheets(f: any) { for (const x of f?.sheets ?? []) S.deleted.push(x.path); }",
+    "function kickWorker() { S.kicks++; }",
+    "function background() {}",
+    "function providerFor() { return { media: true }; }",
+    "const UUID_RE = /^[0-9a-fA-F-]{36}$/; const UPLOAD_EXTS = ['mp4'];",
+    fn("function parseUploadPath("),
+    "async function attachUpload() { throw new Error('not here'); }",
+    span("const FRAMES_HOLD_MS = ", "/**\n * \"Read the video\" — the manual trigger"),
+    fn("async function handleReadVideo("),
+    "export { handleReadVideo };",
+  ].join("\n");
+  const h = await import("data:application/typescript," + encodeURIComponent(mod));
+  const ID = "cccccccc-0000-4000-8000-000000000006";
+  const post = (viaKey: boolean) => h.handleReadVideo(ID, UID,
+    new Request("https://fixture.invalid/api/workouts/" + ID + "/media", { method: "POST", body: JSON.stringify({ frames: { sheets: [] } }) }), {}, viaKey);
+  const card = { id: ID, user_id: UID, shortcode: "tt-9", platform: "tiktok", ingest_status: "processing", ingest_job_id: "j6" };
+  for (const viaKey of [true, false]) {
+    const who = viaKey ? "the save key" : "the app";
+    h.reset({ ...card }, { id: "j6", user_id: UID, status: "queued", meta: { caption: null, hold_frames: true } });
+    const first = await post(viaKey);
+    check(first.status === 202 && h.S.job.meta.frames?.sheets?.length === 2 && !h.S.deleted.length,
+      "R-6 (" + who + "): the first frames POST releases the held job with its sheets");
+    const again = await post(viaKey);
+    check(again.status === 200 && again.body.message === "Already reading that one." && !h.S.deleted.length,
+      "R-6 (" + who + "): the same POST again deletes nothing the queued job holds (deleted: " + h.S.deleted.join(", ") + ")");
+    check(h.S.job.meta.frames?.sheets?.length === 2, "R-6 (" + who + "): and the job still has its frames");
+    h.S.job.status = "running";
+    await post(viaKey);
+    check(!h.S.deleted.length, "R-6 (" + who + "): nor once a worker is running it");
+    h.S.job.status = "done";
+    await post(viaKey);
+    check(h.S.deleted.length === 2, "R-6 (" + who + "): sheets nobody holds any more are still deleted");
+  }
 }
 
 // ---- the free path's per-minute throttle (request_tick) ----
