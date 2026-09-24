@@ -34,6 +34,8 @@ const checks = [
   ['Reorder: slot math, auto-scroll, arrows, exact permutation, stale guard', 'node', ['tools/reorder-harness.mjs']],
   ['Reorder SQL: the override holds the order, one ledger row per reorder', 'node', ['tools/reorder-db-check.mjs']],
   ['Section edits through the iOS bridge: the block guard compares what the owner sees', 'node', ['tools/block-guard-harness.mjs']],
+  ['Pumpy new chat after five minutes away; labels fold on the first message', 'node', ['tools/pumpy-fresh-harness.mjs']],
+  ['Library search X: clears and puts the keyboard away on a finger\'s lift', 'node', ['tools/search-x-harness.mjs']],
   ['One declaration per name in app.ts', 'node', ['tools/unique-decls.mjs']],
   ['Creator codes on the client', 'node', ['tools/creator-client-harness.mjs']],
   ['Creator codes SQL', 'node', ['tools/creator-db-check.mjs']],

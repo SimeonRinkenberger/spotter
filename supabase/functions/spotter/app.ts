@@ -1284,6 +1284,7 @@ export const APP = String.raw`
     if (wo) saveDraft();
     clearInterval(woTimer); stopRest(); liveEnd(false); releaseWake(); wo = null; hist = {}; histReady = false;
     if (strava) strava = { asked: false, configured: false, connected: false, athlete: null, busy: false };
+    clearTimeout(pumpyIdleTimer);
     if (pumpy) {
       var seq = (pumpy.openSeq || 0) + 1, wired = pumpy.wired;
       pumpy = { thread: null, messages: [], refs: [], refsRev: 0, loaded: false,
@@ -13325,7 +13326,7 @@ export const APP = String.raw`
   var QUICK_ASKS = [
     "Build a 25-min kettlebell shoulders + core",
     "Plan my week from what I’ve saved",
-    "Add a finisher to my leg day",
+    "Edit one of my workouts",
     "Shoulder pain — what should I strengthen?"
   ];
 
@@ -13334,14 +13335,76 @@ export const APP = String.raw`
   var NO_TOUCH = !("ontouchstart" in window) && !(navigator.maxTouchPoints > 0);
 
   function openPumpy(w) {
-    // "Ask Pumpy about this workout" is the first reference, picked for you.
+    // "Ask Pumpy about this workout" is the first reference, picked for you. It
+    // is also a reason to keep the conversation on the page: the five-minute
+    // rule below counts it as the chat's latest moment.
     if (w) {
       pumpy.refs = [w.id].concat(pumpy.refs.filter(function (id) { return id !== w.id; })).slice(0, MAX_REFS);
       pumpy.refsRev++;
+      pumpy.ctxAt = Date.now();
       renderPumpyCtx();
     }
     setView("pumpy");
   }
+
+  // ---------- Pumpy · a new chat after five minutes away ----------
+  //
+  // The owner: "When it has been a few minutes when I go back to Pumpy it
+  // defaults to a new chat, so the user is not just spamming one chat with a
+  // bunch of stuff." ChatGPT and Claude both open on an empty chat and keep the
+  // last one a tap away in the list; this is that, with a grace period, so
+  // stepping out to look at a card mid-conversation does not lose the thread.
+  // Nothing is written: the old conversation is already in Chats, and a new one
+  // is created by its first message, as New chat always did.
+  var PUMPY_IDLE = 5 * 60 * 1000, pumpyIdleTimer = 0;
+
+  // When a conversation last moved: its newest message, sent or received, as the
+  // server stamped it or as this session saw it happen (seen).
+  function pumpyLastAt(msgs, seen) {
+    var t = seen || 0;
+    for (var i = msgs.length - 1; i >= 0; i--) {
+      var c = Date.parse(msgs[i].created_at || "");
+      if (c) { if (c > t) t = c; break; }
+    }
+    return t;
+  }
+
+  // What a new chat never takes off the page: an answer still arriving, or a
+  // change Pumpy is waiting on a yes or no for.
+  function pumpyHolds(msgs) {
+    if (pumpy.busy || pumpy.live) return true;
+    return msgs.some(function (m) {
+      return m.role === "assistant" && m.meta && m.meta.proposal && m.meta.status === "pending";
+    });
+  }
+
+  function pumpyStale(msgs, seen, at) {
+    if (!msgs.length || pumpyHolds(msgs)) return false;
+    var last = Math.max(pumpyLastAt(msgs, seen), pumpy.ctxAt || 0);
+    return !!last && (at || Date.now()) - last > PUMPY_IDLE;
+  }
+
+  // The page on a new chat, at once: this runs where nobody is watching the
+  // chat change (another tab, or the moment the app comes back), so New chat's
+  // crossfade would only be a delay.
+  function freshenPumpy() {
+    if (!pumpy.loaded || pumpy.loading || !pumpyStale(pumpy.messages, pumpy.lastAt)) return false;
+    pumpyBlank();
+    renderPumpy();
+    $("pumpyview").scrollTop = 0;
+    return true;
+  }
+
+  // Away from Pumpy: freshen now if it is time, or when it will be.
+  function pumpyAway() {
+    clearTimeout(pumpyIdleTimer);
+    if (state.view === "pumpy" || !pumpy.loaded || !pumpy.messages.length || freshenPumpy()) return;
+    var last = Math.max(pumpyLastAt(pumpy.messages, pumpy.lastAt), pumpy.ctxAt || 0);
+    if (last) pumpyIdleTimer = setTimeout(pumpyAway, Math.max(1000, last + PUMPY_IDLE - Date.now() + 250));
+  }
+
+  // The app coming back is going back to Pumpy when Pumpy is the page it shows.
+  function pumpyBack() { if (state.view === "pumpy") freshenPumpy(); else pumpyAway(); }
 
   // sizePumpy() measured the header and the tab bar for this one view. Every
   // page needs the same two numbers now, so measureChrome() in the pager section
@@ -13378,7 +13441,9 @@ export const APP = String.raw`
   function settlePumpy(t) {
     pumpy.loading = false;
     pumpy.loaded = true;
-    if (t) {
+    // The newest conversation, unless it went quiet more than five minutes ago:
+    // then it stays in Chats and the page opens on a new one.
+    if (t && !pumpyStale(t.pumpy_messages || [], 0)) {
       pumpy.thread = { id: t.id, title: t.title, updated_at: t.updated_at, workout_id: t.workout_id };
       pumpy.messages = t.pumpy_messages || [];
       // Any explicit selection this session, before or during loading, wins over history.
@@ -13410,16 +13475,21 @@ export const APP = String.raw`
     $("pumpyctx").inert = false;
   }
 
+  // A new owner retires the old stream immediately. Its last packet can still
+  // save to that conversation, but cannot put a reply into this new one.
+  function pumpyBlank() {
+    cancelPumpyReset();
+    pumpy = Object.assign({}, pumpy, { thread: null, messages: [], refs: [],
+      refsRev: pumpy.refsRev + 1, openSeq: (pumpy.openSeq || 0) + 1,
+      loaded: true, loading: false, busy: false, live: null, nodes: {}, shownCount: 0, stick: true,
+      lastAt: 0, ctxAt: 0 });
+  }
+
   function newPumpyThread() {
     // Repeated taps on an empty chat should not restart its drawing or blink.
     if (pumpy.loaded && !pumpy.loading && !pumpy.thread && !pumpy.messages.length &&
         !pumpy.busy && !pumpy.refs.length) return;
-    cancelPumpyReset();
-    // A new owner retires the old stream immediately. Its last packet can still
-    // save to that conversation, but cannot put a reply into this new one.
-    pumpy = Object.assign({}, pumpy, { thread: null, messages: [], refs: [],
-      refsRev: pumpy.refsRev + 1, openSeq: (pumpy.openSeq || 0) + 1,
-      loaded: true, loading: false, busy: false, live: null, nodes: {}, shownCount: 0, stick: true });
+    pumpyBlank();
     var owner = pumpy, log = $("pumpylog"), ctx = $("pumpyctx");
     log.classList.remove("waiting");
     $("pumpysend").disabled = false;
@@ -13640,6 +13710,9 @@ export const APP = String.raw`
         pumpy.loaded = true;
         pumpy.shownCount = 0;   // loaded history arrives without msgin
         pumpy.stick = true;     // a thread opens on its newest message, always
+        // Chosen from the list just now: that counts as the chat's latest moment,
+        // or stepping out and straight back would swap it for a new one.
+        pumpy.lastAt = 0; pumpy.ctxAt = Date.now();
         log.classList.remove("waiting");
         renderPumpy();          // one fragment, one swap, one scrollTop
         if (!closed) closeSheet("pumpysheet");
@@ -13804,6 +13877,9 @@ export const APP = String.raw`
     // With nothing said yet the log is empty space, so the greeting sits in the
     // middle of it rather than clinging to the top.
     log.classList.toggle("hello", !shown.length);
+    // The bar's words are for the empty chat only (style.ts, .pblabel), and not
+    // before the first fetch has said it is empty, or they would fold on arrival.
+    $("pumpybar").classList.toggle("labelled", !!pumpy.loaded && !shown.length && !pumpy.busy);
     // And only once we KNOW there is nothing: before the first fetch lands it is a
     // final state that has to be taken away again, which reads as a flash.
     if (!shown.length && pumpy.loaded) {
@@ -14157,6 +14233,7 @@ export const APP = String.raw`
     pumpy.busy = true;
     pumpy.live = null;
     pumpy.stick = true;
+    pumpy.lastAt = Date.now();
     pumpy.messages.push({ id: "local-" + Date.now(), role: "user", content: text });
     renderPumpy();
     var ids = pumpy.refs.slice(0, MAX_REFS);
@@ -14170,6 +14247,7 @@ export const APP = String.raw`
     };
     apiStream("pumpy/chat", payload, function (r) {
       if (pumpy !== owner) return;
+      pumpy.lastAt = Date.now();
       if (r.t !== "final") { liveEvent(r); return; }
       pumpy.busy = false;
       $("pumpyannounce").textContent = "Pumpy’s answer is ready.";
@@ -17667,6 +17745,9 @@ export const APP = String.raw`
     setTimeout(function () { guidePage(v); }, 450);
     if (v === "library") renderToday();
     if (v === "train" && state.logs) countStats();
+    // Settled somewhere else, with Pumpy off screen: the one place a chat can be
+    // swapped without anybody seeing it happen.
+    if (v !== "pumpy") pumpyAway();
   }
 
   // Start independent reads on navigation intent, while the spring is moving.
@@ -17684,6 +17765,10 @@ export const APP = String.raw`
       drawn.train = true;
       quietly(prepareTrain());
     } else if (v === "pumpy") {
+      // Last word on the five-minute rule, for a return that beat pumpyAway's
+      // timer; usually the page is already on its new chat.
+      clearTimeout(pumpyIdleTimer);
+      freshenPumpy();
       loadPumpy();
     }
   }
@@ -19084,6 +19169,7 @@ export const APP = String.raw`
     if (wo && !wo.finished) { startClock(); acquireWake(); }
     watchBilling(); stravaBack();
     publishSummary();
+    if (state.user) pumpyBack();
     if (state.user && !wo && !overlayShowing()) load();
   });
 
@@ -19094,6 +19180,7 @@ export const APP = String.raw`
     if (!state.user) return;
     pendPolls = 0;
     watchPending();
+    pumpyBack();
     // The interval was throttled while the phone was away; the deadline was not.
     // One tick puts the ring right, and ends a rest that ran out in a pocket.
     if (restUntil) tickRest();

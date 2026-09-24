@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-8xYPjwkOpeXtp/7EYlyeJs/l6z3Vp5hxtBXqdyy+Gn8=' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/ https://challenges.cloudflare.com https://accounts.google.com/gsi/client https://appleid.cdn-apple.com/appleauth/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://api.fontshare.com https://accounts.google.com/gsi/style; font-src 'self' data: https://fonts.gstatic.com https://cdn.fontshare.com; img-src 'self' data: blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://i.ytimg.com https://simeonrinkenberger.github.io; media-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://simeonrinkenberger.github.io; connect-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co wss://mtzevoxxpsktmrbbuxva.supabase.co https://accounts.google.com/gsi/; frame-src https://www.tiktok.com https://www.instagram.com https://www.youtube.com https://www.youtube-nocookie.com https://challenges.cloudflare.com https://accounts.google.com/gsi/ https://appleid.apple.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-oT6PAqKhKqoE3yGAoLtMFuYjGQiEg56doqftB0tm0qc=' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/ https://challenges.cloudflare.com https://accounts.google.com/gsi/client https://appleid.cdn-apple.com/appleauth/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://api.fontshare.com https://accounts.google.com/gsi/style; font-src 'self' data: https://fonts.gstatic.com https://cdn.fontshare.com; img-src 'self' data: blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://i.ytimg.com https://simeonrinkenberger.github.io; media-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://simeonrinkenberger.github.io; connect-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co wss://mtzevoxxpsktmrbbuxva.supabase.co https://accounts.google.com/gsi/; frame-src https://www.tiktok.com https://www.instagram.com https://www.youtube.com https://www.youtube-nocookie.com https://challenges.cloudflare.com https://accounts.google.com/gsi/ https://appleid.apple.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="google-site-verification" content="unLzcq6TBz9Bm6q4KHpbTmZ88dQ_tTnViacVX5BLzS0">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <title>Spotter by Quarterdeck Collective — save any workout video</title>
@@ -6436,15 +6436,17 @@ body:not(.app) #toast.show {
   backdrop-filter: blur(18px);
 }
 .pumpybar button {
-  width: 44px;
+  min-width: 44px;
   height: 44px;
+  padding: 0 12.5px;
   font-size: 19px;
   border: none;
   background: none;
   border-radius: 999px;
   color: var(--ink-2);
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   transition: transform var(--t-1) var(--e-out), background-color var(--t-2) var(--e-soft);
 }
 .pumpybar button:active {
@@ -6452,9 +6454,38 @@ body:not(.app) #toast.show {
   background: var(--sand);
   color: var(--ink);
 }
+.pblabel {
+  display: block;
+  max-width: 0;
+  margin-left: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: -.005em;
+  color: var(--ink);
+  opacity: 0;
+  transition:
+    max-width var(--t-3) var(--e-soft),
+    margin-left var(--t-3) var(--e-soft),
+    opacity var(--t-1) var(--e-in);
+}
+.pumpybar.labelled .pblabel {
+  max-width: 96px;
+  margin-left: 7px;
+  opacity: 1;
+  transition:
+    max-width var(--t-3) var(--e-out),
+    margin-left var(--t-3) var(--e-out),
+    opacity var(--t-2) var(--e-out) var(--t-1);
+}
 @media (prefers-reduced-motion: reduce) {
   .pumpybar button {
     transition: none;
+  }
+  .pblabel,
+  .pumpybar.labelled .pblabel {
+    transition: opacity var(--t-1) var(--e-soft);
   }
 }
 .pumpyhello {
@@ -8340,6 +8371,8 @@ details.details-moving > :not(summary) {
 
 <svg class="sprite" aria-hidden="true" focusable="false">
 <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></symbol>
+<symbol id="i-compose" viewBox="0 0 24 24"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/></symbol>
+<symbol id="i-chats" viewBox="0 0 24 24"><path d="M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719"/></symbol>
 <symbol id="i-paperclip" viewBox="0 0 24 24"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></symbol>
 <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
 <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
@@ -8490,9 +8523,9 @@ details.details-moving > :not(summary) {
 
       <div class="page view" id="trainview" role="tabpanel" aria-labelledby="tab1"></div>
       <div class="page view" id="pumpyview" role="tabpanel" aria-labelledby="tab2">
-        <div class="pumpybar">
-          <button id="pumpychats" title="Chats" aria-label="Chats"><svg class="ic"><use href="#i-list"></use></svg></button>
-          <button id="pumpynew" title="New chat" aria-label="New chat"><svg class="ic"><use href="#i-plus"></use></svg></button>
+        <div class="pumpybar" id="pumpybar">
+          <button id="pumpychats" title="Chats" aria-label="Chats"><svg class="ic"><use href="#i-chats"></use></svg><span class="pblabel" aria-hidden="true">Chats</span></button>
+          <button id="pumpynew" title="New chat" aria-label="New chat"><svg class="ic"><use href="#i-compose"></use></svg><span class="pblabel" aria-hidden="true">New chat</span></button>
         </div>
         <div id="pumpylog"></div>
         <div id="pumpyannounce" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
@@ -9933,7 +9966,7 @@ details.details-moving > :not(summary) {
   }
   function clearAccount() {
     if (dismissAiConsent(), native && native.configureSharing(null).catch(function() {
-    }), cancelPumpyReset(), pendingMotion && pendingMotion.disconnect(), $("app").classList.add("hide"), accountEpoch++, reads = {}, inFlight = {}, libraryRev++, logsRev++, planRev++, clearTimeout(undoTimer), undoTimer = null, undoFn = null, clearTimeout(detailCloseTimer), clearTimeout(woCloseTimer), clearTimeout(pendTimer), pendTimer = null, pendPolls = 0, pendBusy = !1, wkChannel && (sb.removeChannel(wkChannel), wkChannel = null), booting = null, state.profile = null, state.workouts = [], state.logs = null, state.plan = null, state.awards = null, state.goal = null, heroPct = 0, trainSeg = null, state.unit = "lb", state.sounds = !0, state.haptics = !0, state.collections = [], state.colItems = [], seenCards = {}, gridCards = {}, expCache = {}, expWaiting = {}, vidCache = {}, expKey = "", today.rows = [], today.at = 0, today.day = null, today.busy = !1, today.shown = !1, current = null, sc && scForget(), wo && saveDraft(), clearInterval(woTimer), stopRest(), liveEnd(!1), releaseWake(), wo = null, hist = {}, histReady = !1, strava && (strava = { asked: !1, configured: !1, connected: !1, athlete: null, busy: !1 }), pumpy) {
+    }), cancelPumpyReset(), pendingMotion && pendingMotion.disconnect(), $("app").classList.add("hide"), accountEpoch++, reads = {}, inFlight = {}, libraryRev++, logsRev++, planRev++, clearTimeout(undoTimer), undoTimer = null, undoFn = null, clearTimeout(detailCloseTimer), clearTimeout(woCloseTimer), clearTimeout(pendTimer), pendTimer = null, pendPolls = 0, pendBusy = !1, wkChannel && (sb.removeChannel(wkChannel), wkChannel = null), booting = null, state.profile = null, state.workouts = [], state.logs = null, state.plan = null, state.awards = null, state.goal = null, heroPct = 0, trainSeg = null, state.unit = "lb", state.sounds = !0, state.haptics = !0, state.collections = [], state.colItems = [], seenCards = {}, gridCards = {}, expCache = {}, expWaiting = {}, vidCache = {}, expKey = "", today.rows = [], today.at = 0, today.day = null, today.busy = !1, today.shown = !1, current = null, sc && scForget(), wo && saveDraft(), clearInterval(woTimer), stopRest(), liveEnd(!1), releaseWake(), wo = null, hist = {}, histReady = !1, strava && (strava = { asked: !1, configured: !1, connected: !1, athlete: null, busy: !1 }), clearTimeout(pumpyIdleTimer), pumpy) {
       var seq = (pumpy.openSeq || 0) + 1, wired = pumpy.wired;
       pumpy = {
         thread: null,
@@ -16772,13 +16805,46 @@ details.details-moving > :not(summary) {
   }, MAX_REFS = 6, QUICK_ASKS = [
     "Build a 25-min kettlebell shoulders + core",
     "Plan my week from what I\u2019ve saved",
-    "Add a finisher to my leg day",
+    "Edit one of my workouts",
     "Shoulder pain \u2014 what should I strengthen?"
   ], NO_TOUCH = !("ontouchstart" in window) && !(navigator.maxTouchPoints > 0);
   function openPumpy(w) {
     w && (pumpy.refs = [w.id].concat(pumpy.refs.filter(function(id) {
       return id !== w.id;
-    })).slice(0, MAX_REFS), pumpy.refsRev++, renderPumpyCtx()), setView("pumpy");
+    })).slice(0, MAX_REFS), pumpy.refsRev++, pumpy.ctxAt = Date.now(), renderPumpyCtx()), setView("pumpy");
+  }
+  var PUMPY_IDLE = 300 * 1e3, pumpyIdleTimer = 0;
+  function pumpyLastAt(msgs, seen) {
+    for (var t = seen || 0, i = msgs.length - 1; i >= 0; i--) {
+      var c = Date.parse(msgs[i].created_at || "");
+      if (c) {
+        c > t && (t = c);
+        break;
+      }
+    }
+    return t;
+  }
+  function pumpyHolds(msgs) {
+    return pumpy.busy || pumpy.live ? !0 : msgs.some(function(m) {
+      return m.role === "assistant" && m.meta && m.meta.proposal && m.meta.status === "pending";
+    });
+  }
+  function pumpyStale(msgs, seen, at) {
+    if (!msgs.length || pumpyHolds(msgs)) return !1;
+    var last = Math.max(pumpyLastAt(msgs, seen), pumpy.ctxAt || 0);
+    return !!last && (at || Date.now()) - last > PUMPY_IDLE;
+  }
+  function freshenPumpy() {
+    return !pumpy.loaded || pumpy.loading || !pumpyStale(pumpy.messages, pumpy.lastAt) ? !1 : (pumpyBlank(), renderPumpy(), $("pumpyview").scrollTop = 0, !0);
+  }
+  function pumpyAway() {
+    if (clearTimeout(pumpyIdleTimer), !(state.view === "pumpy" || !pumpy.loaded || !pumpy.messages.length || freshenPumpy())) {
+      var last = Math.max(pumpyLastAt(pumpy.messages, pumpy.lastAt), pumpy.ctxAt || 0);
+      last && (pumpyIdleTimer = setTimeout(pumpyAway, Math.max(1e3, last + PUMPY_IDLE - Date.now() + 250)));
+    }
+  }
+  function pumpyBack() {
+    state.view === "pumpy" ? freshenPumpy() : pumpyAway();
   }
   function loadPumpy(warm) {
     if (!state.user || (warm || ensurePumpyMeter(), pumpy.loaded) || pumpy.loading) return;
@@ -16795,7 +16861,7 @@ details.details-moving > :not(summary) {
     });
   }
   function settlePumpy(t) {
-    pumpy.loading = !1, pumpy.loaded = !0, t && (pumpy.thread = { id: t.id, title: t.title, updated_at: t.updated_at, workout_id: t.workout_id }, pumpy.messages = t.pumpy_messages || [], pumpy.refsRev || (pumpy.refs = lastRefs(pumpy.messages, t.workout_id))), pumpy.shownCount = 0, renderPumpy();
+    pumpy.loading = !1, pumpy.loaded = !0, t && !pumpyStale(t.pumpy_messages || [], 0) && (pumpy.thread = { id: t.id, title: t.title, updated_at: t.updated_at, workout_id: t.workout_id }, pumpy.messages = t.pumpy_messages || [], pumpy.refsRev || (pumpy.refs = lastRefs(pumpy.messages, t.workout_id))), pumpy.shownCount = 0, renderPumpy();
   }
   function lastRefs(msgs, workoutId) {
     for (var i = msgs.length - 1; i >= 0; i--) {
@@ -16811,8 +16877,7 @@ details.details-moving > :not(summary) {
       a.onfinish = null, a.cancel();
     }), $("pumpylog").classList.remove("resetting"), $("pumpylog").inert = !1, $("pumpyctx").inert = !1);
   }
-  function newPumpyThread() {
-    if (pumpy.loaded && !pumpy.loading && !pumpy.thread && !pumpy.messages.length && !pumpy.busy && !pumpy.refs.length) return;
+  function pumpyBlank() {
     cancelPumpyReset(), pumpy = Object.assign({}, pumpy, {
       thread: null,
       messages: [],
@@ -16825,8 +16890,14 @@ details.details-moving > :not(summary) {
       live: null,
       nodes: {},
       shownCount: 0,
-      stick: !0
+      stick: !0,
+      lastAt: 0,
+      ctxAt: 0
     });
+  }
+  function newPumpyThread() {
+    if (pumpy.loaded && !pumpy.loading && !pumpy.thread && !pumpy.messages.length && !pumpy.busy && !pumpy.refs.length) return;
+    pumpyBlank();
     var owner = pumpy, log = $("pumpylog"), ctx = $("pumpyctx");
     log.classList.remove("waiting"), $("pumpysend").disabled = !1, $("pumpyannounce").textContent = "New chat ready.";
     function draw() {
@@ -16965,7 +17036,7 @@ details.details-moving > :not(summary) {
     sb.from("pumpy_messages").select("*").eq("thread_id", t.id).order("id", { ascending: !0 }).limit(80).then(function(m) {
       if (seq === pumpy.openSeq) {
         if (m.error) throw m.error;
-        clearTimeout(timer), swapped = !0, pumpy.thread = { id: t.id, title: t.title, updated_at: t.updated_at, workout_id: t.workout_id }, pumpy.messages = m && m.data || [], pumpy.refsRev === refsRev && (pumpy.refs = lastRefs(pumpy.messages, t.workout_id)), pumpy.loaded = !0, pumpy.shownCount = 0, pumpy.stick = !0, log.classList.remove("waiting"), renderPumpy(), closed || closeSheet("pumpysheet");
+        clearTimeout(timer), swapped = !0, pumpy.thread = { id: t.id, title: t.title, updated_at: t.updated_at, workout_id: t.workout_id }, pumpy.messages = m && m.data || [], pumpy.refsRev === refsRev && (pumpy.refs = lastRefs(pumpy.messages, t.workout_id)), pumpy.loaded = !0, pumpy.shownCount = 0, pumpy.stick = !0, pumpy.lastAt = 0, pumpy.ctxAt = Date.now(), log.classList.remove("waiting"), renderPumpy(), closed || closeSheet("pumpysheet");
       }
     }).catch(function() {
       seq === pumpy.openSeq && (clearTimeout(timer), log.classList.remove("waiting"), $("pumpysend").disabled = !!pumpy.busy, closeSheet("pumpysheet"), toast("That chat did not open \u2014 try again in a moment."));
@@ -17057,7 +17128,7 @@ details.details-moving > :not(summary) {
     var shown = pumpy.messages.filter(function(m) {
       return m.role === "user" || m.role === "assistant";
     });
-    if (log.classList.toggle("hello", !shown.length), !shown.length && pumpy.loaded) {
+    if (log.classList.toggle("hello", !shown.length), $("pumpybar").classList.toggle("labelled", !!pumpy.loaded && !shown.length && !pumpy.busy), !shown.length && pumpy.loaded) {
       var hello = el("div", "pumpyhello");
       hello.appendChild(pumpyArt("hello", !0)), hello.appendChild(el("h2", null, "Hey, I\u2019m Pumpy")), hello.appendChild(el(
         "p",
@@ -17251,7 +17322,7 @@ details.details-moving > :not(summary) {
       var owner = pumpy;
       $("pumpyannounce").textContent = "", pumpy.refs.length && guideLearn("refs");
       var box = $("pumpyinput");
-      box.value = "", box.style.height = "auto", NO_TOUCH && box.focus(), pumpy.busy = !0, pumpy.live = null, pumpy.stick = !0, pumpy.messages.push({ id: "local-" + Date.now(), role: "user", content: text }), renderPumpy();
+      box.value = "", box.style.height = "auto", NO_TOUCH && box.focus(), pumpy.busy = !0, pumpy.live = null, pumpy.stick = !0, pumpy.lastAt = Date.now(), pumpy.messages.push({ id: "local-" + Date.now(), role: "user", content: text }), renderPumpy();
       var ids = pumpy.refs.slice(0, MAX_REFS), payload = {
         thread_id: pumpy.thread ? pumpy.thread.id : null,
         message: text,
@@ -17262,7 +17333,7 @@ details.details-moving > :not(summary) {
       };
       apiStream("pumpy/chat", payload, function(r) {
         if (pumpy === owner) {
-          if (r.t !== "final") {
+          if (pumpy.lastAt = Date.now(), r.t !== "final") {
             liveEvent(r);
             return;
           }
@@ -19581,7 +19652,7 @@ details.details-moving > :not(summary) {
     var v = VIEWS[i];
     guide.visit = v, setTimeout(function() {
       guidePage(v);
-    }, 450), v === "library" && renderToday(), v === "train" && state.logs && countStats();
+    }, 450), v === "library" && renderToday(), v === "train" && state.logs && countStats(), v !== "pumpy" && pumpyAway();
   }
   function preparePage(i) {
     var v = VIEWS[i];
@@ -19589,7 +19660,7 @@ details.details-moving > :not(summary) {
       renderToday();
       return;
     }
-    v === "train" ? (restorePlan(), drawn.train = !0, quietly(prepareTrain())) : v === "pumpy" && loadPumpy();
+    v === "train" ? (restorePlan(), drawn.train = !0, quietly(prepareTrain())) : v === "pumpy" && (clearTimeout(pumpyIdleTimer), freshenPumpy(), loadPumpy());
   }
   function settled() {
     arrivedAt !== idx && (arrivedAt = idx, arrive(idx));
@@ -20393,14 +20464,14 @@ details.details-moving > :not(summary) {
       saveDraft(), sb.auth.stopAutoRefresh();
       return;
     }
-    sb.auth.startAutoRefresh(), restUntil && tickRest(), wo && !wo.finished && (startClock(), acquireWake()), watchBilling(), stravaBack(), publishSummary(), state.user && !wo && !overlayShowing() && load();
+    sb.auth.startAutoRefresh(), restUntil && tickRest(), wo && !wo.finished && (startClock(), acquireWake()), watchBilling(), stravaBack(), publishSummary(), state.user && pumpyBack(), state.user && !wo && !overlayShowing() && load();
   }), document.addEventListener("visibilitychange", function() {
     if (document.hidden && saveDraft(), document.body.classList.toggle("asleep", document.hidden), document.visibilityState !== "visible") {
       clearTimeout(pendTimer), pendTimer = null;
       return;
     }
     if (state.user) {
-      if (pendPolls = 0, watchPending(), restUntil && tickRest(), wo) {
+      if (pendPolls = 0, watchPending(), pumpyBack(), restUntil && tickRest(), wo) {
         acquireWake();
         return;
       }

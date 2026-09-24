@@ -2456,12 +2456,26 @@ export const STYLE = String.raw`<style>
     box-shadow: 0 0 0 1px var(--line), var(--sh-sm);
     background: color-mix(in srgb, var(--paper) 82%, transparent);
     -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); }
-  .pumpybar button { width: 44px; height: 44px; font-size: 19px; border: none;
-    background: none; border-radius: 999px; color: var(--ink-2); display: grid;
-    place-items: center; transition: transform var(--t-1) var(--e-out),
+  .pumpybar button { min-width: 44px; height: 44px; padding: 0 12.5px; font-size: 19px; border: none;
+    background: none; border-radius: 999px; color: var(--ink-2); display: flex;
+    align-items: center; justify-content: center; transition: transform var(--t-1) var(--e-out),
       background-color var(--t-2) var(--e-soft); }
   .pumpybar button:active { transform: scale(.9); background: var(--sand); color: var(--ink); }
-  @media (prefers-reduced-motion: reduce) { .pumpybar button { transition: none; } }
+  /* On an empty chat the two buttons say what they are, beside their icons; the
+     first message folds the words away and leaves the icons, so a conversation
+     gives them no more room than before (#pumpybar.labelled, app.ts renderPumpy).
+     The capsule only gets wider or narrower: nothing under it moves. */
+  .pblabel { display: block; max-width: 0; margin-left: 0; overflow: hidden; white-space: nowrap;
+    font-size: 14px; font-weight: 650; letter-spacing: -.005em; color: var(--ink); opacity: 0;
+    transition: max-width var(--t-3) var(--e-soft), margin-left var(--t-3) var(--e-soft),
+      opacity var(--t-1) var(--e-in); }
+  .pumpybar.labelled .pblabel { max-width: 96px; margin-left: 7px; opacity: 1;
+    transition: max-width var(--t-3) var(--e-out), margin-left var(--t-3) var(--e-out),
+      opacity var(--t-2) var(--e-out) var(--t-1); }
+  @media (prefers-reduced-motion: reduce) {
+    .pumpybar button { transition: none; }
+    .pblabel, .pumpybar.labelled .pblabel { transition: opacity var(--t-1) var(--e-soft); }
+  }
   .pumpyhello { text-align: center; padding: 22px 12px 8px; color: var(--ink-2); font-size: 14px; line-height: 1.6; }
   .pumpyhello .pmark { width: 60px; height: 60px; margin: 0 auto 12px; box-shadow: var(--sh-md); }
   .pumpyhello .pmark svg { width: 34px; height: 34px; }
