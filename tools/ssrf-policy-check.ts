@@ -10,6 +10,12 @@
 // as before in all three.
 import * as net from "../supabase/functions/spotter/net.ts";
 
+// Our own project's host is read from SUPABASE_URL in production; this harness
+// runs without env access, so it names it (older net.ts had no such hook).
+const PROJECT = "https://mtzevoxxpsktmrbbuxva.supabase.co";
+const useProject = (m: unknown) => (m as { useProjectHost?: (u: string) => void }).useProjectHost?.(PROJECT);
+useProject(net);
+
 const failures: string[] = [];
 let passed = 0;
 function check(ok: unknown, what: string) {
@@ -99,6 +105,7 @@ try {
     useResolver(undefined);
     const fresh = await import("data:application/typescript," + encodeURIComponent(
       await Deno.readTextFile(new URL("../supabase/functions/spotter/net.ts", import.meta.url)))) as typeof net;
+    useProject(fresh);
     check(!fresh.dnsAvailable(), "the simulated runtime has no resolver");
     const web = await fresh.assertPublicUrl("https://www.example.org/program");
     check(!web.ok && /could not be resolved/.test(web.reason), "no resolver: a non-platform host is refused");
@@ -140,6 +147,37 @@ try {
     check(!isPlatformHost("tiktok.com.evil.example") && !isPlatformHost("eviltiktok.com") &&
       isPlatformHost("p16-sign.tiktokcdn-us.com") && isPlatformHost("youtu.be"),
       "the platform list matches whole labels only");
+  }
+
+  // ---- R-8: every IPv6 spelling of a private address, and our own project only ----
+  {
+    const priv = [
+      "64:ff9b::a9fe:a9fe", "64:ff9b::169.254.169.254", "64:ff9b::7f00:1", "64:ff9b:1::1",
+      "2002:7f00:1::1", "2002:a00:1::", "2002:a9fe:a9fe::",
+      "2001:0:4136:e378:8000:63bf:3fff:fdd2", "2001::1",
+      "fec0::1", "fed0:0:0:0:0:0:0:1",
+      "::7f00:1", "::127.0.0.1", "::a9fe:a9fe", "0:0:0:0:0:0:0:1", "0000:0000:0000:0000:0000:0000:0000:0001",
+      "0:0:0:0:0:ffff:7f00:1", "::ffff:7f00:1", "::FFFF:A9FE:A9FE", "::ffff:0:7f00:1", "::ffff:10.0.0.1",
+      "fe80::1%eth0", "[fe80::1]", "ff02::1", "fc00::1", "2001:db8::1", "::",
+      "1:2:3:4:5:6:7:8:9", "::1::", "zz::1",
+    ];
+    const bad = priv.filter((ip) => !net.isPrivateAddress(ip));
+    check(!bad.length, "R-8: private in every spelling (NAT64, 6to4, Teredo, site-local, IPv4-compatible/mapped in hex and uncompressed; unparsable refused) — missed: " + bad.join(", "));
+    const pub = ["2606:2800:220:1:248:1893:25c8:1946", "64:ff9b::808:808", "2002:808:808::1", "::ffff:8.8.8.8",
+      "2a03:2880:f12f:83:face:b00c::25de", "93.184.216.34"];
+    const wrong = pub.filter((ip) => net.isPrivateAddress(ip));
+    check(!wrong.length, "R-8: public addresses stay public, embedded ones judged by their IPv4 (" + wrong.join(", ") + ")");
+    useResolver(async (_h, t) => t === "A" ? [] : ["64:ff9b::a9fe:a9fe"]);
+    const nat = await net.assertPublicUrl("https://nat64.example/p");
+    check(!nat.ok, "R-8: a name answering with a NAT64 address of the metadata host is refused");
+    check(!net.isPlatformHost("evil.supabase.co") && !net.isPlatformHost("supabase.co") &&
+      !net.isPlatformHost("x.mtzevoxxpsktmrbbuxva.supabase.co"),
+      "R-8: somebody else's supabase.co project is not a platform host");
+    check(net.isPlatformHost("mtzevoxxpsktmrbbuxva.supabase.co") && net.isPlatformHost("MTZEVOXXPSKTMRBBUXVA.supabase.co."),
+      "R-8: our own project's host still is");
+    useResolver(undefined);
+    const other = await net.assertPublicUrl("http://evil.supabase.co/storage/v1/object/x");
+    check(!other.ok, "R-8: another project's host is held to the non-platform rules (no resolver: refused)");
   }
 
   // ---- static checks are unchanged ----
