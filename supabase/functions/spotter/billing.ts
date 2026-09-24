@@ -767,8 +767,35 @@ export async function cancelAndDeleteCustomer(userId: string): Promise<void> {
   if (!billingConfigured()) {
     // A customer row with no key to cancel it: refuse loudly rather than delete
     // the account and leave a live subscription behind with nobody attached.
+    // (Account deletion no longer reaches this without a key: it hands the
+    // customer to the erasure outbox instead — see billingCustomerFor.)
     throw new Error("billing_customers row exists but STRIPE_SECRET_KEY is unset");
   }
+  await cancelAndDeleteCustomerId(customer, userId);
+}
+
+/**
+ * The Stripe customer an account has, if any. Account deletion reads it when no
+ * Stripe key is set, so the customer can be handed to the erasure outbox before
+ * the row naming it cascades away with the account.
+ */
+export async function billingCustomerFor(userId: string): Promise<string | null> {
+  return await customerIdFor(userId);
+}
+
+/**
+ * The erasure outbox's Stripe step: cancel every live subscription of one
+ * customer and delete it. Not done, and retried, while no key is set.
+ */
+export async function eraseStripeCustomer(
+  customer: string,
+): Promise<{ done: true } | { done: false; error: string }> {
+  if (!billingConfigured()) return { done: false, error: "STRIPE_SECRET_KEY is not set" };
+  await cancelAndDeleteCustomerId(customer, "erasure outbox");
+  return { done: true };
+}
+
+async function cancelAndDeleteCustomerId(customer: string, userId: string): Promise<void> {
   const stripe = stripeClient();
   const subs = await stripe.subscriptions.list({ customer, status: "all", limit: 100 });
   for (const sub of subs.data) {

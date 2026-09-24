@@ -12,10 +12,11 @@ import assert from 'node:assert/strict';
 import { transformSync } from 'esbuild';
 
 const src = fs.readFileSync('supabase/functions/spotter/index.ts', 'utf8');
-function fn(name) {
-  const m = src.match(new RegExp('^(?:export )?(?:async )?function ' + name + '\\(', 'm'));
+const erasureSrc = fs.readFileSync('supabase/functions/spotter/erasure.ts', 'utf8');
+function fn(name, from = src) {
+  const m = from.match(new RegExp('^(?:export )?(?:async )?function ' + name + '\\(', 'm'));
   assert(m, name);
-  return src.slice(m.index, src.indexOf('\n}', m.index) + 2).replace(/^export /, '');
+  return from.slice(m.index, from.indexOf('\n}', m.index) + 2).replace(/^export /, '');
 }
 
 // The subscriber id is the account id, and that is a fact about the SHELLS, not
@@ -36,10 +37,22 @@ const run = ({ key, revenueCat = { ok: true, status: 200 }, stripe = null, apple
     SUPABASE_URL: 'https://db.invalid', SERVICE_KEY: 'service', authHeaders: { apikey: 'service' },
     Deno: { env: { get: (name) => (name === 'REVENUECAT_API_KEY' ? key : undefined) } },
     json: (body, status) => ({ body, status }),
+    billingConfigured: () => true,
+    billingCustomerFor: async () => null,
+    eraseStripeCustomer: async () => ({ done: true }),
     cancelAndDeleteCustomer: async () => { calls.push('stripe'); if (stripe) throw stripe; },
     AppleGrantError: class AppleGrantError extends Error {},
     forgetAppleGrant: async () => { calls.push('apple'); if (apple) throw apple; },
-    forgetStravaQuietly: async () => { calls.push('strava'); },
+    stravaGrantFor: async () => { calls.push('strava'); return null; },
+    deauthorizeStrava: async () => ({ done: true }),
+    // The outbox itself is proved against the real SQL in erasure-outbox-check.mjs;
+    // here it only has to record that the request was written down, then make it.
+    eraseAtProvider: async (provider, subject, detail, eraser) => {
+      calls.push('queue:' + provider + ':' + subject);
+      const out = await eraser(subject, detail);
+      if (!out.done) logs.push('erasure: ' + provider + ' not done yet, queued: ' + out.error);
+      return { ...out, row: out.done ? null : 1 };
+    },
     dbDelete: async (table) => { calls.push('delete:' + table); },
     dbPatchMany: async (table) => { calls.push('patch:' + table); },
     listUploads: async () => [],
@@ -53,7 +66,7 @@ const run = ({ key, revenueCat = { ok: true, status: 200 }, stripe = null, apple
       return { ...auth, text: async () => 'body', body: null };
     },
   });
-  vm.runInContext(transformSync([fn('forgetRevenueCatQuietly'), fn('handleAccountDelete')].join('\n'), { loader: 'ts', format: 'cjs' }).code, c);
+  vm.runInContext(transformSync([fn('deleteRevenueCatSubscriber', erasureSrc), fn('handleAccountDelete')].join('\n'), { loader: 'ts', format: 'cjs' }).code, c);
   c.uid = '11111111-1111-4111-8111-111111111111';
   return { calls, logs, result: vm.runInContext('handleAccountDelete(uid, {})', c) };
 };
@@ -65,6 +78,7 @@ const run = ({ key, revenueCat = { ok: true, status: 200 }, stripe = null, apple
   assert.equal(out.status, 200);
   const rc = t.calls.indexOf('DELETE https://api.revenuecat.com/v1/subscribers/11111111-1111-4111-8111-111111111111');
   assert(rc > 0, 'the subscriber is deleted by the account id');
+  assert(t.calls.indexOf('queue:revenuecat:11111111-1111-4111-8111-111111111111') === rc - 1, 'and the request is written down just before it is made');
   assert(rc > t.calls.indexOf('stripe'), 'after Stripe has said the deletion may go ahead');
   assert(rc < t.calls.indexOf('DELETE auth'), 'and before the auth row that names it is gone');
 }
@@ -73,7 +87,7 @@ const run = ({ key, revenueCat = { ok: true, status: 200 }, stripe = null, apple
 for (const revenueCat of [{ ok: false, status: 401 }, { ok: false, status: 500 }]) {
   const t = run({ key: 'sk_test', revenueCat });
   assert.equal((await t.result).status, 200, 'a RevenueCat outage does not block an erasure (' + revenueCat.status + ')');
-  assert(t.logs.some((l) => l.includes('revenuecat subscriber not deleted')), 'but it is logged');
+  assert(t.logs.some((l) => l.includes('revenuecat not done yet, queued')), 'but it is queued for retry, and says so');
 }
 {
   const t = run({ key: 'sk_test', revenueCat: { ok: false, status: 404 } });
@@ -85,7 +99,8 @@ for (const revenueCat of [{ ok: false, status: 401 }, { ok: false, status: 500 }
 {
   const t = run({ key: undefined });
   await t.result;
-  assert(!t.calls.some((x) => x.includes('revenuecat')), 'a deploy without the secret makes no call at all');
+  assert(!t.calls.some((x) => x.includes('api.revenuecat.com')), 'a deploy without the secret makes no call at all');
+  assert(t.calls.includes('queue:revenuecat:11111111-1111-4111-8111-111111111111'), 'but the request is queued rather than dropped');
 }
 {
   const t = run({ key: 'sk_test', stripe: new Error('stripe down') });
@@ -93,7 +108,7 @@ for (const revenueCat of [{ ok: false, status: 401 }, { ok: false, status: 500 }
   assert.deepEqual(t.calls, ['stripe'], 'Stripe is still the one step that stops the whole deletion');
 }
 
-console.log('PASS account deletion forgets the RevenueCat subscriber by account id, best effort, after Stripe and before the auth row.');
+console.log('PASS account deletion forgets the RevenueCat subscriber by account id, through the outbox, after Stripe and before the auth row.');
 
 {
   const t = run({ key: 'sk_test', apple: new Error('Apple unavailable') });

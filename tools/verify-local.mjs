@@ -34,6 +34,7 @@ const steps = [
   ['Reader access', 'node', ['tools/reader-access-check.mjs']],
   ['Reader database', 'node', ['tools/reader-db-check.mjs']],
   ['Schema security (all migrations replayed)', 'node', ['tools/security-db-check.mjs']],
+  ['Erasure outbox (account deletion at third parties)', 'node', ['tools/erasure-outbox-check.mjs']],
   ['GTM launch regressions', 'npm', ['run', 'gtm:check']],
   ['Type check the edge function', 'deno', ['check', 'supabase/functions/spotter/index.ts']],
   ['AI transport accounting', 'deno', ['run', '--allow-env', 'tools/ai-guard-check.ts']],

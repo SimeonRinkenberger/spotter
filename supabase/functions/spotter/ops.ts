@@ -113,6 +113,8 @@ export function phraseFor(alert: Alert): string {
       return `${num(d.count) ?? "?"} uploads not cleaned up`;
     case "jobs_at_max_attempts":
       return `${num(d.count) ?? "?"} reads out of retries`;
+    case "erasure_stuck":
+      return `${num(d.count) ?? "?"} account erasures waiting on a third party`;
     default: {
       const day = alert.key.match(/^spend_day_(\d+)$/);
       if (day) return `day spend ${num(d.pct) ?? day[1]} %`;
