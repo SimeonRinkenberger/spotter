@@ -790,6 +790,77 @@ export const STYLE = String.raw`<style>
     color: var(--ink-2); font-size: 13px; font-weight: 650; padding: 10px; margin: 4px 0 12px;
     transition: transform var(--t-1) var(--e-out); }
   .addex:active { transform: scale(.985); }
+  /* Add a section and Reorder share the line under the last section: both are
+     about the card's shape, and neither is the card asking for anything. */
+  .cardtools { display: flex; gap: 8px; }
+  .cardtools .addex { flex: 1 1 0; min-width: 0; display: flex; align-items: center; justify-content: center; gap: 6px; }
+  .cardtools .addex .ic { width: 15px; height: 15px; }
+  /* ---------- reorder ----------
+     A list of tiles, iOS edit-mode style: a section is a sand band, an exercise a
+     card, and each keeps its handle on the trailing edge where UIKit draws the
+     reorder control. The gap is the list's, never a margin, so every tile that
+     makes way moves by exactly the lifted tile's height plus one gap. Only
+     transform moves while a finger is down: the tiles making way glide on --t-2,
+     the lifted one follows the finger with no timing at all. Done and Cancel sit
+     in a band that stays put, as a modal's bar does, so a long card never scrolls
+     them away. */
+  /* No negative margin into the scroller's padding: Blink measures the sticky
+     inset from the content box and WebKit from the padding box, so the band sits
+     8px lower in one of them. The shadow fills that strip in paper instead. */
+  .ohead { position: sticky; top: 0; z-index: 4; margin: 0 -20px; padding: 0 20px 4px;
+    background: var(--paper); background-image: var(--grain); box-shadow: 0 -8px 0 var(--paper); }
+  .ohead .grabber { margin-bottom: 6px; }
+  .otop { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .ohead .otop h2 { margin: 0; flex: 1; text-align: center; }
+  .obtn { min-width: 64px; min-height: 44px; padding: 0 4px; border: 0; background: none; color: var(--ink-2);
+    font-size: 15px; font-weight: 600; text-align: left; }
+  .obtn.odone { color: var(--ember-ink); font-weight: 750; text-align: right; }
+  .olede .ic { display: inline; width: 15px; height: 15px; vertical-align: -3px; }
+  #olist { position: relative; display: flex; flex-direction: column; gap: 6px; }
+  /* The list is redrawn on every move; the scroller must not chase an anchor. */
+  #ordersheet .sheetbody { overflow-anchor: none; }
+  .orow { display: flex; align-items: center; min-height: 52px; border-radius: 14px; background: var(--card);
+    border: 1px solid var(--line); position: relative;
+    transition: transform var(--t-2) var(--e-out), background-color var(--t-1) var(--e-out),
+      border-color var(--t-1) var(--e-out), box-shadow var(--t-2) var(--e-out); }
+  /* --muted is 4.13 on sand, under AA for this size; --ink-2 is not. */
+  .orow.osec { background: var(--sand); }
+  .opick { flex: 1; min-width: 0; align-self: stretch; display: flex; flex-direction: column; justify-content: center;
+    border: 0; background: none; padding: 8px 4px 8px 14px; text-align: left; color: inherit; font: inherit;
+    -webkit-user-select: none; user-select: none; }
+  .opick b, .opick span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .opick b { font-size: 14.5px; font-weight: 600; line-height: 1.3; }
+  .opick span { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .osec .opick b { font-family: var(--display); font-size: 15px; font-weight: 700; letter-spacing: -.01em; }
+  .osec .opick span { color: var(--ink-2); }
+  .ogrip, .ostep { flex: 0 0 auto; width: 44px; height: 44px; border: 0; background: none; padding: 0;
+    display: flex; align-items: center; justify-content: center; color: var(--muted); }
+  /* The handle takes the touch before the scroller can: no pan, no zoom, no delay. */
+  .ogrip { touch-action: none; cursor: grab; margin-right: 2px; }
+  .ogrip .ic, .ostep .ic { width: 18px; height: 18px; }
+  .ostep { display: none; color: var(--ember-ink); }
+  .ostep.dn .ic { transform: rotate(180deg); }
+  .ostep:disabled { color: var(--line-2); }
+  .orow.sel { background: var(--ember-soft); border-color: var(--ember); }
+  /* --muted on --ember-soft is 4.29, under AA for 12px; --ink-2 is 5.5. */
+  .orow.sel .opick span { color: var(--ink-2); }
+  .orow.sel .ostep { display: flex; }
+  .orow.lift { z-index: 3; box-shadow: var(--sh-lg); cursor: grabbing; border-color: var(--line-2);
+    transition: box-shadow var(--t-2) var(--e-out), background-color var(--t-1) var(--e-out); }
+  /* A section being moved carries its exercises folded under it, as Fitbod and
+     Hevy fold a group: one tile per section, so the lift is never a screen tall. */
+  /* A shadow barely reads on a dark sheet; the lifted tile comes forward in
+     tone instead, as an elevated surface does in iOS dark mode. */
+  @media (prefers-color-scheme: dark) { .orow.oex.lift { background: var(--sand); } }
+  #olist.ocollapse .oex { display: none; }
+  .orow.oin { animation: fadein var(--t-2) var(--e-out) both; }
+  /* Where a moved row landed on the card, said once. Colour, not travel. */
+  .exrow.moved .exmain, .exrow.moved .exercise-card { animation: movedglow 1.6s var(--e-soft) both; }
+  @keyframes movedglow { 0%, 35% { background-color: var(--ember-soft); } }
+  @media (prefers-reduced-motion: reduce) {
+    .orow, .orow.lift { transition: background-color var(--t-1), border-color var(--t-1); }
+    .orow.oin { animation: none; }
+  }
   .fieldrow { display: flex; gap: 9px; }
   .fieldrow .field { flex: 1; min-width: 0; }
   /* A caption is a couple of thousand characters of wrapped text a long way below

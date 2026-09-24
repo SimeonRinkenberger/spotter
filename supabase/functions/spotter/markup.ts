@@ -71,6 +71,7 @@ export const MARKUP_BODY = String.raw`</head>
 <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></symbol>
 <symbol id="i-arrow-up" viewBox="0 0 24 24"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></symbol>
 <symbol id="i-arrow-up-right" viewBox="0 0 24 24"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></symbol>
+<symbol id="i-reorder" viewBox="0 0 24 24"><path d="m3 16 4 4 4-4"/><path d="M7 20V4"/><path d="m21 8-4-4-4 4"/><path d="M17 4v16"/></symbol>
 <symbol id="i-swap" viewBox="0 0 24 24"><path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/></symbol>
 <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20.5 12a8.5 8.5 0 1 1-2.5-6"/><path d="M21 3.5V6h-2.5"/></symbol>
 <symbol id="i-settings" viewBox="0 0 24 24"><path d="M13.8 2.5h-3.6l-.5 2.6-2.3 1.3-2.5-.9-1.8 3.1 2 1.7v2.6l-2 1.7 1.8 3.1 2.5-.9 2.3 1.3.5 2.6h3.6l.5-2.6 2.3-1.3 2.5.9 1.8-3.1-2-1.7v-2.6l2-1.7-1.8-3.1-2.5.9-2.3-1.3z"/><circle cx="12" cy="12" r="3"/></symbol>
@@ -309,6 +310,7 @@ export const MARKUP_BODY = String.raw`</head>
   <div id="workmanage"></div>
   <button class="pickrow" id="dshare">Share workout</button>
   <button class="pickrow" id="dreproc">Read it again</button>
+  <button class="pickrow" id="dorder">Reorder sections and exercises</button>
   <button class="btn ghost" data-close="workoptions">Done</button>
 </div></div>
 <!-- The way out of a live session. Two doors, neither of which loses a set: pause
@@ -564,6 +566,17 @@ export const MARKUP_BODY = String.raw`</head>
   </div>
   <div class="btnrow"><button class="btn ghost" data-close="sectionsheet">Cancel</button><button class="btn" id="sectionsave">Choose the first exercise</button></div>
   <button class="danger hide" id="sectionremove">Remove section</button>
+</div></div>
+
+<!-- The card's order, and nothing else. One row per section and per exercise, a
+     handle on each (touch it and the row lifts at once, as UIKit's reorder control
+     does), and for anyone who cannot drag, a tap on a row brings up Move up / Move
+     down. Nothing is written until Done, which is one edit however much moved. -->
+<div class="sheet" id="ordersheet" role="dialog" aria-modal="true" aria-labelledby="ordertitle"><div class="sheetbody">
+  <div class="ohead"><div class="grabber"></div><div class="otop"><button class="obtn" data-close="ordersheet">Cancel</button><h2 id="ordertitle">Reorder</h2><button class="obtn odone" id="ordersave">Done</button></div></div>
+  <p class="lede olede">Drag <svg class="ic"><use href="#i-list"></use></svg> to move a section or an exercise, or tap one for arrows.</p>
+  <div id="olist" role="list" aria-labelledby="ordertitle"></div>
+  <div class="sr-only" id="orderlive" aria-live="polite"></div>
 </div></div>
 
 <!-- Three answers, in the order they earn: what the creator said, somebody filming

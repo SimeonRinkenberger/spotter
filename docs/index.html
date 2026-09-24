@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-5QQdhHptBqg2QmTCRE1341gdyIgSeGUz8lMtfHzNNo4=' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/ https://challenges.cloudflare.com https://accounts.google.com/gsi/client https://appleid.cdn-apple.com/appleauth/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://api.fontshare.com https://accounts.google.com/gsi/style; font-src 'self' data: https://fonts.gstatic.com https://cdn.fontshare.com; img-src 'self' data: blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://i.ytimg.com https://simeonrinkenberger.github.io; media-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://simeonrinkenberger.github.io; connect-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co wss://mtzevoxxpsktmrbbuxva.supabase.co https://accounts.google.com/gsi/; frame-src https://www.tiktok.com https://www.instagram.com https://www.youtube.com https://www.youtube-nocookie.com https://challenges.cloudflare.com https://accounts.google.com/gsi/ https://appleid.apple.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-9VAKK5qQ5kVdQOeaZqYOKx3oElDO1cvncXOGz8hYJOU=' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/ https://challenges.cloudflare.com https://accounts.google.com/gsi/client https://appleid.cdn-apple.com/appleauth/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://api.fontshare.com https://accounts.google.com/gsi/style; font-src 'self' data: https://fonts.gstatic.com https://cdn.fontshare.com; img-src 'self' data: blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://i.ytimg.com https://simeonrinkenberger.github.io; media-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://simeonrinkenberger.github.io; connect-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co wss://mtzevoxxpsktmrbbuxva.supabase.co https://accounts.google.com/gsi/; frame-src https://www.tiktok.com https://www.instagram.com https://www.youtube.com https://www.youtube-nocookie.com https://challenges.cloudflare.com https://accounts.google.com/gsi/ https://appleid.apple.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="google-site-verification" content="unLzcq6TBz9Bm6q4KHpbTmZ88dQ_tTnViacVX5BLzS0">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <title>Spotter by Quarterdeck Collective — save any workout video</title>
@@ -2107,6 +2107,214 @@ h1 {
 }
 .addex:active {
   transform: scale(.985);
+}
+.cardtools {
+  display: flex;
+  gap: 8px;
+}
+.cardtools .addex {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.cardtools .addex .ic {
+  width: 15px;
+  height: 15px;
+}
+.ohead {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  margin: 0 -20px;
+  padding: 0 20px 4px;
+  background: var(--paper);
+  background-image: var(--grain);
+  box-shadow: 0 -8px 0 var(--paper);
+}
+.ohead .grabber {
+  margin-bottom: 6px;
+}
+.otop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.ohead .otop h2 {
+  margin: 0;
+  flex: 1;
+  text-align: center;
+}
+.obtn {
+  min-width: 64px;
+  min-height: 44px;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: var(--ink-2);
+  font-size: 15px;
+  font-weight: 600;
+  text-align: left;
+}
+.obtn.odone {
+  color: var(--ember-ink);
+  font-weight: 750;
+  text-align: right;
+}
+.olede .ic {
+  display: inline;
+  width: 15px;
+  height: 15px;
+  vertical-align: -3px;
+}
+#olist {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+#ordersheet .sheetbody {
+  overflow-anchor: none;
+}
+.orow {
+  display: flex;
+  align-items: center;
+  min-height: 52px;
+  border-radius: 14px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  position: relative;
+  transition:
+    transform var(--t-2) var(--e-out),
+    background-color var(--t-1) var(--e-out),
+    border-color var(--t-1) var(--e-out),
+    box-shadow var(--t-2) var(--e-out);
+}
+.orow.osec {
+  background: var(--sand);
+}
+.opick {
+  flex: 1;
+  min-width: 0;
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  border: 0;
+  background: none;
+  padding: 8px 4px 8px 14px;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.opick b,
+.opick span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.opick b {
+  font-size: 14.5px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.opick span {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.osec .opick b {
+  font-family: var(--display);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -.01em;
+}
+.osec .opick span {
+  color: var(--ink-2);
+}
+.ogrip,
+.ostep {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  background: none;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+}
+.ogrip {
+  touch-action: none;
+  cursor: grab;
+  margin-right: 2px;
+}
+.ogrip .ic,
+.ostep .ic {
+  width: 18px;
+  height: 18px;
+}
+.ostep {
+  display: none;
+  color: var(--ember-ink);
+}
+.ostep.dn .ic {
+  transform: rotate(180deg);
+}
+.ostep:disabled {
+  color: var(--line-2);
+}
+.orow.sel {
+  background: var(--ember-soft);
+  border-color: var(--ember);
+}
+.orow.sel .opick span {
+  color: var(--ink-2);
+}
+.orow.sel .ostep {
+  display: flex;
+}
+.orow.lift {
+  z-index: 3;
+  box-shadow: var(--sh-lg);
+  cursor: grabbing;
+  border-color: var(--line-2);
+  transition: box-shadow var(--t-2) var(--e-out), background-color var(--t-1) var(--e-out);
+}
+@media (prefers-color-scheme: dark) {
+  .orow.oex.lift {
+    background: var(--sand);
+  }
+}
+#olist.ocollapse .oex {
+  display: none;
+}
+.orow.oin {
+  animation: fadein var(--t-2) var(--e-out) both;
+}
+.exrow.moved .exmain,
+.exrow.moved .exercise-card {
+  animation: movedglow 1.6s var(--e-soft) both;
+}
+@keyframes movedglow {
+  0%, 35% {
+    background-color: var(--ember-soft);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .orow,
+  .orow.lift {
+    transition: background-color var(--t-1), border-color var(--t-1);
+  }
+  .orow.oin {
+    animation: none;
+  }
 }
 .fieldrow {
   display: flex;
@@ -8418,6 +8626,7 @@ details.details-moving > :not(summary) {
 <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></symbol>
 <symbol id="i-arrow-up" viewBox="0 0 24 24"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></symbol>
 <symbol id="i-arrow-up-right" viewBox="0 0 24 24"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></symbol>
+<symbol id="i-reorder" viewBox="0 0 24 24"><path d="m3 16 4 4 4-4"/><path d="M7 20V4"/><path d="m21 8-4-4-4 4"/><path d="M17 4v16"/></symbol>
 <symbol id="i-swap" viewBox="0 0 24 24"><path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/></symbol>
 <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20.5 12a8.5 8.5 0 1 1-2.5-6"/><path d="M21 3.5V6h-2.5"/></symbol>
 <symbol id="i-settings" viewBox="0 0 24 24"><path d="M13.8 2.5h-3.6l-.5 2.6-2.3 1.3-2.5-.9-1.8 3.1 2 1.7v2.6l-2 1.7 1.8 3.1 2.5-.9 2.3 1.3.5 2.6h3.6l.5-2.6 2.3-1.3 2.5.9 1.8-3.1-2-1.7v-2.6l2-1.7-1.8-3.1-2.5.9-2.3-1.3z"/><circle cx="12" cy="12" r="3"/></symbol>
@@ -8600,6 +8809,7 @@ details.details-moving > :not(summary) {
   <div id="workmanage"></div>
   <button class="pickrow" id="dshare">Share workout</button>
   <button class="pickrow" id="dreproc">Read it again</button>
+  <button class="pickrow" id="dorder">Reorder sections and exercises</button>
   <button class="btn ghost" data-close="workoptions">Done</button>
 </div></div>
 <div class="sheet" id="wleavesheet" role="dialog" aria-modal="true" aria-labelledby="wleavetitle"><div class="sheetbody">
@@ -8804,6 +9014,13 @@ details.details-moving > :not(summary) {
   </div>
   <div class="btnrow"><button class="btn ghost" data-close="sectionsheet">Cancel</button><button class="btn" id="sectionsave">Choose the first exercise</button></div>
   <button class="danger hide" id="sectionremove">Remove section</button>
+</div></div>
+
+<div class="sheet" id="ordersheet" role="dialog" aria-modal="true" aria-labelledby="ordertitle"><div class="sheetbody">
+  <div class="ohead"><div class="grabber"></div><div class="otop"><button class="obtn" data-close="ordersheet">Cancel</button><h2 id="ordertitle">Reorder</h2><button class="obtn odone" id="ordersave">Done</button></div></div>
+  <p class="lede olede">Drag <svg class="ic"><use href="#i-list"></use></svg> to move a section or an exercise, or tap one for arrows.</p>
+  <div id="olist" role="list" aria-labelledby="ordertitle"></div>
+  <div class="sr-only" id="orderlive" aria-live="polite"></div>
 </div></div>
 
 <div class="sheet" id="explainsheet"><div class="sheetbody">
@@ -11132,7 +11349,7 @@ details.details-moving > :not(summary) {
   function openDetail(w, keepHistory) {
     keepHistory || (guideClear(), guideStill()), current = w, clearTimeout(detailCloseTimer), $("detail").classList.remove("closing", "edgeout");
     var d = $("dinner");
-    d.innerHTML = "", d.classList.remove("din", "dmove"), d.style.transform = "", d.style.opacity = "", navFrom ? (dNav = gridNav(w.id), navFrom = !1) : dNav && dNav.ids[dNav.i] !== w.id && (dNav = null), $("workmanage").innerHTML = "", $("workmanage").appendChild(manageRow(w)), syncRereadButton(w), $("dreproc").hidden = isUpload(w) || w.platform === "pumpy", d.appendChild(el("div", "dkick", isPending(w) ? stageOf(w).kick : isFailed(w) ? "Needs another try" : w.category || "Other"));
+    d.innerHTML = "", d.classList.remove("din", "dmove"), d.style.transform = "", d.style.opacity = "", navFrom ? (dNav = gridNav(w.id), navFrom = !1) : dNav && dNav.ids[dNav.i] !== w.id && (dNav = null), $("workmanage").innerHTML = "", $("workmanage").appendChild(manageRow(w)), syncRereadButton(w), $("dreproc").hidden = isUpload(w) || w.platform === "pumpy", $("dorder").hidden = isPending(w) || isFailed(w) || !ordCan(w), d.appendChild(el("div", "dkick", isPending(w) ? stageOf(w).kick : isFailed(w) ? "Needs another try" : w.category || "Other"));
     var titleEl = el("h2", "dtitle", w.title || "Untitled workout");
     if (d.appendChild(titleEl), w.author) {
       var au = el("button", "dauthor", "@" + w.author);
@@ -11265,6 +11482,7 @@ details.details-moving > :not(summary) {
         strip.appendChild(fromChip(src));
       }), built.appendChild(strip), d.appendChild(built);
     }
+    var canOrder = ordCan(w);
     if ((w.blocks || []).forEach(function(b, bi) {
       var sect = el("div", "sect workout-block"), blockRow = el("div", "exrow delete-swipe block-swipe"), blockFront = el("div", "exmain");
       blockFront.appendChild(el("h3", null, b.title || (w.blocks.length === 1 ? "Exercises" : "Block " + (bi + 1))));
@@ -11305,9 +11523,15 @@ details.details-moving > :not(summary) {
           explain(ex, w);
         }, options.lastChild.appendChild(demo);
         var swap = icon(el("button", "pickrow"), "swap", "Swap or modify");
-        swap.onclick = function() {
+        if (swap.onclick = function() {
           openSwap(ex.name, w.title, { w: w, bi: bi, ei: ei, ex: ex });
-        }, options.lastChild.appendChild(swap), acts.appendChild(options), row.appendChild(acts);
+        }, options.lastChild.appendChild(swap), canOrder) {
+          var move = icon(el("button", "pickrow"), "reorder", "Reorder");
+          move.onclick = function() {
+            openOrder(w, "e" + bi + "." + ei);
+          }, options.lastChild.appendChild(move);
+        }
+        acts.appendChild(options), row.appendChild(acts);
         var swipe = el("div", "exrow delete-swipe"), front = el("div", "exmain");
         front.appendChild(row);
         var drawer = el("div", "exacts"), del = icon(el("button", "exact danger"), "trash", "Delete");
@@ -11342,10 +11566,16 @@ details.details-moving > :not(summary) {
         openExAdd(w, 0);
       }, none.appendChild(addfirst), d.appendChild(none);
     }
-    var addsec = el("button", "addex", "+ Add a section");
+    var tools = el("div", "cardtools"), addsec = el("button", "addex", "+ Add a section");
     if (addsec.onclick = function() {
       openSection(w, null);
-    }, d.appendChild(addsec), exN) {
+    }, tools.appendChild(addsec), canOrder) {
+      var reorder = icon(el("button", "addex"), "reorder", "Reorder");
+      reorder.onclick = function() {
+        openOrder(w);
+      }, tools.appendChild(reorder);
+    }
+    if (d.appendChild(tools), exN) {
       var hitDetails = disclosure("Muscles worked"), hits = hitDetails.lastChild, slot = el("div");
       hits.appendChild(slot), hits.appendChild(el("div", null, " ")), d.appendChild(hitDetails), loadCatalog().then(function() {
         if (!(!current || current.id !== w.id)) {
@@ -11821,7 +12051,7 @@ details.details-moving > :not(summary) {
   }
   function postCorrection(w, payload, btn, okMsg, sheet) {
     var label = btn ? btn.textContent : null;
-    return btn && (btn.disabled = !0, btn.textContent = "Saving\u2026"), api("workouts/" + w.id + "/exercises", { method: "POST", body: JSON.stringify(payload) }).then(function(r) {
+    return btn && (btn.disabled = !0, btn.textContent = "Saving\u2026"), cardWrite(w.id, payload).then(function(r) {
       if (btn && (btn.disabled = !1, btn.textContent = label), r.status !== "ok") {
         limitHit(r, "That change did not save. Your copy is unchanged.");
         return;
@@ -12027,7 +12257,7 @@ details.details-moving > :not(summary) {
       w.blocks = before, redraw(), render(), rowBack(rowOf(w, bi)), msg && toast(msg);
     }
     w.blocks.splice(bi, 1), render(), rowAway(box, from, redraw), offerUndo("Removed " + (expected.title || "block"), function() {
-      api("workouts/" + w.id + "/exercises", { method: "POST", body: JSON.stringify({ op: "delete_block", block: bi, expect_block: asStored(expected) }) }).then(function(r) {
+      cardWrite(w.id, { op: "delete_block", block: bi, expect_block: asStored(expected) }).then(function(r) {
         r.status === "ok" ? absorbWorkout(r.workout) : restore(r.message || "Could not remove that block.");
       }).catch(function() {
         restore("Could not reach Spotter \u2014 the block is back.");
@@ -12049,10 +12279,7 @@ details.details-moving > :not(summary) {
       w.blocks = before, redraw(), render(), rowBack(rowOf(w, ctx.block, ctx.index)), msg && toast(msg);
     }
     offerUndo("Removed " + ctx.name, function() {
-      api("workouts/" + w.id + "/exercises", {
-        method: "POST",
-        body: JSON.stringify({ op: "delete", block: ctx.block, index: ctx.index, expect_name: ctx.name })
-      }).then(function(r) {
+      cardWrite(w.id, { op: "delete", block: ctx.block, index: ctx.index, expect_name: ctx.name }).then(function(r) {
         if (r.status !== "ok") {
           putBack(limitHit(r, null) ? null : r.message || "That did not save \u2014 the exercise is back.");
           return;
@@ -12065,6 +12292,312 @@ details.details-moving > :not(summary) {
       putBack(null);
     });
   }
+  var ORD_EDGE = 56, ORD_SPEED = 14, ord = null, orderLanding = null;
+  function ordKeys(blocks) {
+    var out = [];
+    return blocks.forEach(function(b, bi) {
+      out.push("s" + bi), (b.exercises || []).forEach(function(x, ei) {
+        out.push("e" + bi + "." + ei);
+      });
+    }), out;
+  }
+  function ordKey(k) {
+    var p = k.slice(1).split(".");
+    return { b: +p[0], e: k.charAt(0) === "e" ? +p[1] : null };
+  }
+  function ordSecs(keys) {
+    var secs = [];
+    return keys.forEach(function(k) {
+      var p = ordKey(k);
+      p.e === null ? secs.push({ b: p.b, ex: [] }) : secs[secs.length - 1].ex.push([p.b, p.e]);
+    }), secs;
+  }
+  function ordFlat(secs) {
+    var out = [];
+    return secs.forEach(function(s) {
+      out.push("s" + s.b), s.ex.forEach(function(x) {
+        out.push("e" + x[0] + "." + x[1]);
+      });
+    }), out;
+  }
+  function ordMove(keys, from, to) {
+    var out = keys.slice(), k = out.splice(from, 1)[0];
+    return out.splice(to, 0, k), out;
+  }
+  function ordStep(keys, k, dir) {
+    var i = keys.indexOf(k), secs, si, t;
+    if (i < 0) return null;
+    if (k.charAt(0) === "e") return i + dir < 1 || i + dir >= keys.length ? null : ordMove(keys, i, i + dir);
+    for (secs = ordSecs(keys), si = 0; si < secs.length && "s" + secs[si].b !== k; si++)
+      ;
+    return si + dir < 0 || si + dir >= secs.length ? null : (t = secs[si], secs[si] = secs[si + dir], secs[si + dir] = t, ordFlat(secs));
+  }
+  function ordSlot(mids, from, y, lo, hi) {
+    for (var to = from; to < hi && y > mids[to + 1]; ) to++;
+    for (; to > lo && y < mids[to - 1]; ) to--;
+    return to;
+  }
+  function ordEdge(y, top, bottom, st, max) {
+    var v = 0;
+    return y < top + ORD_EDGE ? v = -ORD_SPEED * Math.min(1, (top + ORD_EDGE - y) / ORD_EDGE) : y > bottom - ORD_EDGE && (v = ORD_SPEED * Math.min(1, (y - bottom + ORD_EDGE) / ORD_EDGE)), v < 0 && st <= 0 || v > 0 && st >= max ? 0 : v;
+  }
+  function ordPayload(secs) {
+    return secs.map(function(s) {
+      return { block: s.b, exercises: s.ex.map(function(x) {
+        return x[0] === s.b ? x[1] : x;
+      }) };
+    });
+  }
+  function ordApply(blocks, secs) {
+    return secs.map(function(s) {
+      return Object.assign({}, blocks[s.b], { exercises: s.ex.map(function(x) {
+        return blocks[x[0]].exercises[x[1]];
+      }) });
+    }).filter(function(b) {
+      return b.exercises.length;
+    });
+  }
+  function ordCan(w) {
+    var n = 0;
+    return (w.blocks || []).forEach(function(b) {
+      n += (b.exercises || []).length;
+    }), n > 1 || (w.blocks || []).length > 1;
+  }
+  function cardOf(id) {
+    for (var i = 0; i < state.workouts.length; i++) if (state.workouts[i].id === id) return state.workouts[i];
+    return null;
+  }
+  function cardWrite(id, body) {
+    return undoFn && undoFn.order && flushUndo(), (orderLanding || Promise.resolve()).then(function() {
+      return api("workouts/" + id + "/exercises", { method: "POST", body: JSON.stringify(body) });
+    });
+  }
+  function openOrder(w, pick) {
+    var d = pausedDraft();
+    if (wo && !wo.finished && wo.workout.id === w.id || d && d.workoutId === w.id) {
+      toast("Your paused workout is using this order. End or finish it, then reorder.");
+      return;
+    }
+    flushUndo(), ord = { w: w, before: JSON.parse(JSON.stringify(w.blocks || [])), sel: pick || null, moved: {}, drag: null }, ord.keys = ordKeys(ord.before), ord.start = ord.keys.join(), ord.keys.indexOf(ord.sel) < 0 && (ord.sel = null), ordPaint(), openSheet("ordersheet"), ord.sel && (ordReveal(ordRowOf(ord.sel)), ordSay(ordWhere(ord.sel) + ". Move it up or down."));
+  }
+  function ordTitle(blocks, bi) {
+    return blocks[bi].title || (blocks.length === 1 ? "Exercises" : "Block " + (bi + 1));
+  }
+  function ordLabel(blocks, k) {
+    var p = ordKey(k);
+    return p.e === null ? ordTitle(blocks, p.b) : blocks[p.b].exercises[p.e].name || "Exercise";
+  }
+  function ordRowOf(k) {
+    return $("olist").querySelector('[data-k="' + k + '"]');
+  }
+  function ordPaint() {
+    var list = $("olist");
+    list.innerHTML = "", ordSecs(ord.keys).forEach(function(s) {
+      var n = s.ex.length;
+      list.appendChild(ordRow(
+        "s" + s.b,
+        ordTitle(ord.before, s.b),
+        n ? n + (n === 1 ? " exercise" : " exercises") : "Empty \xB7 it goes when you tap Done"
+      )), s.ex.forEach(function(x) {
+        var ex = ord.before[x[0]].exercises[x[1]];
+        list.appendChild(ordRow("e" + x[0] + "." + x[1], ex.name, doseText(ex)));
+      });
+    }), ordArrows();
+  }
+  function ordRow(k, title, sub) {
+    var on = ord.sel === k, row = el("div", "orow " + (k.charAt(0) === "s" ? "osec" : "oex") + (on ? " sel" : ""));
+    row.setAttribute("role", "listitem"), row.setAttribute("data-k", k);
+    var pick = el("button", "opick");
+    pick.appendChild(el("b", null, title)), sub && pick.appendChild(el("span", null, sub)), pick.setAttribute("aria-pressed", on ? "true" : "false"), row.appendChild(pick), [[-1, "up", " up"], [1, "dn", " down"]].forEach(function(a) {
+      var b = icon(el("button", "ostep " + a[1]), "arrow-up");
+      b.setAttribute("data-d", a[0]), b.setAttribute("aria-label", "Move " + title + a[2]), row.appendChild(b);
+    });
+    var grip = icon(el("span", "ogrip"), "list");
+    return grip.setAttribute("aria-hidden", "true"), grip.setAttribute("data-noswipe", ""), row.appendChild(grip), row;
+  }
+  function ordArrows() {
+    var row = ord.sel && ordRowOf(ord.sel);
+    row && row.querySelectorAll(".ostep").forEach(function(b) {
+      b.disabled = !ordStep(ord.keys, ord.sel, +b.getAttribute("data-d"));
+    });
+  }
+  function ordPick(k, quiet2) {
+    ord.sel = ord.sel === k ? null : k, $("olist").querySelectorAll(".orow").forEach(function(r) {
+      var on = r.getAttribute("data-k") === ord.sel;
+      r.classList.toggle("sel", on), r.firstChild.setAttribute("aria-pressed", on ? "true" : "false");
+    }), ordArrows(), !quiet2 && (haptic("select"), ord.sel && ordSay(ordWhere(k) + ". Move it up or down."));
+  }
+  function ordWhere(k) {
+    var p = ordKey(k), out = ordLabel(ord.before, k), secs = ordSecs(ord.keys);
+    return secs.forEach(function(s, si) {
+      p.e === null && s.b === p.b && (out += ", section " + (si + 1) + " of " + secs.length), s.ex.forEach(function(x, xi) {
+        x[0] === p.b && x[1] === p.e && (out += ", " + (xi + 1) + " of " + s.ex.length + " in " + ordTitle(ord.before, s.b));
+      });
+    }), out;
+  }
+  function ordSay(text) {
+    var live = $("orderlive");
+    live.textContent = "", setTimeout(function() {
+      live.textContent = text;
+    }, 40);
+  }
+  function ordReveal(row) {
+    if (row) {
+      var body = $("olist").parentNode, head = body.querySelector(".ohead").offsetHeight, top = $("olist").offsetTop + row.offsetTop, bottom = top + row.offsetHeight;
+      top - head < body.scrollTop + 8 ? body.scrollTop = Math.max(0, top - head - 8) : bottom > body.scrollTop + body.clientHeight - 8 && (body.scrollTop = bottom - body.clientHeight + 8);
+    }
+  }
+  function ordRects() {
+    var out = {};
+    return $("olist").querySelectorAll(".orow").forEach(function(r) {
+      r.offsetParent !== null && (out[r.getAttribute("data-k")] = r.getBoundingClientRect().top);
+    }), out;
+  }
+  function ordFlip(from, land2, skip) {
+    var list = $("olist"), moved = [];
+    lessMotion() || (list.querySelectorAll(".orow").forEach(function(r) {
+      var k = r.getAttribute("data-k"), was = from[k], d;
+      if (!(k === skip || r.offsetParent === null)) {
+        if (was === void 0) {
+          r.classList.add("oin");
+          return;
+        }
+        d = was - r.getBoundingClientRect().top, k === land2 && r.classList.add("lift"), !(Math.abs(d) < 0.5 && k !== land2) && (r.style.transition = "none", r.style.transform = "translateY(" + d + "px)", moved.push(r));
+      }
+    }), moved.length && (list.offsetHeight, moved.forEach(function(r) {
+      r.style.transition = "", r.style.transform = "", r.classList.remove("lift");
+    })));
+  }
+  function ordArrow(k, dir) {
+    var next = ordStep(ord.keys, k, dir), from, row, b;
+    next && (from = ordRects(), ord.keys = next, ord.moved[k] = 1, ordPaint(), ordFlip(from, null), haptic("select"), row = ordRowOf(k), b = row.querySelector(dir < 0 ? ".up" : ".dn"), b.disabled && (b = row.querySelector(dir < 0 ? ".dn" : ".up")), b.focus({ preventScroll: !0 }), ordReveal(row), ordSay(ordWhere(k)));
+  }
+  function ordLift(e, row) {
+    var list = $("olist"), body = list.parentNode, k = row.getAttribute("data-k"), sec2 = k.charAt(0) === "s", top0 = row.getBoundingClientRect().top, rows, i, gap, g;
+    if (!(ord.drag || !e.isPrimary || e.button > 0)) {
+      if (e.preventDefault(), ord.sel && ordPick(ord.sel, !0), sec2) {
+        var from = ordRects();
+        body.style.height = body.offsetHeight + "px", list.classList.add("ocollapse"), body.scrollTop += row.getBoundingClientRect().top - top0, ordFlip(from, null, k);
+      }
+      rows = Array.prototype.filter.call(list.children, function(r) {
+        return r.offsetParent !== null;
+      }), i = rows.indexOf(row), gap = parseFloat(getComputedStyle(list).rowGap) || 6, g = ord.drag = {
+        id: e.pointerId,
+        k: k,
+        row: row,
+        rows: rows,
+        from: i,
+        to: i,
+        y0: e.clientY,
+        y: e.clientY,
+        s0: body.scrollTop,
+        off: top0 - row.getBoundingClientRect().top,
+        lo: sec2 ? 0 : 1,
+        hi: rows.length - 1,
+        tops: [],
+        hs: [],
+        mids: [],
+        raf: 0,
+        top: body.querySelector(".ohead").getBoundingClientRect().bottom,
+        bottom: body.getBoundingClientRect().bottom
+      }, rows.forEach(function(r) {
+        g.tops.push(r.offsetTop), g.hs.push(r.offsetHeight), g.mids.push(r.offsetTop + r.offsetHeight / 2);
+      }), g.foot = g.hs[i] + gap, row.classList.add("lift");
+      try {
+        list.setPointerCapture(e.pointerId);
+      } catch (err) {
+      }
+      haptic("tap"), ordCarry(e.clientY), g.raf = requestAnimationFrame(ordFrame);
+    }
+  }
+  function ordCarry(y) {
+    var g = ord.drag, body = $("olist").parentNode, t, to;
+    g.y = y, t = g.off + (y - g.y0) + (body.scrollTop - g.s0), t = Math.max(g.tops[g.lo] - g.mids[g.from], Math.min(t, g.tops[g.hi] + g.hs[g.hi] - g.mids[g.from])), g.row.style.transform = "translateY(" + t + "px) scale(1.02)", to = ordSlot(g.mids, g.from, g.mids[g.from] + t, g.lo, g.hi), to !== g.to && (g.to = to, g.rows.forEach(function(r, j) {
+      var s = j === g.from ? 0 : j > g.from && j <= to ? -g.foot : j < g.from && j >= to ? g.foot : 0;
+      j !== g.from && (r.style.transform = s ? "translateY(" + s + "px)" : "");
+    }), haptic("select"));
+  }
+  function ordFrame() {
+    var g = ord && ord.drag, body, v;
+    g && (body = $("olist").parentNode, v = ordEdge(g.y, g.top, g.bottom, body.scrollTop, body.scrollHeight - body.clientHeight), v && (body.scrollTop += v, ordCarry(g.y)), g.raf = requestAnimationFrame(ordFrame));
+  }
+  function ordDrop(e, cancelled) {
+    var g = ord && ord.drag, list = $("olist"), body = list.parentNode, from, secs, moved, row;
+    if (!(!g || e && e.pointerId !== g.id)) {
+      ord.drag = null, cancelAnimationFrame(g.raf);
+      try {
+        list.releasePointerCapture(g.id);
+      } catch (err) {
+      }
+      moved = !cancelled && g.to !== g.from, moved && swallowClick(), from = ordRects(), moved && g.k.charAt(0) === "s" ? (secs = ordSecs(ord.keys), secs.splice(g.to, 0, secs.splice(g.from, 1)[0]), ord.keys = ordFlat(secs)) : moved && (ord.keys = ordMove(ord.keys, g.from, g.to)), moved && (ord.moved[g.k] = 1), list.classList.remove("ocollapse"), ordPaint(), body.style.height = "", row = ordRowOf(g.k), g.k.charAt(0) === "s" && (body.scrollTop += row.getBoundingClientRect().top - from[g.k]), ordFlip(from, g.k), moved && haptic("tap"), ordSay(moved ? ordWhere(g.k) : ordLabel(ord.before, g.k) + " stays where it was.");
+    }
+  }
+  function ordShut() {
+    ord && ord.drag && (cancelAnimationFrame(ord.drag.raf), ord.drag = null), $("olist").classList.remove("ocollapse"), $("olist").parentNode.style.height = "", ord = null;
+  }
+  function ordDone() {
+    var o = ord, live, secs, after, moved, one;
+    if (!o || o.drag || (closeSheet("ordersheet"), o.keys.join() === o.start)) return;
+    live = cardOf(o.w.id) || o.w, secs = ordSecs(o.keys), after = ordApply(o.before, secs), moved = Object.keys(o.moved), one = moved.length === 1 ? "Moved " + ordLabel(o.before, moved[0]) : "Card reordered", live.blocks = after, ordRepaint(live, secs, moved);
+    function commit2() {
+      return ordCommit(live.id, o.before, secs, after);
+    }
+    commit2.order = !0, offerUndo(one, commit2, function() {
+      live.blocks = o.before, ordRepaint(live, null, null);
+    });
+  }
+  function ordRepaint(w, secs, moved) {
+    if (current && current.id === w.id && refreshDetail(w, !0), render(), !(!secs || !current || current.id !== w.id)) {
+      var kept = secs.filter(function(s) {
+        return s.ex.length;
+      });
+      moved.forEach(function(k) {
+        var p = ordKey(k), node = null;
+        kept.forEach(function(s, si) {
+          var sect = p.e === null && s.b === p.b ? rowOf(w, si) : null;
+          sect && (node = sect.firstElementChild), s.ex.forEach(function(x, xi) {
+            x[0] === p.b && x[1] === p.e && (node = rowOf(w, si, xi));
+          });
+        }), node && node.classList.add("moved");
+      });
+    }
+  }
+  function ordCommit(id, before, secs, after) {
+    function back(msg) {
+      var live = cardOf(id);
+      live && JSON.stringify(live.blocks) === JSON.stringify(after) && (live.blocks = before, ordRepaint(live, null, null)), msg && toast(msg);
+    }
+    var p = cardWrite(id, { op: "reorder", order: ordPayload(secs), expect_blocks: before }).then(function(r) {
+      r.status === "ok" ? absorbWorkout(r.workout) : back(limitHit(r, null) ? null : r.message || "That order did not save \u2014 the card is back as it was.");
+    }, function() {
+      back("Could not reach Spotter \u2014 the card is back as it was.");
+    }).then(function() {
+      orderLanding === p && (orderLanding = null);
+    });
+    return orderLanding = p, p;
+  }
+  (function() {
+    var list = $("olist"), sheet = $("ordersheet");
+    list.addEventListener("click", function(e) {
+      var b = e.target.closest && e.target.closest("button"), row = b && b.closest(".orow");
+      !ord || !row || (b.classList.contains("ostep") ? ordArrow(row.getAttribute("data-k"), +b.getAttribute("data-d")) : ordPick(row.getAttribute("data-k")));
+    }), list.addEventListener("pointerdown", function(e) {
+      var grip = e.target.closest && e.target.closest(".ogrip");
+      ord && grip && ordLift(e, grip.parentNode);
+    }), list.addEventListener("pointermove", function(e) {
+      ord && ord.drag && e.pointerId === ord.drag.id && ordCarry(e.clientY);
+    }), list.addEventListener("pointerup", function(e) {
+      ord && ordDrop(e, !1);
+    }), list.addEventListener("pointercancel", function(e) {
+      ord && ordDrop(e, !0);
+    }), list.addEventListener("touchmove", function(e) {
+      ord && ord.drag && e.cancelable && e.preventDefault();
+    }, { passive: !1 }), sheet.addEventListener("keydown", function(e) {
+      !ord || !ord.sel || (e.key === "Escape" ? (e.preventDefault(), e.stopImmediatePropagation(), ordPick(ord.sel)) : (e.key === "ArrowUp" || e.key === "ArrowDown") && (e.preventDefault(), ordArrow(ord.sel, e.key === "ArrowUp" ? -1 : 1)));
+    }), $("ordersave").onclick = ordDone, $("dorder").onclick = function() {
+      current && openOrder(current);
+    };
+  })();
   function removeWorkout(w, btn) {
     var go = function() {
       var keptW = state.workouts, keptC = state.colItems;
@@ -13339,7 +13872,7 @@ details.details-moving > :not(summary) {
   }
   function woaKeep(body, msg) {
     var w = wo.workout;
-    api("workouts/" + w.id + "/exercises", { method: "POST", body: JSON.stringify(body) }).then(function(r) {
+    cardWrite(w.id, body).then(function(r) {
       if (!r || r.status !== "ok") {
         limitHit(r, WOA_NOSAVE);
         return;
@@ -14128,14 +14661,13 @@ details.details-moving > :not(summary) {
     return cxDial(a), s.block.exercises[cur] || s.ex;
   }
   function cxScoreOf(w, entries) {
-    var out = null, by = {};
-    return (entries || []).forEach(function(e) {
-      by[e.block + ":" + e.exercise] = e;
-    }), (w && w.blocks || []).forEach(function(b, bi) {
-      var cx = out ? null : complexOf(b, w), reps = 0, low, x = 0;
+    var out = null;
+    return (w && w.blocks || []).forEach(function(b, bi) {
+      var cx = out ? null : complexOf(b, w), reps = 0, low, x = 0, got;
       if (cx) {
+        got = cxLogged(entries, b, bi);
         var counts = (b.exercises || []).map(function(ex, j) {
-          var sets = ((by[bi + ":" + j] || {}).sets || []).filter(Boolean);
+          var sets = ((got[j] || {}).sets || []).filter(Boolean);
           return sets.forEach(function(st) {
             reps += st.reps || 0;
           }), sets.length;
@@ -14145,6 +14677,33 @@ details.details-moving > :not(summary) {
         }), out = { rounds: low, extra: x, reps: reps, cap: cx.cap, text: cxScore(low, x) });
       }
     }), out;
+  }
+  function cxLogged(entries, b, bi) {
+    var list = b.exercises || [], groups = {}, best = null, most = 0, here;
+    (entries || []).forEach(function(e) {
+      (groups[e.block] = groups[e.block] || []).push(e);
+    });
+    function same(e, ex) {
+      return e.name === ex.name || !!(e.canonical_id && e.canonical_id === ex.canonical_id);
+    }
+    function at(pool, j) {
+      for (var i = 0; i < pool.length; i++) if (pool[i].exercise === j) return pool.splice(i, 1)[0];
+      return null;
+    }
+    return here = list.map(function(ex, j) {
+      return at((groups[bi] || []).slice(), j);
+    }), here.some(Boolean) && here.every(function(e, j) {
+      return !e || !e.name || same(e, list[j]);
+    }) ? here : ([String(bi)].concat(Object.keys(groups)).forEach(function(k) {
+      var pool = (groups[k] || []).slice(), n = 0, got = list.map(function(ex) {
+        for (var i = 0; i < pool.length; i++) if (same(pool[i], ex))
+          return n++, pool.splice(i, 1)[0];
+        return null;
+      });
+      n > most && (most = n, best = got.map(function(e, j) {
+        return e || at(pool, j);
+      }));
+    }), best || here);
   }
   function ssMembers(i) {
     var s = wo.screens[i], out = [], k;
@@ -18240,7 +18799,7 @@ details.details-moving > :not(summary) {
   function closeSheet(id, fromPop) {
     var n = $(id);
     if (n.classList.contains("open")) {
-      if (id === "aiconsentsheet" && dismissAiConsent(), id === "setsheet" && ssDock(), guideClear("hold"), id === "welcomesheet") {
+      if (id === "aiconsentsheet" && dismissAiConsent(), id === "setsheet" && ssDock(), id === "ordersheet" && ordShut(), guideClear("hold"), id === "welcomesheet") {
         welcomeDone();
         var focus = welcomeReturn && welcomeReturn.isConnected && !welcomeReturn.closest("#landing, .sheet:not(.open)") ? welcomeReturn : $("addbtn");
         focus && focus.focus({ preventScroll: !0 });
@@ -18348,7 +18907,8 @@ details.details-moving > :not(summary) {
     "aiconsentsheet",
     "wleavesheet",
     "restsheet",
-    "sectionsheet"
+    "sectionsheet",
+    "ordersheet"
   ].forEach(wireSheet);
   function overlayShowing() {
     if ($("detail").classList.contains("open") || $("workout").classList.contains("open")) return !0;
@@ -20040,7 +20600,8 @@ details.details-moving > :not(summary) {
     "aiconsentsheet",
     "wleavesheet",
     "restsheet",
-    "sectionsheet"
+    "sectionsheet",
+    "ordersheet"
   ].forEach(function(id) {
     $(id).addEventListener("keydown", function(e) {
       if (e.key === "Escape" && (e.preventDefault(), closeSheet(id)), e.key === "Tab") {

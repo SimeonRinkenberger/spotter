@@ -3051,6 +3051,7 @@ export const APP = String.raw`
     $("workmanage").appendChild(manageRow(w));
     syncRereadButton(w);
     $("dreproc").hidden = isUpload(w) || w.platform === "pumpy";
+    $("dorder").hidden = isPending(w) || isFailed(w) || !ordCan(w);
 
     d.appendChild(el("div", "dkick", isPending(w)
       ? stageOf(w).kick
@@ -3287,6 +3288,7 @@ export const APP = String.raw`
       d.appendChild(built);
     }
 
+    var canOrder = ordCan(w);
     (w.blocks || []).forEach(function (b, bi) {
       var sect = el("div", "sect workout-block");
       // A block has a name in the data — "Warm-up", "Finisher". The card printed
@@ -3358,6 +3360,11 @@ export const APP = String.raw`
         var swap = icon(el("button", "pickrow"), "swap", "Swap or modify");
         swap.onclick = function () { openSwap(ex.name, w.title, { w: w, bi: bi, ei: ei, ex: ex }); };
         options.lastChild.appendChild(swap);
+        if (canOrder) {
+          var move = icon(el("button", "pickrow"), "reorder", "Reorder");
+          move.onclick = function () { openOrder(w, "e" + bi + "." + ei); };
+          options.lastChild.appendChild(move);
+        }
         acts.appendChild(options);
         row.appendChild(acts);
         var swipe = el("div", "exrow delete-swipe");
@@ -3427,9 +3434,18 @@ export const APP = String.raw`
     // After the last block, a whole section: a circuit, a finisher, ten minutes
     // on the bike, a stretch. The per-block add above stays for a single missed
     // movement; this is for "the video had a finisher and the card does not".
+    var tools = el("div", "cardtools");
     var addsec = el("button", "addex", "+ Add a section");
     addsec.onclick = function () { openSection(w, null); };
-    d.appendChild(addsec);
+    tools.appendChild(addsec);
+    // Beside it, the card's order: Hevy keeps Reorder with the other things that
+    // change a routine's shape, and so does this.
+    if (canOrder) {
+      var reorder = icon(el("button", "addex"), "reorder", "Reorder");
+      reorder.onclick = function () { openOrder(w); };
+      tools.appendChild(reorder);
+    }
+    d.appendChild(tools);
 
     // What this hits: catalog muscles through canonical_id, nothing else. Filled
     // in once the catalog map is here, which after the first card is immediate.
@@ -4305,7 +4321,7 @@ export const APP = String.raw`
     if (btn) { btn.disabled = true; btn.textContent = "Saving…"; }
     // Returned, so a caller with no button to disable can still know when the
     // round trip is over.
-    return api("workouts/" + w.id + "/exercises", { method: "POST", body: JSON.stringify(payload) })
+    return cardWrite(w.id, payload)
       .then(function (r) {
         if (btn) { btn.disabled = false; btn.textContent = label; }
         if (r.status !== "ok") { limitHit(r, "That change did not save. Your copy is unchanged."); return; }
@@ -4572,7 +4588,7 @@ export const APP = String.raw`
     w.blocks.splice(bi, 1); render();
     rowAway(box, from, redraw);
     offerUndo("Removed " + (expected.title || "block"), function () {
-      api("workouts/" + w.id + "/exercises", { method: "POST", body: JSON.stringify({ op: "delete_block", block: bi, expect_block: asStored(expected) }) })
+      cardWrite(w.id, { op: "delete_block", block: bi, expect_block: asStored(expected) })
         .then(function (r) { if (r.status === "ok") absorbWorkout(r.workout); else restore(r.message || "Could not remove that block."); })
         .catch(function () { restore("Could not reach Spotter — the block is back."); });
     }, function () { restore(null); });
@@ -4600,10 +4616,7 @@ export const APP = String.raw`
     function putBack(msg) { w.blocks = before; redraw(); render(); rowBack(rowOf(w, ctx.block, ctx.index)); if (msg) toast(msg); }
 
     offerUndo("Removed " + ctx.name, function () {
-      api("workouts/" + w.id + "/exercises", {
-        method: "POST",
-        body: JSON.stringify({ op: "delete", block: ctx.block, index: ctx.index, expect_name: ctx.name })
-      }).then(function (r) {
+      cardWrite(w.id, { op: "delete", block: ctx.block, index: ctx.index, expect_name: ctx.name }).then(function (r) {
         if (r.status !== "ok") {
           putBack(limitHit(r, null) ? null : (r.message || "That did not save — the exercise is back."));
           return;
@@ -4614,6 +4627,510 @@ export const APP = String.raw`
       });
     }, function () { putBack(null); });
   }
+
+  // ---------- reorder ----------
+  //
+  // "I want a way to reorder blocks and exercises" (owner, 24 Sept). The card was
+  // already full of gestures: a row swipes left to delete, a held press opens that
+  // drawer for anyone who cannot swipe, a tap opens Options, a sideways drag steps
+  // to the next card and the page scrolls. Long-press-to-drag on the card itself,
+  // Fitbod's and Strong's way, would have taken the held press back from the people
+  // it was given to, and iOS 18 Reminders, where one press can mean edit, magnify
+  // or move, is what that feels like. So it is a mode, as Hevy's Reorder Exercises
+  // and every iOS edit mode are: a sheet of one-line tiles with a handle each. The
+  // handle lifts its tile the moment it is touched (UIKit's reorder control has no
+  // hold), the tiles around it make way, the list scrolls when the tile is carried
+  // to an edge, and a tick marks every slot passed. A section travels with its
+  // exercises folded under it, as a Fitbod group does; an exercise can be carried
+  // out of its section into another, which is how a superset gets built. Dragging
+  // cannot be the only way in (WCAG 2.5.7, HIG drag and drop), so a tap on a tile
+  // gives it Move up and Move down, and the arrow keys do the same.
+  //
+  // Nothing is written until Done, and then once: the whole order as a permutation
+  // of what the server stores, with the layout it was made from as the stale guard.
+  // The card changes on the tap and the write waits for the toast to go, the way a
+  // delete does, so Undo cancels a write that never happened.
+  //
+  // The model is a list of keys in the order shown: "s2" is stored block 2, "e2.3"
+  // the fourth exercise stored in it. Every move is a move of keys, so the stored
+  // position each tile came from travels with it and the order sent is read
+  // straight off them.
+
+  var ORD_EDGE = 56;         // px inside the list's visible edge where a carried tile scrolls it
+  var ORD_SPEED = 14;        // px a frame at the very edge, about 840 px/s at 60 Hz
+  var ord = null;            // the open sheet: { w, before, keys, start, sel, moved, drag }
+  var orderLanding = null;   // the reorder write in flight; every other card write waits for it
+
+  function ordKeys(blocks) {
+    var out = [];
+    blocks.forEach(function (b, bi) {
+      out.push("s" + bi);
+      (b.exercises || []).forEach(function (x, ei) { out.push("e" + bi + "." + ei); });
+    });
+    return out;
+  }
+
+  function ordKey(k) {
+    var p = k.slice(1).split(".");
+    return { b: +p[0], e: k.charAt(0) === "e" ? +p[1] : null };
+  }
+
+  // Keys back into sections: [{ b, ex: [[b, e], ...] }]. A key list always opens
+  // on a section, which the slot bounds below make sure of.
+  function ordSecs(keys) {
+    var secs = [];
+    keys.forEach(function (k) {
+      var p = ordKey(k);
+      if (p.e === null) secs.push({ b: p.b, ex: [] });
+      else secs[secs.length - 1].ex.push([p.b, p.e]);
+    });
+    return secs;
+  }
+
+  function ordFlat(secs) {
+    var out = [];
+    secs.forEach(function (s) {
+      out.push("s" + s.b);
+      s.ex.forEach(function (x) { out.push("e" + x[0] + "." + x[1]); });
+    });
+    return out;
+  }
+
+  // What a drop and an arrow both do: one key out, back in at index to.
+  function ordMove(keys, from, to) {
+    var out = keys.slice(), k = out.splice(from, 1)[0];
+    out.splice(to, 0, k);
+    return out;
+  }
+
+  // One step for the arrows. An exercise steps over its neighbour and a section
+  // heading counts as one, so stepping up past its own heading puts it at the end
+  // of the section above. A section steps over the whole of the next one. Null
+  // where there is nowhere to go, which is what greys the arrow.
+  function ordStep(keys, k, dir) {
+    var i = keys.indexOf(k), secs, si, t;
+    if (i < 0) return null;
+    if (k.charAt(0) === "e") return i + dir < 1 || i + dir >= keys.length ? null : ordMove(keys, i, i + dir);
+    secs = ordSecs(keys);
+    for (si = 0; si < secs.length && "s" + secs[si].b !== k; si++) { /* find it */ }
+    if (si + dir < 0 || si + dir >= secs.length) return null;
+    t = secs[si]; secs[si] = secs[si + dir]; secs[si + dir] = t;
+    return ordFlat(secs);
+  }
+
+  // Where a carried tile would land: past a neighbour's resting midpoint is past
+  // the neighbour, UITableView's rule. mids are the tiles' resting midpoints, y the
+  // carried tile's midpoint now, lo..hi the slots it may take.
+  function ordSlot(mids, from, y, lo, hi) {
+    var to = from;
+    while (to < hi && y > mids[to + 1]) to++;
+    while (to > lo && y < mids[to - 1]) to--;
+    return to;
+  }
+
+  // How far the list scrolls this frame under a tile held at y: nothing until the
+  // tile is within ORD_EDGE of the visible top or bottom, faster the closer it
+  // gets, never past either end of the list.
+  function ordEdge(y, top, bottom, st, max) {
+    var v = 0;
+    if (y < top + ORD_EDGE) v = -ORD_SPEED * Math.min(1, (top + ORD_EDGE - y) / ORD_EDGE);
+    else if (y > bottom - ORD_EDGE) v = ORD_SPEED * Math.min(1, (y - bottom + ORD_EDGE) / ORD_EDGE);
+    return (v < 0 && st <= 0) || (v > 0 && st >= max) ? 0 : v;
+  }
+
+  // The order as the server reads it: a bare index for an exercise still in its
+  // own section, [block, index] for one that came from another.
+  function ordPayload(secs) {
+    return secs.map(function (s) {
+      return { block: s.b, exercises: s.ex.map(function (x) { return x[0] === s.b ? x[1] : x; }) };
+    });
+  }
+
+  // The blocks the server will store, built the way it builds them: each stored
+  // block and exercise object as it is, a section left empty gone.
+  function ordApply(blocks, secs) {
+    return secs.map(function (s) {
+      return Object.assign({}, blocks[s.b], { exercises: s.ex.map(function (x) { return blocks[x[0]].exercises[x[1]]; }) });
+    }).filter(function (b) { return b.exercises.length; });
+  }
+
+  function ordCan(w) {
+    var n = 0;
+    (w.blocks || []).forEach(function (b) { n += (b.exercises || []).length; });
+    return n > 1 || (w.blocks || []).length > 1;
+  }
+
+  function cardOf(id) {
+    for (var i = 0; i < state.workouts.length; i++) if (state.workouts[i].id === id) return state.workouts[i];
+    return null;
+  }
+
+  // Every write to a card's exercises goes out through here. A reorder still under
+  // its Undo toast goes first, and the write waits for it to land: the positions it
+  // names are the card's new ones, which the server only has once the reorder does.
+  function cardWrite(id, body) {
+    if (undoFn && undoFn.order) flushUndo();
+    return (orderLanding || Promise.resolve()).then(function () {
+      return api("workouts/" + id + "/exercises", { method: "POST", body: JSON.stringify(body) });
+    });
+  }
+
+  function openOrder(w, pick) {
+    var d = pausedDraft();
+    // Workout Mode runs on its own copy of the card, and the Lock Screen, the
+    // watch and the saved log all count through it by position. A session of this
+    // card keeps the order it started with, so the card waits for it rather than
+    // telling the two apart later.
+    if ((wo && !wo.finished && wo.workout.id === w.id) || (d && d.workoutId === w.id)) {
+      toast("Your paused workout is using this order. End or finish it, then reorder.");
+      return;
+    }
+    // A delete still under its toast lands first, so the order starts from the
+    // card the server will have.
+    flushUndo();
+    ord = { w: w, before: JSON.parse(JSON.stringify(w.blocks || [])), sel: pick || null, moved: {}, drag: null };
+    ord.keys = ordKeys(ord.before);
+    ord.start = ord.keys.join();
+    if (ord.keys.indexOf(ord.sel) < 0) ord.sel = null;
+    ordPaint();
+    openSheet("ordersheet");
+    if (ord.sel) { ordReveal(ordRowOf(ord.sel)); ordSay(ordWhere(ord.sel) + ". Move it up or down."); }
+  }
+
+  // Named as the card named it when the sheet opened, by the block's stored
+  // place: "Block 2" stays Block 2 however far it is carried.
+  function ordTitle(blocks, bi) {
+    return blocks[bi].title || (blocks.length === 1 ? "Exercises" : "Block " + (bi + 1));
+  }
+
+  function ordLabel(blocks, k) {
+    var p = ordKey(k);
+    return p.e === null ? ordTitle(blocks, p.b) : blocks[p.b].exercises[p.e].name || "Exercise";
+  }
+
+  function ordRowOf(k) { return $("olist").querySelector('[data-k="' + k + '"]'); }
+
+  function ordPaint() {
+    var list = $("olist");
+    list.innerHTML = "";
+    ordSecs(ord.keys).forEach(function (s) {
+      var n = s.ex.length;
+      list.appendChild(ordRow("s" + s.b, ordTitle(ord.before, s.b),
+        n ? n + (n === 1 ? " exercise" : " exercises") : "Empty · it goes when you tap Done"));
+      s.ex.forEach(function (x) {
+        var ex = ord.before[x[0]].exercises[x[1]];
+        list.appendChild(ordRow("e" + x[0] + "." + x[1], ex.name, doseText(ex)));
+      });
+    });
+    ordArrows();
+  }
+
+  function ordRow(k, title, sub) {
+    var on = ord.sel === k, row = el("div", "orow " + (k.charAt(0) === "s" ? "osec" : "oex") + (on ? " sel" : ""));
+    row.setAttribute("role", "listitem");
+    row.setAttribute("data-k", k);
+    var pick = el("button", "opick");
+    pick.appendChild(el("b", null, title));
+    if (sub) pick.appendChild(el("span", null, sub));
+    pick.setAttribute("aria-pressed", on ? "true" : "false");
+    row.appendChild(pick);
+    [[-1, "up", " up"], [1, "dn", " down"]].forEach(function (a) {
+      var b = icon(el("button", "ostep " + a[1]), "arrow-up");
+      b.setAttribute("data-d", a[0]);
+      b.setAttribute("aria-label", "Move " + title + a[2]);
+      row.appendChild(b);
+    });
+    // The handle is for a finger or a mouse. A screen reader and a keyboard have
+    // the row itself and its arrows, which say more than "drag here" can.
+    var grip = icon(el("span", "ogrip"), "list");
+    grip.setAttribute("aria-hidden", "true");
+    grip.setAttribute("data-noswipe", "");
+    row.appendChild(grip);
+    return row;
+  }
+
+  function ordArrows() {
+    var row = ord.sel && ordRowOf(ord.sel);
+    if (row) row.querySelectorAll(".ostep").forEach(function (b) {
+      b.disabled = !ordStep(ord.keys, ord.sel, +b.getAttribute("data-d"));
+    });
+  }
+
+  function ordPick(k, quiet) {
+    ord.sel = ord.sel === k ? null : k;
+    $("olist").querySelectorAll(".orow").forEach(function (r) {
+      var on = r.getAttribute("data-k") === ord.sel;
+      r.classList.toggle("sel", on);
+      r.firstChild.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+    ordArrows();
+    if (quiet) return;
+    haptic("select");
+    if (ord.sel) ordSay(ordWhere(k) + ". Move it up or down.");
+  }
+
+  // "Goblet Squat, 2 of 3 in Finisher": where a tile is, for the live region.
+  function ordWhere(k) {
+    var p = ordKey(k), out = ordLabel(ord.before, k), secs = ordSecs(ord.keys);
+    secs.forEach(function (s, si) {
+      if (p.e === null && s.b === p.b) out += ", section " + (si + 1) + " of " + secs.length;
+      s.ex.forEach(function (x, xi) {
+        if (x[0] === p.b && x[1] === p.e) out += ", " + (xi + 1) + " of " + s.ex.length + " in " + ordTitle(ord.before, s.b);
+      });
+    });
+    return out;
+  }
+
+  function ordSay(text) {
+    var live = $("orderlive");
+    live.textContent = "";
+    setTimeout(function () { live.textContent = text; }, 40);
+  }
+
+  // The sheet scrolls under a band that stays put, so "into view" is below it.
+  function ordReveal(row) {
+    if (!row) return;
+    var body = $("olist").parentNode, head = body.querySelector(".ohead").offsetHeight;
+    var top = $("olist").offsetTop + row.offsetTop, bottom = top + row.offsetHeight;
+    if (top - head < body.scrollTop + 8) body.scrollTop = Math.max(0, top - head - 8);
+    else if (bottom > body.scrollTop + body.clientHeight - 8) body.scrollTop = bottom - body.clientHeight + 8;
+  }
+
+  // First, last, invert, play. ordRects is where every showing tile is now;
+  // ordFlip, after the list has been redrawn, starts each tile that moved where it
+  // was and lets it glide to where it is. A tile that was not showing fades in, and
+  // the one just let go keeps its lifted shadow for the glide down.
+  function ordRects() {
+    var out = {};
+    $("olist").querySelectorAll(".orow").forEach(function (r) {
+      if (r.offsetParent !== null) out[r.getAttribute("data-k")] = r.getBoundingClientRect().top;
+    });
+    return out;
+  }
+
+  function ordFlip(from, land, skip) {
+    var list = $("olist"), moved = [];
+    if (lessMotion()) return;
+    list.querySelectorAll(".orow").forEach(function (r) {
+      var k = r.getAttribute("data-k"), was = from[k], d;
+      if (k === skip || r.offsetParent === null) return;
+      if (was === undefined) { r.classList.add("oin"); return; }
+      d = was - r.getBoundingClientRect().top;
+      if (k === land) r.classList.add("lift");
+      if (Math.abs(d) < 0.5 && k !== land) return;
+      r.style.transition = "none";
+      r.style.transform = "translateY(" + d + "px)";
+      moved.push(r);
+    });
+    if (!moved.length) return;
+    void list.offsetHeight;
+    moved.forEach(function (r) { r.style.transition = ""; r.style.transform = ""; r.classList.remove("lift"); });
+  }
+
+  function ordArrow(k, dir) {
+    var next = ordStep(ord.keys, k, dir), from, row, b;
+    if (!next) return;
+    from = ordRects();
+    ord.keys = next;
+    ord.moved[k] = 1;
+    ordPaint();
+    ordFlip(from, null);
+    haptic("select");
+    row = ordRowOf(k);
+    // Focus stays on the arrow pressed, so it can be pressed again; on the other
+    // one once this one has gone grey at the end of the list.
+    b = row.querySelector(dir < 0 ? ".up" : ".dn");
+    if (b.disabled) b = row.querySelector(dir < 0 ? ".dn" : ".up");
+    b.focus({ preventScroll: true });
+    ordReveal(row);
+    ordSay(ordWhere(k));
+  }
+
+  function ordLift(e, row) {
+    var list = $("olist"), body = list.parentNode, k = row.getAttribute("data-k"), sec = k.charAt(0) === "s";
+    var top0 = row.getBoundingClientRect().top, rows, i, gap, g;
+    if (ord.drag || !e.isPrimary || e.button > 0) return;
+    e.preventDefault();
+    if (ord.sel) ordPick(ord.sel, true);
+    // A section is carried folded: its exercises and every other section's fold
+    // away under their headings, and the list scrolls so the one in hand stays
+    // under the finger. The sheet keeps its height while they are folded, or it
+    // would drop half the screen out from under the thumb.
+    if (sec) {
+      var from = ordRects();
+      body.style.height = body.offsetHeight + "px";
+      list.classList.add("ocollapse");
+      body.scrollTop += row.getBoundingClientRect().top - top0;
+      ordFlip(from, null, k);
+    }
+    rows = Array.prototype.filter.call(list.children, function (r) { return r.offsetParent !== null; });
+    i = rows.indexOf(row);
+    gap = parseFloat(getComputedStyle(list).rowGap) || 6;
+    g = ord.drag = { id: e.pointerId, k: k, row: row, rows: rows, from: i, to: i, y0: e.clientY, y: e.clientY,
+      s0: body.scrollTop, off: top0 - row.getBoundingClientRect().top, lo: sec ? 0 : 1, hi: rows.length - 1,
+      tops: [], hs: [], mids: [], raf: 0, top: body.querySelector(".ohead").getBoundingClientRect().bottom,
+      bottom: body.getBoundingClientRect().bottom };
+    rows.forEach(function (r) {
+      g.tops.push(r.offsetTop); g.hs.push(r.offsetHeight); g.mids.push(r.offsetTop + r.offsetHeight / 2);
+    });
+    g.foot = g.hs[i] + gap;
+    row.classList.add("lift");
+    try { list.setPointerCapture(e.pointerId); } catch (err) { /* not fatal */ }
+    haptic("tap");
+    ordCarry(e.clientY);
+    g.raf = requestAnimationFrame(ordFrame);
+  }
+
+  // The tile under the finger, the others out of its way, a tick per slot.
+  function ordCarry(y) {
+    var g = ord.drag, body = $("olist").parentNode, t, to;
+    g.y = y;
+    // Its middle may reach the outer edge of the first and last slots, and no
+    // further: far enough to pass the end tile's midpoint, not off into the sheet.
+    t = g.off + (y - g.y0) + (body.scrollTop - g.s0);
+    t = Math.max(g.tops[g.lo] - g.mids[g.from], Math.min(t, g.tops[g.hi] + g.hs[g.hi] - g.mids[g.from]));
+    g.row.style.transform = "translateY(" + t + "px) scale(1.02)";
+    to = ordSlot(g.mids, g.from, g.mids[g.from] + t, g.lo, g.hi);
+    if (to === g.to) return;
+    g.to = to;
+    g.rows.forEach(function (r, j) {
+      var s = j === g.from ? 0 : j > g.from && j <= to ? -g.foot : j < g.from && j >= to ? g.foot : 0;
+      if (j !== g.from) r.style.transform = s ? "translateY(" + s + "px)" : "";
+    });
+    haptic("select");
+  }
+
+  function ordFrame() {
+    var g = ord && ord.drag, body, v;
+    if (!g) return;
+    body = $("olist").parentNode;
+    v = ordEdge(g.y, g.top, g.bottom, body.scrollTop, body.scrollHeight - body.clientHeight);
+    if (v) { body.scrollTop += v; ordCarry(g.y); }
+    g.raf = requestAnimationFrame(ordFrame);
+  }
+
+  function ordDrop(e, cancelled) {
+    var g = ord && ord.drag, list = $("olist"), body = list.parentNode, from, secs, moved, row;
+    if (!g || (e && e.pointerId !== g.id)) return;
+    ord.drag = null;
+    cancelAnimationFrame(g.raf);
+    try { list.releasePointerCapture(g.id); } catch (err) { /* already gone */ }
+    moved = !cancelled && g.to !== g.from;
+    if (moved) swallowClick();
+    from = ordRects();
+    if (moved && g.k.charAt(0) === "s") {
+      secs = ordSecs(ord.keys);
+      secs.splice(g.to, 0, secs.splice(g.from, 1)[0]);
+      ord.keys = ordFlat(secs);
+    } else if (moved) ord.keys = ordMove(ord.keys, g.from, g.to);
+    if (moved) ord.moved[g.k] = 1;
+    list.classList.remove("ocollapse");
+    ordPaint();
+    body.style.height = "";
+    row = ordRowOf(g.k);
+    // A section unfolds around the place it was let go, its exercises opening
+    // below it; an exercise glides from the finger into its slot.
+    if (g.k.charAt(0) === "s") body.scrollTop += row.getBoundingClientRect().top - from[g.k];
+    ordFlip(from, g.k);
+    if (moved) haptic("tap");
+    ordSay(moved ? ordWhere(g.k) : ordLabel(ord.before, g.k) + " stays where it was.");
+  }
+
+  function ordShut() {
+    if (ord && ord.drag) { cancelAnimationFrame(ord.drag.raf); ord.drag = null; }
+    $("olist").classList.remove("ocollapse");
+    $("olist").parentNode.style.height = "";
+    ord = null;
+  }
+
+  function ordDone() {
+    var o = ord, live, secs, after, moved, one;
+    if (!o || o.drag) return;
+    closeSheet("ordersheet");
+    if (o.keys.join() === o.start) return;
+    live = cardOf(o.w.id) || o.w;
+    secs = ordSecs(o.keys);
+    after = ordApply(o.before, secs);
+    moved = Object.keys(o.moved);
+    one = moved.length === 1 ? "Moved " + ordLabel(o.before, moved[0]) : "Card reordered";
+    live.blocks = after;
+    ordRepaint(live, secs, moved);
+    function commit() { return ordCommit(live.id, o.before, secs, after); }
+    commit.order = true;
+    offerUndo(one, commit, function () { live.blocks = o.before; ordRepaint(live, null, null); });
+  }
+
+  // The card redrawn in its new order, where it was scrolled to, with whatever was
+  // moved lit for a moment in the place it landed.
+  function ordRepaint(w, secs, moved) {
+    if (current && current.id === w.id) refreshDetail(w, true);
+    render();
+    if (!secs || !current || current.id !== w.id) return;
+    var kept = secs.filter(function (s) { return s.ex.length; });
+    moved.forEach(function (k) {
+      var p = ordKey(k), node = null;
+      kept.forEach(function (s, si) {
+        var sect = p.e === null && s.b === p.b ? rowOf(w, si) : null;
+        if (sect) node = sect.firstElementChild;
+        s.ex.forEach(function (x, xi) { if (x[0] === p.b && x[1] === p.e) node = rowOf(w, si, xi); });
+      });
+      if (node) node.classList.add("moved");
+    });
+  }
+
+  function ordCommit(id, before, secs, after) {
+    function back(msg) {
+      // The old order goes back only over the order this wrote. If a refresh has
+      // brought the server's copy in since, that copy is the truth.
+      var live = cardOf(id);
+      if (live && JSON.stringify(live.blocks) === JSON.stringify(after)) { live.blocks = before; ordRepaint(live, null, null); }
+      if (msg) toast(msg);
+    }
+    var p = cardWrite(id, { op: "reorder", order: ordPayload(secs), expect_blocks: before }).then(function (r) {
+      if (r.status === "ok") absorbWorkout(r.workout);
+      else back(limitHit(r, null) ? null : (r.message || "That order did not save — the card is back as it was."));
+    }, function () { back("Could not reach Spotter — the card is back as it was."); }).then(function () {
+      if (orderLanding === p) orderLanding = null;
+    });
+    orderLanding = p;
+    return p;
+  }
+
+  (function () {
+    var list = $("olist"), sheet = $("ordersheet");
+    list.addEventListener("click", function (e) {
+      var b = e.target.closest && e.target.closest("button"), row = b && b.closest(".orow");
+      if (!ord || !row) return;
+      if (b.classList.contains("ostep")) ordArrow(row.getAttribute("data-k"), +b.getAttribute("data-d"));
+      else ordPick(row.getAttribute("data-k"));
+    });
+    list.addEventListener("pointerdown", function (e) {
+      var grip = e.target.closest && e.target.closest(".ogrip");
+      if (ord && grip) ordLift(e, grip.parentNode);
+    });
+    list.addEventListener("pointermove", function (e) {
+      if (ord && ord.drag && e.pointerId === ord.drag.id) ordCarry(e.clientY);
+    });
+    list.addEventListener("pointerup", function (e) { if (ord) ordDrop(e, false); });
+    list.addEventListener("pointercancel", function (e) { if (ord) ordDrop(e, true); });
+    // WebKit reads a held finger that starts moving as a scroll unless the touch
+    // itself is refused; touch-action on the handle covers the start of it.
+    list.addEventListener("touchmove", function (e) {
+      if (ord && ord.drag && e.cancelable) e.preventDefault();
+    }, { passive: false });
+    // Registered before the sheet's shared Escape, so Escape puts a selection
+    // down before it closes anything.
+    sheet.addEventListener("keydown", function (e) {
+      if (!ord || !ord.sel) return;
+      if (e.key === "Escape") { e.preventDefault(); e.stopImmediatePropagation(); ordPick(ord.sel); }
+      else if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+        e.preventDefault();
+        ordArrow(ord.sel, e.key === "ArrowUp" ? -1 : 1);
+      }
+    });
+    $("ordersave").onclick = ordDone;
+    $("dorder").onclick = function () { if (current) openOrder(current); };
+  })();
 
   // The second tap of an armed button is as deliberate as an answer gets, and it
   // used to be followed by a card sitting there for a round trip. Deleting a
@@ -7140,7 +7657,7 @@ export const APP = String.raw`
    */
   function woaKeep(body, msg) {
     var w = wo.workout;
-    api("workouts/" + w.id + "/exercises", { method: "POST", body: JSON.stringify(body) }).then(function (r) {
+    cardWrite(w.id, body).then(function (r) {
       if (!r || r.status !== "ok") { limitHit(r, WOA_NOSAVE); return; }
       absorbWorkout(r.workout);
       toast(msg);
@@ -8612,13 +9129,13 @@ export const APP = String.raw`
    * live counter or from a log written six weeks ago.
    */
   function cxScoreOf(w, entries) {
-    var out = null, by = {};
-    (entries || []).forEach(function (e) { by[e.block + ":" + e.exercise] = e; });
+    var out = null;
     ((w && w.blocks) || []).forEach(function (b, bi) {
-      var cx = out ? null : complexOf(b, w), reps = 0, low, x = 0;
+      var cx = out ? null : complexOf(b, w), reps = 0, low, x = 0, got;
       if (!cx) return;
+      got = cxLogged(entries, b, bi);
       var counts = (b.exercises || []).map(function (ex, j) {
-        var sets = ((by[bi + ":" + j] || {}).sets || []).filter(Boolean);
+        var sets = ((got[j] || {}).sets || []).filter(Boolean);
         sets.forEach(function (st) { reps += st.reps || 0; });
         return sets.length;
       });
@@ -8628,6 +9145,32 @@ export const APP = String.raw`
       out = { rounds: low, extra: x, reps: reps, cap: cx.cap, text: cxScore(low, x) };
     });
     return out;
+  }
+
+  // The logged entry for each movement of block bi. A log names its entries by
+  // block and position as the card stood on the day, and the card can have been
+  // reordered or edited since, while a past session is scored against the card as
+  // it is now. So a position counts only while what is logged there is still that
+  // movement; otherwise the movements are found by name (or catalog id) in the
+  // logged block holding most of them, and one renamed since keeps its place.
+  function cxLogged(entries, b, bi) {
+    var list = b.exercises || [], groups = {}, best = null, most = 0, here;
+    (entries || []).forEach(function (e) { (groups[e.block] = groups[e.block] || []).push(e); });
+    function same(e, ex) { return e.name === ex.name || !!(e.canonical_id && e.canonical_id === ex.canonical_id); }
+    function at(pool, j) {
+      for (var i = 0; i < pool.length; i++) if (pool[i].exercise === j) return pool.splice(i, 1)[0];
+      return null;
+    }
+    here = list.map(function (ex, j) { return at((groups[bi] || []).slice(), j); });
+    if (here.some(Boolean) && here.every(function (e, j) { return !e || !e.name || same(e, list[j]); })) return here;
+    [String(bi)].concat(Object.keys(groups)).forEach(function (k) {
+      var pool = (groups[k] || []).slice(), n = 0, got = list.map(function (ex) {
+        for (var i = 0; i < pool.length; i++) if (same(pool[i], ex)) { n++; return pool.splice(i, 1)[0]; }
+        return null;
+      });
+      if (n > most) { most = n; best = got.map(function (e, j) { return e || at(pool, j); }); }
+    });
+    return best || here;
   }
 
   // ---------- supersets, one screen ----------
@@ -15474,6 +16017,8 @@ export const APP = String.raw`
     if (id === "aiconsentsheet") dismissAiConsent();
     // The steppers go back to the superset panel they were borrowed from.
     if (id === "setsheet") ssDock();
+    // A tile still in hand is put down where it came from; nothing was written.
+    if (id === "ordersheet") ordShut();
     guideClear("hold");
     if (id === "welcomesheet") {
       welcomeDone();
@@ -15607,7 +16152,7 @@ export const APP = String.raw`
    "settingssheet", "colsheet", "renamesheet", "swapsheet", "pumpysheet", "capsheet", "plansheet",
    "daysheet", "copysheet", "sortsheet", "refsheet", "countsheet", "guidesheet", "welcomesheet",
    "workoptions", "filtersheet", "schedulesheet", "recapsheet", "woaddsheet", "aiconsentsheet", "wleavesheet",
-   "restsheet", "sectionsheet"]
+   "restsheet", "sectionsheet", "ordersheet"]
     .forEach(wireSheet);
 
   function overlayShowing() {
@@ -18526,7 +19071,7 @@ export const APP = String.raw`
     b.onclick = function () { closeSheet(b.getAttribute("data-close")); };
   });
   ["workoptions", "filtersheet", "schedulesheet", "recapsheet", "woaddsheet", "aiconsentsheet", "wleavesheet",
-   "restsheet", "sectionsheet"].forEach(function (id) {
+   "restsheet", "sectionsheet", "ordersheet"].forEach(function (id) {
     $(id).addEventListener("keydown", function (e) {
       if (e.key === "Escape") { e.preventDefault(); closeSheet(id); }
       if (e.key !== "Tab") return;

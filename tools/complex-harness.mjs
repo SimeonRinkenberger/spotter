@@ -23,7 +23,7 @@ function fn(name) {
 
 const LIFTED = ['isTimed', 'cxDosed', 'cxCap', 'complexOf', 'isStop', 'endStop', 'stopDone',
   'cxOf', 'cxLeft', 'cxMarks', 'cxCurrent', 'cxEntry', 'cxSet', 'cxSync', 'cxScore',
-  'cxDelta', 'cxScoreOf', 'flatten'];
+  'cxDelta', 'cxScoreOf', 'cxLogged', 'flatten'];
 
 // The three things the lifted code reaches for that are not in this file's scope.
 const STUBS = [
