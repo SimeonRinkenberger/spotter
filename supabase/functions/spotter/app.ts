@@ -560,8 +560,15 @@ export const APP = String.raw`
   function dismissAiConsent() {
     var pending = aiConsentPending;
     aiConsentPending = null;
-    if (pending) pending.reject(new Error("AI processing was not enabled. You can still log and plan workouts manually."));
+    if (!pending) return;
+    // "Not now" is an answer, not a failure. The flag lets each AI caller's catch
+    // put its button back without a connection error nobody had (OU-6).
+    var no = new Error("AI processing was not enabled. You can still log and plan workouts manually.");
+    no.declined = true;
+    pending.reject(no);
   }
+
+  function aiDeclined(e) { return !!(e && e.declined); }
 
   function noteConsent(enabled) {
     var pending = aiConsentPending;
@@ -2446,6 +2453,33 @@ export const APP = String.raw`
     });
   }
 
+  // A card under a finger keeps its node until the finger lifts. A render that
+  // replaced it mid-press (Realtime renaming it, a read finishing) took the end of
+  // the touch away with the old node, and WebKit dropped the click, so the tap
+  // did nothing (seen on the iPhone 16e with a card renamed three times a
+  // second). The replacement waits instead, and one catch-up render follows once
+  // the click that belongs to the lift has had its moment. A new press anywhere
+  // is proof an old one lifted, so a lost lift holds a card back only until then.
+  var pressedCard = null, gridBehind = false, gridCatchUp = 0;
+
+  function liftCard() {
+    if (!pressedCard) return;
+    pressedCard = null;
+    if (!gridBehind) return;
+    gridBehind = false;
+    var epoch = accountEpoch;
+    clearTimeout(gridCatchUp);
+    gridCatchUp = setTimeout(function () { if (state.user && epoch === accountEpoch) renderGrid(); }, 350);
+  }
+
+  window.addEventListener("pointerdown", function (e) {
+    liftCard();
+    pressedCard = e.target && e.target.closest ? e.target.closest("#grid .carditem") : null;
+  }, true);
+  window.addEventListener("pointerup", liftCard, true);
+  window.addEventListener("pointercancel", liftCard, true);
+  document.addEventListener("visibilitychange", liftCard);
+
   function renderGrid() {
     var grid = $("grid"), empty = $("empty");
     var items = visible();
@@ -2460,6 +2494,8 @@ export const APP = String.raw`
       var sig = JSON.stringify([w.title, w.ingest_status, w.media_stage, w.platform, w.thumb_url,
         w.favorite, w.duration_minutes, w.category, w.difficulty, cardMeta(w)]);
       var entry = previous[key];
+      // Pressed: kept as it is, with its old signature so the catch-up redraws it.
+      if (entry && entry.sig !== sig && entry.node === pressedCard) { gridBehind = true; sig = entry.sig; }
       if (!entry || entry.sig !== sig) {
         var changed = !!entry;
         if (entry && pendingMotion) pendingMotion.unobserve(entry.node);
@@ -3782,10 +3818,10 @@ export const APP = String.raw`
         watchPending();
         toast(w.user_workout_override ? "Refreshing the source; your personal exercise list will be kept." : "Reading it again…");
       })
-      .catch(function () {
+      .catch(function (e) {
         if (!accountNow(epoch, uid)) return;
         if (btn) { btn.disabled = false; btn.textContent = "Try reading it again"; }
-        toast("Could not start reading that — try again in a minute.");
+        if (!aiDeclined(e)) toast("Could not start reading that — try again in a minute.");
       });
   }
 
@@ -3827,10 +3863,10 @@ export const APP = String.raw`
         watchPending();
         toast(w.user_workout_override ? "Refreshing the source; your personal exercise list will be kept." : "Listening to the video…");
       })
-      .catch(function () {
+      .catch(function (e) {
         if (!accountNow(epoch, uid)) return;
         if (btn) { btn.disabled = false; btn.textContent = "Read the video"; }
-        toast("Could not start reading that — try again in a minute.");
+        if (!aiDeclined(e)) toast("Could not start reading that — try again in a minute.");
       });
   }
 
@@ -3888,10 +3924,10 @@ export const APP = String.raw`
         if (fresh) openDetail(fresh, true);
         toast("Re-read it from your caption.");
       });
-    }).catch(function () {
+    }).catch(function (e) {
       btn.disabled = false;
       btn.textContent = "Read it";
-      toast("Could not read that caption — try again in a moment.");
+      if (!aiDeclined(e)) toast("Could not read that caption — try again in a moment.");
     });
   }
 
@@ -6871,8 +6907,15 @@ export const APP = String.raw`
           return;
         }
         done(r);
-      }).catch(function () {
-        if (expKey === key) $("explaintext").textContent = got || EXFAIL;
+      }).catch(function (e) {
+        if (expKey !== key) return;
+        // Declined before a word arrived: the sheet goes back to its Explain button.
+        if (aiDeclined(e) && !got) {
+          $("explaintext").classList.add("hide");
+          $("explainask").classList.remove("hide");
+          return;
+        }
+        $("explaintext").textContent = got || EXFAIL;
       });
     };
   }
@@ -6991,10 +7034,10 @@ export const APP = String.raw`
         return;
       }
       renderSwapResult(box, r);
-    }).catch(function () {
+    }).catch(function (e) {
       if (swapCtx !== ctx || ctx.seq !== seq) return;
       box.innerHTML = "";
-      box.appendChild(el("div", "aitext", "Could not find a swap just now. Try again in a moment."));
+      if (!aiDeclined(e)) box.appendChild(el("div", "aitext", "Could not find a swap just now. Try again in a moment."));
     });
   }
 
@@ -9781,6 +9824,7 @@ export const APP = String.raw`
 
   function wireWmain(main) {
     var md = null;
+    var loose = { held: function () { return md; }, release: function () { stop(null, true, true); } };
 
     // A damped half of the travel, a capped fifth at the first exercise and the
     // last — the whole of saying there is nothing that way.
@@ -9792,13 +9836,13 @@ export const APP = String.raw`
       main.style.opacity = String(1 - Math.abs(lead) / 320);
     }
 
-    function stop(e, cancelled) {
+    function stop(e, cancelled, lost) {
       if (!md || (e && e.pointerId !== md.id)) return;
       var d = md;
       md = null;
       if (!d.lock) return;
       try { main.releasePointerCapture(d.id); } catch (err) { /* already gone */ }
-      swallowClick();
+      if (!lost) swallowClick();
       var s = d.s, a = s[0], b = s[s.length - 1], dt = (b.t - a.t) / 1000;
       var v = dt > 0.004 ? (b.x - a.x) / dt : 0;
       var far = Math.abs(d.dx) > main.offsetWidth * 0.4;
@@ -9827,12 +9871,14 @@ export const APP = String.raw`
       if (document.querySelector(".sheet.open") || noDragIn(e.target)) return;
       // Safari's back gesture owns the very edge inside a browser tab.
       if (!standalone() && e.clientX < 24) return;
-      md = { id: e.pointerId, x: e.clientX, y: e.clientY, dx: 0, lock: false,
+      md = { id: e.pointerId, x: e.clientX, y: e.clientY, dx: 0, lock: false, seen: now(),
         calm: lessMotion(), s: [{ t: now(), x: e.clientX }] };
+      holdDrag(loose);
     });
 
     main.addEventListener("pointermove", function (e) {
       if (!md || e.pointerId !== md.id) return;
+      md.seen = now();
       var dx = e.clientX - md.x, dy = e.clientY - md.y;
       if (!md.lock) {
         if (dx * dx + dy * dy < SLOP * SLOP) return;
@@ -11885,6 +11931,7 @@ export const APP = String.raw`
 
   function wireWeekBar(node, ctx) {
     var wd = null;
+    var loose = { held: function () { return wd; }, release: function () { stop(null, true, true); } };
 
     function rest(keepBody) {
       ctx.bar.classList.remove("wbdrag");
@@ -11896,15 +11943,15 @@ export const APP = String.raw`
       ctx.lean.style.opacity = "";
     }
 
-    function stop(e, cancelled) {
+    function stop(e, cancelled, lost) {
       if (!wd || (e && e.pointerId !== wd.id)) return;
       var d = wd;
       wd = null;
       if (!d.lock) return;
       try { node.releasePointerCapture(d.id); } catch (err) { /* already gone */ }
       // One click follows the finger up, and it belongs to whichever arrow or day
-      // the drag started on.
-      swallowClick();
+      // the drag started on. Not after a lost lift: the next tap is its own.
+      if (!lost) swallowClick();
       var s = d.s, a = s[0], b = s[s.length - 1], dt = (b.t - a.t) / 1000;
       var v = dt > 0.004 ? (b.x - a.x) / dt : 0;
       var far = Math.abs(d.dx) > node.offsetWidth * PART;
@@ -11932,12 +11979,14 @@ export const APP = String.raw`
       if (wd || !e.isPrimary || overlayShowing()) return;
       // Safari's back gesture owns the very edge inside a browser tab.
       if (!standalone() && e.clientX < 24) return;
-      wd = { id: e.pointerId, x: e.clientX, y: e.clientY, dx: 0, lock: false,
+      wd = { id: e.pointerId, x: e.clientX, y: e.clientY, dx: 0, lock: false, seen: now(),
         calm: lessMotion(), s: [{ t: now(), x: e.clientX }] };
+      holdDrag(loose);
     });
 
     node.addEventListener("pointermove", function (e) {
       if (!wd || e.pointerId !== wd.id) return;
+      wd.seen = now();
       var dx = e.clientX - wd.x, dy = e.clientY - wd.y;
       if (!wd.lock) {
         if (dx * dx + dy * dy < SLOP * SLOP) return;
@@ -14523,7 +14572,8 @@ export const APP = String.raw`
     pumpy.live = null;
     pumpy.stick = true;
     pumpy.lastAt = Date.now();
-    pumpy.messages.push({ id: "local-" + Date.now(), role: "user", content: text });
+    var asked = { id: "local-" + Date.now(), role: "user", content: text };
+    pumpy.messages.push(asked);
     renderPumpy();
     var ids = pumpy.refs.slice(0, MAX_REFS);
     var payload = {
@@ -14579,9 +14629,22 @@ export const APP = String.raw`
       // Still busy means the body ended with no final line — a dead isolate or a
       // dropped connection. Same recovery as a throw, one handler below.
       if (pumpy === owner && pumpy.busy) throw new Error("cut");
-    }).catch(function () {
+    }).catch(function (e) {
       if (pumpy !== owner || !pumpy.busy) return;
       pumpy.busy = false;
+      if (aiDeclined(e)) {
+        // "Not now" on the permission sheet: nothing was sent and nothing broke.
+        // The question comes off the log and goes back in the box, unsent.
+        pumpy.live = null;
+        pumpy.messages = pumpy.messages.filter(function (m) { return m !== asked; });
+        if (!box.value) {
+          box.value = text;
+          box.style.height = "auto";
+          box.style.height = Math.min(box.scrollHeight, 138) + "px";
+        }
+        renderPumpy();
+        return;
+      }
       // Whatever arrived before it broke is kept: it is still what the coach said.
       $("pumpyannounce").textContent = "Connection ended. You can read the partial answer and try again.";
       var half = pumpy.live && pumpy.live.tn.data;
@@ -16317,14 +16380,15 @@ export const APP = String.raw`
     var sheet = $(id), body = sheet.querySelector(".sheetbody"), sd = null;
     sheet.addEventListener("click", function (e) { if (e.target === sheet) closeSheet(id); });
     if (!body) return;
+    var loose = { held: function () { return sd; }, release: function () { stop(null, true, true); } };
 
-    function stop(e, cancelled) {
+    function stop(e, cancelled, lost) {
       if (!sd || (e && e.pointerId !== sd.id)) return;
       var d = sd;
       sd = null;
       if (!d.lock) return;
       try { body.releasePointerCapture(d.id); } catch (err) { /* already gone */ }
-      swallowClick();
+      if (!lost) swallowClick();
       var s = d.s, a = s[0], b = s[s.length - 1], dt = (b.t - a.t) / 1000;
       var v = dt > 0.004 ? (b.y - a.y) / dt : 0;
       // closeSheet drops the inline transform in the same style change that
@@ -16345,14 +16409,17 @@ export const APP = String.raw`
       // handle, and pulls the sheet down however far the list has been scrolled.
       // Asked of the finger's position rather than what it landed on, because the
       // gaps between rows are the sheet body itself and a drag there is a scroll.
-      if (body.scrollTop > 0 && e.clientY - body.getBoundingClientRect().top > 44) return;
+      var grab = e.clientY - body.getBoundingClientRect().top <= 44;
+      if (body.scrollTop > 0 && !grab) return;
       var ctl = e.target.closest && e.target.closest("button, a, label, [role=button]");
       sd = { id: e.pointerId, x: e.clientX, y: e.clientY, lock: false, dy: 0, s: [],
-        slop: ctl ? SH_TAP : SLOP };
+        slop: ctl ? SH_TAP : SLOP, grab: grab, seen: now(), first: false };
+      holdDrag(loose);
     });
 
     body.addEventListener("pointermove", function (e) {
       if (!sd || e.pointerId !== sd.id) return;
+      sd.seen = now();
       var dy = e.clientY - sd.y, dx = e.clientX - sd.x;
       if (!sd.lock) {
         if (Math.abs(dx) > sd.slop && Math.abs(dx) > Math.abs(dy)) { sd = null; return; }
@@ -16378,11 +16445,33 @@ export const APP = String.raw`
       body.style.transform = "translateY(" + (dy > 0 ? dy : dy / 3) + "px)";
     });
 
+    // A sheet taller than its frame scrolls, and WebKit lets that scroller begin a
+    // pan unless the FIRST touchmove of the touch is cancelled; once it pans it
+    // takes the touch with a pointercancel, well before the lock above. That is
+    // why the Plus page, taller than the phone, could not be pushed away while a
+    // short sheet always could: a short sheet has no scroller to lose to. So the
+    // first move is claimed when it can only mean the sheet: heading down, more
+    // down than sideways, one finger, nothing under it that could scroll up
+    // instead, and the sheet at its top or the finger on the grabber band.
+    function claims(e) {
+      if (sd.first) return false;
+      sd.first = true;
+      var t = e.touches && e.touches.length === 1 ? e.touches[0] : null;
+      if (!t || body.scrollHeight <= body.clientHeight + 1) return false;
+      var dy = t.clientY - sd.y, dx = t.clientX - sd.x;
+      if (!(dy > 0 && dy >= Math.abs(dx))) return false;
+      for (var n = e.target; n && n !== body; n = n.parentElement) {
+        if (n.scrollTop > 0 && n.scrollHeight > n.clientHeight + 1) return false;
+      }
+      return body.scrollTop <= 0 || sd.grab;
+    }
+
     // Pointer events are dispatched before the touch that caused them, so the drag
     // has already decided by the time this runs. iOS needs the touch itself
     // cancelled or it takes the gesture for a scroll and pointercancels us mid-drag.
     body.addEventListener("touchmove", function (e) {
-      if (sd && sd.lock && e.cancelable) e.preventDefault();
+      if (!sd || !e.cancelable) return;
+      if (sd.lock || claims(e)) e.preventDefault();
     }, { passive: false });
 
     body.addEventListener("pointerup", function (e) { stop(e, false); });
@@ -16556,11 +16645,12 @@ export const APP = String.raw`
           recover();
           return false;
         }
-      }).catch(function () {
+      }).catch(function (e) {
         btn.disabled = false;
         btn.textContent = "Save workout";
         if (fromShare) sharing = false;
-        toast("Could not reach Spotter — check your connection.");
+        // Declined AI permission: the link stays in the box, unsaved, with no error.
+        if (!aiDeclined(e)) toast("Could not reach Spotter — check your connection.");
         recover();
         return false;
       });
@@ -16958,7 +17048,7 @@ export const APP = String.raw`
     }).catch(function (e) {
       var msg = String(e && e.message ? e.message : e);
       resetUpload();
-      if (e && e.handled) return;
+      if ((e && e.handled) || aiDeclined(e)) return;
       if (e && e.uploadLimit) {
         upError(msg);
       } else if (msg === "413") {
@@ -18690,6 +18780,61 @@ export const APP = String.raw`
   window.addEventListener("blur", dropStaleDrag);
   window.addEventListener("spotter:native-state", dropStaleDrag);
 
+  // ---------- the other drags that hold a touch ----------
+  //
+  // The week bar, a sheet pushed down and Workout Mode's swipe hold a touch the
+  // way the pager does, and each refused every new touch while one was held, so
+  // a lift that never arrived froze that gesture until the app was killed: the
+  // pager's old fault. They take the pager's releases from here. While one holds
+  // a drag it is listed, and anything that says its finger has gone lets it go
+  // as a cancel would: a new first finger anywhere, the page hidden or shown,
+  // the window losing focus, the shell going inactive, a touchcancel, or two
+  // seconds without a word from the pointer before the drag has chosen its
+  // axis. After that a still finger is holding it on purpose, as on the pager,
+  // and the clock leaves it alone. g is the gesture: g.held() is its drag or
+  // null, and g.release() lets go without swallowing the next click, because
+  // the tap that proves the finger lifted is a tap somebody meant.
+  var looseDrags = [];
+
+  function holdDrag(g) {
+    if (looseDrags.indexOf(g) < 0) looseDrags.push(g);
+    watchLoose(g);
+  }
+
+  function watchLoose(g) {
+    clearTimeout(g.dog);
+    var d = g.held();
+    if (!d) {
+      var i = looseDrags.indexOf(g);
+      if (i >= 0) looseDrags.splice(i, 1);
+      return;
+    }
+    if (d.lock) return;
+    g.dog = setTimeout(function () {
+      var h = g.held();
+      if (h && !h.lock && now() - h.seen >= STALE) g.release();
+      watchLoose(g);
+    }, Math.max(16, STALE - (now() - d.seen)));
+  }
+
+  function dropLoose() {
+    looseDrags.slice().forEach(function (g) {
+      if (g.held()) g.release();
+      watchLoose(g);
+    });
+  }
+
+  // Capture, so the stale drag is gone before the new finger's own pointerdown
+  // asks whether one is held.
+  window.addEventListener("pointerdown", function (e) {
+    if (e.isPrimary && (e.pointerType === "touch" || e.pointerType === "pen")) dropLoose();
+  }, true);
+  window.addEventListener("touchcancel", dropLoose, true);
+  document.addEventListener("visibilitychange", dropLoose);
+  window.addEventListener("pageshow", dropLoose);
+  window.addEventListener("blur", dropLoose);
+  window.addEventListener("spotter:native-state", dropLoose);
+
   // ---------- the tab bar ----------
   //
   // iOS tab bars select on touch-down, not on the lift, and it is most of why a
@@ -19451,7 +19596,11 @@ export const APP = String.raw`
           if (fresh && current && current.id === w.id) openDetail(fresh);
           toast((fresh || w).user_workout_override ? "Source refreshed; your personal exercise list was kept." : "Re-read the workout.");
         });
-      }).catch(function () { finishRead(); if (!accountNow(epoch, uid)) return; toast("Could not read that workout again — try again in a minute."); });
+      }).catch(function (e) {
+        finishRead();
+        if (!accountNow(epoch, uid) || aiDeclined(e)) return;
+        toast("Could not read that workout again — try again in a minute.");
+      });
   };
 
   $("wclose").onclick = function () {

@@ -483,9 +483,9 @@ ok('handleCorrection takes reorder, guards it, and writes one ledger row through
   assert(branch.includes('return json({ status: "ok", workout: w, corrections: 0 }, 200, cors)'), 'an unchanged order writes nothing');
   assert(idx.includes('kind: op === "delete_block" ? "delete" : op === "edit_block" || op === "reorder" ? "edit" : op,'));
   assert(idx.includes('block_index: op === "reorder" ? null : bi,'));
-  // A reorder changes no exercise, so nothing re-resolves its catalog id: the one
-  // a person picked in the bank, or Pumpy carried over, travels as it is.
-  assert(idx.includes('if (op !== "reorder") applyCatalog(shim);'));
+  // A reorder changes no exercise, so it skips the catalog pass altogether; every
+  // other op keeps the ids too (keepIds, RO-1; midadd-harness runs it end to end).
+  assert(idx.includes('if (op !== "reorder") applyCatalog(shim, true);'));
   // The same dbPatch every correction uses: the override snapshot, the revision fence.
   assert(idx.includes('user_workout_override: { blocks: kept, muscle_groups: shim.muscle_groups,'));
   assert(idx.includes('user_edit_revision=eq.${w.user_edit_revision ?? 0}'));

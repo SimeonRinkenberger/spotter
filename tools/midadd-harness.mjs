@@ -884,4 +884,137 @@ ok('the ledger never learns a field the table would refuse', () => {
   assert(idx.includes('field: "name", old: before.name ?? null, new: nameNext, oldCanon: canonWas, newCanon: canonNext,'));
 });
 
+// ---------- an id picked in the bank survives the next edit ----------
+//
+// handleCorrection itself, lifted out of index.ts with the real catalog and the
+// database stubbed to one stored row, so every op runs end to end through the
+// catalog pass that follows it. "Row" picked as a dumbbell row resolves to a
+// barbell row by name, and "Heavy Carry" (a Pumpy line carrying farmers-carry)
+// resolves to nothing: before RO-1 any edit anywhere on the card re-derived both.
+
+console.log('catalog ids across corrections');
+
+const { canonicalize } = vm.runInContext('module.exports', catalog);
+const route = vm.createContext({ catalogById, canonicalize, console: { log() {}, error() {} },
+  JSON, Math, Number, String, Array, Object, Error });
+const handleSrc = (() => {
+  const a = idx.indexOf('async function handleCorrection(');
+  assert(a >= 0, 'not found in index.ts: handleCorrection');
+  return idx.slice(a, idx.indexOf('\n}', a) + 2);
+})();
+vm.runInContext(transformSync([
+  'class BadEdit extends Error {}',
+  'const LIMIT_CORRECTIONS = 500;',
+  'const BLOCK_TYPES = ' + /const BLOCK_TYPES = (\[[^\]]*\]);/.exec(idx)[1] + ';',
+  'const EDIT_FIELDS = ' + /const EDIT_FIELDS: EditField\[\] = (\[[^\]]*\]);/.exec(idx)[1] + ';',
+  'function utcMidnight() { return "2026-09-24T00:00:00Z"; }',
+  'function json(body, status) { return { body, status }; }',
+  'var ROW = null, PATCH = null, LEDGER = null;',
+  'async function dbSelect() { return [JSON.parse(JSON.stringify(ROW))]; }',
+  'async function dbCount() { return 0; }',
+  'async function dbPatch(t, q, body) { PATCH = body; return Object.assign({}, ROW, body); }',
+  'async function dbInsertMany(t, rows) { LEDGER = rows; return rows; }',
+  idx.slice(idx.indexOf('function deepCopy<T>('), idx.indexOf('\n}', idx.indexOf('function deepCopy<T>(')) + 2),
+  ...['cleanEditField', 'canonId', 'applyCatalog', 'guardNum', 'blockGuardForm', 'sameBlock',
+    'cleanBlockFields', 'blockFurnitureText', 'applyReorder', 'reorderGuard', 'layoutText'].map(tsFn),
+  handleSrc,
+].join('\n'), { loader: 'ts' }).code, route);
+
+const PICKED = {
+  id: 'w1', user_id: 'u1', ingest_status: 'ready', user_edit_revision: 0, shortcode: 'fx-1', platform: 'web',
+  muscle_groups: ['back', 'biceps', 'forearms'], equipment: ['dumbbell'],
+  blocks: [
+    { title: 'Pull', type: 'straight', rounds: null, rest_seconds: null, exercises: [
+      { name: 'Row', canonical_id: 'dumbbell-row', sets: 3, reps: '10' },
+      { name: 'Tempo Squat', canonical_id: null, sets: 3, reps: '8' },
+    ] },
+    { title: 'Finisher', type: 'straight', rounds: null, rest_seconds: null, exercises: [
+      { name: 'Heavy Carry', canonical_id: 'farmers-carry', sets: 2, duration_seconds: 40 },
+      { name: 'Goblet Squat', canonical_id: 'goblet-squat', sets: 3, reps: '12' },
+    ] },
+  ],
+};
+async function correct(body) {
+  vm.runInContext('ROW = ' + JSON.stringify(PICKED) + '; PATCH = null; LEDGER = null;', route);
+  route.BODY = body;
+  const res = await vm.runInContext('handleCorrection("w1", "u1", { json: async function () { return BODY; } }, {})', route);
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  const patch = JSON.parse(JSON.stringify(vm.runInContext('PATCH', route)));
+  return { patch, ids: patch.blocks.map((b) => b.exercises.map((e) => e.canonical_id)),
+    ledger: JSON.parse(JSON.stringify(vm.runInContext('LEDGER', route))) };
+}
+async function okAsync(what, f) { await f(); checks++; console.log('  ok  ' + what); }
+
+assert.equal(canonicalize('Row').id, 'bent-over-row', 'the fixture needs a name that resolves elsewhere');
+assert.equal(canonicalize('Heavy Carry'), null, 'the fixture needs a name that resolves nowhere');
+
+await okAsync('an edit to a different exercise keeps every picked id', async () => {
+  const r = await correct({ op: 'edit', block: 1, index: 1, expect_name: 'Goblet Squat', fields: { sets: 4 } });
+  assert.deepEqual(r.ids, [['dumbbell-row', null], ['farmers-carry', 'goblet-squat']]);
+  assert.deepEqual(r.patch.user_workout_override.blocks, r.patch.blocks, 'the override carries the same ids');
+});
+
+await okAsync('an edit to the picked exercise itself, without a new name, keeps its id', async () => {
+  const r = await correct({ op: 'edit', block: 0, index: 0, expect_name: 'Row', fields: { name: 'Row', sets: 5, reps: '8' } });
+  assert.equal(r.ids[0][0], 'dumbbell-row');
+  assert.equal(r.patch.blocks[0].exercises[0].sets, 5);
+  assert(!r.ledger.some((c) => c.field === 'name'), 'an unchanged name writes no name row');
+});
+
+await okAsync('a rename re-derives only the renamed exercise', async () => {
+  const r = await correct({ op: 'edit', block: 0, index: 0, expect_name: 'Row', fields: { name: 'Chest Supported Row' } });
+  assert.deepEqual(r.ids, [['chest-supported-row', null], ['farmers-carry', 'goblet-squat']]);
+  const name = r.ledger.find((c) => c.field === 'name');
+  assert.equal(name.old_canonical_id, 'dumbbell-row');
+  assert.equal(name.new_canonical_id, 'chest-supported-row');
+});
+
+await okAsync('a rename with an id picked in the bank takes that id', async () => {
+  const r = await correct({ op: 'edit', block: 1, index: 0, expect_name: 'Heavy Carry',
+    fields: { name: 'Suitcase Carry', canonical_id: 'farmers-carry' } });
+  assert.deepEqual(r.ids, [['dumbbell-row', null], ['farmers-carry', 'goblet-squat']]);
+});
+
+await okAsync('an add resolves the new exercise and leaves the others alone', async () => {
+  const typed = await correct({ op: 'add', block: 0, fields: { name: 'Farmer Carry', sets: 2 } });
+  assert.deepEqual(typed.ids, [['dumbbell-row', null, 'farmers-carry'], ['farmers-carry', 'goblet-squat']]);
+  const picked = await correct({ op: 'add', block: 1, fields: { name: 'Row', canonical_id: 'dumbbell-row', sets: 3 } });
+  assert.deepEqual(picked.ids, [['dumbbell-row', null], ['farmers-carry', 'goblet-squat', 'dumbbell-row']]);
+});
+
+await okAsync('a delete, a section edit and a section delete keep every other id', async () => {
+  const del = await correct({ op: 'delete', block: 1, index: 1, expect_name: 'Goblet Squat' });
+  assert.deepEqual(del.ids, [['dumbbell-row', null], ['farmers-carry']]);
+  const sec = await correct({ op: 'edit_block', block: 1, expect_block: PICKED.blocks[1], fields: { title: 'Carry out' } });
+  assert.deepEqual(sec.ids, [['dumbbell-row', null], ['farmers-carry', 'goblet-squat']]);
+  const gone = await correct({ op: 'delete_block', block: 1, expect_block: PICKED.blocks[1] });
+  assert.deepEqual(gone.ids, [['dumbbell-row', null]]);
+});
+
+await okAsync('the muscles come from the kept id, not from what the name would resolve to', async () => {
+  // After the Finisher goes, the card is a dumbbell row and an unmatched squat:
+  // back and biceps. The name "Row" alone would add the barbell row's forearms.
+  const gone = await correct({ op: 'delete_block', block: 1, expect_block: PICKED.blocks[1] });
+  assert.deepEqual(gone.patch.muscle_groups, ['back', 'biceps']);
+});
+
+await okAsync('an exercise with no usable id is still resolved from its name, as before', async () => {
+  const stale = JSON.parse(JSON.stringify(PICKED));
+  stale.blocks[0].exercises[1] = { name: 'Goblet Squat', canonical_id: null, sets: 3, reps: '8' };
+  stale.blocks[1].exercises[1] = { name: 'Goblet Squat', canonical_id: 'retired-id', sets: 3, reps: '12' };
+  const was = PICKED.blocks;
+  PICKED.blocks = stale.blocks;
+  try {
+    const r = await correct({ op: 'edit', block: 0, index: 0, expect_name: 'Row', fields: { sets: 4 } });
+    assert.deepEqual(r.ids, [['dumbbell-row', 'goblet-squat'], ['farmers-carry', 'goblet-squat']]);
+  } finally { PICKED.blocks = was; }
+});
+
+await okAsync('a reorder still skips the catalog pass entirely', async () => {
+  const r = await correct({ op: 'reorder', expect_blocks: PICKED.blocks,
+    order: [{ block: 1, exercises: [0, 1] }, { block: 0, exercises: [1, 0] }] });
+  assert.deepEqual(r.ids, [['farmers-carry', 'goblet-squat'], [null, 'dumbbell-row']]);
+  assert.deepEqual(r.patch.muscle_groups, PICKED.muscle_groups);
+});
+
 console.log('\n' + checks + ' checks passed.');

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-Ubx4FT7mI2A+BLO+icALMaeQQoOPefvCnF1k/QpS+CY=' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/ https://challenges.cloudflare.com https://accounts.google.com/gsi/client https://appleid.cdn-apple.com/appleauth/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://api.fontshare.com https://accounts.google.com/gsi/style; font-src 'self' data: https://fonts.gstatic.com https://cdn.fontshare.com; img-src 'self' data: blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://i.ytimg.com https://simeonrinkenberger.github.io; media-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://simeonrinkenberger.github.io; connect-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co wss://mtzevoxxpsktmrbbuxva.supabase.co https://accounts.google.com/gsi/; frame-src https://www.tiktok.com https://www.instagram.com https://www.youtube.com https://www.youtube-nocookie.com https://challenges.cloudflare.com https://accounts.google.com/gsi/ https://appleid.apple.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-GZ5NYBL9hRm+XEk7sXskCU5s5B8DdIqh8jEkC5ZG51Y=' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/ https://challenges.cloudflare.com https://accounts.google.com/gsi/client https://appleid.cdn-apple.com/appleauth/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://api.fontshare.com https://accounts.google.com/gsi/style; font-src 'self' data: https://fonts.gstatic.com https://cdn.fontshare.com; img-src 'self' data: blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://i.ytimg.com https://simeonrinkenberger.github.io; media-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://simeonrinkenberger.github.io; connect-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co wss://mtzevoxxpsktmrbbuxva.supabase.co https://accounts.google.com/gsi/; frame-src https://www.tiktok.com https://www.instagram.com https://www.youtube.com https://www.youtube-nocookie.com https://challenges.cloudflare.com https://accounts.google.com/gsi/ https://appleid.apple.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="google-site-verification" content="unLzcq6TBz9Bm6q4KHpbTmZ88dQ_tTnViacVX5BLzS0">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <title>Spotter by Quarterdeck Collective — save any workout video</title>
@@ -1295,6 +1295,16 @@ h1 {
 .thumbwrap.loaded img {
   opacity: 1;
   transform: none;
+}
+.thumbwrap img,
+.tthumb,
+.planitem img,
+.pickrow img,
+.fromthumb img {
+  -webkit-touch-callout: none;
+  -webkit-user-drag: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 .thumbwrap.loading::after {
   content: "";
@@ -9761,7 +9771,13 @@ details.details-moving > :not(summary) {
   }
   function dismissAiConsent() {
     var pending2 = aiConsentPending;
-    aiConsentPending = null, pending2 && pending2.reject(new Error("AI processing was not enabled. You can still log and plan workouts manually."));
+    if (aiConsentPending = null, !!pending2) {
+      var no = new Error("AI processing was not enabled. You can still log and plan workouts manually.");
+      no.declined = !0, pending2.reject(no);
+    }
+  }
+  function aiDeclined(e) {
+    return !!(e && e.declined);
   }
   function noteConsent(enabled) {
     var pending2 = aiConsentPending;
@@ -11080,6 +11096,19 @@ details.details-moving > :not(summary) {
       card.classList.remove("in"), card.style.animationDelay = "";
     }));
   }
+  var pressedCard = null, gridBehind = !1, gridCatchUp = 0;
+  function liftCard() {
+    if (pressedCard && (pressedCard = null, !!gridBehind)) {
+      gridBehind = !1;
+      var epoch = accountEpoch;
+      clearTimeout(gridCatchUp), gridCatchUp = setTimeout(function() {
+        state.user && epoch === accountEpoch && renderGrid();
+      }, 350);
+    }
+  }
+  window.addEventListener("pointerdown", function(e) {
+    liftCard(), pressedCard = e.target && e.target.closest ? e.target.closest("#grid .carditem") : null;
+  }, !0), window.addEventListener("pointerup", liftCard, !0), window.addEventListener("pointercancel", liftCard, !0), document.addEventListener("visibilitychange", liftCard);
   function renderGrid() {
     var grid = $("grid"), empty = $("empty"), items = visible(), previous = gridCards, next = {}, liveIds = {};
     state.workouts.forEach(function(w) {
@@ -11100,7 +11129,7 @@ details.details-moving > :not(summary) {
         w.difficulty,
         cardMeta(w)
       ]), entry = previous[key];
-      if (!entry || entry.sig !== sig) {
+      if (entry && entry.sig !== sig && entry.node === pressedCard && (gridBehind = !0, sig = entry.sig), !entry || entry.sig !== sig) {
         var changed = !!entry;
         entry && pendingMotion && pendingMotion.unobserve(entry.node), entry = { id: w.id, sig: sig, node: cardNode(w, i) }, changed && entry.node.classList.add("fresh");
       }
@@ -11775,8 +11804,8 @@ details.details-moving > :not(summary) {
           }
           w.ingest_status = "processing", w.ingest_error = null, current && current.id === w.id && openDetail(w, !0), render(), watchPending(), toast(w.user_workout_override ? "Refreshing the source; your personal exercise list will be kept." : "Reading it again\u2026");
         }
-      }).catch(function() {
-        accountNow(epoch, uid) && (btn && (btn.disabled = !1, btn.textContent = "Try reading it again"), toast("Could not start reading that \u2014 try again in a minute."));
+      }).catch(function(e) {
+        accountNow(epoch, uid) && (btn && (btn.disabled = !1, btn.textContent = "Try reading it again"), aiDeclined(e) || toast("Could not start reading that \u2014 try again in a minute."));
       });
     }
   }
@@ -11802,8 +11831,8 @@ details.details-moving > :not(summary) {
           }
           w.ingest_status = "processing", w.ingest_error = null, w.media_stage = "listening", current && current.id === w.id && openDetail(w, !0), render(), watchPending(), toast(w.user_workout_override ? "Refreshing the source; your personal exercise list will be kept." : "Listening to the video\u2026");
         }
-      }).catch(function() {
-        accountNow(epoch, uid) && (btn && (btn.disabled = !1, btn.textContent = "Read the video"), toast("Could not start reading that \u2014 try again in a minute."));
+      }).catch(function(e) {
+        accountNow(epoch, uid) && (btn && (btn.disabled = !1, btn.textContent = "Read the video"), aiDeclined(e) || toast("Could not start reading that \u2014 try again in a minute."));
       });
     }
   }
@@ -11839,8 +11868,8 @@ details.details-moving > :not(summary) {
           })[0];
           fresh && openDetail(fresh, !0), toast("Re-read it from your caption.");
         });
-      }).catch(function() {
-        btn.disabled = !1, btn.textContent = "Read it", toast("Could not read that caption \u2014 try again in a moment.");
+      }).catch(function(e) {
+        btn.disabled = !1, btn.textContent = "Read it", aiDeclined(e) || toast("Could not read that caption \u2014 try again in a moment.");
       });
     }
   }
@@ -13430,8 +13459,14 @@ details.details-moving > :not(summary) {
           return;
         }
         done(r);
-      }).catch(function() {
-        expKey === key && ($("explaintext").textContent = got || EXFAIL);
+      }).catch(function(e) {
+        if (expKey === key) {
+          if (aiDeclined(e) && !got) {
+            $("explaintext").classList.add("hide"), $("explainask").classList.remove("hide");
+            return;
+          }
+          $("explaintext").textContent = got || EXFAIL;
+        }
       });
     };
   }
@@ -13493,8 +13528,8 @@ details.details-moving > :not(summary) {
           }
           renderSwapResult(box, r);
         }
-      }).catch(function() {
-        swapCtx !== ctx || ctx.seq !== seq || (box.innerHTML = "", box.appendChild(el("div", "aitext", "Could not find a swap just now. Try again in a moment.")));
+      }).catch(function(e) {
+        swapCtx !== ctx || ctx.seq !== seq || (box.innerHTML = "", aiDeclined(e) || box.appendChild(el("div", "aitext", "Could not find a swap just now. Try again in a moment.")));
       });
     }
   }
@@ -14996,14 +15031,18 @@ details.details-moving > :not(summary) {
   }
   var WM_LEAD = 72, WM_BAND = 26, woSlide = 0;
   function wireWmain(main) {
-    var md = null;
+    var md = null, loose = { held: function() {
+      return md;
+    }, release: function() {
+      stop(null, !0, !0);
+    } };
     function paint2(dx) {
       if (!md.calm) {
         var end = dx < 0 ? wo.i >= endStop() : stopOf(wo.i) <= 0, lead = end ? clamp(dx / 5, -WM_BAND, WM_BAND) : clamp(dx / 2, -WM_LEAD, WM_LEAD);
         main.style.transform = "translateX(" + lead + "px)", main.style.opacity = String(1 - Math.abs(lead) / 320);
       }
     }
-    function stop(e, cancelled) {
+    function stop(e, cancelled, lost) {
       if (!(!md || e && e.pointerId !== md.id)) {
         var d = md;
         if (md = null, !!d.lock) {
@@ -15011,7 +15050,7 @@ details.details-moving > :not(summary) {
             main.releasePointerCapture(d.id);
           } catch (err) {
           }
-          swallowClick();
+          lost || swallowClick();
           var s = d.s, a = s[0], b = s[s.length - 1], dt = (b.t - a.t) / 1e3, v = dt > 4e-3 ? (b.x - a.x) / dt : 0, far = Math.abs(d.dx) > main.offsetWidth * 0.4, n = cancelled || !wo ? 0 : v < -FLING || far && d.dx < 0 ? 1 : v > FLING || far && d.dx > 0 ? -1 : 0;
           n > 0 && wo.i >= endStop() && (n = 0), n < 0 && stopOf(wo.i) <= 0 && (n = 0), main.classList.add("wmease"), main.style.transform = "", main.style.opacity = "", n && (woSlide = n, woGo(n), haptic("tap"));
         }
@@ -15024,11 +15063,13 @@ details.details-moving > :not(summary) {
         y: e.clientY,
         dx: 0,
         lock: !1,
+        seen: now(),
         calm: lessMotion(),
         s: [{ t: now(), x: e.clientX }]
-      });
+      }, holdDrag(loose));
     }), main.addEventListener("pointermove", function(e) {
       if (!(!md || e.pointerId !== md.id)) {
+        md.seen = now();
         var dx = e.clientX - md.x, dy = e.clientY - md.y;
         if (!md.lock) {
           if (dx * dx + dy * dy < SLOP * SLOP) return;
@@ -16176,11 +16217,15 @@ details.details-moving > :not(summary) {
   }
   var WB_LEAD = 64, planSlide = 0;
   function wireWeekBar(node, ctx) {
-    var wd = null;
+    var wd = null, loose = { held: function() {
+      return wd;
+    }, release: function() {
+      stop(null, !0, !0);
+    } };
     function rest(keepBody) {
       ctx.bar.classList.remove("wbdrag"), ctx.title.style.transform = "", !keepBody && (ctx.lean.classList.add("pbmove"), ctx.lean.style.transform = "", ctx.lean.style.opacity = "");
     }
-    function stop(e, cancelled) {
+    function stop(e, cancelled, lost) {
       if (!(!wd || e && e.pointerId !== wd.id)) {
         var d = wd;
         if (wd = null, !!d.lock) {
@@ -16188,7 +16233,7 @@ details.details-moving > :not(summary) {
             node.releasePointerCapture(d.id);
           } catch (err) {
           }
-          swallowClick();
+          lost || swallowClick();
           var s = d.s, a = s[0], b = s[s.length - 1], dt = (b.t - a.t) / 1e3, v = dt > 4e-3 ? (b.x - a.x) / dt : 0, far = Math.abs(d.dx) > node.offsetWidth * PART, n = cancelled ? 0 : v < -FLING || far && d.dx < 0 ? 1 : v > FLING || far && d.dx > 0 ? -1 : 0;
           rest(!!n), n && (planSlide = n, d.calm || (ctx.lean.classList.add("pbmove"), ctx.lean.style.transform = "translateX(" + (n > 0 ? -WB_LEAD : WB_LEAD) + "px)", ctx.lean.style.opacity = "0"), ctx.step(n), paintTrainBar(), haptic("tap"));
         }
@@ -16201,11 +16246,13 @@ details.details-moving > :not(summary) {
         y: e.clientY,
         dx: 0,
         lock: !1,
+        seen: now(),
         calm: lessMotion(),
         s: [{ t: now(), x: e.clientX }]
-      });
+      }, holdDrag(loose));
     }), node.addEventListener("pointermove", function(e) {
       if (!(!wd || e.pointerId !== wd.id)) {
+        wd.seen = now();
         var dx = e.clientX - wd.x, dy = e.clientY - wd.y;
         if (!wd.lock) {
           if (dx * dx + dy * dy < SLOP * SLOP) return;
@@ -17766,7 +17813,9 @@ details.details-moving > :not(summary) {
       var owner = pumpy;
       $("pumpyannounce").textContent = "", pumpy.refs.length && guideLearn("refs");
       var box = $("pumpyinput");
-      box.value = "", box.style.height = "auto", NO_TOUCH && box.focus(), pumpy.busy = !0, pumpy.live = null, pumpy.stick = !0, pumpy.lastAt = Date.now(), pumpy.messages.push({ id: "local-" + Date.now(), role: "user", content: text }), renderPumpy();
+      box.value = "", box.style.height = "auto", NO_TOUCH && box.focus(), pumpy.busy = !0, pumpy.live = null, pumpy.stick = !0, pumpy.lastAt = Date.now();
+      var asked = { id: "local-" + Date.now(), role: "user", content: text };
+      pumpy.messages.push(asked), renderPumpy();
       var ids = pumpy.refs.slice(0, MAX_REFS), payload = {
         thread_id: pumpy.thread ? pumpy.thread.id : null,
         message: text,
@@ -17806,9 +17855,15 @@ details.details-moving > :not(summary) {
         }
       }).then(function() {
         if (pumpy === owner && pumpy.busy) throw new Error("cut");
-      }).catch(function() {
+      }).catch(function(e) {
         if (!(pumpy !== owner || !pumpy.busy)) {
-          pumpy.busy = !1, $("pumpyannounce").textContent = "Connection ended. You can read the partial answer and try again.";
+          if (pumpy.busy = !1, aiDeclined(e)) {
+            pumpy.live = null, pumpy.messages = pumpy.messages.filter(function(m) {
+              return m !== asked;
+            }), box.value || (box.value = text, box.style.height = "auto", box.style.height = Math.min(box.scrollHeight, 138) + "px"), renderPumpy();
+            return;
+          }
+          $("pumpyannounce").textContent = "Connection ended. You can read the partial answer and try again.";
           var half = pumpy.live && pumpy.live.tn.data, keep = pumpy.stick ? -1 : $("pumpyview").scrollTop;
           pumpy.live = null, pumpy.messages.push({
             id: "local-err-" + Date.now(),
@@ -18976,7 +19031,12 @@ details.details-moving > :not(summary) {
     if (sheet.addEventListener("click", function(e) {
       e.target === sheet && closeSheet(id);
     }), !body) return;
-    function stop(e, cancelled) {
+    var loose = { held: function() {
+      return sd;
+    }, release: function() {
+      stop(null, !0, !0);
+    } };
+    function stop(e, cancelled, lost) {
       if (!(!sd || e && e.pointerId !== sd.id)) {
         var d = sd;
         if (sd = null, !!d.lock) {
@@ -18984,7 +19044,7 @@ details.details-moving > :not(summary) {
             body.releasePointerCapture(d.id);
           } catch (err) {
           }
-          swallowClick();
+          lost || swallowClick();
           var s = d.s, a = s[0], b = s[s.length - 1], dt = (b.t - a.t) / 1e3, v = dt > 4e-3 ? (b.y - a.y) / dt : 0;
           if (!cancelled && (v > SH_FLING || d.dy > body.offsetHeight * SH_PART)) {
             closeSheet(id);
@@ -18995,20 +19055,27 @@ details.details-moving > :not(summary) {
       }
     }
     body.addEventListener("pointerdown", function(e) {
-      if (!(e.pointerType !== "touch" && e.pointerType !== "pen") && !(sd || !e.isPrimary || noDragIn(e.target)) && !(body.scrollTop > 0 && e.clientY - body.getBoundingClientRect().top > 44)) {
-        var ctl = e.target.closest && e.target.closest("button, a, label, [role=button]");
-        sd = {
-          id: e.pointerId,
-          x: e.clientX,
-          y: e.clientY,
-          lock: !1,
-          dy: 0,
-          s: [],
-          slop: ctl ? SH_TAP : SLOP
-        };
+      if (!(e.pointerType !== "touch" && e.pointerType !== "pen") && !(sd || !e.isPrimary || noDragIn(e.target))) {
+        var grab = e.clientY - body.getBoundingClientRect().top <= 44;
+        if (!(body.scrollTop > 0 && !grab)) {
+          var ctl = e.target.closest && e.target.closest("button, a, label, [role=button]");
+          sd = {
+            id: e.pointerId,
+            x: e.clientX,
+            y: e.clientY,
+            lock: !1,
+            dy: 0,
+            s: [],
+            slop: ctl ? SH_TAP : SLOP,
+            grab: grab,
+            seen: now(),
+            first: !1
+          }, holdDrag(loose);
+        }
       }
     }), body.addEventListener("pointermove", function(e) {
       if (!(!sd || e.pointerId !== sd.id)) {
+        sd.seen = now();
         var dy = e.clientY - sd.y, dx = e.clientX - sd.x;
         if (!sd.lock) {
           if (Math.abs(dx) > sd.slop && Math.abs(dx) > Math.abs(dy)) {
@@ -19029,8 +19096,20 @@ details.details-moving > :not(summary) {
         for (sd.dy = dy, sd.s.push({ t: now(), y: e.clientY }); sd.s.length > 2 && sd.s[sd.s.length - 1].t - sd.s[0].t > VWIN; ) sd.s.shift();
         body.style.transform = "translateY(" + (dy > 0 ? dy : dy / 3) + "px)";
       }
-    }), body.addEventListener("touchmove", function(e) {
-      sd && sd.lock && e.cancelable && e.preventDefault();
+    });
+    function claims(e) {
+      if (sd.first) return !1;
+      sd.first = !0;
+      var t = e.touches && e.touches.length === 1 ? e.touches[0] : null;
+      if (!t || body.scrollHeight <= body.clientHeight + 1) return !1;
+      var dy = t.clientY - sd.y, dx = t.clientX - sd.x;
+      if (!(dy > 0 && dy >= Math.abs(dx))) return !1;
+      for (var n = e.target; n && n !== body; n = n.parentElement)
+        if (n.scrollTop > 0 && n.scrollHeight > n.clientHeight + 1) return !1;
+      return body.scrollTop <= 0 || sd.grab;
+    }
+    body.addEventListener("touchmove", function(e) {
+      !sd || !e.cancelable || (sd.lock || claims(e)) && e.preventDefault();
     }, { passive: !1 }), body.addEventListener("pointerup", function(e) {
       stop(e, !1);
     }), body.addEventListener("pointercancel", function(e) {
@@ -19142,8 +19221,8 @@ details.details-moving > :not(summary) {
         })[0];
         w && openDetail(w);
       }), !0) : r.status === "exists" ? (closeSheet("addsheet"), toast("Already in your library."), load(), !0) : (limitHit(r, null) || (toast(r.message || "Could not save that link \u2014 check it and try again."), recover()), !1);
-    }).catch(function() {
-      return btn.disabled = !1, btn.textContent = "Save workout", fromShare && (sharing = !1), toast("Could not reach Spotter \u2014 check your connection."), recover(), !1;
+    }).catch(function(e) {
+      return btn.disabled = !1, btn.textContent = "Save workout", fromShare && (sharing = !1), aiDeclined(e) || toast("Could not reach Spotter \u2014 check your connection."), recover(), !1;
     });
   }
   var SHARE_KEY = "spotter_share_pending", sharing = !1;
@@ -19379,7 +19458,7 @@ details.details-moving > :not(summary) {
         }
       }).catch(function(e) {
         var msg = String(e && e.message ? e.message : e);
-        resetUpload(), !(e && e.handled) && (e && e.uploadLimit ? upError(msg) : upError(msg === "413" ? "That file is too big for Spotter\u2019s storage. The limit is " + mb(UPLOAD_MAX) + " MB." : msg === "400" || msg === "415" ? "Spotter\u2019s storage would not take that file. Send " + UPLOAD_KINDS + "." : msg === "401" || msg === "403" ? "Session expired \u2014 sign in again." : "The upload did not finish. Check your connection and try again."));
+        resetUpload(), !(e && e.handled || aiDeclined(e)) && (e && e.uploadLimit ? upError(msg) : upError(msg === "413" ? "That file is too big for Spotter\u2019s storage. The limit is " + mb(UPLOAD_MAX) + " MB." : msg === "400" || msg === "415" ? "Spotter\u2019s storage would not take that file. Send " + UPLOAD_KINDS + "." : msg === "401" || msg === "403" ? "Session expired \u2014 sign in again." : "The upload did not finish. Check your connection and try again."));
       });
     }
   }
@@ -20374,6 +20453,31 @@ details.details-moving > :not(summary) {
   }), window.addEventListener("touchcancel", function() {
     drag && endDrag(null, !0);
   }, !0), document.addEventListener("visibilitychange", dropStaleDrag), window.addEventListener("pageshow", dropStaleDrag), window.addEventListener("blur", dropStaleDrag), window.addEventListener("spotter:native-state", dropStaleDrag);
+  var looseDrags = [];
+  function holdDrag(g) {
+    looseDrags.indexOf(g) < 0 && looseDrags.push(g), watchLoose(g);
+  }
+  function watchLoose(g) {
+    clearTimeout(g.dog);
+    var d = g.held();
+    if (!d) {
+      var i = looseDrags.indexOf(g);
+      i >= 0 && looseDrags.splice(i, 1);
+      return;
+    }
+    d.lock || (g.dog = setTimeout(function() {
+      var h = g.held();
+      h && !h.lock && now() - h.seen >= STALE && g.release(), watchLoose(g);
+    }, Math.max(16, STALE - (now() - d.seen))));
+  }
+  function dropLoose() {
+    looseDrags.slice().forEach(function(g) {
+      g.held() && g.release(), watchLoose(g);
+    });
+  }
+  window.addEventListener("pointerdown", function(e) {
+    e.isPrimary && (e.pointerType === "touch" || e.pointerType === "pen") && dropLoose();
+  }, !0), window.addEventListener("touchcancel", dropLoose, !0), document.addEventListener("visibilitychange", dropLoose), window.addEventListener("pageshow", dropLoose), window.addEventListener("blur", dropLoose), window.addEventListener("spotter:native-state", dropLoose);
   var tabTouched = 0;
   function tabTap(i) {
     if (i === idx) {
@@ -20845,8 +20949,8 @@ details.details-moving > :not(summary) {
           }
         });
       }
-    }).catch(function() {
-      finishRead(), accountNow(epoch, uid) && toast("Could not read that workout again \u2014 try again in a minute.");
+    }).catch(function(e) {
+      finishRead(), !(!accountNow(epoch, uid) || aiDeclined(e)) && toast("Could not read that workout again \u2014 try again in a minute.");
     });
   }, $("wclose").onclick = function() {
     wo && !wo.finished ? openLeave() : history.back();

@@ -3,11 +3,13 @@ import vm from 'node:vm';
 import assert from 'node:assert/strict';
 const source=fs.readFileSync('supabase/functions/spotter/app.ts','utf8');
 const handler=source.slice(source.indexOf('  var rereading = {};'),source.indexOf('  $("wclose").onclick'));
+// The "Not now" test the handler's catch asks first (OU-6), a one-liner in app.ts.
+const declined=source.slice(source.indexOf('  function aiDeclined('),source.indexOf('\n',source.indexOf('  function aiDeclined(')));
 function fixture(){
  const button={disabled:false,textContent:'Read it again',setAttribute(k,v){this[k]=v;}};
  const calls=[],opened=[]; let resolve,reject;
  const c={current:{id:'a'},$:()=>button,isPending:w=>w.ingest_status==='processing',isFailed:()=>false,retryWorkout:()=>{},api:(path)=>{calls.push(path);return new Promise((a,b)=>{resolve=a;reject=b;});},state:{user:{id:'alice'},workouts:[]},accountEpoch:1,accountNow:(e,u)=>e===c.accountEpoch&&c.state.user?.id===u,load:()=>Promise.resolve(),openDetail:w=>opened.push(w.id),render:()=>{},watchPending:()=>{},toast:()=>{},limitHit:()=>{}};
- vm.createContext(c); vm.runInContext(handler,c);
+ vm.createContext(c); vm.runInContext(declined+'\n'+handler,c);
  return {c,button,calls,opened,resolve:v=>resolve(v),reject:()=>reject(new Error('offline'))};
 }
 const flush=()=>new Promise(r=>setImmediate(r));
