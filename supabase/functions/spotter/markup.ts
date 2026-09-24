@@ -377,12 +377,31 @@ export const MARKUP_BODY = String.raw`</head>
   <div class="grabber"></div>
   <h2 id="addtitle">Add a workout</h2>
   <p class="lede" id="addlede">Paste a link to a TikTok, Instagram reel, YouTube video, or any workout page.</p>
-  <div class="field"><input id="addurl" type="url" placeholder="https://..." autocapitalize="off" autocomplete="off" spellcheck="false"></div>
+  <!-- In the app the everyday save never touches this sheet: it is Share in TikTok
+       or Instagram, then Spotter. So there the sheet opens as the lesson for that
+       (.share, set by addMode), drawn as the row people will actually look at: the
+       share glyph, the round "More" and Spotter's own icon, the three things ReciMe
+       and Deglaze teach with GIFs. The link box moves under it. data-on picks the
+       platform's lines; the empty library borrows this same list. -->
+  <div class="sharehow">
+    <ol class="shareflow">
+      <li><span class="sfmark" aria-hidden="true"><svg class="ic"><use href="#i-share"></use></svg></span><span class="sr-only">Tap </span>Share</li>
+      <li data-on="ios"><span class="sfmark more" aria-hidden="true"><svg class="ic"><use href="#i-more"></use></svg></span><span class="sr-only">Tap </span>More</li>
+      <li><span class="sfmark app" aria-hidden="true"><img src="icon.png" alt="" width="46" height="46"></span><span class="sr-only">Tap </span>Spotter</li>
+    </ol>
+    <p class="sfnote" data-on="ios">Not in the row? Scroll down to <b>Save&nbsp;to&nbsp;Spotter</b>.</p>
+    <p class="sfnote" data-on="android">In TikTok, Spotter is under <b>More</b>.</p>
+    <p class="sfnote sftip" data-on="ios"><svg class="ic" aria-hidden="true"><use href="#i-star"></use></svg><span>One tap next time: in <b>More</b>, tap <b>Edit</b> and add Spotter to&nbsp;Favorites.</span></p>
+    <div class="sfopen"><button class="chip" type="button" data-app="https://www.tiktok.com/">Open TikTok<svg class="ic"><use href="#i-arrow-up-right"></use></svg></button><button class="chip" type="button" data-app="https://www.instagram.com/">Open Instagram<svg class="ic"><use href="#i-arrow-up-right"></use></svg></button></div>
+  </div>
+  <div class="orpaste">Or paste a link</div>
+  <div class="field"><input id="addurl" type="url" placeholder="https://..." autocapitalize="off" autocomplete="off" spellcheck="false" aria-label="Video link"></div>
   <button class="btn" id="addgo">Save workout</button>
+  <p class="webnote" data-on="web">In the Spotter app you save straight from the <b>Share</b> button in TikTok or Instagram.</p>
 
-  <!-- The last rung of the ingest ladder, and deliberately the quiet one: pasting
-       a link is the everyday path, this is for the video that lives only on the
-       phone. It says "watches" because that is what changed, and the size limit
+  <!-- The last rung of the ingest ladder, and deliberately the quiet one: sharing
+       (in the app) or pasting a link is the everyday path, this is for the video
+       that lives only on the phone. It says "watches" because that is what changed, and the size limit
        is stated here rather than only in the error. -->
   <div class="upblock">
     <button class="uploadrow" id="uploadrow" type="button">
@@ -846,10 +865,12 @@ export const MARKUP_BODY = String.raw`</head>
   <div class="setnote" id="setremnote"></div>
 
   <details class="disclosure" id="phonesave"><summary>Save from your phone</summary><div class="disclosure-body">
-    <p class="lede"><b>On any phone</b> — copy a video link, then tap <b>Save workout</b> in Spotter.</p>
-    <p class="lede"><b>Android</b> — install Spotter, then choose it in the video app’s share sheet.</p>
-    <p id="nativesharehelp" class="lede hide">In TikTok, YouTube, Instagram or another app, share the post’s link and choose Spotter. If needed, open More to find Spotter in the iPhone share menu.</p>
-    <details id="shortcutsetup" class="disclosure"><summary>iPhone Shortcut setup (advanced)</summary><div class="disclosure-body">
+    <!-- The sheet's own words, so Settings and the add sheet never teach two ways. -->
+    <p class="lede" data-on="ios">In TikTok, Instagram, YouTube or any app, tap <b>Share</b>, then <b>More</b>, then <b>Spotter</b> (or <b>Save to Spotter</b> further down). For one tap next time, in <b>More</b> tap <b>Edit</b> and add Spotter to Favorites.</p>
+    <p class="lede" data-on="android">In TikTok, Instagram, YouTube or any app, tap <b>Share</b>, then <b>Spotter</b>. In TikTok it is under <b>More</b>.</p>
+    <p class="lede" data-on="web"><b>In the Spotter app</b> — tap <b>Share</b> on a TikTok, Instagram or YouTube video and choose Spotter.</p>
+    <p class="lede"><b>Or</b> copy the video’s link and paste it into <b>Save workout</b>.</p>
+    <details id="shortcutsetup" class="disclosure" data-on="web"><summary>iPhone Shortcut setup (advanced)</summary><div class="disclosure-body">
       <p class="lede">For direct sharing on iPhone, create a Shortcut that sends the shared URL as a POST to this address. Keep it private — it works without your password.</p>
       <div class="keybox" id="setkey">&mdash;</div>
       <div class="btnrow"><button class="btn ghost" id="copykey">Copy address</button><button class="btn ghost" id="rotatekey">New key</button></div>

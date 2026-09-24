@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-QPSrdkprVQ33mI3h/4gkq/PdAF3CizM98Y2+QgG2jEs=' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/ https://challenges.cloudflare.com https://accounts.google.com/gsi/client https://appleid.cdn-apple.com/appleauth/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://api.fontshare.com https://accounts.google.com/gsi/style; font-src 'self' data: https://fonts.gstatic.com https://cdn.fontshare.com; img-src 'self' data: blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://i.ytimg.com https://simeonrinkenberger.github.io; media-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://simeonrinkenberger.github.io; connect-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co wss://mtzevoxxpsktmrbbuxva.supabase.co https://accounts.google.com/gsi/; frame-src https://www.tiktok.com https://www.instagram.com https://www.youtube.com https://www.youtube-nocookie.com https://challenges.cloudflare.com https://accounts.google.com/gsi/ https://appleid.apple.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-5QQdhHptBqg2QmTCRE1341gdyIgSeGUz8lMtfHzNNo4=' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/ https://challenges.cloudflare.com https://accounts.google.com/gsi/client https://appleid.cdn-apple.com/appleauth/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://api.fontshare.com https://accounts.google.com/gsi/style; font-src 'self' data: https://fonts.gstatic.com https://cdn.fontshare.com; img-src 'self' data: blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://i.ytimg.com https://simeonrinkenberger.github.io; media-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://simeonrinkenberger.github.io; connect-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co wss://mtzevoxxpsktmrbbuxva.supabase.co https://accounts.google.com/gsi/; frame-src https://www.tiktok.com https://www.instagram.com https://www.youtube.com https://www.youtube-nocookie.com https://challenges.cloudflare.com https://accounts.google.com/gsi/ https://appleid.apple.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="google-site-verification" content="unLzcq6TBz9Bm6q4KHpbTmZ88dQ_tTnViacVX5BLzS0">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <title>Spotter by Quarterdeck Collective — save any workout video</title>
@@ -3251,6 +3251,238 @@ h1 {
   }
   .uperr {
     animation: none;
+  }
+}
+.sharehow,
+.orpaste {
+  display: none;
+}
+#addsheet.share .sharehow {
+  display: block;
+}
+#addsheet.share .orpaste {
+  display: flex;
+}
+.shareflow {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  margin: 0 0 12px;
+  padding: 16px 6px 13px;
+  list-style: none;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  box-shadow: var(--sh-sm);
+}
+.shareflow li {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 68px;
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--ink);
+  letter-spacing: -.005em;
+}
+.shareflow li + li {
+  margin-left: 20px;
+}
+.shareflow li + li::before {
+  content: "";
+  position: absolute;
+  left: -16px;
+  top: 20px;
+  width: 7px;
+  height: 7px;
+  border-top: 2px solid var(--muted);
+  border-right: 2px solid var(--muted);
+  transform: rotate(45deg);
+}
+.sfmark {
+  position: relative;
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  border-radius: 13px;
+  background: var(--sand);
+  color: var(--ink);
+}
+.sfmark .ic {
+  width: 22px;
+  height: 22px;
+}
+.sfmark.more {
+  border-radius: 999px;
+}
+.sfmark.more .ic {
+  stroke-width: 3.4;
+}
+.sfmark.app img {
+  display: block;
+  width: 46px;
+  height: 46px;
+  border-radius: 11px;
+}
+.sfmark::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 16px;
+  border: 2px solid var(--ember);
+  opacity: 0;
+  pointer-events: none;
+}
+.sfmark.more::after {
+  border-radius: 999px;
+}
+.sfmark.app::after {
+  border-radius: 14px;
+  opacity: 1;
+}
+#addsheet.open .sfmark::after {
+  animation: sftap .6s var(--e-out) .45s both;
+}
+#addsheet.open li:nth-child(2) .sfmark::after {
+  animation-delay: .85s;
+}
+#addsheet.open .sfmark.app::after {
+  animation: sfstay .5s var(--e-spring) 1.25s both;
+}
+@keyframes sftap {
+  0% {
+    opacity: 0;
+    transform: scale(.84);
+  }
+  35% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.1);
+  }
+}
+@keyframes sfstay {
+  from {
+    opacity: 0;
+    transform: scale(.84);
+  }
+}
+.sfnote {
+  margin: 0 4px 6px;
+  text-align: center;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+.sfnote b,
+.webnote b {
+  color: var(--ink);
+  font-weight: 650;
+}
+.sftip .ic {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  margin: 0 5px 0 0;
+  vertical-align: -2px;
+  color: var(--ember-ink);
+  fill: currentColor;
+}
+.sfopen {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin: 12px 0 0;
+}
+.sfopen .chip {
+  flex: 1 1 0;
+  max-width: 176px;
+  min-height: 44px;
+  justify-content: center;
+  padding: 0 12px;
+  background: var(--card);
+  color: var(--ink);
+  border: 1px solid var(--line-2);
+  font-size: 13px;
+}
+.sfopen .chip .ic {
+  width: 14px;
+  height: 14px;
+  color: var(--ember-ink);
+}
+.orpaste {
+  align-items: center;
+  gap: 12px;
+  margin: 18px 0 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.orpaste::before,
+.orpaste::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line-2);
+}
+#addsheet #addgo {
+  transition:
+    transform var(--t-1) var(--e-out),
+    opacity var(--t-2),
+    background-color var(--t-2) var(--e-soft),
+    color var(--t-2) var(--e-soft),
+    box-shadow var(--t-2) var(--e-soft);
+}
+#addsheet.share:has(#addurl:placeholder-shown) #addgo {
+  background: var(--sand);
+  color: var(--ink);
+  box-shadow: none;
+}
+#addsheet.share .upblock {
+  margin-top: 12px;
+  padding-top: 0;
+  border-top: 0;
+}
+#addsheet.share .pumpy-tip {
+  margin: 14px 0 0;
+}
+.webnote {
+  margin: 12px 2px 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+#addsheet.attach .webnote {
+  display: none;
+}
+.empty .shareflow {
+  margin: 18px auto 0;
+  padding: 0;
+  background: none;
+  border: 0;
+  box-shadow: none;
+}
+.empty .sfmark {
+  background: var(--card);
+  box-shadow: var(--sh-sm);
+}
+@media (max-width: 359px) {
+  .sfopen .chip .ic {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  #addsheet.open .sfmark::after,
+  #addsheet.open .sfmark.app::after {
+    animation: none;
+  }
+  #addsheet #addgo {
+    transition: none;
   }
 }
 .swapsummary {
@@ -8425,8 +8657,21 @@ details.details-moving > :not(summary) {
   <div class="grabber"></div>
   <h2 id="addtitle">Add a workout</h2>
   <p class="lede" id="addlede">Paste a link to a TikTok, Instagram reel, YouTube video, or any workout page.</p>
-  <div class="field"><input id="addurl" type="url" placeholder="https://..." autocapitalize="off" autocomplete="off" spellcheck="false"></div>
+  <div class="sharehow">
+    <ol class="shareflow">
+      <li><span class="sfmark" aria-hidden="true"><svg class="ic"><use href="#i-share"></use></svg></span><span class="sr-only">Tap </span>Share</li>
+      <li data-on="ios"><span class="sfmark more" aria-hidden="true"><svg class="ic"><use href="#i-more"></use></svg></span><span class="sr-only">Tap </span>More</li>
+      <li><span class="sfmark app" aria-hidden="true"><img src="icon.png" alt="" width="46" height="46"></span><span class="sr-only">Tap </span>Spotter</li>
+    </ol>
+    <p class="sfnote" data-on="ios">Not in the row? Scroll down to <b>Save&nbsp;to&nbsp;Spotter</b>.</p>
+    <p class="sfnote" data-on="android">In TikTok, Spotter is under <b>More</b>.</p>
+    <p class="sfnote sftip" data-on="ios"><svg class="ic" aria-hidden="true"><use href="#i-star"></use></svg><span>One tap next time: in <b>More</b>, tap <b>Edit</b> and add Spotter to&nbsp;Favorites.</span></p>
+    <div class="sfopen"><button class="chip" type="button" data-app="https://www.tiktok.com/">Open TikTok<svg class="ic"><use href="#i-arrow-up-right"></use></svg></button><button class="chip" type="button" data-app="https://www.instagram.com/">Open Instagram<svg class="ic"><use href="#i-arrow-up-right"></use></svg></button></div>
+  </div>
+  <div class="orpaste">Or paste a link</div>
+  <div class="field"><input id="addurl" type="url" placeholder="https://..." autocapitalize="off" autocomplete="off" spellcheck="false" aria-label="Video link"></div>
   <button class="btn" id="addgo">Save workout</button>
+  <p class="webnote" data-on="web">In the Spotter app you save straight from the <b>Share</b> button in TikTok or Instagram.</p>
 
   <div class="upblock">
     <button class="uploadrow" id="uploadrow" type="button">
@@ -8796,10 +9041,11 @@ details.details-moving > :not(summary) {
   <div class="setnote" id="setremnote"></div>
 
   <details class="disclosure" id="phonesave"><summary>Save from your phone</summary><div class="disclosure-body">
-    <p class="lede"><b>On any phone</b> — copy a video link, then tap <b>Save workout</b> in Spotter.</p>
-    <p class="lede"><b>Android</b> — install Spotter, then choose it in the video app’s share sheet.</p>
-    <p id="nativesharehelp" class="lede hide">In TikTok, YouTube, Instagram or another app, share the post’s link and choose Spotter. If needed, open More to find Spotter in the iPhone share menu.</p>
-    <details id="shortcutsetup" class="disclosure"><summary>iPhone Shortcut setup (advanced)</summary><div class="disclosure-body">
+    <p class="lede" data-on="ios">In TikTok, Instagram, YouTube or any app, tap <b>Share</b>, then <b>More</b>, then <b>Spotter</b> (or <b>Save to Spotter</b> further down). For one tap next time, in <b>More</b> tap <b>Edit</b> and add Spotter to Favorites.</p>
+    <p class="lede" data-on="android">In TikTok, Instagram, YouTube or any app, tap <b>Share</b>, then <b>Spotter</b>. In TikTok it is under <b>More</b>.</p>
+    <p class="lede" data-on="web"><b>In the Spotter app</b> — tap <b>Share</b> on a TikTok, Instagram or YouTube video and choose Spotter.</p>
+    <p class="lede"><b>Or</b> copy the video’s link and paste it into <b>Save workout</b>.</p>
+    <details id="shortcutsetup" class="disclosure" data-on="web"><summary>iPhone Shortcut setup (advanced)</summary><div class="disclosure-body">
       <p class="lede">For direct sharing on iPhone, create a Shortcut that sends the shared URL as a POST to this address. Keep it private — it works without your password.</p>
       <div class="keybox" id="setkey">&mdash;</div>
       <div class="btnrow"><button class="btn ghost" id="copykey">Copy address</button><button class="btn ghost" id="rotatekey">New key</button></div>
@@ -10525,7 +10771,11 @@ details.details-moving > :not(summary) {
         var q = state.q.trim();
         empty.appendChild(el("h2", null, q ? "Nothing matches \u201C" + q + "\u201D" : "Nothing under this filter")), empty.appendChild(el("p", null, q ? "Spotter searches titles, exercise names, muscles and equipment. Try one word instead of three." : "Nothing is filed here yet. Clear the filter to see all workouts."));
       } else {
-        empty.appendChild(el("h2", null, "Your saved videos become workouts.")), empty.appendChild(el("p", null, "Paste a TikTok, Instagram, or YouTube link to get started."));
+        if (empty.appendChild(el("h2", null, "Your saved videos become workouts.")), native) {
+          empty.appendChild(el("p", null, "Found one on TikTok, Instagram or YouTube? Share it to Spotter."));
+          var how = $("addsheet").querySelector(".shareflow").cloneNode(!0);
+          paintSaveOn(how), empty.appendChild(how);
+        } else empty.appendChild(el("p", null, "Paste a TikTok, Instagram, or YouTube link to get started."));
         var first = el("button", "btn firstsave", "Save your first workout");
         first.onclick = function() {
           $("addbtn").click();
@@ -17722,10 +17972,11 @@ details.details-moving > :not(summary) {
     observer: null,
     played: {}
   }, GUIDE_TIPS = {
+    // The app saves from the share sheet, so that is what its tip teaches first.
     save: {
       title: "Save it now. Train it later.",
       art: "coach",
-      text: "Paste the workout link, then tap Save workout. You can leave while I read it."
+      text: native ? "Share it from TikTok or Instagram, or paste its link below. You can leave while I read it." : "Paste the workout link, then tap Save workout. You can leave while I read it."
     },
     detail: {
       title: "Make this workout yours",
@@ -17900,7 +18151,7 @@ details.details-moving > :not(summary) {
     var tip = id === "addsheet" ? "save" : id === "setsheet" ? "set" : null;
     if (tip) {
       var b = $(id).querySelector(".sheetbody");
-      guideOffer(tip, b, b.querySelector(".field, .stepper"));
+      guideOffer(tip, b, b.querySelector(".orpaste, .field, .stepper"));
     }
   }
   function guidePaintSettings() {
@@ -17945,7 +18196,7 @@ details.details-moving > :not(summary) {
     var stage = $("welcomestage");
     stage.innerHTML = "";
     var page = el("section", "welcome-page on");
-    page.appendChild(pumpyArt("coach", !1)), page.appendChild(el("h2", null, "Your saved videos become workouts.")), page.appendChild(el("p", null, "Paste a TikTok, Instagram, or YouTube link. Check the exercises, then start when you\u2019re ready.")), stage.appendChild(page), $("welcomecount").textContent = "Save \xB7 check \xB7 train", $("welcomenext").textContent = "Save a workout", openSheet("welcomesheet"), $("welcomenext").focus({ preventScroll: !0 });
+    page.appendChild(pumpyArt("coach", !1)), page.appendChild(el("h2", null, "Your saved videos become workouts.")), page.appendChild(el("p", null, native ? "In TikTok, Instagram or YouTube, " + shareWords() + ". Check the exercises, then start when you\u2019re ready." : "Paste a TikTok, Instagram, or YouTube link. Check the exercises, then start when you\u2019re ready.")), stage.appendChild(page), $("welcomecount").textContent = "Save \xB7 check \xB7 train", $("welcomenext").textContent = "Save a workout", openSheet("welcomesheet"), $("welcomenext").focus({ preventScroll: !0 });
   }
   $("welcomenext").onclick = function() {
     $("addbtn").click(), closeSheet("welcomesheet");
@@ -18283,10 +18534,37 @@ details.details-moving > :not(summary) {
       l: $("addlede").textContent,
       u: $("uptitle").textContent,
       s: $("upsub").textContent
-    }), attachTo = w || null, $("addsheet").classList.toggle("attach", !!w), $("addtitle").textContent = w ? "Add the video" : addWords.t, $("addlede").textContent = w ? "In Instagram, tap Share \u2192 Download on the reel, then choose that video here. Spotter reads it into \u201C" + (w.title || "this card") + "\u201D." : addWords.l, $("uptitle").textContent = w ? "Choose the downloaded video" : addWords.u, $("upsub").textContent = w ? "It counts as one of your video reads, not an upload. MP4 or MOV, up to 25 MB, deleted once it is read." : addWords.s, $("addfile").setAttribute("accept", w ? "video/*" : "video/*,audio/*");
+    }), attachTo = w || null;
+    var share = !w && !!native && !$("addurl").value.trim();
+    $("addsheet").classList.toggle("attach", !!w), $("addsheet").classList.toggle("share", share), $("addtitle").textContent = w ? "Add the video" : share ? "Save from any app" : addWords.t, $("addlede").textContent = w ? "In Instagram, tap Share \u2192 Download on the reel, then choose that video here. Spotter reads it into \u201C" + (w.title || "this card") + "\u201D." : share ? "Share a workout from TikTok, Instagram, YouTube or anywhere else, straight to Spotter." : addWords.l, $("uptitle").textContent = w ? "Choose the downloaded video" : addWords.u, $("upsub").textContent = w ? "It counts as one of your video reads, not an upload. MP4 or MOV, up to 25 MB, deleted once it is read." : addWords.s, $("addfile").setAttribute("accept", w ? "video/*" : "video/*,audio/*");
   }
   function openAddVideo(w) {
     state.user && (resetUpload(), addMode(w), openSheet("addsheet"));
+  }
+  function saveOn() {
+    return native ? native.platform === "android" ? "android" : "ios" : "web";
+  }
+  function paintSaveOn(root) {
+    var on = saveOn();
+    Array.prototype.forEach.call(root.querySelectorAll("[data-on]"), function(n) {
+      n.classList.toggle("hide", n.getAttribute("data-on").split(" ").indexOf(on) < 0);
+    });
+  }
+  function shareWords() {
+    return saveOn() === "ios" ? "tap Share, then More, then Spotter" : "tap Share, then Spotter";
+  }
+  function openSourceApp(url) {
+    if (!native) {
+      window.open(url, "_blank", "noopener");
+      return;
+    }
+    function away(e) {
+      !document.hidden && !(e && e.detail && e.detail.isActive === !1) || (stop(), closeSheet("addsheet"));
+    }
+    function stop() {
+      document.removeEventListener("visibilitychange", away), window.removeEventListener("spotter:native-state", away);
+    }
+    document.addEventListener("visibilitychange", away), window.addEventListener("spotter:native-state", away), setTimeout(stop, 5e3), location.href = url;
   }
   function attached(w, r) {
     closeSheet("addsheet"), resetUpload();
@@ -18554,7 +18832,7 @@ details.details-moving > :not(summary) {
     var how = signInMethod();
     $("setprov").textContent = how || "\u2014", $("setprovrow").classList.toggle("hide", !how), $("consentrow").classList.remove("hide"), consentFill($("consentset"), "Your account uses the Spotter "), paintConsent();
     var mine = isEmailAccount();
-    $("setpwrow").classList.toggle("hide", !mine), $("setmailrow").disabled = !mine, $("setname").textContent = displayName() || "Not set", $("unittoggle").textContent = state.unit, paintGoal(), $("haptictoggle").textContent = state.haptics ? "On" : "Off", $("sethapticrow").classList.toggle("hide", !native && !navigator.vibrate), paintSounds(), loadRemind(), $("shortcutsetup").classList.toggle("hide", !!native), $("nativesharehelp").classList.toggle("hide", !native), native && native.platform === "android" && ($("nativesharehelp").textContent = "In TikTok, YouTube, Instagram or another app, share the post\u2019s link and choose Spotter from the Android share sheet.");
+    $("setpwrow").classList.toggle("hide", !mine), $("setmailrow").disabled = !mine, $("setname").textContent = displayName() || "Not set", $("unittoggle").textContent = state.unit, paintGoal(), $("haptictoggle").textContent = state.haptics ? "On" : "Off", $("sethapticrow").classList.toggle("hide", !native && !navigator.vibrate), paintSounds(), loadRemind();
     var key = state.profile ? state.profile.ingest_key : null;
     $("setkey").textContent = key ? API + "ingest?key=" + key : "Loading\u2026", renderSettingsMeter(), paintPlanGroup(), paintPlanUse(billing.limits), Promise.all([loadPrices(), loadSub()]).then(paintPlanGroup), paintCreator(), loadCreator().then(paintCreator), paintStrava(), askStrava(), api("limits", { method: "GET" }).then(function(r) {
       pumpy.meterAsked = !0, absorbMeter(r && r.pumpy), r.status === "ok" && (billing.limits = r, adoptPlan(r.plan), paintPlanUse(r));
@@ -19624,7 +19902,11 @@ details.details-moving > :not(summary) {
     e.key === "Enter" && doAuth();
   }), $("addbtn").onclick = function() {
     $("addurl").value = "", resetUpload(), addMode(null), openSheet("addsheet");
-  }, $("addgo").onclick = function() {
+  }, paintSaveOn(document), Array.prototype.forEach.call(document.querySelectorAll("[data-app]"), function(b) {
+    b.onclick = function() {
+      openSourceApp(b.getAttribute("data-app"));
+    };
+  }), $("addgo").onclick = function() {
     doAdd();
   }, $("addurl").addEventListener("keydown", function(e) {
     e.key === "Enter" && doAdd();

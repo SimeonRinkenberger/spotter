@@ -2291,7 +2291,14 @@ export const APP = String.raw`
       empty.appendChild(state.workouts.length ? icon(el("div", "big"), "search") : pumpyArt("coach", false));
       if (!state.workouts.length) {
         empty.appendChild(el("h2", null, "Your saved videos become workouts."));
-        empty.appendChild(el("p", null, "Paste a TikTok, Instagram, or YouTube link to get started."));
+        if (native) {
+          // The first lesson is the one used every day after it: the share row, the
+          // add sheet's own copy, learnt before anything has been tapped.
+          empty.appendChild(el("p", null, "Found one on TikTok, Instagram or YouTube? Share it to Spotter."));
+          var how = $("addsheet").querySelector(".shareflow").cloneNode(true);
+          paintSaveOn(how);
+          empty.appendChild(how);
+        } else empty.appendChild(el("p", null, "Paste a TikTok, Instagram, or YouTube link to get started."));
         var first = el("button", "btn firstsave", "Save your first workout");
         first.onclick = function () { $("addbtn").click(); };
         empty.appendChild(first);
@@ -15119,8 +15126,10 @@ export const APP = String.raw`
   var guide = { user: null, seen: {}, off: false, motion: true, welcome: false, active: null,
     count: 0, last: 0, visit: null, observer: null, played: {} };
   var GUIDE_TIPS = {
+    // The app saves from the share sheet, so that is what its tip teaches first.
     save: { title: "Save it now. Train it later.", art: "coach",
-      text: "Paste the workout link, then tap Save workout. You can leave while I read it." },
+      text: native ? "Share it from TikTok or Instagram, or paste its link below. You can leave while I read it."
+        : "Paste the workout link, then tap Save workout. You can leave while I read it." },
     detail: { title: "Make this workout yours", art: "coach",
       text: "Use Review / Edit to check an exercise, Demo to see it, and Options for a swap." },
     set: { title: "Your numbers go here", art: "coach",
@@ -15325,7 +15334,8 @@ export const APP = String.raw`
     if (tip) {
       var b = $(id).querySelector(".sheetbody");
       // Appended before opening: its height is settled before the sheet moves.
-      guideOffer(tip, b, b.querySelector(".field, .stepper"));
+      // Under the share row, not above it: the row is the lesson, the tip the aside.
+      guideOffer(tip, b, b.querySelector(".orpaste, .field, .stepper"));
     }
   }
 
@@ -15389,7 +15399,9 @@ export const APP = String.raw`
     var page = el("section", "welcome-page on");
     page.appendChild(pumpyArt("coach", false));
     page.appendChild(el("h2", null, "Your saved videos become workouts."));
-    page.appendChild(el("p", null, "Paste a TikTok, Instagram, or YouTube link. Check the exercises, then start when you’re ready."));
+    page.appendChild(el("p", null, native
+      ? "In TikTok, Instagram or YouTube, " + shareWords() + ". Check the exercises, then start when you’re ready."
+      : "Paste a TikTok, Instagram, or YouTube link. Check the exercises, then start when you’re ready."));
     stage.appendChild(page);
     $("welcomecount").textContent = "Save · check · train";
     $("welcomenext").textContent = "Save a workout";
@@ -15943,11 +15955,17 @@ export const APP = String.raw`
     if (!addWords) addWords = { t: $("addtitle").textContent, l: $("addlede").textContent,
       u: $("uptitle").textContent, s: $("upsub").textContent };
     attachTo = w || null;
+    // In the app the sheet leads with the share row, because that is how a save
+    // is meant to happen there. Not when a link is already in the box: that is a
+    // share that failed and was put back to retry, and the box is the point.
+    var share = !w && !!native && !$("addurl").value.trim();
     $("addsheet").classList.toggle("attach", !!w);
-    $("addtitle").textContent = w ? "Add the video" : addWords.t;
+    $("addsheet").classList.toggle("share", share);
+    $("addtitle").textContent = w ? "Add the video" : share ? "Save from any app" : addWords.t;
     $("addlede").textContent = w
       ? "In Instagram, tap Share → Download on the reel, then choose that video here. Spotter reads it into “" +
         (w.title || "this card") + "”."
+      : share ? "Share a workout from TikTok, Instagram, YouTube or anywhere else, straight to Spotter."
       : addWords.l;
     $("uptitle").textContent = w ? "Choose the downloaded video" : addWords.u;
     $("upsub").textContent = w
@@ -15961,6 +15979,55 @@ export const APP = String.raw`
     resetUpload();
     addMode(w);
     openSheet("addsheet");
+  }
+
+  // ---------- saving from another app ----------
+  //
+  // Where a save comes from differs by platform, and three places say it (the add
+  // sheet, the empty library, Settings), so one answer drives all three. iOS has
+  // a step Android does not: TikTok's own panel and Apple's app row both end in
+  // More, and Spotter is often behind it. The web has no share extension at all.
+  function saveOn() {
+    return !native ? "web" : native.platform === "android" ? "android" : "ios";
+  }
+
+  function paintSaveOn(root) {
+    var on = saveOn();
+    Array.prototype.forEach.call(root.querySelectorAll("[data-on]"), function (n) {
+      n.classList.toggle("hide", n.getAttribute("data-on").split(" ").indexOf(on) < 0);
+    });
+  }
+
+  function shareWords() {
+    return saveOn() === "ios" ? "tap Share, then More, then Spotter" : "tap Share, then Spotter";
+  }
+
+  // "Open TikTok" goes by the website's address, not a tiktok:// guess. Both sites
+  // claim their root path for their apps (apple-app-site-association, Android app
+  // links), so the phone opens the app where it is installed and the site where it
+  // is not, a fallback a URL scheme cannot give without the shell declaring it
+  // for canOpenURL. It leaves as a top-level navigation because the shell hands
+  // those to the system (UIApplication.open, an ACTION_VIEW intent); native.open
+  // would load TikTok's website inside Spotter, where there is no app to reach.
+  function openSourceApp(url) {
+    if (!native) { window.open(url, "_blank", "noopener"); return; }
+    // The sheet's work is done once the phone is in TikTok: coming back should
+    // land on the library, where the shared card is arriving. Closed on the way
+    // out rather than before it, because closing pops history, and a pop and a
+    // navigation in the same task race; and not at all if nothing opened.
+    function away(e) {
+      if (!document.hidden && !(e && e.detail && e.detail.isActive === false)) return;
+      stop();
+      closeSheet("addsheet");
+    }
+    function stop() {
+      document.removeEventListener("visibilitychange", away);
+      window.removeEventListener("spotter:native-state", away);
+    }
+    document.addEventListener("visibilitychange", away);
+    window.addEventListener("spotter:native-state", away);
+    setTimeout(stop, 5000);
+    location.href = url;
   }
 
   // What the card does when the file has gone to be read: pending, with the verb
@@ -16431,9 +16498,6 @@ export const APP = String.raw`
     $("sethapticrow").classList.toggle("hide", !native && !navigator.vibrate);
     paintSounds();
     loadRemind();
-    $("shortcutsetup").classList.toggle("hide", !!native);
-    $("nativesharehelp").classList.toggle("hide", !native);
-    if (native && native.platform === "android") $("nativesharehelp").textContent = "In TikTok, YouTube, Instagram or another app, share the post’s link and choose Spotter from the Android share sheet.";
     var key = state.profile ? state.profile.ingest_key : null;
     $("setkey").textContent = key ? API + "ingest?key=" + key : "Loading…";
     renderSettingsMeter();
@@ -18293,6 +18357,12 @@ export const APP = String.raw`
   // the sign-in/sign-up toggle is rebuilt by setAuthMode, which wires its own handler
 
   $("addbtn").onclick = function () { $("addurl").value = ""; resetUpload(); addMode(null); openSheet("addsheet"); };
+  // Once: which lines each platform shows (the Shortcut set-up is web only, the
+  // share sheet is the app's), and the two ways out to where the videos are.
+  paintSaveOn(document);
+  Array.prototype.forEach.call(document.querySelectorAll("[data-app]"), function (b) {
+    b.onclick = function () { openSourceApp(b.getAttribute("data-app")); };
+  });
   // Wrapped: doAdd's first argument means "this came from the share sheet", and a
   // bare handler would hand it a MouseEvent.
   $("addgo").onclick = function () { doAdd(); };
