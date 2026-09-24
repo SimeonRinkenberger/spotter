@@ -17554,12 +17554,16 @@ export const APP = String.raw`
     springTo(near * pageW, 0);
   }
 
-  // The two seconds. A finger resting mid-drag sends nothing either, so this can
-  // let go of a drag somebody is still holding. Two still seconds are not a
-  // swipe, and the page it settles on is the one under the finger.
+  // The two seconds, and only before the drag has chosen sideways. A finger
+  // resting there sends nothing, so an unlocked drag that goes quiet is most
+  // likely one whose lift was lost, and two still seconds are not a swipe. Once
+  // it has locked, a still finger is somebody holding a page half-turned on
+  // purpose, as they always could: that drag is let go only by the lift or by
+  // the proofs above that the finger is gone (a new first finger, the page
+  // hidden, the window blurred, a cancel), never by the clock.
   function watchDrag() {
     clearTimeout(dragDog);
-    if (!drag) return;
+    if (!drag || drag.lock) return;
     dragDog = setTimeout(function () {
       if (drag && now() - drag.seen >= STALE) dropStaleDrag(); else watchDrag();
     }, Math.max(16, STALE - (now() - drag.seen)));

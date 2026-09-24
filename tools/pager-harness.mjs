@@ -388,21 +388,24 @@ for (const mode of ['native shell', 'browser tab']) {
     });
   }
 
-  ok('two seconds with no word from the pointer: the drag is let go on its own', () => {
+  ok('two seconds with no word from the pointer: an unlocked drag is let go on its own', () => {
     let w = world({ native });
     w.drag(w.d.cardArt, -4, 0, { lose: true });     // a touch that never locked
     w.run(1900);
     assert(w.h.held(), 'still held at 1.9 s: a resting finger is a finger');
     w.run(300);
     assert.equal(w.h.held(), null, 'let go by 2.2 s');
-    w = world({ native });
+  });
+
+  ok('a drag that has locked sideways is never let go by the clock; the next touch lets it go and pages', () => {
+    const w = world({ native });
     w.drag(w.d.cardArt, -150, 0, { lose: true, ms: 300 });
-    w.run(2100);
-    assert.equal(w.h.held(), null);
-    w.run();
-    assert.equal(w.page(), 0); assert.equal(w.h.pos(), 0, 'and a locked one settles');
+    w.run(5000);
+    assert(w.h.held() && w.h.held().lock, 'a page held half-turned stays held, however still');
+    // The lift was lost; the next first finger is the proof, and that swipe pages.
     w.drag(w.d.cardArt, -260, 0);
-    assert.equal(w.page(), 1);
+    assert.equal(w.h.held(), null);
+    assert.equal(w.page(), 1, 'the next swipe pages');
   });
 
   ok('a slow drag that keeps moving is never cut off by the two seconds', () => {
