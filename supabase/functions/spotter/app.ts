@@ -4156,6 +4156,26 @@ export const APP = String.raw`
   // The stored shape of a rest as the wheel takes it: a number, or "" for "not said".
   function restVal(x) { return typeof x === "number" ? x : ""; }
 
+  // A block as the database writes it, for the guard on edit_block and
+  // delete_block. In the iOS shell every answer from the function crosses
+  // CapacitorHttp, which parses it into a Swift dictionary with no key order and
+  // hands the page doubles, so the card an edit hands back is the stored card
+  // with its keys shuffled — and a server that compares the two as strings calls
+  // that a different block. jsonb keeps an object's keys shortest first, then in
+  // byte order, so putting them back that way (and a double back to the number
+  // it was) is the stored text again. Today's function compares a canonical form
+  // and does not need this; an older deployment does.
+  function asStored(v) {
+    if (Array.isArray(v)) return v.map(asStored);
+    if (v && typeof v === "object") {
+      var out = {};
+      Object.keys(v).sort(function (a, b) { return a.length - b.length || (a < b ? -1 : a > b ? 1 : 0); })
+        .forEach(function (k) { out[k] = asStored(v[k]); });
+      return out;
+    }
+    return typeof v === "number" && isFinite(v) && v % 1 ? Number(v.toPrecision(15)) : v;
+  }
+
   // The sheet's title, lede and buttons are what the markup says: its add mode
   // went when "+ Add an exercise" became the bank, and with it the resetting.
   function openExEdit(w, bi, ei, ex) {
@@ -4360,7 +4380,7 @@ export const APP = String.raw`
     var f = sectionFields();
     if (f.duration_seconds && f.duration_seconds < 60) { toast("A time cap starts at a minute."); return; }
     if (sec.b) {
-      postCorrection(sec.w, { op: "edit_block", block: sec.bi, expect_block: sec.b, fields: f },
+      postCorrection(sec.w, { op: "edit_block", block: sec.bi, expect_block: asStored(sec.b), fields: f },
         $("sectionsave"), "Section saved", "sectionsheet");
       return;
     }
@@ -4472,7 +4492,7 @@ export const APP = String.raw`
     w.blocks.splice(bi, 1); render();
     rowAway(box, from, redraw);
     offerUndo("Removed " + (expected.title || "block"), function () {
-      api("workouts/" + w.id + "/exercises", { method: "POST", body: JSON.stringify({ op: "delete_block", block: bi, expect_block: expected }) })
+      api("workouts/" + w.id + "/exercises", { method: "POST", body: JSON.stringify({ op: "delete_block", block: bi, expect_block: asStored(expected) }) })
         .then(function (r) { if (r.status === "ok") absorbWorkout(r.workout); else restore(r.message || "Could not remove that block."); })
         .catch(function () { restore("Could not reach Spotter — the block is back."); });
     }, function () { restore(null); });

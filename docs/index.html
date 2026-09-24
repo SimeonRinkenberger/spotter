@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-y7Y4Xlt9szbhxqal0L52OYZmDRLO6zt+ggkK1quc3k4=' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/ https://challenges.cloudflare.com https://accounts.google.com/gsi/client https://appleid.cdn-apple.com/appleauth/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://api.fontshare.com https://accounts.google.com/gsi/style; font-src 'self' data: https://fonts.gstatic.com https://cdn.fontshare.com; img-src 'self' data: blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://i.ytimg.com https://simeonrinkenberger.github.io; media-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://simeonrinkenberger.github.io; connect-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co wss://mtzevoxxpsktmrbbuxva.supabase.co https://accounts.google.com/gsi/; frame-src https://www.tiktok.com https://www.instagram.com https://www.youtube.com https://www.youtube-nocookie.com https://challenges.cloudflare.com https://accounts.google.com/gsi/ https://appleid.apple.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-cbGUZJpQULwBYptRlZXqaUjYG0H4+MdgaERPQB/3/vk=' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/ https://challenges.cloudflare.com https://accounts.google.com/gsi/client https://appleid.cdn-apple.com/appleauth/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://api.fontshare.com https://accounts.google.com/gsi/style; font-src 'self' data: https://fonts.gstatic.com https://cdn.fontshare.com; img-src 'self' data: blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://i.ytimg.com https://simeonrinkenberger.github.io; media-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://simeonrinkenberger.github.io; connect-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co wss://mtzevoxxpsktmrbbuxva.supabase.co https://accounts.google.com/gsi/; frame-src https://www.tiktok.com https://www.instagram.com https://www.youtube.com https://www.youtube-nocookie.com https://challenges.cloudflare.com https://accounts.google.com/gsi/ https://appleid.apple.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="google-site-verification" content="unLzcq6TBz9Bm6q4KHpbTmZ88dQ_tTnViacVX5BLzS0">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <title>Spotter by Quarterdeck Collective — save any workout video</title>
@@ -11408,6 +11408,18 @@ details.details-moving > :not(summary) {
   function restVal(x) {
     return typeof x == "number" ? x : "";
   }
+  function asStored(v) {
+    if (Array.isArray(v)) return v.map(asStored);
+    if (v && typeof v == "object") {
+      var out = {};
+      return Object.keys(v).sort(function(a, b) {
+        return a.length - b.length || (a < b ? -1 : a > b ? 1 : 0);
+      }).forEach(function(k) {
+        out[k] = asStored(v[k]);
+      }), out;
+    }
+    return typeof v == "number" && isFinite(v) && v % 1 ? Number(v.toPrecision(15)) : v;
+  }
   function openExEdit(w, bi, ei, ex) {
     var timed = !!(ex.duration_seconds && !ex.reps);
     exEdit = {
@@ -11547,7 +11559,7 @@ details.details-moving > :not(summary) {
       if (sec.b) {
         postCorrection(
           sec.w,
-          { op: "edit_block", block: sec.bi, expect_block: sec.b, fields: f },
+          { op: "edit_block", block: sec.bi, expect_block: asStored(sec.b), fields: f },
           $("sectionsave"),
           "Section saved",
           "sectionsheet"
@@ -11644,7 +11656,7 @@ details.details-moving > :not(summary) {
       w.blocks = before, redraw(), render(), rowBack(rowOf(w, bi)), msg && toast(msg);
     }
     w.blocks.splice(bi, 1), render(), rowAway(box, from, redraw), offerUndo("Removed " + (expected.title || "block"), function() {
-      api("workouts/" + w.id + "/exercises", { method: "POST", body: JSON.stringify({ op: "delete_block", block: bi, expect_block: expected }) }).then(function(r) {
+      api("workouts/" + w.id + "/exercises", { method: "POST", body: JSON.stringify({ op: "delete_block", block: bi, expect_block: asStored(expected) }) }).then(function(r) {
         r.status === "ok" ? absorbWorkout(r.workout) : restore(r.message || "Could not remove that block.");
       }).catch(function() {
         restore("Could not reach Spotter \u2014 the block is back.");

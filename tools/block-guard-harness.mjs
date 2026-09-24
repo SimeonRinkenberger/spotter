@@ -218,6 +218,32 @@ assert.equal((await post({ op: 'edit_block', block: 0, fields: { rest_seconds: 6
 assert.equal((await post({ op: 'edit_block', block: 3, expect_block: straight, fields: {} })).code, 409, 'no such block is stale');
 assert.equal((await post({ op: 'delete_block', block: 0, expect_block: 'x' })).code, 409, 'a non-object is stale');
 
+// ---- the page's half: asStored puts a bridged block back into jsonb's order ----
+//
+// So an app built from this branch passes even a deployment that still compares
+// strings. The stored text comes from a real jsonb round trip in PGlite, not from
+// a reimplementation of its key order.
+if (!expectFail) {
+  const { pathToFileURL } = await import('node:url');
+  const { PGlite } = await import(pathToFileURL(process.env.PGLITE_MODULE ||
+    '/tmp/spotter-reader-db/node_modules/@electric-sql/pglite/dist/index.js'));
+  const pg = new PGlite();
+  const app = fs.readFileSync('supabase/functions/spotter/app.ts', 'utf8');
+  const a = app.indexOf('  function asStored(');
+  assert(a >= 0, 'asStored is in app.ts');
+  const page = vm.createContext({ Array, Object, Number, isFinite });
+  vm.runInContext(app.slice(a, app.indexOf('\n  }', a) + 4), page);
+  for (const [label, block] of [['Pumpy superset', pumpyBlock], ['caption circuit', captionBlock], ['edited AMRAP', editedBlock]]) {
+    const stored = (await pg.query('select $1::jsonb b', [JSON.stringify(block)])).rows[0].b;
+    for (const how of ['reverse', 'shuffle']) {
+      const sent = page.asStored(reorder(JSON.parse(JSON.stringify(stored)), how));
+      assert.equal(JSON.stringify(sent), JSON.stringify(stored), label + ' (' + how + '): the strict comparison of an older deployment passes');
+      assert.equal(sameBlockLifted(stored, sent), true);
+    }
+  }
+  await pg.close();
+}
+
 if (expectFail) {
   for (const [l, r] of legit) console.log((r === 'pass' ? '  pass ' : '  FAIL ') + l + (r === 'pass' ? '' : ' — ' + r.slice(6).split('\n')[0]));
   const bridgedCases = legit.filter((c) => !c[2]);
@@ -227,5 +253,6 @@ if (expectFail) {
 } else {
   for (const [l, r] of legit) assert.equal(r, 'pass', l);
   console.log('PASS block guard: ' + legit.length + ' legitimate edits through the iOS bridge (Pumpy superset, caption circuit, edited AMRAP, ' +
-    'the owner\'s sequence, an exact copy) accepted; ' + (concurrent.length * 2 + 4) + ' concurrent or malformed cases refused with nothing written');
+    'the owner\'s sequence, an exact copy) accepted; ' + (concurrent.length * 2 + 4) + ' concurrent or malformed cases refused with nothing written; ' +
+    'the page\'s asStored restores jsonb\'s own text for 3 shapes x 2 shuffles');
 }
