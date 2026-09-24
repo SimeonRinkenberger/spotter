@@ -37,6 +37,7 @@
     "@capacitor/status-bar": "8.0.3",
     "@revenuecat/purchases-capacitor": "13.5.1",
     "@supabase/supabase-js": "2.115.0",
+    "jpeg-js": "0.4.4",
     "stripe": "^22"
   },
   "devDependencies": {

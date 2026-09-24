@@ -56,6 +56,8 @@
 
 import { aiActor, createGuardedFetch, GuardError, tokenCost, tokenPrice } from "./ai-guard.ts";
 import { deterministicCombine } from "./pumpy-combine.ts";
+// Card-size covers (storeThumb): a plain-JS JPEG codec, so nothing but the function ships.
+import jpeg from "npm:jpeg-js@0.4.4";
 
 import { PAGE_HTML } from "./page.ts";
 import { ICON_B64 } from "./icon.ts";
@@ -7039,23 +7041,161 @@ const authHeaders: Record<string, string> = KEY_IS_JWT
   : { apikey: SERVICE_KEY };
 const dbHeaders = { ...authHeaders, "content-type": "application/json" };
 
-async function storeThumb(shortcode: string, src: string | null): Promise<string | null> {
+// ---------- covers at the size they are shown ----------
+//
+// TikTok hands over its origin cover, 1440x2560 and up to 2160x3840, 300-650 KB,
+// for a Library tile at most ~590 device px wide (a 440pt phone, two columns, 3x)
+// and a Train row a quarter of that. Stored with no cache header, every one was
+// fetched whole and then revalidated on every relaunch.
+//
+// So a video platform's cover is re-encoded to fill a 4:5 tile COVER_W wide and
+// stored under the same name with a week's max-age: old builds load the same
+// thumb_url and get the small file. Storage's image transforms would do this but
+// are a paid feature and the org is on Free, so the decode, the resample and the
+// encode are ours (jpeg-js, plain JS: nothing to bundle beside the function), and
+// off the response path: the original goes up first, exactly as before but for
+// its header, and the small copy replaces it once it is made. Anything unusual
+// keeps the original: not a baseline or progressive JPEG, an Exif or ICC segment
+// whose meaning a re-encode would drop, over COVER_MAX_PX, or a saving under a
+// fifth. A web page's picture is left whole, because the detail shows that one
+// full width (app.ts embedNode's .dphoto).
+const COVER_W = 640;
+const COVER_Q = 80;
+const COVER_MAX_PX = 12_000_000;
+const COVER_CACHE = "max-age=604800";
+const COVER_PLATFORMS = new Set(["tiktok", "instagram", "youtube"]);
+
+/** The size that still fills a 4:5 tile COVER_W wide, or null when the cover is within a fifth of it already. */
+export function coverFit(w: number, h: number): { w: number; h: number } | null {
+  if (!(w > 0 && h > 0) || w * h > COVER_MAX_PX) return null;
+  const s = Math.max(COVER_W / w, (COVER_W * 5 / 4) / h);
+  if (s > 0.8) return null;
+  return { w: Math.round(w * s), h: Math.round(h * s) };
+}
+
+/**
+ * The Exif orientation in an APP1 segment's data (1 when the tag is absent), or 0
+ * for an APP1 that is not Exif (XMP) or cannot be read.
+ */
+function exifOrientation(b: Uint8Array, at: number, end: number): number {
+  if (end - at < 14 || b[at] !== 0x45 || b[at + 1] !== 0x78 || b[at + 2] !== 0x69 || b[at + 3] !== 0x66) return 0;
+  const t = at + 6, le = b[t] === 0x49;
+  const u16 = (o: number) => le ? b[o] | (b[o + 1] << 8) : (b[o] << 8) | b[o + 1];
+  const ifd = t + (le ? u16(t + 4) | (u16(t + 6) << 16) : (u16(t + 4) << 16) | u16(t + 6));
+  if (ifd < t + 8 || ifd + 2 > end) return 0;
+  for (let k = 0, n = u16(ifd); k < n; k++) {
+    const e = ifd + 2 + k * 12;
+    if (e + 12 > end) return 0;
+    if (u16(e) === 0x0112) return u16(e + 8);
+  }
+  return 1;
+}
+
+/**
+ * A JPEG's pixel size, read off its frame header without decoding it, or null when
+ * it is not a plain one: not a JPEG, arithmetic-coded, turned by its Exif
+ * orientation, carrying XMP, or carrying an ICC colour profile, all of which a
+ * re-encode would drop the meaning of.
+ */
+export function plainJpegSize(b: Uint8Array): { w: number; h: number } | null {
+  if (b.length < 4 || b[0] !== 0xFF || b[1] !== 0xD8) return null;
+  let i = 2;
+  while (i + 9 < b.length && b[i] === 0xFF) {
+    const m = b[i + 1];
+    if (m === 0xFF) { i++; continue; }
+    const len = (b[i + 2] << 8) | b[i + 3];
+    if (m === 0xE1 && exifOrientation(b, i + 4, Math.min(b.length, i + 2 + len)) !== 1) return null;
+    if (m === 0xE2) return null;
+    if (m === 0xC0 || m === 0xC1 || m === 0xC2) return { w: (b[i + 7] << 8) | b[i + 8], h: (b[i + 5] << 8) | b[i + 6] };
+    if ((m >= 0xC3 && m <= 0xCF && m !== 0xC4 && m !== 0xC8 && m !== 0xCC) || m === 0xDA) return null;
+    i += 2 + len;
+  }
+  return null;
+}
+
+/**
+ * Area-average resample, RGBA in, RGBA out. Every source pixel lands in the output
+ * pixels it overlaps in proportion to the overlap, which is what a downscale by
+ * 2-3.4x needs to stay free of the shimmer a point sampler leaves. Rows are
+ * resampled across and accumulated down one output row at a time, so the extra
+ * memory is two rows, not a second image.
+ */
+function resampleArea(src: Uint8Array, sw: number, sh: number, tw: number, th: number): Uint8ClampedArray {
+  const sx = sw / tw, sy = sh / th;
+  const x0 = new Int32Array(tw), wx: Float32Array[] = [];
+  for (let x = 0; x < tw; x++) {
+    const a = x * sx, b = a + sx, i0 = Math.floor(a), i1 = Math.min(sw, Math.ceil(b));
+    const w = new Float32Array(i1 - i0);
+    for (let i = i0; i < i1; i++) w[i - i0] = (Math.min(b, i + 1) - Math.max(a, i)) / sx;
+    x0[x] = i0; wx.push(w);
+  }
+  const row = new Float32Array(tw * 3), acc = new Float32Array(tw * 3), out = new Uint8ClampedArray(tw * th * 4);
+  for (let y = 0; y < th; y++) {
+    const a = y * sy, b = a + sy, j0 = Math.floor(a), j1 = Math.min(sh, Math.ceil(b));
+    acc.fill(0);
+    for (let j = j0; j < j1; j++) {
+      const fy = (Math.min(b, j + 1) - Math.max(a, j)) / sy, base = j * sw * 4;
+      for (let x = 0; x < tw; x++) {
+        const w = wx[x];
+        let p = base + x0[x] * 4, r = 0, g = 0, bl = 0;
+        for (let k = 0; k < w.length; k++, p += 4) { const f = w[k]; r += src[p] * f; g += src[p + 1] * f; bl += src[p + 2] * f; }
+        row[x * 3] = r; row[x * 3 + 1] = g; row[x * 3 + 2] = bl;
+      }
+      for (let k = 0; k < acc.length; k++) acc[k] += row[k] * fy;
+    }
+    for (let x = 0, o = y * tw * 4; x < tw; x++, o += 4) {
+      out[o] = acc[x * 3]; out[o + 1] = acc[x * 3 + 1]; out[o + 2] = acc[x * 3 + 2]; out[o + 3] = 255;
+    }
+  }
+  return out;
+}
+
+/** The card-size re-encode of a cover, or null to keep the original. */
+export function shrinkCover(buf: Uint8Array): Uint8Array<ArrayBuffer> | null {
+  const size = plainJpegSize(buf);
+  const fit = size && coverFit(size.w, size.h);
+  if (!fit) return null;
+  const img = jpeg.decode(buf, { useTArray: true, formatAsRGBA: true, maxResolutionInMP: COVER_MAX_PX / 1e6, maxMemoryUsageInMB: 160 });
+  if (img.width !== size!.w || img.height !== size!.h) return null;
+  const px = resampleArea(img.data, img.width, img.height, fit.w, fit.h);
+  const out = new Uint8Array(jpeg.encode({ data: px, width: fit.w, height: fit.h }, COVER_Q).data);
+  return out.byteLength <= buf.byteLength * 0.8 ? out : null;
+}
+
+async function putThumb(name: string, body: BodyInit, type: string, cache: string): Promise<Response> {
+  return await fetch(`${SUPABASE_URL}/storage/v1/object/thumbs/${name}`, {
+    method: "POST",
+    headers: { ...authHeaders, "content-type": type, "cache-control": cache, "x-upsert": "true" },
+    body,
+  });
+}
+
+/** The small copy, over the original of the same name. A failure leaves the original, as before. */
+async function shrinkStoredCover(name: string, buf: Uint8Array): Promise<void> {
+  const t0 = performance.now();
+  const small = shrinkCover(buf);
+  if (!small) return;
+  const ms = Math.round(performance.now() - t0);
+  const up = await putThumb(name, small, "image/jpeg", COVER_CACHE);
+  if (!up.ok) { console.error("cover shrink upload", name, up.status, await up.text()); return; }
+  console.log("cover", name, buf.byteLength, "->", small.byteLength, "bytes in", ms, "ms");
+}
+
+export async function storeThumb(shortcode: string, src: string | null, platform = ""): Promise<string | null> {
   if (!src) return null;
   try {
     const r = await safeFetch(src, { headers: { "User-Agent": DESKTOP_UA } });
     if (!r.ok) return null;
-    const buf = await r.arrayBuffer();
+    const buf = new Uint8Array(await r.arrayBuffer());
     if (buf.byteLength < 500) return null;
-    const up = await fetch(`${SUPABASE_URL}/storage/v1/object/thumbs/${shortcode}.jpg`, {
-      method: "POST",
-      headers: {
-        ...authHeaders,
-        "content-type": r.headers.get("content-type") ?? "image/jpeg",
-        "x-upsert": "true",
-      },
-      body: buf,
-    });
+    // A cover about to be replaced by its small copy goes up uncached, so nothing
+    // holds the big one for a week; everything else is cacheable from the start.
+    const size = COVER_PLATFORMS.has(platform) ? plainJpegSize(buf) : null;
+    const shrink = !!(size && coverFit(size.w, size.h));
+    const up = await putThumb(`${shortcode}.jpg`, buf, r.headers.get("content-type") ?? "image/jpeg",
+      shrink ? "no-cache" : COVER_CACHE);
     if (!up.ok) { console.error("thumb upload", up.status, await up.text()); return null; }
+    if (shrink) background(shrinkStoredCover(`${shortcode}.jpg`, buf));
     return `${SUPABASE_URL}/storage/v1/object/public/thumbs/${shortcode}.jpg`;
   } catch (e) {
     console.error("storeThumb failed", e);
@@ -8918,7 +9058,7 @@ async function runJobGuarded(job: Job): Promise<void> {
 
   let thumbUrl: string | null = null;
   try {
-    thumbUrl = await captionMayOverwriteCache(p.shortcode, meta) ? await storeThumb(p.shortcode, meta.thumb) : null;
+    thumbUrl = await captionMayOverwriteCache(p.shortcode, meta) ? await storeThumb(p.shortcode, meta.thumb, p.platform) : null;
   } catch (e) {
     console.error("job storeThumb failed", job.id, e);
   }
@@ -9863,7 +10003,7 @@ async function handleReprocess(id: string, userId: string, req: Request, cors: C
 
   let thumbUrl: string | null = old.thumb_url;
   try {
-    thumbUrl = (await captionMayOverwriteCache(p.shortcode, meta) ? await storeThumb(p.shortcode, meta.thumb) : null) ?? old.thumb_url;
+    thumbUrl = (await captionMayOverwriteCache(p.shortcode, meta) ? await storeThumb(p.shortcode, meta.thumb, p.platform) : null) ?? old.thumb_url;
   } catch (e) {
     console.error("reprocess storeThumb failed", p.shortcode, e);
   }

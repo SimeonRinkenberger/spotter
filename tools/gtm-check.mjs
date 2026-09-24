@@ -30,6 +30,7 @@ const checks = [
   ['Dumbbell each: the rule, the ×2 volume, bests per dumbbell', 'node', ['tools/each-harness.mjs']],
   ['Rest wheel: notches, settle vs Save, spinbutton, no chips left', 'node', ['tools/rest-wheel-harness.mjs']],
   ['Speed: cache before the token, one today read, library columns', 'node', ['tools/speed-harness.mjs']],
+  ['Card-size covers: fit, header walk, re-encode, upload order', 'deno', ['run','--allow-read','--allow-env','tools/cover-check.ts']],
   ['One declaration per name in app.ts', 'node', ['tools/unique-decls.mjs']],
   ['Creator codes on the client', 'node', ['tools/creator-client-harness.mjs']],
   ['Creator codes SQL', 'node', ['tools/creator-db-check.mjs']],
