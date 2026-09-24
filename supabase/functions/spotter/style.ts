@@ -342,27 +342,32 @@ export const STYLE = String.raw`<style>
   .search:focus { border-color: var(--ember); background: var(--card); }
   .search::placeholder { color: var(--muted); }
   /* The way out of typing, beside the field for exactly as long as the field has
-     the keyboard: the trailing slot UISearchBar gives its Cancel. It closes the
-     keyboard and keeps the query, because the results are what the reader wanted
-     room to see; clearing stays with the field's own clear button. The field
-     gives it room the way UIKit's does, by getting narrower. */
+     the keyboard: the trailing slot UISearchBar gives its Cancel, and it does what
+     Cancel does — the query goes, the keyboard goes, the whole library comes back.
+     The field gives it room the way UIKit's does, by getting narrower. The button
+     is the whole strip from the field's edge to the circle, top to bottom of the
+     bar, so a thumb that lands beside the circle still lands on the button; the
+     circle is its child. */
   #searchwrap { display: flex; align-items: center; }
   #searchwrap .search { flex: 1 1 auto; width: auto; min-width: 0; }
-  .searchx { flex: 0 0 auto; width: 0; height: 44px; margin-left: 0; padding: 0; border: none;
-    border-radius: 999px; background: var(--sand); color: var(--ink-2); overflow: hidden;
+  .searchx { flex: 0 0 auto; box-sizing: border-box; width: 0; height: 64px; margin: -8px 0 -12px; padding: 0;
+    border: none; border-radius: 0; background: none; color: var(--ink-2); overflow: hidden;
+    display: flex; align-items: center; justify-content: flex-end;
+    opacity: 0; pointer-events: none; -webkit-tap-highlight-color: transparent;
+    transition: width var(--t-2) var(--e-in), opacity var(--t-1) var(--e-in); }
+  .searchx > span { flex: 0 0 44px; height: 44px; border-radius: 999px; background: var(--sand);
     display: flex; align-items: center; justify-content: center;
-    opacity: 0; transform: scale(.6); pointer-events: none;
-    transition: width var(--t-2) var(--e-in), margin-left var(--t-2) var(--e-in),
-      opacity var(--t-1) var(--e-in), transform var(--t-2) var(--e-in); }
-  #searchwrap:focus-within .searchx { width: 44px; margin-left: 8px; opacity: 1; transform: none;
-    pointer-events: auto;
-    transition: width var(--t-2) var(--e-out), margin-left var(--t-2) var(--e-out),
-      opacity var(--t-2) var(--e-out), transform var(--t-2) var(--e-out); }
-  #searchwrap:focus-within .searchx:active { transform: scale(.92); transition-duration: var(--t-1); }
+    transform: scale(.6); transition: transform var(--t-2) var(--e-in); }
+  #searchwrap:focus-within .searchx { width: 52px; opacity: 1; pointer-events: auto;
+    transition: width var(--t-2) var(--e-out), opacity var(--t-2) var(--e-out); }
+  #searchwrap:focus-within .searchx > span { transform: none; transition: transform var(--t-2) var(--e-out); }
+  #searchwrap:focus-within .searchx:active > span { transform: scale(.92); transition-duration: var(--t-1); }
   .searchx .ic { width: 18px; height: 18px; }
+  /* One X: Chromium's own clear button inside a search field would be a second. */
+  #search::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; display: none; }
   @media (prefers-reduced-motion: reduce) {
-    .searchx, #searchwrap:focus-within .searchx { transform: none;
-      transition: opacity var(--t-1) var(--e-soft); }
+    .searchx, #searchwrap:focus-within .searchx { transition: opacity var(--t-1) var(--e-soft); }
+    .searchx > span, #searchwrap:focus-within .searchx > span { transform: none; transition: none; }
   }
 
   /* ---------- filter chips ---------- */
@@ -1821,7 +1826,17 @@ export const STYLE = String.raw`<style>
   .wtools { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
   .wclock { font-family: var(--display); font-size: 14px; font-weight: 700; color: var(--muted);
     font-variant-numeric: tabular-nums; }
-  .wdots { display: flex; gap: 5px; justify-content: center; flex-wrap: wrap; padding: 8px 20px 0; }
+  /* The dots are a band of their own between the bar and the screen: the screen
+     scrolls under the band's lower edge, never under the dots, and a hairline
+     comes up on that edge once something has gone beneath it (#workout.wedge,
+     app.ts) — a UIKit bar's scroll-edge shadow. On a Dynamic Island phone with a
+     rest running the screen does scroll, and it used to be clipped flush under
+     the dots, which read as the dots cutting the card off. */
+  .wdots { position: relative; flex-shrink: 0; display: flex; gap: 5px; justify-content: center;
+    flex-wrap: wrap; padding: 6px 20px 12px; }
+  .wdots::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1px;
+    background: var(--line); opacity: 0; transition: opacity var(--t-2) var(--e-soft); }
+  #workout.wedge .wdots::after { opacity: 1; }
   .wdot { width: 6px; height: 6px; border-radius: 999px; background: var(--line-2);
     transition: background-color var(--t-2), transform var(--t-2) var(--e-out); }
   .wdot.on { background: var(--ember); transform: scale(1.4); }
@@ -2373,12 +2388,26 @@ export const STYLE = String.raw`<style>
     box-shadow: 0 0 0 1px var(--line), var(--sh-sm);
     background: color-mix(in srgb, var(--paper) 82%, transparent);
     -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); }
-  .pumpybar button { width: 44px; height: 44px; font-size: 19px; border: none;
-    background: none; border-radius: 999px; color: var(--ink-2); display: grid;
-    place-items: center; transition: transform var(--t-1) var(--e-out),
+  .pumpybar button { min-width: 44px; height: 44px; padding: 0 12.5px; font-size: 19px; border: none;
+    background: none; border-radius: 999px; color: var(--ink-2); display: flex;
+    align-items: center; justify-content: center; transition: transform var(--t-1) var(--e-out),
       background-color var(--t-2) var(--e-soft); }
   .pumpybar button:active { transform: scale(.9); background: var(--sand); color: var(--ink); }
-  @media (prefers-reduced-motion: reduce) { .pumpybar button { transition: none; } }
+  /* On an empty chat the two buttons say what they are, beside their icons; the
+     first message folds the words away and leaves the icons, so a conversation
+     gives them no more room than before (#pumpybar.labelled, app.ts renderPumpy).
+     The capsule only gets wider or narrower: nothing under it moves. */
+  .pblabel { display: block; max-width: 0; margin-left: 0; overflow: hidden; white-space: nowrap;
+    font-size: 14px; font-weight: 650; letter-spacing: -.005em; color: var(--ink); opacity: 0;
+    transition: max-width var(--t-3) var(--e-soft), margin-left var(--t-3) var(--e-soft),
+      opacity var(--t-1) var(--e-in); }
+  .pumpybar.labelled .pblabel { max-width: 96px; margin-left: 7px; opacity: 1;
+    transition: max-width var(--t-3) var(--e-out), margin-left var(--t-3) var(--e-out),
+      opacity var(--t-2) var(--e-out) var(--t-1); }
+  @media (prefers-reduced-motion: reduce) {
+    .pumpybar button { transition: none; }
+    .pblabel, .pumpybar.labelled .pblabel { transition: opacity var(--t-1) var(--e-soft); }
+  }
   .pumpyhello { text-align: center; padding: 22px 12px 8px; color: var(--ink-2); font-size: 14px; line-height: 1.6; }
   .pumpyhello .pmark { width: 60px; height: 60px; margin: 0 auto 12px; box-shadow: var(--sh-md); }
   .pumpyhello .pmark svg { width: 34px; height: 34px; }
@@ -2756,6 +2785,7 @@ export const STYLE = String.raw`<style>
     /* The exercise still changes and says so, crossfading rather than sliding.
        The drag moves nothing at all: app.ts asks lessMotion() first. */
     .wmain.wmease { transition: none; }
+    .wdots::after { transition: none; }
     .wmain.wmin { animation-name: fadeonly; animation-duration: var(--t-2); }
     /* A marked movement still fills and still ticks; it just does it at once. */
     .cxmove { transition: none; }
@@ -2904,8 +2934,10 @@ export const STYLE = String.raw`<style>
   .wactions .exercise-options > summary { justify-content: center; background: var(--sand); border-radius: 12px; font-size: 13px; }
   /* Keep the exercise and logging controls anchored when supporting actions open.
      Centering the whole stack makes every item drift upward during expansion. */
+  /* 10px less than it was: the dots' band grew by that much, so at rest nothing
+     on the screen moves. */
   #workout:not(.summary) .wmain { justify-content: flex-start; min-height: 0;
-    padding-top: clamp(20px, calc(var(--vvh) * .04), 32px); }
+    padding-top: clamp(10px, calc(var(--vvh) * .04 - 10px), 22px); }
   #workout:not(.summary) .wmain > * { flex-shrink: 0; }
   .exercise-options .disclosure-body { padding: 4px 12px; margin: 4px 0 10px; background: var(--sand); border-radius: 12px; overflow: hidden; }
   .exercise-options .pickrow { width: 100%; min-height: 48px; padding: 12px 2px; border-radius: 0;

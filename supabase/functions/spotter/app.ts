@@ -1284,6 +1284,7 @@ export const APP = String.raw`
     if (wo) saveDraft();
     clearInterval(woTimer); stopRest(); liveEnd(false); releaseWake(); wo = null; hist = {}; histReady = false;
     if (strava) strava = { asked: false, configured: false, connected: false, athlete: null, busy: false };
+    clearTimeout(pumpyIdleTimer);
     if (pumpy) {
       var seq = (pumpy.openSeq || 0) + 1, wired = pumpy.wired;
       pumpy = { thread: null, messages: [], refs: [], refsRev: 0, loaded: false,
@@ -3245,7 +3246,7 @@ export const APP = String.raw`
     var schedule = el("button", "chip", "Schedule");
     schedule.onclick = function () { scheduleWorkout(w); };
     actions.appendChild(schedule);
-    var ask = el("button", "chip", "Ask coach");
+    var ask = el("button", "chip", "Ask Pumpy");
     ask.onclick = function () { history.back(); openPumpy(w); };
     actions.appendChild(ask);
     d.appendChild(actions);
@@ -4228,6 +4229,26 @@ export const APP = String.raw`
   // The stored shape of a rest as the wheel takes it: a number, or "" for "not said".
   function restVal(x) { return typeof x === "number" ? x : ""; }
 
+  // A block as the database writes it, for the guard on edit_block and
+  // delete_block. In the iOS shell every answer from the function crosses
+  // CapacitorHttp, which parses it into a Swift dictionary with no key order and
+  // hands the page doubles, so the card an edit hands back is the stored card
+  // with its keys shuffled — and a server that compares the two as strings calls
+  // that a different block. jsonb keeps an object's keys shortest first, then in
+  // byte order, so putting them back that way (and a double back to the number
+  // it was) is the stored text again. Today's function compares a canonical form
+  // and does not need this; an older deployment does.
+  function asStored(v) {
+    if (Array.isArray(v)) return v.map(asStored);
+    if (v && typeof v === "object") {
+      var out = {};
+      Object.keys(v).sort(function (a, b) { return a.length - b.length || (a < b ? -1 : a > b ? 1 : 0); })
+        .forEach(function (k) { out[k] = asStored(v[k]); });
+      return out;
+    }
+    return typeof v === "number" && isFinite(v) && v % 1 ? Number(v.toPrecision(15)) : v;
+  }
+
   // The sheet's title, lede and buttons are what the markup says: its add mode
   // went when "+ Add an exercise" became the bank, and with it the resetting.
   function openExEdit(w, bi, ei, ex) {
@@ -4432,7 +4453,7 @@ export const APP = String.raw`
     var f = sectionFields();
     if (f.duration_seconds && f.duration_seconds < 60) { toast("A time cap starts at a minute."); return; }
     if (sec.b) {
-      postCorrection(sec.w, { op: "edit_block", block: sec.bi, expect_block: sec.b, fields: f },
+      postCorrection(sec.w, { op: "edit_block", block: sec.bi, expect_block: asStored(sec.b), fields: f },
         $("sectionsave"), "Section saved", "sectionsheet");
       return;
     }
@@ -4544,7 +4565,7 @@ export const APP = String.raw`
     w.blocks.splice(bi, 1); render();
     rowAway(box, from, redraw);
     offerUndo("Removed " + (expected.title || "block"), function () {
-      api("workouts/" + w.id + "/exercises", { method: "POST", body: JSON.stringify({ op: "delete_block", block: bi, expect_block: expected }) })
+      api("workouts/" + w.id + "/exercises", { method: "POST", body: JSON.stringify({ op: "delete_block", block: bi, expect_block: asStored(expected) }) })
         .then(function (r) { if (r.status === "ok") absorbWorkout(r.workout); else restore(r.message || "Could not remove that block."); })
         .catch(function () { restore("Could not reach Spotter — the block is back."); });
     }, function () { restore(null); });
@@ -8909,6 +8930,14 @@ export const APP = String.raw`
   // In the iOS shell the frame no longer shrinks (html.kb-over): the keyboard
   // section below owns bringing a covered field into view there, and a second
   // scroll 450 ms after its own would be a second motion.
+  // The dots' scroll edge (style.ts, .wdots): on while anything of the screen is
+  // under the band. Toggled on the crossing, not on every scroll event.
+  var woEdge = false;
+  $("wmain").addEventListener("scroll", function () {
+    var on = this.scrollTop > 1;
+    if (on !== woEdge) { woEdge = on; $("workout").classList.toggle("wedge", on); }
+  }, { passive: true });
+
   $("wmain").addEventListener("focusin", function (e) {
     if (document.documentElement.classList.contains("kb-over")) return;
     var box = e.target.classList.contains("numin") ? e.target.parentNode : null;
@@ -12826,7 +12855,7 @@ export const APP = String.raw`
   var QUICK_ASKS = [
     "Build a 25-min kettlebell shoulders + core",
     "Plan my week from what I’ve saved",
-    "Add a finisher to my leg day",
+    "Edit one of my workouts",
     "Shoulder pain — what should I strengthen?"
   ];
 
@@ -12835,14 +12864,76 @@ export const APP = String.raw`
   var NO_TOUCH = !("ontouchstart" in window) && !(navigator.maxTouchPoints > 0);
 
   function openPumpy(w) {
-    // "Ask Pumpy about this workout" is the first reference, picked for you.
+    // "Ask Pumpy about this workout" is the first reference, picked for you. It
+    // is also a reason to keep the conversation on the page: the five-minute
+    // rule below counts it as the chat's latest moment.
     if (w) {
       pumpy.refs = [w.id].concat(pumpy.refs.filter(function (id) { return id !== w.id; })).slice(0, MAX_REFS);
       pumpy.refsRev++;
+      pumpy.ctxAt = Date.now();
       renderPumpyCtx();
     }
     setView("pumpy");
   }
+
+  // ---------- Pumpy · a new chat after five minutes away ----------
+  //
+  // The owner: "When it has been a few minutes when I go back to Pumpy it
+  // defaults to a new chat, so the user is not just spamming one chat with a
+  // bunch of stuff." ChatGPT and Claude both open on an empty chat and keep the
+  // last one a tap away in the list; this is that, with a grace period, so
+  // stepping out to look at a card mid-conversation does not lose the thread.
+  // Nothing is written: the old conversation is already in Chats, and a new one
+  // is created by its first message, as New chat always did.
+  var PUMPY_IDLE = 5 * 60 * 1000, pumpyIdleTimer = 0;
+
+  // When a conversation last moved: its newest message, sent or received, as the
+  // server stamped it or as this session saw it happen (seen).
+  function pumpyLastAt(msgs, seen) {
+    var t = seen || 0;
+    for (var i = msgs.length - 1; i >= 0; i--) {
+      var c = Date.parse(msgs[i].created_at || "");
+      if (c) { if (c > t) t = c; break; }
+    }
+    return t;
+  }
+
+  // What a new chat never takes off the page: an answer still arriving, or a
+  // change Pumpy is waiting on a yes or no for.
+  function pumpyHolds(msgs) {
+    if (pumpy.busy || pumpy.live) return true;
+    return msgs.some(function (m) {
+      return m.role === "assistant" && m.meta && m.meta.proposal && m.meta.status === "pending";
+    });
+  }
+
+  function pumpyStale(msgs, seen, at) {
+    if (!msgs.length || pumpyHolds(msgs)) return false;
+    var last = Math.max(pumpyLastAt(msgs, seen), pumpy.ctxAt || 0);
+    return !!last && (at || Date.now()) - last > PUMPY_IDLE;
+  }
+
+  // The page on a new chat, at once: this runs where nobody is watching the
+  // chat change (another tab, or the moment the app comes back), so New chat's
+  // crossfade would only be a delay.
+  function freshenPumpy() {
+    if (!pumpy.loaded || pumpy.loading || !pumpyStale(pumpy.messages, pumpy.lastAt)) return false;
+    pumpyBlank();
+    renderPumpy();
+    $("pumpyview").scrollTop = 0;
+    return true;
+  }
+
+  // Away from Pumpy: freshen now if it is time, or when it will be.
+  function pumpyAway() {
+    clearTimeout(pumpyIdleTimer);
+    if (state.view === "pumpy" || !pumpy.loaded || !pumpy.messages.length || freshenPumpy()) return;
+    var last = Math.max(pumpyLastAt(pumpy.messages, pumpy.lastAt), pumpy.ctxAt || 0);
+    if (last) pumpyIdleTimer = setTimeout(pumpyAway, Math.max(1000, last + PUMPY_IDLE - Date.now() + 250));
+  }
+
+  // The app coming back is going back to Pumpy when Pumpy is the page it shows.
+  function pumpyBack() { if (state.view === "pumpy") freshenPumpy(); else pumpyAway(); }
 
   // sizePumpy() measured the header and the tab bar for this one view. Every
   // page needs the same two numbers now, so measureChrome() in the pager section
@@ -12879,7 +12970,9 @@ export const APP = String.raw`
   function settlePumpy(t) {
     pumpy.loading = false;
     pumpy.loaded = true;
-    if (t) {
+    // The newest conversation, unless it went quiet more than five minutes ago:
+    // then it stays in Chats and the page opens on a new one.
+    if (t && !pumpyStale(t.pumpy_messages || [], 0)) {
       pumpy.thread = { id: t.id, title: t.title, updated_at: t.updated_at, workout_id: t.workout_id };
       pumpy.messages = t.pumpy_messages || [];
       // Any explicit selection this session, before or during loading, wins over history.
@@ -12911,16 +13004,21 @@ export const APP = String.raw`
     $("pumpyctx").inert = false;
   }
 
+  // A new owner retires the old stream immediately. Its last packet can still
+  // save to that conversation, but cannot put a reply into this new one.
+  function pumpyBlank() {
+    cancelPumpyReset();
+    pumpy = Object.assign({}, pumpy, { thread: null, messages: [], refs: [],
+      refsRev: pumpy.refsRev + 1, openSeq: (pumpy.openSeq || 0) + 1,
+      loaded: true, loading: false, busy: false, live: null, nodes: {}, shownCount: 0, stick: true,
+      lastAt: 0, ctxAt: 0 });
+  }
+
   function newPumpyThread() {
     // Repeated taps on an empty chat should not restart its drawing or blink.
     if (pumpy.loaded && !pumpy.loading && !pumpy.thread && !pumpy.messages.length &&
         !pumpy.busy && !pumpy.refs.length) return;
-    cancelPumpyReset();
-    // A new owner retires the old stream immediately. Its last packet can still
-    // save to that conversation, but cannot put a reply into this new one.
-    pumpy = Object.assign({}, pumpy, { thread: null, messages: [], refs: [],
-      refsRev: pumpy.refsRev + 1, openSeq: (pumpy.openSeq || 0) + 1,
-      loaded: true, loading: false, busy: false, live: null, nodes: {}, shownCount: 0, stick: true });
+    pumpyBlank();
     var owner = pumpy, log = $("pumpylog"), ctx = $("pumpyctx");
     log.classList.remove("waiting");
     $("pumpysend").disabled = false;
@@ -13141,6 +13239,9 @@ export const APP = String.raw`
         pumpy.loaded = true;
         pumpy.shownCount = 0;   // loaded history arrives without msgin
         pumpy.stick = true;     // a thread opens on its newest message, always
+        // Chosen from the list just now: that counts as the chat's latest moment,
+        // or stepping out and straight back would swap it for a new one.
+        pumpy.lastAt = 0; pumpy.ctxAt = Date.now();
         log.classList.remove("waiting");
         renderPumpy();          // one fragment, one swap, one scrollTop
         if (!closed) closeSheet("pumpysheet");
@@ -13305,6 +13406,9 @@ export const APP = String.raw`
     // With nothing said yet the log is empty space, so the greeting sits in the
     // middle of it rather than clinging to the top.
     log.classList.toggle("hello", !shown.length);
+    // The bar's words are for the empty chat only (style.ts, .pblabel), and not
+    // before the first fetch has said it is empty, or they would fold on arrival.
+    $("pumpybar").classList.toggle("labelled", !!pumpy.loaded && !shown.length && !pumpy.busy);
     // And only once we KNOW there is nothing: before the first fetch lands it is a
     // final state that has to be taken away again, which reads as a flash.
     if (!shown.length && pumpy.loaded) {
@@ -13658,6 +13762,7 @@ export const APP = String.raw`
     pumpy.busy = true;
     pumpy.live = null;
     pumpy.stick = true;
+    pumpy.lastAt = Date.now();
     pumpy.messages.push({ id: "local-" + Date.now(), role: "user", content: text });
     renderPumpy();
     var ids = pumpy.refs.slice(0, MAX_REFS);
@@ -13671,6 +13776,7 @@ export const APP = String.raw`
     };
     apiStream("pumpy/chat", payload, function (r) {
       if (pumpy !== owner) return;
+      pumpy.lastAt = Date.now();
       if (r.t !== "final") { liveEvent(r); return; }
       pumpy.busy = false;
       $("pumpyannounce").textContent = "Pumpy’s answer is ready.";
@@ -17285,6 +17391,9 @@ export const APP = String.raw`
     setTimeout(function () { guidePage(v); }, 450);
     if (v === "library") renderToday();
     if (v === "train" && state.logs) countStats();
+    // Settled somewhere else, with Pumpy off screen: the one place a chat can be
+    // swapped without anybody seeing it happen.
+    if (v !== "pumpy") pumpyAway();
   }
 
   // Start independent reads on navigation intent, while the spring is moving.
@@ -17302,6 +17411,10 @@ export const APP = String.raw`
       drawn.train = true;
       quietly(prepareTrain());
     } else if (v === "pumpy") {
+      // Last word on the five-minute rule, for a return that beat pumpyAway's
+      // timer; usually the page is already on its new chat.
+      clearTimeout(pumpyIdleTimer);
+      freshenPumpy();
       loadPumpy();
     }
   }
@@ -18023,11 +18136,39 @@ export const APP = String.raw`
     kbApply({ visible: true, height: k.height, duration: k.duration || 0.25, easing: k.easing });
   });
 
-  // The search's own way out of typing (style.ts, .searchx). Held on the press so
-  // the field keeps the keyboard, and the button its place, until the tap lands;
-  // a cancelled pointerdown cancels the mouse events that would move focus too.
+  // The search's own way out of typing (style.ts, .searchx), and UISearchBar's
+  // Cancel in what it does: the query goes, the keyboard goes, the library is
+  // whole again. Held on the press so the field keeps the keyboard, and the
+  // button its place, until the tap lands.
+  //
+  // Acted on where the finger lifts, not on the click after it. On the owner's
+  // phone the X left the keyboard up. The click a finger makes is WebKit's, aimed
+  // at the best tappable thing under the whole contact patch, and beside this
+  // button that used to be the label wrapped round the field and the X, whose
+  // click puts the focus straight back in the field; in the simulator a tap two
+  // points left of the circle did exactly that. The label is gone (markup.ts),
+  // the button covers the gap, and a handled touchend cancels that click outright.
+  var searchXAt = 0;
+  function searchDone() {
+    var f = $("search");
+    if (f.value || state.q) { f.value = ""; state.q = ""; renderGrid(); }
+    f.blur();
+  }
   $("searchx").addEventListener("pointerdown", function (e) { e.preventDefault(); });
-  $("searchx").onclick = function () { $("search").blur(); this.blur(); };
+  $("searchx").addEventListener("touchend", function (e) {
+    var t = e.changedTouches && e.changedTouches[0], r = this.getBoundingClientRect();
+    // A finger that slid off the button before lifting changed its mind.
+    if (!t || t.clientX < r.left - 10 || t.clientX > r.right + 10 || t.clientY < r.top - 10 || t.clientY > r.bottom + 10) return;
+    e.preventDefault();
+    searchXAt = Date.now();
+    searchDone();
+  }, { passive: false });
+  // A mouse, a hardware keyboard and VoiceOver arrive here instead.
+  $("searchx").onclick = function (e) {
+    e.preventDefault();
+    this.blur();
+    if (Date.now() - searchXAt > 700) searchDone();
+  };
   // Search on the keyboard means the same thing: done typing, show me.
   $("search").addEventListener("keydown", function (e) { if (e.key === "Enter") this.blur(); });
 
@@ -18674,6 +18815,7 @@ export const APP = String.raw`
     if (wo && !wo.finished) { startClock(); acquireWake(); }
     watchBilling(); stravaBack();
     publishSummary();
+    if (state.user) pumpyBack();
     // Under whatever is open: a card that landed while the phone was away must be
     // on the shelf when the sheet or the card closes, and load() refreshes an open
     // card in place. Only a live session is left alone. The pending poll starts a
@@ -18688,6 +18830,7 @@ export const APP = String.raw`
     if (!state.user) return;
     pendPolls = 0;
     watchPending();
+    pumpyBack();
     // The interval was throttled while the phone was away; the deadline was not.
     // One tick puts the ring right, and ends a rest that ran out in a pocket.
     if (restUntil) tickRest();

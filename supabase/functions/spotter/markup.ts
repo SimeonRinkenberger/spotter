@@ -56,6 +56,9 @@ export const MARKUP_BODY = String.raw`</head>
      colour rule that dressed the character it replaces. -->
 <svg class="sprite" aria-hidden="true" focusable="false">
 <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></symbol>
+<!-- Pumpy's two doors, as ChatGPT draws them: Lucide square-pen and message-circle, v1.48 paths. -->
+<symbol id="i-compose" viewBox="0 0 24 24"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/></symbol>
+<symbol id="i-chats" viewBox="0 0 24 24"><path d="M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719"/></symbol>
 <symbol id="i-paperclip" viewBox="0 0 24 24"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></symbol>
 <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
 <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
@@ -234,11 +237,13 @@ export const MARKUP_BODY = String.raw`</head>
   <div class="pages" id="pages">
     <div class="track" id="track">
       <div class="page" id="libpage" role="tabpanel" aria-labelledby="tab0">
-        <label class="searchwrap" id="searchwrap">
+        <!-- A div, not a label: a label round the field and its X made the X's
+             neighbourhood a door back into the field (app.ts, searchDone). -->
+        <div class="searchwrap" id="searchwrap" role="search">
           <span class="searchico"><svg class="ic"><use href="#i-search"></use></svg></span>
           <input class="search" id="search" type="search" placeholder="Search workouts, exercises, muscles" autocapitalize="off" autocomplete="off">
-          <button class="searchx" id="searchx" type="button" aria-label="Hide keyboard"><svg class="ic"><use href="#i-x"></use></svg></button>
-        </label>
+          <button class="searchx" id="searchx" type="button" aria-label="Clear search"><span><svg class="ic"><use href="#i-x"></use></svg></span></button>
+        </div>
 
         <div id="hint">
           <div id="hinttext">Spotter works better installed — full screen, and it opens like an app.
@@ -258,9 +263,9 @@ export const MARKUP_BODY = String.raw`</head>
 
       <div class="page view" id="trainview" role="tabpanel" aria-labelledby="tab1"></div>
       <div class="page view" id="pumpyview" role="tabpanel" aria-labelledby="tab2">
-        <div class="pumpybar">
-          <button id="pumpychats" title="Chats" aria-label="Chats"><svg class="ic"><use href="#i-list"></use></svg></button>
-          <button id="pumpynew" title="New chat" aria-label="New chat"><svg class="ic"><use href="#i-plus"></use></svg></button>
+        <div class="pumpybar" id="pumpybar">
+          <button id="pumpychats" title="Chats" aria-label="Chats"><svg class="ic"><use href="#i-chats"></use></svg><span class="pblabel" aria-hidden="true">Chats</span></button>
+          <button id="pumpynew" title="New chat" aria-label="New chat"><svg class="ic"><use href="#i-compose"></use></svg><span class="pblabel" aria-hidden="true">New chat</span></button>
         </div>
         <div id="pumpylog"></div>
         <div id="pumpyannounce" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
