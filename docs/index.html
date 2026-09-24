@@ -9537,7 +9537,7 @@ details.details-moving > :not(summary) {
   }
   function clearAccount() {
     if (dismissAiConsent(), native && native.configureSharing(null).catch(function() {
-    }), cancelPumpyReset(), pendingMotion && pendingMotion.disconnect(), $("app").classList.add("hide"), accountEpoch++, reads = {}, inFlight = {}, libraryRev++, logsRev++, planRev++, clearTimeout(undoTimer), undoTimer = null, undoFn = null, clearTimeout(detailCloseTimer), clearTimeout(woCloseTimer), clearTimeout(pendTimer), pendTimer = null, pendPolls = 0, pendBusy = !1, wkChannel && (sb.removeChannel(wkChannel), wkChannel = null), booting = null, state.profile = null, state.workouts = [], state.logs = null, state.plan = null, state.awards = null, state.goal = null, heroPct = 0, trainSeg = null, state.unit = "lb", state.sounds = !0, state.haptics = !0, state.collections = [], state.colItems = [], seenCards = {}, gridCards = {}, expCache = {}, expWaiting = {}, vidCache = {}, expKey = "", today.rows = [], today.at = 0, today.day = null, today.busy = !1, today.shown = !1, current = null, sc && scForget(), wo && saveDraft(), clearInterval(woTimer), stopRest(), liveEnd(!1), releaseWake(), wo = null, hist = {}, histReady = !1, strava && (strava = { asked: !1, configured: !1, connected: !1, athlete: null, busy: !1 }), pumpy) {
+    }), cancelPumpyReset(), pendingMotion && pendingMotion.disconnect(), $("app").classList.add("hide"), accountEpoch++, reads = {}, inFlight = {}, libraryRev++, logsRev++, planRev++, clearTimeout(undoTimer), undoTimer = null, undoFn = null, clearTimeout(detailCloseTimer), clearTimeout(woCloseTimer), clearTimeout(pendTimer), pendTimer = null, pendPolls = 0, pendBusy = !1, wkChannel && (sb.removeChannel(wkChannel), wkChannel = null), booting = null, earlyUid = null, state.profile = null, state.workouts = [], state.logs = null, state.plan = null, state.awards = null, state.goal = null, heroPct = 0, trainSeg = null, state.unit = "lb", state.sounds = !0, state.haptics = !0, state.collections = [], state.colItems = [], seenCards = {}, gridCards = {}, expCache = {}, expWaiting = {}, vidCache = {}, expKey = "", today.rows = [], today.at = 0, today.day = null, today.busy = !1, today.shown = !1, current = null, sc && scForget(), wo && saveDraft(), clearInterval(woTimer), stopRest(), liveEnd(!1), releaseWake(), wo = null, hist = {}, histReady = !1, strava && (strava = { asked: !1, configured: !1, connected: !1, athlete: null, busy: !1 }), pumpy) {
       var seq = (pumpy.openSeq || 0) + 1, wired = pumpy.wired;
       pumpy = {
         thread: null,
@@ -9563,14 +9563,14 @@ details.details-moving > :not(summary) {
   sb.auth.onAuthStateChange(function(event, session) {
     if (event === "PASSWORD_RECOVERY" && setTimeout(openRecovery, 0), session && session.user) {
       var first = !state.user || state.user.id !== session.user.id;
-      first && state.user && clearAccount(), state.user = session.user, showApp(), first && setTimeout(boot, 0);
+      first && state.user ? clearAccount() : first && settleEarly(session.user.id), state.user = session.user, showApp(), first && setTimeout(boot, 0);
     } else
       clearAccount(), publishSignedOut(), state.user = null, guideUser(), state.workouts = [], state.logs = null, state.plan = null, state.awards = null, state.filter = "All", state.q = "", $("search").value = "", dropCache(), booting = null, showLanding();
   });
   var booting = null;
   function boot() {
     if (guideUser(), booting) return booting;
-    paintCache();
+    earlyUid !== state.user.id && paintCache(), earlyUid = null;
     var profileReady = loadProfile();
     maybeInstallHint(), watchWorkouts();
     var epoch = accountEpoch, uid = state.user.id;
@@ -9701,12 +9701,12 @@ details.details-moving > :not(summary) {
       Object.prototype.hasOwnProperty.call(w, k) && k !== "caption" && (out[k] = w[k]);
     return out;
   }
-  function readCache() {
+  function readCache(uid) {
     try {
       var raw = localStorage.getItem(CACHE_KEY);
       if (!raw) return null;
       var c = JSON.parse(raw);
-      return !c || c.v !== 1 || !state.user || c.uid !== state.user.id || !c.workouts || !c.workouts.length ? null : c;
+      return !c || c.v !== 1 || !uid || c.uid !== uid || !c.workouts || !c.workouts.length ? null : c;
     } catch (e) {
       return null;
     }
@@ -9741,12 +9741,41 @@ details.details-moving > :not(summary) {
     }
   }
   function paintCache() {
-    var c = readCache();
-    if (c) {
-      state.workouts = c.workouts, state.collections = c.collections || [], state.colItems = c.colItems || [];
-      for (var i = 0; i < state.workouts.length; i++) seenCards[state.workouts[i].id] = 1;
-      render();
+    var c = readCache(state.user && state.user.id);
+    c && paintRows(c);
+  }
+  function paintRows(c) {
+    state.workouts = c.workouts, state.collections = c.collections || [], state.colItems = c.colItems || [];
+    for (var i = 0; i < state.workouts.length; i++) seenCards[state.workouts[i].id] = 1;
+    render();
+  }
+  var SESSION_KEY = "sb-mtzevoxxpsktmrbbuxva-auth-token", earlyUid = null;
+  function paintBeforeAuth() {
+    if (!native && /(^|[#?&])(access_token|refresh_token|code|error)=/.test(location.hash + "&" + location.search.slice(1))) return;
+    function take(raw) {
+      if (!(state.user || earlyUid || !raw)) {
+        var s = null;
+        try {
+          s = JSON.parse(raw);
+        } catch (e) {
+          return;
+        }
+        var uid = s && s.user && s.user.id, c = typeof uid == "string" ? readCache(uid) : null;
+        c && (earlyUid = uid, showApp(), paintRows(c));
+      }
     }
+    if (native) {
+      native.authStorage.getItem(SESSION_KEY).then(take, function() {
+      });
+      return;
+    }
+    try {
+      take(localStorage.getItem(SESSION_KEY));
+    } catch (e) {
+    }
+  }
+  function settleEarly(uid) {
+    earlyUid && earlyUid !== uid && clearAccount();
   }
   function load(retry) {
     if (!state.user) return Promise.resolve();
@@ -19507,8 +19536,8 @@ details.details-moving > :not(summary) {
       }
       watchBilling(), overlayShowing() || load();
     }
-  }), window.addEventListener("pageshow", watchBilling), window.addEventListener("focus", watchBilling), captureCreator(), setAuthMode("signup"), captureShare(), captureBilling(), captureStrava(), linkProblem(), sb.auth.getSession().then(function(r) {
-    r.data.session && r.data.session.user ? (state.user = r.data.session.user, showApp(), boot().then(restoreSession)) : (showLanding(), sharePending() && toast("Sign in to save the link you shared."));
+  }), window.addEventListener("pageshow", watchBilling), window.addEventListener("focus", watchBilling), captureCreator(), setAuthMode("signup"), captureShare(), captureBilling(), captureStrava(), linkProblem(), paintBeforeAuth(), sb.auth.getSession().then(function(r) {
+    r.data.session && r.data.session.user ? (state.user || settleEarly(r.data.session.user.id), state.user = r.data.session.user, showApp(), boot().then(restoreSession)) : (earlyUid && clearAccount(), showLanding(), sharePending() && toast("Sign in to save the link you shared."));
   }), !native && "serviceWorker" in navigator && window.addEventListener("load", function() {
     navigator.serviceWorker.register("sw.js").catch(function() {
     });

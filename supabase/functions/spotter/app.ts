@@ -1273,7 +1273,7 @@ export const APP = String.raw`
     clearTimeout(detailCloseTimer); clearTimeout(woCloseTimer);
     clearTimeout(pendTimer); pendTimer = null; pendPolls = 0; pendBusy = false;
     if (wkChannel) { sb.removeChannel(wkChannel); wkChannel = null; }
-    booting = null; state.profile = null; state.workouts = []; state.logs = null;
+    booting = null; earlyUid = null; state.profile = null; state.workouts = []; state.logs = null;
     state.plan = null; state.awards = null; state.goal = null; heroPct = 0; trainSeg = null;
     state.unit = "lb"; state.sounds = true; state.haptics = true;
     state.collections = []; state.colItems = []; seenCards = {}; gridCards = {};
@@ -1310,6 +1310,7 @@ export const APP = String.raw`
     if (session && session.user) {
       var first = !state.user || state.user.id !== session.user.id;
       if (first && state.user) clearAccount();
+      else if (first) settleEarly(session.user.id);
       state.user = session.user;
       showApp();
       // supabase-js holds the auth lock for the duration of this callback, so any
@@ -1343,8 +1344,10 @@ export const APP = String.raw`
     guideUser();
     if (booting) return booting;
     // Before the network is asked anything: the library someone is looking at is
-    // almost always the one they left.
-    paintCache();
+    // almost always the one they left. Already up if it was painted before the
+    // token came back.
+    if (earlyUid !== state.user.id) paintCache();
+    earlyUid = null;
     var profileReady = loadProfile();
     maybeInstallHint();
     watchWorkouts();
@@ -1561,14 +1564,14 @@ export const APP = String.raw`
     return out;
   }
 
-  function readCache() {
+  function readCache(uid) {
     try {
       var raw = localStorage.getItem(CACHE_KEY);
       if (!raw) return null;
       var c = JSON.parse(raw);
       // Keyed by user and checked rather than trusted: a shared phone must never
       // show one person the other's workouts, not even for a third of a second.
-      if (!c || c.v !== 1 || !state.user || c.uid !== state.user.id) return null;
+      if (!c || c.v !== 1 || !uid || c.uid !== uid) return null;
       if (!c.workouts || !c.workouts.length) return null;
       return c;
     } catch (e) { return null; }
@@ -1597,8 +1600,11 @@ export const APP = String.raw`
   }
 
   function paintCache() {
-    var c = readCache();
-    if (!c) return;
+    var c = readCache(state.user && state.user.id);
+    if (c) paintRows(c);
+  }
+
+  function paintRows(c) {
     state.workouts = c.workouts;
     state.collections = c.collections || [];
     state.colItems = c.colItems || [];
@@ -1607,6 +1613,46 @@ export const APP = String.raw`
     // tap re-animating the grid; this is the same idea one launch earlier.
     for (var i = 0; i < state.workouts.length; i++) seenCards[state.workouts[i].id] = 1;
     render();
+  }
+
+  // ---------- the cache before the token ----------
+  //
+  // supabase-js names the signed-in person only once it holds a live token, and
+  // after an hour away it holds none: it refreshes first, and the library the
+  // person left waited behind that round trip (150-460ms on the simulator's fast
+  // network, more on a phone's). The stored session names its user whether or not
+  // its token has expired, and reading it costs no network: localStorage here, one
+  // Keychain read on a phone. When that user is the one the cache was written for,
+  // the cache is painted now instead of after the refresh.
+  //
+  // Nothing is trusted beyond the paint. state.user stays empty until the SDK
+  // answers, so no read or write goes out on the stored name. An answer for
+  // somebody else, or for nobody (a revoked or deleted account), goes through
+  // clearAccount like any sign-out and takes the grid and the cache with it. A
+  // link that is itself a sign-in may be another account, so it paints nothing.
+  var SESSION_KEY = "sb-mtzevoxxpsktmrbbuxva-auth-token";
+  var earlyUid = null;
+
+  function paintBeforeAuth() {
+    if (!native && /(^|[#?&])(access_token|refresh_token|code|error)=/.test(location.hash + "&" + location.search.slice(1))) return;
+    function take(raw) {
+      if (state.user || earlyUid || !raw) return;
+      var s = null;
+      try { s = JSON.parse(raw); } catch (e) { return; }
+      var uid = s && s.user && s.user.id, c = typeof uid === "string" ? readCache(uid) : null;
+      if (!c) return;
+      earlyUid = uid;
+      showApp();
+      paintRows(c);
+    }
+    if (native) { native.authStorage.getItem(SESSION_KEY).then(take, function () {}); return; }
+    try { take(localStorage.getItem(SESSION_KEY)); } catch (e) { }
+  }
+
+  // The answer arrived. Painted for this same person: keep it (boot skips the
+  // second paint). Painted for anyone else: take it down before theirs goes up.
+  function settleEarly(uid) {
+    if (earlyUid && earlyUid !== uid) clearAccount();
   }
 
   // ---------- library ----------
@@ -18341,13 +18387,18 @@ export const APP = String.raw`
   // After the three captures, because it strips the query it reads from.
   linkProblem();
 
+  // The library the person left, while the SDK is still deciding who they are.
+  paintBeforeAuth();
+
   // A session restored from storage does not always fire onAuthStateChange in time.
   sb.auth.getSession().then(function (r) {
     if (r.data.session && r.data.session.user) {
+      if (!state.user) settleEarly(r.data.session.user.id);
       state.user = r.data.session.user;
       showApp();
       boot().then(restoreSession);
     } else {
+      if (earlyUid) clearAccount();
       showLanding();
       // A share that landed on a signed-out app. Say the link is safe rather than
       // showing a sign-in screen that looks like the share went nowhere.
