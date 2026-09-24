@@ -170,7 +170,9 @@ function world(opts = {}) {
     guide: { visit: null }, pumpyReset: false, ptrPulling: false,
     drawn: {}, heroPct: 0, planSig: '', statsCounted: false, trainSeg: null, trainLean: null, trainSwap: false,
     guideClear() {}, guideStill() {}, guidePage() {}, haptic() {}, renderToday() {}, countStats() {},
-    restorePlan() {}, prepareTrain() {}, quietly() {}, loadPumpy() {}, renderPumpy() {}, paintSeg() {}, drawTrainBody() {}
+    restorePlan() {}, prepareTrain() {}, quietly() {}, loadPumpy() {}, renderPumpy() {}, paintSeg() {}, drawTrainBody() {},
+    // The Pumpy new-chat clock (gtm-owner-ux): setView starts it when Pumpy is left.
+    pumpyAway() {}, pumpyBack() {}, freshenPumpy() {}, pumpyIdleTimer: 0
   };
   vm.createContext(sandbox);
   vm.runInContext('(function () {\n' + fn('overlayShowing') + fn('standalone') + PAGER +
