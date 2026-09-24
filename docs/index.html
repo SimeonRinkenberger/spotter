@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-Yi0QCYjh7oEnGSfWf+gnlVOLJQKNsus72EwX0Gz2MgM=' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/ https://challenges.cloudflare.com https://accounts.google.com/gsi/client https://appleid.cdn-apple.com/appleauth/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://api.fontshare.com https://accounts.google.com/gsi/style; font-src 'self' data: https://fonts.gstatic.com https://cdn.fontshare.com; img-src 'self' data: blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://i.ytimg.com https://simeonrinkenberger.github.io; media-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://simeonrinkenberger.github.io; connect-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co wss://mtzevoxxpsktmrbbuxva.supabase.co https://accounts.google.com/gsi/; frame-src https://www.tiktok.com https://www.instagram.com https://www.youtube.com https://www.youtube-nocookie.com https://challenges.cloudflare.com https://accounts.google.com/gsi/ https://appleid.apple.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-OGyiba3rWBKP7f/HHVngRRLO3jysGP7TsjWs2AiHxKQ=' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/ https://challenges.cloudflare.com https://accounts.google.com/gsi/client https://appleid.cdn-apple.com/appleauth/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://api.fontshare.com https://accounts.google.com/gsi/style; font-src 'self' data: https://fonts.gstatic.com https://cdn.fontshare.com; img-src 'self' data: blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://i.ytimg.com https://simeonrinkenberger.github.io; media-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://simeonrinkenberger.github.io; connect-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co wss://mtzevoxxpsktmrbbuxva.supabase.co https://accounts.google.com/gsi/; frame-src https://www.tiktok.com https://www.instagram.com https://www.youtube.com https://www.youtube-nocookie.com https://challenges.cloudflare.com https://accounts.google.com/gsi/ https://appleid.apple.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="google-site-verification" content="unLzcq6TBz9Bm6q4KHpbTmZ88dQ_tTnViacVX5BLzS0">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <title>Spotter by Quarterdeck Collective — save any workout video</title>
@@ -10703,7 +10703,11 @@ details.details-moving > :not(summary) {
         var q = state.q.trim();
         empty.appendChild(el("h2", null, q ? "Nothing matches \u201C" + q + "\u201D" : "Nothing under this filter")), empty.appendChild(el("p", null, q ? "Spotter searches titles, exercise names, muscles and equipment. Try one word instead of three." : "Nothing is filed here yet. Clear the filter to see all workouts."));
       } else {
-        empty.appendChild(el("h2", null, "Your saved videos become workouts.")), empty.appendChild(el("p", null, "Paste a TikTok, Instagram, or YouTube link to get started."));
+        if (empty.appendChild(el("h2", null, "Your saved videos become workouts.")), native) {
+          empty.appendChild(el("p", null, "Found one on TikTok, Instagram or YouTube? Share it to Spotter."));
+          var how = $("addsheet").querySelector(".shareflow").cloneNode(!0);
+          paintSaveOn(how), empty.appendChild(how);
+        } else empty.appendChild(el("p", null, "Paste a TikTok, Instagram, or YouTube link to get started."));
         var first = el("button", "btn firstsave", "Save your first workout");
         first.onclick = function() {
           $("addbtn").click();
@@ -18070,7 +18074,7 @@ details.details-moving > :not(summary) {
     var stage = $("welcomestage");
     stage.innerHTML = "";
     var page = el("section", "welcome-page on");
-    page.appendChild(pumpyArt("coach", !1)), page.appendChild(el("h2", null, "Your saved videos become workouts.")), page.appendChild(el("p", null, "Paste a TikTok, Instagram, or YouTube link. Check the exercises, then start when you\u2019re ready.")), stage.appendChild(page), $("welcomecount").textContent = "Save \xB7 check \xB7 train", $("welcomenext").textContent = "Save a workout", openSheet("welcomesheet"), $("welcomenext").focus({ preventScroll: !0 });
+    page.appendChild(pumpyArt("coach", !1)), page.appendChild(el("h2", null, "Your saved videos become workouts.")), page.appendChild(el("p", null, native ? "In TikTok, Instagram or YouTube, " + shareWords() + ". Check the exercises, then start when you\u2019re ready." : "Paste a TikTok, Instagram, or YouTube link. Check the exercises, then start when you\u2019re ready.")), stage.appendChild(page), $("welcomecount").textContent = "Save \xB7 check \xB7 train", $("welcomenext").textContent = "Save a workout", openSheet("welcomesheet"), $("welcomenext").focus({ preventScroll: !0 });
   }
   $("welcomenext").onclick = function() {
     $("addbtn").click(), closeSheet("welcomesheet");

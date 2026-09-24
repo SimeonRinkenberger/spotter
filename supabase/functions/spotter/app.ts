@@ -2290,7 +2290,14 @@ export const APP = String.raw`
       empty.appendChild(state.workouts.length ? icon(el("div", "big"), "search") : pumpyArt("coach", false));
       if (!state.workouts.length) {
         empty.appendChild(el("h2", null, "Your saved videos become workouts."));
-        empty.appendChild(el("p", null, "Paste a TikTok, Instagram, or YouTube link to get started."));
+        if (native) {
+          // The first lesson is the one used every day after it: the share row, the
+          // add sheet's own copy, learnt before anything has been tapped.
+          empty.appendChild(el("p", null, "Found one on TikTok, Instagram or YouTube? Share it to Spotter."));
+          var how = $("addsheet").querySelector(".shareflow").cloneNode(true);
+          paintSaveOn(how);
+          empty.appendChild(how);
+        } else empty.appendChild(el("p", null, "Paste a TikTok, Instagram, or YouTube link to get started."));
         var first = el("button", "btn firstsave", "Save your first workout");
         first.onclick = function () { $("addbtn").click(); };
         empty.appendChild(first);
@@ -15286,7 +15293,9 @@ export const APP = String.raw`
     var page = el("section", "welcome-page on");
     page.appendChild(pumpyArt("coach", false));
     page.appendChild(el("h2", null, "Your saved videos become workouts."));
-    page.appendChild(el("p", null, "Paste a TikTok, Instagram, or YouTube link. Check the exercises, then start when you’re ready."));
+    page.appendChild(el("p", null, native
+      ? "In TikTok, Instagram or YouTube, " + shareWords() + ". Check the exercises, then start when you’re ready."
+      : "Paste a TikTok, Instagram, or YouTube link. Check the exercises, then start when you’re ready."));
     stage.appendChild(page);
     $("welcomecount").textContent = "Save · check · train";
     $("welcomenext").textContent = "Save a workout";
