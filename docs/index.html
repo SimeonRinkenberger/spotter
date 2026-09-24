@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-Gz+bB3lIpjtRGqSQkm9eInyA4+G6O0UKiG7rWxszqWs=' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/ https://challenges.cloudflare.com https://accounts.google.com/gsi/client https://appleid.cdn-apple.com/appleauth/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://api.fontshare.com https://accounts.google.com/gsi/style; font-src 'self' data: https://fonts.gstatic.com https://cdn.fontshare.com; img-src 'self' data: blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://i.ytimg.com https://simeonrinkenberger.github.io; media-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://simeonrinkenberger.github.io; connect-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co wss://mtzevoxxpsktmrbbuxva.supabase.co https://accounts.google.com/gsi/; frame-src https://www.tiktok.com https://www.instagram.com https://www.youtube.com https://www.youtube-nocookie.com https://challenges.cloudflare.com https://accounts.google.com/gsi/ https://appleid.apple.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-As7NLI6KtCDgWg15zthF4btz1Ljk2jQKk5wVMHLMWB4=' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/ https://challenges.cloudflare.com https://accounts.google.com/gsi/client https://appleid.cdn-apple.com/appleauth/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://api.fontshare.com https://accounts.google.com/gsi/style; font-src 'self' data: https://fonts.gstatic.com https://cdn.fontshare.com; img-src 'self' data: blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://i.ytimg.com https://simeonrinkenberger.github.io; media-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://simeonrinkenberger.github.io; connect-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co wss://mtzevoxxpsktmrbbuxva.supabase.co https://accounts.google.com/gsi/; frame-src https://www.tiktok.com https://www.instagram.com https://www.youtube.com https://www.youtube-nocookie.com https://challenges.cloudflare.com https://accounts.google.com/gsi/ https://appleid.apple.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="google-site-verification" content="unLzcq6TBz9Bm6q4KHpbTmZ88dQ_tTnViacVX5BLzS0">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <title>Spotter by Quarterdeck Collective — save any workout video</title>
@@ -10748,6 +10748,12 @@ details.details-moving > :not(summary) {
   function isUnavailable(w) {
     return isFailed(w) && w.ingest_error === UNAVAILABLE;
   }
+  function failedKick(w, onTile) {
+    return isUnavailable(w) ? "Unavailable" : isUpload(w) ? "Failed" : onTile ? "Retry" : "Needs another try";
+  }
+  function failedGlyph(w) {
+    return isUnavailable(w) ? "eye-off" : isUpload(w) ? "ear" : "refresh";
+  }
   var UNCHANGED = /This card is unchanged\.$/;
   function isColFilter(f) {
     return typeof f == "string" && f.indexOf("col:") === 0;
@@ -11206,13 +11212,13 @@ details.details-moving > :not(summary) {
     pending2 && pendingMotion && pendingMotion.observe(card), card.setAttribute("data-id", w.id), cardIn(card, w.id);
     var tw = el("div", "thumbwrap loading");
     if (pending2 || failed) {
-      var up = isUpload(w), stage = stageOf(w);
-      tw.className = "thumbwrap " + (pending2 ? "pending" : "failed"), tw.appendChild(icon(el("div", "noimg"), pending2 ? stage.glyph : up ? "ear" : "refresh")), card.appendChild(tw);
+      var stage = stageOf(w);
+      tw.className = "thumbwrap " + (pending2 ? "pending" : "failed"), tw.appendChild(icon(el("div", "noimg"), pending2 ? stage.glyph : failedGlyph(w))), card.appendChild(tw);
       var pb = el("div", "cardbody"), pk = el("div", "cardkick");
       return pk.appendChild(el(
         "div",
         "catpill",
-        pending2 ? stage.kick : up ? "Failed" : "Retry"
+        pending2 ? stage.kick : failedKick(w, !0)
       )), pb.appendChild(pk), pb.appendChild(el("div", "cardtitle", w.title || stage.line)), pb.appendChild(el("div", "cardmeta" + (failed ? " retryline" : ""), cardMeta(w))), card.appendChild(pb), card.onclick = function() {
         openDetail(w);
       }, card;
@@ -11512,7 +11518,7 @@ details.details-moving > :not(summary) {
   function openDetail(w, keepHistory) {
     keepHistory || (guideClear(), guideStill()), current = w, clearTimeout(detailCloseTimer), $("detail").classList.remove("closing", "edgeout");
     var d = $("dinner");
-    d.innerHTML = "", d.classList.remove("din", "dmove"), d.style.transform = "", d.style.opacity = "", navFrom ? (dNav = gridNav(w.id), navFrom = !1) : dNav && dNav.ids[dNav.i] !== w.id && (dNav = null), $("workmanage").innerHTML = "", $("workmanage").appendChild(manageRow(w)), syncRereadButton(w), $("dreproc").hidden = isUpload(w) || w.platform === "pumpy", $("dorder").hidden = isPending(w) || isFailed(w) || !ordCan(w), d.appendChild(el("div", "dkick", isPending(w) ? stageOf(w).kick : isFailed(w) ? "Needs another try" : w.category || "Other"));
+    d.innerHTML = "", d.classList.remove("din", "dmove"), d.style.transform = "", d.style.opacity = "", navFrom ? (dNav = gridNav(w.id), navFrom = !1) : dNav && dNav.ids[dNav.i] !== w.id && (dNav = null), $("workmanage").innerHTML = "", $("workmanage").appendChild(manageRow(w)), syncRereadButton(w), $("dreproc").hidden = isUpload(w) || w.platform === "pumpy", $("dorder").hidden = isPending(w) || isFailed(w) || !ordCan(w), d.appendChild(el("div", "dkick", isPending(w) ? stageOf(w).kick : isFailed(w) ? failedKick(w, !1) : w.category || "Other"));
     var titleEl = el("h2", "dtitle", w.title || "Untitled workout");
     if (d.appendChild(titleEl), w.author) {
       var au = el("button", "dauthor", "@" + w.author);
