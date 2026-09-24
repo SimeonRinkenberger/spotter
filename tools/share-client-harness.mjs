@@ -224,7 +224,7 @@ ok(await run('takeParkedShare()') === undefined, 'a shell without the method (An
 ok(/configured = native\.configureSharing\(r\.data\.ingest_key, \{ plan: r\.data\.plan \}\)[\s\S]{0,2500}sharingSet = loaded\.then\(function \(\) \{ return configured; \}, function \(\) \{\}\);\s*return loaded;/.test(APP),
   'R-5: the profile load is what settles it: the configure call with this account\'s key');
 ctx.native = null;
-ok(/load\(\)\.then\(function \(\) \{ if \(accountNow\(epoch, uid\)\) return consumeShare\(\); \}\)[\s\S]{0,200}\.then\(function \(\) \{ if \(accountNow\(epoch, uid\)\) takeParkedShare\(\); \}\)/.test(APP),
+ok(/(?:load\(\)|library)\.then\(function \(\) \{ if \(accountNow\(epoch, uid\)\) return consumeShare\(\); \}\)[\s\S]{0,200}\.then\(function \(\) \{ if \(accountNow\(epoch, uid\)\) takeParkedShare\(\); \}\)/.test(APP),
   'boot takes parked links right after the pending share, without holding the rest of the start');
 ok(/return doAdd\(true\)\.then\(function \(saved\) \{[\s\S]{0,200}if \(saved\) takeParkedShare\(\);/.test(APP),
   'a link share that lands while links are parked is followed by them');
