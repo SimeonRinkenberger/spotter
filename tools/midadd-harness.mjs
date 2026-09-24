@@ -36,7 +36,7 @@ function fn(name) {
 const LIFTED = ['woaMake', 'woaRows', 'woaHit', 'woaScore', 'woaRank', 'woaPass', 'woaFilter',
   'woaFields', 'woaEditBody', 'swapRow', 'entryAt', 'insertSessionExercise', 'replaceSessionExercise',
   'flatten', 'complexOf', 'cxCap', 'cxDosed', 'isTimed', 'cxEntry', 'cxSet', 'cxSync',
-  'cxScoreOf', 'cxScore', 'doseText', 'timeText', 'clock', 'restOf', 'restWord', 'isCircuit', 'blockMetaText',
+  'cxScoreOf', 'cxLogged', 'cxScore', 'doseText', 'timeText', 'clock', 'restOf', 'restWord', 'isCircuit', 'blockMetaText',
   'kindName', 'timedByNature', 'kindOf', 'restVal'];
 
 // What the lifted code reaches for that is not in this file's scope. lastLine is
@@ -589,8 +589,11 @@ const idx = fs.readFileSync('supabase/functions/spotter/index.ts', 'utf8');
 const EDIT_FIELDS = JSON.parse('[' + /const EDIT_FIELDS: EditField\[\] = \[([^\]]*)\]/.exec(idx)[1] + ']');
 
 ok('the endpoint the picker posts to is the one the corrections handler serves', () => {
-  assert(src.includes('api("workouts/" + w.id + "/exercises"'), 'woaKeep posts somewhere else');
-  assert(idx.includes('if (op !== "edit" && op !== "add" && op !== "delete" && op !== "delete_block" && op !== "edit_block")'));
+  // Every card write goes out through cardWrite, which waits for a reorder still
+  // landing (tools/reorder-harness.mjs pins that part).
+  assert(fn('cardWrite').includes('api("workouts/" + id + "/exercises"'), 'cardWrite posts somewhere else');
+  assert(fn('woaKeep').includes('cardWrite(w.id, body)'), 'woaKeep posts somewhere else');
+  assert(idx.includes('if (op !== "edit" && op !== "add" && op !== "delete" && op !== "delete_block" && op !== "edit_block" &&'));
 });
 
 ok('every field sent is one the server reads, and none it would throw on', () => {
@@ -848,7 +851,7 @@ ok('edit_block and new_block are guarded and clamped the way delete_block and ad
   assert(idx.includes('? cleanBlockFields((body as any).new_block as Record<string, unknown>, {}) : null;'));
   assert(idx.includes('if (fresh && blocks.length === bi) {'));
   assert(idx.includes('rest_seconds: cleanEditField("rest_seconds", fields.rest_seconds) as number | null,'));
-  assert(idx.includes('kind: op === "delete_block" ? "delete" : op === "edit_block" ? "edit" : op,'));
+  assert(idx.includes('kind: op === "delete_block" ? "delete" : op === "edit_block" || op === "reorder" ? "edit" : op,'));
 });
 
 ok('a supplied valid id wins over the name on add and on edit; none means the old behaviour', () => {
@@ -863,11 +866,13 @@ ok('the ledger never learns a field the table would refuse', () => {
   // as old_canonical_id / new_canonical_id, and is skipped in the field loop.
   const mig = fs.readFileSync('supabase/migrations/20260901240000_user_corrections.sql', 'utf8');
   assert(mig.includes("check (field in ('name', 'sets', 'reps', 'duration_seconds', 'exercise'))"));
-  // The constraint has been widened twice since; the newest text is what the
-  // table enforces, and every field the ledger can write has to be in it.
-  const now = fs.readFileSync('supabase/migrations/20260921120000_corrections_rest_block.sql', 'utf8');
+  // The constraint has been widened since; the newest migration that sets it is
+  // what the table enforces, and every field the ledger can write has to be in it.
+  const last = fs.readdirSync('supabase/migrations').sort().filter((f) =>
+    fs.readFileSync('supabase/migrations/' + f, 'utf8').includes('add constraint corrections_field_check')).pop();
+  const now = fs.readFileSync('supabase/migrations/' + last, 'utf8');
   const allowed = now.match(/check \(field in \(([^)]*)\)\)/)[1];
-  for (const f of ['name', 'sets', 'reps', 'duration_seconds', 'rest_seconds', 'exercise', 'title', 'block']) {
+  for (const f of ['name', 'sets', 'reps', 'duration_seconds', 'rest_seconds', 'exercise', 'title', 'block', 'order']) {
     assert(allowed.includes("'" + f + "'"), 'ledger field not in the check constraint: ' + f);
   }
   const union = idx.match(/type Change = \{\s*field: ([^;]*);/)[1];

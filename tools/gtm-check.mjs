@@ -31,6 +31,8 @@ const checks = [
   ['Supersets: one screen, ping-pong, rests, remote sets', 'node', ['tools/superset-harness.mjs']],
   ['Dumbbell each: the rule, the ×2 volume, bests per dumbbell', 'node', ['tools/each-harness.mjs']],
   ['Rest wheel: notches, settle vs Save, spinbutton, no chips left', 'node', ['tools/rest-wheel-harness.mjs']],
+  ['Reorder: slot math, auto-scroll, arrows, exact permutation, stale guard', 'node', ['tools/reorder-harness.mjs']],
+  ['Reorder SQL: the override holds the order, one ledger row per reorder', 'node', ['tools/reorder-db-check.mjs']],
   ['One declaration per name in app.ts', 'node', ['tools/unique-decls.mjs']],
   ['Creator codes on the client', 'node', ['tools/creator-client-harness.mjs']],
   ['Creator codes SQL', 'node', ['tools/creator-db-check.mjs']],
