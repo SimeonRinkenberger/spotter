@@ -20,7 +20,7 @@ const sdk = {
   purchasePackage: async () => { calls.push(['purchase']); if (cancelPurchase) throw { userCancelled: true }; },
   restorePurchases: async () => { calls.push(['restore']); }
 };
-const create = new Function('Purchases', 'storeKeys', source + '\nreturn createPurchases;')(sdk, { ios: 'public-test', android: 'public-test' });
+const create = new Function('Purchases', 'config', source + '\nreturn createPurchases;')(sdk, { ios: 'public-test', android: 'public-test' });
 const app = create('ios');
 await assert.rejects(app.prices(null), /Sign in/);
 const prices = await app.prices('a');
@@ -86,7 +86,7 @@ assert.equal((await play.prices('g')).plans.plus.year.trial_days, 0, 'no free ph
 {
   const keys = [];
   const store = { ...sdk, configure: async ({ apiKey }) => { keys.push(apiKey); } };
-  const make = (testKey) => new Function('Purchases', 'storeKeys', '__SPOTTER_TEST_STORE__', source + '\nreturn createPurchases;')(store, { ios: 'appl_public', android: 'goog_public' }, testKey);
+  const make = (testKey) => new Function('Purchases', 'config', '__SPOTTER_TEST_STORE__', source + '\nreturn createPurchases;')(store, { ios: 'appl_public', android: 'goog_public' }, testKey);
   await make('')('ios').prices('k1');
   await make(undefined)('android').prices('k2');
   await make('test_FromTheIgnoredFile')('ios').prices('k3');

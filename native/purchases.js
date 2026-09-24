@@ -1,5 +1,5 @@
 import { Purchases } from '@revenuecat/purchases-capacitor';
-import storeKeys from './purchases-config.json';
+import config from './purchases-config.json';
 
 // Store keys are public SDK identifiers. Secret RevenueCat keys stay server-side.
 
@@ -32,9 +32,11 @@ function freeTrialDays(product, eligible) {
 // simulator bundle (SPOTTER_TEST_STORE=1); an empty string in every other build,
 // which configures the SDK with the stores' own public keys as always.
 const TEST_STORE = typeof __SPOTTER_TEST_STORE__ === 'string' && /^test_/.test(__SPOTTER_TEST_STORE__) ? __SPOTTER_TEST_STORE__ : '';
-const config = TEST_STORE ? { ios: TEST_STORE, android: TEST_STORE } : storeKeys;
+const sdkKeys = () => (TEST_STORE ? { ios: TEST_STORE, android: TEST_STORE } : config);
 
 export function createPurchases(platform) {
+  // The table this adapter configures with, under the name it always had.
+  const config = sdkKeys();
   let configured = false, currentUser = null, queue = Promise.resolve(), packages = {}, generation = 0;
   const serial = work => { const next = queue.catch(() => {}).then(work); queue = next; return next; };
   const guard = version => { if (version !== generation) throw new Error('The account changed. Please reopen subscriptions.'); };
