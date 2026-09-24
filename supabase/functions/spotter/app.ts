@@ -8,6 +8,15 @@ export const APP = String.raw`
   "use strict";
 
   var native = window.SpotterNative || null;
+  // Spotter is never shown inside somebody else's page. A <meta> policy cannot
+  // say frame-ancestors and GitHub Pages sends no X-Frame-Options, so the web
+  // page checks for itself: framed, it asks to be the whole window, and draws
+  // nothing where it cannot be. The native shell is its own top window.
+  if (!native && window.top !== window.self) {
+    try { window.top.location.replace(location.href); } catch (e) { /* sandboxed, or not allowed to navigate */ }
+    document.documentElement.style.display = "none";
+    return;
+  }
   var AUTH_RETURN = native ? "https://simeonrinkenberger.github.io/spotter/" : location.origin + location.pathname;
 
   var SB_URL = "https://mtzevoxxpsktmrbbuxva.supabase.co";
