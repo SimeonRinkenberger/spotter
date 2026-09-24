@@ -131,7 +131,7 @@ body {
   background-color: var(--paper);
   color: var(--ink);
   font-family: var(--sans);
-  overscroll-behavior-y: none;
+  overscroll-behavior: none;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -713,8 +713,10 @@ h1 {
 .page {
   flex: 0 0 100%;
   height: 100%;
+  overflow-x: hidden;
   overflow-y: auto;
-  overscroll-behavior: contain;
+  overscroll-behavior-x: auto;
+  overscroll-behavior-y: contain;
   -webkit-overflow-scrolling: touch;
   padding-bottom: calc(var(--ptab, 78px) + 24px);
 }

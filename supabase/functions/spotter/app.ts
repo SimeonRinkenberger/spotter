@@ -17428,12 +17428,20 @@ export const APP = String.raw`
   // a ruler-straight swipe ever got through, which is exactly what the owner
   // reported about Plan.
   //
-  // So .pages declares no touch-action, which makes WebKit wait for a verdict on
-  // every touchmove, and the non-passive listener below gives it one: while we
-  // hold a horizontal lock the touch is cancelled, the scroller never sees the
-  // gesture, and there is no pointercancel left to lose. Pointer events are
-  // dispatched before the touch that caused them, so the axis chosen in
-  // pointermove is already known to the touchmove that follows it.
+  // So .pages declares no touch-action and the non-passive listener below holds
+  // the touch once we have locked horizontal. Pointer events are dispatched
+  // before the touch that caused them, so the axis chosen in pointermove is
+  // already known to the touchmove that follows it.
+  //
+  // What that listener cannot do on iOS is win a race. WebKit keeps UIKit's pans
+  // waiting for the FIRST touchmove of a touch only (WebPageProxy.cpp,
+  // m_touchMovePreventionState); the lock comes eight pixels later, and any
+  // scroll view that begins a pan in between cancels our pointer on the spot
+  // (WKWebViewIOS.mm, axesToPreventScrollingForPanGestureInScrollView). So a
+  // page must never begin a pan for a sideways drag: it cannot scroll sideways
+  // and it hands sideways drags to its parent (.page in style.ts). The page's
+  // overscroll-behavior: contain once told WebKit to keep them instead, and on
+  // the phone no page tall enough to scroll would turn.
   //
   // The verdict is taken once, at the moment the finger clears the slop, and it
   // is deliberately generous: 45 degrees normally, up to 65 when whatever is
@@ -17580,11 +17588,11 @@ export const APP = String.raw`
     if (!drag.raf) drag.raf = requestAnimationFrame(dragFrame);
   });
 
-  // The whole reason .pages can drop touch-action. WebKit holds the scroll until
-  // this has run, and the pointermove above has already chosen the axis by the
-  // time it does, so a locked drag simply takes the touch off the scroller. The
-  // pull to refresh keeps its own passive listeners on this same element: they
-  // read the gesture, this one is the only one that answers for it.
+  // The whole reason .pages can drop touch-action: once the drag has locked,
+  // every touchmove says so, which WebKit takes as the page claiming the touch
+  // (WKContentViewInteraction.mm, _touchEvent:preventsNativeGestures:). The pull
+  // to refresh keeps its own passive listeners on this same element: they read
+  // the gesture, this one is the only one that answers for it.
   pagesEl.addEventListener("touchmove", function (e) {
     if (drag && drag.lock && e.cancelable) e.preventDefault();
   }, { passive: false });

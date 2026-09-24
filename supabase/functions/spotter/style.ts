@@ -65,8 +65,10 @@ export const STYLE = String.raw`<style>
     }
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  /* x as well since the pages stopped containing sideways overscroll (.page):
+     a trackpad's sideways swipe ends here rather than in the browser's Back. */
   html, body { margin: 0; padding: 0; background-color: var(--paper); color: var(--ink);
-    font-family: var(--sans); overscroll-behavior-y: none;
+    font-family: var(--sans); overscroll-behavior: none;
     -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
   /* Quotes and brackets hang into the margin instead of indenting the line they
      start. One declaration, Safari-supported, and it is the difference between
@@ -300,12 +302,18 @@ export const STYLE = String.raw`<style>
   /* ---------- the pager ----------
      No touch-action on purpose. Asking for pan-y let WebKit start scrolling
      before the drag had said a word, and it then cancelled our pointer on any
-     drag that was not ruler-straight. Left alone, WebKit waits for the verdict
-     of the non-passive touchmove in app.ts, so the axis is ours to decide. */
+     drag that was not ruler-straight. Without it the drag is decided in app.ts,
+     which works only while no page begins a pan of its own for a sideways drag
+     (app.ts, "the drag"). Hence the page's two horizontal words. overflow-x:
+     hidden, so no stray overflow can make it scroll sideways. And overscroll
+     containment on the vertical axis only: contain on x is what WebKit turns
+     into UIScrollView's transfersHorizontalScrollingToParent = NO, a page that
+     keeps every sideways drag for itself, cancels our pointer and never turns. */
   .pages { position: absolute; inset: 0; overflow: hidden; }
   .track { display: flex; height: 100%; }
   .track.dragging { will-change: transform; }
-  .page { flex: 0 0 100%; height: 100%; overflow-y: auto; overscroll-behavior: contain;
+  .page { flex: 0 0 100%; height: 100%; overflow-x: hidden; overflow-y: auto;
+    overscroll-behavior-x: auto; overscroll-behavior-y: contain;
     -webkit-overflow-scrolling: touch; padding-bottom: calc(var(--ptab, 78px) + 24px); }
   /* The header's height as a real box rather than the scroller's top padding:
      engines disagree about which edge a sticky inset inside a PADDED scroller
