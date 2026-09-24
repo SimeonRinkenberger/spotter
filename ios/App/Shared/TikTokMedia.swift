@@ -48,6 +48,13 @@ enum TikTokMedia {
         return host == "tiktok.com" || host.hasSuffix(".tiktok.com")
     }
 
+    /// A photo carousel says so in its address. There is no video to cut stills
+    /// from, so the Share Extension does not ask the server to wait for any.
+    /// Short links cannot tell, and are treated as possibly a video.
+    static func isPhoto(_ url: URL) -> Bool {
+        url.path.range(of: #"^/@[^/]+/photo/\d+"#, options: .regularExpression) != nil
+    }
+
     /// The watch page, its cookies, and the address it settled on after redirects.
     static func page(_ url: URL, session: URLSession) async throws -> (html: String, cookie: String, url: URL) {
         var request = URLRequest(url: url)
