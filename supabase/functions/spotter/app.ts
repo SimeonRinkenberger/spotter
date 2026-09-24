@@ -560,8 +560,15 @@ export const APP = String.raw`
   function dismissAiConsent() {
     var pending = aiConsentPending;
     aiConsentPending = null;
-    if (pending) pending.reject(new Error("AI processing was not enabled. You can still log and plan workouts manually."));
+    if (!pending) return;
+    // "Not now" is an answer, not a failure. The flag lets each AI caller's catch
+    // put its button back without a connection error nobody had (OU-6).
+    var no = new Error("AI processing was not enabled. You can still log and plan workouts manually.");
+    no.declined = true;
+    pending.reject(no);
   }
+
+  function aiDeclined(e) { return !!(e && e.declined); }
 
   function noteConsent(enabled) {
     var pending = aiConsentPending;
@@ -3782,10 +3789,10 @@ export const APP = String.raw`
         watchPending();
         toast(w.user_workout_override ? "Refreshing the source; your personal exercise list will be kept." : "Reading it again…");
       })
-      .catch(function () {
+      .catch(function (e) {
         if (!accountNow(epoch, uid)) return;
         if (btn) { btn.disabled = false; btn.textContent = "Try reading it again"; }
-        toast("Could not start reading that — try again in a minute.");
+        if (!aiDeclined(e)) toast("Could not start reading that — try again in a minute.");
       });
   }
 
@@ -3827,10 +3834,10 @@ export const APP = String.raw`
         watchPending();
         toast(w.user_workout_override ? "Refreshing the source; your personal exercise list will be kept." : "Listening to the video…");
       })
-      .catch(function () {
+      .catch(function (e) {
         if (!accountNow(epoch, uid)) return;
         if (btn) { btn.disabled = false; btn.textContent = "Read the video"; }
-        toast("Could not start reading that — try again in a minute.");
+        if (!aiDeclined(e)) toast("Could not start reading that — try again in a minute.");
       });
   }
 
@@ -3888,10 +3895,10 @@ export const APP = String.raw`
         if (fresh) openDetail(fresh, true);
         toast("Re-read it from your caption.");
       });
-    }).catch(function () {
+    }).catch(function (e) {
       btn.disabled = false;
       btn.textContent = "Read it";
-      toast("Could not read that caption — try again in a moment.");
+      if (!aiDeclined(e)) toast("Could not read that caption — try again in a moment.");
     });
   }
 
@@ -6871,8 +6878,15 @@ export const APP = String.raw`
           return;
         }
         done(r);
-      }).catch(function () {
-        if (expKey === key) $("explaintext").textContent = got || EXFAIL;
+      }).catch(function (e) {
+        if (expKey !== key) return;
+        // Declined before a word arrived: the sheet goes back to its Explain button.
+        if (aiDeclined(e) && !got) {
+          $("explaintext").classList.add("hide");
+          $("explainask").classList.remove("hide");
+          return;
+        }
+        $("explaintext").textContent = got || EXFAIL;
       });
     };
   }
@@ -6991,10 +7005,10 @@ export const APP = String.raw`
         return;
       }
       renderSwapResult(box, r);
-    }).catch(function () {
+    }).catch(function (e) {
       if (swapCtx !== ctx || ctx.seq !== seq) return;
       box.innerHTML = "";
-      box.appendChild(el("div", "aitext", "Could not find a swap just now. Try again in a moment."));
+      if (!aiDeclined(e)) box.appendChild(el("div", "aitext", "Could not find a swap just now. Try again in a moment."));
     });
   }
 
@@ -14523,7 +14537,8 @@ export const APP = String.raw`
     pumpy.live = null;
     pumpy.stick = true;
     pumpy.lastAt = Date.now();
-    pumpy.messages.push({ id: "local-" + Date.now(), role: "user", content: text });
+    var asked = { id: "local-" + Date.now(), role: "user", content: text };
+    pumpy.messages.push(asked);
     renderPumpy();
     var ids = pumpy.refs.slice(0, MAX_REFS);
     var payload = {
@@ -14579,9 +14594,22 @@ export const APP = String.raw`
       // Still busy means the body ended with no final line — a dead isolate or a
       // dropped connection. Same recovery as a throw, one handler below.
       if (pumpy === owner && pumpy.busy) throw new Error("cut");
-    }).catch(function () {
+    }).catch(function (e) {
       if (pumpy !== owner || !pumpy.busy) return;
       pumpy.busy = false;
+      if (aiDeclined(e)) {
+        // "Not now" on the permission sheet: nothing was sent and nothing broke.
+        // The question comes off the log and goes back in the box, unsent.
+        pumpy.live = null;
+        pumpy.messages = pumpy.messages.filter(function (m) { return m !== asked; });
+        if (!box.value) {
+          box.value = text;
+          box.style.height = "auto";
+          box.style.height = Math.min(box.scrollHeight, 138) + "px";
+        }
+        renderPumpy();
+        return;
+      }
       // Whatever arrived before it broke is kept: it is still what the coach said.
       $("pumpyannounce").textContent = "Connection ended. You can read the partial answer and try again.";
       var half = pumpy.live && pumpy.live.tn.data;
@@ -16556,11 +16584,12 @@ export const APP = String.raw`
           recover();
           return false;
         }
-      }).catch(function () {
+      }).catch(function (e) {
         btn.disabled = false;
         btn.textContent = "Save workout";
         if (fromShare) sharing = false;
-        toast("Could not reach Spotter — check your connection.");
+        // Declined AI permission: the link stays in the box, unsaved, with no error.
+        if (!aiDeclined(e)) toast("Could not reach Spotter — check your connection.");
         recover();
         return false;
       });
@@ -16958,7 +16987,7 @@ export const APP = String.raw`
     }).catch(function (e) {
       var msg = String(e && e.message ? e.message : e);
       resetUpload();
-      if (e && e.handled) return;
+      if ((e && e.handled) || aiDeclined(e)) return;
       if (e && e.uploadLimit) {
         upError(msg);
       } else if (msg === "413") {
@@ -19451,7 +19480,11 @@ export const APP = String.raw`
           if (fresh && current && current.id === w.id) openDetail(fresh);
           toast((fresh || w).user_workout_override ? "Source refreshed; your personal exercise list was kept." : "Re-read the workout.");
         });
-      }).catch(function () { finishRead(); if (!accountNow(epoch, uid)) return; toast("Could not read that workout again — try again in a minute."); });
+      }).catch(function (e) {
+        finishRead();
+        if (!accountNow(epoch, uid) || aiDeclined(e)) return;
+        toast("Could not read that workout again — try again in a minute.");
+      });
   };
 
   $("wclose").onclick = function () {

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-Ubx4FT7mI2A+BLO+icALMaeQQoOPefvCnF1k/QpS+CY=' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/ https://challenges.cloudflare.com https://accounts.google.com/gsi/client https://appleid.cdn-apple.com/appleauth/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://api.fontshare.com https://accounts.google.com/gsi/style; font-src 'self' data: https://fonts.gstatic.com https://cdn.fontshare.com; img-src 'self' data: blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://i.ytimg.com https://simeonrinkenberger.github.io; media-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://simeonrinkenberger.github.io; connect-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co wss://mtzevoxxpsktmrbbuxva.supabase.co https://accounts.google.com/gsi/; frame-src https://www.tiktok.com https://www.instagram.com https://www.youtube.com https://www.youtube-nocookie.com https://challenges.cloudflare.com https://accounts.google.com/gsi/ https://appleid.apple.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-I8HU0zI/oF2AXB859/d8yNp4YoERRCjylxdvLCEIHDM=' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/ https://challenges.cloudflare.com https://accounts.google.com/gsi/client https://appleid.cdn-apple.com/appleauth/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://api.fontshare.com https://accounts.google.com/gsi/style; font-src 'self' data: https://fonts.gstatic.com https://cdn.fontshare.com; img-src 'self' data: blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://i.ytimg.com https://simeonrinkenberger.github.io; media-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://simeonrinkenberger.github.io; connect-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co wss://mtzevoxxpsktmrbbuxva.supabase.co https://accounts.google.com/gsi/; frame-src https://www.tiktok.com https://www.instagram.com https://www.youtube.com https://www.youtube-nocookie.com https://challenges.cloudflare.com https://accounts.google.com/gsi/ https://appleid.apple.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="google-site-verification" content="unLzcq6TBz9Bm6q4KHpbTmZ88dQ_tTnViacVX5BLzS0">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <title>Spotter by Quarterdeck Collective — save any workout video</title>
@@ -9761,7 +9761,13 @@ details.details-moving > :not(summary) {
   }
   function dismissAiConsent() {
     var pending2 = aiConsentPending;
-    aiConsentPending = null, pending2 && pending2.reject(new Error("AI processing was not enabled. You can still log and plan workouts manually."));
+    if (aiConsentPending = null, !!pending2) {
+      var no = new Error("AI processing was not enabled. You can still log and plan workouts manually.");
+      no.declined = !0, pending2.reject(no);
+    }
+  }
+  function aiDeclined(e) {
+    return !!(e && e.declined);
   }
   function noteConsent(enabled) {
     var pending2 = aiConsentPending;
@@ -11775,8 +11781,8 @@ details.details-moving > :not(summary) {
           }
           w.ingest_status = "processing", w.ingest_error = null, current && current.id === w.id && openDetail(w, !0), render(), watchPending(), toast(w.user_workout_override ? "Refreshing the source; your personal exercise list will be kept." : "Reading it again\u2026");
         }
-      }).catch(function() {
-        accountNow(epoch, uid) && (btn && (btn.disabled = !1, btn.textContent = "Try reading it again"), toast("Could not start reading that \u2014 try again in a minute."));
+      }).catch(function(e) {
+        accountNow(epoch, uid) && (btn && (btn.disabled = !1, btn.textContent = "Try reading it again"), aiDeclined(e) || toast("Could not start reading that \u2014 try again in a minute."));
       });
     }
   }
@@ -11802,8 +11808,8 @@ details.details-moving > :not(summary) {
           }
           w.ingest_status = "processing", w.ingest_error = null, w.media_stage = "listening", current && current.id === w.id && openDetail(w, !0), render(), watchPending(), toast(w.user_workout_override ? "Refreshing the source; your personal exercise list will be kept." : "Listening to the video\u2026");
         }
-      }).catch(function() {
-        accountNow(epoch, uid) && (btn && (btn.disabled = !1, btn.textContent = "Read the video"), toast("Could not start reading that \u2014 try again in a minute."));
+      }).catch(function(e) {
+        accountNow(epoch, uid) && (btn && (btn.disabled = !1, btn.textContent = "Read the video"), aiDeclined(e) || toast("Could not start reading that \u2014 try again in a minute."));
       });
     }
   }
@@ -11839,8 +11845,8 @@ details.details-moving > :not(summary) {
           })[0];
           fresh && openDetail(fresh, !0), toast("Re-read it from your caption.");
         });
-      }).catch(function() {
-        btn.disabled = !1, btn.textContent = "Read it", toast("Could not read that caption \u2014 try again in a moment.");
+      }).catch(function(e) {
+        btn.disabled = !1, btn.textContent = "Read it", aiDeclined(e) || toast("Could not read that caption \u2014 try again in a moment.");
       });
     }
   }
@@ -13430,8 +13436,14 @@ details.details-moving > :not(summary) {
           return;
         }
         done(r);
-      }).catch(function() {
-        expKey === key && ($("explaintext").textContent = got || EXFAIL);
+      }).catch(function(e) {
+        if (expKey === key) {
+          if (aiDeclined(e) && !got) {
+            $("explaintext").classList.add("hide"), $("explainask").classList.remove("hide");
+            return;
+          }
+          $("explaintext").textContent = got || EXFAIL;
+        }
       });
     };
   }
@@ -13493,8 +13505,8 @@ details.details-moving > :not(summary) {
           }
           renderSwapResult(box, r);
         }
-      }).catch(function() {
-        swapCtx !== ctx || ctx.seq !== seq || (box.innerHTML = "", box.appendChild(el("div", "aitext", "Could not find a swap just now. Try again in a moment.")));
+      }).catch(function(e) {
+        swapCtx !== ctx || ctx.seq !== seq || (box.innerHTML = "", aiDeclined(e) || box.appendChild(el("div", "aitext", "Could not find a swap just now. Try again in a moment.")));
       });
     }
   }
@@ -17766,7 +17778,9 @@ details.details-moving > :not(summary) {
       var owner = pumpy;
       $("pumpyannounce").textContent = "", pumpy.refs.length && guideLearn("refs");
       var box = $("pumpyinput");
-      box.value = "", box.style.height = "auto", NO_TOUCH && box.focus(), pumpy.busy = !0, pumpy.live = null, pumpy.stick = !0, pumpy.lastAt = Date.now(), pumpy.messages.push({ id: "local-" + Date.now(), role: "user", content: text }), renderPumpy();
+      box.value = "", box.style.height = "auto", NO_TOUCH && box.focus(), pumpy.busy = !0, pumpy.live = null, pumpy.stick = !0, pumpy.lastAt = Date.now();
+      var asked = { id: "local-" + Date.now(), role: "user", content: text };
+      pumpy.messages.push(asked), renderPumpy();
       var ids = pumpy.refs.slice(0, MAX_REFS), payload = {
         thread_id: pumpy.thread ? pumpy.thread.id : null,
         message: text,
@@ -17806,9 +17820,15 @@ details.details-moving > :not(summary) {
         }
       }).then(function() {
         if (pumpy === owner && pumpy.busy) throw new Error("cut");
-      }).catch(function() {
+      }).catch(function(e) {
         if (!(pumpy !== owner || !pumpy.busy)) {
-          pumpy.busy = !1, $("pumpyannounce").textContent = "Connection ended. You can read the partial answer and try again.";
+          if (pumpy.busy = !1, aiDeclined(e)) {
+            pumpy.live = null, pumpy.messages = pumpy.messages.filter(function(m) {
+              return m !== asked;
+            }), box.value || (box.value = text, box.style.height = "auto", box.style.height = Math.min(box.scrollHeight, 138) + "px"), renderPumpy();
+            return;
+          }
+          $("pumpyannounce").textContent = "Connection ended. You can read the partial answer and try again.";
           var half = pumpy.live && pumpy.live.tn.data, keep = pumpy.stick ? -1 : $("pumpyview").scrollTop;
           pumpy.live = null, pumpy.messages.push({
             id: "local-err-" + Date.now(),
@@ -19142,8 +19162,8 @@ details.details-moving > :not(summary) {
         })[0];
         w && openDetail(w);
       }), !0) : r.status === "exists" ? (closeSheet("addsheet"), toast("Already in your library."), load(), !0) : (limitHit(r, null) || (toast(r.message || "Could not save that link \u2014 check it and try again."), recover()), !1);
-    }).catch(function() {
-      return btn.disabled = !1, btn.textContent = "Save workout", fromShare && (sharing = !1), toast("Could not reach Spotter \u2014 check your connection."), recover(), !1;
+    }).catch(function(e) {
+      return btn.disabled = !1, btn.textContent = "Save workout", fromShare && (sharing = !1), aiDeclined(e) || toast("Could not reach Spotter \u2014 check your connection."), recover(), !1;
     });
   }
   var SHARE_KEY = "spotter_share_pending", sharing = !1;
@@ -19379,7 +19399,7 @@ details.details-moving > :not(summary) {
         }
       }).catch(function(e) {
         var msg = String(e && e.message ? e.message : e);
-        resetUpload(), !(e && e.handled) && (e && e.uploadLimit ? upError(msg) : upError(msg === "413" ? "That file is too big for Spotter\u2019s storage. The limit is " + mb(UPLOAD_MAX) + " MB." : msg === "400" || msg === "415" ? "Spotter\u2019s storage would not take that file. Send " + UPLOAD_KINDS + "." : msg === "401" || msg === "403" ? "Session expired \u2014 sign in again." : "The upload did not finish. Check your connection and try again."));
+        resetUpload(), !(e && e.handled || aiDeclined(e)) && (e && e.uploadLimit ? upError(msg) : upError(msg === "413" ? "That file is too big for Spotter\u2019s storage. The limit is " + mb(UPLOAD_MAX) + " MB." : msg === "400" || msg === "415" ? "Spotter\u2019s storage would not take that file. Send " + UPLOAD_KINDS + "." : msg === "401" || msg === "403" ? "Session expired \u2014 sign in again." : "The upload did not finish. Check your connection and try again."));
       });
     }
   }
@@ -20845,8 +20865,8 @@ details.details-moving > :not(summary) {
           }
         });
       }
-    }).catch(function() {
-      finishRead(), accountNow(epoch, uid) && toast("Could not read that workout again \u2014 try again in a minute.");
+    }).catch(function(e) {
+      finishRead(), !(!accountNow(epoch, uid) || aiDeclined(e)) && toast("Could not read that workout again \u2014 try again in a minute.");
     });
   }, $("wclose").onclick = function() {
     wo && !wo.finished ? openLeave() : history.back();
