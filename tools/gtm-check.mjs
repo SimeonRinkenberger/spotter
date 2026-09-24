@@ -34,6 +34,8 @@ const checks = [
   ['Creator codes on the client', 'node', ['tools/creator-client-harness.mjs']],
   ['Creator codes SQL', 'node', ['tools/creator-db-check.mjs']],
   ['Creator ledger in the store webhook', 'node', ['tools/creator-purchases-check.mjs']],
+  ['Store entitlements under every sandbox policy', 'deno', ['run','--allow-read','tools/android/entitlement-check.ts']],
+  ['Store entitlement environment and renewal SQL', 'node', ['tools/store-entitlements-db-check.mjs']],
 ];
 const failures=[];
 for(const [label,cmd,args] of checks) {
