@@ -53,6 +53,9 @@ const run = ({ key, revenueCat = { ok: true, status: 200 }, stripe = null, apple
       if (!out.done) logs.push('erasure: ' + provider + ' not done yet, queued: ' + out.error);
       return { ...out, row: out.done ? null : 1 };
     },
+    // index.ts writes each erasure down against the account before the auth
+    // delete (R-4), and attempts it only after.
+    rpc: async (name, args) => { calls.push('enqueue:' + args.p_provider + ':' + args.p_subject + ':' + args.p_account); return 1; },
     dbDelete: async (table) => { calls.push('delete:' + table); },
     dbPatchMany: async (table) => { calls.push('patch:' + table); },
     listUploads: async () => [],
@@ -66,7 +69,8 @@ const run = ({ key, revenueCat = { ok: true, status: 200 }, stripe = null, apple
       return { ...auth, text: async () => 'body', body: null };
     },
   });
-  vm.runInContext(transformSync([fn('deleteRevenueCatSubscriber', erasureSrc), fn('handleAccountDelete')].join('\n'), { loader: 'ts', format: 'cjs' }).code, c);
+  const queue = /^async function queueErasure\(/m.test(src) ? fn('queueErasure') : '';
+  vm.runInContext(transformSync([fn('deleteRevenueCatSubscriber', erasureSrc), queue, fn('handleAccountDelete')].join('\n'), { loader: 'ts', format: 'cjs' }).code, c);
   c.uid = '11111111-1111-4111-8111-111111111111';
   return { calls, logs, result: vm.runInContext('handleAccountDelete(uid, {})', c) };
 };
@@ -80,7 +84,18 @@ const run = ({ key, revenueCat = { ok: true, status: 200 }, stripe = null, apple
   assert(rc > 0, 'the subscriber is deleted by the account id');
   assert(t.calls.indexOf('queue:revenuecat:11111111-1111-4111-8111-111111111111') === rc - 1, 'and the request is written down just before it is made');
   assert(rc > t.calls.indexOf('stripe'), 'after Stripe has said the deletion may go ahead');
-  assert(rc < t.calls.indexOf('DELETE auth'), 'and before the auth row that names it is gone');
+  // R-4: written down against the account while it exists, attempted once it is gone.
+  const early = t.calls.indexOf('enqueue:revenuecat:11111111-1111-4111-8111-111111111111:11111111-1111-4111-8111-111111111111');
+  assert(early > 0 && early < t.calls.indexOf('DELETE auth'), 'R-4: the request is written down, against the account, before the auth row goes');
+  assert(rc > t.calls.indexOf('DELETE auth'), 'R-4: and made only after the auth row is gone');
+}
+
+// ---- R-4: a deletion that stops before the auth row goes erases nothing ----
+{
+  const t = run({ key: 'sk_test', auth: { ok: false, status: 500 } });
+  assert.equal((await t.result).status, 500);
+  assert(!t.calls.some((x) => x.includes('api.revenuecat.com') || x.startsWith('queue:')),
+    'R-4: the auth delete failed: no third party was called (' + t.calls.join(', ') + ')');
 }
 
 // ---- best effort, in the same direction as Strava ----
@@ -108,7 +123,7 @@ for (const revenueCat of [{ ok: false, status: 401 }, { ok: false, status: 500 }
   assert.deepEqual(t.calls, ['stripe'], 'Stripe is still the one step that stops the whole deletion');
 }
 
-console.log('PASS account deletion forgets the RevenueCat subscriber by account id, through the outbox, after Stripe and before the auth row.');
+console.log('PASS account deletion forgets the RevenueCat subscriber by account id, through the outbox, written down before the auth row goes and made after it.');
 
 {
   const t = run({ key: 'sk_test', apple: new Error('Apple unavailable') });

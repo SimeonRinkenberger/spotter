@@ -7560,7 +7560,11 @@ const ERASERS: Record<ErasureProvider, Eraser> = {
  * The third parties that are best effort — Strava, RevenueCat, and Stripe
  * without a key — go through the erasure outbox (erasure.ts): the request is
  * written down before the call and retried by the hourly tick until the
- * provider says done, so a failure is no longer only a log line.
+ * provider says done, so a failure is no longer only a log line. Each is
+ * written down early, while the rows naming it still exist, against this
+ * account; it is attempted only once the auth row is gone, and the outbox does
+ * not claim it while the account still exists (20260924140200). A deletion
+ * that stops before the auth row goes reaches none of these three.
  */
 async function handleAccountDelete(userId: string, cors: Cors): Promise<Response> {
   if (!UUID_RE.test(userId)) return json({ status: "error", message: "Bad account." }, 400, cors);
@@ -7572,6 +7576,8 @@ async function handleAccountDelete(userId: string, cors: Cors): Promise<Response
     message: "Could not cancel your subscription just now — try again in a minute, " +
       "or cancel it from Manage subscription first.",
   }, 503, cors);
+  // A Stripe-era customer without a key to cancel it with: erased at the end.
+  let customer: string | null = null;
   if (billingConfigured()) {
     try {
       await cancelAndDeleteCustomer(userId);
@@ -7583,17 +7589,13 @@ async function handleAccountDelete(userId: string, cors: Cors): Promise<Response
     // No key: a leftover (test-mode) customer is written to the outbox, and the
     // deletion goes on. Only if that cannot even be written down does it stop —
     // the database is then what is failing, and nothing has been deleted yet.
-    let customer: string | null = null;
     try {
       customer = await billingCustomerFor(userId);
     } catch (e) {
       console.error("account delete: billing lookup failed, nothing deleted", userId, e);
       return billingUnreachable();
     }
-    if (customer) {
-      const out = await eraseAtProvider("stripe", customer, {}, (c) => eraseStripeCustomer(c));
-      if (!out.done && out.row === null) return billingUnreachable();
-    }
+    if (customer && !(await queueErasure("stripe", customer, {}, userId))) return billingUnreachable();
   }
 
   try {
@@ -7607,18 +7609,18 @@ async function handleAccountDelete(userId: string, cors: Cors): Promise<Response
 
   // Strava, once Stripe has said the deletion may go ahead. `strava_tokens`
   // cascades with the auth row, but a row deleted without telling Strava leaves a
-  // live grant on the athlete's account with nothing left here to revoke it. This
-  // one is best effort in the other direction from Stripe: a Strava outage must
-  // not hold up an erasure. It goes through the outbox, so it is retried.
+  // live grant on the athlete's account with nothing left here to revoke it, so
+  // the grant is read (and written down) now, and revoked at the end. Best effort
+  // in the other direction from Stripe: a Strava outage must not hold up an
+  // erasure. RevenueCat is keyed by the account id, which outlives the row.
+  let grant: { subject: string; detail: Record<string, unknown> } | null = null;
   try {
-    const grant = await stravaGrantFor(userId);
-    if (grant) await eraseAtProvider("strava", grant.subject, grant.detail, deauthorizeStrava);
+    grant = await stravaGrantFor(userId);
+    if (grant) await queueErasure("strava", grant.subject, grant.detail, userId);
   } catch (e) {
     console.error("account delete: strava lookup failed for", userId, e);
   }
-  // RevenueCat, by the account id, the same way. Neither of these can fail the
-  // deletion: eraseAtProvider never throws.
-  await eraseAtProvider("revenuecat", userId, {}, (id) => deleteRevenueCatSubscriber(id));
+  await queueErasure("revenuecat", userId, {}, userId);
 
   try {
     await dbDelete("saves_log", filter);
@@ -7656,7 +7658,38 @@ async function handleAccountDelete(userId: string, cors: Cors): Promise<Response
   }
   await r.body?.cancel();
   console.log("account deleted", userId);
+  // The account is gone, so the third parties may be told. None of these can
+  // fail the deletion: eraseAtProvider never throws, and a provider that does
+  // not answer is retried by the hourly tick from the rows written above.
+  if (customer) await eraseAtProvider("stripe", customer, {}, (c) => eraseStripeCustomer(c));
+  if (grant) await eraseAtProvider("strava", grant.subject, grant.detail, deauthorizeStrava);
+  await eraseAtProvider("revenuecat", userId, {}, (id) => deleteRevenueCatSubscriber(id));
   return json({ status: "ok" }, 200, cors);
+}
+
+/**
+ * Write an erasure down against the account it belongs to, without attempting
+ * it: the outbox holds it until that account no longer exists. True when the
+ * row is written. Never throws.
+ */
+async function queueErasure(
+  provider: ErasureProvider, subject: string, detail: Record<string, unknown>, account: string,
+): Promise<boolean> {
+  const args = { p_provider: provider, p_subject: subject, p_detail: detail };
+  try {
+    try {
+      await rpc("erasure_enqueue", { ...args, p_account: account });
+    } catch (e) {
+      // Before migration 20260924140200 there is no account column: written down
+      // the old way, which the deletion's later attempt would do anyway.
+      if (!/PGRST202/.test(String(e))) throw e;
+      await rpc("erasure_enqueue", args);
+    }
+    return true;
+  } catch (e) {
+    console.error("account delete: could not write down the", provider, "erasure —", e);
+    return false;
+  }
 }
 
 function utcMidnight(): string {
