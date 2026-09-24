@@ -1352,6 +1352,7 @@ export const APP = String.raw`
     // creates lands in a rendered grid rather than into an empty one.
     var epoch = accountEpoch, uid = state.user.id;
     booting = load().then(function () { if (accountNow(epoch, uid)) return consumeShare(); })
+      .then(function () { if (accountNow(epoch, uid)) return takeParkedShare(); })
       .then(function () { if (accountNow(epoch, uid)) consumeOpen(); })
       .then(function () { if (accountNow(epoch, uid)) return consumeBilling(); })
       .then(function () { if (accountNow(epoch, uid)) consumeCreator(); })
@@ -1472,7 +1473,9 @@ export const APP = String.raw`
     if (was && was.ingest_status === "processing" && row.ingest_status === "ready") {
       toast("Ready: " + (row.title || "your workout"));
     } else if (was && was.ingest_status === "processing" && row.ingest_status === "failed") {
-      toast("Could not read that video — open it to try again.");
+      toast(row.ingest_error === UNAVAILABLE ? "That post is private, deleted or unavailable."
+        : row.kind === "photo" || row.kind === "p" ? "Could not read that post — open it to try again."
+        : "Could not read that video — open it to try again.");
     }
     render();
     watchPending();
@@ -1723,6 +1726,17 @@ export const APP = String.raw`
       body: "Spotter is listening to your file and pulling the workout out of what is said. " +
         "The card fills in here as soon as it lands — you can close this and carry on."
     },
+    // A carousel or a photo post has pictures, not a video to read.
+    post: {
+      kick: "Reading", glyph: "hourglass", line: "Reading the post…",
+      head: "Still reading this one",
+      body: "Spotter is reading this post’s caption and pictures. The card fills in here as soon " +
+        "as it lands — you can close this and carry on."
+    },
+    // Basic, where Plus could not read more either: no promise it cannot keep.
+    basicText: { kick: "Basic read", glyph: "hourglass", line: "Reading available text…",
+      head: "Building your workout", body: "Spotter is reading the post’s own text. The card fills in here " +
+        "as soon as it lands — you can close this and carry on." },
     // An upload is watched AND heard in one pass, which neither line above says.
     upwatch: {
       kick: "Watching", glyph: "eye", line: "Watching the video…",
@@ -1735,9 +1749,13 @@ export const APP = String.raw`
   function stageOf(w) {
     // An upload names the reader that is running. Audio is only ever heard.
     if (isUpload(w)) return w.media_stage === "watching" ? STAGES.upwatch : STAGES.upload;
+    // "Add the video" on an Instagram card: the person's own file, watched and heard.
+    if (w.platform === "instagram" && w.media_stage === "watching") return STAGES.upwatch;
     if (w.media_stage === "watching") return STAGES.watching;
     if (w.media_stage === "listening") return STAGES.listening;
-    return isFree() ? STAGES.basic : STAGES.reading;
+    var post = w.kind === "photo" || (w.platform === "instagram" && w.kind === "p");
+    if (isFree()) return w.platform === "tiktok" && !post ? STAGES.basic : STAGES.basicText;
+    return post ? STAGES.post : STAGES.reading;
   }
 
   // What this card was actually read out of. The caveat has to be able to say so:
@@ -1767,6 +1785,24 @@ export const APP = String.raw`
     var from = readFrom(w);
     return w.read_quality !== "premium";
   }
+
+  // Instagram lets nobody outside it watch a reel, so the reading comes from the
+  // person: Instagram's own Download, then "Add the video" on this card. Offered
+  // where it can help — a card the caption left without a workout — and never as
+  // "Plus reads the video", which Plus cannot do for a reel.
+  function canAddVideo(w) {
+    if (w.platform !== "instagram" || isPending(w) || isFailed(w)) return false;
+    if (w.read_quality === "premium") return false;
+    return !w.has_full_workout || !exerciseNames(w).length;
+  }
+  var ADD_VIDEO_WHY = "Instagram doesn’t let apps watch reels. Add the video and Spotter will read it: " +
+    "in Instagram tap Share → Download, then choose it here.";
+  // The line a Basic card carries when somebody's Plus read found what its caption
+  // did not (set by the server). It moves into the empty-card box with its button.
+  var PLUS_READ_HINT = "The caption lists no exercises.";
+  // The server's sentence for a post the platform says is gone. Nothing to retry.
+  var UNAVAILABLE = "This post is private, deleted or unavailable to Spotter.";
+  function isUnavailable(w) { return isFailed(w) && w.ingest_error === UNAVAILABLE; }
 
   // ---------- collections: lookups ----------
 
@@ -2169,7 +2205,8 @@ export const APP = String.raw`
 
   function cardMeta(w) {
     if (isPending(w)) return stageOf(w).line;
-    if (isFailed(w)) return isUpload(w) ? "No workout in it — tap to see why" : "Could not read it — tap to retry";
+    if (isFailed(w)) return isUpload(w) ? "No workout in it — tap to see why"
+      : isUnavailable(w) ? "Private, deleted or unavailable" : "Could not read it — tap to retry";
     var bits = [];
     var n = exerciseNames(w).length;
     if (n) bits.push(n + (n === 1 ? " exercise" : " exercises"));
@@ -3019,7 +3056,8 @@ export const APP = String.raw`
     }
 
 
-    if (!isPending(w) && !isFailed(w) && w.ingest_error) {
+    if (!isPending(w) && !isFailed(w) && w.ingest_error &&
+        !((w.blocks || []).length === 0 && String(w.ingest_error).indexOf(PLUS_READ_HINT) === 0)) {
       var incomplete = el("div", "sect");
       incomplete.appendChild(el("h3", null, "Some details are missing"));
       incomplete.appendChild(el("div", "capbox", w.ingest_error));
@@ -3032,9 +3070,10 @@ export const APP = String.raw`
       var isUp = isUpload(w);
       var stage = stageOf(w);
       var note = el("div", "sect");
+      var gone = isUnavailable(w);
       note.appendChild(el("h3", null, isPending(w)
         ? stage.head
-        : (isUp ? "Could not find a workout in this one" : "Could not read this one")));
+        : (isUp ? "Could not find a workout in this one" : gone ? "This post is unavailable" : "Could not read this one")));
       note.appendChild(el("div", "capbox", isPending(w)
         ? stage.body
         : (w.ingest_error || (isUp
@@ -3048,7 +3087,9 @@ export const APP = String.raw`
       if (isFailed(w)) {
         // An upload has nothing to try again: the file is gone by the time this
         // card exists. Offering a re-read would offer a button that can only fail.
-        if (!isUp) {
+        // Nor for a post the platform says is gone: a retry would ask the same
+        // question and get the same answer.
+        if (!isUp && !gone) {
           var rb = el("button", "retrybtn", "Try reading it again");
           rb.onclick = function () { retryWorkout(w, rb); };
           d.appendChild(rb);
@@ -3141,7 +3182,21 @@ export const APP = String.raw`
       d.appendChild(warn);
     }
 
-    if (w.platform !== "pumpy" && w.read_quality !== "premium") {
+    // "Plus reads the video" only where Plus can: a TikTok video, or a file of the
+    // person's own. An Instagram card whose caption left it thin is offered the
+    // one thing that works for a reel instead; the empty-card box above already
+    // does that for a card with nothing in it.
+    var plusCan = (w.platform === "tiktok" && w.kind !== "photo") || isUpload(w);
+    var addHere = canAddVideo(w) && (w.blocks || []).length > 0;
+    if (w.platform !== "pumpy" && w.read_quality !== "premium" && addHere) {
+      var addBox = el("div", "reader-offer");
+      addBox.appendChild(el("b", null, "Add the video"));
+      addBox.appendChild(el("p", null, ADD_VIDEO_WHY));
+      var addv = el("button", "btn ghost", "Add the video");
+      addv.onclick = function () { openAddVideo(w); };
+      addBox.appendChild(addv);
+      d.appendChild(addBox);
+    } else if (w.platform !== "pumpy" && w.read_quality !== "premium" && plusCan) {
       var quality = el("div", "reader-offer");
       quality.appendChild(el("b", null, "Basic read"));
       quality.appendChild(el("p", null, "Plus reads the video’s movements, spoken cues and on-screen details to build a more complete workout."));
@@ -3316,10 +3371,14 @@ export const APP = String.raw`
       // said nothing, so the workout is in the video or nowhere. Offer that first,
       // and only then the two things that cost the user work.
       var canRead = canReadVideo(w);
-      var np = el("div", "capbox", canRead
+      var canAdd = canAddVideo(w);
+      var hinted = canRead && isFree() && String(w.ingest_error || "").indexOf(PLUS_READ_HINT) === 0;
+      var np = el("div", "capbox", hinted ? w.ingest_error
+        : canRead
         ? "The caption on this one names no exercises. Spotter can go and read the video itself — " +
           "listen to what the creator says, and read what is written on the screen. It takes a " +
           "minute or so, and the card fills in here."
+        : canAdd ? ADD_VIDEO_WHY
         : (from.video || from.speech
           ? "Spotter read the video itself and still could not make out a workout in it. " +
             "You can watch it and log a freestyle session, or type the exercises in yourself."
@@ -3329,9 +3388,16 @@ export const APP = String.raw`
       none.appendChild(np);
       none.appendChild(el("div", null, " "));
       if (canRead) {
-        var rvb = el("button", "retrybtn", "Read the video");
-        rvb.onclick = function () { readVideo(w, rvb); };
+        // A Basic account reads the video with one of its free Plus reads; asking
+        // without saying so was a paywall behind a button labelled as the action.
+        var rvb = el("button", "retrybtn", isFree() ? "Use a free Plus read" : "Read the video");
+        rvb.onclick = function () { readVideo(w, rvb, isFree()); };
         none.appendChild(rvb);
+      }
+      if (canAdd) {
+        var avb = el("button", "retrybtn", "Add the video");
+        avb.onclick = function () { openAddVideo(w); };
+        none.appendChild(avb);
       }
       var addfirst = el("button", "addex", "+ Add an exercise");
       addfirst.onclick = function () { openExAdd(w, 0); };
@@ -15335,6 +15401,7 @@ export const APP = String.raw`
     function recover() {
       if (!fromShare) return;
       resetUpload();
+      addMode(null);
       openSheet("addsheet");
     }
 
@@ -15347,6 +15414,9 @@ export const APP = String.raw`
       .then(function (r) {
         btn.disabled = false;
         btn.textContent = "Save workout";
+        // One share at a time, not one per launch: the flag used to stay set, so
+        // a second link shared into an open app waited for the next cold start.
+        if (fromShare) sharing = false;
 
         // The normal case now. The row already exists; only its contents are
         // pending. Close the sheet, put the card in the library straight away and
@@ -15356,7 +15426,7 @@ export const APP = String.raw`
           closeSheet("addsheet");
           placePending(r, url, null);
           toast(withShelf(isFree() ? "Saved — building a Basic read from available text…" : (fromShare ? "Saved from the share sheet — reading it…"
-            : "Saved — reading the video…")), 3400);
+            : /\/(p|photo)\//.test(url) ? "Saved — reading the post…" : "Saved — reading the video…")), 3400);
           return;
         }
 
@@ -15390,6 +15460,7 @@ export const APP = String.raw`
       }).catch(function () {
         btn.disabled = false;
         btn.textContent = "Save workout";
+        if (fromShare) sharing = false;
         toast("Could not reach Spotter — check your connection.");
         recover();
       });
@@ -15464,6 +15535,26 @@ export const APP = String.raw`
     doAdd(true);
   }
 
+  // A link shared while nobody was signed in. The Share Extension cannot save for
+  // nobody, so it parks the link where the app can reach it and says "Sign in to
+  // Spotter and it will be saved"; this is the other half. The plugin TAKES it —
+  // reads and removes — so one parked share is one save, and a link parked more
+  // than a day ago is dropped rather than saved out of the blue.
+  function takeParkedShare() {
+    if (!native || !native.takeParkedShare || !state.user || sharing) return Promise.resolve();
+    var epoch = accountEpoch, uid = state.user.id;
+    return native.takeParkedShare().then(function (parked) {
+      if (!parked || !parked.url || !accountNow(epoch, uid)) return;
+      var at = typeof parked.at === "number" ? (parked.at < 1e12 ? parked.at * 1000 : parked.at)
+        : Date.parse(parked.at || "");
+      if (isFinite(at) && Date.now() - at > 24 * 3600 * 1000) return;
+      var u = firstUrlIn(parked.url);
+      if (!u) return;
+      try { sessionStorage.setItem(SHARE_KEY, u); } catch (e) { handleSharedUrl(u); return; }
+      consumeShare();
+    }).catch(function () { /* nothing parked, or a shell without the method */ });
+  }
+
   // ---------- upload a video from your phone ----------
   //
   // The bottom of the ingest ladder, for the video that lives only on the phone.
@@ -15519,6 +15610,49 @@ export const APP = String.raw`
     $("upprog").hidden = false;
     $("upfill").style.width = Math.round(Math.max(0, Math.min(1, frac)) * 100) + "%";
     $("upnote").textContent = note;
+  }
+
+  // "Add the video": the same sheet, the same picker, the same upload, read INTO
+  // the card it was opened from. The sheet says so in its own words and hides the
+  // link field, because there is no link to paste — the person has the file.
+  var attachTo = null, addWords = null;
+  function addMode(w) {
+    if (!addWords) addWords = { t: $("addtitle").textContent, l: $("addlede").textContent,
+      u: $("uptitle").textContent, s: $("upsub").textContent };
+    attachTo = w || null;
+    $("addsheet").classList.toggle("attach", !!w);
+    $("addtitle").textContent = w ? "Add the video" : addWords.t;
+    $("addlede").textContent = w
+      ? "In Instagram, tap Share → Download on the reel, then choose that video here. Spotter reads it into “" +
+        (w.title || "this card") + "”."
+      : addWords.l;
+    $("uptitle").textContent = w ? "Choose the downloaded video" : addWords.u;
+    $("upsub").textContent = w
+      ? "It counts as one of your video reads, not an upload. MP4 or MOV, up to 25 MB, deleted once it is read."
+      : addWords.s;
+    $("addfile").setAttribute("accept", w ? "video/*" : "video/*,audio/*");
+  }
+
+  function openAddVideo(w) {
+    if (!state.user) return;
+    resetUpload();
+    addMode(w);
+    openSheet("addsheet");
+  }
+
+  // What the card does when the file has gone to be read: pending, with the verb
+  // that is true — watching — until the worker fills it in, as any pending card does.
+  function attached(w, r) {
+    closeSheet("addsheet");
+    resetUpload();
+    var row = state.workouts.filter(function (x) { return x.id === w.id; })[0] || w;
+    row.ingest_status = "processing";
+    row.ingest_error = null;
+    row.media_stage = "watching";
+    if (current && current.id === row.id) openDetail(row, true);
+    render();
+    watchPending();
+    toast(r.message || "Watching your video…", 3400);
   }
 
   function resetUpload() {
@@ -15586,10 +15720,28 @@ export const APP = String.raw`
     upProgress(0, "Uploading… 0%");
 
     var watched = !!UPLOAD_WATCHED[ext];
-    api("uploads/authorize", { method: "POST", body: JSON.stringify({ path: path, bytes: file.size }) }).then(function (permit) {
-      if (permit.status !== "ok") { var denied = new Error(permit.message || "Upload is paused. Please try again later."); denied.uploadLimit = true; throw denied; }
+    var into = attachTo;
+    var permitBody = { path: path, bytes: file.size };
+    if (into) permitBody.attach = into.id;
+    api("uploads/authorize", { method: "POST", body: JSON.stringify(permitBody) }).then(function (permit) {
+      if (permit.status !== "ok") {
+        // Out of video reads is a Plus answer, not a broken upload.
+        if (into && limitHit(permit, null)) { var sold = new Error(""); sold.handled = true; throw sold; }
+        var denied = new Error(permit.message || "Upload is paused. Please try again later."); denied.uploadLimit = true; throw denied;
+      }
       return putObject(file, path, UPLOAD_TYPES[ext]);
     }).then(function () {
+      if (into) {
+        upProgress(1, "Uploaded — Spotter is watching it…");
+        return api("workouts/" + into.id + "/media", { method: "POST",
+          body: JSON.stringify({ upload_path: path, filename: name.slice(0, 160) }) }).then(function (r) {
+          if (r.status === "processing") { attached(into, r); return null; }
+          resetUpload();
+          if (limitHit(r, null)) return null;
+          upError(r.message || "Spotter could not start reading that video.");
+          return null;
+        });
+      }
       // The bytes have landed, and somebody else's machine reading them is a
       // different wait — so it gets its own verb, and the true one for this file.
       // On a native shell the phone reads the file it still has, first: the
@@ -15599,11 +15751,13 @@ export const APP = String.raw`
       upProgress(1, "Uploaded — reading the video…");
       return deviceFrames({ file: file, shortcode: "up-" + path.split("/")[1].split(".")[0] });
     }).then(function (frames) {
+      if (into) return null;
       upProgress(1, watched ? "Uploaded — Spotter is watching it…" : "Uploaded — Spotter is listening…");
       var body = { upload_path: path, filename: name.slice(0, 160) };
       if (frames) body.frames = frames;
       return api("ingest", { method: "POST", body: JSON.stringify(body) });
     }).then(function (r) {
+      if (!r) return;
       if (r.status === "processing") {
         closeSheet("addsheet");
         resetUpload();
@@ -15624,6 +15778,7 @@ export const APP = String.raw`
     }).catch(function (e) {
       var msg = String(e && e.message ? e.message : e);
       resetUpload();
+      if (e && e.handled) return;
       if (e && e.uploadLimit) {
         upError(msg);
       } else if (msg === "413") {
@@ -17779,7 +17934,7 @@ export const APP = String.raw`
   $("pw").addEventListener("keydown", function (e) { if (e.key === "Enter") doAuth(); });
   // the sign-in/sign-up toggle is rebuilt by setAuthMode, which wires its own handler
 
-  $("addbtn").onclick = function () { $("addurl").value = ""; resetUpload(); openSheet("addsheet"); };
+  $("addbtn").onclick = function () { $("addurl").value = ""; resetUpload(); addMode(null); openSheet("addsheet"); };
   // Wrapped: doAdd's first argument means "this came from the share sheet", and a
   // bare handler would hand it a MouseEvent.
   $("addgo").onclick = function () { doAdd(); };
@@ -18301,7 +18456,11 @@ export const APP = String.raw`
     if (wo && !wo.finished) { startClock(); acquireWake(); }
     watchBilling(); stravaBack();
     publishSummary();
-    if (state.user && !wo && !overlayShowing()) load();
+    // Under whatever is open: a card that landed while the phone was away must be
+    // on the shelf when the sheet or the card closes, and load() refreshes an open
+    // card in place. Only a live session is left alone. The pending poll starts a
+    // fresh budget, so a card that outlived the last one is asked about again.
+    if (state.user && !wo) { pendPolls = 0; watchPending(); load(); takeParkedShare(); }
   });
 
   document.addEventListener("visibilitychange", function () {
@@ -18316,7 +18475,7 @@ export const APP = String.raw`
     if (restUntil) tickRest();
     if (wo) { acquireWake(); return; }
     watchBilling();
-    if (!overlayShowing()) load();
+    load();
   });
 
   // Three doors onto the same question, because the way back from a cross-origin

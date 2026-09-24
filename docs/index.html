@@ -2989,6 +2989,15 @@ h1 {
   padding-top: 16px;
   border-top: 1px solid var(--line);
 }
+#addsheet.attach .field,
+#addsheet.attach #addgo {
+  display: none;
+}
+#addsheet.attach .upblock {
+  margin-top: 4px;
+  padding-top: 0;
+  border-top: 0;
+}
 .uploadrow {
   display: flex;
   align-items: center;
@@ -8206,8 +8215,8 @@ details.details-moving > :not(summary) {
 
 <div class="sheet" id="addsheet"><div class="sheetbody">
   <div class="grabber"></div>
-  <h2>Add a workout</h2>
-  <p class="lede">Paste a link to a TikTok, Instagram reel, YouTube video, or any workout page.</p>
+  <h2 id="addtitle">Add a workout</h2>
+  <p class="lede" id="addlede">Paste a link to a TikTok, Instagram reel, YouTube video, or any workout page.</p>
   <div class="field"><input id="addurl" type="url" placeholder="https://..." autocapitalize="off" autocomplete="off" spellcheck="false"></div>
   <button class="btn" id="addgo">Save workout</button>
 
@@ -8215,8 +8224,8 @@ details.details-moving > :not(summary) {
     <button class="uploadrow" id="uploadrow" type="button">
       <span class="upmark" aria-hidden="true"><svg class="ic"><use href="#i-upload"></use></svg></span>
       <span class="uptext">
-        <b>Upload a video from your phone</b>
-        <small>Spotter watches and listens to it, so it works when nothing is written down. MP4, MOV, M4A, MP3, WAV or WebM, up to 25 MB.</small>
+        <b id="uptitle">Upload a video from your phone</b>
+        <small id="upsub">Spotter watches and listens to it, so it works when nothing is written down. MP4, MOV, M4A, MP3, WAV or WebM, up to 25 MB.</small>
       </span>
     </button>
     <input id="addfile" type="file" accept="video/*,audio/*" hidden>
@@ -9577,6 +9586,8 @@ details.details-moving > :not(summary) {
     return booting = load().then(function() {
       if (accountNow(epoch, uid)) return consumeShare();
     }).then(function() {
+      if (accountNow(epoch, uid)) return takeParkedShare();
+    }).then(function() {
       accountNow(epoch, uid) && consumeOpen();
     }).then(function() {
       if (accountNow(epoch, uid)) return consumeBilling();
@@ -9647,7 +9658,7 @@ details.details-moving > :not(summary) {
           break;
         }
       var was = at >= 0 ? state.workouts[at] : null;
-      at >= 0 ? state.workouts[at] = row : state.workouts.unshift(row), current && current.id === row.id && refreshDetail(row), was && was.ingest_status === "processing" && row.ingest_status === "ready" ? toast("Ready: " + (row.title || "your workout")) : was && was.ingest_status === "processing" && row.ingest_status === "failed" && toast("Could not read that video \u2014 open it to try again."), render(), watchPending();
+      at >= 0 ? state.workouts[at] = row : state.workouts.unshift(row), current && current.id === row.id && refreshDetail(row), was && was.ingest_status === "processing" && row.ingest_status === "ready" ? toast("Ready: " + (row.title || "your workout")) : was && was.ingest_status === "processing" && row.ingest_status === "failed" && toast(row.ingest_error === UNAVAILABLE ? "That post is private, deleted or unavailable." : row.kind === "photo" || row.kind === "p" ? "Could not read that post \u2014 open it to try again." : "Could not read that video \u2014 open it to try again."), render(), watchPending();
     }
   }
   var pendTimer = null, pendPolls = 0, pendBusy = !1;
@@ -9858,6 +9869,22 @@ details.details-moving > :not(summary) {
       head: "Still listening to this one",
       body: "Spotter is listening to your file and pulling the workout out of what is said. The card fills in here as soon as it lands \u2014 you can close this and carry on."
     },
+    // A carousel or a photo post has pictures, not a video to read.
+    post: {
+      kick: "Reading",
+      glyph: "hourglass",
+      line: "Reading the post\u2026",
+      head: "Still reading this one",
+      body: "Spotter is reading this post\u2019s caption and pictures. The card fills in here as soon as it lands \u2014 you can close this and carry on."
+    },
+    // Basic, where Plus could not read more either: no promise it cannot keep.
+    basicText: {
+      kick: "Basic read",
+      glyph: "hourglass",
+      line: "Reading available text\u2026",
+      head: "Building your workout",
+      body: "Spotter is reading the post\u2019s own text. The card fills in here as soon as it lands \u2014 you can close this and carry on."
+    },
     // An upload is watched AND heard in one pass, which neither line above says.
     upwatch: {
       kick: "Watching",
@@ -9868,7 +9895,12 @@ details.details-moving > :not(summary) {
     }
   };
   function stageOf(w) {
-    return isUpload(w) ? w.media_stage === "watching" ? STAGES.upwatch : STAGES.upload : w.media_stage === "watching" ? STAGES.watching : w.media_stage === "listening" ? STAGES.listening : isFree() ? STAGES.basic : STAGES.reading;
+    if (isUpload(w)) return w.media_stage === "watching" ? STAGES.upwatch : STAGES.upload;
+    if (w.platform === "instagram" && w.media_stage === "watching") return STAGES.upwatch;
+    if (w.media_stage === "watching") return STAGES.watching;
+    if (w.media_stage === "listening") return STAGES.listening;
+    var post = w.kind === "photo" || w.platform === "instagram" && w.kind === "p";
+    return isFree() ? w.platform === "tiktok" && !post ? STAGES.basic : STAGES.basicText : post ? STAGES.post : STAGES.reading;
   }
   function readFrom(w) {
     var out = { video: !1, speech: !1 };
@@ -9883,6 +9915,13 @@ details.details-moving > :not(summary) {
     if (w.platform !== "tiktok" || isPending(w) || isFailed(w)) return !1;
     var from = readFrom(w);
     return w.read_quality !== "premium";
+  }
+  function canAddVideo(w) {
+    return w.platform !== "instagram" || isPending(w) || isFailed(w) || w.read_quality === "premium" ? !1 : !w.has_full_workout || !exerciseNames(w).length;
+  }
+  var ADD_VIDEO_WHY = "Instagram doesn\u2019t let apps watch reels. Add the video and Spotter will read it: in Instagram tap Share \u2192 Download, then choose it here.", PLUS_READ_HINT = "The caption lists no exercises.", UNAVAILABLE = "This post is private, deleted or unavailable to Spotter.";
+  function isUnavailable(w) {
+    return isFailed(w) && w.ingest_error === UNAVAILABLE;
   }
   function isColFilter(f) {
     return typeof f == "string" && f.indexOf("col:") === 0;
@@ -10213,7 +10252,7 @@ details.details-moving > :not(summary) {
   }
   function cardMeta(w) {
     if (isPending(w)) return stageOf(w).line;
-    if (isFailed(w)) return isUpload(w) ? "No workout in it \u2014 tap to see why" : "Could not read it \u2014 tap to retry";
+    if (isFailed(w)) return isUpload(w) ? "No workout in it \u2014 tap to see why" : isUnavailable(w) ? "Private, deleted or unavailable" : "Could not read it \u2014 tap to retry";
     var bits = [], n = exerciseNames(w).length;
     if (n && bits.push(n + (n === 1 ? " exercise" : " exercises")), w.equipment && w.equipment.length ? bits.push(w.equipment[0]) : w.has_full_workout && bits.push("bodyweight"), !bits.length && w.author && bits.push("@" + w.author), w.platform === "pumpy") {
       var cn = citedSources(w).length;
@@ -10638,14 +10677,14 @@ details.details-moving > :not(summary) {
         state.filter = "by:" + authorKey(w.author), render(), history.back(), setView("library");
       }, d.appendChild(au);
     }
-    if (!isPending(w) && !isFailed(w) && w.ingest_error) {
+    if (!isPending(w) && !isFailed(w) && w.ingest_error && !((w.blocks || []).length === 0 && String(w.ingest_error).indexOf(PLUS_READ_HINT) === 0)) {
       var incomplete = el("div", "sect");
       incomplete.appendChild(el("h3", null, "Some details are missing")), incomplete.appendChild(el("div", "capbox", w.ingest_error)), d.appendChild(incomplete);
     }
     if (isPending(w) || isFailed(w)) {
-      var isUp = isUpload(w), stage = stageOf(w), note = el("div", "sect");
-      if (note.appendChild(el("h3", null, isPending(w) ? stage.head : isUp ? "Could not find a workout in this one" : "Could not read this one")), note.appendChild(el("div", "capbox", isPending(w) ? stage.body : (w.ingest_error || (isUp ? "Spotter could not make out a workout in that file." : "Spotter could not get anything back from this link.")) + (isUp ? " The file itself is already deleted \u2014 Spotter keeps uploads only long enough to read them." : " The link is saved either way, so nothing is lost."))), d.appendChild(note), isFailed(w)) {
-        if (!isUp) {
+      var isUp = isUpload(w), stage = stageOf(w), note = el("div", "sect"), gone = isUnavailable(w);
+      if (note.appendChild(el("h3", null, isPending(w) ? stage.head : isUp ? "Could not find a workout in this one" : gone ? "This post is unavailable" : "Could not read this one")), note.appendChild(el("div", "capbox", isPending(w) ? stage.body : (w.ingest_error || (isUp ? "Spotter could not make out a workout in that file." : "Spotter could not get anything back from this link.")) + (isUp ? " The file itself is already deleted \u2014 Spotter keeps uploads only long enough to read them." : " The link is saved either way, so nothing is lost."))), d.appendChild(note), isFailed(w)) {
+        if (!isUp && !gone) {
           var rb = el("button", "retrybtn", "Try reading it again");
           rb.onclick = function() {
             retryWorkout(w, rb);
@@ -10689,7 +10728,15 @@ details.details-moving > :not(summary) {
       }
       d.appendChild(warn);
     }
-    if (w.platform !== "pumpy" && w.read_quality !== "premium") {
+    var plusCan = w.platform === "tiktok" && w.kind !== "photo" || isUpload(w), addHere = canAddVideo(w) && (w.blocks || []).length > 0;
+    if (w.platform !== "pumpy" && w.read_quality !== "premium" && addHere) {
+      var addBox = el("div", "reader-offer");
+      addBox.appendChild(el("b", null, "Add the video")), addBox.appendChild(el("p", null, ADD_VIDEO_WHY));
+      var addv = el("button", "btn ghost", "Add the video");
+      addv.onclick = function() {
+        openAddVideo(w);
+      }, addBox.appendChild(addv), d.appendChild(addBox);
+    } else if (w.platform !== "pumpy" && w.read_quality !== "premium" && plusCan) {
       var quality = el("div", "reader-offer");
       if (quality.appendChild(el("b", null, "Basic read")), quality.appendChild(el("p", null, "Plus reads the video\u2019s movements, spoken cues and on-screen details to build a more complete workout.")), w.platform === "tiktok" && w.kind !== "photo") {
         var pv = billing.limits && billing.limits.video_previews, trial = el("button", "btn ghost", isFree() ? pv ? "Try a Plus read \xB7 " + Math.max(0, pv.cap - pv.used) + " left this month" : "Try a Plus read" : "Read with Plus");
@@ -10805,12 +10852,18 @@ details.details-moving > :not(summary) {
     }), !(w.blocks || []).length) {
       var none = el("div", "sect");
       none.appendChild(el("h3", null, "No exercises found"));
-      var canRead = canReadVideo(w), np = el("div", "capbox", canRead ? "The caption on this one names no exercises. Spotter can go and read the video itself \u2014 listen to what the creator says, and read what is written on the screen. It takes a minute or so, and the card fills in here." : from.video || from.speech ? "Spotter read the video itself and still could not make out a workout in it. You can watch it and log a freestyle session, or type the exercises in yourself." : "This video did not include a written workout, so there is nothing to step through. You can still watch it and log a freestyle session, use Read it again in Options on this card to have another go, or type the exercises in yourself.");
+      var canRead = canReadVideo(w), canAdd = canAddVideo(w), hinted = canRead && isFree() && String(w.ingest_error || "").indexOf(PLUS_READ_HINT) === 0, np = el("div", "capbox", hinted ? w.ingest_error : canRead ? "The caption on this one names no exercises. Spotter can go and read the video itself \u2014 listen to what the creator says, and read what is written on the screen. It takes a minute or so, and the card fills in here." : canAdd ? ADD_VIDEO_WHY : from.video || from.speech ? "Spotter read the video itself and still could not make out a workout in it. You can watch it and log a freestyle session, or type the exercises in yourself." : "This video did not include a written workout, so there is nothing to step through. You can still watch it and log a freestyle session, use Read it again in Options on this card to have another go, or type the exercises in yourself.");
       if (none.appendChild(np), none.appendChild(el("div", null, " ")), canRead) {
-        var rvb = el("button", "retrybtn", "Read the video");
+        var rvb = el("button", "retrybtn", isFree() ? "Use a free Plus read" : "Read the video");
         rvb.onclick = function() {
-          readVideo(w, rvb);
+          readVideo(w, rvb, isFree());
         }, none.appendChild(rvb);
+      }
+      if (canAdd) {
+        var avb = el("button", "retrybtn", "Add the video");
+        avb.onclick = function() {
+          openAddVideo(w);
+        }, none.appendChild(avb);
       }
       var addfirst = el("button", "addex", "+ Add an exercise");
       addfirst.onclick = function() {
@@ -17708,14 +17761,14 @@ details.details-moving > :not(summary) {
     var btn = $("addgo");
     btn.disabled = !0, btn.textContent = cuttingFrames(url) ? "Reading\u2026" : "Saving\u2026";
     function recover() {
-      fromShare && (resetUpload(), openSheet("addsheet"));
+      fromShare && (resetUpload(), addMode(null), openSheet("addsheet"));
     }
     deviceFrames({ url: url }).then(function(frames) {
       var body = { url: url };
       return frames && (body.frames = frames), btn.textContent = "Saving\u2026", api("ingest", { method: "POST", body: JSON.stringify(body) });
     }).then(function(r) {
-      if (btn.disabled = !1, btn.textContent = "Save workout", r.status === "processing") {
-        $("addurl").value = "", closeSheet("addsheet"), placePending(r, url, null), toast(withShelf(isFree() ? "Saved \u2014 building a Basic read from available text\u2026" : fromShare ? "Saved from the share sheet \u2014 reading it\u2026" : "Saved \u2014 reading the video\u2026"), 3400);
+      if (btn.disabled = !1, btn.textContent = "Save workout", fromShare && (sharing = !1), r.status === "processing") {
+        $("addurl").value = "", closeSheet("addsheet"), placePending(r, url, null), toast(withShelf(isFree() ? "Saved \u2014 building a Basic read from available text\u2026" : fromShare ? "Saved from the share sheet \u2014 reading it\u2026" : /\/(p|photo)\//.test(url) ? "Saved \u2014 reading the post\u2026" : "Saved \u2014 reading the video\u2026"), 3400);
         return;
       }
       if (r.status === "saved")
@@ -17732,7 +17785,7 @@ details.details-moving > :not(summary) {
         toast(r.message || "Could not save that link \u2014 check it and try again."), recover();
       }
     }).catch(function() {
-      btn.disabled = !1, btn.textContent = "Save workout", toast("Could not reach Spotter \u2014 check your connection."), recover();
+      btn.disabled = !1, btn.textContent = "Save workout", fromShare && (sharing = !1), toast("Could not reach Spotter \u2014 check your connection."), recover();
     });
   }
   var SHARE_KEY = "spotter_share_pending", sharing = !1;
@@ -17780,6 +17833,28 @@ details.details-moving > :not(summary) {
   function handleSharedUrl(u) {
     !u || sharing || (sharing = !0, $("addurl").value = u, doAdd(!0));
   }
+  function takeParkedShare() {
+    if (!native || !native.takeParkedShare || !state.user || sharing) return Promise.resolve();
+    var epoch = accountEpoch, uid = state.user.id;
+    return native.takeParkedShare().then(function(parked) {
+      if (!(!parked || !parked.url || !accountNow(epoch, uid))) {
+        var at = typeof parked.at == "number" ? parked.at < 1e12 ? parked.at * 1e3 : parked.at : Date.parse(parked.at || "");
+        if (!(isFinite(at) && Date.now() - at > 24 * 3600 * 1e3)) {
+          var u = firstUrlIn(parked.url);
+          if (u) {
+            try {
+              sessionStorage.setItem(SHARE_KEY, u);
+            } catch (e) {
+              handleSharedUrl(u);
+              return;
+            }
+            consumeShare();
+          }
+        }
+      }
+    }).catch(function() {
+    });
+  }
   var UPLOAD_MAX = 25 * 1024 * 1024, UPLOAD_TYPES = {
     mp4: "video/mp4",
     m4v: "video/x-m4v",
@@ -17810,6 +17885,25 @@ details.details-moving > :not(summary) {
   }
   function upProgress(frac, note) {
     $("upprog").hidden = !1, $("upfill").style.width = Math.round(Math.max(0, Math.min(1, frac)) * 100) + "%", $("upnote").textContent = note;
+  }
+  var attachTo = null, addWords = null;
+  function addMode(w) {
+    addWords || (addWords = {
+      t: $("addtitle").textContent,
+      l: $("addlede").textContent,
+      u: $("uptitle").textContent,
+      s: $("upsub").textContent
+    }), attachTo = w || null, $("addsheet").classList.toggle("attach", !!w), $("addtitle").textContent = w ? "Add the video" : addWords.t, $("addlede").textContent = w ? "In Instagram, tap Share \u2192 Download on the reel, then choose that video here. Spotter reads it into \u201C" + (w.title || "this card") + "\u201D." : addWords.l, $("uptitle").textContent = w ? "Choose the downloaded video" : addWords.u, $("upsub").textContent = w ? "It counts as one of your video reads, not an upload. MP4 or MOV, up to 25 MB, deleted once it is read." : addWords.s, $("addfile").setAttribute("accept", w ? "video/*" : "video/*,audio/*");
+  }
+  function openAddVideo(w) {
+    state.user && (resetUpload(), addMode(w), openSheet("addsheet"));
+  }
+  function attached(w, r) {
+    closeSheet("addsheet"), resetUpload();
+    var row = state.workouts.filter(function(x) {
+      return x.id === w.id;
+    })[0] || w;
+    row.ingest_status = "processing", row.ingest_error = null, row.media_stage = "watching", current && current.id === row.id && openDetail(row, !0), render(), watchPending(), toast(r.message || "Watching your video\u2026", 3400);
   }
   function resetUpload() {
     uploading = !1, upError(""), $("upprog").hidden = !0, $("upfill").style.width = "0", $("upnote").textContent = "Uploading\u2026", $("uploadrow").disabled = !1, $("addfile").value = "";
@@ -17860,32 +17954,44 @@ details.details-moving > :not(summary) {
       uploading = !0, $("uploadrow").disabled = !0;
       var path = state.user.id + "/" + uuid() + "." + ext;
       upProgress(0, "Uploading\u2026 0%");
-      var watched = !!UPLOAD_WATCHED[ext];
-      api("uploads/authorize", { method: "POST", body: JSON.stringify({ path: path, bytes: file.size }) }).then(function(permit) {
+      var watched = !!UPLOAD_WATCHED[ext], into = attachTo, permitBody = { path: path, bytes: file.size };
+      into && (permitBody.attach = into.id), api("uploads/authorize", { method: "POST", body: JSON.stringify(permitBody) }).then(function(permit) {
         if (permit.status !== "ok") {
+          if (into && limitHit(permit, null)) {
+            var sold = new Error("");
+            throw sold.handled = !0, sold;
+          }
           var denied2 = new Error(permit.message || "Upload is paused. Please try again later.");
           throw denied2.uploadLimit = !0, denied2;
         }
         return putObject(file, path, UPLOAD_TYPES[ext]);
       }).then(function() {
-        return !watched || !native || !native.contactSheet ? null : (upProgress(1, "Uploaded \u2014 reading the video\u2026"), deviceFrames({ file: file, shortcode: "up-" + path.split("/")[1].split(".")[0] }));
+        return into ? (upProgress(1, "Uploaded \u2014 Spotter is watching it\u2026"), api("workouts/" + into.id + "/media", {
+          method: "POST",
+          body: JSON.stringify({ upload_path: path, filename: name.slice(0, 160) })
+        }).then(function(r) {
+          return r.status === "processing" ? (attached(into, r), null) : (resetUpload(), limitHit(r, null) || upError(r.message || "Spotter could not start reading that video."), null);
+        })) : !watched || !native || !native.contactSheet ? null : (upProgress(1, "Uploaded \u2014 reading the video\u2026"), deviceFrames({ file: file, shortcode: "up-" + path.split("/")[1].split(".")[0] }));
       }).then(function(frames) {
+        if (into) return null;
         upProgress(1, watched ? "Uploaded \u2014 Spotter is watching it\u2026" : "Uploaded \u2014 Spotter is listening\u2026");
         var body = { upload_path: path, filename: name.slice(0, 160) };
         return frames && (body.frames = frames), api("ingest", { method: "POST", body: JSON.stringify(body) });
       }).then(function(r) {
-        if (r.status === "processing") {
-          closeSheet("addsheet"), resetUpload(), placePending(r, "", "upload", watched ? "watching" : "listening"), toast(withShelf(watched ? "Uploaded \u2014 watching the video\u2026" : "Uploaded \u2014 listening to it\u2026"), 3400);
-          return;
+        if (r) {
+          if (r.status === "processing") {
+            closeSheet("addsheet"), resetUpload(), placePending(r, "", "upload", watched ? "watching" : "listening"), toast(withShelf(watched ? "Uploaded \u2014 watching the video\u2026" : "Uploaded \u2014 listening to it\u2026"), 3400);
+            return;
+          }
+          if (r.status === "exists") {
+            closeSheet("addsheet"), resetUpload(), toast("Already in your library."), load();
+            return;
+          }
+          resetUpload(), !limitHit(r, null) && upError(r.message || "Spotter could not start reading that upload.");
         }
-        if (r.status === "exists") {
-          closeSheet("addsheet"), resetUpload(), toast("Already in your library."), load();
-          return;
-        }
-        resetUpload(), !limitHit(r, null) && upError(r.message || "Spotter could not start reading that upload.");
       }).catch(function(e) {
         var msg = String(e && e.message ? e.message : e);
-        resetUpload(), e && e.uploadLimit ? upError(msg) : upError(msg === "413" ? "That file is too big for Spotter\u2019s storage. The limit is " + mb(UPLOAD_MAX) + " MB." : msg === "400" || msg === "415" ? "Spotter\u2019s storage would not take that file. Send " + UPLOAD_KINDS + "." : msg === "401" || msg === "403" ? "Session expired \u2014 sign in again." : "The upload did not finish. Check your connection and try again.");
+        resetUpload(), !(e && e.handled) && (e && e.uploadLimit ? upError(msg) : upError(msg === "413" ? "That file is too big for Spotter\u2019s storage. The limit is " + mb(UPLOAD_MAX) + " MB." : msg === "400" || msg === "415" ? "Spotter\u2019s storage would not take that file. Send " + UPLOAD_KINDS + "." : msg === "401" || msg === "403" ? "Session expired \u2014 sign in again." : "The upload did not finish. Check your connection and try again."));
       });
     }
   }
@@ -19118,7 +19224,7 @@ details.details-moving > :not(summary) {
   }), $("mailresend").onclick = mailResend, $("mailback").onclick = mailBack, $("oagoogle").onclick = googleSignIn, $("oaapple").onclick = appleSignIn, oaLabelOf("oagoogle"), oaLabelOf("oaapple"), loadAuthProviders(), $("pw").addEventListener("keydown", function(e) {
     e.key === "Enter" && doAuth();
   }), $("addbtn").onclick = function() {
-    $("addurl").value = "", resetUpload(), openSheet("addsheet");
+    $("addurl").value = "", resetUpload(), addMode(null), openSheet("addsheet");
   }, $("addgo").onclick = function() {
     doAdd();
   }, $("addurl").addEventListener("keydown", function(e) {
@@ -19494,7 +19600,7 @@ details.details-moving > :not(summary) {
       saveDraft(), sb.auth.stopAutoRefresh();
       return;
     }
-    sb.auth.startAutoRefresh(), restUntil && tickRest(), wo && !wo.finished && (startClock(), acquireWake()), watchBilling(), stravaBack(), publishSummary(), state.user && !wo && !overlayShowing() && load();
+    sb.auth.startAutoRefresh(), restUntil && tickRest(), wo && !wo.finished && (startClock(), acquireWake()), watchBilling(), stravaBack(), publishSummary(), state.user && !wo && (pendPolls = 0, watchPending(), load(), takeParkedShare());
   }), document.addEventListener("visibilitychange", function() {
     if (document.hidden && saveDraft(), document.body.classList.toggle("asleep", document.hidden), document.visibilityState !== "visible") {
       clearTimeout(pendTimer), pendTimer = null;
@@ -19505,7 +19611,7 @@ details.details-moving > :not(summary) {
         acquireWake();
         return;
       }
-      watchBilling(), overlayShowing() || load();
+      watchBilling(), load();
     }
   }), window.addEventListener("pageshow", watchBilling), window.addEventListener("focus", watchBilling), captureCreator(), setAuthMode("signup"), captureShare(), captureBilling(), captureStrava(), linkProblem(), sb.auth.getSession().then(function(r) {
     r.data.session && r.data.session.user ? (state.user = r.data.session.user, showApp(), boot().then(restoreSession)) : (showLanding(), sharePending() && toast("Sign in to save the link you shared."));

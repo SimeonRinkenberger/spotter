@@ -1170,6 +1170,9 @@ export const STYLE = String.raw`<style>
      mobile data is well past the ten seconds at which a spinner stops being an
      honest answer to "how long". */
   .upblock { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+  /* "Add the video": no link to paste, so the sheet is the picker alone. */
+  #addsheet.attach .field, #addsheet.attach #addgo { display: none; }
+  #addsheet.attach .upblock { margin-top: 4px; padding-top: 0; border-top: 0; }
   .uploadrow { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
     background: var(--card); border: 1px solid var(--line-2); border-radius: 16px;
     padding: 13px 14px; color: var(--ink); box-shadow: var(--sh-sm);
