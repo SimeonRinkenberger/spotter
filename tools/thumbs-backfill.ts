@@ -1,9 +1,10 @@
 // Card-size covers for the thumbnails stored before storeThumb learned to make them.
 //
-// DRY RUN BY DEFAULT: it downloads each public cover, runs the function's own
-// shrinkCover on it (imported from index.ts, so this is the code that ships, not a
-// copy), and prints the object list with the bytes before and after. Nothing is
-// written anywhere unless --apply is given, and --apply is the owner's call.
+// DRY RUN BY DEFAULT: it runs the function's own shrinkStoredCover on each object
+// (imported from index.ts: the code /api/worker/cover runs for a new save, not a
+// copy) against a store that reads the public cover and, in a dry run, writes
+// nothing, then prints the object list with the bytes before and after. Nothing
+// is written anywhere unless --apply is given, and --apply is the owner's call.
 //
 //   deno run --allow-read --allow-write --allow-env --allow-net tools/thumbs-backfill.ts \
 //     [--names names.json] [--out dir] [--apply] [--env path/to/.env.local]
@@ -11,8 +12,8 @@
 //   --names  a JSON array of object names in the `thumbs` bucket. Without it the
 //            bucket is listed through the Storage API, which needs the service key.
 //   --out    also write each small copy to this directory (for looking at them).
-//   --apply  upload: the small copy where there is one, else the same bytes, under
-//            the same name, with the week's cache header storeThumb now sends.
+//   --apply  upload what the route would: the small copy where there is one, else
+//            the same bytes if they lack the week's cache header, under the same name.
 //            Needs PROJECT_REF and SERVICE_ROLE_KEY (read from --env, default the
 //            repo's .env.local). Never printed.
 //
@@ -30,7 +31,8 @@ Deno.env.set("SUPABASE_SERVICE_ROLE_KEY", "import-not-a-jwt");
   addr: { transport: "tcp", hostname: "127.0.0.1", port: 0 },
 });
 const quiet = console.log; console.log = () => {};
-const { shrinkCover, plainJpegSize } = await import("../supabase/functions/spotter/index.ts");
+const { shrinkStoredCover } = await import("../supabase/functions/spotter/index.ts");
+type CoverStore = import("../supabase/functions/spotter/index.ts").CoverStore;
 console.log = quiet;
 
 const arg = (k: string) => { const i = Deno.args.indexOf("--" + k); return i >= 0 ? Deno.args[i + 1] : undefined; };
@@ -45,7 +47,6 @@ function findEnv(): string {
   throw new Error("no .env.local found; pass --env");
 }
 const ENV_ARG = arg("env");
-const CACHE = "max-age=604800";
 
 function env(): Record<string, string> {
   const out: Record<string, string> = {};
@@ -82,34 +83,40 @@ async function listNames(): Promise<string[]> {
 
 const names = await listNames();
 if (OUT) Deno.mkdirSync(OUT, { recursive: true });
+// Reads the public copy (no key needed for a dry run); writes only under --apply.
+const store: CoverStore = {
+  async read(name) {
+    const r = await fetch(`${PUBLIC_BASE}/storage/v1/object/public/thumbs/${encodeURIComponent(name)}`);
+    if (!r.ok) { await r.body?.cancel(); return null; }
+    return { bytes: new Uint8Array(await r.arrayBuffer()), type: r.headers.get("content-type") ?? "image/jpeg", cache: r.headers.get("cache-control") };
+  },
+  async write(name, bytes, type, cache) {
+    if (OUT && type === "image/jpeg") Deno.writeFileSync(`${OUT}/${name}`, bytes);
+    if (!APPLY) return true;
+    const a = admin();
+    const up = await fetch(`${a.base}/storage/v1/object/thumbs/${encodeURIComponent(name)}`, {
+      method: "POST", headers: { ...a.headers, "content-type": type, "cache-control": cache, "x-upsert": "true" }, body: bytes,
+    });
+    await up.body?.cancel();
+    return up.ok;
+  },
+};
+const quietLog = console.log;
 let before = 0, after = 0, shrunk = 0, kept = 0;
 const rows: string[] = [];
 for (const name of names) {
-  const skip = /^(web|up)-/.test(name);
-  const r = await fetch(`${PUBLIC_BASE}/storage/v1/object/public/thumbs/${encodeURIComponent(name)}`);
-  if (!r.ok) { rows.push(`${name}\tmissing ${r.status}`); await r.body?.cancel(); continue; }
-  const buf = new Uint8Array(await r.arrayBuffer());
-  const type = r.headers.get("content-type") ?? "image/jpeg";
-  const size = plainJpegSize(buf);
-  const t0 = performance.now();
-  const small = skip ? null : shrinkCover(buf);
-  const ms = Math.round(performance.now() - t0);
-  before += buf.byteLength; after += small ? small.byteLength : buf.byteLength;
-  if (small) shrunk++; else kept++;
-  rows.push(`${name}\t${size ? size.w + "x" + size.h : "-"}\t${buf.byteLength}\t${small ? small.byteLength : buf.byteLength}\t${
-    small ? "shrink " + ms + "ms" : skip ? "keep (full-width photo)" : "keep"}\t${r.headers.get("cache-control")}`);
-  if (small && OUT) Deno.writeFileSync(`${OUT}/${name}`, small);
-  if (APPLY) {
-    const a = admin();
-    const up = await fetch(`${a.base}/storage/v1/object/thumbs/${encodeURIComponent(name)}`, {
-      method: "POST", headers: { ...a.headers, "content-type": small ? "image/jpeg" : type, "cache-control": CACHE, "x-upsert": "true" },
-      body: small ?? buf,
-    });
-    rows[rows.length - 1] += up.ok ? "\tuploaded" : "\tUPLOAD FAILED " + up.status;
-    if (!up.ok) await up.body?.cancel();
-  }
+  console.log = () => {};
+  const o = await shrinkStoredCover(name, store);
+  console.log = quietLog;
+  if (o.action === "missing" || o.action === "refused") { rows.push(`${name}\t${o.action}`); continue; }
+  before += o.before; after += o.after;
+  if (o.action === "shrunk") shrunk++; else kept++;
+  const verb = APPLY ? "" : "would be ";
+  rows.push(`${name}\t${o.size ?? "-"}\t${o.before}\t${o.after}\t${
+    o.action === "shrunk" ? "shrink " + o.cpu_ms + "ms" : o.action === "failed" ? "UPLOAD FAILED" : /^(web|up)-/.test(name) ? "keep (full-width photo)" : "keep"}${
+    o.recached ? " (" + verb + "made cacheable)" : ""}\t${o.cache_was}`);
 }
-console.log("name\tsize\tbytes_before\tbytes_after\taction\tcache_control_now" + (APPLY ? "\tupload" : ""));
+console.log("name\tsize\tbytes_before\tbytes_after\taction\tcache_control_now");
 for (const r of rows) console.log(r);
 console.log(`\n${names.length} objects: ${shrunk} shrink, ${kept} keep. ${before} -> ${after} bytes (${
   before ? Math.round(100 * (before - after) / before) : 0}% less).${APPLY ? "" : " DRY RUN: nothing was written. Add --apply to upload."}`);

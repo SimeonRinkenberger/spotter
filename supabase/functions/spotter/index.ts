@@ -47,6 +47,7 @@
 //   POST /api/worker/media          one tier of reading the video, in its own isolate
 //   POST /api/worker/probe          one-off measurement behind the same secret
 //   POST /api/worker/ops-alert      push what ops_alert_check() fired to staff devices
+//   POST /api/worker/cover          one stored cover re-encoded at card size (shared secret)
 //   GET  /api/ops/scorecard         this week's operating review as JSON (staff only)
 //
 // Ingest is asynchronous: it enqueues and returns in ~200ms, and the worker fills
@@ -7053,8 +7054,9 @@ const dbHeaders = { ...authHeaders, "content-type": "application/json" };
 // thumb_url and get the small file. Storage's image transforms would do this but
 // are a paid feature and the org is on Free, so the decode, the resample and the
 // encode are ours (jpeg-js, plain JS: nothing to bundle beside the function), and
-// off the response path: the original goes up first, exactly as before but for
-// its header, and the small copy replaces it once it is made. Anything unusual
+// off the response path and out of the saving isolate: the original goes up first,
+// exactly as before but for its header, and /api/worker/cover makes the small copy
+// in a request of its own and puts it over the original. Anything unusual
 // keeps the original: not a baseline or progressive JPEG, an Exif or ICC segment
 // whose meaning a re-encode would drop, over COVER_MAX_PX, or a saving under a
 // fifth. A web page's picture is left whole, because the detail shows that one
@@ -7064,6 +7066,14 @@ const COVER_Q = 80;
 const COVER_MAX_PX = 12_000_000;
 const COVER_CACHE = "max-age=604800";
 const COVER_PLATFORMS = new Set(["tiktok", "instagram", "youtube"]);
+// The one shape storeThumb names an object in `thumbs`: a shortcode (the charset
+// every parser mints, authorizeSheets' rule) and the extension. No slash, and no
+// dot but the extension's, so no name can reach outside the bucket's top level.
+const THUMB_NAME = /^[A-Za-z0-9_-]{1,64}\.jpg$/;
+// A web page's picture (web-*) and an upload's frame (up-*) are shown full width.
+const THUMB_FULL_WIDTH = /^(web|up)-/;
+// Twice the largest cover seen (650 KB) many times over; a bigger object is kept as it is.
+const COVER_READ_MAX = 16 * 1024 * 1024;
 
 /** The size that still fills a 4:5 tile COVER_W wide, or null when the cover is within a fifth of it already. */
 export function coverFit(w: number, h: number): { w: number; h: number } | null {
@@ -7170,15 +7180,108 @@ async function putThumb(name: string, body: BodyInit, type: string, cache: strin
   });
 }
 
-/** The small copy, over the original of the same name. A failure leaves the original, as before. */
-async function shrinkStoredCover(name: string, buf: Uint8Array): Promise<void> {
-  const t0 = performance.now();
-  const small = shrinkCover(buf);
-  if (!small) return;
-  const ms = Math.round(performance.now() - t0);
-  const up = await putThumb(name, small, "image/jpeg", COVER_CACHE);
-  if (!up.ok) { console.error("cover shrink upload", name, up.status, await up.text()); return; }
-  console.log("cover", name, buf.byteLength, "->", small.byteLength, "bytes in", ms, "ms");
+/** Where shrinkStoredCover reads a stored cover and writes it back; the backfill passes its own. */
+export type CoverStore = {
+  read(name: string): Promise<{ bytes: Uint8Array; type: string; cache: string | null } | null>;
+  write(name: string, bytes: Uint8Array<ArrayBuffer>, type: string, cache: string): Promise<boolean>;
+};
+
+export type CoverOutcome = {
+  name: string; action: "shrunk" | "kept" | "missing" | "refused" | "failed";
+  size: string | null; before: number; after: number; cpu_ms: number; recached: boolean; cache_was: string | null;
+};
+
+/** Our own `thumbs` bucket, read and written with the service key. Never a platform, never a caller's URL. */
+const storageCovers: CoverStore = {
+  async read(name) {
+    const r = await fetch(`${SUPABASE_URL}/storage/v1/object/thumbs/${name}`, { headers: authHeaders, signal: AbortSignal.timeout(15_000) });
+    if (!r.ok) { await r.body?.cancel(); return null; }
+    if (Number(r.headers.get("content-length") ?? 0) > COVER_READ_MAX) { await r.body?.cancel(); return null; }
+    const bytes = new Uint8Array(await r.arrayBuffer());
+    if (bytes.byteLength > COVER_READ_MAX) return null;
+    return { bytes, type: r.headers.get("content-type") ?? "image/jpeg", cache: r.headers.get("cache-control") };
+  },
+  async write(name, bytes, type, cache) {
+    const up = await putThumb(name, bytes, type, cache);
+    if (!up.ok) console.error("cover upload", name, up.status, (await up.text()).slice(0, 200));
+    else await up.body?.cancel();
+    return up.ok;
+  },
+};
+
+/**
+ * One stored cover, put back at the size it is shown: the small copy over the
+ * original of the same name with a week's max-age, or, when there is no small
+ * copy worth having, the original itself with that header if it went up without
+ * it. The CPU the decode, resample and encode took is logged per cover. A failure
+ * leaves the original where it was, which is what every build already shows.
+ *
+ * The /api/worker/cover route and tools/thumbs-backfill.ts both run this, so the
+ * backfill makes exactly what a new save makes.
+ */
+export async function shrinkStoredCover(name: string, store: CoverStore = storageCovers): Promise<CoverOutcome> {
+  const out: CoverOutcome = { name, action: "refused", size: null, before: 0, after: 0, cpu_ms: 0, recached: false, cache_was: null };
+  if (!THUMB_NAME.test(name)) return out;
+  const held = await store.read(name);
+  if (!held) { out.action = "missing"; return out; }
+  const buf = held.bytes;
+  const size = plainJpegSize(buf);
+  out.size = size ? `${size.w}x${size.h}` : null;
+  out.before = out.after = buf.byteLength;
+  out.cache_was = held.cache;
+  let small: Uint8Array<ArrayBuffer> | null = null;
+  if (!THUMB_FULL_WIDTH.test(name)) {
+    const t0 = performance.now();
+    try { small = shrinkCover(buf); } catch (e) { console.error("cover decode", name, String(e).slice(0, 200)); }
+    out.cpu_ms = Math.round(performance.now() - t0);
+  }
+  if (small) {
+    if (!await store.write(name, small, "image/jpeg", COVER_CACHE)) { out.action = "failed"; return out; }
+    out.action = "shrunk"; out.after = small.byteLength;
+  } else {
+    out.action = "kept";
+    if (held.cache !== COVER_CACHE) out.recached = await store.write(name, buf as Uint8Array<ArrayBuffer>, held.type, COVER_CACHE);
+  }
+  console.log("cover", name, out.action, out.size, out.before, "->", out.after, "bytes,", out.cpu_ms, "ms CPU", out.recached ? "(now cacheable)" : "");
+  return out;
+}
+
+/**
+ * The cover isolate. Same shared secret as /api/worker/tick and a 404 without it.
+ * A request of its own for the same reason as /api/worker/vision: decoding and
+ * re-encoding a 2160x3840 cover is 250-400 ms of CPU on a laptop and more on the
+ * edge, and inside the job's (or a reprocess's) invocation that would count
+ * against the same CPU limit as the job; a kill would take the job with it. Here
+ * a kill costs only the small copy: the original is already stored and shown.
+ *
+ * It takes a name and nothing else, checked against the one shape storeThumb
+ * writes, and reads the bytes back from our own bucket.
+ */
+async function handleCoverTick(req: Request): Promise<Response> {
+  if (!secretEquals(req.headers.get("x-worker-secret") ?? "", WORKER_SECRET)) {
+    return json({ status: "error", message: "Not found" }, 404);
+  }
+  const body = await req.json().catch(() => null) as { name?: unknown } | null;
+  const name = typeof body?.name === "string" ? body.name : "";
+  if (!THUMB_NAME.test(name)) return json({ status: "error", message: "name must be a stored cover's name" }, 400);
+  const out = await shrinkStoredCover(name);
+  return json({ status: out.action === "failed" ? "error" : "ok", ...out }, out.action === "failed" ? 502 : 200);
+}
+
+/** Fire and forget, the kickWorker way: the saving isolate never waits on the shrink. */
+function kickCover(name: string): void {
+  if (!WORKER_SECRET) { console.error("cover shrink skipped: WORKER_SECRET is not set"); return; }
+  background(
+    fetch(`${SELF_URL}/api/worker/cover`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-worker-secret": WORKER_SECRET },
+      body: JSON.stringify({ name }),
+      signal: AbortSignal.timeout(15_000),
+    }).then(async (r) => {
+      const body = await r.text();
+      if (!r.ok) console.error("cover kick", r.status, body.slice(0, 200));
+    }),
+  );
 }
 
 export async function storeThumb(shortcode: string, src: string | null, platform = ""): Promise<string | null> {
@@ -7195,7 +7298,7 @@ export async function storeThumb(shortcode: string, src: string | null, platform
     const up = await putThumb(`${shortcode}.jpg`, buf, r.headers.get("content-type") ?? "image/jpeg",
       shrink ? "no-cache" : COVER_CACHE);
     if (!up.ok) { console.error("thumb upload", up.status, await up.text()); return null; }
-    if (shrink) background(shrinkStoredCover(`${shortcode}.jpg`, buf));
+    if (shrink) kickCover(`${shortcode}.jpg`);
     return `${SUPABASE_URL}/storage/v1/object/public/thumbs/${shortcode}.jpg`;
   } catch (e) {
     console.error("storeThumb failed", e);
@@ -13944,6 +14047,9 @@ Deno.serve(async (req: Request) => {
     // The sheets A/B bench, behind its own secret. Matched here, above the user
     // gate, so it can never be reached with a user bearer.
     if (req.method === "POST" && path === "/api/worker/eval-sheets") return await handleEvalSheets(req);
+    // One stored cover re-encoded at the size it is shown, in its own isolate and
+    // behind the worker secret; storeThumb kicks it after a save.
+    if (req.method === "POST" && path === "/api/worker/cover") return await handleCoverTick(req);
 
     // The reminders pass, on the hour from pg_cron. Same shared secret and the
     // same reason as the worker's routes: nobody is signed in. `?dry=1` reports
