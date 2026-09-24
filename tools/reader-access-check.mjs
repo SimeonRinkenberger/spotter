@@ -17,8 +17,10 @@ const constant=(text,name)=>Number(text.match(new RegExp('(?:export )?const '+na
 const AI_CONSENT_VERSION=src.match(/const AI_CONSENT_VERSION = "([^"]+)"/)[1];
 const c = vm.createContext({console, CARD_V:constant(src,'CARD_V'), MIN_USABLE_CARD_V:constant(src,'MIN_USABLE_CARD_V'),
  PACK_V:constant(packSrc,'PACK_V'), MIN_USABLE_PACK_V:constant(packSrc,'MIN_USABLE_PACK_V'), Date, Set, Map, JSON, Number, String});
-const functions=['usablePack','visuallyRead','cacheStale','markCache','cacheForAccess','basicMeta','readQuality','labelRecommendations','plusPlan'];
-vm.runInContext(transformSync(functions.map(fn).join('\n'),{loader:'ts',format:'cjs'}).code,c);
+const functions=['usablePack','visuallyRead','cacheStale','markCache','cacheForAccess','cacheEntitled','isDoseWordName','cardSound','basicMeta','readQuality','labelRecommendations','plusPlan'];
+// The dose-word vocabulary cardSound reads, lifted as it is written.
+const doseWords=src.slice(src.indexOf('const DOSE_WORDS = new Set(['),src.indexOf('function isDoseWordName('));
+vm.runInContext(transformSync(doseWords+functions.map(fn).join('\n'),{loader:'ts',format:'cjs'}).code,c);
 const pack={pack_v:1,reader:'sheets:gemini',exercises:[{name_shown:'Squat'}]};
 const basic={title:'Basic',blocks:[]}, premium={title:'Plus',blocks:[{exercises:[{name:'Squat'}]}]};
 c.row={pack,pack_v:1,card:premium,v:9,read_quality:'premium',media_source:'pack:video',media_text:'private visual transcript'};

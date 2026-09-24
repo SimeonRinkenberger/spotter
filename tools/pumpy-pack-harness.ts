@@ -132,6 +132,7 @@ const NAMES = [
   "pumpyShort", "compactExercise", "catalogMusclesOf", "toolGetWorkout",
   "pumpyPack", "pumpyVariant", "pumpyExerciseAt", "toolExerciseDetail", "pumpyFitDetail",
   "runPumpyTool",
+  "DOSE_WORDS", "DOSE_ANCHORS", "isDoseWordName",
   "pumpyExName", "pumpyFindInWorkout", "pumpyKeepsExercise", "pumpyFromHandle",
   "pumpyCitedInList", "pumpyAttachSources",
   "pumpyAttachmentError", "pumpyRefBlock", "pumpySystem",

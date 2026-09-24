@@ -33,6 +33,7 @@ const checks = [
   ['Creator codes on the client', 'node', ['tools/creator-client-harness.mjs']],
   ['Creator codes SQL', 'node', ['tools/creator-db-check.mjs']],
   ['Creator ledger in the store webhook', 'node', ['tools/creator-purchases-check.mjs']],
+  ['Save flow: Instagram slides, dose words, link shapes, holds, admission', 'deno', ['run','--allow-read','tools/share-harness.ts']],
 ];
 const failures=[];
 for(const [label,cmd,args] of checks) {

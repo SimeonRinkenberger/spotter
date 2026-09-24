@@ -190,7 +190,9 @@ const STUBS = "import { normText } from '" +
 
 const NAMES = [
   "CUE_MAX", "CUE_RULE", "TRANSCRIBE_PROMPT",
-  "intOrNull", "numOrNullBounded", "trimCue", "parseJsonLoose", "splitDose", "normalizeExercise",
+  "intOrNull", "numOrNullBounded", "trimCue", "parseJsonLoose", "splitDose",
+  // The dose-word rule every exercise name passes, and the cache check built on it.
+  "DOSE_WORDS", "DOSE_ANCHORS", "isDoseWordName", "cardSound", "normalizeExercise",
   "ttSubtitles",
   "countExercises", "matchPackExercise", "packEvidence", "applyPack",
   // The two routes the native share extension and the "Re-read this video" action

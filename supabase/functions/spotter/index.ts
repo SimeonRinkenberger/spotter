@@ -893,6 +893,11 @@ const ALLOWED_ORIGINS = (Deno.env.get("ALLOWED_ORIGINS") ??
 const DESKTOP_UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
 const CRAWLER_UA = "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)";
+// Instagram's captioned embed answers a desktop browser with a 640 KB login shell
+// and a phone or a link-preview crawler with the real embed. The crawler is asked
+// first because it is what the og: rung already uses; the phone is the second try.
+const IPHONE_UA =
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1";
 
 const CATEGORIES = [
   "Push", "Pull", "Legs", "Upper Body", "Full Body",
@@ -1422,6 +1427,10 @@ type Meta = {
   // seeded from the cache has no ORIGINAL url to re-fetch, and storeThumb answers
   // null for that — which would strip the picture off a card that has one.
   thumb_stored?: string | null;
+  // The platform answered and says there is no such post — deleted, private, or a
+  // code that never existed. Set by a provider only on that positive answer, never
+  // on a timeout or a login wall, because it makes the job final at attempt one.
+  absent?: boolean;
 };
 
 // Successful-model state remains for the parser adapters; active routing uses
@@ -1822,6 +1831,7 @@ function igFromOg(html: string): { caption: string | null; thumb: string | null;
  */
 function igFromEmbed(html: string): {
   caption: string | null; thumb: string | null; author: string | null; images: string[];
+  slides: { url: string; video: boolean }[]; absent: boolean;
 } {
   let thumb: string | null = null;
   const im = html.match(/class="EmbeddedMediaImage"[^>]*src="([^"]+)"/) ??
@@ -1842,12 +1852,58 @@ function igFromEmbed(html: string): {
   const a = html.match(/class="UsernameText"[^>]*>([^<]+)</);
   if (a) author = decodeEntities(a[1]);
 
-  const images: string[] = [];
-  for (const mm of html.matchAll(/"display_url"\s*:\s*"([^"]+)"/g)) {
-    const u = mm[1].replace(/\\u0026/g, "&").replace(/\\\//g, "/");
-    if (/^https:\/\//.test(u) && !images.includes(u)) images.push(u);
+  // The slides. They live in `contextJSON`, which is JSON written as a string
+  // inside a script's object literal — escaped twice, so a URL reads
+  // `https:\\\/\\\/scontent…` in the raw page. The old regex wanted bare quotes
+  // and found nothing on every one of thirteen verified posts, which is why no
+  // carousel was ever read slide by slide. Decoding it the way the page's own
+  // script does is the fix; the flattened regex below is the fallback for a
+  // page whose script shape moves.
+  const slides: { url: string; video: boolean }[] = [];
+  const push = (u: unknown, video: unknown) => {
+    if (typeof u !== "string" || !/^https:\/\//.test(u) || slides.some((s) => s.url === u)) return;
+    slides.push({ url: u, video: video === true });
+  };
+  const media = igEmbedContext(html)?.gql_data?.shortcode_media;
+  if (media && typeof media === "object") {
+    const edges = media.edge_sidecar_to_children?.edges;
+    if (Array.isArray(edges) && edges.length) {
+      for (const e of edges) push(e?.node?.display_url, e?.node?.is_video);
+    } else push(media.display_url, media.is_video);
+    const text = media.edge_media_to_caption?.edges?.[0]?.node?.text;
+    // The creator's caption as they wrote it, line breaks and all, without the
+    // handle the Caption div puts on its first line.
+    if (typeof text === "string" && text.trim()) caption = text.replace(/\n{3,}/g, "\n\n").trim();
+    if (typeof media.owner?.username === "string" && media.owner.username) author = media.owner.username;
+  } else {
+    const flat = html.replace(/\\+u([0-9a-fA-F]{4})/g, (_, h) => String.fromCharCode(parseInt(h, 16)))
+      .replace(/\\+"/g, '"').replace(/\\+\//g, "/");
+    for (const mm of flat.matchAll(/"display_url"\s*:\s*"([^"]+)"/g)) push(mm[1], false);
   }
-  return { caption, thumb, author, images };
+  // A carousel's own display_url repeats its first child's, so the list is the
+  // children when there are any and the one picture otherwise.
+  const images = slides.map((s) => s.url);
+  // "Instagram answered, and there is no post": the embed page's broken-media
+  // panel and no context at all. Not a network fault and not a login wall — the
+  // one case where asking again cannot help (igMeta decides with the og: rung).
+  const absent = /class="EmbedBrokenMedia"/.test(html) && !media && !caption && !images.length;
+  return { caption, thumb, author, images, slides, absent };
+}
+
+/** The embed's `contextJSON`, decoded twice as the page's own script would. Null when absent. */
+function igEmbedContext(html: string): any | null {
+  const key = '"contextJSON":"';
+  const at = html.indexOf(key);
+  if (at < 0) return null;
+  const start = at + key.length - 1;
+  let end = start + 1;
+  while (end < html.length && html[end] !== '"') end += html[end] === "\\" ? 2 : 1;
+  try {
+    const inner = JSON.parse(html.slice(start, end + 1));
+    return typeof inner === "string" ? JSON.parse(inner) : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -1896,13 +1952,20 @@ async function igMeta(p: Parsed): Promise<Meta> {
     }
   } catch (_) { /* fall through */ }
 
-  // 2) the captioned-embed page often works when og: tags are login-walled
-  try {
-    const r = await safeFetch(`https://www.instagram.com/p/${p.shortcode}/embed/captioned/`, {
-      headers: { "User-Agent": DESKTOP_UA, "Accept-Language": "en-US" },
-    });
-    if (r.ok) {
+  // 2) the captioned-embed page: the caption with its lines, and the slides. Asked
+  // as the crawler and then as a phone, never as a desktop browser — that is the
+  // login shell, and it is what every production save got until 24 Sept.
+  let broken = false;
+  for (const ua of [CRAWLER_UA, IPHONE_UA]) {
+    try {
+      const r = await safeFetch(`https://www.instagram.com/p/${p.shortcode}/embed/captioned/`, {
+        headers: { "User-Agent": ua, "Accept-Language": "en-US", "Accept": "text/html" },
+      });
+      if (!r.ok) { await r.body?.cancel(); continue; }
       const got = igFromEmbed(await r.text());
+      if (got.absent) { broken = true; break; }
+      // A shell with nothing in it: the other voice may be answered properly.
+      if (!got.caption && !got.author && !got.images.length) continue;
       // "did this rung contribute", not "is there anything at all by now" — the old
       // test read the accumulated fields and so credited the embed page for what og:
       // had already found, which is the one question save_health exists to answer.
@@ -1913,12 +1976,20 @@ async function igMeta(p: Parsed): Promise<Meta> {
       if (!out.author && got.author) { out.author = got.author; gained = true; }
       for (const u of got.images) if (!images.includes(u)) { images.push(u); gained = true; }
       if (gained) used.push("embed-captioned");
-    }
-  } catch (_) { /* fall through */ }
+      if (got.slides.some((s) => s.video)) {
+        console.log("instagram:", p.shortcode, got.slides.length, "slide(s),",
+          got.slides.filter((s) => s.video).length, "of them video covers");
+      }
+      break;
+    } catch (_) { /* fall through */ }
+  }
 
   if (!images.length && out.thumb) images = [out.thumb];
   out.images = images;
   out.source = used.join(",") || "none";
+  // Instagram answered both pages and neither names a post: deleted, private, or a
+  // code that never existed. Final, not a fault — see runJob.
+  if (broken && !out.caption && !out.author && !out.thumb) out.absent = true;
   return out;
 }
 
@@ -4902,6 +4973,41 @@ const SPAM_LINE = /^(#|link in bio|follow (me|for)|save this|comment [A-Z]+ belo
 // Lines that carry a duration but describe the protocol, not a movement to perform.
 const NOT_AN_EXERCISE = /^(rest|repeat|complete|do |perform|between|then |x\d|round|set\b|circuit|total|warm ?up:|cool ?down:)/i;
 
+// A name made of nothing but the words a dose is written in. "3 Sets x 15 Reps
+// each Exercise" is a carousel's instruction for the slides, and reading it as a
+// line of the plan made a movement called "each Exercise" — which then counted as
+// a complete card, so the slides that held the real movements were never read.
+// Every word must be one of these and one must be an anchor, so "Leg Raises" and
+// "Arm Circles" are untouched.
+const DOSE_WORDS = new Set([
+  "each", "every", "all", "per", "the", "of", "for", "in", "on", "and", "between", "x",
+  "exercise", "exercises", "movement", "movements", "move", "moves", "side", "sides", "leg", "legs",
+  "arm", "arms", "rep", "reps", "set", "sets", "round", "rounds", "time", "times",
+  "second", "seconds", "sec", "secs", "minute", "minutes", "min", "mins",
+]);
+const DOSE_ANCHORS = new Set([
+  "each", "every", "all", "per", "exercise", "exercises", "movement", "movements",
+  "rep", "reps", "set", "sets", "round", "rounds",
+]);
+
+function isDoseWordName(name: string): boolean {
+  const words = name.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(Boolean);
+  return words.length > 0 && words.some((w) => DOSE_ANCHORS.has(w)) &&
+    words.every((w) => DOSE_WORDS.has(w) || /^\d+$/.test(w));
+}
+
+/**
+ * Whether a stored card is fit to be served. A row written before the dose-word
+ * rule can still hold one of those movements, and serving it would hand every
+ * later saver the same empty plan; answering "miss" instead lets the next save
+ * rebuild it, without anybody writing to the shared table by hand.
+ */
+function cardSound(card: any): boolean {
+  const blocks = Array.isArray(card?.blocks) ? card.blocks : [];
+  return !blocks.some((b: any) => (Array.isArray(b?.exercises) ? b.exercises : [])
+    .some((e: any) => typeof e?.name === "string" && isDoseWordName(e.name)));
+}
+
 function cleanLine(s: string): string {
   return s
     .replace(/[•▪●–—\-\*]+\s*/g, " ")
@@ -5057,7 +5163,7 @@ function heuristicWorkout(
         .replace(/\b(reps?|sets?|each side|per side|ea)\b/gi, " ")
         .replace(/[:\-–—]+/g, " ").replace(/\s+/g, " ").trim(),
     );
-    if (name.length < 3 || NOT_AN_EXERCISE.test(name)) continue;
+    if (name.length < 3 || NOT_AN_EXERCISE.test(name) || isDoseWordName(name)) continue;
 
     let seconds: number | null = null;
     if (tm && !sr) {
@@ -5256,7 +5362,7 @@ function splitDose(reps: string | null, sets: number | null, seconds: number | n
 
 function normalizeExercise(raw: any): Exercise | null {
   const name = typeof raw?.name === "string" ? cleanTitle(raw.name) : "";
-  if (!name || name.length < 2) return null;
+  if (!name || name.length < 2 || isDoseWordName(name)) return null;
   // A slide read of a "12 / 10 / 8" column comes back as the cells often enough to
   // be worth spelling out: the model hands over an array, and the card wants the
   // line the creator printed.
@@ -8432,6 +8538,15 @@ function markCache(row: any): any {
 /** Select an entitled result before copying any data into a user's RLS-visible row. */
 function cacheForAccess(row: any, premium: boolean): any | null {
   if (!row) return null;
+  const out = cacheEntitled(row, premium);
+  if (out && !cardSound(out.card)) {
+    console.log("cache: serving", row.shortcode, "as a miss — its card fails the dose-word rule");
+    return null;
+  }
+  return out;
+}
+
+function cacheEntitled(row: any, premium: boolean): any | null {
   if (premium) return markCache(row);
   if (row.read_quality === "basic" && !visuallyRead(row) && !row.media_source) return markCache(row);
   if (!row.basic_card || Number(row.basic_v) < MIN_USABLE_CARD_V) return null;
@@ -9501,7 +9616,7 @@ function mediaSeed(cached: any, w: any): { step: string; meta: Meta; card: Card 
   // seeding from one would stamp last version's shape as current and nothing
   // would ever rebuild it. A stale row still hands over its caption, thumbnail,
   // transcript and pack below — none of that is re-read.
-  const usable = cached && Number(cached.v) >= CARD_V && cached.card;
+  const usable = cached && Number(cached.v) >= CARD_V && cached.card && cardSound(cached.card);
   return usable
     ? { step: "media", meta, card: cached.card as Card }
     : { step: "card", meta, card: null };
@@ -9591,7 +9706,7 @@ async function handleReadVideo(
 
   // A first preview of a verified current card needs no model, decoding or queue.
   // A paid explicit reread deliberately bypasses this fast path.
-  if (!plusPlan(uc.plan) && visuallyRead(cached) && cached?.card && !cached.card.vision?.missing?.length &&
+  if (!plusPlan(uc.plan) && visuallyRead(cached) && cached?.card && cardSound(cached.card) && !cached.card.vision?.missing?.length &&
       (body?.preview === true || await premiumAccess(userId, w.shortcode))) {
     const cm: Meta = { caption: cached.caption, author: cached.author, thumb: cached.thumb_url,
       pack: usablePack(cached), source: "cache", read_plan: cached.read_plan };
@@ -11814,7 +11929,9 @@ function pumpyExercises(list: unknown): Exercise[] {
 
 /** The one rule normalizeExercise applies before anything else: a usable name. */
 function pumpyKeepsExercise(raw: any): boolean {
-  return typeof raw?.name === "string" && cleanTitle(raw.name).length >= 2;
+  if (typeof raw?.name !== "string") return false;
+  const name = cleanTitle(raw.name);
+  return name.length >= 2 && !isDoseWordName(name);
 }
 
 function pumpyFromHandle(raw: any): string | null {
