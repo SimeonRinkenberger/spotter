@@ -7,8 +7,31 @@ public class ShareAccessPlugin: CAPPlugin, CAPBridgedPlugin {
     public let jsName = "ShareAccess"
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "configure", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "contactSheet", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "contactSheet", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "takeParkedShare", returnType: CAPPluginReturnPromise)
     ]
+
+    /// Where a signed-out share leaves its link: the store the app and the Share
+    /// Extension both open, JSON `{url, at}`. The extension writes it; only this
+    /// method reads it, and it removes what it reads.
+    static let parkedShareKey = "spotter.parkedShare"
+
+    /**
+     * The link a signed-out share parked, taken out so it is saved exactly once.
+     * Resolves empty when nothing is parked or what is parked does not decode —
+     * the page's answer to both is the same: there is nothing to save.
+     */
+    @objc func takeParkedShare(_ call: CAPPluginCall) {
+        let key = ShareAccessPlugin.parkedShareKey
+        guard let data = try? SharedStore.read(key: key) else { call.resolve([:]); return }
+        SharedStore.remove(key: key)
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let url = object["url"] as? String, !url.isEmpty else { call.resolve([:]); return }
+        var out: JSObject = ["url": url]
+        if let at = object["at"] as? String { out["at"] = at }
+        else if let at = object["at"] as? Double { out["at"] = at }
+        call.resolve(out)
+    }
 
     @objc func configure(_ call: CAPPluginCall) {
         let key = call.getString("key")

@@ -88,6 +88,11 @@ window.SpotterNative = {
   push: createPush(registerPlugin('SpotterPush')),
   configureSharing,
   contactSheet,
+  // A link the Share Extension parked while nobody was signed in. Taken, not
+  // read: the plugin removes it, so it is saved exactly once. Android shares
+  // arrive through the intent instead, so there is never anything parked there.
+  takeParkedShare: () => android ? Promise.resolve(null)
+    : ShareAccessHost.takeParkedShare().catch(() => null),
   signInWithApple: (sb, registerGrant) => signInWithApple(sb, registerPlugin('AppleAuth'), registerGrant),
   signInWithGoogle: sb => signInWithGoogle(sb, registerPlugin('GoogleAuth')),
   authStorage: session.storage,
