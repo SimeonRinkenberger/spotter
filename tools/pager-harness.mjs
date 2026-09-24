@@ -67,6 +67,17 @@ class El {
   set className(v) { this.cls = new Set(String(v).split(' ').filter(Boolean)); }
   get className() { return [...this.cls].join(' '); }
   add(...kids) { kids.forEach((k) => { k.parentElement = this; this.children.push(k); }); return this; }
+  get firstChild() { return this.children[0] || null; }
+  get nextSibling() { const p = this.parentElement; return p ? p.children[p.children.indexOf(this) + 1] || null : null; }
+  get isConnected() { let n = this; while (n.parentElement) n = n.parentElement; return n.tagName === 'HTML'; }
+  insertBefore(n, ref) {
+    if (n.parentElement) n.remove();
+    n.parentElement = this;
+    const at = ref ? this.children.indexOf(ref) : -1;
+    if (at < 0) this.children.push(n); else this.children.splice(at, 0, n);
+    return n;
+  }
+  removeChild(n) { n.remove(); return n; }
   remove() { if (this.parentElement) { const p = this.parentElement; p.children = p.children.filter((c) => c !== this); } this.parentElement = null; }
   setAttribute(k, v) { this.attrs[k] = String(v); }
   getAttribute(k) { return k in this.attrs ? this.attrs[k] : null; }
@@ -81,6 +92,18 @@ class El {
   scrollTo(o) { this.scrollTop = o.top; }
   matches(sel) {
     return sel.split(',').map((s) => s.trim()).some((s) => {
+      // A descendant selector: the last part here, the rest on the way up.
+      const parts = s.split(/\s+/);
+      if (parts.length > 1) {
+        if (!this.matches(parts.pop())) return false;
+        let n = this.parentElement;
+        for (let i = parts.length - 1; i >= 0; i--) {
+          while (n && !n.matches(parts[i])) n = n.parentElement;
+          if (!n) return false;
+          n = n.parentElement;
+        }
+        return true;
+      }
       if (/^\[[\w-]+\]$/.test(s)) return this.hasAttribute(s.slice(1, -1));
       const av = s.match(/^\[([\w-]+)=([\w-]+)\]$/);
       if (av) return this.getAttribute(av[1]) === av[2];
@@ -664,6 +687,114 @@ console.log('a sheet taller than the phone pushes away like a short one');
     const wire = fn('wireSheet');
     assert(wire.includes('if (sd.lock || claims(e)) e.preventDefault();'));
     assert(wire.includes('if (sd.first) return false;'));
+  });
+}
+
+// ---------- a card that re-renders under the finger ----------
+//
+// On the 16e a card renamed three times a second while pressed lost its tap: the
+// render swapped its node, the touch's end went with the old one and WebKit
+// dropped the click. renderGrid and the press it keeps are lifted and run over
+// the fake DOM; cardNode is stubbed to a button that carries the title it drew.
+console.log('a card that re-renders under the finger');
+{
+  // Absent, the grid simply renders as it did before the fix, and the checks say so.
+  const MARK = '  // A card under a finger keeps its node until the finger lifts.';
+  const PRESS = APP.includes(MARK) ? between(APP, MARK, '  function renderGrid() {') : '';
+  function grid() {
+    T = 1000;
+    const doc = mk('html'), body = mk('body'); doc.add(body);
+    const g = mk('div', 'grid', { id: 'grid' }), empty = mk('div', '', { id: 'empty' }), other = mk('button', 'tab');
+    body.add(g, empty, other);
+    const byId = { grid: g, empty }, timers = [], winL = {}, docL = {}, opened = [];
+    const sandbox = {
+      Math, String, Number, JSON, Object, Array, console,
+      window: { addEventListener: (t, f) => { (winL[t] = winL[t] || []).push(f); } },
+      document: { addEventListener: (t, f) => { (docL[t] = docL[t] || []).push(f); },
+        documentElement: { style: { setProperty() {} } } },
+      $: (id) => byId[id],
+      setTimeout: (f, ms) => { timers.push({ f, at: T + (ms || 0) }); return timers.length; },
+      clearTimeout: (id) => { if (id) timers[id - 1] = null; },
+      state: { user: { id: 'u' }, workouts: [] }, accountEpoch: 1, gridCards: {}, newThisPass: 0,
+      pendingMotion: null, sortMode: 'new', visible: () => sandbox.state.workouts,
+      cardNode: (w) => { const n = mk('button', 'carditem'); n.setAttribute('data-id', w.id); n.drawn = w.title; n.add(mk('div', 'thumbwrap')); return n; },
+      cardMeta: () => '', openDetail: (w) => opened.push(w.title),
+      isByFilter: () => false, isMgFilter: () => false
+    };
+    vm.createContext(sandbox);
+    vm.runInContext(PRESS + fn('renderGrid'), sandbox);
+    const cards = () => g.children.slice();
+    const at = (id) => g.children.find((c) => c.getAttribute('data-id') === id);
+    const press = (target, type, e = {}) => (winL[type] || []).forEach((f) => f(Object.assign({ type, target }, e)));
+    const run = (ms) => { const end = T + ms; while (T < end) { T += 16; timers.forEach((t, i) => { if (t && t.at <= T) { timers[i] = null; t.f(); } }); } };
+    const set = (list) => { sandbox.state.workouts = list; vm.runInContext('renderGrid()', sandbox); };
+    return { g, other, cards, at, press, run, set, opened, docL };
+  }
+  const A = (title) => ({ id: 'a', title }), B = (title) => ({ id: 'b', title });
+
+  ok('the pressed card keeps its node through a render, and its tap opens what the card now is', () => {
+    const x = grid();
+    x.set([A('Leg day'), B('Push')]);
+    const node = x.at('a');
+    x.press(node.firstChild, 'pointerdown');
+    x.set([A('Leg day (1)'), B('Push')]);
+    x.set([A('Leg day (2)'), B('Push')]);
+    assert.equal(x.at('a'), node, 'the node under the finger was replaced');
+    assert(node.isConnected);
+    node.onclick();
+    assert.deepEqual(x.opened, ['Leg day (2)'], 'the tap opens the card as it is now');
+  });
+
+  ok('after the lift, one render brings the pressed card up to date', () => {
+    const x = grid();
+    x.set([A('Leg day'), B('Push')]);
+    const node = x.at('a');
+    x.press(node, 'pointerdown');
+    x.set([A('Leg day (1)'), B('Push')]);
+    x.press(node, 'pointerup');
+    assert.equal(x.at('a'), node, 'not before the click has had its moment');
+    x.run(400);
+    assert.notEqual(x.at('a'), node);
+    assert.equal(x.at('a').drawn, 'Leg day (1)');
+  });
+
+  ok('a card nobody is pressing redraws at once; a press elsewhere changes nothing', () => {
+    const x = grid();
+    x.set([A('Leg day'), B('Push')]);
+    const a = x.at('a'), b = x.at('b');
+    x.press(a, 'pointerdown');
+    x.set([A('Leg day'), B('Push day')]);
+    assert.equal(x.at('a'), a);
+    assert.notEqual(x.at('b'), b);
+    assert.equal(x.at('b').drawn, 'Push day');
+    const y = grid();
+    y.set([A('Leg day')]);
+    const n = y.at('a');
+    y.press(y.other, 'pointerdown');
+    y.set([A('Leg day (1)')]);
+    assert.notEqual(y.at('a'), n);
+  });
+
+  ok('a lift that never came holds a card back only until the next press, or a cancel, or the app going away', () => {
+    for (const end of [(x) => x.press(x.other, 'pointerdown'), (x) => x.press(x.other, 'pointercancel'),
+      (x) => (x.docL.visibilitychange || []).forEach((f) => f({}))]) {
+      const x = grid();
+      x.set([A('Leg day')]);
+      const node = x.at('a');
+      x.press(node, 'pointerdown');
+      x.set([A('Leg day (1)')]);
+      end(x);
+      x.run(400);
+      assert.equal(x.at('a').drawn, 'Leg day (1)');
+    }
+  });
+
+  ok('a pressed card that leaves the grid still goes', () => {
+    const x = grid();
+    x.set([A('Leg day'), B('Push')]);
+    x.press(x.at('a'), 'pointerdown');
+    x.set([B('Push')]);
+    assert.equal(x.at('a'), undefined);
   });
 }
 

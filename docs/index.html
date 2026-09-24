@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-7CQFRig9gXwoaJlDXz3kvWn9m37dihAptvCNh48Ez0Y=' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/ https://challenges.cloudflare.com https://accounts.google.com/gsi/client https://appleid.cdn-apple.com/appleauth/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://api.fontshare.com https://accounts.google.com/gsi/style; font-src 'self' data: https://fonts.gstatic.com https://cdn.fontshare.com; img-src 'self' data: blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://i.ytimg.com https://simeonrinkenberger.github.io; media-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://simeonrinkenberger.github.io; connect-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co wss://mtzevoxxpsktmrbbuxva.supabase.co https://accounts.google.com/gsi/; frame-src https://www.tiktok.com https://www.instagram.com https://www.youtube.com https://www.youtube-nocookie.com https://challenges.cloudflare.com https://accounts.google.com/gsi/ https://appleid.apple.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-GZ5NYBL9hRm+XEk7sXskCU5s5B8DdIqh8jEkC5ZG51Y=' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/ https://challenges.cloudflare.com https://accounts.google.com/gsi/client https://appleid.cdn-apple.com/appleauth/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://api.fontshare.com https://accounts.google.com/gsi/style; font-src 'self' data: https://fonts.gstatic.com https://cdn.fontshare.com; img-src 'self' data: blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://i.ytimg.com https://simeonrinkenberger.github.io; media-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://simeonrinkenberger.github.io; connect-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co wss://mtzevoxxpsktmrbbuxva.supabase.co https://accounts.google.com/gsi/; frame-src https://www.tiktok.com https://www.instagram.com https://www.youtube.com https://www.youtube-nocookie.com https://challenges.cloudflare.com https://accounts.google.com/gsi/ https://appleid.apple.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="google-site-verification" content="unLzcq6TBz9Bm6q4KHpbTmZ88dQ_tTnViacVX5BLzS0">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <title>Spotter by Quarterdeck Collective — save any workout video</title>
@@ -11096,6 +11096,19 @@ details.details-moving > :not(summary) {
       card.classList.remove("in"), card.style.animationDelay = "";
     }));
   }
+  var pressedCard = null, gridBehind = !1, gridCatchUp = 0;
+  function liftCard() {
+    if (pressedCard && (pressedCard = null, !!gridBehind)) {
+      gridBehind = !1;
+      var epoch = accountEpoch;
+      clearTimeout(gridCatchUp), gridCatchUp = setTimeout(function() {
+        state.user && epoch === accountEpoch && renderGrid();
+      }, 350);
+    }
+  }
+  window.addEventListener("pointerdown", function(e) {
+    liftCard(), pressedCard = e.target && e.target.closest ? e.target.closest("#grid .carditem") : null;
+  }, !0), window.addEventListener("pointerup", liftCard, !0), window.addEventListener("pointercancel", liftCard, !0), document.addEventListener("visibilitychange", liftCard);
   function renderGrid() {
     var grid = $("grid"), empty = $("empty"), items = visible(), previous = gridCards, next = {}, liveIds = {};
     state.workouts.forEach(function(w) {
@@ -11116,7 +11129,7 @@ details.details-moving > :not(summary) {
         w.difficulty,
         cardMeta(w)
       ]), entry = previous[key];
-      if (!entry || entry.sig !== sig) {
+      if (entry && entry.sig !== sig && entry.node === pressedCard && (gridBehind = !0, sig = entry.sig), !entry || entry.sig !== sig) {
         var changed = !!entry;
         entry && pendingMotion && pendingMotion.unobserve(entry.node), entry = { id: w.id, sig: sig, node: cardNode(w, i) }, changed && entry.node.classList.add("fresh");
       }

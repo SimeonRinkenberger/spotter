@@ -2453,6 +2453,33 @@ export const APP = String.raw`
     });
   }
 
+  // A card under a finger keeps its node until the finger lifts. A render that
+  // replaced it mid-press (Realtime renaming it, a read finishing) took the end of
+  // the touch away with the old node, and WebKit dropped the click, so the tap
+  // did nothing (seen on the iPhone 16e with a card renamed three times a
+  // second). The replacement waits instead, and one catch-up render follows once
+  // the click that belongs to the lift has had its moment. A new press anywhere
+  // is proof an old one lifted, so a lost lift holds a card back only until then.
+  var pressedCard = null, gridBehind = false, gridCatchUp = 0;
+
+  function liftCard() {
+    if (!pressedCard) return;
+    pressedCard = null;
+    if (!gridBehind) return;
+    gridBehind = false;
+    var epoch = accountEpoch;
+    clearTimeout(gridCatchUp);
+    gridCatchUp = setTimeout(function () { if (state.user && epoch === accountEpoch) renderGrid(); }, 350);
+  }
+
+  window.addEventListener("pointerdown", function (e) {
+    liftCard();
+    pressedCard = e.target && e.target.closest ? e.target.closest("#grid .carditem") : null;
+  }, true);
+  window.addEventListener("pointerup", liftCard, true);
+  window.addEventListener("pointercancel", liftCard, true);
+  document.addEventListener("visibilitychange", liftCard);
+
   function renderGrid() {
     var grid = $("grid"), empty = $("empty");
     var items = visible();
@@ -2467,6 +2494,8 @@ export const APP = String.raw`
       var sig = JSON.stringify([w.title, w.ingest_status, w.media_stage, w.platform, w.thumb_url,
         w.favorite, w.duration_minutes, w.category, w.difficulty, cardMeta(w)]);
       var entry = previous[key];
+      // Pressed: kept as it is, with its old signature so the catch-up redraws it.
+      if (entry && entry.sig !== sig && entry.node === pressedCard) { gridBehind = true; sig = entry.sig; }
       if (!entry || entry.sig !== sig) {
         var changed = !!entry;
         if (entry && pendingMotion) pendingMotion.unobserve(entry.node);
