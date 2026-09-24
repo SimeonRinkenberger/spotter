@@ -372,12 +372,31 @@ export const MARKUP_BODY = String.raw`</head>
   <div class="grabber"></div>
   <h2 id="addtitle">Add a workout</h2>
   <p class="lede" id="addlede">Paste a link to a TikTok, Instagram reel, YouTube video, or any workout page.</p>
-  <div class="field"><input id="addurl" type="url" placeholder="https://..." autocapitalize="off" autocomplete="off" spellcheck="false"></div>
+  <!-- In the app the everyday save never touches this sheet: it is Share in TikTok
+       or Instagram, then Spotter. So there the sheet opens as the lesson for that
+       (.share, set by addMode), drawn as the row people will actually look at: the
+       share glyph, the round "More" and Spotter's own icon, the three things ReciMe
+       and Deglaze teach with GIFs. The link box moves under it. data-on picks the
+       platform's lines; the empty library borrows this same list. -->
+  <div class="sharehow">
+    <ol class="shareflow">
+      <li><span class="sfmark" aria-hidden="true"><svg class="ic"><use href="#i-share"></use></svg></span><span class="sr-only">Tap </span>Share</li>
+      <li data-on="ios"><span class="sfmark more" aria-hidden="true"><svg class="ic"><use href="#i-more"></use></svg></span><span class="sr-only">Tap </span>More</li>
+      <li><span class="sfmark app" aria-hidden="true"><img src="icon.png" alt="" width="46" height="46"></span><span class="sr-only">Tap </span>Spotter</li>
+    </ol>
+    <p class="sfnote" data-on="ios">Not in the row? Scroll down to <b>Save&nbsp;to&nbsp;Spotter</b>.</p>
+    <p class="sfnote" data-on="android">In TikTok, Spotter is under <b>More</b>.</p>
+    <p class="sfnote sftip" data-on="ios"><svg class="ic" aria-hidden="true"><use href="#i-star"></use></svg><span>One tap next time: in <b>More</b>, tap <b>Edit</b> and add Spotter to&nbsp;Favorites.</span></p>
+    <div class="sfopen"><button class="chip" type="button" data-app="https://www.tiktok.com/">Open TikTok<svg class="ic"><use href="#i-arrow-up-right"></use></svg></button><button class="chip" type="button" data-app="https://www.instagram.com/">Open Instagram<svg class="ic"><use href="#i-arrow-up-right"></use></svg></button></div>
+  </div>
+  <div class="orpaste">Or paste a link</div>
+  <div class="field"><input id="addurl" type="url" placeholder="https://..." autocapitalize="off" autocomplete="off" spellcheck="false" aria-label="Video link"></div>
   <button class="btn" id="addgo">Save workout</button>
+  <p class="webnote" data-on="web">In the Spotter app you save straight from the <b>Share</b> button in TikTok or Instagram.</p>
 
-  <!-- The last rung of the ingest ladder, and deliberately the quiet one: pasting
-       a link is the everyday path, this is for the video that lives only on the
-       phone. It says "watches" because that is what changed, and the size limit
+  <!-- The last rung of the ingest ladder, and deliberately the quiet one: sharing
+       (in the app) or pasting a link is the everyday path, this is for the video
+       that lives only on the phone. It says "watches" because that is what changed, and the size limit
        is stated here rather than only in the error. -->
   <div class="upblock">
     <button class="uploadrow" id="uploadrow" type="button">

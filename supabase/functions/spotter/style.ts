@@ -1243,6 +1243,70 @@ export const STYLE = String.raw`<style>
     .uperr { animation: none; }
   }
 
+  /* ---------- save from any app ----------
+     The share sheet's own row, drawn small: the share glyph, the round More and
+     Spotter's real icon, chevrons between. The app's add sheet opens as this
+     (.share); on the web, which has no share extension, it stays hidden and the
+     link box leads as before. Spotter's tile keeps an ember ring, "this is the one
+     you tap", and on opening a ring walks the row once, the way a thumb would. */
+  .sharehow, .orpaste { display: none; }
+  #addsheet.share .sharehow { display: block; }
+  #addsheet.share .orpaste { display: flex; }
+  .shareflow { display: flex; justify-content: center; align-items: flex-start; margin: 0 0 12px;
+    padding: 16px 6px 13px; list-style: none; background: var(--card); border: 1px solid var(--line);
+    border-radius: 18px; box-shadow: var(--sh-sm); }
+  .shareflow li { position: relative; display: flex; flex-direction: column; align-items: center; gap: 8px;
+    width: 68px; font-size: 12.5px; font-weight: 650; color: var(--ink); letter-spacing: -.005em; }
+  .shareflow li + li { margin-left: 20px; }
+  /* Two borders of a turned square: a chevron with nothing to load. */
+  .shareflow li + li::before { content: ""; position: absolute; left: -16px; top: 20px; width: 7px; height: 7px;
+    border-top: 2px solid var(--muted); border-right: 2px solid var(--muted); transform: rotate(45deg); }
+  .sfmark { position: relative; width: 46px; height: 46px; display: grid; place-items: center;
+    border-radius: 13px; background: var(--sand); color: var(--ink); }
+  .sfmark .ic { width: 22px; height: 22px; }
+  .sfmark.more { border-radius: 999px; }
+  .sfmark.more .ic { stroke-width: 3.4; }
+  .sfmark.app img { display: block; width: 46px; height: 46px; border-radius: 11px; }
+  .sfmark::after { content: ""; position: absolute; inset: -4px; border-radius: 16px;
+    border: 2px solid var(--ember); opacity: 0; pointer-events: none; }
+  .sfmark.more::after { border-radius: 999px; }
+  .sfmark.app::after { border-radius: 14px; opacity: 1; }
+  #addsheet.open .sfmark::after { animation: sftap .6s var(--e-out) .45s both; }
+  #addsheet.open li:nth-child(2) .sfmark::after { animation-delay: .85s; }
+  #addsheet.open .sfmark.app::after { animation: sfstay .5s var(--e-spring) 1.25s both; }
+  @keyframes sftap { 0% { opacity: 0; transform: scale(.84); } 35% { opacity: 1; transform: none; }
+    100% { opacity: 0; transform: scale(1.1); } }
+  @keyframes sfstay { from { opacity: 0; transform: scale(.84); } }
+  .sfnote { margin: 0 4px 6px; text-align: center; font-size: 12.5px; line-height: 1.5; color: var(--ink-2); }
+  .sfnote b, .webnote b { color: var(--ink); font-weight: 650; }
+  .sftip .ic { display: inline-block; width: 13px; height: 13px; margin: 0 5px 0 0; vertical-align: -2px;
+    color: var(--ember-ink); fill: currentColor; }
+  .sfopen { display: flex; justify-content: center; gap: 8px; margin: 12px 0 0; }
+  .sfopen .chip { flex: 1 1 0; max-width: 176px; min-height: 44px; justify-content: center; padding: 0 12px;
+    background: var(--card); color: var(--ink); border: 1px solid var(--line-2); font-size: 13px; }
+  .sfopen .chip .ic { width: 14px; height: 14px; color: var(--ember-ink); }
+  /* The second way in, headed as the second way: a rule either side of the words. */
+  .orpaste { align-items: center; gap: 12px; margin: 18px 0 12px; font-size: 12px; font-weight: 600;
+    color: var(--muted); }
+  .orpaste::before, .orpaste::after { content: ""; flex: 1; height: 1px; background: var(--line-2); }
+  /* Quiet until there is a link to save; ember the moment one is pasted. */
+  #addsheet #addgo { transition: transform var(--t-1) var(--e-out), opacity var(--t-2),
+    background-color var(--t-2) var(--e-soft), color var(--t-2) var(--e-soft), box-shadow var(--t-2) var(--e-soft); }
+  #addsheet.share:has(#addurl:placeholder-shown) #addgo { background: var(--sand); color: var(--ink); box-shadow: none; }
+  #addsheet.share .upblock { margin-top: 12px; padding-top: 0; border-top: 0; }
+  /* Pumpy's first tip lands under the row; "Or paste a link" already spaces below it. */
+  #addsheet.share .pumpy-tip { margin: 14px 0 0; }
+  .webnote { margin: 12px 2px 0; font-size: 12.5px; line-height: 1.5; color: var(--ink-2); }
+  #addsheet.attach .webnote { display: none; }
+  /* The empty library shows the same row, lighter: no card, tiles on their own. */
+  .empty .shareflow { margin: 18px auto 0; padding: 0; background: none; border: 0; box-shadow: none; }
+  .empty .sfmark { background: var(--card); box-shadow: var(--sh-sm); }
+  @media (max-width: 359px) { .sfopen .chip .ic { display: none; } }
+  @media (prefers-reduced-motion: reduce) {
+    #addsheet.open .sfmark::after, #addsheet.open .sfmark.app::after { animation: none; }
+    #addsheet #addgo { transition: none; }
+  }
+
   /* ---------- swap or modify ----------
      Reason and body-area pickers reuse the library chips; the answer is a list
      in the detail view's exercise-row rhythm, with the trade-off one step quieter
