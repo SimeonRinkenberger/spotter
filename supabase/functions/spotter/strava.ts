@@ -737,20 +737,77 @@ export async function disconnectStrava(userId: string): Promise<void> {
 }
 
 /**
- * The same thing on the way out of an account, and it may never throw.
- *
- * Unlike Stripe, a Strava grant left behind costs nobody anything and the athlete
- * can revoke it themselves; blocking a deletion on Strava being reachable would
- * trade a real right for a tidy third party. The row itself goes with the cascade.
+ * The same thing on the way out of an account, handed to the erasure outbox
+ * (erasure.ts) so a failed deauthorize is retried rather than forgotten. This
+ * returns what the outbox row has to carry: the athlete as the subject and the
+ * token pair, because the `strava_tokens` row cascades away with the account a
+ * moment later. The outbox drops the tokens once the grant is gone, or when it
+ * gives up (a stale grant is one the athlete can revoke on strava.com).
  */
-export async function forgetStravaQuietly(userId: string): Promise<void> {
-  if (!stravaConfigured()) return;
-  try {
-    const row = await loadTokens(userId);
-    if (row) await deauthorize(row);
-  } catch (e) {
-    console.error("account delete: strava deauthorize failed for", userId, e);
+export async function stravaGrantFor(
+  userId: string,
+): Promise<{ subject: string; detail: Record<string, unknown> } | null> {
+  const row = await loadTokens(userId);
+  if (!row) return null;
+  return {
+    subject: row.athlete_id ? String(row.athlete_id) : "user:" + userId,
+    detail: { access_token: row.access_token, refresh_token: row.refresh_token, expires_at: row.expires_at },
+  };
+}
+
+/**
+ * The outbox's Strava step. Deauthorize with the stored access token while it is
+ * live; refresh it first when it has expired (Strava access tokens last six
+ * hours and a retry can come days later). A refresh Strava refuses as an invalid
+ * refresh token means the athlete already revoked us: the grant is gone, done.
+ * A refreshed pair is handed back so the next retry does not spend a rotated
+ * refresh token; a 401 on deauthorize marks the access token stale for the same
+ * reason.
+ */
+export async function deauthorizeStrava(
+  _subject: string, detail: Record<string, unknown>,
+): Promise<{ done: true } | { done: false; error: string; detail?: Record<string, unknown> }> {
+  let access = String(detail.access_token ?? "");
+  let refresh = String(detail.refresh_token ?? "");
+  let expiresAt = String(detail.expires_at ?? "");
+  let fresh: Record<string, unknown> | undefined;
+
+  const expMs = Date.parse(expiresAt);
+  if (!access || !Number.isFinite(expMs) || expMs <= Date.now() + 60_000) {
+    if (!stravaConfigured()) return { done: false, error: "strava access token expired and the client secrets are not set" };
+    const { id, secret } = cfg();
+    const r = await fetch(TOKEN_URL, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ client_id: id, client_secret: secret, grant_type: "refresh_token", refresh_token: refresh }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    const text = await r.text();
+    if (r.status === 400 && /refresh_?token/i.test(text)) return { done: true };
+    if (!r.ok) return { done: false, error: `strava refresh ${r.status}` };
+    const tok = JSON.parse(text) as TokenResponse;
+    if (!tok.access_token || !tok.refresh_token || !tok.expires_at) return { done: false, error: "strava refresh returned no token" };
+    access = tok.access_token;
+    refresh = tok.refresh_token;
+    expiresAt = new Date(tok.expires_at * 1000).toISOString();
+    fresh = { access_token: access, refresh_token: refresh, expires_at: expiresAt };
   }
+
+  const d = await fetch(DEAUTHORIZE_URL, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ access_token: access }),
+    signal: AbortSignal.timeout(10_000),
+  });
+  await d.body?.cancel();
+  if (d.ok) return { done: true };
+  if (d.status === 401) {
+    return {
+      done: false, error: "strava deauthorize 401",
+      detail: { access_token: access, refresh_token: refresh, expires_at: new Date(0).toISOString() },
+    };
+  }
+  return { done: false, error: `strava deauthorize ${d.status}`, detail: fresh };
 }
 
 // ---------- the routes ----------

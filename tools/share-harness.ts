@@ -341,6 +341,8 @@ function check(ok: unknown, what: string): void {
     "function plusPlan(p: string) { return p === 'plus'; }",
     "async function admitNow() { S.admitted++; return S.admit; }",
     "const PREVIEW_CAP = 4;",
+    "function allowanceFor(plan: string) { return { reads: plan === 'plus' ? 20 : 4 }; } function utcNextMonth() { return '2026-10-01T00:00:00.000Z'; }",
+    fn("function previewLimit("),
     "async function previewCount() { return 4; }",
     "async function dbSelect() { return []; }",
     "async function dbDelete() {}",
@@ -366,8 +368,9 @@ function check(ok: unknown, what: string): void {
 
   a.reset(); a.S.previewOk = false;
   const out = await a.attachUpload(ig, ref, "", "u1", {});
-  check(out.status === 429 && out.body.upgrade === true && a.S.deleted[0] === ref.path,
-    "attach: no reads left → the Plus answer, and the file is deleted");
+  check(out.status === 429 && out.body.upgrade === true && out.body.scope === "month" && out.body.cap === 4 &&
+    out.body.next_plan === "plus" && a.S.deleted[0] === ref.path,
+    "attach: no reads left → the Plus answer (previewLimit's shape), and the file is deleted");
   a.reset(); a.S.plan = "plus"; a.S.reads = 20;
   const month = await a.attachUpload(ig, ref, "", "u1", {});
   check(month.status === 429 && month.body.scope === "month" && !a.S.rpc.length, "attach: Plus at twenty reads is refused before any reservation");
@@ -439,7 +442,7 @@ function check(ok: unknown, what: string): void {
     "export const S: any = {};",
     "export function reset(o: any = {}) { Object.assign(S, { plan: 'plus', p: { platform: 'tiktok', shortcode: 'tt-1', kind: 'video', clean: 'https://www.tiktok.com/@/video/1' }, cache: [], q: { workout_id: 'w1', job_id: 'j1', job_created: true, already: false }, held: 0, kicks: 0 }, o); }",
     "function json(body: any, status = 200) { return { status, body }; }",
-    "const BLOCKED = Symbol('blocked');",
+    "const BLOCKED = Symbol('blocked'); const INSECURE = Symbol('insecure');",
     "const SUPPLIED_HTML_MAX = 2_000_000; const SUPPLIED_CAPTION_MAX = 6_000; const FRAMES_HOLD_MS = 20_000;",
     "async function resolveShare() { return S.p; }",
     "function noPostAnswer() { return { status: 'error' }; }",

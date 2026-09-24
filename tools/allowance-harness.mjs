@@ -69,7 +69,7 @@ const context = vm.createContext({
   },
 });
 for (const name of ['num', 'capNum', 'capMany', 'planWord', 'resetDay', 'useRow',
-  'paintPlanUse', 'planBenefits', 'pumpyRoom', 'planCtxLine']) {
+  'paintPlanUse', 'pumpyRoom', 'planCtxLine']) {
   vm.runInContext(fn(app, name, '  '), context);
 }
 for (const [kw, name] of [['var', 'ALLOW_ROWS'], ['var', 'CAP_WORDS'], ['var', 'MULT']]) {
@@ -93,7 +93,7 @@ function limits(plan, month, extra) {
     library_count: 7,
     month: Object.assign({
       reads: 0, reads_cap: plan === 'free' ? 4 : 20,
-      answers: 0, answers_cap: plan === 'free' ? 100 : 300,
+      answers: 0, answers_cap: plan === 'free' ? 0 : 300,
       helpers: 0, helpers_cap: plan === 'free' ? 20 : 100,
       uploads: 0, uploads_cap: plan === 'free' ? 1 : 10,
       previews: 0, previews_cap: plan === 'free' ? 4 : null,
@@ -147,12 +147,13 @@ check('Plus exhausted: the line turns, and only the line that ran out', () => {
   assert.equal(p.lines[1], 'Coaching answers 12 of 300 this month · resets ' + BACK);
 });
 
-check('Basic gets the shelf line and its four reads, from the same fields', () => {
+check('Basic gets the shelf line and its four reads, from the same fields, and no coaching line', () => {
+  // Pumpy is Plus-only, so Basic's coaching allowance is 0 and Settings says
+  // nothing about it; the Plus page's table is where "Pumpy coach —" is said.
   const p = paint(limits('free', { reads: 2, previews: 2 }));
   assert.deepEqual(p.lines, [
     'Library 7 of 20 saved',
     'Video reads 2 of 4 this month · resets ' + BACK,
-    'Coaching answers 0 of 100 this month · resets ' + BACK,
     'Explanations and swaps 0 of 20 this month · resets ' + BACK,
     'Uploads 0 of 1 this month · resets ' + BACK,
   ]);
@@ -196,7 +197,7 @@ check('a monthly refusal speaks in months, and a burst stop still speaks in days
     upgrade: true, next_plan: 'plus', next_cap: 20,
   }) + ')');
   assert.equal(month,
-    'That is 4 video reads this month, the free plan’s whole allowance. It comes back on the 1st. Plus reads 20 a month.');
+    'That is 4 video reads this month, the Basic plan’s whole allowance. It comes back on the 1st. Plus reads 20 a month.');
   const day = run('planCtxLine(' + JSON.stringify({
     kind: 'saves', plan: 'free', cap: 30, used: 30, upgrade: true, next_plan: 'plus', next_cap: 200,
   }) + ')');
@@ -205,39 +206,16 @@ check('a monthly refusal speaks in months, and a burst stop still speaks in days
   assert.ok(!day.includes('this month'), day);
 });
 
-check('Pumpy has one branch now, and it is the monthly one', () => {
-  context.billing.prices = { caps: { free: { pumpy_month: 1500 }, plus: { pumpy_month: 5000 } } };
-  const line = run('planCtxLine({ kind: "pumpy", plan: "free", next_plan: "plus" })');
+check('Pumpy has one branch now, and it is the monthly one — and only with a cap that is used up', () => {
+  context.billing.caps = { free: { pumpy_month: 1500 }, plus: { pumpy_month: 5000 } };
+  const line = run('planCtxLine({ kind: "pumpy", plan: "plus", cap: 5000, used: 5000 })');
   assert.ok(line.startsWith('That is this month’s coaching used up — my credits come back on the 1st.'), line);
   assert.ok(!line.includes('midnight'), line);
+  // Pumpy is Plus-only: a Basic account opening the page from him has used nothing.
+  assert.equal(run('planCtxLine({ kind: "pumpy", plan: "free", next_plan: "plus" })'), 'Pumpy is part of Spotter Plus.');
 });
 
-check('the paywall rows quote the allowances, from the same table the server refuses against', () => {
-  const rows = run('planBenefits(' + JSON.stringify({
-    free: { library: 20, month_reads: 4, month_answers: 100, month_helpers: 20, month_uploads: 1 },
-    plus: { library: null, month_reads: 20, month_answers: 300, month_helpers: 100, month_uploads: 10 },
-  }) + ')');
-  assert.equal(rows.length, 5);
-  assert.ok(rows[1].startsWith('Read 20 videos a month in full'), rows[1]);
-  assert.ok(rows[1].includes('Basic reads 4.'), rows[1]);
-  assert.ok(rows[2].startsWith('300 coaching answers a month'), rows[2]);
-  assert.ok(rows[2].includes('100 explanations and swaps'), rows[2]);
-  assert.ok(rows[3].includes('never metered'), rows[3]);
-  assert.ok(rows[0].includes('Basic holds 20'), rows[0]);
-  assert.ok(rows[4].includes('stays readable'), rows[4]);
-  // The reset date is said once, in the fine print, with the hour. A benefit row
-  // that repeats it is the paywall telling you the same thing twice.
-  assert.equal(rows.filter(function (r) { return /reset/.test(r); }).length, 0, rows.join(' | '));
-  for (const row of rows) assert.ok(!/ a day\b/.test(row), 'a daily number survived on the paywall: ' + row);
-});
-
-check('an older server that sends no allowances makes no promise it cannot keep', () => {
-  const rows = run('planBenefits({ free: { library: 20 }, plus: { library: null } })');
-  for (const row of rows) {
-    assert.ok(!/\bas many\b/.test(row), 'an absent cap printed as "as many": ' + row);
-  }
-  assert.ok(rows.some((r) => r.includes('Settings shows what is left')), rows.join(' | '));
-});
+// The paywall's rows moved to a Basic | Plus table: tools/plus-page-harness.mjs.
 
 // ---------- half two: the server's table and its refusal copy ----------
 //

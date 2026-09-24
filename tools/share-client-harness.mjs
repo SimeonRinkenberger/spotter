@@ -252,7 +252,8 @@ ok(!/configureSharing\([^)]*,\s*(r\.data\.plan|state\.profile && state\.profile\
   const c3 = vm.createContext({ console, Object, Promise });
   vm.runInContext('var billing = {}; var state = { profile: { plan: "free", ingest_key: "k" } }; var hints = [];' +
     'var native = { configureSharing: function (k, h) { hints.push([k, h]); return Promise.resolve(); } };' +
-    'function renderLibCount() {} function paintPlanGroup() {}\n' + fn('adoptPlan'), c3);
+    'function renderLibCount() {} function paintPlanGroup() {} function renderPumpy() {} function paintPlans() {} function refreshDetail() {}' +
+    'var current = null; function $() { return { classList: { contains: function () { return false; } } }; }\n' + fn('adoptPlan'), c3);
   vm.runInContext('adoptPlan("plus"); adoptPlan("plus"); adoptPlan("free")', c3);
   ok(JSON.stringify(c3.hints) === '[["k",{"plan":"plus"}],["k",{"plan":"free"}]]',
     'a plan change tells the extension at once, only when it changes');

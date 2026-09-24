@@ -74,9 +74,15 @@ enum SheetPipeline {
      * point — playAddr answers 403 to a request that does not carry the ones the
      * watch page set moments earlier, and a caller's cached HTML has no cookies
      * attached to it.
+     *
+     * `precheck: false` is for a caller that already knows the frames are wanted:
+     * the Share Extension after a save the server is holding for them
+     * (`frames_pending`). Asking `/api/ingest/prepare` at that point would be
+     * wrong as well as slow, because the card now exists and prepare answers
+     * "you already own this" with `needs_frames: false`.
      */
     static func run(pageURL: URL, html: String?,
-                    auth: SheetAuth, deadline: Date) async -> SheetOutcome? {
+                    auth: SheetAuth, deadline: Date, precheck: Bool = true) async -> SheetOutcome? {
         let started = Date()
         guard TikTokMedia.isTikTok(pageURL) else { return nil }
 
@@ -91,23 +97,29 @@ enum SheetPipeline {
         // Without AI permission the upload would be refused and so would the save,
         // so there is nothing to cut yet: the save's own refusal is what makes the
         // extension ask, and it comes back in a moment rather than after a download.
-        if case .ingestKey(let key) = auth {
-            var check = URLRequest(url: URL(string: functionBase + "/api/ingest/prepare")!)
-            check.httpMethod = "POST"
-            check.timeoutInterval = 5
-            check.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            check.setValue(key, forHTTPHeaderField: "x-ingest-key")
-            check.httpBody = try? JSONSerialization.data(withJSONObject: ["url": pageURL.absoluteString])
-            if let (data, response) = try? await session.data(for: check),
-               (response as? HTTPURLResponse)?.statusCode == 200,
-               let reply = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-               reply["needs_frames"] as? Bool == false || reply["ai_consent"] as? Bool == false { return nil }
+        //
+        // The watch page is fetched while the question is out rather than after
+        // it (speed audit C5): the page goes phone → TikTok only and carries
+        // nothing of the user's, so fetching it and throwing it away on a "no" is
+        // free, while waiting for the answer first cost a full prepare round trip
+        // on every save that did cut frames. The MP4 — the part that matters —
+        // still waits for the answer.
+        let fetched: (html: String, cookie: String, url: URL)?
+        if case .ingestKey(let key) = auth, precheck {
+            async let page = try? TikTokMedia.page(pageURL, session: session)
+            guard await framesWanted(pageURL: pageURL, key: key, session: session) else {
+                // Leaving the scope cancels the page fetch still in flight.
+                return nil
+            }
+            fetched = await page
+        } else {
+            fetched = try? await TikTokMedia.page(pageURL, session: session)
         }
 
         var page: (html: String, cookie: String, url: URL)
-        do {
-            page = try await TikTokMedia.page(pageURL, session: session)
-        } catch {
+        if let fetched = fetched {
+            page = fetched
+        } else {
             guard let fallback = html else { return nil }
             page = (fallback, "", pageURL)
         }
@@ -124,6 +136,23 @@ enum SheetPipeline {
 
         return await finish(mp4: mp4, duration: video.duration, shortcode: shortcode,
                             auth: auth, deadline: deadline, started: started, session: session)
+    }
+
+    /// `/api/ingest/prepare`'s answer, as the one bit the pipeline needs. Only a
+    /// clear "no" (no frames wanted, or no AI permission) stops it: an answer
+    /// that did not arrive is not a no, and the save goes out either way.
+    private static func framesWanted(pageURL: URL, key: String, session: URLSession) async -> Bool {
+        var check = URLRequest(url: URL(string: functionBase + "/api/ingest/prepare")!)
+        check.httpMethod = "POST"
+        check.timeoutInterval = 5
+        check.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        check.setValue(key, forHTTPHeaderField: "x-ingest-key")
+        check.httpBody = try? JSONSerialization.data(withJSONObject: ["url": pageURL.absoluteString])
+        if let (data, response) = try? await session.data(for: check),
+           (response as? HTTPURLResponse)?.statusCode == 200,
+           let reply = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+           reply["needs_frames"] as? Bool == false || reply["ai_consent"] as? Bool == false { return false }
+        return true
     }
 
     /**
@@ -153,16 +182,26 @@ enum SheetPipeline {
         // existing fallback instead of publishing only the beginning of the clip.
         let slots = await authorize(shortcode: shortcode, sizes: built.pages.map { $0.jpeg.count },
                                     auth: auth, session: session)
-        var uploaded: [UploadedSheet] = []
-        for (index, page) in built.pages.enumerated() where index < slots.count {
-            guard await put(page.jpeg, to: slots[index].url, session: session) else { break }
-            uploaded.append(UploadedSheet(path: slots[index].path, cols: page.cols, rows: page.rows,
-                                          cellW: built.cellW, cellH: built.cellH,
-                                          times: page.times, bytes: page.jpeg.count))
-            if Date() >= deadline { break }
-        }
         // A failed upload must not silently turn the overview into a video prefix.
-        guard !uploaded.isEmpty, uploaded.count == built.pages.count else { return nil }
+        guard !built.pages.isEmpty, slots.count >= built.pages.count else { return nil }
+        // The (at most three) pages go up side by side rather than one after
+        // another (speed audit C5): each PUT is its own signed address, so the
+        // order they land in means nothing. All of them or none of them, still.
+        let landed = await withTaskGroup(of: (Int, Bool).self) { group -> Set<Int> in
+            for (index, page) in built.pages.enumerated() {
+                let target = slots[index].url
+                group.addTask { (index, await put(page.jpeg, to: target, session: session)) }
+            }
+            var ok = Set<Int>()
+            for await (index, success) in group where success { ok.insert(index) }
+            return ok
+        }
+        guard landed.count == built.pages.count else { return nil }
+        let uploaded = built.pages.enumerated().map { index, page in
+            UploadedSheet(path: slots[index].path, cols: page.cols, rows: page.rows,
+                          cellW: built.cellW, cellH: built.cellH,
+                          times: page.times, bytes: page.jpeg.count)
+        }
 
         // A local file's duration is whatever AVFoundation measured, and the last
         // frame's own time plus the half-second inset is that number back again —

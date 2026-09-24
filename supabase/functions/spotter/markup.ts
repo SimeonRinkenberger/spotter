@@ -25,10 +25,13 @@ export const MARKUP_HEAD = String.raw`<!DOCTYPE html>
 <link rel="dns-prefetch" href="https://mtzevoxxpsktmrbbuxva.supabase.co">
 <!-- supabase-js is the one blocking script, its tag is at the foot of a 480 KB
      document, and the preload scanner reached it 107ms into a cold load. Nothing
-     happens until it has run. Neither line carries crossorigin: the script tag is
-     a plain one, and a preload in another mode is a second download. -->
-<link rel="preconnect" href="https://cdn.jsdelivr.net">
-<link rel="preload" as="script" href="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/dist/umd/supabase.js">
+     happens until it has run. The tag is pinned by integrity (SRI), which makes it a
+     CORS request, so both lines carry crossorigin as well: a preload in another mode
+     is a second download, and a preconnect in another mode is a second connection.
+     The preload carries the same integrity so the browser can check the bytes it
+     keeps for the tag. -->
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="preload" as="script" href="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/dist/umd/supabase.js" integrity="sha384-CLZeq1dk8+Uzrs7TVvBUdlFoV5F0DMqgRoeHa8g5wJcuPe5SkVfEvdxB0ZuzlnBQ" crossorigin="anonymous">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <!-- Two font hosts now, so two preconnects: the display face lives at Fontshare,
@@ -738,9 +741,8 @@ export const MARKUP_BODY = String.raw`</head>
 
   <!-- Under Account, where Hevy and Fitbod both put theirs and where Apple's
        guideline expects a subscriber to look for the way out; below Sign out only
-       because Sign out is deliberately the end of the Account section. With
-       billing switched off the row reads Free and no button appears at all —
-       Settings is not the place to advertise a plan nobody can buy yet. -->
+       because Sign out is deliberately the end of the Account section. A Basic
+       account always has the way to Plus here, store answering or not. -->
   <h3 class="seth">Plan</h3>
   <div class="setgroup">
     <div class="kv" id="setplanrow"><span class="k">Plan</span><span class="v" id="setplan">Free</span></div>
@@ -755,6 +757,7 @@ export const MARKUP_BODY = String.raw`</head>
     <button class="btn ghost hide" id="setmanage">Manage subscription</button>
     <button class="btn hide" id="setupgrade">Upgrade to Plus</button>
   </div>
+  <div class="setnote hide" id="setplanhow"></div>
   <button class="setlink hide" id="setrefresh">Refresh</button>
 
   <!-- Only for an account that owns a code. The numbers are the server's
@@ -883,11 +886,13 @@ export const MARKUP_BODY = String.raw`</head>
   <div class="grabber"></div>
   <div class="planctx hide" id="planctx"></div>
   <h2>Spotter Plus</h2>
-  <p class="lede">Room to save what you find, and a coach who does not run out mid-week.</p>
+  <p class="lede">Keep every workout you save, read TikTok videos in full, and train with Pumpy, your coach.</p>
   <div class="plangood" id="plangood"></div>
-  <div class="plancards" id="plancards" role="radiogroup" aria-label="Billing period"></div>
-  <div class="plantrial hide" id="plantrial"></div>
-  <div class="plansoon hide" id="plansoon">Plans are coming soon.</div>
+  <div id="planbox">
+    <div class="plancards" id="plancards" role="radiogroup" aria-label="Billing period"></div>
+    <div class="plantrial hide" id="plantrial"></div>
+    <div class="plansoon hide" id="plansoon" aria-live="polite"></div>
+  </div>
   <!-- A creator's code, typed here or already on the account. The app never
        prices the discount: the store does, when the code is redeemed there, so
        the cards above stay the store's own numbers. -->
@@ -906,7 +911,8 @@ export const MARKUP_BODY = String.raw`</head>
   <div class="planlegal">
     <a href="https://quarterdeckcollective.com/spotter/terms/">Terms</a><span aria-hidden="true">&middot;</span>
     <a href="https://quarterdeckcollective.com/spotter/privacy/">Privacy</a><span aria-hidden="true" id="plandot2">&middot;</span>
-    <button id="planrestore">Restore purchase</button>
+    <button id="planrestore">Restore purchase</button><span aria-hidden="true" id="plandot3">&middot;</span>
+    <button id="planmanage">Manage</button>
   </div>
 </div></div>
 

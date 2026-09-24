@@ -62,11 +62,14 @@ import { PAGE_HTML } from "./page.ts";
 import { ICON_B64 } from "./icon.ts";
 import { readVisionImage } from "./vision-reader.ts";
 import {
-  BillingError, billingConfigured, cancelAndDeleteCustomer, createCheckout, createPortal,
-  handleWebhook, pricesBlock, returnBaseFrom, sellablePlans, syncFromSession, syncUser,
+  BillingError, billingConfigured, billingCustomerFor, cancelAndDeleteCustomer, createCheckout, createPortal,
+  eraseStripeCustomer, handleWebhook, pricesBlock, returnBaseFrom, sellablePlans, syncFromSession, syncUser,
 } from "./billing.ts";
 import { AppleGrantError, forgetAppleGrant, rememberAppleGrant } from "./apple-auth.ts";
-import { forgetStravaQuietly, handleCallback, handleStrava } from "./strava.ts";
+import { deauthorizeStrava, handleCallback, handleStrava, stravaGrantFor } from "./strava.ts";
+import {
+  deleteRevenueCatSubscriber, type Eraser, eraseAtProvider, type Provider as ErasureProvider, runErasureOutbox,
+} from "./erasure.ts";
 import { pushConfig, runPushTick, sendPush } from "./push.ts";
 import { opsScorecard, runOpsAlert } from "./ops.ts";
 import { CATALOG, type CatalogEntry, canonicalize, catalogById, standardOf } from "./catalog.ts";
@@ -92,7 +95,8 @@ import {
 // run; Deno.resolveDns is not present in every Deno-compatible runtime, and the
 // difference decides whether a public hostname pointing at a private A record is
 // caught. Logged once at cold start so it is answerable from the function logs.
-console.log("ssrf guard: static checks on, dns resolution", dnsAvailable() ? "on" : "UNAVAILABLE");
+console.log("ssrf guard: static checks on, dns resolution",
+  dnsAvailable() ? "on" : "UNAVAILABLE (only platform hosts will be fetched)");
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -520,6 +524,9 @@ function limitsConfig(): Record<string, LimitCaps> {
 // `answers` is Pumpy. Its credits are the enforcing gate and they are sized so
 // that this many answers can never be refused (ALLOWANCES.md section 5); the
 // number here is the floor that is promised, which is why nothing enforces it.
+// Basic's is 0, because Pumpy is a Plus feature: the chat route answers a Basic
+// account with a 403 before any credit is counted, so any other number here was
+// Settings promising "0 of 100" coaching nobody on Basic could have.
 
 type AllowanceKind = "reads" | "answers" | "helpers" | "uploads";
 type Allowance = Record<AllowanceKind, number | null>;
@@ -533,7 +540,7 @@ const ALLOWANCE_LOG_KIND: Record<AllowanceKind, string> = {
 };
 
 const ALLOWANCE_DEFAULTS: Record<string, Allowance> = {
-  free: { reads: 4, answers: 100, helpers: 20, uploads: 1 },
+  free: { reads: 4, answers: 0, helpers: 20, uploads: 1 },
   plus: { reads: 20, answers: 300, helpers: 100, uploads: 10 },
   pro: { reads: 60, answers: 900, helpers: 300, uploads: 25 },
   staff: { reads: null, answers: null, helpers: null, uploads: null },
@@ -586,13 +593,16 @@ function allowancesConfig(): Record<string, Allowance> {
  * One account's monthly allowance. An unknown plan reads as free, exactly as the
  * daily caps do — a bad string in one column must never mean "no ceiling".
  *
- * Basic's read allowance is clamped to what `reserve_video_preview` will admit.
+ * Basic's read allowance is clamped to what `reserve_video_preview` will admit,
+ * and its coaching to what the chat route admits, which is none: a config row
+ * written when Basic had a coach must not put the promise back.
  */
 function allowanceFor(plan: string): Allowance {
   const table = allowancesConfig();
   const a = { ...(table[plan] ?? table.free ?? ALLOWANCE_DEFAULTS.free) };
   if (!plusPlan(plan)) {
     a.reads = a.reads === null ? PREVIEW_CAP : Math.min(a.reads, PREVIEW_CAP);
+    a.answers = 0;
   }
   return a;
 }
@@ -734,15 +744,21 @@ async function capLimit(
 ): Promise<Response> {
   const cap = uc.caps[kind];
   const table = limitsConfig();
+  const up = upgradePath(uc.plan, cap, (p) => table[p]?.[kind], await sellablePlans());
+  // The shelf is the one refusal the Share Extension shows as text, with no way
+  // into the app from there. So when a bigger shelf is on sale the sentence says
+  // where it is; the app itself opens the Plus page and never shows this line.
+  const shelfUp = kind === "library" && up.upgrade && up.next_cap === null && up.next_plan
+    ? ` Spotter ${planName(up.next_plan)} keeps every workout — open Spotter to see it.` : "";
   return json({
     status: "limit",
     kind,
     plan: uc.plan,
     cap,
     used,
-    ...upgradePath(uc.plan, cap, (p) => table[p]?.[kind], await sellablePlans()),
+    ...up,
     resets_at: isDailyKind(kind) ? utcNextMidnight() : null,
-    message: message ?? capMessage(kind, uc.plan, cap),
+    message: message ?? capMessage(kind, uc.plan, cap) + shelfUp,
   }, 429, cors);
 }
 
@@ -1308,9 +1324,12 @@ function matchYouTube(u: string): Parsed | null {
 
 // Any other http(s) page — a training blog, a program write-up. Keyed by URL hash.
 // Returns null for anything unusable and BLOCKED for anything that fails the SSRF
-// guard, so ingest can tell the user which of the two happened.
+// guard, so ingest can tell the user which of the two happened. INSECURE is the
+// third answer: an http:// page whose https:// form does not answer, which the
+// guard will not read over plain http (net.ts says why).
 const BLOCKED = Symbol("blocked");
-type WebParse = Parsed | null | typeof BLOCKED;
+const INSECURE = Symbol("insecure");
+type WebParse = Parsed | null | typeof BLOCKED | typeof INSECURE;
 
 function isFacebookPost(u: URL): boolean {
   return /^\/(?:reel|share\/(?:r|v|p))\/[^/]+/i.test(u.pathname) ||
@@ -1324,6 +1343,8 @@ function isFacebookPost(u: URL): boolean {
 async function webParsed(target: string): Promise<WebParse> {
   const guard = await assertPublicUrl(target.split("#")[0]);
   if (!guard.ok) { console.error("ssrf: rejected", target, "—", guard.reason); return BLOCKED; }
+  // guard.url, not target: an http:// page is read, linked and keyed as the
+  // https:// form it is actually fetched as.
   const u = guard.url;
   // social links that failed their own matcher (profiles, channels) make junk cards — reject
   if (/(^|\.)(instagram\.com|tiktok\.com|youtube\.com|youtu\.be)$/i.test(u.hostname)) return null;
@@ -1407,7 +1428,12 @@ async function resolveShare(raw: string): Promise<WebParse> {
       } else {
         await r.body?.cancel();
       }
-    } catch (_) { break; }
+    } catch (_) {
+      // An http:// link is tried as https:// and never read over plain http, so
+      // when the https form does not answer, that is the answer.
+      if (guard.upgraded) { console.error("ssrf: no https answer for http link, hop", hop); return INSECURE; }
+      break;
+    }
     if (!loc) break;
     try { target = new URL(loc, guard.url).toString(); } catch { return BLOCKED; }
     // login redirects carry the real path in ?next=
@@ -7459,6 +7485,21 @@ async function userFromIngestKey(req: Request, url: URL): Promise<string | null>
 }
 
 /**
+ * The erasers the hourly tick retries the outbox with. RevenueCat's subscriber
+ * id is the Supabase user id: the native shells identify RevenueCat with it and
+ * nothing else (`native/purchases.js` passes it as `appUserID` to `configure`
+ * and to `logIn`), so without the delete the subscriber — purchase history,
+ * aliases — would outlive the account, and a reused id would inherit somebody
+ * else's entitlements. The tick uses shorter timeouts than a deletion request
+ * does, because it runs several in one invocation.
+ */
+const ERASERS: Record<ErasureProvider, Eraser> = {
+  revenuecat: (subject) => deleteRevenueCatSubscriber(subject, 10_000),
+  stripe: (subject) => eraseStripeCustomer(subject),
+  strava: (subject, detail) => deauthorizeStrava(subject, detail),
+};
+
+/**
  * Erase the caller. Required to ship at all — App Store guideline 5.1.1(v) makes
  * in-app account deletion a condition of listing any app that creates accounts,
  * and Play asks for the same plus a public page describing it.
@@ -7488,60 +7529,50 @@ async function userFromIngestKey(req: Request, url: URL): Promise<string | null>
  * row is touched, and a failure there stops everything with a 503: an account
  * that is gone but still charging a card every month is the one outcome that
  * must never happen, and "try again in a minute" is a far better answer than a
- * subscription nobody is left to cancel.
+ * subscription nobody is left to cancel. That holds while a Stripe key is set.
+ * Without one (Stripe was dropped on 18 Sept 2026, so any customer row left is
+ * a test-mode one that cannot be billing anybody) the customer goes to the
+ * erasure outbox instead and the deletion finishes: an erasure right that fails
+ * for an account with a leftover test row is the worse outcome (App Store
+ * 5.1.1(v)).
+ *
+ * The third parties that are best effort — Strava, RevenueCat, and Stripe
+ * without a key — go through the erasure outbox (erasure.ts): the request is
+ * written down before the call and retried by the hourly tick until the
+ * provider says done, so a failure is no longer only a log line.
  */
-/**
- * Forget the RevenueCat subscriber, if there is one and if we hold a key.
- *
- * The native shells identify RevenueCat with the Supabase user id and nothing
- * else (`native/purchases.js` passes it as `appUserID` to `configure` and to
- * `logIn`), so the subscriber id is the user id we are about to erase. Without
- * this the auth row goes and the subscriber stays: purchase history, aliases and
- * the email RevenueCat may hold outlive the erasure, and a reused id would
- * inherit somebody else's entitlements.
- *
- * Best effort, in the same direction as Strava and for the same reason: the
- * store, not RevenueCat, is what is actually charging the card, `cancelAndDelete
- * Customer` has already run, and an erasure must not be blocked by a third
- * party's outage. A 404 is the ordinary answer for anyone who never opened the
- * native app.
- *
- * Silent when `REVENUECAT_API_KEY` is unset, which is every web-only deploy and
- * every fork. Note that deleting a subscriber needs a SECRET RevenueCat key; the
- * public SDK key the purchases function reads customer info with is refused here,
- * which shows up as the logged 401 rather than as a failed deletion.
- */
-async function forgetRevenueCatQuietly(userId: string): Promise<void> {
-  const key = Deno.env.get("REVENUECAT_API_KEY");
-  if (!key) return;
-  try {
-    const r = await fetch(
-      `https://api.revenuecat.com/v1/subscribers/${encodeURIComponent(userId)}`,
-      { method: "DELETE", headers: { authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(15_000) },
-    );
-    const body = await r.text();
-    if (!r.ok && r.status !== 404) {
-      console.error("account delete: revenuecat subscriber not deleted for", userId, r.status, body.slice(0, 200));
-    }
-  } catch (e) {
-    console.error("account delete: revenuecat delete failed for", userId, e);
-  }
-}
-
 async function handleAccountDelete(userId: string, cors: Cors): Promise<Response> {
   if (!UUID_RE.test(userId)) return json({ status: "error", message: "Bad account." }, 400, cors);
   const filter = `user_id=eq.${userId}`;
 
-  try {
-    await cancelAndDeleteCustomer(userId);
-  } catch (e) {
-    console.error("account delete: STRIPE FAILED, nothing deleted", userId, e);
-    return json({
-      status: "error",
-      code: "billing_unreachable",
-      message: "Could not cancel your subscription just now — try again in a minute, " +
-        "or cancel it from Manage subscription first.",
-    }, 503, cors);
+  const billingUnreachable = () => json({
+    status: "error",
+    code: "billing_unreachable",
+    message: "Could not cancel your subscription just now — try again in a minute, " +
+      "or cancel it from Manage subscription first.",
+  }, 503, cors);
+  if (billingConfigured()) {
+    try {
+      await cancelAndDeleteCustomer(userId);
+    } catch (e) {
+      console.error("account delete: STRIPE FAILED, nothing deleted", userId, e);
+      return billingUnreachable();
+    }
+  } else {
+    // No key: a leftover (test-mode) customer is written to the outbox, and the
+    // deletion goes on. Only if that cannot even be written down does it stop —
+    // the database is then what is failing, and nothing has been deleted yet.
+    let customer: string | null = null;
+    try {
+      customer = await billingCustomerFor(userId);
+    } catch (e) {
+      console.error("account delete: billing lookup failed, nothing deleted", userId, e);
+      return billingUnreachable();
+    }
+    if (customer) {
+      const out = await eraseAtProvider("stripe", customer, {}, (c) => eraseStripeCustomer(c));
+      if (!out.done && out.row === null) return billingUnreachable();
+    }
   }
 
   try {
@@ -7557,10 +7588,16 @@ async function handleAccountDelete(userId: string, cors: Cors): Promise<Response
   // cascades with the auth row, but a row deleted without telling Strava leaves a
   // live grant on the athlete's account with nothing left here to revoke it. This
   // one is best effort in the other direction from Stripe: a Strava outage must
-  // not hold up an erasure, because a stale grant costs the person nothing and
-  // they can revoke it on strava.com themselves.
-  await forgetStravaQuietly(userId);
-  await forgetRevenueCatQuietly(userId);
+  // not hold up an erasure. It goes through the outbox, so it is retried.
+  try {
+    const grant = await stravaGrantFor(userId);
+    if (grant) await eraseAtProvider("strava", grant.subject, grant.detail, deauthorizeStrava);
+  } catch (e) {
+    console.error("account delete: strava lookup failed for", userId, e);
+  }
+  // RevenueCat, by the account id, the same way. Neither of these can fail the
+  // deletion: eraseAtProvider never throws.
+  await eraseAtProvider("revenuecat", userId, {}, (id) => deleteRevenueCatSubscriber(id));
 
   try {
     await dbDelete("saves_log", filter);
@@ -7821,6 +7858,21 @@ async function allowanceLimit(
   }, 429, cors);
 }
 
+/**
+ * A Basic account out of Plus previews. The allowanceLimit shape, so the Plus
+ * page's context line can say what ran out, when it comes back and what Plus
+ * reads instead: these two refusals used to carry only a sentence, which the
+ * app drops when it opens the page. `used` is the cap, because the database
+ * refuses a preview only at the cap; `upgrade` stays true, as it always was.
+ */
+function previewLimit(uc: UserCaps, message: string, cors: Cors): Response {
+  const cap = allowanceFor(uc.plan).reads;
+  return json({
+    status: "limit", kind: "media", upgrade: true, plan: uc.plan, cap, used: cap, scope: "month",
+    next_plan: "plus", next_cap: allowanceFor("plus").reads, resets_at: utcNextMonth(), message,
+  }, 429, cors);
+}
+
 function extractLimitResponse(cors: Cors, uc: UserCaps, used: number): Promise<Response> {
   return capLimit("extract", uc, used, cors);
 }
@@ -7912,7 +7964,7 @@ async function ingestUpload(
   // not an upload. Anything else is an upload card, exactly as before.
   if (typeof body.source_url === "string" && body.source_url.trim()) {
     const src = await resolveShare(body.source_url.slice(0, 4096)).catch(() => null);
-    if (src && src !== BLOCKED) {
+    if (src && src !== BLOCKED && src !== INSECURE) {
       const w = (await dbSelect("workouts",
         `user_id=eq.${userId}&shortcode=eq.${encodeURIComponent(src.shortcode)}&select=*`))[0];
       if (w && attachable(w)) return await attachUpload(w, ref, filename, userId, cors);
@@ -8031,7 +8083,7 @@ async function handleIngestPrepare(req: Request, userId: string, cors: Cors): Pr
   const profileP = dbSelect("profiles", `id=eq.${userId}&select=plan,limits,settings`)
     .then((r) => ({ ok: true as const, row: r[0] ?? null }), (e) => ({ ok: false as const, e }));
   const p = await resolveShare(String(body?.url ?? "").slice(0, 4096));
-  if (!p || p === BLOCKED || p.platform !== "tiktok" || p.kind === "photo")
+  if (!p || p === BLOCKED || p === INSECURE || p.platform !== "tiktok" || p.kind === "photo")
     return json({ status: "ok", needs_frames: false }, 200, cors);
   const sc = encodeURIComponent(p.shortcode);
   const [owned, cached, heldRows, got] = await Promise.all([
@@ -8103,6 +8155,12 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
     return json({
       status: "blocked",
       message: "That link points to a private or internal address, so Spotter will not fetch it.",
+    }, 400, cors);
+  }
+  if (p === INSECURE) {
+    return json({
+      status: "blocked",
+      message: "That page does not open over a secure (https) connection, so Spotter will not fetch it.",
     }, 400, cors);
   }
   if (!p) return json(noPostAnswer(shared), 400, cors);
@@ -8785,7 +8843,7 @@ async function runPackTier(
         console.log("pack: skipping", p.shortcode, "—", job.user_id, "has spent this month's video reads");
         return { card, meta, ran: false };
       }
-      if (overCap(u as number, plusPlan((uc as UserCaps).plan) ? (uc as UserCaps).caps.media : 15)) {
+      if (overCap(u as number, mediaBurst(uc as UserCaps))) {
         console.log("pack: skipping", p.shortcode, "—", job.user_id, "is over today's media cap");
         return { card, meta, ran: false };
       }
@@ -8962,7 +9020,7 @@ async function escalateToMedia(
         const [u, uc] = await settledAll<any>([mediaCountToday(job.user_id), capsFor(job.user_id)]);
         used = u as number;
         plan = (uc as UserCaps).plan;
-        cap = plusPlan(plan) ? (uc as UserCaps).caps.media : 15;
+        cap = mediaBurst(uc as UserCaps);
       } catch (e) {
         // A count that could not be read is not a count of zero. Skipping costs one
         // thin card; guessing costs an uncapped bill.
@@ -9911,6 +9969,16 @@ function mediaSeed(cached: any, w: any): { step: string; meta: Meta; card: Card 
     : { step: "card", meta, card: null };
 }
 
+// Basic's daily ceiling on media steps, which is not the plan table's `media`.
+// A Basic read is a Plus preview, four a month, so this stop is never the one a
+// Basic account meets on the read route, the pack tier or the media step; it
+// is only the burst guard behind the previews, the same size as Plus's. One
+// number, so /api/limits reports the ceiling those three enforce.
+const BASIC_MEDIA_BURST = 15;
+function mediaBurst(uc: UserCaps): number | null {
+  return plusPlan(uc.plan) ? uc.caps.media : BASIC_MEDIA_BURST;
+}
+
 /**
  * The daily ceiling on media steps, asked before anything is charged for one.
  * Returns how many have been used when the plan's cap is reached, null when it
@@ -9968,8 +10036,10 @@ async function attachRefusal(
     if (refused) return refused;
   }
   if (plusPlan(uc.plan)) return null;
-  const previewsOut = json({ status: "limit", kind: "media", upgrade: true, plan: uc.plan,
-    message: "You have used all four Plus video reads this month. They reset on the first, or continue with Spotter Plus." }, 429, cors);
+  // The same answer the preview routes give (previewLimit), so the Plus sheet
+  // shows the month's count and its reset for this refusal too.
+  const previewsOut = previewLimit(uc,
+    "You have used all four Plus video reads this month. They reset on the first, or continue with Spotter Plus.", cors);
   if (reserve) {
     return await rpc("reserve_video_preview", { p_user: userId, p_shortcode: shortcode }) === true ? null : previewsOut;
   }
@@ -10244,8 +10314,8 @@ async function handleReadVideo(
       confidence: card.confidence, extracted_by: card.extracted_by, read_quality: "premium",
       read_plan: cached.read_plan ?? "plus", ingest_status: "ready", ingest_error: null, media_stage: null,
     } });
-    if (result.status === "limit") return await bail(json({ status: "limit", kind: "media", upgrade: true,
-      message: "You have used all four Plus video previews this month." }, 429, cors));
+    if (result.status === "limit") return await bail(previewLimit(uc,
+      "You have used all four Plus video previews this month.", cors));
     if (result.status === "processing") return await bail(json({ status: "processing", id, message: "Already reading that one." }, 200, cors));
     if (result.status !== "ok") return await bail(json({ status: "error", message: "Preview access changed. Reload this workout and try again." }, 409, cors));
     return await bail(json({ status: "ok", workout: result.workout, cached: true }, 200, cors));
@@ -10269,8 +10339,10 @@ async function handleReadVideo(
   // would fire — and the one that speaks should be the one on the paywall.
   const monthOver = await monthReadsReached(userId, uc.plan, w.shortcode);
   if (monthOver !== null) return await bail(await allowanceLimit("media", "reads", uc, monthOver, cors));
-  const over = await mediaCapReached(userId, plusPlan(uc.plan) ? uc.caps.media : 15);
-  if (over !== null) return await bail(await capLimit("media", uc, over, cors));
+  const over = await mediaCapReached(userId, mediaBurst(uc));
+  if (over !== null) {
+    return await bail(await capLimit("media", { plan: uc.plan, caps: { ...uc.caps, media: mediaBurst(uc) } }, over, cors));
+  }
   if (!(await paidAllowed())) {
     return await bail(json({
       status: "limit",
@@ -10284,8 +10356,8 @@ async function handleReadVideo(
   if (!plusPlan(uc.plan)) {
     if (body?.preview === true) {
       const admitted = await rpc("reserve_video_preview", { p_user: userId, p_shortcode: w.shortcode });
-      if (admitted !== true) return await bail(json({ status: "limit", kind: "media", upgrade: true, plan: uc.plan,
-        message: "You have used all four Plus video previews this month. They reset on the first, or continue with Spotter Plus." }, 429, cors));
+      if (admitted !== true) return await bail(previewLimit(uc,
+        "You have used all four Plus video previews this month. They reset on the first, or continue with Spotter Plus.", cors));
     }
   }
   // A preview can use an existing full read; paying to repeat identical evidence
@@ -13713,12 +13785,20 @@ function notConfigured(cors: Cors): Response {
  * from their own dial (`pumpy.plans`) and are folded in here, because to the
  * person reading the sheet they are simply another line in the same list.
  */
+// What is a Plus feature rather than a bigger number: the plans that have it.
+// Pumpy is refused to Basic by the chat route (a 403, not a cap), and Basic's
+// awards page keeps its latest few; neither has an allowance to quote, so the
+// Plus page reads them from here instead of from a sentence in the markup.
+const PLAN_FEATURES = { pumpy: ["plus"], awards_all: ["plus"] };
+
 function capsBlock(): Record<string, Record<string, number | null>> {
   const table = limitsConfig();
   const pumpy = pumpyConfig().plans;
   const out: Record<string, Record<string, number | null>> = {};
   for (const plan of ["free", "plus"]) {
-    const caps = table[plan] ?? LIMITS_FLOOR.free;
+    const caps = { ...(table[plan] ?? LIMITS_FLOOR.free) };
+    // The ceiling the read route enforces, as /api/limits reports it.
+    caps.media = mediaBurst({ plan, caps });
     const a = allowanceFor(plan);
     // The monthly allowances ride along under their own names so the paywall can
     // print "20 videos a month" from the same table the 429 counts against,
@@ -13757,20 +13837,25 @@ async function handleBilling(path: string, req: Request, userId: string, cors: C
   const route = path.slice("/api/billing/".length);
 
   if (req.method === "GET" && route === "prices") {
-    if (!billingConfigured()) return json({ status: "ok", configured: false }, 200, cors);
+    // The caps come from this file rather than from billing.ts on purpose:
+    // billing.ts deliberately knows nothing about the cap table, and the
+    // paywall wants both halves in one answer. They ride on EVERY answer, not
+    // only a Stripe one: the Plus page is a comparison of what each plan gets,
+    // and that is true whether or not anybody is selling it on the web. The
+    // App Store app asks this route for exactly this and takes its prices from
+    // the store; builds that predate it never call it at all.
+    await ensureConfig();
+    const plan = { caps: capsBlock(), features: PLAN_FEATURES };
+    if (!billingConfigured()) return json({ status: "ok", configured: false, ...plan }, 200, cors);
     try {
-      // The caps come from this file rather than from billing.ts on purpose:
-      // billing.ts deliberately knows nothing about the cap table, and the
-      // paywall wants both halves in one answer.
-      await ensureConfig();
-      return json({ status: "ok", ...(await pricesBlock()), caps: capsBlock() }, 200, cors);
+      return json({ status: "ok", ...(await pricesBlock()), ...plan }, 200, cors);
     } catch (e) {
       // A Stripe outage is not "coming soon" — say so, so the sheet can offer a
       // retry rather than telling everyone the product does not exist yet.
       console.error("billing prices failed", e);
       return json({
         status: "error", code: "billing_failed",
-        message: "Could not reach Stripe just now — try again in a minute.",
+        message: "Could not reach Stripe just now — try again in a minute.", ...plan,
       }, 502, cors);
     }
   }
@@ -14639,8 +14724,16 @@ Deno.serve(async (req: Request) => {
       if (!secretEquals(req.headers.get("x-worker-secret") ?? "", WORKER_SECRET)) {
         return json({ status: "error", message: "Not found" }, 404);
       }
-      const out = await runPushTick(Date.now(), url.searchParams.get("dry") === "1");
-      return json({ status: "ok", ...out });
+      const dry = url.searchParams.get("dry") === "1";
+      const out = await runPushTick(Date.now(), dry);
+      // The erasure outbox rides the same hourly tick: a third-party deletion
+      // that failed at account-deletion time is retried here until it is done.
+      let erasure: unknown = null;
+      if (!dry) {
+        try { erasure = await runErasureOutbox(ERASERS); }
+        catch (e) { console.error("erasure outbox tick failed", e); }
+      }
+      return json({ status: out.errors.length ? "partial" : "ok", ...out, erasure });
     }
 
     // The operational pager, every fifteen minutes from pg_cron. Same shared
@@ -14815,12 +14908,12 @@ Deno.serve(async (req: Request) => {
       return json({
         status: "ok",
         plan: uc.plan,
-        limits: uc.caps,
+        limits: { ...uc.caps, media: mediaBurst(uc) },
         library_count: held,
         saves_today: counts.saves, extracts_today: counts.extracts, helpers_today: counts.helpers,
         chats_today: counts.chats,
         limit_saves: uc.caps.saves, limit_extract: uc.caps.extract, limit_helper: uc.caps.helper,
-        limit_media: uc.caps.media, limit_uploads: uc.caps.uploads,
+        limit_media: mediaBurst(uc), limit_uploads: uc.caps.uploads,
         limit_chat: LIMIT_CHAT,
         spend_today: Number(spent.toFixed(4)),
         spend_limit: Number(budget?.daily_limit ?? DAILY_SPEND_USD),

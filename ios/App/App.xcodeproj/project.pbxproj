@@ -84,6 +84,8 @@
 		53089864B734B15593412B6E /* SharedLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 888CA8D430694205B0923980 /* SharedLink.swift */; };
 		F6FAFCCD6FA6CC6BB563A1DD /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4075202865E412782C634D9 /* ShareViewController.swift */; };
 		6C4A67EAB2DC35514ACEE816 /* ActionExtension.appex in Copy Files */ = {isa = PBXBuildFile; fileRef = 2E36C1CCF5AA42C6A95F0F5D; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		50734091A398FDC069BA1576 /* SharedStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9F100000000000000000504 /* SharedStore.swift */; };
+		120478078FBAF9C5077BC986 /* SharedStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9F100000000000000000504 /* SharedStore.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -582,6 +584,7 @@
 				A9CE70000000000000000303 /* SheetPipeline.swift in Sources */,
 				A91D72E3076443E9A17A80D0 /* SharedLink.swift in Sources */,
 				C5C7A98AF2AD468F9429D2AC /* ShareViewController.swift in Sources */,
+				50734091A398FDC069BA1576 /* SharedStore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -634,6 +637,7 @@
 				B4B7F6DD41642BE3F2F9BA40 /* SheetPipeline.swift in Sources */,
 				53089864B734B15593412B6E /* SharedLink.swift in Sources */,
 				F6FAFCCD6FA6CC6BB563A1DD /* ShareViewController.swift in Sources */,
+				120478078FBAF9C5077BC986 /* SharedStore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

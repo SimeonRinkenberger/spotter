@@ -882,11 +882,42 @@ export const STYLE = String.raw`<style>
      that arrives after the pitch reads as an excuse for the pitch. */
   .planctx { font-size: 13px; line-height: 1.55; color: var(--muted); margin: 2px 0 12px; }
   .plangood { margin: 14px 0 4px; }
-  /* 44px whatever the sentence does at 375px: the rhythm the app's other rows
-     keep, so this reads as a list and not as a paragraph. */
-  .pgood { display: flex; align-items: flex-start; gap: 11px; min-height: 44px;
-    box-sizing: border-box; padding: 7px 0; font-size: 13.5px; line-height: 1.5; color: var(--ink-2); }
-  .pgood .ic { flex: 0 0 auto; width: 17px; height: 17px; margin-top: 3px; color: var(--ember); }
+  /* Basic | Plus, Hevy and Strong's way: each row names Basic's number plainly.
+     The Plus column is one tinted band; Basic's own usage sits under its figure
+     in the grey the Settings lines use. Below 360px each row stacks, the label
+     over its two values, rather than crushing the labels. */
+  .ptable { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13.5px;
+    line-height: 1.35; font-variant-numeric: tabular-nums; }
+  .ptable th, .ptable td { padding: 10px 8px; text-align: left; vertical-align: top; }
+  .ptable tbody > * > * { border-top: 1px solid var(--line); }
+  .ptable tbody th { padding-left: 0; font-weight: 500; color: var(--ink-2); }
+  .ptable thead th { padding-bottom: 7px; font-size: 11.5px; font-weight: 750; letter-spacing: .05em;
+    text-transform: uppercase; color: var(--muted); }
+  .ptable td { width: 29%; font-weight: 650; color: var(--ink); }
+  .ptable .pplus { background: var(--ember-soft); }
+  .ptable thead .pplus { color: var(--ember-ink); border-radius: 12px 12px 0 0; }
+  .ptable tr:last-child .pplus { border-radius: 0 0 12px 12px; }
+  .ptable .ic { display: inline-block; width: 13px; height: 13px; margin: 0 4px -1px 0; color: var(--ember-ink);
+    stroke-width: 3; }
+  .ptable small { display: block; margin-top: 3px; font-size: 11.5px; font-weight: 500; color: var(--muted); }
+  .ptable small.out { color: var(--ember-ink); }
+  .ptable .pno { color: var(--muted); font-weight: 500; }
+  .pfree { display: flex; align-items: flex-start; gap: 10px; margin: 12px 0 0; padding: 12px 14px;
+    border-radius: 14px; background: var(--sand); font-size: 13px; line-height: 1.5; color: var(--ink-2); }
+  .pfree .ic { flex: 0 0 auto; width: 16px; height: 16px; margin-top: 2px; color: var(--good); }
+  .pfree b { font-weight: 650; color: var(--ink); }
+  .plansoft { font-size: 13px; line-height: 1.5; color: var(--muted); margin: 4px 0; }
+  @media (max-width: 359px) {
+    .ptable thead { display: none; }
+    .ptable tr { display: grid; grid-template-columns: 1fr 1fr; gap: 0 6px; padding: 10px 0 2px;
+      border-top: 1px solid var(--line); }
+    .ptable tbody > * > * { border-top: 0; }
+    .ptable tbody th { grid-column: 1 / -1; padding: 0 0 4px; }
+    .ptable td, .ptable tr:last-child .pplus { width: auto; padding: 6px 8px; border-radius: 10px; }
+    .ptable td::before { content: attr(data-l); display: block; font-size: 10.5px; font-weight: 750;
+      letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+    .ptable .pplus::before { color: var(--ember-ink); }
+  }
   .plancards { margin: 16px 0 0; }
   /* The whole rectangle is the radio, so there is no small circle to hit. Label
      left, amount right, the rest wrapping underneath — which is what keeps the
@@ -898,6 +929,7 @@ export const STYLE = String.raw`<style>
       transform var(--t-1) var(--e-out); }
   .pcard.on { border-color: var(--ember); background: var(--ember-soft); }
   .pcard:active { transform: scale(.985); }
+  .pcard.off { opacity: .55; box-shadow: none; transform: none; }
   .prow { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
   .pname { font-size: 14.5px; font-weight: 650; letter-spacing: -.01em; }
   .pamt { font-family: var(--display); font-size: 17px; font-weight: 700; letter-spacing: -.015em;
@@ -914,8 +946,14 @@ export const STYLE = String.raw`<style>
     background: var(--ember); color: var(--on-ember); font-size: 12px; font-weight: 750; }
   .pcompare, .prenew { color: var(--ink-2); font-size: 12px; line-height: 1.5; }
   .prenew { margin-top: 5px; font-weight: 650; }
-  .plantrial, .plansoon { font-size: 13px; line-height: 1.5; color: var(--ink-2); margin: 4px 0 14px; }
-  .plansoon { color: var(--muted); }
+  .plantrial { font-size: 13px; line-height: 1.5; color: var(--ink-2); margin: 4px 0 14px; }
+  /* Where the prices would be when there are none: the price cards' own shape,
+     so the page keeps its rhythm in every state. */
+  .plansoon { margin: 16px 0 12px; padding: 14px 15px; border-radius: 16px; background: var(--card);
+    border: 1px solid var(--line-2); box-shadow: var(--sh-sm); }
+  .plansoon b { display: block; font-size: 14.5px; font-weight: 650; line-height: 1.45; }
+  .plansoon p { margin: 5px 0 0; font-size: 13px; line-height: 1.5; color: var(--ink-2); }
+  .plansoon .btn { margin-top: 12px; min-height: 44px; }
   .planbuy { margin-top: 4px; min-height: 48px; }
   /* Cross-fades rather than cutting: this is the one thing a person watches
      while deciding, and a word that snaps under the thumb reads as a mis-tap. */

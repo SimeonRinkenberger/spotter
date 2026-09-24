@@ -8,6 +8,8 @@
   tw.py rest    <tag> <METHOD> <path> [json]   call PostgREST as that user (RLS applies)
   tw.py srest   <tag> <METHOD> <path> [json]   call PostgREST as the SERVICE ROLE, with
                                                user_id filled in for that throwaway
+  tw.py qa      <tag> on|off           flag the throwaway a store QA account (profiles.limits.store_qa),
+                                       which REVENUECAT_SANDBOX_POLICY qa/all read in spotter-purchases
   tw.py delete  <tag>                  delete the account (cascades its data)
   tw.py list                           list every throwaway currently in auth
 """
@@ -87,6 +89,20 @@ def main():
     if cmd == "ensure": print(ensure(tag)); return
     if cmd == "token": print(token(tag)); return
     if cmd == "magic": print(magic(tag)); return
+    if cmd == "qa":
+        # profiles has no user_id column, so srest's owner scoping cannot address
+        # it; this is the one profiles write the harnesses need, scoped by id here.
+        # profiles.limits is service-role-only, which is why it can carry the flag.
+        if tag == "simeon": raise SystemExit("not the owner's permanent test account")
+        u = find(tag)
+        if not u: raise SystemExit("no such throwaway: " + email(tag))
+        on = len(a) > 2 and a[2] == "on"
+        st, d = admin("/rest/v1/profiles?id=eq.%s&select=limits" % u["id"])
+        limits = dict((d or [{}])[0].get("limits") or {})
+        if on: limits["store_qa"] = True
+        else: limits.pop("store_qa", None)
+        st, d = admin("/rest/v1/profiles?id=eq.%s" % u["id"], "PATCH", {"limits": limits or None})
+        print(st, u["email"], "store_qa", "on" if on else "off"); return
     if cmd == "delete":
         u = find(tag)
         if not u: print("no such user"); return

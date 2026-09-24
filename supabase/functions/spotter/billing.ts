@@ -363,31 +363,64 @@ export async function priceByLookupKey(key: string): Promise<Stripe.Price | null
 }
 
 /**
- * The plans somebody could actually buy this minute: a plan is here only when
- * Stripe has an active price for it.
+ * The plans on sale in the stores, from app_config `billing.store_plans`.
+ *
+ * ABSENT MEANS PLUS, the opposite of the founding switch and for the opposite
+ * reason: Plus is on sale in the App Store and Google Play whether or not
+ * anybody writes a row, so an absent row must not hide it, and needing an owner
+ * step to show a paywall that already sells is how testers ended up with no way
+ * to Plus at all. The row exists to take a plan OFF sale without a deploy:
+ * `[]` (or an empty string) sells nothing in the stores. A JSON array or a
+ * comma list both read. An unreadable table is the code default, because the
+ * stores keep selling whatever this function can see.
+ */
+const STORE_PLANS_DEFAULT = ["plus"];
+let storePlansCache: { at: number; plans: string[] } | null = null;
+
+async function storePlans(): Promise<string[]> {
+  if (storePlansCache && Date.now() - storePlansCache.at < CFG_TTL_MS) return storePlansCache.plans;
+  let plans = STORE_PLANS_DEFAULT;
+  try {
+    const rows = await bSelect("app_config", "key=eq.billing.store_plans&select=value");
+    if (rows.length) {
+      const raw = String(rows[0]?.value ?? "").trim();
+      let list: unknown = raw;
+      try { list = JSON.parse(raw); } catch { /* a comma list */ }
+      const names = Array.isArray(list) ? list : String(list).split(",");
+      plans = names.map((n) => String(n ?? "").trim().toLowerCase()).filter((n) => /^[a-z]+$/.test(n));
+    }
+    storePlansCache = { at: Date.now(), plans };
+  } catch (e) {
+    console.error("billing: billing.store_plans unreadable, selling the default", STORE_PLANS_DEFAULT, "—", e);
+  }
+  return plans;
+}
+
+/**
+ * The plans somebody could actually buy this minute, in any channel: the store
+ * plans above, and a plan with an active Stripe price when a Stripe key is set.
  *
  * This is what makes `upgrade` on a cap 429 honest. `pro` is seeded in the cap
- * table as the price-raise valve but has no Stripe product, so a Plus subscriber
+ * table as the price-raise valve but is on sale nowhere, so a Plus subscriber
  * who trips a daily ceiling must be told "that is the ceiling", not sold a tier
- * that does not exist. And with no key at all the answer is nobody-can-buy-
- * anything, which is exactly right: a project running without billing should
- * never show a paywall.
+ * that does not exist. Stripe used to be the only channel asked, so once its key
+ * was gone every Basic refusal said upgrade:false and the paywall was
+ * unreachable from a cap, while Plus was on sale in both stores.
  */
 export async function sellablePlans(): Promise<string[]> {
-  if (!billingConfigured()) return [];
+  const plans = new Set<string>(await storePlans());
+  if (!billingConfigured()) return [...plans];
   try {
     const { byKey } = await loadCatalog();
-    const plans = new Set<string>();
     for (const [key, price] of Object.entries(byKey)) {
       if (price && typeof price.unit_amount === "number") plans.add(key.split("_")[1]);
     }
-    return [...plans];
   } catch (e) {
     // Same direction as everything else here: when Stripe cannot be asked, sell
-    // nothing rather than advertise something that might not be there.
-    console.error("billing: could not list sellable plans —", e);
-    return [];
+    // nothing through it rather than advertise something that might not be there.
+    console.error("billing: could not list Stripe's sellable plans —", e);
   }
+  return [...plans];
 }
 
 /** What one plan's first-year price is with the founding coupon applied. */
@@ -767,8 +800,35 @@ export async function cancelAndDeleteCustomer(userId: string): Promise<void> {
   if (!billingConfigured()) {
     // A customer row with no key to cancel it: refuse loudly rather than delete
     // the account and leave a live subscription behind with nobody attached.
+    // (Account deletion no longer reaches this without a key: it hands the
+    // customer to the erasure outbox instead — see billingCustomerFor.)
     throw new Error("billing_customers row exists but STRIPE_SECRET_KEY is unset");
   }
+  await cancelAndDeleteCustomerId(customer, userId);
+}
+
+/**
+ * The Stripe customer an account has, if any. Account deletion reads it when no
+ * Stripe key is set, so the customer can be handed to the erasure outbox before
+ * the row naming it cascades away with the account.
+ */
+export async function billingCustomerFor(userId: string): Promise<string | null> {
+  return await customerIdFor(userId);
+}
+
+/**
+ * The erasure outbox's Stripe step: cancel every live subscription of one
+ * customer and delete it. Not done, and retried, while no key is set.
+ */
+export async function eraseStripeCustomer(
+  customer: string,
+): Promise<{ done: true } | { done: false; error: string }> {
+  if (!billingConfigured()) return { done: false, error: "STRIPE_SECRET_KEY is not set" };
+  await cancelAndDeleteCustomerId(customer, "erasure outbox");
+  return { done: true };
+}
+
+async function cancelAndDeleteCustomerId(customer: string, userId: string): Promise<void> {
   const stripe = stripeClient();
   const subs = await stripe.subscriptions.list({ customer, status: "all", limit: 100 });
   for (const sub of subs.data) {
