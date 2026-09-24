@@ -9538,7 +9538,7 @@ details.details-moving > :not(summary) {
   }
   function clearAccount() {
     if (dismissAiConsent(), native && native.configureSharing(null).catch(function() {
-    }), cancelPumpyReset(), pendingMotion && pendingMotion.disconnect(), $("app").classList.add("hide"), accountEpoch++, reads = {}, inFlight = {}, libraryRev++, logsRev++, planRev++, clearTimeout(undoTimer), undoTimer = null, undoFn = null, clearTimeout(detailCloseTimer), clearTimeout(woCloseTimer), clearTimeout(pendTimer), pendTimer = null, pendPolls = 0, pendBusy = !1, wkChannel && (sb.removeChannel(wkChannel), wkChannel = null), booting = null, earlyUid = null, state.profile = null, state.workouts = [], state.logs = null, state.plan = null, state.awards = null, state.goal = null, heroPct = 0, trainSeg = null, state.unit = "lb", state.sounds = !0, state.haptics = !0, state.collections = [], state.colItems = [], seenCards = {}, gridCards = {}, expCache = {}, expWaiting = {}, vidCache = {}, expKey = "", capWaiting = {}, today.rows = [], today.at = 0, today.day = null, today.busy = !1, today.shown = !1, today.asked = 0, current = null, sc && scForget(), wo && saveDraft(), clearInterval(woTimer), stopRest(), liveEnd(!1), releaseWake(), wo = null, hist = {}, histReady = !1, strava && (strava = { asked: !1, configured: !1, connected: !1, athlete: null, busy: !1 }), pumpy) {
+    }), cancelPumpyReset(), pendingMotion && pendingMotion.disconnect(), $("app").classList.add("hide"), accountEpoch++, reads = {}, inFlight = {}, libraryRev++, logsRev++, planRev++, clearTimeout(undoTimer), undoTimer = null, undoFn = null, clearTimeout(detailCloseTimer), clearTimeout(woCloseTimer), clearTimeout(pendTimer), pendTimer = null, pendPolls = 0, pendBusy = !1, wkChannel && (sb.removeChannel(wkChannel), wkChannel = null), booting = null, earlyUid = null, reconnecting = !1, state.profile = null, state.workouts = [], state.logs = null, state.plan = null, state.awards = null, state.goal = null, heroPct = 0, trainSeg = null, state.unit = "lb", state.sounds = !0, state.haptics = !0, state.collections = [], state.colItems = [], seenCards = {}, gridCards = {}, expCache = {}, expWaiting = {}, vidCache = {}, expKey = "", capWaiting = {}, today.rows = [], today.at = 0, today.day = null, today.busy = !1, today.shown = !1, today.asked = 0, current = null, sc && scForget(), wo && saveDraft(), clearInterval(woTimer), stopRest(), liveEnd(!1), releaseWake(), wo = null, hist = {}, histReady = !1, strava && (strava = { asked: !1, configured: !1, connected: !1, athlete: null, busy: !1 }), pumpy) {
       var seq = (pumpy.openSeq || 0) + 1, wired = pumpy.wired;
       pumpy = {
         thread: null,
@@ -9565,9 +9565,11 @@ details.details-moving > :not(summary) {
     if (event === "PASSWORD_RECOVERY" && setTimeout(openRecovery, 0), session && session.user) {
       var first = !state.user || state.user.id !== session.user.id;
       first && state.user ? clearAccount() : first && settleEarly(session.user.id), state.user = session.user, showApp(), first && setTimeout(boot, 0);
-    } else
-      clearAccount(), publishSignedOut(), state.user = null, guideUser(), state.workouts = [], state.logs = null, state.plan = null, state.awards = null, state.filter = "All", state.q = "", $("search").value = "", dropCache(), booting = null, showLanding();
+    } else earlyUid && !state.user && event !== "SIGNED_OUT" ? answeredNobody(signedOut) : signedOut();
   });
+  function signedOut() {
+    clearAccount(), publishSignedOut(), state.user = null, guideUser(), state.workouts = [], state.logs = null, state.plan = null, state.awards = null, state.filter = "All", state.q = "", $("search").value = "", dropCache(), booting = null, showLanding();
+  }
   var booting = null;
   function boot() {
     if (guideUser(), booting) return booting;
@@ -9788,6 +9790,46 @@ details.details-moving > :not(summary) {
   function settleEarly(uid) {
     earlyUid && earlyUid !== uid && clearAccount();
   }
+  var reconnecting = !1;
+  function answeredNobody(leave) {
+    var uid = earlyUid;
+    function decide(raw2) {
+      if (!(state.user || earlyUid !== uid)) {
+        var s = null;
+        try {
+          s = JSON.parse(raw2);
+        } catch (e) {
+        }
+        if (!(s && s.user && s.user.id === uid && s.refresh_token)) {
+          leave();
+          return;
+        }
+        reconnecting || (reconnecting = !0, toast(WAITING), window.addEventListener("online", function() {
+          !state.user && earlyUid === uid && sb.auth.getSession().catch(function() {
+          });
+        }));
+      }
+    }
+    if (native) {
+      native.authStorage.getItem(SESSION_KEY).then(decide, function() {
+        leave();
+      });
+      return;
+    }
+    var raw = null;
+    try {
+      raw = localStorage.getItem(SESSION_KEY);
+    } catch (e) {
+    }
+    decide(raw);
+  }
+  var WAITING = "Reconnecting\u2026 Your library and workouts still work offline.";
+  function accountFree(t) {
+    return !t || !t.closest ? !1 : t.closest("[data-close], #dclose, #grid, #chips, #searchwrap, #hint, #filtersheet, #sortsheet, #tab0, #resume, #toast, #dinner .startbtn, #dinner .source-disclosure, #workout") ? !0 : !!(wo && !wo.finished && t.closest(".sheet"));
+  }
+  document.addEventListener("click", function(e) {
+    state.user || !earlyUid || accountFree(e.target) || (e.preventDefault(), e.stopPropagation(), toast(WAITING));
+  }, !0);
   function load(retry) {
     if (!state.user) return Promise.resolve();
     var uid = state.user.id, epoch = accountEpoch, rev = libraryRev;
@@ -13906,6 +13948,10 @@ details.details-moving > :not(summary) {
       });
       if (!logged.length) {
         leaveWorkout(), toast("Workout closed \u2014 nothing logged.");
+        return;
+      }
+      if (!state.user) {
+        saveDraft(), toast("Reconnecting\u2026 This workout is kept on this phone. Save it once you're back online.");
         return;
       }
       var payload = {
@@ -19160,6 +19206,10 @@ details.details-moving > :not(summary) {
       ptrPulling = !1;
       var p = $("ptr"), d = parseFloat(p.style.opacity || "0");
       if (p.classList.add("back"), p.style.opacity = 0, p.style.transform = "", !(d < 1)) {
+        if (!state.user) {
+          toast(WAITING);
+          return;
+        }
         var before = state.workouts.length, job = refreshActive();
         if (!job || !job.then) {
           toast("Up to date");
@@ -19608,7 +19658,14 @@ details.details-moving > :not(summary) {
       watchBilling(), overlayShowing() || load();
     }
   }), window.addEventListener("pageshow", watchBilling), window.addEventListener("focus", watchBilling), captureCreator(), setAuthMode("signup"), captureShare(), captureBilling(), captureStrava(), linkProblem(), paintBeforeAuth(), sb.auth.getSession().then(function(r) {
-    r.data.session && r.data.session.user ? (state.user || settleEarly(r.data.session.user.id), state.user = r.data.session.user, showApp(), boot().then(restoreSession)) : (earlyUid && clearAccount(), showLanding(), sharePending() && toast("Sign in to save the link you shared."));
+    if (r.data.session && r.data.session.user)
+      state.user || settleEarly(r.data.session.user.id), state.user = r.data.session.user, showApp(), boot().then(restoreSession);
+    else {
+      var land2 = function() {
+        earlyUid && clearAccount(), showLanding(), sharePending() && toast("Sign in to save the link you shared.");
+      };
+      earlyUid && !state.user ? answeredNobody(land2) : land2();
+    }
   }), !native && "serviceWorker" in navigator && window.addEventListener("load", function() {
     navigator.serviceWorker.register("sw.js").catch(function() {
     });

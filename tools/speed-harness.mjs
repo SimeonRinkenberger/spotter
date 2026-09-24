@@ -11,6 +11,10 @@
 //   C2  the cached Library paints before the token refresh, for the stored user
 //       only: a revoked or deleted account lands on the sign-in card with nothing
 //       left behind, and a switch of account paints nothing of the previous one.
+//       Offline with that stale token (supabase-js answers nobody but keeps the
+//       session) the library stays up, taps that need the account say
+//       "Reconnecting…", Save keeps the session on the phone, and the refresh
+//       that finally gets through boots the account as usual.
 //   C3  /api/limits is asked once a minute, not once per Basic card opened; a write
 //       retires the copy; two asks at once are one call.
 //   C6  a launch reads plan and workout_logs for the today card once, not twice;
@@ -73,8 +77,10 @@ var localStorage = {
   removeItem: function (k) { delete store[k]; }
 };
 var location = { hash: "", search: "", pathname: "/spotter/" };
-var document = { querySelectorAll: function () { return []; }, body: $("body") };
-var window = {};
+var docListeners = [], winL = {}, toasts = [], sessionAsks = 0;
+var document = { querySelectorAll: function () { return []; }, body: $("body"),
+  addEventListener: function (t, f, c) { docListeners.push({ t: t, f: f, c: c }); } };
+var window = { addEventListener: function (t, f) { (winL[t] = winL[t] || []).push(f); } };
 function setTimeout(f) { timers.push(f); return timers.length; }
 function clearTimeout() {}
 function clearInterval() {}
@@ -97,7 +103,7 @@ function guideUser() {} function publishSignedOut() { log.push("signed-out"); } 
 function resetPager() {} function measureChrome() {} function mailClose() {} function capOn() { return false; }
 function maybeInstallHint() {} function watchWorkouts() {} function welcomeMaybe() {} function restoreSession() {}
 function consumeShare() {} function consumeOpen() {} function consumeBilling() {} function consumeCreator() {}
-function warmPages() {} function sharePending() { return false; } function toast() {}
+function warmPages() {} function sharePending() { return false; } function toast(m) { toasts.push(m); }
 function renderToday() { log.push("today"); }
 function accountNow(epoch, uid) { return epoch === accountEpoch && state.user && state.user.id === uid; }
 function loadProfile() { nets.push("profiles"); return Promise.resolve(); }
@@ -105,12 +111,15 @@ function load() { nets.push("workouts"); return Promise.resolve(); }
 // What the grid shows is what render() last drew; clearAccount's innerHTML = "" empties it.
 function render() { $("grid").cards = state.workouts.map(function (w) { return w.id; }); log.push("render:" + $("grid").cards.join(",")); }
 var authCb = null;
-sb.auth = { onAuthStateChange: function (cb) { authCb = cb; } };
+sb.auth = { onAuthStateChange: function (cb) { authCb = cb; },
+  getSession: function () { sessionAsks++; return Promise.resolve({ data: { session: null } }); } };
 `;
 
 const LIFT = ['readCache', 'paintCache', 'paintRows', 'dropCache', 'paintBeforeAuth', 'settleEarly',
-  'clearAccount', 'showApp', 'showLanding', 'boot'].map(fn).join('\n');
-const DECLS = ['  var SESSION_KEY', '  var earlyUid', '  var booting'].map((h) => {
+  'answeredNobody', 'accountFree', 'signedOut', 'clearAccount', 'showApp', 'showLanding', 'boot'].map(fn).join('\n') + '\n' +
+  // The gate on taps while the account is unconfirmed, as written.
+  stmt('  document.addEventListener("click", function (e) {\n    if (state.user || !earlyUid', '  }, true);');
+const DECLS = ['  var SESSION_KEY', '  var earlyUid', '  var booting', '  var reconnecting', '  var WAITING'].map((h) => {
   const a = APP.indexOf(h); assert(a >= 0, 'not found: ' + h); return APP.slice(a, APP.indexOf('\n', a));
 }).join('\n');
 const LISTENER = stmt('  sb.auth.onAuthStateChange(function (event, session) {', '  });');
@@ -168,6 +177,8 @@ for (const order of ['callback-first', 'getSession-first']) {
   const c = page(); seed(c, A, A); c.$('app').cls.add('hide');
   let answer; c.foot(new Promise((r) => { answer = r; }));
   assert.equal(grid(c), 'a-card-1,a-card-2', 'painted while the refresh is out');
+  // supabase-js drops the stored session first, then says so.
+  delete c.store[SESSION];
   if (order === 'callback-first') { c.authCb('SIGNED_OUT', null); answer({ data: { session: null } }); }
   else { answer({ data: { session: null } }); await tick(); c.authCb('SIGNED_OUT', null); }
   await tick(); c.flush();
@@ -177,6 +188,7 @@ for (const order of ['callback-first', 'getSession-first']) {
   assert(!shown(c) && c.$('landing').cls.has('open'), 'the sign-in card is what shows');
   assert.equal(c.state.user, null);
   assert.equal(c.nets.length, 0, 'no read went out');
+  assert(!c.toasts.some((t) => /^Reconnecting/.test(t)), 'a refused session is not called offline');
   ok('C2 revoked account (' + order + '): landing, nothing left behind');
 }
 
@@ -236,6 +248,119 @@ for (const [hash, search] of [['#access_token=t&refresh_token=r&type=magiclink',
   assert.equal(grid(c), '');
   assert.equal(c.store['spotter-lib-v1'], undefined);
   ok('C2 native: painted from the Keychain, revoked answer clears it');
+}
+
+// 5. Offline with that stale token. supabase-js retries the refresh for ~25 s,
+//    then answers nobody (INITIAL_SESSION null, getSession null with an
+//    AuthRetryableFetchError) and KEEPS the stored session for its next try.
+const WAITING = /^Reconnecting/;
+// A tap on an element that matches exactly one of accountFree's selectors.
+const tap = (c, sel) => {
+  const e = { target: { closest: (list) => (list.split(',').map((x) => x.trim()).includes(sel) ? {} : null) },
+    prevented: false, stopped: false, preventDefault() { this.prevented = true; }, stopPropagation() { this.stopped = true; } };
+  c.docListeners.filter((l) => l.t === 'click' && l.c === true).forEach((l) => l.f(e));
+  return !(e.prevented || e.stopped);
+};
+for (const door of ['callback', 'getSession', 'both']) {
+  const c = page(); seed(c, A, A); c.$('app').cls.add('hide');
+  let answer; c.foot(new Promise((r) => { answer = r; }));
+  assert.equal(grid(c), 'a-card-1,a-card-2');
+  const nobody = { data: { session: null }, error: { name: 'AuthRetryableFetchError', message: 'Failed to fetch' } };
+  if (door !== 'getSession') c.authCb('INITIAL_SESSION', null);
+  if (door !== 'callback') { answer(nobody); await tick(); }
+  await tick(); c.flush();
+  assert.equal(grid(c), 'a-card-1,a-card-2', 'the library stays up');
+  assert.equal(c.state.workouts.length, 2);
+  assert(c.store['spotter-lib-v1'], 'the cache stays in storage');
+  assert(shown(c) && !c.$('landing').cls.has('open'), 'no sign-in card over it');
+  assert.equal(c.state.user, null, 'still nobody to act as');
+  assert.equal(c.earlyUid, A.id);
+  assert.equal(c.nets.length, 0, 'no read went out');
+  assert.equal(c.toasts.filter((t) => WAITING.test(t)).length, 1, 'says so, once: ' + c.toasts.join(' | '));
+  // What needs no account works; what does says so instead of acting as nobody.
+  for (const sel of ['#grid', '#chips', '#tab0', '#resume', '#dinner .startbtn', '#dinner .source-disclosure', '#workout', '[data-close]', '#dclose'])
+    assert(tap(c, sel), sel + ' is usable offline');
+  for (const sel of ['#settingsbtn', '#addbtn', '#tab1', '#tab2', '#dmore', '#dfav', '#colbar', '#pumpysend', '.sheet'])
+    assert(!tap(c, sel), sel + ' waits for the account');
+  c.wo = { finished: false };
+  assert(tap(c, '.sheet'), 'a sheet of a running workout (a set, the rest, leaving) is usable');
+  c.wo = null;
+  // Back online: the page nudges the SDK rather than waiting for its next tick.
+  (c.winL.online || []).forEach((f) => f());
+  assert.equal(c.sessionAsks, 1, 'an online event asks for the session again');
+  // The refresh gets through: the account boots as it always does, onto the painted cards.
+  c.authCb('TOKEN_REFRESHED', { user: A }); c.flush(); await tick();
+  assert.equal(c.state.user.id, A.id);
+  assert.equal(c.log.filter((l) => l.startsWith('render:')).length, 1, 'the cache is not painted a second time');
+  assert.deepEqual([...c.nets].sort(), ['profiles', 'workouts'], 'boot reads as it always did');
+  assert(tap(c, '#settingsbtn'), 'the gate lifts with the account');
+  (c.winL.online || []).forEach((f) => f());
+  assert.equal(c.sessionAsks, 1, 'and the nudge stops');
+  ok('C2 offline, stale token (' + door + '): library stays up, account taps wait, the refresh boots it');
+}
+// 6. Offline first, and the account turns out to be gone when the phone is back.
+{
+  const c = page(); seed(c, A, A); c.$('app').cls.add('hide');
+  c.foot(new Promise(() => {}));
+  c.authCb('INITIAL_SESSION', null); await tick(); c.flush();
+  assert.equal(grid(c), 'a-card-1,a-card-2');
+  delete c.store[SESSION]; c.authCb('SIGNED_OUT', null); c.flush();
+  assert.equal(grid(c), '');
+  assert.equal(c.store['spotter-lib-v1'], undefined, 'the cache is gone');
+  assert(!shown(c) && c.$('landing').cls.has('open'));
+  assert(tap(c, '#settingsbtn'), 'no gate is left behind for the next sign-in');
+  ok('C2 offline, then revoked on reconnect: landing, nothing left behind');
+}
+// 7. The stored session is already gone (or someone else's) when nobody is answered.
+for (const [label, mutate] of [['removed', (c) => { delete c.store[SESSION]; }], ['replaced by B', (c) => { c.store[SESSION] = JSON.stringify({ access_token: 'x', refresh_token: 'z', expires_at: 1, user: B }); }]]) {
+  const c = page(); seed(c, A, A); c.$('app').cls.add('hide');
+  c.paintBeforeAuth();
+  mutate(c); c.authCb('INITIAL_SESSION', null); c.flush();
+  assert.equal(grid(c), '');
+  assert.equal(c.store['spotter-lib-v1'], undefined);
+  assert(c.$('landing').cls.has('open'));
+  ok('C2 nobody, stored session ' + label + ': a sign-out like any other');
+}
+// 8. Native: the stored session is read from the Keychain, asynchronously.
+{
+  const c = page(); seed(c, A, A); c.$('app').cls.add('hide');
+  c.native = { configureSharing: () => Promise.resolve(), authStorage: { getItem: () => Promise.resolve(c.store[SESSION]) } };
+  c.paintBeforeAuth(); await tick();
+  c.authCb('INITIAL_SESSION', null); await tick(); await tick(); c.flush();
+  assert.equal(grid(c), 'a-card-1,a-card-2', 'native keeps the library up offline');
+  assert(c.store['spotter-lib-v1']);
+  c.store[SESSION] = undefined; delete c.store[SESSION];
+  c.authCb('SIGNED_OUT', null); c.flush();
+  assert.equal(grid(c), '');
+  ok('C2 native offline: Keychain session kept → library up; SIGNED_OUT → landing');
+}
+// 9. Save while the account is unconfirmed: nothing throws, nothing is lost.
+{
+  const ctx = vm.createContext({ Promise, JSON, Object, Array, String, Number, Math, console, Date });
+  vm.runInContext(`
+    var calls = [], toasts = [], state = { user: null }, native = null, woTimer = 0, today = { at: 1 }, inserted = [];
+    var wo = { finished: false, startedAt: new Date(Date.now() - 600000).toISOString(), workout: { id: "w1", title: "Leg day" },
+      entries: [{ name: "Goblet Squat", sets: [{ reps: 10 }, null, { reps: 8 }] }, { name: "Lunge", sets: [] }] };
+    function leaveWorkout() { calls.push("leave"); } function saveDraft() { calls.push("saveDraft"); }
+    function toast(m) { toasts.push(m); } function clearInterval() {} function cxOff() {} function stopRest() {}
+    function clearDraft() { calls.push("clearDraft"); } function liveEnd() { calls.push("liveEnd"); } function haptic() {}
+    function renderSummary() { calls.push("summary"); } function sumLanded() {} function invalidateLogs() {} function renderToday() {}
+    function loadLogs() { return Promise.resolve(); } function publishSummary() {}
+    var sb = { from: function () { return { insert: function (p) { inserted.push(p); return { select: function () {
+      return { single: function () { return Promise.resolve({ data: { id: "log1" } }); } }; } }; } }; } };
+  ` + fn('finishWorkout'), ctx);
+  vm.runInContext('finishWorkout()', ctx);
+  assert.deepEqual([...ctx.calls], ['saveDraft'], 'the session is written to disk, not cleared: ' + ctx.calls.join(','));
+  assert.equal(ctx.inserted.length, 0, 'no insert as nobody');
+  assert.equal(ctx.wo.finished, false, 'the workout stays open');
+  assert(WAITING.test(ctx.toasts[0]), 'and says why: ' + ctx.toasts[0]);
+  ctx.calls.length = 0;
+  vm.runInContext('state.user = { id: "u1" }; finishWorkout()', ctx);
+  assert.equal(ctx.inserted.length, 1, 'with the account back, Save inserts');
+  assert.equal(ctx.inserted[0].user_id, 'u1');
+  assert.deepEqual([...ctx.inserted[0].entries].map((e) => e.sets.length), [2], 'both sets, the hole closed');
+  assert(ctx.calls.includes('clearDraft') && ctx.calls.includes('summary') && ctx.wo.finished);
+  ok('C2 Save while the account is unconfirmed keeps the session; Save once it is back inserts it');
 }
 
 // ---------- C3 (client) ----------

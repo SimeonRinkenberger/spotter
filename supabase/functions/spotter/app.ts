@@ -1277,7 +1277,7 @@ export const APP = String.raw`
     clearTimeout(detailCloseTimer); clearTimeout(woCloseTimer);
     clearTimeout(pendTimer); pendTimer = null; pendPolls = 0; pendBusy = false;
     if (wkChannel) { sb.removeChannel(wkChannel); wkChannel = null; }
-    booting = null; earlyUid = null; state.profile = null; state.workouts = []; state.logs = null;
+    booting = null; earlyUid = null; reconnecting = false; state.profile = null; state.workouts = []; state.logs = null;
     state.plan = null; state.awards = null; state.goal = null; heroPct = 0; trainSeg = null;
     state.unit = "lb"; state.sounds = true; state.haptics = true;
     state.collections = []; state.colItems = []; seenCards = {}; gridCards = {};
@@ -1320,22 +1320,29 @@ export const APP = String.raw`
       // supabase-js holds the auth lock for the duration of this callback, so any
       // query started here deadlocks. Hand the work to the next tick instead.
       if (first) setTimeout(boot, 0);
+    } else if (earlyUid && !state.user && event !== "SIGNED_OUT") {
+      // Painted before the token came back, and the answer is nobody: offline, or gone?
+      answeredNobody(signedOut);
     } else {
-      clearAccount();
-      publishSignedOut();
-      state.user = null;
-      guideUser();
-      state.workouts = []; state.logs = null; state.plan = null; state.awards = null;
-      // What the last person was looking for is not what the next one is. The
-      // library came back narrowed to a search and a creator nobody had typed.
-      state.filter = "All"; state.q = ""; $("search").value = "";
-      // Somebody else's library must never paint on this phone, and the next
-      // sign-in on this page has to be a real boot rather than a no-op.
-      dropCache();
-      booting = null;
-      showLanding();
+      signedOut();
     }
   });
+
+  function signedOut() {
+    clearAccount();
+    publishSignedOut();
+    state.user = null;
+    guideUser();
+    state.workouts = []; state.logs = null; state.plan = null; state.awards = null;
+    // What the last person was looking for is not what the next one is. The
+    // library came back narrowed to a search and a creator nobody had typed.
+    state.filter = "All"; state.q = ""; $("search").value = "";
+    // Somebody else's library must never paint on this phone, and the next
+    // sign-in on this page has to be a real boot rather than a no-op.
+    dropCache();
+    booting = null;
+    showLanding();
+  }
 
   // Two doors lead here — onAuthStateChange's first session, and the getSession at
   // the foot of this file for a session restored before the listener existed — and
@@ -1688,6 +1695,58 @@ export const APP = String.raw`
   function settleEarly(uid) {
     if (earlyUid && earlyUid !== uid) clearAccount();
   }
+
+  // The SDK answered nobody while that library is up. supabase-js drops the stored
+  // session when the server refused it (revoked, deleted, signed out elsewhere)
+  // and keeps it when the server could not be reached, retrying on its own every
+  // 30 s. So the stored session decides. Still there and still theirs: the phone
+  // is offline with an hour-old token, and the library stays up until a refresh
+  // gets through, when onAuthStateChange boots as it always does. Gone, or
+  // someone else's: a sign-out like any other.
+  var reconnecting = false;
+
+  function answeredNobody(leave) {
+    var uid = earlyUid;
+    function decide(raw) {
+      if (state.user || earlyUid !== uid) return;
+      var s = null;
+      try { s = JSON.parse(raw); } catch (e) { }
+      if (!(s && s.user && s.user.id === uid && s.refresh_token)) { leave(); return; }
+      if (reconnecting) return;
+      reconnecting = true;
+      toast(WAITING);
+      // A phone that says it is back is worth a try before the SDK's next tick.
+      window.addEventListener("online", function () {
+        if (!state.user && earlyUid === uid) sb.auth.getSession().catch(function () {});
+      });
+    }
+    if (native) { native.authStorage.getItem(SESSION_KEY).then(decide, function () { leave(); }); return; }
+    var raw = null;
+    try { raw = localStorage.getItem(SESSION_KEY); } catch (e) { }
+    decide(raw);
+  }
+
+  // Until the account is confirmed the page shows a library with nobody signed
+  // in, and anything that reads or writes as the account has nobody to act as.
+  // Online that is a fraction of a second; offline it lasts until the phone is
+  // back. What needs no account stays usable: the Library, a card, and training
+  // from it (Save waits for the account, see finishWorkout). Every other tap says
+  // so instead of acting as nobody.
+  var WAITING = "Reconnecting… Your library and workouts still work offline.";
+
+  function accountFree(t) {
+    if (!t || !t.closest) return false;
+    if (t.closest("[data-close], #dclose, #grid, #chips, #searchwrap, #hint, #filtersheet, #sortsheet, #tab0, #resume, #toast, " +
+      "#dinner .startbtn, #dinner .source-disclosure, #workout")) return true;
+    // Workout Mode's own sheets: a set, the rest, leaving, adding a movement.
+    return !!(wo && !wo.finished && t.closest(".sheet"));
+  }
+
+  document.addEventListener("click", function (e) {
+    if (state.user || !earlyUid || accountFree(e.target)) return;
+    e.preventDefault(); e.stopPropagation();
+    toast(WAITING);
+  }, true);
 
   // ---------- library ----------
 
@@ -9140,6 +9199,13 @@ export const APP = String.raw`
       return Object.assign({}, e, { sets: (e.sets || []).filter(Boolean) });
     }).filter(function (e) { return e.sets.length; });
     if (!logged.length) { leaveWorkout(); toast("Workout closed — nothing logged."); return; }
+    // Painted before the account came back (offline with an hour-old token): the
+    // session stays open and on disk, and Save works once the account is back.
+    if (!state.user) {
+      saveDraft();
+      toast("Reconnecting… This workout is kept on this phone. Save it once you're back online.");
+      return;
+    }
     var payload = {
       user_id: state.user.id,
       workout_id: wo.workout.id,
@@ -17861,6 +17927,7 @@ export const APP = String.raw`
     p.style.opacity = 0;
     p.style.transform = "";
     if (d < 1) return;
+    if (!state.user) { toast(WAITING); return; }
     // "Refreshed" is a receipt with nothing on it. Wait for the read and answer
     // the question the pull was actually asking.
     var before = state.workouts.length;
@@ -18511,11 +18578,14 @@ export const APP = String.raw`
       showApp();
       boot().then(restoreSession);
     } else {
-      if (earlyUid) clearAccount();
-      showLanding();
-      // A share that landed on a signed-out app. Say the link is safe rather than
-      // showing a sign-in screen that looks like the share went nowhere.
-      if (sharePending()) toast("Sign in to save the link you shared.");
+      var land = function () {
+        if (earlyUid) clearAccount();
+        showLanding();
+        // A share that landed on a signed-out app. Say the link is safe rather than
+        // showing a sign-in screen that looks like the share went nowhere.
+        if (sharePending()) toast("Sign in to save the link you shared.");
+      };
+      if (earlyUid && !state.user) answeredNobody(land); else land();
     }
   });
 
