@@ -1351,9 +1351,15 @@ function noPostAnswer(shared: string): { status: string; code?: string; message:
     return { status: "error", code: "not_a_post",
       message: "That is an Instagram sound page, not a post. Open the reel itself and share that." };
   }
-  if (/^https?:\/\/(?:(?:vm|vt)\.tiktok\.com\/|(?:www\.)?tiktok\.com\/t\/|(?:www\.)?instagram\.com\/share\/)/i.test(link)) {
+  if (/^https?:\/\/(?:(?:vm|vt)\.tiktok\.com\/|(?:www\.)?tiktok\.com\/t\/)/i.test(link)) {
     return { status: "error", code: "link_expired",
       message: "That link no longer opens a post — it may have been deleted. Open the post and share it again." };
+  }
+  // An Instagram share link that did not name its post. It may be fine — the
+  // page it serves is Instagram's to change — so this says what works instead.
+  if (/^https?:\/\/(?:www\.)?instagram\.com\/share\//i.test(link)) {
+    return { status: "error", code: "link_unresolved",
+      message: "Spotter could not follow that Instagram share link. Open the post, tap Share → Copy link, and paste it into Spotter." };
   }
   return { status: "error", message: "No workout link found in what was shared." };
 }

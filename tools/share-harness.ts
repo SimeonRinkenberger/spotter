@@ -180,6 +180,9 @@ function check(ok: unknown, what: string): void {
   }
   check(u.noPostAnswer("Leg day https://example.com").message === "No workout link found in what was shared.",
     "an ordinary non-post keeps the old sentence");
+  const unresolved = u.noPostAnswer("https://www.instagram.com/share/reel/BAGabc123xy/");
+  check(unresolved.code === "link_unresolved" && /Copy link/.test(unresolved.message),
+    "an Instagram share link that names no post says what works instead, not that it was deleted");
   const expired = u.noPostAnswer("https://vt.tiktok.com/ZSe4FqkKd");
   check(expired.message === "That link no longer opens a post — it may have been deleted. Open the post and share it again.",
     "S13 sentence for an expired short link");
