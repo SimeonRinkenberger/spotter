@@ -21,6 +21,8 @@
  * change the thing it is reporting on is a notifier that can hide an outage.
  */
 
+import { serviceFetch } from "./rest.ts";
+
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
@@ -39,7 +41,7 @@ const ALLOWED_ORIGINS = (Deno.env.get("ALLOWED_ORIGINS") ??
 function rest(table: string): string { return `${SUPABASE_URL}/rest/v1/${table}`; }
 
 async function readRows(table: string, query: string): Promise<Record<string, unknown>[]> {
-  const r = await fetch(`${rest(table)}?${query}`, { headers: dbHeaders });
+  const r = await serviceFetch(`${rest(table)}?${query}`, { headers: dbHeaders });
   if (!r.ok) throw new Error(`ops db ${table} ${r.status}: ${await r.text()}`);
   return await r.json();
 }
@@ -246,7 +248,7 @@ export async function runOpsAlert(
         continue;
       }
       if (result.gone) {
-        await fetch(`${rest("push_subscriptions")}?endpoint=eq.${encodeURIComponent(sub.endpoint)}`,
+        await serviceFetch(`${rest("push_subscriptions")}?endpoint=eq.${encodeURIComponent(sub.endpoint)}`,
           { method: "DELETE", headers: dbHeaders }).then((r) => r.body?.cancel());
         dropped++;
         continue;
@@ -263,7 +265,7 @@ export async function runOpsAlert(
     const stamp = new Date(nowMs).toISOString();
     for (const a of pending) {
       const detail = { ...(a.detail ?? {}), notified: stamp };
-      const r = await fetch(`${rest("ops_alerts")}?id=eq.${a.id}`, {
+      const r = await serviceFetch(`${rest("ops_alerts")}?id=eq.${a.id}`, {
         method: "PATCH",
         headers: { ...dbHeaders, prefer: "return=minimal" },
         body: JSON.stringify({ detail }),

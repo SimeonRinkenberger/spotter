@@ -42,6 +42,7 @@ const steps = [
   ['Source trust', 'deno', ['run', '--allow-read', 'tools/source-trust-check.ts']],
   ['Outbound guard policy', 'deno', ['run', '--allow-read', 'tools/ssrf-policy-check.ts']],
   ['Push endpoint guard', 'deno', ['run', '--allow-env', '--allow-read', 'tools/push-ssrf-check.ts']],
+  ['Push tick survives PGRST303', 'deno', ['run', '--allow-env', '--allow-read', 'tools/push-tick-retry-check.ts']],
   ['Merge harness', 'deno', ['run', '--allow-read', 'tools/merge-harness.ts']],
   ['Ingest coverage', 'deno', ['run', '--allow-read', '--allow-env', 'tools/ingest-coverage-harness.ts']],
   ['Pack eval offline', 'deno', ['run', '--allow-read', 'tools/pack-eval/offline.ts']],

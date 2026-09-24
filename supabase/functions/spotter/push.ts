@@ -43,6 +43,7 @@
 // notification at all.
 
 import { assertPublicUrl, checkUrl } from "./net.ts";
+import { serviceFetch } from "./rest.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -719,13 +720,13 @@ export function decide(sub: Reminder, ctx: Ctx, nowMs: number): Decision {
 function rest(table: string): string { return `${SUPABASE_URL}/rest/v1/${table}`; }
 
 async function readRows(table: string, query: string): Promise<Record<string, unknown>[]> {
-  const r = await fetch(`${rest(table)}?${query}`, { headers: dbHeaders });
+  const r = await serviceFetch(`${rest(table)}?${query}`, { headers: dbHeaders });
   if (!r.ok) throw new Error(`push db ${table} ${r.status}: ${await r.text()}`);
   return await r.json();
 }
 
 async function writeRow(table: string, query: string, body: Record<string, unknown>): Promise<void> {
-  const r = await fetch(`${rest(table)}?${query}`, {
+  const r = await serviceFetch(`${rest(table)}?${query}`, {
     method: "PATCH",
     headers: { ...dbHeaders, prefer: "return=minimal" },
     body: JSON.stringify(body),
@@ -735,7 +736,7 @@ async function writeRow(table: string, query: string, body: Record<string, unkno
 }
 
 async function dropRow(table: string, query: string): Promise<void> {
-  const r = await fetch(`${rest(table)}?${query}`, { method: "DELETE", headers: dbHeaders });
+  const r = await serviceFetch(`${rest(table)}?${query}`, { method: "DELETE", headers: dbHeaders });
   await r.body?.cancel();
 }
 
@@ -844,15 +845,24 @@ type Live = { via: "web"; row: Sub } | { via: "apns"; row: Device };
  */
 export async function runPushTick(nowMs = Date.now(), dry = false): Promise<{
   looked: number; sent: number; dropped: number; decisions: { user: string; kind: string; why: string }[];
+  errors: string[];
 }> {
   const apns = apnsCfg();
   const live = "or=(remind_plan.eq.true,remind_risk.eq.true)&select=*&limit=2000";
+  // Each table on its own: one that cannot be read this hour costs its own rows
+  // this hour, not the other transport's too (it used to throw the whole tick).
+  const errors: string[] = [];
+  const readLive = (table: string) => readRows(table, live).catch((e) => {
+    console.error(`push: could not read ${table}; this tick goes on without it`, e);
+    errors.push(table);
+    return [] as Record<string, unknown>[];
+  });
   const [subs, devices] = await Promise.all([
-    readRows("push_subscriptions", live) as unknown as Promise<Sub[]>,
+    readLive("push_subscriptions") as unknown as Promise<Sub[]>,
     // A deployment with no APNs key is not read at all. Those rows are somebody
     // switching a reminder on and waiting for a signing key, not an error worth
     // a log line an hour.
-    (apns ? readRows("push_devices", live) : Promise.resolve([])) as unknown as Promise<Device[]>,
+    (apns ? readLive("push_devices") : Promise.resolve([])) as unknown as Promise<Device[]>,
   ]);
 
   const rows: Live[] = [
@@ -953,5 +963,5 @@ export async function runPushTick(nowMs = Date.now(), dry = false): Promise<{
     decisions.push({ user: sub.user_id, kind: d.kind, why: "sent" });
   }
 
-  return { looked: rows.length, sent, dropped, decisions };
+  return { looked: rows.length, sent, dropped, decisions, errors };
 }

@@ -19,6 +19,8 @@
 // runOpsAlert takes sendPush, so this module needs no Stripe or Strava code and
 // the harness can drive it without either.
 
+import { serviceFetch } from "./rest.ts";
+
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
@@ -41,7 +43,7 @@ export type Eraser = (subject: string, detail: Record<string, unknown>) => Promi
 type Row = { id: number; provider: Provider; subject: string; detail: Record<string, unknown> | null };
 
 async function rpc(fn: string, args: Record<string, unknown>): Promise<unknown> {
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
+  const r = await serviceFetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
     method: "POST",
     headers: dbHeaders,
     body: JSON.stringify(args),

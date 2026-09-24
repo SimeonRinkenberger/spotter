@@ -113,13 +113,24 @@ const ctx = vm.createContext({
   Deno: { env: { get: (k) => (k === 'SUPABASE_URL' ? SUPA : k === 'SUPABASE_SERVICE_ROLE_KEY' ? 'service' : world.env[k]) } },
   fetch: fakeFetch,
 });
-ctx.module = { exports: {} };
-ctx.exports = ctx.module.exports;
+// erasure.ts imports the PostgREST retry helper (rest.ts); both run in this context.
+const modules = {};
+ctx.require = (spec) => {
+  if (modules[spec]) return modules[spec];
+  throw new Error('unexpected import ' + spec);
+};
+function loadModule(path) {
+  const m = { exports: {} };
+  ctx.module = m; ctx.exports = m.exports;
+  vm.runInContext(transformSync(fs.readFileSync(path, 'utf8'), { loader: 'ts', format: 'cjs' }).code, ctx);
+  return m.exports;
+}
 try {
-  if (erasureSrc) {
-    vm.runInContext(transformSync(erasureSrc, { loader: 'ts', format: 'cjs' }).code, ctx);
-    Object.assign(ctx, ctx.module.exports);
+  if (fs.existsSync('supabase/functions/spotter/rest.ts')) {
+    modules['./rest.ts'] = loadModule('supabase/functions/spotter/rest.ts');
+    modules['./rest.ts'].pgrstRetry.waitMs = 5;
   }
+  if (erasureSrc) Object.assign(ctx, loadModule(erasurePath));
 } catch (e) { check(false, 'erasure.ts loads: ' + e.message); }
 
 const handler = slice(indexSrc, 'handleAccountDelete');

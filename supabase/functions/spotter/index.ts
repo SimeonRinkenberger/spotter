@@ -13847,7 +13847,7 @@ Deno.serve(async (req: Request) => {
         try { erasure = await runErasureOutbox(ERASERS); }
         catch (e) { console.error("erasure outbox tick failed", e); }
       }
-      return json({ status: "ok", ...out, erasure });
+      return json({ status: out.errors.length ? "partial" : "ok", ...out, erasure });
     }
 
     // The operational pager, every fifteen minutes from pg_cron. Same shared
