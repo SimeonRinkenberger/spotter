@@ -26,6 +26,7 @@ const checks = [
   ['Pumpy source context fixtures', 'deno', ['run','--allow-read','tools/pumpy-pack-harness.ts']],
   ['Monthly allowance table and refusals', 'deno', ['run','--allow-read','tools/allowance-table-check.ts']],
   ['Plus on sale in the stores: refusals, previews, the prices route', 'deno', ['run','--allow-read','tools/plus-server-check.ts']],
+  ['The Plus page: four states, the table from caps, every way in', 'node', ['tools/plus-page-harness.mjs']],
   ['Exercise bank picker, swap and corrections', 'node', ['tools/midadd-harness.mjs']],
   ['Supersets: one screen, ping-pong, rests, remote sets', 'node', ['tools/superset-harness.mjs']],
   ['Dumbbell each: the rule, the ×2 volume, bests per dumbbell', 'node', ['tools/each-harness.mjs']],
