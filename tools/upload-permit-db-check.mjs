@@ -27,6 +27,8 @@ await db.exec(readFileSync('supabase/migrations/20260908150000_cost_and_abuse_gu
 // The one column 20260915100000 adds that the permit reads; that migration also
 // touches video_cache and storage, which this schema does not carry.
 await db.exec("alter table public.upload_permits add column if not exists kind text not null default 'media';");
+// The contact-sheet permit as it stands before this cycle (the retry-friendly one).
+await db.exec(readFileSync('supabase/migrations/20260915140000_pack_authorize_retry.sql', 'utf8'));
 const migration = readFileSync('supabase/migrations/20260924130000_upload_permits_per_user.sql', 'utf8');
 await db.exec(migration);
 // The later permit migrations of this cycle (address-aware permits, per-plan
@@ -58,6 +60,8 @@ await q("insert into upload_permits(path,user_id,max_bytes,kind) values($1,$2,10
 ok(await permit(user(20), file(user(20), 1)) === 'ok', 'outstanding sheets do not block a video permit');
 
 // Product ceiling: 16 outstanding video permits in all. a holds 2, user 20 holds 1.
+// These are Plus accounts, which see the whole ceiling (Basic's share is below).
+for (let i = 30; i < 72; i++) await q("insert into profiles(id, plan) values($1, 'plus') on conflict do nothing", [user(i)]);
 let admitted = 0;
 for (let i = 30; i < 60 && admitted < 13; i++) {
   if (await permit(user(i), file(user(i), 1)) === 'ok') admitted++;
@@ -113,6 +117,7 @@ soft(await permit4(e, file(e, 4), 0) === 'invalid' && await permit4(e, file(e, 5
 
 // The product ceiling counts live addresses too: 16 released-but-live permits fill it.
 await q('delete from upload_permits'); await q('delete from storage.objects');
+for (const i of [100, 101, 102, 103, 104, 105, 106, 107, 120]) await q("insert into profiles(id, plan) values($1, 'plus') on conflict do nothing", [user(i)]);
 for (let i = 100; i < 108; i++) for (let k = 1; k <= 2; k++) await permit4(user(i), file(user(i), k), 7260);
 await q('update upload_permits set released=true');
 soft(await permit4(user(120), file(user(120), 1), 7260) === 'busy', 'R-2: sixteen live addresses fill the product ceiling even once released');
@@ -123,8 +128,38 @@ soft(await permit(f, file(f, 1)) === 'ok' && await permit(f, file(f, 2)) === 'ok
 await q('update upload_permits set released=true where user_id=$1', [f]);
 soft(await permit(f, file(f, 3)) === 'ok', 'R-2: and a released session permit still frees its slot at once');
 
+// ---- R-9: Basic accounts alone cannot fill the product-wide ceilings ----
+await q('delete from upload_permits'); await q('delete from storage.objects');
+const plus = user(200);
+await q("insert into profiles(id, plan) values($1, 'plus'), ($2, 'staff') on conflict do nothing", [plus, user(201)]);
+const basics = [];
+for (let i = 210; i < 220; i++) { basics.push(user(i)); await q("insert into profiles(id, plan) values($1, 'free') on conflict do nothing", [user(i)]); }
+const answers = [];
+for (const b of basics) for (let k = 1; k <= 2; k++) answers.push(await permit(b, file(b, k)));
+const basicOk = answers.filter((x) => x === 'ok').length;
+soft(basicOk === 12 && answers.filter((x) => x === 'busy').length === 8,
+  'R-9: Basic accounts together hold at most twelve of the sixteen video slots (' + basicOk + ' admitted)');
+soft(await permit(plus, file(plus, 1)) === 'ok' && await permit(user(201), file(user(201), 1)) === 'ok',
+  'R-9: a Plus (and a staff) account is still admitted while Basic accounts hold their share');
+soft(await permit(user(230), file(user(230), 1)) === 'busy', 'R-9: an account with no profile row counts as Basic');
+await q('delete from upload_permits');
+for (let i = 0; i < 12; i++) await q("insert into storage.objects values('uploads',$1)", [user(240 + i) + '/f.mp4']);
+soft(await permit(basics[0], file(basics[0], 9)) === 'busy' && await permit(plus, file(plus, 9)) === 'ok',
+  'R-9: twelve objects in the bucket refuse Basic, not Plus');
+await q('delete from upload_permits'); await q('delete from storage.objects');
+const sheets = async (u, sc) => {
+  try { return (await q('select issue_sheet_permits($1,$2,1000) as r',
+    [u, [1, 2, 3].map((n) => u + '/pack/' + sc + '/sheet-' + n + '.jpg')]))[0].r; }
+  catch (e) { return 'error: ' + e.message.split('\n')[0]; }
+};
+const sheetAnswers = [];
+for (const b of basics.slice(0, 5)) sheetAnswers.push(await sheets(b, 'tt-1'));
+soft(sheetAnswers.join() === 'ok,ok,ok,busy,busy', 'R-9: Basic accounts hold at most three sheet sets of the twelve rows (' + sheetAnswers.join() + ')');
+soft(await sheets(plus, 'tt-1') === 'ok', 'R-9: a Plus account still gets its frames through');
+soft(await sheets(basics[0], 'tt-1') === 'ok', 'R-9: the same save asking again for its own sheets is not refused (unchanged)');
+
 if (failed.length) {
   console.error('FAIL ' + failed.length + ' of ' + checks + ' upload permit checks:\n  ' + failed.join('\n  '));
   process.exit(1);
 }
-console.log('PASS ' + checks + ' upload permit checks (two per person, sixteen for the product, held while an address can write, own objects counted).');
+console.log('PASS ' + checks + ' upload permit checks (two per person, sixteen for the product with four kept for Plus, held while an address can write, own objects counted, sheet sets likewise).');
