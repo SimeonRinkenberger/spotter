@@ -39,6 +39,7 @@ const steps = [
   ['Type check the edge function', 'deno', ['check', 'supabase/functions/spotter/index.ts']],
   ['AI transport accounting', 'deno', ['run', '--allow-env', 'tools/ai-guard-check.ts']],
   ['AI admission', 'deno', ['run', '--allow-read', '--allow-env', 'tools/ai-admission-check.ts']],
+  ['No callable model priced at $0', 'deno', ['run', '--allow-read', 'tools/ai-price-check.ts']],
   ['Source trust', 'deno', ['run', '--allow-read', 'tools/source-trust-check.ts']],
   ['Outbound guard policy', 'deno', ['run', '--allow-read', 'tools/ssrf-policy-check.ts']],
   ['Push endpoint guard', 'deno', ['run', '--allow-env', '--allow-read', 'tools/push-ssrf-check.ts']],

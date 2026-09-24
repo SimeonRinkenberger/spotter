@@ -41,6 +41,7 @@ jobs:
       - run: deno check supabase/functions/spotter/index.ts
       - run: deno run --allow-env tools/ai-guard-check.ts
       - run: deno run --allow-read --allow-env tools/ai-admission-check.ts
+      - run: deno run --allow-read tools/ai-price-check.ts
       - run: deno run --allow-read tools/source-trust-check.ts
       - run: deno run --allow-read tools/ssrf-policy-check.ts
       - run: deno run --allow-env --allow-read tools/push-ssrf-check.ts
