@@ -24,6 +24,10 @@ public class ShareAccessPlugin: CAPPlugin, CAPBridgedPlugin {
             try ShareCredential.write(key)
             if key == nil { try? ShareCredential.writePlan(nil) }
             else if let plan = plan { try? ShareCredential.writePlan(plan) }
+            // Links parked from now on belong to this account, and any parked
+            // under another one are dropped (ParkedShare). Sign-out leaves the
+            // tag: links shared while signed out wait for this account's return.
+            if let key = key { ParkedShare.claim(saveKey: key) }
             call.resolve()
         }
         catch { call.reject("Could not prepare sharing. Open Spotter again to retry.") }
@@ -33,10 +37,13 @@ public class ShareAccessPlugin: CAPPlugin, CAPBridgedPlugin {
      * One link the Share Extension parked while nobody was signed in, removed
      * as it is handed over: `{url, at}` (at = ms since 1970), or `{}` when there
      * is none. The page calls this after sign-in and again until it answers `{}`,
-     * saving each link the way a share would.
+     * saving each link the way a share would. Only links parked under the
+     * account configured now (or before any account) are handed over, and none
+     * before the page has configured one.
      */
     @objc func takeParked(_ call: CAPPluginCall) {
-        guard let item = ParkedShare.take() else { call.resolve([:]); return }
+        let saveKey = (try? ShareCredential.read()) ?? nil
+        guard let item = ParkedShare.take(for: saveKey) else { call.resolve([:]); return }
         call.resolve(["url": item.url, "at": item.at])
     }
 

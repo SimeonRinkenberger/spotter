@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-ymDOOVsjVNbW2BaWPeHSt3Eka37ix/b7XaVYkj2lWX0=' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/ https://challenges.cloudflare.com https://accounts.google.com/gsi/client https://appleid.cdn-apple.com/appleauth/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://api.fontshare.com https://accounts.google.com/gsi/style; font-src 'self' data: https://fonts.gstatic.com https://cdn.fontshare.com; img-src 'self' data: blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://i.ytimg.com https://simeonrinkenberger.github.io; media-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://simeonrinkenberger.github.io; connect-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co wss://mtzevoxxpsktmrbbuxva.supabase.co https://accounts.google.com/gsi/; frame-src https://www.tiktok.com https://www.instagram.com https://www.youtube.com https://www.youtube-nocookie.com https://challenges.cloudflare.com https://accounts.google.com/gsi/ https://appleid.apple.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-vPKEslkW041aQwrfgf9lGQoUjjSk3hmXNLDeTgOOG/U=' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/ https://challenges.cloudflare.com https://accounts.google.com/gsi/client https://appleid.cdn-apple.com/appleauth/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://api.fontshare.com https://accounts.google.com/gsi/style; font-src 'self' data: https://fonts.gstatic.com https://cdn.fontshare.com; img-src 'self' data: blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://i.ytimg.com https://simeonrinkenberger.github.io; media-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://simeonrinkenberger.github.io; connect-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co wss://mtzevoxxpsktmrbbuxva.supabase.co https://accounts.google.com/gsi/; frame-src https://www.tiktok.com https://www.instagram.com https://www.youtube.com https://www.youtube-nocookie.com https://challenges.cloudflare.com https://accounts.google.com/gsi/ https://appleid.apple.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="google-site-verification" content="unLzcq6TBz9Bm6q4KHpbTmZ88dQ_tTnViacVX5BLzS0">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <title>Spotter by Quarterdeck Collective — save any workout video</title>
@@ -9840,15 +9840,18 @@ details.details-moving > :not(summary) {
     });
   }
   function loadProfile() {
-    var uid = state.user.id, epoch = accountEpoch;
-    return sb.from("profiles").select("*").eq("id", uid).maybeSingle().then(function(r) {
+    var uid = state.user.id, epoch = accountEpoch, configured = null, loaded = sb.from("profiles").select("*").eq("id", uid).maybeSingle().then(function(r) {
       if (accountNow(epoch, uid) && r.data) {
-        state.profile = r.data, paintConsent(), native && native.configureSharing(r.data.ingest_key, { plan: r.data.plan }).catch(function() {
-        });
+        state.profile = r.data, paintConsent(), native && (configured = native.configureSharing(r.data.ingest_key, { plan: r.data.plan }).catch(function() {
+        }));
         var s = r.data.settings || {};
         s.unit && (state.unit = s.unit), typeof s.sounds == "boolean" && (state.sounds = s.sounds), typeof s.haptics == "boolean" && (state.haptics = s.haptics), s.remind && (remind.plan = !!s.remind.plan, remind.risk = !!s.remind.risk), typeof s.remindAt == "number" && (remind.at = s.remindAt), paintSounds(), billing.said && (state.profile.plan = billing.said), renderLibCount();
       }
     });
+    return sharingSet = loaded.then(function() {
+      return configured;
+    }, function() {
+    }), loaded;
   }
   var CACHE_KEY = "spotter-lib-v1", CACHE_MAX = 15e5;
   function thinRow(w) {
@@ -18101,7 +18104,7 @@ details.details-moving > :not(summary) {
       return saved && takeParkedShare(), saved;
     }));
   }
-  var PARKED_MAX_MS = 168 * 3600 * 1e3, PARKED_PER_PASS = 10, parkedBusy = !1;
+  var PARKED_MAX_MS = 168 * 3600 * 1e3, PARKED_PER_PASS = 10, parkedBusy = !1, sharingSet = Promise.resolve();
   function takeParkedShare() {
     if (parkedBusy || !native || !native.takeParkedShare || !state.user || sharing) return Promise.resolve();
     parkedBusy = !0;
@@ -18119,7 +18122,7 @@ details.details-moving > :not(summary) {
           }
         });
     }
-    return Promise.resolve().then(next).catch(function() {
+    return Promise.resolve(sharingSet).then(next).catch(function() {
     }).then(function() {
       parkedBusy = !1;
     });

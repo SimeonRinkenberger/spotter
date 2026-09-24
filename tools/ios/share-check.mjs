@@ -24,7 +24,13 @@ assert.equal(await takeParked({})(), null, 'a shell without the method has nothi
 const bridge = readFileSync('native/bridge.js', 'utf8');
 assert(bridge.includes('takeParkedShare: android ? () => Promise.resolve(null) : takeParked(ShareAccessHost)'), 'the page reaches parked links through SpotterNative.takeParkedShare');
 const plugin = readFileSync('ios/App/App/ShareAccess.swift', 'utf8');
-assert(plugin.includes('CAPPluginMethod(name: "takeParked"') && plugin.includes('ParkedShare.take()'), 'ShareAccess exposes takeParked');
+assert(plugin.includes('CAPPluginMethod(name: "takeParked"') && plugin.includes('ParkedShare.take(for: saveKey)') &&
+  plugin.includes('let saveKey = (try? ShareCredential.read()) ?? nil'), 'ShareAccess exposes takeParked, for the account configured now');
+// R-5: configuring a key claims the parked store for that account; clearing it
+// (sign-out, and every launch before sign-in) does not, so links parked while
+// signed out still wait for the account they were parked under.
+assert(/try ShareCredential\.write\(key\)[\s\S]{0,400}if let key = key \{ ParkedShare\.claim\(saveKey: key\) \}/.test(plugin),
+  'R-5: configure(key) claims the parked links for that account');
 // iOS sharingd rejects aggregate literal expressions even though NSPredicate
 // evaluates them on macOS. This guard catches the exact hidden-extension regression;
 // a real iOS share-sheet pass is still required for changes to activation rules.
@@ -268,22 +274,45 @@ precondition(SharedLink.noLinkMessage.contains("share the video file itself"))
 // S14: parked while signed out, handed to the app once, oldest first.
 let now = Date()
 SharedStore.remove(key: ParkedShare.key)
-precondition(ParkedShare.take(now: now) == nil)
+SharedStore.remove(key: ParkedShare.ownerKey)
+let keyA = String(repeating: "a", count: 32), keyB = String(repeating: "b", count: 32)
+precondition(ParkedShare.take(for: keyA, now: now) == nil)
 try ParkedShare.park(URL(string: "https://vt.tiktok.com/A/")!, now: now.addingTimeInterval(-8 * 24 * 3600))
 try ParkedShare.park(URL(string: "https://www.instagram.com/reel/DBGi0r0pHZ4/")!, now: now.addingTimeInterval(-60))
 try ParkedShare.park(URL(string: "https://vt.tiktok.com/B/")!, now: now.addingTimeInterval(-30))
 try ParkedShare.park(URL(string: "https://www.instagram.com/reel/DBGi0r0pHZ4/")!, now: now)
-let first = ParkedShare.take(now: now)!
+let first = ParkedShare.take(for: keyA, now: now)!
 precondition(first.url == "https://vt.tiktok.com/B/", "a week-old link is dropped, and a re-shared link moves to the back")
 precondition(first.at == ((now.timeIntervalSince1970 - 30) * 1000).rounded())
-precondition(ParkedShare.take(now: now)?.url == "https://www.instagram.com/reel/DBGi0r0pHZ4/")
-precondition(ParkedShare.take(now: now) == nil, "each link is handed over once")
+precondition(ParkedShare.take(for: keyA, now: now)?.url == "https://www.instagram.com/reel/DBGi0r0pHZ4/")
+precondition(ParkedShare.take(for: keyA, now: now) == nil, "each link is handed over once")
 for i in 0..<15 { try ParkedShare.park(URL(string: "https://vt.tiktok.com/\\(i)/")!, now: now) }
 var kept: [String] = []
-while let item = ParkedShare.take(now: now) { kept.append(item.url) }
+while let item = ParkedShare.take(for: keyA, now: now) { kept.append(item.url) }
 precondition(kept.count == ParkedShare.limit && kept.first == "https://vt.tiktok.com/5/", "at most ten, the newest kept")
+// R-5: a parked link belongs to the account signed in last on this phone.
+SharedStore.remove(key: ParkedShare.ownerKey)
+try ParkedShare.park(URL(string: "https://vt.tiktok.com/first/")!, now: now)
+precondition(ParkedShare.take(for: nil, now: now) == nil, "R-5: nothing is handed over before the app has configured an account")
+ParkedShare.claim(saveKey: keyA, now: now)
+precondition(ParkedShare.take(for: keyA, now: now)?.url == "https://vt.tiktok.com/first/", "R-5: a link parked before any account goes to the first one")
+// A signs out (the tag stays), somebody shares, B signs in on the same phone.
+try ParkedShare.park(URL(string: "https://vt.tiktok.com/after-a/")!, now: now)
+ParkedShare.claim(saveKey: keyB, now: now)
+precondition(ParkedShare.take(for: keyB, now: now) == nil, "R-5: a link parked after A signed out never reaches B")
+ParkedShare.claim(saveKey: keyA, now: now)
+precondition(ParkedShare.take(for: keyA, now: now) == nil, "R-5: and it is dropped, not kept for later")
+// A signs out and back in: what they shared meanwhile is still theirs.
+try ParkedShare.park(URL(string: "https://vt.tiktok.com/mine/")!, now: now)
+ParkedShare.claim(saveKey: keyA, now: now)
+precondition(ParkedShare.take(for: keyA, now: now)?.url == "https://vt.tiktok.com/mine/", "R-5: the same account signing back in gets its links")
+// A deletes the account; a new account signs up on the phone.
+try ParkedShare.park(URL(string: "https://vt.tiktok.com/before-new/")!, now: now)
+precondition(ParkedShare.take(for: keyB, now: now) == nil, "R-5: a different account asking directly gets nothing either")
+precondition(!ParkedShare.tag(forKey: keyA).contains(keyA) && ParkedShare.tag(forKey: keyA).count == 16 && ParkedShare.tag(forKey: keyA) != ParkedShare.tag(forKey: keyB),
+  "R-5: the tag is a one-way 16-hex digest, distinct per key")
 precondition(SharedLink.parkedMessage == "You’re signed out. Sign in to Spotter and it will be saved.")
-print("PASS native activation incl. one video file (and not two), safe predicate forms, 17 social/web URL formats, one post however it is spelled, \\(cases.count) share payloads each saving one link, set-aside notes, save-first frames rules, failure retry rules incl. unavailable/busy, video-door sentences, parked links (expiry, order, once), durable-save acknowledgement and the in-sheet AI permission")
+print("PASS native activation incl. one video file (and not two), safe predicate forms, 17 social/web URL formats, one post however it is spelled, \\(cases.count) share payloads each saving one link, set-aside notes, save-first frames rules, failure retry rules incl. unavailable/busy, video-door sentences, parked links (expiry, order, once, per account), durable-save acknowledgement and the in-sheet AI permission")
 `);
 const swiftc = '/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc';
 const sdk = '/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk';

@@ -1517,13 +1517,13 @@ export const APP = String.raw`
   }
 
   function loadProfile() {
-    var uid = state.user.id, epoch = accountEpoch;
-    return sb.from("profiles").select("*").eq("id", uid).maybeSingle().then(function (r) {
+    var uid = state.user.id, epoch = accountEpoch, configured = null;
+    var loaded = sb.from("profiles").select("*").eq("id", uid).maybeSingle().then(function (r) {
       if (!accountNow(epoch, uid)) return;
       if (r.data) {
         state.profile = r.data;
         paintConsent();
-        if (native) native.configureSharing(r.data.ingest_key, { plan: r.data.plan }).catch(function () {});
+        if (native) configured = native.configureSharing(r.data.ingest_key, { plan: r.data.plan }).catch(function () {});
         var s = r.data.settings || {};
         if (s.unit) state.unit = s.unit;
         // false is a real answer, so these test presence, not truth. An older
@@ -1545,6 +1545,10 @@ export const APP = String.raw`
         renderLibCount();
       }
     });
+    // Parked links are handed over only to the account the native side has been
+    // told about, so taking them waits for that (takeParkedShare).
+    sharingSet = loaded.then(function () { return configured; }, function () {});
+    return loaded;
   }
 
   // ---------- cache ----------
@@ -15751,6 +15755,10 @@ export const APP = String.raw`
   // One taker at a time: two would each take a link, and the second would find
   // a save in flight and drop what it had already taken.
   var parkedBusy = false;
+  // Settles once the native side knows which account is signed in (loadProfile
+  // sets it). The native store hands a parked link only to the account that was
+  // signed in when it was parked, so asking before then would get nothing.
+  var sharingSet = Promise.resolve();
 
   function takeParkedShare() {
     if (parkedBusy || !native || !native.takeParkedShare || !state.user || sharing) return Promise.resolve();
@@ -15767,7 +15775,7 @@ export const APP = String.raw`
         return handleSharedUrl(u).then(function (saved) { if (saved) return next(); });
       });
     }
-    return Promise.resolve().then(next)
+    return Promise.resolve(sharingSet).then(next)
       .catch(function () { /* a shell without the method, or a save that threw */ })
       .then(function () { parkedBusy = false; });
   }
