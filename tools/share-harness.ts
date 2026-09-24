@@ -737,6 +737,7 @@ function check(ok: unknown, what: string): void {
     "function parseFrames(raw: any, uid: string, sc: string) { return raw?.bad ? { error: 'frames refused' } : { frames: { sheets: [{ path: uid + '/pack/' + sc + '/sheet-1.jpg' }] } }; }",
     "async function deleteSheets(f: any) { S.deleted += f?.sheets?.length ?? 0; }",
     "function providerFor() { S.reached = true; return { media: false }; }",
+    fnOr("async function deleteUnheldSheets(", ""),
     span("/** POST /api/workouts/:id/media, the one route", "/**\n * \"Read the video\" — the manual trigger"),
     fn("async function handleReadVideo("),
     "export { handleReadVideo, keyMediaBody, MEDIA_PATH_RE };",
@@ -793,6 +794,60 @@ function check(ok: unknown, what: string): void {
   check(/path === "\/api\/ai-consent" \|\| \(req\.method === "POST" && MEDIA_PATH_RE\.test\(path\)\)\)\) \{\s*\n\s*userId = await userFromIngestKey\(req, url\);\s*\n\s*viaKey = !!userId;/.test(SRC) &&
     /handleReadVideo\(readvid\[1\], userId, req, cors, viaKey\)/.test(SRC),
     "CR-2: the router lets the key reach /media only as viaKey (a bearer never sets it)");
+}
+
+// ---- R-6: frames sent twice never delete the sheets a live job holds ----
+{
+  const UID = "aaaaaaaa-0000-4000-8000-000000000001";
+  const mod = [
+    "type Meta = any; type Cors = any; type Frames = any; type Counts = any; type UserCaps = any; type Card = any;",
+    "export const S: any = {};",
+    "export function reset(card: any, job: any) { Object.assign(S, { card, job, deleted: [] as string[], kicks: 0 }); }",
+    "function json(body: any, status = 200) { return { status, body }; }",
+    // A small stateful ingest_jobs/workouts pair, answering the queries these routes make.
+    "async function dbSelect(t: string, q: string) {",
+    "  if (t === 'workouts') return S.card ? [S.card] : [];",
+    "  const j = S.job; if (!j) return [];",
+    "  if (q.includes('select=frames:meta->frames')) return ['queued', 'running'].includes(j.status) ? [{ frames: j.meta?.frames ?? null }] : [];",
+    "  if (q.includes('status=eq.queued')) return j.status === 'queued' ? [{ id: j.id, meta: j.meta }] : [];",
+    "  return [j];",
+    "}",
+    "async function dbPatchMany(t: string, q: string, body: any) { if (t === 'ingest_jobs' && S.job && S.job.status === 'queued') { Object.assign(S.job, body); return [S.job]; } return []; }",
+    "async function dbPatch() { return {}; }",
+    "function parseFrames(raw: any, uid: string, sc: string) { return { frames: { source: 'device', duration_s: 30, sheets: [{ path: uid + '/pack/' + sc + '/sheet-1.jpg' }, { path: uid + '/pack/' + sc + '/sheet-2.jpg' }] } }; }",
+    "async function deleteSheets(f: any) { for (const x of f?.sheets ?? []) S.deleted.push(x.path); }",
+    "function kickWorker() { S.kicks++; }",
+    "function background() {}",
+    "function providerFor() { return { media: true }; }",
+    "const UUID_RE = /^[0-9a-fA-F-]{36}$/; const UPLOAD_EXTS = ['mp4'];",
+    fn("function parseUploadPath("),
+    "async function attachUpload() { throw new Error('not here'); }",
+    span("const FRAMES_HOLD_MS = ", "/**\n * \"Read the video\" — the manual trigger"),
+    fn("async function handleReadVideo("),
+    "export { handleReadVideo };",
+  ].join("\n");
+  const h = await import("data:application/typescript," + encodeURIComponent(mod));
+  const ID = "cccccccc-0000-4000-8000-000000000006";
+  const post = (viaKey: boolean) => h.handleReadVideo(ID, UID,
+    new Request("https://fixture.invalid/api/workouts/" + ID + "/media", { method: "POST", body: JSON.stringify({ frames: { sheets: [] } }) }), {}, viaKey);
+  const card = { id: ID, user_id: UID, shortcode: "tt-9", platform: "tiktok", ingest_status: "processing", ingest_job_id: "j6" };
+  for (const viaKey of [true, false]) {
+    const who = viaKey ? "the save key" : "the app";
+    h.reset({ ...card }, { id: "j6", user_id: UID, status: "queued", meta: { caption: null, hold_frames: true } });
+    const first = await post(viaKey);
+    check(first.status === 202 && h.S.job.meta.frames?.sheets?.length === 2 && !h.S.deleted.length,
+      "R-6 (" + who + "): the first frames POST releases the held job with its sheets");
+    const again = await post(viaKey);
+    check(again.status === 200 && again.body.message === "Already reading that one." && !h.S.deleted.length,
+      "R-6 (" + who + "): the same POST again deletes nothing the queued job holds (deleted: " + h.S.deleted.join(", ") + ")");
+    check(h.S.job.meta.frames?.sheets?.length === 2, "R-6 (" + who + "): and the job still has its frames");
+    h.S.job.status = "running";
+    await post(viaKey);
+    check(!h.S.deleted.length, "R-6 (" + who + "): nor once a worker is running it");
+    h.S.job.status = "done";
+    await post(viaKey);
+    check(h.S.deleted.length === 2, "R-6 (" + who + "): sheets nobody holds any more are still deleted");
+  }
 }
 
 // ---- the free path's per-minute throttle (request_tick) ----

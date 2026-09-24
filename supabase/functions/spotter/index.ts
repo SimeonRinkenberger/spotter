@@ -10268,7 +10268,7 @@ async function releaseHeldJob(w: any, rawFrames: unknown, userId: string, cors: 
     updated_at: new Date().toISOString(),
   });
   if (!moved.length) {
-    await deleteSheets(parsed.frames);
+    await deleteUnheldSheets(parsed.frames, w, userId);
     return json({ status: "processing", id: w.id, message: "Already reading that one." }, 200, cors);
   }
   try { await dbPatch("workouts", `id=eq.${w.id}&ingest_status=eq.processing`, { media_stage: "watching" }); }
@@ -10276,6 +10276,28 @@ async function releaseHeldJob(w: any, rawFrames: unknown, userId: string, cors: 
   console.log("held save released with", parsed.frames.sheets.length, "sheet(s):", w.shortcode, "job", job.id);
   kickWorker();
   return json({ status: "processing", id: w.id, job_id: job.id, message: "Reading the frames…" }, 202, cors);
+}
+
+/**
+ * Delete the sheets a request brought, except any this card's queued or running
+ * job holds. A sheet's path is fixed per video (sheetPathFor), so frames sent a
+ * second time for one save name the very objects the job the first request
+ * released is about to read. A lookup that fails keeps them: the orphan sweep
+ * removes them once they are two hours old.
+ */
+async function deleteUnheldSheets(frames: Frames, w: any, userId: string): Promise<void> {
+  let held: Set<string>;
+  try {
+    const jobs = await dbSelect("ingest_jobs",
+      `user_id=eq.${userId}&shortcode=eq.${encodeURIComponent(w.shortcode)}&status=in.(queued,running)&select=frames:meta->frames`);
+    held = new Set(jobs.flatMap((j: any) =>
+      Array.isArray(j?.frames?.sheets) ? j.frames.sheets.map((x: any) => String(x?.path ?? "")) : []));
+  } catch (e) {
+    console.error("frames: could not tell which sheets a job holds for", w.shortcode, "— keeping them", e);
+    return;
+  }
+  const loose = frames.sheets.filter((x) => !held.has(x.path));
+  if (loose.length) await deleteSheets({ ...frames, sheets: loose });
 }
 
 /** POST /api/workouts/:id/media, the one route with a card id in its path. */
@@ -10352,7 +10374,7 @@ async function handleReadVideo(
   // in flight at all, which makes this a re-read — the app's to ask for.
   if (viaKey) {
     const parsed = parseFrames(body?.frames, userId, w.shortcode);
-    if (!("error" in parsed)) await deleteSheets(parsed.frames);
+    if (!("error" in parsed)) await deleteUnheldSheets(parsed.frames, w, userId);
     if (w.ingest_status === "processing") {
       return json({ status: "processing", id, message: "Already reading that one." }, 200, cors);
     }
@@ -10384,7 +10406,8 @@ async function handleReadVideo(
     }, 400, cors);
   }
   if (w.ingest_status === "processing") {
-    return await bail(json({ status: "processing", id, message: "Already reading that one." }, 200, cors));
+    if (frames) await deleteUnheldSheets(frames, w, userId);
+    return json({ status: "processing", id, message: "Already reading that one." }, 200, cors);
   }
 
   const sc = encodeURIComponent(w.shortcode);
@@ -10488,8 +10511,8 @@ async function handleReadVideo(
       "from step", seed.step, frames ? "with " + frames.sheets.length + " fresh sheet(s)" : "");
   } else {
     console.log("read-the-video joined an existing job for", w.shortcode, "— not seeded");
-    // That job owns the reading and knows nothing about these sheets.
-    if (frames) await deleteSheets(frames);
+    // That job owns the reading; these sheets are deleted unless it holds them.
+    if (frames) await deleteUnheldSheets(frames, w, userId);
   }
   // The stage is set here rather than only by the worker: between this response
   // and the worker reaching the media step there are a few seconds in which the
