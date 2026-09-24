@@ -9698,7 +9698,7 @@ details.details-moving > :not(summary) {
     var uid = state.user.id, epoch = accountEpoch;
     return sb.from("profiles").select("*").eq("id", uid).maybeSingle().then(function(r) {
       if (accountNow(epoch, uid) && r.data) {
-        state.profile = r.data, paintConsent(), native && native.configureSharing(r.data.ingest_key).catch(function() {
+        state.profile = r.data, paintConsent(), native && native.configureSharing(r.data.ingest_key, r.data.plan).catch(function() {
         });
         var s = r.data.settings || {};
         s.unit && (state.unit = s.unit), typeof s.sounds == "boolean" && (state.sounds = s.sounds), typeof s.haptics == "boolean" && (state.haptics = s.haptics), s.remind && (remind.plan = !!s.remind.plan, remind.risk = !!s.remind.risk), typeof s.remindAt == "number" && (remind.at = s.remindAt), paintSounds(), billing.said && (state.profile.plan = billing.said), renderLibCount();
@@ -18179,7 +18179,7 @@ details.details-moving > :not(summary) {
           toast("Could not make a new key \u2014 try again in a moment.");
           return;
         }
-        state.profile && (state.profile.ingest_key = r.ingest_key), $("setkey").textContent = API + "ingest?key=" + r.ingest_key, native && native.configureSharing(r.ingest_key).catch(function() {
+        state.profile && (state.profile.ingest_key = r.ingest_key), $("setkey").textContent = API + "ingest?key=" + r.ingest_key, native && native.configureSharing(r.ingest_key, state.profile && state.profile.plan).catch(function() {
         }), toast(native ? "Sharing key refreshed." : "New key made \u2014 update your Shortcut.");
       }
     });

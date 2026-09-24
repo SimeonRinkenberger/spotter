@@ -39,8 +39,22 @@ public class ShareAccessPlugin: CAPPlugin, CAPBridgedPlugin {
             call.reject("Invalid share credential"); return
         }
         do { try ShareCredential.write(key); call.resolve() }
-        catch { call.reject("Could not prepare sharing. Open Spotter again to retry.") }
+        catch { call.reject("Could not prepare sharing. Open Spotter again to retry."); return }
+        // The plan beside the key, so the Share Extension can tell without a round
+        // trip whether this account could want frames with a save at all. A hint,
+        // never an entitlement — the server decides — and it goes with the key.
+        let plan = call.getString("plan")
+        if let plan = plan, key != nil, plan.range(of: "^[a-z]{1,16}$", options: .regularExpression) != nil {
+            try? SharedStore.writeJSON(PlanHint(plan: plan, at: Date().timeIntervalSince1970),
+                                       key: ShareAccessPlugin.planHintKey)
+        } else {
+            SharedStore.remove(key: ShareAccessPlugin.planHintKey)
+        }
     }
+
+    /// `{plan, at}` beside the save key: "free", "plus", "pro" or "staff".
+    struct PlanHint: Codable { let plan: String; let at: Double }
+    static let planHintKey = "spotter.planHint"
 
     /**
      * Cut frames for a save happening inside the app.

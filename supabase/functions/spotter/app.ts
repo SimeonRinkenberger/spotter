@@ -1519,7 +1519,7 @@ export const APP = String.raw`
       if (r.data) {
         state.profile = r.data;
         paintConsent();
-        if (native) native.configureSharing(r.data.ingest_key).catch(function () {});
+        if (native) native.configureSharing(r.data.ingest_key, r.data.plan).catch(function () {});
         var s = r.data.settings || {};
         if (s.unit) state.unit = s.unit;
         // false is a real answer, so these test presence, not truth. An older
@@ -16152,7 +16152,7 @@ export const APP = String.raw`
       if (r.status !== "ok") { toast("Could not make a new key — try again in a moment."); return; }
       if (state.profile) state.profile.ingest_key = r.ingest_key;
       $("setkey").textContent = API + "ingest?key=" + r.ingest_key;
-      if (native) native.configureSharing(r.ingest_key).catch(function () {});
+      if (native) native.configureSharing(r.ingest_key, state.profile && state.profile.plan).catch(function () {});
       toast(native ? "Sharing key refreshed." : "New key made — update your Shortcut.");
     });
   }
