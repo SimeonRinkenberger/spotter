@@ -8857,6 +8857,14 @@ export const APP = String.raw`
   // In the iOS shell the frame no longer shrinks (html.kb-over): the keyboard
   // section below owns bringing a covered field into view there, and a second
   // scroll 450 ms after its own would be a second motion.
+  // The dots' scroll edge (style.ts, .wdots): on while anything of the screen is
+  // under the band. Toggled on the crossing, not on every scroll event.
+  var woEdge = false;
+  $("wmain").addEventListener("scroll", function () {
+    var on = this.scrollTop > 1;
+    if (on !== woEdge) { woEdge = on; $("workout").classList.toggle("wedge", on); }
+  }, { passive: true });
+
   $("wmain").addEventListener("focusin", function (e) {
     if (document.documentElement.classList.contains("kb-over")) return;
     var box = e.target.classList.contains("numin") ? e.target.parentNode : null;

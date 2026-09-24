@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-Idj2S/tTYh9vrEPGRqaakuasNAwOzu9uzdNoO+i59Fo=' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/ https://challenges.cloudflare.com https://accounts.google.com/gsi/client https://appleid.cdn-apple.com/appleauth/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://api.fontshare.com https://accounts.google.com/gsi/style; font-src 'self' data: https://fonts.gstatic.com https://cdn.fontshare.com; img-src 'self' data: blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://i.ytimg.com https://simeonrinkenberger.github.io; media-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://simeonrinkenberger.github.io; connect-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co wss://mtzevoxxpsktmrbbuxva.supabase.co https://accounts.google.com/gsi/; frame-src https://www.tiktok.com https://www.instagram.com https://www.youtube.com https://www.youtube-nocookie.com https://challenges.cloudflare.com https://accounts.google.com/gsi/ https://appleid.apple.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-KNrrvQCP6TvOsWmq17+0y6oJ+EApPw2fJJdsk8CcyZI=' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/ https://challenges.cloudflare.com https://accounts.google.com/gsi/client https://appleid.cdn-apple.com/appleauth/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://api.fontshare.com https://accounts.google.com/gsi/style; font-src 'self' data: https://fonts.gstatic.com https://cdn.fontshare.com; img-src 'self' data: blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://i.ytimg.com https://simeonrinkenberger.github.io; media-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://simeonrinkenberger.github.io; connect-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co wss://mtzevoxxpsktmrbbuxva.supabase.co https://accounts.google.com/gsi/; frame-src https://www.tiktok.com https://www.instagram.com https://www.youtube.com https://www.youtube-nocookie.com https://challenges.cloudflare.com https://accounts.google.com/gsi/ https://appleid.apple.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="google-site-verification" content="unLzcq6TBz9Bm6q4KHpbTmZ88dQ_tTnViacVX5BLzS0">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <title>Spotter by Quarterdeck Collective — save any workout video</title>
@@ -4776,11 +4776,27 @@ body:not(.app) #toast.show {
   font-variant-numeric: tabular-nums;
 }
 .wdots {
+  position: relative;
+  flex-shrink: 0;
   display: flex;
   gap: 5px;
   justify-content: center;
   flex-wrap: wrap;
-  padding: 8px 20px 0;
+  padding: 6px 20px 12px;
+}
+.wdots::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: var(--line);
+  opacity: 0;
+  transition: opacity var(--t-2) var(--e-soft);
+}
+#workout.wedge .wdots::after {
+  opacity: 1;
 }
 .wdot {
   width: 6px;
@@ -7149,6 +7165,9 @@ select:focus-visible,
   .wmain.wmease {
     transition: none;
   }
+  .wdots::after {
+    transition: none;
+  }
   .wmain.wmin {
     animation-name: fadeonly;
     animation-duration: var(--t-2);
@@ -7661,7 +7680,7 @@ select:focus-visible,
 #workout:not(.summary) .wmain {
   justify-content: flex-start;
   min-height: 0;
-  padding-top: clamp(20px, calc(var(--vvh) * .04), 32px);
+  padding-top: clamp(10px, calc(var(--vvh) * .04 - 10px), 22px);
 }
 #workout:not(.summary) .wmain > * {
   flex-shrink: 0;
@@ -13907,7 +13926,11 @@ details.details-moving > :not(summary) {
     var m = $("wmain"), a = p.getBoundingClientRect(), b = m.getBoundingClientRect(), d = Math.min(Math.max(a.bottom - b.bottom + 8, 0), a.top - b.top - 8);
     d && p.isConnected && !p.closest(".sspanel:not(.open)") && m.scrollBy({ top: d, behavior: lessMotion() ? "auto" : "smooth" });
   }
-  $("wmain").addEventListener("focusin", function(e) {
+  var woEdge = !1;
+  $("wmain").addEventListener("scroll", function() {
+    var on = this.scrollTop > 1;
+    on !== woEdge && (woEdge = on, $("workout").classList.toggle("wedge", on));
+  }, { passive: !0 }), $("wmain").addEventListener("focusin", function(e) {
     if (!document.documentElement.classList.contains("kb-over")) {
       var box = e.target.classList.contains("numin") ? e.target.parentNode : null;
       box && setTimeout(function() {

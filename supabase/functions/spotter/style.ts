@@ -1823,7 +1823,17 @@ export const STYLE = String.raw`<style>
   .wtools { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
   .wclock { font-family: var(--display); font-size: 14px; font-weight: 700; color: var(--muted);
     font-variant-numeric: tabular-nums; }
-  .wdots { display: flex; gap: 5px; justify-content: center; flex-wrap: wrap; padding: 8px 20px 0; }
+  /* The dots are a band of their own between the bar and the screen: the screen
+     scrolls under the band's lower edge, never under the dots, and a hairline
+     comes up on that edge once something has gone beneath it (#workout.wedge,
+     app.ts) — a UIKit bar's scroll-edge shadow. On a Dynamic Island phone with a
+     rest running the screen does scroll, and it used to be clipped flush under
+     the dots, which read as the dots cutting the card off. */
+  .wdots { position: relative; flex-shrink: 0; display: flex; gap: 5px; justify-content: center;
+    flex-wrap: wrap; padding: 6px 20px 12px; }
+  .wdots::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1px;
+    background: var(--line); opacity: 0; transition: opacity var(--t-2) var(--e-soft); }
+  #workout.wedge .wdots::after { opacity: 1; }
   .wdot { width: 6px; height: 6px; border-radius: 999px; background: var(--line-2);
     transition: background-color var(--t-2), transform var(--t-2) var(--e-out); }
   .wdot.on { background: var(--ember); transform: scale(1.4); }
@@ -2758,6 +2768,7 @@ export const STYLE = String.raw`<style>
     /* The exercise still changes and says so, crossfading rather than sliding.
        The drag moves nothing at all: app.ts asks lessMotion() first. */
     .wmain.wmease { transition: none; }
+    .wdots::after { transition: none; }
     .wmain.wmin { animation-name: fadeonly; animation-duration: var(--t-2); }
     /* A marked movement still fills and still ticks; it just does it at once. */
     .cxmove { transition: none; }
@@ -2906,8 +2917,10 @@ export const STYLE = String.raw`<style>
   .wactions .exercise-options > summary { justify-content: center; background: var(--sand); border-radius: 12px; font-size: 13px; }
   /* Keep the exercise and logging controls anchored when supporting actions open.
      Centering the whole stack makes every item drift upward during expansion. */
+  /* 10px less than it was: the dots' band grew by that much, so at rest nothing
+     on the screen moves. */
   #workout:not(.summary) .wmain { justify-content: flex-start; min-height: 0;
-    padding-top: clamp(20px, calc(var(--vvh) * .04), 32px); }
+    padding-top: clamp(10px, calc(var(--vvh) * .04 - 10px), 22px); }
   #workout:not(.summary) .wmain > * { flex-shrink: 0; }
   .exercise-options .disclosure-body { padding: 4px 12px; margin: 4px 0 10px; background: var(--sand); border-radius: 12px; overflow: hidden; }
   .exercise-options .pickrow { width: 100%; min-height: 48px; padding: 12px 2px; border-radius: 0;
