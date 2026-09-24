@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import fs from 'node:fs';
+import { spawnSync } from 'node:child_process';
+// A Test Store bundle (tools/ios/build.mjs, SPOTTER_TEST_STORE=1) never passes the parity check.
+{ const guard = spawnSync('node', ['tools/ios/test-store-guard.mjs'], { stdio: 'inherit' }); if (guard.status !== 0) process.exit(1); }
 const src = fs.readFileSync('supabase/functions/spotter/app.ts','utf8');
 const fn = name => {
   const start = src.indexOf('  function '+name+'(');

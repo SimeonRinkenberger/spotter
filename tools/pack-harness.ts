@@ -149,6 +149,7 @@ const STUBS = "import { normText } from '" +
   "async function libraryCount() { return 1; }\n" +
   "function overCap(used: number, cap: number | null) { return cap !== null && used >= cap; }\n" +
   "async function capLimit(kind: string) { return json({ status: 'limit', kind }, 429); }\n" +
+  "function previewLimit() { return json({ status: 'limit', kind: 'media', scope: 'month' }, 429); }\n" +
   "async function extractLimitResponse() { return json({ status: 'limit', kind: 'extract' }, 429); }\n" +
   "async function mediaCapReached() { return null; }\n" +
   // The monthly allowance is exercised by tools/allowance-harness.mjs; here it is
@@ -197,7 +198,7 @@ const NAMES = [
   // call. Their collaborators are stubbed above; the judgement is the real code.
   "CARD_V", "MIN_USABLE_CARD_V", "UPLOAD_SIGN_SECONDS", "usablePack", "cacheStale", "markCache",
   "mediaSeed", "authorizeSheets", "handleReadVideo",
-  "scopeFor", "isPackAuthorize", "plusPlan", "visuallyRead",
+  "scopeFor", "isPackAuthorize", "plusPlan", "visuallyRead", "BASIC_MEDIA_BURST", "mediaBurst",
   // The tier that spends the money, and the two things that happen to a job when
   // the reading it paid for cannot be trusted.
   "SoftFailure", "buildVideoPack", "runPackTier", "failJob",

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-u7O0TXIcJjz15uLHpUjkE7A04qIHt39TIxom7hHmhBg=' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/ https://challenges.cloudflare.com https://accounts.google.com/gsi/client https://appleid.cdn-apple.com/appleauth/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://api.fontshare.com https://accounts.google.com/gsi/style; font-src 'self' data: https://fonts.gstatic.com https://cdn.fontshare.com; img-src 'self' data: blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://i.ytimg.com https://simeonrinkenberger.github.io; media-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://simeonrinkenberger.github.io; connect-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co wss://mtzevoxxpsktmrbbuxva.supabase.co https://accounts.google.com/gsi/; frame-src https://www.tiktok.com https://www.instagram.com https://www.youtube.com https://www.youtube-nocookie.com https://challenges.cloudflare.com https://accounts.google.com/gsi/ https://appleid.apple.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-y7Y4Xlt9szbhxqal0L52OYZmDRLO6zt+ggkK1quc3k4=' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/ https://challenges.cloudflare.com https://accounts.google.com/gsi/client https://appleid.cdn-apple.com/appleauth/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://api.fontshare.com https://accounts.google.com/gsi/style; font-src 'self' data: https://fonts.gstatic.com https://cdn.fontshare.com; img-src 'self' data: blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://i.ytimg.com https://simeonrinkenberger.github.io; media-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://simeonrinkenberger.github.io; connect-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co wss://mtzevoxxpsktmrbbuxva.supabase.co https://accounts.google.com/gsi/; frame-src https://www.tiktok.com https://www.instagram.com https://www.youtube.com https://www.youtube-nocookie.com https://challenges.cloudflare.com https://accounts.google.com/gsi/ https://appleid.apple.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="google-site-verification" content="unLzcq6TBz9Bm6q4KHpbTmZ88dQ_tTnViacVX5BLzS0">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <title>Spotter by Quarterdeck Collective — save any workout video</title>
@@ -2293,23 +2293,138 @@ h1 {
 .plangood {
   margin: 14px 0 4px;
 }
-.pgood {
+.ptable {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13.5px;
+  line-height: 1.35;
+  font-variant-numeric: tabular-nums;
+}
+.ptable th,
+.ptable td {
+  padding: 10px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+.ptable tbody > * > * {
+  border-top: 1px solid var(--line);
+}
+.ptable tbody th {
+  padding-left: 0;
+  font-weight: 500;
+  color: var(--ink-2);
+}
+.ptable thead th {
+  padding-bottom: 7px;
+  font-size: 11.5px;
+  font-weight: 750;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.ptable td {
+  width: 29%;
+  font-weight: 650;
+  color: var(--ink);
+}
+.ptable .pplus {
+  background: var(--ember-soft);
+}
+.ptable thead .pplus {
+  color: var(--ember-ink);
+  border-radius: 12px 12px 0 0;
+}
+.ptable tr:last-child .pplus {
+  border-radius: 0 0 12px 12px;
+}
+.ptable .ic {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  margin: 0 4px -1px 0;
+  color: var(--ember-ink);
+  stroke-width: 3;
+}
+.ptable small {
+  display: block;
+  margin-top: 3px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--muted);
+}
+.ptable small.out {
+  color: var(--ember-ink);
+}
+.ptable .pno {
+  color: var(--muted);
+  font-weight: 500;
+}
+.pfree {
   display: flex;
   align-items: flex-start;
-  gap: 11px;
-  min-height: 44px;
-  box-sizing: border-box;
-  padding: 7px 0;
-  font-size: 13.5px;
+  gap: 10px;
+  margin: 12px 0 0;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--sand);
+  font-size: 13px;
   line-height: 1.5;
   color: var(--ink-2);
 }
-.pgood .ic {
+.pfree .ic {
   flex: 0 0 auto;
-  width: 17px;
-  height: 17px;
-  margin-top: 3px;
-  color: var(--ember);
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  color: var(--good);
+}
+.pfree b {
+  font-weight: 650;
+  color: var(--ink);
+}
+.plansoft {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+  margin: 4px 0;
+}
+@media (max-width: 359px) {
+  .ptable thead {
+    display: none;
+  }
+  .ptable tr {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0 6px;
+    padding: 10px 0 2px;
+    border-top: 1px solid var(--line);
+  }
+  .ptable tbody > * > * {
+    border-top: 0;
+  }
+  .ptable tbody th {
+    grid-column: 1 / -1;
+    padding: 0 0 4px;
+  }
+  .ptable td,
+  .ptable tr:last-child .pplus {
+    width: auto;
+    padding: 6px 8px;
+    border-radius: 10px;
+  }
+  .ptable td::before {
+    content: attr(data-l);
+    display: block;
+    font-size: 10.5px;
+    font-weight: 750;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .ptable .pplus::before {
+    color: var(--ember-ink);
+  }
 }
 .plancards {
   margin: 16px 0 0;
@@ -2337,6 +2452,11 @@ h1 {
 }
 .pcard:active {
   transform: scale(.985);
+}
+.pcard.off {
+  opacity: .55;
+  box-shadow: none;
+  transform: none;
 }
 .prow {
   display: flex;
@@ -2412,15 +2532,35 @@ h1 {
   margin-top: 5px;
   font-weight: 650;
 }
-.plantrial,
-.plansoon {
+.plantrial {
   font-size: 13px;
   line-height: 1.5;
   color: var(--ink-2);
   margin: 4px 0 14px;
 }
 .plansoon {
-  color: var(--muted);
+  margin: 16px 0 12px;
+  padding: 14px 15px;
+  border-radius: 16px;
+  background: var(--card);
+  border: 1px solid var(--line-2);
+  box-shadow: var(--sh-sm);
+}
+.plansoon b {
+  display: block;
+  font-size: 14.5px;
+  font-weight: 650;
+  line-height: 1.45;
+}
+.plansoon p {
+  margin: 5px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+.plansoon .btn {
+  margin-top: 12px;
+  min-height: 44px;
 }
 .planbuy {
   margin-top: 4px;
@@ -8519,6 +8659,7 @@ details.details-moving > :not(summary) {
     <button class="btn ghost hide" id="setmanage">Manage subscription</button>
     <button class="btn hide" id="setupgrade">Upgrade to Plus</button>
   </div>
+  <div class="setnote hide" id="setplanhow"></div>
   <button class="setlink hide" id="setrefresh">Refresh</button>
 
   <div class="hide" id="setcreator">
@@ -8613,11 +8754,13 @@ details.details-moving > :not(summary) {
   <div class="grabber"></div>
   <div class="planctx hide" id="planctx"></div>
   <h2>Spotter Plus</h2>
-  <p class="lede">Room to save what you find, and a coach who does not run out mid-week.</p>
+  <p class="lede">Keep every workout you save, read TikTok videos in full, and train with Pumpy, your coach.</p>
   <div class="plangood" id="plangood"></div>
-  <div class="plancards" id="plancards" role="radiogroup" aria-label="Billing period"></div>
-  <div class="plantrial hide" id="plantrial"></div>
-  <div class="plansoon hide" id="plansoon">Plans are coming soon.</div>
+  <div id="planbox">
+    <div class="plancards" id="plancards" role="radiogroup" aria-label="Billing period"></div>
+    <div class="plantrial hide" id="plantrial"></div>
+    <div class="plansoon hide" id="plansoon" aria-live="polite"></div>
+  </div>
   <div class="plancode">
     <button type="button" class="codeask" id="plancodeask">Have a creator code?</button>
     <div class="codeform hide" id="plancodeform">
@@ -8633,7 +8776,8 @@ details.details-moving > :not(summary) {
   <div class="planlegal">
     <a href="https://quarterdeckcollective.com/spotter/terms/">Terms</a><span aria-hidden="true">&middot;</span>
     <a href="https://quarterdeckcollective.com/spotter/privacy/">Privacy</a><span aria-hidden="true" id="plandot2">&middot;</span>
-    <button id="planrestore">Restore purchase</button>
+    <button id="planrestore">Restore purchase</button><span aria-hidden="true" id="plandot3">&middot;</span>
+    <button id="planmanage">Manage</button>
   </div>
 </div></div>
 
@@ -9554,7 +9698,7 @@ details.details-moving > :not(summary) {
       };
     }
     native && native.purchases && native.purchases.clear().catch(function() {
-    }), billing && (billing.prices = null, billing.waiting = null, billing.busy = !1, billing.sub = null, billing.subAsked = !1, billing.limits = null, billing.said = null, billing.ctx = null, billing.cc = null, billing.ccWaiting = null, billing.redeeming = !1), ["grid", "chips", "colbar", "libcount", "empty", "dinner", "pumpylog", "pumpyannounce", "pumpyctx", "pumpythreads", "trainview", "today", "resume", "recapopts"].forEach(function(id) {
+    }), billing && (billing.prices = null, billing.caps = null, billing.capsWaiting = null, billing.asking = !1, billing.fails = 0, billing.busy = !1, billing.sub = null, billing.subAsked = !1, billing.limits = null, billing.said = null, billing.ctx = null, billing.cc = null, billing.ccWaiting = null, billing.redeeming = !1), ["grid", "chips", "colbar", "libcount", "empty", "dinner", "pumpylog", "pumpyannounce", "pumpyctx", "pumpythreads", "trainview", "today", "resume", "recapopts"].forEach(function(id) {
       var n = $(id);
       n && (n.innerHTML = "");
     }), $("count0").textContent = "Reading your library", clearTimeout(toastTimer), $("toast").classList.remove("show"), $("toast").textContent = "", Array.prototype.forEach.call(document.querySelectorAll(".sheet.open, #detail.open, #workout.open"), function(n) {
@@ -9606,7 +9750,7 @@ details.details-moving > :not(summary) {
     }, 200), idle(function() {
       accountNow(epoch, uid) && (pumpy.loaded || renderPumpy(), loadPumpy(!0));
     }, 450), idle(function() {
-      accountNow(epoch, uid) && isFree() && loadPrices().then(renderLibCount);
+      accountNow(epoch, uid) && isFree() && (loadCaps().then(renderLibCount), native && native.purchases && loadPrices());
     }, 700);
   }
   var wkChannel = null;
@@ -9795,8 +9939,8 @@ details.details-moving > :not(summary) {
       });
     });
   }
-  function refreshDetail(w) {
-    if (!(!current || current.id !== w.id) && JSON.stringify(current) !== JSON.stringify(w)) {
+  function refreshDetail(w, force) {
+    if (!(!current || current.id !== w.id) && !(!force && JSON.stringify(current) === JSON.stringify(w))) {
       var old = current, d = $("dinner"), scroll = $("detail").scrollTop;
       if (!$("detail").classList.contains("open")) {
         current = w;
@@ -10700,7 +10844,16 @@ details.details-moving > :not(summary) {
           if (!(!trial.isConnected || !r.video_previews)) {
             var left = Math.max(0, r.video_previews.cap - r.video_previews.used);
             trial.textContent = left ? "Try a Plus read \xB7 " + left + " left this month" : "Explore Spotter Plus", left || (trial.onclick = function() {
-              openPlans({ kind: "media" });
+              var c = billing.caps;
+              openPlans({
+                kind: "media",
+                plan: "free",
+                scope: "month",
+                cap: r.video_previews.cap,
+                used: r.video_previews.used,
+                next_plan: "plus",
+                next_cap: c ? capNum(c.plus.month_reads) : void 0
+              });
             });
           }
         }).catch(function() {
@@ -15739,15 +15892,15 @@ details.details-moving > :not(summary) {
       return a.kind !== "freeze";
     }), box = el("div", "chartcard");
     box.appendChild(el("h3", null, "Awards"));
-    var grid = el("div", "tgrid"), shown = isFree() ? have.slice(0, 12) : have;
+    var grid = el("div", "tgrid"), shown = isFree() ? have.slice(0, AWARDS_KEPT) : have;
     return shown.forEach(function(a) {
       grid.appendChild(medallion(a));
     }), lockedAwards(st, logs).forEach(function(l) {
       grid.appendChild(medallion(l, !0));
-    }), box.appendChild(grid), isFree() && have.length > 12 && box.appendChild(el(
+    }), box.appendChild(grid), isFree() && have.length > AWARDS_KEPT && box.appendChild(el(
       "div",
       "bodynote",
-      have.length - 12 + " earlier awards are kept in Plus."
+      have.length - AWARDS_KEPT + " earlier awards are kept in Plus."
     )), box;
   }
   var statsCounted = !1;
@@ -16286,7 +16439,7 @@ details.details-moving > :not(summary) {
     var log = $("pumpylog"), frag = document.createDocumentFragment();
     if (isFree()) {
       var offer = el("div", "reader-offer");
-      offer.appendChild(el("b", null, "Pumpy \xB7 Included with Spotter Plus")), offer.appendChild(el("p", null, "Combine your saved workouts, build a routine for your goals, get coaching and find alternate exercises. Upgrade to let Pumpy work with your attachments."));
+      offer.appendChild(el("b", null, "Pumpy \xB7 Included with Spotter Plus")), offer.appendChild(el("p", null, "Combine your saved workouts, build a routine for your goals, get coaching and find alternate exercises."));
       var upgrade = el("button", "btn", "Explore Spotter Plus");
       upgrade.onclick = function() {
         openPlans({ kind: "pumpy" });
@@ -16570,6 +16723,15 @@ details.details-moving > :not(summary) {
     // the plan the server last reported, which outranks the row
     ctx: null,
     // the 429 the sheet was opened by, or null from Settings
+    caps: null,
+    // what each plan gets, from the server: {free, plus, features}
+    capsWaiting: null,
+    asking: !1,
+    // the store is being asked for prices right now
+    fails: 0,
+    // store answers that were not a price, this session
+    shown: null,
+    // which page the sheet last painted
     interval: "year",
     busy: !1,
     cc: null,
@@ -16614,21 +16776,44 @@ details.details-moving > :not(summary) {
     var epoch = accountEpoch, uid = state.user && state.user.id;
     return native && native.purchases ? native.purchases.prices(uid).then(function(r) {
       return accountNow(epoch, uid) ? (billing.prices = r, r) : null;
+    }).catch(function(e) {
+      return accountNow(epoch, uid) ? (console.warn("Spotter Plus: no store price", e && e.message), billing.prices = { configured: !1, nativeStore: !0 }, billing.prices) : null;
+    }) : loadCaps().then(function() {
+      return billing.prices;
+    });
+  }
+  function loadCaps() {
+    if (billing.caps) return Promise.resolve(billing.caps);
+    if (billing.capsWaiting) return billing.capsWaiting;
+    var epoch = accountEpoch, uid = state.user && state.user.id;
+    return billing.capsWaiting = api("billing/prices", { method: "GET" }).then(function(r) {
+      if (!accountNow(epoch, uid)) return null;
+      billing.capsWaiting = null;
+      var c = r && r.caps;
+      return c && c.free && c.plus && (billing.caps = { free: c.free, plus: c.plus, features: r.features || null }), native || (billing.prices = r && r.status === "ok" && r.configured ? r : { configured: !1 }), billing.caps;
+    }, function() {
+      return accountNow(epoch, uid) && (billing.capsWaiting = null), null;
+    }), billing.capsWaiting;
+  }
+  function loadUse() {
+    return api("limits", { method: "GET" }).then(function(r) {
+      r && r.status === "ok" && (billing.limits = r, adoptPlan(r.plan));
     }).catch(function() {
-      return accountNow(epoch, uid) ? (billing.prices = { configured: !1, nativeStore: !0 }, billing.prices) : null;
-    }) : billing.prices ? Promise.resolve(billing.prices) : (billing.waiting || (billing.waiting = api("billing/prices", { method: "GET" }).then(function(r) {
-      return accountNow(epoch, uid) ? (billing.waiting = null, billing.prices = r && r.status === "ok" && r.configured ? r : { configured: !1 }, billing.prices) : null;
-    }).catch(function() {
-      return accountNow(epoch, uid) ? (billing.waiting = null, billing.prices = { configured: !1 }, billing.prices) : null;
-    })), billing.waiting);
+    });
   }
   function loadSub() {
     if (billing.subAsked) return Promise.resolve(billing.sub);
     billing.subAsked = !0;
-    var epoch = accountEpoch, uid = state.user && state.user.id, legacy = sb.from("subscriptions").select("*").maybeSingle(), request = native && native.purchases ? Promise.all([legacy, sb.from("store_entitlements").select("*").maybeSingle()]).then(function(rows) {
+    var epoch = accountEpoch, uid = state.user && state.user.id, legacy = sb.from("subscriptions").select("*").maybeSingle(), request = Promise.all([legacy, sb.from("store_entitlements").select("*").maybeSingle()]).then(function(rows) {
       var store = rows[1].data;
-      return store && store.active && (!store.expires_at || Date.parse(store.expires_at) > Date.now()) ? { data: { source: store.source, plan: "plus", status: "active", current_period_end: store.expires_at } } : rows[0];
-    }) : legacy;
+      return store && store.active && (!store.expires_at || Date.parse(store.expires_at) > Date.now()) ? { data: {
+        source: store.source,
+        plan: "plus",
+        status: "active",
+        current_period_end: store.expires_at,
+        cancel_at_period_end: store.will_renew === !1
+      } } : rows[0];
+    });
     return request.then(function(r) {
       if (!accountNow(epoch, uid)) return null;
       if (r.error) throw r.error;
@@ -16647,11 +16832,66 @@ details.details-moving > :not(summary) {
     var n = credits / 5;
     return (n >= 100 ? Math.round(n / 50) * 50 : Math.round(n / 10) * 10).toLocaleString();
   }
-  function planBenefits(caps) {
-    var f = caps && caps.free, p = caps && caps.plus;
-    if (!f || !p) return [];
-    var out = [], lib = capNum(p.library), reads2 = capNum(p.month_reads);
-    return out.push(lib === null ? "Keep every workout you save \u2014 Basic holds " + f.library + "." : "Hold " + capMany(lib) + " saved workouts, instead of " + f.library + "."), reads2 === null ? (out.push("Read the movements, the spoken cues and the text on screen in supported videos."), out.push("Video reading and coaching have monthly allowances; Settings shows what is left.")) : (out.push("Read " + reads2 + " videos a month in full \u2014 the movements, the spoken cues and the text on screen. Basic reads " + capMany(capNum(f.month_reads)) + "."), out.push(capMany(capNum(p.month_answers)) + " coaching answers a month from Pumpy, and " + capMany(capNum(p.month_helpers)) + " explanations and swaps.")), out.push("Saving from a caption, logging, your plan and your progress are free and are never metered."), out.push("Stop whenever you like \u2014 everything you saved stays yours, and stays readable."), out;
+  var AWARDS_KEPT = 12;
+  function planRows(c, mine) {
+    var f = c.free, p = c.plus, m = mine && billing.limits && billing.limits.month, held = state.workouts.length;
+    function has(k, plan) {
+      var l = c.features && c.features[k];
+      return l ? l.indexOf(plan) >= 0 : plan !== "free";
+    }
+    function month(n) {
+      return n = capNum(n), n === null ? "No limit" : n ? n.toLocaleString() + " a month" : "\u2014";
+    }
+    function shelfN(n) {
+      return n = capNum(n), n === null ? "No limit" : n.toLocaleString();
+    }
+    function kept(plan) {
+      return has("awards_all", plan) ? "All" : "Latest " + AWARDS_KEPT;
+    }
+    function used(k) {
+      var u = m ? num(m[k]) : null, cap = m ? capNum(m[k + "_cap"]) : null;
+      return u === null || !cap ? null : [u + " of " + cap + " used", u >= cap];
+    }
+    var lib = capNum(f.library);
+    return [
+      ["Saved workouts", shelfN(f.library), shelfN(p.library), mine && lib ? [held + " saved", held >= lib] : null],
+      // Named for what Plus can actually read: TikTok video (the save-flow audit's
+      // S2; Instagram and YouTube give no video to read, so no row promises it).
+      ["Full TikTok video reads", month(f.month_reads), month(p.month_reads), used("reads")],
+      ["Pumpy coach", has("pumpy", "free") ? "Included" : "\u2014", has("pumpy", "plus") ? "Included" : "\u2014", null],
+      ["Explanations and swaps", month(f.month_helpers), month(p.month_helpers), used("helpers")],
+      ["Uploads", month(f.month_uploads), month(p.month_uploads), used("uploads")],
+      ["Awards history", kept("free"), kept("plus"), null]
+    ];
+  }
+  function paintTable() {
+    var box = $("plangood"), c = billing.caps;
+    if (box.innerHTML = "", !c) {
+      if (billing.capsWaiting || !state.user) {
+        ["sline", "sline half", "sline", "sline half"].forEach(function(k) {
+          box.appendChild(skelRow(k));
+        });
+        return;
+      }
+      var soft = el("p", "plansoft", "What each plan includes did not load. "), again = el("button", "fixlink", "Try again");
+      again.onclick = function() {
+        retryPrices(again);
+      }, soft.appendChild(again), box.appendChild(soft);
+      return;
+    }
+    var t = el("table", "ptable"), head = el("tr"), body = el("tbody");
+    t.appendChild(el("caption", "sr-only", "What Basic and Plus include")), head.appendChild(el("td")), ["Basic", "Plus"].forEach(function(w, i) {
+      var th = el("th", i ? "pplus" : null, w);
+      th.setAttribute("scope", "col"), head.appendChild(th);
+    }), t.appendChild(el("thead")).appendChild(head), planRows(c, isFree()).forEach(function(r) {
+      var tr = el("tr"), th = el("th", null, r[0]);
+      th.setAttribute("scope", "row"), tr.appendChild(th), [r[1], r[2]].forEach(function(v, i) {
+        var td = el("td", i ? "pplus" : null);
+        td.setAttribute("data-l", i ? "Plus" : "Basic"), v === "\u2014" ? (td.appendChild(el("span", "pno", "\u2014")).setAttribute("aria-hidden", "true"), td.appendChild(el("span", "sr-only", "Not included"))) : (v === "Included" && td.appendChild(ic("check")), td.appendChild(document.createTextNode(v))), !i && r[3] && td.appendChild(el("small", r[3][1] ? "out" : null, r[3][0])), tr.appendChild(td);
+      }), body.appendChild(tr);
+    }), t.appendChild(body), box.appendChild(t);
+    var free = el("div", "pfree"), line = el("span");
+    free.appendChild(ic("check")), line.appendChild(el("b", null, "Always free: ")), line.appendChild(document.createTextNode("logging, Workout Mode, your plan, progress and export. What you save stays yours.")), free.appendChild(line), box.appendChild(free);
   }
   var CAP_WORDS = {
     extract: ["new videos read", "reads"],
@@ -16661,7 +16901,7 @@ details.details-moving > :not(summary) {
     helper: ["explanations and swaps", "allows"]
   }, MULT = ["", "", "twice", "three times", "four times", "five times", "six times"];
   function pumpyRoom(up) {
-    var caps = billing.prices && billing.prices.caps, f = caps && caps.free && num(caps.free.pumpy_month), p = caps && caps.plus && num(caps.plus.pumpy_month), mult = f && p ? Math.round(p / f) : 0;
+    var caps = billing.caps, f = caps && num(caps.free.pumpy_month), p = caps && num(caps.plus.pumpy_month), mult = f && p ? Math.round(p / f) : 0;
     return "On " + up + " I have " + (mult >= 2 && mult < MULT.length ? "about " + MULT[mult] + " as much room" : "a lot more room") + ".";
   }
   function planCtxLine(c) {
@@ -16670,18 +16910,14 @@ details.details-moving > :not(summary) {
     if (c.kind === "library")
       return "That is " + cap + " saved workouts, which is " + mine + "\u2019s shelf. " + up + " takes the lid off, and nothing you have saved is going anywhere in the meantime.";
     if (c.kind === "pumpy")
-      return "That is this month\u2019s coaching used up \u2014 my credits come back on the 1st. " + pumpyRoom(up);
+      return cap !== null && num(c.used) >= cap ? "That is this month\u2019s coaching used up \u2014 my credits come back on the 1st. " + pumpyRoom(up) : "Pumpy is part of Spotter Plus.";
     var w = CAP_WORDS[c.kind];
     if (!w || cap === null) return "";
     var month = c.scope === "month", noun = c.kind === "uploads" && cap === 1 ? "upload" : w[0];
-    return "That is " + cap + " " + noun + (month ? " this month, " : " today, ") + mine + "\u2019s " + (month ? "whole allowance. It comes back on the 1st. " : "burst limit. It resets at midnight UTC. ") + (next === null ? up + " has no limit here." : up + " " + w[1] + " " + next + (month ? " a month." : " a day."));
+    return ("That is " + cap + " " + noun + (month ? " this month, " : " today, ") + mine + "\u2019s " + (month ? "whole allowance. It comes back on the 1st. " : "burst limit. It resets at midnight UTC. ") + (c.next_cap === void 0 ? "" : next === null ? up + " has no limit here." : up + " " + w[1] + " " + next + (month ? " a month." : " a day."))).trim();
   }
   function skelRow(cls) {
     return el("div", "skel " + cls);
-  }
-  function paintSkeleton() {
-    var good = $("plangood"), cards = $("plancards");
-    good.innerHTML = "", cards.innerHTML = "", good.appendChild(skelRow("sline")), good.appendChild(skelRow("sline half")), good.appendChild(skelRow("sline")), good.appendChild(skelRow("sline half")), cards.appendChild(skelRow("scard")), cards.appendChild(skelRow("scard")), $("planbuy").classList.add("hide"), $("plantrial").classList.add("hide"), $("plansoon").classList.add("hide"), $("planfine").textContent = "";
   }
   function priceCard(iv, plus, p) {
     var yearly = iv === "year", cur = p.currency, full = plus[iv].amount, pay = yearly && p.founding ? p.founding.first_year_amount : full, b = el("button", "pcard");
@@ -16690,7 +16926,7 @@ details.details-moving > :not(summary) {
     row.appendChild(el("span", "pname", yearly ? "Yearly" : "Monthly"));
     var amt = el("span", "pamt");
     pay !== full && amt.appendChild(el("span", "pold", money(full, cur))), amt.appendChild(document.createTextNode(p.nativeStore ? plus[iv].localized : money(pay, cur))), row.appendChild(amt), b.appendChild(row);
-    var monthlyYear = plus.month.amount * 12;
+    var monthlyYear = plus.month ? plus.month.amount * 12 : 0;
     if (yearly) {
       var intro = pay !== full, saved = monthlyYear - pay;
       if (monthlyYear > 0 && saved > 0) {
@@ -16704,6 +16940,10 @@ details.details-moving > :not(summary) {
       pickInterval(iv);
     }, b;
   }
+  function goneCard(iv) {
+    var b = el("button", "pcard off");
+    return b.type = "button", b.disabled = !0, b.setAttribute("role", "radio"), b.setAttribute("aria-checked", "false"), b.appendChild(el("div", "prow")).appendChild(el("span", "pname", iv === "year" ? "Yearly" : "Monthly")), b.appendChild(el("div", "pmeta", "Not available right now")), b;
+  }
   function setBuyLabel(text) {
     var s = $("planbuy").querySelector("b");
     if (!(!s || s.textContent === text)) {
@@ -16716,9 +16956,10 @@ details.details-moving > :not(summary) {
       }, 130);
     }
   }
+  var PLAN_RESET = "Monthly allowances come back on the 1st, 00:00 UTC. New AI work can pause when Spotter\u2019s shared daily allowance is reached; saved workouts stay available.";
   function finePrint(p, plus, iv, pay, full, days) {
     var cur = p.currency, first;
-    if (p.nativeStore) return "Renews automatically at " + (plus[iv].localized || money(full, cur)) + (iv === "month" ? " per month" : " per year") + " until cancelled. Manage or cancel in your store subscription settings. Any eligible offer and its terms appear in the store confirmation.";
+    if (p.nativeStore) return (days > 0 ? "After the " + days + "-day free trial, it renews" : "Renews") + " automatically at " + (plus[iv].localized || money(full, cur)) + (iv === "month" ? " per month" : " per year") + " until cancelled. Manage or cancel in your store subscription settings. Any eligible offer and its terms appear in the store confirmation.";
     if (iv === "month")
       first = money(pay, cur) + " a month until you cancel.";
     else if (pay !== full) {
@@ -16735,36 +16976,69 @@ details.details-moving > :not(summary) {
         var on = cards[i].getAttribute("data-iv") === iv;
         cards[i].classList.toggle("on", on), cards[i].setAttribute("aria-checked", on ? "true" : "false");
       }
-      var full = plus[iv].amount, pay = yearly && p.founding ? p.founding.first_year_amount : full, days = num(p.trial_days) || 0, trial = $("plantrial");
-      yearly && days > 0 ? (trial.textContent = "Free for " + days + " days. We will not charge you before " + new Date(Date.now() + days * 864e5).toLocaleDateString(void 0, { day: "numeric", month: "long" }) + ", and you can cancel before then.", trial.classList.remove("hide")) : (trial.textContent = "", trial.classList.add("hide")), setBuyLabel(yearly && days > 0 ? "Start " + days + " free days" : "Subscribe for " + (p.nativeStore ? plus[iv].localized : money(pay, cur)) + (yearly ? " a year" : " a month"));
-      var fr = p.caps && p.caps.free, basic = capNum(fr && fr.month_reads);
-      $("planfine").textContent = finePrint(p, plus, iv, pay, full, days) + (basic === null ? "" : " Basic reads " + basic + " videos a month in full, and everything you have already saved stays readable for ever.") + " Allowances reset on the 1st, 00:00 UTC. During beta, new AI work can also pause when Spotter\u2019s shared allowance is reached; saved workouts remain available.";
+      var full = plus[iv].amount, pay = yearly && p.founding ? p.founding.first_year_amount : full, days = num(plus[iv].trial_days), trial = $("plantrial");
+      days === null && (days = yearly && num(p.trial_days) || 0), days > 0 ? (trial.textContent = "Free for " + days + " days. We will not charge you before " + new Date(Date.now() + days * 864e5).toLocaleDateString(void 0, { day: "numeric", month: "long" }) + ", and you can cancel before then.", trial.classList.remove("hide")) : (trial.textContent = "", trial.classList.add("hide")), setBuyLabel(days > 0 ? "Start " + days + " free days" : "Subscribe for " + (p.nativeStore ? plus[iv].localized : money(pay, cur)) + (yearly ? " a year" : " a month")), $("planfine").textContent = finePrint(p, plus, iv, pay, full, days) + " " + PLAN_RESET;
     }
   }
   function pickInterval(iv) {
     billing.interval === iv || billing.busy || (billing.interval = iv, haptic("tap"), paintChoice());
   }
+  function planState() {
+    if (!isFree()) return "plus";
+    if (!(native && native.purchases)) return "web";
+    var p = billing.prices, plus = p && p.configured && p.plans && p.plans.plus;
+    return plus && (plus.year || plus.month) ? "buy" : billing.asking || !p ? "wait" : "down";
+  }
   function paintPlans() {
-    var p = billing.prices || { configured: !1 }, good = $("plangood"), cards = $("plancards");
-    good.innerHTML = "", cards.innerHTML = "", paintPlanCode(), planBenefits(p.caps).forEach(function(t) {
-      var row = el("div", "pgood");
-      row.appendChild(ic("check")), row.appendChild(el("span", null, t)), good.appendChild(row);
+    var st = planState(), was = billing.shown, store = !!(native && native.purchases), p = billing.prices, plus = st === "buy" && p.plans.plus, cards = $("plancards");
+    billing.shown = st, paintPlanCode(), paintTable(), cards.innerHTML = "", st === "wait" && (cards.appendChild(skelRow("scard")), cards.appendChild(skelRow("scard"))), plus && (plus[billing.interval] || (billing.interval = plus.year ? "year" : "month"), ["year", "month"].forEach(function(iv) {
+      cards.appendChild(plus[iv] ? priceCard(iv, plus, p) : goneCard(iv));
+    })), cards.classList.toggle("hide", !plus && st !== "wait"), $("planbuy").classList.toggle("hide", !plus), $("planbuy").disabled = billing.busy, paintSoon(st), $("plannot").textContent = st === "plus" ? "Done" : "Not now", ["planrestore", "planmanage", "plandot2", "plandot3"].forEach(function(id) {
+      $(id).classList.toggle("hide", !store);
+    }), plus ? paintChoice() : ($("plantrial").classList.add("hide"), $("planfine").textContent = PLAN_RESET), was && was !== st && $("plansheet").classList.contains("open") && !lessMotion() && [$("planbox"), $("planbuy")].forEach(function(n) {
+      n.classList.remove("planswap"), n.offsetWidth, n.classList.add("planswap");
     });
-    var plus = p.plans && p.plans.plus, ready = !!(p.configured && plus && plus.month && plus.year);
-    if ($("plansoon").classList.toggle("hide", ready), $("planbuy").classList.toggle("hide", !ready), $("plandot2").classList.toggle("hide", !ready), $("planrestore").classList.toggle("hide", !ready && !(native && native.purchases)), p.nativeStore && ($("plansoon").textContent = "Subscriptions are temporarily unavailable. Please try again later. Existing purchases can be restored below."), !ready) {
-      $("plantrial").classList.add("hide"), $("planfine").textContent = "";
-      return;
+  }
+  function paintSoon(st) {
+    var n = $("plansoon"), s = billing.sub, src = s && s.source, name = storeName();
+    if (n.innerHTML = "", n.classList.toggle("hide", st === "buy" || st === "wait"), st === "web")
+      n.appendChild(el("b", null, "Spotter Plus is bought in the Spotter app.")), n.appendChild(el("p", null, "It belongs to your account, so Plus bought in the app works here too."));
+    else if (st === "down") {
+      n.appendChild(el("b", null, name.charAt(0).toUpperCase() + name.slice(1) + " isn\u2019t answering right now, so we can\u2019t show a price.")), n.appendChild(el("p", null, "Nothing has been charged." + (billing.fails >= 2 ? " If this keeps happening, update Spotter from " + name + "." : "")));
+      var retry = el("button", "btn");
+      retry.appendChild(ic("refresh")), retry.appendChild(document.createTextNode("Try again")), retry.onclick = function() {
+        retryPrices(retry);
+      }, n.appendChild(retry);
+    } else if (st === "plus") {
+      var end = s && dayMonth(s.current_period_end, !0);
+      if (n.appendChild(el("b", null, myPlan() === "staff" ? "This account has everything in Plus." : "You have Spotter Plus.")), end && n.appendChild(el("p", null, (s.cancel_at_period_end || s.cancel_at ? "Ends " : "Renews ") + end + ".")), native && native.purchases) {
+        var manage = el("button", "btn ghost", "Manage subscription");
+        manage.onclick = function() {
+          openPortal(manage);
+        }, n.appendChild(manage);
+      } else (src === "apple" || src === "google") && n.appendChild(el("p", null, "Manage it in " + (src === "google" ? "Google Play on your phone." : "the App Store on your iPhone.")));
     }
-    cards.appendChild(priceCard("year", plus, p)), cards.appendChild(priceCard("month", plus, p)), $("planbuy").disabled = billing.busy, paintChoice();
+  }
+  function retryPrices(btn) {
+    if (!billing.asking) {
+      var epoch = accountEpoch, uid = state.user && state.user.id, at = Date.now();
+      billing.asking = !0, btn.disabled = !0, btn.firstChild && btn.firstChild.classList && btn.firstChild.classList.add("spin"), Promise.all([loadPrices(), loadCaps()]).then(function() {
+        setTimeout(function() {
+          accountNow(epoch, uid) && (billing.asking = !1, planState() === "down" && billing.fails++, $("plansheet").classList.contains("open") && paintPlans());
+        }, Math.max(0, 500 - (Date.now() - at)));
+      });
+    }
   }
   function paintCtx() {
     var n = $("planctx"), line = planCtxLine(billing.ctx);
     n.textContent = line, n.classList.toggle("hide", !line);
   }
   function openPlans(ctx) {
-    var epoch = accountEpoch, uid = state.user && state.user.id;
-    billing.ctx = ctx && ctx.kind ? ctx : null, billing.interval = "year", paintCtx(), billing.prices || paintSkeleton(), $("plancodeform").classList.add("hide"), $("plancodein").value = "", paintPlanCode(), openSheet("plansheet"), loadPrices().then(function() {
-      accountNow(epoch, uid) && $("plansheet").classList.contains("open") && paintPlans();
+    var epoch = accountEpoch, uid = state.user && state.user.id, ask = !!(native && native.purchases) && isFree();
+    billing.ctx = ctx && ctx.kind ? ctx : null, billing.interval = "year", billing.shown = null, billing.asking = ask && planState() !== "buy";
+    var asked = Promise.all([loadCaps(), ask ? loadPrices() : null, isFree() ? loadUse() : loadSub()]);
+    paintCtx(), $("plancodeform").classList.add("hide"), $("plancodein").value = "", paintPlans(), openSheet("plansheet"), asked.then(function() {
+      accountNow(epoch, uid) && (billing.asking = !1, ask && planState() === "down" && billing.fails++, $("plansheet").classList.contains("open") && paintPlans());
     }), loadCreator().then(function() {
       accountNow(epoch, uid) && $("plansheet").classList.contains("open") && paintPlanCode();
     });
@@ -16799,13 +17073,13 @@ details.details-moving > :not(summary) {
   }
   function nativePurchase(restore, btn) {
     if (!(!state.user || billing.busy)) {
-      var uid = state.user.id, epoch = accountEpoch;
+      var uid = state.user.id, epoch = accountEpoch, before = myPlan();
       billing.busy = !0, btn && (btn.disabled = !0);
       var work = restore ? native.purchases.restore(uid) : native.purchases.purchase(uid, billing.interval);
       work.then(function() {
         return accountNow(epoch, uid) ? syncNativePurchase(epoch, uid) : null;
       }).then(function(r) {
-        !accountNow(epoch, uid) || !r || (absorbPlan(r, !restore), toast(r.plan === "free" ? "No active subscription was found for this account." : "Your " + planWord(r.plan) + " access is up to date."));
+        !accountNow(epoch, uid) || !r || (absorbPlan(r, !restore), r.plan === "free" ? toast("No active subscription was found for this account.") : restore && before === "free" ? toast("Plus is on this account now. If it was bought on another Spotter account, that one is back on Basic.", 5200) : (restore || r.plan === before) && toast("Your " + planWord(r.plan) + " access is up to date."));
       }).catch(function(e) {
         accountNow(epoch, uid) && !e.userCancelled && String(e.code) !== "1" && toast(e.message || "Could not complete the purchase. Please try again.");
       }).then(function() {
@@ -17190,12 +17464,14 @@ details.details-moving > :not(summary) {
       row.textContent = text;
       var warn = $("setplanwarn"), until = failed && dayMonth(s.current_period_end, !0);
       warn.textContent = failed ? "The last payment did not go through. " + word + " keeps working" + (until ? " until " + until : "") + " while we retry." : "", warn.classList.toggle("hide", !failed);
-      var canBuy = configured && !paid && !staff, canManage = configured && paid;
-      $("setupgrade").classList.toggle("hide", !canBuy), $("setmanage").classList.toggle("hide", !canManage), $("setpay").classList.toggle("hide", !(canManage && failed)), $("setplanbtns").classList.toggle("hide", !(canBuy || canManage)), $("setrefresh").classList.toggle("hide", !configured && !(native && native.purchases));
+      var store = native && native.purchases, src = s && s.source, storePaid = paid && (src === "apple" || src === "google"), canBuy = !paid && !staff, canManage = paid && (configured || store && storePaid);
+      $("setupgrade").textContent = store ? "Upgrade to Plus" : "See Spotter Plus", $("setupgrade").classList.toggle("hide", !canBuy), $("setmanage").classList.toggle("hide", !canManage), $("setpay").classList.toggle("hide", !(canManage && failed)), $("setplanbtns").classList.toggle("hide", !(canBuy || canManage)), $("setrefresh").classList.toggle("hide", !configured && !store);
+      var how = $("setplanhow");
+      how.textContent = storePaid && !store ? "Manage it in " + (src === "google" ? "Google Play on your phone." : "the App Store on your iPhone.") : "", how.classList.toggle("hide", !how.textContent);
     }
   }
   function adoptPlan(plan) {
-    plan && (billing.said = plan, !(!state.profile || state.profile.plan === plan) && (state.profile.plan = plan, renderLibCount(), paintPlanGroup()));
+    plan && (billing.said = plan, !(!state.profile || state.profile.plan === plan) && (state.profile.plan = plan, renderLibCount(), paintPlanGroup(), renderPumpy(), current && $("detail").classList.contains("open") && refreshDetail(current, !0), $("plansheet").classList.contains("open") && paintPlans()));
   }
   var ALLOW_ROWS = [
     ["reads", "Video reads"],
@@ -17223,7 +17499,7 @@ details.details-moving > :not(summary) {
       var back = resetDay(m.resets_at);
       ALLOW_ROWS.forEach(function(a) {
         var cap = capNum(m[a[0] + "_cap"]), used = num(m[a[0]]);
-        used === null || cap === null || n.appendChild(useRow(a[1], used + " of " + cap, " this month", back, used >= cap));
+        used === null || cap === null || cap === 0 || n.appendChild(useRow(a[1], used + " of " + cap, " this month", back, used >= cap));
       });
     }
     r && r.paid_enabled === !1 && n.appendChild(el(
@@ -17235,8 +17511,8 @@ details.details-moving > :not(summary) {
     n.classList.toggle("hide", empty), hidden && !empty && n.classList.add("viewin");
   }
   function shelf(extra) {
-    if (!billOn() || !isFree()) return null;
-    var caps = billing.prices.caps, cap = caps && caps.free ? capNum(caps.free.library) : null;
+    if (!isFree() || !billing.caps) return null;
+    var cap = capNum(billing.caps.free.library);
     return cap === null || cap <= 0 ? null : { used: state.workouts.length + (extra || 0), cap: cap, warn: Math.ceil(cap * 0.8) };
   }
   function withShelf(msg, extra) {
@@ -19211,6 +19487,8 @@ details.details-moving > :not(summary) {
     closeSheet("plansheet");
   }, $("planbuy").onclick = startCheckout, $("planrestore").onclick = function() {
     refreshBilling(this);
+  }, $("planmanage").onclick = function() {
+    openPortal(null);
   }, $("setcoderow").onclick = openCode, $("setcreatorshare").onclick = shareCreator, $("plancodeask").onclick = askPlanCode, $("plancodego").onclick = function() {
     applyPlanCode(this);
   }, $("plancodein").addEventListener("keydown", function(e) {

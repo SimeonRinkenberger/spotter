@@ -17,14 +17,16 @@ function setup() {
     billing:{busy:false,interval:'year',prices:null,waiting:null},
     native:{purchases:{prices:()=>prices.promise,purchase:()=>{storeCalls.push('buy');return purchase.promise;},restore:()=>{storeCalls.push('restore');return purchase.promise;}}},
     sb:{auth:{getSession:()=>session.promise},functions:{invoke:(name,args)=>{calls.push({name,args});return verification.promise;}}},
-    toast:s=>toasts.push(s),absorbPlan:r=>plans.push(r),planWord:s=>s});
+    toast:s=>toasts.push(s),absorbPlan:r=>plans.push(r),planWord:s=>s,myPlan:()=>'free'});
   vm.runInContext('function accountNow(e,u){return e===accountEpoch && state.user && state.user.id===u;}\n'+['loadPrices','syncNativePurchase','nativePurchase'].map(lift).join('\n'),ctx);
   const switchAccount=(id='bob')=>{ctx.accountEpoch++;ctx.state.user={id};ctx.billing.prices={account:id};ctx.billing.busy=true;};
   return {ctx,prices,purchase,session,verification,calls,toasts,plans,storeCalls,switchAccount};
 }
 {
  const t=setup();
- Object.assign(t.ctx,{paintCtx(){},paintSkeleton(){},openSheet(){},paintPlans(){},paintPlanCode(){},loadCreator:()=>Promise.resolve(null),$:()=>({value:'',classList:{contains:()=>false,add(){},remove(){},toggle(){}}})});
+ Object.assign(t.ctx,{paintCtx(){},openSheet(){},paintPlans(){},paintPlanCode(){},loadCreator:()=>Promise.resolve(null),
+   isFree:()=>true,planState:()=>'wait',loadCaps:()=>Promise.resolve(null),loadUse:()=>Promise.resolve(),loadSub:()=>Promise.resolve(null),
+   $:()=>({value:'',classList:{contains:()=>false,add(){},remove(){},toggle(){}}})});
  vm.runInContext(lift('openPlans'),t.ctx);
  t.ctx.nativePurchase(false,{});t.ctx.openPlans(null);t.ctx.nativePurchase(false,{});
  assert.equal(t.storeCalls.length,1,'Reopening paywall must not reset the in-flight purchase lock');
