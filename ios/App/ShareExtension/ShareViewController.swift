@@ -1,20 +1,53 @@
 import UIKit
 import UniformTypeIdentifiers
+import os
+
+// Timings only, never a link or a key: enough to read tap → "Saved" off a device
+// with `log stream --predicate 'subsystem == "app.spotter.share"'`.
+private let log = Logger(subsystem: "app.spotter.share", category: "save")
 
 // A small native view, with no WebView and no attempt to launch the containing
 // app. The backend acknowledges a durable job before we tell the user it saved.
 final class ShareViewController: UIViewController {
     private let statusLabel = UILabel()
     private let linkLabel = UILabel()
-    private let consentLabel = UILabel()
+    // The consent wording while asking; otherwise a quieter second line under
+    // the confirmation (a post set aside, stills being added).
+    private let detailLabel = UILabel()
+    private let progress = UIProgressView(progressViewStyle: .default)
     private let saveButton = UIButton(type: .system)
     private let allowButton = UIButton(type: .system)
     private let declineButton = UIButton(type: .system)
     private let closeButton = UIButton(type: .system)
     private let spinner = UIActivityIndicatorView(style: .medium)
-    private var links: [URL] = []
+
+    /// What this share saves: one link, or one video file.
+    private enum Target {
+        case link(URL, choice: SharedLink.Choice)
+        case video(NSItemProvider)
+    }
+    private var target: Target?
+    private var key: String?
+    private var plan: String?
+    /// The shared video, copied out of the host's hands; deleted once uploaded.
+    private var staged: StagedVideo?
+    /// Where the video landed, and its name. A save retried after the consent
+    /// question or a dropped connection sends these again instead of uploading
+    /// twice.
+    private var uploadedPath: String?
+    private var uploadedName = "Shared video"
+
     private var task: Task<Void, Never>?
-    private var session: URLSession?
+    private var followUp: Task<Void, Never>?
+    // One session for the whole share, created with the view: the warm-up
+    // below and the save then ride the same connection.
+    private lazy var transport: URLSession = {
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 25
+        config.timeoutIntervalForResource = 120
+        return URLSession(configuration: config, delegate: NoRedirect(), delegateQueue: nil)
+    }()
+    private let loaded = Date()
     private var started = false
     private var finished = false
     // Asked at most once per share: a save still refused after the agreement was
@@ -30,7 +63,7 @@ final class ShareViewController: UIViewController {
         title.font = .preferredFont(forTextStyle: .title2)
         title.adjustsFontForContentSizeCategory = true
         title.accessibilityTraits = .header
-        for label in [statusLabel, linkLabel, consentLabel] {
+        for label in [statusLabel, linkLabel, detailLabel] {
             label.numberOfLines = 0
             label.font = .preferredFont(forTextStyle: .body)
             label.adjustsFontForContentSizeCategory = true
@@ -38,10 +71,11 @@ final class ShareViewController: UIViewController {
         linkLabel.textColor = .secondaryLabel
         linkLabel.lineBreakMode = .byTruncatingMiddle
         linkLabel.numberOfLines = 2
-        consentLabel.font = .preferredFont(forTextStyle: .subheadline)
-        consentLabel.textColor = .secondaryLabel
-        consentLabel.isHidden = true
-        statusLabel.text = "Reading shared link…"
+        detailLabel.font = .preferredFont(forTextStyle: .subheadline)
+        detailLabel.textColor = .secondaryLabel
+        detailLabel.isHidden = true
+        progress.isHidden = true
+        statusLabel.text = SharedLink.readingMessage
         saveButton.setTitle("Save workout", for: .normal)
         saveButton.titleLabel?.font = .preferredFont(forTextStyle: .headline)
         saveButton.addTarget(self, action: #selector(save), for: .touchUpInside)
@@ -55,7 +89,7 @@ final class ShareViewController: UIViewController {
         declineButton.isHidden = true
         closeButton.setTitle("Cancel", for: .normal)
         closeButton.addTarget(self, action: #selector(close), for: .touchUpInside)
-        let stack = UIStackView(arrangedSubviews: [title, linkLabel, statusLabel, consentLabel, spinner,
+        let stack = UIStackView(arrangedSubviews: [title, linkLabel, statusLabel, progress, detailLabel, spinner,
                                                    saveButton, allowButton, declineButton, closeButton])
         stack.axis = .vertical; stack.spacing = 18
         stack.translatesAutoresizingMaskIntoConstraints = false
@@ -70,67 +104,142 @@ final class ShareViewController: UIViewController {
             declineButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
             closeButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 44)
         ])
+        // Start now, not when the sheet has finished sliding up (audit S6). The
+        // half second of animation is time the items, the Keychain and the
+        // network can all use; the labels are already in the view, so what the
+        // person sees when the sheet lands is simply further along.
+        begin()
     }
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        begin()
+    }
+
+    private func begin() {
         guard !started else { return }; started = true
+        warm()
         task = Task { await readInput() }
+    }
+
+    // DNS, TCP and TLS to the function, while the items are still being read,
+    // on the session the save will use. `HEAD /` is the function's own no-op
+    // (it answers before any auth or database work) and carries nothing of the
+    // user's: no key, no link.
+    private func warm() {
+        var request = URLRequest(url: URL(string: SheetPipeline.functionBase + "/")!)
+        request.httpMethod = "HEAD"
+        request.timeoutInterval = 5
+        transport.dataTask(with: request).resume()
+    }
+
+    private func ms() -> Int { Int(Date().timeIntervalSince(loaded) * 1000) }
+
+    // MARK: Reading the share
+
+    /// The Keychain read, off the main thread and alongside the item loading.
+    private enum Access { case key(String, plan: String?), signedOut, locked }
+    private nonisolated static func readAccess() async -> Access {
+        do {
+            guard let key = try ShareCredential.read() else { return .signedOut }
+            return .key(key, plan: ShareCredential.readPlan())
+        } catch { return .locked }
     }
 
     private func readInput() async {
         spinner.startAnimating()
+        async let access = Self.readAccess()
         let items = extensionContext?.inputItems as? [NSExtensionItem] ?? []
-        var values: [URL] = []
+        let found = await Self.collect(items)
+        guard !Task.isCancelled else { return }
+        log.info("items read at \(self.ms(), privacy: .public) ms")
+
+        if let choice = SharedLink.choose(attached: found.attached, text: found.text) {
+            target = .link(choice.link, choice: choice)
+            linkLabel.text = choice.link.absoluteString
+        } else if found.movies.count == 1, let movie = found.movies.first {
+            // A link always wins over a file in the same share, as it did before
+            // files were accepted: it is free to read, and it is the post.
+            target = .video(movie)
+            linkLabel.text = movie.suggestedName
+        } else {
+            spinner.stopAnimating()
+            stop(found.movies.isEmpty ? SharedLink.noLinkMessage : SharedLink.oneVideoMessage)
+            return
+        }
+
+        switch await access {
+        case .key(let key, let plan):
+            self.key = key; self.plan = plan
+            await submit()
+        case .signedOut:
+            spinner.stopAnimating()
+            guard case .link(let link, _)? = target else { stop(SharedLink.signedOutVideoMessage); return }
+            do {
+                try ParkedShare.park(link)
+                stop(SharedLink.parkedMessage, done: true)
+            } catch {
+                stop(SharedLink.signedOutMessage)
+            }
+        case .locked:
+            spinner.stopAnimating()
+            stop(SharedLink.lockedMessage)
+        }
+    }
+
+    private struct Found {
+        var attached: [URL] = []
+        var text: [URL] = []
+        var movies: [NSItemProvider] = []
+    }
+
+    /// Every link in the share, URL attachments first, then text attachments,
+    /// then the share's own caption; plus any video files. All providers are
+    /// asked at once rather than one after another.
+    private static func collect(_ items: [NSExtensionItem]) async -> Found {
+        var found = Found()
+        var loads: [(isURL: Bool, provider: NSItemProvider, task: Task<NSSecureCoding?, Never>)] = []
+        var captions: [String] = []
         for item in items.prefix(10) {
             for provider in (item.attachments ?? []).prefix(10) {
                 guard let type = [UTType.url.identifier, UTType.plainText.identifier, UTType.text.identifier]
-                    .first(where: { provider.hasItemConformingToTypeIdentifier($0) }) else { continue }
-                let value: NSSecureCoding? = await withCheckedContinuation { continuation in
-                    provider.loadItem(forTypeIdentifier: type, options: nil) { value, _ in
-                        continuation.resume(returning: value)
+                    .first(where: { provider.hasItemConformingToTypeIdentifier($0) }) else {
+                    if provider.hasItemConformingToTypeIdentifier(UTType.movie.identifier) { found.movies.append(provider) }
+                    continue
+                }
+                let task = Task { () -> NSSecureCoding? in
+                    await withCheckedContinuation { continuation in
+                        provider.loadItem(forTypeIdentifier: type, options: nil) { value, _ in
+                            continuation.resume(returning: value)
+                        }
                     }
                 }
-                guard !Task.isCancelled else { return }
-                if let url = value as? URL { values += SharedLink.urls(in: url.absoluteString) }
-                else if let text = value as? String { values += SharedLink.urls(in: text) }
-                else if let text = value as? NSAttributedString { values += SharedLink.urls(in: text.string) }
-                else if let data = value as? Data, data.count <= 64_000,
-                        let text = String(data: data, encoding: .utf8) { values += SharedLink.urls(in: text) }
+                loads.append((type == UTType.url.identifier, provider, task))
             }
-            if let text = item.attributedContentText?.string { values += SharedLink.urls(in: text) }
+            if let text = item.attributedContentText?.string { captions.append(text) }
         }
-        var seen = Set<String>()
-        links = values.filter { seen.insert($0.absoluteString).inserted }
-        spinner.stopAnimating()
-        guard !links.isEmpty else {
-            statusLabel.text = "No video link was shared. In the social app, share the post’s link to Spotter. Photos and video files aren’t supported here yet."
-            return
+        for load in loads {
+            let value = await load.task.value
+            var urls: [URL] = []
+            if let url = value as? URL { urls = SharedLink.urls(in: url.absoluteString) }
+            else if let text = value as? String { urls = SharedLink.urls(in: text) }
+            else if let text = value as? NSAttributedString { urls = SharedLink.urls(in: text.string) }
+            else if let data = value as? Data, data.count <= 64_000,
+                    let text = String(data: data, encoding: .utf8) { urls = SharedLink.urls(in: text) }
+            if load.isURL { found.attached += urls } else { found.text += urls }
+            // A file URL is not a link. When that file is the video itself
+            // (some hosts offer both representations), it is the video.
+            if urls.isEmpty, load.provider.hasItemConformingToTypeIdentifier(UTType.movie.identifier) {
+                found.movies.append(load.provider)
+            }
         }
-        linkLabel.text = links.map(\.absoluteString).joined(separator: "\n")
-        guard links.count == 1 else {
-            statusLabel.text = "Please share one post at a time so Spotter saves the workout you intended."
-            return
-        }
-        // Selecting Spotter is the save action; no second confirmation required.
-        await submit()
+        for caption in captions { found.text += SharedLink.urls(in: caption) }
+        return found
     }
+
+    // MARK: Saving
 
     @objc private func save() { task = Task { await submit() } }
-
-    // The save key, or the sentence that says why there is none.
-    private func credential() -> String? {
-        do {
-            guard let stored = try ShareCredential.read() else {
-                statusLabel.text = "Open Spotter and sign in once, then share this post again."
-                return nil
-            }
-            return stored
-        } catch {
-            statusLabel.text = "Unlock your phone and open Spotter once, then try sharing again."
-            return nil
-        }
-    }
 
     private func request(_ route: String, key: String, body: [String: Any]) -> URLRequest {
         var request = URLRequest(url: URL(string: SheetPipeline.functionBase + route)!)
@@ -141,65 +250,207 @@ final class ShareViewController: UIViewController {
         return request
     }
 
-    private func makeTransport() -> URLSession {
-        let config = URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForRequest = 25
-        config.timeoutIntervalForResource = 30
-        return URLSession(configuration: config, delegate: NoRedirect(), delegateQueue: nil)
+    private func post(_ route: String, key: String, body: [String: Any]) async throws -> (Int, [String: Any]) {
+        let (data, response) = try await transport.data(for: request(route, key: key, body: body))
+        let http = (response as? HTTPURLResponse)?.statusCode ?? 0
+        return (http, (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:])
     }
 
     private func submit() async {
-        guard let link = links.first, !finished else { return }
+        guard let target = target, let key = key, !finished else { return }
         saveButton.isHidden = true
-        guard let key = credential() else { return }
         spinner.startAnimating()
-
-        // The frames, before the save that carries them.
-        //
-        // This is the one thing the phone can do that the server cannot: cut
-        // stills out of the video and send them with the link, so the reader
-        // looks at the workout instead of only listening to it. It is strictly
-        // best effort and strictly budgeted — eight seconds, after which the save
-        // goes out exactly as it did before and the server falls back to reading
-        // the video itself. The wording changes because the wait changed: a
-        // person watching a share sheet for four seconds deserves to know the
-        // phone is doing something for them, not stalling.
-        var payload: [String: Any] = ["url": link.absoluteString]
-        if TikTokMedia.isTikTok(link) {
-            statusLabel.text = "Reading the video…"
-            let deadline = Date().addingTimeInterval(SheetSpec.budgetMs / 1000)
-            if let sheet = await SheetPipeline.run(pageURL: link, html: nil,
-                                                   auth: .ingestKey(key), deadline: deadline) {
-                payload["frames"] = sheet.frames
-            }
-            guard !Task.isCancelled else { spinner.stopAnimating(); return }
+        switch target {
+        case .link(let link, let choice): await saveLink(link, choice: choice, key: key)
+        case .video(let provider): await saveVideo(provider, key: key)
         }
+    }
 
+    /// Save first, frames after (audit S5).
+    ///
+    /// The one POST goes out before anything else, so "Saved" is the first thing
+    /// the person sees and a swipe-down a second later cannot lose the link.
+    /// For a Plus account sharing a TikTok video, the POST also says
+    /// `frames_pending`: the server holds that one job up to twenty seconds for
+    /// the stills this extension is about to cut, and reads the video itself if
+    /// they never come — which is exactly what happens when the sheet is closed.
+    private func saveLink(_ link: URL, choice: SharedLink.Choice, key: String) async {
+        let framesPending = ShareCredential.plusPlan(plan) && TikTokMedia.isTikTok(link) && !TikTokMedia.isPhoto(link)
+        var payload: [String: Any] = ["url": link.absoluteString]
+        if framesPending { payload["frames_pending"] = true }
         statusLabel.text = "Saving to your library…"
-        let transport = makeTransport()
-        session = transport
-        defer { spinner.stopAnimating(); transport.invalidateAndCancel(); session = nil }
         do {
-            let (data, response) = try await transport.data(for: request("/api/ingest", key: key, body: payload))
+            log.info("save sent at \(self.ms(), privacy: .public) ms")
+            let (http, body) = try await post("/api/ingest", key: key, body: payload)
             guard !Task.isCancelled else { return }
-            let http = (response as? HTTPURLResponse)?.statusCode ?? 0
-            let body = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
-            if let message = SharedLink.savedMessage(status: http, body: body) {
-                statusLabel.text = message; finished = true
-                closeButton.setTitle("Done", for: .normal)
-                UINotificationFeedbackGenerator().notificationOccurred(.success)
-                UIAccessibility.post(notification: .announcement, argument: message)
-            } else if SharedLink.needsConsent(status: http, body: body), !consentAsked {
-                askConsent()
+            log.info("save answered \(http, privacy: .public) at \(self.ms(), privacy: .public) ms")
+            guard answered(http, body) else { return }
+            detail(SharedLink.setAsideNote(choice))
+            if framesPending, SharedLink.wantsFrames(status: http, body: body), let id = body["id"] as? String {
+                sendFrames(for: link, workout: id, key: key, choice: choice)
             } else {
-                statusLabel.text = SharedLink.failureMessage(status: http, body: body)
-                saveButton.setTitle("Try again", for: .normal); saveButton.isHidden = false
+                spinner.stopAnimating()
             }
         } catch {
             guard !Task.isCancelled else { return }
-            statusLabel.text = "Couldn’t confirm the save. Check your connection and try again; the same link won’t be added twice."
-            saveButton.setTitle("Try again", for: .normal); saveButton.isHidden = false
+            spinner.stopAnimating()
+            retry(SharedLink.networkMessage)
         }
+    }
+
+    /// The server's answer to a save, on screen. True when it saved.
+    private func answered(_ http: Int, _ body: [String: Any]) -> Bool {
+        if let message = SharedLink.savedMessage(status: http, body: body) {
+            statusLabel.text = message; finished = true
+            closeButton.setTitle("Done", for: .normal)
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            UIAccessibility.post(notification: .announcement, argument: message)
+            return true
+        }
+        spinner.stopAnimating()
+        if SharedLink.needsConsent(status: http, body: body), !consentAsked {
+            askConsent()
+            return false
+        }
+        let failure = SharedLink.failure(status: http, body: body)
+        if failure.retry { retry(failure.message) } else { stop(failure.message) }
+        return false
+    }
+
+    // The stills, after the confirmation. Nothing here can undo the save: a
+    // failure at any step leaves the held job to time out and read the video on
+    // the server, as it did before the phone cut frames at all.
+    private func sendFrames(for link: URL, workout id: String, key: String, choice: SharedLink.Choice) {
+        detail([SharedLink.setAsideNote(choice), SharedLink.framesNote].compactMap { $0 }.joined(separator: "\n\n"))
+        followUp = Task {
+            let deadline = Date().addingTimeInterval(SheetSpec.budgetMs / 1000)
+            var sent = false
+            if let sheet = await SheetPipeline.run(pageURL: link, html: nil, auth: .ingestKey(key),
+                                                   deadline: deadline, precheck: false), !Task.isCancelled {
+                log.info("frames cut in \(sheet.milliseconds, privacy: .public) ms")
+                if let (http, _) = try? await post("/api/workouts/\(id)/media", key: key, body: ["frames": sheet.frames]) {
+                    sent = (200..<300).contains(http)
+                    log.info("frames answered \(http, privacy: .public) at \(self.ms(), privacy: .public) ms")
+                }
+            }
+            guard !Task.isCancelled else { return }
+            spinner.stopAnimating()
+            detail([SharedLink.setAsideNote(choice), sent ? SharedLink.framesSentNote : nil].compactMap { $0 }.joined(separator: "\n\n"))
+        }
+    }
+
+    // MARK: A shared video file (the second door for Instagram)
+    //
+    // Instagram lets people download a public reel (Share → Download), and a
+    // reel whose caption says nothing about the workout is only readable from
+    // its video. So a single video file shared from Photos — or from anywhere —
+    // is uploaded the way the app uploads one: the file goes straight from
+    // disk to a signed storage address (never into this process's memory,
+    // which an extension has little of), then one save names it.
+
+    private func saveVideo(_ provider: NSItemProvider, key: String) async {
+        if uploadedPath == nil {
+            if staged == nil {
+                statusLabel.text = "Preparing the video…"
+                switch await StagedVideo.stage(provider) {
+                case .success(let file): staged = file
+                case .failure(let problem):
+                    spinner.stopAnimating()
+                    stop(SharedLink.videoProblem(problem))
+                    return
+                }
+            }
+            guard let file = staged, await upload(file, key: key) else { return }
+        }
+        guard let path = uploadedPath else { return }
+        statusLabel.text = "Saving to your library…"
+        do {
+            let (http, body) = try await post("/api/ingest", key: key,
+                                              body: ["upload_path": path, "filename": uploadedName])
+            guard !Task.isCancelled else { return }
+            if answered(http, body) { spinner.stopAnimating() }
+        } catch {
+            guard !Task.isCancelled else { return }
+            spinner.stopAnimating()
+            retry(SharedLink.networkMessage)
+        }
+    }
+
+    /// Permission, then the bytes. True when the file is in storage.
+    private func upload(_ file: StagedVideo, key: String) async -> Bool {
+        statusLabel.text = "Uploading the video…"
+        let slot: (path: String, url: URL)
+        do {
+            let (http, body) = try await post("/api/uploads/authorize", key: key,
+                                              body: ["kind": "video", "bytes": file.bytes, "ext": file.ext])
+            guard !Task.isCancelled else { return false }
+            if let path = body["path"] as? String, !path.isEmpty,
+               let address = body["upload_url"] as? String, !address.isEmpty, (200..<300).contains(http) {
+                var full = address
+                if let token = body["token"] as? String, !token.isEmpty, !address.contains("token=") {
+                    full += (address.contains("?") ? "&" : "?") + "token=" + token
+                }
+                guard let url = URL(string: full) else { spinner.stopAnimating(); stop(SharedLink.videoNotHereYet); return false }
+                slot = (path, url)
+            } else if http == 400 || (200..<300).contains(http) {
+                // A server that does not yet hand this extension an upload address
+                // (see the contract) answers the old way. The app can still take it.
+                spinner.stopAnimating(); stop(SharedLink.videoNotHereYet); return false
+            } else {
+                _ = answered(http, body)
+                return false
+            }
+        } catch {
+            guard !Task.isCancelled else { return false }
+            spinner.stopAnimating(); retry(SharedLink.networkMessage); return false
+        }
+
+        progress.progress = 0; progress.isHidden = false
+        var put = URLRequest(url: slot.url)
+        put.httpMethod = "PUT"
+        put.setValue(file.contentType, forHTTPHeaderField: "Content-Type")
+        let meter = UploadMeter { [weak self] fraction in
+            DispatchQueue.main.async {
+                self?.progress.setProgress(Float(fraction), animated: true)
+                self?.statusLabel.text = "Uploading the video… \(Int(fraction * 100))%"
+            }
+        }
+        do {
+            let (_, response) = try await transport.upload(for: put, fromFile: file.url, delegate: meter)
+            guard !Task.isCancelled else { return false }
+            progress.isHidden = true
+            guard let code = (response as? HTTPURLResponse)?.statusCode, (200..<300).contains(code) else {
+                spinner.stopAnimating(); retry(SharedLink.uploadFailedMessage); return false
+            }
+        } catch {
+            guard !Task.isCancelled else { return false }
+            progress.isHidden = true
+            spinner.stopAnimating(); retry(SharedLink.uploadFailedMessage); return false
+        }
+        uploadedPath = slot.path; uploadedName = file.name
+        file.discard(); staged = nil
+        return true
+    }
+
+    // MARK: Screen states
+
+    /// A sentence with nothing left to do here but close.
+    private func stop(_ message: String, done: Bool = false) {
+        statusLabel.text = message
+        closeButton.setTitle(done ? "Done" : "Close", for: .normal)
+        UIAccessibility.post(notification: .announcement, argument: message)
+    }
+
+    /// A sentence and a way to try again.
+    private func retry(_ message: String) {
+        statusLabel.text = message
+        saveButton.setTitle("Try again", for: .normal); saveButton.isHidden = false
+        UIAccessibility.post(notification: .announcement, argument: message)
+    }
+
+    private func detail(_ text: String?) {
+        detailLabel.text = text
+        detailLabel.isHidden = (text ?? "").isEmpty
     }
 
     // MARK: AI permission
@@ -217,8 +468,8 @@ final class ShareViewController: UIViewController {
         preferredContentSize = CGSize(width: 390, height: 560)
         statusLabel.text = SharedLink.consentTitle
         statusLabel.font = .preferredFont(forTextStyle: .headline)
-        consentLabel.text = SharedLink.consentText
-        consentLabel.isHidden = false
+        detailLabel.text = SharedLink.consentText
+        detailLabel.isHidden = false
         allowButton.isHidden = false; allowButton.isEnabled = true
         declineButton.isHidden = false; declineButton.isEnabled = true
         closeButton.isHidden = true
@@ -227,7 +478,7 @@ final class ShareViewController: UIViewController {
 
     private func endConsent() {
         statusLabel.font = .preferredFont(forTextStyle: .body)
-        consentLabel.isHidden = true
+        detail(nil)
         allowButton.isHidden = true
         declineButton.isHidden = true
         closeButton.isHidden = false
@@ -242,18 +493,13 @@ final class ShareViewController: UIViewController {
     }
 
     private func recordConsent() async {
-        guard let key = credential() else { endConsent(); return }
+        guard let key = key else { endConsent(); return }
         allowButton.isEnabled = false; declineButton.isEnabled = false
         spinner.startAnimating()
-        let transport = makeTransport()
-        session = transport
-        defer { transport.invalidateAndCancel(); session = nil }
         let body: [String: Any] = ["enabled": true, "version": SharedLink.consentVersion]
         do {
-            let (data, response) = try await transport.data(for: request("/api/ai-consent", key: key, body: body))
+            let (http, reply) = try await post("/api/ai-consent", key: key, body: body)
             guard !Task.isCancelled else { spinner.stopAnimating(); return }
-            let http = (response as? HTTPURLResponse)?.statusCode ?? 0
-            let reply = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
             spinner.stopAnimating()
             guard (200..<300).contains(http), reply["status"] as? String == "ok" else {
                 statusLabel.text = SharedLink.consentFailureMessage(status: http, body: reply)
@@ -271,9 +517,76 @@ final class ShareViewController: UIViewController {
     }
 
     @objc private func close() {
-        task?.cancel(); session?.invalidateAndCancel()
+        task?.cancel(); followUp?.cancel(); transport.invalidateAndCancel()
+        staged?.discard(); staged = nil
         extensionContext?.completeRequest(returningItems: nil)
     }
+}
+
+// MARK: - The shared video on disk
+
+/// A copy of the shared video in this process's temporary directory. The
+/// host's own file is only valid inside the callback that hands it over, so it
+/// is cloned out there (APFS makes that a metadata copy, not a read).
+private struct StagedVideo {
+    let url: URL
+    let ext: String
+    let bytes: Int
+    let name: String
+
+    var contentType: String { SharedLink.videoTypes[ext] ?? "video/mp4" }
+
+    func discard() { try? FileManager.default.removeItem(at: url) }
+
+    static func stage(_ provider: NSItemProvider) async -> Result<StagedVideo, SharedLink.VideoProblem> {
+        let declared = provider.registeredTypeIdentifiers.compactMap { UTType($0) }
+        let fallbackExt: String? = declared.contains { $0.conforms(to: .quickTimeMovie) } ? "mov"
+            : declared.contains { $0.conforms(to: .mpeg4Movie) } ? "mp4"
+            : declared.contains { $0.identifier == "com.apple.m4v-video" } ? "m4v" : nil
+        let suggested = provider.suggestedName
+        return await withCheckedContinuation { continuation in
+            _ = provider.loadFileRepresentation(forTypeIdentifier: UTType.movie.identifier) { source, _ in
+                guard let source = source else { continuation.resume(returning: .failure(.unreadable)); return }
+                var ext = source.pathExtension.lowercased()
+                if SharedLink.videoTypes[ext] == nil, let fallback = fallbackExt { ext = fallback }
+                guard SharedLink.videoTypes[ext] != nil else {
+                    continuation.resume(returning: .failure(.unsupported(ext))); return
+                }
+                let bytes = (try? source.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+                guard bytes > 0 else { continuation.resume(returning: .failure(.unreadable)); return }
+                guard bytes <= SharedLink.videoMaxBytes else {
+                    continuation.resume(returning: .failure(.tooBig(bytes))); return
+                }
+                let copy = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("spotter-share-\(UUID().uuidString).\(ext)")
+                do {
+                    try FileManager.default.copyItem(at: source, to: copy)
+                } catch {
+                    continuation.resume(returning: .failure(.unreadable)); return
+                }
+                let base = (suggested ?? source.deletingPathExtension().lastPathComponent)
+                let name = String((base.isEmpty ? "Shared video" : base).prefix(150)) + "." + ext
+                continuation.resume(returning: .success(StagedVideo(url: copy, ext: ext, bytes: bytes, name: name)))
+            }
+        }
+    }
+}
+
+/// Upload progress for one task, handed to the screen.
+private final class UploadMeter: NSObject, URLSessionTaskDelegate {
+    private let report: (Double) -> Void
+    init(_ report: @escaping (Double) -> Void) { self.report = report }
+    func urlSession(_ session: URLSession, task: URLSessionTask, didSendBodyData bytesSent: Int64,
+                    totalBytesSent: Int64, totalBytesExpectedToSend: Int64) {
+        guard totalBytesExpectedToSend > 0 else { return }
+        report(min(1, Double(totalBytesSent) / Double(totalBytesExpectedToSend)))
+    }
+    // The signed address is the whole authority and carries no header worth
+    // guarding, but a storage upload has no business following a redirect.
+    func urlSession(_ session: URLSession, task: URLSessionTask,
+                    willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest,
+                    completionHandler: @escaping (URLRequest?) -> Void) { completionHandler(nil) }
 }
 
 // Never forward the save credential to a redirect destination.
