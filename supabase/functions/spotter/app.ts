@@ -9795,6 +9795,7 @@ export const APP = String.raw`
 
   function wireWmain(main) {
     var md = null;
+    var loose = { held: function () { return md; }, release: function () { stop(null, true, true); } };
 
     // A damped half of the travel, a capped fifth at the first exercise and the
     // last — the whole of saying there is nothing that way.
@@ -9806,13 +9807,13 @@ export const APP = String.raw`
       main.style.opacity = String(1 - Math.abs(lead) / 320);
     }
 
-    function stop(e, cancelled) {
+    function stop(e, cancelled, lost) {
       if (!md || (e && e.pointerId !== md.id)) return;
       var d = md;
       md = null;
       if (!d.lock) return;
       try { main.releasePointerCapture(d.id); } catch (err) { /* already gone */ }
-      swallowClick();
+      if (!lost) swallowClick();
       var s = d.s, a = s[0], b = s[s.length - 1], dt = (b.t - a.t) / 1000;
       var v = dt > 0.004 ? (b.x - a.x) / dt : 0;
       var far = Math.abs(d.dx) > main.offsetWidth * 0.4;
@@ -9841,12 +9842,14 @@ export const APP = String.raw`
       if (document.querySelector(".sheet.open") || noDragIn(e.target)) return;
       // Safari's back gesture owns the very edge inside a browser tab.
       if (!standalone() && e.clientX < 24) return;
-      md = { id: e.pointerId, x: e.clientX, y: e.clientY, dx: 0, lock: false,
+      md = { id: e.pointerId, x: e.clientX, y: e.clientY, dx: 0, lock: false, seen: now(),
         calm: lessMotion(), s: [{ t: now(), x: e.clientX }] };
+      holdDrag(loose);
     });
 
     main.addEventListener("pointermove", function (e) {
       if (!md || e.pointerId !== md.id) return;
+      md.seen = now();
       var dx = e.clientX - md.x, dy = e.clientY - md.y;
       if (!md.lock) {
         if (dx * dx + dy * dy < SLOP * SLOP) return;
@@ -11899,6 +11902,7 @@ export const APP = String.raw`
 
   function wireWeekBar(node, ctx) {
     var wd = null;
+    var loose = { held: function () { return wd; }, release: function () { stop(null, true, true); } };
 
     function rest(keepBody) {
       ctx.bar.classList.remove("wbdrag");
@@ -11910,15 +11914,15 @@ export const APP = String.raw`
       ctx.lean.style.opacity = "";
     }
 
-    function stop(e, cancelled) {
+    function stop(e, cancelled, lost) {
       if (!wd || (e && e.pointerId !== wd.id)) return;
       var d = wd;
       wd = null;
       if (!d.lock) return;
       try { node.releasePointerCapture(d.id); } catch (err) { /* already gone */ }
       // One click follows the finger up, and it belongs to whichever arrow or day
-      // the drag started on.
-      swallowClick();
+      // the drag started on. Not after a lost lift: the next tap is its own.
+      if (!lost) swallowClick();
       var s = d.s, a = s[0], b = s[s.length - 1], dt = (b.t - a.t) / 1000;
       var v = dt > 0.004 ? (b.x - a.x) / dt : 0;
       var far = Math.abs(d.dx) > node.offsetWidth * PART;
@@ -11946,12 +11950,14 @@ export const APP = String.raw`
       if (wd || !e.isPrimary || overlayShowing()) return;
       // Safari's back gesture owns the very edge inside a browser tab.
       if (!standalone() && e.clientX < 24) return;
-      wd = { id: e.pointerId, x: e.clientX, y: e.clientY, dx: 0, lock: false,
+      wd = { id: e.pointerId, x: e.clientX, y: e.clientY, dx: 0, lock: false, seen: now(),
         calm: lessMotion(), s: [{ t: now(), x: e.clientX }] };
+      holdDrag(loose);
     });
 
     node.addEventListener("pointermove", function (e) {
       if (!wd || e.pointerId !== wd.id) return;
+      wd.seen = now();
       var dx = e.clientX - wd.x, dy = e.clientY - wd.y;
       if (!wd.lock) {
         if (dx * dx + dy * dy < SLOP * SLOP) return;
@@ -16345,14 +16351,15 @@ export const APP = String.raw`
     var sheet = $(id), body = sheet.querySelector(".sheetbody"), sd = null;
     sheet.addEventListener("click", function (e) { if (e.target === sheet) closeSheet(id); });
     if (!body) return;
+    var loose = { held: function () { return sd; }, release: function () { stop(null, true, true); } };
 
-    function stop(e, cancelled) {
+    function stop(e, cancelled, lost) {
       if (!sd || (e && e.pointerId !== sd.id)) return;
       var d = sd;
       sd = null;
       if (!d.lock) return;
       try { body.releasePointerCapture(d.id); } catch (err) { /* already gone */ }
-      swallowClick();
+      if (!lost) swallowClick();
       var s = d.s, a = s[0], b = s[s.length - 1], dt = (b.t - a.t) / 1000;
       var v = dt > 0.004 ? (b.y - a.y) / dt : 0;
       // closeSheet drops the inline transform in the same style change that
@@ -16376,11 +16383,13 @@ export const APP = String.raw`
       if (body.scrollTop > 0 && e.clientY - body.getBoundingClientRect().top > 44) return;
       var ctl = e.target.closest && e.target.closest("button, a, label, [role=button]");
       sd = { id: e.pointerId, x: e.clientX, y: e.clientY, lock: false, dy: 0, s: [],
-        slop: ctl ? SH_TAP : SLOP };
+        slop: ctl ? SH_TAP : SLOP, seen: now() };
+      holdDrag(loose);
     });
 
     body.addEventListener("pointermove", function (e) {
       if (!sd || e.pointerId !== sd.id) return;
+      sd.seen = now();
       var dy = e.clientY - sd.y, dx = e.clientX - sd.x;
       if (!sd.lock) {
         if (Math.abs(dx) > sd.slop && Math.abs(dx) > Math.abs(dy)) { sd = null; return; }
@@ -18718,6 +18727,61 @@ export const APP = String.raw`
   window.addEventListener("pageshow", dropStaleDrag);
   window.addEventListener("blur", dropStaleDrag);
   window.addEventListener("spotter:native-state", dropStaleDrag);
+
+  // ---------- the other drags that hold a touch ----------
+  //
+  // The week bar, a sheet pushed down and Workout Mode's swipe hold a touch the
+  // way the pager does, and each refused every new touch while one was held, so
+  // a lift that never arrived froze that gesture until the app was killed: the
+  // pager's old fault. They take the pager's releases from here. While one holds
+  // a drag it is listed, and anything that says its finger has gone lets it go
+  // as a cancel would: a new first finger anywhere, the page hidden or shown,
+  // the window losing focus, the shell going inactive, a touchcancel, or two
+  // seconds without a word from the pointer before the drag has chosen its
+  // axis. After that a still finger is holding it on purpose, as on the pager,
+  // and the clock leaves it alone. g is the gesture: g.held() is its drag or
+  // null, and g.release() lets go without swallowing the next click, because
+  // the tap that proves the finger lifted is a tap somebody meant.
+  var looseDrags = [];
+
+  function holdDrag(g) {
+    if (looseDrags.indexOf(g) < 0) looseDrags.push(g);
+    watchLoose(g);
+  }
+
+  function watchLoose(g) {
+    clearTimeout(g.dog);
+    var d = g.held();
+    if (!d) {
+      var i = looseDrags.indexOf(g);
+      if (i >= 0) looseDrags.splice(i, 1);
+      return;
+    }
+    if (d.lock) return;
+    g.dog = setTimeout(function () {
+      var h = g.held();
+      if (h && !h.lock && now() - h.seen >= STALE) g.release();
+      watchLoose(g);
+    }, Math.max(16, STALE - (now() - d.seen)));
+  }
+
+  function dropLoose() {
+    looseDrags.slice().forEach(function (g) {
+      if (g.held()) g.release();
+      watchLoose(g);
+    });
+  }
+
+  // Capture, so the stale drag is gone before the new finger's own pointerdown
+  // asks whether one is held.
+  window.addEventListener("pointerdown", function (e) {
+    if (e.isPrimary && (e.pointerType === "touch" || e.pointerType === "pen")) dropLoose();
+  }, true);
+  window.addEventListener("touchcancel", dropLoose, true);
+  document.addEventListener("visibilitychange", dropLoose);
+  window.addEventListener("pageshow", dropLoose);
+  window.addEventListener("blur", dropLoose);
+  window.addEventListener("spotter:native-state", dropLoose);
 
   // ---------- the tab bar ----------
   //

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-I8HU0zI/oF2AXB859/d8yNp4YoERRCjylxdvLCEIHDM=' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/ https://challenges.cloudflare.com https://accounts.google.com/gsi/client https://appleid.cdn-apple.com/appleauth/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://api.fontshare.com https://accounts.google.com/gsi/style; font-src 'self' data: https://fonts.gstatic.com https://cdn.fontshare.com; img-src 'self' data: blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://i.ytimg.com https://simeonrinkenberger.github.io; media-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://simeonrinkenberger.github.io; connect-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co wss://mtzevoxxpsktmrbbuxva.supabase.co https://accounts.google.com/gsi/; frame-src https://www.tiktok.com https://www.instagram.com https://www.youtube.com https://www.youtube-nocookie.com https://challenges.cloudflare.com https://accounts.google.com/gsi/ https://appleid.apple.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-EtqA7Zp0XjATZfKqdxw6ScujxU+iJ2E5tfijRsKsEdc=' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/ https://challenges.cloudflare.com https://accounts.google.com/gsi/client https://appleid.cdn-apple.com/appleauth/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://api.fontshare.com https://accounts.google.com/gsi/style; font-src 'self' data: https://fonts.gstatic.com https://cdn.fontshare.com; img-src 'self' data: blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://i.ytimg.com https://simeonrinkenberger.github.io; media-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://simeonrinkenberger.github.io; connect-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co wss://mtzevoxxpsktmrbbuxva.supabase.co https://accounts.google.com/gsi/; frame-src https://www.tiktok.com https://www.instagram.com https://www.youtube.com https://www.youtube-nocookie.com https://challenges.cloudflare.com https://accounts.google.com/gsi/ https://appleid.apple.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="google-site-verification" content="unLzcq6TBz9Bm6q4KHpbTmZ88dQ_tTnViacVX5BLzS0">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <title>Spotter by Quarterdeck Collective — save any workout video</title>
@@ -15018,14 +15018,18 @@ details.details-moving > :not(summary) {
   }
   var WM_LEAD = 72, WM_BAND = 26, woSlide = 0;
   function wireWmain(main) {
-    var md = null;
+    var md = null, loose = { held: function() {
+      return md;
+    }, release: function() {
+      stop(null, !0, !0);
+    } };
     function paint2(dx) {
       if (!md.calm) {
         var end = dx < 0 ? wo.i >= endStop() : stopOf(wo.i) <= 0, lead = end ? clamp(dx / 5, -WM_BAND, WM_BAND) : clamp(dx / 2, -WM_LEAD, WM_LEAD);
         main.style.transform = "translateX(" + lead + "px)", main.style.opacity = String(1 - Math.abs(lead) / 320);
       }
     }
-    function stop(e, cancelled) {
+    function stop(e, cancelled, lost) {
       if (!(!md || e && e.pointerId !== md.id)) {
         var d = md;
         if (md = null, !!d.lock) {
@@ -15033,7 +15037,7 @@ details.details-moving > :not(summary) {
             main.releasePointerCapture(d.id);
           } catch (err) {
           }
-          swallowClick();
+          lost || swallowClick();
           var s = d.s, a = s[0], b = s[s.length - 1], dt = (b.t - a.t) / 1e3, v = dt > 4e-3 ? (b.x - a.x) / dt : 0, far = Math.abs(d.dx) > main.offsetWidth * 0.4, n = cancelled || !wo ? 0 : v < -FLING || far && d.dx < 0 ? 1 : v > FLING || far && d.dx > 0 ? -1 : 0;
           n > 0 && wo.i >= endStop() && (n = 0), n < 0 && stopOf(wo.i) <= 0 && (n = 0), main.classList.add("wmease"), main.style.transform = "", main.style.opacity = "", n && (woSlide = n, woGo(n), haptic("tap"));
         }
@@ -15046,11 +15050,13 @@ details.details-moving > :not(summary) {
         y: e.clientY,
         dx: 0,
         lock: !1,
+        seen: now(),
         calm: lessMotion(),
         s: [{ t: now(), x: e.clientX }]
-      });
+      }, holdDrag(loose));
     }), main.addEventListener("pointermove", function(e) {
       if (!(!md || e.pointerId !== md.id)) {
+        md.seen = now();
         var dx = e.clientX - md.x, dy = e.clientY - md.y;
         if (!md.lock) {
           if (dx * dx + dy * dy < SLOP * SLOP) return;
@@ -16198,11 +16204,15 @@ details.details-moving > :not(summary) {
   }
   var WB_LEAD = 64, planSlide = 0;
   function wireWeekBar(node, ctx) {
-    var wd = null;
+    var wd = null, loose = { held: function() {
+      return wd;
+    }, release: function() {
+      stop(null, !0, !0);
+    } };
     function rest(keepBody) {
       ctx.bar.classList.remove("wbdrag"), ctx.title.style.transform = "", !keepBody && (ctx.lean.classList.add("pbmove"), ctx.lean.style.transform = "", ctx.lean.style.opacity = "");
     }
-    function stop(e, cancelled) {
+    function stop(e, cancelled, lost) {
       if (!(!wd || e && e.pointerId !== wd.id)) {
         var d = wd;
         if (wd = null, !!d.lock) {
@@ -16210,7 +16220,7 @@ details.details-moving > :not(summary) {
             node.releasePointerCapture(d.id);
           } catch (err) {
           }
-          swallowClick();
+          lost || swallowClick();
           var s = d.s, a = s[0], b = s[s.length - 1], dt = (b.t - a.t) / 1e3, v = dt > 4e-3 ? (b.x - a.x) / dt : 0, far = Math.abs(d.dx) > node.offsetWidth * PART, n = cancelled ? 0 : v < -FLING || far && d.dx < 0 ? 1 : v > FLING || far && d.dx > 0 ? -1 : 0;
           rest(!!n), n && (planSlide = n, d.calm || (ctx.lean.classList.add("pbmove"), ctx.lean.style.transform = "translateX(" + (n > 0 ? -WB_LEAD : WB_LEAD) + "px)", ctx.lean.style.opacity = "0"), ctx.step(n), paintTrainBar(), haptic("tap"));
         }
@@ -16223,11 +16233,13 @@ details.details-moving > :not(summary) {
         y: e.clientY,
         dx: 0,
         lock: !1,
+        seen: now(),
         calm: lessMotion(),
         s: [{ t: now(), x: e.clientX }]
-      });
+      }, holdDrag(loose));
     }), node.addEventListener("pointermove", function(e) {
       if (!(!wd || e.pointerId !== wd.id)) {
+        wd.seen = now();
         var dx = e.clientX - wd.x, dy = e.clientY - wd.y;
         if (!wd.lock) {
           if (dx * dx + dy * dy < SLOP * SLOP) return;
@@ -19006,7 +19018,12 @@ details.details-moving > :not(summary) {
     if (sheet.addEventListener("click", function(e) {
       e.target === sheet && closeSheet(id);
     }), !body) return;
-    function stop(e, cancelled) {
+    var loose = { held: function() {
+      return sd;
+    }, release: function() {
+      stop(null, !0, !0);
+    } };
+    function stop(e, cancelled, lost) {
       if (!(!sd || e && e.pointerId !== sd.id)) {
         var d = sd;
         if (sd = null, !!d.lock) {
@@ -19014,7 +19031,7 @@ details.details-moving > :not(summary) {
             body.releasePointerCapture(d.id);
           } catch (err) {
           }
-          swallowClick();
+          lost || swallowClick();
           var s = d.s, a = s[0], b = s[s.length - 1], dt = (b.t - a.t) / 1e3, v = dt > 4e-3 ? (b.y - a.y) / dt : 0;
           if (!cancelled && (v > SH_FLING || d.dy > body.offsetHeight * SH_PART)) {
             closeSheet(id);
@@ -19034,11 +19051,13 @@ details.details-moving > :not(summary) {
           lock: !1,
           dy: 0,
           s: [],
-          slop: ctl ? SH_TAP : SLOP
-        };
+          slop: ctl ? SH_TAP : SLOP,
+          seen: now()
+        }, holdDrag(loose);
       }
     }), body.addEventListener("pointermove", function(e) {
       if (!(!sd || e.pointerId !== sd.id)) {
+        sd.seen = now();
         var dy = e.clientY - sd.y, dx = e.clientX - sd.x;
         if (!sd.lock) {
           if (Math.abs(dx) > sd.slop && Math.abs(dx) > Math.abs(dy)) {
@@ -20404,6 +20423,31 @@ details.details-moving > :not(summary) {
   }), window.addEventListener("touchcancel", function() {
     drag && endDrag(null, !0);
   }, !0), document.addEventListener("visibilitychange", dropStaleDrag), window.addEventListener("pageshow", dropStaleDrag), window.addEventListener("blur", dropStaleDrag), window.addEventListener("spotter:native-state", dropStaleDrag);
+  var looseDrags = [];
+  function holdDrag(g) {
+    looseDrags.indexOf(g) < 0 && looseDrags.push(g), watchLoose(g);
+  }
+  function watchLoose(g) {
+    clearTimeout(g.dog);
+    var d = g.held();
+    if (!d) {
+      var i = looseDrags.indexOf(g);
+      i >= 0 && looseDrags.splice(i, 1);
+      return;
+    }
+    d.lock || (g.dog = setTimeout(function() {
+      var h = g.held();
+      h && !h.lock && now() - h.seen >= STALE && g.release(), watchLoose(g);
+    }, Math.max(16, STALE - (now() - d.seen))));
+  }
+  function dropLoose() {
+    looseDrags.slice().forEach(function(g) {
+      g.held() && g.release(), watchLoose(g);
+    });
+  }
+  window.addEventListener("pointerdown", function(e) {
+    e.isPrimary && (e.pointerType === "touch" || e.pointerType === "pen") && dropLoose();
+  }, !0), window.addEventListener("touchcancel", dropLoose, !0), document.addEventListener("visibilitychange", dropLoose), window.addEventListener("pageshow", dropLoose), window.addEventListener("blur", dropLoose), window.addEventListener("spotter:native-state", dropLoose);
   var tabTouched = 0;
   function tabTap(i) {
     if (i === idx) {
