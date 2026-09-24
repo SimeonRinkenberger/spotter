@@ -1143,8 +1143,10 @@ function cachedPart(u: Usage): number {
 }
 
 // Outstanding reservations count toward spend even when their outcome is unknown.
-async function spendToday(): Promise<number> {
-  const status = await rpc("ai_budget_status", {});
+// Handed the status read rather than making it, so /api/limits asks once for the
+// spend, the ceiling and whether paid reads are on.
+async function spendFrom(pending: Promise<Record<string, unknown> | null>): Promise<number> {
+  const status = await pending;
   if (!status || !Number.isFinite(Number(status.daily_used))) throw new GuardError("accounting_unavailable");
   return Number(status.daily_used);
 }
@@ -1179,9 +1181,13 @@ async function cachePctToday(): Promise<number | null> {
 /** False once the day's estimated spend has crossed the ceiling. */
 async function paidAllowed(): Promise<boolean> {
   try {
-    const s = await rpc("ai_budget_status", {});
-    return !!s && Number(s.daily_used) < Number(s.daily_limit) && Number(s.monthly_used) < Number(s.monthly_limit);
+    return paidFrom(await rpc("ai_budget_status", {}));
   } catch { return false; }
+}
+
+/** paidAllowed's rule on a status already read. */
+function paidFrom(s: Record<string, unknown> | null): boolean {
+  return !!s && Number(s.daily_used) < Number(s.daily_limit) && Number(s.monthly_used) < Number(s.monthly_limit);
 }
 
 // Said once per isolate, not once per call: a missing column is a deploy-ordering
@@ -13961,14 +13967,17 @@ Deno.serve(async (req: Request) => {
       // `library_count` rides along because the Library page's counter — "12 of
       // 20 saved" — is the paywall's quietest and most-seen surface, and it would
       // otherwise need a count of its own on every visit.
-      const [counts, spent, cachePct, meter, uc, held, mc] = await settledAll<any>(
-        [countsFor(userId), spendToday(), cachePctToday(), pumpyMeter(userId), capsFor(userId), libraryCount(userId),
-          monthCountsFor(userId)],
-      ) as [Counts, number, number | null, PumpyMeter, UserCaps, number, MonthCounts];
       // The ceiling is the policy row's, not a constant: `spend_limit` used to be
       // a hard-coded 0.50 that kept saying 0.50 after the owner moved the guard,
-      // which is the same class of lie the daily counts were telling.
-      const budget = await rpc("ai_budget_status", {}) as Record<string, unknown> | null;
+      // which is the same class of lie the daily counts were telling. One status
+      // read answers the spend, the ceiling and whether paid reads are on: it was
+      // asked three times, two of them one after another after the batch, and
+      // the answer waited for all three round trips.
+      const status = rpc("ai_budget_status", {}) as Promise<Record<string, unknown> | null>;
+      const [counts, spent, cachePct, meter, uc, held, mc, budget, aiAllowance] = await settledAll<any>(
+        [countsFor(userId), spendFrom(status), cachePctToday(), pumpyMeter(userId), capsFor(userId), libraryCount(userId),
+          monthCountsFor(userId), status, rpc("ai_budget_user_status", { p_user: userId })],
+      ) as [Counts, number, number | null, PumpyMeter, UserCaps, number, MonthCounts, Record<string, unknown> | null, unknown];
       const allowance = allowanceFor(uc.plan);
       return json({
         status: "ok",
@@ -13997,8 +14006,8 @@ Deno.serve(async (req: Request) => {
           previews: mc.previews, previews_cap: plusPlan(uc.plan) ? null : allowance.reads,
           resets_at: utcNextMonth(),
         },
-        ai_allowance: await rpc("ai_budget_user_status", { p_user: userId }),
-        paid_enabled: await paidAllowed(),
+        ai_allowance: aiAllowance,
+        paid_enabled: paidFrom(budget),
         cache_pct_today: cachePct,
         // The card's "N left this month" button reads this; Settings reads
         // `month` above. They have to be the same number, so for a Basic

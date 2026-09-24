@@ -11,6 +11,8 @@
 //   C2  the cached Library paints before the token refresh, for the stored user
 //       only: a revoked or deleted account lands on the sign-in card with nothing
 //       left behind, and a switch of account paints nothing of the previous one.
+//   C3  /api/limits is asked once a minute, not once per Basic card opened; a write
+//       retires the copy; two asks at once are one call.
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
@@ -221,6 +223,47 @@ for (const [hash, search] of [['#access_token=t&refresh_token=r&type=magiclink',
   assert.equal(grid(c), '');
   assert.equal(c.store['spotter-lib-v1'], undefined);
   ok('C2 native: painted from the Keychain, revoked answer clears it');
+}
+
+// ---------- C3 (client) ----------
+{
+  const billingDecl = (() => { const a = APP.indexOf('  var billing = {'); return APP.slice(a, APP.indexOf('\n  };\n', a) + 5); })();
+  const LIMITS = ['api', 'deadline', 'readLimits', 'recentLimits', 'retireLimits'].map(fn).join('\n');
+  const decl = (h) => { const a = APP.indexOf(h); assert(a >= 0, h); return APP.slice(a, APP.indexOf('\n', a)); };
+  const ctx = vm.createContext({ Promise, JSON, Object, Array, String, Number, Math, console, Date, AbortController, setTimeout, clearTimeout });
+  vm.runInContext(`
+    var state = { user: { id: "u1" } }, accountEpoch = 0, inFlight = {}, asked = [], clock = 1000000;
+    Date.now = function () { return clock; };
+    function accountNow(e, u) { return e === accountEpoch && state.user && state.user.id === u; }
+    function needsAiConsent() { return false; } function consentAt() { return 1; } function toast() {}
+    var SHARED = {}, API = "https://x/api/";
+    var sb = { auth: { getSession: function () { return Promise.resolve({ data: { session: { access_token: "t" } } }); } } };
+    var used = 0;
+    function fetch(url, o) {
+      asked.push((o.method || "GET") + " " + url.replace(API, ""));
+      var body = /limits$/.test(url) ? { status: "ok", video_previews: { cap: 4, used: used } } : { status: "ok" };
+      if (/read-video/.test(url)) used++;
+      return Promise.resolve({ status: 200, json: function () { return Promise.resolve(body); } });
+    }
+  ` + billingDecl + '\n' + decl('  var LIMITS_FRESH') + '\n' + LIMITS, ctx);
+  const run = (js) => vm.runInContext(js, ctx);
+  const limitsAsks = () => run('asked').filter((a) => /limits$/.test(a)).length;
+  await run('recentLimits()');
+  await run('recentLimits()'); await run('recentLimits()');
+  assert.equal(limitsAsks(), 1, 'three card opens inside a minute ask once');
+  run('clock += 61000'); await run('recentLimits()');
+  assert.equal(limitsAsks(), 2, 'past a minute it asks again');
+  await run('api("workouts/w1/read-video", { method: "POST", body: "{}" })');
+  const left = await run('recentLimits()');
+  assert.equal(limitsAsks(), 3, 'a write retires the copy');
+  assert.equal(left.video_previews.used, 1, 'and the count that follows is the spent one');
+  await Promise.all([run('readLimits()'), run('readLimits()')]);
+  assert.equal(limitsAsks(), 4, 'two asks at once are one call');
+  // Spent while a read was out: the answer is drawn but not called fresh.
+  run('clock += 61000');
+  const out = run('recentLimits()'); run('retireLimits()'); await out;
+  assert.equal(run('billing.limitsAt'), 0, 'an answer that raced a write is not trusted for the minute');
+  ok('C3 client: one /api/limits a minute, retired by writes, shared in flight');
 }
 
 console.log('All ' + n + ' speed checks passed.');

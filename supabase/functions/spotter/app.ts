@@ -350,6 +350,9 @@ export const APP = String.raw`
     });
     var share = SHARED[path] ? epoch + ":" + uid + ":" + path + "\n" + (opts.body || "") : null;
     if (share && inFlight[share]) return inFlight[share];
+    // Anything that is not a read may have spent an allowance, so the minute-old
+    // copy of /api/limits is retired when it starts and again when it lands.
+    if (opts.method && opts.method !== "GET") retireLimits();
     var p = deadline(function (signal) { return sb.auth.getSession().then(function (r) {
       if (!accountNow(epoch, uid)) throw new Error("Account changed");
       var token = r.data.session ? r.data.session.access_token : "";
@@ -370,6 +373,7 @@ export const APP = String.raw`
       var forget = function () { delete inFlight[share]; };
       p.then(forget, forget);
     }
+    if (opts.method && opts.method !== "GET") p.then(retireLimits, retireLimits);
     return p;
   }
 
@@ -1290,7 +1294,7 @@ export const APP = String.raw`
         busy: false, live: null, stick: true, wired: wired, openSeq: seq };
     }
     if (native && native.purchases) native.purchases.clear().catch(function () {});
-    if (billing) { billing.prices = null; billing.waiting = null; billing.busy = false; billing.sub = null; billing.subAsked = false; billing.limits = null; billing.said = null; billing.ctx = null; billing.cc = null; billing.ccWaiting = null; billing.redeeming = false; }
+    if (billing) { billing.prices = null; billing.waiting = null; billing.busy = false; billing.sub = null; billing.subAsked = false; billing.limits = null; billing.limitsAt = 0; billing.limitsWaiting = null; billing.said = null; billing.ctx = null; billing.cc = null; billing.ccWaiting = null; billing.redeeming = false; }
     ["grid", "chips", "colbar", "libcount", "empty", "dinner", "pumpylog", "pumpyannounce", "pumpyctx", "pumpythreads", "trainview", "today", "resume", "recapopts"].forEach(function (id) {
       var n = $(id); if (n) n.innerHTML = "";
     });
@@ -1404,6 +1408,8 @@ export const APP = String.raw`
       // such, so nothing about the page changes.
       if (!isFree()) return;
       loadPrices().then(renderLibCount);
+      // Once per session, so a Basic card's preview count is on its first paint.
+      readLimits().catch(function () {});
     }, 700);
   }
 
@@ -3201,7 +3207,7 @@ export const APP = String.raw`
           : "Try a Plus read");
         trial.onclick = function () { readVideo(w, trial, isFree()); };
         quality.appendChild(trial);
-        if (isFree()) api("limits").then(function (r) {
+        if (isFree()) recentLimits().then(function (r) {
           if (!trial.isConnected || !r.video_previews) return;
           var left = Math.max(0, r.video_previews.cap - r.video_previews.used);
           trial.textContent = left ? "Try a Plus read · " + left + " left this month" : "Explore Spotter Plus";
@@ -13739,6 +13745,8 @@ export const APP = String.raw`
     waiting: null,     // that fetch in flight, so two callers make one call
     sub: null, subAsked: false,
     limits: null,      // last /api/limits, for the Settings usage line
+    limitsAt: 0,       // when it was read; 0 once a write may have spent from it
+    limitsWaiting: null,
     said: null,        // the plan the server last reported, which outranks the row
     ctx: null,         // the 429 the sheet was opened by, or null from Settings
     interval: "year", busy: false,
@@ -13748,6 +13756,35 @@ export const APP = String.raw`
   };
 
   function billOn() { return !!(billing.prices && billing.prices.configured); }
+
+  // /api/limits is an edge call with eighteen reads behind it, and every Basic
+  // card's "N left this month" used to ask it again on every open. An answer
+  // under a minute old is the answer; anything that is not a read retires it
+  // (api() does, since a save, a read or a reread may have spent an allowance),
+  // and two asks at once share one call.
+  var LIMITS_FRESH = 60000, limitsRev = 0;
+
+  function readLimits() {
+    if (billing.limitsWaiting) return billing.limitsWaiting;
+    var epoch = accountEpoch, uid = state.user && state.user.id, rev = limitsRev;
+    var p = billing.limitsWaiting = api("limits", { method: "GET" }).then(function (r) {
+      if (!r || r.status !== "ok" || !accountNow(epoch, uid)) return r;
+      billing.limits = r;
+      // Kept for drawing either way; only called fresh if nothing was spent meanwhile.
+      billing.limitsAt = rev === limitsRev ? Date.now() : 0;
+      return r;
+    });
+    function done() { if (billing.limitsWaiting === p) billing.limitsWaiting = null; }
+    p.then(done, done);
+    return p;
+  }
+
+  function recentLimits() {
+    if (billing.limits && Date.now() - billing.limitsAt < LIMITS_FRESH) return Promise.resolve(billing.limits);
+    return readLimits();
+  }
+
+  function retireLimits() { billing.limitsAt = 0; limitsRev++; }
   function myPlan() { return (state.profile && state.profile.plan) || "free"; }
   function isFree() { var p = myPlan(); return p !== "plus" && p !== "pro" && p !== "staff"; }
 
@@ -16020,11 +16057,10 @@ export const APP = String.raw`
     // difference between Settings opening finished and Settings filling itself in.
     paintStrava();
     askStrava();
-    api("limits", { method: "GET" }).then(function (r) {
+    readLimits().then(function (r) {
       pumpy.meterAsked = true;
       absorbMeter(r && r.pumpy);
       if (r.status === "ok") {
-        billing.limits = r;
         adoptPlan(r.plan);
         // The day's counts used to be printed under Account. They are burst
         // stops — sized above every allowance, nobody is sold one, and showing

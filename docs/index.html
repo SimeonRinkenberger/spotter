@@ -8920,6 +8920,7 @@ details.details-moving > :not(summary) {
     });
     var share = SHARED[path] ? epoch + ":" + uid + ":" + path + "\n" + (opts.body || "") : null;
     if (share && inFlight[share]) return inFlight[share];
+    opts.method && opts.method !== "GET" && retireLimits();
     var p = deadline(function(signal) {
       return sb.auth.getSession().then(function(r) {
         if (!accountNow(epoch, uid)) throw new Error("Account changed");
@@ -8944,7 +8945,7 @@ details.details-moving > :not(summary) {
       };
       p.then(forget, forget);
     }
-    return p;
+    return opts.method && opts.method !== "GET" && p.then(retireLimits, retireLimits), p;
   }
   function apiStream(path, body, onEvent) {
     var consentEpoch = accountEpoch, consentUid = state.user && state.user.id;
@@ -9553,7 +9554,7 @@ details.details-moving > :not(summary) {
       };
     }
     native && native.purchases && native.purchases.clear().catch(function() {
-    }), billing && (billing.prices = null, billing.waiting = null, billing.busy = !1, billing.sub = null, billing.subAsked = !1, billing.limits = null, billing.said = null, billing.ctx = null, billing.cc = null, billing.ccWaiting = null, billing.redeeming = !1), ["grid", "chips", "colbar", "libcount", "empty", "dinner", "pumpylog", "pumpyannounce", "pumpyctx", "pumpythreads", "trainview", "today", "resume", "recapopts"].forEach(function(id) {
+    }), billing && (billing.prices = null, billing.waiting = null, billing.busy = !1, billing.sub = null, billing.subAsked = !1, billing.limits = null, billing.limitsAt = 0, billing.limitsWaiting = null, billing.said = null, billing.ctx = null, billing.cc = null, billing.ccWaiting = null, billing.redeeming = !1), ["grid", "chips", "colbar", "libcount", "empty", "dinner", "pumpylog", "pumpyannounce", "pumpyctx", "pumpythreads", "trainview", "today", "resume", "recapopts"].forEach(function(id) {
       var n = $(id);
       n && (n.innerHTML = "");
     }), $("count0").textContent = "Reading your library", clearTimeout(toastTimer), $("toast").classList.remove("show"), $("toast").textContent = "", Array.prototype.forEach.call(document.querySelectorAll(".sheet.open, #detail.open, #workout.open"), function(n) {
@@ -9605,7 +9606,8 @@ details.details-moving > :not(summary) {
     }, 200), idle(function() {
       accountNow(epoch, uid) && (pumpy.loaded || renderPumpy(), loadPumpy(!0));
     }, 450), idle(function() {
-      accountNow(epoch, uid) && isFree() && loadPrices().then(renderLibCount);
+      accountNow(epoch, uid) && isFree() && (loadPrices().then(renderLibCount), readLimits().catch(function() {
+      }));
     }, 700);
   }
   var wkChannel = null;
@@ -10724,7 +10726,7 @@ details.details-moving > :not(summary) {
         var pv = billing.limits && billing.limits.video_previews, trial = el("button", "btn ghost", isFree() ? pv ? "Try a Plus read \xB7 " + Math.max(0, pv.cap - pv.used) + " left this month" : "Try a Plus read" : "Read with Plus");
         trial.onclick = function() {
           readVideo(w, trial, isFree());
-        }, quality.appendChild(trial), isFree() && api("limits").then(function(r) {
+        }, quality.appendChild(trial), isFree() && recentLimits().then(function(r) {
           if (!(!trial.isConnected || !r.video_previews)) {
             var left = Math.max(0, r.video_previews.cap - r.video_previews.used);
             trial.textContent = left ? "Try a Plus read \xB7 " + left + " left this month" : "Explore Spotter Plus", left || (trial.onclick = function() {
@@ -16594,6 +16596,9 @@ details.details-moving > :not(summary) {
     subAsked: !1,
     limits: null,
     // last /api/limits, for the Settings usage line
+    limitsAt: 0,
+    // when it was read; 0 once a write may have spent from it
+    limitsWaiting: null,
     said: null,
     // the plan the server last reported, which outranks the row
     ctx: null,
@@ -16609,6 +16614,23 @@ details.details-moving > :not(summary) {
   };
   function billOn() {
     return !!(billing.prices && billing.prices.configured);
+  }
+  var LIMITS_FRESH = 6e4, limitsRev = 0;
+  function readLimits() {
+    if (billing.limitsWaiting) return billing.limitsWaiting;
+    var epoch = accountEpoch, uid = state.user && state.user.id, rev = limitsRev, p = billing.limitsWaiting = api("limits", { method: "GET" }).then(function(r) {
+      return !r || r.status !== "ok" || !accountNow(epoch, uid) || (billing.limits = r, billing.limitsAt = rev === limitsRev ? Date.now() : 0), r;
+    });
+    function done() {
+      billing.limitsWaiting === p && (billing.limitsWaiting = null);
+    }
+    return p.then(done, done), p;
+  }
+  function recentLimits() {
+    return billing.limits && Date.now() - billing.limitsAt < LIMITS_FRESH ? Promise.resolve(billing.limits) : readLimits();
+  }
+  function retireLimits() {
+    billing.limitsAt = 0, limitsRev++;
   }
   function myPlan() {
     return state.profile && state.profile.plan || "free";
@@ -18089,8 +18111,8 @@ details.details-moving > :not(summary) {
     var mine = isEmailAccount();
     $("setpwrow").classList.toggle("hide", !mine), $("setmailrow").disabled = !mine, $("setname").textContent = displayName() || "Not set", $("unittoggle").textContent = state.unit, paintGoal(), $("haptictoggle").textContent = state.haptics ? "On" : "Off", $("sethapticrow").classList.toggle("hide", !native && !navigator.vibrate), paintSounds(), loadRemind(), $("shortcutsetup").classList.toggle("hide", !!native), $("nativesharehelp").classList.toggle("hide", !native), native && native.platform === "android" && ($("nativesharehelp").textContent = "In TikTok, YouTube, Instagram or another app, share the post\u2019s link and choose Spotter from the Android share sheet.");
     var key = state.profile ? state.profile.ingest_key : null;
-    $("setkey").textContent = key ? API + "ingest?key=" + key : "Loading\u2026", renderSettingsMeter(), paintPlanGroup(), paintPlanUse(billing.limits), Promise.all([loadPrices(), loadSub()]).then(paintPlanGroup), paintCreator(), loadCreator().then(paintCreator), paintStrava(), askStrava(), api("limits", { method: "GET" }).then(function(r) {
-      pumpy.meterAsked = !0, absorbMeter(r && r.pumpy), r.status === "ok" && (billing.limits = r, adoptPlan(r.plan), paintPlanUse(r));
+    $("setkey").textContent = key ? API + "ingest?key=" + key : "Loading\u2026", renderSettingsMeter(), paintPlanGroup(), paintPlanUse(billing.limits), Promise.all([loadPrices(), loadSub()]).then(paintPlanGroup), paintCreator(), loadCreator().then(paintCreator), paintStrava(), askStrava(), readLimits().then(function(r) {
+      pumpy.meterAsked = !0, absorbMeter(r && r.pumpy), r.status === "ok" && (adoptPlan(r.plan), paintPlanUse(r));
     }).catch(function() {
     }), openSheet("settingssheet");
   }
