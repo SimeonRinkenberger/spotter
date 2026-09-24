@@ -806,7 +806,7 @@ export const STYLE = String.raw`<style>
     background: var(--paper); background-image: var(--grain); box-shadow: 0 -8px 0 var(--paper); }
   .ohead .grabber { margin-bottom: 6px; }
   .otop { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-  .otop h2 { margin: 0; flex: 1; text-align: center; }
+  .ohead .otop h2 { margin: 0; flex: 1; text-align: center; }
   .obtn { min-width: 64px; min-height: 44px; padding: 0 4px; border: 0; background: none; color: var(--ink-2);
     font-size: 15px; font-weight: 600; text-align: left; }
   .obtn.odone { color: var(--ember-ink); font-weight: 750; text-align: right; }
@@ -837,11 +837,16 @@ export const STYLE = String.raw`<style>
   .ostep.dn .ic { transform: rotate(180deg); }
   .ostep:disabled { color: var(--line-2); }
   .orow.sel { background: var(--ember-soft); border-color: var(--ember); }
+  /* --muted on --ember-soft is 4.29, under AA for 12px; --ink-2 is 5.5. */
+  .orow.sel .opick span { color: var(--ink-2); }
   .orow.sel .ostep { display: flex; }
-  .orow.lift { z-index: 3; box-shadow: var(--sh-lg); cursor: grabbing;
+  .orow.lift { z-index: 3; box-shadow: var(--sh-lg); cursor: grabbing; border-color: var(--line-2);
     transition: box-shadow var(--t-2) var(--e-out), background-color var(--t-1) var(--e-out); }
   /* A section being moved carries its exercises folded under it, as Fitbod and
      Hevy fold a group: one tile per section, so the lift is never a screen tall. */
+  /* A shadow barely reads on a dark sheet; the lifted tile comes forward in
+     tone instead, as an elevated surface does in iOS dark mode. */
+  @media (prefers-color-scheme: dark) { .orow.oex.lift { background: var(--sand); } }
   #olist.ocollapse .oex { display: none; }
   .orow.oin { animation: fadein var(--t-2) var(--e-out) both; }
   /* Where a moved row landed on the card, said once. Colour, not travel. */

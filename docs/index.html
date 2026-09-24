@@ -2128,7 +2128,7 @@ h1 {
   justify-content: space-between;
   gap: 8px;
 }
-.otop h2 {
+.ohead .otop h2 {
   margin: 0;
   flex: 1;
   text-align: center;
@@ -2259,6 +2259,9 @@ h1 {
   background: var(--ember-soft);
   border-color: var(--ember);
 }
+.orow.sel .opick span {
+  color: var(--ink-2);
+}
 .orow.sel .ostep {
   display: flex;
 }
@@ -2266,7 +2269,13 @@ h1 {
   z-index: 3;
   box-shadow: var(--sh-lg);
   cursor: grabbing;
+  border-color: var(--line-2);
   transition: box-shadow var(--t-2) var(--e-out), background-color var(--t-1) var(--e-out);
+}
+@media (prefers-color-scheme: dark) {
+  .orow.oex.lift {
+    background: var(--sand);
+  }
 }
 #olist.ocollapse .oex {
   display: none;
