@@ -1908,9 +1908,24 @@ function haveAI(): boolean {
 // 429 and Instagram is one policy change from doing the same, while from a phone's
 // own residential IP those pages carry everything. Same regexes, different courier.
 
+/**
+ * Instagram's own artwork rather than a post's picture. Asked from this
+ * datacenter, the post page is sometimes Instagram's generic page, and its
+ * og:image is the Instagram logo — static.cdninstagram.com/rsrc.php/…png, a
+ * 4168×4168 PNG of 778 KB — which two cold saves on 24 Sept stored as the cover
+ * and in video_cache for everybody after. A post's media is served from
+ * scontent-*.cdninstagram.com (or fbcdn); static.cdninstagram.com serves only the
+ * site's own files, so the host is the rule, as TikTok's logo path is for
+ * ttGenericImage. Pure.
+ */
+function igGenericImage(u: string | null | undefined): boolean {
+  return !!u && /^https?:\/\/static\.cdninstagram\.com\/|\/rsrc\.php\//i.test(u);
+}
+
 /** og: tags on the post page, as served to link-preview crawlers. Pure. */
 function igFromOg(html: string): { caption: string | null; thumb: string | null; author: string | null } {
-  const thumb = metaTag(html, "og:image");
+  const og = metaTag(html, "og:image");
+  const thumb = igGenericImage(og) ? null : og;
   const ogTitle = metaTag(html, "og:title");
   const ogDesc = metaTag(html, "og:description");
   const quoted = (s: string | null) => s?.match(/: ["“]([\s\S]*?)["”]?\s*$/)?.[1]?.trim() ?? null;
@@ -1930,12 +1945,16 @@ function igFromOg(html: string): { caption: string | null; thumb: string | null;
  */
 function igFromEmbed(html: string): {
   caption: string | null; thumb: string | null; author: string | null; images: string[];
-  slides: { url: string; video: boolean }[]; absent: boolean;
+  slides: { url: string; video: boolean }[]; absent: boolean; mediaThumb: boolean;
 } {
+  // The post's own picture: the embed's media image, or failing that the first
+  // slide the context names. `mediaThumb` says it is one of those two, which
+  // igMeta prefers over og:image; the loose scontent match below it can be the
+  // author's avatar, so it only ever fills a gap.
   let thumb: string | null = null;
-  const im = html.match(/class="EmbeddedMediaImage"[^>]*src="([^"]+)"/) ??
-    html.match(/src="(https:\/\/[^"]*scontent[^"]+)"/);
-  if (im) thumb = decodeEntities(im[1]);
+  let mediaThumb = false;
+  const im = html.match(/class="EmbeddedMediaImage"[^>]*src="([^"]+)"/);
+  if (im && !igGenericImage(decodeEntities(im[1]))) { thumb = decodeEntities(im[1]); mediaThumb = true; }
 
   let caption: string | null = null;
   const capDiv = html.match(/<div class="Caption"[^>]*>([\s\S]*?)<div class="CaptionComments"/) ??
@@ -1982,11 +2001,16 @@ function igFromEmbed(html: string): {
   // A carousel's own display_url repeats its first child's, so the list is the
   // children when there are any and the one picture otherwise.
   const images = slides.map((s) => s.url);
+  if (!thumb && media && slides.length && !igGenericImage(slides[0].url)) { thumb = slides[0].url; mediaThumb = true; }
+  if (!thumb) {
+    const loose = html.match(/src="(https:\/\/[^"]*scontent[^"]+)"/);
+    if (loose) thumb = decodeEntities(loose[1]);
+  }
   // "Instagram answered, and there is no post": the embed page's broken-media
   // panel and no context at all. Not a network fault and not a login wall — the
   // one case where asking again cannot help (igMeta decides with the og: rung).
   const absent = /class="EmbedBrokenMedia"/.test(html) && !media && !caption && !images.length;
-  return { caption, thumb, author, images, slides, absent };
+  return { caption, thumb, author, images, slides, absent, mediaThumb };
 }
 
 /** The embed's `contextJSON`, decoded twice as the page's own script would. Null when absent. */
@@ -2032,7 +2056,7 @@ function igParseHtml(html: string): Meta {
   };
 }
 
-async function igMeta(p: Parsed): Promise<Meta> {
+export async function igMeta(p: Parsed): Promise<Meta> {
   const out: Meta = { caption: null, thumb: null, author: null };
   let images: string[] = [];
   const used: string[] = [];
@@ -2071,7 +2095,9 @@ async function igMeta(p: Parsed): Promise<Meta> {
       let gained = false;
       const better = igBetterCaption(out.caption, got.caption);
       if (better !== out.caption) { out.caption = better; gained = true; }
-      if (!out.thumb && got.thumb) { out.thumb = got.thumb; gained = true; }
+      // The embed's media image is the post's own picture at its own shape; og:image
+      // is a 640 square crop at best and Instagram's logo at worst (igGenericImage).
+      if (got.thumb && (got.mediaThumb ? got.thumb !== out.thumb : !out.thumb)) { out.thumb = got.thumb; gained = true; }
       if (!out.author && got.author) { out.author = got.author; gained = true; }
       for (const u of got.images) if (!images.includes(u)) { images.push(u); gained = true; }
       if (gained) used.push("embed-captioned");
@@ -2342,7 +2368,7 @@ async function ttFetchSource(s: TtSource, id: string, clean: string):
   }
 }
 
-async function ttMeta(p: Parsed): Promise<Meta> {
+export async function ttMeta(p: Parsed): Promise<Meta> {
   const id = p.shortcode.replace(/^tt-/, "");
   const out: Meta = { caption: null, thumb: null, author: null };
   const used: string[] = [];
@@ -7532,13 +7558,36 @@ function kickCover(name: string): void {
   );
 }
 
+/**
+ * Platform logos that have been stored as a cover, by the SHA-256 of their bytes:
+ * the proof tools/thumbs-repair.ts asks of an object before it touches the rows
+ * that share it, and the last check storeThumb makes before it uploads. The URL
+ * rules (igGenericImage, ttGenericImage) are what normally stop a logo; the bytes
+ * catch the same picture reached by another path. Measured 24 Sept 2026 from the
+ * stored objects and from Instagram's own og:image.
+ */
+export const PLATFORM_LOGO_SHA256: Record<string, string> = {
+  "b421b00fd1791a1d1ab70dd1e9667f40ca79a8c8673989864f1be092295cd7da": "Instagram logo (4168x4168 PNG)",
+  "3e37b1d51ead41bc3e9a3c2951994e0ecbcf090f09116a2055d27c547a12afa4": "TikTok logo (928x928 PNG)",
+};
+
+/** The logo these bytes are, or null. */
+export async function platformLogo(bytes: Uint8Array<ArrayBuffer>): Promise<string | null> {
+  const d = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+  return PLATFORM_LOGO_SHA256[Array.from(d, (b) => b.toString(16).padStart(2, "0")).join("")] ?? null;
+}
+
 export async function storeThumb(shortcode: string, src: string | null, platform = ""): Promise<string | null> {
-  if (!src) return null;
+  // A platform's own artwork is not a cover, and a card with no picture is
+  // better than a library of logos.
+  if (!src || igGenericImage(src) || ttGenericImage(src)) return null;
   try {
     const r = await safeFetch(src, { headers: { "User-Agent": DESKTOP_UA } });
     if (!r.ok) return null;
     const buf = new Uint8Array(await r.arrayBuffer());
     if (buf.byteLength < 500) return null;
+    const logo = await platformLogo(buf);
+    if (logo) { console.log("thumb refused for", shortcode, "— it is the", logo); return null; }
     // A cover about to be replaced by its small copy goes up uncached, so nothing
     // holds the big one for a week; everything else is cacheable from the start.
     const size = COVER_PLATFORMS.has(platform) ? plainJpegSize(buf) : null;
