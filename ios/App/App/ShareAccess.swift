@@ -7,31 +7,8 @@ public class ShareAccessPlugin: CAPPlugin, CAPBridgedPlugin {
     public let jsName = "ShareAccess"
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "configure", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "contactSheet", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "takeParkedShare", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "contactSheet", returnType: CAPPluginReturnPromise)
     ]
-
-    /// Where a signed-out share leaves its link: the store the app and the Share
-    /// Extension both open, JSON `{url, at}`. The extension writes it; only this
-    /// method reads it, and it removes what it reads.
-    static let parkedShareKey = "spotter.parkedShare"
-
-    /**
-     * The link a signed-out share parked, taken out so it is saved exactly once.
-     * Resolves empty when nothing is parked or what is parked does not decode —
-     * the page's answer to both is the same: there is nothing to save.
-     */
-    @objc func takeParkedShare(_ call: CAPPluginCall) {
-        let key = ShareAccessPlugin.parkedShareKey
-        guard let data = try? SharedStore.read(key: key) else { call.resolve([:]); return }
-        SharedStore.remove(key: key)
-        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let url = object["url"] as? String, !url.isEmpty else { call.resolve([:]); return }
-        var out: JSObject = ["url": url]
-        if let at = object["at"] as? String { out["at"] = at }
-        else if let at = object["at"] as? Double { out["at"] = at }
-        call.resolve(out)
-    }
 
     @objc func configure(_ call: CAPPluginCall) {
         let key = call.getString("key")
@@ -39,22 +16,8 @@ public class ShareAccessPlugin: CAPPlugin, CAPBridgedPlugin {
             call.reject("Invalid share credential"); return
         }
         do { try ShareCredential.write(key); call.resolve() }
-        catch { call.reject("Could not prepare sharing. Open Spotter again to retry."); return }
-        // The plan beside the key, so the Share Extension can tell without a round
-        // trip whether this account could want frames with a save at all. A hint,
-        // never an entitlement — the server decides — and it goes with the key.
-        let plan = call.getString("plan")
-        if let plan = plan, key != nil, plan.range(of: "^[a-z]{1,16}$", options: .regularExpression) != nil {
-            try? SharedStore.writeJSON(PlanHint(plan: plan, at: Date().timeIntervalSince1970),
-                                       key: ShareAccessPlugin.planHintKey)
-        } else {
-            SharedStore.remove(key: ShareAccessPlugin.planHintKey)
-        }
+        catch { call.reject("Could not prepare sharing. Open Spotter again to retry.") }
     }
-
-    /// `{plan, at}` beside the save key: "free", "plus", "pro" or "staff".
-    struct PlanHint: Codable { let plan: String; let at: Double }
-    static let planHintKey = "spotter.planHint"
 
     /**
      * Cut frames for a save happening inside the app.
