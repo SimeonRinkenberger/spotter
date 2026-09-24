@@ -921,6 +921,8 @@ function corsFor(req: Request): Cors {
     "Access-Control-Allow-Origin": allow,
     "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-ingest-key",
     "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
+    // A browser asks again after 5 s by default; WebKit honours up to 600.
+    "Access-Control-Max-Age": "600",
     "Vary": "Origin",
   };
 }
