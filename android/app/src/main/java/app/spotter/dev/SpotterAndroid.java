@@ -10,6 +10,8 @@ import java.util.regex.*;
 
 @CapacitorPlugin(name = "SpotterAndroid")
 public class SpotterAndroid extends Plugin {
+    private static final Pattern POST_HOST = Pattern.compile(
+        "^https?://([a-z0-9-]+\\.)*(tiktok\\.com|tiktokv\\.com|instagram\\.com|instagr\\.am|youtube\\.com|youtu\\.be)/", Pattern.CASE_INSENSITIVE);
     private String pending;
     private boolean ready;
     // Frame cutting is seconds of decoding. ANR is five seconds of blocked input,
@@ -21,9 +23,17 @@ public class SpotterAndroid extends Plugin {
         if (intent == null || !Intent.ACTION_SEND.equals(intent.getAction()) || !"text/plain".equals(intent.getType())) return;
         CharSequence text = intent.getCharSequenceExtra(Intent.EXTRA_TEXT);
         if (text == null || text.length() > 100000) return;
+        // The first link, unless a later one is the post itself: a caption shared
+        // with its bio link first ("linktr.ee/…  https://www.instagram.com/reel/…")
+        // is a share of the reel, not of the bio.
         Matcher match = Pattern.compile("https?://[^\\s\"'<>]+").matcher(text);
-        if (!match.find()) return;
-        String url = match.group().replaceAll("[.,;:!?)\\]]+$", "");
+        String url = null;
+        while (match.find()) {
+            String found = match.group().replaceAll("[.,;:!?)\\]]+$", "");
+            if (url == null) url = found;
+            if (POST_HOST.matcher(found).find()) { url = found; break; }
+        }
+        if (url == null) return;
         if (url.length() > 8192) return;
         intent.setAction(null); intent.removeExtra(Intent.EXTRA_TEXT);
         if (ready) notifyListeners("sharedUrl", new JSObject().put("url", url), true);

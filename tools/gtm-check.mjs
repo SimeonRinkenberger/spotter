@@ -37,6 +37,10 @@ const checks = [
   ['Creator ledger in the store webhook', 'node', ['tools/creator-purchases-check.mjs']],
   ['Store entitlements under every sandbox policy', 'deno', ['run','--allow-read','tools/android/entitlement-check.ts']],
   ['Store entitlement environment and renewal SQL', 'node', ['tools/store-entitlements-db-check.mjs']],
+  ['Save flow: Instagram slides, dose words, link shapes, holds, admission', 'deno', ['run','--allow-read','tools/share-harness.ts']],
+  ['Upload permits: two per person, sixteen for the product', 'node', ['tools/upload-permit-db-check.mjs']],
+  ['Save flow client: honest offers, Add the video, parked links, resume', 'node', ['tools/share-client-harness.mjs']],
+  ['Free-path throttle SQL: 30 a minute per person per route, admission untouched', 'node', ['tools/request-tick-db-check.mjs']],
 ];
 const failures=[];
 for(const [label,cmd,args] of checks) {

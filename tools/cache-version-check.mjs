@@ -45,15 +45,17 @@ const gates = src.match(/v=gte\.\$\{MIN_USABLE_CARD_V\}/g) ?? [];
 assert.equal(gates.length, 3, 'save, worker seed and handleReadVideo all read from the minimum');
 assert.equal((src.match(/v=gte\.\$\{CARD_V\}/g) ?? []).length, 1,
   'only handleReprocess — an explicit paid re-read — still demands the current shape');
-assert.match(src, /const usable = cached && Number\(cached\.v\) >= CARD_V && cached\.card;/,
+assert.match(src, /const usable = cached && Number\(cached\.v\) >= CARD_V && cached\.card && cardSound\(cached\.card\);/,
   'mediaSeed rebuilds an old card instead of re-stamping it as current');
 assert.match(src, /pack_v=gte\.\$\{MIN_USABLE_PACK_V\}&pack_v=lte\.\$\{PACK_V\}/,
   'the coach reads the readable range of pack shapes, not one exact shape');
 
 // ---------- the decisions, run ----------
 const c = vm.createContext({ console, CARD_V, MIN_USABLE_CARD_V, PACK_V, MIN_USABLE_PACK_V, Date, Set, Map, JSON, Number, String, Array, Promise, structuredClone, encodeURIComponent });
-const decisions = ['usablePack', 'visuallyRead', 'cacheStale', 'markCache', 'cacheForAccess', 'plusPlan', 'readQuality', 'labelRecommendations', 'basicMeta'];
-vm.runInContext(transformSync(decisions.map((n) => fn(src, n)).join('\n'), { loader: 'ts', format: 'cjs' }).code, c);
+const decisions = ['usablePack', 'visuallyRead', 'cacheStale', 'markCache', 'cacheForAccess', 'cacheEntitled', 'isDoseWordName', 'cardSound', 'plusPlan', 'readQuality', 'labelRecommendations', 'basicMeta'];
+// The dose-word vocabulary cardSound reads, lifted as it is written.
+const doseWords = src.slice(src.indexOf('const DOSE_WORDS = new Set(['), src.indexOf('function isDoseWordName('));
+vm.runInContext(transformSync(doseWords + decisions.map((n) => fn(src, n)).join('\n'), { loader: 'ts', format: 'cjs' }).code, c);
 
 // The row the whole finding is about: written by the deployed build, one card
 // shape and one pack shape behind everything this build writes.
@@ -115,6 +117,8 @@ c.mediaCapReached = async () => null;
 c.monthReadsReached = async () => null;
 c.allowanceLimit = async () => ({ status: 'limit', scope: 'month' });
 c.paidAllowed = async () => true;
+// Admission is asked late now and is driven by tools/ai-admission-check.ts.
+c.admitNow = async () => null;
 c.extractLimitResponse = async () => ({ status: 'limit' });
 c.capLimit = async () => ({ status: 'limit' });
 c.previewLimit = () => ({ status: 'limit', kind: 'media', scope: 'month' });

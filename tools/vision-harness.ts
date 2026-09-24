@@ -220,7 +220,8 @@ const NAMES = [
   // CUE_MAX and numOrNullBounded arrived with the Video Context Pack: the line
   // under an exercise name is a typed `cue` now, and a card carries when in the
   // video the movement happens. normalizeExercise reads both.
-  "CUE_MAX", "trimCue", "numOrNullBounded", "splitDose", "normalizeExercise", "normalizeCard",
+  "CUE_MAX", "trimCue", "numOrNullBounded", "splitDose",
+  "DOSE_WORDS", "DOSE_ANCHORS", "isDoseWordName", "normalizeExercise", "normalizeCard",
   // the pass itself
   "countExercises", "hasDose", "doseGap", "picturesAreAPage", "slidesWouldHelp",
   "nameKey", "fillEmptyDose", "mergeSlideCard",

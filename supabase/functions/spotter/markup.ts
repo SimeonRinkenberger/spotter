@@ -370,8 +370,8 @@ export const MARKUP_BODY = String.raw`</head>
 <!-- ---------- sheets ---------- -->
 <div class="sheet" id="addsheet"><div class="sheetbody">
   <div class="grabber"></div>
-  <h2>Add a workout</h2>
-  <p class="lede">Paste a link to a TikTok, Instagram reel, YouTube video, or any workout page.</p>
+  <h2 id="addtitle">Add a workout</h2>
+  <p class="lede" id="addlede">Paste a link to a TikTok, Instagram reel, YouTube video, or any workout page.</p>
   <div class="field"><input id="addurl" type="url" placeholder="https://..." autocapitalize="off" autocomplete="off" spellcheck="false"></div>
   <button class="btn" id="addgo">Save workout</button>
 
@@ -383,8 +383,8 @@ export const MARKUP_BODY = String.raw`</head>
     <button class="uploadrow" id="uploadrow" type="button">
       <span class="upmark" aria-hidden="true"><svg class="ic"><use href="#i-upload"></use></svg></span>
       <span class="uptext">
-        <b>Upload a video from your phone</b>
-        <small>Spotter watches and listens to it, so it works when nothing is written down. MP4, MOV, M4A, MP3, WAV or WebM, up to 25 MB.</small>
+        <b id="uptitle">Upload a video from your phone</b>
+        <small id="upsub">Spotter watches and listens to it, so it works when nothing is written down. MP4, MOV, M4A, MP3, WAV or WebM, up to 25 MB.</small>
       </span>
     </button>
     <input id="addfile" type="file" accept="video/*,audio/*" hidden>

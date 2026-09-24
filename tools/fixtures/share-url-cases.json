@@ -1,0 +1,372 @@
+[
+ {
+  "id": "tt-canonical",
+  "input": "https://www.tiktok.com/@thewodfather/video/7679960172495785246",
+  "expect": {
+   "platform": "tiktok",
+   "shortcode": "tt-7679960172495785246"
+  }
+ },
+ {
+  "id": "tt-no-www",
+  "input": "https://tiktok.com/@thewodfather/video/7679960172495785246",
+  "expect": {
+   "platform": "tiktok",
+   "shortcode": "tt-7679960172495785246"
+  }
+ },
+ {
+  "id": "tt-trailing-slash",
+  "input": "https://www.tiktok.com/@thewodfather/video/7679960172495785246/",
+  "expect": {
+   "platform": "tiktok",
+   "shortcode": "tt-7679960172495785246"
+  }
+ },
+ {
+  "id": "tt-webapp-tracking",
+  "input": "https://www.tiktok.com/@thewodfather/video/7679960172495785246?is_from_webapp=1&sender_device=pc&web_id=7412345678901234567",
+  "expect": {
+   "platform": "tiktok",
+   "shortcode": "tt-7679960172495785246",
+   "clean": "https://www.tiktok.com/@thewodfather/video/7679960172495785246"
+  }
+ },
+ {
+  "id": "tt-app-share-params",
+  "input": "https://www.tiktok.com/@thewodfather/video/7679960172495785246?_r=1&_t=ZT-90abcDEF",
+  "expect": {
+   "platform": "tiktok",
+   "shortcode": "tt-7679960172495785246"
+  }
+ },
+ {
+  "id": "tt-lang-region",
+  "input": "https://www.tiktok.com/@thewodfather/video/7679960172495785246?lang=de-DE&is_copy_url=1",
+  "expect": {
+   "platform": "tiktok",
+   "shortcode": "tt-7679960172495785246"
+  }
+ },
+ {
+  "id": "tt-share-text",
+  "input": "Check out AJ's video! #TikTok https://www.tiktok.com/@thewodfather/video/7679960172495785246?_t=ZT-90&_r=1",
+  "expect": {
+   "platform": "tiktok",
+   "shortcode": "tt-7679960172495785246"
+  }
+ },
+ {
+  "id": "tt-mobile-host",
+  "input": "https://m.tiktok.com/@thewodfather/video/7679960172495785246",
+  "expect": {
+   "platform": "tiktok",
+   "shortcode": "tt-7679960172495785246"
+  }
+ },
+ {
+  "id": "tt-m-v-html",
+  "input": "https://m.tiktok.com/v/7679960172495785246.html",
+  "expect": {
+   "platform": "tiktok",
+   "shortcode": "tt-7679960172495785246"
+  }
+ },
+ {
+  "id": "tt-photo",
+  "input": "https://www.tiktok.com/@maxndah/photo/7686591894004026657",
+  "expect": {
+   "platform": "tiktok",
+   "shortcode": "tt-7686591894004026657",
+   "kind": "photo"
+  }
+ },
+ {
+  "id": "tt-photo-under-video-alias",
+  "input": "https://www.tiktok.com/@maxndah/video/7686591894004026657",
+  "expect": {
+   "platform": "tiktok",
+   "shortcode": "tt-7686591894004026657"
+  }
+ },
+ {
+  "id": "tt-embed-v2",
+  "input": "https://www.tiktok.com/embed/v2/7679960172495785246",
+  "expect": {
+   "platform": "tiktok",
+   "shortcode": "tt-7679960172495785246",
+   "clean": "https://www.tiktok.com/@/video/7679960172495785246"
+  }
+ },
+ {
+  "id": "tt-player-v1",
+  "input": "https://www.tiktok.com/player/v1/7679960172495785246",
+  "expect": {
+   "platform": "tiktok",
+   "shortcode": "tt-7679960172495785246",
+   "clean": "https://www.tiktok.com/@/video/7679960172495785246"
+  }
+ },
+ {
+  "id": "tt-tiktokv-share",
+  "input": "https://www.tiktokv.com/share/video/7679960172495785246/",
+  "expect": {
+   "platform": "tiktok",
+   "shortcode": "tt-7679960172495785246",
+   "clean": "https://www.tiktok.com/@/video/7679960172495785246"
+  }
+ },
+ {
+  "id": "tt-vm-expired",
+  "input": "https://vm.tiktok.com/ZTR45GpSF/",
+  "expect": {
+   "platform": null
+  },
+  "answer": "link_expired"
+ },
+ {
+  "id": "tt-vt-expired",
+  "input": "https://vt.tiktok.com/ZSe4FqkKd",
+  "expect": {
+   "platform": null
+  },
+  "answer": "link_expired"
+ },
+ {
+  "id": "tt-t-expired",
+  "input": "https://www.tiktok.com/t/ZTRC5xgJp",
+  "expect": {
+   "platform": null
+  },
+  "answer": "link_expired"
+ },
+ {
+  "id": "tt-profile",
+  "input": "https://www.tiktok.com/@thewodfather",
+  "expect": {
+   "platform": null
+  }
+ },
+ {
+  "id": "ig-reel",
+  "input": "https://www.instagram.com/reel/DBGi0r0pHZ4/",
+  "expect": {
+   "platform": "instagram",
+   "shortcode": "DBGi0r0pHZ4",
+   "kind": "reel"
+  }
+ },
+ {
+  "id": "ig-reel-igsh",
+  "input": "https://www.instagram.com/reel/DBGi0r0pHZ4/?igsh=MTc4MmM1YmI2Ng==",
+  "expect": {
+   "platform": "instagram",
+   "shortcode": "DBGi0r0pHZ4",
+   "clean": "https://www.instagram.com/reel/DBGi0r0pHZ4/"
+  }
+ },
+ {
+  "id": "ig-reel-utm-igsh",
+  "input": "https://www.instagram.com/reel/DBGi0r0pHZ4/?utm_source=ig_web_copy_link&igsh=MzRlODBiNWFlZA==",
+  "expect": {
+   "platform": "instagram",
+   "shortcode": "DBGi0r0pHZ4"
+  }
+ },
+ {
+  "id": "ig-reels-plural",
+  "input": "https://www.instagram.com/reels/DBGi0r0pHZ4/",
+  "expect": {
+   "platform": "instagram",
+   "shortcode": "DBGi0r0pHZ4",
+   "kind": "reel"
+  }
+ },
+ {
+  "id": "ig-no-www",
+  "input": "https://instagram.com/reel/DBGi0r0pHZ4",
+  "expect": {
+   "platform": "instagram",
+   "shortcode": "DBGi0r0pHZ4"
+  }
+ },
+ {
+  "id": "ig-mobile-host",
+  "input": "https://m.instagram.com/reel/DBGi0r0pHZ4/",
+  "expect": {
+   "platform": "instagram",
+   "shortcode": "DBGi0r0pHZ4"
+  }
+ },
+ {
+  "id": "ig-username-prefix",
+  "input": "https://www.instagram.com/coachjaeo/reel/DBGi0r0pHZ4/",
+  "expect": {
+   "platform": "instagram",
+   "shortcode": "DBGi0r0pHZ4"
+  }
+ },
+ {
+  "id": "ig-post",
+  "input": "https://www.instagram.com/p/DTasqBeFMdq/",
+  "expect": {
+   "platform": "instagram",
+   "shortcode": "DTasqBeFMdq",
+   "kind": "p"
+  }
+ },
+ {
+  "id": "ig-post-img-index",
+  "input": "https://www.instagram.com/p/DTasqBeFMdq/?img_index=3",
+  "expect": {
+   "platform": "instagram",
+   "shortcode": "DTasqBeFMdq"
+  }
+ },
+ {
+  "id": "ig-tv",
+  "input": "https://www.instagram.com/tv/CLymnxZjlAw/",
+  "expect": {
+   "platform": "instagram",
+   "shortcode": "CLymnxZjlAw",
+   "kind": "tv"
+  }
+ },
+ {
+  "id": "ig-instagr-am-post",
+  "input": "https://instagr.am/p/DTasqBeFMdq/",
+  "expect": {
+   "platform": "instagram",
+   "shortcode": "DTasqBeFMdq",
+   "clean": "https://www.instagram.com/p/DTasqBeFMdq/"
+  }
+ },
+ {
+  "id": "ig-instagr-am-reel",
+  "input": "https://instagr.am/reel/DBGi0r0pHZ4",
+  "expect": {
+   "platform": "instagram",
+   "shortcode": "DBGi0r0pHZ4"
+  }
+ },
+ {
+  "id": "ig-share-reel-token",
+  "input": "https://www.instagram.com/share/reel/BAGabc123xy/",
+  "expect": {
+   "platform": "instagram",
+   "shortcode": "DBGi0r0pHZ4"
+  },
+  "note": "resolved through the share page's og:url; the token itself is never a shortcode"
+ },
+ {
+  "id": "ig-share-p-token",
+  "input": "https://www.instagram.com/share/p/BAGabc123xy/",
+  "expect": {
+   "platform": "instagram",
+   "shortcode": "DBGi0r0pHZ4"
+  },
+  "note": "resolved through the share page's og:url; the token itself is never a shortcode"
+ },
+ {
+  "id": "ig-share-bare-token",
+  "input": "https://www.instagram.com/share/BAGabc123xy",
+  "expect": {
+   "platform": "instagram",
+   "shortcode": "DBGi0r0pHZ4"
+  },
+  "note": "resolved through the share page's og:url; the token itself is never a shortcode"
+ },
+ {
+  "id": "ig-reels-audio-page",
+  "input": "https://www.instagram.com/reels/audio/1234567890123456/",
+  "expect": {
+   "platform": null
+  },
+  "answer": "not_a_post"
+ },
+ {
+  "id": "ig-story",
+  "input": "https://www.instagram.com/stories/coachjaeo/3570766765028588805/",
+  "expect": {
+   "platform": null
+  }
+ },
+ {
+  "id": "ig-profile",
+  "input": "https://www.instagram.com/coachjaeo/",
+  "expect": {
+   "platform": null
+  }
+ },
+ {
+  "id": "ig-caption-plus-bio-link",
+  "input": "Leg day 🔥 https://www.instagram.com/reel/DBGi0r0pHZ4/?igsh=abc full plan at https://linktr.ee/coachjaeo",
+  "expect": {
+   "platform": "instagram",
+   "shortcode": "DBGi0r0pHZ4"
+  }
+ },
+ {
+  "id": "yt-shorts-si",
+  "input": "https://youtube.com/shorts/X5W_jSPCV3g?si=AbCdEf123",
+  "expect": {
+   "platform": "youtube",
+   "shortcode": "yt-X5W_jSPCV3g"
+  }
+ },
+ {
+  "id": "yt-short-link-si",
+  "input": "https://youtu.be/X5W_jSPCV3g?si=AbCdEf123",
+  "expect": {
+   "platform": "youtube",
+   "shortcode": "yt-X5W_jSPCV3g"
+  }
+ },
+ {
+  "id": "yt-mobile-shorts",
+  "input": "https://m.youtube.com/shorts/X5W_jSPCV3g",
+  "expect": {
+   "platform": "youtube",
+   "shortcode": "yt-X5W_jSPCV3g"
+  }
+ },
+ {
+  "id": "yt-watch-feature",
+  "input": "https://www.youtube.com/watch?feature=share&v=X5W_jSPCV3g",
+  "expect": {
+   "platform": "youtube",
+   "shortcode": "yt-X5W_jSPCV3g"
+  }
+ },
+ {
+  "id": "private-address",
+  "input": "http://169.254.169.254/latest/meta-data/",
+  "expect": {
+   "platform": "BLOCKED"
+  }
+ },
+ {
+  "id": "no-link",
+  "input": "Leg day was brutal today",
+  "expect": {
+   "platform": null
+  }
+ },
+ {
+  "id": "bio-link-before-reel",
+  "input": "Full plan at https://linktr.ee/coachjaeo and the reel https://www.instagram.com/reel/DBGi0r0pHZ4/?igsh=abc",
+  "expect": {
+   "platform": "instagram",
+   "shortcode": "DBGi0r0pHZ4"
+  },
+  "note": "a later post link wins over an earlier non-post link"
+ },
+ {
+  "id": "ig-post-kind-line",
+  "input": "https://www.instagram.com/p/DTasqBeFMdq/",
+  "expect": {
+   "platform": "instagram",
+   "kind": "p"
+  }
+ }
+]
