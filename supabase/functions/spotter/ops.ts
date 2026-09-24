@@ -21,6 +21,8 @@
  * change the thing it is reporting on is a notifier that can hide an outage.
  */
 
+import { serviceFetch } from "./rest.ts";
+
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
@@ -39,7 +41,7 @@ const ALLOWED_ORIGINS = (Deno.env.get("ALLOWED_ORIGINS") ??
 function rest(table: string): string { return `${SUPABASE_URL}/rest/v1/${table}`; }
 
 async function readRows(table: string, query: string): Promise<Record<string, unknown>[]> {
-  const r = await fetch(`${rest(table)}?${query}`, { headers: dbHeaders });
+  const r = await serviceFetch(`${rest(table)}?${query}`, { headers: dbHeaders });
   if (!r.ok) throw new Error(`ops db ${table} ${r.status}: ${await r.text()}`);
   return await r.json();
 }
@@ -113,6 +115,8 @@ export function phraseFor(alert: Alert): string {
       return `${num(d.count) ?? "?"} uploads not cleaned up`;
     case "jobs_at_max_attempts":
       return `${num(d.count) ?? "?"} reads out of retries`;
+    case "erasure_stuck":
+      return `${num(d.count) ?? "?"} account erasures waiting on a third party`;
     default: {
       const day = alert.key.match(/^spend_day_(\d+)$/);
       if (day) return `day spend ${num(d.pct) ?? day[1]} %`;
@@ -235,11 +239,16 @@ export async function runOpsAlert(
           url: `${ALLOWED_ORIGINS[0]}/spotter/`,
         });
       } catch (e) {
-        console.error("ops: push failed", e);
+        // A refused endpoint is named by its row, never by the endpoint itself.
+        if ((e as Error)?.name === "PushEndpointError") {
+          console.error("ops: push endpoint refused for subscription", sub.id, (e as { reason?: string }).reason ?? "");
+        } else {
+          console.error("ops: push failed", e);
+        }
         continue;
       }
       if (result.gone) {
-        await fetch(`${rest("push_subscriptions")}?endpoint=eq.${encodeURIComponent(sub.endpoint)}`,
+        await serviceFetch(`${rest("push_subscriptions")}?endpoint=eq.${encodeURIComponent(sub.endpoint)}`,
           { method: "DELETE", headers: dbHeaders }).then((r) => r.body?.cancel());
         dropped++;
         continue;
@@ -256,7 +265,7 @@ export async function runOpsAlert(
     const stamp = new Date(nowMs).toISOString();
     for (const a of pending) {
       const detail = { ...(a.detail ?? {}), notified: stamp };
-      const r = await fetch(`${rest("ops_alerts")}?id=eq.${a.id}`, {
+      const r = await serviceFetch(`${rest("ops_alerts")}?id=eq.${a.id}`, {
         method: "PATCH",
         headers: { ...dbHeaders, prefer: "return=minimal" },
         body: JSON.stringify({ detail }),

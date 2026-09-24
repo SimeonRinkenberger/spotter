@@ -29,18 +29,29 @@ jobs:
       - run: node tools/reader-db-check.mjs
         env:
           PGLITE_MODULE: ${{ runner.temp }}/guard-db/node_modules/@electric-sql/pglite/dist/index.js
+      - run: node tools/security-db-check.mjs
+        env:
+          PGLITE_MODULE: ${{ runner.temp }}/guard-db/node_modules/@electric-sql/pglite/dist/index.js
+      - run: node tools/erasure-outbox-check.mjs
+        env:
+          PGLITE_MODULE: ${{ runner.temp }}/guard-db/node_modules/@electric-sql/pglite/dist/index.js
       - run: npm run gtm:check
         env:
           PGLITE_MODULE: ${{ runner.temp }}/guard-db/node_modules/@electric-sql/pglite/dist/index.js
       - run: deno check supabase/functions/spotter/index.ts
       - run: deno run --allow-env tools/ai-guard-check.ts
       - run: deno run --allow-read --allow-env tools/ai-admission-check.ts
+      - run: deno run --allow-read tools/ai-price-check.ts
       - run: deno run --allow-read tools/source-trust-check.ts
+      - run: deno run --allow-read tools/ssrf-policy-check.ts
+      - run: deno run --allow-env --allow-read tools/push-ssrf-check.ts
+      - run: deno run --allow-env --allow-read tools/push-tick-retry-check.ts
       - run: deno run --allow-read tools/merge-harness.ts
       - run: deno run --allow-read --allow-env tools/ingest-coverage-harness.ts
       - run: deno run --allow-read tools/pack-eval/offline.ts
       - run: deno run --allow-read tools/pack-eval/score-test.ts
       - run: node build.mjs && git diff --exit-code -- docs/index.html supabase/functions/spotter/page.gen.ts
+      - run: node tools/csp-check.mjs
   native-parity:
     runs-on: macos-14
     timeout-minutes: 10

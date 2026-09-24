@@ -8,8 +8,11 @@ const end = html.indexOf('</script>', start);
 if (start < 0 || end < 0) throw new Error('App script not found');
 writeFileSync('native-dist/app.js', html.slice(start + 8, end));
 html = html.slice(0, start) + '<script src="native.js"></script>' + html.slice(end + 9);
-html = html.replace(/<script src="https:\/\/cdn\.jsdelivr\.net\/npm\/@supabase\/supabase-js@2\.115\.0\/dist\/umd\/supabase.js"><\/script>/, '')
-  .replace(/<link[^>]+rel="(?:preload|manifest)"[^>]*>/g, '');
+html = html.replace(/<script src="https:\/\/cdn\.jsdelivr\.net\/npm\/@supabase\/supabase-js@2\.115\.0\/dist\/umd\/supabase.js"[^>]*><\/script>/, '')
+  .replace(/<link[^>]+rel="(?:preload|manifest)"[^>]*>/g, '')
+  // The web page's CSP is the web page's: the shell loads native.js and the SDK
+  // bundle from its own scheme, and its behaviour is kept exactly as it was.
+  .replace(/<meta http-equiv="Content-Security-Policy"[^>]*>\n/, '');
 // Retain the web app's typography and font stylesheets. Its existing system-font
 // fallbacks still apply when a font host is unavailable.
 writeFileSync('native-dist/index.html', html);

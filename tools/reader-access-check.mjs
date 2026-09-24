@@ -81,7 +81,7 @@ assert.equal(updates.find(x=>x.table==='workouts').body.title,'Basic');
 assert.equal(updates.find(x=>x.table==='workouts').body.read_quality,'basic');
 console.log('PASS owner/job-scoped completion, isolated simultaneous saves and downgrade during visual reading.');
 // Preparing a native save must be read-only and never expose the cached card.
-c.BLOCKED=Symbol('blocked');c.resolveShare=async()=>({shortcode:'same',platform:'tiktok',kind:'video',clean:'https://www.tiktok.com/@fixture/video/1'});
+c.BLOCKED=Symbol('blocked');c.INSECURE=Symbol('insecure');c.resolveShare=async()=>({shortcode:'same',platform:'tiktok',kind:'video',clean:'https://www.tiktok.com/@fixture/video/1'});
 c.json=(body)=>body;let plan='plus',cached=true,owned=false;
 let consented=true;
 c.capsFor=async()=>({plan});c.dbSelect=async(table)=>table==='workouts'?(owned?[{id:'mine'}]:[]):table==='profiles'?[{settings:consented?{ai_consent_version:AI_CONSENT_VERSION,ai_consent_at:'2026-09-20T00:00:00Z'}:{}}]:cached?[{pack,pack_v:1}]:[];

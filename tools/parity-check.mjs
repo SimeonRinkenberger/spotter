@@ -11,8 +11,11 @@ assert(start >= 0 && end > start, 'Missing shared application script');
 assert.equal(read('native-dist/app.js'), web.slice(start + 8, end),
   'Native application differs from the web application; run npm run ios:assets');
 const shell = (web.slice(0, start) + '<script src="native.js"></script>' + web.slice(end + 9))
-  .replace(/<script src="https:\/\/cdn\.jsdelivr\.net\/npm\/@supabase\/supabase-js@2\.115\.0\/dist\/umd\/supabase.js"><\/script>/, '')
-  .replace(/<link[^>]+rel="(?:preload|manifest)"[^>]*>/g, '');
+  .replace(/<script src="https:\/\/cdn\.jsdelivr\.net\/npm\/@supabase\/supabase-js@2\.115\.0\/dist\/umd\/supabase.js"[^>]*><\/script>/, '')
+  .replace(/<link[^>]+rel="(?:preload|manifest)"[^>]*>/g, '')
+  // The web page's CSP is the web page's: the shell loads native.js and the SDK
+  // bundle from its own scheme, and its behaviour is kept exactly as it was.
+  .replace(/<meta http-equiv="Content-Security-Policy"[^>]*>\n/, '');
 assert.equal(read('native-dist/index.html'), shell,
   'Native markup or styling differs from the shared web shell');
 const generated = read('supabase/functions/spotter/page.gen.ts');

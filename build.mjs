@@ -12,6 +12,7 @@
 // generated constant, so nothing imports the templates at runtime any more.
 //
 // Run from the repo root:  npm install   (once)   then   node build.mjs
+import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { gzipSync } from "node:zlib";
 import { transformSync } from "esbuild";
@@ -183,7 +184,66 @@ const pieces = PARTS.map(([file, name]) => {
 });
 
 const raw = rawPieces.join("");
-const html = pieces.join("");
+const built = pieces.join("");
+
+// ---------- Content-Security-Policy ----------
+//
+// GitHub Pages cannot send response headers, so the policy is a <meta> written
+// here, first in <head>, before any tag it has to govern. It lists exactly what
+// the page loads and nothing else; tools/csp-check.mjs fails the build's CI if
+// an origin the page uses is missing from it.
+//
+// Scripts: no 'unsafe-inline' and no 'unsafe-eval'. The app is one inline
+// <script>, allowed by the sha256 of its exact built bytes, computed below on
+// every build, so an edit to app.ts can never ship with a stale hash. The CDN is
+// allowed by path, not by host: cdn.jsdelivr.net serves every npm package there
+// is, so the host alone would let any of them run. supabase-js is additionally
+// pinned by integrity (SRI) on its tag. The three identity/captcha providers are
+// loaded on demand by loadScript() in app.ts.
+//
+// Styles keep 'unsafe-inline': the design lives in one inline <style> and the
+// app sets style attributes throughout, and a style cannot run code.
+//
+// The same page is written to page.gen.ts for the edge function (parity), where
+// the policy is equally correct. The native shell strips it (tools/ios/build.mjs):
+// its WKWebView page is assembled differently and keeps its behaviour unchanged.
+const SUPABASE = "https://mtzevoxxpsktmrbbuxva.supabase.co";
+const SUPABASE_JS = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/";
+const PAGES = "https://simeonrinkenberger.github.io";   // Pumpy artwork when served by the edge function
+function cspFor(page) {
+  const hashes = [];
+  const inline = /<script(\s[^>]*)?>([\s\S]*?)<\/script>/gi;
+  for (let m; (m = inline.exec(page));) {
+    if (/\ssrc\s*=/.test(m[1] ?? "")) continue;
+    hashes.push("'sha256-" + createHash("sha256").update(m[2], "utf8").digest("base64") + "'");
+  }
+  if (!hashes.length) throw new Error("no inline script found to hash for the CSP");
+  const policy = {
+    "default-src": ["'self'"],
+    "script-src": [...hashes, SUPABASE_JS, "https://challenges.cloudflare.com",
+      "https://accounts.google.com/gsi/client", "https://appleid.cdn-apple.com/appleauth/"],
+    "style-src": ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://api.fontshare.com",
+      "https://accounts.google.com/gsi/style"],
+    "font-src": ["'self'", "data:", "https://fonts.gstatic.com", "https://cdn.fontshare.com"],
+    "img-src": ["'self'", "data:", "blob:", SUPABASE, "https://i.ytimg.com", PAGES],
+    "media-src": ["'self'", "blob:", SUPABASE, PAGES],
+    "connect-src": ["'self'", "blob:", SUPABASE, SUPABASE.replace("https://", "wss://"),
+      "https://accounts.google.com/gsi/"],
+    "frame-src": ["https://www.tiktok.com", "https://www.instagram.com", "https://www.youtube.com",
+      "https://www.youtube-nocookie.com", "https://challenges.cloudflare.com", "https://accounts.google.com/gsi/",
+      "https://appleid.apple.com"],
+    "worker-src": ["'self'"],
+    "manifest-src": ["'self'"],
+    "object-src": ["'none'"],
+    "base-uri": ["'self'"],
+    "form-action": ["'self'"],
+  };
+  return Object.entries(policy).map(([k, v]) => k + " " + v.join(" ")).join("; ");
+}
+const CHARSET = '<meta charset="utf-8">\n';
+if (!built.includes(CHARSET)) throw new Error("page has no charset meta to put the CSP after");
+const html = built.replace(CHARSET, CHARSET +
+  '<meta http-equiv="Content-Security-Policy" content="' + cspFor(built) + '">\n');
 
 // Cheap proof that the scanner did not eat something structural.
 for (const anchor of ["<!DOCTYPE html>", "<style>", "</style>", "<script>", "</script>", "</html>"]) {

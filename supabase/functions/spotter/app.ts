@@ -2,7 +2,7 @@
 // Reads and simple writes go straight to PostgREST through supabase-js under RLS;
 // only ingest, reprocess and the AI helpers go through the edge function.
 export const APP = String.raw`
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/dist/umd/supabase.js" integrity="sha384-CLZeq1dk8+Uzrs7TVvBUdlFoV5F0DMqgRoeHa8g5wJcuPe5SkVfEvdxB0ZuzlnBQ" crossorigin="anonymous"></script>
 <script>
 (function () {
   "use strict";
