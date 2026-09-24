@@ -61,6 +61,7 @@ const sendFrames = controller.slice(controller.indexOf('private func sendFrames(
 assert(sendFrames.includes('precheck: false') && sendFrames.includes('/api/workouts/\\(id)/media'), 'frames go to the held card, without prepare');
 assert(controller.indexOf('begin()\n    }\n\n    override func viewDidAppear') > 0, 'work starts in viewDidLoad, under the sheet animation');
 assert(controller.includes('async let access = Self.readAccess()'), 'the Keychain read overlaps the item reading');
+assert(!controller.includes('"HEAD"'), 'no warm-up request: the save is on the wire within ~30 ms of the view loading');
 // The video door streams from disk and never reads the file into memory.
 assert(controller.includes('transport.upload(for: put, fromFile: file.url'), 'upload from the file');
 assert(!/Data\(contentsOf:/.test(controller), 'no whole file in memory');

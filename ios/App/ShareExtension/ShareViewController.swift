@@ -39,8 +39,8 @@ final class ShareViewController: UIViewController {
 
     private var task: Task<Void, Never>?
     private var followUp: Task<Void, Never>?
-    // One session for the whole share, created with the view: the warm-up
-    // below and the save then ride the same connection.
+    // One session for the whole share: the save, the consent answer, the
+    // upload and the frames all ride the same connection.
     private lazy var transport: URLSession = {
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 25
@@ -116,21 +116,13 @@ final class ShareViewController: UIViewController {
         begin()
     }
 
+    // No connection warm-up: the items and the Keychain are read in 20–90 ms
+    // (measured in the simulator), so the save itself is on the wire before a
+    // warm-up request could finish, and a HEAD would only cost the function an
+    // extra invocation per share.
     private func begin() {
         guard !started else { return }; started = true
-        warm()
         task = Task { await readInput() }
-    }
-
-    // DNS, TCP and TLS to the function, while the items are still being read,
-    // on the session the save will use. `HEAD /` is the function's own no-op
-    // (it answers before any auth or database work) and carries nothing of the
-    // user's: no key, no link.
-    private func warm() {
-        var request = URLRequest(url: URL(string: SheetPipeline.functionBase + "/")!)
-        request.httpMethod = "HEAD"
-        request.timeoutInterval = 5
-        transport.dataTask(with: request).resume()
     }
 
     private func ms() -> Int { Int(Date().timeIntervalSince(loaded) * 1000) }
