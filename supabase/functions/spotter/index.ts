@@ -91,7 +91,8 @@ import {
 // run; Deno.resolveDns is not present in every Deno-compatible runtime, and the
 // difference decides whether a public hostname pointing at a private A record is
 // caught. Logged once at cold start so it is answerable from the function logs.
-console.log("ssrf guard: static checks on, dns resolution", dnsAvailable() ? "on" : "UNAVAILABLE");
+console.log("ssrf guard: static checks on, dns resolution",
+  dnsAvailable() ? "on" : "UNAVAILABLE (only platform hosts will be fetched)");
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -1291,9 +1292,12 @@ function matchYouTube(u: string): Parsed | null {
 
 // Any other http(s) page — a training blog, a program write-up. Keyed by URL hash.
 // Returns null for anything unusable and BLOCKED for anything that fails the SSRF
-// guard, so ingest can tell the user which of the two happened.
+// guard, so ingest can tell the user which of the two happened. INSECURE is the
+// third answer: an http:// page whose https:// form does not answer, which the
+// guard will not read over plain http (net.ts says why).
 const BLOCKED = Symbol("blocked");
-type WebParse = Parsed | null | typeof BLOCKED;
+const INSECURE = Symbol("insecure");
+type WebParse = Parsed | null | typeof BLOCKED | typeof INSECURE;
 
 function isFacebookPost(u: URL): boolean {
   return /^\/(?:reel|share\/(?:r|v|p))\/[^/]+/i.test(u.pathname) ||
@@ -1307,6 +1311,8 @@ function isFacebookPost(u: URL): boolean {
 async function webParsed(target: string): Promise<WebParse> {
   const guard = await assertPublicUrl(target.split("#")[0]);
   if (!guard.ok) { console.error("ssrf: rejected", target, "—", guard.reason); return BLOCKED; }
+  // guard.url, not target: an http:// page is read, linked and keyed as the
+  // https:// form it is actually fetched as.
   const u = guard.url;
   // social links that failed their own matcher (profiles, channels) make junk cards — reject
   if (/(^|\.)(instagram\.com|tiktok\.com|youtube\.com|youtu\.be)$/i.test(u.hostname)) return null;
@@ -1351,7 +1357,12 @@ async function resolveShare(raw: string): Promise<WebParse> {
       });
       loc = r.headers.get("location");
       await r.body?.cancel();
-    } catch (_) { break; }
+    } catch (_) {
+      // An http:// link is tried as https:// and never read over plain http, so
+      // when the https form does not answer, that is the answer.
+      if (guard.upgraded) { console.error("ssrf: no https answer for http link, hop", hop); return INSECURE; }
+      break;
+    }
     if (!loc) break;
     try { target = new URL(loc, guard.url).toString(); } catch { return BLOCKED; }
     // login redirects carry the real path in ?next=
@@ -7818,7 +7829,7 @@ async function ingestUpload(
 async function handleIngestPrepare(req: Request, userId: string, cors: Cors): Promise<Response> {
   const body = await req.json().catch(() => ({}));
   const p = await resolveShare(String(body?.url ?? "").slice(0, 4096));
-  if (!p || p === BLOCKED || p.platform !== "tiktok" || p.kind === "photo")
+  if (!p || p === BLOCKED || p === INSECURE || p.platform !== "tiktok" || p.kind === "photo")
     return json({ status: "ok", needs_frames: false }, 200, cors);
   const sc = encodeURIComponent(p.shortcode);
   const [owned, cached, uc, profile] = await Promise.all([
@@ -7880,6 +7891,12 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
     return json({
       status: "blocked",
       message: "That link points to a private or internal address, so Spotter will not fetch it.",
+    }, 400, cors);
+  }
+  if (p === INSECURE) {
+    return json({
+      status: "blocked",
+      message: "That page does not open over a secure (https) connection, so Spotter will not fetch it.",
     }, 400, cors);
   }
   if (!p) return json({ status: "error", message: "No workout link found in what was shared." }, 400, cors);

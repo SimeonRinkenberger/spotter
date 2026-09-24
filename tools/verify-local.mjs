@@ -38,6 +38,7 @@ const steps = [
   ['AI transport accounting', 'deno', ['run', '--allow-env', 'tools/ai-guard-check.ts']],
   ['AI admission', 'deno', ['run', '--allow-read', '--allow-env', 'tools/ai-admission-check.ts']],
   ['Source trust', 'deno', ['run', '--allow-read', 'tools/source-trust-check.ts']],
+  ['Outbound guard policy', 'deno', ['run', '--allow-read', 'tools/ssrf-policy-check.ts']],
   ['Merge harness', 'deno', ['run', '--allow-read', 'tools/merge-harness.ts']],
   ['Ingest coverage', 'deno', ['run', '--allow-read', '--allow-env', 'tools/ingest-coverage-harness.ts']],
   ['Pack eval offline', 'deno', ['run', '--allow-read', 'tools/pack-eval/offline.ts']],
