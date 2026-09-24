@@ -49,6 +49,7 @@ jobs:
       - run: deno run --allow-read tools/pack-eval/offline.ts
       - run: deno run --allow-read tools/pack-eval/score-test.ts
       - run: node build.mjs && git diff --exit-code -- docs/index.html supabase/functions/spotter/page.gen.ts
+      - run: node tools/csp-check.mjs
   native-parity:
     runs-on: macos-14
     timeout-minutes: 10
