@@ -3017,12 +3017,18 @@ function uploadRoute(
  * tell, on the media tier's own principle: a count that could not be read is not
  * a count of zero, and the cost of being wrong here is one file heard rather than
  * watched, which is what every upload used to get.
+ *
+ * The ceiling is mediaBurst, the number the routes admit against, and not the
+ * plan table's `media` (Basic 2). With the two apart, one Basic upload — which
+ * logs a row for the pack attempt and one for the video read — used Basic's two,
+ * and "Add the video" that same day was admitted by /media, then only heard here,
+ * and failed as audio.
  */
 async function overMediaCapToday(userId: string, shortcode: string): Promise<boolean> {
   try {
     const [u, uc] = await settledAll<unknown>([mediaCountToday(userId), capsFor(userId)]);
     if (await monthReadsReached(userId, (uc as UserCaps).plan, shortcode) !== null) return true;
-    return overCap(u as number, (uc as UserCaps).caps.media);
+    return overCap(u as number, mediaBurst(uc as UserCaps));
   } catch (e) {
     console.error("upload: cannot read today's media count for", userId, "— not watching", e);
     return true;
@@ -10325,9 +10331,10 @@ function mediaSeed(cached: any, w: any): { step: string; meta: Meta; card: Card 
 
 // Basic's daily ceiling on media steps, which is not the plan table's `media`.
 // A Basic read is a Plus preview, four a month, so this stop is never the one a
-// Basic account meets on the read route, the pack tier or the media step; it
-// is only the burst guard behind the previews, the same size as Plus's. One
-// number, so /api/limits reports the ceiling those three enforce.
+// Basic account meets on the read route, the pack tier, the media step, the
+// upload reader or the cache upgrade; it is only the burst guard behind the
+// previews, the same size as Plus's. One number, so /api/limits reports the
+// ceiling all of them enforce.
 const BASIC_MEDIA_BURST = 15;
 function mediaBurst(uc: UserCaps): number | null {
   return plusPlan(uc.plan) ? uc.caps.media : BASIC_MEDIA_BURST;
@@ -10842,7 +10849,7 @@ async function upgradeCachedCard(
   const [counts, uc] = await settledAll<any>([countsFor(userId), known ? Promise.resolve(known) : capsFor(userId)]);
   if (overCap((counts as Counts).extracts, (uc as UserCaps).caps.extract)) return null;
   if (await monthReadsReached(userId, (uc as UserCaps).plan, p.shortcode) !== null) return null;
-  if (await mediaCapReached(userId, (uc as UserCaps).caps.media) !== null) return null;
+  if (await mediaCapReached(userId, mediaBurst(uc as UserCaps)) !== null) return null;
   if (!(await paidAllowed())) return null;
   // A paid read is about to be queued: the one point this save is admitted. A
   // refusal leaves the ordinary cache hit standing.
