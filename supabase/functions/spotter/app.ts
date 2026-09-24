@@ -16392,9 +16392,6 @@ export const APP = String.raw`
     $("sethapticrow").classList.toggle("hide", !native && !navigator.vibrate);
     paintSounds();
     loadRemind();
-    $("shortcutsetup").classList.toggle("hide", !!native);
-    $("nativesharehelp").classList.toggle("hide", !native);
-    if (native && native.platform === "android") $("nativesharehelp").textContent = "In TikTok, YouTube, Instagram or another app, share the post’s link and choose Spotter from the Android share sheet.";
     var key = state.profile ? state.profile.ingest_key : null;
     $("setkey").textContent = key ? API + "ingest?key=" + key : "Loading…";
     renderSettingsMeter();
