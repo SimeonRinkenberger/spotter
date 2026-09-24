@@ -7634,14 +7634,9 @@ async function handleAccountDelete(userId: string, cors: Cors): Promise<Response
     return json({ status: "error", message: "Could not delete the account." }, 500, cors);
   }
 
-  // Best effort, and paged: a folder is not guaranteed to fit in one listing.
+  // Best effort: everything in the person's folder, the phone's contact sheets too.
   try {
-    for (let page = 0; page < 10; page++) {
-      const objects = await listUploads(`${userId}/`, 100);
-      if (!objects.length) break;
-      for (const o of objects) await deleteUpload(`${userId}/${o.name}`);
-      if (objects.length < 100) break;
-    }
+    await deleteUserFolder(userId);
   } catch (e) {
     console.error("account delete: uploads", userId, e);
   }
@@ -7665,6 +7660,32 @@ async function handleAccountDelete(userId: string, cors: Cors): Promise<Response
   if (grant) await eraseAtProvider("strava", grant.subject, grant.detail, deauthorizeStrava);
   await eraseAtProvider("revenuecat", userId, {}, (id) => deleteRevenueCatSubscriber(id));
   return json({ status: "ok" }, 200, cors);
+}
+
+/**
+ * Every object under a person's folder in the uploads bucket, including the
+ * contact sheets under `pack/<shortcode>/`. A listing names a folder with a null
+ * id (the one a person has is `pack`, and each video in it is a folder of
+ * sheets), so folders are descended into rather than handed to deleteUpload.
+ * Paged: a folder is not guaranteed to fit in one listing, and a deleted page
+ * makes room for the next at offset 0.
+ */
+async function deleteUserFolder(userId: string): Promise<void> {
+  const walk = async (prefix: string, depth: number): Promise<void> => {
+    for (let page = 0; page < 10; page++) {
+      const objects = await listUploads(prefix, 100);
+      if (!objects.length) return;
+      for (const o of objects) {
+        if (o.id === null) {
+          if (depth < 2) await walk(`${prefix}${o.name}/`, depth + 1);
+          continue;
+        }
+        await deleteUpload(`${prefix}${o.name}`);
+      }
+      if (objects.length < 100) return;
+    }
+  };
+  await walk(`${userId}/`, 0);
 }
 
 /**

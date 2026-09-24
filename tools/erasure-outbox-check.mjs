@@ -149,6 +149,7 @@ check(handler && erasers, 'index.ts has handleAccountDelete and the ERASERS the 
 const legacy = slice(indexSrc, 'forgetRevenueCatQuietly');
 // Writes an erasure down against its account without attempting it (R-4); absent in older trees.
 const queue = slice(indexSrc, 'queueErasure');
+const folder = slice(indexSrc, 'deleteUserFolder');
 Object.assign(ctx, {
   UUID_RE: /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/,
   SUPABASE_URL: SUPA, SERVICE_KEY: 'service', authHeaders: { apikey: 'service' },
@@ -176,7 +177,7 @@ Object.assign(ctx, {
   rpc: async (name, args) => { if (world.rpcDown) throw new Error('rpc ' + name + ' 503'); return await rpc(name, args); },
 });
 if (handler) {
-  vm.runInContext(transformSync([erasers ?? '', legacy ?? '', queue ?? '', handler].join('\n'), { loader: 'ts', format: 'cjs' }).code
+  vm.runInContext(transformSync([erasers ?? '', legacy ?? '', queue ?? '', folder ?? '', handler].join('\n'), { loader: 'ts', format: 'cjs' }).code
     .replace(/^const ERASERS/m, 'var ERASERS'), ctx);
 }
 const canRun = !!handler;
