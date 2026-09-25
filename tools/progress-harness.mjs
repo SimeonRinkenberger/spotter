@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import assert from 'node:assert/strict';
 const {chromium}=await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const src=fs.readFileSync('supabase/functions/spotter/app.ts','utf8');
-const built=fs.readFileSync('docs/index.html','utf8');
+const built=fs.readFileSync('web-dist/index.html','utf8');
 const markup=fs.readFileSync('supabase/functions/spotter/markup.ts','utf8');
 function fn(name){const a=src.indexOf('  function '+name+'(');assert(a>=0,name);return src.slice(a,src.indexOf('\n  }',a)+4);}
 const browser=await chromium.launch({channel:'chrome',headless:true});

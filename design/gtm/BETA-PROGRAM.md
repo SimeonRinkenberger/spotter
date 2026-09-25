@@ -116,14 +116,15 @@ Run this once per tester. It should take under fifteen minutes of theirs.
       thing the closed test exists to test.
 
 **iPhone — TestFlight (not available yet)**
-- [ ] Blocked on Apple Developer Program enrollment. Until then, iPhone testers use the web app.
+- [ ] Blocked on Apple Developer Program enrollment. (The web app that stood in is retired.)
 - [ ] When it exists: add them as an external tester, submit the build for TestFlight review, send
       the public link, and tell them the build expires in 90 days.
 
-**Web PWA — the fallback for everyone else**
-- [ ] Send https://simeonrinkenberger.github.io/spotter/ and tell them to add it to the home screen.
-- [ ] Say plainly that the web app is a stop-gap and will be retired after the native apps ship, and
-      that their account and library carry over.
+**Web PWA — retired 24 September 2026**
+- The web app is no longer published: https://simeonrinkenberger.github.io/spotter/ is a landing
+  page saying Spotter is an iPhone and Android app. Testers use TestFlight or the Play test track;
+  anyone who used the web version signs in with the same email in the app, and their account and
+  library carry over.
 
 **First run, on a call if possible**
 - [ ] They create an account with email or Continue with Google.

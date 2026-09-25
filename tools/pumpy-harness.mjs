@@ -318,8 +318,4 @@ check('reopening a chat preserves an explicitly cleared attachment list', () => 
   assert.equal(run('lastRefs([{role:"user",meta:{refs:["old"]}},{role:"user",meta:{refs:[]}}], "old").length'), 0);
 });
 
-check('built page equals edge-function page', () => {
-  const generated = fs.readFileSync('supabase/functions/spotter/page.gen.ts', 'utf8');
-  assert.equal(JSON.parse(generated.slice(generated.indexOf('"'), generated.lastIndexOf('"') + 1)), fs.readFileSync('docs/index.html', 'utf8'));
-});
 console.log(checks + ' checks passed');

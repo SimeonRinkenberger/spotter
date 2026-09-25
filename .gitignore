@@ -7,6 +7,8 @@ HANDOFF.md
 census-*.json
 .demo-cache/
 native-dist/
+# build.mjs's app page (the web app is retired; not published, not committed)
+web-dist/
 ios/App/App/public/
 ios/App/App/capacitor.config.json
 ios/App/Local.xcconfig

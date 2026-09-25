@@ -72,7 +72,11 @@ def token(tag):
 def magic(tag):
     st, d = admin("/auth/v1/admin/generate_link", "POST",
                   {"type": "magiclink", "email": email(tag),
-                   "options": {"redirect_to": "https://simeonrinkenberger.github.io/spotter/"}})
+                   # The web app is retired: the Pages address is a landing page that
+                   # drops a session, so a magic link signs in the local web copy
+                   # (npx --yes serve -l 8000 web-dist) instead; the same spelling as the
+                   # redirect allow-list entry in supabase/config.toml.
+                   "options": {"redirect_to": "http://localhost:8000"}})
     if st >= 300: raise SystemExit("magic link failed %s %s" % (st, d))
     return d.get("action_link") or d.get("properties", {}).get("action_link")
 

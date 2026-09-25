@@ -6,7 +6,10 @@ Save a fitness video from TikTok, Instagram or YouTube. Spotter reads the exerci
 and reps out of the caption, gives you a real workout card, then walks you through it one
 move at a time and logs what you lifted.
 
-**Live app:** https://simeonrinkenberger.github.io/spotter/
+**Spotter is an iPhone and Android app** (Capacitor shells in `ios/` and `android/`), coming
+soon to the App Store and Google Play. The web app is retired: https://simeonrinkenberger.github.io/spotter/
+is now a small landing page that says so (`docs/index.html`), and `docs/sw.js` is a kill switch
+that unregisters the old web app's service worker. See [The retired web app](#the-retired-web-app).
 
 <img src="docs/icon.png" width="88" alt="">
 
@@ -38,12 +41,38 @@ move at a time and logs what you lifted.
   everything in it from inside the app. A forgotten password is reset by email from the sign-in
   card.
 
+## The retired web app
+
+Native is the product, and the web app that used to run at
+https://simeonrinkenberger.github.io/spotter/ is retired. What GitHub Pages publishes from
+`docs/` now:
+
+- `index.html` — a small landing page: Spotter is an iPhone and Android app, coming soon to
+  the stores; a line for people who used the web version; links to privacy, terms, account
+  deletion and support. No Supabase client, no fonts or scripts from other hosts; its CSP
+  (`default-src 'none'`, its one inline script and style by hash) is written by `build.mjs`.
+  Its script only works on this device: it answers old auth-email links and creator
+  `?code=` links with one sentence, takes tokens out of the address bar, and removes
+  Spotter's own keys (`sb-mtzevoxxpsktmrbbuxva-*`, `spotter*`), caches and service worker from
+  the origin, which is shared with another app. Nothing else on the origin is touched.
+- `sw.js` — a kill switch at the old worker's address, which must stay there for good: an old
+  install's next update check gets it, and it deletes Spotter's caches, unregisters, and
+  reloads its windows onto the landing page.
+- `privacy.html`, `terms.html`, `delete-account.html`, `whats-new.html`, `pumpy.html`,
+  `strava-return.html` (Strava's OAuth return, opened in the app's in-app browser),
+  `billing-return.html`, the icon and `assets/` (which the native bundle copies).
+
+The edge function answers `GET /` with a 302 to the landing page and no longer bundles the
+app page, and it never allows the Pages origin through CORS. The Pages address is still where
+Strava, creator share links, notification taps and the app's auth emails send people, which
+is why the landing page handles those. `tools/retire-web-check.mjs` holds all of this.
+
 ## Architecture
 
 Two moving parts, no build step and no bundler.
 
 ```
-Browser (GitHub Pages, docs/index.html)
+iOS / Android app (Capacitor WebView; its page is cut from web-dist/index.html)
   ├── supabase-js ──► PostgREST      reads + simple writes, protected by per-user RLS
   ├── supabase-js ──► Realtime       this user's OWN workouts rows, filtered by user_id
   └── fetch ────────► Edge Function  ingest, re-extract, AI helpers (needs secrets)
@@ -324,9 +353,8 @@ gets the not-medical-advice line appended whether or not the model wrote it.
 | `supabase/functions/spotter/style.ts` | Design tokens and every component style |
 | `supabase/functions/spotter/markup.ts` | Page head, landing page, app shell, sheets |
 | `supabase/functions/spotter/app.ts` | All app logic: auth, library, Workout Mode, plan, progress |
-| `supabase/functions/spotter/page.ts` | One line: re-exports `PAGE_HTML` from the generated module |
-| `supabase/functions/spotter/page.gen.ts` | **Generated** — the built page as a JSON string. Never edit it |
-| `build.mjs` | The build: stitches the three, strips their comments, writes both copies |
+| `build.mjs` | The build: stitches the three, strips their comments, writes `web-dist/index.html` (not committed); keeps the landing page's CSP current |
+| `docs/` | What GitHub Pages publishes: the landing page, the kill-switch `sw.js`, the privacy/terms/deletion and return pages, the icon and mascot art the native bundle copies |
 | `package.json` | Build-time dependencies only (esbuild). Nothing here is shipped |
 | `supabase/migrations/` | Schema, RLS policies, profile trigger, storage buckets, exercise catalog, ingest queue, corrections, collections, Pumpy |
 | `tools/` | Catalog migration generator, normalizer + confidence test batteries, one-time backfill, `census.py` (hash the real users' rows before/after a change), `throwaway.py` (drive disposable accounts against the live deployment) |
@@ -336,12 +364,12 @@ backtick or `${`. `build.mjs` fails loudly if they do.
 
 **The build.** Run `npm install` once, then `node build.mjs` from the repo root after every
 edit to `markup.ts`, `style.ts` or `app.ts`. It concatenates the three templates, strips the
-comments out of the result, and writes that one string to both places that serve it —
-`docs/index.html` for GitHub Pages and `supabase/functions/spotter/page.gen.ts` for the edge
-function, the latter as a JSON string literal so the generated module carries no backtick or
-`${` of its own. One string, two writes: the copies cannot drift, and `page.ts` is now just
-`export { PAGE_HTML } from "./page.gen.ts"`, so nothing imports the templates at runtime.
-Commit `docs/index.html` and `page.gen.ts` together with the source you changed.
+comments out of the result, and writes the page to `web-dist/index.html` (with the icon and
+mascot art beside it). `web-dist/` is a build output: it is gitignored, nothing publishes it,
+and there is nothing to commit. `tools/ios/build.mjs` (`npm run ios:assets`) cuts the native
+bundle out of it, and the browser harnesses and a local browser test it
+(`npx --yes serve -l 8000 web-dist`). The page is no longer served by GitHub Pages or by the
+edge function.
 
 Roughly 30% of those templates is comment. The comments explain why the code is the way it
 is, which is worth a lot to whoever opens the source and nothing to a phone on hotel wifi, so
@@ -357,10 +385,11 @@ by Deno; `stripe` is listed there too, because Deno switches to `node_modules` r
 soon as it finds a `package.json` above the function and would otherwise fail to resolve
 `npm:stripe@^22` during `deno check`.
 
-To assert the two copies really are the same bytes:
+To check a branch leaves the phones' app exactly as it was (every file of `native-dist/`, by
+SHA-256, against another commit):
 
 ```bash
-node -e 'const fs=require("node:fs");const Q=String.fromCharCode(34);const m=fs.readFileSync("supabase/functions/spotter/page.gen.ts","utf8");const gen=JSON.parse(m.slice(m.indexOf(Q),m.lastIndexOf(Q)+1));const web=fs.readFileSync("docs/index.html","utf8");console.log(gen===web?"byte-identical, "+web.length+" chars":"DIFFER");process.exit(gen===web?0:1)'
+npm run native:identity -- main
 ```
 
 **The provider registry.** Everything that knows how a video is obtained lives in one table
@@ -383,7 +412,7 @@ ask how the media was obtained. Adding a source is a new object in `PROVIDERS`.
 ```bash
 npm install                                                        # once, for esbuild
 npm run verify:local                                               # everything CI's verify job runs
-node build.mjs && git add -A && git commit -m "..." && git push   # frontend
+npm run ios:sync && npm run android:sync                           # app: rebuild + copy into the shells
 supabase functions deploy spotter --no-verify-jwt                  # backend
 supabase db push                                                   # schema
 node tools/test-normalize.mjs && node tools/test-confidence.mjs    # both batteries
@@ -392,7 +421,8 @@ node tools/test-normalize.mjs && node tools/test-confidence.mjs    # both batter
 **`npm run verify:local`** runs every step of the `verify` job in
 `.github/workflows/release-checks.yml`, in the same order, and stops at the first failure — the
 PGlite database checks, `npm run gtm:check`, `deno check`, the Deno harnesses, both pack evals,
-`npm audit` and the `build.mjs` byte diff. It needs PGlite once:
+`npm audit`, the build (web-dist/, and the landing page's CSP) and the retired-web checks. It
+needs PGlite once:
 
 ```bash
 npm install --prefix /tmp/spotter-reader-db --ignore-scripts --no-audit --no-fund @electric-sql/pglite@0.5.8
@@ -646,17 +676,20 @@ deletion all share **one** sheet (`#accountsheet`), dressed by `accSheet(cfg)` i
 ### Forgot password
 
 The sign-in face of the auth card shows **Forgot your password?**, which calls
-`resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname })`. Coming back
-on the link fires `PASSWORD_RECOVERY`, and the "Choose a new password" sheet opens from it
-(deferred a tick — supabase-js holds the auth lock through that callback). A `type=recovery` in
-the URL hash is checked at boot as a fallback for browsers that restore the session before the
-listener is attached.
+`resetPasswordForEmail(email, { redirectTo: AUTH_RETURN })` and opens the "check your email"
+card with a six-digit code field. In the app the reset is finished by typing that code
+(`verifyOtp({ type: "recovery" })`), which opens the "Choose a new password" sheet. The link in
+the same email goes to `AUTH_RETURN`, which in the native app is the Pages address — now the
+landing page, which cannot set a password: it says to reset it in the app with a fresh code
+(following the link spends the code in that email). `PASSWORD_RECOVERY` and the `type=recovery`
+boot check remain for a local web copy.
 
-> **Owner action.** The Pages URL `https://simeonrinkenberger.github.io/spotter/` must be listed
-> under Dashboard → Authentication → **URL Configuration** → Redirect URLs, or the link in the
-> email bounces to the Site URL instead. Mail also still goes through Supabase's built-in sender,
-> which is rate-limited to a handful an hour and not for production — the reset copy says so out
-> loud, and a real SMTP provider is needed before launch.
+> **Owner action.** The **Reset password** email template must carry `{{ .Token }}` (Dashboard →
+> Authentication → Email Templates), or an app user has no way to finish a reset now that the
+> link lands on the landing page. The Pages URL stays under **URL Configuration** → Redirect
+> URLs (installed builds send it as `redirectTo`). Mail also still goes through Supabase's
+> built-in sender, which is rate-limited to a handful an hour and not for production — a real
+> SMTP provider is needed before launch.
 
 ### Export my data
 
@@ -1248,7 +1281,8 @@ after in History. `capacity`, `disconnected` and `rate_limited` each get their o
    ```
 5. `supabase functions deploy spotter --no-verify-jwt`.
 6. Put your project URL and anon key at the top of `app.ts`, run `npm install && node build.mjs`, and
-   serve `docs/` (GitHub Pages works: Settings → Pages → main branch, `/docs`).
+   either build the native shells (`npm run ios:sync`, `npm run android:sync`) or serve
+   `web-dist/` for a browser copy (this project no longer publishes one).
 7. Auth hardening. `supabase/config.toml` carries TOTP MFA
    (`[auth.mfa.totp] enroll_enabled/verify_enabled`), which `supabase config push` applies —
    those two keys are in the published
@@ -1410,7 +1444,7 @@ redirect allowlist and activation checklist.
 4. Copy the **Client ID** and **Client secret**. Supabase Dashboard → **Authentication →
    Providers → Google** → enable, paste both, Save. The button appears on the next page load.
 5. Paste the **Client ID** (only the id) into `PUBLIC_AUTH.google_client_id`, run
-   `node build.mjs`, and commit `docs/index.html` and `page.gen.ts` with it. Without this
+   `node build.mjs` (the web app is retired; this matters only for a local web copy). Without this
    step the button
    still works — it just takes the redirect fallback instead of the in-page flow.
 
@@ -1447,7 +1481,7 @@ all — it works on the deployed site or not at all.
    - **Client IDs**: the Services ID from step 2
    - **Secret Key**: the JWT from step 4
 6. Paste the **Services ID** into `PUBLIC_AUTH.apple_services_id`, run `node build.mjs`,
-   commit `docs/index.html` and `page.gen.ts`.
+   rebuild (`node build.mjs`; nothing to commit, the web app is retired).
 
 #### 3. What changes for the people using it
 
@@ -1483,19 +1517,24 @@ all — it works on the deployed site or not at all.
 
 ## Saving from your phone
 
-Android uses the installed web app. The iPhone app now includes a native Share Extension;
-see IOS-SHARING.md for behavior, signing and verification status.
+The Android app takes a share through its own intent (`SpotterAndroid` in `native/bridge.js`)
+and the iPhone app through its native Share Extension; see IOS-SHARING.md for behavior,
+signing and verification status.
 
-### Android — the share sheet, no setup
+### Android — the share sheet of the retired web app
+
+> **Retired.** The web app is no longer published and `docs/manifest.webmanifest` is gone, so
+> the site can no longer be installed or appear in the share sheet; a home-screen install from
+> before lands on the landing page. What follows describes the web path as it was, and the
+> `?share` handling that is still in `app.ts`.
 
 Install Spotter from Chrome (**⋮ → Add to Home screen / Install app**), and it appears in the
 Android share sheet next to the native apps. Share a reel to it and the save is already
 running before the share sheet has finished closing; a video somebody else has already saved
 comes back finished, from the shared cache.
 
-That comes from one manifest member. It is written in both `docs/manifest.webmanifest` and
-the copy the function serves at `GET /manifest.webmanifest`, and the two copies of *this block*
-are kept identical:
+That came from one manifest member, written in `docs/manifest.webmanifest` and in the copy the
+function served at `GET /manifest.webmanifest` (both removed):
 
 ```json
 "share_target": {

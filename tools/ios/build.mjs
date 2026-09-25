@@ -20,8 +20,10 @@ if (process.env.SPOTTER_TEST_STORE === '1') {
   writeFileSync('native-dist/TEST-STORE', 'This bundle uses RevenueCat Test Store. Debug simulator only; run npm run ios:sync without SPOTTER_TEST_STORE before any archive.\n');
   console.warn('*** TEST STORE BUNDLE: Debug simulator only. Run npm run ios:sync without SPOTTER_TEST_STORE before any archive. ***');
 }
+// The app page is build.mjs's unpublished output (web-dist/); the mascot art and the
+// icon are the published copies in docs/, byte for byte what web-dist/ holds too.
 for (const path of ['assets', 'icon.png']) cpSync('docs/' + path, 'native-dist/' + path, { recursive: true });
-let html = readFileSync('docs/index.html', 'utf8');
+let html = readFileSync('web-dist/index.html', 'utf8');
 const start = html.lastIndexOf('<script>');
 const end = html.indexOf('</script>', start);
 if (start < 0 || end < 0) throw new Error('App script not found');
