@@ -1453,6 +1453,9 @@ export const STYLE = String.raw`<style>
     color: var(--ember-ink); }
   .leaverow .pt b { font-size: 15px; white-space: normal; }
   .leaverow .pt span { display: block; margin-top: 1px; line-height: 1.4; }
+  /* The same rows ask about a paused session (askPaused), whose title takes
+     VoiceOver's focus as the sheet opens: a focus that draws no ring. */
+  #patitle { outline: none; }
   /* A card with no picture keeps the column: a sand tile where the art would be. */
   .pickrow .noimg { width: 46px; height: 46px; border-radius: 11px; flex: 0 0 auto; display: flex;
     align-items: center; justify-content: center; background: var(--sand); color: var(--muted); }

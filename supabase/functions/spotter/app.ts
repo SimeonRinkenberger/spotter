@@ -7395,11 +7395,16 @@ export const APP = String.raw`
 
   function startWorkout(w, resume) {
     // Start on a card whose session is waiting is Resume: nobody starting the
-    // workout they paused an hour ago wants a second copy of it.
+    // workout they paused an hour ago wants a second copy of it. Every Start
+    // door comes through here — the card's dock, the day card, Up next, the
+    // ready sheet, spotter://start — so this is where another card's waiting
+    // session stops being overwritten: with sets in it, it is finished or
+    // resumed first (askPaused); with none, there was nothing in it to keep.
     if (!resume) {
       var waiting = pausedDraft();
       if (waiting && waiting.workoutId === w.id) { resumeWorkout(); return; }
-      if (waiting) toast("Ended the paused " + (waiting.title || "workout") + ".");
+      if (waiting && draftSets(waiting)) { askPaused(waiting); return; }
+      if (waiting) toast("Closed " + (waiting.title || "the paused workout") + " — nothing was logged.");
     }
     guideClear(); guideStill();
     // The session owns its exercise list, including additions recovered from a draft.
@@ -7460,6 +7465,33 @@ export const APP = String.raw`
     history.pushState({ workout: 1 }, "");
     lastWeights();
   }
+
+  // Start on one card while another's session waits with sets in it. Apple's
+  // Workout app never loses a session, and nor does this: no Discard, and no
+  // new session written over the old one's draft. The waiting one is finished
+  // — saved with its recap, the paused bar's own Finish — or resumed, and the
+  // card that asked is a second Start away once the way is clear. The rows hand
+  // over as every sheet's do: Workout Mode opens first and the sheet closes
+  // behind it on the same history entry, taking with it the ready sheet a
+  // notification's Start Now can have left underneath.
+  function askPaused(d) {
+    var t = d.title || "Workout", n = draftSets(d);
+    $("patitle").textContent = t + " is paused";
+    $("palede").textContent = n + (n === 1 ? " set logged" : " sets logged");
+    $("pafin").querySelector("b").textContent = "Finish " + t;
+    $("pago").querySelector("b").textContent = "Resume " + t;
+    openSheet("pausedask");
+    // Where VoiceOver starts: which session, then what to do about it.
+    $("patitle").focus({ preventScroll: true });
+  }
+
+  function askDone(fin) {
+    resumeWorkout();
+    if (fin) finishWorkout();
+    [].forEach.call(document.querySelectorAll(".sheet.open"), function (n) { closeSheet(n.id); });
+  }
+  $("pafin").onclick = function () { askDone(true); };
+  $("pago").onclick = function () { askDone(false); };
 
   function appendSessionExercise(ex) {
     if (!wo || wo.finished) return false;
@@ -17475,7 +17507,7 @@ export const APP = String.raw`
    "settingssheet", "colsheet", "renamesheet", "swapsheet", "pumpysheet", "capsheet", "plansheet",
    "trainmore", "copysheet", "sortsheet", "refsheet", "countsheet", "guidesheet", "welcomesheet",
    "workoptions", "filtersheet", "recapsheet", "woaddsheet", "aiconsentsheet", "wleavesheet",
-   "sectionsheet", "ordersheet", "exmenu", "plandays", "readysheet"]
+   "sectionsheet", "ordersheet", "exmenu", "plandays", "readysheet", "pausedask"]
     .forEach(wireSheet);
 
   function overlayShowing() {
@@ -20729,7 +20761,7 @@ export const APP = String.raw`
     b.onclick = function () { closeSheet(b.getAttribute("data-close")); };
   });
   ["workoptions", "filtersheet", "recapsheet", "woaddsheet", "aiconsentsheet", "wleavesheet",
-   "sectionsheet", "ordersheet", "exmenu", "plandays", "readysheet"].forEach(function (id) {
+   "sectionsheet", "ordersheet", "exmenu", "plandays", "readysheet", "pausedask"].forEach(function (id) {
     $(id).addEventListener("keydown", function (e) {
       if (e.key === "Escape") { e.preventDefault(); closeSheet(id); }
       if (e.key !== "Tab") return;
