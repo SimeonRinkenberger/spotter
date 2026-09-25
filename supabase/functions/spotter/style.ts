@@ -1547,7 +1547,7 @@ export const STYLE = String.raw`<style>
   .pausedbar { position: absolute; left: 0; right: 0; bottom: var(--ptab, 78px); z-index: 39;
     padding: 0 10px 8px; pointer-events: none; }
   .pbin { display: flex; align-items: center; gap: 6px; padding: 6px; border-radius: 20px;
-    background: color-mix(in srgb, var(--card) 88%, transparent); border: 1px solid var(--line);
+    background: color-mix(in srgb, var(--card) 94%, transparent); border: 1px solid var(--line);
     -webkit-backdrop-filter: blur(22px) saturate(1.6); backdrop-filter: blur(22px) saturate(1.6);
     box-shadow: var(--sh-md); opacity: 0; transform: translateY(calc(100% + 14px));
     transition: transform var(--t-2) var(--e-in), opacity var(--t-2) var(--e-in); }
@@ -1559,7 +1559,7 @@ export const STYLE = String.raw`<style>
   .pbtx { min-width: 0; display: grid; gap: 2px; }
   .pbtx > * { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pbtx b { font-family: var(--display); font-size: 15px; letter-spacing: -.012em; }
-  .pbtx span { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .pbtx span { font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
   /* The app's own buttons cut to the bar: Resume, and Finish as an icon button. */
   .pbin .btn { width: auto; min-height: 44px; padding: 0 16px; font-size: 14px; }
   .pbin .iconbtn { width: 44px; height: 44px; }
