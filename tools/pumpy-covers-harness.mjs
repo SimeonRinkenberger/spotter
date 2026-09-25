@@ -139,11 +139,11 @@ ok('lists: the migration, app.ts and the directory name the same 35 drawings in 
 
 // ---------- every surface that draws a card's picture ----------
 {
-  for (const fn of ['cardNode', 'fromChip', 'planItem', 'pickRow', 'renderRefList']) {
+  // Train (Option B): the day card's cover (tcard), a day's planned rows (dayCard)
+  // and the Ready to try shelf (drawShelf).
+  for (const fn of ['cardNode', 'fromChip', 'tcard', 'dayCard', 'drawShelf', 'pickRow', 'renderRefList']) {
     assert(/cardArt\((w|src)\)/.test(fnBody(fn)), fn + ' asks cardArt');
   }
-  const today = APP.slice(APP.indexOf('var thumb, art = cardArt(w);') - 400, APP.indexOf('var thumb, art = cardArt(w);') + 200);
-  assert(/tthumb/.test(today), "Train's today card asks cardArt");
   assert(!/pumpyAsset\("workout-/.test(APP), 'no category picture is chosen anywhere in app.ts');
   // The source disclosure's .dphoto is the one picture still drawn from thumb_url:
   // it is the video's own photo, and a Pumpy card has no source disclosure.
@@ -152,7 +152,7 @@ ok('lists: the migration, app.ts and the directory name the same 35 drawings in 
   assert(/pumpy_cover/.test(decl), 'load() and pollPending read pumpy_cover');
   assert(/w\.thumb_url, w\.pumpy_cover,/.test(APP), "the grid's signature redraws a card whose cover arrives");
   assert(!/pumpy-cover/.test(readFileSync('supabase/functions/spotter/style.ts', 'utf8')), 'the letterbox rule is gone');
-  ok('surfaces: Library grid, source chips, Train today card, plan rows, the day picker and the Pumpy reference list all ask cardArt; CARD_COLS and the grid signature carry pumpy_cover');
+  ok('surfaces: Library grid, source chips, Train\'s day card, a day\'s plan rows and the shelf, the day picker and the Pumpy reference list all ask cardArt; CARD_COLS and the grid signature carry pumpy_cover');
 }
 
 console.log('PASS ' + passed + ' Pumpy cover client checks');

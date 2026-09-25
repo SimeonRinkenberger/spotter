@@ -1,6 +1,6 @@
-// The four rules the Train tab cannot get wrong, run against the real functions
-// in app.ts rather than a copy of them: the dot language, the ISO week in the
-// header, which segment a visit opens on, and the sets-per-day bars.
+// The rules the Train tab cannot get wrong, run against the real functions in
+// app.ts rather than a copy of them: the dot language, a week's name and the
+// month's fold, which segment a visit opens on, and the sets-per-day bars.
 // No browser and no playwright — node:vm and the fn() slicer from tools/ios/check.mjs.
 // Run from the repo root: node tools/train-harness.mjs
 import fs from 'node:fs';
@@ -31,8 +31,8 @@ function ctx(over) {
     localStorage: { store: {}, getItem(k) { return k in this.store ? this.store[k] : null; },
       setItem(k, v) { this.store[k] = String(v); } }
   }, over));
-  for (const name of ['ymd', 'addDays', 'mondayOf', 'isSession', 'sessionsOn', 'loggedOn',
-    'knowable', 'dayMark', 'isoWeek', 'rowsFor', 'readTrainSeg']) vm.runInContext(fn(name), c);
+  for (const name of ['ymd', 'addDays', 'mondayOf', 'isSession', 'sessionsOn', 'knowable', 'dayMark',
+    'rowsFor', 'readTrainSeg', 'shortDate', 'weekLabel', 'foldKey', 'foldTo', 'foldP']) vm.runInContext(fn(name), c);
   // Read off app.ts rather than restated: the month left the segments for the strip.
   vm.runInContext(src.match(/\n  var SEGS = [^\n]+/)[0], c);
   return { c, run: s => vm.runInContext(s, c) };
@@ -66,7 +66,7 @@ check('an abandoned session with no logged set is not a session', () => {
   x.c.state.logs = [{ started_at: '2026-09-13T12:00:00', completed_at: '2026-09-13T13:00:00',
     entries: [{ name: 'Squat', sets: [] }] }];
   assert.equal(x.run('dayMark("2026-09-13")'), '');
-  assert.equal(x.run('loggedOn("2026-09-13")'), false);
+  assert.equal(x.run('sessionsOn("2026-09-13").length'), 0);
 });
 check('past the 400-log horizon a planned day is unknown, not missed', () => {
   const x = ctx();
@@ -86,14 +86,36 @@ check('past the 400-log horizon a planned day is unknown, not missed', () => {
   assert.equal(x.run('dayMark("2026-09-14")'), 'miss');
 });
 
-// ---------- 2. the ISO week in the header ----------
-check('isoWeek follows the Thursday rule at both ends of the year', () => {
+// ---------- 2. a week's name, and the month's fold ----------
+// The header says today's date now (no "Week 39"), and a week is its dates.
+check('a week is named by its dates: "Sep 21–27", and across two months both of them', () => {
   const x = ctx();
-  assert.equal(x.run('isoWeek(new Date(2026, 8, 16))'), 38);
-  assert.equal(x.run('isoWeek(new Date(2026, 0, 1))'), 1);
-  assert.equal(x.run('isoWeek(new Date(2026, 11, 31))'), 53);
-  // 1 Jan 2023 is a Sunday, which belongs to 2022's week 52.
-  assert.equal(x.run('isoWeek(new Date(2023, 0, 1))'), 52);
+  const en = new Intl.DateTimeFormat().resolvedOptions().locale.startsWith('en-US');
+  const one = x.run('weekLabel(new Date(2026, 8, 21))'), two = x.run('weekLabel(new Date(2026, 8, 28))');
+  if (en) {
+    assert.equal(one, 'Sep 21–27');
+    assert.equal(two, 'Sep 28 – Oct 4');
+  }
+  assert(one.includes('21') && one.includes('27') && two.includes('28') && two.includes('4'));
+});
+
+// RESEARCH-MONTH-PULLDOWN, Recommendation 2-4: the fold follows the finger 1:1,
+// gives half speed past the month and nothing past the week; a release at
+// 150px/s goes the way it was thrown, slower lands on the nearer end; a closing
+// month folds onto the selected day's week, else today's, else its first.
+check('the fold: tracking, release and the week a closing month folds onto', () => {
+  const x = ctx();
+  assert.equal(x.run('foldP(0, 130, 260)'), 0.5, '1:1 across the extra height');
+  assert.equal(x.run('foldP(0, 390, 260)'), 1.25, 'past the month at half speed');
+  assert.equal(x.run('foldP(1, -400, 260)'), 0, 'nothing past the week');
+  assert.equal(x.run('foldTo(0.3, 150)'), 1, 'a throw down opens, however little was pulled');
+  assert.equal(x.run('foldTo(0.8, -150)'), 0, 'a throw up closes');
+  assert.equal(x.run('foldTo(0.51, 149)'), 1, 'slower: the nearer end');
+  assert.equal(x.run('foldTo(0.49, -20)'), 0);
+  const from = '2026-08-31', to = '2026-10-04';
+  assert.equal(x.run(`foldKey("2026-09-15", "2026-09-25", "${from}", "${to}")`), '2026-09-15', 'the selected day');
+  assert.equal(x.run(`foldKey("2026-10-20", "2026-09-25", "${from}", "${to}")`), '2026-09-25', 'else today');
+  assert.equal(x.run(`foldKey("2026-10-20", "2026-11-02", "${from}", "${to}")`), from, 'else the first week');
 });
 
 // ---------- 3. which segment a visit opens on ----------
