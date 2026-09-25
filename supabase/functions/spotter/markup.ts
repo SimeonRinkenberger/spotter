@@ -252,12 +252,6 @@ export const MARKUP_BODY = String.raw`</head>
           <button class="searchx" id="searchx" type="button" aria-label="Clear search"><span><svg class="ic"><use href="#i-x"></use></svg></span></button>
         </div>
 
-        <div id="hint">
-          <div id="hinttext">Spotter works better installed — full screen, and it opens like an app.
-            Tap <b>Share</b>, then <b>Add to Home Screen</b>.</div>
-          <button id="hintx" aria-label="Dismiss"><svg class="ic"><use href="#i-x"></use></svg></button>
-        </div>
-
         <div class="chips" id="chips"></div>
         <div class="colbar hide" id="colbar"></div>
         <!-- The only paywall that is not a refusal, sitting where the shelf is.

@@ -98,7 +98,7 @@ export const STYLE = String.raw`<style>
   .stepper button .ic { width: 20px; height: 20px; }
   /* Every control that used to centre a glyph with line-height now has a box to
      centre instead, and a box only centres inside a flex container. */
-  .addbtn, .planx, .pumpyctx button, #hint button, .stepper button {
+  .addbtn, .planx, .pumpyctx button, .stepper button {
     display: flex; align-items: center; justify-content: center; }
   .btn { display: flex; align-items: center; justify-content: center; gap: 7px; }
   .daydone { display: inline-flex; align-items: center; gap: 4px; }
@@ -335,7 +335,7 @@ export const STYLE = String.raw`<style>
   .track.dragging { will-change: transform; }
   .page { flex: 0 0 100%; height: 100%; overflow-x: hidden; overflow-y: auto;
     overscroll-behavior-x: auto; overscroll-behavior-y: contain;
-    -webkit-overflow-scrolling: touch; padding-bottom: calc(var(--ptab, 78px) + 24px); }
+    -webkit-overflow-scrolling: touch; padding-bottom: calc(var(--ptab, 78px) + var(--pbar, 0px) + 24px); }
   /* The header's height as a real box rather than the scroller's top padding:
      engines disagree about which edge a sticky inset inside a PADDED scroller
      is measured from, and with no padding there is nothing to disagree about.
@@ -399,19 +399,13 @@ export const STYLE = String.raw`<style>
     .searchx > span, #searchwrap:focus-within .searchx > span { transform: none; transition: none; }
   }
 
-  /* ---------- filter chips ---------- */
-  /* This row used to ask for horizontal pans back, because the pager was taking
-     them away at the top. It no longer takes them, so there is nothing to ask. */
-  /* The row's side inset lives on the end chips, not on the scroller: Blink measures
-     a sticky inset from the scrollport's content box and WebKit from its padding box,
-     so a padded scroller pins the Sort chip 18px apart on the two engines. With no
-     horizontal padding there is nothing for them to disagree about. */
-  .chips { display: flex; gap: 7px; overflow-x: auto; padding: 14px 0 6px; scrollbar-width: none;
-    -webkit-mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 26px), transparent 100%);
-    mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 26px), transparent 100%); }
-  .chips::-webkit-scrollbar { display: none; }
-  .chips > :first-child { margin-left: 18px; }
-  .chips > :last-child { margin-right: 18px; }
+  /* ---------- filter chips ----------
+     The library's row wraps rather than scrolls, so every way to narrow the grid
+     has a name on screen (7 Sept). It was drawn as a sideways scroller — edge
+     fade, hidden scrollbar, the inset on its end chips — and then told to wrap
+     by a rule further down; the row is only ever this now, inset on the box so a
+     second line keeps it too. */
+  .chips { display: flex; flex-wrap: wrap; gap: 7px; padding: 14px 18px 6px; }
   .chip { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px;
     border: none; background: var(--sand); color: var(--ink-2);
     border-radius: 999px; padding: 9px 14px; font-size: 13px; font-weight: 600; line-height: 1;
@@ -422,37 +416,11 @@ export const STYLE = String.raw`<style>
   .chip.active { background: var(--ember); color: var(--on-ember); box-shadow: 0 3px 12px var(--glow); }
   .chip .n { opacity: .5; font-weight: 700; margin-left: 5px; font-size: 11px; font-variant-numeric: tabular-nums; }
   .chip.active .n { opacity: .75; }
-  /* ---------- today ----------
-     The Plan's own day card, borrowed to answer the question the app is opened
-     with. It sits beside the chip row and hides with it: the view switch turns
-     that row off when the Library is not on screen, and this has to leave too
-     rather than sit on top of the Plan. Trained already and the ember goes —
-     nothing left to do here today. */
-  .todaywrap { padding: 12px 18px 0; }
-  .chips.hide + .todaywrap { display: none; }
-  /* ---------- a paused session ----------
-     The card the Library leads with while a workout is waiting: what was paused,
-     how far it got, one button that picks it up. It used to be a toast for
-     thirty seconds and then nothing — a session the reader had every intention
-     of finishing, gone from sight behind a grid of other cards. Same card as
-     Today, ember all round so it reads as the thing to do, and it stays until
-     the session is resumed or ended. */
-  .resumewrap { padding: 12px 18px 0; }
-  .resumewrap .daycard { margin-bottom: 0; border-color: var(--ember); }
-  .resumewrap .dayname { color: var(--ember-ink); }
-  .resumewrap .tclock { font-family: var(--display); font-size: 13px; font-weight: 700; color: var(--muted);
-    font-variant-numeric: tabular-nums; }
-  .resumewrap .tbtns { margin-top: 12px; }
-  .resumewrap .tend { flex: 0 0 auto; width: auto; padding: 12px 16px; font-size: 14px; }
-  .resumewrap .tstart { flex: 1; }
-  .todaywrap .daycard { margin-bottom: 0; }
-  .todaywrap .daycard.done { border-color: var(--line); }
-  .todaywrap .daycard.done .dayname { color: var(--muted); }
+  /* Train's day card: its title and its dose line. */
   .ttitle { display: block; width: 100%; text-align: left; border: none; background: none;
     padding: 3px 0 0; color: var(--ink); font-family: var(--display); font-size: 18px;
     font-weight: 700; line-height: 1.22; letter-spacing: -.015em; }
   .tdose { font-size: 12.5px; color: var(--muted); margin: 5px 0 12px; }
-  .tstart { padding: 12px; font-size: 14.5px; border-radius: 12px; }
 
   /* ---------- collections ----------
      A collection is the general form of a favourite: the same chip row, the same
@@ -557,10 +525,27 @@ export const STYLE = String.raw`<style>
   .fav { position: absolute; top: 9px; right: 9px; z-index: 2; width: 27px; height: 27px;
     display: flex; align-items: center; justify-content: center; font-size: 13px; line-height: 1;
     background: rgba(10,14,20,.46); border-radius: 999px; color: #FFC9A8; }
-  .durbadge { position: absolute; left: 9px; bottom: 9px; z-index: 2; font-size: 10.5px; font-weight: 700;
-    letter-spacing: .02em; font-variant-numeric: tabular-nums;
-    color: #fff; background: rgba(10,14,20,.56); padding: 4px 8px;
-    border-radius: 999px; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+  /* The two marks a picture carries share one geometry: the video's length, and
+     the card's one status (app.ts, cardNode). The status holds the bottom-left
+     corner on every card. The length gave that corner up and went to the top:
+     at 375px a card is 163px wide, and "Done 3× · Sep 21" with "45 min" beside
+     it is 190 — the pair would have fitted beside each other on no status but
+     "New". */
+  .durbadge, .stpill { position: absolute; z-index: 2; display: flex; align-items: center; gap: 4px;
+    font-size: 10.5px; font-weight: 700; letter-spacing: .02em; font-variant-numeric: tabular-nums;
+    padding: 4px 8px; border-radius: 999px; white-space: nowrap; }
+  .durbadge { left: 9px; top: 9px; color: #fff; background: rgba(10,14,20,.56);
+    -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+  /* Solid, so a word on a photograph is still a word. New is the quietest of the
+     three — a dot, no mark — because on a young shelf most cards say it. */
+  .stpill { left: 9px; bottom: 9px; background: var(--card); color: var(--ink);
+    box-shadow: 0 1px 3px rgba(10,14,20,.24); }
+  .stpill .ic { stroke-width: 2.6; }
+  .stpill.new { background: var(--ember-soft); color: var(--ember-ink); }
+  .stpill.new::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--ember); }
+  /* No soft green in the palette: these are --good at AA on them, 4.56 and 7.2. */
+  .stpill.done { background: #EFF8F3; color: var(--good); }
+  @media (prefers-color-scheme: dark) { .stpill.done { background: #173026; } }
   .cardbody { padding: 11px 3px 0; min-width: 0; }
   .cardkick { display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
     margin-bottom: 5px; min-width: 0; }
@@ -1489,7 +1474,7 @@ export const STYLE = String.raw`<style>
      edge on an installed iPhone. -100% makes top the line the toast sits ON, so
      the 96px of clearance still means 96px. */
   #toast { position: fixed; left: 50%;
-    top: calc(var(--vvtop) + var(--vvh) - 96px - var(--sab));
+    top: calc(var(--vvtop) + var(--vvh) - 96px - var(--pbar, 0px) - var(--sab));
     transform: translate(-50%, calc(-100% + 14px)); z-index: 90; background: var(--ink); color: var(--paper);
     padding: 12px 18px; border-radius: 999px; font-size: 13.5px; font-weight: 600; opacity: 0;
     pointer-events: none; transition: opacity var(--t-2), transform var(--t-2) var(--e-out);
@@ -1553,6 +1538,35 @@ export const STYLE = String.raw`<style>
      correct — the signature of WebKit dropping an anonymous text run inside a
      backdrop-filtered bar while a transformed sibling repaints every frame. */
   .tab .tl { display: block; transform: translateZ(0); }
+
+  /* ---------- the paused bar ----------
+     A session waiting, on every tab (app.ts, "the paused bar"): a card of glass
+     standing on the tab bar's top edge, --ptab being that bar's measured height,
+     safe area and all. It rises from behind the tab bar and sinks back into it
+     on transform and opacity alone; reduced motion keeps the fade. */
+  .pausedbar { position: absolute; left: 0; right: 0; bottom: var(--ptab, 78px); z-index: 39;
+    padding: 0 10px 8px; pointer-events: none; }
+  .pbin { display: flex; align-items: center; gap: 6px; padding: 6px; border-radius: 20px;
+    background: color-mix(in srgb, var(--card) 88%, transparent); border: 1px solid var(--line);
+    -webkit-backdrop-filter: blur(22px) saturate(1.6); backdrop-filter: blur(22px) saturate(1.6);
+    box-shadow: var(--sh-md); opacity: 0; transform: translateY(calc(100% + 14px));
+    transition: transform var(--t-2) var(--e-in), opacity var(--t-2) var(--e-in); }
+  .pausedbar.on .pbin { pointer-events: auto; opacity: 1; transform: none;
+    transition: transform var(--t-3) var(--e-spring), opacity var(--t-2) var(--e-out); }
+  .pbbody { flex: 1; min-width: 0; min-height: 44px; display: flex; align-items: center; gap: 9px;
+    border: none; background: none; padding: 0; text-align: left; color: var(--ink); }
+  .pbin .addbtn { flex: 0 0 auto; background: var(--ember-soft); color: var(--ember-ink); }
+  .pbtx { min-width: 0; display: grid; gap: 2px; }
+  .pbtx > * { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pbtx b { font-family: var(--display); font-size: 15px; letter-spacing: -.012em; }
+  .pbtx span { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  /* The app's own buttons cut to the bar: Resume, and Finish as an icon button. */
+  .pbin .btn { width: auto; min-height: 44px; padding: 0 16px; font-size: 14px; }
+  .pbin .iconbtn { width: 44px; height: 44px; }
+  /* Finish, armed: the flag lit, and the line under the title says what it does. */
+  .pbin.armed .pbtx span { color: var(--ember-ink); }
+  body.kb .pausedbar { visibility: hidden; }
+  @media (prefers-reduced-motion: reduce) { .pbin, .pausedbar.on .pbin { transform: none; } }
 
   /* ---------- pull to refresh ---------- */
   #ptr { position: fixed; top: calc(env(safe-area-inset-top) + 6px); left: 50%; z-index: 30;
@@ -2644,8 +2658,9 @@ export const STYLE = String.raw`<style>
   .proposal .declined { color: var(--muted); font-size: 13px; margin-top: 10px;
     animation: donein var(--t-3) var(--e-out); }
   @keyframes donein { from { opacity: 0; transform: translateY(-5px); } }
-  .composer { position: sticky; bottom: var(--ptab, calc(78px + var(--sab)));
-    margin-bottom: var(--ptab, calc(78px + var(--sab)));
+  /* --pbar: the paused bar, when there is one, stands between it and the tab bar. */
+  .composer { position: sticky; bottom: calc(var(--ptab, calc(78px + var(--sab))) + var(--pbar, 0px));
+    margin-bottom: calc(var(--ptab, calc(78px + var(--sab))) + var(--pbar, 0px));
     padding: 8px 0 10px;
     background: color-mix(in srgb, var(--paper) 90%, transparent);
     -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
@@ -2919,18 +2934,6 @@ export const STYLE = String.raw`<style>
   /* Up into the label, which is text and not a control; down to the dose line. */
   .ttitle::after { inset: -14px 0 -5px; }
 
-  /* ---------- install hint ---------- */
-  #hint { margin: 12px 18px 0; background: var(--card); border: 1px solid var(--line);
-    border-radius: 16px; padding: 13px 15px; font-size: 13px; line-height: 1.55; color: var(--ink-2);
-    display: none; align-items: flex-start; gap: 11px; box-shadow: var(--sh-sm); }
-  #hint.show { display: flex; }
-  #hint b { color: var(--ink); }
-  /* The dismiss cross only. "Phone save options" is a button in the same box,
-     appended after this rule was written, and #hint button was dressing it as a
-     17px glyph with no padding, jammed against the sentence above it. */
-  #hintx { background: none; border: none; color: var(--muted); font-size: 17px; padding: 0 2px;
-    line-height: 1; flex: 0 0 auto; }
-
   /* ---------- reduced motion, in one place ----------
      Apple's instruction is not "remove the feedback" but "replace transitions in
      x, y and z with fades": entrances keep opacity and lose travel, decorative
@@ -3131,15 +3134,6 @@ export const STYLE = String.raw`<style>
   /* The section sheet's Remove is its last word and its one red one: this one. */
   #recapopts .danger, #sectionremove { color: var(--ember-ink); font-size: 15px; font-weight: 650; }
   #dmore { min-height: 44px; }
-  /* The library row wraps rather than scrolls, and a wrapped row cannot carry its
-     side inset on its end chips: the second line's first chip is not :first-child,
-     so "Clear filter" sat flush against the screen edge under a row inset 18px.
-     A wrapping row has no scrollport for the two engines to disagree about, so the
-     inset moves back onto the box, and the scroll fade goes with the scrolling. */
-  #chips { flex-wrap: wrap; overflow: visible; padding-left: 18px; padding-right: 18px;
-    -webkit-mask-image: none; mask-image: none; }
-  #chips > :first-child { margin-left: 0; }
-  #chips > :last-child { margin-right: 0; }
   /* iOS date inputs can add padding outside their declared width. Let a normal
      box own the inset and border; the native picker remains an unpadded input. */
   .schedule-date-control { display: flex; min-width: 0; padding: 0 14px; border: 1px solid var(--line);

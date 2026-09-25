@@ -455,6 +455,7 @@ for (const [label, mutate] of [['removed', (c) => { delete c.store[SESSION]; }],
       var painted = [];
       function renderTrain() { painted.push({ lite: !!state.logsLite, logs: state.logs && state.logs.length, plan: state.plan && state.plan.length }); }
       function render() {} function refreshDetail() {} function watchPending() {} function writeCache() {} function publishSummary() {}
+      function libStatusesChanged() {}
       function quietly(p) { return p; } function idle(f) { timers.push(f); } function toast() {}
       var $ = function () { return { classList: { contains: function () { return false; } } }; };
       function guideUser() {} function loadProfile() { return Promise.resolve(); } function maybeInstallHint() {} function watchWorkouts() {}
