@@ -20,8 +20,6 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>SpotterKeychainGroup</key>
 	<string>$(AppIdentifierPrefix)$(SPOTTER_BUNDLE_ID)</string>
-	<key>SpotterAppGroup</key>
-	<string>$(SPOTTER_APP_GROUP)</string>
 	<key>CFBundleIcons</key>
 	<dict><key>CFBundlePrimaryIcon</key><dict><key>CFBundleSymbolName</key><string>dumbbell.fill</string></dict></dict>
 	<key>NSExtension</key>
