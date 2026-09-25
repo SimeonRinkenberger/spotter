@@ -512,7 +512,7 @@ await ok('no "beta" in anything the page can say', () => {
 await ok('below 360px each row stacks, and the cross-fade is still under reduced motion', () => {
   const narrow = STYLE.slice(STYLE.indexOf('@media (max-width: 359px)'));
   assert(/\.ptable thead \{ display: none; \}/.test(narrow) && /content: attr\(data-l\)/.test(narrow), 'the stacked layout');
-  const reduce = STYLE.slice(STYLE.indexOf('.planbtn:active, .segbtn, .mcell, .copyweek { transition: none; }') - 400);
+  const reduce = STYLE.slice(STYLE.indexOf('.planbtn:active, .segbtn, .cday') - 400);
   assert(/\.planswap \{ animation: none; \}/.test(reduce), 'planswap has a reduced-motion rule');
   assert(/\.plansoon \.btn \{ margin-top: 12px; min-height: 44px; \}/.test(STYLE), 'Try again is a 44px target');
 });

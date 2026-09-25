@@ -1654,48 +1654,81 @@ export const STYLE = String.raw`<style>
      the vertical padding belongs to .page. */
   .view { padding-left: 18px; padding-right: 18px; }
 
-  /* The streak on the left, the ring on the right, and nothing between them: the
-     two things a training week is judged by, at a glance, above everything the
-     week can be browsed into. */
-  .trainhero { display: flex; align-items: center; justify-content: space-between; gap: 14px;
-    margin: 4px 0 12px; min-height: 84px; }
-  .wkleft { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-  .wkbig { font-family: var(--display); font-size: 26px; font-weight: 800; line-height: 1;
-    letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
-  .wksub { font-size: 12px; font-weight: 600; color: var(--muted); }
-  .trainhero.risk .wksub { color: var(--ember-ink); }
-  .trainhero.full .wksub { color: var(--good); }
-  /* The ring as a button: it is the door to what counts, which is where the day
-     dots used to lead. 84px is the mockup's, and it carries its own 44px. */
-  .ringwrap.rsm { width: 84px; height: 84px; margin: 0; flex: 0 0 auto; border: 0;
-    background: none; padding: 0; }
-  .rsm .rnum { font-size: 22px; }
-  .rsm .rof { font-size: 10px; }
-  .rsm .rcheck .ic { width: 26px; height: 26px; }
+  /* ---------- train / the header's corner ----------
+     The streak and the week's ring, up in the bar since Option B, faded by the
+     pager's --x with the titles (.trainstat, under the header). The ring is a
+     44px button, the door to what counts. */
+  .tsk { width: min-content; font-size: 11px; font-weight: 700; line-height: 1.15; text-align: right;
+    color: var(--ink-2); }
+  .sheetbody p.countnow { font-weight: 700; color: var(--ink); }
+  .countnow:empty { display: none; }
 
-  .weekbar { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; }
-  .weekbar b, .secthead b { font-family: var(--display); font-size: 16px; font-weight: 700;
-    letter-spacing: -.012em; }
-  .wbnav { margin-left: auto; display: flex; align-items: center; gap: 2px; }
-
-  /* Seven days, one row, one dot each. The cell is the target — 48px across on a
-     375px phone and 56 deep — because a dot is not something anyone can hit. */
-  .wstrip { display: flex; gap: 4px; margin: 0 0 12px; }
-  .wday { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center;
-    gap: 6px; min-height: 56px; padding: 8px 0 7px; border-radius: 12px; background: none;
-    border: 1px solid transparent; transition: transform var(--t-1) var(--e-out); }
-  .wday:active { transform: scale(.93); }
-  .wday.today { background: var(--card); border-color: var(--ember); box-shadow: var(--sh-sm); }
+  /* ---------- train / the calendar ----------
+     One grid at two heights (app.ts, "train · the calendar"): the week strip is
+     the month seen through a one-row window, and pulling it down opens the
+     window. .wk is the week at rest, .mo the month at rest, .moving a fold under
+     way (app.ts runs it). A row is a fixed 48px on a 52px pitch (ROW_PITCH), so
+     the strip is placed without measuring anything: --a is the row it shows. */
+  .tcalhead { display: flex; align-items: center; gap: 8px; min-height: 44px; }
+  .tctitle, .tcacts { display: grid; }
+  .tcacts { justify-items: end; }
+  .tctitle { flex: 1; justify-items: start; transition: transform var(--t-2) var(--e-spring); }
+  .wbdrag .tctitle { transition: none; }
+  .tctitle > *, .tcacts > * { grid-area: 1 / 1; }
+  /* The week's words and the month's controls share the row and cross over. */
+  .cw { opacity: var(--cw, 1); }
+  .cm { opacity: var(--cm, 1); }
+  .wk .cm, .mo .cw, .wk .cweek:not(.anchor), .wk .dlegend { visibility: hidden; }
+  .tcrange, .tcmonth { margin: 0; font: 700 16px var(--display); letter-spacing: -.012em; color: var(--ink); }
+  /* Focused after the month opens, for VoiceOver; it is a heading, not a control. */
+  .tcmonth { outline: none; }
+  .tcrange { display: flex; align-items: center; gap: 3px; min-height: 44px; padding: 0 6px 0 0; border: 0;
+    background: none; }
+  .tcrange .ic { color: var(--muted); transform: rotate(90deg); }
+  .cdow, .cweek { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; text-align: center; }
+  .cdow { padding-bottom: 5px; font-size: 10.5px; font-weight: 650; color: var(--muted); }
+  .crows { overflow: hidden; }
+  .wk .crows { height: 48px; }
+  .cblock { display: flex; flex-direction: column; gap: 4px; padding-bottom: 6px; }
+  .wk .cblock { transform: translateY(calc(var(--a) * -52px)); }
+  .moving .cblock, .moving + .tbelow { will-change: transform; }
+  .crows.xfade { animation: fadeonly var(--t-2) var(--e-soft); }
+  .cweek { height: 48px; }
+  /* A day: its number and its dot. Today is told by colour and the selected day
+     by the card it stands on (ember when they are the same day), the way iOS
+     Calendar tells the two apart. The Plan sheet's fortnight borrows the cell
+     as .wday, with the weekday's name over the date (.pdays, above). */
+  .cday, .wday { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+    min-width: 0; padding: 0; border: 1px solid transparent; border-radius: 12px; background: none;
+    --dbg: var(--paper); transition: transform var(--t-1) var(--e-out), background-color var(--t-2) var(--e-soft); }
+  .cday:active, .wday:active { transform: scale(.93); }
+  .wday { min-height: 56px; padding: 8px 0 7px; }
+  .wday.today { background: var(--card); border-color: var(--ember); box-shadow: var(--sh-sm); --dbg: var(--card); }
   .wdl { font-size: 10.5px; font-weight: 650; color: var(--muted); letter-spacing: .04em; }
-  .wdn { font-family: var(--display); font-size: 15px; font-weight: 700; color: var(--ink-2);
-    font-variant-numeric: tabular-nums; }
-  .wday.today .wdn { color: var(--ink); }
+  .cdn, .wdn { font: 700 15px/1 var(--display); color: var(--ink); font-variant-numeric: tabular-nums; }
+  .cday.sel { background: var(--card); border-color: var(--line-2); box-shadow: var(--sh-sm); --dbg: var(--card); }
+  .cday.today .cdn { color: var(--ember-ink); }
+  .cday.sel.today { border-color: var(--ember); }
+  /* The month's neighbours: there and tappable, quieter. Colour and weight, not
+     opacity: --muted is 4.52 on paper, where ink at .45 was 3.4. */
+  .tcal:not(.wk) .cday.out .cdn { color: var(--muted); font-weight: 600; }
+  /* The handle, on the calendar's edge in both states: drawn 36 by 5, answering a
+     120-wide, 44-deep area clear of the days above it and the card below. */
+  .thandle { position: relative; display: block; width: 120px; height: 24px; margin: 0 auto 14px; border: 0;
+    background: none; }
+  .thandle::before, .thandle::after { content: ""; position: absolute; }
+  .thandle::before { left: 42px; top: 10px; width: 36px; height: 5px; border-radius: 3px;
+    background: color-mix(in srgb, var(--muted) 55%, transparent); }
+  .thandle::after { inset: -6px 0 -14px; }
+  /* Everything under the calendar is one sheet the month opens out from under:
+     opaque paper, above the rows, moved (transform only) while a fold runs. */
+  .tbelow { position: relative; z-index: 1; background: var(--paper); }
 
   /* ---------- train / the dot language ----------
-     Five states, spoken by the strip, the month grid and the key under it:
-     filled is done, filled with a ring is done exactly as planned, hollow ember
-     is planned, a grey cross is planned and missed, sand is a free day. The ring
-     is drawn in --card so it reads on a card and in a cell.
+     Five states, spoken by the strip, the month and the key under it: filled is
+     done, filled with a ring is done exactly as planned, hollow ember is planned,
+     a grey cross is planned and missed, sand is a free day. The ring is drawn in
+     the colour under it (--dbg), so it reads on a selected day's card too.
 
      Missed used to be a hollow amber ring — the same shape as planned in a hue a
      shade off ember, which at 8px the owner could not tell apart ("too close in
@@ -1711,57 +1744,86 @@ export const STYLE = String.raw`<style>
   .dmark.on { background: var(--ember); }
   .dmark.as { background: var(--ember);
     box-shadow: 0 0 0 2px var(--dbg, var(--paper)), 0 0 0 3.5px var(--ember); }
-  .mcell, .wday.today { --dbg: var(--card); }
-  .mcell.out { --dbg: var(--paper); }
   .dmark.plan { background: none; box-shadow: inset 0 0 0 1.6px var(--ember); }
   .dmark.miss { background: none; }
   .dmark.miss::before, .dmark.miss::after { content: ""; position: absolute; left: 50%; top: 50%;
     width: 10px; height: 1.8px; border-radius: 1px; background: var(--muted);
     transform: translate(-50%, -50%) rotate(45deg); }
   .dmark.miss::after { transform: translate(-50%, -50%) rotate(-45deg); }
-  .dlegend { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; margin: 9px 2px 0;
+  .dlegend { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; margin: 5px 2px 0;
     font-size: 11.5px; font-weight: 600; color: var(--muted); }
   .dlegend .lg { display: flex; align-items: center; gap: 6px; }
 
-  /* ---------- train / today ---------- */
+  /* ---------- train / the day card ----------
+     Up next for today, the selected day's own card for any other: one card, so the
+     question the app is opened with has one answer. It wears .daycard's frame (the
+     Workouts Resume card's too, until the paused bar replaces it), ember-edged
+     when it asks for something (resume, start, try), quiet when it only reports.
+     Its rows are the picker's (.pickrow) and the history's (.histrow). */
   .daycard { background: var(--card); border: 1px solid var(--line); border-radius: 16px;
     padding: 13px 15px; margin-bottom: 9px; box-shadow: var(--sh-sm); }
-  .daycard.today { border-color: var(--ember); }
   .dayhead { display: flex; align-items: center; justify-content: space-between; gap: 10px;
     margin-bottom: 2px; }
   .dayname { font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
     color: var(--muted); }
-  .daycard.today .dayname { color: var(--ember-ink); }
   .daydone { color: var(--good); font-size: 12px; font-weight: 700; }
-  .tcard { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; margin: 0 0 12px; }
-  .tcard .dayhead { margin-bottom: 0; }
-  /* The overflow reads as a glyph, not as a second button competing with Start. */
-  .tmore { background: none; color: var(--muted); margin: -3px -6px -3px 0; }
-  .tbody { display: flex; align-items: center; gap: 12px; min-width: 0; }
-  .tthumb { width: 44px; height: 55px; border-radius: 12px; object-fit: cover;
-    background: var(--sand); flex: 0 0 auto; }
-  .ttxt { min-width: 0; }
-  .tcard .ttitle { font-size: 17px; padding: 0; }
-  .tcard .tdose { margin: 3px 0 0; font-size: 13px; color: var(--ink-2); }
+  .tcard { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; overflow: hidden; }
+  .tcard.act { border-color: var(--ember); }
+  .tcard.act > .dayname { color: var(--ember-ink); }
+  .tcard.good > .dayname { color: var(--good); }
+  /* The saved video's own frame; portrait video, so the crop sits a third down. */
+  .tcover { margin: -13px -15px 0; aspect-ratio: 12 / 5; overflow: hidden; background: var(--sand); }
+  .tcover img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: center 30%; }
+  .tcard .ttitle { padding: 0; }
+  .tcard .tdose { margin: -7px 0 0; font-size: 13px; color: var(--ink-2); }
+  .tcard .linkbtn { align-self: flex-start; }
+  .tcard .pickrow { padding: 4px 0; }
   .tbtns { display: flex; gap: 8px; }
   .tbtns .btn { flex: 1; min-width: 0; min-height: 44px; }
-  .tbtns .tmove { flex: 0 0 auto; width: auto; padding: 14px 16px; font-size: 14px; }
-  .planitem { display: flex; align-items: center; gap: 11px; margin-top: 9px; }
-  .planitem img { width: 42px; height: 42px; border-radius: 10px; object-fit: cover;
-    background: var(--sand); flex: 0 0 auto; }
-  .planitem .pt { flex: 1; min-width: 0; font-size: 14px; font-weight: 600; line-height: 1.3;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tbtns .tmove, .piacts .btn { flex: 0 0 auto; width: auto; padding: 12px 16px; font-size: 14px; }
+  .tbtns .iconbtn { width: 50px; height: auto; border-radius: 14px; }
+  .piacts { display: flex; align-items: center; gap: 20px; margin-top: -4px; }
+  .dayses { width: 100%; min-height: 44px; background: none; border: 0; border-top: 1px solid var(--line);
+    text-align: left; color: var(--ink); }
+  .dayses .ic { color: var(--muted); flex: 0 0 auto; }
   .planadd { background: none; border: 1px dashed var(--line-2); color: var(--muted); width: 100%;
-    border-radius: 12px; padding: 10px; font-size: 13px; font-weight: 600; margin-top: 9px; }
-  .planx { background: none; border: none; color: var(--muted); font-size: 15px; padding: 6px; }
+    border-radius: 12px; padding: 10px; font-size: 13px; font-weight: 600; min-height: 44px; }
+  .tcard.empty { padding: 22px 16px 16px; }
+  .tcard .pumpyart { width: 96px; height: 96px; margin: 0 auto; }
+  /* S0: the planned card's shape in sand while the first answer is on its way. */
+  .sk { height: 13px; width: 30%; border-radius: 7px; background: var(--sand); }
+  .sk.st { height: 22px; width: 70%; }
+  .sk.sm { height: 16px; width: 50%; margin-top: -7px; }
+  .sk.sb { height: 47px; width: auto; border-radius: 14px; }
+  .tskel > * { animation: skel 1.1s var(--e-soft) infinite alternate; }
+  @keyframes skel { to { opacity: .55; } }
+
+  /* ---------- train / ready to try ----------
+     The saves never trained yet, newest first: a sideways scroller with the
+     page's gutter inside it, so the row runs out to the screen's edge; at either
+     end the tab pager takes over, as it does from the chip row. */
+  .tshelf .secthead { margin: 0 2px 9px; }
+  .shelfn { margin-right: auto; font-size: 12px; color: var(--muted); }
+  .shelfrow { display: flex; gap: 10px; overflow-x: auto; margin: 0 -18px 6px; padding: 0 18px 4px;
+    scrollbar-width: none; }
+  .shelfrow::-webkit-scrollbar { display: none; }
+  .shelfitem { flex: 0 0 104px; display: grid; align-content: start; gap: 6px; padding: 0; border: 0;
+    background: none; color: var(--ink); text-align: left; font-size: 12.5px; font-weight: 600; line-height: 1.3;
+    transition: transform var(--t-1) var(--e-out); }
+  .shelfitem:active { transform: scale(.96); }
+  .shelfart { position: relative; aspect-ratio: 3 / 4; border-radius: 12px; overflow: hidden; background: var(--sand); }
+  .shelfart img { width: 100%; height: 100%; object-fit: cover; }
+  .shelfart .noimg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    font-size: 30px; opacity: .45; }
+  .shelft { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 
   /* ---------- train / the segmented control ----------
      Apple's segmented control: the selection is one thumb travelling between
      seats, not three pictures of a state, so the pill is a single node sliding on
-     --t-2 while the labels hold still. Three title-case nouns and no action among
+     --t-2 while the labels hold still. Title-case nouns and no action among
      them — a segmented control chooses a view and never does a thing.
      Sticky in the header's own glass, bled to the page edges, because the days
-     above it scroll away and the question "which of the three am I reading" must
+     above it scroll away and the question "which of these am I reading" must
      not. No touch-action anywhere in here: the pager's axis lock depends on the
      page declaring nothing. */
   .trainseg { position: sticky; top: var(--hdr, 92px); z-index: 5; margin: 0 -18px 14px;
@@ -1778,56 +1840,26 @@ export const STYLE = String.raw`<style>
     background: none; color: var(--ink-2); font-size: 13px; font-weight: 700; padding: 0 10px;
     letter-spacing: -.005em; transition: color var(--t-2) var(--e-soft); }
   .segbtn[aria-selected="true"] { color: var(--ink); }
-  .planacts { display: flex; align-items: center; gap: 7px; margin: 0 0 12px; }
+  .secthead b { font-family: var(--display); font-size: 16px; font-weight: 700; letter-spacing: -.012em; }
+  .wbnav { margin-left: auto; display: flex; align-items: center; gap: 2px; }
   .planbtn { border: 1px solid var(--line); background: var(--card); color: var(--ink-2);
     border-radius: 999px; padding: 0 13px; min-height: 32px; font-size: 12.5px; font-weight: 700;
     display: inline-flex; align-items: center; justify-content: center; gap: 5px;
     transition: transform var(--t-1) var(--e-out), border-color var(--t-2) var(--e-soft); }
   .planbtn:active { transform: scale(.94); }
-  /* A crossfade and nothing more: the tap did not say which way time went. */
+  .wbnav .planbtn { margin: 0 4px; }
+  /* A crossfade and nothing more: the change did not say which way time went. */
   .planswap { animation: planswap var(--t-2) var(--e-out); }
   @keyframes planswap { from { opacity: 0; } }
-  /* A swipe on the band leans the week the way the finger goes and then sends it
-     out that way, so the week arriving comes in from the far side — the crossfade
-     above cannot say which direction time went. The days, the card and whichever
-     segment is open lean together, because they are one week. Transform and
-     opacity only, and .pbmove is timing: on for the release, off while a finger is
-     holding it, so tracking is 1:1 and the let-go is the only thing that eases. */
-  .trainlean.pbmove { transition: transform var(--t-2) var(--e-out), opacity var(--t-2) var(--e-out); }
-  .weekbar b { transition: transform var(--t-2) var(--e-spring); }
-  .weekbar.wbdrag b { transition: none; }
+  /* A swipe on the strip leans the rows the way the finger goes and then sends
+     them out that way, so the week arriving comes in from the far side — a
+     crossfade cannot say which direction time went; the week's Progress arrives
+     with it, and a day's card from the side the day is on. Transform and opacity
+     only, and .pbmove is timing: on for the release, off while a finger holds
+     it, so tracking is 1:1 and the let-go is the only thing that eases. */
+  .pbmove { transition: transform var(--t-2) var(--e-out), opacity var(--t-2) var(--e-out); }
   .planin { animation: planin var(--t-3) var(--e-out); }
   @keyframes planin { from { opacity: 0; transform: translateX(var(--pin, 26px)); } }
-
-  /* ---------- train / the month ----------
-     iOS Calendar's compact month: a number and one mark, with the key under the
-     grid doing the naming. Seven columns in a 375px phone leave 45px each, which
-     is what an 8px dot and a 12.5px number were sized against. */
-  .mgrid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; }
-  .mdow { text-align: center; font-size: 10px; font-weight: 700; letter-spacing: .08em;
-    color: var(--muted); padding-bottom: 5px; }
-  .mcell { display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
-    gap: 6px; min-height: 48px; padding: 8px 1px; background: var(--card);
-    border: 1px solid var(--line); border-radius: 11px; box-shadow: var(--sh-sm);
-    transition: transform var(--t-1) var(--e-out); }
-  .mcell:active { transform: scale(.93); }
-  /* Present and tappable but no longer cards: 35 equal boxes hide the 1st. */
-  .mcell.out { background: none; border-color: transparent; box-shadow: none; }
-  /* Colour and weight, not opacity: --muted measures 4.52 on paper, and ink at
-     .45 lands on 3.4 and stops being AA. */
-  .mcell.out .mnum { color: var(--muted); font-weight: 600; }
-  .mcell.today { border-color: var(--ember); box-shadow: 0 0 0 1px var(--ember); }
-  .mnum { font-size: 12.5px; font-weight: 700; color: var(--ink); line-height: 1;
-    font-variant-numeric: tabular-nums; }
-  .mcell.today .mnum { color: var(--ember-ink); }
-  /* The day sheet borrows .planitem and .planadd whole, and .histrow for the
-     sessions above them. */
-  #daylist { margin-bottom: 4px; }
-  #daylist .lede { margin: 10px 0 0; }
-  .dayses { width: 100%; min-height: 44px; background: none; border: 0;
-    border-top: 1px solid var(--line); text-align: left; color: var(--ink); }
-  .dayses:first-child { border-top: none; }
-  .dayses .ic { color: var(--muted); flex: 0 0 auto; }
 
   /* ---------- train / sets per day ----------
      Seven bars, no axes, no SVG: the shape of the week is the message and the
@@ -1881,55 +1913,44 @@ export const STYLE = String.raw`<style>
      stays scoped to this sheet: the pager's axis lock needs the rest of the page
      to keep declaring nothing. */
   #copysheet button { touch-action: manipulation; }
-  .planbtn.wide { width: 100%; min-height: 44px; margin-top: 11px; font-size: 13.5px; }
-  /* Already 44, and stacked between two controls whose hit areas it would eat. */
-  .planbtn.wide::after { display: none; }
-  .trainbody > .planbtn.wide { margin-top: 16px; }
-  .planbtn .pumpmark { border-radius: 50%; overflow: hidden; width: 18px; height: 18px; color: var(--ember); flex: 0 0 auto; }
-  .planbtn .pumpmark svg { border-radius: 50%; width: 100%; height: 100%; display: block; }
   /* The answer without the travel: the pill still moves, instantly. */
   @media (prefers-reduced-motion: reduce) {
     .segpill { transition: none; }
-    .planbtn:active, .segbtn, .mcell, .copyweek { transition: none; }
+    .planbtn:active, .segbtn, .cday, .wday, .copyweek, .shelfitem { transition: none; }
     .planswap { animation: none; }
     /* The week still changes and still says so, with the crossfade this section
        already uses rather than a slide. The drag itself moves nothing: app.ts
-       asks lessMotion() before it paints a lean. */
-    .trainlean.pbmove, .weekbar b, .sbar, .wday { transition: none; }
+       asks lessMotion() before it paints a lean, and a fold lands at once. */
+    .pbmove, .tctitle, .sbar { transition: none; }
     .planin { animation: planswap var(--t-2) var(--e-out); }
+    .tskel > * { animation: none; }
   }
 
   /* ---------- train / the ring ----------
      Apple's Activity shape with ONE arc, because a second ring is a second thing
      to fail at. Only stroke-dashoffset moves, and every colour is a token, so the
      dark scheme costs nothing. */
-  .ringwrap { position: relative; width: min(96px, 26vw); height: min(96px, 26vw);
-    margin: 13px auto 11px; }
+  .ringwrap { position: relative; width: 44px; height: 44px; padding: 3px; border: 0; background: none; }
+  .ringwrap .rtrack, .ringwrap .rarc { stroke-width: 9; }
   .wring { display: block; width: 100%; height: 100%; overflow: visible; }
   .rtrack, .rarc { fill: none; stroke-width: 4.2; }
   .rtrack { stroke: var(--sand); }
   .rarc { stroke: var(--ember); stroke-linecap: round;
     transform: rotate(-90deg); transform-origin: 50% 50%;
     transition: stroke-dashoffset var(--t-4) var(--e-out), stroke var(--t-3) var(--e-soft); }
-  .trainhero.full .rarc, .sumweek.full .rarc { stroke: var(--good); }
+  .trainstat.full .rarc, .sumweek.full .rarc { stroke: var(--good); }
   /* Once, two seconds, on a week still winnable but tight. Something that pulses
      forever is an alarm; this is a nudge. */
-  .trainhero.risk .wring { animation: ringpulse 2s var(--e-soft) 1; }
+  .trainstat.risk .wring { animation: ringpulse 2s var(--e-soft) 1; }
   @keyframes ringpulse { 0%, 100% { filter: none; }
     50% { filter: drop-shadow(0 0 6px var(--glow)); } }
   .rmid { position: absolute; inset: 0; display: flex; flex-direction: column;
     align-items: center; justify-content: center; gap: 1px; }
-  .rnum { font-family: var(--display); font-size: min(40px, 11vw); font-weight: 800;
-    line-height: 1; letter-spacing: -.02em; color: var(--ink); }
-  .rof { font-size: 11px; font-weight: 600; color: var(--muted); }
+  .rnum { font-family: var(--display); font-size: 11.5px; font-weight: 800; color: var(--ink); }
   .rcheck { display: flex; color: var(--good); }
-  .rcheck .ic { width: 34px; height: 34px; stroke-width: 2.6; }
-  .rnum, .rof, .rmeta, .tweek, .sumweek, .wkbig { font-variant-numeric: tabular-nums; }
+  .rcheck .ic { width: 17px; height: 17px; stroke-width: 3; }
+  .rnum, .rmeta, .sumweek { font-variant-numeric: tabular-nums; }
   .rmeta { font-size: 11.5px; color: var(--muted); padding-bottom: 8px; }
-  /* The same sentence on the today card and at the end of a session. */
-  .tweek { font-size: 12px; font-weight: 600; color: var(--ember-ink); margin: 0 0 12px; }
-  .tweek.risk { color: var(--ember); }
-  .tdose + .tweek { margin-top: -7px; }
   .sumweek { display: flex; align-items: center; justify-content: center; gap: 9px;
     margin: 13px 0 0; font-size: 13px; font-weight: 600; color: var(--ink-2); }
   .sumweek.full { color: var(--good); }
@@ -1970,7 +1991,7 @@ export const STYLE = String.raw`<style>
     /* The arc still says the right thing without travelling to say it, and the
        at-risk week still glows — it just stops breathing. */
     .rarc { transition: none; }
-    .trainhero.risk .wring { animation: none; filter: drop-shadow(0 0 6px var(--glow)); }
+    .trainstat.risk .wring { animation: none; filter: drop-shadow(0 0 6px var(--glow)); }
   }
   .chartcard { background: var(--card); border: 1px solid var(--line); border-radius: 18px;
     padding: 16px; margin-bottom: 14px; box-shadow: var(--sh-sm); }
@@ -1988,6 +2009,8 @@ export const STYLE = String.raw`<style>
     font-weight: 400; margin-top: 2px; }
   .prrow .v, .cardnum { font-family: var(--display); font-size: 14px; font-weight: 700;
     color: var(--ember-ink); font-variant-numeric: tabular-nums; }
+  .prrow .v { text-align: right; }
+  .prrow .v small { display: block; font-family: var(--sans); font-size: 10.5px; font-weight: 600; color: var(--muted); }
   .monthhead { font-family: var(--display); font-size: 12px; font-weight: 700; letter-spacing: .11em;
     text-transform: uppercase; color: var(--muted); margin: 20px 0 8px; }
 

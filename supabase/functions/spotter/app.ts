@@ -4814,7 +4814,7 @@ export const APP = String.raw`
         $("sectionsave"), "Section saved", "sectionsheet");
       return;
     }
-    // Handed over rather than stacked, the way dayadd hands over to the picker:
+    // Handed over rather than stacked, the way Train's ⋯ rows hand over (openMore):
     // the bank opens first and this sheet closes behind it, so the sheet layer's
     // one history entry passes across instead of falling to the floor. The
     // furniture rides on the picker's target and comes back here on woaback.
@@ -11937,9 +11937,9 @@ export const APP = String.raw`
 
   // ---------- train · where you are looking ----------
   //
-  // Two anchors, because the page shows two spans at once: the strip is a week
-  // and the Calendar segment is the month that week belongs to. Move either and
-  // the other follows, so they can never describe different places.
+  // Two anchors, because the calendar is two spans at once: the strip is a week
+  // and, pulled down, the month that week belongs to. Move either and the other
+  // follows, so they can never describe different places.
   var monthStart = null;
   // The week that speaks for a month: today's when today is in it, else the first.
   function weekInMonth(m) {
@@ -11952,7 +11952,11 @@ export const APP = String.raw`
   function monthOfWeek(w) { return firstOf(addDays(w, 3)); }
 
   function restorePlan() {
-    // Open on this week, including after a tab visit or a new calendar day.
+    // Open on this week and on today, as a week, including after a tab visit or
+    // a new calendar day. The plan link asks for the month itself (trainWantMonth).
+    calOpen = false;
+    selDay = null;
+    if (cal) { calRest(); cal.box.className = "tcal wk"; }
     state.weekStart = mondayOf(new Date());
     monthStart = monthOfWeek(state.weekStart);
   }
@@ -11978,16 +11982,6 @@ export const APP = String.raw`
   function fetchRange() {
     var r = planRange(), now = new Date(), from = mondayOf(now), to = addDays(now, AHEAD_DAYS);
     return { from: ymd(r.from) < ymd(from) ? r.from : from, to: ymd(r.to) > ymd(to) ? r.to : to };
-  }
-
-  // The ISO week number, for the subtitle. Thursday is the day that decides which
-  // year a week belongs to, which is the whole rule: the week holding 1 January's
-  // Thursday is week 1, and 31 December can therefore be week 1 of the next year.
-  function isoWeek(d) {
-    var t = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-    t.setDate(t.getDate() + 3 - ((t.getDay() + 6) % 7));
-    var jan4 = new Date(t.getFullYear(), 0, 4);
-    return 1 + Math.round(((t - jan4) / 86400000 - 3 + ((jan4.getDay() + 6) % 7)) / 7);
   }
 
   // What the visible range actually holds, cheaply. Arriving on a tab must not
@@ -12052,8 +12046,6 @@ export const APP = String.raw`
     });
   }
 
-  function loggedOn(key) { return sessionsOn(key).length > 0; }
-
   // state.logs is the newest 400. Past that horizon a day the plan asked for and
   // no log answers is not a failure, it is a question we cannot answer — so it
   // reads as planned rather than missed. Silence is not evidence.
@@ -12085,21 +12077,31 @@ export const APP = String.raw`
     return state.workouts.filter(function (x) { return x.id === id; })[0];
   }
 
-  // ---------- train · the band ----------
+  // ---------- train · the page ----------
   //
-  // Built once and kept, unlike the body under it: a node replaced rather than
-  // moved cannot slide, and the slide is the point of these controls.
+  // Option B, 25 Sept: Train is the page the app opens on, and it answers "what
+  // now?" with one card. Top to bottom: the week strip, which pulls down into the
+  // month in place; the day card (Up next for today, any other day's own card
+  // once that day is tapped); the saves never trained yet; Progress and Records.
+  // The ring and the streak moved up into the header's corner (#trainstat).
   //
   // Research, 16 Sept: Apple Fitness, Garmin Connect, Runna and Peloton all put
   // a seven-day strip at the top of the training screen and let it carry the
   // whole page under it. Runna and Garmin swipe it; Apple Fitness and Peloton
   // tap it. Apple's own guidance is that a gesture supplements a control rather
-  // than replacing it, so this does both: swipe the band, or press an arrow.
+  // than replacing it, so this does both: the strip swipes and pulls, and the
+  // same moves are buttons (the month's arrows, the handle, and a pair of week
+  // buttons only VoiceOver sees).
 
   var trainSeg = null, heroPct = 0;
-  var trainBar = null, trainLean = null, trainBody = null, stripRow = null;
-  var cardBox = null, heroBox = null, segTrack = null, trainSwap = false;
-  var barTitle = null, barPrev = null, barNext = null, barToday = null;
+  // trainLean is the page under the calendar, the sheet the month opens out from
+  // under, and as before the sign that Train has been built at all.
+  var trainLean = null, trainBody = null, cardBox = null, shelfBox = null, segTrack = null, trainSwap = false;
+  // The calendar's nodes and its fold; the day the card is showing (null is
+  // today, which moves at midnight on its own); whether the month is out. What
+  // the day card and the shelf last drew, so a refresh that changes nothing on
+  // them rebuilds nothing; the side the next day's card arrives from.
+  var cal = null, selDay = null, calOpen = false, daySig = "", shelfSig = "", daySlide = 0;
 
   var DOW = ["M", "T", "W", "T", "F", "S", "S"];
   // The month left the segments for the strip (it opens out of the week in
@@ -12153,101 +12155,342 @@ export const APP = String.raw`
     countStats();
   }
 
-  // ---------- train · the page ----------
-
+  // ---------- train · the build ----------
+  //
+  // The page's frame is constant markup, parsed once per account: nothing in it
+  // comes from a person, and a string is a quarter of the page weight of the
+  // same nodes built one call at a time. Kept, not rebuilt, between renders: a
+  // node replaced rather than moved cannot slide, and the slides are the point.
+  // data-go is what a calendar button does: a step, "t" today, "m" the ⋯.
   function buildTrain(v) {
-    v.innerHTML = "";
-    heroBox = el("div", "trainhero");
-    v.appendChild(heroBox);
-
-    trainBar = el("div", "weekbar");
-    barTitle = el("b");
-    trainBar.appendChild(barTitle);
-    // Google Calendar keeps a way back to today in reach; it earns its place only
-    // while today is off screen, so it comes and goes.
-    barToday = el("button", "planbtn", "Today");
-    barToday.onclick = function () {
-      state.weekStart = mondayOf(new Date());
-      monthStart = monthOfWeek(state.weekStart);
-      loadPlan();
+    var go = function (n, text, cls, label, glyph) {
+      return '<button class="' + cls + '" data-go="' + n + '"' + (label ? ' aria-label="' + label + '"' : "") + ">" +
+        (text || "") + (glyph ? '<svg class="ic"><use href="#i-' + glyph + '"></use></svg>' : "") + "</button>";
     };
-    trainBar.appendChild(barToday);
-    var nav = el("div", "wbnav");
-    barPrev = icon(el("button", "iconbtn"), "arrow-left");
-    barPrev.setAttribute("aria-label", "The week before");
-    barPrev.onclick = function () { stepWeek(-1); };
-    barNext = icon(el("button", "iconbtn"), "arrow-right");
-    barNext.setAttribute("aria-label", "The week after");
-    barNext.onclick = function () { stepWeek(1); };
-    nav.appendChild(barPrev);
-    nav.appendChild(barNext);
-    trainBar.appendChild(nav);
-    // The one word that keeps the pager off this band, so the drag below can have
-    // it. Everything else about the pager is left alone.
-    trainBar.setAttribute("data-noswipe", "");
-    v.appendChild(trainBar);
-
-    // Everything the week owns leans together, because it is one week: the days,
-    // the card and whichever segment is open. The hero above stays put — its ring
-    // is always the calendar week, whatever week is being read.
-    trainLean = el("div", "trainlean");
-    stripRow = el("div", "wstrip");
-    stripRow.setAttribute("data-noswipe", "");
-    trainLean.appendChild(stripRow);
-    cardBox = el("div", "tcardwrap");
-    trainLean.appendChild(cardBox);
-
-    var segWrap = el("div", "trainseg");
-    segTrack = el("div", "seg");
+    selDay = null; calOpen = false; daySig = ""; shelfSig = "";
+    v.innerHTML = '<div class="tcal wk" data-noswipe><div class="tcalhead"><div class="tctitle">' +
+      go("o", "<span></span>", "tcrange cw", "", "chev") + '<h3 class="tcmonth cm" tabindex="-1" aria-live="polite"></h3></div>' +
+      '<div class="tcacts">' + go("t", "Back to today", "planbtn cw") + '<div class="wbnav cm">' +
+      go(-1, "", "iconbtn", "Previous month", "arrow-left") + go(1, "", "iconbtn", "Next month", "arrow-right") +
+      go("t", "Today", "planbtn") + go("m", "", "iconbtn", "More", "more") + "</div>" +
+      go(-1, "Previous week", "sr-only cw") + go(1, "Next week", "sr-only cw") +
+      '</div></div><div class="cdow" aria-hidden="true"><span>M</span><span>T</span><span>W</span><span>T</span>' +
+      '<span>F</span><span>S</span><span>S</span></div><div class="crows" id="tcalrows"><div class="cblock"></div></div></div>' +
+      '<div class="tbelow"><button class="thandle" aria-controls="tcalrows" data-noswipe></button><div></div>' +
+      '<div class="tshelf hide"></div><div class="trainseg"><div class="seg" role="tablist" ' +
+      'aria-label="What to show for this week"><span class="segpill"></span></div></div><div class="trainbody"></div></div>';
+    var q = function (s) { return v.querySelector(s); };
+    trainLean = q(".tbelow");
+    cardBox = trainLean.children[1];
+    shelfBox = q(".tshelf");
+    trainBody = q(".trainbody");
+    segTrack = q(".seg");
+    cal = { box: q(".tcal"), rows: q(".crows"), block: q(".cblock"), range: q(".tcrange"), month: q(".tcmonth"),
+      handle: q(".thandle"), weeks: [], cells: [], raf: 0 };
+    cal.box.onclick = function (e) {
+      var n = e.target.closest("[data-go]");
+      n = n && n.getAttribute("data-go");
+      if (n === "o") calSet(true);
+      else if (n === "t") backToToday();
+      else if (n === "m") {
+        openMore("Plan", [["Copy week", openCopy], ["Build with Pumpy", programWithPumpy, state.weekStart],
+          ["What counts", openCounts]]);
+      } else if (n) calStep(+n);
+    };
+    cal.handle.onclick = function () { calSet(!calOpen); };
     segTrack.style.setProperty("--n", String(SEGS.length));
-    segTrack.setAttribute("role", "tablist");
-    segTrack.setAttribute("aria-label", "What to show for this week");
-    segTrack.appendChild(el("span", "segpill"));
     SEGS.forEach(function (s) {
-      var b = el("button", "segbtn", s[1]);
-      b.setAttribute("role", "tab");
-      b.onclick = function () { setTrainSeg(s[0]); };
-      segTrack.appendChild(b);
+      segTrack.appendChild(tbtn("segbtn", s[1], setTrainSeg, s[0])).setAttribute("role", "tab");
     });
-    segWrap.appendChild(segTrack);
-    trainLean.appendChild(segWrap);
-
-    trainBody = el("div", "trainbody");
-    trainLean.appendChild(trainBody);
-    v.appendChild(trainLean);
-
-    var ctx = { bar: trainBar, lean: trainLean, title: barTitle, step: stepWeek };
-    wireWeekBar(trainBar, ctx);
-    wireWeekBar(stripRow, ctx);
+    var ctx = { bar: cal.box, lean: cal.rows, title: q(".tctitle"), step: calStep, pull: calPull };
+    wireWeekBar(cal.box, ctx);
+    wireWeekBar(cal.handle, ctx);
   }
 
-  function stepWeek(n) {
-    state.weekStart = addDays(state.weekStart, 7 * n);
-    monthStart = monthOfWeek(state.weekStart);
-    loadPlan();
+  // ---------- train · the calendar ----------
+  //
+  // One grid, two heights. Collapsed it is the week strip: every row of the
+  // month is there, and a one-row window shows the week's. Pulled down it is the
+  // month, in place. Research (briefs/simplify-b/RESEARCH-MONTH-PULLDOWN.md):
+  // FSCalendar's scope pan is the model — the finger tracked 1:1, the row on
+  // screen staying in view and sliding to its slot (rowIndex x rowHeight x
+  // progress) while the other rows fade in — with the platform's numbers: the
+  // axis chosen at 10px, a release at 150px/s or else the nearer end, and the
+  // pager's critically damped spring to land; a crossfade in place of all of it
+  // under reduced motion.
+  //
+  // Only transform and opacity move per frame. The month is laid out at full
+  // height once, when a fold begins, and everything under the calendar — the day
+  // card, the shelf, the segments — is one opaque sheet (.tbelow) held up by
+  // exactly the height the month gained, then let down. The rows it has not
+  // uncovered yet are simply under it, and the rows above the week slide in from
+  // under the weekday letters, because the grid moves as one block.
+  var ROW_PITCH = 52;   // a row's 48px and the 4px under it (style.ts, .cweek)
+  var calTimer = 0;
+
+  function selKey() { return selDay || ymd(new Date()); }
+
+  // Which row of the month on screen holds a week.
+  function weekRow(w) {
+    return clamp(Math.round((mondayOf(w) - planRange().from) / WEEK_MS), 0, cal.weeks.length - 1);
   }
 
-  function stepMonth(n) {
-    monthStart = new Date(monthStart.getFullYear(), monthStart.getMonth() + n, 1);
-    state.weekStart = weekInMonth(monthStart);
-    loadPlan();
+  // The week a closing month folds onto: the selected day's, else today's, else
+  // the month's first — whichever of them the grid on screen holds. Opening, it
+  // is the week already on screen, so there is nothing to choose.
+  function foldKey(sel, today, from, to) {
+    return sel >= from && sel <= to ? sel : today >= from && today <= to ? today : from;
   }
 
-  // ---------- train · the band is the control ----------
+  // Where a released drag lands: thrown at 150px/s or more it goes the way it was
+  // thrown; slower, whichever end is nearer.
+  function foldTo(p, v) {
+    return Math.abs(v) >= 150 ? +(v > 0) : +(p >= 0.5);
+  }
+
+  // The fold under a finger dy px from where the drag locked at p0: 1:1 across
+  // the month's extra height, half speed past it (the give iOS puts at the end of
+  // a scroll), and nothing past the week, which has nowhere further to go.
+  function foldP(p0, dy, extra) {
+    var p = p0 + dy / extra;
+    return p > 1 ? (p + 1) / 2 : Math.max(0, p);
+  }
+
+  // The month on screen, every day a button: its number, its dot, and one
+  // sentence for VoiceOver. A redraw under VoiceOver's finger puts the focus back
+  // on the day that had it (f). The ways back to today earn their place only
+  // while today is not what is showing (Google Calendar's rule).
+  function drawCal() {
+    var c = cal, r = planRange(), today = ymd(new Date()), sel = selKey(), f = document.activeElement._k, i = 0, d, row;
+    // A fold in progress owns the rows; a read landing mid-fold is drawn when it settles.
+    if (c.moving) return;
+    c.block.innerHTML = "";
+    c.weeks = []; c.cells = [];
+    for (d = r.from; ymd(d) <= ymd(r.to); d = addDays(d, 1)) {
+      var k = ymd(d), m = dayMark(k), b = tbtn("cday" + (d.getMonth() !== monthStart.getMonth() ? " out" : "") +
+        (k === today ? " today" : "") + (k === sel ? " sel" : ""), null, pickDay, k);
+      if (!(i++ % 7)) c.weeks.push(row = c.block.appendChild(el("div", "cweek")));
+      b._k = k;
+      b.appendChild(el("span", "cdn", d.getDate()));
+      b.appendChild(el("span", "dmark " + m));
+      b.setAttribute("aria-label", dayLabel(d) + markWord(m) + (k === sel ? ", selected" : ""));
+      if (k === today) b.setAttribute("aria-current", "date");
+      c.cells.push(row.appendChild(b));
+      if (k === f) b.focus({ preventScroll: true });
+    }
+    c.block.appendChild(c.legend = markLegend());
+    c.a = weekRow(state.weekStart);
+    c.weeks[c.a].classList.add("anchor");
+    c.block.style.setProperty("--a", c.a);
+    c.range.firstChild.textContent = weekLabel(state.weekStart);
+    c.range.setAttribute("aria-label", "Show month, " + weekLabel(state.weekStart));
+    c.month.textContent = monthStart.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+    c.box.className = "tcal " + (calOpen ? "mo" : "wk");
+    c.handle.setAttribute("aria-expanded", calOpen);
+    c.handle.setAttribute("aria-label", calOpen ? "Collapse month" : "Expand month");
+    d = c.box.querySelectorAll(".planbtn");
+    d[0].classList.toggle("hide", sel === today && showingToday());
+    d[1].classList.toggle("hide", sel === today && +monthStart === +firstOf(new Date()));
+  }
+
+  // A tap on a day selects it; it opens nothing. Picked in the month it is also
+  // how the month closes, onto that day's week; picked off the strip (a card's
+  // Next row), the strip goes to that week.
+  function pickDay(k) {
+    var was = selKey();
+    if (cal.moving) return;
+    if (k !== was) { daySlide = k > was ? 1 : -1; selDay = k; haptic("select"); }
+    if (calOpen) { drawDay(); cal.pick = k; drawCal(); calSet(false); }
+    else if (k < ymd(state.weekStart) || k > ymd(addDays(state.weekStart, 6))) {
+      state.weekStart = mondayOf(dayDate(k));
+      monthStart = monthOfWeek(state.weekStart);
+      calGo(daySlide);
+    } else { drawDay(); drawCal(); }
+  }
+
+  // A step sideways: a week while the strip is a week, a month while it is the month.
+  function calStep(n, swiped) {
+    if (calOpen) {
+      monthStart = new Date(monthStart.getFullYear(), monthStart.getMonth() + n, 1);
+      state.weekStart = weekInMonth(monthStart);
+    } else {
+      state.weekStart = addDays(state.weekStart, 7 * n);
+      monthStart = monthOfWeek(state.weekStart);
+    }
+    calGo(n, swiped && !lessMotion() ? 120 : 0);
+  }
+
+  // The week belongs to the finger, not to the fetch: what is now on screen is
+  // drawn from the rows already in hand (after ms, the time a swipe's lean takes
+  // to carry the old week out), arriving from side n, and again only if the read
+  // brings something new.
+  function calGo(n, ms) {
+    planSlide = n;
+    clearTimeout(calTimer);
+    calTimer = setTimeout(function () { planSig = planShape(); renderTrain(); loadPlan(true); }, ms || 0);
+  }
+
+  function backToToday() {
+    var now = new Date(), k = ymd(now), was = ymd(state.weekStart);
+    daySlide = selKey() > k ? -1 : 1;
+    selDay = null;
+    state.weekStart = mondayOf(now);
+    monthStart = calOpen ? firstOf(now) : monthOfWeek(state.weekStart);
+    calGo(was > k ? -1 : was < ymd(state.weekStart) ? 1 : 0);
+  }
+
+  // A tap on the handle or the week's name, VoiceOver, a pick in the month or the
+  // plan link: the fold a drag makes. Scrolled down, the page goes to its top
+  // first (--t-3), so the fold happens where it can be seen.
+  function calSet(open) {
+    var pg = $("trainview");
+    if (open === calOpen && !cal.moving) return;
+    if (pg.scrollTop > 1 && !cal.moving) {
+      pg.scrollTo({ top: 0, behavior: lessMotion() ? "auto" : "smooth" });
+      setTimeout(function () { pg.scrollTop = 0; calSet(open); }, lessMotion() ? 0 : 320);
+      return;
+    }
+    calBegin();
+    calTo(+open, null);
+  }
+
+  // The month laid out at full height and measured, once, with the sheet under
+  // it held where it was: the start of every fold, whichever way it goes. A fold
+  // already running is caught where it is.
+  function calBegin() {
+    var c = cal, r = planRange();
+    cancelAnimationFrame(c.raf);
+    c.raf = 0;
+    if (c.moving) return;
+    if (calOpen) c.a = weekRow(dayDate(foldKey(selKey(), ymd(new Date()), ymd(r.from), ymd(r.to))));
+    c.moving = true;
+    c.opening = !calOpen;
+    c.calm = lessMotion();
+    c.box.className = "tcal moving";
+    c.extra = Math.max(1, c.block.offsetHeight - 48);
+    // Under reduced motion the rows fade where they stand; nothing slides.
+    c.block.style.transform = "translateY(" + (calOpen ? 0 : -c.a * ROW_PITCH) + "px)";
+    calPaint(+calOpen);
+  }
+
+  // One frame of the fold, p from 0 (the week) to 1 (the month), past 1 while a
+  // finger overpulls. The row on screen slides to its slot with the block; the
+  // other rows fade in with the fold, and out a little ahead of it, so the week
+  // is alone before the window closes on it; the sheet under the calendar moves
+  // by the height the month has so far; the header crosses over in the second half.
+  function calPaint(p) {
+    var c = cal, q = clamp(p, 0, 1), f = c.opening ? q : Math.max(0, 1.1 * q - 0.1);
+    c.p = p;
+    if (!c.calm) c.block.style.transform = "translateY(" + -c.a * ROW_PITCH * (1 - q) + "px)";
+    c.weeks.concat(c.legend).forEach(function (n, i) { if (i !== c.a) n.style.opacity = f; });
+    trainLean.style.transform = "translateY(" + c.extra * (p - 1) + "px)";
+    c.box.style.setProperty("--cw", clamp(1 - 2 * q, 0, 1));
+    c.box.style.setProperty("--cm", clamp(2 * q - 1, 0, 1));
+  }
+
+  // Lands the fold at 0 or 1 on the pager's spring: 0.42s, critically damped,
+  // from v (folds per second at the release), and stopped at the target rather
+  // than let through it. A tap starts it at the speed that makes it a pure
+  // ease-out, x0 e^(-wt), settled inside --t-3. Reduced motion lands at once and
+  // crossfades.
+  function calTo(to, v) {
+    var c = cal, x0 = c.p - to, t0 = 0, W = 2 * Math.PI / 0.42;
+    cancelAnimationFrame(c.raf);
+    if (c.calm) {
+      calEnd(to);
+      c.rows.classList.remove("xfade");
+      void c.rows.offsetWidth;
+      c.rows.classList.add("xfade");
+      return;
+    }
+    if (v === null) v = -W * x0;
+    c.raf = requestAnimationFrame(function frame(t) {
+      var s = (t - (t0 = t0 || t)) / 1000, x = (x0 + (v + W * x0) * s) * Math.exp(-W * s);
+      if (x * x0 <= 0 || Math.abs(x * c.extra) < 0.5) calEnd(to);
+      else { calPaint(to + x); c.raf = requestAnimationFrame(frame); }
+    });
+  }
+
+  // Everything a fold put on the page, taken off in one style change.
+  function calRest() {
+    var c = cal;
+    cancelAnimationFrame(c.raf);
+    c.raf = 0;
+    c.moving = false;
+    c.box.style.cssText = c.block.style.transform = trainLean.style.transform = "";
+    c.weeks.concat(c.legend || []).forEach(function (n) { n.style.opacity = ""; });
+  }
+
+  // The fold has landed. Open, the month is the page's; closed, the week it
+  // folded onto is the strip, in the month the Thursday rule gives it, and the
+  // page under it is that week's. VoiceOver goes where the eye does: the
+  // month's name, or the day just picked.
+  function calEnd(to) {
+    var c = cal, wk = ymd(state.weekStart), k = c.pick;
+    calRest();
+    calOpen = !!to;
+    c.pick = null;
+    haptic("tap");
+    c.box.className = "tcal " + (calOpen ? "mo" : "wk");
+    if (!to) {
+      state.weekStart = addDays(planRange().from, c.a * 7);
+      monthStart = monthOfWeek(state.weekStart);
+      trainSwap = ymd(state.weekStart) !== wk;
+      calGo(0);
+    }
+    drawCal();
+    if (to) c.month.focus({ preventScroll: true });
+    else c.cells.forEach(function (b) { if (b._k === k) b.focus({ preventScroll: true }); });
+  }
+
+  // The vertical half of the calendar's drag; wireWeekBar owns the touch.
+  //   can    asked on the first touchmove, the only one WebKit lets decide whether
+  //          the page scrolls: the drag is the calendar's only with the page at its
+  //          top (anywhere else it is the page scrolling), down to open and up to
+  //          close; a fold still settling is caught whichever way the finger goes
+  //   grab   a finger landing on a fold still settling stops it where it is...
+  //   drop   ...and if it turns out not to be a drag, lets it finish
+  //   end    the speed is the last 100ms of travel, and none from a finger that
+  //          rested 50ms before it lifted; a cancel is an interruption, not a throw
+  // (Comments in here would ship: the build keeps them inside an object literal.)
+  var calPull = {
+    can: function (dy) {
+      return $("trainview").scrollTop <= 0 && (cal.moving || (calOpen ? dy <= 0 : dy >= 0));
+    },
+    grab: function () {
+      var r = cal.raf;
+      cancelAnimationFrame(r);
+      cal.raf = 0;
+      return !!r;
+    },
+    drop: function () { if (cal.moving && !cal.raf) calTo(foldTo(cal.p, 0), 0); },
+    start: function () { calBegin(); cal.p0 = cal.p; },
+    move: function (dy) { calPaint(foldP(cal.p0, dy, cal.extra)); },
+    end: function (s, cancelled) {
+      var a = s[0], b = s[s.length - 1], dt = (b.t - a.t) / 1000;
+      var v = !cancelled && dt > 0.004 && now() - b.t < 50 ? (b.y - a.y) / dt : 0;
+      calTo(foldTo(cal.p, v), v / cal.extra);
+    }
+  };
+
+  // ---------- train · the calendar is the control ----------
   //
   // Material lets a tab strip and the content under it each answer a sideways
   // drag and mean different things by it. Here the content is the app's three
-  // tabs, so data-noswipe hands every drag starting on this band to the code
-  // below and the pager never sees one; a drag anywhere else still pages. The
-  // arrows stay: Apple asks a gesture to supplement a control, not replace it.
+  // tabs, so data-noswipe hands every drag starting on the calendar (or on its
+  // handle) to the code below and the pager never sees one; a drag anywhere
+  // else still pages.
   //
-  // Nothing is fetched for the week arriving, so the body leans the way the
-  // finger goes rather than pretending to be two weeks side by side, and the
-  // title follows a fifth of that. On release the lean carries out and the week
-  // that lands slides in from the far side. Discipline and constants are the
-  // pager's: slop before an axis, one verdict, the touch cancelled only while we
-  // hold it, a fling or two fifths of the bar to commit.
-  var WB_LEAD = 64, planSlide = 0;
+  // Two axes, one verdict, taken once the finger has gone 10px (iOS waits
+  // "usually 10 points"). Sideways steps the week, or the month while the month
+  // is open: nothing is fetched for the one arriving, so the rows lean the way
+  // the finger goes rather than pretending to be two weeks side by side, the
+  // title follows a fifth of that, and on release the lean carries out and the
+  // week that lands slides in from the far side. Up or down is the fold
+  // (calPull), and only if the touch's first move claimed it. Discipline and
+  // constants are the pager's: one verdict, the touch cancelled only while we
+  // hold it, a fling or two fifths of the width to commit.
+  var WB_LEAD = 64, WB_SLOP = 10, planSlide = 0;
 
   function wireWeekBar(node, ctx) {
     var wd = null;
@@ -12267,11 +12510,12 @@ export const APP = String.raw`
       if (!wd || (e && e.pointerId !== wd.id)) return;
       var d = wd;
       wd = null;
-      if (!d.lock) return;
+      if (!d.lock) { if (d.caught) ctx.pull.drop(); return; }
       try { node.releasePointerCapture(d.id); } catch (err) { /* already gone */ }
-      // One click follows the finger up, and it belongs to whichever arrow or day
-      // the drag started on. Not after a lost lift: the next tap is its own.
+      // One click follows the finger up, and it belongs to whichever day or
+      // button the drag started on. Not after a lost lift: the next tap is its own.
       if (!lost) swallowClick();
+      if (d.lock === "y") { ctx.pull.end(d.s, cancelled); return; }
       var s = d.s, a = s[0], b = s[s.length - 1], dt = (b.t - a.t) / 1000;
       var v = dt > 0.004 ? (b.x - a.x) / dt : 0;
       var far = Math.abs(d.dx) > node.offsetWidth * PART;
@@ -12281,15 +12525,13 @@ export const APP = String.raw`
         : (v > FLING || (far && d.dx > 0)) ? -1 : 0;
       rest(!!n);
       if (!n) return;
-      // The week belongs to the finger, not to the fetch — the rule the segmented
-      // control already follows when it paints before it loads.
       planSlide = n;
       if (!d.calm) {
         ctx.lean.classList.add("pbmove");
         ctx.lean.style.transform = "translateX(" + (n > 0 ? -WB_LEAD : WB_LEAD) + "px)";
         ctx.lean.style.opacity = "0";
       }
-      ctx.step(n);
+      ctx.step(n, true);
       paintTrainBar();
       haptic("tap");
     }
@@ -12300,31 +12542,34 @@ export const APP = String.raw`
       // Safari's back gesture owns the very edge inside a browser tab.
       if (!standalone() && e.clientX < 24) return;
       wd = { id: e.pointerId, x: e.clientX, y: e.clientY, dx: 0, lock: false, seen: now(),
-        calm: lessMotion(), s: [{ t: now(), x: e.clientX }] };
+        calm: lessMotion(), s: [{ t: now(), x: e.clientX, y: e.clientY }],
+        first: false, claim: false, caught: !!(ctx.pull && ctx.pull.grab()) };
       holdDrag(loose);
     });
 
     node.addEventListener("pointermove", function (e) {
       if (!wd || e.pointerId !== wd.id) return;
       wd.seen = now();
-      var dx = e.clientX - wd.x, dy = e.clientY - wd.y;
+      var dx = e.clientX - wd.x, dy = e.clientY - wd.y, up = Math.abs(dy) > Math.abs(dx);
       if (!wd.lock) {
-        if (dx * dx + dy * dy < SLOP * SLOP) return;
-        // Forty-five degrees and no wider. The pager leans to 65 because a page
-        // that will not turn is the worse fault there; this band sits where people
-        // start a scroll, so a drag that leans down is theirs.
-        if (Math.abs(dy) > Math.abs(dx)) { wd = null; return; }
-        wd.lock = true;
-        // Re-datum on the lock point so the week does not jump the slop.
-        wd.x = e.clientX;
-        dx = 0;
-        ctx.bar.classList.add("wbdrag");
-        ctx.lean.classList.remove("pbmove");
+        if (dx * dx + dy * dy < WB_SLOP * WB_SLOP) return;
+        // Forty-five degrees and no wider. Up or down is the fold only if the
+        // touch was claimed for it (claim, below) — otherwise the page is
+        // already scrolling. Sideways is the week's, unless the finger landed
+        // on a fold still settling, which it lets finish instead.
+        if (up ? !claim(dy, dx) : wd.caught) { if (wd.caught) ctx.pull.drop(); wd = null; return; }
+        wd.lock = up ? "y" : "x";
+        // Re-datum on the lock point so nothing jumps the slop.
+        wd.x = e.clientX; wd.y = e.clientY;
+        dx = dy = 0;
+        if (up) ctx.pull.start();
+        else { ctx.bar.classList.add("wbdrag"); ctx.lean.classList.remove("pbmove"); }
         try { node.setPointerCapture(wd.id); } catch (err) { /* not fatal */ }
       }
-      wd.dx = dx;
-      wd.s.push({ t: now(), x: e.clientX });
+      wd.s.push({ t: now(), x: e.clientX, y: e.clientY });
       while (wd.s.length > 2 && wd.s[wd.s.length - 1].t - wd.s[0].t > VWIN) wd.s.shift();
+      if (wd.lock === "y") { ctx.pull.move(dy); return; }
+      wd.dx = dx;
       if (wd.calm) return;
       var lead = clamp(dx / 2, -WB_LEAD, WB_LEAD);
       ctx.lean.style.transform = "translateX(" + lead + "px)";
@@ -12332,11 +12577,21 @@ export const APP = String.raw`
       ctx.title.style.transform = "translateX(" + (lead * 0.18) + "px)";
     });
 
-    // The page under this band scrolls, and WebKit settles that on the touch, not
-    // on the pointer event before it: cancelling the touch while we hold the axis
-    // is the whole reason the band can declare no touch-action, as the pager does.
+    // WebKit settles on the FIRST touchmove whether the page may scroll: cancel
+    // that one or none after it counts (webkit.org/b/182521). So the touch is
+    // claimed for the fold, once, when it can only be the fold's (calPull.can),
+    // and on whichever comes first: its first touchmove (WebKit sends one for
+    // every pixel) or the lock (Chrome holds touchmoves back until the finger is
+    // past its slop). Once an axis is held every move is cancelled — the whole
+    // reason the calendar can declare no touch-action, as the pager does.
+    function claim(dy, dx) {
+      if (!wd.first) { wd.first = true; wd.claim = !!(ctx.pull && ctx.pull.can(dy, dx)); }
+      return wd.claim;
+    }
+
     node.addEventListener("touchmove", function (e) {
-      if (wd && wd.lock && e.cancelable) e.preventDefault();
+      var t = e.touches && e.touches.length === 1 && e.touches[0];
+      if (wd && e.cancelable && (wd.lock || (t && claim(t.clientY - wd.y, t.clientX - wd.x)))) e.preventDefault();
     }, { passive: false });
 
     node.addEventListener("pointerup", function (e) { stop(e, false); });
@@ -12352,7 +12607,12 @@ export const APP = String.raw`
     return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
   }
 
-  function weekLabel(w) { return shortDate(w) + " – " + shortDate(addDays(w, 6)); }
+  // "Sep 21–27", or "Sep 28 – Oct 4" across two months: a week's name, wherever
+  // it is written (the wording table).
+  function weekLabel(w) {
+    var e = addDays(w, 6);
+    return shortDate(w) + (w.getMonth() === e.getMonth() ? "–" + e.getDate() : " – " + shortDate(e));
+  }
 
   function dayLabel(d) {
     return d.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
@@ -12366,8 +12626,6 @@ export const APP = String.raw`
   }
 
   function paintTrainBar() {
-    barTitle.textContent = weekLabel(state.weekStart);
-    barToday.classList.toggle("hide", showingToday());
     // Today's date, the one thing the eyebrow can say that nothing under it does.
     $("counttrain").textContent = new Date().toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
   }
@@ -12382,71 +12640,39 @@ export const APP = String.raw`
     }
   }
 
-  // ---------- train · the hero ----------
+  // ---------- train · the header's corner ----------
   //
-  // The streak in weeks on the left, the ring on the right. A week is the unit
-  // everywhere in this app, and the ring is ALWAYS this calendar week however far
-  // back the strip is reading: a number that changed as you browsed would answer
-  // a question nobody asked.
-  function drawHero(st) {
-    heroBox.innerHTML = "";
-    heroBox.className = "trainhero" + (st.done >= st.goal ? " full" : "") +
-      (st.atRisk ? " risk" : "") + (st.unreachable ? " miss" : "");
-    var left = el("div", "wkleft");
-    if (st.streakWeeks > 0) {
-      left.appendChild(el("div", "wkbig", st.streakWeeks + " wk"));
-      var fz = (st.frozen || []).length;
-      left.appendChild(el("div", "wksub",
-        "streak" + (fz ? " · " + fz + (fz === 1 ? " freeze" : " freezes") : "")));
-    } else {
-      // No run to name yet. The ring beside it already says "1 of 4", so the line
-      // only speaks when it has something the ring does not: a week at risk, a
-      // week that can no longer be met, a week already done.
-      left.appendChild(el("div", "wksub",
-        st.done >= st.goal || st.atRisk || st.unreachable ? ringLabel(st) : "This week"));
-    }
-    heroBox.appendChild(left);
-
-    var ring = el("button", "ringwrap rsm");
-    ring.setAttribute("aria-label", "What counts as a session");
-    // The arc sweeps once, the first time it has something to say. A week swipe
-    // or a quiet refresh redraws this row and must not replay it: a ring that
-    // fills itself again on every render is a fidget, not a result.
-    var pct = st.goal ? st.done / st.goal : 0;
+  // The streak and the ring, up in the bar since Option B: the two things a
+  // training week is judged by, in sight at every scroll position. The ring is
+  // ALWAYS this calendar week however far the strip has been paged — a number
+  // that changed as you browsed would answer a question nobody asked — and it
+  // is the door to what counts, which also says how the week stands and whether
+  // a freeze has been spent. The streak's hyphen does not break (U+2011), so it
+  // folds as "3-week / streak".
+  function drawStat() {
+    var box = $("trainstat"), st = thisWeek(), pct = st && st.done / st.goal, sw = st && st.streakWeeks, ring;
+    box.innerHTML = "";
+    if (!st) return;
+    box.className = "trainstat" + (pct >= 1 ? " full" : st.atRisk ? " risk" : "");
+    if (sw) box.appendChild(el("span", "tsk", sw + "‑week streak"));
+    ring = box.appendChild(tbtn("ringwrap", null, openCounts));
+    // The arc sweeps once, the first time it has something to say, and a refresh
+    // redraws it from where it was: a ring that refills on every render is a
+    // fidget, not a result.
     ring.appendChild(ringSvg(pct, null, heroPct));
     heroPct = pct;
-    var mid = el("div", "rmid");
-    if (st.done >= st.goal) mid.appendChild(icon(el("div", "rcheck"), "check"));
-    else {
-      mid.appendChild(el("div", "rnum", String(st.done)));
-      mid.appendChild(el("div", "rof", "of " + st.goal));
-    }
-    ring.appendChild(mid);
-    ring.onclick = function () { openSheet("countsheet"); };
-    heroBox.appendChild(ring);
+    ring.appendChild(pct >= 1 ? icon(el("span", "rmid rcheck"), "check") : el("span", "rmid rnum", st.done + "/" + st.goal));
+    ring.setAttribute("aria-label", st.done + " of " + st.goal + " this week" + (sw ? ", " + sw + "-week streak" : "") + ". What counts");
   }
 
-  // ---------- train · the seven days ----------
-
-  function drawStrip() {
-    stripRow.innerHTML = "";
-    var todayStr = ymd(new Date());
-    for (var i = 0; i < 7; i++) {
-      (function (i) {
-        var d = addDays(state.weekStart, i), key = ymd(d);
-        var cell = el("button", "wday" + (key === todayStr ? " today" : ""));
-        cell.appendChild(el("span", "wdl", DOW[i]));
-        cell.appendChild(el("span", "wdn", String(d.getDate())));
-        var m = dayMark(key);
-        cell.appendChild(el("span", "dmark" + (m ? " " + m : "")));
-        cell.setAttribute("aria-label", dayLabel(d) + markWord(m));
-        cell.onclick = function () { openDay(key); };
-        stripRow.appendChild(cell);
-      })(i);
-    }
+  function openCounts() {
+    var st = thisWeek(), fz = st && st.frozen.length;
+    $("countnow").textContent = st ? [ringLabel(st), st.streakWeeks ? st.streakWeeks + "-week streak" : "",
+      fz ? fz + (fz > 1 ? " freezes" : " freeze") + " used" : ""].filter(Boolean).join(" · ") : "";
+    openSheet("countsheet");
   }
 
-  // done / planned / as planned / missed, spelled out once under the grid. Four
+  // done / planned / as planned / missed, spelled out once under the month. Four
   // shapes carrying four meanings need a key, and a key is cheaper than four
   // words in every cell.
   function markLegend() {
@@ -12461,87 +12687,233 @@ export const APP = String.raw`
     return row;
   }
 
-  // ---------- train · today ----------
+  // ---------- train · the day card ----------
   //
-  // Always today, whatever week the strip is showing: the question the app is
-  // opened with does not move when you go looking at October.
-  // fetchRange always holds today, whatever month the strip is showing.
-  function todayRows() {
-    return rowsFor(ymd(new Date()));
+  // Today's is Up next: upNext() is the rule, and this only draws its answer.
+  // Any other day's is what happened on it and what is or was planned, with the
+  // plan's actions on each row. It replaces the Today card, the day sheet and
+  // the Resume card, and it is the only place Start appears on Train.
+  //
+  // Cheap to call at any moment — sessionChanged calls it on every pause, resume
+  // and finish, and on every render of the library, which is also when a save
+  // lands, so the shelf under the card is kept with it — and it rebuilds only
+  // what has changed. A new day arrives from the side the day moved to, the same
+  // day saying something new crossfades, and the box eases to the new height.
+  function drawDay() {
+    if (!cardBox) return;
+    planHide();
+    drawShelf();
+    var k = selKey(), u = k === ymd(new Date()) ? upNext() : dayState(k), sig = k + JSON.stringify(u), h = cardBox.offsetHeight;
+    if (sig === daySig) return;
+    var card = u.key ? dayCard(u) : upCard(u);
+    cardBox.innerHTML = "";
+    cardBox.appendChild(card);
+    if (daySig && !quiet) {
+      card.style.setProperty("--pin", (daySlide < 0 ? -26 : 26) + "px");
+      card.classList.add(daySlide ? "planin" : "planswap");
+      if (h !== cardBox.offsetHeight) sizeMotion(cardBox, h, cardBox.offsetHeight);
+    }
+    daySig = sig;
+    daySlide = 0;
   }
 
-  function todayMeta(w, extra) {
-    return [w.author, fmtDur(w.duration_minutes), (w.equipment || [])[0] || w.category, extra]
+  // A button whose tap calls fn with one argument: the shape nearly every
+  // control on these cards takes.
+  function tbtn(cls, text, fn, arg) {
+    var b = el("button", cls, text);
+    b.onclick = function () { fn(arg); };
+    return b;
+  }
+
+  function wMeta(w, more) {
+    var n = exerciseNames(w).length;
+    return [w.author && "@" + w.author, fmtDur(w.duration_minutes), n && n + (n > 1 ? " exercises" : " exercise"), more]
       .filter(Boolean).join(" · ");
   }
 
-  function drawToday(st) {
-    var d = new Date(), key = ymd(d);
-    cardBox.innerHTML = "";
-    var list = [];
-    todayRows().forEach(function (p) {
-      var w = planWorkout(p.workout_id);
-      if (w) list.push({ row: p, w: w });
-    });
-    var done = loggedOn(key);
-    var card = el("div", "daycard today tcard" + (done && !list.length ? " done" : ""));
-    var head = el("div", "dayhead");
-    head.appendChild(el("div", "dayname", "Today · " +
-      d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })));
-    var more = icon(el("button", "iconbtn tmore"), "more");
-    more.setAttribute("aria-label", "More");
-    more.onclick = function () { openSheet("trainmore"); };
-    head.appendChild(more);
-    card.appendChild(head);
+  function setsWord(n) { return n + (n === 1 ? " set" : " sets"); }
 
-    if (list.length) {
-      var w = list[0].w;
-      var body = el("div", "tbody");
-      var thumb, art = cardArt(w);
-      if (art) { thumb = el("img", "tthumb"); thumb.src = art; thumb.alt = ""; }
-      else thumb = el("div", "tthumb");
-      body.appendChild(thumb);
-      var txt = el("div", "ttxt");
-      var t = el("button", "ttitle", w.title || "Workout");
-      t.onclick = function () { openDetail(w); };
-      txt.appendChild(t);
-      var meta = todayMeta(w, list.length > 1
-        ? "+" + (list.length - 1) + " more today" : null);
-      if (meta) txt.appendChild(el("div", "tdose", meta));
-      body.appendChild(txt);
-      card.appendChild(body);
-      var row = el("div", "tbtns");
-      // The detail overlay's own start call, so finishing lands in the same place.
-      var go = el("button", "btn" + (done ? " ghost" : ""),
-        done ? "Log another" : "Start workout");
-      go.onclick = function () { startWorkout(w); };
-      row.appendChild(go);
-      var mv = el("button", "btn ghost tmove", "Move");
-      mv.onclick = function () { openPlanSheet({ w: w, row: list[0].row, from: "today" }); };
-      row.appendChild(mv);
-      card.appendChild(row);
-    } else if (done) {
-      card.appendChild(el("div", "tdose",
-        "Done for today." + (st ? " " + weekLine(st) : "")));
-    } else {
-      // Nothing planned is not a problem to solve, but it is worth two doors.
-      card.appendChild(el("div", "tdose", "Rest day — add one, or ask Pumpy."));
-      var rest = el("div", "tbtns");
-      var add = el("button", "btn ghost", "Plan a workout");
-      add.onclick = function () { openPicker(key, dayLabel(d)); };
-      rest.appendChild(add);
-      var ask = el("button", "btn ghost", "Ask Pumpy");
-      ask.onclick = function () { programWithPumpy(state.weekStart); };
-      rest.appendChild(ask);
-      card.appendChild(rest);
+  // The card: the saved video's frame (or Pumpy's drawing) across the top — a
+  // second door to the workout for a thumb; the title is the one VoiceOver and a
+  // keyboard use — then the card's word, the title (w without an id is only a
+  // name), one line of facts, and the buttons, [class, words, fn, argument].
+  // act: it asks for something, and wears the ember edge.
+  function tcard(cls, kick, w, meta, btns) {
+    var card = el("div", "daycard tcard " + cls), art = w && w.id && cardArt(w), row = el("div", "tbtns"), cov;
+    if (art) {
+      cov = card.appendChild(el("div", "tcover"));
+      cov.onclick = function () { openDetail(w); };
+      var img = cov.appendChild(el("img"));
+      img.alt = "";
+      img.onerror = function () { cov.remove(); };
+      img.src = art;
     }
-    cardBox.appendChild(card);
+    card.appendChild(el("div", "dayname", kick));
+    if (w) card.appendChild(w.id ? tbtn("ttitle", w.title || "Workout", openDetail, w) : el("div", "ttitle", w.title));
+    if (meta) card.appendChild(el("div", "tdose", meta));
+    (btns || []).forEach(function (b) { row.appendChild(tbtn(b[0], b[1], b[2], b[3])); });
+    if (row.firstChild) card.appendChild(row);
+    return card;
   }
 
-  // Train's day card, redrawn on its own when a session changes (sessionChanged).
-  // Seam: sb-train replaces drawToday with the selected-day card and Up next.
-  function drawDay() {
-    drawToday(state.logs ? thisWeek() : null);
+  // A row of the history's shape, "title / line ›": a session (its recap) or
+  // what is next ("Next: Sat · Leg Day", which selects that day).
+  function histRow(title, line, fn, arg) {
+    var b = tbtn("histrow dayses", null, fn, arg), n = b.appendChild(el("div", "n"));
+    n.appendChild(el("b", null, title));
+    n.appendChild(el("span", null, line));
+    b.appendChild(ic("chev"));
+    return b;
+  }
+
+  function nextRow(nx) {
+    var d = aheadWord(nx.day, new Date());
+    return histRow("Next: " + d.charAt(0).toUpperCase() + d.slice(1), nx.w.title || "Workout", pickDay, nx.day);
+  }
+
+  // Up next, in the order upNextOf decides it (S0 to S6).
+  function upCard(u) {
+    var w = u.w, n = u.sessions && u.sessions.length, card, go;
+    if (!u.s) {
+      // S0: the planned card's shape in sand, so the page does not jump when the answer lands.
+      card = el("div", "daycard tcard tskel");
+      card.innerHTML = '<div class="tcover"></div><div class="sk"></div><div class="sk st"></div><div class="sk sm"></div><div class="sk sb"></div>';
+      return card;
+    }
+    if (u.s > 5) return firstCard(u.pending);
+    // Paused or still running: the way back in, and End, which saves what was
+    // logged exactly as End inside the session does.
+    if (u.s < 2) {
+      return tcard("act", u.running ? "In progress" : "Paused", w, setsWord(u.sets) + " · " +
+        clock(Math.max(0, Math.round(((u.pausedAt ? new Date(u.pausedAt) : new Date()) - new Date(u.startedAt)) / 1000))),
+        [["btn", "Resume", woForward], ["btn ghost tmove", "End", function () { woForward(); finishWorkout(); }]]);
+    }
+    if (u.s < 3) {
+      card = tcard("act", "Planned today", w, wMeta(w, u.more && "+" + u.more + " more today"),
+        [["btn", "Start workout", startWorkout, w]]);
+      if (u.done.length) {
+        card.insertBefore(el("div", "tdose", "Also done today: " +
+          u.done.map(function (l) { return l.workout_title || "Workout"; }).join(", ")), card.lastChild);
+      }
+      go = card.lastChild.appendChild(icon(el("button", "iconbtn"), "more"));
+      go.setAttribute("aria-label", "More for this plan");
+      go.onclick = function () {
+        openMore(w.title || "Workout", [["Move", openPlanSheet, { w: w, row: u.row, from: "upnext" }],
+          ["Swap", planSwap, u.row], ["Remove from plan", planRemove, u.row, 1]]);
+      };
+      return card;
+    }
+    if (u.s < 4) {
+      card = tcard("good", "Done today ✓", w || { title: u.session.workout_title || "Workout" },
+        Math.max(1, Math.round(u.secs / 60)) + " min · " + setsWord(u.sets) + (n > 1 ? " · " + n + " sessions" : ""),
+        [["btn ghost", "View recap", openRecap, u.session]]);
+      if (u.next) card.appendChild(nextRow(u.next));
+      card.appendChild(tbtn("linkbtn", "Log another", setView, "library"));
+      return card;
+    }
+    if (u.s < 5) {
+      // A rest day in a planned week: what is next, and a way in anyway — the
+      // next planned workout, or with nothing ahead the one Try next would pick.
+      go = u.next ? u.next.w : u.pick;
+      card = tcard("rest", "Rest day", null, u.next ? null : "Nothing else planned this week." +
+        (go ? " Or try " + (go.title || "a saved workout") + "." : ""), go && [["btn ghost", "Start it now", startWorkout, go]]);
+      if (u.next) card.insertBefore(nextRow(u.next), card.lastChild);
+      card.appendChild(tbtn("linkbtn", "Plan a workout today", planPick, ymd(new Date())));
+      card.appendChild(tbtn("linkbtn", "Build this week with Pumpy", programWithPumpy, mondayOf(new Date())));
+      return card;
+    }
+    return tcard("act", u.again ? "Do it again" : "Try next", w, wMeta(w),
+      [["btn", "Start workout", startWorkout, w], ["btn ghost tmove", "Plan it", openPlanSheet, { w: w, from: "upnext" }]]);
+  }
+
+  // S6: nothing on the shelf to do yet. The lesson is the add sheet's own share
+  // row, the one used every day after this, as the empty library shows it.
+  function firstCard(n) {
+    var card = el("div", "daycard tcard empty");
+    card.appendChild(pumpyArt("coach", false));
+    card.appendChild(el("h2", null, n ? "Spotter is reading " + n + (n > 1 ? " videos" : " video") : "Save your first workout video"));
+    card.appendChild(el("p", null, n ? "It lands here the moment it is ready." : "Found one on TikTok, Instagram or YouTube? Share it to Spotter."));
+    if (!n) paintSaveOn(card.appendChild($("addsheet").querySelector(".shareflow").cloneNode(true)));
+    card.appendChild(tbtn("btn firstsave", "Add video", function () { $("addbtn").click(); }));
+    return card;
+  }
+
+  // Any other day. Past: the sessions finished on it (each opens its recap), and
+  // what was planned and not done, which can be done today instead. Ahead: what
+  // is planned, to start now, move or remove. Either way a workout can be added.
+  function dayCard(d) {
+    var card = el("div", "daycard tcard");
+    card.appendChild(el("div", "dayname", dayDate(d.key).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })));
+    d.sessions.forEach(function (l) {
+      card.appendChild(histRow(l.workout_title || "Workout", setsWord(setsIn(l.entries)) +
+        (l.duration_seconds ? " · " + Math.max(1, Math.round(l.duration_seconds / 60)) + " min" : ""), openRecap, l));
+    });
+    // A planned row is the picker's row (the workout, its word and length), with
+    // the plan's actions under it, the first of them a button.
+    d.missed.concat(d.planned).forEach(function (it) {
+      var miss = d.missed.indexOf(it) >= 0, w = it.w, head = card.appendChild(tbtn("pickrow", null, openDetail, w));
+      var t = el("span", "pt"), row = card.appendChild(el("div", "piacts"));
+      if (cardArt(w)) { var img = head.appendChild(el("img")); img.alt = ""; img.src = cardArt(w); }
+      t.appendChild(el("b", null, w.title || "Workout"));
+      t.appendChild(el("span", null, [miss ? "Missed" : "Planned", fmtDur(w.duration_minutes)].filter(Boolean).join(" · ")));
+      head.appendChild(t);
+      (miss ? [["btn ghost", "Do it today", doToday, it]] : [["btn ghost", "Start now", startWorkout, w],
+        ["linkbtn", "Move", openPlanSheet, { w: w, row: it.row, from: "day" }]])
+        .concat([["linkbtn", "Remove", planRemove, it.row]])
+        .forEach(function (a) { row.appendChild(tbtn(a[0], a[1], a[2], a[3])); });
+    });
+    if (d.empty) card.appendChild(el("div", "tdose", d.when === "past" ? "Nothing logged or planned." : "Nothing planned yet."));
+    card.appendChild(tbtn("planadd", "+ Plan a workout", planPick, d.key));
+    return card;
+  }
+
+  // Train paints from lite logs before the real ones land (fullLogs), and a recap
+  // needs every figure, so it waits for them and opens the full row.
+  function openRecap(l) {
+    loadLogs().then(function () {
+      openSession((state.logs || []).filter(function (x) { return x.id === l.id; })[0] || l);
+    });
+  }
+
+  // The one ⋯ sheet Train owns, filled per opening: rows of [words, fn, argument,
+  // danger]. Handed over rather than stacked: whatever a row opens opens first,
+  // and this closes behind it, so the one history entry never falls between them.
+  function openMore(title, rows) {
+    var list = $("tmlist");
+    $("tmtitle").textContent = title;
+    list.innerHTML = "";
+    rows.forEach(function (r) {
+      list.appendChild(tbtn("pickrow" + (r[3] ? " danger" : ""), r[0], function () { r[1](r[2]); closeSheet("trainmore"); }));
+    });
+    openSheet("trainmore");
+  }
+
+  // ---------- train · ready to try ----------
+  //
+  // The saves never part of a finished session, newest first (readyToTry, the one
+  // list the Workouts chip and Up next read too): the landing page's promise,
+  // "actually do the workout", as a row of things to do. A card opens; Start is
+  // the day card's alone. Hidden when there is nothing — and until the logs are
+  // in, because before then every save looks untried.
+  function drawShelf() {
+    var all = state.logs && state.libReady ? readyToTry() : [], list = all.slice(0, 10), row = el("div", "shelfrow"), head;
+    var sig = all.length + JSON.stringify(list.map(function (w) { return [w.id, w.title, cardArt(w), w.duration_minutes]; }));
+    if (sig === shelfSig) return;
+    shelfSig = sig;
+    shelfBox.innerHTML = "";
+    shelfBox.classList.toggle("hide", !list.length);
+    head = shelfBox.appendChild(el("div", "secthead"));
+    head.appendChild(el("b", null, "Ready to try"));
+    head.appendChild(el("span", "shelfn", all.length + " saved, not done yet"));
+    head.appendChild(tbtn("linkbtn", "See all", function () { state.filter = "ready"; render(); setView("library"); }));
+    list.forEach(function (w) {
+      var b = row.appendChild(tbtn("shelfitem", null, openDetail, w)), art = b.appendChild(el("span", "shelfart")), img;
+      if (cardArt(w)) { img = art.appendChild(el("img")); img.alt = ""; img.loading = "lazy"; img.src = cardArt(w); }
+      else art.appendChild(noArt(w));
+      if (w.duration_minutes) art.appendChild(el("span", "durbadge", fmtDur(w.duration_minutes)));
+      b.appendChild(el("span", "shelft", w.title || "Workout"));
+    });
+    shelfBox.appendChild(row);
   }
 
   // ---------- train · the render ----------
@@ -12557,31 +12929,39 @@ export const APP = String.raw`
     // Painted from the cache before the token is back (earlyUid) as well: nothing
     // below reads the network, and Train is the page the app opens on.
     if (!state.user && !earlyUid) return;
-    var v = $("trainview");
+    var v = $("trainview"), slide = planSlide, r;
     if (!trainLean || trainLean.parentNode !== v) buildTrain(v);
+    r = cal.rows;
+    planHide();
     paintTrainBar();
-    var st = state.logs ? weekStats(state.logs, state.plan, goalSetting(), new Date()) : null;
-    if (st) drawHero(st); else heroBox.innerHTML = "";
-    drawStrip();
-    drawToday(st);
+    drawStat();
+    drawCal();
+    // The plan link asks for the month, and the strip spends the ask the first
+    // time it can answer: in front of the reader it unfolds, arriving it is open.
+    if (trainWantMonth) {
+      trainWantMonth = false;
+      if (!quiet && v.offsetHeight) calSet(true);
+      else { calOpen = true; drawCal(); }
+    }
+    drawDay();
     paintSeg();
-    // Whatever a swipe left on it, taken back without animating the way back: the
-    // entrance below is the move, and a transition under it would fight it.
-    trainLean.classList.remove("planin", "pbmove");
-    trainLean.style.transform = "";
-    trainLean.style.opacity = "";
+    planSlide = 0;
+    // Whatever a swipe left on the rows, taken back without animating the way
+    // back: the entrance below is the move, and a transition would fight it.
+    r.classList.remove("planin", "pbmove");
+    trainBody.classList.remove("planin");
+    r.style.transform = r.style.opacity = "";
     drawTrainBody();
-    // A second window onto these same rows; redrawn here so the two agree.
-    if ($("daysheet").classList.contains("open")) renderDay();
     guidePage("train");
-    void trainLean.offsetWidth;
-    // A swipe said which way time went, so the week arrives from that side. A tap
-    // on the segmented control did not, and gets the crossfade instead.
-    if (planSlide) {
-      trainLean.style.setProperty("--pin", (planSlide > 0 ? 26 : -26) + "px");
-      planSlide = 0;
-      trainLean.classList.add("planin");
-    } else viewIn(trainLean);
+    // A swipe or an arrow said which way time went, so the week (or the month)
+    // arrives from that side, and the week's Progress with it.
+    if (slide) {
+      [r, trainBody].forEach(function (n) {
+        void n.offsetWidth;
+        n.style.setProperty("--pin", slide * 26 + "px");
+        n.classList.add("planin");
+      });
+    }
     countStats();
   }
 
@@ -12597,28 +12977,7 @@ export const APP = String.raw`
     trainBody.classList.add("planswap");
   }
 
-  // ---------- train · one row of a plan ----------
-
-  // One row, drawn the same on the today card's sheet and in the day sheet.
-  function planItem(p) {
-    var w = planWorkout(p.workout_id);
-    if (!w) return null;
-    var item = el("div", "planitem"), art = cardArt(w);
-    if (art) {
-      var img = el("img");
-      img.src = art;
-      img.alt = "";
-      item.appendChild(img);
-    }
-    var t = el("div", "pt", w.title || "Workout");
-    t.onclick = function () { openDetail(w); };
-    item.appendChild(t);
-    var x = icon(el("button", "planx"), "x");
-    x.setAttribute("aria-label", "Take this off the day");
-    x.onclick = function () { planDrop(p); };
-    item.appendChild(x);
-    return item;
-  }
+  // ---------- train · one day's plan, written ----------
 
   // The two plan writes, each behind one door — the speed pass wants these lines
   // optimistic and can have them here. day may be a list: the Plan sheet puts one
@@ -12631,17 +12990,42 @@ export const APP = String.raw`
     })).select("id").then(function (r) { planRev++; return r; });
   }
 
-  // Off the day on the tap. A row the server has not confirmed yet has no id to
-  // delete by; it goes on its own when loadPlan lands. This was also the one write
-  // in the file that never looked at r.error, so a refused delete quietly redrew
-  // the row; now it is put back and said.
-  function planDrop(p) {
+  // Rows whose Remove is waiting on its Undo toast. A read landing in between
+  // brings them back from the server, where they still are; they stay off the
+  // screen until the delete lands or the Undo puts them back.
+  var planGone = {};
+  function planHide() {
+    if (state.plan) state.plan = state.plan.filter(function (p) { return !planGone[p.id]; });
+  }
+
+  // Off the day on the tap. With a message it is a Remove, on the delayed commit
+  // this file uses everywhere: the row leaves the screen now and the database
+  // when the toast offering Undo does, so nothing can half-fail; undone runs if
+  // the Undo is taken. Without one it is the second half of a move, gone at once.
+  // A row the server has not confirmed yet has no id to delete by; it goes on
+  // its own when loadPlan lands.
+  function planDrop(p, msg, undone) {
     if (String(p.id).indexOf("tmp-") === 0) return Promise.resolve();
     planRev++;
-    var epoch = accountEpoch, uid = state.user.id;
-    var range = JSON.stringify(fetchRange());
-    var kept = state.plan;
+    var epoch = accountEpoch, uid = state.user.id, range = JSON.stringify(fetchRange()), kept = state.plan;
     state.plan = (state.plan || []).filter(function (q) { return q.id !== p.id; });
+    if (msg) {
+      planGone[p.id] = 1;
+      repaintPlan();
+      offerUndo(msg, function () {
+        sb.from("plan").delete().eq("id", p.id).then(function (r) {
+          delete planGone[p.id];
+          if (r && r.error) toast("That did not come off the day — it is still planned.");
+          loadPlan(true);
+        });
+      }, function () {
+        delete planGone[p.id];
+        state.plan = state.plan.concat([p]);
+        repaintPlan();
+        if (undone) undone();
+      });
+      return Promise.resolve();
+    }
     renderTrain();
     return sb.from("plan").delete().eq("id", p.id).then(function (r) {
       if (!accountNow(epoch, uid)) return;
@@ -12657,129 +13041,21 @@ export const APP = String.raw`
     });
   }
 
-  // ---------- train · the calendar segment ----------
-  //
-  // iOS Calendar's compact month: one cell a day, one mark, today ringed, the
-  // days either side present but quiet. The thumbnails that used to fill a cell
-  // are gone: with a legend under the grid one dot says more than three pictures,
-  // and past and future finally read in the same language.
-  function drawCalendarSeg(v) {
-    var head = el("div", "weekbar");
-    head.appendChild(el("b", null,
-      monthStart.toLocaleDateString(undefined, { month: "long", year: "numeric" })));
-    var nav = el("div", "wbnav");
-    var prev = icon(el("button", "iconbtn"), "arrow-left");
-    prev.setAttribute("aria-label", "The month before");
-    prev.onclick = function () { stepMonth(-1); };
-    var next = icon(el("button", "iconbtn"), "arrow-right");
-    next.setAttribute("aria-label", "The month after");
-    next.onclick = function () { stepMonth(1); };
-    nav.appendChild(prev);
-    nav.appendChild(next);
-    head.appendChild(nav);
-    v.appendChild(head);
+  function planRemove(p) { planDrop(p, "Removed from plan"); }
 
-    var acts = el("div", "planacts");
-    // Boostcamp duplicates a week; TrainHeroic and TrueCoach copy and ask where
-    // to paste. Copy is the word all three answer to.
-    var copy = el("button", "planbtn", "Copy week");
-    copy.onclick = function () { openCopy(); };
-    acts.appendChild(copy);
-    acts.appendChild(pumpyProgramBtn(el("button", "planbtn"), state.weekStart, "Build with Pumpy"));
-    v.appendChild(acts);
-
-    renderMonth(v);
-    v.appendChild(markLegend());
-    // Under the plan, not in the bar: it is what you do once you have looked.
-    v.appendChild(pumpyProgramBtn(el("button", "planbtn wide"), state.weekStart));
-  }
-
-  function renderMonth(v) {
-    var r = planRange();
-    var grid = el("div", "mgrid");
-    for (var h = 0; h < 7; h++) {
-      var head = el("div", "mdow", DOW[h]);
-      head.setAttribute("aria-hidden", "true");
-      grid.appendChild(head);
-    }
-    var todayStr = ymd(new Date());
-    var days = Math.round((r.to.getTime() - r.from.getTime()) / 86400000) + 1;
-
-    for (var i = 0; i < days; i++) {
-      (function (i) {
-        var d = addDays(r.from, i);
-        var key = ymd(d);
-        var out = d.getMonth() !== monthStart.getMonth();
-        var cell = el("button", "mcell" + (out ? " out" : "") + (key === todayStr ? " today" : ""));
-        cell.appendChild(el("span", "mnum", String(d.getDate())));
-        var m = dayMark(key);
-        cell.appendChild(el("span", "dmark" + (m ? " " + m : "")));
-        // One dot and nothing a screen reader could read.
-        cell.setAttribute("aria-label", dayLabel(d) + markWord(m));
-        cell.onclick = function () { openDay(key); };
-        grid.appendChild(cell);
-      })(i);
-    }
-    v.appendChild(grid);
-  }
-
-  // ---------- plan · one day ----------
-  //
-  // Apple's Calendar in List density answers a tapped day in place, and Google's
-  // month does the same — tap a date, see that date. A sheet gives the day back
-  // without taking the month away.
-
-  var dayKey = null;
-
-  function openDay(key) {
-    dayKey = key;
-    renderDay();
-    openSheet("daysheet");
-  }
-
-  function renderDay() {
-    if (!dayKey) return;
-    var d = dayDate(dayKey);
-    var label = dayLabel(d);
-    $("daytitle").textContent = label;
-    var list = $("daylist");
-    list.innerHTML = "";
-    // What happened, before what is meant to happen: "what did I do on the 15th"
-    // is the question a past day is tapped with, and the answer used to live two
-    // tabs away. Handed over rather than stacked — the recap pushes its own
-    // history entry, exactly as dayadd hands over to the picker: the new screen
-    // opens FIRST and the sheet closes behind it. Closing first gave the entry
-    // back and pushed the recap's in the same task, and a queued traversal plus a
-    // pushState cancel each other out — the recap ended up sitting on the app's
-    // own entry, so the X and the phone's back gesture left Spotter instead of
-    // the recap. Order is the whole fix; every other sheet here is already
-    // balanced because it never hands over at all.
-    var done = sessionsOn(dayKey);
-    done.forEach(function (l) {
-      var b = el("button", "histrow dayses"), n = el("div", "n"), sets = 0;
-      (l.entries || []).forEach(function (e) { sets += (e.sets || []).filter(Boolean).length; });
-      n.appendChild(el("b", null, l.workout_title || "Workout"));
-      n.appendChild(el("span", null, sets + (sets === 1 ? " set" : " sets") +
-        (l.duration_seconds ? " · " + Math.max(1, Math.round(l.duration_seconds / 60)) + " min" : "")));
-      b.appendChild(n);
-      b.appendChild(ic("chev"));
-      b.onclick = function () { openSession(l); closeSheet("daysheet"); };
-      list.appendChild(b);
+  // Missed, and done today instead: the row moves to today. The new one is
+  // written now, the old one leaves with the toast, and one Undo takes back both.
+  function doToday(it) {
+    var add = planAdd(ymd(new Date()), it.w.id);
+    add.then(function () { loadPlan(true); });
+    planDrop(it.row, "Moved to today", function () {
+      add.then(function (r) { if (r.data && r.data[0]) planDrop(r.data[0]); });
     });
-    var rows = rowsFor(dayKey);
-    if (!rows.length && !done.length) list.appendChild(el("p", "lede", "Nothing planned for this day."));
-    rows.forEach(function (row) {
-      var item = planItem(row);
-      if (item) list.appendChild(item);
-    });
-    // Handed over rather than stacked: the picker opens first, so the one
-    // history entry never falls to the floor between them.
-    $("dayadd").onclick = function () {
-      var key = dayKey;
-      openPicker(key, label);
-      closeSheet("daysheet");
-    };
   }
+
+  // The picker, for a day ("+ Plan a workout"), or in place of a planned row (Swap).
+  function planPick(key) { openPicker(key, dayLabel(dayDate(key))); }
+  function planSwap(row) { openPicker(row.day, dayLabel(dayDate(row.day)), { replace: row }); }
 
   // ---------- programs ----------
   //
@@ -12926,7 +13202,6 @@ export const APP = String.raw`
     var go = $("copygo");
     go.textContent = "Copy to " + copyPlural(copyReps);
     go.disabled = !srcRows.length;
-    pumpyProgramBtn($("copypumpy"), copySrc);
     var clear = $("copyclear");
     clear.textContent = "Clear " + weekLabel(copySrc);
     clear.disabled = !srcRows.length;
@@ -12989,19 +13264,6 @@ export const APP = String.raw`
     box.style.height = "auto";
     box.style.height = Math.min(box.scrollHeight, 138) + "px";
     if (NO_TOUCH) box.focus();
-  }
-
-  // Three places, one function, whichever node it is handed. The label is short
-  // where the button sits in a row of pills and long where it is the wide one.
-  function pumpyProgramBtn(node, week, label) {
-    if (!node.childNodes.length) {
-      var mark = el("span", "pumpmark");
-      mark.innerHTML = PUMPY_MARK;
-      node.appendChild(mark);
-      node.appendChild(document.createTextNode(label || "Build a program with Pumpy"));
-    }
-    node.onclick = function () { programWithPumpy(week); };
-    return node;
   }
 
   function clearWeek() {
@@ -13714,11 +13976,11 @@ export const APP = String.raw`
     if (st.unreachable) return "Next week starts Monday.";
     if (st.atRisk) return st.needed + " to go · " + st.daysLeft +
       (st.daysLeft === 1 ? " day left" : " days left");
-    // The eyebrow says "This week" when there is no streak; do not say it twice.
-    return st.done + " of " + st.goal + (st.streakWeeks > 0 ? " this week" : "");
+    return st.done + " of " + st.goal + " this week";
   }
 
-  // The compact form: one line, no ring, for the today card and the summary.
+  // The compact form: one line, no ring, for the end of a session. A streak is
+  // "3-week streak" wherever it is written (the wording table), never "Week 3".
   function weekLine(st) {
     if (st.streakWeeks > 0) {
       return st.streakWeeks + "-week streak · " + st.done + " of " + st.goal +
@@ -14228,7 +14490,10 @@ export const APP = String.raw`
           wtText(p.weight) + " " + setUnit(p) + " × " + p.reps + " · " +
           new Date(p.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })));
         r.appendChild(nm);
-        r.appendChild(el("div", "v", Math.round(p.est) + " " + state.unit));
+        // An Epley estimate, not a lift anybody did, and it says so.
+        var est = el("div", "v", Math.round(p.est) + " " + state.unit);
+        est.appendChild(el("small", null, "est. max"));
+        r.appendChild(est);
         pc.appendChild(r);
       });
       v.appendChild(pc);
@@ -17176,7 +17441,7 @@ export const APP = String.raw`
 
   ["addsheet", "setsheet", "watchsheet", "exsheet", "exeditsheet", "explainsheet", "picksheet",
    "settingssheet", "colsheet", "renamesheet", "swapsheet", "pumpysheet", "capsheet", "plansheet",
-   "daysheet", "copysheet", "sortsheet", "refsheet", "countsheet", "guidesheet", "welcomesheet",
+   "trainmore", "copysheet", "sortsheet", "refsheet", "countsheet", "guidesheet", "welcomesheet",
    "workoptions", "filtersheet", "recapsheet", "woaddsheet", "aiconsentsheet", "wleavesheet",
    "sectionsheet", "ordersheet", "exmenu", "plandays", "readysheet"]
     .forEach(wireSheet);
@@ -17328,7 +17593,7 @@ export const APP = String.raw`
   // thing to do now, the days to do it instead, and the way to look first. Every
   // way on is handed over, not stacked: the next screen opens first and the sheet
   // closes behind it, so the history entry it held becomes that screen's (the
-  // order renderDay explains).
+  // order openMore explains).
   function showReadySheet(w) {
     if (!w || isPending(w) || isFailed(w)) return;
     readyMark(w.id);
@@ -20178,7 +20443,7 @@ export const APP = String.raw`
     // Library only: it is the one page whose content arrives from outside — a
     // share from another device, a socket that dropped. Plan, Progress and Pumpy
     // refresh themselves on arrival and have nothing a pull could add.
-    if (idx !== 0 || !pg || pg.scrollTop > 2 || overlayShowing()) { ptrPulling = false; return; }
+    if (VIEWS[idx] !== "library" || !pg || pg.scrollTop > 2 || overlayShowing()) { ptrPulling = false; return; }
     ptrStart = e.touches[0].clientY;
     ptrPulling = true;
   }, { passive: true });
@@ -20354,11 +20619,6 @@ export const APP = String.raw`
   $("goalless").onclick = function () { bumpGoal(-1); };
   $("goalmore").onclick = function () { bumpGoal(1); };
   $("countdone").onclick = function () { closeSheet("countsheet"); };
-  // Handed over rather than stacked, the way dayadd hands over to the picker: the
-  // sheet layer holds one history entry and the next sheet keeps it.
-  $("tmcopy").onclick = function () { openCopy(); closeSheet("trainmore"); };
-  $("tmpumpy").onclick = function () { programWithPumpy(state.weekStart); closeSheet("trainmore"); };
-  $("tmcount").onclick = function () { openSheet("countsheet"); closeSheet("trainmore"); };
   $("soundtoggle").onclick = toggleSounds;
   $("haptictoggle").onclick = toggleHaptics;
   $("remplan").onclick = function () { toggleRemind("plan"); };

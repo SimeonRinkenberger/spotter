@@ -214,7 +214,7 @@ function world(opts = {}) {
     // The Pumpy new-chat clock (gtm-owner-ux): setView starts it when Pumpy is left.
     pumpyAway() {}, pumpyBack() {}, freshenPumpy() {}, pumpyIdleTimer: 0,
     // What the week bar, a sheet and Workout Mode call when a drag lands.
-    steps: [], closed: [], moves: [],
+    steps: [], closed: [], moves: [], pull: opts.pull || null,
     paintTrainBar() {}, closeSheet(id) { sandbox.closed.push(id); d.byId[id].classList.remove('open'); },
     wo: { i: 1, finished: false }, endStop: () => 3, stopOf: (i) => i, woGo(n) { sandbox.moves.push(n); }
   };
@@ -225,7 +225,8 @@ function world(opts = {}) {
   const wire = !opts.gestures ? '' : ['wireWeekBar', 'wireSheet', 'wireWmain'].map(fn).join('') +
     /  var WB_LEAD = [^;]*;/.exec(APP)[0] + /  var SH_FLING = [^;]*;/.exec(APP)[0] + /  var WM_LEAD = [^;]*;/.exec(APP)[0] +
     '\n  wireWeekBar($("trainview").querySelector(".wstrip"), { bar: $("trainview").querySelector(".wstrip"),' +
-    ' lean: document.querySelector(".trainlean"), title: document.querySelector(".wbtitle"), step: function (n) { steps.push(n); } });' +
+    ' lean: document.querySelector(".trainlean"), title: document.querySelector(".wbtitle"), step: function (n) { steps.push(n); },' +
+    ' pull: pull });' +
     '\n  wireSheet("settingssheet");\n  wireWmain($("wmain"));\n';
   vm.runInContext('(function () {\n' + fn('overlayShowing') + fn('standalone') + PAGER + wire +
     '\n  this.h = { idx: function () { return idx; }, pos: function () { return pos; }, held: function () { return drag; },' +
@@ -323,7 +324,30 @@ function world(opts = {}) {
     run(400);
     return { first, taken };
   }
-  return { d, h, run, drag, fire, page, tab, emit, idle, sheetDrag, sb: sandbox };
+  // A drag with the touch's own coordinates on every touchmove, the way the
+  // calendar's fold reads them. ease starts it from rest, as a finger does, so
+  // WebKit's first touchmove comes pixels in, long before the lock; without it
+  // the first move is already past the slop, which is Chrome's order (it holds
+  // touchmoves back until then).
+  function vdrag(target, dy, o = {}) {
+    const id = nextId++, x0 = o.x ?? 200, y0 = o.y ?? 150, steps = Math.max(1, Math.round((o.ms ?? 200) / 16));
+    const base = { pointerType: 'touch', pointerId: id, isPrimary: true };
+    fire(target, 'pointerdown', { ...base, clientX: x0, clientY: y0 });
+    let first = null, prevented = 0;
+    for (let i = 1; i <= steps; i++) {
+      T += 16;
+      const k = o.ease ? (i / steps) * (i / steps) : i / steps;
+      const x = x0 + (o.dx ?? 0) * k, y = y0 + dy * k;
+      fire(target, 'pointermove', { ...base, clientX: x, clientY: y });
+      const ev = fire(target, 'touchmove', { touches: [{ clientX: x, clientY: y }] });
+      if (first === null) first = ev.defaultPrevented;
+      if (ev.defaultPrevented) prevented++;
+    }
+    if (!o.lose) fire(target, 'pointerup', { ...base, clientX: x0 + (o.dx ?? 0), clientY: y0 + dy });
+    run(400);
+    return { first, prevented, steps };
+  }
+  return { d, h, run, drag, fire, page, tab, emit, idle, sheetDrag, vdrag, sb: sandbox };
 }
 
 let checks = 0, failed = 0;
@@ -633,6 +657,89 @@ for (const mode of ['native shell', 'browser tab']) {
     assert.equal(clicks, 1, 'the click behind a real drag is still eaten');
     assert.equal(w.sb.steps.length, 1);
   });
+}
+
+// ---------- the calendar's fold ----------
+//
+// Option B: the week strip pulls down into the month, on the same node as the
+// week's sideways drag. The fold's own rules (tracking, release, the spring) are
+// the train harness's; this is the touch: who claims it, when, and that the tabs
+// and the week never move for a drag that went up or down.
+console.log('the week strip pulled down into the month');
+{
+  function puller(o = {}) {
+    const p = { calls: [], open: !!o.open, top: o.top !== false,
+      can(dy) { p.calls.push('can'); return p.top && (p.open ? dy <= 0 : dy >= 0); },
+      grab() { return false; }, drop() { p.calls.push('drop'); },
+      start() { p.calls.push('start'); }, move(dy) { p.dy = dy; },
+      end(s, cancelled) { p.calls.push(cancelled ? 'end:cancel' : 'end'); } };
+    return p;
+  }
+  for (const native of [true, false]) {
+    const G = (pull) => world({ native, gestures: true, pull });
+    const mode = native ? ' (native shell)' : ' (browser tab)';
+
+    ok('at rest at the top, a drag down is claimed on its first touchmove and folds: never the tabs, never the week' + mode, () => {
+      const pull = puller(), w = G(pull);
+      const r = w.vdrag(w.d.wday, 160, { ease: true, ms: 260 });
+      assert.equal(r.first, true, 'the first touchmove is cancelled, so the page cannot start a scroll');
+      assert.equal(r.prevented, r.steps, 'and every one after it');
+      assert.deepEqual(pull.calls, ['can', 'start', 'end']);
+      assert(pull.dy > 100, 'tracked from the lock');
+      assert.equal(w.page(), 0);
+      assert.equal(w.sb.steps.length, 0);
+      assert.equal(w.h.loose(), 0, 'let go on the lift');
+    });
+
+    ok('Chrome holds touchmoves back past its slop: the claim is made at the lock instead' + mode, () => {
+      const pull = puller(), w = G(pull);
+      const r = w.vdrag(w.d.wday, 160, { ms: 200 });
+      assert.equal(r.first, true);
+      assert.deepEqual(pull.calls, ['can', 'start', 'end']);
+    });
+
+    ok('the page scrolled down, or a finger heading up: the drag is the page\'s, nothing is claimed' + mode, () => {
+      let pull = puller({ top: false }), w = G(pull);
+      let r = w.vdrag(w.d.wday, 160, { ease: true });
+      assert.equal(r.first, false);
+      assert.equal(r.prevented, 0, 'the page scrolls');
+      assert.deepEqual(pull.calls, ['can']);
+      assert.equal(w.h.loose(), 0);
+      pull = puller(); w = G(pull);
+      r = w.vdrag(w.d.wday, -160, { ease: true });
+      assert.equal(r.prevented, 0, 'up on the week is the page coming up');
+      assert.deepEqual(pull.calls, ['can']);
+    });
+
+    ok('the month open: up folds it, down is left to the page' + mode, () => {
+      let pull = puller({ open: true }), w = G(pull);
+      w.vdrag(w.d.wday, -160, { ease: true });
+      assert.deepEqual(pull.calls, ['can', 'start', 'end']);
+      pull = puller({ open: true }); w = G(pull);
+      const r = w.vdrag(w.d.wday, 160, { ease: true });
+      assert.equal(r.prevented, 0);
+      assert.deepEqual(pull.calls, ['can']);
+    });
+
+    ok('a claimed touch that turns sideways steps the week and never starts the fold' + mode, () => {
+      const pull = puller(), w = G(pull);
+      const r = w.vdrag(w.d.wday, 30, { dx: -260, ease: true, ms: 240 });
+      assert.equal(r.first, true);
+      assert.deepEqual(w.sb.steps, [1]);
+      assert.deepEqual(pull.calls, ['can']);
+      assert.equal(w.page(), 0, 'the tabs stay put');
+    });
+
+    ok('a fold whose lift is lost is let go on a cancel\'s terms, and the next drag works' + mode, () => {
+      const pull = puller(), w = G(pull);
+      w.vdrag(w.d.wday, 120, { ease: true, lose: true });
+      assert.equal(w.h.loose(), 1, 'held, its lift lost');
+      w.emit('window', 'touchcancel');
+      assert.deepEqual(pull.calls, ['can', 'start', 'end:cancel']);
+      w.vdrag(w.d.wday, 160, { ease: true });
+      assert.deepEqual(pull.calls.slice(3), ['can', 'start', 'end']);
+    });
+  }
 }
 
 // ---------- a sheet taller than the phone ----------
