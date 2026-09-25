@@ -164,8 +164,53 @@ check(directive('base-uri').join() === "'self'", "base-uri 'self'");
   }
 }
 
+// ---------- the published landing page ----------
+// docs/index.html is all GitHub Pages serves at /spotter/ now. Its policy is
+// default-src 'none' with its one inline script and style allowed by hash (build.mjs
+// writes it), and the page loads nothing from any other host.
+{
+  const land = readFileSync('docs/index.html', 'utf8');
+  const lhead = land.slice(0, land.indexOf('</head>'));
+  const lm = /<meta http-equiv="Content-Security-Policy" content="([^"]*)">/.exec(land);
+  check(lm, 'landing: docs/index.html carries a Content-Security-Policy <meta>');
+  const lp = {};
+  if (lm) {
+    for (const part of lm[1].split(';')) {
+      const [name, ...values] = part.trim().split(/\s+/);
+      if (name) lp[name] = values;
+    }
+    const firstGoverned = lhead.search(/<(link|script|style)\b/i);
+    check(lm.index < lhead.length && (firstGoverned < 0 || lm.index < firstGoverned),
+      'landing: the CSP meta is in <head>, ahead of every <link>, <script> and <style>');
+  }
+  check((lp['default-src'] ?? []).join(' ') === "'none'", "landing: default-src 'none'");
+  const onlyHashes = (d) => (lp[d] ?? []).length > 0 && (lp[d] ?? []).every((v) => /^'sha256-[A-Za-z0-9+/=]+'$/.test(v));
+  check(onlyHashes('script-src'), 'landing: script-src is sha256 hashes and nothing else');
+  check(onlyHashes('style-src'), "landing: style-src is sha256 hashes and nothing else (no 'unsafe-inline')");
+  check((lp['img-src'] ?? []).join(' ') === "'self'", "landing: img-src 'self' only");
+  check((lp['base-uri'] ?? []).join(' ') === "'none'" && (lp['form-action'] ?? []).join(' ') === "'none'",
+    "landing: base-uri and form-action 'none'");
+  const bodyOnly = land.replace(/<!--[\s\S]*?-->/g, '');
+  const each = (tag, dir) => {
+    let n = 0;
+    for (const m of bodyOnly.matchAll(new RegExp('<' + tag + '(\\s[^>]*)?>([\\s\\S]*?)</' + tag + '>', 'gi'))) {
+      n++;
+      check(!/\ssrc\s*=/.test(m[1] ?? ''), 'landing: <' + tag + '> #' + n + ' is inline, not loaded');
+      const h = "'sha256-" + createHash('sha256').update(m[2], 'utf8').digest('base64') + "'";
+      check((lp[dir] ?? []).includes(h), 'landing: inline <' + tag + '> #' + n + ' is allowed by its hash (run node build.mjs)');
+    }
+    return n;
+  };
+  check(each('script', 'script-src') === 1, 'landing: exactly one inline script');
+  check(each('style', 'style-src') === 1, 'landing: exactly one inline style');
+  check(!/\sstyle\s*=|\son[a-z]+\s*=/i.test(bodyOnly.replace(/<script[\s\S]*?<\/script>/gi, '').replace(/<style[\s\S]*?<\/style>/gi, '')),
+    'landing: no style or event-handler attributes (the policy would block them)');
+  check(!/\s(?:src|href|action)\s*=\s*"(?:https?:)?\/\//i.test(bodyOnly), 'landing: no src, href or action points at another host');
+  check(!/<link[^>]+rel="(?:stylesheet|preload|preconnect|manifest|modulepreload)"/i.test(bodyOnly), 'landing: no stylesheet, preload, preconnect or manifest link');
+}
+
 if (failures.length) {
   console.error('\n' + failures.length + ' of ' + (failures.length + passed) + ' CSP / SRI checks FAILED');
   process.exit(1);
 }
-console.log('PASS ' + passed + ' CSP / SRI checks: hashed inline app, no unsafe script sources, supabase-js pinned by SRI to the installed bytes, every origin the page uses allowed by the directive it needs, native shell without it.');
+console.log('PASS ' + passed + ' CSP / SRI checks: hashed inline app, no unsafe script sources, supabase-js pinned by SRI to the installed bytes, every origin the page uses allowed by the directive it needs, native shell without it; the published landing page locked to its own hashed script and style.');

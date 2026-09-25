@@ -268,3 +268,41 @@ console.log("wrote " + OUT_HTML + " (not published)");
 console.log(table.join("\n"));
 console.log(row("page", Buffer.byteLength(raw), Buffer.byteLength(html)));
 console.log(row("gzip", gzipSync(Buffer.from(raw)).length, gzipSync(Buffer.from(html)).length));
+
+// ---------- the published landing page ----------
+//
+// docs/index.html is what https://simeonrinkenberger.github.io/spotter/ serves now
+// that the web app is retired. It is written by hand, not built, but its policy is
+// written here, for the same reason the app's was: a hash typed by hand goes stale
+// the first time somebody edits the script, and a stale hash means the browser
+// refuses the one script that clears an old Spotter session off the shared origin.
+//
+// The policy is the whole page's needs and nothing more: its one inline <style> and
+// one inline <script> by sha256, its own icon, and no other host of any kind. No
+// 'unsafe-inline' for styles either: the page has no style attributes to need it.
+const LANDING = "docs/index.html";
+{
+  const src = readFileSync(LANDING, "utf8");
+  const bare = src.replace(/<meta http-equiv="Content-Security-Policy" content="[^"]*">\n/, "");
+  // Comments are dropped for the scan only, so a tag named in one is never hashed.
+  const scan = bare.replace(/<!--[\s\S]*?-->/g, "");
+  const hash = (body) => "'sha256-" + createHash("sha256").update(body, "utf8").digest("base64") + "'";
+  const sources = (tag) => {
+    const found = [...scan.matchAll(new RegExp("<" + tag + "(\\s[^>]*)?>([\\s\\S]*?)</" + tag + ">", "gi"))];
+    if (found.some((m) => /\ssrc\s*=/.test(m[1] ?? ""))) throw new Error(LANDING + " loads a <" + tag + "> from elsewhere; it must stay self-contained");
+    return found.length ? found.map((m) => hash(m[2])).join(" ") : "'none'";
+  };
+  const policy = [
+    "default-src 'none'",
+    "script-src " + sources("script"),
+    "style-src " + sources("style"),
+    "img-src 'self'",
+    "base-uri 'none'",
+    "form-action 'none'",
+  ].join("; ");
+  if (!bare.includes(CHARSET)) throw new Error(LANDING + " has no charset meta to put the CSP after");
+  const out = bare.replace(CHARSET, CHARSET + '<meta http-equiv="Content-Security-Policy" content="' + policy + '">\n');
+  if (out !== src) writeFileSync(LANDING, out);
+  console.log((out !== src ? "wrote " : "kept ") + LANDING + " (published landing page; CSP " +
+    (out !== src ? "refreshed" : "current") + ")");
+}
