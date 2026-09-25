@@ -2,12 +2,21 @@
 // Reads and simple writes go straight to PostgREST through supabase-js under RLS;
 // only ingest, reprocess and the AI helpers go through the edge function.
 export const APP = String.raw`
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/dist/umd/supabase.js" integrity="sha384-CLZeq1dk8+Uzrs7TVvBUdlFoV5F0DMqgRoeHa8g5wJcuPe5SkVfEvdxB0ZuzlnBQ" crossorigin="anonymous"></script>
 <script>
 (function () {
   "use strict";
 
   var native = window.SpotterNative || null;
+  // Spotter is never shown inside somebody else's page. A <meta> policy cannot
+  // say frame-ancestors and GitHub Pages sends no X-Frame-Options, so the web
+  // page checks for itself: framed, it asks to be the whole window, and draws
+  // nothing where it cannot be. The native shell is its own top window.
+  if (!native && window.top !== window.self) {
+    try { window.top.location.replace(location.href); } catch (e) { /* sandboxed, or not allowed to navigate */ }
+    document.documentElement.style.display = "none";
+    return;
+  }
   var AUTH_RETURN = native ? "https://simeonrinkenberger.github.io/spotter/" : location.origin + location.pathname;
 
   var SB_URL = "https://mtzevoxxpsktmrbbuxva.supabase.co";
@@ -350,6 +359,9 @@ export const APP = String.raw`
     });
     var share = SHARED[path] ? epoch + ":" + uid + ":" + path + "\n" + (opts.body || "") : null;
     if (share && inFlight[share]) return inFlight[share];
+    // Anything that is not a read may have spent an allowance, so the minute-old
+    // copy of /api/limits is retired when it starts and again when it lands.
+    if (opts.method && opts.method !== "GET") retireLimits();
     var p = deadline(function (signal) { return sb.auth.getSession().then(function (r) {
       if (!accountNow(epoch, uid)) throw new Error("Account changed");
       var token = r.data.session ? r.data.session.access_token : "";
@@ -370,6 +382,7 @@ export const APP = String.raw`
       var forget = function () { delete inFlight[share]; };
       p.then(forget, forget);
     }
+    if (opts.method && opts.method !== "GET") p.then(retireLimits, retireLimits);
     return p;
   }
 
@@ -547,8 +560,15 @@ export const APP = String.raw`
   function dismissAiConsent() {
     var pending = aiConsentPending;
     aiConsentPending = null;
-    if (pending) pending.reject(new Error("AI processing was not enabled. You can still log and plan workouts manually."));
+    if (!pending) return;
+    // "Not now" is an answer, not a failure. The flag lets each AI caller's catch
+    // put its button back without a connection error nobody had (OU-6).
+    var no = new Error("AI processing was not enabled. You can still log and plan workouts manually.");
+    no.declined = true;
+    pending.reject(no);
   }
+
+  function aiDeclined(e) { return !!(e && e.declined); }
 
   function noteConsent(enabled) {
     var pending = aiConsentPending;
@@ -1273,24 +1293,25 @@ export const APP = String.raw`
     clearTimeout(detailCloseTimer); clearTimeout(woCloseTimer);
     clearTimeout(pendTimer); pendTimer = null; pendPolls = 0; pendBusy = false;
     if (wkChannel) { sb.removeChannel(wkChannel); wkChannel = null; }
-    booting = null; state.profile = null; state.workouts = []; state.logs = null;
+    booting = null; earlyUid = null; reconnecting = false; state.profile = null; state.workouts = []; state.logs = null;
     state.plan = null; state.awards = null; state.goal = null; heroPct = 0; trainSeg = null;
     state.unit = "lb"; state.sounds = true; state.haptics = true;
     state.collections = []; state.colItems = []; seenCards = {}; gridCards = {};
-    expCache = {}; expWaiting = {}; vidCache = {}; expKey = "";
-    today.rows = []; today.at = 0; today.day = null; today.busy = false; today.shown = false;
+    expCache = {}; expWaiting = {}; vidCache = {}; expKey = ""; capWaiting = {};
+    today.rows = []; today.at = 0; today.day = null; today.busy = false; today.shown = false; today.asked = 0;
     current = null;
     if (sc) scForget();
     if (wo) saveDraft();
     clearInterval(woTimer); stopRest(); liveEnd(false); releaseWake(); wo = null; hist = {}; histReady = false;
     if (strava) strava = { asked: false, configured: false, connected: false, athlete: null, busy: false };
+    clearTimeout(pumpyIdleTimer);
     if (pumpy) {
       var seq = (pumpy.openSeq || 0) + 1, wired = pumpy.wired;
       pumpy = { thread: null, messages: [], refs: [], refsRev: 0, loaded: false,
         busy: false, live: null, stick: true, wired: wired, openSeq: seq };
     }
     if (native && native.purchases) native.purchases.clear().catch(function () {});
-    if (billing) { billing.prices = null; billing.waiting = null; billing.busy = false; billing.sub = null; billing.subAsked = false; billing.limits = null; billing.said = null; billing.ctx = null; billing.cc = null; billing.ccWaiting = null; billing.redeeming = false; }
+    if (billing) { billing.prices = null; billing.caps = null; billing.capsWaiting = null; billing.asking = false; billing.fails = 0; billing.busy = false; billing.sub = null; billing.subAsked = false; billing.limits = null; billing.limitsAt = 0; billing.limitsWaiting = null; billing.said = null; billing.ctx = null; billing.cc = null; billing.ccWaiting = null; billing.redeeming = false; }
     ["grid", "chips", "colbar", "libcount", "empty", "dinner", "pumpylog", "pumpyannounce", "pumpyctx", "pumpythreads", "trainview", "today", "resume", "recapopts"].forEach(function (id) {
       var n = $(id); if (n) n.innerHTML = "";
     });
@@ -1310,27 +1331,35 @@ export const APP = String.raw`
     if (session && session.user) {
       var first = !state.user || state.user.id !== session.user.id;
       if (first && state.user) clearAccount();
+      else if (first) settleEarly(session.user.id);
       state.user = session.user;
       showApp();
       // supabase-js holds the auth lock for the duration of this callback, so any
       // query started here deadlocks. Hand the work to the next tick instead.
       if (first) setTimeout(boot, 0);
+    } else if (earlyUid && !state.user && event !== "SIGNED_OUT") {
+      // Painted before the token came back, and the answer is nobody: offline, or gone?
+      answeredNobody(signedOut);
     } else {
-      clearAccount();
-      publishSignedOut();
-      state.user = null;
-      guideUser();
-      state.workouts = []; state.logs = null; state.plan = null; state.awards = null;
-      // What the last person was looking for is not what the next one is. The
-      // library came back narrowed to a search and a creator nobody had typed.
-      state.filter = "All"; state.q = ""; $("search").value = "";
-      // Somebody else's library must never paint on this phone, and the next
-      // sign-in on this page has to be a real boot rather than a no-op.
-      dropCache();
-      booting = null;
-      showLanding();
+      signedOut();
     }
   });
+
+  function signedOut() {
+    clearAccount();
+    publishSignedOut();
+    state.user = null;
+    guideUser();
+    state.workouts = []; state.logs = null; state.plan = null; state.awards = null;
+    // What the last person was looking for is not what the next one is. The
+    // library came back narrowed to a search and a creator nobody had typed.
+    state.filter = "All"; state.q = ""; $("search").value = "";
+    // Somebody else's library must never paint on this phone, and the next
+    // sign-in on this page has to be a real boot rather than a no-op.
+    dropCache();
+    booting = null;
+    showLanding();
+  }
 
   // Two doors lead here — onAuthStateChange's first session, and the getSession at
   // the foot of this file for a session restored before the listener existed — and
@@ -1342,16 +1371,24 @@ export const APP = String.raw`
   function boot() {
     guideUser();
     if (booting) return booting;
-    // Before the network is asked anything: the library someone is looking at is
-    // almost always the one they left.
-    paintCache();
+    // The library's read goes out first, so the today read the paint below starts
+    // is the younger of the two and load() does not ask for today again.
+    var library = load();
+    // Before the network answers anything: the library someone is looking at is
+    // almost always the one they left. Already up if it was painted before the
+    // token came back, when only the today card is still to ask.
+    if (earlyUid !== state.user.id) paintCache(); else renderToday();
+    earlyUid = null;
     var profileReady = loadProfile();
     maybeInstallHint();
     watchWorkouts();
     // A shared link is saved only once the library is in hand, so the card it
     // creates lands in a rendered grid rather than into an empty one.
     var epoch = accountEpoch, uid = state.user.id;
-    booting = load().then(function () { if (accountNow(epoch, uid)) return consumeShare(); })
+    booting = library.then(function () { if (accountNow(epoch, uid)) return consumeShare(); })
+      // Not waited for, as a share is not: a queue of parked links saves one by
+      // one in the background while the rest of the start carries on.
+      .then(function () { if (accountNow(epoch, uid)) takeParkedShare(); })
       .then(function () { if (accountNow(epoch, uid)) consumeOpen(); })
       .then(function () { if (accountNow(epoch, uid)) return consumeBilling(); })
       .then(function () { if (accountNow(epoch, uid)) consumeCreator(); })
@@ -1396,11 +1433,13 @@ export const APP = String.raw`
     idle(function () {
       if (!accountNow(epoch, uid)) return;
       // One GET per session, and only for an account that has something to be
-      // told: a paid or staff account never asks about prices at all, and a
-      // project without a Stripe key answers "not configured" and is cached as
-      // such, so nothing about the page changes.
+      // told: a paid or staff account never asks. The store's prices are asked
+      // now too, so the Plus page opens on them.
       if (!isFree()) return;
-      loadPrices().then(renderLibCount);
+      loadCaps().then(renderLibCount);
+      if (native && native.purchases) loadPrices();
+      // Once per session, so a Basic card's preview count is on its first paint.
+      readLimits().catch(function () {});
     }, 700);
   }
 
@@ -1447,7 +1486,7 @@ export const APP = String.raw`
     if (!row || !row.id) return;
     if (!state.user || (row.user_id && row.user_id !== state.user.id)) return;
     if (payload.eventType !== "DELETE" && state.workouts.some(function (w) {
-      return w.id === row.id && JSON.stringify(w) === JSON.stringify(row);
+      return w.id === row.id && sameRow(w, row);
     })) return;
     libraryRev++;
 
@@ -1470,9 +1509,13 @@ export const APP = String.raw`
     }
     // Only announce a transition, so a favourite toggle or a note edit is silent.
     if (was && was.ingest_status === "processing" && row.ingest_status === "ready") {
-      toast("Ready: " + (row.title || "your workout"));
+      // A read that could not add anything leaves the card as it was and says
+      // why; "Ready" over an unchanged card would be the wrong news.
+      toast(UNCHANGED.test(row.ingest_error || "") ? row.ingest_error : "Ready: " + (row.title || "your workout"));
     } else if (was && was.ingest_status === "processing" && row.ingest_status === "failed") {
-      toast("Could not read that video — open it to try again.");
+      toast(row.ingest_error === UNAVAILABLE ? "That post is private, deleted or unavailable."
+        : row.kind === "photo" || row.kind === "p" ? "Could not read that post — open it to try again."
+        : "Could not read that video — open it to try again.");
     }
     render();
     watchPending();
@@ -1498,7 +1541,7 @@ export const APP = String.raw`
     if (!ids.length) return Promise.resolve();
     var epoch = accountEpoch, uid = state.user.id, rev = libraryRev;
     pendBusy = true; pendPolls++;
-    return sb.from("workouts").select("*").eq("user_id", uid).in("id", ids).then(function (r) {
+    return sb.from("workouts").select(CARD_COLS).eq("user_id", uid).in("id", ids).then(function (r) {
       if (!accountNow(epoch, uid) || r.error || rev !== libraryRev) return;
       var found = {};
       (r.data || []).forEach(function (w) { found[w.id] = true; onWorkoutChange({eventType:"UPDATE",new:w}); });
@@ -1510,13 +1553,13 @@ export const APP = String.raw`
   }
 
   function loadProfile() {
-    var uid = state.user.id, epoch = accountEpoch;
-    return sb.from("profiles").select("*").eq("id", uid).maybeSingle().then(function (r) {
+    var uid = state.user.id, epoch = accountEpoch, configured = null;
+    var loaded = sb.from("profiles").select("*").eq("id", uid).maybeSingle().then(function (r) {
       if (!accountNow(epoch, uid)) return;
       if (r.data) {
         state.profile = r.data;
         paintConsent();
-        if (native) native.configureSharing(r.data.ingest_key).catch(function () {});
+        if (native) configured = native.configureSharing(r.data.ingest_key, { plan: r.data.plan }).catch(function () {});
         var s = r.data.settings || {};
         if (s.unit) state.unit = s.unit;
         // false is a real answer, so these test presence, not truth. An older
@@ -1538,6 +1581,35 @@ export const APP = String.raw`
         renderLibCount();
       }
     });
+    // Parked links are handed over only to the account the native side has been
+    // told about, so taking them waits for that (takeParkedShare).
+    sharingSet = loaded.then(function () { return configured; }, function () {});
+    return loaded;
+  }
+
+  // ---------- the columns a card is read with ----------
+  //
+  // What app.ts reads off a workouts row, and nothing else. caption is read only
+  // by the detail's source disclosure, which asks for it when it is opened
+  // (askCaption); ingest_job_id, extracted_by, read_plan, rating, calories,
+  // user_title_override and user_category_override are read nowhere. Builds 5-7
+  // keep their own select=*, which PostgREST serves as before. The data export
+  // keeps select=* too: that one is meant to be everything.
+  var CARD_COLS = "id,user_id,created_at,url,shortcode,platform,kind,author,title,thumb_url,category," +
+    "muscle_groups,equipment,difficulty,duration_minutes,blocks,tags,has_full_workout,favorite,notes," +
+    "source_url,ingest_status,ingest_error,confidence,media_stage,read_quality,user_workout_override,user_edit_revision";
+  var CARD_KEYS = CARD_COLS.split(",");
+
+  // Two rows are the same card when those columns agree, and the caption too when
+  // both sides carry it. A socket event carries every column; comparing all of
+  // them against a row read with fewer would re-render on every event.
+  function cardSig(w) {
+    var o = {};
+    for (var i = 0; i < CARD_KEYS.length; i++) o[CARD_KEYS[i]] = w[CARD_KEYS[i]] === undefined ? null : w[CARD_KEYS[i]];
+    return JSON.stringify(o);
+  }
+  function sameRow(a, b) {
+    return cardSig(a) === cardSig(b) && (a.caption === undefined || b.caption === undefined || a.caption === b.caption);
   }
 
   // ---------- cache ----------
@@ -1561,14 +1633,14 @@ export const APP = String.raw`
     return out;
   }
 
-  function readCache() {
+  function readCache(uid) {
     try {
       var raw = localStorage.getItem(CACHE_KEY);
       if (!raw) return null;
       var c = JSON.parse(raw);
       // Keyed by user and checked rather than trusted: a shared phone must never
       // show one person the other's workouts, not even for a third of a second.
-      if (!c || c.v !== 1 || !state.user || c.uid !== state.user.id) return null;
+      if (!c || c.v !== 1 || !uid || c.uid !== uid) return null;
       if (!c.workouts || !c.workouts.length) return null;
       return c;
     } catch (e) { return null; }
@@ -1597,8 +1669,11 @@ export const APP = String.raw`
   }
 
   function paintCache() {
-    var c = readCache();
-    if (!c) return;
+    var c = readCache(state.user && state.user.id);
+    if (c) paintRows(c);
+  }
+
+  function paintRows(c) {
     state.workouts = c.workouts;
     state.collections = c.collections || [];
     state.colItems = c.colItems || [];
@@ -1609,20 +1684,118 @@ export const APP = String.raw`
     render();
   }
 
+  // ---------- the cache before the token ----------
+  //
+  // supabase-js names the signed-in person only once it holds a live token, and
+  // after an hour away it holds none: it refreshes first, and the library the
+  // person left waited behind that round trip (150-460ms on the simulator's fast
+  // network, more on a phone's). The stored session names its user whether or not
+  // its token has expired, and reading it costs no network: localStorage here, one
+  // Keychain read on a phone. When that user is the one the cache was written for,
+  // the cache is painted now instead of after the refresh.
+  //
+  // Nothing is trusted beyond the paint. state.user stays empty until the SDK
+  // answers, so no read or write goes out on the stored name. An answer for
+  // somebody else, or for nobody (a revoked or deleted account), goes through
+  // clearAccount like any sign-out and takes the grid and the cache with it. A
+  // link that is itself a sign-in may be another account, so it paints nothing.
+  var SESSION_KEY = "sb-mtzevoxxpsktmrbbuxva-auth-token";
+  var earlyUid = null;
+
+  function paintBeforeAuth() {
+    if (!native && /(^|[#?&])(access_token|refresh_token|code|error)=/.test(location.hash + "&" + location.search.slice(1))) return;
+    function take(raw) {
+      if (state.user || earlyUid || !raw) return;
+      var s = null;
+      try { s = JSON.parse(raw); } catch (e) { return; }
+      var uid = s && s.user && s.user.id, c = typeof uid === "string" ? readCache(uid) : null;
+      if (!c) return;
+      earlyUid = uid;
+      showApp();
+      paintRows(c);
+    }
+    if (native) { native.authStorage.getItem(SESSION_KEY).then(take, function () {}); return; }
+    try { take(localStorage.getItem(SESSION_KEY)); } catch (e) { }
+  }
+
+  // The answer arrived. Painted for this same person: keep it (boot skips the
+  // second paint). Painted for anyone else: take it down before theirs goes up.
+  function settleEarly(uid) {
+    if (earlyUid && earlyUid !== uid) clearAccount();
+  }
+
+  // The SDK answered nobody while that library is up. supabase-js drops the stored
+  // session when the server refused it (revoked, deleted, signed out elsewhere)
+  // and keeps it when the server could not be reached, retrying on its own every
+  // 30 s. So the stored session decides. Still there and still theirs: the phone
+  // is offline with an hour-old token, and the library stays up until a refresh
+  // gets through, when onAuthStateChange boots as it always does. Gone, or
+  // someone else's: a sign-out like any other.
+  var reconnecting = false;
+
+  function answeredNobody(leave) {
+    var uid = earlyUid;
+    function decide(raw) {
+      if (state.user || earlyUid !== uid) return;
+      var s = null;
+      try { s = JSON.parse(raw); } catch (e) { }
+      if (!(s && s.user && s.user.id === uid && s.refresh_token)) { leave(); return; }
+      if (reconnecting) return;
+      reconnecting = true;
+      toast(WAITING);
+      // A phone that says it is back is worth a try before the SDK's next tick.
+      window.addEventListener("online", function () {
+        if (!state.user && earlyUid === uid) sb.auth.getSession().catch(function () {});
+      });
+    }
+    if (native) { native.authStorage.getItem(SESSION_KEY).then(decide, function () { leave(); }); return; }
+    var raw = null;
+    try { raw = localStorage.getItem(SESSION_KEY); } catch (e) { }
+    decide(raw);
+  }
+
+  // Until the account is confirmed the page shows a library with nobody signed
+  // in, and anything that reads or writes as the account has nobody to act as.
+  // Online that is a fraction of a second; offline it lasts until the phone is
+  // back. What needs no account stays usable: the Library, a card, and training
+  // from it (Save waits for the account, see finishWorkout). Every other tap says
+  // so instead of acting as nobody.
+  var WAITING = "Reconnecting… Your library and workouts still work offline.";
+
+  function accountFree(t) {
+    if (!t || !t.closest) return false;
+    if (t.closest("[data-close], #dclose, #grid, #chips, #searchwrap, #hint, #filtersheet, #sortsheet, #tab0, #resume, #toast, " +
+      "#dinner .startbtn, #dinner .source-disclosure, #workout")) return true;
+    // Workout Mode's own sheets: a set, the rest, leaving, adding a movement.
+    return !!(wo && !wo.finished && t.closest(".sheet"));
+  }
+
+  document.addEventListener("click", function (e) {
+    if (state.user || !earlyUid || accountFree(e.target)) return;
+    e.preventDefault(); e.stopPropagation();
+    toast(WAITING);
+  }, true);
+
   // ---------- library ----------
 
   function load(retry) {
     if (!state.user) return Promise.resolve();
-    var uid = state.user.id, epoch = accountEpoch, rev = libraryRev;
+    // When the call was made, not when readOnce's microtask runs: boot's cached
+    // paint (and its today read) happens in between, and on a phone that paint
+    // takes long enough that a later clock made the today read look older.
+    var uid = state.user.id, epoch = accountEpoch, rev = libraryRev, begun = Date.now();
     return readOnce("library:" + rev + ":" + !!retry, function () {
-      var rows = sb.from("workouts").select("*").eq("user_id", uid)
+      var rows = sb.from("workouts").select(CARD_COLS).eq("user_id", uid)
         .order("created_at", { ascending: false }).limit(200).then(function (r) {
           if (!accountNow(epoch, uid)) return;
           if (r.error) throw r.error;
           // A socket event or local edit after the read started is newer evidence.
           if (rev !== libraryRev) return;
           state.workouts = r.data || [];
-          today.at = 0;
+          // Refresh means refresh, for the today card too, unless the today read
+          // went out after this one did: at boot the cached paint has just asked,
+          // and asking again here read plan and workout_logs twice per launch.
+          if (today.asked < begun) today.at = 0;
           render();
           if (current && $("detail").classList.contains("open")) {
             var fresh = state.workouts.filter(function (w) { return w.id === current.id; })[0];
@@ -1660,9 +1833,11 @@ export const APP = String.raw`
 
   // A background refresh is not a new visit. Keep the mounted body (including
   // expanded rows, focus and playing media) when its source has not changed.
-  function refreshDetail(w) {
+  function refreshDetail(w, force) {
     if (!current || current.id !== w.id) return;
-    if (JSON.stringify(current) === JSON.stringify(w)) return;
+    // A row from load() carries no caption; the one this detail already asked for stays.
+    if (w.caption === undefined && current.caption !== undefined) w.caption = current.caption;
+    if (!force && sameRow(current, w)) return;
     var old = current, d = $("dinner"), scroll = $("detail").scrollTop;
     if (!$("detail").classList.contains("open")) { current = w; return; }
     var source = d.querySelector(".source-disclosure");
@@ -1681,6 +1856,45 @@ export const APP = String.raw`
       if (replacement) replacement.replaceWith(source);
     }
     $("detail").scrollTop = scroll;
+  }
+
+  // ---------- the caption, on demand ----------
+  //
+  // load() leaves caption on the server (CARD_COLS). The disclosure asks for it
+  // when it opens; the answer is kept on the row, so a second open asks nothing.
+  // Closed, it is simply there next time. Opened already, it slides in under the
+  // link once the disclosure has finished opening, rather than jumping the page.
+  var capWaiting = {};
+
+  function askCaption(w, box, body) {
+    if (w.caption !== undefined || isUpload(w) || !state.user) return;
+    var epoch = accountEpoch, uid = state.user.id, id = w.id;
+    var p = capWaiting[id];
+    if (!p) {
+      p = capWaiting[id] = sb.from("workouts").select("caption").eq("id", id).maybeSingle().then(function (r) {
+        if (r.error) throw r.error;
+        return r.data ? r.data.caption : null;
+      });
+      var done = function () { if (capWaiting[id] === p) delete capWaiting[id]; };
+      p.then(done, done);
+    }
+    p.then(function (cap) {
+      if (!accountNow(epoch, uid)) return;
+      if (w.caption === undefined) w.caption = cap;
+      if (current && current.id === id && current.caption === undefined) current.caption = cap;
+      showCaption(box, body, cap);
+    }, function () { /* the link is still there; the next open asks again */ });
+  }
+
+  function showCaption(box, body, text) {
+    if (!text || !body.isConnected || body.querySelector(".capbox")) return;
+    if (box._disclosureRun) { setTimeout(function () { showCaption(box, body, text); }, 90); return; }
+    var cap = el("div", "capbox", text);
+    body.appendChild(cap);
+    if (!box.open || lessMotion() || !cap.animate) return;
+    var css = getComputedStyle(cap), h = cap.getBoundingClientRect().height;
+    cap.animate([{ height: "0px", opacity: 0, overflow: "hidden" }, { height: h + "px", opacity: 1, overflow: "hidden" }],
+      { duration: parseFloat(css.getPropertyValue("--t-3")) || 320, easing: css.getPropertyValue("--e-out").trim() || "ease-out" });
   }
 
   function isPending(w) { return w.ingest_status === "processing"; }
@@ -1723,6 +1937,17 @@ export const APP = String.raw`
       body: "Spotter is listening to your file and pulling the workout out of what is said. " +
         "The card fills in here as soon as it lands — you can close this and carry on."
     },
+    // A carousel or a photo post has pictures, not a video to read.
+    post: {
+      kick: "Reading", glyph: "hourglass", line: "Reading the post…",
+      head: "Still reading this one",
+      body: "Spotter is reading this post’s caption and pictures. The card fills in here as soon " +
+        "as it lands — you can close this and carry on."
+    },
+    // Basic, where Plus could not read more either: no promise it cannot keep.
+    basicText: { kick: "Basic read", glyph: "hourglass", line: "Reading available text…",
+      head: "Building your workout", body: "Spotter is reading the post’s own text. The card fills in here " +
+        "as soon as it lands — you can close this and carry on." },
     // An upload is watched AND heard in one pass, which neither line above says.
     upwatch: {
       kick: "Watching", glyph: "eye", line: "Watching the video…",
@@ -1735,9 +1960,13 @@ export const APP = String.raw`
   function stageOf(w) {
     // An upload names the reader that is running. Audio is only ever heard.
     if (isUpload(w)) return w.media_stage === "watching" ? STAGES.upwatch : STAGES.upload;
+    // "Add the video" on an Instagram card: the person's own file, watched and heard.
+    if (w.platform === "instagram" && w.media_stage === "watching") return STAGES.upwatch;
     if (w.media_stage === "watching") return STAGES.watching;
     if (w.media_stage === "listening") return STAGES.listening;
-    return isFree() ? STAGES.basic : STAGES.reading;
+    var post = w.kind === "photo" || (w.platform === "instagram" && w.kind === "p");
+    if (isFree()) return w.platform === "tiktok" && !post ? STAGES.basic : STAGES.basicText;
+    return post ? STAGES.post : STAGES.reading;
   }
 
   // What this card was actually read out of. The caveat has to be able to say so:
@@ -1767,6 +1996,36 @@ export const APP = String.raw`
     var from = readFrom(w);
     return w.read_quality !== "premium";
   }
+
+  // Instagram lets nobody outside it watch a reel, so the reading comes from the
+  // person: Instagram's own Download, then "Add the video" on this card. Offered
+  // where it can help — a card the caption left without a workout — and never as
+  // "Plus reads the video", which Plus cannot do for a reel.
+  function canAddVideo(w) {
+    if (w.platform !== "instagram" || isPending(w) || isFailed(w)) return false;
+    if (w.read_quality === "premium") return false;
+    return !w.has_full_workout || !exerciseNames(w).length;
+  }
+  var ADD_VIDEO_WHY = "Instagram doesn’t let apps watch reels. Add the video and Spotter will read it: " +
+    "in Instagram tap Share → Download, then choose it here.";
+  // The line a Basic card carries when somebody's Plus read found what its caption
+  // did not (set by the server). It moves into the empty-card box with its button.
+  var PLUS_READ_HINT = "The caption lists no exercises.";
+  // The server's sentence for a post the platform says is gone. Nothing to retry.
+  var UNAVAILABLE = "This post is private, deleted or unavailable to Spotter.";
+  function isUnavailable(w) { return isFailed(w) && w.ingest_error === UNAVAILABLE; }
+  // What a failed card is called on its tile and above its title, and its mark.
+  // Only an ordinary failure can be read again. A post the platform says is gone
+  // cannot, and an upload's file is deleted once it is read, so neither wears
+  // "Retry" or the ↻ that the detail below them does not offer.
+  function failedKick(w, onTile) {
+    if (isUnavailable(w)) return "Unavailable";
+    if (isUpload(w)) return "Failed";
+    return onTile ? "Retry" : "Needs another try";
+  }
+  function failedGlyph(w) { return isUnavailable(w) ? "eye-off" : isUpload(w) ? "ear" : "refresh"; }
+  // How the server ends a read that kept the card as it was (Add the video, a re-read).
+  var UNCHANGED = /This card is unchanged\.$/;
 
   // ---------- collections: lookups ----------
 
@@ -2074,7 +2333,7 @@ export const APP = String.raw`
   // only thing that reads plan rows and most sessions never open it, so this does
   // its own read of today's plan and today's logs: two small selects.
 
-  var today = { day: null, rows: [], done: false, at: 0, busy: false, shown: false };
+  var today = { day: null, rows: [], done: false, at: 0, busy: false, shown: false, asked: 0 };
 
   // Anchored to the chip row instead of declared in markup.ts: setView hides that
   // row exactly when the Library is off screen, and one CSS adjacency rule lets
@@ -2086,7 +2345,7 @@ export const APP = String.raw`
   function loadToday() {
     if (today.busy || !state.user) return;
     var key = ymd(new Date()), epoch = accountEpoch, uid = state.user.id;
-    today.busy = true;
+    today.busy = true; today.asked = Date.now();
     Promise.all([
       sb.from("plan").select("workout_id").eq("day", key),
       // Pulled back a day: no time zone can then leave this morning's session
@@ -2169,7 +2428,8 @@ export const APP = String.raw`
 
   function cardMeta(w) {
     if (isPending(w)) return stageOf(w).line;
-    if (isFailed(w)) return isUpload(w) ? "No workout in it — tap to see why" : "Could not read it — tap to retry";
+    if (isFailed(w)) return isUpload(w) ? "No workout in it — tap to see why"
+      : isUnavailable(w) ? "Private, deleted or unavailable" : "Could not read it — tap to retry";
     var bits = [];
     var n = exerciseNames(w).length;
     if (n) bits.push(n + (n === 1 ? " exercise" : " exercises"));
@@ -2203,6 +2463,33 @@ export const APP = String.raw`
     });
   }
 
+  // A card under a finger keeps its node until the finger lifts. A render that
+  // replaced it mid-press (Realtime renaming it, a read finishing) took the end of
+  // the touch away with the old node, and WebKit dropped the click, so the tap
+  // did nothing (seen on the iPhone 16e with a card renamed three times a
+  // second). The replacement waits instead, and one catch-up render follows once
+  // the click that belongs to the lift has had its moment. A new press anywhere
+  // is proof an old one lifted, so a lost lift holds a card back only until then.
+  var pressedCard = null, gridBehind = false, gridCatchUp = 0;
+
+  function liftCard() {
+    if (!pressedCard) return;
+    pressedCard = null;
+    if (!gridBehind) return;
+    gridBehind = false;
+    var epoch = accountEpoch;
+    clearTimeout(gridCatchUp);
+    gridCatchUp = setTimeout(function () { if (state.user && epoch === accountEpoch) renderGrid(); }, 350);
+  }
+
+  window.addEventListener("pointerdown", function (e) {
+    liftCard();
+    pressedCard = e.target && e.target.closest ? e.target.closest("#grid .carditem") : null;
+  }, true);
+  window.addEventListener("pointerup", liftCard, true);
+  window.addEventListener("pointercancel", liftCard, true);
+  document.addEventListener("visibilitychange", liftCard);
+
   function renderGrid() {
     var grid = $("grid"), empty = $("empty");
     var items = visible();
@@ -2217,6 +2504,8 @@ export const APP = String.raw`
       var sig = JSON.stringify([w.title, w.ingest_status, w.media_stage, w.platform, w.thumb_url,
         w.favorite, w.duration_minutes, w.category, w.difficulty, cardMeta(w)]);
       var entry = previous[key];
+      // Pressed: kept as it is, with its old signature so the catch-up redraws it.
+      if (entry && entry.sig !== sig && entry.node === pressedCard) { gridBehind = true; sig = entry.sig; }
       if (!entry || entry.sig !== sig) {
         var changed = !!entry;
         if (entry && pendingMotion) pendingMotion.unobserve(entry.node);
@@ -2247,7 +2536,14 @@ export const APP = String.raw`
       empty.appendChild(state.workouts.length ? icon(el("div", "big"), "search") : pumpyArt("coach", false));
       if (!state.workouts.length) {
         empty.appendChild(el("h2", null, "Your saved videos become workouts."));
-        empty.appendChild(el("p", null, "Paste a TikTok, Instagram, or YouTube link to get started."));
+        if (native) {
+          // The first lesson is the one used every day after it: the share row, the
+          // add sheet's own copy, learnt before anything has been tapped.
+          empty.appendChild(el("p", null, "Found one on TikTok, Instagram or YouTube? Share it to Spotter."));
+          var how = $("addsheet").querySelector(".shareflow").cloneNode(true);
+          paintSaveOn(how);
+          empty.appendChild(how);
+        } else empty.appendChild(el("p", null, "Paste a TikTok, Instagram, or YouTube link to get started."));
         var first = el("button", "btn firstsave", "Save your first workout");
         first.onclick = function () { $("addbtn").click(); };
         empty.appendChild(first);
@@ -2333,17 +2629,16 @@ export const APP = String.raw`
 
     var tw = el("div", "thumbwrap loading");
     if (pending || failed) {
-      var up = isUpload(w);
       var stage = stageOf(w);
       tw.className = "thumbwrap " + (pending ? "pending" : "failed");
-      // A failed upload cannot be retried — the file was deleted the moment
-      // Spotter finished listening — so it must not wear the mark that says it can.
-      tw.appendChild(icon(el("div", "noimg"), pending ? stage.glyph : (up ? "ear" : "refresh")));
+      // A failed upload or an unavailable post cannot be retried, so it must not
+      // wear the mark that says it can (failedGlyph).
+      tw.appendChild(icon(el("div", "noimg"), pending ? stage.glyph : failedGlyph(w)));
       card.appendChild(tw);
       var pb = el("div", "cardbody");
       var pk = el("div", "cardkick");
       pk.appendChild(el("div", "catpill",
-        pending ? stage.kick : (up ? "Failed" : "Retry")));
+        pending ? stage.kick : failedKick(w, true)));
       pb.appendChild(pk);
       pb.appendChild(el("div", "cardtitle", w.title || stage.line));
       pb.appendChild(el("div", "cardmeta" + (failed ? " retryline" : ""), cardMeta(w)));
@@ -3000,10 +3295,11 @@ export const APP = String.raw`
     $("workmanage").appendChild(manageRow(w));
     syncRereadButton(w);
     $("dreproc").hidden = isUpload(w) || w.platform === "pumpy";
+    $("dorder").hidden = isPending(w) || isFailed(w) || !ordCan(w);
 
     d.appendChild(el("div", "dkick", isPending(w)
       ? stageOf(w).kick
-      : (isFailed(w) ? "Needs another try" : (w.category || "Other"))));
+      : (isFailed(w) ? failedKick(w, false) : (w.category || "Other"))));
     var titleEl = el("h2", "dtitle", w.title || "Untitled workout");
     d.appendChild(titleEl);
     // The handle does what a collection pill does: close the card, land in a library
@@ -3019,9 +3315,10 @@ export const APP = String.raw`
     }
 
 
-    if (!isPending(w) && !isFailed(w) && w.ingest_error) {
+    if (!isPending(w) && !isFailed(w) && w.ingest_error &&
+        !((w.blocks || []).length === 0 && String(w.ingest_error).indexOf(PLUS_READ_HINT) === 0)) {
       var incomplete = el("div", "sect");
-      incomplete.appendChild(el("h3", null, "Some details are missing"));
+      incomplete.appendChild(el("h3", null, UNCHANGED.test(w.ingest_error) ? "That read did not change this card" : "Some details are missing"));
       incomplete.appendChild(el("div", "capbox", w.ingest_error));
       d.appendChild(incomplete);
     }
@@ -3032,9 +3329,10 @@ export const APP = String.raw`
       var isUp = isUpload(w);
       var stage = stageOf(w);
       var note = el("div", "sect");
+      var gone = isUnavailable(w);
       note.appendChild(el("h3", null, isPending(w)
         ? stage.head
-        : (isUp ? "Could not find a workout in this one" : "Could not read this one")));
+        : (isUp ? "Could not find a workout in this one" : gone ? "This post is unavailable" : "Could not read this one")));
       note.appendChild(el("div", "capbox", isPending(w)
         ? stage.body
         : (w.ingest_error || (isUp
@@ -3048,7 +3346,9 @@ export const APP = String.raw`
       if (isFailed(w)) {
         // An upload has nothing to try again: the file is gone by the time this
         // card exists. Offering a re-read would offer a button that can only fail.
-        if (!isUp) {
+        // Nor for a post the platform says is gone: a retry would ask the same
+        // question and get the same answer.
+        if (!isUp && !gone) {
           var rb = el("button", "retrybtn", "Try reading it again");
           rb.onclick = function () { retryWorkout(w, rb); };
           d.appendChild(rb);
@@ -3141,7 +3441,23 @@ export const APP = String.raw`
       d.appendChild(warn);
     }
 
-    if (w.platform !== "pumpy" && w.read_quality !== "premium") {
+    // "Plus reads the video" only where Plus reads more: a TikTok video. A file of
+    // the person's own is read the same way on either plan (the uploads allowance
+    // pays for it), so a Basic upload card is not told Plus would have watched
+    // what Spotter just watched. An Instagram card whose caption left it thin is
+    // offered the one thing that works for a reel instead; the empty-card box
+    // above already does that for a card with nothing in it.
+    var plusCan = w.platform === "tiktok" && w.kind !== "photo";
+    var addHere = canAddVideo(w) && (w.blocks || []).length > 0;
+    if (w.platform !== "pumpy" && w.read_quality !== "premium" && addHere) {
+      var addBox = el("div", "reader-offer");
+      addBox.appendChild(el("b", null, "Add the video"));
+      addBox.appendChild(el("p", null, ADD_VIDEO_WHY));
+      var addv = el("button", "btn ghost", "Add the video");
+      addv.onclick = function () { openAddVideo(w); };
+      addBox.appendChild(addv);
+      d.appendChild(addBox);
+    } else if (w.platform !== "pumpy" && w.read_quality !== "premium" && plusCan) {
       var quality = el("div", "reader-offer");
       quality.appendChild(el("b", null, "Basic read"));
       quality.appendChild(el("p", null, "Plus reads the video’s movements, spoken cues and on-screen details to build a more complete workout."));
@@ -3155,11 +3471,16 @@ export const APP = String.raw`
           : "Try a Plus read");
         trial.onclick = function () { readVideo(w, trial, isFree()); };
         quality.appendChild(trial);
-        if (isFree()) api("limits").then(function (r) {
+        if (isFree()) recentLimits().then(function (r) {
           if (!trial.isConnected || !r.video_previews) return;
           var left = Math.max(0, r.video_previews.cap - r.video_previews.used);
           trial.textContent = left ? "Try a Plus read · " + left + " left this month" : "Explore Spotter Plus";
-          if (!left) trial.onclick = function () { openPlans({ kind: "media" }); };
+          // Opens on what ran out, as a refused preview would.
+          if (!left) trial.onclick = function () {
+            var c = billing.caps;
+            openPlans({ kind: "media", plan: "free", scope: "month", cap: r.video_previews.cap, used: r.video_previews.used,
+              next_plan: "plus", next_cap: c ? capNum(c.plus.month_reads) : undefined });
+          };
         }).catch(function () {});
       }
       if (isFree()) {
@@ -3179,7 +3500,7 @@ export const APP = String.raw`
     var schedule = el("button", "chip", "Schedule");
     schedule.onclick = function () { scheduleWorkout(w); };
     actions.appendChild(schedule);
-    var ask = el("button", "chip", "Ask coach");
+    var ask = el("button", "chip", "Ask Pumpy");
     ask.onclick = function () { history.back(); openPumpy(w); };
     actions.appendChild(ask);
     d.appendChild(actions);
@@ -3188,12 +3509,16 @@ export const APP = String.raw`
     var sourceBody = original.lastChild;
     if (!isUpload(w) && w.url) sourceBody.appendChild(originalLink(w));
     if (w.caption) sourceBody.appendChild(el("div", "capbox", w.caption));
+    // Asked for on the press that opens it, a beat before the tap lands, and on the
+    // open itself for a keyboard.
+    original.firstChild.addEventListener("pointerdown", function () { askCaption(w, original, sourceBody); });
     original._prepareDisclosure = function () {
       if (!original.open) {
         var old = sourceBody.querySelector(".embedwrap, .dphoto");
         if (old) old.remove();
         return;
       }
+      askCaption(w, original, sourceBody);
       if (sourceBody.querySelector(".embedwrap, .dphoto")) return;
       var em = embedNode(w);
       if (em) { sourceBody.insertBefore(em, sourceBody.firstChild); fitEmbed(em, w.platform); }
@@ -3213,6 +3538,7 @@ export const APP = String.raw`
       d.appendChild(built);
     }
 
+    var canOrder = ordCan(w);
     (w.blocks || []).forEach(function (b, bi) {
       var sect = el("div", "sect workout-block");
       // A block has a name in the data — "Warm-up", "Finisher". The card printed
@@ -3284,6 +3610,11 @@ export const APP = String.raw`
         var swap = icon(el("button", "pickrow"), "swap", "Swap or modify");
         swap.onclick = function () { openSwap(ex.name, w.title, { w: w, bi: bi, ei: ei, ex: ex }); };
         options.lastChild.appendChild(swap);
+        if (canOrder) {
+          var move = icon(el("button", "pickrow"), "reorder", "Reorder");
+          move.onclick = function () { openOrder(w, "e" + bi + "." + ei); };
+          options.lastChild.appendChild(move);
+        }
         acts.appendChild(options);
         row.appendChild(acts);
         var swipe = el("div", "exrow delete-swipe");
@@ -3316,10 +3647,14 @@ export const APP = String.raw`
       // said nothing, so the workout is in the video or nowhere. Offer that first,
       // and only then the two things that cost the user work.
       var canRead = canReadVideo(w);
-      var np = el("div", "capbox", canRead
+      var canAdd = canAddVideo(w);
+      var hinted = canRead && isFree() && String(w.ingest_error || "").indexOf(PLUS_READ_HINT) === 0;
+      var np = el("div", "capbox", hinted ? w.ingest_error
+        : canRead
         ? "The caption on this one names no exercises. Spotter can go and read the video itself — " +
           "listen to what the creator says, and read what is written on the screen. It takes a " +
           "minute or so, and the card fills in here."
+        : canAdd ? ADD_VIDEO_WHY
         : (from.video || from.speech
           ? "Spotter read the video itself and still could not make out a workout in it. " +
             "You can watch it and log a freestyle session, or type the exercises in yourself."
@@ -3329,9 +3664,16 @@ export const APP = String.raw`
       none.appendChild(np);
       none.appendChild(el("div", null, " "));
       if (canRead) {
-        var rvb = el("button", "retrybtn", "Read the video");
-        rvb.onclick = function () { readVideo(w, rvb); };
+        // A Basic account reads the video with one of its free Plus reads; asking
+        // without saying so was a paywall behind a button labelled as the action.
+        var rvb = el("button", "retrybtn", isFree() ? "Use a free Plus read" : "Read the video");
+        rvb.onclick = function () { readVideo(w, rvb, isFree()); };
         none.appendChild(rvb);
+      }
+      if (canAdd) {
+        var avb = el("button", "retrybtn", "Add the video");
+        avb.onclick = function () { openAddVideo(w); };
+        none.appendChild(avb);
       }
       var addfirst = el("button", "addex", "+ Add an exercise");
       addfirst.onclick = function () { openExAdd(w, 0); };
@@ -3342,9 +3684,18 @@ export const APP = String.raw`
     // After the last block, a whole section: a circuit, a finisher, ten minutes
     // on the bike, a stretch. The per-block add above stays for a single missed
     // movement; this is for "the video had a finisher and the card does not".
+    var tools = el("div", "cardtools");
     var addsec = el("button", "addex", "+ Add a section");
     addsec.onclick = function () { openSection(w, null); };
-    d.appendChild(addsec);
+    tools.appendChild(addsec);
+    // Beside it, the card's order: Hevy keeps Reorder with the other things that
+    // change a routine's shape, and so does this.
+    if (canOrder) {
+      var reorder = icon(el("button", "addex"), "reorder", "Reorder");
+      reorder.onclick = function () { openOrder(w); };
+      tools.appendChild(reorder);
+    }
+    d.appendChild(tools);
 
     // What this hits: catalog muscles through canonical_id, nothing else. Filled
     // in once the catalog map is here, which after the first card is immediate.
@@ -3478,10 +3829,10 @@ export const APP = String.raw`
         watchPending();
         toast(w.user_workout_override ? "Refreshing the source; your personal exercise list will be kept." : "Reading it again…");
       })
-      .catch(function () {
+      .catch(function (e) {
         if (!accountNow(epoch, uid)) return;
         if (btn) { btn.disabled = false; btn.textContent = "Try reading it again"; }
-        toast("Could not start reading that — try again in a minute.");
+        if (!aiDeclined(e)) toast("Could not start reading that — try again in a minute.");
       });
   }
 
@@ -3523,10 +3874,10 @@ export const APP = String.raw`
         watchPending();
         toast(w.user_workout_override ? "Refreshing the source; your personal exercise list will be kept." : "Listening to the video…");
       })
-      .catch(function () {
+      .catch(function (e) {
         if (!accountNow(epoch, uid)) return;
         if (btn) { btn.disabled = false; btn.textContent = "Read the video"; }
-        toast("Could not start reading that — try again in a minute.");
+        if (!aiDeclined(e)) toast("Could not start reading that — try again in a minute.");
       });
   }
 
@@ -3584,10 +3935,10 @@ export const APP = String.raw`
         if (fresh) openDetail(fresh, true);
         toast("Re-read it from your caption.");
       });
-    }).catch(function () {
+    }).catch(function (e) {
       btn.disabled = false;
       btn.textContent = "Read it";
-      toast("Could not read that caption — try again in a moment.");
+      if (!aiDeclined(e)) toast("Could not read that caption — try again in a moment.");
     });
   }
 
@@ -4151,6 +4502,26 @@ export const APP = String.raw`
   // The stored shape of a rest as the wheel takes it: a number, or "" for "not said".
   function restVal(x) { return typeof x === "number" ? x : ""; }
 
+  // A block as the database writes it, for the guard on edit_block and
+  // delete_block. In the iOS shell every answer from the function crosses
+  // CapacitorHttp, which parses it into a Swift dictionary with no key order and
+  // hands the page doubles, so the card an edit hands back is the stored card
+  // with its keys shuffled — and a server that compares the two as strings calls
+  // that a different block. jsonb keeps an object's keys shortest first, then in
+  // byte order, so putting them back that way (and a double back to the number
+  // it was) is the stored text again. Today's function compares a canonical form
+  // and does not need this; an older deployment does.
+  function asStored(v) {
+    if (Array.isArray(v)) return v.map(asStored);
+    if (v && typeof v === "object") {
+      var out = {};
+      Object.keys(v).sort(function (a, b) { return a.length - b.length || (a < b ? -1 : a > b ? 1 : 0); })
+        .forEach(function (k) { out[k] = asStored(v[k]); });
+      return out;
+    }
+    return typeof v === "number" && isFinite(v) && v % 1 ? Number(v.toPrecision(15)) : v;
+  }
+
   // The sheet's title, lede and buttons are what the markup says: its add mode
   // went when "+ Add an exercise" became the bank, and with it the resetting.
   function openExEdit(w, bi, ei, ex) {
@@ -4200,7 +4571,7 @@ export const APP = String.raw`
     if (btn) { btn.disabled = true; btn.textContent = "Saving…"; }
     // Returned, so a caller with no button to disable can still know when the
     // round trip is over.
-    return api("workouts/" + w.id + "/exercises", { method: "POST", body: JSON.stringify(payload) })
+    return cardWrite(w.id, payload)
       .then(function (r) {
         if (btn) { btn.disabled = false; btn.textContent = label; }
         if (r.status !== "ok") { limitHit(r, "That change did not save. Your copy is unchanged."); return; }
@@ -4355,7 +4726,7 @@ export const APP = String.raw`
     var f = sectionFields();
     if (f.duration_seconds && f.duration_seconds < 60) { toast("A time cap starts at a minute."); return; }
     if (sec.b) {
-      postCorrection(sec.w, { op: "edit_block", block: sec.bi, expect_block: sec.b, fields: f },
+      postCorrection(sec.w, { op: "edit_block", block: sec.bi, expect_block: asStored(sec.b), fields: f },
         $("sectionsave"), "Section saved", "sectionsheet");
       return;
     }
@@ -4467,7 +4838,7 @@ export const APP = String.raw`
     w.blocks.splice(bi, 1); render();
     rowAway(box, from, redraw);
     offerUndo("Removed " + (expected.title || "block"), function () {
-      api("workouts/" + w.id + "/exercises", { method: "POST", body: JSON.stringify({ op: "delete_block", block: bi, expect_block: expected }) })
+      cardWrite(w.id, { op: "delete_block", block: bi, expect_block: asStored(expected) })
         .then(function (r) { if (r.status === "ok") absorbWorkout(r.workout); else restore(r.message || "Could not remove that block."); })
         .catch(function () { restore("Could not reach Spotter — the block is back."); });
     }, function () { restore(null); });
@@ -4495,10 +4866,7 @@ export const APP = String.raw`
     function putBack(msg) { w.blocks = before; redraw(); render(); rowBack(rowOf(w, ctx.block, ctx.index)); if (msg) toast(msg); }
 
     offerUndo("Removed " + ctx.name, function () {
-      api("workouts/" + w.id + "/exercises", {
-        method: "POST",
-        body: JSON.stringify({ op: "delete", block: ctx.block, index: ctx.index, expect_name: ctx.name })
-      }).then(function (r) {
+      cardWrite(w.id, { op: "delete", block: ctx.block, index: ctx.index, expect_name: ctx.name }).then(function (r) {
         if (r.status !== "ok") {
           putBack(limitHit(r, null) ? null : (r.message || "That did not save — the exercise is back."));
           return;
@@ -4509,6 +4877,510 @@ export const APP = String.raw`
       });
     }, function () { putBack(null); });
   }
+
+  // ---------- reorder ----------
+  //
+  // "I want a way to reorder blocks and exercises" (owner, 24 Sept). The card was
+  // already full of gestures: a row swipes left to delete, a held press opens that
+  // drawer for anyone who cannot swipe, a tap opens Options, a sideways drag steps
+  // to the next card and the page scrolls. Long-press-to-drag on the card itself,
+  // Fitbod's and Strong's way, would have taken the held press back from the people
+  // it was given to, and iOS 18 Reminders, where one press can mean edit, magnify
+  // or move, is what that feels like. So it is a mode, as Hevy's Reorder Exercises
+  // and every iOS edit mode are: a sheet of one-line tiles with a handle each. The
+  // handle lifts its tile the moment it is touched (UIKit's reorder control has no
+  // hold), the tiles around it make way, the list scrolls when the tile is carried
+  // to an edge, and a tick marks every slot passed. A section travels with its
+  // exercises folded under it, as a Fitbod group does; an exercise can be carried
+  // out of its section into another, which is how a superset gets built. Dragging
+  // cannot be the only way in (WCAG 2.5.7, HIG drag and drop), so a tap on a tile
+  // gives it Move up and Move down, and the arrow keys do the same.
+  //
+  // Nothing is written until Done, and then once: the whole order as a permutation
+  // of what the server stores, with the layout it was made from as the stale guard.
+  // The card changes on the tap and the write waits for the toast to go, the way a
+  // delete does, so Undo cancels a write that never happened.
+  //
+  // The model is a list of keys in the order shown: "s2" is stored block 2, "e2.3"
+  // the fourth exercise stored in it. Every move is a move of keys, so the stored
+  // position each tile came from travels with it and the order sent is read
+  // straight off them.
+
+  var ORD_EDGE = 56;         // px inside the list's visible edge where a carried tile scrolls it
+  var ORD_SPEED = 14;        // px a frame at the very edge, about 840 px/s at 60 Hz
+  var ord = null;            // the open sheet: { w, before, keys, start, sel, moved, drag }
+  var orderLanding = null;   // the reorder write in flight; every other card write waits for it
+
+  function ordKeys(blocks) {
+    var out = [];
+    blocks.forEach(function (b, bi) {
+      out.push("s" + bi);
+      (b.exercises || []).forEach(function (x, ei) { out.push("e" + bi + "." + ei); });
+    });
+    return out;
+  }
+
+  function ordKey(k) {
+    var p = k.slice(1).split(".");
+    return { b: +p[0], e: k.charAt(0) === "e" ? +p[1] : null };
+  }
+
+  // Keys back into sections: [{ b, ex: [[b, e], ...] }]. A key list always opens
+  // on a section, which the slot bounds below make sure of.
+  function ordSecs(keys) {
+    var secs = [];
+    keys.forEach(function (k) {
+      var p = ordKey(k);
+      if (p.e === null) secs.push({ b: p.b, ex: [] });
+      else secs[secs.length - 1].ex.push([p.b, p.e]);
+    });
+    return secs;
+  }
+
+  function ordFlat(secs) {
+    var out = [];
+    secs.forEach(function (s) {
+      out.push("s" + s.b);
+      s.ex.forEach(function (x) { out.push("e" + x[0] + "." + x[1]); });
+    });
+    return out;
+  }
+
+  // What a drop and an arrow both do: one key out, back in at index to.
+  function ordMove(keys, from, to) {
+    var out = keys.slice(), k = out.splice(from, 1)[0];
+    out.splice(to, 0, k);
+    return out;
+  }
+
+  // One step for the arrows. An exercise steps over its neighbour and a section
+  // heading counts as one, so stepping up past its own heading puts it at the end
+  // of the section above. A section steps over the whole of the next one. Null
+  // where there is nowhere to go, which is what greys the arrow.
+  function ordStep(keys, k, dir) {
+    var i = keys.indexOf(k), secs, si, t;
+    if (i < 0) return null;
+    if (k.charAt(0) === "e") return i + dir < 1 || i + dir >= keys.length ? null : ordMove(keys, i, i + dir);
+    secs = ordSecs(keys);
+    for (si = 0; si < secs.length && "s" + secs[si].b !== k; si++) { /* find it */ }
+    if (si + dir < 0 || si + dir >= secs.length) return null;
+    t = secs[si]; secs[si] = secs[si + dir]; secs[si + dir] = t;
+    return ordFlat(secs);
+  }
+
+  // Where a carried tile would land: past a neighbour's resting midpoint is past
+  // the neighbour, UITableView's rule. mids are the tiles' resting midpoints, y the
+  // carried tile's midpoint now, lo..hi the slots it may take.
+  function ordSlot(mids, from, y, lo, hi) {
+    var to = from;
+    while (to < hi && y > mids[to + 1]) to++;
+    while (to > lo && y < mids[to - 1]) to--;
+    return to;
+  }
+
+  // How far the list scrolls this frame under a tile held at y: nothing until the
+  // tile is within ORD_EDGE of the visible top or bottom, faster the closer it
+  // gets, never past either end of the list.
+  function ordEdge(y, top, bottom, st, max) {
+    var v = 0;
+    if (y < top + ORD_EDGE) v = -ORD_SPEED * Math.min(1, (top + ORD_EDGE - y) / ORD_EDGE);
+    else if (y > bottom - ORD_EDGE) v = ORD_SPEED * Math.min(1, (y - bottom + ORD_EDGE) / ORD_EDGE);
+    return (v < 0 && st <= 0) || (v > 0 && st >= max) ? 0 : v;
+  }
+
+  // The order as the server reads it: a bare index for an exercise still in its
+  // own section, [block, index] for one that came from another.
+  function ordPayload(secs) {
+    return secs.map(function (s) {
+      return { block: s.b, exercises: s.ex.map(function (x) { return x[0] === s.b ? x[1] : x; }) };
+    });
+  }
+
+  // The blocks the server will store, built the way it builds them: each stored
+  // block and exercise object as it is, a section left empty gone.
+  function ordApply(blocks, secs) {
+    return secs.map(function (s) {
+      return Object.assign({}, blocks[s.b], { exercises: s.ex.map(function (x) { return blocks[x[0]].exercises[x[1]]; }) });
+    }).filter(function (b) { return b.exercises.length; });
+  }
+
+  function ordCan(w) {
+    var n = 0;
+    (w.blocks || []).forEach(function (b) { n += (b.exercises || []).length; });
+    return n > 1 || (w.blocks || []).length > 1;
+  }
+
+  function cardOf(id) {
+    for (var i = 0; i < state.workouts.length; i++) if (state.workouts[i].id === id) return state.workouts[i];
+    return null;
+  }
+
+  // Every write to a card's exercises goes out through here. A reorder still under
+  // its Undo toast goes first, and the write waits for it to land: the positions it
+  // names are the card's new ones, which the server only has once the reorder does.
+  function cardWrite(id, body) {
+    if (undoFn && undoFn.order) flushUndo();
+    return (orderLanding || Promise.resolve()).then(function () {
+      return api("workouts/" + id + "/exercises", { method: "POST", body: JSON.stringify(body) });
+    });
+  }
+
+  function openOrder(w, pick) {
+    var d = pausedDraft();
+    // Workout Mode runs on its own copy of the card, and the Lock Screen, the
+    // watch and the saved log all count through it by position. A session of this
+    // card keeps the order it started with, so the card waits for it rather than
+    // telling the two apart later.
+    if ((wo && !wo.finished && wo.workout.id === w.id) || (d && d.workoutId === w.id)) {
+      toast("Your paused workout is using this order. End or finish it, then reorder.");
+      return;
+    }
+    // A delete still under its toast lands first, so the order starts from the
+    // card the server will have.
+    flushUndo();
+    ord = { w: w, before: JSON.parse(JSON.stringify(w.blocks || [])), sel: pick || null, moved: {}, drag: null };
+    ord.keys = ordKeys(ord.before);
+    ord.start = ord.keys.join();
+    if (ord.keys.indexOf(ord.sel) < 0) ord.sel = null;
+    ordPaint();
+    openSheet("ordersheet");
+    if (ord.sel) { ordReveal(ordRowOf(ord.sel)); ordSay(ordWhere(ord.sel) + ". Move it up or down."); }
+  }
+
+  // Named as the card named it when the sheet opened, by the block's stored
+  // place: "Block 2" stays Block 2 however far it is carried.
+  function ordTitle(blocks, bi) {
+    return blocks[bi].title || (blocks.length === 1 ? "Exercises" : "Block " + (bi + 1));
+  }
+
+  function ordLabel(blocks, k) {
+    var p = ordKey(k);
+    return p.e === null ? ordTitle(blocks, p.b) : blocks[p.b].exercises[p.e].name || "Exercise";
+  }
+
+  function ordRowOf(k) { return $("olist").querySelector('[data-k="' + k + '"]'); }
+
+  function ordPaint() {
+    var list = $("olist");
+    list.innerHTML = "";
+    ordSecs(ord.keys).forEach(function (s) {
+      var n = s.ex.length;
+      list.appendChild(ordRow("s" + s.b, ordTitle(ord.before, s.b),
+        n ? n + (n === 1 ? " exercise" : " exercises") : "Empty · it goes when you tap Done"));
+      s.ex.forEach(function (x) {
+        var ex = ord.before[x[0]].exercises[x[1]];
+        list.appendChild(ordRow("e" + x[0] + "." + x[1], ex.name, doseText(ex)));
+      });
+    });
+    ordArrows();
+  }
+
+  function ordRow(k, title, sub) {
+    var on = ord.sel === k, row = el("div", "orow " + (k.charAt(0) === "s" ? "osec" : "oex") + (on ? " sel" : ""));
+    row.setAttribute("role", "listitem");
+    row.setAttribute("data-k", k);
+    var pick = el("button", "opick");
+    pick.appendChild(el("b", null, title));
+    if (sub) pick.appendChild(el("span", null, sub));
+    pick.setAttribute("aria-pressed", on ? "true" : "false");
+    row.appendChild(pick);
+    [[-1, "up", " up"], [1, "dn", " down"]].forEach(function (a) {
+      var b = icon(el("button", "ostep " + a[1]), "arrow-up");
+      b.setAttribute("data-d", a[0]);
+      b.setAttribute("aria-label", "Move " + title + a[2]);
+      row.appendChild(b);
+    });
+    // The handle is for a finger or a mouse. A screen reader and a keyboard have
+    // the row itself and its arrows, which say more than "drag here" can.
+    var grip = icon(el("span", "ogrip"), "list");
+    grip.setAttribute("aria-hidden", "true");
+    grip.setAttribute("data-noswipe", "");
+    row.appendChild(grip);
+    return row;
+  }
+
+  function ordArrows() {
+    var row = ord.sel && ordRowOf(ord.sel);
+    if (row) row.querySelectorAll(".ostep").forEach(function (b) {
+      b.disabled = !ordStep(ord.keys, ord.sel, +b.getAttribute("data-d"));
+    });
+  }
+
+  function ordPick(k, quiet) {
+    ord.sel = ord.sel === k ? null : k;
+    $("olist").querySelectorAll(".orow").forEach(function (r) {
+      var on = r.getAttribute("data-k") === ord.sel;
+      r.classList.toggle("sel", on);
+      r.firstChild.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+    ordArrows();
+    if (quiet) return;
+    haptic("select");
+    if (ord.sel) ordSay(ordWhere(k) + ". Move it up or down.");
+  }
+
+  // "Goblet Squat, 2 of 3 in Finisher": where a tile is, for the live region.
+  function ordWhere(k) {
+    var p = ordKey(k), out = ordLabel(ord.before, k), secs = ordSecs(ord.keys);
+    secs.forEach(function (s, si) {
+      if (p.e === null && s.b === p.b) out += ", section " + (si + 1) + " of " + secs.length;
+      s.ex.forEach(function (x, xi) {
+        if (x[0] === p.b && x[1] === p.e) out += ", " + (xi + 1) + " of " + s.ex.length + " in " + ordTitle(ord.before, s.b);
+      });
+    });
+    return out;
+  }
+
+  function ordSay(text) {
+    var live = $("orderlive");
+    live.textContent = "";
+    setTimeout(function () { live.textContent = text; }, 40);
+  }
+
+  // The sheet scrolls under a band that stays put, so "into view" is below it.
+  function ordReveal(row) {
+    if (!row) return;
+    var body = $("olist").parentNode, head = body.querySelector(".ohead").offsetHeight;
+    var top = $("olist").offsetTop + row.offsetTop, bottom = top + row.offsetHeight;
+    if (top - head < body.scrollTop + 8) body.scrollTop = Math.max(0, top - head - 8);
+    else if (bottom > body.scrollTop + body.clientHeight - 8) body.scrollTop = bottom - body.clientHeight + 8;
+  }
+
+  // First, last, invert, play. ordRects is where every showing tile is now;
+  // ordFlip, after the list has been redrawn, starts each tile that moved where it
+  // was and lets it glide to where it is. A tile that was not showing fades in, and
+  // the one just let go keeps its lifted shadow for the glide down.
+  function ordRects() {
+    var out = {};
+    $("olist").querySelectorAll(".orow").forEach(function (r) {
+      if (r.offsetParent !== null) out[r.getAttribute("data-k")] = r.getBoundingClientRect().top;
+    });
+    return out;
+  }
+
+  function ordFlip(from, land, skip) {
+    var list = $("olist"), moved = [];
+    if (lessMotion()) return;
+    list.querySelectorAll(".orow").forEach(function (r) {
+      var k = r.getAttribute("data-k"), was = from[k], d;
+      if (k === skip || r.offsetParent === null) return;
+      if (was === undefined) { r.classList.add("oin"); return; }
+      d = was - r.getBoundingClientRect().top;
+      if (k === land) r.classList.add("lift");
+      if (Math.abs(d) < 0.5 && k !== land) return;
+      r.style.transition = "none";
+      r.style.transform = "translateY(" + d + "px)";
+      moved.push(r);
+    });
+    if (!moved.length) return;
+    void list.offsetHeight;
+    moved.forEach(function (r) { r.style.transition = ""; r.style.transform = ""; r.classList.remove("lift"); });
+  }
+
+  function ordArrow(k, dir) {
+    var next = ordStep(ord.keys, k, dir), from, row, b;
+    if (!next) return;
+    from = ordRects();
+    ord.keys = next;
+    ord.moved[k] = 1;
+    ordPaint();
+    ordFlip(from, null);
+    haptic("select");
+    row = ordRowOf(k);
+    // Focus stays on the arrow pressed, so it can be pressed again; on the other
+    // one once this one has gone grey at the end of the list.
+    b = row.querySelector(dir < 0 ? ".up" : ".dn");
+    if (b.disabled) b = row.querySelector(dir < 0 ? ".dn" : ".up");
+    b.focus({ preventScroll: true });
+    ordReveal(row);
+    ordSay(ordWhere(k));
+  }
+
+  function ordLift(e, row) {
+    var list = $("olist"), body = list.parentNode, k = row.getAttribute("data-k"), sec = k.charAt(0) === "s";
+    var top0 = row.getBoundingClientRect().top, rows, i, gap, g;
+    if (ord.drag || !e.isPrimary || e.button > 0) return;
+    e.preventDefault();
+    if (ord.sel) ordPick(ord.sel, true);
+    // A section is carried folded: its exercises and every other section's fold
+    // away under their headings, and the list scrolls so the one in hand stays
+    // under the finger. The sheet keeps its height while they are folded, or it
+    // would drop half the screen out from under the thumb.
+    if (sec) {
+      var from = ordRects();
+      body.style.height = body.offsetHeight + "px";
+      list.classList.add("ocollapse");
+      body.scrollTop += row.getBoundingClientRect().top - top0;
+      ordFlip(from, null, k);
+    }
+    rows = Array.prototype.filter.call(list.children, function (r) { return r.offsetParent !== null; });
+    i = rows.indexOf(row);
+    gap = parseFloat(getComputedStyle(list).rowGap) || 6;
+    g = ord.drag = { id: e.pointerId, k: k, row: row, rows: rows, from: i, to: i, y0: e.clientY, y: e.clientY,
+      s0: body.scrollTop, off: top0 - row.getBoundingClientRect().top, lo: sec ? 0 : 1, hi: rows.length - 1,
+      tops: [], hs: [], mids: [], raf: 0, top: body.querySelector(".ohead").getBoundingClientRect().bottom,
+      bottom: body.getBoundingClientRect().bottom };
+    rows.forEach(function (r) {
+      g.tops.push(r.offsetTop); g.hs.push(r.offsetHeight); g.mids.push(r.offsetTop + r.offsetHeight / 2);
+    });
+    g.foot = g.hs[i] + gap;
+    row.classList.add("lift");
+    try { list.setPointerCapture(e.pointerId); } catch (err) { /* not fatal */ }
+    haptic("tap");
+    ordCarry(e.clientY);
+    g.raf = requestAnimationFrame(ordFrame);
+  }
+
+  // The tile under the finger, the others out of its way, a tick per slot.
+  function ordCarry(y) {
+    var g = ord.drag, body = $("olist").parentNode, t, to;
+    g.y = y;
+    // Its middle may reach the outer edge of the first and last slots, and no
+    // further: far enough to pass the end tile's midpoint, not off into the sheet.
+    t = g.off + (y - g.y0) + (body.scrollTop - g.s0);
+    t = Math.max(g.tops[g.lo] - g.mids[g.from], Math.min(t, g.tops[g.hi] + g.hs[g.hi] - g.mids[g.from]));
+    g.row.style.transform = "translateY(" + t + "px) scale(1.02)";
+    to = ordSlot(g.mids, g.from, g.mids[g.from] + t, g.lo, g.hi);
+    if (to === g.to) return;
+    g.to = to;
+    g.rows.forEach(function (r, j) {
+      var s = j === g.from ? 0 : j > g.from && j <= to ? -g.foot : j < g.from && j >= to ? g.foot : 0;
+      if (j !== g.from) r.style.transform = s ? "translateY(" + s + "px)" : "";
+    });
+    haptic("select");
+  }
+
+  function ordFrame() {
+    var g = ord && ord.drag, body, v;
+    if (!g) return;
+    body = $("olist").parentNode;
+    v = ordEdge(g.y, g.top, g.bottom, body.scrollTop, body.scrollHeight - body.clientHeight);
+    if (v) { body.scrollTop += v; ordCarry(g.y); }
+    g.raf = requestAnimationFrame(ordFrame);
+  }
+
+  function ordDrop(e, cancelled) {
+    var g = ord && ord.drag, list = $("olist"), body = list.parentNode, from, secs, moved, row;
+    if (!g || (e && e.pointerId !== g.id)) return;
+    ord.drag = null;
+    cancelAnimationFrame(g.raf);
+    try { list.releasePointerCapture(g.id); } catch (err) { /* already gone */ }
+    moved = !cancelled && g.to !== g.from;
+    if (moved) swallowClick();
+    from = ordRects();
+    if (moved && g.k.charAt(0) === "s") {
+      secs = ordSecs(ord.keys);
+      secs.splice(g.to, 0, secs.splice(g.from, 1)[0]);
+      ord.keys = ordFlat(secs);
+    } else if (moved) ord.keys = ordMove(ord.keys, g.from, g.to);
+    if (moved) ord.moved[g.k] = 1;
+    list.classList.remove("ocollapse");
+    ordPaint();
+    body.style.height = "";
+    row = ordRowOf(g.k);
+    // A section unfolds around the place it was let go, its exercises opening
+    // below it; an exercise glides from the finger into its slot.
+    if (g.k.charAt(0) === "s") body.scrollTop += row.getBoundingClientRect().top - from[g.k];
+    ordFlip(from, g.k);
+    if (moved) haptic("tap");
+    ordSay(moved ? ordWhere(g.k) : ordLabel(ord.before, g.k) + " stays where it was.");
+  }
+
+  function ordShut() {
+    if (ord && ord.drag) { cancelAnimationFrame(ord.drag.raf); ord.drag = null; }
+    $("olist").classList.remove("ocollapse");
+    $("olist").parentNode.style.height = "";
+    ord = null;
+  }
+
+  function ordDone() {
+    var o = ord, live, secs, after, moved, one;
+    if (!o || o.drag) return;
+    closeSheet("ordersheet");
+    if (o.keys.join() === o.start) return;
+    live = cardOf(o.w.id) || o.w;
+    secs = ordSecs(o.keys);
+    after = ordApply(o.before, secs);
+    moved = Object.keys(o.moved);
+    one = moved.length === 1 ? "Moved " + ordLabel(o.before, moved[0]) : "Card reordered";
+    live.blocks = after;
+    ordRepaint(live, secs, moved);
+    function commit() { return ordCommit(live.id, o.before, secs, after); }
+    commit.order = true;
+    offerUndo(one, commit, function () { live.blocks = o.before; ordRepaint(live, null, null); });
+  }
+
+  // The card redrawn in its new order, where it was scrolled to, with whatever was
+  // moved lit for a moment in the place it landed.
+  function ordRepaint(w, secs, moved) {
+    if (current && current.id === w.id) refreshDetail(w, true);
+    render();
+    if (!secs || !current || current.id !== w.id) return;
+    var kept = secs.filter(function (s) { return s.ex.length; });
+    moved.forEach(function (k) {
+      var p = ordKey(k), node = null;
+      kept.forEach(function (s, si) {
+        var sect = p.e === null && s.b === p.b ? rowOf(w, si) : null;
+        if (sect) node = sect.firstElementChild;
+        s.ex.forEach(function (x, xi) { if (x[0] === p.b && x[1] === p.e) node = rowOf(w, si, xi); });
+      });
+      if (node) node.classList.add("moved");
+    });
+  }
+
+  function ordCommit(id, before, secs, after) {
+    function back(msg) {
+      // The old order goes back only over the order this wrote. If a refresh has
+      // brought the server's copy in since, that copy is the truth.
+      var live = cardOf(id);
+      if (live && JSON.stringify(live.blocks) === JSON.stringify(after)) { live.blocks = before; ordRepaint(live, null, null); }
+      if (msg) toast(msg);
+    }
+    var p = cardWrite(id, { op: "reorder", order: ordPayload(secs), expect_blocks: before }).then(function (r) {
+      if (r.status === "ok") absorbWorkout(r.workout);
+      else back(limitHit(r, null) ? null : (r.message || "That order did not save — the card is back as it was."));
+    }, function () { back("Could not reach Spotter — the card is back as it was."); }).then(function () {
+      if (orderLanding === p) orderLanding = null;
+    });
+    orderLanding = p;
+    return p;
+  }
+
+  (function () {
+    var list = $("olist"), sheet = $("ordersheet");
+    list.addEventListener("click", function (e) {
+      var b = e.target.closest && e.target.closest("button"), row = b && b.closest(".orow");
+      if (!ord || !row) return;
+      if (b.classList.contains("ostep")) ordArrow(row.getAttribute("data-k"), +b.getAttribute("data-d"));
+      else ordPick(row.getAttribute("data-k"));
+    });
+    list.addEventListener("pointerdown", function (e) {
+      var grip = e.target.closest && e.target.closest(".ogrip");
+      if (ord && grip) ordLift(e, grip.parentNode);
+    });
+    list.addEventListener("pointermove", function (e) {
+      if (ord && ord.drag && e.pointerId === ord.drag.id) ordCarry(e.clientY);
+    });
+    list.addEventListener("pointerup", function (e) { if (ord) ordDrop(e, false); });
+    list.addEventListener("pointercancel", function (e) { if (ord) ordDrop(e, true); });
+    // WebKit reads a held finger that starts moving as a scroll unless the touch
+    // itself is refused; touch-action on the handle covers the start of it.
+    list.addEventListener("touchmove", function (e) {
+      if (ord && ord.drag && e.cancelable) e.preventDefault();
+    }, { passive: false });
+    // Registered before the sheet's shared Escape, so Escape puts a selection
+    // down before it closes anything.
+    sheet.addEventListener("keydown", function (e) {
+      if (!ord || !ord.sel) return;
+      if (e.key === "Escape") { e.preventDefault(); e.stopImmediatePropagation(); ordPick(ord.sel); }
+      else if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+        e.preventDefault();
+        ordArrow(ord.sel, e.key === "ArrowUp" ? -1 : 1);
+      }
+    });
+    $("ordersave").onclick = ordDone;
+    $("dorder").onclick = function () { if (current) openOrder(current); };
+  })();
 
   // The second tap of an armed button is as deliberate as an answer gets, and it
   // used to be followed by a card sitting there for a round trip. Deleting a
@@ -6046,8 +6918,15 @@ export const APP = String.raw`
           return;
         }
         done(r);
-      }).catch(function () {
-        if (expKey === key) $("explaintext").textContent = got || EXFAIL;
+      }).catch(function (e) {
+        if (expKey !== key) return;
+        // Declined before a word arrived: the sheet goes back to its Explain button.
+        if (aiDeclined(e) && !got) {
+          $("explaintext").classList.add("hide");
+          $("explainask").classList.remove("hide");
+          return;
+        }
+        $("explaintext").textContent = got || EXFAIL;
       });
     };
   }
@@ -6166,10 +7045,10 @@ export const APP = String.raw`
         return;
       }
       renderSwapResult(box, r);
-    }).catch(function () {
+    }).catch(function (e) {
       if (swapCtx !== ctx || ctx.seq !== seq) return;
       box.innerHTML = "";
-      box.appendChild(el("div", "aitext", "Could not find a swap just now. Try again in a moment."));
+      if (!aiDeclined(e)) box.appendChild(el("div", "aitext", "Could not find a swap just now. Try again in a moment."));
     });
   }
 
@@ -7035,7 +7914,7 @@ export const APP = String.raw`
    */
   function woaKeep(body, msg) {
     var w = wo.workout;
-    api("workouts/" + w.id + "/exercises", { method: "POST", body: JSON.stringify(body) }).then(function (r) {
+    cardWrite(w.id, body).then(function (r) {
       if (!r || r.status !== "ok") { limitHit(r, WOA_NOSAVE); return; }
       absorbWorkout(r.workout);
       toast(msg);
@@ -8507,13 +9386,13 @@ export const APP = String.raw`
    * live counter or from a log written six weeks ago.
    */
   function cxScoreOf(w, entries) {
-    var out = null, by = {};
-    (entries || []).forEach(function (e) { by[e.block + ":" + e.exercise] = e; });
+    var out = null;
     ((w && w.blocks) || []).forEach(function (b, bi) {
-      var cx = out ? null : complexOf(b, w), reps = 0, low, x = 0;
+      var cx = out ? null : complexOf(b, w), reps = 0, low, x = 0, got;
       if (!cx) return;
+      got = cxLogged(entries, b, bi);
       var counts = (b.exercises || []).map(function (ex, j) {
-        var sets = ((by[bi + ":" + j] || {}).sets || []).filter(Boolean);
+        var sets = ((got[j] || {}).sets || []).filter(Boolean);
         sets.forEach(function (st) { reps += st.reps || 0; });
         return sets.length;
       });
@@ -8523,6 +9402,32 @@ export const APP = String.raw`
       out = { rounds: low, extra: x, reps: reps, cap: cx.cap, text: cxScore(low, x) };
     });
     return out;
+  }
+
+  // The logged entry for each movement of block bi. A log names its entries by
+  // block and position as the card stood on the day, and the card can have been
+  // reordered or edited since, while a past session is scored against the card as
+  // it is now. So a position counts only while what is logged there is still that
+  // movement; otherwise the movements are found by name (or catalog id) in the
+  // logged block holding most of them, and one renamed since keeps its place.
+  function cxLogged(entries, b, bi) {
+    var list = b.exercises || [], groups = {}, best = null, most = 0, here;
+    (entries || []).forEach(function (e) { (groups[e.block] = groups[e.block] || []).push(e); });
+    function same(e, ex) { return e.name === ex.name || !!(e.canonical_id && e.canonical_id === ex.canonical_id); }
+    function at(pool, j) {
+      for (var i = 0; i < pool.length; i++) if (pool[i].exercise === j) return pool.splice(i, 1)[0];
+      return null;
+    }
+    here = list.map(function (ex, j) { return at((groups[bi] || []).slice(), j); });
+    if (here.some(Boolean) && here.every(function (e, j) { return !e || !e.name || same(e, list[j]); })) return here;
+    [String(bi)].concat(Object.keys(groups)).forEach(function (k) {
+      var pool = (groups[k] || []).slice(), n = 0, got = list.map(function (ex) {
+        for (var i = 0; i < pool.length; i++) if (same(pool[i], ex)) { n++; return pool.splice(i, 1)[0]; }
+        return null;
+      });
+      if (n > most) { most = n; best = got.map(function (e, j) { return e || at(pool, j); }); }
+    });
+    return best || here;
   }
 
   // ---------- supersets, one screen ----------
@@ -8832,6 +9737,14 @@ export const APP = String.raw`
   // In the iOS shell the frame no longer shrinks (html.kb-over): the keyboard
   // section below owns bringing a covered field into view there, and a second
   // scroll 450 ms after its own would be a second motion.
+  // The dots' scroll edge (style.ts, .wdots): on while anything of the screen is
+  // under the band. Toggled on the crossing, not on every scroll event.
+  var woEdge = false;
+  $("wmain").addEventListener("scroll", function () {
+    var on = this.scrollTop > 1;
+    if (on !== woEdge) { woEdge = on; $("workout").classList.toggle("wedge", on); }
+  }, { passive: true });
+
   $("wmain").addEventListener("focusin", function (e) {
     if (document.documentElement.classList.contains("kb-over")) return;
     var box = e.target.classList.contains("numin") ? e.target.parentNode : null;
@@ -8922,6 +9835,7 @@ export const APP = String.raw`
 
   function wireWmain(main) {
     var md = null;
+    var loose = { held: function () { return md; }, release: function () { stop(null, true, true); } };
 
     // A damped half of the travel, a capped fifth at the first exercise and the
     // last — the whole of saying there is nothing that way.
@@ -8933,13 +9847,13 @@ export const APP = String.raw`
       main.style.opacity = String(1 - Math.abs(lead) / 320);
     }
 
-    function stop(e, cancelled) {
+    function stop(e, cancelled, lost) {
       if (!md || (e && e.pointerId !== md.id)) return;
       var d = md;
       md = null;
       if (!d.lock) return;
       try { main.releasePointerCapture(d.id); } catch (err) { /* already gone */ }
-      swallowClick();
+      if (!lost) swallowClick();
       var s = d.s, a = s[0], b = s[s.length - 1], dt = (b.t - a.t) / 1000;
       var v = dt > 0.004 ? (b.x - a.x) / dt : 0;
       var far = Math.abs(d.dx) > main.offsetWidth * 0.4;
@@ -8968,12 +9882,14 @@ export const APP = String.raw`
       if (document.querySelector(".sheet.open") || noDragIn(e.target)) return;
       // Safari's back gesture owns the very edge inside a browser tab.
       if (!standalone() && e.clientX < 24) return;
-      md = { id: e.pointerId, x: e.clientX, y: e.clientY, dx: 0, lock: false,
+      md = { id: e.pointerId, x: e.clientX, y: e.clientY, dx: 0, lock: false, seen: now(),
         calm: lessMotion(), s: [{ t: now(), x: e.clientX }] };
+      holdDrag(loose);
     });
 
     main.addEventListener("pointermove", function (e) {
       if (!md || e.pointerId !== md.id) return;
+      md.seen = now();
       var dx = e.clientX - md.x, dy = e.clientY - md.y;
       if (!md.lock) {
         if (dx * dx + dy * dy < SLOP * SLOP) return;
@@ -9011,6 +9927,13 @@ export const APP = String.raw`
       return Object.assign({}, e, { sets: (e.sets || []).filter(Boolean) });
     }).filter(function (e) { return e.sets.length; });
     if (!logged.length) { leaveWorkout(); toast("Workout closed — nothing logged."); return; }
+    // Painted before the account came back (offline with an hour-old token): the
+    // session stays open and on disk, and Save works once the account is back.
+    if (!state.user) {
+      saveDraft();
+      toast("Reconnecting… This workout is kept on this phone. Save it once you're back online.");
+      return;
+    }
     var payload = {
       user_id: state.user.id,
       workout_id: wo.workout.id,
@@ -11019,6 +11942,7 @@ export const APP = String.raw`
 
   function wireWeekBar(node, ctx) {
     var wd = null;
+    var loose = { held: function () { return wd; }, release: function () { stop(null, true, true); } };
 
     function rest(keepBody) {
       ctx.bar.classList.remove("wbdrag");
@@ -11030,15 +11954,15 @@ export const APP = String.raw`
       ctx.lean.style.opacity = "";
     }
 
-    function stop(e, cancelled) {
+    function stop(e, cancelled, lost) {
       if (!wd || (e && e.pointerId !== wd.id)) return;
       var d = wd;
       wd = null;
       if (!d.lock) return;
       try { node.releasePointerCapture(d.id); } catch (err) { /* already gone */ }
       // One click follows the finger up, and it belongs to whichever arrow or day
-      // the drag started on.
-      swallowClick();
+      // the drag started on. Not after a lost lift: the next tap is its own.
+      if (!lost) swallowClick();
       var s = d.s, a = s[0], b = s[s.length - 1], dt = (b.t - a.t) / 1000;
       var v = dt > 0.004 ? (b.x - a.x) / dt : 0;
       var far = Math.abs(d.dx) > node.offsetWidth * PART;
@@ -11066,12 +11990,14 @@ export const APP = String.raw`
       if (wd || !e.isPrimary || overlayShowing()) return;
       // Safari's back gesture owns the very edge inside a browser tab.
       if (!standalone() && e.clientX < 24) return;
-      wd = { id: e.pointerId, x: e.clientX, y: e.clientY, dx: 0, lock: false,
+      wd = { id: e.pointerId, x: e.clientX, y: e.clientY, dx: 0, lock: false, seen: now(),
         calm: lessMotion(), s: [{ t: now(), x: e.clientX }] };
+      holdDrag(loose);
     });
 
     node.addEventListener("pointermove", function (e) {
       if (!wd || e.pointerId !== wd.id) return;
+      wd.seen = now();
       var dx = e.clientX - wd.x, dy = e.clientY - wd.y;
       if (!wd.lock) {
         if (dx * dx + dy * dy < SLOP * SLOP) return;
@@ -12309,14 +13235,14 @@ export const APP = String.raw`
     var box = el("div", "chartcard");
     box.appendChild(el("h3", null, "Awards"));
     var grid = el("div", "tgrid");
-    var shown = isFree() ? have.slice(0, 12) : have;
+    var shown = isFree() ? have.slice(0, AWARDS_KEPT) : have;
     shown.forEach(function (a) { grid.appendChild(medallion(a)); });
     lockedAwards(st, logs).forEach(function (l) { grid.appendChild(medallion(l, true)); });
     box.appendChild(grid);
     // A count, not a paywall: nothing earned here is ever taken away.
-    if (isFree() && have.length > 12) {
+    if (isFree() && have.length > AWARDS_KEPT) {
       box.appendChild(el("div", "bodynote",
-        (have.length - 12) + " earlier awards are kept in Plus."));
+        (have.length - AWARDS_KEPT) + " earlier awards are kept in Plus."));
     }
     return box;
   }
@@ -12749,7 +13675,7 @@ export const APP = String.raw`
   var QUICK_ASKS = [
     "Build a 25-min kettlebell shoulders + core",
     "Plan my week from what I’ve saved",
-    "Add a finisher to my leg day",
+    "Edit one of my workouts",
     "Shoulder pain — what should I strengthen?"
   ];
 
@@ -12758,14 +13684,76 @@ export const APP = String.raw`
   var NO_TOUCH = !("ontouchstart" in window) && !(navigator.maxTouchPoints > 0);
 
   function openPumpy(w) {
-    // "Ask Pumpy about this workout" is the first reference, picked for you.
+    // "Ask Pumpy about this workout" is the first reference, picked for you. It
+    // is also a reason to keep the conversation on the page: the five-minute
+    // rule below counts it as the chat's latest moment.
     if (w) {
       pumpy.refs = [w.id].concat(pumpy.refs.filter(function (id) { return id !== w.id; })).slice(0, MAX_REFS);
       pumpy.refsRev++;
+      pumpy.ctxAt = Date.now();
       renderPumpyCtx();
     }
     setView("pumpy");
   }
+
+  // ---------- Pumpy · a new chat after five minutes away ----------
+  //
+  // The owner: "When it has been a few minutes when I go back to Pumpy it
+  // defaults to a new chat, so the user is not just spamming one chat with a
+  // bunch of stuff." ChatGPT and Claude both open on an empty chat and keep the
+  // last one a tap away in the list; this is that, with a grace period, so
+  // stepping out to look at a card mid-conversation does not lose the thread.
+  // Nothing is written: the old conversation is already in Chats, and a new one
+  // is created by its first message, as New chat always did.
+  var PUMPY_IDLE = 5 * 60 * 1000, pumpyIdleTimer = 0;
+
+  // When a conversation last moved: its newest message, sent or received, as the
+  // server stamped it or as this session saw it happen (seen).
+  function pumpyLastAt(msgs, seen) {
+    var t = seen || 0;
+    for (var i = msgs.length - 1; i >= 0; i--) {
+      var c = Date.parse(msgs[i].created_at || "");
+      if (c) { if (c > t) t = c; break; }
+    }
+    return t;
+  }
+
+  // What a new chat never takes off the page: an answer still arriving, or a
+  // change Pumpy is waiting on a yes or no for.
+  function pumpyHolds(msgs) {
+    if (pumpy.busy || pumpy.live) return true;
+    return msgs.some(function (m) {
+      return m.role === "assistant" && m.meta && m.meta.proposal && m.meta.status === "pending";
+    });
+  }
+
+  function pumpyStale(msgs, seen, at) {
+    if (!msgs.length || pumpyHolds(msgs)) return false;
+    var last = Math.max(pumpyLastAt(msgs, seen), pumpy.ctxAt || 0);
+    return !!last && (at || Date.now()) - last > PUMPY_IDLE;
+  }
+
+  // The page on a new chat, at once: this runs where nobody is watching the
+  // chat change (another tab, or the moment the app comes back), so New chat's
+  // crossfade would only be a delay.
+  function freshenPumpy() {
+    if (!pumpy.loaded || pumpy.loading || !pumpyStale(pumpy.messages, pumpy.lastAt)) return false;
+    pumpyBlank();
+    renderPumpy();
+    $("pumpyview").scrollTop = 0;
+    return true;
+  }
+
+  // Away from Pumpy: freshen now if it is time, or when it will be.
+  function pumpyAway() {
+    clearTimeout(pumpyIdleTimer);
+    if (state.view === "pumpy" || !pumpy.loaded || !pumpy.messages.length || freshenPumpy()) return;
+    var last = Math.max(pumpyLastAt(pumpy.messages, pumpy.lastAt), pumpy.ctxAt || 0);
+    if (last) pumpyIdleTimer = setTimeout(pumpyAway, Math.max(1000, last + PUMPY_IDLE - Date.now() + 250));
+  }
+
+  // The app coming back is going back to Pumpy when Pumpy is the page it shows.
+  function pumpyBack() { if (state.view === "pumpy") freshenPumpy(); else pumpyAway(); }
 
   // sizePumpy() measured the header and the tab bar for this one view. Every
   // page needs the same two numbers now, so measureChrome() in the pager section
@@ -12802,7 +13790,9 @@ export const APP = String.raw`
   function settlePumpy(t) {
     pumpy.loading = false;
     pumpy.loaded = true;
-    if (t) {
+    // The newest conversation, unless it went quiet more than five minutes ago:
+    // then it stays in Chats and the page opens on a new one.
+    if (t && !pumpyStale(t.pumpy_messages || [], 0)) {
       pumpy.thread = { id: t.id, title: t.title, updated_at: t.updated_at, workout_id: t.workout_id };
       pumpy.messages = t.pumpy_messages || [];
       // Any explicit selection this session, before or during loading, wins over history.
@@ -12834,16 +13824,21 @@ export const APP = String.raw`
     $("pumpyctx").inert = false;
   }
 
+  // A new owner retires the old stream immediately. Its last packet can still
+  // save to that conversation, but cannot put a reply into this new one.
+  function pumpyBlank() {
+    cancelPumpyReset();
+    pumpy = Object.assign({}, pumpy, { thread: null, messages: [], refs: [],
+      refsRev: pumpy.refsRev + 1, openSeq: (pumpy.openSeq || 0) + 1,
+      loaded: true, loading: false, busy: false, live: null, nodes: {}, shownCount: 0, stick: true,
+      lastAt: 0, ctxAt: 0 });
+  }
+
   function newPumpyThread() {
     // Repeated taps on an empty chat should not restart its drawing or blink.
     if (pumpy.loaded && !pumpy.loading && !pumpy.thread && !pumpy.messages.length &&
         !pumpy.busy && !pumpy.refs.length) return;
-    cancelPumpyReset();
-    // A new owner retires the old stream immediately. Its last packet can still
-    // save to that conversation, but cannot put a reply into this new one.
-    pumpy = Object.assign({}, pumpy, { thread: null, messages: [], refs: [],
-      refsRev: pumpy.refsRev + 1, openSeq: (pumpy.openSeq || 0) + 1,
-      loaded: true, loading: false, busy: false, live: null, nodes: {}, shownCount: 0, stick: true });
+    pumpyBlank();
     var owner = pumpy, log = $("pumpylog"), ctx = $("pumpyctx");
     log.classList.remove("waiting");
     $("pumpysend").disabled = false;
@@ -13064,6 +14059,9 @@ export const APP = String.raw`
         pumpy.loaded = true;
         pumpy.shownCount = 0;   // loaded history arrives without msgin
         pumpy.stick = true;     // a thread opens on its newest message, always
+        // Chosen from the list just now: that counts as the chat's latest moment,
+        // or stepping out and straight back would swap it for a new one.
+        pumpy.lastAt = 0; pumpy.ctxAt = Date.now();
         log.classList.remove("waiting");
         renderPumpy();          // one fragment, one swap, one scrollTop
         if (!closed) closeSheet("pumpysheet");
@@ -13219,7 +14217,7 @@ export const APP = String.raw`
     if (isFree()) {
       var offer = el("div", "reader-offer");
       offer.appendChild(el("b", null, "Pumpy · Included with Spotter Plus"));
-      offer.appendChild(el("p", null, "Combine your saved workouts, build a routine for your goals, get coaching and find alternate exercises. Upgrade to let Pumpy work with your attachments."));
+      offer.appendChild(el("p", null, "Combine your saved workouts, build a routine for your goals, get coaching and find alternate exercises."));
       var upgrade = el("button", "btn", "Explore Spotter Plus");
       upgrade.onclick = function () { openPlans({ kind: "pumpy" }); };
       offer.appendChild(upgrade); frag.appendChild(offer);
@@ -13228,6 +14226,9 @@ export const APP = String.raw`
     // With nothing said yet the log is empty space, so the greeting sits in the
     // middle of it rather than clinging to the top.
     log.classList.toggle("hello", !shown.length);
+    // The bar's words are for the empty chat only (style.ts, .pblabel), and not
+    // before the first fetch has said it is empty, or they would fold on arrival.
+    $("pumpybar").classList.toggle("labelled", !!pumpy.loaded && !shown.length && !pumpy.busy);
     // And only once we KNOW there is nothing: before the first fetch lands it is a
     // final state that has to be taken away again, which reads as a flash.
     if (!shown.length && pumpy.loaded) {
@@ -13581,7 +14582,9 @@ export const APP = String.raw`
     pumpy.busy = true;
     pumpy.live = null;
     pumpy.stick = true;
-    pumpy.messages.push({ id: "local-" + Date.now(), role: "user", content: text });
+    pumpy.lastAt = Date.now();
+    var asked = { id: "local-" + Date.now(), role: "user", content: text };
+    pumpy.messages.push(asked);
     renderPumpy();
     var ids = pumpy.refs.slice(0, MAX_REFS);
     var payload = {
@@ -13594,6 +14597,7 @@ export const APP = String.raw`
     };
     apiStream("pumpy/chat", payload, function (r) {
       if (pumpy !== owner) return;
+      pumpy.lastAt = Date.now();
       if (r.t !== "final") { liveEvent(r); return; }
       pumpy.busy = false;
       $("pumpyannounce").textContent = "Pumpy’s answer is ready.";
@@ -13636,9 +14640,22 @@ export const APP = String.raw`
       // Still busy means the body ended with no final line — a dead isolate or a
       // dropped connection. Same recovery as a throw, one handler below.
       if (pumpy === owner && pumpy.busy) throw new Error("cut");
-    }).catch(function () {
+    }).catch(function (e) {
       if (pumpy !== owner || !pumpy.busy) return;
       pumpy.busy = false;
+      if (aiDeclined(e)) {
+        // "Not now" on the permission sheet: nothing was sent and nothing broke.
+        // The question comes off the log and goes back in the box, unsent.
+        pumpy.live = null;
+        pumpy.messages = pumpy.messages.filter(function (m) { return m !== asked; });
+        if (!box.value) {
+          box.value = text;
+          box.style.height = "auto";
+          box.style.height = Math.min(box.scrollHeight, 138) + "px";
+        }
+        renderPumpy();
+        return;
+      }
       // Whatever arrived before it broke is kept: it is still what the coach said.
       $("pumpyannounce").textContent = "Connection ended. You can read the partial answer and try again.";
       var half = pumpy.live && pumpy.live.tn.data;
@@ -13693,8 +14710,15 @@ export const APP = String.raw`
     waiting: null,     // that fetch in flight, so two callers make one call
     sub: null, subAsked: false,
     limits: null,      // last /api/limits, for the Settings usage line
+    limitsAt: 0,       // when it was read; 0 once a write may have spent from it
+    limitsWaiting: null,
     said: null,        // the plan the server last reported, which outranks the row
     ctx: null,         // the 429 the sheet was opened by, or null from Settings
+    caps: null,        // what each plan gets, from the server: {free, plus, features}
+    capsWaiting: null,
+    asking: false,     // the store is being asked for prices right now
+    fails: 0,          // store answers that were not a price, this session
+    shown: null,       // which page the sheet last painted
     interval: "year", busy: false,
     cc: null,          // last /api/creator/me: {referral, creator, discount}
     ccWaiting: null, ccRev: 0,
@@ -13702,6 +14726,35 @@ export const APP = String.raw`
   };
 
   function billOn() { return !!(billing.prices && billing.prices.configured); }
+
+  // /api/limits is an edge call with eighteen reads behind it, and every Basic
+  // card's "N left this month" used to ask it again on every open. An answer
+  // under a minute old is the answer; anything that is not a read retires it
+  // (api() does, since a save, a read or a reread may have spent an allowance),
+  // and two asks at once share one call.
+  var LIMITS_FRESH = 60000, limitsRev = 0;
+
+  function readLimits() {
+    if (billing.limitsWaiting) return billing.limitsWaiting;
+    var epoch = accountEpoch, uid = state.user && state.user.id, rev = limitsRev;
+    var p = billing.limitsWaiting = api("limits", { method: "GET" }).then(function (r) {
+      if (!r || r.status !== "ok" || !accountNow(epoch, uid)) return r;
+      billing.limits = r;
+      // Kept for drawing either way; only called fresh if nothing was spent meanwhile.
+      billing.limitsAt = rev === limitsRev ? Date.now() : 0;
+      return r;
+    });
+    function done() { if (billing.limitsWaiting === p) billing.limitsWaiting = null; }
+    p.then(done, done);
+    return p;
+  }
+
+  function recentLimits() {
+    if (billing.limits && Date.now() - billing.limitsAt < LIMITS_FRESH) return Promise.resolve(billing.limits);
+    return readLimits();
+  }
+
+  function retireLimits() { billing.limitsAt = 0; limitsRev++; }
   function myPlan() { return (state.profile && state.profile.plan) || "free"; }
   function isFree() { var p = myPlan(); return p !== "plus" && p !== "pro" && p !== "staff"; }
 
@@ -13736,26 +14789,44 @@ export const APP = String.raw`
       return native.purchases.prices(uid).then(function (r) {
         if (!accountNow(epoch, uid)) return null;
         billing.prices = r; return r;
-      }).catch(function () {
+      }).catch(function (e) {
         if (!accountNow(epoch, uid)) return null;
+        // The reason is for a TestFlight console; the page only says the store did not answer.
+        console.warn("Spotter Plus: no store price", e && e.message);
         billing.prices = { configured: false, nativeStore: true }; return billing.prices;
       });
     }
-    if (billing.prices) return Promise.resolve(billing.prices);
-    if (billing.waiting) return billing.waiting;
-    billing.waiting = api("billing/prices", { method: "GET" }).then(function (r) {
+    return loadCaps().then(function () { return billing.prices; });
+  }
+
+  // What each plan gets comes from the server on every platform, because the
+  // server is what enforces it; a store only knows prices. The same answer is
+  // the web's own prices, which the web never sells from. Asked once per
+  // account, and again after a failure.
+  function loadCaps() {
+    if (billing.caps) return Promise.resolve(billing.caps);
+    if (billing.capsWaiting) return billing.capsWaiting;
+    var epoch = accountEpoch, uid = state.user && state.user.id;
+    billing.capsWaiting = api("billing/prices", { method: "GET" }).then(function (r) {
       if (!accountNow(epoch, uid)) return null;
-      billing.waiting = null;
-      billing.prices = (r && r.status === "ok" && r.configured) ? r : { configured: false };
-      return billing.prices;
-    }).catch(function () {
-      if (!accountNow(epoch, uid)) return null;
-      // A route that has not shipped, or a browser that would not make the call.
-      billing.waiting = null;
-      billing.prices = { configured: false };
-      return billing.prices;
+      billing.capsWaiting = null;
+      var c = r && r.caps;
+      if (c && c.free && c.plus) billing.caps = { free: c.free, plus: c.plus, features: r.features || null };
+      if (!native) billing.prices = r && r.status === "ok" && r.configured ? r : { configured: false };
+      return billing.caps;
+    }, function () {
+      if (accountNow(epoch, uid)) billing.capsWaiting = null;
+      return null;
     });
-    return billing.waiting;
+    return billing.capsWaiting;
+  }
+
+  // The usage under Basic's column: the /api/limits answer Settings reads, asked
+  // fresh because the page is where somebody decides on it.
+  function loadUse() {
+    return api("limits", { method: "GET" }).then(function (r) {
+      if (r && r.status === "ok") { billing.limits = r; adoptPlan(r.plan); }
+    }).catch(function () {});
   }
 
   // Straight from PostgREST under the owner's own RLS. Before the migration is
@@ -13765,14 +14836,16 @@ export const APP = String.raw`
     if (billing.subAsked) return Promise.resolve(billing.sub);
     billing.subAsked = true;
     var epoch = accountEpoch, uid = state.user && state.user.id;
+    // The store row on the web too: it is how the web knows which store to point to.
     var legacy = sb.from("subscriptions").select("*").maybeSingle();
-    var request = native && native.purchases ? Promise.all([legacy, sb.from("store_entitlements").select("*").maybeSingle()]).then(function (rows) {
+    var request = Promise.all([legacy, sb.from("store_entitlements").select("*").maybeSingle()]).then(function (rows) {
       var store = rows[1].data;
       if (store && store.active && (!store.expires_at || Date.parse(store.expires_at) > Date.now())) {
-        return { data: { source: store.source, plan: "plus", status: "active", current_period_end: store.expires_at } };
+        return { data: { source: store.source, plan: "plus", status: "active", current_period_end: store.expires_at,
+          cancel_at_period_end: store.will_renew === false } };
       }
       return rows[0];
-    }) : legacy;
+    });
     return request.then(function (r) {
       if (!accountNow(epoch, uid)) return null;
       if (r.error) throw r.error;
@@ -13793,32 +14866,91 @@ export const APP = String.raw`
     return (n >= 100 ? Math.round(n / 50) * 50 : Math.round(n / 10) * 10).toLocaleString();
   }
 
-  // The sell is the allowance, so the allowance is what the rows say. Every
-  // number here is the same number the server counts a refusal against — it
-  // comes down in the caps payload — because a benefit row that quotes a figure nothing
-  // enforces is how the old "15 video reads a day" got onto a price page while
-  // the money funded fewer than one.
-  function planBenefits(caps) {
-    var f = caps && caps.free, p = caps && caps.plus;
-    if (!f || !p) return [];
-    var out = [], lib = capNum(p.library), reads = capNum(p.month_reads);
-    out.push(lib === null
-      ? "Keep every workout you save — Basic holds " + f.library + "."
-      : "Hold " + capMany(lib) + " saved workouts, instead of " + f.library + ".");
-    if (reads === null) {
-      // An older function that does not send the allowances yet. Say the shape
-      // of the thing rather than a number this page cannot stand behind.
-      out.push("Read the movements, the spoken cues and the text on screen in supported videos.");
-      out.push("Video reading and coaching have monthly allowances; Settings shows what is left.");
-    } else {
-      out.push("Read " + reads + " videos a month in full — the movements, the spoken cues and the " +
-        "text on screen. Basic reads " + capMany(capNum(f.month_reads)) + ".");
-      out.push(capMany(capNum(p.month_answers)) + " coaching answers a month from Pumpy, and " +
-        capMany(capNum(p.month_helpers)) + " explanations and swaps.");
+  // Basic's awards page keeps its latest dozen (trophyCase); Plus keeps them all.
+  var AWARDS_KEPT = 12;
+
+  // The Basic | Plus rows: [label, Basic, Plus, what this Basic account has used
+  // and whether that is all of it]. Every figure is one the server counts a
+  // refusal against, from the caps it sends, because a row quoting a number
+  // nothing enforces is how "15 video reads a day" once reached a price page. A
+  // feature is a list of the plans that have it; an older server without the
+  // list gets today's truth, which is Plus has it and Basic does not.
+  function planRows(c, mine) {
+    var f = c.free, p = c.plus, m = mine && billing.limits && billing.limits.month, held = state.workouts.length;
+    function has(k, plan) { var l = c.features && c.features[k]; return l ? l.indexOf(plan) >= 0 : plan !== "free"; }
+    function month(n) { n = capNum(n); return n === null ? "No limit" : n ? n.toLocaleString() + " a month" : "—"; }
+    function shelfN(n) { n = capNum(n); return n === null ? "No limit" : n.toLocaleString(); }
+    function kept(plan) { return has("awards_all", plan) ? "All" : "Latest " + AWARDS_KEPT; }
+    function used(k) {
+      var u = m ? num(m[k]) : null, cap = m ? capNum(m[k + "_cap"]) : null;
+      return u === null || !cap ? null : [u + " of " + cap + " used", u >= cap];
     }
-    out.push("Saving from a caption, logging, your plan and your progress are free and are never metered.");
-    out.push("Stop whenever you like — everything you saved stays yours, and stays readable.");
-    return out;
+    var lib = capNum(f.library);
+    return [
+      ["Saved workouts", shelfN(f.library), shelfN(p.library), mine && lib ? [held + " saved", held >= lib] : null],
+      // Named for what Plus can actually read: TikTok video (the save-flow audit's
+      // S2; Instagram and YouTube give no video to read, so no row promises it).
+      ["Full TikTok video reads", month(f.month_reads), month(p.month_reads), used("reads")],
+      ["Pumpy coach", has("pumpy", "free") ? "Included" : "—", has("pumpy", "plus") ? "Included" : "—", null],
+      ["Explanations and swaps", month(f.month_helpers), month(p.month_helpers), used("helpers")],
+      ["Uploads", month(f.month_uploads), month(p.month_uploads), used("uploads")],
+      ["Awards history", kept("free"), kept("plus"), null]
+    ];
+  }
+
+  // A real table, so a screen reader says "Uploads, Basic, 1 a month". The Plus
+  // column is one tinted band: the page's whole argument, read at a glance.
+  function paintTable() {
+    var box = $("plangood"), c = billing.caps;
+    box.innerHTML = "";
+    if (!c) {
+      if (billing.capsWaiting || !state.user) {
+        ["sline", "sline half", "sline", "sline half"].forEach(function (k) { box.appendChild(skelRow(k)); });
+        return;
+      }
+      var soft = el("p", "plansoft", "What each plan includes did not load. ");
+      var again = el("button", "fixlink", "Try again");
+      again.onclick = function () { retryPrices(again); };
+      soft.appendChild(again);
+      box.appendChild(soft);
+      return;
+    }
+    var t = el("table", "ptable"), head = el("tr"), body = el("tbody");
+    t.appendChild(el("caption", "sr-only", "What Basic and Plus include"));
+    head.appendChild(el("td"));
+    ["Basic", "Plus"].forEach(function (w, i) {
+      var th = el("th", i ? "pplus" : null, w);
+      th.setAttribute("scope", "col");
+      head.appendChild(th);
+    });
+    t.appendChild(el("thead")).appendChild(head);
+    planRows(c, isFree()).forEach(function (r) {
+      var tr = el("tr"), th = el("th", null, r[0]);
+      th.setAttribute("scope", "row");
+      tr.appendChild(th);
+      [r[1], r[2]].forEach(function (v, i) {
+        var td = el("td", i ? "pplus" : null);
+        td.setAttribute("data-l", i ? "Plus" : "Basic");
+        if (v === "—") {
+          td.appendChild(el("span", "pno", "—")).setAttribute("aria-hidden", "true");
+          td.appendChild(el("span", "sr-only", "Not included"));
+        } else {
+          if (v === "Included") td.appendChild(ic("check"));
+          td.appendChild(document.createTextNode(v));
+        }
+        if (!i && r[3]) td.appendChild(el("small", r[3][1] ? "out" : null, r[3][0]));
+        tr.appendChild(td);
+      });
+      body.appendChild(tr);
+    });
+    t.appendChild(body);
+    box.appendChild(t);
+    var free = el("div", "pfree"), line = el("span");
+    free.appendChild(ic("check"));
+    line.appendChild(el("b", null, "Always free: "));
+    line.appendChild(document.createTextNode("logging, Workout Mode, your plan, progress and export. What you save stays yours."));
+    free.appendChild(line);
+    box.appendChild(free);
   }
 
   // A limit line has to carry three things — what you hit, when it comes back,
@@ -13836,9 +14968,9 @@ export const APP = String.raw`
   var MULT = ["", "", "twice", "three times", "four times", "five times", "six times"];
 
   function pumpyRoom(up) {
-    var caps = billing.prices && billing.prices.caps;
-    var f = caps && caps.free && num(caps.free.pumpy_month);
-    var p = caps && caps.plus && num(caps.plus.pumpy_month);
+    var caps = billing.caps;
+    var f = caps && num(caps.free.pumpy_month);
+    var p = caps && num(caps.plus.pumpy_month);
     var mult = f && p ? Math.round(p / f) : 0;
     return "On " + up + " I have " +
       (mult >= 2 && mult < MULT.length ? "about " + MULT[mult] + " as much room" : "a lot more room") + ".";
@@ -13855,38 +14987,27 @@ export const APP = String.raw`
     // Pumpy stays in his own first person, wherever this is read. There used to
     // be a second, daily branch here saying his credits came back at midnight;
     // they never did — the ladder has always been monthly — so it is gone.
+    // Pumpy is Plus-only, so a Basic account opening this from him has used
+    // nothing: "used up" is said only with a cap and a count that say so.
     if (c.kind === "pumpy") {
-      return "That is this month’s coaching used up — my credits come back on the 1st. " + pumpyRoom(up);
+      return cap !== null && num(c.used) >= cap
+        ? "That is this month’s coaching used up — my credits come back on the 1st. " + pumpyRoom(up)
+        : "Pumpy is part of Spotter Plus.";
     }
     var w = CAP_WORDS[c.kind];
     if (!w || cap === null) return "";
     var month = c.scope === "month";
     var noun = c.kind === "uploads" && cap === 1 ? "upload" : w[0];
-    return "That is " + cap + " " + noun + (month ? " this month, " : " today, ") + mine + "’s " +
+    // A context that does not know the next plan's number says nothing about it.
+    return ("That is " + cap + " " + noun + (month ? " this month, " : " today, ") + mine + "’s " +
       (month ? "whole allowance. It comes back on the 1st. " : "burst limit. It resets at midnight UTC. ") +
-      (next === null ? up + " has no limit here."
-        : up + " " + w[1] + " " + next + (month ? " a month." : " a day."));
+      (c.next_cap === undefined ? "" : next === null ? up + " has no limit here."
+        : up + " " + w[1] + " " + next + (month ? " a month." : " a day."))).trim();
   }
 
   // ---------- the sheet ----------
 
   function skelRow(cls) { return el("div", "skel " + cls); }
-
-  // Never a blank rectangle waiting on Stripe, and never a price we do not have.
-  function paintSkeleton() {
-    var good = $("plangood"), cards = $("plancards");
-    good.innerHTML = ""; cards.innerHTML = "";
-    good.appendChild(skelRow("sline"));
-    good.appendChild(skelRow("sline half"));
-    good.appendChild(skelRow("sline"));
-    good.appendChild(skelRow("sline half"));
-    cards.appendChild(skelRow("scard"));
-    cards.appendChild(skelRow("scard"));
-    $("planbuy").classList.add("hide");
-    $("plantrial").classList.add("hide");
-    $("plansoon").classList.add("hide");
-    $("planfine").textContent = "";
-  }
 
   function priceCard(iv, plus, p) {
     var yearly = iv === "year", cur = p.currency;
@@ -13904,7 +15025,7 @@ export const APP = String.raw`
     amt.appendChild(document.createTextNode(p.nativeStore ? plus[iv].localized : money(pay, cur)));
     row.appendChild(amt);
     b.appendChild(row);
-    var monthlyYear = plus.month.amount * 12;
+    var monthlyYear = plus.month ? plus.month.amount * 12 : 0;
     if (yearly) {
       var intro = pay !== full, saved = monthlyYear - pay;
       if (monthlyYear > 0 && saved > 0) {
@@ -13924,6 +15045,19 @@ export const APP = String.raw`
     return b;
   }
 
+  // One period the store did not return: shown, named and not choosable, so
+  // the other one is still a page with a price on it.
+  function goneCard(iv) {
+    var b = el("button", "pcard off");
+    b.type = "button";
+    b.disabled = true;
+    b.setAttribute("role", "radio");
+    b.setAttribute("aria-checked", "false");
+    b.appendChild(el("div", "prow")).appendChild(el("span", "pname", iv === "year" ? "Yearly" : "Monthly"));
+    b.appendChild(el("div", "pmeta", "Not available right now"));
+    return b;
+  }
+
   // The button is the thing being watched while somebody decides, so its word
   // cross-fades rather than cutting under the thumb.
   function setBuyLabel(text) {
@@ -13934,9 +15068,13 @@ export const APP = String.raw`
     setTimeout(function () { s.textContent = text; s.classList.remove("fade"); }, 130);
   }
 
+  // Under every page: the table's figures are monthly, and none of them is a
+  // promise about Spotter's own shared daily AI budget.
+  var PLAN_RESET = "Monthly allowances come back on the 1st, 00:00 UTC. New AI work can pause when Spotter’s shared daily allowance is reached; saved workouts stay available.";
+
   function finePrint(p, plus, iv, pay, full, days) {
     var cur = p.currency, first;
-    if (p.nativeStore) return "Renews automatically at " + (plus[iv].localized || money(full, cur)) + (iv === "month" ? " per month" : " per year") + " until cancelled. Manage or cancel in your store subscription settings. Any eligible offer and its terms appear in the store confirmation.";
+    if (p.nativeStore) return (days > 0 ? "After the " + days + "-day free trial, it renews" : "Renews") + " automatically at " + (plus[iv].localized || money(full, cur)) + (iv === "month" ? " per month" : " per year") + " until cancelled. Manage or cancel in your store subscription settings. Any eligible offer and its terms appear in the store confirmation.";
     if (iv === "month") {
       first = money(pay, cur) + " a month until you cancel.";
     } else if (pay !== full) {
@@ -13964,23 +15102,20 @@ export const APP = String.raw`
       cards[i].setAttribute("aria-checked", on ? "true" : "false");
     }
     var full = plus[iv].amount, pay = yearly && p.founding ? p.founding.first_year_amount : full;
-    var days = num(p.trial_days) || 0, trial = $("plantrial");
-    // Yearly only, per the contract, and the date is computed so the sentence is
-    // still true on the day it is read.
-    if (yearly && days > 0) {
+    // The store's own eligible offer for this period (purchases.js), or the web
+    // contract's yearly trial. The date is computed so the sentence is still
+    // true on the day it is read.
+    var days = num(plus[iv].trial_days), trial = $("plantrial");
+    if (days === null) days = yearly ? num(p.trial_days) || 0 : 0;
+    if (days > 0) {
       trial.textContent = "Free for " + days + " days. We will not charge you before " +
         new Date(Date.now() + days * 86400000).toLocaleDateString(undefined, { day: "numeric", month: "long" }) +
         ", and you can cancel before then.";
       trial.classList.remove("hide");
     } else { trial.textContent = ""; trial.classList.add("hide"); }
-    setBuyLabel(yearly && days > 0 ? "Start " + days + " free days"
+    setBuyLabel(days > 0 ? "Start " + days + " free days"
       : "Subscribe for " + (p.nativeStore ? plus[iv].localized : money(pay, cur)) + (yearly ? " a year" : " a month"));
-    // What Basic keeps, said on the paid screen rather than only on the free
-    // one: nobody should have to buy Plus to find out what they already had.
-    var fr = p.caps && p.caps.free, basic = capNum(fr && fr.month_reads);
-    $("planfine").textContent = finePrint(p, plus, iv, pay, full, days) +
-      (basic === null ? "" : " Basic reads " + basic + " videos a month in full, and everything you have already saved stays readable for ever.") +
-      " Allowances reset on the 1st, 00:00 UTC. During beta, new AI work can also pause when Spotter’s shared allowance is reached; saved workouts remain available.";
+    $("planfine").textContent = finePrint(p, plus, iv, pay, full, days) + " " + PLAN_RESET;
   }
 
   function pickInterval(iv) {
@@ -13990,36 +15125,100 @@ export const APP = String.raw`
     paintChoice();
   }
 
+  // Which page this is. "plus" for an account that has it, which is never sold
+  // to; "web", because the web never sells; and in the app "buy" once the store
+  // gave a price, "wait" while it is asked, "down" when it did not answer.
+  function planState() {
+    if (!isFree()) return "plus";
+    if (!(native && native.purchases)) return "web";
+    var p = billing.prices, plus = p && p.configured && p.plans && p.plans.plus;
+    return plus && (plus.year || plus.month) ? "buy" : billing.asking || !p ? "wait" : "down";
+  }
+
+  // One sheet, four pages: the comparison is the same on all of them, and only
+  // what stands where the prices would changes. Painted from whatever is known,
+  // and again as each answer lands.
   function paintPlans() {
-    var p = billing.prices || { configured: false };
-    var good = $("plangood"), cards = $("plancards");
-    good.innerHTML = ""; cards.innerHTML = "";
+    var st = planState(), was = billing.shown, store = !!(native && native.purchases);
+    var p = billing.prices, plus = st === "buy" && p.plans.plus, cards = $("plancards");
+    billing.shown = st;
     paintPlanCode();
-    planBenefits(p.caps).forEach(function (t) {
-      var row = el("div", "pgood");
-      row.appendChild(ic("check"));
-      row.appendChild(el("span", null, t));
-      good.appendChild(row);
-    });
-    var plus = p.plans && p.plans.plus;
-    var ready = !!(p.configured && plus && plus.month && plus.year);
-    $("plansoon").classList.toggle("hide", ready);
-    $("planbuy").classList.toggle("hide", !ready);
-    $("plandot2").classList.toggle("hide", !ready);
-    $("planrestore").classList.toggle("hide", !ready && !(native && native.purchases));
-    if (p.nativeStore) $("plansoon").textContent = "Subscriptions are temporarily unavailable. Please try again later. Existing purchases can be restored below.";
-    if (!ready) {
-      $("plantrial").classList.add("hide");
-      $("planfine").textContent = "";
-      return;
+    paintTable();
+    cards.innerHTML = "";
+    if (st === "wait") { cards.appendChild(skelRow("scard")); cards.appendChild(skelRow("scard")); }
+    if (plus) {
+      if (!plus[billing.interval]) billing.interval = plus.year ? "year" : "month";
+      // Yearly first and pre-selected: annual keeps 44% of subscribers at twelve
+      // months against monthly's 17%, and pre-selecting it moved the mix 70% in
+      // Superwall's tests. Monthly is still one tap away.
+      ["year", "month"].forEach(function (iv) { cards.appendChild(plus[iv] ? priceCard(iv, plus, p) : goneCard(iv)); });
     }
-    // Yearly first and pre-selected: annual keeps 44% of subscribers at twelve
-    // months against monthly's 17%, and pre-selecting it moved the mix 70% in
-    // Superwall's tests. Monthly is still one tap away.
-    cards.appendChild(priceCard("year", plus, p));
-    cards.appendChild(priceCard("month", plus, p));
+    cards.classList.toggle("hide", !plus && st !== "wait");
+    $("planbuy").classList.toggle("hide", !plus);
     $("planbuy").disabled = billing.busy;
-    paintChoice();
+    paintSoon(st);
+    $("plannot").textContent = st === "plus" ? "Done" : "Not now";
+    ["planrestore", "planmanage", "plandot2", "plandot3"].forEach(function (id) { $(id).classList.toggle("hide", !store); });
+    if (plus) paintChoice();
+    else { $("plantrial").classList.add("hide"); $("planfine").textContent = PLAN_RESET; }
+    // A page that changes under the reader cross-fades in place: the store
+    // answering, Try again landing, a restore making this Plus.
+    if (was && was !== st && $("plansheet").classList.contains("open") && !lessMotion()) {
+      [$("planbox"), $("planbuy")].forEach(function (n) {
+        n.classList.remove("planswap"); void n.offsetWidth; n.classList.add("planswap");
+      });
+    }
+  }
+
+  // What stands where the prices would when there are none: why, and the one
+  // thing to do about it. Never a price we do not have.
+  function paintSoon(st) {
+    var n = $("plansoon"), s = billing.sub, src = s && s.source, name = storeName();
+    n.innerHTML = "";
+    n.classList.toggle("hide", st === "buy" || st === "wait");
+    if (st === "web") {
+      n.appendChild(el("b", null, "Spotter Plus is bought in the Spotter app."));
+      n.appendChild(el("p", null, "It belongs to your account, so Plus bought in the app works here too."));
+    } else if (st === "down") {
+      n.appendChild(el("b", null, name.charAt(0).toUpperCase() + name.slice(1) + " isn’t answering right now, so we can’t show a price."));
+      n.appendChild(el("p", null, "Nothing has been charged." +
+        (billing.fails >= 2 ? " If this keeps happening, update Spotter from " + name + "." : "")));
+      var retry = el("button", "btn");
+      retry.appendChild(ic("refresh"));
+      retry.appendChild(document.createTextNode("Try again"));
+      retry.onclick = function () { retryPrices(retry); };
+      n.appendChild(retry);
+    } else if (st === "plus") {
+      var end = s && dayMonth(s.current_period_end, true);
+      n.appendChild(el("b", null, myPlan() === "staff" ? "This account has everything in Plus." : "You have Spotter Plus."));
+      if (end) n.appendChild(el("p", null, (s.cancel_at_period_end || s.cancel_at ? "Ends " : "Renews ") + end + "."));
+      if (native && native.purchases) {
+        var manage = el("button", "btn ghost", "Manage subscription");
+        manage.onclick = function () { openPortal(manage); };
+        n.appendChild(manage);
+      } else if (src === "apple" || src === "google") {
+        n.appendChild(el("p", null, "Manage it in " + (src === "google" ? "Google Play on your phone." : "the App Store on your iPhone.")));
+      }
+    }
+  }
+
+  // Asks the store (and the server, if the table is missing) once more and
+  // paints the answer in place. The spinner stays half a second at least: a
+  // refusal faster than that reads as a button that did nothing.
+  function retryPrices(btn) {
+    if (billing.asking) return;
+    var epoch = accountEpoch, uid = state.user && state.user.id, at = Date.now();
+    billing.asking = true;
+    btn.disabled = true;
+    if (btn.firstChild && btn.firstChild.classList) btn.firstChild.classList.add("spin");
+    Promise.all([loadPrices(), loadCaps()]).then(function () {
+      setTimeout(function () {
+        if (!accountNow(epoch, uid)) return;
+        billing.asking = false;
+        if (planState() === "down") billing.fails++;
+        if ($("plansheet").classList.contains("open")) paintPlans();
+      }, Math.max(0, 500 - (Date.now() - at)));
+    });
   }
 
   function paintCtx() {
@@ -14030,17 +15229,25 @@ export const APP = String.raw`
 
   function openPlans(ctx) {
     var epoch = accountEpoch, uid = state.user && state.user.id;
+    var ask = !!(native && native.purchases) && isFree();
     billing.ctx = ctx && ctx.kind ? ctx : null;
     billing.interval = "year";
+    billing.shown = null;
+    // The store is asked on every open, so a page that said "not answering" last
+    // time waits for this answer instead of repeating the old one.
+    billing.asking = ask && planState() !== "buy";
+    // Asked before the first paint, so a table still on its way is drawn as one.
+    var asked = Promise.all([loadCaps(), ask ? loadPrices() : null, isFree() ? loadUse() : loadSub()]);
     paintCtx();
-    if (!billing.prices) paintSkeleton();
     // The fold closes with the sheet; a code half-typed last time is not a code.
     $("plancodeform").classList.add("hide");
     $("plancodein").value = "";
-    paintPlanCode();
+    paintPlans();
     openSheet("plansheet");
-    loadPrices().then(function () {
+    asked.then(function () {
       if (!accountNow(epoch, uid)) return;
+      billing.asking = false;
+      if (ask && planState() === "down") billing.fails++;
       if ($("plansheet").classList.contains("open")) paintPlans();
     });
     loadCreator().then(function () {
@@ -14094,7 +15301,7 @@ export const APP = String.raw`
 
   function nativePurchase(restore, btn) {
     if (!state.user || billing.busy) return;
-    var uid = state.user.id, epoch = accountEpoch;
+    var uid = state.user.id, epoch = accountEpoch, before = myPlan();
     billing.busy = true;
     if (btn) btn.disabled = true;
     var work = restore ? native.purchases.restore(uid) : native.purchases.purchase(uid, billing.interval);
@@ -14104,7 +15311,12 @@ export const APP = String.raw`
     }).then(function (r) {
       if (!accountNow(epoch, uid) || !r) return;
       absorbPlan(r, !restore);
-      toast(r.plan === "free" ? "No active subscription was found for this account." : "Your " + planWord(r.plan) + " access is up to date.");
+      // A purchase that changed the plan was welcomed by absorbPlan. A restore
+      // that did can have moved Plus from another Spotter account on the same
+      // store account, which that account then loses, so it says so.
+      if (r.plan === "free") toast("No active subscription was found for this account.");
+      else if (restore && before === "free") toast("Plus is on this account now. If it was bought on another Spotter account, that one is back on Basic.", 5200);
+      else if (restore || r.plan === before) toast("Your " + planWord(r.plan) + " access is up to date.");
     }).catch(function (e) {
       if (!accountNow(epoch, uid)) return;
       if (!e.userCancelled && String(e.code) !== "1") toast(e.message || "Could not complete the purchase. Please try again.");
@@ -14613,12 +15825,20 @@ export const APP = String.raw`
       : "";
     warn.classList.toggle("hide", !failed);
 
-    var canBuy = configured && !paid && !staff, canManage = configured && paid;
+    // Every Basic account can see Plus, whether or not a store answered, and a
+    // store subscriber can always manage it: neither waits on the product load.
+    // The web sells nothing and manages no store, so it says where to go.
+    var store = native && native.purchases, src = s && s.source, storePaid = paid && (src === "apple" || src === "google");
+    var canBuy = !paid && !staff, canManage = paid && (configured || (store && storePaid));
+    $("setupgrade").textContent = store ? "Upgrade to Plus" : "See Spotter Plus";
     $("setupgrade").classList.toggle("hide", !canBuy);
     $("setmanage").classList.toggle("hide", !canManage);
     $("setpay").classList.toggle("hide", !(canManage && failed));
     $("setplanbtns").classList.toggle("hide", !(canBuy || canManage));
-    $("setrefresh").classList.toggle("hide", !configured && !(native && native.purchases));
+    $("setrefresh").classList.toggle("hide", !configured && !store);
+    var how = $("setplanhow");
+    how.textContent = storePaid && !store ? "Manage it in " + (src === "google" ? "Google Play on your phone." : "the App Store on your iPhone.") : "";
+    how.classList.toggle("hide", !how.textContent);
   }
 
   // Two copies of "which plan is this": the profile row the webhook writes, and
@@ -14631,8 +15851,16 @@ export const APP = String.raw`
     billing.said = plan;
     if (!state.profile || state.profile.plan === plan) return;
     state.profile.plan = plan;
+    // The Share Extension's copy of the plan, so a share right after a purchase
+    // (or a lapse) asks for frames the way this plan should.
+    if (native && state.profile.ingest_key) native.configureSharing(state.profile.ingest_key, { plan: plan }).catch(function () {});
     renderLibCount();
     paintPlanGroup();
+    // And everything else that reads it, without a relaunch: Pumpy's tab, the open
+    // card's Basic-read offer, and the Plus page if it is up.
+    renderPumpy();
+    if (current && $("detail").classList.contains("open")) refreshDetail(current, true);
+    if ($("plansheet").classList.contains("open")) paintPlans();
   }
 
   // The four allowances, in the order they cost money, each on its own line. The
@@ -14684,8 +15912,9 @@ export const APP = String.raw`
       ALLOW_ROWS.forEach(function (a) {
         var cap = capNum(m[a[0] + "_cap"]), used = num(m[a[0]]);
         // A null cap is uncapped: there is no allowance to count towards, so the
-        // line would be a number with nothing to mean.
-        if (used === null || cap === null) return;
+        // line would be a number with nothing to mean. A 0 is a feature the plan
+        // does not have (Basic's coaching), which the Plus page says instead.
+        if (used === null || cap === null || cap === 0) return;
         n.appendChild(useRow(a[1], used + " of " + cap, " this month", back, used >= cap));
       });
     }
@@ -14703,13 +15932,11 @@ export const APP = String.raw`
 
   // ---------- how full the free shelf is ----------
   //
-  // The one paywall here that is not a refusal. Null means say nothing, and a
-  // paid account, an account with billing off and a cap the server did not send
-  // all come back null — which is what makes all three look like today.
+  // The one paywall here that is not a refusal. Null means say nothing: a paid
+  // account, and a cap the server has not sent yet.
   function shelf(extra) {
-    if (!billOn() || !isFree()) return null;
-    var caps = billing.prices.caps;
-    var cap = caps && caps.free ? capNum(caps.free.library) : null;
+    if (!isFree() || !billing.caps) return null;
+    var cap = capNum(billing.caps.free.library);
     if (cap === null || cap <= 0) return null;
     return { used: state.workouts.length + (extra || 0), cap: cap, warn: Math.ceil(cap * 0.8) };
   }
@@ -14757,8 +15984,10 @@ export const APP = String.raw`
   var guide = { user: null, seen: {}, off: false, motion: true, welcome: false, active: null,
     count: 0, last: 0, visit: null, observer: null, played: {} };
   var GUIDE_TIPS = {
+    // The app saves from the share sheet, so that is what its tip teaches first.
     save: { title: "Save it now. Train it later.", art: "coach",
-      text: "Paste the workout link, then tap Save workout. You can leave while I read it." },
+      text: native ? "Share it from TikTok or Instagram, or paste its link below. You can leave while I read it."
+        : "Paste the workout link, then tap Save workout. You can leave while I read it." },
     detail: { title: "Make this workout yours", art: "coach",
       text: "Use Review / Edit to check an exercise, Demo to see it, and Options for a swap." },
     set: { title: "Your numbers go here", art: "coach",
@@ -14963,7 +16192,8 @@ export const APP = String.raw`
     if (tip) {
       var b = $(id).querySelector(".sheetbody");
       // Appended before opening: its height is settled before the sheet moves.
-      guideOffer(tip, b, b.querySelector(".field, .stepper"));
+      // Under the share row, not above it: the row is the lesson, the tip the aside.
+      guideOffer(tip, b, b.querySelector(".orpaste, .field, .stepper"));
     }
   }
 
@@ -15027,7 +16257,9 @@ export const APP = String.raw`
     var page = el("section", "welcome-page on");
     page.appendChild(pumpyArt("coach", false));
     page.appendChild(el("h2", null, "Your saved videos become workouts."));
-    page.appendChild(el("p", null, "Paste a TikTok, Instagram, or YouTube link. Check the exercises, then start when you’re ready."));
+    page.appendChild(el("p", null, native
+      ? "In TikTok, Instagram or YouTube, " + shareWords() + ". Check the exercises, then start when you’re ready."
+      : "Paste a TikTok, Instagram, or YouTube link. Check the exercises, then start when you’re ready."));
     stage.appendChild(page);
     $("welcomecount").textContent = "Save · check · train";
     $("welcomenext").textContent = "Save a workout";
@@ -15100,6 +16332,8 @@ export const APP = String.raw`
     if (id === "aiconsentsheet") dismissAiConsent();
     // The steppers go back to the superset panel they were borrowed from.
     if (id === "setsheet") ssDock();
+    // A tile still in hand is put down where it came from; nothing was written.
+    if (id === "ordersheet") ordShut();
     guideClear("hold");
     if (id === "welcomesheet") {
       welcomeDone();
@@ -15157,14 +16391,15 @@ export const APP = String.raw`
     var sheet = $(id), body = sheet.querySelector(".sheetbody"), sd = null;
     sheet.addEventListener("click", function (e) { if (e.target === sheet) closeSheet(id); });
     if (!body) return;
+    var loose = { held: function () { return sd; }, release: function () { stop(null, true, true); } };
 
-    function stop(e, cancelled) {
+    function stop(e, cancelled, lost) {
       if (!sd || (e && e.pointerId !== sd.id)) return;
       var d = sd;
       sd = null;
       if (!d.lock) return;
       try { body.releasePointerCapture(d.id); } catch (err) { /* already gone */ }
-      swallowClick();
+      if (!lost) swallowClick();
       var s = d.s, a = s[0], b = s[s.length - 1], dt = (b.t - a.t) / 1000;
       var v = dt > 0.004 ? (b.y - a.y) / dt : 0;
       // closeSheet drops the inline transform in the same style change that
@@ -15185,14 +16420,17 @@ export const APP = String.raw`
       // handle, and pulls the sheet down however far the list has been scrolled.
       // Asked of the finger's position rather than what it landed on, because the
       // gaps between rows are the sheet body itself and a drag there is a scroll.
-      if (body.scrollTop > 0 && e.clientY - body.getBoundingClientRect().top > 44) return;
+      var grab = e.clientY - body.getBoundingClientRect().top <= 44;
+      if (body.scrollTop > 0 && !grab) return;
       var ctl = e.target.closest && e.target.closest("button, a, label, [role=button]");
       sd = { id: e.pointerId, x: e.clientX, y: e.clientY, lock: false, dy: 0, s: [],
-        slop: ctl ? SH_TAP : SLOP };
+        slop: ctl ? SH_TAP : SLOP, grab: grab, seen: now(), first: false };
+      holdDrag(loose);
     });
 
     body.addEventListener("pointermove", function (e) {
       if (!sd || e.pointerId !== sd.id) return;
+      sd.seen = now();
       var dy = e.clientY - sd.y, dx = e.clientX - sd.x;
       if (!sd.lock) {
         if (Math.abs(dx) > sd.slop && Math.abs(dx) > Math.abs(dy)) { sd = null; return; }
@@ -15218,11 +16456,33 @@ export const APP = String.raw`
       body.style.transform = "translateY(" + (dy > 0 ? dy : dy / 3) + "px)";
     });
 
+    // A sheet taller than its frame scrolls, and WebKit lets that scroller begin a
+    // pan unless the FIRST touchmove of the touch is cancelled; once it pans it
+    // takes the touch with a pointercancel, well before the lock above. That is
+    // why the Plus page, taller than the phone, could not be pushed away while a
+    // short sheet always could: a short sheet has no scroller to lose to. So the
+    // first move is claimed when it can only mean the sheet: heading down, more
+    // down than sideways, one finger, nothing under it that could scroll up
+    // instead, and the sheet at its top or the finger on the grabber band.
+    function claims(e) {
+      if (sd.first) return false;
+      sd.first = true;
+      var t = e.touches && e.touches.length === 1 ? e.touches[0] : null;
+      if (!t || body.scrollHeight <= body.clientHeight + 1) return false;
+      var dy = t.clientY - sd.y, dx = t.clientX - sd.x;
+      if (!(dy > 0 && dy >= Math.abs(dx))) return false;
+      for (var n = e.target; n && n !== body; n = n.parentElement) {
+        if (n.scrollTop > 0 && n.scrollHeight > n.clientHeight + 1) return false;
+      }
+      return body.scrollTop <= 0 || sd.grab;
+    }
+
     // Pointer events are dispatched before the touch that caused them, so the drag
     // has already decided by the time this runs. iOS needs the touch itself
     // cancelled or it takes the gesture for a scroll and pointercancels us mid-drag.
     body.addEventListener("touchmove", function (e) {
-      if (sd && sd.lock && e.cancelable) e.preventDefault();
+      if (!sd || !e.cancelable) return;
+      if (sd.lock || claims(e)) e.preventDefault();
     }, { passive: false });
 
     body.addEventListener("pointerup", function (e) { stop(e, false); });
@@ -15233,7 +16493,7 @@ export const APP = String.raw`
    "settingssheet", "colsheet", "renamesheet", "swapsheet", "pumpysheet", "capsheet", "plansheet",
    "daysheet", "copysheet", "sortsheet", "refsheet", "countsheet", "guidesheet", "welcomesheet",
    "workoptions", "filtersheet", "schedulesheet", "recapsheet", "woaddsheet", "aiconsentsheet", "wleavesheet",
-   "restsheet", "sectionsheet"]
+   "restsheet", "sectionsheet", "ordersheet"]
     .forEach(wireSheet);
 
   function overlayShowing() {
@@ -15325,7 +16585,7 @@ export const APP = String.raw`
    */
   function doAdd(fromShare) {
     var url = $("addurl").value.trim();
-    if (!url) { toast("Paste a link first."); return; }
+    if (!url) { toast("Paste a link first."); return Promise.resolve(false); }
     var btn = $("addgo");
     btn.disabled = true;
     // Two different waits deserve two different words. The phone reading the
@@ -15335,10 +16595,13 @@ export const APP = String.raw`
     function recover() {
       if (!fromShare) return;
       resetUpload();
+      addMode(null);
       openSheet("addsheet");
     }
 
-    deviceFrames({ url: url }).then(function (frames) {
+    // Resolves true when the link is on the shelf (new, reading or already
+    // there), so the parked-share queue can take the next only after this one.
+    return deviceFrames({ url: url }).then(function (frames) {
       var body = { url: url };
       if (frames) body.frames = frames;
       btn.textContent = "Saving…";
@@ -15347,6 +16610,9 @@ export const APP = String.raw`
       .then(function (r) {
         btn.disabled = false;
         btn.textContent = "Save workout";
+        // One share at a time, not one per launch: the flag used to stay set, so
+        // a second link shared into an open app waited for the next cold start.
+        if (fromShare) sharing = false;
 
         // The normal case now. The row already exists; only its contents are
         // pending. Close the sheet, put the card in the library straight away and
@@ -15356,8 +16622,8 @@ export const APP = String.raw`
           closeSheet("addsheet");
           placePending(r, url, null);
           toast(withShelf(isFree() ? "Saved — building a Basic read from available text…" : (fromShare ? "Saved from the share sheet — reading it…"
-            : "Saved — reading the video…")), 3400);
-          return;
+            : /\/(p|photo)\//.test(url) ? "Saved — reading the post…" : "Saved — reading the video…")), 3400);
+          return true;
         }
 
         if (r.status === "saved") {
@@ -15376,22 +16642,28 @@ export const APP = String.raw`
             var w = state.workouts.filter(function (x) { return x.id === r.id; })[0];
             if (w) openDetail(w);
           });
+          return true;
         } else if (r.status === "exists") {
           closeSheet("addsheet");
           toast("Already in your library.");
           load();
+          return true;
         } else {
           // A cap is not a broken link: the sheet answers it, and the link stays
           // in the box so a plan change lands the person back on the save.
-          if (limitHit(r, null)) return;
+          if (limitHit(r, null)) return false;
           toast(r.message || "Could not save that link — check it and try again.");
           recover();
+          return false;
         }
-      }).catch(function () {
+      }).catch(function (e) {
         btn.disabled = false;
         btn.textContent = "Save workout";
-        toast("Could not reach Spotter — check your connection.");
+        if (fromShare) sharing = false;
+        // Declined AI permission: the link stays in the box, unsaved, with no error.
+        if (!aiDeclined(e)) toast("Could not reach Spotter — check your connection.");
         recover();
+        return false;
       });
   }
 
@@ -15456,12 +16728,57 @@ export const APP = String.raw`
   }
 
   function handleSharedUrl(u) {
-    if (!u || sharing) return;
+    if (!u || sharing) return Promise.resolve(false);
     sharing = true;
     // Through the add sheet's own field, so a failure can simply show that sheet
     // with the link already in it.
     $("addurl").value = u;
-    doAdd(true);
+    return doAdd(true).then(function (saved) {
+      // A share that arrived by link while links were parked went first; the
+      // parked ones follow it rather than waiting for the next resume.
+      if (saved) takeParkedShare();
+      return saved;
+    });
+  }
+
+  // Links shared while nobody was signed in. The Share Extension cannot save for
+  // nobody, so it parks each link where the app can reach it and says "Sign in
+  // to Spotter and it will be saved"; this is the other half. The native side
+  // hands them over one at a time, oldest first, each removed as it is taken
+  // (native.takeParkedShare → {url, at} with at in ms, or null when none is left
+  // or the shell has no such method), so one parked share is one save. They are
+  // saved one after another through the ordinary share path; a failure leaves
+  // that link in the add sheet and the rest parked for the next resume, rather
+  // than overwriting the box with the next one. The extension already drops
+  // links older than a week; the same bound here covers any other shell.
+  var PARKED_MAX_MS = 7 * 24 * 3600 * 1000;
+  var PARKED_PER_PASS = 10;
+  // One taker at a time: two would each take a link, and the second would find
+  // a save in flight and drop what it had already taken.
+  var parkedBusy = false;
+  // Settles once the native side knows which account is signed in (loadProfile
+  // sets it). The native store hands a parked link only to the account that was
+  // signed in when it was parked, so asking before then would get nothing.
+  var sharingSet = Promise.resolve();
+
+  function takeParkedShare() {
+    if (parkedBusy || !native || !native.takeParkedShare || !state.user || sharing) return Promise.resolve();
+    parkedBusy = true;
+    var epoch = accountEpoch, uid = state.user.id, taken = 0;
+    function next() {
+      if (taken >= PARKED_PER_PASS || sharing || !accountNow(epoch, uid)) return;
+      taken++;
+      return Promise.resolve().then(function () { return native.takeParkedShare(); }).then(function (parked) {
+        if (!parked || !parked.url || !accountNow(epoch, uid)) return;
+        var at = Number(parked.at);
+        var u = firstUrlIn(parked.url);
+        if (!u || (at > 0 && Date.now() - at > PARKED_MAX_MS)) return next();
+        return handleSharedUrl(u).then(function (saved) { if (saved) return next(); });
+      });
+    }
+    return Promise.resolve(sharingSet).then(next)
+      .catch(function () { /* a shell without the method, or a save that threw */ })
+      .then(function () { parkedBusy = false; });
   }
 
   // ---------- upload a video from your phone ----------
@@ -15519,6 +16836,104 @@ export const APP = String.raw`
     $("upprog").hidden = false;
     $("upfill").style.width = Math.round(Math.max(0, Math.min(1, frac)) * 100) + "%";
     $("upnote").textContent = note;
+  }
+
+  // "Add the video": the same sheet, the same picker, the same upload, read INTO
+  // the card it was opened from. The sheet says so in its own words and hides the
+  // link field, because there is no link to paste — the person has the file.
+  var attachTo = null, addWords = null;
+  function addMode(w) {
+    if (!addWords) addWords = { t: $("addtitle").textContent, l: $("addlede").textContent,
+      u: $("uptitle").textContent, s: $("upsub").textContent };
+    attachTo = w || null;
+    // In the app the sheet leads with the share row, because that is how a save
+    // is meant to happen there. Not when a link is already in the box: that is a
+    // share that failed and was put back to retry, and the box is the point.
+    var share = !w && !!native && !$("addurl").value.trim();
+    $("addsheet").classList.toggle("attach", !!w);
+    $("addsheet").classList.toggle("share", share);
+    $("addtitle").textContent = w ? "Add the video" : share ? "Save from any app" : addWords.t;
+    $("addlede").textContent = w
+      ? "In Instagram, tap Share → Download on the reel, then choose that video here. Spotter reads it into “" +
+        (w.title || "this card") + "”."
+      : share ? "Share a workout from TikTok, Instagram, YouTube or anywhere else, straight to Spotter."
+      : addWords.l;
+    $("uptitle").textContent = w ? "Choose the downloaded video" : addWords.u;
+    $("upsub").textContent = w
+      ? "It counts as one of your video reads, not an upload. MP4 or MOV, up to 25 MB, deleted once it is read."
+      : addWords.s;
+    $("addfile").setAttribute("accept", w ? "video/*" : "video/*,audio/*");
+  }
+
+  function openAddVideo(w) {
+    if (!state.user) return;
+    resetUpload();
+    addMode(w);
+    openSheet("addsheet");
+  }
+
+  // ---------- saving from another app ----------
+  //
+  // Where a save comes from differs by platform, and three places say it (the add
+  // sheet, the empty library, Settings), so one answer drives all three. iOS has
+  // a step Android does not: TikTok's own panel and Apple's app row both end in
+  // More, and Spotter is often behind it. The web has no share extension at all.
+  function saveOn() {
+    return !native ? "web" : native.platform === "android" ? "android" : "ios";
+  }
+
+  function paintSaveOn(root) {
+    var on = saveOn();
+    Array.prototype.forEach.call(root.querySelectorAll("[data-on]"), function (n) {
+      n.classList.toggle("hide", n.getAttribute("data-on").split(" ").indexOf(on) < 0);
+    });
+  }
+
+  function shareWords() {
+    return saveOn() === "ios" ? "tap Share, then More, then Spotter" : "tap Share, then Spotter";
+  }
+
+  // "Open TikTok" goes by the website's address, not a tiktok:// guess. Both sites
+  // claim their root path for their apps (apple-app-site-association, Android app
+  // links), so the phone opens the app where it is installed and the site where it
+  // is not, a fallback a URL scheme cannot give without the shell declaring it
+  // for canOpenURL. It leaves as a top-level navigation because the shell hands
+  // those to the system (UIApplication.open, an ACTION_VIEW intent); native.open
+  // would load TikTok's website inside Spotter, where there is no app to reach.
+  function openSourceApp(url) {
+    if (!native) { window.open(url, "_blank", "noopener"); return; }
+    // The sheet's work is done once the phone is in TikTok: coming back should
+    // land on the library, where the shared card is arriving. Closed on the way
+    // out rather than before it, because closing pops history, and a pop and a
+    // navigation in the same task race; and not at all if nothing opened.
+    function away(e) {
+      if (!document.hidden && !(e && e.detail && e.detail.isActive === false)) return;
+      stop();
+      closeSheet("addsheet");
+    }
+    function stop() {
+      document.removeEventListener("visibilitychange", away);
+      window.removeEventListener("spotter:native-state", away);
+    }
+    document.addEventListener("visibilitychange", away);
+    window.addEventListener("spotter:native-state", away);
+    setTimeout(stop, 5000);
+    location.href = url;
+  }
+
+  // What the card does when the file has gone to be read: pending, with the verb
+  // that is true — watching — until the worker fills it in, as any pending card does.
+  function attached(w, r) {
+    closeSheet("addsheet");
+    resetUpload();
+    var row = state.workouts.filter(function (x) { return x.id === w.id; })[0] || w;
+    row.ingest_status = "processing";
+    row.ingest_error = null;
+    row.media_stage = "watching";
+    if (current && current.id === row.id) openDetail(row, true);
+    render();
+    watchPending();
+    toast(r.message || "Watching your video…", 3400);
   }
 
   function resetUpload() {
@@ -15586,10 +17001,28 @@ export const APP = String.raw`
     upProgress(0, "Uploading… 0%");
 
     var watched = !!UPLOAD_WATCHED[ext];
-    api("uploads/authorize", { method: "POST", body: JSON.stringify({ path: path, bytes: file.size }) }).then(function (permit) {
-      if (permit.status !== "ok") { var denied = new Error(permit.message || "Upload is paused. Please try again later."); denied.uploadLimit = true; throw denied; }
+    var into = attachTo;
+    var permitBody = { path: path, bytes: file.size };
+    if (into) permitBody.attach = into.id;
+    api("uploads/authorize", { method: "POST", body: JSON.stringify(permitBody) }).then(function (permit) {
+      if (permit.status !== "ok") {
+        // Out of video reads is a Plus answer, not a broken upload.
+        if (into && limitHit(permit, null)) { var sold = new Error(""); sold.handled = true; throw sold; }
+        var denied = new Error(permit.message || "Upload is paused. Please try again later."); denied.uploadLimit = true; throw denied;
+      }
       return putObject(file, path, UPLOAD_TYPES[ext]);
     }).then(function () {
+      if (into) {
+        upProgress(1, "Uploaded — Spotter is watching it…");
+        return api("workouts/" + into.id + "/media", { method: "POST",
+          body: JSON.stringify({ upload_path: path, filename: name.slice(0, 160) }) }).then(function (r) {
+          if (r.status === "processing") { attached(into, r); return null; }
+          resetUpload();
+          if (limitHit(r, null)) return null;
+          upError(r.message || "Spotter could not start reading that video.");
+          return null;
+        });
+      }
       // The bytes have landed, and somebody else's machine reading them is a
       // different wait — so it gets its own verb, and the true one for this file.
       // On a native shell the phone reads the file it still has, first: the
@@ -15599,11 +17032,13 @@ export const APP = String.raw`
       upProgress(1, "Uploaded — reading the video…");
       return deviceFrames({ file: file, shortcode: "up-" + path.split("/")[1].split(".")[0] });
     }).then(function (frames) {
+      if (into) return null;
       upProgress(1, watched ? "Uploaded — Spotter is watching it…" : "Uploaded — Spotter is listening…");
       var body = { upload_path: path, filename: name.slice(0, 160) };
       if (frames) body.frames = frames;
       return api("ingest", { method: "POST", body: JSON.stringify(body) });
     }).then(function (r) {
+      if (!r) return;
       if (r.status === "processing") {
         closeSheet("addsheet");
         resetUpload();
@@ -15624,6 +17059,7 @@ export const APP = String.raw`
     }).catch(function (e) {
       var msg = String(e && e.message ? e.message : e);
       resetUpload();
+      if ((e && e.handled) || aiDeclined(e)) return;
       if (e && e.uploadLimit) {
         upError(msg);
       } else if (msg === "413") {
@@ -15953,9 +17389,6 @@ export const APP = String.raw`
     $("sethapticrow").classList.toggle("hide", !native && !navigator.vibrate);
     paintSounds();
     loadRemind();
-    $("shortcutsetup").classList.toggle("hide", !!native);
-    $("nativesharehelp").classList.toggle("hide", !native);
-    if (native && native.platform === "android") $("nativesharehelp").textContent = "In TikTok, YouTube, Instagram or another app, share the post’s link and choose Spotter from the Android share sheet.";
     var key = state.profile ? state.profile.ingest_key : null;
     $("setkey").textContent = key ? API + "ingest?key=" + key : "Loading…";
     renderSettingsMeter();
@@ -15974,11 +17407,10 @@ export const APP = String.raw`
     // difference between Settings opening finished and Settings filling itself in.
     paintStrava();
     askStrava();
-    api("limits", { method: "GET" }).then(function (r) {
+    readLimits().then(function (r) {
       pumpy.meterAsked = true;
       absorbMeter(r && r.pumpy);
       if (r.status === "ok") {
-        billing.limits = r;
         adoptPlan(r.plan);
         // The day's counts used to be printed under Account. They are burst
         // stops — sized above every allowance, nobody is sold one, and showing
@@ -15997,7 +17429,7 @@ export const APP = String.raw`
       if (r.status !== "ok") { toast("Could not make a new key — try again in a moment."); return; }
       if (state.profile) state.profile.ingest_key = r.ingest_key;
       $("setkey").textContent = API + "ingest?key=" + r.ingest_key;
-      if (native) native.configureSharing(r.ingest_key).catch(function () {});
+      if (native) native.configureSharing(r.ingest_key, { plan: myPlan() }).catch(function () {});
       toast(native ? "Sharing key refreshed." : "New key made — update your Shortcut.");
     });
   }
@@ -16913,6 +18345,9 @@ export const APP = String.raw`
     setTimeout(function () { guidePage(v); }, 450);
     if (v === "library") renderToday();
     if (v === "train" && state.logs) countStats();
+    // Settled somewhere else, with Pumpy off screen: the one place a chat can be
+    // swapped without anybody seeing it happen.
+    if (v !== "pumpy") pumpyAway();
   }
 
   // Start independent reads on navigation intent, while the spring is moving.
@@ -16930,6 +18365,10 @@ export const APP = String.raw`
       drawn.train = true;
       quietly(prepareTrain());
     } else if (v === "pumpy") {
+      // Last word on the five-minute rule, for a return that beat pumpyAway's
+      // timer; usually the page is already on its new chat.
+      clearTimeout(pumpyIdleTimer);
+      freshenPumpy();
       loadPumpy();
     }
   }
@@ -17056,12 +18495,20 @@ export const APP = String.raw`
   // a ruler-straight swipe ever got through, which is exactly what the owner
   // reported about Plan.
   //
-  // So .pages declares no touch-action, which makes WebKit wait for a verdict on
-  // every touchmove, and the non-passive listener below gives it one: while we
-  // hold a horizontal lock the touch is cancelled, the scroller never sees the
-  // gesture, and there is no pointercancel left to lose. Pointer events are
-  // dispatched before the touch that caused them, so the axis chosen in
-  // pointermove is already known to the touchmove that follows it.
+  // So .pages declares no touch-action and the non-passive listener below holds
+  // the touch once we have locked horizontal. Pointer events are dispatched
+  // before the touch that caused them, so the axis chosen in pointermove is
+  // already known to the touchmove that follows it.
+  //
+  // What that listener cannot do on iOS is win a race. WebKit keeps UIKit's pans
+  // waiting for the FIRST touchmove of a touch only (WebPageProxy.cpp,
+  // m_touchMovePreventionState); the lock comes eight pixels later, and a
+  // scroll view that began a pan in between would cancel our pointer on the
+  // spot (WKWebViewIOS.mm, axesToPreventScrollingForPanGestureInScrollView). A
+  // page only scrolls vertically, and on the iPhone 16e simulator its scroll
+  // view never took a sideways drag; .page in style.ts spells that out (no
+  // sideways overflow, sideways overscroll left to the parent) so that no stray
+  // overflow or overscroll setting can ever hand it one.
   //
   // The verdict is taken once, at the moment the finger clears the slop, and it
   // is deliberately generous: 45 degrees normally, up to 65 when whatever is
@@ -17076,7 +18523,8 @@ export const APP = String.raw`
   var PART = 0.4;         // of a page dragged, past which a slow release commits
   var LEAN = 2.14;        // tan 65deg: the most a drag may lean and still be sideways
   var LEAN_Y = 1.43;      // tan 55deg: the lean allowed over content that could scroll
-  var drag = null;
+  var STALE = 2000;       // ms a held drag may go without a pointer event before it is let go
+  var drag = null, dragDog = 0;
 
   // Fields, and anything that says so: places where a sideways drag already
   // means something else. The chip rows used to be listed here and so did the
@@ -17146,16 +18594,64 @@ export const APP = String.raw`
     t = setTimeout(off, 350);
   }
 
+  // A drag ends only when its pointerup or pointercancel reaches .pages, and
+  // while one was held every new touch used to be refused. So a drag whose end
+  // never arrived turned the pager off until the app was killed, which fits the
+  // owner's report that swiping came back only after he reset the app. Nothing
+  // guarantees that end: a render can take the node the finger went down on out
+  // of the page (WebKit still sent the pointerup on; the touchend it lost), and
+  // an interruption, whether the app sent away, Notification Centre or a call,
+  // can end a touch the page never hears about. The iPhone 16e simulator
+  // delivered the end in every case we could drive, so the rule is not to
+  // depend on it: a held drag is let go of as soon as anything says its finger
+  // has gone, which is a new first finger, the page hidden or shown, the window
+  // losing focus, the shell going inactive, a touchcancel, or two seconds
+  // without a word from the pointer. It settles on the nearest page if it had
+  // moved the track.
+  function dropStaleDrag() {
+    var d = drag;
+    if (!d) return;
+    drag = null;
+    clearTimeout(dragDog);
+    if (d.raf) cancelAnimationFrame(d.raf);
+    if (!d.lock) return;
+    try { pagesEl.releasePointerCapture(d.id); } catch (err) { /* already gone */ }
+    var near = clamp(Math.round(pos / pageW), 0, LAST);
+    commit(near);
+    springTo(near * pageW, 0);
+  }
+
+  // The two seconds, and only before the drag has chosen sideways. A finger
+  // resting there sends nothing, so an unlocked drag that goes quiet is most
+  // likely one whose lift was lost, and two still seconds are not a swipe. Once
+  // it has locked, a still finger is somebody holding a page half-turned on
+  // purpose, as they always could: that drag is let go only by the lift or by
+  // the proofs above that the finger is gone (a new first finger, the page
+  // hidden, the window blurred, a cancel), never by the clock.
+  function watchDrag() {
+    clearTimeout(dragDog);
+    if (!drag || drag.lock) return;
+    dragDog = setTimeout(function () {
+      if (drag && now() - drag.seen >= STALE) dropStaleDrag(); else watchDrag();
+    }, Math.max(16, STALE - (now() - drag.seen)));
+  }
+
   pagesEl.addEventListener("pointerdown", function (e) {
     if (e.pointerType !== "touch" && e.pointerType !== "pen") return;
-    if (drag || overlayShowing()) return;
+    // A second finger joining a live drag is not a new drag. A first finger is
+    // proof that the old one lifted, and so is any finger once the old drag has
+    // gone quiet: an engine that lost the lift may still count that touch as down.
+    if (drag && !e.isPrimary && now() - drag.seen < STALE) return;
+    dropStaleDrag();
+    if (overlayShowing()) return;
     if (noDragIn(e.target)) return;
     // Safari's back gesture starts at the very edge. Taking it over inside a
     // browser tab would trap the user on the page; installed to the home screen
     // there is no such gesture and the whole width is ours.
     if (!standalone() && e.clientX < 24) return;
-    drag = { id: e.pointerId, x: e.clientX, y: e.clientY, from: idx, lock: false,
+    drag = { id: e.pointerId, x: e.clientX, y: e.clientY, from: idx, lock: false, seen: now(),
       dx: 0, pos0: pos, raf: 0, lockT: 0, on: e.target, s: [{ t: now(), x: e.clientX }] };
+    watchDrag();
   });
 
   function dragFrame() {
@@ -17167,6 +18663,7 @@ export const APP = String.raw`
 
   pagesEl.addEventListener("pointermove", function (e) {
     if (!drag || e.pointerId !== drag.id) return;
+    drag.seen = now();
     var dx = e.clientX - drag.x, dy = e.clientY - drag.y;
     if (!drag.lock) {
       var ax = Math.abs(dx), ay = Math.abs(dy);
@@ -17208,11 +18705,11 @@ export const APP = String.raw`
     if (!drag.raf) drag.raf = requestAnimationFrame(dragFrame);
   });
 
-  // The whole reason .pages can drop touch-action. WebKit holds the scroll until
-  // this has run, and the pointermove above has already chosen the axis by the
-  // time it does, so a locked drag simply takes the touch off the scroller. The
-  // pull to refresh keeps its own passive listeners on this same element: they
-  // read the gesture, this one is the only one that answers for it.
+  // The whole reason .pages can drop touch-action: once the drag has locked,
+  // every touchmove says so, which WebKit takes as the page claiming the touch
+  // (WKContentViewInteraction.mm, _touchEvent:preventsNativeGestures:). The pull
+  // to refresh keeps its own passive listeners on this same element: they read
+  // the gesture, this one is the only one that answers for it.
   pagesEl.addEventListener("touchmove", function (e) {
     if (drag && drag.lock && e.cancelable) e.preventDefault();
   }, { passive: false });
@@ -17221,6 +18718,7 @@ export const APP = String.raw`
     if (!drag || (e && e.pointerId !== drag.id)) return;
     var d = drag;
     drag = null;
+    clearTimeout(dragDog);
     if (d.raf) cancelAnimationFrame(d.raf);
     if (!d.lock) return;
     try { pagesEl.releasePointerCapture(d.id); } catch (err) { /* already gone */ }
@@ -17282,6 +18780,71 @@ export const APP = String.raw`
 
   pagesEl.addEventListener("pointerup", function (e) { endDrag(e, false); });
   pagesEl.addEventListener("pointercancel", function (e) { endDrag(e, true); });
+
+  // The rest of "its finger has gone" (dropStaleDrag). A touchcancel is a
+  // cancel even when the pointercancel that should have come with it did not
+  // reach .pages, so it ends the drag on a cancel's terms. The others mean the
+  // page stopped being the thing under the finger.
+  window.addEventListener("touchcancel", function () { if (drag) endDrag(null, true); }, true);
+  document.addEventListener("visibilitychange", dropStaleDrag);
+  window.addEventListener("pageshow", dropStaleDrag);
+  window.addEventListener("blur", dropStaleDrag);
+  window.addEventListener("spotter:native-state", dropStaleDrag);
+
+  // ---------- the other drags that hold a touch ----------
+  //
+  // The week bar, a sheet pushed down and Workout Mode's swipe hold a touch the
+  // way the pager does, and each refused every new touch while one was held, so
+  // a lift that never arrived froze that gesture until the app was killed: the
+  // pager's old fault. They take the pager's releases from here. While one holds
+  // a drag it is listed, and anything that says its finger has gone lets it go
+  // as a cancel would: a new first finger anywhere, the page hidden or shown,
+  // the window losing focus, the shell going inactive, a touchcancel, or two
+  // seconds without a word from the pointer before the drag has chosen its
+  // axis. After that a still finger is holding it on purpose, as on the pager,
+  // and the clock leaves it alone. g is the gesture: g.held() is its drag or
+  // null, and g.release() lets go without swallowing the next click, because
+  // the tap that proves the finger lifted is a tap somebody meant.
+  var looseDrags = [];
+
+  function holdDrag(g) {
+    if (looseDrags.indexOf(g) < 0) looseDrags.push(g);
+    watchLoose(g);
+  }
+
+  function watchLoose(g) {
+    clearTimeout(g.dog);
+    var d = g.held();
+    if (!d) {
+      var i = looseDrags.indexOf(g);
+      if (i >= 0) looseDrags.splice(i, 1);
+      return;
+    }
+    if (d.lock) return;
+    g.dog = setTimeout(function () {
+      var h = g.held();
+      if (h && !h.lock && now() - h.seen >= STALE) g.release();
+      watchLoose(g);
+    }, Math.max(16, STALE - (now() - d.seen)));
+  }
+
+  function dropLoose() {
+    looseDrags.slice().forEach(function (g) {
+      if (g.held()) g.release();
+      watchLoose(g);
+    });
+  }
+
+  // Capture, so the stale drag is gone before the new finger's own pointerdown
+  // asks whether one is held.
+  window.addEventListener("pointerdown", function (e) {
+    if (e.isPrimary && (e.pointerType === "touch" || e.pointerType === "pen")) dropLoose();
+  }, true);
+  window.addEventListener("touchcancel", dropLoose, true);
+  document.addEventListener("visibilitychange", dropLoose);
+  window.addEventListener("pageshow", dropLoose);
+  window.addEventListener("blur", dropLoose);
+  window.addEventListener("spotter:native-state", dropLoose);
 
   // ---------- the tab bar ----------
   //
@@ -17651,11 +19214,39 @@ export const APP = String.raw`
     kbApply({ visible: true, height: k.height, duration: k.duration || 0.25, easing: k.easing });
   });
 
-  // The search's own way out of typing (style.ts, .searchx). Held on the press so
-  // the field keeps the keyboard, and the button its place, until the tap lands;
-  // a cancelled pointerdown cancels the mouse events that would move focus too.
+  // The search's own way out of typing (style.ts, .searchx), and UISearchBar's
+  // Cancel in what it does: the query goes, the keyboard goes, the library is
+  // whole again. Held on the press so the field keeps the keyboard, and the
+  // button its place, until the tap lands.
+  //
+  // Acted on where the finger lifts, not on the click after it. On the owner's
+  // phone the X left the keyboard up. The click a finger makes is WebKit's, aimed
+  // at the best tappable thing under the whole contact patch, and beside this
+  // button that used to be the label wrapped round the field and the X, whose
+  // click puts the focus straight back in the field; in the simulator a tap two
+  // points left of the circle did exactly that. The label is gone (markup.ts),
+  // the button covers the gap, and a handled touchend cancels that click outright.
+  var searchXAt = 0;
+  function searchDone() {
+    var f = $("search");
+    if (f.value || state.q) { f.value = ""; state.q = ""; renderGrid(); }
+    f.blur();
+  }
   $("searchx").addEventListener("pointerdown", function (e) { e.preventDefault(); });
-  $("searchx").onclick = function () { $("search").blur(); this.blur(); };
+  $("searchx").addEventListener("touchend", function (e) {
+    var t = e.changedTouches && e.changedTouches[0], r = this.getBoundingClientRect();
+    // A finger that slid off the button before lifting changed its mind.
+    if (!t || t.clientX < r.left - 10 || t.clientX > r.right + 10 || t.clientY < r.top - 10 || t.clientY > r.bottom + 10) return;
+    e.preventDefault();
+    searchXAt = Date.now();
+    searchDone();
+  }, { passive: false });
+  // A mouse, a hardware keyboard and VoiceOver arrive here instead.
+  $("searchx").onclick = function (e) {
+    e.preventDefault();
+    this.blur();
+    if (Date.now() - searchXAt > 700) searchDone();
+  };
   // Search on the keyboard means the same thing: done typing, show me.
   $("search").addEventListener("keydown", function (e) { if (e.key === "Enter") this.blur(); });
 
@@ -17702,6 +19293,7 @@ export const APP = String.raw`
     p.style.opacity = 0;
     p.style.transform = "";
     if (d < 1) return;
+    if (!state.user) { toast(WAITING); return; }
     // "Refreshed" is a receipt with nothing on it. Wait for the read and answer
     // the question the pull was actually asking.
     var before = state.workouts.length;
@@ -17779,7 +19371,13 @@ export const APP = String.raw`
   $("pw").addEventListener("keydown", function (e) { if (e.key === "Enter") doAuth(); });
   // the sign-in/sign-up toggle is rebuilt by setAuthMode, which wires its own handler
 
-  $("addbtn").onclick = function () { $("addurl").value = ""; resetUpload(); openSheet("addsheet"); };
+  $("addbtn").onclick = function () { $("addurl").value = ""; resetUpload(); addMode(null); openSheet("addsheet"); };
+  // Once: which lines each platform shows (the Shortcut set-up is web only, the
+  // share sheet is the app's), and the two ways out to where the videos are.
+  paintSaveOn(document);
+  Array.prototype.forEach.call(document.querySelectorAll("[data-app]"), function (b) {
+    b.onclick = function () { openSourceApp(b.getAttribute("data-app")); };
+  });
   // Wrapped: doAdd's first argument means "this came from the share sheet", and a
   // bare handler would hand it a MouseEvent.
   $("addgo").onclick = function () { doAdd(); };
@@ -17893,6 +19491,7 @@ export const APP = String.raw`
   $("plannot").onclick = function () { closeSheet("plansheet"); };
   $("planbuy").onclick = startCheckout;
   $("planrestore").onclick = function () { refreshBilling(this); };
+  $("planmanage").onclick = function () { openPortal(null); };
   $("setcoderow").onclick = openCode;
   $("setcreatorshare").onclick = shareCreator;
   $("plancodeask").onclick = askPlanCode;
@@ -17942,7 +19541,7 @@ export const APP = String.raw`
     b.onclick = function () { closeSheet(b.getAttribute("data-close")); };
   });
   ["workoptions", "filtersheet", "schedulesheet", "recapsheet", "woaddsheet", "aiconsentsheet", "wleavesheet",
-   "restsheet", "sectionsheet"].forEach(function (id) {
+   "restsheet", "sectionsheet", "ordersheet"].forEach(function (id) {
     $(id).addEventListener("keydown", function (e) {
       if (e.key === "Escape") { e.preventDefault(); closeSheet(id); }
       if (e.key !== "Tab") return;
@@ -18008,7 +19607,11 @@ export const APP = String.raw`
           if (fresh && current && current.id === w.id) openDetail(fresh);
           toast((fresh || w).user_workout_override ? "Source refreshed; your personal exercise list was kept." : "Re-read the workout.");
         });
-      }).catch(function () { finishRead(); if (!accountNow(epoch, uid)) return; toast("Could not read that workout again — try again in a minute."); });
+      }).catch(function (e) {
+        finishRead();
+        if (!accountNow(epoch, uid) || aiDeclined(e)) return;
+        toast("Could not read that workout again — try again in a minute.");
+      });
   };
 
   $("wclose").onclick = function () {
@@ -18301,7 +19904,12 @@ export const APP = String.raw`
     if (wo && !wo.finished) { startClock(); acquireWake(); }
     watchBilling(); stravaBack();
     publishSummary();
-    if (state.user && !wo && !overlayShowing()) load();
+    if (state.user) pumpyBack();
+    // Under whatever is open: a card that landed while the phone was away must be
+    // on the shelf when the sheet or the card closes, and load() refreshes an open
+    // card in place. Only a live session is left alone. The pending poll starts a
+    // fresh budget, so a card that outlived the last one is asked about again.
+    if (state.user && !wo) { pendPolls = 0; watchPending(); load(); takeParkedShare(); }
   });
 
   document.addEventListener("visibilitychange", function () {
@@ -18311,12 +19919,13 @@ export const APP = String.raw`
     if (!state.user) return;
     pendPolls = 0;
     watchPending();
+    pumpyBack();
     // The interval was throttled while the phone was away; the deadline was not.
     // One tick puts the ring right, and ends a rest that ran out in a pocket.
     if (restUntil) tickRest();
     if (wo) { acquireWake(); return; }
     watchBilling();
-    if (!overlayShowing()) load();
+    load();
   });
 
   // Three doors onto the same question, because the way back from a cross-origin
@@ -18341,17 +19950,25 @@ export const APP = String.raw`
   // After the three captures, because it strips the query it reads from.
   linkProblem();
 
+  // The library the person left, while the SDK is still deciding who they are.
+  paintBeforeAuth();
+
   // A session restored from storage does not always fire onAuthStateChange in time.
   sb.auth.getSession().then(function (r) {
     if (r.data.session && r.data.session.user) {
+      if (!state.user) settleEarly(r.data.session.user.id);
       state.user = r.data.session.user;
       showApp();
       boot().then(restoreSession);
     } else {
-      showLanding();
-      // A share that landed on a signed-out app. Say the link is safe rather than
-      // showing a sign-in screen that looks like the share went nowhere.
-      if (sharePending()) toast("Sign in to save the link you shared.");
+      var land = function () {
+        if (earlyUid) clearAccount();
+        showLanding();
+        // A share that landed on a signed-out app. Say the link is safe rather than
+        // showing a sign-in screen that looks like the share went nowhere.
+        if (sharePending()) toast("Sign in to save the link you shared.");
+      };
+      if (earlyUid && !state.user) answeredNobody(land); else land();
     }
   });
 

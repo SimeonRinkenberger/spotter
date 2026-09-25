@@ -149,6 +149,7 @@ const STUBS = "import { normText } from '" +
   "async function libraryCount() { return 1; }\n" +
   "function overCap(used: number, cap: number | null) { return cap !== null && used >= cap; }\n" +
   "async function capLimit(kind: string) { return json({ status: 'limit', kind }, 429); }\n" +
+  "function previewLimit() { return json({ status: 'limit', kind: 'media', scope: 'month' }, 429); }\n" +
   "async function extractLimitResponse() { return json({ status: 'limit', kind: 'extract' }, 429); }\n" +
   "async function mediaCapReached() { return null; }\n" +
   // The monthly allowance is exercised by tools/allowance-harness.mjs; here it is
@@ -161,6 +162,12 @@ const STUBS = "import { normText } from '" +
   "async function jobStep(_id: string, step: string, patch: any) { spy.seeded = { step, ...patch }; }\n" +
   "async function signUploadTarget(path: string) { spy.signed.push(path); return { upload_url: 'https://sb/storage/v1/object/upload/sign/uploads/' + path + '?token=tok-' + path.slice(-6), token: 'tok-' + path.slice(-6) }; }\n" +
   "function kickWorker() {}\n" +
+  // Admission is asked late now (tools/ai-admission-check.ts drives it); a fixture
+  // account is always admitted, and the held-save and Add-the-video branches have
+  // their own harness (tools/share-harness.ts).
+  "async function admitNow() { return null; }\n" +
+  "async function releaseHeldJob() { return null; }\n" +
+  "async function attachUpload() { throw new Error('attachUpload is not under test here'); }\n" +
   "const OPENAI_API_KEY = 'sk-test'; const GEMINI_API_KEY = 'g-test';\n" +
   "const PACK_EVAL_KEY = 'e'.repeat(32);\n" +
   "function secretEquals(a: string, b: string) { return !!a && !!b && a === b; }\n" +
@@ -190,14 +197,16 @@ const STUBS = "import { normText } from '" +
 
 const NAMES = [
   "CUE_MAX", "CUE_RULE", "TRANSCRIBE_PROMPT",
-  "intOrNull", "numOrNullBounded", "trimCue", "parseJsonLoose", "splitDose", "normalizeExercise",
+  "intOrNull", "numOrNullBounded", "trimCue", "parseJsonLoose", "splitDose",
+  // The dose-word rule every exercise name passes, and the cache check built on it.
+  "DOSE_WORDS", "DOSE_ANCHORS", "isDoseWordName", "cardSound", "normalizeExercise",
   "ttSubtitles",
   "countExercises", "matchPackExercise", "packEvidence", "applyPack",
   // The two routes the native share extension and the "Re-read this video" action
   // call. Their collaborators are stubbed above; the judgement is the real code.
   "CARD_V", "MIN_USABLE_CARD_V", "UPLOAD_SIGN_SECONDS", "usablePack", "cacheStale", "markCache",
-  "mediaSeed", "authorizeSheets", "handleReadVideo",
-  "scopeFor", "isPackAuthorize", "plusPlan", "visuallyRead",
+  "mediaSeed", "authorizeSheets", "handleReadVideo", "deleteUnheldSheets",
+  "scopeFor", "isPackAuthorize", "plusPlan", "visuallyRead", "BASIC_MEDIA_BURST", "mediaBurst",
   // The tier that spends the money, and the two things that happen to a job when
   // the reading it paid for cannot be trusted.
   "SoftFailure", "buildVideoPack", "runPackTier", "failJob",

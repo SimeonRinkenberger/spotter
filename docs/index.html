@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-As7NLI6KtCDgWg15zthF4btz1Ljk2jQKk5wVMHLMWB4=' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/ https://challenges.cloudflare.com https://accounts.google.com/gsi/client https://appleid.cdn-apple.com/appleauth/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://api.fontshare.com https://accounts.google.com/gsi/style; font-src 'self' data: https://fonts.gstatic.com https://cdn.fontshare.com; img-src 'self' data: blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://i.ytimg.com https://simeonrinkenberger.github.io; media-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://simeonrinkenberger.github.io; connect-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co wss://mtzevoxxpsktmrbbuxva.supabase.co https://accounts.google.com/gsi/; frame-src https://www.tiktok.com https://www.instagram.com https://www.youtube.com https://www.youtube-nocookie.com https://challenges.cloudflare.com https://accounts.google.com/gsi/ https://appleid.apple.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="google-site-verification" content="unLzcq6TBz9Bm6q4KHpbTmZ88dQ_tTnViacVX5BLzS0">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <title>Spotter by Quarterdeck Collective — save any workout video</title>
@@ -17,8 +18,8 @@
 <meta name="theme-color" content="#101214" media="(prefers-color-scheme: dark)">
 <link rel="preconnect" href="https://mtzevoxxpsktmrbbuxva.supabase.co" crossorigin>
 <link rel="dns-prefetch" href="https://mtzevoxxpsktmrbbuxva.supabase.co">
-<link rel="preconnect" href="https://cdn.jsdelivr.net">
-<link rel="preload" as="script" href="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/dist/umd/supabase.js">
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="preload" as="script" href="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/dist/umd/supabase.js" integrity="sha384-CLZeq1dk8+Uzrs7TVvBUdlFoV5F0DMqgRoeHa8g5wJcuPe5SkVfEvdxB0ZuzlnBQ" crossorigin="anonymous">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="preconnect" href="https://cdn.fontshare.com" crossorigin>
@@ -130,7 +131,7 @@ body {
   background-color: var(--paper);
   color: var(--ink);
   font-family: var(--sans);
-  overscroll-behavior-y: none;
+  overscroll-behavior: none;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -712,8 +713,10 @@ h1 {
 .page {
   flex: 0 0 100%;
   height: 100%;
+  overflow-x: hidden;
   overflow-y: auto;
-  overscroll-behavior: contain;
+  overscroll-behavior-x: auto;
+  overscroll-behavior-y: contain;
   -webkit-overflow-scrolling: touch;
   padding-bottom: calc(var(--ptab, 78px) + 24px);
 }
@@ -815,40 +818,46 @@ h1 {
 }
 .searchx {
   flex: 0 0 auto;
+  box-sizing: border-box;
   width: 0;
-  height: 44px;
-  margin-left: 0;
+  height: 64px;
+  margin: -8px 0 -12px;
   padding: 0;
   border: none;
-  border-radius: 999px;
-  background: var(--sand);
+  border-radius: 0;
+  background: none;
   color: var(--ink-2);
   overflow: hidden;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-end;
   opacity: 0;
-  transform: scale(.6);
   pointer-events: none;
-  transition:
-    width var(--t-2) var(--e-in),
-    margin-left var(--t-2) var(--e-in),
-    opacity var(--t-1) var(--e-in),
-    transform var(--t-2) var(--e-in);
+  -webkit-tap-highlight-color: transparent;
+  transition: width var(--t-2) var(--e-in), opacity var(--t-1) var(--e-in);
+}
+.searchx > span {
+  flex: 0 0 44px;
+  height: 44px;
+  border-radius: 999px;
+  background: var(--sand);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform: scale(.6);
+  transition: transform var(--t-2) var(--e-in);
 }
 #searchwrap:focus-within .searchx {
-  width: 44px;
-  margin-left: 8px;
+  width: 52px;
   opacity: 1;
-  transform: none;
   pointer-events: auto;
-  transition:
-    width var(--t-2) var(--e-out),
-    margin-left var(--t-2) var(--e-out),
-    opacity var(--t-2) var(--e-out),
-    transform var(--t-2) var(--e-out);
+  transition: width var(--t-2) var(--e-out), opacity var(--t-2) var(--e-out);
 }
-#searchwrap:focus-within .searchx:active {
+#searchwrap:focus-within .searchx > span {
+  transform: none;
+  transition: transform var(--t-2) var(--e-out);
+}
+#searchwrap:focus-within .searchx:active > span {
   transform: scale(.92);
   transition-duration: var(--t-1);
 }
@@ -856,11 +865,20 @@ h1 {
   width: 18px;
   height: 18px;
 }
+#search::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+  display: none;
+}
 @media (prefers-reduced-motion: reduce) {
   .searchx,
   #searchwrap:focus-within .searchx {
-    transform: none;
     transition: opacity var(--t-1) var(--e-soft);
+  }
+  .searchx > span,
+  #searchwrap:focus-within .searchx > span {
+    transform: none;
+    transition: none;
   }
 }
 .chips {
@@ -1277,6 +1295,16 @@ h1 {
 .thumbwrap.loaded img {
   opacity: 1;
   transform: none;
+}
+.thumbwrap img,
+.tthumb,
+.planitem img,
+.pickrow img,
+.fromthumb img {
+  -webkit-touch-callout: none;
+  -webkit-user-drag: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 .thumbwrap.loading::after {
   content: "";
@@ -2092,6 +2120,214 @@ h1 {
 .addex:active {
   transform: scale(.985);
 }
+.cardtools {
+  display: flex;
+  gap: 8px;
+}
+.cardtools .addex {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.cardtools .addex .ic {
+  width: 15px;
+  height: 15px;
+}
+.ohead {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  margin: 0 -20px;
+  padding: 0 20px 4px;
+  background: var(--paper);
+  background-image: var(--grain);
+  box-shadow: 0 -8px 0 var(--paper);
+}
+.ohead .grabber {
+  margin-bottom: 6px;
+}
+.otop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.ohead .otop h2 {
+  margin: 0;
+  flex: 1;
+  text-align: center;
+}
+.obtn {
+  min-width: 64px;
+  min-height: 44px;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: var(--ink-2);
+  font-size: 15px;
+  font-weight: 600;
+  text-align: left;
+}
+.obtn.odone {
+  color: var(--ember-ink);
+  font-weight: 750;
+  text-align: right;
+}
+.olede .ic {
+  display: inline;
+  width: 15px;
+  height: 15px;
+  vertical-align: -3px;
+}
+#olist {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+#ordersheet .sheetbody {
+  overflow-anchor: none;
+}
+.orow {
+  display: flex;
+  align-items: center;
+  min-height: 52px;
+  border-radius: 14px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  position: relative;
+  transition:
+    transform var(--t-2) var(--e-out),
+    background-color var(--t-1) var(--e-out),
+    border-color var(--t-1) var(--e-out),
+    box-shadow var(--t-2) var(--e-out);
+}
+.orow.osec {
+  background: var(--sand);
+}
+.opick {
+  flex: 1;
+  min-width: 0;
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  border: 0;
+  background: none;
+  padding: 8px 4px 8px 14px;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.opick b,
+.opick span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.opick b {
+  font-size: 14.5px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.opick span {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.osec .opick b {
+  font-family: var(--display);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -.01em;
+}
+.osec .opick span {
+  color: var(--ink-2);
+}
+.ogrip,
+.ostep {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  background: none;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+}
+.ogrip {
+  touch-action: none;
+  cursor: grab;
+  margin-right: 2px;
+}
+.ogrip .ic,
+.ostep .ic {
+  width: 18px;
+  height: 18px;
+}
+.ostep {
+  display: none;
+  color: var(--ember-ink);
+}
+.ostep.dn .ic {
+  transform: rotate(180deg);
+}
+.ostep:disabled {
+  color: var(--line-2);
+}
+.orow.sel {
+  background: var(--ember-soft);
+  border-color: var(--ember);
+}
+.orow.sel .opick span {
+  color: var(--ink-2);
+}
+.orow.sel .ostep {
+  display: flex;
+}
+.orow.lift {
+  z-index: 3;
+  box-shadow: var(--sh-lg);
+  cursor: grabbing;
+  border-color: var(--line-2);
+  transition: box-shadow var(--t-2) var(--e-out), background-color var(--t-1) var(--e-out);
+}
+@media (prefers-color-scheme: dark) {
+  .orow.oex.lift {
+    background: var(--sand);
+  }
+}
+#olist.ocollapse .oex {
+  display: none;
+}
+.orow.oin {
+  animation: fadein var(--t-2) var(--e-out) both;
+}
+.exrow.moved .exmain,
+.exrow.moved .exercise-card {
+  animation: movedglow 1.6s var(--e-soft) both;
+}
+@keyframes movedglow {
+  0%, 35% {
+    background-color: var(--ember-soft);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .orow,
+  .orow.lift {
+    transition: background-color var(--t-1), border-color var(--t-1);
+  }
+  .orow.oin {
+    animation: none;
+  }
+}
 .fieldrow {
   display: flex;
   gap: 9px;
@@ -2292,23 +2528,138 @@ h1 {
 .plangood {
   margin: 14px 0 4px;
 }
-.pgood {
+.ptable {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13.5px;
+  line-height: 1.35;
+  font-variant-numeric: tabular-nums;
+}
+.ptable th,
+.ptable td {
+  padding: 10px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+.ptable tbody > * > * {
+  border-top: 1px solid var(--line);
+}
+.ptable tbody th {
+  padding-left: 0;
+  font-weight: 500;
+  color: var(--ink-2);
+}
+.ptable thead th {
+  padding-bottom: 7px;
+  font-size: 11.5px;
+  font-weight: 750;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.ptable td {
+  width: 29%;
+  font-weight: 650;
+  color: var(--ink);
+}
+.ptable .pplus {
+  background: var(--ember-soft);
+}
+.ptable thead .pplus {
+  color: var(--ember-ink);
+  border-radius: 12px 12px 0 0;
+}
+.ptable tr:last-child .pplus {
+  border-radius: 0 0 12px 12px;
+}
+.ptable .ic {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  margin: 0 4px -1px 0;
+  color: var(--ember-ink);
+  stroke-width: 3;
+}
+.ptable small {
+  display: block;
+  margin-top: 3px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--muted);
+}
+.ptable small.out {
+  color: var(--ember-ink);
+}
+.ptable .pno {
+  color: var(--muted);
+  font-weight: 500;
+}
+.pfree {
   display: flex;
   align-items: flex-start;
-  gap: 11px;
-  min-height: 44px;
-  box-sizing: border-box;
-  padding: 7px 0;
-  font-size: 13.5px;
+  gap: 10px;
+  margin: 12px 0 0;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--sand);
+  font-size: 13px;
   line-height: 1.5;
   color: var(--ink-2);
 }
-.pgood .ic {
+.pfree .ic {
   flex: 0 0 auto;
-  width: 17px;
-  height: 17px;
-  margin-top: 3px;
-  color: var(--ember);
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  color: var(--good);
+}
+.pfree b {
+  font-weight: 650;
+  color: var(--ink);
+}
+.plansoft {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+  margin: 4px 0;
+}
+@media (max-width: 359px) {
+  .ptable thead {
+    display: none;
+  }
+  .ptable tr {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0 6px;
+    padding: 10px 0 2px;
+    border-top: 1px solid var(--line);
+  }
+  .ptable tbody > * > * {
+    border-top: 0;
+  }
+  .ptable tbody th {
+    grid-column: 1 / -1;
+    padding: 0 0 4px;
+  }
+  .ptable td,
+  .ptable tr:last-child .pplus {
+    width: auto;
+    padding: 6px 8px;
+    border-radius: 10px;
+  }
+  .ptable td::before {
+    content: attr(data-l);
+    display: block;
+    font-size: 10.5px;
+    font-weight: 750;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .ptable .pplus::before {
+    color: var(--ember-ink);
+  }
 }
 .plancards {
   margin: 16px 0 0;
@@ -2336,6 +2687,11 @@ h1 {
 }
 .pcard:active {
   transform: scale(.985);
+}
+.pcard.off {
+  opacity: .55;
+  box-shadow: none;
+  transform: none;
 }
 .prow {
   display: flex;
@@ -2411,15 +2767,35 @@ h1 {
   margin-top: 5px;
   font-weight: 650;
 }
-.plantrial,
-.plansoon {
+.plantrial {
   font-size: 13px;
   line-height: 1.5;
   color: var(--ink-2);
   margin: 4px 0 14px;
 }
 .plansoon {
-  color: var(--muted);
+  margin: 16px 0 12px;
+  padding: 14px 15px;
+  border-radius: 16px;
+  background: var(--card);
+  border: 1px solid var(--line-2);
+  box-shadow: var(--sh-sm);
+}
+.plansoon b {
+  display: block;
+  font-size: 14.5px;
+  font-weight: 650;
+  line-height: 1.45;
+}
+.plansoon p {
+  margin: 5px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+.plansoon .btn {
+  margin-top: 12px;
+  min-height: 44px;
 }
 .planbuy {
   margin-top: 4px;
@@ -2989,6 +3365,15 @@ h1 {
   padding-top: 16px;
   border-top: 1px solid var(--line);
 }
+#addsheet.attach .field,
+#addsheet.attach #addgo {
+  display: none;
+}
+#addsheet.attach .upblock {
+  margin-top: 4px;
+  padding-top: 0;
+  border-top: 0;
+}
 .uploadrow {
   display: flex;
   align-items: center;
@@ -3086,6 +3471,238 @@ h1 {
   }
   .uperr {
     animation: none;
+  }
+}
+.sharehow,
+.orpaste {
+  display: none;
+}
+#addsheet.share .sharehow {
+  display: block;
+}
+#addsheet.share .orpaste {
+  display: flex;
+}
+.shareflow {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  margin: 0 0 12px;
+  padding: 16px 6px 13px;
+  list-style: none;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  box-shadow: var(--sh-sm);
+}
+.shareflow li {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 68px;
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--ink);
+  letter-spacing: -.005em;
+}
+.shareflow li + li {
+  margin-left: 20px;
+}
+.shareflow li + li::before {
+  content: "";
+  position: absolute;
+  left: -16px;
+  top: 20px;
+  width: 7px;
+  height: 7px;
+  border-top: 2px solid var(--muted);
+  border-right: 2px solid var(--muted);
+  transform: rotate(45deg);
+}
+.sfmark {
+  position: relative;
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  border-radius: 13px;
+  background: var(--sand);
+  color: var(--ink);
+}
+.sfmark .ic {
+  width: 22px;
+  height: 22px;
+}
+.sfmark.more {
+  border-radius: 999px;
+}
+.sfmark.more .ic {
+  stroke-width: 3.4;
+}
+.sfmark.app img {
+  display: block;
+  width: 46px;
+  height: 46px;
+  border-radius: 11px;
+}
+.sfmark::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 16px;
+  border: 2px solid var(--ember);
+  opacity: 0;
+  pointer-events: none;
+}
+.sfmark.more::after {
+  border-radius: 999px;
+}
+.sfmark.app::after {
+  border-radius: 14px;
+  opacity: 1;
+}
+#addsheet.open .sfmark::after {
+  animation: sftap .6s var(--e-out) .45s both;
+}
+#addsheet.open li:nth-child(2) .sfmark::after {
+  animation-delay: .85s;
+}
+#addsheet.open .sfmark.app::after {
+  animation: sfstay .5s var(--e-spring) 1.25s both;
+}
+@keyframes sftap {
+  0% {
+    opacity: 0;
+    transform: scale(.84);
+  }
+  35% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.1);
+  }
+}
+@keyframes sfstay {
+  from {
+    opacity: 0;
+    transform: scale(.84);
+  }
+}
+.sfnote {
+  margin: 0 4px 6px;
+  text-align: center;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+.sfnote b,
+.webnote b {
+  color: var(--ink);
+  font-weight: 650;
+}
+.sftip .ic {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  margin: 0 5px 0 0;
+  vertical-align: -2px;
+  color: var(--ember-ink);
+  fill: currentColor;
+}
+.sfopen {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin: 12px 0 0;
+}
+.sfopen .chip {
+  flex: 1 1 0;
+  max-width: 176px;
+  min-height: 44px;
+  justify-content: center;
+  padding: 0 12px;
+  background: var(--card);
+  color: var(--ink);
+  border: 1px solid var(--line-2);
+  font-size: 13px;
+}
+.sfopen .chip .ic {
+  width: 14px;
+  height: 14px;
+  color: var(--ember-ink);
+}
+.orpaste {
+  align-items: center;
+  gap: 12px;
+  margin: 18px 0 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.orpaste::before,
+.orpaste::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line-2);
+}
+#addsheet #addgo {
+  transition:
+    transform var(--t-1) var(--e-out),
+    opacity var(--t-2),
+    background-color var(--t-2) var(--e-soft),
+    color var(--t-2) var(--e-soft),
+    box-shadow var(--t-2) var(--e-soft);
+}
+#addsheet.share:has(#addurl:placeholder-shown) #addgo {
+  background: var(--sand);
+  color: var(--ink);
+  box-shadow: none;
+}
+#addsheet.share .upblock {
+  margin-top: 12px;
+  padding-top: 0;
+  border-top: 0;
+}
+#addsheet.share .pumpy-tip {
+  margin: 14px 0 0;
+}
+.webnote {
+  margin: 12px 2px 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+#addsheet.attach .webnote {
+  display: none;
+}
+.empty .shareflow {
+  margin: 18px auto 0;
+  padding: 0;
+  background: none;
+  border: 0;
+  box-shadow: none;
+}
+.empty .sfmark {
+  background: var(--card);
+  box-shadow: var(--sh-sm);
+}
+@media (max-width: 359px) {
+  .sfopen .chip .ic {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  #addsheet.open .sfmark::after,
+  #addsheet.open .sfmark.app::after {
+    animation: none;
+  }
+  #addsheet #addgo {
+    transition: none;
   }
 }
 .swapsummary {
@@ -4620,11 +5237,27 @@ body:not(.app) #toast.show {
   font-variant-numeric: tabular-nums;
 }
 .wdots {
+  position: relative;
+  flex-shrink: 0;
   display: flex;
   gap: 5px;
   justify-content: center;
   flex-wrap: wrap;
-  padding: 8px 20px 0;
+  padding: 6px 20px 12px;
+}
+.wdots::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: var(--line);
+  opacity: 0;
+  transition: opacity var(--t-2) var(--e-soft);
+}
+#workout.wedge .wdots::after {
+  opacity: 1;
 }
 .wdot {
   width: 6px;
@@ -6056,15 +6689,17 @@ body:not(.app) #toast.show {
   backdrop-filter: blur(18px);
 }
 .pumpybar button {
-  width: 44px;
+  min-width: 44px;
   height: 44px;
+  padding: 0 12.5px;
   font-size: 19px;
   border: none;
   background: none;
   border-radius: 999px;
   color: var(--ink-2);
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   transition: transform var(--t-1) var(--e-out), background-color var(--t-2) var(--e-soft);
 }
 .pumpybar button:active {
@@ -6072,9 +6707,38 @@ body:not(.app) #toast.show {
   background: var(--sand);
   color: var(--ink);
 }
+.pblabel {
+  display: block;
+  max-width: 0;
+  margin-left: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: -.005em;
+  color: var(--ink);
+  opacity: 0;
+  transition:
+    max-width var(--t-3) var(--e-soft),
+    margin-left var(--t-3) var(--e-soft),
+    opacity var(--t-1) var(--e-in);
+}
+.pumpybar.labelled .pblabel {
+  max-width: 96px;
+  margin-left: 7px;
+  opacity: 1;
+  transition:
+    max-width var(--t-3) var(--e-out),
+    margin-left var(--t-3) var(--e-out),
+    opacity var(--t-2) var(--e-out) var(--t-1);
+}
 @media (prefers-reduced-motion: reduce) {
   .pumpybar button {
     transition: none;
+  }
+  .pblabel,
+  .pumpybar.labelled .pblabel {
+    transition: opacity var(--t-1) var(--e-soft);
   }
 }
 .pumpyhello {
@@ -6993,6 +7657,9 @@ select:focus-visible,
   .wmain.wmease {
     transition: none;
   }
+  .wdots::after {
+    transition: none;
+  }
   .wmain.wmin {
     animation-name: fadeonly;
     animation-duration: var(--t-2);
@@ -7505,7 +8172,7 @@ select:focus-visible,
 #workout:not(.summary) .wmain {
   justify-content: flex-start;
   min-height: 0;
-  padding-top: clamp(20px, calc(var(--vvh) * .04), 32px);
+  padding-top: clamp(10px, calc(var(--vvh) * .04 - 10px), 22px);
 }
 #workout:not(.summary) .wmain > * {
   flex-shrink: 0;
@@ -7957,6 +8624,8 @@ details.details-moving > :not(summary) {
 
 <svg class="sprite" aria-hidden="true" focusable="false">
 <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></symbol>
+<symbol id="i-compose" viewBox="0 0 24 24"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/></symbol>
+<symbol id="i-chats" viewBox="0 0 24 24"><path d="M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719"/></symbol>
 <symbol id="i-paperclip" viewBox="0 0 24 24"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></symbol>
 <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
 <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
@@ -7969,6 +8638,7 @@ details.details-moving > :not(summary) {
 <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></symbol>
 <symbol id="i-arrow-up" viewBox="0 0 24 24"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></symbol>
 <symbol id="i-arrow-up-right" viewBox="0 0 24 24"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></symbol>
+<symbol id="i-reorder" viewBox="0 0 24 24"><path d="m3 16 4 4 4-4"/><path d="M7 20V4"/><path d="m21 8-4-4-4 4"/><path d="M17 4v16"/></symbol>
 <symbol id="i-swap" viewBox="0 0 24 24"><path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/></symbol>
 <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20.5 12a8.5 8.5 0 1 1-2.5-6"/><path d="M21 3.5V6h-2.5"/></symbol>
 <symbol id="i-settings" viewBox="0 0 24 24"><path d="M13.8 2.5h-3.6l-.5 2.6-2.3 1.3-2.5-.9-1.8 3.1 2 1.7v2.6l-2 1.7 1.8 3.1 2.5-.9 2.3 1.3.5 2.6h3.6l.5-2.6 2.3-1.3 2.5.9 1.8-3.1-2-1.7v-2.6l2-1.7-1.8-3.1-2.5.9-2.3-1.3z"/><circle cx="12" cy="12" r="3"/></symbol>
@@ -8085,11 +8755,11 @@ details.details-moving > :not(summary) {
   <div class="pages" id="pages">
     <div class="track" id="track">
       <div class="page" id="libpage" role="tabpanel" aria-labelledby="tab0">
-        <label class="searchwrap" id="searchwrap">
+        <div class="searchwrap" id="searchwrap" role="search">
           <span class="searchico"><svg class="ic"><use href="#i-search"></use></svg></span>
           <input class="search" id="search" type="search" placeholder="Search workouts, exercises, muscles" autocapitalize="off" autocomplete="off">
-          <button class="searchx" id="searchx" type="button" aria-label="Hide keyboard"><svg class="ic"><use href="#i-x"></use></svg></button>
-        </label>
+          <button class="searchx" id="searchx" type="button" aria-label="Clear search"><span><svg class="ic"><use href="#i-x"></use></svg></span></button>
+        </div>
 
         <div id="hint">
           <div id="hinttext">Spotter works better installed — full screen, and it opens like an app.
@@ -8106,9 +8776,9 @@ details.details-moving > :not(summary) {
 
       <div class="page view" id="trainview" role="tabpanel" aria-labelledby="tab1"></div>
       <div class="page view" id="pumpyview" role="tabpanel" aria-labelledby="tab2">
-        <div class="pumpybar">
-          <button id="pumpychats" title="Chats" aria-label="Chats"><svg class="ic"><use href="#i-list"></use></svg></button>
-          <button id="pumpynew" title="New chat" aria-label="New chat"><svg class="ic"><use href="#i-plus"></use></svg></button>
+        <div class="pumpybar" id="pumpybar">
+          <button id="pumpychats" title="Chats" aria-label="Chats"><svg class="ic"><use href="#i-chats"></use></svg><span class="pblabel" aria-hidden="true">Chats</span></button>
+          <button id="pumpynew" title="New chat" aria-label="New chat"><svg class="ic"><use href="#i-compose"></use></svg><span class="pblabel" aria-hidden="true">New chat</span></button>
         </div>
         <div id="pumpylog"></div>
         <div id="pumpyannounce" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
@@ -8151,6 +8821,7 @@ details.details-moving > :not(summary) {
   <div id="workmanage"></div>
   <button class="pickrow" id="dshare">Share workout</button>
   <button class="pickrow" id="dreproc">Read it again</button>
+  <button class="pickrow" id="dorder">Reorder sections and exercises</button>
   <button class="btn ghost" data-close="workoptions">Done</button>
 </div></div>
 <div class="sheet" id="wleavesheet" role="dialog" aria-modal="true" aria-labelledby="wleavetitle"><div class="sheetbody">
@@ -8206,17 +8877,30 @@ details.details-moving > :not(summary) {
 
 <div class="sheet" id="addsheet"><div class="sheetbody">
   <div class="grabber"></div>
-  <h2>Add a workout</h2>
-  <p class="lede">Paste a link to a TikTok, Instagram reel, YouTube video, or any workout page.</p>
-  <div class="field"><input id="addurl" type="url" placeholder="https://..." autocapitalize="off" autocomplete="off" spellcheck="false"></div>
+  <h2 id="addtitle">Add a workout</h2>
+  <p class="lede" id="addlede">Paste a link to a TikTok, Instagram reel, YouTube video, or any workout page.</p>
+  <div class="sharehow">
+    <ol class="shareflow">
+      <li><span class="sfmark" aria-hidden="true"><svg class="ic"><use href="#i-share"></use></svg></span><span class="sr-only">Tap </span>Share</li>
+      <li data-on="ios"><span class="sfmark more" aria-hidden="true"><svg class="ic"><use href="#i-more"></use></svg></span><span class="sr-only">Tap </span>More</li>
+      <li><span class="sfmark app" aria-hidden="true"><img src="icon.png" alt="" width="46" height="46"></span><span class="sr-only">Tap </span>Spotter</li>
+    </ol>
+    <p class="sfnote" data-on="ios">Not in the row? Scroll down to <b>Save&nbsp;to&nbsp;Spotter</b>.</p>
+    <p class="sfnote" data-on="android">In TikTok, Spotter is under <b>More</b>.</p>
+    <p class="sfnote sftip" data-on="ios"><svg class="ic" aria-hidden="true"><use href="#i-star"></use></svg><span>One tap next time: in <b>More</b>, tap <b>Edit</b> and add Spotter to&nbsp;Favorites.</span></p>
+    <div class="sfopen"><button class="chip" type="button" data-app="https://www.tiktok.com/">Open TikTok<svg class="ic"><use href="#i-arrow-up-right"></use></svg></button><button class="chip" type="button" data-app="https://www.instagram.com/">Open Instagram<svg class="ic"><use href="#i-arrow-up-right"></use></svg></button></div>
+  </div>
+  <div class="orpaste">Or paste a link</div>
+  <div class="field"><input id="addurl" type="url" placeholder="https://..." autocapitalize="off" autocomplete="off" spellcheck="false" aria-label="Video link"></div>
   <button class="btn" id="addgo">Save workout</button>
+  <p class="webnote" data-on="web">In the Spotter app you save straight from the <b>Share</b> button in TikTok or Instagram.</p>
 
   <div class="upblock">
     <button class="uploadrow" id="uploadrow" type="button">
       <span class="upmark" aria-hidden="true"><svg class="ic"><use href="#i-upload"></use></svg></span>
       <span class="uptext">
-        <b>Upload a video from your phone</b>
-        <small>Spotter watches and listens to it, so it works when nothing is written down. MP4, MOV, M4A, MP3, WAV or WebM, up to 25 MB.</small>
+        <b id="uptitle">Upload a video from your phone</b>
+        <small id="upsub">Spotter watches and listens to it, so it works when nothing is written down. MP4, MOV, M4A, MP3, WAV or WebM, up to 25 MB.</small>
       </span>
     </button>
     <input id="addfile" type="file" accept="video/*,audio/*" hidden>
@@ -8342,6 +9026,13 @@ details.details-moving > :not(summary) {
   </div>
   <div class="btnrow"><button class="btn ghost" data-close="sectionsheet">Cancel</button><button class="btn" id="sectionsave">Choose the first exercise</button></div>
   <button class="danger hide" id="sectionremove">Remove section</button>
+</div></div>
+
+<div class="sheet" id="ordersheet" role="dialog" aria-modal="true" aria-labelledby="ordertitle"><div class="sheetbody">
+  <div class="ohead"><div class="grabber"></div><div class="otop"><button class="obtn" data-close="ordersheet">Cancel</button><h2 id="ordertitle">Reorder</h2><button class="obtn odone" id="ordersave">Done</button></div></div>
+  <p class="lede olede">Drag <svg class="ic"><use href="#i-list"></use></svg> to move a section or an exercise, or tap one for arrows.</p>
+  <div id="olist" role="list" aria-labelledby="ordertitle"></div>
+  <div class="sr-only" id="orderlive" aria-live="polite"></div>
 </div></div>
 
 <div class="sheet" id="explainsheet"><div class="sheetbody">
@@ -8518,6 +9209,7 @@ details.details-moving > :not(summary) {
     <button class="btn ghost hide" id="setmanage">Manage subscription</button>
     <button class="btn hide" id="setupgrade">Upgrade to Plus</button>
   </div>
+  <div class="setnote hide" id="setplanhow"></div>
   <button class="setlink hide" id="setrefresh">Refresh</button>
 
   <div class="hide" id="setcreator">
@@ -8578,10 +9270,11 @@ details.details-moving > :not(summary) {
   <div class="setnote" id="setremnote"></div>
 
   <details class="disclosure" id="phonesave"><summary>Save from your phone</summary><div class="disclosure-body">
-    <p class="lede"><b>On any phone</b> — copy a video link, then tap <b>Save workout</b> in Spotter.</p>
-    <p class="lede"><b>Android</b> — install Spotter, then choose it in the video app’s share sheet.</p>
-    <p id="nativesharehelp" class="lede hide">In TikTok, YouTube, Instagram or another app, share the post’s link and choose Spotter. If needed, open More to find Spotter in the iPhone share menu.</p>
-    <details id="shortcutsetup" class="disclosure"><summary>iPhone Shortcut setup (advanced)</summary><div class="disclosure-body">
+    <p class="lede" data-on="ios">In TikTok, Instagram, YouTube or any app, tap <b>Share</b>, then <b>More</b>, then <b>Spotter</b> (or <b>Save to Spotter</b> further down). For one tap next time, in <b>More</b> tap <b>Edit</b> and add Spotter to Favorites.</p>
+    <p class="lede" data-on="android">In TikTok, Instagram, YouTube or any app, tap <b>Share</b>, then <b>Spotter</b>. In TikTok it is under <b>More</b>.</p>
+    <p class="lede" data-on="web"><b>In the Spotter app</b> — tap <b>Share</b> on a TikTok, Instagram or YouTube video and choose Spotter.</p>
+    <p class="lede"><b>Or</b> copy the video’s link and paste it into <b>Save workout</b>.</p>
+    <details id="shortcutsetup" class="disclosure" data-on="web"><summary>iPhone Shortcut setup (advanced)</summary><div class="disclosure-body">
       <p class="lede">For direct sharing on iPhone, create a Shortcut that sends the shared URL as a POST to this address. Keep it private — it works without your password.</p>
       <div class="keybox" id="setkey">&mdash;</div>
       <div class="btnrow"><button class="btn ghost" id="copykey">Copy address</button><button class="btn ghost" id="rotatekey">New key</button></div>
@@ -8612,11 +9305,13 @@ details.details-moving > :not(summary) {
   <div class="grabber"></div>
   <div class="planctx hide" id="planctx"></div>
   <h2>Spotter Plus</h2>
-  <p class="lede">Room to save what you find, and a coach who does not run out mid-week.</p>
+  <p class="lede">Keep every workout you save, read TikTok videos in full, and train with Pumpy, your coach.</p>
   <div class="plangood" id="plangood"></div>
-  <div class="plancards" id="plancards" role="radiogroup" aria-label="Billing period"></div>
-  <div class="plantrial hide" id="plantrial"></div>
-  <div class="plansoon hide" id="plansoon">Plans are coming soon.</div>
+  <div id="planbox">
+    <div class="plancards" id="plancards" role="radiogroup" aria-label="Billing period"></div>
+    <div class="plantrial hide" id="plantrial"></div>
+    <div class="plansoon hide" id="plansoon" aria-live="polite"></div>
+  </div>
   <div class="plancode">
     <button type="button" class="codeask" id="plancodeask">Have a creator code?</button>
     <div class="codeform hide" id="plancodeform">
@@ -8632,7 +9327,8 @@ details.details-moving > :not(summary) {
   <div class="planlegal">
     <a href="https://quarterdeckcollective.com/spotter/terms/">Terms</a><span aria-hidden="true">&middot;</span>
     <a href="https://quarterdeckcollective.com/spotter/privacy/">Privacy</a><span aria-hidden="true" id="plandot2">&middot;</span>
-    <button id="planrestore">Restore purchase</button>
+    <button id="planrestore">Restore purchase</button><span aria-hidden="true" id="plandot3">&middot;</span>
+    <button id="planmanage">Manage</button>
   </div>
 </div></div>
 
@@ -8684,11 +9380,20 @@ details.details-moving > :not(summary) {
 
 <div id="toast"></div>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/dist/umd/supabase.js" integrity="sha384-CLZeq1dk8+Uzrs7TVvBUdlFoV5F0DMqgRoeHa8g5wJcuPe5SkVfEvdxB0ZuzlnBQ" crossorigin="anonymous"></script>
 <script>
 (function() {
   "use strict";
-  var native = window.SpotterNative || null, AUTH_RETURN = native ? "https://simeonrinkenberger.github.io/spotter/" : location.origin + location.pathname, SB_URL = "https://mtzevoxxpsktmrbbuxva.supabase.co", SB_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10emV2b3h4cHNrdG1yYmJ1eHZhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgyMjM5ODgsImV4cCI6MjEwMzc5OTk4OH0._vpNhLJtv2bVGgXXClva9O5cX8Y5eJdTgbgAO81NnmU", API = SB_URL + "/functions/v1/spotter/api/", PUBLIC_AUTH = { google_client_id: "48831784248-dh1o2fhiem9kqgs6ambnnvaba8vojrf2.apps.googleusercontent.com", apple_services_id: "" }, PUBLIC_CAPTCHA = { turnstile_site_key: "" }, sb = window.supabase.createClient(SB_URL, SB_ANON, {
+  var native = window.SpotterNative || null;
+  if (!native && window.top !== window.self) {
+    try {
+      window.top.location.replace(location.href);
+    } catch (e) {
+    }
+    document.documentElement.style.display = "none";
+    return;
+  }
+  var AUTH_RETURN = native ? "https://simeonrinkenberger.github.io/spotter/" : location.origin + location.pathname, SB_URL = "https://mtzevoxxpsktmrbbuxva.supabase.co", SB_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10emV2b3h4cHNrdG1yYmJ1eHZhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgyMjM5ODgsImV4cCI6MjEwMzc5OTk4OH0._vpNhLJtv2bVGgXXClva9O5cX8Y5eJdTgbgAO81NnmU", API = SB_URL + "/functions/v1/spotter/api/", PUBLIC_AUTH = { google_client_id: "48831784248-dh1o2fhiem9kqgs6ambnnvaba8vojrf2.apps.googleusercontent.com", apple_services_id: "" }, PUBLIC_CAPTCHA = { turnstile_site_key: "" }, sb = window.supabase.createClient(SB_URL, SB_ANON, {
     auth: { persistSession: !0, autoRefreshToken: !0, detectSessionInUrl: !native, flowType: native ? "pkce" : "implicit", storage: native ? native.authStorage : void 0 },
     global: { fetch: function(url, opts) {
       return String(url).indexOf("/auth/v1/") >= 0 ? deadline(function(signal) {
@@ -8920,6 +9625,7 @@ details.details-moving > :not(summary) {
     });
     var share = SHARED[path] ? epoch + ":" + uid + ":" + path + "\n" + (opts.body || "") : null;
     if (share && inFlight[share]) return inFlight[share];
+    opts.method && opts.method !== "GET" && retireLimits();
     var p = deadline(function(signal) {
       return sb.auth.getSession().then(function(r) {
         if (!accountNow(epoch, uid)) throw new Error("Account changed");
@@ -8944,7 +9650,7 @@ details.details-moving > :not(summary) {
       };
       p.then(forget, forget);
     }
-    return p;
+    return opts.method && opts.method !== "GET" && p.then(retireLimits, retireLimits), p;
   }
   function apiStream(path, body, onEvent) {
     var consentEpoch = accountEpoch, consentUid = state.user && state.user.id;
@@ -9065,7 +9771,13 @@ details.details-moving > :not(summary) {
   }
   function dismissAiConsent() {
     var pending2 = aiConsentPending;
-    aiConsentPending = null, pending2 && pending2.reject(new Error("AI processing was not enabled. You can still log and plan workouts manually."));
+    if (aiConsentPending = null, !!pending2) {
+      var no = new Error("AI processing was not enabled. You can still log and plan workouts manually.");
+      no.declined = !0, pending2.reject(no);
+    }
+  }
+  function aiDeclined(e) {
+    return !!(e && e.declined);
   }
   function noteConsent(enabled) {
     var pending2 = aiConsentPending;
@@ -9537,7 +10249,7 @@ details.details-moving > :not(summary) {
   }
   function clearAccount() {
     if (dismissAiConsent(), native && native.configureSharing(null).catch(function() {
-    }), cancelPumpyReset(), pendingMotion && pendingMotion.disconnect(), $("app").classList.add("hide"), accountEpoch++, reads = {}, inFlight = {}, libraryRev++, logsRev++, planRev++, clearTimeout(undoTimer), undoTimer = null, undoFn = null, clearTimeout(detailCloseTimer), clearTimeout(woCloseTimer), clearTimeout(pendTimer), pendTimer = null, pendPolls = 0, pendBusy = !1, wkChannel && (sb.removeChannel(wkChannel), wkChannel = null), booting = null, state.profile = null, state.workouts = [], state.logs = null, state.plan = null, state.awards = null, state.goal = null, heroPct = 0, trainSeg = null, state.unit = "lb", state.sounds = !0, state.haptics = !0, state.collections = [], state.colItems = [], seenCards = {}, gridCards = {}, expCache = {}, expWaiting = {}, vidCache = {}, expKey = "", today.rows = [], today.at = 0, today.day = null, today.busy = !1, today.shown = !1, current = null, sc && scForget(), wo && saveDraft(), clearInterval(woTimer), stopRest(), liveEnd(!1), releaseWake(), wo = null, hist = {}, histReady = !1, strava && (strava = { asked: !1, configured: !1, connected: !1, athlete: null, busy: !1 }), pumpy) {
+    }), cancelPumpyReset(), pendingMotion && pendingMotion.disconnect(), $("app").classList.add("hide"), accountEpoch++, reads = {}, inFlight = {}, libraryRev++, logsRev++, planRev++, clearTimeout(undoTimer), undoTimer = null, undoFn = null, clearTimeout(detailCloseTimer), clearTimeout(woCloseTimer), clearTimeout(pendTimer), pendTimer = null, pendPolls = 0, pendBusy = !1, wkChannel && (sb.removeChannel(wkChannel), wkChannel = null), booting = null, earlyUid = null, reconnecting = !1, state.profile = null, state.workouts = [], state.logs = null, state.plan = null, state.awards = null, state.goal = null, heroPct = 0, trainSeg = null, state.unit = "lb", state.sounds = !0, state.haptics = !0, state.collections = [], state.colItems = [], seenCards = {}, gridCards = {}, expCache = {}, expWaiting = {}, vidCache = {}, expKey = "", capWaiting = {}, today.rows = [], today.at = 0, today.day = null, today.busy = !1, today.shown = !1, today.asked = 0, current = null, sc && scForget(), wo && saveDraft(), clearInterval(woTimer), stopRest(), liveEnd(!1), releaseWake(), wo = null, hist = {}, histReady = !1, strava && (strava = { asked: !1, configured: !1, connected: !1, athlete: null, busy: !1 }), clearTimeout(pumpyIdleTimer), pumpy) {
       var seq = (pumpy.openSeq || 0) + 1, wired = pumpy.wired;
       pumpy = {
         thread: null,
@@ -9553,7 +10265,7 @@ details.details-moving > :not(summary) {
       };
     }
     native && native.purchases && native.purchases.clear().catch(function() {
-    }), billing && (billing.prices = null, billing.waiting = null, billing.busy = !1, billing.sub = null, billing.subAsked = !1, billing.limits = null, billing.said = null, billing.ctx = null, billing.cc = null, billing.ccWaiting = null, billing.redeeming = !1), ["grid", "chips", "colbar", "libcount", "empty", "dinner", "pumpylog", "pumpyannounce", "pumpyctx", "pumpythreads", "trainview", "today", "resume", "recapopts"].forEach(function(id) {
+    }), billing && (billing.prices = null, billing.caps = null, billing.capsWaiting = null, billing.asking = !1, billing.fails = 0, billing.busy = !1, billing.sub = null, billing.subAsked = !1, billing.limits = null, billing.limitsAt = 0, billing.limitsWaiting = null, billing.said = null, billing.ctx = null, billing.cc = null, billing.ccWaiting = null, billing.redeeming = !1), ["grid", "chips", "colbar", "libcount", "empty", "dinner", "pumpylog", "pumpyannounce", "pumpyctx", "pumpythreads", "trainview", "today", "resume", "recapopts"].forEach(function(id) {
       var n = $(id);
       n && (n.innerHTML = "");
     }), $("count0").textContent = "Reading your library", clearTimeout(toastTimer), $("toast").classList.remove("show"), $("toast").textContent = "", Array.prototype.forEach.call(document.querySelectorAll(".sheet.open, #detail.open, #workout.open"), function(n) {
@@ -9563,19 +10275,24 @@ details.details-moving > :not(summary) {
   sb.auth.onAuthStateChange(function(event, session) {
     if (event === "PASSWORD_RECOVERY" && setTimeout(openRecovery, 0), session && session.user) {
       var first = !state.user || state.user.id !== session.user.id;
-      first && state.user && clearAccount(), state.user = session.user, showApp(), first && setTimeout(boot, 0);
-    } else
-      clearAccount(), publishSignedOut(), state.user = null, guideUser(), state.workouts = [], state.logs = null, state.plan = null, state.awards = null, state.filter = "All", state.q = "", $("search").value = "", dropCache(), booting = null, showLanding();
+      first && state.user ? clearAccount() : first && settleEarly(session.user.id), state.user = session.user, showApp(), first && setTimeout(boot, 0);
+    } else earlyUid && !state.user && event !== "SIGNED_OUT" ? answeredNobody(signedOut) : signedOut();
   });
+  function signedOut() {
+    clearAccount(), publishSignedOut(), state.user = null, guideUser(), state.workouts = [], state.logs = null, state.plan = null, state.awards = null, state.filter = "All", state.q = "", $("search").value = "", dropCache(), booting = null, showLanding();
+  }
   var booting = null;
   function boot() {
     if (guideUser(), booting) return booting;
-    paintCache();
+    var library = load();
+    earlyUid !== state.user.id ? paintCache() : renderToday(), earlyUid = null;
     var profileReady = loadProfile();
     maybeInstallHint(), watchWorkouts();
     var epoch = accountEpoch, uid = state.user.id;
-    return booting = load().then(function() {
+    return booting = library.then(function() {
       if (accountNow(epoch, uid)) return consumeShare();
+    }).then(function() {
+      accountNow(epoch, uid) && takeParkedShare();
     }).then(function() {
       accountNow(epoch, uid) && consumeOpen();
     }).then(function() {
@@ -9605,7 +10322,8 @@ details.details-moving > :not(summary) {
     }, 200), idle(function() {
       accountNow(epoch, uid) && (pumpy.loaded || renderPumpy(), loadPumpy(!0));
     }, 450), idle(function() {
-      accountNow(epoch, uid) && isFree() && loadPrices().then(renderLibCount);
+      accountNow(epoch, uid) && isFree() && (loadCaps().then(renderLibCount), native && native.purchases && loadPrices(), readLimits().catch(function() {
+      }));
     }, 700);
   }
   var wkChannel = null;
@@ -9631,7 +10349,7 @@ details.details-moving > :not(summary) {
   function onWorkoutChange(payload) {
     var row = payload.eventType === "DELETE" ? payload.old : payload.new;
     if (!(!row || !row.id) && !(!state.user || row.user_id && row.user_id !== state.user.id) && !(payload.eventType !== "DELETE" && state.workouts.some(function(w) {
-      return w.id === row.id && JSON.stringify(w) === JSON.stringify(row);
+      return w.id === row.id && sameRow(w, row);
     }))) {
       if (libraryRev++, payload.eventType === "DELETE") {
         state.workouts = state.workouts.filter(function(w) {
@@ -9647,7 +10365,7 @@ details.details-moving > :not(summary) {
           break;
         }
       var was = at >= 0 ? state.workouts[at] : null;
-      at >= 0 ? state.workouts[at] = row : state.workouts.unshift(row), current && current.id === row.id && refreshDetail(row), was && was.ingest_status === "processing" && row.ingest_status === "ready" ? toast("Ready: " + (row.title || "your workout")) : was && was.ingest_status === "processing" && row.ingest_status === "failed" && toast("Could not read that video \u2014 open it to try again."), render(), watchPending();
+      at >= 0 ? state.workouts[at] = row : state.workouts.unshift(row), current && current.id === row.id && refreshDetail(row), was && was.ingest_status === "processing" && row.ingest_status === "ready" ? toast(UNCHANGED.test(row.ingest_error || "") ? row.ingest_error : "Ready: " + (row.title || "your workout")) : was && was.ingest_status === "processing" && row.ingest_status === "failed" && toast(row.ingest_error === UNAVAILABLE ? "That post is private, deleted or unavailable." : row.kind === "photo" || row.kind === "p" ? "Could not read that post \u2014 open it to try again." : "Could not read that video \u2014 open it to try again."), render(), watchPending();
     }
   }
   var pendTimer = null, pendPolls = 0, pendBusy = !1;
@@ -9669,7 +10387,7 @@ details.details-moving > :not(summary) {
     });
     if (!ids.length) return Promise.resolve();
     var epoch = accountEpoch, uid = state.user.id, rev = libraryRev;
-    return pendBusy = !0, pendPolls++, sb.from("workouts").select("*").eq("user_id", uid).in("id", ids).then(function(r) {
+    return pendBusy = !0, pendPolls++, sb.from("workouts").select(CARD_COLS).eq("user_id", uid).in("id", ids).then(function(r) {
       if (!(!accountNow(epoch, uid) || r.error || rev !== libraryRev)) {
         var found = {};
         (r.data || []).forEach(function(w) {
@@ -9684,15 +10402,26 @@ details.details-moving > :not(summary) {
     });
   }
   function loadProfile() {
-    var uid = state.user.id, epoch = accountEpoch;
-    return sb.from("profiles").select("*").eq("id", uid).maybeSingle().then(function(r) {
+    var uid = state.user.id, epoch = accountEpoch, configured = null, loaded = sb.from("profiles").select("*").eq("id", uid).maybeSingle().then(function(r) {
       if (accountNow(epoch, uid) && r.data) {
-        state.profile = r.data, paintConsent(), native && native.configureSharing(r.data.ingest_key).catch(function() {
-        });
+        state.profile = r.data, paintConsent(), native && (configured = native.configureSharing(r.data.ingest_key, { plan: r.data.plan }).catch(function() {
+        }));
         var s = r.data.settings || {};
         s.unit && (state.unit = s.unit), typeof s.sounds == "boolean" && (state.sounds = s.sounds), typeof s.haptics == "boolean" && (state.haptics = s.haptics), s.remind && (remind.plan = !!s.remind.plan, remind.risk = !!s.remind.risk), typeof s.remindAt == "number" && (remind.at = s.remindAt), paintSounds(), billing.said && (state.profile.plan = billing.said), renderLibCount();
       }
     });
+    return sharingSet = loaded.then(function() {
+      return configured;
+    }, function() {
+    }), loaded;
+  }
+  var CARD_COLS = "id,user_id,created_at,url,shortcode,platform,kind,author,title,thumb_url,category,muscle_groups,equipment,difficulty,duration_minutes,blocks,tags,has_full_workout,favorite,notes,source_url,ingest_status,ingest_error,confidence,media_stage,read_quality,user_workout_override,user_edit_revision", CARD_KEYS = CARD_COLS.split(",");
+  function cardSig(w) {
+    for (var o = {}, i = 0; i < CARD_KEYS.length; i++) o[CARD_KEYS[i]] = w[CARD_KEYS[i]] === void 0 ? null : w[CARD_KEYS[i]];
+    return JSON.stringify(o);
+  }
+  function sameRow(a, b) {
+    return cardSig(a) === cardSig(b) && (a.caption === void 0 || b.caption === void 0 || a.caption === b.caption);
   }
   var CACHE_KEY = "spotter-lib-v1", CACHE_MAX = 15e5;
   function thinRow(w) {
@@ -9701,12 +10430,12 @@ details.details-moving > :not(summary) {
       Object.prototype.hasOwnProperty.call(w, k) && k !== "caption" && (out[k] = w[k]);
     return out;
   }
-  function readCache() {
+  function readCache(uid) {
     try {
       var raw = localStorage.getItem(CACHE_KEY);
       if (!raw) return null;
       var c = JSON.parse(raw);
-      return !c || c.v !== 1 || !state.user || c.uid !== state.user.id || !c.workouts || !c.workouts.length ? null : c;
+      return !c || c.v !== 1 || !uid || c.uid !== uid || !c.workouts || !c.workouts.length ? null : c;
     } catch (e) {
       return null;
     }
@@ -9741,22 +10470,91 @@ details.details-moving > :not(summary) {
     }
   }
   function paintCache() {
-    var c = readCache();
-    if (c) {
-      state.workouts = c.workouts, state.collections = c.collections || [], state.colItems = c.colItems || [];
-      for (var i = 0; i < state.workouts.length; i++) seenCards[state.workouts[i].id] = 1;
-      render();
+    var c = readCache(state.user && state.user.id);
+    c && paintRows(c);
+  }
+  function paintRows(c) {
+    state.workouts = c.workouts, state.collections = c.collections || [], state.colItems = c.colItems || [];
+    for (var i = 0; i < state.workouts.length; i++) seenCards[state.workouts[i].id] = 1;
+    render();
+  }
+  var SESSION_KEY = "sb-mtzevoxxpsktmrbbuxva-auth-token", earlyUid = null;
+  function paintBeforeAuth() {
+    if (!native && /(^|[#?&])(access_token|refresh_token|code|error)=/.test(location.hash + "&" + location.search.slice(1))) return;
+    function take(raw) {
+      if (!(state.user || earlyUid || !raw)) {
+        var s = null;
+        try {
+          s = JSON.parse(raw);
+        } catch (e) {
+          return;
+        }
+        var uid = s && s.user && s.user.id, c = typeof uid == "string" ? readCache(uid) : null;
+        c && (earlyUid = uid, showApp(), paintRows(c));
+      }
+    }
+    if (native) {
+      native.authStorage.getItem(SESSION_KEY).then(take, function() {
+      });
+      return;
+    }
+    try {
+      take(localStorage.getItem(SESSION_KEY));
+    } catch (e) {
     }
   }
+  function settleEarly(uid) {
+    earlyUid && earlyUid !== uid && clearAccount();
+  }
+  var reconnecting = !1;
+  function answeredNobody(leave) {
+    var uid = earlyUid;
+    function decide(raw2) {
+      if (!(state.user || earlyUid !== uid)) {
+        var s = null;
+        try {
+          s = JSON.parse(raw2);
+        } catch (e) {
+        }
+        if (!(s && s.user && s.user.id === uid && s.refresh_token)) {
+          leave();
+          return;
+        }
+        reconnecting || (reconnecting = !0, toast(WAITING), window.addEventListener("online", function() {
+          !state.user && earlyUid === uid && sb.auth.getSession().catch(function() {
+          });
+        }));
+      }
+    }
+    if (native) {
+      native.authStorage.getItem(SESSION_KEY).then(decide, function() {
+        leave();
+      });
+      return;
+    }
+    var raw = null;
+    try {
+      raw = localStorage.getItem(SESSION_KEY);
+    } catch (e) {
+    }
+    decide(raw);
+  }
+  var WAITING = "Reconnecting\u2026 Your library and workouts still work offline.";
+  function accountFree(t) {
+    return !t || !t.closest ? !1 : t.closest("[data-close], #dclose, #grid, #chips, #searchwrap, #hint, #filtersheet, #sortsheet, #tab0, #resume, #toast, #dinner .startbtn, #dinner .source-disclosure, #workout") ? !0 : !!(wo && !wo.finished && t.closest(".sheet"));
+  }
+  document.addEventListener("click", function(e) {
+    state.user || !earlyUid || accountFree(e.target) || (e.preventDefault(), e.stopPropagation(), toast(WAITING));
+  }, !0);
   function load(retry) {
     if (!state.user) return Promise.resolve();
-    var uid = state.user.id, epoch = accountEpoch, rev = libraryRev;
+    var uid = state.user.id, epoch = accountEpoch, rev = libraryRev, begun = Date.now();
     return readOnce("library:" + rev + ":" + !!retry, function() {
-      var rows = sb.from("workouts").select("*").eq("user_id", uid).order("created_at", { ascending: !1 }).limit(200).then(function(r) {
+      var rows = sb.from("workouts").select(CARD_COLS).eq("user_id", uid).order("created_at", { ascending: !1 }).limit(200).then(function(r) {
         if (accountNow(epoch, uid)) {
           if (r.error) throw r.error;
           if (rev === libraryRev) {
-            if (state.workouts = r.data || [], today.at = 0, render(), current && $("detail").classList.contains("open")) {
+            if (state.workouts = r.data || [], today.asked < begun && (today.at = 0), render(), current && $("detail").classList.contains("open")) {
               var fresh = state.workouts.filter(function(w) {
                 return w.id === current.id;
               })[0];
@@ -9794,8 +10592,8 @@ details.details-moving > :not(summary) {
       });
     });
   }
-  function refreshDetail(w) {
-    if (!(!current || current.id !== w.id) && JSON.stringify(current) !== JSON.stringify(w)) {
+  function refreshDetail(w, force) {
+    if (!(!current || current.id !== w.id) && (w.caption === void 0 && current.caption !== void 0 && (w.caption = current.caption), !(!force && sameRow(current, w)))) {
       var old = current, d = $("dinner"), scroll = $("detail").scrollTop;
       if (!$("detail").classList.contains("open")) {
         current = w;
@@ -9811,6 +10609,44 @@ details.details-moving > :not(summary) {
         replacement && replacement.replaceWith(source);
       }
       $("detail").scrollTop = scroll;
+    }
+  }
+  var capWaiting = {};
+  function askCaption(w, box, body) {
+    if (!(w.caption !== void 0 || isUpload(w) || !state.user)) {
+      var epoch = accountEpoch, uid = state.user.id, id = w.id, p = capWaiting[id];
+      if (!p) {
+        p = capWaiting[id] = sb.from("workouts").select("caption").eq("id", id).maybeSingle().then(function(r) {
+          if (r.error) throw r.error;
+          return r.data ? r.data.caption : null;
+        });
+        var done = function() {
+          capWaiting[id] === p && delete capWaiting[id];
+        };
+        p.then(done, done);
+      }
+      p.then(function(cap) {
+        accountNow(epoch, uid) && (w.caption === void 0 && (w.caption = cap), current && current.id === id && current.caption === void 0 && (current.caption = cap), showCaption(box, body, cap));
+      }, function() {
+      });
+    }
+  }
+  function showCaption(box, body, text) {
+    if (!(!text || !body.isConnected || body.querySelector(".capbox"))) {
+      if (box._disclosureRun) {
+        setTimeout(function() {
+          showCaption(box, body, text);
+        }, 90);
+        return;
+      }
+      var cap = el("div", "capbox", text);
+      if (body.appendChild(cap), !(!box.open || lessMotion() || !cap.animate)) {
+        var css = getComputedStyle(cap), h = cap.getBoundingClientRect().height;
+        cap.animate(
+          [{ height: "0px", opacity: 0, overflow: "hidden" }, { height: h + "px", opacity: 1, overflow: "hidden" }],
+          { duration: parseFloat(css.getPropertyValue("--t-3")) || 320, easing: css.getPropertyValue("--e-out").trim() || "ease-out" }
+        );
+      }
     }
   }
   function isPending(w) {
@@ -9858,6 +10694,22 @@ details.details-moving > :not(summary) {
       head: "Still listening to this one",
       body: "Spotter is listening to your file and pulling the workout out of what is said. The card fills in here as soon as it lands \u2014 you can close this and carry on."
     },
+    // A carousel or a photo post has pictures, not a video to read.
+    post: {
+      kick: "Reading",
+      glyph: "hourglass",
+      line: "Reading the post\u2026",
+      head: "Still reading this one",
+      body: "Spotter is reading this post\u2019s caption and pictures. The card fills in here as soon as it lands \u2014 you can close this and carry on."
+    },
+    // Basic, where Plus could not read more either: no promise it cannot keep.
+    basicText: {
+      kick: "Basic read",
+      glyph: "hourglass",
+      line: "Reading available text\u2026",
+      head: "Building your workout",
+      body: "Spotter is reading the post\u2019s own text. The card fills in here as soon as it lands \u2014 you can close this and carry on."
+    },
     // An upload is watched AND heard in one pass, which neither line above says.
     upwatch: {
       kick: "Watching",
@@ -9868,7 +10720,12 @@ details.details-moving > :not(summary) {
     }
   };
   function stageOf(w) {
-    return isUpload(w) ? w.media_stage === "watching" ? STAGES.upwatch : STAGES.upload : w.media_stage === "watching" ? STAGES.watching : w.media_stage === "listening" ? STAGES.listening : isFree() ? STAGES.basic : STAGES.reading;
+    if (isUpload(w)) return w.media_stage === "watching" ? STAGES.upwatch : STAGES.upload;
+    if (w.platform === "instagram" && w.media_stage === "watching") return STAGES.upwatch;
+    if (w.media_stage === "watching") return STAGES.watching;
+    if (w.media_stage === "listening") return STAGES.listening;
+    var post = w.kind === "photo" || w.platform === "instagram" && w.kind === "p";
+    return isFree() ? w.platform === "tiktok" && !post ? STAGES.basic : STAGES.basicText : post ? STAGES.post : STAGES.reading;
   }
   function readFrom(w) {
     var out = { video: !1, speech: !1 };
@@ -9884,6 +10741,20 @@ details.details-moving > :not(summary) {
     var from = readFrom(w);
     return w.read_quality !== "premium";
   }
+  function canAddVideo(w) {
+    return w.platform !== "instagram" || isPending(w) || isFailed(w) || w.read_quality === "premium" ? !1 : !w.has_full_workout || !exerciseNames(w).length;
+  }
+  var ADD_VIDEO_WHY = "Instagram doesn\u2019t let apps watch reels. Add the video and Spotter will read it: in Instagram tap Share \u2192 Download, then choose it here.", PLUS_READ_HINT = "The caption lists no exercises.", UNAVAILABLE = "This post is private, deleted or unavailable to Spotter.";
+  function isUnavailable(w) {
+    return isFailed(w) && w.ingest_error === UNAVAILABLE;
+  }
+  function failedKick(w, onTile) {
+    return isUnavailable(w) ? "Unavailable" : isUpload(w) ? "Failed" : onTile ? "Retry" : "Needs another try";
+  }
+  function failedGlyph(w) {
+    return isUnavailable(w) ? "eye-off" : isUpload(w) ? "ear" : "refresh";
+  }
+  var UNCHANGED = /This card is unchanged\.$/;
   function isColFilter(f) {
     return typeof f == "string" && f.indexOf("col:") === 0;
   }
@@ -10140,12 +11011,12 @@ details.details-moving > :not(summary) {
     var pg = $("libpage"), top = pg.scrollTop + sec2.getBoundingClientRect().top - pg.getBoundingClientRect().top - secTop();
     top < 0 && (top = 0), lessMotion() || !pg.scrollTo ? pg.scrollTop = top : pg.scrollTo({ top: top, behavior: "smooth" });
   }
-  var today = { day: null, rows: [], done: !1, at: 0, busy: !1, shown: !1 }, todayBox = el("div", "todaywrap hide");
+  var today = { day: null, rows: [], done: !1, at: 0, busy: !1, shown: !1, asked: 0 }, todayBox = el("div", "todaywrap hide");
   todayBox.id = "today", $("chips").parentNode.insertBefore(todayBox, $("chips").nextSibling);
   function loadToday() {
     if (!(today.busy || !state.user)) {
       var key = ymd(/* @__PURE__ */ new Date()), epoch = accountEpoch, uid = state.user.id;
-      today.busy = !0, Promise.all([
+      today.busy = !0, today.asked = Date.now(), Promise.all([
         sb.from("plan").select("workout_id").eq("day", key),
         // Pulled back a day: no time zone can then leave this morning's session
         // outside the window, and the local date below is what decides.
@@ -10213,7 +11084,7 @@ details.details-moving > :not(summary) {
   }
   function cardMeta(w) {
     if (isPending(w)) return stageOf(w).line;
-    if (isFailed(w)) return isUpload(w) ? "No workout in it \u2014 tap to see why" : "Could not read it \u2014 tap to retry";
+    if (isFailed(w)) return isUpload(w) ? "No workout in it \u2014 tap to see why" : isUnavailable(w) ? "Private, deleted or unavailable" : "Could not read it \u2014 tap to retry";
     var bits = [], n = exerciseNames(w).length;
     if (n && bits.push(n + (n === 1 ? " exercise" : " exercises")), w.equipment && w.equipment.length ? bits.push(w.equipment[0]) : w.has_full_workout && bits.push("bodyweight"), !bits.length && w.author && bits.push("@" + w.author), w.platform === "pumpy") {
       var cn = citedSources(w).length;
@@ -10231,6 +11102,19 @@ details.details-moving > :not(summary) {
       card.classList.remove("in"), card.style.animationDelay = "";
     }));
   }
+  var pressedCard = null, gridBehind = !1, gridCatchUp = 0;
+  function liftCard() {
+    if (pressedCard && (pressedCard = null, !!gridBehind)) {
+      gridBehind = !1;
+      var epoch = accountEpoch;
+      clearTimeout(gridCatchUp), gridCatchUp = setTimeout(function() {
+        state.user && epoch === accountEpoch && renderGrid();
+      }, 350);
+    }
+  }
+  window.addEventListener("pointerdown", function(e) {
+    liftCard(), pressedCard = e.target && e.target.closest ? e.target.closest("#grid .carditem") : null;
+  }, !0), window.addEventListener("pointerup", liftCard, !0), window.addEventListener("pointercancel", liftCard, !0), document.addEventListener("visibilitychange", liftCard);
   function renderGrid() {
     var grid = $("grid"), empty = $("empty"), items = visible(), previous = gridCards, next = {}, liveIds = {};
     state.workouts.forEach(function(w) {
@@ -10251,7 +11135,7 @@ details.details-moving > :not(summary) {
         w.difficulty,
         cardMeta(w)
       ]), entry = previous[key];
-      if (!entry || entry.sig !== sig) {
+      if (entry && entry.sig !== sig && entry.node === pressedCard && (gridBehind = !0, sig = entry.sig), !entry || entry.sig !== sig) {
         var changed = !!entry;
         entry && pendingMotion && pendingMotion.unobserve(entry.node), entry = { id: w.id, sig: sig, node: cardNode(w, i) }, changed && entry.node.classList.add("fresh");
       }
@@ -10273,7 +11157,11 @@ details.details-moving > :not(summary) {
         var q = state.q.trim();
         empty.appendChild(el("h2", null, q ? "Nothing matches \u201C" + q + "\u201D" : "Nothing under this filter")), empty.appendChild(el("p", null, q ? "Spotter searches titles, exercise names, muscles and equipment. Try one word instead of three." : "Nothing is filed here yet. Clear the filter to see all workouts."));
       } else {
-        empty.appendChild(el("h2", null, "Your saved videos become workouts.")), empty.appendChild(el("p", null, "Paste a TikTok, Instagram, or YouTube link to get started."));
+        if (empty.appendChild(el("h2", null, "Your saved videos become workouts.")), native) {
+          empty.appendChild(el("p", null, "Found one on TikTok, Instagram or YouTube? Share it to Spotter."));
+          var how = $("addsheet").querySelector(".shareflow").cloneNode(!0);
+          paintSaveOn(how), empty.appendChild(how);
+        } else empty.appendChild(el("p", null, "Paste a TikTok, Instagram, or YouTube link to get started."));
         var first = el("button", "btn firstsave", "Save your first workout");
         first.onclick = function() {
           $("addbtn").click();
@@ -10324,13 +11212,13 @@ details.details-moving > :not(summary) {
     pending2 && pendingMotion && pendingMotion.observe(card), card.setAttribute("data-id", w.id), cardIn(card, w.id);
     var tw = el("div", "thumbwrap loading");
     if (pending2 || failed) {
-      var up = isUpload(w), stage = stageOf(w);
-      tw.className = "thumbwrap " + (pending2 ? "pending" : "failed"), tw.appendChild(icon(el("div", "noimg"), pending2 ? stage.glyph : up ? "ear" : "refresh")), card.appendChild(tw);
+      var stage = stageOf(w);
+      tw.className = "thumbwrap " + (pending2 ? "pending" : "failed"), tw.appendChild(icon(el("div", "noimg"), pending2 ? stage.glyph : failedGlyph(w))), card.appendChild(tw);
       var pb = el("div", "cardbody"), pk = el("div", "cardkick");
       return pk.appendChild(el(
         "div",
         "catpill",
-        pending2 ? stage.kick : up ? "Failed" : "Retry"
+        pending2 ? stage.kick : failedKick(w, !0)
       )), pb.appendChild(pk), pb.appendChild(el("div", "cardtitle", w.title || stage.line)), pb.appendChild(el("div", "cardmeta" + (failed ? " retryline" : ""), cardMeta(w))), card.appendChild(pb), card.onclick = function() {
         openDetail(w);
       }, card;
@@ -10630,7 +11518,7 @@ details.details-moving > :not(summary) {
   function openDetail(w, keepHistory) {
     keepHistory || (guideClear(), guideStill()), current = w, clearTimeout(detailCloseTimer), $("detail").classList.remove("closing", "edgeout");
     var d = $("dinner");
-    d.innerHTML = "", d.classList.remove("din", "dmove"), d.style.transform = "", d.style.opacity = "", navFrom ? (dNav = gridNav(w.id), navFrom = !1) : dNav && dNav.ids[dNav.i] !== w.id && (dNav = null), $("workmanage").innerHTML = "", $("workmanage").appendChild(manageRow(w)), syncRereadButton(w), $("dreproc").hidden = isUpload(w) || w.platform === "pumpy", d.appendChild(el("div", "dkick", isPending(w) ? stageOf(w).kick : isFailed(w) ? "Needs another try" : w.category || "Other"));
+    d.innerHTML = "", d.classList.remove("din", "dmove"), d.style.transform = "", d.style.opacity = "", navFrom ? (dNav = gridNav(w.id), navFrom = !1) : dNav && dNav.ids[dNav.i] !== w.id && (dNav = null), $("workmanage").innerHTML = "", $("workmanage").appendChild(manageRow(w)), syncRereadButton(w), $("dreproc").hidden = isUpload(w) || w.platform === "pumpy", $("dorder").hidden = isPending(w) || isFailed(w) || !ordCan(w), d.appendChild(el("div", "dkick", isPending(w) ? stageOf(w).kick : isFailed(w) ? failedKick(w, !1) : w.category || "Other"));
     var titleEl = el("h2", "dtitle", w.title || "Untitled workout");
     if (d.appendChild(titleEl), w.author) {
       var au = el("button", "dauthor", "@" + w.author);
@@ -10638,14 +11526,14 @@ details.details-moving > :not(summary) {
         state.filter = "by:" + authorKey(w.author), render(), history.back(), setView("library");
       }, d.appendChild(au);
     }
-    if (!isPending(w) && !isFailed(w) && w.ingest_error) {
+    if (!isPending(w) && !isFailed(w) && w.ingest_error && !((w.blocks || []).length === 0 && String(w.ingest_error).indexOf(PLUS_READ_HINT) === 0)) {
       var incomplete = el("div", "sect");
-      incomplete.appendChild(el("h3", null, "Some details are missing")), incomplete.appendChild(el("div", "capbox", w.ingest_error)), d.appendChild(incomplete);
+      incomplete.appendChild(el("h3", null, UNCHANGED.test(w.ingest_error) ? "That read did not change this card" : "Some details are missing")), incomplete.appendChild(el("div", "capbox", w.ingest_error)), d.appendChild(incomplete);
     }
     if (isPending(w) || isFailed(w)) {
-      var isUp = isUpload(w), stage = stageOf(w), note = el("div", "sect");
-      if (note.appendChild(el("h3", null, isPending(w) ? stage.head : isUp ? "Could not find a workout in this one" : "Could not read this one")), note.appendChild(el("div", "capbox", isPending(w) ? stage.body : (w.ingest_error || (isUp ? "Spotter could not make out a workout in that file." : "Spotter could not get anything back from this link.")) + (isUp ? " The file itself is already deleted \u2014 Spotter keeps uploads only long enough to read them." : " The link is saved either way, so nothing is lost."))), d.appendChild(note), isFailed(w)) {
-        if (!isUp) {
+      var isUp = isUpload(w), stage = stageOf(w), note = el("div", "sect"), gone = isUnavailable(w);
+      if (note.appendChild(el("h3", null, isPending(w) ? stage.head : isUp ? "Could not find a workout in this one" : gone ? "This post is unavailable" : "Could not read this one")), note.appendChild(el("div", "capbox", isPending(w) ? stage.body : (w.ingest_error || (isUp ? "Spotter could not make out a workout in that file." : "Spotter could not get anything back from this link.")) + (isUp ? " The file itself is already deleted \u2014 Spotter keeps uploads only long enough to read them." : " The link is saved either way, so nothing is lost."))), d.appendChild(note), isFailed(w)) {
+        if (!isUp && !gone) {
           var rb = el("button", "retrybtn", "Try reading it again");
           rb.onclick = function() {
             retryWorkout(w, rb);
@@ -10689,17 +11577,34 @@ details.details-moving > :not(summary) {
       }
       d.appendChild(warn);
     }
-    if (w.platform !== "pumpy" && w.read_quality !== "premium") {
+    var plusCan = w.platform === "tiktok" && w.kind !== "photo", addHere = canAddVideo(w) && (w.blocks || []).length > 0;
+    if (w.platform !== "pumpy" && w.read_quality !== "premium" && addHere) {
+      var addBox = el("div", "reader-offer");
+      addBox.appendChild(el("b", null, "Add the video")), addBox.appendChild(el("p", null, ADD_VIDEO_WHY));
+      var addv = el("button", "btn ghost", "Add the video");
+      addv.onclick = function() {
+        openAddVideo(w);
+      }, addBox.appendChild(addv), d.appendChild(addBox);
+    } else if (w.platform !== "pumpy" && w.read_quality !== "premium" && plusCan) {
       var quality = el("div", "reader-offer");
       if (quality.appendChild(el("b", null, "Basic read")), quality.appendChild(el("p", null, "Plus reads the video\u2019s movements, spoken cues and on-screen details to build a more complete workout.")), w.platform === "tiktok" && w.kind !== "photo") {
         var pv = billing.limits && billing.limits.video_previews, trial = el("button", "btn ghost", isFree() ? pv ? "Try a Plus read \xB7 " + Math.max(0, pv.cap - pv.used) + " left this month" : "Try a Plus read" : "Read with Plus");
         trial.onclick = function() {
           readVideo(w, trial, isFree());
-        }, quality.appendChild(trial), isFree() && api("limits").then(function(r) {
+        }, quality.appendChild(trial), isFree() && recentLimits().then(function(r) {
           if (!(!trial.isConnected || !r.video_previews)) {
             var left = Math.max(0, r.video_previews.cap - r.video_previews.used);
             trial.textContent = left ? "Try a Plus read \xB7 " + left + " left this month" : "Explore Spotter Plus", left || (trial.onclick = function() {
-              openPlans({ kind: "media" });
+              var c = billing.caps;
+              openPlans({
+                kind: "media",
+                plan: "free",
+                scope: "month",
+                cap: r.video_previews.cap,
+                used: r.video_previews.used,
+                next_plan: "plus",
+                next_cap: c ? capNum(c.plus.month_reads) : void 0
+              });
             });
           }
         }).catch(function() {
@@ -10721,18 +11626,20 @@ details.details-moving > :not(summary) {
     schedule.onclick = function() {
       scheduleWorkout(w);
     }, actions.appendChild(schedule);
-    var ask = el("button", "chip", "Ask coach");
+    var ask = el("button", "chip", "Ask Pumpy");
     ask.onclick = function() {
       history.back(), openPumpy(w);
     }, actions.appendChild(ask), d.appendChild(actions);
     var original = disclosure("Watch original / source", "source-disclosure"), sourceBody = original.lastChild;
-    !isUpload(w) && w.url && sourceBody.appendChild(originalLink(w)), w.caption && sourceBody.appendChild(el("div", "capbox", w.caption)), original._prepareDisclosure = function() {
+    !isUpload(w) && w.url && sourceBody.appendChild(originalLink(w)), w.caption && sourceBody.appendChild(el("div", "capbox", w.caption)), original.firstChild.addEventListener("pointerdown", function() {
+      askCaption(w, original, sourceBody);
+    }), original._prepareDisclosure = function() {
       if (!original.open) {
         var old = sourceBody.querySelector(".embedwrap, .dphoto");
         old && old.remove();
         return;
       }
-      if (!sourceBody.querySelector(".embedwrap, .dphoto")) {
+      if (askCaption(w, original, sourceBody), !sourceBody.querySelector(".embedwrap, .dphoto")) {
         var em = embedNode(w);
         em && (sourceBody.insertBefore(em, sourceBody.firstChild), fitEmbed(em, w.platform));
       }
@@ -10746,6 +11653,7 @@ details.details-moving > :not(summary) {
         strip.appendChild(fromChip(src));
       }), built.appendChild(strip), d.appendChild(built);
     }
+    var canOrder = ordCan(w);
     if ((w.blocks || []).forEach(function(b, bi) {
       var sect = el("div", "sect workout-block"), blockRow = el("div", "exrow delete-swipe block-swipe"), blockFront = el("div", "exmain");
       blockFront.appendChild(el("h3", null, b.title || (w.blocks.length === 1 ? "Exercises" : "Block " + (bi + 1))));
@@ -10786,9 +11694,15 @@ details.details-moving > :not(summary) {
           explain(ex, w);
         }, options.lastChild.appendChild(demo);
         var swap = icon(el("button", "pickrow"), "swap", "Swap or modify");
-        swap.onclick = function() {
+        if (swap.onclick = function() {
           openSwap(ex.name, w.title, { w: w, bi: bi, ei: ei, ex: ex });
-        }, options.lastChild.appendChild(swap), acts.appendChild(options), row.appendChild(acts);
+        }, options.lastChild.appendChild(swap), canOrder) {
+          var move = icon(el("button", "pickrow"), "reorder", "Reorder");
+          move.onclick = function() {
+            openOrder(w, "e" + bi + "." + ei);
+          }, options.lastChild.appendChild(move);
+        }
+        acts.appendChild(options), row.appendChild(acts);
         var swipe = el("div", "exrow delete-swipe"), front = el("div", "exmain");
         front.appendChild(row);
         var drawer = el("div", "exacts"), del = icon(el("button", "exact danger"), "trash", "Delete");
@@ -10805,22 +11719,34 @@ details.details-moving > :not(summary) {
     }), !(w.blocks || []).length) {
       var none = el("div", "sect");
       none.appendChild(el("h3", null, "No exercises found"));
-      var canRead = canReadVideo(w), np = el("div", "capbox", canRead ? "The caption on this one names no exercises. Spotter can go and read the video itself \u2014 listen to what the creator says, and read what is written on the screen. It takes a minute or so, and the card fills in here." : from.video || from.speech ? "Spotter read the video itself and still could not make out a workout in it. You can watch it and log a freestyle session, or type the exercises in yourself." : "This video did not include a written workout, so there is nothing to step through. You can still watch it and log a freestyle session, use Read it again in Options on this card to have another go, or type the exercises in yourself.");
+      var canRead = canReadVideo(w), canAdd = canAddVideo(w), hinted = canRead && isFree() && String(w.ingest_error || "").indexOf(PLUS_READ_HINT) === 0, np = el("div", "capbox", hinted ? w.ingest_error : canRead ? "The caption on this one names no exercises. Spotter can go and read the video itself \u2014 listen to what the creator says, and read what is written on the screen. It takes a minute or so, and the card fills in here." : canAdd ? ADD_VIDEO_WHY : from.video || from.speech ? "Spotter read the video itself and still could not make out a workout in it. You can watch it and log a freestyle session, or type the exercises in yourself." : "This video did not include a written workout, so there is nothing to step through. You can still watch it and log a freestyle session, use Read it again in Options on this card to have another go, or type the exercises in yourself.");
       if (none.appendChild(np), none.appendChild(el("div", null, " ")), canRead) {
-        var rvb = el("button", "retrybtn", "Read the video");
+        var rvb = el("button", "retrybtn", isFree() ? "Use a free Plus read" : "Read the video");
         rvb.onclick = function() {
-          readVideo(w, rvb);
+          readVideo(w, rvb, isFree());
         }, none.appendChild(rvb);
+      }
+      if (canAdd) {
+        var avb = el("button", "retrybtn", "Add the video");
+        avb.onclick = function() {
+          openAddVideo(w);
+        }, none.appendChild(avb);
       }
       var addfirst = el("button", "addex", "+ Add an exercise");
       addfirst.onclick = function() {
         openExAdd(w, 0);
       }, none.appendChild(addfirst), d.appendChild(none);
     }
-    var addsec = el("button", "addex", "+ Add a section");
+    var tools = el("div", "cardtools"), addsec = el("button", "addex", "+ Add a section");
     if (addsec.onclick = function() {
       openSection(w, null);
-    }, d.appendChild(addsec), exN) {
+    }, tools.appendChild(addsec), canOrder) {
+      var reorder = icon(el("button", "addex"), "reorder", "Reorder");
+      reorder.onclick = function() {
+        openOrder(w);
+      }, tools.appendChild(reorder);
+    }
+    if (d.appendChild(tools), exN) {
       var hitDetails = disclosure("Muscles worked"), hits = hitDetails.lastChild, slot = el("div");
       hits.appendChild(slot), hits.appendChild(el("div", null, " ")), d.appendChild(hitDetails), loadCatalog().then(function() {
         if (!(!current || current.id !== w.id)) {
@@ -10884,8 +11810,8 @@ details.details-moving > :not(summary) {
           }
           w.ingest_status = "processing", w.ingest_error = null, current && current.id === w.id && openDetail(w, !0), render(), watchPending(), toast(w.user_workout_override ? "Refreshing the source; your personal exercise list will be kept." : "Reading it again\u2026");
         }
-      }).catch(function() {
-        accountNow(epoch, uid) && (btn && (btn.disabled = !1, btn.textContent = "Try reading it again"), toast("Could not start reading that \u2014 try again in a minute."));
+      }).catch(function(e) {
+        accountNow(epoch, uid) && (btn && (btn.disabled = !1, btn.textContent = "Try reading it again"), aiDeclined(e) || toast("Could not start reading that \u2014 try again in a minute."));
       });
     }
   }
@@ -10911,8 +11837,8 @@ details.details-moving > :not(summary) {
           }
           w.ingest_status = "processing", w.ingest_error = null, w.media_stage = "listening", current && current.id === w.id && openDetail(w, !0), render(), watchPending(), toast(w.user_workout_override ? "Refreshing the source; your personal exercise list will be kept." : "Listening to the video\u2026");
         }
-      }).catch(function() {
-        accountNow(epoch, uid) && (btn && (btn.disabled = !1, btn.textContent = "Read the video"), toast("Could not start reading that \u2014 try again in a minute."));
+      }).catch(function(e) {
+        accountNow(epoch, uid) && (btn && (btn.disabled = !1, btn.textContent = "Read the video"), aiDeclined(e) || toast("Could not start reading that \u2014 try again in a minute."));
       });
     }
   }
@@ -10948,8 +11874,8 @@ details.details-moving > :not(summary) {
           })[0];
           fresh && openDetail(fresh, !0), toast("Re-read it from your caption.");
         });
-      }).catch(function() {
-        btn.disabled = !1, btn.textContent = "Read it", toast("Could not read that caption \u2014 try again in a moment.");
+      }).catch(function(e) {
+        btn.disabled = !1, btn.textContent = "Read it", aiDeclined(e) || toast("Could not read that caption \u2014 try again in a moment.");
       });
     }
   }
@@ -11254,6 +12180,18 @@ details.details-moving > :not(summary) {
   function restVal(x) {
     return typeof x == "number" ? x : "";
   }
+  function asStored(v) {
+    if (Array.isArray(v)) return v.map(asStored);
+    if (v && typeof v == "object") {
+      var out = {};
+      return Object.keys(v).sort(function(a, b) {
+        return a.length - b.length || (a < b ? -1 : a > b ? 1 : 0);
+      }).forEach(function(k) {
+        out[k] = asStored(v[k]);
+      }), out;
+    }
+    return typeof v == "number" && isFinite(v) && v % 1 ? Number(v.toPrecision(15)) : v;
+  }
   function openExEdit(w, bi, ei, ex) {
     var timed = !!(ex.duration_seconds && !ex.reps);
     exEdit = {
@@ -11284,7 +12222,7 @@ details.details-moving > :not(summary) {
   }
   function postCorrection(w, payload, btn, okMsg, sheet) {
     var label = btn ? btn.textContent : null;
-    return btn && (btn.disabled = !0, btn.textContent = "Saving\u2026"), api("workouts/" + w.id + "/exercises", { method: "POST", body: JSON.stringify(payload) }).then(function(r) {
+    return btn && (btn.disabled = !0, btn.textContent = "Saving\u2026"), cardWrite(w.id, payload).then(function(r) {
       if (btn && (btn.disabled = !1, btn.textContent = label), r.status !== "ok") {
         limitHit(r, "That change did not save. Your copy is unchanged.");
         return;
@@ -11393,7 +12331,7 @@ details.details-moving > :not(summary) {
       if (sec.b) {
         postCorrection(
           sec.w,
-          { op: "edit_block", block: sec.bi, expect_block: sec.b, fields: f },
+          { op: "edit_block", block: sec.bi, expect_block: asStored(sec.b), fields: f },
           $("sectionsave"),
           "Section saved",
           "sectionsheet"
@@ -11490,7 +12428,7 @@ details.details-moving > :not(summary) {
       w.blocks = before, redraw(), render(), rowBack(rowOf(w, bi)), msg && toast(msg);
     }
     w.blocks.splice(bi, 1), render(), rowAway(box, from, redraw), offerUndo("Removed " + (expected.title || "block"), function() {
-      api("workouts/" + w.id + "/exercises", { method: "POST", body: JSON.stringify({ op: "delete_block", block: bi, expect_block: expected }) }).then(function(r) {
+      cardWrite(w.id, { op: "delete_block", block: bi, expect_block: asStored(expected) }).then(function(r) {
         r.status === "ok" ? absorbWorkout(r.workout) : restore(r.message || "Could not remove that block.");
       }).catch(function() {
         restore("Could not reach Spotter \u2014 the block is back.");
@@ -11512,10 +12450,7 @@ details.details-moving > :not(summary) {
       w.blocks = before, redraw(), render(), rowBack(rowOf(w, ctx.block, ctx.index)), msg && toast(msg);
     }
     offerUndo("Removed " + ctx.name, function() {
-      api("workouts/" + w.id + "/exercises", {
-        method: "POST",
-        body: JSON.stringify({ op: "delete", block: ctx.block, index: ctx.index, expect_name: ctx.name })
-      }).then(function(r) {
+      cardWrite(w.id, { op: "delete", block: ctx.block, index: ctx.index, expect_name: ctx.name }).then(function(r) {
         if (r.status !== "ok") {
           putBack(limitHit(r, null) ? null : r.message || "That did not save \u2014 the exercise is back.");
           return;
@@ -11528,6 +12463,312 @@ details.details-moving > :not(summary) {
       putBack(null);
     });
   }
+  var ORD_EDGE = 56, ORD_SPEED = 14, ord = null, orderLanding = null;
+  function ordKeys(blocks) {
+    var out = [];
+    return blocks.forEach(function(b, bi) {
+      out.push("s" + bi), (b.exercises || []).forEach(function(x, ei) {
+        out.push("e" + bi + "." + ei);
+      });
+    }), out;
+  }
+  function ordKey(k) {
+    var p = k.slice(1).split(".");
+    return { b: +p[0], e: k.charAt(0) === "e" ? +p[1] : null };
+  }
+  function ordSecs(keys) {
+    var secs = [];
+    return keys.forEach(function(k) {
+      var p = ordKey(k);
+      p.e === null ? secs.push({ b: p.b, ex: [] }) : secs[secs.length - 1].ex.push([p.b, p.e]);
+    }), secs;
+  }
+  function ordFlat(secs) {
+    var out = [];
+    return secs.forEach(function(s) {
+      out.push("s" + s.b), s.ex.forEach(function(x) {
+        out.push("e" + x[0] + "." + x[1]);
+      });
+    }), out;
+  }
+  function ordMove(keys, from, to) {
+    var out = keys.slice(), k = out.splice(from, 1)[0];
+    return out.splice(to, 0, k), out;
+  }
+  function ordStep(keys, k, dir) {
+    var i = keys.indexOf(k), secs, si, t;
+    if (i < 0) return null;
+    if (k.charAt(0) === "e") return i + dir < 1 || i + dir >= keys.length ? null : ordMove(keys, i, i + dir);
+    for (secs = ordSecs(keys), si = 0; si < secs.length && "s" + secs[si].b !== k; si++)
+      ;
+    return si + dir < 0 || si + dir >= secs.length ? null : (t = secs[si], secs[si] = secs[si + dir], secs[si + dir] = t, ordFlat(secs));
+  }
+  function ordSlot(mids, from, y, lo, hi) {
+    for (var to = from; to < hi && y > mids[to + 1]; ) to++;
+    for (; to > lo && y < mids[to - 1]; ) to--;
+    return to;
+  }
+  function ordEdge(y, top, bottom, st, max) {
+    var v = 0;
+    return y < top + ORD_EDGE ? v = -ORD_SPEED * Math.min(1, (top + ORD_EDGE - y) / ORD_EDGE) : y > bottom - ORD_EDGE && (v = ORD_SPEED * Math.min(1, (y - bottom + ORD_EDGE) / ORD_EDGE)), v < 0 && st <= 0 || v > 0 && st >= max ? 0 : v;
+  }
+  function ordPayload(secs) {
+    return secs.map(function(s) {
+      return { block: s.b, exercises: s.ex.map(function(x) {
+        return x[0] === s.b ? x[1] : x;
+      }) };
+    });
+  }
+  function ordApply(blocks, secs) {
+    return secs.map(function(s) {
+      return Object.assign({}, blocks[s.b], { exercises: s.ex.map(function(x) {
+        return blocks[x[0]].exercises[x[1]];
+      }) });
+    }).filter(function(b) {
+      return b.exercises.length;
+    });
+  }
+  function ordCan(w) {
+    var n = 0;
+    return (w.blocks || []).forEach(function(b) {
+      n += (b.exercises || []).length;
+    }), n > 1 || (w.blocks || []).length > 1;
+  }
+  function cardOf(id) {
+    for (var i = 0; i < state.workouts.length; i++) if (state.workouts[i].id === id) return state.workouts[i];
+    return null;
+  }
+  function cardWrite(id, body) {
+    return undoFn && undoFn.order && flushUndo(), (orderLanding || Promise.resolve()).then(function() {
+      return api("workouts/" + id + "/exercises", { method: "POST", body: JSON.stringify(body) });
+    });
+  }
+  function openOrder(w, pick) {
+    var d = pausedDraft();
+    if (wo && !wo.finished && wo.workout.id === w.id || d && d.workoutId === w.id) {
+      toast("Your paused workout is using this order. End or finish it, then reorder.");
+      return;
+    }
+    flushUndo(), ord = { w: w, before: JSON.parse(JSON.stringify(w.blocks || [])), sel: pick || null, moved: {}, drag: null }, ord.keys = ordKeys(ord.before), ord.start = ord.keys.join(), ord.keys.indexOf(ord.sel) < 0 && (ord.sel = null), ordPaint(), openSheet("ordersheet"), ord.sel && (ordReveal(ordRowOf(ord.sel)), ordSay(ordWhere(ord.sel) + ". Move it up or down."));
+  }
+  function ordTitle(blocks, bi) {
+    return blocks[bi].title || (blocks.length === 1 ? "Exercises" : "Block " + (bi + 1));
+  }
+  function ordLabel(blocks, k) {
+    var p = ordKey(k);
+    return p.e === null ? ordTitle(blocks, p.b) : blocks[p.b].exercises[p.e].name || "Exercise";
+  }
+  function ordRowOf(k) {
+    return $("olist").querySelector('[data-k="' + k + '"]');
+  }
+  function ordPaint() {
+    var list = $("olist");
+    list.innerHTML = "", ordSecs(ord.keys).forEach(function(s) {
+      var n = s.ex.length;
+      list.appendChild(ordRow(
+        "s" + s.b,
+        ordTitle(ord.before, s.b),
+        n ? n + (n === 1 ? " exercise" : " exercises") : "Empty \xB7 it goes when you tap Done"
+      )), s.ex.forEach(function(x) {
+        var ex = ord.before[x[0]].exercises[x[1]];
+        list.appendChild(ordRow("e" + x[0] + "." + x[1], ex.name, doseText(ex)));
+      });
+    }), ordArrows();
+  }
+  function ordRow(k, title, sub) {
+    var on = ord.sel === k, row = el("div", "orow " + (k.charAt(0) === "s" ? "osec" : "oex") + (on ? " sel" : ""));
+    row.setAttribute("role", "listitem"), row.setAttribute("data-k", k);
+    var pick = el("button", "opick");
+    pick.appendChild(el("b", null, title)), sub && pick.appendChild(el("span", null, sub)), pick.setAttribute("aria-pressed", on ? "true" : "false"), row.appendChild(pick), [[-1, "up", " up"], [1, "dn", " down"]].forEach(function(a) {
+      var b = icon(el("button", "ostep " + a[1]), "arrow-up");
+      b.setAttribute("data-d", a[0]), b.setAttribute("aria-label", "Move " + title + a[2]), row.appendChild(b);
+    });
+    var grip = icon(el("span", "ogrip"), "list");
+    return grip.setAttribute("aria-hidden", "true"), grip.setAttribute("data-noswipe", ""), row.appendChild(grip), row;
+  }
+  function ordArrows() {
+    var row = ord.sel && ordRowOf(ord.sel);
+    row && row.querySelectorAll(".ostep").forEach(function(b) {
+      b.disabled = !ordStep(ord.keys, ord.sel, +b.getAttribute("data-d"));
+    });
+  }
+  function ordPick(k, quiet2) {
+    ord.sel = ord.sel === k ? null : k, $("olist").querySelectorAll(".orow").forEach(function(r) {
+      var on = r.getAttribute("data-k") === ord.sel;
+      r.classList.toggle("sel", on), r.firstChild.setAttribute("aria-pressed", on ? "true" : "false");
+    }), ordArrows(), !quiet2 && (haptic("select"), ord.sel && ordSay(ordWhere(k) + ". Move it up or down."));
+  }
+  function ordWhere(k) {
+    var p = ordKey(k), out = ordLabel(ord.before, k), secs = ordSecs(ord.keys);
+    return secs.forEach(function(s, si) {
+      p.e === null && s.b === p.b && (out += ", section " + (si + 1) + " of " + secs.length), s.ex.forEach(function(x, xi) {
+        x[0] === p.b && x[1] === p.e && (out += ", " + (xi + 1) + " of " + s.ex.length + " in " + ordTitle(ord.before, s.b));
+      });
+    }), out;
+  }
+  function ordSay(text) {
+    var live = $("orderlive");
+    live.textContent = "", setTimeout(function() {
+      live.textContent = text;
+    }, 40);
+  }
+  function ordReveal(row) {
+    if (row) {
+      var body = $("olist").parentNode, head = body.querySelector(".ohead").offsetHeight, top = $("olist").offsetTop + row.offsetTop, bottom = top + row.offsetHeight;
+      top - head < body.scrollTop + 8 ? body.scrollTop = Math.max(0, top - head - 8) : bottom > body.scrollTop + body.clientHeight - 8 && (body.scrollTop = bottom - body.clientHeight + 8);
+    }
+  }
+  function ordRects() {
+    var out = {};
+    return $("olist").querySelectorAll(".orow").forEach(function(r) {
+      r.offsetParent !== null && (out[r.getAttribute("data-k")] = r.getBoundingClientRect().top);
+    }), out;
+  }
+  function ordFlip(from, land2, skip) {
+    var list = $("olist"), moved = [];
+    lessMotion() || (list.querySelectorAll(".orow").forEach(function(r) {
+      var k = r.getAttribute("data-k"), was = from[k], d;
+      if (!(k === skip || r.offsetParent === null)) {
+        if (was === void 0) {
+          r.classList.add("oin");
+          return;
+        }
+        d = was - r.getBoundingClientRect().top, k === land2 && r.classList.add("lift"), !(Math.abs(d) < 0.5 && k !== land2) && (r.style.transition = "none", r.style.transform = "translateY(" + d + "px)", moved.push(r));
+      }
+    }), moved.length && (list.offsetHeight, moved.forEach(function(r) {
+      r.style.transition = "", r.style.transform = "", r.classList.remove("lift");
+    })));
+  }
+  function ordArrow(k, dir) {
+    var next = ordStep(ord.keys, k, dir), from, row, b;
+    next && (from = ordRects(), ord.keys = next, ord.moved[k] = 1, ordPaint(), ordFlip(from, null), haptic("select"), row = ordRowOf(k), b = row.querySelector(dir < 0 ? ".up" : ".dn"), b.disabled && (b = row.querySelector(dir < 0 ? ".dn" : ".up")), b.focus({ preventScroll: !0 }), ordReveal(row), ordSay(ordWhere(k)));
+  }
+  function ordLift(e, row) {
+    var list = $("olist"), body = list.parentNode, k = row.getAttribute("data-k"), sec2 = k.charAt(0) === "s", top0 = row.getBoundingClientRect().top, rows, i, gap, g;
+    if (!(ord.drag || !e.isPrimary || e.button > 0)) {
+      if (e.preventDefault(), ord.sel && ordPick(ord.sel, !0), sec2) {
+        var from = ordRects();
+        body.style.height = body.offsetHeight + "px", list.classList.add("ocollapse"), body.scrollTop += row.getBoundingClientRect().top - top0, ordFlip(from, null, k);
+      }
+      rows = Array.prototype.filter.call(list.children, function(r) {
+        return r.offsetParent !== null;
+      }), i = rows.indexOf(row), gap = parseFloat(getComputedStyle(list).rowGap) || 6, g = ord.drag = {
+        id: e.pointerId,
+        k: k,
+        row: row,
+        rows: rows,
+        from: i,
+        to: i,
+        y0: e.clientY,
+        y: e.clientY,
+        s0: body.scrollTop,
+        off: top0 - row.getBoundingClientRect().top,
+        lo: sec2 ? 0 : 1,
+        hi: rows.length - 1,
+        tops: [],
+        hs: [],
+        mids: [],
+        raf: 0,
+        top: body.querySelector(".ohead").getBoundingClientRect().bottom,
+        bottom: body.getBoundingClientRect().bottom
+      }, rows.forEach(function(r) {
+        g.tops.push(r.offsetTop), g.hs.push(r.offsetHeight), g.mids.push(r.offsetTop + r.offsetHeight / 2);
+      }), g.foot = g.hs[i] + gap, row.classList.add("lift");
+      try {
+        list.setPointerCapture(e.pointerId);
+      } catch (err) {
+      }
+      haptic("tap"), ordCarry(e.clientY), g.raf = requestAnimationFrame(ordFrame);
+    }
+  }
+  function ordCarry(y) {
+    var g = ord.drag, body = $("olist").parentNode, t, to;
+    g.y = y, t = g.off + (y - g.y0) + (body.scrollTop - g.s0), t = Math.max(g.tops[g.lo] - g.mids[g.from], Math.min(t, g.tops[g.hi] + g.hs[g.hi] - g.mids[g.from])), g.row.style.transform = "translateY(" + t + "px) scale(1.02)", to = ordSlot(g.mids, g.from, g.mids[g.from] + t, g.lo, g.hi), to !== g.to && (g.to = to, g.rows.forEach(function(r, j) {
+      var s = j === g.from ? 0 : j > g.from && j <= to ? -g.foot : j < g.from && j >= to ? g.foot : 0;
+      j !== g.from && (r.style.transform = s ? "translateY(" + s + "px)" : "");
+    }), haptic("select"));
+  }
+  function ordFrame() {
+    var g = ord && ord.drag, body, v;
+    g && (body = $("olist").parentNode, v = ordEdge(g.y, g.top, g.bottom, body.scrollTop, body.scrollHeight - body.clientHeight), v && (body.scrollTop += v, ordCarry(g.y)), g.raf = requestAnimationFrame(ordFrame));
+  }
+  function ordDrop(e, cancelled) {
+    var g = ord && ord.drag, list = $("olist"), body = list.parentNode, from, secs, moved, row;
+    if (!(!g || e && e.pointerId !== g.id)) {
+      ord.drag = null, cancelAnimationFrame(g.raf);
+      try {
+        list.releasePointerCapture(g.id);
+      } catch (err) {
+      }
+      moved = !cancelled && g.to !== g.from, moved && swallowClick(), from = ordRects(), moved && g.k.charAt(0) === "s" ? (secs = ordSecs(ord.keys), secs.splice(g.to, 0, secs.splice(g.from, 1)[0]), ord.keys = ordFlat(secs)) : moved && (ord.keys = ordMove(ord.keys, g.from, g.to)), moved && (ord.moved[g.k] = 1), list.classList.remove("ocollapse"), ordPaint(), body.style.height = "", row = ordRowOf(g.k), g.k.charAt(0) === "s" && (body.scrollTop += row.getBoundingClientRect().top - from[g.k]), ordFlip(from, g.k), moved && haptic("tap"), ordSay(moved ? ordWhere(g.k) : ordLabel(ord.before, g.k) + " stays where it was.");
+    }
+  }
+  function ordShut() {
+    ord && ord.drag && (cancelAnimationFrame(ord.drag.raf), ord.drag = null), $("olist").classList.remove("ocollapse"), $("olist").parentNode.style.height = "", ord = null;
+  }
+  function ordDone() {
+    var o = ord, live, secs, after, moved, one;
+    if (!o || o.drag || (closeSheet("ordersheet"), o.keys.join() === o.start)) return;
+    live = cardOf(o.w.id) || o.w, secs = ordSecs(o.keys), after = ordApply(o.before, secs), moved = Object.keys(o.moved), one = moved.length === 1 ? "Moved " + ordLabel(o.before, moved[0]) : "Card reordered", live.blocks = after, ordRepaint(live, secs, moved);
+    function commit2() {
+      return ordCommit(live.id, o.before, secs, after);
+    }
+    commit2.order = !0, offerUndo(one, commit2, function() {
+      live.blocks = o.before, ordRepaint(live, null, null);
+    });
+  }
+  function ordRepaint(w, secs, moved) {
+    if (current && current.id === w.id && refreshDetail(w, !0), render(), !(!secs || !current || current.id !== w.id)) {
+      var kept = secs.filter(function(s) {
+        return s.ex.length;
+      });
+      moved.forEach(function(k) {
+        var p = ordKey(k), node = null;
+        kept.forEach(function(s, si) {
+          var sect = p.e === null && s.b === p.b ? rowOf(w, si) : null;
+          sect && (node = sect.firstElementChild), s.ex.forEach(function(x, xi) {
+            x[0] === p.b && x[1] === p.e && (node = rowOf(w, si, xi));
+          });
+        }), node && node.classList.add("moved");
+      });
+    }
+  }
+  function ordCommit(id, before, secs, after) {
+    function back(msg) {
+      var live = cardOf(id);
+      live && JSON.stringify(live.blocks) === JSON.stringify(after) && (live.blocks = before, ordRepaint(live, null, null)), msg && toast(msg);
+    }
+    var p = cardWrite(id, { op: "reorder", order: ordPayload(secs), expect_blocks: before }).then(function(r) {
+      r.status === "ok" ? absorbWorkout(r.workout) : back(limitHit(r, null) ? null : r.message || "That order did not save \u2014 the card is back as it was.");
+    }, function() {
+      back("Could not reach Spotter \u2014 the card is back as it was.");
+    }).then(function() {
+      orderLanding === p && (orderLanding = null);
+    });
+    return orderLanding = p, p;
+  }
+  (function() {
+    var list = $("olist"), sheet = $("ordersheet");
+    list.addEventListener("click", function(e) {
+      var b = e.target.closest && e.target.closest("button"), row = b && b.closest(".orow");
+      !ord || !row || (b.classList.contains("ostep") ? ordArrow(row.getAttribute("data-k"), +b.getAttribute("data-d")) : ordPick(row.getAttribute("data-k")));
+    }), list.addEventListener("pointerdown", function(e) {
+      var grip = e.target.closest && e.target.closest(".ogrip");
+      ord && grip && ordLift(e, grip.parentNode);
+    }), list.addEventListener("pointermove", function(e) {
+      ord && ord.drag && e.pointerId === ord.drag.id && ordCarry(e.clientY);
+    }), list.addEventListener("pointerup", function(e) {
+      ord && ordDrop(e, !1);
+    }), list.addEventListener("pointercancel", function(e) {
+      ord && ordDrop(e, !0);
+    }), list.addEventListener("touchmove", function(e) {
+      ord && ord.drag && e.cancelable && e.preventDefault();
+    }, { passive: !1 }), sheet.addEventListener("keydown", function(e) {
+      !ord || !ord.sel || (e.key === "Escape" ? (e.preventDefault(), e.stopImmediatePropagation(), ordPick(ord.sel)) : (e.key === "ArrowUp" || e.key === "ArrowDown") && (e.preventDefault(), ordArrow(ord.sel, e.key === "ArrowUp" ? -1 : 1)));
+    }), $("ordersave").onclick = ordDone, $("dorder").onclick = function() {
+      current && openOrder(current);
+    };
+  })();
   function removeWorkout(w, btn) {
     var go = function() {
       var keptW = state.workouts, keptC = state.colItems;
@@ -12224,8 +13465,14 @@ details.details-moving > :not(summary) {
           return;
         }
         done(r);
-      }).catch(function() {
-        expKey === key && ($("explaintext").textContent = got || EXFAIL);
+      }).catch(function(e) {
+        if (expKey === key) {
+          if (aiDeclined(e) && !got) {
+            $("explaintext").classList.add("hide"), $("explainask").classList.remove("hide");
+            return;
+          }
+          $("explaintext").textContent = got || EXFAIL;
+        }
       });
     };
   }
@@ -12287,8 +13534,8 @@ details.details-moving > :not(summary) {
           }
           renderSwapResult(box, r);
         }
-      }).catch(function() {
-        swapCtx !== ctx || ctx.seq !== seq || (box.innerHTML = "", box.appendChild(el("div", "aitext", "Could not find a swap just now. Try again in a moment.")));
+      }).catch(function(e) {
+        swapCtx !== ctx || ctx.seq !== seq || (box.innerHTML = "", aiDeclined(e) || box.appendChild(el("div", "aitext", "Could not find a swap just now. Try again in a moment.")));
       });
     }
   }
@@ -12802,7 +14049,7 @@ details.details-moving > :not(summary) {
   }
   function woaKeep(body, msg) {
     var w = wo.workout;
-    api("workouts/" + w.id + "/exercises", { method: "POST", body: JSON.stringify(body) }).then(function(r) {
+    cardWrite(w.id, body).then(function(r) {
       if (!r || r.status !== "ok") {
         limitHit(r, WOA_NOSAVE);
         return;
@@ -13591,14 +14838,13 @@ details.details-moving > :not(summary) {
     return cxDial(a), s.block.exercises[cur] || s.ex;
   }
   function cxScoreOf(w, entries) {
-    var out = null, by = {};
-    return (entries || []).forEach(function(e) {
-      by[e.block + ":" + e.exercise] = e;
-    }), (w && w.blocks || []).forEach(function(b, bi) {
-      var cx = out ? null : complexOf(b, w), reps = 0, low, x = 0;
+    var out = null;
+    return (w && w.blocks || []).forEach(function(b, bi) {
+      var cx = out ? null : complexOf(b, w), reps = 0, low, x = 0, got;
       if (cx) {
+        got = cxLogged(entries, b, bi);
         var counts = (b.exercises || []).map(function(ex, j) {
-          var sets = ((by[bi + ":" + j] || {}).sets || []).filter(Boolean);
+          var sets = ((got[j] || {}).sets || []).filter(Boolean);
           return sets.forEach(function(st) {
             reps += st.reps || 0;
           }), sets.length;
@@ -13608,6 +14854,33 @@ details.details-moving > :not(summary) {
         }), out = { rounds: low, extra: x, reps: reps, cap: cx.cap, text: cxScore(low, x) });
       }
     }), out;
+  }
+  function cxLogged(entries, b, bi) {
+    var list = b.exercises || [], groups = {}, best = null, most = 0, here;
+    (entries || []).forEach(function(e) {
+      (groups[e.block] = groups[e.block] || []).push(e);
+    });
+    function same(e, ex) {
+      return e.name === ex.name || !!(e.canonical_id && e.canonical_id === ex.canonical_id);
+    }
+    function at(pool, j) {
+      for (var i = 0; i < pool.length; i++) if (pool[i].exercise === j) return pool.splice(i, 1)[0];
+      return null;
+    }
+    return here = list.map(function(ex, j) {
+      return at((groups[bi] || []).slice(), j);
+    }), here.some(Boolean) && here.every(function(e, j) {
+      return !e || !e.name || same(e, list[j]);
+    }) ? here : ([String(bi)].concat(Object.keys(groups)).forEach(function(k) {
+      var pool = (groups[k] || []).slice(), n = 0, got = list.map(function(ex) {
+        for (var i = 0; i < pool.length; i++) if (same(pool[i], ex))
+          return n++, pool.splice(i, 1)[0];
+        return null;
+      });
+      n > most && (most = n, best = got.map(function(e, j) {
+        return e || at(pool, j);
+      }));
+    }), best || here);
   }
   function ssMembers(i) {
     var s = wo.screens[i], out = [], k;
@@ -13726,7 +14999,11 @@ details.details-moving > :not(summary) {
     var m = $("wmain"), a = p.getBoundingClientRect(), b = m.getBoundingClientRect(), d = Math.min(Math.max(a.bottom - b.bottom + 8, 0), a.top - b.top - 8);
     d && p.isConnected && !p.closest(".sspanel:not(.open)") && m.scrollBy({ top: d, behavior: lessMotion() ? "auto" : "smooth" });
   }
-  $("wmain").addEventListener("focusin", function(e) {
+  var woEdge = !1;
+  $("wmain").addEventListener("scroll", function() {
+    var on = this.scrollTop > 1;
+    on !== woEdge && (woEdge = on, $("workout").classList.toggle("wedge", on));
+  }, { passive: !0 }), $("wmain").addEventListener("focusin", function(e) {
     if (!document.documentElement.classList.contains("kb-over")) {
       var box = e.target.classList.contains("numin") ? e.target.parentNode : null;
       box && setTimeout(function() {
@@ -13760,14 +15037,18 @@ details.details-moving > :not(summary) {
   }
   var WM_LEAD = 72, WM_BAND = 26, woSlide = 0;
   function wireWmain(main) {
-    var md = null;
+    var md = null, loose = { held: function() {
+      return md;
+    }, release: function() {
+      stop(null, !0, !0);
+    } };
     function paint2(dx) {
       if (!md.calm) {
         var end = dx < 0 ? wo.i >= endStop() : stopOf(wo.i) <= 0, lead = end ? clamp(dx / 5, -WM_BAND, WM_BAND) : clamp(dx / 2, -WM_LEAD, WM_LEAD);
         main.style.transform = "translateX(" + lead + "px)", main.style.opacity = String(1 - Math.abs(lead) / 320);
       }
     }
-    function stop(e, cancelled) {
+    function stop(e, cancelled, lost) {
       if (!(!md || e && e.pointerId !== md.id)) {
         var d = md;
         if (md = null, !!d.lock) {
@@ -13775,7 +15056,7 @@ details.details-moving > :not(summary) {
             main.releasePointerCapture(d.id);
           } catch (err) {
           }
-          swallowClick();
+          lost || swallowClick();
           var s = d.s, a = s[0], b = s[s.length - 1], dt = (b.t - a.t) / 1e3, v = dt > 4e-3 ? (b.x - a.x) / dt : 0, far = Math.abs(d.dx) > main.offsetWidth * 0.4, n = cancelled || !wo ? 0 : v < -FLING || far && d.dx < 0 ? 1 : v > FLING || far && d.dx > 0 ? -1 : 0;
           n > 0 && wo.i >= endStop() && (n = 0), n < 0 && stopOf(wo.i) <= 0 && (n = 0), main.classList.add("wmease"), main.style.transform = "", main.style.opacity = "", n && (woSlide = n, woGo(n), haptic("tap"));
         }
@@ -13788,11 +15069,13 @@ details.details-moving > :not(summary) {
         y: e.clientY,
         dx: 0,
         lock: !1,
+        seen: now(),
         calm: lessMotion(),
         s: [{ t: now(), x: e.clientX }]
-      });
+      }, holdDrag(loose));
     }), main.addEventListener("pointermove", function(e) {
       if (!(!md || e.pointerId !== md.id)) {
+        md.seen = now();
         var dx = e.clientX - md.x, dy = e.clientY - md.y;
         if (!md.lock) {
           if (dx * dx + dy * dy < SLOP * SLOP) return;
@@ -13826,6 +15109,10 @@ details.details-moving > :not(summary) {
       });
       if (!logged.length) {
         leaveWorkout(), toast("Workout closed \u2014 nothing logged.");
+        return;
+      }
+      if (!state.user) {
+        saveDraft(), toast("Reconnecting\u2026 This workout is kept on this phone. Save it once you're back online.");
         return;
       }
       var payload = {
@@ -14936,11 +16223,15 @@ details.details-moving > :not(summary) {
   }
   var WB_LEAD = 64, planSlide = 0;
   function wireWeekBar(node, ctx) {
-    var wd = null;
+    var wd = null, loose = { held: function() {
+      return wd;
+    }, release: function() {
+      stop(null, !0, !0);
+    } };
     function rest(keepBody) {
       ctx.bar.classList.remove("wbdrag"), ctx.title.style.transform = "", !keepBody && (ctx.lean.classList.add("pbmove"), ctx.lean.style.transform = "", ctx.lean.style.opacity = "");
     }
-    function stop(e, cancelled) {
+    function stop(e, cancelled, lost) {
       if (!(!wd || e && e.pointerId !== wd.id)) {
         var d = wd;
         if (wd = null, !!d.lock) {
@@ -14948,7 +16239,7 @@ details.details-moving > :not(summary) {
             node.releasePointerCapture(d.id);
           } catch (err) {
           }
-          swallowClick();
+          lost || swallowClick();
           var s = d.s, a = s[0], b = s[s.length - 1], dt = (b.t - a.t) / 1e3, v = dt > 4e-3 ? (b.x - a.x) / dt : 0, far = Math.abs(d.dx) > node.offsetWidth * PART, n = cancelled ? 0 : v < -FLING || far && d.dx < 0 ? 1 : v > FLING || far && d.dx > 0 ? -1 : 0;
           rest(!!n), n && (planSlide = n, d.calm || (ctx.lean.classList.add("pbmove"), ctx.lean.style.transform = "translateX(" + (n > 0 ? -WB_LEAD : WB_LEAD) + "px)", ctx.lean.style.opacity = "0"), ctx.step(n), paintTrainBar(), haptic("tap"));
         }
@@ -14961,11 +16252,13 @@ details.details-moving > :not(summary) {
         y: e.clientY,
         dx: 0,
         lock: !1,
+        seen: now(),
         calm: lessMotion(),
         s: [{ t: now(), x: e.clientX }]
-      });
+      }, holdDrag(loose));
     }), node.addEventListener("pointermove", function(e) {
       if (!(!wd || e.pointerId !== wd.id)) {
+        wd.seen = now();
         var dx = e.clientX - wd.x, dy = e.clientY - wd.y;
         if (!wd.lock) {
           if (dx * dx + dy * dy < SLOP * SLOP) return;
@@ -15738,15 +17031,15 @@ details.details-moving > :not(summary) {
       return a.kind !== "freeze";
     }), box = el("div", "chartcard");
     box.appendChild(el("h3", null, "Awards"));
-    var grid = el("div", "tgrid"), shown = isFree() ? have.slice(0, 12) : have;
+    var grid = el("div", "tgrid"), shown = isFree() ? have.slice(0, AWARDS_KEPT) : have;
     return shown.forEach(function(a) {
       grid.appendChild(medallion(a));
     }), lockedAwards(st, logs).forEach(function(l) {
       grid.appendChild(medallion(l, !0));
-    }), box.appendChild(grid), isFree() && have.length > 12 && box.appendChild(el(
+    }), box.appendChild(grid), isFree() && have.length > AWARDS_KEPT && box.appendChild(el(
       "div",
       "bodynote",
-      have.length - 12 + " earlier awards are kept in Plus."
+      have.length - AWARDS_KEPT + " earlier awards are kept in Plus."
     )), box;
   }
   var statsCounted = !1;
@@ -16009,13 +17302,46 @@ details.details-moving > :not(summary) {
   }, MAX_REFS = 6, QUICK_ASKS = [
     "Build a 25-min kettlebell shoulders + core",
     "Plan my week from what I\u2019ve saved",
-    "Add a finisher to my leg day",
+    "Edit one of my workouts",
     "Shoulder pain \u2014 what should I strengthen?"
   ], NO_TOUCH = !("ontouchstart" in window) && !(navigator.maxTouchPoints > 0);
   function openPumpy(w) {
     w && (pumpy.refs = [w.id].concat(pumpy.refs.filter(function(id) {
       return id !== w.id;
-    })).slice(0, MAX_REFS), pumpy.refsRev++, renderPumpyCtx()), setView("pumpy");
+    })).slice(0, MAX_REFS), pumpy.refsRev++, pumpy.ctxAt = Date.now(), renderPumpyCtx()), setView("pumpy");
+  }
+  var PUMPY_IDLE = 300 * 1e3, pumpyIdleTimer = 0;
+  function pumpyLastAt(msgs, seen) {
+    for (var t = seen || 0, i = msgs.length - 1; i >= 0; i--) {
+      var c = Date.parse(msgs[i].created_at || "");
+      if (c) {
+        c > t && (t = c);
+        break;
+      }
+    }
+    return t;
+  }
+  function pumpyHolds(msgs) {
+    return pumpy.busy || pumpy.live ? !0 : msgs.some(function(m) {
+      return m.role === "assistant" && m.meta && m.meta.proposal && m.meta.status === "pending";
+    });
+  }
+  function pumpyStale(msgs, seen, at) {
+    if (!msgs.length || pumpyHolds(msgs)) return !1;
+    var last = Math.max(pumpyLastAt(msgs, seen), pumpy.ctxAt || 0);
+    return !!last && (at || Date.now()) - last > PUMPY_IDLE;
+  }
+  function freshenPumpy() {
+    return !pumpy.loaded || pumpy.loading || !pumpyStale(pumpy.messages, pumpy.lastAt) ? !1 : (pumpyBlank(), renderPumpy(), $("pumpyview").scrollTop = 0, !0);
+  }
+  function pumpyAway() {
+    if (clearTimeout(pumpyIdleTimer), !(state.view === "pumpy" || !pumpy.loaded || !pumpy.messages.length || freshenPumpy())) {
+      var last = Math.max(pumpyLastAt(pumpy.messages, pumpy.lastAt), pumpy.ctxAt || 0);
+      last && (pumpyIdleTimer = setTimeout(pumpyAway, Math.max(1e3, last + PUMPY_IDLE - Date.now() + 250)));
+    }
+  }
+  function pumpyBack() {
+    state.view === "pumpy" ? freshenPumpy() : pumpyAway();
   }
   function loadPumpy(warm) {
     if (!state.user || (warm || ensurePumpyMeter(), pumpy.loaded) || pumpy.loading) return;
@@ -16032,7 +17358,7 @@ details.details-moving > :not(summary) {
     });
   }
   function settlePumpy(t) {
-    pumpy.loading = !1, pumpy.loaded = !0, t && (pumpy.thread = { id: t.id, title: t.title, updated_at: t.updated_at, workout_id: t.workout_id }, pumpy.messages = t.pumpy_messages || [], pumpy.refsRev || (pumpy.refs = lastRefs(pumpy.messages, t.workout_id))), pumpy.shownCount = 0, renderPumpy();
+    pumpy.loading = !1, pumpy.loaded = !0, t && !pumpyStale(t.pumpy_messages || [], 0) && (pumpy.thread = { id: t.id, title: t.title, updated_at: t.updated_at, workout_id: t.workout_id }, pumpy.messages = t.pumpy_messages || [], pumpy.refsRev || (pumpy.refs = lastRefs(pumpy.messages, t.workout_id))), pumpy.shownCount = 0, renderPumpy();
   }
   function lastRefs(msgs, workoutId) {
     for (var i = msgs.length - 1; i >= 0; i--) {
@@ -16048,8 +17374,7 @@ details.details-moving > :not(summary) {
       a.onfinish = null, a.cancel();
     }), $("pumpylog").classList.remove("resetting"), $("pumpylog").inert = !1, $("pumpyctx").inert = !1);
   }
-  function newPumpyThread() {
-    if (pumpy.loaded && !pumpy.loading && !pumpy.thread && !pumpy.messages.length && !pumpy.busy && !pumpy.refs.length) return;
+  function pumpyBlank() {
     cancelPumpyReset(), pumpy = Object.assign({}, pumpy, {
       thread: null,
       messages: [],
@@ -16062,8 +17387,14 @@ details.details-moving > :not(summary) {
       live: null,
       nodes: {},
       shownCount: 0,
-      stick: !0
+      stick: !0,
+      lastAt: 0,
+      ctxAt: 0
     });
+  }
+  function newPumpyThread() {
+    if (pumpy.loaded && !pumpy.loading && !pumpy.thread && !pumpy.messages.length && !pumpy.busy && !pumpy.refs.length) return;
+    pumpyBlank();
     var owner = pumpy, log = $("pumpylog"), ctx = $("pumpyctx");
     log.classList.remove("waiting"), $("pumpysend").disabled = !1, $("pumpyannounce").textContent = "New chat ready.";
     function draw() {
@@ -16202,7 +17533,7 @@ details.details-moving > :not(summary) {
     sb.from("pumpy_messages").select("*").eq("thread_id", t.id).order("id", { ascending: !0 }).limit(80).then(function(m) {
       if (seq === pumpy.openSeq) {
         if (m.error) throw m.error;
-        clearTimeout(timer), swapped = !0, pumpy.thread = { id: t.id, title: t.title, updated_at: t.updated_at, workout_id: t.workout_id }, pumpy.messages = m && m.data || [], pumpy.refsRev === refsRev && (pumpy.refs = lastRefs(pumpy.messages, t.workout_id)), pumpy.loaded = !0, pumpy.shownCount = 0, pumpy.stick = !0, log.classList.remove("waiting"), renderPumpy(), closed || closeSheet("pumpysheet");
+        clearTimeout(timer), swapped = !0, pumpy.thread = { id: t.id, title: t.title, updated_at: t.updated_at, workout_id: t.workout_id }, pumpy.messages = m && m.data || [], pumpy.refsRev === refsRev && (pumpy.refs = lastRefs(pumpy.messages, t.workout_id)), pumpy.loaded = !0, pumpy.shownCount = 0, pumpy.stick = !0, pumpy.lastAt = 0, pumpy.ctxAt = Date.now(), log.classList.remove("waiting"), renderPumpy(), closed || closeSheet("pumpysheet");
       }
     }).catch(function() {
       seq === pumpy.openSeq && (clearTimeout(timer), log.classList.remove("waiting"), $("pumpysend").disabled = !!pumpy.busy, closeSheet("pumpysheet"), toast("That chat did not open \u2014 try again in a moment."));
@@ -16285,7 +17616,7 @@ details.details-moving > :not(summary) {
     var log = $("pumpylog"), frag = document.createDocumentFragment();
     if (isFree()) {
       var offer = el("div", "reader-offer");
-      offer.appendChild(el("b", null, "Pumpy \xB7 Included with Spotter Plus")), offer.appendChild(el("p", null, "Combine your saved workouts, build a routine for your goals, get coaching and find alternate exercises. Upgrade to let Pumpy work with your attachments."));
+      offer.appendChild(el("b", null, "Pumpy \xB7 Included with Spotter Plus")), offer.appendChild(el("p", null, "Combine your saved workouts, build a routine for your goals, get coaching and find alternate exercises."));
       var upgrade = el("button", "btn", "Explore Spotter Plus");
       upgrade.onclick = function() {
         openPlans({ kind: "pumpy" });
@@ -16294,7 +17625,7 @@ details.details-moving > :not(summary) {
     var shown = pumpy.messages.filter(function(m) {
       return m.role === "user" || m.role === "assistant";
     });
-    if (log.classList.toggle("hello", !shown.length), !shown.length && pumpy.loaded) {
+    if (log.classList.toggle("hello", !shown.length), $("pumpybar").classList.toggle("labelled", !!pumpy.loaded && !shown.length && !pumpy.busy), !shown.length && pumpy.loaded) {
       var hello = el("div", "pumpyhello");
       hello.appendChild(pumpyArt("hello", !0)), hello.appendChild(el("h2", null, "Hey, I\u2019m Pumpy")), hello.appendChild(el(
         "p",
@@ -16488,7 +17819,9 @@ details.details-moving > :not(summary) {
       var owner = pumpy;
       $("pumpyannounce").textContent = "", pumpy.refs.length && guideLearn("refs");
       var box = $("pumpyinput");
-      box.value = "", box.style.height = "auto", NO_TOUCH && box.focus(), pumpy.busy = !0, pumpy.live = null, pumpy.stick = !0, pumpy.messages.push({ id: "local-" + Date.now(), role: "user", content: text }), renderPumpy();
+      box.value = "", box.style.height = "auto", NO_TOUCH && box.focus(), pumpy.busy = !0, pumpy.live = null, pumpy.stick = !0, pumpy.lastAt = Date.now();
+      var asked = { id: "local-" + Date.now(), role: "user", content: text };
+      pumpy.messages.push(asked), renderPumpy();
       var ids = pumpy.refs.slice(0, MAX_REFS), payload = {
         thread_id: pumpy.thread ? pumpy.thread.id : null,
         message: text,
@@ -16499,7 +17832,7 @@ details.details-moving > :not(summary) {
       };
       apiStream("pumpy/chat", payload, function(r) {
         if (pumpy === owner) {
-          if (r.t !== "final") {
+          if (pumpy.lastAt = Date.now(), r.t !== "final") {
             liveEvent(r);
             return;
           }
@@ -16528,9 +17861,15 @@ details.details-moving > :not(summary) {
         }
       }).then(function() {
         if (pumpy === owner && pumpy.busy) throw new Error("cut");
-      }).catch(function() {
+      }).catch(function(e) {
         if (!(pumpy !== owner || !pumpy.busy)) {
-          pumpy.busy = !1, $("pumpyannounce").textContent = "Connection ended. You can read the partial answer and try again.";
+          if (pumpy.busy = !1, aiDeclined(e)) {
+            pumpy.live = null, pumpy.messages = pumpy.messages.filter(function(m) {
+              return m !== asked;
+            }), box.value || (box.value = text, box.style.height = "auto", box.style.height = Math.min(box.scrollHeight, 138) + "px"), renderPumpy();
+            return;
+          }
+          $("pumpyannounce").textContent = "Connection ended. You can read the partial answer and try again.";
           var half = pumpy.live && pumpy.live.tn.data, keep = pumpy.stick ? -1 : $("pumpyview").scrollTop;
           pumpy.live = null, pumpy.messages.push({
             id: "local-err-" + Date.now(),
@@ -16565,10 +17904,22 @@ details.details-moving > :not(summary) {
     subAsked: !1,
     limits: null,
     // last /api/limits, for the Settings usage line
+    limitsAt: 0,
+    // when it was read; 0 once a write may have spent from it
+    limitsWaiting: null,
     said: null,
     // the plan the server last reported, which outranks the row
     ctx: null,
     // the 429 the sheet was opened by, or null from Settings
+    caps: null,
+    // what each plan gets, from the server: {free, plus, features}
+    capsWaiting: null,
+    asking: !1,
+    // the store is being asked for prices right now
+    fails: 0,
+    // store answers that were not a price, this session
+    shown: null,
+    // which page the sheet last painted
     interval: "year",
     busy: !1,
     cc: null,
@@ -16580,6 +17931,23 @@ details.details-moving > :not(summary) {
   };
   function billOn() {
     return !!(billing.prices && billing.prices.configured);
+  }
+  var LIMITS_FRESH = 6e4, limitsRev = 0;
+  function readLimits() {
+    if (billing.limitsWaiting) return billing.limitsWaiting;
+    var epoch = accountEpoch, uid = state.user && state.user.id, rev = limitsRev, p = billing.limitsWaiting = api("limits", { method: "GET" }).then(function(r) {
+      return !r || r.status !== "ok" || !accountNow(epoch, uid) || (billing.limits = r, billing.limitsAt = rev === limitsRev ? Date.now() : 0), r;
+    });
+    function done() {
+      billing.limitsWaiting === p && (billing.limitsWaiting = null);
+    }
+    return p.then(done, done), p;
+  }
+  function recentLimits() {
+    return billing.limits && Date.now() - billing.limitsAt < LIMITS_FRESH ? Promise.resolve(billing.limits) : readLimits();
+  }
+  function retireLimits() {
+    billing.limitsAt = 0, limitsRev++;
   }
   function myPlan() {
     return state.profile && state.profile.plan || "free";
@@ -16613,21 +17981,44 @@ details.details-moving > :not(summary) {
     var epoch = accountEpoch, uid = state.user && state.user.id;
     return native && native.purchases ? native.purchases.prices(uid).then(function(r) {
       return accountNow(epoch, uid) ? (billing.prices = r, r) : null;
+    }).catch(function(e) {
+      return accountNow(epoch, uid) ? (console.warn("Spotter Plus: no store price", e && e.message), billing.prices = { configured: !1, nativeStore: !0 }, billing.prices) : null;
+    }) : loadCaps().then(function() {
+      return billing.prices;
+    });
+  }
+  function loadCaps() {
+    if (billing.caps) return Promise.resolve(billing.caps);
+    if (billing.capsWaiting) return billing.capsWaiting;
+    var epoch = accountEpoch, uid = state.user && state.user.id;
+    return billing.capsWaiting = api("billing/prices", { method: "GET" }).then(function(r) {
+      if (!accountNow(epoch, uid)) return null;
+      billing.capsWaiting = null;
+      var c = r && r.caps;
+      return c && c.free && c.plus && (billing.caps = { free: c.free, plus: c.plus, features: r.features || null }), native || (billing.prices = r && r.status === "ok" && r.configured ? r : { configured: !1 }), billing.caps;
+    }, function() {
+      return accountNow(epoch, uid) && (billing.capsWaiting = null), null;
+    }), billing.capsWaiting;
+  }
+  function loadUse() {
+    return api("limits", { method: "GET" }).then(function(r) {
+      r && r.status === "ok" && (billing.limits = r, adoptPlan(r.plan));
     }).catch(function() {
-      return accountNow(epoch, uid) ? (billing.prices = { configured: !1, nativeStore: !0 }, billing.prices) : null;
-    }) : billing.prices ? Promise.resolve(billing.prices) : (billing.waiting || (billing.waiting = api("billing/prices", { method: "GET" }).then(function(r) {
-      return accountNow(epoch, uid) ? (billing.waiting = null, billing.prices = r && r.status === "ok" && r.configured ? r : { configured: !1 }, billing.prices) : null;
-    }).catch(function() {
-      return accountNow(epoch, uid) ? (billing.waiting = null, billing.prices = { configured: !1 }, billing.prices) : null;
-    })), billing.waiting);
+    });
   }
   function loadSub() {
     if (billing.subAsked) return Promise.resolve(billing.sub);
     billing.subAsked = !0;
-    var epoch = accountEpoch, uid = state.user && state.user.id, legacy = sb.from("subscriptions").select("*").maybeSingle(), request = native && native.purchases ? Promise.all([legacy, sb.from("store_entitlements").select("*").maybeSingle()]).then(function(rows) {
+    var epoch = accountEpoch, uid = state.user && state.user.id, legacy = sb.from("subscriptions").select("*").maybeSingle(), request = Promise.all([legacy, sb.from("store_entitlements").select("*").maybeSingle()]).then(function(rows) {
       var store = rows[1].data;
-      return store && store.active && (!store.expires_at || Date.parse(store.expires_at) > Date.now()) ? { data: { source: store.source, plan: "plus", status: "active", current_period_end: store.expires_at } } : rows[0];
-    }) : legacy;
+      return store && store.active && (!store.expires_at || Date.parse(store.expires_at) > Date.now()) ? { data: {
+        source: store.source,
+        plan: "plus",
+        status: "active",
+        current_period_end: store.expires_at,
+        cancel_at_period_end: store.will_renew === !1
+      } } : rows[0];
+    });
     return request.then(function(r) {
       if (!accountNow(epoch, uid)) return null;
       if (r.error) throw r.error;
@@ -16646,11 +18037,66 @@ details.details-moving > :not(summary) {
     var n = credits / 5;
     return (n >= 100 ? Math.round(n / 50) * 50 : Math.round(n / 10) * 10).toLocaleString();
   }
-  function planBenefits(caps) {
-    var f = caps && caps.free, p = caps && caps.plus;
-    if (!f || !p) return [];
-    var out = [], lib = capNum(p.library), reads2 = capNum(p.month_reads);
-    return out.push(lib === null ? "Keep every workout you save \u2014 Basic holds " + f.library + "." : "Hold " + capMany(lib) + " saved workouts, instead of " + f.library + "."), reads2 === null ? (out.push("Read the movements, the spoken cues and the text on screen in supported videos."), out.push("Video reading and coaching have monthly allowances; Settings shows what is left.")) : (out.push("Read " + reads2 + " videos a month in full \u2014 the movements, the spoken cues and the text on screen. Basic reads " + capMany(capNum(f.month_reads)) + "."), out.push(capMany(capNum(p.month_answers)) + " coaching answers a month from Pumpy, and " + capMany(capNum(p.month_helpers)) + " explanations and swaps.")), out.push("Saving from a caption, logging, your plan and your progress are free and are never metered."), out.push("Stop whenever you like \u2014 everything you saved stays yours, and stays readable."), out;
+  var AWARDS_KEPT = 12;
+  function planRows(c, mine) {
+    var f = c.free, p = c.plus, m = mine && billing.limits && billing.limits.month, held = state.workouts.length;
+    function has(k, plan) {
+      var l = c.features && c.features[k];
+      return l ? l.indexOf(plan) >= 0 : plan !== "free";
+    }
+    function month(n) {
+      return n = capNum(n), n === null ? "No limit" : n ? n.toLocaleString() + " a month" : "\u2014";
+    }
+    function shelfN(n) {
+      return n = capNum(n), n === null ? "No limit" : n.toLocaleString();
+    }
+    function kept(plan) {
+      return has("awards_all", plan) ? "All" : "Latest " + AWARDS_KEPT;
+    }
+    function used(k) {
+      var u = m ? num(m[k]) : null, cap = m ? capNum(m[k + "_cap"]) : null;
+      return u === null || !cap ? null : [u + " of " + cap + " used", u >= cap];
+    }
+    var lib = capNum(f.library);
+    return [
+      ["Saved workouts", shelfN(f.library), shelfN(p.library), mine && lib ? [held + " saved", held >= lib] : null],
+      // Named for what Plus can actually read: TikTok video (the save-flow audit's
+      // S2; Instagram and YouTube give no video to read, so no row promises it).
+      ["Full TikTok video reads", month(f.month_reads), month(p.month_reads), used("reads")],
+      ["Pumpy coach", has("pumpy", "free") ? "Included" : "\u2014", has("pumpy", "plus") ? "Included" : "\u2014", null],
+      ["Explanations and swaps", month(f.month_helpers), month(p.month_helpers), used("helpers")],
+      ["Uploads", month(f.month_uploads), month(p.month_uploads), used("uploads")],
+      ["Awards history", kept("free"), kept("plus"), null]
+    ];
+  }
+  function paintTable() {
+    var box = $("plangood"), c = billing.caps;
+    if (box.innerHTML = "", !c) {
+      if (billing.capsWaiting || !state.user) {
+        ["sline", "sline half", "sline", "sline half"].forEach(function(k) {
+          box.appendChild(skelRow(k));
+        });
+        return;
+      }
+      var soft = el("p", "plansoft", "What each plan includes did not load. "), again = el("button", "fixlink", "Try again");
+      again.onclick = function() {
+        retryPrices(again);
+      }, soft.appendChild(again), box.appendChild(soft);
+      return;
+    }
+    var t = el("table", "ptable"), head = el("tr"), body = el("tbody");
+    t.appendChild(el("caption", "sr-only", "What Basic and Plus include")), head.appendChild(el("td")), ["Basic", "Plus"].forEach(function(w, i) {
+      var th = el("th", i ? "pplus" : null, w);
+      th.setAttribute("scope", "col"), head.appendChild(th);
+    }), t.appendChild(el("thead")).appendChild(head), planRows(c, isFree()).forEach(function(r) {
+      var tr = el("tr"), th = el("th", null, r[0]);
+      th.setAttribute("scope", "row"), tr.appendChild(th), [r[1], r[2]].forEach(function(v, i) {
+        var td = el("td", i ? "pplus" : null);
+        td.setAttribute("data-l", i ? "Plus" : "Basic"), v === "\u2014" ? (td.appendChild(el("span", "pno", "\u2014")).setAttribute("aria-hidden", "true"), td.appendChild(el("span", "sr-only", "Not included"))) : (v === "Included" && td.appendChild(ic("check")), td.appendChild(document.createTextNode(v))), !i && r[3] && td.appendChild(el("small", r[3][1] ? "out" : null, r[3][0])), tr.appendChild(td);
+      }), body.appendChild(tr);
+    }), t.appendChild(body), box.appendChild(t);
+    var free = el("div", "pfree"), line = el("span");
+    free.appendChild(ic("check")), line.appendChild(el("b", null, "Always free: ")), line.appendChild(document.createTextNode("logging, Workout Mode, your plan, progress and export. What you save stays yours.")), free.appendChild(line), box.appendChild(free);
   }
   var CAP_WORDS = {
     extract: ["new videos read", "reads"],
@@ -16660,7 +18106,7 @@ details.details-moving > :not(summary) {
     helper: ["explanations and swaps", "allows"]
   }, MULT = ["", "", "twice", "three times", "four times", "five times", "six times"];
   function pumpyRoom(up) {
-    var caps = billing.prices && billing.prices.caps, f = caps && caps.free && num(caps.free.pumpy_month), p = caps && caps.plus && num(caps.plus.pumpy_month), mult = f && p ? Math.round(p / f) : 0;
+    var caps = billing.caps, f = caps && num(caps.free.pumpy_month), p = caps && num(caps.plus.pumpy_month), mult = f && p ? Math.round(p / f) : 0;
     return "On " + up + " I have " + (mult >= 2 && mult < MULT.length ? "about " + MULT[mult] + " as much room" : "a lot more room") + ".";
   }
   function planCtxLine(c) {
@@ -16669,18 +18115,14 @@ details.details-moving > :not(summary) {
     if (c.kind === "library")
       return "That is " + cap + " saved workouts, which is " + mine + "\u2019s shelf. " + up + " takes the lid off, and nothing you have saved is going anywhere in the meantime.";
     if (c.kind === "pumpy")
-      return "That is this month\u2019s coaching used up \u2014 my credits come back on the 1st. " + pumpyRoom(up);
+      return cap !== null && num(c.used) >= cap ? "That is this month\u2019s coaching used up \u2014 my credits come back on the 1st. " + pumpyRoom(up) : "Pumpy is part of Spotter Plus.";
     var w = CAP_WORDS[c.kind];
     if (!w || cap === null) return "";
     var month = c.scope === "month", noun = c.kind === "uploads" && cap === 1 ? "upload" : w[0];
-    return "That is " + cap + " " + noun + (month ? " this month, " : " today, ") + mine + "\u2019s " + (month ? "whole allowance. It comes back on the 1st. " : "burst limit. It resets at midnight UTC. ") + (next === null ? up + " has no limit here." : up + " " + w[1] + " " + next + (month ? " a month." : " a day."));
+    return ("That is " + cap + " " + noun + (month ? " this month, " : " today, ") + mine + "\u2019s " + (month ? "whole allowance. It comes back on the 1st. " : "burst limit. It resets at midnight UTC. ") + (c.next_cap === void 0 ? "" : next === null ? up + " has no limit here." : up + " " + w[1] + " " + next + (month ? " a month." : " a day."))).trim();
   }
   function skelRow(cls) {
     return el("div", "skel " + cls);
-  }
-  function paintSkeleton() {
-    var good = $("plangood"), cards = $("plancards");
-    good.innerHTML = "", cards.innerHTML = "", good.appendChild(skelRow("sline")), good.appendChild(skelRow("sline half")), good.appendChild(skelRow("sline")), good.appendChild(skelRow("sline half")), cards.appendChild(skelRow("scard")), cards.appendChild(skelRow("scard")), $("planbuy").classList.add("hide"), $("plantrial").classList.add("hide"), $("plansoon").classList.add("hide"), $("planfine").textContent = "";
   }
   function priceCard(iv, plus, p) {
     var yearly = iv === "year", cur = p.currency, full = plus[iv].amount, pay = yearly && p.founding ? p.founding.first_year_amount : full, b = el("button", "pcard");
@@ -16689,7 +18131,7 @@ details.details-moving > :not(summary) {
     row.appendChild(el("span", "pname", yearly ? "Yearly" : "Monthly"));
     var amt = el("span", "pamt");
     pay !== full && amt.appendChild(el("span", "pold", money(full, cur))), amt.appendChild(document.createTextNode(p.nativeStore ? plus[iv].localized : money(pay, cur))), row.appendChild(amt), b.appendChild(row);
-    var monthlyYear = plus.month.amount * 12;
+    var monthlyYear = plus.month ? plus.month.amount * 12 : 0;
     if (yearly) {
       var intro = pay !== full, saved = monthlyYear - pay;
       if (monthlyYear > 0 && saved > 0) {
@@ -16703,6 +18145,10 @@ details.details-moving > :not(summary) {
       pickInterval(iv);
     }, b;
   }
+  function goneCard(iv) {
+    var b = el("button", "pcard off");
+    return b.type = "button", b.disabled = !0, b.setAttribute("role", "radio"), b.setAttribute("aria-checked", "false"), b.appendChild(el("div", "prow")).appendChild(el("span", "pname", iv === "year" ? "Yearly" : "Monthly")), b.appendChild(el("div", "pmeta", "Not available right now")), b;
+  }
   function setBuyLabel(text) {
     var s = $("planbuy").querySelector("b");
     if (!(!s || s.textContent === text)) {
@@ -16715,9 +18161,10 @@ details.details-moving > :not(summary) {
       }, 130);
     }
   }
+  var PLAN_RESET = "Monthly allowances come back on the 1st, 00:00 UTC. New AI work can pause when Spotter\u2019s shared daily allowance is reached; saved workouts stay available.";
   function finePrint(p, plus, iv, pay, full, days) {
     var cur = p.currency, first;
-    if (p.nativeStore) return "Renews automatically at " + (plus[iv].localized || money(full, cur)) + (iv === "month" ? " per month" : " per year") + " until cancelled. Manage or cancel in your store subscription settings. Any eligible offer and its terms appear in the store confirmation.";
+    if (p.nativeStore) return (days > 0 ? "After the " + days + "-day free trial, it renews" : "Renews") + " automatically at " + (plus[iv].localized || money(full, cur)) + (iv === "month" ? " per month" : " per year") + " until cancelled. Manage or cancel in your store subscription settings. Any eligible offer and its terms appear in the store confirmation.";
     if (iv === "month")
       first = money(pay, cur) + " a month until you cancel.";
     else if (pay !== full) {
@@ -16734,36 +18181,69 @@ details.details-moving > :not(summary) {
         var on = cards[i].getAttribute("data-iv") === iv;
         cards[i].classList.toggle("on", on), cards[i].setAttribute("aria-checked", on ? "true" : "false");
       }
-      var full = plus[iv].amount, pay = yearly && p.founding ? p.founding.first_year_amount : full, days = num(p.trial_days) || 0, trial = $("plantrial");
-      yearly && days > 0 ? (trial.textContent = "Free for " + days + " days. We will not charge you before " + new Date(Date.now() + days * 864e5).toLocaleDateString(void 0, { day: "numeric", month: "long" }) + ", and you can cancel before then.", trial.classList.remove("hide")) : (trial.textContent = "", trial.classList.add("hide")), setBuyLabel(yearly && days > 0 ? "Start " + days + " free days" : "Subscribe for " + (p.nativeStore ? plus[iv].localized : money(pay, cur)) + (yearly ? " a year" : " a month"));
-      var fr = p.caps && p.caps.free, basic = capNum(fr && fr.month_reads);
-      $("planfine").textContent = finePrint(p, plus, iv, pay, full, days) + (basic === null ? "" : " Basic reads " + basic + " videos a month in full, and everything you have already saved stays readable for ever.") + " Allowances reset on the 1st, 00:00 UTC. During beta, new AI work can also pause when Spotter\u2019s shared allowance is reached; saved workouts remain available.";
+      var full = plus[iv].amount, pay = yearly && p.founding ? p.founding.first_year_amount : full, days = num(plus[iv].trial_days), trial = $("plantrial");
+      days === null && (days = yearly && num(p.trial_days) || 0), days > 0 ? (trial.textContent = "Free for " + days + " days. We will not charge you before " + new Date(Date.now() + days * 864e5).toLocaleDateString(void 0, { day: "numeric", month: "long" }) + ", and you can cancel before then.", trial.classList.remove("hide")) : (trial.textContent = "", trial.classList.add("hide")), setBuyLabel(days > 0 ? "Start " + days + " free days" : "Subscribe for " + (p.nativeStore ? plus[iv].localized : money(pay, cur)) + (yearly ? " a year" : " a month")), $("planfine").textContent = finePrint(p, plus, iv, pay, full, days) + " " + PLAN_RESET;
     }
   }
   function pickInterval(iv) {
     billing.interval === iv || billing.busy || (billing.interval = iv, haptic("tap"), paintChoice());
   }
+  function planState() {
+    if (!isFree()) return "plus";
+    if (!(native && native.purchases)) return "web";
+    var p = billing.prices, plus = p && p.configured && p.plans && p.plans.plus;
+    return plus && (plus.year || plus.month) ? "buy" : billing.asking || !p ? "wait" : "down";
+  }
   function paintPlans() {
-    var p = billing.prices || { configured: !1 }, good = $("plangood"), cards = $("plancards");
-    good.innerHTML = "", cards.innerHTML = "", paintPlanCode(), planBenefits(p.caps).forEach(function(t) {
-      var row = el("div", "pgood");
-      row.appendChild(ic("check")), row.appendChild(el("span", null, t)), good.appendChild(row);
+    var st = planState(), was = billing.shown, store = !!(native && native.purchases), p = billing.prices, plus = st === "buy" && p.plans.plus, cards = $("plancards");
+    billing.shown = st, paintPlanCode(), paintTable(), cards.innerHTML = "", st === "wait" && (cards.appendChild(skelRow("scard")), cards.appendChild(skelRow("scard"))), plus && (plus[billing.interval] || (billing.interval = plus.year ? "year" : "month"), ["year", "month"].forEach(function(iv) {
+      cards.appendChild(plus[iv] ? priceCard(iv, plus, p) : goneCard(iv));
+    })), cards.classList.toggle("hide", !plus && st !== "wait"), $("planbuy").classList.toggle("hide", !plus), $("planbuy").disabled = billing.busy, paintSoon(st), $("plannot").textContent = st === "plus" ? "Done" : "Not now", ["planrestore", "planmanage", "plandot2", "plandot3"].forEach(function(id) {
+      $(id).classList.toggle("hide", !store);
+    }), plus ? paintChoice() : ($("plantrial").classList.add("hide"), $("planfine").textContent = PLAN_RESET), was && was !== st && $("plansheet").classList.contains("open") && !lessMotion() && [$("planbox"), $("planbuy")].forEach(function(n) {
+      n.classList.remove("planswap"), n.offsetWidth, n.classList.add("planswap");
     });
-    var plus = p.plans && p.plans.plus, ready = !!(p.configured && plus && plus.month && plus.year);
-    if ($("plansoon").classList.toggle("hide", ready), $("planbuy").classList.toggle("hide", !ready), $("plandot2").classList.toggle("hide", !ready), $("planrestore").classList.toggle("hide", !ready && !(native && native.purchases)), p.nativeStore && ($("plansoon").textContent = "Subscriptions are temporarily unavailable. Please try again later. Existing purchases can be restored below."), !ready) {
-      $("plantrial").classList.add("hide"), $("planfine").textContent = "";
-      return;
+  }
+  function paintSoon(st) {
+    var n = $("plansoon"), s = billing.sub, src = s && s.source, name = storeName();
+    if (n.innerHTML = "", n.classList.toggle("hide", st === "buy" || st === "wait"), st === "web")
+      n.appendChild(el("b", null, "Spotter Plus is bought in the Spotter app.")), n.appendChild(el("p", null, "It belongs to your account, so Plus bought in the app works here too."));
+    else if (st === "down") {
+      n.appendChild(el("b", null, name.charAt(0).toUpperCase() + name.slice(1) + " isn\u2019t answering right now, so we can\u2019t show a price.")), n.appendChild(el("p", null, "Nothing has been charged." + (billing.fails >= 2 ? " If this keeps happening, update Spotter from " + name + "." : "")));
+      var retry = el("button", "btn");
+      retry.appendChild(ic("refresh")), retry.appendChild(document.createTextNode("Try again")), retry.onclick = function() {
+        retryPrices(retry);
+      }, n.appendChild(retry);
+    } else if (st === "plus") {
+      var end = s && dayMonth(s.current_period_end, !0);
+      if (n.appendChild(el("b", null, myPlan() === "staff" ? "This account has everything in Plus." : "You have Spotter Plus.")), end && n.appendChild(el("p", null, (s.cancel_at_period_end || s.cancel_at ? "Ends " : "Renews ") + end + ".")), native && native.purchases) {
+        var manage = el("button", "btn ghost", "Manage subscription");
+        manage.onclick = function() {
+          openPortal(manage);
+        }, n.appendChild(manage);
+      } else (src === "apple" || src === "google") && n.appendChild(el("p", null, "Manage it in " + (src === "google" ? "Google Play on your phone." : "the App Store on your iPhone.")));
     }
-    cards.appendChild(priceCard("year", plus, p)), cards.appendChild(priceCard("month", plus, p)), $("planbuy").disabled = billing.busy, paintChoice();
+  }
+  function retryPrices(btn) {
+    if (!billing.asking) {
+      var epoch = accountEpoch, uid = state.user && state.user.id, at = Date.now();
+      billing.asking = !0, btn.disabled = !0, btn.firstChild && btn.firstChild.classList && btn.firstChild.classList.add("spin"), Promise.all([loadPrices(), loadCaps()]).then(function() {
+        setTimeout(function() {
+          accountNow(epoch, uid) && (billing.asking = !1, planState() === "down" && billing.fails++, $("plansheet").classList.contains("open") && paintPlans());
+        }, Math.max(0, 500 - (Date.now() - at)));
+      });
+    }
   }
   function paintCtx() {
     var n = $("planctx"), line = planCtxLine(billing.ctx);
     n.textContent = line, n.classList.toggle("hide", !line);
   }
   function openPlans(ctx) {
-    var epoch = accountEpoch, uid = state.user && state.user.id;
-    billing.ctx = ctx && ctx.kind ? ctx : null, billing.interval = "year", paintCtx(), billing.prices || paintSkeleton(), $("plancodeform").classList.add("hide"), $("plancodein").value = "", paintPlanCode(), openSheet("plansheet"), loadPrices().then(function() {
-      accountNow(epoch, uid) && $("plansheet").classList.contains("open") && paintPlans();
+    var epoch = accountEpoch, uid = state.user && state.user.id, ask = !!(native && native.purchases) && isFree();
+    billing.ctx = ctx && ctx.kind ? ctx : null, billing.interval = "year", billing.shown = null, billing.asking = ask && planState() !== "buy";
+    var asked = Promise.all([loadCaps(), ask ? loadPrices() : null, isFree() ? loadUse() : loadSub()]);
+    paintCtx(), $("plancodeform").classList.add("hide"), $("plancodein").value = "", paintPlans(), openSheet("plansheet"), asked.then(function() {
+      accountNow(epoch, uid) && (billing.asking = !1, ask && planState() === "down" && billing.fails++, $("plansheet").classList.contains("open") && paintPlans());
     }), loadCreator().then(function() {
       accountNow(epoch, uid) && $("plansheet").classList.contains("open") && paintPlanCode();
     });
@@ -16798,13 +18278,13 @@ details.details-moving > :not(summary) {
   }
   function nativePurchase(restore, btn) {
     if (!(!state.user || billing.busy)) {
-      var uid = state.user.id, epoch = accountEpoch;
+      var uid = state.user.id, epoch = accountEpoch, before = myPlan();
       billing.busy = !0, btn && (btn.disabled = !0);
       var work = restore ? native.purchases.restore(uid) : native.purchases.purchase(uid, billing.interval);
       work.then(function() {
         return accountNow(epoch, uid) ? syncNativePurchase(epoch, uid) : null;
       }).then(function(r) {
-        !accountNow(epoch, uid) || !r || (absorbPlan(r, !restore), toast(r.plan === "free" ? "No active subscription was found for this account." : "Your " + planWord(r.plan) + " access is up to date."));
+        !accountNow(epoch, uid) || !r || (absorbPlan(r, !restore), r.plan === "free" ? toast("No active subscription was found for this account.") : restore && before === "free" ? toast("Plus is on this account now. If it was bought on another Spotter account, that one is back on Basic.", 5200) : (restore || r.plan === before) && toast("Your " + planWord(r.plan) + " access is up to date."));
       }).catch(function(e) {
         accountNow(epoch, uid) && !e.userCancelled && String(e.code) !== "1" && toast(e.message || "Could not complete the purchase. Please try again.");
       }).then(function() {
@@ -17189,12 +18669,15 @@ details.details-moving > :not(summary) {
       row.textContent = text;
       var warn = $("setplanwarn"), until = failed && dayMonth(s.current_period_end, !0);
       warn.textContent = failed ? "The last payment did not go through. " + word + " keeps working" + (until ? " until " + until : "") + " while we retry." : "", warn.classList.toggle("hide", !failed);
-      var canBuy = configured && !paid && !staff, canManage = configured && paid;
-      $("setupgrade").classList.toggle("hide", !canBuy), $("setmanage").classList.toggle("hide", !canManage), $("setpay").classList.toggle("hide", !(canManage && failed)), $("setplanbtns").classList.toggle("hide", !(canBuy || canManage)), $("setrefresh").classList.toggle("hide", !configured && !(native && native.purchases));
+      var store = native && native.purchases, src = s && s.source, storePaid = paid && (src === "apple" || src === "google"), canBuy = !paid && !staff, canManage = paid && (configured || store && storePaid);
+      $("setupgrade").textContent = store ? "Upgrade to Plus" : "See Spotter Plus", $("setupgrade").classList.toggle("hide", !canBuy), $("setmanage").classList.toggle("hide", !canManage), $("setpay").classList.toggle("hide", !(canManage && failed)), $("setplanbtns").classList.toggle("hide", !(canBuy || canManage)), $("setrefresh").classList.toggle("hide", !configured && !store);
+      var how = $("setplanhow");
+      how.textContent = storePaid && !store ? "Manage it in " + (src === "google" ? "Google Play on your phone." : "the App Store on your iPhone.") : "", how.classList.toggle("hide", !how.textContent);
     }
   }
   function adoptPlan(plan) {
-    plan && (billing.said = plan, !(!state.profile || state.profile.plan === plan) && (state.profile.plan = plan, renderLibCount(), paintPlanGroup()));
+    plan && (billing.said = plan, !(!state.profile || state.profile.plan === plan) && (state.profile.plan = plan, native && state.profile.ingest_key && native.configureSharing(state.profile.ingest_key, { plan: plan }).catch(function() {
+    }), renderLibCount(), paintPlanGroup(), renderPumpy(), current && $("detail").classList.contains("open") && refreshDetail(current, !0), $("plansheet").classList.contains("open") && paintPlans()));
   }
   var ALLOW_ROWS = [
     ["reads", "Video reads"],
@@ -17222,7 +18705,7 @@ details.details-moving > :not(summary) {
       var back = resetDay(m.resets_at);
       ALLOW_ROWS.forEach(function(a) {
         var cap = capNum(m[a[0] + "_cap"]), used = num(m[a[0]]);
-        used === null || cap === null || n.appendChild(useRow(a[1], used + " of " + cap, " this month", back, used >= cap));
+        used === null || cap === null || cap === 0 || n.appendChild(useRow(a[1], used + " of " + cap, " this month", back, used >= cap));
       });
     }
     r && r.paid_enabled === !1 && n.appendChild(el(
@@ -17234,8 +18717,8 @@ details.details-moving > :not(summary) {
     n.classList.toggle("hide", empty), hidden && !empty && n.classList.add("viewin");
   }
   function shelf(extra) {
-    if (!billOn() || !isFree()) return null;
-    var caps = billing.prices.caps, cap = caps && caps.free ? capNum(caps.free.library) : null;
+    if (!isFree() || !billing.caps) return null;
+    var cap = capNum(billing.caps.free.library);
     return cap === null || cap <= 0 ? null : { used: state.workouts.length + (extra || 0), cap: cap, warn: Math.ceil(cap * 0.8) };
   }
   function withShelf(msg, extra) {
@@ -17269,10 +18752,11 @@ details.details-moving > :not(summary) {
     observer: null,
     played: {}
   }, GUIDE_TIPS = {
+    // The app saves from the share sheet, so that is what its tip teaches first.
     save: {
       title: "Save it now. Train it later.",
       art: "coach",
-      text: "Paste the workout link, then tap Save workout. You can leave while I read it."
+      text: native ? "Share it from TikTok or Instagram, or paste its link below. You can leave while I read it." : "Paste the workout link, then tap Save workout. You can leave while I read it."
     },
     detail: {
       title: "Make this workout yours",
@@ -17447,7 +18931,7 @@ details.details-moving > :not(summary) {
     var tip = id === "addsheet" ? "save" : id === "setsheet" ? "set" : null;
     if (tip) {
       var b = $(id).querySelector(".sheetbody");
-      guideOffer(tip, b, b.querySelector(".field, .stepper"));
+      guideOffer(tip, b, b.querySelector(".orpaste, .field, .stepper"));
     }
   }
   function guidePaintSettings() {
@@ -17492,7 +18976,7 @@ details.details-moving > :not(summary) {
     var stage = $("welcomestage");
     stage.innerHTML = "";
     var page = el("section", "welcome-page on");
-    page.appendChild(pumpyArt("coach", !1)), page.appendChild(el("h2", null, "Your saved videos become workouts.")), page.appendChild(el("p", null, "Paste a TikTok, Instagram, or YouTube link. Check the exercises, then start when you\u2019re ready.")), stage.appendChild(page), $("welcomecount").textContent = "Save \xB7 check \xB7 train", $("welcomenext").textContent = "Save a workout", openSheet("welcomesheet"), $("welcomenext").focus({ preventScroll: !0 });
+    page.appendChild(pumpyArt("coach", !1)), page.appendChild(el("h2", null, "Your saved videos become workouts.")), page.appendChild(el("p", null, native ? "In TikTok, Instagram or YouTube, " + shareWords() + ". Check the exercises, then start when you\u2019re ready." : "Paste a TikTok, Instagram, or YouTube link. Check the exercises, then start when you\u2019re ready.")), stage.appendChild(page), $("welcomecount").textContent = "Save \xB7 check \xB7 train", $("welcomenext").textContent = "Save a workout", openSheet("welcomesheet"), $("welcomenext").focus({ preventScroll: !0 });
   }
   $("welcomenext").onclick = function() {
     $("addbtn").click(), closeSheet("welcomesheet");
@@ -17536,7 +19020,7 @@ details.details-moving > :not(summary) {
   function closeSheet(id, fromPop) {
     var n = $(id);
     if (n.classList.contains("open")) {
-      if (id === "aiconsentsheet" && dismissAiConsent(), id === "setsheet" && ssDock(), guideClear("hold"), id === "welcomesheet") {
+      if (id === "aiconsentsheet" && dismissAiConsent(), id === "setsheet" && ssDock(), id === "ordersheet" && ordShut(), guideClear("hold"), id === "welcomesheet") {
         welcomeDone();
         var focus = welcomeReturn && welcomeReturn.isConnected && !welcomeReturn.closest("#landing, .sheet:not(.open)") ? welcomeReturn : $("addbtn");
         focus && focus.focus({ preventScroll: !0 });
@@ -17553,7 +19037,12 @@ details.details-moving > :not(summary) {
     if (sheet.addEventListener("click", function(e) {
       e.target === sheet && closeSheet(id);
     }), !body) return;
-    function stop(e, cancelled) {
+    var loose = { held: function() {
+      return sd;
+    }, release: function() {
+      stop(null, !0, !0);
+    } };
+    function stop(e, cancelled, lost) {
       if (!(!sd || e && e.pointerId !== sd.id)) {
         var d = sd;
         if (sd = null, !!d.lock) {
@@ -17561,7 +19050,7 @@ details.details-moving > :not(summary) {
             body.releasePointerCapture(d.id);
           } catch (err) {
           }
-          swallowClick();
+          lost || swallowClick();
           var s = d.s, a = s[0], b = s[s.length - 1], dt = (b.t - a.t) / 1e3, v = dt > 4e-3 ? (b.y - a.y) / dt : 0;
           if (!cancelled && (v > SH_FLING || d.dy > body.offsetHeight * SH_PART)) {
             closeSheet(id);
@@ -17572,20 +19061,27 @@ details.details-moving > :not(summary) {
       }
     }
     body.addEventListener("pointerdown", function(e) {
-      if (!(e.pointerType !== "touch" && e.pointerType !== "pen") && !(sd || !e.isPrimary || noDragIn(e.target)) && !(body.scrollTop > 0 && e.clientY - body.getBoundingClientRect().top > 44)) {
-        var ctl = e.target.closest && e.target.closest("button, a, label, [role=button]");
-        sd = {
-          id: e.pointerId,
-          x: e.clientX,
-          y: e.clientY,
-          lock: !1,
-          dy: 0,
-          s: [],
-          slop: ctl ? SH_TAP : SLOP
-        };
+      if (!(e.pointerType !== "touch" && e.pointerType !== "pen") && !(sd || !e.isPrimary || noDragIn(e.target))) {
+        var grab = e.clientY - body.getBoundingClientRect().top <= 44;
+        if (!(body.scrollTop > 0 && !grab)) {
+          var ctl = e.target.closest && e.target.closest("button, a, label, [role=button]");
+          sd = {
+            id: e.pointerId,
+            x: e.clientX,
+            y: e.clientY,
+            lock: !1,
+            dy: 0,
+            s: [],
+            slop: ctl ? SH_TAP : SLOP,
+            grab: grab,
+            seen: now(),
+            first: !1
+          }, holdDrag(loose);
+        }
       }
     }), body.addEventListener("pointermove", function(e) {
       if (!(!sd || e.pointerId !== sd.id)) {
+        sd.seen = now();
         var dy = e.clientY - sd.y, dx = e.clientX - sd.x;
         if (!sd.lock) {
           if (Math.abs(dx) > sd.slop && Math.abs(dx) > Math.abs(dy)) {
@@ -17606,8 +19102,20 @@ details.details-moving > :not(summary) {
         for (sd.dy = dy, sd.s.push({ t: now(), y: e.clientY }); sd.s.length > 2 && sd.s[sd.s.length - 1].t - sd.s[0].t > VWIN; ) sd.s.shift();
         body.style.transform = "translateY(" + (dy > 0 ? dy : dy / 3) + "px)";
       }
-    }), body.addEventListener("touchmove", function(e) {
-      sd && sd.lock && e.cancelable && e.preventDefault();
+    });
+    function claims(e) {
+      if (sd.first) return !1;
+      sd.first = !0;
+      var t = e.touches && e.touches.length === 1 ? e.touches[0] : null;
+      if (!t || body.scrollHeight <= body.clientHeight + 1) return !1;
+      var dy = t.clientY - sd.y, dx = t.clientX - sd.x;
+      if (!(dy > 0 && dy >= Math.abs(dx))) return !1;
+      for (var n = e.target; n && n !== body; n = n.parentElement)
+        if (n.scrollTop > 0 && n.scrollHeight > n.clientHeight + 1) return !1;
+      return body.scrollTop <= 0 || sd.grab;
+    }
+    body.addEventListener("touchmove", function(e) {
+      !sd || !e.cancelable || (sd.lock || claims(e)) && e.preventDefault();
     }, { passive: !1 }), body.addEventListener("pointerup", function(e) {
       stop(e, !1);
     }), body.addEventListener("pointercancel", function(e) {
@@ -17644,7 +19152,8 @@ details.details-moving > :not(summary) {
     "aiconsentsheet",
     "wleavesheet",
     "restsheet",
-    "sectionsheet"
+    "sectionsheet",
+    "ordersheet"
   ].forEach(wireSheet);
   function overlayShowing() {
     if ($("detail").classList.contains("open") || $("workout").classList.contains("open")) return !0;
@@ -17701,38 +19210,25 @@ details.details-moving > :not(summary) {
   }
   function doAdd(fromShare) {
     var url = $("addurl").value.trim();
-    if (!url) {
-      toast("Paste a link first.");
-      return;
-    }
+    if (!url)
+      return toast("Paste a link first."), Promise.resolve(!1);
     var btn = $("addgo");
     btn.disabled = !0, btn.textContent = cuttingFrames(url) ? "Reading\u2026" : "Saving\u2026";
     function recover() {
-      fromShare && (resetUpload(), openSheet("addsheet"));
+      fromShare && (resetUpload(), addMode(null), openSheet("addsheet"));
     }
-    deviceFrames({ url: url }).then(function(frames) {
+    return deviceFrames({ url: url }).then(function(frames) {
       var body = { url: url };
       return frames && (body.frames = frames), btn.textContent = "Saving\u2026", api("ingest", { method: "POST", body: JSON.stringify(body) });
     }).then(function(r) {
-      if (btn.disabled = !1, btn.textContent = "Save workout", r.status === "processing") {
-        $("addurl").value = "", closeSheet("addsheet"), placePending(r, url, null), toast(withShelf(isFree() ? "Saved \u2014 building a Basic read from available text\u2026" : fromShare ? "Saved from the share sheet \u2014 reading it\u2026" : "Saved \u2014 reading the video\u2026"), 3400);
-        return;
-      }
-      if (r.status === "saved")
-        $("addurl").value = "", closeSheet("addsheet"), r.cached ? toast(withShelf(fromShare ? "Saved from the share sheet \u2014 someone had already read this one, so it is ready" : "Saved \u2014 someone had already read this one, so it is ready", 1), 3400) : toast(withShelf(fromShare ? "Saved from the share sheet \u2014 read and ready" : "Saved \u2014 read and ready", 1), 3400), load().then(function() {
-          var w = state.workouts.filter(function(x) {
-            return x.id === r.id;
-          })[0];
-          w && openDetail(w);
-        });
-      else if (r.status === "exists")
-        closeSheet("addsheet"), toast("Already in your library."), load();
-      else {
-        if (limitHit(r, null)) return;
-        toast(r.message || "Could not save that link \u2014 check it and try again."), recover();
-      }
-    }).catch(function() {
-      btn.disabled = !1, btn.textContent = "Save workout", toast("Could not reach Spotter \u2014 check your connection."), recover();
+      return btn.disabled = !1, btn.textContent = "Save workout", fromShare && (sharing = !1), r.status === "processing" ? ($("addurl").value = "", closeSheet("addsheet"), placePending(r, url, null), toast(withShelf(isFree() ? "Saved \u2014 building a Basic read from available text\u2026" : fromShare ? "Saved from the share sheet \u2014 reading it\u2026" : /\/(p|photo)\//.test(url) ? "Saved \u2014 reading the post\u2026" : "Saved \u2014 reading the video\u2026"), 3400), !0) : r.status === "saved" ? ($("addurl").value = "", closeSheet("addsheet"), r.cached ? toast(withShelf(fromShare ? "Saved from the share sheet \u2014 someone had already read this one, so it is ready" : "Saved \u2014 someone had already read this one, so it is ready", 1), 3400) : toast(withShelf(fromShare ? "Saved from the share sheet \u2014 read and ready" : "Saved \u2014 read and ready", 1), 3400), load().then(function() {
+        var w = state.workouts.filter(function(x) {
+          return x.id === r.id;
+        })[0];
+        w && openDetail(w);
+      }), !0) : r.status === "exists" ? (closeSheet("addsheet"), toast("Already in your library."), load(), !0) : (limitHit(r, null) || (toast(r.message || "Could not save that link \u2014 check it and try again."), recover()), !1);
+    }).catch(function(e) {
+      return btn.disabled = !1, btn.textContent = "Save workout", fromShare && (sharing = !1), aiDeclined(e) || toast("Could not reach Spotter \u2014 check your connection."), recover(), !1;
     });
   }
   var SHARE_KEY = "spotter_share_pending", sharing = !1;
@@ -17778,7 +19274,32 @@ details.details-moving > :not(summary) {
     u && handleSharedUrl(u);
   }
   function handleSharedUrl(u) {
-    !u || sharing || (sharing = !0, $("addurl").value = u, doAdd(!0));
+    return !u || sharing ? Promise.resolve(!1) : (sharing = !0, $("addurl").value = u, doAdd(!0).then(function(saved) {
+      return saved && takeParkedShare(), saved;
+    }));
+  }
+  var PARKED_MAX_MS = 168 * 3600 * 1e3, PARKED_PER_PASS = 10, parkedBusy = !1, sharingSet = Promise.resolve();
+  function takeParkedShare() {
+    if (parkedBusy || !native || !native.takeParkedShare || !state.user || sharing) return Promise.resolve();
+    parkedBusy = !0;
+    var epoch = accountEpoch, uid = state.user.id, taken = 0;
+    function next() {
+      if (!(taken >= PARKED_PER_PASS || sharing || !accountNow(epoch, uid)))
+        return taken++, Promise.resolve().then(function() {
+          return native.takeParkedShare();
+        }).then(function(parked) {
+          if (!(!parked || !parked.url || !accountNow(epoch, uid))) {
+            var at = Number(parked.at), u = firstUrlIn(parked.url);
+            return !u || at > 0 && Date.now() - at > PARKED_MAX_MS ? next() : handleSharedUrl(u).then(function(saved) {
+              if (saved) return next();
+            });
+          }
+        });
+    }
+    return Promise.resolve(sharingSet).then(next).catch(function() {
+    }).then(function() {
+      parkedBusy = !1;
+    });
   }
   var UPLOAD_MAX = 25 * 1024 * 1024, UPLOAD_TYPES = {
     mp4: "video/mp4",
@@ -17810,6 +19331,52 @@ details.details-moving > :not(summary) {
   }
   function upProgress(frac, note) {
     $("upprog").hidden = !1, $("upfill").style.width = Math.round(Math.max(0, Math.min(1, frac)) * 100) + "%", $("upnote").textContent = note;
+  }
+  var attachTo = null, addWords = null;
+  function addMode(w) {
+    addWords || (addWords = {
+      t: $("addtitle").textContent,
+      l: $("addlede").textContent,
+      u: $("uptitle").textContent,
+      s: $("upsub").textContent
+    }), attachTo = w || null;
+    var share = !w && !!native && !$("addurl").value.trim();
+    $("addsheet").classList.toggle("attach", !!w), $("addsheet").classList.toggle("share", share), $("addtitle").textContent = w ? "Add the video" : share ? "Save from any app" : addWords.t, $("addlede").textContent = w ? "In Instagram, tap Share \u2192 Download on the reel, then choose that video here. Spotter reads it into \u201C" + (w.title || "this card") + "\u201D." : share ? "Share a workout from TikTok, Instagram, YouTube or anywhere else, straight to Spotter." : addWords.l, $("uptitle").textContent = w ? "Choose the downloaded video" : addWords.u, $("upsub").textContent = w ? "It counts as one of your video reads, not an upload. MP4 or MOV, up to 25 MB, deleted once it is read." : addWords.s, $("addfile").setAttribute("accept", w ? "video/*" : "video/*,audio/*");
+  }
+  function openAddVideo(w) {
+    state.user && (resetUpload(), addMode(w), openSheet("addsheet"));
+  }
+  function saveOn() {
+    return native ? native.platform === "android" ? "android" : "ios" : "web";
+  }
+  function paintSaveOn(root) {
+    var on = saveOn();
+    Array.prototype.forEach.call(root.querySelectorAll("[data-on]"), function(n) {
+      n.classList.toggle("hide", n.getAttribute("data-on").split(" ").indexOf(on) < 0);
+    });
+  }
+  function shareWords() {
+    return saveOn() === "ios" ? "tap Share, then More, then Spotter" : "tap Share, then Spotter";
+  }
+  function openSourceApp(url) {
+    if (!native) {
+      window.open(url, "_blank", "noopener");
+      return;
+    }
+    function away(e) {
+      !document.hidden && !(e && e.detail && e.detail.isActive === !1) || (stop(), closeSheet("addsheet"));
+    }
+    function stop() {
+      document.removeEventListener("visibilitychange", away), window.removeEventListener("spotter:native-state", away);
+    }
+    document.addEventListener("visibilitychange", away), window.addEventListener("spotter:native-state", away), setTimeout(stop, 5e3), location.href = url;
+  }
+  function attached(w, r) {
+    closeSheet("addsheet"), resetUpload();
+    var row = state.workouts.filter(function(x) {
+      return x.id === w.id;
+    })[0] || w;
+    row.ingest_status = "processing", row.ingest_error = null, row.media_stage = "watching", current && current.id === row.id && openDetail(row, !0), render(), watchPending(), toast(r.message || "Watching your video\u2026", 3400);
   }
   function resetUpload() {
     uploading = !1, upError(""), $("upprog").hidden = !0, $("upfill").style.width = "0", $("upnote").textContent = "Uploading\u2026", $("uploadrow").disabled = !1, $("addfile").value = "";
@@ -17860,32 +19427,44 @@ details.details-moving > :not(summary) {
       uploading = !0, $("uploadrow").disabled = !0;
       var path = state.user.id + "/" + uuid() + "." + ext;
       upProgress(0, "Uploading\u2026 0%");
-      var watched = !!UPLOAD_WATCHED[ext];
-      api("uploads/authorize", { method: "POST", body: JSON.stringify({ path: path, bytes: file.size }) }).then(function(permit) {
+      var watched = !!UPLOAD_WATCHED[ext], into = attachTo, permitBody = { path: path, bytes: file.size };
+      into && (permitBody.attach = into.id), api("uploads/authorize", { method: "POST", body: JSON.stringify(permitBody) }).then(function(permit) {
         if (permit.status !== "ok") {
+          if (into && limitHit(permit, null)) {
+            var sold = new Error("");
+            throw sold.handled = !0, sold;
+          }
           var denied2 = new Error(permit.message || "Upload is paused. Please try again later.");
           throw denied2.uploadLimit = !0, denied2;
         }
         return putObject(file, path, UPLOAD_TYPES[ext]);
       }).then(function() {
-        return !watched || !native || !native.contactSheet ? null : (upProgress(1, "Uploaded \u2014 reading the video\u2026"), deviceFrames({ file: file, shortcode: "up-" + path.split("/")[1].split(".")[0] }));
+        return into ? (upProgress(1, "Uploaded \u2014 Spotter is watching it\u2026"), api("workouts/" + into.id + "/media", {
+          method: "POST",
+          body: JSON.stringify({ upload_path: path, filename: name.slice(0, 160) })
+        }).then(function(r) {
+          return r.status === "processing" ? (attached(into, r), null) : (resetUpload(), limitHit(r, null) || upError(r.message || "Spotter could not start reading that video."), null);
+        })) : !watched || !native || !native.contactSheet ? null : (upProgress(1, "Uploaded \u2014 reading the video\u2026"), deviceFrames({ file: file, shortcode: "up-" + path.split("/")[1].split(".")[0] }));
       }).then(function(frames) {
+        if (into) return null;
         upProgress(1, watched ? "Uploaded \u2014 Spotter is watching it\u2026" : "Uploaded \u2014 Spotter is listening\u2026");
         var body = { upload_path: path, filename: name.slice(0, 160) };
         return frames && (body.frames = frames), api("ingest", { method: "POST", body: JSON.stringify(body) });
       }).then(function(r) {
-        if (r.status === "processing") {
-          closeSheet("addsheet"), resetUpload(), placePending(r, "", "upload", watched ? "watching" : "listening"), toast(withShelf(watched ? "Uploaded \u2014 watching the video\u2026" : "Uploaded \u2014 listening to it\u2026"), 3400);
-          return;
+        if (r) {
+          if (r.status === "processing") {
+            closeSheet("addsheet"), resetUpload(), placePending(r, "", "upload", watched ? "watching" : "listening"), toast(withShelf(watched ? "Uploaded \u2014 watching the video\u2026" : "Uploaded \u2014 listening to it\u2026"), 3400);
+            return;
+          }
+          if (r.status === "exists") {
+            closeSheet("addsheet"), resetUpload(), toast("Already in your library."), load();
+            return;
+          }
+          resetUpload(), !limitHit(r, null) && upError(r.message || "Spotter could not start reading that upload.");
         }
-        if (r.status === "exists") {
-          closeSheet("addsheet"), resetUpload(), toast("Already in your library."), load();
-          return;
-        }
-        resetUpload(), !limitHit(r, null) && upError(r.message || "Spotter could not start reading that upload.");
       }).catch(function(e) {
         var msg = String(e && e.message ? e.message : e);
-        resetUpload(), e && e.uploadLimit ? upError(msg) : upError(msg === "413" ? "That file is too big for Spotter\u2019s storage. The limit is " + mb(UPLOAD_MAX) + " MB." : msg === "400" || msg === "415" ? "Spotter\u2019s storage would not take that file. Send " + UPLOAD_KINDS + "." : msg === "401" || msg === "403" ? "Session expired \u2014 sign in again." : "The upload did not finish. Check your connection and try again.");
+        resetUpload(), !(e && e.handled || aiDeclined(e)) && (e && e.uploadLimit ? upError(msg) : upError(msg === "413" ? "That file is too big for Spotter\u2019s storage. The limit is " + mb(UPLOAD_MAX) + " MB." : msg === "400" || msg === "415" ? "Spotter\u2019s storage would not take that file. Send " + UPLOAD_KINDS + "." : msg === "401" || msg === "403" ? "Session expired \u2014 sign in again." : "The upload did not finish. Check your connection and try again."));
       });
     }
   }
@@ -18058,10 +19637,10 @@ details.details-moving > :not(summary) {
     var how = signInMethod();
     $("setprov").textContent = how || "\u2014", $("setprovrow").classList.toggle("hide", !how), $("consentrow").classList.remove("hide"), consentFill($("consentset"), "Your account uses the Spotter "), paintConsent();
     var mine = isEmailAccount();
-    $("setpwrow").classList.toggle("hide", !mine), $("setmailrow").disabled = !mine, $("setname").textContent = displayName() || "Not set", $("unittoggle").textContent = state.unit, paintGoal(), $("haptictoggle").textContent = state.haptics ? "On" : "Off", $("sethapticrow").classList.toggle("hide", !native && !navigator.vibrate), paintSounds(), loadRemind(), $("shortcutsetup").classList.toggle("hide", !!native), $("nativesharehelp").classList.toggle("hide", !native), native && native.platform === "android" && ($("nativesharehelp").textContent = "In TikTok, YouTube, Instagram or another app, share the post\u2019s link and choose Spotter from the Android share sheet.");
+    $("setpwrow").classList.toggle("hide", !mine), $("setmailrow").disabled = !mine, $("setname").textContent = displayName() || "Not set", $("unittoggle").textContent = state.unit, paintGoal(), $("haptictoggle").textContent = state.haptics ? "On" : "Off", $("sethapticrow").classList.toggle("hide", !native && !navigator.vibrate), paintSounds(), loadRemind();
     var key = state.profile ? state.profile.ingest_key : null;
-    $("setkey").textContent = key ? API + "ingest?key=" + key : "Loading\u2026", renderSettingsMeter(), paintPlanGroup(), paintPlanUse(billing.limits), Promise.all([loadPrices(), loadSub()]).then(paintPlanGroup), paintCreator(), loadCreator().then(paintCreator), paintStrava(), askStrava(), api("limits", { method: "GET" }).then(function(r) {
-      pumpy.meterAsked = !0, absorbMeter(r && r.pumpy), r.status === "ok" && (billing.limits = r, adoptPlan(r.plan), paintPlanUse(r));
+    $("setkey").textContent = key ? API + "ingest?key=" + key : "Loading\u2026", renderSettingsMeter(), paintPlanGroup(), paintPlanUse(billing.limits), Promise.all([loadPrices(), loadSub()]).then(paintPlanGroup), paintCreator(), loadCreator().then(paintCreator), paintStrava(), askStrava(), readLimits().then(function(r) {
+      pumpy.meterAsked = !0, absorbMeter(r && r.pumpy), r.status === "ok" && (adoptPlan(r.plan), paintPlanUse(r));
     }).catch(function() {
     }), openSheet("settingssheet");
   }
@@ -18073,7 +19652,7 @@ details.details-moving > :not(summary) {
           toast("Could not make a new key \u2014 try again in a moment.");
           return;
         }
-        state.profile && (state.profile.ingest_key = r.ingest_key), $("setkey").textContent = API + "ingest?key=" + r.ingest_key, native && native.configureSharing(r.ingest_key).catch(function() {
+        state.profile && (state.profile.ingest_key = r.ingest_key), $("setkey").textContent = API + "ingest?key=" + r.ingest_key, native && native.configureSharing(r.ingest_key, { plan: myPlan() }).catch(function() {
         }), toast(native ? "Sharing key refreshed." : "New key made \u2014 update your Shortcut.");
       }
     });
@@ -18694,7 +20273,7 @@ details.details-moving > :not(summary) {
     var v = VIEWS[i];
     guide.visit = v, setTimeout(function() {
       guidePage(v);
-    }, 450), v === "library" && renderToday(), v === "train" && state.logs && countStats();
+    }, 450), v === "library" && renderToday(), v === "train" && state.logs && countStats(), v !== "pumpy" && pumpyAway();
   }
   function preparePage(i) {
     var v = VIEWS[i];
@@ -18702,7 +20281,7 @@ details.details-moving > :not(summary) {
       renderToday();
       return;
     }
-    v === "train" ? (restorePlan(), drawn.train = !0, quietly(prepareTrain())) : v === "pumpy" && loadPumpy();
+    v === "train" ? (restorePlan(), drawn.train = !0, quietly(prepareTrain())) : v === "pumpy" && (clearTimeout(pumpyIdleTimer), freshenPumpy(), loadPumpy());
   }
   function settled() {
     arrivedAt !== idx && (arrivedAt = idx, arrive(idx));
@@ -18746,7 +20325,7 @@ details.details-moving > :not(summary) {
     chromeRO.observe(hdrEl, border), chromeRO.observe(tabbar, border), chromeRO.observe(pagesEl, border);
   }
   window.addEventListener("resize", measureChrome), window.addEventListener("orientationchange", measureChrome), window.addEventListener("pageshow", measureChrome), window.visualViewport && window.visualViewport.addEventListener("resize", measureChrome);
-  var FLING = 350, SLOP = 8, VWIN = 100, QUICK = 300, QUICKPX = 30, PART = 0.4, LEAN = 2.14, LEAN_Y = 1.43, drag = null;
+  var FLING = 350, SLOP = 8, VWIN = 100, QUICK = 300, QUICKPX = 30, PART = 0.4, LEAN = 2.14, LEAN_Y = 1.43, STALE = 2e3, drag = null, dragDog = 0;
   function noDragIn(node) {
     return !!(node && node.closest && node.closest(
       "input, textarea, select, [contenteditable], [data-noswipe]"
@@ -18785,26 +20364,44 @@ details.details-moving > :not(summary) {
     }
     document.addEventListener("click", eat, !0), t = setTimeout(off, 350);
   }
+  function dropStaleDrag() {
+    var d = drag;
+    if (d && (drag = null, clearTimeout(dragDog), d.raf && cancelAnimationFrame(d.raf), !!d.lock)) {
+      try {
+        pagesEl.releasePointerCapture(d.id);
+      } catch (err) {
+      }
+      var near = clamp(Math.round(pos / pageW), 0, LAST);
+      commit(near), springTo(near * pageW, 0);
+    }
+  }
+  function watchDrag() {
+    clearTimeout(dragDog), !(!drag || drag.lock) && (dragDog = setTimeout(function() {
+      drag && now() - drag.seen >= STALE ? dropStaleDrag() : watchDrag();
+    }, Math.max(16, STALE - (now() - drag.seen))));
+  }
   pagesEl.addEventListener("pointerdown", function(e) {
-    e.pointerType !== "touch" && e.pointerType !== "pen" || drag || overlayShowing() || noDragIn(e.target) || !standalone() && e.clientX < 24 || (drag = {
+    e.pointerType !== "touch" && e.pointerType !== "pen" || drag && !e.isPrimary && now() - drag.seen < STALE || (dropStaleDrag(), !overlayShowing() && (noDragIn(e.target) || !standalone() && e.clientX < 24 || (drag = {
       id: e.pointerId,
       x: e.clientX,
       y: e.clientY,
       from: idx,
       lock: !1,
+      seen: now(),
       dx: 0,
       pos0: pos,
       raf: 0,
       lockT: 0,
       on: e.target,
       s: [{ t: now(), x: e.clientX }]
-    });
+    }, watchDrag())));
   });
   function dragFrame() {
     drag && (drag.raf = 0, pos = bandPos(drag.pos0 - drag.dx), paint());
   }
   pagesEl.addEventListener("pointermove", function(e) {
     if (!(!drag || e.pointerId !== drag.id)) {
+      drag.seen = now();
       var dx = e.clientX - drag.x, dy = e.clientY - drag.y;
       if (!drag.lock) {
         var ax = Math.abs(dx), ay = Math.abs(dy);
@@ -18835,7 +20432,7 @@ details.details-moving > :not(summary) {
   function endDrag(e, cancelled) {
     if (!(!drag || e && e.pointerId !== drag.id)) {
       var d = drag;
-      if (drag = null, d.raf && cancelAnimationFrame(d.raf), !!d.lock) {
+      if (drag = null, clearTimeout(dragDog), d.raf && cancelAnimationFrame(d.raf), !!d.lock) {
         try {
           pagesEl.releasePointerCapture(d.id);
         } catch (err) {
@@ -18859,7 +20456,34 @@ details.details-moving > :not(summary) {
     endDrag(e, !1);
   }), pagesEl.addEventListener("pointercancel", function(e) {
     endDrag(e, !0);
-  });
+  }), window.addEventListener("touchcancel", function() {
+    drag && endDrag(null, !0);
+  }, !0), document.addEventListener("visibilitychange", dropStaleDrag), window.addEventListener("pageshow", dropStaleDrag), window.addEventListener("blur", dropStaleDrag), window.addEventListener("spotter:native-state", dropStaleDrag);
+  var looseDrags = [];
+  function holdDrag(g) {
+    looseDrags.indexOf(g) < 0 && looseDrags.push(g), watchLoose(g);
+  }
+  function watchLoose(g) {
+    clearTimeout(g.dog);
+    var d = g.held();
+    if (!d) {
+      var i = looseDrags.indexOf(g);
+      i >= 0 && looseDrags.splice(i, 1);
+      return;
+    }
+    d.lock || (g.dog = setTimeout(function() {
+      var h = g.held();
+      h && !h.lock && now() - h.seen >= STALE && g.release(), watchLoose(g);
+    }, Math.max(16, STALE - (now() - d.seen))));
+  }
+  function dropLoose() {
+    looseDrags.slice().forEach(function(g) {
+      g.held() && g.release(), watchLoose(g);
+    });
+  }
+  window.addEventListener("pointerdown", function(e) {
+    e.isPrimary && (e.pointerType === "touch" || e.pointerType === "pen") && dropLoose();
+  }, !0), window.addEventListener("touchcancel", dropLoose, !0), document.addEventListener("visibilitychange", dropLoose), window.addEventListener("pageshow", dropLoose), window.addEventListener("blur", dropLoose), window.addEventListener("spotter:native-state", dropLoose);
   var tabTouched = 0;
   function tabTap(i) {
     if (i === idx) {
@@ -19027,10 +20651,19 @@ details.details-moving > :not(summary) {
   }), document.addEventListener("focusin", function() {
     var k = native && native.keyboard;
     !k || !k.visible || !kbOver() || kbApply({ visible: !0, height: k.height, duration: k.duration || 0.25, easing: k.easing });
-  }), $("searchx").addEventListener("pointerdown", function(e) {
+  });
+  var searchXAt = 0;
+  function searchDone() {
+    var f = $("search");
+    (f.value || state.q) && (f.value = "", state.q = "", renderGrid()), f.blur();
+  }
+  $("searchx").addEventListener("pointerdown", function(e) {
     e.preventDefault();
-  }), $("searchx").onclick = function() {
-    $("search").blur(), this.blur();
+  }), $("searchx").addEventListener("touchend", function(e) {
+    var t = e.changedTouches && e.changedTouches[0], r = this.getBoundingClientRect();
+    !t || t.clientX < r.left - 10 || t.clientX > r.right + 10 || t.clientY < r.top - 10 || t.clientY > r.bottom + 10 || (e.preventDefault(), searchXAt = Date.now(), searchDone());
+  }, { passive: !1 }), $("searchx").onclick = function(e) {
+    e.preventDefault(), this.blur(), Date.now() - searchXAt > 700 && searchDone();
   }, $("search").addEventListener("keydown", function(e) {
     e.key === "Enter" && this.blur();
   });
@@ -19060,6 +20693,10 @@ details.details-moving > :not(summary) {
       ptrPulling = !1;
       var p = $("ptr"), d = parseFloat(p.style.opacity || "0");
       if (p.classList.add("back"), p.style.opacity = 0, p.style.transform = "", !(d < 1)) {
+        if (!state.user) {
+          toast(WAITING);
+          return;
+        }
         var before = state.workouts.length, job = refreshActive();
         if (!job || !job.then) {
           toast("Up to date");
@@ -19118,8 +20755,12 @@ details.details-moving > :not(summary) {
   }), $("mailresend").onclick = mailResend, $("mailback").onclick = mailBack, $("oagoogle").onclick = googleSignIn, $("oaapple").onclick = appleSignIn, oaLabelOf("oagoogle"), oaLabelOf("oaapple"), loadAuthProviders(), $("pw").addEventListener("keydown", function(e) {
     e.key === "Enter" && doAuth();
   }), $("addbtn").onclick = function() {
-    $("addurl").value = "", resetUpload(), openSheet("addsheet");
-  }, $("addgo").onclick = function() {
+    $("addurl").value = "", resetUpload(), addMode(null), openSheet("addsheet");
+  }, paintSaveOn(document), Array.prototype.forEach.call(document.querySelectorAll("[data-app]"), function(b) {
+    b.onclick = function() {
+      openSourceApp(b.getAttribute("data-app"));
+    };
+  }), $("addgo").onclick = function() {
     doAdd();
   }, $("addurl").addEventListener("keydown", function(e) {
     e.key === "Enter" && doAdd();
@@ -19210,6 +20851,8 @@ details.details-moving > :not(summary) {
     closeSheet("plansheet");
   }, $("planbuy").onclick = startCheckout, $("planrestore").onclick = function() {
     refreshBilling(this);
+  }, $("planmanage").onclick = function() {
+    openPortal(null);
   }, $("setcoderow").onclick = openCode, $("setcreatorshare").onclick = shareCreator, $("plancodeask").onclick = askPlanCode, $("plancodego").onclick = function() {
     applyPlanCode(this);
   }, $("plancodein").addEventListener("keydown", function(e) {
@@ -19251,7 +20894,8 @@ details.details-moving > :not(summary) {
     "aiconsentsheet",
     "wleavesheet",
     "restsheet",
-    "sectionsheet"
+    "sectionsheet",
+    "ordersheet"
   ].forEach(function(id) {
     $(id).addEventListener("keydown", function(e) {
       if (e.key === "Escape" && (e.preventDefault(), closeSheet(id)), e.key === "Tab") {
@@ -19311,8 +20955,8 @@ details.details-moving > :not(summary) {
           }
         });
       }
-    }).catch(function() {
-      finishRead(), accountNow(epoch, uid) && toast("Could not read that workout again \u2014 try again in a minute.");
+    }).catch(function(e) {
+      finishRead(), !(!accountNow(epoch, uid) || aiDeclined(e)) && toast("Could not read that workout again \u2014 try again in a minute.");
     });
   }, $("wclose").onclick = function() {
     wo && !wo.finished ? openLeave() : history.back();
@@ -19494,21 +21138,28 @@ details.details-moving > :not(summary) {
       saveDraft(), sb.auth.stopAutoRefresh();
       return;
     }
-    sb.auth.startAutoRefresh(), restUntil && tickRest(), wo && !wo.finished && (startClock(), acquireWake()), watchBilling(), stravaBack(), publishSummary(), state.user && !wo && !overlayShowing() && load();
+    sb.auth.startAutoRefresh(), restUntil && tickRest(), wo && !wo.finished && (startClock(), acquireWake()), watchBilling(), stravaBack(), publishSummary(), state.user && pumpyBack(), state.user && !wo && (pendPolls = 0, watchPending(), load(), takeParkedShare());
   }), document.addEventListener("visibilitychange", function() {
     if (document.hidden && saveDraft(), document.body.classList.toggle("asleep", document.hidden), document.visibilityState !== "visible") {
       clearTimeout(pendTimer), pendTimer = null;
       return;
     }
     if (state.user) {
-      if (pendPolls = 0, watchPending(), restUntil && tickRest(), wo) {
+      if (pendPolls = 0, watchPending(), pumpyBack(), restUntil && tickRest(), wo) {
         acquireWake();
         return;
       }
-      watchBilling(), overlayShowing() || load();
+      watchBilling(), load();
     }
-  }), window.addEventListener("pageshow", watchBilling), window.addEventListener("focus", watchBilling), captureCreator(), setAuthMode("signup"), captureShare(), captureBilling(), captureStrava(), linkProblem(), sb.auth.getSession().then(function(r) {
-    r.data.session && r.data.session.user ? (state.user = r.data.session.user, showApp(), boot().then(restoreSession)) : (showLanding(), sharePending() && toast("Sign in to save the link you shared."));
+  }), window.addEventListener("pageshow", watchBilling), window.addEventListener("focus", watchBilling), captureCreator(), setAuthMode("signup"), captureShare(), captureBilling(), captureStrava(), linkProblem(), paintBeforeAuth(), sb.auth.getSession().then(function(r) {
+    if (r.data.session && r.data.session.user)
+      state.user || settleEarly(r.data.session.user.id), state.user = r.data.session.user, showApp(), boot().then(restoreSession);
+    else {
+      var land2 = function() {
+        earlyUid && clearAccount(), showLanding(), sharePending() && toast("Sign in to save the link you shared.");
+      };
+      earlyUid && !state.user ? answeredNobody(land2) : land2();
+    }
   }), !native && "serviceWorker" in navigator && window.addEventListener("load", function() {
     navigator.serviceWorker.register("sw.js").catch(function() {
     });

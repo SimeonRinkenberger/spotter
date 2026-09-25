@@ -25,10 +25,13 @@ export const MARKUP_HEAD = String.raw`<!DOCTYPE html>
 <link rel="dns-prefetch" href="https://mtzevoxxpsktmrbbuxva.supabase.co">
 <!-- supabase-js is the one blocking script, its tag is at the foot of a 480 KB
      document, and the preload scanner reached it 107ms into a cold load. Nothing
-     happens until it has run. Neither line carries crossorigin: the script tag is
-     a plain one, and a preload in another mode is a second download. -->
-<link rel="preconnect" href="https://cdn.jsdelivr.net">
-<link rel="preload" as="script" href="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/dist/umd/supabase.js">
+     happens until it has run. The tag is pinned by integrity (SRI), which makes it a
+     CORS request, so both lines carry crossorigin as well: a preload in another mode
+     is a second download, and a preconnect in another mode is a second connection.
+     The preload carries the same integrity so the browser can check the bytes it
+     keeps for the tag. -->
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="preload" as="script" href="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/dist/umd/supabase.js" integrity="sha384-CLZeq1dk8+Uzrs7TVvBUdlFoV5F0DMqgRoeHa8g5wJcuPe5SkVfEvdxB0ZuzlnBQ" crossorigin="anonymous">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <!-- Two font hosts now, so two preconnects: the display face lives at Fontshare,
@@ -53,6 +56,9 @@ export const MARKUP_BODY = String.raw`</head>
      colour rule that dressed the character it replaces. -->
 <svg class="sprite" aria-hidden="true" focusable="false">
 <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></symbol>
+<!-- Pumpy's two doors, as ChatGPT draws them: Lucide square-pen and message-circle, v1.48 paths. -->
+<symbol id="i-compose" viewBox="0 0 24 24"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/></symbol>
+<symbol id="i-chats" viewBox="0 0 24 24"><path d="M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719"/></symbol>
 <symbol id="i-paperclip" viewBox="0 0 24 24"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></symbol>
 <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
 <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
@@ -65,6 +71,7 @@ export const MARKUP_BODY = String.raw`</head>
 <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></symbol>
 <symbol id="i-arrow-up" viewBox="0 0 24 24"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></symbol>
 <symbol id="i-arrow-up-right" viewBox="0 0 24 24"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></symbol>
+<symbol id="i-reorder" viewBox="0 0 24 24"><path d="m3 16 4 4 4-4"/><path d="M7 20V4"/><path d="m21 8-4-4-4 4"/><path d="M17 4v16"/></symbol>
 <symbol id="i-swap" viewBox="0 0 24 24"><path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/></symbol>
 <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20.5 12a8.5 8.5 0 1 1-2.5-6"/><path d="M21 3.5V6h-2.5"/></symbol>
 <symbol id="i-settings" viewBox="0 0 24 24"><path d="M13.8 2.5h-3.6l-.5 2.6-2.3 1.3-2.5-.9-1.8 3.1 2 1.7v2.6l-2 1.7 1.8 3.1 2.5-.9 2.3 1.3.5 2.6h3.6l.5-2.6 2.3-1.3 2.5.9 1.8-3.1-2-1.7v-2.6l2-1.7-1.8-3.1-2.5.9-2.3-1.3z"/><circle cx="12" cy="12" r="3"/></symbol>
@@ -231,11 +238,13 @@ export const MARKUP_BODY = String.raw`</head>
   <div class="pages" id="pages">
     <div class="track" id="track">
       <div class="page" id="libpage" role="tabpanel" aria-labelledby="tab0">
-        <label class="searchwrap" id="searchwrap">
+        <!-- A div, not a label: a label round the field and its X made the X's
+             neighbourhood a door back into the field (app.ts, searchDone). -->
+        <div class="searchwrap" id="searchwrap" role="search">
           <span class="searchico"><svg class="ic"><use href="#i-search"></use></svg></span>
           <input class="search" id="search" type="search" placeholder="Search workouts, exercises, muscles" autocapitalize="off" autocomplete="off">
-          <button class="searchx" id="searchx" type="button" aria-label="Hide keyboard"><svg class="ic"><use href="#i-x"></use></svg></button>
-        </label>
+          <button class="searchx" id="searchx" type="button" aria-label="Clear search"><span><svg class="ic"><use href="#i-x"></use></svg></span></button>
+        </div>
 
         <div id="hint">
           <div id="hinttext">Spotter works better installed — full screen, and it opens like an app.
@@ -255,9 +264,9 @@ export const MARKUP_BODY = String.raw`</head>
 
       <div class="page view" id="trainview" role="tabpanel" aria-labelledby="tab1"></div>
       <div class="page view" id="pumpyview" role="tabpanel" aria-labelledby="tab2">
-        <div class="pumpybar">
-          <button id="pumpychats" title="Chats" aria-label="Chats"><svg class="ic"><use href="#i-list"></use></svg></button>
-          <button id="pumpynew" title="New chat" aria-label="New chat"><svg class="ic"><use href="#i-plus"></use></svg></button>
+        <div class="pumpybar" id="pumpybar">
+          <button id="pumpychats" title="Chats" aria-label="Chats"><svg class="ic"><use href="#i-chats"></use></svg><span class="pblabel" aria-hidden="true">Chats</span></button>
+          <button id="pumpynew" title="New chat" aria-label="New chat"><svg class="ic"><use href="#i-compose"></use></svg><span class="pblabel" aria-hidden="true">New chat</span></button>
         </div>
         <div id="pumpylog"></div>
         <div id="pumpyannounce" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
@@ -301,6 +310,7 @@ export const MARKUP_BODY = String.raw`</head>
   <div id="workmanage"></div>
   <button class="pickrow" id="dshare">Share workout</button>
   <button class="pickrow" id="dreproc">Read it again</button>
+  <button class="pickrow" id="dorder">Reorder sections and exercises</button>
   <button class="btn ghost" data-close="workoptions">Done</button>
 </div></div>
 <!-- The way out of a live session. Two doors, neither of which loses a set: pause
@@ -367,21 +377,40 @@ export const MARKUP_BODY = String.raw`</head>
 <!-- ---------- sheets ---------- -->
 <div class="sheet" id="addsheet"><div class="sheetbody">
   <div class="grabber"></div>
-  <h2>Add a workout</h2>
-  <p class="lede">Paste a link to a TikTok, Instagram reel, YouTube video, or any workout page.</p>
-  <div class="field"><input id="addurl" type="url" placeholder="https://..." autocapitalize="off" autocomplete="off" spellcheck="false"></div>
+  <h2 id="addtitle">Add a workout</h2>
+  <p class="lede" id="addlede">Paste a link to a TikTok, Instagram reel, YouTube video, or any workout page.</p>
+  <!-- In the app the everyday save never touches this sheet: it is Share in TikTok
+       or Instagram, then Spotter. So there the sheet opens as the lesson for that
+       (.share, set by addMode), drawn as the row people will actually look at: the
+       share glyph, the round "More" and Spotter's own icon, the three things ReciMe
+       and Deglaze teach with GIFs. The link box moves under it. data-on picks the
+       platform's lines; the empty library borrows this same list. -->
+  <div class="sharehow">
+    <ol class="shareflow">
+      <li><span class="sfmark" aria-hidden="true"><svg class="ic"><use href="#i-share"></use></svg></span><span class="sr-only">Tap </span>Share</li>
+      <li data-on="ios"><span class="sfmark more" aria-hidden="true"><svg class="ic"><use href="#i-more"></use></svg></span><span class="sr-only">Tap </span>More</li>
+      <li><span class="sfmark app" aria-hidden="true"><img src="icon.png" alt="" width="46" height="46"></span><span class="sr-only">Tap </span>Spotter</li>
+    </ol>
+    <p class="sfnote" data-on="ios">Not in the row? Scroll down to <b>Save&nbsp;to&nbsp;Spotter</b>.</p>
+    <p class="sfnote" data-on="android">In TikTok, Spotter is under <b>More</b>.</p>
+    <p class="sfnote sftip" data-on="ios"><svg class="ic" aria-hidden="true"><use href="#i-star"></use></svg><span>One tap next time: in <b>More</b>, tap <b>Edit</b> and add Spotter to&nbsp;Favorites.</span></p>
+    <div class="sfopen"><button class="chip" type="button" data-app="https://www.tiktok.com/">Open TikTok<svg class="ic"><use href="#i-arrow-up-right"></use></svg></button><button class="chip" type="button" data-app="https://www.instagram.com/">Open Instagram<svg class="ic"><use href="#i-arrow-up-right"></use></svg></button></div>
+  </div>
+  <div class="orpaste">Or paste a link</div>
+  <div class="field"><input id="addurl" type="url" placeholder="https://..." autocapitalize="off" autocomplete="off" spellcheck="false" aria-label="Video link"></div>
   <button class="btn" id="addgo">Save workout</button>
+  <p class="webnote" data-on="web">In the Spotter app you save straight from the <b>Share</b> button in TikTok or Instagram.</p>
 
-  <!-- The last rung of the ingest ladder, and deliberately the quiet one: pasting
-       a link is the everyday path, this is for the video that lives only on the
-       phone. It says "watches" because that is what changed, and the size limit
+  <!-- The last rung of the ingest ladder, and deliberately the quiet one: sharing
+       (in the app) or pasting a link is the everyday path, this is for the video
+       that lives only on the phone. It says "watches" because that is what changed, and the size limit
        is stated here rather than only in the error. -->
   <div class="upblock">
     <button class="uploadrow" id="uploadrow" type="button">
       <span class="upmark" aria-hidden="true"><svg class="ic"><use href="#i-upload"></use></svg></span>
       <span class="uptext">
-        <b>Upload a video from your phone</b>
-        <small>Spotter watches and listens to it, so it works when nothing is written down. MP4, MOV, M4A, MP3, WAV or WebM, up to 25 MB.</small>
+        <b id="uptitle">Upload a video from your phone</b>
+        <small id="upsub">Spotter watches and listens to it, so it works when nothing is written down. MP4, MOV, M4A, MP3, WAV or WebM, up to 25 MB.</small>
       </span>
     </button>
     <input id="addfile" type="file" accept="video/*,audio/*" hidden>
@@ -537,6 +566,17 @@ export const MARKUP_BODY = String.raw`</head>
   </div>
   <div class="btnrow"><button class="btn ghost" data-close="sectionsheet">Cancel</button><button class="btn" id="sectionsave">Choose the first exercise</button></div>
   <button class="danger hide" id="sectionremove">Remove section</button>
+</div></div>
+
+<!-- The card's order, and nothing else. One row per section and per exercise, a
+     handle on each (touch it and the row lifts at once, as UIKit's reorder control
+     does), and for anyone who cannot drag, a tap on a row brings up Move up / Move
+     down. Nothing is written until Done, which is one edit however much moved. -->
+<div class="sheet" id="ordersheet" role="dialog" aria-modal="true" aria-labelledby="ordertitle"><div class="sheetbody">
+  <div class="ohead"><div class="grabber"></div><div class="otop"><button class="obtn" data-close="ordersheet">Cancel</button><h2 id="ordertitle">Reorder</h2><button class="obtn odone" id="ordersave">Done</button></div></div>
+  <p class="lede olede">Drag <svg class="ic"><use href="#i-list"></use></svg> to move a section or an exercise, or tap one for arrows.</p>
+  <div id="olist" role="list" aria-labelledby="ordertitle"></div>
+  <div class="sr-only" id="orderlive" aria-live="polite"></div>
 </div></div>
 
 <!-- Three answers, in the order they earn: what the creator said, somebody filming
@@ -738,9 +778,8 @@ export const MARKUP_BODY = String.raw`</head>
 
   <!-- Under Account, where Hevy and Fitbod both put theirs and where Apple's
        guideline expects a subscriber to look for the way out; below Sign out only
-       because Sign out is deliberately the end of the Account section. With
-       billing switched off the row reads Free and no button appears at all —
-       Settings is not the place to advertise a plan nobody can buy yet. -->
+       because Sign out is deliberately the end of the Account section. A Basic
+       account always has the way to Plus here, store answering or not. -->
   <h3 class="seth">Plan</h3>
   <div class="setgroup">
     <div class="kv" id="setplanrow"><span class="k">Plan</span><span class="v" id="setplan">Free</span></div>
@@ -755,6 +794,7 @@ export const MARKUP_BODY = String.raw`</head>
     <button class="btn ghost hide" id="setmanage">Manage subscription</button>
     <button class="btn hide" id="setupgrade">Upgrade to Plus</button>
   </div>
+  <div class="setnote hide" id="setplanhow"></div>
   <button class="setlink hide" id="setrefresh">Refresh</button>
 
   <!-- Only for an account that owns a code. The numbers are the server's
@@ -838,10 +878,12 @@ export const MARKUP_BODY = String.raw`</head>
   <div class="setnote" id="setremnote"></div>
 
   <details class="disclosure" id="phonesave"><summary>Save from your phone</summary><div class="disclosure-body">
-    <p class="lede"><b>On any phone</b> — copy a video link, then tap <b>Save workout</b> in Spotter.</p>
-    <p class="lede"><b>Android</b> — install Spotter, then choose it in the video app’s share sheet.</p>
-    <p id="nativesharehelp" class="lede hide">In TikTok, YouTube, Instagram or another app, share the post’s link and choose Spotter. If needed, open More to find Spotter in the iPhone share menu.</p>
-    <details id="shortcutsetup" class="disclosure"><summary>iPhone Shortcut setup (advanced)</summary><div class="disclosure-body">
+    <!-- The sheet's own words, so Settings and the add sheet never teach two ways. -->
+    <p class="lede" data-on="ios">In TikTok, Instagram, YouTube or any app, tap <b>Share</b>, then <b>More</b>, then <b>Spotter</b> (or <b>Save to Spotter</b> further down). For one tap next time, in <b>More</b> tap <b>Edit</b> and add Spotter to Favorites.</p>
+    <p class="lede" data-on="android">In TikTok, Instagram, YouTube or any app, tap <b>Share</b>, then <b>Spotter</b>. In TikTok it is under <b>More</b>.</p>
+    <p class="lede" data-on="web"><b>In the Spotter app</b> — tap <b>Share</b> on a TikTok, Instagram or YouTube video and choose Spotter.</p>
+    <p class="lede"><b>Or</b> copy the video’s link and paste it into <b>Save workout</b>.</p>
+    <details id="shortcutsetup" class="disclosure" data-on="web"><summary>iPhone Shortcut setup (advanced)</summary><div class="disclosure-body">
       <p class="lede">For direct sharing on iPhone, create a Shortcut that sends the shared URL as a POST to this address. Keep it private — it works without your password.</p>
       <div class="keybox" id="setkey">&mdash;</div>
       <div class="btnrow"><button class="btn ghost" id="copykey">Copy address</button><button class="btn ghost" id="rotatekey">New key</button></div>
@@ -883,11 +925,13 @@ export const MARKUP_BODY = String.raw`</head>
   <div class="grabber"></div>
   <div class="planctx hide" id="planctx"></div>
   <h2>Spotter Plus</h2>
-  <p class="lede">Room to save what you find, and a coach who does not run out mid-week.</p>
+  <p class="lede">Keep every workout you save, read TikTok videos in full, and train with Pumpy, your coach.</p>
   <div class="plangood" id="plangood"></div>
-  <div class="plancards" id="plancards" role="radiogroup" aria-label="Billing period"></div>
-  <div class="plantrial hide" id="plantrial"></div>
-  <div class="plansoon hide" id="plansoon">Plans are coming soon.</div>
+  <div id="planbox">
+    <div class="plancards" id="plancards" role="radiogroup" aria-label="Billing period"></div>
+    <div class="plantrial hide" id="plantrial"></div>
+    <div class="plansoon hide" id="plansoon" aria-live="polite"></div>
+  </div>
   <!-- A creator's code, typed here or already on the account. The app never
        prices the discount: the store does, when the code is redeemed there, so
        the cards above stay the store's own numbers. -->
@@ -906,7 +950,8 @@ export const MARKUP_BODY = String.raw`</head>
   <div class="planlegal">
     <a href="https://quarterdeckcollective.com/spotter/terms/">Terms</a><span aria-hidden="true">&middot;</span>
     <a href="https://quarterdeckcollective.com/spotter/privacy/">Privacy</a><span aria-hidden="true" id="plandot2">&middot;</span>
-    <button id="planrestore">Restore purchase</button>
+    <button id="planrestore">Restore purchase</button><span aria-hidden="true" id="plandot3">&middot;</span>
+    <button id="planmanage">Manage</button>
   </div>
 </div></div>
 

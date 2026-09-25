@@ -80,7 +80,7 @@ function ok(v: unknown, why: string): void {
 // the paywall, Settings and the price page were all just quietly repriced.
 check("the compiled defaults are the published allowances", () => {
   M.seed(null);
-  eq(M.allowanceFor("free"), { reads: 4, answers: 100, helpers: 20, uploads: 1 });
+  eq(M.allowanceFor("free"), { reads: 4, answers: 0, helpers: 20, uploads: 1 });
   eq(M.allowanceFor("plus"), { reads: 20, answers: 300, helpers: 100, uploads: 10 });
 });
 
@@ -95,7 +95,7 @@ check("config merges over the defaults rather than replacing them", () => {
   eq(M.allowanceFor("plus").reads, 12);
   eq(M.allowanceFor("free").reads, 3);
   // The rows the seed said nothing about are still there.
-  eq(M.allowanceFor("free").answers, 100);
+  eq(M.allowanceFor("free").helpers, 20);
   eq(M.allowanceFor("plus").uploads, 10);
   eq(M.allowanceFor("staff").reads, null);
 });
@@ -107,6 +107,17 @@ check("config cannot sell Basic more previews than the database will admit", () 
   eq(M.allowanceFor("free").reads, M.PREVIEW_CAP);
   M.seed(JSON.stringify({ free: { reads: null } }));
   eq(M.allowanceFor("free").reads, M.PREVIEW_CAP, "uncapped Basic still means four");
+});
+
+check("config cannot promise Basic coaching the chat route refuses", () => {
+  // Pumpy answers a Basic account with a 403 before a credit is counted, so the
+  // only true allowance is none, whatever a row written in beta still says.
+  M.seed(JSON.stringify({ free: { answers: 100 } }));
+  eq(M.allowanceFor("free").answers, 0);
+  eq(M.allowanceFor("gold-tier").answers, 0, "an unknown plan reads as Basic here too");
+  M.seed(JSON.stringify({ free: { answers: null } }));
+  eq(M.allowanceFor("free").answers, 0, "uncapped Basic coaching is still none");
+  eq(M.allowanceFor("plus").answers, 300);
 });
 
 check("a typo falls back to the compiled table; an explicit null is honoured", () => {

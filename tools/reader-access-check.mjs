@@ -17,8 +17,10 @@ const constant=(text,name)=>Number(text.match(new RegExp('(?:export )?const '+na
 const AI_CONSENT_VERSION=src.match(/const AI_CONSENT_VERSION = "([^"]+)"/)[1];
 const c = vm.createContext({console, CARD_V:constant(src,'CARD_V'), MIN_USABLE_CARD_V:constant(src,'MIN_USABLE_CARD_V'),
  PACK_V:constant(packSrc,'PACK_V'), MIN_USABLE_PACK_V:constant(packSrc,'MIN_USABLE_PACK_V'), Date, Set, Map, JSON, Number, String});
-const functions=['usablePack','visuallyRead','cacheStale','markCache','cacheForAccess','basicMeta','readQuality','labelRecommendations','plusPlan'];
-vm.runInContext(transformSync(functions.map(fn).join('\n'),{loader:'ts',format:'cjs'}).code,c);
+const functions=['usablePack','visuallyRead','cacheStale','markCache','cacheForAccess','cacheEntitled','isDoseWordName','cardSound','basicMeta','readQuality','labelRecommendations','plusPlan'];
+// The dose-word vocabulary cardSound reads, lifted as it is written.
+const doseWords=src.slice(src.indexOf('const DOSE_WORDS = new Set(['),src.indexOf('function isDoseWordName('));
+vm.runInContext(transformSync(doseWords+functions.map(fn).join('\n'),{loader:'ts',format:'cjs'}).code,c);
 const pack={pack_v:1,reader:'sheets:gemini',exercises:[{name_shown:'Squat'}]};
 const basic={title:'Basic',blocks:[]}, premium={title:'Plus',blocks:[{exercises:[{name:'Squat'}]}]};
 c.row={pack,pack_v:1,card:premium,v:9,read_quality:'premium',media_source:'pack:video',media_text:'private visual transcript'};
@@ -67,7 +69,10 @@ c.rpc=async(name,args)=>{
 };
 c.dbPatchMany=async(table,query,body)=>{updates.push({table,query,body});return [{id:'owned'}];};
 c.dbDelete=async()=>{};
-vm.runInContext(transformSync(fn('finishJob'),{loader:'ts',format:'cjs'}).code,c);
+// S9: the sentence a Basic card gets when its caption named nothing and a Plus
+// read of the same video found the workout — lifted as written.
+const hintConst=src.match(/const PLUS_READ_HINT = "[^"]+";/)[0];
+vm.runInContext(transformSync(hintConst+'\n'+fn('countExercises')+'\n'+fn('plusReadHint')+'\n'+fn('finishJob'),{loader:'ts',format:'cjs'}).code,c);
 c.job={id:'job',user_id:'plus'};c.p={shortcode:'same-video',platform:'tiktok',clean:'https://example.test/video',kind:'video'};
 c.meta={pack,caption:'public caption',read_plan:'plus'};c.card=structuredClone(premium);
 await vm.runInContext('finishJob(job,p,meta,card,null,false)',c);
@@ -79,12 +84,15 @@ c.aiActor={run:async(_,f)=>f(),getStore:()=>undefined};c.providerFor=()=>({cache
 await vm.runInContext('finishJob(job,p,meta,card,null,false)',c);
 assert.equal(updates.find(x=>x.table==='workouts').body.title,'Basic');
 assert.equal(updates.find(x=>x.table==='workouts').body.read_quality,'basic');
+assert.equal(updates.find(x=>x.table==='workouts').body.ingest_error,
+  'The caption lists no exercises. A Plus read of the video found 1 exercise — use one of your free Plus reads to see it.',
+  'S9: an empty Basic card says a Plus read found the workout');
 console.log('PASS owner/job-scoped completion, isolated simultaneous saves and downgrade during visual reading.');
 // Preparing a native save must be read-only and never expose the cached card.
-c.BLOCKED=Symbol('blocked');c.resolveShare=async()=>({shortcode:'same',platform:'tiktok',kind:'video',clean:'https://www.tiktok.com/@fixture/video/1'});
+c.BLOCKED=Symbol('blocked');c.INSECURE=Symbol('insecure');c.resolveShare=async()=>({shortcode:'same',platform:'tiktok',kind:'video',clean:'https://www.tiktok.com/@fixture/video/1'});
 c.json=(body)=>body;let plan='plus',cached=true,owned=false;
 let consented=true;
-c.capsFor=async()=>({plan});c.dbSelect=async(table)=>table==='workouts'?(owned?[{id:'mine'}]:[]):table==='profiles'?[{settings:consented?{ai_consent_version:AI_CONSENT_VERSION,ai_consent_at:'2026-09-20T00:00:00Z'}:{}}]:cached?[{pack,pack_v:1}]:[];
+c.capsFor=async()=>({plan});c.capsFrom=()=>({plan});let heldSave=false;c.dbSelect=async(table)=>table==='workouts'?(owned?[{id:'mine'}]:[]):table==='ingest_jobs'?(heldSave?[{id:'j',hold:true}]:[]):table==='profiles'?[{settings:consented?{ai_consent_version:AI_CONSENT_VERSION,ai_consent_at:'2026-09-20T00:00:00Z'}:{}}]:cached?[{pack,pack_v:1}]:[];
 c.AI_CONSENT_VERSION=AI_CONSENT_VERSION;
 vm.runInContext(transformSync([fn('aiConsented'),fn('handleIngestPrepare')].join('\n'),{loader:'ts',format:'cjs'}).code,c);
 const prep=async(body)=>{c.req={json:async()=>body};return vm.runInContext('handleIngestPrepare(req,"fixture",{})',c);};
@@ -94,6 +102,9 @@ assert.equal((await prep({url:'x'})).ai_consent,true);
 consented=false;assert.equal((await prep({url:'x'})).ai_consent,false);consented=true;
 cached=false;assert.equal((await prep({url:'x'})).needs_frames,true);
 owned=true;assert.equal((await prep({url:'x'})).needs_frames,false);
+// Saved first with frames_pending: the card is already owned and its job is held
+// for exactly these frames, so the extension's after-the-save question says yes.
+heldSave=true;assert.equal((await prep({url:'x'})).needs_frames,true);heldSave=false;
 assert.equal((await prep({url:'x',reread:true})).needs_frames,true);
 plan='free';owned=false;assert.equal((await prep({url:'x'})).needs_frames,false);
 assert.equal((await prep({url:'x',preview:true})).needs_frames,true);

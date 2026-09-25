@@ -47,6 +47,7 @@
 //   POST /api/worker/media          one tier of reading the video, in its own isolate
 //   POST /api/worker/probe          one-off measurement behind the same secret
 //   POST /api/worker/ops-alert      push what ops_alert_check() fired to staff devices
+//   POST /api/worker/cover          one stored cover re-encoded at card size (shared secret)
 //   GET  /api/ops/scorecard         this week's operating review as JSON (staff only)
 //
 // Ingest is asynchronous: it enqueues and returns in ~200ms, and the worker fills
@@ -54,18 +55,24 @@
 // Everything else (listing, editing, logs, plan) goes straight to PostgREST from
 // the browser under RLS — this function only holds what needs secrets.
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import { aiActor, createGuardedFetch, GuardError, tokenCost, tokenPrice } from "./ai-guard.ts";
 import { deterministicCombine } from "./pumpy-combine.ts";
+// Card-size covers (storeThumb): a plain-JS JPEG codec, so nothing but the function ships.
+import jpeg from "npm:jpeg-js@0.4.4";
 
 import { PAGE_HTML } from "./page.ts";
 import { ICON_B64 } from "./icon.ts";
 import { readVisionImage } from "./vision-reader.ts";
 import {
-  BillingError, billingConfigured, cancelAndDeleteCustomer, createCheckout, createPortal,
-  handleWebhook, pricesBlock, returnBaseFrom, sellablePlans, syncFromSession, syncUser,
+  BillingError, billingConfigured, billingCustomerFor, cancelAndDeleteCustomer, createCheckout, createPortal,
+  eraseStripeCustomer, handleWebhook, pricesBlock, returnBaseFrom, sellablePlans, syncFromSession, syncUser,
 } from "./billing.ts";
 import { AppleGrantError, forgetAppleGrant, rememberAppleGrant } from "./apple-auth.ts";
-import { forgetStravaQuietly, handleCallback, handleStrava } from "./strava.ts";
+import { deauthorizeStrava, handleCallback, handleStrava, stravaGrantFor } from "./strava.ts";
+import {
+  deleteRevenueCatSubscriber, type Eraser, eraseAtProvider, type Provider as ErasureProvider, runErasureOutbox,
+} from "./erasure.ts";
 import { pushConfig, runPushTick, sendPush } from "./push.ts";
 import { opsScorecard, runOpsAlert } from "./ops.ts";
 import { CATALOG, type CatalogEntry, canonicalize, catalogById, standardOf } from "./catalog.ts";
@@ -91,7 +98,8 @@ import {
 // run; Deno.resolveDns is not present in every Deno-compatible runtime, and the
 // difference decides whether a public hostname pointing at a private A record is
 // caught. Logged once at cold start so it is answerable from the function logs.
-console.log("ssrf guard: static checks on, dns resolution", dnsAvailable() ? "on" : "UNAVAILABLE");
+console.log("ssrf guard: static checks on, dns resolution",
+  dnsAvailable() ? "on" : "UNAVAILABLE (only platform hosts will be fetched)");
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -519,6 +527,9 @@ function limitsConfig(): Record<string, LimitCaps> {
 // `answers` is Pumpy. Its credits are the enforcing gate and they are sized so
 // that this many answers can never be refused (ALLOWANCES.md section 5); the
 // number here is the floor that is promised, which is why nothing enforces it.
+// Basic's is 0, because Pumpy is a Plus feature: the chat route answers a Basic
+// account with a 403 before any credit is counted, so any other number here was
+// Settings promising "0 of 100" coaching nobody on Basic could have.
 
 type AllowanceKind = "reads" | "answers" | "helpers" | "uploads";
 type Allowance = Record<AllowanceKind, number | null>;
@@ -532,7 +543,7 @@ const ALLOWANCE_LOG_KIND: Record<AllowanceKind, string> = {
 };
 
 const ALLOWANCE_DEFAULTS: Record<string, Allowance> = {
-  free: { reads: 4, answers: 100, helpers: 20, uploads: 1 },
+  free: { reads: 4, answers: 0, helpers: 20, uploads: 1 },
   plus: { reads: 20, answers: 300, helpers: 100, uploads: 10 },
   pro: { reads: 60, answers: 900, helpers: 300, uploads: 25 },
   staff: { reads: null, answers: null, helpers: null, uploads: null },
@@ -585,13 +596,16 @@ function allowancesConfig(): Record<string, Allowance> {
  * One account's monthly allowance. An unknown plan reads as free, exactly as the
  * daily caps do — a bad string in one column must never mean "no ceiling".
  *
- * Basic's read allowance is clamped to what `reserve_video_preview` will admit.
+ * Basic's read allowance is clamped to what `reserve_video_preview` will admit,
+ * and its coaching to what the chat route admits, which is none: a config row
+ * written when Basic had a coach must not put the promise back.
  */
 function allowanceFor(plan: string): Allowance {
   const table = allowancesConfig();
   const a = { ...(table[plan] ?? table.free ?? ALLOWANCE_DEFAULTS.free) };
   if (!plusPlan(plan)) {
     a.reads = a.reads === null ? PREVIEW_CAP : Math.min(a.reads, PREVIEW_CAP);
+    a.answers = 0;
   }
   return a;
 }
@@ -628,7 +642,7 @@ function capsFrom(profile: { plan?: unknown; limits?: unknown } | null): UserCap
 async function capsFor(userId: string): Promise<UserCaps> {
   let profile: { plan?: unknown; limits?: unknown } | null = null;
   try {
-    profile = (await dbSelect("profiles", `id=eq.${userId}&select=plan,limits`))[0] ?? null;
+    profile = await profileRow(userId);
   } catch (e) {
     console.error("caps: could not read the plan for", userId, "— using free —", e);
   }
@@ -733,15 +747,21 @@ async function capLimit(
 ): Promise<Response> {
   const cap = uc.caps[kind];
   const table = limitsConfig();
+  const up = upgradePath(uc.plan, cap, (p) => table[p]?.[kind], await sellablePlans());
+  // The shelf is the one refusal the Share Extension shows as text, with no way
+  // into the app from there. So when a bigger shelf is on sale the sentence says
+  // where it is; the app itself opens the Plus page and never shows this line.
+  const shelfUp = kind === "library" && up.upgrade && up.next_cap === null && up.next_plan
+    ? ` Spotter ${planName(up.next_plan)} keeps every workout — open Spotter to see it.` : "";
   return json({
     status: "limit",
     kind,
     plan: uc.plan,
     cap,
     used,
-    ...upgradePath(uc.plan, cap, (p) => table[p]?.[kind], await sellablePlans()),
+    ...up,
     resets_at: isDailyKind(kind) ? utcNextMidnight() : null,
-    message: message ?? capMessage(kind, uc.plan, cap),
+    message: message ?? capMessage(kind, uc.plan, cap) + shelfUp,
   }, 429, cors);
 }
 
@@ -785,6 +805,11 @@ const UPLOAD_MAX_BYTES = Number(Deno.env.get("UPLOAD_MAX_BYTES") ?? String(25 * 
 const UPLOAD_EXTS = ["mp4", "mov", "webm", "m4v", "mp3", "m4a", "wav", "weba"];
 // Signed media links expire after fifteen minutes.
 const UPLOAD_SIGN_SECONDS = 900;
+// A signed UPLOAD address is another clock. Storage fixes its lifetime in its own
+// configuration — two hours, whatever the request asks for (storage-js
+// createSignedUploadUrl: "valid for 2 hours"; measured: the token's exp-iat is
+// 7200) — so this is the fallback when a token cannot be read, not a setting.
+const SIGNED_UPLOAD_SECONDS = 7200;
 // Below this many characters, a transcript cannot be describing a workout. This is
 // the load-bearing half of the silence test: measured 2026-09-02, one second of
 // silence comes back from whisper-large-v3-turbo as HTTP 200 with the text
@@ -893,6 +918,11 @@ const ALLOWED_ORIGINS = (Deno.env.get("ALLOWED_ORIGINS") ??
 const DESKTOP_UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
 const CRAWLER_UA = "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)";
+// Instagram's captioned embed answers a desktop browser with a 640 KB login shell
+// and a phone or a link-preview crawler with the real embed. The crawler is asked
+// first because it is what the og: rung already uses; the phone is the second try.
+const IPHONE_UA =
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1";
 
 const CATEGORIES = [
   "Push", "Pull", "Legs", "Upper Body", "Full Body",
@@ -918,6 +948,8 @@ function corsFor(req: Request): Cors {
     "Access-Control-Allow-Origin": allow,
     "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-ingest-key",
     "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
+    // A browser asks again after 5 s by default; WebKit honours up to 600.
+    "Access-Control-Max-Age": "600",
     "Vary": "Origin",
   };
 }
@@ -1143,8 +1175,10 @@ function cachedPart(u: Usage): number {
 }
 
 // Outstanding reservations count toward spend even when their outcome is unknown.
-async function spendToday(): Promise<number> {
-  const status = await rpc("ai_budget_status", {});
+// Handed the status read rather than making it, so /api/limits asks once for the
+// spend, the ceiling and whether paid reads are on.
+async function spendFrom(pending: Promise<Record<string, unknown> | null>): Promise<number> {
+  const status = await pending;
   if (!status || !Number.isFinite(Number(status.daily_used))) throw new GuardError("accounting_unavailable");
   return Number(status.daily_used);
 }
@@ -1179,9 +1213,13 @@ async function cachePctToday(): Promise<number | null> {
 /** False once the day's estimated spend has crossed the ceiling. */
 async function paidAllowed(): Promise<boolean> {
   try {
-    const s = await rpc("ai_budget_status", {});
-    return !!s && Number(s.daily_used) < Number(s.daily_limit) && Number(s.monthly_used) < Number(s.monthly_limit);
+    return paidFrom(await rpc("ai_budget_status", {}));
   } catch { return false; }
+}
+
+/** paidAllowed's rule on a status already read. */
+function paidFrom(s: Record<string, unknown> | null): boolean {
+  return !!s && Number(s.daily_used) < Number(s.daily_limit) && Number(s.monthly_used) < Number(s.monthly_limit);
 }
 
 // Said once per isolate, not once per call: a missing column is a deploy-ordering
@@ -1260,9 +1298,14 @@ type Parsed = {
   clean: string;       // canonical link, or spotter://upload/<uuid> for an upload
 };
 
+// instagr.am is Instagram's own short host and serves the same paths. `share/` is
+// never a username: /share/reel/<token> names a share token, not a post, and
+// reading the token as a shortcode fetched a post that does not exist (yt-dlp
+// excludes it for the same reason). /reels/audio/<id> is a sound's page.
 function matchInstagram(u: string): Parsed | null {
-  const m = u.match(/instagram\.com\/(?:[A-Za-z0-9_.]+\/)?(reel|reels|p|tv)\/([A-Za-z0-9_-]+)/);
+  const m = u.match(/(?:instagram\.com|instagr\.am)\/(?:(?!share\/)[A-Za-z0-9_.]+\/)?(reel|reels|p|tv)\/([A-Za-z0-9_-]+)/);
   if (!m) return null;
+  if (m[1] === "reels" && m[2] === "audio") return null;
   const kind = m[1] === "reels" ? "reel" : m[1];
   return { platform: "instagram", shortcode: m[2], kind, clean: `https://www.instagram.com/${kind}/${m[2]}/` };
 }
@@ -1272,14 +1315,20 @@ function matchInstagram(u: string): Parsed | null {
 // refuses tiktok.com hostnames, so resolveShare answered null and ingest replied
 // "No workout link found in what was shared." That sentence is the error the owner
 // reported, and this regex is most of the fix.
+//
+// The embed, player and tiktokv.com share shapes name the same id and nothing
+// else, so their canonical link is the watch page with an empty handle: oEmbed
+// and the crawler both answer it (measured 24 Sept), and it matches here again,
+// which the media isolate checks before it will read anything.
 function matchTikTok(u: string): Parsed | null {
-  const m = u.match(/tiktok\.com\/(?:@[^/]+\/(video|photo)|v)\/(\d+)/);
+  const m = u.match(/(?:tiktok\.com\/(?:@[^/]*\/(video|photo)|v|embed(?:\/v2)?|player\/v1)|tiktokv\.com\/share\/video)\/(\d+)/);
   if (!m) return null;
+  const bare = !m[1] && !/tiktok\.com\/v\//.test(u);
   return {
     platform: "tiktok",
     shortcode: `tt-${m[2]}`,
     kind: m[1] === "photo" ? "photo" : "video",
-    clean: u.split("?")[0],
+    clean: bare ? `https://www.tiktok.com/@/video/${m[2]}` : u.split("?")[0],
   };
 }
 
@@ -1291,9 +1340,12 @@ function matchYouTube(u: string): Parsed | null {
 
 // Any other http(s) page — a training blog, a program write-up. Keyed by URL hash.
 // Returns null for anything unusable and BLOCKED for anything that fails the SSRF
-// guard, so ingest can tell the user which of the two happened.
+// guard, so ingest can tell the user which of the two happened. INSECURE is the
+// third answer: an http:// page whose https:// form does not answer, which the
+// guard will not read over plain http (net.ts says why).
 const BLOCKED = Symbol("blocked");
-type WebParse = Parsed | null | typeof BLOCKED;
+const INSECURE = Symbol("insecure");
+type WebParse = Parsed | null | typeof BLOCKED | typeof INSECURE;
 
 function isFacebookPost(u: URL): boolean {
   return /^\/(?:reel|share\/(?:r|v|p))\/[^/]+/i.test(u.pathname) ||
@@ -1307,6 +1359,8 @@ function isFacebookPost(u: URL): boolean {
 async function webParsed(target: string): Promise<WebParse> {
   const guard = await assertPublicUrl(target.split("#")[0]);
   if (!guard.ok) { console.error("ssrf: rejected", target, "—", guard.reason); return BLOCKED; }
+  // guard.url, not target: an http:// page is read, linked and keyed as the
+  // https:// form it is actually fetched as.
   const u = guard.url;
   // social links that failed their own matcher (profiles, channels) make junk cards — reject
   if (/(^|\.)(instagram\.com|tiktok\.com|youtube\.com|youtu\.be)$/i.test(u.hostname)) return null;
@@ -1322,10 +1376,37 @@ async function webParsed(target: string): Promise<WebParse> {
   return { platform: "web", shortcode: `web-${hex.slice(0, 16)}`, kind: "page", clean };
 }
 
+/**
+ * What to say when a share names no post. A link WAS found in most of these, so
+ * "no workout link found" was the wrong sentence: an expired short link lands on
+ * the platform's home page (vm./vt./t/ all 302 to tiktok.com/?_r=1 once the post
+ * is gone), and an Instagram sound page is a real page that is not a post.
+ */
+function noPostAnswer(shared: string): { status: string; code?: string; message: string } {
+  const link = shared.match(/https?:\/\/[^\s"'<>]+/)?.[0] ?? "";
+  if (/(?:instagram\.com|instagr\.am)\/reels?\/audio\//i.test(link)) {
+    return { status: "error", code: "not_a_post",
+      message: "That is an Instagram sound page, not a post. Open the reel itself and share that." };
+  }
+  if (/^https?:\/\/(?:(?:vm|vt)\.tiktok\.com\/|(?:www\.)?tiktok\.com\/t\/)/i.test(link)) {
+    return { status: "error", code: "link_expired",
+      message: "That link no longer opens a post — it may have been deleted. Open the post and share it again." };
+  }
+  // An Instagram share link that did not name its post. It may be fine — the
+  // page it serves is Instagram's to change — so this says what works instead.
+  if (/^https?:\/\/(?:www\.)?instagram\.com\/share\//i.test(link)) {
+    return { status: "error", code: "link_unresolved",
+      message: "Spotter could not follow that Instagram share link. Open the post, tap Share → Copy link, and paste it into Spotter." };
+  }
+  return { status: "error", message: "No workout link found in what was shared." };
+}
+
 async function resolveShare(raw: string): Promise<WebParse> {
-  const urlMatch = raw.match(/https?:\/\/[^\s"'<>]+/);
-  if (!urlMatch) return null;
-  let target = urlMatch[0];
+  // The first link, unless a later one is a post a provider recognises: a caption
+  // pasted with its bio link first is a share of the post, not of the bio.
+  const links = raw.match(/https?:\/\/[^\s"'<>]+/g);
+  if (!links) return null;
+  let target = links.find((l) => matchUrl(l)) ?? links[0];
 
   // Guard what the user actually posted before anything else looks at it, so a
   // private address cannot reach a platform matcher and be laundered into `clean`.
@@ -1345,13 +1426,30 @@ async function resolveShare(raw: string): Promise<WebParse> {
 
     let loc: string | null = null;
     try {
+      // Instagram answers its share links to a link-preview crawler rather than
+      // to a desktop browser, which gets a script page with no redirect.
+      const insta = /(^|\.)(instagram\.com|instagr\.am)$/i.test(guard.url.hostname);
       const r = await fetch(guard.url.toString(), {
         redirect: "manual",
-        headers: { "User-Agent": DESKTOP_UA, "Accept-Language": "en-US" },
+        headers: { "User-Agent": insta ? CRAWLER_UA : DESKTOP_UA, "Accept-Language": "en-US" },
       });
       loc = r.headers.get("location");
-      await r.body?.cancel();
-    } catch (_) { break; }
+      // No redirect, but a page: an Instagram share link names its post in the
+      // page's own og:url (or canonical), which is the only other place it says.
+      if (!loc && insta && r.ok && /^\/share\//.test(guard.url.pathname)) {
+        const html = (await r.text()).slice(0, 400_000);
+        const named = metaTag(html, "og:url") ?? html.match(/<link[^>]+rel="canonical"[^>]+href="([^"]+)"/i)?.[1] ?? null;
+        const hit = named ? matchInstagram(decodeEntities(named)) : null;
+        if (hit) return hit;
+      } else {
+        await r.body?.cancel();
+      }
+    } catch (_) {
+      // An http:// link is tried as https:// and never read over plain http, so
+      // when the https form does not answer, that is the answer.
+      if (guard.upgraded) { console.error("ssrf: no https answer for http link, hop", hop); return INSECURE; }
+      break;
+    }
     if (!loc) break;
     try { target = new URL(loc, guard.url).toString(); } catch { return BLOCKED; }
     // login redirects carry the real path in ?next=
@@ -1422,6 +1520,16 @@ type Meta = {
   // seeded from the cache has no ORIGINAL url to re-fetch, and storeThumb answers
   // null for that — which would strip the picture off a card that has one.
   thumb_stored?: string | null;
+  // A save made with `frames_pending`: the job is held until the phone's frames
+  // arrive at /media or the hold runs out. Carries no text, so runJob scrapes.
+  hold_frames?: boolean;
+  // "Add the video": this job reads the file at `upload_path` INTO an existing
+  // card rather than making one, and never touches the shared cache.
+  attach?: boolean;
+  // The platform answered and says there is no such post — deleted, private, or a
+  // code that never existed. Set by a provider only on that positive answer, never
+  // on a timeout or a login wall, because it makes the job final at attempt one.
+  absent?: boolean;
 };
 
 // Successful-model state remains for the parser adapters; active routing uses
@@ -1800,9 +1908,24 @@ function haveAI(): boolean {
 // 429 and Instagram is one policy change from doing the same, while from a phone's
 // own residential IP those pages carry everything. Same regexes, different courier.
 
+/**
+ * Instagram's own artwork rather than a post's picture. Asked from this
+ * datacenter, the post page is sometimes Instagram's generic page, and its
+ * og:image is the Instagram logo — static.cdninstagram.com/rsrc.php/…png, a
+ * 4168×4168 PNG of 778 KB — which two cold saves on 24 Sept stored as the cover
+ * and in video_cache for everybody after. A post's media is served from
+ * scontent-*.cdninstagram.com (or fbcdn); static.cdninstagram.com serves only the
+ * site's own files, so the host is the rule, as TikTok's logo path is for
+ * ttGenericImage. Pure.
+ */
+function igGenericImage(u: string | null | undefined): boolean {
+  return !!u && /^https?:\/\/static\.cdninstagram\.com\/|\/rsrc\.php\//i.test(u);
+}
+
 /** og: tags on the post page, as served to link-preview crawlers. Pure. */
 function igFromOg(html: string): { caption: string | null; thumb: string | null; author: string | null } {
-  const thumb = metaTag(html, "og:image");
+  const og = metaTag(html, "og:image");
+  const thumb = igGenericImage(og) ? null : og;
   const ogTitle = metaTag(html, "og:title");
   const ogDesc = metaTag(html, "og:description");
   const quoted = (s: string | null) => s?.match(/: ["“]([\s\S]*?)["”]?\s*$/)?.[1]?.trim() ?? null;
@@ -1822,11 +1945,16 @@ function igFromOg(html: string): { caption: string | null; thumb: string | null;
  */
 function igFromEmbed(html: string): {
   caption: string | null; thumb: string | null; author: string | null; images: string[];
+  slides: { url: string; video: boolean }[]; absent: boolean; mediaThumb: boolean;
 } {
+  // The post's own picture: the embed's media image, or failing that the first
+  // slide the context names. `mediaThumb` says it is one of those two, which
+  // igMeta prefers over og:image; the loose scontent match below it can be the
+  // author's avatar, so it only ever fills a gap.
   let thumb: string | null = null;
-  const im = html.match(/class="EmbeddedMediaImage"[^>]*src="([^"]+)"/) ??
-    html.match(/src="(https:\/\/[^"]*scontent[^"]+)"/);
-  if (im) thumb = decodeEntities(im[1]);
+  let mediaThumb = false;
+  const im = html.match(/class="EmbeddedMediaImage"[^>]*src="([^"]+)"/);
+  if (im && !igGenericImage(decodeEntities(im[1]))) { thumb = decodeEntities(im[1]); mediaThumb = true; }
 
   let caption: string | null = null;
   const capDiv = html.match(/<div class="Caption"[^>]*>([\s\S]*?)<div class="CaptionComments"/) ??
@@ -1842,12 +1970,63 @@ function igFromEmbed(html: string): {
   const a = html.match(/class="UsernameText"[^>]*>([^<]+)</);
   if (a) author = decodeEntities(a[1]);
 
-  const images: string[] = [];
-  for (const mm of html.matchAll(/"display_url"\s*:\s*"([^"]+)"/g)) {
-    const u = mm[1].replace(/\\u0026/g, "&").replace(/\\\//g, "/");
-    if (/^https:\/\//.test(u) && !images.includes(u)) images.push(u);
+  // The slides. They live in `contextJSON`, which is JSON written as a string
+  // inside a script's object literal — escaped twice, so a URL reads
+  // `https:\\\/\\\/scontent…` in the raw page. The old regex wanted bare quotes
+  // and found nothing on every one of thirteen verified posts, which is why no
+  // carousel was ever read slide by slide. Decoding it the way the page's own
+  // script does is the fix; the flattened regex below is the fallback for a
+  // page whose script shape moves.
+  const slides: { url: string; video: boolean }[] = [];
+  const push = (u: unknown, video: unknown) => {
+    if (typeof u !== "string" || !/^https:\/\//.test(u) || slides.some((s) => s.url === u)) return;
+    slides.push({ url: u, video: video === true });
+  };
+  const media = igEmbedContext(html)?.gql_data?.shortcode_media;
+  if (media && typeof media === "object") {
+    const edges = media.edge_sidecar_to_children?.edges;
+    if (Array.isArray(edges) && edges.length) {
+      for (const e of edges) push(e?.node?.display_url, e?.node?.is_video);
+    } else push(media.display_url, media.is_video);
+    const text = media.edge_media_to_caption?.edges?.[0]?.node?.text;
+    // The creator's caption as they wrote it, line breaks and all, without the
+    // handle the Caption div puts on its first line.
+    if (typeof text === "string" && text.trim()) caption = text.replace(/\n{3,}/g, "\n\n").trim();
+    if (typeof media.owner?.username === "string" && media.owner.username) author = media.owner.username;
+  } else {
+    const flat = html.replace(/\\+u([0-9a-fA-F]{4})/g, (_, h) => String.fromCharCode(parseInt(h, 16)))
+      .replace(/\\+"/g, '"').replace(/\\+\//g, "/");
+    for (const mm of flat.matchAll(/"display_url"\s*:\s*"([^"]+)"/g)) push(mm[1], false);
   }
-  return { caption, thumb, author, images };
+  // A carousel's own display_url repeats its first child's, so the list is the
+  // children when there are any and the one picture otherwise.
+  const images = slides.map((s) => s.url);
+  if (!thumb && media && slides.length && !igGenericImage(slides[0].url)) { thumb = slides[0].url; mediaThumb = true; }
+  if (!thumb) {
+    const loose = html.match(/src="(https:\/\/[^"]*scontent[^"]+)"/);
+    if (loose) thumb = decodeEntities(loose[1]);
+  }
+  // "Instagram answered, and there is no post": the embed page's broken-media
+  // panel and no context at all. Not a network fault and not a login wall — the
+  // one case where asking again cannot help (igMeta decides with the og: rung).
+  const absent = /class="EmbedBrokenMedia"/.test(html) && !media && !caption && !images.length;
+  return { caption, thumb, author, images, slides, absent, mediaThumb };
+}
+
+/** The embed's `contextJSON`, decoded twice as the page's own script would. Null when absent. */
+function igEmbedContext(html: string): any | null {
+  const key = '"contextJSON":"';
+  const at = html.indexOf(key);
+  if (at < 0) return null;
+  const start = at + key.length - 1;
+  let end = start + 1;
+  while (end < html.length && html[end] !== '"') end += html[end] === "\\" ? 2 : 1;
+  try {
+    const inner = JSON.parse(html.slice(start, end + 1));
+    return typeof inner === "string" ? JSON.parse(inner) : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -1877,7 +2056,7 @@ function igParseHtml(html: string): Meta {
   };
 }
 
-async function igMeta(p: Parsed): Promise<Meta> {
+export async function igMeta(p: Parsed): Promise<Meta> {
   const out: Meta = { caption: null, thumb: null, author: null };
   let images: string[] = [];
   const used: string[] = [];
@@ -1896,29 +2075,46 @@ async function igMeta(p: Parsed): Promise<Meta> {
     }
   } catch (_) { /* fall through */ }
 
-  // 2) the captioned-embed page often works when og: tags are login-walled
-  try {
-    const r = await safeFetch(`https://www.instagram.com/p/${p.shortcode}/embed/captioned/`, {
-      headers: { "User-Agent": DESKTOP_UA, "Accept-Language": "en-US" },
-    });
-    if (r.ok) {
+  // 2) the captioned-embed page: the caption with its lines, and the slides. Asked
+  // as the crawler and then as a phone, never as a desktop browser — that is the
+  // login shell, and it is what every production save got until 24 Sept.
+  let broken = false;
+  for (const ua of [CRAWLER_UA, IPHONE_UA]) {
+    try {
+      const r = await safeFetch(`https://www.instagram.com/p/${p.shortcode}/embed/captioned/`, {
+        headers: { "User-Agent": ua, "Accept-Language": "en-US", "Accept": "text/html" },
+      });
+      if (!r.ok) { await r.body?.cancel(); continue; }
       const got = igFromEmbed(await r.text());
+      if (got.absent) { broken = true; break; }
+      // A shell with nothing in it: the other voice may be answered properly.
+      if (!got.caption && !got.author && !got.images.length) continue;
       // "did this rung contribute", not "is there anything at all by now" — the old
       // test read the accumulated fields and so credited the embed page for what og:
       // had already found, which is the one question save_health exists to answer.
       let gained = false;
       const better = igBetterCaption(out.caption, got.caption);
       if (better !== out.caption) { out.caption = better; gained = true; }
-      if (!out.thumb && got.thumb) { out.thumb = got.thumb; gained = true; }
+      // The embed's media image is the post's own picture at its own shape; og:image
+      // is a 640 square crop at best and Instagram's logo at worst (igGenericImage).
+      if (got.thumb && (got.mediaThumb ? got.thumb !== out.thumb : !out.thumb)) { out.thumb = got.thumb; gained = true; }
       if (!out.author && got.author) { out.author = got.author; gained = true; }
       for (const u of got.images) if (!images.includes(u)) { images.push(u); gained = true; }
       if (gained) used.push("embed-captioned");
-    }
-  } catch (_) { /* fall through */ }
+      if (got.slides.some((s) => s.video)) {
+        console.log("instagram:", p.shortcode, got.slides.length, "slide(s),",
+          got.slides.filter((s) => s.video).length, "of them video covers");
+      }
+      break;
+    } catch (_) { /* fall through */ }
+  }
 
   if (!images.length && out.thumb) images = [out.thumb];
   out.images = images;
   out.source = used.join(",") || "none";
+  // Instagram answered both pages and neither names a post: deleted, private, or a
+  // code that never existed. Final, not a fault — see runJob.
+  if (broken && !out.caption && !out.author && !out.thumb) out.absent = true;
   return out;
 }
 
@@ -2062,8 +2258,18 @@ function ttFromUniversalData(html: string): TtRaw | null {
  */
 const TT_OG_NOT_A_HANDLE = /^(make your day|watch|discover|explore|trending|log in|sign up)\b/i;
 
+/**
+ * TikTok's own poster, which the crawler view names as og:image for a video that
+ * is gone. Stored, it became the thumbnail of a "TikTok video" card with nothing
+ * in it — a logo in the public bucket, and a card that looked saved.
+ */
+function ttGenericImage(u: string | null): boolean {
+  return !!u && /\/tiktok-logo\/|\/tiktok-web-common[^/]*\/.*\/static\/images\//i.test(u);
+}
+
 function ttFromOg(html: string): TtRaw | null {
-  const thumb = metaTag(html, "og:image");
+  const og = metaTag(html, "og:image");
+  const thumb = ttGenericImage(og) ? null : og;
   const title = metaTag(html, "og:title");
 
   // "TikTok · handle" is the only author shape observed. The separator match must
@@ -2162,12 +2368,13 @@ async function ttFetchSource(s: TtSource, id: string, clean: string):
   }
 }
 
-async function ttMeta(p: Parsed): Promise<Meta> {
+export async function ttMeta(p: Parsed): Promise<Meta> {
   const id = p.shortcode.replace(/^tt-/, "");
   const out: Meta = { caption: null, thumb: null, author: null };
   const used: string[] = [];
   const photo = p.kind === "photo";
   let images: string[] = [];
+  const status: Record<string, number> = {};
 
   for (const s of TT_SOURCES) {
     if (photo && s.videoOnly) continue;
@@ -2175,6 +2382,7 @@ async function ttMeta(p: Parsed): Promise<Meta> {
     // carousel is usually a hashtag line, and the workout is on the pictures.
     if (out.caption && out.thumb && out.author && (!photo || images.length)) break;
     const got = await ttFetchSource(s, id, p.clean);
+    status[s.name] = got.status;
     if (!got.raw) {
       if (got.status && got.status !== 200) console.error("tiktok", s.name, "http", got.status);
       else if (got.error) console.error("tiktok", s.name, got.error);
@@ -2205,6 +2413,13 @@ async function ttMeta(p: Parsed): Promise<Meta> {
   if (images.length) out.images = images;
 
   out.source = used.join(",") || "none";
+  // TikTok answered, and there is no post: oEmbed or the embed refuses the id
+  // outright (400/404, not a timeout or a 403/429 wall) while the watch page
+  // serves only its generic poster. Measured 24 Sept on a nonexistent id: oEmbed
+  // 400, embed/v2 400, crawler page 200 with the TikTok logo and nothing else.
+  const refused = [status.oembed, status["embed-v2"]].some((c) => c === 400 || c === 404);
+  if (refused && status["page-crawler"] === 200 &&
+      !out.caption && !out.thumb && !out.author && !images.length) out.absent = true;
   console.log("tiktok meta", id, photo ? "(photo)" : "", "sources:", out.source,
     "caption:", out.caption?.length ?? 0, "thumb:", !!out.thumb, "author:", out.author ?? "-",
     "slides:", images.length);
@@ -2707,20 +2922,24 @@ async function deleteUpload(path: string): Promise<void> {
  *
  * Storage returns the path-and-token half; the token is pulled out separately
  * because the client sends it as a query parameter and reading it out of a URL on
- * the phone is a parsing job nobody should have to do twice.
+ * the phone is a parsing job nobody should have to do twice. `expires_in` is the
+ * token's own lifetime, read out of it: storage decides that, not this request.
+ *
+ * `upsert` travels as the `x-upsert` header, the one place storage reads it
+ * (a body flag is ignored, and the token then says upsert:false). Contact sheets
+ * ask for it: their paths are fixed per video, and issue_sheet_permits lets a
+ * phone that lost the network re-authorize the same set, whose re-PUT of a sheet
+ * that already landed would otherwise be a 409. A whole video never does: it is
+ * handed to a model under a signed read url, so its address writes a new object
+ * or nothing, and the Share Extension asks for a new address on a retry.
  */
 async function signUploadTarget(
-  path: string,
-): Promise<{ upload_url: string; token: string }> {
+  path: string, upsert = false,
+): Promise<{ upload_url: string; token: string; expires_in: number }> {
   const r = await fetch(`${SUPABASE_URL}/storage/v1/object/upload/sign/uploads/${path}`, {
     method: "POST",
-    headers: dbHeaders,
-    // `upsert` so a phone that lost the network halfway through a sheet can send
-    // it again. The bucket's no-overwrite rule exists to stop bytes being swapped
-    // under a signed READ url already handed to somebody else; a pack sheet has no
-    // such reader — the only thing that ever fetches one is our own isolate, from
-    // a url minted seconds earlier, and the object is deleted immediately after.
-    body: JSON.stringify({ expiresIn: UPLOAD_SIGN_SECONDS, upsert: true }),
+    headers: upsert ? { ...dbHeaders, "x-upsert": "true" } : dbHeaders,
+    body: "{}",
     signal: AbortSignal.timeout(10_000),
   });
   if (!r.ok) throw new Error(`sign upload ${r.status}: ${(await r.text()).slice(0, 200)}`);
@@ -2731,7 +2950,22 @@ async function signUploadTarget(
   let token = "";
   try { token = new URL(full).searchParams.get("token") ?? ""; } catch { /* keep empty */ }
   if (!token) throw new Error("sign upload returned no token");
-  return { upload_url: full, token };
+  return { upload_url: full, token, expires_in: tokenLifetime(token) };
+}
+
+/**
+ * How long a storage token lets its address write: its own exp minus iat. The
+ * payload is read, not verified — storage verifies it when the PUT arrives; this
+ * only has to say truthfully how long that will keep working.
+ */
+function tokenLifetime(token: string): number {
+  try {
+    const part = token.split(".")[1] ?? "";
+    const claims = JSON.parse(atob(part.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(part.length / 4) * 4, "=")));
+    const life = Number(claims?.exp) - Number(claims?.iat);
+    if (Number.isFinite(life) && life > 0) return Math.round(life);
+  } catch { /* fall through */ }
+  return SIGNED_UPLOAD_SECONDS;
 }
 
 /** A temporary signed URL for the media reader. */
@@ -2809,12 +3043,18 @@ function uploadRoute(
  * tell, on the media tier's own principle: a count that could not be read is not
  * a count of zero, and the cost of being wrong here is one file heard rather than
  * watched, which is what every upload used to get.
+ *
+ * The ceiling is mediaBurst, the number the routes admit against, and not the
+ * plan table's `media` (Basic 2). With the two apart, one Basic upload — which
+ * logs a row for the pack attempt and one for the video read — used Basic's two,
+ * and "Add the video" that same day was admitted by /media, then only heard here,
+ * and failed as audio.
  */
 async function overMediaCapToday(userId: string, shortcode: string): Promise<boolean> {
   try {
     const [u, uc] = await settledAll<unknown>([mediaCountToday(userId), capsFor(userId)]);
     if (await monthReadsReached(userId, (uc as UserCaps).plan, shortcode) !== null) return true;
-    return overCap(u as number, (uc as UserCaps).caps.media);
+    return overCap(u as number, mediaBurst(uc as UserCaps));
   } catch (e) {
     console.error("upload: cannot read today's media count for", userId, "— not watching", e);
     return true;
@@ -4902,6 +5142,41 @@ const SPAM_LINE = /^(#|link in bio|follow (me|for)|save this|comment [A-Z]+ belo
 // Lines that carry a duration but describe the protocol, not a movement to perform.
 const NOT_AN_EXERCISE = /^(rest|repeat|complete|do |perform|between|then |x\d|round|set\b|circuit|total|warm ?up:|cool ?down:)/i;
 
+// A name made of nothing but the words a dose is written in. "3 Sets x 15 Reps
+// each Exercise" is a carousel's instruction for the slides, and reading it as a
+// line of the plan made a movement called "each Exercise" — which then counted as
+// a complete card, so the slides that held the real movements were never read.
+// Every word must be one of these and one must be an anchor, so "Leg Raises" and
+// "Arm Circles" are untouched.
+const DOSE_WORDS = new Set([
+  "each", "every", "all", "per", "the", "of", "for", "in", "on", "and", "between", "x",
+  "exercise", "exercises", "movement", "movements", "move", "moves", "side", "sides", "leg", "legs",
+  "arm", "arms", "rep", "reps", "set", "sets", "round", "rounds", "time", "times",
+  "second", "seconds", "sec", "secs", "minute", "minutes", "min", "mins",
+]);
+const DOSE_ANCHORS = new Set([
+  "each", "every", "all", "per", "exercise", "exercises", "movement", "movements",
+  "rep", "reps", "set", "sets", "round", "rounds",
+]);
+
+function isDoseWordName(name: string): boolean {
+  const words = name.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(Boolean);
+  return words.length > 0 && words.some((w) => DOSE_ANCHORS.has(w)) &&
+    words.every((w) => DOSE_WORDS.has(w) || /^\d+$/.test(w));
+}
+
+/**
+ * Whether a stored card is fit to be served. A row written before the dose-word
+ * rule can still hold one of those movements, and serving it would hand every
+ * later saver the same empty plan; answering "miss" instead lets the next save
+ * rebuild it, without anybody writing to the shared table by hand.
+ */
+function cardSound(card: any): boolean {
+  const blocks = Array.isArray(card?.blocks) ? card.blocks : [];
+  return !blocks.some((b: any) => (Array.isArray(b?.exercises) ? b.exercises : [])
+    .some((e: any) => typeof e?.name === "string" && isDoseWordName(e.name)));
+}
+
 function cleanLine(s: string): string {
   return s
     .replace(/[•▪●–—\-\*]+\s*/g, " ")
@@ -5057,7 +5332,7 @@ function heuristicWorkout(
         .replace(/\b(reps?|sets?|each side|per side|ea)\b/gi, " ")
         .replace(/[:\-–—]+/g, " ").replace(/\s+/g, " ").trim(),
     );
-    if (name.length < 3 || NOT_AN_EXERCISE.test(name)) continue;
+    if (name.length < 3 || NOT_AN_EXERCISE.test(name) || isDoseWordName(name)) continue;
 
     let seconds: number | null = null;
     if (tm && !sr) {
@@ -5256,7 +5531,7 @@ function splitDose(reps: string | null, sets: number | null, seconds: number | n
 
 function normalizeExercise(raw: any): Exercise | null {
   const name = typeof raw?.name === "string" ? cleanTitle(raw.name) : "";
-  if (!name || name.length < 2) return null;
+  if (!name || name.length < 2 || isDoseWordName(name)) return null;
   // A slide read of a "12 / 10 / 8" column comes back as the cells often enough to
   // be worth spelling out: the model hands over an array, and the card wants the
   // line the creator printed.
@@ -5408,14 +5683,22 @@ function normalizeCard(raw: any, fallback: Card): Card {
 //     a medicine ball, because that is what rows, chest presses and Russian twists
 //     usually use. The video's own statement is the better evidence, so the catalog
 //     only fills the field when the model produced nothing at all.
-function applyCatalog(card: Card): Card {
+//   * `keepIds` is for a card a person already owns (the corrections route). There an
+//     id can be one they picked in the exercise bank, or one Pumpy carried over, for
+//     a movement whose name alone resolves elsewhere or nowhere — "Row" picked as a
+//     dumbbell row. Re-deriving it would silently move that movement's history on
+//     every later edit to anything on the card. So an id the catalog knows is kept
+//     and the muscles come from it; only an exercise with no usable id is resolved
+//     from its name. The route itself sets the id of an exercise it adds or renames.
+function applyCatalog(card: Card, keepIds = false): Card {
   const muscles: string[] = [];
   const equip: string[] = [];
   let matched = 0;
 
   for (const b of card.blocks) {
     for (const ex of b.exercises) {
-      const m = canonicalize(ex.name);
+      const held = keepIds ? catalogById(ex.canonical_id) : null;
+      const m = held ? { id: held.id, entry: held } : canonicalize(ex.name);
       ex.canonical_id = m ? m.id : null;
       if (!m) continue;
       matched++;
@@ -6459,6 +6742,52 @@ function mergeSlideCard(card: Card, slide: Card): SlideMerge {
   return { filled, added: extras.length, matched, capped };
 }
 
+/**
+ * A set count the caption gives the whole post: "✅3 sets" on a line of its own,
+ * or "3 Sets x 15 Reps each Exercise". A line made only of dose words (the
+ * isDoseWordName rule, so no movement is on it) that names one number of sets.
+ * Null when there is none, when two such lines disagree, or when it is a range.
+ * Pure.
+ */
+function captionWideSets(caption: string | null | undefined): number | null {
+  if (!caption) return null;
+  let found: number | null = null;
+  for (const raw of caption.split("\n")) {
+    const line = raw.trim();
+    if (!line || line.length > 60 || !isDoseWordName(line)) continue;
+    if (/\d\s*[-–]\s*\d+\s*sets?\b/i.test(line)) return null;
+    const m = line.match(/(\d{1,2})\s*sets?\b/i) ?? line.match(/^\W*sets?\s*[:=]\s*(\d{1,2})\W*$/i);
+    if (!m) continue;
+    const n = Number(m[1]);
+    if (n < 1 || n > 10) continue;
+    if (found !== null && found !== n) return null;
+    found = n;
+  }
+  return found;
+}
+
+/**
+ * Give that count to the exercises read off the slides that have none of their
+ * own. The slides of a carousel print the movements and the reps; the set count
+ * is often written once, in the caption, for all of them — DGLrGidP-Mz's eight
+ * slide exercises arrived with reps and no sets under a caption that says
+ * "✅3 sets". Only a straight block without rounds takes it: a circuit's rounds
+ * already are its set count, and an exercise with its own sets keeps them.
+ * Mutates `card`; returns how many exercises took it.
+ */
+function applyCaptionSets(card: Card, sets: number): number {
+  let n = 0;
+  for (const b of card.blocks) {
+    if (b.type !== "straight" || b.rounds !== null) continue;
+    for (const ex of b.exercises) {
+      if (ex.sets !== null || ex.evidence?.source !== "carousel") continue;
+      ex.sets = sets;
+      n++;
+    }
+  }
+  return n;
+}
+
 /** Progress hook so a job can persist how far through a carousel it got. */
 type VisionProgress = (slide: number, card: Card) => Promise<void>;
 
@@ -6670,6 +6999,9 @@ async function buildCard(
 
     stampVision();
     console.log("vision: coverage", p.shortcode, card.vision);
+    const wide = captionWideSets(meta.caption);
+    const widened = wide ? applyCaptionSets(card, wide) : 0;
+    if (widened) console.log("vision:", widened, "slide exercise(s) take the caption's", wide, "sets");
     console.log("vision: merged → exercises " + before.total + "/" + countExercises(card) +
       ", doses filled " + filled + ", matched " + matched +
       " — " + readOk + " read, " + timedOut + " timed out, " + retried + " retried, " +
@@ -7033,23 +7365,286 @@ const authHeaders: Record<string, string> = KEY_IS_JWT
   : { apikey: SERVICE_KEY };
 const dbHeaders = { ...authHeaders, "content-type": "application/json" };
 
-async function storeThumb(shortcode: string, src: string | null): Promise<string | null> {
-  if (!src) return null;
+// ---------- covers at the size they are shown ----------
+//
+// TikTok hands over its origin cover, 1440x2560 and up to 2160x3840, 300-650 KB,
+// for a Library tile at most ~590 device px wide (a 440pt phone, two columns, 3x)
+// and a Train row a quarter of that. Stored with no cache header, every one was
+// fetched whole and then revalidated on every relaunch.
+//
+// So a video platform's cover is re-encoded to fill a 4:5 tile COVER_W wide and
+// stored under the same name with a week's max-age: old builds load the same
+// thumb_url and get the small file. Storage's image transforms would do this but
+// are a paid feature and the org is on Free, so the decode, the resample and the
+// encode are ours (jpeg-js, plain JS: nothing to bundle beside the function), and
+// off the response path and out of the saving isolate: the original goes up first,
+// exactly as before but for its header, and /api/worker/cover makes the small copy
+// in a request of its own and puts it over the original. Anything unusual
+// keeps the original: not a baseline or progressive JPEG, an Exif or ICC segment
+// whose meaning a re-encode would drop, over COVER_MAX_PX, or a saving under a
+// fifth. A web page's picture is left whole, because the detail shows that one
+// full width (app.ts embedNode's .dphoto).
+const COVER_W = 640;
+const COVER_Q = 80;
+const COVER_MAX_PX = 12_000_000;
+const COVER_CACHE = "max-age=604800";
+const COVER_PLATFORMS = new Set(["tiktok", "instagram", "youtube"]);
+// The one shape storeThumb names an object in `thumbs`: a shortcode (the charset
+// every parser mints, authorizeSheets' rule) and the extension. No slash, and no
+// dot but the extension's, so no name can reach outside the bucket's top level.
+const THUMB_NAME = /^[A-Za-z0-9_-]{1,64}\.jpg$/;
+// A web page's picture (web-*) and an upload's frame (up-*) are shown full width.
+const THUMB_FULL_WIDTH = /^(web|up)-/;
+// Twice the largest cover seen (650 KB) many times over; a bigger object is kept as it is.
+const COVER_READ_MAX = 16 * 1024 * 1024;
+
+/** The size that still fills a 4:5 tile COVER_W wide, or null when the cover is within a fifth of it already. */
+export function coverFit(w: number, h: number): { w: number; h: number } | null {
+  if (!(w > 0 && h > 0) || w * h > COVER_MAX_PX) return null;
+  const s = Math.max(COVER_W / w, (COVER_W * 5 / 4) / h);
+  if (s > 0.8) return null;
+  return { w: Math.round(w * s), h: Math.round(h * s) };
+}
+
+/**
+ * The Exif orientation in an APP1 segment's data (1 when the tag is absent), or 0
+ * for an APP1 that is not Exif (XMP) or cannot be read.
+ */
+function exifOrientation(b: Uint8Array, at: number, end: number): number {
+  if (end - at < 14 || b[at] !== 0x45 || b[at + 1] !== 0x78 || b[at + 2] !== 0x69 || b[at + 3] !== 0x66) return 0;
+  const t = at + 6, le = b[t] === 0x49;
+  const u16 = (o: number) => le ? b[o] | (b[o + 1] << 8) : (b[o] << 8) | b[o + 1];
+  const ifd = t + (le ? u16(t + 4) | (u16(t + 6) << 16) : (u16(t + 4) << 16) | u16(t + 6));
+  if (ifd < t + 8 || ifd + 2 > end) return 0;
+  for (let k = 0, n = u16(ifd); k < n; k++) {
+    const e = ifd + 2 + k * 12;
+    if (e + 12 > end) return 0;
+    if (u16(e) === 0x0112) return u16(e + 8);
+  }
+  return 1;
+}
+
+/**
+ * A JPEG's pixel size, read off its frame header without decoding it, or null when
+ * it is not a plain one: not a JPEG, arithmetic-coded, turned by its Exif
+ * orientation, carrying XMP, or carrying an ICC colour profile, all of which a
+ * re-encode would drop the meaning of.
+ */
+export function plainJpegSize(b: Uint8Array): { w: number; h: number } | null {
+  if (b.length < 4 || b[0] !== 0xFF || b[1] !== 0xD8) return null;
+  let i = 2;
+  while (i + 9 < b.length && b[i] === 0xFF) {
+    const m = b[i + 1];
+    if (m === 0xFF) { i++; continue; }
+    const len = (b[i + 2] << 8) | b[i + 3];
+    if (m === 0xE1 && exifOrientation(b, i + 4, Math.min(b.length, i + 2 + len)) !== 1) return null;
+    if (m === 0xE2) return null;
+    if (m === 0xC0 || m === 0xC1 || m === 0xC2) return { w: (b[i + 7] << 8) | b[i + 8], h: (b[i + 5] << 8) | b[i + 6] };
+    if ((m >= 0xC3 && m <= 0xCF && m !== 0xC4 && m !== 0xC8 && m !== 0xCC) || m === 0xDA) return null;
+    i += 2 + len;
+  }
+  return null;
+}
+
+/**
+ * Area-average resample, RGBA in, RGBA out. Every source pixel lands in the output
+ * pixels it overlaps in proportion to the overlap, which is what a downscale by
+ * 2-3.4x needs to stay free of the shimmer a point sampler leaves. Rows are
+ * resampled across and accumulated down one output row at a time, so the extra
+ * memory is two rows, not a second image.
+ */
+function resampleArea(src: Uint8Array, sw: number, sh: number, tw: number, th: number): Uint8ClampedArray {
+  const sx = sw / tw, sy = sh / th;
+  const x0 = new Int32Array(tw), wx: Float32Array[] = [];
+  for (let x = 0; x < tw; x++) {
+    const a = x * sx, b = a + sx, i0 = Math.floor(a), i1 = Math.min(sw, Math.ceil(b));
+    const w = new Float32Array(i1 - i0);
+    for (let i = i0; i < i1; i++) w[i - i0] = (Math.min(b, i + 1) - Math.max(a, i)) / sx;
+    x0[x] = i0; wx.push(w);
+  }
+  const row = new Float32Array(tw * 3), acc = new Float32Array(tw * 3), out = new Uint8ClampedArray(tw * th * 4);
+  for (let y = 0; y < th; y++) {
+    const a = y * sy, b = a + sy, j0 = Math.floor(a), j1 = Math.min(sh, Math.ceil(b));
+    acc.fill(0);
+    for (let j = j0; j < j1; j++) {
+      const fy = (Math.min(b, j + 1) - Math.max(a, j)) / sy, base = j * sw * 4;
+      for (let x = 0; x < tw; x++) {
+        const w = wx[x];
+        let p = base + x0[x] * 4, r = 0, g = 0, bl = 0;
+        for (let k = 0; k < w.length; k++, p += 4) { const f = w[k]; r += src[p] * f; g += src[p + 1] * f; bl += src[p + 2] * f; }
+        row[x * 3] = r; row[x * 3 + 1] = g; row[x * 3 + 2] = bl;
+      }
+      for (let k = 0; k < acc.length; k++) acc[k] += row[k] * fy;
+    }
+    for (let x = 0, o = y * tw * 4; x < tw; x++, o += 4) {
+      out[o] = acc[x * 3]; out[o + 1] = acc[x * 3 + 1]; out[o + 2] = acc[x * 3 + 2]; out[o + 3] = 255;
+    }
+  }
+  return out;
+}
+
+/** The card-size re-encode of a cover, or null to keep the original. */
+export function shrinkCover(buf: Uint8Array): Uint8Array<ArrayBuffer> | null {
+  const size = plainJpegSize(buf);
+  const fit = size && coverFit(size.w, size.h);
+  if (!fit) return null;
+  const img = jpeg.decode(buf, { useTArray: true, formatAsRGBA: true, maxResolutionInMP: COVER_MAX_PX / 1e6, maxMemoryUsageInMB: 160 });
+  if (img.width !== size!.w || img.height !== size!.h) return null;
+  const px = resampleArea(img.data, img.width, img.height, fit.w, fit.h);
+  const out = new Uint8Array(jpeg.encode({ data: px, width: fit.w, height: fit.h }, COVER_Q).data);
+  return out.byteLength <= buf.byteLength * 0.8 ? out : null;
+}
+
+async function putThumb(name: string, body: BodyInit, type: string, cache: string): Promise<Response> {
+  return await fetch(`${SUPABASE_URL}/storage/v1/object/thumbs/${name}`, {
+    method: "POST",
+    headers: { ...authHeaders, "content-type": type, "cache-control": cache, "x-upsert": "true" },
+    body,
+  });
+}
+
+/** Where shrinkStoredCover reads a stored cover and writes it back; the backfill passes its own. */
+export type CoverStore = {
+  read(name: string): Promise<{ bytes: Uint8Array; type: string; cache: string | null } | null>;
+  write(name: string, bytes: Uint8Array<ArrayBuffer>, type: string, cache: string): Promise<boolean>;
+};
+
+export type CoverOutcome = {
+  name: string; action: "shrunk" | "kept" | "missing" | "refused" | "failed";
+  size: string | null; before: number; after: number; cpu_ms: number; recached: boolean; cache_was: string | null;
+};
+
+/** Our own `thumbs` bucket, read and written with the service key. Never a platform, never a caller's URL. */
+const storageCovers: CoverStore = {
+  async read(name) {
+    const r = await fetch(`${SUPABASE_URL}/storage/v1/object/thumbs/${name}`, { headers: authHeaders, signal: AbortSignal.timeout(15_000) });
+    if (!r.ok) { await r.body?.cancel(); return null; }
+    if (Number(r.headers.get("content-length") ?? 0) > COVER_READ_MAX) { await r.body?.cancel(); return null; }
+    const bytes = new Uint8Array(await r.arrayBuffer());
+    if (bytes.byteLength > COVER_READ_MAX) return null;
+    return { bytes, type: r.headers.get("content-type") ?? "image/jpeg", cache: r.headers.get("cache-control") };
+  },
+  async write(name, bytes, type, cache) {
+    const up = await putThumb(name, bytes, type, cache);
+    if (!up.ok) console.error("cover upload", name, up.status, (await up.text()).slice(0, 200));
+    else await up.body?.cancel();
+    return up.ok;
+  },
+};
+
+/**
+ * One stored cover, put back at the size it is shown: the small copy over the
+ * original of the same name with a week's max-age, or, when there is no small
+ * copy worth having, the original itself with that header if it went up without
+ * it. The CPU the decode, resample and encode took is logged per cover. A failure
+ * leaves the original where it was, which is what every build already shows.
+ *
+ * The /api/worker/cover route and tools/thumbs-backfill.ts both run this, so the
+ * backfill makes exactly what a new save makes.
+ */
+export async function shrinkStoredCover(name: string, store: CoverStore = storageCovers): Promise<CoverOutcome> {
+  const out: CoverOutcome = { name, action: "refused", size: null, before: 0, after: 0, cpu_ms: 0, recached: false, cache_was: null };
+  if (!THUMB_NAME.test(name)) return out;
+  const held = await store.read(name);
+  if (!held) { out.action = "missing"; return out; }
+  const buf = held.bytes;
+  const size = plainJpegSize(buf);
+  out.size = size ? `${size.w}x${size.h}` : null;
+  out.before = out.after = buf.byteLength;
+  out.cache_was = held.cache;
+  let small: Uint8Array<ArrayBuffer> | null = null;
+  if (!THUMB_FULL_WIDTH.test(name)) {
+    const t0 = performance.now();
+    try { small = shrinkCover(buf); } catch (e) { console.error("cover decode", name, String(e).slice(0, 200)); }
+    out.cpu_ms = Math.round(performance.now() - t0);
+  }
+  if (small) {
+    if (!await store.write(name, small, "image/jpeg", COVER_CACHE)) { out.action = "failed"; return out; }
+    out.action = "shrunk"; out.after = small.byteLength;
+  } else {
+    out.action = "kept";
+    if (held.cache !== COVER_CACHE) out.recached = await store.write(name, buf as Uint8Array<ArrayBuffer>, held.type, COVER_CACHE);
+  }
+  console.log("cover", name, out.action, out.size, out.before, "->", out.after, "bytes,", out.cpu_ms, "ms CPU", out.recached ? "(now cacheable)" : "");
+  return out;
+}
+
+/**
+ * The cover isolate. Same shared secret as /api/worker/tick and a 404 without it.
+ * A request of its own for the same reason as /api/worker/vision: decoding and
+ * re-encoding a 2160x3840 cover is 250-400 ms of CPU on a laptop and more on the
+ * edge, and inside the job's (or a reprocess's) invocation that would count
+ * against the same CPU limit as the job; a kill would take the job with it. Here
+ * a kill costs only the small copy: the original is already stored and shown.
+ *
+ * It takes a name and nothing else, checked against the one shape storeThumb
+ * writes, and reads the bytes back from our own bucket.
+ */
+async function handleCoverTick(req: Request): Promise<Response> {
+  if (!secretEquals(req.headers.get("x-worker-secret") ?? "", WORKER_SECRET)) {
+    return json({ status: "error", message: "Not found" }, 404);
+  }
+  const body = await req.json().catch(() => null) as { name?: unknown } | null;
+  const name = typeof body?.name === "string" ? body.name : "";
+  if (!THUMB_NAME.test(name)) return json({ status: "error", message: "name must be a stored cover's name" }, 400);
+  const out = await shrinkStoredCover(name);
+  return json({ status: out.action === "failed" ? "error" : "ok", ...out }, out.action === "failed" ? 502 : 200);
+}
+
+/** Fire and forget, the kickWorker way: the saving isolate never waits on the shrink. */
+function kickCover(name: string): void {
+  if (!WORKER_SECRET) { console.error("cover shrink skipped: WORKER_SECRET is not set"); return; }
+  background(
+    fetch(`${SELF_URL}/api/worker/cover`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-worker-secret": WORKER_SECRET },
+      body: JSON.stringify({ name }),
+      signal: AbortSignal.timeout(15_000),
+    }).then(async (r) => {
+      const body = await r.text();
+      if (!r.ok) console.error("cover kick", r.status, body.slice(0, 200));
+    }),
+  );
+}
+
+/**
+ * Platform logos that have been stored as a cover, by the SHA-256 of their bytes:
+ * the proof tools/thumbs-repair.ts asks of an object before it touches the rows
+ * that share it, and the last check storeThumb makes before it uploads. The URL
+ * rules (igGenericImage, ttGenericImage) are what normally stop a logo; the bytes
+ * catch the same picture reached by another path. Measured 24 Sept 2026 from the
+ * stored objects and from Instagram's own og:image.
+ */
+export const PLATFORM_LOGO_SHA256: Record<string, string> = {
+  "b421b00fd1791a1d1ab70dd1e9667f40ca79a8c8673989864f1be092295cd7da": "Instagram logo (4168x4168 PNG)",
+  "3e37b1d51ead41bc3e9a3c2951994e0ecbcf090f09116a2055d27c547a12afa4": "TikTok logo (928x928 PNG)",
+};
+
+/** The logo these bytes are, or null. */
+export async function platformLogo(bytes: Uint8Array<ArrayBuffer>): Promise<string | null> {
+  const d = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+  return PLATFORM_LOGO_SHA256[Array.from(d, (b) => b.toString(16).padStart(2, "0")).join("")] ?? null;
+}
+
+export async function storeThumb(shortcode: string, src: string | null, platform = ""): Promise<string | null> {
+  // A platform's own artwork is not a cover, and a card with no picture is
+  // better than a library of logos.
+  if (!src || igGenericImage(src) || ttGenericImage(src)) return null;
   try {
     const r = await safeFetch(src, { headers: { "User-Agent": DESKTOP_UA } });
     if (!r.ok) return null;
-    const buf = await r.arrayBuffer();
+    const buf = new Uint8Array(await r.arrayBuffer());
     if (buf.byteLength < 500) return null;
-    const up = await fetch(`${SUPABASE_URL}/storage/v1/object/thumbs/${shortcode}.jpg`, {
-      method: "POST",
-      headers: {
-        ...authHeaders,
-        "content-type": r.headers.get("content-type") ?? "image/jpeg",
-        "x-upsert": "true",
-      },
-      body: buf,
-    });
+    const logo = await platformLogo(buf);
+    if (logo) { console.log("thumb refused for", shortcode, "— it is the", logo); return null; }
+    // A cover about to be replaced by its small copy goes up uncached, so nothing
+    // holds the big one for a week; everything else is cacheable from the start.
+    const size = COVER_PLATFORMS.has(platform) ? plainJpegSize(buf) : null;
+    const shrink = !!(size && coverFit(size.w, size.h));
+    const up = await putThumb(`${shortcode}.jpg`, buf, r.headers.get("content-type") ?? "image/jpeg",
+      shrink ? "no-cache" : COVER_CACHE);
     if (!up.ok) { console.error("thumb upload", up.status, await up.text()); return null; }
+    if (shrink) kickCover(`${shortcode}.jpg`);
     return `${SUPABASE_URL}/storage/v1/object/public/thumbs/${shortcode}.jpg`;
   } catch (e) {
     console.error("storeThumb failed", e);
@@ -7266,12 +7861,33 @@ async function userEmailFromBearer(req: Request): Promise<string> {
 
 // The long-lived per-user key used by the iOS Shortcut. Hex-validated before it
 // ever reaches a PostgREST filter.
-async function userFromIngestKey(req: Request, url: URL): Promise<string | null> {
+//
+// The row it finds is the person's profile, so it brings back the three columns
+// every metered route reads next (profileRow) and hands them over in `seen`: the
+// Share Extension's save used to read the same row twice, one hop after the
+// other, and on a fresh isolate that second hop sat in front of the config read.
+async function userFromIngestKey(req: Request, url: URL, seen?: { profile?: unknown }): Promise<string | null> {
   const key = (req.headers.get("x-ingest-key") ?? url.searchParams.get("key") ?? "").trim();
   if (!/^[0-9a-f]{32}$/.test(key)) return null;
-  const rows = await dbSelect("profiles", `ingest_key=eq.${key}&select=id`);
+  const rows = await dbSelect("profiles", `ingest_key=eq.${key}&select=id,plan,limits,settings`);
+  if (seen && rows[0]) seen.profile = rows[0];
   return rows[0]?.id ?? null;
 }
+
+/**
+ * The erasers the hourly tick retries the outbox with. RevenueCat's subscriber
+ * id is the Supabase user id: the native shells identify RevenueCat with it and
+ * nothing else (`native/purchases.js` passes it as `appUserID` to `configure`
+ * and to `logIn`), so without the delete the subscriber — purchase history,
+ * aliases — would outlive the account, and a reused id would inherit somebody
+ * else's entitlements. The tick uses shorter timeouts than a deletion request
+ * does, because it runs several in one invocation.
+ */
+const ERASERS: Record<ErasureProvider, Eraser> = {
+  revenuecat: (subject) => deleteRevenueCatSubscriber(subject, 10_000),
+  stripe: (subject) => eraseStripeCustomer(subject),
+  strava: (subject, detail) => deauthorizeStrava(subject, detail),
+};
 
 /**
  * Erase the caller. Required to ship at all — App Store guideline 5.1.1(v) makes
@@ -7303,60 +7919,52 @@ async function userFromIngestKey(req: Request, url: URL): Promise<string | null>
  * row is touched, and a failure there stops everything with a 503: an account
  * that is gone but still charging a card every month is the one outcome that
  * must never happen, and "try again in a minute" is a far better answer than a
- * subscription nobody is left to cancel.
+ * subscription nobody is left to cancel. That holds while a Stripe key is set.
+ * Without one (Stripe was dropped on 18 Sept 2026, so any customer row left is
+ * a test-mode one that cannot be billing anybody) the customer goes to the
+ * erasure outbox instead and the deletion finishes: an erasure right that fails
+ * for an account with a leftover test row is the worse outcome (App Store
+ * 5.1.1(v)).
+ *
+ * The third parties that are best effort — Strava, RevenueCat, and Stripe
+ * without a key — go through the erasure outbox (erasure.ts): the request is
+ * written down before the call and retried by the hourly tick until the
+ * provider says done, so a failure is no longer only a log line. Each is
+ * written down early, while the rows naming it still exist, against this
+ * account; it is attempted only once the auth row is gone, and the outbox does
+ * not claim it while the account still exists (20260924140200). A deletion
+ * that stops before the auth row goes reaches none of these three.
  */
-/**
- * Forget the RevenueCat subscriber, if there is one and if we hold a key.
- *
- * The native shells identify RevenueCat with the Supabase user id and nothing
- * else (`native/purchases.js` passes it as `appUserID` to `configure` and to
- * `logIn`), so the subscriber id is the user id we are about to erase. Without
- * this the auth row goes and the subscriber stays: purchase history, aliases and
- * the email RevenueCat may hold outlive the erasure, and a reused id would
- * inherit somebody else's entitlements.
- *
- * Best effort, in the same direction as Strava and for the same reason: the
- * store, not RevenueCat, is what is actually charging the card, `cancelAndDelete
- * Customer` has already run, and an erasure must not be blocked by a third
- * party's outage. A 404 is the ordinary answer for anyone who never opened the
- * native app.
- *
- * Silent when `REVENUECAT_API_KEY` is unset, which is every web-only deploy and
- * every fork. Note that deleting a subscriber needs a SECRET RevenueCat key; the
- * public SDK key the purchases function reads customer info with is refused here,
- * which shows up as the logged 401 rather than as a failed deletion.
- */
-async function forgetRevenueCatQuietly(userId: string): Promise<void> {
-  const key = Deno.env.get("REVENUECAT_API_KEY");
-  if (!key) return;
-  try {
-    const r = await fetch(
-      `https://api.revenuecat.com/v1/subscribers/${encodeURIComponent(userId)}`,
-      { method: "DELETE", headers: { authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(15_000) },
-    );
-    const body = await r.text();
-    if (!r.ok && r.status !== 404) {
-      console.error("account delete: revenuecat subscriber not deleted for", userId, r.status, body.slice(0, 200));
-    }
-  } catch (e) {
-    console.error("account delete: revenuecat delete failed for", userId, e);
-  }
-}
-
 async function handleAccountDelete(userId: string, cors: Cors): Promise<Response> {
   if (!UUID_RE.test(userId)) return json({ status: "error", message: "Bad account." }, 400, cors);
   const filter = `user_id=eq.${userId}`;
 
-  try {
-    await cancelAndDeleteCustomer(userId);
-  } catch (e) {
-    console.error("account delete: STRIPE FAILED, nothing deleted", userId, e);
-    return json({
-      status: "error",
-      code: "billing_unreachable",
-      message: "Could not cancel your subscription just now — try again in a minute, " +
-        "or cancel it from Manage subscription first.",
-    }, 503, cors);
+  const billingUnreachable = () => json({
+    status: "error",
+    code: "billing_unreachable",
+    message: "Could not cancel your subscription just now — try again in a minute, " +
+      "or cancel it from Manage subscription first.",
+  }, 503, cors);
+  // A Stripe-era customer without a key to cancel it with: erased at the end.
+  let customer: string | null = null;
+  if (billingConfigured()) {
+    try {
+      await cancelAndDeleteCustomer(userId);
+    } catch (e) {
+      console.error("account delete: STRIPE FAILED, nothing deleted", userId, e);
+      return billingUnreachable();
+    }
+  } else {
+    // No key: a leftover (test-mode) customer is written to the outbox, and the
+    // deletion goes on. Only if that cannot even be written down does it stop —
+    // the database is then what is failing, and nothing has been deleted yet.
+    try {
+      customer = await billingCustomerFor(userId);
+    } catch (e) {
+      console.error("account delete: billing lookup failed, nothing deleted", userId, e);
+      return billingUnreachable();
+    }
+    if (customer && !(await queueErasure("stripe", customer, {}, userId))) return billingUnreachable();
   }
 
   try {
@@ -7370,12 +7978,18 @@ async function handleAccountDelete(userId: string, cors: Cors): Promise<Response
 
   // Strava, once Stripe has said the deletion may go ahead. `strava_tokens`
   // cascades with the auth row, but a row deleted without telling Strava leaves a
-  // live grant on the athlete's account with nothing left here to revoke it. This
-  // one is best effort in the other direction from Stripe: a Strava outage must
-  // not hold up an erasure, because a stale grant costs the person nothing and
-  // they can revoke it on strava.com themselves.
-  await forgetStravaQuietly(userId);
-  await forgetRevenueCatQuietly(userId);
+  // live grant on the athlete's account with nothing left here to revoke it, so
+  // the grant is read (and written down) now, and revoked at the end. Best effort
+  // in the other direction from Stripe: a Strava outage must not hold up an
+  // erasure. RevenueCat is keyed by the account id, which outlives the row.
+  let grant: { subject: string; detail: Record<string, unknown> } | null = null;
+  try {
+    grant = await stravaGrantFor(userId);
+    if (grant) await queueErasure("strava", grant.subject, grant.detail, userId);
+  } catch (e) {
+    console.error("account delete: strava lookup failed for", userId, e);
+  }
+  await queueErasure("revenuecat", userId, {}, userId);
 
   try {
     await dbDelete("saves_log", filter);
@@ -7389,14 +8003,9 @@ async function handleAccountDelete(userId: string, cors: Cors): Promise<Response
     return json({ status: "error", message: "Could not delete the account." }, 500, cors);
   }
 
-  // Best effort, and paged: a folder is not guaranteed to fit in one listing.
+  // Best effort: everything in the person's folder, the phone's contact sheets too.
   try {
-    for (let page = 0; page < 10; page++) {
-      const objects = await listUploads(`${userId}/`, 100);
-      if (!objects.length) break;
-      for (const o of objects) await deleteUpload(`${userId}/${o.name}`);
-      if (objects.length < 100) break;
-    }
+    await deleteUserFolder(userId);
   } catch (e) {
     console.error("account delete: uploads", userId, e);
   }
@@ -7413,7 +8022,64 @@ async function handleAccountDelete(userId: string, cors: Cors): Promise<Response
   }
   await r.body?.cancel();
   console.log("account deleted", userId);
+  // The account is gone, so the third parties may be told. None of these can
+  // fail the deletion: eraseAtProvider never throws, and a provider that does
+  // not answer is retried by the hourly tick from the rows written above.
+  if (customer) await eraseAtProvider("stripe", customer, {}, (c) => eraseStripeCustomer(c));
+  if (grant) await eraseAtProvider("strava", grant.subject, grant.detail, deauthorizeStrava);
+  await eraseAtProvider("revenuecat", userId, {}, (id) => deleteRevenueCatSubscriber(id));
   return json({ status: "ok" }, 200, cors);
+}
+
+/**
+ * Every object under a person's folder in the uploads bucket, including the
+ * contact sheets under `pack/<shortcode>/`. A listing names a folder with a null
+ * id (the one a person has is `pack`, and each video in it is a folder of
+ * sheets), so folders are descended into rather than handed to deleteUpload.
+ * Paged: a folder is not guaranteed to fit in one listing, and a deleted page
+ * makes room for the next at offset 0.
+ */
+async function deleteUserFolder(userId: string): Promise<void> {
+  const walk = async (prefix: string, depth: number): Promise<void> => {
+    for (let page = 0; page < 10; page++) {
+      const objects = await listUploads(prefix, 100);
+      if (!objects.length) return;
+      for (const o of objects) {
+        if (o.id === null) {
+          if (depth < 2) await walk(`${prefix}${o.name}/`, depth + 1);
+          continue;
+        }
+        await deleteUpload(`${prefix}${o.name}`);
+      }
+      if (objects.length < 100) return;
+    }
+  };
+  await walk(`${userId}/`, 0);
+}
+
+/**
+ * Write an erasure down against the account it belongs to, without attempting
+ * it: the outbox holds it until that account no longer exists. True when the
+ * row is written. Never throws.
+ */
+async function queueErasure(
+  provider: ErasureProvider, subject: string, detail: Record<string, unknown>, account: string,
+): Promise<boolean> {
+  const args = { p_provider: provider, p_subject: subject, p_detail: detail };
+  try {
+    try {
+      await rpc("erasure_enqueue", { ...args, p_account: account });
+    } catch (e) {
+      // Before migration 20260924140200 there is no account column: written down
+      // the old way, which the deletion's later attempt would do anyway.
+      if (!/PGRST202/.test(String(e))) throw e;
+      await rpc("erasure_enqueue", args);
+    }
+    return true;
+  } catch (e) {
+    console.error("account delete: could not write down the", provider, "erasure —", e);
+    return false;
+  }
 }
 
 function utcMidnight(): string {
@@ -7636,6 +8302,21 @@ async function allowanceLimit(
   }, 429, cors);
 }
 
+/**
+ * A Basic account out of Plus previews. The allowanceLimit shape, so the Plus
+ * page's context line can say what ran out, when it comes back and what Plus
+ * reads instead: these two refusals used to carry only a sentence, which the
+ * app drops when it opens the page. `used` is the cap, because the database
+ * refuses a preview only at the cap; `upgrade` stays true, as it always was.
+ */
+function previewLimit(uc: UserCaps, message: string, cors: Cors): Response {
+  const cap = allowanceFor(uc.plan).reads;
+  return json({
+    status: "limit", kind: "media", upgrade: true, plan: uc.plan, cap, used: cap, scope: "month",
+    next_plan: "plus", next_cap: allowanceFor("plus").reads, resets_at: utcNextMonth(), message,
+  }, 429, cors);
+}
+
 function extractLimitResponse(cors: Cors, uc: UserCaps, used: number): Promise<Response> {
   return capLimit("extract", uc, used, cors);
 }
@@ -7664,6 +8345,11 @@ async function seedJobMeta(jobId: string | null | undefined, meta: Meta): Promis
 }
 
 /** What the Shortcut's Show Result shows, so the phone can see which path ran. */
+/** A carousel or a photo post has pictures to read, not a video (S16). */
+function readingLine(p: Parsed): string {
+  return p.kind === "photo" || p.kind === "p" ? "Reading the post…" : "Reading the video…";
+}
+
 function suppliedMessage(meta: Meta, seeded: boolean): string {
   if (!seeded) return "Reading the video…";
   if (captionIsUserTyped(meta)) return "Reading your caption…";
@@ -7715,6 +8401,20 @@ async function ingestUpload(
   }
   const filename = typeof body.filename === "string" ? body.filename.slice(0, 160).trim() : "";
 
+  // The Share Extension's second door for a post Spotter cannot watch: a video
+  // file shared from Photos or from Instagram's own Download, with the link it
+  // came from when the host app gave one. A link naming a post this person
+  // already has a card for makes this "Add the video" into THAT card — a read,
+  // not an upload. Anything else is an upload card, exactly as before.
+  if (typeof body.source_url === "string" && body.source_url.trim()) {
+    const src = await resolveShare(body.source_url.slice(0, 4096)).catch(() => null);
+    if (src && src !== BLOCKED && src !== INSECURE) {
+      const w = (await dbSelect("workouts",
+        `user_id=eq.${userId}&shortcode=eq.${encodeURIComponent(src.shortcode)}&select=*`))[0];
+      if (w && attachable(w)) return await attachUpload(w, ref, filename, userId, cors);
+    }
+  }
+
   const [countsR, uploadsR, capsR, libR] = await Promise.allSettled([
     countsFor(userId),
     dbCount("saves_log", `user_id=eq.${userId}&created_at=gte.${utcMidnight()}&kind=eq.upload`),
@@ -7746,6 +8446,10 @@ async function ingestUpload(
       message: "Spotter cannot find that file — the upload did not finish. Try picking it again.",
     }, 404, cors);
   }
+
+  // Admitted here, after every free answer and before the job that reads it.
+  const refused = await admitNow();
+  if (refused) { await deleteUpload(ref.path); return refused; }
 
   const p: Parsed = {
     platform: "upload",
@@ -7817,23 +8521,35 @@ async function ingestUpload(
  * This returns no cached content and never grants premium access. */
 async function handleIngestPrepare(req: Request, userId: string, cors: Cors): Promise<Response> {
   const body = await req.json().catch(() => ({}));
+  // The person's own row does not depend on the link, so it is read while the
+  // link resolves: plan, overrides and consent in one request. Settled into a
+  // value so an early answer below never leaves a rejection unobserved.
+  const profileP = dbSelect("profiles", `id=eq.${userId}&select=plan,limits,settings`)
+    .then((r) => ({ ok: true as const, row: r[0] ?? null }), (e) => ({ ok: false as const, e }));
   const p = await resolveShare(String(body?.url ?? "").slice(0, 4096));
-  if (!p || p === BLOCKED || p.platform !== "tiktok" || p.kind === "photo")
+  if (!p || p === BLOCKED || p === INSECURE || p.platform !== "tiktok" || p.kind === "photo")
     return json({ status: "ok", needs_frames: false }, 200, cors);
   const sc = encodeURIComponent(p.shortcode);
-  const [owned, cached, uc, profile] = await Promise.all([
+  const [owned, cached, heldRows, got] = await Promise.all([
     dbSelect("workouts", `user_id=eq.${userId}&shortcode=eq.${sc}&select=id`),
-    dbSelect("video_cache", `shortcode=eq.${sc}&select=pack,pack_v`), capsFor(userId),
-    dbSelect("profiles", `id=eq.${userId}&select=settings`),
+    dbSelect("video_cache", `shortcode=eq.${sc}&select=pack,pack_v`),
+    // A save made with `frames_pending` is already on the shelf when the
+    // extension asks this, and is waiting for exactly the frames asked about.
+    dbSelect("ingest_jobs", `user_id=eq.${userId}&shortcode=eq.${sc}&status=eq.queued&select=id,hold:meta->hold_frames`),
+    profileP,
   ]);
+  if (!got.ok) throw got.e;
+  const uc = capsFrom(got.row);
+  const held = heldRows.some((r: any) => r.hold === true);
   const eligible = plusPlan(uc.plan) || body?.preview === true;
   const fresh = body?.reread === true && plusPlan(uc.plan);
   // `ai_consent` is for the Share Extension, which has no profile of its own: a
   // save without permission is refused at /api/ingest anyway, and knowing that
   // now means it asks the person first instead of after cutting frames it
   // could not have uploaded.
-  return json({ status: "ok", needs_frames: eligible && (fresh || (!visuallyRead(cached[0]) && (!owned.length || body?.preview === true))),
-    ai_consent: aiConsented(profile[0]?.settings), url: p.clean }, 200, cors);
+  return json({ status: "ok",
+    needs_frames: eligible && (fresh || held || (!visuallyRead(cached[0]) && (!owned.length || body?.preview === true))),
+    ai_consent: aiConsented(got.row?.settings), url: p.clean }, 200, cors);
 }
 
 async function handleIngest(req: Request, userId: string, cors: Cors): Promise<Response> {
@@ -7846,6 +8562,8 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
   // it is checked against the caller's own uid and the shortcode below, after the
   // link has been resolved and there is a shortcode to check it against.
   let rawFrames: unknown = undefined;
+  // The Share Extension saved first and will send frames within FRAMES_HOLD_MS.
+  let framesPending = false;
   const ct = req.headers.get("content-type") ?? "";
   if (ct.includes("json")) {
     let body: Record<string, unknown> | null = null;
@@ -7870,6 +8588,7 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
     const rawCap = typeof body?.caption === "string" ? body.caption : "";
     if (rawCap.trim()) caption = rawCap.slice(0, SUPPLIED_CAPTION_MAX).trim();
     if (body?.frames !== undefined && body?.frames !== null) rawFrames = body.frames;
+    framesPending = body?.frames_pending === true;
   } else {
     shared = (await req.text()).trim();
   }
@@ -7882,7 +8601,13 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
       message: "That link points to a private or internal address, so Spotter will not fetch it.",
     }, 400, cors);
   }
-  if (!p) return json({ status: "error", message: "No workout link found in what was shared." }, 400, cors);
+  if (p === INSECURE) {
+    return json({
+      status: "blocked",
+      message: "That page does not open over a secure (https) connection, so Spotter will not fetch it.",
+    }, 400, cors);
+  }
+  if (!p) return json(noPostAnswer(shared), 400, cors);
 
   // The frames block, validated or refused by name.
   //
@@ -7927,23 +8652,28 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
   // cap, is your library full, has anyone extracted this video — asked at once.
   // Sequentially they were round trips on the critical path of a request whose
   // whole purpose is now to return quickly.
-  const [dupeR, countsR, cachedR, capsR, libR] = await Promise.allSettled([
+  //
+  // The preview row is the sixth: premiumAccess asked it one hop later, and asked
+  // for the plan a second time on the way.
+  const [dupeR, countsR, cachedR, capsR, libR, previewR] = await Promise.allSettled([
     dbSelect("workouts", `user_id=eq.${userId}&shortcode=eq.${sc}&select=id,title,ingest_status`),
     countsFor(userId),
     dbSelect("video_cache", `shortcode=eq.${sc}&v=gte.${MIN_USABLE_CARD_V}&select=*`),
     capsFor(userId),
     libraryCount(userId),
+    dbSelect("video_previews", `user_id=eq.${userId}&shortcode=eq.${sc}&month=eq.${new Date().toISOString().slice(0, 7)}-01&select=shortcode`),
   ]);
-  for (const r of [dupeR, countsR, cachedR, capsR, libR]) {
+  for (const r of [dupeR, countsR, cachedR, capsR, libR, previewR]) {
     if (r.status === "rejected") throw r.reason;
   }
   const dupe = (dupeR as PromiseFulfilledResult<any[]>).value;
   const counts = (countsR as PromiseFulfilledResult<Counts>).value;
   const cacheRows = (cachedR as PromiseFulfilledResult<any[]>).value;
-  const visibleCache = cacheForAccess(cacheRows[0], await premiumAccess(userId, p.shortcode));
-  const cached = visibleCache ? [visibleCache] : [];
   const uc = (capsR as PromiseFulfilledResult<UserCaps>).value;
   const held = (libR as PromiseFulfilledResult<number>).value;
+  const premium = plusPlan(uc.plan) || (previewR as PromiseFulfilledResult<any[]>).value.length > 0;
+  const visibleCache = cacheForAccess(cacheRows[0], premium);
+  const cached = visibleCache ? [visibleCache] : [];
 
   // Idempotency, cheap layer. The authoritative one is the unique (user_id,
   // shortcode) constraint inside enqueue_ingest — this only saves a round trip on
@@ -7952,6 +8682,8 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
   if (dupe.length) {
     if (supplied && dupe[0].ingest_status === "failed") {
       if (overCap(counts.extracts, uc.caps.extract)) return extractLimitResponse(cors, uc, counts.extracts);
+      const refused = await admitNow();
+      if (refused) return refused;
       return await requeueWithMeta(dupe[0].id, userId, supplied, cors);
     }
     const processing = dupe[0].ingest_status === "processing";
@@ -8000,7 +8732,7 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
         confidence: typeof card.confidence === "number" ? card.confidence : (c.confidence ?? null),
         extracted_by: card.extracted_by ?? c.extracted_by ?? null,
         read_quality: visuallyRead(c) ? "premium" : "basic", read_plan: c.read_plan ?? "unknown",
-        ingest_status: "ready", ingest_error: visionWarning(card),
+        ingest_status: "ready", ingest_error: visionWarning(card) ?? plusReadHint(p, card, cacheRows[0], premium),
       });
     } catch (e) {
       // Two simultaneous saves of the same cached video by the same user: the
@@ -8009,7 +8741,10 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
       const again = await dbSelect("workouts", `user_id=eq.${userId}&shortcode=eq.${sc}&select=id,title`);
       return await bail(json({ status: "exists", id: again[0]?.id, title: again[0]?.title, message: "Already in your library." }, 200, cors));
     }
-    await logSave(userId, p, meta, card, c.thumb_url, true, false, "save", null);
+    // The ledger row is written after the answer, not before it: the card is
+    // already the person's, and the row is metrics plus the daily save count,
+    // which the insert trigger enforces whenever it lands.
+    background(logSave(userId, p, meta, card, c.thumb_url, true, false, "save", null));
     // `stale` is the cutover signal: a hit on a shape older than this build still
     // costs nothing and is still correct, and counting them is how the owner sees
     // the old cache draining instead of guessing at it.
@@ -8017,7 +8752,7 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
       "served in", Date.now() - t0, "ms");
     // The row is theirs either way — this only decides whether Spotter stops here
     // or goes and reads the video the cached card could not.
-    const upgraded = await upgradeCachedCard(userId, p, c, row.id, cors);
+    const upgraded = await upgradeCachedCard(userId, p, c, row.id, cors, premium, uc);
     if (upgraded) return await bail(upgraded);
     return await bail(json({
       status: "saved", cached: true, id: row.id, title: row.title,
@@ -8026,6 +8761,11 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
   }
 
   if (overCap(counts.extracts, uc.caps.extract)) return await bail(await extractLimitResponse(cors, uc, counts.extracts));
+
+  // Everything above answered without spending; this is where a read is queued,
+  // so this is where the save is admitted.
+  const refused = await admitNow();
+  if (refused) return await bail(refused);
 
   // Cache miss. Everything past here used to happen inline: scrape, model call,
   // thumbnail upload, 5-15 seconds with the user's request held open. Now it is a
@@ -8071,21 +8811,59 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
   const seedMeta: Meta | null = supplied
     ? (frames ? { ...supplied, frames } : supplied)
     : (frames ? { caption: null, thumb: null, author: null, frames } : null);
-  const seeded = seedMeta && q.job_created ? await seedJobMeta(q.job_id, seedMeta) : false;
+  // Saved first, frames after: a new job with no frames yet is held for them —
+  // only when stills could change the read (CR-6). The plan is the server's, not
+  // the hint the extension decided with, which can be a plan ago; a joined job
+  // belongs to the save that started it.
+  const holding = framesPending && !frames && q.job_created && framesCouldHelp(p, uc.plan, cached[0])
+    ? await holdForFrames(q.job_id, supplied) : false;
+  const seeded = holding ? !!supplied
+    : seedMeta && q.job_created ? await seedJobMeta(q.job_id, seedMeta) : false;
   if (seedMeta && !q.job_created) {
     // Another save of the same video is already in flight and owns the reading.
     console.log("joined an existing job for", p.shortcode, "— supplied meta not applied");
     if (frames) await deleteSheets(frames);
   }
-  kickWorker();
+  if (holding) console.log("holding", p.shortcode, "job", q.job_id, "for frames,", FRAMES_HOLD_MS, "ms");
+  else kickWorker();
 
   return json({
     status: "processing",
     id: q.workout_id,
     job_id: q.job_id,
     title: provisional,
-    message: supplied ? suppliedMessage(supplied, seeded) : "Reading the video…",
+    message: supplied ? suppliedMessage(supplied, seeded) : readingLine(p),
+    // The answer to `frames_pending` (CR-5): false tells the Share Extension not
+    // to cut stills nobody will wait for. Absent for a save that did not ask.
+    ...(framesPending ? { frames_wanted: holding } : {}),
   }, 202, cors);
+}
+
+/**
+ * Whether a held save's stills could change what is read: a Plus account (a
+ * preview goes through the app, never the share sheet), a TikTok video (the
+ * only thing the phone cuts stills from; /ingest/prepare says the same), and a
+ * video nobody has read visually yet.
+ */
+function framesCouldHelp(p: Parsed, plan: string, cached: any): boolean {
+  return plusPlan(plan) && p.platform === "tiktok" && p.kind !== "photo" && !visuallyRead(cached);
+}
+
+/**
+ * S9: a Basic save of a video whose caption names nothing, when somebody's Plus
+ * read of the same video found the workout. The empty card used to arrive with no
+ * word of that; now it says so, on the card, where "Try a Plus read" already sits.
+ * Only for a TikTok video, the one place a preview can deliver. Null otherwise.
+ */
+const PLUS_READ_HINT = "The caption lists no exercises.";
+
+function plusReadHint(p: Parsed, served: Card, row: any, premium: boolean): string | null {
+  if (premium || p.platform !== "tiktok" || p.kind === "photo") return null;
+  if (countExercises(served) > 0 || !visuallyRead(row) || !row?.card) return null;
+  const n = countExercises(row.card as Card);
+  if (!n) return null;
+  return PLUS_READ_HINT + " A Plus read of the video found " + n + (n === 1 ? " exercise" : " exercises") +
+    " — use one of your free Plus reads to see " + (n === 1 ? "it." : "them.");
 }
 
 /**
@@ -8239,7 +9017,18 @@ async function finishJob(
   const sc = encodeURIComponent(p.shortcode);
   const waiting = await dbSelect("workouts", `ingest_job_id=eq.${job.id}&user_id=eq.${job.user_id}&ingest_status=eq.processing&select=id,user_id`);
   const access = await Promise.all(waiting.map(async (w: any) => ({ ...w, premium: await premiumAccess(w.user_id, p.shortcode, job.created_at) })));
-  let basic: Card | null = readQuality(meta) === "basic" ? card : null;
+  // The person's own file is theirs to have read, whatever the plan. It was paid
+  // for by the uploads allowance (Basic's one a month) when it was admitted, it
+  // is keyed by an id nobody else can produce, and it never reaches the shared
+  // cache — so there is no Plus reading of somebody else's to withhold. Before
+  // this, a Basic upload was watched and then delivered as the caption-only card
+  // of a file that has no caption: empty, with the read already spent. The
+  // quality stays "basic" for a Basic account because finish_ingest_job refuses
+  // a premium card without a preview row, and reserving one would charge the same
+  // file to the month's four reads as well. "Add the video" is not this: its
+  // platform is the post's, and it reserves its own read (attachRefusal).
+  const own = p.platform === "upload";
+  let basic: Card | null = readQuality(meta) === "basic" || own ? card : null;
   const basicOwner = access.find((w: any) => !w.premium);
   if (!basic && basicOwner) {
     const shared = (await dbSelect("video_cache", `shortcode=eq.${sc}&select=*`))[0];
@@ -8256,7 +9045,7 @@ async function finishJob(
   // The database owns the final authorization and claim check. Nothing visible
   // is written before that check; the workout, preview, and job commit together.
   const recipient = access[0];
-  const delivered = recipient?.premium ? card : (basic ?? card);
+  const delivered = recipient?.premium || own ? card : (basic ?? card);
   const quality = recipient?.premium ? readQuality(meta) : "basic";
   const committed = await rpc("finish_ingest_job", {
     p_job: job.id, p_user: job.user_id, p_worker: WORKER_ID, p_generation: job.claim_generation,
@@ -8270,7 +9059,8 @@ async function finishJob(
       source_url: delivered.source_url ?? null,
       confidence: typeof delivered.confidence === "number" ? delivered.confidence : null,
       extracted_by: delivered.extracted_by ?? null,
-      ingest_error: visionWarning(delivered),
+      ingest_error: visionWarning(delivered) ?? (!recipient?.premium && delivered !== card
+        ? plusReadHint(p, delivered, { card, pack: meta.pack, pack_v: PACK_V }, false) : null),
     },
   }) as { status: string; filled: number };
   if (committed.status === "access_changed") throw new Error("Reading access changed before completion; retry with current access");
@@ -8319,7 +9109,7 @@ async function failJob(job: Job, err: unknown): Promise<void> {
       ? new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth()+1, 1)).getTime()
       : budget ? new Date(utcNextMidnight()).getTime() : Date.now()+60_000
     : Date.now() + backoffMs(job.attempts);
-  const noun = job.kind === "photo" ? "photo post" : "video";
+  const noun = job.kind === "photo" ? "photo post" : job.kind === "p" ? "post" : "video";
   const message = guarded ? "Reading is paused for now. Spotter will try again later."
     : err instanceof SoftFailure ? err.userMessage
     : `Spotter could not read this ${noun}. Tap ↻ to try again.`;
@@ -8432,6 +9222,15 @@ function markCache(row: any): any {
 /** Select an entitled result before copying any data into a user's RLS-visible row. */
 function cacheForAccess(row: any, premium: boolean): any | null {
   if (!row) return null;
+  const out = cacheEntitled(row, premium);
+  if (out && !cardSound(out.card)) {
+    console.log("cache: serving", row.shortcode, "as a miss — its card fails the dose-word rule");
+    return null;
+  }
+  return out;
+}
+
+function cacheEntitled(row: any, premium: boolean): any | null {
   if (premium) return markCache(row);
   if (row.read_quality === "basic" && !visuallyRead(row) && !row.media_source) return markCache(row);
   if (!row.basic_card || Number(row.basic_v) < MIN_USABLE_CARD_V) return null;
@@ -8499,7 +9298,7 @@ async function runPackTier(
         console.log("pack: skipping", p.shortcode, "—", job.user_id, "has spent this month's video reads");
         return { card, meta, ran: false };
       }
-      if (overCap(u as number, plusPlan((uc as UserCaps).plan) ? (uc as UserCaps).caps.media : 15)) {
+      if (overCap(u as number, mediaBurst(uc as UserCaps))) {
         console.log("pack: skipping", p.shortcode, "—", job.user_id, "is over today's media cap");
         return { card, meta, ran: false };
       }
@@ -8676,7 +9475,7 @@ async function escalateToMedia(
         const [u, uc] = await settledAll<any>([mediaCountToday(job.user_id), capsFor(job.user_id)]);
         used = u as number;
         plan = (uc as UserCaps).plan;
-        cap = plusPlan(plan) ? (uc as UserCaps).caps.media : 15;
+        cap = mediaBurst(uc as UserCaps);
       } catch (e) {
         // A count that could not be read is not a count of zero. Skipping costs one
         // thin card; guessing costs an uncapped bill.
@@ -8765,6 +9564,92 @@ async function escalateToMedia(
   return { card, meta, ran };
 }
 
+/**
+ * The worker's half of "Add the video".
+ *
+ * The file is read by the upload reader — pack, then the video tier, then
+ * listening — exactly as an uploaded video is, then the card is rebuilt from the
+ * post's own caption plus what the file showed and said, and merged into the
+ * person's card under the never-downgrade rule. The card's title stays theirs.
+ *
+ * Every failure is final and keeps the card: the file is deleted whatever
+ * happens (uploadMeta's finally), so there is nothing a second attempt could
+ * read, and the card is exactly as good as it was before the person tried.
+ * Nothing here reaches video_cache: the meta is marked supplied, which is what
+ * finishJob's shared-basic write and every publish ask.
+ */
+async function runAttachedUpload(job: Job, p: Parsed): Promise<void> {
+  const seed = job.meta!;
+  const keep = (sentence: string, detail: string) =>
+    new SoftFailure(sentence + " This card is unchanged.", detail, { final: true, keepCard: true });
+  const ref = parseUploadPath(seed.upload_path, job.user_id);
+  if (!ref) throw keep("Spotter could not find that video any more — add it again.", "attach: no upload path");
+  // A Basic read reserved under this file's own key (attachRefusal) is given back
+  // when the read fails or is only heard, as fail_ingest_job and
+  // finish_ingest_job give back the card's own row. A no-op for Plus.
+  let kept = false;
+  try {
+    const up = uploadParsed("up-" + ref.id);
+    const old = (await dbSelect("workouts",
+      `ingest_job_id=eq.${job.id}&user_id=eq.${job.user_id}&select=id,title,caption,author,thumb_url,blocks,category,muscle_groups,equipment,difficulty,duration_minutes,calories,tags,has_full_workout,extracted_by`))[0] ??
+      { blocks: [] };
+    // The reader sees an upload job: same id and claim, so its stage and its
+    // checkpoint land on this job, and its read is logged under the file's own key.
+    const reader: Job = { ...job, platform: "upload", shortcode: up.shortcode, kind: "upload", url: up.clean,
+      step: "meta", card: null,
+      meta: { caption: null, thumb: null, author: null, upload_path: ref.path, filename: seed.filename } };
+    let read: Meta;
+    try {
+      read = await uploadMeta(up, reader);
+    } catch (e) {
+      if (e instanceof SoftFailure) throw keep(e.userMessage.replace(/\s*Paste the workout text instead\.$/, ""), e.message);
+      if (e instanceof GuardError) throw keep("Spotter's daily budget is spent — add the video again tomorrow.", String(e));
+      throw keep("Spotter could not read that video — add it again in a minute.", String(e).slice(0, 300));
+    }
+    if (aiActor.getStore()?.blocked) {
+      throw keep("Spotter's daily budget is spent — add the video again tomorrow.", "attach: " + aiActor.getStore()!.blocked);
+    }
+
+    const meta: Meta = {
+      caption: old.caption ?? seed.caption ?? null,
+      thumb: null,
+      thumb_stored: old.thumb_url ?? seed.thumb_stored ?? null,
+      author: old.author ?? seed.author ?? null,
+      source: "personal-fallback,upload",
+      supplied: true,
+      topped_up: true,
+      transcript: read.transcript ?? (read.source === "transcript" ? read.caption ?? undefined : undefined),
+      media_source: read.media_source,
+      pack: read.pack,
+      seconds: read.seconds,
+      read_plan: (await capsFor(job.user_id)).plan,
+    };
+    let next: Card;
+    if (reader.card) {
+      // The video tier answered with a finished card; the post's caption still
+      // names the workout better than a model's title for a clip.
+      next = reader.card as Card;
+    } else {
+      next = await buildCard(meta, p, { purpose: "extract", userId: job.user_id });
+    }
+    if (aiActor.getStore()?.blocked) {
+      throw keep("Spotter's daily budget is spent — add the video again tomorrow.", "attach: " + aiActor.getStore()!.blocked);
+    }
+    if (!countExercises(next)) {
+      throw keep("Spotter watched your video and could not make out a workout in it.", "attach: no exercises");
+    }
+    const card = mergeNoDowngrade(old, next, meta, p.platform);
+    if (old.title) card.title = old.title;
+    labelRecommendations(card, meta);
+    console.log("add the video:", p.shortcode, countExercises(old as Card), "->", countExercises(card),
+      "exercise(s), read by", meta.media_source ?? "-", meta.pack ? "(pack)" : "");
+    await finishJob(job, p, meta, card, meta.thumb_stored ?? null, false);
+    kept = readQuality(meta) === "premium";
+  } finally {
+    if (!kept) await refundAttachRead(job.user_id, attachReadKey(ref));
+  }
+}
+
 async function runJob(job: Job): Promise<void> {
   return await aiActor.run({ userId: job.user_id, jobId: job.id, workKey: job.shortcode, deadline: Date.now() + 120_000 }, () => runJobGuarded(job));
 }
@@ -8779,6 +9664,11 @@ async function runJobGuarded(job: Job): Promise<void> {
   const ctx: AiCtx = { purpose: "extract", userId: job.user_id };
   const sc = encodeURIComponent(p.shortcode);
   const cacheable = providerFor(p.platform).cacheable;
+
+  // "Add the video": a person's file read into a card they already have. Its own
+  // path from here, because nothing below — the shared cache, the scrape, the
+  // publish — may touch it.
+  if (job.meta?.attach && job.meta?.upload_path) return await runAttachedUpload(job, p);
 
   // A job whose whole purpose is to improve the cached card must not be answered
   // by the cached card. Without this the media job seeded from a cache row would
@@ -8817,7 +9707,15 @@ async function runJobGuarded(job: Job): Promise<void> {
   // happened, it is what the provider needs in order to do its own. Reading it as
   // a finished scrape would give the user a card built from an empty caption and
   // never listen to their video at all.
-  const addressOnly = !!job.meta?.upload_path && !job.meta?.caption;
+  //
+  // The same is true of a meta that holds only the phone's frames — sent with the
+  // save, or promised by `frames_pending` and held for. A contact sheet says
+  // nothing about the caption, the handle or the thumbnail, and reading it as a
+  // finished scrape is how frame saves reached the library with none of the three
+  // (saves_log: meta_source null, caption/thumb/author all false). They are
+  // scraped like any other save and the frames ride along.
+  const framesOnly = !job.meta?.caption && !job.meta?.supplied && !!(job.meta?.frames || job.meta?.hold_frames);
+  const addressOnly = (!!job.meta?.upload_path && !job.meta?.caption) || framesOnly;
   let meta: Meta;
   if (job.meta && !addressOnly) {
     meta = job.meta;
@@ -8833,6 +9731,14 @@ async function runJobGuarded(job: Job): Promise<void> {
     }
   } else {
     meta = await fetchMeta(p, job);     // throws: worth a retry, that is a network fault
+    if (job.meta?.frames && p.platform !== "upload" && !meta.frames) meta.frames = job.meta.frames;
+    // The platform answered that there is no such post. Asking again cannot
+    // change that, and a card that spins for six minutes to say "tap to retry"
+    // is the one outcome worse than saying so now.
+    if (meta.absent) {
+      if (meta.frames) await deleteSheets(meta.frames);
+      throw new SoftFailure(UNAVAILABLE_SENTENCE, "platform says the post is absent", { final: true });
+    }
     await jobStep(job.id, "card", { meta }, job);
   }
 
@@ -8912,7 +9818,7 @@ async function runJobGuarded(job: Job): Promise<void> {
 
   let thumbUrl: string | null = null;
   try {
-    thumbUrl = await captionMayOverwriteCache(p.shortcode, meta) ? await storeThumb(p.shortcode, meta.thumb) : null;
+    thumbUrl = await captionMayOverwriteCache(p.shortcode, meta) ? await storeThumb(p.shortcode, meta.thumb, p.platform) : null;
   } catch (e) {
     console.error("job storeThumb failed", job.id, e);
   }
@@ -8979,6 +9885,25 @@ async function runJobGuarded(job: Job): Promise<void> {
   await finishJob(job, p, meta, card, thumbUrl, degraded);
 }
 
+/**
+ * One running job per person is the rule (claim_ingest_jobs), and nothing woke
+ * the worker when that job ended: two shares two seconds apart took 10 s and
+ * 66 s, the second waiting for pg_cron's next minute. So the end of a job looks
+ * for that person's next one that is due, and wakes the worker if there is one.
+ */
+async function kickIfQueued(userId: string): Promise<void> {
+  try {
+    const next = await dbSelect("ingest_jobs",
+      `user_id=eq.${userId}&status=eq.queued&run_after=lte.${encodeURIComponent(new Date().toISOString())}&select=id&limit=1`);
+    if (next.length) {
+      console.log("job ended with another queued for", userId, "— waking the worker");
+      kickWorker();
+    }
+  } catch (e) {
+    console.error("could not look for the next queued job of", userId, e);
+  }
+}
+
 async function handleWorkerTick(req: Request): Promise<Response> {
   // Not 401: an unauthenticated caller should not learn this route exists.
   if (!secretEquals(req.headers.get("x-worker-secret") ?? "", WORKER_SECRET)) {
@@ -9000,7 +9925,8 @@ async function handleWorkerTick(req: Request): Promise<Response> {
   if (!jobs.length) return json({ status: "ok", claimed: 0 });
 
   console.log("claimed", jobs.length, "job(s):", jobs.map((j) => j.shortcode).join(","));
-  const work = Promise.all(jobs.map((j) => runJob(j).catch((e) => failJob(j, e))));
+  const work = Promise.all(jobs.map((j) =>
+    runJob(j).catch((e) => failJob(j, e)).then(() => kickIfQueued(j.user_id))));
 
   // Return before the work finishes — otherwise the tick is just the old
   // synchronous ingest wearing a different hat. The claim is already committed, so
@@ -9501,10 +10427,21 @@ function mediaSeed(cached: any, w: any): { step: string; meta: Meta; card: Card 
   // seeding from one would stamp last version's shape as current and nothing
   // would ever rebuild it. A stale row still hands over its caption, thumbnail,
   // transcript and pack below — none of that is re-read.
-  const usable = cached && Number(cached.v) >= CARD_V && cached.card;
+  const usable = cached && Number(cached.v) >= CARD_V && cached.card && cardSound(cached.card);
   return usable
     ? { step: "media", meta, card: cached.card as Card }
     : { step: "card", meta, card: null };
+}
+
+// Basic's daily ceiling on media steps, which is not the plan table's `media`.
+// A Basic read is a Plus preview, four a month, so this stop is never the one a
+// Basic account meets on the read route, the pack tier, the media step, the
+// upload reader or the cache upgrade; it is only the burst guard behind the
+// previews, the same size as Plus's. One number, so /api/limits reports the
+// ceiling all of them enforce.
+const BASIC_MEDIA_BURST = 15;
+function mediaBurst(uc: UserCaps): number | null {
+  return plusPlan(uc.plan) ? uc.caps.media : BASIC_MEDIA_BURST;
 }
 
 /**
@@ -9524,6 +10461,267 @@ async function mediaCapReached(userId: string, cap: number | null): Promise<numb
   }
 }
 
+// ---------- "Add the video" ----------
+//
+// Instagram does not let anybody watch a reel from outside it, logged out, and
+// Spotter will not log in or lift a file out of the embed. What Instagram does
+// allow is its own Download on the share sheet, so the person brings the file and
+// Spotter reads it into the card they already have for that post: the same
+// upload reader an uploaded video gets, merged under the never-downgrade rule,
+// counted as one of the month's video reads (Basic's four, Plus's twenty) and
+// never as an upload, and never written to the shared cache — a person's copy of
+// a post is not the post.
+
+/** A card a file can be read into: one that came from a link. */
+function attachable(w: any): boolean {
+  return !!w && w.platform !== "upload" && w.platform !== "pumpy";
+}
+
+/** The key a file's read is counted under: the upload reader logs it as `up-<id>`. */
+function attachReadKey(ref: UploadRef): string {
+  return "up-" + ref.id;
+}
+
+/**
+ * Whether this person may spend a video read on this file, for this card, right
+ * now. Null means yes. `reserve` is false at authorize, where a Basic preview is
+ * only counted, and true at /media, where it is taken — refunded by the job if
+ * the read ends up only heard, or fails.
+ *
+ * A read is one FILE. Each file is new evidence and a new model call, so a card
+ * that already had a read this month does not make the next file free: Plus's
+ * month is asked with the file's own key (the key the worker logs the read
+ * under), and Basic reserves a new preview for every file after the card's
+ * first. The daily media ceiling is asked as "Read the video" asks it.
+ */
+async function attachRefusal(
+  userId: string, shortcode: string, fileKey: string, reserve: boolean, cors: Cors,
+): Promise<Response | null> {
+  const [counts, uc] = await settledAll<any>([countsFor(userId), capsFor(userId)]) as [Counts, UserCaps];
+  if (overCap(counts.extracts, uc.caps.extract)) return await extractLimitResponse(cors, uc, counts.extracts);
+  const monthOver = await monthReadsReached(userId, uc.plan, fileKey);
+  if (monthOver !== null) return await allowanceLimit("media", "reads", uc, monthOver, cors);
+  const over = await mediaCapReached(userId, mediaBurst(uc));
+  if (over !== null) {
+    return await capLimit("media", { plan: uc.plan, caps: { ...uc.caps, media: mediaBurst(uc) } }, over, cors);
+  }
+  if (!(await paidAllowed())) {
+    return json({ status: "limit",
+      message: "Spotter's daily budget is spent — add the video again tomorrow." }, 429, cors);
+  }
+  // /media is admitted late: every answer above was free, and what follows
+  // reserves a read and queues one.
+  if (reserve) {
+    const refused = await admitNow();
+    if (refused) return refused;
+  }
+  if (plusPlan(uc.plan)) return null;
+  // The same answer the preview routes give (previewLimit), so the Plus sheet
+  // shows the month's count and its reset for this refusal too.
+  const previewsOut = previewLimit(uc,
+    "You have used all four Plus video reads this month. They reset on the first, or continue with Spotter Plus.", cors);
+  if (reserve) {
+    // The card's own row when it has none this month: that row is also what the
+    // completion fence (finish_ingest_job, premiumAccess) reads to deliver the
+    // premium card, and what fail_ingest_job refunds. A card that already has
+    // one — an earlier file, or a preview — spends a new row under the file's
+    // key; runAttachedUpload gives that one back if the read fails.
+    const sc = encodeURIComponent(shortcode);
+    const month = `${new Date().toISOString().slice(0, 7)}-01`;
+    const mine = await dbSelect("video_previews", `user_id=eq.${userId}&shortcode=eq.${sc}&month=eq.${month}&select=shortcode`);
+    const key = mine.length ? fileKey : shortcode;
+    return await rpc("reserve_video_preview", { p_user: userId, p_shortcode: key }) === true ? null : previewsOut;
+  }
+  // A new file always takes a preview of its own, so the count alone answers.
+  return (await previewCount(userId)) < PREVIEW_CAP ? null : previewsOut;
+}
+
+/** Give back a Basic read an attached file reserved under its own key. No-op for Plus. */
+async function refundAttachRead(userId: string, fileKey: string): Promise<void> {
+  try {
+    await dbDelete("video_previews",
+      `user_id=eq.${userId}&shortcode=eq.${encodeURIComponent(fileKey)}&completed=eq.false`);
+  } catch (e) {
+    console.error("add the video: could not refund the read", fileKey, "for", userId, e);
+  }
+}
+
+/**
+ * The file, read into card `w`. Every refusal deletes the object first: the
+ * person's permit is one of two they may hold, and a file nobody will read is
+ * not worth keeping for the two-hour sweep.
+ */
+async function attachUpload(
+  w: any, ref: UploadRef, filename: string, userId: string, cors: Cors,
+): Promise<Response> {
+  const refuse = async (r: Response): Promise<Response> => { await deleteUpload(ref.path); return r; };
+  if (!attachable(w)) {
+    return await refuse(json({ status: "error",
+      message: "That card is already your own video. Upload it as a new one instead." }, 400, cors));
+  }
+  if (w.ingest_status === "processing") {
+    return await refuse(json({ status: "processing", id: w.id, message: "Already reading that one." }, 200, cors));
+  }
+  if (!(await uploadExists(ref))) {
+    return json({ status: "error",
+      message: "Spotter cannot find that file — the upload did not finish. Try picking it again." }, 404, cors);
+  }
+  const fileKey = attachReadKey(ref);
+  const refused = await attachRefusal(userId, w.shortcode, fileKey, true, cors);
+  if (refused) return await refuse(refused);
+  const refund = async () => {
+    await dbDelete("video_previews",
+      `user_id=eq.${userId}&shortcode=eq.${encodeURIComponent(w.shortcode)}&completed=eq.false`).catch(() => {});
+    await refundAttachRead(userId, fileKey);
+  };
+  const q = (await rpc("requeue_ingest", { p_user: userId, p_workout: w.id }))[0];
+  if (!q || !q.job_created) {
+    // Another job already owns this card, and it knows nothing about this file.
+    // The file's own read goes back; the card's row may be that job's.
+    if (!q) await refund();
+    else await refundAttachRead(userId, fileKey);
+    return await refuse(json(q ? { status: "processing", id: w.id, message: "Already reading that one." }
+      : { status: "error", message: "Not found." }, q ? 200 : 404, cors));
+  }
+  // One pass, because the file is deleted whatever happens to it — the same reason
+  // an upload's job gets one attempt. The seed says what the card already had, so
+  // the worker merges into it rather than starting over.
+  try {
+    await dbPatch("ingest_jobs", `id=eq.${q.job_id}&status=eq.queued`, {
+      max_attempts: 1, step: "card",
+      meta: {
+        caption: w.caption ?? null, thumb: null, author: w.author ?? null, thumb_stored: w.thumb_url ?? null,
+        upload_path: ref.path, filename: filename || null, attach: true,
+        source: "personal-fallback", supplied: true, topped_up: true,
+      },
+      updated_at: new Date().toISOString(),
+    });
+  } catch (e) {
+    console.error("could not seed the attached video onto job", q.job_id, e);
+    await refund();
+    // Without the address the job would re-read the caption and stop; the card
+    // is left processing only for as long as that takes.
+    return await refuse(json({ status: "error",
+      message: "Spotter could not start reading that video. Try again in a moment." }, 500, cors));
+  }
+  try { await dbPatch("workouts", `id=eq.${w.id}`, { media_stage: "watching" }); }
+  catch (e) { console.error("could not set the media stage on", w.id, e); }
+  console.log("add the video: queued", w.platform, w.shortcode, "job", q.job_id, "from", ref.path.split("/")[1]);
+  kickWorker();
+  return json({ status: "processing", id: w.id, job_id: q.job_id, title: w.title,
+    message: "Watching your video…" }, 202, cors);
+}
+
+// ---------- saved first, frames after ----------
+//
+// The Share Extension used to cut frames BEFORE it saved, so a dismissed sheet in
+// that window lost the link, and a Plus share sat on up to eight seconds of work
+// before the person saw "Saved". Now it saves first with `frames_pending`, and
+// the job is held (queued, due in FRAMES_HOLD_MS) so no paid read starts without
+// the frames. The frames arrive at /media and release the SAME job; if they never
+// come, the hold simply runs out and the save proceeds as one without frames.
+
+const FRAMES_HOLD_MS = 20_000;
+
+/** The one sentence for a post the platform says is not there. Contract code `unavailable`. */
+const UNAVAILABLE_SENTENCE = "This post is private, deleted or unavailable to Spotter.";
+
+/** Hold a job this save just created until its frames arrive, or the hold ends. */
+async function holdForFrames(jobId: string, seed: Meta | null): Promise<boolean> {
+  try {
+    const held = await dbPatchMany("ingest_jobs", `id=eq.${jobId}&status=eq.queued`, {
+      step: seed ? "card" : "meta",
+      meta: { ...(seed ?? { caption: null, thumb: null, author: null }), hold_frames: true },
+      run_after: new Date(Date.now() + FRAMES_HOLD_MS).toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+    if (!held.length) return false;
+    // Nothing else wakes the worker when a hold simply runs out: pg_cron's next
+    // minute would, forty seconds late. The isolate is kept alive for the wait.
+    background(new Promise((r) => setTimeout(r, FRAMES_HOLD_MS + 500)).then(() => kickWorker()));
+    return true;
+  } catch (e) {
+    // A hold that did not land is a save that proceeds now, without frames.
+    console.error("could not hold job", jobId, "for frames —", e);
+    return false;
+  }
+}
+
+/**
+ * Frames for a held save. Null when this card's job is not held — the ordinary
+ * re-read path then answers, exactly as it did before `frames_pending` existed.
+ * Fenced on the job still being queued, so frames never land on a job a worker
+ * has already claimed (they are deleted, and the save goes on without them).
+ */
+async function releaseHeldJob(w: any, rawFrames: unknown, userId: string, cors: Cors): Promise<Response | null> {
+  if (!w.ingest_job_id) return null;
+  const job = (await dbSelect("ingest_jobs",
+    `id=eq.${w.ingest_job_id}&user_id=eq.${userId}&status=eq.queued&select=id,meta`))[0];
+  if (!job?.meta?.hold_frames) return null;
+  const parsed = parseFrames(rawFrames, userId, w.shortcode);
+  if ("error" in parsed) {
+    console.log("held save: frames refused for", w.shortcode, "—", parsed.error);
+    return json({ status: "error", message: parsed.error }, 400, cors);
+  }
+  const { hold_frames: _held, ...kept } = job.meta;
+  const moved = await dbPatchMany("ingest_jobs", `id=eq.${job.id}&status=eq.queued`, {
+    meta: { ...kept, frames: parsed.frames },
+    run_after: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  });
+  if (!moved.length) {
+    await deleteUnheldSheets(parsed.frames, w, userId);
+    return json({ status: "processing", id: w.id, message: "Already reading that one." }, 200, cors);
+  }
+  try { await dbPatch("workouts", `id=eq.${w.id}&ingest_status=eq.processing`, { media_stage: "watching" }); }
+  catch (e) { console.error("could not set the media stage on", w.id, e); }
+  console.log("held save released with", parsed.frames.sheets.length, "sheet(s):", w.shortcode, "job", job.id);
+  kickWorker();
+  return json({ status: "processing", id: w.id, job_id: job.id, message: "Reading the frames…" }, 202, cors);
+}
+
+/**
+ * Delete the sheets a request brought, except any this card's queued or running
+ * job holds. A sheet's path is fixed per video (sheetPathFor), so frames sent a
+ * second time for one save name the very objects the job the first request
+ * released is about to read. A lookup that fails keeps them: the orphan sweep
+ * removes them once they are two hours old.
+ */
+async function deleteUnheldSheets(frames: Frames, w: any, userId: string): Promise<void> {
+  let held: Set<string>;
+  try {
+    const jobs = await dbSelect("ingest_jobs",
+      `user_id=eq.${userId}&shortcode=eq.${encodeURIComponent(w.shortcode)}&status=in.(queued,running)&select=frames:meta->frames`);
+    held = new Set(jobs.flatMap((j: any) =>
+      Array.isArray(j?.frames?.sheets) ? j.frames.sheets.map((x: any) => String(x?.path ?? "")) : []));
+  } catch (e) {
+    console.error("frames: could not tell which sheets a job holds for", w.shortcode, "— keeping them", e);
+    return;
+  }
+  const loose = frames.sheets.filter((x) => !held.has(x.path));
+  if (loose.length) await deleteSheets({ ...frames, sheets: loose });
+}
+
+/** POST /api/workouts/:id/media, the one route with a card id in its path. */
+const MEDIA_PATH_RE = /^\/api\/workouts\/([0-9a-f-]{36})\/media$/;
+
+/**
+ * The two /media bodies the save key may send (CR-2): `{frames}` alone — the
+ * Share Extension's stills for the save it just held — and `{upload_path,
+ * filename?}`, "Add the video" into a card the person owns. The card is still
+ * looked up by owner, so a key reaches only its own account's cards.
+ */
+function keyMediaBody(body: Record<string, unknown> | null): boolean {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return false;
+  const keys = Object.keys(body);
+  if (keys.length === 1 && keys[0] === "frames") return body.frames !== null && body.frames !== undefined;
+  return typeof body.upload_path === "string" && keys.every((k) => k === "upload_path" || k === "filename");
+}
+
+function keyMediaRefusal(cors: Cors): Response {
+  return json({ status: "error", message: "Open Spotter to do that." }, 403, cors);
+}
+
 /**
  * "Read the video" — the manual trigger, for a card that came out thin and a user
  * who would rather Spotter listened than retyped the caption themselves.
@@ -9534,12 +10732,8 @@ async function mediaCapReached(userId: string, cap: number | null): Promise<numb
  * the backoff, the one-job-per-video guarantee and the dead-letter cutoff.
  */
 async function handleReadVideo(
-  id: string, userId: string, req: Request, cors: Cors,
+  id: string, userId: string, req: Request, cors: Cors, viaKey = false,
 ): Promise<Response> {
-  const rows = await dbSelect("workouts", `id=eq.${id}&user_id=eq.${userId}&select=*`);
-  if (!rows.length) return json({ status: "error", message: "Not found." }, 404, cors);
-  const w = rows[0];
-
   // "Re-read this video", from the native app, with frames it has just cut.
   //
   // This is the one route that is ALLOWED to pay twice for the same video, and it
@@ -9550,6 +10744,45 @@ async function handleReadVideo(
   // no-op. Without frames the route behaves exactly as it did: the cached reading
   // wins and nobody pays for a second one.
   const body = await req.json().catch(() => null) as Record<string, unknown> | null;
+  // The save key reaches this route for two bodies only; anything else it asks
+  // for — a re-read, a preview, a read with no frames — is the app's to ask, and
+  // is refused before a row is read.
+  if (viaKey && !keyMediaBody(body)) return keyMediaRefusal(cors);
+
+  const rows = await dbSelect("workouts", `id=eq.${id}&user_id=eq.${userId}&select=*`);
+  if (!rows.length) return json({ status: "error", message: "Not found." }, 404, cors);
+  const w = rows[0];
+
+  // "Add the video": a file the person downloaded from the post, read into this
+  // card. Validated exactly as an upload save validates its path.
+  if (typeof body?.upload_path === "string") {
+    const ref = parseUploadPath(body.upload_path, userId);
+    if (!ref) {
+      return json({ status: "error", message: "That upload could not be read. Pick the file again." }, 400, cors);
+    }
+    const filename = typeof body.filename === "string" ? body.filename.slice(0, 160).trim() : "";
+    return await attachUpload(w, ref, filename, userId, cors);
+  }
+
+  // The frames a Share Extension promised with `frames_pending`, for a save whose
+  // job is being held for them. They release the held job — the same job, so no
+  // second read and nothing counted twice.
+  if (body?.frames !== undefined && body?.frames !== null && w.ingest_status === "processing") {
+    const released = await releaseHeldJob(w, body.frames, userId, cors);
+    if (released) return released;
+  }
+  // Frames with the key that released nothing: the hold ran out and the save is
+  // being read without them (said as today, sheets deleted), or there is no save
+  // in flight at all, which makes this a re-read — the app's to ask for.
+  if (viaKey) {
+    const parsed = parseFrames(body?.frames, userId, w.shortcode);
+    if (!("error" in parsed)) await deleteUnheldSheets(parsed.frames, w, userId);
+    if (w.ingest_status === "processing") {
+      return json({ status: "processing", id, message: "Already reading that one." }, 200, cors);
+    }
+    return keyMediaRefusal(cors);
+  }
+
   let frames: Frames | null = null;
   if (body?.frames !== undefined && body?.frames !== null) {
     const parsed = parseFrames(body.frames, userId, w.shortcode);
@@ -9575,7 +10808,8 @@ async function handleReadVideo(
     }, 400, cors);
   }
   if (w.ingest_status === "processing") {
-    return await bail(json({ status: "processing", id, message: "Already reading that one." }, 200, cors));
+    if (frames) await deleteUnheldSheets(frames, w, userId);
+    return json({ status: "processing", id, message: "Already reading that one." }, 200, cors);
   }
 
   const sc = encodeURIComponent(w.shortcode);
@@ -9591,7 +10825,7 @@ async function handleReadVideo(
 
   // A first preview of a verified current card needs no model, decoding or queue.
   // A paid explicit reread deliberately bypasses this fast path.
-  if (!plusPlan(uc.plan) && visuallyRead(cached) && cached?.card && !cached.card.vision?.missing?.length &&
+  if (!plusPlan(uc.plan) && visuallyRead(cached) && cached?.card && cardSound(cached.card) && !cached.card.vision?.missing?.length &&
       (body?.preview === true || await premiumAccess(userId, w.shortcode))) {
     const cm: Meta = { caption: cached.caption, author: cached.author, thumb: cached.thumb_url,
       pack: usablePack(cached), source: "cache", read_plan: cached.read_plan };
@@ -9604,8 +10838,8 @@ async function handleReadVideo(
       confidence: card.confidence, extracted_by: card.extracted_by, read_quality: "premium",
       read_plan: cached.read_plan ?? "plus", ingest_status: "ready", ingest_error: null, media_stage: null,
     } });
-    if (result.status === "limit") return await bail(json({ status: "limit", kind: "media", upgrade: true,
-      message: "You have used all four Plus video previews this month." }, 429, cors));
+    if (result.status === "limit") return await bail(previewLimit(uc,
+      "You have used all four Plus video previews this month.", cors));
     if (result.status === "processing") return await bail(json({ status: "processing", id, message: "Already reading that one." }, 200, cors));
     if (result.status !== "ok") return await bail(json({ status: "error", message: "Preview access changed. Reload this workout and try again." }, 409, cors));
     return await bail(json({ status: "ok", workout: result.workout, cached: true }, 200, cors));
@@ -9629,20 +10863,25 @@ async function handleReadVideo(
   // would fire — and the one that speaks should be the one on the paywall.
   const monthOver = await monthReadsReached(userId, uc.plan, w.shortcode);
   if (monthOver !== null) return await bail(await allowanceLimit("media", "reads", uc, monthOver, cors));
-  const over = await mediaCapReached(userId, plusPlan(uc.plan) ? uc.caps.media : 15);
-  if (over !== null) return await bail(await capLimit("media", uc, over, cors));
+  const over = await mediaCapReached(userId, mediaBurst(uc));
+  if (over !== null) {
+    return await bail(await capLimit("media", { plan: uc.plan, caps: { ...uc.caps, media: mediaBurst(uc) } }, over, cors));
+  }
   if (!(await paidAllowed())) {
     return await bail(json({
       status: "limit",
       message: "Spotter's daily budget is spent — try reading this one again tomorrow.",
     }, 429, cors));
   }
+  // Everything above was a free answer; a read is reserved and queued below.
+  const refused = await admitNow();
+  if (refused) return await bail(refused);
 
   if (!plusPlan(uc.plan)) {
     if (body?.preview === true) {
       const admitted = await rpc("reserve_video_preview", { p_user: userId, p_shortcode: w.shortcode });
-      if (admitted !== true) return await bail(json({ status: "limit", kind: "media", upgrade: true, plan: uc.plan,
-        message: "You have used all four Plus video previews this month. They reset on the first, or continue with Spotter Plus." }, 429, cors));
+      if (admitted !== true) return await bail(previewLimit(uc,
+        "You have used all four Plus video previews this month. They reset on the first, or continue with Spotter Plus.", cors));
     }
   }
   // A preview can use an existing full read; paying to repeat identical evidence
@@ -9674,8 +10913,8 @@ async function handleReadVideo(
       "from step", seed.step, frames ? "with " + frames.sheets.length + " fresh sheet(s)" : "");
   } else {
     console.log("read-the-video joined an existing job for", w.shortcode, "— not seeded");
-    // That job owns the reading and knows nothing about these sheets.
-    if (frames) await deleteSheets(frames);
+    // That job owns the reading; these sheets are deleted unless it holds them.
+    if (frames) await deleteUnheldSheets(frames, w, userId);
   }
   // The stage is set here rather than only by the worker: between this response
   // and the worker reaching the media step there are a few seconds in which the
@@ -9701,18 +10940,24 @@ async function handleReadVideo(
  */
 async function upgradeCachedCard(
   userId: string, p: Parsed, cached: any, workoutId: string, cors: Cors,
+  premium?: boolean, known?: UserCaps,
 ): Promise<Response | null> {
   if (visuallyRead(cached)) return null;
-  if (!(await premiumAccess(userId, p.shortcode))) return null;
+  // The save already knows both of these; asking again was two more hops on
+  // every cache hit's response path.
+  if (!(premium ?? await premiumAccess(userId, p.shortcode))) return null;
   if (!providerFor(p.platform).media) return null;
   const card = cached.card as Card;
   if (!card) return null;
 
-  const [counts, uc] = await settledAll<any>([countsFor(userId), capsFor(userId)]);
+  const [counts, uc] = await settledAll<any>([countsFor(userId), known ? Promise.resolve(known) : capsFor(userId)]);
   if (overCap((counts as Counts).extracts, (uc as UserCaps).caps.extract)) return null;
   if (await monthReadsReached(userId, (uc as UserCaps).plan, p.shortcode) !== null) return null;
-  if (await mediaCapReached(userId, (uc as UserCaps).caps.media) !== null) return null;
+  if (await mediaCapReached(userId, mediaBurst(uc as UserCaps)) !== null) return null;
   if (!(await paidAllowed())) return null;
+  // A paid read is about to be queued: the one point this save is admitted. A
+  // refusal leaves the ordinary cache hit standing.
+  if (await admitNow()) return null;
 
   const q = (await rpc("requeue_ingest", { p_user: userId, p_workout: workoutId }))[0];
   if (!q) return null;
@@ -9732,6 +10977,8 @@ async function upgradeCachedCard(
   return json({
     status: "processing", id: workoutId, job_id: q.job_id, title: card.title,
     message: "Listening to the video…",
+    // A cache upgrade never waits for a phone's stills (CR-5).
+    frames_wanted: false,
   }, 202, cors);
 }
 
@@ -9857,7 +11104,7 @@ async function handleReprocess(id: string, userId: string, req: Request, cors: C
 
   let thumbUrl: string | null = old.thumb_url;
   try {
-    thumbUrl = (await captionMayOverwriteCache(p.shortcode, meta) ? await storeThumb(p.shortcode, meta.thumb) : null) ?? old.thumb_url;
+    thumbUrl = (await captionMayOverwriteCache(p.shortcode, meta) ? await storeThumb(p.shortcode, meta.thumb, p.platform) : null) ?? old.thumb_url;
   } catch (e) {
     console.error("reprocess storeThumb failed", p.shortcode, e);
   }
@@ -10090,8 +11337,85 @@ export function sameBlock(stored: unknown, sent: unknown): boolean {
   return blockGuardForm(stored) === blockGuardForm(sent);
 }
 
+// ---------- reorder ----------
+//
+// "I want a way to reorder blocks and exercises" (owner, 24 Sept). The client
+// sends the whole new order as a permutation of the stored positions:
+//
+//   order: [{ block: <stored block index>, exercises: [<stored index> | [<stored block>, <stored index>], …] }, …]
+//
+// A bare number is an exercise that stays in its own section; a pair is one that
+// came from another, which is how an exercise joins a superset. Every section and
+// every exercise has to appear exactly once — the op can move things and nothing
+// else. Each item travels whole: the block's furniture and each exercise object
+// are the stored ones, untouched, so titles, rounds, rest, canonical ids,
+// evidence, each, cardio minutes and anything a later wave adds all go where the
+// item goes without this code having to know their names.
+
+/** The stored blocks in the order asked for, or a refusal naming what is wrong. */
+function applyReorder(blocks: any[], order: unknown): any[] {
+  const whole = "reopen the workout and try again.";
+  if (!Array.isArray(order) || order.length !== blocks.length) {
+    throw new BadEdit("That order does not list every section — " + whole);
+  }
+  let total = 0;
+  for (const b of blocks) total += Array.isArray(b?.exercises) ? b.exercises.length : 0;
+  const seenBlocks = new Set<number>(), seenEx = new Set<string>();
+  let placed = 0;
+  const out = order.map((entry: any) => {
+    const bi = entry?.block;
+    if (!Number.isInteger(bi) || bi < 0 || bi >= blocks.length) {
+      throw new BadEdit("That order names a section this workout does not have — " + whole);
+    }
+    if (seenBlocks.has(bi)) throw new BadEdit("That order lists a section twice — " + whole);
+    seenBlocks.add(bi);
+    if (!Array.isArray(entry.exercises)) throw new BadEdit("That order does not say what is in each section — " + whole);
+    // The same ceiling add holds a block to, so a reorder cannot build a section
+    // no other op could have.
+    if (entry.exercises.length > 60) throw new BadEdit("A section holds at most 60 exercises.");
+    const exercises = entry.exercises.map((ref: unknown) => {
+      const pair = Array.isArray(ref) && ref.length === 2;
+      const from = pair ? (ref as unknown[])[0] : bi, at = pair ? (ref as unknown[])[1] : ref;
+      const list = Number.isInteger(from) && (from as number) >= 0 && (from as number) < blocks.length &&
+        Array.isArray(blocks[from as number]?.exercises) ? blocks[from as number].exercises : null;
+      if (!list || !Number.isInteger(at) || (at as number) < 0 || (at as number) >= list.length) {
+        throw new BadEdit("That order names an exercise this workout does not have — " + whole);
+      }
+      const key = from + ":" + at;
+      if (seenEx.has(key)) throw new BadEdit("That order lists an exercise twice — " + whole);
+      seenEx.add(key);
+      placed++;
+      return list[at as number];
+    });
+    // Spread, so the block keeps its own keys in its own order and only the
+    // list inside it is replaced.
+    return { ...blocks[bi], exercises };
+  });
+  if (placed !== total) throw new BadEdit("That order leaves an exercise out — " + whole);
+  return out;
+}
+
+/**
+ * The stale guard for a reorder: the card the client rearranged is the card
+ * stored, block by block, by the same rule edit_block and delete_block use
+ * (sameBlock: what the owner sees, not the bytes, so key order and float noise
+ * from the iOS bridge never refuse a legitimate order). Positions are what the
+ * permutation is written in, so a card changed anywhere since is refused whole.
+ */
+function reorderGuard(stored: any[], seen: unknown): boolean {
+  return Array.isArray(seen) && seen.length === stored.length && stored.every((b, i) => sameBlock(b, seen[i]));
+}
+
+/** The card's shape as the ledger writes it: section titles and exercise names, in order. */
+function layoutText(blocks: any[]): string {
+  return JSON.stringify(blocks.map((b) => ({
+    title: b?.title ?? null,
+    exercises: (Array.isArray(b?.exercises) ? b.exercises : []).map((x: any) => String(x?.name ?? "")),
+  })));
+}
+
 type Change = {
-  field: "name" | "sets" | "reps" | "duration_seconds" | "rest_seconds" | "exercise" | "block";
+  field: "name" | "sets" | "reps" | "duration_seconds" | "rest_seconds" | "exercise" | "block" | "order";
   old: string | number | null;
   new: string | number | null;
   oldCanon: string | null;
@@ -10113,7 +11437,8 @@ function deepCopy<T>(v: T): T {
 async function handleCorrection(id: string, userId: string, req: Request, cors: Cors): Promise<Response> {
   const body = await req.json().catch(() => ({} as Record<string, unknown>));
   const op = String((body as any)?.op ?? "");
-  if (op !== "edit" && op !== "add" && op !== "delete" && op !== "delete_block" && op !== "edit_block") {
+  if (op !== "edit" && op !== "add" && op !== "delete" && op !== "delete_block" && op !== "edit_block" &&
+    op !== "reorder") {
     return json({ status: "error", message: "Unknown edit." }, 400, cors);
   }
 
@@ -10162,7 +11487,20 @@ async function handleCorrection(id: string, userId: string, req: Request, cors: 
   try {
     if (bi < 0 || bi > 40) throw new BadEdit("That block does not exist.");
 
-    if (op === "delete_block") {
+    if (op === "reorder") {
+      // The whole card at once, as one edit: the client sends the order only when
+      // the person taps Done, so one ledger row is one reorder and it counts once
+      // against the daily edit limit, however many things were moved.
+      if (!reorderGuard(blocks, (body as any).expect_blocks)) {
+        return json({ status: "stale", message: "This card changed since you opened it — reopen it and try again." }, 409, cors);
+      }
+      const next = applyReorder(blocks, (body as any).order);
+      if (JSON.stringify(next) === JSON.stringify(blocks)) return json({ status: "ok", workout: w, corrections: 0 }, 200, cors);
+      const was = layoutText(blocks);
+      blocks.splice(0, blocks.length, ...next);
+      exIndex = -1;
+      changes.push({ field: "order", old: was, new: layoutText(blocks), oldCanon: null, newCanon: null, oldEx: null, newEx: null });
+    } else if (op === "delete_block") {
       const block = blocks[bi];
       if (!block || !sameBlock(block, (body as any).expect_block))
         return json({ status: "stale", message: "This block changed — reopen the workout and try again." }, 409, cors);
@@ -10321,7 +11659,12 @@ async function handleCorrection(id: string, userId: string, req: Request, cors: 
     equipment: Array.isArray(w.equipment) ? w.equipment.slice() : [],
     blocks: kept,
   } as unknown as Card;
-  applyCatalog(shim);
+  // Not for a reorder: it changed no exercise, and the muscles and equipment the
+  // card hits are the same in any order. For every other op the ids are kept
+  // (keepIds): the op above already set the id of the one exercise it added or
+  // renamed, and an id a person picked in the bank, or one Pumpy carried over,
+  // has to survive an edit to something else on the card.
+  if (op !== "reorder") applyCatalog(shim, true);
 
   // workouts only. Not video_cache — see the note at the top of this section.
   // confidence and extracted_by are also left exactly as they were: they measure
@@ -10357,7 +11700,7 @@ async function handleCorrection(id: string, userId: string, req: Request, cors: 
     workout_id: id,
     shortcode: w.shortcode,
     platform: w.platform,
-    kind: op === "delete_block" ? "delete" : op === "edit_block" ? "edit" : op,
+    kind: op === "delete_block" ? "delete" : op === "edit_block" || op === "reorder" ? "edit" : op,
     field: c.field,
     old_value: c.old === null || c.old === undefined ? null : String(c.old),
     new_value: c.new === null || c.new === undefined ? null : String(c.new),
@@ -10365,8 +11708,9 @@ async function handleCorrection(id: string, userId: string, req: Request, cors: 
     new_canonical_id: c.newCanon,
     old_exercise: c.oldEx,
     new_exercise: c.newEx,
-    block_index: bi,
-    exercise_index: exIndex,
+    // A reorder is about the whole card, not one place in it.
+    block_index: op === "reorder" ? null : bi,
+    exercise_index: op === "reorder" ? null : exIndex,
     exercise_name: subject ? String(subject.name) : null,
     // The state of the extraction at the moment it was corrected. Reprocess
     // overwrites both of these in place, so they cannot be recovered afterwards.
@@ -11855,7 +13199,9 @@ function pumpyExercises(list: unknown): Exercise[] {
 
 /** The one rule normalizeExercise applies before anything else: a usable name. */
 function pumpyKeepsExercise(raw: any): boolean {
-  return typeof raw?.name === "string" && cleanTitle(raw.name).length >= 2;
+  if (typeof raw?.name !== "string") return false;
+  const name = cleanTitle(raw.name);
+  return name.length >= 2 && !isDoseWordName(name);
 }
 
 function pumpyFromHandle(raw: any): string | null {
@@ -12078,7 +13424,9 @@ async function execProposal(userId: string, p: PumpyProposal, model: string | nu
     blocks.push({ title: p.block_title ?? "Added by Pumpy", type: "straight", rounds: null, rest_seconds: null, exercises: exs });
     const shim = { muscle_groups: Array.isArray(w.muscle_groups) ? w.muscle_groups.slice() : [],
       equipment: Array.isArray(w.equipment) ? w.equipment.slice() : [], blocks } as unknown as Card;
-    applyCatalog(shim);
+    // Keep every id the card already holds (an exercise-bank pick, an earlier
+    // Pumpy match); only an exercise with no usable id is matched by name.
+    applyCatalog(shim, true);
     return { expected_revision: w.user_edit_revision ?? 0, base_blocks: w.blocks ?? null, blocks,
       muscle_groups: shim.muscle_groups, equipment: shim.equipment };
   }
@@ -13101,12 +14449,20 @@ function notConfigured(cors: Cors): Response {
  * from their own dial (`pumpy.plans`) and are folded in here, because to the
  * person reading the sheet they are simply another line in the same list.
  */
+// What is a Plus feature rather than a bigger number: the plans that have it.
+// Pumpy is refused to Basic by the chat route (a 403, not a cap), and Basic's
+// awards page keeps its latest few; neither has an allowance to quote, so the
+// Plus page reads them from here instead of from a sentence in the markup.
+const PLAN_FEATURES = { pumpy: ["plus"], awards_all: ["plus"] };
+
 function capsBlock(): Record<string, Record<string, number | null>> {
   const table = limitsConfig();
   const pumpy = pumpyConfig().plans;
   const out: Record<string, Record<string, number | null>> = {};
   for (const plan of ["free", "plus"]) {
-    const caps = table[plan] ?? LIMITS_FLOOR.free;
+    const caps = { ...(table[plan] ?? LIMITS_FLOOR.free) };
+    // The ceiling the read route enforces, as /api/limits reports it.
+    caps.media = mediaBurst({ plan, caps });
     const a = allowanceFor(plan);
     // The monthly allowances ride along under their own names so the paywall can
     // print "20 videos a month" from the same table the 429 counts against,
@@ -13145,20 +14501,25 @@ async function handleBilling(path: string, req: Request, userId: string, cors: C
   const route = path.slice("/api/billing/".length);
 
   if (req.method === "GET" && route === "prices") {
-    if (!billingConfigured()) return json({ status: "ok", configured: false }, 200, cors);
+    // The caps come from this file rather than from billing.ts on purpose:
+    // billing.ts deliberately knows nothing about the cap table, and the
+    // paywall wants both halves in one answer. They ride on EVERY answer, not
+    // only a Stripe one: the Plus page is a comparison of what each plan gets,
+    // and that is true whether or not anybody is selling it on the web. The
+    // App Store app asks this route for exactly this and takes its prices from
+    // the store; builds that predate it never call it at all.
+    await ensureConfig();
+    const plan = { caps: capsBlock(), features: PLAN_FEATURES };
+    if (!billingConfigured()) return json({ status: "ok", configured: false, ...plan }, 200, cors);
     try {
-      // The caps come from this file rather than from billing.ts on purpose:
-      // billing.ts deliberately knows nothing about the cap table, and the
-      // paywall wants both halves in one answer.
-      await ensureConfig();
-      return json({ status: "ok", ...(await pricesBlock()), caps: capsBlock() }, 200, cors);
+      return json({ status: "ok", ...(await pricesBlock()), ...plan }, 200, cors);
     } catch (e) {
       // A Stripe outage is not "coming soon" — say so, so the sheet can offer a
       // retry rather than telling everyone the product does not exist yet.
       console.error("billing prices failed", e);
       return json({
         status: "error", code: "billing_failed",
-        message: "Could not reach Stripe just now — try again in a minute.",
+        message: "Could not reach Stripe just now — try again in a minute.", ...plan,
       }, 502, cors);
     }
   }
@@ -13239,6 +14600,21 @@ async function isPackAuthorize(req: Request): Promise<boolean> {
 }
 
 /**
+ * An authorize that is the first half of something charged elsewhere: a pack's
+ * sheets (a save) or "Add the video" (`attach`, a read into a card the person
+ * already has). Neither may spend the one-a-day upload ceiling, which exists for
+ * a file that becomes a NEW card — Basic's single monthly upload would otherwise
+ * go on the first Instagram reel somebody tried to complete.
+ */
+async function isSaveAuthorize(req: Request): Promise<boolean> {
+  if (await isPackAuthorize(req)) return true;
+  try {
+    const body = await req.clone().json();
+    return typeof body?.attach === "string" && UUID_RE.test(body.attach);
+  } catch { return false; }
+}
+
+/**
  * Which daily cap a route is charged against.
  *
  * The one that is not obvious from the path is the pack authorize, and it cost a
@@ -13311,49 +14687,155 @@ async function handleAiConsent(req: Request, userId: string, cors: Cors): Promis
     ai_consent_version: settings.ai_consent_version }, 200, cors);
 }
 
+/**
+ * The routes that ask for admission themselves, and only when they are about
+ * to start paid work. A save's first answers — a link that is not a post, a card
+ * the person already has, a card another person already paid to read — cost
+ * nothing, and charging them to the one-minute burst and the busy lease is how a
+ * seventh share in a minute (four of them bad links) was refused on 24 Sept, and
+ * a share landing during a Pumpy turn was told to wait.
+ *
+ * Upload authorize is the third: admitted just before a permit is issued, so a
+ * refused one (a file type or size the route will not take, a full library)
+ * does not use Basic's one upload of the day — the Share Extension's first
+ * video share was spending it on a 400.
+ */
+function admitsLate(req: Request, path: string): boolean {
+  return req.method === "POST" &&
+    (path === "/api/ingest" || path === "/api/uploads/authorize" ||
+      /^\/api\/workouts\/[0-9a-f-]{36}\/media$/.test(path));
+}
+
+/** What a late-admitting handler calls, once, before it spends anything. */
+const admission = new AsyncLocalStorage<{ admit: () => Promise<Response | null> }>();
+
+/** Admission for the request in hand. Null means go ahead — also when nothing guards this call. */
+async function admitNow(): Promise<Response | null> {
+  const a = admission.getStore();
+  return a ? await a.admit() : null;
+}
+
+/**
+ * The sentence for a refused admission. `busy` and `minute` are not a limit
+ * anybody bought and they pass in seconds, so they say that, in the words of the
+ * thing being done; a share is the case people meet.
+ */
+function admissionRefusal(code: string, path: string, cors: Cors): Response {
+  const saving = path === "/api/ingest";
+  const message = code === "busy"
+    ? (saving ? "Still saving your last share — try again in a few seconds."
+      : "Your previous request is still being processed. Please wait a moment.")
+    : code === "minute"
+    ? (saving ? "That is a lot of saves in one minute — wait a few seconds and share it again."
+      : "That is a lot at once — wait a few seconds and try again.")
+    : "You have reached the limit for now. Please try again later.";
+  return json({ status: "limit", kind: "request", code, message }, 429, cors);
+}
+
+/**
+ * The per-minute bound on the save routes' FREE answers (request_tick,
+ * 20260924130100). Late admission took the invalid link, the duplicate and the
+ * cache hit off ai_admit's one-minute burst, which left nothing bounding them —
+ * and an invalid link is resolved first, up to four outbound fetches to a host
+ * the caller names. Thirty a minute per person per route is far past anybody
+ * sharing by hand. Not an admission: no lease, no burst, no daily cap, so late
+ * admission stands. It fails OPEN: a throttle, not a guard of money.
+ */
+const FREE_PER_MINUTE = 30;
+const FREE_THROTTLED = new Set(["/api/ingest", "/api/ingest/prepare", "/api/uploads/authorize"]);
+
+async function freePathThrottle(userId: string, path: string, cors: Cors): Promise<Response | null> {
+  try {
+    const within = await rpc("request_tick", { p_user: userId, p_route: path, p_limit: FREE_PER_MINUTE });
+    if (within === false) return admissionRefusal("minute", path, cors);
+  } catch (e) {
+    console.error("request_tick failed; the free path stays open", e);
+  }
+  return null;
+}
+
+/**
+ * One profile read per request for every metered route: consent, plan and
+ * overrides come from the same row, and capsFor asks this before the database.
+ * Scoped to one request, so a plan bought a second ago still bites on the next.
+ */
+const profileMemo = new AsyncLocalStorage<{ userId: string; row?: Promise<any> }>();
+
+function profileRow(userId: string): Promise<any> {
+  const memo = profileMemo.getStore();
+  const read = () => dbSelect("profiles", `id=eq.${userId}&select=plan,limits,settings`).then((r) => r[0] ?? null);
+  if (!memo || memo.userId !== userId) return read();
+  memo.row ??= read();
+  return memo.row;
+}
+
 async function guardedUserRequest(
   req: Request, path: string, userId: string, cors: Cors, handle: () => Promise<Response>,
+  profile?: unknown,
 ): Promise<Response> {
   const aiRoute = req.method === "POST" && (/^\/api\/(ingest|explain|swap|demo-video|uploads\/authorize|pumpy\/chat)$/.test(path) || /\/(reprocess|media)$/.test(path));
   if (!aiRoute) return await aiActor.run({ userId, workKey: crypto.randomUUID() }, handle);
-  const consentProfile = (await dbSelect("profiles", `id=eq.${userId}&select=settings`))[0];
+  // `profile` is the row the ingest key's lookup already read in this request
+  // (userFromIngestKey), so the memo starts with it rather than reading it again.
+  return await profileMemo.run({ userId, row: profile ? Promise.resolve(profile) : undefined }, async () => {
+  // The consent read and the config wait are independent, so they overlap: on a
+  // fresh isolate the config read used to start only once the profile was back.
+  // ensureConfig never throws, so a refusal below leaves nothing unobserved.
+  const [consentProfile] = await Promise.all([profileRow(userId), ensureConfig()]);
   if (!aiConsented(consentProfile?.settings)) {
     return json({ status: "error", code: "ai_consent_required",
       message: "Allow AI processing in Spotter → Settings → Data & privacy before using AI features." }, 403, cors);
   }
-  await ensureConfig();
   const uc = await capsFor(userId);
-  const scope = scopeFor(path, path.endsWith("/authorize") && await isPackAuthorize(req));
+  const scope = scopeFor(path, path.endsWith("/authorize") && await isSaveAuthorize(req));
   const meter = scope === "chat" ? await pumpyMeter(userId) : null;
-  const id = crypto.randomUUID();
-  const admitted = await rpc("ai_admit", { p_id: id, p_user: userId, p_scope: scope,
-    p_cap: scope === "chat" ? LIMIT_CHAT : uc.caps[scope as LimitKind],
-    p_credits: meter ? pumpyConfig().turnMaxCredits : 0,
-    p_day_credits: meter?.day ?? null, p_month_credits: meter?.month ?? null });
-  if (admitted !== "ok") return json({ status: "limit", kind: "request", code: admitted,
-    message: admitted === "busy" ? "Your previous request is still being processed. Please wait a moment." :
-      "You have reached the limit for now. Please try again later." }, 429, cors);
-  const actor = { userId, workKey: path.includes("/workouts/") ? path.split("/")[3] : id, actionId: id, deadline: Date.now() + 120_000 };
+  const actor: { userId: string; workKey: string; actionId?: string; deadline: number } = {
+    userId, workKey: path.includes("/workouts/") ? path.split("/")[3] : crypto.randomUUID(),
+    deadline: Date.now() + 120_000,
+  };
+  const admit = async (): Promise<Response | null> => {
+    if (actor.actionId) return null;
+    const id = crypto.randomUUID();
+    const admitted = await rpc("ai_admit", { p_id: id, p_user: userId, p_scope: scope,
+      p_cap: scope === "chat" ? LIMIT_CHAT : uc.caps[scope as LimitKind],
+      p_credits: meter ? pumpyConfig().turnMaxCredits : 0,
+      p_day_credits: meter?.day ?? null, p_month_credits: meter?.month ?? null });
+    if (admitted !== "ok") return admissionRefusal(String(admitted), path, cors);
+    actor.actionId = id;
+    return null;
+  };
+  if (!admitsLate(req, path)) {
+    const refused = await admit();
+    if (refused) return refused;
+  }
   const finish = async () => {
+    const id = actor.actionId;
+    if (!id) return;
     try { await rpc("ai_finish_action", { p_id: id }); }
     catch { console.error("Request lease will expire", id); }
   };
-  return await aiActor.run(actor, async () => {
+  return await aiActor.run(actor, () => admission.run({ admit }, async () => {
     try {
       const response = await handle();
       if (/text\/event-stream|application\/x-ndjson/.test(response.headers.get("content-type") ?? "") && response.body) {
         const reader = response.body.getReader();
-        let disconnected = false;
+        let done = false;
+        const once = async () => { if (done) return; done = true; await finish(); };
         return new Response(new ReadableStream({
           async pull(c) {
-            try { const r = await reader.read(); if (r.done) { if (!disconnected) await finish(); c.close(); } else c.enqueue(r.value); }
-            catch(e) { if (!disconnected) await finish(); c.error(e); }
+            try { const r = await reader.read(); if (r.done) { await once(); c.close(); } else c.enqueue(r.value); }
+            catch(e) { await once(); c.error(e); }
           },
-          async cancel(reason) { disconnected = true; await reader.cancel(reason).catch(() => {}); /* The producer may still run: let the lease expire. */ },
+          // The person has gone, so the lease goes with them. The producer may
+          // still be finishing its writes, and it still settles its own credits
+          // on this action; what it no longer does is refuse their next share
+          // for up to three minutes.
+          async cancel(reason) { await reader.cancel(reason).catch(() => {}); await once(); },
         }), { status: response.status, headers: response.headers });
       }
       await finish(); return response;
     } catch(e) { await finish(); throw e; }
+  }));
   });
 }
 
@@ -13399,11 +14881,22 @@ async function authorizeSheets(
     sizes.push(n);
   }
 
-  const uc = await capsFor(userId);
-  if (overCap(await libraryCount(userId), uc.caps.library)) {
+  // Four independent reads at once, then the refusals in their old order. The
+  // fourth is new: a Share Extension that saved first sends its frames for a
+  // card already on the shelf, and that card must not count against the room
+  // for itself — the twentieth Basic save would otherwise lose its frames.
+  const [uc, held, paid, owned] = await settledAll<any>([
+    capsFor(userId), libraryCount(userId), paidAllowed(),
+    dbSelect("workouts", `user_id=eq.${userId}&shortcode=eq.${encodeURIComponent(shortcode)}&select=id`),
+  ]) as [UserCaps, number, boolean, any[]];
+  if (!owned.length && overCap(held, uc.caps.library)) {
     return await capLimit("library", uc, uc.caps.library ?? 0, cors);
   }
-  if (!(await paidAllowed())) throw new GuardError("budget");
+  if (!paid) throw new GuardError("budget");
+  // The route admits late (admitsLate): every answer above was free, and a
+  // request refused for its shape never spends the day's admission.
+  const refused = await admitNow();
+  if (refused) return refused;
 
   const paths = sizes.map((_n, i) => sheetPathFor(userId, shortcode, i + 1));
   // The permits still go out, and they are still what ties a path to this person
@@ -13423,7 +14916,8 @@ async function authorizeSheets(
 
   let targets: { upload_url: string; token: string }[];
   try {
-    targets = await Promise.all(paths.map((path) => signUploadTarget(path)));
+    targets = (await Promise.all(paths.map((path) => signUploadTarget(path, true))))
+      .map(({ upload_url, token }) => ({ upload_url, token }));
   } catch (e) {
     console.error("sheets: could not sign the upload targets for", shortcode, e);
     return json({
@@ -13451,18 +14945,108 @@ async function authorizeUpload(req: Request, userId: string, cors: Cors): Promis
   if (body && (body.kind === "pack" || (typeof body.shortcode === "string" && Array.isArray(body.sheets)))) {
     return await authorizeSheets(body as Record<string, unknown>, userId, cors);
   }
-  const ref = parseUploadPath(body?.path, userId);
+  // The Share Extension's video door: `{kind: "video", bytes, ext}` and no path.
+  // The extension holds the save key, not the account, so it cannot know the uid
+  // a path must start with; the path is minted here, and because it has no
+  // session to write to storage with, the answer carries a one-object signed
+  // address for exactly that path. A request that names its own path is the
+  // app's, and is answered exactly as it always was.
+  const minted = body?.kind === "video" && body?.path === undefined;
+  let path: unknown = body?.path;
+  if (minted) {
+    const ext = typeof body.ext === "string" ? body.ext.trim().toLowerCase().replace(/^\./, "") : "";
+    if (!Object.hasOwn(SHARED_VIDEO_TYPES, ext)) {
+      return json({ status: "error", message: "Choose an MP4, MOV or M4V video under 25 MB." }, 400, cors);
+    }
+    path = `${userId}/${crypto.randomUUID()}.${ext}`;
+  }
+  const ref = parseUploadPath(path, userId);
   const bytes = Number(body?.bytes);
   if (!ref || !Number.isInteger(bytes) || bytes < 1 || bytes > 25 * 1024 * 1024) {
     return json({ status: "error", message: "Choose a supported file under 25 MB." }, 400, cors);
   }
-  const uc = await capsFor(userId);
-  if (overCap(await libraryCount(userId), uc.caps.library)) return capLimit("library", uc, uc.caps.library ?? 0, cors);
-  if (!(await paidAllowed())) throw new GuardError("budget");
-  const issued = await rpc("issue_upload_permit", { p_user: userId, p_path: body.path, p_bytes: bytes });
+  if (typeof body?.attach === "string") {
+    // "Add the video": this file is read into a card the person already has, so
+    // the shelf is not asked — nothing is added to it — and the allowance asked is
+    // reads, not uploads. Asked here as well as at /media so a refusal comes
+    // before 25 MB crosses a phone connection rather than after.
+    const w = UUID_RE.test(body.attach)
+      ? (await dbSelect("workouts", `id=eq.${body.attach}&user_id=eq.${userId}&select=id,shortcode,platform`))[0]
+      : null;
+    if (!w || !attachable(w)) {
+      return json({ status: "error", message: "That card is not there any more. Reload Spotter and try again." }, 404, cors);
+    }
+    const refused = await attachRefusal(userId, w.shortcode, attachReadKey(ref), false, cors);
+    if (refused) return refused;
+  } else {
+    const uc = await capsFor(userId);
+    if (overCap(await libraryCount(userId), uc.caps.library)) return capLimit("library", uc, uc.caps.library ?? 0, cors);
+    if (!(await paidAllowed())) throw new GuardError("budget");
+  }
+  // Admitted here, after every free refusal: a request that was only ever going
+  // to be told "choose a supported file" or "your library is full" must not use
+  // Basic's one upload of the day (CR-1b).
+  const refused = await admitNow();
+  if (refused) return refused;
+  const issued = minted
+    ? await issueAddressPermit(userId, ref.path, bytes)
+    : await rpc("issue_upload_permit", { p_user: userId, p_path: body.path, p_bytes: bytes });
   if (issued !== "ok") return json({ status: "limit", message: "Uploads are busy right now. Please try again later." }, 429, cors);
-  return json({ status: "ok", path: body.path }, 200, cors);
+  if (!minted) return json({ status: "ok", path: body.path }, 200, cors);
+  let target: { upload_url: string; token: string; expires_in: number };
+  try {
+    target = await signUploadTarget(ref.path, false);
+  } catch (e) {
+    console.error("video door: could not sign the upload target for", ref.path, e);
+    // No address exists, so nothing can write there: the slot goes back.
+    const gone = { released: true, expires_at: new Date().toISOString() };
+    const permit = `path=eq.${encodeURIComponent(ref.path)}`;
+    await dbPatchMany("upload_permits", permit, { ...gone, address_until: null })
+      .catch(() => dbPatchMany("upload_permits", permit, gone)).catch(() => {});
+    return json({ status: "error", message: "Spotter could not open a place to put that video. Try again in a moment." }, 502, cors);
+  }
+  if (target.expires_in > SIGNED_UPLOAD_SECONDS) {
+    // Storage's lifetime changed under us: the permit holds until the real one ends.
+    await dbPatchMany("upload_permits", `path=eq.${encodeURIComponent(ref.path)}`,
+      { address_until: new Date(Date.now() + (target.expires_in + ADDRESS_HOLD_MARGIN_S) * 1000).toISOString() })
+      .catch((e) => console.error("video door: could not extend the permit for", ref.path, e));
+  }
+  return json({ status: "ok", path: ref.path, ...target }, 200, cors);
 }
+
+// The permit is issued a moment before its address is signed, so its hold runs a
+// minute past the address's two hours rather than a few hundred ms short of them.
+const ADDRESS_HOLD_MARGIN_S = 60;
+
+/**
+ * The permit for a path the server signs an upload address for. It counts
+ * against the person's two and the product's ceiling until that address can no
+ * longer write (`address_until`), not only until the server deletes the object:
+ * storage lets a live address write again once the path is empty.
+ *
+ * Needs migration 20260924140000. Until it is applied the old three-argument
+ * permit answers, exactly as before this change.
+ */
+async function issueAddressPermit(userId: string, path: string, bytes: number): Promise<string> {
+  try {
+    return await rpc("issue_upload_permit", { p_user: userId, p_path: path, p_bytes: bytes,
+      p_address_seconds: SIGNED_UPLOAD_SECONDS + ADDRESS_HOLD_MARGIN_S });
+  } catch (e) {
+    // PostgREST's "no function with these arguments": the migration is not in yet.
+    if (!/PGRST202/.test(String(e))) throw e;
+    console.error("video door: the address-aware permit is not deployed yet; issuing the old one");
+    return await rpc("issue_upload_permit", { p_user: userId, p_path: path, p_bytes: bytes });
+  }
+}
+
+/**
+ * What the video door takes, by extension: the three a phone's camera roll and
+ * Instagram's Download produce. Each is also in UPLOAD_EXTS and the bucket's
+ * allowed_mime_types; the Share Extension sends the matching Content-Type.
+ */
+const SHARED_VIDEO_TYPES: Record<string, string> = {
+  mp4: "video/mp4", mov: "video/quicktime", m4v: "video/x-m4v",
+};
 
 // ---------- creator codes ----------
 //
@@ -13839,6 +15423,9 @@ Deno.serve(async (req: Request) => {
     // The sheets A/B bench, behind its own secret. Matched here, above the user
     // gate, so it can never be reached with a user bearer.
     if (req.method === "POST" && path === "/api/worker/eval-sheets") return await handleEvalSheets(req);
+    // One stored cover re-encoded at the size it is shown, in its own isolate and
+    // behind the worker secret; storeThumb kicks it after a save.
+    if (req.method === "POST" && path === "/api/worker/cover") return await handleCoverTick(req);
 
     // The reminders pass, on the hour from pg_cron. Same shared secret and the
     // same reason as the worker's routes: nobody is signed in. `?dry=1` reports
@@ -13848,8 +15435,16 @@ Deno.serve(async (req: Request) => {
       if (!secretEquals(req.headers.get("x-worker-secret") ?? "", WORKER_SECRET)) {
         return json({ status: "error", message: "Not found" }, 404);
       }
-      const out = await runPushTick(Date.now(), url.searchParams.get("dry") === "1");
-      return json({ status: "ok", ...out });
+      const dry = url.searchParams.get("dry") === "1";
+      const out = await runPushTick(Date.now(), dry);
+      // The erasure outbox rides the same hourly tick: a third-party deletion
+      // that failed at account-deletion time is retried here until it is done.
+      let erasure: unknown = null;
+      if (!dry) {
+        try { erasure = await runErasureOutbox(ERASERS); }
+        catch (e) { console.error("erasure outbox tick failed", e); }
+      }
+      return json({ status: out.errors.length ? "partial" : "ok", ...out, erasure });
     }
 
     // The operational pager, every fifteen minutes from pg_cron. Same shared
@@ -13886,10 +15481,23 @@ Deno.serve(async (req: Request) => {
     // hold, because the account it would come from lives in the containing app. So
     // a route it must reach that only accepted a bearer was a route it could not
     // reach at all, and handing the frames over is exactly such a route.
+    //
+    // `/media` takes the key too, narrowly: only the Share Extension's frames for
+    // a save it held, and "Add the video" for a card the person owns. Every other
+    // use of that route still needs the bearer (handleReadVideo, `viaKey`).
+    // A save on a fresh isolate reads app_config before it can do anything else
+    // (ensureConfig, in the guard). Started here it runs beside auth instead of
+    // after the profile read: every share from the phone lands minutes apart, so
+    // almost every one is the first request of its isolate. Not awaited; the
+    // guard waits for this same refresh, and models() never throws.
+    if (req.method === "POST" && FREE_THROTTLED.has(path)) models();
     let userId = await userFromBearer(req);
+    let viaKey = false;
+    const keyed: { profile?: unknown } = {};
     if (!userId && (path === "/api/ingest" || path === "/api/ingest/prepare" || path === "/api/uploads/authorize" ||
-        path === "/api/ai-consent")) {
-      userId = await userFromIngestKey(req, url);
+        path === "/api/ai-consent" || (req.method === "POST" && MEDIA_PATH_RE.test(path)))) {
+      userId = await userFromIngestKey(req, url, keyed);
+      viaKey = !!userId;
     }
     if (!userId) return json({ status: "error", message: "Sign in to use Spotter." }, 401, cors);
 
@@ -13908,17 +15516,21 @@ Deno.serve(async (req: Request) => {
       return json(await opsScorecard(Date.now(), url.searchParams.get("week") ?? undefined), 200, cors);
     }
 
+    // The free path's per-minute tick is started here and awaited first thing in
+    // the three routes it bounds, before a link is resolved: its round trip runs
+    // beside reading the body and the consent read, so a save pays no extra hop.
+    const freeTick = req.method === "POST" && FREE_THROTTLED.has(path) ? freePathThrottle(userId, path, cors) : null;
     if (req.method === "POST") req = await boundedRequest(req);
     return await guardedUserRequest(req, path, userId, cors, async () => {
-    if (req.method === "POST" && path === "/api/uploads/authorize") return await authorizeUpload(req, userId!, cors);
-    if (req.method === "POST" && path === "/api/ingest/prepare") return await handleIngestPrepare(req, userId, cors);
-    if (req.method === "POST" && path === "/api/ingest") return await handleIngest(req, userId, cors);
+    if (req.method === "POST" && path === "/api/uploads/authorize") return (await freeTick) ?? await authorizeUpload(req, userId!, cors);
+    if (req.method === "POST" && path === "/api/ingest/prepare") return (await freeTick) ?? await handleIngestPrepare(req, userId, cors);
+    if (req.method === "POST" && path === "/api/ingest") return (await freeTick) ?? await handleIngest(req, userId, cors);
 
     const reproc = path.match(/^\/api\/workouts\/([0-9a-f-]{36})\/reprocess$/);
     if (req.method === "POST" && reproc) return await handleReprocess(reproc[1], userId, req, cors);
 
-    const readvid = path.match(/^\/api\/workouts\/([0-9a-f-]{36})\/media$/);
-    if (req.method === "POST" && readvid) return await handleReadVideo(readvid[1], userId, req, cors);
+    const readvid = path.match(MEDIA_PATH_RE);
+    if (req.method === "POST" && readvid) return await handleReadVideo(readvid[1], userId, req, cors, viaKey);
 
     const fix = path.match(/^\/api\/workouts\/([0-9a-f-]{36})\/exercises$/);
     if (req.method === "POST" && fix) return await handleCorrection(fix[1], userId, req, cors);
@@ -14002,24 +15614,27 @@ Deno.serve(async (req: Request) => {
       // `library_count` rides along because the Library page's counter — "12 of
       // 20 saved" — is the paywall's quietest and most-seen surface, and it would
       // otherwise need a count of its own on every visit.
-      const [counts, spent, cachePct, meter, uc, held, mc] = await settledAll<any>(
-        [countsFor(userId), spendToday(), cachePctToday(), pumpyMeter(userId), capsFor(userId), libraryCount(userId),
-          monthCountsFor(userId)],
-      ) as [Counts, number, number | null, PumpyMeter, UserCaps, number, MonthCounts];
       // The ceiling is the policy row's, not a constant: `spend_limit` used to be
       // a hard-coded 0.50 that kept saying 0.50 after the owner moved the guard,
-      // which is the same class of lie the daily counts were telling.
-      const budget = await rpc("ai_budget_status", {}) as Record<string, unknown> | null;
+      // which is the same class of lie the daily counts were telling. One status
+      // read answers the spend, the ceiling and whether paid reads are on: it was
+      // asked three times, two of them one after another after the batch, and
+      // the answer waited for all three round trips.
+      const status = rpc("ai_budget_status", {}) as Promise<Record<string, unknown> | null>;
+      const [counts, spent, cachePct, meter, uc, held, mc, budget, aiAllowance] = await settledAll<any>(
+        [countsFor(userId), spendFrom(status), cachePctToday(), pumpyMeter(userId), capsFor(userId), libraryCount(userId),
+          monthCountsFor(userId), status, rpc("ai_budget_user_status", { p_user: userId })],
+      ) as [Counts, number, number | null, PumpyMeter, UserCaps, number, MonthCounts, Record<string, unknown> | null, unknown];
       const allowance = allowanceFor(uc.plan);
       return json({
         status: "ok",
         plan: uc.plan,
-        limits: uc.caps,
+        limits: { ...uc.caps, media: mediaBurst(uc) },
         library_count: held,
         saves_today: counts.saves, extracts_today: counts.extracts, helpers_today: counts.helpers,
         chats_today: counts.chats,
         limit_saves: uc.caps.saves, limit_extract: uc.caps.extract, limit_helper: uc.caps.helper,
-        limit_media: uc.caps.media, limit_uploads: uc.caps.uploads,
+        limit_media: mediaBurst(uc), limit_uploads: uc.caps.uploads,
         limit_chat: LIMIT_CHAT,
         spend_today: Number(spent.toFixed(4)),
         spend_limit: Number(budget?.daily_limit ?? DAILY_SPEND_USD),
@@ -14038,8 +15653,8 @@ Deno.serve(async (req: Request) => {
           previews: mc.previews, previews_cap: plusPlan(uc.plan) ? null : allowance.reads,
           resets_at: utcNextMonth(),
         },
-        ai_allowance: await rpc("ai_budget_user_status", { p_user: userId }),
-        paid_enabled: await paidAllowed(),
+        ai_allowance: aiAllowance,
+        paid_enabled: paidFrom(budget),
         cache_pct_today: cachePct,
         // The card's "N left this month" button reads this; Settings reads
         // `month` above. They have to be the same number, so for a Basic
@@ -14053,7 +15668,7 @@ Deno.serve(async (req: Request) => {
     }
 
     return json({ status: "error", message: "Not found" }, 404, cors);
-    });
+    }, keyed.profile);
   } catch (e) {
     if (e instanceof GuardError) return json({ status: "limit", code: e.reason, message: e.reason === "request_too_large" ? "That request is too large." : e.reason === "user_monthly_budget" ? "Your monthly AI allowance is used up. It resets on the first of next month. Your saved workouts are still available." : "AI reading is paused for now. Your saved workouts are still available." }, e.reason === "request_too_large" ? 413 : 429, cors);
     console.error("unhandled", e);

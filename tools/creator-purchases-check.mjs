@@ -17,13 +17,19 @@ import {transformSync} from 'esbuild';
 
 const src=fs.readFileSync('supabase/functions/spotter-purchases/index.ts','utf8').replace(/^import .*;\n/gm,'');
 const code=transformSync(src,{loader:'ts'}).code;
+// The policy half of entitlement.ts is the real one; verifiedEntitlement stays a
+// stub below (tools/android/entitlement-check.ts is where it is proved), but the
+// access it was handed is recorded.
+const policyCode=transformSync(fs.readFileSync('supabase/functions/spotter-purchases/entitlement.ts','utf8')
+  .replace(/^export /gm,'').replace(/^const SOURCE[\s\S]*$/m,''),{loader:'ts'}).code;
 
 const uid='11111111-1111-4111-8111-111111111111';
 const other='22222222-2222-4222-8222-222222222222';
-function setup({env={},tables={},rpc={}}={}) {
+function setup({env={},tables={},rpc={},user=null}={}) {
   const calls=[],logs=[],errors=[];
   let handler=null;
   const data={profiles:[{id:uid}],creator_referrals:[],creator_earnings:[],...tables};
+  const verified=[];
   const answers={
     sync_store_entitlement:{data:null,error:null},
     redeem_creator_code:{data:[{status:'ok',code:'MARIA',creator_name:'Maria',redeemed_at:'2026-09-18T10:00:00Z'}],error:null},
@@ -38,22 +44,26 @@ function setup({env={},tables={},rpc={}}={}) {
   };return chain;};
   // Args cross the vm boundary with the context's Object prototype; JSON brings them home for deepEqual.
   const db={from,rpc:async(name,args)=>{calls.push(['rpc',name,JSON.parse(JSON.stringify(args))]);const a=answers[name];return typeof a==='function'?a(args):a;},
-    auth:{getUser:async()=>({data:{user:null},error:{message:'unused'}})}};
+    auth:{getUser:async()=>user?{data:{user},error:null}:({data:{user:null},error:{message:'unused'}})}};
   const environment={SUPABASE_URL:'https://db.invalid',SUPABASE_SERVICE_ROLE_KEY:'service',REVENUECAT_API_KEY:'rc-key',REVENUECAT_WEBHOOK_AUTH:'hook-secret',...env};
   const ctx=vm.createContext({
     console:{log:(...a)=>logs.push(a.join(' ')),error:(...a)=>errors.push(a.join(' ')),warn:(...a)=>logs.push(a.join(' '))},
     Deno:{env:{get:k=>environment[k]},serve:fn=>{handler=fn;}},
     createClient:()=>db,
-    verifiedEntitlement:()=>({active:true,expiry:'2027-01-01T00:00:00.000Z',source:'apple',product:'plus_month'}),
-    fetch:async(url)=>{calls.push(['fetch',String(url)]);return {ok:true,json:async()=>({subscriber:{}})};},
+    verifiedEntitlement:(_s,_now,access)=>{verified.push(JSON.parse(JSON.stringify(access)));
+      return {active:true,expiry:'2027-01-01T00:00:00.000Z',source:'apple',product:'plus_month',environment:'production',willRenew:true};},
+    fetch:async(url,init)=>{calls.push(['fetch',String(url),JSON.parse(JSON.stringify(init?.headers||{}))]);return {ok:true,json:async()=>({subscriber:{}})};},
     crypto,TextEncoder,Uint8Array,Response,Request,URL,AbortSignal,Set,Date,Math,Number,String,JSON,Array,Promise,Error,Object,
   });
+  vm.runInContext(policyCode,ctx);
   vm.runInContext(code,ctx);
   assert(handler,'Deno.serve received the handler');
   const hook=async(event,auth='hook-secret')=>handler(new Request('https://fn.invalid/spotter-purchases/webhook',
     {method:'POST',headers:{authorization:auth,'content-type':'application/json'},body:JSON.stringify({event})}));
   const rpcs=(name)=>calls.filter(c=>c[0]==='rpc'&&(!name||c[1]===name)).map(c=>({name:c[1],args:c[2]}));
-  return {hook,calls,logs,errors,rpcs,data};
+  const verify=async()=>handler(new Request('https://fn.invalid/spotter-purchases',
+    {method:'POST',headers:{authorization:'Bearer session-jwt','content-type':'application/json'},body:'{}'}));
+  return {hook,verify,calls,logs,errors,rpcs,data,verified};
 }
 const purchase=(over={})=>({type:'INITIAL_PURCHASE',app_user_id:uid,environment:'PRODUCTION',store:'APP_STORE',price:6.99,
   currency:'USD',transaction_id:'t1',purchased_at_ms:Date.parse('2026-09-18T10:00:00Z'),period_type:'NORMAL',...over});
@@ -119,11 +129,39 @@ for (const [why,over,env] of [
   await ok(await t.hook(purchase({offer_code:'MARIA',...over})));
   assert.deepEqual(t.rpcs().map(r=>r.name),['sync_store_entitlement'],why+' records nothing');
 }
-// Unless sandbox is explicitly allowed, the same way entitlement.ts allows it.
-{
-  const t=setup({env:{REVENUECAT_ALLOW_SANDBOX:'true'}});
+// Whatever the sandbox policy lets unlock Plus, a sandbox purchase is nobody's
+// money: the ledger ignores it under every policy, the legacy switch included.
+for (const env of [{REVENUECAT_ALLOW_SANDBOX:'true'},{REVENUECAT_SANDBOX_POLICY:'all'},{REVENUECAT_SANDBOX_POLICY:'qa'}]) {
+  const t=setup({env,tables:{profiles:[{id:uid,limits:{store_qa:true}}]}});
   await ok(await t.hook(purchase({environment:'SANDBOX'})));
-  assert.deepEqual(t.rpcs().map(r=>r.name),['sync_store_entitlement','record_creator_earning']);
+  await ok(await t.hook(purchase({environment:'SANDBOX',store:'TEST_STORE',transaction_id:'ts1'})));
+  assert.deepEqual(t.rpcs().map(r=>r.name),['sync_store_entitlement','sync_store_entitlement'],JSON.stringify(env)+' books no sandbox commission');
+}
+// The sync under each policy: what access it hands entitlement.ts, whether it
+// asks RevenueCat for Xcode StoreKit-test transactions, and what it saves.
+{
+  const flagged={profiles:[{id:uid,limits:{store_qa:true}}]}, plain={profiles:[{id:uid,limits:{library:40}}]};
+  const cases=[
+    [{},plain,{sandbox:false,testStore:false,xcode:false},false],
+    [{},flagged,{sandbox:false,testStore:false,xcode:false},false],
+    [{REVENUECAT_SANDBOX_POLICY:'qa'},plain,{sandbox:false,testStore:false,xcode:false},true],
+    [{REVENUECAT_SANDBOX_POLICY:'qa'},flagged,{sandbox:true,testStore:true,xcode:true},true],
+    [{REVENUECAT_SANDBOX_POLICY:'all'},plain,{sandbox:true,testStore:false,xcode:false},true],
+    [{REVENUECAT_SANDBOX_POLICY:'all'},flagged,{sandbox:true,testStore:true,xcode:true},true],
+    [{REVENUECAT_ALLOW_SANDBOX:'true'},plain,{sandbox:true,testStore:false,xcode:false},true],
+  ];
+  for (const [env,tables,access,readsFlag] of cases) {
+    const t=setup({env,tables});
+    await ok(await t.hook(purchase()));
+    assert.deepEqual(t.verified,[access],JSON.stringify(env)+' '+JSON.stringify(tables.profiles[0].limits));
+    const fetched=t.calls.find(c=>c[0]==='fetch');
+    assert.equal(fetched[2]['X-Is-Sandbox'],access.xcode?'true':undefined,'X-Is-Sandbox only for a QA account under qa or all');
+    assert.equal(fetched[2].Authorization,'Bearer rc-key');
+    const flagReads=t.calls.filter(c=>c[0]==='select'&&c[1]==='profiles').length;
+    assert.equal(flagReads,readsFlag?2:1,'the QA flag is read only when a policy could use it');
+    const saved=t.rpcs('sync_store_entitlement')[0].args;
+    assert.equal(saved.environment,'production');assert.equal(saved.will_renew,true);
+  }
 }
 // An account this database has never seen gets neither a sync nor a ledger row.
 {
@@ -163,6 +201,17 @@ for (const [why,rpc] of [
   assert.equal(t.rpcs('sync_store_entitlement').length,1);
   assert.ok(t.errors.some(e=>/creator ledger failed INITIAL_PURCHASE t1/.test(e)),why+' is logged with the event named');
 }
+// The app's own verify route: a store subscription with auto-renew off answers
+// with cancel_at_period_end, the field every build's Settings reads as "ends".
+for (const [willRenew,ends] of [[false,true],[true,false],[null,false]]) {
+  const t=setup({user:{id:uid},tables:{profiles:[{id:uid,plan:'plus'}],subscriptions:[],
+    store_entitlements:[{user_id:uid,active:true,source:'apple',expires_at:'2026-10-24T00:00:00Z',will_renew:willRenew,environment:'sandbox'}]}});
+  const r=await t.verify();
+  assert.equal(r.status,200);
+  const b=await r.json();
+  assert.deepEqual(JSON.parse(JSON.stringify(b)),{status:'ok',plan:'plus',subscription:{source:'apple',status:'active',plan:'plus',
+    current_period_end:'2026-10-24T00:00:00Z',cancel_at_period_end:ends,environment:'sandbox'}},'will_renew '+willRenew);
+}
 // What was there before is untouched: TEST events, the shared secret, transfers, and a failed sync.
 {
   const t=setup();
@@ -179,4 +228,4 @@ for (const [why,rpc] of [
   assert.equal(failed.status,503,'the sync is the thing that must succeed, and it still says so when it does not');
   assert.equal(v.rpcs('record_creator_earning').length,0,'no bookkeeping about a sync that failed');
 }
-console.log('PASS creator ledger: paid production purchases record the store transaction in cents, store offer codes attribute once and first, sandbox/trial/unknown-store/unknown-account events record nothing, sandbox honoured only when allowed, customer-support cancellations refund what the ledger holds, ledger failures log and never fail the webhook, and TEST/secret/transfer/failed-sync behaviour is unchanged.');
+console.log('PASS creator ledger: paid production purchases record the store transaction in cents, store offer codes attribute once and first, sandbox/trial/unknown-store/unknown-account events record nothing, sandbox never booked under any policy, the sync’s access, X-Is-Sandbox and QA flag per policy, customer-support cancellations refund what the ledger holds, the verify route says ends when auto-renew is off, ledger failures log and never fail the webhook, and TEST/secret/transfer/failed-sync behaviour is unchanged.');

@@ -1,5 +1,5 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.115.0';
-import { verifiedEntitlement } from './entitlement.ts';
+import { sandboxPolicy, storeAccess, verifiedEntitlement } from './entitlement.ts';
 
 const url = Deno.env.get('SUPABASE_URL')!;
 const service = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -13,21 +13,34 @@ async function equalSecret(a: string, b: string) {
   let different = 0; for (let i=0;i<xx.length;i++) different |= xx[i]^yy[i];
   return different === 0;
 }
+// A QA account is one the owner flagged with profiles.limits.store_qa = true.
+// `limits` is the per-account override column only the service role can write
+// (authenticated may update display_name and settings, nothing else), so no
+// client can flag itself. Asked only when a policy could use the answer.
+async function isQa(uid: string) {
+  const { data, error } = await db.from('profiles').select('limits').eq('id', uid).maybeSingle();
+  if (error) throw new Error('Could not read the account');
+  return data?.limits?.store_qa === true;
+}
 async function sync(uid: string) {
   // Customer-info reads use the project app's public SDK key. No privileged
   // RevenueCat key capable of granting purchases is needed by this service.
   const apiKey = Deno.env.get('REVENUECAT_API_KEY');
   if (!apiKey) throw new Error('Store verification is not configured');
+  const policy = sandboxPolicy(k => Deno.env.get(k));
+  const access = storeAccess(policy, policy !== 'off' && await isQa(uid));
   const observed = new Date().toISOString();
+  const headers: Record<string,string> = { Authorization: 'Bearer ' + apiKey };
+  if (access.xcode) headers['X-Is-Sandbox'] = 'true';
   const result = await fetch('https://api.revenuecat.com/v1/subscribers/' + encodeURIComponent(uid), {
-    headers: { Authorization: 'Bearer ' + apiKey }, signal: AbortSignal.timeout(15000)
+    headers, signal: AbortSignal.timeout(15000)
   });
   if (!result.ok) throw new Error('Store verification unavailable');
   const customer = (await result.json()).subscriber;
-  const verified = verifiedEntitlement(customer, Date.now(), Deno.env.get('REVENUECAT_ALLOW_SANDBOX') === 'true');
+  const verified = verifiedEntitlement(customer, Date.now(), access);
   const { error } = await db.rpc('sync_store_entitlement', {
     uid, is_active: verified.active, expiry: verified.expiry, store: verified.source,
-    product: verified.product, observed
+    product: verified.product, observed, environment: verified.environment, will_renew: verified.willRenew
   });
   if (error) throw new Error('Could not save verified access');
 }
@@ -40,16 +53,16 @@ async function sync(uid: string) {
 // this side only translates the event. Everything here is inside a try in the
 // handler below, so a ledger failure is a log line and the webhook still says ok.
 //
-// Sandbox events are ignored unless REVENUECAT_ALLOW_SANDBOX is set, for the
-// same reason entitlement.ts ignores sandbox subscriptions: a creator must not be
-// owed money for a purchase nobody made.
+// Only production events count, whatever the sandbox policy lets unlock Plus: a
+// sandbox, TestFlight, App Review or Test Store purchase is nobody's money, and a
+// creator must not be owed commission on it.
 const PURCHASE_EVENTS = new Set(['INITIAL_PURCHASE','RENEWAL','NON_RENEWING_PURCHASE']);
 const CREATOR_CODE = /^[A-Za-z0-9]{3,20}$/;
 const storeSource = (store: unknown) => store === 'APP_STORE' ? 'apple' : store === 'PLAY_STORE' ? 'google' : null;
 async function creatorLedger(event: any) {
   const uid = event?.app_user_id;
   if (typeof uid !== 'string' || !UUID.test(uid)) return;
-  if (event.environment !== 'PRODUCTION' && Deno.env.get('REVENUECAT_ALLOW_SANDBOX') !== 'true') return;
+  if (event.environment !== 'PRODUCTION') return;
   const tid = typeof event.transaction_id === 'string' ? event.transaction_id.trim() : '';
   if (!tid) return;
   if (PURCHASE_EVENTS.has(event.type)) {
@@ -135,7 +148,10 @@ Deno.serve(async req => {
       db.from('subscriptions').select('source,status,plan,current_period_end,cancel_at_period_end').eq('user_id',auth.user.id).maybeSingle()
     ]);
     if (profile.error) throw new Error('Could not read verified access');
-    const subscription = store.data?.active ? {source:store.data.source,status:'active',plan:'plus',current_period_end:store.data.expires_at} : legacy.data;
+    // cancel_at_period_end is the name every build's Settings already reads, so a
+    // store subscription with auto-renew off says "ends" there instead of "renews".
+    const subscription = store.data?.active ? {source:store.data.source,status:'active',plan:'plus',current_period_end:store.data.expires_at,
+      cancel_at_period_end:store.data.will_renew === false,environment:store.data.environment ?? null} : legacy.data;
     return reply({status:'ok',plan:profile.data.plan,subscription});
   } catch (_) {
     return reply({status:'error',message:'Could not verify the subscription. Your purchase remains in your store account; please try Restore purchase again.'},503);

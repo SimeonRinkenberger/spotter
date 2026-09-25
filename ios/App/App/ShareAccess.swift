@@ -7,16 +7,44 @@ public class ShareAccessPlugin: CAPPlugin, CAPBridgedPlugin {
     public let jsName = "ShareAccess"
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "configure", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "contactSheet", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "contactSheet", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "takeParked", returnType: CAPPluginReturnPromise)
     ]
 
+    /// `plan` is optional and only a hint for the Share Extension (see
+    /// ShareCredential.writePlan). A call without it leaves the stored hint as it
+    /// was; signing out (no key) clears both, so the next account starts clean.
     @objc func configure(_ call: CAPPluginCall) {
         let key = call.getString("key")
         if let key = key, key.range(of: "^[0-9a-f]{32}$", options: .regularExpression) == nil {
             call.reject("Invalid share credential"); return
         }
-        do { try ShareCredential.write(key); call.resolve() }
+        let plan = call.getString("plan").flatMap { $0.range(of: "^[a-z_]{1,24}$", options: .regularExpression) == nil ? nil : $0 }
+        do {
+            try ShareCredential.write(key)
+            if key == nil { try? ShareCredential.writePlan(nil) }
+            else if let plan = plan { try? ShareCredential.writePlan(plan) }
+            // Links parked from now on belong to this account, and any parked
+            // under another one are dropped (ParkedShare). Sign-out leaves the
+            // tag: links shared while signed out wait for this account's return.
+            if let key = key { ParkedShare.claim(saveKey: key) }
+            call.resolve()
+        }
         catch { call.reject("Could not prepare sharing. Open Spotter again to retry.") }
+    }
+
+    /**
+     * One link the Share Extension parked while nobody was signed in, removed
+     * as it is handed over: `{url, at}` (at = ms since 1970), or `{}` when there
+     * is none. The page calls this after sign-in and again until it answers `{}`,
+     * saving each link the way a share would. Only links parked under the
+     * account configured now (or before any account) are handed over, and none
+     * before the page has configured one.
+     */
+    @objc func takeParked(_ call: CAPPluginCall) {
+        let saveKey = (try? ShareCredential.read()) ?? nil
+        guard let item = ParkedShare.take(for: saveKey) else { call.resolve([:]); return }
+        call.resolve(["url": item.url, "at": item.at])
     }
 
     /**

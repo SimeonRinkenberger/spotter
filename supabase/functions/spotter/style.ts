@@ -65,8 +65,10 @@ export const STYLE = String.raw`<style>
     }
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  /* x as well since the pages stopped containing sideways overscroll (.page):
+     a trackpad's sideways swipe ends here rather than in the browser's Back. */
   html, body { margin: 0; padding: 0; background-color: var(--paper); color: var(--ink);
-    font-family: var(--sans); overscroll-behavior-y: none;
+    font-family: var(--sans); overscroll-behavior: none;
     -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
   /* Quotes and brackets hang into the margin instead of indenting the line they
      start. One declaration, Safari-supported, and it is the difference between
@@ -300,12 +302,19 @@ export const STYLE = String.raw`<style>
   /* ---------- the pager ----------
      No touch-action on purpose. Asking for pan-y let WebKit start scrolling
      before the drag had said a word, and it then cancelled our pointer on any
-     drag that was not ruler-straight. Left alone, WebKit waits for the verdict
-     of the non-passive touchmove in app.ts, so the axis is ours to decide. */
+     drag that was not ruler-straight. Without it the drag is decided in app.ts,
+     which works only while no page begins a pan of its own for a sideways drag
+     (app.ts, "the drag"). Hence the page's two horizontal words. overflow-x:
+     hidden, so no stray overflow can make it scroll sideways. And overscroll
+     containment on the vertical axis only: contain on x is what WebKit turns
+     into UIScrollView's transfersHorizontalScrollingToParent = NO, which asks
+     the page to keep sideways drags for itself. The iPhone 16e simulator turned
+     pages either way; these say what a page is for, so it never has to. */
   .pages { position: absolute; inset: 0; overflow: hidden; }
   .track { display: flex; height: 100%; }
   .track.dragging { will-change: transform; }
-  .page { flex: 0 0 100%; height: 100%; overflow-y: auto; overscroll-behavior: contain;
+  .page { flex: 0 0 100%; height: 100%; overflow-x: hidden; overflow-y: auto;
+    overscroll-behavior-x: auto; overscroll-behavior-y: contain;
     -webkit-overflow-scrolling: touch; padding-bottom: calc(var(--ptab, 78px) + 24px); }
   /* The header's height as a real box rather than the scroller's top padding:
      engines disagree about which edge a sticky inset inside a PADDED scroller
@@ -342,27 +351,32 @@ export const STYLE = String.raw`<style>
   .search:focus { border-color: var(--ember); background: var(--card); }
   .search::placeholder { color: var(--muted); }
   /* The way out of typing, beside the field for exactly as long as the field has
-     the keyboard: the trailing slot UISearchBar gives its Cancel. It closes the
-     keyboard and keeps the query, because the results are what the reader wanted
-     room to see; clearing stays with the field's own clear button. The field
-     gives it room the way UIKit's does, by getting narrower. */
+     the keyboard: the trailing slot UISearchBar gives its Cancel, and it does what
+     Cancel does — the query goes, the keyboard goes, the whole library comes back.
+     The field gives it room the way UIKit's does, by getting narrower. The button
+     is the whole strip from the field's edge to the circle, top to bottom of the
+     bar, so a thumb that lands beside the circle still lands on the button; the
+     circle is its child. */
   #searchwrap { display: flex; align-items: center; }
   #searchwrap .search { flex: 1 1 auto; width: auto; min-width: 0; }
-  .searchx { flex: 0 0 auto; width: 0; height: 44px; margin-left: 0; padding: 0; border: none;
-    border-radius: 999px; background: var(--sand); color: var(--ink-2); overflow: hidden;
+  .searchx { flex: 0 0 auto; box-sizing: border-box; width: 0; height: 64px; margin: -8px 0 -12px; padding: 0;
+    border: none; border-radius: 0; background: none; color: var(--ink-2); overflow: hidden;
+    display: flex; align-items: center; justify-content: flex-end;
+    opacity: 0; pointer-events: none; -webkit-tap-highlight-color: transparent;
+    transition: width var(--t-2) var(--e-in), opacity var(--t-1) var(--e-in); }
+  .searchx > span { flex: 0 0 44px; height: 44px; border-radius: 999px; background: var(--sand);
     display: flex; align-items: center; justify-content: center;
-    opacity: 0; transform: scale(.6); pointer-events: none;
-    transition: width var(--t-2) var(--e-in), margin-left var(--t-2) var(--e-in),
-      opacity var(--t-1) var(--e-in), transform var(--t-2) var(--e-in); }
-  #searchwrap:focus-within .searchx { width: 44px; margin-left: 8px; opacity: 1; transform: none;
-    pointer-events: auto;
-    transition: width var(--t-2) var(--e-out), margin-left var(--t-2) var(--e-out),
-      opacity var(--t-2) var(--e-out), transform var(--t-2) var(--e-out); }
-  #searchwrap:focus-within .searchx:active { transform: scale(.92); transition-duration: var(--t-1); }
+    transform: scale(.6); transition: transform var(--t-2) var(--e-in); }
+  #searchwrap:focus-within .searchx { width: 52px; opacity: 1; pointer-events: auto;
+    transition: width var(--t-2) var(--e-out), opacity var(--t-2) var(--e-out); }
+  #searchwrap:focus-within .searchx > span { transform: none; transition: transform var(--t-2) var(--e-out); }
+  #searchwrap:focus-within .searchx:active > span { transform: scale(.92); transition-duration: var(--t-1); }
   .searchx .ic { width: 18px; height: 18px; }
+  /* One X: Chromium's own clear button inside a search field would be a second. */
+  #search::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; display: none; }
   @media (prefers-reduced-motion: reduce) {
-    .searchx, #searchwrap:focus-within .searchx { transform: none;
-      transition: opacity var(--t-1) var(--e-soft); }
+    .searchx, #searchwrap:focus-within .searchx { transition: opacity var(--t-1) var(--e-soft); }
+    .searchx > span, #searchwrap:focus-within .searchx > span { transform: none; transition: none; }
   }
 
   /* ---------- filter chips ---------- */
@@ -503,6 +517,13 @@ export const STYLE = String.raw`<style>
     opacity: 0; transform: scale(1.05);
     transition: opacity 400ms var(--e-soft), transform 700ms var(--e-out); }
   .thumbwrap.loaded img { opacity: 1; transform: none; }
+  /* Card art is the face of a card, not a photo to keep: held, it opened iOS's image
+     menu (Share / Save to Photos / Copy) over the Library, on top of the press the card
+     answers itself. Library grid, Train's rows and pickers, and the detail's source chips.
+     The source photo (.dphoto) and the share card (.scprev, #proof) keep the menu:
+     those are pictures, and keeping one is a fair thing to want. */
+  .thumbwrap img, .tthumb, .planitem img, .pickrow img, .fromthumb img {
+    -webkit-touch-callout: none; -webkit-user-drag: none; -webkit-user-select: none; user-select: none; }
   /* Finite sweep on purpose: lazy images far below the fold stay pending indefinitely,
      and an infinite animation per card would keep the compositor busy all session. */
   .thumbwrap.loading::after { content: ""; position: absolute; inset: 0; pointer-events: none;
@@ -785,6 +806,77 @@ export const STYLE = String.raw`<style>
     color: var(--ink-2); font-size: 13px; font-weight: 650; padding: 10px; margin: 4px 0 12px;
     transition: transform var(--t-1) var(--e-out); }
   .addex:active { transform: scale(.985); }
+  /* Add a section and Reorder share the line under the last section: both are
+     about the card's shape, and neither is the card asking for anything. */
+  .cardtools { display: flex; gap: 8px; }
+  .cardtools .addex { flex: 1 1 0; min-width: 0; display: flex; align-items: center; justify-content: center; gap: 6px; }
+  .cardtools .addex .ic { width: 15px; height: 15px; }
+  /* ---------- reorder ----------
+     A list of tiles, iOS edit-mode style: a section is a sand band, an exercise a
+     card, and each keeps its handle on the trailing edge where UIKit draws the
+     reorder control. The gap is the list's, never a margin, so every tile that
+     makes way moves by exactly the lifted tile's height plus one gap. Only
+     transform moves while a finger is down: the tiles making way glide on --t-2,
+     the lifted one follows the finger with no timing at all. Done and Cancel sit
+     in a band that stays put, as a modal's bar does, so a long card never scrolls
+     them away. */
+  /* No negative margin into the scroller's padding: Blink measures the sticky
+     inset from the content box and WebKit from the padding box, so the band sits
+     8px lower in one of them. The shadow fills that strip in paper instead. */
+  .ohead { position: sticky; top: 0; z-index: 4; margin: 0 -20px; padding: 0 20px 4px;
+    background: var(--paper); background-image: var(--grain); box-shadow: 0 -8px 0 var(--paper); }
+  .ohead .grabber { margin-bottom: 6px; }
+  .otop { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .ohead .otop h2 { margin: 0; flex: 1; text-align: center; }
+  .obtn { min-width: 64px; min-height: 44px; padding: 0 4px; border: 0; background: none; color: var(--ink-2);
+    font-size: 15px; font-weight: 600; text-align: left; }
+  .obtn.odone { color: var(--ember-ink); font-weight: 750; text-align: right; }
+  .olede .ic { display: inline; width: 15px; height: 15px; vertical-align: -3px; }
+  #olist { position: relative; display: flex; flex-direction: column; gap: 6px; }
+  /* The list is redrawn on every move; the scroller must not chase an anchor. */
+  #ordersheet .sheetbody { overflow-anchor: none; }
+  .orow { display: flex; align-items: center; min-height: 52px; border-radius: 14px; background: var(--card);
+    border: 1px solid var(--line); position: relative;
+    transition: transform var(--t-2) var(--e-out), background-color var(--t-1) var(--e-out),
+      border-color var(--t-1) var(--e-out), box-shadow var(--t-2) var(--e-out); }
+  /* --muted is 4.13 on sand, under AA for this size; --ink-2 is not. */
+  .orow.osec { background: var(--sand); }
+  .opick { flex: 1; min-width: 0; align-self: stretch; display: flex; flex-direction: column; justify-content: center;
+    border: 0; background: none; padding: 8px 4px 8px 14px; text-align: left; color: inherit; font: inherit;
+    -webkit-user-select: none; user-select: none; }
+  .opick b, .opick span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .opick b { font-size: 14.5px; font-weight: 600; line-height: 1.3; }
+  .opick span { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .osec .opick b { font-family: var(--display); font-size: 15px; font-weight: 700; letter-spacing: -.01em; }
+  .osec .opick span { color: var(--ink-2); }
+  .ogrip, .ostep { flex: 0 0 auto; width: 44px; height: 44px; border: 0; background: none; padding: 0;
+    display: flex; align-items: center; justify-content: center; color: var(--muted); }
+  /* The handle takes the touch before the scroller can: no pan, no zoom, no delay. */
+  .ogrip { touch-action: none; cursor: grab; margin-right: 2px; }
+  .ogrip .ic, .ostep .ic { width: 18px; height: 18px; }
+  .ostep { display: none; color: var(--ember-ink); }
+  .ostep.dn .ic { transform: rotate(180deg); }
+  .ostep:disabled { color: var(--line-2); }
+  .orow.sel { background: var(--ember-soft); border-color: var(--ember); }
+  /* --muted on --ember-soft is 4.29, under AA for 12px; --ink-2 is 5.5. */
+  .orow.sel .opick span { color: var(--ink-2); }
+  .orow.sel .ostep { display: flex; }
+  .orow.lift { z-index: 3; box-shadow: var(--sh-lg); cursor: grabbing; border-color: var(--line-2);
+    transition: box-shadow var(--t-2) var(--e-out), background-color var(--t-1) var(--e-out); }
+  /* A section being moved carries its exercises folded under it, as Fitbod and
+     Hevy fold a group: one tile per section, so the lift is never a screen tall. */
+  /* A shadow barely reads on a dark sheet; the lifted tile comes forward in
+     tone instead, as an elevated surface does in iOS dark mode. */
+  @media (prefers-color-scheme: dark) { .orow.oex.lift { background: var(--sand); } }
+  #olist.ocollapse .oex { display: none; }
+  .orow.oin { animation: fadein var(--t-2) var(--e-out) both; }
+  /* Where a moved row landed on the card, said once. Colour, not travel. */
+  .exrow.moved .exmain, .exrow.moved .exercise-card { animation: movedglow 1.6s var(--e-soft) both; }
+  @keyframes movedglow { 0%, 35% { background-color: var(--ember-soft); } }
+  @media (prefers-reduced-motion: reduce) {
+    .orow, .orow.lift { transition: background-color var(--t-1), border-color var(--t-1); }
+    .orow.oin { animation: none; }
+  }
   .fieldrow { display: flex; gap: 9px; }
   .fieldrow .field { flex: 1; min-width: 0; }
   /* A caption is a couple of thousand characters of wrapped text a long way below
@@ -882,11 +974,42 @@ export const STYLE = String.raw`<style>
      that arrives after the pitch reads as an excuse for the pitch. */
   .planctx { font-size: 13px; line-height: 1.55; color: var(--muted); margin: 2px 0 12px; }
   .plangood { margin: 14px 0 4px; }
-  /* 44px whatever the sentence does at 375px: the rhythm the app's other rows
-     keep, so this reads as a list and not as a paragraph. */
-  .pgood { display: flex; align-items: flex-start; gap: 11px; min-height: 44px;
-    box-sizing: border-box; padding: 7px 0; font-size: 13.5px; line-height: 1.5; color: var(--ink-2); }
-  .pgood .ic { flex: 0 0 auto; width: 17px; height: 17px; margin-top: 3px; color: var(--ember); }
+  /* Basic | Plus, Hevy and Strong's way: each row names Basic's number plainly.
+     The Plus column is one tinted band; Basic's own usage sits under its figure
+     in the grey the Settings lines use. Below 360px each row stacks, the label
+     over its two values, rather than crushing the labels. */
+  .ptable { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13.5px;
+    line-height: 1.35; font-variant-numeric: tabular-nums; }
+  .ptable th, .ptable td { padding: 10px 8px; text-align: left; vertical-align: top; }
+  .ptable tbody > * > * { border-top: 1px solid var(--line); }
+  .ptable tbody th { padding-left: 0; font-weight: 500; color: var(--ink-2); }
+  .ptable thead th { padding-bottom: 7px; font-size: 11.5px; font-weight: 750; letter-spacing: .05em;
+    text-transform: uppercase; color: var(--muted); }
+  .ptable td { width: 29%; font-weight: 650; color: var(--ink); }
+  .ptable .pplus { background: var(--ember-soft); }
+  .ptable thead .pplus { color: var(--ember-ink); border-radius: 12px 12px 0 0; }
+  .ptable tr:last-child .pplus { border-radius: 0 0 12px 12px; }
+  .ptable .ic { display: inline-block; width: 13px; height: 13px; margin: 0 4px -1px 0; color: var(--ember-ink);
+    stroke-width: 3; }
+  .ptable small { display: block; margin-top: 3px; font-size: 11.5px; font-weight: 500; color: var(--muted); }
+  .ptable small.out { color: var(--ember-ink); }
+  .ptable .pno { color: var(--muted); font-weight: 500; }
+  .pfree { display: flex; align-items: flex-start; gap: 10px; margin: 12px 0 0; padding: 12px 14px;
+    border-radius: 14px; background: var(--sand); font-size: 13px; line-height: 1.5; color: var(--ink-2); }
+  .pfree .ic { flex: 0 0 auto; width: 16px; height: 16px; margin-top: 2px; color: var(--good); }
+  .pfree b { font-weight: 650; color: var(--ink); }
+  .plansoft { font-size: 13px; line-height: 1.5; color: var(--muted); margin: 4px 0; }
+  @media (max-width: 359px) {
+    .ptable thead { display: none; }
+    .ptable tr { display: grid; grid-template-columns: 1fr 1fr; gap: 0 6px; padding: 10px 0 2px;
+      border-top: 1px solid var(--line); }
+    .ptable tbody > * > * { border-top: 0; }
+    .ptable tbody th { grid-column: 1 / -1; padding: 0 0 4px; }
+    .ptable td, .ptable tr:last-child .pplus { width: auto; padding: 6px 8px; border-radius: 10px; }
+    .ptable td::before { content: attr(data-l); display: block; font-size: 10.5px; font-weight: 750;
+      letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+    .ptable .pplus::before { color: var(--ember-ink); }
+  }
   .plancards { margin: 16px 0 0; }
   /* The whole rectangle is the radio, so there is no small circle to hit. Label
      left, amount right, the rest wrapping underneath — which is what keeps the
@@ -898,6 +1021,7 @@ export const STYLE = String.raw`<style>
       transform var(--t-1) var(--e-out); }
   .pcard.on { border-color: var(--ember); background: var(--ember-soft); }
   .pcard:active { transform: scale(.985); }
+  .pcard.off { opacity: .55; box-shadow: none; transform: none; }
   .prow { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
   .pname { font-size: 14.5px; font-weight: 650; letter-spacing: -.01em; }
   .pamt { font-family: var(--display); font-size: 17px; font-weight: 700; letter-spacing: -.015em;
@@ -914,8 +1038,14 @@ export const STYLE = String.raw`<style>
     background: var(--ember); color: var(--on-ember); font-size: 12px; font-weight: 750; }
   .pcompare, .prenew { color: var(--ink-2); font-size: 12px; line-height: 1.5; }
   .prenew { margin-top: 5px; font-weight: 650; }
-  .plantrial, .plansoon { font-size: 13px; line-height: 1.5; color: var(--ink-2); margin: 4px 0 14px; }
-  .plansoon { color: var(--muted); }
+  .plantrial { font-size: 13px; line-height: 1.5; color: var(--ink-2); margin: 4px 0 14px; }
+  /* Where the prices would be when there are none: the price cards' own shape,
+     so the page keeps its rhythm in every state. */
+  .plansoon { margin: 16px 0 12px; padding: 14px 15px; border-radius: 16px; background: var(--card);
+    border: 1px solid var(--line-2); box-shadow: var(--sh-sm); }
+  .plansoon b { display: block; font-size: 14.5px; font-weight: 650; line-height: 1.45; }
+  .plansoon p { margin: 5px 0 0; font-size: 13px; line-height: 1.5; color: var(--ink-2); }
+  .plansoon .btn { margin-top: 12px; min-height: 44px; }
   .planbuy { margin-top: 4px; min-height: 48px; }
   /* Cross-fades rather than cutting: this is the one thing a person watches
      while deciding, and a word that snaps under the thumb reads as a mis-tap. */
@@ -1170,6 +1300,9 @@ export const STYLE = String.raw`<style>
      mobile data is well past the ten seconds at which a spinner stops being an
      honest answer to "how long". */
   .upblock { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+  /* "Add the video": no link to paste, so the sheet is the picker alone. */
+  #addsheet.attach .field, #addsheet.attach #addgo { display: none; }
+  #addsheet.attach .upblock { margin-top: 4px; padding-top: 0; border-top: 0; }
   .uploadrow { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
     background: var(--card); border: 1px solid var(--line-2); border-radius: 16px;
     padding: 13px 14px; color: var(--ink); box-shadow: var(--sh-sm);
@@ -1200,6 +1333,70 @@ export const STYLE = String.raw`<style>
   @media (prefers-reduced-motion: reduce) {
     .uploadrow, .upbar i { transition: none; }
     .uperr { animation: none; }
+  }
+
+  /* ---------- save from any app ----------
+     The share sheet's own row, drawn small: the share glyph, the round More and
+     Spotter's real icon, chevrons between. The app's add sheet opens as this
+     (.share); on the web, which has no share extension, it stays hidden and the
+     link box leads as before. Spotter's tile keeps an ember ring, "this is the one
+     you tap", and on opening a ring walks the row once, the way a thumb would. */
+  .sharehow, .orpaste { display: none; }
+  #addsheet.share .sharehow { display: block; }
+  #addsheet.share .orpaste { display: flex; }
+  .shareflow { display: flex; justify-content: center; align-items: flex-start; margin: 0 0 12px;
+    padding: 16px 6px 13px; list-style: none; background: var(--card); border: 1px solid var(--line);
+    border-radius: 18px; box-shadow: var(--sh-sm); }
+  .shareflow li { position: relative; display: flex; flex-direction: column; align-items: center; gap: 8px;
+    width: 68px; font-size: 12.5px; font-weight: 650; color: var(--ink); letter-spacing: -.005em; }
+  .shareflow li + li { margin-left: 20px; }
+  /* Two borders of a turned square: a chevron with nothing to load. */
+  .shareflow li + li::before { content: ""; position: absolute; left: -16px; top: 20px; width: 7px; height: 7px;
+    border-top: 2px solid var(--muted); border-right: 2px solid var(--muted); transform: rotate(45deg); }
+  .sfmark { position: relative; width: 46px; height: 46px; display: grid; place-items: center;
+    border-radius: 13px; background: var(--sand); color: var(--ink); }
+  .sfmark .ic { width: 22px; height: 22px; }
+  .sfmark.more { border-radius: 999px; }
+  .sfmark.more .ic { stroke-width: 3.4; }
+  .sfmark.app img { display: block; width: 46px; height: 46px; border-radius: 11px; }
+  .sfmark::after { content: ""; position: absolute; inset: -4px; border-radius: 16px;
+    border: 2px solid var(--ember); opacity: 0; pointer-events: none; }
+  .sfmark.more::after { border-radius: 999px; }
+  .sfmark.app::after { border-radius: 14px; opacity: 1; }
+  #addsheet.open .sfmark::after { animation: sftap .6s var(--e-out) .45s both; }
+  #addsheet.open li:nth-child(2) .sfmark::after { animation-delay: .85s; }
+  #addsheet.open .sfmark.app::after { animation: sfstay .5s var(--e-spring) 1.25s both; }
+  @keyframes sftap { 0% { opacity: 0; transform: scale(.84); } 35% { opacity: 1; transform: none; }
+    100% { opacity: 0; transform: scale(1.1); } }
+  @keyframes sfstay { from { opacity: 0; transform: scale(.84); } }
+  .sfnote { margin: 0 4px 6px; text-align: center; font-size: 12.5px; line-height: 1.5; color: var(--ink-2); }
+  .sfnote b, .webnote b { color: var(--ink); font-weight: 650; }
+  .sftip .ic { display: inline-block; width: 13px; height: 13px; margin: 0 5px 0 0; vertical-align: -2px;
+    color: var(--ember-ink); fill: currentColor; }
+  .sfopen { display: flex; justify-content: center; gap: 8px; margin: 12px 0 0; }
+  .sfopen .chip { flex: 1 1 0; max-width: 176px; min-height: 44px; justify-content: center; padding: 0 12px;
+    background: var(--card); color: var(--ink); border: 1px solid var(--line-2); font-size: 13px; }
+  .sfopen .chip .ic { width: 14px; height: 14px; color: var(--ember-ink); }
+  /* The second way in, headed as the second way: a rule either side of the words. */
+  .orpaste { align-items: center; gap: 12px; margin: 18px 0 12px; font-size: 12px; font-weight: 600;
+    color: var(--muted); }
+  .orpaste::before, .orpaste::after { content: ""; flex: 1; height: 1px; background: var(--line-2); }
+  /* Quiet until there is a link to save; ember the moment one is pasted. */
+  #addsheet #addgo { transition: transform var(--t-1) var(--e-out), opacity var(--t-2),
+    background-color var(--t-2) var(--e-soft), color var(--t-2) var(--e-soft), box-shadow var(--t-2) var(--e-soft); }
+  #addsheet.share:has(#addurl:placeholder-shown) #addgo { background: var(--sand); color: var(--ink); box-shadow: none; }
+  #addsheet.share .upblock { margin-top: 12px; padding-top: 0; border-top: 0; }
+  /* Pumpy's first tip lands under the row; "Or paste a link" already spaces below it. */
+  #addsheet.share .pumpy-tip { margin: 14px 0 0; }
+  .webnote { margin: 12px 2px 0; font-size: 12.5px; line-height: 1.5; color: var(--ink-2); }
+  #addsheet.attach .webnote { display: none; }
+  /* The empty library shows the same row, lighter: no card, tiles on their own. */
+  .empty .shareflow { margin: 18px auto 0; padding: 0; background: none; border: 0; box-shadow: none; }
+  .empty .sfmark { background: var(--card); box-shadow: var(--sh-sm); }
+  @media (max-width: 359px) { .sfopen .chip .ic { display: none; } }
+  @media (prefers-reduced-motion: reduce) {
+    #addsheet.open .sfmark::after, #addsheet.open .sfmark.app::after { animation: none; }
+    #addsheet #addgo { transition: none; }
   }
 
   /* ---------- swap or modify ----------
@@ -1780,7 +1977,17 @@ export const STYLE = String.raw`<style>
   .wtools { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
   .wclock { font-family: var(--display); font-size: 14px; font-weight: 700; color: var(--muted);
     font-variant-numeric: tabular-nums; }
-  .wdots { display: flex; gap: 5px; justify-content: center; flex-wrap: wrap; padding: 8px 20px 0; }
+  /* The dots are a band of their own between the bar and the screen: the screen
+     scrolls under the band's lower edge, never under the dots, and a hairline
+     comes up on that edge once something has gone beneath it (#workout.wedge,
+     app.ts) — a UIKit bar's scroll-edge shadow. On a Dynamic Island phone with a
+     rest running the screen does scroll, and it used to be clipped flush under
+     the dots, which read as the dots cutting the card off. */
+  .wdots { position: relative; flex-shrink: 0; display: flex; gap: 5px; justify-content: center;
+    flex-wrap: wrap; padding: 6px 20px 12px; }
+  .wdots::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1px;
+    background: var(--line); opacity: 0; transition: opacity var(--t-2) var(--e-soft); }
+  #workout.wedge .wdots::after { opacity: 1; }
   .wdot { width: 6px; height: 6px; border-radius: 999px; background: var(--line-2);
     transition: background-color var(--t-2), transform var(--t-2) var(--e-out); }
   .wdot.on { background: var(--ember); transform: scale(1.4); }
@@ -2332,12 +2539,26 @@ export const STYLE = String.raw`<style>
     box-shadow: 0 0 0 1px var(--line), var(--sh-sm);
     background: color-mix(in srgb, var(--paper) 82%, transparent);
     -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); }
-  .pumpybar button { width: 44px; height: 44px; font-size: 19px; border: none;
-    background: none; border-radius: 999px; color: var(--ink-2); display: grid;
-    place-items: center; transition: transform var(--t-1) var(--e-out),
+  .pumpybar button { min-width: 44px; height: 44px; padding: 0 12.5px; font-size: 19px; border: none;
+    background: none; border-radius: 999px; color: var(--ink-2); display: flex;
+    align-items: center; justify-content: center; transition: transform var(--t-1) var(--e-out),
       background-color var(--t-2) var(--e-soft); }
   .pumpybar button:active { transform: scale(.9); background: var(--sand); color: var(--ink); }
-  @media (prefers-reduced-motion: reduce) { .pumpybar button { transition: none; } }
+  /* On an empty chat the two buttons say what they are, beside their icons; the
+     first message folds the words away and leaves the icons, so a conversation
+     gives them no more room than before (#pumpybar.labelled, app.ts renderPumpy).
+     The capsule only gets wider or narrower: nothing under it moves. */
+  .pblabel { display: block; max-width: 0; margin-left: 0; overflow: hidden; white-space: nowrap;
+    font-size: 14px; font-weight: 650; letter-spacing: -.005em; color: var(--ink); opacity: 0;
+    transition: max-width var(--t-3) var(--e-soft), margin-left var(--t-3) var(--e-soft),
+      opacity var(--t-1) var(--e-in); }
+  .pumpybar.labelled .pblabel { max-width: 96px; margin-left: 7px; opacity: 1;
+    transition: max-width var(--t-3) var(--e-out), margin-left var(--t-3) var(--e-out),
+      opacity var(--t-2) var(--e-out) var(--t-1); }
+  @media (prefers-reduced-motion: reduce) {
+    .pumpybar button { transition: none; }
+    .pblabel, .pumpybar.labelled .pblabel { transition: opacity var(--t-1) var(--e-soft); }
+  }
   .pumpyhello { text-align: center; padding: 22px 12px 8px; color: var(--ink-2); font-size: 14px; line-height: 1.6; }
   .pumpyhello .pmark { width: 60px; height: 60px; margin: 0 auto 12px; box-shadow: var(--sh-md); }
   .pumpyhello .pmark svg { width: 34px; height: 34px; }
@@ -2715,6 +2936,7 @@ export const STYLE = String.raw`<style>
     /* The exercise still changes and says so, crossfading rather than sliding.
        The drag moves nothing at all: app.ts asks lessMotion() first. */
     .wmain.wmease { transition: none; }
+    .wdots::after { transition: none; }
     .wmain.wmin { animation-name: fadeonly; animation-duration: var(--t-2); }
     /* A marked movement still fills and still ticks; it just does it at once. */
     .cxmove { transition: none; }
@@ -2863,8 +3085,10 @@ export const STYLE = String.raw`<style>
   .wactions .exercise-options > summary { justify-content: center; background: var(--sand); border-radius: 12px; font-size: 13px; }
   /* Keep the exercise and logging controls anchored when supporting actions open.
      Centering the whole stack makes every item drift upward during expansion. */
+  /* 10px less than it was: the dots' band grew by that much, so at rest nothing
+     on the screen moves. */
   #workout:not(.summary) .wmain { justify-content: flex-start; min-height: 0;
-    padding-top: clamp(20px, calc(var(--vvh) * .04), 32px); }
+    padding-top: clamp(10px, calc(var(--vvh) * .04 - 10px), 22px); }
   #workout:not(.summary) .wmain > * { flex-shrink: 0; }
   .exercise-options .disclosure-body { padding: 4px 12px; margin: 4px 0 10px; background: var(--sand); border-radius: 12px; overflow: hidden; }
   .exercise-options .pickrow { width: 100%; min-height: 48px; padding: 12px 2px; border-radius: 0;
