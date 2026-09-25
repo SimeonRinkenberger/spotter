@@ -154,23 +154,23 @@ const PAGES = 'https://simeonrinkenberger.github.io/spotter/';
 }
 {
   const r = await visit(PAGES + '#access_token=a.b.c&expires_in=3600&refresh_token=r&token_type=bearer&type=recovery');
-  ok(r.note === 'Reset your password in the app' && r.bold.join() === 'Forgot your password?' && /six-digit code/.test(r.noteText),
+  ok(r.note === 'Reset your password in the\u00a0app' && r.bold.join() === 'Forgot your password?' && /six-digit code/.test(r.noteText),
     'landing: a password-reset link says to reset it in the app with a new six-digit code');
   ok(r.replaced.join() === '/spotter/', 'landing: and takes the tokens out of the address bar');
 }
 {
   const r = await visit(PAGES + '?code=6f1d3a2e-9b7c-4e8f-a1d2-3c4b5a697887');
-  ok(r.note === 'Carry on in the Spotter app' && r.code === null && r.replaced.join() === '/spotter/',
+  ok(r.note === 'Carry on in the Spotter\u00a0app' && r.code === null && r.replaced.join() === '/spotter/',
     'landing: a PKCE ?code= (a UUID) is an email link, never a creator code, and leaves the address');
 }
 {
   const r = await visit(PAGES + '#access_token=a&refresh_token=r&type=signup');
-  ok(r.note === 'Carry on in the Spotter app' && /confirming an email address, that is done/.test(r.noteText),
+  ok(r.note === 'Carry on in the Spotter\u00a0app' && /confirming an email address, that is done/.test(r.noteText),
     'landing: a confirmation link says it is done and to carry on in the app');
 }
 {
   const r = await visit(PAGES + '#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired');
-  ok(r.note === 'That link has expired' && r.replaced.join() === '/spotter/', 'landing: an expired link says so and asks for a new code');
+  ok(r.note === 'That link has\u00a0expired' && r.replaced.join() === '/spotter/', 'landing: an expired link says so and asks for a new code');
 }
 {
   const r = await visit(PAGES + '?code=maria');

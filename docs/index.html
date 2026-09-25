@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-HsuRbV31kAVsE5TUUspS+rKoS9GCR7vTxq93Dkrflls='; style-src 'sha256-S/NjOqVWKsUBlokeWDUVBYC97Avc3Cing8a9wgYVf0o='; img-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-qD6enDIZHg/uCv1NhNfRmvuVr9KvggboWZ5N31z64YQ='; style-src 'sha256-Q63CnfPjq/2UEOkkekpS61WotiNvlAC7SOwc7g4gvDs='; img-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="referrer" content="no-referrer">
 <meta name="color-scheme" content="light dark">
@@ -51,8 +51,9 @@
   main { width: 100%; max-width: 440px; margin: auto;
     padding: calc(44px + env(safe-area-inset-top)) 20px calc(28px + env(safe-area-inset-bottom)); }
   .hero { text-align: center; }
+  /* The icon is a dark tile; a hairline keeps its edge on the dark paper too. */
   .icon { display: block; width: 84px; height: 84px; margin: 0 auto 20px; border-radius: 20px;
-    box-shadow: var(--sh-sm); }
+    box-shadow: 0 0 0 1px var(--line), var(--sh-sm); }
   h1 { margin: 0 0 12px; text-wrap: balance; font-size: clamp(25px, 7.4vw, 31px); line-height: 1.12; letter-spacing: -.022em;
     font-weight: 800; }
   .lead { margin: 0 auto 20px; max-width: 34ch; color: var(--ink-2); font-size: 16px; }
@@ -148,13 +149,13 @@
     " and type the six-digit code from the new email."];
   var say = null;
   if (failed) {
-    say = ["That link has expired", ["Links in Spotter emails work once, for a short time. Open Spotter on " +
+    say = ["That link has\u00a0expired", ["Links in Spotter emails work once, for a short time. Open Spotter on " +
       "your phone and ask for a new code, then type the six digits instead of tapping the link."]];
   } else if (type === "recovery") {
-    say = ["Reset your password in the app", ["This link cannot finish in a browser any more, and it has " +
+    say = ["Reset your password in the\u00a0app", ["This link cannot finish in a browser any more, and it has " +
       "now been used. To choose a new password, " + CODE_STEP[0]].concat(CODE_STEP.slice(1))];
   } else if (link) {
-    say = ["Carry on in the Spotter app", ["Links in Spotter emails no longer open anything in a browser. " +
+    say = ["Carry on in the Spotter\u00a0app", ["Links in Spotter emails no longer open anything in a browser. " +
       "If you were confirming an email address, that is done. If you were resetting your password, " +
       CODE_STEP[0]].concat(CODE_STEP.slice(1))];
   }
