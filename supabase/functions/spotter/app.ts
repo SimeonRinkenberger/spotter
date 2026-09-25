@@ -12860,7 +12860,10 @@ export const APP = String.raw`
           u.done.map(function (l) { return l.workout_title || "Workout"; }).join(", ")), card.lastChild);
       }
       go = card.lastChild.appendChild(icon(el("button", "iconbtn"), "more"));
-      go.setAttribute("aria-label", "More for this plan");
+      // Move, Swap and Remove act on the row by its id, which a row just planned
+      // is still waiting for: offered once the server has given it one.
+      go.disabled = String(u.row.id).indexOf("tmp-") === 0;
+      go.setAttribute("aria-label", go.disabled ? "Saving the plan…" : "More for this plan");
       go.onclick = function () {
         openMore(w.title || "Workout", [["Move", openPlanSheet, { w: w, row: u.row, from: "upnext" }],
           ["Swap", planSwap, u.row], ["Remove from plan", planRemove, u.row, 1]]);
@@ -12904,7 +12907,8 @@ export const APP = String.raw`
 
   // Any other day. Past: the sessions finished on it (each opens its recap), and
   // what was planned and not done, which can be done today instead. Ahead: what
-  // is planned, to start now, move or remove. Either way a workout can be added.
+  // is planned, to start now. Either way a planned row can be moved (Move works
+  // on any planned row, a missed one included) or removed, and a workout added.
   function dayCard(d) {
     var card = el("div", "daycard tcard");
     card.appendChild(el("div", "dayname", dayDate(d.key).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })));
@@ -12913,18 +12917,19 @@ export const APP = String.raw`
         (l.duration_seconds ? " · " + Math.max(1, Math.round(l.duration_seconds / 60)) + " min" : ""), openRecap, l));
     });
     // A planned row is the picker's row (the workout, its word and length), with
-    // the plan's actions under it, the first of them a button.
+    // the plan's actions under it, the first of them a button. A row planWrite has
+    // drawn before the server gave it an id says so, and its plan actions wait
+    // for the id: there is nothing yet to take off a day or move by.
     d.missed.concat(d.planned).forEach(function (it) {
       var miss = d.missed.indexOf(it) >= 0, w = it.w, head = card.appendChild(tbtn("pickrow", null, openDetail, w));
-      var t = el("span", "pt"), row = card.appendChild(el("div", "piacts"));
+      var t = el("span", "pt"), row = card.appendChild(el("div", "piacts")), wait = String(it.row.id).indexOf("tmp-") === 0;
       if (cardArt(w)) { var img = head.appendChild(el("img")); img.alt = ""; img.src = cardArt(w); }
       t.appendChild(el("b", null, w.title || "Workout"));
-      t.appendChild(el("span", null, [miss ? "Missed" : "Planned", fmtDur(w.duration_minutes)].filter(Boolean).join(" · ")));
+      t.appendChild(el("span", null, [wait ? "Saving…" : miss ? "Missed" : "Planned", fmtDur(w.duration_minutes)].filter(Boolean).join(" · ")));
       head.appendChild(t);
-      (miss ? [["btn ghost", "Do it today", doToday, it]] : [["btn ghost", "Start now", startWorkout, w],
-        ["linkbtn", "Move", openPlanSheet, { w: w, row: it.row, from: "day" }]])
-        .concat([["linkbtn", "Remove", planRemove, it.row]])
-        .forEach(function (a) { row.appendChild(tbtn(a[0], a[1], a[2], a[3])); });
+      [miss ? ["btn ghost", "Do it today", doToday, it] : ["btn ghost", "Start now", startWorkout, w],
+        ["linkbtn", "Move", openPlanSheet, { w: w, row: it.row, from: "day" }], ["linkbtn", "Remove", planRemove, it.row]]
+        .forEach(function (a) { row.appendChild(tbtn(a[0], a[1], a[2], a[3])).disabled = wait && a[2] !== startWorkout; });
     });
     if (d.empty) card.appendChild(el("div", "tdose", d.when === "past" ? "Nothing logged or planned." : "Nothing planned yet."));
     card.appendChild(tbtn("planadd", "+ Plan a workout", planPick, d.key));
@@ -13062,59 +13067,41 @@ export const APP = String.raw`
     if (state.plan) state.plan = state.plan.filter(function (p) { return !planGone[p.id]; });
   }
 
-  // Off the day on the tap. With a message it is a Remove, on the delayed commit
-  // this file uses everywhere: the row leaves the screen now and the database
-  // when the toast offering Undo does, so nothing can half-fail; undone runs if
-  // the Undo is taken. Without one it is the second half of a move, gone at once.
-  // A row the server has not confirmed yet has no id to delete by; it goes on
-  // its own when loadPlan lands.
-  function planDrop(p, msg, undone) {
-    if (String(p.id).indexOf("tmp-") === 0) return Promise.resolve();
+  // Off the day on the tap, on the delayed commit this file uses everywhere: the
+  // row leaves the screen now and the database when the toast offering Undo
+  // does, so nothing can half-fail. (A move is planWrite's, which deletes only
+  // once the new row is in.) A row the server has not confirmed yet has no id to
+  // delete by, so nothing offers this on one (dayCard, upCard) until it has.
+  function planDrop(p, msg) {
     planRev++;
-    var epoch = accountEpoch, uid = state.user.id, range = JSON.stringify(fetchRange()), kept = state.plan;
     state.plan = (state.plan || []).filter(function (q) { return q.id !== p.id; });
-    if (msg) {
-      planGone[p.id] = 1;
-      repaintPlan();
-      offerUndo(msg, function () {
-        sb.from("plan").delete().eq("id", p.id).then(function (r) {
-          delete planGone[p.id];
-          if (r && r.error) toast("That did not come off the day — it is still planned.");
-          loadPlan(true);
-        });
-      }, function () {
+    planGone[p.id] = 1;
+    repaintPlan();
+    offerUndo(msg, function () {
+      sb.from("plan").delete().eq("id", p.id).then(function (r) {
         delete planGone[p.id];
-        state.plan = state.plan.concat([p]);
-        repaintPlan();
-        if (undone) undone();
+        if (r && r.error) toast("That did not come off the day — it is still planned.");
+        loadPlan(true);
       });
-      return Promise.resolve();
-    }
-    renderTrain();
-    return sb.from("plan").delete().eq("id", p.id).then(function (r) {
-      if (!accountNow(epoch, uid)) return;
-      planRev++;
-      if (range !== JSON.stringify(fetchRange())) { loadPlan(true); return; }
-      if (r && r.error) {
-        state.plan = kept;
-        renderTrain();
-        toast("That did not come off the day — it is still planned.");
-        return;
-      }
-      loadPlan(true);
+    }, function () {
+      delete planGone[p.id];
+      state.plan = state.plan.concat([p]);
+      repaintPlan();
     });
   }
 
   function planRemove(p) { planDrop(p, "Removed from plan"); }
 
-  // Missed, and done today instead: the row moves to today. The new one is
-  // written now, the old one leaves with the toast, and one Undo takes back both.
+  // Missed, and done today instead: the row moves to today through planWrite,
+  // the Plan sheet's own write — today's row goes in first and the missed one
+  // comes off only once it has, so a failed write leaves the workout where it
+  // was, and one Undo takes back both. Already planned today, there is nothing
+  // to move: the missed row only comes off, with its Undo, rather than putting
+  // the workout on today twice.
   function doToday(it) {
-    var add = planAdd(ymd(new Date()), it.w.id);
-    add.then(function () { loadPlan(true); });
-    planDrop(it.row, "Moved to today", function () {
-      add.then(function (r) { if (r.data && r.data[0]) planDrop(r.data[0]); });
-    });
+    var key = ymd(new Date());
+    if (planned(it.w.id, key)) planDrop(it.row, "Already planned today — removed from " + pdWord(it.row.day));
+    else planWrite(it.w, [key], it.row, "Moved to today");
   }
 
   // The picker, for a day ("+ Plan a workout"), or in place of a planned row (Swap).
@@ -13357,9 +13344,8 @@ export const APP = String.raw`
   var pickCtx = null;
 
   function openPicker(day, label, opts) {
-    var rep = opts && opts.replace, when = pdWord(day);
-    // A row still waiting for its id cannot be taken off by it; that pick is an add.
-    pickCtx = { day: day, rep: rep && String(rep.id).indexOf("tmp-") !== 0 ? rep : null };
+    var when = pdWord(day);
+    pickCtx = { day: day, rep: opts && opts.replace || null };
     // "today" and "tomorrow" say it best; any other day by the caller's own name for it.
     $("picktitle").textContent = pickCtx.rep ? "Swap" : "Plan for " + (/^to/.test(when) ? when : label || dayLabel(dayDate(day)));
     $("pickq").value = "";
@@ -13443,7 +13429,7 @@ export const APP = String.raw`
   function openPlanSheet(o) {
     if (!o || !o.w || !state.user) return;
     var w = o.w, box = $("plandaysbody"), keys = planDays(new Date()), mine = {};
-    var row = o.row && String(o.row.id).indexOf("tmp-") !== 0 ? o.row : null;
+    var row = o.row || null;
     (state.plan || []).forEach(function (p) { if (p.workout_id === w.id) mine[p.day] = 1; });
     planCtx = { w: w, row: row, sel: {}, epoch: accountEpoch, uid: state.user.id };
     $("plandaystitle").textContent = row ? "Move" : "Plan";

@@ -1780,6 +1780,12 @@ export const STYLE = String.raw`<style>
   .tbtns .tmove, .piacts .btn { flex: 0 0 auto; width: auto; padding: 12px 16px; font-size: 14px; }
   .tbtns .iconbtn { width: 50px; height: auto; border-radius: 14px; }
   .piacts { display: flex; align-items: center; gap: 20px; margin-top: -4px; }
+  /* Level with the button beside them: .tcard .linkbtn lifts a card's own links
+     to the top of their line, which beside a 44px button reads as a slip. */
+  .piacts .linkbtn { align-self: center; }
+  /* A row planned a moment ago waits for the server's id, and its plan actions
+     with it (app.ts, dayCard and Up next's ⋯). */
+  .piacts .linkbtn[disabled], .tbtns .iconbtn[disabled] { opacity: .42; }
   .dayses { width: 100%; min-height: 44px; background: none; border: 0; border-top: 1px solid var(--line);
     text-align: left; color: var(--ink); }
   .dayses .ic { color: var(--muted); flex: 0 0 auto; }
