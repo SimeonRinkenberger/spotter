@@ -1386,7 +1386,6 @@ export const APP = String.raw`
     drawn.train = true;
     quietly(prepareTrain());
     var profileReady = loadProfile();
-    maybeInstallHint();
     watchWorkouts();
     // A shared link is saved only once the library is in hand, so the card it
     // creates lands in a rendered grid rather than into an empty one.
@@ -1825,7 +1824,7 @@ export const APP = String.raw`
 
   function accountFree(t) {
     if (!t || !t.closest) return false;
-    if (t.closest("[data-close], [data-offline], #dclose, #grid, #chips, #searchwrap, #hint, #filtersheet, #sortsheet, #tab0, #tab1, #pausedbar, #toast, " +
+    if (t.closest("[data-close], [data-offline], #dclose, #grid, #chips, #searchwrap, #filtersheet, #sortsheet, #tab0, #tab1, #pausedbar, #toast, " +
       "#dstart, #dinner .dcover, #dinner .dwatch, #watchsheet, #workout")) return true;
     // Workout Mode's own sheets: a set, the rest, leaving, adding a movement.
     return !!(wo && !wo.finished && t.closest(".sheet"));
@@ -2083,8 +2082,8 @@ export const APP = String.raw`
   function isColFilter(f) { return typeof f === "string" && f.indexOf("col:") === 0; }
   // The third way a library divides itself, after the category the model guessed
   // and the collection the user made — and the only one nobody had to work for. It
-  // takes the same "prefix:value" shape as a collection filter so visible(),
-  // renderChips() and chipSig all learn it at once, and is keyed lower-case so one
+  // takes the same "prefix:value" shape as a collection filter so visible() and
+  // renderChips() both learn it at once, and is keyed lower-case so one
   // person cannot end up with two chips.
   function isByFilter(f) { return typeof f === "string" && f.indexOf("by:") === 0; }
   function authorKey(a) { return a ? String(a).toLowerCase().trim() : ""; }
@@ -2148,13 +2147,14 @@ export const APP = String.raw`
   }
 
   function visible() {
-    var q = state.q.toLowerCase().trim();
-    return state.workouts.filter(function (w) {
+    var q = state.q.toLowerCase().trim(), ready = state.filter === "ready";
+    // Ready to try is readyToTry()'s own list, so it and Train's shelf never disagree.
+    return (ready ? readyToTry() : state.workouts).filter(function (w) {
       if (state.filter === "Favorites") { if (!w.favorite) return false; }
       else if (isColFilter(state.filter)) { if (!inCol(state.filter.slice(4), w.id)) return false; }
       else if (isByFilter(state.filter)) { if (authorKey(w.author) !== state.filter.slice(3)) return false; }
       else if (isMgFilter(state.filter)) { if (!hasMg(w, state.filter.slice(3))) return false; }
-      else if (state.filter !== "All" && w.category !== state.filter) return false;
+      else if (state.filter !== "All" && !ready && w.category !== state.filter) return false;
       if (!q) return true;
       return searchHay(w).indexOf(q) >= 0;
     });
@@ -2177,22 +2177,57 @@ export const APP = String.raw`
     return out;
   }
 
-  var chipSig = null;
+  // One status per card, in the rule's own words (cardStatus, statusLabel). None
+  // on a card still being read or one that could not be, which keep their own
+  // state; none until the plan and the logs are both in, or the rule would call a
+  // trained workout "New". (A reread after a finished session happens under the
+  // summary, and lands before anybody is looking at the grid again.)
+  // The words are kept per status and day: the grid redraws on every keystroke of
+  // a search, and toLocaleDateString was four-fifths of what a status cost.
+  var badgeWords = {};
+
+  function cardBadge(w) {
+    if (!state.plan || !state.logs || isPending(w) || isFailed(w)) return null;
+    var st = cardStatus(w), now = new Date(), k = ymd(now) + st.kind + st.day + st.last + st.n;
+    return { kind: st.kind, label: badgeWords[k] || (badgeWords[k] = statusLabel(st, now)) };
+  }
+
+  // The plan or the logs just changed under the library: the statuses, the
+  // Ready to try count and its narrow line follow. renderGrid rebuilds only the
+  // cards whose status actually moved, so an unchanged answer costs nothing.
+  function libStatusesChanged() {
+    if (!state.libReady) return;
+    renderChips(); renderColBar(); renderGrid();
+  }
 
   function renderChips() {
-    var wrap = $("chips");
-    if (isColFilter(state.filter) && !colById(state.filter.slice(4))) state.filter = "All";
+    var wrap = $("chips"), f = state.filter, n = state.logs ? readyToTry().length : 0;
+    // Gone from under it: the collection deleted, or the shelf's last card trained.
+    if (isColFilter(f) && !colById(f.slice(4)) || f === "ready" && state.logs && !n) f = state.filter = "All";
+    var ready = f === "ready";
     wrap.innerHTML = "";
     wrap.classList.toggle("hide", !state.workouts.length);
     function control(label, fn, active) {
       var b = el("button", "chip" + (active ? " active" : ""), label);
       b.onclick = fn; wrap.appendChild(b);
+      return b;
     }
-    var filterLabel = state.filter !== "All" && !isColFilter(state.filter) && !isByFilter(state.filter) && !isMgFilter(state.filter) ? "Filter: " + state.filter : "Filters";
-    control(filterLabel, function () { openLibraryFilters(false); }, state.filter !== "All" && !isColFilter(state.filter));
-    control("Collections", function () { openLibraryFilters(true); }, isColFilter(state.filter));
-    control("Sort: " + SORTLBL[sortMode], function () { openSort(); });
-    if (state.filter !== "All") control("Clear filter", function () { state.filter = "All"; render(); });
+    var named = f !== "All" && !ready && !isColFilter(f) && !isByFilter(f) && !isMgFilter(f);
+    control(named ? "Filter: " + f : "Filters", function () { openLibraryFilters(false); },
+      f !== "All" && !ready && !isColFilter(f));
+    // A toggle rather than a door: one tap narrows the grid to what has never been
+    // trained, the same tap brings everything back. Not offered until the logs
+    // say what has been trained, and not at all when the answer is nothing.
+    if (n || ready) {
+      var r = control("Ready to try", function () { state.filter = ready ? "All" : "ready"; render(); viewIn($("grid")); }, ready);
+      if (n) r.appendChild(el("span", "n", String(n)));
+      r.setAttribute("aria-pressed", String(ready));
+    }
+    control("Collections", function () { openLibraryFilters(true); }, isColFilter(f));
+    // Newest is the order a library is in; only a grouping is worth naming, and
+    // four chips have to share a row that "Sort: Newest" alone pushed onto two.
+    control(sortMode === "new" ? "Sort" : "Sort: " + SORTLBL[sortMode], function () { openSort(); });
+    if (f !== "All" && !ready) control("Clear filter", function () { state.filter = "All"; render(); });
   }
 
   function openLibraryFilters(collections) {
@@ -2228,10 +2263,12 @@ export const APP = String.raw`
     var c = isColFilter(state.filter) ? colById(state.filter.slice(4)) : null;
     // A creator or a body part narrows the grid as a collection does, and with the
     // creator chips gone this line is the only thing that says which narrow is on —
-    // and the only way back out.
-    if (!c && (isByFilter(state.filter) || isMgFilter(state.filter))) {
-      var isBy = isByFilter(state.filter), k = state.filter.slice(3), n = 0, name = null;
-      state.workouts.forEach(function (w) {
+    // and the only way back out. Ready to try says itself the same way.
+    var rd = state.filter === "ready";
+    if (!c && (rd || isByFilter(state.filter) || isMgFilter(state.filter))) {
+      var isBy = isByFilter(state.filter), k = state.filter.slice(3), n = rd ? readyToTry().length : 0;
+      var name = rd ? "Ready to try" : null;
+      if (!rd) state.workouts.forEach(function (w) {
         if (isBy ? authorKey(w.author) !== k : !hasMg(w, k)) return;
         n++;
         if (!name && isBy && k) name = "@" + w.author;
@@ -2462,16 +2499,18 @@ export const APP = String.raw`
       else if (pendingMotion) pendingMotion.unobserve(previous[key].node);
     });
     function card(w, i, groupKey) {
-      var key = (groupKey || "flat") + ":" + w.id;
+      var key = (groupKey || "flat") + ":" + w.id, b = cardBadge(w);
+      // The status is in the signature, so a plan or a finished session repaints
+      // just the cards it changed.
       var sig = JSON.stringify([w.title, w.ingest_status, w.media_stage, w.platform, w.thumb_url, w.pumpy_cover,
-        w.favorite, w.duration_minutes, w.category, w.difficulty, cardMeta(w)]);
+        w.favorite, w.duration_minutes, w.category, w.difficulty, cardMeta(w), b && b.label]);
       var entry = previous[key];
       // Pressed: kept as it is, with its old signature so the catch-up redraws it.
       if (entry && entry.sig !== sig && entry.node === pressedCard) { gridBehind = true; sig = entry.sig; }
       if (!entry || entry.sig !== sig) {
         var changed = !!entry;
         if (entry && pendingMotion) pendingMotion.unobserve(entry.node);
-        entry = { id: w.id, sig: sig, node: cardNode(w, i) };
+        entry = { id: w.id, sig: sig, node: cardNode(w, i, b) };
         if (changed) entry.node.classList.add("fresh");
       }
       entry.node.onclick = function () { openDetail(w); };
@@ -2623,8 +2662,9 @@ export const APP = String.raw`
   // One card, wherever it is going: the flat grid, or a section of it. i is its
   // place on the page, so the first four are still the ones told to hurry. Listed
   // under three muscles it flies in once — cardIn is how a NEW card arrives, and
-  // one workout arriving three times is a flock, not news.
-  function cardNode(w, i) {
+  // one workout arriving three times is a flock, not news. b is its status
+  // (cardBadge), or nothing while the plan and the logs are still unknown.
+  function cardNode(w, i, b) {
     var pending = isPending(w), failed = isFailed(w);
     var card = el("button", "carditem" + (pending ? " pending" : "") + (failed ? " failed" : ""));
     if (pending && pendingMotion) pendingMotion.observe(card);
@@ -2687,6 +2727,15 @@ export const APP = String.raw`
     }
     var d = fmtDur(w.duration_minutes);
     if (d) tw.appendChild(el("div", "durbadge", d));
+    // One status, on the picture's bottom-left corner, where it sits on every card
+    // and adds no height. A word as well as a mark, never a colour alone; the words
+    // are the rule's, and a screen reader reads them with the rest of the card.
+    if (b) {
+      var sp = el("div", "stpill " + b.kind);
+      if (b.kind !== "new") sp.appendChild(ic(b.kind === "done" ? "check" : "calendar"));
+      sp.appendChild(document.createTextNode(b.label));
+      tw.appendChild(sp);
+    }
     card.appendChild(tw);
 
     var body = el("div", "cardbody");
@@ -2714,7 +2763,6 @@ export const APP = String.raw`
     renderLibCount();
     var n = state.workouts.length;
     $("searchwrap").classList.toggle("hide", !n);
-    maybeInstallHint();
     $("countlib").textContent = n ? n + " saved" : "Nothing saved yet";
   }
 
@@ -7192,7 +7240,7 @@ export const APP = String.raw`
 
   // The draft on disk, or null. A day is the shelf life: a session paused
   // yesterday morning is one nobody is finishing, and it goes without a word
-  // rather than sitting at the top of the Library until somebody ends it.
+  // rather than waiting above the tab bar until somebody ends it.
   var DRAFT_TTL = 24 * 3600 * 1000;
 
   function readDraft() {
@@ -10170,8 +10218,8 @@ export const APP = String.raw`
   // nothing. So here. The X asks which of the two, a back gesture takes the safe
   // one, and a draft the process was killed on comes back paused. A paused session
   // is a draft on disk and nothing in memory — wo is null — so the rest of the
-  // engine keeps its one rule, "wo means a session is running", and the Library
-  // leads with a card that says what is waiting.
+  // engine keeps its one rule, "wo means a session is running", and a bar above
+  // the tab bar says what is waiting.
 
   function loggedSets() {
     var n = 0;
@@ -10224,16 +10272,6 @@ export const APP = String.raw`
     sessionChanged();
   }
 
-  // Minutes for the first hour, hours for the first day: what "how long ago" means
-  // to somebody deciding whether to go back to a workout.
-  function pausedAgo(iso) {
-    var m = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
-    if (m < 1) return "just now";
-    if (m < 60) return m + " min ago";
-    var h = Math.round(m / 60);
-    return h + (h === 1 ? " hour ago" : " hours ago");
-  }
-
   // ---------- the paused bar (seam) ----------
   //
   // A session's state changed — paused, resumed, finished, or found on disk at
@@ -10241,7 +10279,7 @@ export const APP = String.raw`
   // Up next on Train. One call for both, so neither can be left saying the old
   // thing. pausedBar.sync() is the bar's own (sb-library); drawDay is Train's
   // day card (sb-train).
-  var pausedBar = { sync: function () { renderResume(); } };
+  var pausedBar = { sync: syncPausedBar };
 
   function sessionChanged() {
     pausedBar.sync();
@@ -10249,35 +10287,81 @@ export const APP = String.raw`
     if (current) paintDock(current);
   }
 
-  var resumeBox = el("div", "resumewrap hide"), resumeShown = false;
-  resumeBox.id = "resume";
-  $("chips").parentNode.insertBefore(resumeBox, $("chips"));
+  // A session paused and walked away from waits in one bar above the tab bar, on
+  // every tab: the shelf iOS 26 keeps over a tab bar for its one accessory, and
+  // the shape Apple Music's mini player and Hevy's minimised workout both take —
+  // what is waiting, how far it got, and the way back in, wherever the reader
+  // has wandered off to. The body and Resume both go back in. Finish saves what
+  // was logged, as the leave sheet's does, and takes two taps: the bar sits a
+  // thumb above the tabs, and a thumb on its way to one must not end a session.
+  // Never over Workout Mode, where the session is not waiting for anybody. Its
+  // height joins the tab bar's in every page's bottom inset (--pbar), so it
+  // covers nothing that cannot be scrolled clear of it, Pumpy's composer included.
+  var pbSig = "", pbOut = 0, pbArm = 0;
 
-  function renderResume() {
-    var d = pausedDraft(), w = d && srcById(d.workoutId);
-    resumeBox.innerHTML = "";
-    if (!d || !w || wo) { resumeBox.classList.add("hide"); resumeShown = false; return; }
-    var card = el("div", "daycard"), head = el("div", "dayhead"), n = draftSets(d);
-    var secs = Math.max(0, Math.floor((new Date(d.pausedAt || d.savedAt).getTime() - new Date(d.startedAt).getTime()) / 1000));
-    head.appendChild(el("div", "dayname", "Paused"));
-    head.appendChild(el("div", "tclock", clock(secs)));
-    card.appendChild(head);
-    var t = el("button", "ttitle", d.title || w.title || "Workout");
-    t.onclick = function () { openDetail(w); };
-    card.appendChild(t);
-    card.appendChild(el("div", "tdose", (n ? n + (n === 1 ? " set logged" : " sets logged") : "No sets logged yet")
-      + " · paused " + pausedAgo(d.pausedAt || d.savedAt)));
-    var btns = el("div", "tbtns"), go = icon(el("button", "btn tstart"), "play", "Resume");
-    go.onclick = resumeWorkout;
-    // End from here saves what was logged, exactly as End inside the session
-    // does: the session comes back for the moment it takes to be written down.
-    var end = el("button", "btn ghost tend", "End");
-    end.onclick = function () { resumeWorkout(); finishWorkout(); };
-    btns.appendChild(go); btns.appendChild(end);
-    card.appendChild(btns);
-    resumeBox.appendChild(card);
-    resumeBox.classList.remove("hide");
-    if (!resumeShown) { resumeShown = true; viewIn(resumeBox); }
+  function syncPausedBar() {
+    var bar = $("pausedbar"), d = pausedDraft(), w = d && srcById(d.workoutId);
+    // Its card deleted while it waited: nobody's session, and nothing to go back to.
+    if (d && !w && state.libReady && state.workouts.length) clearDraft();
+    var show = !!w && !wo && !$("workout").classList.contains("open");
+    if (show) drawPausedBar(bar, d, w);
+    if (show === bar.classList.contains("on")) return;
+    clearTimeout(pbOut);
+    // Drawn where it rests, below, before it rises; gone from the layout only once
+    // it has sunk.
+    if (show) { bar.classList.remove("hide"); void bar.offsetWidth; }
+    else pbOut = setTimeout(function () { bar.classList.add("hide"); pbSig = ""; }, 240);
+    bar.classList.toggle("on", show);
+  }
+
+  // What the bar takes from the foot of every page: measured, because it grows
+  // with the text size, and nothing once it has sunk out of the layout.
+  if (window.ResizeObserver) new ResizeObserver(function () {
+    document.documentElement.style.setProperty("--pbar", $("pausedbar").offsetHeight + "px");
+  }).observe($("pausedbar"));
+
+  function drawPausedBar(bar, d, w) {
+    var n = draftSets(d), title = d.title || w.title || "Workout";
+    var secs = Math.max(0, Math.floor((new Date(d.pausedAt || d.savedAt) - new Date(d.startedAt)) / 1000));
+    var line = "Paused · " + n + (n === 1 ? " set · " : " sets · ") + clock(secs);
+    if (pbSig === title + line && bar.firstChild) return;
+    pbSig = title + line;
+    bar.innerHTML = "";
+    var box = el("div", "pbin"), body = el("button", "pbbody"), tx = el("span", "pbtx");
+    var sub = el("span", null, line), live = el("span", "sr-only");
+    // Finish is the leave sheet's flag, lit while it waits for its second tap: lit
+    // by the bar's class, not its own "on", which wireIconMotion would animate;
+    // with that icon animating, the iPhone Air drew the rest of the change late.
+    var fin = icon(el("button", "iconbtn"), "flag"), go = el("button", "btn", "Resume");
+    body.appendChild(icon(el("span", "addbtn ghost"), "pause"));
+    tx.appendChild(el("b", null, title));
+    tx.appendChild(sub);
+    body.appendChild(tx);
+    // In words: "8:00" read aloud is a time of day.
+    body.setAttribute("aria-label", "Resume " + title + ", paused, " + n + (n === 1 ? " set, " : " sets, ") +
+      Math.max(1, Math.round(secs / 60)) + " min");
+    fin.setAttribute("aria-label", "Finish workout");
+    live.setAttribute("aria-live", "polite");
+    function disarm() { clearTimeout(pbArm); box.seen = 0; box.classList.remove("armed"); sub.textContent = line; }
+    fin.onclick = function () {
+      if (box.seen && Date.now() - box.seen > 300) { disarm(); resumeWorkout(); finishWorkout(); return; }
+      clearTimeout(pbArm);
+      box.classList.add("armed");
+      sub.textContent = live.textContent = n ? "Tap again to save " + n + (n === 1 ? " set" : " sets") : "Tap again to close it";
+      haptic("select");
+      // Only a question that reached the screen, and stayed longer than a double
+      // tap takes, can be answered. The iPhone Air once armed this without drawing
+      // it, and the next tap ended a session nobody had seen asked about. Two
+      // frames drawn means it showed (a web view drawing nothing runs none); a
+      // tap sooner than that, or than 300ms after, only asks again.
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () { box.seen = box.classList.contains("armed") && (box.seen || Date.now()); });
+      });
+      pbArm = setTimeout(disarm, 4000);
+    };
+    body.onclick = go.onclick = function () { resumeWorkout(); };
+    box.appendChild(body); box.appendChild(fin); box.appendChild(go); box.appendChild(live);
+    bar.appendChild(box);
   }
 
   // ---------- the session summary ----------
@@ -11931,6 +12015,7 @@ export const APP = String.raw`
         state.plan = r0.data || [];
         publishSummary();
         writeTrainCache();
+        libStatusesChanged();
         var shape = planShape();
         if (silent && shape === planSig) return;
         planSig = shape; renderTrain();
@@ -11944,6 +12029,7 @@ export const APP = String.raw`
   function repaintPlan() {
     planRev++;
     publishSummary();
+    libStatusesChanged();
     planSig = planShape();
     renderTrain();
   }
@@ -13424,6 +13510,7 @@ export const APP = String.raw`
           state.logsLite = false;
           publishSummary();
           writeTrainCache();
+          libStatusesChanged();
           return state.logs;
         }).catch(function () {
           if (accountNow(epoch, uid)) toast("Could not load your history. Open Train to try again.");
@@ -20393,38 +20480,14 @@ export const APP = String.raw`
     }, function () { toast("Could not reach Spotter — check your connection."); });
   }, { passive: true });
 
-  // ---------- install hint ----------
+  // ---------- installed ----------
 
-  // Two reasons to install, one per platform. On iPhone it buys a home-screen app;
-  // on Android it also buys a place in the share sheet, which is the whole reason
-  // an Android user would bother, so the hint says that instead.
+  // An app, not a browser tab: the native shell, or a page added to a home screen.
+  // (The "install Spotter" hint that asked for the second went with the web app;
+  // the page only ships inside the shell now, where it could never show.)
   function standalone() {
     return !!(native || window.navigator.standalone ||
       (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches));
-  }
-
-  function maybeInstallHint() {
-    $("hint").classList.remove("show");
-    if (!state.user || !state.workouts.some(function (w) { return !isPending(w) && !isFailed(w); }) || standalone()) return;
-    var dismissed = false;
-    try { dismissed = localStorage.getItem("spotter_hint_done") === "1"; } catch (e) { /* ignore */ }
-    if (dismissed) return;
-    var isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
-    var isAndroid = /android/i.test(navigator.userAgent);
-    if (!isIOS && !isAndroid) return;
-    // Why, then how. The old line was only the how — two steps for no given reason.
-    $("hinttext").innerHTML = isIOS
-      ? "Make your next visit easier. Install Spotter for a full-screen app. " +
-        "Tap <b>Share</b>, then <b>Add to Home Screen</b>."
-      : "Make your next save easier. Install Spotter to add it to your share sheet — then a video goes " +
-        "straight to it with <b>Share</b>.";
-    var help = el("button", "setlink", "Phone save options");
-    help.onclick = function () {
-      openSettings(); animateDisclosure($("phonesave"), true);
-      $("phonesave").scrollIntoView({ block: "start" });
-    };
-    $("hinttext").appendChild(help);
-    $("hint").classList.add("show");
   }
 
   // ---------- wiring ----------
@@ -20821,11 +20884,6 @@ export const APP = String.raw`
     saveDraft();
     closeSheet("setsheet");
     renderWorkout();
-  };
-
-  $("hintx").onclick = function () {
-    $("hint").classList.remove("show");
-    try { localStorage.setItem("spotter_hint_done", "1"); } catch (e) { /* ignore */ }
   };
 
   // ---------- arriving from outside the page ----------

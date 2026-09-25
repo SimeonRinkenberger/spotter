@@ -829,7 +829,7 @@ console.log('a card that re-renders under the finger');
       state: { user: { id: 'u' }, workouts: [] }, accountEpoch: 1, gridCards: {}, newThisPass: 0,
       pendingMotion: null, sortMode: 'new', visible: () => sandbox.state.workouts,
       cardNode: (w) => { const n = mk('button', 'carditem'); n.setAttribute('data-id', w.id); n.drawn = w.title; n.add(mk('div', 'thumbwrap')); return n; },
-      cardMeta: () => '', openDetail: (w) => opened.push(w.title),
+      cardMeta: () => '', cardBadge: () => null, openDetail: (w) => opened.push(w.title),
       isByFilter: () => false, isMgFilter: () => false
     };
     vm.createContext(sandbox);
