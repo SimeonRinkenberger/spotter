@@ -52,6 +52,8 @@ const steps = [
   ['Pack eval offline', 'deno', ['run', '--allow-read', 'tools/pack-eval/offline.ts']],
   ['Pack eval scoring', 'deno', ['run', '--allow-read', 'tools/pack-eval/score-test.ts']],
   ['Content-Security-Policy and SRI cover the page', 'node', ['tools/csp-check.mjs']],
+  ['The web app stays retired: no client or app in docs/, the landing script, no app from the function', 'node', ['tools/retire-web-check.mjs']],
+  ['sw.js is the kill switch', 'node', ['tools/sw-harness.mjs']],
   ['Tab pager: every page turns, rows/chips/week bar keep their drags', 'node', ['tools/pager-harness.mjs']],
 ];
 
