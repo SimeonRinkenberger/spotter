@@ -17188,15 +17188,22 @@ export const APP = String.raw`
 
   // Opening on a card that turned ready while the app was away: once, for the
   // newest, once the library and the logs are in — and not when the open came
-  // with an errand of its own (a notification, a widget, a link).
+  // with an errand of its own (a notification, a widget, a link). One greeting
+  // per open: the rest of what arrived meanwhile is on the shelf marked New, and
+  // three shares must not become three opens that each start with a sheet.
   function readyOnOpen() {
     var epoch = accountEpoch, uid = state.user && state.user.id;
     loadLogs().then(function () {
       idle(function () {
-        var seen = {};
+        var seen = {}, now = new Date(), busy = !!(wo && !wo.finished), w;
         if (!accountNow(epoch, uid) || !fullLogs() || Date.now() - linkAt < 5000) return;
         seenReady().forEach(function (id) { seen[id] = 1; });
-        offerReady(readyPick(state.workouts, state.logs, pausedDraft(), seen, new Date(), !!(wo && !wo.finished)));
+        w = readyPick(state.workouts, state.logs, pausedDraft(), seen, now, busy);
+        if (!w) return;
+        state.workouts.forEach(function (x) {
+          if (x !== w && readyPick([x], state.logs, pausedDraft(), seen, now, busy)) readyMark(x.id);
+        });
+        offerReady(w);
       }, 600);
     });
   }
@@ -18541,7 +18548,8 @@ export const APP = String.raw`
         // the toast is only for the case where nothing was refused and nothing
         // worked either — no VAPID keys on the deployment, most likely.
         paintRemind();
-        if (!denied()) toast("Reminders are not switched on for this app yet.");
+        // Worded for all three switches: the ready one is not a reminder.
+        if (!denied()) toast("Notifications are not switched on for this app yet.");
         return;
       }
       remind.sub = sub;
@@ -18553,7 +18561,7 @@ export const APP = String.raw`
     }, function () {
       remind.busy = false;
       paintRemind();
-      toast("Could not switch that reminder on \u2014 try again in a moment.");
+      toast("Could not switch that on \u2014 try again in a moment.");
     });
   }
 

@@ -332,9 +332,26 @@ const tick = () => new Promise((r) => setTimeout(r, 0));
   await tick(); await tick();
   assert.deepEqual(q.calls.shown, [], 'not when a notification, a widget or a link opened the app');
 }
+// A burst greets once: the next open does not start with the second card of it.
+{
+  const store = {};
+  const burst = () => [
+    { id: 'b3', title: 'Third', ingest_status: 'ready', created_at: iso(30_000) },
+    { id: 'b2', title: 'Second', ingest_status: 'ready', created_at: iso(60_000) },
+    { id: 'b1', title: 'First', ingest_status: 'ready', created_at: iso(90_000) },
+  ];
+  const a = page({ store, workouts: burst() });
+  run(a, 'readyOnOpen()');
+  await tick(); await tick();
+  assert.deepEqual(a.calls.shown, ['b3'], 'the newest of the burst');
+  const b = page({ store, workouts: burst() });
+  run(b, 'readyOnOpen()');
+  await tick(); await tick();
+  assert.deepEqual(b.calls.shown, [], 'one greeting per burst, not one per open');
+}
 
 console.log('PASS the ready card: CARD_READY registered at launch with Start Now and Plan It routed to start/ and ' +
   'ready/, the foreground hand-off (?auto=1), the payload and its fixtures, the sheet beside the others; ' +
   'once per card (kept, bounded), never over a set, waiting behind a sheet or a keyboard, not over its own card, ' +
   'a re-read keeps its line, a tap shows and moves what is in the way, an unseen card is read first, ' +
-  'Start Now closes the sheet, and the open greets once unless it came with an errand.');
+  'Start Now closes the sheet, and the open greets once (once per burst) unless it came with an errand.');
