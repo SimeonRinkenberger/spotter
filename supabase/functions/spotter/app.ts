@@ -3360,6 +3360,7 @@ export const APP = String.raw`
       if (w.url) body.appendChild(originalLink(w));
       if (typeof w.caption === "string") body.appendChild(el("div", "capbox", w.caption));
       else askCaption(w, {}, body);
+      $("watchtitle").textContent = "Watch original";
       openSheet("watchsheet");
       if (em) fitEmbed(em, w.platform);
     }
@@ -6551,6 +6552,8 @@ export const APP = String.raw`
     if (ex) $("watchbody").appendChild(el("div", "segment-label", ex.name + " · " + clock(t) +
       (secOf(ex.t1) !== null ? "–" + clock(ex.t1) : "")));
     $("watchbody").appendChild(em);
+    // The sheet says which of the two it is (the wording table's video words).
+    $("watchtitle").textContent = "Watch this part";
     openSheet("watchsheet");
     fitEmbed(em, w.platform);
     closeSheet("explainsheet");
@@ -10028,6 +10031,7 @@ export const APP = String.raw`
     // second of it, so offer that too. Emptied with the iframe on close.
     var s = wo.screens[wo.i], b = bitBtn(w, ex || (s && s.ex));
     if (b) body.appendChild(b);
+    $("watchtitle").textContent = "Watch original";
     // The wake lock is kept: a screen asleep during a form check is the complaint.
     openSheet("watchsheet");
   }
@@ -13560,7 +13564,21 @@ export const APP = String.raw`
     return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
   }
 
-  function cardStatus(w) { return workoutStatus(w, state.logs, state.plan, new Date()); }
+  // Every card on Workouts asks this on every redraw, and a search redraws on each
+  // keystroke: 200 cards against 400 logs was 80,000 comparisons a key. So the
+  // logs and the plan are sorted by workout once per change (a new array, or a
+  // length that moved) and per day, and each card asks only its own rows.
+  var statusMemo = {};
+
+  function cardStatus(w) {
+    var now = new Date(), m = statusMemo, day = ymd(now), ls = state.logs || [], ps = state.plan || [];
+    if (m.logs !== state.logs || m.plan !== state.plan || m.nl !== ls.length || m.np !== ps.length || m.day !== day) {
+      m = statusMemo = { logs: state.logs, plan: state.plan, nl: ls.length, np: ps.length, day: day, lg: {}, pl: {}, by: {} };
+      ls.forEach(function (l) { if (l.workout_id) (m.lg[l.workout_id] = m.lg[l.workout_id] || []).push(l); });
+      ps.forEach(function (p) { if (p.workout_id) (m.pl[p.workout_id] = m.pl[p.workout_id] || []).push(p); });
+    }
+    return m.by[w.id] || (m.by[w.id] = workoutStatus(w, m.lg[w.id], m.pl[w.id], now));
+  }
 
   // The Plan sheet's days: a fortnight starting today, as the plan's own keys.
   // addDays builds each day at local midnight, so a daylight-saving change in
@@ -17407,32 +17425,15 @@ export const APP = String.raw`
     return rowsFor(key).some(function (p) { return p.workout_id === id; });
   }
 
-  // One day, one tap, and Undo, on the copy-week rule: written at once, so Up
-  // next, the strip and the widget agree straight away, and Undo removes what
-  // this wrote once the write has landed.
+  // One day, one tap, and Undo: planWrite, the Plan sheet's and the picker's one
+  // write, so a day planned from here reads and undoes exactly as one planned there.
   function planOn(w, key, chip, then) {
-    var epoch = accountEpoch, uid = state.user.id, said = "Planned " + aheadWord(key, new Date());
+    var said = "Planned " + aheadWord(key, new Date());
     if (planned(w.id, key)) return toast("Already " + said.toLowerCase() + ".");
-    function mark(on) {
-      state.plan = on ? (state.plan || []).concat([{ id: "tmp-" + Date.now(), day: key, workout_id: w.id, user_id: uid }])
-        : (state.plan || []).filter(function (p) { return p.day !== key || p.workout_id !== w.id; });
-      repaintPlan();
-      if (chip) chip.setAttribute("aria-pressed", String(on));
-    }
-    mark(true);
     haptic("tap");
+    if (chip) chip.setAttribute("aria-pressed", "true");
     if (then) then();
-    var put = planAdd(key, w.id).then(function (r) {
-      if (r.error && accountNow(epoch, uid)) { mark(false); toast("Could not plan it. Try again in a moment."); }
-      else loadPlan(true);
-      return !r.error;
-    });
-    offerUndo(said, function () { /* written already */ }, function () {
-      mark(false);
-      put.then(function (ok) {
-        if (ok) sb.from("plan").delete().eq("user_id", uid).eq("day", key).eq("workout_id", w.id).then(function () { loadPlan(true); });
-      });
-    });
+    planWrite(w, [key], null, said);
   }
 
   // The recap's next step: the same workout on a day of the coming week, or
