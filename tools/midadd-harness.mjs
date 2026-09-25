@@ -683,7 +683,7 @@ ok('a replacement is dosed from the movement it replaces', () => {
 ok('every way in passes a target, and the editor falls back to its own slot', () => {
   assert(src.includes('openSwap(ex.name, w.title, live ? swapTarget(w, ex) : { w: w, bi: ctx.bi, ei: ctx.ei, ex: ex })'), 'the exercise sheet, card and workout');
   assert(src.includes('openSwap(name, title, swapTarget(w, ex))'), 'the explain sheet');
-  assert(src.includes('openSwap(focus.name, wo.workout.title, swapTarget(wo.workout, focus))'), 'workout mode');
+  assert(/live \? swapTarget\(w, ex\)/.test(fn('openExerciseSheet')), 'workout mode, through ⋯ Exercise');
   assert(src.includes('openBank("card-add", { w: w, bi: bi })'), 'the card add');
   assert(src.includes('swapTarget(exEdit.w, exEdit.ex) || { w: exEdit.w, bi: exEdit.block, ei: exEdit.index, ex: exEdit.ex }'), 'the editor');
 });
