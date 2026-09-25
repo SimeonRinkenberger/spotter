@@ -16859,7 +16859,7 @@ export const APP = String.raw`
    "settingssheet", "colsheet", "renamesheet", "swapsheet", "pumpysheet", "capsheet", "plansheet",
    "daysheet", "copysheet", "sortsheet", "refsheet", "countsheet", "guidesheet", "welcomesheet",
    "workoptions", "filtersheet", "schedulesheet", "recapsheet", "woaddsheet", "aiconsentsheet", "wleavesheet",
-   "restsheet", "sectionsheet", "ordersheet"]
+   "restsheet", "sectionsheet", "ordersheet", "exmenu", "plandays", "readysheet"]
     .forEach(wireSheet);
 
   function overlayShowing() {
@@ -19926,7 +19926,7 @@ export const APP = String.raw`
     b.onclick = function () { closeSheet(b.getAttribute("data-close")); };
   });
   ["workoptions", "filtersheet", "schedulesheet", "recapsheet", "woaddsheet", "aiconsentsheet", "wleavesheet",
-   "restsheet", "sectionsheet", "ordersheet"].forEach(function (id) {
+   "restsheet", "sectionsheet", "ordersheet", "exmenu", "plandays", "readysheet"].forEach(function (id) {
     $(id).addEventListener("keydown", function (e) {
       if (e.key === "Escape") { e.preventDefault(); closeSheet(id); }
       if (e.key !== "Tab") return;

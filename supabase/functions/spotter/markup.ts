@@ -341,6 +341,9 @@ export const MARKUP_BODY = String.raw`</head>
   <div class="grabber"></div><h2 id="scheduletitle">Plan</h2>
   <p class="lede" id="schedulename"></p>
   <div class="field"><label for="scheduledate">Choose a day</label><div class="schedule-date-control"><input id="scheduledate" type="date" required></div></div>
+  <p class="autherr" id="scheduleerror" role="status"></p>
+  <div class="btnrow"><button class="btn ghost" data-close="schedulesheet">Cancel</button><button class="btn" id="schedulego">Plan</button></div>
+</div></div>
 <!-- The one way to put a workout on a day (app.ts, openPlanSheet): two weeks of
      days to tap, starting today. Move uses the same sheet with one day. -->
 <div class="sheet" id="plandays" role="dialog" aria-modal="true" aria-labelledby="plandaystitle"><div class="sheetbody">
@@ -355,9 +358,6 @@ export const MARKUP_BODY = String.raw`</head>
 <div class="sheet" id="readysheet" role="dialog" aria-modal="true" aria-labelledby="readytitle"><div class="sheetbody">
   <div class="grabber"></div>
   <div id="readybody"><h2 id="readytitle">Ready to train</h2></div>
-</div></div>
-  <p class="autherr" id="scheduleerror" role="status"></p>
-  <div class="btnrow"><button class="btn ghost" data-close="schedulesheet">Cancel</button><button class="btn" id="schedulego">Plan</button></div>
 </div></div>
 
 <!-- ---------- workout mode ---------- -->
