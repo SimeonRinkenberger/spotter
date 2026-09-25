@@ -938,8 +938,8 @@ for (const [where, src] of [['style.ts', STYLE], ['web-dist/index.html', PAGE]])
 // Found along the way on the simulator: a held thumbnail opened iOS's image menu
 // (Share / Save to Photos / Copy) over the Library. Card art is not for saving.
 for (const [where, src] of [['style.ts', STYLE], ['web-dist/index.html', PAGE]]) {
-  ok(where + ': card art (grid, Train rows and pickers, the detail\'s source chips) has no image menu or drag', () => {
-    const art = rule(src, '.thumbwrap img, .tthumb, .planitem img, .pickrow img, .fromthumb img');
+  ok(where + ': card art (grid, pickers, source chips, the covers, the shelf, the ready sheet) has no image menu or drag', () => {
+    const art = rule(src, '.thumbwrap img, .pickrow img, .fromthumb img, .dcover img, .tcover img, .shelfart img, .readycover');
     assert.match(art, /-webkit-touch-callout: ?none/);
     assert.match(art, /-webkit-user-drag: ?none/);
     assert.match(art, /(^|[^-])user-select: ?none/);

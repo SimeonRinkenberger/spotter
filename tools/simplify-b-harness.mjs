@@ -300,8 +300,8 @@ const RETIRED = [
   [/\bBlock (\d|$)/, 'Section'],
   [/Schedule/, 'Plan'],
   [/Favourite/, 'Favorite (one US spelling)'],
-  [/\bLibrary\b/, 'Workouts'],
-  [/\byour library\b/, 'your workouts / Workouts'],
+  // Any case, in a phrase: "library" alone is the view's code name.
+  [/\blibrary\b/i, 'Workouts', 'phrase'],
   [/Review \/ Edit|Fix this exercise/, 'Edit exercise'],
   [/Watch this bit|Watch original \/ source|Open original/, 'Watch this part / Watch original'],
   [/\bWeek (\d|$)/, 'the date range, or "3-week streak"'],
@@ -310,6 +310,8 @@ const RETIRED = [
 const ALLOW = [
   // Apple's own name for the phone's photo store, on the upload row.
   /Photo Library/,
+  // Pumpy's snapshot and tool notes are read by the model, not by a person.
+  /^LIBRARY\b/, /^The snapshot already lists the library/,
 ];
 function literals(src) {
   const out = [];
@@ -319,7 +321,13 @@ function literals(src) {
     if (c === '/' && d === '*') { i = src.indexOf('*/', i) + 1; continue; }
     if (c === '"' || c === "'" || c === '`') {
       let j = i + 1, s = '';
-      for (; j < src.length && src[j] !== c; j++) { if (src[j] === '\\') { s += src[j + 1]; j++; } else s += src[j]; }
+      for (; j < src.length && src[j] !== c; j++) {
+        // A quote or an apostrophe in a regex or a comment is no string: a real
+        // one ends on its own line, and a line end first puts the scan back in step.
+        if (c !== '`' && src[j] === '\n') break;
+        if (src[j] === '\\') { s += src[j + 1]; j++; } else s += src[j];
+      }
+      if (src[j] !== c) continue;
       out.push({ s, at: src.slice(0, i).split('\n').length });
       i = j;
     }
@@ -341,7 +349,10 @@ function scan(label, items) {
   const hits = [];
   for (const { s, at } of items) {
     if (ALLOW.some((re) => re.test(s))) continue;
-    for (const [re, say] of RETIRED) if (re.test(s)) hits.push(label + ':' + at + ' "' + s.slice(0, 70) + '" → ' + say);
+    for (const [re, say, phrase] of RETIRED) {
+      if (phrase && !/\s/.test(s)) continue;
+      if (re.test(s)) hits.push(label + ':' + at + ' "' + s.slice(0, 70) + '" → ' + say);
+    }
   }
   return hits;
 }

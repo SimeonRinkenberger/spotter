@@ -1145,6 +1145,11 @@ export async function sendReady(
     readRows("ingest_jobs",
       `user_id=eq.${userId}&status=eq.done&finished_at=gte.${since}&meta->>notify_ready=eq.true&select=id`),
   ]);
+  // A cache hit has no job to carry the mark, so every cache hit of the window
+  // counts — a save made inside the app a minute before a share too, and that
+  // burst reads "2 workouts are ready" and opens Workouts. Rare (two saves
+  // inside two minutes, one of them a cache hit made in the app), and harmless;
+  // telling them apart would need a mark on the card, which is a migration.
   const or = [`id.eq.${cardId}`, `and(ingest_job_id.is.null,platform.neq.pumpy,created_at.gte."${since}")`];
   if (jobs.length) or.push(`ingest_job_id.in.(${jobs.map((j) => String(j.id)).join(",")})`);
   const cards = await readRows("workouts",

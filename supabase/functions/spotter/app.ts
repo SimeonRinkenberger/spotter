@@ -1820,7 +1820,7 @@ export const APP = String.raw`
   // back. What needs no account stays usable: the Library, a card, and training
   // from it (Save waits for the account, see finishWorkout). Every other tap says
   // so instead of acting as nobody.
-  var WAITING = "Reconnecting… Your library and workouts still work offline.";
+  var WAITING = "Reconnecting… Your workouts still work offline.";
 
   function accountFree(t) {
     if (!t || !t.closest) return false;
@@ -5116,7 +5116,7 @@ export const APP = String.raw`
     // card keeps the order it started with, so the card waits for it rather than
     // telling the two apart later.
     if ((wo && !wo.finished && wo.workout.id === w.id) || (d && d.workoutId === w.id)) {
-      toast("Your paused workout is using this order. End or finish it, then reorder.");
+      toast("Your paused workout is using this order. Finish it first, then reorder.");
       return;
     }
     // A delete still under its toast lands first, so the order starts from the
@@ -5471,7 +5471,8 @@ export const APP = String.raw`
   // delete that never happened). It used to ask for an armed second tap instead —
   // a confirmation standing in for an undo, which the HIG ranks below undo. A
   // refused delete puts the card back where it was and says so.
-  function removeWorkout(w) {
+  // spent: the caller has already taken the card's history entry with its own.
+  function removeWorkout(w, spent) {
     var epoch = accountEpoch, uid = state.user && state.user.id, at = state.workouts.indexOf(w);
     var items = state.colItems.filter(function (it) { return it.workout_id === w.id; });
     function back(msg) {
@@ -5482,7 +5483,7 @@ export const APP = String.raw`
     }
     state.workouts = state.workouts.filter(function (x) { return x.id !== w.id; });
     state.colItems = state.colItems.filter(function (it) { return it.workout_id !== w.id; });
-    if (current && current.id === w.id && $("detail").classList.contains("open")) history.back();
+    if (!spent && current && current.id === w.id && $("detail").classList.contains("open")) history.back();
     render();
     offerUndo("Removed " + (w.title || "the workout"), function () {
       if (!accountNow(epoch, uid)) return;
@@ -5490,8 +5491,10 @@ export const APP = String.raw`
       sb.from("workouts").delete().eq("id", w.id).then(function (r) {
         libraryRev++;
         if (!accountNow(epoch, uid)) return;
-        // Its plan rows went with it (the foreign key cascades); the strip reads them again.
-        if (r.error) back("That did not remove. The workout is still here."); else loadPlan(true);
+        // Its plan rows went with it (the foreign key cascades); the strip reads them
+        // again. A session paused on it goes now, not while the Undo stood.
+        if (r.error) back("That did not remove. The workout is still here.");
+        else { loadPlan(true); dropDraftOf(w.id); }
       });
     }, function () { back(null); });
   }
@@ -7262,6 +7265,16 @@ export const APP = String.raw`
   function draftSets(d) {
     var n = 0;
     (d.entries || []).forEach(function (e) { n += (e.sets || []).filter(Boolean).length; });
+    return n;
+  }
+
+  // Planned sets a paused session has not logged, counted as setsLeft counts a
+  // running one's, on the session's own exercise list (it keeps additions).
+  function draftLeft(d, w) {
+    var n = 0;
+    flatten(Object.assign({}, w, { blocks: d.blocks || w.blocks || [] })).forEach(function (s, i) {
+      n += Math.max(0, targetOf(s) - (((d.entries || [])[i] || {}).sets || []).filter(Boolean).length);
+    });
     return n;
   }
 
@@ -10246,7 +10259,7 @@ export const APP = String.raw`
   function resumeWorkout() {
     var d = pausedDraft(), w = d && srcById(d.workoutId), gap;
     if (!d) return;
-    if (!w) { if (state.workouts.length) clearDraft(); sessionChanged(); return; }
+    if (!w) { draftCheck(d, resumeWorkout); return; }
     if (d.pausedAt) {
       gap = Date.now() - new Date(d.pausedAt).getTime();
       if (gap > 0) d.startedAt = new Date(new Date(d.startedAt).getTime() + gap).toISOString();
@@ -10263,12 +10276,49 @@ export const APP = String.raw`
     if (wo) return;
     var d = readDraft(), w = d && srcById(d.workoutId);
     if (!d) return;
-    if (!w) { if (state.workouts.length) clearDraft(); return; }
+    if (!w) { draftCheck(d, restoreSession); return; }
     if (!d.paused) {
       d.paused = true; d.pausedAt = d.savedAt || new Date().toISOString(); d.rest = null;
       writeDraft(d);
     }
     if (native && native.live) try { native.live.update(pausedState(d, w)); } catch (e) { /* ignore */ }
+    sessionChanged();
+  }
+
+  // A session's card missing from the list on screen is not proof it is gone:
+  // the list can be the cache from before the card was saved (a paste read in
+  // over Realtime never reaches it), a Remove still offering Undo, or older than
+  // the 200 cards the library reads. So the server is asked, and the session goes
+  // only on its word. A card it still has joins the list and then runs (then);
+  // a failed ask keeps everything, and the next open asks again.
+  var draftAsked = "";
+
+  function draftCheck(d, then) {
+    var epoch = accountEpoch, uid = state.user && state.user.id;
+    if (!uid || draftAsked === d.workoutId) return;
+    draftAsked = d.workoutId;
+    sb.from("workouts").select(CARD_COLS).eq("user_id", uid).eq("id", d.workoutId).maybeSingle().then(function (r) {
+      draftAsked = "";
+      if (!accountNow(epoch, uid) || r.error) return;
+      if (!r.data) return dropDraftOf(d.workoutId);
+      onWorkoutChange({ eventType: "UPDATE", new: r.data });
+      if (srcById(d.workoutId) && then) then();
+    }, function () { draftAsked = ""; });
+  }
+
+  // A session on a card that no longer exists can never be saved (a log needs
+  // its card), so it goes with the card: from a Remove once the delete has
+  // landed, not while its Undo stands, and from draftCheck on the server's word.
+  // Its Lock Screen card is ended too, or it would sit there paused for hours
+  // with nothing behind a tap.
+  function dropDraftOf(id) {
+    var d = readDraft();
+    if (!d || d.workoutId !== id || (wo && !wo.finished)) return;
+    clearDraft();
+    if (native && native.live) try {
+      native.live.end({ v: 1, title: d.title || "Workout", startedAt: d.startedAt, endedAt: new Date().toISOString(),
+        sets: draftSets(d), prs: 0, completed: false });
+    } catch (e) { /* the activity may already be gone */ }
     sessionChanged();
   }
 
@@ -10291,18 +10341,20 @@ export const APP = String.raw`
   // every tab: the shelf iOS 26 keeps over a tab bar for its one accessory, and
   // the shape Apple Music's mini player and Hevy's minimised workout both take —
   // what is waiting, how far it got, and the way back in, wherever the reader
-  // has wandered off to. The body and Resume both go back in. Finish saves what
-  // was logged, as the leave sheet's does, and takes two taps: the bar sits a
-  // thumb above the tabs, and a thumb on its way to one must not end a session.
+  // has wandered off to. The body and Resume both go back in. Finish is the
+  // session's own: with planned sets left (or none logged) it opens the session
+  // and its leave sheet, which asks what Up next's and the pill's ask; with every
+  // planned set in it would finish at once, so here it takes two taps — the bar
+  // sits a thumb above the tabs, and a thumb on its way to one must not end it.
   // Never over Workout Mode, where the session is not waiting for anybody. Its
   // height joins the tab bar's in every page's bottom inset (--pbar), so it
   // covers nothing that cannot be scrolled clear of it, Pumpy's composer included.
   var pbSig = "", pbOut = 0, pbArm = 0;
 
   function syncPausedBar() {
+    // No card in the list, no bar — but the session stays: the list may be a stale
+    // cache or a Remove waiting on its Undo (draftCheck decides, not the bar).
     var bar = $("pausedbar"), d = pausedDraft(), w = d && srcById(d.workoutId);
-    // Its card deleted while it waited: nobody's session, and nothing to go back to.
-    if (d && !w && state.libReady && state.workouts.length) clearDraft();
     var show = !!w && !wo && !$("workout").classList.contains("open");
     if (show) drawPausedBar(bar, d, w);
     if (show === bar.classList.contains("on")) return;
@@ -10344,10 +10396,11 @@ export const APP = String.raw`
     live.setAttribute("aria-live", "polite");
     function disarm() { clearTimeout(pbArm); box.seen = 0; box.classList.remove("armed"); sub.textContent = line; }
     fin.onclick = function () {
+      if (!n || draftLeft(d, w)) { disarm(); woForward(); woFinish(); return; }
       if (box.seen && Date.now() - box.seen > 300) { disarm(); resumeWorkout(); finishWorkout(); return; }
       clearTimeout(pbArm);
       box.classList.add("armed");
-      sub.textContent = live.textContent = n ? "Tap again to save " + n + (n === 1 ? " set" : " sets") : "Tap again to close it";
+      sub.textContent = live.textContent = "Tap again to save " + n + (n === 1 ? " set" : " sets");
       haptic("select");
       // Only a question that reached the screen, and stayed longer than a double
       // tap takes, can be answered. The iPhone Air once armed this without drawing
@@ -12448,8 +12501,13 @@ export const APP = String.raw`
   // The vertical half of the calendar's drag; wireWeekBar owns the touch.
   //   can    asked on the first touchmove, the only one WebKit lets decide whether
   //          the page scrolls: the drag is the calendar's only with the page at its
-  //          top (anywhere else it is the page scrolling), down to open and up to
-  //          close; a fold still settling is caught whichever way the finger goes
+  //          top (anywhere else it is the page scrolling), down (or level) to open
+  //          and up to close; a fold still settling is caught whichever way the
+  //          finger goes. Not the research note's 2px: a finger starts from rest,
+  //          so a deliberate pull's first move is often under a pixel, and asking
+  //          for two gave the page the pull instead. The cost is a scroll up that
+  //          starts on the strip with a pixel's settle downward — rarer, and a
+  //          second try scrolls.
   //   grab   a finger landing on a fold still settling stops it where it is...
   //   drop   ...and if it turns out not to be a drag, lets it finish
   //   end    the speed is the last 100ms of travel, and none from a finger that
@@ -12871,10 +12929,13 @@ export const APP = String.raw`
   }
 
   // Train paints from lite logs before the real ones land (fullLogs), and a recap
-  // needs every figure, so it waits for them and opens the full row.
+  // needs every figure — it is also where a set is corrected, and a correction
+  // writes the whole list back over the session — so it waits for them and opens
+  // only the full row. Offline the lite row is all there is, and it is no recap.
   function openRecap(l) {
     loadLogs().then(function () {
-      openSession((state.logs || []).filter(function (x) { return x.id === l.id; })[0] || l);
+      var full = (fullLogs() || []).filter(function (x) { return x.id === l.id; })[0];
+      if (full) openSession(full); else toast("Could not load that session — check your connection.");
     });
   }
 
@@ -12998,7 +13059,11 @@ export const APP = String.raw`
   // screen until the delete lands or the Undo puts them back.
   var planGone = {};
   function planHide() {
-    if (state.plan) state.plan = state.plan.filter(function (p) { return !planGone[p.id]; });
+    // Reassigned only when a row goes: a new array is how every reader of the
+    // plan (the card statuses' memo) learns it changed.
+    if (state.plan && state.plan.some(function (p) { return planGone[p.id]; })) {
+      state.plan = state.plan.filter(function (p) { return !planGone[p.id]; });
+    }
   }
 
   // Off the day on the tap. With a message it is a Remove, on the delayed commit
@@ -20685,15 +20750,25 @@ export const APP = String.raw`
   $("dmore").onclick = function () { openSheet("workoptions"); };
   // Every row closes the sheet after its own handler has run, so a row that opens
   // another sheet hands the history entry over rather than dropping it. Read it
-  // again stays open to show that it is reading.
+  // again stays open to show that it is reading. Ask Pumpy and Remove close the
+  // card as well, and do their own leaving (cardOff).
   $("workoptions").addEventListener("click", function (e) {
     var b = e.target.closest("button");
-    if (b && b.id !== "dreproc") closeSheet("workoptions");
+    if (b && ["dreproc", "dask", "drm"].indexOf(b.id) < 0) closeSheet("workoptions");
   });
-  $("dask").onclick = function () { var w = current; history.back(); if (w) openPumpy(w); };
+  // The sheet and the card under it, in one navigation. Two history.back() calls
+  // in one task are one traversal in WebKit (it keeps only the last navigation
+  // it was asked for), and that one popstate was then read as the sheet's own,
+  // so on the phone the card stayed open — the way leaveWorkout folds its pops.
+  function cardOff() {
+    var n = sheetNav ? 2 : 1;
+    closeSheet("workoptions", true);
+    history.go(-n);
+  }
+  $("dask").onclick = function () { var w = current; cardOff(); if (w) openPumpy(w); };
   $("dren").onclick = function () { if (current) openRename("workout", current.id, current.title || ""); };
   $("dcol").onclick = function () { if (current) openCollections(current); };
-  $("drm").onclick = function () { if (current) removeWorkout(current); };
+  $("drm").onclick = function () { var w = current; if (!w) return; cardOff(); removeWorkout(w, true); };
   $("dstart").onclick = function () { if (current) startWorkout(current); };
   $("dplan").onclick = function () { if (current) openPlanSheet({ w: current, from: "card" }); };
   document.querySelectorAll("[data-close]").forEach(function (b) {

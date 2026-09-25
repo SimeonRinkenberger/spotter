@@ -507,10 +507,12 @@ export const STYLE = String.raw`<style>
   .thumbwrap.loaded img { opacity: 1; transform: none; }
   /* Card art is the face of a card, not a photo to keep: held, it opened iOS's image
      menu (Share / Save to Photos / Copy) over the Library, on top of the press the card
-     answers itself. Library grid, Train's rows and pickers, and the detail's source chips.
+     answers itself. The Workouts grid, the pickers, the detail's source chips, the
+     card's cover, Up next's cover, the Ready to try shelf and the ready sheet (a drag
+     in the shelf would otherwise pick the picture up instead of scrolling).
      The source photo (.dphoto) and the share card (.scprev, #proof) keep the menu:
      those are pictures, and keeping one is a fair thing to want. */
-  .thumbwrap img, .pickrow img, .fromthumb img {
+  .thumbwrap img, .pickrow img, .fromthumb img, .dcover img, .tcover img, .shelfart img, .readycover {
     -webkit-touch-callout: none; -webkit-user-drag: none; -webkit-user-select: none; user-select: none; }
   /* Finite sweep on purpose: lazy images far below the fold stay pending indefinitely,
      and an infinite animation per card would keep the compositor busy all session. */

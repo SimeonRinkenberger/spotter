@@ -713,8 +713,8 @@ function capMessage(kind: LimitKind, plan: string, cap: number | null): string {
       // No "resets at midnight" here, because it never does: this is the shelf,
       // not the day. Says plainly what to do about it, and does not pretend the
       // workouts are at risk — nothing already saved is ever touched by a cap.
-      return `That is ${many("saved workout", "saved workouts")} — the whole ${p} library. ` +
-        "Everything you have saved stays; deleting one makes room for another.";
+      return `That is ${many("saved workout", "saved workouts")}, the most the ${p} plan keeps. ` +
+        "Everything you have saved stays; removing one makes room for another.";
     case "saves":
       return `That is today's ${many("save", "saves")} ${tail}`;
     case "extract":
@@ -7068,7 +7068,7 @@ async function buildCard(
 function visionWarning(card: Card): string | null {
   if (!card.vision?.missing.length) return null;
   return "Read " + card.vision.completed.length + " of " + card.vision.total +
-    " images. Some workout details may be missing. Use Read it again in the ⋯ menu to retry.";
+    " images. Some workout details may be missing. Use Read it again to retry.";
 }
 
 /**

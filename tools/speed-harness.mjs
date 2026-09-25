@@ -537,9 +537,10 @@ for (const [label, mutate] of [['removed', (c) => { delete c.store[SESSION]; }],
   }
   assert.deepEqual([...capReaders].sort(), ['askCaption', 'openDetail', 'refreshDetail', 'sameRow'], 'caption readers: ' + [...capReaders]);
   const selects = [...APP.matchAll(/from\("workouts"\)\.select\(([^)]*)\)/g)].map((m) => m[1]);
-  // The fifth is openLink's one row for a card a notification names before the page has it.
-  assert.deepEqual(selects, ['CARD_COLS', 'CARD_COLS', '"caption"', '"*"', 'CARD_COLS'],
-    'pollPending, load and the card-link read select CARD_COLS; the export keeps *: ' + selects);
+  // The fourth is draftCheck's one row for a paused session's card the list on screen
+  // lacks; the last is openLink's for a card a notification names before the page has it.
+  assert.deepEqual(selects, ['CARD_COLS', 'CARD_COLS', '"caption"', 'CARD_COLS', '"*"', 'CARD_COLS'],
+    'pollPending, load, draftCheck and the card-link read select CARD_COLS; the export keeps *: ' + selects);
   ok('C7 columns: the ones app.ts reads, caption on demand, the export still whole');
 }
 {
