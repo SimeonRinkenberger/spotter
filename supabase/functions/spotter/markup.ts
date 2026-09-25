@@ -305,20 +305,33 @@ export const MARKUP_BODY = String.raw`</head>
     <button class="iconbtn" id="dclose" aria-label="Back"><svg class="ic"><use href="#i-arrow-left"></use></svg></button>
     <div class="hbtns">
       <button class="iconbtn" id="dfav" title="Favorite" aria-label="Favorite" aria-pressed="false"><svg class="ic"><use href="#i-star"></use></svg></button>
-      <button class="chip" id="dmore" aria-haspopup="dialog">Options</button>
+      <button class="iconbtn" id="dmore" aria-label="More" aria-haspopup="dialog"><svg class="ic"><use href="#i-more"></use></svg></button>
     </div>
   </div>
   <div class="dinner" id="dinner"></div>
+  <!-- Start and Plan, pinned under the card (app.ts, openDetail): the two things a
+       card is opened to do, never scrolled away and never behind anything. -->
+  <div class="ddock" id="ddock" data-noswipe>
+    <button class="btn" id="dstart">Start workout</button>
+    <button class="btn ghost" id="dplan"><svg class="ic"><use href="#i-calendar"></use></svg>Plan</button>
+  </div>
 </div>
 
-
+<!-- ⋯ on a card. Everything that changes the saved workout rather than training
+     it, in one list; Remove is the last word, apart, and has an Undo. -->
 <div class="sheet" id="workoptions" role="dialog" aria-modal="true" aria-labelledby="workoptiontitle"><div class="sheetbody">
   <div class="grabber"></div>
   <h2 id="workoptiontitle">Workout</h2>
-  <div id="workmanage"></div>
-  <button class="pickrow" id="dshare">Share workout</button>
-  <button class="pickrow" id="dreproc">Read it again</button>
-  <button class="pickrow" id="dorder">Reorder sections and exercises</button>
+  <p class="lede" id="worksub"></p>
+  <div class="mlist">
+    <button class="pickrow" id="dask"><svg class="ic"><use href="#i-chats"></use></svg>Ask Pumpy</button>
+    <button class="pickrow" id="dren"><svg class="ic"><use href="#i-pencil"></use></svg>Rename</button>
+    <button class="pickrow" id="dcol"><svg class="ic"><use href="#i-folder"></use></svg>Collections<span class="pknote" id="dcoln"></span></button>
+    <button class="pickrow" id="dshare"><svg class="ic"><use href="#i-share"></use></svg>Share</button>
+    <button class="pickrow" id="dorder"><svg class="ic"><use href="#i-reorder"></use></svg>Reorder</button>
+    <button class="pickrow" id="dreproc"><svg class="ic"><use href="#i-refresh"></use></svg><span>Read it again</span></button>
+  </div>
+  <div class="mlist"><button class="pickrow del" id="drm"><svg class="ic"><use href="#i-trash"></use></svg>Remove</button></div>
   <button class="btn ghost" data-close="workoptions">Done</button>
 </div></div>
 <!-- The way out of a live session. Two doors, neither of which loses a set: pause
@@ -337,20 +350,15 @@ export const MARKUP_BODY = String.raw`</head>
   <div id="filterlist"></div>
   <button class="btn ghost" data-close="filtersheet">Done</button>
 </div></div>
-<div class="sheet" id="schedulesheet" role="dialog" aria-modal="true" aria-labelledby="scheduletitle"><div class="sheetbody">
-  <div class="grabber"></div><h2 id="scheduletitle">Plan</h2>
-  <p class="lede" id="schedulename"></p>
-  <div class="field"><label for="scheduledate">Choose a day</label><div class="schedule-date-control"><input id="scheduledate" type="date" required></div></div>
-  <p class="autherr" id="scheduleerror" role="status"></p>
-  <div class="btnrow"><button class="btn ghost" data-close="schedulesheet">Cancel</button><button class="btn" id="schedulego">Plan</button></div>
-</div></div>
 <!-- The one way to put a workout on a day (app.ts, openPlanSheet): two weeks of
-     days to tap, starting today. Move uses the same sheet with one day. -->
+     days to tap, starting today, as many as you like. Move uses the same sheet
+     with one day. -->
 <div class="sheet" id="plandays" role="dialog" aria-modal="true" aria-labelledby="plandaystitle"><div class="sheetbody">
   <div class="grabber"></div>
   <h2 id="plandaystitle">Plan</h2>
   <p class="lede" id="plandayssub"></p>
-  <div id="plandaysbody"></div>
+  <div class="pdays" id="plandaysbody" role="group" aria-labelledby="plandaystitle"></div>
+  <p class="pdsum" id="plandayssum" aria-live="polite"></p>
   <div class="btnrow"><button class="btn ghost" data-close="plandays">Cancel</button><button class="btn" id="plandaysgo">Plan</button></div>
 </div></div>
 <!-- A saved video has become a workout (app.ts, showReadySheet): start it now,
@@ -553,6 +561,7 @@ export const MARKUP_BODY = String.raw`</head>
   <div class="grabber"></div>
   <h2 id="exmenutitle">Exercise</h2>
   <p class="lede" id="exmenusub"></p>
+  <p class="exmnote" id="exmenunote"></p>
   <div id="exmenulist"></div>
   <button class="btn ghost" data-close="exmenu">Done</button>
 </div></div>
@@ -576,19 +585,6 @@ export const MARKUP_BODY = String.raw`</head>
     <button class="btn" id="exeditsave">Save change</button>
   </div>
   <button class="danger" id="exeditdelete">Not a real exercise — remove it</button>
-</div></div>
-
-<!-- The rest, from the card. One job: the number Workout Mode will run after a
-     set of this exercise, on the minutes and seconds wheel restWheel in app.ts
-     builds — the same wheel the dose panes and the section sheet use, three rows
-     tall there and five here. Save commits, since a wheel passes a dozen values
-     on its way to one. -->
-<div class="sheet" id="restsheet" role="dialog" aria-modal="true" aria-labelledby="resttitle"><div class="sheetbody">
-  <div class="grabber"></div>
-  <h2 id="resttitle"></h2>
-  <p class="lede">Workout Mode starts this timer after each set.</p>
-  <div class="restpick" id="restwheel"></div>
-  <div class="btnrow"><button class="btn ghost" data-close="restsheet">Cancel</button><button class="btn" id="restsave">Save</button></div>
 </div></div>
 
 <!-- A section of the workout — a warm-up, a circuit, ten minutes of cardio, a
@@ -669,9 +665,14 @@ export const MARKUP_BODY = String.raw`</head>
   <div id="swapresult"></div>
 </div></div>
 
-<div class="sheet" id="picksheet"><div class="sheetbody">
+<!-- A workout for a day (app.ts, openPicker): the field first, as the exercise
+     bank has it, then what is waiting to be tried, what was trained lately and
+     everything A–Z. The same sheet swaps a planned workout for another. -->
+<div class="sheet" id="picksheet" role="dialog" aria-modal="true" aria-labelledby="picktitle"><div class="sheetbody">
   <div class="grabber"></div>
-  <h2 id="picktitle">Pick a workout</h2>
+  <h2 id="picktitle">Plan</h2>
+  <label class="woasearch"><span class="searchico"><svg class="ic"><use href="#i-search"></use></svg></span>
+    <input class="search" id="pickq" type="search" enterkeyhint="done" placeholder="Search workouts" autocapitalize="off" autocomplete="off" spellcheck="false" aria-label="Search workouts"></label>
   <div class="picklist" id="picklist"></div>
 </div></div>
 

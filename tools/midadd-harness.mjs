@@ -176,7 +176,8 @@ ok('restOf: the exercise, then the block at a lap end, then the default; zero is
   assert(fn('restAfter').includes('return restOf(s.ex, s.block, atRoundEnd()).secs;'));
   assert(fn('saveSet').includes('var secs = s ? restOf(s.ex, s.block, false).secs : REST_FALLBACK;'));
   assert(fn('workDone').includes('var r = restOf(s.ex, s.block, false);'));
-  assert(src.includes('var rest = restOf(ex, b, false), dflt = rest.source === "default";'), 'the card row');
+  // The card row: its rest in words, a default dimmer than a chosen one.
+  assert(src.includes('var rest = restOf(ex, b, false)') && src.includes('rest.source === "default" ? "dflt" : null'), 'the card row');
 });
 
 ok('a block reads as a sentence, and the rest only where a lap ends', () => {
@@ -680,7 +681,7 @@ ok('a replacement is dosed from the movement it replaces', () => {
 });
 
 ok('every way in passes a target, and the editor falls back to its own slot', () => {
-  assert(src.includes('openSwap(ex.name, w.title, { w: w, bi: bi, ei: ei, ex: ex })'), 'the library card');
+  assert(src.includes('openSwap(ex.name, w.title, live ? swapTarget(w, ex) : { w: w, bi: ctx.bi, ei: ctx.ei, ex: ex })'), 'the exercise sheet, card and workout');
   assert(src.includes('openSwap(name, title, swapTarget(w, ex))'), 'the explain sheet');
   assert(/live \? swapTarget\(w, ex\)/.test(fn('openExerciseSheet')), 'workout mode, through ⋯ Exercise');
   assert(src.includes('openBank("card-add", { w: w, bi: bi })'), 'the card add');

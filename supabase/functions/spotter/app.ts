@@ -1823,7 +1823,7 @@ export const APP = String.raw`
   function accountFree(t) {
     if (!t || !t.closest) return false;
     if (t.closest("[data-close], [data-offline], #dclose, #grid, #chips, #searchwrap, #hint, #filtersheet, #sortsheet, #tab0, #tab1, #pausedbar, #toast, " +
-      "#dinner .startbtn, #dinner .source-disclosure, #workout")) return true;
+      "#dstart, #dinner .dcover, #dinner .dwatch, #watchsheet, #workout")) return true;
     // Workout Mode's own sheets: a set, the rest, leaving, adding a movement.
     return !!(wo && !wo.finished && t.closest(".sheet"));
   }
@@ -1892,8 +1892,8 @@ export const APP = String.raw`
     if (!force && sameRow(current, w)) return;
     var old = current, d = $("dinner"), scroll = $("detail").scrollTop;
     if (!$("detail").classList.contains("open")) { current = w; return; }
-    var source = d.querySelector(".source-disclosure");
-    var keepSource = source && old.url === w.url && old.caption === w.caption && old.platform === w.platform;
+    // A playing original is in the clip sheet, not on the card, so rebuilding the
+    // card never stops it; only the folds need putting back as they were.
     var opened = Array.from(d.querySelectorAll(".disclosure")).map(function (box) {
       return { title: box.firstChild.textContent, open: box.open };
     });
@@ -1902,10 +1902,6 @@ export const APP = String.raw`
       d.querySelectorAll(".disclosure").forEach(function (box, i) {
         if (opened[i] && opened[i].title === box.firstChild.textContent) box.open = opened[i].open;
       });
-    }
-    if (keepSource) {
-      var replacement = d.querySelector(".source-disclosure");
-      if (replacement) replacement.replaceWith(source);
     }
     $("detail").scrollTop = scroll;
   }
@@ -2157,12 +2153,17 @@ export const APP = String.raw`
       else if (isMgFilter(state.filter)) { if (!hasMg(w, state.filter.slice(3))) return false; }
       else if (state.filter !== "All" && w.category !== state.filter) return false;
       if (!q) return true;
-      var hay = [w.title, w.author, w.category, (w.muscle_groups || []).join(" "),
-        (w.equipment || []).join(" "), (w.tags || []).join(" "), exerciseNames(w).join(" "),
-        colsOf(w.id).map(function (c) { return c.name; }).join(" ")]
-        .join(" ").toLowerCase();
-      return hay.indexOf(q) >= 0;
+      return searchHay(w).indexOf(q) >= 0;
     });
+  }
+
+  // What a search looks through: the library's field and the day picker's alike,
+  // so a word finds the same workouts in both.
+  function searchHay(w) {
+    return [w.title, w.author, w.category, (w.muscle_groups || []).join(" "),
+      (w.equipment || []).join(" "), (w.tags || []).join(" "), exerciseNames(w).join(" "),
+      colsOf(w.id).map(function (c) { return c.name; }).join(" ")]
+      .join(" ").toLowerCase();
   }
 
   function exerciseNames(w) {
@@ -2931,8 +2932,8 @@ export const APP = String.raw`
 
   // ---------- choosing a rest ----------
   //
-  // One wheel, four homes: the pill's sheet, both dose panes and the section
-  // sheet. It replaced fifteen chips and a Custom… pair because the owner asked
+  // One wheel, three homes: both dose panes (the card's Edit exercise and the
+  // workout's add) and the section sheet. It replaced fifteen chips and a Custom… pair because the owner asked
   // for "a swipable thing like the apple alarm so there's not like a million
   // buttons" — and a wheel that reaches every value IS the custom option. The
   // shape is Clock's timer, UIDatePicker's countdown mode: minutes 0–10 and
@@ -2948,8 +2949,7 @@ export const APP = String.raw`
   // value and onPick keep the chip grid's three shapes: "" for the default, 0
   // for no rest, a number of seconds. onPick hears of a new notch once the wheel
   // settles, and of "Use default" at once; saving is the caller's business —
-  // the rest sheet has a Save, the panes and the section sheet their own
-  // buttons. A value off the grid (97 s from a video) shows its nearest notch
+  // the panes and the section sheet have their own buttons. A value off the grid (97 s from a video) shows its nearest notch
   // and stays 97 until someone moves the wheel.
   function restDetent(t) { return clamp(Math.round(t / 5) * 5, 0, 655); }
 
@@ -3265,6 +3265,16 @@ export const APP = String.raw`
 
   // keepHistory is set when Realtime re-renders an open card in place: the overlay
   // is already on the history stack and pushing again would need two back gestures.
+  //
+  // The card top to bottom, since Simplify-B (25 Sept): the cover, which is the way
+  // to the video; what it is and whose; the rows, each of which opens its exercise
+  // sheet; what shapes the card; the fixes for a thin read; the caption. Start and
+  // Plan are pinned under all of it (#ddock), so nothing stands between somebody
+  // who has just saved a video and doing it — the Plus offer that used to sit above
+  // Start is one fold down now, with the other repairs. Recipe apps settled on this
+  // shape (Crouton and Mela: a picture, a line of facts, the list, one way into
+  // cooking that never scrolls away), and so did Apple Fitness+: artwork first,
+  // Let's Go beside one quieter button, everything else under ⋯.
   function openDetail(w, keepHistory) {
     if (!keepHistory) { guideClear(); guideStill(); }
     current = w;
@@ -3282,18 +3292,49 @@ export const APP = String.raw`
     // an overlay already open — a citation chip — is a new place with no order.
     if (navFrom) { dNav = gridNav(w.id); navFrom = false; }
     else if (dNav && dNav.ids[dNav.i] !== w.id) dNav = null;
+    paintManage(w);
 
-    $("workmanage").innerHTML = "";
-    $("workmanage").appendChild(manageRow(w));
-    syncRereadButton(w);
-    $("dreproc").hidden = isUpload(w) || w.platform === "pumpy";
-    $("dorder").hidden = isPending(w) || isFailed(w) || !ordCan(w);
+    var dead = isPending(w) || isFailed(w), art = cardArt(w);
+    // A coach's card has no video, and an upload's file is gone by the time its
+    // card exists: neither has an original to go back to.
+    var canWatch = !isUpload(w) && w.platform !== "pumpy";
 
-    d.appendChild(el("div", "dkick", isPending(w)
-      ? stageOf(w).kick
-      : (isFailed(w) ? failedKick(w, false) : (w.category || "Other"))));
-    var titleEl = el("h2", "dtitle", w.title || "Untitled workout");
-    d.appendChild(titleEl);
+    // The original in the clip sheet with its caption under it: what the folded
+    // "Watch original" row used to hold, now a tap on the picture. The player
+    // lives in the sheet, so a background refresh of the card never stops it.
+    function watchOriginal() {
+      var body = $("watchbody"), em = embedNode(w);
+      body.innerHTML = "";
+      if (em) body.appendChild(em);
+      if (w.url) body.appendChild(originalLink(w));
+      if (typeof w.caption === "string") body.appendChild(el("div", "capbox", w.caption));
+      else askCaption(w, {}, body);
+      openSheet("watchsheet");
+      if (em) fitEmbed(em, w.platform);
+    }
+
+    // The thumbnail, or the drawing a coach's card wears, at 16:9. A picture that
+    // will not load keeps its sand frame and its label, which is still the door.
+    if (art) {
+      var cover = el(canWatch ? "button" : "div", "dcover"), img = el("img");
+      img.alt = "";
+      img.decoding = "async";
+      img.onload = function () { cover.classList.add("in"); };
+      img.onerror = function () { cover.classList.add("in", "noart"); };
+      img.src = art;
+      // Cached: a fade for a wait already over is the flicker it prevents.
+      if (img.complete && img.naturalWidth) cover.classList.add("in", "now");
+      cover.appendChild(img);
+      if (canWatch) {
+        cover.appendChild(icon(el("span", "dplay"), "play", "Watch original"));
+        cover.onclick = watchOriginal;
+      }
+      d.appendChild(cover);
+    }
+
+    d.appendChild(el("div", "dkick", isPending(w) ? stageOf(w).kick : isFailed(w) ? failedKick(w, false)
+      : [w.category || "Other", w.difficulty ? capWord(w.difficulty) : ""].filter(Boolean).join(" · ")));
+    d.appendChild(el("h2", "dtitle", w.title || "Untitled workout"));
     // The handle does what a collection pill does: close the card, land in a library
     // already narrowed to that creator. setView only moves the pager now — arriving
     // on a page deliberately does not redraw it — so the new filter has to be drawn
@@ -3306,18 +3347,42 @@ export const APP = String.raw`
       d.appendChild(au);
     }
 
+    // One line of facts and one of gear, both text: five equipment pills took two
+    // rows of a 375px screen to say what "cables · machine · barbell +2" says.
+    if (!dead) {
+      var exN = exerciseNames(w).length, sets = 0, eq = w.equipment || [];
+      allExercises(w).forEach(function (x) { sets += +x.sets || 0; });
+      var facts = [w.duration_minutes ? "~" + fmtDur(w.duration_minutes) : "",
+        exN ? exN + (exN === 1 ? " exercise" : " exercises") : "",
+        sets ? sets + (sets === 1 ? " set" : " sets") : ""].filter(Boolean).join(" · ");
+      if (facts) d.appendChild(el("div", "workout-meta", facts));
+      var gear = eq.length ? eq.slice(0, 3).join(" · ") + (eq.length > 3 ? " +" + (eq.length - 3) : "")
+        : w.has_full_workout ? "bodyweight" : "";
+      if (gear) d.appendChild(el("div", "dgear", gear));
+    }
+    // No picture to tap: the same door as a chip, where the old pill stood.
+    if (canWatch && !art) {
+      var wbtn = icon(el("button", "chip dwatch"), "play", "Watch original");
+      wbtn.onclick = watchOriginal;
+      d.appendChild(wbtn);
+    }
 
-    if (!isPending(w) && !isFailed(w) && w.ingest_error &&
+    // What the read could not fill in, as one folded line like the caveat under
+    // it: the headline is the news for most readers, the sentence the detail.
+    if (!dead && w.ingest_error &&
         !((w.blocks || []).length === 0 && String(w.ingest_error).indexOf(PLUS_READ_HINT) === 0)) {
-      var incomplete = el("div", "sect");
-      incomplete.appendChild(el("h3", null, UNCHANGED.test(w.ingest_error) ? "That read did not change this card" : "Some details are missing"));
-      incomplete.appendChild(el("div", "capbox", w.ingest_error));
-      d.appendChild(incomplete);
+      var gap = disclosure(null, "dnote");
+      gap.firstChild.appendChild(ic("alert"));
+      gap.firstChild.appendChild(el("b", null, UNCHANGED.test(w.ingest_error) ? "That read did not change this card" : "Some details are missing"));
+      gap.lastChild.textContent = w.ingest_error;
+      d.appendChild(gap);
     }
 
     // A card whose extraction has not landed yet, or one whose job gave up. Both
     // are real rows with a real link — the user keeps what they saved either way.
-    if (isPending(w) || isFailed(w)) {
+    // Neither gets the dock: there is nothing to start yet, and each has its own
+    // way forward right here.
+    if (dead) {
       var isUp = isUpload(w);
       var stage = stageOf(w);
       var note = el("div", "sect");
@@ -3351,34 +3416,13 @@ export const APP = String.raw`
         pb.onclick = function () { openCaption(w); };
         d.appendChild(pb);
       }
-      // An upload has no original to open — its only address is inside Spotter,
-      // and that address stopped resolving to anything the moment it was read.
-      if (!isUp) d.appendChild(originalLink(w));
 
       setFav(w);
       paintNav();
+      $("detail").classList.remove("docked");
       $("detail").classList.add("open");
       if (!keepHistory) { $("detail").scrollTop = 0; history.pushState({ detail: 1 }, ""); }
       return;
-    }
-
-    var pills = el("div", "pillrow");
-
-    (w.equipment || []).forEach(function (e) { pills.appendChild(el("span", "pill", e)); });
-    if (!(w.equipment || []).length && w.has_full_workout) pills.appendChild(el("span", "pill", "bodyweight"));
-    if (pills.children.length) d.appendChild(pills);
-
-    var specs = [];
-    var dur = fmtDur(w.duration_minutes);
-    if (dur) specs.push([dur, "Duration"]);
-    var exN = exerciseNames(w).length;
-    if (exN) specs.push([String(exN), "Exercises"]);
-    if (w.difficulty) specs.push([capWord(w.difficulty), "Level"]);
-
-    if (specs.length) {
-      d.appendChild(el("div", "workout-meta", specs.map(function (v) {
-        return v[0] + (v[1] === "Exercises" ? " exercises" : "");
-      }).join(" · ")));
     }
 
     // The confidence score, translated into the only thing a user needs from it:
@@ -3406,11 +3450,9 @@ export const APP = String.raw`
           ? "The exercises below were not traceable to anything written on the post. Watch the original before you train it."
           : "A few sets or reps were not written down anywhere Spotter could find. Worth a glance at the original.";
       }
-      // One line, folded like the rows around it: the headline is the whole caveat
-      // for most readers, and the sentence behind it opens on the same chevron
-      // "Watch original" and "Options" use, so the card has one way of hiding
-      // things rather than two.
-      var warn = disclosure(null, "unverified"), wt = warn.lastChild;
+      // One compact line, folded: the headline is the whole caveat for most
+      // readers, and the sentence behind it opens on a tap.
+      var warn = disclosure(null, "dnote unverified"), wt = warn.lastChild;
       warn.firstChild.appendChild(ic(from.video || from.speech ? "eye" : (conf < 0.45 ? "alert" : "eye")));
       warn.firstChild.appendChild(el("b", null, head));
       wt.appendChild(document.createTextNode(why));
@@ -3433,91 +3475,6 @@ export const APP = String.raw`
       d.appendChild(warn);
     }
 
-    // "Plus reads the video" only where Plus reads more: a TikTok video. A file of
-    // the person's own is read the same way on either plan (the uploads allowance
-    // pays for it), so a Basic upload card is not told Plus would have watched
-    // what Spotter just watched. An Instagram card whose caption left it thin is
-    // offered the one thing that works for a reel instead; the empty-card box
-    // above already does that for a card with nothing in it.
-    var plusCan = w.platform === "tiktok" && w.kind !== "photo";
-    var addHere = canAddVideo(w) && (w.blocks || []).length > 0;
-    if (w.platform !== "pumpy" && w.read_quality !== "premium" && addHere) {
-      var addBox = el("div", "reader-offer");
-      addBox.appendChild(el("b", null, "Add the video"));
-      addBox.appendChild(el("p", null, ADD_VIDEO_WHY));
-      var addv = el("button", "btn ghost", "Add the video");
-      addv.onclick = function () { openAddVideo(w); };
-      addBox.appendChild(addv);
-      d.appendChild(addBox);
-    } else if (w.platform !== "pumpy" && w.read_quality !== "premium" && plusCan) {
-      var quality = el("div", "reader-offer");
-      quality.appendChild(el("b", null, "Basic read"));
-      quality.appendChild(el("p", null, "Plus reads the video’s movements, spoken cues and on-screen details to build a more complete workout."));
-      if (w.platform === "tiktok" && w.kind !== "photo") {
-        // No number until one is known. The count used to be hard-coded here as
-        // four, which is right today and would go quietly wrong the moment the
-        // allowance moved in config; the read below fills it in a moment later.
-        var pv = billing.limits && billing.limits.video_previews;
-        var trial = el("button", "btn ghost", !isFree() ? "Read with Plus"
-          : pv ? "Try a Plus read · " + Math.max(0, pv.cap - pv.used) + " left this month"
-          : "Try a Plus read");
-        trial.onclick = function () { readVideo(w, trial, isFree()); };
-        quality.appendChild(trial);
-        if (isFree()) recentLimits().then(function (r) {
-          if (!trial.isConnected || !r.video_previews) return;
-          var left = Math.max(0, r.video_previews.cap - r.video_previews.used);
-          trial.textContent = left ? "Try a Plus read · " + left + " left this month" : "Explore Spotter Plus";
-          // Opens on what ran out, as a refused preview would.
-          if (!left) trial.onclick = function () {
-            var c = billing.caps;
-            openPlans({ kind: "media", plan: "free", scope: "month", cap: r.video_previews.cap, used: r.video_previews.used,
-              next_plan: "plus", next_cap: c ? capNum(c.plus.month_reads) : undefined });
-          };
-        }).catch(function () {});
-      }
-      if (isFree()) {
-        var value = el("button", "fixlink", "See everything in Plus");
-        value.onclick = function () { openPlans({ kind: "media" }); };
-        quality.appendChild(value);
-      }
-      d.appendChild(quality);
-    }
-    var waiting = pausedDraft();
-    var start = el("button", "startbtn", waiting && waiting.workoutId === w.id ? "Resume workout"
-      : w.has_full_workout ? "Start workout" : "Start & log freestyle");
-    start.onclick = function () { startWorkout(w); };
-    d.appendChild(start);
-
-    var actions = el("div", "detail-actions");
-    var schedule = el("button", "chip", "Plan");
-    schedule.onclick = function () { scheduleWorkout(w); };
-    actions.appendChild(schedule);
-    var ask = el("button", "chip", "Ask Pumpy");
-    ask.onclick = function () { history.back(); openPumpy(w); };
-    actions.appendChild(ask);
-    d.appendChild(actions);
-
-    var original = disclosure("Watch original", "source-disclosure");
-    var sourceBody = original.lastChild;
-    if (!isUpload(w) && w.url) sourceBody.appendChild(originalLink(w));
-    if (w.caption) sourceBody.appendChild(el("div", "capbox", w.caption));
-    // Asked for on the press that opens it, a beat before the tap lands, and on the
-    // open itself for a keyboard.
-    original.firstChild.addEventListener("pointerdown", function () { askCaption(w, original, sourceBody); });
-    original._prepareDisclosure = function () {
-      if (!original.open) {
-        var old = sourceBody.querySelector(".embedwrap, .dphoto");
-        if (old) old.remove();
-        return;
-      }
-      askCaption(w, original, sourceBody);
-      if (sourceBody.querySelector(".embedwrap, .dphoto")) return;
-      var em = embedNode(w);
-      if (em) { sourceBody.insertBefore(em, sourceBody.firstChild); fitEmbed(em, w.platform); }
-    };
-    original.addEventListener("toggle", original._prepareDisclosure);
-    if (w.platform !== "pumpy") d.appendChild(original);
-
     // Above the blocks: a coach's card arrives with no video attached, and whose
     // videos it came out of is the first thing worth knowing about it.
     var cites = citedSources(w);
@@ -3530,7 +3487,6 @@ export const APP = String.raw`
       d.appendChild(built);
     }
 
-    var canOrder = ordCan(w);
     (w.blocks || []).forEach(function (b, bi) {
       var sect = el("div", "sect workout-block");
       // A block has a name in the data — "Warm-up", "Finisher". The card printed
@@ -3555,62 +3511,36 @@ export const APP = String.raw`
       var bm = blockMetaText(b);
       if (bm) sect.appendChild(el("div", "blockmeta", bm));
       (b.exercises || []).forEach(function (ex, ei) {
-        var row = el("div", "exercise-card");
-        var main = el("div", "exercise-main");
-        var name = el("div", "exname");
-        name.appendChild(document.createTextNode(ex.name));
-        var cue = cueOf(ex);
-        if (cue) name.appendChild(el("div", "exnote", cue));
-        // Under the cue: how this differed from the standard version, and when in
-        // the video it happens. Both are one glance each, and both are things the
-        // row could never say before — the delta because nothing computed it, the
-        // second because nothing knew it.
-        var marks = rowMarks(ex);
-        if (marks) name.appendChild(marks);
-        var segment = bitBtn(sourceOf(ex) || w, ex);
-        if (segment) name.appendChild(segment);
-        if (ex.recommendation) name.appendChild(el("div", "exnote recommendation", ex.recommendation.note));
+        // What to do and how long to rest, and a ▶ where the video shows the
+        // movement at a known second; everything you can DO to it is one tap away
+        // in its sheet (openExerciseSheet) and Remove one swipe away. It used to
+        // carry a clip chip, a rest pill and an Options fold of its own: three
+        // controls a row, forty-odd on a long card.
+        var swipe = el("div", "exrow delete-swipe"), front = el("div", "exmain");
+        var row = el("button", "exercise-main"), name = el("span", "exname", ex.name);
+        var rest = restOf(ex, b, false), src = sourceOf(ex) || w, t = startOf(ex);
+        var restTxt = restWord(rest.secs).replace("Rest ", "rest "), cue = cueOf(ex), dose = doseText(ex);
+        if (t === null) t = bitOf(ex);
+        // The sheet's rule for "Watch this part": only where the embed can seek.
+        if (!src || !/^(youtube|tiktok)$/.test(src.platform)) t = null;
+        if (cue) name.appendChild(el("span", "exnote", cue));
+        if (ex.recommendation) name.appendChild(el("span", "exnote recommendation", ex.recommendation.note));
+        var meta = el("span", "exmeta");
+        if (t !== null) meta.appendChild(icon(el("span", "exclip"), "play", clock(t)));
+        // A default is dimmer than a rest somebody chose: the same number is a
+        // different fact about the video.
+        meta.appendChild(el("span", rest.source === "default" ? "dflt" : null, restTxt));
         // Say which lines are the user's own. Everything else on the card is the
         // creator's wording, and the difference matters when they come back to it.
-        if (ex.added_by_user) name.appendChild(el("div", "exmine", "Added by you"));
-        else if (ex.edited_by_user) name.appendChild(el("div", "exmine", "Edited by you"));
+        if (ex.added_by_user || ex.edited_by_user) meta.appendChild(el("span", null, ex.added_by_user ? "Added by you" : "Edited by you"));
+        name.appendChild(meta);
         var fl = fromLine(ex);
         if (fl) name.appendChild(fl);
-        // The source line used to be a hover title here — invisible on a phone, and
-        // silent about where it came from. The Explain sheet says all of it now.
-        main.appendChild(name);
-        var dose = doseText(ex);
-        if (dose) main.appendChild(el("div", "exdose", dose));
-        row.appendChild(main);
-        var acts = el("div", "exercise-actions");
-        // The rest, where the owner pointed: the empty half of the options line.
-        // It is the rest Workout Mode will actually run, so a default is marked
-        // as one — dimmer, outlined, and saying so — because "1:30" the card
-        // stated and "1:30" nobody chose are different facts about the video.
-        var rest = restOf(ex, b, false), dflt = rest.source === "default";
-        var pill = el("button", "pill restpill" + (dflt ? " dflt" : ""), restWord(rest.secs) + (dflt ? " · default" : ""));
-        pill.onclick = function () { openRest(w, bi, ei, ex); };
-        acts.appendChild(pill);
-        var options = disclosure("Options", "exercise-options");
-        options.firstChild.setAttribute("aria-label", "Options for " + ex.name);
-        var edit = icon(el("button", "pickrow"), "pencil", "Edit exercise");
-        edit.onclick = function () { openExEdit(w, bi, ei, ex); };
-        options.lastChild.appendChild(edit);
-        var demo = icon(el("button", "pickrow"), "play", "Demo");
-        demo.onclick = function () { explain(ex, w); };
-        options.lastChild.appendChild(demo);
-        var swap = icon(el("button", "pickrow"), "swap", "Swap or modify");
-        swap.onclick = function () { openSwap(ex.name, w.title, { w: w, bi: bi, ei: ei, ex: ex }); };
-        options.lastChild.appendChild(swap);
-        if (canOrder) {
-          var move = icon(el("button", "pickrow"), "reorder", "Reorder");
-          move.onclick = function () { openOrder(w, "e" + bi + "." + ei); };
-          options.lastChild.appendChild(move);
-        }
-        acts.appendChild(options);
-        row.appendChild(acts);
-        var swipe = el("div", "exrow delete-swipe");
-        var front = el("div", "exmain");
+        row.appendChild(name);
+        if (dose) row.appendChild(el("span", "exdose", dose));
+        row.setAttribute("aria-haspopup", "dialog");
+        row.setAttribute("aria-label", [ex.name, dose, restTxt, t !== null ? "shown at " + clock(t) : ""].filter(Boolean).join(", "));
+        row.onclick = function () { openExerciseSheet({ from: "card", w: w, bi: bi, ei: ei, ex: ex, block: b }); };
         front.appendChild(row);
         var drawer = el("div", "exacts");
         var del = icon(el("button", "exact danger"), "trash", "Remove");
@@ -3621,15 +3551,11 @@ export const APP = String.raw`
         };
         drawer.appendChild(del);
         swipe.appendChild(front); swipe.appendChild(drawer); sect.appendChild(swipe);
-        var remove = icon(el("button", "pickrow"), "trash", "Remove exercise");
-        remove.onclick = del.onclick;
-        options.lastChild.appendChild(remove);
       });
-      var addex = el("button", "addex", "+ Add an exercise Spotter missed");
+      var addex = el("button", "addex", "+ Add exercise");
       addex.onclick = function () { openExAdd(w, bi); };
       sect.appendChild(addex);
       d.appendChild(sect);
-
     });
 
     if (!(w.blocks || []).length) {
@@ -3673,21 +3599,13 @@ export const APP = String.raw`
       d.appendChild(none);
     }
 
-    // After the last block, a whole section: a circuit, a finisher, ten minutes
-    // on the bike, a stretch. The per-block add above stays for a single missed
+    // After the last section, a whole new one: a circuit, a finisher, ten minutes
+    // on the bike, a stretch. The per-section add above stays for a single missed
     // movement; this is for "the video had a finisher and the card does not".
-    var tools = el("div", "cardtools");
+    // Reorder lives in ⋯ and in each exercise's sheet now.
     var addsec = el("button", "addex", "+ Add a section");
     addsec.onclick = function () { openSection(w, null); };
-    tools.appendChild(addsec);
-    // Beside it, the card's order: Hevy keeps Reorder with the other things that
-    // change a routine's shape, and so does this.
-    if (canOrder) {
-      var reorder = icon(el("button", "addex"), "reorder", "Reorder");
-      reorder.onclick = function () { openOrder(w); };
-      tools.appendChild(reorder);
-    }
-    d.appendChild(tools);
+    d.appendChild(addsec);
 
     // What this hits: catalog muscles through canonical_id, nothing else. Filled
     // in once the catalog map is here, which after the first card is immediate.
@@ -3770,24 +3688,107 @@ export const APP = String.raw`
     notesSect.appendChild(el("div", null, " "));
     notesBody.appendChild(notesSect);
 
+    // ---- improve this read ----
+    // What used to stand between a new user and Start — the Basic/Plus read offer —
+    // with the repairs for a card that came out thin: one fold under the list.
+    // Built when it opens, because its Plus count is a request and most cards are
+    // never asked about.
+    if (w.platform !== "pumpy") {
+      var imp = disclosure("Improve this read"), ib = imp.lastChild;
+      imp._prepareDisclosure = function () {
+        if (ib.firstChild) return;
+        // "Plus reads the video" only where Plus reads more: a TikTok video. A file
+        // of the person's own is read the same way on either plan (the uploads
+        // allowance pays for it), so a Basic upload card is not told Plus would
+        // have watched what Spotter just watched. An Instagram card whose caption
+        // left it thin is offered the one thing that works for a reel instead; the
+        // empty-card box above already does that for a card with nothing in it.
+        var plusCan = w.platform === "tiktok" && w.kind !== "photo";
+        var addHere = canAddVideo(w) && (w.blocks || []).length > 0;
+        if (w.read_quality !== "premium" && addHere) {
+          var addBox = el("div", "reader-offer");
+          addBox.appendChild(el("b", null, "Add the video"));
+          addBox.appendChild(el("p", null, ADD_VIDEO_WHY));
+          var addv = el("button", "btn ghost", "Add the video");
+          addv.onclick = function () { openAddVideo(w); };
+          addBox.appendChild(addv);
+          ib.appendChild(addBox);
+        } else if (w.read_quality !== "premium" && plusCan) {
+          var quality = el("div", "reader-offer");
+          quality.appendChild(el("b", null, "Basic read"));
+          quality.appendChild(el("p", null, "Plus reads the video’s movements, spoken cues and on-screen details to build a more complete workout."));
+          // No number until one is known. The count used to be hard-coded here as
+          // four, which is right today and would go quietly wrong the moment the
+          // allowance moved in config; the read below fills it in a moment later.
+          var pv = billing.limits && billing.limits.video_previews;
+          var trial = el("button", "btn ghost", !isFree() ? "Read with Plus"
+            : pv ? "Try a Plus read · " + Math.max(0, pv.cap - pv.used) + " left this month"
+            : "Try a Plus read");
+          trial.onclick = function () { readVideo(w, trial, isFree()); };
+          quality.appendChild(trial);
+          if (isFree()) recentLimits().then(function (r) {
+            if (!trial.isConnected || !r.video_previews) return;
+            var left = Math.max(0, r.video_previews.cap - r.video_previews.used);
+            trial.textContent = left ? "Try a Plus read · " + left + " left this month" : "Explore Spotter Plus";
+            // Opens on what ran out, as a refused preview would.
+            if (!left) trial.onclick = function () {
+              var c = billing.caps;
+              openPlans({ kind: "media", plan: "free", scope: "month", cap: r.video_previews.cap, used: r.video_previews.used,
+                next_plan: "plus", next_cap: c ? capNum(c.plus.month_reads) : undefined });
+            };
+          }).catch(function () {});
+          if (isFree()) {
+            var value = el("button", "fixlink", "See everything in Plus");
+            value.onclick = function () { openPlans({ kind: "media" }); };
+            quality.appendChild(value);
+          }
+          ib.appendChild(quality);
+        }
+        var fixes = el("div", "mlist");
+        fixes.appendChild(icon(el("button", "pickrow"), "compose", "Paste the caption")).onclick = function () { openCaption(w); };
+        if (!isUpload(w)) fixes.appendChild(icon(el("button", "pickrow"), "refresh", "Read it again")).onclick = rereadCard;
+        ib.appendChild(fixes);
+      };
+      // A keyboard, and a refresh putting the fold back open, arrive as a toggle.
+      imp.addEventListener("toggle", function () { if (imp.open) imp._prepareDisclosure(); });
+      d.appendChild(imp);
+    }
+
+    // The caption, last, as the list's footnote. CARD_COLS leaves it on the server,
+    // so it is asked for on the press that opens this, a beat before the tap lands.
+    if (canWatch) {
+      var capd = disclosure("Caption"), capb = capd.lastChild;
+      if (w.url) capb.appendChild(originalLink(w));
+      if (typeof w.caption === "string") capb.appendChild(el("div", "capbox", w.caption));
+      capd.firstChild.addEventListener("pointerdown", function () { askCaption(w, capd, capb); });
+      capd.addEventListener("toggle", function () { if (capd.open) askCaption(w, capd, capb); });
+      d.appendChild(capd);
+    }
+
+    paintDock(w);
     setFav(w);
     paintNav();
-    $("detail").classList.add("open");
+    $("detail").classList.add("docked", "open");
     if (!keepHistory) { $("detail").scrollTop = 0; history.pushState({ detail: 1 }, ""); }
   }
 
-  // The same pill in both halves of openDetail.
+  // Start is Resume while this card's session is paused — startWorkout resumes it
+  // either way, and the word should not say otherwise — and freestyle on a card
+  // with no list to step through. Painted on open and whenever a session changes.
+  function paintDock(w) {
+    var waiting = pausedDraft();
+    $("dstart").textContent = waiting && waiting.workoutId === w.id ? "Resume workout"
+      : w.has_full_workout ? "Start workout" : "Start & log freestyle";
+  }
+
+  // The external link to the original, in its own app: under the player in the
+  // clip sheet, and at the head of the Caption fold.
   function originalLink(w) {
-    var a = icon(el("a", "pill accent"), "arrow-up-right");
+    var a = icon(el("a", "pill accent olink"), "arrow-up-right");
     a.insertBefore(document.createTextNode("Watch original"), a.firstChild);
     a.href = w.source_url || w.url;
     a.target = "_blank";
     a.rel = "noopener";
-    a.style.display = "inline-flex";
-    a.style.alignItems = "center";
-    a.style.gap = "5px";
-    a.style.textDecoration = "none";
-    a.style.marginBottom = "14px";
     return a;
   }
 
@@ -4164,20 +4165,6 @@ export const APP = String.raw`
       row.scrollLeft = 0;
     } else if (openEx && row !== openEx) closeExRow(openEx);
   });
-
-  // A mark over a word: what iOS 26 shows by default, and what a reader needs. The
-  // aria-label keeps the sentence the round buttons carried.
-  function exAct(row, mark, word, label, prim, fn) {
-    var b = icon(el("button", prim ? "exact prim" : "exact"), mark);
-    b.appendChild(el("span", null, word));
-    b.setAttribute("aria-label", label);
-    b.onclick = function (e) {
-      e.stopPropagation();
-      closeExRow(row);
-      fn();
-    };
-    return b;
-  }
 
   // ---------- stepping to the next workout ----------
   //
@@ -4599,27 +4586,7 @@ export const APP = String.raw`
       $("exeditsave"), "Fixed — thanks");
   }
 
-  // ---------- the rest, from the card ----------
-  //
-  // "I want to see what the rest period will be." The pill on the row opens this:
-  // the wheel on the current rest, and a Save. A chip could save on its tap; a
-  // wheel cannot, since every notch it passes on the way would be a correction
-  // posted, so the sheet asks once, as Clock's alarm editor does. Unmoved, Save
-  // only closes. postCorrection holds the button while the write is out.
-
-  function openRest(w, bi, ei, ex) {
-    var was = restVal(ex.rest_seconds), pick = was;
-    $("resttitle").textContent = "Rest after " + ex.name;
-    restWheel($("restwheel"), was, function (v) { pick = v; });
-    $("restsave").onclick = function () {
-      if (pick === was) { closeSheet("restsheet"); return; }
-      postCorrection(w, { op: "edit", block: bi, index: ei, expect_name: ex.name, fields: { rest_seconds: pick } }, $("restsave"),
-        pick === "" ? "Back to the default rest" : pick === 0 ? "No rest after " + ex.name : "Rest set to " + clock(pick), "restsheet");
-    };
-    openSheet("restsheet");
-  }
-
-  // ---------- one sheet per exercise (seam) ----------
+  // ---------- one sheet per exercise ----------
   //
   // Every row on the card used to carry three controls of its own — Watch this
   // bit, a rest pill and an Options fold — and Workout Mode had a fourth menu for
@@ -4635,25 +4602,34 @@ export const APP = String.raw`
   //            Add set · Add an exercise
   // The card's own edits change the saved workout, which a running session has
   // its own copy of, so Edit, Reorder and Remove stay on the card.
+  //
+  // Drawn as an inset-grouped list, iOS's shape for a menu that outgrew a popover:
+  // a mark, a word, a hairline that starts at the word. Remove is last, alone in a
+  // group of its own and in the app's red, as the section sheet's Remove is. Over
+  // the list, what the row on the card had to cut short: the whole cue, and how
+  // this creator's version differs from the standard one.
   function openExerciseSheet(ctx) {
     var ex = ctx.ex, w = ctx.w, live = ctx.from === "workout", list = $("exmenulist");
     var block = ctx.block || ((w && w.blocks) || [])[ctx.bi] || {};
-    var src = sourceOf(ex) || w, t = startOf(ex), rest = restOf(ex, block, false);
+    var src = sourceOf(ex) || w, t = startOf(ex), rest = restOf(ex, block, false), group = el("div", "mlist");
     if (t === null) t = bitOf(ex);
     $("exmenutitle").textContent = ex.name || "Exercise";
     $("exmenusub").textContent = [doseText(ex),
       restWord(rest.secs).replace("Rest ", "rest ") + (rest.source === "default" ? " (default)" : ""),
       ex.equipment || null].filter(Boolean).join(" · ");
+    $("exmenunote").textContent = [cueOf(ex), ex.delta ? "Differs from the standard: " + String(ex.delta).trim() : ""]
+      .filter(Boolean).join("\n");
     list.innerHTML = "";
+    list.appendChild(group);
     function row(glyph, label, note, fn, cls) {
       var b = icon(el("button", "pickrow" + (cls ? " " + cls : "")), glyph, label);
       if (note) b.appendChild(el("span", "pknote", note));
       b.onclick = function () { fn(); closeSheet("exmenu"); };
-      list.appendChild(b);
+      group.appendChild(b);
       return b;
     }
     if (t !== null && src && /^(youtube|tiktok)$/.test(src.platform)) {
-      row("play", "Watch this part", clock(t) + " in the video", function () { watchBit(src, t, ex); });
+      row("play", "Watch this part", clock(t), function () { watchBit(src, t, ex); });
     } else if (live && src && (src.thumb_url || (src.shortcode && /^(instagram|tiktok|youtube)$/.test(src.platform)))) {
       row("play", "Watch original", src.author ? "@" + src.author : null, function () { openWatch(src, ex); });
     }
@@ -4674,10 +4650,11 @@ export const APP = String.raw`
       row("plus", "Add an exercise", null, openWorkoutAdd);
     }
     if (!live) {
+      list.appendChild(group = el("div", "mlist"));
       row("trash", "Remove", null, function () {
         exEdit = { w: w, block: ctx.bi, index: ctx.ei, name: ex.name };
         deleteExEdit();
-      }, "danger");
+      }, "del");
     }
     openSheet("exmenu");
   }
@@ -4892,10 +4869,10 @@ export const APP = String.raw`
     function restore(msg) { w.blocks = before; redraw(); render(); rowBack(rowOf(w, bi)); if (msg) toast(msg); }
     w.blocks.splice(bi, 1); render();
     rowAway(box, from, redraw);
-    offerUndo("Removed " + (expected.title || "block"), function () {
+    offerUndo("Removed " + (expected.title || "the section"), function () {
       cardWrite(w.id, { op: "delete_block", block: bi, expect_block: asStored(expected) })
-        .then(function (r) { if (r.status === "ok") absorbWorkout(r.workout); else restore(r.message || "Could not remove that block."); })
-        .catch(function () { restore("Could not reach Spotter — the block is back."); });
+        .then(function (r) { if (r.status === "ok") absorbWorkout(r.workout); else restore(r.message || "Could not remove that section."); })
+        .catch(function () { restore("Could not reach Spotter — the section is back."); });
     }, function () { restore(null); });
   }
 
@@ -5437,28 +5414,34 @@ export const APP = String.raw`
     $("dorder").onclick = function () { if (current) openOrder(current); };
   })();
 
-  // The second tap of an armed button is as deliberate as an answer gets, and it
-  // used to be followed by a card sitting there for a round trip. Deleting a
-  // collection and deleting a session already worked this way; the workout was the
-  // odd one out. No undo on purpose — the arming is the confirmation — but a
-  // refused delete puts the card back rather than leaving the library wrong.
-  function removeWorkout(w, btn) {
-    var go = function () {
-      var keptW = state.workouts, keptC = state.colItems;
-      state.workouts = state.workouts.filter(function (x) { return x.id !== w.id; });
-      state.colItems = state.colItems.filter(function (it) { return it.workout_id !== w.id; });
-      history.back();
+  // Remove, like every other Remove on a card: off the screen on the tap, off the
+  // server once the Undo has gone (offerUndo's delayed commit, so an Undo cancels a
+  // delete that never happened). It used to ask for an armed second tap instead —
+  // a confirmation standing in for an undo, which the HIG ranks below undo. A
+  // refused delete puts the card back where it was and says so.
+  function removeWorkout(w) {
+    var epoch = accountEpoch, uid = state.user && state.user.id, at = state.workouts.indexOf(w);
+    var items = state.colItems.filter(function (it) { return it.workout_id === w.id; });
+    function back(msg) {
+      if (!srcById(w.id)) state.workouts.splice(Math.max(0, Math.min(at, state.workouts.length)), 0, w);
+      items.forEach(function (it) { if (state.colItems.indexOf(it) < 0) state.colItems.push(it); });
       render();
-      toast("Workout removed.");
+      if (msg) toast(msg);
+    }
+    state.workouts = state.workouts.filter(function (x) { return x.id !== w.id; });
+    state.colItems = state.colItems.filter(function (it) { return it.workout_id !== w.id; });
+    if (current && current.id === w.id && $("detail").classList.contains("open")) history.back();
+    render();
+    offerUndo("Removed " + (w.title || "the workout"), function () {
+      if (!accountNow(epoch, uid)) return;
+      libraryRev++;
       sb.from("workouts").delete().eq("id", w.id).then(function (r) {
-        if (!r.error) return;
-        state.workouts = keptW;
-        state.colItems = keptC;
-        render();
-        toast("That did not delete. The workout is still here.");
+        libraryRev++;
+        if (!accountNow(epoch, uid)) return;
+        // Its plan rows went with it (the foreign key cascades); the strip reads them again.
+        if (r.error) back("That did not remove. The workout is still here."); else loadPlan(true);
       });
-    };
-    if (btn) armed(btn, "Tap again to remove", go); else go();
+    }, function () { back(null); });
   }
 
   // ---------- collections and renaming ----------
@@ -5481,25 +5464,19 @@ export const APP = String.raw`
     }, 3000);
   }
 
-  // Rename · Collections · Remove as one row under the title. The favourite star
-  // stays in the top bar: it is a state, these are actions.
-  function manageRow(w) {
-    var row = el("div", "managerow");
-    row.id = "dmanage";
-    if (!isPending(w)) {
-      var ren = icon(el("button", "mbtn"), "pencil", "Rename");
-      ren.onclick = function () { openRename("workout", w.id, w.title || ""); };
-      row.appendChild(ren);
-    }
-    var n = colsOf(w.id).length;
-    var col = icon(el("button", "mbtn" + (n ? " on" : "")), "folder", "Collections");
-    if (n) col.appendChild(el("span", "n", String(n)));
-    col.onclick = function () { openCollections(w); };
-    row.appendChild(col);
-    var rm = icon(el("button", "mbtn quiet"), "trash", "Remove");
-    rm.onclick = function () { removeWorkout(w, rm); };
-    row.appendChild(rm);
-    return row;
+  // The ⋯ Workout sheet is markup; this says which of its rows this card has. The
+  // favorite star stays in the top bar: it is a state, these are actions. Hevy's
+  // routine ⋯ is the model — share, edit, delete in one list — with Ask Pumpy at
+  // its head, where the chip beside Start used to be.
+  function paintManage(w) {
+    var dead = isPending(w) || isFailed(w), n = colsOf(w.id).length;
+    $("worksub").textContent = w.title || "Untitled workout";
+    $("dask").hidden = dead;
+    $("dren").hidden = isPending(w);
+    $("dcoln").textContent = n ? String(n) : "";
+    $("dorder").hidden = dead || !ordCan(w);
+    $("dreproc").hidden = isUpload(w) || w.platform === "pumpy";
+    syncRereadButton(w);
   }
 
   // The collections this card is in, as tappable pills that jump to that filter.
@@ -5515,11 +5492,10 @@ export const APP = String.raw`
     return wrap;
   }
 
-  // Redraw only the management row and pills on an open card; a full openDetail
-  // would reload the embedded video for a membership toggle.
+  // A membership toggle redraws the collections count and pills, not the card.
   function refreshManage(w) {
-    var m = $("dmanage"), p = $("dcols");
-    if (m) m.parentNode.replaceChild(manageRow(w), m);
+    var p = $("dcols");
+    paintManage(w);
     if (p) p.parentNode.replaceChild(colPills(w), p);
   }
 
@@ -6341,23 +6317,6 @@ export const APP = String.raw`
     var out = [];
     (w.blocks || []).forEach(function (b) { (b.exercises || []).forEach(function (e) { out.push(e); }); });
     return out;
-  }
-
-  /**
-   * The delta and the timestamp, under an exercise's cue on the card.
-   *
-   * One chip and one pill, on one line that never wraps to two: the delta truncates
-   * because the sheet says it in full, and the second is pushed to the end where a
-   * reader's eye already goes for a duration. Null when the row has neither, which
-   * is every card saved before the pack existed.
-   */
-  function rowMarks(ex) {
-    var delta = ex && ex.delta ? String(ex.delta).trim() : "", t = startOf(ex);
-    if (!delta && t === null) return null;
-    var row = el("div", "exmarks");
-    if (delta) row.appendChild(el("span", "dchip", delta));
-    if (t !== null) row.appendChild(el("span", "t", clock(t)));
-    return row;
   }
 
   // ---------- how to do this ----------
@@ -10280,6 +10239,7 @@ export const APP = String.raw`
   function sessionChanged() {
     pausedBar.sync();
     if (drawn.train && trainLean) drawDay();
+    if (current) paintDock(current);
   }
 
   var resumeBox = el("div", "resumewrap hide"), resumeShown = false;
@@ -12460,7 +12420,7 @@ export const APP = String.raw`
       go.onclick = function () { startWorkout(w); };
       row.appendChild(go);
       var mv = el("button", "btn ghost tmove", "Move");
-      mv.onclick = function () { scheduleWorkout(w, list[0].row); };
+      mv.onclick = function () { openPlanSheet({ w: w, row: list[0].row, from: "today" }); };
       row.appendChild(mv);
       card.appendChild(row);
     } else if (done) {
@@ -12563,12 +12523,15 @@ export const APP = String.raw`
     return item;
   }
 
-  // The two single-day writes, each behind one door — the speed pass wants
-  // these lines optimistic and can have them here.
+  // The two plan writes, each behind one door — the speed pass wants these lines
+  // optimistic and can have them here. day may be a list: the Plan sheet puts one
+  // workout on several days in one request. The ids come back so an Undo can take
+  // exactly those rows off again.
   function planAdd(day, workoutId) {
     planRev++;
-    return sb.from("plan").insert({ user_id: state.user.id, day: day, workout_id: workoutId })
-      .then(function (r) { planRev++; return r; });
+    return sb.from("plan").insert([].concat(day).map(function (k) {
+      return { user_id: state.user.id, day: k, workout_id: workoutId };
+    })).select("id").then(function (r) { planRev++; return r; });
   }
 
   // Off the day on the tap. A row the server has not confirmed yet has no id to
@@ -12958,99 +12921,219 @@ export const APP = String.raw`
     }, function () { loadPlan(); });
   }
 
-  // Named the way the card that opened it names the day — "Add to Thursday 3",
-  // not the yyyy-mm-dd key the row is stored under.
-  function openPicker(day, label) {
-    var list = $("picklist");
-    list.innerHTML = "";
-    $("picktitle").textContent = "Add to " + (label || day);
-    if (!state.workouts.length) {
-      list.appendChild(el("p", "lede", "Add a workout video first, then you can plan it."));
-    }
-    state.workouts.forEach(function (w) {
-      var row = el("button", "pickrow"), art = cardArt(w);
-      if (art) {
-        var img = el("img");
-        img.src = art;
-        img.alt = "";
-        row.appendChild(img);
-      }
-      var t = el("div", "pt");
-      t.appendChild(el("b", null, w.title || "Workout"));
-      t.appendChild(el("span", null, [w.category, fmtDur(w.duration_minutes)].filter(Boolean).join(" · ")));
-      row.appendChild(t);
-      row.onclick = function () {
-        // The sheet closes and the day fills in on the tap; it used to take two
-        // serial round trips — the insert, then a whole week re-read — before
-        // anything moved. The row wears a temporary id until the real one lands.
-        closeSheet("picksheet");
-        var kept = state.plan;
-        state.plan = (state.plan || []).concat([
-          { id: "tmp-" + Date.now(), day: day, workout_id: w.id, user_id: state.user.id }
-        ]);
-        renderTrain();
-        planAdd(day, w.id).then(function (r) {
-          if (r.error) {
-            state.plan = kept;
-            renderTrain();
-            toast("Could not add it to that day. Try again in a moment.");
-            return;
-          }
-          loadPlan();
-        });
-      };
-      list.appendChild(row);
-    });
+  // ---------- plan · a workout for a day ----------
+  //
+  // "+ Plan a workout" on an empty day, and Swap on a planned one. The field leads,
+  // as the exercise bank's does, because forty saves are found faster by a word
+  // than by a scroll; under it the three answers a person is usually after, in the
+  // order they ask: the saves still waiting to be tried, what was trained lately,
+  // then everything A–Z. Typing folds the three into one list of matches, the way
+  // a search field does everywhere on iOS. A workout already on that day is marked
+  // and not added twice.
+  // opts.replace: a plan row the pick takes the place of (Up next's Swap).
+  var pickCtx = null;
+
+  function openPicker(day, label, opts) {
+    var rep = opts && opts.replace, when = pdWord(day);
+    // A row still waiting for its id cannot be taken off by it; that pick is an add.
+    pickCtx = { day: day, rep: rep && String(rep.id).indexOf("tmp-") !== 0 ? rep : null };
+    // "today" and "tomorrow" say it best; any other day by the caller's own name for it.
+    $("picktitle").textContent = pickCtx.rep ? "Swap" : "Plan for " + (/^to/.test(when) ? when : label || dayLabel(dayDate(day)));
+    $("pickq").value = "";
+    $("picksheet").firstElementChild.style.minHeight = "";
+    pickPaint();
     openSheet("picksheet");
   }
 
-  // ---------- plan (seam) ----------
-  //
-  // The one way to put a workout on a day, from the card's Plan, Up next's "Plan
-  // it", the ready sheet and the recap. sb-card builds the fortnight of days; until
-  // then it is the date sheet it replaces.
-  // o: { w, row (a plan row to move, or null), days (keys to preselect), from }
-  function openPlanSheet(o) {
-    scheduleWorkout(o.w, o.row || null);
+  function pickPaint() {
+    var c = pickCtx, list = $("picklist"), q = $("pickq").value.toLowerCase().trim(), on = {}, seen = {}, recent = [];
+    if (!c) return;
+    rowsFor(c.day).forEach(function (p) { on[p.workout_id] = 1; });
+    var all = state.workouts.filter(function (w) { return !isFailed(w); });
+    list.innerHTML = "";
+    if (!all.length) { list.appendChild(el("p", "lede", "Add a workout video first, then you can plan it.")); return; }
+    function part(head, ws) {
+      if (!ws.length) return;
+      if (head) list.appendChild(el("div", "woahead", head));
+      ws.forEach(function (w) { list.appendChild(pickRow(w, !!on[w.id])); });
+    }
+    if (q) {
+      part(null, all.filter(function (w) { return searchHay(w).indexOf(q) >= 0; }));
+      if (!list.firstChild) list.appendChild(el("p", "lede", "No workout matches that."));
+      return;
+    }
+    part("Ready to try", readyToTry().slice(0, 6));
+    (state.logs || []).forEach(function (l) {
+      var w = srcById(l.workout_id);
+      if (w && !seen[w.id] && recent.length < 4 && isSession(l) && !isFailed(w)) { seen[w.id] = 1; recent.push(w); }
+    });
+    part("Recent", recent);
+    part("All (A–Z)", all.slice().sort(function (a, b) { return String(a.title || "").localeCompare(String(b.title || "")); }));
   }
 
-  // One sheet, two errands. Handed a plan row it is a move — same date picker,
-  // and the old row goes only once the new one is in, so a failed write leaves
-  // the workout where it was rather than nowhere.
-  var scheduleCtx = null;
-  function scheduleWorkout(w, from) {
-    var row = from && from.id && String(from.id).indexOf("tmp-") !== 0 ? from : null;
-    scheduleCtx = { w: w, from: row, uid: state.user.id, epoch: accountEpoch };
-    $("scheduletitle").textContent = row ? "Move" : "Plan";
-    $("schedulename").textContent = w.title || "Workout";
-    $("scheduledate").value = row ? row.day : ymd(new Date());
-    $("scheduleerror").textContent = "";
-    $("schedulego").disabled = false;
-    $("schedulego").textContent = row ? "Move" : "Add to plan";
-    openSheet("schedulesheet");
+  function pickRow(w, on) {
+    var row = el("button", "pickrow" + (on ? " on" : "")), art = cardArt(w), t = el("div", "pt");
+    if (art) {
+      var img = el("img");
+      img.loading = "lazy";
+      img.alt = "";
+      img.src = art;
+      row.appendChild(img);
+    } else row.appendChild(noArt(w));
+    t.appendChild(el("b", null, w.title || "Workout"));
+    t.appendChild(el("span", null, [w.category, fmtDur(w.duration_minutes),
+      isPending(w) ? stageOf(w).kick : statusLabel(cardStatus(w), new Date())].filter(Boolean).join(" · ")));
+    row.appendChild(t);
+    if (on) row.appendChild(icon(el("span", "ck"), "check"));
+    row.onclick = function () {
+      var c = pickCtx;
+      if (on) { toast("Already planned for that day."); return; }
+      closeSheet("picksheet");
+      planWrite(w, [c.day], c.rep, c.rep ? "Swapped for " + (w.title || "another workout") : "Planned for " + pdWord(c.day));
+    };
+    return row;
   }
-  $("schedulego").onclick = function () {
-    var ctx = scheduleCtx, day = $("scheduledate").value, b = this;
-    if (!ctx || !accountNow(ctx.epoch, ctx.uid) || b.disabled) return;
-    var word = ctx.from ? "Move" : "Add to plan";
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) { $("scheduleerror").textContent = "Choose a day first."; return; }
-    // Moved to the day it is already on: nothing to write, and writing it would
-    // be an insert and a delete of the same row.
-    if (ctx.from && day === ctx.from.day) { closeSheet("schedulesheet"); return; }
-    b.disabled = true; b.textContent = ctx.from ? "Moving…" : "Adding…";
-    planAdd(day, ctx.w.id).then(function (r) {
-      if (!accountNow(ctx.epoch, ctx.uid) || scheduleCtx !== ctx) return;
-      b.disabled = false; b.textContent = word;
-      if (r.error) { $("scheduleerror").textContent = "Could not " + (ctx.from ? "move" : "add") + " it. Try again."; return; }
-      if (ctx.from) planDrop(ctx.from);
-      closeSheet("schedulesheet"); loadPlan();
-      toast(ctx.from ? "Moved to another day." : "Added to your plan.");
-    }).catch(function () {
-      if (scheduleCtx !== ctx || !accountNow(ctx.epoch, ctx.uid)) return;
-      b.disabled = false; b.textContent = word;
-      $("scheduleerror").textContent = "Could not connect. Try again.";
+
+  // Filtering starts on the first keystroke, as the bank's does. The sheet keeps
+  // the height it opened at while it filters: a sheet that shrank under the
+  // typing would pull the field down with it, away from the thumb.
+  $("pickq").addEventListener("input", function () {
+    var b = $("picksheet").firstElementChild;
+    if (!b.style.minHeight) b.style.minHeight = b.offsetHeight + "px";
+    pickPaint();
+  });
+  $("pickq").addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); this.blur(); } });
+
+  // ---------- plan · the fortnight ----------
+  //
+  // The one way to put a workout on a day, from the card's Plan, Up next's "Plan
+  // it", the ready sheet and the recap: the next fourteen days, two rows of seven,
+  // in the week strip's own cell and dot, so what is already on a day reads the
+  // way it does on Train. A tap toggles a day and any number can be on, as UIKit's
+  // multi-date calendar picks; the date wheel this replaces took Monday, Wednesday
+  // and Friday as three trips through it, and a calendar popover five taps for
+  // one Thursday. Days this workout is already on say so and cannot be picked
+  // twice. Handed a plan row it is Move: the same days, one of them.
+  // o: { w, row (a plan row to move), days (keys to preselect), from }
+  var planCtx = null;
+
+  function openPlanSheet(o) {
+    if (!o || !o.w || !state.user) return;
+    var w = o.w, box = $("plandaysbody"), keys = planDays(new Date()), mine = {};
+    var row = o.row && String(o.row.id).indexOf("tmp-") !== 0 ? o.row : null;
+    (state.plan || []).forEach(function (p) { if (p.workout_id === w.id) mine[p.day] = 1; });
+    planCtx = { w: w, row: row, sel: {}, epoch: accountEpoch, uid: state.user.id };
+    $("plandaystitle").textContent = row ? "Move" : "Plan";
+    $("plandayssub").textContent = w.title || "Workout";
+    box.innerHTML = "";
+    keys.forEach(function (key, i) {
+      var d = dayDate(key), m = dayMark(key), cell = el("button", "wday pday" + (i ? "" : " today") + (mine[key] ? " has" : ""));
+      cell.setAttribute("data-k", key);
+      cell.appendChild(el("span", "wdl", i ? d.toLocaleDateString(undefined, { weekday: "short" }) : "Today"));
+      // The first of a month names it: a fortnight crosses one more often than not.
+      cell.appendChild(el("span", "wdn", (d.getDate() === 1 ? d.toLocaleDateString(undefined, { month: "short" }) + " " : "") + d.getDate()));
+      cell.appendChild(el("span", "dmark" + (m ? " " + m : "")));
+      cell.appendChild(ic("check"));
+      cell.setAttribute("aria-label", dayLabel(d) + (mine[key] ? ", already planned" : markWord(m)));
+      if (mine[key]) cell.setAttribute("aria-disabled", "true");
+      cell.onclick = function () {
+        if (mine[key]) { haptic("tap"); return; }
+        var on = !planCtx.sel[key];
+        if (planCtx.row) planCtx.sel = {};
+        if (on) planCtx.sel[key] = 1; else delete planCtx.sel[key];
+        haptic("select");
+        planPaint();
+      };
+      box.appendChild(cell);
     });
+    (o.days || []).forEach(function (k) {
+      if (keys.indexOf(k) >= 0 && !mine[k] && !(row && Object.keys(planCtx.sel).length)) planCtx.sel[k] = 1;
+    });
+    planPaint();
+    openSheet("plandays");
+  }
+
+  // The picks, drawn, and said twice: in the button, and in words under the days.
+  function planPaint() {
+    var c = planCtx, days = Object.keys(c.sel).sort(), n = days.length, go = $("plandaysgo");
+    [].forEach.call($("plandaysbody").children, function (cell) {
+      var on = !!c.sel[cell.getAttribute("data-k")];
+      cell.classList.toggle("on", on);
+      if (!cell.getAttribute("aria-disabled")) cell.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+    go.disabled = !n;
+    go.textContent = c.row ? (n ? "Move to " + pdWord(days[0]) : "Move")
+      : n > 1 ? "Plan " + n + " days" : n ? "Plan for " + pdWord(days[0]) : "Plan";
+    var said = days.map(pdWord).join(" · ");
+    $("plandayssum").textContent = n ? said.charAt(0).toUpperCase() + said.slice(1)
+      : c.row ? "Pick the day to move it to." : "Pick one day or several.";
+  }
+
+  $("plandaysgo").onclick = function () {
+    var c = planCtx, days = c ? Object.keys(c.sel).sort() : [];
+    if (!days.length || !accountNow(c.epoch, c.uid)) return;
+    planCtx = null;
+    closeSheet("plandays");
+    planWrite(c.w, days, c.row, c.row ? "Moved to " + pdWord(days[0])
+      : "Planned for " + (days.length > 1 ? days.length + " days" : pdWord(days[0])));
   };
+
+  // A day the way people say one: today, tomorrow, then the weekday and the date.
+  function pdWord(key) {
+    var d = dayDate(key), n = Math.round((d - dayDate(ymd(new Date()))) / 86400000);
+    return n === 0 ? "today" : n === 1 ? "tomorrow"
+      : d.toLocaleDateString(undefined, { weekday: "short" }) + " " + d.getDate();
+  }
+
+  // The one write behind the Plan sheet and the picker: w onto each of days, and old
+  // (a row being moved or swapped) off, on the screen at once and behind one Undo.
+  // The insert goes first and the old row comes off only once it is in, so a failed
+  // write leaves the workout where it was rather than nowhere. The rows are really
+  // written straight away and an Undo takes them back off, unlike the deletes'
+  // delayed commit: a plan row that existed only on this screen for five seconds
+  // would vanish under any plan read that landed meanwhile — arriving on Train is one.
+  function planWrite(w, days, old, msg) {
+    var epoch = accountEpoch, uid = state.user.id, tag = "tmp-" + Date.now() + "-", ids = [], off = false, undone = false;
+    function show(plan) { state.plan = plan; repaintPlan(); render(); }
+    // The screen as it was: this write's rows gone, the moved one back (once).
+    function unshow() {
+      var plan = (state.plan || []).filter(function (p) { return ids.indexOf(p.id) < 0 && String(p.id).indexOf(tag) !== 0; });
+      show(old && !plan.filter(function (p) { return p.id === old.id; }).length ? plan.concat([old]) : plan);
+    }
+    show((state.plan || []).filter(function (p) { return !old || p.id !== old.id; }).concat(days.map(function (k, i) {
+      return { id: tag + i, day: k, workout_id: w.id, user_id: uid };
+    })));
+    // What was written is noted before anything else, Undo or not, so an Undo that
+    // lands while a request is out still knows what to take back.
+    var put = planAdd(days, w.id).then(function (r) {
+      if (!accountNow(epoch, uid)) return;
+      if (r.error) {
+        if (!undone) { unshow(); toast("Could not plan that. Try again in a moment."); }
+        return;
+      }
+      ids = (r.data || []).map(function (x) { return x.id; });
+      if (undone) return;
+      if (!old) { loadPlan(true); return; }
+      return sb.from("plan").delete().eq("id", old.id).then(function (x) {
+        if (!accountNow(epoch, uid)) return;
+        off = !x.error;
+        if (undone) return;
+        if (x.error) toast("That did not come off " + pdWord(old.day) + " — it is on both days.");
+        loadPlan(true);
+      });
+    });
+    offerUndo(msg, function () {}, function () {
+      undone = true;
+      unshow();
+      put.then(function () {
+        if (!accountNow(epoch, uid)) return;
+        var back = [];
+        if (ids.length) back.push(sb.from("plan").delete().in("id", ids));
+        if (off) back.push(planAdd(old.day, old.workout_id));
+        Promise.all(back).then(function () { loadPlan(true); });
+      });
+    });
+  }
 
   // ---------- logs, progress, history ----------
 
@@ -16777,7 +16860,7 @@ export const APP = String.raw`
     if (e.matches) guideStill(); else guideWake();
   });
   document.addEventListener("click", function (e) {
-    if (e.target.closest(".exercise-actions button")) guideLearn("detail");
+    if (e.target.closest("#dinner .exercise-main")) guideLearn("detail");
   });
 
 
@@ -16808,7 +16891,7 @@ export const APP = String.raw`
     // free and Settings needs at its top. Before .open, so its transition is honest.
     if (b) { b.classList.remove("dragging"); b.style.transform = ""; b.scrollTop = 0; }
     n.classList.add("open");
-    if (["workoptions", "filtersheet", "schedulesheet"].indexOf(id) >= 0) {
+    if (["workoptions", "filtersheet", "plandays"].indexOf(id) >= 0) {
       n._returnFocus = document.activeElement;
       var first = n.querySelector("button, input");
       if (first) first.focus({ preventScroll: true });
@@ -16982,8 +17065,8 @@ export const APP = String.raw`
   ["addsheet", "setsheet", "watchsheet", "exsheet", "exeditsheet", "explainsheet", "picksheet",
    "settingssheet", "colsheet", "renamesheet", "swapsheet", "pumpysheet", "capsheet", "plansheet",
    "daysheet", "copysheet", "sortsheet", "refsheet", "countsheet", "guidesheet", "welcomesheet",
-   "workoptions", "filtersheet", "schedulesheet", "recapsheet", "woaddsheet", "aiconsentsheet", "wleavesheet",
-   "restsheet", "sectionsheet", "ordersheet", "exmenu", "plandays", "readysheet"]
+   "workoptions", "filtersheet", "recapsheet", "woaddsheet", "aiconsentsheet", "wleavesheet",
+   "sectionsheet", "ordersheet", "exmenu", "plandays", "readysheet"]
     .forEach(wireSheet);
 
   function overlayShowing() {
@@ -20042,15 +20125,24 @@ export const APP = String.raw`
     });
   };
   $("dmore").onclick = function () { openSheet("workoptions"); };
+  // Every row closes the sheet after its own handler has run, so a row that opens
+  // another sheet hands the history entry over rather than dropping it. Read it
+  // again stays open to show that it is reading.
   $("workoptions").addEventListener("click", function (e) {
     var b = e.target.closest("button");
-    if (b && b.id !== "dreproc" && b.getAttribute("data-armed") !== "1") closeSheet("workoptions");
+    if (b && b.id !== "dreproc") closeSheet("workoptions");
   });
+  $("dask").onclick = function () { var w = current; history.back(); if (w) openPumpy(w); };
+  $("dren").onclick = function () { if (current) openRename("workout", current.id, current.title || ""); };
+  $("dcol").onclick = function () { if (current) openCollections(current); };
+  $("drm").onclick = function () { if (current) removeWorkout(current); };
+  $("dstart").onclick = function () { if (current) startWorkout(current); };
+  $("dplan").onclick = function () { if (current) openPlanSheet({ w: current, from: "card" }); };
   document.querySelectorAll("[data-close]").forEach(function (b) {
     b.onclick = function () { closeSheet(b.getAttribute("data-close")); };
   });
-  ["workoptions", "filtersheet", "schedulesheet", "recapsheet", "woaddsheet", "aiconsentsheet", "wleavesheet",
-   "restsheet", "sectionsheet", "ordersheet", "exmenu", "plandays", "readysheet"].forEach(function (id) {
+  ["workoptions", "filtersheet", "recapsheet", "woaddsheet", "aiconsentsheet", "wleavesheet",
+   "sectionsheet", "ordersheet", "exmenu", "plandays", "readysheet"].forEach(function (id) {
     $(id).addEventListener("keydown", function (e) {
       if (e.key === "Escape") { e.preventDefault(); closeSheet(id); }
       if (e.key !== "Tab") return;
@@ -20078,10 +20170,12 @@ export const APP = String.raw`
   function syncRereadButton(w) {
     var b = $("dreproc"), busy = !!(w && rereading[w.id] && rereading[w.id].epoch === accountEpoch);
     b.disabled = busy || !!(w && isPending(w));
-    b.textContent = busy ? "Reading…" : "Read it again";
+    b.lastChild.textContent = busy ? "Reading…" : "Read it again";
     b.setAttribute("aria-busy", busy ? "true" : "false");
   }
-  $("dreproc").onclick = function () {
+  // From ⋯ and from Improve this read alike.
+  $("dreproc").onclick = rereadCard;
+  function rereadCard() {
     if (!state.user || !current || (rereading[current.id] && rereading[current.id].epoch === accountEpoch)) return;
     // A card that never finished goes back on the queue instead of being re-run
     // inline; retryWorkout owns that path and the pending UI that goes with it.
@@ -20113,7 +20207,8 @@ export const APP = String.raw`
         return load().then(function () {
           if (!accountNow(epoch, uid)) return;
           var fresh = state.workouts.filter(function (x) { return x.id === r.workout.id; })[0];
-          if (fresh && current && current.id === w.id) openDetail(fresh);
+          // In place: the card already holds its history entry.
+          if (fresh && current && current.id === w.id) openDetail(fresh, true);
           toast((fresh || w).user_workout_override ? "Source refreshed; your personal exercise list was kept." : "Re-read the workout.");
         });
       }).catch(function (e) {
@@ -20121,7 +20216,7 @@ export const APP = String.raw`
         if (!accountNow(epoch, uid) || aiDeclined(e)) return;
         toast("Could not read that workout again — try again in a minute.");
       });
-  };
+  }
 
   $("wclose").onclick = function () {
     if (wo && !wo.finished) openLeave(); else history.back();

@@ -285,9 +285,9 @@ for (const door of ['callback', 'getSession', 'both']) {
   assert.equal(c.nets.length, 0, 'no read went out');
   assert.equal(c.toasts.filter((t) => WAITING.test(t)).length, 1, 'says so, once: ' + c.toasts.join(' | '));
   // What needs no account works; what does says so instead of acting as nobody.
-  for (const sel of ['#grid', '#chips', '#tab0', '#tab1', '#pausedbar', '[data-offline]', '#dinner .startbtn', '#dinner .source-disclosure', '#workout', '[data-close]', '#dclose'])
+  for (const sel of ['#grid', '#chips', '#tab0', '#tab1', '#pausedbar', '[data-offline]', '#dstart', '#dinner .dcover', '#dinner .dwatch', '#watchsheet', '#workout', '[data-close]', '#dclose'])
     assert(tap(c, sel), sel + ' is usable offline');
-  for (const sel of ['#settingsbtn', '#addbtn', '#tab2', '#dmore', '#dfav', '#colbar', '#pumpysend', '.sheet'])
+  for (const sel of ['#settingsbtn', '#addbtn', '#tab2', '#dmore', '#dfav', '#dplan', '#colbar', '#pumpysend', '.sheet'])
     assert(!tap(c, sel), sel + ' waits for the account');
   c.wo = { finished: false };
   assert(tap(c, '.sheet'), 'a sheet of a running workout (a set, the rest, leaving) is usable');

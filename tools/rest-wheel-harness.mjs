@@ -317,55 +317,12 @@ ok('restChips is gone and every rest is chosen on restWheel', () => {
     assert(!/restChips|restchips|restcustom|REST_STEPS|"Custom…"/.test(src), 'chip grid left in ' + name);
   }
   const calls = [...APP.matchAll(/restWheel\(\$\("(\w+)"\)/g)].map((m) => m[1]);
-  assert.deepEqual(calls.sort(), ['exeditrest', 'restwheel', 'sectionrest', 'sectionrest', 'woarest'].sort());
+  assert.deepEqual(calls.sort(), ['exeditrest', 'sectionrest', 'sectionrest', 'woarest'].sort());
   assert(PAGE.includes('function restWheel(box, value, onPick)'), 'the built page carries it');
-  // Five rows in the rest sheet, three in the panes and the section sheet.
-  assert(MARKUP.includes('<div class="restpick" id="restwheel"></div>'));
+  // The card's own rest sheet went with the rest pill (Simplify-B): a rest is
+  // set in Edit exercise, one tap from the row's sheet. Three rows everywhere.
+  assert(!/id="restwheel"|id="restsheet"|function openRest\b/.test(MARKUP + APP), 'the rest sheet is gone');
   for (const id of ['woarest', 'exeditrest', 'sectionrest']) assert(MARKUP.includes('<div class="restpick short" id="' + id + '"></div>'), id);
-});
-
-ok('the rest sheet commits once, on Save; moving the wheel posts nothing', () => {
-  const els = { resttitle: new El('h2'), restwheel: new El('div'), restsave: new El('button') };
-  const c2 = vm.createContext({ El, Math, String, Number, JSON, Object, Array, Set });
-  vm.runInContext(STUBS + `
-    var posts = [], closed = [], opened = [];
-    function $(id) { return els[id]; }
-    function postCorrection(w, payload, btn, msg, sheet) { posts.push({ payload: payload, btn: btn === els.restsave, msg: msg, sheet: sheet }); }
-    function closeSheet(id) { closed.push(id); }
-    function openSheet(id) { opened.push(id); }
-  ` + ['clamp', 'clock', 'restWord', 'restVal', 'restDetent', 'restSpoken', 'restWheel', 'openRest'].map(fn).join('\n'), c2);
-  c2.els = els;
-  const r = (code) => { const v = vm.runInContext(code, c2); return v && typeof v === 'object' ? JSON.parse(JSON.stringify(v)) : v; };
-  r('openRest({ id: "w1" }, 0, 1, { name: "Push Up", rest_seconds: 97 })');
-  assert.deepEqual(r('opened'), ['restsheet']);
-  assert.equal(els.resttitle.textContent, 'Rest after Push Up');
-  // Unmoved, Save only closes: a nudged 97 is not a correction.
-  els.restsave.click();
-  assert.equal(r('posts.length'), 0);
-  assert.deepEqual(r('closed'), ['restsheet']);
-  // Moved through several notches: still nothing posted until Save.
-  const sec = els.restwheel.all('wsc')[1];
-  for (const k of [8, 9, 10]) { sec.scrollTop = k * 44; sec.fire('scroll'); r('flush()'); }
-  assert.equal(r('posts.length'), 0, 'a wheel that saved per notch would post a correction per notch');
-  els.restsave.click();
-  assert.equal(r('posts.length'), 1);
-  const p = r('posts[0]');
-  assert.deepEqual(p.payload, { op: 'edit', block: 0, index: 1, expect_name: 'Push Up', fields: { rest_seconds: 110 } });
-  assert.equal(p.btn, true, 'the Save button is the one held while it saves');
-  assert.equal(p.msg, 'Rest set to 1:50');
-  assert.equal(p.sheet, 'restsheet');
-  // No rest and the default say so.
-  r('openRest({ id: "w1" }, 0, 1, { name: "Push Up", rest_seconds: 90 })');
-  const s2 = els.restwheel.all('wsc');
-  s2[0].scrollTop = 0; s2[0].fire('scroll'); s2[1].scrollTop = 0; s2[1].fire('scroll'); r('flush()');
-  els.restsave.click();
-  assert.equal(r('posts[1].msg'), 'No rest after Push Up');
-  assert.equal(r('posts[1].payload.fields.rest_seconds'), 0);
-  r('openRest({ id: "w1" }, 0, 1, { name: "Push Up", rest_seconds: 45 })');
-  els.restwheel.all('wdef')[0].click();
-  els.restsave.click();
-  assert.equal(r('posts[2].msg'), 'Back to the default rest');
-  assert.equal(r('posts[2].payload.fields.rest_seconds'), '');
 });
 
 ok('the dose panes and the section sheet only hold the value; their own buttons save it', () => {
