@@ -229,7 +229,7 @@ ok('arrow keys and Escape work the selection, and Escape puts it down before the
   assert(wire.includes('e.key === "Escape"') && wire.includes('e.stopImmediatePropagation()'));
   assert(wire.includes('ordArrow(ord.sel, e.key === "ArrowUp" ? -1 : 1)'));
   // Registered before the shared Escape/Tab loop that closes sheets.
-  assert(src.indexOf('sheet.addEventListener("keydown"') < src.indexOf('"restsheet", "sectionsheet", "ordersheet"].forEach(function (id) {'));
+  assert(src.indexOf('sheet.addEventListener("keydown"') < src.indexOf('"sectionsheet", "ordersheet"].forEach(function (id) {'));
   // Every arrow is a labelled button; the drag handle is hidden from assistive tech.
   const row = fn('ordRow');
   assert(row.includes('b.setAttribute("aria-label", "Move " + title + a[2]);'));
