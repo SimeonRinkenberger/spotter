@@ -3223,7 +3223,6 @@ export const STYLE = String.raw`<style>
   .exrow.leaving::before { display: none; }
   .segment-label { padding: 12px 16px; background: var(--ember-soft); color: var(--ink); font-weight: 650; }
   .recommendation { color: var(--ember-ink); }
-  .thumbwrap img.pumpy-cover { object-fit: contain; background: #f8efdf; }
   /* The block's own row: its name and its one quiet action on a band of paper,
      swipeable like the exercises under it. The band spans the card like the
      rows do and pads by the same 16px, so the name lines up with the exercise
