@@ -17,7 +17,8 @@ import UserNotifications
 //   - `willPresent` stays silent while the app is in front. A rest timer ending
 //     while Workout Mode is on screen already announces itself — the screen
 //     changes, the haptic fires. A banner over the top of that is the app
-//     talking to itself.
+//     talking to itself. A ready card is handed to the page instead, which has
+//     a sheet for it.
 //
 // `install()` is called at launch and only sets the delegate, which is required
 // before the first notification is delivered if taps are to be routed at all.
@@ -53,8 +54,45 @@ final class NotificationsHost: NSObject, UNUserNotificationCenterDelegate {
     ///
     /// Delegate only — no permission is requested here. That is asked for in
     /// Workout Mode, in context, from a tap.
+    ///
+    /// The ready card's category goes in at the same moment, for the same reason
+    /// the delegate does: a category registered after the notification arrives
+    /// is a banner with no buttons. Registering one asks for nothing either.
     func install() {
         center.delegate = self
+        center.setNotificationCategories([Self.readyCategory])
+    }
+
+    // MARK: - A saved video is ready
+
+    /// The one notification with buttons: a video shared in from another app has
+    /// become a workout (push.ts, `card_ready`). Both buttons open the app,
+    /// because both need it — Start Now to run the session, Plan It to show the
+    /// days — and neither just opens it, which Apple's HIG rules out: Start Now
+    /// lands in Workout Mode and Plan It on the ready sheet's days, where the
+    /// banner itself shows the card. Title case and a symbol each, as the HIG asks
+    /// of notification actions. Start Now goes first: the Watch's double tap
+    /// answers with the first action that is not destructive.
+    static let readyCategory = UNNotificationCategory(
+        identifier: "CARD_READY",
+        actions: [
+            UNNotificationAction(identifier: "START_NOW", title: "Start Now", options: [.foreground],
+                                 icon: UNNotificationActionIcon(systemImageName: "play.fill")),
+            UNNotificationAction(identifier: "PLAN_IT", title: "Plan It", options: [.foreground],
+                                 icon: UNNotificationActionIcon(systemImageName: "calendar.badge.plus")),
+        ],
+        intentIdentifiers: [],
+        // What a Lock Screen with previews hidden says instead of the card's name.
+        hiddenPreviewsBodyPlaceholder: "A saved workout is ready",
+        options: [])
+
+    /// The card a ready notification names, if it names a plausible one: the id
+    /// ends up in a spotter:// link, so it may hold nothing a link could be bent by.
+    private static func readyCard(_ content: UNNotificationContent) -> String? {
+        guard content.categoryIdentifier == readyCategory.identifier,
+              let card = content.userInfo["card"] as? String, !card.isEmpty, card.count <= 64,
+              card.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-") }) else { return nil }
+        return card
     }
 
     /// The response that launched the app, handed over by the scene: a cold
@@ -156,6 +194,15 @@ final class NotificationsHost: NSObject, UNUserNotificationCenterDelegate {
                                 willPresent notification: UNNotification,
                                 withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
         let active = UIApplication.shared.applicationState == .active
+        // A ready card with Spotter in front is not a banner over the app: the
+        // page is handed the card and shows its own sheet, by its quieter rules
+        // (?auto=1 — never over a set or another sheet, once per card), which is
+        // Apple's "discoverable but not distracting" for news that arrives in the
+        // foreground.
+        if active, let card = Self.readyCard(notification.request.content) {
+            LiveStatePlugin.deliver(LiveAction(kind: .notification, source: .notification,
+                                               id: "spotter://ready/" + card + "?auto=1"))
+        }
         completionHandler(active ? [] : [.banner, .sound])
     }
 
@@ -171,8 +218,18 @@ final class NotificationsHost: NSObject, UNUserNotificationCenterDelegate {
     }
 
     private func route(_ response: UNNotificationResponse) {
-        let link = response.notification.request.content.userInfo["url"] as? String
-        let id = (link?.isEmpty == false) ? link : response.notification.request.identifier
+        let content = response.notification.request.content
+        let link = content.userInfo["url"] as? String
+        var id = (link?.isEmpty == false) ? link : response.notification.request.identifier
+        // A ready card's two buttons act on the card it names; the banner itself
+        // follows its url like any other (the card's sheet, or Workouts for a burst).
+        if let card = Self.readyCard(content) {
+            switch response.actionIdentifier {
+            case "START_NOW": id = "spotter://start/" + card
+            case "PLAN_IT": id = "spotter://ready/" + card
+            default: break
+            }
+        }
         LiveStatePlugin.deliver(LiveAction(kind: .notification, source: .notification, id: id))
     }
 }

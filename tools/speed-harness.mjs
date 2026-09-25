@@ -110,7 +110,7 @@ function guideUser() {} function publishSignedOut() { log.push("signed-out"); } 
 function resetPager() {} function measureChrome() {} function mailClose() {} function capOn() { return false; }
 function maybeInstallHint() {} function watchWorkouts() {} function welcomeMaybe() {} function restoreSession() {}
 function consumeShare() {} function consumeOpen() {} function consumeBilling() {} function consumeCreator() {}
-function takeParkedShare() {}
+function takeParkedShare() {} function readyOnOpen() {}
 function warmPages() {} function sharePending() { return false; } function toast(m) { toasts.push(m); }
 function accountNow(epoch, uid) { return epoch === accountEpoch && state.user && state.user.id === uid; }
 function loadProfile() { nets.push("profiles"); return Promise.resolve(); }
@@ -285,9 +285,9 @@ for (const door of ['callback', 'getSession', 'both']) {
   assert.equal(c.nets.length, 0, 'no read went out');
   assert.equal(c.toasts.filter((t) => WAITING.test(t)).length, 1, 'says so, once: ' + c.toasts.join(' | '));
   // What needs no account works; what does says so instead of acting as nobody.
-  for (const sel of ['#grid', '#chips', '#tab0', '#tab1', '#pausedbar', '[data-offline]', '#dinner .startbtn', '#dinner .source-disclosure', '#workout', '[data-close]', '#dclose'])
+  for (const sel of ['#grid', '#chips', '#tab0', '#tab1', '#pausedbar', '[data-offline]', '#dstart', '#dinner .dcover', '#dinner .dwatch', '#watchsheet', '#workout', '[data-close]', '#dclose'])
     assert(tap(c, sel), sel + ' is usable offline');
-  for (const sel of ['#settingsbtn', '#addbtn', '#tab2', '#dmore', '#dfav', '#colbar', '#pumpysend', '.sheet'])
+  for (const sel of ['#settingsbtn', '#addbtn', '#tab2', '#dmore', '#dfav', '#dplan', '#colbar', '#pumpysend', '.sheet'])
     assert(!tap(c, sel), sel + ' waits for the account');
   c.wo = { finished: false };
   assert(tap(c, '.sheet'), 'a sheet of a running workout (a set, the rest, leaving) is usable');
@@ -459,7 +459,7 @@ for (const [label, mutate] of [['removed', (c) => { delete c.store[SESSION]; }],
       var $ = function () { return { classList: { contains: function () { return false; } } }; };
       function guideUser() {} function loadProfile() { return Promise.resolve(); } function maybeInstallHint() {} function watchWorkouts() {}
       function consumeShare() {} function consumeOpen() {} function consumeBilling() {} function consumeCreator() {} function warmPages() {} function welcomeMaybe() {}
-      function takeParkedShare() {}
+      function takeParkedShare() {} function readyOnOpen() {}
       function isSession(l) { return !!(l && l.completed_at); }
     ` + DECL + '\n' + REAL, ctx);
     return ctx;
@@ -536,7 +536,9 @@ for (const [label, mutate] of [['removed', (c) => { delete c.store[SESSION]; }],
   }
   assert.deepEqual([...capReaders].sort(), ['askCaption', 'openDetail', 'refreshDetail', 'sameRow'], 'caption readers: ' + [...capReaders]);
   const selects = [...APP.matchAll(/from\("workouts"\)\.select\(([^)]*)\)/g)].map((m) => m[1]);
-  assert.deepEqual(selects, ['CARD_COLS', 'CARD_COLS', '"caption"', '"*"'], 'pollPending and load select CARD_COLS; the export keeps *: ' + selects);
+  // The fifth is openLink's one row for a card a notification names before the page has it.
+  assert.deepEqual(selects, ['CARD_COLS', 'CARD_COLS', '"caption"', '"*"', 'CARD_COLS'],
+    'pollPending, load and the card-link read select CARD_COLS; the export keeps *: ' + selects);
   ok('C7 columns: the ones app.ts reads, caption on demand, the export still whole');
 }
 {
