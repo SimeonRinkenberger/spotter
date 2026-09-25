@@ -688,22 +688,14 @@ export const MARKUP_BODY = String.raw`</head>
   <div class="btnrow"><button class="btn" id="refdone">Done</button></div>
 </div></div>
 
-<!-- The today card's overflow: what you do TO a week, one tap off the card that
-     already answers what you are doing today. -->
+<!-- Train's one ⋯ sheet, filled per opening (app.ts, openMore): the expanded
+     month's Copy week · Build with Pumpy · What counts, and Up next's Move · Swap ·
+     Remove from plan. -->
 <div class="sheet" id="trainmore"><div class="sheetbody">
   <div class="grabber"></div>
-  <h2>This week</h2>
-  <button class="pickrow" id="tmcopy">Copy week</button>
-  <button class="pickrow" id="tmpumpy">Build with Pumpy</button>
-  <button class="pickrow" id="tmcount">What counts</button>
+  <h2 id="tmtitle">Plan</h2>
+  <div class="picklist" id="tmlist"></div>
   <button class="btn ghost" data-close="trainmore">Done</button>
-</div></div>
-
-<div class="sheet" id="daysheet"><div class="sheetbody">
-  <div class="grabber"></div>
-  <h2 id="daytitle">Day</h2>
-  <div id="daylist"></div>
-  <button class="planadd" id="dayadd">+ Plan a workout</button>
 </div></div>
 
 <!-- What the ring counts, one tap under the dots: a goal whose rules are hidden
@@ -711,6 +703,7 @@ export const MARKUP_BODY = String.raw`</head>
 <div class="sheet" id="countsheet"><div class="sheetbody">
   <div class="grabber"></div>
   <h2>What counts</h2>
+  <p class="lede countnow" id="countnow"></p>
   <p class="lede">A session is a workout you finished with at least one set logged. Two in one
     day count as two. Rest days are free &mdash; the week only asks for the number you set, and it
     starts again on Monday.</p>
@@ -727,7 +720,6 @@ export const MARKUP_BODY = String.raw`</head>
   <div class="copyweeks" id="copyweeks"></div>
   <div class="copyrep"><span>Repeat for</span><div class="copychips" id="copyreps"></div></div>
   <div class="btnrow"><button class="btn" id="copygo">Copy</button></div>
-  <button class="planbtn wide" id="copypumpy"></button>
   <button class="danger" id="copyclear">Clear this week</button>
 </div></div>
 
