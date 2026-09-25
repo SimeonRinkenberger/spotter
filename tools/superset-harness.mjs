@@ -87,10 +87,12 @@ function session(blocks) {
     'log = []; restUntil = 0; restFace = null; setCtx = { idx: 0, reps: 10, weight: 0 }; justSet = -1;');
 }
 
-// The panel's own button: setCtx is what the docked stepper holds for the open
-// member's next set (stepDock), then the button's handler is saveSet itself.
+// Workout Mode's big button: setCtx is what the open panel's docked steppers hold
+// for its member's next set (stepDock), and the button logs through logNextSet,
+// which reads that dock rather than the prefill.
 function tap(r, w) {
-  run('setCtx.idx = ssIdx(wo.entries[wo.i]); setCtx.reps = ' + (r || 10) + '; setCtx.weight = ' + (w || 0) + '; saveSet();');
+  run('setCtx.idx = ssIdx(wo.entries[wo.i]); setCtx.reps = ' + (r || 10) + '; setCtx.weight = ' + (w || 0) + ';' +
+    ' stepRows = [{ parentNode: { _wo: wo, _k: wo.i, _idx: setCtx.idx } }]; logNextSet({ source: "app" }); stepRows = null;');
   return run('wo.i');
 }
 
@@ -272,7 +274,7 @@ ok('a hand-over saves the draft and buzzes after the set\'s own buzz', () => {
 
 console.log('from the Lock Screen and the wrist');
 
-ok('liveAction({ kind: "set" }) hands over exactly like the panel\'s button', () => {
+ok('liveAction({ kind: "set" }) hands over exactly like the big button on the panel\'s figures', () => {
   const byTap = [], byRemote = [];
   session([superset([reps('A'), reps('B')], { rounds: 2 }), straight]);
   for (let n = 0; n < 4; n++) byTap.push([tap(12, 50), run('log.filter(function (x) { return x.indexOf("rest:") === 0; }).length')]);
@@ -285,8 +287,10 @@ ok('liveAction({ kind: "set" }) hands over exactly like the panel\'s button', ()
   const remoteSets = run('wo.entries.map(function (e) { return e.sets.map(function (s) { return [s.reps, s.weight]; }); })');
   assert.deepEqual(byRemote, byTap, 'same members opened, same rests started, in the same order');
   assert.deepEqual(remoteSets, tapSets, 'and the same sets written');
-  // The panel's button really is saveSet, and saveSet is where the hand-over lives.
-  assert.ok(fn('ssLive').includes('go.onclick = saveSet;'));
+  // One button for every panel: ssLive draws none of its own, the big button's
+  // tap goes through logNextSet (the dialled figures above are the dock's), and
+  // saveSet is where the hand-over lives.
+  assert.ok(!fn('ssLive').includes('saveSet') && fn('logTap').includes('logNextSet({ source: "app" })'));
   assert.ok(/if \(ssLogged\(fresh, setCtx\.idx\)\) return;\n\s+closeSheet\("setsheet"\);/.test(fn('saveSet')));
   assert.ok(fn('workDone').includes('if (ssLogged(true, wo.entries[wo.i].sets.length - 1)) return;'), 'a hold hands over the same way');
 });
