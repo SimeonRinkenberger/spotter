@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 const app=fs.readFileSync('supabase/functions/spotter/app.ts','utf8');
-let html=fs.readFileSync('docs/index.html','utf8');
+let html=fs.readFileSync('web-dist/index.html','utf8');
 html=html.replace(/<script src="https:\/\/cdn.jsdelivr.net[^>]+><\/script>/g,'');
 const start=app.indexOf('(function () {'),end=app.lastIndexOf('})();');
 let script=app.slice(start,end)+`

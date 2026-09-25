@@ -41,6 +41,6 @@ r = run({ framed: false, native: {} });
 ok(r.started.length === 1 && !r.hidden, 'R-11: the native shell starts as always');
 r = run({ framed: true, native: {} });
 ok(r.started.length === 1 && !r.hidden && !r.replaced.length, 'R-11: the native shell is never subject to the guard');
-const built = readFileSync('docs/index.html', 'utf8');
+const built = readFileSync('web-dist/index.html', 'utf8');
 ok(built.includes('if (!native && window.top !== window.self) {'), 'R-11: the built page carries the guard');
 console.log('PASS ' + checks + ' frame-guard checks: the web page refuses to be framed, the native shell is untouched.');

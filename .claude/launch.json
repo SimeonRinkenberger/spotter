@@ -3,16 +3,24 @@
   "configurations": [
     {
       "name": "spotter-docs",
+      "//": "The app for local testing: build.mjs's unpublished web-dist/ (run node build.mjs first). The name is kept from when docs/ held the app; docs/ is now the published landing page (spotter-site).",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "8052", "--directory", "docs"],
+      "runtimeArgs": ["-m", "http.server", "8052", "--directory", "web-dist"],
       "port": 8052
     },
     {
       "name": "spotter-docs-8000",
-      "//": "Port 8000 is the one localhost origin on the edge function's CORS allow-list; API calls (corrections, limits) only succeed from here.",
+      "//": "Port 8000 is the one localhost origin on the edge function's CORS allow-list; API calls (corrections, limits) only succeed from here. Serves the app from web-dist/ (run node build.mjs first).",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "8000", "--directory", "docs"],
+      "runtimeArgs": ["-m", "http.server", "8000", "--directory", "web-dist"],
       "port": 8000
+    },
+    {
+      "name": "spotter-site",
+      "//": "docs/ as GitHub Pages publishes it: the landing page that replaced the web app, the kill-switch sw.js and the static pages.",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "8053", "--directory", "docs"],
+      "port": 8053
     }
   ]
 }

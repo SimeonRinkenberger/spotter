@@ -1,10 +1,12 @@
-// The web page's Content-Security-Policy and SRI, checked statically against the
-// page it governs. No network.
+// The app page's Content-Security-Policy and SRI, checked statically against the
+// page it governs. No network. The app page is build.mjs's unpublished output
+// (web-dist/index.html): the web app is retired, but the page is still what the
+// browser harnesses and a local browser run, so its policy is kept honest.
 //
 //   node tools/csp-check.mjs        (after node build.mjs)
 //
 // Fails when:
-//   - docs/index.html has no CSP <meta>, or it is not in <head> ahead of every
+//   - web-dist/index.html has no CSP <meta>, or it is not in <head> ahead of every
 //     tag it has to govern;
 //   - script-src allows 'unsafe-inline' / 'unsafe-eval' / a bare CDN host, or an
 //     inline <script> in the page is not allowed by its sha256;
@@ -13,8 +15,7 @@
 //   - any origin the page uses is not allowed by the directive its use needs
 //     (script, frame, style, font, img, connect) — or, for an origin that is only
 //     ever navigated to, is not on the short navigation list below;
-//   - the edge function's copy differs from the web page, or the native shell
-//     (native-dist/, when built) still carries the web policy.
+//   - the native shell (native-dist/, when built) still carries the web policy.
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 
@@ -25,10 +26,10 @@ function check(ok, what) {
   else { failures.push(what); console.error('FAIL ' + what); }
 }
 
-const page = readFileSync('docs/index.html', 'utf8');
+const page = readFileSync('web-dist/index.html', 'utf8');
 const head = page.slice(0, page.indexOf('</head>'));
 const meta = /<meta http-equiv="Content-Security-Policy" content="([^"]*)">/.exec(page);
-check(meta, 'docs/index.html carries a Content-Security-Policy <meta>');
+check(meta, 'web-dist/index.html carries a Content-Security-Policy <meta>');
 const policy = {};
 if (meta) {
   for (const part of meta[1].split(';')) {
@@ -154,10 +155,8 @@ for (const o of origins) {
 check(directive('object-src').join() === "'none'", "object-src 'none'");
 check(directive('base-uri').join() === "'self'", "base-uri 'self'");
 
-// ---------- the other copies ----------
+// ---------- the native copy ----------
 {
-  const gen = readFileSync('supabase/functions/spotter/page.gen.ts', 'utf8');
-  check(gen.includes(JSON.stringify(page)), 'the edge function serves the same page, policy included');
   if (existsSync('native-dist/index.html')) {
     const shell = readFileSync('native-dist/index.html', 'utf8');
     check(!shell.includes('Content-Security-Policy'), 'the native shell does not carry the web policy');
@@ -169,4 +168,4 @@ if (failures.length) {
   console.error('\n' + failures.length + ' of ' + (failures.length + passed) + ' CSP / SRI checks FAILED');
   process.exit(1);
 }
-console.log('PASS ' + passed + ' CSP / SRI checks: hashed inline app, no unsafe script sources, supabase-js pinned by SRI to the installed bytes, every origin the page uses allowed by the directive it needs, edge copy identical, native shell without it.');
+console.log('PASS ' + passed + ' CSP / SRI checks: hashed inline app, no unsafe script sources, supabase-js pinned by SRI to the installed bytes, every origin the page uses allowed by the directive it needs, native shell without it.');

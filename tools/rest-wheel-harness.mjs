@@ -19,7 +19,7 @@ import vm from 'node:vm';
 const APP = fs.readFileSync('supabase/functions/spotter/app.ts', 'utf8');
 const STYLE = fs.readFileSync('supabase/functions/spotter/style.ts', 'utf8');
 const MARKUP = fs.readFileSync('supabase/functions/spotter/markup.ts', 'utf8');
-const PAGE = fs.readFileSync('docs/index.html', 'utf8');
+const PAGE = fs.readFileSync('web-dist/index.html', 'utf8');
 
 // A top-level function, one-liners included (the midadd lift assumes a body).
 function fn(name) {
@@ -313,7 +313,7 @@ ok('the stylesheet keeps the snap, the containment, and the tilt off the snappin
 console.log('commit rules and callers');
 
 ok('restChips is gone and every rest is chosen on restWheel', () => {
-  for (const [name, src] of [['app.ts', APP], ['style.ts', STYLE], ['markup.ts', MARKUP], ['docs/index.html', PAGE]]) {
+  for (const [name, src] of [['app.ts', APP], ['style.ts', STYLE], ['markup.ts', MARKUP], ['web-dist/index.html', PAGE]]) {
     assert(!/restChips|restchips|restcustom|REST_STEPS|"Custom…"/.test(src), 'chip grid left in ' + name);
   }
   const calls = [...APP.matchAll(/restWheel\(\$\("(\w+)"\)/g)].map((m) => m[1]);

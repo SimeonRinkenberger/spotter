@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import assert from 'node:assert/strict';
 const engines=await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const source=fs.readFileSync('supabase/functions/spotter/app.ts','utf8');
-const page=fs.readFileSync('docs/index.html','utf8');
+const page=fs.readFileSync('web-dist/index.html','utf8');
 const motion=source.slice(source.indexOf('  var movingDisclosures ='),source.indexOf('  function disclosure('));
 assert(motion.includes('function animateDisclosure('));
 const engine=process.env.SPOTTER_BROWSER==='webkit'?'webkit':'chromium';

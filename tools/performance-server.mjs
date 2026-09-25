@@ -1,9 +1,10 @@
-// Local-only browser laboratory. No credentials or production writes; never build into docs.
+// Local-only browser laboratory. No credentials or production writes; serves build.mjs's
+// unpublished web-dist/ (run node build.mjs first), never docs/.
 // node tools/performance-server.mjs [baseline html] serves real app at / and lab at /lab.
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
-const root = path.resolve('docs');
+const root = path.resolve('web-dist');
 const baseline = process.argv[2];
 const out = path.resolve('/private/tmp/spotter-performance');
 fs.mkdirSync(out, {recursive:true});

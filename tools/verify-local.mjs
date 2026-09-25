@@ -3,7 +3,7 @@
 // Why this exists: `npm run gtm:check` is 16 launch regressions and none of them
 // is reader-access-check, reader-db-check, ai-guard-db-check, `deno check`,
 // ai-admission-check, source-trust-check, merge-harness,
-// ingest-coverage-harness, the two pack-eval runs or the build.mjs byte diff. A
+// ingest-coverage-harness, the two pack-eval runs or the build step. A
 // green gtm:check therefore sat next to a red PR for an afternoon: the `verify`
 // job died at reader-access-check on `aiActor.getStore is not a function`, which
 // nothing runnable in one command would have caught first.
@@ -30,6 +30,9 @@ if (!fs.existsSync(PGLITE_MODULE)) {
 
 const steps = [
   ['npm audit', 'npm', ['audit', '--omit=dev', '--audit-level=high']],
+  // First, because every harness that loads the app reads build.mjs's output
+  // (web-dist/, not committed) and a fresh CI checkout has none.
+  ['Build the app page; the published landing page matches its build', 'node', ['tools/verify-build-diff.mjs']],
   ['AI guard database', 'node', ['tools/ai-guard-db-check.mjs']],
   ['Reader access', 'node', ['tools/reader-access-check.mjs']],
   ['Reader database', 'node', ['tools/reader-db-check.mjs']],
@@ -48,7 +51,6 @@ const steps = [
   ['Ingest coverage', 'deno', ['run', '--allow-read', '--allow-env', 'tools/ingest-coverage-harness.ts']],
   ['Pack eval offline', 'deno', ['run', '--allow-read', 'tools/pack-eval/offline.ts']],
   ['Pack eval scoring', 'deno', ['run', '--allow-read', 'tools/pack-eval/score-test.ts']],
-  ['Built page matches its source', 'node', ['tools/verify-build-diff.mjs']],
   ['Content-Security-Policy and SRI cover the page', 'node', ['tools/csp-check.mjs']],
   ['Tab pager: every page turns, rows/chips/week bar keep their drags', 'node', ['tools/pager-harness.mjs']],
 ];
