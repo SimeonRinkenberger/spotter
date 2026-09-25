@@ -3,32 +3,24 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
 <title>Spotter — all set</title>
 <link rel="icon" href="icon.png">
 <!--
-  Why this page exists at all.
-
-  Stripe Checkout is on stripe.com, a different origin. Installed to the home
-  screen on iOS, Spotter opens a cross-origin link in an in-app browser whose
-  storage is NOT the app's storage — so the app may never load the success URL
-  itself, and anything written here would be written somewhere the app cannot
-  read. This page therefore stores nothing and promises nothing. It says the
-  payment went through and offers the way back; the app learns the outcome for
-  itself, from ?billing=success when that link is followed, and otherwise from
-  the pending flag in its own storage, which it re-checks every time it returns
-  to the front.
-
-  No external script, no fetch, no font download: this is the first thing seen
-  after a card is charged and it should be on screen before the network has
-  finished thinking. The only script is the branch between paid and cancelled.
+  Stripe Checkout's success address (billing.ts, createCheckout: success_url). Spotter
+  no longer sells through Stripe and the web app it used to hand back to is retired,
+  so nothing should arrive here any more; the page stays so that an old checkout, or
+  one made while a Stripe key is still configured, never ends on a 404 after a card
+  was charged. It says the one true thing and points at the app. No script, no fetch,
+  no font download, and no link back into a web app that no longer exists.
 -->
 <style>
   :root { color-scheme: light dark;
     --paper: #F5F6F8; --card: #FFFFFF; --ink: #14171A; --ink-2: #58626E;
-    --line: rgba(20,23,26,.09); --ember: #E8551F; --on-ember: #17100C; --good: #178055; }
+    --line: rgba(20,23,26,.09); --good: #178055; }
   @media (prefers-color-scheme: dark) {
     :root { --paper: #101214; --card: #191D21; --ink: #EEF2F6; --ink-2: #AFBAC6;
-      --line: rgba(238,242,246,.10); --ember: #FF7A45; --on-ember: #17100C; --good: #3FD096; }
+      --line: rgba(238,242,246,.10); --good: #3FD096; }
   }
   body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
     background: var(--paper); color: var(--ink); line-height: 1.6;
@@ -40,43 +32,17 @@
     display: flex; align-items: center; justify-content: center; }
   .mark svg { width: 30px; height: 30px; fill: none; stroke: var(--good); stroke-width: 2.4;
     stroke-linecap: round; stroke-linejoin: round; }
-  .mark.off svg { stroke: var(--ink-2); }
   h1 { font-size: 24px; letter-spacing: -.025em; margin: 0 0 10px; }
-  p { color: var(--ink-2); font-size: 15px; margin: 0 0 26px; }
-  a.go { display: block; background: var(--ember); color: var(--on-ember); text-decoration: none;
-    font-size: 15.5px; font-weight: 650; padding: 15px; border-radius: 14px; }
+  p { color: var(--ink-2); font-size: 15px; margin: 0; }
 </style>
 </head>
 <body>
 <main>
-  <div class="mark" id="mark">
+  <div class="mark">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
   </div>
-  <h1 id="head">You&rsquo;re all set</h1>
-  <p id="say">Close this and go back to Spotter &mdash; your plan is already active.</p>
-  <a class="go" id="go" href="./?billing=success">Open Spotter</a>
+  <h1>You&rsquo;re all set</h1>
+  <p>Close this page and open the Spotter app. Your plan is already active there.</p>
 </main>
-<script>
-  (function () {
-    var q;
-    try { q = new URLSearchParams(location.search); } catch (e) { return; }
-    if (q.get("billing") === "cancel") {
-      document.getElementById("mark").className = "mark off";
-      document.getElementById("mark").innerHTML =
-        '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
-      document.getElementById("head").textContent = "No charge was made";
-      document.getElementById("say").textContent = "You closed the checkout before paying, so nothing " +
-        "was taken. Everything in Spotter is where you left it.";
-      document.getElementById("go").href = "./?billing=cancel";
-      document.getElementById("go").textContent = "Back to Spotter";
-      return;
-    }
-    // Carry the Checkout Session id across if Stripe put one on this address. It
-    // is the one identifier that lets the app confirm the purchase without
-    // waiting on a webhook, so it should survive the hop back.
-    var sid = q.get("session_id");
-    if (sid) document.getElementById("go").href = "./?billing=success&session_id=" + encodeURIComponent(sid);
-  })();
-</script>
 </body>
 </html>
