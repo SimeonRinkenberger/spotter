@@ -275,11 +275,12 @@ export const STYLE = String.raw`<style>
   header { position: absolute; top: 0; left: 0; right: 0; z-index: 20;
     padding: calc(12px + env(safe-area-inset-top)) 18px 12px; }
   /* The hairline belongs at the bottom of the whole translucent bar, and on
-     Library that bar ends at the search field, which carries its own and slides
-     away with the page. --x is the track position in pages, so the two lines
-     cross-fade: mid-swipe you see half of each instead of both at full strength. */
+     Workouts (the second page) that bar ends at the search field, which carries
+     its own and slides away with the page. --x is the track position in pages,
+     so the two lines cross-fade: mid-swipe you see half of each instead of both
+     at full strength. */
   header::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1px;
-    background: var(--line); opacity: clamp(0, var(--x, 0), 1); }
+    background: var(--line); opacity: clamp(0, max(var(--x, 0) - 1, 1 - var(--x, 0)), 1); }
   .titlerow { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
   .tstack { flex: 1 1 auto; min-width: 0; }
   h1 { font-family: var(--display); font-size: 27px; margin: 0; font-weight: 700;
@@ -297,7 +298,26 @@ export const STYLE = String.raw`<style>
   .ts:nth-child(1) { --i: 0; }
   .ts:nth-child(2) { --i: 1; }
   .ts:nth-child(3) { --i: 2; }
-  .hbtns { display: flex; gap: 8px; }
+  .hbtns { display: flex; gap: 8px; position: relative; }
+  /* Train's streak and ring sit left of the buttons without taking their room:
+     out of the flow, so the gear and the + never move as the page changes, and
+     faded by the pager's own --x the way the titles are. Only Train can tap them. */
+  .trainstat { position: absolute; right: calc(100% + 10px); top: 50%; display: flex;
+    align-items: center; gap: 10px; transform: translateY(-50%);
+    opacity: clamp(0, calc(1 - var(--x, 0) * 1.6), 1); pointer-events: none; }
+  header.ontrain .trainstat { pointer-events: auto; }
+  /* One add button, two sizes: the word shows on Workouts, where saving is the
+     page's job, and folds away to a + on Train and Pumpy. Switched when the page
+     is decided rather than per frame, so a drag never relays out the header. */
+  #addbtn .addword { display: inline-block; max-width: 0; opacity: 0; overflow: hidden;
+    transition: max-width var(--t-2) var(--e-out), opacity var(--t-1) var(--e-soft); }
+  header.onlib #addbtn .addword { max-width: 96px; opacity: 1; }
+  #addbtn { min-width: 44px; justify-content: center;
+    transition: padding var(--t-2) var(--e-out), gap var(--t-2) var(--e-out); }
+  header:not(.onlib) #addbtn { padding: 0 10px; gap: 0; }
+  @media (prefers-reduced-motion: reduce) {
+    #addbtn, #addbtn .addword { transition: opacity var(--t-1) var(--e-soft); }
+  }
 
   /* ---------- the pager ----------
      No touch-action on purpose. Asking for pan-y let WebKit start scrolling
@@ -340,7 +360,7 @@ export const STYLE = String.raw`<style>
     background: color-mix(in srgb, var(--paper) 84%, transparent);
     -webkit-backdrop-filter: blur(20px) saturate(1.5); backdrop-filter: blur(20px) saturate(1.5); }
   .searchwrap::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1px;
-    background: var(--line); opacity: calc(1 - clamp(0, var(--x, 0), 1)); }
+    background: var(--line); opacity: calc(1 - clamp(0, max(var(--x, 0) - 1, 1 - var(--x, 0)), 1)); }
   /* Spanning the input's own band rather than half of a padded box, so the mark
      stays on the field's mid-line whatever the field's height turns out to be. */
   .searchico { position: absolute; left: 32px; top: 8px; bottom: 12px;
@@ -680,7 +700,7 @@ export const STYLE = String.raw`<style>
   .dauthor:active { color: var(--ember-ink); }
   /* ---------- managing a card ----------
      Rename, collections and remove as one row, in the same quiet card style as
-     .sect. Favourite stays in the top bar: it is a state, these are actions. */
+     .sect. Favorite stays in the top bar: it is a state, these are actions. */
   .managerow { display: flex; gap: 8px; margin: 0 0 12px; }
   .mbtn { flex: 1; min-width: 0; border: 1px solid var(--line); background: var(--card);
     color: var(--ink-2); border-radius: 13px; padding: 10px 8px; font-size: 12.5px; font-weight: 650;

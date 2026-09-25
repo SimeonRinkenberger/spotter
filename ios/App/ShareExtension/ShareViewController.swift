@@ -76,7 +76,7 @@ final class ShareViewController: UIViewController {
         detailLabel.isHidden = true
         progress.isHidden = true
         statusLabel.text = SharedLink.readingMessage
-        saveButton.setTitle("Save workout", for: .normal)
+        saveButton.setTitle("Save to Spotter", for: .normal)
         saveButton.titleLabel?.font = .preferredFont(forTextStyle: .headline)
         saveButton.addTarget(self, action: #selector(save), for: .touchUpInside)
         saveButton.isHidden = true

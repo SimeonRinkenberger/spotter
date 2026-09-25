@@ -30,7 +30,7 @@ const LIFTED = ['isTimed', 'supersetOf', 'cxDosed', 'cxCap', 'complexOf', 'isCir
   'targetOf', 'restOf', 'restWord', 'clock', 'kindName', 'blockMetaText', 'flatten', 'isStop', 'endStop',
   'stopDone', 'stopOf', 'setUnit', 'ssMembers', 'ssDone', 'ssTurn', 'ssName', 'ssIdx', 'ssSum', 'askText',
   'setText', 'wtText', 'doseText', 'timeText', 'ssLogged', 'saveSet', 'setPrefill', 'setNum', 'setReps',
-  'setWeight', 'plate', 'clamp', 'liveAction', 'liveState', 'blockName', 'draftOf', 'woGo', 'logHold', 'workDone'];
+  'setWeight', 'plate', 'clamp', 'liveAction', 'logNextSet', 'liveState', 'blockName', 'draftOf', 'woGo', 'logHold', 'workDone'];
 
 // Everything the lifted code reaches for that draws or talks to the device.
 // Each records what it was asked, which is what the checks below read.
@@ -38,6 +38,7 @@ const STUBS = `
 var state = { unit: "lb", haptics: true }, hist = {}, wo = null, REST_FALLBACK = 90, native = null;
 var setCtx = { idx: 0, reps: 10, weight: 0 }, justSet = -1, woPhase = "idle";
 var restUntil = 0, restTotal = 0, restHeld = 0, restFace = null, restThen = null, ssHand = false;
+var stepRows = null, setEvents = [];
 var log = [];
 function capWord(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
 function exKey(e) { return e && e.canonical_id ? "c:" + e.canonical_id : "n:" + ((e && e.name) || ""); }

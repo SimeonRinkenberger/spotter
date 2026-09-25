@@ -225,19 +225,25 @@ export const MARKUP_BODY = String.raw`</head>
   <header>
     <div class="titlerow">
       <div class="tstack">
-        <h1 id="apptitle"><span class="ts">Spotter</span><span class="ts" aria-hidden="true">Train</span><span class="ts" aria-hidden="true">Pumpy</span></h1>
-        <div class="count" id="count"><span class="ts" id="count0">Reading your library</span><span class="ts" id="count1" aria-hidden="true">This week</span><span class="ts" aria-hidden="true">Your coach</span></div>
+        <h1 id="apptitle"><span class="ts">Train</span><span class="ts" aria-hidden="true">Workouts</span><span class="ts" aria-hidden="true">Pumpy</span></h1>
+        <div class="count" id="count"><span class="ts" id="counttrain">This week</span><span class="ts" id="countlib" aria-hidden="true">Reading your workouts</span><span class="ts" aria-hidden="true">Your coach</span></div>
       </div>
       <div class="hbtns">
+        <!-- Train's own corner of the bar: the streak and the week ring (app.ts,
+             "train · the header"). It fades with the page, as the titles do. -->
+        <div class="trainstat" id="trainstat"></div>
         <button class="addbtn ghost" id="settingsbtn" title="Settings" aria-label="Settings"><svg class="ic"><use href="#i-settings"></use></svg></button>
-        <button class="addbtn savebtn" id="addbtn"><svg class="ic"><use href="#i-plus"></use></svg><span>Save workout</span></button>
+        <!-- One button, two sizes: a compact + on Train and Pumpy, the labelled
+             pill on Workouts, drawn from the pager's --x like the titles. -->
+        <button class="addbtn savebtn" id="addbtn" aria-label="Add video"><svg class="ic"><use href="#i-plus"></use></svg><span class="addword">Add video</span></button>
       </div>
     </div>
   </header>
 
   <div class="pages" id="pages">
     <div class="track" id="track">
-      <div class="page" id="libpage" role="tabpanel" aria-labelledby="tab0">
+      <div class="page view" id="trainview" role="tabpanel" aria-labelledby="tab0"></div>
+      <div class="page" id="libpage" role="tabpanel" aria-labelledby="tab1">
         <!-- A div, not a label: a label round the field and its X made the X's
              neighbourhood a door back into the field (app.ts, searchDone). -->
         <div class="searchwrap" id="searchwrap" role="search">
@@ -262,7 +268,6 @@ export const MARKUP_BODY = String.raw`</head>
         <div class="empty hide" id="empty"></div>
       </div>
 
-      <div class="page view" id="trainview" role="tabpanel" aria-labelledby="tab1"></div>
       <div class="page view" id="pumpyview" role="tabpanel" aria-labelledby="tab2">
         <div class="pumpybar" id="pumpybar">
           <button id="pumpychats" title="Chats" aria-label="Chats"><svg class="ic"><use href="#i-chats"></use></svg><span class="pblabel" aria-hidden="true">Chats</span></button>
@@ -283,10 +288,13 @@ export const MARKUP_BODY = String.raw`</head>
     </div>
   </div>
 
+  <!-- A paused session, on every tab, above the tab bar (app.ts, "the paused
+       bar"). Hidden until there is one; never shown over Workout Mode. -->
+  <div class="pausedbar hide" id="pausedbar" role="region" aria-label="Paused workout"></div>
   <nav class="tabbar" role="tablist" aria-label="Sections">
     <div class="tabpill" aria-hidden="true"></div>
-    <button class="tab active" id="tab0" role="tab" aria-selected="true" aria-controls="libpage" data-view="library"><span class="ti"><svg class="ic"><use href="#i-dumbbell"></use></svg></span><span class="tl">Workouts</span></button>
-    <button class="tab" id="tab1" role="tab" aria-selected="false" aria-controls="trainview" data-view="train"><span class="ti"><svg class="ic"><use href="#i-train"></use></svg></span><span class="tl">Train</span></button>
+    <button class="tab active" id="tab0" role="tab" aria-selected="true" aria-controls="trainview" data-view="train"><span class="ti"><svg class="ic"><use href="#i-train"></use></svg></span><span class="tl">Train</span></button>
+    <button class="tab" id="tab1" role="tab" aria-selected="false" aria-controls="libpage" data-view="library"><span class="ti"><svg class="ic"><use href="#i-dumbbell"></use></svg></span><span class="tl">Workouts</span></button>
     <button class="tab" id="tab2" role="tab" aria-selected="false" aria-controls="pumpyview" data-view="pumpy"><span class="ti" id="pumpytab"></span><span class="tl">Pumpy</span></button>
   </nav>
 </div>
@@ -296,7 +304,7 @@ export const MARKUP_BODY = String.raw`</head>
   <div class="dtop">
     <button class="iconbtn" id="dclose" aria-label="Back"><svg class="ic"><use href="#i-arrow-left"></use></svg></button>
     <div class="hbtns">
-      <button class="iconbtn" id="dfav" title="Favourite" aria-label="Favourite" aria-pressed="false"><svg class="ic"><use href="#i-star"></use></svg></button>
+      <button class="iconbtn" id="dfav" title="Favorite" aria-label="Favorite" aria-pressed="false"><svg class="ic"><use href="#i-star"></use></svg></button>
       <button class="chip" id="dmore" aria-haspopup="dialog">Options</button>
     </div>
   </div>
@@ -306,7 +314,7 @@ export const MARKUP_BODY = String.raw`</head>
 
 <div class="sheet" id="workoptions" role="dialog" aria-modal="true" aria-labelledby="workoptiontitle"><div class="sheetbody">
   <div class="grabber"></div>
-  <h2 id="workoptiontitle">Workout options</h2>
+  <h2 id="workoptiontitle">Workout</h2>
   <div id="workmanage"></div>
   <button class="pickrow" id="dshare">Share workout</button>
   <button class="pickrow" id="dreproc">Read it again</button>
@@ -314,14 +322,14 @@ export const MARKUP_BODY = String.raw`</head>
   <button class="btn ghost" data-close="workoptions">Done</button>
 </div></div>
 <!-- The way out of a live session. Two doors, neither of which loses a set: pause
-     keeps the session for later (the Library offers it back), end saves what was
+     keeps the session for later (the paused bar offers it back), finish saves what was
      logged. The X used to throw the session away without a word. -->
 <div class="sheet" id="wleavesheet" role="dialog" aria-modal="true" aria-labelledby="wleavetitle"><div class="sheetbody">
   <div class="grabber"></div>
   <h2 id="wleavetitle">Leave this workout?</h2>
   <p class="lede" id="wleavelede">Nothing is lost either way.</p>
-  <button class="pickrow leaverow" id="wpause"><svg class="ic"><use href="#i-pause"></use></svg><span class="pt"><b>Pause workout</b><span>Pick it up later from the Library. The clock stops.</span></span></button>
-  <button class="pickrow leaverow" id="wend"><svg class="ic"><use href="#i-flag"></use></svg><span class="pt"><b>End workout</b><span id="wendsub">Saves what you logged.</span></span></button>
+  <button class="pickrow leaverow" id="wpause"><svg class="ic"><use href="#i-pause"></use></svg><span class="pt"><b>Pause workout</b><span>Pick it up later from any tab. The clock stops.</span></span></button>
+  <button class="pickrow leaverow" id="wend"><svg class="ic"><use href="#i-flag"></use></svg><span class="pt"><b>Finish workout</b><span id="wendsub">Saves what you logged.</span></span></button>
   <button class="btn ghost" data-close="wleavesheet">Keep going</button>
 </div></div>
 <div class="sheet" id="filtersheet" role="dialog" aria-modal="true" aria-labelledby="filtertitle"><div class="sheetbody">
@@ -330,11 +338,26 @@ export const MARKUP_BODY = String.raw`</head>
   <button class="btn ghost" data-close="filtersheet">Done</button>
 </div></div>
 <div class="sheet" id="schedulesheet" role="dialog" aria-modal="true" aria-labelledby="scheduletitle"><div class="sheetbody">
-  <div class="grabber"></div><h2 id="scheduletitle">Schedule workout</h2>
+  <div class="grabber"></div><h2 id="scheduletitle">Plan</h2>
   <p class="lede" id="schedulename"></p>
   <div class="field"><label for="scheduledate">Choose a day</label><div class="schedule-date-control"><input id="scheduledate" type="date" required></div></div>
+<!-- The one way to put a workout on a day (app.ts, openPlanSheet): two weeks of
+     days to tap, starting today. Move uses the same sheet with one day. -->
+<div class="sheet" id="plandays" role="dialog" aria-modal="true" aria-labelledby="plandaystitle"><div class="sheetbody">
+  <div class="grabber"></div>
+  <h2 id="plandaystitle">Plan</h2>
+  <p class="lede" id="plandayssub"></p>
+  <div id="plandaysbody"></div>
+  <div class="btnrow"><button class="btn ghost" data-close="plandays">Cancel</button><button class="btn" id="plandaysgo">Plan</button></div>
+</div></div>
+<!-- A saved video has become a workout (app.ts, showReadySheet): start it now,
+     put it on a day, or look it over first. -->
+<div class="sheet" id="readysheet" role="dialog" aria-modal="true" aria-labelledby="readytitle"><div class="sheetbody">
+  <div class="grabber"></div>
+  <div id="readybody"><h2 id="readytitle">Ready to train</h2></div>
+</div></div>
   <p class="autherr" id="scheduleerror" role="status"></p>
-  <div class="btnrow"><button class="btn ghost" data-close="schedulesheet">Cancel</button><button class="btn" id="schedulego">Add to plan</button></div>
+  <div class="btnrow"><button class="btn ghost" data-close="schedulesheet">Cancel</button><button class="btn" id="schedulego">Plan</button></div>
 </div></div>
 
 <!-- ---------- workout mode ---------- -->
@@ -349,7 +372,7 @@ export const MARKUP_BODY = String.raw`</head>
       <button class="iconbtn" id="wsound" aria-label="Timer sounds" aria-pressed="true"><svg class="ic"><use href="#i-volume-2"></use></svg></button>
       <button class="iconbtn" id="wlist" aria-label="All exercises"><svg class="ic"><use href="#i-list"></use></svg></button>
       <!-- Only on a past session, where it is the one place Delete lives. -->
-      <button class="iconbtn" id="wmore" aria-label="Session options" aria-haspopup="dialog"><svg class="ic"><use href="#i-more"></use></svg></button>
+      <button class="iconbtn" id="wmore" aria-label="Session" aria-haspopup="dialog"><svg class="ic"><use href="#i-more"></use></svg></button>
     </div>
   </div>
   <div class="wdots" id="wdots"></div>
@@ -369,7 +392,7 @@ export const MARKUP_BODY = String.raw`</head>
   <div class="wbottom">
     <button class="wnav" id="wprev" aria-label="Previous exercise"><svg class="ic"><use href="#i-arrow-left"></use></svg></button>
     <button class="btn ghost" id="waddexercise">+ Add exercise</button>
-    <button class="wfinish" id="wfinish">Save workout</button>
+    <button class="wfinish" id="wfinish">Finish workout</button>
     <button class="wnav" id="wnext" aria-label="Next exercise"><svg class="ic"><use href="#i-arrow-right"></use></svg></button>
   </div>
 </div>
@@ -377,7 +400,7 @@ export const MARKUP_BODY = String.raw`</head>
 <!-- ---------- sheets ---------- -->
 <div class="sheet" id="addsheet"><div class="sheetbody">
   <div class="grabber"></div>
-  <h2 id="addtitle">Add a workout</h2>
+  <h2 id="addtitle">Add a workout video</h2>
   <p class="lede" id="addlede">Paste a link to a TikTok, Instagram reel, YouTube video, or any workout page.</p>
   <!-- In the app the everyday save never touches this sheet: it is Share in TikTok
        or Instagram, then Spotter. So there the sheet opens as the lesson for that
@@ -398,7 +421,7 @@ export const MARKUP_BODY = String.raw`</head>
   </div>
   <div class="orpaste">Or paste a link</div>
   <div class="field"><input id="addurl" type="url" placeholder="https://..." autocapitalize="off" autocomplete="off" spellcheck="false" aria-label="Video link"></div>
-  <button class="btn" id="addgo">Save workout</button>
+  <button class="btn" id="addgo">Add video</button>
   <p class="webnote" data-on="web">In the Spotter app you save straight from the <b>Share</b> button in TikTok or Instagram.</p>
 
   <!-- The last rung of the ingest ladder, and deliberately the quiet one: sharing
@@ -494,7 +517,7 @@ export const MARKUP_BODY = String.raw`</head>
 
 <div class="sheet" id="recapsheet" role="dialog" aria-modal="true" aria-labelledby="recaptitle"><div class="sheetbody">
   <div class="grabber"></div>
-  <h2 id="recaptitle">Session options</h2>
+  <h2 id="recaptitle">Session</h2>
   <div id="recapopts"></div>
   <button class="btn ghost" data-close="recapsheet">Done</button>
 </div></div>
@@ -512,9 +535,20 @@ export const MARKUP_BODY = String.raw`</head>
   <div id="exlist"></div>
 </div></div>
 
+<!-- One sheet per exercise, opened from a row on the card and from ⋯ Exercise in
+     Workout Mode (app.ts, openExerciseSheet). Each row hands over to the sheet
+     that already does the job rather than stacking on top of it. -->
+<div class="sheet" id="exmenu" role="dialog" aria-modal="true" aria-labelledby="exmenutitle"><div class="sheetbody">
+  <div class="grabber"></div>
+  <h2 id="exmenutitle">Exercise</h2>
+  <p class="lede" id="exmenusub"></p>
+  <div id="exmenulist"></div>
+  <button class="btn ghost" data-close="exmenu">Done</button>
+</div></div>
+
 <div class="sheet" id="exeditsheet"><div class="sheetbody">
   <div class="grabber"></div>
-  <h2>Fix this exercise</h2>
+  <h2>Edit exercise</h2>
   <p class="lede">Spotter read this off the video. If it got it wrong, put it right — the change stays on your copy.</p>
   <div class="field">
     <div class="fieldhead"><label for="exeditname">Exercise</label><button type="button" class="fieldlink" id="exeditpick">Change</button></div>
@@ -669,7 +703,7 @@ export const MARKUP_BODY = String.raw`</head>
   <div class="grabber"></div>
   <h2 id="daytitle">Day</h2>
   <div id="daylist"></div>
-  <button class="planadd" id="dayadd">+ Add a workout</button>
+  <button class="planadd" id="dayadd">+ Plan a workout</button>
 </div></div>
 
 <!-- What the ring counts, one tap under the dots: a goal whose rules are hidden
@@ -882,7 +916,7 @@ export const MARKUP_BODY = String.raw`</head>
     <p class="lede" data-on="ios">In TikTok, Instagram, YouTube or any app, tap <b>Share</b>, then <b>More</b>, then <b>Spotter</b> (or <b>Save to Spotter</b> further down). For one tap next time, in <b>More</b> tap <b>Edit</b> and add Spotter to Favorites.</p>
     <p class="lede" data-on="android">In TikTok, Instagram, YouTube or any app, tap <b>Share</b>, then <b>Spotter</b>. In TikTok it is under <b>More</b>.</p>
     <p class="lede" data-on="web"><b>In the Spotter app</b> — tap <b>Share</b> on a TikTok, Instagram or YouTube video and choose Spotter.</p>
-    <p class="lede"><b>Or</b> copy the video’s link and paste it into <b>Save workout</b>.</p>
+    <p class="lede"><b>Or</b> copy the video’s link and paste it into <b>Add video</b>.</p>
     <details id="shortcutsetup" class="disclosure" data-on="web"><summary>iPhone Shortcut setup (advanced)</summary><div class="disclosure-body">
       <p class="lede">For direct sharing on iPhone, create a Shortcut that sends the shared URL as a POST to this address. Keep it private — it works without your password.</p>
       <div class="keybox" id="setkey">&mdash;</div>

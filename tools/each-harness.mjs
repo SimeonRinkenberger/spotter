@@ -29,7 +29,7 @@ function fnIn(src, head, where) {
 const fn = (name) => fnIn(APP, '  function ' + name + '(', 'app.ts');
 
 const LIFTED = ['dbRule', 'dbOf', 'eachOf', 'wtUnit', 'setUnit', 'setLoad', 'tally', 'volumeOf', 'volLb',
-  'toUnit', 'wtText', 'exKey', 'prsOfLog', 'prText', 'scSets', 'figsOf', 'sumStill', 'prCheck', 'lastWeights', 'lastLine'];
+  'toUnit', 'wtText', 'exKey', 'prsOfLog', 'prText', 'scSets', 'figsOf', 'fullLogs', 'sumStill', 'prCheck', 'lastWeights', 'lastLine'];
 const DB = APP.slice(APP.indexOf('  var DB_PAIR'), APP.indexOf('  /**\n   * 2 for a pair'));
 assert(DB.includes('DB_NOT'), 'the DB_* constants moved');
 

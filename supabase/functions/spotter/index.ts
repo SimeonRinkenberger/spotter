@@ -7062,7 +7062,7 @@ async function buildCard(
 function visionWarning(card: Card): string | null {
   if (!card.vision?.missing.length) return null;
   return "Read " + card.vision.completed.length + " of " + card.vision.total +
-    " images. Some workout details may be missing. Use Read it again in Options to retry.";
+    " images. Some workout details may be missing. Use Read it again in the ⋯ menu to retry.";
 }
 
 /**
@@ -8480,7 +8480,7 @@ async function ingestUpload(
   // `up-<uuid>` is unique per upload, so this cannot legitimately happen — a
   // repeated POST of the same path is the only way, and it is already saved.
   if (q.already) {
-    return json({ status: "exists", id: q.workout_id, message: "Already in your library." }, 200, cors);
+    return json({ status: "exists", id: q.workout_id, message: "Already in Workouts." }, 200, cors);
   }
 
   // Two things at once, and both matter.
@@ -8701,7 +8701,7 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
     return await bail(json({
       status: processing ? "processing" : "exists",
       id: dupe[0].id, title: dupe[0].title,
-      message: processing ? "Already reading that one." : "Already in your library.",
+      message: processing ? "Already reading that one." : "Already in Workouts.",
     }, 200, cors));
   }
 
@@ -8750,7 +8750,7 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
       // unique constraint rejects the second, which is correct, not an error.
       if (!String(e).includes("23505")) throw e;
       const again = await dbSelect("workouts", `user_id=eq.${userId}&shortcode=eq.${sc}&select=id,title`);
-      return await bail(json({ status: "exists", id: again[0]?.id, title: again[0]?.title, message: "Already in your library." }, 200, cors));
+      return await bail(json({ status: "exists", id: again[0]?.id, title: again[0]?.title, message: "Already in Workouts." }, 200, cors));
     }
     // The ledger row is written after the answer, not before it: the card is
     // already the person's, and the row is metrics plus the daily save count,
@@ -8799,7 +8799,7 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
         return await requeueWithMeta(again[0].id, userId, supplied, cors);
       }
     }
-    return await bail(json({ status: "exists", id: q.workout_id, message: "Already in your library." }, 200, cors));
+    return await bail(json({ status: "exists", id: q.workout_id, message: "Already in Workouts." }, 200, cors));
   }
 
   console.log("enqueued", p.platform, p.shortcode, "job", q.job_id,
@@ -13363,7 +13363,7 @@ export async function validateProposal(userId: string, p: any): Promise<PumpyPro
     return {
       kind, title: card.title, category: card.category, difficulty: card.difficulty,
       duration_minutes: card.duration_minutes, equipment: card.equipment, muscle_groups: card.muscle_groups,
-      blocks: card.blocks, summary: summary || `Save "${card.title}" to your library`,
+      blocks: card.blocks, summary: summary || `Save "${card.title}" to Workouts`,
     };
   }
 
@@ -13428,7 +13428,7 @@ async function execProposal(userId: string, p: PumpyProposal, model: string | nu
   }
   if (p.kind === "append_exercises") {
     const rows = await dbSelect("workouts", `id=eq.${p.workout_id}&user_id=eq.${userId}&select=*`);
-    if (!rows.length) throw new Error("That workout is no longer in your library.");
+    if (!rows.length) throw new Error("That workout is no longer in Workouts.");
     const w = rows[0];
     const blocks: any[] = Array.isArray(w.blocks) ? deepCopy(w.blocks) : [];
     const exs = p.exercises.map((e) => ({ ...e, added_by_pumpy: true }));
@@ -13549,7 +13549,7 @@ const PUMPY_STATIC = [
   'When an exercise is taken from one of the user\'s saved workouts, set that exercise\'s "from" to that ' +
   "workout's id — only ever the id of a workout that really contains the movement, otherwise leave it out — and " +
   "in say name the workouts you drew from by their titles.",
-  "Rules: spell exercises the way the catalog does when the catalog has them; favourites (★) and collections tell " +
+  "Rules: spell exercises the way the catalog does when the catalog has them; favorites (★) and collections tell " +
   "you what the user likes, and when the user names something like 'my leg day' or 'hotel gym', a collection with " +
   "that name identifies the workouts they mean — use it before asking; when a saved workout fits, prefer it to " +
   "inventing one; balance a week — do not stack the same muscles on consecutive days and leave rest days; respect " +
@@ -13823,7 +13823,7 @@ export function makeSayGate(limit: number): SayGate {
 
 /** What the user reads while a tool runs. Specific, per Apple's rule against "loading". */
 export const PUMPY_TOOL_STATUS: Record<string, string> = {
-  list_library: "Looking through your library…",
+  list_library: "Looking through your workouts…",
   get_workout: "Reading that workout…",
   get_exercise_detail: "Watching how they did it…",
   search_catalog: "Checking the exercise catalog…",

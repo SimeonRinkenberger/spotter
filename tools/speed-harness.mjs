@@ -17,9 +17,10 @@
 //       that finally gets through boots the account as usual.
 //   C3  /api/limits is asked once a minute, not once per Basic card opened; a write
 //       retires the copy; two asks at once are one call.
-//   C6  a launch reads plan and workout_logs for the today card once, not twice;
-//       the card still ticks when a session is logged, moves when the day
-//       changes, and a pull to refresh still re-reads it.
+//   C6  a launch reads plan and workout_logs once, for Train (the first page),
+//       beside the library's read and after it; Train paints from its own cache
+//       (plan rows + lite logs) before either read lands, and the real logs
+//       replace the lite ones and rewrite the cache.
 //   C7  load() reads the columns the app reads; a socket event carrying every
 //       column does not re-render an unchanged card; the caption is asked for
 //       once, when the source disclosure opens, and kept.
@@ -92,7 +93,11 @@ var state = { user: null, profile: null, workouts: [], logs: null, plan: null, c
 var accountEpoch = 0, reads = {}, inFlight = {}, libraryRev = 0, logsRev = 0, planRev = 0;
 var undoTimer = null, undoFn = null, detailCloseTimer = null, woCloseTimer = null, pendTimer = null, pendPolls = 0, pendBusy = false;
 var wkChannel = null, heroPct = 0, trainSeg = null, seenCards = {}, gridCards = {}, expCache = {}, expWaiting = {}, vidCache = {}, expKey = "";
-var today = { day: null, rows: [], done: false, at: 0, busy: false, shown: false };
+var drawn = { train: false, pumpy: false }, trainCacheTimer = 0, trainWantMonth = false, trainCacheGoal = null;
+var TRAIN_KEY = "spotter-train-v1";
+function renderTrain() { log.push("train"); }
+function prepareTrain() { nets.push("plan"); nets.push("workout_logs"); return Promise.resolve(); }
+function quietly(p) { return p; }
 var current = null, sc = null, wo = null, woTimer = null, hist = {}, histReady = false, strava = null, pumpy = null, billing = null;
 // pumpyIdleTimer and takeParkedShare arrive with the integration branch; stubbed so
 // the lifted clearAccount/boot run on either side of that merge.
@@ -107,7 +112,6 @@ function maybeInstallHint() {} function watchWorkouts() {} function welcomeMaybe
 function consumeShare() {} function consumeOpen() {} function consumeBilling() {} function consumeCreator() {}
 function takeParkedShare() {}
 function warmPages() {} function sharePending() { return false; } function toast(m) { toasts.push(m); }
-function renderToday() { log.push("today"); }
 function accountNow(epoch, uid) { return epoch === accountEpoch && state.user && state.user.id === uid; }
 function loadProfile() { nets.push("profiles"); return Promise.resolve(); }
 function load() { nets.push("workouts"); return Promise.resolve(); }
@@ -118,7 +122,7 @@ sb.auth = { onAuthStateChange: function (cb) { authCb = cb; },
   getSession: function () { sessionAsks++; return Promise.resolve({ data: { session: null } }); } };
 `;
 
-const LIFT = ['readCache', 'paintCache', 'paintRows', 'dropCache', 'paintBeforeAuth', 'settleEarly',
+const LIFT = ['readCache', 'paintCache', 'paintTrainCache', 'paintRows', 'dropCache', 'paintBeforeAuth', 'settleEarly',
   'answeredNobody', 'accountFree', 'signedOut', 'clearAccount', 'showApp', 'showLanding', 'boot'].map(fn).join('\n') + '\n' +
   // The gate on taps while the account is unconfirmed, as written.
   stmt('  document.addEventListener("click", function (e) {\n    if (state.user || !earlyUid', '  }, true);');
@@ -170,7 +174,7 @@ const tick = () => new Promise((r) => setImmediate(r));
   const renders = c.log.filter((l) => l.startsWith('render:'));
   assert.equal(renders.length, 1, 'boot does not paint the same cache twice: ' + renders.join(' | '));
   assert.equal(grid(c), 'a-card-1,a-card-2');
-  assert.deepEqual([...c.nets].sort(), ['profiles', 'workouts'], 'boot reads as it always did');
+  assert.deepEqual([...c.nets].sort(), ['plan', 'profiles', 'workout_logs', 'workouts'], 'boot reads the library and Train');
   assert.equal(c.earlyUid, null);
   ok('C2 stale token: cached library painted before the refresh, once');
 }
@@ -281,9 +285,9 @@ for (const door of ['callback', 'getSession', 'both']) {
   assert.equal(c.nets.length, 0, 'no read went out');
   assert.equal(c.toasts.filter((t) => WAITING.test(t)).length, 1, 'says so, once: ' + c.toasts.join(' | '));
   // What needs no account works; what does says so instead of acting as nobody.
-  for (const sel of ['#grid', '#chips', '#tab0', '#resume', '#dinner .startbtn', '#dinner .source-disclosure', '#workout', '[data-close]', '#dclose'])
+  for (const sel of ['#grid', '#chips', '#tab0', '#tab1', '#pausedbar', '[data-offline]', '#dinner .startbtn', '#dinner .source-disclosure', '#workout', '[data-close]', '#dclose'])
     assert(tap(c, sel), sel + ' is usable offline');
-  for (const sel of ['#settingsbtn', '#addbtn', '#tab1', '#tab2', '#dmore', '#dfav', '#colbar', '#pumpysend', '.sheet'])
+  for (const sel of ['#settingsbtn', '#addbtn', '#tab2', '#dmore', '#dfav', '#colbar', '#pumpysend', '.sheet'])
     assert(!tap(c, sel), sel + ' waits for the account');
   c.wo = { finished: false };
   assert(tap(c, '.sheet'), 'a sheet of a running workout (a set, the rest, leaving) is usable');
@@ -295,7 +299,7 @@ for (const door of ['callback', 'getSession', 'both']) {
   c.authCb('TOKEN_REFRESHED', { user: A }); c.flush(); await tick();
   assert.equal(c.state.user.id, A.id);
   assert.equal(c.log.filter((l) => l.startsWith('render:')).length, 1, 'the cache is not painted a second time');
-  assert.deepEqual([...c.nets].sort(), ['profiles', 'workouts'], 'boot reads as it always did');
+  assert.deepEqual([...c.nets].sort(), ['plan', 'profiles', 'workout_logs', 'workouts'], 'boot reads the library and Train');
   assert(tap(c, '#settingsbtn'), 'the gate lifts with the account');
   (c.winL.online || []).forEach((f) => f());
   assert.equal(c.sessionAsks, 1, 'and the nudge stops');
@@ -347,7 +351,8 @@ for (const [label, mutate] of [['removed', (c) => { delete c.store[SESSION]; }],
     function leaveWorkout() { calls.push("leave"); } function saveDraft() { calls.push("saveDraft"); }
     function toast(m) { toasts.push(m); } function clearInterval() {} function cxOff() {} function stopRest() {}
     function clearDraft() { calls.push("clearDraft"); } function liveEnd() { calls.push("liveEnd"); } function haptic() {}
-    function renderSummary() { calls.push("summary"); } function sumLanded() {} function invalidateLogs() {} function renderToday() {}
+    function renderSummary() { calls.push("summary"); } function sumLanded() {} function invalidateLogs() {} function renderGrid() {} function renderTrain() {}
+    function quietly(p) { return p; } var drawn = { train: false };
     function loadLogs() { return Promise.resolve(); } function publishSummary() {}
     var sb = { from: function () { return { insert: function (p) { inserted.push(p); return { select: function () {
       return { single: function () { return Promise.resolve({ data: { id: "log1" } }); } }; } }; } }; } };
@@ -409,20 +414,21 @@ for (const [label, mutate] of [['removed', (c) => { delete c.store[SESSION]; }],
 
 // ---------- C6 ----------
 {
-  // The real load(), loadToday(), renderToday() and boot() over a PostgREST that
-  // answers when the test says so. Requests are counted per table.
-  const REAL = ['readOnce', 'load', 'loadToday', 'renderToday', 'ymd', 'boot', 'paintCache', 'paintRows', 'readCache'].map(fn).join('\n');
-  const TODAY_DECL = (() => { const a = APP.indexOf('  var today = {'); return APP.slice(a, APP.indexOf('\n', a)); })() + '\n' + CARD_DECL;
+  // The real load(), boot(), prepareTrain(), loadPlan() and loadLogs() over a
+  // PostgREST that answers when the test says so. Requests are counted per table.
+  const REAL = ['readOnce', 'load', 'ymd', 'addDays', 'mondayOf', 'firstOf', 'monthOfWeek', 'planRange', 'fetchRange', 'planShape',
+    'loadPlan', 'loadLogs', 'prepareTrain', 'boot', 'paintCache', 'paintRows', 'readCache', 'paintTrainCache',
+    'liteLog', 'writeTrainCache', 'goalSetting'].map(fn).join('\n');
+  const DECL = CARD_DECL + '\n' + (() => { const a = APP.indexOf('  var AHEAD_DAYS = '); return APP.slice(a, APP.indexOf('\n', a)); })();
   function world() {
     const ctx = vm.createContext({ El, Promise, JSON, Object, Array, String, Number, Math, console });
     vm.runInContext(`
       var RealDate = Date, clock = RealDate.UTC(2026, 8, 24, 15, 0, 0);
-      Date = function (v) { return arguments.length ? new RealDate(v) : new RealDate(clock); };
+      Date = function (a, b, c, d) { return arguments.length === 1 ? new RealDate(a) : arguments.length ? new RealDate(a, b, c || 1, d || 0) : new RealDate(clock); };
       Date.now = function () { return clock; }; Date.UTC = RealDate.UTC;
       var timers = [], asked = [], waiting = [], rows = { workouts: [{ id: "w1", title: "A" }], plan: [], workout_logs: [], collections: [], collection_items: [] };
       function setTimeout(f) { timers.push(f); return timers.length; } function clearTimeout() {}
       function flushTimers() { while (timers.length) { var q = timers; timers = []; q.forEach(function (f) { f(); }); } }
-      // One PostgREST: every query is a thenable that answers when answer() is called.
       function query(table) {
         var q = { table: table, then: function (ok, bad) {
           var p = new Promise(function (resolve) { var f = function () { resolve({ data: rows[table].slice(), error: null }); }; f.table = table; waiting.push(f); });
@@ -433,81 +439,75 @@ for (const [label, mutate] of [['removed', (c) => { delete c.store[SESSION]; }],
         return q;
       }
       var sb = { from: query };
-      // answer(["plan"]) answers only those tables' reads; answer() answers all.
       function answer(only) {
         var w = waiting.filter(function (f) { return !only || only.indexOf(f.table) >= 0; });
         waiting = waiting.filter(function (f) { return w.indexOf(f) < 0; });
         w.forEach(function (f) { f(); });
       }
-      var state = { user: { id: "u1" }, workouts: [], collections: [], colItems: [], view: "library", filter: "All", q: "" };
-      var accountEpoch = 0, reads = {}, libraryRev = 0, earlyUid = null, booting = null, current = null, seenCards = {};
+      var state = { user: { id: "u1" }, workouts: [], collections: [], colItems: [], view: "train", filter: "All", q: "",
+        plan: null, logs: null, logsLite: false, libReady: false, weekStart: null, profile: null, goal: null };
+      var accountEpoch = 0, reads = {}, libraryRev = 0, logsRev = 0, planRev = 0, earlyUid = null, booting = null, current = null, seenCards = {};
+      var monthStart = null, trainSeg = null, planSig = "", drawn = { train: false, pumpy: false };
+      var trainCacheTimer = 0, trainCacheGoal = null, TRAIN_KEY = "spotter-train-v1";
       function accountNow(e, u) { return e === accountEpoch && state.user && state.user.id === u; }
       var CACHE_KEY = "spotter-lib-v1", store = {};
       var localStorage = { getItem: function (k) { return k in store ? store[k] : null; }, setItem: function (k, v) { store[k] = v; }, removeItem: function (k) { delete store[k]; } };
-      function node() { return { classList: { add: function () {}, remove: function () {} }, appendChild: function () {}, set innerHTML(v) {} }; }
-      var todayBox = node(), ticks = [];
-      function el(t, c) { if (c && c.indexOf("daycard") === 0) ticks.push(c.indexOf("done") > 0); return node(); }
-      function icon(n) { return n; } function todayDose() { return ""; } function thisWeek() { return null; } function viewIn() {}
-      function fmtDur() { return null; } function weekLine() { return ""; } function openDetail() {} function startWorkout() {}
-      // A paint costs time on a phone: slow = ms the clock moves per render.
-      var slow = 0;
-      function render() { renderToday(); clock += slow; } function refreshDetail() {} function watchPending() {} function writeCache() {}
-      function idle(f) { timers.push(f); } function toast() {}
+      var painted = [];
+      function renderTrain() { painted.push({ lite: !!state.logsLite, logs: state.logs && state.logs.length, plan: state.plan && state.plan.length }); }
+      function render() {} function refreshDetail() {} function watchPending() {} function writeCache() {} function publishSummary() {}
+      function quietly(p) { return p; } function idle(f) { timers.push(f); } function toast() {}
       var $ = function () { return { classList: { contains: function () { return false; } } }; };
       function guideUser() {} function loadProfile() { return Promise.resolve(); } function maybeInstallHint() {} function watchWorkouts() {}
       function consumeShare() {} function consumeOpen() {} function consumeBilling() {} function consumeCreator() {} function warmPages() {} function welcomeMaybe() {}
       function takeParkedShare() {}
-    ` + TODAY_DECL + '\n' + REAL, ctx);
+      function isSession(l) { return !!(l && l.completed_at); }
+    ` + DECL + '\n' + REAL, ctx);
     return ctx;
   }
   const run = (c, js) => vm.runInContext(js, c);
   const count = (c, t) => run(c, 'asked').filter((x) => x === t).length;
   const settle = async (c) => { for (let i = 0; i < 6; i++) { run(c, 'answer(); flushTimers()'); await tick(); } };
 
-  for (const variant of ['cached', 'cached, 8 ms paint', 'early', 'nocache']) {
+  for (const variant of ['cached', 'early', 'nocache']) {
     const c = world();
-    // The native lab caught this one: 20 cards take a few ms to paint, and the
-    // library read's clock was taken after the paint, so the today read the
-    // paint had just sent looked older than the library read and was sent again.
-    if (variant === 'cached, 8 ms paint') run(c, 'slow = 8');
     if (variant !== 'nocache') run(c, 'store[CACHE_KEY] = JSON.stringify({ v: 1, uid: "u1", workouts: [{ id: "w1" }], collections: [], colItems: [] })');
-    // Painted before the SDK answered: state.user is still empty then (C2).
     if (variant === 'early') run(c, 'var who = state.user; state.user = null; earlyUid = "u1"; paintRows(JSON.parse(store[CACHE_KEY])); state.user = who');
     run(c, 'boot()'); await tick();
-    // The today reads are small and land before the library's rows, as on a phone
-    // (the audit's net list: the rows at +136 ms, plan and logs well before).
-    run(c, 'answer(["plan", "workout_logs"])'); await tick(); await tick();
     await settle(c);
     assert.equal(count(c, 'workouts'), 1, variant + ': one library read');
-    assert.equal(count(c, 'plan'), 1, variant + ': plan read once for the today card, not twice');
-    assert.equal(count(c, 'workout_logs'), 1, variant + ': workout_logs read once for the today card, not twice');
+    assert.equal(count(c, 'plan'), 1, variant + ': plan read once, for Train');
+    assert.equal(count(c, 'workout_logs'), 1, variant + ': workout_logs read once, for Train');
     assert.equal(run(c, 'asked[0]'), 'workouts', variant + ': the library read goes out first: ' + run(c, 'asked.join()'));
-    ok('C6 boot (' + variant + '): plan and workout_logs read once, library first');
+    assert.equal(run(c, 'drawn.train'), true, variant + ': Train is marked drawn, so warmPages does not read it again');
+    ok('C6 boot (' + variant + '): plan and workout_logs read once, at launch, library first');
   }
   {
+    // Train's own cache: plan rows and lite logs, painted with the library's
+    // cache before any read lands, then replaced by the real answer.
     const c = world();
-    run(c, 'store[CACHE_KEY] = JSON.stringify({ v: 1, uid: "u1", workouts: [{ id: "w1" }], collections: [], colItems: [] }); rows.plan = [{ workout_id: "w1" }]');
-    run(c, 'boot()'); await settle(c);
-    assert.equal(run(c, 'today.done'), false);
-    // A session is logged: saveSet's insert handler retires the card and redraws it.
-    run(c, 'clock += 5000; rows.workout_logs = [{ started_at: new RealDate(clock).toISOString() }]; today.at = 0; renderToday()'); await settle(c);
-    assert.equal(run(c, 'today.done'), true, 'the card ticks once a session is logged');
-    assert.equal(run(c, 'ticks[ticks.length - 1]'), true, 'and draws the tick');
-    assert.equal(count(c, 'workout_logs'), 2);
-    // The day changes under a phone left open: the next paint asks about the new day.
-    run(c, 'clock += 86400000; rows.plan = []; renderToday()'); await settle(c);
-    assert.equal(run(c, 'today.day'), run(c, 'ymd(new Date())'), 'the card moves to the new day');
-    assert.equal(run(c, 'today.rows.length'), 0);
-    // Pull to refresh a moment later still re-reads today (Make Refresh refresh the today card too).
-    const before = count(c, 'plan');
-    run(c, 'clock += 3000; rows.plan = [{ workout_id: "w1" }]; libraryRev++; load(true)'); await settle(c);
-    assert.equal(count(c, 'plan'), before + 1, 'a refresh re-reads the today card');
-    assert.equal(run(c, 'today.rows.length'), 1);
-    // A render inside the thirty seconds without a refresh does not.
-    const again = count(c, 'plan');
-    run(c, 'clock += 2000; renderToday()'); await settle(c);
-    assert.equal(count(c, 'plan'), again, 'a plain repaint inside half a minute asks nothing');
-    ok('C6 today card: ticks on a log, moves with the day, refresh still re-reads');
+    run(c, 'store[CACHE_KEY] = JSON.stringify({ v: 1, uid: "u1", workouts: [{ id: "w1" }], collections: [], colItems: [] })');
+    run(c, 'store[TRAIN_KEY] = JSON.stringify({ v: 1, uid: "u1", goal: 4, plan: [{ id: "p1", day: "2026-09-24", workout_id: "w1" }],' +
+      ' logs: [{ id: "l1", workout_id: "w1", started_at: "2026-09-23T17:00:00Z", completed_at: "2026-09-23T18:00:00Z", entries: [{ sets: [1, 1, 1] }] }] })');
+    run(c, 'boot()');
+    assert.deepEqual({ ...run(c, 'painted[0]') }, { lite: true, logs: 1, plan: 1 }, 'Train painted from its cache before any read');
+    assert.equal(run(c, 'goalSetting()'), 4, 'with the goal it was drawn with, until the profile lands');
+    await tick();
+    assert.equal(count(c, 'workout_logs'), 1, 'lite logs are not loaded logs: the real read still goes out');
+    run(c, 'rows.workout_logs = [{ id: "l1", workout_id: "w1", started_at: "2026-09-23T17:00:00Z", completed_at: "2026-09-23T18:00:00Z",' +
+      ' entries: [{ name: "Squat", sets: [{ reps: 5, weight: 100 }, { reps: 5, weight: 100 }] }] }]');
+    await settle(c);
+    assert.equal(run(c, 'state.logsLite'), false, 'the real logs replace the lite ones');
+    assert.equal(run(c, 'state.logs[0].entries[0].name'), 'Squat');
+    const kept = JSON.parse(run(c, 'store[TRAIN_KEY]'));
+    assert.deepEqual(kept.logs[0].entries, [{ sets: [1, 1] }], 'the cache is rewritten, cut down to a 1 per set');
+    assert.equal(kept.logs[0].workout_id, 'w1');
+    // Another account's cache paints nothing.
+    const d = world();
+    run(d, 'store[CACHE_KEY] = JSON.stringify({ v: 1, uid: "u1", workouts: [{ id: "w1" }], collections: [], colItems: [] })');
+    run(d, 'store[TRAIN_KEY] = JSON.stringify({ v: 1, uid: "someone-else", plan: [{ day: "2026-09-24" }], logs: [] })');
+    run(d, 'paintCache()');
+    assert.equal(run(d, 'state.plan'), null, 'a Train cache written for another account is not read');
+    ok('C6 Train cache: painted before the reads, lite logs replaced, rewritten, never another account\'s');
   }
 }
 

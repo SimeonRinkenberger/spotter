@@ -33,8 +33,8 @@ function ctx(over) {
   }, over));
   for (const name of ['ymd', 'addDays', 'mondayOf', 'isSession', 'sessionsOn', 'loggedOn',
     'knowable', 'dayMark', 'isoWeek', 'rowsFor', 'readTrainSeg']) vm.runInContext(fn(name), c);
-  vm.runInContext('var SEGS = ' + JSON.stringify([['calendar', 'Calendar'],
-    ['progress', 'Progress'], ['records', 'Records']]) + ';', c);
+  // Read off app.ts rather than restated: the month left the segments for the strip.
+  vm.runInContext(src.match(/\n  var SEGS = [^\n]+/)[0], c);
   return { c, run: s => vm.runInContext(s, c) };
 }
 
@@ -97,18 +97,22 @@ check('isoWeek follows the Thursday rule at both ends of the year', () => {
 });
 
 // ---------- 3. which segment a visit opens on ----------
-check('the profile beats localStorage beats the default, and nonsense is Calendar', () => {
+check('the profile beats localStorage beats the default; nonsense and the old "calendar" read as Progress', () => {
   const x = ctx();
-  assert.equal(x.run('readTrainSeg()'), 'calendar');
+  assert.equal(x.run('SEGS.map(function (s) { return s[0]; }).join()'), 'progress,records');
+  assert.equal(x.run('readTrainSeg()'), 'progress');
   x.c.localStorage.store.spotter_trainseg = 'records';
   assert.equal(x.run('readTrainSeg()'), 'records');
   x.c.state.profile = { settings: { trainSeg: 'progress' } };
   assert.equal(x.run('readTrainSeg()'), 'progress');
   x.c.state.profile = { settings: { trainSeg: 'nonsense' } };
-  assert.equal(x.run('readTrainSeg()'), 'calendar');
+  assert.equal(x.run('readTrainSeg()'), 'progress');
+  // Stored before the month moved into the strip.
+  x.c.state.profile = { settings: { trainSeg: 'calendar' } };
+  assert.equal(x.run('readTrainSeg()'), 'progress');
   x.c.state.profile = null;
-  x.c.localStorage.store.spotter_trainseg = 'nonsense';
-  assert.equal(x.run('readTrainSeg()'), 'calendar');
+  x.c.localStorage.store.spotter_trainseg = 'calendar';
+  assert.equal(x.run('readTrainSeg()'), 'progress');
 });
 
 // ---------- 4. sets per day ----------
@@ -140,23 +144,30 @@ check('sets per day counts logged sets by local day, and holes are not sets', ()
 // ---------- 5. the old view names still name a place ----------
 function viewCtx(view) {
   const went = [], painted = [];
-  const c = vm.createContext({ VIEWS: ['library', 'train', 'pumpy'], trainSeg: null,
+  const c = vm.createContext({ VIEWS: ['train', 'library', 'pumpy'], trainSeg: null, trainWantMonth: false,
     trainSwap: false, trainLean: {}, state: { view: view || 'library' },
     goTo: (i, animate) => went.push([i, animate]),
     paintSeg: () => painted.push('seg'), drawTrainBody: () => painted.push('body'),
+    renderTrain: () => painted.push('train'),
     $: () => ({ classList: { contains: () => false } }) });
   vm.runInContext(fn('setView'), c);
   return { c, went, painted };
 }
 
-check('plan, progress and history all land on Train, on the segment they asked for', () => {
+check('plan opens the month on Train; progress and history land on Train, on Progress', () => {
   const { c, went } = viewCtx('library');
-  for (const [name, seg] of [['plan', 'calendar'], ['progress', 'progress'], ['history', 'progress']]) {
+  vm.runInContext('setView("plan")', c);
+  assert.equal(c.trainWantMonth, true, 'plan asks the strip to open the month');
+  assert.equal(c.trainSeg, null, 'plan leaves the segment where it was');
+  for (const name of ['progress', 'history']) {
     c.trainSeg = null;
     vm.runInContext('setView(' + JSON.stringify(name) + ')', c);
-    assert.equal(c.trainSeg, seg, name);
+    assert.equal(c.trainSeg, 'progress', name);
   }
-  assert.deepEqual(went.map(w => w[0]), [1, 1, 1]);
+  // Train is the first page now.
+  assert.deepEqual(went.map(w => w[0]), [0, 0, 0]);
+  vm.runInContext('setView("library")', c);
+  assert.equal(went[went.length - 1][0], 1);
   // A name nothing knows still lands somewhere real rather than off the end.
   vm.runInContext('setView("nonsense")', c);
   assert.equal(went[went.length - 1][0], 0);
@@ -175,6 +186,10 @@ check('a deep link repaints the segment when Train is already the page', () => {
   const away = viewCtx('library');
   vm.runInContext('setView("progress")', away.c);
   assert.deepEqual(away.painted, []);
+  // The plan link on Train itself redraws the strip, which spends the request.
+  const month = viewCtx('train');
+  vm.runInContext('setView("plan")', month.c);
+  assert.deepEqual(month.painted, ['train']);
 });
 
 console.log(checks + ' Train checks passed');

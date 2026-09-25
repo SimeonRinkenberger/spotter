@@ -337,7 +337,7 @@ export const APP = String.raw`
     return p;
   }
   function accountNow(epoch, uid) { return epoch === accountEpoch && state.user && state.user.id === uid; }
-  function invalidateLogs() { logsRev++; state.logs = null; }
+  function invalidateLogs() { logsRev++; state.logs = null; state.logsLite = false; }
 
   function deadline(work, ms) {
     var controller = new AbortController(), timer;
@@ -1294,11 +1294,12 @@ export const APP = String.raw`
     clearTimeout(pendTimer); pendTimer = null; pendPolls = 0; pendBusy = false;
     if (wkChannel) { sb.removeChannel(wkChannel); wkChannel = null; }
     booting = null; earlyUid = null; reconnecting = false; state.profile = null; state.workouts = []; state.logs = null;
+    state.logsLite = false; state.libReady = false; clearTimeout(trainCacheTimer); trainWantMonth = false;
+    trainCacheGoal = null;
     state.plan = null; state.awards = null; state.goal = null; heroPct = 0; trainSeg = null;
     state.unit = "lb"; state.sounds = true; state.haptics = true;
     state.collections = []; state.colItems = []; seenCards = {}; gridCards = {};
     expCache = {}; expWaiting = {}; vidCache = {}; expKey = ""; capWaiting = {};
-    today.rows = []; today.at = 0; today.day = null; today.busy = false; today.shown = false; today.asked = 0;
     current = null;
     if (sc) scForget();
     if (wo) saveDraft();
@@ -1312,10 +1313,10 @@ export const APP = String.raw`
     }
     if (native && native.purchases) native.purchases.clear().catch(function () {});
     if (billing) { billing.prices = null; billing.caps = null; billing.capsWaiting = null; billing.asking = false; billing.fails = 0; billing.busy = false; billing.sub = null; billing.subAsked = false; billing.limits = null; billing.limitsAt = 0; billing.limitsWaiting = null; billing.said = null; billing.ctx = null; billing.cc = null; billing.ccWaiting = null; billing.redeeming = false; }
-    ["grid", "chips", "colbar", "libcount", "empty", "dinner", "pumpylog", "pumpyannounce", "pumpyctx", "pumpythreads", "trainview", "today", "resume", "recapopts"].forEach(function (id) {
+    ["grid", "chips", "colbar", "libcount", "empty", "dinner", "pumpylog", "pumpyannounce", "pumpyctx", "pumpythreads", "trainview", "pausedbar", "recapopts"].forEach(function (id) {
       var n = $(id); if (n) n.innerHTML = "";
     });
-    $("count0").textContent = "Reading your library";
+    $("countlib").textContent = "Reading your workouts";
     clearTimeout(toastTimer); $("toast").classList.remove("show"); $("toast").textContent = "";
     Array.prototype.forEach.call(document.querySelectorAll(".sheet.open, #detail.open, #workout.open"), function (n) {
       n.classList.remove("open");
@@ -1350,7 +1351,8 @@ export const APP = String.raw`
     publishSignedOut();
     state.user = null;
     guideUser();
-    state.workouts = []; state.logs = null; state.plan = null; state.awards = null;
+    state.workouts = []; state.logs = null; state.logsLite = false; state.libReady = false;
+    state.plan = null; state.awards = null;
     // What the last person was looking for is not what the next one is. The
     // library came back narrowed to a search and a creator nobody had typed.
     state.filter = "All"; state.q = ""; $("search").value = "";
@@ -1377,8 +1379,12 @@ export const APP = String.raw`
     // Before the network answers anything: the library someone is looking at is
     // almost always the one they left. Already up if it was painted before the
     // token came back, when only the today card is still to ask.
-    if (earlyUid !== state.user.id) paintCache(); else renderToday();
+    if (earlyUid !== state.user.id) paintCache();
     earlyUid = null;
+    // Train is the page the app opens on, so its two reads go out now, beside the
+    // library's, rather than in idle time after it.
+    drawn.train = true;
+    quietly(prepareTrain());
     var profileReady = loadProfile();
     maybeInstallHint();
     watchWorkouts();
@@ -1667,6 +1673,7 @@ export const APP = String.raw`
 
   function dropCache() {
     try { localStorage.removeItem(CACHE_KEY); } catch (e) { }
+    try { localStorage.removeItem(TRAIN_KEY); } catch (e) { }
   }
 
   function paintCache() {
@@ -1674,15 +1681,65 @@ export const APP = String.raw`
     if (c) paintRows(c);
   }
 
+  // ---------- Train's cache ----------
+  //
+  // Train is the first page now, and after an hour away it would otherwise wait
+  // on two reads — the plan and the logs — before it could say what today is.
+  // So the last answer is kept, as the library's is: the plan rows, and the logs
+  // cut down to what the strip, the ring, the statuses and Up next read (which
+  // workout, when, how long, how many sets — each set a bare 1). state.logsLite
+  // says the logs are that cut; loadLogs treats them as not loaded, and anything
+  // that needs a log's real figures (Progress, Records, awards, a corrected best)
+  // asks fullLogs(), which answers null until the real ones land.
+  var TRAIN_KEY = "spotter-train-v1", trainCacheTimer = 0, trainCacheGoal = null;
+
+  function liteLog(l) {
+    var ones = [];
+    (l.entries || []).forEach(function (e) { (e.sets || []).forEach(function (x) { if (x) ones.push(1); }); });
+    return { id: l.id, workout_id: l.workout_id, workout_title: l.workout_title, started_at: l.started_at,
+      completed_at: l.completed_at, duration_seconds: l.duration_seconds, entries: ones.length ? [{ sets: ones }] : [] };
+  }
+
+  function fullLogs() { return state.logsLite ? null : state.logs; }
+
+  function writeTrainCache() {
+    if (!state.user) return;
+    clearTimeout(trainCacheTimer);
+    var uid = state.user.id;
+    trainCacheTimer = setTimeout(function () {
+      if (!state.user || state.user.id !== uid || !state.plan || !state.logs || state.logsLite) return;
+      try {
+        localStorage.setItem(TRAIN_KEY, JSON.stringify({ v: 1, uid: uid, at: Date.now(),
+          goal: goalSetting(), plan: state.plan, logs: state.logs.map(liteLog) }));
+      } catch (e) { try { localStorage.removeItem(TRAIN_KEY); } catch (e2) { } }
+    }, 1000);
+  }
+
+  // Only into an empty slot: a real answer already in hand is never replaced by
+  // an older one, and the reads that follow overwrite this one as they land.
+  function paintTrainCache(uid) {
+    var c = null;
+    try { c = JSON.parse(localStorage.getItem(TRAIN_KEY) || "null"); } catch (e) { c = null; }
+    if (!c || c.v !== 1 || !uid || c.uid !== uid) return false;
+    if (!state.plan && c.plan) state.plan = c.plan;
+    if (!state.logs && c.logs) { state.logs = c.logs; state.logsLite = true; }
+    trainCacheGoal = c.goal || null;
+    return true;
+  }
+
   function paintRows(c) {
     state.workouts = c.workouts;
     state.collections = c.collections || [];
     state.colItems = c.colItems || [];
+    state.libReady = true;
+    paintTrainCache(c.uid);
     // Every card here has been seen before, so none should fly in — not now and
     // not when load() lands. seenCards is the ledger that already stops a filter
     // tap re-animating the grid; this is the same idea one launch earlier.
     for (var i = 0; i < state.workouts.length; i++) seenCards[state.workouts[i].id] = 1;
     render();
+    // The first page, drawn from the same kept answer before any read returns.
+    if (state.plan && state.logs) renderTrain();
   }
 
   // ---------- the cache before the token ----------
@@ -1765,7 +1822,7 @@ export const APP = String.raw`
 
   function accountFree(t) {
     if (!t || !t.closest) return false;
-    if (t.closest("[data-close], #dclose, #grid, #chips, #searchwrap, #hint, #filtersheet, #sortsheet, #tab0, #resume, #toast, " +
+    if (t.closest("[data-close], [data-offline], #dclose, #grid, #chips, #searchwrap, #hint, #filtersheet, #sortsheet, #tab0, #tab1, #pausedbar, #toast, " +
       "#dinner .startbtn, #dinner .source-disclosure, #workout")) return true;
     // Workout Mode's own sheets: a set, the rest, leaving, adding a movement.
     return !!(wo && !wo.finished && t.closest(".sheet"));
@@ -1781,10 +1838,7 @@ export const APP = String.raw`
 
   function load(retry) {
     if (!state.user) return Promise.resolve();
-    // When the call was made, not when readOnce's microtask runs: boot's cached
-    // paint (and its today read) happens in between, and on a phone that paint
-    // takes long enough that a later clock made the today read look older.
-    var uid = state.user.id, epoch = accountEpoch, rev = libraryRev, begun = Date.now();
+    var uid = state.user.id, epoch = accountEpoch, rev = libraryRev;
     return readOnce("library:" + rev + ":" + !!retry, function () {
       var rows = sb.from("workouts").select(CARD_COLS).eq("user_id", uid)
         .order("created_at", { ascending: false }).limit(200).then(function (r) {
@@ -1793,10 +1847,7 @@ export const APP = String.raw`
           // A socket event or local edit after the read started is newer evidence.
           if (rev !== libraryRev) return;
           state.workouts = r.data || [];
-          // Refresh means refresh, for the today card too, unless the today read
-          // went out after this one did: at boot the cached paint has just asked,
-          // and asking again here read plan and workout_logs twice per launch.
-          if (today.asked < begun) today.at = 0;
+          state.libReady = true;
           render();
           if (current && $("detail").classList.contains("open")) {
             var fresh = state.workouts.filter(function (w) { return w.id === current.id; })[0];
@@ -1827,7 +1878,7 @@ export const APP = String.raw`
         if (!retry) return new Promise(function (resolve) {
           setTimeout(function () { resolve(accountNow(epoch, uid) ? load(true) : undefined); }, 900);
         });
-        toast("Could not load your library — pull down to try again.");
+        toast("Could not load your workouts — pull down to try again.");
       });
     });
   }
@@ -2157,7 +2208,7 @@ export const APP = String.raw`
       manage.onclick = function () { openCollections(null); closeSheet("filtersheet"); };
       list.appendChild(manage);
     } else {
-      option("Favorites", "Favourites");
+      option("Favorites", "Favorites");
       CATEGORIES.forEach(function (c) {
         if (state.workouts.some(function (w) { return w.category === c; })) option(c, c);
       });
@@ -2201,7 +2252,7 @@ export const APP = String.raw`
     var ren = el("button", null, "Rename");
     ren.onclick = function () { openRename("collection", c.id, c.name); };
     bar.appendChild(ren);
-    var del = el("button", "warn", "Delete");
+    var del = el("button", "warn", "Remove");
     del.onclick = function () { deleteCollection(c); };
     bar.appendChild(del);
   }
@@ -2324,100 +2375,6 @@ export const APP = String.raw`
     if (top < 0) top = 0;
     if (lessMotion() || !pg.scrollTo) pg.scrollTop = top;
     else pg.scrollTo({ top: top, behavior: "smooth" });
-  }
-
-  // ---------- today ----------
-  //
-  // A training app is opened with one question — what am I doing today — and the
-  // plan knew the answer two tabs away. One card above the grid, and none at all on
-  // an empty day: nothing planned is not a problem to solve. The Plan tab is the
-  // only thing that reads plan rows and most sessions never open it, so this does
-  // its own read of today's plan and today's logs: two small selects.
-
-  var today = { day: null, rows: [], done: false, at: 0, busy: false, shown: false, asked: 0 };
-
-  // Anchored to the chip row instead of declared in markup.ts: setView hides that
-  // row exactly when the Library is off screen, and one CSS adjacency rule lets
-  // this card leave with it however the block is laid out later.
-  var todayBox = el("div", "todaywrap hide");
-  todayBox.id = "today";
-  $("chips").parentNode.insertBefore(todayBox, $("chips").nextSibling);
-
-  function loadToday() {
-    if (today.busy || !state.user) return;
-    var key = ymd(new Date()), epoch = accountEpoch, uid = state.user.id;
-    today.busy = true; today.asked = Date.now();
-    Promise.all([
-      sb.from("plan").select("workout_id").eq("day", key),
-      // Pulled back a day: no time zone can then leave this morning's session
-      // outside the window, and the local date below is what decides.
-      sb.from("workout_logs").select("started_at")
-        .gte("started_at", ymd(new Date(Date.now() - 86400000)) + "T00:00:00Z")
-    ]).then(function (rs) {
-      if (!accountNow(epoch, uid)) return;
-      if (rs[0].error || rs[1].error) throw new Error("Today unavailable");
-      today.day = key;
-      today.rows = rs[0].data || [];
-      // The Plan's own test for its tick, so the two cannot disagree about today.
-      // A day is the local one: comparing UTC dates ticked the wrong day every
-      // evening west of Greenwich, which is most of an evening's training.
-      today.done = (rs[1].data || []).some(function (l) {
-        return l.started_at && ymd(new Date(l.started_at)) === key;
-      });
-      renderToday();
-    }).catch(function () { /* the age check tries again in half a minute */ })
-      .then(function () { if (accountNow(epoch, uid)) { today.busy = false; today.at = Date.now(); } });
-  }
-
-  function todayDose(w) {
-    var n = exerciseNames(w).length;
-    var first = ((w.blocks || [])[0] || {}).exercises || [];
-    return [n ? n + (n === 1 ? " exercise" : " exercises") : null,
-      first.length ? doseText(first[0]) : null, fmtDur(w.duration_minutes)]
-      .filter(Boolean).join(" · ");
-  }
-
-  function renderToday() {
-    // The snapshot ages two ways this screen never hears about: the day rolling over
-    // under a phone left on the counter, and a session finished in Workout Mode,
-    // which does not come back through load(). One age check covers both, at two
-    // small reads a minute however often the library repaints.
-    if (state.view === "library" &&
-      (today.day !== ymd(new Date()) || Date.now() - today.at > 30000)) loadToday();
-
-    var box = todayBox, list = [];
-    today.rows.forEach(function (p) {
-      var m = state.workouts.filter(function (x) { return x.id === p.workout_id; })[0];
-      if (m) list.push(m);
-    });
-    var w = list[0];
-    box.innerHTML = "";
-    if (!w) { box.classList.add("hide"); today.shown = false; return; }
-    box.classList.remove("hide");
-
-    var card = el("div", "daycard today" + (today.done ? " done" : ""));
-    var head = el("div", "dayhead");
-    head.appendChild(el("div", "dayname", "Today"));
-    if (today.done) head.appendChild(icon(el("div", "daydone"), "check", "Done today"));
-    card.appendChild(head);
-    var t = el("button", "ttitle", w.title || "Workout");
-    t.onclick = function () { openDetail(w); };
-    card.appendChild(t);
-    var dose = [todayDose(w), list.length > 1 ? "+" + (list.length - 1) + " more today" : null]
-      .filter(Boolean).join(" · ");
-    if (dose) card.appendChild(el("div", "tdose", dose));
-    // Where the week stands, on the card already answering "what am I doing today".
-    var wk = thisWeek();
-    if (wk) card.appendChild(el("div", "tweek" + (wk.atRisk ? " risk" : ""), weekLine(wk)));
-    // The detail overlay's own start call, so finishing lands in the same place.
-    var go = el("button", "btn tstart" + (today.done ? " ghost" : ""),
-      today.done ? "Log another" : "Start");
-    go.onclick = function () { startWorkout(w); };
-    card.appendChild(go);
-    box.appendChild(card);
-    // Only the first appearance arrives: rebuilt on every render, a card that
-    // re-enters on every filter tap is a flicker.
-    if (!today.shown) { today.shown = true; viewIn(box); }
   }
 
   function fmtDur(m) {
@@ -2545,7 +2502,7 @@ export const APP = String.raw`
           paintSaveOn(how);
           empty.appendChild(how);
         } else empty.appendChild(el("p", null, "Paste a TikTok, Instagram, or YouTube link to get started."));
-        var first = el("button", "btn firstsave", "Save your first workout");
+        var first = el("button", "btn firstsave", "Add video");
         first.onclick = function () { $("addbtn").click(); };
         empty.appendChild(first);
       } else {
@@ -2721,7 +2678,7 @@ export const APP = String.raw`
     if (w.favorite) {
       var fv = icon(el("div", "fav"), "star");
       fv.setAttribute("role", "img");
-      fv.setAttribute("aria-label", "Favourite");
+      fv.setAttribute("aria-label", "Favorite");
       tw.appendChild(fv);
     }
     var d = fmtDur(w.duration_minutes);
@@ -2748,14 +2705,13 @@ export const APP = String.raw`
   function render() {
     renderChips();
     renderColBar();
-    renderResume();
-    renderToday();
+    sessionChanged();
     renderGrid();
     renderLibCount();
     var n = state.workouts.length;
     $("searchwrap").classList.toggle("hide", !n);
     maybeInstallHint();
-    $("count0").textContent = n ? n + (n === 1 ? " workout" : " workouts") : "No workouts yet";
+    $("countlib").textContent = n ? n + " saved" : "Nothing saved yet";
   }
 
   // ---------- detail ----------
@@ -3533,7 +3489,7 @@ export const APP = String.raw`
     d.appendChild(start);
 
     var actions = el("div", "detail-actions");
-    var schedule = el("button", "chip", "Schedule");
+    var schedule = el("button", "chip", "Plan");
     schedule.onclick = function () { scheduleWorkout(w); };
     actions.appendChild(schedule);
     var ask = el("button", "chip", "Ask Pumpy");
@@ -3541,7 +3497,7 @@ export const APP = String.raw`
     actions.appendChild(ask);
     d.appendChild(actions);
 
-    var original = disclosure("Watch original / source", "source-disclosure");
+    var original = disclosure("Watch original", "source-disclosure");
     var sourceBody = original.lastChild;
     if (!isUpload(w) && w.url) sourceBody.appendChild(originalLink(w));
     if (w.caption) sourceBody.appendChild(el("div", "capbox", w.caption));
@@ -3582,17 +3538,17 @@ export const APP = String.raw`
       // round. The name IS the heading.
       var blockRow = el("div", "exrow delete-swipe block-swipe");
       var blockFront = el("div", "exmain");
-      blockFront.appendChild(el("h3", null, b.title || (w.blocks.length === 1 ? "Exercises" : "Block " + (bi + 1))));
+      blockFront.appendChild(el("h3", null, b.title || (w.blocks.length === 1 ? "Exercises" : "Section " + (bi + 1))));
       // Its one quiet action opens the section sheet, which is where the name,
       // the kind, the rounds and the rest live now; removing is in there and in
       // the swipe.
       var blockMore = el("button", "linkbtn", "Edit");
-      blockMore.setAttribute("aria-label", "Edit " + (b.title || "block " + (bi + 1)));
+      blockMore.setAttribute("aria-label", "Edit " + (b.title || "section " + (bi + 1)));
       blockMore.onclick = function () { openSection(w, bi); };
       blockFront.appendChild(blockMore);
       var blockActions = el("div", "exacts");
-      var blockDelete = icon(el("button", "exact danger"), "trash", "Delete");
-      blockDelete.setAttribute("aria-label", "Delete " + (b.title || "block " + (bi + 1)));
+      var blockDelete = icon(el("button", "exact danger"), "trash", "Remove");
+      blockDelete.setAttribute("aria-label", "Remove " + (b.title || "section " + (bi + 1)));
       blockDelete.onclick = function () { deleteBlock(w, bi); };
       blockActions.appendChild(blockDelete); blockRow.appendChild(blockFront); blockRow.appendChild(blockActions);
       sect.appendChild(blockRow);
@@ -3637,7 +3593,7 @@ export const APP = String.raw`
         acts.appendChild(pill);
         var options = disclosure("Options", "exercise-options");
         options.firstChild.setAttribute("aria-label", "Options for " + ex.name);
-        var edit = icon(el("button", "pickrow"), "pencil", "Review / Edit");
+        var edit = icon(el("button", "pickrow"), "pencil", "Edit exercise");
         edit.onclick = function () { openExEdit(w, bi, ei, ex); };
         options.lastChild.appendChild(edit);
         var demo = icon(el("button", "pickrow"), "play", "Demo");
@@ -3657,7 +3613,7 @@ export const APP = String.raw`
         var front = el("div", "exmain");
         front.appendChild(row);
         var drawer = el("div", "exacts");
-        var del = icon(el("button", "exact danger"), "trash", "Delete");
+        var del = icon(el("button", "exact danger"), "trash", "Remove");
         del.setAttribute("aria-label", "Remove " + ex.name);
         del.onclick = function () {
           exEdit = { w: w, block: bi, index: ei, name: ex.name };
@@ -3695,7 +3651,7 @@ export const APP = String.raw`
           ? "Spotter read the video itself and still could not make out a workout in it. " +
             "You can watch it and log a freestyle session, or type the exercises in yourself."
           : "This video did not include a written workout, so there is nothing to step through. " +
-            "You can still watch it and log a freestyle session, use Read it again in Options on " +
+            "You can still watch it and log a freestyle session, use Read it again in the ⋯ menu on " +
             "this card to have another go, or type the exercises in yourself."));
       none.appendChild(np);
       none.appendChild(el("div", null, " "));
@@ -3823,7 +3779,7 @@ export const APP = String.raw`
   // The same pill in both halves of openDetail.
   function originalLink(w) {
     var a = icon(el("a", "pill accent"), "arrow-up-right");
-    a.insertBefore(document.createTextNode("Open original"), a.firstChild);
+    a.insertBefore(document.createTextNode("Watch original"), a.firstChild);
     a.href = w.source_url || w.url;
     a.target = "_blank";
     a.rel = "noopener";
@@ -4663,6 +4619,69 @@ export const APP = String.raw`
     openSheet("restsheet");
   }
 
+  // ---------- one sheet per exercise (seam) ----------
+  //
+  // Every row on the card used to carry three controls of its own — Watch this
+  // bit, a rest pill and an Options fold — and Workout Mode had a fourth menu for
+  // the same movement. One sheet now, opened by tapping a row on the card and by
+  // ⋯ Exercise in Workout Mode, the way Hevy hangs everything off one ⋯ per
+  // exercise. Each row hands over to the sheet that already does the job: that
+  // sheet opens first and this one closes behind it, the order the day sheet
+  // taught, so the one history entry is never dropped between the two.
+  //
+  // ctx: { from: "card" | "workout", w, bi, ei, ex, block }
+  //   card     Watch this part · Demo and how-to · Edit exercise · Swap · Reorder · Remove
+  //   workout  Watch this part (or the whole video) · Demo and how-to · Swap ·
+  //            Add set · Add an exercise
+  // The card's own edits change the saved workout, which a running session has
+  // its own copy of, so Edit, Reorder and Remove stay on the card.
+  function openExerciseSheet(ctx) {
+    var ex = ctx.ex, w = ctx.w, live = ctx.from === "workout", list = $("exmenulist");
+    var block = ctx.block || ((w && w.blocks) || [])[ctx.bi] || {};
+    var src = sourceOf(ex) || w, t = startOf(ex), rest = restOf(ex, block, false);
+    if (t === null) t = bitOf(ex);
+    $("exmenutitle").textContent = ex.name || "Exercise";
+    $("exmenusub").textContent = [doseText(ex),
+      restWord(rest.secs).replace("Rest ", "rest ") + (rest.source === "default" ? " (default)" : ""),
+      ex.equipment || null].filter(Boolean).join(" · ");
+    list.innerHTML = "";
+    function row(glyph, label, note, fn, cls) {
+      var b = icon(el("button", "pickrow" + (cls ? " " + cls : "")), glyph, label);
+      if (note) b.appendChild(el("span", "pknote", note));
+      b.onclick = function () { fn(); closeSheet("exmenu"); };
+      list.appendChild(b);
+      return b;
+    }
+    if (t !== null && src && /^(youtube|tiktok)$/.test(src.platform)) {
+      row("play", "Watch this part", clock(t) + " in the video", function () { watchBit(src, t, ex); });
+    } else if (live && src && (src.thumb_url || (src.shortcode && /^(instagram|tiktok|youtube)$/.test(src.platform)))) {
+      row("play", "Watch original", src.author ? "@" + src.author : null, function () { openWatch(src, ex); });
+    }
+    row("help", "Demo and how-to", null, function () { explain(ex, w); });
+    if (!live) row("pencil", "Edit exercise", null, function () { openExEdit(w, ctx.bi, ctx.ei, ex); });
+    row("swap", "Swap exercise", null, function () {
+      openSwap(ex.name, w.title, live ? swapTarget(w, ex) : { w: w, bi: ctx.bi, ei: ctx.ei, ex: ex });
+    });
+    if (!live && ordCan(w)) row("reorder", "Reorder", null, function () { openOrder(w, "e" + ctx.bi + "." + ctx.ei); });
+    if (live && wo && !wo.finished) {
+      var s = wo.screens[wo.i], entry = wo.entries[wo.i];
+      if (s && entry && !(s.cx && !s.ei)) {
+        row("plus", "Add set", null, function () {
+          if (isTimed(s.ex)) { logHold(entry.sets.length, s.ex.duration_seconds); renderWorkout(); }
+          else openSetSheet(entry.sets.length);
+        });
+      }
+      row("plus", "Add an exercise", null, openWorkoutAdd);
+    }
+    if (!live) {
+      row("trash", "Remove", null, function () {
+        exEdit = { w: w, block: ctx.bi, index: ctx.ei, name: ex.name };
+        deleteExEdit();
+      }, "danger");
+    }
+    openSheet("exmenu");
+  }
+
   // ---------- a section: circuits, cardio, finishers, stretches ----------
   //
   // The other half of "not cardio friendly": a workout is sections — Ladder,
@@ -5086,7 +5105,7 @@ export const APP = String.raw`
   // Named as the card named it when the sheet opened, by the block's stored
   // place: "Block 2" stays Block 2 however far it is carried.
   function ordTitle(blocks, bi) {
-    return blocks[bi].title || (blocks.length === 1 ? "Exercises" : "Block " + (bi + 1));
+    return blocks[bi].title || (blocks.length === 1 ? "Exercises" : "Section " + (bi + 1));
   }
 
   function ordLabel(blocks, k) {
@@ -5692,7 +5711,7 @@ export const APP = String.raw`
     if (state.filter === "col:" + c.id) state.filter = "All";
     render();
     if ($("colsheet").classList.contains("open")) renderColSheet();
-    offerUndo("Deleted " + c.name + " — the workouts stay", function () {
+    offerUndo("Removed " + c.name + " — the workouts stay", function () {
       sb.from("collections").delete().eq("id", c.id).then(function (r) {
         if (!r || !r.error) return;
         toast("That did not delete. The collection is still here.");
@@ -6453,7 +6472,7 @@ export const APP = String.raw`
     var t = startOf(ex);
     if (t === null) t = bitOf(ex);
     if (t === null || !w || !/^(youtube|tiktok)$/.test(w.platform)) return null;
-    var b = icon(el("button", "chip"), "play", "Watch this bit");
+    var b = icon(el("button", "chip"), "play", "Watch this part");
     b.onclick = function () { watchBit(w, t, ex); };
     return b;
   }
@@ -7411,6 +7430,7 @@ export const APP = String.raw`
     }
     saveDraft();
     publishSummary();
+    sessionChanged();
     history.pushState({ workout: 1 }, "");
     lastWeights();
   }
@@ -7739,7 +7759,7 @@ export const APP = String.raw`
       var cap = WOA_CAP[r.src], h;
       n[r.src] = (n[r.src] || 0) + 1;
       if (cap && n[r.src] > cap) return;
-      h = r.src === 1 ? "Recent" : r.src === 2 ? "In your library" : capWord(r.pattern || "other");
+      h = r.src === 1 ? "Recent" : r.src === 2 ? "In your workouts" : capWord(r.pattern || "other");
       if (h !== head) { head = h; list.appendChild(el("div", "woahead", h)); }
       woaRow(list, r);
     });
@@ -8252,7 +8272,7 @@ export const APP = String.raw`
   // title, else the shape it is, else its place on the card.
   function blockName(s) {
     return s.block.title ||
-      (s.block.type && s.block.type !== "straight" ? s.block.type : "Block " + (s.bi + 1));
+      (s.block.type && s.block.type !== "straight" ? s.block.type : "Section " + (s.bi + 1));
   }
 
   // hush: no entrance; a logged round changed a number.
@@ -8632,6 +8652,49 @@ export const APP = String.raw`
     var v = parseFloat(e.input.value);
     if (!isNaN(v)) e.commit(v);
     if (document.activeElement === e.input) e.input.blur();
+  }
+
+  // ---------- one way to log the next set (seam) ----------
+  //
+  // Workout Mode's big button, the Lock Screen's Log set and the watch's all come
+  // through here, so the three can never log different numbers for the same set.
+  // The set is the first one not yet done on the movement the session stands on;
+  // its figures are the caller's if it sent any (a dial turned on the wrist),
+  // else the open superset panel's own steppers, else setPrefill's — the same
+  // numbers the sheet would open on. It goes through saveSet, the one place a
+  // set is written, rested, buzzed and checked for a best.
+  //
+  // Nothing here asks which screen is up: the next cycle's native session core
+  // replays taps made on the Lock Screen and the watch through this door. An
+  // event id makes a replay harmless — a second delivery of the same tap is
+  // answered "seen", not logged twice. A hold and an unresolved complex are not
+  // logged with reps and a weight, and are answered "screen" for the caller to
+  // handle (the phone's own button starts the hold or counts the round).
+  var setEvents = [];
+
+  function logNextSet(opts) {
+    opts = opts || {};
+    if (opts.id && setEvents.indexOf(opts.id) >= 0) return { ok: false, why: "seen" };
+    if (!wo || wo.finished) return { ok: false, why: "idle" };
+    var s = wo.screens[wo.i], entry = wo.entries[wo.i];
+    if (!s || (s.cx && !s.ei) || isTimed(s.ex)) return { ok: false, why: "screen" };
+    var idx = ssIdx(entry), dock = s.ss && stepRows ? stepRows[0].parentNode : null;
+    var dialled = typeof opts.reps === "number" && isFinite(opts.reps) ||
+      typeof opts.weight === "number" && isFinite(opts.weight);
+    if (!dialled && dock && dock._wo === wo && dock._k === wo.i && dock._idx === idx) {
+      // The open panel's steppers already hold what this set will be.
+      setCtx.idx = idx;
+    } else {
+      var pre = setPrefill(idx);
+      setCtx.idx = pre.idx;
+      setReps(typeof opts.reps === "number" && isFinite(opts.reps) ? opts.reps : pre.reps);
+      setWeight(typeof opts.weight === "number" && isFinite(opts.weight) ? opts.weight : pre.weight);
+    }
+    var reps = setCtx.reps, weight = setCtx.weight;
+    saveSet();
+    if (opts.id) { setEvents.push(opts.id); if (setEvents.length > 64) setEvents.shift(); }
+    var done = entry.sets[idx];
+    return { ok: true, idx: idx, reps: reps, weight: weight, pr: !!(done && done.pr) };
   }
 
   function saveSet() {
@@ -9990,12 +10053,9 @@ export const APP = String.raw`
       if (wo) wo.logId = payload.id;
       sumLanded(payload);
       invalidateLogs();
-      // The today card was drawn before this session existed. Retire it now,
-      // and redraw at once if the library is the page underneath.
-      today.at = 0;
-      renderToday();
-      // The week just changed and the widget is the one reader that cannot ask.
-      if (native && native.live) loadLogs().then(function () { publishSummary(); });
+      // The week just changed: Up next, the strip, the ring, the statuses on
+      // Workouts and the widget all read these logs, and the widget cannot ask.
+      quietly(loadLogs().then(function () { publishSummary(); if (drawn.train) renderTrain(); renderGrid(); }));
     });
     clearInterval(woTimer);
     cxOff();
@@ -10016,7 +10076,7 @@ export const APP = String.raw`
     var openedFromDetail = $("detail").classList.contains("open");
     exitWorkout(pause);
     history.go(-((extra || 0) + (openedFromDetail ? 2 : 1)));
-    renderResume();
+    sessionChanged();
   }
 
   // ---------- pausing, and coming back ----------
@@ -10049,14 +10109,14 @@ export const APP = String.raw`
   function resumeWorkout() {
     var d = pausedDraft(), w = d && srcById(d.workoutId), gap;
     if (!d) return;
-    if (!w) { if (state.workouts.length) clearDraft(); renderResume(); return; }
+    if (!w) { if (state.workouts.length) clearDraft(); sessionChanged(); return; }
     if (d.pausedAt) {
       gap = Date.now() - new Date(d.pausedAt).getTime();
       if (gap > 0) d.startedAt = new Date(new Date(d.startedAt).getTime() + gap).toISOString();
     }
     d.paused = false; d.pausedAt = null; d.rest = null;
     startWorkout(w, d);
-    renderResume();
+    sessionChanged();
   }
 
   // After boot. A draft still marked running belongs to a process that ended
@@ -10072,7 +10132,7 @@ export const APP = String.raw`
       writeDraft(d);
     }
     if (native && native.live) try { native.live.update(pausedState(d, w)); } catch (e) { /* ignore */ }
-    renderResume();
+    sessionChanged();
   }
 
   // Minutes for the first hour, hours for the first day: what "how long ago" means
@@ -10083,6 +10143,20 @@ export const APP = String.raw`
     if (m < 60) return m + " min ago";
     var h = Math.round(m / 60);
     return h + (h === 1 ? " hour ago" : " hours ago");
+  }
+
+  // ---------- the paused bar (seam) ----------
+  //
+  // A session's state changed — paused, resumed, finished, or found on disk at
+  // boot — and two things say so: the bar above the tab bar on every tab, and
+  // Up next on Train. One call for both, so neither can be left saying the old
+  // thing. pausedBar.sync() is the bar's own (sb-library); drawDay is Train's
+  // day card (sb-train).
+  var pausedBar = { sync: function () { renderResume(); } };
+
+  function sessionChanged() {
+    pausedBar.sync();
+    if (drawn.train && trainLean) drawDay();
   }
 
   var resumeBox = el("div", "resumewrap hide"), resumeShown = false;
@@ -10358,10 +10432,10 @@ export const APP = String.raw`
         tagPaint(tag, pair ? 2 : 1);
       }
     }
-    // The last set of a session is not deleted from here: that is the session,
-    // and Delete session is where that lives.
+    // The last set of a session is not removed from here: that is the session,
+    // and Remove session is where that lives.
     if (total > 1) {
-      del = acts.appendChild(icon(el("button", "sedel"), "trash", "Delete"));
+      del = acts.appendChild(icon(el("button", "sedel"), "trash", "Remove"));
       del.onclick = function () {
         var gone = e.sets.splice(si, 1)[0];
         c.open = null;
@@ -10369,7 +10443,7 @@ export const APP = String.raw`
         sumMorph(ed, ed.offsetHeight, function () { sumPaint(c); });
         // Undoable the way a deleted session is: the row goes on the tap, the write
         // that carries it waits for the toast to go, and any write between carries it.
-        offerUndo("Set deleted", function () { sumWrite(c); }, function () {
+        offerUndo("Set removed", function () { sumWrite(c); }, function () {
           e.sets.splice(Math.min(si, e.sets.length), 0, gone);
           sumPaint(c);
           sumWrite(c);
@@ -10474,7 +10548,7 @@ export const APP = String.raw`
   // than keep one it may not have earned.
   function sumStill(c, e, s) {
     var k = exKey(e), at = new Date(c.payload.started_at).getTime(), was = 0;
-    if (state.logs) {
+    if (fullLogs()) {
       state.logs.forEach(function (l) {
         if (l.id === c.payload.id || !(new Date(l.started_at).getTime() < at)) return;
         (l.entries || []).forEach(function (x) {
@@ -10557,7 +10631,7 @@ export const APP = String.raw`
   function sealAwards(payload, main) {
     // With nothing loaded there is no way to tell a new award from an old one, and
     // a seal for one earned in March is a lie. Progress backfills instead.
-    if (!state.awards || !state.logs) return;
+    if (!state.awards || !fullLogs()) return;
     var logs = state.logs.concat([payload]);
     var st = weekStats(logs, state.plan, goalSetting(), new Date());
     var won = grantAwards(awardsFor(logs, st, wo && wo.prs))
@@ -11714,6 +11788,19 @@ export const APP = String.raw`
     return { from: mondayOf(monthStart), to: addDays(mondayOf(last), 6) };
   }
 
+  // What is READ is wider than what is shown: the month on screen, plus this week
+  // and the thirteen days after today, whatever month is being browsed. Up next,
+  // the ring, "Planned Thu" on a Workouts card and the widgets all ask about now
+  // and the next fortnight, and they must get their answer from the same rows the
+  // strip draws — one read, one source of truth — rather than each keeping a
+  // snapshot of its own. Plan rows are tiny; a range of a few months is nothing.
+  var AHEAD_DAYS = 13;
+
+  function fetchRange() {
+    var r = planRange(), now = new Date(), from = mondayOf(now), to = addDays(now, AHEAD_DAYS);
+    return { from: ymd(r.from) < ymd(from) ? r.from : from, to: ymd(r.to) > ymd(to) ? r.to : to };
+  }
+
   // The ISO week number, for the subtitle. Thursday is the day that decides which
   // year a week belongs to, which is the whole rule: the week holding 1 January's
   // Thursday is week 1, and 31 December can therefore be week 1 of the next year.
@@ -11730,7 +11817,7 @@ export const APP = String.raw`
   var planSig = "";
 
   function planShape() {
-    var r = planRange();
+    var r = fetchRange();
     return JSON.stringify([state.plan, ymd(state.weekStart), ymd(r.from), ymd(r.to),
       trainSeg, state.logs && state.logs.length, state.workouts.length]);
   }
@@ -11739,7 +11826,7 @@ export const APP = String.raw`
     if (!state.user) return Promise.resolve();
     if (!state.weekStart) state.weekStart = mondayOf(new Date());
     if (!monthStart) monthStart = monthOfWeek(state.weekStart);
-    var r = planRange(), from = ymd(r.from), to = ymd(r.to);
+    var r = fetchRange(), from = ymd(r.from), to = ymd(r.to);
     var uid = state.user.id, epoch = accountEpoch, rev = planRev;
     // One query, not two. The second one used to fetch a slim list of logs just
     // for the ticks, which meant the strip, the grid and the ring could each hold
@@ -11749,12 +11836,12 @@ export const APP = String.raw`
       return sb.from("plan").select("*").eq("user_id", uid).gte("day", from).lte("day", to)
         .then(function (r0) {
         if (!accountNow(epoch, uid) || rev !== planRev) return;
-        var nowRange = planRange();
+        var nowRange = fetchRange();
         if (from !== ymd(nowRange.from) || to !== ymd(nowRange.to)) return;
         if (r0.error) throw new Error("Plan unavailable");
         state.plan = r0.data || [];
-        today.at = 0;
         publishSummary();
+        writeTrainCache();
         var shape = planShape();
         if (silent && shape === planSig) return;
         planSig = shape; renderTrain();
@@ -11767,7 +11854,6 @@ export const APP = String.raw`
   // A change already true on the screen: loadPlan's two chores, no round trip.
   function repaintPlan() {
     planRev++;
-    today.at = 0;
     publishSummary();
     planSig = planShape();
     renderTrain();
@@ -11835,7 +11921,12 @@ export const APP = String.raw`
   var barTitle = null, barPrev = null, barNext = null, barToday = null;
 
   var DOW = ["M", "T", "W", "T", "F", "S", "S"];
-  var SEGS = [["calendar", "Calendar"], ["progress", "Progress"], ["records", "Records"]];
+  // The month left the segments for the strip (it opens out of the week in
+  // place), so two are left. A stored "calendar" reads as Progress.
+  var SEGS = [["progress", "Progress"], ["records", "Records"]];
+  // Set by the plan link (setView("plan")) and spent by the strip, which opens
+  // the month the next time it is drawn.
+  var trainWantMonth = false;
 
   // ---------- train · which segment ----------
   //
@@ -11843,12 +11934,13 @@ export const APP = String.raw`
   // were last on, and coming back to a different one is the small daily tax that
   // makes people stop opening a tab. The profile is the truth so a second device
   // opens where the first one left off; localStorage answers before the profile
-  // has landed, and an unknown word is not an error, it is just Calendar.
+  // has landed, and an unknown word is not an error, it is just Progress — which
+  // is also what a "calendar" stored before the month moved into the strip reads as.
   function readTrainSeg() {
     var s = state.profile && state.profile.settings, v = s && s.trainSeg;
     if (!v) { try { v = localStorage.getItem("spotter_trainseg"); } catch (e) { /* ignore */ } }
     for (var i = 0; i < SEGS.length; i++) if (SEGS[i][0] === v) return v;
-    return "calendar";
+    return "progress";
   }
 
   function curSeg() {
@@ -12095,7 +12187,8 @@ export const APP = String.raw`
   function paintTrainBar() {
     barTitle.textContent = weekLabel(state.weekStart);
     barToday.classList.toggle("hide", showingToday());
-    $("count1").textContent = "Week " + isoWeek(state.weekStart);
+    // Today's date, the one thing the eyebrow can say that nothing under it does.
+    $("counttrain").textContent = new Date().toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
   }
 
   function paintSeg() {
@@ -12191,14 +12284,9 @@ export const APP = String.raw`
   //
   // Always today, whatever week the strip is showing: the question the app is
   // opened with does not move when you go looking at October.
+  // fetchRange always holds today, whatever month the strip is showing.
   function todayRows() {
-    var key = ymd(new Date()), r = planRange();
-    if (key >= ymd(r.from) && key <= ymd(r.to)) return rowsFor(key);
-    // Paged away to another month, so the range no longer holds today. The
-    // Library's card reads the same two rows and keeps its own snapshot of them.
-    if (today.day === key) return today.rows;
-    loadToday();
-    return [];
+    return rowsFor(ymd(new Date()));
   }
 
   function todayMeta(w, extra) {
@@ -12258,7 +12346,7 @@ export const APP = String.raw`
       // Nothing planned is not a problem to solve, but it is worth two doors.
       card.appendChild(el("div", "tdose", "Rest day — add one, or ask Pumpy."));
       var rest = el("div", "tbtns");
-      var add = el("button", "btn ghost", "Add a workout");
+      var add = el("button", "btn ghost", "Plan a workout");
       add.onclick = function () { openPicker(key, dayLabel(d)); };
       rest.appendChild(add);
       var ask = el("button", "btn ghost", "Ask Pumpy");
@@ -12267,6 +12355,12 @@ export const APP = String.raw`
       card.appendChild(rest);
     }
     cardBox.appendChild(card);
+  }
+
+  // Train's day card, redrawn on its own when a session changes (sessionChanged).
+  // Seam: sb-train replaces drawToday with the selected-day card and Up next.
+  function drawDay() {
+    drawToday(state.logs ? thisWeek() : null);
   }
 
   // ---------- train · the render ----------
@@ -12279,7 +12373,9 @@ export const APP = String.raw`
   }
 
   function renderTrain() {
-    if (!state.user) return;
+    // Painted from the cache before the token is back (earlyUid) as well: nothing
+    // below reads the network, and Train is the page the app opens on.
+    if (!state.user && !earlyUid) return;
     var v = $("trainview");
     if (!trainLean || trainLean.parentNode !== v) buildTrain(v);
     paintTrainBar();
@@ -12312,9 +12408,8 @@ export const APP = String.raw`
     var seg = curSeg();
     trainBody.innerHTML = "";
     trainBody.classList.remove("planswap");
-    if (seg === "progress") drawProgressSeg(trainBody);
-    else if (seg === "records") drawRecordsSeg(trainBody);
-    else drawCalendarSeg(trainBody);
+    if (seg === "records") drawRecordsSeg(trainBody);
+    else drawProgressSeg(trainBody);
     if (!trainSwap) return;
     trainSwap = false;
     void trainBody.offsetWidth;
@@ -12360,15 +12455,14 @@ export const APP = String.raw`
     if (String(p.id).indexOf("tmp-") === 0) return Promise.resolve();
     planRev++;
     var epoch = accountEpoch, uid = state.user.id;
-    var range = JSON.stringify(planRange());
+    var range = JSON.stringify(fetchRange());
     var kept = state.plan;
     state.plan = (state.plan || []).filter(function (q) { return q.id !== p.id; });
-    today.at = 0;
     renderTrain();
     return sb.from("plan").delete().eq("id", p.id).then(function (r) {
       if (!accountNow(epoch, uid)) return;
       planRev++;
-      if (range !== JSON.stringify(planRange())) { loadPlan(true); return; }
+      if (range !== JSON.stringify(fetchRange())) { loadPlan(true); return; }
       if (r && r.error) {
         state.plan = kept;
         renderTrain();
@@ -12747,7 +12841,7 @@ export const APP = String.raw`
     list.innerHTML = "";
     $("picktitle").textContent = "Add to " + (label || day);
     if (!state.workouts.length) {
-      list.appendChild(el("p", "lede", "Save a workout first, then you can plan it."));
+      list.appendChild(el("p", "lede", "Add a workout video first, then you can plan it."));
     }
     state.workouts.forEach(function (w) {
       var row = el("button", "pickrow"), art = cardArt(w);
@@ -12770,7 +12864,6 @@ export const APP = String.raw`
         state.plan = (state.plan || []).concat([
           { id: "tmp-" + Date.now(), day: day, workout_id: w.id, user_id: state.user.id }
         ]);
-        today.at = 0;
         renderTrain();
         planAdd(day, w.id).then(function (r) {
           if (r.error) {
@@ -12787,6 +12880,16 @@ export const APP = String.raw`
     openSheet("picksheet");
   }
 
+  // ---------- plan (seam) ----------
+  //
+  // The one way to put a workout on a day, from the card's Plan, Up next's "Plan
+  // it", the ready sheet and the recap. sb-card builds the fortnight of days; until
+  // then it is the date sheet it replaces.
+  // o: { w, row (a plan row to move, or null), days (keys to preselect), from }
+  function openPlanSheet(o) {
+    scheduleWorkout(o.w, o.row || null);
+  }
+
   // One sheet, two errands. Handed a plan row it is a move — same date picker,
   // and the old row goes only once the new one is in, so a failed write leaves
   // the workout where it was rather than nowhere.
@@ -12794,7 +12897,7 @@ export const APP = String.raw`
   function scheduleWorkout(w, from) {
     var row = from && from.id && String(from.id).indexOf("tmp-") !== 0 ? from : null;
     scheduleCtx = { w: w, from: row, uid: state.user.id, epoch: accountEpoch };
-    $("scheduletitle").textContent = row ? "Move workout" : "Schedule workout";
+    $("scheduletitle").textContent = row ? "Move" : "Plan";
     $("schedulename").textContent = w.title || "Workout";
     $("scheduledate").value = row ? row.day : ymd(new Date());
     $("scheduleerror").textContent = "";
@@ -12816,7 +12919,7 @@ export const APP = String.raw`
       b.disabled = false; b.textContent = word;
       if (r.error) { $("scheduleerror").textContent = "Could not " + (ctx.from ? "move" : "add") + " it. Try again."; return; }
       if (ctx.from) planDrop(ctx.from);
-      closeSheet("schedulesheet"); today.at = 0; loadPlan(); loadToday();
+      closeSheet("schedulesheet"); loadPlan();
       toast(ctx.from ? "Moved to another day." : "Added to your plan.");
     }).catch(function () {
       if (scheduleCtx !== ctx || !accountNow(ctx.epoch, ctx.uid)) return;
@@ -12828,7 +12931,7 @@ export const APP = String.raw`
   // ---------- logs, progress, history ----------
 
   function loadLogs() {
-    if (state.logs) return Promise.resolve(state.logs);
+    if (state.logs && !state.logsLite) return Promise.resolve(state.logs);
     if (!state.user) return Promise.resolve([]);
     var uid = state.user.id, epoch = accountEpoch, rev = logsRev;
     return readOnce("logs:" + rev, function () {
@@ -12838,8 +12941,9 @@ export const APP = String.raw`
           if (rev !== logsRev) return loadLogs();
           if (r.error) throw r.error;
           state.logs = r.data || [];
+          state.logsLite = false;
           publishSummary();
-          if (today.shown) renderToday();
+          writeTrainCache();
           return state.logs;
         }).catch(function () {
           if (accountNow(epoch, uid)) toast("Could not load your history. Open Train to try again.");
@@ -12869,12 +12973,14 @@ export const APP = String.raw`
   function goalSetting() {
     if (state.goal) return state.goal;
     var s = state.profile && state.profile.settings;
+    // Before the profile lands, the goal Train's cache was drawn with, so a ring
+    // painted from the cache does not read "2 of 3" and then jump to "2 of 4".
+    if (!state.profile) return trainCacheGoal || null;
     return (s && s.goal) || null;
   }
 
-  // Which days of a Mon-Sun week the plan has something on. state.plan holds only
-  // the range the Plan tab is looking at, so this answers 0 once the user pages
-  // away, and the goal falls back to the setting rather than to nothing.
+  // Which days of a Mon-Sun week the plan has something on. state.plan always
+  // holds this week (fetchRange), whatever month the strip is showing.
   function planMap(plan, monday) {
     var days = {}, n = 0, i;
     for (i = 0; i < 7; i++) days[ymd(addDays(monday, i))] = false;
@@ -12962,6 +13068,226 @@ export const APP = String.raw`
     return weekStats(logs, state.plan, goalSetting(), new Date());
   }
 
+  // ---------- up next (seam) ----------
+  //
+  // "What do I do now?" had three answers on two tabs: a Resume card and a Today
+  // card for the same workout on the Library, and Train's own Today card, which
+  // said Start for a workout that was paused. One rule now, in one place, and
+  // pure — handed everything it reads — so tools/simplify-b-harness.mjs can hold
+  // it to its truth table. The first state that applies wins:
+  //   1  a session paused or running: Resume
+  //   2  planned today and not done: Start
+  //   3  done today, planned or not: the recap, and what is next
+  //   4  a rest day in a week that has a plan: what is next, and a way in anyway
+  //   5  nothing planned this week: the newest save never done, else the last one done
+  //   6  nothing on the shelf to do: how to save the first video
+  // 0 is "not known yet". The library, the plan or the logs have not arrived,
+  // and a guess painted now would be taken back a moment later.
+  //
+  // A planned row counts as done when a session today trained that workout; one
+  // trained instead of the plan leaves the plan standing, and says so (done).
+  //
+  // d: { now, draft (pausedDraft), running (wo while live), workouts, logs, plan,
+  //      libReady, planReady }
+  function upNextOf(d) {
+    var key = ymd(d.now), ws = d.workouts || [], byId = {}, i;
+    for (i = 0; i < ws.length; i++) byId[ws[i].id] = ws[i];
+    if (d.running) {
+      return { s: 1, kind: "paused", running: true, w: d.running.workout, draft: null,
+        sets: setsIn(d.running.entries), startedAt: d.running.startedAt, pausedAt: null };
+    }
+    if (d.draft && byId[d.draft.workoutId]) {
+      return { s: 1, kind: "paused", running: false, w: byId[d.draft.workoutId], draft: d.draft,
+        sets: setsIn(d.draft.entries), startedAt: d.draft.startedAt, pausedAt: d.draft.pausedAt || d.draft.savedAt };
+    }
+    if (!d.libReady || !d.planReady || !d.logs) return { s: 0, kind: "loading" };
+    if (!ws.length) return { s: 6, kind: "empty", pending: 0 };
+    var done = daySessions(d.logs, key), left = [];
+    dayRows(d.plan, key, byId).forEach(function (r) { if (!sessionFor(done, r.workout_id)) left.push(r); });
+    if (left.length) {
+      return { s: 2, kind: "planned", w: byId[left[0].workout_id], row: left[0], more: left.length - 1, done: done };
+    }
+    var next = nextPlanned(d.plan, key, byId);
+    if (done.length) {
+      var secs = 0, sets = 0;
+      done.forEach(function (l) { secs += l.duration_seconds || 0; sets += setsIn(l.entries); });
+      return { s: 3, kind: "done", session: done[0], sessions: done, secs: secs, sets: sets,
+        w: byId[done[0].workout_id] || null, next: next };
+    }
+    var pick = tryNext(ws, d.logs, byId), mon = mondayOf(d.now), planned = false;
+    for (i = 0; i < 7 && !planned; i++) planned = dayRows(d.plan, ymd(addDays(mon, i)), byId).length > 0;
+    if (planned) return { s: 4, kind: "rest", next: next, pick: pick.w, again: pick.again };
+    if (pick.w) return { s: 5, kind: "try", w: pick.w, again: pick.again, session: pick.session, next: next };
+    var pending = 0;
+    ws.forEach(function (w) { if (isPending(w)) pending++; });
+    return { s: 6, kind: "empty", pending: pending };
+  }
+
+  function upNext() {
+    return upNextOf({ now: new Date(), draft: pausedDraft(), running: wo && !wo.finished ? wo : null,
+      workouts: state.workouts, logs: state.logs, plan: state.plan,
+      libReady: !!state.libReady, planReady: !!state.plan });
+  }
+
+  // Any day but today, as the card under the strip shows it: what happened on
+  // it (a finished session opens its summary), and what was or is planned. A
+  // planned day behind today is "missed" only inside the logs' horizon, the rule
+  // dayMark keeps: silence past the newest 400 logs is not evidence.
+  function dayOf(key, d) {
+    var today = ymd(d.now), ws = d.workouts || [], byId = {}, logs = d.logs || [], i;
+    for (i = 0; i < ws.length; i++) byId[ws[i].id] = ws[i];
+    var oldest = logs.length >= 400 ? logs[logs.length - 1] : null;
+    var horizon = oldest && oldest.started_at ? ymd(new Date(oldest.started_at)) : null;
+    var done = daySessions(logs, key), planned = [], missed = [];
+    dayRows(d.plan, key, byId).forEach(function (r) {
+      if (sessionFor(done, r.workout_id)) return;
+      var item = { row: r, w: byId[r.workout_id] };
+      if (key < today && (!horizon || key >= horizon)) missed.push(item); else planned.push(item);
+    });
+    return { key: key, when: key < today ? "past" : key > today ? "future" : "today",
+      sessions: done, planned: planned, missed: missed,
+      empty: !done.length && !planned.length && !missed.length };
+  }
+
+  function dayState(key) {
+    return dayOf(key, { now: new Date(), workouts: state.workouts, logs: state.logs, plan: state.plan });
+  }
+
+  function setsIn(entries) {
+    var n = 0;
+    (entries || []).forEach(function (e) { n += ((e && e.sets) || []).filter(Boolean).length; });
+    return n;
+  }
+
+  // The finished sessions of one local day, newest first.
+  function daySessions(logs, key) {
+    return (logs || []).filter(function (l) {
+      return isSession(l) && l.started_at && ymd(new Date(l.started_at)) === key;
+    }).sort(function (a, b) { return new Date(b.started_at).getTime() - new Date(a.started_at).getTime(); });
+  }
+
+  // A day's plan rows whose workout is still on the shelf.
+  function dayRows(plan, key, byId) {
+    return (plan || []).filter(function (p) { return p.day === key && !!byId[p.workout_id]; });
+  }
+
+  function sessionFor(sessions, workoutId) {
+    for (var i = 0; i < sessions.length; i++) {
+      if (sessions[i].workout_id && sessions[i].workout_id === workoutId) return sessions[i];
+    }
+    return null;
+  }
+
+  // The first planned day after key, as far ahead as the plan read reaches.
+  function nextPlanned(plan, key, byId) {
+    var best = null;
+    (plan || []).forEach(function (p) {
+      if (!p.day || p.day <= key || !byId[p.workout_id]) return;
+      if (!best || p.day < best.day) best = p;
+    });
+    return best ? { day: best.day, row: best, w: byId[best.workout_id] } : null;
+  }
+
+  // With nothing planned: the newest save never done, else the workout trained
+  // most recently that is still on the shelf.
+  function tryNext(ws, logs, byId) {
+    var fresh = readyList(ws, logs), ls = logs || [], i;
+    if (fresh.length) return { w: fresh[0], again: false, session: null };
+    for (i = 0; i < ls.length; i++) {
+      var w = byId[ls[i].workout_id];
+      if (isSession(ls[i]) && w && !isPending(w) && !isFailed(w)) return { w: w, again: true, session: ls[i] };
+    }
+    return { w: null, again: false, session: null };
+  }
+
+  // ---------- ready to try (seam) ----------
+  //
+  // Saves that have never been part of a finished session — the landing page's
+  // promise, "save any workout video, actually do the workout", made into a list.
+  // Newest first, which is the order the library is read in. A card still being
+  // read, or one that could not be, is not ready to try. One list for the shelf
+  // on Train, the chip on Workouts, the picker's top section and Up next, so the
+  // four can never disagree about what counts. (Past the newest 400 logs a
+  // workout done long ago reads as never done — the same horizon the strip has.)
+  function readyList(ws, logs) {
+    var done = {};
+    (logs || []).forEach(function (l) { if (l.workout_id && isSession(l)) done[l.workout_id] = 1; });
+    return (ws || []).filter(function (w) { return !done[w.id] && !isPending(w) && !isFailed(w); });
+  }
+
+  function readyToTry() { return readyList(state.workouts, state.logs); }
+
+  // ---------- one status per card (seam) ----------
+  //
+  // Planned beats done beats new: what will happen to a workout next is worth
+  // more than what happened last. "Planned" looks as far ahead as the plan read
+  // does (AHEAD_DAYS), and a row for today stops counting once today trained it.
+  function workoutStatus(w, logs, plan, now) {
+    var key = ymd(now), end = ymd(addDays(now, AHEAD_DAYS)), n = 0, last = null, next = null, trained = false;
+    (logs || []).forEach(function (l) {
+      if (l.workout_id !== w.id || !isSession(l)) return;
+      n++;
+      if (!last || new Date(l.started_at).getTime() > new Date(last).getTime()) last = l.started_at;
+      if (l.started_at && ymd(new Date(l.started_at)) === key) trained = true;
+    });
+    (plan || []).forEach(function (p) {
+      if (p.workout_id !== w.id || !p.day || p.day < key || p.day > end) return;
+      if (p.day === key && trained) return;
+      if (!next || p.day < next) next = p.day;
+    });
+    if (next) return { kind: "planned", day: next, n: n, last: last };
+    if (n) return { kind: "done", n: n, last: last };
+    return { kind: "new", n: 0, last: null };
+  }
+
+  // The status in words. Days close by are named the way people say them;
+  // further out, a date.
+  function statusLabel(st, now) {
+    if (st.kind === "new") return "New";
+    if (st.kind === "planned") return "Planned " + aheadWord(st.day, now);
+    var d = new Date(st.last), ago = Math.round((dayDate(ymd(now)) - dayDate(ymd(d))) / 86400000);
+    var when = ago === 0 ? "today" : ago === 1 ? "yesterday"
+      : d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    return (st.n > 1 ? "Done " + st.n + "× · " : "Done · ") + when;
+  }
+
+  function aheadWord(key, now) {
+    var days = Math.round((dayDate(key) - dayDate(ymd(now))) / 86400000), d = dayDate(key);
+    if (days <= 0) return "today";
+    if (days === 1) return "tomorrow";
+    if (days < 7) return d.toLocaleDateString(undefined, { weekday: "short" });
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  }
+
+  function cardStatus(w) { return workoutStatus(w, state.logs, state.plan, new Date()); }
+
+  // The Plan sheet's days: a fortnight starting today, as the plan's own keys.
+  // addDays builds each day at local midnight, so a daylight-saving change in
+  // the middle of the two weeks moves nothing.
+  function planDays(now) {
+    var out = [];
+    for (var i = 0; i < 14; i++) out.push(ymd(addDays(now, i)));
+    return out;
+  }
+
+  // Which card the ready sheet greets an opening app with: the newest one saved in
+  // the last day that is ready, has never been trained or started, and has not had
+  // its sheet already — once per card, whichever way it was shown. Nothing while a
+  // workout is up: a sheet over a set is an interruption, not news.
+  // seen: { id: 1 } of cards whose sheet has shown. busy: Workout Mode is open.
+  function readyPick(ws, logs, draft, seen, now, busy) {
+    if (busy) return null;
+    var done = {}, best = null, t0 = now.getTime() - 86400000;
+    (logs || []).forEach(function (l) { if (l.workout_id) done[l.workout_id] = 1; });
+    if (draft && draft.workoutId) done[draft.workoutId] = 1;
+    (ws || []).forEach(function (w) {
+      var at = new Date(w.created_at).getTime();
+      if (!(at >= t0) || isPending(w) || isFailed(w) || done[w.id] || (seen && seen[w.id])) return;
+      if (!best || at > new Date(best.created_at).getTime()) best = w;
+    });
+    return best;
+  }
+
   // ---------- what the Home Screen knows ----------
   //
   // The widgets show the week, the streak and what is planned next, and they read
@@ -12981,7 +13307,6 @@ export const APP = String.raw`
     var wk = state.user ? thisWeek() : null;
     if (!wk) return;
     var key = ymd(new Date()), rows = rowsFor(key), i, w;
-    if (!rows.length) rows = today.rows || [];
     var now = null, soon = null, last = null;
     // Two passes over the SAME dot row the week strip draws, so a Home Screen
     // widget and the Progress tab cannot disagree about a Thursday: filled is a
@@ -13497,7 +13822,9 @@ export const APP = String.raw`
   }
 
   function drawProgressSeg(v) {
-    if (!state.logs) return;
+    // Lite logs carry no figures to chart; the real ones are on their way and
+    // redraw this segment when they land.
+    if (!fullLogs()) return;
     if (!state.logs.length) { v.appendChild(emptyLogs()); return; }
     v.appendChild(musclesCard());
     v.appendChild(setsCard());
@@ -13526,7 +13853,9 @@ export const APP = String.raw`
   // The lifetime numbers, and the only place in the app where a figure is meant
   // to be read as a total rather than as this week.
   function drawRecordsSeg(v) {
-    var logs = state.logs || [];
+    // Nothing until the real logs are in: a best read off lite logs is no best.
+    if (!fullLogs()) return;
+    var logs = state.logs;
     if (!logs.length) { v.appendChild(emptyLogs()); return; }
     var st = weekStats(logs, state.plan, goalSetting(), new Date());
 
@@ -13634,7 +13963,7 @@ export const APP = String.raw`
     var box = $("recapopts"), l = recapLog;
     box.innerHTML = "";
     if (!l) return;
-    var del = el("button", "pickrow danger", "Delete session");
+    var del = el("button", "pickrow danger", "Remove session");
     del.onclick = function () {
       // Everything on this screen is derived from state.logs, so taking the
       // session out of that array and redrawing IS the optimistic update.
@@ -13645,10 +13974,10 @@ export const APP = String.raw`
       var at = state.logs.indexOf(l);
       state.logs = state.logs.filter(function (x) { return x.id !== l.id; });
       renderTrain();
-      offerUndo("Session deleted", function () {
+      offerUndo("Session removed", function () {
         sb.from("workout_logs").delete().eq("id", l.id).then(function (r) {
           if (!r || !r.error) return;
-          toast("That did not delete. The session is still here.");
+          toast("That did not come off. The session is still here.");
           invalidateLogs();
           loadLogs().then(renderTrain);
         });
@@ -14496,7 +14825,7 @@ export const APP = String.raw`
     });
     if (!rows.length) {
       list.appendChild(el("p", "lede", state.workouts.length ? "Nothing by that name."
-        : "Save a workout first, then you can point Pumpy at it."));
+        : "Add a workout video first, then you can point Pumpy at it."));
     }
     rows.forEach(function (w) {
       var on = pumpy.refs.indexOf(w.id) >= 0;
@@ -15941,7 +16270,7 @@ export const APP = String.raw`
     // The shelf is a stock, not a month, so it never says "this month" and never
     // carries a reset date. A plan with no ceiling has nothing to count.
     if (lim && capNum(lim.library) !== null && num(r.library_count) !== null) {
-      n.appendChild(useRow("Library", r.library_count + " of " + capNum(lim.library), " saved", null,
+      n.appendChild(useRow("Workouts", r.library_count + " of " + capNum(lim.library), " saved", null,
         r.library_count >= capNum(lim.library)));
     }
     if (m) {
@@ -16024,13 +16353,13 @@ export const APP = String.raw`
     // The app saves from the share sheet, so that is what its tip teaches first.
     save: { title: "Save it now. Train it later.", art: "coach",
       text: native ? "Share it from TikTok or Instagram, or paste its link below. You can leave while I read it."
-        : "Paste the workout link, then tap Save workout. You can leave while I read it." },
+        : "Paste the workout link, then tap Add video. You can leave while I read it." },
     detail: { title: "Make this workout yours", art: "coach",
-      text: "Use Review / Edit to check an exercise, Demo to see it, and Options for a swap." },
+      text: "Tap an exercise to watch that part, see a demo, edit it or swap it." },
     set: { title: "Your numbers go here", art: "coach",
       text: "Tap a number to type your reps or weight. Save set logs it and starts your rest." },
     train: { title: "Your week, in one place", art: "plan",
-      text: "Swipe the days to change week, tap one to plan it. Calendar, Progress and Records live under the strip." },
+      text: "Swipe the days to change week, pull the strip down for the month. Progress and Records live below." },
     refs: { title: "Show me what you have in mind", art: "coach",
       text: "Tap + beside the message box to choose workouts. I’ll use them in my answer and show changes before saving." }
   };
@@ -16299,7 +16628,7 @@ export const APP = String.raw`
       : "Paste a TikTok, Instagram, or YouTube link. Check the exercises, then start when you’re ready."));
     stage.appendChild(page);
     $("welcomecount").textContent = "Save · check · train";
-    $("welcomenext").textContent = "Save a workout";
+    $("welcomenext").textContent = "Add a video";
     openSheet("welcomesheet");
     $("welcomenext").focus({ preventScroll: true });
   }
@@ -16620,6 +16949,16 @@ export const APP = String.raw`
    * once it has been taken off the address bar, so a failed share puts it back in
    * the add sheet instead of dropping it.
    */
+  // ---------- ready (seam) ----------
+  //
+  // A saved video has become a workout. The moment a save turns into a first set
+  // or a planned day is where a new person is won or lost, so it gets its own
+  // sheet: Start now, plan it for a day, or look it over first. sb-ready builds
+  // it; until then it is the card.
+  function showReadySheet(w) {
+    if (w) openDetail(w);
+  }
+
   function doAdd(fromShare) {
     var url = $("addurl").value.trim();
     if (!url) { toast("Paste a link first."); return Promise.resolve(false); }
@@ -16646,7 +16985,7 @@ export const APP = String.raw`
     })
       .then(function (r) {
         btn.disabled = false;
-        btn.textContent = "Save workout";
+        btn.textContent = "Add video";
         // One share at a time, not one per launch: the flag used to stay set, so
         // a second link shared into an open app waited for the next cold start.
         if (fromShare) sharing = false;
@@ -16682,7 +17021,7 @@ export const APP = String.raw`
           return true;
         } else if (r.status === "exists") {
           closeSheet("addsheet");
-          toast("Already in your library.");
+          toast("Already in Workouts.");
           load();
           return true;
         } else {
@@ -16695,7 +17034,7 @@ export const APP = String.raw`
         }
       }).catch(function (e) {
         btn.disabled = false;
-        btn.textContent = "Save workout";
+        btn.textContent = "Add video";
         if (fromShare) sharing = false;
         // Declined AI permission: the link stays in the box, unsaved, with no error.
         if (!aiDeclined(e)) toast("Could not reach Spotter — check your connection.");
@@ -17086,7 +17425,7 @@ export const APP = String.raw`
       if (r.status === "exists") {
         closeSheet("addsheet");
         resetUpload();
-        toast("Already in your library.");
+        toast("Already in Workouts.");
         load();
         return;
       }
@@ -17527,7 +17866,6 @@ export const APP = String.raw`
     saveSettings();
     // The ring, its label, the streak and the today card all read this number.
     if (drawn.train && state.logs) renderTrain();
-    if (today.shown) renderToday();
   }
 
   function toggleSounds() { setSounds(!state.sounds); }
@@ -18249,8 +18587,10 @@ export const APP = String.raw`
   // DRAWN from it every frame, which is why a tap, a fling and a finger stopped
   // between two pages all agree with one another.
 
-  var VIEWS = ["library", "train", "pumpy"];
-  var PAGE_IDS = ["libpage", "trainview", "pumpyview"];
+  // Train first: the app opens on what to do today, and Workouts is the shelf it
+  // is chosen from (owner decision, 25 Sept, Option B "Train is home").
+  var VIEWS = ["train", "library", "pumpy"];
+  var PAGE_IDS = ["trainview", "libpage", "pumpyview"];
   var LAST = VIEWS.length - 1;
 
   var pagesEl = $("pages"), track = $("track"), tabbar = document.querySelector(".tabbar");
@@ -18350,6 +18690,10 @@ export const APP = String.raw`
     if (changed) { guideClear(); guideStill(); guide.visit = null; }
     idx = i;
     state.view = VIEWS[i];
+    // The header's two per-page parts: Train's streak and ring are tappable only
+    // on Train, and the add button wears its word only on Workouts.
+    hdrEl.classList.toggle("ontrain", state.view === "train");
+    hdrEl.classList.toggle("onlib", state.view === "library");
     if (changed && pumpyReset) renderPumpy();
     var tabs = document.querySelectorAll(".tab"), n, k;
     for (k = 0; k < tabs.length; k++) {
@@ -18380,7 +18724,6 @@ export const APP = String.raw`
     var v = VIEWS[i];
     guide.visit = v;
     setTimeout(function () { guidePage(v); }, 450);
-    if (v === "library") renderToday();
     if (v === "train" && state.logs) countStats();
     // Settled somewhere else, with Pumpy off screen: the one place a chat can be
     // swapped without anybody seeing it happen.
@@ -18391,9 +18734,9 @@ export const APP = String.raw`
   // Contextual help still waits for arrive(); warming cannot count as a visit.
   function preparePage(i) {
     var v = VIEWS[i];
-    // Library's grid is kept fresh by realtime and load(); only the today card
-    // is a snapshot, and renderToday() decides for itself whether it has aged.
-    if (v === "library") { renderToday(); return; }
+    // Workouts' grid is kept fresh by realtime and load(); its statuses read the
+    // plan and the logs Train already holds.
+    if (v === "library") { renderGrid(); return; }
     if (v === "train") {
       // The strip opens on this week on every visit, the way Plan always did —
       // but the segment and the scroll offset are where the visitor left them:
@@ -18441,8 +18784,12 @@ export const APP = String.raw`
     // an old link, a notification or a console call lands on Train, on the
     // segment it asked for. History has lived under Progress since the recap wave.
     if (v === "history") v = "progress";
-    if (v === "plan" || v === "progress") {
-      trainSeg = v === "plan" ? "calendar" : "progress";
+    // "plan" is the month now, opened out of the week strip in place; the
+    // segments below it are Progress and Records. Asked for rather than done
+    // here, because the strip may not be built yet (a cold launch from a link).
+    if (v === "plan") { trainWantMonth = true; v = "train"; if (state.view === "train" && trainLean) renderTrain(); }
+    if (v === "progress") {
+      trainSeg = "progress";
       v = "train";
       // goTo() only prepares a page it had to change to, so a link naming a
       // segment of the page you are already on moved nothing: the control stayed
@@ -18461,9 +18808,10 @@ export const APP = String.raw`
   function resetPager() {
     if (!pagesEl) return;
     stopSpring();
-    idx = 0; arrivedAt = 0; state.view = "library";
+    idx = 0; arrivedAt = 0; state.view = VIEWS[0];
     drawn = { train: false, pumpy: false };
     trainSeg = null;
+    trainWantMonth = false;
     trainLean = null;
     // The arc's starting point, too: left behind, the next account's first ring
     // would animate out of the last account's number instead of out of nothing.
@@ -19781,24 +20129,19 @@ export const APP = String.raw`
   }
 
   function liveAction(a) {
-    var k = a.kind, live = wo && !wo.finished, s = live ? wo.screens[wo.i] : null, pre;
+    var k = a.kind, live = wo && !wo.finished, s = live ? wo.screens[wo.i] : null;
     // A remote reminder carries its destination as the action id. A rest-end one
     // whose rest is already over has nothing left to say.
     if (k === "notification" && typeof a.id === "string" && a.id.indexOf("spotter://") === 0) openLink(a.id);
     else if (k === "open" || k === "notification") { if (k === "open" || !wo || restUntil) woForward(); }
     else if (!live) return;
     else if (k === "set") {
-      // A hold and a complex are not logged with reps and a weight, so a remote
-      // Save has nothing to send: those two are answered on the screen.
-      if (!s || (s.cx && !s.ei) || isTimed(s.ex)) toast("Log this one on the phone.");
-      else {
-        // The wrist can turn the dial before it saves, and through the stepper’s
-        // own setters a figure from off the phone meets the clamp a thumb does.
-        pre = setPrefill(wo.entries[wo.i].sets.length);
-        setCtx.idx = pre.idx;
-        setReps(typeof a.reps === "number" && isFinite(a.reps) ? a.reps : pre.reps);
-        setWeight(typeof a.weight === "number" && isFinite(a.weight) ? a.weight : pre.weight);
-        saveSet();
+      // The same door as Workout Mode's big button. The wrist can turn the dial
+      // before it saves, and through the stepper's own setters a figure from off
+      // the phone meets the clamp a thumb does. A hold and a complex are not
+      // logged with reps and a weight, so those two are answered on the screen.
+      if (logNextSet({ reps: a.reps, weight: a.weight, id: a.eventId || null, source: a.source || "activity" }).why === "screen") {
+        toast("Log this one on the phone.");
       }
     } else if (k === "round" || k === "mark") {
       // The complex screen's two taps. "round" is Round N done; "mark" ticks the
@@ -19844,7 +20187,7 @@ export const APP = String.raw`
     var card = !!arg && (head === "workout" || head === "start"), w = card ? planWorkout(arg) : null;
     if (head === "resume") woForward();
     else if (head === "tab") {
-      if (!/^(library|plan|progress|pumpy)$/.test(arg)) return;
+      if (!/^(train|library|plan|progress|pumpy)$/.test(arg)) return;
       // An overlay covers the tabs, so switching one underneath it changes
       // nothing the reader can see: on the 16e, a Today-widget tap with a
       // workout card open and a reminder tap with Settings open both looked
@@ -19859,7 +20202,7 @@ export const APP = String.raw`
       setView(arg);
     }
     else if (!card) return;
-    else if (!w) toast("That workout is not in your library any more.");
+    else if (!w) toast("That workout is no longer in Workouts.");
     else if (head === "workout") openDetail(w);
     else if (wo && !wo.finished) { woForward(); toast("A workout is already running."); }
     // The card first, so finishing lands back where a Library tap would have.
@@ -19919,7 +20262,7 @@ export const APP = String.raw`
     }
     // A back gesture on a live session pauses it: the safe door, and the one
     // Android's back button opens without a chance to ask.
-    if ($("workout").classList.contains("open")) { exitWorkout(!!(wo && !wo.finished)); renderResume(); return; }
+    if ($("workout").classList.contains("open")) { exitWorkout(!!(wo && !wo.finished)); sessionChanged(); return; }
     if ($("detail").classList.contains("open")) closeDetail();
   });
 
