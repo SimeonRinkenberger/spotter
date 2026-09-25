@@ -12934,10 +12934,11 @@ export const APP = String.raw`
   var pickCtx = null;
 
   function openPicker(day, label, opts) {
-    var rep = opts && opts.replace, n = Math.round((dayDate(day) - dayDate(ymd(new Date()))) / 86400000);
+    var rep = opts && opts.replace, when = pdWord(day);
     // A row still waiting for its id cannot be taken off by it; that pick is an add.
     pickCtx = { day: day, rep: rep && String(rep.id).indexOf("tmp-") !== 0 ? rep : null };
-    $("picktitle").textContent = pickCtx.rep ? "Swap" : "Plan for " + (n === 0 ? "today" : n === 1 ? "tomorrow" : label || dayLabel(dayDate(day)));
+    // "today" and "tomorrow" say it best; any other day by the caller's own name for it.
+    $("picktitle").textContent = pickCtx.rep ? "Swap" : "Plan for " + (/^to/.test(when) ? when : label || dayLabel(dayDate(day)));
     $("pickq").value = "";
     $("picksheet").firstElementChild.style.minHeight = "";
     pickPaint();
@@ -16859,7 +16860,7 @@ export const APP = String.raw`
     if (e.matches) guideStill(); else guideWake();
   });
   document.addEventListener("click", function (e) {
-    if (e.target.closest(".exercise-actions button, #dinner .exercise-main")) guideLearn("detail");
+    if (e.target.closest("#dinner .exercise-main")) guideLearn("detail");
   });
 
 

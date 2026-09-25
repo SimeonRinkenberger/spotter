@@ -92,7 +92,7 @@ export const STYLE = String.raw`<style>
   .iconbtn .ic { width: 18px; height: 18px; }
   .addbtn .ic { width: 20px; height: 20px; }
   .addbtn.ghost .ic { width: 18px; height: 18px; }
-  .chip .ic, .mbtn .ic, .btn .ic { width: 15px; height: 15px; }
+  .chip .ic, .btn .ic { width: 15px; height: 15px; }
   .exhelp .ic, .colrow .mark .ic, .daydone .ic { width: 14px; height: 14px; }
   .searchico .ic { width: 16px; height: 16px; }
   .stepper button .ic { width: 20px; height: 20px; }
@@ -916,7 +916,7 @@ export const STYLE = String.raw`<style>
   #olist.ocollapse .oex { display: none; }
   .orow.oin { animation: fadein var(--t-2) var(--e-out) both; }
   /* Where a moved row landed on the card, said once. Colour, not travel. */
-  .exrow.moved .exmain, .exrow.moved .exercise-card { animation: movedglow 1.6s var(--e-soft) both; }
+  .exrow.moved .exmain { animation: movedglow 1.6s var(--e-soft) both; }
   @keyframes movedglow { 0%, 35% { background-color: var(--ember-soft); } }
   @media (prefers-reduced-motion: reduce) {
     .orow, .orow.lift { transition: background-color var(--t-1), border-color var(--t-1); }
@@ -1493,8 +1493,6 @@ export const STYLE = String.raw`<style>
   .mlist .del, .mlist .del .ic { color: var(--ember-ink); }
   .pknote { margin-left: auto; font-size: 13px; font-weight: 500; color: var(--muted);
     font-variant-numeric: tabular-nums; }
-  .disclosure-body > .mlist { margin: 4px 0 0; }
-  #exmenu .lede { margin-bottom: 12px; }
   /* The whole cue the row cuts at two lines, and the creator's difference. */
   .exmnote { margin: 0 0 16px; font-size: 13.5px; line-height: 1.55; color: var(--ink); white-space: pre-line; }
   .exmnote:empty { display: none; }
@@ -2964,12 +2962,12 @@ export const STYLE = String.raw`<style>
      Apple asks for 44px; these are drawn smaller because their rows are. Only the
      hit area grows, capped at the gap to the next control so no two overlap.
      Insets come off the padding box: a bordered control needs a pixel more. */
-  .iconbtn, .addbtn, .exhelp, .planx, .planadd, .mbtn, .addex, .danger, .libcount,
+  .iconbtn, .addbtn, .exhelp, .planx, .planadd, .addex, .danger, .libcount,
   .planlegal a, .planlegal button, .segbtn, .planbtn, .linkbtn,
   .chips .chip, .said .chip, .votes .chip, .pumpyctx button, .threadrow .tdel, .ttitle { position: relative; }
   .iconbtn::after, .addbtn::after, .exhelp::after, .planx::after, .planadd::after,
   .segbtn::after, .planbtn::after, .linkbtn::after,
-  .mbtn::after, .addex::after, .danger::after, .chips .chip::after, .said .chip::after,
+  .addex::after, .danger::after, .chips .chip::after, .said .chip::after,
   .votes .chip::after,
   .pumpyctx button::after, .threadrow .tdel::after, .ttitle::after,
   .libcount::after, .planlegal a::after, .planlegal button::after { content: ""; position: absolute; }
@@ -3132,7 +3130,7 @@ export const STYLE = String.raw`<style>
     .pumpy-tip { animation: none; }
     .welcome-page { transform: none; transition: opacity var(--t-1) var(--e-soft); }
     .btn:active, .iconbtn:active, .addbtn:active, .chip:active, .carditem:active,
-    .mbtn:active, .startbtn:active, .addex:active, .planbtn:active, .mcell:active,
+    .addex:active, .planbtn:active, .mcell:active,
     .setpill:active, .wnav:active, .wfinish:active, .ring:active, .scprev:active,
     .uploadrow:active, .pumpybar button:active { transform: none; }
   }
@@ -3146,13 +3144,6 @@ export const STYLE = String.raw`<style>
   .disclosure { border: 1px solid var(--line); background: var(--card); border-radius: 16px; margin: 12px 0; }
   .disclosure > summary { cursor: pointer; padding: 14px 16px; min-height: 48px; font-size: 13px; font-weight: 600; color: var(--ink-2); }
   .disclosure-body { padding: 0 14px 14px; }
-  /* A stable full-width drawer keeps secondary actions quiet, without a flex
-     row renegotiating its width when the hidden labels become visible. */
-  .exercise-actions { display: block; width: 100%; min-width: 0; padding: 0; position: relative; }
-  .exercise-options { border: 0; margin: 0; border-radius: 0; background: none; min-width: 0; }
-  .exercise-actions > .exercise-options { width: 100%; }
-  .exercise-options > summary { width: 100%; font-size: 12px; min-height: 44px; padding: 10px 6px;
-    justify-content: flex-end; border-radius: 10px; }
   /* Keep the exercise and logging controls anchored when supporting actions open.
      Centering the whole stack makes every item drift upward during expansion. */
   /* 10px less than it was: the dots' band grew by that much, so at rest nothing
@@ -3160,16 +3151,6 @@ export const STYLE = String.raw`<style>
   #workout:not(.summary) .wmain { justify-content: flex-start; min-height: 0;
     padding-top: clamp(10px, calc(var(--vvh) * .04 - 10px), 22px); }
   #workout:not(.summary) .wmain > * { flex-shrink: 0; }
-  .exercise-options .disclosure-body { padding: 4px 12px; margin: 4px 0 10px; background: var(--sand); border-radius: 12px; overflow: hidden; }
-  .exercise-options .pickrow { width: 100%; min-height: 48px; padding: 12px 2px; border-radius: 0;
-    font-size: 13px; font-weight: 550; background: transparent; color: var(--ink); justify-content: flex-start;
-    transition: background-color var(--t-1) var(--e-soft); }
-  .exercise-options .pickrow + .pickrow { border-top: 1px solid var(--line); }
-  .exercise-options .pickrow .ic { width: 18px; height: 18px; color: var(--ink-2); }
-  .exercise-options .pickrow:active { background: var(--card); }
-  .exercise-options > summary:active { background: var(--sand); transform: none; }
-  .exercise-options[open] > summary { color: var(--ember-ink); }
-  .exercise-options.details-closing > summary { color: var(--ink-2); }
   #recapopts .pickrow { min-height: 48px; }
   /* Destructive, so it takes the one red the system has - the same red Settings
      gives its delete - rather than the muted grey that reads as unavailable. */
@@ -3188,7 +3169,7 @@ export const STYLE = String.raw`<style>
   #chips > :first-child { margin-left: 0; }
   #chips > :last-child { margin-right: 0; }
   #explainask { min-height: 44px; }
-  .disclosure summary:focus-visible, .exercise-actions button:focus-visible { outline: 2px solid var(--ember-ink); outline-offset: 2px; }
+  .disclosure summary:focus-visible { outline: 2px solid var(--ember-ink); outline-offset: 2px; }
   .history-card > summary { position: relative; cursor: pointer; list-style: none; min-height: 44px; padding-right: 20px; }
   .history-card > summary::-webkit-details-marker { display: none; }
   .history-card > summary::after { content: "Session details"; display: block; font-size: 11px; font-weight: 600; color: var(--ember-ink); margin-top: 8px; }
@@ -3226,12 +3207,10 @@ export const STYLE = String.raw`<style>
   .disclosure > summary::after, .guide-topic > summary::after { content: ""; flex: 0 0 auto; width: 6px; height: 6px;
     border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; margin-left: auto;
     transform: rotate(-45deg); transition: transform var(--t-3) var(--e-soft); }
-  .exercise-options > summary::after { margin-left: 0; }
   .disclosure[open] > summary::after, .guide-topic[open] > summary::after { transform: rotate(45deg); }
   .disclosure.details-closing > summary::after, .guide-topic.details-closing > summary::after { transform: rotate(-45deg); }
   @media (prefers-reduced-motion: reduce) {
-    .disclosure > summary::after, .guide-topic > summary::after, .history-card > summary::before,
-    .exercise-options .pickrow { transition: none; }
+    .disclosure > summary::after, .guide-topic > summary::after, .history-card > summary::before { transition: none; }
   }
   .reader-offer { background: var(--ember-soft); border: 1px solid var(--line); border-radius: 18px; padding: 16px; margin: 16px 0; }
   .reader-offer p { color: var(--ink-2); font-size: 14px; line-height: 1.5; margin: 8px 0 12px; }
