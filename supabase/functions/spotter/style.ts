@@ -2579,7 +2579,10 @@ export const STYLE = String.raw`<style>
     font-size: 14px; font-weight: 650; }
   .readylook + .readylook { color: var(--muted); }
   .sumnext { margin-top: 22px; text-align: left; animation: viewin var(--t-2) var(--e-out) 230ms both; }
-  .sumnext .scchip:last-child { grid-column: span 2; }
+  /* Seven days and Pick another: the ready sheet's two rows of four. A quarter of
+     375px has 68px for a label and "Pick another" is 80, so its two words take
+     two lines inside the 44px every chip keeps, rather than a row of their own. */
+  .sumnext .scchip:last-child { white-space: normal; line-height: 1.1; padding-top: 5px; padding-bottom: 5px; }
   /* A lit switch in a Settings row wears its fill and not its glow: the value cell
      clips (overflow, for the ellipsis) and the glow came out as a hard square. */
   .setgroup .kv .v .chip.active { box-shadow: none; }

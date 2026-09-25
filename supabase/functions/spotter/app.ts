@@ -17763,10 +17763,10 @@ export const APP = String.raw`
 
   // The recap's next step: the same workout on a day of the coming week, or
   // another one on the first free day of it (the picker's title names it). Today
-  // has just been done, so the week is the six days after it — all of them named
-  // by weekday, and the wide cell they leave is Pick another's.
+  // has just been done, so the week is the seven days after it, tomorrow to the
+  // same weekday next week (named by its date), and Pick another the eighth cell.
   function sumNext(w) {
-    var card = planWorkout(w.id), keys = planDays(new Date()).slice(1, 7), wrap = el("div", "sumnext");
+    var card = planWorkout(w.id), keys = planDays(new Date()).slice(1, 8), wrap = el("div", "sumnext");
     if (!card) return null;
     wrap.appendChild(el("p", "readylabel", "Plan your next one"));
     wrap.appendChild(dayChips(card, keys, "Pick another", function () {
