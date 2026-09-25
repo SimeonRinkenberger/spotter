@@ -13526,7 +13526,7 @@ export const APP = String.raw`
   // The compact form: one line, no ring, for the today card and the summary.
   function weekLine(st) {
     if (st.streakWeeks > 0) {
-      return "Week " + st.streakWeeks + " · " + st.done + " of " + st.goal +
+      return st.streakWeeks + "-week streak · " + st.done + " of " + st.goal +
         (st.done >= st.goal ? " — week complete" : "");
     }
     return st.done + " of " + st.goal + " this week";

@@ -296,14 +296,15 @@ console.log('8. The wording scan');
 // storage keys) are lower-case single words and never match these phrases.
 const RETIRED = [
   [/Save workout/, 'Add video (adding) or Finish workout (ending)'],
-  [/\bBlock \d|"Block "/, 'Section'],
+  // A label built at runtime starts as a bare "Block " or "Week " literal.
+  [/\bBlock (\d|$)/, 'Section'],
   [/Schedule/, 'Plan'],
   [/Favourite/, 'Favorite (one US spelling)'],
   [/\bLibrary\b/, 'Workouts'],
   [/\byour library\b/, 'your workouts / Workouts'],
   [/Review \/ Edit|Fix this exercise/, 'Edit exercise'],
   [/Watch this bit|Watch original \/ source|Open original/, 'Watch this part / Watch original'],
-  [/Week \d|"Week "/, 'the date range, or "3-week streak"'],
+  [/\bWeek (\d|$)/, 'the date range, or "3-week streak"'],
 ];
 // Allowed on purpose, each with its reason. Keep it short.
 const ALLOW = [
