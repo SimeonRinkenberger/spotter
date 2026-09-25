@@ -139,7 +139,7 @@ ok('lists: the migration, app.ts and the directory name the same 35 drawings in 
 
 // ---------- every surface that draws a card's picture ----------
 {
-  for (const fn of ['cardNode', 'fromChip', 'planItem', 'openPicker', 'renderRefList']) {
+  for (const fn of ['cardNode', 'fromChip', 'planItem', 'pickRow', 'renderRefList']) {
     assert(/cardArt\((w|src)\)/.test(fnBody(fn)), fn + ' asks cardArt');
   }
   const today = APP.slice(APP.indexOf('var thumb, art = cardArt(w);') - 400, APP.indexOf('var thumb, art = cardArt(w);') + 200);

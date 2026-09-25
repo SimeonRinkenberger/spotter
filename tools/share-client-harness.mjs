@@ -147,7 +147,7 @@ ok(run('failedKick(W, true)') === 'Failed' && run('failedKick(W, false)') === 'F
   'V-4: a failed upload (its file is gone) says "Failed" on the tile and above the title alike');
 ok(/tw\.appendChild\(icon\(el\("div", "noimg"\), pending \? stage\.glyph : failedGlyph\(w\)\)\);/.test(APP) &&
   /pending \? stage\.kick : failedKick\(w, true\)\)\);/.test(APP) &&
-  /\(isFailed\(w\) \? failedKick\(w, false\) : \(w\.category \|\| "Other"\)\)\)\);/.test(APP) &&
+  /isFailed\(w\) \? failedKick\(w, false\)\s*: \[w\.category \|\| "Other"/.test(APP) &&
   !/"Needs another try" : \(w\.category/.test(APP),
   'V-4: the library tile and the detail overline both ask failedKick / failedGlyph');
 
