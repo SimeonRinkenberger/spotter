@@ -44,6 +44,9 @@ alter table corrections add column user_id uuid,add column shortcode text,add co
 const guard=readFileSync('supabase/migrations/20260908150000_cost_and_abuse_guards.sql','utf8');
 await db.exec(guard.slice(guard.indexOf('create function public.guard_workout_library()'),guard.indexOf('-- Explicit function grants')));
 await db.exec(readFileSync('supabase/migrations/20260917140000_pumpy_confirmation.sql','utf8'));
+// The function as it stands now: 20260925100000 redefines it to pick a cover, and
+// every regression below must hold for that definition too.
+await db.exec(readFileSync('supabase/migrations/20260925100000_pumpy_covers.sql','utf8'));
 const u=crypto.randomUUID(),other=crypto.randomUUID(),thread=crypto.randomUUID();
 await db.query("insert into profiles(id,plan) values($1,'plus'),($2,'plus')",[u,other]);
 await db.query('insert into pumpy_threads values($1,$2,now())',[thread,u]);
@@ -56,6 +59,8 @@ const status=async(mid)=>(await db.query('select meta from pumpy_messages where 
 let mid=await proposal();
 const [first,second]=await Promise.all([confirm(mid),confirm(mid)]);
 assert.equal(first.workout.id,second.workout.id,'same proposal returns same created row');
+assert((await db.query('select public.pumpy_cover_keys() k')).rows[0].k.includes(first.workout.pumpy_cover),'a created card carries a known cover');
+assert.equal(second.workout.pumpy_cover,first.workout.pumpy_cover,'and a repeated accept the same one');
 assert.equal(await count('workouts'),1,'duplicate accepts do not duplicate workouts');
 assert.equal(await count('pumpy_messages'),3,'one tool receipt and one assistant receipt');
 // The idempotency key is the message AND the decision. Repeating the same
@@ -166,5 +171,5 @@ assert.equal(lateYes.body.message,'That one was already declined.');
 assert(Array.isArray(lateYes.body.messages)&&lateYes.body.messages.length,'the receipt rides along with the 409');
 assert.equal(rpcCalls,0,'no short-circuit path executes anything');
 
-console.log('PASS atomic Pumpy confirmation: duplicate accepts, accept/decline order in SQL and on the route, account scope, append CAS/override, entitlement, plan rollback/deduplication, injected receipt failure rollback, library cap, RPC grants');
+console.log('PASS atomic Pumpy confirmation (with its cover): duplicate accepts, accept/decline order in SQL and on the route, account scope, append CAS/override, entitlement, plan rollback/deduplication, injected receipt failure rollback, library cap, RPC grants');
 await db.close();
