@@ -5,7 +5,10 @@ const url = Deno.env.get('SUPABASE_URL')!;
 const service = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const db = createClient(url, service, { auth: { persistSession: false, autoRefreshToken: false } });
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const origins = new Set(['https://localhost','capacitor://localhost','https://simeonrinkenberger.github.io']);
+// The two Capacitor shells: Android's WebView and iOS's WKWebView. Only the native
+// app syncs a store purchase; the web app on GitHub Pages is retired, so its origin
+// is no longer allowed (that origin is shared with another app).
+const origins = new Set(['https://localhost','capacitor://localhost']);
 async function equalSecret(a: string, b: string) {
   const hash = (v: string) => crypto.subtle.digest('SHA-256', new TextEncoder().encode(v));
   const [x,y] = await Promise.all([hash(a),hash(b)]);

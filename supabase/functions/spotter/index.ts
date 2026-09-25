@@ -1,7 +1,8 @@
 // Spotter — save a fitness video, get a structured workout.
 // One function under /functions/v1/spotter:
-//   GET  /                          the web app (HTML)
-//   GET  /icon.png  /manifest.webmanifest
+//   GET  /                          302 to the landing page on GitHub Pages (the web app is
+//                                    retired; native is the product). HEAD / answers 200.
+//   GET  /icon.png
 //   POST /api/ingest                { url, html?, caption? } — Bearer token OR per-user ingest
 //                                    key (iOS Shortcut). `html` is the page the phone already
 //                                    fetched from its own residential IP; `caption` is text the
@@ -61,7 +62,6 @@ import { deterministicCombine } from "./pumpy-combine.ts";
 // Card-size covers (storeThumb): a plain-JS JPEG codec, so nothing but the function ships.
 import jpeg from "npm:jpeg-js@0.4.4";
 
-import { PAGE_HTML } from "./page.ts";
 import { ICON_B64 } from "./icon.ts";
 import { readVisionImage } from "./vision-reader.ts";
 import {
@@ -911,9 +911,20 @@ const CARD_V = 11;
  */
 const MIN_USABLE_CARD_V = 10;
 
-const ALLOWED_ORIGINS = (Deno.env.get("ALLOWED_ORIGINS") ??
-  "https://simeonrinkenberger.github.io,http://localhost:8000,http://127.0.0.1:8000")
-  .split(",").map((s) => s.trim()).filter(Boolean);
+// The browser origins allowed to call this function. The web app on GitHub Pages is
+// retired, so its origin is never one of them, even if an ALLOWED_ORIGINS secret
+// still names it: nothing served from simeonrinkenberger.github.io calls the API any
+// more (the landing page and the static pages make no request at all), that origin
+// is shared with another app, and the native shells never needed CORS here (their
+// calls go through CapacitorHttp and URLSession, which send no Origin to check).
+// The secret cannot simply drop it instead: billing.ts, strava.ts, push.ts and ops.ts
+// read the same variable for the address people are sent back to, and that is still
+// the Pages landing page. What is left is the local test origin.
+const RETIRED_WEB_ORIGIN = "https://simeonrinkenberger.github.io";
+const ALLOWED_ORIGINS = (Deno.env.get("ALLOWED_ORIGINS") ?? "http://localhost:8000,http://127.0.0.1:8000")
+  .split(",").map((s) => s.trim()).filter((s) => s && s !== RETIRED_WEB_ORIGIN);
+/** Where anyone who opens the function's own root is sent: the page that says Spotter is an app now. */
+const LANDING_URL = "https://simeonrinkenberger.github.io/spotter/";
 
 const DESKTOP_UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
@@ -943,7 +954,7 @@ type Cors = Record<string, string>;
 
 function corsFor(req: Request): Cors {
   const origin = req.headers.get("origin") ?? "";
-  const allow = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  const allow = ALLOWED_ORIGINS.includes(origin) ? origin : (ALLOWED_ORIGINS[0] ?? "null");
   return {
     "Access-Control-Allow-Origin": allow,
     "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-ingest-key",
@@ -15373,12 +15384,19 @@ Deno.serve(async (req: Request) => {
 
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
 
+    // HEAD / stays a 200 with no body: it is a cheap reachability probe, and a Share
+    // Extension build from 24 September warmed its connection with one.
     if (req.method === "HEAD" && (path === "/" || path === "/icon.png")) {
       return new Response(null, { status: 200, headers: cors });
     }
+    // The web app is retired. Supabase serves a function's HTML as text/plain in a
+    // sandbox anyway, so the page this used to return could not run; anyone who opens
+    // the function's address in a browser is sent to the landing page instead. No
+    // native build asks for it: every shell and every app.js call is under /api/.
     if (req.method === "GET" && (path === "/" || path === "")) {
-      return new Response(PAGE_HTML, {
-        headers: { ...cors, "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
+      return new Response(null, {
+        status: 302,
+        headers: { ...cors, location: LANDING_URL, "cache-control": "no-store" },
       });
     }
     if (req.method === "GET" && path === "/icon.png") {
@@ -15386,22 +15404,6 @@ Deno.serve(async (req: Request) => {
       return new Response(bin, {
         headers: { ...cors, "content-type": "image/png", "cache-control": "public, max-age=86400" },
       });
-    }
-    if (req.method === "GET" && path === "/manifest.webmanifest") {
-      return json({
-        name: "Spotter", short_name: "Spotter", start_url: ".", scope: ".",
-        display: "standalone", background_color: "#F5F6F8", theme_color: "#F5F6F8",
-        icons: [{ src: "icon.png", sizes: "512x512", type: "image/png", purpose: "any maskable" }],
-        // Puts an installed Spotter in Android's share sheet. The action is relative
-        // to this manifest's own URL, so it resolves to the function's root here and
-        // to /spotter/ on Pages, inside scope in both places. Kept byte-identical
-        // with docs/manifest.webmanifest, which is the copy Pages serves.
-        share_target: {
-          action: "./?share",
-          method: "GET",
-          params: { title: "title", text: "text", url: "url" },
-        },
-      }, 200, cors);
     }
 
     if (!path.startsWith("/api/")) return json({ status: "error", message: "Not found" }, 404, cors);
