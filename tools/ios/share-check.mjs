@@ -4,6 +4,7 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 let written = [], active = 0;
 const configure = shareAccess({ configure: async (options) => {
   assert.equal(active++, 0);
@@ -46,12 +47,31 @@ for (const path of ['ShareExtension', 'ActionExtension']) {
     .replace(/SUBQUERY\(extensionItems, \$item, SUBQUERY\(\$item\.attachments, \$attachment, [X OR]+\)\.@count (&gt;|==) [01]\)\.@count (&gt;|==) [01]/g, 'Y')
     .replace(/Y OR Y/, 'Y'), 'Y', `${path}: activation rule uses only the safe predicate forms`);
   assert(clauses.some(c => c.endsWith('UTI-CONFORMS-TO "public.movie"')), `${path}: accepts a video file`);
-  // The extension reads SharedStore (parked links); it must follow the app's
-  // App Group switch or the two would look in different places once it flips.
-  assert(plist.includes('<key>SpotterAppGroup</key>\n\t<string>$(SPOTTER_APP_GROUP)</string>'), `${path}: SpotterAppGroup follows the app`);
 }
 const project = readFileSync('ios/App/App.xcodeproj/project.pbxproj', 'utf8');
 assert.equal((project.match(/SharedStore\.swift in Sources \*\/,/g) || []).length, 4, 'SharedStore is compiled into the app, the widgets and both share extensions');
+// A target's Info.plist names an App Group only when its Release signing grants
+// one. SharedStore switches to UserDefaults(suiteName:) on the name alone, and
+// in a target without the entitlement that suite is private to the process:
+// build 8's "Save to Spotter" parked links there that the app never saw.
+const releaseXcconfig = readFileSync('ios/App/App/Release.xcconfig', 'utf8');
+const configs = project.slice(project.indexOf('/* Begin XCBuildConfiguration section */'), project.indexOf('/* End XCBuildConfiguration section */'));
+const groupRule = {};
+for (const [, block] of configs.matchAll(/\n\t\t\w+ \/\* Release \*\/ = \{([\s\S]*?)\n\t\t\};/g)) {
+  const plistPath = /\bINFOPLIST_FILE = ([^;]+);/.exec(block)?.[1];
+  if (!plistPath) continue;
+  let entitlements = /\bCODE_SIGN_ENTITLEMENTS = "?([^;"]+)"?;/.exec(block)[1];
+  const variable = /^\$\((\w+)\)$/.exec(entitlements);
+  if (variable) entitlements = new RegExp(`^${variable[1]} = (\\S+)$`, 'm').exec(releaseXcconfig)[1];
+  const grants = readFileSync(`ios/App/${entitlements}`, 'utf8').includes('com.apple.security.application-groups');
+  const plist = readFileSync(`ios/App/${plistPath}`, 'utf8');
+  const names = plist.includes('<key>SpotterAppGroup</key>');
+  assert.equal(names, grants, `${plistPath}: names an App Group ${names ? 'without' : 'despite'} the Release entitlement (${entitlements})`);
+  if (names) assert(plist.includes('<key>SpotterAppGroup</key>\n\t<string>$(SPOTTER_APP_GROUP)</string>'), `${plistPath}: SpotterAppGroup follows the app`);
+  groupRule[plistPath] = grants;
+}
+assert.deepEqual(groupRule, { 'App/Info.plist': true, 'ShareExtension/Info.plist': true, 'SpotterWidgets/Info.plist': true, 'ActionExtension/Info.plist': false },
+  'the app, the Share extension and the widgets share the App Group; "Save to Spotter" has only the Keychain group');
 
 // Save first, frames after (audit S5/S6): the one POST is the first request the
 // controller makes with the key, prepare is never on its path, and the frames
@@ -80,16 +100,135 @@ assert(pipeline.includes('withTaskGroup(of: (Int, Bool).self)') && pipeline.incl
 const cases = JSON.parse(readFileSync('tools/ios/fixtures/share-cases.json', 'utf8')).cases;
 const dir = mkdtempSync(join(tmpdir(), 'spotter-share-test-'));
 writeFileSync(join(dir, 'cases.json'), JSON.stringify(cases));
-// An Info.plist linked into the test binary gives SharedStore an App Group
-// suite (plain UserDefaults on a Mac), so the parked-link store runs for real.
+// The test is linked twice, each time with an Info.plist in the shape of a real
+// target: the app (Keychain group and App Group) and "Save to Spotter" (the
+// Keychain group only, as its signing has). The App Group is a real
+// UserDefaults suite on a Mac; the Keychain is the fake in harness.swift.
 const suite = 'app.spotter.share-check.' + process.pid;
-writeFileSync(join(dir, 'Info.plist'), `<?xml version="1.0" encoding="UTF-8"?>
+const keychainGroup = 'ABCDE12345.app.spotter.dev';
+function shapedPlist(target, name) {
+  const real = readFileSync(`ios/App/${target}/Info.plist`, 'utf8');
+  let keys = `<key>CFBundleIdentifier</key><string>app.spotter.share-check.${name}</string>`;
+  if (real.includes('<key>SpotterKeychainGroup</key>')) keys += `<key>SpotterKeychainGroup</key><string>${keychainGroup}</string>`;
+  if (real.includes('<key>SpotterAppGroup</key>')) keys += `<key>SpotterAppGroup</key><string>${suite}</string>`;
+  return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict><key>CFBundleIdentifier</key><string>app.spotter.share-check</string>
-<key>SpotterAppGroup</key><string>${suite}</string></dict></plist>`);
+<plist version="1.0"><dict>${keys}</dict></plist>`;
+}
+writeFileSync(join(dir, 'harness.swift'), String.raw`
+import Foundation
+import Security
+
+// The Keychain, faked for this test binary. These four functions shadow
+// Security's inside this module, so ShareCredential and SharedStore run
+// unchanged while every call they make is recorded: service, account, access
+// group and accessibility. Only the group all three targets are entitled to
+// answers (anything else is errSecMissingEntitlement, as on a phone), and the
+// store lives in a file when SPOTTER_FAKE_KEYCHAIN names one, so the app and
+// the Action extension, two processes, share it the way the real targets do.
+enum FakeKeychain {
+    static let group = "ABCDE12345.app.spotter.dev"
+    struct Op { let op: String; let service: String; let account: String; let group: String; let accessible: String? }
+    struct Entry: Codable { var data: Data; var accessible: String }
+    static var ops: [Op] = []
+    /// Answer every read and write as a locked phone would.
+    static var locked = false
+    private static let path = ProcessInfo.processInfo.environment["SPOTTER_FAKE_KEYCHAIN"]
+    private static var memory: [String: Entry] = {
+        guard let path = path, let data = FileManager.default.contents(atPath: path) else { return [:] }
+        return try! JSONDecoder().decode([String: Entry].self, from: data)
+    }()
+    static var items: [String: Entry] {
+        get { memory }
+        set {
+            memory = newValue
+            if let path = path { try! JSONEncoder().encode(newValue).write(to: URL(fileURLWithPath: path)) }
+        }
+    }
+    static func reset() { items = [:]; ops = [] }
+    static func id(_ service: String, _ account: String) -> String { service + "|" + account + "|" + group }
+    static func entry(_ account: String, service: String = "app.spotter.share") -> Entry? { items[id(service, account)] }
+    static func remove(_ account: String, service: String = "app.spotter.share") { items[id(service, account)] = nil }
+    static var writes: [Op] { ops.filter { $0.op != "read" } }
+    static func name(_ accessible: String?) -> String? {
+        if accessible == kSecAttrAccessibleWhenUnlockedThisDeviceOnly as String { return "WhenUnlockedThisDeviceOnly" }
+        if accessible == kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly as String { return "AfterFirstUnlockThisDeviceOnly" }
+        return accessible
+    }
+    static func record(_ op: String, _ dictionary: CFDictionary, accessible: String? = nil) -> (key: String, refused: OSStatus?) {
+        let q = dictionary as NSDictionary as! [String: Any]
+        let service = q[kSecAttrService as String] as? String ?? ""
+        let account = q[kSecAttrAccount as String] as? String ?? ""
+        let group = q[kSecAttrAccessGroup as String] as? String ?? ""
+        ops.append(Op(op: op, service: service, account: account, group: group, accessible: accessible))
+        if group != FakeKeychain.group { return ("", errSecMissingEntitlement) }
+        return (service + "|" + account + "|" + group, locked ? errSecInteractionNotAllowed : nil)
+    }
+}
+
+func SecItemCopyMatching(_ query: CFDictionary, _ result: UnsafeMutablePointer<CFTypeRef?>?) -> OSStatus {
+    let (key, refused) = FakeKeychain.record("read", query)
+    if let refused = refused { return refused }
+    guard let entry = FakeKeychain.items[key] else { return errSecItemNotFound }
+    result?.pointee = entry.data as CFData
+    return errSecSuccess
+}
+
+func SecItemAdd(_ attributes: CFDictionary, _ result: UnsafeMutablePointer<CFTypeRef?>?) -> OSStatus {
+    let values = attributes as NSDictionary as! [String: Any]
+    let accessible = values[kSecAttrAccessible as String] as? String
+    let (key, refused) = FakeKeychain.record("add", attributes, accessible: accessible)
+    if let refused = refused { return refused }
+    guard FakeKeychain.items[key] == nil else { return errSecDuplicateItem }
+    guard let data = values[kSecValueData as String] as? Data, let accessible = accessible else { return errSecParam }
+    FakeKeychain.items[key] = FakeKeychain.Entry(data: data, accessible: accessible)
+    return errSecSuccess
+}
+
+func SecItemUpdate(_ query: CFDictionary, _ attributesToUpdate: CFDictionary) -> OSStatus {
+    let values = attributesToUpdate as NSDictionary as! [String: Any]
+    let accessible = values[kSecAttrAccessible as String] as? String
+    let (key, refused) = FakeKeychain.record("update", query, accessible: accessible)
+    if let refused = refused { return refused }
+    guard var entry = FakeKeychain.items[key] else { return errSecItemNotFound }
+    if let data = values[kSecValueData as String] as? Data { entry.data = data }
+    if let accessible = accessible { entry.accessible = accessible }
+    FakeKeychain.items[key] = entry
+    return errSecSuccess
+}
+
+func SecItemDelete(_ query: CFDictionary) -> OSStatus {
+    let (key, refused) = FakeKeychain.record("delete", query)
+    if let refused = refused { return refused }
+    guard FakeKeychain.items[key] != nil else { return errSecItemNotFound }
+    FakeKeychain.items[key] = nil
+    return errSecSuccess
+}
+
+/// One step of the two-process case (check step park|claim|take <arg>): what
+/// it did, where it wrote, and what is parked afterwards, as one JSON line.
+func runStep(_ args: [String]) {
+    var out: [String: Any] = ["usesAppGroup": SharedStore.usesAppGroup]
+    switch args[0] {
+    case "park":
+        do { try ParkedShare.park(URL(string: args[1])!); out["parked"] = true }
+        catch { out["parked"] = false }
+    case "claim": ParkedShare.claim(saveKey: args[1])
+    case "take": out["url"] = ParkedShare.take(for: args[1])?.url ?? NSNull()
+    default: preconditionFailure(args[0])
+    }
+    let parked = FakeKeychain.entry(ParkedShare.account).flatMap { try? JSONDecoder().decode([ParkedShare.Item].self, from: $0.data) } ?? []
+    out["items"] = parked.map { ["url": $0.url, "owner": $0.owner ?? NSNull()] as [String: Any] }
+    out["writes"] = FakeKeychain.writes.map { ["op": $0.op, "service": $0.service, "account": $0.account, "group": $0.group,
+                                                "accessible": FakeKeychain.name($0.accessible) ?? NSNull()] as [String: Any] }
+    print(String(decoding: try! JSONSerialization.data(withJSONObject: out, options: [.sortedKeys]), as: UTF8.self))
+}
+`);
 writeFileSync(join(dir, 'main.swift'), `
 import Foundation
+import Security
 import UniformTypeIdentifiers
+if CommandLine.arguments.count > 2, CommandLine.arguments[1] == "step" { runStep(Array(CommandLine.arguments.dropFirst(2))); exit(0) }
 let _ = UTType.utf8PlainText
 for extensionName in ["ShareExtension", "ActionExtension"] {
 let infoData = try Data(contentsOf: URL(fileURLWithPath: "ios/App/\\(extensionName)/Info.plist"))
@@ -271,30 +410,52 @@ precondition(SharedLink.videoProblem(.unreadable).contains("Save it to Photos"))
 precondition(SharedLink.videoNotHereYet.contains("Upload a video from your phone"))
 precondition(SharedLink.noLinkMessage.contains("share the video file itself"))
 
-// S14: parked while signed out, handed to the app once, oldest first.
+// S14: parked while signed out, handed to the app once, oldest first. The list
+// and the owner tag live in the Keychain group beside the save key (service
+// app.spotter.share), never in the App Group, even in a target that has one:
+// this binary is the app, and it has one.
+precondition(SharedStore.usesAppGroup, "the app-shaped binary has an App Group")
+let appGroup = UserDefaults(suiteName: Bundle.main.object(forInfoDictionaryKey: "SpotterAppGroup") as? String)!
+func parkedURLs() -> [String] {
+ guard let entry = FakeKeychain.entry(ParkedShare.account) else { return [] }
+ return try! JSONDecoder().decode([ParkedShare.Item].self, from: entry.data).map { $0.url }
+}
+func onlyTheKeychainGroup(_ label: String) {
+ for op in FakeKeychain.writes {
+  precondition(op.service == "app.spotter.share" && op.group == FakeKeychain.group && [ParkedShare.account, ParkedShare.ownerAccount].contains(op.account),
+   label + ": wrote " + op.service + "/" + op.account)
+  precondition(op.op == "delete" || FakeKeychain.name(op.accessible) == "WhenUnlockedThisDeviceOnly", label + ": the save key's accessibility")
+ }
+ precondition(appGroup.data(forKey: ParkedShare.legacyKey) == nil && appGroup.data(forKey: ParkedShare.legacyOwnerKey) == nil, label + ": nothing in the App Group")
+}
+FakeKeychain.reset()
 let now = Date()
-SharedStore.remove(key: ParkedShare.key)
-SharedStore.remove(key: ParkedShare.ownerKey)
 let keyA = String(repeating: "a", count: 32), keyB = String(repeating: "b", count: 32)
 precondition(ParkedShare.take(for: keyA, now: now) == nil)
 try ParkedShare.park(URL(string: "https://vt.tiktok.com/A/")!, now: now.addingTimeInterval(-8 * 24 * 3600))
 try ParkedShare.park(URL(string: "https://www.instagram.com/reel/DBGi0r0pHZ4/")!, now: now.addingTimeInterval(-60))
 try ParkedShare.park(URL(string: "https://vt.tiktok.com/B/")!, now: now.addingTimeInterval(-30))
 try ParkedShare.park(URL(string: "https://www.instagram.com/reel/DBGi0r0pHZ4/")!, now: now)
+precondition(parkedURLs() == ["https://vt.tiktok.com/B/", "https://www.instagram.com/reel/DBGi0r0pHZ4/"], "parked in the Keychain item")
+onlyTheKeychainGroup("park")
 let first = ParkedShare.take(for: keyA, now: now)!
 precondition(first.url == "https://vt.tiktok.com/B/", "a week-old link is dropped, and a re-shared link moves to the back")
 precondition(first.at == ((now.timeIntervalSince1970 - 30) * 1000).rounded())
 precondition(ParkedShare.take(for: keyA, now: now)?.url == "https://www.instagram.com/reel/DBGi0r0pHZ4/")
 precondition(ParkedShare.take(for: keyA, now: now) == nil, "each link is handed over once")
 for i in 0..<15 { try ParkedShare.park(URL(string: "https://vt.tiktok.com/\\(i)/")!, now: now) }
+precondition(parkedURLs().count == ParkedShare.limit, "the Keychain item holds ten links at most")
 var kept: [String] = []
 while let item = ParkedShare.take(for: keyA, now: now) { kept.append(item.url) }
 precondition(kept.count == ParkedShare.limit && kept.first == "https://vt.tiktok.com/5/", "at most ten, the newest kept")
+precondition(FakeKeychain.entry(ParkedShare.account) == nil, "the last take removes the item")
 // R-5: a parked link belongs to the account signed in last on this phone.
-SharedStore.remove(key: ParkedShare.ownerKey)
+FakeKeychain.remove(ParkedShare.ownerAccount)
 try ParkedShare.park(URL(string: "https://vt.tiktok.com/first/")!, now: now)
 precondition(ParkedShare.take(for: nil, now: now) == nil, "R-5: nothing is handed over before the app has configured an account")
 ParkedShare.claim(saveKey: keyA, now: now)
+precondition((try! JSONSerialization.jsonObject(with: FakeKeychain.entry(ParkedShare.ownerAccount)!.data) as! [String: String]) == ["tag": ParkedShare.tag(forKey: keyA)],
+ "R-5: the owner tag is its own Keychain item, JSON")
 precondition(ParkedShare.take(for: keyA, now: now)?.url == "https://vt.tiktok.com/first/", "R-5: a link parked before any account goes to the first one")
 // A signs out (the tag stays), somebody shares, B signs in on the same phone.
 try ParkedShare.park(URL(string: "https://vt.tiktok.com/after-a/")!, now: now)
@@ -311,20 +472,100 @@ try ParkedShare.park(URL(string: "https://vt.tiktok.com/before-new/")!, now: now
 precondition(ParkedShare.take(for: keyB, now: now) == nil, "R-5: a different account asking directly gets nothing either")
 precondition(!ParkedShare.tag(forKey: keyA).contains(keyA) && ParkedShare.tag(forKey: keyA).count == 16 && ParkedShare.tag(forKey: keyA) != ParkedShare.tag(forKey: keyB),
   "R-5: the tag is a one-way 16-hex digest, distinct per key")
+onlyTheKeychainGroup("R-5")
+
+// Build 8 kept both values in SharedStore, which is the App Group in a Release
+// app. The app drains them into the Keychain on its next claim or take: build
+// 8's links first, expired ones and links re-shared since dropped, the ten-link
+// cap kept, the owner still deciding. An extension never drains.
+let tagA = ParkedShare.tag(forKey: keyA)
+func build8(_ urls: [String], owner: String?, at: Date = now.addingTimeInterval(-3600)) {
+ try! SharedStore.writeJSON(urls.map { ParkedShare.Item(url: $0, at: (at.timeIntervalSince1970 * 1000).rounded(), owner: owner) }, key: ParkedShare.legacyKey)
+ if let owner = owner { appGroup.set(try! JSONSerialization.data(withJSONObject: ["tag": owner]), forKey: ParkedShare.legacyOwnerKey) }
+}
+FakeKeychain.reset()
+build8(["https://vt.tiktok.com/old/", "https://vt.tiktok.com/again/"], owner: tagA)
+// The update lands; before the app runs, the Share extension parks two more.
+try ParkedShare.park(URL(string: "https://vt.tiktok.com/new/")!, now: now)
+try ParkedShare.park(URL(string: "https://vt.tiktok.com/again/")!, now: now)
+precondition(appGroup.data(forKey: ParkedShare.legacyKey) != nil, "parking does not drain")
+precondition(try! JSONDecoder().decode([ParkedShare.Item].self, from: FakeKeychain.entry(ParkedShare.account)!.data).allSatisfy { $0.owner == tagA },
+ "until the app runs, the owner build 8 recorded tags new links")
+ParkedShare.claim(saveKey: keyA, now: now)
+onlyTheKeychainGroup("drain")
+precondition(parkedURLs() == ["https://vt.tiktok.com/old/", "https://vt.tiktok.com/new/", "https://vt.tiktok.com/again/"], "build 8's links first, a re-shared one once")
+var drained: [String] = []
+while let item = ParkedShare.take(for: keyA, now: now) { drained.append(item.url) }
+precondition(drained == ["https://vt.tiktok.com/old/", "https://vt.tiktok.com/new/", "https://vt.tiktok.com/again/"], "nothing parked on build 8 is lost")
+// B signs in on a phone A used on build 8: A's links are not B's.
+FakeKeychain.reset()
+build8(["https://vt.tiktok.com/as-a/"], owner: tagA)
+ParkedShare.claim(saveKey: keyB, now: now)
+precondition(ParkedShare.take(for: keyB, now: now) == nil, "R-5 holds across the drain")
+onlyTheKeychainGroup("drain for another account")
+// A Keychain that will not answer drains nothing and clears nothing; take drains too.
+FakeKeychain.reset()
+try ParkedShare.park(URL(string: "https://vt.tiktok.com/kept/")!, now: now)
+build8(["https://vt.tiktok.com/waits/"], owner: nil)
+FakeKeychain.locked = true
+precondition(ParkedShare.take(for: keyA, now: now) == nil)
+FakeKeychain.locked = false
+precondition(appGroup.data(forKey: ParkedShare.legacyKey) != nil && parkedURLs() == ["https://vt.tiktok.com/kept/"], "an unreadable Keychain is not an empty one")
+precondition(ParkedShare.take(for: keyA, now: now)?.url == "https://vt.tiktok.com/waits/", "take drains, older first")
+precondition(ParkedShare.take(for: keyA, now: now)?.url == "https://vt.tiktok.com/kept/")
+onlyTheKeychainGroup("take")
+FakeKeychain.reset()
+build8((0..<8).map { "https://vt.tiktok.com/b8-\\($0)/" }, owner: nil)
+for i in 0..<5 { try ParkedShare.park(URL(string: "https://vt.tiktok.com/b9-\\(i)/")!, now: now) }
+ParkedShare.claim(saveKey: keyA, now: now)
+precondition(parkedURLs().count == ParkedShare.limit && parkedURLs().first == "https://vt.tiktok.com/b8-3/", "the drain keeps the cap, newest kept")
+FakeKeychain.reset()
+build8(["https://vt.tiktok.com/stale/"], owner: nil, at: now.addingTimeInterval(-8 * 24 * 3600))
+ParkedShare.claim(saveKey: keyA, now: now)
+precondition(parkedURLs().isEmpty, "an expired build-8 link is dropped")
+onlyTheKeychainGroup("expired")
 precondition(SharedLink.parkedMessage == "You’re signed out. Sign in to Spotter and it will be saved.")
-print("PASS native activation incl. one video file (and not two), safe predicate forms, 17 social/web URL formats, one post however it is spelled, \\(cases.count) share payloads each saving one link, set-aside notes, save-first frames rules, failure retry rules incl. unavailable/busy, video-door sentences, parked links (expiry, order, once, per account), durable-save acknowledgement and the in-sheet AI permission")
+print("PASS native activation incl. one video file (and not two), safe predicate forms, 17 social/web URL formats, one post however it is spelled, \\(cases.count) share payloads each saving one link, set-aside notes, save-first frames rules, failure retry rules incl. unavailable/busy, video-door sentences, parked links (expiry, order, once, per account) in the Keychain group and never the App Group, build-8 App Group links drained (order, cap, expiry, owner, locked Keychain), durable-save acknowledgement and the in-sheet AI permission")
 `);
 const swiftc = '/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc';
 const sdk = '/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk';
 const target = process.arch === 'arm64' ? 'arm64-apple-macosx14.0' : 'x86_64-apple-macosx14.0';
-const r = spawnSync(swiftc, ['-sdk', sdk, '-target', target, '-module-cache-path', join(dir, 'cache'),
+const common = ['-sdk', sdk, '-target', target, '-module-cache-path', join(dir, 'cache')];
+let r = spawnSync(swiftc, [...common, '-module-name', 'ShareCheck', '-wmo', '-c',
   'ios/App/Shared/SharedLink.swift', 'ios/App/Shared/TikTokMedia.swift', 'ios/App/Shared/ShareCredential.swift',
-  'ios/App/Shared/SharedStore.swift', join(dir, 'main.swift'),
-  '-Xlinker', '-sectcreate', '-Xlinker', '__TEXT', '-Xlinker', '__info_plist', '-Xlinker', join(dir, 'Info.plist'),
-  '-o', join(dir, 'check')], { encoding: 'utf8' });
+  'ios/App/Shared/SharedStore.swift', join(dir, 'harness.swift'), join(dir, 'main.swift'),
+  '-o', join(dir, 'check.o')], { encoding: 'utf8' });
 assert.equal(r.status, 0, r.stderr);
+for (const [name, shape] of [['check', 'App'], ['action', 'ActionExtension']]) {
+  writeFileSync(join(dir, name + '.plist'), shapedPlist(shape, name));
+  r = spawnSync(swiftc, [...common, join(dir, 'check.o'),
+    '-Xlinker', '-sectcreate', '-Xlinker', '__TEXT', '-Xlinker', '__info_plist', '-Xlinker', join(dir, name + '.plist'),
+    '-o', join(dir, name)], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+}
 const result = spawnSync(join(dir, 'check'), [join(dir, 'cases.json')], { encoding: 'utf8' });
+// The defect itself, across two processes: A is signed in once, then signed
+// out; "Save to Spotter" (no App Group) parks a link; the app (App Group)
+// takes it after A signs back in. One fake Keychain file stands in for the group.
+const step = (binary, ...args) => {
+  const out = spawnSync(join(dir, binary), ['step', ...args], { encoding: 'utf8', env: { ...process.env, SPOTTER_FAKE_KEYCHAIN: join(dir, 'keychain.json') } });
+  assert.equal(out.status, 0, `${binary} ${args[0]}: ${out.stderr}`);
+  return JSON.parse(out.stdout);
+};
+const actionKey = 'c'.repeat(32), actionTag = createHash('sha256').update(actionKey).digest('hex').slice(0, 16);
+const claimed = step('check', 'claim', actionKey);
+const parked = step('action', 'park', 'https://vt.tiktok.com/ZSaveToSpotter/');
+const taken = step('check', 'take', actionKey);
 spawnSync('defaults', ['delete', suite]);
 rmSync(join(process.env.HOME, 'Library/Preferences', suite + '.plist'), { force: true });
 assert.equal(result.status, 0, result.stderr); process.stdout.write(result.stdout);
-console.log('PASS serialized account switching with the plan hint, sign-out, credential-write failure recovery, parked-link bridge, save-first source order, C5 pipeline overlap');
+assert.equal(claimed.usesAppGroup, true, 'the app-shaped binary has the App Group');
+assert.equal(parked.usesAppGroup, false, 'the Action-extension-shaped binary has no App Group, like its signing');
+assert.equal(parked.parked, true, '"Save to Spotter" parks the link');
+const parkedItem = { service: 'app.spotter.share', account: 'parked', group: keychainGroup, accessible: 'WhenUnlockedThisDeviceOnly' };
+assert.deepEqual(parked.writes, [{ op: 'update', ...parkedItem }, { op: 'add', ...parkedItem }],
+  'the Action extension writes one Keychain item in the shared group and nothing else');
+assert.deepEqual(parked.items, [{ url: 'https://vt.tiktok.com/ZSaveToSpotter/', owner: actionTag }], 'tagged with the account the app configured, read across processes');
+assert.equal(taken.url, 'https://vt.tiktok.com/ZSaveToSpotter/', 'the app takes what "Save to Spotter" parked');
+assert.deepEqual(taken.items, [], 'and it is handed over once');
+console.log('PASS serialized account switching with the plan hint, sign-out, credential-write failure recovery, parked-link bridge, save-first source order, C5 pipeline overlap, App Group only where the Release entitlements grant it, a link parked by "Save to Spotter" (no App Group) taken by the app');
