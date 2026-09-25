@@ -12637,13 +12637,15 @@ export const APP = String.raw`
   // plan's actions on each row. It replaces the Today card, the day sheet and
   // the Resume card, and it is the only place Start appears on Train.
   //
-  // Cheap to call at any moment (sessionChanged calls it on every pause, resume
-  // and finish): it rebuilds only when what it would say has changed. A new day
-  // arrives from the side the day moved to, the same day saying something new
-  // crossfades, and the box eases to the new card's height.
+  // Cheap to call at any moment — sessionChanged calls it on every pause, resume
+  // and finish, and on every render of the library, which is also when a save
+  // lands, so the shelf under the card is kept with it — and it rebuilds only
+  // what has changed. A new day arrives from the side the day moved to, the same
+  // day saying something new crossfades, and the box eases to the new height.
   function drawDay() {
     if (!cardBox) return;
     planHide();
+    drawShelf();
     var k = selKey(), u = k === ymd(new Date()) ? upNext() : dayState(k), sig = k + JSON.stringify(u), h = cardBox.offsetHeight;
     if (sig === daySig) return;
     var card = u.key ? dayCard(u) : upCard(u);
@@ -12675,16 +12677,15 @@ export const APP = String.raw`
   function setsWord(n) { return n + (n === 1 ? " set" : " sets"); }
 
   // The card: the saved video's frame (or Pumpy's drawing) across the top — a
-  // second door to the workout for a thumb, hidden from VoiceOver, for whom the
-  // title is the door — then the card's word, the title (w without an id is only
-  // a name), one line of facts, and the buttons, [class, words, fn, argument].
+  // second door to the workout for a thumb; the title is the one VoiceOver and a
+  // keyboard use — then the card's word, the title (w without an id is only a
+  // name), one line of facts, and the buttons, [class, words, fn, argument].
   // act: it asks for something, and wears the ember edge.
   function tcard(cls, kick, w, meta, btns) {
     var card = el("div", "daycard tcard " + cls), art = w && w.id && cardArt(w), row = el("div", "tbtns"), cov;
     if (art) {
-      cov = card.appendChild(tbtn("tcover", null, openDetail, w));
-      cov.tabIndex = -1;
-      cov.setAttribute("aria-hidden", "true");
+      cov = card.appendChild(el("div", "tcover"));
+      cov.onclick = function () { openDetail(w); };
       var img = cov.appendChild(el("img"));
       img.alt = "";
       img.onerror = function () { cov.remove(); };
@@ -12886,7 +12887,6 @@ export const APP = String.raw`
       else { calOpen = true; drawCal(); }
     }
     drawDay();
-    drawShelf();
     paintSeg();
     planSlide = 0;
     // Whatever a swipe left on the rows, taken back without animating the way

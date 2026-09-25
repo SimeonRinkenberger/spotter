@@ -1602,6 +1602,8 @@ export const STYLE = String.raw`<style>
   .cm { opacity: var(--cm, 1); }
   .wk .cm, .mo .cw, .wk .cweek:not(.anchor), .wk .dlegend { visibility: hidden; }
   .tcrange, .tcmonth { margin: 0; font: 700 16px var(--display); letter-spacing: -.012em; color: var(--ink); }
+  /* Focused after the month opens, for VoiceOver; it is a heading, not a control. */
+  .tcmonth { outline: none; }
   .tcrange { display: flex; align-items: center; gap: 3px; min-height: 44px; padding: 0 6px 0 0; border: 0;
     background: none; }
   .tcrange .ic { color: var(--muted); transform: rotate(90deg); }
@@ -1688,8 +1690,7 @@ export const STYLE = String.raw`<style>
   .tcard.act > .dayname { color: var(--ember-ink); }
   .tcard.good > .dayname { color: var(--good); }
   /* The saved video's own frame; portrait video, so the crop sits a third down. */
-  .tcover { margin: -13px -15px 0; padding: 0; border: 0; aspect-ratio: 12 / 5; overflow: hidden;
-    background: var(--sand); }
+  .tcover { margin: -13px -15px 0; aspect-ratio: 12 / 5; overflow: hidden; background: var(--sand); }
   .tcover img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: center 30%; }
   .tcard .ttitle { padding: 0; }
   .tcard .tdose { margin: -7px 0 0; font-size: 13px; color: var(--ink-2); }
