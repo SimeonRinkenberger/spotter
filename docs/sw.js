@@ -1,161 +1,45 @@
-// Service worker for the installed app. Still deliberately not an offline cache of
-// everything: only the shell and first-party mascot art are kept, and a
-// Supabase or CDN response is never touched — a stale workout row would be a lie,
-// and a stale page is only yesterday's build.
+// Spotter's web app is retired; native is the product. This is a kill switch.
 //
-// The page is network-first with a short timeout rather than cache-first, because a
-// deploy has to be picked up. On a normal connection the network wins every time and
-// the user gets today's build; on an aeroplane, a hotel lobby or a lift the timeout
-// fires, the last good copy opens instantly, and the network response — whenever it
-// arrives — still refreshes the cache for next time. That is the pattern Workbox
-// calls NetworkFirst with networkTimeoutSeconds, and 1.5s is the number that keeps a
-// bad connection from holding a blank screen while never beating a good one.
-var CACHE = "spotter-shell-v7";
-var SHELL = ["icon.png", "manifest.webmanifest"];
-var PAGE = "index.html";
-var NET_TIMEOUT = 1500;
-
-self.addEventListener("install", function (e) {
-  e.waitUntil(caches.open(CACHE).then(function (c) {
-    return c.addAll(SHELL).then(function () {
-      // Keep a usable shell if the phone goes offline just after an upgrade.
-      return caches.keys().then(function (keys) {
-        var previous = keys.filter(function (k) { return k !== CACHE && k.indexOf("spotter-shell-") === 0; }).reverse();
-        function copy(i) {
-          if (i >= previous.length) return;
-          return caches.open(previous[i]).then(function (old) { return old.match(PAGE); }).then(function (hit) {
-            return hit ? c.put(PAGE, hit) : copy(i + 1);
-          });
-        }
-        return copy(0);
-      });
-    });
-  }).then(function () {
-    return self.skipWaiting();
-  }));
+// It must stay at this address for good. Every browser tab and home-screen install
+// that ever ran the web app holds a registration pointing at /spotter/sw.js, and the
+// next time that browser checks for an update (on the next visit, or when the old
+// page calls register() as it boots) this file is what it downloads. A 404 here
+// would leave the old worker, and the old app in its cache, in place.
+//
+// The pattern is the standard self-destroying worker (github.com/NekR/self-destroying-sw;
+// vite-plugin-pwa generates the same), with one change for this origin: it is shared
+// with another app (Simmer), and CacheStorage belongs to the whole origin, not to a
+// path, so only Spotter's caches ("spotter-shell-v1" to "v7") are deleted, never all.
+//
+//   install   take over straight away (skipWaiting) instead of waiting for every tab
+//             running the old app to close;
+//   activate  delete Spotter's caches, unregister, then reload each window this worker
+//             controls, so a tab or a home-screen app still showing the old shell
+//             comes back as the landing page, straight from the network.
+//
+// No fetch handler, so while it lives every request goes to the network; and no push
+// handler, because unregistering ends the push subscription along with the worker.
+// The landing page (index.html) does the same clean-up from the page side, which is
+// what covers a browser that never gets as far as running this.
+self.addEventListener("install", function () {
+  self.skipWaiting();
 });
 
 self.addEventListener("activate", function (e) {
   e.waitUntil(caches.keys().then(function (keys) {
-    return Promise.all(keys.filter(function (k) { return k !== CACHE && k.indexOf("spotter-shell-") === 0; })
+    return Promise.all(keys.filter(function (k) { return k.indexOf("spotter") === 0; })
       .map(function (k) { return caches.delete(k); }));
-  }).then(function () { return self.clients.claim(); }));
-});
-
-// A redirected response cannot be handed back for a navigation — the browser refuses
-// it — and GitHub Pages redirects /spotter to /spotter/. Copy it into a plain one.
-function unredirect(res) {
-  if (!res || !res.redirected) return Promise.resolve(res);
-  return res.blob().then(function (body) {
-    return new Response(body, { status: res.status, statusText: res.statusText, headers: res.headers });
-  });
-}
-
-function page(req, event) {
-  // A timeout may answer first; keep the late network/cache write alive too.
-  var finish;
-  var lifetime = new Promise(function (resolve) { finish = resolve; });
-  if (event) event.waitUntil(lifetime);
-  return caches.open(CACHE).then(function (c) {
-    return new Promise(function (resolve) {
-      var settled = false;
-      function done(r) { if (!settled && r) { settled = true; resolve(r); } }
-
-      var timer = setTimeout(function () {
-        c.match(PAGE).then(done);
-      }, NET_TIMEOUT);
-
-      fetch(req).then(function (res) {
-        clearTimeout(timer);
-        // Cached even when the timeout already answered from the shelf: this launch
-        // is what makes the next one right.
-        var save = res && res.ok ? unredirect(res.clone()).then(function (keep) { return c.put(PAGE, keep); }) : Promise.resolve();
-        save.then(finish, finish);
-        if (!res.ok) { c.match(PAGE).then(function (hit) { done(hit || res); }); return; }
-        unredirect(res).then(function (out) {
-          done(out);
-          // The network lost the race but still came back — nothing to hand over
-          // now, and the put above has already taken care of next time.
-        });
-      }, function () {
-        finish();
-        clearTimeout(timer);
-        c.match(PAGE).then(function (hit) { done(hit || Response.error()); });
-      });
+  }).catch(function () { /* nothing to clear */ }).then(function () {
+    return self.registration.unregister();
+  }).then(function () {
+    return self.clients.matchAll({ type: "window" });
+  }).then(function (tabs) {
+    tabs.forEach(function (tab) {
+      // WindowClient.navigate is in every Chromium and in Safari from 16.4. Where it
+      // is missing the tab keeps what it shows until it is next opened, and then the
+      // network (no worker in the way) hands it the landing page.
+      try { if (tab.navigate) tab.navigate(tab.url).catch(function () { /* tab went away */ }); }
+      catch (err) { /* not navigable */ }
     });
-  });
-}
-
-self.addEventListener("fetch", function (e) {
-  if (e.request.method !== "GET") return;
-  var url = new URL(e.request.url);
-  if (url.origin !== self.location.origin) return;   // never touch Supabase or CDN calls
-  // Only the app itself is served off the shelf. The other pages here — privacy,
-  // terms, the billing return — are small, rarely opened and never the thing
-  // somebody is waiting on in a lift; on a slow link a timeout would hand them
-  // the app instead of the page they asked for.
-  if (e.request.mode === "navigate") {
-    if (/\/$|\/index\.html$/.test(url.pathname)) e.respondWith(page(e.request, e));
-    return;
-  }
-  // Small first-party drawings are cached only after use. Installing the shell
-  // never waits on mascot art, and no unused animation is downloaded up front.
-  if (/\/assets\/pumpy\/(coach|plan|proud|avatar|hello|hello-motion|hello-idle|proud-wing)\.webp$/.test(url.pathname)) {
-    e.respondWith(caches.open(CACHE).then(function (c) {
-      return c.match(e.request).then(function (hit) {
-        return hit || fetch(e.request).then(function (r) {
-          if (r.ok) c.put(e.request, r.clone());
-          return r;
-        });
-      });
-    }));
-    return;
-  }
-  if (SHELL.some(function (p) { return url.pathname.endsWith(p); })) {
-    e.respondWith(caches.match(e.request).then(function (r) { return r || fetch(e.request); }));
-  }
-});
-
-// ---------- the two reminders ----------
-//
-// Spotter sends exactly two notifications, both opt-in, both switchable off in
-// Settings: the plan-day reminder and the one that says the week is still
-// reachable. The server decides whether to send; this decides how it looks.
-//
-// The payload is JSON — { title, body, tag, url } — but a push service is
-// allowed to wake a worker with no data at all (a Safari "budget" ping, a
-// mangled body), and userVisibleOnly means a push that shows nothing costs the
-// site its permission. So the parse is wrapped and there is always a fallback
-// notification. `tag` is one fixed string per KIND, so tomorrow's plan-day
-// reminder replaces today's on the lock screen instead of stacking under it.
-self.addEventListener("push", function (e) {
-  var d = {};
-  try { d = e.data ? e.data.json() : {}; } catch (err) { d = {}; }
-  var title = d.title || "Spotter";
-  e.waitUntil(self.registration.showNotification(title, {
-    body: d.body || undefined,
-    tag: d.tag || "spotter",
-    icon: "icon.png",
-    badge: "icon.png",
-    // Replace quietly: a second buzz for a notification that only updated the
-    // first one is the thing that gets an app switched off.
-    renotify: false,
-    data: { url: d.url || "./" }
-  }));
-});
-
-// Tapping it should land in the app that is already open, on the phone it is
-// open on, rather than starting a second copy of it. Only if nothing is running
-// do we open a window.
-self.addEventListener("notificationclick", function (e) {
-  e.notification.close();
-  var want = (e.notification.data && e.notification.data.url) || "./";
-  e.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true })
-    .then(function (list) {
-      for (var i = 0; i < list.length; i++) {
-        var c = list[i];
-        if (c.url.indexOf(self.registration.scope) === 0 && "focus" in c) return c.focus();
-      }
-      return self.clients.openWindow ? self.clients.openWindow(want) : undefined;
-    }));
+  }).catch(function () { /* nothing more this worker can do */ }));
 });
