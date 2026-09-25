@@ -10250,13 +10250,22 @@ export const APP = String.raw`
       Math.max(1, Math.round(secs / 60)) + " min");
     fin.setAttribute("aria-label", "Finish workout");
     live.setAttribute("aria-live", "polite");
-    function disarm() { clearTimeout(pbArm); box.classList.remove("armed"); fin.classList.remove("on"); sub.textContent = line; }
+    function disarm() { clearTimeout(pbArm); box.seen = 0; box.classList.remove("armed"); fin.classList.remove("on"); sub.textContent = line; }
     fin.onclick = function () {
-      if (fin.classList.contains("on")) { disarm(); resumeWorkout(); finishWorkout(); return; }
+      if (box.seen && Date.now() - box.seen > 300) { disarm(); resumeWorkout(); finishWorkout(); return; }
+      clearTimeout(pbArm);
       box.classList.add("armed");
       fin.classList.add("on");
       sub.textContent = live.textContent = n ? "Tap again to save " + n + (n === 1 ? " set" : " sets") : "Tap again to close it";
       haptic("select");
+      // Only a question that reached the screen, and stayed longer than a double
+      // tap takes, can be answered. The iPhone Air once armed this without drawing
+      // it, and the next tap ended a session nobody had seen asked about. Two
+      // frames drawn means it showed (a web view drawing nothing runs none); a
+      // tap sooner than that, or than 300ms after, only asks again.
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () { box.seen = fin.classList.contains("on") && (box.seen || Date.now()); });
+      });
       pbArm = setTimeout(disarm, 4000);
     };
     body.onclick = go.onclick = function () { resumeWorkout(); };

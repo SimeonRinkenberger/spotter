@@ -1540,16 +1540,19 @@ export const STYLE = String.raw`<style>
   .tab .tl { display: block; transform: translateZ(0); }
 
   /* ---------- the paused bar ----------
-     A session waiting, on every tab (app.ts, "the paused bar"): a card of glass
-     standing on the tab bar's top edge, --ptab being that bar's measured height,
-     safe area and all. It rises from behind the tab bar and sinks back into it
-     on transform and opacity alone; reduced motion keeps the fade. */
+     A session waiting, on every tab (app.ts, "the paused bar"): a card standing
+     on the tab bar's top edge, --ptab being that bar's measured height, safe area
+     and all. It rises from behind the tab bar and sinks back into it on transform
+     and opacity alone; reduced motion keeps the fade. Solid, not glass: a blur
+     here is recomputed on every scroll frame of every page beneath it, and at the
+     opacity its small print needs to stay AA over a photo, it showed nothing. */
   .pausedbar { position: absolute; left: 0; right: 0; bottom: var(--ptab, 78px); z-index: 39;
     padding: 0 10px 8px; pointer-events: none; }
+  /* Taps, not a double-tap zoom (#setsheet's reason): Finish is two taps in a row.
+     The bar is outside the pager, so saying so costs the axis lock nothing. */
   .pbin { display: flex; align-items: center; gap: 6px; padding: 6px; border-radius: 20px;
-    background: color-mix(in srgb, var(--card) 94%, transparent); border: 1px solid var(--line);
-    -webkit-backdrop-filter: blur(22px) saturate(1.6); backdrop-filter: blur(22px) saturate(1.6);
-    box-shadow: var(--sh-md); opacity: 0; transform: translateY(calc(100% + 14px));
+    background: var(--card); border: 1px solid var(--line); box-shadow: var(--sh-md);
+    touch-action: manipulation; opacity: 0; transform: translateY(calc(100% + 14px));
     transition: transform var(--t-2) var(--e-in), opacity var(--t-2) var(--e-in); }
   .pausedbar.on .pbin { pointer-events: auto; opacity: 1; transform: none;
     transition: transform var(--t-3) var(--e-spring), opacity var(--t-2) var(--e-out); }
