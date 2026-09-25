@@ -2014,6 +2014,16 @@ export const APP = String.raw`
   // The server's sentence for a post the platform says is gone. Nothing to retry.
   var UNAVAILABLE = "This post is private, deleted or unavailable to Spotter.";
   function isUnavailable(w) { return isFailed(w) && w.ingest_error === UNAVAILABLE; }
+  // What a failed card is called on its tile and above its title, and its mark.
+  // Only an ordinary failure can be read again. A post the platform says is gone
+  // cannot, and an upload's file is deleted once it is read, so neither wears
+  // "Retry" or the ↻ that the detail below them does not offer.
+  function failedKick(w, onTile) {
+    if (isUnavailable(w)) return "Unavailable";
+    if (isUpload(w)) return "Failed";
+    return onTile ? "Retry" : "Needs another try";
+  }
+  function failedGlyph(w) { return isUnavailable(w) ? "eye-off" : isUpload(w) ? "ear" : "refresh"; }
   // How the server ends a read that kept the card as it was (Add the video, a re-read).
   var UNCHANGED = /This card is unchanged\.$/;
 
@@ -2619,17 +2629,16 @@ export const APP = String.raw`
 
     var tw = el("div", "thumbwrap loading");
     if (pending || failed) {
-      var up = isUpload(w);
       var stage = stageOf(w);
       tw.className = "thumbwrap " + (pending ? "pending" : "failed");
-      // A failed upload cannot be retried — the file was deleted the moment
-      // Spotter finished listening — so it must not wear the mark that says it can.
-      tw.appendChild(icon(el("div", "noimg"), pending ? stage.glyph : (up ? "ear" : "refresh")));
+      // A failed upload or an unavailable post cannot be retried, so it must not
+      // wear the mark that says it can (failedGlyph).
+      tw.appendChild(icon(el("div", "noimg"), pending ? stage.glyph : failedGlyph(w)));
       card.appendChild(tw);
       var pb = el("div", "cardbody");
       var pk = el("div", "cardkick");
       pk.appendChild(el("div", "catpill",
-        pending ? stage.kick : (up ? "Failed" : "Retry")));
+        pending ? stage.kick : failedKick(w, true)));
       pb.appendChild(pk);
       pb.appendChild(el("div", "cardtitle", w.title || stage.line));
       pb.appendChild(el("div", "cardmeta" + (failed ? " retryline" : ""), cardMeta(w)));
@@ -3290,7 +3299,7 @@ export const APP = String.raw`
 
     d.appendChild(el("div", "dkick", isPending(w)
       ? stageOf(w).kick
-      : (isFailed(w) ? "Needs another try" : (w.category || "Other"))));
+      : (isFailed(w) ? failedKick(w, false) : (w.category || "Other"))));
     var titleEl = el("h2", "dtitle", w.title || "Untitled workout");
     d.appendChild(titleEl);
     // The handle does what a collection pill does: close the card, land in a library
@@ -3432,11 +3441,13 @@ export const APP = String.raw`
       d.appendChild(warn);
     }
 
-    // "Plus reads the video" only where Plus can: a TikTok video, or a file of the
-    // person's own. An Instagram card whose caption left it thin is offered the
-    // one thing that works for a reel instead; the empty-card box above already
-    // does that for a card with nothing in it.
-    var plusCan = (w.platform === "tiktok" && w.kind !== "photo") || isUpload(w);
+    // "Plus reads the video" only where Plus reads more: a TikTok video. A file of
+    // the person's own is read the same way on either plan (the uploads allowance
+    // pays for it), so a Basic upload card is not told Plus would have watched
+    // what Spotter just watched. An Instagram card whose caption left it thin is
+    // offered the one thing that works for a reel instead; the empty-card box
+    // above already does that for a card with nothing in it.
+    var plusCan = w.platform === "tiktok" && w.kind !== "photo";
     var addHere = canAddVideo(w) && (w.blocks || []).length > 0;
     if (w.platform !== "pumpy" && w.read_quality !== "premium" && addHere) {
       var addBox = el("div", "reader-offer");

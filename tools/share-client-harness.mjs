@@ -111,10 +111,11 @@ ok(!run('canAddVideo(W)') && run('canReadVideo(W)'), 'a TikTok video keeps "read
 ctx.W = { ...ig, platform: 'tiktok', kind: 'photo' };
 ok(!run('canAddVideo(W)'), 'a TikTok photo post is offered neither');
 // The offer box's own rule, read off the source: the Plus line is drawn only where
-// Plus can deliver.
-ok(/var plusCan = \(w\.platform === "tiktok" && w\.kind !== "photo"\) \|\| isUpload\(w\);/.test(APP) &&
+// Plus reads more. A person's own file is read the same on either plan (V-1), so
+// a Basic upload card is not told Plus would have watched it.
+ok(/var plusCan = w\.platform === "tiktok" && w\.kind !== "photo";/.test(APP) &&
   /read_quality !== "premium" && plusCan\) \{\s*\n\s*var quality = el\("div", "reader-offer"\);/.test(APP),
-  '"Plus reads the video" is drawn only for a TikTok video or an upload');
+  '"Plus reads the video" is drawn only for a TikTok video, not under an upload Spotter already watched');
 
 // ---- S16: what a pending card says ----
 ctx.W = { ...ig, platform: 'instagram', kind: 'p', ingest_status: 'processing' };
@@ -133,6 +134,22 @@ ctx.W = { ...ig, ingest_status: 'failed', ingest_error: 'Spotter could not read 
 ok(!run('isUnavailable(W)') && /tap to retry/.test(run('cardMeta(W)')), 'an ordinary failure still offers a retry');
 ok(/if \(!isUp && !gone\) \{\s*\n\s*var rb = el\("button", "retrybtn", "Try reading it again"\);/.test(APP),
   'the detail view hides "Try reading it again" for an unavailable post');
+
+// ---- V-4: a final "unavailable" card is not labelled as something to retry ----
+ctx.W = { ...ig, ingest_status: 'failed', ingest_error: 'This post is private, deleted or unavailable to Spotter.' };
+ok(run('failedKick(W, true)') === 'Unavailable' && run('failedKick(W, false)') === 'Unavailable' && run('failedGlyph(W)') === 'eye-off',
+  'V-4: an unavailable post\'s tile and overline say "Unavailable", with no ↻');
+ctx.W = { ...ig, ingest_status: 'failed', ingest_error: 'Spotter could not read this video. Tap ↻ to try again.' };
+ok(run('failedKick(W, true)') === 'Retry' && run('failedKick(W, false)') === 'Needs another try' && run('failedGlyph(W)') === 'refresh',
+  'V-4: an ordinary failure keeps "Retry", "Needs another try" and ↻');
+ctx.W = { ...ig, platform: 'upload', kind: 'upload', ingest_status: 'failed', ingest_error: 'Spotter read that file and could not make out a workout in it.' };
+ok(run('failedKick(W, true)') === 'Failed' && run('failedKick(W, false)') === 'Failed' && run('failedGlyph(W)') === 'ear',
+  'V-4: a failed upload (its file is gone) says "Failed" on the tile and above the title alike');
+ok(/tw\.appendChild\(icon\(el\("div", "noimg"\), pending \? stage\.glyph : failedGlyph\(w\)\)\);/.test(APP) &&
+  /pending \? stage\.kick : failedKick\(w, true\)\)\);/.test(APP) &&
+  /\(isFailed\(w\) \? failedKick\(w, false\) : \(w\.category \|\| "Other"\)\)\)\);/.test(APP) &&
+  !/"Needs another try" : \(w\.category/.test(APP),
+  'V-4: the library tile and the detail overline both ask failedKick / failedGlyph');
 
 // ---- Add the video, through the upload sheet ----
 run('openAddVideo(W)');

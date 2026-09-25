@@ -1908,9 +1908,24 @@ function haveAI(): boolean {
 // 429 and Instagram is one policy change from doing the same, while from a phone's
 // own residential IP those pages carry everything. Same regexes, different courier.
 
+/**
+ * Instagram's own artwork rather than a post's picture. Asked from this
+ * datacenter, the post page is sometimes Instagram's generic page, and its
+ * og:image is the Instagram logo — static.cdninstagram.com/rsrc.php/…png, a
+ * 4168×4168 PNG of 778 KB — which two cold saves on 24 Sept stored as the cover
+ * and in video_cache for everybody after. A post's media is served from
+ * scontent-*.cdninstagram.com (or fbcdn); static.cdninstagram.com serves only the
+ * site's own files, so the host is the rule, as TikTok's logo path is for
+ * ttGenericImage. Pure.
+ */
+function igGenericImage(u: string | null | undefined): boolean {
+  return !!u && /^https?:\/\/static\.cdninstagram\.com\/|\/rsrc\.php\//i.test(u);
+}
+
 /** og: tags on the post page, as served to link-preview crawlers. Pure. */
 function igFromOg(html: string): { caption: string | null; thumb: string | null; author: string | null } {
-  const thumb = metaTag(html, "og:image");
+  const og = metaTag(html, "og:image");
+  const thumb = igGenericImage(og) ? null : og;
   const ogTitle = metaTag(html, "og:title");
   const ogDesc = metaTag(html, "og:description");
   const quoted = (s: string | null) => s?.match(/: ["“]([\s\S]*?)["”]?\s*$/)?.[1]?.trim() ?? null;
@@ -1930,12 +1945,16 @@ function igFromOg(html: string): { caption: string | null; thumb: string | null;
  */
 function igFromEmbed(html: string): {
   caption: string | null; thumb: string | null; author: string | null; images: string[];
-  slides: { url: string; video: boolean }[]; absent: boolean;
+  slides: { url: string; video: boolean }[]; absent: boolean; mediaThumb: boolean;
 } {
+  // The post's own picture: the embed's media image, or failing that the first
+  // slide the context names. `mediaThumb` says it is one of those two, which
+  // igMeta prefers over og:image; the loose scontent match below it can be the
+  // author's avatar, so it only ever fills a gap.
   let thumb: string | null = null;
-  const im = html.match(/class="EmbeddedMediaImage"[^>]*src="([^"]+)"/) ??
-    html.match(/src="(https:\/\/[^"]*scontent[^"]+)"/);
-  if (im) thumb = decodeEntities(im[1]);
+  let mediaThumb = false;
+  const im = html.match(/class="EmbeddedMediaImage"[^>]*src="([^"]+)"/);
+  if (im && !igGenericImage(decodeEntities(im[1]))) { thumb = decodeEntities(im[1]); mediaThumb = true; }
 
   let caption: string | null = null;
   const capDiv = html.match(/<div class="Caption"[^>]*>([\s\S]*?)<div class="CaptionComments"/) ??
@@ -1982,11 +2001,16 @@ function igFromEmbed(html: string): {
   // A carousel's own display_url repeats its first child's, so the list is the
   // children when there are any and the one picture otherwise.
   const images = slides.map((s) => s.url);
+  if (!thumb && media && slides.length && !igGenericImage(slides[0].url)) { thumb = slides[0].url; mediaThumb = true; }
+  if (!thumb) {
+    const loose = html.match(/src="(https:\/\/[^"]*scontent[^"]+)"/);
+    if (loose) thumb = decodeEntities(loose[1]);
+  }
   // "Instagram answered, and there is no post": the embed page's broken-media
   // panel and no context at all. Not a network fault and not a login wall — the
   // one case where asking again cannot help (igMeta decides with the og: rung).
   const absent = /class="EmbedBrokenMedia"/.test(html) && !media && !caption && !images.length;
-  return { caption, thumb, author, images, slides, absent };
+  return { caption, thumb, author, images, slides, absent, mediaThumb };
 }
 
 /** The embed's `contextJSON`, decoded twice as the page's own script would. Null when absent. */
@@ -2032,7 +2056,7 @@ function igParseHtml(html: string): Meta {
   };
 }
 
-async function igMeta(p: Parsed): Promise<Meta> {
+export async function igMeta(p: Parsed): Promise<Meta> {
   const out: Meta = { caption: null, thumb: null, author: null };
   let images: string[] = [];
   const used: string[] = [];
@@ -2071,7 +2095,9 @@ async function igMeta(p: Parsed): Promise<Meta> {
       let gained = false;
       const better = igBetterCaption(out.caption, got.caption);
       if (better !== out.caption) { out.caption = better; gained = true; }
-      if (!out.thumb && got.thumb) { out.thumb = got.thumb; gained = true; }
+      // The embed's media image is the post's own picture at its own shape; og:image
+      // is a 640 square crop at best and Instagram's logo at worst (igGenericImage).
+      if (got.thumb && (got.mediaThumb ? got.thumb !== out.thumb : !out.thumb)) { out.thumb = got.thumb; gained = true; }
       if (!out.author && got.author) { out.author = got.author; gained = true; }
       for (const u of got.images) if (!images.includes(u)) { images.push(u); gained = true; }
       if (gained) used.push("embed-captioned");
@@ -2342,7 +2368,7 @@ async function ttFetchSource(s: TtSource, id: string, clean: string):
   }
 }
 
-async function ttMeta(p: Parsed): Promise<Meta> {
+export async function ttMeta(p: Parsed): Promise<Meta> {
   const id = p.shortcode.replace(/^tt-/, "");
   const out: Meta = { caption: null, thumb: null, author: null };
   const used: string[] = [];
@@ -3017,12 +3043,18 @@ function uploadRoute(
  * tell, on the media tier's own principle: a count that could not be read is not
  * a count of zero, and the cost of being wrong here is one file heard rather than
  * watched, which is what every upload used to get.
+ *
+ * The ceiling is mediaBurst, the number the routes admit against, and not the
+ * plan table's `media` (Basic 2). With the two apart, one Basic upload — which
+ * logs a row for the pack attempt and one for the video read — used Basic's two,
+ * and "Add the video" that same day was admitted by /media, then only heard here,
+ * and failed as audio.
  */
 async function overMediaCapToday(userId: string, shortcode: string): Promise<boolean> {
   try {
     const [u, uc] = await settledAll<unknown>([mediaCountToday(userId), capsFor(userId)]);
     if (await monthReadsReached(userId, (uc as UserCaps).plan, shortcode) !== null) return true;
-    return overCap(u as number, (uc as UserCaps).caps.media);
+    return overCap(u as number, mediaBurst(uc as UserCaps));
   } catch (e) {
     console.error("upload: cannot read today's media count for", userId, "— not watching", e);
     return true;
@@ -6710,6 +6742,52 @@ function mergeSlideCard(card: Card, slide: Card): SlideMerge {
   return { filled, added: extras.length, matched, capped };
 }
 
+/**
+ * A set count the caption gives the whole post: "✅3 sets" on a line of its own,
+ * or "3 Sets x 15 Reps each Exercise". A line made only of dose words (the
+ * isDoseWordName rule, so no movement is on it) that names one number of sets.
+ * Null when there is none, when two such lines disagree, or when it is a range.
+ * Pure.
+ */
+function captionWideSets(caption: string | null | undefined): number | null {
+  if (!caption) return null;
+  let found: number | null = null;
+  for (const raw of caption.split("\n")) {
+    const line = raw.trim();
+    if (!line || line.length > 60 || !isDoseWordName(line)) continue;
+    if (/\d\s*[-–]\s*\d+\s*sets?\b/i.test(line)) return null;
+    const m = line.match(/(\d{1,2})\s*sets?\b/i) ?? line.match(/^\W*sets?\s*[:=]\s*(\d{1,2})\W*$/i);
+    if (!m) continue;
+    const n = Number(m[1]);
+    if (n < 1 || n > 10) continue;
+    if (found !== null && found !== n) return null;
+    found = n;
+  }
+  return found;
+}
+
+/**
+ * Give that count to the exercises read off the slides that have none of their
+ * own. The slides of a carousel print the movements and the reps; the set count
+ * is often written once, in the caption, for all of them — DGLrGidP-Mz's eight
+ * slide exercises arrived with reps and no sets under a caption that says
+ * "✅3 sets". Only a straight block without rounds takes it: a circuit's rounds
+ * already are its set count, and an exercise with its own sets keeps them.
+ * Mutates `card`; returns how many exercises took it.
+ */
+function applyCaptionSets(card: Card, sets: number): number {
+  let n = 0;
+  for (const b of card.blocks) {
+    if (b.type !== "straight" || b.rounds !== null) continue;
+    for (const ex of b.exercises) {
+      if (ex.sets !== null || ex.evidence?.source !== "carousel") continue;
+      ex.sets = sets;
+      n++;
+    }
+  }
+  return n;
+}
+
 /** Progress hook so a job can persist how far through a carousel it got. */
 type VisionProgress = (slide: number, card: Card) => Promise<void>;
 
@@ -6921,6 +6999,9 @@ async function buildCard(
 
     stampVision();
     console.log("vision: coverage", p.shortcode, card.vision);
+    const wide = captionWideSets(meta.caption);
+    const widened = wide ? applyCaptionSets(card, wide) : 0;
+    if (widened) console.log("vision:", widened, "slide exercise(s) take the caption's", wide, "sets");
     console.log("vision: merged → exercises " + before.total + "/" + countExercises(card) +
       ", doses filled " + filled + ", matched " + matched +
       " — " + readOk + " read, " + timedOut + " timed out, " + retried + " retried, " +
@@ -7526,13 +7607,36 @@ function kickCover(name: string): void {
   );
 }
 
+/**
+ * Platform logos that have been stored as a cover, by the SHA-256 of their bytes:
+ * the proof tools/thumbs-repair.ts asks of an object before it touches the rows
+ * that share it, and the last check storeThumb makes before it uploads. The URL
+ * rules (igGenericImage, ttGenericImage) are what normally stop a logo; the bytes
+ * catch the same picture reached by another path. Measured 24 Sept 2026 from the
+ * stored objects and from Instagram's own og:image.
+ */
+export const PLATFORM_LOGO_SHA256: Record<string, string> = {
+  "b421b00fd1791a1d1ab70dd1e9667f40ca79a8c8673989864f1be092295cd7da": "Instagram logo (4168x4168 PNG)",
+  "3e37b1d51ead41bc3e9a3c2951994e0ecbcf090f09116a2055d27c547a12afa4": "TikTok logo (928x928 PNG)",
+};
+
+/** The logo these bytes are, or null. */
+export async function platformLogo(bytes: Uint8Array<ArrayBuffer>): Promise<string | null> {
+  const d = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+  return PLATFORM_LOGO_SHA256[Array.from(d, (b) => b.toString(16).padStart(2, "0")).join("")] ?? null;
+}
+
 export async function storeThumb(shortcode: string, src: string | null, platform = ""): Promise<string | null> {
-  if (!src) return null;
+  // A platform's own artwork is not a cover, and a card with no picture is
+  // better than a library of logos.
+  if (!src || igGenericImage(src) || ttGenericImage(src)) return null;
   try {
     const r = await safeFetch(src, { headers: { "User-Agent": DESKTOP_UA } });
     if (!r.ok) return null;
     const buf = new Uint8Array(await r.arrayBuffer());
     if (buf.byteLength < 500) return null;
+    const logo = await platformLogo(buf);
+    if (logo) { console.log("thumb refused for", shortcode, "— it is the", logo); return null; }
     // A cover about to be replaced by its small copy goes up uncached, so nothing
     // holds the big one for a week; everything else is cacheable from the start.
     const size = COVER_PLATFORMS.has(platform) ? plainJpegSize(buf) : null;
@@ -7757,10 +7861,16 @@ async function userEmailFromBearer(req: Request): Promise<string> {
 
 // The long-lived per-user key used by the iOS Shortcut. Hex-validated before it
 // ever reaches a PostgREST filter.
-async function userFromIngestKey(req: Request, url: URL): Promise<string | null> {
+//
+// The row it finds is the person's profile, so it brings back the three columns
+// every metered route reads next (profileRow) and hands them over in `seen`: the
+// Share Extension's save used to read the same row twice, one hop after the
+// other, and on a fresh isolate that second hop sat in front of the config read.
+async function userFromIngestKey(req: Request, url: URL, seen?: { profile?: unknown }): Promise<string | null> {
   const key = (req.headers.get("x-ingest-key") ?? url.searchParams.get("key") ?? "").trim();
   if (!/^[0-9a-f]{32}$/.test(key)) return null;
-  const rows = await dbSelect("profiles", `ingest_key=eq.${key}&select=id`);
+  const rows = await dbSelect("profiles", `ingest_key=eq.${key}&select=id,plan,limits,settings`);
+  if (seen && rows[0]) seen.profile = rows[0];
   return rows[0]?.id ?? null;
 }
 
@@ -8907,7 +9017,18 @@ async function finishJob(
   const sc = encodeURIComponent(p.shortcode);
   const waiting = await dbSelect("workouts", `ingest_job_id=eq.${job.id}&user_id=eq.${job.user_id}&ingest_status=eq.processing&select=id,user_id`);
   const access = await Promise.all(waiting.map(async (w: any) => ({ ...w, premium: await premiumAccess(w.user_id, p.shortcode, job.created_at) })));
-  let basic: Card | null = readQuality(meta) === "basic" ? card : null;
+  // The person's own file is theirs to have read, whatever the plan. It was paid
+  // for by the uploads allowance (Basic's one a month) when it was admitted, it
+  // is keyed by an id nobody else can produce, and it never reaches the shared
+  // cache — so there is no Plus reading of somebody else's to withhold. Before
+  // this, a Basic upload was watched and then delivered as the caption-only card
+  // of a file that has no caption: empty, with the read already spent. The
+  // quality stays "basic" for a Basic account because finish_ingest_job refuses
+  // a premium card without a preview row, and reserving one would charge the same
+  // file to the month's four reads as well. "Add the video" is not this: its
+  // platform is the post's, and it reserves its own read (attachRefusal).
+  const own = p.platform === "upload";
+  let basic: Card | null = readQuality(meta) === "basic" || own ? card : null;
   const basicOwner = access.find((w: any) => !w.premium);
   if (!basic && basicOwner) {
     const shared = (await dbSelect("video_cache", `shortcode=eq.${sc}&select=*`))[0];
@@ -8924,7 +9045,7 @@ async function finishJob(
   // The database owns the final authorization and claim check. Nothing visible
   // is written before that check; the workout, preview, and job commit together.
   const recipient = access[0];
-  const delivered = recipient?.premium ? card : (basic ?? card);
+  const delivered = recipient?.premium || own ? card : (basic ?? card);
   const quality = recipient?.premium ? readQuality(meta) : "basic";
   const committed = await rpc("finish_ingest_job", {
     p_job: job.id, p_user: job.user_id, p_worker: WORKER_ID, p_generation: job.claim_generation,
@@ -10314,9 +10435,10 @@ function mediaSeed(cached: any, w: any): { step: string; meta: Meta; card: Card 
 
 // Basic's daily ceiling on media steps, which is not the plan table's `media`.
 // A Basic read is a Plus preview, four a month, so this stop is never the one a
-// Basic account meets on the read route, the pack tier or the media step; it
-// is only the burst guard behind the previews, the same size as Plus's. One
-// number, so /api/limits reports the ceiling those three enforce.
+// Basic account meets on the read route, the pack tier, the media step, the
+// upload reader or the cache upgrade; it is only the burst guard behind the
+// previews, the same size as Plus's. One number, so /api/limits reports the
+// ceiling all of them enforce.
 const BASIC_MEDIA_BURST = 15;
 function mediaBurst(uc: UserCaps): number | null {
   return plusPlan(uc.plan) ? uc.caps.media : BASIC_MEDIA_BURST;
@@ -10831,7 +10953,7 @@ async function upgradeCachedCard(
   const [counts, uc] = await settledAll<any>([countsFor(userId), known ? Promise.resolve(known) : capsFor(userId)]);
   if (overCap((counts as Counts).extracts, (uc as UserCaps).caps.extract)) return null;
   if (await monthReadsReached(userId, (uc as UserCaps).plan, p.shortcode) !== null) return null;
-  if (await mediaCapReached(userId, (uc as UserCaps).caps.media) !== null) return null;
+  if (await mediaCapReached(userId, mediaBurst(uc as UserCaps)) !== null) return null;
   if (!(await paidAllowed())) return null;
   // A paid read is about to be queued: the one point this save is admitted. A
   // refusal leaves the ordinary cache hit standing.
@@ -14649,16 +14771,21 @@ function profileRow(userId: string): Promise<any> {
 
 async function guardedUserRequest(
   req: Request, path: string, userId: string, cors: Cors, handle: () => Promise<Response>,
+  profile?: unknown,
 ): Promise<Response> {
   const aiRoute = req.method === "POST" && (/^\/api\/(ingest|explain|swap|demo-video|uploads\/authorize|pumpy\/chat)$/.test(path) || /\/(reprocess|media)$/.test(path));
   if (!aiRoute) return await aiActor.run({ userId, workKey: crypto.randomUUID() }, handle);
-  return await profileMemo.run({ userId }, async () => {
-  const consentProfile = await profileRow(userId);
+  // `profile` is the row the ingest key's lookup already read in this request
+  // (userFromIngestKey), so the memo starts with it rather than reading it again.
+  return await profileMemo.run({ userId, row: profile ? Promise.resolve(profile) : undefined }, async () => {
+  // The consent read and the config wait are independent, so they overlap: on a
+  // fresh isolate the config read used to start only once the profile was back.
+  // ensureConfig never throws, so a refusal below leaves nothing unobserved.
+  const [consentProfile] = await Promise.all([profileRow(userId), ensureConfig()]);
   if (!aiConsented(consentProfile?.settings)) {
     return json({ status: "error", code: "ai_consent_required",
       message: "Allow AI processing in Spotter → Settings → Data & privacy before using AI features." }, 403, cors);
   }
-  await ensureConfig();
   const uc = await capsFor(userId);
   const scope = scopeFor(path, path.endsWith("/authorize") && await isSaveAuthorize(req));
   const meter = scope === "chat" ? await pumpyMeter(userId) : null;
@@ -15358,11 +15485,18 @@ Deno.serve(async (req: Request) => {
     // `/media` takes the key too, narrowly: only the Share Extension's frames for
     // a save it held, and "Add the video" for a card the person owns. Every other
     // use of that route still needs the bearer (handleReadVideo, `viaKey`).
+    // A save on a fresh isolate reads app_config before it can do anything else
+    // (ensureConfig, in the guard). Started here it runs beside auth instead of
+    // after the profile read: every share from the phone lands minutes apart, so
+    // almost every one is the first request of its isolate. Not awaited; the
+    // guard waits for this same refresh, and models() never throws.
+    if (req.method === "POST" && FREE_THROTTLED.has(path)) models();
     let userId = await userFromBearer(req);
     let viaKey = false;
+    const keyed: { profile?: unknown } = {};
     if (!userId && (path === "/api/ingest" || path === "/api/ingest/prepare" || path === "/api/uploads/authorize" ||
         path === "/api/ai-consent" || (req.method === "POST" && MEDIA_PATH_RE.test(path)))) {
-      userId = await userFromIngestKey(req, url);
+      userId = await userFromIngestKey(req, url, keyed);
       viaKey = !!userId;
     }
     if (!userId) return json({ status: "error", message: "Sign in to use Spotter." }, 401, cors);
@@ -15534,7 +15668,7 @@ Deno.serve(async (req: Request) => {
     }
 
     return json({ status: "error", message: "Not found" }, 404, cors);
-    });
+    }, keyed.profile);
   } catch (e) {
     if (e instanceof GuardError) return json({ status: "limit", code: e.reason, message: e.reason === "request_too_large" ? "That request is too large." : e.reason === "user_monthly_budget" ? "Your monthly AI allowance is used up. It resets on the first of next month. Your saved workouts are still available." : "AI reading is paused for now. Your saved workouts are still available." }, e.reason === "request_too_large" ? 413 : 429, cors);
     console.error("unhandled", e);
