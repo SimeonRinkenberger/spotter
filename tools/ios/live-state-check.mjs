@@ -411,7 +411,7 @@ function actionContext() {
   const calls = { reps: [], weight: [], save: 0, done: 0, pause: 0, finish: 0, deep: [], toast: [], forward: 0,
     parked: [], unparked: 0 };
   const ctx = vm.createContext({
-    wo: fixture(), restUntil: 1, setCtx: { idx: 0, reps: 0, weight: 0 },
+    wo: fixture(), restUntil: 1, setCtx: { idx: 0, reps: 0, weight: 0 }, stepRows: null, setEvents: [],
     $: id => overlay(calls, id, {}),
     OPEN_KEY: 'spotter_open_pending',
     sessionStorage: { setItem: (k, v) => calls.parked.push(v), removeItem: () => { calls.unparked++; } },
@@ -428,7 +428,7 @@ function actionContext() {
     toast: t => calls.toast.push(t),
     Math, Object, String, Number, isFinite, parseInt
   });
-  vm.runInContext(pull(['isTimed', 'exKey', 'toUnit', 'setPrefill', 'woForward', 'openLink', 'liveAction']), ctx);
+  vm.runInContext(pull(['isTimed', 'exKey', 'toUnit', 'setPrefill', 'ssIdx', 'logNextSet', 'woForward', 'openLink', 'liveAction']), ctx);
   return { ctx, calls };
 }
 
@@ -497,7 +497,7 @@ console.log('PASS remote set with and without an adjusted dose, rest and finish 
 function complexActionContext() {
   const calls = { round: [], mark: [], save: 0, toast: [] };
   const ctx = vm.createContext({
-    wo: fixture(), restUntil: 0, setCtx: { idx: 0, reps: 0, weight: 0 },
+    wo: fixture(), restUntil: 0, setCtx: { idx: 0, reps: 0, weight: 0 }, stepRows: null, setEvents: [],
     $: id => overlay(calls, id, {}), OPEN_KEY: 'spotter_open_pending',
     sessionStorage: { setItem: () => {}, removeItem: () => {} },
     state: { unit: 'kg', user: { id: 'u1' } }, hist: {}, LB_PER_KG: 2.2046226,
@@ -510,7 +510,7 @@ function complexActionContext() {
     cxMark: (bi, cx, j) => calls.mark.push([bi, j]),
     Math, Object, String, Number, isFinite, parseInt
   });
-  vm.runInContext(pull(['isTimed', 'exKey', 'toUnit', 'setPrefill', 'woForward', 'openLink', 'liveAction']), ctx);
+  vm.runInContext(pull(['isTimed', 'exKey', 'toUnit', 'setPrefill', 'ssIdx', 'logNextSet', 'woForward', 'openLink', 'liveAction']), ctx);
   return { ctx, calls };
 }
 

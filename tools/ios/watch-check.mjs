@@ -143,7 +143,13 @@ assert(liveAction, APP + ' has no liveAction() handler');
 // The adjusted dose, both directions.
 assert(/var reps: Int\?/.test(state) && /var weight: Double\?/.test(state),
   'LiveAction must carry optional reps and weight for a dose dialled on the wrist');
-assert(/typeof a\.reps === "number"/.test(liveAction[0]) && /typeof a\.weight === "number"/.test(liveAction[0]),
+// The set goes through logNextSet, the one door the phone's own button uses too:
+// liveAction hands it the wrist's figures, and it reads them as numbers or falls
+// back to setPrefill.
+const nextSet = /function logNextSet\(opts\) \{[\s\S]*?\n  \}/.exec(app);
+assert(nextSet && /logNextSet\(\{ reps: a\.reps, weight: a\.weight/.test(liveAction[0]) &&
+  /typeof opts\.reps === "number"/.test(nextSet[0]) && /typeof opts\.weight === "number"/.test(nextSet[0]) &&
+  /setPrefill\(idx\)/.test(nextSet[0]),
   APP + ' must read a.reps and a.weight as numbers and fall back to its own prefill');
 
 console.log('PASS every action the wrist can send (' + [...new Set(sent)].sort().join(', ') +
