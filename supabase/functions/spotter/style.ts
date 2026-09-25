@@ -98,7 +98,7 @@ export const STYLE = String.raw`<style>
   .stepper button .ic { width: 20px; height: 20px; }
   /* Every control that used to centre a glyph with line-height now has a box to
      centre instead, and a box only centres inside a flex container. */
-  .addbtn, .planx, .pumpyctx button, .stepper button {
+  .addbtn, .pumpyctx button, .stepper button {
     display: flex; align-items: center; justify-content: center; }
   .btn { display: flex; align-items: center; justify-content: center; gap: 7px; }
   .daydone { display: inline-flex; align-items: center; gap: 4px; }
@@ -510,7 +510,7 @@ export const STYLE = String.raw`<style>
      answers itself. Library grid, Train's rows and pickers, and the detail's source chips.
      The source photo (.dphoto) and the share card (.scprev, #proof) keep the menu:
      those are pictures, and keeping one is a fair thing to want. */
-  .thumbwrap img, .tthumb, .planitem img, .pickrow img, .fromthumb img {
+  .thumbwrap img, .pickrow img, .fromthumb img {
     -webkit-touch-callout: none; -webkit-user-drag: none; -webkit-user-select: none; user-select: none; }
   /* Finite sweep on purpose: lazy images far below the fold stay pending indefinitely,
      and an infinite animation per card would keep the compositor busy all session. */
@@ -788,10 +788,6 @@ export const STYLE = String.raw`<style>
   .exhelp { flex: 0 0 auto; width: 26px; height: 26px; border-radius: 999px; border: 1px solid var(--line-2);
     background: none; color: var(--muted); font-size: 12px; line-height: 1; display: flex;
     align-items: center; justify-content: center; }
-  /* An exercise the user has corrected or added by hand. The card still shows the
-     creator's wording everywhere else, so this is the only mark that says which
-     lines are theirs — quiet, and it never appears on model output. */
-  .exmine { font-size: 11px; font-weight: 600; color: var(--muted); margin-top: 4px; }
   /* Where a coach borrowed the line from: the voice of "Added by you", and not a
      link — the source is one tap away in the strip above, and a fourth target on a
      row holding three buttons is a row nobody can aim at. */
@@ -1756,14 +1752,12 @@ export const STYLE = String.raw`<style>
 
   /* ---------- train / the day card ----------
      Up next for today, the selected day's own card for any other: one card, so the
-     question the app is opened with has one answer. It wears .daycard's frame (the
-     Workouts Resume card's too, until the paused bar replaces it), ember-edged
-     when it asks for something (resume, start, try), quiet when it only reports.
+     question the app is opened with has one answer. It wears .daycard's frame,
+     ember-edged when it asks for something (resume, start, try), quiet when it
+     only reports.
      Its rows are the picker's (.pickrow) and the history's (.histrow). */
   .daycard { background: var(--card); border: 1px solid var(--line); border-radius: 16px;
     padding: 13px 15px; margin-bottom: 9px; box-shadow: var(--sh-sm); }
-  .dayhead { display: flex; align-items: center; justify-content: space-between; gap: 10px;
-    margin-bottom: 2px; }
   .dayname { font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
     color: var(--muted); }
   .daydone { color: var(--good); font-size: 12px; font-weight: 700; }
@@ -3037,10 +3031,10 @@ export const STYLE = String.raw`<style>
      Apple asks for 44px; these are drawn smaller because their rows are. Only the
      hit area grows, capped at the gap to the next control so no two overlap.
      Insets come off the padding box: a bordered control needs a pixel more. */
-  .iconbtn, .addbtn, .exhelp, .planx, .planadd, .addex, .danger, .libcount,
+  .iconbtn, .addbtn, .exhelp, .planadd, .addex, .danger, .libcount,
   .planlegal a, .planlegal button, .segbtn, .planbtn, .linkbtn,
   .chips .chip, .said .chip, .votes .chip, .pumpyctx button, .threadrow .tdel, .ttitle { position: relative; }
-  .iconbtn::after, .addbtn::after, .exhelp::after, .planx::after, .planadd::after,
+  .iconbtn::after, .addbtn::after, .exhelp::after, .planadd::after,
   .segbtn::after, .planbtn::after, .linkbtn::after,
   .addex::after, .danger::after, .chips .chip::after, .said .chip::after,
   .votes .chip::after,
@@ -3051,7 +3045,6 @@ export const STYLE = String.raw`<style>
   .iconbtn::after { inset: -3px; }
   .addbtn::after { inset: -2px; }
   .exhelp::after { inset: -7px -6px; }
-  .planx::after { inset: -7px -4px; }
   .planadd::after, .addex::after { inset: -5px 0; }
   .segbtn::after, .planbtn::after { inset: -6px 0; }
   /* "All" is two letters and drew a 20x27 target — the smallest control in the
@@ -3193,7 +3186,7 @@ export const STYLE = String.raw`<style>
     .pumpy-tip { animation: none; }
     .welcome-page { transform: none; transition: opacity var(--t-1) var(--e-soft); }
     .btn:active, .iconbtn:active, .addbtn:active, .chip:active, .carditem:active,
-    .addex:active, .planbtn:active, .mcell:active,
+    .addex:active, .planbtn:active,
     .setpill:active, .wnav:active, .wfinish:active, .ring:active, .scprev:active,
     .uploadrow:active, .pumpybar button:active { transform: none; }
   }

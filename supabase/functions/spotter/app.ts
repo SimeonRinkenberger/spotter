@@ -12012,7 +12012,9 @@ export const APP = String.raw`
         var nowRange = fetchRange();
         if (from !== ymd(nowRange.from) || to !== ymd(nowRange.to)) return;
         if (r0.error) throw new Error("Plan unavailable");
-        state.plan = r0.data || [];
+        // A row whose Remove is still offering Undo stays off everything that
+        // reads the plan — widgets, the cache, card statuses — not just Train.
+        state.plan = (r0.data || []).filter(function (p) { return !planGone[p.id]; });
         publishSummary();
         writeTrainCache();
         libStatusesChanged();
@@ -12781,12 +12783,13 @@ export const APP = String.raw`
       return card;
     }
     if (u.s > 5) return firstCard(u.pending);
-    // Paused or still running: the way back in, and End, which saves what was
-    // logged exactly as End inside the session does.
+    // Paused or still running: the way back in, and Finish workout, which is the
+    // session's own Finish pill — at once when every planned set is in, else the
+    // leave sheet asks first, over the session it would end.
     if (u.s < 2) {
       return tcard("act", u.running ? "In progress" : "Paused", w, setsWord(u.sets) + " · " +
         clock(Math.max(0, Math.round(((u.pausedAt ? new Date(u.pausedAt) : new Date()) - new Date(u.startedAt)) / 1000))),
-        [["btn", "Resume", woForward], ["btn ghost tmove", "End", function () { woForward(); finishWorkout(); }]]);
+        [["btn", "Resume", woForward], ["btn ghost tmove", "Finish workout", function () { woForward(); woFinish(); }]]);
     }
     if (u.s < 3) {
       card = tcard("act", "Planned today", w, wMeta(w, u.more && "+" + u.more + " more today"),
