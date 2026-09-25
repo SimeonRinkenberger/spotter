@@ -16940,8 +16940,8 @@ export const APP = String.raw`
   ["addsheet", "setsheet", "watchsheet", "exsheet", "exeditsheet", "explainsheet", "picksheet",
    "settingssheet", "colsheet", "renamesheet", "swapsheet", "pumpysheet", "capsheet", "plansheet",
    "daysheet", "copysheet", "sortsheet", "refsheet", "countsheet", "guidesheet", "welcomesheet",
-   "workoptions", "filtersheet", "plandays", "recapsheet", "woaddsheet", "aiconsentsheet", "wleavesheet",
-   "exmenu", "sectionsheet", "ordersheet"]
+   "workoptions", "filtersheet", "recapsheet", "woaddsheet", "aiconsentsheet", "wleavesheet",
+   "sectionsheet", "ordersheet", "exmenu", "plandays", "readysheet"]
     .forEach(wireSheet);
 
   function overlayShowing() {
@@ -20016,8 +20016,8 @@ export const APP = String.raw`
   document.querySelectorAll("[data-close]").forEach(function (b) {
     b.onclick = function () { closeSheet(b.getAttribute("data-close")); };
   });
-  ["workoptions", "filtersheet", "plandays", "recapsheet", "woaddsheet", "aiconsentsheet", "wleavesheet",
-   "exmenu", "sectionsheet", "ordersheet"].forEach(function (id) {
+  ["workoptions", "filtersheet", "recapsheet", "woaddsheet", "aiconsentsheet", "wleavesheet",
+   "sectionsheet", "ordersheet", "exmenu", "plandays", "readysheet"].forEach(function (id) {
     $(id).addEventListener("keydown", function (e) {
       if (e.key === "Escape") { e.preventDefault(); closeSheet(id); }
       if (e.key !== "Tab") return;
