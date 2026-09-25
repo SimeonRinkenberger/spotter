@@ -3191,7 +3191,7 @@ export const APP = String.raw`
     t.appendChild(el("span", "fromtitle", src.title || "Untitled workout"));
     b.appendChild(tw);
     b.appendChild(t);
-    b.onclick = function () { openDetail(src, true); $("detail").scrollTop = 0; };
+    b.onclick = function () { showCard(src); };
     return b;
   }
 
@@ -3822,6 +3822,16 @@ export const APP = String.raw`
     paintNav();
     $("detail").classList.add("docked", "open");
     if (!keepHistory) { $("detail").scrollTop = 0; history.pushState({ detail: 1 }, ""); }
+  }
+
+  // A card opened from somewhere that can sit over another card — a citation
+  // chip, the ready sheet's Look it over first, a spotter://workout or start
+  // link — takes the open card's place and its history entry, at its own top.
+  // A second entry would outlive the Back that closes the overlay, and the next
+  // Back would spend it doing nothing. With no card open it is an ordinary open.
+  function showCard(w) {
+    openDetail(w, $("detail").classList.contains("open"));
+    $("detail").scrollTop = 0;
   }
 
   // Start is Resume while this card's session is paused — startWorkout resumes it
@@ -17670,7 +17680,7 @@ export const APP = String.raw`
     }, function () { closeSheet("readysheet"); }));
     // The way out is a button as well as a swipe: VoiceOver cannot reach the scrim.
     var foot = box.appendChild(el("div", "readyfoot"));
-    foot.appendChild(el("button", "readylook", "Look it over first")).onclick = function () { openDetail(w); closeSheet("readysheet"); };
+    foot.appendChild(el("button", "readylook", "Look it over first")).onclick = function () { showCard(w); closeSheet("readysheet"); };
     foot.appendChild(el("button", "readylook", "Not now")).onclick = function () { closeSheet("readysheet"); };
     openSheet("readysheet");
     // Where VoiceOver starts: what this is, then what to do about it.
@@ -21038,10 +21048,10 @@ export const APP = String.raw`
     else if (!w) toast("That workout is no longer in Workouts.");
     // A saved video is ready (push.ts): the banner and Plan It land here.
     else if (head === "ready") readyLink(w, /[?&]auto=1/.test(url));
-    else if (head === "workout") openDetail(w);
+    else if (head === "workout") showCard(w);
     else if (wo && !wo.finished) { woForward(); toast("A workout is already running."); }
     // The card first, so finishing lands back where a Library tap would have.
-    else { openDetail(w); startWorkout(w); }
+    else { showCard(w); startWorkout(w); }
   }
 
   // A link can only open something once there is a library to open it in.

@@ -310,7 +310,7 @@ function overlay(calls, id, open) {
 
 function linkContext(open) {
   open = open || {};
-  const calls = { detail: [], start: [], view: [], toast: [], forward: 0, back: 0, closed: [], resumed: 0 };
+  const calls = { detail: [], keep: [], start: [], view: [], toast: [], forward: 0, back: 0, closed: [], resumed: 0 };
   const sheets = (open.sheets || []).map(id => ({ id }));
   const ctx = vm.createContext({
     wo: null, $: id => overlay(calls, id, open),
@@ -322,19 +322,19 @@ function linkContext(open) {
     resumeWorkout: () => { calls.resumed++; },
     state: { user: { id: 'u1' }, workouts: [{ id: 'w1', title: 'Push day' }] },
     planWorkout: id => ctx.state.workouts.filter(w => w.id === id)[0],
-    openDetail: w => calls.detail.push(w.id),
+    openDetail: (w, keep) => { calls.detail.push(w.id); calls.keep.push(!!keep); },
     startWorkout: w => calls.start.push(w.id),
     setView: v => calls.view.push(v),
     toast: t => calls.toast.push(t),
     String, decodeURIComponent, Object
   });
-  vm.runInContext(pull(['woForward', 'openDeepLink']), ctx);
+  vm.runInContext(pull(['woForward', 'showCard', 'openDeepLink']), ctx);
   return { ctx, calls };
 }
 
 let link = linkContext();
 vm.runInContext('openDeepLink("spotter://open")', link.ctx);
-assert.deepEqual(link.calls, { detail: [], start: [], view: [], toast: [], forward: 0, back: 0, closed: [], resumed: 0 },
+assert.deepEqual(link.calls, { detail: [], keep: [], start: [], view: [], toast: [], forward: 0, back: 0, closed: [], resumed: 0 },
   'spotter://open does nothing on its own — the shell already brought the app up');
 
 link = linkContext();
@@ -368,6 +368,16 @@ vm.runInContext('openDeepLink("spotter://start/w1")', link.ctx);
 assert.deepEqual(link.calls.start, [], 'a running session is never restarted');
 assert.equal(link.calls.forward, 1);
 assert.equal(link.calls.toast.length, 1);
+
+// Over a card already open, a card link takes its place and its history entry
+// (showCard): a second {detail} entry outlived the Back that closed the overlay,
+// and the next Back spent it doing nothing.
+link = linkContext({ detail: true });
+vm.runInContext('openDeepLink("spotter://workout/w1"); openDeepLink("spotter://start/w1")', link.ctx);
+assert.deepEqual(link.calls.keep, [true, true], 'a card link over an open card pushes no second entry');
+link = linkContext();
+vm.runInContext('openDeepLink("spotter://workout/w1")', link.ctx);
+assert.deepEqual(link.calls.keep, [false], 'with no card open it is an ordinary open');
 
 link = linkContext();
 ['library', 'plan', 'progress', 'pumpy'].forEach(t => vm.runInContext('openDeepLink("spotter://tab/' + t + '")', link.ctx));
@@ -414,7 +424,7 @@ link.ctx.state.user = null;
 vm.runInContext('openDeepLink("spotter://tab/plan")', link.ctx);
 assert.deepEqual(link.calls.view, []);
 
-console.log('PASS five deep-link routes, the already-running guard, a deleted card, garbage and signed-out.');
+console.log('PASS five deep-link routes, the already-running guard, a card link over an open card, a deleted card, garbage and signed-out.');
 
 // ---------- actions arriving from outside the page ----------
 

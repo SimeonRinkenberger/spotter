@@ -100,7 +100,7 @@ assert(app.includes('if (fromShare) body.source = "share";'), 'a share from anot
 // ---------- the rules, run ----------
 
 const PULL = ['seenReady', 'readyMark', 'offerReady', 'readyArrived', 'readyLink', 'readyOnOpen', 'cardLink',
-  'readyPick', 'isPending', 'isFailed', 'planWorkout', 'openDeepLink', 'openLink'];
+  'readyPick', 'isPending', 'isFailed', 'planWorkout', 'showCard', 'openDeepLink', 'openLink'];
 
 const NOW = Date.now();
 const iso = (msAgo) => new Date(NOW - msAgo).toISOString();
