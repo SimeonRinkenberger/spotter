@@ -543,7 +543,7 @@ export const MARKUP_BODY = String.raw`</head>
 
 <div class="sheet" id="watchsheet"><div class="sheetbody">
   <div class="grabber"></div>
-  <h2>Watch the clip</h2>
+  <h2 id="watchtitle">Watch original</h2>
   <div id="watchbody"></div>
   <button class="btn ghost" id="watchclose">Close</button>
 </div></div>
