@@ -1630,6 +1630,7 @@ export const STYLE = String.raw`<style>
   .pbin .btn { width: auto; min-height: 44px; padding: 0 16px; font-size: 14px; }
   .pbin .iconbtn { width: 44px; height: 44px; }
   /* Finish, armed: the flag lit, and the line under the title says what it does. */
+  .pbin.armed .iconbtn { background: var(--ember); color: var(--on-ember); }
   .pbin.armed .pbtx span { color: var(--ember-ink); }
   body.kb .pausedbar { visibility: hidden; }
   @media (prefers-reduced-motion: reduce) { .pbin, .pausedbar.on .pbin { transform: none; } }

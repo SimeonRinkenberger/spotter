@@ -10325,7 +10325,9 @@ export const APP = String.raw`
     bar.innerHTML = "";
     var box = el("div", "pbin"), body = el("button", "pbbody"), tx = el("span", "pbtx");
     var sub = el("span", null, line), live = el("span", "sr-only");
-    // Finish is the leave sheet's flag, lit while it waits for its second tap.
+    // Finish is the leave sheet's flag, lit while it waits for its second tap: lit
+    // by the bar's class, not its own "on", which wireIconMotion would animate;
+    // with that icon animating, the iPhone Air drew the rest of the change late.
     var fin = icon(el("button", "iconbtn"), "flag"), go = el("button", "btn", "Resume");
     body.appendChild(icon(el("span", "addbtn ghost"), "pause"));
     tx.appendChild(el("b", null, title));
@@ -10336,12 +10338,11 @@ export const APP = String.raw`
       Math.max(1, Math.round(secs / 60)) + " min");
     fin.setAttribute("aria-label", "Finish workout");
     live.setAttribute("aria-live", "polite");
-    function disarm() { clearTimeout(pbArm); box.seen = 0; box.classList.remove("armed"); fin.classList.remove("on"); sub.textContent = line; }
+    function disarm() { clearTimeout(pbArm); box.seen = 0; box.classList.remove("armed"); sub.textContent = line; }
     fin.onclick = function () {
       if (box.seen && Date.now() - box.seen > 300) { disarm(); resumeWorkout(); finishWorkout(); return; }
       clearTimeout(pbArm);
       box.classList.add("armed");
-      fin.classList.add("on");
       sub.textContent = live.textContent = n ? "Tap again to save " + n + (n === 1 ? " set" : " sets") : "Tap again to close it";
       haptic("select");
       // Only a question that reached the screen, and stayed longer than a double
@@ -10350,7 +10351,7 @@ export const APP = String.raw`
       // frames drawn means it showed (a web view drawing nothing runs none); a
       // tap sooner than that, or than 300ms after, only asks again.
       requestAnimationFrame(function () {
-        requestAnimationFrame(function () { box.seen = fin.classList.contains("on") && (box.seen || Date.now()); });
+        requestAnimationFrame(function () { box.seen = box.classList.contains("armed") && (box.seen || Date.now()); });
       });
       pbArm = setTimeout(disarm, 4000);
     };
