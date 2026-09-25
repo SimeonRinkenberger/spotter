@@ -31,15 +31,17 @@ The steps below document the configuration for future maintenance.
    for Spotter. Create a **Web application** OAuth client, used by both platforms.
    Register this authorized redirect URI:
    `https://mtzevoxxpsktmrbbuxva.supabase.co/auth/v1/callback`.
-   For the website's optional One Tap flow, register the JavaScript origin
-   `https://simeonrinkenberger.github.io` (and `http://localhost:8000` for local use).
+   The website's optional One Tap flow needed the JavaScript origin
+   `https://simeonrinkenberger.github.io`; the web app is retired, so that origin is no longer
+   used (keep `http://localhost:8000` for a local web copy).
 2. In [Supabase Google provider settings](https://supabase.com/dashboard/project/mtzevoxxpsktmrbbuxva/auth/providers?provider=Google),
    enter the client ID and client secret and enable Google. Keep nonce checks on.
    Store the secret only in the provider settings, never in source control.
 3. In [Supabase URL Configuration](https://supabase.com/dashboard/project/mtzevoxxpsktmrbbuxva/auth/url-configuration),
    preserve existing entries and allow these exact redirect URLs:
    - `com.spotter.auth://callback`
-   - `https://simeonrinkenberger.github.io/spotter/`
+   - `https://simeonrinkenberger.github.io/spotter/` (keep it: installed builds still send it as
+     `redirectTo` for password-reset email links, which now land on the landing page)
    - `http://localhost:8000/` if testing the web app locally.
 4. Optional: set `PUBLIC_AUTH.google_client_id` in
    `supabase/functions/spotter/app.ts` to the public web client ID for One Tap.
